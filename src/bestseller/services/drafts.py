@@ -30,6 +30,16 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
 )
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
+from bestseller.services.chapter_constraint_manifest import (
+    PrewritePlan,
+    build_safe_prewrite_plan,
+    compile_chapter_constraint_manifest,
+    parse_prewrite_plan,
+    render_constraint_manifest_block,
+    render_prewrite_plan_block,
+    render_prewrite_plan_prompt,
+    validate_prewrite_plan,
+)
 from bestseller.services.chapter_validator import classify_cliffhanger
 from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
@@ -4144,6 +4154,8 @@ def build_scene_draft_prompts(
     hook_echo_block: str | None = None,
     exposition_density_block: str | None = None,
     canon_guardrails_block: str | None = None,
+    prewrite_contract_block: str | None = None,
+    prewrite_plan_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -4562,6 +4574,12 @@ def build_scene_draft_prompts(
     _canon_guardrails_line = ""
     if canon_guardrails_block:
         _canon_guardrails_line = f"{canon_guardrails_block}\n\n"
+    _prewrite_contract_line = ""
+    if prewrite_contract_block:
+        _prewrite_contract_line = f"{prewrite_contract_block}\n\n"
+    _prewrite_plan_line = ""
+    if prewrite_plan_block:
+        _prewrite_plan_line = f"{prewrite_plan_block}\n\n"
 
     # Material library soft reference — opt-in inspiration for old projects'
     # new chapters. See ``material_library_reference`` module docstring.
@@ -4808,6 +4826,8 @@ def build_scene_draft_prompts(
 
     if is_en:
         user_prompt = (
+            f"{_prewrite_contract_line}"
+            f"{_prewrite_plan_line}"
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
             f"{_query_brief_line}"
@@ -4903,6 +4923,8 @@ def build_scene_draft_prompts(
         )
     else:
         user_prompt = (
+            f"{_prewrite_contract_line}"
+            f"{_prewrite_plan_line}"
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
             f"{_query_brief_line}"
@@ -5224,6 +5246,97 @@ def _determine_model_tier(
     if scene.scene_type in ("climax", "revelation", "turning_point"):
         return "strong"
     return "standard"
+
+
+async def _declare_validated_prewrite_plan(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+    manifest: Any,
+    language: str,
+    workflow_run_id: UUID | None = None,
+    step_run_id: UUID | None = None,
+) -> tuple[PrewritePlan, dict[str, Any]]:
+    """Ask for a short scene plan and validate it before prose generation."""
+
+    safe_plan = build_safe_prewrite_plan(manifest)
+    fallback = json.dumps(safe_plan.model_dump(mode="json"), ensure_ascii=False)
+    is_en = is_english_language(language)
+    system_prompt = (
+        "You are a pre-write constraint compiler. Output JSON only, no prose."
+        if is_en
+        else "你是小说写作系统的写前约束编译器。只输出 JSON，不写正文。"
+    )
+    violations: list[str] = []
+    last_model_name: str | None = None
+    last_provider: str | None = None
+
+    for attempt in range(2):
+        user_prompt = render_prewrite_plan_prompt(manifest, language=language)
+        if violations:
+            joined = "\n".join(f"- {item}" for item in violations)
+            user_prompt += (
+                f"\n\nThe previous plan was rejected:\n{joined}\nReturn corrected JSON only."
+                if is_en
+                else f"\n\n上一轮计划被拒绝，原因：\n{joined}\n请只修正 JSON。"
+            )
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="planner",
+                model_tier="standard",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                fallback_response=fallback,
+                prompt_template="prewrite_plan_manifest",
+                prompt_version="1.0",
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+                max_tokens_override=700,
+                metadata={
+                    "project_slug": project.slug,
+                    "chapter_number": chapter.chapter_number,
+                    "scene_number": scene.scene_number,
+                    "attempt": attempt + 1,
+                },
+            ),
+        )
+        last_model_name = completion.model_name
+        last_provider = completion.provider
+        try:
+            plan = parse_prewrite_plan(completion.content)
+        except ValueError as exc:
+            violations = [str(exc)]
+            continue
+        result = validate_prewrite_plan(plan, manifest)
+        if result.passed:
+            return plan, {
+                "mode": "llm_validated",
+                "attempts": attempt + 1,
+                "model_name": last_model_name,
+                "provider": last_provider,
+                "violations": [],
+            }
+        violations = result.violations
+
+    logger.warning(
+        "Pre-write plan for chapter %d scene %d failed validation; using deterministic safe plan. violations=%s",
+        chapter.chapter_number,
+        scene.scene_number,
+        violations,
+    )
+    return safe_plan, {
+        "mode": "deterministic_safe_fallback",
+        "attempts": 2,
+        "model_name": last_model_name,
+        "provider": last_provider,
+        "violations": violations,
+    }
 
 
 async def _maybe_render_library_soft_reference(
@@ -5577,7 +5690,52 @@ async def generate_scene_draft(
     generation_mode = "template-fallback"
     content_md = fallback_content
     prompt_trace_path: str | None = None
+    prewrite_manifest = None
+    prewrite_plan: PrewritePlan | None = None
+    prewrite_plan_meta: dict[str, Any] = {"mode": "not_run"}
+    prewrite_contract_block: str | None = None
+    prewrite_plan_block: str | None = None
     if settings is not None:
+        language = _project_language(project)
+        canon_guardrails = load_canon_guardrails_for_project(
+            project,
+            output_base_dir=settings.output.base_dir,
+        )
+        prewrite_manifest = compile_chapter_constraint_manifest(
+            chapter_number=chapter.chapter_number,
+            scene_number=scene.scene_number,
+            participants=list(scene.participants or []),
+            scene_time_label=scene.time_label,
+            scene_metadata=scene.metadata_json if isinstance(scene.metadata_json, dict) else {},
+            scene_exit_state=scene.exit_state if isinstance(scene.exit_state, dict) else {},
+            story_bible_context=_packet_story_bible_context(context_packet) or {},
+            hard_fact_snapshot=_packet_hard_fact_snapshot(context_packet),
+            recent_timeline_events=_packet_recent_timeline_events(context_packet),
+            hook_requirement=scene.hook_requirement,
+            canon_guardrails=canon_guardrails,
+            project_metadata=getattr(project, "metadata_json", None)
+            if isinstance(getattr(project, "metadata_json", None), dict)
+            else {},
+        )
+        prewrite_contract_block = render_constraint_manifest_block(
+            prewrite_manifest,
+            language=language,
+        )
+        prewrite_plan, prewrite_plan_meta = await _declare_validated_prewrite_plan(
+            session,
+            settings,
+            project=project,
+            chapter=chapter,
+            scene=scene,
+            manifest=prewrite_manifest,
+            language=language,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+        )
+        prewrite_plan_block = render_prewrite_plan_block(
+            prewrite_plan,
+            language=language,
+        )
         system_prompt, user_prompt = build_scene_draft_prompts(
             project,
             chapter,
@@ -5768,6 +5926,8 @@ async def generate_scene_draft(
             canon_guardrails_block=(
                 context_packet.canon_guardrails_block if context_packet else None
             ),
+            prewrite_contract_block=prewrite_contract_block,
+            prewrite_plan_block=prewrite_plan_block,
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000
             ),
@@ -5972,6 +6132,17 @@ async def generate_scene_draft(
             "query_brief_used": bool(getattr(context_packet, "query_brief", None)),
             "query_tool_call_count": len(getattr(context_packet, "query_trace", []) or []),
             "regen_count": int(scene_regen_count),
+            "prewrite_manifest": (
+                prewrite_manifest.model_dump(mode="json")
+                if prewrite_manifest is not None
+                else None
+            ),
+            "prewrite_plan": (
+                prewrite_plan.model_dump(mode="json")
+                if prewrite_plan is not None
+                else None
+            ),
+            "prewrite_plan_meta": prewrite_plan_meta,
             # Hype assignment — read by assemble_chapter_draft to stamp the
             # chapter row + register the moment on DiversityBudget.
             "assigned_hype_type": (

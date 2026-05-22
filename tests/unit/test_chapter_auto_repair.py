@@ -146,6 +146,64 @@ async def test_no_latest_report_returns_no_trigger() -> None:
 
 
 @pytest.mark.asyncio
+async def test_metadata_retention_code_triggers_repair_without_quality_report() -> None:
+    chapter = FakeChapter(
+        metadata_json={
+            "auto_repair_last_block_codes": ["HOOK_ECHO_MISSING"],
+            "retention_gate_last_findings": [
+                {
+                    "code": "HOOK_ECHO_MISSING",
+                    "severity": "critical",
+                    "evidence": {
+                        "missed_tokens": ["第六个是谁", "锦盒里的旧镜"],
+                        "matched_tokens": ["倒计时"],
+                    },
+                }
+            ],
+        }
+    )
+    scene = FakeScene(chapter_id=chapter.id)
+    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("HOOK_ECHO_MISSING",),
+    )
+
+    assert triggered is True
+    assert codes == ("HOOK_ECHO_MISSING",)
+    assert chapter.production_state == "pending"
+    assert scene.status == SceneStatus.NEEDS_REWRITE.value
+    assert "上一章尾钩" in scene.metadata_json["auto_repair_hint"]
+    assert "第六个是谁" in scene.metadata_json["auto_repair_hint"]
+    assert "倒计时" in scene.metadata_json["auto_repair_hint"]
+    assert scene.metadata_json["auto_repair_block_codes"] == ["HOOK_ECHO_MISSING"]
+
+
+@pytest.mark.asyncio
+async def test_metadata_cast_violation_code_triggers_repair_hint() -> None:
+    chapter = FakeChapter(
+        metadata_json={"auto_repair_last_block_codes": ["CAST_VIOLATION"]}
+    )
+    scene = FakeScene(chapter_id=chapter.id)
+    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("CAST_VIOLATION",),
+    )
+
+    assert triggered is True
+    assert codes == ("CAST_VIOLATION",)
+    assert chapter.production_state == "pending"
+    assert "不允许登场的角色" in scene.metadata_json["auto_repair_hint"]
+
+
+@pytest.mark.asyncio
 async def test_report_without_blocking_codes_returns_no_trigger() -> None:
     """If the latest report was a passing one, no auto-repair."""
     report = FakeQualityReport(report_json={"blocking_codes": []})
@@ -188,6 +246,49 @@ async def test_stored_duplicate_block_triggers_repair_even_with_latest_report() 
     assert "第30章复用了第29章段落" in scene.metadata_json["auto_repair_hint"]
     assert "post_assembly_duplicate_gate" not in chapter.metadata_json
     assert len(session.execute_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_stored_write_safety_repair_carries_retention_evidence() -> None:
+    chapter = FakeChapter(
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+            "write_safety_hint": "LENGTH_OVER: 3562 chars > max 3000",
+            "production_block_code": "HOOK_ECHO_MISSING",
+            "retention_gate_last_findings": [
+                {
+                    "code": "HOOK_ECHO_MISSING",
+                    "severity": "critical",
+                    "evidence": {
+                        "missed_tokens": [
+                            "303室那个替你认账的男人——你认识他吗",
+                            "又该找谁算",
+                        ],
+                        "matched_tokens": ["倒计时"],
+                    },
+                }
+            ],
+        },
+    )
+    scene = FakeScene(chapter_id=chapter.id, scene_number=1)
+    report = FakeQualityReport(report_json={"blocking_codes": []})
+    session = FakeSession(scalar_queue=[report], scalars_queue=[[scene]])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("CHAPTER_LENGTH_BLOCK_HIGH", "HOOK_ECHO_MISSING"),
+    )
+
+    assert triggered is True
+    assert codes == ("CHAPTER_LENGTH_BLOCK_HIGH",)
+    hint = scene.metadata_json["auto_repair_hint"]
+    assert "LENGTH_OVER" in hint
+    assert "上一章尾钩中本章漏掉的具体承诺" in hint
+    assert "303室那个替你认账的男人" in hint
+    assert "倒计时" in hint
 
 
 @pytest.mark.asyncio

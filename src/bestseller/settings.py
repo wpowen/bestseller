@@ -341,6 +341,10 @@ class PipelineSettings(BaseModel):
             "CANON_STATE_REGRESSION",
             "CROSS_CHAPTER_REPETITION",
             "INTRA_CHAPTER_REPETITION",
+            "HOOK_ECHO_MISSING",
+            "SIGNATURE_SCENE_MISSING",
+            "EXPOSITION_DUMP",
+            "CAST_VIOLATION",
         ]
     )
     # Project-level premium-readiness gate. It is enabled as telemetry by

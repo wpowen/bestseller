@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 import csv
 from dataclasses import dataclass, field
+from itertools import pairwise
 import json
 from pathlib import Path
 import re
@@ -127,6 +128,7 @@ def evaluate_book_package(
         _check_planning_artifact_drift(root, metadata, guardrails, effective_policy)
     )
     issues.extend(_check_golden_three(chapters))
+    issues.extend(_check_package_integrity(root, chapters))
     issues.extend(_check_canon_guardrails(chapters, guardrails))
     issues.extend(_check_reader_contract(chapters, effective_policy))
     issues.extend(_check_genre_contract(chapters, metadata, effective_policy))
@@ -539,6 +541,304 @@ def _has_serial_suspense_opening(chapters: Sequence[ChapterText]) -> bool:
         if any(term in tail for term in _SERIAL_SUSPENSE_OPENING_TERMS) or "？" in tail:
             ending_hits += 1
     return distinct_terms >= 6 and ending_hits >= 2
+
+
+_CHINESE_DIGITS = {
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+
+_FLOOR_RE = re.compile(r"(?<!栋)([0-9]+|[零一二两三四五六七八九十百]{1,4})(?:层|楼)")
+_OPENING_RESET_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:[零一二两三四五六七八九十0-9]{1,4}[点时])|"
+    r"子时|凌晨|午夜|清晨|傍晚|深夜|"
+    r"三天前|十五分钟前|十一点|十七栋楼下"
+    r")"
+)
+
+
+def _check_package_integrity(
+    root: Path,
+    chapters: Sequence[ChapterText],
+) -> list[CommercialGateIssue]:
+    """Catch package-level prose integrity defects.
+
+    These are the defects that make a file read like stitched drafts even when
+    the right commercial keywords appear: contradictory space anchors, hard
+    manuscript separators, early use of later-cast names, or chapter endings
+    silently dropped by the next chapter opening.
+    """
+
+    issues: list[CommercialGateIssue] = []
+    issues.extend(_check_location_anchor_conflicts(chapters))
+    issues.extend(_check_stitched_opening_resets(chapters))
+    issues.extend(_check_manuscript_stitch_markers(chapters))
+    issues.extend(_check_early_cast_usage(root, chapters))
+    issues.extend(_check_package_chapter_seams(chapters))
+    return issues
+
+
+def _parse_cjk_integer(raw: str) -> int | None:
+    raw = str(raw or "").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return int(raw)
+    if raw == "十":
+        return 10
+    if "百" in raw:
+        left, _, right = raw.partition("百")
+        hundreds = _CHINESE_DIGITS.get(left, 1 if not left else -1)
+        if hundreds < 0:
+            return None
+        tail = _parse_cjk_integer(right) if right else 0
+        return hundreds * 100 + (tail or 0)
+    if "十" in raw:
+        left, _, right = raw.partition("十")
+        tens = _CHINESE_DIGITS.get(left, 1 if not left else -1)
+        ones = _CHINESE_DIGITS.get(right, 0 if not right else -1)
+        if tens < 0 or ones < 0:
+            return None
+        return tens * 10 + ones
+    if len(raw) == 1:
+        return _CHINESE_DIGITS.get(raw)
+    return None
+
+
+def _snippet(text: str, start: int, *, radius: int = 42) -> str:
+    left = max(0, start - radius)
+    right = min(len(text), start + radius)
+    return text[left:right].replace("\n", " ").strip()
+
+
+def _check_location_anchor_conflicts(
+    chapters: Sequence[ChapterText],
+) -> list[CommercialGateIssue]:
+    issues: list[CommercialGateIssue] = []
+    for chapter in chapters:
+        window = chapter.text[:1800] if chapter.chapter_no <= 3 else chapter.text[:900]
+        floor_hits: dict[int, list[str]] = {}
+        for match in _FLOOR_RE.finditer(window):
+            number = _parse_cjk_integer(match.group(1))
+            if number is None:
+                continue
+            floor_hits.setdefault(number, []).append(_snippet(window, match.start()))
+        if len(floor_hits) < 2:
+            continue
+        severity: GateSeverity = "high" if chapter.chapter_no <= 3 else "medium"
+        issues.append(
+            CommercialGateIssue(
+                code="CHAPTER_LOCATION_CONFLICT",
+                severity=severity,
+                chapter_no=chapter.chapter_no,
+                detail=(
+                    "Chapter opening contains multiple floor anchors: "
+                    + ", ".join(str(item) for item in sorted(floor_hits))
+                ),
+                suggestion=(
+                    "先锁定本章唯一空间入口；楼层、房号、门牌不得由不同草稿残片并存。"
+                    "如果数字承担倒计时或旧账含义，应改写为非空间表述。"
+                ),
+                evidence={"floors": floor_hits},
+            )
+        )
+    return issues
+
+
+def _check_stitched_opening_resets(
+    chapters: Sequence[ChapterText],
+) -> list[CommercialGateIssue]:
+    issues: list[CommercialGateIssue] = []
+    for chapter in chapters:
+        if chapter.chapter_no > 10:
+            break
+        offset = 0
+        for line in chapter.text.splitlines():
+            stripped = line.strip()
+            if (
+                80 <= offset <= 1600
+                and stripped
+                and not stripped.startswith("#")
+                and _OPENING_RESET_RE.search(stripped)
+            ):
+                issues.append(
+                    CommercialGateIssue(
+                        code="CHAPTER_OPENING_RESET",
+                        severity="high" if chapter.chapter_no <= 3 else "medium",
+                        chapter_no=chapter.chapter_no,
+                        detail=(
+                            "Chapter appears to restart its opening after an active scene "
+                            f"has already begun: {stripped[:80]}"
+                        ),
+                        suggestion=(
+                            "把回忆、倒叙或地点切换改成明确桥段；若是旧稿残片，删除其中一套开场。"
+                        ),
+                        evidence={"offset": offset, "line": stripped},
+                    )
+                )
+                break
+            offset += len(line) + 1
+    return issues
+
+
+def _check_manuscript_stitch_markers(
+    chapters: Sequence[ChapterText],
+) -> list[CommercialGateIssue]:
+    issues: list[CommercialGateIssue] = []
+    marker_re = re.compile(r"(?m)^\s*---\s*$")
+    for chapter in chapters:
+        matches = list(marker_re.finditer(chapter.text))
+        if not matches:
+            continue
+        issues.append(
+            CommercialGateIssue(
+                code="MANUSCRIPT_STITCH_MARKER",
+                severity="medium",
+                chapter_no=chapter.chapter_no,
+                detail=(
+                    "Chapter contains raw manuscript separator markers, "
+                    "suggesting draft grafting."
+                ),
+                suggestion="用自然转场重写分隔处；如果两段来自不同版本，只保留正典事件链需要的一段。",
+                evidence={
+                    "markers": [
+                        _snippet(chapter.text, match.start()) for match in matches[:5]
+                    ]
+                },
+            )
+        )
+    return issues
+
+
+def _cast_sections(root: Path) -> dict[str, str]:
+    path = root / "story-bible" / "cast-and-promises.md"
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    sections: dict[str, str] = {}
+    current: str | None = None
+    buf: list[str] = []
+    for line in text.splitlines():
+        match = re.match(r"^##\s+(.+?)\s*$", line)
+        if match:
+            if current:
+                sections[current] = "\n".join(buf)
+            current = match.group(1).strip()
+            buf = []
+            continue
+        if current:
+            buf.append(line)
+    if current:
+        sections[current] = "\n".join(buf)
+    return sections
+
+
+def _check_early_cast_usage(
+    root: Path,
+    chapters: Sequence[ChapterText],
+) -> list[CommercialGateIssue]:
+    sections = _cast_sections(root)
+    if not sections:
+        return []
+    usage_limits: dict[str, int] = {}
+    for name, section in sections.items():
+        match = re.search(r"第\s*(\d+)\s*章", section)
+        has_explicit_later_use = bool(
+            re.search(r"第\s*\d+\s*章\s*(?:之后|以后|后才|后可)", section)
+        )
+        if match and ("旧账名" in section or has_explicit_later_use):
+            usage_limits[name] = int(match.group(1))
+    if not usage_limits:
+        return []
+
+    issues: list[CommercialGateIssue] = []
+    for chapter in chapters:
+        for name, allowed_from in usage_limits.items():
+            if chapter.chapter_no >= allowed_from or name not in chapter.text:
+                continue
+            idx = chapter.text.find(name)
+            issues.append(
+                CommercialGateIssue(
+                    code="CAST_NAME_EARLY_USE",
+                    severity="high" if chapter.chapter_no <= 10 else "medium",
+                    chapter_no=chapter.chapter_no,
+                    detail=(
+                        f"Cast item '{name}' is planned for chapter {allowed_from} "
+                        f"or later, but appears in chapter {chapter.chapter_no}."
+                    ),
+                    suggestion=(
+                        "把该名字改回当前正典人物，或把它降级为不可行动的账页/旧名线索；"
+                        "黄金三章不得让后期账名作为现场人物抢焦点。"
+                    ),
+                    evidence={
+                        "name": name,
+                        "allowed_from_chapter": allowed_from,
+                        "snippet": _snippet(chapter.text, idx),
+                    },
+                )
+            )
+    return issues
+
+
+def _check_package_chapter_seams(
+    chapters: Sequence[ChapterText],
+) -> list[CommercialGateIssue]:
+    try:
+        from bestseller.services.chapter_seam import validate_chapter_seam
+    except Exception:
+        return []
+
+    issues: list[CommercialGateIssue] = []
+    for previous, current in pairwise(chapters):
+        prev_tail = previous.text[-900:]
+        current_opening = current.text[:900]
+        if len(prev_tail.strip()) < 700 or len(current_opening.strip()) < 500:
+            continue
+        report = validate_chapter_seam(prev_tail, current_opening)
+        if report.score >= 0.5:
+            continue
+        issues.append(
+            CommercialGateIssue(
+                code="CHAPTER_SEAM_SILENT_DROP",
+                severity="high" if current.chapter_no <= 10 else "medium",
+                chapter_no=current.chapter_no,
+                detail=(
+                    f"Chapter {current.chapter_no} opening resolves only "
+                    f"{report.score:.0%} of chapter {previous.chapter_no} ending threads."
+                ),
+                suggestion=(
+                    "下一章开头必须先承接上一章最后的地点、人物、威胁或未答问题；"
+                    "禁止直接跳到新案、新空间或新规则。"
+                ),
+                evidence={
+                    "previous_chapter": previous.chapter_no,
+                    "current_chapter": current.chapter_no,
+                    "score": round(report.score, 3),
+                    "silent_drops": [
+                        {
+                            "kind": drop.thread.kind.value,
+                            "marker": drop.thread.marker,
+                            "evidence": drop.thread.evidence,
+                        }
+                        for drop in report.silent_drops[:8]
+                    ],
+                },
+            )
+        )
+    return issues
 
 
 def _check_canon_guardrails(

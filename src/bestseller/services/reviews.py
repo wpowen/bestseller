@@ -1090,6 +1090,48 @@ def build_scene_rewrite_prompts(
         language=language,
         max_soft_tokens=context_budget_tokens,
     )
+    # ── P1/Retention block injection for rewrite prompts ──
+    # build_scene_draft_prompts (fresh write) reads these blocks; rewrite
+    # path used to skip them, which is why auto-repair kept regenerating
+    # the same broken content. Adding them here closes the loop.
+    _rewrite_canon_block = (
+        getattr(context_packet, "canon_guardrails_block", None)
+        if context_packet
+        else None
+    ) or ""
+    _rewrite_hook_echo_block = (
+        getattr(context_packet, "hook_echo_block", None) if context_packet else None
+    ) or ""
+    _rewrite_signature_block = (
+        getattr(context_packet, "signature_scene_block", None)
+        if context_packet
+        else None
+    ) or ""
+    _rewrite_voice_dna_block = (
+        getattr(context_packet, "voice_dna_block", None) if context_packet else None
+    ) or ""
+    _rewrite_market_constraints_block = (
+        getattr(context_packet, "chapter_market_constraints_block", None)
+        if context_packet
+        else None
+    ) or ""
+    _rewrite_exposition_block = (
+        getattr(context_packet, "exposition_density_block", None)
+        if context_packet
+        else None
+    ) or ""
+    _rewrite_p1_block = "\n\n".join(
+        s for s in (
+            _rewrite_canon_block,
+            _rewrite_hook_echo_block,
+            _rewrite_signature_block,
+            _rewrite_voice_dna_block,
+            _rewrite_market_constraints_block,
+            _rewrite_exposition_block,
+        ) if s.strip()
+    )
+    if _rewrite_p1_block:
+        _rewrite_p1_block = _rewrite_p1_block + "\n\n"
     # ── Word-count envelope: hard constraint to prevent rewrite-bloat spiral ──
     # The scene writer already enforces a strict word range; the rewriter must
     # enforce the SAME envelope or it will inflate past target on every pass.
@@ -1176,6 +1218,7 @@ def build_scene_rewrite_prompts(
             f"{_material_reference_block}"
             f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
+            f"{_rewrite_p1_block}"
             f"{_rewrite_context_block}"
             f"Current draft:\n{current_draft.content_md}\n"
             "Rewrite the current scene in English only. Fix the flagged issues while "
@@ -1200,6 +1243,7 @@ def build_scene_rewrite_prompts(
             f"{_material_reference_block}"
             f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
+            f"{_rewrite_p1_block}"
             f"{_rewrite_context_block}"
             f"当前草稿：\n{current_draft.content_md}\n"
             "请按上述字数闸门重写本场景：修复被标记的问题的同时严格控制字数。"
@@ -1657,6 +1701,21 @@ def build_chapter_rewrite_prompts(
         chapter_number=chapter.chapter_number,
         language=language,
     )
+    _rewrite_p1_block = "\n\n".join(
+        s
+        for s in (
+            getattr(chapter_context, "canon_guardrails_block", None) or "",
+            getattr(chapter_context, "hook_echo_block", None) or "",
+            getattr(chapter_context, "signature_scene_block", None) or "",
+            getattr(chapter_context, "voice_dna_block", None) or "",
+            getattr(chapter_context, "chapter_market_constraints_block", None)
+            or "",
+            getattr(chapter_context, "exposition_density_block", None) or "",
+        )
+        if str(s).strip()
+    )
+    if _rewrite_p1_block:
+        _rewrite_p1_block = _rewrite_p1_block + "\n\n"
     _settings = get_settings()
     _length_band = chapter_rewrite_length_band(
         _settings,
@@ -1763,6 +1822,7 @@ def build_chapter_rewrite_prompts(
             f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
             f"Chapter context:\n{_render_chapter_context_section(chapter_context, language=language)}\n"
+            f"{_rewrite_p1_block}"
             f"Current draft:\n{current_draft.content_md}\n"
             "Rewrite the chapter in English only while preserving the core event order. Improve transitions, chapter propulsion, and the ending hook first."
         )
@@ -1782,6 +1842,7 @@ def build_chapter_rewrite_prompts(
             f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
             f"章节上下文：\n{_render_chapter_context_section(chapter_context, language=language)}\n"
+            f"{_rewrite_p1_block}"
             f"当前草稿：\n{current_draft.content_md}\n"
             "请在保留本章核心事件顺序的前提下，重写本章，使场景衔接更顺、章节推进更完整、收尾钩子更明确。"
             "优先强化读者追更欲、爽点兑现、人设辨识和节奏推进。"

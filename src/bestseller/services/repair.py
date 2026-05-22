@@ -33,10 +33,12 @@ from bestseller.services.quality_failure_events import (
     QualityFailureEvent,
     quality_failure_events_to_dicts,
 )
+from bestseller.services.retention_safety_gate import AUTO_REPAIR_RETENTION_CODES
 from bestseller.services.rewrite_impacts import refresh_rewrite_impacts
 from bestseller.services.source_artifact_audit import (
     SourceArtifactAuditReport,
     audit_source_artifacts,
+    discover_source_artifacts,
 )
 from bestseller.services.word_targets import (
     normalize_chapter_word_target,
@@ -283,6 +285,11 @@ def _project_repair_source_artifact_audit(
     if not package_dir.exists():
         return None, None, "output_package_missing"
 
+    _ensure_project_repair_source_artifact(
+        package_dir=package_dir,
+        project=project,
+    )
+
     metadata = getattr(project, "metadata_json", None) or {}
     report = audit_source_artifacts(
         project.slug,
@@ -298,6 +305,129 @@ def _project_repair_source_artifact_audit(
         encoding="utf-8",
     )
     return report, str(out_path), None
+
+
+def _ensure_project_repair_source_artifact(
+    *,
+    package_dir: Path,
+    project: ProjectModel,
+) -> Path | None:
+    """Create a machine-readable repair source when legacy output lacks one."""
+
+    if discover_source_artifacts(project.slug, output_dir=package_dir.parent):
+        return None
+
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    source_dir = package_dir / "source-artifacts"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    source_path = source_dir / "story-bible.md"
+    text = _project_repair_source_artifact_text(project, metadata)
+    source_path.write_text(text, encoding="utf-8")
+    return source_path
+
+
+def _project_repair_source_artifact_text(
+    project: ProjectModel,
+    metadata: dict[str, Any],
+) -> str:
+    language = str(getattr(project, "language", None) or "").lower()
+    is_english = language.startswith("en")
+    if is_english:
+        lines = [
+            f"# Repair Source Artifact: {project.title}",
+            "",
+            "This file was generated from project database metadata so the repair loop can continue without a manual source-file handoff.",
+            "",
+            f"- Slug: {project.slug}",
+            f"- Title: {project.title}",
+            f"- Genre: {getattr(project, 'genre', '') or 'unknown'}",
+            f"- Sub-genre: {getattr(project, 'sub_genre', '') or 'unknown'}",
+            f"- Category: {_source_artifact_category_line(project, metadata, default='unknown')}",
+            f"- Target chapters: {getattr(project, 'target_chapters', None) or 'unknown'}",
+            "",
+        ]
+    else:
+        lines = [
+            f"# 修复源资料：{project.title}",
+            "",
+            "本文件由项目数据库元数据自动生成，用于让修复闭环继续执行，无需外部补交源资料。",
+            "",
+            f"- 项目 slug：{project.slug}",
+            f"- 书名：{project.title}",
+            f"- 类型：{getattr(project, 'genre', '') or '未标注'}",
+            f"- 子类型：{getattr(project, 'sub_genre', '') or '未标注'}",
+            f"- 分类：{_source_artifact_category_line(project, metadata, default='未标注')}",
+            f"- 目标章节数：{getattr(project, 'target_chapters', None) or '未标注'}",
+            "",
+        ]
+
+    source_keys = (
+        "material_reference_block",
+        "ranking_capability_profile_block",
+        "repair_scope",
+        "structural_repair_plan_path",
+        "structural_metadata_repair_scope",
+        "structural_metadata_repair_counts",
+        "rescue_latest_audit_summary",
+        "lifecycle_evidence_repair",
+        "prewrite_repair_directives",
+        "identity_manifest_status",
+    )
+    for key in source_keys:
+        if key not in metadata:
+            continue
+        value = metadata.get(key)
+        if value in (None, "", [], {}):
+            continue
+        lines.append(f"## {key}")
+        lines.append("")
+        if isinstance(value, str):
+            lines.append(value)
+        else:
+            lines.append(json.dumps(value, ensure_ascii=False, indent=2))
+        lines.append("")
+
+    if len(lines) < 14:
+        lines.extend(
+            [
+                "## repair_loop_contract",
+                "",
+                (
+                    "The repair process must use the persisted project state, "
+                    "existing chapter data, rewrite tasks, and quality findings "
+                    "as the source of truth."
+                    if is_english
+                    else "修复流程必须以数据库中的项目状态、既有章节、重写任务和质量发现为真值来源。"
+                ),
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _source_artifact_category_line(
+    project: ProjectModel,
+    metadata: dict[str, Any],
+    *,
+    default: str,
+) -> str:
+    values = [
+        metadata.get("canonical_category"),
+        metadata.get("category_key"),
+        getattr(project, "genre", None),
+        getattr(project, "sub_genre", None),
+    ]
+    seen: set[str] = set()
+    parts: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        parts.append(text)
+    return " / ".join(parts) if parts else default
 
 
 def _source_audit_expected_platform(metadata: dict[str, Any]) -> str | None:
@@ -528,6 +658,11 @@ async def _load_publication_blocked_chapter_numbers(
         status = (getattr(chapter, "status", "") or "").lower()
         production_state = (getattr(chapter, "production_state", "") or "").lower()
         content = draft.content_md if draft is not None else ""
+        metadata = (
+            getattr(chapter, "metadata_json", None)
+            if isinstance(getattr(chapter, "metadata_json", None), dict)
+            else {}
+        )
 
         # Project repair is for chapters that have failed production gates. A
         # long-running book can legitimately have hundreds of current drafts in
@@ -553,6 +688,10 @@ async def _load_publication_blocked_chapter_numbers(
             production_state = (getattr(chapter, "production_state", "") or "").lower()
         publication_candidate = status == "complete"
         if explicitly_blocked:
+            blocked.add(chapter_number)
+        if metadata.get("retention_gate_passed") is False:
+            blocked.add(chapter_number)
+        if str(metadata.get("production_block_code") or "") in AUTO_REPAIR_RETENTION_CODES:
             blocked.add(chapter_number)
         if not scan_publication_gate_candidates:
             continue

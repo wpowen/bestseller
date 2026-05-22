@@ -179,6 +179,43 @@ class MethodologyFrameworkConfig:
     longform_chaos_start_after_chapter: int = 30
 
 
+@dataclass(frozen=True)
+class OriginalityEngineConfig:
+    """Wiring for the P1 Originality Engine (Voice DNA + Market Constraints +
+    Reader Personas + Signature Scenes).
+
+    When enabled, the chapter assembly path in ``pipelines.py``:
+      1. Calls ``prepare_chapter_context(slug, chapter_no)``.
+      2. Renders four prompt blocks (voice DNA, market constraints,
+         signature scene mandate, prior persona feedback) and stamps them
+         onto ``SceneWriterContextPacket`` / ``ChapterWriterContextPacket``.
+      3. After the chapter draft is finalized, calls ``grade_chapter`` to
+         persist persona feedback for the next chapter.
+
+    When disabled (or when the project has no DNA/signature-plan on
+    disk), the path is a no-op — behavior is identical to legacy.
+    """
+
+    enabled: bool = True
+    # When False, the post-write hook is skipped — useful when an
+    # external review service already runs the persona simulator and
+    # you want to avoid double-persisting feedback.
+    persist_persona_feedback: bool = True
+    # When set, treats the project as a Mode B (ai-generated) package,
+    # reading/writing under ``output/ai-generated/<slug>/`` instead of
+    # ``output/<slug>/``. The pipeline auto-detects from project
+    # metadata when None.
+    mode_b_override: bool | None = None
+    # Per-chapter text fields longer than this character cap get
+    # truncated before being graded — protects against pathological
+    # 100k-char outputs choking the signal builder.
+    grading_text_cap_chars: int = 12_000
+    # Retention repair uses its own budget because hook/signature/cast
+    # failures often need more than the generic length-repair loop.
+    retention_max_retries: int = 5
+    retention_escalate_after: int = 3
+
+
 # ---------------------------------------------------------------------------
 # Phase B/C/D — webnovel-writer adoption flags (plan: shimmying-soaring-gadget).
 # ---------------------------------------------------------------------------
@@ -249,6 +286,9 @@ class QualityGatesConfig:
     methodology_framework: MethodologyFrameworkConfig = field(
         default_factory=MethodologyFrameworkConfig
     )
+    originality_engine: OriginalityEngineConfig = field(
+        default_factory=OriginalityEngineConfig
+    )
 
 
 def _as_dict(payload: Any) -> dict[str, Any]:
@@ -313,6 +353,7 @@ def load_quality_gates_config(
     l6 = _as_dict(raw.get("l6_write_gate"))
     story_principle = _as_dict(raw.get("story_principle_gate"))
     methodology_framework = _as_dict(raw.get("methodology_framework"))
+    originality_engine = _as_dict(raw.get("originality_engine"))
     l7 = _as_dict(raw.get("l7_continuous_audit"))
     l8 = _as_dict(raw.get("l8_scorecard"))
     l2_stance = _as_dict(l2_checks.get("stance_flip_justification"))
@@ -408,6 +449,7 @@ def load_quality_gates_config(
         phase_d=_build_phase_d(_as_dict(raw.get("phase_d_time"))),
         ai_flavor=_build_ai_flavor(_as_dict(raw.get("ai_flavor_gate"))),
         methodology_framework=_build_methodology_framework(methodology_framework),
+        originality_engine=_build_originality_engine(originality_engine),
     )
 
 
@@ -483,6 +525,29 @@ def _build_methodology_framework(raw: dict[str, Any]) -> MethodologyFrameworkCon
         longform_chaos_enabled=_safe_bool(chaos.get("enabled"), False),
         longform_chaos_start_after_chapter=max(
             1, _safe_int(chaos.get("start_after_chapter"), 30)
+        ),
+    )
+
+
+def _build_originality_engine(raw: dict[str, Any]) -> OriginalityEngineConfig:
+    mode_b_raw = raw.get("mode_b_override")
+    mode_b_override: bool | None = None
+    if isinstance(mode_b_raw, bool):
+        mode_b_override = mode_b_raw
+    return OriginalityEngineConfig(
+        enabled=_safe_bool(raw.get("enabled"), True),
+        persist_persona_feedback=_safe_bool(
+            raw.get("persist_persona_feedback"), True
+        ),
+        mode_b_override=mode_b_override,
+        grading_text_cap_chars=max(
+            500, _safe_int(raw.get("grading_text_cap_chars"), 12_000)
+        ),
+        retention_max_retries=max(
+            1, _safe_int(raw.get("retention_max_retries"), 5)
+        ),
+        retention_escalate_after=max(
+            1, _safe_int(raw.get("retention_escalate_after"), 3)
         ),
     )
 

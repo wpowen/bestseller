@@ -96,6 +96,35 @@ def build_project() -> ProjectModel:
     return project
 
 
+def test_project_repair_source_audit_synthesizes_missing_source_artifact(
+    tmp_path: Path,
+) -> None:
+    settings = build_settings()
+    settings.output.base_dir = str(tmp_path)
+    project = build_project()
+    project.language = "zh-CN"
+    project.metadata_json = {
+        "ranking_capability_profile_block": "这是一本仙侠升级流，核心是资源账、境界账和因果账。",
+        "repair_scope": {"chapter_from": 51, "chapter_to": 550},
+    }
+    package_dir = tmp_path / project.slug
+    package_dir.mkdir()
+    (package_dir / "chapter-001.md").write_text("# 第1章\n正文", encoding="utf-8")
+
+    report, report_path, skip_reason = repair_services._project_repair_source_artifact_audit(
+        settings,
+        project,
+    )
+
+    synthesized = package_dir / "source-artifacts" / "story-bible.md"
+    assert synthesized.exists()
+    assert report is not None
+    assert report.passed is True
+    assert report.artifact_count == 1
+    assert report_path == str(package_dir / "audits" / "source-artifacts" / "report.json")
+    assert skip_reason is None
+
+
 def build_chapter(project_id, chapter_number: int) -> ChapterModel:
     chapter = ChapterModel(
         project_id=project_id,
@@ -306,7 +335,9 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
     assert task_chapter.status == "cancelled"
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
-    assert len(workflow_steps) == 7
+    assert len(workflow_steps) == 8
+    assert workflow_steps[0].step_name == "source_artifact_audit"
+    assert workflow_steps[0].status == "completed"
 
 
 @pytest.mark.asyncio
@@ -1038,6 +1069,75 @@ async def test_run_project_repair_does_not_sweep_in_progress_revision_drafts(
 
 
 @pytest.mark.asyncio
+async def test_run_project_repair_targets_retention_failed_ok_chapters_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter3 = build_chapter(project.id, 3)
+    chapter3.status = "revision"
+    chapter3.production_state = "ok"
+    chapter3.metadata_json = {"retention_gate_passed": False}
+    chapter7 = build_chapter(project.id, 7)
+    chapter7.status = "revision"
+    chapter7.production_state = "blocked"
+    chapter7.metadata_json = {"production_block_code": "HOOK_ECHO_MISSING"}
+    drafts = [
+        build_chapter_draft(project.id, chapter3.id, content="# 第3章\n\n留存未过。"),
+        build_chapter_draft(project.id, chapter7.id, content="# 第7章\n\n需要修复。"),
+    ]
+    processed: list[int] = []
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_run_chapter_pipeline(session, settings, project_slug: str, chapter_number: int, **kwargs):
+        processed.append(chapter_number)
+        chapter = chapter3 if chapter_number == 3 else chapter7
+        return ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=2,
+            final_verdict="pass",
+            requires_human_review=False,
+        )
+
+    async def fake_review_project_consistency(session, settings, project_slug: str, **kwargs):
+        return (
+            type("ReviewResultStub", (), {"verdict": "pass"})(),
+            type("ReportStub", (), {"id": uuid4()})(),
+            type("QualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(repair_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        repair_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+
+    session = FakeSession(
+        scalar_results=[0],
+        scalars_results=[[], []],
+        execute_results=[list(zip([chapter3, chapter7], drafts, strict=True))],
+    )
+    result = await repair_services.run_project_repair(
+        session,
+        build_settings(),
+        "my-story",
+        export_markdown=False,
+        include_pending_rewrite_tasks=False,
+    )
+
+    assert processed == [3, 7]
+    assert [item.chapter_number for item in result.processed_chapters] == [3, 7]
+
+
+@pytest.mark.asyncio
 async def test_run_project_repair_does_not_deep_scan_complete_chapters_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1201,6 +1301,8 @@ async def test_run_project_repair_normalizes_stale_word_targets_before_collectin
     assert result.processed_chapters == []
     assert chapter.target_word_count == 2200
     assert {scene.target_word_count for scene in scenes} == {550}
-    assert workflow_steps[0].step_name == "normalize_word_targets"
-    assert workflow_steps[0].output_ref["chapter_updates"] == 1
-    assert workflow_steps[0].output_ref["scene_updates"] == 4
+    assert workflow_steps[0].step_name == "source_artifact_audit"
+    assert workflow_steps[0].status == "completed"
+    assert workflow_steps[1].step_name == "normalize_word_targets"
+    assert workflow_steps[1].output_ref["chapter_updates"] == 1
+    assert workflow_steps[1].output_ref["scene_updates"] == 4

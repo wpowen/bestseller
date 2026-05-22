@@ -278,9 +278,9 @@ async def _emit_terminal_pipeline_event(
     event_payload = {"result": completed_result, **payload}
     if _result_payload_requires_attention(payload):
         await reporter.emit(
-            "machine_blocked",
+            "repairable_auto_continue_pending",
             {**event_payload, "reason": attention_reason},
-            event_type="machine_blocked",
+            event_type="repairable_auto_continue_pending",
         )
         return
     await reporter.emit("completed", event_payload, event_type="completed")
@@ -288,6 +288,10 @@ async def _emit_terminal_pipeline_event(
 
 def _quality_closure_job_id(slug: str) -> str:
     return f"quality-closure:heal:{slug}"
+
+
+def _project_repair_job_id(slug: str) -> str:
+    return f"repair:heal:{slug}"
 
 
 def _auto_quality_closure_enabled() -> bool:
@@ -361,6 +365,60 @@ async def _enqueue_quality_closure_if_needed(
     return True
 
 
+async def _enqueue_project_repair_if_needed(
+    redis: Any,
+    reporter: RedisProgressReporter,
+    project_slug: str,
+    *,
+    source: str,
+    reason: str,
+) -> bool:
+    project_slug = str(project_slug or "").strip()
+    if not project_slug:
+        return False
+    job_id = _project_repair_job_id(project_slug)
+    repair_payload = {
+        "project_slug": project_slug,
+        "requested_by": source,
+        "include_pending_rewrite_tasks": True,
+        "pending_rewrite_task_limit": 25,
+        "scan_publication_gate_candidates": False,
+    }
+    try:
+        job = await redis.enqueue_job(
+            "run_project_repair_task",
+            workflow_run_id=job_id,
+            payload=repair_payload,
+            _job_id=job_id,
+            _expires=_dt.timedelta(days=7),
+        )
+    except AttributeError:
+        return False
+    if job is None:
+        await reporter.emit(
+            "repairable_auto_continue_already_queued",
+            {
+                "project_slug": project_slug,
+                "job_id": job_id,
+                "source": source,
+                "reason": reason,
+            },
+            event_type="repairable_auto_continue_already_queued",
+        )
+        return True
+    await reporter.emit(
+        "repairable_auto_continue",
+        {
+            "project_slug": project_slug,
+            "job_id": job_id,
+            "source": source,
+            "reason": reason,
+        },
+        event_type="repairable_auto_continue",
+    )
+    return True
+
+
 def _load_closure_runner_module() -> Any:
     script_path = Path(__file__).resolve().parents[3] / "scripts" / "run_book_quality_closure.py"
     spec = importlib.util.spec_from_file_location("bestseller_quality_closure_runner", script_path)
@@ -377,7 +435,7 @@ async def _mark_project_generation_repair_exhausted(
     reason: str,
     error_message: str,
 ) -> None:
-    """Persist an exhausted generation gate so self-heal stops requeueing it."""
+    """Persist generation-gate diagnostics without creating a manual stop state."""
     async with get_server_session() as session:
         project = await session.scalar(
             select(ProjectModel).where(ProjectModel.slug == project_slug)
@@ -387,18 +445,24 @@ async def _mark_project_generation_repair_exhausted(
 
         now = _dt.datetime.now(_dt.UTC).isoformat()
         metadata = dict(project.metadata_json or {})
+        for key in (
+            "generation_resume_blocked_by_planning_gate",
+            "generation_auto_repair_exhausted",
+            "production_paused",
+            "production_pause_reason",
+        ):
+            metadata.pop(key, None)
         metadata.update(
             {
-                "generation_resume_blocked_by_planning_gate": True,
-                "generation_auto_repair_exhausted": True,
-                "production_paused": True,
-                "production_pause_reason": reason,
+                "generation_gate_auto_retry_needed": True,
+                "last_generation_gate_reason": reason,
                 "last_generation_gate_error": error_message[:4000],
                 "last_generation_gate_blocked_at": now,
             }
         )
         project.metadata_json = metadata
-        project.status = ProjectStatus.PAUSED.value
+        if (getattr(project, "status", None) or "").lower() == ProjectStatus.PAUSED.value:
+            project.status = ProjectStatus.REVISING.value
 
         active_runs = list(
             await session.scalars(
@@ -409,15 +473,60 @@ async def _mark_project_generation_repair_exhausted(
             )
         )
         for run in active_runs:
-            run.status = WorkflowStatus.MACHINE_BLOCKED.value
+            run.status = WorkflowStatus.FAILED.value
             run.error_message = error_message[:4000]
             run.metadata_json = {
                 **(run.metadata_json or {}),
-                "generation_gate_blocked": True,
-                "generation_auto_repair_exhausted": True,
+                "generation_gate_auto_retry_needed": True,
+                "repairable_auto_continue": True,
                 "generation_gate_reason": reason,
                 "generation_gate_blocked_at": now,
             }
+
+
+async def _handle_generation_gate_auto_continue(
+    redis: Any,
+    reporter: RedisProgressReporter,
+    project_slug: str,
+    *,
+    reason: str,
+    message: str,
+    source: str,
+) -> dict[str, Any]:
+    await _mark_project_generation_repair_exhausted(
+        project_slug,
+        reason=reason,
+        error_message=message,
+    )
+    queued = await _enqueue_project_repair_if_needed(
+        redis,
+        reporter,
+        project_slug,
+        source=source,
+        reason=reason,
+    )
+    if not queued:
+        await reporter.emit(
+            "repairable_auto_continue_pending",
+            {
+                "project_slug": project_slug,
+                "reason": reason,
+                "error": message,
+            },
+            event_type="repairable_auto_continue_pending",
+        )
+    logger.warning(
+        "%s for %s hit generation gate; recorded diagnostics and kept auto-recovery active: %s",
+        source,
+        project_slug,
+        reason,
+    )
+    return {
+        "status": "generation_gate_auto_retry_pending",
+        "project_slug": project_slug,
+        "reason": reason,
+        "repair_queued": queued,
+    }
 
 
 async def run_self_heal_task(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -513,31 +622,14 @@ async def run_autowrite_task(
             gate_block = _generation_gate_block(exc)
             if gate_block is not None:
                 reason, message = gate_block
-                await _mark_project_generation_repair_exhausted(
+                return await _handle_generation_gate_auto_continue(
+                    redis,
+                    reporter,
                     project_slug,
                     reason=reason,
-                    error_message=message,
+                    message=message,
+                    source="autowrite",
                 )
-                await reporter.emit(
-                    "blocked_generation_gate",
-                    {
-                        "project_slug": project_slug,
-                        "reason": reason,
-                        "error": message,
-                        "auto_repair_exhausted": True,
-                    },
-                    event_type="blocked_generation_gate",
-                )
-                logger.warning(
-                    "Autowrite task for %s exhausted generation gate auto-repair: %s",
-                    project_slug,
-                    reason,
-                )
-                return {
-                    "status": "blocked_generation_gate",
-                    "project_slug": project_slug,
-                    "reason": reason,
-                }
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
 
@@ -596,7 +688,7 @@ async def run_project_pipeline_task(
             async with get_server_session() as session:
                 project = await get_project_by_slug(session, project_slug)
                 if project is None:
-                    raise ValueError(f"Project '{project_slug}' was not found.")
+                    raise ValueError(f"Project '{project_slug}' was not found.") from None
                 await pipeline_services._refresh_stale_truth_materializations_for_resume(
                     session,
                     settings,
@@ -614,31 +706,14 @@ async def run_project_pipeline_task(
             gate_block = _generation_gate_block(exc)
             if gate_block is not None:
                 reason, message = gate_block
-                await _mark_project_generation_repair_exhausted(
+                return await _handle_generation_gate_auto_continue(
+                    redis,
+                    reporter,
                     project_slug,
                     reason=reason,
-                    error_message=message,
+                    message=message,
+                    source="project_pipeline",
                 )
-                await reporter.emit(
-                    "blocked_generation_gate",
-                    {
-                        "project_slug": project_slug,
-                        "reason": reason,
-                        "error": message,
-                        "auto_repair_exhausted": True,
-                    },
-                    event_type="blocked_generation_gate",
-                )
-                logger.warning(
-                    "Project pipeline task for %s exhausted generation gate auto-repair: %s",
-                    project_slug,
-                    reason,
-                )
-                return {
-                    "status": "blocked_generation_gate",
-                    "project_slug": project_slug,
-                    "reason": reason,
-                }
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
 
@@ -746,31 +821,14 @@ async def run_project_repair_task(
             gate_block = _generation_gate_block(exc)
             if gate_block is not None:
                 reason, message = gate_block
-                await _mark_project_generation_repair_exhausted(
+                return await _handle_generation_gate_auto_continue(
+                    redis,
+                    reporter,
                     project_slug,
                     reason=reason,
-                    error_message=message,
+                    message=message,
+                    source="project_repair",
                 )
-                await reporter.emit(
-                    "blocked_generation_gate",
-                    {
-                        "project_slug": project_slug,
-                        "reason": reason,
-                        "error": message,
-                        "auto_repair_exhausted": True,
-                    },
-                    event_type="blocked_generation_gate",
-                )
-                logger.warning(
-                    "Project repair task for %s exhausted generation gate auto-repair: %s",
-                    project_slug,
-                    reason,
-                )
-                return {
-                    "status": "blocked_generation_gate",
-                    "project_slug": project_slug,
-                    "reason": reason,
-                }
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
 
@@ -786,13 +844,13 @@ async def run_project_repair_task(
 
     if result.requires_human_review:
         await reporter.emit(
-            "machine_blocked",
+            "repairable_auto_continue_pending",
             {
                 "project_slug": project_slug,
                 "reason": "project_repair_requires_attention",
                 "workflow_run_id": str(result.workflow_run_id),
             },
-            event_type="machine_blocked",
+            event_type="repairable_auto_continue_pending",
         )
     else:
         await reporter.emit("completed", {"result": "project_repair_done"})
@@ -803,7 +861,6 @@ async def run_book_quality_closure_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
     """Run whole-book acceptance closure after generation finishes repairable."""
-    settings = get_settings()
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
     project_slug = str(payload["project_slug"])
@@ -876,12 +933,20 @@ async def run_book_quality_closure_task(
             event_type="completed",
         )
     else:
-        await reporter.emit(
-            "machine_blocked",
-            {
-                **event_payload,
-                "reason": "book_quality_closure_requires_attention",
-            },
-            event_type="machine_blocked",
+        queued = await _enqueue_project_repair_if_needed(
+            redis,
+            reporter,
+            project_slug,
+            source="book_quality_closure",
+            reason="book_quality_closure_requires_attention",
         )
+        if not queued:
+            await reporter.emit(
+                "repairable_auto_continue_pending",
+                {
+                    **event_payload,
+                    "reason": "book_quality_closure_requires_attention",
+                },
+                event_type="repairable_auto_continue_pending",
+            )
     return result

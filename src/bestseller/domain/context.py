@@ -260,6 +260,37 @@ class SceneWriterContextPacket(BaseModel):
     # to rebuild a full ``PromptPlan`` per scene.
     l3_prompt_block: str | None = None
 
+    # ── P1 Originality Engine blocks ──
+    # Stamped by ``pipelines.py`` from
+    # ``chapter_orchestrator.prepare_chapter_context``. Each block is the
+    # rendered text for the corresponding service:
+    #   - voice_dna_block: render_voice_dna_block(target_dna)
+    #   - chapter_market_constraints_block: render_chapter_constraints_block(constraints)
+    #   - signature_scene_block: render_signature_scene_block(mandate)
+    #   - prior_persona_feedback_block: render_persona_feedback_block(prev_result)
+    # When the project hasn't extracted DNA / planned signatures / written
+    # any prior chapter, the corresponding block stays ``None`` — the
+    # downstream concatenation simply skips it.
+    voice_dna_block: str | None = None
+    chapter_market_constraints_block: str | None = None
+    signature_scene_block: str | None = None
+    prior_persona_feedback_block: str | None = None
+
+    # ── Retention safety gates (auto-repair triggers) ──
+    # ``hook_echo_block`` lists the previous chapter's specific hook tokens
+    # that the current chapter MUST echo in its opening. Computed by
+    # ``hook_echo_gate.render_hook_echo_block`` from the prev chapter draft.
+    # ``exposition_density_block`` is an advisory nudge: keep exposition
+    # below the band-specific threshold (≤25% for ch1-5, ≤35% for ch6-10).
+    hook_echo_block: str | None = None
+    exposition_density_block: str | None = None
+
+    # Canon guardrails — chapter-aware forbidden-character/state list.
+    # When set, the writing LLM is forbidden from introducing listed
+    # characters before their allowed chapter. Cleanest defense against
+    # cast drift (the 裴镜渊-into-ch2 failure mode).
+    canon_guardrails_block: str | None = None
+
 
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)
@@ -323,3 +354,15 @@ class ChapterWriterContextPacket(BaseModel):
     entry_system_context_block: str | None = None
     entry_registry_context_block: str | None = None
     entry_state_ledger_block: str | None = None
+
+    # ── P1 Originality Engine blocks (chapter-level mirror) ──
+    # See SceneWriterContextPacket for semantics.
+    voice_dna_block: str | None = None
+    chapter_market_constraints_block: str | None = None
+    signature_scene_block: str | None = None
+    prior_persona_feedback_block: str | None = None
+
+    # ── Retention safety gates (auto-repair triggers) ──
+    hook_echo_block: str | None = None
+    exposition_density_block: str | None = None
+    canon_guardrails_block: str | None = None

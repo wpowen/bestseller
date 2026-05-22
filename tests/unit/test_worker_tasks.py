@@ -250,7 +250,7 @@ async def test_run_project_repair_task_skips_archived_project(
 
 
 @pytest.mark.asyncio
-async def test_run_project_pipeline_task_emits_machine_blocked_when_not_closed(
+async def test_run_project_pipeline_task_marks_attention_as_auto_continue_pending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, dict, str | None]] = []
@@ -304,8 +304,8 @@ async def test_run_project_pipeline_task_emits_machine_blocked_when_not_closed(
     )
 
     assert result == {"requires_human_review": True, "final_verdict": "attention"}
-    assert events[-1][0] == "machine_blocked"
-    assert events[-1][2] == "machine_blocked"
+    assert events[-1][0] == "repairable_auto_continue_pending"
+    assert events[-1][2] == "repairable_auto_continue_pending"
     assert events[-1][1]["reason"] == "project_pipeline_requires_attention"
 
 
@@ -403,7 +403,7 @@ async def test_run_project_pipeline_task_refreshes_stale_truth_once(
 
 
 @pytest.mark.asyncio
-async def test_run_autowrite_task_emits_machine_blocked_when_not_closed(
+async def test_run_autowrite_task_marks_attention_as_auto_continue_pending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, dict, str | None]] = []
@@ -477,17 +477,18 @@ async def test_run_autowrite_task_emits_machine_blocked_when_not_closed(
         "final_verdict": "attention",
         "chapter_count": 2,
     }
-    assert events[-1][0] == "machine_blocked"
-    assert events[-1][2] == "machine_blocked"
+    assert events[-1][0] == "repairable_auto_continue_pending"
+    assert events[-1][2] == "repairable_auto_continue_pending"
     assert events[-1][1]["reason"] == "autowrite_requires_attention"
 
 
 @pytest.mark.asyncio
-async def test_run_project_repair_task_blocks_generation_gate_failures(
+async def test_run_project_repair_task_auto_continues_generation_gate_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, dict, str | None]] = []
     marked: list[tuple[str, str]] = []
+    enqueued: list[dict[str, object]] = []
 
     class _FakeReporter:
         async def emit(
@@ -511,6 +512,11 @@ async def test_run_project_repair_task_blocks_generation_gate_failures(
     async def fake_mark(project_slug: str, *, reason: str, error_message: str) -> None:
         marked.append((project_slug, reason))
 
+    class _FakeRedis:
+        async def enqueue_job(self, function: str, **kwargs: object) -> object:
+            enqueued.append({"function": function, **kwargs})
+            return types.SimpleNamespace(job_id=kwargs.get("_job_id"))
+
     import bestseller.services.repair as repair_services
 
     monkeypatch.setattr(
@@ -528,17 +534,20 @@ async def test_run_project_repair_task_blocks_generation_gate_failures(
     monkeypatch.setattr(repair_services, "run_project_repair", fake_run_project_repair)
 
     result = await worker_tasks.run_project_repair_task(
-        {"redis": object()},
+        {"redis": _FakeRedis()},
         "repair:heal:novel",
         {"project_slug": "novel"},
     )
 
     expected_reason = "volume_outline_gate_failed:plan_scene_unknown_participant"
     assert result == {
-        "status": "blocked_generation_gate",
+        "status": "generation_gate_auto_retry_pending",
         "project_slug": "novel",
         "reason": expected_reason,
+        "repair_queued": True,
     }
     assert marked == [("novel", expected_reason)]
-    assert events[-1][0] == "blocked_generation_gate"
-    assert events[-1][2] == "blocked_generation_gate"
+    assert enqueued[0]["function"] == "run_project_repair_task"
+    assert enqueued[0]["workflow_run_id"] == "repair:heal:novel"
+    assert events[-1][0] == "repairable_auto_continue"
+    assert events[-1][2] == "repairable_auto_continue"

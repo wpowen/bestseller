@@ -197,3 +197,98 @@ def _parse_optional_positive_int(raw: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return value if value >= 0 else None
+
+
+def render_canon_guardrails_block(
+    guardrails: CanonGuardrails | None,
+    *,
+    chapter_number: int | None = None,
+    language: str = "zh-CN",
+    max_forbidden_terms: int = 20,
+    max_state_rules: int = 15,
+) -> str:
+    """Render a strong "MUST NOT" prompt block for the writing LLM.
+
+    Filters state_rules by ``chapter_number``: rules whose
+    ``applies_after_chapter`` is greater than ``chapter_number`` are
+    ACTIVELY in effect (subject still forbidden), so they appear in the
+    block. Rules where the threshold has been crossed are dropped (the
+    character is now allowed to appear).
+    """
+
+    if guardrails is None or guardrails.is_empty:
+        return ""
+
+    active_rules: list[CanonStateRule] = []
+    for rule in guardrails.state_rules:
+        if rule.applies_after_chapter is None:
+            active_rules.append(rule)
+            continue
+        if chapter_number is None:
+            active_rules.append(rule)
+            continue
+        if chapter_number <= rule.applies_after_chapter:
+            active_rules.append(rule)
+
+    if not guardrails.forbidden_terms and not active_rules:
+        return ""
+
+    if language.lower().startswith("zh"):
+        lines = ["【正典守护 — 严禁出现以下违规】"]
+        if guardrails.forbidden_terms:
+            lines.append("- 禁用旧版词汇/人名（任何形式不得出现）:")
+            for term in guardrails.forbidden_terms[:max_forbidden_terms]:
+                suffix = ""
+                if term.suggestion:
+                    suffix = f" → 改用: {term.suggestion}"
+                lines.append(f"  · '{term.term}' ({term.reason}){suffix}")
+        if active_rules:
+            lines.append(
+                "- 角色出场/状态禁令（当前章节生效，违反任何一条都退回重写）:"
+            )
+            for rule in active_rules[:max_state_rules]:
+                if rule.applies_after_chapter is not None and chapter_number is not None:
+                    threshold_text = (
+                        f"【绝对禁止】角色 {rule.subject} 不得在第 "
+                        f"{rule.applies_after_chapter} 章前以任何形式出现"
+                        f"（不得有 {rule.subject} 的对白、动作、视角、心声或在场描写；"
+                        f"不得让其他角色直接用名字 {rule.subject} 称呼或介绍他）。"
+                    )
+                    lines.append(f"  · {threshold_text}")
+                    if rule.status or rule.reason:
+                        lines.append(
+                            f"    背景: {rule.status or rule.reason}"
+                        )
+                else:
+                    lines.append(
+                        f"  · {rule.subject}: {rule.status or rule.reason}"
+                    )
+                for pat in rule.forbidden_patterns[:3]:
+                    lines.append(f"    具体禁用模式: {pat}")
+                if rule.allowed_next:
+                    lines.append(f"    替代写法: {rule.allowed_next}")
+        lines.append(
+            "- 违反任何一条都会让本章被判违规并触发重写。如果有任何角色想"
+            "提前出场，请改用本章已锁定的现有角色（林渊/孙九斤/小雨/陈默/"
+            "老道士/老张/钱婆婆/苏婉宁/王建业等）。"
+        )
+        return "\n".join(lines)
+
+    lines = ["[Canon Guardrails — DO NOT include the following]"]
+    for term in guardrails.forbidden_terms[:max_forbidden_terms]:
+        lines.append(f"  - '{term.term}': {term.reason}")
+    for rule in active_rules[:max_state_rules]:
+        lines.append(f"  - {rule.subject}: {rule.status or rule.reason}")
+    return "\n".join(lines)
+
+
+__all__ = [
+    "CanonForbiddenTerm",
+    "CanonStateRule",
+    "CanonGuardrails",
+    "canon_guardrails_from_mapping",
+    "merge_canon_guardrails",
+    "load_canon_guardrails_for_project",
+    "load_canon_guardrails_file",
+    "render_canon_guardrails_block",
+]

@@ -867,6 +867,27 @@ def collect_publication_blockers(
                 )
             )
         try:
+            from bestseller.services.common_sense_gate import evaluate_common_sense_gate
+
+            common_sense = evaluate_common_sense_gate(
+                draft.content_md or "",
+                genre=getattr(project, "genre", None),
+                sub_genre=getattr(project, "sub_genre", None),
+                chapter_number=chapter_number,
+            )
+            for finding in common_sense.findings[:5]:
+                if finding.severity not in {"high", "medium"}:
+                    continue
+                blockers.append(
+                    (
+                        f"Chapter {chapter_number}: common-sense gate {finding.code}: {finding.message}"
+                        if is_en
+                        else f"第{chapter_number}章：常识因果门禁 {finding.code}：{finding.message}"
+                    )
+                )
+        except Exception:
+            logger.debug("Publication gate: common-sense check failed", exc_info=True)
+        try:
             from bestseller.services.deduplication import (
                 detect_chapter_text_loop,
                 detect_intra_chapter_repetition,

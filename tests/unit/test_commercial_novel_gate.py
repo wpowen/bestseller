@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from bestseller.services.commercial_novel_gate import (
+    CommercialGatePolicy,
     _callback_present,
     _infer_commercial_anchors,
+    commercial_gate_report_to_dict,
     evaluate_book_package,
 )
 
@@ -121,8 +123,8 @@ def test_commercial_gate_accepts_aligned_package(tmp_path: Path) -> None:
     report = evaluate_book_package(tmp_path)
 
     assert report.passed
-    assert report.overall_score >= 75
-    assert not any(issue.severity == "critical" for issue in report.issues)
+    assert report.overall_score >= 95
+    assert report.metrics["blocking_issue_counts"] == {}
 
 
 def test_suspense_terms_do_not_hide_weak_golden_three(tmp_path: Path) -> None:
@@ -211,6 +213,75 @@ def test_commercial_gate_flags_stitched_chapter_integrity_defects(tmp_path: Path
     assert "CHAPTER_OPENING_RESET" in codes
     assert "CAST_NAME_EARLY_USE" in codes
     assert "MANUSCRIPT_STITCH_MARKER" in codes
+
+
+def test_commercial_gate_blocks_opening_reset_in_first_ten_chapters(
+    tmp_path: Path,
+) -> None:
+    _write_package(tmp_path, drift=False)
+    (tmp_path / "chapter-008.md").write_text(
+        "# 第8章 测试\n\n"
+        "林渊蹲在太平间的不锈钢台前，铜钱压住王建业冰冷的手指。"
+        "苏婉宁递过镊子时，镜片已经从尸体指缝里露出来。"
+        "灯管闪了三下，冷柜深处传来三短一长的敲击声。\n\n"
+        "三天前碎玉出现在太平间。今天，镜中的东西在用尸体撬门。\n",
+        encoding="utf-8",
+    )
+
+    report = evaluate_book_package(tmp_path)
+    issue = next(issue for issue in report.issues if issue.code == "CHAPTER_OPENING_RESET")
+
+    assert not report.passed
+    assert issue.chapter_no == 8
+    assert issue.severity == "high"
+    assert report.metrics["blocking_issue_counts"]["CHAPTER_OPENING_RESET"] == 1
+
+
+def test_commercial_gate_issues_include_full_closure_contract(
+    tmp_path: Path,
+) -> None:
+    _write_package(tmp_path, drift=False)
+    (tmp_path / "chapter-008.md").write_text(
+        "# 第8章 测试\n\n"
+        "林渊蹲在太平间的不锈钢台前，铜钱压住王建业冰冷的手指。"
+        "苏婉宁递过镊子时，镜片已经从尸体指缝里露出来。"
+        "灯管闪了三下，冷柜深处传来三短一长的敲击声。\n\n"
+        "三天前碎玉出现在太平间。今天，镜中的东西在用尸体撬门。\n",
+        encoding="utf-8",
+    )
+
+    payload = commercial_gate_report_to_dict(evaluate_book_package(tmp_path))
+    issue = next(item for item in payload["issues"] if item["code"] == "CHAPTER_OPENING_RESET")
+
+    assert payload["closure_plan"]["required"] is True
+    assert payload["closure_plan"]["blocking_issue_count"] >= 1
+    assert "chapter:8" in payload["closure_plan"]["rerun_scopes"]
+    assert set(issue["closure"]) == {
+        "immediate_repair",
+        "recurrence_prevention",
+        "verification",
+        "rerun_scope",
+    }
+    assert all(issue["closure"].values())
+    assert "前置" in issue["closure"]["recurrence_prevention"]
+    assert issue["closure"]["rerun_scope"] == "chapter:8"
+
+
+def test_commercial_gate_policy_can_relax_medium_blocking_for_diagnostics(
+    tmp_path: Path,
+) -> None:
+    _write_package(tmp_path, drift=False)
+
+    report = evaluate_book_package(
+        tmp_path,
+        policy=CommercialGatePolicy(
+            min_professional_score=75,
+            blocking_severities=("critical", "high"),
+            anchors=_infer_commercial_anchors({}, ""),
+        ),
+    )
+
+    assert report.passed
 
 
 def test_batch_callback_matching_accepts_qingnang_aliases() -> None:

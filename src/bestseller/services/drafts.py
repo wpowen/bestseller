@@ -5248,6 +5248,45 @@ def _determine_model_tier(
     return "standard"
 
 
+def _load_project_prewrite_contract_metadata(
+    project: ProjectModel,
+    *,
+    output_base_dir: str | Path,
+    base_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = dict(base_metadata or {})
+    slug = str(getattr(project, "slug", "") or "").strip()
+    if not slug:
+        return metadata
+    path = Path(output_base_dir) / slug / "story-bible" / "prewrite-contract.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return metadata
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load prewrite contract metadata from %s: %s", path, exc)
+        return metadata
+    if not isinstance(payload, dict):
+        return metadata
+    return _deep_merge_dicts(metadata, payload)
+
+
+def _deep_merge_dicts(
+    base: dict[str, Any],
+    override: dict[str, Any],
+) -> dict[str, Any]:
+    result = dict(base)
+    for key, value in override.items():
+        if (
+            isinstance(value, dict)
+            and isinstance(result.get(key), dict)
+        ):
+            result[key] = _deep_merge_dicts(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 async def _declare_validated_prewrite_plan(
     session: AsyncSession,
     settings: AppSettings,
@@ -5701,6 +5740,16 @@ async def generate_scene_draft(
             project,
             output_base_dir=settings.output.base_dir,
         )
+        project_metadata = (
+            getattr(project, "metadata_json", None)
+            if isinstance(getattr(project, "metadata_json", None), dict)
+            else {}
+        )
+        project_metadata = _load_project_prewrite_contract_metadata(
+            project,
+            output_base_dir=settings.output.base_dir,
+            base_metadata=project_metadata,
+        )
         prewrite_manifest = compile_chapter_constraint_manifest(
             chapter_number=chapter.chapter_number,
             scene_number=scene.scene_number,
@@ -5713,9 +5762,7 @@ async def generate_scene_draft(
             recent_timeline_events=_packet_recent_timeline_events(context_packet),
             hook_requirement=scene.hook_requirement,
             canon_guardrails=canon_guardrails,
-            project_metadata=getattr(project, "metadata_json", None)
-            if isinstance(getattr(project, "metadata_json", None), dict)
-            else {},
+            project_metadata=project_metadata,
         )
         prewrite_contract_block = render_constraint_manifest_block(
             prewrite_manifest,

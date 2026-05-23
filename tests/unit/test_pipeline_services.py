@@ -1334,6 +1334,28 @@ def test_publication_gate_allows_repaired_revision_ok_chapter() -> None:
     assert blockers == []
 
 
+def test_publication_gate_blocks_common_sense_findings() -> None:
+    project = build_project()
+    project.genre = "灵异"
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 1
+    chapter.status = "complete"
+    chapter.production_state = "ok"
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 十五分钟凶宅\n\n林渊把铜钱压到王建业额头，鼻血滴在对方脸上，没擦。",
+        word_count=30,
+        assembled_from_scene_draft_ids=[str(uuid4())],
+        is_current=True,
+    )
+
+    blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
+
+    assert any("常识因果门禁" in blocker for blocker in blockers)
+
+
 def test_publication_gate_blocks_cross_chapter_repeated_paragraph() -> None:
     project = build_project()
     chapter_29 = build_chapter(project.id)

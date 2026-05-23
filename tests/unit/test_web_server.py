@@ -1100,6 +1100,50 @@ def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -
     assert payload["unlocked_gate_count"] == 1
 
 
+def test_design_dossier_readiness_flags_missing_design_surfaces() -> None:
+    payload = web_server._build_design_dossier_readiness(
+        planning_documents=[
+            {
+                "artifact_type": "book_spec",
+                "version_no": 1,
+                "content": {"title": "Demo"},
+            }
+        ],
+        structure={"total_chapters": 12, "total_scenes": 36},
+        story_bible={
+            "world_backbone": {"title": "世界主干"},
+            "world_rules": [{"rule_code": "R1"}],
+            "locations": [],
+            "factions": [],
+            "characters": [{"name": "陆渊"}],
+            "relationships": [],
+        },
+        narrative={
+            "plot_arcs": [{"arc_code": "main"}],
+            "chapter_contracts": [{"chapter_number": 1}],
+            "scene_contracts": [],
+        },
+    )
+
+    missing_labels = {item["label"] for item in payload["blocking_gaps"]}
+
+    assert payload["status"] == "incomplete"
+    assert "关系图" in missing_labels
+    assert "场景合约" in missing_labels
+    assert "人物信息" not in missing_labels
+
+
+def test_design_dossier_html_contains_expected_mount_points() -> None:
+    html = web_server._read_design_dossier_html()
+
+    assert "设计审查包" in html
+    assert "/api/projects/${encodeURIComponent(slug)}/design-dossier" in html
+    assert "/api/projects/${encodeURIComponent(slug)}/design-artifact" in html
+    assert "data-tab=\"relations\"" in html
+    assert "展开后会自动加载这份规划产物的原始内容" in html
+    assert "侦查式关系图谱" in html
+
+
 # ── Zombie auto-resume ───────────────────────────────────────────────────────
 
 

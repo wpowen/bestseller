@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BestSeller 设计审查包</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Noto+Serif+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f2eee4;
+    --paper: #fffaf0;
+    --surface: #faf4e8;
+    --surface-2: #f4eadc;
+    --ink: #25211d;
+    --muted: #6e6457;
+    --faint: #9a8d79;
+    --border: #d7c9b5;
+    --strong: #a55738;
+    --strong-2: #783720;
+    --blue: #27586f;
+    --green: #446c3c;
+    --amber: #9a6919;
+    --red: #8d2b22;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    --serif: "Source Serif 4", "Noto Serif SC", Georgia, serif;
+  }
+
+  body {
+    min-height: 100vh;
+    background:
+      linear-gradient(180deg, rgba(255,250,240,0.88), rgba(242,238,228,0.96)),
+      linear-gradient(90deg, rgba(37,33,29,0.035) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(37,33,29,0.03) 1px, transparent 1px),
+      var(--bg);
+    background-size: auto, 34px 34px, 34px 34px, auto;
+    color: var(--ink);
+    font-family: var(--serif);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    border-bottom: 1px solid var(--border);
+    background: rgba(242, 238, 228, 0.96);
+    backdrop-filter: blur(14px);
+  }
+
+  .topbar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    width: min(1440px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 12px 0;
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .brand h1 {
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .brand .meta {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 7px 12px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--ink);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .btn.primary {
+    border-color: var(--strong);
+    background: var(--strong);
+    color: #fffaf0;
+  }
+
+  .shell {
+    width: min(1440px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 22px 0 80px;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.7fr);
+    gap: 24px;
+    align-items: stretch;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+
+  .kicker {
+    color: var(--strong);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .hero h2 {
+    margin-top: 8px;
+    font-size: clamp(30px, 4vw, 56px);
+    line-height: 1.02;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .hero .subtitle {
+    max-width: 860px;
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 17px;
+  }
+
+  .score-panel {
+    border: 1px solid var(--border);
+    background: rgba(255, 250, 240, 0.78);
+    padding: 18px;
+  }
+
+  .score-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 18px;
+    border-bottom: 1px solid var(--border);
+    padding: 9px 0;
+  }
+
+  .score-row:last-child { border-bottom: 0; }
+  .score-label { color: var(--muted); font-size: 13px; }
+  .score-value { font-family: var(--mono); font-size: 16px; font-weight: 600; }
+
+  .tabs {
+    position: sticky;
+    top: 59px;
+    z-index: 15;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    margin-top: 18px;
+    border: 1px solid var(--border);
+    background: rgba(250, 244, 232, 0.96);
+  }
+
+  .tab {
+    flex: 0 0 auto;
+    min-height: 42px;
+    padding: 0 16px;
+    border: 0;
+    border-right: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .tab.active {
+    background: var(--paper);
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--strong);
+  }
+
+  .section { display: none; padding-top: 22px; }
+  .section.active { display: block; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+  }
+
+  .panel {
+    border: 1px solid var(--border);
+    background: rgba(255, 250, 240, 0.72);
+  }
+
+  .panel.span-3 { grid-column: span 3; }
+  .panel.span-4 { grid-column: span 4; }
+  .panel.span-5 { grid-column: span 5; }
+  .panel.span-6 { grid-column: span 6; }
+  .panel.span-7 { grid-column: span 7; }
+  .panel.span-8 { grid-column: span 8; }
+  .panel.span-12 { grid-column: span 12; }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(244, 234, 220, 0.62);
+  }
+
+  .panel-title {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .panel-count {
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .panel-body { padding: 14px; }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .metric {
+    border: 1px solid var(--border);
+    background: rgba(250, 244, 232, 0.66);
+    padding: 12px;
+  }
+
+  .metric .label {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .metric .value {
+    margin-top: 5px;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+  }
+
+  .list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .item {
+    border: 1px solid var(--border);
+    background: rgba(250, 244, 232, 0.58);
+    padding: 12px;
+  }
+
+  .item-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .item-meta {
+    margin-top: 5px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .item-text {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 14px;
+    white-space: pre-line;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    min-height: 24px;
+    padding: 3px 7px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .tag.ok { border-color: rgba(68,108,60,.45); color: var(--green); }
+  .tag.warn { border-color: rgba(154,105,25,.45); color: var(--amber); }
+  .tag.miss { border-color: rgba(141,43,34,.45); color: var(--red); }
+
+  details.artifact {
+    border: 1px solid var(--border);
+    background: rgba(250, 244, 232, 0.58);
+  }
+
+  details.artifact summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  details.artifact summary::-webkit-details-marker { display: none; }
+
+  .artifact-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 12px 12px;
+  }
+
+  .artifact-load {
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--strong-2);
+    padding: 6px 9px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .artifact-load:disabled {
+    cursor: wait;
+    color: var(--faint);
+  }
+
+  .artifact-hint {
+    padding: 0 12px 12px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  pre.json {
+    max-height: 420px;
+    overflow: auto;
+    border-top: 1px solid var(--border);
+    background: #231f1b;
+    color: #f6ecd8;
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .outline {
+    display: grid;
+    gap: 12px;
+  }
+
+  .volume {
+    border: 1px solid var(--border);
+    background: rgba(250, 244, 232, 0.58);
+  }
+
+  .volume-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chapters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .chapter {
+    border: 1px solid var(--border);
+    background: var(--paper);
+    padding: 10px;
+  }
+
+  .chapter h4 {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .chapter p {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .relationship-graph {
+    width: 100%;
+    border: 1px solid var(--border);
+    background:
+      linear-gradient(90deg, rgba(37,33,29,0.04) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(37,33,29,0.035) 1px, transparent 1px),
+      rgba(250, 244, 232, 0.72);
+    background-size: 28px 28px;
+  }
+
+  .relationship-board {
+    position: relative;
+    min-height: 560px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    background:
+      linear-gradient(90deg, rgba(37,33,29,0.04) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(37,33,29,0.035) 1px, transparent 1px),
+      rgba(250, 244, 232, 0.72);
+    background-size: 28px 28px;
+  }
+
+  .relation-lines {
+    position: absolute;
+    inset: 0;
+    min-width: 1040px;
+    pointer-events: none;
+  }
+
+  .case-node,
+  .relation-cluster {
+    position: absolute;
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.94);
+    box-shadow: 0 8px 18px rgba(37,33,29,0.08);
+  }
+
+  .case-node {
+    width: 220px;
+    padding: 14px;
+    border-color: var(--strong);
+  }
+
+  .case-node .case-label,
+  .relation-cluster .cluster-label {
+    color: var(--strong);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .case-node .case-title {
+    margin-top: 6px;
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .case-node .case-meta {
+    margin-top: 6px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .relation-cluster {
+    width: 270px;
+    padding: 12px;
+  }
+
+  .relation-cluster .cluster-title {
+    margin-top: 4px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .relation-cluster .cluster-count {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .clue-list {
+    display: grid;
+    gap: 6px;
+    margin-top: 9px;
+  }
+
+  .clue {
+    border-left: 2px solid var(--strong);
+    padding-left: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .clue strong {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  .empty {
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    padding: 16px;
+    font-size: 14px;
+  }
+
+  .loading {
+    padding: 40px 0;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  @media (max-width: 980px) {
+    .topbar-inner, .shell { width: min(100% - 28px, 1440px); }
+    .hero { grid-template-columns: 1fr; }
+    .panel.span-3, .panel.span-4, .panel.span-5,
+    .panel.span-6, .panel.span-7, .panel.span-8 { grid-column: span 12; }
+    .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .chapters { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 640px) {
+    .topbar-inner { align-items: flex-start; flex-direction: column; }
+    .brand { align-items: flex-start; flex-direction: column; gap: 6px; }
+    .brand h1 { font-size: 22px; white-space: normal; }
+    .metric-grid { grid-template-columns: 1fr; }
+    .tab { padding: 0 12px; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <h1 id="pageTitle">设计审查包</h1>
+      <div class="meta" id="pageMeta">LOADING</div>
+    </div>
+    <div class="top-actions">
+      <a class="btn" href="/library">书稿库</a>
+      <a class="btn" id="readLink" href="#">阅读正文</a>
+      <button class="btn primary" id="refreshBtn" type="button">刷新</button>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+  <section class="hero">
+    <div>
+      <div class="kicker">Design Dossier</div>
+      <h2 id="heroTitle">设计阶段产物</h2>
+      <p class="subtitle" id="heroSubtitle">正在加载设计资料。</p>
+    </div>
+    <aside class="score-panel" id="scorePanel"></aside>
+  </section>
+
+  <nav class="tabs" aria-label="设计审查导航">
+    <button class="tab active" data-tab="overview">总览</button>
+    <button class="tab" data-tab="artifacts">规划产物</button>
+    <button class="tab" data-tab="outline">大纲</button>
+    <button class="tab" data-tab="characters">人物</button>
+    <button class="tab" data-tab="relations">关系图</button>
+    <button class="tab" data-tab="world">世界观</button>
+    <button class="tab" data-tab="narrative">叙事线</button>
+    <button class="tab" data-tab="contracts">合约</button>
+  </nav>
+
+  <div id="status" class="loading">加载中…</div>
+  <section class="section active" id="tab-overview"></section>
+  <section class="section" id="tab-artifacts"></section>
+  <section class="section" id="tab-outline"></section>
+  <section class="section" id="tab-characters"></section>
+  <section class="section" id="tab-relations"></section>
+  <section class="section" id="tab-world"></section>
+  <section class="section" id="tab-narrative"></section>
+  <section class="section" id="tab-contracts"></section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
+  const esc = (s) => { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; };
+  const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+  let dossier = null;
+
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function obj(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+  function text(v, fallback = '—') {
+    if (v === null || v === undefined || v === '') return fallback;
+    if (Array.isArray(v)) return v.filter(Boolean).join('、') || fallback;
+    if (typeof v === 'object') return JSON.stringify(v, null, 2);
+    return String(v);
+  }
+  function count(v) { return arr(v).length; }
+  function tag(value, cls = '') { return `<span class="tag ${cls}">${esc(value)}</span>`; }
+  function panel(title, body, span = 6, countLabel = '') {
+    return `<article class="panel span-${span}">
+      <div class="panel-head"><div class="panel-title">${esc(title)}</div>${countLabel ? `<div class="panel-count">${esc(countLabel)}</div>` : ''}</div>
+      <div class="panel-body">${body}</div>
+    </article>`;
+  }
+  function empty(label) { return `<div class="empty">${esc(label)}</div>`; }
+  function item(title, meta, body, tags = []) {
+    return `<div class="item">
+      <div class="item-title"><span>${esc(title)}</span></div>
+      ${meta ? `<div class="item-meta">${esc(meta)}</div>` : ''}
+      ${body ? `<div class="item-text">${esc(body)}</div>` : ''}
+      ${tags.length ? `<div class="tags">${tags.join('')}</div>` : ''}
+    </div>`;
+  }
+  function asJson(value) { return esc(JSON.stringify(value, null, 2)); }
+
+  function setTab(name) {
+    $$('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+    $$('.section').forEach(section => section.classList.toggle('active', section.id === `tab-${name}`));
+  }
+
+  function renderHeader() {
+    const project = obj(dossier.project);
+    const summary = obj(dossier.summary);
+    const readiness = obj(dossier.readiness);
+    const title = project.title || slug;
+    $('#pageTitle').textContent = title;
+    $('#heroTitle').textContent = `${title} · 设计阶段产物`;
+    $('#pageMeta').textContent = `${project.genre || '未分类'} / ${slug}`;
+    $('#readLink').href = `/read/${encodeURIComponent(slug)}`;
+    $('#heroSubtitle').textContent = project.premise || project.synopsis || '暂无命题摘要';
+    const structure = obj(summary.structure_summary);
+    const bible = obj(summary.story_bible_counts);
+    const narrative = obj(summary.narrative_counts);
+    const artifacts = obj(dossier.planning_artifacts);
+    $('#scorePanel').innerHTML = `
+      <div class="score-row"><span class="score-label">审查状态</span><span class="score-value">${readiness.status === 'ready' ? 'READY' : 'INCOMPLETE'}</span></div>
+      <div class="score-row"><span class="score-label">规划产物</span><span class="score-value">${artifacts.document_count || 0}</span></div>
+      <div class="score-row"><span class="score-label">卷/章/场</span><span class="score-value">${structure.volume_count || 0}/${structure.total_chapters || 0}/${structure.total_scenes || 0}</span></div>
+      <div class="score-row"><span class="score-label">人物/关系</span><span class="score-value">${bible.character_count || 0}/${bible.relationship_count || 0}</span></div>
+      <div class="score-row"><span class="score-label">叙事线/章节合约</span><span class="score-value">${narrative.plot_arc_count || 0}/${narrative.chapter_contract_count || 0}</span></div>
+    `;
+  }
+
+  function renderOverview() {
+    const summary = obj(dossier.summary);
+    const readiness = obj(dossier.readiness);
+    const checks = arr(readiness.checks);
+    const structure = obj(summary.structure_summary);
+    const bible = obj(summary.story_bible_counts);
+    const narrative = obj(summary.narrative_counts);
+    const workflow = obj(summary.workflow_counts);
+    const metrics = [
+      ['规划产物', obj(dossier.planning_artifacts).document_count || 0],
+      ['卷数', structure.volume_count || 0],
+      ['章节', structure.total_chapters || 0],
+      ['场景', structure.total_scenes || 0],
+      ['世界规则', bible.world_rule_count || 0],
+      ['人物', bible.character_count || 0],
+      ['关系', bible.relationship_count || 0],
+      ['叙事线', narrative.plot_arc_count || 0],
+      ['伏笔', narrative.clue_count || 0],
+      ['兑现', narrative.payoff_count || 0],
+      ['章节合约', narrative.chapter_contract_count || 0],
+      ['场景合约', narrative.scene_contract_count || 0],
+      ['工作流', workflow.run_count || 0],
+      ['失败工作流', workflow.failed_run_count || 0],
+    ];
+    const metricHtml = `<div class="metric-grid">${metrics.map(([label, value]) => `
+      <div class="metric"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>
+    `).join('')}</div>`;
+    const checkHtml = checks.length ? `<div class="list">${checks.map(c => item(
+      c.label,
+      c.surface,
+      c.message,
+      [tag(c.status === 'present' ? `已存在 · ${c.count}` : '缺失', c.status === 'present' ? 'ok' : 'miss')]
+    )).join('')}</div>` : empty('暂无审查项');
+    $('#tab-overview').innerHTML = `<div class="grid">
+      ${panel('产物覆盖', metricHtml, 8)}
+      ${panel('缺口', checkHtml, 4)}
+    </div>`;
+  }
+
+  function renderArtifacts() {
+    const docs = arr(obj(dossier.planning_artifacts).documents);
+    if (!docs.length) {
+      $('#tab-artifacts').innerHTML = empty('暂无规划产物');
+      return;
+    }
+    const grouped = docs.reduce((acc, doc) => {
+      const phase = doc.phase || 'other';
+      (acc[phase] ||= []).push(doc);
+      return acc;
+    }, {});
+    const phaseLabels = {
+      foundation: '基础设计',
+      macro_plan: '宏观规划',
+      outline: '大纲与批次',
+      quality_gate: '开写前校验',
+      publishing: '上架资料',
+      other: '其他',
+    };
+    const body = Object.entries(grouped).map(([phase, items]) => panel(
+      phaseLabels[phase] || phase,
+      `<div class="list">${items.map(doc => `
+        <details class="artifact">
+          <summary>
+            <span><strong>${esc(doc.label || doc.artifact_type)}</strong> ${tag(`v${doc.version_no}`)} ${tag(doc.status || 'status')}</span>
+            <span class="panel-count">${esc(doc.artifact_type)}</span>
+          </summary>
+          <div class="artifact-hint">展开后会自动加载这份规划产物的原始内容。首屏只保留目录和版本信息，避免一次性拉取上万份大 JSON。</div>
+          <div class="artifact-actions">
+            <button class="artifact-load" type="button" data-artifact-id="${esc(doc.artifact_id || '')}">立即加载原始内容</button>
+          </div>
+          <pre class="json">${asJson({
+            artifact_id: doc.artifact_id,
+            artifact_type: doc.artifact_type,
+            label: doc.label,
+            version_no: doc.version_no,
+            status: doc.status,
+            scope_ref_id: doc.scope_ref_id,
+            note: '展开或点击按钮后显示原始规划产物内容',
+          })}</pre>
+        </details>
+      `).join('')}</div>`,
+      12,
+      `${items.length}`
+    )).join('');
+    $('#tab-artifacts').innerHTML = `<div class="grid">${body}</div>`;
+  }
+
+  function renderOutline() {
+    const volumes = arr(obj(dossier.structure).volumes);
+    if (!volumes.length) {
+      $('#tab-outline').innerHTML = empty('暂无卷章大纲');
+      return;
+    }
+    const html = volumes.map(volume => {
+      const chapters = arr(volume.chapters);
+      return `<div class="volume">
+        <div class="volume-head">
+          <strong>第${esc(volume.volume_number)}卷 · ${esc(volume.title || '未命名')}</strong>
+          <span class="panel-count">${chapters.length}章 / ${esc(volume.status || '')}</span>
+        </div>
+        <div class="chapters">${chapters.map(chapter => `
+          <div class="chapter">
+            <h4>第${esc(chapter.chapter_number)}章 · ${esc(chapter.title || '未命名')}</h4>
+            <p>${esc(chapter.chapter_goal || '暂无章节目标')}</p>
+            <div class="tags">
+              ${tag(chapter.status || 'planned')}
+              ${tag(`${arr(chapter.scenes).length}场`)}
+              ${chapter.production_state ? tag(chapter.production_state) : ''}
+            </div>
+          </div>
+        `).join('')}</div>
+      </div>`;
+    }).join('');
+    $('#tab-outline').innerHTML = `<div class="outline">${html}</div>`;
+  }
+
+  function renderCharacters() {
+    const characters = arr(obj(dossier.story_bible).characters);
+    const tracks = arr(obj(dossier.narrative).emotion_tracks);
+    const characterHtml = characters.length ? `<div class="list">${characters.map(c => item(
+      c.name,
+      [c.role, c.is_pov_character ? 'POV' : '', c.arc_state].filter(Boolean).join(' / '),
+      [c.goal ? `目标：${c.goal}` : '', c.fear ? `恐惧：${c.fear}` : '', c.arc_trajectory ? `弧光：${c.arc_trajectory}` : '', c.secret ? `秘密：${c.secret}` : ''].filter(Boolean).join('\n'),
+      [c.power_tier ? tag(`能力 ${c.power_tier}`) : '', c.latest_state ? tag(`状态更新至 ${c.latest_state.chapter_number}-${c.latest_state.scene_number}`, 'ok') : tag('无状态快照', 'warn')].filter(Boolean)
+    )).join('')}</div>` : empty('暂无人物卡');
+    const trackHtml = tracks.length ? `<div class="list">${tracks.map(t => item(
+      t.title,
+      `${t.character_a_label} / ${t.character_b_label} / ${t.intimacy_stage}`,
+      t.summary,
+      [tag(`信任 ${Number(t.trust_level || 0).toFixed(2)}`), tag(`冲突 ${Number(t.conflict_level || 0).toFixed(2)}`), tag(t.status || '')]
+    )).join('')}</div>` : empty('暂无情绪关系轨');
+    $('#tab-characters').innerHTML = `<div class="grid">
+      ${panel('人物卡', characterHtml, 7, `${characters.length}`)}
+      ${panel('情绪关系轨', trackHtml, 5, `${tracks.length}`)}
+    </div>`;
+  }
+
+  function renderRelationshipGraph() {
+    const relations = arr(obj(dossier.story_bible).relationships);
+    if (!relations.length) return empty('暂无人物关系边');
+    const characters = arr(obj(dossier.story_bible).characters);
+    const names = Array.from(new Set(relations.flatMap(r => [r.character_a, r.character_b]).filter(Boolean)));
+    const degree = names.reduce((acc, name) => {
+      acc[name] = relations.filter(r => r.character_a === name || r.character_b === name).length;
+      return acc;
+    }, {});
+    const protagonist = characters.find(c => c.is_pov_character)
+      || characters.find(c => /主角|protagonist|lead/i.test(`${c.role || ''} ${c.name || ''}`))
+      || null;
+    const hub = protagonist?.name || names.sort((a, b) => (degree[b] || 0) - (degree[a] || 0))[0];
+    const groups = Object.entries(relations.reduce((acc, rel) => {
+      const key = rel.relationship_type || '未分类关系';
+      (acc[key] ||= []).push(rel);
+      return acc;
+    }, {})).sort((a, b) => b[1].length - a[1].length);
+    const columnWidth = 310;
+    const rowHeight = 164;
+    const boardWidth = 1060;
+    const boardHeight = Math.max(600, Math.ceil(groups.length / 2) * rowHeight + 84);
+    const hubPoint = { x: 128, y: boardHeight / 2 };
+    const clusterPoints = groups.map(([, items], index) => {
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      return {
+        x: 380 + col * columnWidth,
+        y: 44 + row * rowHeight,
+        count: items.length,
+      };
+    });
+    const lines = clusterPoints.map((point, index) => {
+      const endX = point.x;
+      const endY = point.y + 72;
+      const width = Math.max(1.5, Math.min(5, 1.2 + point.count / 4));
+      return `<path d="M ${hubPoint.x + 220} ${hubPoint.y} C ${hubPoint.x + 300} ${hubPoint.y}, ${endX - 100} ${endY}, ${endX} ${endY}" fill="none" stroke="#9b6b4d" stroke-width="${width}" opacity="0.42"/>
+        <circle cx="${endX}" cy="${endY}" r="4" fill="#a55738" opacity="0.8"/>
+        <text x="${endX - 92}" y="${endY - 8}" font-size="11" fill="#6e6457" font-family="JetBrains Mono, monospace">线索 ${index + 1}</text>`;
+    }).join('');
+    const hubCard = `<div class="case-node" style="left:${hubPoint.x}px; top:${hubPoint.y - 70}px">
+      <div class="case-label">中心人物</div>
+      <div class="case-title">${esc(hub || '未命名')}</div>
+      <div class="case-meta">${esc(degree[hub] || relations.length)} 条直接/间接关系 · ${relations.length} 条关系边</div>
+    </div>`;
+    const clusters = groups.map(([type, items], index) => {
+      const point = clusterPoints[index];
+      const clues = items.slice(0, 5).map(rel => {
+        const pair = `${rel.character_a || '未知'} ↔ ${rel.character_b || '未知'}`;
+        const note = rel.tension_summary || rel.private_reality || rel.public_face || '暂无张力说明';
+        return `<div class="clue"><strong>${esc(pair)}</strong><br>${esc(note)}</div>`;
+      }).join('');
+      const overflow = items.length > 5 ? `<div class="clue">另有 <strong>${items.length - 5}</strong> 条同类关系，见右侧明细。</div>` : '';
+      return `<div class="relation-cluster" style="left:${point.x}px; top:${point.y}px">
+        <div class="cluster-label">关系类型</div>
+        <div class="cluster-title">${esc(type)}</div>
+        <div class="cluster-count">${items.length} 条边 · 关联 ${new Set(items.flatMap(r => [r.character_a, r.character_b]).filter(Boolean)).size} 人</div>
+        <div class="clue-list">${clues}${overflow}</div>
+      </div>`;
+    }).join('');
+    return `<div class="relationship-board" style="height:${boardHeight}px" role="img" aria-label="侦查式人物关系分析图">
+      <svg class="relation-lines" viewBox="0 0 ${boardWidth} ${boardHeight}" aria-hidden="true">${lines}</svg>
+      ${hubCard}
+      ${clusters}
+    </div>`;
+  }
+
+  function renderRelations() {
+    const relations = arr(obj(dossier.story_bible).relationships);
+    const graph = renderRelationshipGraph();
+    const list = relations.length ? `<div class="list">${relations.map(r => item(
+      `${r.character_a} ↔ ${r.character_b}`,
+      `${r.relationship_type || '关系'} / 强度 ${r.strength ?? '—'}`,
+      [r.public_face ? `公开：${r.public_face}` : '', r.private_reality ? `私下：${r.private_reality}` : '', r.tension_summary ? `张力：${r.tension_summary}` : ''].filter(Boolean).join('\n'),
+      [r.established_chapter_no ? tag(`建立 ${r.established_chapter_no}章`) : '', r.last_changed_chapter_no ? tag(`变化 ${r.last_changed_chapter_no}章`) : ''].filter(Boolean)
+    )).join('')}</div>` : empty('暂无关系明细');
+    $('#tab-relations').innerHTML = `<div class="grid">
+      ${panel('侦查式关系图谱', graph, 12, `${relations.length}`)}
+      ${panel('关系明细', list, 12, `${relations.length}`)}
+    </div>`;
+  }
+
+  function renderWorld() {
+    const bible = obj(dossier.story_bible);
+    const backbone = obj(bible.world_backbone);
+    const rules = arr(bible.world_rules);
+    const locations = arr(bible.locations);
+    const factions = arr(bible.factions);
+    const frontiers = arr(bible.volume_frontiers);
+    const reveals = arr(bible.deferred_reveals);
+    const gates = arr(bible.expansion_gates);
+    const backboneHtml = backbone.title ? item(
+      backbone.title,
+      backbone.core_promise || '',
+      [backbone.mainline_drive, backbone.protagonist_destiny, backbone.antagonist_axis, backbone.thematic_melody, backbone.world_frame].filter(Boolean).join('\n'),
+      arr(backbone.invariant_elements).map(v => tag(v))
+    ) : empty('暂无世界主干');
+    const rulesHtml = rules.length ? `<div class="list">${rules.map(r => item(r.name, r.rule_code, r.description, [r.story_consequence ? tag(r.story_consequence) : '', r.exploitation_potential ? tag(r.exploitation_potential) : ''].filter(Boolean))).join('')}</div>` : empty('暂无世界规则');
+    const placeHtml = locations.length ? `<div class="list">${locations.map(l => item(l.name, l.location_type, l.story_role || l.atmosphere, arr(l.key_rule_codes).map(v => tag(v)))).join('')}</div>` : empty('暂无地点');
+    const factionHtml = factions.length ? `<div class="list">${factions.map(f => item(f.name, f.relationship_to_protagonist, [f.goal, f.method, f.internal_conflict].filter(Boolean).join('\n'))).join('')}</div>` : empty('暂无势力');
+    const expansionHtml = [...frontiers.map(f => item(`第${f.volume_number}卷 · ${f.title}`, f.expansion_focus, f.frontier_summary, [tag(`${f.start_chapter_number}-${f.end_chapter_number || '?'}`)])), ...reveals.map(r => item(r.label, `${r.category} / ${r.status}`, r.summary, [tag(`揭示 ${r.reveal_chapter_number || '?'}`)])), ...gates.map(g => item(g.label, `${g.gate_type} / ${g.status}`, `${g.condition_summary}\n${g.unlocks_summary}`, [tag(`解锁 ${g.unlock_chapter_number || '?'}`)]))];
+    $('#tab-world').innerHTML = `<div class="grid">
+      ${panel('世界主干', backboneHtml, 6)}
+      ${panel('世界规则', rulesHtml, 6, `${rules.length}`)}
+      ${panel('地点', placeHtml, 4, `${locations.length}`)}
+      ${panel('势力', factionHtml, 4, `${factions.length}`)}
+      ${panel('扩张与揭示', expansionHtml.length ? `<div class="list">${expansionHtml.join('')}</div>` : empty('暂无扩张计划'), 4, `${expansionHtml.length}`)}
+    </div>`;
+  }
+
+  function renderNarrative() {
+    const narrative = obj(dossier.narrative);
+    const arcs = arr(narrative.plot_arcs);
+    const beats = arr(narrative.arc_beats);
+    const clues = arr(narrative.clues);
+    const payoffs = arr(narrative.payoffs);
+    const antagonist = arr(narrative.antagonist_plans);
+    const themes = arr(narrative.theme_arcs);
+    const arcHtml = arcs.length ? `<div class="list">${arcs.map(a => item(a.name, `${a.arc_code} / ${a.arc_type} / ${a.status}`, `${a.promise}\n${a.core_question}\n${a.target_payoff || ''}`, [tag(a.scope_level), a.scope_volume_number ? tag(`卷${a.scope_volume_number}`) : ''].filter(Boolean))).join('')}</div>` : empty('暂无叙事线');
+    const beatHtml = beats.length ? `<div class="list">${beats.slice(0, 80).map(b => item(`${b.arc_code} #${b.beat_order}`, `${b.beat_kind} / ${b.status}`, b.summary, [b.scope_chapter_number ? tag(`第${b.scope_chapter_number}章`) : '', b.emotional_shift ? tag(b.emotional_shift) : ''].filter(Boolean))).join('')}</div>` : empty('暂无弧线节拍');
+    const clueHtml = [...clues.map(c => item(c.label, `${c.clue_code} / ${c.status}`, c.description, [tag(`埋 ${c.planted_in_chapter_number || '?'}`), tag(`兑 ${c.expected_payoff_by_chapter_number || '?'}`)])), ...payoffs.map(p => item(p.label, `${p.payoff_code} / ${p.status}`, p.description, [tag(`目标 ${p.target_chapter_number || '?'}`)]))];
+    const antagonistHtml = antagonist.length ? `<div class="list">${antagonist.map(a => item(a.title, `${a.antagonist_label} / 压力 ${a.pressure_level}`, `${a.goal}\n${a.current_move}\n${a.next_countermove}`, [tag(a.threat_type), a.target_chapter_number ? tag(`目标章 ${a.target_chapter_number}`) : ''].filter(Boolean))).join('')}</div>` : empty('暂无反派计划');
+    const themeHtml = themes.length ? `<div class="list">${themes.map(t => item(t.theme_code, t.current_stage, t.theme_statement, arr(t.symbol_set).map(v => tag(v)))).join('')}</div>` : empty('暂无主题线');
+    $('#tab-narrative').innerHTML = `<div class="grid">
+      ${panel('叙事线', arcHtml, 5, `${arcs.length}`)}
+      ${panel('弧线节拍', beatHtml, 7, `${beats.length}`)}
+      ${panel('伏笔与兑现', clueHtml.length ? `<div class="list">${clueHtml.join('')}</div>` : empty('暂无伏笔兑现账本'), 6, `${clues.length}/${payoffs.length}`)}
+      ${panel('反派计划', antagonistHtml, 3, `${antagonist.length}`)}
+      ${panel('主题线', themeHtml, 3, `${themes.length}`)}
+    </div>`;
+  }
+
+  function renderContracts() {
+    const narrative = obj(dossier.narrative);
+    const chapterContracts = arr(narrative.chapter_contracts);
+    const sceneContracts = arr(narrative.scene_contracts);
+    const chapterHtml = chapterContracts.length ? `<div class="list">${chapterContracts.map(c => item(
+      `第${c.chapter_number}章`,
+      [c.pacing_mode, c.emotion_phase, c.loop_position].filter(Boolean).join(' / '),
+      [c.contract_summary, c.core_conflict ? `冲突：${c.core_conflict}` : '', c.emotional_shift ? `情绪：${c.emotional_shift}` : '', c.closing_hook ? `尾钩：${c.closing_hook}` : ''].filter(Boolean).join('\n'),
+      [...arr(c.primary_arc_codes).map(v => tag(v)), ...arr(c.hooks_to_plant).map(v => tag(v, 'ok')), ...arr(c.relationship_debts).map(v => tag(v, 'warn'))]
+    )).join('')}</div>` : empty('暂无章节合约');
+    const sceneHtml = sceneContracts.length ? `<div class="list">${sceneContracts.slice(0, 120).map(s => item(
+      `第${s.chapter_number}章 / 场${s.scene_number}`,
+      [s.hook_type, s.information_control_mode, s.spotlight_character].filter(Boolean).join(' / '),
+      [s.contract_summary, s.core_conflict ? `冲突：${s.core_conflict}` : '', s.information_release ? `信息：${s.information_release}` : '', s.tail_hook ? `尾钩：${s.tail_hook}` : '', s.failure_cost ? `代价：${s.failure_cost}` : ''].filter(Boolean).join('\n'),
+      [...arr(s.arc_codes).map(v => tag(v)), s.signature_image ? tag(s.signature_image, 'ok') : '', s.cut_point ? tag(s.cut_point, 'warn') : ''].filter(Boolean)
+    )).join('')}</div>` : empty('暂无场景合约');
+    $('#tab-contracts').innerHTML = `<div class="grid">
+      ${panel('章节合约', chapterHtml, 6, `${chapterContracts.length}`)}
+      ${panel('场景合约', sceneHtml, 6, `${sceneContracts.length}`)}
+    </div>`;
+  }
+
+  async function loadArtifactContent(target) {
+    const artifact = target.closest('.artifact');
+    const button = artifact?.querySelector('.artifact-load');
+    const artifactId = button?.dataset.artifactId;
+    const pre = artifact?.querySelector('.json');
+    if (!artifact || artifact.dataset.loaded === 'true' || !artifactId || !pre || !button) return;
+    button.disabled = true;
+    const originalLabel = button.textContent;
+    button.textContent = '加载中';
+    pre.textContent = '正在加载原始规划产物...';
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(slug)}/design-artifact?artifact_id=${encodeURIComponent(artifactId)}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || '加载失败');
+      pre.textContent = JSON.stringify(data.content ?? data, null, 2);
+      artifact.dataset.loaded = 'true';
+      button.textContent = '已加载原始内容';
+    } catch (err) {
+      pre.textContent = `加载失败：${err.message}`;
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+
+  function renderAll() {
+    renderHeader();
+    renderOverview();
+    renderArtifacts();
+    renderOutline();
+    renderCharacters();
+    renderRelations();
+    renderWorld();
+    renderNarrative();
+    renderContracts();
+  }
+
+  async function load() {
+    $('#status').style.display = 'block';
+    $('#status').textContent = '加载中…';
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(slug)}/design-dossier`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || '加载失败');
+      dossier = data;
+      $('#status').style.display = 'none';
+      renderAll();
+    } catch (err) {
+      $('#status').style.display = 'block';
+      $('#status').textContent = `加载失败：${err.message}`;
+    }
+  }
+
+  $$('.tab').forEach(btn => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
+  $('#refreshBtn').addEventListener('click', load);
+  document.addEventListener('click', event => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const button = target?.closest('.artifact-load');
+    if (!button) return;
+    event.preventDefault();
+    loadArtifactContent(button);
+  });
+  document.addEventListener('toggle', event => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (!target?.matches('details.artifact') || !target.open) return;
+    loadArtifactContent(target);
+  }, true);
+  load();
+})();
+</script>
+</body>
+</html>

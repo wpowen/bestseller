@@ -50,7 +50,8 @@ class CommercialAnchor:
 
 @dataclass(frozen=True)
 class CommercialGatePolicy:
-    min_professional_score: int = 75
+    min_professional_score: int = 95
+    blocking_severities: tuple[GateSeverity, ...] = ("critical", "high", "medium")
     anchor_window_chapters: int = 6
     length_cv_warn: float = 0.28
     length_cv_fail: float = 0.42
@@ -76,6 +77,26 @@ class CommercialGateIssue:
     detail: str
     suggestion: str
     evidence: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def closure(self) -> CommercialIssueClosure:
+        return _closure_for_commercial_issue(self)
+
+
+@dataclass(frozen=True)
+class CommercialIssueClosure:
+    immediate_repair: str
+    recurrence_prevention: str
+    verification: str
+    rerun_scope: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "immediate_repair": self.immediate_repair,
+            "recurrence_prevention": self.recurrence_prevention,
+            "verification": self.verification,
+            "rerun_scope": self.rerun_scope,
+        }
 
 
 @dataclass(frozen=True)
@@ -137,15 +158,17 @@ def evaluate_book_package(
     issues.extend(_check_length_stability(chapters, effective_policy))
 
     score = _score_issues(issues)
-    passed = score >= effective_policy.min_professional_score and not any(
-        issue.severity == "critical" for issue in issues
-    )
+    blocking_severities = set(effective_policy.blocking_severities)
+    blocking_issues = [issue for issue in issues if issue.severity in blocking_severities]
+    passed = score >= effective_policy.min_professional_score and not blocking_issues
     metrics = {
         "anchor_groups": [
             {"key": anchor.key, "terms": list(anchor.terms), "max_gap": anchor.max_gap_chapters}
             for anchor in effective_policy.anchors
         ],
         "issue_counts": _issue_counts(issues),
+        "blocking_severities": list(effective_policy.blocking_severities),
+        "blocking_issue_counts": _issue_counts(blocking_issues),
     }
 
     return CommercialGateReport(
@@ -167,6 +190,7 @@ def commercial_gate_report_to_dict(report: CommercialGateReport) -> dict[str, An
         "overall_score": report.overall_score,
         "passed": report.passed,
         "metrics": dict(report.metrics),
+        "closure_plan": _commercial_gate_closure_plan(report),
         "issues": [
             {
                 "code": issue.code,
@@ -175,6 +199,7 @@ def commercial_gate_report_to_dict(report: CommercialGateReport) -> dict[str, An
                 "detail": issue.detail,
                 "suggestion": issue.suggestion,
                 "evidence": dict(issue.evidence),
+                "closure": issue.closure.to_dict(),
             }
             for issue in report.issues
         ],
@@ -674,7 +699,7 @@ def _check_stitched_opening_resets(
                 issues.append(
                     CommercialGateIssue(
                         code="CHAPTER_OPENING_RESET",
-                        severity="high" if chapter.chapter_no <= 3 else "medium",
+                        severity="high" if chapter.chapter_no <= 10 else "medium",
                         chapter_no=chapter.chapter_no,
                         detail=(
                             "Chapter appears to restart its opening after an active scene "
@@ -1257,6 +1282,203 @@ def _score_issues(issues: Sequence[CommercialGateIssue]) -> int:
     penalties = {"critical": 18, "high": 10, "medium": 4, "low": 1}
     score = 100 - sum(penalties[issue.severity] for issue in issues)
     return max(0, min(100, score))
+
+
+def _commercial_gate_closure_plan(report: CommercialGateReport) -> dict[str, Any]:
+    blocking_severities = {
+        str(item)
+        for item in report.metrics.get(
+            "blocking_severities",
+            ("critical", "high", "medium"),
+        )
+    }
+    blocking_issues = [
+        issue for issue in report.issues if issue.severity in blocking_severities
+    ]
+    rerun_scopes = list(
+        dict.fromkeys(issue.closure.rerun_scope for issue in blocking_issues)
+    )
+    return {
+        "required": not report.passed,
+        "policy": (
+            "Every blocking issue must define immediate repair, recurrence "
+            "prevention, and verification before the package can be promoted."
+        ),
+        "blocking_issue_count": len(blocking_issues),
+        "rerun_scopes": rerun_scopes,
+        "final_verification": (
+            "Rerun commercial-gate package after targeted repairs and promote only "
+            "when passed=true, score meets the professional threshold, and "
+            "blocking_issue_counts is empty."
+        ),
+    }
+
+
+def _closure_for_commercial_issue(issue: CommercialGateIssue) -> CommercialIssueClosure:
+    code = issue.code
+    chapter = f"第{issue.chapter_no}章" if issue.chapter_no else "对应范围"
+    generic = CommercialIssueClosure(
+        immediate_repair=f"按门禁建议修复{chapter}，保留现有正典和章节状态，不做无关改写。",
+        recurrence_prevention=(
+            "把本次命中的 code 加入后续章节的 prewrite constraints，要求写前 plan "
+            "显式规避同类问题。"
+        ),
+        verification=(
+            "重跑对应章节 pipeline/review，再重跑 commercial-gate package，确认该 code "
+            "不再出现。"
+        ),
+        rerun_scope=f"chapter:{issue.chapter_no}" if issue.chapter_no else "book",
+    )
+    closures: dict[str, CommercialIssueClosure] = {
+        "GOLDEN_THREE_COMMERCIAL_WEAK": CommercialIssueClosure(
+            immediate_repair=(
+                "重做前三章规划和正文：第一章必须有当场冲突、主角主动选择、失败代价；"
+                "第二三章必须递进而不是解释设定。"
+            ),
+            recurrence_prevention=(
+                "在前三章规划阶段强制运行 golden-three readiness；未达到开篇冲突、"
+                "短回报、章末追读目标前禁止进入正文生成。"
+            ),
+            verification=(
+                "重跑前三章常识门禁、golden-three 分析和整包 commercial gate；"
+                "golden issue_codes 必须为空。"
+            ),
+            rerun_scope="chapters:1-3",
+        ),
+        "CHAPTER_OPENING_RESET": CommercialIssueClosure(
+            immediate_repair=(
+                f"重写{chapter}开头 1600 字内的转场：删除第二套开场，"
+                "把倒叙/回忆改成明确桥段，保证场景连续推进。"
+            ),
+            recurrence_prevention=(
+                "把 opening reset 检查前置到章节晋级门禁；正文前 1600 字出现新的时间/"
+                "地点起笔时，要求有桥接句和明确因果。"
+            ),
+            verification=(
+                f"重跑{chapter}章节 review 和 commercial gate，确认 CHAPTER_OPENING_RESET "
+                "消失且章节仍有尾钩。"
+            ),
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "MANUSCRIPT_STITCH_MARKER": CommercialIssueClosure(
+            immediate_repair=(
+                f"清理{chapter}中的草稿分隔符和拼接残片，合并成单一连续场景。"
+            ),
+            recurrence_prevention=(
+                "导出前增加 manuscript hygiene 检查；任何原始分隔符、元标记、拼稿残留"
+                "都不得进入可发布稿。"
+            ),
+            verification=(
+                "重跑 manuscript/package integrity gate，确认 MANUSCRIPT_STITCH_MARKER "
+                "不再出现。"
+            ),
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "CANON_FORBIDDEN_TERM": CommercialIssueClosure(
+            immediate_repair=(
+                f"重写{chapter}中命中的废弃正典词，替换为当前书的合法人物、势力或规则名。"
+            ),
+            recurrence_prevention=(
+                "把命中词加入该书 constraint manifest 的 forbidden_terms，并在写前计划"
+                "要求模型声明不会使用。"
+            ),
+            verification=(
+                "重跑 canon guardrails、章节常识门禁和整包 commercial gate，确认 forbidden "
+                "term 不再泄漏。"
+            ),
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "CANON_STATE_REGRESSION": CommercialIssueClosure(
+            immediate_repair=(
+                f"重写{chapter}中回退到旧状态的段落；以最新 state snapshot / canon "
+                "guardrails 为准，不允许复活、解封、倒退或重新引入已废弃状态。"
+            ),
+            recurrence_prevention=(
+                "把本章后的 state snapshot 作为下一章硬约束；写前计划必须声明继承状态，"
+                "正文晋级前再跑状态回归检查。"
+            ),
+            verification=(
+                "重跑 canon state regression、章节 review 和整包 commercial gate，确认状态"
+                "回退 code 清零。"
+            ),
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "CAST_NAME_EARLY_USE": CommercialIssueClosure(
+            immediate_repair=(
+                f"删除或改写{chapter}中过早出现的后期角色名；必要时只保留物件、账页或传闻。"
+            ),
+            recurrence_prevention=(
+                "从 cast-and-promises 编译每章 allowed_characters / must_not_appear 白名单，"
+                "生成前先验计划，生成后再扫正文。"
+            ),
+            verification=(
+                "重跑 cast/canon/commercial gate，确认对应角色未在允许章节前真人出场。"
+            ),
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "CHAPTER_LOCATION_CONFLICT": CommercialIssueClosure(
+            immediate_repair=(
+                f"统一{chapter}开篇空间锚点，删除互相冲突的楼层、房号或地点残片。"
+            ),
+            recurrence_prevention=(
+                "把本章唯一入口地点写进 allowed_locations；写前计划不得声明第二个入口空间。"
+            ),
+            verification=(
+                "重跑 location/package integrity gate，确认开篇不再出现冲突空间锚。"
+            ),
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "GENRE_CONTRACT_DRIFT": CommercialIssueClosure(
+            immediate_repair=(
+                "重写漂移章节，把核心卖点、题材词、主角能力和读者承诺拉回当前书类型。"
+            ),
+            recurrence_prevention=(
+                "把 listing、reader promise、genre anchors 注入每章 plan；低命中时禁止生成正文。"
+            ),
+            verification=(
+                "重跑 genre contract 和 reader contract gate，确认漂移 code 清零。"
+            ),
+            rerun_scope="book",
+        ),
+        "READER_CONTRACT_GAP": CommercialIssueClosure(
+            immediate_repair=(
+                "补回缺失的核心读者承诺：规则、能力使用、反制、短回报必须在窗口内出现。"
+            ),
+            recurrence_prevention=(
+                "把 reader contract anchors 转成跨章 recurring obligation；"
+                "超过窗口前自动插入章节目标。"
+            ),
+            verification=(
+                "重跑 reader contract gate，确认 anchor gap 和缺失回报全部清零。"
+            ),
+            rerun_scope="book",
+        ),
+        "PREMATURE_MAJOR_PAYOFF": CommercialIssueClosure(
+            immediate_repair=(
+                "撤回过早释放的大真相/终局词，把它改成局部线索或误导性小回报。"
+            ),
+            recurrence_prevention=(
+                "把 major payoff 的 due chapter 写入状态机；未到窗口禁止使用终局词和终极解释。"
+            ),
+            verification=(
+                "重跑 premature payoff gate，确认开篇没有提前消耗第一卷核心悬念。"
+            ),
+            rerun_scope="book",
+        ),
+        "PLANNING_ARTIFACT_GENRE_DRIFT": CommercialIssueClosure(
+            immediate_repair=(
+                "修正 story-bible/listing/volume-plan 中漂移到异题材的词，再据此重跑受影响章节。"
+            ),
+            recurrence_prevention=(
+                "规划材料变更后先跑 planning artifact drift gate；失败时禁止进入正文生成。"
+            ),
+            verification=(
+                "重跑 commercial planning 和 package gate，确认规划材料与成稿题材一致。"
+            ),
+            rerun_scope="planning",
+        ),
+    }
+    return closures.get(code, generic)
 
 
 def _issue_counts(issues: Sequence[CommercialGateIssue]) -> dict[str, int]:

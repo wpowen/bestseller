@@ -214,6 +214,11 @@ class OriginalityEngineConfig:
     # failures often need more than the generic length-repair loop.
     retention_max_retries: int = 5
     retention_escalate_after: int = 3
+    # 2026-05-23: per-gate disable for the new chapter-length gate so
+    # integration tests with stub-length scene drafts can skip it.
+    # In PRODUCTION this should stay True — short chapters are the
+    # single biggest "省事感" tell.
+    chapter_length_gate_enabled: bool = True
 
 
 # ---------------------------------------------------------------------------

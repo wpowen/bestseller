@@ -22,6 +22,43 @@ _PREV_CHAPTER = (
 )
 
 
+def test_semantic_overlap_rescue_for_parallel_action_echo() -> None:
+    """Regression for 青囊 ch1→ch2 false-negative (2026-05-23).
+
+    Original parallel-action echo:
+    - ch1 ends "镜中林渊忽然睁开了眼"
+    - ch2 opens "镜中的林渊睁眼时，真正的林渊先把自己的眼睛闭上"
+
+    Token bag-of-words misses this (no shared nouns), but semantic
+    groups overlap on {mirror_action, eye_action, protagonist_self}.
+    The gate must NOT flag this as HOOK_ECHO_MISSING.
+    """
+
+    prev = (
+        "镜面深处，那七张脸让开一道缝。\n"
+        "第八张脸正在长成他。\n"
+        "门外的假王建业用父亲林正淳的声音笑了一下。\n"
+        "“渊，开门。”\n"
+        "林渊盯着镜子里的第八张脸，慢慢把铜钱按进镜框缺口。\n"
+        "“先查张建军。”\n"
+        "镜中那张快要长全的林渊，忽然睁开了眼。"
+    )
+    curr = (
+        "镜中的“林渊”睁眼时，真正的林渊先把自己的眼睛闭上。\n"
+        "阴阳眼最忌硬看。"
+    )
+    report = check_hook_echo(
+        prev_chapter_text=prev,
+        current_chapter_text=curr,
+        prev_chapter_position=1,
+        current_chapter_position=2,
+    )
+    assert report.finding.severity != "critical", (
+        f"parallel-action semantic echo must not be flagged critical; "
+        f"got {report.finding.severity} detail={report.finding.detail}"
+    )
+
+
 def test_extract_hook_tokens_finds_suspense_words() -> None:
     tokens = extract_hook_tokens(_PREV_CHAPTER)
 
@@ -98,6 +135,8 @@ def test_check_hook_echo_full_coverage_passes() -> None:
         ("那份名单还在他怀里。", "他翻开账册，看见第一行名字已经变红。", "名单"),
         ("有人开始敲门。", "叩门声三短一长，像催命符。", "敲门"),
         ("真相就在镜后。", "他终于摸到谜底，却发现答案比谎言更冷。", "真相"),
+        ("王建业的尸体手里攥着回执镜片。", "死者指缝里的碎镜像一枚凭证。", "回执镜片"),
+        ("小雨为什么能活到现在？", "那个女孩被镜债保住命，不是因为好运。", "小雨为什么能活到现在"),
     ],
 )
 def test_check_hook_echo_matches_semantic_synonyms(
@@ -114,6 +153,36 @@ def test_check_hook_echo_matches_semantic_synonyms(
 
     assert expected in report.finding.matched_tokens
     assert report.passed
+
+
+def test_extract_hook_tokens_drops_low_signal_connectors_when_domain_hooks_exist() -> None:
+    text = (
+        "然而下一刻，门外突然响起脚步声。"
+        "林渊按住铜钱，青囊秘卷发烫，三短一长之后，"
+        "镜里有人问：你放的？有没有一面旧镜子？"
+        "王建业终于认账，账页开始入账。"
+    )
+
+    tokens = extract_hook_tokens(text)
+
+    assert "然而" not in tokens
+    assert "突然" not in tokens
+    assert "青囊" in tokens
+    assert "有没有一面旧镜子" in tokens
+
+
+def test_extract_hook_tokens_ignores_mid_chapter_questions() -> None:
+    text = (
+        "“你承认那孩子死在你的车轮下吗？”林渊问。\n"
+        "两人随后继续查账，铜钱压住镜框。\n"
+        + ("账页翻动。" * 160)
+        + "\n门外响起敲门声。"
+    )
+
+    tokens = extract_hook_tokens(text)
+
+    assert "你承认那孩子死在你的车轮下吗" not in tokens
+    assert "敲门" in tokens
 
 
 def test_check_hook_echo_zero_coverage_critical_for_early_chapter() -> None:

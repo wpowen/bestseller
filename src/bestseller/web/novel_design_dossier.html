@@ -436,20 +436,7 @@
     font-size: 13px;
   }
 
-  .relationship-graph {
-    width: 100%;
-    border: 1px solid var(--border);
-    background:
-      linear-gradient(90deg, rgba(37,33,29,0.04) 1px, transparent 1px),
-      linear-gradient(0deg, rgba(37,33,29,0.035) 1px, transparent 1px),
-      rgba(250, 244, 232, 0.72);
-    background-size: 28px 28px;
-  }
-
   .relationship-board {
-    position: relative;
-    min-height: 560px;
-    overflow: auto;
     border: 1px solid var(--border);
     background:
       linear-gradient(90deg, rgba(37,33,29,0.04) 1px, transparent 1px),
@@ -458,83 +445,156 @@
     background-size: 28px 28px;
   }
 
-  .relation-lines {
+  .relationship-map {
+    display: grid;
+    grid-template-columns: minmax(720px, 1fr) 340px;
+    gap: 0;
+    min-height: 680px;
+  }
+
+  .graph-stage {
+    position: relative;
+    min-height: 680px;
+    overflow: auto;
+    border-right: 1px solid var(--border);
+  }
+
+  .graph-canvas {
     position: absolute;
     inset: 0;
-    min-width: 1040px;
-    pointer-events: none;
+    min-width: 920px;
+    min-height: 680px;
   }
 
-  .case-node,
-  .relation-cluster {
-    position: absolute;
-    border: 1px solid var(--border);
-    background: rgba(255,250,240,0.94);
-    box-shadow: 0 8px 18px rgba(37,33,29,0.08);
+  .case-graph {
+    width: 100%;
+    height: 680px;
+    min-width: 920px;
+    display: block;
   }
 
-  .case-node {
-    width: 220px;
-    padding: 14px;
-    border-color: var(--strong);
+  .edge-line.conflict { stroke: var(--red); }
+  .edge-line.positive { stroke: var(--green); }
+  .edge-line.neutral { stroke: var(--blue); }
+  .edge-line.unknown { stroke: var(--amber); }
+
+  .edge-label rect {
+    fill: rgba(255,250,240,0.95);
+    stroke: var(--border);
   }
 
-  .case-node .case-label,
-  .relation-cluster .cluster-label {
-    color: var(--strong);
+  .edge-label text {
     font-family: var(--mono);
     font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
+    fill: var(--ink);
   }
 
-  .case-node .case-title {
-    margin-top: 6px;
-    font-size: 20px;
+  .entity-node circle,
+  .entity-node rect {
+    fill: #fffaf0;
+    stroke: var(--border);
+    stroke-width: 1.4;
+  }
+
+  .entity-node.hub circle {
+    fill: #f6dfc9;
+    stroke: var(--strong);
+    stroke-width: 2;
+  }
+
+  .entity-node text {
+    fill: var(--ink);
     font-weight: 700;
+    font-size: 13px;
   }
 
-  .case-node .case-meta {
-    margin-top: 6px;
+  .entity-node .node-meta {
+    fill: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .map-legend {
+    position: absolute;
+    left: 14px;
+    top: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-width: 520px;
+    z-index: 2;
+  }
+
+  .legend-chip {
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.92);
+    padding: 5px 8px;
     color: var(--muted);
     font-family: var(--mono);
     font-size: 11px;
   }
 
-  .relation-cluster {
-    width: 270px;
+  .relation-inspector {
+    max-height: 680px;
+    overflow: auto;
+    background: rgba(255,250,240,0.82);
+  }
+
+  .inspector-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    border-bottom: 1px solid var(--border);
+    background: rgba(244,234,220,0.96);
     padding: 12px;
   }
 
-  .relation-cluster .cluster-title {
-    margin-top: 4px;
+  .inspector-head strong {
+    display: block;
     font-size: 15px;
-    font-weight: 700;
   }
 
-  .relation-cluster .cluster-count {
+  .inspector-head span {
     color: var(--muted);
     font-family: var(--mono);
     font-size: 11px;
   }
 
-  .clue-list {
+  .relation-sheet {
     display: grid;
-    gap: 6px;
-    margin-top: 9px;
+    gap: 8px;
+    padding: 12px;
   }
 
-  .clue {
-    border-left: 2px solid var(--strong);
-    padding-left: 8px;
+  .sheet-row {
+    border: 1px solid var(--border);
+    background: rgba(250,244,232,0.7);
+    padding: 10px;
+  }
+
+  .sheet-row.conflict { border-left: 4px solid var(--red); }
+  .sheet-row.positive { border-left: 4px solid var(--green); }
+  .sheet-row.neutral { border-left: 4px solid var(--blue); }
+  .sheet-row.unknown { border-left: 4px solid var(--amber); }
+
+  .sheet-pair {
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .sheet-meta {
+    margin-top: 4px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .sheet-note {
+    margin-top: 6px;
     color: var(--muted);
     font-size: 12px;
     line-height: 1.35;
-  }
-
-  .clue strong {
-    color: var(--ink);
-    font-weight: 700;
   }
 
   .empty {
@@ -554,6 +614,8 @@
   @media (max-width: 980px) {
     .topbar-inner, .shell { width: min(100% - 28px, 1440px); }
     .hero { grid-template-columns: 1fr; }
+    .relationship-map { grid-template-columns: 1fr; }
+    .graph-stage { border-right: 0; border-bottom: 1px solid var(--border); }
     .panel.span-3, .panel.span-4, .panel.span-5,
     .panel.span-6, .panel.span-7, .panel.span-8 { grid-column: span 12; }
     .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -831,57 +893,136 @@
       || characters.find(c => /主角|protagonist|lead/i.test(`${c.role || ''} ${c.name || ''}`))
       || null;
     const hub = protagonist?.name || names.sort((a, b) => (degree[b] || 0) - (degree[a] || 0))[0];
-    const groups = Object.entries(relations.reduce((acc, rel) => {
-      const key = rel.relationship_type || '未分类关系';
-      (acc[key] ||= []).push(rel);
-      return acc;
-    }, {})).sort((a, b) => b[1].length - a[1].length);
-    const columnWidth = 310;
-    const rowHeight = 164;
-    const boardWidth = 1060;
-    const boardHeight = Math.max(600, Math.ceil(groups.length / 2) * rowHeight + 84);
-    const hubPoint = { x: 128, y: boardHeight / 2 };
-    const clusterPoints = groups.map(([, items], index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      return {
-        x: 380 + col * columnWidth,
-        y: 44 + row * rowHeight,
-        count: items.length,
+    const hubAliases = new Set([hub, ...String(hub || '').split(/[／/、,，\s]+/).filter(Boolean)]);
+    const involvesHub = (name) => {
+      const value = String(name || '');
+      return [...hubAliases].some(alias => alias && (value === alias || value.includes(alias) || alias.includes(value)));
+    };
+    const relationTone = (rel) => {
+      const type = String(rel.relationship_type || '').toLowerCase();
+      const strength = Number(rel.strength || 0);
+      if (type.includes('conflict') || type.includes('敌') || strength < 0) return 'conflict';
+      if (type.includes('ally') || type.includes('friend') || type.includes('love') || type.includes('mentor') || strength > 0.35) return 'positive';
+      if (!type || type === 'unknown') return 'unknown';
+      return 'neutral';
+    };
+    const toneLabel = { conflict: '冲突/对抗', positive: '同盟/亲密', neutral: '中性/组织', unknown: '待判定' };
+    const annotated = relations.map((rel, index) => {
+      const direct = involvesHub(rel.character_a) || involvesHub(rel.character_b);
+      const counterpart = direct
+        ? (involvesHub(rel.character_a) ? rel.character_b : rel.character_a)
+        : `${rel.character_a || '未知'} / ${rel.character_b || '未知'}`;
+      const hasEvidence = Boolean(rel.tension_summary || rel.private_reality || rel.public_face);
+      const chapter = Number(rel.last_changed_chapter_no || rel.established_chapter_no || 0);
+      const tone = relationTone(rel);
+      return { rel, index, direct, counterpart, hasEvidence, chapter, tone };
+    }).sort((a, b) => {
+      if (a.direct !== b.direct) return a.direct ? -1 : 1;
+      if (a.hasEvidence !== b.hasEvidence) return a.hasEvidence ? -1 : 1;
+      return b.chapter - a.chapter;
+    });
+    const visibleEdges = annotated.slice(0, 42);
+    const visibleNames = Array.from(new Set([hub, ...visibleEdges.flatMap(item => [item.rel.character_a, item.rel.character_b]).filter(Boolean)]));
+    const canonicalHubName = visibleNames.find(involvesHub) || hub;
+    const relatedNames = visibleNames.filter(name => name !== canonicalHubName);
+    const width = 920;
+    const height = 680;
+    const cx = 460;
+    const cy = 352;
+    const radiusX = 330;
+    const radiusY = 235;
+    const nodePositions = { [canonicalHubName]: { x: cx, y: cy, hub: true } };
+    relatedNames.forEach((name, index) => {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * index / Math.max(relatedNames.length, 1));
+      nodePositions[name] = {
+        x: cx + Math.cos(angle) * radiusX,
+        y: cy + Math.sin(angle) * radiusY,
       };
     });
-    const lines = clusterPoints.map((point, index) => {
-      const endX = point.x;
-      const endY = point.y + 72;
-      const width = Math.max(1.5, Math.min(5, 1.2 + point.count / 4));
-      return `<path d="M ${hubPoint.x + 220} ${hubPoint.y} C ${hubPoint.x + 300} ${hubPoint.y}, ${endX - 100} ${endY}, ${endX} ${endY}" fill="none" stroke="#9b6b4d" stroke-width="${width}" opacity="0.42"/>
-        <circle cx="${endX}" cy="${endY}" r="4" fill="#a55738" opacity="0.8"/>
-        <text x="${endX - 92}" y="${endY - 8}" font-size="11" fill="#6e6457" font-family="JetBrains Mono, monospace">线索 ${index + 1}</text>`;
+    const findPoint = (name) => {
+      if (nodePositions[name]) return nodePositions[name];
+      const hubLike = visibleNames.find(involvesHub);
+      return nodePositions[hubLike] || nodePositions[canonicalHubName];
+    };
+    const curvePath = (a, b, offset) => {
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      const ox = (-dy / len) * offset;
+      const oy = (dx / len) * offset;
+      return `M ${a.x} ${a.y} Q ${mx + ox} ${my + oy} ${b.x} ${b.y}`;
+    };
+    const edgeSvg = visibleEdges.map((item, visibleIndex) => {
+      const a = findPoint(item.rel.character_a);
+      const b = findPoint(item.rel.character_b);
+      if (!a || !b) return '';
+      const offset = ((visibleIndex % 5) - 2) * 14;
+      const path = curvePath(a, b, offset);
+      const mx = (a.x + b.x) / 2 + offset * 0.45;
+      const my = (a.y + b.y) / 2 + offset * 0.45;
+      const summary = item.rel.tension_summary || item.rel.private_reality || item.rel.public_face || '';
+      const label = `${item.rel.relationship_type || '关系'}${item.chapter ? ` / ${item.chapter}章` : ''}`;
+      const labelWidth = Math.min(190, Math.max(78, label.length * 8));
+      const lineWidth = Math.max(1.2, Math.min(4.5, Math.abs(Number(item.rel.strength || 0)) * 4 + 1.5));
+      return `<path class="edge-line ${item.tone}" d="${path}" fill="none" stroke-width="${lineWidth}" opacity="${item.direct ? '0.58' : '0.32'}"/>
+        <g class="edge-label">
+          <rect x="${mx - labelWidth / 2}" y="${my - 14}" width="${labelWidth}" height="24" rx="0"/>
+          <text x="${mx}" y="${my + 2}" text-anchor="middle">${esc(label).slice(0, 26)}</text>
+          ${summary ? `<title>${esc(summary)}</title>` : ''}
+        </g>`;
     }).join('');
-    const hubCard = `<div class="case-node" style="left:${hubPoint.x}px; top:${hubPoint.y - 70}px">
-      <div class="case-label">中心人物</div>
-      <div class="case-title">${esc(hub || '未命名')}</div>
-      <div class="case-meta">${esc(degree[hub] || relations.length)} 条直接/间接关系 · ${relations.length} 条关系边</div>
+    const nodeSvg = Object.entries(nodePositions).map(([name, point]) => {
+      const nodeDegree = degree[name] || relations.filter(r => r.character_a === name || r.character_b === name || involvesHub(name)).length;
+      if (point.hub) {
+        return `<g class="entity-node hub" transform="translate(${point.x}, ${point.y})">
+          <circle r="58"/>
+          <text text-anchor="middle" y="-4">${esc(name).slice(0, 10)}</text>
+          <text class="node-meta" text-anchor="middle" y="18">${nodeDegree} 条关系</text>
+        </g>`;
+      }
+      const label = String(name || '未知');
+      const rectWidth = Math.min(150, Math.max(78, label.length * 13));
+      return `<g class="entity-node" transform="translate(${point.x}, ${point.y})">
+        <rect x="${-rectWidth / 2}" y="-24" width="${rectWidth}" height="48" rx="0"/>
+        <text text-anchor="middle" y="-3">${esc(label).slice(0, 10)}</text>
+        <text class="node-meta" text-anchor="middle" y="16">${nodeDegree || 1} 条</text>
+      </g>`;
+    }).join('');
+    const directCount = annotated.filter(item => item.direct).length;
+    const legend = `<div class="map-legend">
+      <span class="legend-chip">中心：${esc(hub || '未命名')}</span>
+      <span class="legend-chip">上图 ${visibleEdges.length}/${relations.length} 条重点边</span>
+      <span class="legend-chip">直接 ${directCount} 条</span>
+      <span class="legend-chip">红=冲突 绿=同盟 蓝=中性</span>
     </div>`;
-    const clusters = groups.map(([type, items], index) => {
-      const point = clusterPoints[index];
-      const clues = items.slice(0, 5).map(rel => {
-        const pair = `${rel.character_a || '未知'} ↔ ${rel.character_b || '未知'}`;
-        const note = rel.tension_summary || rel.private_reality || rel.public_face || '暂无张力说明';
-        return `<div class="clue"><strong>${esc(pair)}</strong><br>${esc(note)}</div>`;
-      }).join('');
-      const overflow = items.length > 5 ? `<div class="clue">另有 <strong>${items.length - 5}</strong> 条同类关系，见右侧明细。</div>` : '';
-      return `<div class="relation-cluster" style="left:${point.x}px; top:${point.y}px">
-        <div class="cluster-label">关系类型</div>
-        <div class="cluster-title">${esc(type)}</div>
-        <div class="cluster-count">${items.length} 条边 · 关联 ${new Set(items.flatMap(r => [r.character_a, r.character_b]).filter(Boolean)).size} 人</div>
-        <div class="clue-list">${clues}${overflow}</div>
+    const sheet = annotated.slice(0, 24).map(item => {
+      const rel = item.rel;
+      const note = rel.tension_summary || rel.private_reality || rel.public_face || '暂无张力说明，需要补充关系证据。';
+      const chapter = [rel.established_chapter_no ? `建立 ${rel.established_chapter_no}章` : '', rel.last_changed_chapter_no ? `变化 ${rel.last_changed_chapter_no}章` : ''].filter(Boolean).join(' / ');
+      return `<div class="sheet-row ${item.tone}">
+        <div class="sheet-pair">${esc(rel.character_a || '未知')} ↔ ${esc(rel.character_b || '未知')}</div>
+        <div class="sheet-meta">${esc(toneLabel[item.tone])} · ${esc(rel.relationship_type || '关系')} · 强度 ${esc(rel.strength ?? '—')}${chapter ? ` · ${esc(chapter)}` : ''}</div>
+        <div class="sheet-note">${esc(note)}</div>
       </div>`;
     }).join('');
-    return `<div class="relationship-board" style="height:${boardHeight}px" role="img" aria-label="侦查式人物关系分析图">
-      <svg class="relation-lines" viewBox="0 0 ${boardWidth} ${boardHeight}" aria-hidden="true">${lines}</svg>
-      ${hubCard}
-      ${clusters}
+    return `<div class="relationship-board">
+      <div class="relationship-map">
+        <div class="graph-stage">
+          ${legend}
+          <div class="graph-canvas">
+            <svg class="case-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="人物关系网络图">
+              ${edgeSvg}
+              ${nodeSvg}
+            </svg>
+          </div>
+        </div>
+        <aside class="relation-inspector">
+          <div class="inspector-head"><strong>重点关系线索</strong><span>按中心人物、证据完整度、章节新近度排序</span></div>
+          <div class="relation-sheet">${sheet}</div>
+        </aside>
+      </div>
     </div>`;
   }
 

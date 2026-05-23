@@ -157,6 +157,43 @@ def build_settings():
     return load_settings(env={})
 
 
+def _disable_chapter_length_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Disable the new chapter_length gate in tests that use stub-short
+    mock content (≤200 zh chars). Production behavior keeps the gate on.
+
+    Added 2026-05-23 with the chapter_length gate. Without this, every
+    integration test that uses synthetic 50-char draft content gets
+    flagged CHAPTER_TOO_SHORT and the chapter requires human review.
+    """
+
+    from bestseller.services import quality_gates_config
+
+    quality_gates_config.reset_quality_gates_cache()
+
+    original = quality_gates_config.get_quality_gates_config
+
+    def _patched() -> Any:
+        cfg = original.__wrapped__()  # bypass lru_cache
+        # ``OriginalityEngineConfig`` is a frozen dataclass; rebuild it.
+        import dataclasses
+
+        new_orig = dataclasses.replace(
+            cfg.originality_engine,
+            chapter_length_gate_enabled=False,
+        )
+        return dataclasses.replace(cfg, originality_engine=new_orig)
+
+    monkeypatch.setattr(
+        quality_gates_config, "get_quality_gates_config", _patched
+    )
+    # The pipelines.py call goes through the module-level binding.
+    import bestseller.services.pipelines as pipeline_module
+
+    monkeypatch.setattr(
+        pipeline_module, "get_quality_gates_config", _patched, raising=False
+    )
+
+
 @pytest.mark.asyncio
 async def test_recover_session_after_nonfatal_error_rolls_back_dirty_session() -> None:
     session = FakeSession()
@@ -352,7 +389,10 @@ async def test_retention_safety_after_assembly_blocks_from_prev_draft() -> None:
 
 
 @pytest.mark.asyncio
-async def test_retention_safety_after_assembly_pass_keeps_state() -> None:
+async def test_retention_safety_after_assembly_pass_keeps_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _disable_chapter_length_gate(monkeypatch)
     project = build_project()
     chapter = build_chapter(project.id)
     chapter.chapter_number = 2
@@ -1085,8 +1125,8 @@ async def test_export_project_markdown_writes_artifact(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# 第1章 失准星图",
-        word_count=120,
+        content_md="# 第1章 失准星图\n\n" + ("沈砚按住星图，港口的雾又往前压了一尺。" * 200),
+        word_count=2860,
         assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
     )
@@ -1136,8 +1176,8 @@ async def test_export_project_markdown_removes_stale_chapter_files(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=2,
-        content_md="# 第1章 新稿\n\n这一次是数据库当前稿。",
-        word_count=120,
+        content_md="# 第1章 新稿\n\n" + ("这一次是数据库当前稿，沈砚没有退后。" * 210),
+        word_count=2860,
         assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
     )
@@ -1178,8 +1218,8 @@ async def test_export_project_docx_writes_artifact(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# 第1章 失准星图",
-        word_count=120,
+        content_md="# 第1章 失准星图\n\n" + ("沈砚按住星图，港口的雾又往前压了一尺。" * 200),
+        word_count=2860,
         assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
     )
@@ -1221,8 +1261,8 @@ async def test_export_project_epub_writes_artifact(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# 第1章 失准星图",
-        word_count=120,
+        content_md="# 第1章 失准星图\n\n" + ("沈砚按住星图，港口的雾又往前压了一尺。" * 200),
+        word_count=2860,
         assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
     )
@@ -1354,6 +1394,29 @@ def test_publication_gate_blocks_common_sense_findings() -> None:
     blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
 
     assert any("常识因果门禁" in blocker for blocker in blockers)
+
+
+def test_publication_gate_blocks_short_chinese_commercial_chapter() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 1
+    chapter.status = "complete"
+    chapter.production_state = "ok"
+    chapter.target_word_count = 2200
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 镜债开门\n\n" + ("林渊按住铜钱，镜面裂开一线。" * 120),
+        word_count=2160,
+        assembled_from_scene_draft_ids=[str(uuid4())],
+        is_current=True,
+    )
+
+    blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
+
+    assert any("章节体量" in blocker and "2000" in blocker for blocker in blockers)
 
 
 def test_publication_gate_blocks_cross_chapter_repeated_paragraph() -> None:
@@ -1962,6 +2025,7 @@ async def test_run_chapter_pipeline_assembles_and_exports(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    _disable_chapter_length_gate(monkeypatch)
     project = build_project()
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
@@ -2085,6 +2149,7 @@ async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    _disable_chapter_length_gate(monkeypatch)
     project = build_project()
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
@@ -2449,6 +2514,7 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    _disable_chapter_length_gate(monkeypatch)
     project = build_project()
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
@@ -2618,6 +2684,7 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
 async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_stall(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _disable_chapter_length_gate(monkeypatch)
     project = build_project()
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
@@ -2715,6 +2782,7 @@ async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_sta
 async def test_run_chapter_pipeline_accepts_safe_draft_after_review_stall(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _disable_chapter_length_gate(monkeypatch)
     project = build_project()
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)

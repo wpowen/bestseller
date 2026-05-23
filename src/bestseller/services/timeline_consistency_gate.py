@@ -418,45 +418,116 @@ def render_timeline_canon_block(
     *,
     language: str = "zh-CN",
 ) -> str:
-    """Render canon facts as a prompt block."""
+    """Render canon facts as an LLM-first whitelist prompt block.
+
+    Design notes (2026-05-23):
+
+    LLMs respond MUCH better to positive whitelists ("you may only use X")
+    than to negative blacklists ("do not use Y").  Free-form bible markdown
+    is given to humans; this rendered block is the canonical form fed to
+    the writing model.  Frame every constraint as a small, enumerable
+    permission set so the model has no degree of freedom to hallucinate
+    "十七年前 / 十年前 / 五年前" style anchors.
+    """
 
     if canon is None or not canon.events:
         return ""
 
     if language.lower().startswith("zh"):
-        lines = ["【时间线锁定 — 必须遵守】"]
+        lines: list[str] = []
+        lines.append("【时间线白名单 — 本章只能用这里列出的时间锚，其余一律禁止】")
+        lines.append("")
+        # 1. 当下
         if canon.protagonist_current_age is not None:
             lines.append(
-                f"- 主角{canon.protagonist_name or ''}当下 "
-                f"{canon.protagonist_current_age} 岁"
+                f"▶ 当下：{canon.present_year or '本书当下年'}年，"
+                f"主角 {canon.protagonist_name or '主角'} "
+                f"{canon.protagonist_current_age} 岁。"
             )
-        lines.append("- 全书唯一允许的时间锚:")
+        # 2. 唯一允许的 "X 年前" 锚（白名单）
+        allowed_years = canon.allowed_years_ago
+        if allowed_years:
+            allowed_str = " / ".join(f"{y} 年前" for y in allowed_years)
+            lines.append(
+                f"▶ 唯一允许的「X 年前」表达：{allowed_str}（其他数字一律禁止）。"
+            )
+        # 3. 每个事件的白名单详情
+        lines.append("▶ 全书允许出现的事件锚（每一条都不可改写）：")
         for event in canon.events:
             if event.years_ago is None:
                 continue
-            label = event.label
+            year_name = f"（{event.year_name}）" if event.year_name else ""
             age_part = (
-                f"（主角当时 {event.protagonist_age_at_event} 岁）"
+                f"，主角当时 {event.protagonist_age_at_event} 岁"
                 if event.protagonist_age_at_event is not None
                 else ""
             )
-            year_name = f"（{event.year_name}）" if event.year_name else ""
+            subjects_str = "、".join(event.subjects[:3]) if event.subjects else ""
+            who = f"【{subjects_str}】" if subjects_str else ""
             lines.append(
-                f"  · {event.years_ago} 年前{year_name}: {label}{age_part}"
+                f"   ◆ {event.years_ago} 年前{year_name}：{who}{event.label}{age_part}"
             )
+        # 4. 严禁清单（黑名单作辅助说明）
         if canon.forbidden_anchors:
             forbidden_str = "、".join(
                 f"{a} 年前" for a in sorted(canon.forbidden_anchors)
             )
-            lines.append(f"- 严禁出现的时间锚: {forbidden_str}")
-        if canon.protagonist_current_age is not None:
             lines.append(
-                "- 年龄校验规则: 主角当下年龄 - N 年前 = X 岁那年。"
-                "凡同段出现 'X 岁那年' 与 'Y 年前'，必须满足这个等式。"
+                f"▶ 严禁出现以下数字（已被作者明确否决）：{forbidden_str}。"
             )
+        # 5. 年龄运算硬约束
+        if canon.protagonist_current_age is not None:
+            present_age = canon.protagonist_current_age
+            lines.append("")
+            lines.append("▶ 年龄运算硬约束（违反即重写）：")
+            lines.append(
+                f"   ◆ 公式：{present_age}（当下年龄） − N（年前数字） = X（彼时年龄）。"
+            )
+            lines.append(
+                "   ◆ 同段同时出现「X 岁那年」与「Y 年前」时，必须满足上式。"
+            )
+            # 自动展开样例
+            for event in canon.events:
+                if event.protagonist_age_at_event is None or event.years_ago is None:
+                    continue
+                lines.append(
+                    f"   ◆ 例：「{event.protagonist_age_at_event}岁那年」"
+                    f" + 「{event.years_ago}年前」 ✓ "
+                    f"({present_age}-{event.years_ago}={event.protagonist_age_at_event})"
+                )
+        # 6. 同名锁定
+        if canon.locked_names:
+            lines.append("")
+            lines.append("▶ 命名锁定（不可改名、不可生造）：")
+            for role, name in canon.locked_names.items():
+                lines.append(f"   ◆ {role}: {name}")
+        # 7. 写作执行戒律
+        lines.append("")
+        lines.append("▶ 写作时必须遵守：")
+        lines.append("   ① 任何「N 年前」必须出自上面白名单；不在白名单的数字一律改写为最近的合法锚。")
+        lines.append("   ② 同一人物的事件锚必须落在其专属年份；不要给一个人物多于上面允许的事件次数。")
+        lines.append("   ③ 「X 岁那年」必须配对正确的年前数字，违反公式视为硬错误。")
+        lines.append("   ④ 不要生造干支（戊子年只对应 23 年前，不要写戊子年=17 年前）。")
         return "\n".join(lines)
 
-    return "[Timeline Canon — locked anchors only]"
+    # English fallback
+    lines = ["[TIMELINE WHITELIST — ONLY THESE ANCHORS MAY APPEAR]"]
+    if canon.protagonist_current_age is not None:
+        lines.append(
+            f"- Protagonist current age: {canon.protagonist_current_age}"
+        )
+    if canon.allowed_years_ago:
+        lines.append(
+            "- Permitted 'N years ago' anchors: "
+            + " / ".join(f"{y}" for y in canon.allowed_years_ago)
+        )
+    if canon.forbidden_anchors:
+        lines.append(
+            "- FORBIDDEN anchors: "
+            + ", ".join(f"{a}" for a in sorted(canon.forbidden_anchors))
+        )
+    lines.append("- Age formula: current_age − N_years_ago = age_at_event.")
+    return "\n".join(lines)
 
 
 def render_timeline_violations_block(

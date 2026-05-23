@@ -7,8 +7,8 @@ prompt, but chapter-level length can still drift badly:
   for the lost words, so a 4-scene chapter that passes scene gates can
   emerge 800-1200 words under the ``words_per_chapter.min``.
 * LLM ``max_tokens`` ceilings can silently truncate Chinese output before
-  the final scene completes, producing a chapter that is 2500-3500 words
-  short of target.
+  the final scene completes, producing a chapter that lands below the
+  commercial reading window.
 * The existing ``LengthEnvelopeCheck`` in :mod:`output_validator` only
   fires when ``ProjectInvariants.length_envelope`` is populated. Projects
   created before the invariants bootstrap have no such envelope, so the
@@ -39,6 +39,8 @@ from enum import Enum
 from typing import Any, Iterable, Mapping
 
 __all__ = [
+    "CHINESE_CHAPTER_HARD_MAX_WORDS",
+    "CHINESE_CHAPTER_HARD_MIN_WORDS",
     "LengthStabilityBand",
     "LengthStabilityReport",
     "LENGTH_STABILITY_ISSUE_SEVERITY",
@@ -59,6 +61,9 @@ PLATFORM_CHAPTER_WORD_WINDOWS: dict[str, dict[str, int]] = {
     "tomato": {"min": 2000, "target": 2500, "max": 3000},
     "tomato_short": {"min": 1800, "target": 2500, "max": 3500},
 }
+
+CHINESE_CHAPTER_HARD_MIN_WORDS = 2000
+CHINESE_CHAPTER_HARD_MAX_WORDS = 3500
 
 
 _PLATFORM_ALIASES: dict[str, tuple[str, ...]] = {
@@ -210,6 +215,8 @@ def evaluate_chapter_length(
     target_words: int,
     max_words: int,
     warn_margin: float = 0.10,
+    hard_min_words: int | None = None,
+    hard_max_words: int | None = None,
     enabled: bool = True,
 ) -> LengthStabilityReport:
     """Classify ``word_count`` against a ``[min, target, max]`` budget.
@@ -233,6 +240,26 @@ def evaluate_chapter_length(
         # target outside the [min,max] window; clamp rather than raise so
         # the gate keeps running.
         target_words = max(min_words, min(max_words, target_words))
+    hard_floor = 0
+    if hard_min_words is not None:
+        try:
+            hard_floor = int(hard_min_words)
+        except (TypeError, ValueError):
+            hard_floor = 0
+        if hard_floor > 0 and min_words < hard_floor:
+            min_words = hard_floor
+            max_words = max(max_words, min_words)
+            target_words = max(min_words, min(max_words, target_words))
+    hard_ceiling = 0
+    if hard_max_words is not None:
+        try:
+            hard_ceiling = int(hard_max_words)
+        except (TypeError, ValueError):
+            hard_ceiling = 0
+        if hard_ceiling > 0 and max_words > hard_ceiling:
+            max_words = hard_ceiling
+            min_words = min(min_words, max_words)
+            target_words = max(min_words, min(max_words, target_words))
     if warn_margin < 0:
         warn_margin = 0.0
 
@@ -255,7 +282,13 @@ def evaluate_chapter_length(
     low_soft = int(round(min_words * (1.0 - warn_margin)))
     high_soft = int(round(max_words * (1.0 + warn_margin)))
 
-    if word_count < low_soft:
+    if hard_floor > 0 and word_count < hard_floor:
+        band = LengthStabilityBand.BLOCK_LOW
+        issue_code = "CHAPTER_LENGTH_BLOCK_LOW"
+    elif hard_ceiling > 0 and word_count > hard_ceiling:
+        band = LengthStabilityBand.BLOCK_HIGH
+        issue_code = "CHAPTER_LENGTH_BLOCK_HIGH"
+    elif word_count < low_soft:
         band = LengthStabilityBand.BLOCK_LOW
         issue_code = "CHAPTER_LENGTH_BLOCK_LOW"
     elif word_count < min_words:

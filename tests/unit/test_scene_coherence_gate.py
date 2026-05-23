@@ -12,6 +12,28 @@ from bestseller.services.scene_coherence_gate import (
 pytestmark = pytest.mark.unit
 
 
+def test_flashback_reference_does_not_trigger_jump() -> None:
+    """Regression for 青囊 ch1 false positive (2026-05-23).
+
+    Para "这张脸他在城南旧货市场见过" mentioned 城南旧货市场 as a memory
+    of where the protagonist previously SAW a face. The character is
+    still physically in 十七栋. The gate must NOT flag this as a
+    十七栋 → 城南旧货市场 location jump.
+    """
+
+    text = (
+        "林渊到十七栋楼下时，夜色已经贴近子时。\n\n"
+        "他抬眼看王建业，没接他的手。\n\n"
+        "这张脸他在城南旧货市场见过。那时她拦住他，问过一句很怪的话。\n\n"
+        "电梯重新上行，二十三层到了。\n\n"
+        "他走出电梯，罗盘指针不再指北。"
+    )
+    report = check_scene_coherence(text, chapter_position=1)
+    assert not report.has_critical, (
+        f"flashback reference must not trip scene jump; got jumps: {report.jumps}"
+    )
+
+
 def test_single_location_chapter_passes() -> None:
     text = (
         "林渊踏进十七栋二十三层。\n"
@@ -49,6 +71,49 @@ def test_jump_with_strong_transition_passes() -> None:
     report = check_scene_coherence(text, chapter_position=1)
     # No critical jumps
     assert not report.has_critical
+
+
+def test_flashback_location_reference_does_not_count_as_scene_jump() -> None:
+    text = (
+        "林渊踏进十七栋二十三层，掌心的铜钱被冷汗浸透。\n"
+        "他想起三十年前爷爷在清水桥义庄补镜，账页上只留下半枚血印。\n"
+        "走廊里的应急灯又闪了一下，十七栋的镜面重新映出王建业的脸。\n"
+    )
+
+    report = check_scene_coherence(text, chapter_position=1)
+
+    assert report.passed
+    assert report.jumps == ()
+
+
+def test_that_time_location_reference_does_not_count_as_scene_jump() -> None:
+    text = (
+        "电梯厢壁镜面慢慢起雾，雾里出现一个女人的脸。\n"
+        "这张脸他在城南旧货市场见过。那时她拦住他，问过一句怪话。\n"
+        "现在，她贴在电梯镜面里，嘴唇翕动。\n"
+        "二十三层到了，林渊走出电梯。\n"
+    )
+
+    report = check_scene_coherence(text, chapter_position=1)
+
+    assert report.passed
+    assert report.jumps == ()
+
+
+def test_phone_and_route_location_mentions_do_not_count_as_scene_jump() -> None:
+    text = (
+        "林渊接到的电话是下午三点打来的。打电话的人叫王建业，"
+        "做旧货生意的，在城北旧货市场摆了十几年摊子。\n"
+        "电话里王建业的声音发紧。他说十七栋有单生意，问林渊接不接。\n"
+        "城北旧货市场离他住的地方不算远，骑车十五分钟。\n"
+        "“你在十七栋楼下等我。”林渊挂断电话。\n"
+        "十七栋在老城区的边缘，六年前因为一桩命案被封。\n"
+        "王建业站在十七栋对面的巷子口抽烟。"
+    )
+
+    report = check_scene_coherence(text, chapter_position=1)
+
+    assert report.has_critical is False
 
 
 def test_jump_with_weak_marker_only_high_severity() -> None:

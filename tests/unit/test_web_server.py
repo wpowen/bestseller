@@ -1142,6 +1142,7 @@ def test_design_dossier_html_contains_expected_mount_points() -> None:
     assert "data-tab=\"relations\"" in html
     assert "展开后会自动加载这份规划产物的原始内容" in html
     assert "侦查式关系图谱" in html
+    assert "relationship-map" in html
 
 
 # ── Zombie auto-resume ───────────────────────────────────────────────────────

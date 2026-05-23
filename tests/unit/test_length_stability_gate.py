@@ -11,6 +11,8 @@ from __future__ import annotations
 import pytest
 
 from bestseller.services.length_stability_gate import (
+    CHINESE_CHAPTER_HARD_MAX_WORDS,
+    CHINESE_CHAPTER_HARD_MIN_WORDS,
     LENGTH_STABILITY_ISSUE_SEVERITY,
     LengthStabilityBand,
     LengthStabilityReport,
@@ -145,6 +147,36 @@ def test_evaluate_chapter_length_warn_margin_zero_promotes_to_block() -> None:
         warn_margin=0.0,
     )
     assert report.band is LengthStabilityBand.BLOCK_LOW
+
+
+def test_evaluate_chapter_length_hard_min_promotes_short_commercial_chapter_to_block() -> None:
+    report = evaluate_chapter_length(
+        word_count=1900,
+        min_words=1800,
+        target_words=2200,
+        max_words=3500,
+        hard_min_words=CHINESE_CHAPTER_HARD_MIN_WORDS,
+    )
+
+    assert report.band is LengthStabilityBand.BLOCK_LOW
+    assert report.issue_code == "CHAPTER_LENGTH_BLOCK_LOW"
+    assert report.min_words == CHINESE_CHAPTER_HARD_MIN_WORDS
+    assert report.is_blocking is True
+
+
+def test_evaluate_chapter_length_hard_max_blocks_overlong_commercial_chapter() -> None:
+    report = evaluate_chapter_length(
+        word_count=3501,
+        min_words=2000,
+        target_words=2600,
+        max_words=4000,
+        hard_max_words=CHINESE_CHAPTER_HARD_MAX_WORDS,
+    )
+
+    assert report.band is LengthStabilityBand.BLOCK_HIGH
+    assert report.issue_code == "CHAPTER_LENGTH_BLOCK_HIGH"
+    assert report.max_words == CHINESE_CHAPTER_HARD_MAX_WORDS
+    assert report.is_blocking is True
 
 
 # ── summarize_length_stability ─────────────────────────────────────────

@@ -4,16 +4,20 @@ from types import SimpleNamespace
 
 import pytest
 
+from bestseller.services.canon_guardrails import CanonGuardrails, CanonStateRule
+from bestseller.services.character_role_gate import CharacterProfile
+from bestseller.services.dialogue_voice_profile import parse_dialogue_voice_profiles
 from bestseller.services.retention_safety_gate import (
     AUTO_REPAIR_RETENTION_CODES,
     CAST_VIOLATION_BLOCK_CODE,
+    DIALOGUE_AI_FLAVOR_BLOCK_CODE,
     EXPOSITION_DUMP_BLOCK_CODE,
     HOOK_ECHO_BLOCK_CODE,
+    HOOK_ECHO_LOW_BLOCK_CODE,
     SIGNATURE_SCENE_BLOCK_CODE,
     evaluate_retention_safety,
     stamp_retention_block_codes,
 )
-from bestseller.services.canon_guardrails import CanonGuardrails, CanonStateRule
 
 pytestmark = pytest.mark.unit
 
@@ -47,6 +51,7 @@ def test_evaluate_retention_safety_passes_when_all_ok() -> None:
         prev_chapter_text=_PREV_CHAPTER,
         prev_chapter_position=1,
         skip_signature=True,  # skip — _ECHOING_CHAPTER won't have signature hints
+        skip_chapter_length=True,  # _ECHOING_CHAPTER is intentionally a stub
     )
 
     assert report.passed
@@ -67,6 +72,20 @@ def test_evaluate_retention_safety_critical_hook_echo() -> None:
     assert report.has_critical
     assert report.findings[0].evidence
     assert report.findings[0].evidence["missed_tokens"]
+
+
+def test_evaluate_retention_safety_low_hook_echo_triggers_repair() -> None:
+    report = evaluate_retention_safety(
+        chapter_position=2,
+        chapter_text="门外脚步声响起。下一刻，他握紧剑柄。",
+        prev_chapter_text=_PREV_CHAPTER,
+        prev_chapter_position=1,
+        skip_signature=True,
+    )
+
+    assert not report.passed
+    assert HOOK_ECHO_LOW_BLOCK_CODE in report.auto_repair_codes
+    assert report.findings[0].code == HOOK_ECHO_LOW_BLOCK_CODE
 
 
 def test_evaluate_retention_safety_signature_missing() -> None:
@@ -153,6 +172,7 @@ def test_stamp_retention_block_codes_passing_does_not_block() -> None:
         prev_chapter_text=_PREV_CHAPTER,
         prev_chapter_position=1,
         skip_signature=True,
+        skip_chapter_length=True,
     )
 
     blocked = stamp_retention_block_codes(chapter, report)
@@ -191,6 +211,7 @@ def test_auto_repair_retention_codes_constants_exposed() -> None:
     """All 3 block codes must be in the auto-repair-eligible tuple."""
 
     assert HOOK_ECHO_BLOCK_CODE in AUTO_REPAIR_RETENTION_CODES
+    assert HOOK_ECHO_LOW_BLOCK_CODE in AUTO_REPAIR_RETENTION_CODES
     assert SIGNATURE_SCENE_BLOCK_CODE in AUTO_REPAIR_RETENTION_CODES
     assert EXPOSITION_DUMP_BLOCK_CODE in AUTO_REPAIR_RETENTION_CODES
     assert CAST_VIOLATION_BLOCK_CODE in AUTO_REPAIR_RETENTION_CODES
@@ -219,6 +240,35 @@ def test_evaluate_retention_safety_cast_violation() -> None:
     assert CAST_VIOLATION_BLOCK_CODE in report.auto_repair_codes
 
 
+def test_evaluate_retention_safety_dialogue_voice_violation() -> None:
+    voice = parse_dialogue_voice_profiles(
+        """
+# Cast
+
+## 林渊
+原型：P2
+"""
+    )[0]
+    report = evaluate_retention_safety(
+        chapter_position=2,
+        chapter_text="林渊按住罗盘，说：“看来这事不简单。”",
+        character_profiles=(
+            CharacterProfile(
+                name="林渊",
+                abilities=("罗盘",),
+                dialogue_voice=voice,
+            ),
+        ),
+        skip_hook_echo=True,
+        skip_signature=True,
+        skip_exposition=True,
+        skip_chapter_length=True,
+        skip_character_role=True,
+    )
+
+    assert DIALOGUE_AI_FLAVOR_BLOCK_CODE in report.auto_repair_codes
+
+
 def test_evaluate_skip_flags_all_set() -> None:
     """All skip flags set → no findings even with bad input."""
 
@@ -229,7 +279,58 @@ def test_evaluate_skip_flags_all_set() -> None:
         skip_signature=True,
         skip_hook_echo=True,
         skip_exposition=True,
+        skip_chapter_length=True,
     )
 
     assert report.passed
     assert report.findings == ()
+
+
+def test_timeline_violation_triggers_auto_repair() -> None:
+    """Regression for the ch1 silent-skip bug (2026-05-23).
+
+    When ``timeline_canon`` is passed, the TimelineConsistencyGate must
+    fire on the canonical ch1-style violation: "十七年前 + 七岁" with
+    "戊子年" present. Previously the gate was silently skipped because
+    pipelines.py did not forward this argument.
+    """
+
+    from bestseller.services.retention_safety_gate import TIMELINE_INCONSISTENT_BLOCK_CODE
+    from bestseller.services.timeline_consistency_gate import (
+        TimelineCanon,
+        TimelineFact,
+    )
+
+    canon = TimelineCanon(
+        present_year=2025,
+        protagonist_name="林渊",
+        protagonist_current_age=30,
+        events=(
+            TimelineFact(
+                event_id="father_first_entry",
+                label="父亲第一次入十七栋",
+                years_ago=23,
+                year_name="戊子年",
+                protagonist_age_at_event=7,
+                subjects=("林正淳", "林渊"),
+                aliases=("父亲",),
+            ),
+        ),
+        forbidden_anchors=(17, 10, 5, 50),
+    )
+    chapter_text = (
+        "林渊低头，看见自己的倒影浮现——不是现在的模样，"
+        "而是十七年前的自己。那时候他才七岁，"
+        "站在十七栋门口，抬头看着四楼的窗口。"
+    )
+    report = evaluate_retention_safety(
+        chapter_position=1,
+        chapter_text=chapter_text,
+        skip_signature=True,
+        skip_hook_echo=True,
+        skip_exposition=True,
+        timeline_canon=canon,
+    )
+
+    assert not report.passed, "ch1-style timeline violation must NOT pass"
+    assert TIMELINE_INCONSISTENT_BLOCK_CODE in report.auto_repair_codes

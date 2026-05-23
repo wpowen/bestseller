@@ -325,6 +325,58 @@ def test_quality_retrofit_rewrite_uses_tighter_output_cap(
     assert 4096 <= cap <= 5600
 
 
+def test_chinese_compression_repair_keeps_enough_output_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings(
+        env={
+            "BESTSELLER__LLM__EDITOR__MODEL": "anthropic/claude-sonnet-4-5",
+            "BESTSELLER__LLM__EDITOR__MAX_TOKENS": "8192",
+        }
+    )
+    monkeypatch.setattr(review_services, "get_settings", lambda: settings)
+    project = ProjectModel(
+        slug="qingnang",
+        title="青囊不语问阴阳",
+        genre="urban-fantasy",
+        target_word_count=80000,
+        target_chapters=30,
+        language="zh-CN",
+        metadata_json={},
+    )
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=1,
+        title="第一章",
+        target_word_count=2200,
+    )
+    task = RewriteTaskModel(
+        project_id=uuid4(),
+        trigger_type="autonomous_quality_retrofit",
+        trigger_source_id=uuid4(),
+        rewrite_strategy="quality_retrofit_chapter_rewrite",
+        instructions="候选稿过长，压缩型修复。",
+        metadata_json={},
+    )
+
+    cap = review_services._rewrite_output_max_tokens_override(
+        chapter,
+        project,
+        task,
+        force_compression=True,
+    )
+    floor_cap = review_services.prose_output_max_tokens_for_target(
+        2200,
+        language=project.language,
+        settings=settings,
+        role="editor",
+    )
+
+    assert cap == floor_cap
+    assert cap is not None
+    assert cap > 2768
+
+
 def test_quality_retrofit_rewrite_reserves_minimax_reasoning_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

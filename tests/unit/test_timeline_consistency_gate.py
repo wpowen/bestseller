@@ -142,11 +142,16 @@ def test_internal_contradiction_high() -> None:
 
 def test_render_canon_block_zh() -> None:
     block = render_timeline_canon_block(_qingnang_canon())
-    assert "时间线锁定" in block
+    # 2026-05-23: header upgraded to "白名单" framing (LLM-first whitelist)
+    assert "白名单" in block
     assert "23 年前" in block
     assert "17 年前" in block  # in forbidden list
     assert "戊子年" in block
     assert "30 岁" in block or "年龄" in block
+    # Whitelist must explicitly enumerate allowed anchors
+    assert "唯一允许" in block
+    # Age formula must be present
+    assert "30-23=7" in block or "30-3=27" in block
 
 
 def test_render_canon_block_handles_none() -> None:

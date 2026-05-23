@@ -37,7 +37,7 @@
 - Spacing/layout rhythm: compact dashboards and full-width bands; repeated items may use bordered cards.
 - Shape/radius/elevation: square or small-radius editorial panels; no floating nested cards or heavy shadows.
 - Motion: minimal; tab switching and refresh only.
-- Imagery/iconography: relationship graph is rendered as an inspectable case-board / relationship-map visualization; no decorative imagery required for this operational tool.
+- Imagery/iconography: relationship graph is rendered as a node-link relationship network with labeled edges and a fixed evidence list; no decorative imagery required for this operational tool.
 
 ## Components
 - Existing components to reuse: static HTML/CSS pattern in `novel_library.html` and server route pattern in `web/server.py`.

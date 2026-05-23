@@ -265,6 +265,7 @@ class SceneWriterContextPacket(BaseModel):
     # ``chapter_orchestrator.prepare_chapter_context``. Each block is the
     # rendered text for the corresponding service:
     #   - voice_dna_block: render_voice_dna_block(target_dna)
+    #   - dialogue_voice_block: per-character speech DNA from cast/archetypes
     #   - chapter_market_constraints_block: render_chapter_constraints_block(constraints)
     #   - signature_scene_block: render_signature_scene_block(mandate)
     #   - prior_persona_feedback_block: render_persona_feedback_block(prev_result)
@@ -272,6 +273,7 @@ class SceneWriterContextPacket(BaseModel):
     # any prior chapter, the corresponding block stays ``None`` — the
     # downstream concatenation simply skips it.
     voice_dna_block: str | None = None
+    dialogue_voice_block: str | None = None
     chapter_market_constraints_block: str | None = None
     signature_scene_block: str | None = None
     prior_persona_feedback_block: str | None = None
@@ -290,6 +292,22 @@ class SceneWriterContextPacket(BaseModel):
     # characters before their allowed chapter. Cleanest defense against
     # cast drift (the 裴镜渊-into-ch2 failure mode).
     canon_guardrails_block: str | None = None
+
+    # ── Story Integrity blocks (LLM-first, white-list framing) ──
+    # ``timeline_canon_block``: ONLY allowed time anchors for this story
+    # (e.g. "23 年前 / 3 年前 / 30 年前 / 300 年前"). All others forbidden.
+    #   Prevents "十七年前/十年前" hallucinations from slipping into prose.
+    # ``scene_coherence_block``: rules for explicit transition markers
+    #   between scenes (time + movement verbs).
+    # ``character_role_block``: per-character ability / role / forbidden-
+    #   phrase profile so the LLM doesn't make a 风水师 act like a 刑警.
+    # ``chapter_length_block``: enforce minimum chapter body size so the
+    #   LLM doesn't take the cheap 1300-zh-char path.
+    # All four are pre-rendered by their respective gate modules.
+    timeline_canon_block: str | None = None
+    scene_coherence_block: str | None = None
+    character_role_block: str | None = None
+    chapter_length_block: str | None = None
 
 
 class ChapterSceneContext(BaseModel):
@@ -358,6 +376,7 @@ class ChapterWriterContextPacket(BaseModel):
     # ── P1 Originality Engine blocks (chapter-level mirror) ──
     # See SceneWriterContextPacket for semantics.
     voice_dna_block: str | None = None
+    dialogue_voice_block: str | None = None
     chapter_market_constraints_block: str | None = None
     signature_scene_block: str | None = None
     prior_persona_feedback_block: str | None = None
@@ -366,3 +385,10 @@ class ChapterWriterContextPacket(BaseModel):
     hook_echo_block: str | None = None
     exposition_density_block: str | None = None
     canon_guardrails_block: str | None = None
+
+    # ── Story Integrity blocks (LLM-first, white-list framing) ──
+    # Chapter-level mirror of SceneWriterContextPacket — same semantics.
+    timeline_canon_block: str | None = None
+    scene_coherence_block: str | None = None
+    character_role_block: str | None = None
+    chapter_length_block: str | None = None

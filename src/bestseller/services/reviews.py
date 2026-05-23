@@ -3115,6 +3115,27 @@ def evaluate_chapter_draft(
                 message=issue,
             )
         )
+    try:
+        from bestseller.services.common_sense_gate import evaluate_common_sense_gate
+
+        common_sense = evaluate_common_sense_gate(
+            content,
+            genre=genre,
+            sub_genre=sub_genre,
+            chapter_number=int(chapter.chapter_number),
+        )
+        for finding in common_sense.findings:
+            if finding.severity not in {"high", "medium"}:
+                continue
+            findings.append(
+                ChapterReviewFinding(
+                    category="common_sense",
+                    severity=finding.severity,
+                    message=f"{finding.code}: {finding.message}",
+                )
+            )
+    except Exception:
+        logger.debug("Chapter review common-sense gate failed", exc_info=True)
 
     _ch_dup_score = _clamp_score(float(duplication_score))
     if duplication_findings:

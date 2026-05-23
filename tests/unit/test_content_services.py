@@ -13,6 +13,7 @@ from bestseller.infra.db.models import CharacterModel
 from bestseller.services.drafts import (
     _character_voice_audit_payload,
     _load_active_character_engine_profiles,
+    _load_project_prewrite_contract_metadata,
     _render_story_bible_section,
     build_scene_draft_prompts,
     count_words,
@@ -49,6 +50,30 @@ class FakeScalarsSession:
 
 def test_count_words_handles_mixed_chinese_and_english() -> None:
     assert count_words("你好 world chapter 1") == 5
+
+
+def test_load_project_prewrite_contract_metadata_merges_story_bible_json(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "output"
+    contract_dir = root / "qingnang" / "story-bible"
+    contract_dir.mkdir(parents=True)
+    (contract_dir / "prewrite-contract.json").write_text(
+        '{"opening_causality_contract":{"protagonist_entry_motivation":"委托看宅"},'
+        '"ending_hook_contract":{"forbidden_ending_modes":["总结主题"]}}',
+        encoding="utf-8",
+    )
+    project = SimpleNamespace(slug="qingnang")
+
+    metadata = _load_project_prewrite_contract_metadata(
+        project,
+        output_base_dir=root,
+        base_metadata={"opening_causality_contract": {"protagonist_function": "青囊推账"}},
+    )
+
+    assert metadata["opening_causality_contract"]["protagonist_function"] == "青囊推账"
+    assert metadata["opening_causality_contract"]["protagonist_entry_motivation"] == "委托看宅"
+    assert metadata["ending_hook_contract"]["forbidden_ending_modes"] == ["总结主题"]
 
 
 @pytest.mark.asyncio
@@ -185,6 +210,38 @@ def test_render_scene_draft_markdown_context_flows_via_llm_prompt() -> None:
     # Rich context still reaches the LLM prompt
     assert "故事圣经约束" in user_prompt
     assert "本卷目标：找到第一份铁证" in user_prompt
+
+
+def test_scene_draft_prompt_puts_prewrite_contract_first() -> None:
+    project = SimpleNamespace(title="青囊不语问阴阳", slug="qingnang")
+    chapter = SimpleNamespace(chapter_number=2, chapter_goal="查清第八张脸", title="镜口")
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="二十三层",
+        participants=["林渊", "王建业"],
+        purpose={"story": "确认镜中账页", "emotion": "压迫"},
+        time_label="今夜",
+        entry_state={},
+        exit_state={},
+        scene_type="revelation",
+        target_word_count=1000,
+    )
+    style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["克制"])
+
+    _, user_prompt = build_scene_draft_prompts(
+        project,
+        chapter,
+        scene,
+        style_guide,
+        {},
+        prewrite_contract_block="【写前约束清单 — 优先级最高】allowed_characters=[林渊, 王建业]",
+        prewrite_plan_block="【已验证写作计划 — 正文必须严格执行】characters_to_use=[林渊]",
+        canon_guardrails_block="【正典守护 — 严禁出现以下违规】裴镜渊",
+    )
+
+    assert user_prompt.startswith("【写前约束清单")
+    assert user_prompt.index("【已验证写作计划") < user_prompt.index("【正典守护")
+    assert "裴镜渊" in user_prompt
 
 
 def test_scene_draft_prompt_includes_recent_context_sections() -> None:

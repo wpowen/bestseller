@@ -21,13 +21,22 @@ import webbrowser
 
 from bestseller.domain.fanqie_short import is_fanqie_short_project
 from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
-from bestseller.infra.db.models import StyleGuideModel
+from bestseller.infra.db.models import (
+    PlanningArtifactVersionModel,
+    StyleGuideModel,
+    WorkflowRunModel,
+)
 from bestseller.infra.db.session import session_scope
 from bestseller.services.book_listing import (
     build_book_listing_profile,
     validate_book_listing_profile,
 )
 from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
+from bestseller.services.genre_creativity import (
+    creative_direction_to_user_hints,
+    get_genre_creative_direction,
+    get_genre_creativity_catalog_payload,
+)
 from bestseller.services.if_generation import run_if_pipeline_integrated
 from bestseller.services.inspection import (
     build_project_structure,
@@ -41,11 +50,6 @@ from bestseller.services.projects import (
     get_project_by_slug,
     is_project_delete_tombstoned,
     list_projects,
-)
-from bestseller.services.genre_creativity import (
-    creative_direction_to_user_hints,
-    get_genre_creative_direction,
-    get_genre_creativity_catalog_payload,
 )
 from bestseller.services.repair import run_project_repair
 from bestseller.services.writing_presets import (
@@ -65,6 +69,7 @@ _READER_HTML_PATH = Path(__file__).with_name("novel_reader.html")
 _IF_READER_HTML_PATH = Path(__file__).with_name("novel_if_reader.html")
 _QUICKSTART_HTML_PATH = Path(__file__).with_name("novel_quickstart.html")
 _LIBRARY_HTML_PATH = Path(__file__).with_name("novel_library.html")
+_DESIGN_DOSSIER_HTML_PATH = Path(__file__).with_name("novel_design_dossier.html")
 # Bounded LRU cache for markdown artifact metadata.  Previous unbounded dict
 # grew without limit over long server runs.  512 entries is enough for a few
 # large projects while capping memory usage.
@@ -745,7 +750,9 @@ def resolve_project_artifact_path(
             artifact_path.write_text(fresh_content, encoding="utf-8")
         return artifact_path
     if not artifact_path.exists() or not artifact_path.is_file():
-        raise FileNotFoundError(f"Artifact '{safe_name}' was not found for '{project_slug}'.")
+        raise FileNotFoundError(
+            f"Artifact '{requested.as_posix()}' was not found for '{project_slug}'."
+        )
     return artifact_path
 
 
@@ -4560,6 +4567,160 @@ def _build_project_identity_payload(
     return payload
 
 
+_DESIGN_ARTIFACT_LABELS: dict[str, str] = {
+    "premise": "命题与核心承诺",
+    "book_spec": "全书设定",
+    "world_spec": "世界观设定",
+    "cast_spec": "人物设定",
+    "story_design_kernel": "故事设计内核",
+    "entry_system_kernel": "入口系统内核",
+    "emotion_driven_kernel": "情绪驱动内核",
+    "public_emotion_kernel": "公共情绪内核",
+    "compliance_boundary_kernel": "合规边界内核",
+    "act_plan": "幕结构",
+    "volume_plan": "卷规划",
+    "volume_chapter_outline": "卷章大纲",
+    "chapter_outline_batch": "章节大纲批次",
+    "volume_cast_expansion": "分卷人物扩展",
+    "volume_world_disclosure": "分卷世界揭示",
+    "plan_validation": "规划校验",
+    "prewrite_readiness": "开写前就绪度",
+    "promotional_brief": "上架/宣传资料",
+    "fanqie_beat_sheet": "番茄短故事节拍表",
+}
+
+_DESIGN_ARTIFACT_PHASES: dict[str, str] = {
+    "premise": "foundation",
+    "book_spec": "foundation",
+    "world_spec": "foundation",
+    "cast_spec": "foundation",
+    "story_design_kernel": "foundation",
+    "entry_system_kernel": "foundation",
+    "emotion_driven_kernel": "foundation",
+    "public_emotion_kernel": "foundation",
+    "compliance_boundary_kernel": "foundation",
+    "act_plan": "macro_plan",
+    "volume_plan": "macro_plan",
+    "volume_chapter_outline": "outline",
+    "chapter_outline_batch": "outline",
+    "volume_cast_expansion": "outline",
+    "volume_world_disclosure": "outline",
+    "plan_validation": "quality_gate",
+    "prewrite_readiness": "quality_gate",
+    "promotional_brief": "publishing",
+    "fanqie_beat_sheet": "outline",
+}
+
+_DESIGN_REQUIRED_SURFACES: tuple[tuple[str, str, str], ...] = (
+    ("planning_artifacts", "规划产物", "缺少命题、设定或大纲等 PlanningArtifactVersion。"),
+    ("structure", "章节大纲", "缺少可审查的卷/章/场结构。"),
+    ("characters", "人物信息", "缺少人物卡，无法提前审查人物目标、秘密、弧光和状态。"),
+    ("relationships", "关系图", "缺少人物关系边，无法提前审查关系张力和变化。"),
+    ("world", "世界观", "缺少世界主干、规则、地点或势力信息。"),
+    ("plot_arcs", "叙事线", "缺少主线/副线/主题线，无法提前判断跨章推进。"),
+    ("chapter_contracts", "章节合约", "缺少章节合约，无法在写正文前审查每章任务。"),
+    ("scene_contracts", "场景合约", "缺少场景合约，无法审查每场的冲突、信息和尾钩。"),
+)
+
+
+def _design_artifact_phase(artifact_type: str) -> str:
+    return _DESIGN_ARTIFACT_PHASES.get(artifact_type, "other")
+
+
+def _design_artifact_label(artifact_type: str) -> str:
+    return _DESIGN_ARTIFACT_LABELS.get(artifact_type, artifact_type.replace("_", " "))
+
+
+def _count_design_surface(
+    *,
+    surface: str,
+    planning_documents: list[dict[str, object]],
+    structure: Mapping[str, object],
+    story_bible: Mapping[str, object],
+    narrative: Mapping[str, object],
+) -> int:
+    if surface == "planning_artifacts":
+        return len(planning_documents)
+    if surface == "structure":
+        return int(structure.get("total_chapters") or 0) + int(
+            structure.get("total_scenes") or 0
+        )
+    if surface == "characters":
+        return len(story_bible.get("characters") or [])
+    if surface == "relationships":
+        return len(story_bible.get("relationships") or [])
+    if surface == "world":
+        return (
+            int(bool(story_bible.get("world_backbone")))
+            + len(story_bible.get("world_rules") or [])
+            + len(story_bible.get("locations") or [])
+            + len(story_bible.get("factions") or [])
+        )
+    if surface == "plot_arcs":
+        return len(narrative.get("plot_arcs") or [])
+    if surface == "chapter_contracts":
+        return len(narrative.get("chapter_contracts") or [])
+    if surface == "scene_contracts":
+        return len(narrative.get("scene_contracts") or [])
+    return 0
+
+
+def _build_design_dossier_readiness(
+    *,
+    planning_documents: list[dict[str, object]],
+    structure: Mapping[str, object],
+    story_bible: Mapping[str, object],
+    narrative: Mapping[str, object],
+) -> dict[str, object]:
+    checks: list[dict[str, object]] = []
+    for surface, label, missing_message in _DESIGN_REQUIRED_SURFACES:
+        count = _count_design_surface(
+            surface=surface,
+            planning_documents=planning_documents,
+            structure=structure,
+            story_bible=story_bible,
+            narrative=narrative,
+        )
+        checks.append(
+            {
+                "surface": surface,
+                "label": label,
+                "count": count,
+                "status": "present" if count > 0 else "missing",
+                "message": "可审查" if count > 0 else missing_message,
+            }
+        )
+    missing = [item for item in checks if item["status"] == "missing"]
+    return {
+        "status": "ready" if not missing else "incomplete",
+        "present_count": len(checks) - len(missing),
+        "missing_count": len(missing),
+        "checks": checks,
+        "blocking_gaps": missing,
+    }
+
+
+def _planning_artifact_stats(
+    documents: list[dict[str, object]],
+) -> dict[str, object]:
+    by_type: dict[str, int] = {}
+    latest_by_type: dict[str, dict[str, object]] = {}
+    for doc in documents:
+        artifact_type = str(doc.get("artifact_type") or "")
+        by_type[artifact_type] = by_type.get(artifact_type, 0) + 1
+        current = latest_by_type.get(artifact_type)
+        version = int(doc.get("version_no") or 0)
+        current_version = int(current.get("version_no") or 0) if current else -1
+        if current is None or version > current_version:
+            latest_by_type[artifact_type] = doc
+    return {
+        "document_count": len(documents),
+        "type_count": len(by_type),
+        "by_type": by_type,
+        "latest_by_type": latest_by_type,
+    }
+
+
 def _fanqie_short_export_artifact_entry(
     settings: AppSettings,
     project_slug: str,
@@ -4804,6 +4965,205 @@ async def _load_workflow_payload(
     async with session_scope(settings) as session:
         overview = await build_project_workflow_overview(session, project_slug)
     return overview.model_dump(mode="json")
+
+
+async def _load_project_design_dossier_payload(
+    settings: AppSettings,
+    project_slug: str,
+) -> dict[str, object]:
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' was not found.")
+        structure = await build_project_structure(session, project_slug)
+        story_bible = await build_story_bible_overview(session, project_slug)
+        narrative = await build_narrative_overview(session, project_slug)
+        style_guide = await session.get(StyleGuideModel, project.id)
+        writing_profile = get_project_writing_profile(project, style_guide).model_dump(
+            mode="json"
+        )
+        from sqlalchemy import select
+
+        artifact_rows = await session.execute(
+            select(
+                PlanningArtifactVersionModel.id,
+                PlanningArtifactVersionModel.artifact_type,
+                PlanningArtifactVersionModel.scope_ref_id,
+                PlanningArtifactVersionModel.version_no,
+                PlanningArtifactVersionModel.status,
+                PlanningArtifactVersionModel.schema_version,
+                PlanningArtifactVersionModel.created_at,
+                PlanningArtifactVersionModel.notes,
+            )
+            .where(PlanningArtifactVersionModel.project_id == project.id)
+            .order_by(
+                PlanningArtifactVersionModel.artifact_type.asc(),
+                PlanningArtifactVersionModel.version_no.desc(),
+                PlanningArtifactVersionModel.created_at.desc(),
+            )
+        )
+        workflow_rows = await session.execute(
+            select(
+                WorkflowRunModel.id,
+                WorkflowRunModel.status,
+                WorkflowRunModel.created_at,
+            )
+            .where(WorkflowRunModel.project_id == project.id)
+            .order_by(WorkflowRunModel.created_at.desc())
+        )
+        artifact_documents: list[dict[str, object]] = []
+        for row in artifact_rows:
+            artifact_type = str(row.artifact_type)
+            artifact_documents.append(
+                {
+                    "artifact_id": str(row.id),
+                    "artifact_type": artifact_type,
+                    "label": _design_artifact_label(artifact_type),
+                    "phase": _design_artifact_phase(artifact_type),
+                    "version_no": row.version_no,
+                    "scope_ref_id": str(row.scope_ref_id) if row.scope_ref_id else None,
+                    "status": row.status,
+                    "schema_version": row.schema_version,
+                    "created_at": row.created_at.isoformat(),
+                    "notes": row.notes,
+                }
+            )
+        workflow_documents = list(workflow_rows)
+        latest_workflow = workflow_documents[0] if workflow_documents else None
+
+    structure_payload = structure.model_dump(mode="json")
+    story_bible_payload = story_bible.model_dump(mode="json")
+    narrative_payload = narrative.model_dump(mode="json")
+    readiness = _build_design_dossier_readiness(
+        planning_documents=artifact_documents,
+        structure=structure_payload,
+        story_bible=story_bible_payload,
+        narrative=narrative_payload,
+    )
+    return {
+        "generated_at": _utc_now(),
+        "project": {
+            "id": str(project.id),
+            "slug": project.slug,
+            "title": project.title,
+            "stored_title": project.title,
+            "genre": project.genre,
+            "sub_genre": project.sub_genre,
+            "audience": project.audience,
+            "status": project.status,
+            "target_word_count": project.target_word_count,
+            "target_chapters": project.target_chapters,
+            "author_display_name": _project_author_display_name(project),
+            "current_volume_number": project.current_volume_number,
+            "current_chapter_number": project.current_chapter_number,
+            "synopsis": (project.metadata_json or {}).get("synopsis", ""),
+            "tags": (project.metadata_json or {}).get("tags", []),
+            "premise": (project.metadata_json or {}).get("premise", ""),
+        },
+        "summary": {
+            "structure_summary": {
+                "total_chapters": structure.total_chapters,
+                "total_scenes": structure.total_scenes,
+                "volume_count": len(structure.volumes),
+            },
+            "story_bible_counts": {
+                "has_world_backbone": story_bible.world_backbone is not None,
+                "world_rule_count": len(story_bible.world_rules),
+                "location_count": len(story_bible.locations),
+                "faction_count": len(story_bible.factions),
+                "character_count": len(story_bible.characters),
+                "relationship_count": len(story_bible.relationships),
+                "volume_frontier_count": len(story_bible.volume_frontiers),
+                "deferred_reveal_count": len(story_bible.deferred_reveals),
+                "expansion_gate_count": len(story_bible.expansion_gates),
+            },
+            "narrative_counts": {
+                "plot_arc_count": len(narrative.plot_arcs),
+                "arc_beat_count": len(narrative.arc_beats),
+                "clue_count": len(narrative.clues),
+                "payoff_count": len(narrative.payoffs),
+                "emotion_track_count": len(narrative.emotion_tracks),
+                "antagonist_plan_count": len(narrative.antagonist_plans),
+                "chapter_contract_count": len(narrative.chapter_contracts),
+                "scene_contract_count": len(narrative.scene_contracts),
+            },
+            "workflow_counts": {
+                "run_count": len(workflow_documents),
+                "completed_run_count": sum(
+                    1 for row in workflow_documents if row.status == "completed"
+                ),
+                "failed_run_count": sum(
+                    1 for row in workflow_documents if row.status == "failed"
+                ),
+                "latest_run_id": str(latest_workflow.id) if latest_workflow else None,
+                "latest_run_status": latest_workflow.status if latest_workflow else None,
+            },
+            "world_expansion": _resolve_story_bible_progress(
+                story_bible,
+                current_chapter_number=int(project.current_chapter_number or 0),
+            ),
+            "repair_status": {},
+        },
+        "readiness": readiness,
+        "planning_artifacts": {
+            **_planning_artifact_stats(artifact_documents),
+            "documents": artifact_documents,
+        },
+        "writing_profile": writing_profile,
+        "listing_profile": {},
+        "structure": structure_payload,
+        "story_bible": story_bible_payload,
+        "narrative": narrative_payload,
+        "workflow": {
+            "run_count": len(workflow_documents),
+            "latest_run_id": str(latest_workflow.id) if latest_workflow else None,
+            "latest_run_status": latest_workflow.status if latest_workflow else None,
+        },
+    }
+
+
+async def _load_project_design_artifact_payload(
+    settings: AppSettings,
+    project_slug: str,
+    artifact_id: str,
+) -> dict[str, object]:
+    try:
+        artifact_uuid = UUID(str(artifact_id))
+    except ValueError as exc:
+        raise ValueError("Invalid planning artifact id.") from exc
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' was not found.")
+        from sqlalchemy import select
+
+        artifact = await session.scalar(
+            select(PlanningArtifactVersionModel).where(
+                PlanningArtifactVersionModel.project_id == project.id,
+                PlanningArtifactVersionModel.id == artifact_uuid,
+            )
+        )
+        if artifact is None:
+            raise ValueError(
+                f"Planning artifact '{artifact_id}' was not found for '{project_slug}'."
+            )
+        return {
+            "artifact_id": str(artifact.id),
+            "artifact_type": artifact.artifact_type,
+            "label": _design_artifact_label(artifact.artifact_type),
+            "phase": _design_artifact_phase(artifact.artifact_type),
+            "version_no": artifact.version_no,
+            "scope_ref_id": str(artifact.scope_ref_id) if artifact.scope_ref_id else None,
+            "status": artifact.status,
+            "schema_version": artifact.schema_version,
+            "source_run_id": str(artifact.source_run_id)
+            if artifact.source_run_id
+            else None,
+            "notes": artifact.notes,
+            "created_at": artifact.created_at.isoformat(),
+            "created_by": artifact.created_by,
+            "content": artifact.content,
+        }
 
 
 _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
@@ -5401,6 +5761,12 @@ def _read_library_html() -> str:
     if _LIBRARY_HTML_PATH.exists():
         return _LIBRARY_HTML_PATH.read_text(encoding="utf-8")
     return "<!DOCTYPE html><html><body><h1>Library page not found.</h1></body></html>"
+
+
+def _read_design_dossier_html() -> str:
+    if _DESIGN_DOSSIER_HTML_PATH.exists():
+        return _DESIGN_DOSSIER_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Design dossier page not found.</h1></body></html>"
 
 
 def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
@@ -6989,6 +7355,16 @@ def serve_web_app(
                 if path == "/library":
                     self._send_text(_read_library_html(), content_type="text/html; charset=utf-8")
                     return
+                if path.startswith("/design/"):
+                    project_slug = path.removeprefix("/design/").strip("/")
+                    if not project_slug:
+                        self._route_not_found()
+                        return
+                    self._send_text(
+                        _read_design_dossier_html(),
+                        content_type="text/html; charset=utf-8",
+                    )
+                    return
                 if path == "/api/library":
                     self._send_json(asyncio.run(_load_library_payload(settings)))
                     return
@@ -7153,6 +7529,29 @@ def serve_web_app(
                 project_slug = _match_project_route(path, "workflow")
                 if project_slug is not None:
                     self._send_json(asyncio.run(_load_workflow_payload(settings, project_slug)))
+                    return
+                project_slug = _match_project_route(path, "design-dossier")
+                if project_slug is not None:
+                    self._send_json(
+                        asyncio.run(
+                            _load_project_design_dossier_payload(settings, project_slug)
+                        )
+                    )
+                    return
+                project_slug = _match_project_route(path, "design-artifact")
+                if project_slug is not None:
+                    artifact_id = (query.get("artifact_id") or [""])[0]
+                    if not artifact_id:
+                        raise ValueError("Missing artifact_id query parameter.")
+                    self._send_json(
+                        asyncio.run(
+                            _load_project_design_artifact_payload(
+                                settings,
+                                project_slug,
+                                artifact_id,
+                            )
+                        )
+                    )
                     return
                 project_slug = _match_project_route(path, "preview")
                 if project_slug is not None:

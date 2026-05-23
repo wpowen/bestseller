@@ -342,6 +342,7 @@ class PipelineSettings(BaseModel):
             "CROSS_CHAPTER_REPETITION",
             "INTRA_CHAPTER_REPETITION",
             "HOOK_ECHO_MISSING",
+            "HOOK_ECHO_LOW",
             "SIGNATURE_SCENE_MISSING",
             "EXPOSITION_DUMP",
             "CAST_VIOLATION",

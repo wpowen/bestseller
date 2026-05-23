@@ -49,6 +49,9 @@ from bestseller.services.diversity_budget import (
     load_diversity_budget,
     save_diversity_budget,
 )
+from bestseller.services.dialogue_personality_bridge import (
+    render_dialogue_personality_bridge_block,
+)
 from bestseller.services.invariants import InvariantSeedError, invariants_from_dict
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology import (
@@ -229,12 +232,17 @@ def _maybe_write_scene_prompt_trace(
             "hype_constraints_block",
             "l3_prompt_block",
             "voice_dna_block",
+            "dialogue_voice_block",
             "chapter_market_constraints_block",
             "signature_scene_block",
             "prior_persona_feedback_block",
             "hook_echo_block",
             "exposition_density_block",
             "canon_guardrails_block",
+            "timeline_canon_block",
+            "scene_coherence_block",
+            "character_role_block",
+            "chapter_length_block",
         )
         blocks = {
             attr: _block_trace(getattr(context_packet, attr, None), user_prompt)
@@ -1097,6 +1105,8 @@ async def _evaluate_chapter_quality_gate(
     length_report_payload: dict[str, Any] | None = None
     try:
         from bestseller.services.length_stability_gate import (
+            CHINESE_CHAPTER_HARD_MAX_WORDS,
+            CHINESE_CHAPTER_HARD_MIN_WORDS,
             evaluate_chapter_length,
         )
         from bestseller.settings import get_settings
@@ -1113,6 +1123,16 @@ async def _evaluate_chapter_quality_gate(
                 max_words=int(_budget.max),
                 warn_margin=float(
                     getattr(_pipeline_cfg, "length_stability_warn_margin", 0.10)
+                ),
+                hard_min_words=(
+                    None
+                    if is_english_language(getattr(project, "language", None))
+                    else CHINESE_CHAPTER_HARD_MIN_WORDS
+                ),
+                hard_max_words=(
+                    None
+                    if is_english_language(getattr(project, "language", None))
+                    else CHINESE_CHAPTER_HARD_MAX_WORDS
                 ),
                 enabled=True,
             )
@@ -2892,6 +2912,14 @@ def _render_story_bible_section(
         if character_engine_block:
             lines.append(character_engine_block)
 
+        dialogue_personality_block = render_dialogue_personality_bridge_block(
+            participants,
+            language=language,
+            max_profiles=4,
+        )
+        if dialogue_personality_block:
+            lines.append(dialogue_personality_block)
+
         voice_lines: list[str] = []
         for item in participants[:8]:
             vp = item.get("voice_profile") or {}
@@ -4137,11 +4165,13 @@ def build_scene_draft_prompts(
     # ``chapter_orchestrator.prepare_chapter_context``. Each is the
     # rendered text for the corresponding service:
     #   - voice_dna_block: render_voice_dna_block(target_dna)
+    #   - dialogue_voice_block: render_dialogue_voice_block(character voices)
     #   - chapter_market_constraints_block: render_chapter_constraints_block(...)
     #   - signature_scene_block: render_signature_scene_block(mandate)
     #   - prior_persona_feedback_block: render_persona_feedback_block(prev_result)
     # All optional; missing → no-op (block silently dropped from user_prompt).
     voice_dna_block: str | None = None,
+    dialogue_voice_block: str | None = None,
     chapter_market_constraints_block: str | None = None,
     signature_scene_block: str | None = None,
     prior_persona_feedback_block: str | None = None,
@@ -4154,6 +4184,21 @@ def build_scene_draft_prompts(
     hook_echo_block: str | None = None,
     exposition_density_block: str | None = None,
     canon_guardrails_block: str | None = None,
+    # ── Story Integrity blocks (LLM-first whitelists) ──
+    # 2026-05-23: these three blocks were rendered but never injected
+    # into the writing prompt. That's why ch1 of 青囊 kept regenerating
+    # "十七年前" violations. They MUST appear at the TOP of the user
+    # prompt, before character lists / arc beats / methodology, so the
+    # LLM treats them as inviolable.
+    # ``timeline_canon_block``: enumerated allowed time anchors.
+    # ``scene_coherence_block``: transition marker rules.
+    # ``character_role_block``: per-character ability/forbidden phrases.
+    timeline_canon_block: str | None = None,
+    scene_coherence_block: str | None = None,
+    character_role_block: str | None = None,
+    # ``chapter_length_block``: top-of-prompt reminder of the body-size
+    # band (default 2000 floor / 2500 target zh chars).
+    chapter_length_block: str | None = None,
     prewrite_contract_block: str | None = None,
     prewrite_plan_block: str | None = None,
     # Context budget
@@ -4550,6 +4595,9 @@ def build_scene_draft_prompts(
     _voice_dna_line = ""
     if voice_dna_block:
         _voice_dna_line = f"{voice_dna_block}\n\n"
+    _dialogue_voice_line = ""
+    if dialogue_voice_block:
+        _dialogue_voice_line = f"{dialogue_voice_block}\n\n"
     _chapter_market_constraints_line = ""
     if chapter_market_constraints_block:
         _chapter_market_constraints_line = (
@@ -4574,6 +4622,19 @@ def build_scene_draft_prompts(
     _canon_guardrails_line = ""
     if canon_guardrails_block:
         _canon_guardrails_line = f"{canon_guardrails_block}\n\n"
+    # Story Integrity whitelist blocks — render as top-of-prompt anchors.
+    _timeline_canon_line = ""
+    if timeline_canon_block:
+        _timeline_canon_line = f"{timeline_canon_block}\n\n"
+    _scene_coherence_line = ""
+    if scene_coherence_block:
+        _scene_coherence_line = f"{scene_coherence_block}\n\n"
+    _character_role_line = ""
+    if character_role_block:
+        _character_role_line = f"{character_role_block}\n\n"
+    _chapter_length_line = ""
+    if chapter_length_block:
+        _chapter_length_line = f"{chapter_length_block}\n\n"
     _prewrite_contract_line = ""
     if prewrite_contract_block:
         _prewrite_contract_line = f"{prewrite_contract_block}\n\n"
@@ -4720,12 +4781,17 @@ def build_scene_draft_prompts(
             "qimao_opening_contract_line": _qimao_opening_contract_line,
             "l3_prompt_line": _l3_prompt_line,
             "voice_dna_line": _voice_dna_line,
+            "dialogue_voice_line": _dialogue_voice_line,
             "chapter_market_constraints_line": _chapter_market_constraints_line,
             "signature_scene_line": _signature_scene_line,
             "prior_persona_feedback_line": _prior_persona_feedback_line,
             "hook_echo_line": _hook_echo_line,
             "exposition_density_line": _exposition_density_line,
             "canon_guardrails_line": _canon_guardrails_line,
+            "timeline_canon_line": _timeline_canon_line,
+            "scene_coherence_line": _scene_coherence_line,
+            "character_role_line": _character_role_line,
+            "chapter_length_line": _chapter_length_line,
             "project_material_reference_line": _project_material_reference_line,
             "library_reference_line": _library_reference_line,
             "hard_fact_line": _hard_fact_line,
@@ -4791,12 +4857,17 @@ def build_scene_draft_prompts(
     _qimao_opening_contract_line = _ctx["qimao_opening_contract_line"]
     _l3_prompt_line = _ctx["l3_prompt_line"]
     _voice_dna_line = _ctx["voice_dna_line"]
+    _dialogue_voice_line = _ctx["dialogue_voice_line"]
     _chapter_market_constraints_line = _ctx["chapter_market_constraints_line"]
     _signature_scene_line = _ctx["signature_scene_line"]
     _prior_persona_feedback_line = _ctx["prior_persona_feedback_line"]
     _hook_echo_line = _ctx["hook_echo_line"]
     _exposition_density_line = _ctx["exposition_density_line"]
     _canon_guardrails_line = _ctx["canon_guardrails_line"]
+    _timeline_canon_line = _ctx["timeline_canon_line"]
+    _scene_coherence_line = _ctx["scene_coherence_line"]
+    _character_role_line = _ctx["character_role_line"]
+    _chapter_length_line = _ctx["chapter_length_line"]
     _project_material_reference_line = _ctx["project_material_reference_line"]
     _library_reference_line = _ctx["library_reference_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
@@ -4826,6 +4897,13 @@ def build_scene_draft_prompts(
 
     if is_en:
         user_prompt = (
+            # Story Integrity whitelists — these MUST come first so the
+            # LLM treats them as inviolable constraints, not later
+            # afterthoughts. Order: timeline → scene → character → length.
+            f"{_timeline_canon_line}"
+            f"{_scene_coherence_line}"
+            f"{_character_role_line}"
+            f"{_chapter_length_line}"
             f"{_prewrite_contract_line}"
             f"{_prewrite_plan_line}"
             f"{_hard_fact_line}"
@@ -4836,6 +4914,7 @@ def build_scene_draft_prompts(
             f"{_qimao_opening_contract_line}"
             f"{_l3_prompt_line}"
             f"{_voice_dna_line}"
+            f"{_dialogue_voice_line}"
             f"{_chapter_market_constraints_line}"
             f"{_signature_scene_line}"
             f"{_canon_guardrails_line}"
@@ -4923,6 +5002,13 @@ def build_scene_draft_prompts(
         )
     else:
         user_prompt = (
+            # Story Integrity whitelists — these MUST come first so the
+            # LLM treats them as inviolable constraints, not later
+            # afterthoughts. Order: timeline → scene → character → length.
+            f"{_timeline_canon_line}"
+            f"{_scene_coherence_line}"
+            f"{_character_role_line}"
+            f"{_chapter_length_line}"
             f"{_prewrite_contract_line}"
             f"{_prewrite_plan_line}"
             f"{_hard_fact_line}"
@@ -4933,6 +5019,7 @@ def build_scene_draft_prompts(
             f"{_qimao_opening_contract_line}"
             f"{_l3_prompt_line}"
             f"{_voice_dna_line}"
+            f"{_dialogue_voice_line}"
             f"{_chapter_market_constraints_line}"
             f"{_signature_scene_line}"
             f"{_canon_guardrails_line}"
@@ -5950,6 +6037,9 @@ async def generate_scene_draft(
             voice_dna_block=(
                 context_packet.voice_dna_block if context_packet else None
             ),
+            dialogue_voice_block=(
+                context_packet.dialogue_voice_block if context_packet else None
+            ),
             chapter_market_constraints_block=(
                 context_packet.chapter_market_constraints_block
                 if context_packet
@@ -5972,6 +6062,19 @@ async def generate_scene_draft(
             ),
             canon_guardrails_block=(
                 context_packet.canon_guardrails_block if context_packet else None
+            ),
+            # Story Integrity whitelists — see drafts.py docstring for ordering.
+            timeline_canon_block=(
+                context_packet.timeline_canon_block if context_packet else None
+            ),
+            scene_coherence_block=(
+                context_packet.scene_coherence_block if context_packet else None
+            ),
+            character_role_block=(
+                context_packet.character_role_block if context_packet else None
+            ),
+            chapter_length_block=(
+                context_packet.chapter_length_block if context_packet else None
             ),
             prewrite_contract_block=prewrite_contract_block,
             prewrite_plan_block=prewrite_plan_block,
@@ -6634,6 +6737,9 @@ async def maybe_prepare_chapter_auto_repair(
         "HOOK_ECHO_MISSING": (
             "本章没有在开篇呼应上一章尾钩。重写时必须在前1000字内兑现、升级或反转上一章留下的具体钩子。"
         ),
+        "HOOK_ECHO_LOW": (
+            "本章对上一章尾钩呼应不足。重写时必须在前1000字内增加至少两个明确回响：具体人物/地点/威胁/未答问题要被兑现、升级或反转。"
+        ),
         "SIGNATURE_SCENE_MISSING": (
             "本章处在招牌场景槽位，但没有兑现招牌场景指令。重写时必须落实指定意象、誓约或揭示场面。"
         ),
@@ -6654,15 +6760,22 @@ async def maybe_prepare_chapter_auto_repair(
         if not ordered_codes:
             return ""
         hint_text = "\n".join(retention_hint_by_code[code] for code in ordered_codes)
-        if "HOOK_ECHO_MISSING" in ordered_codes:
+        hook_code = (
+            "HOOK_ECHO_MISSING"
+            if "HOOK_ECHO_MISSING" in ordered_codes
+            else "HOOK_ECHO_LOW"
+            if "HOOK_ECHO_LOW" in ordered_codes
+            else ""
+        )
+        if hook_code:
             missed_tokens = _tokens_from_retention_finding(
-                "HOOK_ECHO_MISSING", "missed_tokens"
+                hook_code, "missed_tokens"
             )
             matched_tokens = _tokens_from_retention_finding(
-                "HOOK_ECHO_MISSING", "matched_tokens"
+                hook_code, "matched_tokens"
             )
             prev_tokens = _tokens_from_retention_finding(
-                "HOOK_ECHO_MISSING", "prev_hook_tokens"
+                hook_code, "prev_hook_tokens"
             )
             if missed_tokens:
                 hint_text = (

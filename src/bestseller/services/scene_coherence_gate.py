@@ -95,8 +95,65 @@ _WEAK_TRANSITION_PATTERNS: tuple[str, ...] = (
     "起身离开", "起身出门",
 )
 
-_PARAGRAPH_SPLITTER = re.compile(r"\n+")
+_REFERENTIAL_LOCATION_MARKERS: tuple[str, ...] = (
+    "记得",
+    "想起",
+    "想到了",
+    "回忆",
+    "回想",
+    "当年",
+    "当时",
+    "那年",
+    "那时",
+    "年前",
+    "多年前",
+    "小时候",
+    "梦里",
+    "脑海里",
+    "照片里",
+    "档案里",
+    "账页上",
+    "信里写着",
+    "爷爷说",
+    "父亲说",
+    "传闻里",
+    "故事里",
+    # 2026-05-23: extend with the missing case from 青囊不语问阴阳 ch1:
+    # 「这张脸他在城南旧货市场见过」— "见过" must be treated as
+    # backstory reference, not a current location switch.
+    "见过",
+    "听说过",
+    "听人说",
+    "听过",
+    "认得她",
+    "认得他",
+    "认出",
+    "曾经",
+    "以前",
+    "过去",
+    "上次",
+    "上回",
+    "上一次",
+    "上个月",
+    "去年",
+    "昨天",
+    "昨日",
+)
 
+_NON_SCENE_LOCATION_MARKERS: tuple[str, ...] = (
+    "电话里",
+    "打电话",
+    "来电",
+    "问林渊接不接",
+    "老板想找人看看",
+    "离他住的地方",
+    "在十七栋楼下等我",
+    "等我",
+    "摆了十几年摊子",
+    "做旧货生意",
+)
+
+_PARAGRAPH_SPLITTER = re.compile(r"\n+")
 
 @dataclass(frozen=True)
 class SceneJump:
@@ -177,7 +234,16 @@ def check_scene_coherence(
 
     # Tag each paragraph with the set of group labels it touches.
     para_groups: list[set[str]] = [
-        _paragraph_groups(p, all_tokens, lookup) for p in paragraphs
+        (
+            set()
+            if _is_referential_location_paragraph(
+                p,
+                strong_markers=strong_set,
+                weak_patterns=weak_set,
+            )
+            else _paragraph_groups(p, all_tokens, lookup)
+        )
+        for p in paragraphs
     ]
 
     jumps: list[SceneJump] = []
@@ -312,6 +378,29 @@ def _paragraph_groups(
             group = token_to_group.get(token, token)
             groups.add(group)
     return groups
+
+
+def _is_referential_location_paragraph(
+    paragraph: str,
+    *,
+    strong_markers: Sequence[str],
+    weak_patterns: Sequence[str],
+) -> bool:
+    """Return True when a location mention belongs to memory/documentation.
+
+    Scene jumps are about the character's current physical location. A
+    paragraph such as "他想起三十年前爷爷在清水桥义庄..." names another place,
+    but the narration has not moved there. Strong movement/time markers keep
+    real flashback scene transitions detectable.
+    """
+
+    if any(marker in paragraph for marker in _NON_SCENE_LOCATION_MARKERS):
+        return True
+    if not any(marker in paragraph for marker in _REFERENTIAL_LOCATION_MARKERS):
+        return False
+    if any(marker in paragraph for marker in strong_markers):
+        return False
+    return not any(pattern in paragraph for pattern in weak_patterns)
 
 
 __all__ = [

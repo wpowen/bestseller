@@ -84,6 +84,7 @@ from bestseller.services.quality_levers import (
 )
 from bestseller.services.rewrite_impacts import analyze_rewrite_impacts_for_scene_task
 from bestseller.services.word_targets import (
+    CHINESE_CHAPTER_HARD_MIN_WORDS,
     chapter_rewrite_length_band,
     model_output_token_ceiling,
     model_reasoning_token_reserve,
@@ -5321,13 +5322,29 @@ def _rewrite_output_max_tokens_override(
     force_expansion: bool = False,
 ) -> int | None:
     settings = get_settings()
+    project_language = _project_language(project)
+    try:
+        target = int(chapter.target_word_count or 0)
+    except (TypeError, ValueError):
+        target = 0
+    cap_target = target
+    if cap_target > 0 and not is_english_language(project_language):
+        cap_target = max(cap_target, CHINESE_CHAPTER_HARD_MIN_WORDS)
     base = prose_output_max_tokens_for_target(
-        chapter.target_word_count,
-        language=_project_language(project),
+        cap_target or chapter.target_word_count,
+        language=project_language,
         settings=settings,
         role="editor",
     )
     if force_expansion:
+        if target > 0 and not is_english_language(project_language):
+            expansion_cap = prose_output_max_tokens_for_target(
+                max(cap_target, CHINESE_CHAPTER_HARD_MIN_WORDS + 220),
+                language=project_language,
+                settings=settings,
+                role="editor",
+            )
+            return expansion_cap if expansion_cap is not None else base
         return base
     metadata = rewrite_task.metadata_json if isinstance(rewrite_task.metadata_json, dict) else {}
     audit_row = metadata.get("audit_row") if isinstance(metadata.get("audit_row"), dict) else {}
@@ -5343,16 +5360,12 @@ def _rewrite_output_max_tokens_override(
         or "当前章节偏长" in instructions
         or "压缩型修复" in instructions
     )
-    try:
-        target = int(chapter.target_word_count or 0)
-    except (TypeError, ValueError):
-        target = 0
     if target <= 0:
         return base
     model_reserve = model_reasoning_token_reserve(
         resolve_llm_role_model(settings, role="editor")
     )
-    if quality_retrofit_requested and not force_expansion:
+    if quality_retrofit_requested and not force_expansion and not compression_requested:
         editor_model = resolve_llm_role_model(settings, role="editor")
         model_ceiling = model_output_token_ceiling(editor_model)
         if model_reserve and model_ceiling:
@@ -5363,6 +5376,15 @@ def _rewrite_output_max_tokens_override(
         return min(base, retrofit_cap) if base is not None else retrofit_cap
     if not compression_requested:
         return base
+    if not is_english_language(project_language):
+        compression_floor_cap = prose_output_max_tokens_for_target(
+            max(target, CHINESE_CHAPTER_HARD_MIN_WORDS),
+            language=project_language,
+            settings=settings,
+            role="editor",
+        )
+        if compression_floor_cap is not None:
+            return compression_floor_cap
     compression_cap = max(1800, int(round(target * 1.20)) + 128) + model_reserve
     return min(base, compression_cap) if base is not None else compression_cap
 

@@ -206,16 +206,90 @@ async def _evaluate_retention_safety_after_assembly(
     output_base_dir: str | Path | None = None,
 ) -> bool:
     from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
+    from bestseller.services.character_role_gate import load_character_profiles
     from bestseller.services.retention_safety_gate import (
         evaluate_retention_safety,
         stamp_retention_block_codes,
     )
+    from bestseller.services.timeline_consistency_gate import load_timeline_canon
 
     prev_text = await _load_prev_chapter_draft_text(
         session,
         project,
         chapter_number,
     )
+
+    # ──────────────────────────────────────────────────────────────────
+    # CRITICAL BUG FIX (2026-05-23):
+    # TimelineConsistencyGate and CharacterRoleGate were being silently
+    # skipped in production because this function did not load nor pass
+    # the required ``timeline_canon`` and ``character_profiles`` args.
+    # The retention gate's internal guards (line 283 / 359) treat those
+    # as opt-in features: when None/empty, the check is skipped.
+    # That's how ch1 shipped with 5 critical timeline violations.
+    # ──────────────────────────────────────────────────────────────────
+    bible_root = (
+        Path(output_base_dir) / project.slug / "story-bible"
+        if output_base_dir is not None
+        else None
+    )
+    timeline_canon = None
+    character_profiles: tuple = ()
+    if bible_root is not None:
+        try:
+            timeline_canon = load_timeline_canon(bible_root / "timeline-canon.md")
+        except Exception:
+            logger.debug(
+                "timeline-canon load failed for ch%d (non-fatal)",
+                chapter_number,
+                exc_info=True,
+            )
+        try:
+            character_profiles = load_character_profiles(
+                bible_root / "cast-and-promises.md"
+            )
+        except Exception:
+            logger.debug(
+                "cast-and-promises load failed for ch%d (non-fatal)",
+                chapter_number,
+                exc_info=True,
+            )
+
+    # Derive chapter-length thresholds. Use project's target_chapter_words
+    # if defined; else fall back to the gate defaults.
+    _proj_target_words = int(
+        getattr(project, "default_target_chapter_words", 0)
+        or getattr(project, "target_chapter_words", 0)
+        or 0
+    )
+    _length_kwargs: dict = {}
+    if _proj_target_words > 0:
+        # When the project specifies a target (e.g. 2800 zh chars), make
+        # the floor 70% of that and warning 85%.
+        _length_kwargs["chapter_length_hard_floor"] = max(
+            1500, int(_proj_target_words * 0.7)
+        )
+        _length_kwargs["chapter_length_soft_warning"] = max(
+            2000, int(_proj_target_words * 0.85)
+        )
+    # Honor the per-gate disable flag (default True; tests can opt out).
+    try:
+        from bestseller.services.quality_gates_config import (
+            get_quality_gates_config,
+        )
+
+        _length_enabled = bool(
+            getattr(
+                get_quality_gates_config().originality_engine,
+                "chapter_length_gate_enabled",
+                True,
+            )
+        )
+    except Exception:
+        _length_enabled = True
+    if not _length_enabled:
+        _length_kwargs["skip_chapter_length"] = True
+
     report = evaluate_retention_safety(
         chapter_position=chapter_number,
         chapter_text=chapter_draft.content_md or "",
@@ -226,10 +300,13 @@ async def _evaluate_retention_safety_after_assembly(
             project,
             output_base_dir=output_base_dir,
         ),
+        timeline_canon=timeline_canon,
+        character_profiles=character_profiles or None,
         skip_signature=not _signature_plan_file_exists(
             project.slug,
             output_base_dir=output_base_dir,
         ),
+        **_length_kwargs,
     )
     metadata = dict(getattr(chapter, "metadata_json", None) or {})
     metadata["retention_gate_last_findings"] = [
@@ -3134,6 +3211,106 @@ async def run_scene_pipeline(
                     except Exception:
                         logger.debug(
                             "canon guardrails injection failed for ch%d (non-fatal)",
+                            chapter_number,
+                            exc_info=True,
+                        )
+
+                    # ── Story Integrity blocks (LLM-first whitelists) ──
+                    # 2026-05-23: previously the writing prompt did NOT
+                    # inject timeline-canon, scene-coherence, or character-
+                    # role rules into prompts. The LLM was given the bible
+                    # markdown as free text only — too soft. Force them as
+                    # structured whitelist blocks here.
+                    _bible_root = (
+                        Path(settings.output.base_dir) / project.slug / "story-bible"
+                        if settings.output.base_dir
+                        else None
+                    )
+                    if _bible_root is not None:
+                        try:
+                            from bestseller.services.timeline_consistency_gate import (
+                                load_timeline_canon as _load_canon,
+                                render_timeline_canon_block as _render_canon,
+                            )
+
+                            _canon = _load_canon(_bible_root / "timeline-canon.md")
+                            if _canon is not None:
+                                shared_context.timeline_canon_block = (
+                                    _render_canon(_canon, language=_orig_lang)
+                                    or None
+                                )
+                        except Exception:
+                            logger.debug(
+                                "timeline canon block injection failed for ch%d "
+                                "(non-fatal)",
+                                chapter_number,
+                                exc_info=True,
+                            )
+                        try:
+                            from bestseller.services.scene_coherence_gate import (
+                                render_scene_coherence_block as _render_scene,
+                            )
+
+                            shared_context.scene_coherence_block = (
+                                _render_scene(language=_orig_lang) or None
+                            )
+                        except Exception:
+                            logger.debug(
+                                "scene coherence block injection failed for ch%d "
+                                "(non-fatal)",
+                                chapter_number,
+                                exc_info=True,
+                            )
+                        try:
+                            from bestseller.services.character_role_gate import (
+                                load_character_profiles as _load_profiles,
+                                render_character_role_block as _render_role,
+                            )
+                            from bestseller.services.dialogue_voice_blocks import (
+                                render_dialogue_voice_block as _render_dialogue_voice,
+                            )
+
+                            _profiles = _load_profiles(
+                                _bible_root / "cast-and-promises.md"
+                            )
+                            if _profiles:
+                                shared_context.character_role_block = (
+                                    _render_role(_profiles, language=_orig_lang)
+                                    or None
+                                )
+                                _voice_profiles = tuple(
+                                    profile.dialogue_voice
+                                    for profile in _profiles
+                                    if profile.dialogue_voice is not None
+                                )
+                                if _voice_profiles:
+                                    shared_context.dialogue_voice_block = (
+                                        _render_dialogue_voice(
+                                            _voice_profiles,
+                                            language=_orig_lang,
+                                        )
+                                        or None
+                                    )
+                        except Exception:
+                            logger.debug(
+                                "character/dialogue role block injection failed for ch%d "
+                                "(non-fatal)",
+                                chapter_number,
+                                exc_info=True,
+                            )
+                    # Chapter length block — independent of bible files.
+                    try:
+                        from bestseller.services.chapter_length_gate import (
+                            render_chapter_length_block as _render_length,
+                        )
+
+                        shared_context.chapter_length_block = (
+                            _render_length(language=_orig_lang) or None
+                        )
+                    except Exception:
+                        logger.debug(
+                            "chapter length block injection failed for ch%d "
+                            "(non-fatal)",
                             chapter_number,
                             exc_info=True,
                         )

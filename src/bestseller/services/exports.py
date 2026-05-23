@@ -836,25 +836,67 @@ def collect_publication_blockers(
                     target,
                     ratio * 100,
                 )
-        # Length hard-blocking belongs to the production gate that stamps
-        # production_state. Export must not re-block a repaired chapter that
-        # already passed that gate, because repair passes can leave
-        # status=revision while production_state=ok is authoritative.
+        # Export is the final defense for historical chapters stamped ok
+        # before the commercial chapter-length floor existed.
         try:
             from bestseller.settings import get_settings as _get_settings
             from bestseller.services.drafts import count_words as _count_words
+            from bestseller.services.length_stability_gate import (
+                CHINESE_CHAPTER_HARD_MAX_WORDS,
+                CHINESE_CHAPTER_HARD_MIN_WORDS,
+                evaluate_chapter_length,
+            )
             _cfg = _get_settings()
             _budget = _cfg.generation.words_per_chapter
             _wc = _count_words(draft.content_md or "")
-            _env_max = int(_budget.max)
-            if _wc > _env_max:
+            _length_report = evaluate_chapter_length(
+                word_count=_wc,
+                min_words=int(_budget.min),
+                target_words=int(_budget.target),
+                max_words=int(_budget.max),
+                warn_margin=float(
+                    getattr(
+                        getattr(_cfg, "pipeline", object()),
+                        "length_stability_warn_margin",
+                        0.10,
+                    )
+                ),
+                hard_min_words=None if is_en else CHINESE_CHAPTER_HARD_MIN_WORDS,
+                hard_max_words=None if is_en else CHINESE_CHAPTER_HARD_MAX_WORDS,
+                enabled=True,
+            )
+            if not is_en and _wc < CHINESE_CHAPTER_HARD_MIN_WORDS:
+                blockers.append(
+                    (
+                        f"Chapter {chapter_number}: chapter length {_wc} below commercial floor "
+                        f"{CHINESE_CHAPTER_HARD_MIN_WORDS}, export blocked"
+                        if is_en
+                        else f"第{chapter_number}章：章节体量 {_wc} 字低于商业硬底线 "
+                        f"{CHINESE_CHAPTER_HARD_MIN_WORDS} 字，禁止发布"
+                    )
+                )
+            elif _length_report.is_warning or _length_report.is_blocking:
+                if _length_report.is_blocking:
+                    blockers.append(
+                        (
+                            f"Chapter {chapter_number}: chapter length {_wc} outside commercial "
+                            f"window {CHINESE_CHAPTER_HARD_MIN_WORDS}-{CHINESE_CHAPTER_HARD_MAX_WORDS}, "
+                            "export blocked"
+                            if is_en
+                            else f"第{chapter_number}章：章节体量 {_wc} 字超出商业硬范围 "
+                            f"{CHINESE_CHAPTER_HARD_MIN_WORDS}-{CHINESE_CHAPTER_HARD_MAX_WORDS} 字，禁止发布"
+                        )
+                    )
+                    continue
                 logger.warning(
-                    "Chapter %d exceeds configured export length max but "
-                    "production_state=%s controls publishability: %d > %d.",
+                    "Chapter %d length-stability warning at export: %s wc=%d "
+                    "min=%d target=%d max=%d.",
                     chapter.chapter_number,
-                    production_state or "unset",
+                    _length_report.band.value,
                     _wc,
-                    _env_max,
+                    _length_report.min_words,
+                    _length_report.target_words,
+                    _length_report.max_words,
                 )
         except Exception:
             pass  # Never let a config read error crash an export.

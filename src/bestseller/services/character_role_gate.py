@@ -23,12 +23,13 @@ Block code: ``CHARACTER_ROLE_DRIFT`` — eligible for auto-repair.
 
 from __future__ import annotations
 
-import logging
-import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
+import logging
 from pathlib import Path
-from typing import Any
+import re
+
+from bestseller.domain.dialogue_voice import DialogueVoiceDNA
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,9 @@ class CharacterProfile:
     expected_tone_markers: tuple[str, ...] = ()
     # Tone vocabulary that conflicts with the character's role
     conflicting_tone_markers: tuple[str, ...] = ()
+    # Character-level dialogue voice DNA. This is framework-level speech
+    # behavior, separate from role/ability compliance.
+    dialogue_voice: DialogueVoiceDNA | None = None
     # Minimum presence threshold (mentions) to consider "on page"
     on_page_threshold: int = 2
 
@@ -147,6 +151,20 @@ def load_character_profiles(
                 conflicting_tone_markers=conflicting_tone,
             )
         )
+
+    try:
+        from bestseller.services.dialogue_voice_profile import (
+            parse_dialogue_voice_profiles,
+        )
+
+        voice_profiles = parse_dialogue_voice_profiles(text, role_profiles=profiles)
+        voice_by_name = {profile.character_name: profile for profile in voice_profiles}
+        profiles = [
+            replace(profile, dialogue_voice=voice_by_name.get(profile.name))
+            for profile in profiles
+        ]
+    except Exception:
+        logger.debug("dialogue voice profile parse failed (non-fatal)", exc_info=True)
 
     return tuple(profiles)
 
@@ -318,24 +336,24 @@ def render_character_role_block(
             lines.append(f"  · {profile.name}:")
             if profile.abilities:
                 lines.append(
-                    f"      能力（必须有 ≥ 1 项实际使用）: "
+                    "      能力（必须有 ≥ 1 项实际使用）: "
                     + "、".join(profile.abilities[:5])
                 )
             if profile.forbidden_phrases:
                 lines.append(
-                    f"      严禁: "
+                    "      严禁: "
                     + "、".join(
                         f"'{p[:30]}'" for p in profile.forbidden_phrases[:3]
                     )
                 )
             if profile.expected_tone_markers:
                 lines.append(
-                    f"      期望腔调（≥ 1 个出现）: "
+                    "      期望腔调（≥ 1 个出现）: "
                     + "、".join(profile.expected_tone_markers[:6])
                 )
             if profile.conflicting_tone_markers:
                 lines.append(
-                    f"      冲突腔调（避免）: "
+                    "      冲突腔调（避免）: "
                     + "、".join(profile.conflicting_tone_markers[:4])
                 )
         lines.append(

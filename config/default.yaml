@@ -110,9 +110,9 @@ generation:
   target_chapters: 30
 
   words_per_chapter:
-    min: 1800
-    target: 2200
-    max: 3000
+    min: 2000
+    target: 2600
+    max: 3500
 
   scenes_per_chapter:
     min: 2
@@ -284,6 +284,7 @@ pipeline:
     - CANON_FORBIDDEN_TERM
     - CANON_STATE_REGRESSION
     - HOOK_ECHO_MISSING
+    - HOOK_ECHO_LOW
     - SIGNATURE_SCENE_MISSING
     - EXPOSITION_DUMP
     - CAST_VIOLATION

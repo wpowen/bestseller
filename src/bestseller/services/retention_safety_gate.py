@@ -32,10 +32,19 @@ from bestseller.services.cast_compliance_gate import (
     CAST_VIOLATION_BLOCK_CODE,
     check_cast_compliance,
 )
+from bestseller.services.chapter_length_gate import (
+    CHAPTER_BELOW_TARGET_BLOCK_CODE,
+    CHAPTER_TOO_SHORT_BLOCK_CODE,
+    check_chapter_length,
+)
 from bestseller.services.character_role_gate import (
     CHARACTER_ROLE_DRIFT_BLOCK_CODE,
     CharacterProfile,
     check_character_role_compliance,
+)
+from bestseller.services.dialogue_voice_gate import (
+    DIALOGUE_AI_FLAVOR_BLOCK_CODE,
+    check_dialogue_voice,
 )
 from bestseller.services.exposition_density_gate import (
     check_exposition_density,
@@ -61,18 +70,22 @@ logger = logging.getLogger(__name__)
 
 
 HOOK_ECHO_BLOCK_CODE = "HOOK_ECHO_MISSING"
+HOOK_ECHO_LOW_BLOCK_CODE = "HOOK_ECHO_LOW"
 SIGNATURE_SCENE_BLOCK_CODE = "SIGNATURE_SCENE_MISSING"
 EXPOSITION_DUMP_BLOCK_CODE = "EXPOSITION_DUMP"
 
 # These codes are eligible for auto-repair.
 AUTO_REPAIR_RETENTION_CODES: tuple[str, ...] = (
     HOOK_ECHO_BLOCK_CODE,
+    HOOK_ECHO_LOW_BLOCK_CODE,
     SIGNATURE_SCENE_BLOCK_CODE,
     EXPOSITION_DUMP_BLOCK_CODE,
     CAST_VIOLATION_BLOCK_CODE,
     TIMELINE_INCONSISTENT_BLOCK_CODE,
     SCENE_JUMP_BLOCK_CODE,
     CHARACTER_ROLE_DRIFT_BLOCK_CODE,
+    DIALOGUE_AI_FLAVOR_BLOCK_CODE,
+    CHAPTER_TOO_SHORT_BLOCK_CODE,
 )
 
 
@@ -123,6 +136,10 @@ def evaluate_retention_safety(
     skip_timeline: bool = False,
     skip_scene_coherence: bool = False,
     skip_character_role: bool = False,
+    skip_dialogue_voice: bool = False,
+    skip_chapter_length: bool = False,
+    chapter_length_hard_floor: int | None = None,
+    chapter_length_soft_warning: int | None = None,
 ) -> RetentionGateReport:
     """Run the 3 retention gates on an assembled chapter.
 
@@ -163,7 +180,7 @@ def evaluate_retention_safety(
             elif severity == "high":
                 findings.append(
                     RetentionGateFinding(
-                        code="HOOK_ECHO_LOW",
+                        code=HOOK_ECHO_LOW_BLOCK_CODE,
                         severity=severity,
                         detail=he.finding.detail,
                         coverage=he.coverage,
@@ -174,6 +191,7 @@ def evaluate_retention_safety(
                         },
                     )
                 )
+                auto_repair.append(HOOK_ECHO_LOW_BLOCK_CODE)
         except Exception as exc:
             logger.warning(
                 "hook echo evaluation failed for ch%d: %s",
@@ -390,6 +408,114 @@ def evaluate_retention_safety(
                 exc,
             )
 
+    # Dialogue Voice Gate
+    if not skip_dialogue_voice and character_profiles:
+        voice_profiles = tuple(
+            profile.dialogue_voice
+            for profile in character_profiles
+            if profile.dialogue_voice is not None
+        )
+        if voice_profiles:
+            try:
+                dv = check_dialogue_voice(
+                    chapter_text,
+                    chapter_position=chapter_position,
+                    profiles=voice_profiles,
+                )
+                critical = [finding for finding in dv.findings if finding.severity == "critical"]
+                if critical:
+                    findings.append(
+                        RetentionGateFinding(
+                            code=DIALOGUE_AI_FLAVOR_BLOCK_CODE,
+                            severity="critical",
+                            detail=f"dialogue AI flavor: {len(critical)} critical finding(s)",
+                            evidence={
+                                "findings": [
+                                    {
+                                        "code": finding.code,
+                                        "character": finding.character,
+                                        "severity": finding.severity,
+                                        "detail": finding.detail,
+                                        "line_index": finding.line_index,
+                                        "evidence": finding.evidence,
+                                    }
+                                    for finding in dv.findings
+                                ],
+                            },
+                        )
+                    )
+                    auto_repair.append(DIALOGUE_AI_FLAVOR_BLOCK_CODE)
+                else:
+                    for finding in dv.findings:
+                        if finding.severity == "high":
+                            findings.append(
+                                RetentionGateFinding(
+                                    code=finding.code,
+                                    severity=finding.severity,
+                                    detail=finding.detail,
+                                    evidence={
+                                        "character": finding.character,
+                                        "line_index": finding.line_index,
+                                        "evidence": finding.evidence,
+                                    },
+                                )
+                            )
+            except Exception as exc:
+                logger.warning(
+                    "dialogue voice check failed for ch%d: %s",
+                    chapter_position,
+                    exc,
+                )
+
+    # Chapter Length — guard against "省事感" short chapters.
+    # 2026-05-23: added because the framework had no length gate, allowing
+    # 1300-zh-char chapters to ship.
+    if not skip_chapter_length:
+        try:
+            length_kwargs: dict[str, int] = {}
+            if chapter_length_hard_floor is not None:
+                length_kwargs["hard_floor"] = chapter_length_hard_floor
+            if chapter_length_soft_warning is not None:
+                length_kwargs["soft_warning"] = chapter_length_soft_warning
+            length_report = check_chapter_length(
+                chapter_text,
+                chapter_position=chapter_position,
+                **length_kwargs,
+            )
+            if length_report.has_critical:
+                findings.append(
+                    RetentionGateFinding(
+                        code=CHAPTER_TOO_SHORT_BLOCK_CODE,
+                        severity="critical",
+                        detail=length_report.finding.detail,
+                        evidence={
+                            "zh_char_count": length_report.finding.zh_char_count,
+                            "hard_floor": length_report.finding.hard_floor,
+                            "soft_warning": length_report.finding.soft_warning,
+                        },
+                    )
+                )
+                auto_repair.append(CHAPTER_TOO_SHORT_BLOCK_CODE)
+            elif length_report.finding.severity == "high":
+                findings.append(
+                    RetentionGateFinding(
+                        code=CHAPTER_BELOW_TARGET_BLOCK_CODE,
+                        severity="high",
+                        detail=length_report.finding.detail,
+                        evidence={
+                            "zh_char_count": length_report.finding.zh_char_count,
+                            "hard_floor": length_report.finding.hard_floor,
+                            "soft_warning": length_report.finding.soft_warning,
+                        },
+                    )
+                )
+        except Exception as exc:
+            logger.warning(
+                "chapter length check failed for ch%d: %s",
+                chapter_position,
+                exc,
+            )
+
     return RetentionGateReport(
         chapter_position=chapter_position,
         findings=tuple(findings),
@@ -452,6 +578,9 @@ def stamp_retention_block_codes(
 __all__ = [
     "AUTO_REPAIR_RETENTION_CODES",
     "CAST_VIOLATION_BLOCK_CODE",
+    "CHAPTER_BELOW_TARGET_BLOCK_CODE",
+    "CHAPTER_TOO_SHORT_BLOCK_CODE",
+    "DIALOGUE_AI_FLAVOR_BLOCK_CODE",
     "EXPOSITION_DUMP_BLOCK_CODE",
     "HOOK_ECHO_BLOCK_CODE",
     "SIGNATURE_SCENE_BLOCK_CODE",

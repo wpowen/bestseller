@@ -5,6 +5,7 @@ from math import ceil
 from typing import Any
 
 from bestseller.settings import AppSettings
+from bestseller.services.length_stability_gate import CHINESE_CHAPTER_HARD_MIN_WORDS
 from bestseller.services.writing_profile import is_english_language
 
 
@@ -121,6 +122,9 @@ def chapter_rewrite_length_band(
     policy = word_target_policy(settings)
     hard_min = int(policy.chapter_min)
     hard_max = int(policy.chapter_max)
+    if not is_english_language(language):
+        hard_min = max(hard_min, CHINESE_CHAPTER_HARD_MIN_WORDS)
+        hard_max = max(hard_max, hard_min)
     hard_target = _positive_int(target_word_count)
     if hard_target is None:
         hard_target = int(policy.chapter_target)
@@ -132,7 +136,10 @@ def chapter_rewrite_length_band(
         safe_min = hard_target - lower_delta
         safe_max = hard_target + upper_delta
     elif direction == "under":
-        safe_min = hard_target
+        expansion_buffer = 0
+        if not is_english_language(language):
+            expansion_buffer = min(220, max(0, hard_max - hard_target))
+        safe_min = hard_target + expansion_buffer
         safe_max = hard_target + max(220, int(round(hard_target * 0.18)))
     else:
         safe_min = hard_target - max(220, int(round(hard_target * 0.12)))
@@ -148,10 +155,9 @@ def chapter_rewrite_length_band(
     if model_output_chars is not None:
         # Reserve a small narrative + markdown overhead before the actual chapter body.
         model_safe_max = max(1, model_output_chars - 120)
-        safe_max = min(safe_max, model_safe_max)
-        if safe_max < hard_min:
-            safe_max = hard_min
-        safe_min = max(hard_min, min(safe_min, safe_max))
+        if model_safe_max >= hard_min:
+            safe_max = min(safe_max, model_safe_max)
+            safe_min = max(hard_min, min(safe_min, safe_max))
 
     return RewriteLengthBand(
         hard_min=hard_min,

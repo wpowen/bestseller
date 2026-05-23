@@ -1,0 +1,24 @@
+id: classical_chinese
+label: 古典中式
+applicable_categories:
+  - 历史架空
+  - 古典权谋
+  - 武侠群像
+palette:
+  - {category: food, name: 冷茶, sensory_hook: 半盏冷茶的涩香, class_signal: 士族日常}
+  - {category: food, name: 麦饼, sensory_hook: 麦饼边缘的焦香, class_signal: 庶民日常}
+  - {category: clothing, name: 青布短褐, sensory_hook: 青布短褐上的雨潮气, class_signal: 江湖行旅}
+  - {category: tool, name: 竹筹, sensory_hook: 竹筹相碰的轻响, class_signal: 账房器物}
+  - {category: ornament, name: 旧银簪, sensory_hook: 旧银簪的凉意, class_signal: 家族旧物}
+  - {category: music, name: 巷口笛声, sensory_hook: 巷口笛声被雨压低, class_signal: 市井背景}
+  - {category: vehicle, name: 乌篷船, sensory_hook: 乌篷船篷布上的水声, class_signal: 江南水路}
+  - {category: tool, name: 油纸伞, sensory_hook: 油纸伞骨的吱呀声, class_signal: 行旅日常}
+daily_rituals:
+  - 晨起净手
+  - 入门先称主人
+  - 饭前让席
+taboo_behaviors:
+  - 直呼长辈名讳
+  - 祭日前动刀
+aesthetic_zeitgeist: 重礼、重含蓄，以器物旧痕显示身份与时间。
+

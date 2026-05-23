@@ -134,8 +134,11 @@ def test_whole_book_quality_gate_passes_good_multi_chapter_sample() -> None:
     chapters = {idx: _good_chapter("沈姝", idx) for idx in range(1, 7)}
 
     report = evaluate_whole_book_quality(chapters)
+    payload = whole_book_quality_report_to_dict(report)
 
     assert report.passed is True
+    assert report.gate_verdict.verdict == "pass"
+    assert payload["gate_verdict"]["passed"] is True
     assert report.findings == ()
     assert len(report.ledger) == 6
     assert report.metrics["flat_chapter_count"] == 0
@@ -189,6 +192,7 @@ def test_whole_book_quality_gate_flags_stale_emotion_bomb() -> None:
     codes = {finding.code for finding in report.findings}
 
     assert report.passed is False
+    assert report.gate_verdict.verdict == "warn_only"
     assert "emotion_bomb_payoff_stale" in codes
     assert report.metrics["emotion_driven"]["stale_bomb_ids"] == ["missing-payoff"]
     assert whole_book_quality_strategy_for_findings(report.findings) == (

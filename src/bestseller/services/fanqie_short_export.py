@@ -5,18 +5,27 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import json
+import logging
 from pathlib import Path
 import re
 from typing import Any
 
-from bestseller.domain.fanqie_short import DEFAULT_SIGNING_TARGET_UNLOCKS, DEFAULT_UNLOCK_LINE_RATIO
+from bestseller.domain.fanqie_short import (
+    DEFAULT_SIGNING_TARGET_UNLOCKS,
+    DEFAULT_UNLOCK_LINE_RATIO,
+)
 from bestseller.services.drafts import count_words
 from bestseller.services.fanqie_short_gate_v2 import evaluate_fanqie_short_v2_readiness
 from bestseller.services.fanqie_short_opening_gate import (
     evaluate_fanqie_short_opening_gate,
     scan_fanqie_short_taboo_signals,
 )
-from bestseller.services.fanqie_short_ranking_gate import evaluate_fanqie_core_ranking_readiness
+from bestseller.services.fanqie_short_ranking_gate import (
+    evaluate_fanqie_core_ranking_readiness,
+)
+from bestseller.services.forbidden_terms_learner import learn_from_rejected_export
+
+logger = logging.getLogger(__name__)
 
 
 def insert_unlock_line_marker(
@@ -210,6 +219,14 @@ def export_fanqie_short_rejected_draft(
         ),
         encoding="utf-8",
     )
+    try:
+        learn_from_rejected_export(output_dir)
+    except Exception:
+        logger.debug(
+            "forbidden term candidate refresh failed for %s",
+            rejected_dir,
+            exc_info=True,
+        )
     return {
         "rejected_markdown_path": str(md_path.resolve()),
         "rejection_report_path": str(report_path.resolve()),

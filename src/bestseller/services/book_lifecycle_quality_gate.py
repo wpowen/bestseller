@@ -4,6 +4,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from bestseller.domain.gate_verdict import (
+    AggregateGateReport,
+    GateFinding,
+    GateVerdict,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class BookLifecycleQualityThresholds:
@@ -92,6 +98,31 @@ class BookLifecycleDomainStatus:
             "metrics": dict(self.metrics),
         }
 
+    @property
+    def gate_verdict(self) -> GateVerdict:
+        if any(finding.severity == "critical" for finding in self.findings):
+            verdict = "blocked"
+        elif self.passed:
+            verdict = "pass"
+        else:
+            verdict = "warn_only"
+        return GateVerdict(
+            gate_name=self.domain,
+            verdict=verdict,
+            coverage=1.0 if self.passed else 0.0,
+            findings=tuple(
+                GateFinding(
+                    code=finding.code,
+                    severity=finding.severity,
+                    message=finding.message,
+                    path=finding.path,
+                    repair_action=finding.repair_action,
+                )
+                for finding in self.findings
+            ),
+            metrics=dict(self.metrics),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class BookLifecycleQualityReport:
@@ -108,8 +139,9 @@ class BookLifecycleQualityReport:
     def to_dict(self) -> dict[str, object]:
         return {
             "slug": self.slug,
-            "passed": self.passed,
+            "passed": self.aggregate_gate_report.passed,
             "readiness_level": self.readiness_level,
+            "aggregate_gate_report": self.aggregate_gate_report.model_dump(mode="json"),
             "domain_statuses": [
                 domain_status.to_dict() for domain_status in self.domain_statuses
             ],
@@ -117,6 +149,13 @@ class BookLifecycleQualityReport:
             "metrics": dict(self.metrics),
             "thresholds": self.thresholds.to_dict(),
         }
+
+    @property
+    def aggregate_gate_report(self) -> AggregateGateReport:
+        return AggregateGateReport(
+            gate_name="lifecycle-quality",
+            gates=tuple(status.gate_verdict for status in self.domain_statuses),
+        )
 
 
 def _as_mapping(value: object | None) -> Mapping[str, Any]:

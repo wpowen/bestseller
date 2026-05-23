@@ -265,8 +265,15 @@ def check_character_role_compliance(
 
         # 2. Abilities present in chapter?
         if profile.abilities:
+            ability_markers = tuple(
+                dict.fromkeys(
+                    marker
+                    for marker in (*profile.abilities, *profile.expected_tone_markers)
+                    if marker
+                )
+            )
             abilities_hit = sum(
-                1 for a in profile.abilities if a and a in chapter_text
+                1 for marker in ability_markers if marker in chapter_text
             )
             if abilities_hit == 0:
                 # The character is on-page but uses NONE of their declared
@@ -279,7 +286,7 @@ def check_character_role_compliance(
                         detail=(
                             f"{profile.name} is on page ({mention_count} mentions) "
                             f"but none of declared abilities used: "
-                            f"{list(profile.abilities)[:5]}"
+                            f"{list(ability_markers)[:8]}"
                         ),
                     )
                 )

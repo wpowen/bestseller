@@ -172,6 +172,36 @@ def test_commercial_gate_flags_contract_drift_and_canon_leak(tmp_path: Path) -> 
     assert "PLANNING_ARTIFACT_GENRE_DRIFT" in codes
     assert "READER_CONTRACT_GAP" in codes
     assert "PREMATURE_MAJOR_PAYOFF" in codes
+    assert report.gate_verdict.verdict == "blocked"
+    assert report.gate_verdict.passed is False
+
+
+def test_commercial_gate_allows_negated_forbidden_terms_in_planning_contracts(tmp_path: Path) -> None:
+    _write_package(tmp_path, drift=False)
+    (tmp_path / "story-bible" / "canon-guardrails.json").write_text(
+        json.dumps(
+            {
+                "forbidden_terms": [{"term": "玩家", "reason": "游戏化漂移"}],
+                "state_rules": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "story-bible" / "prewrite-contract.json").write_text(
+        json.dumps({"protagonist_forbidden_vocabulary": ["玩家"]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (tmp_path / "story-bible" / "ch51-75-recovery-contract.md").write_text(
+        "禁用游戏化漂移词：玩家。后续必须替换为入局者或欠账人。",
+        encoding="utf-8",
+    )
+
+    report = evaluate_book_package(tmp_path)
+    codes = {issue.code for issue in report.issues}
+
+    assert "PLANNING_ARTIFACT_CANON_LEAK" not in codes
+    assert "PLANNING_ARTIFACT_GENRE_DRIFT" not in codes
 
 
 def test_commercial_gate_flags_stitched_chapter_integrity_defects(tmp_path: Path) -> None:
@@ -215,6 +245,21 @@ def test_commercial_gate_flags_stitched_chapter_integrity_defects(tmp_path: Path
     assert "MANUSCRIPT_STITCH_MARKER" in codes
 
 
+def test_commercial_gate_ignores_material_layer_as_floor_anchor(tmp_path: Path) -> None:
+    _write_package(tmp_path, drift=False)
+    (tmp_path / "chapter-001.md").write_text(
+        "# 第1章 测试\n\n"
+        "林渊按下二十三层的按钮，电梯门合上。\n\n"
+        "镜子里站着七个人，面目模糊，像隔着一层磨砂玻璃在看。\n",
+        encoding="utf-8",
+    )
+
+    report = evaluate_book_package(tmp_path)
+    scoped_codes = {issue.code for issue in report.issues if issue.chapter_no == 1}
+
+    assert "CHAPTER_LOCATION_CONFLICT" not in scoped_codes
+
+
 def test_commercial_gate_blocks_opening_reset_in_first_ten_chapters(
     tmp_path: Path,
 ) -> None:
@@ -253,6 +298,9 @@ def test_commercial_gate_issues_include_full_closure_contract(
     payload = commercial_gate_report_to_dict(evaluate_book_package(tmp_path))
     issue = next(item for item in payload["issues"] if item["code"] == "CHAPTER_OPENING_RESET")
 
+    assert payload["quality_score"] == payload["overall_score"]
+    assert payload["passed"] is payload["gate_verdict"]["passed"]
+    assert payload["gate_verdict"]["gate_name"] == "commercial_novel_gate"
     assert payload["closure_plan"]["required"] is True
     assert payload["closure_plan"]["blocking_issue_count"] >= 1
     assert "chapter:8" in payload["closure_plan"]["rerun_scopes"]

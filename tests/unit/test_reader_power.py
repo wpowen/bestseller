@@ -31,6 +31,22 @@ def test_golden_three_report_accepts_strong_opening_signals() -> None:
     assert payload["chapters"][0]["assigned_hype_type"] == "counterattack"
 
 
+def test_golden_three_report_accepts_suspense_mystery_conflict_words() -> None:
+    report = analyze_golden_three(
+        chapter_texts=(
+            (1, "铜镜倒计时只剩十五分钟，王建业不认账就会被拖进镜里。"),
+            (2, "尸水从门缝往上爬，林渊必须逼张建军认下旧债！"),
+            (3, "小雨快被镜债吞掉，陈默困在门里，真相却被账页撕走？"),
+        ),
+        chapter_hype=((1, HypeType.REVERSAL), (2, HypeType.FACE_SLAP), (3, None)),
+        language="zh-CN",
+    )
+
+    payload = serialize_golden_three_report(report)
+
+    assert "GOLDEN_THREE_WEAK_OPEN_CONFLICT" not in payload["issue_codes"]
+
+
 def test_golden_three_report_flags_weak_opening() -> None:
     report = analyze_golden_three(
         chapter_texts=((1, "主角醒来，吃饭，出门，回家。"),),

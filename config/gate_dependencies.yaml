@@ -1,0 +1,16 @@
+defaults:
+  chapter:
+    - commercial_novel_gate
+    - whole_book_quality
+  story_bible:
+    - lifecycle_quality
+    - commercial_novel_gate
+  project:
+    - lifecycle_quality
+gates:
+  commercial_novel_gate:
+    required: true
+  whole_book_quality:
+    required: true
+  lifecycle_quality:
+    required: true

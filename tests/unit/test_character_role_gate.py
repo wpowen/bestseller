@@ -86,6 +86,19 @@ def test_abilities_used_passes() -> None:
     assert report.passed
 
 
+def test_expected_tone_marker_counts_as_role_ability() -> None:
+    text = (
+        "林渊盯着镜面。\n"
+        "林渊把铜钱贴在门缝上，听见三短一长的回声。\n"
+        "账页在黑暗里翻了一下。\n"
+    )
+    report = check_character_role_compliance(
+        text, chapter_position=1, profiles=[_lin_yuan_profile()]
+    )
+
+    assert not [f for f in report.findings if f.drift_type == "ability_absent"]
+
+
 def test_no_abilities_used_high_severity() -> None:
     text = (
         "林渊在十七栋走廊。\n"

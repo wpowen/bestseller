@@ -287,6 +287,13 @@ class SceneWriterContextPacket(BaseModel):
     hook_echo_block: str | None = None
     exposition_density_block: str | None = None
 
+    # ── Anti-slop prose beat sheet ──
+    # Rendered by scene_beat_planner / scene_beat_renderer. It translates
+    # abstract chapter and scene contracts into visible camera beats before
+    # drafting, so the writer sees actions, objects, sensory anchors, and a
+    # concrete in-scene ending instead of planning-language summaries.
+    scene_beat_block: str | None = None
+
     # Canon guardrails — chapter-aware forbidden-character/state list.
     # When set, the writing LLM is forbidden from introducing listed
     # characters before their allowed chapter. Cleanest defense against

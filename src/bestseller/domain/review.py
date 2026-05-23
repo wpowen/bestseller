@@ -27,6 +27,7 @@ class SceneReviewScores(BaseModel):
     worldbuilding_integration: float = Field(ge=0, le=1)
     prose_variety: float = Field(ge=0, le=1)
     moral_complexity: float = Field(ge=0, le=1)
+    moral_complexity_evidence: list[str] = Field(default_factory=list)
     contract_alignment: float = Field(ge=0, le=1)
 
     # ── Phase-1 wiring: pacing & subplot alignment ──

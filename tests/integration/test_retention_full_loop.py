@@ -36,6 +36,7 @@ def test_retention_full_loop_blocks_prompts_and_passes_after_echo_repair() -> No
         prev_chapter_position=1,
         skip_signature=True,
         skip_exposition=True,
+        skip_chapter_length=True,
     )
     stamp_retention_block_codes(chapter, failed)
     exhausted = _apply_retention_retry_budget(
@@ -64,6 +65,7 @@ def test_retention_full_loop_blocks_prompts_and_passes_after_echo_repair() -> No
         prev_chapter_position=1,
         skip_signature=True,
         skip_exposition=True,
+        skip_chapter_length=True,
     )
 
     assert passed.passed

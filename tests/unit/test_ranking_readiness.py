@@ -259,3 +259,99 @@ def test_project_ranking_readiness_derives_project_evidence() -> None:
     assert report.tier in {"strong_project", "flagship"}
     assert report.marketing_assets["short_video_scripts"][0]["duration_seconds"] == 15
     assert report.ip_readiness["status"] == "ready"
+
+
+def test_project_ranking_readiness_blocks_low_scorecard_and_incomplete_book() -> None:
+    project = SimpleNamespace(
+        slug="qingnang",
+        title="青囊不语问阴阳",
+        genre="悬疑",
+        sub_genre="民俗悬疑",
+        language="zh-CN",
+        target_chapters=500,
+        metadata_json={
+            "reader_promise": ["规则破局", "镜债反制"],
+            "volume_plan": [{"volume_number": 1, "major_payoff": "救出父亲"}],
+            "ending_plan": "十卷回收父亲线和第一笔镜债。",
+        },
+        theme_statement="否认现实的人终会被现实入账。",
+        dramatic_question="林渊能否逼所有人认账？",
+    )
+    writing_profile = {
+        "market": {
+            "opening_contract": "子时入镜，否认者先入账。",
+            "chapter_hook_strategy": "每章尾部保留镜债升级。",
+            "payoff_rhythm": "三章一小回收。",
+        },
+        "character": {"antagonist_mode": "镜债系统性对手"},
+        "serialization": {
+            "first_three_chapter_goal": "立人立局立钩。",
+            "scene_drive_rule": "每场必须有目标阻碍升级。",
+            "chapter_ending_rule": "章末留下新债。",
+        },
+        "style": {
+            "prose_style": "commercial-web-serial",
+            "sentence_style": "short-punchy",
+            "tone_keywords": ["民俗", "悬疑"],
+            "info_density": "lean",
+            "custom_rules": ["少解释，多动作"],
+        },
+    }
+    story_bible = SimpleNamespace(
+        world_backbone=SimpleNamespace(core_promise="镜债规则", thematic_melody="认账"),
+        characters=[
+            SimpleNamespace(
+                name="林渊",
+                role="主角",
+                goal="救父",
+                fear="父亲永困镜中",
+                flaw="习惯独自扛债",
+                arc_trajectory="从否认到认账",
+                voice_profile={"cadence": "冷硬"},
+                moral_framework={"rule": "不让无辜者替债"},
+            ),
+            SimpleNamespace(name="王建业", role="反派"),
+        ],
+        world_rules=[SimpleNamespace(name="否认者先入账", story_consequence="否认债务会入镜")],
+        locations=[SimpleNamespace(name="十七栋凶宅"), SimpleNamespace(name="困魂镜")],
+        factions=[SimpleNamespace(name="张家")],
+        relationships=[SimpleNamespace(character_a="林渊", character_b="王建业")],
+        volume_frontiers=[SimpleNamespace(volume_number=1)],
+        deferred_reveals=[SimpleNamespace(reveal_code="father_truth")],
+    )
+    listing = {
+        "primary_title": "青囊不语问阴阳",
+        "logline": "落魄风水师接下凶宅委托，却被困进一面以否认为食的困魂镜。",
+        "short_intro": "林渊必须逼活人认账，才能从镜中夺回父亲线索。",
+        "promo_copy": ["子时之后，别照镜子。", "谁不认账，谁先入账。", "他见鬼先看方位。"],
+        "tags": ["悬疑", "民俗", "风水师", "规则怪谈", "凶宅"],
+        "reader_promise": ["规则破局", "镜债反制"],
+        "title_candidates": [{"title": f"标题{i}"} for i in range(20)],
+        "main_characters": [{"name": "林渊", "role": "主角"}],
+    }
+
+    report = evaluate_project_ranking_readiness(
+        project,
+        writing_profile=writing_profile,
+        story_bible=story_bible,
+        listing_profile=listing,
+        scorecard_quality_score=66.35,
+        scorecard_snapshot={
+            "quality_score": 66.35,
+            "total_chapters": 100,
+            "missing_chapters": 400,
+            "length_cv": 0.1842,
+            "cliffhanger_entropy": 0.3451,
+            "hype_intensity_variance": 11.574,
+            "top_overused_words": [["林渊的手", 15], ["沈家旧卷", 14]],
+        },
+        premium_gate_score=85,
+    )
+
+    codes = {finding.code for finding in report.findings}
+    assert report.passed is False
+    assert report.tier == "immature"
+    assert report.maturity_score == 69
+    assert "scorecard_quality_below_recommendation" in codes
+    assert "book_completion_below_target" in codes
+    assert "cliffhanger_entropy_low" in codes

@@ -221,6 +221,38 @@ class OriginalityEngineConfig:
     chapter_length_gate_enabled: bool = True
 
 
+@dataclass(frozen=True)
+class ProseQualityGateConfig:
+    """Anti-slop prose gates and prompt sanitization posture."""
+
+    sanitize_prompt: bool = True
+    beat_planner_enabled: bool = True
+    anti_meta_enabled: bool = True
+    anti_meta_severity: str = "block"
+    show_dont_tell_enabled: bool = True
+    show_dont_tell_severity: str = "warn"
+    in_scene_ending_enabled: bool = True
+    in_scene_ending_severity: str = "block"
+
+
+@dataclass(frozen=True)
+class NarrativeRichnessConfig:
+    """Feature flags for geography/culture/ensemble/mystery/dilemma kernels."""
+
+    enabled: bool = True
+    prompt_injection_enabled: bool = True
+    default_mode: str = "warn"
+    strict_categories: tuple[str, ...] = (
+        "历史架空",
+        "古典权谋",
+        "武侠群像",
+        "史诗",
+        "wuxia-jianghu",
+        "history-strategy",
+        "western_fantasy",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Phase B/C/D — webnovel-writer adoption flags (plan: shimmying-soaring-gadget).
 # ---------------------------------------------------------------------------
@@ -288,6 +320,10 @@ class QualityGatesConfig:
     phase_c: PhaseCOverridesConfig = field(default_factory=PhaseCOverridesConfig)
     phase_d: PhaseDTimeConfig = field(default_factory=PhaseDTimeConfig)
     ai_flavor: AiFlavorGateConfig = field(default_factory=AiFlavorGateConfig)
+    prose_quality: ProseQualityGateConfig = field(default_factory=ProseQualityGateConfig)
+    narrative_richness: NarrativeRichnessConfig = field(
+        default_factory=NarrativeRichnessConfig
+    )
     methodology_framework: MethodologyFrameworkConfig = field(
         default_factory=MethodologyFrameworkConfig
     )
@@ -359,6 +395,8 @@ def load_quality_gates_config(
     story_principle = _as_dict(raw.get("story_principle_gate"))
     methodology_framework = _as_dict(raw.get("methodology_framework"))
     originality_engine = _as_dict(raw.get("originality_engine"))
+    prose_quality = _as_dict(raw.get("prose_quality"))
+    narrative_richness = _as_dict(raw.get("narrative_richness"))
     l7 = _as_dict(raw.get("l7_continuous_audit"))
     l8 = _as_dict(raw.get("l8_scorecard"))
     l2_stance = _as_dict(l2_checks.get("stance_flip_justification"))
@@ -453,6 +491,8 @@ def load_quality_gates_config(
         phase_c=_build_phase_c(_as_dict(raw.get("phase_c_overrides"))),
         phase_d=_build_phase_d(_as_dict(raw.get("phase_d_time"))),
         ai_flavor=_build_ai_flavor(_as_dict(raw.get("ai_flavor_gate"))),
+        prose_quality=_build_prose_quality(prose_quality),
+        narrative_richness=_build_narrative_richness(narrative_richness),
         methodology_framework=_build_methodology_framework(methodology_framework),
         originality_engine=_build_originality_engine(originality_engine),
     )
@@ -502,6 +542,42 @@ def _safe_bool(raw: Any, default: bool) -> bool:
     if raw is None:
         return default
     return bool(raw)
+
+
+def _build_narrative_richness(raw: dict[str, Any]) -> NarrativeRichnessConfig:
+    categories_raw = raw.get("strict_categories")
+    categories = (
+        tuple(str(item) for item in categories_raw if isinstance(item, str))
+        if isinstance(categories_raw, list)
+        else NarrativeRichnessConfig().strict_categories
+    )
+    default_mode = str(raw.get("default_mode", "warn"))
+    if default_mode not in {"warn", "strict"}:
+        default_mode = "warn"
+    return NarrativeRichnessConfig(
+        enabled=bool(raw.get("enabled", True)),
+        prompt_injection_enabled=bool(raw.get("prompt_injection_enabled", True)),
+        default_mode=default_mode,
+        strict_categories=categories,
+    )
+
+
+def _build_prose_quality(raw: dict[str, Any]) -> ProseQualityGateConfig:
+    beat = _as_dict(raw.get("beat_planner"))
+    gates = _as_dict(raw.get("gates"))
+    anti_meta = _as_dict(gates.get("anti_meta"))
+    show = _as_dict(gates.get("show_dont_tell"))
+    ending = _as_dict(gates.get("in_scene_ending"))
+    return ProseQualityGateConfig(
+        sanitize_prompt=_safe_bool(raw.get("sanitize_prompt"), True),
+        beat_planner_enabled=_safe_bool(beat.get("enabled"), True),
+        anti_meta_enabled=_safe_bool(anti_meta.get("enabled"), True),
+        anti_meta_severity=str(anti_meta.get("severity") or "block"),
+        show_dont_tell_enabled=_safe_bool(show.get("enabled"), True),
+        show_dont_tell_severity=str(show.get("severity") or "warn"),
+        in_scene_ending_enabled=_safe_bool(ending.get("enabled"), True),
+        in_scene_ending_severity=str(ending.get("severity") or "block"),
+    )
 
 
 def _build_methodology_framework(raw: dict[str, Any]) -> MethodologyFrameworkConfig:

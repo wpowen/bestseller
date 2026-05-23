@@ -1,0 +1,23 @@
+id: apocalypse_wasteland
+label: 末世废土
+applicable_categories:
+  - 末世废土
+  - post-apocalypse
+palette:
+  - {category: food, name: 压缩饼干, sensory_hook: 压缩饼干碎屑里的油腥味, class_signal: 避难所配给}
+  - {category: food, name: 净水片, sensory_hook: 净水片溶开后的漂白味, class_signal: 生存物资}
+  - {category: clothing, name: 补丁防尘衣, sensory_hook: 防尘衣袖口的沙粒摩擦, class_signal: 荒野行旅}
+  - {category: tool, name: 手摇电台, sensory_hook: 手摇电台旋钮里的杂音, class_signal: 联络工具}
+  - {category: ornament, name: 金属身份牌, sensory_hook: 身份牌贴在锁骨上的冷硬, class_signal: 旧秩序遗物}
+  - {category: music, name: 断续广播歌, sensory_hook: 广播歌声被电流撕裂, class_signal: 废墟背景}
+  - {category: vehicle, name: 改装越野车, sensory_hook: 越野车排气管的焦油味, class_signal: 荒原交通}
+  - {category: tool, name: 辐射计, sensory_hook: 辐射计指针轻轻抖动, class_signal: 风险探测}
+daily_rituals:
+  - 入夜前封门
+  - 分水前核对人数
+  - 离营前检查滤芯
+taboo_behaviors:
+  - 在水源旁清洗伤口
+  - 未经通报打开避难所外门
+aesthetic_zeitgeist: 稀缺、警觉、修补感，所有物件都带着旧世界的残痕。
+

@@ -11,6 +11,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from bestseller.domain.calendar_system import CalendarSystem
+from bestseller.domain.cultural_texture import CulturalTextureModule
+from bestseller.domain.honorific_system import HonorificSystem
+from bestseller.domain.religious_organization import ReligiousOrganization
 from bestseller.services.story_shape_router import StoryShape
 
 PlotLineType = Literal[
@@ -176,6 +180,7 @@ class WorldviewLocation(BaseModel, frozen=True):
     """A repeatable location whose rules can generate scenes and conflicts."""
 
     name: str = Field(min_length=1)
+    region_id: str | None = None
     surface_function: str = Field(min_length=1)
     hidden_function: str = Field(min_length=1)
     conflict_sources: list[str] = Field(min_length=1)
@@ -594,6 +599,10 @@ class WorldviewKernel(BaseModel, frozen=True):
     authority_claims: list[WorldAuthorityClaim] = Field(default_factory=list)
     scene_templates: list[WorldSceneTemplateBinding] = Field(default_factory=list)
     anti_copy_boundaries: list[str] = Field(default_factory=list)
+    cultural_texture_module: CulturalTextureModule | None = None
+    calendar_module: CalendarSystem | None = None
+    religious_organization_module: ReligiousOrganization | None = None
+    honorific_system_module: HonorificSystem | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1099,6 +1108,58 @@ def render_story_design_kernel_prompt_block(
                 f"{template.key}: {template.template_name}; use={template.use_case}; "
                 f"required_change={', '.join(template.required_change[:4])}"
             )
+        if worldview.cultural_texture_module is not None:
+            module = worldview.cultural_texture_module
+            anchors = ", ".join(
+                f"{item.name}/{item.sensory_hook}" for item in module.palette[:4]
+            )
+            lines.extend(
+                [
+                    "### Cultural texture module",
+                    f"- Palette anchors: {anchors}",
+                    f"- Aesthetic zeitgeist: {module.aesthetic_zeitgeist}",
+                ]
+            )
+            if module.daily_rituals:
+                lines.append(f"- Daily rituals: {', '.join(module.daily_rituals[:4])}")
+            if module.taboo_behaviors:
+                lines.append(f"- Taboos: {', '.join(module.taboo_behaviors[:4])}")
+        if worldview.calendar_module is not None:
+            calendar = worldview.calendar_module
+            festivals = ", ".join(
+                f"{festival.name}({festival.season})"
+                for festival in calendar.major_festivals[:4]
+            )
+            lines.extend(
+                [
+                    "### Calendar module",
+                    f"- Calendar type: {calendar.calendar_type}",
+                    f"- Festivals: {festivals}",
+                ]
+            )
+            if calendar.forbidden_dates:
+                lines.append(f"- Forbidden dates: {', '.join(calendar.forbidden_dates[:4])}")
+        if worldview.religious_organization_module is not None:
+            org = worldview.religious_organization_module
+            lines.extend(
+                [
+                    "### Religious organization module",
+                    f"- {org.name}: doctrine={org.core_doctrine}",
+                    f"- Hierarchy: {', '.join(org.hierarchy[:5])}",
+                    f"- Sacred sites: {', '.join(org.sacred_sites[:5])}",
+                ]
+            )
+        if worldview.honorific_system_module is not None:
+            honorific = worldview.honorific_system_module
+            pairs = ", ".join(
+                f"{key}={value}"
+                for key, value in list(honorific.inferior_to_superior.items())[:5]
+            )
+            lines.extend(["### Honorific system module", f"- Inferior to superior: {pairs}"])
+            if honorific.forbidden_addresses:
+                lines.append(
+                    f"- Forbidden addresses: {', '.join(honorific.forbidden_addresses[:5])}"
+                )
         if worldview.anti_copy_boundaries:
             lines.append(
                 "- World anti-copy boundaries: "

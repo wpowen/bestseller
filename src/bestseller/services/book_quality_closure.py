@@ -10,6 +10,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from bestseller.domain.gate_verdict import AggregateGateReport, GateVerdict
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
@@ -196,6 +197,9 @@ class BookClosureReport:
     errors: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object | None]:
+        lifecycle_quality = _lifecycle_quality_with_gate_report(
+            self.lifecycle_quality or {}
+        )
         return {
             "slug": self.slug,
             "status": self.status,
@@ -223,10 +227,32 @@ class BookClosureReport:
             "after_acceptance": dict(self.after_acceptance or {}),
             "fleet_row": self.fleet_row.to_dict() if self.fleet_row else None,
             "lifecycle_evidence": dict(self.lifecycle_evidence or {}),
-            "lifecycle_quality": dict(self.lifecycle_quality or {}),
+            "lifecycle_quality": lifecycle_quality,
             "report_paths": dict(self.report_paths),
             "errors": list(self.errors),
         }
+
+
+def _lifecycle_quality_with_gate_report(
+    lifecycle_quality: Mapping[str, object],
+) -> dict[str, object]:
+    payload = dict(lifecycle_quality)
+    if not payload or "aggregate_gate_report" in payload:
+        return payload
+    readiness = str(payload.get("readiness_level") or payload.get("readiness") or "")
+    passed = bool(payload.get("passed")) and readiness not in {"blocked", "partial"}
+    gate = GateVerdict(
+        gate_name="book-quality-closure",
+        verdict="pass" if passed else "blocked",
+        coverage=1.0 if passed else 0.0,
+        metrics={"readiness": readiness},
+    )
+    payload["aggregate_gate_report"] = AggregateGateReport(
+        gate_name="book-quality-closure",
+        gates=(gate,),
+    ).model_dump(mode="json")
+    payload["passed"] = gate.passed
+    return payload
 
 
 def _as_mapping(value: object | None) -> Mapping[str, Any]:

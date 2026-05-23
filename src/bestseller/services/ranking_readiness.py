@@ -817,6 +817,7 @@ def evaluate_project_ranking_readiness(
     listing_profile: Mapping[str, Any] | None = None,
     behavior_metrics: Mapping[str, Any] | None = None,
     scorecard_quality_score: float | None = None,
+    scorecard_snapshot: Mapping[str, Any] | None = None,
     premium_gate_score: float | None = None,
     external_gate_findings: Sequence[Mapping[str, Any] | RankingReadinessFinding] | None = None,
 ) -> RankingReadinessReport:
@@ -831,6 +832,14 @@ def evaluate_project_ranking_readiness(
     )
     marketing_assets = build_listing_marketing_asset_pack(listing, story_bible=story_bible)
     ip_readiness = build_listing_ip_readiness(listing, story_bible=story_bible)
+    readiness_findings = (
+        *_project_scorecard_findings(
+            project,
+            scorecard_quality_score=scorecard_quality_score,
+            scorecard_snapshot=scorecard_snapshot,
+        ),
+        *(external_gate_findings or ()),
+    )
     return evaluate_ranking_readiness(
         project_slug=_clean_text(_get_value(project, "slug")) or None,
         title=_clean_text(_get_value(project, "title")) or None,
@@ -839,8 +848,131 @@ def evaluate_project_ranking_readiness(
         behavior_metrics=behavior_metrics,
         marketing_assets=marketing_assets,
         ip_readiness=ip_readiness,
-        external_gate_findings=external_gate_findings,
+        external_gate_findings=readiness_findings,
     )
+
+
+def _project_scorecard_findings(
+    project: Any,
+    *,
+    scorecard_quality_score: float | None,
+    scorecard_snapshot: Mapping[str, Any] | None,
+) -> tuple[RankingReadinessFinding, ...]:
+    """Convert L8 scorecard signals into ranking-readiness blockers.
+
+    The project readiness report is a launch decision surface, not only a
+    text-feature assessment. A low L8 scorecard or an incomplete long-form
+    target must cap maturity even when listing/profile text looks strong.
+    """
+
+    findings: list[RankingReadinessFinding] = []
+    snapshot = dict(scorecard_snapshot or {})
+    quality = _float_or_none(snapshot.get("quality_score"))
+    if quality is None:
+        quality = scorecard_quality_score
+    if quality is not None and quality < 75.0:
+        findings.append(
+            RankingReadinessFinding(
+                code="scorecard_quality_below_recommendation",
+                severity="critical",
+                scope="scorecard.quality_score",
+                message=f"L8 质量分 {quality:.2f} 低于推荐线 75。",
+                suggestion="先修复 scorecard 暴露的结构、节奏和语言问题，再做商业化评级。",
+                evidence={"quality_score": quality, "minimum": 75.0},
+            )
+        )
+
+    target_chapters = _positive_int(_get_value(project, "target_chapters"))
+    total_chapters = _positive_int(snapshot.get("total_chapters"))
+    missing_chapters = _positive_int(snapshot.get("missing_chapters"))
+    if missing_chapters is None and target_chapters is not None and total_chapters is not None:
+        missing_chapters = max(0, target_chapters - total_chapters)
+    if target_chapters is not None and missing_chapters and missing_chapters > 0:
+        actual = (
+            total_chapters
+            if total_chapters is not None
+            else max(0, target_chapters - missing_chapters)
+        )
+        completion = actual / target_chapters if target_chapters else 0.0
+        findings.append(
+            RankingReadinessFinding(
+                code="book_completion_below_target",
+                severity="critical",
+                scope="scorecard.completion",
+                message=(
+                    f"长篇目标 {target_chapters} 章，当前约 {actual} 章，"
+                    f"缺 {missing_chapters} 章。"
+                ),
+                suggestion="不要把试写/阶段稿标为旗舰可上架；先完成目标体量或降级项目目标。",
+                evidence={
+                    "target_chapters": target_chapters,
+                    "total_chapters": actual,
+                    "missing_chapters": missing_chapters,
+                    "completion_ratio": round(completion, 4),
+                },
+            )
+        )
+
+    length_cv = _float_or_none(snapshot.get("length_cv"))
+    if length_cv is not None and length_cv > 0.10:
+        findings.append(
+            RankingReadinessFinding(
+                code="chapter_length_stability_low",
+                severity="high",
+                scope="scorecard.length_cv",
+                message=f"章节字数波动系数 {length_cv:.4f} 高于 0.10。",
+                suggestion="归一化章节目标字数，重写过短/过长章节后再评估节奏稳定性。",
+                evidence={"length_cv": length_cv, "maximum": 0.10},
+            )
+        )
+
+    cliffhanger_entropy = _float_or_none(snapshot.get("cliffhanger_entropy"))
+    if cliffhanger_entropy is not None and cliffhanger_entropy < 0.55:
+        findings.append(
+            RankingReadinessFinding(
+                code="cliffhanger_entropy_low",
+                severity="high",
+                scope="scorecard.cliffhanger_entropy",
+                message=f"章末钩子熵 {cliffhanger_entropy:.4f} 低于 0.55。",
+                suggestion="轮换章末钩子类型，减少同一种威胁/反问/身份危机重复收束。",
+                evidence={"cliffhanger_entropy": cliffhanger_entropy, "minimum": 0.55},
+            )
+        )
+
+    hype_variance = _float_or_none(snapshot.get("hype_intensity_variance"))
+    if hype_variance is not None and hype_variance > 10.0:
+        findings.append(
+            RankingReadinessFinding(
+                code="hype_intensity_variance_high",
+                severity="high",
+                scope="scorecard.hype_intensity_variance",
+                message=f"爽点/压力强度方差 {hype_variance:.4f} 高于 10。",
+                suggestion="重排强弱章节，把连续高压和低压段改成可预期的升级节奏。",
+                evidence={"hype_intensity_variance": hype_variance, "maximum": 10.0},
+            )
+        )
+
+    overused = _sequence(snapshot.get("top_overused_words"))
+    severe_overuse = [
+        item
+        for item in overused
+        if isinstance(item, Sequence)
+        and not isinstance(item, str | bytes)
+        and len(item) >= 2
+        and (_positive_int(item[1]) or 0) >= 12
+    ]
+    if severe_overuse:
+        findings.append(
+            RankingReadinessFinding(
+                code="top_overused_words_high",
+                severity="medium",
+                scope="scorecard.top_overused_words",
+                message="高频重复词簇过密，文本存在可见复读风险。",
+                suggestion="对高频词簇做替换、删减或语义分散，避免连续章节重复同一表达。",
+                evidence={"top_overused_words": severe_overuse[:10]},
+            )
+        )
+    return tuple(findings)
 
 
 def derive_project_dimension_scores(
@@ -1043,6 +1175,21 @@ def _non_empty(value: Any) -> bool:
     if isinstance(value, Sequence) and not isinstance(value, str | bytes):
         return bool(value)
     return True
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _find_protagonist(characters: Sequence[Any]) -> Any | None:

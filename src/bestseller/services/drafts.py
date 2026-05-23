@@ -45,12 +45,12 @@ from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
 )
 from bestseller.services.context import build_scene_writer_context_from_models
+from bestseller.services.dialogue_personality_bridge import (
+    render_dialogue_personality_bridge_block,
+)
 from bestseller.services.diversity_budget import (
     load_diversity_budget,
     save_diversity_budget,
-)
-from bestseller.services.dialogue_personality_bridge import (
-    render_dialogue_personality_bridge_block,
 )
 from bestseller.services.invariants import InvariantSeedError, invariants_from_dict
 from bestseller.services.llm import LLMCompletionRequest, complete_text
@@ -2036,8 +2036,8 @@ logger = logging.getLogger(__name__)
 # Uses triple-quoted string to safely contain Chinese fullwidth quotes.
 _NOVEL_OUTPUT_PROHIBITION = """\
 【严禁出现以下内容】：
-- 不得出现\u201c钩子\u201d\u201c开场白\u201d\u201c设想\u201d\u201c尾钩\u201d\u201c入场状态\u201d\u201c离场状态\u201d\u201c收束状态\u201d\u201c剧情任务\u201d\u201c情绪任务\u201d等策划术语
-- 严禁在章节或场景末尾输出【小钩子：...】【中钩子：...】【大钩子：...】等钩子摘要标记——这些是内部规划标签，绝不能出现在正文中
+- 不得出现开场结构、结尾牵引、入场状态、离场状态、收束状态、剧情任务、情绪任务等策划术语
+- 严禁在章节或场景末尾输出任何内部摘要标记或策划标签——这些是内部规划信息，绝不能出现在正文中
 - 不得出现\u201c修订说明\u201d\u201c重写策略\u201d\u201c上一版草稿\u201d\u201c场景说明\u201d\u201c写法指导\u201d等元评论
 - 不得出现\u201c这一场景要完成的剧情任务是\u201d\u201c以下是\u201d\u201c以上是\u201d等解释性前缀
 - 不得出现 entry_state / exit_state / contract / scene_type 等英文结构化标签
@@ -2068,8 +2068,8 @@ _NOVEL_OUTPUT_PROHIBITION = """\
 
 _NOVEL_OUTPUT_PROHIBITION_EN = """\
 FORBIDDEN OUTPUT — the following must NEVER appear in the prose:
-- Do not output planning terms: "hook", "opening beat", "premise", "tail hook", "entry state", "exit state", "closing state", "story task", "emotion task"
-- Do not output hook summary labels at the end of scenes or chapters: [Small Hook: ...] [Medium Hook: ...] [Large Hook: ...] — these are internal planning tags and must never appear in prose
+- Do not output planning terms for opening structures, ending pull, premises, entry state, exit state, closing state, story task, or emotion task
+- Do not output summary labels at the end of scenes or chapters — these are internal planning tags and must never appear in prose
 - Do not output meta-commentary: "revision notes", "rewrite strategy", "previous draft", "scene notes", "writing guidance"
 - Do not output explanatory prefixes: "The story task for this scene is", "The following is", "The above is"
 - Do not output structural labels: entry_state / exit_state / contract / scene_type
@@ -2191,7 +2191,7 @@ async def validate_and_clean_novel_content(
     system_prompt = (
         "你是小说正文校验编辑。你的唯一任务是删除或改写混入正文的非小说内容。\n"
         "非小说内容包括但不限于：\n"
-        "1. 策划术语：钩子、开场白、设想、尾钩、剧情任务、情绪任务、入场状态、离场状态、收束状态\n"
+        "1. 策划术语：开场结构标签、结尾牵引标签、剧情任务、情绪任务、入场状态、离场状态、收束状态\n"
         "2. 元评论：修订说明、重写策略、上一版草稿、写法指导、场景说明\n"
         "3. 英文结构标签：entry_state、exit_state、scene_summary、contract 等\n"
         "4. 解释性前缀/后缀：\u201c以下是\u201d\u201c以上是\u201d\u201c这一场景要完成的剧情任务是\u201d\n\n"
@@ -3136,7 +3136,7 @@ def _render_contract_section(
         if chapter_contract.get("core_conflict"):
             sections.append(f"- {'Chapter core conflict' if is_en else '章节核心冲突'}：{chapter_contract['core_conflict']}")
         if chapter_contract.get("closing_hook"):
-            sections.append(f"- {'Chapter closing hook' if is_en else '章节尾钩'}：{chapter_contract['closing_hook']}")
+            sections.append(f"- {'Chapter ending turn' if is_en else '章节收尾转折'}：{chapter_contract['closing_hook']}")
         overlay_block = render_overlay_prompt_block(
             chapter_overlay=chapter_contract,
             language=language,
@@ -3158,7 +3158,7 @@ def _render_contract_section(
         if scene_contract.get("core_conflict"):
             sections.append(f"- {'Scene core conflict' if is_en else '场景核心冲突'}：{scene_contract['core_conflict']}")
         if scene_contract.get("tail_hook"):
-            sections.append(f"- {'Scene tail hook' if is_en else '场景尾钩'}：{scene_contract['tail_hook']}")
+            sections.append(f"- {'Scene ending turn' if is_en else '场景收尾转折'}：{scene_contract['tail_hook']}")
         if scene_contract.get("thematic_task"):
             sections.append(
                 (
@@ -3342,7 +3342,7 @@ def _story_principle_scene_focus(
         "desire_lock": {
             "opening": "用行为亮出主角想要的结果，不要解释。",
             "development": "逼出一个会收窄选项的可见选择。",
-            "handoff": "让读者想看这个已承诺目标能否扛住压力。",
+            "handoff": "让读者想看这个已建立目标能否扛住压力。",
         },
         "obstacle_escalation": {
             "opening": "尽快让阻碍上页。",
@@ -3360,7 +3360,7 @@ def _story_principle_scene_focus(
             "handoff": "暴露转折带来的后果。",
         },
         "payoff_feedback": {
-            "opening": "尽早落下承诺过的兑现或失败信号。",
+            "opening": "尽早落下前文期待的兑现或失败信号。",
             "development": "展示反馈和余波，包括代价。",
             "handoff": "把反馈转换成下一步欲望或未解问题。",
         },
@@ -3581,7 +3581,7 @@ def render_scene_draft_markdown(
 
 _SCENE_TYPE_GUIDANCE: dict[str, str] = {
     "hook": (
-        "这是一个钩子/开场场景。用强烈的感官画面或悬念动作立刻抓住读者注意力："
+        "这是一个强开场场景。用强烈的感官画面或悬念动作立刻抓住读者注意力："
         "角色必须在第一段就处于行动或困境中，严禁平铺直叙的背景介绍。"
         "抛出一个读者必须知道答案的问题或一个打破日常的意外事件。"
         "结尾要让读者非翻下一页不可。"
@@ -3703,9 +3703,9 @@ def _scene_type_writing_guidance(scene_type: str, *, language: str | None = None
     return guidance_map.get(
         scene_type,
         (
-            "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook."
+            "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing turn."
             if is_en
-            else "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。"
+            else "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾牵引。"
         ),
     )
 
@@ -4183,6 +4183,7 @@ def build_scene_draft_prompts(
     #   (rendered from canon_guardrails). Prevents premature cast drift.
     hook_echo_block: str | None = None,
     exposition_density_block: str | None = None,
+    scene_beat_block: str | None = None,
     canon_guardrails_block: str | None = None,
     # ── Story Integrity blocks (LLM-first whitelists) ──
     # 2026-05-23: these three blocks were rendered but never injected
@@ -4224,7 +4225,7 @@ def build_scene_draft_prompts(
         system_prompt = (
             # --- Part A: Creative voice anchor ---
             "You are an expert fiction writer inside a long-form commercial fiction system. "
-            "You write vivid, cinematic prose with sharp rhythm and irresistible hooks.\n"
+            "You write vivid, cinematic prose with sharp rhythm and strong forward pull.\n"
             "Your core craft:\n"
             "- Show, don't tell — replace adjectives with action: not 'she was nervous' but 'her nails bit into her palm'.\n"
             "- Consequences over description — not 'the wave was huge' but 'the freighter flipped like a bathtub toy'.\n"
@@ -4258,7 +4259,7 @@ def build_scene_draft_prompts(
     else:
         system_prompt = (
             # --- Part A: 创作声音锚点 (Positive creative guidance) ---
-            "你是功力深厚的中文网文写手，擅长写出有画面感、有节奏、有钩子的商业小说。\n"
+            "你是功力深厚的中文网文写手，擅长写出有画面感、有节奏、有牵引力的商业小说。\n"
             "你的核心能力：\n"
             "・用动作代替形容词——不写「她很紧张」，写「她的手指死死掐进掌心」\n"
             "・用后果代替描述——不写「巨浪很大」，写「几千吨重的巨轮像塑料玩具一样被瞬间掀翻」\n"
@@ -4619,6 +4620,9 @@ def build_scene_draft_prompts(
     _exposition_density_line = ""
     if exposition_density_block:
         _exposition_density_line = f"{exposition_density_block}\n\n"
+    _scene_beat_line = ""
+    if scene_beat_block:
+        _scene_beat_line = f"{scene_beat_block}\n\n"
     _canon_guardrails_line = ""
     if canon_guardrails_block:
         _canon_guardrails_line = f"{canon_guardrails_block}\n\n"
@@ -4787,6 +4791,7 @@ def build_scene_draft_prompts(
             "prior_persona_feedback_line": _prior_persona_feedback_line,
             "hook_echo_line": _hook_echo_line,
             "exposition_density_line": _exposition_density_line,
+            "scene_beat_line": _scene_beat_line,
             "canon_guardrails_line": _canon_guardrails_line,
             "timeline_canon_line": _timeline_canon_line,
             "scene_coherence_line": _scene_coherence_line,
@@ -4863,6 +4868,7 @@ def build_scene_draft_prompts(
     _prior_persona_feedback_line = _ctx["prior_persona_feedback_line"]
     _hook_echo_line = _ctx["hook_echo_line"]
     _exposition_density_line = _ctx["exposition_density_line"]
+    _scene_beat_line = _ctx["scene_beat_line"]
     _canon_guardrails_line = _ctx["canon_guardrails_line"]
     _timeline_canon_line = _ctx["timeline_canon_line"]
     _scene_coherence_line = _ctx["scene_coherence_line"]
@@ -4920,6 +4926,7 @@ def build_scene_draft_prompts(
             f"{_canon_guardrails_line}"
             f"{_hook_echo_line}"
             f"{_exposition_density_line}"
+            f"{_scene_beat_line}"
             f"{_prior_persona_feedback_line}"
             f"{_project_material_reference_line}"
             f"{_library_reference_line}"
@@ -4992,7 +4999,7 @@ def build_scene_draft_prompts(
             "Write the scene in English only. Do not switch to Chinese. "
             "Do not reveal information that belongs to future chapters, and do not contradict established facts or timeline beats. "
             "Prioritize the deterministic path retrieval and narrative-tree constraints when they exist. "
-            "The scene must land the core conflict, emotional movement, information release, and tail hook required by the scene contract. "
+            "The scene must land the core conflict, emotional movement, information release, and closing turn required by the scene contract. "
             "Keep exposition compressed; hide setting inside action, exchange, consequence, and detail.\n"
             "OPENING DIVERSITY: Do NOT open this scene with darkness, pain, waking up, or loss of consciousness. "
             "Choose from: mid-action, dialogue, a sensory detail, an environmental observation, a character's thought about something specific, a question, or an ironic contrast. "
@@ -5025,6 +5032,7 @@ def build_scene_draft_prompts(
             f"{_canon_guardrails_line}"
             f"{_hook_echo_line}"
             f"{_exposition_density_line}"
+            f"{_scene_beat_line}"
             f"{_prior_persona_feedback_line}"
             f"{_project_material_reference_line}"
             f"{_library_reference_line}"
@@ -5096,7 +5104,7 @@ def build_scene_draft_prompts(
             f"{_scene_type_writing_guidance(scene.scene_type, language=language)}"
             "不得泄露未来章节才会揭示的信息，不得与当前已知事实和时间线冲突。"
             "优先服从 deterministic path retrieval 与 narrative tree 提供的结构化约束。"
-            "必须覆盖 scene contract 的核心冲突、情绪变化、信息释放和尾钩。"
+            "必须覆盖 scene contract 的核心冲突、情绪变化、信息释放和结尾牵引。"
             "背景说明必须压缩到最少，优先把设定藏进人物行动、交易、冲突后果和细节里。"
             "不要用空泛抒情、不要先解释世界观、不要写成提纲口吻。\n"
             "【开头多样性】本场景不要以黑暗、痛苦、失去意识或醒来开场。"
@@ -5870,6 +5878,51 @@ async def generate_scene_draft(
             prewrite_plan,
             language=language,
         )
+        if context_packet is not None and not context_packet.scene_beat_block:
+            try:
+                if get_quality_gates_config().prose_quality.beat_planner_enabled:
+                    from bestseller.services.scene_beat_planner import (
+                        build_scene_beat_sheet,
+                    )
+                    from bestseller.services.scene_beat_renderer import (
+                        render_scene_beat_sheet_block,
+                    )
+
+                    _scene_contract = (
+                        context_packet.scene_contract.model_dump(mode="json")
+                        if context_packet.scene_contract is not None
+                        else None
+                    )
+                    _chapter_contract = (
+                        context_packet.chapter_contract.model_dump(mode="json")
+                        if context_packet.chapter_contract is not None
+                        else None
+                    )
+                    _beat_sheet = build_scene_beat_sheet(
+                        chapter_number=chapter.chapter_number,
+                        scene_number=scene.scene_number,
+                        scene_title=scene.title,
+                        scene_type=scene.scene_type,
+                        time_label=scene.time_label,
+                        participants=list(scene.participants or []),
+                        chapter_goal=chapter.chapter_goal,
+                        story_purpose=(scene.purpose or {}).get("story"),
+                        emotion_purpose=(scene.purpose or {}).get("emotion"),
+                        entry_state=scene.entry_state or {},
+                        exit_state=scene.exit_state or {},
+                        scene_contract=_scene_contract,
+                        chapter_contract=_chapter_contract,
+                        word_target=scene.target_word_count,
+                    )
+                    context_packet.scene_beat_block = (
+                        render_scene_beat_sheet_block(_beat_sheet, language=language)
+                        or None
+                    )
+            except Exception:
+                logger.debug(
+                    "scene beat sheet direct-draft injection failed (non-fatal)",
+                    exc_info=True,
+                )
         system_prompt, user_prompt = build_scene_draft_prompts(
             project,
             chapter,
@@ -6023,6 +6076,9 @@ async def generate_scene_draft(
             ),
             l3_prompt_block=(
                 context_packet.l3_prompt_block if context_packet else None
+            ),
+            scene_beat_block=(
+                context_packet.scene_beat_block if context_packet else None
             ),
             library_reference_block=await _maybe_render_library_soft_reference(
                 session,
@@ -6735,10 +6791,10 @@ async def maybe_prepare_chapter_auto_repair(
 
     retention_hint_by_code = {
         "HOOK_ECHO_MISSING": (
-            "本章没有在开篇呼应上一章尾钩。重写时必须在前1000字内兑现、升级或反转上一章留下的具体钩子。"
+            "本章没有在开篇呼应上一章结尾留下的具体未解问题。重写时必须在前1000字内兑现、升级或反转上一章留下的具体危险、人物或物件。"
         ),
         "HOOK_ECHO_LOW": (
-            "本章对上一章尾钩呼应不足。重写时必须在前1000字内增加至少两个明确回响：具体人物/地点/威胁/未答问题要被兑现、升级或反转。"
+            "本章对上一章结尾呼应不足。重写时必须在前1000字内增加至少两个明确回响：具体人物/地点/威胁/未答问题要被兑现、升级或反转。"
         ),
         "SIGNATURE_SCENE_MISSING": (
             "本章处在招牌场景槽位，但没有兑现招牌场景指令。重写时必须落实指定意象、誓约或揭示场面。"
@@ -6791,7 +6847,7 @@ async def maybe_prepare_chapter_auto_repair(
             if prev_tokens and not missed_tokens:
                 hint_text = (
                     f"{hint_text}\n"
-                    f"上一章可回响钩子：{'；'.join(prev_tokens[:8])}。"
+                    f"上一章尾钩可回响要素：{'；'.join(prev_tokens[:8])}。"
                 )
         if "CAST_VIOLATION" in ordered_codes:
             cast_details = _details_for_retention_finding("CAST_VIOLATION")
@@ -7085,7 +7141,7 @@ async def maybe_prepare_chapter_auto_repair(
         else:
             hint_fragments.append(
                 f"【最终修复尝试】{_length_budget_note}章节字数不足问题持续存在。"
-                "本次必须优先补足关键冲突、动作、对话和尾钩，使章节回到发布硬范围内。"
+                "本次必须优先补足关键冲突、动作、对话和结尾牵引，使章节回到发布硬范围内。"
             )
 
     if "BLOCK_HIGH" in canonical_hits:
@@ -7105,7 +7161,7 @@ async def maybe_prepare_chapter_auto_repair(
         else:
             hint_fragments.append(
                 f"【最终修复尝试】{_length_budget_note}章节字数超标问题持续存在。"
-                "本次必须只保留主冲突、关键动作、必要对白和尾钩，删除解释性铺陈，"
+                "本次必须只保留主冲突、关键动作、必要对白和结尾牵引，删除解释性铺陈，"
                 "使章节回到发布硬范围内。"
             )
 
@@ -7132,12 +7188,13 @@ async def maybe_prepare_chapter_auto_repair(
     if "ENDING_SENTENCE_WEAK" in canonical_hits:
         if _attempt == 1:
             hint_fragments.append(
-                "上一版本的章节结尾缺少明确钩子。本次重写请把最后一段改成新的威胁、"
+                "章节结尾缺少明确钩子：上一版本的章节结尾缺少明确的动作或信息推进。"
+                "本次重写请把最后一段改成新的威胁、"
                 "发现、决定或反转，避免以平静收束、总结感想或问题已解决的句子结尾。"
             )
         elif _attempt == 2:
             hint_fragments.append(
-                "【紧急修复第2次】章节结尾钩子仍然不够强。最后 200 字必须包含"
+                "【紧急修复第2次】章节结尾牵引仍然不够强。最后 200 字必须包含"
                 "以下任一项：\n"
                 "1. 一个突然出现的威胁或敌人（打破当前的平静状态）\n"
                 "2. 一个颠覆性的发现（推翻之前认定的真相）\n"
@@ -7147,7 +7204,7 @@ async def maybe_prepare_chapter_auto_repair(
             )
         else:
             hint_fragments.append(
-                "【最终修复尝试】章节结尾钩子问题持续存在。本次为最后一次重写——"
+                "【最终修复尝试】章节结尾牵引问题持续存在。本次为最后一次重写——"
                 "请在最后一段加入一个悬念性的句子即可，即使不够强也将被接受。"
             )
 
@@ -7183,7 +7240,7 @@ async def maybe_prepare_chapter_auto_repair(
             f"{_canon_state_detail_note}"
             "本次重写必须按当前正典修正这些称谓和关系：不得把父亲写成爷爷/祖父，"
             "不得把先祖、父亲、爷爷等身份混用；不要解释错误版本，直接用正确关系重写相关句子，"
-            "并保持本章核心冲突、信息揭示和结尾钩子继续推进。"
+            "并保持本章核心冲突、信息揭示和结尾牵引继续推进。"
         )
     if "NAMING_OUT_OF_POOL" in canonical_hits:
         _naming_detail_note = (

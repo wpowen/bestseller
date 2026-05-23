@@ -81,6 +81,19 @@ l5_chapter_validator:
       enabled: true
       no_repeat_within: 3
 
+narrative_richness:
+  enabled: true
+  prompt_injection_enabled: true
+  default_mode: warn
+  strict_categories:
+    - 历史架空
+    - 古典权谋
+    - 武侠群像
+    - 史诗
+    - wuxia-jianghu
+    - history-strategy
+    - western_fantasy
+
 l6_write_gate:
   enabled: true
   default: audit_only
@@ -235,3 +248,28 @@ ai_flavor_gate:
   # block threshold is routed to human review. Flip to false only when
   # you want the gate to be advisory-only.
   block_on_residual: true
+
+# ---------------------------------------------------------------------------
+# Anti-slop prose system — prompt sanitization + scene beats + structure gates.
+# Keeps planning/market language out of prose prompts, then blocks chapter
+# boundary narration and out-of-scene endings after draft assembly.
+# ---------------------------------------------------------------------------
+prose_quality:
+  sanitize_prompt: true
+  beat_planner:
+    enabled: true
+    beats_per_chapter: [4, 7]
+    cliff_type_distribution:
+      action: 0.4
+      image: 0.35
+      reveal: 0.25
+  gates:
+    anti_meta:
+      enabled: true
+      severity: block
+    show_dont_tell:
+      enabled: true
+      severity: warn
+    in_scene_ending:
+      enabled: true
+      severity: block

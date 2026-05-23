@@ -2409,6 +2409,59 @@ async def run_scene_pipeline(
                     exc_info=True,
                 )
 
+        # ── Anti-slop scene beat sheet ──
+        # Translate abstract chapter/scene contracts into camera-level beats
+        # before drafting. This is intentionally deterministic and non-fatal:
+        # missing context still leaves the legacy prompt path intact.
+        if shared_context is not None:
+            try:
+                _prose_cfg = get_quality_gates_config().prose_quality
+                if _prose_cfg.beat_planner_enabled:
+                    from bestseller.services.scene_beat_planner import (
+                        build_scene_beat_sheet,
+                    )
+                    from bestseller.services.scene_beat_renderer import (
+                        render_scene_beat_sheet_block,
+                    )
+
+                    _scene_contract = (
+                        shared_context.scene_contract.model_dump(mode="json")
+                        if shared_context.scene_contract is not None
+                        else None
+                    )
+                    _chapter_contract = (
+                        shared_context.chapter_contract.model_dump(mode="json")
+                        if shared_context.chapter_contract is not None
+                        else None
+                    )
+                    _beat_sheet = build_scene_beat_sheet(
+                        chapter_number=chapter_number,
+                        scene_number=scene_number,
+                        scene_title=getattr(scene, "title", None),
+                        scene_type=getattr(scene, "scene_type", None),
+                        time_label=getattr(scene, "time_label", None),
+                        participants=list(getattr(scene, "participants", None) or []),
+                        chapter_goal=getattr(chapter, "chapter_goal", None),
+                        story_purpose=(getattr(scene, "purpose", None) or {}).get("story"),
+                        emotion_purpose=(getattr(scene, "purpose", None) or {}).get("emotion"),
+                        entry_state=getattr(scene, "entry_state", None) or {},
+                        exit_state=getattr(scene, "exit_state", None) or {},
+                        scene_contract=_scene_contract,
+                        chapter_contract=_chapter_contract,
+                        word_target=getattr(scene, "target_word_count", None),
+                    )
+                    _lang = getattr(project, "language", None) or settings.generation.language
+                    shared_context.scene_beat_block = (
+                        render_scene_beat_sheet_block(_beat_sheet, language=_lang) or None
+                    )
+            except Exception:
+                logger.debug(
+                    "scene beat sheet injection failed for ch%d sc%d (non-fatal)",
+                    chapter_number,
+                    scene_number,
+                    exc_info=True,
+                )
+
         # ── Prewrite planning-kernel directives ──
         # These are generated from the project-level prewrite readiness gate.
         # They make macro-planning failures immediately visible to active
@@ -3007,6 +3060,7 @@ async def run_scene_pipeline(
                             settings.generation, "pacing_profile", "medium"
                         ) or "medium",
                         golden_finger_ladder=_ladder,
+                        sanitize_for_prose=get_quality_gates_config().prose_quality.sanitize_prompt,
                     )
                     shared_context.reader_contract_block = (
                         _hype_blocks.reader_contract_block or None
@@ -3038,13 +3092,21 @@ async def run_scene_pipeline(
                         _l3_cfg.enabled
                         and _invariants_for_hype is not None
                     ):
+                        from bestseller.services.kernel_composer import (
+                            narrative_richness_context_from_metadata,
+                        )
                         from bestseller.services.prompt_constructor import (
                             build_chapter_l3_blocks,
+                        )
+
+                        _richness_context = narrative_richness_context_from_metadata(
+                            project.metadata_json or {}
                         )
                         _l3_blocks = build_chapter_l3_blocks(
                             _invariants_for_hype,
                             _budget_for_hype,
                             chapter_no=chapter_number,
+                            narrative_richness_context=_richness_context,
                             hot_vocab_window=_l3_cfg.hot_vocab_window_chapters,
                             hot_vocab_top_n=_l3_cfg.hot_vocab_top_n,
                             hot_vocab_min_count=_l3_cfg.hot_vocab_min_count,
@@ -4772,6 +4834,101 @@ async def run_chapter_pipeline(
                     step_order += 1
         except Exception:
             logger.debug("ai_flavor_gate failed (non-fatal)", exc_info=True)
+
+        # ── Anti-slop prose gates ───────────────────────────────────────
+        # Structural prose checks added by the Anti-Slop Prose System:
+        # anti-meta blocks chapter-boundary/design-language leaks and
+        # out-of-scene endings; show-don't-tell is advisory by default.
+        try:
+            _prose_cfg = get_quality_gates_config().prose_quality
+            if (
+                chapter_draft is not None
+                and chapter_draft.content_md
+                and (_prose_cfg.anti_meta_enabled or _prose_cfg.show_dont_tell_enabled)
+            ):
+                if _prose_cfg.anti_meta_enabled:
+                    from bestseller.services.anti_meta_gate import (
+                        check_anti_meta_gate,
+                    )
+
+                    _anti_meta = check_anti_meta_gate(
+                        chapter_draft.content_md,
+                        chapter_position=chapter_number,
+                    )
+                    _anti_report = _anti_meta.to_checker_report()
+                    _anti_blocks = (
+                        (not _anti_meta.passed)
+                        and (
+                            _prose_cfg.anti_meta_severity == "block"
+                            or (
+                                not _anti_meta.ending_passed
+                                and _prose_cfg.in_scene_ending_severity == "block"
+                            )
+                        )
+                    )
+                    if _anti_blocks:
+                        chapter.status = ChapterStatus.REVISION.value
+                        chapter.production_state = "blocked"
+                        scene_requires_human_review = True
+                        workflow_run.metadata_json = {
+                            **workflow_run.metadata_json,
+                            "blocked_by_anti_meta_gate": True,
+                            "anti_meta_metrics": _anti_report.metrics,
+                        }
+                    if _anti_report.issues:
+                        await create_workflow_step_run(
+                            session,
+                            workflow_run_id=workflow_run.id,
+                            step_name="anti_meta_gate",
+                            step_order=step_order,
+                            status=WorkflowStatus.COMPLETED,
+                            output_ref={
+                                "passed": _anti_report.passed,
+                                "issues": len(_anti_report.issues),
+                                "metrics": _anti_report.metrics,
+                            },
+                        )
+                        step_order += 1
+                if _prose_cfg.show_dont_tell_enabled:
+                    from bestseller.services.show_dont_tell_gate import (
+                        check_show_dont_tell_gate,
+                    )
+
+                    _show = check_show_dont_tell_gate(
+                        chapter_draft.content_md,
+                        chapter_position=chapter_number,
+                    )
+                    _show_report = _show.to_checker_report()
+                    _show_blocks = (
+                        not _show.passed
+                        and _prose_cfg.show_dont_tell_severity == "block"
+                    )
+                    if _show_blocks:
+                        chapter.status = ChapterStatus.REVISION.value
+                        chapter.production_state = "blocked"
+                        scene_requires_human_review = True
+                        workflow_run.metadata_json = {
+                            **workflow_run.metadata_json,
+                            "blocked_by_show_dont_tell_gate": True,
+                            "show_dont_tell_metrics": _show_report.metrics,
+                        }
+                    if _show_report.issues:
+                        await create_workflow_step_run(
+                            session,
+                            workflow_run_id=workflow_run.id,
+                            step_name="show_dont_tell_gate",
+                            step_order=step_order,
+                            status=WorkflowStatus.COMPLETED,
+                            output_ref={
+                                "passed": _show_report.passed,
+                                "issues": len(_show_report.issues),
+                                "metrics": _show_report.metrics,
+                                "blocks_write": _show_blocks,
+                            },
+                        )
+                        step_order += 1
+        except Exception:
+            logger.debug("anti-slop prose gates failed (non-fatal)", exc_info=True)
 
         async def _export_current_chapter_markdown() -> tuple[UUID | None, str | None]:
             nonlocal current_step_name

@@ -1,0 +1,23 @@
+id: steampunk
+label: 蒸汽朋克
+applicable_categories:
+  - 蒸汽朋克
+  - steampunk
+palette:
+  - {category: food, name: 炉边炖豆, sensory_hook: 炖豆混着煤烟的热气, class_signal: 工坊日常}
+  - {category: food, name: 苦艾酒, sensory_hook: 苦艾酒在铜杯里的草药气, class_signal: 沙龙消费}
+  - {category: clothing, name: 防油长围裙, sensory_hook: 长围裙上的机油黏味, class_signal: 技工身份}
+  - {category: tool, name: 黄铜压力表, sensory_hook: 压力表玻璃后的指针颤动, class_signal: 机械秩序}
+  - {category: ornament, name: 齿轮怀表, sensory_hook: 齿轮怀表贴着掌心细响, class_signal: 中产体面}
+  - {category: music, name: 留声机圆舞曲, sensory_hook: 圆舞曲从留声机里带着沙沙底噪, class_signal: 客厅背景}
+  - {category: vehicle, name: 蒸汽轨车, sensory_hook: 蒸汽轨车刹车时的铁锈味, class_signal: 城市交通}
+  - {category: tool, name: 铆钉钳, sensory_hook: 铆钉钳合拢时的钝响, class_signal: 工业工具}
+daily_rituals:
+  - 上工前校准压力阀
+  - 沙龙入场先递名片
+  - 雾钟响后封闭高架桥
+taboo_behaviors:
+  - 在锅炉房点明火
+  - 越级拆开公会封印
+aesthetic_zeitgeist: 进步崇拜与阶层焦虑并存，铜、烟、齿轮和礼帽共同定义体面。
+

@@ -28,6 +28,7 @@ import re
 import statistics
 from typing import Any, Literal
 
+from bestseller.domain.gate_verdict import GateFinding, GateVerdict
 from bestseller.services.canon_guardrails import (
     CanonGuardrails,
     load_canon_guardrails_file,
@@ -113,6 +114,39 @@ class CommercialGateReport:
     def hard_issues(self) -> tuple[CommercialGateIssue, ...]:
         return tuple(issue for issue in self.issues if issue.severity in {"critical", "high"})
 
+    @property
+    def gate_verdict(self) -> GateVerdict:
+        if any(issue.severity == "critical" for issue in self.issues):
+            verdict = "blocked"
+        elif self.passed:
+            verdict = "pass"
+        else:
+            verdict = "warn_only"
+        return GateVerdict(
+            gate_name="commercial_novel_gate",
+            verdict=verdict,
+            coverage=max(0.0, min(1.0, self.overall_score / 100)),
+            findings=tuple(
+                GateFinding(
+                    code=issue.code,
+                    severity=issue.severity,
+                    message=issue.detail,
+                    path=(
+                        f"chapter-{issue.chapter_no:03d}.md"
+                        if issue.chapter_no is not None
+                        else ""
+                    ),
+                    repair_action=issue.suggestion,
+                )
+                for issue in self.issues
+            ),
+            metrics={
+                **dict(self.metrics),
+                "quality_score": self.overall_score,
+                "total_chapters": self.total_chapters,
+            },
+        )
+
 
 @dataclass(frozen=True)
 class ChapterText:
@@ -183,12 +217,15 @@ def evaluate_book_package(
 
 
 def commercial_gate_report_to_dict(report: CommercialGateReport) -> dict[str, Any]:
+    gate_verdict = report.gate_verdict
     return {
         "book_id": report.book_id,
         "title": report.title,
         "total_chapters": report.total_chapters,
         "overall_score": report.overall_score,
-        "passed": report.passed,
+        "quality_score": report.overall_score,
+        "passed": gate_verdict.passed,
+        "gate_verdict": gate_verdict.model_dump(mode="json"),
         "metrics": dict(report.metrics),
         "closure_plan": _commercial_gate_closure_plan(report),
         "issues": [
@@ -393,7 +430,7 @@ def _check_planning_artifact_drift(
         if not term:
             continue
         for rel_path, text in artifacts.items():
-            if term in text:
+            if _count_unshielded_planning_term(text, term):
                 forbidden_hits.setdefault(term, []).append(rel_path)
     if forbidden_hits:
         issues.append(
@@ -425,7 +462,7 @@ def _check_planning_artifact_drift(
     drift_hits: dict[str, dict[str, int]] = {}
     for rel_path, text in artifacts.items():
         for term in policy.infinite_flow_drift_terms:
-            count = text.count(term)
+            count = _count_unshielded_planning_term(text, term)
             if count:
                 drift_hits.setdefault(term, {})[rel_path] = count
     if drift_hits:
@@ -446,6 +483,44 @@ def _check_planning_artifact_drift(
             )
         )
     return issues
+
+
+_NEGATED_PLANNING_TERM_MARKERS = (
+    "forbidden",
+    "forbid",
+    "禁止",
+    "禁用",
+    "不得",
+    "不能",
+    "不要",
+    "不可",
+    "不应",
+    "剥离",
+    "改写",
+    "替换",
+    "清理",
+    "旧设定",
+    "废弃",
+)
+
+
+def _count_unshielded_planning_term(text: str, term: str) -> int:
+    if not term:
+        return 0
+    count = 0
+    start = 0
+    while True:
+        index = text.find(term, start)
+        if index < 0:
+            return count
+        if not _is_negated_planning_term_occurrence(text, index, len(term)):
+            count += 1
+        start = index + len(term)
+
+
+def _is_negated_planning_term_occurrence(text: str, index: int, term_len: int) -> bool:
+    window = text[max(0, index - 80) : min(len(text), index + term_len + 80)]
+    return any(marker in window for marker in _NEGATED_PLANNING_TERM_MARKERS)
 
 
 def _load_planning_artifact_texts(root: Path) -> dict[str, str]:
@@ -583,6 +658,15 @@ _CHINESE_DIGITS = {
 }
 
 _FLOOR_RE = re.compile(r"(?<!栋)([0-9]+|[零一二两三四五六七八九十百]{1,4})(?:层|楼)")
+_FLOOR_FALSE_POSITIVE_PREFIXES = (
+    "一层磨砂",
+    "一层薄",
+    "一层雾",
+    "一层灰",
+    "一层纸",
+    "一层皮",
+    "一层水",
+)
 _OPENING_RESET_RE = re.compile(
     r"^\s*(?:"
     r"(?:[零一二两三四五六七八九十0-9]{1,4}[点时])|"
@@ -654,6 +738,8 @@ def _check_location_anchor_conflicts(
         window = chapter.text[:1800] if chapter.chapter_no <= 3 else chapter.text[:900]
         floor_hits: dict[int, list[str]] = {}
         for match in _FLOOR_RE.finditer(window):
+            if any(window[match.start() : match.start() + len(prefix)] == prefix for prefix in _FLOOR_FALSE_POSITIVE_PREFIXES):
+                continue
             number = _parse_cjk_integer(match.group(1))
             if number is None:
                 continue

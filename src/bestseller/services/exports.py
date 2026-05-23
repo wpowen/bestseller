@@ -22,10 +22,14 @@ from bestseller.infra.db.models import (
     ExportArtifactModel,
     ProjectModel,
 )
-from bestseller.services.drafts import count_words, format_chapter_heading, sanitize_novel_markdown_content
 from bestseller.services.book_listing import (
     build_book_listing_profile,
     write_platform_title_workflow_artifacts,
+)
+from bestseller.services.drafts import (
+    count_words,
+    format_chapter_heading,
+    sanitize_novel_markdown_content,
 )
 from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
 from bestseller.services.projects import get_project_by_slug
@@ -154,6 +158,138 @@ def _csv_cell(value: object) -> str:
     return f'"{text}"'
 
 
+def _coerce_chapter_range(value: object) -> tuple[int, int] | None:
+    if isinstance(value, str):
+        match = re.search(r"(\d+)\s*[-–]\s*(\d+)", value)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+        return None
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        try:
+            return int(value[0]), int(value[1])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _metadata_volume_plan_rows(
+    metadata: dict,
+    *,
+    max_generated: int,
+    fallback_target: int,
+    reader_promise: str,
+) -> list[str]:
+    plan = metadata.get("premium_volume_plan")
+    if not isinstance(plan, list) or not plan:
+        plan = metadata.get("volume_plan")
+    if not isinstance(plan, list) or not plan:
+        return [
+            ",".join(
+                [
+                    _csv_cell("1"),
+                    _csv_cell("1"),
+                    _csv_cell(str(fallback_target or max_generated or 1)),
+                    _csv_cell("writing"),
+                    _csv_cell(reader_promise),
+                ]
+            )
+        ]
+
+    rows: list[str] = []
+    for index, item in enumerate(plan, start=1):
+        if not isinstance(item, dict):
+            continue
+        volume_no = int(item.get("volume_number") or index)
+        chapter_range = _coerce_chapter_range(item.get("chapter_range")) or (
+            (volume_no - 1) * 50 + 1,
+            volume_no * 50,
+        )
+        start, end = chapter_range
+        if max_generated >= end:
+            status = "drafted"
+        elif start <= max_generated <= end:
+            status = "active"
+        else:
+            status = "planned"
+        goal = _flatten_text(item.get("volume_goal") or item.get("volume_title") or item.get("core_payoff"))
+        rows.append(
+            ",".join(
+                [
+                    _csv_cell(str(volume_no)),
+                    _csv_cell(str(start)),
+                    _csv_cell(str(end)),
+                    _csv_cell(status),
+                    _csv_cell(goal or reader_promise),
+                ]
+            )
+        )
+    return rows
+
+
+def _metadata_batch_queue_rows(metadata: dict, *, max_generated: int, reader_promise: str) -> list[str]:
+    volume_plan = metadata.get("premium_volume_plan")
+    if not isinstance(volume_plan, list) or not volume_plan:
+        volume_plan = metadata.get("volume_plan")
+    if not isinstance(volume_plan, list) or not volume_plan:
+        if not max_generated:
+            return [
+                ",".join(
+                    [_csv_cell("1"), _csv_cell("1"), _csv_cell("0"), _csv_cell(reader_promise), _csv_cell("empty")]
+                )
+            ]
+        rows = []
+        batch_size = 10
+        for batch_no, start in enumerate(range(1, max_generated + 1, batch_size), start=1):
+            end = min(start + batch_size - 1, max_generated)
+            rows.append(
+                ",".join(
+                    [
+                        _csv_cell(str(batch_no)),
+                        _csv_cell(str(start)),
+                        _csv_cell(str(end)),
+                        _csv_cell(reader_promise),
+                        _csv_cell("drafted"),
+                    ]
+                )
+            )
+        return rows
+
+    rows: list[str] = []
+    for index, item in enumerate(volume_plan, start=1):
+        if not isinstance(item, dict):
+            continue
+        volume_no = int(item.get("volume_number") or index)
+        chapter_range = _coerce_chapter_range(item.get("chapter_range")) or (
+            (volume_no - 1) * 50 + 1,
+            volume_no * 50,
+        )
+        start, end = chapter_range
+        if max_generated >= end:
+            status = "drafted"
+        elif start <= max_generated <= end:
+            status = "active"
+        else:
+            status = "planned"
+        callback = _flatten_text(
+            item.get("reader_hook_to_next")
+            or item.get("foreshadowing_planted")
+            or item.get("core_payoff")
+            or item.get("volume_goal")
+        )
+        rows.append(
+            ",".join(
+                [
+                    _csv_cell(f"{volume_no}A"),
+                    _csv_cell(str(start)),
+                    _csv_cell(str(end)),
+                    _csv_cell(callback or reader_promise),
+                    _csv_cell(status),
+                ]
+            )
+        )
+    return rows
+
+
 def _write_commercial_package_sidecars(
     project: ProjectModel,
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
@@ -242,43 +378,22 @@ def _write_commercial_package_sidecars(
         )
     (story_bible_dir / "continuity-ledger.md").write_text("\n".join(ledger_lines).strip() + "\n", encoding="utf-8")
 
-    volume_rows = ['"volume","start_chapter","end_chapter","status","goal"']
     target = max(int(getattr(project, "target_chapters", 0) or 0), len(chapter_payloads))
     generated = [int(ch.chapter_number) for ch, _ in chapter_payloads]
     max_generated = max(generated) if generated else 0
-    volume_rows.append(
-        ",".join(
-            [
-                _csv_cell("1"),
-                _csv_cell("1"),
-                _csv_cell(str(target or max_generated or 1)),
-                _csv_cell(getattr(project, "status", "") or "writing"),
-                _csv_cell(_flatten_text(series_engine.get("core_engine")) or reader_promise),
-            ]
+    volume_rows = ['"volume","start_chapter","end_chapter","status","goal"']
+    volume_rows.extend(
+        _metadata_volume_plan_rows(
+            metadata,
+            max_generated=max_generated,
+            fallback_target=target,
+            reader_promise=_flatten_text(series_engine.get("core_engine")) or reader_promise,
         )
     )
     (story_bible_dir / "volume-plan.csv").write_text("\n".join(volume_rows) + "\n", encoding="utf-8")
 
     batch_rows = ['"batch","start_chapter","end_chapter","required_callbacks","status"']
-    if max_generated:
-        batch_size = 10
-        batch_no = 1
-        for start in range(1, max_generated + 1, batch_size):
-            end = min(start + batch_size - 1, max_generated)
-            batch_rows.append(
-                ",".join(
-                    [
-                        _csv_cell(str(batch_no)),
-                        _csv_cell(str(start)),
-                        _csv_cell(str(end)),
-                        _csv_cell(reader_promise),
-                        _csv_cell("drafted"),
-                    ]
-                )
-            )
-            batch_no += 1
-    else:
-        batch_rows.append(",".join([_csv_cell("1"), _csv_cell("1"), _csv_cell("0"), _csv_cell(reader_promise), _csv_cell("empty")]))
+    batch_rows.extend(_metadata_batch_queue_rows(metadata, max_generated=max_generated, reader_promise=reader_promise))
     (story_bible_dir / "batch-queue.csv").write_text("\n".join(batch_rows) + "\n", encoding="utf-8")
 
     listing_dir = package_root / "listing"
@@ -839,21 +954,30 @@ def collect_publication_blockers(
         # Export is the final defense for historical chapters stamped ok
         # before the commercial chapter-length floor existed.
         try:
-            from bestseller.settings import get_settings as _get_settings
             from bestseller.services.drafts import count_words as _count_words
             from bestseller.services.length_stability_gate import (
                 CHINESE_CHAPTER_HARD_MAX_WORDS,
                 CHINESE_CHAPTER_HARD_MIN_WORDS,
                 evaluate_chapter_length,
             )
+            from bestseller.settings import get_settings as _get_settings
             _cfg = _get_settings()
             _budget = _cfg.generation.words_per_chapter
             _wc = _count_words(draft.content_md or "")
+            _min_words = int(_budget.min)
+            _target_words = int(_budget.target)
+            _max_words = int(_budget.max)
+            if not is_en:
+                # Export should enforce the commercial hard range for Chinese
+                # chapters, not turn the framework's softer default target
+                # window into a publish blocker for otherwise valid legacy
+                # drafts.
+                _max_words = max(_max_words, CHINESE_CHAPTER_HARD_MAX_WORDS)
             _length_report = evaluate_chapter_length(
                 word_count=_wc,
-                min_words=int(_budget.min),
-                target_words=int(_budget.target),
-                max_words=int(_budget.max),
+                min_words=_min_words,
+                target_words=_target_words,
+                max_words=_max_words,
                 warn_margin=float(
                     getattr(
                         getattr(_cfg, "pipeline", object()),
@@ -873,10 +997,10 @@ def collect_publication_blockers(
                         if is_en
                         else f"第{chapter_number}章：章节体量 {_wc} 字低于商业硬底线 "
                         f"{CHINESE_CHAPTER_HARD_MIN_WORDS} 字，禁止发布"
-                    )
                 )
+            )
             elif _length_report.is_warning or _length_report.is_blocking:
-                if _length_report.is_blocking:
+                if _length_report.is_blocking and not is_en:
                     blockers.append(
                         (
                             f"Chapter {chapter_number}: chapter length {_wc} outside commercial "

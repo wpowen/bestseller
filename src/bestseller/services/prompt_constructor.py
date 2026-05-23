@@ -37,11 +37,9 @@ import logging
 import random
 from typing import Any
 
+from bestseller.services.audit_input_sanitizer import sanitize_audit_block, sanitize_audit_input
 from bestseller.services.diversity_budget import DiversityBudget
 from bestseller.services.fanqie_market_integration import render_fanqie_craft_profile_block
-from bestseller.services.market_constraint_compiler import render_chapter_constraints_block
-from bestseller.services.reader_persona_simulator import render_persona_feedback_block
-from bestseller.services.voice_signature import render_voice_dna_block
 from bestseller.services.hype_engine import (
     GoldenFingerLadder,
     GoldenFingerRung,
@@ -58,6 +56,10 @@ from bestseller.services.invariants import (
     OpeningArchetype,
     ProjectInvariants,
 )
+from bestseller.services.kernel_composer import render_narrative_richness_prompt_block
+from bestseller.services.market_constraint_compiler import render_chapter_constraints_block
+from bestseller.services.reader_persona_simulator import render_persona_feedback_block
+from bestseller.services.voice_signature import render_voice_dna_block
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,7 @@ class PromptPlan:
     """
 
     system: str = ""
+    seam_contract_section: str = ""
     invariants_section: str = ""
     voice_dna_section: str = ""
     bible_slice: str = ""
@@ -159,7 +162,10 @@ class PromptPlan:
     rule_system_constraints: str = ""
     faction_ecology_constraints: str = ""
     relationship_agency_constraints: str = ""
+    narrative_richness_section: str = ""
     reader_contract_section: str = ""
+    ledger_delta_section: str = ""
+    audit_report_section: str = ""
     methodology_inject: str = ""
     hype_constraints: str = ""
     diversity_constraints: str = ""
@@ -207,6 +213,7 @@ class PromptPlan:
     # These belong in the system message.
     _SYSTEM_SECTIONS: tuple[str, ...] = (
         "system",
+        "seam_contract_section",
         "invariants_section",
         "voice_dna_section",
         "methodology_inject",
@@ -226,7 +233,10 @@ class PromptPlan:
         "rule_system_constraints",
         "faction_ecology_constraints",
         "relationship_agency_constraints",
+        "narrative_richness_section",
         "reader_contract_section",
+        "ledger_delta_section",
+        "audit_report_section",
         "hype_constraints",
         "diversity_constraints",
         "persona_feedback_section",
@@ -269,6 +279,7 @@ class PromptPlan:
         """
         sections = [
             self.system,
+            self.seam_contract_section,
             self.invariants_section,
             self.voice_dna_section,
             self.bible_slice,
@@ -280,7 +291,10 @@ class PromptPlan:
             self.rule_system_constraints,
             self.faction_ecology_constraints,
             self.relationship_agency_constraints,
+            self.narrative_richness_section,
             self.reader_contract_section,
+            self.ledger_delta_section,
+            self.audit_report_section,
             self.methodology_inject,
             self.hype_constraints,
             self.diversity_constraints,
@@ -424,14 +438,13 @@ def build_diversity_constraints(
     if assigned_cliffhanger is not None:
         if language.lower().startswith("zh"):
             lines.append(
-                f"- 章末悬念: 本章结尾必须采用 {assigned_cliffhanger.value} 类悬念，"
-                f"不得与最近章节重复。"
+                f"- 收尾镜头: 最后一段采用 {assigned_cliffhanger.value} 类动作/画面/揭示，"
+                f"不得与近期收束方式重复。"
             )
         else:
             lines.append(
-                f"- Ending cliffhanger: close this chapter with a "
-                f"{assigned_cliffhanger.value} cliffhanger, "
-                f"distinct from recent chapters."
+                f"- Ending frame: close on a {assigned_cliffhanger.value} "
+                f"action/image/reveal pattern distinct from recent endings."
             )
 
     hot = diversity_budget.hot_vocab(
@@ -472,13 +485,19 @@ def build_reader_contract_section(
     chapter_no: int | None = None,
     reader_contract_cadence_head: int = 10,
     reader_contract_cadence_tail: int = 5,
+    sanitize_for_prose: bool = True,
 ) -> str:
-    """Emit the per-book "reader contract" (selling points + promise + hook strategy).
+    """Emit the per-book reader-facing expectation block.
 
     Renders only when (a) ``HypeScheme`` has any populated fields AND
     (b) the chapter is within the first ``reader_contract_cadence_head``
     chapters OR it lines up every ``reader_contract_cadence_tail``
     chapters. Returning ``""`` keeps the prompt lean on long books.
+
+    ``sanitize_for_prose=True`` is the anti-slop path: it translates market
+    mechanics into visible reader expectations and keeps hook / selling /
+    promise labels out of the prose prompt. ``False`` preserves the legacy
+    contract wording for diagnostics.
     """
 
     scheme: HypeScheme = invariants.hype_scheme
@@ -494,7 +513,47 @@ def build_reader_contract_section(
     is_zh = (invariants.language or "").lower().startswith("zh")
     lines: list[str] = []
 
-    if is_zh:
+    if is_zh and sanitize_for_prose:
+        lines.append("【读者期望画面】")
+        if scheme.selling_points:
+            lines.append(
+                "- 读者要看见的吸引力："
+                + " / ".join(_sanitize_reader_contract_phrase(p) for p in scheme.selling_points)
+            )
+        if scheme.reader_promise:
+            lines.append(
+                "- 本场要兑现为可见后果："
+                + _sanitize_reader_contract_phrase(scheme.reader_promise)
+            )
+        if scheme.chapter_hook_strategy:
+            lines.append("- 收尾方式：用未完成动作、画面或揭示自然牵引后续。")
+        if scheme.hook_keywords:
+            lines.append(
+                "- 必须落地的具体物件/感官："
+                + "、".join(_sanitize_reader_contract_phrase(k) for k in scheme.hook_keywords)
+            )
+        lines.append("- 不要复述企划词；把抽象要求转成角色动作、物件、声音、触感和后果。")
+    elif (not is_zh) and sanitize_for_prose:
+        lines.append("[READER-VISIBLE EXPECTATIONS]")
+        if scheme.selling_points:
+            lines.append(
+                "- Visible appeal: "
+                + " / ".join(_sanitize_reader_contract_phrase(p) for p in scheme.selling_points)
+            )
+        if scheme.reader_promise:
+            lines.append(
+                "- Convert the expectation into a visible consequence: "
+                + _sanitize_reader_contract_phrase(scheme.reader_promise)
+            )
+        if scheme.chapter_hook_strategy:
+            lines.append("- End through an unfinished action, image, or reveal.")
+        if scheme.hook_keywords:
+            lines.append(
+                "- Required concrete objects/sensory anchors: "
+                + ", ".join(_sanitize_reader_contract_phrase(k) for k in scheme.hook_keywords)
+            )
+        lines.append("- Do not restate planning or marketing terms; render them as action, objects, sound, touch, and consequence.")
+    elif is_zh:
         header = "【读者契约】"
         if scheme.selling_points:
             header += "（卖点：" + " / ".join(scheme.selling_points) + "）"
@@ -518,6 +577,30 @@ def build_reader_contract_section(
             lines.append("Hook imagery: " + ", ".join(scheme.hook_keywords))
 
     return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _sanitize_reader_contract_phrase(value: str) -> str:
+    cleaned = str(value or "").strip()
+    replacements = {
+        "钩子": "未完成动作",
+        "hook": "unfinished action",
+        "Hook": "Unfinished action",
+        "卖点": "可见吸引力",
+        "selling point": "visible appeal",
+        "selling": "visible",
+        "承诺": "可见期待",
+        "promise": "expectation",
+        "Promise": "Expectation",
+        "主线": "当前冲突",
+        "副线": "旁支互动",
+        "长线": "未完成线索",
+        "本章": "本场",
+        "本卷": "当前段落",
+        "章末": "收尾",
+    }
+    for old, new in replacements.items():
+        cleaned = cleaned.replace(old, new)
+    return cleaned
 
 
 def build_hype_constraints(
@@ -574,8 +657,8 @@ def build_hype_constraints(
                 "第 1 个在前 1000 字内。"
             )
         lines.append(
-            "- 爽点 ≠ 章末悬念。爽点负责【本章情绪释放峰值】，"
-            "在中段或末段；章末悬念另起一段负责勾下一章，不得合写。"
+            "- 爽点负责当前情绪释放峰值；收尾另起一段，只落在动作、画面或揭示，"
+            "不得解释其意义。"
         )
         if ladder_rung is not None:
             rung_lines = [
@@ -617,9 +700,9 @@ def build_hype_constraints(
                 "chapter, the first within the first 1000 characters."
             )
         lines.append(
-            "- Hype != cliffhanger. The hype peak carries this chapter's "
-            "emotional release in the mid or late section; the chapter-end "
-            "cliffhanger is a separate paragraph that hooks the next chapter."
+            "- The hype peak carries the local emotional release; the ending "
+            "is a separate paragraph that lands on action, image, or reveal "
+            "without explaining what it means."
         )
         if ladder_rung is not None:
             rung_lines = [
@@ -693,7 +776,7 @@ def build_anti_slop_footer(language: str) -> str:
         )
     return (
         "## DO NOT\n"
-        "- No cliffhanger clichés (\"and that was just the beginning\", etc.);\n"
+        "- No ending clichés (\"and that was just the beginning\", etc.);\n"
         "- No padding with rhetorical questions, parallelism, or exclamation spam;\n"
         "- Every paragraph must advance plot, conflict, revelation, or sensory texture — otherwise cut it."
     )
@@ -721,6 +804,14 @@ def build_chapter_prompt(
     rule_system_context_block: str = "",
     faction_ecology_context_block: str = "",
     relationship_agency_context_block: str = "",
+    narrative_richness_context: object = None,
+    narrative_richness_context_block: str = "",
+    seam_contract: object = None,
+    seam_contract_block: str = "",
+    current_region: str | None = None,
+    ledger_delta_block: str = "",
+    story_bible_dir: str | None = None,
+    audit_report_block: str = "",
     scene_spec: str = "",
     prior_chapter_text: str | None = None,
     preassigned_opening: OpeningArchetype | None = None,
@@ -733,6 +824,7 @@ def build_chapter_prompt(
     no_repeat_within_openings: int = DEFAULT_NO_REPEAT_WITHIN_OPENINGS,
     reader_contract_cadence_head: int = 10,
     reader_contract_cadence_tail: int = 5,
+    sanitize_for_prose: bool = True,
     golden_finger_ladder: GoldenFingerLadder | None = None,
     voice_dna: Any = None,
     chapter_market_constraints: Any = None,
@@ -800,6 +892,7 @@ def build_chapter_prompt(
         chapter_no=chapter_no,
         reader_contract_cadence_head=reader_contract_cadence_head,
         reader_contract_cadence_tail=reader_contract_cadence_tail,
+        sanitize_for_prose=sanitize_for_prose,
     )
     fanqie_market_block = render_fanqie_market_craft_profile_block(
         fanqie_market_craft_profile,
@@ -819,9 +912,26 @@ def build_chapter_prompt(
     persona_feedback_section = render_persona_feedback_block(
         prior_persona_feedback, language=invariants.language
     )
+    seam_section = seam_contract_block or _render_seam_contract_block(seam_contract)
+    richness_section = narrative_richness_context_block or render_narrative_richness_prompt_block(
+        _slice_narrative_richness_context(
+            narrative_richness_context,
+            chapter_no=chapter_no,
+            current_region=current_region,
+        ),
+        chapter_no=chapter_no,
+        current_region=current_region,
+    )
+    ledger_section = ledger_delta_block
+    if not ledger_section and story_bible_dir and chapter_no is not None:
+        from bestseller.services.ledger_delta_reader import read_ledger_delta_block
+
+        ledger_section = read_ledger_delta_block(story_bible_dir, chapter_no=chapter_no)
+    audit_section = sanitize_audit_block("【审计报告摘录（已净化）】", audit_report_block)
 
     plan = PromptPlan(
         system=system,
+        seam_contract_section=seam_section,
         invariants_section=build_invariants_section(invariants),
         voice_dna_section=voice_dna_section,
         bible_slice=bible_slice,
@@ -833,7 +943,10 @@ def build_chapter_prompt(
         rule_system_constraints=rule_system_context_block,
         faction_ecology_constraints=faction_ecology_context_block,
         relationship_agency_constraints=relationship_agency_context_block,
+        narrative_richness_section=richness_section,
         reader_contract_section=reader_contract,
+        ledger_delta_section=ledger_section,
+        audit_report_section=audit_section,
         methodology_inject=build_methodology_inject(invariants),
         hype_constraints=hype_section,
         diversity_constraints=build_diversity_constraints(
@@ -907,6 +1020,7 @@ def build_chapter_hype_blocks(
     pacing_profile: str = "medium",
     reader_contract_cadence_head: int = 10,
     reader_contract_cadence_tail: int = 5,
+    sanitize_for_prose: bool = True,
     golden_finger_ladder: GoldenFingerLadder | None = None,
 ) -> ChapterHypeBlocks:
     """Pick once per chapter; return pre-rendered blocks for scene plumbing.
@@ -957,6 +1071,7 @@ def build_chapter_hype_blocks(
         chapter_no=chapter_no,
         reader_contract_cadence_head=reader_contract_cadence_head,
         reader_contract_cadence_tail=reader_contract_cadence_tail,
+        sanitize_for_prose=sanitize_for_prose,
     )
 
     return ChapterHypeBlocks(
@@ -984,6 +1099,9 @@ class ChapterL3Blocks:
     invariants_section: str
     methodology_inject: str
     diversity_constraints: str
+    narrative_richness_section: str
+    seam_contract_section: str
+    ledger_delta_section: str
     anti_slop_footer: str
     assigned_opening: OpeningArchetype | None
     assigned_cliffhanger: CliffhangerType | None
@@ -994,6 +1112,9 @@ class ChapterL3Blocks:
             self.invariants_section
             or self.methodology_inject
             or self.diversity_constraints
+            or self.narrative_richness_section
+            or self.seam_contract_section
+            or self.ledger_delta_section
             or self.anti_slop_footer
         )
 
@@ -1003,6 +1124,9 @@ class ChapterL3Blocks:
             self.invariants_section,
             self.methodology_inject,
             self.diversity_constraints,
+            self.seam_contract_section,
+            self.narrative_richness_section,
+            self.ledger_delta_section,
             self.anti_slop_footer,
         ]
         return "\n\n".join(s.strip() for s in parts if s and s.strip())
@@ -1012,6 +1136,9 @@ EMPTY_L3_BLOCKS = ChapterL3Blocks(
     invariants_section="",
     methodology_inject="",
     diversity_constraints="",
+    narrative_richness_section="",
+    seam_contract_section="",
+    ledger_delta_section="",
     anti_slop_footer="",
     assigned_opening=None,
     assigned_cliffhanger=None,
@@ -1030,6 +1157,13 @@ def build_chapter_l3_blocks(
     hot_vocab_top_n: int = DEFAULT_HOT_VOCAB_TOP_N,
     hot_vocab_min_count: int = DEFAULT_HOT_VOCAB_MIN_COUNT,
     no_repeat_within_openings: int = DEFAULT_NO_REPEAT_WITHIN_OPENINGS,
+    narrative_richness_context: object = None,
+    narrative_richness_context_block: str = "",
+    seam_contract: object = None,
+    seam_contract_block: str = "",
+    current_region: str | None = None,
+    ledger_delta_block: str = "",
+    story_bible_dir: str | None = None,
 ) -> ChapterL3Blocks:
     """Build the per-chapter L3 sections that pair with hype_blocks.
 
@@ -1048,6 +1182,13 @@ def build_chapter_l3_blocks(
     )
     cliffhanger = choose_cliffhanger_type(diversity_budget, policy=policy)
 
+    ledger_section = ledger_delta_block
+    if not ledger_section:
+        if story_bible_dir:
+            from bestseller.services.ledger_delta_reader import read_ledger_delta_block
+
+            ledger_section = read_ledger_delta_block(story_bible_dir, chapter_no=chapter_no)
+
     return ChapterL3Blocks(
         invariants_section=build_invariants_section(invariants),
         methodology_inject=build_methodology_inject(invariants),
@@ -1060,10 +1201,56 @@ def build_chapter_l3_blocks(
             hot_vocab_top_n=hot_vocab_top_n,
             hot_vocab_min_count=hot_vocab_min_count,
         ),
+        seam_contract_section=seam_contract_block or _render_seam_contract_block(
+            seam_contract
+        ),
+        narrative_richness_section=(
+            narrative_richness_context_block
+            or render_narrative_richness_prompt_block(
+                _slice_narrative_richness_context(
+                    narrative_richness_context,
+                    chapter_no=chapter_no,
+                    current_region=current_region,
+                ),
+                chapter_no=chapter_no,
+                current_region=current_region,
+            )
+        ),
+        ledger_delta_section=ledger_section,
         anti_slop_footer=build_anti_slop_footer(invariants.language),
         assigned_opening=opening,
         assigned_cliffhanger=cliffhanger,
     )
+
+
+def _slice_narrative_richness_context(
+    narrative_richness_context: object,
+    *,
+    chapter_no: int | None,
+    current_region: str | None,
+) -> object:
+    if narrative_richness_context is None or chapter_no is None:
+        return narrative_richness_context
+    from bestseller.services.kernel_composer import NarrativeRichnessKernels
+    from bestseller.services.kernel_delta_slicer import KernelDeltaSlicer
+
+    try:
+        context = NarrativeRichnessKernels.model_validate(narrative_richness_context)
+    except (TypeError, ValueError):
+        return narrative_richness_context
+    return KernelDeltaSlicer().slice_for_chapter(
+        context,
+        chapter_no=chapter_no,
+        current_region=current_region,
+    )
+
+
+def _render_seam_contract_block(seam_contract: object) -> str:
+    if seam_contract is None:
+        return ""
+    from bestseller.services.seam_prompt_composer import render_seam_prompt_block
+
+    return render_seam_prompt_block(seam_contract)
 
 
 def build_line_rotation_nudge(
@@ -1107,7 +1294,7 @@ def rebuild_with_feedback(
 
     if not feedback or not feedback.strip():
         return replace(prior_plan, feedback_block="")
-    return replace(prior_plan, feedback_block=feedback.strip())
+    return replace(prior_plan, feedback_block=sanitize_audit_input(feedback))
 
 
 __all__ = [

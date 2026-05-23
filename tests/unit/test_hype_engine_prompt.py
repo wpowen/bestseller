@@ -102,9 +102,12 @@ class TestReaderContractSection:
         for ch in range(1, 11):
             block = build_reader_contract_section(inv, chapter_no=ch)
             assert block, f"chapter {ch} should render the contract"
-            assert "读者契约" in block
+            assert "读者期望画面" in block
             assert "诡异复苏" in block
             assert "冥符" in block
+            assert "钩子" not in block
+            assert "卖点" not in block
+            assert "承诺" not in block
 
     def test_renders_every_fifth_chapter_after_head(self) -> None:
         inv = _invariants_with_scheme(_sample_scheme())
@@ -125,7 +128,7 @@ class TestReaderContractSection:
         inv = _invariants_with_scheme(scheme, language="en")
         block = build_reader_contract_section(inv, chapter_no=1)
         assert block
-        assert "READER CONTRACT" in block
+        assert "READER-VISIBLE EXPECTATIONS" in block
         assert "ghost wealth" in block
 
 
@@ -181,7 +184,7 @@ class TestHypeConstraints:
             recipe=None,
             intensity_target=7.0,
         )
-        assert "爽点 ≠ 章末悬念" in block
+        assert "收尾另起一段" in block
 
     def test_returns_empty_when_no_type_and_no_recipe(self) -> None:
         inv = _invariants_with_scheme(_sample_scheme())
@@ -318,7 +321,7 @@ class TestChapterPromptWiring:
         assert plan.assigned_hype_recipe.key == "冥符拍脸-当众羞辱反转"
         # Chapter 1 is within the golden three.
         assert "黄金三章" in plan.hype_constraints
-        assert "读者契约" in plan.reader_contract_section
+        assert "读者期望画面" in plan.reader_contract_section
         # Fast pacing bumps the target intensity by +0.5.
         band_0 = target_hype_for_chapter(1, 60, pacing_profile="fast")
         assert plan.assigned_hype_intensity is not None
@@ -341,7 +344,7 @@ class TestChapterPromptWiring:
         # Order sanity: bible before reader-contract before hype before
         # diversity before scene.
         bible_at = rendered.index("BIBLE_MARKER")
-        reader_at = rendered.index("读者契约")
+        reader_at = rendered.index("读者期望画面")
         hype_at = rendered.index("本章爽点约束")
         diversity_at = rendered.index("创作多样性约束")
         scene_at = rendered.index("SCENE_MARKER")
@@ -491,7 +494,7 @@ class TestChapterHypeBlocks:
             total_chapters=60,
         )
         assert not blocks.is_empty
-        assert "读者契约" in blocks.reader_contract_block
+        assert "读者期望画面" in blocks.reader_contract_block
         assert "本章爽点约束" in blocks.hype_constraints_block
         assert blocks.assigned_hype_type is HypeType.FACE_SLAP
         assert blocks.assigned_hype_recipe is not None

@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from bestseller.services.book_quality_closure import (
+    BookClosureReport,
     LLMPreflightReport,
     audit_chapter_generation_modes,
     audit_rewrite_task_generation_modes,
@@ -292,6 +293,21 @@ def test_fleet_row_from_acceptance_keeps_closure_metrics() -> None:
         "next_action": "execute_next_repair_round",
         "error": None,
     }
+
+
+def test_book_closure_report_adds_lifecycle_aggregate_gate_report() -> None:
+    payload = BookClosureReport(
+        slug="book-a",
+        status="blocked",
+        next_action="repair",
+        lifecycle_quality={"passed": True, "readiness_level": "blocked"},
+    ).to_dict()
+
+    lifecycle_quality = payload["lifecycle_quality"]
+
+    assert isinstance(lifecycle_quality, dict)
+    assert lifecycle_quality["passed"] is False
+    assert lifecycle_quality["aggregate_gate_report"]["verdict"] == "blocked"
 
 
 @pytest.mark.asyncio

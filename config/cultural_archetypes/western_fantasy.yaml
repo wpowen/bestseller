@@ -1,0 +1,23 @@
+id: western_fantasy
+label: 西式奇幻
+applicable_categories:
+  - western_fantasy
+  - epic-fantasy
+palette:
+  - {category: food, name: 黑麦面包, sensory_hook: 黑麦面包的酸香, class_signal: 边境日常}
+  - {category: food, name: 蜂蜜酒, sensory_hook: 蜂蜜酒黏在杯沿的甜味, class_signal: 旅店消费}
+  - {category: clothing, name: 羊毛斗篷, sensory_hook: 羊毛斗篷吸满雾气, class_signal: 北地行旅}
+  - {category: tool, name: 火漆印章, sensory_hook: 火漆裂开的细响, class_signal: 贵族文书}
+  - {category: ornament, name: 铜护符, sensory_hook: 铜护符贴着胸口发凉, class_signal: 信仰护身}
+  - {category: music, name: 鲁特琴, sensory_hook: 鲁特琴弦音在壁炉旁发颤, class_signal: 酒馆背景}
+  - {category: vehicle, name: 驿站马车, sensory_hook: 驿站马车轮轴的干涩声, class_signal: 长途交通}
+  - {category: tool, name: 羊皮地图, sensory_hook: 羊皮地图边角卷起的灰尘, class_signal: 冒险装备}
+daily_rituals:
+  - 入城缴纳通行税
+  - 饭前向守护圣徒致意
+  - 冬夜围炉议事
+taboo_behaviors:
+  - 在圣坛前拔剑
+  - 以左手递誓约杯
+aesthetic_zeitgeist: 信仰、契约与寒冷边境共同塑造庄重感。
+

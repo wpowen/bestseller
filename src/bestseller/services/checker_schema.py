@@ -32,12 +32,13 @@ Severity convention:
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 import json
-from dataclasses import asdict, dataclass, field
-from typing import Any, Iterable, Literal, Mapping
-
+from typing import Any, Literal
 
 Severity = Literal["critical", "high", "medium", "low"]
+GateVerdictStatus = Literal["pass", "warn_only", "blocked", "not_run", "error"]
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +86,7 @@ class CheckerIssue:
         }
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "CheckerIssue":
+    def from_dict(cls, data: Mapping[str, Any]) -> CheckerIssue:
         return cls(
             id=str(data["id"]),
             type=str(data["type"]),
@@ -155,7 +156,7 @@ class CheckerReport:
         return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "CheckerReport":
+    def from_dict(cls, data: Mapping[str, Any]) -> CheckerReport:
         issues = tuple(CheckerIssue.from_dict(i) for i in data.get("issues", ()))
         hard = tuple(CheckerIssue.from_dict(i) for i in data.get("hard_violations", ()))
         soft = tuple(CheckerIssue.from_dict(i) for i in data.get("soft_suggestions", ()))
@@ -172,8 +173,230 @@ class CheckerReport:
         )
 
     @classmethod
-    def from_json(cls, payload: str) -> "CheckerReport":
+    def from_json(cls, payload: str) -> CheckerReport:
         return cls.from_dict(json.loads(payload))
+
+
+# ---------------------------------------------------------------------------
+# GateVerdict — system-wide gate signal contract.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GateFinding:
+    """One finding in the GateVerdict v2 schema."""
+
+    code: str
+    severity: Severity
+    message: str
+    path: str = ""
+    repair_action: str = ""
+
+    @property
+    def critical(self) -> bool:
+        return self.severity == "critical"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "path": self.path,
+            "repair_action": self.repair_action,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> GateFinding:
+        return cls(
+            code=str(data.get("code") or data.get("id") or "finding"),
+            severity=_coerce_severity(data.get("severity", "medium")),
+            message=str(data.get("message") or data.get("description") or ""),
+            path=str(data.get("path") or data.get("location") or ""),
+            repair_action=str(data.get("repair_action") or data.get("suggestion") or ""),
+        )
+
+
+@dataclass(frozen=True)
+class GateVerdict:
+    """Unified v2 gate verdict.
+
+    ``passed`` is derived, not caller-controlled: only full pass with
+    coverage >= 0.95 can be treated as a green light.
+    """
+
+    gate_name: str
+    verdict: GateVerdictStatus
+    coverage: float
+    findings: tuple[GateFinding, ...] = ()
+    metrics: Mapping[str, Any] = field(default_factory=dict)
+    schema_version: str = "gate-verdict.v2"
+    summary: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "coverage", _clamp_coverage(self.coverage))
+
+    @property
+    def passed(self) -> bool:
+        return self.verdict == "pass" and self.coverage >= 0.95
+
+    @property
+    def critical(self) -> bool:
+        return self.verdict in {"blocked", "error"} or any(f.critical for f in self.findings)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "gate_name": self.gate_name,
+            "verdict": self.verdict,
+            "coverage": self.coverage,
+            "passed": self.passed,
+            "critical": self.critical,
+            "findings": [finding.to_dict() for finding in self.findings],
+            "metrics": dict(self.metrics),
+            "summary": self.summary,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> GateVerdict:
+        findings = tuple(GateFinding.from_dict(item) for item in data.get("findings", ()))
+        verdict = _coerce_gate_status(data.get("verdict"))
+        coverage = _float_or_default(data.get("coverage"), 1.0 if verdict == "pass" else 0.0)
+        return cls(
+            gate_name=str(data.get("gate_name") or data.get("agent") or "unknown_gate"),
+            verdict=verdict,
+            coverage=coverage,
+            findings=findings,
+            metrics=dict(data.get("metrics", {})),
+            schema_version=str(data.get("schema_version") or "gate-verdict.v2"),
+            summary=str(data.get("summary") or ""),
+        )
+
+    @classmethod
+    def from_checker_report(cls, report: CheckerReport) -> GateVerdict:
+        findings = tuple(
+            GateFinding(
+                code=issue.id,
+                severity=issue.severity,
+                message=issue.description,
+                path=issue.location,
+                repair_action=issue.suggestion,
+            )
+            for issue in report.issues
+        )
+        verdict: GateVerdictStatus
+        if report.blocks_write:
+            verdict = "blocked"
+        elif report.passed:
+            verdict = "pass"
+        else:
+            verdict = "warn_only"
+        return cls(
+            gate_name=report.agent,
+            verdict=verdict,
+            coverage=_clamp_coverage(report.overall_score / 100),
+            findings=findings,
+            metrics=report.metrics,
+            summary=report.summary,
+        )
+
+
+@dataclass(frozen=True)
+class AggregateGateReport:
+    """Composite gate output backed by component GateVerdicts."""
+
+    gate_name: str
+    components: tuple[GateVerdict, ...]
+    schema_version: str = "aggregate-gate-report.v1"
+    summary: str = ""
+
+    @property
+    def coverage(self) -> float:
+        if not self.components:
+            return 0.0
+        return min(component.coverage for component in self.components)
+
+    @property
+    def overall_score(self) -> int:
+        return round(self.coverage * 100)
+
+    @property
+    def readiness(self) -> str:
+        if any(component.critical for component in self.components):
+            return "blocked"
+        return "not_blocked"
+
+    @property
+    def verdict(self) -> GateVerdictStatus:
+        if not self.components:
+            return "not_run"
+        if any(component.verdict == "error" for component in self.components):
+            return "error"
+        if any(component.critical for component in self.components):
+            return "blocked"
+        if all(component.passed for component in self.components):
+            return "pass"
+        return "warn_only"
+
+    @property
+    def passed(self) -> bool:
+        return self.verdict == "pass" and self.coverage >= 0.95
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "gate_name": self.gate_name,
+            "verdict": self.verdict,
+            "coverage": self.coverage,
+            "overall_score": self.overall_score,
+            "readiness": self.readiness,
+            "passed": self.passed,
+            "components": [component.to_dict() for component in self.components],
+            "summary": self.summary,
+        }
+
+
+def classify_gate_verdict(
+    *,
+    gate_name: str,
+    findings: Iterable[GateFinding | Mapping[str, Any]] = (),
+    coverage: float = 1.0,
+    metrics: Mapping[str, Any] | None = None,
+    applied: bool | None = None,
+    summary: str = "",
+) -> GateVerdict:
+    """Classify a gate run and demote false-green patterns to warn_only."""
+
+    normalized_findings = tuple(
+        item if isinstance(item, GateFinding) else GateFinding.from_dict(item)
+        for item in findings
+    )
+    metric_map = dict(metrics or {})
+    if any(f.critical for f in normalized_findings):
+        verdict: GateVerdictStatus = "blocked"
+    elif normalized_findings:
+        verdict = "warn_only"
+    else:
+        verdict = "pass"
+
+    quality_score = _float_or_default(metric_map.get("quality_score"), 100.0)
+    readiness = str(metric_map.get("readiness") or "").lower()
+    if verdict == "pass" and (
+        coverage < 0.95
+        or quality_score < 70
+        or readiness == "blocked"
+        or applied is False
+        or metric_map.get("applied") is False
+    ):
+        verdict = "warn_only"
+
+    return GateVerdict(
+        gate_name=gate_name,
+        verdict=verdict,
+        coverage=coverage,
+        findings=normalized_findings,
+        metrics=metric_map,
+        summary=summary,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +420,25 @@ def merge_reports(reports: Iterable[CheckerReport]) -> tuple[CheckerReport, ...]
         else:
             raise TypeError(
                 f"merge_reports: expected CheckerReport or Mapping, got {type(r).__name__}"
+            )
+    return tuple(out)
+
+
+def merge_gate_verdicts(
+    verdicts: Iterable[GateVerdict | Mapping[str, Any]],
+) -> tuple[GateVerdict, ...]:
+    """Normalize component gate verdict payloads for aggregate gates."""
+
+    out: list[GateVerdict] = []
+    for verdict in verdicts:
+        if isinstance(verdict, GateVerdict):
+            out.append(verdict)
+        elif isinstance(verdict, Mapping):
+            out.append(GateVerdict.from_dict(verdict))
+        else:
+            raise TypeError(
+                "merge_gate_verdicts: expected GateVerdict or Mapping, "
+                f"got {type(verdict).__name__}"
             )
     return tuple(out)
 
@@ -244,8 +486,33 @@ def blocked_chapters(reports: Iterable[CheckerReport]) -> frozenset[int]:
 _VALID_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
 
 
-def _coerce_severity(value: Any) -> Severity:
+def _coerce_severity(value: object) -> Severity:
     s = str(value).lower()
     if s not in _VALID_SEVERITIES:
         return "medium"
     return s  # type: ignore[return-value]
+
+
+_VALID_GATE_STATUSES = frozenset({"pass", "warn_only", "blocked", "not_run", "error"})
+
+
+def _coerce_gate_status(value: object) -> GateVerdictStatus:
+    status = str(value or "not_run").lower()
+    if status in {"passed", "success", "ready"}:
+        status = "pass"
+    if status in {"failed", "fail", "critical"}:
+        status = "blocked"
+    if status not in _VALID_GATE_STATUSES:
+        return "not_run"
+    return status  # type: ignore[return-value]
+
+
+def _clamp_coverage(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _float_or_default(value: object, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default

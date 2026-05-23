@@ -165,16 +165,29 @@ def _mbti_rules(value: Any, *, is_en: bool) -> list[str]:
     mbti = _text(value).upper()
     if not re.fullmatch(r"[IE][NS][TF][JP]", mbti):
         return []
-    pairs = {
-        "I": "keeps more interior processing offstage" if is_en else "更多内在加工不直接说破",
-        "E": "uses interaction to discover the next move" if is_en else "通过互动试出下一步",
-        "N": "tracks patterns, implications, and future consequences" if is_en else "关注模式、含义与后果",
-        "S": "anchors speech in present facts and sensory details" if is_en else "把对白锚定在当下事实和感官细节",
-        "T": "frames conflict as logic, cost, or principle" if is_en else "用逻辑、成本或原则处理冲突",
-        "F": "frames conflict through impact, loyalty, and hurt" if is_en else "用影响、忠诚和受伤感处理冲突",
-        "J": "pushes toward closure, sequence, and decision" if is_en else "推动收束、顺序和决策",
-        "P": "keeps options open and tests through improvisation" if is_en else "保留选项，通过即兴试探",
-    }
+    pairs = (
+        {
+            "I": "keeps more interior processing offstage",
+            "E": "uses interaction to discover the next move",
+            "N": "tracks patterns, implications, and future consequences",
+            "S": "anchors speech in present facts and sensory details",
+            "T": "frames conflict as logic, cost, or principle",
+            "F": "frames conflict through impact, loyalty, and hurt",
+            "J": "pushes toward closure, sequence, and decision",
+            "P": "keeps options open and tests through improvisation",
+        }
+        if is_en
+        else {
+            "I": "更多内在加工不直接说破",
+            "E": "通过互动试出下一步",
+            "N": "关注模式、含义与后果",
+            "S": "把对白锚定在当下事实和感官细节",
+            "T": "用逻辑、成本或原则处理冲突",
+            "F": "用影响、忠诚和受伤感处理冲突",
+            "J": "推动收束、顺序和决策",
+            "P": "保留选项，通过即兴试探",
+        }
+    )
     return [pairs[letter] for letter in mbti]
 
 
@@ -240,7 +253,11 @@ def _attachment_rules(value: Any, *, is_en: bool) -> list[str]:
     return []
 
 
-def _character_engine_rules(engine: Mapping[str, Any], *, is_en: bool) -> tuple[list[str], list[str]]:
+def _character_engine_rules(
+    engine: Mapping[str, Any],
+    *,
+    is_en: bool,
+) -> tuple[list[str], list[str]]:
     dialogue: list[str] = []
     action: list[str] = []
     want_need = _as_mapping(engine.get("want_vs_need"))
@@ -262,11 +279,9 @@ def _character_engine_rules(engine: Mapping[str, Any], *, is_en: bool) -> tuple[
         )
     if motivation:
         dialogue.append(
-            
-                "surface motive can speak; hidden/suppressed motive must leak as subtext"
-                if is_en
-                else "表层动机可以说，隐藏/压抑动机必须以潜台词泄露"
-            
+            "surface motive can speak; hidden/suppressed motive must leak as subtext"
+            if is_en
+            else "表层动机可以说，隐藏/压抑动机必须以潜台词泄露"
         )
     if values:
         redlines = _short_join(values.get("absolute_no") or values.get("redlines"))
@@ -282,7 +297,11 @@ def _character_engine_rules(engine: Mapping[str, Any], *, is_en: bool) -> tuple[
         core_value = _text(values.get("core_value"))
         if core_value:
             dialogue.append(
-                ("pressure speech bends around value: " if is_en else "受压对白围绕核心价值变形：")
+                (
+                    "pressure speech bends around value: "
+                    if is_en
+                    else "受压对白围绕核心价值变形："
+                )
                 + _short(core_value)
             )
     if response_chain:
@@ -312,7 +331,11 @@ def _character_engine_rules(engine: Mapping[str, Any], *, is_en: bool) -> tuple[
         )
         if bits:
             action.append(
-                ("signature behavior can recur as evidence, not as a quota: " if is_en else "标志行为可作为证据复现，不设固定配额：")
+                (
+                    "signature behavior can recur as evidence, not as a quota: "
+                    if is_en
+                    else "标志行为可作为证据复现，不设固定配额："
+                )
                 + bits
             )
     if weakness:
@@ -339,7 +362,11 @@ def _character_engine_rules(engine: Mapping[str, Any], *, is_en: bool) -> tuple[
         )
         if voice_bits:
             dialogue.append(
-                ("voice DNA shapes syntax and evasions: " if is_en else "VoiceDNA 约束句法与回避方式：")
+                (
+                    "voice DNA shapes syntax and evasions: "
+                    if is_en
+                    else "VoiceDNA 约束句法与回避方式："
+                )
                 + voice_bits
             )
     return dialogue, action
@@ -390,7 +417,11 @@ def derive_personality_bound_dialogue_contract(
         values = _short_join(moral.get("core_values"), limit=3)
         if values:
             dialogue_rules.append(
-                ("values should steer what the character notices and defends: " if is_en else "价值观决定角色注意什么、捍卫什么：")
+                (
+                    "values should steer what the character notices and defends: "
+                    if is_en
+                    else "价值观决定角色注意什么、捍卫什么："
+                )
                 + values
             )
         redlines = _short_join(
@@ -399,7 +430,11 @@ def derive_personality_bound_dialogue_contract(
         )
         if redlines:
             action_rules.append(
-                ("red lines must shape refusal, compromise, and sacrifice: " if is_en else "底线必须塑造拒绝、妥协和牺牲：")
+                (
+                    "red lines must shape refusal, compromise, and sacrifice: "
+                    if is_en
+                    else "底线必须塑造拒绝、妥协和牺牲："
+                )
                 + redlines
             )
 
@@ -418,13 +453,21 @@ def derive_personality_bound_dialogue_contract(
         )
         if vp_bits:
             dialogue_rules.append(
-                ("existing voice profile remains the surface delivery: " if is_en else "现有语言画像负责表层呈现：")
+                (
+                    "existing voice profile remains the surface delivery: "
+                    if is_en
+                    else "现有语言画像负责表层呈现："
+                )
                 + vp_bits
             )
         mannerisms = _short_join(voice_profile.get("mannerisms"), limit=2)
         if mannerisms:
             action_rules.append(
-                ("mannerisms should reveal pressure state, not decorate: " if is_en else "习惯动作要揭示压力状态，不做装饰：")
+                (
+                    "mannerisms should reveal pressure state, not decorate: "
+                    if is_en
+                    else "习惯动作要揭示压力状态，不做装饰："
+                )
                 + mannerisms
             )
 
@@ -433,11 +476,9 @@ def derive_personality_bound_dialogue_contract(
         need = _text(inner.get("need_internal"))
         if lie or need:
             dialogue_rules.append(
-                
-                    "dialogue should let the believed lie collide with the unmet need"
-                    if is_en
-                    else "对白要让“相信的谎言”和“未满足的需求”发生碰撞"
-                
+                "dialogue should let the believed lie collide with the unmet need"
+                if is_en
+                else "对白要让“相信的谎言”和“未满足的需求”发生碰撞"
             )
 
     name = _text(participant.get("name") or participant.get("display_name"), default="角色")
@@ -478,9 +519,14 @@ def render_dialogue_personality_bridge_block(
             else "【性格绑定的对白/动作契约】"
         ),
         (
-            "Use mature personality systems as behavioral constraints. Do not force exact catchphrases; readers should infer personality from dialogue, action, silence, and choices."
+            "Use mature personality systems as behavioral constraints. "
+            "Do not force exact catchphrases; readers should infer personality "
+            "from dialogue, action, silence, and choices."
             if is_en
-            else "使用成熟性格体系作为行为约束。不要强塞固定口头禅；读者应能从对白、动作、沉默和选择反推出性格。"
+            else (
+                "使用成熟性格体系作为行为约束。不要强塞固定口头禅；"
+                "读者应能从对白、动作、沉默和选择反推出性格。"
+            )
         ),
     ]
     for contract in contracts:

@@ -5,10 +5,15 @@ from __future__ import annotations
 import pytest
 
 from bestseller.services.checker_schema import (
+    AggregateGateReport,
     CheckerIssue,
     CheckerReport,
+    GateFinding,
+    GateVerdict,
     aggregate_issue_counts,
     blocked_chapters,
+    classify_gate_verdict,
+    merge_gate_verdicts,
     merge_reports,
     partition_by_chapter,
 )
@@ -185,6 +190,74 @@ class TestCheckerReport:
         assert r.hard_violations == ()
         assert r.soft_suggestions == ()
         assert r.blocks_write is False
+
+
+# ---------------------------------------------------------------------------
+# GateVerdict
+# ---------------------------------------------------------------------------
+
+
+class TestGateVerdict:
+    def test_passed_requires_pass_and_high_coverage(self) -> None:
+        low_coverage = GateVerdict(
+            gate_name="package_integrity",
+            verdict="pass",
+            coverage=0.94,
+        )
+        clean = GateVerdict(
+            gate_name="package_integrity",
+            verdict="pass",
+            coverage=0.95,
+        )
+
+        assert low_coverage.passed is False
+        assert clean.passed is True
+
+    def test_classify_demotes_false_green_signals(self) -> None:
+        verdict = classify_gate_verdict(
+            gate_name="package_integrity",
+            coverage=1.0,
+            metrics={"quality_score": 66.35},
+        )
+
+        assert verdict.verdict == "warn_only"
+        assert verdict.passed is False
+
+    def test_aggregate_uses_component_min_coverage_and_criticality(self) -> None:
+        report = AggregateGateReport(
+            gate_name="lifecycle_quality",
+            components=(
+                GateVerdict(gate_name="a", verdict="pass", coverage=1.0),
+                GateVerdict(
+                    gate_name="b",
+                    verdict="warn_only",
+                    coverage=0.82,
+                    findings=(
+                        GateFinding(
+                            code="identity_registry_coverage_below_bar",
+                            severity="critical",
+                            message="Identity registry coverage is too low.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assert report.coverage == 0.82
+        assert report.overall_score == 82
+        assert report.readiness == "blocked"
+        assert report.passed is False
+
+    def test_merge_gate_verdicts_accepts_mappings(self) -> None:
+        merged = merge_gate_verdicts(
+            [
+                {"gate_name": "legacy", "verdict": "passed", "coverage": 1},
+                GateVerdict(gate_name="native", verdict="not_run", coverage=0),
+            ]
+        )
+
+        assert [item.gate_name for item in merged] == ["legacy", "native"]
+        assert merged[0].verdict == "pass"
 
 
 # ---------------------------------------------------------------------------

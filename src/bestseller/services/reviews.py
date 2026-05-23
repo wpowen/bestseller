@@ -4557,6 +4557,92 @@ async def _compute_chapter_seam_signal(
     return findings, evidence_summary
 
 
+async def _compute_reader_logic_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel | None,
+) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+    """Validate reader-visible adjacent chapter state.
+
+    ``chapter_seam`` checks dropped hooks; this gate checks contradictions
+    like "did not open 303" after the prior chapter already put the reader
+    inside a room, or a 302→303 jump with no movement bridge.
+    """
+
+    if chapter.chapter_number <= 1 or not (draft and draft.content_md):
+        return [], {}
+
+    try:
+        from bestseller.services.reader_logic_gate import (
+            build_reader_logic_repair_prompt,
+            evaluate_reader_logic_seam,
+        )
+    except Exception:
+        logger.debug("reader_logic_gate import failed", exc_info=True)
+        return [], {}
+
+    prev_chapter = await session.scalar(
+        select(ChapterModel).where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number == chapter.chapter_number - 1,
+        )
+    )
+    if prev_chapter is None:
+        return [], {}
+
+    prev_draft = await session.scalar(
+        select(ChapterDraftVersionModel).where(
+            ChapterDraftVersionModel.chapter_id == prev_chapter.id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+    )
+    prev_text = (prev_draft.content_md or "") if prev_draft else ""
+    if not prev_text:
+        return [], {}
+
+    try:
+        report = evaluate_reader_logic_seam(
+            prev_text,
+            draft.content_md,
+            prev_chapter=int(prev_chapter.chapter_number),
+            current_chapter=int(chapter.chapter_number),
+        )
+    except Exception:
+        logger.debug(
+            "reader logic seam scan failed for ch=%s — non-fatal",
+            chapter.chapter_number,
+            exc_info=True,
+        )
+        return [], {}
+
+    if report.passed:
+        return [], {}
+
+    findings = [
+        ChapterReviewFinding(
+            severity=finding.severity,
+            category="reader_logic_seam",
+            message=finding.message,
+        )
+        for finding in report.findings
+    ]
+    evidence_summary = {
+        "reader_logic_findings": [
+            {
+                "code": finding.code,
+                "severity": finding.severity,
+                "message": finding.message,
+                "evidence": finding.evidence,
+            }
+            for finding in report.findings
+        ],
+        "reader_logic_repair_prompt": build_reader_logic_repair_prompt(report),
+    }
+    return findings, evidence_summary
+
+
 def _merge_chapter_seam_into_review(
     review_result: "ChapterReviewResult",
     findings: list["ChapterReviewFinding"],
@@ -4596,6 +4682,64 @@ def _merge_chapter_seam_into_review(
             rewrite_prefix = (
                 "【章节断点】本章开篇遗漏了前一章末尾的悬念线索。请在进入新场景之前，"
                 "插入 100-300 字的过渡段，对每条 open thread 做承接 / 时间跳跃 / 空间转场 / 屏上解决之一。\n\n"
+                + repair_prompt
+            )
+
+    merged_instructions = review_result.rewrite_instructions
+    if rewrite_prefix:
+        merged_instructions = (
+            f"{rewrite_prefix}\n\n{merged_instructions}"
+            if merged_instructions
+            else rewrite_prefix
+        )
+
+    return ChapterReviewResult(
+        verdict=new_verdict,
+        severity_max=new_severity_max,
+        scores=review_result.scores,
+        findings=merged_findings,
+        evidence_summary=merged_evidence,
+        rewrite_instructions=merged_instructions,
+    )
+
+
+def _merge_reader_logic_into_review(
+    review_result: "ChapterReviewResult",
+    findings: list["ChapterReviewFinding"],
+    evidence: dict[str, Any],
+    *,
+    language: str | None = None,
+) -> "ChapterReviewResult":
+    if not findings:
+        return review_result
+
+    has_critical = any(f.severity == "critical" for f in findings)
+    merged_findings = list(review_result.findings) + findings
+    merged_evidence = dict(review_result.evidence_summary)
+    merged_evidence.update(evidence)
+
+    severity_rank = {"info": 0, "major": 1, "warning": 1, "critical": 2}
+    new_severity_max = review_result.severity_max
+    for f in findings:
+        if severity_rank.get(f.severity, 0) > severity_rank.get(new_severity_max, 0):
+            new_severity_max = f.severity
+
+    new_verdict = "rewrite" if has_critical else review_result.verdict
+    rewrite_prefix: str | None = None
+    if has_critical:
+        is_en = bool(language and str(language).lower().startswith("en"))
+        repair_prompt = evidence.get("reader_logic_repair_prompt") or ""
+        if is_en:
+            rewrite_prefix = (
+                "[reader continuity] The chapter opening contradicts or "
+                "teleports away from the prior chapter's visible state. Add a "
+                "specific bridge for location, door state, and action result "
+                "before entering the new beat.\n\n" + repair_prompt
+            )
+        else:
+            rewrite_prefix = (
+                "【读者逻辑断点】本章开篇与上一章的读者可见状态冲突或跳场。"
+                "请先补清位置、门状态、上一动作结果，再进入新事件。\n\n"
                 + repair_prompt
             )
 
@@ -5081,6 +5225,15 @@ async def review_chapter_draft(
     if seam_findings:
         review_result = _merge_chapter_seam_into_review(
             review_result, seam_findings, seam_evidence,
+            language=getattr(project, "language", None),
+        )
+
+    reader_logic_findings, reader_logic_evidence = await _compute_reader_logic_signal(
+        session=session, project=project, chapter=chapter, draft=draft,
+    )
+    if reader_logic_findings:
+        review_result = _merge_reader_logic_into_review(
+            review_result, reader_logic_findings, reader_logic_evidence,
             language=getattr(project, "language", None),
         )
 

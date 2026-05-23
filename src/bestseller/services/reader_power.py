@@ -65,6 +65,15 @@ _CONFLICT_KEYWORDS_ZH = (
     "杀",
     "抢",
     "夺",
+    "死",
+    "尸",
+    "入账",
+    "认账",
+    "镜债",
+    "拖进",
+    "吞掉",
+    "困在",
+    "倒计时",
 )
 _CONFLICT_KEYWORDS_EN = (
     "threat",

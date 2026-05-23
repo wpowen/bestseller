@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from bestseller.domain.chapter_seam_contract import ChapterSeamContract
+
 
 class PlotArcRead(BaseModel):
     id: UUID
@@ -98,6 +100,7 @@ class ChapterContractRead(BaseModel):
     relationship_debts: list[str] = Field(default_factory=list)  # 本章必须推进/偿还/加码的关系债
     is_climax: bool = False  # 是否为高潮章节
     loop_position: str | None = Field(default=None, max_length=32)  # trigger/action/reward/invest
+    seam_contract: ChapterSeamContract | None = None
 
 
 class SceneContractRead(BaseModel):
@@ -215,6 +218,7 @@ class SubplotScheduleEntryRead(BaseModel):
     arc_code: str = Field(min_length=1, max_length=64)
     chapter_number: int = Field(ge=1)
     prominence: str = Field(min_length=1, max_length=16)  # primary / secondary / mention / dormant
+    ensemble_arc_ref: str | None = None
     notes: str | None = None
 
 

@@ -1,0 +1,23 @@
+id: urban_modern
+label: 现代都市
+applicable_categories:
+  - 都市轻喜
+  - urban-contemporary
+palette:
+  - {category: food, name: 便利店饭团, sensory_hook: 塑封饭团的冷米香, class_signal: 打工日常}
+  - {category: food, name: 外卖咖啡, sensory_hook: 纸杯咖啡的焦苦热气, class_signal: 白领节奏}
+  - {category: clothing, name: 工牌挂绳, sensory_hook: 工牌挂绳扫过领口, class_signal: 职场身份}
+  - {category: tool, name: 电梯门禁卡, sensory_hook: 门禁卡贴上读头的短响, class_signal: 写字楼秩序}
+  - {category: ornament, name: 蓝牙耳机, sensory_hook: 蓝牙耳机里漏出的提示音, class_signal: 城市独处}
+  - {category: music, name: 商场背景乐, sensory_hook: 商场背景乐被人声冲散, class_signal: 消费场景}
+  - {category: vehicle, name: 网约车, sensory_hook: 网约车皮座的清洁剂味, class_signal: 城市流动}
+  - {category: tool, name: 手机备忘录, sensory_hook: 手机备忘录弹出的冷光, class_signal: 私密记录}
+daily_rituals:
+  - 进门刷门禁
+  - 电梯里压低声音
+  - 下班后回消息
+taboo_behaviors:
+  - 未经同意翻手机
+  - 会议中公开私人信息
+aesthetic_zeitgeist: 快速、明亮、压力外包给设备与日程。
+

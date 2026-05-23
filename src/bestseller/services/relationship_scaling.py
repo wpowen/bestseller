@@ -34,10 +34,10 @@ failures fall back to the original cast spec.
 
 from __future__ import annotations
 
-import logging
-import math
 from collections import Counter
 from dataclasses import dataclass, field
+import logging
+import math
 from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
@@ -314,6 +314,8 @@ def scan_relationship_scaling(
     total_chapters: int,
     volume_count: int,
     language: str = "zh-CN",
+    ensemble_arc_kernel: Any = None,
+    category: str | None = None,
 ) -> RelationshipScalingReport:
     """Audit the supporting_cast roster for scale-appropriate breadth."""
 
@@ -520,6 +522,31 @@ def scan_relationship_scaling(
                 payload={"volumes": list(missing_volumes)},
             )
         )
+
+    if total_chapters >= 300:
+        ensemble = _mapping(ensemble_arc_kernel)
+        arcs = _mapping_list(ensemble.get("arcs"))
+        floor = 5 if total_chapters >= 600 else 3
+        severity = (
+            "critical"
+            if str(category or "") in {"武侠群像", "古典权谋", "史诗", "epic"}
+            else "warning"
+        )
+        if ensemble_arc_kernel is not None and len(arcs) < floor:
+            findings.append(
+                RelationshipScalingFinding(
+                    code="ensemble_arc_count_below_floor",
+                    severity=severity,
+                    message=(
+                        f"{total_chapters}-chapter book has {len(arcs)} ensemble arcs; "
+                        f"need at least {floor}."
+                        if is_en
+                        else f"{total_chapters} 章长篇只有 {len(arcs)} 条 ensemble arc，"
+                        f"至少需要 {floor} 条。"
+                    ),
+                    payload={"count": len(arcs), "floor": floor},
+                )
+            )
 
     return RelationshipScalingReport(
         total_chapters=max(int(total_chapters or 0), 1),

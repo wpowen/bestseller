@@ -746,12 +746,6 @@ def check_case_type_diversity(
         "max_consecutive_same": max_consecutive_same,
     }
 
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return 10**9
-
-
 # ---------------------------------------------------------------------------
 # Repository — async DB helpers.
 # ---------------------------------------------------------------------------
@@ -907,7 +901,7 @@ def render_budget_diversity_block(
         if recent_cliffhangers:
             names = "、".join(c.value for c in recent_cliffhangers)
             lines.append(
-                f"· 近期章末悬念类型（本章结尾不得再用）：{names}"
+                f"· 近期收尾类型（本章最后一段不得再用）：{names}"
             )
     else:
         lines.append("[DIVERSITY BUDGET — this chapter MUST avoid the following]")
@@ -925,7 +919,7 @@ def render_budget_diversity_block(
         if recent_cliffhangers:
             names = ", ".join(c.value for c in recent_cliffhangers)
             lines.append(
-                f"- Recent cliffhanger kinds (do NOT reuse at chapter end): {names}"
+                f"- Recent ending-frame kinds (do NOT reuse at chapter end): {names}"
             )
 
     return "\n".join(lines)

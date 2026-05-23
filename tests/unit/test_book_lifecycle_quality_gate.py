@@ -63,6 +63,8 @@ def test_lifecycle_gate_passes_complete_ready_evidence() -> None:
 
     assert report.passed is True
     assert report.readiness_level == "ready"
+    assert report.aggregate_gate_report.verdict == "pass"
+    assert report.to_dict()["aggregate_gate_report"]["passed"] is True
     assert report.findings == ()
     assert {status.domain for status in report.domain_statuses} == {
         "planning",
@@ -111,6 +113,8 @@ def test_lifecycle_gate_blocks_current_historical_incomplete_shape() -> None:
 
     assert report.passed is False
     assert report.readiness_level == "blocked"
+    assert report.aggregate_gate_report.verdict == "blocked"
+    assert report.to_dict()["aggregate_gate_report"]["readiness"] == "blocked"
     assert {
         "planning_outline_below_target",
         "reverse_outline_gate_not_passed",

@@ -15,8 +15,6 @@ not scale to chapter count. These tests fix the scaling contract.
 
 from __future__ import annotations
 
-import pytest
-
 from bestseller.services.world_richness import (
     MAX_REASONABLE_LOCATIONS,
     MAX_REASONABLE_WORLD_RULES,
@@ -27,7 +25,6 @@ from bestseller.services.world_richness import (
     render_world_constraints_block,
     scan_world_spec_richness,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -148,6 +145,21 @@ def test_starved_factions_critical():
 
     codes = {f.code for f in report.findings}
     assert "starved_factions" in codes
+
+
+def test_world_richness_uses_edge_density():
+    world = _healthy_world(rules_n=25, locations_n=12, factions_n=8)
+    geography = {
+        "regions": [{"name": f"region_{i}"} for i in range(5)],
+        "routes": [{"region_a": "region_0", "region_b": "region_1"} for _ in range(4)],
+    }
+    report = scan_world_spec_richness(
+        world,
+        total_chapters=300,
+        geography_kernel=geography,
+    )
+    codes = {f.code for f in report.findings}
+    assert "thin_geography_edge_density" in codes
 
 
 # ---------------------------------------------------------------------------

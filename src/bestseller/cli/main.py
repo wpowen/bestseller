@@ -69,6 +69,12 @@ from bestseller.services.fanqie_market_repository import (
     upsert_ranking_snapshot,
 )
 from bestseller.services.fanqie_seed_profiles import list_fanqie_seed_profile_keys
+from bestseller.services.forbidden_terms_learner import (
+    guardrail_term_sets,
+    learn_and_update_guardrails,
+    load_guardrails_payload,
+    promote_forbidden_term_candidates,
+)
 from bestseller.services.if_generation import run_if_pipeline, run_if_pipeline_integrated
 from bestseller.services.inspection import (
     build_project_structure,
@@ -108,6 +114,7 @@ from bestseller.services.premium_book_gate import (
     premium_book_gate_report_to_dict,
 )
 from bestseller.services.project_health import build_project_health_report, repair_project_health
+from bestseller.services.project_systemic_readiness import evaluate_output_systemic_readiness
 from bestseller.services.projects import (
     create_chapter,
     create_project,
@@ -190,6 +197,7 @@ commercial_gate_app = typer.Typer(help="Commercial novel package gate operations
 premium_gate_app = typer.Typer(help="Premium novel readiness gate operations.")
 material_app = typer.Typer(help="Material library density and project material operations.")
 fanqie_market_app = typer.Typer(help="Fanqie ranking market intelligence operations.")
+forbidden_terms_app = typer.Typer(help="Forbidden-term learner operations.")
 ui_app = typer.Typer(help="Web UI operations.")
 prompt_pack_app = typer.Typer(help="Prompt pack operations.")
 writing_preset_app = typer.Typer(help="Writing preset operations.")
@@ -217,24 +225,104 @@ app.add_typer(commercial_gate_app, name="commercial-gate")
 app.add_typer(premium_gate_app, name="premium-gate")
 app.add_typer(material_app, name="material")
 app.add_typer(fanqie_market_app, name="fanqie-market")
+app.add_typer(forbidden_terms_app, name="forbidden-terms")
 app.add_typer(ui_app, name="ui")
 app.add_typer(prompt_pack_app, name="prompt-pack")
 app.add_typer(writing_preset_app, name="writing-preset")
 app.add_typer(writing_contest_app, name="writing-contest")
 app.add_typer(if_app, name="if")
-from bestseller.cli.voice_dna import voice_dna_app  # noqa: E402
 from bestseller.cli.book_writer import book_app  # noqa: E402
 from bestseller.cli.maintenance import maintenance_app  # noqa: E402
+from bestseller.cli.repair_batch import repair_batch_app  # noqa: E402
+from bestseller.cli.voice_dna import voice_dna_app  # noqa: E402
 
 app.add_typer(voice_dna_app, name="voice-dna")
 app.add_typer(book_app, name="book")
 app.add_typer(maintenance_app, name="maintenance")
+app.add_typer(repair_batch_app, name="repair-batch")
 export_app.add_typer(export_amazon_kdp_app, name="amazon-kdp")
 
 
 @app.callback()
 def main() -> None:
     """Bootstrap the BestSeller command line interface."""
+
+
+@forbidden_terms_app.command("scan")
+def forbidden_terms_scan(
+    project: Annotated[str, typer.Option("--project", "-p")],
+    output_base_dir: Annotated[
+        Path,
+        typer.Option("--output-base-dir", help="Base output directory."),
+    ] = Path("output"),
+    top_n: Annotated[int, typer.Option("--top-n")] = 30,
+    min_count: Annotated[int, typer.Option("--min-count")] = 2,
+) -> None:
+    """Scan rejected drafts and refresh canon guardrail candidates."""
+
+    project_output_dir = output_base_dir / project
+    story_bible_dir = project_output_dir / "story-bible"
+    payload = load_guardrails_payload(story_bible_dir)
+    existing_terms, whitelist = guardrail_term_sets(payload)
+    candidates = learn_and_update_guardrails(
+        project_output_dir,
+        story_bible_dir,
+        existing_terms=existing_terms,
+        whitelist=whitelist,
+        top_n=top_n,
+        min_count=min_count,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "project": project,
+                "candidate_count": len(candidates),
+                "guardrails_path": str(
+                    (story_bible_dir / "canon-guardrails.json").resolve()
+                ),
+                "candidates": [candidate.to_dict() for candidate in candidates],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@forbidden_terms_app.command("review")
+def forbidden_terms_review(
+    project: Annotated[str, typer.Option("--project", "-p")],
+    output_base_dir: Annotated[
+        Path,
+        typer.Option("--output-base-dir", help="Base output directory."),
+    ] = Path("output"),
+    promote: Annotated[
+        list[str] | None,
+        typer.Option("--promote", help="Promote candidate term into forbidden_terms."),
+    ] = None,
+) -> None:
+    """Show or promote forbidden-term candidates."""
+
+    story_bible_dir = output_base_dir / project / "story-bible"
+    if promote:
+        guardrails_path = promote_forbidden_term_candidates(
+            story_bible_dir,
+            {term.strip() for term in promote if term.strip()},
+        )
+    else:
+        guardrails_path = story_bible_dir / "canon-guardrails.json"
+    payload = load_guardrails_payload(story_bible_dir)
+    typer.echo(
+        json.dumps(
+            {
+                "project": project,
+                "guardrails_path": str(guardrails_path.resolve()),
+                "forbidden_terms": payload.get("forbidden_terms", []),
+                "candidates": payload.get("forbidden_terms_candidates", []),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 def _format_progress_details(payload: dict[str, Any] | None) -> str:
@@ -2293,6 +2381,26 @@ def commercial_gate_project(
                     }
                     for issue in package_report.issues
                 )
+                gate_findings.extend(
+                    evaluate_output_systemic_readiness(
+                        package_dir,
+                        target_chapters=project.target_chapters,
+                        identity_registry=(
+                            project.metadata_json.get("identity_manifest")
+                            if isinstance(project.metadata_json, dict)
+                            and isinstance(
+                                project.metadata_json.get("identity_manifest"),
+                                list,
+                            )
+                            else None
+                        ),
+                        identity_registry_locked=(
+                            isinstance(project.metadata_json, dict)
+                            and project.metadata_json.get("identity_manifest_status")
+                            == "locked"
+                        ),
+                    )
+                )
             premium_report = evaluate_premium_project_readiness(project)
             return evaluate_project_ranking_readiness(
                 project,
@@ -2302,6 +2410,11 @@ def commercial_gate_project(
                 scorecard_quality_score=(
                     float(scorecard.quality_score)
                     if scorecard is not None and scorecard.quality_score is not None
+                    else None
+                ),
+                scorecard_snapshot=(
+                    scorecard.snapshot_json
+                    if scorecard is not None and scorecard.snapshot_json is not None
                     else None
                 ),
                 premium_gate_score=premium_report.score,

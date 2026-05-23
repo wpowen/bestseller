@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from bestseller.domain.gate_verdict import GateFinding, GateVerdict
 from bestseller.services.emotion_driven_kernel import (
     EmotionDrivenKernel,
     emotion_driven_kernel_from_dict,
@@ -49,6 +50,34 @@ class WholeBookQualityReport:
     findings: tuple[WholeBookQualityFinding, ...]
     ledger: tuple[ChapterEngagementRecord, ...]
     metrics: dict[str, object]
+
+    @property
+    def gate_verdict(self) -> GateVerdict:
+        if any(finding.severity == "critical" for finding in self.findings):
+            verdict = "blocked"
+        elif self.passed:
+            verdict = "pass"
+        else:
+            verdict = "warn_only"
+        return GateVerdict(
+            gate_name="whole-book-quality",
+            verdict=verdict,
+            coverage=1.0 if self.passed else 0.0,
+            findings=tuple(
+                GateFinding(
+                    code=finding.code,
+                    severity=finding.severity,
+                    message=finding.message,
+                    path=finding.scope,
+                    repair_action=_STRATEGY_BY_CODE.get(
+                        finding.code,
+                        "chapter_serial_loop_rewrite",
+                    ),
+                )
+                for finding in self.findings
+            ),
+            metrics=dict(self.metrics),
+        )
 
 
 _CONFLICT_TERMS = (
@@ -903,7 +932,8 @@ def evaluate_whole_book_quality(
 
 def whole_book_quality_report_to_dict(report: WholeBookQualityReport) -> dict[str, object]:
     return {
-        "passed": report.passed,
+        "passed": report.gate_verdict.passed,
+        "gate_verdict": report.gate_verdict.model_dump(mode="json"),
         "metrics": dict(report.metrics),
         "findings": [
             {

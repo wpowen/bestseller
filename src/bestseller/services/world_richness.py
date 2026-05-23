@@ -42,9 +42,9 @@ exist but no chapter will ground them).
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import logging
 import math
-from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
@@ -114,8 +114,10 @@ class WorldRichnessReport:
     location_bounds: WorldRichnessBounds
     faction_count: int
     faction_bounds: WorldRichnessBounds
-    duplicate_rule_names: tuple[str, ...]
-    findings: tuple[WorldRichnessFinding, ...]
+    geography_region_count: int = 0
+    geography_route_count: int = 0
+    duplicate_rule_names: tuple[str, ...] = ()
+    findings: tuple[WorldRichnessFinding, ...] = ()
 
     @property
     def critical_count(self) -> int:
@@ -291,6 +293,7 @@ def scan_world_spec_richness(
     *,
     total_chapters: int,
     language: str = "zh-CN",
+    geography_kernel: dict[str, Any] | Any | None = None,
 ) -> WorldRichnessReport:
     """Audit a world_spec artifact for scale-appropriate breadth.
 
@@ -322,6 +325,8 @@ def scan_world_spec_richness(
     rule_count = len(rules)
     location_count = len(locations)
     faction_count = len(factions)
+    geography_region_count = 0
+    geography_route_count = 0
 
     # ── Rule count floor/ceiling ─────────────────────────────────────
     if rule_count < bounds["rules"].floor:
@@ -459,6 +464,34 @@ def scan_world_spec_richness(
             )
         )
 
+    if geography_kernel is not None:
+        geography = _mapping(geography_kernel)
+        geography_region_count = len(_mapping_list(geography.get("regions")))
+        geography_route_count = len(_mapping_list(geography.get("routes")))
+        if (
+            total_chapters >= 300
+            and geography_region_count >= 5
+            and geography_route_count < 5
+        ):
+            findings.append(
+                WorldRichnessFinding(
+                    code="thin_geography_edge_density",
+                    severity="critical",
+                    message=(
+                        f"Geography has {geography_region_count} regions but only "
+                        f"{geography_route_count} routes for a {total_chapters}-chapter book."
+                        if is_en
+                        else f"{total_chapters} 章长篇有 {geography_region_count} 个 region，"
+                        f"但只有 {geography_route_count} 条 routes，地理拓扑过薄。"
+                    ),
+                    payload={
+                        "region_count": geography_region_count,
+                        "route_count": geography_route_count,
+                        "route_floor": 5,
+                    },
+                )
+            )
+
     # ── Empty descriptions ───────────────────────────────────────────
     blank_rule_names: list[str] = []
     for r in rules:
@@ -492,6 +525,8 @@ def scan_world_spec_richness(
         location_bounds=bounds["locations"],
         faction_count=faction_count,
         faction_bounds=bounds["factions"],
+        geography_region_count=geography_region_count,
+        geography_route_count=geography_route_count,
         duplicate_rule_names=tuple(duplicate_names),
         findings=tuple(findings),
     )

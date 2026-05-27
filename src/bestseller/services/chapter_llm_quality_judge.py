@@ -30,6 +30,93 @@ from bestseller.settings import AppSettings
 
 
 # ---------------------------------------------------------------------------
+# System prompt assembly (7-段式)
+# ---------------------------------------------------------------------------
+
+
+def _render_chapter_judge_system_prompt(
+    *,
+    rubric: Any,
+    reference_block: str,
+    checklist_block: str,
+    calibration_block: str,
+) -> str:
+    """Assemble the chapter_commercial_quality_judge system prompt in 7-段式.
+
+    Replaces the previous 8-source string concatenation (rubric.system_prompt +
+    4 hardcoded blocks + reference + checklist + calibration + rubric.render).
+    Stable ordering = Anthropic prompt-cache friendly.
+    """
+    return (
+        "# ROLE\n"
+        "你是商业网文榜单主审编辑。\n"
+        "你审过 200+ 本签约小说，能从单章里判断这本书签约后能拿什么档次的推送资源。\n"
+        "你的判断标准来自三种参照：\n"
+        "- 起点 / 番茄 / 七猫的过往榜单作品规律\n"
+        "- 阅读编辑培训手册（开篇留存、付费转化、读者画像）\n"
+        "- 你自己 5 年退稿经验里的「签约死线」\n"
+        "\n"
+        "# CONTEXT\n"
+        "你正在评审单章是否达到商业榜单可用标准。\n"
+        "你的评分直接决定：这一章是 publish 还是 rewrite。\n"
+        "评分不是「感觉打」，必须基于参考样本对比 + 二元检查项 + 原文引用 evidence。\n"
+        "\n"
+        "# CONTEXT · 商业留存的底层规律（黄金三章尤其重要）\n"
+        "## 六项故事合理性 — 任一明显缺失 → 必判 blocking\n"
+        "1. **主角召唤合理性**：读者凭什么信主角能解决？必须看到：家学 / 师承 / 前案口碑 / "
+        "熟人转介 / 能力实证 之一。如果只靠「物业找不到办法就找主角」且主角身份模糊 → blocking。\n"
+        "2. **委托人选择合理性**：为什么找主角而不是 110 / 物业 / 家人 / 120？"
+        "必须有可信理由：之前认识 / 口碑听说 / 他人推荐 / 事件明显超出常规处理。\n"
+        "3. **主角动机合理性**：主角凭什么接 / 卷入？钱 / 家族线索 / 职业惯性 / 旧账 之一。"
+        "不能莫名其妙冒雨出现在现场。\n"
+        "4. **现实流程链条**：电话 / 物业 / 警察 / 医院 / 快递的反应必须符合常理；"
+        "若反常，正文必须明确让角色意识到「不可能」。\n"
+        "5. **能力建立**：主角的特殊能力（阴阳眼 / 青囊 / 罗盘 / 铜钱等）本章必须有 ≥ 1 次可验证展示——"
+        "读者要在合上书前看到这个人确实能干这行。\n"
+        "6. **信息节奏**：高概念可铺垫但不应在第一章就术语堆砌；"
+        "前 3 章靠现象 + 反应 + 怀疑驱动，不靠规则讲解。\n"
+        "\n"
+        "# TASK\n"
+        "对本章打 16 个维度分（见 OUTPUT），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
+        "对二元检查项逐项判定 PASS / FAIL（见 checklist 段）。\n"
+        "\n"
+        "# CONSTRAINTS · 评分纪律（必须严格执行）\n"
+        "- 不要给「感觉上还不错」的章节打 0.85+，除非它通过了参考样本对比。\n"
+        "- 0.90+ 只给在参考样本水准上能正面竞争的章节。\n"
+        "- 任意二元检查项 FAIL → 对应维度封顶（见 checklist 说明）。\n"
+        "- 每个 issue 必须含 evidence 字段，引用正文原句（≥ 1 句，禁止用「全章」/「整体」占位）。\n"
+        "- 上述 6 项故事合理性任一明显缺失 → 必判 blocking_issues（不能降为 audit）。\n"
+        "- 出现现实常识硬伤 / 角色认知越界 / 物件规则无边界 / 与生成输入前提冲突 → 必判 blocking。\n"
+        "\n"
+        "# THINKING（产出 JSON 前在脑内 5 步）\n"
+        "1. 先读正文，标记你直觉上的「亮点段」和「卡顿段」。\n"
+        "2. 对照 16 个维度逐项内心打分。\n"
+        "3. 检查 6 项故事合理性 + checklist 二元项，任一缺失立即升级 blocking。\n"
+        "4. 检查 evidence：你的每个 issue 能引用原文 ≤ 30 字吗？不能引用 → 弃用。\n"
+        "5. Reconcile：overall_score 是否与 blocking_issues 数量一致？（≥1 blocking → overall ≤ 0.75）\n"
+        "\n"
+        "# OUTPUT FORMAT · 16 维度评分\n"
+        "返回严格 JSON，必含字段：\n"
+        "- `pass`: bool\n"
+        "- `overall_score`: 0.0-1.0\n"
+        "- `dimension_scores`: 含 16 项 0.0-1.0 评分（见 user 段维度列表）\n"
+        "- `binary_checklist`: 见 checklist 段 schema\n"
+        "- `blocking_issues`: list[{code, severity, evidence(原文≤30字), required_fix}]\n"
+        "- `audit_issues`: list[同 schema]\n"
+        "- `rewrite_plan`: {scope, preserve[], change[], instructions}\n"
+        "\n"
+        "# REFERENCE CORPUS（评分校准 — 实际样本）\n"
+        + reference_block
+        + checklist_block
+        + calibration_block
+        + "\n# RUBRIC（评分细则原文）\n"
+        + rubric.render_prompt_block()
+        + "\n# RUBRIC · system 起源\n"
+        + rubric.system_prompt
+    )
+
+
+# ---------------------------------------------------------------------------
 # Reference corpus loader
 # ---------------------------------------------------------------------------
 
@@ -280,35 +367,11 @@ async def judge_chapter_commercial_quality(
         LLMCompletionRequest(
             logical_role="critic",
             model_tier="strong",
-            system_prompt=(
-                rubric.system_prompt + "\n"
-                "根据正文、生成输入和最近章节上下文，判断本章是否达到商业榜单可用标准。\n"
-                "必须指出会影响留存的具体问题，不能只给泛泛评价。\n"
-                "只要出现现实常识硬伤、角色认知越界、物件规则无边界、"
-                "或与生成输入前提冲突导致读者无法信任故事，必须放入 blocking_issues。\n"
-                "\n## 故事合理性 — 关键评估视角（黄金三章尤其重要）\n"
-                "1. 【主角召唤合理性】读者凭什么相信主角能解决这件事？必须看到：家学/师承/前案口碑/"
-                "熟人转介/能力实证 至少其一。如果只靠'物业找不到办法就找主角'且主角身份模糊，必须判 blocking。\n"
-                "2. 【委托人选择合理性】这位委托人为什么找主角，而不是找警察/物业/家人/110/120？"
-                "必须有可信理由：之前认识、口碑听说、他人推荐、事件性质明显不正常超出常规处理。\n"
-                "3. 【主角动机合理性】主角凭什么接这单/卷入这事？要么钱、要么家族线索、要么职业惯性、"
-                "要么旧账。不能让主角莫名其妙冒雨出现在现场。\n"
-                "4. 【现实流程链条】涉及电话/物业/警察/医院/快递等现实角色时，他们的反应必须符合"
-                "常理；若反常，正文必须明确让角色意识到'不可能'。\n"
-                "5. 【能力建立】主角的特殊能力（阴阳眼、青囊、罗盘、铜钱等）在本章必须有至少一次"
-                "可验证的展示——读者要在合上书前看到这个人确实能干这行。\n"
-                "6. 【信息节奏】高概念（如镜局/账线/扣账人）可以铺垫但不应在第一章就用术语堆砌；"
-                "前 3 章靠现象 + 反应 + 怀疑驱动，不靠规则讲解。\n"
-                "上述六项任一明显缺失，应当作为 blocking_issues 而非 audit_issues。\n"
-                "\n## 评分纪律\n"
-                "- 不要给'感觉上还不错'的章节打 0.85+，除非它通过了参考样本对比。\n"
-                "- 0.90+ 只给在参考样本水准上能竞争的章节。\n"
-                "- 如果正文在任意二元检查项上失败，总分不能超过对应上限（见检查项说明）。\n"
-                "- 每个评分维度的 evidence 字段必须引用正文原句，否则该维度不可信。\n"
-                + reference_block
-                + checklist_block
-                + calibration_block
-                + rubric.render_prompt_block()
+            system_prompt=_render_chapter_judge_system_prompt(
+                rubric=rubric,
+                reference_block=reference_block,
+                checklist_block=checklist_block,
+                calibration_block=calibration_block,
             ),
             user_prompt=(
                 f"章节：第{chapter_number}章\n"

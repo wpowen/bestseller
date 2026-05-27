@@ -796,6 +796,24 @@ def build_quality_repair_instructions(spec: QualityRepairTaskSpec) -> str:
             lines.extend(_banned_pattern_feedback_lines(row))
     if "weak_immersion" in spec.cause_ids:
         lines.append("- 拆掉心理灌水，把背景信息改成动作触发、证物变化或人物对抗。")
+    if any(cause.startswith("CHAPTER_SPLICE_") for cause in upper_causes):
+        lines.extend(
+            [
+                "- 本章存在拼接草稿痕迹：必须先做去重和时序合并，再重写正文。",
+                "- 对重复事件二选一保留为唯一正典事件线；另一段只能改成递进的新信息，不能保留复读。",
+                "- 人物离场、回场、地点切换、时间跳转必须有可见桥接动作；没有桥接就删除矛盾段。",
+                "- 修复后读者应能按“地点 -> 时间 -> 在场人物 -> 证物变化 -> 下一步选择”复述本章。",
+            ]
+        )
+    if "MATERIAL_SELF_REPAIR_BLOCKING" in upper_causes:
+        lines.extend(
+            [
+                "- 本章存在物料缺口或过期引用：必须按 patch points 修正正典依赖后再重写。",
+                "- 缺失人物/地点/规则/线索只能补成最小可用设定，并与已有 story-bible 对齐；禁止临时现编新体系。",
+                "- 过期别名、重复实体和未知实体必须统一到一个稳定称谓；正文不能靠模糊称呼绕过物料问题。",
+                "- 若物料仍不足以支撑某个桥段，删除或延后该桥段，不要用解释性旁白硬接。",
+            ]
+        )
 
     if row:
         lines.extend(

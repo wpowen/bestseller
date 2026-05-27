@@ -13,21 +13,111 @@ from bestseller.infra.db.models import (
     TimelineEventModel,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.prompt_input_formatter import (
+    group_facts_by_type,
+    render_task_header,
+)
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 
 
+_ROLLING_SUMMARY_SYSTEM_ZH = """# ROLE
+你是一位长篇小说"连贯性主编"。
+你的工作不是给读者写"剧情回顾"，而是给**下游写手 LLM**写一份"如果你忘了前文，看这一份就够了"的工作记忆。
+你做过的最长一本书 800 章，每 50 章为下一段写手生成一份滚动摘要。
+你深知：摘要不是流水账，而是"取舍纪律"的产物——只留下下游不能丢的信息。
+
+# CONTEXT
+- 下游消费者：另一个 LLM（写后续章节）
+- 它需要快速捕获的 4 类信息：
+  1. 哪些角色发生了**不可逆变化**（不能反悔的）
+  2. 哪些**线索/伏笔**已埋下但尚未回收
+  3. 哪些**规则**被建立或破坏
+  4. 当前的**未解钩子清单**
+
+# TASK
+基于给定的 canon_facts 与 timeline_events，输出一份 ≤800 中文字摘要。
+**写给下游写手看，不是写给读者看**——禁止文学化、禁止悬念腔、禁止主观评价。
+
+# CONSTRAINTS（违反即重写）
+- 字数硬上限：800 中文字
+- 必须 4 段格式（## 角色状态 / ## 已埋未回收的线索 / ## 已建立或破坏的规则 / ## 当前未解钩子），缺段不合格
+- 禁止虚构：所有信息必须能追溯到给定 facts/events
+- 禁止主观评价词（精彩、令人惊讶、引人入胜、扣人心弦…）
+- 禁止剧透未来章节
+- 第三人称、过去时、短句优先
+
+# THINKING（产出前在脑内 4 步）
+1. 浏览所有 facts，按"角色变化 / 物件变化 / 关系变化 / 规则变化"分桶
+2. 标记"高密度章节"（含 ≥3 个变化的章）
+3. 抽出 5-15 条"下游写手不能忘"的核心
+4. 用第三人称 + 过去时 + 短句写
+
+# OUTPUT FORMAT（严格 4 段 markdown，无前言无后语）
+## 角色状态
+- 角色 A：…（变化）
+- 角色 B：…
+
+## 已埋未回收的线索
+- 线索 X（首次出现 chN）：…
+- 线索 Y（首次出现 chN）：…
+
+## 已建立或破坏的规则
+- R-XXX：…（chN 建立 / chN 破坏）
+
+## 当前未解钩子
+- 钩子 1：…
+- 钩子 2：…
+
+# EXAMPLE（合格摘要的样子）
+## 角色状态
+- 林渊：在 ch5 失去康熙铜钱一角；ch7 第一次被镜面记住影子；对苏婉宁从警惕转为有限协作。
+- 苏婉宁：从单纯立案警察转为可对林渊半信半疑的协作者。
+- 王建业：ch1 被镜子带走，ch4 在镜中残影被林渊确认仍存活。
+
+## 已埋未回收的线索
+- 父亲半卷青囊（ch3 首次提及，藏处不明）
+- 张建军同款旧镜钥匙（ch1 末，来源未交代）
+"""
+
+_ROLLING_SUMMARY_SYSTEM_EN = """# ROLE
+You are a long-form fiction continuity editor.
+Your output is **working memory for a downstream chapter-writing LLM**, not a reader-facing recap.
+
+# CONTEXT
+Downstream consumer needs: irreversible character changes / unresolved foreshadowing /
+established or broken rules / current open hooks.
+
+# TASK
+Produce ≤800-word summary. Four sections, no preamble.
+
+# CONSTRAINTS
+- ≤800 words total
+- Strict 4-section format (Character State / Unresolved Foreshadowing / Rules Established or Broken / Open Hooks)
+- No fabrication — every claim must trace to given facts/events
+- No subjective praise ("brilliant", "compelling")
+- Third person, past tense, short sentences
+
+# OUTPUT FORMAT
+## Character State
+- ...
+
+## Unresolved Foreshadowing
+- ...
+
+## Rules Established or Broken
+- ...
+
+## Open Hooks
+- ...
+"""
+
+
 def _build_system_prompt(language: str) -> str:
     if str(language or "").lower().startswith("en"):
-        return (
-            "You are a novel knowledge compressor. Your task is to condense "
-            "story knowledge into concise summaries."
-        )
-    return (
-        "你是小说知识压缩器：将故事知识精炼为简短摘要，"
-        "保留人物状态变化与情节关键事实，禁止虚构未在原文出现的内容。"
-    )
+        return _ROLLING_SUMMARY_SYSTEM_EN
+    return _ROLLING_SUMMARY_SYSTEM_ZH
 
 
 class RollingSummaryResult(BaseModel):
@@ -90,25 +180,38 @@ async def compress_knowledge_window(
             to_chapter=to_chapter,
         )
 
-    # Build summarization prompt
-    fact_lines = [
-        f"- [{f.subject_label}] {f.predicate}: {f.value_json}"
-        for f in facts[:200]  # Cap to avoid prompt overflow
-    ]
-    event_lines = [
-        f"- Ch{e.story_order}: {e.event_name}"
-        for e in events[:100]
-    ]
+    # ── Build user prompt using the standard formatter ──────────────────
+    # facts: bucket by fact_type so the LLM sees grouped info (角色变化 /
+    # 物件变化 / 关系变化 / 规则变化), each bucket capped.
+    facts_md = group_facts_by_type(
+        facts[:200],
+        type_attr="fact_type",
+        max_per_group=40,
+    )
+    event_lines = "\n".join(
+        f"- ch{e.story_order} · {e.event_name}" for e in events[:100]
+    )
+    event_truncated = (
+        f"\n\n_（仅显示前 100 / 共 {len(events)} 条）_"
+        if len(events) > 100
+        else ""
+    )
 
     user_prompt = (
-        f"Summarize the following canon facts and timeline events from "
-        f"chapters {from_chapter}-{to_chapter} into a concise narrative summary "
-        f"(max 800 words). Preserve key character developments, plot milestones, "
-        f"relationship changes, and world-state changes. Output ONLY the summary text.\n\n"
-        f"## Canon Facts ({len(facts)} total, showing up to 200)\n"
-        + "\n".join(fact_lines)
-        + f"\n\n## Timeline Events ({len(events)} total, showing up to 100)\n"
-        + "\n".join(event_lines)
+        render_task_header(
+            from_chapter=from_chapter,
+            to_chapter=to_chapter,
+            fact_count_total=len(facts),
+            event_count_total=len(events),
+        )
+        + "\n\n## Canon Facts（按 fact_type 分桶）\n"
+        + facts_md
+        + "\n\n## Timeline Events（按 story_order 排序）\n"
+        + event_lines
+        + event_truncated
+        + "\n\n## 立即开始\n"
+        "按 system 中的 4 段格式输出摘要。"
+        "禁止前言、禁止后语、禁止文学化修饰。"
     )
 
     response = await complete_text(

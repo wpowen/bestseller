@@ -1849,9 +1849,24 @@ async def _regenerate_scene_until_valid(
 
     async def _regenerator(feedback: str) -> str:
         nonlocal last_model_name, last_llm_run_id, last_provider
+        # 7-段式 REPAIR_HINT 段：把整改指令从一句话扩展成"诊断 + 修改边界 + 重写要求"
         retry_user_prompt = (
-            f"{user_prompt}\n\n---\n【质量整改指令】\n{feedback}"
-            "\n\n请基于以上整改要求重写整段场景，保持剧情、人物、场景不变。"
+            f"{user_prompt}\n\n"
+            "---\n"
+            "# REPAIR_HINT · 本场上一稿被质量门拦截\n"
+            "## 诊断\n"
+            f"{feedback}\n\n"
+            "## 修改边界（必须遵守）\n"
+            "- 剧情骨架、参与角色、场景位置、场景目标 — **保持不变**\n"
+            "- 仅针对上述诊断列出的问题做定点修复\n"
+            "- 字数、开篇硬指标、AI 套话黑名单等 system 中的硬约束 — **照样遵守**\n"
+            "- 不要因为修复某条问题反而引入新的违规（如为减字而砍主线）\n\n"
+            "## THINKING（重写前在脑内 3 步）\n"
+            "1. 把诊断里的每一条问题映射到上一稿的具体段落 — 标记「该改 / 不该动」\n"
+            "2. 决定每条问题的最小修复手段（改词 / 改段 / 补段 / 删段）\n"
+            "3. 检查修复后是否违反 system 中任何硬约束 — 违反则回退方案\n\n"
+            "## 立即开始\n"
+            "输出**完整一版重写后的场景正文**（Markdown，无前言后语），不要列修改清单。"
         )
         retry = await complete_text(
             session,
@@ -4867,79 +4882,132 @@ def build_scene_draft_prompts(
     )
     writing_profile_section = render_writing_profile_prompt_block(writing_profile, language=language)
     serial_guardrails = render_serial_fiction_guardrails(writing_profile, language=language)
-    # Build system prompt with project-level static content first (cache-
-    # friendly: Anthropic's automatic prompt caching keeps the shared prefix
-    # across scenes in the same chapter, reducing TTFT by 60-80%).
+    # Build system prompt — 7-段式骨架（ROLE / CONTEXT / TASK / CONSTRAINTS /
+    # THINKING / OUTPUT / EXAMPLES）。前 6 段跨场景稳定，进 Anthropic prompt
+    # cache；写作画像 + 商业守则随项目变化，放在 CONSTRAINTS 末尾独立子段。
+    _pack_label = getattr(prompt_pack, "key", None) or getattr(prompt_pack, "name", None) or "general"
+    _genre_label = getattr(writing_profile.market, "platform_target", None) or "商业长篇连载"
     if is_en:
         system_prompt = (
-            # --- Part A: Creative voice anchor ---
-            "You are an expert fiction writer inside a long-form commercial fiction system. "
-            "You write vivid, cinematic prose with sharp rhythm and strong forward pull.\n"
-            "Your core craft:\n"
-            "- Show, don't tell — replace adjectives with action: not 'she was nervous' but 'her nails bit into her palm'.\n"
-            "- Consequences over description — not 'the wave was huge' but 'the freighter flipped like a bathtub toy'.\n"
-            "- Subtext over directness — true feelings live in action, silence, and environment.\n"
-            "- Every paragraph ending plants an unanswered question that compels the reader forward.\n"
-            "- Each passage should carry multiple functions: environment + character + foreshadowing + emotion in one beat.\n"
+            "# ROLE\n"
+            "You are a senior commercial fiction writer with 5+ signed long-form titles.\n"
+            f"You specialise in **{_pack_label}** sub-genre and write for {_genre_label}.\n"
+            "Your single-chapter follow-on rate exceeds 100k readers — earned not by spectacle but by\n"
+            "making every paragraph trigger an involuntary page-flip.\n"
             "\n"
-            # --- Part B: Pacing & Character ---
-            "PACING RULE — not every scene is a chase. A good novel breathes:\n"
-            "- After high-tension scenes, include moments of quiet: reflection, humor, small human interactions, sensory rest.\n"
-            "- Vary paragraph rhythm: long flowing passages for atmosphere, short punchy lines for action. Mix them.\n"
-            "- Silence, stillness, and waiting can build more tension than explosions. Use the space between events.\n"
+            "# CONTEXT · Craft philosophy (internalised, never violated)\n"
+            "1. **Action over adjectives** — not 'she was nervous' but 'her nails bit into her palm'.\n"
+            "2. **Consequence over description** — not 'the wave was huge' but 'the freighter flipped like a bathtub toy'.\n"
+            "3. **Subtext over statement** — true feelings live in action, silence, environment.\n"
+            "4. **Every paragraph ends on an unresolved question** — the reader MUST turn the page.\n"
+            "5. **One stroke, many functions** — environment + character + foreshadow + emotion in one beat.\n"
             "\n"
-            "CHARACTER DISTINCTION RULE — every character is a unique person:\n"
-            "- Each character has their own sentence length, vocabulary level, speech habits, and emotional style.\n"
-            "- Show characters through UNIQUE actions — not just 'jaw tightened' and 'arms crossed'. Give each person specific physical habits that belong only to them.\n"
-            "- Characters must have agency: they initiate, refuse, surprise, joke, contradict. They are not reactive props.\n"
-            "- When two characters talk, a reader should identify who is speaking WITHOUT dialogue tags.\n"
+            "# CONTEXT · Pacing & character distinction\n"
+            "- Not every scene is a chase. After high-tension, breathe (quiet dialogue / humour / sensory rest).\n"
+            "- Vary paragraph rhythm: long flowing for atmosphere, short punchy for impact. Mix.\n"
+            "- Silence/stillness/waiting often beat explosions. Use the space between events.\n"
+            "- Each character has unique sentence length, vocabulary, speech habits.\n"
+            "- Reader must identify the speaker WITHOUT dialogue tags.\n"
+            "- Characters must initiate / refuse / surprise / contradict — never reactive props.\n"
             "\n"
-            # --- Part C: Consolidated iron rules ---
-            "IRON RULES: Output direct Markdown prose only (narrative, dialogue, action, environment, thought). "
-            "No explanations, bullet lists, planning notes, or commentary.\n"
-            "Write in English only. Do not switch to Chinese.\n"
-            "Word count must land within 90%-120% of target — too short or too long will be rejected.\n"
-            "Use EXACT character names from the Participants list — no renaming, abbreviation, or substitution.\n"
-            "Vary openings across time, place, action, and angle — never repeat the same pattern in consecutive chapters.\n"
+            "# TASK\n"
+            "Write the scene's prose body in Markdown.\n"
+            "Output PROSE ONLY (narrative, dialogue, action, environment, inner thought).\n"
+            "No explanations, no bullet lists, no planning notes, no commentary.\n"
+            "\n"
+            "# CONSTRAINTS · Hard (violation → rewrite)\n"
+            "- Word count: 90%-120% of target. Below or above = rejected.\n"
+            "- Character names: EXACT match to the Participants list. No renaming / abbreviation.\n"
+            "- Language: English only. Do not switch to Chinese.\n"
+            "- Opening: do not repeat the same opening pattern (time / place / action / angle) used in the last 3 chapters.\n"
+            "- No Markdown headings (# or ##). No code fences. No `entry_state` / `exit_state` / `contract` tags.\n"
             + _NOVEL_OUTPUT_PROHIBITION_EN
-            + f"\nWriting profile:\n{writing_profile_section}\n"
+            + "\n"
+            "# THINKING (plan in your head BEFORE writing — do NOT print this)\n"
+            "1. **Scene goal** — what emotional + informational deliverable does the reader get?\n"
+            "2. **Opening shot** — what concrete image is the first sentence? Not 'It was raining' — give a specific physical detail.\n"
+            "3. **Rhythm arc** — what tempo at start / middle / end? Where is the breath?\n"
+            "4. **Signature moment** — what 'screenshot-worthy' beat will you give the reader (golden line / surgical description / micro detail / reaction amplification)?\n"
+            "5. **Closing hook** — what specific unanswered question lands at the end? (Not abstract — concrete.)\n"
+            "\n"
+            "# OUTPUT FORMAT\n"
+            "- First sentence ≤ 80 characters (sharp).\n"
+            "- First paragraph ≤ 150 characters.\n"
+            "- First 250 characters MUST contain a visible anomaly (object, action, sensory).\n"
+            "\n"
+            "# EXAMPLES · Negative (never output these)\n"
+            "- 'a feeling washed over him' / 'the air seemed to freeze' / 'time stood still'\n"
+            "- 'mixed feelings' / 'inexplicable dread' / 'electric sensation'\n"
+            "- Closing lines like 'this was only the beginning' or 'the real answer waited to be revealed'\n"
+            "\n"
+            "# PROJECT-SPECIFIC PROFILE (varies per project)\n"
+            f"Writing profile:\n{writing_profile_section}\n"
             f"Serial fiction guardrails:\n{serial_guardrails}\n"
         )
     else:
         system_prompt = (
-            # --- Part A: 创作声音锚点 (Positive creative guidance) ---
-            "你是功力深厚的中文网文写手，擅长写出有画面感、有节奏、有牵引力的商业小说。\n"
-            "你的核心能力：\n"
-            "・用动作代替形容词——不写「她很紧张」，写「她的手指死死掐进掌心」\n"
-            "・用后果代替描述——不写「巨浪很大」，写「几千吨重的巨轮像塑料玩具一样被瞬间掀翻」\n"
-            "・用潜台词代替直白——角色真实想法藏在动作、沉默和环境反应里\n"
-            "・每一段结尾留一个没解答的问题，让读者必须翻下一页\n"
-            "\n【风格锚点——好文字长这样】\n"
-            "动作描写：「他一低头，发现一个还没他膝盖高的小女孩正扯着他的裤脚，仰着一张肉嘟嘟的小脸。」\n"
-            "情绪隐藏：「滂沱大雨中他孤身一人，指甲深深掐进肉里。」\n"
-            "环境交互：「手里签牛排的刀狠狠切下去——他盯着对面那张笑脸，刀刃陷进瓷盘。」\n"
-            "一笔多用：一段文字同时承载环境、人设暗示、伏笔和情感，绝不浪费笔墨。\n"
+            "# ROLE\n"
+            "你是一位写过 5 本起点 / 番茄 / 七猫签约长篇的中文网文写手。\n"
+            f"你主攻 **{_pack_label}** 细分流派，作品上过 {_genre_label} 的推荐位。\n"
+            "你单章追更稳定 10w+，靠的不是堆砌名场面，而是让每一段都触发读者的下意识翻页。\n"
             "\n"
-            # --- Part B: 节奏与角色 ---
-            "【节奏呼吸】不是每场都是追击战：\n"
-            "・高张力场景之后，必须有喘息节拍——安静对话、幽默、感官休息、人物独处。\n"
-            "・段落节奏要变化：长段铺氛围，短段打冲击。不要全文一个节奏。\n"
-            "・沉默和等待有时比爆炸更有张力。善用留白。\n"
+            "# CONTEXT · 创作哲学（你已内化的 5 条铁律）\n"
+            "1. **用动作代替形容词**——不写「她很紧张」，写「她的手指死死掐进掌心」\n"
+            "2. **用后果代替描述**——不写「巨浪很大」，写「几千吨重的巨轮像塑料玩具一样被瞬间掀翻」\n"
+            "3. **用潜台词代替直白**——人物真心藏在动作、沉默、环境反应里\n"
+            "4. **每段结尾留未解问题**——读者必须下意识翻下一页\n"
+            "5. **一笔多用**——一段同时承载环境 + 人设 + 伏笔 + 情感，绝不浪费笔墨\n"
             "\n"
-            "【角色区分度】每个角色都是独立的人：\n"
-            "・每个角色有独属的句式长度、用词层次、说话习惯和情绪表达方式。\n"
-            "・不要只用「收紧下巴」「抱臂」这种通用动作。每个角色给一个只属于他的肢体语言。\n"
-            "・角色必须有主动性：主动、拒绝、出人意料、开玩笑、反驳。不是被动道具。\n"
-            "・两人对话时，读者不看对话标签就能分辨是谁在说话。\n"
+            "# CONTEXT · 节奏呼吸\n"
+            "- 不是每场都是追击战。高张力场景之后必须有喘息节拍（安静对话 / 幽默 / 感官休息 / 人物独处）。\n"
+            "- 段落节奏要变化：长段铺氛围，短段打冲击。不要全文一个节奏。\n"
+            "- 沉默、等待、留白比爆炸更有张力。善用空气感。\n"
             "\n"
-            # --- Part C: 硬约束 (Consolidated iron rules) ---
-            "【铁律】输出仅限 Markdown 正文（叙事、对话、动作、环境、内心活动），不要解释/清单/策划说明。\n"
-            "字数必须在目标的 90%-120% 范围内，不足或超出均退回重写。\n"
-            "角色名必须与「参与者」列表完全一致，一字不差，禁止改名/别名/缩写。\n"
-            "开场必须在时间、地点、视角、动作上变化，禁止与前几章重复同一模式。\n"
+            "# CONTEXT · 角色区分度\n"
+            "- 每个角色有独属的句式长度、用词层次、说话习惯。\n"
+            "- 不要只用「收紧下巴」「抱臂」这种通用动作；给每个角色一个只属于他的肢体语言。\n"
+            "- 角色必须主动：主动、拒绝、出意外、开玩笑、反驳——不是被动道具。\n"
+            "- 两人对话时，读者不看对话标签就能分辨是谁在说话。\n"
+            "\n"
+            "# TASK\n"
+            "写出本场景的正文（Markdown 段落）。\n"
+            "**只输出正文**（叙事 / 对话 / 动作 / 环境 / 内心活动）。\n"
+            "不要输出解释 / 列表 / 策划说明 / 元评论 / 章节标题。\n"
+            "\n"
+            "# CONSTRAINTS · 硬约束（违反即重写，不可绕过）\n"
+            "- 字数：CJK 汉字数须在目标的 90%-120% 之间。不足或超出均会被退回。\n"
+            "- 角色名：与「参与者」列表完全一致，一字不差，禁止改名 / 别名 / 缩写。\n"
+            "- 语言：仅输出中文，禁止切到英文。\n"
+            "- 开场：禁止与前 3 章重复同一开场模式（时间 / 地点 / 动作 / 视角四维至少一维必须变）。\n"
+            "- 输出格式：纯 Markdown 正文，不带 # 标题、不带 ``` 代码块、不带「以下是」「以上是」前后缀。\n"
+            "- 标签禁止：不写 entry_state / exit_state / contract / scene_type 等英文结构化标签。\n"
             + _NOVEL_OUTPUT_PROHIBITION
-            + f"\n写作画像：\n{writing_profile_section}\n"
-            f"商业网文硬约束：\n{serial_guardrails}\n"
+            + "\n"
+            "# THINKING（写正文前在脑内 plan 一遍，不要把 plan 印出来）\n"
+            "1. **场景目标**：本场要给读者什么「情感 + 信息」双产出？\n"
+            "2. **开场镜头**：第一句给什么具象画面？不要写「那是一个下雨天」，要写「雨棚下灯管闪了两下」这种具体物理细节。\n"
+            "3. **节奏曲线**：本场从什么节奏起、中段如何变奏、尾段如何收？喘息节拍在哪？\n"
+            "4. **签名段**：本场我打算给读者一个什么「截图段」？金句 / 神描写 / 神细节 / 反应放大瞬间 任选其一，必须有一个。\n"
+            "5. **章末钩子**：本场结尾留一个什么具体悬念？不能是抽象感叹（如「一切才刚刚开始」），必须是具体未解物。\n"
+            "\n"
+            "# OUTPUT FORMAT · 开篇硬指标\n"
+            "- 第一句 ≤ 25 个汉字（要狠）。\n"
+            "- 第一段 ≤ 50 个汉字（要快）。\n"
+            "- 前 200 字必须出现至少 1 个可视化异常物 / 异常动作（不能只有人物对话或回忆）。\n"
+            "- 前 500 字内主角必须因这个异常被迫做出决定（不能只是观察、对话、回忆）。\n"
+            "\n"
+            "# EXAMPLES · AI 套话黑名单（绝对禁止输出）\n"
+            "- 「血液仿佛凝固了」/「时间仿佛静止了」/「空气仿佛凝固了」\n"
+            "- 「心中五味杂陈」/「心中百感交集」/「眼眶不由得湿润了」\n"
+            "- 「一股莫名的情绪」/「一阵莫名的恐惧」\n"
+            "- 「电流般的感觉」/「触电般的感觉」\n"
+            "- 「仿佛有一只无形的手」/「像是被什么东西攫住了」\n"
+            "- 任何以「显而易见」/「毫无疑问」/「不言而喻」开头的句子\n"
+            "- 章末「这一切才刚刚开始」/「真正的答案还在等待揭开」/「欲知后事如何」\n"
+            "\n"
+            "# PROJECT PROFILE（项目级变量内容）\n"
+            f"## 写作画像\n{writing_profile_section}\n\n"
+            f"## 商业网文硬约束\n{serial_guardrails}\n"
         )
     tone = (
         ", ".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
@@ -7079,36 +7147,95 @@ def build_chapter_first_draft_prompts(
     writing_profile = _resolve_project_writing_profile(project, style_guide)
     writing_profile_section = render_writing_profile_prompt_block(writing_profile, language=language)
     serial_guardrails = render_serial_fiction_guardrails(writing_profile, language=language)
+    _genre_label = getattr(writing_profile.market, "platform_target", None) or "商业长篇连载"
     if is_en:
         system_prompt = (
-            "You are an expert commercial fiction writer. Write one complete chapter "
-            "in a single pass from the chapter plan and scene cards. Output prose only.\n"
-            "Preserve continuity, causal logic, character voice, and hook strength. "
-            "Do not output outlines, commentary, or scene labels.\n"
-            f"Writing profile:\n{writing_profile_section}\n"
-            f"Serial fiction guardrails:\n{serial_guardrails}\n"
+            "# ROLE\n"
+            "You are a senior commercial fiction writer who delivers one complete chapter in a single pass.\n"
+            f"You write for {_genre_label} and your chapters are judged on whether readers click 'next'.\n"
+            "\n"
+            "# CONTEXT · The chapter-first contract\n"
+            "Scene cards are INTERNAL beat constraints, not visible headings.\n"
+            "You must thread all scenes into ONE continuous narrative — no '第一场 / 第二场' labels,\n"
+            "no scene dividers, no internal scaffolding leaks.\n"
+            "\n"
+            "# CONTEXT · Craft anchors\n"
+            "- Action over adjectives; consequence over description; subtext over statement.\n"
+            "- Each paragraph ends on an unresolved question.\n"
+            "- Continuity, causal logic, character voice, hook strength — all four must hold.\n"
+            "\n"
+            "# TASK\n"
+            "Write the FULL chapter as one continuous Markdown prose draft.\n"
+            "Output prose only: no outlines, commentary, scene labels, planning notes.\n"
+            "\n"
+            "# CONSTRAINTS · Hard (violation → rewrite)\n"
+            "- Stay within the requested word count band — do not pad to explain worldbuilding.\n"
+            "- No scene labels in body text.\n"
+            "- No internal scaffolding leaks (entry_state / exit_state / contract / scene_type tags).\n"
+            "- Use EXACT character names from the participants list.\n"
+            "\n"
+            "# OUTPUT · Chapter-opening hard indicators\n"
+            "- First 100 chars MUST deliver a felt pressure / anomaly to the reader.\n"
+            "- First 300 chars MUST show one human flaw in the protagonist (NOT cold rule-following).\n"
+            "- Terminology release: only what THIS chapter must reveal; don't pile lore.\n"
+            "- Ending: converge to ONE concrete, visualisable hook (not abstract emotion).\n"
+            "\n"
+            "# PROJECT PROFILE\n"
+            f"## Writing profile\n{writing_profile_section}\n\n"
+            f"## Serial fiction guardrails\n{serial_guardrails}\n"
         )
         instruction = (
-            "Write the full chapter in one continuous Markdown prose draft. Use scene cards "
-            "as beat constraints, not visible headings. Open with immediate pressure, show "
-            "a human flaw in the protagonist, keep terminology digestible, and end on one "
-            "concrete hook. Stay within the requested chapter word count band; do not expand "
-            "past the target to explain worldbuilding."
+            "Write the full chapter in ONE continuous Markdown prose draft.\n"
+            "Honour all CONSTRAINTS in the system prompt and meet the chapter-opening hard indicators.\n"
+            "Scene cards are beat constraints, not visible structure."
         )
     else:
         system_prompt = (
-            "你是功力深厚的中文商业小说写手。现在必须基于章节计划和场景卡，"
-            "一次性写出完整一章，而不是逐场景拼接。\n"
-            "只输出小说正文；不要解释、不要提纲、不要评语、不要显式场景标题。"
-            "必须保持连续叙事、因果严密、人物有破绽和主动性、开篇有强牵引、章末有具体钩子。\n"
-            f"写作风格：\n{writing_profile_section}\n"
-            f"连载护栏：\n{serial_guardrails}\n"
+            "# ROLE\n"
+            "你是一位写过多本签约长篇的中文网文写手，**专攻整章一次成稿**——不靠场景拼接，靠连续叙事。\n"
+            f"你写的章节服务 {_genre_label} 的留存场景，判定标准是读者会不会下意识点开「下一章」。\n"
+            "\n"
+            "# CONTEXT · 整章合同（chapter-first 模式）\n"
+            "场景卡只是**内部节拍约束**，不是可见结构。\n"
+            "你必须把所有场景揉进一段连续叙事，正文中不许出现「第一场 / 第二场 / 场景 X」等标签。\n"
+            "也不许写「内部说明 / 写法注释 / 场景目的」——这些是策划信息，不进正文。\n"
+            "\n"
+            "# CONTEXT · 创作锚点（已内化）\n"
+            "- 用动作代替形容词；用后果代替描述；用潜台词代替直白\n"
+            "- 每段结尾留一个未解问题——读者必须翻下一页\n"
+            "- 连贯性 / 因果逻辑 / 人物腔调 / 钩子强度——四项必须同时达标\n"
+            "\n"
+            "# TASK\n"
+            "基于章节计划和场景卡，一次性写完完整一章（Markdown 正文）。\n"
+            "**只输出正文**：不要提纲、不要评语、不要场景标签、不要策划说明。\n"
+            "\n"
+            "# CONSTRAINTS · 硬约束（违反即重写）\n"
+            "- 字数：严格贴近目标字数，不许为了解释设定扩写。\n"
+            "- 场景标签：正文不能出现「第一场 / 第二场 / 场景 X / 转场」字样。\n"
+            "- 策划泄漏：不许出现 entry_state / exit_state / contract / scene_type 等英文结构标签。\n"
+            "- 角色名：与「参与者」列表完全一致，不许改名 / 别名 / 缩写。\n"
+            "- 输出格式：纯 Markdown 正文，不带 # 标题、不带 ``` 代码块。\n"
+            "\n"
+            "# OUTPUT · 章节开篇硬指标\n"
+            "- **前 100 字**：必须给读者可感知的压力或异常（视觉 / 听觉 / 物件异常）。\n"
+            "- **前 300 字**：必须让主角表现出**一个可代入的人性破绽**——不能只是冷静执行规则。\n"
+            "- **术语释放**：本章必须信息按场景卡释放即可，不要堆设定。\n"
+            "- **章末钩子**：只收束到**一个**具体、可视化、能促使读者翻下一章的钩子（不是抽象感叹）。\n"
+            "\n"
+            "# EXAMPLES · AI 套话黑名单（绝对禁止）\n"
+            "- 「血液仿佛凝固了」/「时间仿佛静止了」/「空气仿佛凝固了」\n"
+            "- 「心中五味杂陈」/「眼眶不由得湿润了」\n"
+            "- 「一股莫名的情绪」/「一阵莫名的恐惧」\n"
+            "- 章末「这一切才刚刚开始」/「真正的答案还在等待揭开」\n"
+            "\n"
+            "# PROJECT PROFILE（项目级变量）\n"
+            f"## 写作风格\n{writing_profile_section}\n\n"
+            f"## 连载护栏\n{serial_guardrails}\n"
         )
         instruction = (
-            "请一次性写完整章节。场景卡只作为内部节拍约束，正文不能出现“第一场/第二场/场景”等标签。"
-            "前100字必须给出读者可感知的压力或异常；前300字必须让主角表现出一个可代入的人性破绽，"
-            "不能只是冷静执行规则。术语只按本章必须信息释放，不要堆设定。章末只收束到一个具体、可视化、"
-            "能促使读者翻下一章的钩子。必须严格贴近目标字数，不要为了解释设定而扩写。"
+            "请一次性写完整章节。\n"
+            "场景卡是内部节拍约束，正文不能出现「第一场 / 第二场 / 场景」等标签。\n"
+            "严格执行 system 中的章节开篇硬指标和硬约束。"
         )
 
     raw_chapter_contract = getattr(context_packet, "chapter_contract", None)
@@ -8000,6 +8127,7 @@ async def generate_scene_draft(
     if getattr(effective_settings.pipeline, "require_pre_draft_scene_contract", True):
         from bestseller.services.identity_guard import load_identity_registry
         from bestseller.services.narrative_contracts import (
+            repair_missing_scene_methodology_contract_pre_draft,
             repair_missing_scene_participants_pre_draft,
             validate_scene_contract_pre_draft,
         )
@@ -8025,7 +8153,17 @@ async def generate_scene_draft(
             identity_registry=identity_registry,
             excluded_names=offstage_names,
         )
-        if removed_participants or removed_state_refs or participant_repair_count:
+        methodology_repair_count = repair_missing_scene_methodology_contract_pre_draft(
+            scene,
+            chapter=chapter,
+            chapter_number=chapter_number,
+        )
+        if (
+            removed_participants
+            or removed_state_refs
+            or participant_repair_count
+            or methodology_repair_count
+        ):
             scene.metadata_json = {
                 **(getattr(scene, "metadata_json", None) or {}),
                 "pre_draft_participant_repair": {
@@ -8033,6 +8171,10 @@ async def generate_scene_draft(
                     "removed_state_refs": removed_state_refs,
                     "added_count": participant_repair_count,
                     "participants": list(scene.participants or []),
+                },
+                "pre_draft_methodology_contract_repair": {
+                    "source": "legacy_scene_context",
+                    "added_count": methodology_repair_count,
                 },
             }
         contract = validate_scene_contract_pre_draft(

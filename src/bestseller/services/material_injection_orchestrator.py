@@ -180,14 +180,14 @@ def _volume_milestone_values(project_dir: Path, chapter_number: int, key: str) -
         if not path.exists():
             continue
         payload = _yaml(path)
-        milestones = payload.get("milestones") if isinstance(payload, dict) else None
-        if not isinstance(milestones, list):
+        milestones = _volume_milestones(payload)
+        if not milestones:
             continue
         values: list[str] = []
         for milestone in milestones:
             if not isinstance(milestone, dict):
                 continue
-            if _int(milestone.get("chapter") or milestone.get("chapter_no"), -1) != chapter_number:
+            if not _milestone_contains_chapter(milestone, chapter_number):
                 continue
             raw = milestone.get(key)
             if isinstance(raw, list):
@@ -196,6 +196,36 @@ def _volume_milestone_values(project_dir: Path, chapter_number: int, key: str) -
                 values.append(str(raw))
         return "\n".join(f"- {value}" for value in values)
     return ""
+
+
+def _volume_milestones(payload: object) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    direct = payload.get("milestones")
+    if isinstance(direct, list):
+        return [item for item in direct if isinstance(item, dict)]
+    rows: list[dict[str, Any]] = []
+    volumes = payload.get("volumes")
+    if isinstance(volumes, list):
+        for volume in volumes:
+            if not isinstance(volume, dict):
+                continue
+            milestones = volume.get("milestones")
+            if isinstance(milestones, list):
+                rows.extend(item for item in milestones if isinstance(item, dict))
+    return rows
+
+
+def _milestone_contains_chapter(milestone: dict[str, Any], chapter_number: int) -> bool:
+    explicit = milestone.get("chapter") or milestone.get("chapter_no")
+    if explicit is not None:
+        return _int(explicit, -1) == chapter_number
+    chapter_range = milestone.get("chapter_range")
+    if isinstance(chapter_range, (list, tuple)) and len(chapter_range) >= 2:
+        start = _int(chapter_range[0], -1)
+        end = _int(chapter_range[1], -1)
+        return start <= chapter_number <= end
+    return _chapter_range_contains(str(chapter_range or ""), chapter_number)
 
 
 def _historical_clues(project_dir: Path) -> str:

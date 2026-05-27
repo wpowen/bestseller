@@ -3422,6 +3422,7 @@ async def run_scene_pipeline(
                 from bestseller.services.narrative_contracts import (
                     repair_legacy_scene_contract_pre_draft,
                     repair_missing_scene_participants_pre_draft,
+                    repair_missing_scene_methodology_contract_pre_draft,
                     validate_scene_contract_pre_draft,
                 )
                 from bestseller.services.methodology_overlay import (
@@ -3463,6 +3464,12 @@ async def run_scene_pipeline(
                     excluded_names=_offstage_names,
                 )
                 _repair_count += _participant_repair_count
+                _methodology_repair_count = repair_missing_scene_methodology_contract_pre_draft(
+                    scene,
+                    chapter=chapter,
+                    chapter_number=chapter_number,
+                )
+                _repair_count += _methodology_repair_count
                 if _repair_count:
                     _scene_meta = dict(getattr(scene, "metadata_json", {}) or {})
                     _scene_meta["legacy_scene_contract_repair"] = {
@@ -3475,6 +3482,11 @@ async def run_scene_pipeline(
                             "source": "identity_registry_and_scene_context",
                             "added_count": _participant_repair_count,
                             "participants": list(scene.participants or []),
+                        }
+                    if _methodology_repair_count:
+                        _scene_meta["methodology_contract_repair"] = {
+                            "source": "legacy_scene_context",
+                            "added_count": _methodology_repair_count,
                         }
                     scene.metadata_json = _scene_meta
 

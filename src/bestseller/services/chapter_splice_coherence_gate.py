@@ -264,6 +264,8 @@ def _normalize(value: str) -> str:
 def _looks_like_actor(value: str) -> bool:
     if not value or len(value) < 2:
         return False
+    if value.endswith(("把", "将", "被", "向", "往", "和", "与", "跟")):
+        return False
     return value not in {"他们", "我们", "有人", "那人", "众人", "所有人", "电梯", "镜子"}
 
 

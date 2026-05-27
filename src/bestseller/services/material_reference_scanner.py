@@ -22,8 +22,9 @@ class ReferenceProblem:
     context: str
 
 
-_WIKILINK_RE = re.compile(r"\[\[([^]|#]+)(?:#[^]|]+)?(?:\|[^]]+)?\]\]")
+_WIKILINK_RE = re.compile(r"\[\[([^]]+)\]\]")
 _RULE_RE = re.compile(r"\bR-\d{3,}\b")
+_MATERIAL_WIKI_PREFIXES = ("人物/", "地点/", "物件/", "规则/", "线索/", "派系/")
 
 
 def scan_material_references(
@@ -104,13 +105,33 @@ def _scan_unknown_wikilinks(
 ) -> list[ReferenceProblem]:
     problems: list[ReferenceProblem] = []
     for match in _WIKILINK_RE.finditer(line):
-        target = match.group(1).strip()
+        target = _wikilink_target(match.group(1))
         name = target.split("/")[-1]
         if target.startswith(("Inbox/", "../", "#")):
+            continue
+        if target.endswith("索引"):
+            continue
+        if "/" in target and not target.startswith(_MATERIAL_WIKI_PREFIXES):
             continue
         if name and name not in registry.by_name:
             problems.append(ReferenceProblem(file, line_no, name, "unknown", line.strip()))
     return problems
+
+
+def _wikilink_target(raw_target: str) -> str:
+    """Return the target path from an Obsidian wikilink body.
+
+    Markdown tables often store aliases as ``[[人物/林渊\\|林渊]]`` so the pipe
+    does not split table cells. Treat that escaped pipe as the alias separator
+    instead of as part of the file name.
+    """
+
+    target = raw_target.strip()
+    if "\\|" in target:
+        target = target.split("\\|", 1)[0]
+    else:
+        target = target.split("|", 1)[0]
+    return target.split("#", 1)[0].strip()
 
 
 def _scan_unknown_rules(
@@ -128,7 +149,7 @@ def _scan_unknown_rules(
 
 
 def _is_declaration_line(file: str, line: str) -> bool:
-    if "forbidden" in file:
+    if "forbidden" in file or "canon-guardrails" in file:
         return True
     stripped = line.strip()
     return stripped.startswith(("| ID |", "| --- |", "schema_version:"))

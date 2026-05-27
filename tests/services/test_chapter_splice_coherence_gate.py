@@ -51,3 +51,17 @@ def test_splice_gate_blocks_location_drift() -> None:
 
     assert report.verdict == "blocked"
     assert any(finding.code == "CHAPTER_SPLICE_LOCATION_DRIFT" for finding in report.findings)
+
+
+def test_presence_detector_ignores_object_marker_after_name() -> None:
+    text = (
+        "林渊把铜钱按在桌上。\n\n"
+        "他没有离开，只是把目光转向镜面。\n\n"
+        "林渊把证物袋推给苏婉宁。"
+    )
+
+    report = evaluate_chapter_splice_coherence(text, chapter_number=6)
+
+    assert "CHAPTER_SPLICE_PRESENCE_CONTRADICTION" not in {
+        finding.code for finding in report.findings
+    }

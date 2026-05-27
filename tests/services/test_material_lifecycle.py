@@ -16,7 +16,10 @@ from bestseller.services.material_entity_registry import (
     EntityStatus,
     build_entity_registry,
 )
-from bestseller.services.material_injection_orchestrator import render_material_injection_blocks
+from bestseller.services.material_injection_orchestrator import (
+    collect_material_blocks,
+    render_material_injection_blocks,
+)
 from bestseller.services.material_reference_scanner import scan_material_references
 from bestseller.services.material_referential_integrity_gate import (
     evaluate_material_referential_integrity,
@@ -39,6 +42,35 @@ def test_registry_marks_active_deprecated_and_duplicate_entities(tmp_path: Path)
     assert duplicate.status == EntityStatus.DUPLICATE
 
 
+def test_registry_keeps_entity_like_parenthetical_variants_distinct(tmp_path: Path) -> None:
+    project = _make_material_project(tmp_path)
+    people = project / "obsidian-vault" / "人物"
+    (people / "林渊（心魔）.md").write_text(
+        "# 林渊（心魔）\n\n身份：林渊的镜面心魔。\n",
+        encoding="utf-8",
+    )
+
+    registry = build_entity_registry(project)
+
+    assert registry.by_name["林渊（心魔）"].status == EntityStatus.ACTIVE
+    assert registry.by_name["林渊（心魔）"].canonical_name == "林渊（心魔）"
+
+
+def test_registry_keeps_slashes_inside_character_names(tmp_path: Path) -> None:
+    project = _make_material_project(tmp_path)
+    people = project / "obsidian-vault" / "人物"
+    (people / "林正淳（镜影-声音）.md").write_text(
+        "---\ncharacter: \"林正淳（镜影/声音）\"\n---\n"
+        "# 林正淳（镜影/声音）\n\n身份：镜中残留声音。\n",
+        encoding="utf-8",
+    )
+
+    registry = build_entity_registry(project)
+
+    assert registry.by_name["林正淳（镜影/声音）"].canonical_name == "林正淳（镜影/声音）"
+    assert registry.by_name["林正淳（镜影-声音）"].canonical_name == "林正淳（镜影/声音）"
+
+
 def test_reference_scanner_finds_qingnang_deprecated_references(tmp_path: Path) -> None:
     project = _make_material_project(tmp_path)
     registry = build_entity_registry(project)
@@ -49,6 +81,42 @@ def test_reference_scanner_finds_qingnang_deprecated_references(tmp_path: Path) 
     assert ("story-bible/series-brief.md", "林逸", "deprecated") in deprecated
     assert ("obsidian-vault/人物/林渊.md", "裴镜渊", "deprecated") in deprecated
     assert ("obsidian-vault/人物/林渊.md", "周德昌", "deprecated") in deprecated
+
+
+def test_reference_scanner_accepts_escaped_wikilink_aliases_in_tables(tmp_path: Path) -> None:
+    project = _make_material_project(tmp_path)
+    people = project / "obsidian-vault" / "人物"
+    (people / "人物索引.md").write_text(
+        "| 人物 | 角色 |\n"
+        "| --- | --- |\n"
+        "| [[人物/林渊\\|林渊]] | protagonist |\n",
+        encoding="utf-8",
+    )
+    registry = build_entity_registry(project)
+
+    problems = scan_material_references(project, registry)
+
+    assert all(problem.referenced_name != "林渊\\" for problem in problems)
+
+
+def test_reference_scanner_ignores_non_material_index_links(tmp_path: Path) -> None:
+    project = _make_material_project(tmp_path)
+    overview = project / "obsidian-vault" / "故事圣经"
+    overview.mkdir(parents=True)
+    (overview / "总览.md").write_text(
+        "- 世界规则: [[世界观/规则|122 条]]\n"
+        "- 规划产物: [[raw/planning/book_spec-2.json|raw json]]\n"
+        "- 模型: [[模型调用索引|模型调用索引]]\n",
+        encoding="utf-8",
+    )
+    registry = build_entity_registry(project)
+
+    problems = scan_material_references(project, registry)
+
+    assert all(
+        problem.referenced_name not in {"规则", "book_spec-2.json", "模型调用索引"}
+        for problem in problems
+    )
 
 
 def test_referential_integrity_gate_maps_problem_codes(tmp_path: Path) -> None:
@@ -76,7 +144,10 @@ def test_material_injection_orchestrator_renders_reveal_and_rules(tmp_path: Path
     assert "Material obligation packet" in block
     assert "R-001" in block
     assert "denial_account_rule" in block
+    assert "缺角铜钱" in block
     assert "截图段要求" in block
+    blocks = {item.key: item.content for item in collect_material_blocks(project, chapter_number=2)}
+    assert "缺角铜钱" in blocks["required_evidence"]
 
 
 def test_material_advancement_gate_blocks_missing_required_tokens() -> None:
@@ -166,6 +237,16 @@ def _make_material_project(tmp_path: Path) -> Path:
         "  - id: denial_account_rule\n"
         "    earliest_chapter: 2\n"
         "    tokens: [否认入账, 第一名否认者, 张建军]\n",
+        encoding="utf-8",
+    )
+    (story_bible / "volume-plan-v2.yaml").write_text(
+        "schema_version: volume-plan.v2\n"
+        "volumes:\n"
+        "  - volume_no: 1\n"
+        "    chapter_range: [1, 10]\n"
+        "    milestones:\n"
+        "      - chapter_range: [1, 3]\n"
+        "        required_evidence: [缺角铜钱]\n",
         encoding="utf-8",
     )
     (people / "林渊.md").write_text(

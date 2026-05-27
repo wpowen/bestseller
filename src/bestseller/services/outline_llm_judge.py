@@ -60,6 +60,151 @@ def _render_judge_methodology_reference(pack: PromptPack | None) -> str:
     )
 
 
+def _render_outline_commercial_system_prompt(
+    *,
+    rubric: Any,
+    methodology_reference: str,
+) -> str:
+    """Assemble outline_commercial_judge system prompt in 7-段式.
+
+    Was: rubric.system_prompt + 6-pt 故事合理性 + methodology_reference + rubric.render —
+    pieces collided and lacked clear sections. Now stable ordering, all hard
+    rules promoted into CONSTRAINTS (was in user_prompt before).
+    """
+    return (
+        "# ROLE\n"
+        "你是商业网文签约编辑，主审「大纲是否能撑起榜单级正文」。\n"
+        "你看过 200+ 部签约长篇的大纲提案，最擅长在大纲阶段就嗅出「开篇会掉读者」的隐患。\n"
+        "你的判断标准来自：起点 / 番茄 / 七猫的过往榜单大纲规律 + 阅读编辑培训手册 + 退稿经验。\n"
+        "\n"
+        "# CONTEXT\n"
+        "你正在评审一份卷 / 章 / 场景级大纲。\n"
+        "你的评分决定：这份大纲是 publish-to-write 还是 rework。\n"
+        "不要改写正文——只裁判大纲的可执行性、商业吸引力、逻辑一致性、角色认知边界和方法论覆盖。\n"
+        "\n"
+        "# CONTEXT · 故事合理性 — 黄金三章必查 6 项（任一缺失即 blocking）\n"
+        "1. **主角召唤合理性**：读者凭什么信主角能解决（家学 / 师承 / 口碑 / 熟人 / 能力实证）\n"
+        "2. **委托人选择动机**：为什么找主角而不是 110 / 物业 / 家人\n"
+        "3. **主角入场动机**：钱 / 旧账 / 家族线索 / 职业惯性 之一\n"
+        "4. **能力展示场景**：黄金三章必须有可见的能力实证，不能只在背景里说他厉害\n"
+        "5. **现实流程合理性**：报警 / 物业 / 医院 / 快递的反应符合常识或被明确标记为异常\n"
+        "6. **信息密度节奏**：第一章不能术语堆砌，靠现象 + 反应 + 怀疑铺垫\n"
+        "这六项是商业网文留存的底层规律，缺失会直接掉读者。\n"
+        "\n"
+        "# TASK\n"
+        "对大纲打 13 个维度分（见 user 段维度列表），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
+        "\n"
+        "# CONSTRAINTS · 硬性卡控（违反即 blocking，不可降为 audit）\n"
+        "1. 黄金三章若只靠电话 / 短信 / 语音开局，且没有更强现场画面压力 → blocking。\n"
+        "2. 非专业角色不得天然理解专业规则；若普通客户 / 快递员 / 邻居等主动讲出认账 / 入账 / 替认 / "
+        "镜债 / 账线等术语 → blocking。\n"
+        "3. 快递 / 配送 / 警方 / 医院 / 监控 / 门禁等现实流程必须合理；若不合理，必须明确标记为异常证据 → 否则 blocking。\n"
+        "4. 铜钱 / 罗盘 / 青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用「发烫」替代推理。\n"
+        "5. 场景卡必须含具体人 / 物 / 动作 / 代价 / 信息释放 / 章末钩子；只写抽象目的 → blocking。\n"
+        "\n"
+        "# CONSTRAINTS · 评分纪律\n"
+        "- overall_score 与 dimension_scores 使用 0.0-1.0 小数。\n"
+        "- 每个 issue 必须含 code / severity / evidence / required_fix 四字段。\n"
+        "- evidence 必须引用大纲中具体字段或描述，不可用「整体」/「全章」占位。\n"
+        "- 6 项故事合理性任一明显缺失 → blocking（不能降为 audit）。\n"
+        "\n"
+        "# THINKING（产出 JSON 前在脑内 4 步）\n"
+        "1. 通读大纲结构，按「开篇 / 中段 / 卷末」标记节奏曲线。\n"
+        "2. 对照 6 项故事合理性逐项判定。\n"
+        "3. 对照 5 项硬性卡控逐项检查。\n"
+        "4. Reconcile：若有 blocking → overall_score 不应 ≥ 0.75。\n"
+        "\n"
+        "# OUTPUT FORMAT（严格 JSON）\n"
+        "{\n"
+        '  "pass": bool,\n'
+        '  "overall_score": <0.0-1.0>,\n'
+        '  "dimension_scores": { ... 13 项 ... },\n'
+        '  "blocking_issues": [{"code", "severity", "evidence", "required_fix"}],\n'
+        '  "audit_issues": [...],\n'
+        '  "rewrite_plan": {"scope", "preserve", "change", "instructions"}\n'
+        "}\n"
+        f"{methodology_reference}\n"
+        "\n# RUBRIC（评分细则原文）\n"
+        f"{rubric.render_prompt_block()}\n"
+        "\n# RUBRIC · system 起源\n"
+        f"{rubric.system_prompt}\n"
+    )
+
+
+def _render_planning_readiness_system_prompt(
+    *,
+    rubric: Any,
+    methodology_reference: str,
+) -> str:
+    """7-段式 system prompt for commercial_planning_readiness_judge."""
+    return (
+        "# ROLE\n"
+        "你是商业网文签约编辑，专审「黄金三章规划是否能撑起榜单级正文」。\n"
+        "你做过 5 年商业网文规划诊断，能在大纲阶段就看出哪些故事「开篇就要掉读者」。\n"
+        "你的判断标准来自：起点 / 番茄 / 七猫的过往签约规律 + 编辑培训手册 + 退稿经验。\n"
+        "\n"
+        "# CONTEXT\n"
+        "你正在评判黄金三章（第 1-3 章）的章节规划是否足以支撑榜单级正文生成。\n"
+        "你会收到两类信息：\n"
+        "1. 章节规划原始数据（chapter planning data）\n"
+        "2. 确定性关键词门禁的诊断发现（**仅供参考，可能误判，不作硬性结论**）\n"
+        "\n"
+        "你的职责是综合两类信息，基于你对商业网文规律的理解，给出最终结论。\n"
+        "- 如果确定性门禁报告了问题但规划数据实质上合格 → 通过（pass=true）。\n"
+        "- 如果规划数据存在实质性商业化缺陷（冲突空洞 / 无代价 / 无钩子 / 场景抽象）→ 不通过。\n"
+        "\n"
+        "# CONTEXT · 故事合理性核心审视（6 项，任一缺失即 blocking）\n"
+        "A. **主角召唤路径**：规划是否交代读者凭什么信主角能解决？\n"
+        "   - 必须看到：家学传承 / 师承 / 前案口碑 / 熟人引介 / 行业身份 之一。\n"
+        "   - 仅靠「物业修不好 / 警察不管」不充分。\n"
+        "B. **委托人选择动机**：规划是否让读者相信委托人会主动找主角，而非 110/120/物业？\n"
+        "   - 委托人和主角的关系链必须可被读者重构。\n"
+        "C. **主角入场动机**：规划是否给了主角足够强的入场理由？\n"
+        "   - 钱 / 家族旧账 / 职业惯性 / 旧债 / 好奇心 + 关键线索 之一。\n"
+        "D. **能力可见性**：黄金三章规划是否安排了主角能力的具体展示场景？\n"
+        "   - 不能只在背景设定里说他厉害，必须有「在场可见」的展示动作。\n"
+        "E. **现实世界连接**：规划是否考虑了报警 / 物业 / 医院等现实流程？\n"
+        "   - 完全无视这些流程或处理过于轻描淡写都不合理。\n"
+        "F. **信息密度节奏**：第一章是否避免把核心规则术语全部抛给读者？\n"
+        "   - 高概念词应通过现象铺垫，不应在 ch1 就堆砌术语。\n"
+        "\n"
+        "# TASK\n"
+        "对黄金三章规划打 N 项维度分（见 user 段维度列表），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
+        "\n"
+        "# CONSTRAINTS · 硬性卡控（以下任一成立才判 blocking）\n"
+        "1. 三章主线冲突全部只有抽象目标（无具体对手 / 代价 / 压力），规划无法指导写作\n"
+        "2. 章节规划完全缺失（scenes 为空或无任何字段）\n"
+        "3. 三章中无一章有明确的章末钩子\n"
+        "\n"
+        "# CONSTRAINTS · 判 blocking 时务必避免误伤\n"
+        "- 心理博弈 / 怀疑 / 试探 / 规则压力（如「否认者先死」）/ 超自然威胁（镜局 / 镜债 / 邪祟）"
+        "均属于**合格的具体冲突**，不应判 blocking。\n"
+        "- 即使确定性门禁报告 abstract_chapter_conflict，只要场景或钩子中存在具体的压力 / 代价 / 对手描述，"
+        "应当通过。\n"
+        "\n"
+        "# THINKING（产出 JSON 前在脑内 4 步）\n"
+        "1. 通读三章规划，画出每章的「冲突 → 代价 → 钩子」三角。\n"
+        "2. 对照 6 项故事合理性逐项判定（A-F）。\n"
+        "3. 对照 3 项硬性卡控逐项检查。\n"
+        "4. Reconcile：若有 blocking → overall_score 不应 ≥ 0.75。\n"
+        "\n"
+        "# OUTPUT FORMAT（严格 JSON）\n"
+        "{\n"
+        '  "pass": bool,\n'
+        '  "overall_score": <0.0-1.0>,\n'
+        '  "dimension_scores": { ... },\n'
+        '  "blocking_issues": [{"code", "severity", "evidence", "required_fix"}],\n'
+        '  "audit_issues": [...],\n'
+        '  "rewrite_plan": {"scope", "preserve", "change", "instructions"}\n'
+        "}\n"
+        f"{methodology_reference}\n"
+        "\n# RUBRIC（评分细则原文）\n"
+        f"{rubric.render_prompt_block()}\n"
+        "\n# RUBRIC · system 起源\n"
+        f"{rubric.system_prompt}\n"
+    )
+
+
 async def judge_outline_commercial_readiness(
     session: AsyncSession,
     settings: AppSettings,
@@ -112,39 +257,23 @@ async def judge_outline_commercial_readiness(
         LLMCompletionRequest(
             logical_role="critic",
             model_tier="strong",
-            system_prompt=(
-                rubric.system_prompt
-                + "\n"
-                "基于给定项目设定和卷/章/场景大纲，判断该大纲是否足以支撑榜单级正文生成。"
-                "不要改写正文，只裁判大纲可执行性、商业吸引力、逻辑一致性、角色认知边界和方法论覆盖。"
-                "\n\n## 故事合理性 — 黄金三章必查项（任一缺失即 blocking）\n"
-                "1. 主角召唤合理性：读者凭什么信主角能解决（家学/师承/口碑/熟人/能力实证）\n"
-                "2. 委托人选择动机：为什么找主角而不是 110/物业/家人\n"
-                "3. 主角入场动机：钱/旧账/家族线索/职业惯性 之一\n"
-                "4. 能力展示场景：黄金三章必须有可见的能力实证，不能只在背景里说他厉害\n"
-                "5. 现实流程合理性：报警/物业/医院/快递的反应符合常识或被明确标记为异常\n"
-                "6. 信息密度节奏：第一章不能术语堆砌，靠现象+反应铺垫\n"
-                "这六项是商业网文留存的底层规律，缺失会直接掉读者。"
-                f"{methodology_reference}"
-                f"{rubric.render_prompt_block()}"
+            system_prompt=_render_outline_commercial_system_prompt(
+                rubric=rubric,
+                methodology_reference=methodology_reference,
             ),
             user_prompt=(
-                "评测维度："
-                + "、".join(OUTLINE_JUDGE_DIMENSIONS)
-                + "\n通过标准：overall_score 达到阈值，且不能有 critical blocking issue。"
-                "\n硬性卡控："
-                "\n1. 黄金三章若只靠电话/短信/语音开局，且没有更强现场画面压力，必须判 blocking。"
-                "\n2. 非专业角色不得天然理解专业规则；若普通客户、快递员、送餐员、邻居等主动讲出认账/入账/替认/镜债/账线等术语，必须判 blocking。"
-                "\n3. 快递、配送、警方、医院、监控、门禁等现实流程必须合理；若不合理，必须明确作为异常证据，否则判 blocking。"
-                "\n4. 铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用“发烫”替代推理。"
-                "\n5. 场景卡必须控制读者能看到的具体人、物、动作、代价、信息释放和章末钩子；若只写抽象目的，判 blocking。"
-                "\n必须返回字段：pass, overall_score, dimension_scores, blocking_issues, "
-                "audit_issues, rewrite_plan。"
-                "\noverall_score 和 dimension_scores 必须使用 0.0-1.0 小数；"
-                "每个 issue 必须包含 code, severity, evidence, required_fix。"
-                f"\n阈值：{threshold:.2f}"
-                f"\n项目摘要：\n{brief_text[:6000]}"
-                f"\n大纲数据（已压缩为评测关键字段，不代表字段缺失）：\n{payload_for_prompt}"
+                "## 任务参数\n"
+                f"- 阈值（overall_score）：{threshold:.2f}\n"
+                f"- 评测维度：{'、'.join(OUTLINE_JUDGE_DIMENSIONS)}\n"
+                "- 通过标准：overall_score ≥ 阈值，且无 critical blocking。\n"
+                "\n## 项目摘要\n"
+                f"```\n{brief_text[:6000]}\n```\n"
+                "\n## 大纲数据（已压缩为评测关键字段）\n"
+                f"```json\n{payload_for_prompt}\n```\n"
+                "\n## 立即开始\n"
+                "按 system 中的 THINKING 步骤思考后，输出严格 JSON。"
+                "每个 issue 必须包含 code / severity / evidence / required_fix；"
+                "overall_score 与 dimension_scores 使用 0.0-1.0 小数。"
             ),
             fallback_response=fallback,
             prompt_template="outline_commercial_judge",
@@ -435,54 +564,23 @@ async def judge_commercial_planning_readiness(
         LLMCompletionRequest(
             logical_role="critic",
             model_tier="strong",
-            system_prompt=(
-                rubric.system_prompt + "\n"
-                "任务：综合评判黄金三章（第1-3章）的章节规划是否足以支撑榜单级正文生成。\n"
-                "你会收到两类信息：\n"
-                "1. 章节规划原始数据（chapter planning data）\n"
-                "2. 一份确定性关键词门禁的诊断发现（仅供参考，可能存在误判，不作为硬性结论）\n\n"
-                "你的职责是综合两类信息，基于你对商业网络小说规律的理解，给出最终结论。\n"
-                "如果确定性门禁发现了问题但规划数据实质上是合格的，应当通过（pass=true）。\n"
-                "如果规划数据存在实质性商业化缺陷（冲突空洞、无代价、无钩子、场景抽象），才判不通过。\n\n"
-                "## 故事合理性核心审视（务必逐项核对，缺失即 blocking）\n"
-                "A. 【主角召唤路径】规划是否交代读者凭什么相信主角能解决问题？\n"
-                "   - 必须看到：家学传承 / 师承 / 前案口碑 / 熟人引介 / 行业身份 之一。\n"
-                "   - 仅靠'物业修不好/警察不管'不充分。\n"
-                "B. 【委托人选择动机】规划是否让读者相信委托人会主动找到主角，而非 110/120/物业？\n"
-                "   - 委托人和主角的关系链必须可被读者重构。\n"
-                "C. 【主角入场动机】规划是否给了主角足够强的入场理由？\n"
-                "   - 钱 / 家族旧账 / 职业惯性 / 旧债 / 好奇心 + 关键线索 之一。\n"
-                "D. 【能力可见性】黄金三章规划是否安排了主角能力的具体展示场景？\n"
-                "   - 不能只在背景设定里说他厉害，必须有'在场可见'的展示动作。\n"
-                "E. 【现实世界连接】规划是否考虑了报警/物业/医院等现实流程？\n"
-                "   - 完全无视这些流程或处理得过于轻描淡写都不合理。\n"
-                "F. 【信息密度节奏】第一章是否避免了把核心规则术语全部抛给读者？\n"
-                "   - 高概念词应通过现象铺垫，不应在 ch1 就堆砌术语。"
-                f"{methodology_reference}"
-                f"{rubric.render_prompt_block()}"
+            system_prompt=_render_planning_readiness_system_prompt(
+                rubric=rubric,
+                methodology_reference=methodology_reference,
             ),
             user_prompt=(
-                f"## 项目摘要\n{brief_text[:3000]}"
-                f"\n\n## 黄金三章规划数据\n{chapters_text}"
-                f"{det_section}"
-                f"\n\n## 评测维度\n"
-                + "、".join(COMMERCIAL_PLANNING_JUDGE_DIMENSIONS)
-                + f"\n\n## 通过标准\noverall_score ≥ {threshold:.2f}，且无 critical blocking issue。"
-                "\n\n## 硬性卡控（以下任一成立才判 blocking）\n"
-                "1. 三章主线冲突全部只有抽象目标（无具体对手/代价/压力），规划无法指导写作\n"
-                "2. 章节规划完全缺失（scenes 为空或无任何字段）\n"
-                "3. 三章中无一章有明确的章末钩子\n\n"
-                "## 注意\n"
-                "- 心理博弈、怀疑/试探、规则压力（如否认者先死）、超自然威胁（镜局/镜债/邪祟）"
-                "均属于合格的具体冲突，不应判 blocking\n"
-                "- 即使确定性门禁报告了 abstract_chapter_conflict，"
-                "只要场景或钩子中存在具体的压力/代价/对手描述，应当通过\n\n"
-                "## 输出格式（严格 JSON）\n"
-                '{"pass": bool, "overall_score": float(0-1), '
-                '"dimension_scores": {dim: float}, '
-                '"blocking_issues": [{code, severity, evidence, required_fix}], '
-                '"audit_issues": [{code, severity, evidence, required_fix}], '
-                '"rewrite_plan": {scope, preserve, change, instructions}}'
+                "## 任务参数\n"
+                f"- 阈值（overall_score）：{threshold:.2f}\n"
+                f"- 评测维度：{'、'.join(COMMERCIAL_PLANNING_JUDGE_DIMENSIONS)}\n"
+                "- 通过标准：overall_score ≥ 阈值，且无 critical blocking。\n"
+                "\n## 项目摘要\n"
+                f"```\n{brief_text[:3000]}\n```\n"
+                "\n## 黄金三章规划数据\n"
+                f"```json\n{chapters_text}\n```\n"
+                f"{det_section}\n"
+                "\n## 立即开始\n"
+                "按 system 中的 6 项故事合理性 + 3 项硬性卡控 + THINKING 步骤思考，"
+                "输出严格 JSON（schema 见 system OUTPUT FORMAT 段）。"
             ),
             fallback_response=fallback,
             prompt_template="commercial_planning_readiness_judge",

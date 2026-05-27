@@ -590,7 +590,9 @@ async def _load_pending_rewrite_tasks(
     *,
     project_id: UUID,
     limit: int | None = None,
+    task_ids: Iterable[UUID | str] | None = None,
 ) -> list[RewriteTaskModel]:
+    normalized_task_ids = _normalize_uuid_filter(task_ids)
     query = (
         select(RewriteTaskModel)
         .where(
@@ -602,9 +604,39 @@ async def _load_pending_rewrite_tasks(
             RewriteTaskModel.created_at.asc(),
         )
     )
+    if normalized_task_ids is not None:
+        if not normalized_task_ids:
+            return []
+        query = query.where(RewriteTaskModel.id.in_(normalized_task_ids))
     if limit is not None and int(limit) > 0:
         query = query.limit(int(limit))
     return list(await session.scalars(query))
+
+
+def _normalize_uuid_filter(values: Iterable[UUID | str] | None) -> tuple[UUID, ...] | None:
+    if values is None:
+        return None
+    normalized: list[UUID] = []
+    for value in values:
+        try:
+            normalized.append(value if isinstance(value, UUID) else UUID(str(value)))
+        except (TypeError, ValueError):
+            continue
+    return tuple(dict.fromkeys(normalized))
+
+
+def _normalize_chapter_scope(values: Iterable[int] | None) -> set[int] | None:
+    if values is None:
+        return None
+    scope: set[int] = set()
+    for value in values:
+        try:
+            chapter_number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if chapter_number > 0:
+            scope.add(chapter_number)
+    return scope
 
 
 async def _load_publication_blocked_chapter_numbers(
@@ -1353,6 +1385,8 @@ async def run_project_repair(
     export_markdown: bool = True,
     include_pending_rewrite_tasks: bool = True,
     pending_rewrite_task_limit: int | None = None,
+    pending_rewrite_task_ids: Iterable[UUID | str] | None = None,
+    target_chapter_numbers: Iterable[int] | None = None,
     scan_publication_gate_candidates: bool = False,
     progress: ProgressCallback | None = None,
 ) -> ProjectRepairResult:
@@ -1360,11 +1394,13 @@ async def run_project_repair(
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
 
+    target_chapter_scope = _normalize_chapter_scope(target_chapter_numbers)
     pending_tasks = (
         await _load_pending_rewrite_tasks(
             session,
             project_id=project.id,
             limit=pending_rewrite_task_limit,
+            task_ids=pending_rewrite_task_ids,
         )
         if include_pending_rewrite_tasks
         else []
@@ -1398,6 +1434,10 @@ async def run_project_repair(
             "export_markdown": export_markdown,
             "include_pending_rewrite_tasks": include_pending_rewrite_tasks,
             "pending_rewrite_task_limit": pending_rewrite_task_limit,
+            "pending_rewrite_task_ids": [
+                str(task_id) for task_id in (_normalize_uuid_filter(pending_rewrite_task_ids) or ())
+            ],
+            "target_chapter_numbers": sorted(target_chapter_scope or ()),
             "scan_publication_gate_candidates": scan_publication_gate_candidates,
         },
     )
@@ -1558,6 +1598,12 @@ async def run_project_repair(
                 task=task,
                 refresh_impacts=refresh_impacts,
             )
+            if target_chapter_scope is not None:
+                chapter_numbers = [
+                    number
+                    for number in chapter_numbers
+                    if number in target_chapter_scope
+                ]
             _stamp_project_repair_task_metadata(
                 project,
                 task,
@@ -1573,6 +1619,12 @@ async def run_project_repair(
             settings=settings,
             scan_publication_gate_candidates=scan_publication_gate_candidates,
         )
+        if target_chapter_scope is not None:
+            repair_gate_chapter_numbers = {
+                number
+                for number in repair_gate_chapter_numbers
+                if number in target_chapter_scope
+            }
         for chapter_number in repair_gate_chapter_numbers:
             chapter_task_ids.setdefault(chapter_number, [])
 
@@ -1597,6 +1649,7 @@ async def run_project_repair(
                 "pending_rewrite_task_count": task_count,
                 "include_pending_rewrite_tasks": include_pending_rewrite_tasks,
                 "pending_rewrite_task_limit": pending_rewrite_task_limit,
+                "target_chapter_numbers_requested": sorted(target_chapter_scope or ()),
                 "scan_publication_gate_candidates": scan_publication_gate_candidates,
                 "target_chapter_numbers": _dedupe_sorted(chapter_task_ids.keys()),
                 "repair_gate_chapter_numbers": _dedupe_sorted(repair_gate_chapter_numbers),

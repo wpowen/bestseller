@@ -561,6 +561,125 @@ def repair_legacy_scene_contract_pre_draft(
     return repaired
 
 
+def repair_missing_scene_methodology_contract_pre_draft(
+    scene: Any,
+    *,
+    chapter: Any | None = None,
+    chapter_number: int | None = None,
+) -> int:
+    """Backfill a concrete scene methodology contract for legacy resume rows.
+
+    New plans should carry this contract from the planner.  Older / recovered
+    scene cards may predate the strict methodology gate; blocking those rows at
+    draft time prevents continuation from ever reaching the writer.  This repair
+    only runs when the contract is absent and derives a conservative contract
+    from already-visible scene/chapter fields.
+    """
+
+    metadata = dict(getattr(scene, "metadata_json", None) or {})
+    existing = metadata.get("methodology_contract")
+    if isinstance(existing, dict) and existing:
+        return 0
+
+    scene_number = getattr(scene, "scene_number", "?")
+    participants = [_clean(item) for item in (getattr(scene, "participants", None) or []) if _clean(item)]
+    spotlight = participants[0] if participants else "主角"
+    counterpart = participants[1] if len(participants) > 1 else "对手"
+    purpose = getattr(scene, "purpose", None)
+    purpose_map = purpose if isinstance(purpose, dict) else {}
+    story = _clean(purpose_map.get("story"))
+    emotion = _clean(purpose_map.get("emotion"))
+    title = _clean(getattr(scene, "title", None))
+    time_label = _clean(getattr(scene, "time_label", None))
+    hook = _clean(getattr(scene, "hook_requirement", None))
+    chapter_goal = _clean(getattr(chapter, "chapter_goal", None))
+    chapter_conflict = _clean(getattr(chapter, "main_conflict", None))
+    chapter_hook = _clean(getattr(chapter, "hook_description", None))
+    anchor = _first_non_generic_text(
+        story,
+        hook,
+        chapter_conflict,
+        chapter_goal,
+        title,
+        time_label,
+        fallback=f"{spotlight}在第{chapter_number or '?'}章第{scene_number}场被迫处理现场异常。",
+    )
+    signature = _first_non_generic_text(
+        _scene_signature_hint(scene),
+        hook,
+        title,
+        story,
+        fallback=f"{spotlight}面前出现一件无法立刻归档的异常物。",
+    )
+    cut_point = _first_non_generic_text(
+        hook,
+        chapter_hook,
+        story,
+        fallback=f"{signature}改变{spotlight}的下一步选择。",
+    )
+
+    contract: dict[str, Any] = {
+        "conflict_stakes": f"若处理失败，{anchor}",
+        "conflict_buffs": [
+            f"{signature}把{spotlight}的行动窗口压缩到当场。",
+            f"{counterpart}的反应迫使{spotlight}不能只观察，必须立刻作出选择。",
+        ],
+        "hook_type": _derive_legacy_methodology_hook_type(scene),
+        "spotlight_character": spotlight,
+        "information_control_mode": f"先让读者看见{signature}，暂不解释完整来源。",
+        "camera_distance": f"贴近{spotlight}的手部动作、视线停顿和现场物件变化。",
+        "reveal_mode": f"通过{signature}释放一条会改变行动方向的可见信息。",
+        "signature_image": signature,
+        "cut_point": cut_point,
+    }
+    if len(participants) >= 2:
+        contract["relationship_debts"] = [
+            f"{spotlight}必须向{counterpart}交代、隐瞒或交换一部分关键信息。"
+        ]
+
+    scene_type = _clean(getattr(scene, "scene_type", None)).lower()
+    action_like = scene_type in {
+        "action",
+        "battle",
+        "chase",
+        "climax",
+        "combat",
+        "confrontation",
+        "fight",
+        "reveal",
+    }
+    if action_like:
+        contract.update(
+            {
+                "action_sequence": [
+                    f"{spotlight}先确认{signature}的异常。",
+                    f"{counterpart}或现场压力打断原定判断。",
+                    f"{spotlight}用一个可见动作把局面推向下一场。",
+                ],
+                "fight_objective": f"{spotlight}要在本场拿到能推进{anchor}的实证。",
+                "failure_cost": f"失败会让{signature}指向的线索当场失控。",
+                "opponent_advantage": f"{counterpart}掌握的信息或现场位置先压住{spotlight}。",
+                "tactic_shift": f"{spotlight}从观察转为当场逼问、验证或拦截。",
+                "emotion_driver": (
+                    f"{spotlight}被{emotion}推动，仍要在现场作决定。"
+                    if emotion
+                    else f"{spotlight}不愿让{signature}指向的代价落到同伴身上。"
+                ),
+                "turning_point": f"{signature}暴露第二层含义，迫使行动方向改变。",
+                "exit_state_delta": f"{spotlight}带着{cut_point}进入下一场。",
+            }
+        )
+
+    metadata["methodology_contract"] = contract
+    metadata["legacy_methodology_contract_repair"] = {
+        "source": "pre_draft_legacy_backfill",
+        "chapter_number": chapter_number,
+        "scene_number": scene_number,
+    }
+    scene.metadata_json = metadata
+    return 1
+
+
 def repair_missing_scene_participants_pre_draft(
     scene: Any,
     *,
@@ -1595,6 +1714,54 @@ def _clean(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
     return str(value).strip()
+
+
+def _first_non_generic_text(*values: Any, fallback: str = "") -> str:
+    for value in values:
+        rendered = _clean(value)
+        if not rendered:
+            continue
+        if _contains_marker(rendered, GENERIC_SCENE_PURPOSE_MARKERS):
+            continue
+        if _contains_marker(rendered, GENERIC_HOOK_MARKERS):
+            continue
+        return rendered
+    return fallback
+
+
+def _scene_signature_hint(scene: Any) -> str:
+    metadata = getattr(scene, "metadata_json", None)
+    if isinstance(metadata, dict):
+        for key in (
+            "signature_image",
+            "memorable_image",
+            "visible_progress",
+            "reader_payoff",
+            "ending_hook_payload",
+            "reader_hook",
+        ):
+            rendered = _clean(metadata.get(key))
+            if rendered:
+                return rendered
+    sensory = getattr(scene, "sensory_anchors", None)
+    if isinstance(sensory, dict):
+        for value in sensory.values():
+            rendered = _clean(value)
+            if rendered:
+                return rendered
+    return ""
+
+
+def _derive_legacy_methodology_hook_type(scene: Any) -> str:
+    scene_type = _clean(getattr(scene, "scene_type", None)).lower()
+    scene_number = getattr(scene, "scene_number", 0)
+    if "reveal" in scene_type:
+        return "evidence_reveal"
+    if "confront" in scene_type or "fight" in scene_type or "action" in scene_type:
+        return "confrontation_pressure"
+    if isinstance(scene_number, int) and scene_number <= 1:
+        return "opening_anomaly"
+    return "choice_pressure"
 
 
 def _contains_marker(value: Any, markers: Iterable[str]) -> bool:

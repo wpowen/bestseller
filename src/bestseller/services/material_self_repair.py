@@ -43,6 +43,17 @@ class MaterialRepairAction:
     requires_llm: bool = True
     payload: dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "action_type": self.action_type,
+            "target": self.target,
+            "reason": self.reason,
+            "source_path": self.source_path,
+            "confidence": self.confidence,
+            "requires_llm": self.requires_llm,
+            "payload": dict(self.payload),
+        }
+
 
 @dataclass(frozen=True)
 class MaterialSelfRepairPlan:
@@ -57,15 +68,7 @@ class MaterialSelfRepairPlan:
             "blocking": self.blocking,
             "metrics": dict(self.metrics),
             "actions": [
-                {
-                    "action_type": action.action_type,
-                    "target": action.target,
-                    "reason": action.reason,
-                    "source_path": action.source_path,
-                    "confidence": action.confidence,
-                    "requires_llm": action.requires_llm,
-                    "payload": dict(action.payload),
-                }
+                action.to_dict()
                 for action in self.actions
             ],
         }

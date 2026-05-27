@@ -62,6 +62,16 @@ _RULE_ID_RE = re.compile(r"\|\s*(R-\d{3,})\s*\|")
 _CLUE_ID_RE = re.compile(r"\b(C-\d{3,}|CLUE[-_][A-Za-z0-9_-]+)\b")
 _FRONTMATTER_CHARACTER_RE = re.compile(r"^character:\s*['\"]?(.+?)['\"]?\s*$", re.M)
 _WIKI_PREFIXES = ("人物/", "地点/", "物件/", "规则/", "线索/")
+_PRESERVE_PARENTHETICAL_MARKERS = (
+    "心魔",
+    "镜中",
+    "镜影",
+    "残影",
+    "真身",
+    "自称",
+    "出马仙",
+    "饿物",
+)
 
 
 def build_entity_registry(project_dir: Path) -> EntityRegistry:
@@ -98,8 +108,11 @@ def canonical_character_name(name: str) -> str:
 
     cleaned = _strip_wiki_target(name).strip()
     cleaned = re.sub(r"\.(md|yaml|yml|json)$", "", cleaned, flags=re.I)
-    cleaned = cleaned.split("/")[-1].strip()
-    cleaned = re.sub(r"[（(][^（）()]*[）)]$", "", cleaned).strip()
+    suffix_match = re.search(r"[（(]([^（）()]*)[）)]$", cleaned)
+    if suffix_match and not any(
+        marker in suffix_match.group(1) for marker in _PRESERVE_PARENTHETICAL_MARKERS
+    ):
+        cleaned = re.sub(r"[（(][^（）()]*[）)]$", "", cleaned).strip()
     return cleaned
 
 
@@ -138,7 +151,10 @@ def _records_from_character_files(project_dir: Path) -> list[EntityRecord]:
         text = path.read_text(encoding="utf-8", errors="ignore")
         name = _frontmatter_character(text) or path.stem
         aliases = _extract_aliases(text)
-        if path.stem != canonical_character_name(path.stem):
+        if (
+            path.stem != canonical_character_name(path.stem)
+            or path.stem != canonical_character_name(name)
+        ):
             aliases.add(path.stem)
         heading = _first_heading(text)
         if heading and heading != name:

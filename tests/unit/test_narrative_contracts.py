@@ -11,6 +11,7 @@ from bestseller.services.narrative_contracts import (
     repair_legacy_foundation_identity_locks,
     repair_legacy_scene_contract_model_pre_draft,
     repair_legacy_scene_contract_pre_draft,
+    repair_missing_scene_methodology_contract_pre_draft,
     repair_missing_scene_participants_pre_draft,
     validate_chapter_plan_contract,
     validate_foundation_identity_contract,
@@ -528,6 +529,58 @@ def test_pre_draft_scene_contract_blocks_methodology_gaps_in_strict_mode() -> No
     assert "SCENE_METHODOLOGY_CONTRACT_MISSING" in {
         violation.code for violation in report.violations
     }
+
+
+def test_repair_missing_scene_methodology_contract_backfills_strict_scene() -> None:
+    chapter = SimpleNamespace(
+        chapter_number=71,
+        chapter_goal="林渊在旧账牌前确认镜债转移路径。",
+        main_conflict="账牌上的名字开始改写，林渊必须阻止错误入账。",
+        hook_description="账牌背面浮出一个活人的名字。",
+    )
+    scene = SimpleNamespace(
+        scene_number=1,
+        scene_type="reveal",
+        title="旧账牌背面的名字",
+        participants=["林渊", "苏婉宁"],
+        time_label="第71章开场",
+        purpose={"story": "林渊和苏婉宁检查旧账牌，发现账牌背面浮出活人的名字。"},
+        sensory_anchors={"visual": "账牌背面浮出活人的名字。"},
+        hook_requirement="账牌背面浮出一个活人的名字。",
+        metadata_json={},
+    )
+    registry = [
+        CharacterIdentity(
+            name="林渊",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="苏婉宁",
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
+        ),
+    ]
+
+    repaired = repair_missing_scene_methodology_contract_pre_draft(
+        scene,
+        chapter=chapter,
+        chapter_number=71,
+    )
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+        methodology_contract_mode="strict",
+    )
+
+    assert repaired == 1
+    assert report.passed is True
+    contract = scene.metadata_json["methodology_contract"]
+    assert contract["spotlight_character"] == "林渊"
+    assert contract["signature_image"] == "账牌背面浮出活人的名字。"
 
 
 def test_repair_missing_scene_participants_pre_draft_uses_identity_context() -> None:

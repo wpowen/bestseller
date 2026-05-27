@@ -52,10 +52,51 @@ def _linear_arc_summary_prompt(
     )
 
     system_prompt = (
-        "You are summarizing a completed narrative arc for a long-form serial novel. "
-        "Output ONLY valid JSON, no markdown."
+        (
+            "# ROLE\n"
+            "You are a senior continuity editor specializing in long-form serial fiction.\n"
+            "Your task is to compress a completed narrative arc into structured intel\n"
+            "for the NEXT arc's writer — not for end-readers.\n"
+            "\n"
+            "# CONTEXT\n"
+            "Downstream consumer: another LLM that writes the next arc.\n"
+            "It needs: protagonist growth, relationship deltas, unresolved threads,\n"
+            "power level, next arc setup, open clues, resolved clues.\n"
+            "\n"
+            "# TASK\n"
+            "Emit STRICT JSON (no markdown, no explanation). Schema in user prompt.\n"
+            "\n"
+            "# THINKING (in your head before JSON)\n"
+            "1. Read every chapter summary; mark each as 'growth / relationship / clue / setup' contribution.\n"
+            "2. For protagonist_growth: state the concrete delta (skill / belief / status), not vague feeling.\n"
+            "3. For unresolved_threads: list ONLY items planted in this arc and STILL open.\n"
+            "4. For next_arc_setup: name a concrete tension hook readers feel at arc end.\n"
+            "\n"
+            "# OUTPUT\n"
+            "Strict JSON; downstream parser will reject anything else.\n"
+        )
         if is_en
-        else "你正在为长篇连载小说总结一段已完成的叙事弧线。输出必须是合法 JSON，不要解释。"
+        else (
+            "# ROLE\n"
+            "你是资深连载小说连续性主编。你的任务是为下一段弧线写手压缩本段弧线的结构化情报。\n"
+            "你产出的是「下游写手的工作记忆」，不是读者向回顾。\n"
+            "\n"
+            "# CONTEXT\n"
+            "下游消费者：另一个 LLM（写下一段弧线）。\n"
+            "它需要：主角成长 / 关系变化 / 未解线索 / 实力状态 / 下弧悬念 / 已埋线索 / 已收线索。\n"
+            "\n"
+            "# TASK\n"
+            "输出严格 JSON（无 markdown，无解释）。schema 见 user prompt。\n"
+            "\n"
+            "# THINKING（产 JSON 前在脑内 4 步）\n"
+            "1. 逐章 summary 阅读，每章在心里标记「成长 / 关系 / 线索 / 设置」贡献。\n"
+            "2. protagonist_growth：写具体 delta（技能 / 信念 / 地位），禁止「感觉上的成长」。\n"
+            "3. unresolved_threads：只列本弧线埋下且仍未收的伏线，不含上一弧线遗留项。\n"
+            "4. next_arc_setup：给一个读者在弧末能感受到的具体张力钩子（不是抽象感叹）。\n"
+            "\n"
+            "# OUTPUT\n"
+            "严格 JSON。下游解析器会拒绝 markdown / 解释 / 注释。\n"
+        )
     )
 
     user_prompt = (
@@ -387,10 +428,53 @@ def _linear_world_snapshot_prompt(
         )
 
     system_prompt = (
-        "You are tracking the world state for a long-form serial novel. "
-        "Output ONLY valid JSON, no markdown."
+        (
+            "# ROLE\n"
+            "You are the world-state archivist for a long-form serial novel.\n"
+            "Your snapshot becomes the canonical world reference for upcoming chapters.\n"
+            "\n"
+            "# CONTEXT\n"
+            "Downstream LLM writers will read this snapshot before generating each chapter.\n"
+            "Inaccuracies here create cascading continuity violations.\n"
+            "\n"
+            "# TASK\n"
+            "Merge previous snapshot + this arc summary into a new snapshot. Output STRICT JSON.\n"
+            "\n"
+            "# THINKING (in your head before JSON)\n"
+            "1. For each character in previous snapshot: did this arc change status / location / attitude? Apply delta.\n"
+            "2. For each character newly introduced in this arc: add with current status.\n"
+            "3. For factions: re-evaluate strength tier based on this arc's events.\n"
+            "4. Append newly revealed truths to revealed_truths (do not lose previous ones).\n"
+            "5. Threats: remove resolved ones, add new ones.\n"
+            "6. world_summary: 200 words max, captures the snapshot in narrative form.\n"
+            "\n"
+            "# OUTPUT\n"
+            "Strict JSON. No markdown, no commentary.\n"
+        )
         if is_en
-        else "你正在追踪长篇连载小说的世界状态。输出必须是合法 JSON，不要解释。"
+        else (
+            "# ROLE\n"
+            "你是长篇连载小说的世界状态档案管理员。\n"
+            "你产出的快照将成为后续章节生成时的「世界正典参考」。\n"
+            "\n"
+            "# CONTEXT\n"
+            "下游写手 LLM 会在每章生成前读取这份快照。\n"
+            "你这里写错 = 后续章节连锁违规连续性。\n"
+            "\n"
+            "# TASK\n"
+            "把上一次快照 + 本弧线总结合并为新快照。输出严格 JSON。\n"
+            "\n"
+            "# THINKING（产 JSON 前在脑内 6 步）\n"
+            "1. 上一次快照里的每个角色：本弧是否改变状态 / 位置 / 态度？应用 delta。\n"
+            "2. 本弧新引入角色：用当前状态加入。\n"
+            "3. 势力：基于本弧事件重新评估实力档位。\n"
+            "4. 新揭真相：append 到 revealed_truths（不能丢失前面的）。\n"
+            "5. 威胁：移除已解决的，加入新出现的。\n"
+            "6. world_summary：200 字以内的叙事化总结。\n"
+            "\n"
+            "# OUTPUT\n"
+            "严格 JSON。不带 markdown、注释、解释。\n"
+        )
     )
 
     user_prompt = (

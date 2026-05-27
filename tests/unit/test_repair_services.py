@@ -83,6 +83,15 @@ def build_settings():
     return load_settings(env={})
 
 
+def test_repair_scope_normalizers_discard_invalid_values() -> None:
+    task_id = uuid4()
+
+    assert repair_services._normalize_uuid_filter([task_id, str(task_id), "bad"]) == (
+        task_id,
+    )
+    assert repair_services._normalize_chapter_scope([1, "2", 0, -1, "bad"]) == {1, 2}
+
+
 def build_project() -> ProjectModel:
     project = ProjectModel(
         slug="my-story",

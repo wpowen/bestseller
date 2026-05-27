@@ -215,6 +215,156 @@ def _wrap_rewrite_reference_for_language(
     return _wrap_rewrite_reference(instructions, strategy)
 
 
+def _length_gate_codes_from_metadata(metadata: dict[str, Any]) -> set[str]:
+    codes: set[str] = set()
+    for key in (
+        "candidate_quality_gate_violations",
+        "llm_candidate_quality_gate_violations",
+    ):
+        values = metadata.get(key)
+        if not isinstance(values, list | tuple):
+            continue
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            code = str(item.get("code") or "").strip()
+            if code and ("LENGTH" in code or code.endswith(("_BLOCK_LOW", "_BLOCK_HIGH"))):
+                codes.add(code)
+    return codes
+
+
+def _classify_length_failure(
+    *,
+    word_count: int,
+    codes: set[str],
+    hard_min: int,
+    hard_max: int,
+) -> str | None:
+    if any(code == "LENGTH_UNDER" or code.endswith("_BLOCK_LOW") for code in codes):
+        return "under"
+    if any(code == "LENGTH_OVER" or code.endswith("_BLOCK_HIGH") for code in codes):
+        return "over"
+    if word_count > 0 and word_count < hard_min:
+        return "under"
+    if word_count > hard_max:
+        return "over"
+    return None
+
+
+def _render_recent_length_failure_directive(
+    failures: list[RewriteTaskModel],
+    *,
+    chapter: ChapterModel,
+    language: str | None,
+) -> str:
+    if not failures:
+        return ""
+    band_normal = chapter_rewrite_length_band(
+        get_settings(),
+        getattr(chapter, "target_word_count", None),
+        language=language,
+        direction="normal",
+        role="editor",
+    )
+    samples: list[int] = []
+    directions: list[str] = []
+    codes_seen: set[str] = set()
+    for task in failures[:5]:
+        metadata = task.metadata_json if isinstance(task.metadata_json, dict) else {}
+        try:
+            word_count = int(metadata.get("candidate_word_count") or 0)
+        except (TypeError, ValueError):
+            word_count = 0
+        codes = _length_gate_codes_from_metadata(metadata)
+        direction = _classify_length_failure(
+            word_count=word_count,
+            codes=codes,
+            hard_min=band_normal.hard_min,
+            hard_max=band_normal.hard_max,
+        )
+        if direction is None:
+            continue
+        directions.append(direction)
+        codes_seen.update(codes)
+        if word_count > 0:
+            samples.append(word_count)
+    if not directions:
+        return ""
+
+    if "under" in directions and "over" in directions:
+        mode = "anti_oscillation"
+        band = band_normal
+    elif "over" in directions:
+        mode = "compression"
+        band = chapter_rewrite_length_band(
+            get_settings(),
+            getattr(chapter, "target_word_count", None),
+            language=language,
+            direction="over",
+            role="editor",
+        )
+    else:
+        mode = "expansion"
+        band = chapter_rewrite_length_band(
+            get_settings(),
+            getattr(chapter, "target_word_count", None),
+            language=language,
+            direction="under",
+            role="editor",
+        )
+
+    sample_text = ", ".join(str(item) for item in samples[:5]) or "unknown"
+    codes_text = ", ".join(sorted(codes_seen)) or "length hard gate"
+    if is_english_language(language):
+        label = {
+            "anti_oscillation": "anti-oscillation",
+            "compression": "compression",
+            "expansion": "expansion",
+        }[mode]
+        return (
+            "\nLENGTH CONVERGENCE GATE (MANDATORY):\n"
+            f"- Recent failed rewrite candidate word counts: {sample_text}; gates: {codes_text}.\n"
+            f"- Mode: {label}. Final body must land in {band.safe_min}-{band.safe_max} words, "
+            f"targeting about {band.hard_target}.\n"
+            "- Do not compensate for a short failure with an oversized expansion, or for an oversized "
+            "failure with a summary. Keep the same event set and adjust density.\n"
+            "- Before final output, silently count the body. If outside the safe band, self-revise once "
+            "and output only the corrected final chapter.\n"
+        )
+    label = {
+        "anti_oscillation": "反振荡收敛",
+        "compression": "压缩收敛",
+        "expansion": "扩写收敛",
+    }[mode]
+    return (
+        "\n【章节字数收敛闸门·硬性要求】\n"
+        f"- 最近失败候选稿字数：{sample_text}；触发门：{codes_text}。\n"
+        f"- 本轮模式：{label}。最终正文必须落在 {band.safe_min}-{band.safe_max} 个有效中文汉字，"
+        f"目标约 {band.hard_target} 字。\n"
+        "- 禁止“过短后报复性扩写”或“过长后压成梗概”。保持同一条事件线，只调节场景密度、对白密度和过渡长度。\n"
+        "- 输出前必须在内部静默计数；若不在安全区，先自我修正一次，只输出修正后的最终正文。\n"
+    )
+
+
+def _append_recent_length_failure_directive(
+    instructions: str,
+    failures: list[RewriteTaskModel],
+    *,
+    chapter: ChapterModel,
+    language: str | None,
+) -> str:
+    directive = _render_recent_length_failure_directive(
+        failures,
+        chapter=chapter,
+        language=language,
+    )
+    if not directive:
+        return instructions
+    base = (instructions or "").split("\n【章节字数收敛闸门·硬性要求】", 1)[0]
+    base = base.split("\nLENGTH CONVERGENCE GATE (MANDATORY):", 1)[0]
+    return f"{base.rstrip()}\n{directive}"
+
+
 def _project_metadata(project: ProjectModel) -> dict[str, Any]:
     metadata = getattr(project, "metadata_json", None)
     return metadata if isinstance(metadata, dict) else {}
@@ -987,33 +1137,69 @@ def build_scene_review_prompts(
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_review_system = getattr(_genre_profile.judge_prompts, f"scene_review_system_{_lang_key}", "")
     system_prompt = (
-        "You are a scene reviewer for a long-form fiction pipeline. Return concise, actionable editorial feedback.\n"
-        "You MUST evaluate the prose against these methodology rules:\n"
-        "1. Show-don't-tell: emotions conveyed through action/physicality, NOT named directly\n"
-        "2. Sensory richness: at least 2 sensory channels (sight, sound, touch, smell, taste)\n"
-        "3. Dialogue subtext: characters should NOT state intentions directly; tension comes from gap between words and meaning\n"
-        "4. Tail hook: scene must end on an unresolved question, threat, or revelation\n"
-        "5. Reaction amplification: after key moments, other characters' reactions amplify impact\n\n"
-        "Return your response in this EXACT format:\n"
-        "VERDICT: pass OR rewrite\n"
-        "METHODOLOGY: [list violations found]\n"
-        "REWRITE_DIRECTION: [if rewrite, specific instructions]\n"
-        "COMMENTARY: [brief editorial note]"
+        (
+            "# ROLE\n"
+            "You are a senior scene reviewer for a long-form commercial fiction pipeline.\n"
+            "You have audited 200+ scenes for signed novels and can tell from one read\n"
+            "whether a scene earns the reader's next click or wastes it.\n"
+            "\n"
+            "# CONTEXT\n"
+            "Your verdict drives the rewrite loop: 'pass' = ship; 'rewrite' = trigger LLM regen.\n"
+            "Your feedback must be ACTIONABLE — the regen LLM will execute REWRITE_DIRECTION verbatim.\n"
+            "\n"
+            "# TASK\n"
+            "Evaluate the scene prose against five methodology axes; emit a fixed-format verdict.\n"
+            "\n"
+            "# CONSTRAINTS · The five methodology axes\n"
+            "1. **Show-don't-tell**: emotions via action / physicality, NOT named directly\n"
+            "2. **Sensory richness**: at least 2 sensory channels (sight / sound / touch / smell / taste)\n"
+            "3. **Dialogue subtext**: characters don't state intentions; tension = gap between words and meaning\n"
+            "4. **Tail hook**: scene ends on an unresolved question / threat / revelation\n"
+            "5. **Reaction amplification**: after key moments, other characters' reactions amplify impact\n"
+            "\n"
+            "# THINKING (in your head before output)\n"
+            "1. Read scene end-to-end; mark each axis as PASS or FAIL\n"
+            "2. For each FAIL, locate the specific paragraph / sentence that triggered it\n"
+            "3. If ≥2 axes FAIL, verdict = rewrite; otherwise verdict = pass\n"
+            "4. REWRITE_DIRECTION must be concrete (not 'improve dialogue' — 'cut林渊's line 3, replace with a single action: 拇指碾过铜钱缺口')\n"
+            "\n"
+            "# OUTPUT FORMAT (exact lines, no extras)\n"
+            "VERDICT: pass OR rewrite\n"
+            "METHODOLOGY: [list axes that failed, e.g. 'show-don't-tell, tail hook']\n"
+            "REWRITE_DIRECTION: [if rewrite, concrete instructions; if pass, write 'N/A']\n"
+            "COMMENTARY: [≤2 sentences editorial note]"
+        )
         if is_en
         else (
-            "你是长篇小说审校系统里的场景评论者。"
-            "请输出简洁、专业、可执行的审校意见，不要复述需求。\n"
-            "你必须按以下方法论规则评估文本质量：\n"
-            "1. 展示不讲述：情绪通过动作/身体反应传达，不能直接写情绪词（愤怒、伤心、高兴等）\n"
-            "2. 感官丰富度：至少使用2个感官通道（视觉、听觉、触觉、嗅觉、味觉）\n"
-            "3. 对话潜台词：角色不能直白表达意图，张力来自话语和真实意图的反差\n"
-            "4. 尾钩强度：场景必须以未解答的问题、威胁或揭示结尾\n"
-            "5. 反应放大：关键时刻后必须有其他角色的反应来放大冲击力\n\n"
-            "请严格按以下格式输出：\n"
+            "# ROLE\n"
+            "你是长篇商业小说审校系统里的资深场景评论者。\n"
+            "你审过 200+ 部签约连载的场景稿，能从一遍读下来就判定这一场是值得读者翻页还是浪费时间。\n"
+            "\n"
+            "# CONTEXT\n"
+            "你的 verdict 直接驱动重写循环：'pass' = 通过；'rewrite' = 触发 LLM 重生成。\n"
+            "你的 REWRITE_DIRECTION 会被下游 LLM **照字执行**——必须是具体、可操作的指令。\n"
+            "\n"
+            "# TASK\n"
+            "按下方五项方法论评估本场，按固定格式输出 verdict。\n"
+            "\n"
+            "# CONSTRAINTS · 五项方法论轴\n"
+            "1. **展示不讲述**：情绪通过动作 / 身体反应传达，不能直接写情绪词（愤怒 / 伤心 / 高兴 / 紧张）\n"
+            "2. **感官丰富度**：至少使用 2 个感官通道（视 / 听 / 触 / 嗅 / 味）\n"
+            "3. **对话潜台词**：角色不能直白表达意图，张力来自话语和真实意图的反差\n"
+            "4. **尾钩强度**：场景必须以未解答的问题 / 威胁 / 揭示结尾，不能抽象感叹\n"
+            "5. **反应放大**：关键时刻后必须有其他角色的反应放大冲击力\n"
+            "\n"
+            "# THINKING（输出前在脑内 4 步）\n"
+            "1. 通读场景，对五项逐条心里打 PASS / FAIL\n"
+            "2. 对每条 FAIL，定位到具体段落 / 句子\n"
+            "3. ≥ 2 项 FAIL → verdict = rewrite；否则 verdict = pass\n"
+            "4. REWRITE_DIRECTION 必须具体（不要写「优化对话」—— 要写「删林渊第 3 句，换成单一动作：拇指碾过铜钱缺口」）\n"
+            "\n"
+            "# OUTPUT FORMAT（必须 4 行，每行一项，无前缀无后缀）\n"
             "VERDICT: pass 或 rewrite\n"
-            "METHODOLOGY: [发现的方法论违规]\n"
-            "REWRITE_DIRECTION: [如需重写，给出具体方向]\n"
-            "COMMENTARY: [简要编辑意见]"
+            "METHODOLOGY: [失败的轴，如「展示不讲述, 尾钩」]\n"
+            "REWRITE_DIRECTION: [如需重写，给具体可执行指令；如 pass 则写 N/A]\n"
+            "COMMENTARY: [≤2 句编辑意见]"
         )
     )
     if _genre_review_system:
@@ -1109,14 +1295,65 @@ def build_scene_rewrite_prompts(
     writing_profile = _resolve_project_writing_profile(project, style_guide)
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
-        "You are an English-language fiction rewriting editor. "
-        "Output Markdown prose only, with no explanations, apologies, or change logs.\n"
-        + _NOVEL_OUTPUT_PROHIBITION_EN
-        + _REWRITE_STRATEGY_CONTRACT_EN
+        (
+            "# ROLE\n"
+            "You are a senior scene-rewrite editor for long-form commercial fiction.\n"
+            "Your job is **targeted repair** of a single scene:\n"
+            "- preserve scene location, participant list, scene goal, entry/exit state\n"
+            "- repair only the issues raised by the rewrite directive\n"
+            "- never invent new plot, characters, or settings\n"
+            "\n"
+            "# CONTEXT\n"
+            "You receive: the failing scene draft + a REWRITE_DIRECTION from the scene reviewer +\n"
+            "the scene contract + project methodology. The same gate that flagged the issue will\n"
+            "re-evaluate your output.\n"
+            "\n"
+            "# TASK\n"
+            "Output the complete rewritten scene in Markdown prose only.\n"
+            "No explanations, no apologies, no change logs, no diff markers.\n"
+            "\n"
+            "# THINKING (in your head before writing)\n"
+            "1. Read REWRITE_DIRECTION — map each instruction to a target paragraph\n"
+            "2. Decide minimal fix per issue (replace word / rewrite paragraph / cut / add)\n"
+            "3. Self-check: would any fix violate scene contract (entry/exit state, participants, length)? If yes, revise\n"
+            "4. Preserve unflagged content — do not over-edit\n"
+            "\n"
+            "# CONSTRAINTS · Hard\n"
+            "- Output Markdown prose ONLY\n"
+            "- No `#` headings, no ``` fences, no scene labels\n"
+            "- Use EXACT character names from the participants list\n"
+            "- Word count within 90%-120% of the scene target\n"
+            + _NOVEL_OUTPUT_PROHIBITION_EN
+            + _REWRITE_STRATEGY_CONTRACT_EN
+        )
         if is_en
         else (
-            "你是长篇中文小说写作系统里的重写编辑。"
-            "输出必须是 Markdown 正文，不要解释，不要道歉，不要列修改清单。\n"
+            "# ROLE\n"
+            "你是长篇中文商业小说写作系统里的资深场景重写编辑。\n"
+            "你的工作是**单场定点修复**：\n"
+            "- 保留场景位置、参与角色、场景目标、入场 / 退场状态\n"
+            "- 只修复 REWRITE_DIRECTION 中列出的问题\n"
+            "- 不引入新情节、新角色、新设定\n"
+            "\n"
+            "# CONTEXT\n"
+            "你会收到：失败的场景原稿 + 场景评论者给的 REWRITE_DIRECTION + 场景合同 + 项目方法论。\n"
+            "你产出的内容会替换原稿，并被原先标记问题的同一个 gate 重新审。\n"
+            "\n"
+            "# TASK\n"
+            "输出完整一版重写后的场景正文（Markdown）。\n"
+            "不要解释、不要道歉、不要列修改清单、不要 diff 标记。\n"
+            "\n"
+            "# THINKING（动笔前在脑内 4 步）\n"
+            "1. 阅读 REWRITE_DIRECTION 的每条指令 — 映射到原稿的具体段落\n"
+            "2. 对每条问题决定最小修复手段（换词 / 改段 / 删段 / 补段）\n"
+            "3. 自检：修复是否违反场景合同（入 / 退状态、参与者、字数）？违反则回退\n"
+            "4. REWRITE_DIRECTION 没标的内容不要乱改\n"
+            "\n"
+            "# CONSTRAINTS · 硬约束\n"
+            "- 仅输出 Markdown 正文\n"
+            "- 不带 `#` 标题、不带 ``` 围栏、不带场景标签\n"
+            "- 角色名与「参与者」列表完全一致\n"
+            "- 字数维持在场景目标的 90%-120%\n"
             + _NOVEL_OUTPUT_PROHIBITION
             + _REWRITE_STRATEGY_CONTRACT
         )
@@ -1626,31 +1863,67 @@ def build_chapter_review_prompts(
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_ch_review_system = getattr(_genre_profile.judge_prompts, f"chapter_review_system_{_lang_key}", "")
     system_prompt = (
-        "You are a chapter reviewer for a long-form fiction pipeline. Return concise, actionable editorial feedback.\n"
-        "Evaluate the chapter against these methodology rules:\n"
-        "1. Emotion compression/release: tension must build before payoff\n"
-        "2. Hook lifecycle: chapter must plant new hooks and resolve old ones\n"
-        "3. Conflict stakes: every conflict needs clear stakes (what is lost on failure)\n"
-        "4. Read-on momentum: chapter ending must create irresistible urge to continue\n\n"
-        "Return your response in this EXACT format:\n"
-        "VERDICT: pass OR rewrite\n"
-        "METHODOLOGY: [list violations found]\n"
-        "REWRITE_DIRECTION: [if rewrite, specific instructions]\n"
-        "COMMENTARY: [brief editorial note]"
+        (
+            "# ROLE\n"
+            "You are a senior chapter reviewer for a long-form commercial fiction pipeline.\n"
+            "You have audited 500+ chapters for signed novels. You can tell within one read\n"
+            "whether a chapter holds the reader for the next click or loses them.\n"
+            "\n"
+            "# CONTEXT\n"
+            "Your verdict drives the chapter rewrite loop: 'pass' = ship, 'rewrite' = trigger LLM regen.\n"
+            "REWRITE_DIRECTION will be executed verbatim by the rewrite LLM — make it concrete.\n"
+            "\n"
+            "# TASK\n"
+            "Evaluate the chapter against four methodology axes; emit a fixed-format verdict.\n"
+            "\n"
+            "# CONSTRAINTS · Four methodology axes\n"
+            "1. **Emotion compression / release**: tension must build before any payoff\n"
+            "2. **Hook lifecycle**: chapter must plant new hooks AND resolve / advance old ones\n"
+            "3. **Conflict stakes**: every conflict has clear stakes (what is lost on failure)\n"
+            "4. **Read-on momentum**: chapter ending creates irresistible urge to continue\n"
+            "\n"
+            "# THINKING (in your head before output)\n"
+            "1. Read chapter end-to-end; mark each axis PASS / FAIL\n"
+            "2. For each FAIL, locate triggering paragraphs / sentences\n"
+            "3. ≥2 axes FAIL → verdict = rewrite; otherwise pass\n"
+            "4. REWRITE_DIRECTION must be specific (NOT 'strengthen ending' — 'after final dialogue add a single concrete object cue: 林渊的铜钱缺口又渗出一滴黑水')\n"
+            "\n"
+            "# OUTPUT FORMAT (4 lines, exact)\n"
+            "VERDICT: pass OR rewrite\n"
+            "METHODOLOGY: [list of failed axes]\n"
+            "REWRITE_DIRECTION: [if rewrite, concrete instructions; if pass, N/A]\n"
+            "COMMENTARY: [≤2 sentences editorial note]"
+        )
         if is_en
         else (
-            "你是长篇小说审校系统里的章节评论者。"
-            "请输出简洁、专业、可执行的章节审校意见，不要复述需求。\n"
-            "请按以下方法论规则评估章节质量：\n"
-            "1. 情绪压缩释放：爽点前必须有充分的情绪铺垫\n"
-            "2. 钩子生命周期：本章必须植入新钩子并消解旧钩子\n"
-            "3. 冲突筹码：每个冲突必须有明确筹码（输了会失去什么）\n"
-            "4. 追读欲：章末必须制造让读者无法停下的冲动\n\n"
-            "请严格按以下格式输出：\n"
+            "# ROLE\n"
+            "你是长篇商业小说审校系统里的资深章节评论者。\n"
+            "你审过 500+ 章签约连载，能从一遍读下来就判定这一章能不能留住读者翻下一章。\n"
+            "\n"
+            "# CONTEXT\n"
+            "你的 verdict 驱动章节重写循环：'pass' = 通过，'rewrite' = 触发 LLM 重生成。\n"
+            "REWRITE_DIRECTION 会被下游重写 LLM **照字执行**——必须具体、可操作。\n"
+            "\n"
+            "# TASK\n"
+            "按下方四项方法论评估本章，按固定格式输出 verdict。\n"
+            "\n"
+            "# CONSTRAINTS · 四项方法论轴\n"
+            "1. **情绪压缩释放**：爽点前必须有充分的情绪铺垫\n"
+            "2. **钩子生命周期**：本章必须植入新钩子，并且推进或消解旧钩子\n"
+            "3. **冲突筹码**：每个冲突有明确筹码（输了会失去什么）\n"
+            "4. **追读欲**：章末必须制造让读者无法停下的冲动（具体钩子，不是抽象感叹）\n"
+            "\n"
+            "# THINKING（输出前在脑内 4 步）\n"
+            "1. 通读本章，对四项逐条心里打 PASS / FAIL\n"
+            "2. 对每条 FAIL，定位到具体段落 / 句子\n"
+            "3. ≥ 2 项 FAIL → verdict = rewrite；否则 verdict = pass\n"
+            "4. REWRITE_DIRECTION 必须具体（不要写「加强尾钩」—— 要写「在最后对话后追加一个具象物件提示：林渊的铜钱缺口又渗出一滴黑水」）\n"
+            "\n"
+            "# OUTPUT FORMAT（必须 4 行，每行一项）\n"
             "VERDICT: pass 或 rewrite\n"
-            "METHODOLOGY: [发现的方法论违规]\n"
-            "REWRITE_DIRECTION: [如需重写，给出具体方向]\n"
-            "COMMENTARY: [简要编辑意见]"
+            "METHODOLOGY: [失败的轴]\n"
+            "REWRITE_DIRECTION: [如需重写，给具体可执行指令；如 pass 则写 N/A]\n"
+            "COMMENTARY: [≤2 句编辑意见]"
         )
     )
     if _genre_ch_review_system:
@@ -1799,13 +2072,64 @@ def build_chapter_rewrite_prompts(
     writing_profile = _resolve_project_writing_profile(project)
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
-        "You are an English-language fiction chapter rewriting editor. Output Markdown prose only, with no explanations or change logs.\n"
-        + _NOVEL_OUTPUT_PROHIBITION_EN
-        + _REWRITE_STRATEGY_CONTRACT_EN
+        (
+            "# ROLE\n"
+            "You are a senior chapter-rewrite editor for long-form commercial fiction.\n"
+            "Your job is **targeted repair**, not rewriting from scratch:\n"
+            "- preserve the chapter's plot bones, character arcs, scene order\n"
+            "- repair only the issues raised by the rewrite task\n"
+            "- do not invent new plot, characters, or settings\n"
+            "\n"
+            "# CONTEXT\n"
+            "You receive: original draft + rewrite task (issues + fix instructions) + chapter context.\n"
+            "Your output replaces the original draft and is judged by the same quality gates that flagged it.\n"
+            "\n"
+            "# TASK\n"
+            "Output the complete rewritten chapter in Markdown prose only.\n"
+            "No explanations, no change logs, no diff markers.\n"
+            "\n"
+            "# THINKING (in your head before writing)\n"
+            "1. Read the rewrite_task issues — map each to specific paragraphs in the draft.\n"
+            "2. Decide minimal fix per issue (replace word / rewrite paragraph / cut / add).\n"
+            "3. Re-check: would any fix introduce a NEW violation (length / forbidden terms / opening hook)? If so, revise.\n"
+            "4. Preserve what the task did NOT flag — do not over-edit.\n"
+            "\n"
+            "# CONSTRAINTS · Hard\n"
+            "- Output Markdown prose ONLY (narrative / dialogue / action / environment / thought)\n"
+            "- No `# heading` lines, no ``` fences, no scene labels\n"
+            "- Keep within the same word count band as the original (90%-120% of target)\n"
+            "- Use EXACT character names from the participants list\n"
+            + _NOVEL_OUTPUT_PROHIBITION_EN
+            + _REWRITE_STRATEGY_CONTRACT_EN
+        )
         if is_en
         else (
-            "你是长篇中文小说写作系统里的章节重写编辑。"
-            "输出必须是 Markdown 正文，不要解释，不要列修改清单。\n"
+            "# ROLE\n"
+            "你是长篇中文小说写作系统里的章节重写编辑。\n"
+            "你的工作是**定点修复**，不是推倒重写：\n"
+            "- 保留章节剧情骨架、角色弧线、场景顺序\n"
+            "- 只修复 rewrite_task 中列出的问题\n"
+            "- 不引入新情节、新角色、新设定\n"
+            "\n"
+            "# CONTEXT\n"
+            "你会收到：原稿正文 + rewrite_task（问题清单 + 修复指令）+ 章节上下文物料。\n"
+            "你产出的内容会替换原稿，并被原先标记问题的同一套质量门重新审。\n"
+            "\n"
+            "# TASK\n"
+            "输出完整一版重写后的章节正文（Markdown）。\n"
+            "不要解释、不要列修改清单、不要 diff 标记。\n"
+            "\n"
+            "# THINKING（动笔前在脑内 4 步）\n"
+            "1. 阅读 rewrite_task 的每条问题 — 映射到原稿的具体段落\n"
+            "2. 对每条问题决定最小修复手段（换词 / 改段 / 删段 / 补段）\n"
+            "3. 自检：修复某条问题会不会引入新违规（字数 / 禁词 / 开篇钩子失效）？会就回退方案\n"
+            "4. task 没标的内容不要乱改 — 不要过度编辑\n"
+            "\n"
+            "# CONSTRAINTS · 硬约束\n"
+            "- 仅输出 Markdown 正文（叙事 / 对话 / 动作 / 环境 / 内心活动）\n"
+            "- 不带 `# 标题` 行、不带 ``` 围栏、不带场景标签\n"
+            "- 字数维持在原章目标的 90%-120% 之间\n"
+            "- 角色名与「参与者」列表完全一致\n"
             + _NOVEL_OUTPUT_PROHIBITION
             + _REWRITE_STRATEGY_CONTRACT
         )
@@ -7359,6 +7683,25 @@ async def rewrite_chapter_from_task(
     rewrite_task = await session.scalar(rewrite_query.limit(1))
     if rewrite_task is None:
         raise ValueError(f"Chapter {chapter_number} does not have a pending rewrite task.")
+    recent_failed_rewrites = list(
+        await session.scalars(
+            select(RewriteTaskModel)
+            .where(
+                RewriteTaskModel.project_id == project.id,
+                RewriteTaskModel.trigger_source_id == chapter.id,
+                RewriteTaskModel.status == "failed",
+                RewriteTaskModel.id != rewrite_task.id,
+            )
+            .order_by(RewriteTaskModel.updated_at.desc())
+            .limit(5)
+        )
+    )
+    rewrite_task.instructions = _append_recent_length_failure_directive(
+        rewrite_task.instructions or "",
+        recent_failed_rewrites,
+        chapter=chapter,
+        language=_project_language(project),
+    )
 
     chapter_context = None
     if settings is not None:

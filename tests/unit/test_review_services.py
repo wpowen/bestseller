@@ -81,6 +81,61 @@ def build_settings():
     return load_settings(env={})
 
 
+def test_recent_length_failure_directive_detects_under_over_oscillation() -> None:
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=5,
+        title="第5章",
+        chapter_goal="修复证物袋时序",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        target_word_count=2200,
+        metadata_json={},
+    )
+    under = RewriteTaskModel(
+        project_id=uuid4(),
+        trigger_type="chapter_review",
+        rewrite_strategy="chapter_coherence_bridge_rewrite",
+        status="failed",
+        priority=4,
+        instructions="",
+        context_required=[],
+        metadata_json={
+            "candidate_word_count": 1736,
+            "candidate_quality_gate_violations": [
+                {"code": "CHAPTER_LENGTH_BLOCK_LOW"}
+            ],
+        },
+    )
+    over = RewriteTaskModel(
+        project_id=under.project_id,
+        trigger_type="chapter_review",
+        rewrite_strategy="chapter_coherence_bridge_rewrite",
+        status="failed",
+        priority=4,
+        instructions="",
+        context_required=[],
+        metadata_json={
+            "candidate_word_count": 4953,
+            "candidate_quality_gate_violations": [
+                {"code": "CHAPTER_LENGTH_BLOCK_HIGH"}
+            ],
+        },
+    )
+
+    directive = review_services._render_recent_length_failure_directive(
+        [under, over],
+        chapter=chapter,
+        language="zh-CN",
+    )
+
+    assert "反振荡收敛" in directive
+    assert "1736, 4953" in directive
+    assert "禁止“过短后报复性扩写”" in directive
+    assert "输出前必须在内部静默计数" in directive
+
+
 def test_llm_judge_exception_merge_blocks_chapter_review() -> None:
     base = review_services.ChapterReviewResult(
         verdict="pass",

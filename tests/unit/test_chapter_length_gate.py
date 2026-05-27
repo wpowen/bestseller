@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from bestseller.services.chapter_length_gate import (
     CHAPTER_BELOW_TARGET_BLOCK_CODE,
+    CHAPTER_LENGTH_BLOCK_HIGH_CODE,
     CHAPTER_TOO_SHORT_BLOCK_CODE,
+    DEFAULT_HARD_MAX_ZH_CHARS,
     DEFAULT_HARD_FLOOR_ZH_CHARS,
     DEFAULT_SOFT_WARNING_ZH_CHARS,
     check_chapter_length,
@@ -63,6 +67,21 @@ def test_meeting_target_passes() -> None:
     assert report.finding.severity == "info"
 
 
+def test_over_hard_max_triggers_critical() -> None:
+    text = _make_text(DEFAULT_HARD_MAX_ZH_CHARS + 1)
+    report = check_chapter_length(text, chapter_position=1)
+    assert report.has_critical
+    assert report.finding.code == CHAPTER_LENGTH_BLOCK_HIGH_CODE
+    assert report.finding.hard_max == DEFAULT_HARD_MAX_ZH_CHARS
+
+
+def test_real_qingnang_ch1_count_reads_full_chapter() -> None:
+    text = Path("output/exorcist-detective-1778051012/chapter-001.md").read_text(
+        encoding="utf-8"
+    )
+    assert count_zh_chars(text) == 5172
+
+
 def test_custom_thresholds_respected() -> None:
     text = _make_text(1800)
     # Floor 1500 → 1800 is above floor, but below target 3000 → high.
@@ -87,6 +106,7 @@ def test_render_block_includes_thresholds() -> None:
     block = render_chapter_length_block()
     assert str(DEFAULT_HARD_FLOOR_ZH_CHARS) in block
     assert str(DEFAULT_SOFT_WARNING_ZH_CHARS) in block
+    assert str(DEFAULT_HARD_MAX_ZH_CHARS) in block
     assert "章节体量门" in block
 
 
@@ -104,6 +124,14 @@ def test_render_violation_block_states_gap() -> None:
     assert "扩写" in block
 
 
+def test_render_over_max_violation_block_states_shrink() -> None:
+    text = _make_text(3600)
+    report = check_chapter_length(text, chapter_position=1)
+    block = render_chapter_length_violation_block(report)
+    assert "3600" in block
+    assert "删减" in block
+
+
 def test_evaluate_retention_safety_chapter_too_short_triggers_repair() -> None:
     """Critical short chapter must add CHAPTER_TOO_SHORT to auto_repair codes."""
 
@@ -113,6 +141,7 @@ def test_evaluate_retention_safety_chapter_too_short_triggers_repair() -> None:
     )
 
     assert CHAPTER_TOO_SHORT_BLOCK_CODE in AUTO_REPAIR_RETENTION_CODES
+    assert CHAPTER_LENGTH_BLOCK_HIGH_CODE in AUTO_REPAIR_RETENTION_CODES
 
     text = _make_text(1200)  # well below default floor of 2000
     report = evaluate_retention_safety(
@@ -124,3 +153,18 @@ def test_evaluate_retention_safety_chapter_too_short_triggers_repair() -> None:
     )
     assert not report.passed
     assert CHAPTER_TOO_SHORT_BLOCK_CODE in report.auto_repair_codes
+
+
+def test_evaluate_retention_safety_chapter_too_long_triggers_repair() -> None:
+    from bestseller.services.retention_safety_gate import evaluate_retention_safety
+
+    text = _make_text(3600)
+    report = evaluate_retention_safety(
+        chapter_position=1,
+        chapter_text=text,
+        skip_signature=True,
+        skip_hook_echo=True,
+        skip_exposition=True,
+    )
+    assert not report.passed
+    assert CHAPTER_LENGTH_BLOCK_HIGH_CODE in report.auto_repair_codes

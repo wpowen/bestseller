@@ -32,6 +32,7 @@ class BookLifecycleQualityThresholds:
     require_identity_manifest: bool = True
     require_reference_distance: bool = True
     require_real_generation_audit: bool = True
+    require_material_integrity_passed: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -54,6 +55,7 @@ class BookLifecycleQualityThresholds:
             "require_identity_manifest": self.require_identity_manifest,
             "require_reference_distance": self.require_reference_distance,
             "require_real_generation_audit": self.require_real_generation_audit,
+            "require_material_integrity_passed": self.require_material_integrity_passed,
         }
 
 
@@ -350,6 +352,7 @@ def evaluate_book_lifecycle_quality(
     chapter_report: Mapping[str, Any] | object | None = None,
     whole_book_report: Mapping[str, Any] | object | None = None,
     anti_copy_report: Mapping[str, Any] | object | None = None,
+    material_integrity_report: Mapping[str, Any] | object | None = None,
     thresholds: BookLifecycleQualityThresholds | None = None,
 ) -> BookLifecycleQualityReport:
     """Evaluate whether a book can be claimed as full lifecycle premium quality.
@@ -365,6 +368,7 @@ def evaluate_book_lifecycle_quality(
     chapter = _as_mapping(chapter_report)
     whole_book = _as_mapping(whole_book_report)
     anti_copy = _as_mapping(anti_copy_report)
+    material_integrity = _as_mapping(material_integrity_report)
 
     scorecard = _as_mapping(chapter.get("scorecard")) or chapter
     repair_plan = _as_mapping(chapter.get("repair_plan"))
@@ -891,12 +895,76 @@ def evaluate_book_lifecycle_quality(
         },
     )
 
+    material_status: BookLifecycleDomainStatus | None = None
+    if material_integrity or thresholds.require_material_integrity_passed:
+        material_findings: list[BookLifecycleQualityFinding] = []
+        material_passed = _report_passed(material_integrity)
+        material_verdict = str(material_integrity.get("verdict") or "").lower()
+        raw_findings = material_integrity.get("findings")
+        if thresholds.require_material_integrity_passed and material_passed is not True:
+            material_findings.append(
+                _finding(
+                    code="material_integrity_not_passed",
+                    severity="critical",
+                    domain="material_integrity",
+                    message="Material referential integrity gate is missing or not passed.",
+                    path="material_integrity.passed",
+                    expected=True,
+                    actual=material_passed,
+                    repair_action=(
+                        "Run material_referential_integrity_gate, replace deprecated "
+                        "references, and dedupe canonical material files."
+                    ),
+                )
+            )
+        if material_verdict in {"blocked", "error"}:
+            material_findings.append(
+                _finding(
+                    code="material_integrity_blocked",
+                    severity="critical",
+                    domain="material_integrity",
+                    message="Material referential integrity has blocking findings.",
+                    path="material_integrity.verdict",
+                    expected="pass",
+                    actual=material_verdict,
+                    repair_action=(
+                        "Repair blocking material references before lifecycle "
+                        "acceptance."
+                    ),
+                )
+            )
+        if isinstance(raw_findings, list):
+            for idx, raw in enumerate(raw_findings[:20]):
+                item = _as_mapping(raw)
+                severity = str(item.get("severity") or "medium")
+                if severity not in {"critical", "high", "medium", "low"}:
+                    severity = "medium"
+                material_findings.append(
+                    _finding(
+                        code=str(item.get("code") or "material_integrity_finding"),
+                        severity=severity,
+                        domain="material_integrity",
+                        message=str(item.get("message") or "Material integrity finding."),
+                        path=str(item.get("path") or f"material_integrity.findings[{idx}]"),
+                        repair_action=str(item.get("repair_action") or ""),
+                    )
+                )
+        material_metrics = dict(_as_mapping(material_integrity.get("metrics")))
+        material_metrics["passed"] = material_passed
+        material_metrics["verdict"] = material_verdict or None
+        material_status = _domain_status(
+            "material_integrity",
+            material_findings,
+            material_metrics,
+        )
+
     domain_statuses = (
         planning_status,
         character_status,
         chapter_status,
         whole_status,
         anti_copy_status,
+        *((material_status,) if material_status is not None else ()),
     )
     findings = tuple(
         finding
@@ -925,6 +993,9 @@ def evaluate_book_lifecycle_quality(
             "premium_gate_passed": premium_passed,
             "model_execution_ready": model_ready,
             "reference_distance_score": reference_distance,
+            "material_integrity_passed": (
+                _report_passed(material_integrity) if material_integrity else None
+            ),
         },
         thresholds=thresholds,
     )
@@ -992,6 +1063,11 @@ def build_lifecycle_quality_report_from_closure(
         **dict(_as_mapping(closure.get("anti_copy_report"))),
         **dict(_as_mapping(closure.get("anti_copy"))),
     }
+    material_integrity_report = (
+        _as_mapping(closure.get("material_integrity_report"))
+        or _as_mapping(closure.get("material_referential_integrity"))
+        or _as_mapping(lifecycle_evidence.get("material_integrity_report"))
+    )
 
     return evaluate_book_lifecycle_quality(
         slug=slug,
@@ -1000,6 +1076,7 @@ def build_lifecycle_quality_report_from_closure(
         chapter_report=chapter_report,
         whole_book_report=whole_book_report,
         anti_copy_report=anti_copy_report,
+        material_integrity_report=material_integrity_report,
         thresholds=thresholds,
     )
 

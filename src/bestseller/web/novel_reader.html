@@ -700,6 +700,27 @@
     return "repair";
   }
 
+  function formatReaderTimestamp(value) {
+    if (!value) return "—";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  }
+
+  function formatVersionNo(value) {
+    if (value == null || value === "") return "—";
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? `v${n.toLocaleString()}` : String(value);
+  }
+
   function buildTocLegend() {
     const counts = { formal: 0, repair: 0 };
     for (const ch of toc) {
@@ -802,6 +823,8 @@
       const title = ch ? ch.title : (isSinglePiece ? "全文" : `第 ${n} 章`);
       const readerState = readerStateFor(ch || { availability: "available" });
       const readerStateLabel = READER_STATE_LABEL[readerState];
+      const versionNo = data.version_no ?? ch?.version_no ?? null;
+      const updatedAt = data.updated_at || ch?.updated_at || null;
       // Prefer volume info from the chapter endpoint; fall back to TOC.
       const volNum = (data.volume_number != null ? data.volume_number : ch?.volume_number);
       const volTitle = data.volume_title || ch?.volume_title || "";
@@ -878,6 +901,10 @@
             <span>${isSinglePiece ? "单篇全文" : `第 ${n} 章 / 共 ${toc.length} 章`}</span>
             <span class="dot"></span>
             <span class="reader-status-pill ${readerState}">${readerStateLabel}</span>
+            <span class="dot"></span>
+            <span>版本 ${escapeHtml(formatVersionNo(versionNo))}</span>
+            <span class="dot"></span>
+            <span>更新 ${escapeHtml(formatReaderTimestamp(updatedAt))}</span>
             <span class="dot"></span>
             <span>${data.word_count?.toLocaleString() ?? 0} 字</span>
             <span class="dot"></span>

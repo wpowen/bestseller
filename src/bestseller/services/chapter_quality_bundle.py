@@ -182,6 +182,47 @@ def run_chapter_quality_bundle(
             )
 
     try:
+        from bestseller.services.chapter_splice_coherence_gate import (
+            evaluate_chapter_splice_coherence,
+        )
+
+        report = evaluate_chapter_splice_coherence(text, chapter_number=chapter_number)
+        for raw in report.findings:
+            findings.append(
+                _finding(
+                    code=raw.code,
+                    source="chapter_quality_bundle.splice_coherence",
+                    chapter_number=chapter_number,
+                    severity=raw.severity,
+                    detail=raw.repair_action or raw.message,
+                    evidence={
+                        "message": raw.message,
+                        "path": raw.path,
+                        "gate": report.gate_name,
+                    },
+                    repair_scope="paragraph"
+                    if raw.code
+                    in {
+                        "CHAPTER_SPLICE_REPEATED_SENTENCE",
+                        "CHAPTER_SPLICE_NEAR_DUPLICATE_BLOCK",
+                    }
+                    else "chapter",
+                )
+            )
+    except Exception as exc:
+        if context.commercial_strict:
+            findings.append(
+                _finding(
+                    code="QUALITY_GATE_EXECUTION_FAILED",
+                    source="chapter_quality_bundle.splice_coherence",
+                    chapter_number=chapter_number,
+                    detail=f"splice coherence gate failed: {type(exc).__name__}: {exc}",
+                    evidence={"gate": "chapter_splice_coherence"},
+                    repair_scope="package",
+                )
+            )
+
+    try:
         from bestseller.services.anti_meta_gate import check_anti_meta_gate
 
         report = check_anti_meta_gate(text, chapter_position=chapter_number)
@@ -314,6 +355,10 @@ def run_chapter_quality_bundle(
             length_kwargs["chapter_length_soft_warning"] = max(
                 2000,
                 int(context.target_chapter_words * 0.85),
+            )
+            length_kwargs["chapter_length_hard_max"] = max(
+                3000,
+                int(context.target_chapter_words * 1.2),
             )
         report = evaluate_retention_safety(
             chapter_position=chapter_number,

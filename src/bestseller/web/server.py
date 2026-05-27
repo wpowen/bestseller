@@ -78,6 +78,7 @@ _QUICKSTART_HTML_PATH = Path(__file__).with_name("novel_quickstart.html")
 _LIBRARY_HTML_PATH = Path(__file__).with_name("novel_library.html")
 _DESIGN_DOSSIER_HTML_PATH = Path(__file__).with_name("novel_design_dossier.html")
 _PIPELINE_FLOW_HTML_PATH = Path(__file__).with_name("novel_pipeline_flow.html")
+_CHARACTER_NETWORK_HTML_PATH = Path(__file__).with_name("novel_character_network.html")
 # Bounded LRU cache for markdown artifact metadata.  Previous unbounded dict
 # grew without limit over long server runs.  512 entries is enough for a few
 # large projects while capping memory usage.
@@ -896,7 +897,18 @@ def _try_load_chapter_draft_from_db(
     project_slug: str,
     artifact_name: str,
 ) -> str | None:
-    """Return markdown content for a chapter draft if it exists in the DB.
+    payload = _try_load_chapter_draft_payload_from_db(settings, project_slug, artifact_name)
+    if payload is None:
+        return None
+    return str(payload.get("content") or "")
+
+
+def _try_load_chapter_draft_payload_from_db(
+    settings: AppSettings,
+    project_slug: str,
+    artifact_name: str,
+) -> dict[str, object] | None:
+    """Return current chapter draft content and version metadata from the DB.
 
     Matches filenames like ``chapter-001.md``.  Returns *None* if the file
     name doesn't look like a chapter export or no draft is found.
@@ -924,7 +936,7 @@ def _try_load_chapter_draft_from_db(
             )
         )
 
-    async def _fetch() -> str | None:
+    async def _fetch() -> dict[str, object] | None:
         async with session_scope(settings) as session:
             proj = (
                 await session.execute(select(ProjectModel).where(ProjectModel.slug == project_slug))
@@ -943,23 +955,35 @@ def _try_load_chapter_draft_from_db(
                 return None
             draft = (
                 await session.execute(
-                    select(ChapterDraftVersionModel).where(
-                        ChapterDraftVersionModel.chapter_id == chapter.id,
-                        ChapterDraftVersionModel.is_current.is_(True),
+                    select(ChapterDraftVersionModel)
+                    .where(ChapterDraftVersionModel.chapter_id == chapter.id)
+                    .order_by(
+                        ChapterDraftVersionModel.is_current.desc(),
+                        ChapterDraftVersionModel.version_no.desc(),
+                        ChapterDraftVersionModel.created_at.desc(),
                     )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             if draft is None:
                 return None
             content_md = draft.content_md or ""
-            if _content_has_chapter_heading(content_md, chapter.chapter_number):
-                return content_md
-            heading = format_chapter_heading(
-                chapter.chapter_number,
-                chapter.title,
-                language=proj.language,
-            )
-            return f"{heading}\n\n{content_md}"
+            if not _content_has_chapter_heading(content_md, chapter.chapter_number):
+                heading = format_chapter_heading(
+                    chapter.chapter_number,
+                    chapter.title,
+                    language=proj.language,
+                )
+                content_md = f"{heading}\n\n{content_md}"
+            return {
+                "content": content_md,
+                "version_no": int(draft.version_no or 0),
+                "updated_at": draft.created_at.isoformat()
+                if isinstance(draft.created_at, datetime)
+                else None,
+                "word_count": int(draft.word_count or 0),
+                "chapter_title": chapter.title,
+            }
 
     try:
         return asyncio.run(_fetch())
@@ -6102,6 +6126,12 @@ def _read_pipeline_flow_html() -> str:
     return "<!DOCTYPE html><html><body><h1>Pipeline flow page not found.</h1></body></html>"
 
 
+def _read_character_network_html() -> str:
+    if _CHARACTER_NETWORK_HTML_PATH.exists():
+        return _CHARACTER_NETWORK_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Character network page not found.</h1></body></html>"
+
+
 def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
     """Scan the output dir for story_package.json files and return metadata."""
     output_base = Path(settings.output.base_dir)
@@ -6934,23 +6964,39 @@ def _load_project_chapter_index(
                         select(
                             ChapterDraftVersionModel.chapter_id,
                             ChapterDraftVersionModel.word_count,
-                        ).where(
-                            ChapterDraftVersionModel.project_id == proj.id,
-                            ChapterDraftVersionModel.is_current.is_(True),
+                            ChapterDraftVersionModel.version_no,
+                            ChapterDraftVersionModel.created_at,
+                        )
+                        .where(ChapterDraftVersionModel.project_id == proj.id)
+                        .order_by(
+                            ChapterDraftVersionModel.chapter_id,
+                            ChapterDraftVersionModel.is_current.desc(),
+                            ChapterDraftVersionModel.version_no.desc(),
+                            ChapterDraftVersionModel.created_at.desc(),
                         )
                     )
                 )
-                draft_word_count_by_chapter_id = {
-                    chapter_id: int(word_count or 0) for chapter_id, word_count in draft_rows
-                }
+                draft_meta_by_chapter_id: dict[object, dict[str, object]] = {}
+                for chapter_id, word_count, version_no, created_at in draft_rows:
+                    draft_meta_by_chapter_id.setdefault(
+                        chapter_id,
+                        {
+                            "word_count": int(word_count or 0),
+                            "version_no": int(version_no or 0),
+                            "updated_at": created_at.isoformat()
+                            if isinstance(created_at, datetime)
+                            else None,
+                        },
+                    )
 
                 chapters_out: list[dict[str, object]] = []
                 volume_map: dict[int, dict[str, object]] = {}
                 for ch in chapter_rows:
+                    draft_meta = draft_meta_by_chapter_id.get(ch.id) or {}
                     word_count = int(ch.current_word_count or 0)
                     if word_count <= 0:
-                        word_count = draft_word_count_by_chapter_id.get(ch.id, 0)
-                    has_draft = ch.id in draft_word_count_by_chapter_id
+                        word_count = int(draft_meta.get("word_count") or 0)
+                    has_draft = ch.id in draft_meta_by_chapter_id
                     if not has_draft and word_count <= 0:
                         # Planned but not written yet — skip.  The user
                         # only wants readable chapters in the reader TOC.
@@ -6993,6 +7039,13 @@ def _load_project_chapter_index(
                             "revision_count": revision_count,
                             "has_draft": has_draft,
                             "availability": availability,
+                            "version_no": draft_meta.get("version_no"),
+                            "updated_at": draft_meta.get("updated_at")
+                            or (
+                                ch.updated_at.isoformat()
+                                if isinstance(ch.updated_at, datetime)
+                                else None
+                            ),
                         }
                     )
 
@@ -7708,6 +7761,16 @@ def serve_web_app(
                         content_type="text/html; charset=utf-8",
                     )
                     return
+                if path.startswith("/characters/"):
+                    project_slug = path.removeprefix("/characters/").strip("/")
+                    if not project_slug:
+                        self._route_not_found()
+                        return
+                    self._send_text(
+                        _read_character_network_html(),
+                        content_type="text/html; charset=utf-8",
+                    )
+                    return
                 if path == "/api/library":
                     self._send_json(asyncio.run(_load_library_payload(settings)))
                     return
@@ -8211,6 +8274,8 @@ def serve_web_app(
                                     "revision_count": ch.get("revision_count"),
                                     "has_draft": ch.get("has_draft"),
                                     "availability": availability,
+                                    "version_no": ch.get("version_no"),
+                                    "updated_at": ch.get("updated_at"),
                                 }
                             )
                         toc = merged_toc
@@ -8274,16 +8339,24 @@ def serve_web_app(
                     # current chapter_draft_versions.is_current row even when a
                     # stale file is cached on disk. Falls through to file-only
                     # behavior for Mode B projects that never touch the DB.
-                    fresh_content = _try_load_chapter_draft_from_db(
+                    fresh_payload = _try_load_chapter_draft_payload_from_db(
                         settings,
                         project_slug,
                         f"chapter-{chapter_n:03d}.md",
                     )
+                    fresh_content = (
+                        str(fresh_payload.get("content") or "") if fresh_payload else None
+                    )
                     if fresh_content is None and chapter_n >= 1000:
-                        fresh_content = _try_load_chapter_draft_from_db(
+                        fresh_payload = _try_load_chapter_draft_payload_from_db(
                             settings,
                             project_slug,
                             f"chapter-{chapter_n:04d}.md",
+                        )
+                        fresh_content = (
+                            str(fresh_payload.get("content") or "")
+                            if fresh_payload
+                            else None
                         )
                         if fresh_content is not None:
                             chapter_file = output_dir / f"chapter-{chapter_n:04d}.md"
@@ -8317,6 +8390,14 @@ def serve_web_app(
                             pass
                     html_content = markdown_to_html(md, language=_reader_lang)
                     stats = build_markdown_reading_stats(md)
+                    stat_updated_at = None
+                    try:
+                        stat_updated_at = datetime.fromtimestamp(
+                            chapter_file.stat().st_mtime,
+                            UTC,
+                        ).isoformat()
+                    except OSError:
+                        pass
                     # Resolve volume info for this chapter so the reader can
                     # render "第N卷 卷名 · 第M章 章名".  Best-effort lookup;
                     # we never fail the chapter response just because the
@@ -8337,11 +8418,27 @@ def serve_web_app(
                             "number": chapter_n,
                             "filename": chapter_file.name,
                             "html": html_content,
-                            "word_count": stats["word_count"],
+                            "word_count": int(
+                                fresh_payload.get("word_count") or stats["word_count"]
+                            )
+                            if fresh_payload
+                            else stats["word_count"],
                             "estimated_read_minutes": stats["estimated_read_minutes"],
                             "volume_number": volume_number,
                             "volume_title": volume_title,
-                            "chapter_title": chapter_title,
+                            "chapter_title": (
+                                fresh_payload.get("chapter_title")
+                                if fresh_payload
+                                else chapter_title
+                            ),
+                            "version_no": fresh_payload.get("version_no")
+                            if fresh_payload
+                            else None,
+                            "updated_at": (
+                                fresh_payload.get("updated_at")
+                                if fresh_payload
+                                else stat_updated_at
+                            ),
                         }
                     )
                     return

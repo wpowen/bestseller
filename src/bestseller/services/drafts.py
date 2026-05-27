@@ -532,26 +532,43 @@ def _maybe_write_scene_prompt_trace(
 def _strip_markdown_plain(text: str) -> str:
     """Lightweight markdown-to-plain-text for word counting.
 
-    Strips heading / blockquote / list-item prefixes so the
-    counters below see only prose, not markup.
+    Countable length units in this project intentionally follow mixed
+    Chinese/English publishing convention:
+
+    - CJK ideographs count as one unit each.
+    - Latin words, acronym runs, and numeric runs count as one unit each.
+    - Punctuation, whitespace, markdown syntax, frontmatter, URLs, comments,
+      and fenced-code metadata do not count.
     """
 
+    if not text:
+        return ""
+    cleaned = str(text).replace("\ufeff", "")
+    cleaned = re.sub(r"\A\s*---\s*\n.*?\n---\s*(?:\n|$)", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"<!--.*?-->", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"```.*?```", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"!\[[^\]]*]\([^)]*\)", "", cleaned)
+    cleaned = re.sub(r"\[([^\]]+)]\([^)]*\)", r"\1", cleaned)
+    cleaned = re.sub(r"`([^`]*)`", r"\1", cleaned)
+    cleaned = cleaned.replace("*", "").replace("_", "").replace("~", "")
+
     lines: list[str] = []
-    for raw_line in text.splitlines():
+    for raw_line in cleaned.splitlines():
         stripped = raw_line.strip()
         if not stripped:
             lines.append("")
             continue
-        if stripped.startswith("# "):
-            lines.append(stripped[2:].strip())
-        elif stripped.startswith("## "):
-            lines.append(stripped[3:].strip())
-        elif stripped.startswith("> "):
-            lines.append(stripped[2:].strip())
-        elif stripped.startswith("- "):
-            lines.append(stripped[2:].strip())
-        else:
+        if re.fullmatch(r"[-*_]{3,}", stripped):
+            continue
+        stripped = re.sub(r"^#{1,6}\s+", "", stripped)
+        stripped = re.sub(r"^>\s*", "", stripped)
+        stripped = re.sub(r"^(?:[-+*]|\d+[.)])\s+", "", stripped)
+        if "|" in stripped:
+            stripped = " ".join(part.strip() for part in stripped.split("|") if part.strip())
+        if stripped:
             lines.append(stripped)
+        else:
+            lines.append("")
     return "\n".join(lines).strip()
 
 
@@ -2659,6 +2676,12 @@ async def _collect_post_assembly_duplicate_findings(
         detect_short_cluster_near_repeat,
         extract_chapter_opening,
     )
+    from bestseller.services.chapter_first_sentence_diversity_gate import (
+        check_first_sentence_diversity,
+    )
+    from bestseller.services.opening_hook_density_gate import (
+        check_opening_hook_density,
+    )
 
     findings: list[WriteSafetyFinding] = []
     local_findings = (
@@ -2743,6 +2766,46 @@ async def _collect_post_assembly_duplicate_findings(
                     },
                 )
             )
+        first_sentence_result = check_first_sentence_diversity(
+            current_first_sentence=current_opening,
+            recent_first_sentences={
+                int(chapter_number): opening
+                for chapter_number, opening in previous_openings[-10:]
+                if opening
+            },
+            similarity_threshold=0.70,
+            distance_threshold=0.30,
+        )
+        if not first_sentence_result.passed:
+            source_chapter = int(first_sentence_result.matched_chapter or 0)
+            source_opening = next(
+                (
+                    opening
+                    for chapter_number, opening in previous_openings
+                    if chapter_number == source_chapter
+                ),
+                "",
+            )
+            opening_gate_findings.append(
+                WriteSafetyFinding(
+                    source="post_assembly_first_sentence_diversity_gate",
+                    code=CHAPTER_OPENING_REPETITION_BLOCK_CODE,
+                    severity="critical",
+                    message=(
+                        f"[章节首句重复] 第{chapter.chapter_number}章首句与第"
+                        f"{source_chapter}章过近：{first_sentence_result.reason}。"
+                        "必须重写第一段，禁止复用循环模板句。"
+                    ),
+                    evidence=current_opening[:120],
+                    payload={
+                        "chapter": int(chapter.chapter_number),
+                        "source_chapter": source_chapter,
+                        "similarity": first_sentence_result.similarity_max,
+                        "opening": current_opening,
+                        "source_opening": source_opening,
+                    },
+                )
+            )
     chapter_texts.append((int(chapter.chapter_number), content_md or ""))
     for finding in detect_cross_chapter_repetition(chapter_texts):
         if int(finding.get("chapter") or 0) != int(chapter.chapter_number):
@@ -2758,6 +2821,25 @@ async def _collect_post_assembly_duplicate_findings(
             )
         )
     findings.extend(opening_gate_findings)
+    for finding in check_opening_hook_density(
+        content_md or "",
+        int(chapter.chapter_number or 0),
+    ):
+        if finding.severity not in {"critical", "high"}:
+            continue
+        findings.append(
+            WriteSafetyFinding(
+                source="post_assembly_opening_hook_density_gate",
+                code=finding.code,
+                severity=finding.severity,
+                message=finding.detail,
+                evidence=str(finding.evidence.get("first_200") or finding.evidence),
+                payload={
+                    "chapter": int(chapter.chapter_number or 0),
+                    "evidence": finding.evidence,
+                },
+            )
+        )
     return tuple(findings)
 
 
@@ -5248,6 +5330,15 @@ def build_scene_draft_prompts(
             _project_material_reference_line = (
                 f"{_project_material_lead}{_project_material_reference_block}\n\n"
             )
+    _project_material_obligation_line = _render_project_material_obligation_packet(
+        project,
+        chapter_number=chapter.chapter_number,
+        chapter_position=f"chapter-{chapter.chapter_number}",
+        prompt_pack_key=_resolve_prompt_pack_key(project),
+        is_en=is_en,
+    )
+    if _project_material_obligation_line:
+        _project_material_obligation_line += "\n\n"
 
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
@@ -5373,6 +5464,7 @@ def build_scene_draft_prompts(
             "character_role_line": _character_role_line,
             "chapter_length_line": _chapter_length_line,
             "project_material_reference_line": _project_material_reference_line,
+            "project_material_obligation_line": _project_material_obligation_line,
             "library_reference_line": _library_reference_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
@@ -5450,6 +5542,7 @@ def build_scene_draft_prompts(
     _character_role_line = _ctx["character_role_line"]
     _chapter_length_line = _ctx["chapter_length_line"]
     _project_material_reference_line = _ctx["project_material_reference_line"]
+    _project_material_obligation_line = _ctx["project_material_obligation_line"]
     _library_reference_line = _ctx["library_reference_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
@@ -5504,6 +5597,7 @@ def build_scene_draft_prompts(
             f"{_scene_beat_line}"
             f"{_prior_persona_feedback_line}"
             f"{_project_material_reference_line}"
+            f"{_project_material_obligation_line}"
             f"{_library_reference_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
@@ -5610,6 +5704,7 @@ def build_scene_draft_prompts(
             f"{_scene_beat_line}"
             f"{_prior_persona_feedback_line}"
             f"{_project_material_reference_line}"
+            f"{_project_material_obligation_line}"
             f"{_library_reference_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
@@ -5687,6 +5782,73 @@ def build_scene_draft_prompts(
             "每个角色登场必须有动机——通过动作或暗示说明他/她为何出现在这里。"
         )
     return system_prompt, user_prompt
+
+
+def _render_project_material_obligation_packet(
+    project: ProjectModel,
+    *,
+    chapter_number: int,
+    chapter_position: str | None,
+    prompt_pack_key: str | None,
+    is_en: bool,
+) -> str:
+    try:
+        base_dir = Path(load_settings().output.base_dir)
+    except Exception:
+        return ""
+    project_dir = base_dir / project.slug
+    if not project_dir.exists():
+        return ""
+    try:
+        from bestseller.services.material_injection_orchestrator import (
+            render_material_injection_blocks,
+        )
+        from bestseller.services.material_self_repair import plan_material_self_repair
+
+        repair_plan = plan_material_self_repair(
+            project_dir,
+            chapter_number=chapter_number,
+            chapter_position=chapter_position,
+            prompt_pack_key=prompt_pack_key,
+        )
+        obligation_block = render_material_injection_blocks(
+            project_dir,
+            chapter_number=chapter_number,
+            chapter_position=chapter_position,
+            prompt_pack_key=prompt_pack_key,
+            total_token_budget=3000,
+        )
+    except Exception:
+        logger.debug(
+            "Chapter %d: material obligation packet render failed",
+            chapter_number,
+            exc_info=True,
+        )
+        return ""
+    if not obligation_block and not repair_plan.blocking:
+        return ""
+    lines = [
+        "=== Material lifecycle packet ==="
+        if is_en
+        else "=== 物料生命周期闭环包（必须优先服从）==="
+    ]
+    if repair_plan.blocking:
+        if is_en:
+            lines.append(
+                "Material repair is required before inventing new canon. Use only the "
+                "listed project canon in prose; missing entities/rules must be expanded "
+                "through the material repair loop, not improvised in chapter text."
+            )
+        else:
+            lines.append(
+                "检测到物料闭环缺口：正文不得临场发明新正典来遮盖缺口；必须只使用下列已给定正典。"
+                "缺失人物/规则/线索应进入物料自修复流程后再生成。"
+            )
+        for action in repair_plan.actions[:8]:
+            lines.append(f"- {action.action_type}: {action.target} ({action.reason})")
+    if obligation_block:
+        lines.append(obligation_block)
+    return "\n".join(lines).strip()
 
 
 def _packet_story_bible_context(packet: SceneWriterContextPacket | None) -> dict[str, Any] | None:
@@ -6240,16 +6402,21 @@ def _render_chapter_first_opening_contract(
     return "\n".join(line for line in lines if line.strip())
 
 
-def _render_front_chapter_forbidden_terms_block(chapter: ChapterModel) -> str:
+def _render_front_chapter_forbidden_terms_block(
+    chapter: ChapterModel,
+    project: ProjectModel | None = None,
+) -> str:
     if int(getattr(chapter, "chapter_number", 0) or 0) > 10:
         return ""
-    unique_forbidden_terms = _front10_forbidden_signal_terms(chapter)
+    unique_forbidden_terms = _front10_forbidden_signal_terms(chapter, project=project)
     lines = [
         "【前十章禁写与物件信号硬约束】",
-        "本章正文只能使用本章场景卡里的现场名词、人物和物件；任何卷级真相、家族史、父辈姓名、"
-        "祖辈姓名、幕后身份、名单编号、镜局专名、第几面镜、通讯物流桥段都不要写。",
+        "本章正文只能使用本章场景卡里的现场名词、人物和物件；任何卷级真相、家族本名、"
+        "幕后身份、名单编号、镜局专名、第几面镜都不要提前定义。",
+        "允许电话/短信作为同一 POV 内的现实沟通工具，但不得切镜头到电话另一头；"
+        "不得引入快递员、配送员等额外活人 NPC 推动第一章主线。",
         "物件异常必须写成有稳定含义的可见变化，例如变冷、变重、裂缺、血点、影子错位、指针偏移；"
-        "不能用发热类触感当万能推进器。",
+        "允许短暂温热，但不得把铜钱长时间高温或发烫写成万能推进器。",
         "前十章不得上规则课：林渊只能用问话顺序、物证变化和人物动作让读者推理；"
         "普通邻居、客户、警察不得主动理解认账/入账/镜债/账线等专业词。",
     ]
@@ -6372,7 +6539,11 @@ def _redact_front10_prompt_leaks(
 _FRONT10_MEDIATED_OPENING_TERMS: tuple[str, ...] = ()
 
 
-def _front10_forbidden_signal_terms(chapter: ChapterModel) -> list[str]:
+def _front10_forbidden_signal_terms(
+    chapter: ChapterModel,
+    *,
+    project: ProjectModel | None = None,
+) -> list[str]:
     """Return forbidden signal terms ONLY from chapter metadata (user-configurable).
 
     NOTE (2026-05-26 architecture cleanup): the function previously appended a
@@ -6390,6 +6561,21 @@ def _front10_forbidden_signal_terms(chapter: ChapterModel) -> list[str]:
     object_signal = metadata.get("object_signal_contract") if isinstance(metadata, Mapping) else {}
     foreshadowing = getattr(chapter, "foreshadowing_actions", None) or {}
     forbidden_terms: list[str] = []
+    if project is not None:
+        try:
+            from pathlib import Path
+
+            from bestseller.services.forbidden_leaks_loader import (
+                load_forbidden_leaks_for_chapter,
+            )
+
+            decision = load_forbidden_leaks_for_chapter(
+                Path("output") / str(project.slug),
+                int(getattr(chapter, "chapter_number", 0) or 0),
+            )
+            forbidden_terms.extend(decision.forbidden_terms)
+        except Exception:
+            logger.debug("forbidden leaks policy load failed", exc_info=True)
     if isinstance(object_signal, Mapping):
         forbidden_terms.extend(str(item) for item in object_signal.get("forbidden_signals") or [])
     if isinstance(foreshadowing, Mapping):
@@ -7096,8 +7282,9 @@ def build_chapter_first_draft_prompts(
         "每场达成离场状态后，用一句可见转场进入下一场。"
         "场景卡的入场状态、离场状态和 forbidden_actions 是硬边界；不得把“失声/回声/半账未解”"
         "升级成“被拖进门、被吞掉、确认死亡、门合拢”等未写在场景卡的高潮动作；"
-        "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、吞人、门关闭、电话、快递等关键事件一律禁止。"
-        "如果模型准备写超过42段或超过3500字，必须优先删解释、删重复氛围、删二次推理，"
+        "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、吞人、门关闭、额外活人 NPC 等关键事件一律禁止；"
+        "电话/短信只能作为同一视角内的现实沟通工具，不得用来切走 POV 或凭空送入线索。"
+        f"如果模型准备写超过42段或超过{hard_max_words}字，必须优先删解释、删重复氛围、删二次推理，"
         "不能继续扩写。"
         "不得出现模板化重复句式，不得把同一恐惧/门禁/铜钱动作反复写成同一模式。"
         "非专业角色只能描述自己亲眼看见的异常、听来的警告或身体反应；除非角色认知状态明确写明，"
@@ -7121,7 +7308,10 @@ def build_chapter_first_draft_prompts(
     )
     opening_scene_contract = _render_chapter_first_opening_contract(chapter, scenes)
     prior_chapter_bridge = _render_chapter_first_prior_chapter_bridge(context_packet)
-    front_forbidden_terms_block = _render_front_chapter_forbidden_terms_block(chapter)
+    front_forbidden_terms_block = _render_front_chapter_forbidden_terms_block(
+        chapter,
+        project,
+    )
     story_bible_block = _redact_front10_prompt_leaks(
         _compact_json_block(context_packet.story_bible, max_chars=3200),
         chapter,
@@ -7295,6 +7485,17 @@ async def generate_chapter_draft_once(
         target_word_count=target_word_count,
         character_safety_block=character_safety_block,
     )
+    try:
+        from bestseller.services.prompt_compactor import compact_user_prompt
+
+        user_prompt, compaction_report = compact_user_prompt(
+            user_prompt,
+            chapter_no=int(chapter.chapter_number or 0),
+            forbidden_terms_full=_front10_forbidden_signal_terms(chapter, project=project),
+        )
+    except Exception:
+        compaction_report = None
+        logger.debug("chapter-first prompt compaction failed", exc_info=True)
     fallback_content = "\n\n".join(
         [
             format_chapter_heading(
@@ -7336,6 +7537,15 @@ async def generate_chapter_draft_once(
                 "scene_numbers": [scene.scene_number for scene in scenes],
                 "generation_mode": "chapter_first",
                 "length_control_method": "prompt_contract_and_quality_gate",
+                "prompt_compaction": (
+                    None
+                    if compaction_report is None
+                    else {
+                        "original_chars": compaction_report.original_chars,
+                        "compacted_chars": compaction_report.compacted_chars,
+                        "saved_tokens_estimate": compaction_report.saved_tokens_estimate,
+                    }
+                ),
                 "max_tokens_policy": "runaway_guard_not_length_control",
                 "context_query": context_packet.query_text,
             },
@@ -8358,6 +8568,17 @@ async def generate_scene_draft(
                 voice_corrections_block = f"{header}\n" + "\n".join(correction_lines)
         if voice_corrections_block:
             user_prompt = f"{user_prompt}\n\n{voice_corrections_block}"
+        try:
+            from bestseller.services.prompt_compactor import compact_user_prompt
+
+            user_prompt, compaction_report = compact_user_prompt(
+                user_prompt,
+                chapter_no=int(chapter.chapter_number or 0),
+                forbidden_terms_full=_front10_forbidden_signal_terms(chapter, project=project),
+            )
+        except Exception:
+            compaction_report = None
+            logger.debug("scene prompt compaction failed", exc_info=True)
         _model_tier = _determine_model_tier(
             chapter,
             scene,
@@ -8401,6 +8622,15 @@ async def generate_scene_draft(
                     "chapter_number": chapter.chapter_number,
                     "scene_number": scene.scene_number,
                     "context_query": context_packet.query_text,
+                    "prompt_compaction": (
+                        None
+                        if compaction_report is None
+                        else {
+                            "original_chars": compaction_report.original_chars,
+                            "compacted_chars": compaction_report.compacted_chars,
+                            "saved_tokens_estimate": compaction_report.saved_tokens_estimate,
+                        }
+                    ),
                     "protagonist_name": str((scene.participants or [""])[0] or "").strip(),
                     "supporting_name": str(
                         (scene.participants or ["", ""])[1]

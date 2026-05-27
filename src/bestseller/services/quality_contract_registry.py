@@ -222,6 +222,52 @@ _CONTRACTS: dict[str, QualityContract] = {
             "learning/being possessed before using rule terminology"
         ),
     ),
+    # Chapter assembly / splice coherence.
+    "CHAPTER_SPLICE_REPEATED_SENTENCE": _contract(
+        "CHAPTER_SPLICE_REPEATED_SENTENCE",
+        "assembly",
+        repair_scope="paragraph",
+        required_evidence=("message", "path"),
+        pass_condition="duplicate generated sentence is merged or rewritten as a new beat",
+    ),
+    "CHAPTER_SPLICE_NEAR_DUPLICATE_BLOCK": _contract(
+        "CHAPTER_SPLICE_NEAR_DUPLICATE_BLOCK",
+        "assembly",
+        repair_scope="paragraph",
+        required_evidence=("message", "path"),
+        pass_condition="only one version of the competing draft block remains",
+    ),
+    "CHAPTER_SPLICE_PRESENCE_CONTRADICTION": _contract(
+        "CHAPTER_SPLICE_PRESENCE_CONTRADICTION",
+        "assembly",
+        repair_scope="chapter",
+        required_evidence=("message", "path"),
+        pass_condition="character presence is linear: in-scene, explicitly returned, or removed",
+    ),
+    "CHAPTER_SPLICE_LOCATION_DRIFT": _contract(
+        "CHAPTER_SPLICE_LOCATION_DRIFT",
+        "assembly",
+        severity="high",
+        repair_scope="chapter",
+        required_evidence=("message", "path"),
+        pass_condition="location anchors are unified or bridged by explicit travel/transition",
+    ),
+    "CHAPTER_SPLICE_UNSEEDED_LOCATION_REFERENCE": _contract(
+        "CHAPTER_SPLICE_UNSEEDED_LOCATION_REFERENCE",
+        "assembly",
+        severity="high",
+        repair_scope="chapter",
+        required_evidence=("message", "path"),
+        pass_condition="abrupt location reference is removed or given setup/transition",
+    ),
+    "CHAPTER_SPLICE_TIME_JUMP": _contract(
+        "CHAPTER_SPLICE_TIME_JUMP",
+        "assembly",
+        severity="high",
+        repair_scope="chapter",
+        required_evidence=("message", "path"),
+        pass_condition="chapter time anchors form one explicit, bridgeable timeline",
+    ),
     # Planning/readiness.
     "OUTLINE_GENERIC_OR_UNSCENEABLE": _contract(
         "OUTLINE_GENERIC_OR_UNSCENEABLE",

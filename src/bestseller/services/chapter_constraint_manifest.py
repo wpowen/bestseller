@@ -5,7 +5,7 @@ scene context into a small executable contract, then validates the writer's
 declared plan before prose generation starts.
 """
 
-# ruff: noqa: ANN401
+# ruff: noqa: ANN401, RUF001
 
 from __future__ import annotations
 
@@ -53,8 +53,11 @@ class ChapterConstraintManifest(BaseModel):
     scene_number: int | None = Field(default=None, ge=1)
     allowed_characters: list[str] = Field(default_factory=list)
     characters_must_not_appear: list[str] = Field(default_factory=list)
+    characters_off_screen_only: list[str] = Field(default_factory=list)
     forbidden_terms: list[str] = Field(default_factory=list)
+    required_time_anchors: list[str] = Field(default_factory=list)
     allowed_time_anchors: list[str] = Field(default_factory=list)
+    allowed_relative_time_expressions: list[str] = Field(default_factory=list)
     forbidden_time_anchors: list[str] = Field(default_factory=list)
     allowed_locations: list[str] = Field(default_factory=list)
     must_echo_hooks_from_prev: list[str] = Field(default_factory=list)
@@ -188,6 +191,29 @@ def compile_chapter_constraint_manifest(
             *_string_list(bible.get("allowed_time_anchors")),
         ]
     )
+    required_time_anchors = _dedupe_strings(
+        [
+            *_string_list(metadata.get("required_time_anchors")),
+            *_string_list(bible.get("required_time_anchors")),
+        ]
+    )
+    relative_time_expressions = _dedupe_strings(
+        [
+            *_string_list(metadata.get("allowed_relative_time_expressions")),
+            *_string_list(bible.get("allowed_relative_time_expressions")),
+            "几秒后",
+            "十几秒后",
+            "几分钟后",
+            "半分钟后",
+            "一会儿",
+            "片刻后",
+            "转眼",
+            "没多久",
+            "半小时前",
+            "二十分钟前",
+            "刚才",
+        ]
+    )
     locations = _dedupe_strings(
         [
             scene_meta.get("location"),
@@ -234,10 +260,18 @@ def compile_chapter_constraint_manifest(
         scene_number=scene_number,
         allowed_characters=_dedupe_strings(participants or []),
         characters_must_not_appear=_dedupe_strings(forbidden_characters),
+        characters_off_screen_only=_dedupe_strings(
+            [
+                *_string_list(metadata.get("characters_off_screen_only")),
+                *_string_list(bible.get("characters_off_screen_only")),
+            ]
+        ),
         forbidden_terms=_dedupe_strings(
             [*forbidden_terms, *_string_list(metadata.get("forbidden_terms"))]
         ),
+        required_time_anchors=required_time_anchors,
         allowed_time_anchors=time_anchors,
+        allowed_relative_time_expressions=relative_time_expressions,
         forbidden_time_anchors=_dedupe_strings(
             [
                 *_string_list(metadata.get("forbidden_time_anchors")),
@@ -464,6 +498,8 @@ def validate_prewrite_plan(
     for name in plan.characters_to_use:
         if name in forbidden_characters:
             violations.append(f"character '{name}' is forbidden in this chapter")
+        if name in set(manifest.characters_off_screen_only):
+            violations.append(f"character '{name}' is off-screen only in this chapter")
 
     forbidden_times = set(manifest.forbidden_time_anchors)
     for anchor in plan.time_anchors_to_use:
@@ -473,7 +509,10 @@ def validate_prewrite_plan(
     allowed_times = set(manifest.allowed_time_anchors)
     if allowed_times:
         for anchor in plan.time_anchors_to_use:
-            if anchor not in allowed_times:
+            if anchor not in allowed_times and not _is_allowed_relative_time(
+                anchor,
+                manifest.allowed_relative_time_expressions,
+            ):
                 violations.append(f"time anchor '{anchor}' is not in allowed_time_anchors")
 
     allowed_locations = set(manifest.allowed_locations)
@@ -572,8 +611,9 @@ def render_constraint_manifest_block(
     if language.lower().startswith("zh"):
         return (
             "【写前约束清单 — 优先级最高】\n"
-            "以下 JSON 是本场景可执行合同。只能在白名单内选择人物/时间/地点；"
-            "不得新增未列出的时间锚、真人出场或同功能设定。\n"
+            "以下 JSON 是本场景可执行合同。只能在白名单内选择真人出场/地点；"
+            "required_time_anchors 是关键节点，不等于禁用合理相对时间表达；"
+            "characters_off_screen_only 只能以门外声音、电话、影子等离场方式出现。\n"
             f"```json\n{payload}\n```"
         )
     return (
@@ -1217,6 +1257,21 @@ def _budget_mentions_allowed_event(
         return False
     raw = json.dumps(budget, ensure_ascii=False)
     return any(event and event in raw for event in allowed_elapsed_events)
+
+
+def _is_allowed_relative_time(anchor: str, allowed_patterns: list[str]) -> bool:
+    text = str(anchor or "").strip()
+    if not text:
+        return False
+    if any(pattern and pattern in text for pattern in allowed_patterns):
+        return True
+    return bool(
+        re.search(
+            r"(?:几|十几|半|\d+|一|二|三|四|五|六|七|八|九|十|二十|三十)"
+            r"(?:秒|分钟|刻钟|小时)(?:后|前)?",
+            text,
+        )
+    )
 
 
 __all__ = [

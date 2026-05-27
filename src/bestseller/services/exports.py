@@ -506,8 +506,14 @@ def _parse_markdown_line(line: str) -> tuple[str, str]:
 
 
 def markdown_to_plain_text(content_md: str) -> str:
+    cleaned = str(content_md or "").replace("\ufeff", "")
+    cleaned = re.sub(r"\A\s*---\s*\n.*?\n---\s*(?:\n|$)", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"<!--.*?-->", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"```.*?```", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"!\[[^\]]*]\([^)]*\)", "", cleaned)
+    cleaned = re.sub(r"\[([^\]]+)]\([^)]*\)", r"\1", cleaned)
     lines: list[str] = []
-    for raw_line in content_md.splitlines():
+    for raw_line in cleaned.splitlines():
         if not raw_line.strip():
             lines.append("")
             continue
@@ -532,7 +538,7 @@ def markdown_to_html(content_md: str, *, language: str | None = None) -> str:
 def build_markdown_reading_stats(content_md: str) -> dict[str, int]:
     plain_text = markdown_to_plain_text(content_md)
     non_whitespace_text = re.sub(r"\s+", "", plain_text)
-    word_count = count_words(content_md)
+    word_count = count_words(plain_text)
     character_count = len(non_whitespace_text)
     paragraph_count = len([line for line in plain_text.splitlines() if line.strip()])
     estimated_read_minutes = math.ceil(word_count / 500) if word_count > 0 else 0

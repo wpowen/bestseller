@@ -362,6 +362,9 @@ async def build_pipeline_flow_overview(
                 )
         for step_name in defn.step_names:
             refs.extend(step_index.get(step_name, []))
+        # Limit workflow_refs to avoid huge API responses
+        if len(refs) > 50:
+            refs = refs[-50:]
         runtime_nodes.append(
             PipelineFlowNodeRuntime(
                 id=defn.id,
@@ -372,15 +375,13 @@ async def build_pipeline_flow_overview(
             )
         )
 
-    chapter_meta_rows = list(
-        await session.scalars(
-            select(ChapterModel.chapter_number, ChapterModel.metadata_json).where(
-                ChapterModel.project_id == project.id
-            )
+    chapter_meta_result = await session.execute(
+        select(ChapterModel.chapter_number, ChapterModel.metadata_json).where(
+            ChapterModel.project_id == project.id
         )
     )
     chapter_meta_by_number: dict[int, dict[str, Any]] = {}
-    for row in chapter_meta_rows:
+    for row in chapter_meta_result:
         ch_no, meta = row[0], row[1]
         chapter_meta_by_number[int(ch_no)] = dict(meta or {})
 

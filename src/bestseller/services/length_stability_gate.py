@@ -63,12 +63,10 @@ PLATFORM_CHAPTER_WORD_WINDOWS: dict[str, dict[str, int]] = {
 }
 
 CHINESE_CHAPTER_HARD_MIN_WORDS = 2000
-# NOTE (2026-05-26): raised from 3500 → 4500 to reduce false positives when
-# auto-repair iterations overshoot the 2200-target band.  Length is a
-# secondary quality signal; the LLM judge gates story quality.  Repair will
-# still trim when chapter exceeds the per-platform band, but exceeding the
-# previous 3500 floor no longer immediately exhausts the auto-repair budget.
-CHINESE_CHAPTER_HARD_MAX_WORDS = 4500
+# 2026-05-27: ch1 runtime audit showed 5000+ CJK chapters could pass as
+# "long but acceptable".  Keep the default serial-chapter wall tight; platform
+# profiles may still opt into larger envelopes explicitly.
+CHINESE_CHAPTER_HARD_MAX_WORDS = 3000
 
 
 _PLATFORM_ALIASES: dict[str, tuple[str, ...]] = {

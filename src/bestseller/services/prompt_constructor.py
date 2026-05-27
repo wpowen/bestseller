@@ -375,6 +375,30 @@ def build_invariants_section(invariants: ProjectInvariants) -> str:
     return "【故事不变量】\n" + "\n".join(bits)
 
 
+def build_opening_hook_directive(
+    chapter_no: int | None,
+    *,
+    language: str = "zh-CN",
+) -> str:
+    """Render the golden-three opening contract as a system-priority block."""
+
+    if chapter_no is None or chapter_no > 3:
+        return ""
+    if not language.lower().startswith("zh"):
+        return ""
+    return (
+        "【黄金三章·开篇硬契约 — 最高优先级，违反即重写】\n"
+        "1. 第一句长度 ≤ 25 个汉字。\n"
+        "2. 第一段长度 ≤ 50 个汉字。\n"
+        "3. 前 100 字必须聚焦主角 + 1 个可视化异常物（不能只有人物对话）。\n"
+        "4. 前 200 字必须出现至少 1 个不可解释的怪事（视觉/听觉/物件异常）。\n"
+        "5. 前 500 字主角必须因这个怪事被迫做出决定（不能只是观察、回忆、对话）。\n"
+        "6. 严禁前 500 字内插入超过 2 句的回忆/倒叙（如“X 年前”“那时候他才 N 岁”“他想起”“当年”）。\n"
+        "7. 严禁前 300 字介绍 ≥ 3 个新角色（开篇主角 + 委托人即上限）。\n"
+        "8. 章末必须留下一个能让读者立刻点开下一章的具体悬念（不能是抽象感叹）。"
+    )
+
+
 def choose_opening_archetype(
     diversity_budget: DiversityBudget,
     *,
@@ -972,8 +996,16 @@ def build_chapter_prompt(
         ledger_section = read_ledger_delta_block(story_bible_dir, chapter_no=chapter_no)
     audit_section = sanitize_audit_block("【审计报告摘录（已净化）】", audit_report_block)
 
+    opening_hook_directive = build_opening_hook_directive(
+        chapter_no,
+        language=invariants.language,
+    )
+    effective_system = "\n\n".join(
+        section for section in (opening_hook_directive, system) if section.strip()
+    )
+
     plan = PromptPlan(
-        system=system,
+        system=effective_system,
         seam_contract_section=seam_section,
         invariants_section=build_invariants_section(invariants),
         voice_dna_section=voice_dna_section,

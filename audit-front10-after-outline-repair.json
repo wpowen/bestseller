@@ -1,0 +1,891 @@
+{
+  "by_chapter": {
+    "1": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "2": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "3": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "4": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "5": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "6": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "7": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "8": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "9": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    },
+    "10": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "opening_pull": 0.88,
+          "front_ten_retention": 0.86,
+          "readability": 0.87,
+          "commercial_pull": 0.9,
+          "character_agency": 0.86,
+          "scene_execution": 0.88,
+          "continuity": 0.9,
+          "logic_consistency": 0.89,
+          "knowledge_boundary": 0.88,
+          "real_world_plausibility": 0.87,
+          "scene_delta_quality": 0.86,
+          "methodology_compliance": 0.92,
+          "hook_strength": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.88,\n    \"front_ten_retention\": 0.86,\n    \"readability\": 0.87,\n    \"commercial_pull\": 0.90,\n    \"character_agency\": 0.86,\n    \"scene_execution\": 0.88,\n    \"continuity\": 0.90,\n    \"logic_consistency\": 0.89,\n    \"knowledge_boundary\": 0.88,\n    \"real_world_plausibility\": 0.87,\n    \"scene_delta_quality\": 0.86,\n    \"methodology_compliance\": 0.92,\n    \"hook_strength\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [],\n  \"rewrite_plan\": null,\n  \"audit_summary\": {\n    \"methodology_compliance\": {\n      \"opening_rules\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"protagonist_first_scene\": \"✅ 林渊第一时间出场，骑电动车赶到十七栋楼下\",\n          \"professional_identity\": \"✅ 通过铜钱验证边界、青囊术法建立专业身份\",\n          \"summon_chain\": \"✅ 完整链条：老物业群推荐人+报警物业失败+报酬动机锚点\",\n          \"first_500_words\": \"✅ 包含人物名(林渊/王建业)+当下困境(空电梯+镜中无影)+主角动作\",\n          \"information_density\": \"✅ Ch1: 4角色/2术语/1超自然显形 | Ch2: 3角色/2术语/1超自然 | Ch3: 4角色/3术语/2超自然\",\n          \"chapter_hook\": \"✅ 钩子前提条件本章已建立：三短一长敲门声→张建军持旧镜钥匙上门\",\n          \"taboo_check\": \"✅ 非电话/短信单一媒介开局，有现场画面压力\"\n        }\n      },\n      \"character_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"triple_anchor\": \"✅ 专业能力(阴阳眼+青囊术)+人性弱点(Ch2错判半步)+未解债务(父亲失踪+旧罗盘)\",\n          \"委托人合理性\": \"✅ 王建业：物业退回+警局当纠纷，有无法找正规渠道的合理理由\",\n          \"反派动机\": \"✅ 贪/仇主线伏笔中\",\n          \"角色数量\": \"✅ 第一卷7个角色符合标准\",\n          \"角色弧线节奏\": \"✅ 每章有具体关系变化：信任/恐惧/愧疚\"\n        }\n      },\n      \"reversal_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"三种反转类型\": \"✅ 身份反转(假王建业尸体)+规则反转(镜债记录伪造现实)\",\n          \"反转铺垫\": \"✅ Ch2小雨半账→Ch3半账找人规则→Ch5证物袋验证\",\n          \"反转密度\": \"✅ 黄金三章1次小反转(镜中点头)，ch4-10有多次中反转\"\n        }\n      },\n      \"climax_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"多线交汇\": \"✅ 镜债+证据链+父亲线索在每章交汇\",\n          \"极限封闭\": \"✅ 三分钟倒计时+半账闭合威胁\",\n          \"信息差反转\": \"✅ Ch8尸牌时间悖论：尸牌比死亡时间早7分钟\",\n          \"认知重构\": \"✅ 镜债规则通过具体场景落地而非背景设定\"\n        }\n      },\n      \"stakes_design\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"筹码明确\": \"✅ 每章有具体代价：小雨半账闭合/陈默被记名/林渊旧伤裂开\",\n          \"筹码递进\": \"✅ 第一卷：个人尊严(职业判断)→家庭线索(父亲旧物)→亲人安危(小雨半账)\",\n          \"无筹码冲突\": \"✅ 未发现废戏\"\n        }\n      },\n      \"spring_model\": {\n        \"status\": \"PASS\",\n        \"checks\": {\n          \"compression_release\": \"✅ 每4章有信息释放窗口\",\n          \"payoff_window\": \"✅ 5章兑现窗口：Ch7回执碎片还原最后动作\"\n        }\n      }\n    },\n    \"hard_constraints\": {\n      \"constraint_1\": {\n        \"status\": \"PASS\",\n        \"description\": \"黄金三章不是纯电话/短信开局\",\n        \"evidence\": \"Ch1开场在十七栋楼下，雨棚/电动车/空电梯构成现场画面压力\"\n      },\n      \"constraint_2\": {\n        \"status\": \"PASS\",\n        \"description\": \"非专业角色不主动讲出专业术语\",\n        \"evidence\": \"苏婉宁能封存证物来自文物走私旧案特殊规程，不懂镜债规则；小雨只问'为什么它写到我身上'，不出现'认账/入账/替认/镜债/账线'等术语\"\n      },\n      \"constraint_3\": {\n        \"status\": \"PASS\",\n        \"description\": \"现实流程被合理化或明确标记为异常\",\n        \"evidence\": \"快递异常(明天凌晨寄件)被标记为'不可能证据'；太平间尸牌悖论被标记为异常；警方处理(当邻里纠纷)被标记为失败\"\n      },\n      \"constraint_4\": {\n        \"status\": \"PASS\",\n        \"description\": \"铜钱/青囊物件信号有稳定含义、触发条件和限制\",\n        \"evidence\": \"铜钱验证边界(不能直接给答案)；青囊识别邪祟弱点和布阵逻辑；缺角铜钱背面刻日对应父亲二十三年前评估日期\"\n      },\n      \"constraint_5\": {\n        \"status\": \"PASS\",\n        \"description\": \"场景卡控制具体人/物/动作/代价/信息释放/章末钩子\",\n        \"evidence\": \"每个场景包含：entry_state(进入状态)+exit_state(退出状态)+hook_requirement(钩子)+purpose(故事/情感/商业功能)\"\n      }\n    },\n    \"golden_rules_gold3\": {\n      \"rule_1_召唤合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"王建业通过老物业群认识林渊父亲的旧住户获联系方式；报警被当邻里纠纷；物业两次在空电梯前退回\"\n      },\n      \"rule_2_委托人选择动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"不找110/物业/家人：物业退回+警局当纠纷；有具体异象：空电梯、镜中无影、王建业裤脚沾303黑水\"\n      },\n      \"rule_3_主角入场动机\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"十七栋与父亲失踪前最后一笔旧委托地址重合(家族线索)；职业判断+父亲线索双驱动\"\n      },\n      \"rule_4_能力展示场景\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1用铜钱压镜脚验证边界+阻止王建业随口答应+发现镜中替点头；Ch2用钥匙齿口/空电梯锁痕/门缝镜光判断撒谎\"\n      },\n      \"rule_5_现实流程合理性\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"警方处理→当邻里纠纷(失败被标记)；物业处理→两次在空电梯前退回(异常被标记)；快递异常→明确标注为不可能证据\"\n      },\n      \"rule_6_信息密度节奏\": {\n        \"status\": \"PASS\",\n        \"evidence\": \"Ch1: 4角色/2术语(镜债/困魂镜)/1超自然(电梯无轿厢) | Ch2: 3角色/2术语/1超自然(镜中点头) | Ch3: 4角色/3术语/2超自然\"\n      }\n    },\n    \"hype_scheme_compliance\": {\n      \"recipe_deck\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 spell_demo_subdue(铜钱压镜脚)、Ch2-3 villain_break(镜中点头被阻止)、Ch5 civilian_witness_shock(苏婉宁半步相信)、Ch2-6 comedic_sun_jiujin(孙九斤讨价还价+黑布摊)、Ch7 lineage_secret_drop(父亲刻日+旧罗盘抵押)\"\n      },\n      \"hook_keywords\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"镜中局/镜债/困魂镜/青囊/阴阳眼/入局/父债子偿/三短一长/铜钱定位/灰线手腕全部在前10章有具体呈现\"\n      },\n      \"reader_promise\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"代价可感：半账闭合/被记名/铜钱裂纹；规则公平：半账找人/否认外溢/证据链污染都有具体场景落地\"\n      },\n      \"chapter_hook_strategy\": {\n        \"status\": \"GOOD\",\n        \"evidence\": \"Ch1 countdown_identity / Ch2 rule_pressure / Ch3 rule_payoff / Ch4 rule_payoff",
+        "llm_run_id": "59e9aeab-db61-41d2-9890-af00b0b8394f",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": true,
+        "overall_score": 0.88,
+        "dimension_scores": {
+          "spatial_coherence": 0.92,
+          "information_density": 0.85,
+          "protagonist_call_plausibility": 0.88,
+          "hook_prerequisite_satisfied": 0.9,
+          "motivation_chain_clarity": 0.87,
+          "first_read_followability": 0.89
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "INFO_DENSITY_CUMULATIVE",
+            "severity": "low",
+            "evidence": "ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。",
+            "required_fix": "ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。",
+            "path": ""
+          },
+          {
+            "code": "PROTAGONIST_CHOICE_VERIFICATION",
+            "severity": "low",
+            "evidence": "ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。",
+            "required_fix": "ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。",
+            "path": ""
+          },
+          {
+            "code": "HOOK_PREREQUISITE_THIN",
+            "severity": "low",
+            "evidence": "ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。",
+            "required_fix": "在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。",
+            "path": ""
+          },
+          {
+            "code": "OBJECT_SIGNAL_REDUNDANT",
+            "severity": "low",
+            "evidence": "铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+            "required_fix": "",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": true,\n  \"overall_score\": 0.88,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.92,\n    \"information_density\": 0.85,\n    \"protagonist_call_plausibility\": 0.88,\n    \"hook_prerequisite_satisfied\": 0.90,\n    \"motivation_chain_clarity\": 0.87,\n    \"first_read_followability\": 0.89\n  },\n  \"blocking_issues\": [],\n  \"audit_issues\": [\n    {\n      \"code\": \"INFO_DENSITY_CUMULATIVE\",\n      \"severity\": \"warn\",\n      \"evidence\": \"ch1具名角色3人（林渊/王建业/张建军），ch2+小雨共4人，ch3+苏婉宁共6人，ch4+陈默共7人。前10章若不控制出场节奏，具名角色总数可能逼近上限（7人）。\",\n      \"required_fix\": \"ch3引入苏婉宁时，前两章角色需保持低存在感：王建业已消失、张建军可能失声，不要再频繁提及。小雨在ch2需完成身份建立，ch3之后戏份可大幅压缩。\",\n      \"chapter_no\": 3\n    },\n    {\n      \"code\": \"PROTAGONIST_CHOICE_VERIFICATION\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch2大纲提到「铜钱状态是裂出缺口、未碎毁」「林渊没敢再用铜钱」——但ch2本身未给出铜钱裂角的视觉锚点，读者回看时可能遗忘铜钱已被损坏。\",\n      \"required_fix\": \"ch2第一场景入口处补一句铜钱状态：林渊把缺角铜钱从口袋里摸出来，缺口渗着干涸黑红色水渍。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"HOOK_PREREQUISITE_THIN\",\n      \"severity\": \"minor\",\n      \"evidence\": \"ch1末尾钩子「张建军攥着同款旧镜钥匙」出现小雨，但小雨在ch1正文完全未提及。读者看到章末钩子时对小雨零认知，ch2补身份存在跳跃感。\",\n      \"required_fix\": \"在ch1快结束时、林渊站在303门外时，补充一句：张建军身后还跟着一个抱空餐盒的年轻女人，馄饨摊的收据攥在她手里。这样钩子引出小雨时读者有预期。\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"OBJECT_SIGNAL_REDUNDANT\",\n      \"severity\": \"minor\",\n      \"evidence\": \"铜钱允许信号列表中「掌心冷感」和「压镜脚震动」均",
+        "llm_run_id": "655817e1-f3c1-471d-85c5-0772f85aeea2",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": false
+      }
+    }
+  },
+  "summary": {
+    "total_judge_runs": 20,
+    "pass_count": 20,
+    "block_count": 0,
+    "pass_rate": 1.0,
+    "top_issues": []
+  }
+}

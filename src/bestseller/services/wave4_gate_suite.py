@@ -13,6 +13,10 @@ WAVE4_GATE_NAMES: tuple[str, ...] = (
     "mystery_anchor_reveal_gate",
     "ethical_dilemma_slot_gate",
     "lineage_address_gate",
+    "outline_specificity_gate",
+    "volume_plan_resolution_gate",
+    "forward_state_contract_gate",
+    "outline_reveal_alignment_gate",
 )
 
 

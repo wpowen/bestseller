@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-import yaml
 
-from bestseller.services import genre_profile_thresholds as gpt
 from bestseller.services.genre_profile_thresholds import (
     DEFAULT_FALLBACK_GENRE,
+    KNOWN_GENRE_IDS,
     GenreProfileThresholds,
     HookConfig,
-    KNOWN_GENRE_IDS,
-    MicropayoffConfig,
-    PacingThresholds,
     OverrideConfig,
+    PacingThresholds,
     _reset_cache,
     load_thresholds,
     parse_thresholds,
@@ -162,7 +157,10 @@ class TestYAMLFiles:
     def test_eastern_aesthetic_tolerates_quieter_pacing(self) -> None:
         action = load_thresholds("action-progression")
         eastern = load_thresholds("eastern-aesthetic")
-        assert eastern.pacing_config.stagnation_threshold > action.pacing_config.stagnation_threshold
+        assert (
+            eastern.pacing_config.stagnation_threshold
+            > action.pacing_config.stagnation_threshold
+        )
         assert eastern.override_config.debt_multiplier < action.override_config.debt_multiplier
 
     def test_suspense_mystery_primary_rationale_is_logic(self) -> None:
@@ -184,6 +182,11 @@ class TestYAMLFiles:
 
 
 class TestFallback:
+    def test_raw_suspense_horror_genre_resolves_to_suspense_thresholds(self) -> None:
+        t = resolve_thresholds("惊悚灵异")
+        assert t.id == "suspense-mystery"
+        assert t.override_config.allowed_rationale_types[0] == "LOGIC_INTEGRITY"
+
     def test_unknown_genre_falls_back(self) -> None:
         t = resolve_thresholds("completely-made-up-genre")
         assert t.id == DEFAULT_FALLBACK_GENRE

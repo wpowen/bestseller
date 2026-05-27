@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
 from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
 from bestseller.services.methodology import render_qimao_regeneration_contract
+from bestseller.services.methodology_compiler import MethodologyStage, compile_methodology
 from bestseller.services.platform_title_workflow import select_primary_platform_title
 from bestseller.services.writing_profile import (
     resolve_writing_profile,
@@ -102,6 +103,46 @@ def _extract_json(text: str) -> dict[str, Any]:
 def _safe_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
     val = data.get(key)
     return val if val is not None else default
+
+
+def _attach_conception_methodology(
+    user_prompt: str,
+    *,
+    ctx: dict[str, Any],
+    is_en: bool,
+    token_budget: int = 800,
+) -> str:
+    """Prepend stage=CONCEPTION methodology to zh conception prompts."""
+
+    if is_en:
+        return user_prompt
+    market = ctx.get("market")
+    compiled = compile_methodology(
+        stage=MethodologyStage.CONCEPTION,
+        prompt_pack_key=ctx.get("prompt_pack_key")
+        or (market.get("prompt_pack_key") if isinstance(market, dict) else None),
+        language=str(ctx.get("language") or "zh-CN"),
+        token_budget=token_budget,
+    )
+    if not compiled.text:
+        return user_prompt
+    return f"{compiled.text}\n\n---\n\n{user_prompt}"
+
+
+def _compact_conception_proposal(value: Any, *, max_text: int = 900) -> Any:
+    """Keep review-stage proposals short while preserving keys and decisions."""
+
+    if isinstance(value, str):
+        text = value.strip()
+        return text if len(text) <= max_text else text[:max_text] + "..."
+    if isinstance(value, list):
+        return [_compact_conception_proposal(item, max_text=max_text // 2) for item in value[:8]]
+    if isinstance(value, dict):
+        compact: dict[str, Any] = {}
+        for key, item in list(value.items())[:20]:
+            compact[str(key)] = _compact_conception_proposal(item, max_text=max_text)
+        return compact
+    return value
 
 
 def _deep_merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -1411,11 +1452,17 @@ async def run_conception_pipeline(
 
     # ── Round 1: Independent Proposals ──────────────────────────────
     _emit("conception_market", {"round": 1, "agent": "market_strategist"})
+    market_user_prompt = _attach_conception_methodology(
+        (_market_user_prompt_en if is_en else _market_user_prompt)(ctx, _genre_profile),
+        ctx=ctx,
+        is_en=is_en,
+        token_budget=600,
+    )
     market_proposal, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="planner",
         system_prompt=_MARKET_SYSTEM_EN if is_en else _MARKET_SYSTEM,
-        user_prompt=(_market_user_prompt_en if is_en else _market_user_prompt)(ctx, _genre_profile),
+        user_prompt=market_user_prompt,
         fallback=json.dumps(ctx.get("existing_overrides", {}).get("market", {}), ensure_ascii=False),
         template="conception_market",
         stage="conception.market",
@@ -1426,11 +1473,17 @@ async def run_conception_pipeline(
     conception_log.append({"round": 1, "agent": "market_strategist", "proposal": market_proposal})
 
     _emit("conception_character", {"round": 1, "agent": "character_architect"})
+    character_user_prompt = _attach_conception_methodology(
+        (_character_user_prompt_en if is_en else _character_user_prompt)(ctx, _genre_profile),
+        ctx=ctx,
+        is_en=is_en,
+        token_budget=800,
+    )
     character_proposal, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="planner",
         system_prompt=_CHARACTER_SYSTEM_EN if is_en else _CHARACTER_SYSTEM,
-        user_prompt=(_character_user_prompt_en if is_en else _character_user_prompt)(ctx, _genre_profile),
+        user_prompt=character_user_prompt,
         fallback=json.dumps(ctx.get("existing_overrides", {}).get("character", {}), ensure_ascii=False),
         template="conception_character",
         stage="conception.character",
@@ -1441,11 +1494,17 @@ async def run_conception_pipeline(
     conception_log.append({"round": 1, "agent": "character_architect", "proposal": character_proposal})
 
     _emit("conception_world", {"round": 1, "agent": "world_builder"})
+    world_user_prompt = _attach_conception_methodology(
+        (_world_user_prompt_en if is_en else _world_user_prompt)(ctx, _genre_profile),
+        ctx=ctx,
+        is_en=is_en,
+        token_budget=800,
+    )
     world_proposal, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="planner",
         system_prompt=_WORLD_SYSTEM_EN if is_en else _WORLD_SYSTEM,
-        user_prompt=(_world_user_prompt_en if is_en else _world_user_prompt)(ctx, _genre_profile),
+        user_prompt=world_user_prompt,
         fallback=json.dumps(ctx.get("existing_overrides", {}).get("world", {}), ensure_ascii=False),
         template="conception_world",
         stage="conception.world",
@@ -1457,11 +1516,26 @@ async def run_conception_pipeline(
 
     # ── Round 2: Cross-Review ───────────────────────────────────────
     _emit("conception_review", {"round": 2, "agent": "chief_editor"})
+    review_market = _compact_conception_proposal(market_proposal)
+    review_character = _compact_conception_proposal(character_proposal)
+    review_world = _compact_conception_proposal(world_proposal)
+    review_user_prompt = _attach_conception_methodology(
+        (_review_user_prompt_en if is_en else _review_user_prompt)(
+            ctx,
+            review_market,
+            review_character,
+            review_world,
+            _genre_profile,
+        ),
+        ctx=ctx,
+        is_en=is_en,
+        token_budget=500,
+    )
     review_result, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="critic",
         system_prompt=_REVIEW_SYSTEM_EN if is_en else _REVIEW_SYSTEM,
-        user_prompt=(_review_user_prompt_en if is_en else _review_user_prompt)(ctx, market_proposal, character_proposal, world_proposal, _genre_profile),
+        user_prompt=review_user_prompt,
         fallback='{"overall_coherence_score": 0.7, "contradictions": [], "gaps": [], '
                  '"market_suggestions": [], "character_suggestions": [], "world_suggestions": [], '
                  '"name_quality_issues": [], "premise_seeds": []}',
@@ -1499,11 +1573,17 @@ async def run_conception_pipeline(
 
     # ── Round 3: Merge & Finalize ───────────────────────────────────
     _emit("conception_finalize", {"round": 3, "agent": "project_director"})
+    finalize_user_prompt = _attach_conception_methodology(
+        (_finalize_user_prompt_en if is_en else _finalize_user_prompt)(ctx, market_proposal, character_proposal, world_proposal, review_result, _genre_profile),
+        ctx=ctx,
+        is_en=is_en,
+        token_budget=800,
+    )
     final_result, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="editor",
         system_prompt=_FINALIZE_SYSTEM_EN if is_en else _FINALIZE_SYSTEM,
-        user_prompt=(_finalize_user_prompt_en if is_en else _finalize_user_prompt)(ctx, market_proposal, character_proposal, world_proposal, review_result, _genre_profile),
+        user_prompt=finalize_user_prompt,
         fallback=_build_fallback_final(ctx, market_proposal, character_proposal, world_proposal),
         template="conception_finalize",
         stage="conception.final",

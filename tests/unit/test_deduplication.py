@@ -13,6 +13,7 @@ from bestseller.services.deduplication import (
     detect_chapter_text_loop,
     detect_intra_chapter_repetition,
     detect_short_cluster_near_repeat,
+    extract_chapter_opening,
     extract_frequent_phrases,
     remove_chapter_text_loops,
     remove_intra_chapter_duplicates,
@@ -310,6 +311,8 @@ def test_opening_diversity_block_zh() -> None:
     assert "第14章" in block
     assert "第15章" in block
     assert "开场不得重复" in block
+    assert "不得逐字复用" in block
+    assert "本章独有" in block
 
 
 def test_opening_diversity_block_en() -> None:
@@ -323,6 +326,12 @@ def test_opening_diversity_block_en() -> None:
 
 def test_opening_diversity_block_empty() -> None:
     assert build_opening_diversity_block([], language="zh-CN") == ""
+
+
+def test_extract_chapter_opening_skips_markdown_heading() -> None:
+    text = "# 第75章 账路回潮\n\n这一刻，所有线索都被压回同一条账路上。\n\n林渊停下。"
+
+    assert extract_chapter_opening(text) == "这一刻，所有线索都被压回同一条账路上。"
 
 
 # ---------------------------------------------------------------------------

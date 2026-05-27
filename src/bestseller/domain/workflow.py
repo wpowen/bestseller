@@ -128,7 +128,75 @@ class SceneOutlineInput(BaseModel):
     )
     entry_state: dict[str, Any] = Field(default_factory=dict)
     exit_state: dict[str, Any] = Field(default_factory=dict)
+    key_dialogue_beats: list[str] = Field(default_factory=list)
+    sensory_anchors: dict[str, Any] = Field(default_factory=dict)
+    forbidden_actions: list[str] = Field(default_factory=list)
+    hook_requirement: str | None = None
+    signature_image: str | None = None
+    cut_point: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("cut_point", "breakpoint", "scene_cut_point"),
+    )
+    action_sequence: list[str] = Field(default_factory=list)
+    relationship_debts: list[str] = Field(default_factory=list)
+    information_control_mode: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "information_control_mode",
+            "information_control",
+            "reader_information_mode",
+        ),
+    )
     target_word_count: int = Field(default=700, gt=0)
+
+    # ── Outline-v2 executable script fields (all optional for backward compat) ──
+    # These fields shift the outline from abstract goals to a concrete execution
+    # plan that the scene drafter can follow directly.
+    concrete_goal: str | None = Field(
+        default=None,
+        description=(
+            "Executable scene goal — a specific physical action or event "
+            "that happens in this scene (not an abstract thematic intention). "
+            "E.g. '林渊用铜钱压住镜脚，阻止无脸人的手臂伸出' rather than '建立恐惧感'."
+        ),
+        validation_alias=AliasChoices("concrete_goal", "scene_concrete_goal", "concrete_action"),
+    )
+    protagonist_state: str | None = Field(
+        default=None,
+        description=(
+            "What the protagonist is specifically feeling or wanting at the START "
+            "of this scene, tied to a concrete object or event — not a generic emotion. "
+            "E.g. '摸到铜钱时认出了和父亲记录本同一支笔的字，心里有一层什么东西开始松动'."
+        ),
+    )
+    information_introduced: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Concrete facts/clues the reader learns in this scene. "
+            "Each item should be specific enough that a reader could write it "
+            "down as a clue. E.g. ['303是父亲戊子年未结账的地址', '王建业裤脚黑水来自303门缝']."
+        ),
+        validation_alias=AliasChoices("information_introduced", "reader_learns", "clues_revealed"),
+    )
+    information_held_back: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Facts the author knows but deliberately withholds from the reader "
+            "in this scene — the deliberate tension gap. "
+            "E.g. ['镜子里的无脸人是谁', '父亲为什么没有回来']."
+        ),
+        validation_alias=AliasChoices(
+            "information_held_back", "reader_does_not_learn", "withheld_info"
+        ),
+    )
+    object_signal: str | None = Field(
+        default=None,
+        description=(
+            "How supernatural objects behave in this scene and what that signals. "
+            "Must be specific: which object, what sensation, what it means. "
+            "E.g. '铜钱边缘发凉（不是发烫）——冷是警示，代表镜局有主动意识在看林渊'."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -219,6 +287,23 @@ class SceneOutlineInput(BaseModel):
         # scene_title → title
         if "scene_title" in data and not data.get("title"):
             data["title"] = data.pop("scene_title")
+        # Rich scene-control aliases used by methodology packs and planner
+        # repair prompts. Keep them structured so chapter-first drafting can
+        # consume them directly instead of losing them in prose summaries.
+        for src, dst in (
+            ("dialogue_beats", "key_dialogue_beats"),
+            ("key_dialogue", "key_dialogue_beats"),
+            ("sensory_details", "sensory_anchors"),
+            ("sensory_plan", "sensory_anchors"),
+            ("must_not_do", "forbidden_actions"),
+            ("forbidden_moves", "forbidden_actions"),
+            ("signature_visual", "signature_image"),
+            ("signature_scene_image", "signature_image"),
+            ("action_beats", "action_sequence"),
+            ("relationship_debt", "relationship_debts"),
+        ):
+            if src in data and not data.get(dst):
+                data[dst] = data.pop(src)
         return data
 
 
@@ -236,6 +321,10 @@ class ChapterOutlineInput(BaseModel):
         validation_alias=AliasChoices("chapter_goal", "goal"),
         serialization_alias="goal",
     )
+    opening_pressure: str | None = None
+    protagonist_flaw: str | None = None
+    required_payoff: str | None = None
+    tail_hook: str | None = None
     opening_situation: str | None = None
     main_conflict: str | None = Field(
         default=None,
@@ -310,6 +399,70 @@ class ChapterOutlineInput(BaseModel):
     volume_number: int = Field(default=1, gt=0)
     target_word_count: int = Field(default=2200, gt=0)
     scenes: list[SceneOutlineInput] = Field(default_factory=list)
+
+    # ── Outline-v2 chapter-level executable fields (all optional) ──
+    protagonist_inner_state: str | None = Field(
+        default=None,
+        description=(
+            "The protagonist's specific inner goal or emotional state at the START "
+            "of this chapter — must be tied to a concrete event or object. "
+            "E.g. '看到名片背面字迹认出和父亲记录本的同一支笔，林渊的平静里有一层没有压下去的东西'. "
+            "NOT: '林渊很镇定'. The inner state should imply forward momentum."
+        ),
+        validation_alias=AliasChoices(
+            "protagonist_inner_state",
+            "protagonist_inner_goal",
+            "protagonist_motivation",
+        ),
+    )
+    chapter_concrete_actions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The 3-5 specific physical actions the protagonist takes in this chapter. "
+            "Each should be observable: something a camera could record. "
+            "E.g. ['用伞柄卡住电梯门防止门关上', '把铜钱甩向穿衣镜镜脚压住人影', "
+            "'抓住王建业被拽入镜的瞬间——只拿到一只鞋']."
+        ),
+        validation_alias=AliasChoices(
+            "chapter_concrete_actions", "concrete_actions", "protagonist_actions"
+        ),
+    )
+    chapter_object_uses: list[str] = Field(
+        default_factory=list,
+        description=(
+            "How each supernatural/professional object is used in this chapter. "
+            "Format: '<object>: <action> → <result or signal>'. "
+            "E.g. ['铜钱: 甩向镜脚→压住人影轮廓; 边缘崩裂→说明镜局力量超出铜钱承受极限', "
+            "'罗盘: 揣入内袋未使用→暗示本章没有勘测需要，情境已无需定位']."
+        ),
+        validation_alias=AliasChoices(
+            "chapter_object_uses", "object_uses", "tool_uses"
+        ),
+    )
+    chapter_information_introduced: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Specific facts/clues the reader learns by the end of this chapter. "
+            "Each should be concrete enough to write on a detective's whiteboard. "
+            "E.g. ['303是父亲戊子年未结账的地址', '铜钱崩裂意味着镜局中存在比铜钱能压制的更强存在', "
+            "'张建军手里有一枚铁片，形状和穿衣镜钥匙一模一样']."
+        ),
+        validation_alias=AliasChoices(
+            "chapter_information_introduced", "information_introduced", "chapter_reveals"
+        ),
+    )
+    chapter_information_held_back: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Facts the author knows but deliberately does NOT reveal in this chapter. "
+            "These are the tension gaps that pull readers into the next chapter. "
+            "E.g. ['镜子里的无脸人的真实身份', '父亲是否还活着（在镜中）', "
+            "'张建军手里的铁片是怎么来的']."
+        ),
+        validation_alias=AliasChoices(
+            "chapter_information_held_back", "information_held_back", "chapter_withheld"
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod

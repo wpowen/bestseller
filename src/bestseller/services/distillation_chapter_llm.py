@@ -24,6 +24,7 @@ SCHEMA_REL = Path("data/distillation/schemas/chapter_card.schema.json")
 # Production guard: never send a single user prompt chunk larger than this window.
 CHAPTER_TEXT_CHUNK_SOFT = 8000
 CHAPTER_TEXT_CHUNK_HARD = 12000
+CHAPTER_TEXT_HARD_CAP = 18000
 DEFAULT_CHAPTER_JOB_TIMEOUT_SECONDS = 120.0
 DEFAULT_DISTILLATION_SUMMARIZER_MAX_TOKENS = 6144
 
@@ -560,8 +561,11 @@ async def extract_chapter_card_for_job(
     abs_no = int(job.get("abs_chapter_no") or payload.get("abs_chapter_no") or 0)
 
     full_text = str(payload.get("chapter_text") or "")
-    if max_chapter_chars is not None and len(full_text) > max_chapter_chars:
-        full_text = full_text[: int(max_chapter_chars)]
+    effective_cap = CHAPTER_TEXT_HARD_CAP
+    if max_chapter_chars is not None:
+        effective_cap = min(effective_cap, int(max_chapter_chars))
+    if len(full_text) > effective_cap:
+        full_text = sample_long_chapter_text(full_text, max_chars=effective_cap)
 
     chunks = split_chapter_text_for_llm(full_text)
     if not chunks:
@@ -596,6 +600,26 @@ async def extract_chapter_card_for_job(
     if len(segment_rows) == 1:
         return segment_rows[0]
     return merge_chapter_card_segments(segment_rows, schema=schema)
+
+
+def sample_long_chapter_text(text: str, *, max_chars: int = CHAPTER_TEXT_HARD_CAP) -> str:
+    """Keep head/middle/tail samples for long chapters instead of blind truncation."""
+
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    head = max_chars // 3
+    middle = max_chars // 3
+    tail = max_chars - head - middle
+    mid_start = max(0, (len(text) // 2) - (middle // 2))
+    mid_end = min(len(text), mid_start + middle)
+    return "\n\n[...LONG_CHAPTER_HEAD_SAMPLE_END...]\n\n".join(
+        (
+            text[:head].rstrip(),
+            text[mid_start:mid_end].strip(),
+            text[-tail:].lstrip(),
+        )
+    )
 
 
 def append_chapter_card_jsonl(path: Path, row: dict[str, Any]) -> None:

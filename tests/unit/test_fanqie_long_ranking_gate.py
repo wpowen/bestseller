@@ -75,6 +75,61 @@ def test_fanqie_long_gate_accepts_forensic_mystery_loop_terms() -> None:
     assert report.findings == []
 
 
+def test_fanqie_long_gate_accepts_folk_horror_opening_pressure() -> None:
+    report = evaluate_fanqie_long_ranking_gate(
+        {
+            1: (
+                "电话那头安静了三秒，然后刮擦声又响了。不是噪音——是金属在玻璃上慢慢划过，像指甲。"
+                "“林师傅，你得来一趟。我房里那面镜子里头少了一个人，少了我。”"
+                "林渊抓起铜钱冲进雨里，子时前必须赶到十七栋，否则王建业会入账。"
+                "他用青囊和罗盘验出第一道血痕，发现镜债已经认账。门外又响起三短一长。"
+            ),
+            2: "第二章里林渊用青囊规则继续验镜，铜钱裂开带来流血代价，张建军被逼认账。",
+            3: "第三章镜债继续逼近，林渊冲进走廊反制，用证据链发现第一名替认者，门外又响起敲门声？",
+        },
+        project_slug="exorcist-detective",
+        protagonist_name="林渊",
+    )
+
+    codes = {finding.code for finding in report.findings}
+
+    assert "first_100_pressure_missing" not in codes
+
+
+def test_fanqie_long_gate_accepts_supernatural_sensory_opening_pressure() -> None:
+    """Regression: 青囊不语问阴阳 ch1 (2026-05-25) opened with sensory body
+    horror (hot coin, scar leaking water vapor) — a classic 民俗驱魔
+    opening — but the pre-fix ``_PRESSURE_TERMS`` only matched threat
+    words, so the gate critical-blocked the chapter for ~145 versions.
+    With the sensory-anomaly cues added (烫/渗/旧疤/异动/裂/嘶/etc.) the
+    same opening now clears the ``first_100_pressure_missing`` check."""
+
+    report = evaluate_fanqie_long_ranking_gate(
+        {
+            1: (
+                "林渊把最后一笔账记进青囊时，康熙铜钱从账本角跳了一下。"
+                "不是震动。是烫。他低头看——掌心那道旧疤正贴着铜钱边缘，"
+                "方孔里渗出一圈黑红色的水汽，像什么东西在往外爬。"
+                "电梯外传来三短一长的敲门声。林渊心头一沉，子时已到。"
+            ),
+            2: (
+                "林渊用青囊术验镜，铜钱裂开带来流血代价，张建军被逼认账。"
+                "门外又响起异动，水汽中浮出半张脸。"
+            ),
+            3: (
+                "镜债继续逼近，林渊冲进走廊用证据链反制，门外又响起敲门声？"
+                "他抓到第一个替认者，铜钱裂开第二道口子。"
+            ),
+        },
+        project_slug="exorcist-detective",
+        protagonist_name="林渊",
+    )
+
+    codes = {finding.code for finding in report.findings}
+    assert "first_100_pressure_missing" not in codes
+    assert "first_50_focus_missing" not in codes
+
+
 def test_fanqie_long_gate_blocks_weak_background_opening() -> None:
     report = evaluate_fanqie_long_ranking_gate(
         {

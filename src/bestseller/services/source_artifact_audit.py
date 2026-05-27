@@ -230,19 +230,35 @@ _DUNGEON_COPY_CONTEXT_RE = re.compile(
     r"副本.{0,8}(?:游戏|无限流|主神|玩家|任务|闯关|通关|加载|规则))"
 )
 
+# "玩家" in isolation can mean a participant in any competitive/suspense scenario
+# (e.g. "镜中局玩家" in a death-game thriller).  It becomes genre-pollution only
+# when paired with infinite-flow/dungeon system mechanics.  Match a window of
+# ±20 chars around "玩家" that also contains a hard system-mechanic word.
+_PLAYER_SYSTEM_CONTEXT_RE = re.compile(
+    r"(?:副本|无限流|主神|系统面板|任务奖励|游戏提示|加载|闯关|通关|技能树|属性面板)"
+    r".{0,20}玩家|"
+    r"玩家.{0,20}(?:副本|无限流|主神|系统面板|任务奖励|游戏提示|加载|闯关|通关|技能树|属性面板)"
+)
+
 
 def _count_forbidden_term(text: str, term: str) -> int:
     if not term:
         return 0
     if term == "副本":
-        # “副本” is ambiguous in Chinese: it can mean an ordinary copy of
+        # "副本" is ambiguous in Chinese: it can mean an ordinary copy of
         # evidence or a game/infinite-flow dungeon. Source audits should block
-        # the latter planning pollution, not normal story prose like “证词副本”.
+        # the latter planning pollution, not normal story prose like "证词副本".
         return len(_DUNGEON_COPY_CONTEXT_RE.findall(text))
     if term == "主神":
-        # Avoid false positives such as “宿主神经”, which is normal body/
+        # Avoid false positives such as "宿主神经", which is normal body/
         # sci-fi prose and not the infinite-flow "main god" trope.
         return len(re.findall(r"(?<!宿)主神(?!经)", text))
+    if term == "玩家":
+        # "玩家" alone is acceptable in death-game / suspense plots (e.g. the
+        # participants of a "镜中局" may be referred to as players in planning
+        # notes).  Only flag it when it co-occurs with hard system-mechanic
+        # vocabulary that signals true 无限流 genre contamination.
+        return len(_PLAYER_SYSTEM_CONTEXT_RE.findall(text))
     return text.count(term)
 
 

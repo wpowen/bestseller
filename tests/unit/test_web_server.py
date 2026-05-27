@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -76,6 +76,78 @@ def test_build_preview_payload_includes_html_and_stats() -> None:
     assert "<h1>标题</h1>" in str(payload["html"])
 
 
+def test_default_preview_prefers_db_current_chapter_over_readme() -> None:
+    readme = {
+        "name": "README.md",
+        "suffix": ".md",
+        "modified_at": "2026-05-01T00:00:00+00:00",
+    }
+    stale_chapter = {
+        "name": "chapter-001.md",
+        "suffix": ".md",
+        "modified_at": "2026-05-02T00:00:00+00:00",
+    }
+    current_chapter = {
+        "name": "chapter-001.md",
+        "suffix": ".md",
+        "modified_at": "2026-05-25T14:30:48+00:00",
+        "source": "db_current_draft",
+    }
+
+    selected = web_server._select_default_preview_entry(
+        [readme, stale_chapter],
+        latest_current_chapter_entry=current_chapter,
+    )
+
+    assert selected == current_chapter
+
+
+def test_default_preview_falls_back_to_latest_chapter_not_readme() -> None:
+    entries = [
+        {
+            "name": "README.md",
+            "suffix": ".md",
+            "modified_at": "2026-05-25T00:00:00+00:00",
+        },
+        {
+            "name": "chapter-001.md",
+            "suffix": ".md",
+            "modified_at": "2026-05-24T00:00:00+00:00",
+        },
+        {
+            "name": "chapter-002.md",
+            "suffix": ".md",
+            "modified_at": "2026-05-24T01:00:00+00:00",
+        },
+    ]
+
+    selected = web_server._select_default_preview_entry(entries)
+
+    assert selected is not None
+    assert selected["name"] == "chapter-002.md"
+
+
+def test_upsert_artifact_entry_replaces_stale_file_metadata() -> None:
+    stale = {
+        "name": "chapter-001.md",
+        "suffix": ".md",
+        "word_count": 100,
+        "source": "disk",
+    }
+    fresh = {
+        "name": "chapter-001.md",
+        "suffix": ".md",
+        "word_count": 2400,
+        "source": "db_current_draft",
+    }
+
+    merged = web_server._upsert_artifact_entry([stale], fresh)
+
+    assert len(merged) == 1
+    assert merged[0]["word_count"] == 2400
+    assert merged[0]["source"] == "db_current_draft"
+
+
 def test_build_chapter_toc_includes_reading_stats() -> None:
     output_dir = Path("/tmp") / f"demo-story-{uuid4()}"
     output_dir.mkdir(parents=True)
@@ -98,6 +170,29 @@ def test_build_chapter_toc_includes_reading_stats() -> None:
         }
     ]
     assert entries[0]["word_count"] >= 10
+
+
+def test_try_load_chapter_draft_from_db_returns_markdown_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = "# 第75章：幕后黑手\n\n正文"
+
+    def fake_run(coro: object) -> str:
+        close = getattr(coro, "close", None)
+        if callable(close):
+            close()
+        return expected
+
+    monkeypatch.setattr(web_server.asyncio, "run", fake_run)
+
+    assert (
+        web_server._try_load_chapter_draft_from_db(
+            _settings(Path("/tmp")),
+            "demo-story",
+            "chapter-075.md",
+        )
+        == expected
+    )
 
 
 def test_apply_project_titles_to_tasks_uses_database_title(
@@ -559,6 +654,15 @@ def test_quickstart_incomplete_tasks_are_not_labeled_stopped() -> None:
     assert "已停止" not in incomplete_branch
 
 
+def test_quickstart_exposes_runtime_llm_profile_switcher() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert 'id="llmProfileSelect"' in html
+    assert "function switchLlmProfile(profileKey)" in html
+    assert "fetch('/api/llm-profile'" in html
+    assert "updateLlmProfileUi(d.llm_profile)" in html
+
+
 def test_public_writing_preset_catalog_payload_sanitizes_story_specific_overrides() -> None:
     payload = web_server._public_writing_preset_catalog_payload()
 
@@ -809,6 +913,87 @@ def test_build_db_repair_task_summary_surfaces_project_queue() -> None:
     assert task["title"] == "道种破虚"
     assert task["result"]["pending_autonomous_repair_tasks"] == 246
     assert task["synthetic_db_repair_task"] is True
+
+
+def test_request_visible_task_cancel_routes_db_repair_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    settings = SimpleNamespace(redis=SimpleNamespace(url="redis://stub"))
+    called: dict[str, object] = {}
+
+    def fake_cancel_db_repair_task(settings_arg: object, task_id: str) -> str:
+        called["settings"] = settings_arg
+        called["task_id"] = task_id
+        return "cancel_requested"
+
+    monkeypatch.setattr(
+        web_server,
+        "_cancel_db_repair_task",
+        fake_cancel_db_repair_task,
+    )
+
+    outcome = web_server._request_visible_task_cancel(
+        manager,
+        settings,
+        "db-repair:xianxia-upgrade-1776137730",
+    )
+
+    assert outcome == "cancel_requested"
+    assert called == {
+        "settings": settings,
+        "task_id": "db-repair:xianxia-upgrade-1776137730",
+    }
+
+
+def test_request_visible_task_cancel_routes_worker_heal_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    settings = SimpleNamespace(redis=SimpleNamespace(url="redis://stub"))
+    called: dict[str, object] = {}
+
+    def fake_abort_worker_heal_job(redis_url: str, job_id: str) -> bool:
+        called["redis_url"] = redis_url
+        called["job_id"] = job_id
+        return True
+
+    monkeypatch.setattr(
+        web_server,
+        "_abort_worker_heal_job",
+        fake_abort_worker_heal_job,
+    )
+
+    outcome = web_server._request_visible_task_cancel(
+        manager,
+        settings,
+        "repair:heal:xianxia-upgrade-1776137730",
+    )
+
+    assert outcome == "cancel_requested"
+    assert called == {
+        "redis_url": "redis://stub",
+        "job_id": "repair:heal:xianxia-upgrade-1776137730",
+    }
+
+
+def test_request_visible_task_cancel_reports_existing_finished_task_not_running() -> None:
+    manager = web_server.WebTaskManager()
+    settings = SimpleNamespace(redis=SimpleNamespace(url="redis://stub"))
+    with manager._lock:
+        manager._tasks["done-task"] = web_server.WebTaskState(
+            task_id="done-task",
+            task_type="autowrite",
+            status="completed",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            project_slug="done-book",
+            current_stage="completed",
+        )
+
+    outcome = web_server._request_visible_task_cancel(manager, settings, "done-task")
+
+    assert outcome == "not_running"
 
 
 def test_worker_heal_progress_snapshot_reads_redis_progress(
@@ -1131,6 +1316,17 @@ def test_design_dossier_readiness_flags_missing_design_surfaces() -> None:
     assert "关系图" in missing_labels
     assert "场景合约" in missing_labels
     assert "人物信息" not in missing_labels
+
+
+
+
+def test_pipeline_flow_html_contains_expected_mount_points() -> None:
+    html = web_server._read_pipeline_flow_html()
+
+    assert "流水线数据流" in html
+    assert "/api/projects/${encodeURIComponent(slug)}/pipeline-flow" in html
+    assert "phaseContainer" in html
+    assert "issuesPanel" in html
 
 
 def test_design_dossier_html_contains_expected_mount_points() -> None:

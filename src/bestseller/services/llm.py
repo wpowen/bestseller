@@ -15,8 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import LlmRunModel
 from bestseller.services.word_targets import model_output_token_ceiling
-from bestseller.settings import AppSettings, LLMRoleSettings, RetrySettings, get_runtime_env_value
-
+from bestseller.settings import (
+    AppSettings,
+    LLMRoleSettings,
+    RetrySettings,
+    apply_runtime_llm_profile,
+    get_runtime_env_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -365,6 +370,13 @@ class LLMCompletionRequest(BaseModel):
     step_run_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     max_tokens_override: int | None = Field(default=None, ge=1)
+    cache_system: bool = Field(
+        default=False,
+        description=(
+            "If True and provider is Anthropic, wrap system_prompt in "
+            "cache_control=ephemeral. Only enable for stable system prompts."
+        ),
+    )
 
     # ── Tool-use / function-calling extensions (Batch 1 Stage 0) ──────────
     # ``tools`` is the OpenAI-style function schema list passed straight
@@ -436,6 +448,46 @@ def _effective_request_max_tokens(
     return min(requested, int(model_ceiling))
 
 
+def _is_empty_length_response_error(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return (
+        "response content is empty" in message
+        and "finish_reason='length'" in message
+    )
+
+
+_PROSE_LENGTH_RETRY_KEEP_CAP_TEMPLATES = frozenset()
+_PROMPT_TEMPLATE_RE = re.compile(r"^[a-z_]+(\.[a-z_]+)*(_repair|_v\d+)?$")
+_PROMPT_TEMPLATE_ALLOWLIST_PREFIXES = ("planner_", "listing.regenerate.")
+
+
+def _should_lower_max_tokens_after_empty_length(request: LLMCompletionRequest) -> bool:
+    template = str(request.prompt_template or "").strip()
+    return template not in _PROSE_LENGTH_RETRY_KEEP_CAP_TEMPLATES
+
+
+def _validate_prompt_template_name(request: LLMCompletionRequest) -> None:
+    template = str(request.prompt_template or "").strip()
+    if not template:
+        return
+    if template.startswith(_PROMPT_TEMPLATE_ALLOWLIST_PREFIXES):
+        return
+    if _PROMPT_TEMPLATE_RE.match(template):
+        return
+    logger.warning("Prompt template name violates convention: %s", template)
+
+
+def _max_attempts_for_request(
+    retry_settings: RetrySettings,
+    request: LLMCompletionRequest,
+) -> int:
+    per_class = retry_settings.max_attempts_per_class or {}
+    template = str(request.prompt_template or "")
+    if template.endswith("_repair") or "_repair" in template:
+        return max(1, int(per_class.get("repair", retry_settings.max_attempts)))
+    return max(1, int(per_class.get("default", retry_settings.max_attempts)))
+
+
 def _rate_limit_fallback_key(logical_role: LLMRole, role_settings: LLMRoleSettings) -> str:
     return "|".join(
         [
@@ -445,6 +497,26 @@ def _rate_limit_fallback_key(logical_role: LLMRole, role_settings: LLMRoleSettin
             role_settings.api_key_env or "",
         ]
     )
+
+
+def _effective_thinking_type(role_settings: LLMRoleSettings) -> str | None:
+    """Return provider thinking mode, defaulting DeepSeek V4 prose to visible text.
+
+    DeepSeek V4 defaults to emitting reasoning tokens before normal content.
+    Through LiteLLM this can exhaust the request's max_tokens budget and return
+    an empty assistant content string.  For this app, V4 is used for production
+    prose/review text, so disable thinking unless the role explicitly opts in.
+    """
+
+    if role_settings.thinking_type:
+        return role_settings.thinking_type
+    model = (role_settings.model or "").lower()
+    api_base = (role_settings.api_base or "").lower()
+    if "deepseek-v4" in model and "deepseek" in api_base:
+        return "disabled"
+    if "minimax-m2" in model and "highspeed" in model:
+        return "disabled"
+    return None
 
 
 def _build_rate_limit_fallback_settings(
@@ -760,6 +832,37 @@ def _provider_from_model(model_name: str) -> str:
     return model_name.split("/", maxsplit=1)[0]
 
 
+def _build_messages(request: LLMCompletionRequest, provider: str) -> list[dict[str, Any]]:
+    if request.messages_override is not None:
+        return list(request.messages_override)
+    if request.cache_system and provider == "anthropic":
+        system_content: Any = [
+            {
+                "type": "text",
+                "text": request.system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    else:
+        system_content = request.system_prompt
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": request.user_prompt},
+    ]
+
+
+def _warn_language_system_mismatch(request: LLMCompletionRequest) -> None:
+    language = str(request.metadata.get("language") or request.metadata.get("project_language") or "")
+    if language and language.lower().startswith("en"):
+        return
+    if "You are a" in request.system_prompt:
+        logger.warning(
+            "English system prompt detected on likely zh path template=%s role=%s",
+            request.prompt_template,
+            request.logical_role,
+        )
+
+
 _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
@@ -981,16 +1084,8 @@ async def _call_litellm(
         raise RuntimeError("litellm.acompletion is not available.")
 
     # ── Assemble messages ─────────────────────────────────────────────────
-    if request.messages_override is not None:
-        # Caller provides the complete message array (including system +
-        # assistant + tool turns for a multi-round tool loop).  We trust
-        # it and pass through verbatim.
-        messages = list(request.messages_override)
-    else:
-        messages = [
-            {"role": "system", "content": request.system_prompt},
-            {"role": "user", "content": request.user_prompt},
-        ]
+    provider = _provider_from_model(role_settings.model)
+    messages = _build_messages(request, provider)
 
     max_tokens = _effective_request_max_tokens(role_settings, request)
 
@@ -1002,6 +1097,13 @@ async def _call_litellm(
         "timeout": role_settings.timeout_seconds,
         "stream": role_settings.stream,
     }
+    thinking_type = _effective_thinking_type(role_settings)
+    if thinking_type:
+        completion_kwargs["extra_body"] = {
+            "thinking": {"type": thinking_type}
+        }
+    if role_settings.reasoning_effort:
+        completion_kwargs["reasoning_effort"] = role_settings.reasoning_effort
 
     # ── Tool-use wiring (Batch 1 Stage 0) ─────────────────────────────────
     # Pass tools/tool_choice straight through to litellm.  When tools are
@@ -1087,7 +1189,7 @@ async def _call_litellm_with_retry(
     it against the circuit breaker (otherwise a burst of 429s would
     open the breaker for 60s on top of the provider's throttle).
     """
-    max_attempts = max(1, retry_settings.max_attempts)
+    max_attempts = _max_attempts_for_request(retry_settings, request)
     wait_min = retry_settings.wait_min_seconds
     wait_max = retry_settings.wait_max_seconds
 
@@ -1097,10 +1199,11 @@ async def _call_litellm_with_retry(
 
     generic_attempt = 0
     rate_limit_attempt = 0
+    active_request = request
 
     while True:
         try:
-            result = await _call_litellm(request, role_settings)
+            result = await _call_litellm(active_request, role_settings)
             _llm_breaker.record_success()
             return result
         except Exception as exc:
@@ -1144,6 +1247,26 @@ async def _call_litellm_with_retry(
                     exc,
                 )
                 raise
+            if _is_empty_length_response_error(exc) and _should_lower_max_tokens_after_empty_length(active_request):
+                current_cap = _effective_request_max_tokens(role_settings, active_request)
+                lowered_cap = max(4096, int(current_cap * 0.67))
+                if lowered_cap < current_cap:
+                    active_request = active_request.model_copy(
+                        update={"max_tokens_override": lowered_cap}
+                    )
+                    logger.warning(
+                        "LLM empty length response for template=%s; retrying with "
+                        "lower max_tokens %d -> %d",
+                        active_request.prompt_template,
+                        current_cap,
+                        lowered_cap,
+                    )
+            elif _is_empty_length_response_error(exc):
+                logger.warning(
+                    "LLM empty length response for prose template=%s; retrying with "
+                    "same max_tokens to avoid truncating novel output",
+                    active_request.prompt_template,
+                )
             backoff = min(wait_max, wait_min * (2 ** (generic_attempt - 1)))
             logger.warning(
                 "LLM call attempt %d/%d failed (%s: %s) — retrying in %.1fs",
@@ -1161,7 +1284,10 @@ async def complete_text(
     settings: AppSettings,
     request: LLMCompletionRequest,
 ) -> LLMCompletionResult:
+    settings = apply_runtime_llm_profile(settings)
     role_settings = _get_role_settings(settings, request.logical_role)
+    _warn_language_system_mismatch(request)
+    _validate_prompt_template_name(request)
     if request.model_tier == "strong" and role_settings.model_override:
         role_settings = role_settings.model_copy(
             update={"model": role_settings.model_override}
@@ -1177,6 +1303,8 @@ async def complete_text(
     )
     prompt_hash = _hash_prompt(request.system_prompt, request.user_prompt)
     metadata = dict(request.metadata)
+    if request.cache_system:
+        metadata["cache_system"] = True
     if request.max_tokens_override is not None:
         metadata["max_tokens_override"] = int(request.max_tokens_override)
     latency_ms: int | None = None

@@ -6,7 +6,7 @@ import sys
 
 
 def _load_module():
-    path = Path(__file__).resolve().parents[2] / "scripts/repair_qingnang_ch51_75_guardrails.py"
+    path = Path(__file__).resolve().parents[2] / "scripts/_deprecated/qingnang_repair/repair_qingnang_ch51_75_guardrails.py"
     spec = importlib.util.spec_from_file_location("repair_qingnang_ch51_75_guardrails", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

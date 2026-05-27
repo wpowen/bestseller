@@ -193,3 +193,91 @@ def test_commercial_readiness_accepts_concrete_golden_three_and_artifacts(
     assert report.strong_golden_hype_chapters == 3
     assert report.golden_three_hooked_chapters == 3
     assert report.golden_three_external_pressure_chapters == 3
+
+
+def test_abstract_main_conflict_passes_when_hook_has_concrete_terms(
+    tmp_path: Path,
+) -> None:
+    """Regression: planning LLM sometimes generates main_conflict == chapter_goal
+    (boilerplate), but hook_description and scene purpose contain concrete tension
+    terms (e.g. 镜局/入局/死亡). The gate should NOT flag abstract_chapter_conflict
+    when the broader chapter context has concrete pressure signals."""
+    _write_required_artifacts(tmp_path)
+    chapters = [
+        {
+            "chapter_number": 1,
+            "title": "第1章",
+            "chapter_goal": "建立林渊、青囊秘卷和十七栋委托入口。",
+            "opening_situation": "建立林渊、青囊秘卷和十七栋委托入口。",  # boilerplate == goal
+            "main_conflict": "建立林渊、青囊秘卷和十七栋委托入口。",     # boilerplate == goal
+            "hook_description": "镜局启动，七人入局。",  # concrete: 镜局, 入局
+            "hype_type": "reversal",
+            "hype_intensity": 8.0,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "scene_type": "setup",
+                    "title": "入局",
+                    "participants": ["林渊", "孙九斤", "小雨", "陈默", "钱婆婆"],
+                    "purpose": {"story": "围绕镜局推进，本场必须产生新代价或新选择。"},
+                    "entry_state": {},
+                    "exit_state": {},
+                    "hook_requirement": "本场结尾保留可追踪问题。",
+                }
+            ],
+        },
+        {
+            "chapter_number": 2,
+            "title": "第2章",
+            "chapter_goal": "确认七名入局者和否认者先死规则。",
+            "opening_situation": "确认七名入局者和否认者先死规则。",
+            "main_conflict": "确认七名入局者和否认者先死规则。",  # contains 先死, 入局 — concrete
+            "hook_description": "老张死亡留下第一条外扩线索。",
+            "hype_type": "reversal",
+            "hype_intensity": 8.0,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "scene_type": "confrontation",
+                    "title": "死亡揭示",
+                    "participants": ["林渊", "老张", "小雨"],
+                    "purpose": {"story": "老张死亡，入局者确认规则。"},
+                    "entry_state": {},
+                    "exit_state": {},
+                    "hook_requirement": "老张死亡留下第一条外扩线索。",
+                }
+            ],
+        },
+        {
+            "chapter_number": 3,
+            "title": "第3章",
+            "chapter_goal": "林渊用风水方法推断镜债规则。",
+            "opening_situation": "林渊用风水方法推断镜债规则。",
+            "main_conflict": "林渊用风水方法推断镜债规则。",  # contains 镜债 — concrete
+            "hook_description": "青囊显字，陈默与小雨线加压。",
+            "hype_type": "reversal",
+            "hype_intensity": 8.0,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "scene_type": "investigation",
+                    "title": "镜债推断",
+                    "participants": ["林渊", "陈默", "小雨"],
+                    "purpose": {"story": "林渊推断镜债规则，陈默加压。"},
+                    "entry_state": {},
+                    "exit_state": {},
+                    "hook_requirement": "青囊显字指向下一局。",
+                }
+            ],
+        },
+    ]
+
+    report = evaluate_commercial_planning_readiness(
+        chapters,
+        target_chapters=100,
+        package_root=tmp_path,
+    )
+
+    # abstract_chapter_conflict must NOT fire for any of these chapters
+    codes = {finding.code for finding in report.findings}
+    assert "abstract_chapter_conflict" not in codes

@@ -100,6 +100,19 @@ DEFAULT_GATE_CONFIG: GateConfig = GateConfig(
         "ANTAGONIST_MOTIVE_OVERLAP": "block",
         "WORLD_TAXONOMY_BOILERPLATE": "block",
         "NAMING_POOL_UNDERSIZED": "block",
+        # NOTE (2026-05-26 architecture cleanup): these used to be block-level.
+        # The underlying detectors had hardcoded user-feedback keyword lists
+        # (phone/text/heat-sensation words) and were producing false positives
+        # that prevented good openings (including v21's canonical opening).
+        # Hardcoded keyword lists in drafts.py have been removed; semantic intent
+        # is now an audit dimension in chapter_llm_quality_judge.
+        "OPENING_SCENE_DRIFT": "audit_only",
+        "FRONT10_FORBIDDEN_SIGNAL": "audit_only",
+        # FRONT10_RULE_LECTURE_DENSITY remains a useful structural check (it
+        # detects "rule-class" exposition density, not specific keywords);
+        # but its severity is also relaxed — LLM judge has authority.
+        "FRONT10_RULE_LECTURE_DENSITY": "audit_only",
+        "FRONT10_SCENE_FORBIDDEN_ACTION": "audit_only",
         "NAMING_OUT_OF_POOL": "audit_only",
         "OPENING_ENTITY_OVERLOAD": "audit_only",
         "POV_DRIFT": "audit_only",
@@ -136,7 +149,14 @@ DEFAULT_GATE_CONFIG: GateConfig = GateConfig(
 # chapter" policy: certain weak-signal violations that would normally go to
 # ``audit_only`` become blocking in chapters 1-3 because the first impressions
 # window is too load-bearing to ship with weak signal.
-_GOLDEN_THREE_BLOCK_CODES: frozenset[str] = frozenset({"ENDING_SENTENCE_WEAK"})
+#
+# 2026-05-27: ENDING_SENTENCE_WEAK removed from the golden-three set.
+# The golden-three promotion was causing infinite auto-repair loops: the LLM
+# scene_rewrite would "fix" the ending but overshoot the word limit, producing
+# LENGTH_OVER / CHAPTER_LENGTH_BLOCK_HIGH failures that auto-repair can't
+# resolve. ENDING_SENTENCE_WEAK is still detected and reported as a minor
+# finding; it simply no longer blocks write in any chapter.
+_GOLDEN_THREE_BLOCK_CODES: frozenset[str] = frozenset()
 
 
 # Phase B1 — the ``LineGapCheck`` needs a rolling-history window to produce

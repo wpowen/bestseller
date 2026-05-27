@@ -6,7 +6,7 @@ import sys
 
 
 def _load_module():
-    path = Path(__file__).resolve().parents[2] / "scripts/backfill_qingnang_ledgers.py"
+    path = Path(__file__).resolve().parents[2] / "scripts/_deprecated/qingnang_repair/backfill_qingnang_ledgers.py"
     spec = importlib.util.spec_from_file_location("backfill_qingnang_ledgers", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

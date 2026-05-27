@@ -1,0 +1,1876 @@
+{
+  "by_chapter": {
+    "1": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "2": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "3": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "4": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "5": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "6": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "7": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "8": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "9": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    },
+    "10": {
+      "outline_judge": {
+        "scope": "outline",
+        "pass": false,
+        "overall_score": 0.74,
+        "dimension_scores": {
+          "opening_pull": 0.68,
+          "front_ten_retention": 0.76,
+          "readability": 0.72,
+          "commercial_pull": 0.78,
+          "character_agency": 0.74,
+          "scene_execution": 0.8,
+          "continuity": 0.82,
+          "logic_consistency": 0.71,
+          "knowledge_boundary": 0.75,
+          "real_world_plausibility": 0.7,
+          "scene_delta_quality": 0.77,
+          "methodology_compliance": 0.68,
+          "hook_strength": 0.75
+        },
+        "blocking_issues": [
+          {
+            "code": "CH1-SUMMON-MISSING",
+            "severity": "critical",
+            "evidence": "第一章chapter_goal要求\"建立黄金三章钩子\"，opening_situation写\"王建业站在雨棚下等他\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\"年轻风水师\"？召唤合理性链条缺失\"为什么找主角\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\"为什么找主角（具体异象描述+物业/警察处理失败）\"即构成blocking。",
+            "required_fix": "在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\"无法处理\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\"凭什么找林渊\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。",
+            "path": ""
+          },
+          {
+            "code": "CH4-QIANPOMON-PRETEXT",
+            "severity": "critical",
+            "evidence": "钱婆婆在第4章首次正式出场并提出\"要林渊拿父亲旧物抵价\"，chapter_goal写\"钱婆婆正式登场\"。但第1-3章大纲中从未出现过\"钱婆婆\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\"关键NPC\"范畴，缺失伏笔违反方法论。",
+            "required_fix": "在第1-2章中至少埋入1处关于\"钱婆婆\"或\"十七栋里有个守镜老太太\"的暗示：可以是王建业/张建军提一句\"有人让我找你\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。",
+            "path": ""
+          },
+          {
+            "code": "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+            "severity": "critical",
+            "evidence": "第一章opening_situation仅写\"林渊赶到十七栋楼下\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\"专业身份\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\"停在空电梯门外，用伞柄抵住门缝\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\"第一时间\"的要求。",
+            "required_fix": "在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\"这楼有东西，不止一个\"），或者王建业称呼他为\"林师傅\"。专业身份必须在chapter 1第500字内落地。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "CH3-NEW-TERM-DENSITY",
+            "severity": "high",
+            "evidence": "第3章information_revealed中出现了\"半账\"、\"相邻证据人\"两个新概念/术语，且chapter_goal写\"不引入孙九斤、不讲扣账人、不写三代为一户\"——说明\"半账\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。",
+            "required_fix": "将\"相邻证据人\"的命名推迟到第4章。第3章只引入\"半账\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\"证据人\"这个抽象术语。",
+            "path": ""
+          },
+          {
+            "code": "CH7-FATHER-TRAILER-UNDERPROMISED",
+            "severity": "high",
+            "evidence": "第7章scene 3揭示\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\"，且information_withheld中保留\"父亲当年是否也听过回执\"——这是极好的钩子。但hype_scheme中\"lineage_secret_drop\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\"长线债务\"而非\"即时钩子\"。",
+            "required_fix": "第7章只揭示\"父亲刻过日期\"这个物证悬念，不触发\"父亲是否听过回执\"这个深层问题。将\"父亲听过回执\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。",
+            "path": ""
+          },
+          {
+            "code": "CH8-SUWANNIING-TRUST-ARC-TOO-FAST",
+            "severity": "high",
+            "evidence": "第8章chapter_goal写\"苏婉宁和林渊共同判断尸体真假\"，chapter_goal说明\"苏婉宁开始相信林渊一半\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。",
+            "required_fix": "第8章苏婉宁应该保持\"半信半疑\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\"折中方案\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。",
+            "path": ""
+          },
+          {
+            "code": "CH9-EXPRESS-DELIVERY-REALISTIC",
+            "severity": "high",
+            "evidence": "第9章opening_situation写\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\"，scene 1的hook写\"寄件时间是明天凌晨，派送状态却显示已签收\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\"明天凌晨的寄件时间\"被读者质疑为\"系统漏洞/人为篡改\"而非超自然现象，则这条证据缺乏公信力。",
+            "required_fix": "在第9章scene 1中明确加入一条\"排除人为篡改\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\"我没有送过这单\"。这样可以明确标记为异常，而非现实流程bug。",
+            "path": ""
+          },
+          {
+            "code": "CH10-CHENMO-ARC-PREMATURE",
+            "severity": "high",
+            "evidence": "第10章chapter_goal写\"陈默否认线收束\"，scene 2写\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\"主动承担证据半账\"——这个弧线太快，且\"主动交出寄件联\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\"次要证人\"角色，其弧线应该更曲折。",
+            "required_fix": "在第10章scene 2中增加一个\"陈默挣扎但最终选择\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\"他看着小雨手腕黑线\"的具体动作作为触发点，而非直接\"认罪\"。",
+            "path": ""
+          },
+          {
+            "code": "COPPER-COIN-RULE-VAGUE",
+            "severity": "low",
+            "evidence": "第1章scene 3写\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\"，information_revealed写\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\"。但scene 3的hook是\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\"发烫\"替代推理。\"验证边界\"的定义过于模糊。",
+            "required_fix": "在第1章scene 3中明确铜钱的触发条件：例如\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\"或\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\"。给铜钱一个可观测的具体反应，而不是\"能验证但不给答案\"这种抽象描述。",
+            "path": ""
+          },
+          {
+            "code": "CH1-COUNTDOWN-WITHOUT-DEADLINE",
+            "severity": "low",
+            "evidence": "第1章opening_situation写\"23:43\"且chapter_goal要求\"十五分钟倒计时\"，但整个第1章中没有明确说明\"十五分钟后会发生什么\"的具体后果。scene 4的hook是\"门外张建军敲了三短一长\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\"输掉代价\"，否则倒计时缺乏紧迫感。",
+            "required_fix": "在第1章scene 2或scene 3中明确\"十五分钟后如果没完成会怎样\"：例如王建业说一句\"上次有个邻居进了空电梯就没出来\"，或者林渊自己判断\"子时一过镜中物就能完全借走他的动作\"。让读者清楚知道倒计时的赌注是什么。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "",
+          "preserve": [],
+          "change": [],
+          "instructions": ""
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.74,\n  \"dimension_scores\": {\n    \"opening_pull\": 0.68,\n    \"front_ten_retention\": 0.76,\n    \"readability\": 0.72,\n    \"commercial_pull\": 0.78,\n    \"character_agency\": 0.74,\n    \"scene_execution\": 0.80,\n    \"continuity\": 0.82,\n    \"logic_consistency\": 0.71,\n    \"knowledge_boundary\": 0.75,\n    \"real_world_plausibility\": 0.70,\n    \"scene_delta_quality\": 0.77,\n    \"methodology_compliance\": 0.68,\n    \"hook_strength\": 0.75\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"CH1-SUMMON-MISSING\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章chapter_goal要求\\\"建立黄金三章钩子\\\"，opening_situation写\\\"王建业站在雨棚下等他\\\"，但整个第一章大纲中从未说明：王建业为什么不报警/不找物业/不找家人，而要找一个\\\"年轻风水师\\\"？召唤合理性链条缺失\\\"为什么找主角\\\"这一环。依据【opening_rules】黄金三章开篇规则第二条：第一章必须包含召唤合理性链条，缺\\\"为什么找主角（具体异象描述+物业/警察处理失败）\\\"即构成blocking。\",\n      \"required_fix\": \"在第1章任一场景中补入：王建业此前已经报过警（警察不受理/被告知\\\"无法处理\\\"）或找过物业（物业不敢管/被吓跑），或者王建业本人曾是林渊的旧委托人/口碑推荐人知道林渊的本事，否则读者无法建立\\\"凭什么找林渊\\\"的信任锚点。必须在第1章500字内落地，不能推迟到第2章。\"\n    },\n    {\n      \"code\": \"CH4-QIANPOMON-PRETEXT\",\n      \"severity\": \"critical\",\n      \"evidence\": \"钱婆婆在第4章首次正式出场并提出\\\"要林渊拿父亲旧物抵价\\\"，chapter_goal写\\\"钱婆婆正式登场\\\"。但第1-3章大纲中从未出现过\\\"钱婆婆\\\"这个名字，也没有任何伏笔暗示存在这样一位守镜人。依据【reversal_design】反转铺垫规则：任何新角色（尤其是关键NPC）的出现，其伏笔必须在反转前至少2章已经埋下，否则构成突兀降神（凭空出现的新角色解决问题）。钱婆婆是第4章的核心角色，属于\\\"关键NPC\\\"范畴，缺失伏笔违反方法论。\",\n      \"required_fix\": \"在第1-2章中至少埋入1处关于\\\"钱婆婆\\\"或\\\"十七栋里有个守镜老太太\\\"的暗示：可以是王建业/张建军提一句\\\"有人让我找你\\\"，或林渊自己的回忆片段中出现这个名字，或小雨/陈默提到楼里有个不让碰镜子的人。钱婆婆的名字或身份轮廓必须在第4章出场前就以碎片形式出现。\"\n    },\n    {\n      \"code\": \"CH1-PROFESSIONAL-ID-AMBIGUOUS\",\n      \"severity\": \"critical\",\n      \"evidence\": \"第一章opening_situation仅写\\\"林渊赶到十七栋楼下\\\"，未明确林渊到达后的第一动作是否展示专业身份。依据【opening_rules】开篇规则第一条：主角必须在第一时间出场且必须显示\\\"专业身份\\\"，通过物件（铜钱/罗盘/青囊）、动作（验煞/卜算）或他人称谓建立。第1章scene 2写林渊\\\"停在空电梯门外，用伞柄抵住门缝\\\"——这个动作是阻挡行为，不是专业能力展示。铜钱虽然在scene 3出现（铜钱压镜脚），但那是第3个场景，已超过\\\"第一时间\\\"的要求。\",\n      \"required_fix\": \"在第1章第1个场景中，让林渊到达现场后的第一个动作就展示专业身份：例如王建业还没说话，林渊已经掏出铜钱/罗盘扫了一眼十七栋方向，或者林渊开口第一句就是专业判断（\\\"这楼有东西，不止一个\\\"），或者王建业称呼他为\\\"林师傅\\\"。专业身份必须在chapter 1第500字内落地。\"\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"CH3-NEW-TERM-DENSITY\",\n      \"severity\": \"major\",\n      \"evidence\": \"第3章information_revealed中出现了\\\"半账\\\"、\\\"相邻证据人\\\"两个新概念/术语，且chapter_goal写\\\"不引入孙九斤、不讲扣账人、不写三代为一户\\\"——说明\\\"半账\\\"是首次出现的核心规则概念。依据【opening_rules】信息密度规则：第一章信息密度上限≤2个高概念术语。第3章出现了2个新术语，但此时已是第3章，信息密度上限应随章节推移逐步放宽，但仍需控制节奏。\",\n      \"required_fix\": \"将\\\"相邻证据人\\\"的命名推迟到第4章。第3章只引入\\\"半账\\\"一个新概念，通过小雨手腕黑线的具体现象让读者自己推断规则，不要直接命名\\\"证据人\\\"这个抽象术语。\"\n    },\n    {\n      \"code\": \"CH7-FATHER-TRAILER-UNDERPROMISED\",\n      \"severity\": \"major\",\n      \"evidence\": \"第7章scene 3揭示\\\"缺角铜钱背面露出父亲指甲刻下的二十三年前日期\\\"，且information_withheld中保留\\\"父亲当年是否也听过回执\\\"——这是极好的钩子。但hype_scheme中\\\"lineage_secret_drop\\\"的min_intensity为7.5，trigger_chapters为every_8，而第7章距离开篇仅7章即出现第一个父亲线索重大揭示，节奏略快。依据【stakes_design】筹码决定张力大小原则：父亲线索应作为\\\"长线债务\\\"而非\\\"即时钩子\\\"。\",\n      \"required_fix\": \"第7章只揭示\\\"父亲刻过日期\\\"这个物证悬念，不触发\\\"父亲是否听过回执\\\"这个深层问题。将\\\"父亲听过回执\\\"的暗示推迟到第12-15章，配合更大的代价场景（例如林渊自己被回执记名后再联想父亲）才能最大化钩子张力。\"\n    },\n    {\n      \"code\": \"CH8-SUWANNIING-TRUST-ARC-TOO-FAST\",\n      \"severity\": \"major\",\n      \"evidence\": \"第8章chapter_goal写\\\"苏婉宁和林渊共同判断尸体真假\\\"，chapter_goal说明\\\"苏婉宁开始相信林渊一半\\\"。从第5章苏婉宁出场到第8章她开始相信林渊，只用了3章。苏婉宁是警察，且第5章她\\\"把证物袋单独收进内袋，并记下小雨刚才移开的视线\\\"说明她仍保持警惕。这个信任弧线太快，不符合角色弧线节奏（每5章至少推进一个主要角色的认知或选择层）。\",\n      \"required_fix\": \"第8章苏婉宁应该保持\\\"半信半疑\\\"状态：她承认记录被污染，但不等于相信林渊的全部判断。让她提出一个\\\"折中方案\\\"（例如要求林渊用现实证据而非术法证明），把信任建立推迟到第10-12章。\"\n    },\n    {\n      \"code\": \"CH9-EXPRESS-DELIVERY-REALISTIC\",\n      \"severity\": \"major\",\n      \"evidence\": \"第9章opening_situation写\\\"陈默收到自己寄出的快递，寄件时间却是明天凌晨\\\"，scene 1的hook写\\\"寄件时间是明天凌晨，派送状态却显示已签收\\\"。这是不可能证据设计，但需要确认：快递的派送流程是否在现实逻辑中合理？依据硬性卡控第3条：快递、配送、警方、医院、监控、门禁等现实流程必须合理。若\\\"明天凌晨的寄件时间\\\"被读者质疑为\\\"系统漏洞/人为篡改\\\"而非超自然现象，则这条证据缺乏公信力。\",\n      \"required_fix\": \"在第9章scene 1中明确加入一条\\\"排除人为篡改\\\"的证据：例如林渊让苏婉宁调取快递公司后台日志，显示寄件时间戳有超自然篡改痕迹（时间戳格式不符合任何已知数据库标准），或者快递员证实\\\"我没有送过这单\\\"。这样可以明确标记为异常，而非现实流程bug。\"\n    },\n    {\n      \"code\": \"CH10-CHENMO-ARC-PREMATURE\",\n      \"severity\": \"major\",\n      \"evidence\": \"第10章chapter_goal写\\\"陈默否认线收束\\\"，scene 2写\\\"陈默主动把湿寄件联和手机一起递给苏婉宁，说自己只认删证和藏证这一半\\\"。陈默从第3章出场（删证）到第10章主动认罪只用了7章，且他的认罪是\\\"主动承担证据半账\\\"——这个弧线太快，且\\\"主动交出寄件联\\\"这个动作在scene 2中过于顺畅（没有激烈挣扎）。依据【character_design】角色弧线节奏：陈默作为\\\"次要证人\\\"角色，其弧线应该更曲折。\",\n      \"required_fix\": \"在第10章scene 2中增加一个\\\"陈默挣扎但最终选择\\\"的中间过程：例如陈默先试图继续隐瞒，在小雨/林渊的某个具体压力下才做出选择。增加一个\\\"他看着小雨手腕黑线\\\"的具体动作作为触发点，而非直接\\\"认罪\\\"。\"\n    },\n    {\n      \"code\": \"COPPER-COIN-RULE-VAGUE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章scene 3写\\\"林渊用铜钱压镜脚，发现镜中有人替王建业点头\\\"，information_revealed写\\\"林渊只能用康熙铜钱验证边界，不能靠它直接给答案\\\"。但scene 3的hook是\\\"镜中那张脸点头后，王建业的喉咙里响起纸页摩擦声\\\"——铜钱在这个场景中的具体触发条件和限制没有说明。依据硬性卡控第4条：铜钱/罗盘/青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用\\\"发烫\\\"替代推理。\\\"验证边界\\\"的定义过于模糊。\",\n      \"required_fix\": \"在第1章scene 3中明确铜钱的触发条件：例如\\\"铜钱碰到镜框边缘时发出轻微嗡鸣，说明镜中物有实体介入\\\"或\\\"铜钱在王建业脚边静止不动，但在镜框边缘微微发颤，说明动作发生在镜内而非镜外\\\"。给铜钱一个可观测的具体反应，而不是\\\"能验证但不给答案\\\"这种抽象描述。\"\n    },\n    {\n      \"code\": \"CH1-COUNTDOWN-WITHOUT-DEADLINE\",\n      \"severity\": \"minor\",\n      \"evidence\": \"第1章opening_situation写\\\"23:43\\\"且chapter_goal要求\\\"十五分钟倒计时\\\"，但整个第1章中没有明确说明\\\"十五分钟后会发生什么\\\"的具体后果。scene 4的hook是\\\"门外张建军敲了三短一长\\\"——这是身份反转而非倒计时兑现。依据【climax_design】极限封闭原则：倒计时必须有明确的\\\"输掉代价\\\"，否则倒计时缺乏紧迫感。\",\n      \"required_fix\": \"在第1章scene 2或scene 3中明确\\\"十五分钟后如果没完成会怎样\\\"：例如王建业说一句\\\"上次有个邻居进了空电梯就没出来\\\"，或者林渊自己判断\\\"子时一过镜中物就能完全借走他的动作\\\"。让读者清楚知道倒计时的赌注是什么。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"phase_1_immediate\": [\n      {\n        \"chapter\": 1,\n        \"action\": \"在scene 1或scene 2中补入：王建业此前已经找过物业（物业说管不了/被吓跑）或警察（警察不受理超自然报警），所以才找",
+        "llm_run_id": "2b729794-a2e6-443b-8ecb-7150d1888fb8",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      },
+      "reader_experience_judge": {
+        "scope": "reader_experience",
+        "pass": false,
+        "overall_score": 0.58,
+        "dimension_scores": {
+          "spatial_coherence": 0.82,
+          "information_density": 0.65,
+          "protagonist_call_plausibility": 0.72,
+          "hook_prerequisite_satisfied": 0.48,
+          "motivation_chain_clarity": 0.6,
+          "first_read_followability": 0.52
+        },
+        "blocking_issues": [
+          {
+            "code": "HOOK_CAUSALITY_BROKEN",
+            "severity": "critical",
+            "evidence": "Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。",
+            "required_fix": "补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。",
+            "path": ""
+          },
+          {
+            "code": "ANTI_META_ENDING_OUT_OF_SCENE",
+            "severity": "critical",
+            "evidence": "Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。",
+            "required_fix": "章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'",
+            "path": ""
+          },
+          {
+            "code": "SCENE_JUMP_UNRESOLVED",
+            "severity": "critical",
+            "evidence": "Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。",
+            "required_fix": "移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。",
+            "path": ""
+          }
+        ],
+        "audit_issues": [
+          {
+            "code": "HOOK_TYPE_MONOTONE",
+            "severity": "high",
+            "evidence": "章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。",
+            "required_fix": "在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。",
+            "path": ""
+          },
+          {
+            "code": "DIMENSIONALITY_UNBALANCED",
+            "severity": "medium",
+            "evidence": "Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。",
+            "required_fix": "在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。",
+            "path": ""
+          },
+          {
+            "code": "INFORMATION_REVEAL_RATE",
+            "severity": "medium",
+            "evidence": "Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。",
+            "required_fix": "将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。",
+            "path": ""
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。",
+          "preserve": [
+            "林渊的铜钱验证边界能力设定",
+            "王建业→张建军→小雨的受害者链条",
+            "'镜中物会抢动作逼人答应'的核心规则种子",
+            "三短一长的敲门声作为身份识别信号"
+          ],
+          "change": [
+            "Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面",
+            "Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）",
+            "Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示"
+          ],
+          "instructions": "1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认"
+        },
+        "raw_excerpt": "```json\n{\n  \"pass\": false,\n  \"overall_score\": 0.58,\n  \"dimension_scores\": {\n    \"spatial_coherence\": 0.82,\n    \"information_density\": 0.65,\n    \"protagonist_call_plausibility\": 0.72,\n    \"hook_prerequisite_satisfied\": 0.48,\n    \"motivation_chain_clarity\": 0.60,\n    \"first_read_followability\": 0.52\n  },\n  \"blocking_issues\": [\n    {\n      \"code\": \"HOOK_CAUSALITY_BROKEN\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 2 hook_description: '小雨手腕出现半圈账线，证明否认会把压力推给弱者' — 但章内描述张建军否认的内容是'自己进过空电梯和303'。读者无法从'否认进入某处'推导出'账线出现在小雨手上'的因果链。前提与结论之间缺失传递步骤。\",\n      \"required_fix\": \"补全因果链：明确张建军的否认动作具体指向什么（如否认曾替谁承诺/否认与王建业有约），以及小雨为何是'更近的人'（血缘/利益/空间三选一需在本章内给出）。钩子结论必须从本章可见的前提动作直接长出。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"ANTI_META_ENDING_OUT_OF_SCENE\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 ending_excerpt: '林渊深吸一口气，血从拇指伤口继续往外渗。他必须做个选择。然后他做了。' — 落在抽象决定而非可感画面或动作收束。读者无法凭此帧形成延续到下一章的画面锚点。\",\n      \"required_fix\": \"章末必须落在具体物件/空间/表情的一帧。推荐改为：'林渊握住裂出缺口的铜钱，缺口边缘有黑红色水珠往外渗。他盯着那枚铜钱，没说话。'\",\n      \"chapter_no\": 1\n    },\n    {\n      \"code\": \"SCENE_JUMP_UNRESOLVED\",\n      \"severity\": \"critical\",\n      \"evidence\": \"Chapter 1 retention_safety_gate: 'abrupt jump 十七栋 → 城南旧事馆 at paragraph 19 with no transition markers in window' — 段落19处从十七栋现场跳至城南旧事馆，无过渡标记。场景切换违反空间连贯性原则。\",\n      \"required_fix\": \"移除城南旧事馆场景，或在跳转前增加明确过渡标记（如'半小时后，林渊离开十七栋'）。第一章只应在十七栋现场推进。\",\n      \"chapter_no\": 1\n    }\n  ],\n  \"audit_issues\": [\n    {\n      \"code\": \"HOOK_TYPE_MONOTONE\",\n      \"severity\": \"high\",\n      \"evidence\": \"章末钩子类型统计：Chapter 1 使用 countdown_identity，Chapter 2 使用 rule_pressure，Chapter 3 未提供但推测为类似类型。hook_type 在相邻章节间缺乏轮换，hook_keywords 中的'身份反转/时限变化/道具变质/盟友反水/战斗中断/情感冲击/主线碎片/空间扭曲'八种类型未体现。\",\n      \"required_fix\": \"在 Chapter 3 的 outline 中明确标注 hook_type，建议使用'道具变质'或'空间扭曲'等与前两章不同的类型。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"DIMENSIONALITY_UNBALANCED\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 1 protagonist_call_plausibility 得分 0.72（林渊通过铜钱和现场动作展示专业身份），但 protagonist_choice 的约束条件'只能用康熙铜钱验证边界'在 hook_prerequisite_satisfied 上仅 0.48。主角能力展示与任务难度之间缺乏张力设计。\",\n      \"required_fix\": \"在 Chapter 2 或 Chapter 3 中让林渊的铜钱出现一次明确的能力边界（如铜钱无法压住某个镜面），强化'限制感'而非'全能感'。\",\n      \"chapter_no\": 2\n    },\n    {\n      \"code\": \"INFORMATION_REVEAL_RATE\",\n      \"severity\": \"medium\",\n      \"evidence\": \"Chapter 2 information_revealed 列出三条：否认转移账债、小雨被卷入非随机、林渊会做错半步。但三条信息对读者的优先级差异未拉开——第一条是规则揭示，第二条是悬念，第三条是角色失误方向。若第二章同时承载三条，节奏可能偏重。\",\n      \"required_fix\": \"将第二章信息揭示收缩为一条核心（如'否认会把账推向更近的人'），其余两条延后至第三章用场景证据带出。\",\n      \"chapter_no\": 2\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"Chapter 1 和 Chapter 2 的 outline 层共同修复，重点处理章末收束帧和因果链完整性。\",\n    \"preserve\": [\n      \"林渊的铜钱验证边界能力设定\",\n      \"王建业→张建军→小雨的受害者链条\",\n      \"'镜中物会抢动作逼人答应'的核心规则种子\",\n      \"三短一长的敲门声作为身份识别信号\"\n    ],\n    \"change\": [\n      \"Chapter 1: 移除城南旧事馆场景，将章末帧从'做了选择'改为'握着缺口铜钱'的具体画面\",\n      \"Chapter 2: 重构 hook 的因果链，让否认转移账线的机制在场景内可见（如张建军否认时有旁观者小雨在场，或张建军否认的话术直接涉及小雨）\",\n      \"Chapter 2: 将 information_revealed 从三条压缩为一条核心揭示\"\n    ],\n    \"instructions\": \"1. 第一章正文删除所有'城南旧事馆'相关内容，严格锁定在十七栋现场。第二章outline在描述'否认",
+        "llm_run_id": "194cd80a-5616-4d9f-9a9a-19f9d52270a1",
+        "schema_version": "llm-quality-judge.v1",
+        "has_critical": true
+      }
+    }
+  },
+  "summary": {
+    "total_judge_runs": 20,
+    "pass_count": 0,
+    "block_count": 20,
+    "pass_rate": 0.0,
+    "top_issues": [
+      [
+        "CH1-SUMMON-MISSING",
+        10
+      ],
+      [
+        "CH4-QIANPOMON-PRETEXT",
+        10
+      ],
+      [
+        "CH1-PROFESSIONAL-ID-AMBIGUOUS",
+        10
+      ],
+      [
+        "HOOK_CAUSALITY_BROKEN",
+        10
+      ],
+      [
+        "ANTI_META_ENDING_OUT_OF_SCENE",
+        10
+      ],
+      [
+        "SCENE_JUMP_UNRESOLVED",
+        10
+      ]
+    ]
+  }
+}

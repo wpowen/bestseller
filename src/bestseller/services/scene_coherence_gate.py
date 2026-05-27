@@ -144,6 +144,11 @@ _NON_SCENE_LOCATION_MARKERS: tuple[str, ...] = (
     "电话里",
     "打电话",
     "来电",
+    "从哪买",
+    "哪买的",
+    "买的",
+    "买来",
+    "铺子",
     "问林渊接不接",
     "老板想找人看看",
     "离他住的地方",
@@ -151,6 +156,9 @@ _NON_SCENE_LOCATION_MARKERS: tuple[str, ...] = (
     "等我",
     "摆了十几年摊子",
     "做旧货生意",
+    "方向",
+    "指向",
+    "正对着",
 )
 
 _PARAGRAPH_SPLITTER = re.compile(r"\n+")

@@ -50,6 +50,71 @@ def test_two_drafts_of_same_暗格_scene_are_detected() -> None:
     assert any("道具差异" in c for c in f.conflicts)
 
 
+def test_three_character_names_are_kept_instead_of_prefix_fragments() -> None:
+    chapter = """
+王建业缩在沙发和墙的夹角里，两只手死死抓着膝盖上的布料。
+林渊站在镜前三步，问他最后一次看见镜子是什么时候。
+
+---
+
+张建军从走廊尽头走出来，手里拎着钥匙，声音发颤。
+林渊把铜钱压在门缝前，让张建军别再往前一步。
+"""
+
+    findings = detect_intra_chapter_stitched_drafts(chapter)
+
+    assert not findings
+
+
+def test_recurring_mirror_and_light_props_do_not_create_stitched_draft_alarm() -> None:
+    chapter = """
+电话那头安静了三秒，然后刮擦声又响了。林渊把铜钱压在账本边缘。
+王建业说房里那面镜子少了一个人，灯光在雨里晃了一下。
+
+---
+
+林渊推开303的门。王建业缩在沙发和墙的夹角里，落地灯亮着。
+穿衣镜立在卧室门口，镜面吞掉了大半灯光。
+"""
+
+    findings = detect_intra_chapter_stitched_drafts(chapter)
+
+    assert not findings
+
+
+def test_recurring_folk_props_and_deictic_fragments_do_not_create_stitched_draft_alarm() -> None:
+    chapter = """
+林渊蹲下身，把黄符纸贴在张建军的鞋底。符纸碰到黑水，边角立刻卷起。
+张建军往后缩了一步，嘴里还在说自己没进过那扇门。
+
+小雨的手腕上，那道暗红色的账线往前爬了半寸。林渊把铜钱压下去，
+符纸灰贴在她皮肤上，张建军终于看见302门缝里站着那个小孩。
+
+林渊没有松手。他逼张建军认下动作，却发现镜子里的影子比他先点了头。
+小雨把符纸攥得发白，走廊尽头的灯一下一下闪。
+"""
+
+    findings = detect_intra_chapter_stitched_drafts(chapter)
+
+    assert not findings
+
+
+def test_keychain_knife_fragment_does_not_create_stitched_draft_alarm() -> None:
+    chapter = """
+张建军攥着那串钥匙站在303门外，钥匙扣上的指甲刀套装碰得咯咯响。
+林渊没有让他进屋，只问他刚才为什么敲三短一长。
+
+---
+
+“小张，你先坐。”林渊说。
+张建军没坐，手还攥着那串钥匙。指甲刀套装在灯下反光，他却一直躲着303门缝里的镜光。
+"""
+
+    findings = detect_intra_chapter_stitched_drafts(chapter)
+
+    assert not findings
+
+
 def test_distinct_scenes_with_one_shared_character_do_not_collide() -> None:
     """Two genuinely different scenes that happen to share the protagonist."""
     chapter = """

@@ -127,6 +127,49 @@ def test_commercial_gate_accepts_aligned_package(tmp_path: Path) -> None:
     assert report.metrics["blocking_issue_counts"] == {}
 
 
+def test_commercial_gate_integrates_retention_onboarding_findings(tmp_path: Path) -> None:
+    _write_package(tmp_path, drift=False)
+    (tmp_path / "story-bible" / "canonical-terms.yaml").write_text(
+        """
+terms:
+  - term: 王建业
+    category: character
+  - term: 张建军
+    category: character
+  - term: 钱婆婆
+    category: character
+  - term: 罗盘
+    category: object
+  - term: 康熙铜钱
+    category: object
+  - term: 阴阳眼
+    category: object
+  - term: 十七栋
+    category: place
+  - term: 302
+    category: place
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "chapter-001.md").write_text(
+        "# 第1章 测试\n\n"
+        "23:47，王建业在十七栋递钥匙。林渊握着罗盘、康熙铜钱和阴阳眼，看见302门开。",
+        encoding="utf-8",
+    )
+    (tmp_path / "chapter-002.md").write_text(
+        "# 第2章 测试\n\n21:30，张建军敲门。章尾：罗盘指向302。",
+        encoding="utf-8",
+    )
+
+    report = evaluate_book_package(tmp_path)
+    codes = {issue.code for issue in report.issues}
+
+    assert not report.passed
+    assert "ONBOARDING_OVERLOAD" in codes
+    assert "TIME_ANCHOR_BACKWARDS" in codes
+    assert report.metrics["retention_onboarding_gate"]["verdict"] == "blocked"
+
+
 def test_suspense_terms_do_not_hide_weak_golden_three(tmp_path: Path) -> None:
     _write_package(tmp_path, drift=False)
     weak_chapters = {
@@ -176,7 +219,53 @@ def test_commercial_gate_flags_contract_drift_and_canon_leak(tmp_path: Path) -> 
     assert report.gate_verdict.passed is False
 
 
-def test_commercial_gate_allows_negated_forbidden_terms_in_planning_contracts(tmp_path: Path) -> None:
+def test_commercial_gate_flags_qingnang_front_canon_regressions(tmp_path: Path) -> None:
+    _write_package(tmp_path, drift=False)
+    (tmp_path / "story-bible" / "canon-guardrails.json").write_text(
+        json.dumps(
+            {
+                "forbidden_terms": [],
+                "state_rules": [
+                    {
+                        "subject": "林远山",
+                        "status": "三百年前封镜先祖，不是三十年前补镜人",
+                        "applies_after_chapter": 0,
+                        "forbidden_patterns": [
+                            "林远山.{0,40}(三十年前|二十三年前|三年前).{0,40}(封|补).{0,20}(困魂镜|镜)",
+                            "(三十年前|二十三年前|三年前).{0,40}林远山.{0,40}(封|补).{0,20}(困魂镜|镜)",
+                        ],
+                    },
+                    {
+                        "subject": "小雨",
+                        "status": "第4章已认账获救",
+                        "applies_after_chapter": 4,
+                        "forbidden_patterns": [
+                            "小雨.{0,60}(脸.{0,12}变淡|脸正在变淡|近乎透明|身体.{0,20}往镜子里缩|身体.{0,20}往镜面里陷|她还在里面)"
+                        ],
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "chapter-007.md").write_text(
+        "# 第7章 测试\n\n"
+        "林渊说，林远山三十年前补过困魂镜。小雨的脸正在变淡，身体在往镜子里缩。",
+        encoding="utf-8",
+    )
+
+    report = evaluate_book_package(tmp_path)
+    issue = next(issue for issue in report.issues if issue.code == "CANON_STATE_REGRESSION")
+
+    assert not report.passed
+    assert issue.chapter_no == 7
+    assert issue.evidence["subject"] == "林远山"
+
+
+def test_commercial_gate_allows_negated_forbidden_terms_in_planning_contracts(
+    tmp_path: Path,
+) -> None:
     _write_package(tmp_path, drift=False)
     (tmp_path / "story-bible" / "canon-guardrails.json").write_text(
         json.dumps(
@@ -330,6 +419,38 @@ def test_commercial_gate_policy_can_relax_medium_blocking_for_diagnostics(
     )
 
     assert report.passed
+
+
+def test_commercial_gate_blocks_outline_asset_gates_when_policy_requires(
+    tmp_path: Path,
+) -> None:
+    _write_package(tmp_path, drift=False)
+    (tmp_path / "story-bible" / "prewrite-contract.json").write_text(
+        json.dumps(
+            {
+                "chapters": {
+                    "1": {
+                        "prewrite_anchor": "接住上一章具体尾钩，推动本章主线。",
+                        "chapter_objective": "推动本章剧情发展。",
+                        "scene_beats": ["让林渊主动判断并付出代价。"],
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = evaluate_book_package(
+        tmp_path,
+        policy=CommercialGatePolicy(outline_asset_gates_block_on_failure=True),
+    )
+    codes = {issue.code for issue in report.issues}
+
+    assert report.passed is False
+    assert "PREWRITE_PLACEHOLDER_TEXT" in codes
+    issue = next(issue for issue in report.issues if issue.code == "PREWRITE_PLACEHOLDER_TEXT")
+    assert issue.evidence["gate_name"] == "prewrite_contract_readiness"
 
 
 def test_batch_callback_matching_accepts_qingnang_aliases() -> None:

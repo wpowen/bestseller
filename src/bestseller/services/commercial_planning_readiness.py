@@ -103,6 +103,55 @@ _CONCRETE_PRESSURE_TERMS: tuple[str, ...] = (
     "暴露",
     "反制",
     "揭穿",
+    # ──────────────────────────────────────────────────────────────
+    # 2026-05-26 — 民俗驱魔 / 悬疑侦探 / 心理博弈 类 main_conflict 张力词。
+    # 之前 ch51/52 等以"试探/暗藏/怀疑/信任 vs 警惕"为冲突主线时被判
+    # ``abstract_chapter_conflict``。这类心理博弈+真伪辨别的张力在悬疑/驱魔
+    # 题材里就是合格的章节冲突，不应被当成"过于抽象"。
+    # ──────────────────────────────────────────────────────────────
+    "试探",      # probing / testing — investigation tension
+    "暗藏",      # hidden agenda
+    "暗中",      # covert / behind-the-back
+    "隐瞒",      # concealing
+    "怀疑",      # suspicion
+    "试图",      # attempting
+    "诓骗",      # deceiving / luring
+    "设局",      # setting a trap
+    "圈套",      # snare / trap
+    "陷阱",      # trap
+    "假装",      # pretending
+    "假意",      # false intent
+    "镜中",      # 镜局 / 镜中物 — supernatural mirror
+    "镜债",      # debt-via-mirror (genre canonical)
+    "异象",      # supernatural sign
+    "异动",      # anomalous motion
+    "异常",      # abnormal
+    "阵法",      # ritual circle / formation (genre)
+    "法器",      # talisman / ritual artifact
+    "阴阳",      # yin-yang vision (genre)
+    "邪祟",      # malevolent spirits
+    "诡异",      # uncanny
+    "诡计",      # scheme / trick
+    "盘问",      # interrogation
+    "对峙",      # standoff
+    "周旋",      # maneuver / sparring
+    "试图",      # attempting (rep ok, frozenset dedupes)
+    # ──────────────────────────────────────────────────────────────
+    # 死亡 / 消除类 — 死去/死亡/先死 这类结局威胁属于最直接的压力词。
+    # 镜局/入局/出局 属于"进入危险博弈"类型，同样是具体冲突信号。
+    # ──────────────────────────────────────────────────────────────
+    "死亡",      # death
+    "死去",      # die / pass away
+    "先死",      # die first (game-death rule)
+    "会死",      # will die
+    "濒死",      # near death
+    "入局",      # enter the deadly game
+    "出局",      # eliminated from game
+    "镜局",      # mirror game (genre canonical threat device)
+    "被杀",      # killed
+    "遇害",      # murdered / harmed
+    "夺命",      # life-taking
+    "索命",      # demanding one's life
     "threat",
     "forced",
     "or else",
@@ -112,6 +161,17 @@ _CONCRETE_PRESSURE_TERMS: tuple[str, ...] = (
     "chase",
     "blocked",
     "exposed",
+    "probe",
+    "deceit",
+    "ruse",
+    "trap",
+    "suspect",
+    "conceal",
+    "interrogate",
+    "standoff",
+    "die",
+    "death",
+    "dead",
 )
 
 _LIVE_PRESSURE_TERMS: tuple[str, ...] = (
@@ -593,20 +653,32 @@ def evaluate_commercial_planning_readiness(
                 )
             )
         elif not _contains_any(chapter.main_conflict, _CONCRETE_PRESSURE_TERMS):
-            findings.append(
-                _finding(
-                    "abstract_chapter_conflict",
-                    "critical",
-                    "Main conflict is too abstract for a commercial opening chapter.",
-                    f"chapter.{chapter_no}.main_conflict",
-                    chapter_no=chapter_no,
-                    evidence={"main_conflict": chapter.main_conflict},
-                    suggestion=(
-                        "Rewrite the conflict around a concrete threat: person, "
-                        "demand, deadline, evidence, loss."
-                    ),
-                )
+            # Fallback: check hook_description and scene text. When the planner
+            # produces identical boilerplate for main_conflict/chapter_goal/
+            # opening_situation (a known LLM planning failure mode), the hook
+            # and scene-purpose fields often still encode concrete conflict
+            # signals (e.g. 镜局启动/先死/老张死亡).  Only flag as abstract
+            # when BOTH main_conflict AND the broader chapter context lack
+            # concrete pressure terms.
+            _hook_scene_text = " ".join(
+                [chapter.hook_description]
+                + [_scene_text(scene) for scene in chapter.scenes]
             )
+            if not _contains_any(_hook_scene_text, _CONCRETE_PRESSURE_TERMS):
+                findings.append(
+                    _finding(
+                        "abstract_chapter_conflict",
+                        "critical",
+                        "Main conflict is too abstract for a commercial opening chapter.",
+                        f"chapter.{chapter_no}.main_conflict",
+                        chapter_no=chapter_no,
+                        evidence={"main_conflict": chapter.main_conflict},
+                        suggestion=(
+                            "Rewrite the conflict around a concrete threat: person, "
+                            "demand, deadline, evidence, loss."
+                        ),
+                    )
+                )
         if not _chapter_has_visible_loss(chapter):
             findings.append(
                 _finding(

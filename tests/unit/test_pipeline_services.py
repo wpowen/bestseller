@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
+from bestseller.domain.chapter_generation_input import ChapterGenerationInputBundle
 from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.domain.contradiction import ContradictionCheckResult, ContradictionViolation
 from bestseller.domain.knowledge import SceneKnowledgeRefreshResult
 from bestseller.domain.pipeline import ProjectPipelineResult, ProjectRepairResult
+from bestseller.domain.review import ChapterReviewFinding, ChapterReviewResult, ChapterReviewScores
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
@@ -37,6 +40,177 @@ from bestseller.settings import load_settings
 pytestmark = pytest.mark.unit
 
 
+def test_clean_assembly_clears_scene_auto_repair_residue() -> None:
+    scene = SimpleNamespace(
+        metadata_json={
+            "auto_repair_hint": "补齐场景跳转桥",
+            "auto_repair_block_codes": ["SCENE_JUMP_UNRESOLVED"],
+            "auto_repair_adjusted_target_word_count": 440,
+            "methodology_contract": {"stakes": "keep"},
+        }
+    )
+
+    cleared = draft_services._clear_scene_auto_repair_residue_after_clean_assembly(
+        [scene]
+    )
+
+    assert cleared == 1
+    assert scene.metadata_json == {"methodology_contract": {"stakes": "keep"}}
+
+
+def test_chapter_first_uses_minimax_safe_cap_not_target_length_cap() -> None:
+    settings = load_settings(
+        env={
+            "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+            "BESTSELLER__LLM__WRITER__MAX_TOKENS": "32768",
+        }
+    )
+
+    assert draft_services.chapter_first_runaway_max_tokens(settings) == 5_488
+
+
+def test_chapter_first_falls_back_to_model_family_ceiling() -> None:
+    settings = load_settings(
+        env={
+            "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+            "BESTSELLER__LLM__WRITER__MAX_TOKENS": "0",
+        }
+    )
+
+    assert draft_services.chapter_first_runaway_max_tokens(settings) == 5_488
+
+
+def test_chapter_first_keeps_provider_safe_minimax_cap_for_full_chapters() -> None:
+    settings = load_settings(
+        env={
+            "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+            "BESTSELLER__LLM__WRITER__MAX_TOKENS": "32768",
+        }
+    )
+
+    cap = draft_services.chapter_first_runaway_max_tokens(
+        settings,
+        target_word_count=2600,
+        hard_max_word_count=3500,
+        language="zh-CN",
+    )
+
+    assert cap is not None
+    assert cap == 5_488
+
+
+def test_chapter_first_full_regeneration_for_severe_under_length() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2200
+    draft = SimpleNamespace(word_count=1424, content_md="")
+
+    reason = pipeline_services._chapter_first_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        ("LENGTH_UNDER", "CHAPTER_LENGTH_BLOCK_LOW"),
+        attempt_number=1,
+    )
+
+    assert reason is not None
+    assert reason.startswith("severe_under_length:")
+
+
+def test_chapter_first_allows_local_repair_for_minor_under_length() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2200
+    draft = SimpleNamespace(word_count=1900, content_md="")
+
+    reason = pipeline_services._chapter_first_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        ("LENGTH_UNDER",),
+        attempt_number=1,
+    )
+
+    assert reason is None
+
+
+def test_chapter_first_full_regeneration_for_repeated_front10_structural_block() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 2
+    draft = SimpleNamespace(word_count=2200, content_md="")
+
+    reason = pipeline_services._chapter_first_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        ("FRONT10_RULE_LECTURE_DENSITY",),
+        attempt_number=2,
+    )
+
+    assert reason == "repeated_front10_structural_block:FRONT10_RULE_LECTURE_DENSITY"
+
+
+def test_chapter_first_full_regeneration_for_front10_hard_contract_pollution() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 2
+    draft = SimpleNamespace(word_count=2200, content_md="")
+
+    reason = pipeline_services._chapter_first_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        ("FRONT10_FORBIDDEN_SIGNAL",),
+        attempt_number=1,
+    )
+
+    assert reason == "front10_hard_contract_polluted:FRONT10_FORBIDDEN_SIGNAL"
+
+
+def test_chapter_review_full_regeneration_for_very_low_score() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    draft = SimpleNamespace(word_count=2200, content_md="")
+    report = SimpleNamespace(report_json={"blocking_codes": []})
+    quality = SimpleNamespace(score_overall=0.57)
+
+    reason = pipeline_services._chapter_review_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        report,
+        quality,
+        rewrite_iterations=0,
+    )
+
+    assert reason == "very_low_review_score:0.57"
+
+
+def test_length_repair_codes_follow_current_draft_direction() -> None:
+    codes = draft_services._drop_conflicting_length_repair_codes(
+        (
+            "LENGTH_UNDER",
+            "CHAPTER_LENGTH_BLOCK_LOW",
+            "LENGTH_OVER",
+            "CHAPTER_LENGTH_BLOCK_HIGH",
+            "FRONT10_RULE_LECTURE_DENSITY",
+        ),
+        length_payload={
+            "band": "BLOCK_LOW",
+            "issue_code": "CHAPTER_LENGTH_BLOCK_LOW",
+            "word_count": 1250,
+            "target_words": 2200,
+        },
+    )
+
+    assert "LENGTH_UNDER" in codes
+    assert "CHAPTER_LENGTH_BLOCK_LOW" in codes
+    assert "FRONT10_RULE_LECTURE_DENSITY" in codes
+    assert "LENGTH_OVER" not in codes
+    assert "CHAPTER_LENGTH_BLOCK_HIGH" not in codes
+
+
 def test_volume_outline_auto_repair_constraints_are_exact_count_directives() -> None:
     constraints = pipeline_services._volume_outline_auto_repair_constraints(
         language="zh-CN",
@@ -57,6 +231,501 @@ def test_volume_outline_auto_repairable_requires_count_contract_failure() -> Non
     assert not pipeline_services._is_volume_outline_auto_repairable(
         RuntimeError("Prewrite readiness gate failed")
     )
+
+
+def test_chapter_first_auto_repair_instruction_is_patch_first() -> None:
+    project_id = uuid4()
+    chapter = build_chapter(project_id)
+    chapter.metadata_json = {"retention_retry_strict_prompt": "必须保留章末主钩子。"}
+
+    instructions = pipeline_services._render_chapter_first_local_repair_instructions(
+        chapter=chapter,
+        block_codes=("TIMELINE_INCONSISTENT",),
+        scene_hints=["补齐第2场到第3场的时间桥。"],
+    )
+
+    assert "局部替换优先" in instructions
+    assert "不是重新生成章节" in instructions
+    assert "不得大幅扩写" in instructions
+    assert "patch-first" in instructions
+    assert "补齐第2场到第3场的时间桥" in instructions
+    assert "必须保留章末主钩子" in instructions
+
+
+def test_chapter_first_auto_repair_instruction_rebuilds_structural_opening() -> None:
+    project_id = uuid4()
+    chapter = build_chapter(project_id)
+    chapter.opening_situation = "林渊赶到十七栋楼下，先看到楼道现场异常。"
+    chapter.metadata_json = {
+        "object_signal_contract": {"forbidden_signals": ["铜钱发烫"]}
+    }
+
+    instructions = pipeline_services._render_chapter_first_local_repair_instructions(
+        chapter=chapter,
+        block_codes=("OPENING_SCENE_DRIFT", "FRONT10_FORBIDDEN_SIGNAL"),
+        scene_hints=["删除电话桥段，重写首场现场入场。"],
+    )
+
+    assert "结构性开篇修复合同" in instructions
+    assert "不按普通 patch-first" in instructions
+    assert "必须重写开篇前500字" in instructions
+    assert "首场使用了章节合同未规划的【禁用通联转送桥段】" in instructions
+    assert "媒介不是绝对禁用" in instructions
+    assert "第一场开局合同：林渊赶到十七栋楼下" in instructions
+    assert "铜钱发烫" not in instructions
+    assert "【物件触感捷径】" in instructions
+    assert "最多不超过 3500 字" in instructions
+
+
+def test_chapter_first_auto_repair_instruction_treats_scene_forbidden_as_structural() -> None:
+    project_id = uuid4()
+    chapter = build_chapter(project_id)
+    chapter.opening_situation = "林渊赶到十七栋楼下，直接进入现场。"
+    scene = build_scene(project_id, chapter.id)
+    scene.forbidden_actions = ["不得写电话、来电、手机通知、寄件、快递、外卖、配送、物流、跑腿。"]
+
+    instructions = pipeline_services._render_chapter_first_local_repair_instructions(
+        chapter=chapter,
+        block_codes=("FRONT10_SCENE_FORBIDDEN_ACTION",),
+        scene_hints=["删除电话桥段，重写首场现场入场。"],
+        scenes=[scene],
+    )
+
+    assert "结构性开篇修复合同" in instructions
+    assert "局部替换优先" not in instructions
+    assert "电话" not in instructions
+    assert "手机" not in instructions
+    assert "快递" not in instructions
+    assert "【禁用通联转送桥段】" in instructions
+
+
+def test_chapter_first_auto_repair_instruction_includes_scene_hard_constraints() -> None:
+    project_id = uuid4()
+    chapter = build_chapter(project_id)
+    chapter.metadata_json = {
+        "object_signal_contract": {"forbidden_signals": ["铜钱吸力"]}
+    }
+    chapter.foreshadowing_actions = {"forbidden_early_leaks": ["归人"]}
+    scene = build_scene(project_id, chapter.id)
+    scene.forbidden_actions = [
+        "不得用电梯脚印、黑泥鞋印或钱孔形鞋印作为章末钩子。",
+        "不得写张建军被门吞掉或门合拢。",
+    ]
+
+    instructions = pipeline_services._render_chapter_first_local_repair_instructions(
+        chapter=chapter,
+        block_codes=("LENGTH_OVER",),
+        scene_hints=["压缩重复解释，保持场景出口。"],
+        scenes=[scene],
+    )
+
+    assert "章节硬约束优先级" in instructions
+    assert "铜钱吸力" not in instructions
+    assert "归人" not in instructions
+    assert "电梯脚印" not in instructions
+    assert "门吞掉" not in instructions
+    assert "【暂缓长线信息】" in instructions
+
+
+def test_volume_checkpoint_judge_skips_immature_front_chapters() -> None:
+    assert (
+        review_services._should_run_volume_checkpoint_judge(
+            chapter_number=1,
+            interval=10,
+            min_chapters=10,
+        )
+        is False
+    )
+    assert (
+        review_services._should_run_volume_checkpoint_judge(
+            chapter_number=10,
+            interval=10,
+            min_chapters=10,
+        )
+        is True
+    )
+
+
+def test_window_judge_metadata_filters_stale_repair_telemetry() -> None:
+    metadata = {
+        "auto_repair_last_block_codes": ["FRONT10_FORBIDDEN_SIGNAL"],
+        "front10_framework_repair_last_block_codes": ["TIMELINE_INCONSISTENT"],
+        "methodology_contract": {
+            "chapter_function": "golden_three",
+            "retention_retry_last_block_codes": ["DIALOGUE_PING_PONG"],
+            "scene_contract": {"required_payoff": "张建军被门吞掉"},
+        },
+        "quality_targets": {
+            "opening_pull": 0.86,
+            "gate_last_findings": ["old failure"],
+        },
+        "unrelated": "should not be sent",
+    }
+
+    safe = review_services._window_judge_safe_metadata(metadata)
+
+    assert "auto_repair_last_block_codes" not in safe
+    assert "front10_framework_repair_last_block_codes" not in safe
+    assert "unrelated" not in safe
+    assert safe["methodology_contract"] == {
+        "chapter_function": "golden_three",
+        "scene_contract": {"required_payoff": "张建军被门吞掉"},
+    }
+    assert safe["quality_targets"] == {"opening_pull": 0.86}
+
+
+def test_llm_commercial_pass_downgrades_heuristic_rule_rewrite() -> None:
+    review_result = ChapterReviewResult(
+        verdict="rewrite",
+        severity_max="high",
+        scores=ChapterReviewScores(
+            overall=0.72,
+            goal=0.98,
+            coverage=0.9,
+            coherence=0.8,
+            continuity=0.8,
+            main_plot_progression=0.8,
+            subplot_progression=0.78,
+            style=0.8,
+            hook=0.36,
+            ending_hook_effectiveness=0.34,
+            volume_mission_alignment=0.78,
+            pacing_rhythm=0.8,
+            character_voice_distinction=0.8,
+            thematic_resonance=0.88,
+            contract_alignment=0.57,
+        ),
+        findings=[
+            ChapterReviewFinding(
+                category="ending_hook_effectiveness",
+                severity="high",
+                message="收尾钩子不够硬。",
+            ),
+            ChapterReviewFinding(
+                category="contract_alignment",
+                severity="medium",
+                message="缺失 closing_hook。",
+            ),
+        ],
+        evidence_summary={"llm_rule_gate_conflict": {"rule_verdict": "rewrite"}},
+        rewrite_instructions="请重写尾钩。",
+    )
+    llm_payload = {
+        "pass": True,
+        "overall_score": 0.91,
+        "dimension_scores": {
+            "hook_strength": 0.92,
+            "commercial_pull": 0.91,
+            "methodology_compliance": 0.94,
+        },
+        "blocking_issues": [],
+    }
+
+    assert review_services._can_accept_llm_pass_over_rule_rewrite(
+        review_result,
+        llm_payload,
+    )
+    downgraded = review_services._downgrade_rule_rewrite_after_llm_pass(
+        review_result,
+        llm_payload,
+    )
+
+    assert downgraded.verdict == "pass"
+    assert downgraded.severity_max == "low"
+    assert downgraded.rewrite_instructions is None
+    assert downgraded.scores.overall == 0.91
+    assert downgraded.scores.hook == 0.92
+    assert downgraded.scores.ending_hook_effectiveness == 0.92
+    assert downgraded.scores.contract_alignment == 0.94
+    assert "rule_rewrite_downgraded_by_llm_pass" in downgraded.evidence_summary
+
+
+def test_llm_commercial_pass_can_downgrade_opening_and_continuity_heuristics() -> None:
+    review_result = ChapterReviewResult(
+        verdict="rewrite",
+        severity_max="high",
+        scores=ChapterReviewScores(
+            overall=0.61,
+            goal=1.0,
+            coverage=0.9,
+            coherence=0.8,
+            continuity=0.42,
+            main_plot_progression=0.57,
+            subplot_progression=0.27,
+            style=0.8,
+            hook=0.37,
+            ending_hook_effectiveness=0.65,
+            volume_mission_alignment=0.41,
+            pacing_rhythm=0.61,
+            character_voice_distinction=0.8,
+            thematic_resonance=0.7,
+            contract_alignment=0.6,
+        ),
+        findings=[
+            ChapterReviewFinding(
+                category="opening_contract",
+                severity="medium",
+                message="开篇锚点同义改写未命中精确短语。",
+            ),
+            ChapterReviewFinding(
+                category="continuity",
+                severity="high",
+                message="连续性启发式低分。",
+            ),
+        ],
+    )
+
+    assert review_services._can_accept_llm_pass_over_rule_rewrite(
+        review_result,
+        {
+            "pass": True,
+            "overall_score": 0.88,
+            "dimension_scores": {"commercial_pull": 0.87},
+            "blocking_issues": [],
+        },
+    )
+
+
+def test_llm_commercial_pass_does_not_downgrade_non_overridable_rule_rewrite() -> None:
+    review_result = ChapterReviewResult(
+        verdict="rewrite",
+        severity_max="high",
+        scores=ChapterReviewScores(
+            overall=0.72,
+            goal=0.98,
+            coverage=0.9,
+            coherence=0.8,
+            continuity=0.8,
+            main_plot_progression=0.8,
+            subplot_progression=0.78,
+            style=0.8,
+            hook=0.36,
+            ending_hook_effectiveness=0.34,
+            volume_mission_alignment=0.78,
+            pacing_rhythm=0.8,
+            character_voice_distinction=0.8,
+            thematic_resonance=0.88,
+            contract_alignment=0.57,
+        ),
+        findings=[
+            ChapterReviewFinding(
+                category="name_canon",
+                severity="high",
+                message="出现项目角色池外姓名。",
+            )
+        ],
+    )
+
+    assert not review_services._can_accept_llm_pass_over_rule_rewrite(
+        review_result,
+        {"pass": True, "blocking_issues": [], "dimension_scores": {}, "overall_score": 0.9},
+    )
+
+
+def test_clear_explicit_chapter_regeneration_residue_resets_retry_state() -> None:
+    chapter = SimpleNamespace(
+        production_state="blocked",
+        metadata_json={
+            "retention_retry_count": 12,
+            "retention_auto_repair_exhausted": True,
+            "auto_repair_last_block_codes": ["LENGTH_OVER"],
+            "methodology_contract": {"keep": True},
+        },
+    )
+
+    changed = pipeline_services._clear_explicit_chapter_regeneration_residue(chapter)
+
+    assert changed is True
+    assert chapter.production_state == "ok"
+    assert "retention_retry_count" not in chapter.metadata_json
+    assert "auto_repair_last_block_codes" not in chapter.metadata_json
+    assert chapter.metadata_json["methodology_contract"] == {"keep": True}
+
+
+def test_clear_explicit_scene_regeneration_residue_preserves_dynamic_word_band() -> None:
+    scenes = [
+        SimpleNamespace(
+            target_word_count=824,
+            metadata_json={
+                "auto_repair_adjusted_target_word_count": 824,
+                "auto_repair_hint": "扩写",
+                "methodology_contract": {"keep": True},
+            },
+        ),
+        SimpleNamespace(
+            target_word_count=824,
+            metadata_json={
+                "auto_repair_length_scale": 1.4,
+                "methodology_contract": {"keep": True},
+            },
+        ),
+        SimpleNamespace(
+            target_word_count=824,
+            metadata_json={
+                "auto_repair_original_target_word_count": 550,
+                "methodology_contract": {"keep": True},
+            },
+        ),
+        SimpleNamespace(
+            target_word_count=824,
+            metadata_json={
+                "auto_repair_source_block_code": "BLOCK_LOW",
+                "auto_repair_min_scene_target_floor": 578,
+                "auto_repair_scene_target_cap": 3000,
+                "methodology_contract": {"keep": True},
+            },
+        ),
+    ]
+
+    report = pipeline_services._clear_explicit_scene_regeneration_residue(
+        scenes,
+        chapter_target_word_count=2200,
+    )
+
+    assert report["metadata_residue_cleared"] == 4
+    assert report["target_rebalanced"] is False
+    assert report["target_word_count_sum"] == 3296
+    assert [scene.target_word_count for scene in scenes] == [824, 824, 824, 824]
+    for scene in scenes:
+        assert scene.metadata_json == {"methodology_contract": {"keep": True}}
+
+
+def test_clear_explicit_scene_regeneration_residue_rebalances_true_overflow() -> None:
+    scenes = [
+        SimpleNamespace(target_word_count=1100, metadata_json={}),
+        SimpleNamespace(target_word_count=1100, metadata_json={}),
+        SimpleNamespace(target_word_count=1100, metadata_json={}),
+        SimpleNamespace(target_word_count=1100, metadata_json={}),
+    ]
+
+    report = pipeline_services._clear_explicit_scene_regeneration_residue(
+        scenes,
+        chapter_target_word_count=2200,
+    )
+
+    assert report["target_rebalanced"] is True
+    assert report["target_word_count_sum"] == 2200
+    assert [scene.target_word_count for scene in scenes] == [550, 550, 550, 550]
+
+
+@pytest.mark.asyncio
+async def test_release_stale_auto_repair_block_when_latest_quality_report_is_clean() -> None:
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        production_state="blocked",
+        metadata_json={
+            "auto_repair_in_progress": True,
+            "auto_repair_last_block_codes": ["SCENE_JUMP_UNRESOLVED"],
+        },
+    )
+    report = SimpleNamespace(
+        blocks_write=False,
+        report_json={"violations": [], "blocking_codes": []},
+    )
+    session = FakeSession(scalar_results=[report])
+
+    released = await pipeline_services._release_stale_auto_repair_block_if_latest_quality_clean(
+        session,
+        chapter,
+    )
+
+    assert released is True
+    assert chapter.production_state == "ok"
+    assert "auto_repair_in_progress" not in chapter.metadata_json
+    assert chapter.metadata_json["auto_repair_resolved_by_clean_quality_report"] is True
+
+
+@pytest.mark.asyncio
+async def test_release_stale_auto_repair_block_preserves_other_hard_gate_blocks() -> None:
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        production_state="blocked",
+        metadata_json={
+            "auto_repair_in_progress": True,
+            "blocked_by_phase_d_time_gate": True,
+        },
+    )
+    report = SimpleNamespace(
+        blocks_write=False,
+        report_json={"violations": [], "blocking_codes": []},
+    )
+    session = FakeSession(scalar_results=[report])
+
+    released = await pipeline_services._release_stale_auto_repair_block_if_latest_quality_clean(
+        session,
+        chapter,
+    )
+
+    assert released is False
+    assert chapter.production_state == "blocked"
+    assert session.scalar_results == [report]
+
+
+@pytest.mark.asyncio
+async def test_stop_auto_repair_when_latest_quality_report_is_clean() -> None:
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        production_state="pending",
+        metadata_json={
+            "auto_repair_in_progress": True,
+            "auto_repair_last_block_codes": ["FRONT10_FORBIDDEN_SIGNAL"],
+            "quality_gate_block_codes": ["FRONT10_FORBIDDEN_SIGNAL"],
+            "production_block_code": "FRONT10_FORBIDDEN_SIGNAL",
+        },
+    )
+    report = SimpleNamespace(
+        blocks_write=False,
+        report_json={"violations": [], "blocking_codes": []},
+    )
+    scene = SimpleNamespace(
+        metadata_json={
+            "auto_repair_hint": "上一轮修复残留",
+            "auto_repair_block_codes": ["FRONT10_FORBIDDEN_SIGNAL"],
+            "methodology_contract": {"stakes": "保留"},
+        }
+    )
+    session = FakeSession(scalar_results=[report], scalars_results=[[scene]])
+
+    stopped = await pipeline_services._stop_auto_repair_if_latest_quality_clean(
+        session,
+        chapter,
+    )
+
+    assert stopped is True
+    assert chapter.production_state == "pending"
+    assert "auto_repair_in_progress" not in chapter.metadata_json
+    assert "quality_gate_block_codes" not in chapter.metadata_json
+    assert "production_block_code" not in chapter.metadata_json
+    assert chapter.metadata_json["auto_repair_last_resolved_block_codes"] == [
+        "FRONT10_FORBIDDEN_SIGNAL"
+    ]
+    assert chapter.metadata_json["auto_repair_stopped_by_clean_quality_report"] is True
+    assert scene.metadata_json == {"methodology_contract": {"stakes": "保留"}}
+
+
+@pytest.mark.asyncio
+async def test_stop_auto_repair_preserves_other_hard_gate_blocks() -> None:
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        production_state="blocked",
+        metadata_json={
+            "auto_repair_in_progress": True,
+            "blocked_by_phase_d_time_gate": True,
+        },
+    )
+    report = SimpleNamespace(
+        blocks_write=False,
+        report_json={"violations": [], "blocking_codes": []},
+    )
+    session = FakeSession(scalar_results=[report])
+
+    stopped = await pipeline_services._stop_auto_repair_if_latest_quality_clean(
+        session,
+        chapter,
+    )
+
+    assert stopped is False
+    assert chapter.production_state == "blocked"
 
 
 def test_fanqie_short_project_forces_fanqie_prompt_pack() -> None:
@@ -350,6 +1019,713 @@ def build_scene(project_id, chapter_id) -> SceneCardModel:
     )
     scene.id = uuid4()
     return scene
+
+
+def test_chapter_first_prompt_uses_publish_band_not_tight_target_delta() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2200
+    scene = build_scene(project.id, chapter.id)
+    scene.metadata_json = {"auto_repair_hint": "补入林正淳和青囊线索，但不要扩写新场景。"}
+    context_packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+    )
+
+    assert "发布硬范围 2000-3500 字" in user_prompt
+    assert "篇幅硬范围是 2000-3500 个汉字" in user_prompt
+    assert "补入林正淳和青囊线索" not in user_prompt
+    assert "2024-2376" not in user_prompt
+
+
+def test_chapter_first_prompt_uses_current_scene_contract_not_stale_metadata() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2600
+    scene = build_scene(project.id, chapter.id)
+    scene.hook_requirement = "电梯门开着，里面没有轿厢。"
+    scene.metadata_json = {
+        "methodology_contract": {
+            "visible_action_or_reaction": "林渊停在电梯口，不让王建业靠近井口。",
+            "signature_image": "空电梯井壁映出一张无脸影子。",
+            "cut_point": "电梯井里传出第二个王建业的笑声。",
+            "information_control_mode": "现场证据先行，不解释完整规则。",
+        },
+        "scene_contract": {
+            "visible_object": "空电梯井壁映出一张无脸影子。",
+            "exit_hook": "电梯门开着，里面没有轿厢。",
+        },
+        "cut_point": "电话里响起第二个王建业的笑声。",
+        "action_sequence": ["铜钱烫醒旧疤"],
+        "auto_repair_hint": "上一轮要求电话开场。",
+        "signature_image": "康熙铜钱发烫。",
+    }
+    context_packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+    )
+
+    assert "空电梯井壁映出一张无脸影子" in user_prompt
+    assert "电梯井里传出第二个王建业的笑声" in user_prompt
+    assert "电话里响起第二个王建业" not in user_prompt
+    assert "铜钱烫醒旧疤" not in user_prompt
+    assert "上一轮要求电话开场" not in user_prompt
+
+
+def test_chapter_first_prompt_prioritizes_previous_chapter_ending() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 2
+    chapter.chapter_goal = "承接张建军上门；本章旧细纲含王建业失踪前的模糊表述。"
+    chapter.target_word_count = 2200
+    scene = build_scene(project.id, chapter.id)
+    scene.scene_number = 1
+    context_packet = SimpleNamespace(
+        chapter_number=2,
+        chapter_contract=None,
+        hard_fact_snapshot={
+            "chapter_number": 1,
+            "facts": [
+                {
+                    "name": "王建业状态",
+                    "subject": "王建业",
+                    "value": "被镜面带走后生死未明",
+                    "notes": "林渊只抓住一只鞋",
+                    "source_quote": "人影一闪，消失在镜子碎裂的那片白光里",
+                }
+            ],
+        },
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[
+            SimpleNamespace(
+                summary="上一章开头摘要不重要。",
+                closing_lines="王建业惨叫后消失在镜面白光里，林渊只抓住一只鞋；门外张建军敲了三短一长。",
+                extended_tail="林渊只来得及抓住王建业的一只鞋。门外响起三短一长，张建军攥着旧铁片站在门口。",
+            )
+        ],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+    )
+
+    assert "【上一章硬承接（最高优先级）】" in user_prompt
+    assert "优先于本章旧细纲" in user_prompt
+    assert "已被镜面带走后生死未明" in user_prompt
+    assert "人影一闪，消失在镜子碎裂的那片白光里" in user_prompt
+    assert user_prompt.index("【上一章硬承接（最高优先级）】") < user_prompt.index("【章节目标】")
+
+
+def test_chapter_first_prompt_keeps_scene_forbidden_actions_outside_truncated_contract() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2200
+    scene = build_scene(project.id, chapter.id)
+    scene.forbidden_actions = [
+        "不得写“点头的声音”；点头只能是可见动作，声音只能来自钥匙、门缝、纸页、喉咙或镜面。"
+    ]
+    scene.metadata_json = {
+        "methodology_contract": {
+            f"large_contract_{index}": "复杂方法论合同" * 80 for index in range(12)
+        }
+    }
+    context_packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+    )
+
+    assert "硬禁令" in user_prompt
+    assert "不得写“点头的声音”" in user_prompt
+    assert user_prompt.index("硬禁令") < user_prompt.index("场景执行合同")
+
+
+def test_chapter_first_prompt_includes_character_safety_block() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2200
+    scene = build_scene(project.id, chapter.id)
+    context_packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+        character_safety_block="王建业：计划死亡/退场章为第6章之后；本章禁止写成已死。",
+    )
+
+    assert "【角色生死与登场安全】" in user_prompt
+    assert "王建业" in user_prompt
+    assert "本章禁止写成已死" in user_prompt
+    assert "已经死了，对吧？" in user_prompt
+
+
+def test_chapter_first_prompt_includes_character_knowledge_boundary() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2200
+    scene = build_scene(project.id, chapter.id)
+    context_packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+        participant_knowledge_states=[
+            {
+                "character_name": "张建军",
+                "knows": ["王建业在303门口失踪"],
+                "unaware_of": ["认账", "入账"],
+            }
+        ],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+    )
+
+    assert "【角色认知边界】" in user_prompt
+    assert "张建军" in user_prompt
+    assert "角色的对话和行为不得超越其认知边界" in user_prompt
+    assert "非专业角色只能描述自己亲眼看见的异常" in user_prompt
+
+
+def test_chapter_first_prompt_enforces_scene_opening_and_front10_forbidden_terms() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2200
+    chapter.opening_situation = "23:43，林渊赶到十七栋楼下，王建业站在雨棚下等他。"
+    chapter.foreshadowing_actions = {"forbidden_early_leaks": ["林远山", "源门"]}
+    chapter.metadata_json = {
+        "object_signal_contract": {"forbidden_signals": ["铜钱发烫"]},
+    }
+    chapter.foreshadowing_actions = {"forbidden_early_leaks": ["困魂镜"]}
+    chapter.foreshadowing_actions = {"forbidden_early_leaks": ["困魂镜"]}
+    scene = build_scene(project.id, chapter.id)
+    scene.title = "十七栋楼下的空电梯"
+    scene.hook_requirement = "电梯门开着，里面没有轿厢。"
+    scene.entry_state = {
+        "state": "林渊骑电动车赶到十七栋楼下，王建业在雨棚下等他。"
+    }
+    context_packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+    )
+
+    assert "【开场场景硬合同】" in user_prompt
+    assert "本章开场不是【禁用通联转送桥段】戏" in user_prompt
+    assert "前500字禁止新增【禁用通联转送桥段】" in user_prompt
+    assert "这些词作为背景交代也不许出现" in user_prompt
+    assert "【前十章禁写与物件信号硬约束】" in user_prompt
+    assert "系统门禁已登记" in user_prompt
+    assert "不要复述禁写清单" in user_prompt
+    assert "父辈姓名" in user_prompt
+    assert "电话" not in user_prompt
+    assert "手机" not in user_prompt
+    assert "短信" not in user_prompt
+    assert "快递" not in user_prompt
+    assert "铜钱发烫" not in user_prompt
+
+
+def test_chapter_first_prompt_adds_total_scene_budget_guardrail() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2600
+    scenes = []
+    for scene_number in range(1, 5):
+        scene = build_scene(project.id, chapter.id)
+        scene.scene_number = scene_number
+        scene.target_word_count = 650
+        scenes.append(scene)
+    context_packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        scenes,
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+    )
+
+    assert "本章一共只有 4 个场景" in user_prompt
+    assert "场景目标合计约 2600 字" in user_prompt
+    assert "不是每个场景各写一章" in user_prompt
+    assert "全文建议22-32段" in user_prompt
+    assert "每场5-8段" in user_prompt
+    assert "超过3500字" in user_prompt
+    assert "离场状态和 forbidden_actions 是硬边界" in user_prompt
+    assert "升级成“被拖进门、被吞掉、确认死亡、门合拢”" in user_prompt
+
+
+def test_generated_chapter_cleanup_removes_forbidden_signal_negation_echoes() -> None:
+    cleaned, stats = draft_services._clean_generated_chapter_text(
+        "铜面传来震颤——不是发烫，是有什么东西在另一头敲门。",
+        chapter_number=2,
+        source="test",
+    )
+
+    assert "发烫" not in cleaned
+    assert "没有温度变化" in cleaned
+    assert stats["forbidden_signal_negations"] == 1
+
+
+def test_chapter_review_flags_phone_prelude_when_first_scene_is_in_person() -> None:
+    chapter = build_chapter(uuid4())
+    chapter.opening_situation = "23:43，林渊赶到十七栋楼下，王建业站在雨棚下等他。"
+    scene = build_scene(uuid4(), uuid4())
+    scene.title = "十七栋楼下的空电梯"
+    scene.hook_requirement = "电梯门开着，里面没有轿厢。"
+    scene.entry_state = {
+        "state": "林渊骑电动车赶到十七栋楼下，王建业在雨棚下等他。"
+    }
+
+    findings = review_services._chapter_opening_contract_findings(
+        chapter,
+        [scene],
+        "电话响第三遍的时候，林渊正在翻青囊。来电显示王建业。",
+    )
+
+    assert any(finding.category == "opening_contract" for finding in findings)
+    assert any("OPENING_SCENE_DRIFT" in finding.message for finding in findings)
+
+
+def test_front10_contract_gate_blocks_phone_drift_and_forbidden_signal() -> None:
+    chapter = build_chapter(uuid4())
+    chapter.opening_situation = "23:43，林渊赶到十七栋楼下，王建业站在雨棚下等他。"
+    chapter.metadata_json = {
+        "object_signal_contract": {"forbidden_signals": ["铜钱发烫"]},
+    }
+    chapter.foreshadowing_actions = {"forbidden_early_leaks": ["困魂镜"]}
+    scene = build_scene(uuid4(), uuid4())
+    scene.title = "十七栋楼下的空电梯"
+    scene.hook_requirement = "电梯门开着，里面没有轿厢。"
+    scene.entry_state = {
+        "state": "林渊骑电动车赶到十七栋楼下，王建业在雨棚下等他。"
+    }
+
+    violations = draft_services._front10_contract_violations_for_content(
+        chapter,
+        [scene],
+        "电话响第三遍的时候，林渊掌心里的铜钱忽然变热，热得像刚烧开的水。困魂镜正在醒来。",
+    )
+
+    assert {violation.code for violation in violations} == {
+        "OPENING_SCENE_DRIFT",
+        "FRONT10_FORBIDDEN_SIGNAL",
+    }
+    assert all(violation.severity == "block" for violation in violations)
+    forbidden = [
+        violation for violation in violations if violation.code == "FRONT10_FORBIDDEN_SIGNAL"
+    ][0]
+    assert "困魂镜" in forbidden.detail
+
+
+def test_front10_contract_gate_does_not_treat_human_recoil_as_object_signal() -> None:
+    chapter = build_chapter(uuid4())
+    chapter.chapter_number = 2
+    chapter.metadata_json = {
+        "object_signal_contract": {"forbidden_signals": ["铜钱发烫"]},
+    }
+    scene = build_scene(uuid4(), uuid4())
+
+    violations = draft_services._front10_contract_violations_for_content(
+        chapter,
+        [scene],
+        "张建军看了一眼303门缝，整个人像被烫了一样缩回来。",
+    )
+
+    assert "FRONT10_FORBIDDEN_SIGNAL" not in {
+        violation.code for violation in violations
+    }
+
+
+def test_front10_contract_gate_does_not_count_mundane_account_book_as_rule_lecture() -> None:
+    chapter = build_chapter(uuid4())
+    chapter.chapter_number = 2
+    scene = build_scene(uuid4(), uuid4())
+
+    content = (
+        "小雨说账本上记着张建军三天的欠款，也记着王建业的餐盒押金。"
+        "林渊看着账本，逼张建军承认自己敲过303的门。"
+        "张建军一再否认，最后说自己只是没有应声。"
+        "这一次否认停在门口，下一次否认会落到小雨手腕上。"
+    )
+    violations = draft_services._front10_contract_violations_for_content(
+        chapter,
+        [scene],
+        content,
+    )
+
+    assert "FRONT10_RULE_LECTURE_DENSITY" not in {
+        violation.code for violation in violations
+    }
+
+
+def test_front10_contract_gate_blocks_scene_forbidden_terms_and_rule_lecture() -> None:
+    chapter = build_chapter(uuid4())
+    chapter.chapter_number = 2
+    scene = build_scene(uuid4(), uuid4())
+    scene.forbidden_actions = [
+        "不得写电话、来电、手机通知、寄件、快递、外卖、配送、物流、跑腿。",
+        "不得让小雨下楼；不得把湿纸条按在、贴在或压在小雨手腕上。",
+        "不得提前说林正淳。",
+        "不得让林渊讲完整规则课；只能用问话顺序和动作结果让读者看懂风险。",
+    ]
+    content = (
+        "林渊看着张建军说，你脑子里想的每一个我就是个送外卖的，"
+        "全是给镜债递刀子。账本找的是最近的人，所以先认动作，再认因果。"
+        "否认、入账、认账、镜债、账线这些词在楼道里一遍遍落下。"
+        + "他看着门缝停住。" * 130
+        + "小雨往楼梯口下楼，林渊把湿纸条按在小雨手腕上，心里知道规则只认动作。"
+        + "镜子里传来林正淳的声音。"
+    )
+
+    violations = draft_services._front10_contract_violations_for_content(
+        chapter,
+        [scene],
+        content,
+    )
+
+    codes = {violation.code for violation in violations}
+    assert "FRONT10_SCENE_FORBIDDEN_ACTION" in codes
+    assert "FRONT10_RULE_LECTURE_DENSITY" in codes
+    scene_forbidden = [
+        violation for violation in violations if violation.code == "FRONT10_SCENE_FORBIDDEN_ACTION"
+    ][0]
+    assert "林正淳" in scene_forbidden.detail
+
+
+def test_generated_chapter_cleanup_collapses_llm_text_loops() -> None:
+    loop = "\n\n".join(["门开了。", "水声停了。", "灰线断了。"] * 3)
+    content = f"# 第1章 旧账\n\n{loop}\n\n林渊抬头，镜面裂开一道缝。"
+
+    cleaned, stats = draft_services._clean_generated_chapter_text(
+        content,
+        chapter_number=1,
+        source="test",
+    )
+
+    assert stats["loop_paragraphs"] > 0
+    assert cleaned.count("门开了。") == 1
+    assert cleaned.count("水声停了。") == 1
+    assert cleaned.count("灰线断了。") == 1
+    assert "镜面裂开一道缝" in cleaned
+
+
+def test_chapter_rewrite_prompt_preserves_front10_opening_contract() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2600
+    chapter.opening_situation = "23:43，林渊赶到十七栋楼下，王建业站在雨棚下等他。"
+    chapter.metadata_json = {
+        "object_signal_contract": {"forbidden_signals": ["铜钱发烫"]},
+    }
+    current_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 旧账\n\n电话响第三遍的时候，林渊接起了王建业的电话。",
+        word_count=40,
+        is_current=True,
+    )
+    rewrite_task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_source_id=chapter.id,
+        trigger_type="chapter_review",
+        instructions="修复开场和物件信号。",
+        rewrite_strategy="chapter_rewrite",
+        status="pending",
+    )
+    rewrite_task.id = uuid4()
+    chapter_context = SimpleNamespace(
+        chapter_scenes=[
+            SimpleNamespace(
+                scene_number=1,
+                title="十七栋楼下的空电梯",
+                scene_type="setup",
+                story_purpose="林渊到现场阻止王建业靠近空电梯井。",
+                emotion_purpose="压迫和不安",
+                summary=None,
+            )
+        ],
+        canon_guardrails_block=None,
+        hook_echo_block=None,
+        signature_scene_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        exposition_density_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        recent_timeline_events=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        retrieval_chunks=[],
+        hard_fact_snapshot=None,
+    )
+
+    _, user_prompt = review_services.build_chapter_rewrite_prompts(
+        project,
+        chapter,
+        current_draft,
+        rewrite_task,
+        chapter_context,
+    )
+
+    assert "【前十章重写硬合同】" in user_prompt
+    assert "第一段必须重新落到这个开场场面" in user_prompt
+    assert "前500字不得突然新增电话" in user_prompt
+    assert "来源、转交人、可信原因和到场动机" in user_prompt
+    assert "铜钱发烫" in user_prompt
+
+
+def test_chapter_auto_repair_length_contract_allows_dynamic_publish_range() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2200
+
+    contract = draft_services._chapter_auto_repair_length_contract(project, chapter)
+
+    assert "2000-3500" in contract
+    assert "不得新增无关场景" in contract
+    assert "目标约 2200 字" in contract
 
 
 @pytest.mark.asyncio
@@ -1003,6 +2379,48 @@ async def test_assemble_chapter_draft_blocks_cross_chapter_repetition(
 
 
 @pytest.mark.asyncio
+async def test_assemble_chapter_draft_blocks_repeated_short_opening(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 75
+    scene = build_scene(project.id, chapter.id)
+    opening = "这一刻，所有线索都被压回同一条账路上。"
+    scene_draft = SceneDraftVersionModel(
+        project_id=project.id,
+        scene_card_id=scene.id,
+        version_no=1,
+        content_md=f"{opening}\n\n林渊把账页翻到最后一行，发现签名被水泡开。",
+        word_count=128,
+        is_current=True,
+        generation_params={},
+    )
+    scene_draft.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(draft_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(
+        scalar_results=[chapter, scene_draft, 0],
+        scalars_results=[[scene]],
+        execute_results=[
+            FakeExecuteRows([(70, f"# 第70章 账路初现\n\n{opening}\n\n沈念停下脚步。")]),
+        ],
+    )
+
+    chapter_draft = await draft_services.assemble_chapter_draft(session, "my-story", 75)
+
+    assert chapter_draft.is_current is True
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["write_safety_block_code"] == "CHAPTER_OPENING_REPETITION"
+    gate = chapter.metadata_json["post_assembly_duplicate_gate"]
+    assert gate["finding_count"] >= 1
+    assert gate["findings"][0]["source"] == "post_assembly_opening_diversity_gate"
+
+
+@pytest.mark.asyncio
 async def test_review_scene_draft_creates_rewrite_task_for_low_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1417,6 +2835,30 @@ def test_publication_gate_blocks_short_chinese_commercial_chapter() -> None:
     blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
 
     assert any("章节体量" in blocker and "2000" in blocker for blocker in blockers)
+
+
+def test_publication_gate_blocks_failed_unified_quality_snapshot() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    project.target_chapters = 100
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 1
+    chapter.status = "complete"
+    chapter.production_state = "ok"
+    chapter.target_word_count = 2200
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 镜债开门\n\n本章会告诉读者这里是主线钩子。\n\n短。",
+        word_count=30,
+        assembled_from_scene_draft_ids=[str(uuid4())],
+        is_current=True,
+    )
+
+    blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
+
+    assert any("统一质量快照未通过" in blocker for blocker in blockers)
 
 
 def test_publication_gate_blocks_cross_chapter_repeated_paragraph() -> None:
@@ -2145,6 +3587,217 @@ async def test_run_chapter_pipeline_assembles_and_exports(
 
 
 @pytest.mark.asyncio
+async def test_run_chapter_pipeline_blocks_chapter_first_on_predraft_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.target_chapters = 500
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_build_chapter_writer_context(*args, **kwargs):
+        return SimpleNamespace()
+
+    def fake_build_chapter_generation_input_bundle(*args, **kwargs):
+        return ChapterGenerationInputBundle(
+            chapter={"chapter_number": 1},
+            scenes=(
+                {
+                    "scene_number": 1,
+                    "gate_function": "continuity: bridge",
+                    "visible_progress": "",
+                    "reader_payoff": "",
+                    "ending_hook_payload": "",
+                    "methodology_contract": {},
+                },
+            ),
+            acceptance_contract={
+                "chapter_number": 1,
+                "must_deliver": [{"label": "chapter_goal", "value": "开门"}],
+                "scene_gate_targets": [],
+                "front_position_rules": {},
+            },
+            required_context_keys=("chapter.goal", "chapter_acceptance_contract"),
+            missing_context_keys=("chapter_acceptance_contract",),
+        )
+
+    async def fail_generate_chapter_draft_once(*args, **kwargs):
+        raise AssertionError("predraft gate should block before chapter generation")
+
+    settings = build_settings()
+    settings.pipeline.enable_chapter_outline_readiness_gate = False
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services,
+        "build_chapter_writer_context",
+        fake_build_chapter_writer_context,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "build_chapter_generation_input_bundle",
+        fake_build_chapter_generation_input_bundle,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "generate_chapter_draft_once",
+        fail_generate_chapter_draft_once,
+    )
+
+    session = FakeSession(
+        scalar_results=[chapter],
+        scalars_results=[[scene]],
+    )
+    result = await pipeline_services.run_chapter_pipeline(
+        session,
+        settings,
+        "my-story",
+        1,
+        requested_by="tester",
+        chapter_first=True,
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+    assert result.requires_human_review is True
+    assert result.chapter_draft_id is None
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["blocked_by_chapter_predraft_quality_gate"] is True
+    assert workflow_runs[0].status == "machine_blocked"
+
+
+@pytest.mark.asyncio
+async def test_run_chapter_pipeline_short_circuits_after_retention_budget_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.target_chapters = 500
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=7,
+        content_md="第一章正文。",
+        word_count=2200,
+        is_current=True,
+    )
+    draft.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_build_chapter_writer_context(*args, **kwargs):
+        return SimpleNamespace()
+
+    def fake_build_chapter_generation_input_bundle(*args, **kwargs):
+        return ChapterGenerationInputBundle(
+            chapter={"chapter_number": 1, "goal": "开门见压"},
+            scenes=(
+                {
+                    "scene_number": 1,
+                    "gate_function": "hook: 开门冲突",
+                    "visible_progress": "主角拿到账页",
+                    "reader_payoff": "看到规则生效",
+                    "ending_hook_payload": "镜子回执",
+                    "methodology_contract": {
+                        "stakes": "十五分钟后入账",
+                        "breakpoint": "门外敲门",
+                    },
+                },
+            ),
+            acceptance_contract={
+                "chapter_number": 1,
+                "must_deliver": [{"label": "chapter_goal", "value": "开门见压"}],
+                "scene_gate_targets": [],
+                "front_position_rules": {},
+            },
+            required_context_keys=("chapter.goal",),
+            missing_context_keys=(),
+        )
+
+    async def fake_generate_chapter_draft_once(*args, **kwargs):
+        return draft
+
+    async def fake_retention_eval(*args, **kwargs):
+        chapter.status = "revision"
+        chapter.production_state = "blocked"
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "auto_repair_last_block_codes": ["HOOK_ECHO_MISSING"],
+            "retention_retry_count": 10,
+        }
+
+    def fake_apply_retention_budget(*args, **kwargs):
+        return True
+
+    async def fail_review_chapter_draft(*args, **kwargs):
+        raise AssertionError("retention exhaustion should return before review")
+
+    settings = build_settings()
+    settings.pipeline.enable_chapter_outline_readiness_gate = False
+    settings.pipeline.enable_chapter_predraft_quality_gate = False
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services,
+        "build_chapter_writer_context",
+        fake_build_chapter_writer_context,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "build_chapter_generation_input_bundle",
+        fake_build_chapter_generation_input_bundle,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "generate_chapter_draft_once",
+        fake_generate_chapter_draft_once,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_evaluate_retention_safety_after_assembly",
+        fake_retention_eval,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_apply_retention_retry_budget",
+        fake_apply_retention_budget,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_chapter_draft",
+        fail_review_chapter_draft,
+    )
+
+    session = FakeSession(
+        scalar_results=[chapter],
+        scalars_results=[[scene]],
+    )
+    result = await pipeline_services.run_chapter_pipeline(
+        session,
+        settings,
+        "my-story",
+        1,
+        requested_by="tester",
+        chapter_first=True,
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+    assert result.requires_human_review is True
+    assert result.final_verdict == "rewrite"
+    assert result.chapter_draft_id == draft.id
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["retention_auto_repair_exhausted"] is True
+    assert workflow_runs[0].status == "machine_blocked"
+    assert workflow_runs[0].current_step == "retention_auto_repair_exhausted"
+
+
+@pytest.mark.asyncio
 async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -2273,6 +3926,159 @@ async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
     assert gate_calls == [1]
     assert fanqie_steps
     assert fanqie_steps[0].output_ref["passed"] is True
+
+
+@pytest.mark.asyncio
+async def test_fanqie_long_gate_demotes_to_audit_only_after_attempt_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: keyword-matching ``fanqie_long_ranking_gate`` blocked
+    青囊不语问阴阳 ch1 for ~145 versions on 2026-05-25. The fix added a
+    per-chapter persistent counter — once a chapter has tripped the
+    gate ``block_attempt_cap`` times across pipeline runs we demote it
+    to audit-only so downstream LLM judges can arbitrate."""
+
+    project = build_project()
+    chapter = build_chapter(project.id)
+    # Simulate prior runs: counter at cap - 1 → next failure should trigger
+    # demotion (cap == 3 in default settings).
+    chapter.metadata_json = {"fanqie_long_ranking_block_attempts": 2}
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=99,
+        content_md="纯背景介绍。没有任何冲突词。",
+        word_count=200,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    chapter_draft.id = uuid4()
+
+    failing_report = {
+        "passed": False,
+        "findings": [
+            {
+                "code": "first_100_pressure_missing",
+                "severity": "critical",
+                "evidence": "no threat words in first 100 chars",
+                "target": "opening.first_100",
+                "repair_hint": "add pressure",
+            }
+        ],
+        "metrics": {},
+    }
+    fake_artifact = SimpleNamespace(id=uuid4(), content=failing_report)
+
+    async def fake_load_texts(session, *, project_slug, through_chapter):
+        return {chapter.chapter_number: chapter_draft.content_md}
+
+    async def fake_evaluate_and_persist(
+        session, *, project_slug, chapter_texts, protagonist_name
+    ):
+        return fake_artifact
+
+    monkeypatch.setattr(
+        pipeline_services,
+        "load_current_chapter_texts_for_fanqie_gate",
+        fake_load_texts,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "evaluate_and_persist_fanqie_long_readiness",
+        fake_evaluate_and_persist,
+    )
+
+    session = FakeSession()
+    payload = await pipeline_services._run_fanqie_long_gate_for_chapter(
+        session,
+        project=project,
+        project_slug=project.slug,
+        chapter_number=chapter.chapter_number,
+        chapter_draft=chapter_draft,
+        block_on_failure=True,
+        chapter=chapter,
+        block_attempt_cap=3,
+    )
+
+    # Gate finding is unchanged — first_100_pressure_missing still
+    # surfaces in audit output — but the hard write-block is dropped.
+    assert payload["passed"] is False
+    assert payload["blocks_write"] is False, "demoted to audit-only"
+    assert payload["block_attempts"] == 3
+    assert payload["block_attempts_demoted"] is True
+    assert chapter.metadata_json["fanqie_long_ranking_block_attempts"] == 3
+    assert chapter.metadata_json["fanqie_long_ranking_block_attempts_demoted"] is True
+
+
+@pytest.mark.asyncio
+async def test_fanqie_long_gate_resets_counter_when_chapter_clears(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Companion to the previous test: once a chapter clears the gate
+    we wipe the per-chapter counter so a *future* regression starts
+    fresh on its budget rather than already being mid-way demoted."""
+
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.metadata_json = {
+        "fanqie_long_ranking_block_attempts": 2,
+        "fanqie_long_ranking_block_attempts_demoted": True,
+    }
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=99,
+        content_md="林渊被逼到墙角，子时已到，必须当场认账。",
+        word_count=200,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    chapter_draft.id = uuid4()
+
+    passing_report = {
+        "passed": True,
+        "findings": [],
+        "metrics": {},
+    }
+    fake_artifact = SimpleNamespace(id=uuid4(), content=passing_report)
+
+    async def fake_load_texts(session, *, project_slug, through_chapter):
+        return {chapter.chapter_number: chapter_draft.content_md}
+
+    async def fake_evaluate_and_persist(
+        session, *, project_slug, chapter_texts, protagonist_name
+    ):
+        return fake_artifact
+
+    monkeypatch.setattr(
+        pipeline_services,
+        "load_current_chapter_texts_for_fanqie_gate",
+        fake_load_texts,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "evaluate_and_persist_fanqie_long_readiness",
+        fake_evaluate_and_persist,
+    )
+
+    session = FakeSession()
+    payload = await pipeline_services._run_fanqie_long_gate_for_chapter(
+        session,
+        project=project,
+        project_slug=project.slug,
+        chapter_number=chapter.chapter_number,
+        chapter_draft=chapter_draft,
+        block_on_failure=True,
+        chapter=chapter,
+        block_attempt_cap=3,
+    )
+
+    assert payload["passed"] is True
+    assert payload["blocks_write"] is False
+    assert payload["block_attempts"] == 0
+    assert payload["block_attempts_demoted"] is False
+    assert "fanqie_long_ranking_block_attempts" not in chapter.metadata_json
+    assert "fanqie_long_ranking_block_attempts_demoted" not in chapter.metadata_json
 
 
 @pytest.mark.asyncio
@@ -2775,6 +4581,8 @@ async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_sta
     assert result.final_verdict == "rewrite"
     assert result.requires_human_review is True
     assert result.chapter_draft_id == chapter_draft.id
+    assert chapter.status == "revision"
+    assert chapter.production_state == "blocked"
     assert workflow_runs[0].status == "machine_blocked"
 
 
@@ -3828,6 +5636,92 @@ async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_gen
     assert project.metadata_json["opening_quality_gate_report"]["passed"] is False
     assert project.metadata_json["qimao_opening_gate_blocked"] is True
     assert project.metadata_json["qimao_opening_gate_report"]["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_pauses_after_qimao_opening_attempts_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "opening_quality_contract": {
+            "platform_target": "商业网文签约口径",
+            "protagonist_name": "沈姝",
+            "opening_incident": "沈姝推门进账房时，族叔正按着账童抢账本。",
+            "first_page_conflict": "前600字内被逼交出账本。",
+            "protagonist_immediate_goal": "保住账本。",
+            "visible_loss_if_fail": "失败会失去唯一翻案证据。",
+            "protagonist_edge": "她能从账目细节看出隐藏漏洞。",
+            "edge_limit": "账本不能直接推翻主谋。",
+            "chapter_1_small_turn": "主角当众反制逼迫者。",
+            "chapter_2_reveal": "逼迫者背后另有主谋。",
+            "chapter_3_payoff": "拿到第一份签押证据。",
+            "first_10000_loop": "触发冲突 -> 行动 -> 代价 -> 新钩子",
+            "forbidden_opening_modes": ["background_exposition", "normal_day"],
+        },
+    }
+    chapter = build_chapter(project.id)
+    draft_id = uuid4()
+    chapter_draft = ChapterDraftVersionModel(
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md=(
+            "天玄大陆有三千年历史，家族制度复杂。沈姝站在窗前看天气。"
+            "街道很安静，没有冲突，也没有人逼她立刻行动。"
+        ),
+        word_count=80,
+        is_current=True,
+    )
+    chapter_draft.id = draft_id
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=draft_id,
+        chapter_draft_version_no=1,
+        export_artifact_id=None,
+        output_path=None,
+        requires_human_review=False,
+    )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_run_chapter_pipeline(*args, **kwargs):
+        return chapter_result
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+
+    settings = build_settings()
+    settings.pipeline.qimao_opening_max_attempts = 1
+    session = FakeSession(get_map={(ChapterDraftVersionModel, draft_id): chapter_draft})
+
+    with pytest.raises(ValueError, match="Qimao opening gate failed"):
+        await pipeline_services.run_project_pipeline(
+            session,
+            settings,
+            "my-story",
+            requested_by="tester",
+            export_markdown=False,
+            materialize_narrative_graph=False,
+            materialize_narrative_tree=False,
+        )
+
+    rewrite_tasks = [obj for obj in session.added if isinstance(obj, RewriteTaskModel)]
+    assert rewrite_tasks == []
+    assert project.status == "paused"
+    assert chapter.status == "revision"
+    assert chapter.production_state == "needs_human_review"
+    assert project.metadata_json["qimao_opening_gate_exhausted"] is True
+    assert project.metadata_json["qimao_opening_gate_attempts_by_chapter"]["1"] == 1
 
 
 @pytest.mark.asyncio

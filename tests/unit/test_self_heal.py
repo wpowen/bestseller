@@ -22,6 +22,7 @@ from bestseller.worker.self_heal import (
     WAITING_REPAIR_SUPPRESSION_SECONDS,
     StuckProject,
     _clear_auto_resumable_generation_gate_pause,
+    _project_resume_is_blocked,
     find_stuck_projects,
     reap_orphan_workflow_runs,
 )
@@ -321,8 +322,6 @@ class _FakeSession:
     @staticmethod
     def _filter_project_id(stmt: Any) -> Any:
         # Walk the WHERE clause children and find a literal bound to project_id
-        from sqlalchemy.sql import operators  # noqa: PLC0415
-
         def _walk(node: Any) -> Any:
             try:
                 clauses = list(getattr(node, "clauses", []) or [])
@@ -749,6 +748,37 @@ async def test_find_stuck_projects_skips_library_archived_projects(
 
 
 @pytest.mark.asyncio
+async def test_find_stuck_projects_skips_focus_paused_projects(
+    now: _dt.datetime,
+) -> None:
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-focus-paused",
+        status="paused",
+        target_chapters=100,
+        metadata_json={
+            "production_paused": True,
+            "production_pause_reason": "focus_qingnang_only_20260525",
+            "focus_pause": {"reason": "focus_qingnang_only_20260525"},
+        },
+    )
+    chapters = [
+        _FakeChapter(id=uuid4(), project_id=p.id, production_state="blocked"),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    rewrite_tasks = [_FakeRewriteTask(id=uuid4(), project_id=p.id, status="pending")]
+    session = _FakeSession(
+        projects=[p],
+        runs=[],
+        chapters=chapters,
+        drafts=drafts,
+        rewrite_tasks=rewrite_tasks,
+    )
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
 async def test_find_stuck_projects_retries_stale_generation_gate_pause(
     now: _dt.datetime,
 ) -> None:
@@ -875,6 +905,16 @@ async def test_clear_auto_resumable_generation_gate_pause(
     assert p.metadata_json["last_generation_gate_auto_resumed_reason"] == (
         "volume_outline_gate_failed:plan_chapter_opening_generic"
     )
+
+
+def test_project_resume_is_blocked_for_terminal_gate_exhaustion() -> None:
+    project = _FakeProject(
+        id=uuid4(),
+        slug="blocked-book",
+        metadata_json={"qimao_opening_gate_exhausted": True},
+    )
+
+    assert _project_resume_is_blocked(project) is True
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -23,6 +24,8 @@ from bestseller.services.quality_failure_events import (
 )
 from bestseller.services.word_targets import chapter_rewrite_length_band
 from bestseller.settings import AppSettings, load_settings
+
+logger = logging.getLogger(__name__)
 
 
 AUTONOMOUS_REPAIR_TRIGGER = "autonomous_quality_retrofit"
@@ -106,6 +109,11 @@ class TaskSyncResult:
     superseded: int
     missing_chapters: tuple[int, ...]
     task_ids: tuple[str, ...]
+    # Chapters where a new ``autonomous_quality_retrofit`` rewrite task
+    # would have been created, but the per-chapter cumulative budget was
+    # already spent. Reported for observability so operators can see
+    # which chapters need human attention.
+    budget_exhausted_chapters: tuple[int, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -114,6 +122,7 @@ class TaskSyncResult:
             "superseded": self.superseded,
             "missing_chapters": list(self.missing_chapters),
             "task_ids": list(self.task_ids),
+            "budget_exhausted_chapters": list(self.budget_exhausted_chapters),
         }
 
 
@@ -1497,12 +1506,35 @@ async def create_quality_retrofit_rewrite_tasks(
     specs: Sequence[QualityRepairTaskSpec],
     *,
     replace_existing: bool = False,
+    max_attempts_per_chapter: int | None = None,
 ) -> TaskSyncResult:
+    """Schedule autonomous_quality_retrofit rewrite tasks from quality
+    levers specs.
+
+    ``max_attempts_per_chapter`` bounds how many *new* retrofit tasks
+    can be created for the same chapter across runs (refreshing an
+    already-pending task does not consume budget). When the cap is
+    spent, further specs for that chapter are skipped and recorded
+    under ``TaskSyncResult.budget_exhausted_chapters``. The cap is
+    persisted on the chapter via
+    ``autonomous_quality_retrofit_attempts_active`` and wiped when the
+    chapter passes the quality bundle (see
+    ``drafts._persist_chapter_quality_report``). Pass ``None`` to
+    disable the budget — useful for tests and for one-off operator
+    backfills.
+    """
+
     created = 0
     skipped = 0
     superseded = 0
     task_ids: list[str] = []
     missing_chapters: list[int] = []
+    budget_exhausted_chapters: list[int] = []
+    cap = (
+        max(int(max_attempts_per_chapter), 1)
+        if max_attempts_per_chapter is not None
+        else None
+    )
     for spec in specs:
         chapter = await session.scalar(
             select(ChapterModel).where(
@@ -1586,6 +1618,38 @@ async def create_quality_retrofit_rewrite_tasks(
             )
             superseded += len(existing)
 
+        # Per-chapter budget: count only NEW task creation (refreshing
+        # already-pending work in the branch above is free). The counter
+        # is persisted on the chapter so it survives across audit runs;
+        # ``drafts._persist_chapter_quality_report`` wipes it when the
+        # chapter passes. Without this cap, a chronically-failing chapter
+        # could collect retrofit tasks indefinitely.
+        if cap is not None:
+            chapter_meta = dict(chapter.metadata_json or {})
+            attempts_used = int(
+                chapter_meta.get("autonomous_quality_retrofit_attempts_active")
+                or 0
+            )
+            if attempts_used >= cap:
+                logger.warning(
+                    "autonomous_quality_retrofit budget exhausted for "
+                    "project=%s chapter=%d (attempts_used=%d cap=%d); "
+                    "skipping new retrofit task — flagging for human review.",
+                    project.slug,
+                    spec.chapter_number,
+                    attempts_used,
+                    cap,
+                )
+                chapter_meta["autonomous_quality_retrofit_exhausted"] = True
+                chapter_meta["requires_human_review"] = True
+                chapter.metadata_json = chapter_meta
+                budget_exhausted_chapters.append(spec.chapter_number)
+                continue
+            chapter_meta["autonomous_quality_retrofit_attempts_active"] = (
+                attempts_used + 1
+            )
+            chapter.metadata_json = chapter_meta
+
         task = RewriteTaskModel(
             project_id=project.id,
             trigger_type=AUTONOMOUS_REPAIR_TRIGGER,
@@ -1631,6 +1695,7 @@ async def create_quality_retrofit_rewrite_tasks(
         superseded=superseded,
         missing_chapters=tuple(missing_chapters),
         task_ids=tuple(task_ids),
+        budget_exhausted_chapters=tuple(budget_exhausted_chapters),
     )
 
 

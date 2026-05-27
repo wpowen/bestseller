@@ -16,6 +16,8 @@ htmlcov/
 artifacts/
 output/
 logs/
+audits/
+.playwright-cli/
 .audit-reports/backups/
 .distillation_private/
 

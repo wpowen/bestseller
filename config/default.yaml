@@ -35,9 +35,11 @@ llm:
     temperature: 0.25
     # Chapter/scene review prompts now include commercial-quality gates,
     # continuity checks, and rewrite instructions.  2048 tokens caused live
-    # MiniMax critic responses to truncate mid-report, which can misroute the
+    # MiniMax critic responses to truncate mid-report; live chapter judges
+    # have also hit the 4096 cap and returned empty length-stopped content,
+    # which can misroute the
     # repair loop. Keep enough room for a complete verdict plus evidence.
-    max_tokens: 4096
+    max_tokens: 8192
     timeout_seconds: 60
 
   summarizer:
@@ -112,7 +114,7 @@ generation:
   words_per_chapter:
     min: 1800
     target: 2200
-    max: 3000
+    max: 4500
 
   scenes_per_chapter:
     min: 2
@@ -243,6 +245,7 @@ pipeline:
   # Critical scene-card richness failures should re-plan before prose drafting;
   # otherwise repeated/thin scene patterns only become prompt warnings.
   scene_richness_block_on_critical: true
+  commercial_strict_quality_mode: true
   enable_golden_three_health: true
   golden_three_min_hype_chapters: 2
   golden_three_min_ending_hook_chapters: 2
@@ -269,9 +272,36 @@ pipeline:
   # leaks are rewrite-fixable; deterministic schema blocks remain excluded.
   enable_chapter_auto_repair: true
   chapter_auto_repair_max_attempts: 3
+  # Methodology-gated planning loop. The deterministic readiness gate blocks
+  # outline materialization when chapter/scene cards are too thin to control
+  #正文; the LLM judge is optional because it consumes provider budget.
+  enable_methodology_planning_readiness_gate: true
+  methodology_planning_readiness_block_on_failure: true
+  enable_outline_llm_commercial_judge: true
+  outline_llm_commercial_judge_block_on_failure: true
+  outline_llm_commercial_judge_threshold: 0.82
+  enable_outline_reader_experience_judge: true
+  outline_reader_experience_judge_block_on_failure: true
+  outline_reader_experience_judge_threshold: 0.78
+  enable_chapter_predraft_quality_gate: true
+  chapter_predraft_quality_gate_block_on_failure: true
+  enable_chapter_scene_contract_materializer: true
+  qimao_opening_max_attempts: 3
+  enable_chapter_llm_commercial_judge: true
+  chapter_llm_commercial_judge_block_on_failure: true
+  enable_chapter_window_llm_judge: true
+  chapter_window_llm_judge_block_on_failure: true
+  chapter_window_llm_judge_size: 5
+  chapter_window_llm_judge_min_chapters: 2
+  enable_volume_llm_checkpoint_judge: true
+  volume_llm_checkpoint_block_on_failure: true
+  volume_llm_checkpoint_interval: 10
+  volume_llm_checkpoint_min_chapters: 10
   chapter_auto_repair_repairable_codes:
     - BLOCK_LOW
     - BLOCK_HIGH
+    - CHAPTER_TOO_SHORT
+    - CHAPTER_BELOW_TARGET
     - DIALOG_UNPAIRED
     - ENDING_SENTENCE_WEAK
     - dead_alive
@@ -288,8 +318,18 @@ pipeline:
     - SIGNATURE_SCENE_MISSING
     - EXPOSITION_DUMP
     - CAST_VIOLATION
+    - OPENING_SCENE_DRIFT
+    - FRONT10_FORBIDDEN_SIGNAL
+    - FRONT10_SCENE_FORBIDDEN_ACTION
+    - FRONT10_RULE_LECTURE_DENSITY
+    - UNEXPLAINED_BODY_STATE
     - CROSS_CHAPTER_REPETITION
     - INTRA_CHAPTER_REPETITION
+    - REPEATED_EVENT_BEAT
+    - CHAPTER_OPENING_REPETITION
+    - SCENE_JUMP_UNRESOLVED
+    - ANTI_META_LEAK
+    - ANTI_META_ENDING_OUT_OF_SCENE
   # Records a project-level planning kernel before chapter production entry
   # points. Telemetry-only by default; flip block_on_failure for strict runs.
   enable_prewrite_readiness_gate: true

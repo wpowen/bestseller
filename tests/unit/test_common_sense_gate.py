@@ -30,6 +30,39 @@ def test_common_sense_gate_allows_supernatural_bleeding_with_visible_cost() -> N
     assert report.passed is True
 
 
+def test_common_sense_gate_allows_prior_chapter_bleeding_carryover() -> None:
+    report = evaluate_common_sense_gate(
+        "林渊的拇指还在往外渗血。铜钱边缘的缺口像一张咧开的嘴。",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=2,
+    )
+
+    assert not any(finding.code == "unexplained_body_state" for finding in report.findings)
+
+
+def test_common_sense_gate_ignores_blood_glyphs_as_body_bleeding() -> None:
+    report = evaluate_common_sense_gate(
+        "302门框上浮现出血字。笔画很粗，像是被人用手指蘸着血写上去。",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=2,
+    )
+
+    assert not any(finding.code == "unexplained_body_state" for finding in report.findings)
+
+
+def test_common_sense_gate_ignores_supernatural_door_gap_bleeding() -> None:
+    report = evaluate_common_sense_gate(
+        "303的门虚掩着。林渊在门口停下。门缝里正往外渗血，不往下流，反而顺着门框往上爬。",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=1,
+    )
+
+    assert not any(finding.code == "unexplained_body_state" for finding in report.findings)
+
+
 def test_common_sense_gate_flags_remaining_time_arithmetic_conflict() -> None:
     report = evaluate_common_sense_gate(
         "镜面上写着只剩半个小时。林渊骑电动车赶了二十分钟。"
@@ -67,6 +100,35 @@ def test_common_sense_gate_flags_early_game_or_stitch_marker() -> None:
     assert report.passed is False
     assert any(
         finding.code == "early_chapter_game_or_stitch_marker"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_flags_impossible_body_action_sound() -> None:
+    report = evaluate_common_sense_gate(
+        "镜子里的张建军先点了点头的声音，随后才抬起脸。",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=2,
+    )
+
+    assert report.passed is False
+    assert any(
+        finding.code == "impossible_body_action_sound"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_allows_body_action_with_visible_sound_source() -> None:
+    report = evaluate_common_sense_gate(
+        "张建军点头时，钥匙磕在门锁上，发出很轻的声音。",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=2,
+    )
+
+    assert not any(
+        finding.code == "impossible_body_action_sound"
         for finding in report.findings
     )
 
@@ -138,5 +200,62 @@ def test_common_sense_gate_allows_rule_term_with_onboarding() -> None:
 
     assert not any(
         finding.code == "rule_term_onboarding_failure"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_flags_late_night_delivery_without_impossible_marker() -> None:
+    report = evaluate_common_sense_gate(
+        "张建军把配送单递过来，寄件时间写着23:58，王建业让他现在送旧镜。",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=1,
+    )
+
+    assert report.passed is False
+    assert any(finding.code == "late_night_delivery_plausibility" for finding in report.findings)
+
+
+def test_common_sense_gate_flags_object_signal_overuse() -> None:
+    report = evaluate_common_sense_gate(
+        "铜钱发烫，林渊收回手。过了两步，铜钱又烫得像炭火。"
+        "镜前风一吹，青囊账页也开始发烫。",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=1,
+    )
+
+    assert report.passed is False
+    assert any(finding.code == "object_signal_overuse" for finding in report.findings)
+
+
+def test_common_sense_gate_flags_non_expert_rule_knowledge_leak() -> None:
+    report = evaluate_common_sense_gate(
+        "张建军堵在门口，脸色发白：“下一笔是不是我？我是不是已经入账了？”",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=1,
+    )
+
+    assert report.passed is False
+    assert any(
+        finding.code == "lay_character_rule_knowledge_leak"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_does_not_cross_paragraphs_for_rule_leak() -> None:
+    report = evaluate_common_sense_gate(
+        "林渊伸手挡在张建军身前，“别动。”\n\n"
+        "张建军往后退了一步。\n\n"
+        "林渊的心沉了一下。\n\n"
+        "否认——不是死不认账那种否认。那是林渊自己的判断。",
+        genre="灵异",
+        sub_genre="民俗悬疑",
+        chapter_number=2,
+    )
+
+    assert not any(
+        finding.code == "lay_character_rule_knowledge_leak"
         for finding in report.findings
     )

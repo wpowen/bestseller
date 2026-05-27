@@ -1056,23 +1056,24 @@ def extract_ending_sentence(text: str, language: str = "zh-CN") -> str:
         else _ENDING_TERMINATORS_EN
     )
 
-    # Walk past trailing closers/terminators to find the real content. A
-    # dialogue line commonly ends as `。”`; without removing the quote first,
-    # the extracted "sentence" becomes just `”`.
-    end = len(trimmed)
-    while end > 0 and trimmed[end - 1] in " \n\t":
-        end -= 1
-    while end > 0 and trimmed[end - 1] in _ENDING_TRAILING_CLOSERS:
-        end -= 1
-    while end > 0 and trimmed[end - 1] in terminators + " \n\t":
-        end -= 1
-    while end > 0 and trimmed[end - 1] in _ENDING_TRAILING_CLOSERS:
-        end -= 1
+    # Walk past trailing closers/terminators only to locate sentence content.
+    # The returned sentence keeps the final punctuation so downstream ending
+    # impact checks can score whether the line actually lands with force.
+    sentence_end = len(trimmed)
+    while sentence_end > 0 and trimmed[sentence_end - 1] in " \n\t":
+        sentence_end -= 1
+    content_end = sentence_end
+    while content_end > 0 and trimmed[content_end - 1] in _ENDING_TRAILING_CLOSERS:
+        content_end -= 1
+    while content_end > 0 and trimmed[content_end - 1] in terminators + " \n\t":
+        content_end -= 1
+    while content_end > 0 and trimmed[content_end - 1] in _ENDING_TRAILING_CLOSERS:
+        content_end -= 1
     # Now find the start of the final sentence: nearest prior terminator.
-    start = end
+    start = content_end
     while start > 0 and trimmed[start - 1] not in terminators + "\n":
         start -= 1
-    sentence = trimmed[start:end].strip()
+    sentence = trimmed[start:sentence_end].strip()
     if sentence:
         return sentence
 

@@ -349,6 +349,7 @@ class ChapterWriterContextPacket(BaseModel):
     tree_context_nodes: list[NarrativeTreeNodeRead] = Field(default_factory=list)
     retrieval_chunks: list[RetrievedChunk] = Field(default_factory=list)
     hard_fact_snapshot: ChapterStateSnapshotContext | None = None
+    participant_knowledge_states: list[dict[str, Any]] = Field(default_factory=list)
 
     # ── Phase-1 wiring: previously orphaned narrative models ──
     pacing_target: PacingCurvePointRead | None = None

@@ -18,6 +18,18 @@ from bestseller.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 
+def _build_system_prompt(language: str) -> str:
+    if str(language or "").lower().startswith("en"):
+        return (
+            "You are a novel knowledge compressor. Your task is to condense "
+            "story knowledge into concise summaries."
+        )
+    return (
+        "你是小说知识压缩器：将故事知识精炼为简短摘要，"
+        "保留人物状态变化与情节关键事实，禁止虚构未在原文出现的内容。"
+    )
+
+
 class RollingSummaryResult(BaseModel):
     project_id: UUID
     from_chapter: int
@@ -35,6 +47,7 @@ async def compress_knowledge_window(
     to_chapter: int,
     *,
     workflow_run_id: UUID | None = None,
+    language: str = "zh-CN",
 ) -> RollingSummaryResult:
     """Compress canon facts and timeline events from a chapter range into a rolling summary.
 
@@ -103,7 +116,7 @@ async def compress_knowledge_window(
         settings,
         LLMCompletionRequest(
             logical_role="summarizer",
-            system_prompt="You are a novel knowledge compressor. Your task is to condense story knowledge into concise summaries.",
+            system_prompt=_build_system_prompt(language),
             user_prompt=user_prompt,
             fallback_response=f"Rolling summary for chapters {from_chapter}-{to_chapter}: {len(facts)} facts and {len(events)} events.",
             prompt_template="rolling_summary",

@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BestSeller 流水线数据流</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Noto+Serif+SC:wght@400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f2eee4; --paper: #fffaf0; --surface: #faf4e8; --surface-2: #f4eadc;
+    --ink: #25211d; --muted: #6e6457; --faint: #9a8d79; --border: #d7c9b5;
+    --strong: #a55738; --blue: #27586f; --green: #446c3c; --amber: #9a6919; --red: #8d2b22;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    --serif: "Source Serif 4", "Noto Serif SC", Georgia, serif;
+  }
+  body {
+    min-height: 100vh;
+    background: linear-gradient(180deg, rgba(255,250,240,0.9), rgba(242,238,228,0.96)), var(--bg);
+    color: var(--ink); font-family: var(--serif); line-height: 1.55;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; cursor: pointer; }
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    border-bottom: 1px solid var(--border);
+    background: rgba(242,238,228,0.96); backdrop-filter: blur(12px);
+  }
+  .topbar-inner {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 12px 0;
+  }
+  .brand h1 { font-size: 24px; font-weight: 700; }
+  .brand .meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    min-height: 34px; padding: 7px 12px; border: 1px solid var(--border);
+    background: var(--paper); font-size: 13px; font-weight: 600;
+  }
+  .btn.primary { background: var(--strong); border-color: var(--strong); color: #fffaf0; }
+  .shell {
+    display: grid; grid-template-columns: 1fr 380px; gap: 20px;
+    width: min(1440px, calc(100% - 48px)); margin: 20px auto 40px;
+  }
+  @media (max-width: 1100px) { .shell { grid-template-columns: 1fr; } }
+  .panel {
+    border: 1px solid var(--border); background: var(--paper); padding: 16px;
+  }
+  .panel h2 { font-size: 18px; margin-bottom: 12px; }
+  .status-line { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border: 1px solid var(--border);
+    font-family: var(--mono); font-size: 11px; margin-right: 6px;
+  }
+  .badge.path { border-color: var(--blue); color: var(--blue); }
+  .issues { margin-bottom: 20px; }
+  .issue {
+    border-left: 3px solid var(--amber); padding: 8px 10px; margin-bottom: 8px;
+    background: var(--surface);
+  }
+  .issue.critical { border-left-color: var(--red); }
+  .issue .code { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .phase-block { margin-bottom: 24px; }
+  .phase-title {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+    padding-bottom: 6px; border-bottom: 1px dashed var(--border);
+  }
+  .node-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .node-card {
+    border: 1px solid var(--border); background: var(--surface); padding: 10px 12px;
+    text-align: left; width: 100%;
+  }
+  .node-card:hover { border-color: var(--strong); }
+  .node-card.selected { outline: 2px solid var(--strong); outline-offset: -1px; }
+  .node-card .label { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .node-card .ref { font-family: var(--mono); font-size: 10px; color: var(--faint); word-break: break-all; }
+  .node-card .metrics { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .status-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+  }
+  .st-completed { background: var(--green); }
+  .st-running { background: var(--blue); }
+  .st-failed, .st-blocked { background: var(--red); }
+  .st-pending { background: var(--faint); }
+  .st-skipped, .st-not_applicable { background: #ccc; }
+  .detail h3 { font-size: 16px; margin-bottom: 8px; }
+  .detail section { margin-bottom: 16px; }
+  .detail h4 { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .detail ul { padding-left: 18px; font-size: 13px; }
+  .detail pre {
+    font-family: var(--mono); font-size: 11px; background: var(--surface);
+    border: 1px solid var(--border); padding: 10px; overflow: auto; max-height: 280px;
+  }
+  .chapter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    font-family: var(--mono); font-size: 11px; padding: 4px 8px;
+    border: 1px solid var(--border); background: var(--surface);
+  }
+  .chip.blocked { border-color: var(--red); color: var(--red); }
+  .chip.done { border-color: var(--green); color: var(--green); }
+  .timeline { font-family: var(--mono); font-size: 11px; max-height: 200px; overflow: auto; }
+  .timeline .row { padding: 4px 0; border-bottom: 1px solid var(--surface-2); }
+  .flow-arrows {
+    font-family: var(--mono); font-size: 10px; color: var(--faint);
+    margin: 4px 0 12px 8px;
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <h1>流水线数据流</h1>
+      <div class="meta" id="projectMeta">加载中…</div>
+    </div>
+    <div class="top-actions">
+      <a class="btn" href="/library">书稿库</a>
+      <a class="btn" id="designLink" href="#">设计审查</a>
+      <button class="btn" id="refreshBtn" type="button">刷新</button>
+      <button class="btn primary" id="autoRefreshBtn" type="button">自动刷新：开</button>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+  <div class="main-col">
+    <div class="panel issues" id="issuesPanel" hidden>
+      <h2>诊断问题</h2>
+      <div id="issuesList"></div>
+    </div>
+    <div class="panel">
+      <h2>数据流拓扑</h2>
+      <p class="status-line" id="flowStatus">—</p>
+      <div id="phaseContainer"></div>
+      <div class="panel" style="margin-top:16px;border-style:dashed">
+        <h2>章节下钻</h2>
+        <div class="chapter-chips" id="chapterChips"></div>
+        <pre id="chapterDetail" hidden></pre>
+      </div>
+      <div class="panel" style="margin-top:16px;border-style:dashed">
+        <h2>任务时间线（最近）</h2>
+        <div class="timeline" id="taskTimeline"></div>
+      </div>
+    </div>
+  </div>
+  <aside class="panel detail" id="detailPanel">
+    <h2>节点详情</h2>
+    <p class="status-line">点击左侧节点查看输入/输出、workflow 与 gate 证据。</p>
+    <div id="detailContent"></div>
+  </aside>
+</main>
+
+<script>
+(function () {
+  const PHASE_LABELS = {
+    config: '配置入口',
+    planning: '规划',
+    materialize: '物化',
+    gate: '质量门禁',
+    writing: '写作循环',
+    chapter: '章节流水线',
+    scene: '场景流水线',
+    export: '导出与收尾',
+  };
+  const STATUS_LABELS = {
+    pending: '待执行',
+    running: '进行中',
+    completed: '已完成',
+    skipped: '已跳过',
+    failed: '失败',
+    blocked: '阻塞',
+    not_applicable: '不适用',
+  };
+  const PATH_LABELS = {
+    standard: '标准长篇',
+    progressive: '渐进式多卷',
+    fanqie_short: '番茄短篇',
+  };
+
+  const slug = (location.pathname.split('/').filter(Boolean).pop() || '').trim();
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => {
+    const d = document.createElement('div');
+    d.textContent = String(s ?? '');
+    return d.innerHTML;
+  };
+
+  let payload = null;
+  let selectedNodeId = null;
+  let autoRefresh = true;
+  let refreshTimer = null;
+
+  $('#designLink').href = `/design/${encodeURIComponent(slug)}`;
+
+  function nodeById(id) {
+    if (!payload) return null;
+    const def = (payload.node_defs || []).find((n) => n.id === id);
+    const rt = (payload.nodes || []).find((n) => n.id === id);
+    return def ? { def, rt: rt || { status: 'pending', metrics: {}, workflow_refs: [], node_issues: [] } } : null;
+  }
+
+  function renderIssues() {
+    const issues = payload?.issues || [];
+    const panel = $('#issuesPanel');
+    const list = $('#issuesList');
+    if (!issues.length) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    list.innerHTML = issues.map((issue) => `
+      <div class="issue ${issue.severity === 'critical' ? 'critical' : ''}">
+        <div class="code">${esc(issue.code)} · ${esc(issue.node_id)}</div>
+        <div>${esc(issue.message)}</div>
+        ${issue.suggested_action ? `<div style="margin-top:4px;font-size:12px;color:var(--muted)">${esc(issue.suggested_action)}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function renderPhases() {
+    const container = $('#phaseContainer');
+    const defs = payload?.node_defs || [];
+    const byPhase = {};
+    defs.forEach((d) => {
+      if (!byPhase[d.phase]) byPhase[d.phase] = [];
+      byPhase[d.phase].push(d);
+    });
+    const edges = payload?.edges || [];
+    let html = '';
+    Object.keys(PHASE_LABELS).forEach((phase) => {
+      const nodes = byPhase[phase];
+      if (!nodes || !nodes.length) return;
+      html += `<div class="phase-block"><div class="phase-title">${PHASE_LABELS[phase] || phase}</div><div class="node-grid">`;
+      nodes.forEach((def) => {
+        const rt = (payload.nodes || []).find((n) => n.id === def.id) || {};
+        const st = rt.status || 'pending';
+        const metrics = Object.entries(rt.metrics || {})
+          .slice(0, 3)
+          .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
+          .join(' · ');
+        html += `
+          <button type="button" class="node-card ${selectedNodeId === def.id ? 'selected' : ''}" data-node="${esc(def.id)}">
+            <div class="label">
+              <span class="status-dot st-${esc(st)}"></span>${esc(def.label_zh)}
+            </div>
+            <div class="ref">${esc(def.code_ref)}</div>
+            <div class="metrics">${esc(STATUS_LABELS[st] || st)}${metrics ? ' · ' + esc(metrics) : ''}</div>
+          </button>`;
+      });
+      html += '</div>';
+      const phaseEdges = edges.filter((e) => {
+        const fromDef = defs.find((n) => n.id === e.from_id);
+        const toDef = defs.find((n) => n.id === e.to_id);
+        return fromDef?.phase === phase || toDef?.phase === phase;
+      }).slice(0, 8);
+      if (phaseEdges.length) {
+        html += `<div class="flow-arrows">${phaseEdges.map((e) => `${e.from_id} → ${e.to_id}${e.label ? ' (' + e.label + ')' : ''}`).join(' · ')}</div>`;
+      }
+      html += '</div>';
+    });
+    container.innerHTML = html;
+    container.querySelectorAll('.node-card').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedNodeId = btn.getAttribute('data-node');
+        renderPhases();
+        renderDetail();
+      });
+    });
+  }
+
+  function renderDetail() {
+    const el = $('#detailContent');
+    if (!selectedNodeId) {
+      el.innerHTML = '<p class="status-line">未选择节点</p>';
+      return;
+    }
+    const item = nodeById(selectedNodeId);
+    if (!item) {
+      el.innerHTML = '<p class="status-line">节点未找到</p>';
+      return;
+    }
+    const { def, rt } = item;
+    const inputs = (def.inputs || []).map((io) => `<li>${esc(io.label)}${io.table ? ` → ${esc(io.table)}` : ''}${io.artifact_type ? ` [${esc(io.artifact_type)}]` : ''}</li>`).join('');
+    const outputs = (def.outputs || []).map((io) => `<li>${esc(io.label)}${io.table ? ` → ${esc(io.table)}` : ''}${io.file_pattern ? ` (${esc(io.file_pattern)})` : ''}</li>`).join('');
+    const gates = (def.gates || []).map((g) => `<li>${esc(g.name)} · ${esc((g.metadata_keys || []).join(', '))} · ${esc(g.repair_strategy)}</li>`).join('');
+    const wfs = (rt.workflow_refs || []).slice(0, 12).map((w) =>
+      `<li>${esc(w.workflow_type || w.step_name || '')} · ${esc(w.status || '')}${w.error_message ? ' · ' + esc(w.error_message) : ''}</li>`
+    ).join('');
+    el.innerHTML = `
+      <section><h3>${esc(def.label_zh)}</h3>
+        <span class="badge">${esc(STATUS_LABELS[rt.status] || rt.status)}</span>
+        <span class="badge">${esc(def.phase)}</span>
+      </section>
+      <section><h4>代码锚点</h4><pre>${esc(def.code_ref)}</pre></section>
+      ${inputs ? `<section><h4>输入</h4><ul>${inputs}</ul></section>` : ''}
+      ${outputs ? `<section><h4>输出</h4><ul>${outputs}</ul></section>` : ''}
+      ${gates ? `<section><h4>门禁</h4><ul>${gates}</ul></section>` : ''}
+      ${wfs ? `<section><h4>Workflow 引用</h4><ul>${wfs}</ul></section>` : ''}
+      <section><h4>指标 / 原始</h4><pre>${esc(JSON.stringify(rt.metrics || {}, null, 2))}</pre></section>
+    `;
+  }
+
+  function renderChapters() {
+    const chips = $('#chapterChips');
+    const chapters = payload?.chapters || [];
+    chips.innerHTML = chapters.map((ch) => {
+      const cls = ch.production_state === 'blocked' || (ch.gates && ch.gates.length)
+        ? 'blocked' : (ch.word_count > 0 ? 'done' : '');
+      return `<button type="button" class="chip ${cls}" data-ch="${ch.chapter_number}">ch-${String(ch.chapter_number).padStart(3, '0')} · ${esc(ch.status)}${ch.gates?.length ? ' · gate' : ''}</button>`;
+    }).join('');
+    chips.querySelectorAll('.chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const num = btn.getAttribute('data-ch');
+        const ch = chapters.find((c) => String(c.chapter_number) === num);
+        const pre = $('#chapterDetail');
+        pre.hidden = false;
+        pre.textContent = JSON.stringify(ch, null, 2);
+      });
+    });
+  }
+
+  function renderTimeline() {
+    const el = $('#taskTimeline');
+    const rows = payload?.task_timeline || [];
+    if (!rows.length) {
+      el.innerHTML = '<div class="row">无关联任务事件</div>';
+      return;
+    }
+    el.innerHTML = rows.slice().reverse().map((r) =>
+      `<div class="row">${esc(r.stage || r.message || '')} <span style="color:var(--faint)">${esc(r.ts || '')}</span></div>`
+    ).join('');
+  }
+
+  function scheduleRefresh() {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    if (!autoRefresh) return;
+    const hasRunning = (payload?.nodes || []).some((n) => n.status === 'running');
+    const ms = hasRunning ? 5000 : 30000;
+    refreshTimer = setTimeout(() => loadData(false), ms);
+  }
+
+  async function loadData(showStatus = true) {
+    if (!slug) {
+      $('#flowStatus').textContent = 'URL 缺少项目 slug';
+      return;
+    }
+    if (showStatus) $('#flowStatus').textContent = '加载中…';
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/pipeline-flow`);
+      if (!res.ok) throw new Error(await res.text());
+      payload = await res.json();
+      const p = payload.project || {};
+      $('#projectMeta').innerHTML = `
+        <span class="badge path">${esc(PATH_LABELS[payload.active_path] || payload.active_path)}</span>
+        ${esc(p.title || slug)} · ${esc(p.genre || '')} · pack=${esc(p.prompt_pack_key || 'auto')}
+      `;
+      $('#flowStatus').textContent = `更新于 ${esc(payload.generated_at)} · schema ${esc(payload.schema_version)} · ${(payload.nodes || []).length} 节点`;
+      renderIssues();
+      renderPhases();
+      renderDetail();
+      renderChapters();
+      renderTimeline();
+      scheduleRefresh();
+    } catch (err) {
+      $('#flowStatus').textContent = '加载失败: ' + err.message;
+    }
+  }
+
+  $('#refreshBtn').addEventListener('click', () => loadData(true));
+  $('#autoRefreshBtn').addEventListener('click', () => {
+    autoRefresh = !autoRefresh;
+    $('#autoRefreshBtn').textContent = '自动刷新：' + (autoRefresh ? '开' : '关');
+    if (autoRefresh) scheduleRefresh();
+    else if (refreshTimer) clearTimeout(refreshTimer);
+  });
+
+  loadData(true);
+})();
+</script>
+</body>
+</html>

@@ -38,6 +38,18 @@ def test_flags_room_jump_without_visible_bridge() -> None:
     assert {f.code for f in report.findings} == {"room_jump_without_reader_bridge"}
 
 
+def test_neighbor_floor_identity_is_not_a_room_jump() -> None:
+    prev = "王建业消失在303门缝后的白光里。林渊只抓住他的一只鞋。"
+    current = (
+        "林渊攥着那只鞋，楼道里的应急灯全灭了。"
+        "门外有人敲门：“我、我是三楼的，张建军，我是隔壁邻居。”"
+    )
+
+    report = evaluate_reader_logic_seam(prev, current, prev_chapter=1, current_chapter=2)
+
+    assert report.passed
+
+
 def test_room_jump_with_visible_bridge_is_allowed() -> None:
     prev = "他冲过去，一脚踹开门。302的门板往里凹陷。门槛上的血水还在往外涌。"
     current = "那声音不是从302里出来。罗盘指针拖着他退回303室门口。林渊蹲下身。"

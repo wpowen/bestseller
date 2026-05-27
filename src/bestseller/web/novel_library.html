@@ -960,6 +960,7 @@
         <div class="book-actions" onclick="event.stopPropagation();">
           <a class="book-action primary" href="${esc(readHref)}" target="_blank">${book.unit_kind === 'single_story' ? '阅读全文' : '阅读章节'}</a>
           <a class="book-action" href="/design/${encodeURIComponent(slug)}" target="_blank" title="查看大纲、人物、关系图、世界观、叙事线和规划产物">设计审查</a>
+          <a class="book-action" href="/flow/${encodeURIComponent(slug)}" target="_blank" title="查看从种类选择到章节产出的数据流与门禁状态">数据流</a>
           ${isArchived ? `<button class="book-action" onclick="archiveBook('${esc(slug)}', false)" title="把作品恢复到书稿库默认列表">取消归档</button>` : ''}
           ${!isArchived ? `<button class="book-action" onclick="reviseBook('${esc(slug)}')" title="为这本书创建新的修改任务">再修改</button>` : ''}
           ${isClosed ? `<button class="book-action" onclick="archiveBook('${esc(slug)}', true)" title="把已闭环作品移入归档列表">归档</button>` : ''}

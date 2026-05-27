@@ -1,0 +1,85 @@
+source_set_id: platform_character_debt
+author: platform_methodology
+douyin_id: ""
+homepage: ""
+source_markdown: /Users/owen/Downloads/novel_platform_writing_methodology.md
+captured_at: "2026-05-23"
+total_items: 8
+ocr_items: 8
+pending_items: 0
+total_images: 8
+ocr_images: 8
+failed_images: 0
+items:
+  - source_id: pcd.01
+    aweme_id: local-platform-methodology
+    title: anchor protagonist gene and action loop
+    anchor: "人物定锚 / 主角基因"
+    image_count: 1
+    ocr_image_count: 1
+    ocr_status: ok
+    category: character
+    topics: ["anchor_character", "action_loop"]
+  - source_id: pcd.02
+    aweme_id: local-platform-methodology
+    title: motivation collision
+    anchor: "人物动机碰撞"
+    image_count: 1
+    ocr_image_count: 1
+    ocr_status: ok
+    category: character
+    topics: ["desire", "obstacle", "conflict"]
+  - source_id: pcd.03
+    aweme_id: local-platform-methodology
+    title: relationship hook and emotional bond
+    anchor: "人物关系钩子 / 情感绑定矩阵"
+    image_count: 1
+    ocr_image_count: 1
+    ocr_status: ok
+    category: relationship
+    topics: ["relationship_hook", "emotional_bond"]
+  - source_id: pcd.04
+    aweme_id: local-platform-methodology
+    title: character debt formula
+    anchor: "人物债务公式"
+    image_count: 1
+    ocr_image_count: 1
+    ocr_status: ok
+    category: debt
+    topics: ["debt", "promise", "repayment"]
+  - source_id: pcd.05
+    aweme_id: local-platform-methodology
+    title: triangle conflict and interest chain
+    anchor: "三角冲突 / 利益链"
+    image_count: 1
+    ocr_image_count: 1
+    ocr_status: ok
+    category: mainline
+    topics: ["triangle_conflict", "interest_chain"]
+  - source_id: pcd.06
+    aweme_id: local-platform-methodology
+    title: information gap
+    anchor: "信息差"
+    image_count: 1
+    ocr_image_count: 1
+    ocr_status: ok
+    category: foreshadowing
+    topics: ["information_gap", "reader_superiority"]
+  - source_id: pcd.07
+    aweme_id: local-platform-methodology
+    title: hype four beat
+    anchor: "爽点四段式"
+    image_count: 1
+    ocr_image_count: 1
+    ocr_status: ok
+    category: emotion_beat
+    topics: ["pressure", "reveal", "payoff", "feedback"]
+  - source_id: pcd.08
+    aweme_id: local-platform-methodology
+    title: reverse climax outline
+    anchor: "高潮反推 / 卷结构比例"
+    image_count: 1
+    ocr_image_count: 1
+    ocr_status: ok
+    category: outline
+    topics: ["reverse_outline", "volume_ratio", "signature_scene"]

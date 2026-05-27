@@ -55,3 +55,39 @@ def test_opening_three_function_empty_input_passes_with_missing_metrics() -> Non
 
     assert report.passed is True
     assert report.metrics["missing_chapters"] == [1, 2, 3]
+
+
+def test_opening_three_function_can_ignore_outline_only_future_chapters() -> None:
+    report = evaluate_opening_three_function(
+        chapter_texts=((1, "林渊必须追查镜子。"),),
+        chapter_outlines=(
+            {"chapter_number": 2, "summary": "第二章计划。"},
+            {"chapter_number": 3, "summary": "第三章计划。"},
+        ),
+        require_text_for_checks=True,
+    )
+
+    codes = {issue.id for issue in report.issues}
+
+    assert "OPENING_CH2_COST_PROOF_MISSING" not in codes
+    assert "OPENING_CH3_STATE_CHANGE_MISSING" not in codes
+    assert "OPENING_CH3_LONG_DESIRE_MISSING" not in codes
+    assert report.metrics["checked_chapters"] == [1]
+    assert report.metrics["missing_chapters"] == [2, 3]
+
+
+def test_opening_three_function_focuses_current_chapter_when_reviewing_one_chapter() -> None:
+    report = evaluate_opening_three_function(
+        chapter_texts=(
+            (1, "林渊必须在子时前追查镜子。"),
+            (2, "他付出代价后继续追查。"),
+            (3, "林渊继续听人谈铜镜，场面非常热闹。"),
+        ),
+        focus_chapter=1,
+        require_text_for_checks=True,
+    )
+
+    codes = {issue.id for issue in report.issues}
+
+    assert "OPENING_CH3_STATE_CHANGE_MISSING" not in codes
+    assert "OPENING_CH3_LONG_DESIRE_MISSING" not in codes

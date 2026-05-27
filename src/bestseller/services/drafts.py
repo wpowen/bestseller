@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 import json
 import logging
@@ -14,7 +14,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.context import SceneWriterContextPacket
+from bestseller.domain.context import ChapterWriterContextPacket, SceneWriterContextPacket
 from bestseller.domain.enums import ChapterStatus, SceneStatus
 from bestseller.domain.fanqie_short import is_fanqie_short_project
 from bestseller.infra.db.models import (
@@ -34,17 +34,24 @@ from bestseller.services.chapter_constraint_manifest import (
     PrewritePlan,
     build_safe_prewrite_plan,
     compile_chapter_constraint_manifest,
+    normalize_prewrite_plan_for_manifest,
     parse_prewrite_plan,
     render_constraint_manifest_block,
     render_prewrite_plan_block,
     render_prewrite_plan_prompt,
     validate_prewrite_plan,
 )
+from bestseller.services.chapter_quality_bundle import (
+    ChapterQualityBundleContext,
+    ChapterQualityBundleReport,
+    run_chapter_quality_bundle,
+)
+from bestseller.services.chapter_outline_readiness_gate import chapter_scene_budget_sum_thresholds
 from bestseller.services.chapter_validator import classify_cliffhanger
 from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
 )
-from bestseller.services.context import build_scene_writer_context_from_models
+from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context_from_models
 from bestseller.services.dialogue_personality_bridge import (
     render_dialogue_personality_bridge_block,
 )
@@ -53,10 +60,19 @@ from bestseller.services.diversity_budget import (
     save_diversity_budget,
 )
 from bestseller.services.invariants import InvariantSeedError, invariants_from_dict
+from bestseller.services.length_stability_gate import (
+    CHINESE_CHAPTER_HARD_MAX_WORDS,
+    CHINESE_CHAPTER_HARD_MIN_WORDS,
+)
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology import (
     render_methodology_scene_rules,
     render_qimao_opening_contract_block,
+)
+from bestseller.services.methodology_compiler import (
+    ChapterPosition,
+    MethodologyStage,
+    compile_methodology,
 )
 from bestseller.services.methodology_overlay import (
     render_overlay_prompt_block,
@@ -67,6 +83,7 @@ from bestseller.services.output_validator import (
     OutputValidator,
     QualityReport,
     ValidationContext,
+    Violation,
 )
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.prompt_constructor import render_fanqie_market_craft_profile_block
@@ -76,6 +93,7 @@ from bestseller.services.prompt_packs import (
     render_prompt_pack_prompt_block,
     resolve_prompt_pack,
 )
+from bestseller.services.quality_closure import evaluate_quality_closure
 from bestseller.services.quality_gates_config import (
     build_validator_from_config,
     get_quality_gates_config,
@@ -91,6 +109,7 @@ from bestseller.services.quality_levers.character_engine import (
     render_character_engine_profile_block,
 )
 from bestseller.services.quality_levers.detectors import audit_chapter
+from bestseller.services.quality_repair_playbooks import render_quality_repair_playbooks
 from bestseller.services.regen_loop import (
     DEFAULT_BUDGET_PER_CHAPTER,
     GlobalBudget,
@@ -103,6 +122,7 @@ from bestseller.services.word_targets import (
     model_reasoning_token_reserve,
     resolve_llm_role_max_tokens,
     resolve_llm_role_model,
+    word_target_policy,
 )
 from bestseller.services.write_gate import filter_blocking
 from bestseller.services.write_safety_gate import WriteSafetyFinding
@@ -118,9 +138,42 @@ from bestseller.settings import AppSettings, load_settings
 _REPAIR_CODE_ALIASES: dict[str, str] = {
     "CHAPTER_LENGTH_BLOCK_LOW": "BLOCK_LOW",
     "LENGTH_UNDER": "BLOCK_LOW",
+    "CHAPTER_TOO_SHORT": "BLOCK_LOW",
+    "CHAPTER_BELOW_TARGET": "BLOCK_LOW",
     "CHAPTER_LENGTH_BLOCK_HIGH": "BLOCK_HIGH",
     "LENGTH_OVER": "BLOCK_HIGH",
 }
+
+
+def _resolve_prompt_pack_key(project: ProjectModel) -> str | None:
+    """Resolve prompt pack key from project metadata."""
+
+    meta = getattr(project, "metadata_json", None) or {}
+    if not isinstance(meta, dict):
+        return None
+    explicit = meta.get("prompt_pack_key")
+    if explicit:
+        return str(explicit)
+    market = meta.get("market")
+    if isinstance(market, dict) and market.get("prompt_pack_key"):
+        return str(market["prompt_pack_key"])
+    return None
+
+
+def _infer_chapter_position(project: ProjectModel, chapter: ChapterModel) -> ChapterPosition:
+    """Infer a coarse chapter position for methodology slicing."""
+
+    total = max(int(getattr(project, "target_chapters", None) or 100), 1)
+    n = max(int(getattr(chapter, "chapter_number", None) or 1), 1)
+    if n <= 3:
+        return ChapterPosition.OPENING
+    if n <= max(5, total // 5):
+        return ChapterPosition.EARLY
+    if n >= max(1, total - 3):
+        return ChapterPosition.ENDGAME
+    if n >= max(1, int(total * 0.85)):
+        return ChapterPosition.CLIMAX
+    return ChapterPosition.MIDGAME
 
 
 def _canonical_repair_code(code: str) -> str:
@@ -128,8 +181,151 @@ def _canonical_repair_code(code: str) -> str:
     return _REPAIR_CODE_ALIASES.get(text, text)
 
 
+def _length_direction_from_payload(payload: Mapping[str, Any] | None) -> str | None:
+    data = dict(payload or {})
+    issue_code = _canonical_repair_code(str(data.get("issue_code") or ""))
+    if issue_code in {"BLOCK_LOW", "BLOCK_HIGH"}:
+        return issue_code
+    try:
+        word_count = int(data.get("word_count") or 0)
+        target_words = int(data.get("target_words") or 0)
+    except (TypeError, ValueError):
+        return None
+    if word_count <= 0 or target_words <= 0:
+        return None
+    return "BLOCK_LOW" if word_count < target_words else "BLOCK_HIGH"
+
+
+def _drop_conflicting_length_repair_codes(
+    codes: Iterable[str],
+    *,
+    length_payload: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
+    """Drop stale opposite length directives before preparing auto-repair.
+
+    Quality bundle and legacy L4 reports can both stamp length-like codes on a
+    chapter.  If an old ``CHAPTER_TOO_SHORT`` survives while the latest report
+    says ``LENGTH_OVER``, the repair prompt simultaneously asks the writer to
+    expand and compress, causing the chapter to oscillate across attempts.
+    """
+
+    ordered = tuple(str(code) for code in codes if str(code).strip())
+    canonical = {_canonical_repair_code(code) for code in ordered}
+    if not {"BLOCK_LOW", "BLOCK_HIGH"} <= canonical:
+        return ordered
+
+    preferred = _length_direction_from_payload(length_payload)
+    if preferred not in {"BLOCK_LOW", "BLOCK_HIGH"}:
+        return ordered
+    dropped = "BLOCK_HIGH" if preferred == "BLOCK_LOW" else "BLOCK_LOW"
+    return tuple(code for code in ordered if _canonical_repair_code(code) != dropped)
+
+
 DUPLICATE_CONTENT_BLOCK_CODE = "CROSS_CHAPTER_REPETITION"
 INTRA_CHAPTER_DUPLICATE_BLOCK_CODE = "INTRA_CHAPTER_REPETITION"
+CHAPTER_OPENING_REPETITION_BLOCK_CODE = "CHAPTER_OPENING_REPETITION"
+
+_SCENE_AUTO_REPAIR_RESIDUE_KEYS: frozenset[str] = frozenset(
+    {
+        "auto_repair_adjusted_target_word_count",
+        "auto_repair_block_codes",
+        "auto_repair_hint",
+        "auto_repair_length_scale",
+        "auto_repair_min_scene_target_floor",
+        "auto_repair_original_target_word_count",
+        "auto_repair_scene_target_cap",
+        "auto_repair_source_block_code",
+        "auto_repair_target_word_count_clamped",
+        "auto_repair_attempt",
+    }
+)
+
+
+def _reset_scene_auto_repair_residue_for_attempt(scene: SceneCardModel) -> int | None:
+    """Clear stale repair prompt residue and restore the original scene budget.
+
+    Auto-repair hints are an execution artifact, not story source material.  If
+    a candidate draft is rejected, the next attempt must start from the current
+    scene contract plus the current blocking issues, not a concatenation of old
+    emergency prompts.  When a previous length repair changed the scene target,
+    restore the stored original before calculating the next attempt's budget.
+    """
+
+    metadata = dict(getattr(scene, "metadata_json", None) or {})
+    restored_target: int | None = None
+    try:
+        original_target = int(metadata.get("auto_repair_original_target_word_count") or 0)
+    except (TypeError, ValueError):
+        original_target = 0
+    if original_target > 0:
+        scene.target_word_count = original_target
+        restored_target = original_target
+
+    next_metadata = {
+        key: value
+        for key, value in metadata.items()
+        if key not in _SCENE_AUTO_REPAIR_RESIDUE_KEYS
+    }
+    if next_metadata != metadata:
+        scene.metadata_json = next_metadata
+    return restored_target
+
+
+def _scene_current_contract_controls(
+    scene: SceneCardModel,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Return clean scene prompt controls from the current card contract.
+
+    Scene metadata often accumulates repair residue while a chapter loops. The
+    chapter-first writer must not treat old ``auto_repair_hint`` / top-level
+    ``cut_point`` / ``action_sequence`` values as fresh creative direction.
+    """
+
+    raw_metadata = getattr(scene, "metadata_json", None)
+    metadata = dict(raw_metadata or {}) if isinstance(raw_metadata, Mapping) else {}
+    methodology_contract = (
+        dict(metadata.get("methodology_contract") or {})
+        if isinstance(metadata.get("methodology_contract"), Mapping)
+        else {}
+    )
+    scene_contract = (
+        dict(metadata.get("scene_contract") or {})
+        if isinstance(metadata.get("scene_contract"), Mapping)
+        else {}
+    )
+    controls = {
+        "gate_function": methodology_contract.get("gate_function"),
+        "visible_progress": (
+            methodology_contract.get("visible_progress")
+            or methodology_contract.get("visible_action_or_reaction")
+        ),
+        "reader_payoff": (
+            methodology_contract.get("reader_payoff")
+            or methodology_contract.get("signature_image")
+            or scene_contract.get("visible_object")
+        ),
+        "ending_hook_payload": (
+            getattr(scene, "hook_requirement", None)
+            or scene_contract.get("exit_hook")
+            or methodology_contract.get("cut_point")
+            or methodology_contract.get("breakpoint")
+        ),
+        "signature_image": (
+            methodology_contract.get("signature_image")
+            or scene_contract.get("visible_object")
+        ),
+        "cut_point": (
+            methodology_contract.get("cut_point")
+            or methodology_contract.get("breakpoint")
+        ),
+        "action_sequence": methodology_contract.get("action_sequence"),
+        "relationship_debts": methodology_contract.get("relationship_debts"),
+        "information_control_mode": (
+            methodology_contract.get("information_control_mode")
+            or methodology_contract.get("reveal_mode")
+        ),
+    }
+    return metadata, methodology_contract, controls
 
 
 _CJK_CHAR_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
@@ -365,6 +561,115 @@ def count_words(text: str) -> int:
     return len(_CJK_CHAR_PATTERN.findall(non_ws)) + len(_LATIN_WORD_PATTERN.findall(plain))
 
 
+def _clean_generated_chapter_text(
+    content_md: str,
+    *,
+    chapter_number: int,
+    source: str,
+) -> tuple[str, dict[str, int]]:
+    """Apply deterministic prose cleanup shared by chapter-first and rewrites."""
+
+    cleaned = content_md or ""
+    stats: dict[str, int] = {
+        "meta_markers": 0,
+        "loop_paragraphs": 0,
+        "short_cluster_paragraphs": 0,
+        "duplicate_paragraphs": 0,
+        "forbidden_signal_negations": 0,
+    }
+    try:
+        from bestseller.services.deduplication import (
+            clean_meta_text_markers,
+            detect_chapter_text_loop,
+            detect_intra_chapter_repetition,
+            detect_short_cluster_near_repeat,
+            remove_chapter_text_loops,
+            remove_intra_chapter_duplicates_paraphrase,
+            remove_short_cluster_near_repeats,
+        )
+
+        cleaned, stats["meta_markers"] = clean_meta_text_markers(cleaned)
+        if stats["meta_markers"]:
+            logger.info(
+                "%s chapter %d: removed %d meta-text marker(s)",
+                source,
+                chapter_number,
+                stats["meta_markers"],
+            )
+
+        loop_findings = detect_chapter_text_loop(cleaned)
+        if loop_findings:
+            logger.warning(
+                "%s chapter %d: %d LLM-loop block(s) detected — auto-collapsing",
+                source,
+                chapter_number,
+                len(loop_findings),
+            )
+            cleaned, stats["loop_paragraphs"] = remove_chapter_text_loops(cleaned)
+
+        short_findings = detect_short_cluster_near_repeat(cleaned)
+        if short_findings:
+            logger.warning(
+                "%s chapter %d: %d short-line cluster repeat(s) detected — auto-collapsing",
+                source,
+                chapter_number,
+                len(short_findings),
+            )
+            cleaned, stats["short_cluster_paragraphs"] = remove_short_cluster_near_repeats(
+                cleaned
+            )
+
+        dup_findings = detect_intra_chapter_repetition(cleaned)
+        if dup_findings:
+            logger.warning(
+                "%s chapter %d: %d duplicate paragraph(s) detected — auto-removing",
+                source,
+                chapter_number,
+                len(dup_findings),
+            )
+            cleaned, stats["duplicate_paragraphs"] = remove_intra_chapter_duplicates_paraphrase(
+                cleaned
+            )
+        cleaned, stats["forbidden_signal_negations"] = (
+            _remove_forbidden_signal_negation_echoes(cleaned)
+        )
+    except Exception:
+        logger.debug(
+            "%s chapter %d: generated chapter cleanup failed (non-fatal)",
+            source,
+            chapter_number,
+            exc_info=True,
+        )
+    return cleaned, stats
+
+
+def _remove_forbidden_signal_negation_echoes(content: str) -> tuple[str, int]:
+    """Remove prompt-echoed negations like ``不是发烫`` from publishable prose."""
+
+    replacements = {
+        "不是发烫": "没有温度变化",
+        "并不发烫": "没有温度变化",
+        "没有发烫": "没有温度变化",
+        "不是发热": "没有温度变化",
+        "并不发热": "没有温度变化",
+        "没有发热": "没有温度变化",
+        "不是滚烫": "没有温度变化",
+        "并不滚烫": "没有温度变化",
+        "没有滚烫": "没有温度变化",
+        "不是变热": "没有温度变化",
+        "并不变热": "没有温度变化",
+        "没有变热": "没有温度变化",
+    }
+    updated = content
+    count = 0
+    for needle, replacement in replacements.items():
+        occurrences = updated.count(needle)
+        if occurrences:
+            updated = updated.replace(needle, replacement)
+            count += occurrences
+    return updated, count
+
+
 def prose_output_max_tokens_for_target(
     target_word_count: int | None,
     *,
@@ -394,9 +699,31 @@ def prose_output_max_tokens_for_target(
         active_settings,
         role=role,
     )
-    multiplier = 2.8 if is_english_language(language) else 3.2
-    floor = 1024 if is_english_language(language) else 1536
-    visible_cap = max(floor, int(round(target * multiplier)) + 512)
+    is_minimax_highspeed = "minimax-m2" in (model_name or "").lower() and "highspeed" in (
+        model_name or ""
+    ).lower()
+    if is_minimax_highspeed:
+        # MiniMax-M2.7-highspeed returns empty content too often when a prose
+        # request is cut off exactly at a tight cap. Keep enough room for a
+        # natural stop, while still below the former runaway 1.9x+512 budget.
+        role_lc = (role or "").strip().lower()
+        if role_lc == "editor":
+            multiplier = 2.2 if is_english_language(language) else 2.0
+        else:
+            multiplier = 1.25 if is_english_language(language) else 1.05
+    else:
+        multiplier = 2.8 if is_english_language(language) else 3.2
+    if is_minimax_highspeed:
+        if (role or "").strip().lower() == "editor":
+            floor = 6144
+            extra_budget = 768
+        else:
+            floor = 768
+            extra_budget = 256
+    else:
+        floor = 1024 if is_english_language(language) else 1536
+        extra_budget = 512
+    visible_cap = max(floor, int(round(target * multiplier)) + extra_budget)
     reserve = model_reasoning_token_reserve(model_name)
     cap = visible_cap + reserve
     if model_tokens is not None and model_tokens > 0:
@@ -409,6 +736,45 @@ def prose_output_max_tokens_for_target(
             )
         return min(cap, effective_model_tokens)
     return cap
+
+
+def chapter_first_runaway_max_tokens(
+    settings: AppSettings,
+    *,
+    role: str = "writer",
+    target_word_count: int | None = None,
+    language: str | None = None,
+    hard_max_word_count: int | None = None,
+) -> int | None:
+    """Return a provider-safe output cap for chapter-first prose calls.
+
+    Chapter length must be controlled by the prompt contract and quality gates,
+    not by a target-derived completion cap.  This value is a model-family
+    runaway guard, not a chapter-length budget.  Live MiniMax-M2.7-highspeed
+    runs can consume the full 32768 completion budget and return empty visible
+    content, so that family uses a fixed safe cap that is still ample for a
+    3500-character Chinese chapter.
+    """
+
+    model_name = resolve_llm_role_model(settings, role=role)
+    model_tokens = resolve_llm_role_max_tokens(settings, role=role)
+    model_name_lc = (model_name or "").strip().lower()
+    if "minimax-m2" in model_name_lc and "highspeed" in model_name_lc:
+        safe_cap = 5_488
+        model_ceiling = model_output_token_ceiling(model_name)
+        if model_ceiling is not None and model_ceiling > 0:
+            safe_cap = min(safe_cap, int(model_ceiling))
+        if model_tokens is not None and model_tokens > 0:
+            return min(int(model_tokens), safe_cap)
+        return safe_cap
+    if "minimax" in model_name_lc:
+        safe_cap = 16_384
+        if model_tokens is not None and model_tokens > 0:
+            return min(int(model_tokens), safe_cap)
+        return safe_cap
+    if model_tokens is not None and model_tokens > 0:
+        return int(model_tokens)
+    return model_output_token_ceiling(model_name)
 
 
 async def _load_character_name_roster(
@@ -1024,6 +1390,35 @@ async def _evaluate_chapter_quality_gate(
         canon_guardrails=canon_guardrails,
     )
     report = validator.validate(content, ctx)
+    try:
+        front_chapter = await session.scalar(
+            select(ChapterModel).where(
+                ChapterModel.project_id == project.id,
+                ChapterModel.chapter_number == chapter_number,
+            )
+        )
+        if front_chapter is not None:
+            front_scenes = list(
+                await session.scalars(
+                    select(SceneCardModel)
+                    .where(SceneCardModel.chapter_id == front_chapter.id)
+                    .order_by(SceneCardModel.scene_number.asc())
+                )
+            )
+            front_violations = _front10_contract_violations_for_content(
+                front_chapter,
+                front_scenes,
+                content,
+            )
+            if front_violations:
+                report = QualityReport(report.violations + front_violations)
+    except Exception:
+        logger.debug(
+            "front10 contract gate failed for project %s chapter %d",
+            project.id,
+            chapter_number,
+            exc_info=True,
+        )
     character_voice_payload: dict[str, Any] | None = None
     try:
         _voice_profiles = await _load_active_character_engine_profiles(
@@ -2224,6 +2619,27 @@ async def validate_and_clean_novel_content(
     if not cleaned:
         logger.warning("LLM cleanup returned empty content, falling back to original")
         return content_md
+    # ── Catastrophic-shrink safeguard ────────────────────────────────────
+    # The critic LLM occasionally over-deletes legitimate prose along with
+    # the meta-commentary, especially on long chapters where it summarises
+    # rather than scrubs.  When the cleaner drops more than 30% of the
+    # content, fall back to the rule-based sanitisation result (the input
+    # ``content_md`` is already post-sanitize at this call site).  This
+    # prevents downstream under-length blocks from being caused by the
+    # cleaner itself rather than by the writer model.
+    original_len = max(len(content_md), 1)
+    cleaned_len = len(cleaned)
+    shrink_ratio = (original_len - cleaned_len) / original_len
+    if shrink_ratio > 0.30:
+        logger.warning(
+            "LLM cleanup shrank content from %d -> %d chars (%.0f%% loss); "
+            "this exceeds the 30%% safeguard threshold. Falling back to "
+            "rule-based sanitised content to avoid under-length regression.",
+            original_len,
+            cleaned_len,
+            shrink_ratio * 100,
+        )
+        return content_md
     return cleaned
 
 
@@ -2236,10 +2652,12 @@ async def _collect_post_assembly_duplicate_findings(
 ) -> tuple[WriteSafetyFinding, ...]:
     """Run final duplicate checks before an assembled chapter becomes usable."""
     from bestseller.services.deduplication import (
+        check_opening_diversity,
         detect_chapter_text_loop,
         detect_cross_chapter_repetition,
         detect_intra_chapter_repetition,
         detect_short_cluster_near_repeat,
+        extract_chapter_opening,
     )
 
     findings: list[WriteSafetyFinding] = []
@@ -2279,6 +2697,52 @@ async def _collect_post_assembly_duplicate_findings(
         for chapter_number, text in previous_rows
         if text
     ]
+    opening_gate_findings: list[WriteSafetyFinding] = []
+    current_opening = extract_chapter_opening(content_md or "")
+    if current_opening:
+        previous_openings = [
+            (int(chapter_number), extract_chapter_opening(text or ""))
+            for chapter_number, text in previous_rows
+            if text
+        ]
+        for finding in check_opening_diversity(
+            current_opening,
+            [(n, opening) for n, opening in previous_openings[-12:] if opening],
+            similarity_threshold=0.72,
+            opening_length=80,
+        )[:5]:
+            source_chapter = int(finding.get("chapter") or 0)
+            source_opening = next(
+                (
+                    opening
+                    for chapter_number, opening in previous_openings
+                    if chapter_number == source_chapter
+                ),
+                "",
+            )
+            similarity = float(finding.get("similarity") or 0.0)
+            message = (
+                f"[章节开头重复] 第{chapter.chapter_number}章开头与第"
+                f"{source_chapter}章相似度 {similarity:.0%}："
+                f"{current_opening[:80]}。必须重写第一段，从本章独有的"
+                "动作、冲突、新证据或人物决策切入，禁止复用短模板句。"
+            )
+            opening_gate_findings.append(
+                WriteSafetyFinding(
+                    source="post_assembly_opening_diversity_gate",
+                    code=CHAPTER_OPENING_REPETITION_BLOCK_CODE,
+                    severity="critical",
+                    message=message,
+                    evidence=current_opening[:120],
+                    payload={
+                        "chapter": int(chapter.chapter_number),
+                        "source_chapter": source_chapter,
+                        "similarity": similarity,
+                        "opening": current_opening,
+                        "source_opening": source_opening,
+                    },
+                )
+            )
     chapter_texts.append((int(chapter.chapter_number), content_md or ""))
     for finding in detect_cross_chapter_repetition(chapter_texts):
         if int(finding.get("chapter") or 0) != int(chapter.chapter_number):
@@ -2293,6 +2757,7 @@ async def _collect_post_assembly_duplicate_findings(
                 payload=dict(finding),
             )
         )
+    findings.extend(opening_gate_findings)
     return tuple(findings)
 
 
@@ -2323,6 +2788,108 @@ def _stamp_duplicate_content_block(
         ],
     }
     chapter.metadata_json = chapter_meta
+
+
+def _stamp_chapter_quality_bundle(
+    chapter: ChapterModel,
+    report: ChapterQualityBundleReport,
+) -> None:
+    """Persist the unified quality snapshot on the chapter row."""
+
+    chapter_meta = dict(chapter.metadata_json or {})
+    report_payload = report.to_dict()
+    previous_blocking = tuple(
+        str(code)
+        for code in (
+            chapter_meta.get("quality_bundle_blocking_codes")
+            or chapter_meta.get("quality_gate_block_codes")
+            or ()
+        )
+        if code
+    )
+    blocking_codes = tuple(str(code) for code in report_payload["blocking_codes"] if code)
+    repairable_codes = tuple(str(code) for code in report_payload["repairable_codes"] if code)
+
+    chapter_meta["quality_bundle"] = report_payload
+    chapter_meta["quality_contract_version"] = report.contract_version
+    chapter_meta["quality_findings"] = report_payload["findings"]
+    chapter_meta["quality_bundle_passed"] = report.passed
+
+    closure = evaluate_quality_closure(previous_blocking, blocking_codes)
+    if report.passed:
+        chapter_meta.pop("quality_bundle_blocking_codes", None)
+        chapter_meta.pop("quality_gate_block_codes", None)
+        chapter_meta.pop("production_block_code", None)
+        previous_repair_codes = chapter_meta.pop("auto_repair_last_block_codes", None)
+        if previous_repair_codes:
+            chapter_meta["auto_repair_last_resolved_block_codes"] = previous_repair_codes
+        chapter_meta.pop("auto_repair_exhausted", None)
+        chapter_meta.pop("auto_repair_in_progress", None)
+        # Once the chapter clears the gate we wipe the cross-run cumulative
+        # counter too — a future regression should start the budget fresh
+        # rather than already being mid-way through its cross-run cap.
+        chapter_meta.pop("auto_repair_total_attempts", None)
+        # Same reasoning for the autonomous_quality_retrofit counter — once
+        # the chapter passes its quality bundle, future retrofit specs
+        # earn a clean budget allocation.
+        chapter_meta.pop("autonomous_quality_retrofit_attempts_active", None)
+        chapter_meta.pop("autonomous_quality_retrofit_exhausted", None)
+        chapter_meta["quality_closure"] = closure.to_dict()
+    else:
+        chapter_meta["quality_bundle_blocking_codes"] = list(blocking_codes)
+        chapter_meta["quality_gate_block_codes"] = list(blocking_codes)
+        chapter_meta["production_block_code"] = blocking_codes[0] if blocking_codes else ""
+        if repairable_codes:
+            chapter_meta["auto_repair_last_block_codes"] = list(repairable_codes)
+        chapter_meta["quality_closure"] = closure.to_dict()
+    chapter.metadata_json = chapter_meta
+
+
+def _clear_scene_auto_repair_residue_after_clean_assembly(
+    scenes: Sequence[SceneCardModel],
+) -> int:
+    """Remove stale repair hints once the assembled chapter passes quality gates."""
+
+    cleared = 0
+    for scene in scenes:
+        metadata = dict(getattr(scene, "metadata_json", None) or {})
+        if not metadata:
+            continue
+        next_metadata = {
+            key: value
+            for key, value in metadata.items()
+            if key not in _SCENE_AUTO_REPAIR_RESIDUE_KEYS
+        }
+        if next_metadata == metadata:
+            continue
+        scene.metadata_json = next_metadata
+        cleared += 1
+    return cleared
+
+
+async def _collect_previous_current_chapter_texts(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter_number: int,
+) -> tuple[tuple[int, str], ...]:
+    """Load prior current chapter texts for cross-chapter gates."""
+
+    result = await session.execute(
+        select(ChapterModel.chapter_number, ChapterDraftVersionModel.content_md)
+        .join(
+            ChapterDraftVersionModel,
+            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+        )
+        .where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number < chapter_number,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(ChapterModel.chapter_number.asc())
+    )
+    rows = list(result.all()) if hasattr(result, "all") else []
+    return tuple((int(number), text or "") for number, text in rows if text)
 
 
 def _render_state(state: dict[str, Any]) -> str:
@@ -4370,12 +4937,20 @@ def build_scene_draft_prompts(
         language=language,
         rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
     )
+    _compiled_methodology = compile_methodology(
+        stage=MethodologyStage.PROSE_SCENE,
+        prompt_pack_key=_resolve_prompt_pack_key(project),
+        language=language,
+        chapter_no=chapter.chapter_number,
+        chapter_position=_infer_chapter_position(project, chapter),
+        token_budget=1500,
+    ).text
     _methodology_line = ""
-    if _methodology_pack_block or _methodology_rules:
+    if _methodology_pack_block or _methodology_rules or _compiled_methodology:
         _methodology_line = (
-            f"{_methodology_pack_block}\n\n{_methodology_rules}\n\n"
+            f"{_methodology_pack_block}\n\n{_methodology_rules}\n\n{_compiled_methodology}\n\n"
             if _methodology_pack_block
-            else f"{_methodology_rules}\n\n"
+            else f"{_methodology_rules}\n\n{_compiled_methodology}\n\n"
         )
     # Quality-levers writer block (Steps A-D YAML-driven contracts).
     # Pulls every applicable lever for the chapter into one prompt fragment;
@@ -5076,15 +5651,13 @@ def build_scene_draft_prompts(
             f"项目：《{project.title}》\n"
             f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
             f"章节目标（仅供你理解意图，严禁出现在正文中）：{chapter.chapter_goal}\n"
-            f"场景定位（仅供参考，不要作为标题输出）：第{scene.scene_number}场 {scene.title or ''}\n"
+            + _render_chapter_v2_outline_block(chapter)
+            + f"场景定位（仅供参考，不要作为标题输出）：第{scene.scene_number}场 {scene.title or ''}\n"
             f"场景类型：{scene.scene_type}\n"
             f"时间标签：{scene.time_label or '未指定'}\n"
             f"参与者：{participants}\n"
-            f"剧情目的：{scene.purpose.get('story', '推进本章主线')}\n"
-            f"情绪目的：{scene.purpose.get('emotion', '拉高当前张力')}\n"
-            f"入场状态：{scene.entry_state}\n"
-            f"离场状态：{scene.exit_state}\n"
-            f"目标字数：{scene.target_word_count}（【硬性要求】正文字数必须在 {int(scene.target_word_count * 0.9)}-{int(scene.target_word_count * 1.2)} 字范围内。不足或超出均会退回重写。不要提前收束，也不要注水拖长。）\n"
+            + _render_scene_v2_outline_block(scene)
+            + f"目标字数：{scene.target_word_count}（【硬性要求】正文字数必须在 {int(scene.target_word_count * 0.9)}-{int(scene.target_word_count * 1.2)} 字范围内。不足或超出均会退回重写。不要提前收束，也不要注水拖长。）\n"
             f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
             f"语气关键词：{tone}\n"
             f"{_pp_line}"
@@ -5324,6 +5897,1618 @@ def render_chapter_draft_markdown(
     return "\n\n".join(header + scene_sections).strip()
 
 
+def _compact_json_block(value: Any, *, max_chars: int = 5000) -> str:
+    if value is None:
+        return ""
+    try:
+        text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    except TypeError:
+        text = str(value)
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n...（已截断，仅保留高优先级约束）"
+
+
+def _compact_text_block(value: Any, *, max_chars: int = 1200) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n...（已截断，仅保留高优先级约束）"
+
+
+def _merge_auto_repair_hint(
+    existing: str | None,
+    new_hint: str | None,
+    *,
+    max_chars: int = 2400,
+) -> str:
+    """Merge repair hints without accumulating repeated copies forever."""
+
+    fragments: list[str] = []
+    seen: set[str] = set()
+    for raw in (existing or "", new_hint or ""):
+        for line in str(raw).splitlines():
+            item = line.strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            fragments.append(item)
+    merged = "\n".join(fragments).strip()
+    if len(merged) <= max_chars:
+        return merged
+
+    kept: list[str] = []
+    total = 0
+    for item in reversed(fragments):
+        next_len = len(item) + (1 if kept else 0)
+        if total + next_len > max_chars:
+            break
+        kept.append(item)
+        total += next_len
+    kept.reverse()
+    return "【系统已压缩历史修复提示，仅保留最新高优先级约束】\n" + "\n".join(kept)
+
+
+def _render_compact_constraint_blocks(blocks: Sequence[str]) -> str:
+    rendered: list[str] = []
+    total = 0
+    for block in blocks:
+        compact = _compact_text_block(block, max_chars=1000)
+        if not compact:
+            continue
+        if total + len(compact) > 6500:
+            rendered.append("...（硬约束已截断，保留前序高优先级门禁）")
+            break
+        rendered.append(compact)
+        total += len(compact)
+    return "\n\n".join(rendered)
+
+
+def _chapter_context_list(items: Sequence[Any], *, max_items: int = 8) -> list[dict[str, Any]]:
+    compacted: list[dict[str, Any]] = []
+    for item in items[:max_items]:
+        if hasattr(item, "model_dump"):
+            compacted.append(item.model_dump(mode="json"))
+        elif isinstance(item, Mapping):
+            compacted.append(dict(item))
+        else:
+            compacted.append({"value": str(item)})
+    return compacted
+
+
+def _render_chapter_first_prior_chapter_bridge(
+    context_packet: ChapterWriterContextPacket,
+) -> str:
+    chapter_number = int(getattr(context_packet, "chapter_number", 0) or 0)
+    if chapter_number <= 1:
+        return ""
+    summaries = _chapter_context_list(
+        getattr(context_packet, "previous_scene_summaries", None) or [],
+        max_items=2,
+    )
+    hard_snapshot: dict[str, Any] | None = None
+    snapshot = getattr(context_packet, "hard_fact_snapshot", None)
+    if snapshot is not None:
+        if hasattr(snapshot, "model_dump"):
+            dumped = snapshot.model_dump(mode="json")
+            hard_snapshot = dict(dumped) if isinstance(dumped, Mapping) else None
+        elif isinstance(snapshot, Mapping):
+            hard_snapshot = dict(snapshot)
+
+    if not summaries and not hard_snapshot:
+        return ""
+
+    lines = [
+        "【上一章硬承接（最高优先级）】",
+        "本章必须从以下已发生事实继续；这些事实优先于本章旧细纲、检索摘要和模型联想。",
+        "不得把上一章已发生事件改写成普通失踪、未发生、传闻或角色误会；"
+        "如果本章需要使用“失踪/不见”等模糊词，必须写成“上一章已被镜面带走后生死未明/只剩物证”。",
+    ]
+
+    for index, summary in enumerate(summaries, start=1):
+        if not isinstance(summary, Mapping):
+            continue
+        tail = str(
+            summary.get("extended_tail")
+            or summary.get("closing_lines")
+            or summary.get("summary")
+            or ""
+        ).strip()
+        if not tail:
+            continue
+        lines.append(f"- 上一章尾段证据{index}：{_compact_text_block(tail, max_chars=950)}")
+
+    facts = list((hard_snapshot or {}).get("facts") or [])
+    if facts:
+        priority_terms = (
+            "王建业",
+            "张建军",
+            "小雨",
+            "林渊",
+            "铜钱",
+            "镜",
+            "303",
+            "三短一长",
+            "钥匙",
+            "铁片",
+            "失踪",
+            "消失",
+        )
+
+        def _fact_priority(raw: Any) -> int:
+            text = json.dumps(raw, ensure_ascii=False, default=str) if isinstance(raw, Mapping) else str(raw)
+            return 0 if any(term in text for term in priority_terms) else 1
+
+        selected = sorted(facts, key=_fact_priority)[:10]
+        lines.append("- 上一章硬事实：")
+        for fact in selected:
+            if not isinstance(fact, Mapping):
+                continue
+            name = str(fact.get("name") or "").strip()
+            subject = str(fact.get("subject") or "").strip()
+            value = str(fact.get("value") or "").strip()
+            notes = str(fact.get("notes") or "").strip()
+            quote = str(fact.get("source_quote") or "").strip()
+            pieces = [piece for piece in (name, subject, value, notes) if piece]
+            line = "；".join(pieces)
+            if quote:
+                line += f"；原文证据：{quote}"
+            if line:
+                lines.append(f"  - {_compact_text_block(line, max_chars=260)}")
+
+    return "\n".join(lines)
+
+
+def _render_chapter_first_scene_cards(scenes: Sequence[SceneCardModel]) -> str:
+    lines: list[str] = []
+    previous_exit_state: dict[str, Any] | None = None
+    for scene in scenes:
+        purpose = scene.purpose or {}
+        entry_state = scene.entry_state or {}
+        exit_state = scene.exit_state or {}
+        _metadata, methodology_contract, current_controls = _scene_current_contract_controls(
+            scene
+        )
+        forbidden_actions = _prompt_safe_forbidden_actions(
+            getattr(scene, "forbidden_actions", None) or []
+        )
+        transition_contract = {
+            "time_label": getattr(scene, "time_label", None),
+            "entry_state": entry_state,
+            "exit_state": exit_state,
+            "bridge_from_previous": (
+                {
+                    "previous_exit_state": previous_exit_state,
+                    "requirement": (
+                        "Use one visible transition sentence before this scene: "
+                        "physical movement, call handoff, door/elevator action, "
+                        "time tick, or object reaction. Do not jump locations with "
+                        "a horizontal rule or blank cut."
+                    ),
+                }
+                if previous_exit_state
+                else {
+                    "requirement": (
+                        "Start from this scene's entry state. Do not invent an "
+                        "extra pre-scene location unless it is the current entry location."
+                    )
+                }
+            ),
+        }
+        rich_scene_controls = {
+            "methodology_contract": methodology_contract,
+            "gate_function": current_controls.get("gate_function"),
+            "visible_progress": current_controls.get("visible_progress"),
+            "reader_payoff": current_controls.get("reader_payoff"),
+            "ending_hook_payload": current_controls.get("ending_hook_payload"),
+            "transition_contract": transition_contract,
+            "signature_image": current_controls.get("signature_image"),
+            "cut_point": current_controls.get("cut_point"),
+            "action_sequence": current_controls.get("action_sequence"),
+            "relationship_debts": current_controls.get("relationship_debts"),
+            "information_control_mode": current_controls.get("information_control_mode"),
+            "key_dialogue_beats": getattr(scene, "key_dialogue_beats", None) or [],
+            "sensory_anchors": getattr(scene, "sensory_anchors", None) or {},
+            "forbidden_actions": forbidden_actions,
+        }
+        scene_lines = [
+            f"{scene.scene_number}. {scene.title or '未命名场景'}"
+            f"（{scene.scene_type}，目标约{scene.target_word_count or 0}字）",
+            (
+                "   字数边界："
+                f"{max(1, int((scene.target_word_count or 0) * 0.9))}-"
+                f"{max(2, int((scene.target_word_count or 0) * 1.1))}字；"
+                "本场只写本场任务，达成离场状态后立刻转入下一场。"
+            ),
+            f"   时间/地点锚点：{scene.time_label or '未指定'}",
+            f"   参与者：{', '.join(scene.participants or []) or '未指定'}",
+            f"   故事任务：{purpose.get('story') or ''}",
+            f"   情绪任务：{purpose.get('emotion') or ''}",
+            f"   入场状态：{_compact_json_block(entry_state, max_chars=500)}",
+            f"   离场状态：{_compact_json_block(exit_state, max_chars=500)}",
+            f"   钩子要求：{scene.hook_requirement or ''}",
+        ]
+        if forbidden_actions:
+            scene_lines.append(
+                f"   硬禁令：{_compact_json_block(forbidden_actions, max_chars=900)}"
+            )
+        scene_lines.extend(
+            [
+                f"   场景执行合同：{_compact_json_block(rich_scene_controls, max_chars=1800)}",
+                f"   改写提示：{getattr(scene, 'rewrite_hint', '') or ''}",
+            ]
+        )
+        lines.append("\n".join(scene_lines))
+        previous_exit_state = dict(exit_state)
+    return "\n\n".join(lines).strip()
+
+
+def _render_chapter_v2_outline_block(chapter: Any) -> str:
+    """Render outline-v2 executable script fields from chapter.metadata_json.
+
+    Returns an empty string when no v2 fields are present (backward-compat
+    with old outlines that were generated before the v2 schema).
+    """
+    meta = dict(getattr(chapter, "metadata_json", None) or {})
+    parts: list[str] = []
+    protagonist_inner_state = str(meta.get("protagonist_inner_state") or "").strip()
+    if protagonist_inner_state:
+        parts.append(f"主角内心状态（本章开头的驱动力）：{protagonist_inner_state}\n")
+    chapter_concrete_actions = meta.get("chapter_concrete_actions") or []
+    if chapter_concrete_actions:
+        parts.append(
+            f"本章具体动作脚本：{json.dumps(chapter_concrete_actions, ensure_ascii=False)}\n"
+        )
+    chapter_object_uses = meta.get("chapter_object_uses") or []
+    if chapter_object_uses:
+        parts.append(
+            f"物件使用脚本：{json.dumps(chapter_object_uses, ensure_ascii=False)}\n"
+        )
+    chapter_information_introduced = meta.get("chapter_information_introduced") or []
+    if chapter_information_introduced:
+        parts.append(
+            f"本章须传达给读者的信息：{json.dumps(chapter_information_introduced, ensure_ascii=False)}\n"
+        )
+    chapter_information_held_back = meta.get("chapter_information_held_back") or []
+    if chapter_information_held_back:
+        parts.append(
+            f"本章故意不告诉读者的信息（悬念留白）：{json.dumps(chapter_information_held_back, ensure_ascii=False)}\n"
+        )
+    return "".join(parts)
+
+
+def _render_scene_v2_outline_block(scene: Any) -> str:
+    """Render outline-v2 executable script fields from scene.metadata_json.
+
+    Returns an empty string when no v2 fields are present.
+    """
+    meta = dict(getattr(scene, "metadata_json", None) or {})
+    parts: list[str] = []
+    concrete_goal = str(meta.get("concrete_goal") or "").strip()
+    if concrete_goal:
+        parts.append(f"场景具体目标：{concrete_goal}\n")
+    protagonist_state = str(meta.get("protagonist_state") or "").strip()
+    if protagonist_state:
+        parts.append(f"主角本场状态：{protagonist_state}\n")
+    information_introduced = meta.get("information_introduced") or []
+    if information_introduced:
+        parts.append(
+            f"本场须传达给读者的信息：{json.dumps(information_introduced, ensure_ascii=False)}\n"
+        )
+    information_held_back = meta.get("information_held_back") or []
+    if information_held_back:
+        parts.append(
+            f"本场刻意留白信息：{json.dumps(information_held_back, ensure_ascii=False)}\n"
+        )
+    object_signal = str(meta.get("object_signal") or "").strip()
+    if object_signal:
+        parts.append(f"物件超自然信号：{object_signal}\n")
+    return "".join(parts)
+
+
+def _render_chapter_first_opening_contract(
+    chapter: ChapterModel,
+    scenes: Sequence[SceneCardModel],
+) -> str:
+    if not scenes or int(getattr(chapter, "chapter_number", 0) or 0) > 10:
+        return ""
+    first_scene = scenes[0]
+    first_surface = " ".join(
+        str(value or "")
+        for value in (
+            getattr(chapter, "opening_situation", None),
+            getattr(first_scene, "title", None),
+            getattr(first_scene, "hook_requirement", None),
+            (getattr(first_scene, "purpose", None) or {}).get("story"),
+            (getattr(first_scene, "entry_state", None) or {}).get("state"),
+        )
+    )
+    # NOTE (2026-05-26 architecture cleanup): the "mediated_terms" hardcoded
+    # ban (phone/text/voice) was removed.  Mediated openings are a quality
+    # consideration handled by the LLM judge, not a deterministic source
+    # rule.  The opening-scene contract still anchors first paragraph to the
+    # chapter's planned opening_situation and first scene state.
+    lines = [
+        "【开场场景指导】",
+        f"第一段建议从这里开写：{getattr(chapter, 'opening_situation', '') or ''}",
+        f"第一场入场状态：{_compact_json_block(getattr(first_scene, 'entry_state', None) or {}, max_chars=360)}",
+        f"第一场钩子：{getattr(first_scene, 'hook_requirement', '') or ''}",
+        "前200字应当出现第一场的地点/人物/异常，避免先写无关回忆或资料整理。",
+    ]
+    return "\n".join(line for line in lines if line.strip())
+
+
+def _render_front_chapter_forbidden_terms_block(chapter: ChapterModel) -> str:
+    if int(getattr(chapter, "chapter_number", 0) or 0) > 10:
+        return ""
+    unique_forbidden_terms = _front10_forbidden_signal_terms(chapter)
+    lines = [
+        "【前十章禁写与物件信号硬约束】",
+        "本章正文只能使用本章场景卡里的现场名词、人物和物件；任何卷级真相、家族史、父辈姓名、"
+        "祖辈姓名、幕后身份、名单编号、镜局专名、第几面镜、通讯物流桥段都不要写。",
+        "物件异常必须写成有稳定含义的可见变化，例如变冷、变重、裂缺、血点、影子错位、指针偏移；"
+        "不能用发热类触感当万能推进器。",
+        "前十章不得上规则课：林渊只能用问话顺序、物证变化和人物动作让读者推理；"
+        "普通邻居、客户、警察不得主动理解认账/入账/镜债/账线等专业词。",
+    ]
+    if unique_forbidden_terms:
+        lines.append(
+            f"系统门禁已登记 {len(unique_forbidden_terms)} 个精确禁写字符串；"
+            "正文不要复述禁写清单，也不要用“不是/没有/并不”否定式提及禁写内容。"
+        )
+    return "\n".join(lines)
+
+
+def _prompt_safe_forbidden_actions(actions: Sequence[Any]) -> list[str]:
+    """Keep scene prohibitions useful without priming the writer with exact leaks."""
+
+    safe_actions: list[str] = []
+    for action in actions:
+        text = str(action or "").strip()
+        if not text:
+            continue
+        replacement: list[str] = []
+        if any(
+            term in text
+            for term in (
+                "电话",
+                "来电",
+                "手机",
+                "微信",
+                "短信",
+                "语音",
+                "录音",
+                "寄件",
+                "快递",
+                "外卖",
+                "配送",
+                "物流",
+                "跑腿",
+            )
+        ):
+            replacement.append("不得用通讯、物流、配送、寄送、外卖或跑腿桥段引入人物、物证或转场。")
+        if any(
+            term in text
+            for term in (
+                "林正淳",
+                "林远山",
+                "林家辉",
+                "困魂镜",
+                "祖父",
+                "爷爷",
+                "第七面",
+                "第八个",
+                "第三十七号",
+                "第三十八号",
+                "扣账人",
+                "母镜",
+                "源门",
+                "归人",
+                "入门",
+                "代父",
+                "张家门契",
+                "三代以内",
+                "血债血偿",
+                "七行名单",
+                "八个人影",
+            )
+        ):
+            replacement.append("不得提前写父辈姓名、祖辈姓名、林家旁支、镜局专名、名单编号或第几面镜等长线信息。")
+        if any(term in text for term in ("发烫", "滚烫", "炭火", "烫得", "账页烫", "铜钱烫")):
+            replacement.append("不得把铜钱、青囊纸面、罗盘等物件异常写成发热系反应。")
+        if replacement:
+            safe_actions.extend(replacement)
+            continue
+        safe_actions.append(text)
+    return _ordered_unique_texts(safe_actions)
+
+
+def _redact_front10_prompt_leaks(
+    text: str,
+    chapter: ChapterModel,
+    scenes: Sequence[SceneCardModel] | None = None,
+) -> str:
+    """Remove exact front-10 leak tokens from context blocks before prompting."""
+
+    if not text or int(getattr(chapter, "chapter_number", 0) or 0) > 10:
+        return text
+    redacted = text
+    # NOTE (2026-05-26 architecture cleanup): previously appended ~15
+    # hardcoded communication / delivery terms (phone/express/etc.) to redact
+    # them from the writer's context window — effectively SABOTAGING the
+    # writer's ability to use legitimate openings.  Removed.  Metadata-driven
+    # forbidden_signals + scene-card forbidden_content_terms still apply
+    # (those are user-controllable).
+    prompt_leaks = list(_front10_forbidden_signal_terms(chapter))
+    if scenes:
+        prompt_leaks.extend(_front10_scene_forbidden_content_terms(scenes))
+    for term in sorted(_ordered_unique_texts(prompt_leaks), key=len, reverse=True):
+        if not term:
+            continue
+        if any(
+            marker in term
+            for marker in ("电话", "来电", "手机", "微信", "短信", "语音", "录音", "寄件", "快递", "外卖", "配送", "物流", "跑腿")
+        ):
+            placeholder = "【禁用通联转送桥段】"
+        elif any(marker in term for marker in ("发烫", "发热", "烫", "滚烫", "炭火", "高温", "灼热")):
+            placeholder = "【物件触感捷径】"
+        else:
+            placeholder = "【暂缓长线信息】"
+        redacted = redacted.replace(term, placeholder)
+    return redacted
+
+
+# NOTE (2026-05-26 architecture cleanup):
+# This list previously hardcoded user-feedback keywords (phone/text/etc.) as
+# hard-block forbidden terms for golden-three chapter openings.  That pattern
+# treated user feedback as immutable engine rules and prevented the writer
+# from using legitimate openings (e.g. v21 successfully opened with a phone
+# call).  The semantic intent — "don't lean on weak mediated openings" — is
+# now expressed in ``chapter_llm_quality_judge`` system_prompt as an audit
+# dimension, not a deterministic block.  Leave the tuple empty so existing
+# call sites become no-ops without import churn.
+_FRONT10_MEDIATED_OPENING_TERMS: tuple[str, ...] = ()
+
+
+def _front10_forbidden_signal_terms(chapter: ChapterModel) -> list[str]:
+    """Return forbidden signal terms ONLY from chapter metadata (user-configurable).
+
+    NOTE (2026-05-26 architecture cleanup): the function previously appended a
+    hardcoded list of 21 heat-sensation terms (发烫/发热/滚烫/铜钱烫/etc.) baked
+    into source code.  That list froze user feedback into engine rules and
+    blocked legitimate uses (e.g. v21's "《青囊》残卷在发烫" — the canonical
+    signature image of this novel).  Source-level keyword bans are removed;
+    semantic intent ("don't lean on heat-sensation shortcuts in golden three")
+    is now an audit dimension inside ``chapter_llm_quality_judge``.  Metadata-
+    driven lists (object_signal_contract.forbidden_signals and
+    foreshadowing_actions.forbidden_early_leaks) remain — those are
+    user-controllable per chapter, not engine policy.
+    """
+    metadata = getattr(chapter, "metadata_json", None) or {}
+    object_signal = metadata.get("object_signal_contract") if isinstance(metadata, Mapping) else {}
+    foreshadowing = getattr(chapter, "foreshadowing_actions", None) or {}
+    forbidden_terms: list[str] = []
+    if isinstance(object_signal, Mapping):
+        forbidden_terms.extend(str(item) for item in object_signal.get("forbidden_signals") or [])
+    if isinstance(foreshadowing, Mapping):
+        forbidden_terms.extend(
+            str(item) for item in foreshadowing.get("forbidden_early_leaks") or []
+        )
+    return _ordered_unique_texts(forbidden_terms)
+
+
+# NOTE (2026-05-26 architecture cleanup): previously contained 17 hardcoded
+# heat-sensation terms used to flag "object signal shortcut" in chapters 1-10.
+# Removed: this was source-level user-feedback freezing; v21 successfully used
+# 发烫 as the novel's signature image.  Semantic check moved to LLM judge.
+_FRONT10_GENERIC_HEAT_SIGNAL_TERMS: frozenset[str] = frozenset()
+
+_FRONT10_OBJECT_SIGNAL_SUBJECTS: tuple[str, ...] = (
+    "铜钱",
+    "青囊",
+    "账页",
+    "罗盘",
+    "掌心旧伤",
+    "掌心的旧伤",
+    "手心旧伤",
+)
+
+
+def _front10_forbidden_signal_hits(chapter: ChapterModel, content: str) -> list[str]:
+    hits: list[str] = []
+    text = content or ""
+    for term in _front10_forbidden_signal_terms(chapter):
+        if not term:
+            continue
+        if term in _FRONT10_GENERIC_HEAT_SIGNAL_TERMS:
+            if _front10_generic_heat_signal_hit(term, text):
+                hits.append(term)
+            continue
+        if term in text:
+            hits.append(term)
+    return _ordered_unique_texts(hits)
+
+
+def _front10_generic_heat_signal_hit(term: str, content: str) -> bool:
+    for match in re.finditer(re.escape(term), content or ""):
+        window = content[max(0, match.start() - 18) : match.end() + 18]
+        if any(subject in window for subject in _FRONT10_OBJECT_SIGNAL_SUBJECTS):
+            return True
+    return False
+
+
+def _front10_scene_forbidden_content_terms(
+    scenes: Sequence[SceneCardModel],
+) -> list[str]:
+    """Return front-chapter prose terms implied by scene-card prohibitions."""
+
+    candidates = (
+        "电话",
+        "来电",
+        "手机",
+        "手机通知",
+        "微信",
+        "短信",
+        "语音",
+        "录音",
+        "寄件",
+        "快递",
+        "外卖",
+        "配送",
+        "配送单",
+        "物流",
+        "跑腿",
+        "林正淳",
+        "林远山",
+        "林家辉",
+        "票据",
+        "单子",
+        "半夜等单",
+        "送夜宵",
+        "接配送单",
+        "送个单",
+        "帮忙寄件",
+        "门吞掉",
+        "被门吞掉",
+        "被镜子吞掉",
+        "拖进门",
+        "门合拢",
+        "确认死亡",
+        "下楼",
+        "坐电梯",
+        "离场",
+        "回店",
+        "电梯脚印",
+        "黑泥鞋印",
+        "水渍脚印",
+        "新脚",
+        "湿纸条按在",
+        "湿纸条贴到小雨手腕",
+        "湿纸条贴住小雨手腕",
+        "按在小雨手腕",
+        "贴在小雨手腕",
+        "陈默",
+        "七号入账",
+        "代父",
+        "入门",
+        "归人",
+        "张家门契",
+        "三代以内",
+        "血债血偿",
+        "八个人影",
+        "七行名单",
+        "病号服",
+    )
+    terms: list[str] = []
+    for scene in scenes:
+        for action in getattr(scene, "forbidden_actions", None) or []:
+            text = str(action or "")
+            terms.extend(term for term in candidates if term in text)
+    return _ordered_unique_texts(terms)
+
+
+def _front10_rule_lecture_terms(content: str) -> list[str]:
+    window = content or ""
+    phrase_hits = [
+        term
+        for term in (
+            "认动作",
+            "认因果",
+            "只认动作",
+            "账本找的是最近的人",
+            "账本找",
+            "镜债递刀子",
+            "先认动作",
+            "再认因果",
+        )
+        if term in window
+    ]
+    hard_rule_terms = ("认账", "入账", "替认", "镜债", "账线")
+    density = sum(window.count(term) for term in hard_rule_terms)
+    if density >= 5:
+        phrase_hits.append(f"规则术语密度={density}")
+    return _ordered_unique_texts(phrase_hits)
+
+
+def _front10_contract_violations_for_content(
+    chapter: ChapterModel,
+    scenes: Sequence[SceneCardModel],
+    content: str,
+) -> tuple[Violation, ...]:
+    chapter_number = int(getattr(chapter, "chapter_number", 0) or 0)
+    if chapter_number > 10:
+        return tuple()
+    violations: list[Violation] = []
+    first_scene = scenes[0] if scenes else None
+    first_surface = " ".join(
+        str(value or "")
+        for value in (
+            getattr(chapter, "opening_situation", None),
+            getattr(first_scene, "title", None) if first_scene is not None else None,
+            getattr(first_scene, "hook_requirement", None) if first_scene is not None else None,
+            (
+                (getattr(first_scene, "purpose", None) or {}).get("story")
+                if first_scene is not None
+                else None
+            ),
+            (
+                (getattr(first_scene, "entry_state", None) or {}).get("state")
+                if first_scene is not None
+                else None
+            ),
+        )
+    )
+    first_window = (content or "")[:500]
+    if not any(term in first_surface for term in _FRONT10_MEDIATED_OPENING_TERMS):
+        drift_terms = [term for term in _FRONT10_MEDIATED_OPENING_TERMS if term in first_window]
+        if drift_terms:
+            violations.append(
+                Violation(
+                    code="OPENING_SCENE_DRIFT",
+                    severity="block",
+                    location="chapter.opening",
+                    detail=(
+                        "正文前500字新增了章节开篇合同未规划的媒介桥段："
+                        + "、".join(drift_terms)
+                    ),
+                    prompt_feedback=(
+                        "不要把电话、来电、手机、微信、短信、语音、录音等媒介当成突兀的入场捷径；"
+                        "如果确实使用媒介，必须先把来源、转交人、可信原因和到场动机写进章节开篇合同。"
+                        "否则第一段应直接落到第一场现场、人物和异常。"
+                    ),
+                )
+            )
+    forbidden_hits = _front10_forbidden_signal_hits(chapter, content or "")
+    if forbidden_hits:
+        violations.append(
+            Violation(
+                code="FRONT10_FORBIDDEN_SIGNAL",
+                severity="block",
+                location="chapter.object_signal",
+                detail=(
+                    "前十章正文使用了禁用词、早泄长线或物件/感官捷径："
+                    + "、".join(_ordered_unique_texts(forbidden_hits)[:8])
+                ),
+                prompt_feedback=(
+                    "删除这些禁用词和过早泄露信息；物件异常只能改写成稳定且可推理的可见变化，"
+                    "例如变冷、变重、裂缺、血点、影子错位或指针偏移；长线名词延后到指定章节。"
+                ),
+            )
+        )
+    scene_forbidden_hits = [
+        term for term in _front10_scene_forbidden_content_terms(scenes) if term and term in content
+    ]
+    if scene_forbidden_hits:
+        violations.append(
+            Violation(
+                code="FRONT10_SCENE_FORBIDDEN_ACTION",
+                severity="block",
+                location="chapter.scene_contract",
+                detail=(
+                    "正文写入了场景卡明确禁写的前提/动作："
+                    + "、".join(_ordered_unique_texts(scene_forbidden_hits)[:10])
+                ),
+                prompt_feedback=(
+                    "删除场景卡禁写内容；普通邻居/客户不得被写成快递、外卖、配送、跑腿等身份，"
+                    "也不得引出场景卡声明暂缓的人物、术语或重复高潮动作。"
+                ),
+            )
+        )
+    rule_lecture_hits = _front10_rule_lecture_terms(content)
+    if rule_lecture_hits:
+        violations.append(
+            Violation(
+                code="FRONT10_RULE_LECTURE_DENSITY",
+                severity="block",
+                location="chapter.rule_delivery",
+                detail=(
+                    "前十章规则解释过密，降低读者代入和神秘感："
+                    + "、".join(rule_lecture_hits[:8])
+                ),
+                prompt_feedback=(
+                    "删除规则课式解释；林渊只能通过问话顺序、物证反应和人物动作让读者推理，"
+                    "不得直接讲完整规则，不得让普通人主动理解认账/入账/镜债/账线。"
+                ),
+            )
+        )
+    return tuple(violations)
+
+
+def _ordered_unique_texts(items: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _chapter_length_contract_band(
+    project: ProjectModel,
+    target_word_count: int | None,
+) -> tuple[int, int, int]:
+    """Return the prose-visible chapter word contract shared by write/repair."""
+
+    settings = load_settings()
+    policy = word_target_policy(settings)
+    hard_min = int(policy.chapter_min)
+    hard_max = int(policy.chapter_max)
+    if not is_english_language(getattr(project, "language", None)):
+        hard_min = max(hard_min, CHINESE_CHAPTER_HARD_MIN_WORDS)
+        hard_max = max(hard_min, min(hard_max, CHINESE_CHAPTER_HARD_MAX_WORDS))
+    try:
+        target = int(target_word_count or 0)
+    except (TypeError, ValueError):
+        target = 0
+    if target <= 0:
+        target = int(policy.chapter_target)
+    target = max(hard_min, min(target, hard_max))
+    return hard_min, target, hard_max
+
+
+def _chapter_auto_repair_length_contract(
+    project: ProjectModel,
+    chapter: ChapterModel,
+) -> str:
+    hard_min, hard_target, hard_max = _chapter_length_contract_band(
+        project,
+        int(getattr(chapter, "target_word_count", 0) or 0),
+    )
+    return (
+        "【自动修复字数总契约】本次仍然是完整章节正文，不是补丁说明；"
+        f"最终正文必须保持在 {hard_min}-{hard_max} 个汉字，目标约 {hard_target} 字。"
+        "修复时间线、重复、卷级对齐或尾钩时，不得新增无关场景、人物、地点、阵营或设定解释；"
+        "优先通过压缩重复句、合并解释、补入必要动作/证物/对白来解决问题。"
+        "如果信息量装不下，删解释和术语，保留冲突、选择、代价和章末钩子。"
+    )
+
+
+async def _enrich_chapter_first_context(
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    context_packet: ChapterWriterContextPacket,
+) -> None:
+    """Attach the high-value guardrail blocks that scene drafting already uses."""
+
+    language = getattr(project, "language", None) or settings.generation.language
+    try:
+        from bestseller.services.canon_guardrails import render_canon_guardrails_block
+
+        guard = load_canon_guardrails_for_project(project, output_base_dir=settings.output.base_dir)
+        if not guard.is_empty:
+            context_packet.canon_guardrails_block = (
+                render_canon_guardrails_block(
+                    guard,
+                    chapter_number=chapter.chapter_number,
+                    language=language,
+                )
+                or None
+            )
+    except Exception:
+        logger.debug("chapter-first canon guardrails injection failed", exc_info=True)
+
+    bible_root = Path(settings.output.base_dir) / project.slug / "story-bible"
+    try:
+        from bestseller.services.timeline_consistency_gate import (
+            load_timeline_canon,
+            render_timeline_canon_block,
+        )
+
+        canon = load_timeline_canon(bible_root / "timeline-canon.md")
+        if canon is not None:
+            context_packet.timeline_canon_block = (
+                render_timeline_canon_block(canon, language=language) or None
+            )
+    except Exception:
+        logger.debug("chapter-first timeline canon injection failed", exc_info=True)
+    try:
+        from bestseller.services.scene_coherence_gate import render_scene_coherence_block
+
+        context_packet.scene_coherence_block = render_scene_coherence_block(language=language) or None
+    except Exception:
+        logger.debug("chapter-first scene coherence injection failed", exc_info=True)
+    try:
+        from bestseller.services.character_role_gate import (
+            load_character_profiles,
+            render_character_role_block,
+        )
+        from bestseller.services.dialogue_voice_blocks import render_dialogue_voice_block
+
+        profiles = load_character_profiles(bible_root / "cast-and-promises.md")
+        if profiles:
+            context_packet.character_role_block = (
+                render_character_role_block(profiles, language=language) or None
+            )
+            voice_profiles = tuple(
+                profile.dialogue_voice
+                for profile in profiles
+                if profile.dialogue_voice is not None
+            )
+            if voice_profiles:
+                context_packet.dialogue_voice_block = (
+                    render_dialogue_voice_block(voice_profiles, language=language) or None
+                )
+    except Exception:
+        logger.debug("chapter-first character role injection failed", exc_info=True)
+    try:
+        from bestseller.services.chapter_length_gate import render_chapter_length_block
+
+        context_packet.chapter_length_block = render_chapter_length_block(language=language) or None
+    except Exception:
+        logger.debug("chapter-first length block injection failed", exc_info=True)
+    try:
+        _orig_cfg = get_quality_gates_config().originality_engine
+        if _orig_cfg.enabled:
+            from bestseller.services.chapter_orchestrator import prepare_chapter_context
+            from bestseller.services.exposition_density_gate import (
+                check_exposition_density,
+                render_exposition_density_block,
+            )
+            from bestseller.services.market_constraint_compiler import (
+                render_chapter_constraints_block,
+            )
+            from bestseller.services.reader_persona_simulator import render_persona_feedback_block
+            from bestseller.services.signature_scene_planner import render_signature_scene_block
+            from bestseller.services.voice_signature import render_voice_dna_block
+
+            previous_chapters = await _collect_previous_current_chapter_texts(
+                session,
+                project=project,
+                chapter_number=chapter.chapter_number,
+            )
+            prev_text = previous_chapters[-1][1] if previous_chapters else None
+            mode_b = bool(_orig_cfg.mode_b_override) if _orig_cfg.mode_b_override is not None else False
+            orig_ctx = prepare_chapter_context(
+                project.slug,
+                chapter.chapter_number,
+                output_base_dir=settings.output.base_dir,
+                mode_b=mode_b,
+                prev_chapter_text=prev_text,
+            )
+            if orig_ctx.voice_dna is not None:
+                context_packet.voice_dna_block = (
+                    render_voice_dna_block(orig_ctx.voice_dna, language=language) or None
+                )
+            if orig_ctx.market_constraints is not None:
+                context_packet.chapter_market_constraints_block = (
+                    render_chapter_constraints_block(
+                        orig_ctx.market_constraints,
+                        language=language,
+                    )
+                    or None
+                )
+            if orig_ctx.signature_scene_mandate is not None:
+                context_packet.signature_scene_block = (
+                    render_signature_scene_block(
+                        orig_ctx.signature_scene_mandate,
+                        language=language,
+                    )
+                    or None
+                )
+            if orig_ctx.prior_persona_feedback is not None:
+                context_packet.prior_persona_feedback_block = (
+                    render_persona_feedback_block(
+                        orig_ctx.prior_persona_feedback,
+                        language=language,
+                    )
+                    or None
+                )
+            if orig_ctx.hook_echo_report is not None:
+                context_packet.hook_echo_block = orig_ctx.hook_echo_block(language=language) or None
+            context_packet.exposition_density_block = (
+                render_exposition_density_block(
+                    check_exposition_density("", chapter_position=chapter.chapter_number),
+                    language=language,
+                )
+                or None
+            )
+    except Exception:
+        logger.debug("chapter-first originality block injection failed", exc_info=True)
+
+
+async def _render_chapter_first_character_safety_block(
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scenes: Sequence[SceneCardModel],
+) -> str:
+    """Render future-death guardrails for characters active in this chapter."""
+
+    participant_names: set[str] = set()
+    for scene in scenes:
+        for name in getattr(scene, "participants", None) or ():
+            text = str(name or "").strip()
+            if text:
+                participant_names.add(text)
+    if not participant_names:
+        return ""
+
+    rows = await session.execute(
+        select(CharacterModel.name, CharacterModel.death_chapter_number).where(
+            CharacterModel.project_id == project.id,
+            CharacterModel.name.in_(participant_names),
+            CharacterModel.death_chapter_number.is_not(None),
+            CharacterModel.death_chapter_number > chapter.chapter_number,
+        )
+    )
+    protected = [
+        (str(name).strip(), int(death_chapter))
+        for name, death_chapter in rows
+        if name and death_chapter is not None
+    ]
+    if not protected:
+        return ""
+
+    lines = [
+        "以下角色在当前章节只是可以受伤、失踪、被困、濒危或留下生死悬念，不能被正文确认死亡："
+    ]
+    lines.extend(f"- {name}：计划死亡/退场章为第{death_chapter}章之后；本章禁止写成已死。" for name, death_chapter in protected)
+    lines.append(
+        "禁止使用“死了、死亡、尸体、遗体、断气、没命、临终”等确认死亡表述指向上述角色；"
+        "包括疑问句、传闻句和旁人推测式表达，例如“已经死了，对吧？”“是不是死了？”也禁止。"
+        "如果需要强钩子，改写为“被拖入镜中后生死不明、声音断掉、只留下物件、下一章需确认”。"
+    )
+    return "\n".join(lines)
+
+
+def build_chapter_first_draft_prompts(
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scenes: Sequence[SceneCardModel],
+    style_guide: StyleGuideModel | None,
+    context_packet: ChapterWriterContextPacket,
+    *,
+    target_word_count: int,
+    character_safety_block: str | None = None,
+) -> tuple[str, str]:
+    language = _project_language(project)
+    is_en = is_english_language(language)
+    writing_profile = _resolve_project_writing_profile(project, style_guide)
+    writing_profile_section = render_writing_profile_prompt_block(writing_profile, language=language)
+    serial_guardrails = render_serial_fiction_guardrails(writing_profile, language=language)
+    if is_en:
+        system_prompt = (
+            "You are an expert commercial fiction writer. Write one complete chapter "
+            "in a single pass from the chapter plan and scene cards. Output prose only.\n"
+            "Preserve continuity, causal logic, character voice, and hook strength. "
+            "Do not output outlines, commentary, or scene labels.\n"
+            f"Writing profile:\n{writing_profile_section}\n"
+            f"Serial fiction guardrails:\n{serial_guardrails}\n"
+        )
+        instruction = (
+            "Write the full chapter in one continuous Markdown prose draft. Use scene cards "
+            "as beat constraints, not visible headings. Open with immediate pressure, show "
+            "a human flaw in the protagonist, keep terminology digestible, and end on one "
+            "concrete hook. Stay within the requested chapter word count band; do not expand "
+            "past the target to explain worldbuilding."
+        )
+    else:
+        system_prompt = (
+            "你是功力深厚的中文商业小说写手。现在必须基于章节计划和场景卡，"
+            "一次性写出完整一章，而不是逐场景拼接。\n"
+            "只输出小说正文；不要解释、不要提纲、不要评语、不要显式场景标题。"
+            "必须保持连续叙事、因果严密、人物有破绽和主动性、开篇有强牵引、章末有具体钩子。\n"
+            f"写作风格：\n{writing_profile_section}\n"
+            f"连载护栏：\n{serial_guardrails}\n"
+        )
+        instruction = (
+            "请一次性写完整章节。场景卡只作为内部节拍约束，正文不能出现“第一场/第二场/场景”等标签。"
+            "前100字必须给出读者可感知的压力或异常；前300字必须让主角表现出一个可代入的人性破绽，"
+            "不能只是冷静执行规则。术语只按本章必须信息释放，不要堆设定。章末只收束到一个具体、可视化、"
+            "能促使读者翻下一章的钩子。必须严格贴近目标字数，不要为了解释设定而扩写。"
+        )
+
+    raw_chapter_contract = getattr(context_packet, "chapter_contract", None)
+    if raw_chapter_contract is None:
+        chapter_contract = None
+    elif hasattr(raw_chapter_contract, "model_dump"):
+        chapter_contract = raw_chapter_contract.model_dump(mode="json")
+    elif isinstance(raw_chapter_contract, Mapping):
+        chapter_contract = dict(raw_chapter_contract)
+    else:
+        chapter_contract = {"value": str(raw_chapter_contract)}
+    raw_hard_snapshot = getattr(context_packet, "hard_fact_snapshot", None)
+    if raw_hard_snapshot is None:
+        hard_snapshot = None
+    elif hasattr(raw_hard_snapshot, "model_dump"):
+        hard_snapshot = raw_hard_snapshot.model_dump(mode="json")
+    elif isinstance(raw_hard_snapshot, Mapping):
+        hard_snapshot = dict(raw_hard_snapshot)
+    else:
+        hard_snapshot = {"value": str(raw_hard_snapshot)}
+    generation_input_block = ""
+    acceptance_contract_block = ""
+    try:
+        from bestseller.services.chapter_generation_input_builder import (
+            build_chapter_generation_input_bundle,
+        )
+
+        generation_input_bundle = build_chapter_generation_input_bundle(
+            project=project,
+            chapter=chapter,
+            scenes=scenes,
+            context_packet=context_packet,
+            target_word_count=target_word_count,
+        )
+        generation_input_block = _compact_json_block(
+            generation_input_bundle.model_dump(mode="json"),
+            max_chars=4500,
+        )
+        acceptance_contract_block = _compact_json_block(
+            generation_input_bundle.acceptance_contract,
+            max_chars=2500,
+        )
+    except Exception:
+        logger.debug("chapter generation input bundle render failed", exc_info=True)
+    generation_input_block = _redact_front10_prompt_leaks(
+        generation_input_block,
+        chapter,
+        scenes,
+    )
+    acceptance_contract_block = _redact_front10_prompt_leaks(acceptance_contract_block, chapter, scenes)
+    knowledge_boundary_block = _render_knowledge_state_section(
+        getattr(context_packet, "participant_knowledge_states", None),
+        is_en=is_en,
+    )
+    constraint_blocks = [
+        block
+        for block in (
+            context_packet.chapter_length_block,
+            context_packet.timeline_canon_block,
+            context_packet.character_role_block,
+            context_packet.dialogue_voice_block,
+            context_packet.scene_coherence_block,
+            context_packet.canon_guardrails_block,
+            context_packet.reader_contract_block,
+            context_packet.hype_constraints_block,
+            context_packet.hook_echo_block,
+            context_packet.exposition_density_block,
+            context_packet.voice_dna_block,
+            context_packet.chapter_market_constraints_block,
+            context_packet.signature_scene_block,
+            context_packet.prior_persona_feedback_block,
+        )
+        if block
+    ]
+    opening_retention_rules = ""
+    if chapter.chapter_number <= 3:
+        opening_retention_rules = (
+            "【黄金三章硬规则】\n"
+            "1. 第一句话必须直接给出异常、威胁、倒计时、死亡证据或不可解释事件，禁止从整理物品、回忆、解释职业开始。\n"
+            "2. 前300字只允许释放1-2个核心设定名词，必须按“异常 -> 主角选择 -> 代价/危险升级”推进。\n"
+            "3. 主角必须出现一个可代入的人性破绽：怕、穷、迟疑、误判、心软、愧疚或被父辈阴影击中，不能全程像规则机器。\n"
+            "4. 每章至少交付一个具体爽点：识破、反杀、救人、夺回主动权、规则反用或证据翻转。\n"
+            "5. 章末钩子必须是新的可视化危险或证据，不能只用抽象设定句收尾；"
+            "最后一句必须落在完成画面帧、人物动作、物件变化或明确选择点。"
+        )
+    elif chapter.chapter_number <= 10:
+        opening_retention_rules = (
+            "【前十章留存硬规则】\n"
+            "1. 开头200字必须承接上一章钩子并立刻升级，不得重新铺垫。\n"
+            "2. 本章必须有一个新证据、一次主动选择、一个具体代价或一次规则反用。\n"
+            "3. 对话必须区分人物腔调，禁止所有人都用冷短句。\n"
+            "4. 章末必须留下具体物件、动作、声音、画面或选择压力，且最后一句必须仍在现场内。"
+        )
+    contract_must_hit_block = ""
+    if isinstance(chapter_contract, Mapping):
+        must_hit_items = [
+            ("章节摘要", chapter_contract.get("contract_summary")),
+            ("核心冲突", chapter_contract.get("core_conflict")),
+            ("信息释放", chapter_contract.get("information_release")),
+            ("章末钩子", chapter_contract.get("closing_hook")),
+        ]
+        visible_items = [
+            f"- {label}：{str(value).strip()}"
+            for label, value in must_hit_items
+            if str(value or "").strip()
+        ]
+        if visible_items:
+            contract_must_hit_block = (
+                "【必须显性兑现的章节契约】\n"
+                + "\n".join(visible_items)
+                + "\n这些不是参考资料，而是正文必须让读者直接看见的交付项。"
+                "其中出现的人名、物件、规则、危险和章末钩子不得省略、替换或只做隐晦暗示；"
+                "如果与场景卡有冲突，优先满足章节契约，并用一个自然动作或一句对白补入缺失信息。"
+                "最后200字必须显性兑现“章末钩子”；如果钩子里有未在场景卡参与者出现的人名，"
+                "必须通过门外声音、监控提示或现场物件自然引入，不得省略。"
+            )
+    volume_seed_block = ""
+    if chapter.chapter_number <= 3 and not (
+        isinstance(getattr(chapter, "metadata_json", None), Mapping)
+        and getattr(chapter, "metadata_json", {}).get("framework_regeneration_candidate")
+    ):
+        seed_payload = {
+            "active_plot_arcs": _chapter_context_list(
+                context_packet.active_plot_arcs,
+                max_items=3,
+            ),
+            "unresolved_clues": _chapter_context_list(
+                context_packet.unresolved_clues,
+                max_items=4,
+            ),
+            "planned_payoffs": _chapter_context_list(
+                context_packet.planned_payoffs,
+                max_items=4,
+            ),
+        }
+        compact_seed = _compact_json_block(seed_payload, max_chars=2200)
+        if compact_seed and compact_seed != "{}":
+            volume_seed_block = (
+                "【卷级首章埋钩硬约束】\n"
+                "从以下卷级主线/伏笔中选择1-2个最贴合本章场景的元素，必须在正文中以物件、账文、"
+                "人物反应或短对白可见落地；不要堆术语，不要把卷高潮提前讲透。"
+                "章末只能聚焦一个主钩子，其他卷级元素只能在中段轻轻落点，禁止在最后300字连续抛出多个悬念。\n"
+                + compact_seed
+            )
+    hard_min_words, hard_target_words, hard_max_words = _chapter_length_contract_band(
+        project,
+        target_word_count,
+    )
+    scene_count = len(scenes)
+    total_scene_target = sum(int(scene.target_word_count or 0) for scene in scenes)
+    scene_targets = [int(scene.target_word_count or hard_target_words) for scene in scenes] or [
+        hard_target_words
+    ]
+    per_scene_min = max(1, min(int(target * 0.8) for target in scene_targets))
+    per_scene_max = max(2, max(int(target * 1.15) for target in scene_targets))
+    output_rules = (
+        "只输出小说正文 Markdown。可以保留一个章节标题；不要输出“分析/计划/说明/门禁/改写策略”。"
+        f"正文必须连贯，篇幅硬范围是 {hard_min_words}-{hard_max_words} 个汉字，"
+        f"目标约{hard_target_words}字；写到章末钩子落地后立刻停止，禁止超过上限；"
+        f"字数是硬交付，不是建议：正文少于 {hard_min_words} 个汉字就是失败，"
+        "没有写满下限前不得提前收束、不得只写剧情摘要。"
+        f"本章一共只有 {scene_count} 个场景，场景目标合计约 {total_scene_target or hard_target_words} 字，"
+        f"不是每个场景各写一章；单场通常控制在 {per_scene_min}-{per_scene_max} 字内，"
+        "全文建议22-32段，最多36段；每场5-8段为主，至少4段正在发生的戏，最多9段；"
+        "单段通常45-95字。"
+        "不得把场景卡压缩成一句概述；每个场景必须写出现场空间、角色动作、可见物证变化、"
+        "人物反应和至少一轮有辨识度的对话/追问。"
+        "任何一场到第8段还没完成离场状态，必须用1段收束并进入下一场。"
+        "到最后一个场景的尾钩落成后必须停止，不得继续补新的循环段落。"
+        "严格按场景卡的单场字数边界分配篇幅：每场只完成本场任务，不得把一个场景扩写成整章体量；"
+        "每场达成离场状态后，用一句可见转场进入下一场。"
+        "场景卡的入场状态、离场状态和 forbidden_actions 是硬边界；不得把“失声/回声/半账未解”"
+        "升级成“被拖进门、被吞掉、确认死亡、门合拢”等未写在场景卡的高潮动作；"
+        "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、吞人、门关闭、电话、快递等关键事件一律禁止。"
+        "如果模型准备写超过42段或超过3500字，必须优先删解释、删重复氛围、删二次推理，"
+        "不能继续扩写。"
+        "不得出现模板化重复句式，不得把同一恐惧/门禁/铜钱动作反复写成同一模式。"
+        "非专业角色只能描述自己亲眼看见的异常、听来的警告或身体反应；除非角色认知状态明确写明，"
+        "否则不得让普通客户、快递员、送餐员、邻居、警察主动说出或理解认账、入账、替认、镜债、账线等专业规则词。"
+        "叙述者也不要替普通角色贴规则标签：不要写“张建军继续否认/小雨被替认”这类句子，"
+        "应改写成普通语言，如“张建军咬死说没进过门”“小雨手腕多了半圈黑线”。"
+        "如果需要让非专业角色说出规则词，必须写成被附身、被镜中声音逼迫复述、或主角刚刚当场解释后的结果。"
+        "正文不得使用 ---、***、空行切场、场景标题或小节分隔符。"
+        "每次更换地点或时间，必须先写一句可见转场动作，例如出门、下楼、电梯、电话挂断、"
+        "门牌变化、时间跳动或物件反应；禁止从一个地点直接跳到另一个地点。"
+        "章末最后120字必须满足“钩子+落地帧”：可以抛出新危险或新信息，但最后一句必须是"
+        "现场内可看见的完成画面、人物动作、物件变化或选择点；如果钩子是对白，必须在对白后"
+        "再加一句动作/画面作为最后帧，禁止让最后一句只是一句台词或正在进行的动作。"
+        "章末只能保留一个主钩子，最多一个辅助信息，不得连续堆叠电梯、短信、门、水、电话、"
+        "新人物等多个未解悬念；选择一个最服务下一章的钩子并让其落成完成画面。"
+        "不得临时发明未在场景卡、角色池、章节契约或故事圣经中出现的人名；功能性人物只用"
+        "司机、邻居、保安、摊主、送货员等身份称谓。"
+        "如果角色安全块要求某角色本章不能确认死亡，连疑问句、传闻句和旁人推测式“已经死了，对吧？”"
+        "也不能写，只能写成失踪、被困、生死未明或还不能确认。"
+        "如果信息量装不下，优先删解释和术语，保留动作、冲突、人物选择和章末钩子。"
+    )
+    opening_scene_contract = _render_chapter_first_opening_contract(chapter, scenes)
+    prior_chapter_bridge = _render_chapter_first_prior_chapter_bridge(context_packet)
+    front_forbidden_terms_block = _render_front_chapter_forbidden_terms_block(chapter)
+    story_bible_block = _redact_front10_prompt_leaks(
+        _compact_json_block(context_packet.story_bible, max_chars=3200),
+        chapter,
+        scenes,
+    )
+    activity_context_block = _redact_front10_prompt_leaks(
+        _compact_json_block(
+            {
+                "active_plot_arcs": _chapter_context_list(
+                    context_packet.active_plot_arcs,
+                    max_items=5,
+                ),
+                "active_arc_beats": _chapter_context_list(
+                    context_packet.active_arc_beats,
+                    max_items=5,
+                ),
+                "unresolved_clues": _chapter_context_list(
+                    context_packet.unresolved_clues,
+                    max_items=5,
+                ),
+                "planned_payoffs": _chapter_context_list(
+                    context_packet.planned_payoffs,
+                    max_items=5,
+                ),
+            },
+            max_chars=3000,
+        ),
+        chapter,
+        scenes,
+    )
+    timeline_context_block = _redact_front10_prompt_leaks(
+        _compact_json_block(
+            {
+                "recent_timeline_events": _chapter_context_list(
+                    context_packet.recent_timeline_events,
+                ),
+                "hard_fact_snapshot": hard_snapshot,
+            },
+            max_chars=2800,
+        ),
+        chapter,
+        scenes,
+    )
+    retrieval_context_block = _redact_front10_prompt_leaks(
+        _compact_json_block(
+            _chapter_context_list(context_packet.retrieval_chunks, max_items=4),
+            max_chars=1800,
+        ),
+        chapter,
+        scenes,
+    )
+    user_prompt = "\n\n".join(
+        section
+        for section in [
+            "【任务】\n" + instruction,
+            prior_chapter_bridge,
+            (
+                "【章节目标】\n"
+                f"作品：{project.title}\n"
+                f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
+                f"目标字数：约{hard_target_words}字，必须完整成章；发布硬范围 {hard_min_words}-{hard_max_words} 字\n"
+                f"章节目标：{chapter.chapter_goal or ''}"
+            ),
+            "【场景卡节拍】\n" + _render_chapter_first_scene_cards(scenes),
+            "【统一生成输入包】\n" + generation_input_block
+            if generation_input_block
+            else "",
+            (
+                "【写前验收契约】\n"
+                + acceptance_contract_block
+                + "\n写作前必须在内部逐项核对本契约；正文必须能被这些条款验收通过。"
+                "不要输出核对过程，只输出小说正文。"
+            )
+            if acceptance_contract_block
+            else "",
+            "【角色认知边界】\n" + knowledge_boundary_block
+            if knowledge_boundary_block
+            else "",
+            "【硬约束与门禁】\n" + _render_compact_constraint_blocks(constraint_blocks)
+            if constraint_blocks
+            else "",
+            "【角色生死与登场安全】\n" + character_safety_block
+            if character_safety_block
+            else "",
+            opening_scene_contract,
+            front_forbidden_terms_block,
+            opening_retention_rules,
+            contract_must_hit_block,
+            volume_seed_block,
+            "【章节契约】\n" + _compact_json_block(chapter_contract, max_chars=3500)
+            if chapter_contract
+            else "",
+            "【故事圣经上下文】\n" + story_bible_block,
+            "【近期章节/场景摘要】\n"
+            + _compact_json_block(
+                _chapter_context_list(context_packet.previous_scene_summaries, max_items=5),
+                max_chars=1800,
+            ),
+            "【活动主线/伏笔/回收】\n" + activity_context_block,
+            "【时间线与硬事实快照】\n" + timeline_context_block,
+            "【检索补充】\n" + retrieval_context_block,
+            "【输出要求】\n" + output_rules,
+        ]
+        if section
+    )
+    system_prompt = _redact_front10_prompt_leaks(system_prompt, chapter, scenes)
+    user_prompt = _redact_front10_prompt_leaks(user_prompt, chapter, scenes)
+    return system_prompt, user_prompt
+
+
+async def generate_chapter_draft_once(
+    session: AsyncSession,
+    project_slug: str,
+    chapter_number: int,
+    *,
+    settings: AppSettings | None = None,
+    workflow_run_id: UUID | None = None,
+    step_run_id: UUID | None = None,
+    context_packet: ChapterWriterContextPacket | None = None,
+) -> ChapterDraftVersionModel:
+    project = await get_project_by_slug(session, project_slug)
+    if project is None:
+        raise ValueError(f"Project '{project_slug}' was not found.")
+    chapter = await session.scalar(
+        select(ChapterModel).where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number == chapter_number,
+        )
+    )
+    if chapter is None:
+        raise ValueError(f"Chapter {chapter_number} was not found for '{project_slug}'.")
+    previous_chapter_status = str(getattr(chapter, "status", "") or "")
+    scenes = list(
+        await session.scalars(
+            select(SceneCardModel)
+            .where(SceneCardModel.chapter_id == chapter.id)
+            .order_by(SceneCardModel.scene_number.asc())
+        )
+    )
+    if not scenes:
+        raise ValueError(f"Chapter {chapter_number} does not have any scene cards.")
+
+    effective_settings = settings or load_settings()
+    style_guide = await session.get(StyleGuideModel, project.id)
+    if context_packet is None:
+        context_packet = await build_chapter_writer_context(
+            session,
+            effective_settings,
+            project_slug,
+            chapter_number,
+        )
+    await _enrich_chapter_first_context(session, effective_settings, project, chapter, context_packet)
+    character_safety_block = await _render_chapter_first_character_safety_block(
+        session,
+        project,
+        chapter,
+        scenes,
+    )
+
+    target_word_count = int(
+        chapter.target_word_count
+        or effective_settings.generation.words_per_chapter.target
+        or 2500
+    )
+    system_prompt, user_prompt = build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        scenes,
+        style_guide,
+        context_packet,
+        target_word_count=target_word_count,
+        character_safety_block=character_safety_block,
+    )
+    fallback_content = "\n\n".join(
+        [
+            format_chapter_heading(
+                chapter.chapter_number,
+                chapter.title,
+                language=_project_language(project),
+            ),
+            (chapter.chapter_goal or "").strip(),
+        ]
+    ).strip()
+    completion = await complete_text(
+        session,
+        effective_settings,
+        LLMCompletionRequest(
+            logical_role="writer",
+            model_tier="strong" if chapter.chapter_number <= 3 else "standard",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_response=fallback_content,
+            prompt_template="chapter_first_writer",
+            prompt_version="1.0",
+            project_id=project.id,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+            # This is a runaway guard, not the chapter length controller.
+            # Length is controlled by the prompt contract and post-write gates.
+            max_tokens_override=chapter_first_runaway_max_tokens(
+                effective_settings,
+                target_word_count=target_word_count,
+                language=_project_language(project),
+                hard_max_word_count=_chapter_length_contract_band(
+                    project,
+                    target_word_count,
+                )[2],
+            ),
+            metadata={
+                "project_slug": project.slug,
+                "chapter_number": chapter.chapter_number,
+                "scene_numbers": [scene.scene_number for scene in scenes],
+                "generation_mode": "chapter_first",
+                "length_control_method": "prompt_contract_and_quality_gate",
+                "max_tokens_policy": "runaway_guard_not_length_control",
+                "context_query": context_packet.query_text,
+            },
+        ),
+    )
+    content_md = sanitize_novel_markdown_content(
+        completion.content,
+        language=_project_language(project),
+    ) or fallback_content
+    content_md = strip_scaffolding_echoes(content_md)
+    if has_meta_leak(content_md):
+        content_md = await validate_and_clean_novel_content(
+            session,
+            effective_settings,
+            content_md,
+            project_id=project.id,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+        )
+    if not _has_leading_chapter_heading(content_md, chapter_number):
+        content_md = (
+            f"{format_chapter_heading(chapter_number, chapter.title, language=_project_language(project))}"
+            f"\n\n{content_md}"
+        )
+    content_md, cleanup_stats = _clean_generated_chapter_text(
+        content_md,
+        chapter_number=chapter_number,
+        source="chapter_first",
+    )
+    if any(cleanup_stats.values()):
+        logger.info(
+            "chapter_first %d: cleanup stats=%s word_count=%d",
+            chapter_number,
+            cleanup_stats,
+            count_words(content_md),
+        )
+
+    duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
+        session,
+        project=project,
+        chapter=chapter,
+        content_md=content_md,
+    )
+    if duplicate_gate_findings:
+        _stamp_duplicate_content_block(chapter, duplicate_gate_findings)
+
+    previous_chapter_texts: tuple[tuple[int, str], ...] = ()
+    try:
+        previous_chapter_texts = await _collect_previous_current_chapter_texts(
+            session,
+            project=project,
+            chapter_number=chapter_number,
+        )
+    except Exception:
+        logger.debug(
+            "Chapter %d: prior chapter text lookup for chapter-first quality failed",
+            chapter_number,
+            exc_info=True,
+        )
+    previous_chapter_number = previous_chapter_texts[-1][0] if previous_chapter_texts else None
+    previous_chapter_text = previous_chapter_texts[-1][1] if previous_chapter_texts else None
+    commercial_quality_required = bool(effective_settings.pipeline.commercial_strict_quality_mode) and (
+        int(project.target_chapters or 0)
+        >= int(effective_settings.pipeline.commercial_planning_min_target_chapters)
+    )
+    quality_bundle_report: ChapterQualityBundleReport | None = None
+    if commercial_quality_required:
+        quality_bundle_report = run_chapter_quality_bundle(
+            content_md,
+            ChapterQualityBundleContext(
+                chapter_number=chapter_number,
+                previous_chapter_text=previous_chapter_text,
+                previous_chapter_position=previous_chapter_number,
+                previous_chapter_texts=previous_chapter_texts,
+                total_chapters=project.target_chapters or 500,
+                language=project.language,
+                target_chapter_words=effective_settings.generation.words_per_chapter.target,
+                commercial_strict=bool(effective_settings.pipeline.commercial_strict_quality_mode),
+            ),
+        )
+        _stamp_chapter_quality_bundle(chapter, quality_bundle_report)
+
+    quality_gate_outcome = await _evaluate_chapter_quality_gate(
+        session=session,
+        project=project,
+        chapter_number=chapter_number,
+        content=content_md,
+    )
+    if duplicate_gate_findings or (
+        quality_bundle_report is not None and quality_bundle_report.blocking_findings
+    ):
+        quality_gate_outcome = "blocked"
+
+    word_count = count_words(content_md)
+    next_version = int(
+        (
+            await session.scalar(
+                select(func.coalesce(func.max(ChapterDraftVersionModel.version_no), 0)).where(
+                    ChapterDraftVersionModel.chapter_id == chapter.id
+                )
+            )
+        )
+        or 0
+    ) + 1
+    await session.execute(
+        update(ChapterDraftVersionModel)
+        .where(
+            ChapterDraftVersionModel.chapter_id == chapter.id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .values(is_current=False)
+    )
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=next_version,
+        content_md=content_md,
+        word_count=word_count,
+        assembled_from_scene_draft_ids=[f"chapter_first_scene:{scene.id}" for scene in scenes],
+        is_current=True,
+        llm_run_id=completion.llm_run_id,
+    )
+    session.add(chapter_draft)
+    chapter.current_word_count = word_count
+    chapter.status = (
+        ChapterStatus.REVISION.value
+        if previous_chapter_status == ChapterStatus.REVISION.value
+        else ChapterStatus.DRAFTING.value
+    )
+    chapter.production_state = quality_gate_outcome or "ok"
+    try:
+        from bestseller.services.chapter_generation_input_builder import (
+            build_chapter_generation_input_bundle,
+            build_chapter_generation_input_stamp,
+        )
+
+        generation_input_bundle = build_chapter_generation_input_bundle(
+            project=project,
+            chapter=chapter,
+            scenes=scenes,
+            context_packet=context_packet,
+            target_word_count=target_word_count,
+        )
+        generation_input_payload = build_chapter_generation_input_stamp(
+            generation_input_bundle
+        )
+    except Exception:
+        logger.debug("Chapter %d: generation input bundle stamp failed", chapter_number, exc_info=True)
+        generation_input_payload = {}
+    chapter.metadata_json = {
+        **(chapter.metadata_json or {}),
+        "chapter_first_generation": {
+            "enabled": True,
+            "model_name": completion.model_name,
+            "provider": completion.provider,
+            "llm_run_id": str(completion.llm_run_id) if completion.llm_run_id else None,
+            "scene_count": len(scenes),
+            "generation_input_stamp": generation_input_payload,
+        },
+    }
+    await session.flush()
+
+    if settings is not None:
+        try:
+            output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter_number:03d}.md"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(content_md, encoding="utf-8")
+        except Exception:
+            logger.debug("Chapter %d: chapter-first disk sync failed", chapter_number, exc_info=True)
+
+    return chapter_draft
+
+
 def _determine_model_tier(
     chapter: ChapterModel,
     scene: SceneCardModel,
@@ -5407,9 +7592,24 @@ async def _declare_validated_prewrite_plan(
     violations: list[str] = []
     last_model_name: str | None = None
     last_provider: str | None = None
+    project_metadata = (
+        getattr(project, "metadata_json", None)
+        if isinstance(getattr(project, "metadata_json", None), dict)
+        else {}
+    )
+    prompt_pack = resolve_prompt_pack(
+        project_metadata.get("prompt_pack_name") or project_metadata.get("prompt_pack_key"),
+        genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+        sub_genre=getattr(project, "sub_genre", None),
+    )
 
     for attempt in range(2):
-        user_prompt = render_prewrite_plan_prompt(manifest, language=language)
+        user_prompt = render_prewrite_plan_prompt(
+            manifest,
+            language=language,
+            pack=prompt_pack,
+            chapter_number=chapter.chapter_number,
+        )
         if violations:
             joined = "\n".join(f"- {item}" for item in violations)
             user_prompt += (
@@ -5431,7 +7631,7 @@ async def _declare_validated_prewrite_plan(
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
-                max_tokens_override=700,
+                max_tokens_override=4096,
                 metadata={
                     "project_slug": project.slug,
                     "chapter_number": chapter.chapter_number,
@@ -5443,7 +7643,10 @@ async def _declare_validated_prewrite_plan(
         last_model_name = completion.model_name
         last_provider = completion.provider
         try:
-            plan = parse_prewrite_plan(completion.content)
+            plan = normalize_prewrite_plan_for_manifest(
+                parse_prewrite_plan(completion.content),
+                manifest,
+            )
         except ValueError as exc:
             violations = [str(exc)]
             continue
@@ -6141,6 +8344,7 @@ async def generate_scene_draft(
         # Inject voice drift correction prompts for scene participants
         proj_metadata = getattr(project, "metadata_json", None) or {}
         voice_corrections = proj_metadata.get("voice_corrections", {}) if isinstance(proj_metadata, dict) else {}
+        voice_corrections_block = ""
         if voice_corrections and scene.participants:
             _vc_is_en = is_english_language(_project_language(project))
             correction_lines: list[str] = []
@@ -6150,7 +8354,10 @@ async def generate_scene_draft(
                     _vc_label = f"[{participant} Voice Correction]" if _vc_is_en else f"【{participant}语音修正】"
                     correction_lines.append(f"{_vc_label}{correction}")
             if correction_lines:
-                system_prompt += "\n\n" + "\n".join(correction_lines)
+                header = "## Voice Corrections" if _vc_is_en else "【角色语音修正】"
+                voice_corrections_block = f"{header}\n" + "\n".join(correction_lines)
+        if voice_corrections_block:
+            user_prompt = f"{user_prompt}\n\n{voice_corrections_block}"
         _model_tier = _determine_model_tier(
             chapter,
             scene,
@@ -6176,6 +8383,7 @@ async def generate_scene_draft(
                 model_tier=_model_tier,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
+                cache_system=True,
                 fallback_response=fallback_content,
                 prompt_template="scene_writer",
                 prompt_version="1.0",
@@ -6505,6 +8713,62 @@ async def assemble_chapter_draft(
         )
         _stamp_duplicate_content_block(chapter, duplicate_gate_findings)
 
+    previous_chapter_texts: tuple[tuple[int, str], ...] = ()
+    try:
+        previous_chapter_texts = await _collect_previous_current_chapter_texts(
+            session,
+            project=project,
+            chapter_number=chapter_number,
+        )
+    except Exception:
+        logger.debug(
+            "Chapter %d: prior chapter text lookup for quality bundle failed (non-fatal)",
+            chapter_number,
+            exc_info=True,
+        )
+    previous_chapter_number = previous_chapter_texts[-1][0] if previous_chapter_texts else None
+    previous_chapter_text = previous_chapter_texts[-1][1] if previous_chapter_texts else None
+    generation_target_words: int | None = None
+    commercial_strict = True
+    commercial_quality_required = int(project.target_chapters or 0) >= 50
+    try:
+        effective_settings = settings or load_settings()
+        generation_target_words = int(effective_settings.generation.words_per_chapter.target)
+        commercial_strict = bool(effective_settings.pipeline.commercial_strict_quality_mode)
+        commercial_quality_required = commercial_strict and (
+            int(project.target_chapters or 0)
+            >= int(effective_settings.pipeline.commercial_planning_min_target_chapters)
+        )
+    except Exception:
+        logger.debug(
+            "Chapter %d: quality bundle settings lookup failed, using strict defaults",
+            chapter_number,
+            exc_info=True,
+        )
+    quality_bundle_report: ChapterQualityBundleReport | None = None
+    if commercial_quality_required:
+        quality_bundle_report = run_chapter_quality_bundle(
+            content_md,
+            ChapterQualityBundleContext(
+                chapter_number=chapter_number,
+                previous_chapter_text=previous_chapter_text,
+                previous_chapter_position=previous_chapter_number,
+                previous_chapter_texts=previous_chapter_texts,
+                total_chapters=project.target_chapters or 500,
+                language=project.language,
+                target_chapter_words=generation_target_words,
+                commercial_strict=commercial_strict,
+            ),
+        )
+        _stamp_chapter_quality_bundle(chapter, quality_bundle_report)
+        if quality_bundle_report.blocking_findings:
+            logger.warning(
+                "Chapter %d: quality bundle blocked %d finding(s): %s",
+                chapter_number,
+                len(quality_bundle_report.blocking_findings),
+                ", ".join(dict.fromkeys(f.code for f in quality_bundle_report.blocking_findings)),
+            )
+
     # ── L4/L5/L6 pre-write quality gate ──
     # Runs before the draft row + disk file land. L4 checks language/length/
     # naming/density, L5 checks dialog integrity & POV lock, L6 resolves the
@@ -6517,8 +8781,20 @@ async def assemble_chapter_draft(
         chapter_number=chapter_number,
         content=content_md,
     )
-    if duplicate_gate_findings:
+    if duplicate_gate_findings or (
+        quality_bundle_report is not None and quality_bundle_report.blocking_findings
+    ):
         quality_gate_outcome = "blocked"
+    if quality_gate_outcome == "ok":
+        cleared_repair_residue = _clear_scene_auto_repair_residue_after_clean_assembly(
+            scenes
+        )
+        if cleared_repair_residue:
+            logger.info(
+                "Chapter %d: cleared stale auto-repair metadata from %d scene(s) after clean assembly",
+                chapter_number,
+                cleared_repair_residue,
+            )
 
     word_count = count_words(content_md)
     next_version = int(
@@ -6727,6 +9003,44 @@ async def maybe_prepare_chapter_auto_repair(
     if not repair_set:
         return False, ()
 
+    async def _current_draft_length_payload() -> dict[str, Any]:
+        current_draft = await session.scalar(
+            select(ChapterDraftVersionModel).where(
+                ChapterDraftVersionModel.chapter_id == chapter.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+        )
+        if current_draft is None:
+            return {}
+        try:
+            word_count = int(getattr(current_draft, "word_count", None) or 0)
+        except (TypeError, ValueError):
+            word_count = 0
+        if word_count <= 0:
+            word_count = count_words(getattr(current_draft, "content_md", "") or "")
+        if word_count <= 0:
+            return {}
+        hard_min, target_words, hard_max = _chapter_length_contract_band(
+            project,
+            getattr(chapter, "target_word_count", None),
+        )
+        issue_code: str | None = None
+        band = "OK"
+        if word_count < hard_min:
+            issue_code = "CHAPTER_LENGTH_BLOCK_LOW"
+            band = "BLOCK_LOW"
+        elif word_count > hard_max:
+            issue_code = "CHAPTER_LENGTH_BLOCK_HIGH"
+            band = "BLOCK_HIGH"
+        return {
+            "band": band,
+            "min_words": hard_min,
+            "target_words": target_words,
+            "max_words": hard_max,
+            "issue_code": issue_code,
+            "word_count": word_count,
+        }
+
     def _mark_repair_started(block_codes: tuple[str, ...]) -> None:
         chapter_meta = dict(chapter.metadata_json or {})
         chapter_meta.pop("blocked_by_write_safety_gate", None)
@@ -6736,6 +9050,14 @@ async def maybe_prepare_chapter_auto_repair(
         chapter_meta.pop("auto_repair_exhausted", None)
         chapter_meta["auto_repair_last_block_codes"] = list(block_codes)
         chapter_meta["auto_repair_attempts"] = max(1, int(attempt_number))
+        # Cross-run cumulative counter: ``auto_repair_attempts`` above is
+        # the *intra-run* number (resets to 1 at the start of every
+        # pipeline invocation). ``auto_repair_total_attempts`` accumulates
+        # across runs so the pipeline can refuse to keep retrying a
+        # chapter that has already spent its full cross-run budget.
+        # See settings.chapter_auto_repair_total_max_attempts.
+        prior_total = int(chapter_meta.get("auto_repair_total_attempts") or 0)
+        chapter_meta["auto_repair_total_attempts"] = prior_total + 1
         chapter_meta["auto_repair_in_progress"] = True
         chapter_meta["auto_accepted"] = False
         chapter.metadata_json = chapter_meta
@@ -6789,6 +9111,52 @@ async def maybe_prepare_chapter_auto_repair(
                 details.append(detail)
         return details
 
+    def _timeline_repair_details() -> list[str]:
+        details: list[str] = []
+        for finding in retention_findings:
+            if str(finding.get("code") or "") != "TIMELINE_INCONSISTENT":
+                continue
+            evidence = finding.get("evidence")
+            if not isinstance(evidence, Mapping):
+                continue
+            for item in evidence.get("violations") or ():
+                if not isinstance(item, Mapping):
+                    continue
+                found_anchor = str(item.get("found_anchor") or "").strip()
+                canonical_anchor = str(item.get("canonical_anchor") or "").strip()
+                paragraph_idx = item.get("paragraph_idx")
+                detail = str(item.get("detail") or "").strip()
+                if found_anchor and canonical_anchor:
+                    details.append(
+                        f"段落{paragraph_idx}: 将“{found_anchor}”改为正典锚点“{canonical_anchor}”；{detail}"
+                    )
+                elif detail:
+                    details.append(f"段落{paragraph_idx}: {detail}")
+        return details
+
+    def _scene_jump_repair_details() -> list[str]:
+        details: list[str] = []
+        for finding in retention_findings:
+            if str(finding.get("code") or "") != "SCENE_JUMP_UNRESOLVED":
+                continue
+            evidence = finding.get("evidence")
+            if not isinstance(evidence, Mapping):
+                continue
+            for item in evidence.get("jumps") or ():
+                if not isinstance(item, Mapping):
+                    continue
+                from_place = str(item.get("from") or "").strip()
+                to_place = str(item.get("to") or "").strip()
+                paragraph_idx = item.get("paragraph_idx")
+                detail = str(item.get("detail") or "").strip()
+                if from_place and to_place:
+                    details.append(
+                        f"段落{paragraph_idx}: 在“{from_place}”到“{to_place}”之间补一到两句可见转场动作，写清谁带着什么物证离开、经过多久、如何抵达；{detail}"
+                    )
+                elif detail:
+                    details.append(f"段落{paragraph_idx}: {detail}")
+        return details
+
     retention_hint_by_code = {
         "HOOK_ECHO_MISSING": (
             "本章没有在开篇呼应上一章结尾留下的具体未解问题。重写时必须在前1000字内兑现、升级或反转上一章留下的具体危险、人物或物件。"
@@ -6805,6 +9173,12 @@ async def maybe_prepare_chapter_auto_repair(
         "CAST_VIOLATION": (
             "本章出现了当前章节不允许登场的角色或旧设定名。重写时必须删除违规角色的对白、动作、视角、心声和在场描写；若只是旧账名，只能短暂作为账页/案卷名出现一次。"
         ),
+        "TIMELINE_INCONSISTENT": (
+            "本章时间线锚点与正典冲突。重写时必须按下方具体锚点做局部替换，禁止重排全章事件或新增解释性闪回。"
+        ),
+        "SCENE_JUMP_UNRESOLVED": (
+            "本章存在地点/时间硬切。重写时必须只在命中的跳转位置补可见转场动作，禁止为了解决转场新增整场戏。"
+        ),
     }
 
     def _retention_hint_for_codes(codes: Iterable[str]) -> str:
@@ -6816,6 +9190,9 @@ async def maybe_prepare_chapter_auto_repair(
         if not ordered_codes:
             return ""
         hint_text = "\n".join(retention_hint_by_code[code] for code in ordered_codes)
+        playbook_hint = render_quality_repair_playbooks(ordered_codes)
+        if playbook_hint:
+            hint_text = f"{hint_text}\n{playbook_hint}"
         hook_code = (
             "HOOK_ECHO_MISSING"
             if "HOOK_ECHO_MISSING" in ordered_codes
@@ -6856,6 +9233,32 @@ async def maybe_prepare_chapter_auto_repair(
                     f"{hint_text}\n"
                     f"本次命中的正典/角色违规：{'；'.join(cast_details[:5])}。"
                 )
+        if "TIMELINE_INCONSISTENT" in ordered_codes:
+            timeline_details = _timeline_repair_details()
+            timeline_hint = (
+                "时间线修复必须做局部替换，不得重排全章事件：逐条按正典时间锚点替换错误时间词，"
+                "并同步修正同一主体在本章内的所有冲突年份。"
+            )
+            if timeline_details:
+                timeline_hint = (
+                    f"{timeline_hint}\n"
+                    "本次必须修正的具体锚点："
+                    f"{'；'.join(timeline_details[:8])}。"
+                )
+            hint_text = f"{hint_text}\n{timeline_hint}"
+        if "SCENE_JUMP_UNRESOLVED" in ordered_codes:
+            scene_jump_details = _scene_jump_repair_details()
+            scene_jump_hint = (
+                "场景跳转修复必须做局部补桥：只在缺桥位置加入一到两句可见动作/时间流逝/交通或物证携带，"
+                "不得新增整场戏、不得改变地点顺序、不得重写无关段落。"
+            )
+            if scene_jump_details:
+                scene_jump_hint = (
+                    f"{scene_jump_hint}\n"
+                    "本次必须补桥的位置："
+                    f"{'；'.join(scene_jump_details[:8])}。"
+                )
+            hint_text = f"{hint_text}\n{scene_jump_hint}"
         return hint_text
 
     stored_code = chapter_meta.get("write_safety_block_code")
@@ -6900,6 +9303,9 @@ async def maybe_prepare_chapter_auto_repair(
             ).strip()
             if strict_retention_hint:
                 hint_text = f"{hint_text}\n{strict_retention_hint}"
+            hint_text = (
+                f"{hint_text}\n{_chapter_auto_repair_length_contract(project, chapter)}"
+            )
             # Persist the hint into scene metadata so the writer sees it
             scenes = list(
                 await session.scalars(
@@ -6949,10 +9355,13 @@ async def maybe_prepare_chapter_auto_repair(
                         "不可作为活跃参与者）。\n"
                         f"{_offstage_reference_guidance(repairable_hit)}"
                     )
+                _reset_scene_auto_repair_residue_for_attempt(sc)
                 sc_meta = dict(sc.metadata_json or {})
-                existing = str(sc_meta.get("auto_repair_hint") or "").strip()
-                merged = f"{existing}\n{scene_hint}" if existing else scene_hint
-                sc_meta["auto_repair_hint"] = merged
+                sc_meta["auto_repair_hint"] = _merge_auto_repair_hint(
+                    "",
+                    scene_hint,
+                    max_chars=1600,
+                )
                 sc_meta["auto_repair_block_codes"] = list(repairable_hit)
                 sc.metadata_json = sc_meta
             _mark_repair_started(repairable_hit)
@@ -6979,20 +9388,47 @@ async def maybe_prepare_chapter_auto_repair(
         )
         if c
     )
+    latest_payload = dict(getattr(latest_report, "report_json", None) or {})
+    latest_block_codes: tuple[str, ...] = tuple(
+        str(c) for c in (latest_payload.get("blocking_codes") or ()) if c
+    )
+    length_payload = await _current_draft_length_payload()
+    if not length_payload:
+        length_payload = latest_payload.get("length_stability")
+    if not isinstance(length_payload, Mapping):
+        length_payload = {}
+
     if metadata_codes:
-        repairable_hit = tuple(
-            c for c in metadata_codes if _canonical_repair_code(c) in repair_set
+        combined_codes = tuple(dict.fromkeys((*metadata_codes, *latest_block_codes)))
+        combined_codes = _drop_conflicting_length_repair_codes(
+            combined_codes,
+            length_payload=length_payload,
         )
-        if repairable_hit:
-            hint_text = _retention_hint_for_codes(repairable_hit) or "\n".join(
-                f"本章触发 {code}，请按对应质量门约束重写。"
-                for code in repairable_hit
+        repairable_hit = tuple(
+            c for c in combined_codes if _canonical_repair_code(c) in repair_set
+        )
+        has_length_repair = any(
+            _canonical_repair_code(code) in {"BLOCK_LOW", "BLOCK_HIGH"}
+            for code in repairable_hit
+        )
+        if repairable_hit and not has_length_repair:
+            playbook_hint = render_quality_repair_playbooks(repairable_hit)
+            hint_text = (
+                _retention_hint_for_codes(repairable_hit)
+                or playbook_hint
+                or "\n".join(
+                    f"本章触发 {code}，请按对应质量门约束重写。"
+                    for code in repairable_hit
+                )
             )
             strict_retention_hint = str(
                 chapter_meta.get("retention_retry_strict_prompt") or ""
             ).strip()
             if strict_retention_hint:
                 hint_text = f"{hint_text}\n{strict_retention_hint}"
+            hint_text = (
+                f"{hint_text}\n{_chapter_auto_repair_length_contract(project, chapter)}"
+            )
             scenes = list(
                 await session.scalars(
                     select(SceneCardModel)
@@ -7020,10 +9456,12 @@ async def maybe_prepare_chapter_auto_repair(
                         sc.scene_number,
                         exc_info=True,
                     )
+                _reset_scene_auto_repair_residue_for_attempt(sc)
                 sc_meta = dict(sc.metadata_json or {})
-                existing = str(sc_meta.get("auto_repair_hint") or "").strip()
-                sc_meta["auto_repair_hint"] = (
-                    f"{existing}\n{hint_text}" if existing else hint_text
+                sc_meta["auto_repair_hint"] = _merge_auto_repair_hint(
+                    "",
+                    hint_text,
+                    max_chars=1600,
                 )
                 sc_meta["auto_repair_block_codes"] = list(repairable_hit)
                 sc.metadata_json = sc_meta
@@ -7040,17 +9478,26 @@ async def maybe_prepare_chapter_auto_repair(
             logger.info(
                 "chapter %d: metadata block codes %s are not in repair allowlist %s",
                 chapter.chapter_number,
-                list(metadata_codes),
+                list(combined_codes),
                 sorted(repair_set),
             )
-            return False, metadata_codes
+            return False, combined_codes
 
     if latest_report is None:
         return False, ()
 
-    payload = dict(latest_report.report_json or {})
+    payload = latest_payload
     block_codes: tuple[str, ...] = tuple(
-        str(c) for c in (payload.get("blocking_codes") or ()) if c
+        dict.fromkeys(
+            (
+                *metadata_codes,
+                *(str(c) for c in (payload.get("blocking_codes") or ()) if c),
+            )
+        )
+    )
+    block_codes = _drop_conflicting_length_repair_codes(
+        block_codes,
+        length_payload=length_payload,
     )
     if not block_codes:
         return False, ()
@@ -7126,17 +9573,19 @@ async def maybe_prepare_chapter_auto_repair(
     if "BLOCK_LOW" in canonical_hits:
         if _attempt == 1:
             hint_fragments.append(
-                f"{_length_budget_note}上一版本章节总字数过短，本次重写请在保留所有情节节拍的前提下，"
-                "大幅扩写环境、感官、心理与对话，让本场景至少达到 target_word_count。"
+                f"{_length_budget_note}上一版本章节总字数过短，本次必须受控补写到发布硬范围内，"
+                "优先补足被压缩成概述的冲突推进、人物选择、可见物证变化和必要对白。"
+                "每个场景只补缺失的2-4段现场戏，禁止新增场景、支线、设定讲解或重复氛围；"
+                "全文优先落在2200-3000字，超过3500字视为失败。"
             )
         elif _attempt == 2:
             hint_fragments.append(
                 f"【紧急修复第2次】{_length_budget_note}上一版本章节字数严重不足。本次重写必须采用以下"
                 "具体策略：\n"
-                "1. 每个情节节拍之后增加至少100字的环境描写或感官细节\n"
-                "2. 每段对话之后加入角色的内心反应或心理活动\n"
-                "3. 动作场景中加入身体感受和空间位置变化描述\n"
-                "4. 确保本场景最终字数 ≥ target_word_count × 1.2"
+                "1. 找出被写成摘要的场景，每处补2-3段正在发生的动作、证物变化或追问\n"
+                "2. 只给关键对白补回应和动作，不给每句对白都追加心理活动\n"
+                "3. 补足主角一次选择的代价和章末钩子的落地帧\n"
+                "4. 确保章节总字数回到发布硬范围内；不得靠无关解释凑字，也不得超过3500字"
             )
         else:
             hint_fragments.append(
@@ -7156,7 +9605,7 @@ async def maybe_prepare_chapter_auto_repair(
                 "1. 删除所有非推进情节的环境描写（保留关键场景的氛围描写）\n"
                 "2. 合并重复的心理活动段落，每个情绪变化最多一段\n"
                 "3. 对话去掉多余的寒暄和客套，直接进入冲突或信息交换\n"
-                "4. 确保本场景最终字数 ≤ target_word_count × 0.9"
+                "4. 确保章节总字数回到发布硬范围内，不得压缩成梗概"
             )
         else:
             hint_fragments.append(
@@ -7207,6 +9656,18 @@ async def maybe_prepare_chapter_auto_repair(
                 "【最终修复尝试】章节结尾牵引问题持续存在。本次为最后一次重写——"
                 "请在最后一段加入一个悬念性的句子即可，即使不够强也将被接受。"
             )
+
+    if "SCENE_JUMP_UNRESOLVED" in canonical_hits:
+        hint_fragments.append(
+            "补齐场景跳转桥：本章存在地点、时间或视角跳跃。重写时每次切换前后必须写清楚"
+            "谁带着什么物证离开、经过多久、如何抵达新地点，以及上一场未解压力如何延续到下一场。"
+        )
+
+    if "REPEATED_EVENT_BEAT" in canonical_hits:
+        hint_fragments.append(
+            "本章重复了同一事件节拍。重写时必须合并重复桥段：第一次用于规则展示，"
+            "第二次必须改成新阻力、新证据、新人物反应，或直接删除。"
+        )
 
     if canonical_hits & _CHARACTER_OFFSTAGE_REPAIR_CODES:
         hint_fragments.append(
@@ -7261,6 +9722,7 @@ async def maybe_prepare_chapter_auto_repair(
             "上一版本触发了章节级质量门（{codes}），"
             "请针对性改写。".format(codes=", ".join(repairable_hit))
         )
+    hint_fragments.append(_chapter_auto_repair_length_contract(project, chapter))
     repair_hint = "\n".join(hint_fragments)
 
     # Load scenes first (before any state mutation) so that if the query fails
@@ -7296,6 +9758,13 @@ async def maybe_prepare_chapter_auto_repair(
 
     scene_count = max(len(scenes), 1)
     low_scene_target_floor = 0
+    scene_sum_cap_per_scene = 12_000
+    if _length_target > 0:
+        try:
+            _scene_sum_max = chapter_scene_budget_sum_thresholds(_length_target)[1]
+            scene_sum_cap_per_scene = max(250, int(math.floor(_scene_sum_max / scene_count)))
+        except Exception:
+            scene_sum_cap_per_scene = 12_000
     if "BLOCK_LOW" in canonical_hits:
         try:
             if _length_target > 0:
@@ -7311,16 +9780,18 @@ async def maybe_prepare_chapter_auto_repair(
                     low_scene_target_floor,
                     int(math.ceil((_length_min / scene_count) * 1.05)),
                 )
+            if scene_sum_cap_per_scene > 0:
+                low_scene_target_floor = min(low_scene_target_floor, scene_sum_cap_per_scene)
         except Exception:
             low_scene_target_floor = 0
 
     def _scene_target_cap(*, floor: int = 0) -> int:
         """Keep auto-repair scene budgets within DB-safe, publishable bounds."""
 
-        cap = 12_000
-        if _length_target > 0:
-            cap = max(3_000, int(math.ceil((_length_target / scene_count) * 2.0)))
-        return max(250, min(12_000, max(cap, floor)))
+        cap = scene_sum_cap_per_scene
+        if _length_target <= 0:
+            cap = 12_000
+        return max(250, min(12_000, max(cap, min(floor, cap))))
 
     high_scale: float = 1.0
     if "BLOCK_HIGH" in canonical_hits:
@@ -7382,31 +9853,40 @@ async def maybe_prepare_chapter_auto_repair(
                 "不可作为活跃参与者）。\n"
                 f"{_offstage_reference_guidance(repairable_hit)}"
             )
+        restored_base_target = _reset_scene_auto_repair_residue_for_attempt(sc)
         meta = dict(sc.metadata_json or {})
-        existing_hint = str(meta.get("auto_repair_hint") or "").strip()
-        merged_hint = (
-            f"{existing_hint}\n{scene_hint}" if existing_hint else scene_hint
+        meta["auto_repair_hint"] = _merge_auto_repair_hint(
+            "",
+            scene_hint,
+            max_chars=1600,
         )
-        meta["auto_repair_hint"] = merged_hint
         meta["auto_repair_block_codes"] = list(repairable_hit)
         sc.metadata_json = meta
         if "BLOCK_LOW" in canonical_hits and low_scale > 1.0:
             try:
                 original_target = int(sc.target_word_count or 0)
-                if original_target > 0:
+                meta_original_target = int(
+                    (meta.get("auto_repair_original_target_word_count") or 0)
+                    if isinstance(meta, Mapping)
+                    else 0
+                )
+                base_target = meta_original_target if meta_original_target > 0 else original_target
+                if restored_base_target and restored_base_target > 0:
+                    base_target = restored_base_target
+                if base_target > 0:
                     cap = _scene_target_cap(floor=low_scene_target_floor)
                     raw_adjusted_target = max(
-                        int(round(original_target * low_scale)),
+                        int(round(base_target * low_scale)),
                         low_scene_target_floor,
                     )
                     adjusted_target = min(raw_adjusted_target, cap)
-                    if original_target <= cap:
-                        adjusted_target = max(original_target, adjusted_target)
+                    if base_target <= cap:
+                        adjusted_target = max(base_target, adjusted_target)
                     sc.target_word_count = adjusted_target
                     meta = dict(sc.metadata_json or {})
                     meta.setdefault(
                         "auto_repair_original_target_word_count",
-                        original_target,
+                        base_target,
                     )
                     meta["auto_repair_adjusted_target_word_count"] = int(
                         sc.target_word_count
@@ -7435,9 +9915,13 @@ async def maybe_prepare_chapter_auto_repair(
                 if _length_min > 0:
                     min_scene_target = max(
                         250,
-                        int(round((_length_min / scene_count) * 0.5)),
+                        int(math.ceil(_length_min / scene_count)),
                     )
                 if original_target > 0:
+                    min_scene_target = min(
+                        min_scene_target,
+                        max(250, int(round(original_target * 0.8))),
+                    )
                     cap = _scene_target_cap(floor=min_scene_target)
                     scaled_target = max(
                         min_scene_target,

@@ -9,6 +9,7 @@ from bestseller.domain.retrieval import RetrievedChunk, RetrievalSearchResult
 from bestseller.infra.db.models import (
     AntagonistPlanModel,
     CanonFactModel,
+    ChapterContractModel,
     ChapterModel,
     EmotionTrackModel,
     ProjectModel,
@@ -74,6 +75,45 @@ def build_chapter(project_id, chapter_number: int, title: str) -> ChapterModel:
     )
     chapter.id = uuid4()
     return chapter
+
+
+def test_chapter_contract_read_overlays_current_chapter_plan() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id, 1, "空电梯")
+    chapter.chapter_goal = "新目标：确认王建业召唤链路"
+    chapter.opening_situation = "新开篇：报警和物业失败后，王建业才找到林渊。"
+    chapter.main_conflict = "新冲突：林渊必须确认这不是随机求助。"
+    chapter.chapter_emotion_arc = "警觉到主动介入"
+    chapter.information_revealed = ["旧住户转交号码", {"summary": "十七栋地址和父亲旧案重合"}]
+    chapter.hook_description = "旧铜钥匙敲出三短一长。"
+    contract = ChapterContractModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        contract_summary="旧目标",
+        opening_state={"opening_situation": "旧开篇"},
+        core_conflict="旧冲突",
+        emotional_shift="旧情绪",
+        information_release="旧信息",
+        closing_hook="旧钩子",
+        primary_arc_codes=[],
+        supporting_arc_codes=[],
+        active_arc_beat_ids=[],
+        planted_clue_codes=[],
+        due_payoff_codes=[],
+        metadata_json={"methodology_contract": {"pacing_mode": "accelerate"}},
+    )
+    contract.id = uuid4()
+
+    read = context_services._chapter_contract_read(contract, chapter=chapter)
+
+    assert read.contract_summary == "新目标：确认王建业召唤链路"
+    assert read.opening_state["opening_situation"].startswith("新开篇")
+    assert read.core_conflict.startswith("新冲突")
+    assert read.emotional_shift == "警觉到主动介入"
+    assert "父亲旧案重合" in (read.information_release or "")
+    assert read.closing_hook == "旧铜钥匙敲出三短一长。"
+    assert read.pacing_mode == "accelerate"
 
 
 def build_scene(project_id, chapter_id, scene_number: int, title: str) -> SceneCardModel:

@@ -11,6 +11,7 @@ import logging
 import mimetypes
 import os
 from pathlib import Path
+import re
 import socketserver
 import threading
 import traceback
@@ -61,7 +62,13 @@ from bestseller.services.writing_profile import (
     get_project_writing_profile,
     sanitize_genre_story_overrides,
 )
-from bestseller.settings import AppSettings, load_settings
+from bestseller.settings import (
+    AppSettings,
+    apply_runtime_llm_profile,
+    load_settings,
+    runtime_llm_profile_payload,
+    set_runtime_llm_profile,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +77,7 @@ _IF_READER_HTML_PATH = Path(__file__).with_name("novel_if_reader.html")
 _QUICKSTART_HTML_PATH = Path(__file__).with_name("novel_quickstart.html")
 _LIBRARY_HTML_PATH = Path(__file__).with_name("novel_library.html")
 _DESIGN_DOSSIER_HTML_PATH = Path(__file__).with_name("novel_design_dossier.html")
+_PIPELINE_FLOW_HTML_PATH = Path(__file__).with_name("novel_pipeline_flow.html")
 # Bounded LRU cache for markdown artifact metadata.  Previous unbounded dict
 # grew without limit over long server runs.  512 entries is enough for a few
 # large projects while capping memory usage.
@@ -249,6 +257,74 @@ def _worker_heal_job_is_active(redis_url: str, job_id: str) -> bool:
             client.close()
         except Exception:
             pass
+
+
+async def _abort_worker_heal_job_async(redis_url: str, job_id: str) -> bool:
+    """Ask ARQ to abort a deterministic self-heal job.
+
+    Synthetic task cards such as ``db-repair:<slug>`` can be owned by ARQ
+    worker jobs instead of ``WebTaskManager``.  The web UI still needs a stop
+    action for those visible tasks, so this performs a best-effort abort and
+    removes queued/retry ownership keys.
+    """
+    if not redis_url or not job_id:
+        return False
+
+    from arq.connections import create_pool
+    from arq.jobs import Job
+
+    pool = await create_pool(_arq_redis_settings_from_url(redis_url))
+    try:
+        has_job = await pool.exists(
+            f"arq:job:{job_id}",
+            f"arq:in-progress:{job_id}",
+            f"arq:retry:{job_id}",
+        )
+        if not has_job and await pool.zscore("arq:queue", job_id) is None:
+            return False
+
+        job = Job(job_id, pool)
+        abort_requested = False
+        try:
+            abort_requested = await job.abort(timeout=0.1)
+        except TimeoutError:
+            abort_requested = True
+        except Exception:
+            logger.exception("Failed to request ARQ abort for job %s", job_id)
+
+        removed = await pool.delete(
+            f"arq:job:{job_id}",
+            f"arq:retry:{job_id}",
+        )
+        try:
+            removed += await pool.zrem("arq:queue", job_id)
+        except Exception:
+            logger.debug("Failed to remove %s from ARQ queue", job_id, exc_info=True)
+        return bool(abort_requested or removed)
+    finally:
+        closer = getattr(pool, "aclose", None) or getattr(pool, "close", None)
+        if closer is not None:
+            result = closer()
+            if asyncio.iscoroutine(result):
+                await result
+
+
+def _abort_worker_heal_job(redis_url: str, job_id: str) -> bool:
+    """Synchronously abort an ARQ self-heal job from request-handler code."""
+    if not redis_url or not job_id:
+        return False
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning("task cancel: cannot abort ARQ job from an active event loop")
+        return False
+    try:
+        return asyncio.run(_abort_worker_heal_job_async(redis_url, job_id))
+    except Exception:
+        logger.exception("task cancel: failed to abort ARQ job %s", job_id)
+        return False
 
 
 def _worker_heal_job_state_from_redis_client(client: Any, job_id: str) -> str | None:
@@ -728,6 +804,65 @@ def collect_project_artifact_entries(
     return entries
 
 
+def _chapter_export_number(name: object) -> int | None:
+    match = re.fullmatch(r"chapter-(\d{3,4})\.md", str(name or ""))
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _select_default_preview_entry(
+    markdown_entries: list[dict[str, object]],
+    *,
+    latest_current_chapter_entry: dict[str, object] | None = None,
+) -> dict[str, object] | None:
+    """Choose the preview users expect to see after chapter generation.
+
+    Project summaries historically picked the first markdown file alphabetically,
+    which is often ``README.md``.  That made the UI look stale even when a new
+    current chapter draft existed in the DB.  Prefer the DB-current chapter, then
+    fall back to real chapter files, then project-level markdown.
+    """
+    if latest_current_chapter_entry is not None:
+        return latest_current_chapter_entry
+    chapter_entries = [
+        item for item in markdown_entries if _chapter_export_number(item.get("name")) is not None
+    ]
+    if chapter_entries:
+        return max(
+            chapter_entries,
+            key=lambda item: (
+                _timestamp_seconds(item.get("modified_at")) or 0.0,
+                _chapter_export_number(item.get("name")) or 0,
+            ),
+        )
+    return next((item for item in markdown_entries if item["name"] == "project.md"), None) or (
+        markdown_entries[0] if markdown_entries else None
+    )
+
+
+def _upsert_artifact_entry(
+    entries: list[dict[str, object]],
+    replacement: dict[str, object] | None,
+) -> list[dict[str, object]]:
+    if replacement is None:
+        return entries
+    replacement_name = str(replacement.get("name") or "")
+    if not replacement_name:
+        return entries
+    merged: list[dict[str, object]] = []
+    replaced = False
+    for item in entries:
+        if str(item.get("name") or "") == replacement_name:
+            merged.append({**item, **replacement})
+            replaced = True
+        else:
+            merged.append(item)
+    if not replaced:
+        merged.append(replacement)
+    return sorted(merged, key=lambda item: str(item.get("name") or ""))
+
+
 def resolve_project_artifact_path(
     settings: AppSettings,
     project_slug: str,
@@ -766,8 +901,6 @@ def _try_load_chapter_draft_from_db(
     Matches filenames like ``chapter-001.md``.  Returns *None* if the file
     name doesn't look like a chapter export or no draft is found.
     """
-    import re
-
     m = re.match(r"chapter-(\d{3,4})\.md$", artifact_name)
     if m is None:
         return None
@@ -781,6 +914,15 @@ def _try_load_chapter_draft_from_db(
         ProjectModel,
     )
     from bestseller.services.exports import format_chapter_heading
+
+    def _content_has_chapter_heading(content_md: str, chapter_number: int) -> bool:
+        return bool(
+            re.match(
+                rf"^\s*#\s*第\s*{chapter_number}\s*章(?:[：:].*)?$",
+                content_md or "",
+                flags=re.MULTILINE,
+            )
+        )
 
     async def _fetch() -> str | None:
         async with session_scope(settings) as session:
@@ -809,25 +951,18 @@ def _try_load_chapter_draft_from_db(
             ).scalar_one_or_none()
             if draft is None:
                 return None
+            content_md = draft.content_md or ""
+            if _content_has_chapter_heading(content_md, chapter.chapter_number):
+                return content_md
             heading = format_chapter_heading(
                 chapter.chapter_number,
                 chapter.title,
                 language=proj.language,
             )
-            return f"{heading}\n\n{draft.content_md}"
+            return f"{heading}\n\n{content_md}"
 
     try:
-        summary = asyncio.run(_fetch())
-        if summary.get("is_fanqie_short"):
-            output_dir = _project_output_dir(settings, project_slug)
-            export_path = _fanqie_short_export_file(output_dir)
-            if export_path is not None:
-                raw_md = export_path.read_text(encoding="utf-8")
-                summary["title"] = _fanqie_short_export_title(
-                    raw_md,
-                    str(summary.get("title") or project_slug),
-                )
-        return summary
+        return asyncio.run(_fetch())
     except Exception:
         logger.warning(
             "Failed to load chapter %d draft from DB for %s",
@@ -3988,7 +4123,7 @@ async def _load_project_autonomous_repair_task_counts(
 ) -> dict[UUID, dict[str, int]]:
     if not project_ids:
         return {}
-    from sqlalchemy import func, select
+    from sqlalchemy import select
 
     from bestseller.infra.db.models import RewriteTaskModel
     from bestseller.services.autonomous_book_repair import AUTONOMOUS_REPAIR_TRIGGER
@@ -4195,6 +4330,93 @@ async def _load_db_repair_task_summary(
         if summary.get("task_id") == task_id:
             return summary
     return None
+
+
+async def _cancel_db_repair_task_async(settings: AppSettings, task_id: str) -> str:
+    """Cancel the DB-backed repair work represented by ``db-repair:<slug>``."""
+    if not task_id.startswith("db-repair:"):
+        return "not_found"
+    slug = task_id.removeprefix("db-repair:").strip()
+    if not slug:
+        return "not_found"
+
+    from sqlalchemy import update
+
+    from bestseller.infra.db.models import RewriteTaskModel
+    from bestseller.services.autonomous_book_repair import AUTONOMOUS_REPAIR_TRIGGER
+
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, slug)
+        if project is None:
+            return "not_found"
+        result = await session.execute(
+            update(RewriteTaskModel)
+            .where(
+                RewriteTaskModel.project_id == project.id,
+                RewriteTaskModel.trigger_type == AUTONOMOUS_REPAIR_TRIGGER,
+                RewriteTaskModel.status.in_(("pending", "queued", "paused")),
+            )
+            .values(
+                status="cancelled",
+                error_log="Repair task cancelled from web dashboard.",
+            )
+        )
+        cancelled_rows = int(result.rowcount or 0)
+
+    job_cancelled = _abort_worker_heal_job(settings.redis.url, f"repair:heal:{slug}")
+    return "cancel_requested" if cancelled_rows or job_cancelled else "not_running"
+
+
+def _cancel_db_repair_task(settings: AppSettings, task_id: str) -> str:
+    if not task_id.startswith("db-repair:"):
+        return "not_found"
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning("task cancel: cannot cancel DB repair task from an active event loop")
+        return "not_found"
+    try:
+        return asyncio.run(_cancel_db_repair_task_async(settings, task_id))
+    except Exception:
+        logger.exception("task cancel: failed to cancel DB repair task %s", task_id)
+        return "not_found"
+
+
+def _request_visible_task_cancel(
+    task_manager: WebTaskManager,
+    settings: AppSettings,
+    task_id: str,
+) -> str:
+    """Cancel any task visible through the dashboard task API.
+
+    The dashboard merges in-memory web tasks with synthetic worker/DB repair
+    task cards.  Cancellation must follow the same visibility model; otherwise
+    clicking Stop on a synthetic card reports "Task not found" even though the
+    task was just listed.
+    """
+    normalized_task_id = task_id.strip("/")
+    if not normalized_task_id:
+        return "not_found"
+
+    task = task_manager.get_task(normalized_task_id)
+    if task is not None:
+        if task_manager.request_cancel(normalized_task_id):
+            return "cancel_requested"
+        return "not_running"
+
+    if normalized_task_id.startswith("db-repair:"):
+        return _cancel_db_repair_task(settings, normalized_task_id)
+
+    if normalized_task_id.startswith(("autowrite:heal:", "repair:heal:")):
+        return (
+            "cancel_requested"
+            if _abort_worker_heal_job(settings.redis.url, normalized_task_id)
+            else "not_found"
+        )
+
+    return "not_found"
 
 
 def _safe_int(value: object, default: int = 0) -> int:
@@ -4743,6 +4965,69 @@ def _fanqie_short_export_artifact_entry(
     return entry
 
 
+async def _load_latest_current_chapter_preview_entry(
+    session: Any,
+    settings: AppSettings,
+    project: Any,
+) -> dict[str, object] | None:
+    """Return a DB-authoritative artifact entry for the newest current chapter."""
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
+
+    row = (
+        await session.execute(
+            select(
+                ChapterModel.chapter_number,
+                ChapterDraftVersionModel.content_md,
+                ChapterDraftVersionModel.word_count,
+                ChapterDraftVersionModel.created_at,
+            )
+            .join(
+                ChapterDraftVersionModel,
+                ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+            )
+            .where(
+                ChapterModel.project_id == project.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+            .order_by(
+                ChapterDraftVersionModel.created_at.desc().nullslast(),
+                ChapterModel.chapter_number.desc(),
+            )
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None
+    chapter_number, content_md, draft_word_count, created_at = row
+    content = str(content_md or "")
+    if not content.strip():
+        return None
+    stats = build_markdown_reading_stats(content)
+    output_path = (
+        Path(settings.output.base_dir)
+        / str(project.slug)
+        / f"chapter-{int(chapter_number):03d}.md"
+    )
+    modified_at = created_at
+    return {
+        "name": f"chapter-{int(chapter_number):03d}.md",
+        "path": str(output_path.resolve()),
+        "size_bytes": len(content.encode("utf-8")),
+        "suffix": ".md",
+        "modified_at": modified_at.isoformat()
+        if isinstance(modified_at, datetime)
+        else datetime.now(UTC).isoformat(),
+        "is_previewable": True,
+        "word_count": int(draft_word_count or stats["word_count"] or 0),
+        "character_count": stats["character_count"],
+        "paragraph_count": stats["paragraph_count"],
+        "estimated_read_minutes": stats["estimated_read_minutes"],
+        "source": "db_current_draft",
+    }
+
+
 async def _load_project_summary_payload(
     settings: AppSettings,
     project_slug: str,
@@ -4762,16 +5047,23 @@ async def _load_project_summary_payload(
             session,
             [project.id],
         )
+        latest_current_chapter_entry = await _load_latest_current_chapter_preview_entry(
+            session,
+            settings,
+            project,
+        )
         repair_status = _build_project_repair_status_payload(
             project,
             repair_counts.get(project.id, []),
             autonomous_repair_counts.get(project.id, {}),
         )
     outputs = collect_project_artifact_entries(settings, project_slug)
+    outputs = _upsert_artifact_entry(outputs, latest_current_chapter_entry)
     markdown_entries = [item for item in outputs if str(item["suffix"]) == ".md"]
-    default_preview_entry = next(
-        (item for item in markdown_entries if item["name"] == "project.md"), None
-    ) or (markdown_entries[0] if markdown_entries else None)
+    default_preview_entry = _select_default_preview_entry(
+        markdown_entries,
+        latest_current_chapter_entry=latest_current_chapter_entry,
+    )
     project_markdown_entry = next(
         (item for item in markdown_entries if item["name"] == "project.md"), None
     )
@@ -4782,7 +5074,6 @@ async def _load_project_summary_payload(
         story_bible,
         current_chapter_number=int(project.current_chapter_number or 0),
     )
-    project_meta = project.metadata_json or {}
     listing_profile = _build_fanqie_short_current_listing_profile(settings, project) or build_book_listing_profile(
         project=project,
         writing_profile=writing_profile,
@@ -4964,6 +5255,42 @@ async def _load_workflow_payload(
 ) -> dict[str, object]:
     async with session_scope(settings) as session:
         overview = await build_project_workflow_overview(session, project_slug)
+    return overview.model_dump(mode="json")
+
+
+async def _load_pipeline_flow_payload(
+    settings: AppSettings,
+    project_slug: str,
+    task_manager: WebTaskManager,
+) -> dict[str, object]:
+    from bestseller.services.pipeline_flow_overview import build_pipeline_flow_overview
+
+    task_timeline: list[dict[str, object]] = []
+    for task in task_manager.list_tasks():
+        if str(task.get("project_slug") or "") != project_slug:
+            continue
+        events = task.get("progress_events") or []
+        if isinstance(events, list):
+            for event in events[-40:]:
+                if isinstance(event, dict):
+                    task_timeline.append(
+                        {
+                            "task_id": task.get("task_id"),
+                            "ts": event.get("ts"),
+                            "stage": event.get("stage"),
+                            "message": event.get("message"),
+                            "data": event.get("data"),
+                        }
+                    )
+        break
+
+    async with session_scope(settings) as session:
+        overview = await build_pipeline_flow_overview(
+            session,
+            project_slug,
+            settings=settings,
+            task_timeline=task_timeline,
+        )
     return overview.model_dump(mode="json")
 
 
@@ -5767,6 +6094,12 @@ def _read_design_dossier_html() -> str:
     if _DESIGN_DOSSIER_HTML_PATH.exists():
         return _DESIGN_DOSSIER_HTML_PATH.read_text(encoding="utf-8")
     return "<!DOCTYPE html><html><body><h1>Design dossier page not found.</h1></body></html>"
+
+
+def _read_pipeline_flow_html() -> str:
+    if _PIPELINE_FLOW_HTML_PATH.exists():
+        return _PIPELINE_FLOW_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Pipeline flow page not found.</h1></body></html>"
 
 
 def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
@@ -7365,21 +7698,37 @@ def serve_web_app(
                         content_type="text/html; charset=utf-8",
                     )
                     return
+                if path.startswith("/flow/"):
+                    project_slug = path.removeprefix("/flow/").strip("/")
+                    if not project_slug:
+                        self._route_not_found()
+                        return
+                    self._send_text(
+                        _read_pipeline_flow_html(),
+                        content_type="text/html; charset=utf-8",
+                    )
+                    return
                 if path == "/api/library":
                     self._send_json(asyncio.run(_load_library_payload(settings)))
                     return
                 if path == "/api/status":
+                    llm_profile = runtime_llm_profile_payload(settings)
+                    effective_settings = apply_runtime_llm_profile(settings)
                     self._send_json(
                         {
                             "app": "BestSeller Web Studio",
-                            "database_connected": bool(settings.database.url),
-                            "llm_mock": settings.llm.mock,
-                            "planner_model": settings.llm.planner.model,
-                            "writer_model": settings.llm.writer.model,
+                            "database_connected": bool(effective_settings.database.url),
+                            "llm_mock": effective_settings.llm.mock,
+                            "planner_model": effective_settings.llm.planner.model,
+                            "writer_model": effective_settings.llm.writer.model,
+                            "llm_profile": llm_profile,
                             "output_base_dir": str(Path(settings.output.base_dir).resolve()),
                             "max_concurrent_tasks": task_manager._max_concurrent_tasks,
                         }
                     )
+                    return
+                if path == "/api/llm-profile":
+                    self._send_json(runtime_llm_profile_payload(settings))
                     return
                 if path == "/api/projects":
                     light_mode = _query_bool((query.get("light") or ["0"])[0])
@@ -7529,6 +7878,19 @@ def serve_web_app(
                 project_slug = _match_project_route(path, "workflow")
                 if project_slug is not None:
                     self._send_json(asyncio.run(_load_workflow_payload(settings, project_slug)))
+                    return
+                project_slug = _match_project_route(path, "pipeline-flow")
+                if project_slug is not None:
+                    try:
+                        self._send_json(
+                            asyncio.run(
+                                _load_pipeline_flow_payload(
+                                    settings, project_slug, task_manager
+                                )
+                            )
+                        )
+                    except ValueError as exc:
+                        self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
                     return
                 project_slug = _match_project_route(path, "design-dossier")
                 if project_slug is not None:
@@ -8148,6 +8510,13 @@ def serve_web_app(
                     task = task_manager.create_quickstart_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
+                if path == "/api/llm-profile":
+                    payload = self._read_json_body()
+                    profile_key = str(payload.get("profile") or payload.get("active_key") or "")
+                    if not profile_key:
+                        raise ValueError("Field 'profile' is required.")
+                    self._send_json(set_runtime_llm_profile(settings, profile_key))
+                    return
                 if path == "/api/tasks/autowrite/schedule":
                     payload = self._read_json_body()
                     schedule_dict = _create_book_generation_schedule(
@@ -8175,11 +8544,17 @@ def serve_web_app(
                     return
                 if path.startswith("/api/tasks/") and path.endswith("/cancel"):
                     task_id = path.removeprefix("/api/tasks/").removesuffix("/cancel")
-                    ok = task_manager.request_cancel(task_id)
-                    if not ok:
+                    outcome = _request_visible_task_cancel(task_manager, settings, task_id)
+                    if outcome == "not_found":
                         self._send_json(
-                            {"ok": False, "error": "Task not found or not running"},
+                            {"ok": False, "error": "Task not found"},
                             status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    if outcome == "not_running":
+                        self._send_json(
+                            {"ok": False, "error": "Task is not running or queued"},
+                            status=HTTPStatus.CONFLICT,
                         )
                         return
                     self._send_json({"ok": True, "task_id": task_id})

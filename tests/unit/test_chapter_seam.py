@@ -48,6 +48,19 @@ def test_extract_open_threads_skips_inner_thought_questions() -> None:
     assert not any(t.kind == ThreadKind.UNANSWERED_QUESTION for t in threads)
 
 
+def test_extract_open_threads_skips_folk_horror_prose_fragments_as_participants() -> None:
+    tail = (
+        "镜子里的笑声更大了。然后是一声惨叫。"
+        "门外响起三短一长，一个男人攥着钥匙说看见建业在镜子里招手。"
+    )
+    threads = extract_open_threads(tail)
+    participant_markers = {t.marker for t in threads if t.kind == ThreadKind.PARTICIPANT}
+
+    assert "镜子" not in participant_markers
+    assert "然后" not in participant_markers
+    assert "钥匙" not in participant_markers
+
+
 # ---------------------------------------------------------------------------
 # validate_chapter_seam
 # ---------------------------------------------------------------------------

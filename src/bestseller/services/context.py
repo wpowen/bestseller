@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import (
@@ -36,8 +36,10 @@ from bestseller.infra.db.models import (
     ArcBeatModel,
     CanonFactModel,
     ChapterContractModel,
+    ChapterDraftVersionModel,
     ChapterModel,
     CharacterModel,
+    CharacterStateSnapshotModel,
     ClueModel,
     EmotionTrackModel,
     EndingContractModel,
@@ -541,20 +543,46 @@ def _antagonist_plan_read(item: AntagonistPlanModel) -> AntagonistPlanRead:
     )
 
 
-def _chapter_contract_read(item: ChapterContractModel) -> ChapterContractRead:
+def _chapter_contract_read(
+    item: ChapterContractModel,
+    *,
+    chapter: ChapterModel | None = None,
+) -> ChapterContractRead:
     methodology_contract = normalize_chapter_overlay(
         (item.metadata_json or {}).get("methodology_contract")
     )
+    opening_state = dict(item.opening_state)
+    if chapter is not None and _clean_text(chapter.opening_situation):
+        opening_state["opening_situation"] = _clean_text(chapter.opening_situation)
+    information_release = item.information_release
+    if chapter is not None:
+        information_release = _chapter_information_release_from_model(chapter) or information_release
     return ChapterContractRead(
         id=item.id,
         chapter_id=item.chapter_id,
         chapter_number=item.chapter_number,
-        contract_summary=item.contract_summary,
-        opening_state=dict(item.opening_state),
-        core_conflict=item.core_conflict,
-        emotional_shift=item.emotional_shift,
-        information_release=item.information_release,
-        closing_hook=item.closing_hook,
+        contract_summary=(
+            _clean_text(chapter.chapter_goal)
+            if chapter is not None and _clean_text(chapter.chapter_goal)
+            else item.contract_summary
+        ),
+        opening_state=opening_state,
+        core_conflict=(
+            _clean_text(chapter.main_conflict)
+            if chapter is not None and _clean_text(chapter.main_conflict)
+            else item.core_conflict
+        ),
+        emotional_shift=(
+            _clean_text(chapter.chapter_emotion_arc)
+            if chapter is not None and _clean_text(chapter.chapter_emotion_arc)
+            else item.emotional_shift
+        ),
+        information_release=information_release,
+        closing_hook=(
+            _clean_text(chapter.hook_description)
+            if chapter is not None and _clean_text(chapter.hook_description)
+            else item.closing_hook
+        ),
         primary_arc_codes=list(item.primary_arc_codes),
         supporting_arc_codes=list(item.supporting_arc_codes),
         active_arc_beat_ids=[str(beat_id) for beat_id in item.active_arc_beat_ids],
@@ -570,6 +598,31 @@ def _chapter_contract_read(item: ChapterContractModel) -> ChapterContractRead:
         is_climax=bool(methodology_contract.get("is_climax")),
         loop_position=methodology_contract.get("loop_position"),
     )
+
+
+def _clean_text(value: object) -> str:
+    return str(value).strip() if value is not None else ""
+
+
+def _chapter_information_release_from_model(chapter: ChapterModel) -> str:
+    items: list[str] = []
+    for item in list(chapter.information_revealed or []):
+        rendered = _render_information_item(item)
+        if rendered:
+            items.append(rendered)
+    if _clean_text(chapter.hook_description):
+        items.append(_clean_text(chapter.hook_description))
+    return "；".join(dict.fromkeys(items))
+
+
+def _render_information_item(item: object) -> str:
+    if isinstance(item, dict):
+        for key in ("summary", "description", "fact", "value", "text", "label"):
+            rendered = _clean_text(item.get(key))
+            if rendered:
+                return rendered
+        return "; ".join(f"{key}={value}" for key, value in item.items() if value)
+    return _clean_text(item)
 
 
 def _scene_contract_read(item: SceneContractModel) -> SceneContractRead:
@@ -1268,30 +1321,13 @@ async def build_scene_writer_context_from_models(
         current_chapter_number=chapter.chapter_number,
     )
 
-    # Load knowledge states for scene participants
-    _knowledge_states: list[dict[str, Any]] = []
-    for participant_name in (scene.participants or []):
-        char_row = await session.scalar(
-            select(CharacterModel).where(
-                CharacterModel.project_id == project.id,
-                CharacterModel.name == participant_name,
-            )
-        )
-        if char_row and isinstance(char_row.knowledge_state_json, dict):
-            ks = char_row.knowledge_state_json
-            if ks.get("knows") or ks.get("falsely_believes") or ks.get("unaware_of"):
-                _ks_entry: dict[str, Any] = {
-                    "character_name": participant_name,
-                    "knows": ks.get("knows", [])[:8],
-                    "falsely_believes": ks.get("falsely_believes", [])[:5],
-                    "unaware_of": ks.get("unaware_of", [])[:5],
-                }
-                # Phase-4: attach lie/truth arc if present
-                _char_meta = char_row.metadata_json or {}
-                _lt_arc = _char_meta.get("lie_truth_arc")
-                if isinstance(_lt_arc, dict) and _lt_arc.get("core_lie"):
-                    _ks_entry["lie_truth_arc"] = _lt_arc
-                _knowledge_states.append(_ks_entry)
+    _knowledge_states = await _load_participant_knowledge_states(
+        session,
+        project=project,
+        chapter=chapter,
+        participant_names=scene.participants or [],
+        before_scene_number=scene.scene_number,
+    )
 
     # Load arc summaries (warm context) and world snapshot (cold context)
     from bestseller.services.linear_arc_summary import (
@@ -1444,7 +1480,7 @@ async def build_scene_writer_context_from_models(
         planned_payoffs=planned_payoffs[:4],
         active_emotion_tracks=active_emotion_tracks,
         active_antagonist_plans=active_antagonist_plans,
-        chapter_contract=_chapter_contract_read(chapter_contract_row)
+        chapter_contract=_chapter_contract_read(chapter_contract_row, chapter=chapter)
         if isinstance(chapter_contract_row, ChapterContractModel)
         else None,
         scene_contract=_scene_contract_read(scene_contract_row)
@@ -1680,6 +1716,97 @@ async def _safe_load_previous_snapshot(
         return None
 
 
+async def _load_participant_knowledge_states(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    participant_names: Sequence[str],
+    before_scene_number: int | None = None,
+) -> list[dict[str, Any]]:
+    """Load only knowledge available before the chapter/scene being written."""
+    names = sorted({str(name).strip() for name in participant_names if str(name or "").strip()})
+    if not names:
+        return []
+
+    current_chapter_number = int(project.current_chapter_number or 0)
+    allow_current_state = not current_chapter_number or chapter.chapter_number >= current_chapter_number
+    rows: list[dict[str, Any]] = []
+    for participant_name in names:
+        char_row = await session.scalar(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project.id,
+                CharacterModel.name == participant_name,
+            )
+        )
+        if char_row is None:
+            continue
+
+        snapshot_filters: list[Any] = [
+            CharacterStateSnapshotModel.project_id == project.id,
+            CharacterStateSnapshotModel.character_id == char_row.id,
+        ]
+        if before_scene_number is None:
+            snapshot_filters.append(
+                CharacterStateSnapshotModel.chapter_number < chapter.chapter_number,
+            )
+        else:
+            snapshot_filters.append(
+                or_(
+                    CharacterStateSnapshotModel.chapter_number < chapter.chapter_number,
+                    and_(
+                        CharacterStateSnapshotModel.chapter_number == chapter.chapter_number,
+                        CharacterStateSnapshotModel.scene_number.is_not(None),
+                        CharacterStateSnapshotModel.scene_number < before_scene_number,
+                    ),
+                )
+            )
+        snapshot = await session.scalar(
+            select(CharacterStateSnapshotModel)
+            .where(*snapshot_filters)
+            .order_by(
+                CharacterStateSnapshotModel.chapter_number.desc(),
+                CharacterStateSnapshotModel.scene_number.desc().nullslast(),
+                CharacterStateSnapshotModel.created_at.desc(),
+            )
+            .limit(1)
+        )
+
+        entry: dict[str, Any] | None = None
+        if snapshot is not None and isinstance(snapshot.beliefs, list):
+            knows = [str(item).strip() for item in snapshot.beliefs if str(item or "").strip()]
+            entry = {
+                "character_name": participant_name,
+                "knows": knows[:8],
+                "falsely_believes": [],
+                "unaware_of": [],
+                "source": "character_state_snapshot",
+                "cutoff": {
+                    "chapter_number": snapshot.chapter_number,
+                    "scene_number": snapshot.scene_number,
+                },
+            }
+        elif allow_current_state and isinstance(char_row.knowledge_state_json, dict):
+            ks = char_row.knowledge_state_json
+            if ks.get("knows") or ks.get("falsely_believes") or ks.get("unaware_of"):
+                entry = {
+                    "character_name": participant_name,
+                    "knows": list(ks.get("knows", []))[:8],
+                    "falsely_believes": list(ks.get("falsely_believes", []))[:5],
+                    "unaware_of": list(ks.get("unaware_of", []))[:5],
+                    "source": "current_character_state",
+                }
+        if entry is None:
+            continue
+
+        char_meta = char_row.metadata_json or {}
+        lie_truth_arc = char_meta.get("lie_truth_arc")
+        if isinstance(lie_truth_arc, dict) and lie_truth_arc.get("core_lie"):
+            entry["lie_truth_arc"] = lie_truth_arc
+        rows.append(entry)
+    return rows
+
+
 async def build_chapter_writer_context(
     session: AsyncSession,
     settings: AppSettings,
@@ -1792,8 +1919,61 @@ async def build_chapter_writer_context(
         ),
         reverse=True,
     )
+    previous_scene_summary_reads = [
+        RecentSceneSummary(
+            chapter_number=int(fact.value_json.get("chapter_number", 0)),
+            scene_number=int(fact.value_json.get("scene_number", 0)),
+            scene_title=str(fact.subject_label),
+            summary=str(fact.value_json.get("summary", fact.notes or "")),
+            story_purpose=str(fact.value_json.get("story_purpose")) if fact.value_json.get("story_purpose") else None,
+            emotion_purpose=str(fact.value_json.get("emotion_purpose")) if fact.value_json.get("emotion_purpose") else None,
+        )
+        for fact in previous_summary_facts
+        if fact.value_json.get("summary") or fact.notes
+    ]
+    if not previous_scene_summary_reads and chapter.chapter_number > 1:
+        previous_chapter = await session.scalar(
+            select(ChapterModel).where(
+                ChapterModel.project_id == project.id,
+                ChapterModel.chapter_number == chapter.chapter_number - 1,
+            )
+        )
+        previous_draft: ChapterDraftVersionModel | None = None
+        if previous_chapter is not None:
+            previous_draft = await session.scalar(
+                select(ChapterDraftVersionModel)
+                .where(
+                    ChapterDraftVersionModel.chapter_id == previous_chapter.id,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                )
+                .order_by(ChapterDraftVersionModel.version_no.desc())
+            )
+        previous_text = str(getattr(previous_draft, "content_md", "") or "").strip()
+        if previous_chapter is not None and previous_text:
+            compact_text = " ".join(
+                line.strip() for line in previous_text.splitlines() if line.strip()
+            )
+            previous_scene_summary_reads.append(
+                RecentSceneSummary(
+                    chapter_number=previous_chapter.chapter_number,
+                    scene_number=1,
+                    scene_title=previous_chapter.title,
+                    summary=(
+                        f"上一章当前稿摘录：{compact_text[:420]}"
+                        + ("..." if len(compact_text) > 420 else "")
+                    ),
+                    story_purpose=previous_chapter.chapter_goal,
+                    opening_lines=compact_text[:500],
+                    closing_lines=compact_text[-800:],
+                    extended_tail=compact_text[-1200:],
+                )
+            )
 
-    ch_current_story_order = float(f"{chapter.chapter_number}.99")
+    # Chapter-level generation must not read stale facts extracted from a
+    # previous draft of the same chapter. Current scene cards are supplied
+    # explicitly below; timeline/retrieval context should only describe what
+    # is already true before this chapter starts.
+    ch_current_story_order = float(f"{chapter.chapter_number}.00")
     ch_lookback_from_order = float(f"{ch_lookback_start}.00")
     recent_timeline_events = [
         TimelineEventContext(
@@ -1828,29 +2008,37 @@ async def build_chapter_writer_context(
         )[: max(4, settings.generation.active_context_scenes * 2)]
     ]
 
-    retrieval_chunks = [
-        chunk
-        for chunk in retrieval_result.chunks
+    retrieval_chunks = []
+    for chunk in retrieval_result.chunks:
+        metadata = chunk.metadata or {}
         if (
-            (
-                chunk.source_type == "world_rule"
-                and (
-                    not isinstance(story_bible_context.get("volume_frontier"), dict)
-                    or not story_bible_context.get("volume_frontier", {}).get("visible_rule_codes")
-                    or (
-                        (chunk.metadata or {}).get("rule_code")
-                        in set(story_bible_context.get("volume_frontier", {}).get("visible_rule_codes", []))
-                    )
+            chunk.source_id in scene_ids
+            or metadata.get("chapter_id") == str(chapter.id)
+            or metadata.get("chapter_number") == chapter.chapter_number
+        ):
+            continue
+        if (
+            chunk.source_type == "world_rule"
+            and (
+                not isinstance(story_bible_context.get("volume_frontier"), dict)
+                or not story_bible_context.get("volume_frontier", {}).get("visible_rule_codes")
+                or (
+                    metadata.get("rule_code")
+                    in set(story_bible_context.get("volume_frontier", {}).get("visible_rule_codes", []))
                 )
             )
-            or chunk.source_type in {"character", "relationship", "volume"}
-            or _is_before_current_position(
-                *_retrieval_chunk_position(chunk.model_dump(mode="json")),
-                current_chapter_number=chapter.chapter_number,
-                current_scene_number=99,
-            )
-        )
-    ]
+        ):
+            retrieval_chunks.append(chunk)
+            continue
+        if chunk.source_type in {"character", "relationship", "volume"}:
+            retrieval_chunks.append(chunk)
+            continue
+        if _is_before_current_position(
+            *_retrieval_chunk_position(chunk.model_dump(mode="json")),
+            current_chapter_number=chapter.chapter_number,
+            current_scene_number=0,
+        ):
+            retrieval_chunks.append(chunk)
 
     plot_arcs = list(
         await session.scalars(
@@ -1995,6 +2183,12 @@ async def build_chapter_writer_context(
         project_id=project.id,
         current_chapter_number=chapter.chapter_number,
     )
+    participant_knowledge_states = await _load_participant_knowledge_states(
+        session,
+        project=project,
+        chapter=chapter,
+        participant_names=chapter_participants,
+    )
 
     # ── Phase-1 wiring: query five previously orphaned narrative models (chapter level) ──
 
@@ -2061,7 +2255,7 @@ async def build_chapter_writer_context(
             select(ReaderKnowledgeEntryModel)
             .where(
                 ReaderKnowledgeEntryModel.project_id == project.id,
-                ReaderKnowledgeEntryModel.chapter_number <= chapter.chapter_number,
+                ReaderKnowledgeEntryModel.chapter_number < chapter.chapter_number,
                 ReaderKnowledgeEntryModel.audience.notin_(["character_only"]),
             )
             .order_by(ReaderKnowledgeEntryModel.chapter_number.desc())
@@ -2090,7 +2284,7 @@ async def build_chapter_writer_context(
                     RelationshipEventModel.project_id == project.id,
                     RelationshipEventModel.is_milestone.is_(True),
                     RelationshipEventModel.chapter_number >= _ch_lookback_start,
-                    RelationshipEventModel.chapter_number <= chapter.chapter_number,
+                    RelationshipEventModel.chapter_number < chapter.chapter_number,
                 )
                 .order_by(RelationshipEventModel.chapter_number.desc())
                 .limit(10)
@@ -2136,18 +2330,7 @@ async def build_chapter_writer_context(
             )
             for scene in scenes
         ],
-        previous_scene_summaries=[
-            RecentSceneSummary(
-                chapter_number=int(fact.value_json.get("chapter_number", 0)),
-                scene_number=int(fact.value_json.get("scene_number", 0)),
-                scene_title=str(fact.subject_label),
-                summary=str(fact.value_json.get("summary", fact.notes or "")),
-                story_purpose=str(fact.value_json.get("story_purpose")) if fact.value_json.get("story_purpose") else None,
-                emotion_purpose=str(fact.value_json.get("emotion_purpose")) if fact.value_json.get("emotion_purpose") else None,
-            )
-            for fact in previous_summary_facts
-            if fact.value_json.get("summary") or fact.notes
-        ],
+        previous_scene_summaries=previous_scene_summary_reads,
         recent_timeline_events=recent_timeline_events,
         active_plot_arcs=active_plot_arc_reads,
         active_arc_beats=active_arc_beat_reads,
@@ -2155,12 +2338,13 @@ async def build_chapter_writer_context(
         planned_payoffs=planned_payoffs[:6],
         active_emotion_tracks=active_emotion_tracks,
         active_antagonist_plans=active_antagonist_plans,
-        chapter_contract=_chapter_contract_read(chapter_contract_row)
+        chapter_contract=_chapter_contract_read(chapter_contract_row, chapter=chapter)
         if isinstance(chapter_contract_row, ChapterContractModel)
         else None,
         tree_context_nodes=tree_context_nodes,
         retrieval_chunks=retrieval_chunks,
         hard_fact_snapshot=hard_fact_snapshot,
+        participant_knowledge_states=participant_knowledge_states,
         # Phase-1 wiring
         pacing_target=_ch_pacing_target,
         subplot_schedule=_ch_subplot_schedule,

@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from bestseller.services.quality_levers.dashboard_runner import (
-    DashboardSink,
     FilesystemDashboardSink,
     build_dashboard_for_chapters,
     should_run_dashboard,
@@ -16,7 +15,6 @@ from bestseller.services.quality_levers.quality_trend_dashboard import (
     ChapterScoreSnapshot,
     DashboardWindow,
 )
-
 
 pytestmark = pytest.mark.unit
 
@@ -61,6 +59,7 @@ def test_build_dashboard_writes_to_recording_sink() -> None:
     assert result.window is not None
     assert result.window.start_chapter == 1
     assert result.window.end_chapter == 10
+    assert result.stop_required is False
     assert "Quality Trend Window" in result.summary
     assert len(sink.records) == 1
     slug, window, summary = sink.records[0]
@@ -77,6 +76,8 @@ def test_build_dashboard_red_alert_propagates_into_window() -> None:
     assert result.window is not None
     severities = {alert.severity for alert in result.window.alerts}
     assert "red" in severities
+    assert result.stop_required is True
+    assert result.stop_reasons
 
 
 def test_filesystem_dashboard_sink_writes_file(tmp_path: Path) -> None:

@@ -827,7 +827,7 @@ Typer 驱动，100+ 命令覆盖所有功能。主命令簇：
 | `bestseller canon` | Canon Facts 查询 |
 | `bestseller rewrite` | 重写指定章 / 场景 |
 | `bestseller retrieval` | 检索调试 |
-| `bestseller export` | Markdown / DOCX / EPUB / PDF |
+| `bestseller export` | Markdown / DOCX / EPUB / PDF / Obsidian vault |
 | `bestseller publish-profile` | 发布平台适配 |
 | `bestseller prompt-pack` | 题材 prompt 包 |
 | `bestseller writing-preset` | 平台/题材/篇幅预设 |
@@ -842,6 +842,7 @@ bestseller project autowrite my-story "标题" sci-fi 80000 20 --premise "..."
 bestseller project structure my-story
 bestseller narrative show my-story
 bestseller timeline export my-story --volume 2
+bestseller export obsidian my-story
 bestseller export epub my-story
 ```
 
@@ -1005,12 +1006,22 @@ bestseller export markdown my-story    # Markdown（默认）
 bestseller export docx my-story        # Word
 bestseller export epub my-story        # 电子书
 bestseller export pdf my-story         # PDF（需 pip install -e .[export]）
+bestseller export obsidian my-story    # Obsidian 知识库 vault（资料管理 / 双链 / 图谱）
+bestseller export obsidian my-story --no-system-assets  # 只导出项目故事资料
 ```
 
 产物输出到 `output/<project-slug>/`：
 - `project.md` / `chapter-001.md` / `chapter-002.md` …
 - `project.docx` / `project.epub` / `project.pdf`
+- `obsidian-vault/`（故事圣经、人物、关系、世界观、Canon、时间线、素材、规划产物、资料资产）
 - `大纲/第{N}卷-时间线.md`（Phase D，通过 `bestseller timeline export` 生成）
+
+Obsidian vault 是从数据库重建的资料工作台，不是真值源；人工修订先写入
+`obsidian-vault/Inbox/`，再通过显式导入流程回写到规划产物、Canon 或重写任务。
+默认导出还会生成资料资产工作台：全局物料维度、项目物料密度缺口、蒸馏资料包、
+聚合资产、Prompt Pack、方法论卡片和 `raw/model-call-index.json`。大模型调用应优先
+读取 raw JSON 索引，Obsidian Markdown 负责给作者提供维护视图。
+设计细节见 [`docs/obsidian-integration-design.md`](docs/obsidian-integration-design.md)。
 
 ---
 

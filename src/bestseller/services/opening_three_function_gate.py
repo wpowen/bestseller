@@ -70,6 +70,8 @@ def evaluate_opening_three_function(
     chapter_outlines: Sequence[Mapping[str, Any]] = (),
     chapter_hype: Sequence[tuple[int, HypeType | str | None]] = (),
     mode: str = "audit_only",
+    require_text_for_checks: bool = False,
+    focus_chapter: int | None = None,
 ) -> CheckerReport:
     """Check whether chapters 1-3 carry distinct opening responsibilities."""
 
@@ -82,7 +84,16 @@ def evaluate_opening_three_function(
     ch2 = _combined_text(2, texts, outlines)
     ch3 = _combined_text(3, texts, outlines)
 
-    if ch1:
+    text_ready = {
+        chapter: bool(str(texts.get(chapter, "") or "").strip())
+        for chapter in (1, 2, 3)
+    }
+
+    if (
+        ch1
+        and (focus_chapter is None or focus_chapter == 1)
+        and (not require_text_for_checks or text_ready[1])
+    ):
         _require(
             issues,
             code="OPENING_CH1_PRESSURE_MISSING",
@@ -99,7 +110,11 @@ def evaluate_opening_three_function(
             suggestion="让章节结尾留下读者问题，并让主角产生可执行的下一步目标。",
             mode=mode,
         )
-    if ch2:
+    if (
+        ch2
+        and (focus_chapter is None or focus_chapter == 2)
+        and (not require_text_for_checks or text_ready[2])
+    ):
         _require(
             issues,
             code="OPENING_CH2_COST_PROOF_MISSING",
@@ -116,7 +131,11 @@ def evaluate_opening_three_function(
             suggestion="让主角做出不可空转的选择，行动结果继续压向第三章。",
             mode=mode,
         )
-    if ch3:
+    if (
+        ch3
+        and (focus_chapter is None or focus_chapter == 3)
+        and (not require_text_for_checks or text_ready[3])
+    ):
         _require(
             issues,
             code="OPENING_CH3_STATE_CHANGE_MISSING",
@@ -133,7 +152,7 @@ def evaluate_opening_three_function(
             suggestion="在第三章结尾打开第四章必须追下去的主线问题。",
             mode=mode,
         )
-    if _has_repeated_hype(hype):
+    if focus_chapter is None and _has_repeated_hype(hype):
         issues.append(
             _issue(
                 "OPENING_THREE_REPEATED_STIMULUS",
@@ -144,7 +163,20 @@ def evaluate_opening_three_function(
             )
         )
 
-    missing_chapters = [chapter for chapter in (1, 2, 3) if not _combined_text(chapter, texts, outlines)]
+    missing_chapters = [
+        chapter
+        for chapter in (1, 2, 3)
+        if (
+            not str(texts.get(chapter, "") or "").strip()
+            if require_text_for_checks
+            else not _combined_text(chapter, texts, outlines)
+        )
+    ]
+    checked_chapters = [
+        chapter
+        for chapter in (1, 2, 3)
+        if chapter not in missing_chapters
+    ]
     passed = not issues
     score = max(0, 100 - sum(_severity_penalty(issue.severity) for issue in issues))
     return CheckerReport(
@@ -154,7 +186,7 @@ def evaluate_opening_three_function(
         passed=passed,
         issues=tuple(issues),
         metrics={
-            "checked_chapters": [chapter for chapter in (1, 2, 3) if chapter not in missing_chapters],
+            "checked_chapters": checked_chapters,
             "missing_chapters": missing_chapters,
             "hype_types": {chapter: value for chapter, value in hype.items() if chapter <= 3},
         },

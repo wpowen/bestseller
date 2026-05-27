@@ -65,6 +65,8 @@ from bestseller.services.entry_system_kernel import (
     render_entry_system_kernel_prompt_block,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.methodology_compiler import MethodologyStage
+from bestseller.services.planner_prompt_helpers import attach_planner_methodology
 from bestseller.services.novel_categories import (
     NovelCategoryResearch,
     get_novel_category,
@@ -83,6 +85,9 @@ from bestseller.services.public_emotion_kernel import (
     render_public_emotion_prompt_block,
 )
 from bestseller.services.projects import get_project_by_slug, import_planning_artifact
+from bestseller.services.methodology_bridge import (
+    render_phase_block as render_methodology_phase_block,
+)
 from bestseller.services.prompt_packs import (
     render_methodology_block,
     render_prompt_pack_fragment,
@@ -119,6 +124,17 @@ from bestseller.services.writing_profile import (
 from bestseller.settings import AppSettings, get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _methodology_stage_for_planner_artifact(logical_name: str) -> MethodologyStage | None:
+    name = logical_name.lower()
+    if "chapter_outline" in name or "prewrite" in name:
+        return MethodologyStage.OUTLINE_CHAPTER
+    if any(token in name for token in ("volume", "act", "world_disclosure")):
+        return MethodologyStage.OUTLINE_VOLUME
+    if any(token in name for token in ("book", "world", "cast", "character")):
+        return MethodologyStage.OUTLINE_BOOK
+    return None
 
 WORKFLOW_TYPE_GENERATE_NOVEL_PLAN = "generate_novel_plan"
 PlanningProgressCallback = Callable[[str, dict[str, Any] | None], None]
@@ -1535,6 +1551,12 @@ async def _generate_volume_outline_with_repair_loop(
             revealed_ledger_block=revealed_ledger_block,
             extra_constraints=repair_constraints or None,
             existing_titles=existing_titles,
+        )
+        vol_outline_user = attach_planner_methodology(
+            vol_outline_user,
+            stage=MethodologyStage.OUTLINE_VOLUME,
+            project_ctx=project,
+            token_budget=600,
         )
         try:
             raw_payload, llm_run_id = await _generate_structured_artifact(
@@ -9895,7 +9917,10 @@ def _book_spec_prompts(
         f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     )
     _pp_book_spec = _planner_fragment_or_ref(prompt_pack, project, "planner_book_spec")
-    _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
+    _methodology_planner_block = render_methodology_phase_block(
+        prompt_pack,
+        phase="planner",
+    )
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
     _distilled_architecture_block = _distilled_design_reference_block(project, "architecture")
@@ -10632,7 +10657,10 @@ def _outline_prompts(
         f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     )
     _pp_outline = _planner_fragment_or_ref(prompt_pack, project, "planner_outline")
-    _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
+    _methodology_planner_block = render_methodology_phase_block(
+        prompt_pack,
+        phase="planner",
+    )
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_design_block = _story_design_kernel_prompt_block(project)
     _emotion_driven_block = _emotion_driven_kernel_prompt_block(project)
@@ -10681,7 +10709,23 @@ def _outline_prompts(
             "4. Break the narrative rhythm: some chapters end in failure, some focus on quiet character moments, some open with a twist.\n"
             "5. Chapter goals must be concrete, visualizable events — not abstract narrative functions.\n"
             "6. Each chapter must advance at least two concrete state dimensions: plot, relationship, clue, power, resource, status, or exposure risk. "
-            "Write the visible change into goal/main_conflict/scenes; never write author notes like 'build worldbuilding', 'introduce a faction', or 'deepen theme'."
+            "Write the visible change into goal/main_conflict/scenes; never write author notes like 'build worldbuilding', 'introduce a faction', or 'deepen theme'.\n\n"
+            "[OUTLINE V2 EXECUTABLE SCRIPT FIELDS — MANDATORY FOR GOLDEN THREE CHAPTERS]\n"
+            "Chapters 1-3 MUST include these additional fields (chapters 4+ are encouraged):\n"
+            "- protagonist_inner_state: The protagonist's specific inner state at chapter START, "
+            "bound to a concrete object or event — NOT generic emotions like 'calm' or 'focused'.\n"
+            "- chapter_concrete_actions: 3-5 observable physical actions the protagonist takes "
+            "(camera-recordable). NEVER write unobservable actions like 'he thought about it' or 'he felt the threat'.\n"
+            "- chapter_object_uses: How each supernatural/professional object is used. "
+            "Format: 'object: action → result_or_signal'. Must include result (failure counts).\n"
+            "- chapter_information_introduced: Specific facts the reader learns by end of chapter "
+            "— concrete enough to write on a detective whiteboard.\n"
+            "- chapter_information_held_back: Facts the author knows but deliberately withholds "
+            "— each is a tension gap pulling readers to the next chapter.\n"
+            "Scenes should also include concrete_goal, protagonist_state, information_introduced, "
+            "information_held_back, object_signal.\n"
+            "These fields are evaluated by the commercial quality judge: the judge checks whether "
+            "the drafted prose delivers on the capability demonstration and information pacing promised in the outline."
         )
         if is_en
         else (
@@ -10724,7 +10768,19 @@ def _outline_prompts(
             "要主动打破节奏：有的章以失败结尾，有的章以安静的人物关系推进为主，有的章以反转开场。\n"
             "5. chapter goal 必须是具体的、可视化的事件，不能是抽象的叙事功能描述。\n"
             "6. 每章必须至少推进两个真实状态维度：剧情、关系、线索、能力、资源、身份/地位、暴露风险；"
-            "这种变化必须写进 goal/main_conflict/scenes，禁止写「建立世界观」「引入势力」「完善体系」「深化主题」这类作者笔记。"
+            "这种变化必须写进 goal/main_conflict/scenes，禁止写「建立世界观」「引入势力」「完善体系」「深化主题」这类作者笔记。\n\n"
+            "【大纲 v2 可执行脚本字段——黄金三章强制输出】\n"
+            "前 3 章的每章必须额外输出以下字段（第 4 章起建议输出）：\n"
+            "- protagonist_inner_state: 主角在本章开头的具体内心状态，必须绑定一个具体物件或事件，"
+            "不能是「镇定」「冷静」等通用情绪词。\n"
+            "- chapter_concrete_actions: 主角在本章实际完成的 3-5 个可观察动作（摄像机能拍到的），"
+            "每条用动词开头。禁止写「林渊思考了一下」「他感受到了威胁」等不可观察的行为。\n"
+            "- chapter_object_uses: 每个超自然/职业物件的使用方式，格式：「物件: 动作 → 结果或信号」。"
+            "必须包含结果（失败也算），不能只写「使用了铜钱」。\n"
+            "- chapter_information_introduced: 读者在本章结束后知道的具体事实，每条可以写进侦探白板的线索。\n"
+            "- chapter_information_held_back: 作者知道但本章故意不告诉读者的事实，每条是下一章节的悬念来源。\n"
+            "每个场景也应包含 concrete_goal、protagonist_state、information_introduced、information_held_back、object_signal。\n"
+            "这些字段是商业质量评测的核心依据：裁判模型会检查正文是否兑现了大纲里承诺的能力实证和信息节奏。"
         )
     )
     _genre_instruction = getattr(
@@ -10957,7 +11013,10 @@ def _volume_outline_prompts(
         f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     )
     _pp_outline = _planner_fragment_or_ref(prompt_pack, project, "planner_outline")
-    _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
+    _methodology_planner_block = render_methodology_phase_block(
+        prompt_pack,
+        phase="planner",
+    )
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
     _story_design_block = _story_design_kernel_prompt_block(project)
@@ -11540,7 +11599,17 @@ async def _generate_structured_artifact(
     )
 
     last_llm_run_id: UUID | None = None
-    effective_user_prompt = user_prompt
+    stage = _methodology_stage_for_planner_artifact(logical_name)
+    effective_user_prompt = (
+        user_prompt
+        if "【题材方法论·" in user_prompt or stage is None
+        else attach_planner_methodology(
+            user_prompt,
+            stage=stage,
+            project_ctx=project,
+            token_budget=400 if "repair" in logical_name else 800,
+        )
+    )
     semantic_repair_history: list[dict[str, Any]] = []
     for attempt in range(_max_attempts):
         completion = await complete_text(
@@ -13963,6 +14032,12 @@ async def generate_novel_plan(
             artifact_type=ArtifactType.BOOK_SPEC.value,
         )
         book_system, book_user = _book_spec_prompts(project, premise, book_spec_fallback)
+        book_user = attach_planner_methodology(
+            book_user,
+            stage=MethodologyStage.OUTLINE_BOOK,
+            project_ctx=project,
+            token_budget=800,
+        )
         book_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
             settings,
@@ -14054,6 +14129,12 @@ async def generate_novel_plan(
             artifact_type=ArtifactType.WORLD_SPEC.value,
         )
         world_system, world_user = _world_spec_prompts(project, premise, book_spec_payload)
+        world_user = attach_planner_methodology(
+            world_user,
+            stage=MethodologyStage.OUTLINE_BOOK,
+            project_ctx=project,
+            token_budget=800,
+        )
         world_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
             settings,
@@ -14145,6 +14226,12 @@ async def generate_novel_plan(
             artifact_type=ArtifactType.CAST_SPEC.value,
         )
         cast_system, cast_user = _cast_spec_prompts(project, book_spec_payload, world_spec_payload)
+        cast_user = attach_planner_methodology(
+            cast_user,
+            stage=MethodologyStage.OUTLINE_BOOK,
+            project_ctx=project,
+            token_budget=800,
+        )
         cast_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
             settings,
@@ -14541,6 +14628,12 @@ async def generate_novel_plan(
             act_system, act_user = _act_plan_prompts(
                 project, book_spec_payload, world_spec_payload, cast_spec_payload
             )
+            act_user = attach_planner_methodology(
+                act_user,
+                stage=MethodologyStage.OUTLINE_VOLUME,
+                project_ctx=project,
+                token_budget=700,
+            )
             act_plan_payload_raw, llm_run_id = await _generate_structured_artifact(
                 session,
                 settings,
@@ -14626,6 +14719,12 @@ async def generate_novel_plan(
             world_spec_payload,
             cast_spec_payload,
             act_plan=act_plan_payload,
+        )
+        volume_user = attach_planner_methodology(
+            volume_user,
+            stage=MethodologyStage.OUTLINE_VOLUME,
+            project_ctx=project,
+            token_budget=700,
         )
         volume_plan_payload, llm_run_id = await _generate_structured_artifact(
             session,
@@ -15439,6 +15538,12 @@ async def generate_foundation_plan(
         current_step_name = "generate_book_spec"
         workflow_run.current_step = current_step_name
         book_system, book_user = _book_spec_prompts(project, premise, book_spec_fallback)
+        book_user = attach_planner_methodology(
+            book_user,
+            stage=MethodologyStage.OUTLINE_BOOK,
+            project_ctx=project,
+            token_budget=800,
+        )
         book_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
             settings,
@@ -15502,6 +15607,12 @@ async def generate_foundation_plan(
         current_step_name = "generate_world_spec"
         workflow_run.current_step = current_step_name
         world_system, world_user = _world_spec_prompts(project, premise, book_spec_payload)
+        world_user = attach_planner_methodology(
+            world_user,
+            stage=MethodologyStage.OUTLINE_BOOK,
+            project_ctx=project,
+            token_budget=800,
+        )
         world_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
             settings,
@@ -15569,6 +15680,12 @@ async def generate_foundation_plan(
         current_step_name = "generate_cast_spec"
         workflow_run.current_step = current_step_name
         cast_system, cast_user = _cast_spec_prompts(project, book_spec_payload, world_spec_payload)
+        cast_user = attach_planner_methodology(
+            cast_user,
+            stage=MethodologyStage.OUTLINE_BOOK,
+            project_ctx=project,
+            token_budget=800,
+        )
         cast_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
             settings,
@@ -16015,6 +16132,12 @@ async def generate_volume_plan(
                 prior_feedback_summary=prior_feedback_summary,
                 extra_constraints=_all_constraints or None,
             )
+            cast_exp_user = attach_planner_methodology(
+                cast_exp_user,
+                stage=MethodologyStage.OUTLINE_BOOK,
+                project_ctx=project,
+                token_budget=700,
+            )
             cast_exp_payload, llm_run_id = await _generate_structured_artifact(
                 session,
                 settings,
@@ -16107,6 +16230,12 @@ async def generate_volume_plan(
             world_spec,
             vol_entry,
             prior_world_snapshot=prior_world_snapshot,
+        )
+        world_disc_user = attach_planner_methodology(
+            world_disc_user,
+            stage=MethodologyStage.OUTLINE_BOOK,
+            project_ctx=project,
+            token_budget=700,
         )
         world_disc_payload, llm_run_id = await _generate_structured_artifact(
             session,

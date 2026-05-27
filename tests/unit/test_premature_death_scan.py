@@ -179,6 +179,25 @@ class TestScanPrematureDeathInText:
         )
         assert any(k == "strong" for _, k, _ in findings)
 
+    def test_speaker_after_quote_is_not_death_subject(self) -> None:
+        prose = "“他不是死了二十三年了吗？”王建业的声音尖起来。"
+        findings = _scan_premature_death_in_text(
+            chapter_md=prose,
+            protected_names=["王建业"],
+            other_names=["林渊", "孙九斤"],
+            language="zh-CN",
+        )
+        assert findings == []
+
+    def test_name_inside_quote_still_flags_death_subject(self) -> None:
+        prose = "“王建业已经死了，对吧？”林渊盯着账页。"
+        findings = _scan_premature_death_in_text(
+            chapter_md=prose,
+            protected_names=["王建业"],
+            language="zh-CN",
+        )
+        assert any(name == "王建业" and kind == "strong" for name, kind, _ in findings)
+
 
 # ---------------------------------------------------------------------------
 # DB-aware wrapper — with mocked session

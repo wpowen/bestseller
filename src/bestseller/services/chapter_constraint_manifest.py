@@ -13,10 +13,12 @@ import json
 import re
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from bestseller.services.canon_guardrails import CanonGuardrails
 from bestseller.services.common_sense_gate import evaluate_common_sense_gate
+from bestseller.services.methodology_bridge import get_fragment
+from bestseller.services.prompt_packs import PromptPack
 
 
 class OpeningCausalityContract(BaseModel):
@@ -81,6 +83,52 @@ class PrewritePlan(BaseModel):
     ending_hook_type: str = ""
     ending_hook_target: str = ""
     ending_modes_to_avoid: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "characters_to_use",
+        "time_anchors_to_use",
+        "locations_to_use",
+        "hooks_to_echo",
+        "protagonist_abilities_to_use",
+        "vocabulary_to_avoid",
+        "ending_modes_to_avoid",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_string_list_field(cls, value: Any) -> list[str]:
+        return _string_list(value)
+
+    @field_validator(
+        "time_budget_plan",
+        "body_object_state_plan",
+        "target_state_end",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_mapping_field(cls, value: Any) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            return {"summary": text} if text else {}
+        if isinstance(value, (list, tuple, set)):
+            items = _string_list(value)
+            return {"elapsed_events": items} if items else {}
+        return {}
+
+    @field_validator("ending_hook_type", "ending_hook_target", mode="before")
+    @classmethod
+    def _coerce_string_field(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, (list, tuple, set)):
+            items = _string_list(value)
+            return items[0] if items else ""
+        return str(value).strip()
 
 
 class PlanValidationResult(BaseModel):
@@ -289,6 +337,117 @@ def parse_prewrite_plan(raw: str) -> PrewritePlan:
     return PrewritePlan.model_validate(payload)
 
 
+def normalize_prewrite_plan_for_manifest(
+    plan: PrewritePlan,
+    manifest: ChapterConstraintManifest,
+) -> PrewritePlan:
+    """Clamp a parsed plan to the manifest before it reaches prose prompts.
+
+    Frontier models sometimes return schema-shaped but contract-invalid helper
+    values: list-valued hook types, freeform elapsed-time summaries, or
+    off-whitelist participants. The writer prompt should receive a conservative
+    executable plan, not those raw declarations. This function keeps useful
+    allowed choices and falls back to the deterministic safe contract for
+    constrained fields.
+    """
+
+    safe = build_safe_prewrite_plan(manifest)
+
+    def _allowed_or_safe(
+        values: list[str],
+        allowed: list[str],
+        fallback: list[str],
+    ) -> list[str]:
+        if not allowed:
+            return list(dict.fromkeys(values))
+        kept = [item for item in values if item in set(allowed)]
+        return kept or list(fallback)
+
+    ending_hook_type = plan.ending_hook_type
+    if (
+        manifest.ending_hook_contract is not None
+        and manifest.ending_hook_contract.allowed_hook_types
+        and ending_hook_type not in manifest.ending_hook_contract.allowed_hook_types
+    ):
+        ending_hook_type = safe.ending_hook_type
+
+    ending_modes_to_avoid = list(dict.fromkeys(plan.ending_modes_to_avoid))
+    if manifest.ending_hook_contract is not None:
+        ending_modes_to_avoid = list(
+            dict.fromkeys(
+                [
+                    *ending_modes_to_avoid,
+                    *manifest.ending_hook_contract.forbidden_ending_modes,
+                ]
+            )
+        )
+
+    return plan.model_copy(
+        update={
+            "characters_to_use": _allowed_or_safe(
+                plan.characters_to_use,
+                manifest.allowed_characters,
+                safe.characters_to_use,
+            ),
+            "time_anchors_to_use": _allowed_or_safe(
+                plan.time_anchors_to_use,
+                manifest.allowed_time_anchors,
+                safe.time_anchors_to_use,
+            ),
+            "locations_to_use": _allowed_or_safe(
+                plan.locations_to_use,
+                manifest.allowed_locations,
+                safe.locations_to_use,
+            ),
+            "vocabulary_to_avoid": list(
+                dict.fromkeys(
+                    [
+                        *plan.vocabulary_to_avoid,
+                        *manifest.must_avoid_protagonist_vocabulary,
+                    ]
+                )
+            ),
+            "target_state_end": (
+                dict(manifest.chapter_target_state_end)
+                if manifest.chapter_target_state_end
+                else dict(plan.target_state_end)
+            ),
+            "protagonist_entry_motivation": (
+                safe.protagonist_entry_motivation
+                if manifest.opening_causality_contract is not None
+                else plan.protagonist_entry_motivation
+            ),
+            "protagonist_function": (
+                safe.protagonist_function
+                if manifest.opening_causality_contract is not None
+                else plan.protagonist_function
+            ),
+            "visible_failure_cost": (
+                safe.visible_failure_cost
+                if manifest.opening_causality_contract is not None
+                else plan.visible_failure_cost
+            ),
+            "time_budget_plan": (
+                dict(safe.time_budget_plan)
+                if manifest.time_budget_contract is not None
+                else dict(plan.time_budget_plan)
+            ),
+            "body_object_state_plan": (
+                dict(safe.body_object_state_plan)
+                if manifest.body_object_state_contract is not None
+                else dict(plan.body_object_state_plan)
+            ),
+            "ending_hook_type": ending_hook_type,
+            "ending_hook_target": (
+                safe.ending_hook_target
+                if manifest.ending_hook_contract is not None
+                else plan.ending_hook_target
+            ),
+            "ending_modes_to_avoid": ending_modes_to_avoid,
+        }
+    )
+
+
 def validate_prewrite_plan(
     plan: PrewritePlan,
     manifest: ChapterConstraintManifest,
@@ -449,29 +608,66 @@ def render_prewrite_plan_prompt(
     manifest: ChapterConstraintManifest,
     *,
     language: str = "zh-CN",
+    pack: PromptPack | None = None,
+    chapter_number: int | None = None,
 ) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    methodology_lines: list[str] = []
+
+    density_rule = get_fragment(pack, phase="prewrite", fragment_key="information_density")
+    if density_rule and (chapter_number is None or chapter_number <= 10):
+        methodology_lines.append(f"【信息密度规则】\n{density_rule}")
+
+    spring_rule = get_fragment(pack, phase="prewrite", fragment_key="spring_model")
+    if spring_rule:
+        methodology_lines.append(f"【情绪压缩弹簧法】\n{spring_rule}")
+
+    stakes_rule = get_fragment(pack, phase="prewrite", fragment_key="stakes_design")
+    if stakes_rule:
+        methodology_lines.append(f"【冲突筹码设计】\n{stakes_rule}")
+
+    methodology_block = "\n\n".join(methodology_lines)
     if language.lower().startswith("zh"):
+        methodology_section = (
+            "\n\n## 写作方法论参考（用于影响场景计划的字段选择）\n"
+            f"{methodology_block}\n"
+            if methodology_block
+            else ""
+        )
         return (
-            "根据以下写前约束清单，先声明本场景写作计划。只输出 JSON，不要输出正文。\n"
+            "根据以下写前约束清单和方法论参考，先声明本场景写作计划。只输出 JSON，不要输出正文。\n"
             "字段必须为：characters_to_use, time_anchors_to_use, locations_to_use, "
             "hooks_to_echo, protagonist_abilities_to_use, vocabulary_to_avoid, target_state_end, "
             "protagonist_entry_motivation, protagonist_function, visible_failure_cost, "
             "time_budget_plan, body_object_state_plan, ending_hook_type, ending_hook_target, "
             "ending_modes_to_avoid。\n"
-            "所有选择必须来自约束白名单；如某项无白名单，保持空数组/空对象。"
-            "动机、主角作用、失败代价必须照抄合同值；时间消耗和身体/物件状态必须先登记再写正文。\n"
-            f"约束清单：\n```json\n{payload}\n```"
+            "类型要求: time_budget_plan、body_object_state_plan、target_state_end "
+            "必须是 JSON 对象; ending_hook_type、ending_hook_target 必须是字符串; "
+            "其他复数字段必须是字符串数组。"
+            "所有选择必须来自约束白名单; 如某项无白名单, 保持空数组/空对象。"
+            "动机、主角作用、失败代价必须照抄合同值; "
+            "时间消耗和身体/物件状态必须先登记再写正文。\n"
+            f"约束清单：\n```json\n{payload}\n```{methodology_section}"
         )
+    methodology_section = (
+        "\n\n## Writing methodology reference (use it when choosing plan fields)\n"
+        f"{methodology_block}\n"
+        if methodology_block
+        else ""
+    )
     return (
         "Declare the scene writing plan from this constraint manifest. Output "
-        "JSON only, no prose. Required fields: characters_to_use, "
+        "JSON only, no prose. Use the methodology reference when selecting "
+        "plan fields. Required fields: characters_to_use, "
         "time_anchors_to_use, locations_to_use, hooks_to_echo, "
         "protagonist_abilities_to_use, vocabulary_to_avoid, target_state_end, "
         "protagonist_entry_motivation, protagonist_function, visible_failure_cost, "
         "time_budget_plan, body_object_state_plan, ending_hook_type, "
         "ending_hook_target, ending_modes_to_avoid.\n"
-        f"Manifest:\n```json\n{payload}\n```"
+        "Type requirements: time_budget_plan, body_object_state_plan, and "
+        "target_state_end must be JSON objects; ending_hook_type and "
+        "ending_hook_target must be strings; plural fields must be arrays of strings.\n"
+        f"Manifest:\n```json\n{payload}\n```{methodology_section}"
     )
 
 
@@ -1034,6 +1230,7 @@ __all__ = [
     "TimeBudgetContract",
     "build_safe_prewrite_plan",
     "compile_chapter_constraint_manifest",
+    "normalize_prewrite_plan_for_manifest",
     "parse_prewrite_plan",
     "render_constraint_manifest_block",
     "render_prewrite_plan_block",

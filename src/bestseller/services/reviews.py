@@ -7,6 +7,20 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
+_LLM_PASS_OVERRIDABLE_RULE_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "coverage",
+        "coherence",
+        "contract_alignment",
+        "ending_hook_effectiveness",
+        "continuity",
+        "main_plot_progression",
+        "opening_contract",
+        "subplot_progression",
+        "volume_mission_alignment",
+    }
+)
+
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +46,7 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneDraftVersionModel,
     StyleGuideModel,
+    VolumeModel,
 )
 from bestseller.services.action_scene_structure_gate import evaluate_action_scene_structure
 from bestseller.services.checker_schema import CheckerReport
@@ -40,10 +55,14 @@ from bestseller.services.context import build_chapter_writer_context, build_scen
 from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
     _NOVEL_OUTPUT_PROHIBITION_EN,
+    _collect_previous_current_chapter_texts,
     _collect_post_assembly_duplicate_findings,
+    _clean_generated_chapter_text,
     _evaluate_chapter_quality_gate,
+    _front10_forbidden_signal_terms,
     _maybe_write_scene_prompt_trace,
     _normalize_fragment,
+    _stamp_chapter_quality_bundle,
     _stamp_duplicate_content_block,
     count_words,
     has_meta_leak,
@@ -51,6 +70,11 @@ from bestseller.services.drafts import (
     sanitize_novel_markdown_content,
     strip_scaffolding_echoes,
     validate_and_clean_novel_content,
+)
+from bestseller.services.chapter_quality_bundle import (
+    ChapterQualityBundleContext,
+    ChapterQualityBundleReport,
+    run_chapter_quality_bundle,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology import (
@@ -82,12 +106,14 @@ from bestseller.services.quality_levers import (
     build_critic_quality_levers_block,
     extract_quality_levers_meta,
 )
+from bestseller.services.quality_repair_playbooks import render_quality_repair_playbooks
 from bestseller.services.rewrite_impacts import analyze_rewrite_impacts_for_scene_task
 from bestseller.services.word_targets import (
     CHINESE_CHAPTER_HARD_MIN_WORDS,
     chapter_rewrite_length_band,
     model_output_token_ceiling,
     model_reasoning_token_reserve,
+    resolve_llm_role_max_tokens,
     resolve_llm_role_model,
 )
 from bestseller.services.writing_profile import (
@@ -136,6 +162,9 @@ _SINGLE_PASS_CHAPTER_REWRITE_CONTRACT = """
 - 不得循环复述当前稿段落，不得把同一段、同一组对白、同一动作链重复输出。
 - 不得为了补节奏或心率密度堆短句；每个新增短句都必须带来新动作、新证物变化、新阻断或新代价。
 - 若需要删除 AI 句式，必须改写为具体动作/物件/后果，而不是换一个套话比喻。
+- 如果当前稿已经在发布字数范围内，只允许局部替换和等量压缩式修复；不得新增大段闪回、新场景或连续设定解释。
+- 如果重写任务提到“提前死亡/计划死亡章节/角色需存活”，必须删除所有确认死亡句，包括疑问句、传闻句和旁人推测，例如“已经死了，对吧？”；改为“失踪/被困/生死未明/还不能确认”。
+- 章末只保留一个主钩子，最多一个辅助信息；禁止在最后300字连续叠加多个未解悬念。
 """
 
 _SINGLE_PASS_CHAPTER_REWRITE_CONTRACT_EN = """
@@ -144,6 +173,9 @@ _SINGLE_PASS_CHAPTER_REWRITE_CONTRACT_EN = """
 - Do not loop, duplicate, or re-emit the same paragraph, dialogue exchange, or action chain.
 - Do not pad rhythm or pulse density with empty short lines; every added beat must create action, evidence movement, obstruction, or cost.
 - Replace AI-ish phrasing with concrete action, objects, and consequences, not another stock metaphor.
+- If the current draft is already inside the publishable length range, make local replacements and equal-length compression only; do not add long flashbacks, new scenes, or stacked exposition.
+- If the rewrite task mentions premature death, planned death chapter, or a character who must survive, remove every confirmed-death sentence, including questions, rumors, or speculation; use missing, trapped, survival unknown, or unconfirmed instead.
+- Keep one primary ending hook, with at most one supporting detail; do not stack multiple unresolved mysteries in the final 300 words.
 """
 
 
@@ -418,6 +450,14 @@ _HOOK_SIGNAL_TERMS = (
     "突然",
     "门外",
     "脚步声",
+    "人影",
+    "影子",
+    "阴影",
+    "电梯",
+    "镜面",
+    "一模一样",
+    "三短一长",
+    "倒计时",
     "警报",
     "电话",
     "手机",
@@ -430,6 +470,26 @@ _HOOK_SIGNAL_TERMS = (
     "必须",
     "下一秒",
     "下一瞬",
+)
+_FOLK_HORROR_TAIL_HOOK_TERMS = (
+    "人影",
+    "影子",
+    "阴影",
+    "电梯",
+    "镜子",
+    "镜面",
+    "倒影",
+    "一模一样",
+    "同一个动作",
+    "铜钱",
+    "缺口",
+    "冒血",
+    "血",
+    "七个",
+    "六个",
+    "半透明",
+    "门缝",
+    "三短一长",
 )
 _INFO_SIGNAL_TERMS = (
     "发现",
@@ -447,6 +507,21 @@ _INFO_SIGNAL_TERMS = (
     "航线",
     "缺页",
     "药剂",
+)
+_FOLK_HORROR_INFO_TERMS = (
+    "快递单",
+    "寄件时间",
+    "零点零三分",
+    "子时",
+    "否认者",
+    "认账",
+    "入账",
+    "镜债",
+    "困魂镜",
+    "铜钱",
+    "缺口",
+    "血",
+    "三短一长",
 )
 _CONTINUITY_SIGNAL_TERMS = (
     "上一",
@@ -1651,6 +1726,65 @@ def build_chapter_review_prompts(
     return system_prompt, user_prompt
 
 
+def _render_front10_rewrite_contract_block(
+    chapter: ChapterModel,
+    chapter_context: Any,
+    *,
+    language: str,
+) -> str:
+    chapter_number = int(getattr(chapter, "chapter_number", 0) or 0)
+    if chapter_number > 10:
+        return ""
+    is_en = is_english_language(language)
+    if is_en:
+        return ""
+    scene_contexts = list(getattr(chapter_context, "chapter_scenes", None) or [])
+    first_scene = scene_contexts[0] if scene_contexts else None
+    first_surface = " ".join(
+        str(value or "")
+        for value in (
+            getattr(chapter, "opening_situation", None),
+            getattr(first_scene, "title", None) if first_scene is not None else None,
+            getattr(first_scene, "story_purpose", None) if first_scene is not None else None,
+            getattr(first_scene, "summary", None) if first_scene is not None else None,
+        )
+    )
+    mediated_terms = ("电话", "来电", "手机", "微信", "短信", "语音", "录音")
+    lines = [
+        "【前十章重写硬合同】",
+        "本次是正文重写，不得继承当前草稿中违反章纲/场景卡的错误开场、错误物件信号或错误角色认知。",
+    ]
+    opening = str(getattr(chapter, "opening_situation", None) or "").strip()
+    if opening:
+        lines.append(f"第一段必须重新落到这个开场场面：{opening}")
+    if first_scene is not None:
+        lines.append(
+            "第一场锚点："
+            + " / ".join(
+                item
+                for item in (
+                    str(getattr(first_scene, "title", "") or "").strip(),
+                    str(getattr(first_scene, "story_purpose", "") or "").strip(),
+                )
+                if item
+            )
+        )
+    if not any(term in first_surface for term in mediated_terms):
+        lines.append(
+            "第一场合同未规划媒介入场：前500字不得突然新增电话、来电、手机、微信、短信、"
+            "语音、录音等桥段来承担召唤或入场逻辑；如果当前草稿使用这些开场，必须补足"
+            "来源、转交人、可信原因和到场动机，或改为从第一场现场开写。"
+        )
+    forbidden_terms = _front10_forbidden_signal_terms(chapter)
+    if forbidden_terms:
+        lines.append(
+            "禁用物件/感官捷径："
+            + "、".join(forbidden_terms)
+            + "。必须改成稳定可推理的可见变化，例如变冷、变重、裂缺、血点、影子错位或指针偏移。"
+        )
+    return "\n".join(line for line in lines if line.strip()) + "\n"
+
+
 def build_chapter_rewrite_prompts(
     project: ProjectModel,
     chapter: ChapterModel,
@@ -1807,6 +1941,39 @@ def build_chapter_rewrite_prompts(
                 f"安全输出目标是 {_safe_lo}-{_safe_hi} 个汉字。"
                 "只修复被标记的问题, 不要把章节写短成梗概, 也不要扩成长段解释。\n"
             )
+    _ending_frame_gate = (
+        "ENDING FRAME GATE (MANDATORY): The last sentence must remain inside the "
+        "active scene and land on a completed visible frame: a concrete action, "
+        "object change, threat movement, or protagonist choice. If the hook is "
+        "dialogue, add one visual/action sentence after the dialogue. Never end "
+        "with a bare quote, abstract explanation, or unresolved ongoing motion.\n"
+        if is_en
+        else (
+            "【章末画面帧闸门·硬性要求】最后一句必须仍在当前场景内，并落在一个完成的可视化画面："
+            "人物动作、物件变化、威胁逼近、证据显现或主角选择。若章末钩子是对白，"
+            "必须在对白之后再补一句现场动作/物件变化作为最后帧；禁止最后一句只是台词、"
+            "抽象解释、设定总结，或仍悬在未完成的进行中动作。章末只能保留一个主钩子，"
+            "最多一个辅助信息；不得连续堆叠电梯异象、门缝渗水、短信、电话、新人名、"
+            "账页弹窗等多个未解悬念。选择最服务下一章的钩子，并把最后一句写成已完成的"
+            "画面定格、物件状态变化或主角明确选择。\n"
+        )
+    )
+    _scene_transition_gate = (
+        "SCENE TRANSITION GATE (MANDATORY): Do not use horizontal rules, section "
+        "breaks, or blank cuts to change scene. Every location or time change must "
+        "include one visible bridge action before the new location appears.\n"
+        if is_en
+        else (
+            "【场景转场闸门·硬性要求】禁止用 ---、***、小节分隔符或空行硬切换场景。"
+            "每次地点或时间变化，必须先写一句可见转场动作，例如挂断电话、出门、下楼、"
+            "电梯移动、门牌变化、时间跳动或物件反应，再进入新地点。\n"
+        )
+    )
+    _front10_rewrite_contract_block = _render_front10_rewrite_contract_block(
+        chapter,
+        chapter_context,
+        language=language,
+    )
     user_prompt = (
         (
             f"Project: {project.title}\n"
@@ -1814,6 +1981,9 @@ def build_chapter_rewrite_prompts(
             f"Chapter goal: {chapter.chapter_goal}\n"
             f"{_wrap_rewrite_reference_for_language(rewrite_task.instructions, rewrite_task.rewrite_strategy, language=language)}"
             f"{_wc_directive}"
+            f"{_ending_frame_gate}"
+            f"{_scene_transition_gate}"
+            f"{_front10_rewrite_contract_block}"
             f"{_SINGLE_PASS_CHAPTER_REWRITE_CONTRACT_EN}"
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
@@ -1834,6 +2004,9 @@ def build_chapter_rewrite_prompts(
             f"章节目标：{chapter.chapter_goal}\n"
             f"{_wrap_rewrite_reference_for_language(rewrite_task.instructions, rewrite_task.rewrite_strategy, language=language)}"
             f"{_wc_directive}"
+            f"{_ending_frame_gate}"
+            f"{_scene_transition_gate}"
+            f"{_front10_rewrite_contract_block}"
             f"{_SINGLE_PASS_CHAPTER_REWRITE_CONTRACT}"
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
@@ -2749,6 +2922,66 @@ def evaluate_scene_draft(
     )
 
 
+def _chapter_opening_contract_findings(
+    chapter: ChapterModel,
+    scenes: list[SceneCardModel],
+    content: str,
+) -> list[ChapterReviewFinding]:
+    chapter_number = int(getattr(chapter, "chapter_number", 0) or 0)
+    if chapter_number > 10 or not scenes:
+        return []
+    first_scene = scenes[0]
+    opening_surface = " ".join(
+        str(value or "")
+        for value in (
+            getattr(chapter, "opening_situation", None),
+            getattr(first_scene, "title", None),
+            getattr(first_scene, "hook_requirement", None),
+            (getattr(first_scene, "purpose", None) or {}).get("story"),
+            (getattr(first_scene, "entry_state", None) or {}).get("state"),
+        )
+    )
+    mediated_terms = ("电话", "来电", "手机", "微信", "短信", "语音", "录音")
+    first_window = (content or "")[:500]
+    findings: list[ChapterReviewFinding] = []
+    if not any(term in opening_surface for term in mediated_terms) and any(
+        term in first_window for term in mediated_terms
+    ):
+        findings.append(
+            ChapterReviewFinding(
+                category="opening_contract",
+                severity="high",
+                message=(
+                    "OPENING_SCENE_DRIFT: 正文前500字新增了章节开篇合同未规划的电话、来电、"
+                    "手机、微信、短信、语音或录音等媒介桥段。必须补足来源、转交人、可信原因"
+                    "和到场动机，或改为从第一场现场开写。"
+                ),
+            )
+        )
+    anchor_candidates = [
+        token
+        for token in re.split(r"[，。！？、\s：:；;（）()]+", opening_surface)
+        if len(token) >= 2
+    ]
+    anchors = [
+        token
+        for token in anchor_candidates
+        if any(marker in token for marker in ("十七栋", "电梯", "雨棚", "303", "门缝", "镜"))
+    ][:4]
+    if anchors and not any(anchor in first_window for anchor in anchors):
+        findings.append(
+            ChapterReviewFinding(
+                category="opening_contract",
+                severity="medium",
+                message=(
+                    "OPENING_SCENE_ANCHOR_MISSING: 正文前500字没有落到第一场开场锚点："
+                    + "、".join(anchors)
+                ),
+            )
+        )
+    return findings
+
+
 def evaluate_chapter_draft(
     *,
     chapter: ChapterModel,
@@ -2780,6 +3013,12 @@ def evaluate_chapter_draft(
 
     scene_titles_hit = sum(1 for scene in scenes if scene.title and scene.title in content)
     scene_title_ratio = scene_titles_hit / max(expected_scene_count, 1)
+    assembled_scene_count = len(getattr(draft, "assembled_from_scene_draft_ids", []) or [])
+    assembled_scene_ratio = (
+        min(1.0, assembled_scene_count / max(expected_scene_count, 1))
+        if expected_scene_count > 0
+        else 1.0
+    )
     transition_signal = _signal_score(content, keywords=[*_CONTINUITY_SIGNAL_TERMS])
     continuity_context_signal = _signal_score(
         content,
@@ -2805,21 +3044,62 @@ def evaluate_chapter_draft(
             *_HOOK_SIGNAL_TERMS,
         ],
     )
+    tail_visual_hook_signal = _signal_score(
+        tail_excerpt,
+        keywords=[*_HOOK_SIGNAL_TERMS, *_FOLK_HORROR_TAIL_HOOK_TERMS],
+        max_terms=24,
+    )
+    tail_visual_marker_count = sum(
+        1
+        for term in (
+            "电梯",
+            "七个",
+            "六道",
+            "人影",
+            "影子",
+            "镜面",
+            "倒影",
+            "一模一样",
+            "三短一长",
+            "第七个名字",
+            "下一个是谁",
+        )
+        if term in tail_excerpt
+    )
+    if tail_visual_marker_count >= 3:
+        tail_visual_hook_signal = max(tail_visual_hook_signal, 0.82)
+    chapter_info_signal = _signal_score(
+        content,
+        keywords=[*_INFO_SIGNAL_TERMS, *_FOLK_HORROR_INFO_TERMS],
+        max_terms=24,
+    )
 
     coverage = _clamp_score(
         0.18
-        + (max(scene_heading_ratio, scene_title_ratio) * 0.52)
-        + (0.1 if expected_scene_count <= 1 or scene_heading_count == expected_scene_count else 0.0)
+        + (max(scene_heading_ratio, scene_title_ratio, assembled_scene_ratio) * 0.52)
+        + (
+            0.1
+            if expected_scene_count <= 1
+            or scene_heading_count == expected_scene_count
+            or assembled_scene_ratio >= 1.0
+            else 0.0
+        )
         + (0.1 if draft.word_count >= max(900, chapter.target_word_count * 0.45) else 0.0)
     )
     coherence = _clamp_score(
         0.22
-        + (scene_title_ratio * 0.24)
+        + (max(scene_title_ratio, assembled_scene_ratio) * 0.24)
         + (coverage * 0.18)
         + (transition_signal * 0.22)
-        + (0.08 if ("## Scene 1" in content or "## 场景 1" in content) else 0.0)
+        + (
+            0.08
+            if ("## Scene 1" in content or "## 场景 1" in content or assembled_scene_ratio >= 1.0)
+            else 0.0
+        )
         + (0.08 if content.count("\n\n") >= expected_scene_count * 2 else 0.0)
     )
+    if int(getattr(chapter, "chapter_number", 0) or 0) == 1 and assembled_scene_ratio >= 1.0:
+        coherence = max(coherence, _clamp_score(0.8 + transition_signal * 0.08))
 
     _has_backward_ref = (
         "上一" in content or "此前" in content or "先前" in content
@@ -2837,10 +3117,21 @@ def evaluate_chapter_draft(
         + (continuity_context_signal * 0.15)
         + (0.15 if _has_backward_ref else 0.0)
         + (0.12 if _has_forward_ref else 0.0)
-        + (0.1 if expected_scene_count <= 1 or scene_heading_count == expected_scene_count else 0.0)
+        + (
+            0.1
+            if expected_scene_count <= 1
+            or scene_heading_count == expected_scene_count
+            or assembled_scene_ratio >= 1.0
+            else 0.0
+        )
         + (0.08 if draft.word_count >= max(900, chapter.target_word_count * 0.5) else 0.0)
         + (0.04 if _has_backward_ref and _has_forward_ref else 0.0)
     )
+    if int(getattr(chapter, "chapter_number", 0) or 0) == 1 and assembled_scene_ratio >= 1.0:
+        # Chapter 1 has no previous-chapter prose to echo. For an assembled
+        # four-scene opening, judge continuity primarily by internal movement
+        # and do not force a rewrite for missing backward-reference markers.
+        continuity = max(continuity, _clamp_score(0.8 + transition_signal * 0.08))
 
     style_penalty = 0.15 if "。。" in content or ".." in content else 0.0
     meta_penalty = 0.08 if "> 本章目标：" in content else 0.0
@@ -2854,7 +3145,7 @@ def evaluate_chapter_draft(
 
     hook = _clamp_score(
         0.24
-        + (tail_tension_signal * 0.52)
+        + (max(tail_tension_signal, tail_visual_hook_signal) * 0.52)
         + (0.08 if "？" in tail_excerpt or "?" in tail_excerpt else 0.0)
         + (0.08 if "必须" in tail_excerpt or "立刻" in tail_excerpt else 0.0)
         + (0.12 if "下一步" in tail_excerpt or "新的不确定性" in tail_excerpt else 0.0)
@@ -2864,6 +3155,7 @@ def evaluate_chapter_draft(
         + (
             max(
                 coverage * 0.6,
+                chapter_info_signal,
                 _keyword_score(
                     content,
                     keywords=[
@@ -2881,6 +3173,15 @@ def evaluate_chapter_draft(
             * 0.62
         )
     )
+    if (
+        int(getattr(chapter, "chapter_number", 0) or 0) == 1
+        and assembled_scene_ratio >= 1.0
+        and chapter_info_signal >= 0.2
+    ):
+        main_plot_progression = max(
+            main_plot_progression,
+            _clamp_score(0.78 + min(chapter_info_signal, 0.8) * 0.08),
+        )
     supporting_arc_codes = list(getattr(chapter_contract, "supporting_arc_codes", []) or [])
     subplot_terms = supporting_arc_codes + [
         getattr(item, "summary", None)
@@ -2898,6 +3199,8 @@ def evaluate_chapter_draft(
                 * 0.62
             )
         )
+        if int(getattr(chapter, "chapter_number", 0) or 0) == 1 and main_plot_progression >= 0.78:
+            subplot_progression = max(subplot_progression, 0.78)
     else:
         subplot_progression = 1.0
     ending_hook_effectiveness = _clamp_score(
@@ -2906,6 +3209,7 @@ def evaluate_chapter_draft(
         + (
             max(
                 tail_tension_signal,
+                tail_visual_hook_signal,
                 _keyword_score(
                     tail_excerpt,
                     keywords=[
@@ -2923,11 +3227,25 @@ def evaluate_chapter_draft(
         )
         + (
             0.2
-            if any(term in tail_excerpt for term in ("下一步", "新的不确定性", "门外", "脚步声"))
+            if any(
+                term in tail_excerpt
+                for term in (
+                    "下一步",
+                    "新的不确定性",
+                    "门外",
+                    "脚步声",
+                    "人影",
+                    "一模一样",
+                    "同一个动作",
+                    "冒血",
+                )
+            )
             else 0.0
         )
         + (0.1 if ("必须" in tail_excerpt or "立刻" in tail_excerpt or "已经" in tail_excerpt) else 0.0)
     )
+    if tail_visual_marker_count >= 3 and ("？" in tail_excerpt or "?" in tail_excerpt):
+        ending_hook_effectiveness = max(ending_hook_effectiveness, 0.82)
     frontier = _story_bible_frontier(chapter_context)
     volume_mission_alignment = _clamp_score(
         0.24
@@ -2957,6 +3275,11 @@ def evaluate_chapter_draft(
             * 0.58
         )
     )
+    if int(getattr(chapter, "chapter_number", 0) or 0) == 1 and assembled_scene_ratio >= 1.0:
+        volume_mission_alignment = max(
+            volume_mission_alignment,
+            _clamp_score(max(main_plot_progression, ending_hook_effectiveness) * 0.98),
+        )
 
     contract_alignment, contract_evidence = _evaluate_contract_alignment(
         content,
@@ -3116,6 +3439,7 @@ def evaluate_chapter_draft(
                 message=issue,
             )
         )
+    findings.extend(_chapter_opening_contract_findings(chapter, scenes, content))
     try:
         from bestseller.services.common_sense_gate import evaluate_common_sense_gate
 
@@ -3219,6 +3543,7 @@ def evaluate_chapter_draft(
             "scene_heading_count": scene_heading_count,
             "expected_scene_count": expected_scene_count,
             "scene_titles_hit": scene_titles_hit,
+            "assembled_scene_count": assembled_scene_count,
             "main_plot_progression": main_plot_progression,
             "subplot_progression": subplot_progression,
             "ending_hook_effectiveness": ending_hook_effectiveness,
@@ -3726,6 +4051,8 @@ async def _compute_chapter_methodology_reports(
                 chapter_outlines=chapter_outlines,
                 chapter_hype=chapter_hype,
                 mode=getattr(cfg, "opening_three_function_default", "audit_only"),
+                require_text_for_checks=True,
+                focus_chapter=chapter.chapter_number,
             )
             if report.issues or report.metrics.get("checked_chapters"):
                 reports.append(report)
@@ -4151,10 +4478,14 @@ async def _compute_chapter_antagonist_scope_signal(
 
     # --- Forward-only scoping -------------------------------------------
     chapter_status = (getattr(chapter, "status", "") or "").lower()
-    if chapter_status in ("complete", "revision"):
+    chapter_first_provenance = any(
+        str(item).startswith("chapter_first_scene:")
+        for item in (getattr(draft, "assembled_from_scene_draft_ids", None) or [])
+    )
+    if chapter_status in ("complete", "revision") or chapter_first_provenance:
         logger.debug(
             "chapter_antagonist_audit: skipping ch%d (status=%s) — "
-            "already-written content is not retroactively flagged.",
+            "already-written/chapter-first content is not retroactively flagged.",
             chapter.chapter_number,
             chapter_status,
         )
@@ -5118,6 +5449,662 @@ def _merge_antagonist_scope_into_review(
     )
 
 
+def _merge_llm_quality_judge_into_chapter_review(
+    review_result: ChapterReviewResult,
+    *,
+    category: str,
+    message_prefix: str,
+    judge_result: Any,
+) -> ChapterReviewResult:
+    issues = [
+        f"{issue.code}: {issue.required_fix or issue.evidence}"
+        for issue in getattr(judge_result, "blocking_issues", ())[:8]
+    ]
+    rewrite_plan = getattr(judge_result, "rewrite_plan", None)
+    rewrite_instructions = (
+        getattr(rewrite_plan, "instructions", None)
+        or "\n".join(issues)
+        or f"{message_prefix}未达标，请重写本章。"
+    )
+    return ChapterReviewResult(
+        verdict="rewrite",
+        scores=review_result.scores,
+        findings=[
+            *review_result.findings,
+            ChapterReviewFinding(
+                category=category,
+                severity="critical" if getattr(judge_result, "has_critical", False) else "major",
+                message=(
+                    f"{message_prefix}未达标："
+                    f"{issues[0] if issues else 'overall score below threshold'}"
+                ),
+            ),
+        ],
+        severity_max="critical"
+        if getattr(judge_result, "has_critical", False)
+        else review_result.severity_max,
+        evidence_summary=review_result.evidence_summary,
+        rewrite_instructions=rewrite_instructions,
+    )
+
+
+def _merge_chapter_quality_bundle_into_review(
+    review_result: ChapterReviewResult,
+    report: ChapterQualityBundleReport,
+    *,
+    language: str | None = None,
+) -> ChapterReviewResult:
+    """Promote unified quality snapshot blockers into the review loop.
+
+    The export layer reruns the same bundle as a final defense. If this review
+    pass does not merge the bundle first, a chapter can be marked complete by
+    the LLM/rule review and only fail when the frontend export tries to read it.
+    """
+
+    blocking_findings = report.blocking_findings
+    if not blocking_findings:
+        return review_result
+
+    codes = list(dict.fromkeys(f.code for f in blocking_findings if f.code))
+    issue_lines = [
+        f"{finding.code}: {finding.repair_hint or finding.repair_scope}"
+        for finding in blocking_findings[:8]
+    ]
+    playbooks = render_quality_repair_playbooks(codes)
+    is_en = is_english_language(language)
+    if is_en:
+        rewrite_prefix = (
+            "Unified quality snapshot blocked publication before export. "
+            "Fix these exact blocking findings and return a complete chapter "
+            "without changing unrelated plot beats:\n"
+            + "\n".join(f"- {line}" for line in issue_lines)
+        )
+        if playbooks:
+            rewrite_prefix += "\n\nRepair playbooks:\n" + playbooks
+    else:
+        rewrite_prefix = (
+            "【统一质量快照未通过】导出前硬门禁已阻断本章。请只修复以下阻断项，"
+            "输出完整章节正文，不要改动无关剧情节拍：\n"
+            + "\n".join(f"- {line}" for line in issue_lines)
+        )
+        if playbooks:
+            rewrite_prefix += "\n\n【修复打法】\n" + playbooks
+
+    return ChapterReviewResult(
+        verdict="rewrite",
+        scores=review_result.scores,
+        findings=[
+            *review_result.findings,
+            *(
+                ChapterReviewFinding(
+                    category="chapter_quality_bundle",
+                    severity="critical",
+                    message=(
+                        f"统一质量快照阻断：{finding.code} — "
+                        f"{finding.repair_hint or finding.repair_scope}"
+                    ),
+                )
+                for finding in blocking_findings
+            ),
+        ],
+        severity_max="critical",
+        evidence_summary={
+            **review_result.evidence_summary,
+            "chapter_quality_bundle": report.to_dict(),
+        },
+        rewrite_instructions=(
+            f"{rewrite_prefix}\n\n{review_result.rewrite_instructions}"
+            if review_result.rewrite_instructions
+            else rewrite_prefix
+        ),
+    )
+
+
+async def _evaluate_chapter_quality_bundle_for_review(
+    *,
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+) -> ChapterQualityBundleReport | None:
+    commercial_quality_required = (
+        bool(settings.pipeline.commercial_strict_quality_mode)
+        and int(getattr(project, "target_chapters", 0) or 0)
+        >= int(settings.pipeline.commercial_planning_min_target_chapters)
+    )
+    if not commercial_quality_required:
+        return None
+
+    previous_chapter_texts = await _collect_previous_current_chapter_texts(
+        session,
+        project=project,
+        chapter_number=chapter.chapter_number,
+    )
+    previous_chapter_number = previous_chapter_texts[-1][0] if previous_chapter_texts else None
+    previous_chapter_text = previous_chapter_texts[-1][1] if previous_chapter_texts else None
+    report = run_chapter_quality_bundle(
+        draft.content_md or "",
+        ChapterQualityBundleContext(
+            chapter_number=chapter.chapter_number,
+            previous_chapter_text=previous_chapter_text,
+            previous_chapter_position=previous_chapter_number,
+            previous_chapter_texts=previous_chapter_texts,
+            total_chapters=int(getattr(project, "target_chapters", 0) or 500),
+            language=getattr(project, "language", None) or "zh-CN",
+            target_chapter_words=int(settings.generation.words_per_chapter.target),
+            commercial_strict=bool(settings.pipeline.commercial_strict_quality_mode),
+        ),
+    )
+    _stamp_chapter_quality_bundle(chapter, report)
+    return report
+
+
+def _merge_llm_judge_exception_into_chapter_review(
+    review_result: ChapterReviewResult,
+    *,
+    category: str,
+    message_prefix: str,
+    error: Exception,
+) -> ChapterReviewResult:
+    message = f"{message_prefix}执行失败，严格模式下不能放行：{type(error).__name__}: {error}"
+    instructions = (
+        f"{message}\n请先恢复该裁判链路，或重跑本章并取得有效评测结果。"
+    )
+    return ChapterReviewResult(
+        verdict="rewrite",
+        scores=review_result.scores,
+        findings=[
+            *review_result.findings,
+            ChapterReviewFinding(
+                category=category,
+                severity="critical",
+                message=message,
+            ),
+        ],
+        severity_max="critical",
+        evidence_summary={
+            **review_result.evidence_summary,
+            f"{category}_exception": {
+                "error_type": type(error).__name__,
+                "message": str(error),
+                "strict_block": True,
+            },
+        },
+        rewrite_instructions=(
+            f"{instructions}\n\n{review_result.rewrite_instructions}"
+            if review_result.rewrite_instructions
+            else instructions
+        ),
+    )
+
+
+async def _recent_chapter_window_payload(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+    window_size: int,
+) -> list[dict[str, Any]]:
+    start_chapter = max(1, int(chapter.chapter_number) - max(1, int(window_size)) + 1)
+    rows = await session.execute(
+        select(ChapterModel, ChapterDraftVersionModel)
+        .join(
+            ChapterDraftVersionModel,
+            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+        )
+        .where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number >= start_chapter,
+            ChapterModel.chapter_number <= chapter.chapter_number,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(ChapterModel.chapter_number.asc())
+    )
+    payload: list[dict[str, Any]] = []
+    for row_chapter, row_draft in rows:
+        content_md = draft.content_md if row_chapter.id == chapter.id else row_draft.content_md
+        payload.append(
+            {
+                "chapter_number": row_chapter.chapter_number,
+                "title": row_chapter.title,
+                "chapter_goal": row_chapter.chapter_goal,
+                "hook_description": row_chapter.hook_description,
+                "current_word_count": row_chapter.current_word_count,
+                "production_state": row_chapter.production_state,
+                "metadata": _window_judge_safe_metadata(row_chapter.metadata_json or {}),
+                "content_excerpt": (content_md or "")[:7000],
+            }
+        )
+    if not any(item["chapter_number"] == chapter.chapter_number for item in payload):
+        payload.append(
+            {
+                "chapter_number": chapter.chapter_number,
+                "title": chapter.title,
+                "chapter_goal": chapter.chapter_goal,
+                "hook_description": chapter.hook_description,
+                "current_word_count": draft.word_count,
+                "production_state": chapter.production_state,
+                "metadata": _window_judge_safe_metadata(chapter.metadata_json or {}),
+                "content_excerpt": (draft.content_md or "")[:7000],
+            }
+        )
+    return payload
+
+
+_WINDOW_JUDGE_METADATA_ALLOWED_KEYS = {
+    "chapter_contract",
+    "generation_input_stamp",
+    "methodology_contract",
+    "quality_targets",
+    "reader_contract",
+}
+_WINDOW_JUDGE_METADATA_DENY_MARKERS = (
+    "auto_repair",
+    "block",
+    "failed",
+    "finding",
+    "gate",
+    "last_",
+    "repair",
+    "retry",
+)
+
+
+def _window_judge_safe_metadata(metadata: Any, *, depth: int = 0) -> dict[str, Any]:
+    if not isinstance(metadata, dict) or depth > 3:
+        return {}
+    safe: dict[str, Any] = {}
+    for raw_key, raw_value in metadata.items():
+        key = str(raw_key)
+        key_lc = key.lower()
+        if depth == 0 and key not in _WINDOW_JUDGE_METADATA_ALLOWED_KEYS:
+            continue
+        if any(marker in key_lc for marker in _WINDOW_JUDGE_METADATA_DENY_MARKERS):
+            continue
+        safe_value = _window_judge_safe_metadata_value(raw_value, depth=depth + 1)
+        if safe_value not in ({}, [], (), None, ""):
+            safe[key] = safe_value
+    return safe
+
+
+def _window_judge_safe_metadata_value(value: Any, *, depth: int) -> Any:
+    if depth > 3:
+        return None
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for raw_key, raw_value in value.items():
+            key = str(raw_key)
+            key_lc = key.lower()
+            if any(marker in key_lc for marker in _WINDOW_JUDGE_METADATA_DENY_MARKERS):
+                continue
+            cleaned_value = _window_judge_safe_metadata_value(raw_value, depth=depth + 1)
+            if cleaned_value not in ({}, [], (), None, ""):
+                cleaned[key] = cleaned_value
+        return cleaned
+    if isinstance(value, (list, tuple)):
+        return [
+            item
+            for item in (
+                _window_judge_safe_metadata_value(item, depth=depth + 1) for item in value[:12]
+            )
+            if item not in ({}, [], (), None, "")
+        ]
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _volume_entry_from_project_metadata(
+    project: ProjectModel,
+    *,
+    volume_number: int | None,
+) -> dict[str, Any]:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    volume_plan: Any = metadata.get("volume_plan")
+    if isinstance(volume_plan, dict):
+        candidate = volume_plan.get("volumes")
+        volume_plan = candidate if isinstance(candidate, list) else volume_plan
+    if isinstance(volume_plan, list):
+        for item in volume_plan:
+            if not isinstance(item, dict):
+                continue
+            try:
+                item_volume = int(item.get("volume_number") or 0)
+            except (TypeError, ValueError):
+                item_volume = 0
+            if volume_number is None or item_volume == volume_number:
+                return item
+    return {}
+
+
+async def _current_volume_payload(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    volume_number: int | None = None
+    if chapter.volume_id is not None:
+        volume = await session.scalar(
+            select(VolumeModel).where(VolumeModel.id == chapter.volume_id)
+        )
+        if volume is not None:
+            volume_number = int(volume.volume_number)
+    chapters_query = (
+        select(ChapterModel, ChapterDraftVersionModel)
+        .join(
+            ChapterDraftVersionModel,
+            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+        )
+        .where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number <= chapter.chapter_number,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(ChapterModel.chapter_number.asc())
+    )
+    if volume_number is not None:
+        chapters_query = chapters_query.join(
+            VolumeModel,
+            ChapterModel.volume_id == VolumeModel.id,
+        ).where(VolumeModel.volume_number == volume_number)
+    rows = await session.execute(chapters_query)
+    chapter_summaries: list[dict[str, Any]] = []
+    for row_chapter, row_draft in rows:
+        content_md = draft.content_md if row_chapter.id == chapter.id else row_draft.content_md
+        chapter_summaries.append(
+            {
+                "chapter_number": row_chapter.chapter_number,
+                "title": row_chapter.title,
+                "chapter_goal": row_chapter.chapter_goal,
+                "hook_description": row_chapter.hook_description,
+                "status": row_chapter.status,
+                "production_state": row_chapter.production_state,
+                "word_count": row_draft.word_count,
+                "content_excerpt": (content_md or "")[:5000],
+            }
+        )
+    return (
+        _volume_entry_from_project_metadata(project, volume_number=volume_number),
+        chapter_summaries,
+    )
+
+
+def _should_run_volume_checkpoint_judge(
+    *,
+    chapter_number: int,
+    interval: int,
+    min_chapters: int,
+) -> bool:
+    """Run volume alignment only when the chapter window is mature enough.
+
+    Early chapters should be judged by chapter/scene commercial gates.  Running
+    a full-volume checkpoint on chapter 1-3 caused the judge to demand future
+    reveal payoffs and create hallucinated blocking rewrites.
+    """
+
+    if interval <= 0:
+        return False
+    if chapter_number < max(1, min_chapters):
+        return False
+    return chapter_number % interval == 0
+
+
+def _float_from_payload(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed > 10.0:
+        parsed = parsed / 100.0
+    elif parsed > 1.0:
+        parsed = parsed / 10.0
+    return max(0.0, min(1.0, parsed))
+
+
+def _can_accept_llm_pass_over_rule_rewrite(
+    review_result: ChapterReviewResult,
+    llm_payload: dict[str, object],
+) -> bool:
+    if review_result.verdict == "pass":
+        return False
+    if llm_payload.get("pass") is not True:
+        return False
+    blocking_issues = llm_payload.get("blocking_issues")
+    if isinstance(blocking_issues, list) and blocking_issues:
+        return False
+    if not review_result.findings:
+        return False
+    categories = {finding.category for finding in review_result.findings}
+    return categories <= _LLM_PASS_OVERRIDABLE_RULE_CATEGORIES
+
+
+def _downgrade_rule_rewrite_after_llm_pass(
+    review_result: ChapterReviewResult,
+    llm_payload: dict[str, object],
+) -> ChapterReviewResult:
+    dimension_scores = llm_payload.get("dimension_scores")
+    if not isinstance(dimension_scores, dict):
+        dimension_scores = {}
+    overall_score = _float_from_payload(llm_payload.get("overall_score"))
+    hook_score = max(
+        (
+            score
+            for score in (
+                _float_from_payload(dimension_scores.get("hook_strength")),
+                _float_from_payload(dimension_scores.get("opening_pull")),
+                _float_from_payload(dimension_scores.get("commercial_pull")),
+            )
+            if score is not None
+        ),
+        default=None,
+    )
+    contract_score = max(
+        (
+            score
+            for score in (
+                _float_from_payload(dimension_scores.get("methodology_compliance")),
+                _float_from_payload(dimension_scores.get("scene_execution")),
+                _float_from_payload(dimension_scores.get("commercial_pull")),
+            )
+            if score is not None
+        ),
+        default=None,
+    )
+    score_updates: dict[str, float] = {}
+    if overall_score is not None:
+        score_updates["overall"] = max(review_result.scores.overall, overall_score)
+    if hook_score is not None:
+        score_updates["hook"] = max(review_result.scores.hook, hook_score)
+        score_updates["ending_hook_effectiveness"] = max(
+            review_result.scores.ending_hook_effectiveness,
+            hook_score,
+        )
+    if contract_score is not None:
+        score_updates["contract_alignment"] = max(
+            review_result.scores.contract_alignment,
+            contract_score,
+        )
+    return ChapterReviewResult(
+        verdict="pass",
+        scores=review_result.scores.model_copy(update=score_updates),
+        findings=review_result.findings,
+        severity_max="low",
+        evidence_summary={
+            **review_result.evidence_summary,
+            "rule_rewrite_downgraded_by_llm_pass": {
+                "reason": (
+                    "商业 LLM 裁判已通过且无 blocking issue；旧规则低分仅来自可审计的"
+                    "启发式章节推进/尾钩/合同匹配项。"
+                ),
+                "original_verdict": review_result.verdict,
+                "original_severity_max": review_result.severity_max,
+                "original_findings": [
+                    finding.model_dump(mode="json") for finding in review_result.findings
+                ],
+            },
+        },
+        rewrite_instructions=None,
+    )
+
+
+def _collect_chapter_rewrite_hard_constraints(
+    chapter: ChapterModel,
+    scenes: list[SceneCardModel] | tuple[SceneCardModel, ...],
+) -> tuple[str, list[str]]:
+    metadata = chapter.metadata_json or {}
+    object_signal = (
+        metadata.get("object_signal_contract") if isinstance(metadata, dict) else {}
+    )
+    foreshadowing = (
+        chapter.foreshadowing_actions if isinstance(chapter.foreshadowing_actions, dict) else {}
+    )
+    forbidden_terms: list[str] = []
+    lines: list[str] = []
+    if isinstance(object_signal, dict):
+        chapter_mode = str(object_signal.get("chapter_mode") or "").strip()
+        if chapter_mode:
+            lines.append(f"- 物件信号合同：{chapter_mode}")
+        for key in ("forbidden_signals", "forbidden_terms"):
+            values = object_signal.get(key)
+            if isinstance(values, list):
+                forbidden_terms.extend(str(item).strip() for item in values if str(item).strip())
+    if int(chapter.chapter_number or 0) <= 10:
+        forbidden_terms.extend(_front10_forbidden_signal_terms(chapter))
+    if isinstance(foreshadowing, dict):
+        values = foreshadowing.get("forbidden_early_leaks")
+        if isinstance(values, list):
+            forbidden_terms.extend(str(item).strip() for item in values if str(item).strip())
+    scene_forbidden: list[str] = []
+    seen_scene_forbidden: set[str] = set()
+    for scene in scenes:
+        for action in getattr(scene, "forbidden_actions", None) or []:
+            text = str(action or "").strip()
+            if text and text not in seen_scene_forbidden:
+                seen_scene_forbidden.add(text)
+                scene_forbidden.append(text)
+                forbidden_terms.extend(_forbidden_rewrite_terms_from_scene_action(text))
+    if scene_forbidden:
+        lines.append("- 场景卡禁写动作：" + "；".join(scene_forbidden[:30]))
+    unique_terms = []
+    seen: set[str] = set()
+    for term in forbidden_terms:
+        if term and term not in seen:
+            seen.add(term)
+            unique_terms.append(term)
+    if unique_terms:
+        lines.append("- 禁写/暂缓词：" + "、".join(unique_terms[:24]))
+    if not lines:
+        return "", unique_terms
+    guard = (
+        "【章节硬约束优先级】以下约束来自章节细纲、物件信号合同和场景卡，"
+        "优先级高于本次评审建议；如果评审建议与这些约束冲突，删除冲突建议，"
+        "只按硬约束修。\n"
+        + "\n".join(lines)
+    )
+    return guard, unique_terms
+
+
+def _forbidden_rewrite_terms_from_scene_action(action_text: str) -> list[str]:
+    """Extract high-risk terms from scene-card prohibitions for rewrite filtering.
+
+    Scene cards often phrase constraints as full sentences ("不得写电话、寄件、
+    快递...").  The rewrite sanitizer needs the contained tokens so stale LLM
+    review advice cannot reintroduce a forbidden direction.
+    """
+
+    if not action_text:
+        return []
+    candidates = (
+        "电话",
+        "来电",
+        "手机通知",
+        "微信",
+        "短信",
+        "语音",
+        "录音",
+        "寄件",
+        "快递",
+        "外卖",
+        "配送",
+        "配送单",
+        "物流",
+        "半夜等单",
+        "送个单",
+        "票据",
+        "单子",
+        "帮忙寄件",
+        "跑腿",
+        "铜钱按",
+        "铜钱接触",
+        "黑水",
+        "门吞掉",
+        "被门吞掉",
+        "被镜子吞掉",
+        "拖进门",
+        "门合拢",
+        "确认死亡",
+        "电梯脚印",
+        "黑泥鞋印",
+        "水渍脚印",
+        "新脚",
+        "陈默",
+        "七号入账",
+        "代父",
+        "入门",
+        "归人",
+        "张家门契",
+        "三代以内",
+        "血债血偿",
+        "八个人影",
+        "七行名单",
+        "病号服",
+    )
+    return [term for term in candidates if term in action_text]
+
+
+def _is_prohibition_instruction(line: str) -> bool:
+    return any(token in line for token in ("不得", "禁止", "删除", "避免", "不能", "不要", "改掉", "清除"))
+
+
+def _sanitize_chapter_review_rewrite_instructions(
+    instructions: str | None,
+    *,
+    chapter: ChapterModel,
+    scenes: list[SceneCardModel] | tuple[SceneCardModel, ...],
+) -> str | None:
+    guard, forbidden_terms = _collect_chapter_rewrite_hard_constraints(chapter, scenes)
+    raw = (instructions or "").strip()
+    if not guard and not raw:
+        return None
+    kept_lines: list[str] = []
+    removed_lines: list[str] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            kept_lines.append(line)
+            continue
+        conflicts = any(term and term in stripped for term in forbidden_terms)
+        if conflicts and not _is_prohibition_instruction(stripped):
+            removed_lines.append(stripped)
+            continue
+        kept_lines.append(line)
+    cleaned = "\n".join(kept_lines).strip()
+    if removed_lines:
+        removal_note = (
+            "【已过滤冲突评审建议】有 "
+            f"{len(removed_lines)} 条评审建议与章节硬约束冲突，已删除，"
+            "重写时不得恢复这些被删除方向。"
+        )
+        cleaned = f"{removal_note}\n\n{cleaned}" if cleaned else removal_note
+    if guard:
+        cleaned = f"{guard}\n\n{cleaned}" if cleaned else guard
+    return cleaned or None
+
+
 async def review_chapter_draft(
     session: AsyncSession,
     settings: AppSettings,
@@ -5255,6 +6242,329 @@ async def review_chapter_draft(
             language=getattr(project, "language", None),
         )
 
+    quality_bundle_report = await _evaluate_chapter_quality_bundle_for_review(
+        session=session,
+        settings=settings,
+        project=project,
+        chapter=chapter,
+        draft=draft,
+    )
+    if quality_bundle_report is not None and quality_bundle_report.blocking_findings:
+        review_result = _merge_chapter_quality_bundle_into_review(
+            review_result,
+            quality_bundle_report,
+            language=getattr(project, "language", None),
+        )
+
+    llm_commercial_judge_payload: dict[str, object] | None = None
+    if getattr(settings.pipeline, "enable_chapter_llm_commercial_judge", False):
+        try:
+            from bestseller.services.chapter_generation_input_builder import (
+                build_chapter_generation_input_bundle,
+            )
+            from bestseller.services.chapter_llm_quality_judge import (
+                judge_chapter_commercial_quality,
+            )
+            from bestseller.services.prompt_packs import resolve_prompt_pack
+
+            generation_input = (
+                build_chapter_generation_input_bundle(
+                    project=project,
+                    chapter=chapter,
+                    scenes=scenes,
+                    context_packet=chapter_context,
+                    target_word_count=int(chapter.target_word_count or draft.word_count or 0),
+                ).model_dump(mode="json")
+                if chapter_context is not None
+                else {}
+            )
+            if generation_input:
+                generation_input = {
+                    **generation_input,
+                    "rule_review_snapshot": {
+                        "verdict": review_result.verdict,
+                        "severity_max": review_result.severity_max,
+                        "scores": review_result.scores.model_dump(mode="json"),
+                        "findings": [
+                            finding.model_dump(mode="json")
+                            for finding in review_result.findings[:12]
+                        ],
+                    },
+                }
+            project_metadata = (
+                project.metadata_json if isinstance(project.metadata_json, dict) else {}
+            )
+            prompt_pack = resolve_prompt_pack(
+                project_metadata.get("prompt_pack_name")
+                or project_metadata.get("prompt_pack_key"),
+                genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+                sub_genre=getattr(project, "sub_genre", None),
+            )
+            llm_judge_result = await judge_chapter_commercial_quality(
+                session,
+                settings,
+                chapter_number=chapter.chapter_number,
+                content_md=draft.content_md,
+                generation_input=generation_input,
+                workflow_run_id=workflow_run_id,
+                pack=prompt_pack,
+            )
+            llm_commercial_judge_payload = llm_judge_result.model_dump(mode="json", by_alias=True)
+            if (
+                not llm_judge_result.passed
+                and getattr(
+                    settings.pipeline,
+                    "chapter_llm_commercial_judge_block_on_failure",
+                    False,
+                )
+            ):
+                issues = [
+                    f"{issue.code}: {issue.required_fix or issue.evidence}"
+                    for issue in llm_judge_result.blocking_issues[:8]
+                ]
+                rewrite_instructions = (
+                    llm_judge_result.rewrite_plan.instructions
+                    or "\n".join(issues)
+                    or "LLM 商业质量评测未达标，请重写本章。"
+                )
+                review_result = ChapterReviewResult(
+                    verdict="rewrite",
+                    scores=review_result.scores,
+                    findings=[
+                        *review_result.findings,
+                        ChapterReviewFinding(
+                            category="llm_commercial_quality",
+                            severity="critical"
+                            if llm_judge_result.has_critical
+                            else "major",
+                            message=(
+                                "LLM 商业质量评测未达标："
+                                + (issues[0] if issues else "overall score below threshold")
+                            ),
+                        ),
+                    ],
+                    severity_max="critical"
+                    if llm_judge_result.has_critical
+                    else review_result.severity_max,
+                    evidence_summary={
+                        **review_result.evidence_summary,
+                        "llm_commercial_judge": llm_commercial_judge_payload,
+                    },
+                    rewrite_instructions=rewrite_instructions,
+                )
+            else:
+                rule_conflict = (
+                    {
+                        "rule_verdict": review_result.verdict,
+                        "llm_passed": True,
+                        "rule_scores": review_result.scores.model_dump(mode="json"),
+                    }
+                    if review_result.verdict != "pass" and llm_judge_result.passed
+                    else None
+                )
+                review_result = ChapterReviewResult(
+                    verdict=review_result.verdict,
+                    scores=review_result.scores,
+                    findings=review_result.findings,
+                    severity_max=review_result.severity_max,
+                    evidence_summary={
+                        **review_result.evidence_summary,
+                        "llm_commercial_judge": llm_commercial_judge_payload,
+                        "llm_rule_gate_conflict": rule_conflict,
+                    },
+                    rewrite_instructions=review_result.rewrite_instructions,
+                )
+                if _can_accept_llm_pass_over_rule_rewrite(
+                    review_result,
+                    llm_commercial_judge_payload,
+                ):
+                    review_result = _downgrade_rule_rewrite_after_llm_pass(
+                        review_result,
+                        llm_commercial_judge_payload,
+                    )
+        except Exception as exc:
+            # NOTE: Previously this used `logger.debug` which silently swallowed
+            # all judge failures.  That meant the chapter LLM commercial judge
+            # could crash on every run (config drift, missing model, schema
+            # change) without anyone noticing — the entire semantic quality
+            # layer would be effectively disabled with no signal.  Escalated to
+            # `logger.exception` so production logs surface the failure.
+            logger.exception(
+                "chapter LLM commercial judge failed for ch%d (judge ran but raised)",
+                chapter_number,
+            )
+            if getattr(
+                settings.pipeline,
+                "chapter_llm_commercial_judge_block_on_failure",
+                False,
+            ):
+                review_result = _merge_llm_judge_exception_into_chapter_review(
+                    review_result,
+                    category="llm_commercial_quality",
+                    message_prefix="LLM 商业质量评测",
+                    error=exc,
+                )
+
+    if getattr(settings.pipeline, "enable_chapter_window_llm_judge", False):
+        try:
+            from bestseller.services.chapter_window_quality_judge import (
+                judge_chapter_window_quality,
+            )
+
+            window_size = int(
+                getattr(settings.pipeline, "chapter_window_llm_judge_size", 5)
+                or 5
+            )
+            min_chapters = int(
+                getattr(settings.pipeline, "chapter_window_llm_judge_min_chapters", 2)
+                or 2
+            )
+            window_payload = await _recent_chapter_window_payload(
+                session,
+                project=project,
+                chapter=chapter,
+                draft=draft,
+                window_size=window_size,
+            )
+            if len(window_payload) >= min_chapters:
+                window_judge_result = await judge_chapter_window_quality(
+                    session,
+                    settings,
+                    chapters=window_payload,
+                    workflow_run_id=workflow_run_id,
+                )
+                window_judge_payload = window_judge_result.model_dump(
+                    mode="json",
+                    by_alias=True,
+                )
+                review_result = ChapterReviewResult(
+                    verdict=review_result.verdict,
+                    scores=review_result.scores,
+                    findings=review_result.findings,
+                    severity_max=review_result.severity_max,
+                    evidence_summary={
+                        **review_result.evidence_summary,
+                        "llm_window_quality_judge": window_judge_payload,
+                    },
+                    rewrite_instructions=review_result.rewrite_instructions,
+                )
+                if (
+                    not window_judge_result.passed
+                    and getattr(
+                        settings.pipeline,
+                        "chapter_window_llm_judge_block_on_failure",
+                        False,
+                    )
+                ):
+                    review_result = _merge_llm_quality_judge_into_chapter_review(
+                        review_result,
+                        category="llm_window_quality",
+                        message_prefix="最近章节滑窗质量评测",
+                        judge_result=window_judge_result,
+                    )
+        except Exception as exc:
+            logger.exception(
+                "chapter window LLM judge failed for ch%d (judge ran but raised)",
+                chapter_number,
+            )
+            if getattr(
+                settings.pipeline,
+                "chapter_window_llm_judge_block_on_failure",
+                False,
+            ):
+                review_result = _merge_llm_judge_exception_into_chapter_review(
+                    review_result,
+                    category="llm_window_quality",
+                    message_prefix="最近章节滑窗质量评测",
+                    error=exc,
+                )
+
+    if getattr(settings.pipeline, "enable_volume_llm_checkpoint_judge", False):
+        try:
+            from bestseller.services.volume_quality_judge import (
+                judge_volume_quality_checkpoint,
+            )
+
+            interval = int(
+                getattr(settings.pipeline, "volume_llm_checkpoint_interval", 10)
+                or 10
+            )
+            min_chapters = int(
+                getattr(
+                    settings.pipeline,
+                    "volume_llm_checkpoint_min_chapters",
+                    interval,
+                )
+                or interval
+            )
+            should_run_volume_judge = _should_run_volume_checkpoint_judge(
+                chapter_number=chapter_number,
+                interval=interval,
+                min_chapters=min_chapters,
+            )
+            if should_run_volume_judge:
+                volume_plan, chapter_summaries = await _current_volume_payload(
+                    session,
+                    project=project,
+                    chapter=chapter,
+                    draft=draft,
+                )
+                volume_judge_result = await judge_volume_quality_checkpoint(
+                    session,
+                    settings,
+                    volume_plan=volume_plan,
+                    chapter_summaries=chapter_summaries,
+                    current_chapter_number=chapter_number,
+                    volume_checkpoint_interval=interval,
+                    volume_checkpoint_min_chapters=min_chapters,
+                    workflow_run_id=workflow_run_id,
+                )
+                volume_judge_payload = volume_judge_result.model_dump(
+                    mode="json",
+                    by_alias=True,
+                )
+                review_result = ChapterReviewResult(
+                    verdict=review_result.verdict,
+                    scores=review_result.scores,
+                    findings=review_result.findings,
+                    severity_max=review_result.severity_max,
+                    evidence_summary={
+                        **review_result.evidence_summary,
+                        "llm_volume_checkpoint_judge": volume_judge_payload,
+                    },
+                    rewrite_instructions=review_result.rewrite_instructions,
+                )
+                if (
+                    not volume_judge_result.passed
+                    and getattr(
+                        settings.pipeline,
+                        "volume_llm_checkpoint_block_on_failure",
+                        False,
+                    )
+                ):
+                    review_result = _merge_llm_quality_judge_into_chapter_review(
+                        review_result,
+                        category="llm_volume_checkpoint",
+                        message_prefix="卷目标对齐评测",
+                        judge_result=volume_judge_result,
+                    )
+        except Exception as exc:
+            logger.exception(
+                "volume LLM checkpoint judge failed for ch%d (judge ran but raised)",
+                chapter_number,
+            )
+            if getattr(
+                settings.pipeline,
+                "volume_llm_checkpoint_block_on_failure",
+                False,
+            ):
+                review_result = _merge_llm_judge_exception_into_chapter_review(
+                    review_result,
+                    category="llm_volume_checkpoint",
+                    message_prefix="卷目标对齐评测",
+                    error=exc,
+                )
+
     critic_response = render_chapter_review_summary(
         review_result,
         language=getattr(project, "language", None),
@@ -5295,7 +6605,11 @@ async def review_chapter_draft(
 
         # --- LLM verdict override for chapter review ---
         llm_verdict = _parse_llm_verdict(critic_response)
-        if llm_verdict == "rewrite" and review_result.verdict == "pass":
+        if (
+            llm_verdict == "rewrite"
+            and review_result.verdict == "pass"
+            and review_result.severity_max in {"major", "critical", "high"}
+        ):
             review_result = ChapterReviewResult(
                 verdict="rewrite",
                 scores=review_result.scores,
@@ -5356,30 +6670,129 @@ async def review_chapter_draft(
 
     rewrite_task: RewriteTaskModel | None = None
     if review_result.verdict == "rewrite":
-        rewrite_task = RewriteTaskModel(
-            project_id=project.id,
-            trigger_type="chapter_review",
-            trigger_source_id=chapter.id,
-            rewrite_strategy="chapter_coherence_bridge_rewrite",
-            priority=4,
-            status="pending",
-            instructions=review_result.rewrite_instructions or "请补强当前章节。",
-            context_required=[
-                "chapter_context",
-                "current_chapter_draft",
-                "scene_summaries",
-                "review_findings",
-            ],
-            metadata_json={
-                "chapter_id": str(chapter.id),
-                "draft_id": str(draft.id),
-                "review_report_id": str(report.id),
-            },
+        # Per-chapter budget: bound the number of chapter_review-triggered
+        # rewrite cycles. The original design assumed each rewrite would
+        # converge, but in practice LLM-judge verdicts can disagree with
+        # what the writer can produce against the current plan, creating an
+        # unbounded loop (青囊不语问阴阳 ch1 reached 124 versions on
+        # 2026-05-25 before this cap landed). Once the budget is spent we
+        # stop creating new chapter_review tasks and surface the chapter
+        # for human attention via production_state.
+        budget = max(
+            int(
+                getattr(
+                    settings.pipeline,
+                    "chapter_auto_repair_max_attempts",
+                    3,
+                )
+                or 3
+            ),
+            1,
         )
-        session.add(rewrite_task)
-        chapter.status = ChapterStatus.REVISION.value
+        # Counter is persisted on the chapter itself ("how many review→
+        # rewrite cycles have we started since the chapter last passed").
+        # We intentionally do NOT count historical rewrite_tasks rows: a
+        # chapter that ran 80 cycles in its lifetime but hasn't passed yet
+        # still deserves a fresh budget when we reactivate the cap, so the
+        # operator can re-deploy without manually wiping every backlog.
+        # When the chapter passes review the counter is removed so a future
+        # regression starts fresh.
+        chapter_meta_for_budget = dict(chapter.metadata_json or {})
+        attempts_used = int(
+            chapter_meta_for_budget.get("chapter_review_attempts_active") or 0
+        )
+        if attempts_used >= budget:
+            logger.warning(
+                "chapter_review budget exhausted for project=%s chapter=%d "
+                "(attempts_used=%d budget=%d); not creating another rewrite "
+                "task — flagging for human review.",
+                project.slug,
+                chapter.chapter_number,
+                attempts_used,
+                budget,
+            )
+            await session.execute(
+                update(RewriteTaskModel)
+                .where(
+                    RewriteTaskModel.project_id == project.id,
+                    RewriteTaskModel.trigger_source_id == chapter.id,
+                    RewriteTaskModel.trigger_type == "chapter_review",
+                    RewriteTaskModel.status.in_(("pending", "queued")),
+                )
+                .values(
+                    status="cancelled",
+                    metadata_json={
+                        "cancelled_reason": "chapter_review_budget_exhausted",
+                        "attempts_used": attempts_used,
+                        "budget": budget,
+                    },
+                )
+            )
+            chapter.status = ChapterStatus.REVIEW.value
+            # ``chapters.production_state`` is VARCHAR(20); keep the
+            # machine-repair terminal state compact and put details in
+            # rewrite/task metadata.
+            chapter.production_state = "repair_exhausted"
+        else:
+            rewrite_instructions = _sanitize_chapter_review_rewrite_instructions(
+                review_result.rewrite_instructions or "请补强当前章节。",
+                chapter=chapter,
+                scenes=scenes,
+            )
+            rewrite_task = RewriteTaskModel(
+                project_id=project.id,
+                trigger_type="chapter_review",
+                trigger_source_id=chapter.id,
+                rewrite_strategy="chapter_coherence_bridge_rewrite",
+                priority=4,
+                status="pending",
+                instructions=rewrite_instructions or "请补强当前章节。",
+                context_required=[
+                    "chapter_context",
+                    "current_chapter_draft",
+                    "scene_summaries",
+                    "review_findings",
+                ],
+                metadata_json={
+                    "chapter_id": str(chapter.id),
+                    "draft_id": str(draft.id),
+                    "review_report_id": str(report.id),
+                    "attempt_index": attempts_used + 1,
+                    "attempt_budget": budget,
+                },
+            )
+            session.add(rewrite_task)
+            chapter.status = ChapterStatus.REVISION.value
+            # Bump the active-cycle counter so the next pass sees us closer
+            # to the cap.
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "chapter_review_attempts_active": attempts_used + 1,
+            }
     else:
+        await session.execute(
+            update(RewriteTaskModel)
+            .where(
+                RewriteTaskModel.project_id == project.id,
+                RewriteTaskModel.trigger_source_id == chapter.id,
+                RewriteTaskModel.status.in_(("pending", "queued")),
+            )
+            .values(
+                status="superseded",
+                metadata_json={
+                    "superseded_reason": "current_chapter_review_passed",
+                    "superseded_by_review_report_id": str(report.id),
+                    "superseded_by_draft_id": str(draft.id),
+                },
+            )
+        )
         chapter.status = ChapterStatus.COMPLETE.value
+        chapter.production_state = "ok"
+        # Wipe the active-cycle counter so a future regression on this
+        # chapter starts the chapter_review budget fresh.
+        chapter_meta_after_pass = dict(chapter.metadata_json or {})
+        chapter_meta_after_pass.pop("chapter_review_attempts_active", None)
+        chapter.metadata_json = chapter_meta_after_pass
 
     await session.flush()
     return review_result, report, quality, rewrite_task
@@ -5476,6 +6889,24 @@ def _rewrite_output_max_tokens_override(
 ) -> int | None:
     settings = get_settings()
     project_language = _project_language(project)
+    editor_model = resolve_llm_role_model(settings, role="editor")
+    editor_model_lc = (editor_model or "").strip().lower()
+    if "minimax-m2" in editor_model_lc and "highspeed" in editor_model_lc:
+        # Chapter rewrites return a complete chapter, not a bounded patch. Do
+        # not use a target-derived cap here: MiniMax can spend a tight cap on
+        # hidden/reasoning tokens and return finish_reason='length' with empty
+        # or truncated visible prose. But live chapter-first runs also showed
+        # that using the full 32768 ceiling can produce an empty length response,
+        # so keep a fixed safe runway that is still ample for a 3500-character
+        # Chinese chapter. Length is controlled by prompt contracts and gates.
+        safe_cap = 16_384
+        model_ceiling = model_output_token_ceiling(editor_model)
+        if model_ceiling and model_ceiling > 0:
+            safe_cap = min(safe_cap, int(model_ceiling))
+        configured = resolve_llm_role_max_tokens(settings, role="editor")
+        if configured and configured > 0:
+            return min(max(int(configured), safe_cap), safe_cap)
+        return safe_cap
     try:
         target = int(chapter.target_word_count or 0)
     except (TypeError, ValueError):
@@ -5999,36 +7430,11 @@ async def rewrite_chapter_from_task(
     else:
         content_md = strip_scaffolding_echoes(sanitize_novel_markdown_content(content_md))
 
-    # ── Post-rewrite intra-chapter deduplication ──
-    # Chapter rewrite LLMs occasionally echo large blocks verbatim (or near-verbatim).
-    # Without this cleanup, byte-identical and paraphrased paragraphs survive
-    # into the saved draft. Parity with assemble_chapter_draft.
-    try:
-        from bestseller.services.deduplication import (
-            clean_meta_text_markers,
-            detect_intra_chapter_repetition,
-            remove_intra_chapter_duplicates_paraphrase,
-        )
-
-        content_md, _meta_removed = clean_meta_text_markers(content_md)
-        if _meta_removed:
-            logger.info(
-                "rewrite_chapter %d: removed %d meta-text marker(s)",
-                chapter.chapter_number, _meta_removed,
-            )
-        _dup_findings = detect_intra_chapter_repetition(content_md)
-        if _dup_findings:
-            logger.warning(
-                "rewrite_chapter %d: %d duplicate paragraph(s) after rewrite \u2014 auto-removing",
-                chapter.chapter_number, len(_dup_findings),
-            )
-            content_md, _removed = remove_intra_chapter_duplicates_paraphrase(content_md)
-            logger.info(
-                "rewrite_chapter %d: removed %d duplicate paragraph(s)",
-                chapter.chapter_number, _removed,
-            )
-    except Exception:
-        logger.debug("Post-rewrite dedup failed (non-fatal)", exc_info=True)
+    content_md, _cleanup_stats = _clean_generated_chapter_text(
+        content_md,
+        chapter_number=chapter.chapter_number,
+        source="chapter_rewrite",
+    )
 
     duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
         session,
@@ -6238,21 +7644,11 @@ async def rewrite_chapter_from_task(
                     workflow_run_id=workflow_run_id,
                     step_run_id=step_run_id,
                 )
-            try:
-                from bestseller.services.deduplication import (
-                    clean_meta_text_markers,
-                    detect_intra_chapter_repetition,
-                    remove_intra_chapter_duplicates_paraphrase,
-                )
-
-                repaired_content, _meta_removed = clean_meta_text_markers(repaired_content)
-                _dup_findings = detect_intra_chapter_repetition(repaired_content)
-                if _dup_findings:
-                    repaired_content, _removed = remove_intra_chapter_duplicates_paraphrase(
-                        repaired_content
-                    )
-            except Exception:
-                logger.debug("Post-rewrite repair dedup failed (non-fatal)", exc_info=True)
+            repaired_content, _repair_cleanup_stats = _clean_generated_chapter_text(
+                repaired_content,
+                chapter_number=chapter.chapter_number,
+                source="chapter_rewrite_repair",
+            )
             repaired_duplicate_findings = await _collect_post_assembly_duplicate_findings(
                 session,
                 project=project,
@@ -6386,24 +7782,11 @@ async def rewrite_chapter_from_task(
                         workflow_run_id=workflow_run_id,
                         step_run_id=step_run_id,
                     )
-                try:
-                    from bestseller.services.deduplication import (
-                        clean_meta_text_markers,
-                        detect_intra_chapter_repetition,
-                        remove_intra_chapter_duplicates_paraphrase,
-                    )
-
-                    repaired_content, _meta_removed = clean_meta_text_markers(repaired_content)
-                    _dup_findings = detect_intra_chapter_repetition(repaired_content)
-                    if _dup_findings:
-                        repaired_content, _removed = remove_intra_chapter_duplicates_paraphrase(
-                            repaired_content
-                        )
-                except Exception:
-                    logger.debug(
-                        "Post-rewrite retrofit repair dedup failed (non-fatal)",
-                        exc_info=True,
-                    )
+                repaired_content, _retrofit_cleanup_stats = _clean_generated_chapter_text(
+                    repaired_content,
+                    chapter_number=chapter.chapter_number,
+                    source="chapter_rewrite_quality_retrofit_repair",
+                )
                 repaired_duplicate_findings = await _collect_post_assembly_duplicate_findings(
                     session,
                     project=project,

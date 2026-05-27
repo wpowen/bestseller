@@ -7,7 +7,7 @@ import sys
 
 
 def _load_module():
-    path = Path(__file__).resolve().parents[2] / "scripts/repair_qingnang_story_bible_plans.py"
+    path = Path(__file__).resolve().parents[2] / "scripts/_deprecated/qingnang_repair/repair_qingnang_story_bible_plans.py"
     spec = importlib.util.spec_from_file_location("repair_qingnang_story_bible_plans", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

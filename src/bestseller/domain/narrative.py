@@ -93,13 +93,13 @@ class ChapterContractRead(BaseModel):
     # --- 方法论扩展字段 (Methodology extensions) ---
     conflict_stakes: str | None = None  # 筹码：输了会失去什么
     conflict_buffs: list[str] = Field(default_factory=list)  # 极限施压BUFF
-    pacing_mode: str | None = Field(default=None, max_length=32)  # build/accelerate/climax/breathe
-    emotion_phase: str | None = Field(default=None, max_length=32)  # compress/release
+    pacing_mode: str | None = Field(default=None, max_length=128)  # build/accelerate/climax/breathe
+    emotion_phase: str | None = Field(default=None, max_length=128)  # compress/release
     hooks_to_resolve: list[str] = Field(default_factory=list)  # 本章应消解的钩子
     hooks_to_plant: list[str] = Field(default_factory=list)  # 本章应植入的新钩子
     relationship_debts: list[str] = Field(default_factory=list)  # 本章必须推进/偿还/加码的关系债
     is_climax: bool = False  # 是否为高潮章节
-    loop_position: str | None = Field(default=None, max_length=32)  # trigger/action/reward/invest
+    loop_position: str | None = Field(default=None, max_length=256)  # trigger/action/reward/invest
     seam_contract: ChapterSeamContract | None = None
 
 

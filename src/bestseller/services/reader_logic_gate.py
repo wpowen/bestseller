@@ -85,6 +85,12 @@ def _rooms(text: str) -> list[str]:
         if any(marker in context for marker in _NON_PHYSICAL_ROOM_CONTEXT):
             continue
         token = match.group(0)
+        prefix = (text or "")[max(0, match.start() - 12) : match.start()]
+        suffix = (text or "")[match.end() : match.end() + 8]
+        if token.endswith("楼") and suffix.startswith("的") and any(
+            marker in prefix for marker in ("我是", "我、我是", "住在", "邻居", "隔壁")
+        ):
+            continue
         if token not in seen:
             seen.add(token)
             out.append(token)

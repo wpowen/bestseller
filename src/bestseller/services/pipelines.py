@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 import logging
 from pathlib import Path
 import traceback
@@ -32,7 +32,9 @@ from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
+    ChapterContractModel,
     ChapterModel,
+    ChapterQualityReportModel,
     ChapterStateSnapshotModel,
     ProjectModel,
     RewriteTaskModel,
@@ -46,6 +48,20 @@ from bestseller.services.audit_loop import (
     run_and_persist_audit,
 )
 from bestseller.services.chase_debt_ledger import ChaseDebtLedger
+from bestseller.services.chapter_generation_input_builder import (
+    build_chapter_generation_input_bundle,
+)
+from bestseller.services.chapter_outline_readiness_gate import (
+    chapter_scene_budget_sum_thresholds,
+    evaluate_chapter_outline_readiness,
+)
+from bestseller.services.chapter_predraft_quality_gate import (
+    evaluate_chapter_predraft_quality,
+)
+from bestseller.services.chapter_scene_contract_materializer import (
+    materialize_chapter_contract_from_chapter,
+    materialize_chapter_scene_contracts,
+)
 from bestseller.services.commercial_planning_readiness import (
     ChapterPlanProbe,
     ScenePlanProbe,
@@ -57,7 +73,10 @@ from bestseller.services.consistency import (
     detect_chapter_sequence_gaps,
     review_project_consistency,
 )
-from bestseller.services.context import build_scene_writer_context_from_models
+from bestseller.services.context import (
+    build_chapter_writer_context,
+    build_scene_writer_context_from_models,
+)
 from bestseller.services.continuity import (
     check_countdown_arithmetic,
     check_time_regression,
@@ -65,7 +84,16 @@ from bestseller.services.continuity import (
     load_previous_chapter_snapshot,
     validate_fact_monotonicity,
 )
-from bestseller.services.drafts import assemble_chapter_draft, count_words, generate_scene_draft
+from bestseller.services.drafts import (
+    _chapter_length_contract_band,
+    _prompt_safe_forbidden_actions,
+    _redact_front10_prompt_leaks,
+    assemble_chapter_draft,
+    count_words,
+    generate_chapter_draft_once,
+    generate_scene_draft,
+    _front10_forbidden_signal_terms,
+)
 from bestseller.services.exports import (
     export_chapter_markdown,
     export_project_markdown,
@@ -77,6 +105,7 @@ from bestseller.services.fanqie_market_repository import (
     evaluate_and_persist_fanqie_long_readiness,
     load_current_chapter_texts_for_fanqie_gate,
 )
+from bestseller.services.gate_registry import registered_block_metadata_keys
 from bestseller.services.public_emotion_backfill import ensure_project_public_emotion_kernels
 from bestseller.services.invariants import (
     InvariantSeedError,
@@ -371,6 +400,312 @@ def _current_auto_repair_block_codes(chapter: ChapterModel) -> tuple[str, ...]:
     return tuple(str(code) for code in raw_codes if code)
 
 
+_CHAPTER_FIRST_FULL_REGEN_STRUCTURAL_CODES: frozenset[str] = frozenset(
+    {
+        "OPENING_SCENE_DRIFT",
+        "FRONT10_FORBIDDEN_SIGNAL",
+        "FRONT10_SCENE_FORBIDDEN_ACTION",
+        "FRONT10_RULE_LECTURE_DENSITY",
+        "REPEATED_EVENT_BEAT",
+    }
+)
+
+_CHAPTER_FIRST_FULL_REGEN_IMMEDIATE_FRONT10_CODES: frozenset[str] = frozenset(
+    {
+        "OPENING_SCENE_DRIFT",
+        "FRONT10_FORBIDDEN_SIGNAL",
+        "FRONT10_SCENE_FORBIDDEN_ACTION",
+    }
+)
+
+_CHAPTER_FIRST_FULL_REGEN_LENGTH_LOW_CODES: frozenset[str] = frozenset(
+    {
+        "BLOCK_LOW",
+        "LENGTH_UNDER",
+        "CHAPTER_TOO_SHORT",
+        "CHAPTER_LENGTH_BLOCK_LOW",
+    }
+)
+
+_CHAPTER_FIRST_FULL_REGEN_LENGTH_HIGH_CODES: frozenset[str] = frozenset(
+    {
+        "BLOCK_HIGH",
+        "LENGTH_OVER",
+        "CHAPTER_TOO_LONG",
+        "CHAPTER_LENGTH_BLOCK_HIGH",
+    }
+)
+
+
+def _normalize_chapter_first_block_code(code: str) -> str:
+    text = str(code or "").strip().upper()
+    if text in {"LENGTH_UNDER", "CHAPTER_TOO_SHORT", "CHAPTER_LENGTH_BLOCK_LOW"}:
+        return "BLOCK_LOW"
+    if text in {"LENGTH_OVER", "CHAPTER_TOO_LONG", "CHAPTER_LENGTH_BLOCK_HIGH"}:
+        return "BLOCK_HIGH"
+    return text
+
+
+def _chapter_first_full_regeneration_reason(
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_draft: ChapterDraftVersionModel | None,
+    block_codes: tuple[str, ...],
+    *,
+    attempt_number: int,
+) -> str | None:
+    """Choose full regeneration when a chapter-first draft is too poor to patch.
+
+    Patch-first is appropriate for localized continuity, tail-hook, timeline,
+    or dialogue problems.  It is the wrong tool when the whole draft is too
+    short to be a chapter, when the opening/scene contract is polluted, or
+    when a prior repair already failed and is now amplifying defects.
+    """
+
+    normalized_codes = {
+        _normalize_chapter_first_block_code(code) for code in block_codes if code
+    }
+    original_codes = {str(code or "").strip().upper() for code in block_codes if code}
+    word_count = 0
+    if chapter_draft is not None:
+        try:
+            word_count = int(getattr(chapter_draft, "word_count", None) or 0)
+        except (TypeError, ValueError):
+            word_count = 0
+        if word_count <= 0:
+            word_count = count_words(getattr(chapter_draft, "content_md", "") or "")
+    if word_count <= 0:
+        try:
+            word_count = int(getattr(chapter, "current_word_count", None) or 0)
+        except (TypeError, ValueError):
+            word_count = 0
+    hard_min, target_words, hard_max = _chapter_length_contract_band(
+        project,
+        int(getattr(chapter, "target_word_count", 0) or 0),
+    )
+    if (
+        normalized_codes & _CHAPTER_FIRST_FULL_REGEN_LENGTH_LOW_CODES
+        and word_count > 0
+        and (
+            word_count < int(hard_min * 0.85)
+            or word_count < int(target_words * 0.75)
+        )
+    ):
+        return (
+            "severe_under_length:"
+            f"word_count={word_count},hard_min={hard_min},target={target_words}"
+        )
+    if (
+        normalized_codes & _CHAPTER_FIRST_FULL_REGEN_LENGTH_HIGH_CODES
+        and word_count > int(hard_max * 1.2)
+    ):
+        return (
+            "severe_over_length:"
+            f"word_count={word_count},hard_max={hard_max}"
+        )
+    structural_hits = original_codes & _CHAPTER_FIRST_FULL_REGEN_STRUCTURAL_CODES
+    if int(getattr(chapter, "chapter_number", 0) or 0) <= 10 and structural_hits:
+        immediate_hits = structural_hits & _CHAPTER_FIRST_FULL_REGEN_IMMEDIATE_FRONT10_CODES
+        if immediate_hits:
+            return "front10_hard_contract_polluted:" + ",".join(sorted(immediate_hits))
+        if len(structural_hits) >= 2:
+            return "multiple_front10_structural_blocks:" + ",".join(sorted(structural_hits))
+        if attempt_number >= 2:
+            return "repeated_front10_structural_block:" + ",".join(sorted(structural_hits))
+    if attempt_number >= 2 and normalized_codes & _CHAPTER_FIRST_FULL_REGEN_LENGTH_LOW_CODES:
+        return (
+            "repeated_under_length_after_repair:"
+            f"word_count={word_count},hard_min={hard_min},target={target_words}"
+        )
+    return None
+
+
+def _chapter_review_report_block_codes(report: Any) -> tuple[str, ...]:
+    payload = getattr(report, "report_json", None)
+    if not isinstance(payload, Mapping):
+        return ()
+    codes: list[str] = []
+    for key in ("blocking_codes", "block_codes"):
+        values = payload.get(key)
+        if isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
+            codes.extend(str(value).strip() for value in values if str(value).strip())
+    for key in ("violations", "findings", "blocking_issues"):
+        values = payload.get(key)
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+            continue
+        for item in values:
+            if not isinstance(item, Mapping):
+                continue
+            blocks_write = bool(
+                item.get("blocks_write")
+                or item.get("blocking")
+                or str(item.get("severity") or "").lower() in {"critical", "blocker"}
+            )
+            code = str(item.get("code") or item.get("issue_code") or "").strip()
+            if blocks_write and code:
+                codes.append(code)
+    return tuple(dict.fromkeys(codes))
+
+
+def _chapter_review_full_regeneration_reason(
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_draft: ChapterDraftVersionModel | None,
+    report: Any,
+    quality: Any,
+    *,
+    rewrite_iterations: int,
+) -> str | None:
+    block_codes = _chapter_review_report_block_codes(report)
+    structural_reason = _chapter_first_full_regeneration_reason(
+        project,
+        chapter,
+        chapter_draft,
+        block_codes,
+        attempt_number=rewrite_iterations + 1,
+    )
+    if structural_reason:
+        return structural_reason
+
+    score_value: float | None = None
+    try:
+        raw_score = getattr(quality, "score_overall", None)
+        if raw_score is not None:
+            score_value = float(raw_score)
+    except (TypeError, ValueError):
+        score_value = None
+    if score_value is None:
+        return None
+
+    if score_value <= 0.62:
+        return f"very_low_review_score:{score_value:.2f}"
+    if rewrite_iterations >= 1 and score_value < 0.72:
+        return f"repeated_low_review_score:{score_value:.2f}"
+    return None
+
+
+_NON_QUALITY_BLOCK_METADATA_KEYS: tuple[str, ...] = registered_block_metadata_keys()
+
+
+def _latest_quality_report_is_clean(report: Any) -> bool:
+    if report is None:
+        return False
+    if bool(getattr(report, "blocks_write", False)):
+        return False
+    payload = getattr(report, "report_json", None)
+    if not isinstance(payload, dict):
+        return True
+    blocking_codes = payload.get("blocking_codes")
+    blocking_code_values = (
+        {str(code).strip() for code in blocking_codes if str(code).strip()}
+        if isinstance(blocking_codes, (list, tuple, set))
+        else set()
+    )
+    if blocking_code_values:
+        return False
+    return True
+
+
+def _chapter_has_non_quality_block_metadata(chapter: ChapterModel) -> bool:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    return any(bool(metadata.get(key)) for key in _NON_QUALITY_BLOCK_METADATA_KEYS)
+
+
+async def _release_stale_auto_repair_block_if_latest_quality_clean(
+    session: AsyncSession,
+    chapter: ChapterModel,
+) -> bool:
+    """Release stale auto-repair blocks after a clean final quality report.
+
+    Auto-repair reassembles the chapter repeatedly. A previous blocked state can
+    survive on the in-memory chapter row even after the latest persisted chapter
+    quality report is clean, which prevents export. Only release that stale
+    state when no other hard gate left explicit block metadata.
+    """
+
+    if str(getattr(chapter, "production_state", "") or "").lower() != "blocked":
+        return False
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    if not (
+        metadata.get("auto_repair_in_progress")
+        or metadata.get("auto_repair_exhausted")
+        or metadata.get("auto_repair_last_block_codes")
+    ):
+        return False
+    if _chapter_has_non_quality_block_metadata(chapter):
+        return False
+    latest_report = await session.scalar(
+        select(ChapterQualityReportModel)
+        .where(ChapterQualityReportModel.chapter_id == chapter.id)
+        .order_by(ChapterQualityReportModel.created_at.desc())
+    )
+    if not _latest_quality_report_is_clean(latest_report):
+        return False
+    metadata.pop("auto_repair_in_progress", None)
+    metadata.pop("auto_repair_exhausted", None)
+    metadata["auto_repair_resolved_by_clean_quality_report"] = True
+    chapter.metadata_json = metadata
+    chapter.production_state = "ok"
+    await _clear_scene_auto_repair_residue_for_clean_chapter(session, chapter)
+    return True
+
+
+async def _clear_scene_auto_repair_residue_for_clean_chapter(
+    session: AsyncSession,
+    chapter: ChapterModel,
+) -> int:
+    scenes = list(
+        await session.scalars(
+            select(SceneCardModel)
+            .where(SceneCardModel.chapter_id == chapter.id)
+            .order_by(SceneCardModel.scene_number.asc())
+        )
+    )
+    if not scenes:
+        return 0
+    from bestseller.services.drafts import (
+        _clear_scene_auto_repair_residue_after_clean_assembly,
+    )
+
+    return _clear_scene_auto_repair_residue_after_clean_assembly(scenes)
+
+
+async def _stop_auto_repair_if_latest_quality_clean(
+    session: AsyncSession,
+    chapter: ChapterModel,
+) -> bool:
+    """Stop a stale repair loop as soon as the latest chapter report is clean."""
+
+    latest_report = await session.scalar(
+        select(ChapterQualityReportModel)
+        .where(ChapterQualityReportModel.chapter_id == chapter.id)
+        .order_by(ChapterQualityReportModel.created_at.desc())
+    )
+    if not _latest_quality_report_is_clean(latest_report):
+        return False
+    if _chapter_has_non_quality_block_metadata(chapter):
+        return False
+
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    previous_repair_codes = metadata.pop("auto_repair_last_block_codes", None)
+    if previous_repair_codes:
+        metadata["auto_repair_last_resolved_block_codes"] = previous_repair_codes
+    for key in (
+        "auto_repair_in_progress",
+        "auto_repair_exhausted",
+        "quality_bundle_blocking_codes",
+        "quality_gate_block_codes",
+        "production_block_code",
+    ):
+        metadata.pop(key, None)
+    metadata["auto_repair_stopped_by_clean_quality_report"] = True
+    chapter.metadata_json = metadata
+    if str(getattr(chapter, "production_state", "") or "").lower() == "blocked":
+        chapter.production_state = "ok"
+    await _clear_scene_auto_repair_residue_for_clean_chapter(session, chapter)
+    return True
+
+
 def _apply_retention_retry_budget(
     chapter: ChapterModel,
     block_codes: tuple[str, ...],
@@ -503,8 +838,22 @@ async def _run_fanqie_long_gate_for_chapter(
     chapter_number: int,
     chapter_draft: ChapterDraftVersionModel,
     block_on_failure: bool,
+    chapter: ChapterModel | None = None,
+    block_attempt_cap: int = 3,
 ) -> dict[str, Any]:
-    """Evaluate the Fanqie long-form readiness gate for the current opening."""
+    """Evaluate the Fanqie long-form readiness gate for the current opening.
+
+    ``block_attempt_cap`` bounds how many times the same chapter can be
+    *hard-blocked* by this gate across pipeline runs. The gate is a
+    keyword-matching heuristic and has known false-positive modes on
+    genre openings that signal pressure through sensory wrongness rather
+    than threat words (青囊不语问阴阳 ch1, 2026-05-25 — opened with hot
+    coin + scar leaking, scored zero pressure-keyword hits and looped
+    forever). Once a chapter has tripped this gate ``block_attempt_cap``
+    times we demote ``blocks_write`` to ``False`` and let the chapter
+    proceed into downstream review — the LLM judges can still flag real
+    weak openings; the keyword check just stops being authoritative.
+    """
 
     chapter_texts = await load_current_chapter_texts_for_fanqie_gate(
         session,
@@ -527,6 +876,42 @@ async def _run_fanqie_long_gate_for_chapter(
         for finding in finding_payloads
         if isinstance(finding, dict) and finding.get("severity") == "critical"
     )
+
+    # Per-chapter block-attempt budget. Persisted in chapter.metadata so
+    # the count survives across pipeline runs (intra-run counters reset
+    # at the start of every project_repair / chapter_pipeline call).
+    block_attempts = 0
+    budget_demoted = False
+    if chapter is not None:
+        chapter_meta = dict(getattr(chapter, "metadata_json", None) or {})
+        prior_attempts = int(
+            chapter_meta.get("fanqie_long_ranking_block_attempts") or 0
+        )
+        if passed:
+            # Clean signal: this draft cleared the gate. Reset the counter
+            # so a future regression starts the budget fresh.
+            if "fanqie_long_ranking_block_attempts" in chapter_meta:
+                chapter_meta.pop("fanqie_long_ranking_block_attempts", None)
+                chapter_meta.pop("fanqie_long_ranking_block_attempts_demoted", None)
+                chapter.metadata_json = chapter_meta
+            block_attempts = 0
+        else:
+            block_attempts = prior_attempts + 1
+            chapter_meta["fanqie_long_ranking_block_attempts"] = block_attempts
+            if block_attempts >= max(int(block_attempt_cap), 1):
+                budget_demoted = True
+                chapter_meta["fanqie_long_ranking_block_attempts_demoted"] = True
+                logger.warning(
+                    "fanqie_long_ranking_gate demoted to audit-only for "
+                    "project=%s chapter=%d (block_attempts=%d >= cap=%d); "
+                    "downstream LLM judges remain authoritative.",
+                    project_slug,
+                    chapter_number,
+                    block_attempts,
+                    int(block_attempt_cap),
+                )
+            chapter.metadata_json = chapter_meta
+
     return {
         "artifact_id": str(artifact.id) if artifact.id else None,
         "passed": passed,
@@ -544,7 +929,10 @@ async def _run_fanqie_long_gate_for_chapter(
             if isinstance(finding, dict)
         ],
         "metrics": report.get("metrics", {}),
-        "blocks_write": bool(block_on_failure and not passed),
+        "block_attempts": block_attempts,
+        "block_attempt_cap": int(block_attempt_cap),
+        "block_attempts_demoted": budget_demoted,
+        "blocks_write": bool(block_on_failure and not passed and not budget_demoted),
     }
 
 
@@ -1261,6 +1649,7 @@ async def _enforce_qimao_opening_gate_after_chapter(
     chapter_result: ChapterPipelineResult,
     opening_texts: dict[int, str],
     workflow_run: WorkflowRunModel,
+    settings: AppSettings,
     progress: ProgressCallback | None,
 ) -> None:
     if not project_uses_signing_quality_gate(project):
@@ -1326,6 +1715,65 @@ async def _enforce_qimao_opening_gate_after_chapter(
         )
         return
 
+    max_attempts = max(
+        1,
+        int(getattr(settings.pipeline, "qimao_opening_max_attempts", 3) or 3),
+    )
+    current_metadata = dict(getattr(project, "metadata_json", None) or {})
+    attempts_by_chapter = dict(
+        current_metadata.get("qimao_opening_gate_attempts_by_chapter") or {}
+    )
+    attempt_key = str(chapter.chapter_number)
+    attempt_count = int(attempts_by_chapter.get(attempt_key) or 0) + 1
+    attempts_by_chapter[attempt_key] = attempt_count
+    project.metadata_json = {
+        **current_metadata,
+        "opening_quality_gate_blocked": True,
+        "qimao_opening_gate_blocked": True,
+        "qimao_opening_gate_attempts_by_chapter": attempts_by_chapter,
+        "qimao_opening_gate_attempt_count": attempt_count,
+        "qimao_opening_max_attempts": max_attempts,
+    }
+    workflow_run.metadata_json = {
+        **(workflow_run.metadata_json or {}),
+        "qimao_opening_gate_blocked": True,
+        "qimao_opening_gate_attempt_count": attempt_count,
+        "qimao_opening_max_attempts": max_attempts,
+    }
+
+    if attempt_count >= max_attempts:
+        error_message = _qimao_opening_gate_error_message(report_payload)
+        project.status = ProjectStatus.PAUSED.value
+        chapter.status = ChapterStatus.REVISION.value
+        chapter.production_state = "needs_human_review"
+        project.metadata_json = {
+            **(project.metadata_json or {}),
+            "qimao_opening_gate_exhausted": True,
+            "production_paused": True,
+            "production_pause_reason": "qimao_opening_gate_exhausted",
+            "last_generation_gate_reason": "qimao_opening_gate_exhausted",
+            "last_generation_gate_error": error_message,
+        }
+        workflow_run.metadata_json = {
+            **(workflow_run.metadata_json or {}),
+            "requires_human_review": True,
+            "qimao_opening_gate_exhausted": True,
+            "qimao_opening_gate_error": error_message,
+        }
+        _emit_progress(
+            progress,
+            "qimao_opening_gate_exhausted",
+            {
+                "project_slug": project.slug,
+                "chapter_number": chapter.chapter_number,
+                "attempt_count": attempt_count,
+                "max_attempts": max_attempts,
+                "findings": report_payload.get("findings", []),
+            },
+        )
+        await session.flush()
+        raise ValueError(error_message)
+
     rejection_reasons = (
         metadata.get("editor_rejection_reasons")
         or metadata.get("rejection_reasons")
@@ -1361,11 +1809,6 @@ async def _enforce_qimao_opening_gate_after_chapter(
         },
     )
     session.add(rewrite_task)
-    project.metadata_json = {
-        **(project.metadata_json or {}),
-        "opening_quality_gate_blocked": True,
-        "qimao_opening_gate_blocked": True,
-    }
     workflow_run.metadata_json = {
         **(workflow_run.metadata_json or {}),
         "qimao_opening_gate_blocked": True,
@@ -2157,6 +2600,438 @@ async def _checkpoint_commit(session: AsyncSession) -> None:
     await commit()
 
 
+async def _count_pending_chapter_rewrite_tasks(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_id: UUID,
+) -> int:
+    count = await session.scalar(
+        select(func.count())
+        .select_from(RewriteTaskModel)
+        .where(
+            RewriteTaskModel.project_id == project_id,
+            RewriteTaskModel.trigger_source_id == chapter_id,
+            RewriteTaskModel.status.in_(("pending", "queued")),
+        )
+    )
+    return int(count or 0)
+
+
+async def _supersede_obsolete_stitched_draft_tasks(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_id: UUID,
+) -> int:
+    """Clear stale stitched-draft rewrite tasks when the current draft is clean.
+
+    The stitched-draft detector is intentionally conservative, but its older
+    false positives can leave ``pending`` chapter rewrite tasks behind. The
+    chapter outline readiness gate blocks on any pending rewrite task, so a
+    clean current draft must be allowed to supersede obsolete stitched-draft
+    tasks before readiness is evaluated.
+    """
+
+    tasks = list(
+        await session.scalars(
+            select(RewriteTaskModel).where(
+                RewriteTaskModel.project_id == project_id,
+                RewriteTaskModel.trigger_source_id == chapter_id,
+                RewriteTaskModel.status.in_(("pending", "queued")),
+                RewriteTaskModel.rewrite_strategy == "chapter_coherence_bridge_rewrite",
+            )
+        )
+    )
+    stitched_tasks = [
+        task
+        for task in tasks
+        if "拼接稿" in (task.instructions or "")
+        or "stitched draft" in (task.instructions or "").lower()
+    ]
+    if not stitched_tasks:
+        return 0
+
+    current_draft = await session.scalar(
+        select(ChapterDraftVersionModel).where(
+            ChapterDraftVersionModel.chapter_id == chapter_id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+    )
+    if current_draft is None or not current_draft.content_md:
+        return 0
+
+    try:
+        from bestseller.services.deduplication import (
+            detect_intra_chapter_stitched_drafts,
+        )
+    except Exception:
+        logger.debug("deduplication import failed during stale task cleanup", exc_info=True)
+        return 0
+
+    if detect_intra_chapter_stitched_drafts(current_draft.content_md):
+        return 0
+
+    for task in stitched_tasks:
+        task.status = "superseded"
+        task.metadata_json = {
+            **(task.metadata_json or {}),
+            "superseded_reason": "current_draft_no_longer_matches_stitched_draft_detector",
+            "superseded_by_current_chapter_draft_id": str(current_draft.id),
+            "superseded_by_current_chapter_draft_version": current_draft.version_no,
+        }
+    await session.flush()
+    return len(stitched_tasks)
+
+
+async def _supersede_pending_chapter_rewrite_tasks_for_regeneration(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_id: UUID,
+    reason: str,
+) -> int:
+    """Clear queued chapter rewrite tasks before an explicit full regeneration.
+
+    This is deliberately narrower than a global cleanup: it only runs when the
+    caller opted into chapter-first regeneration, so stale rewrite tasks do not
+    block a fresh one-pass chapter draft.
+    """
+
+    tasks = list(
+        await session.scalars(
+            select(RewriteTaskModel).where(
+                RewriteTaskModel.project_id == project_id,
+                RewriteTaskModel.trigger_source_id == chapter_id,
+                RewriteTaskModel.status.in_(("pending", "queued")),
+            )
+        )
+    )
+    for task in tasks:
+        task.status = "superseded"
+        task.metadata_json = {
+            **(task.metadata_json or {}),
+            "superseded_reason": reason,
+        }
+    if tasks:
+        await session.flush()
+    return len(tasks)
+
+
+def _clear_explicit_chapter_regeneration_residue(chapter: ChapterModel) -> bool:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    residue_keys = (
+        "auto_repair_in_progress",
+        "auto_repair_exhausted",
+        "auto_repair_last_block_codes",
+        "auto_repair_attempts",
+        "retention_retry_count",
+        "retention_auto_repair_exhausted",
+        "retention_gate_passed",
+        "retention_gate_last_findings",
+        "quality_gate_block_codes",
+        "production_block_code",
+        "last_generation_gate_error",
+        "write_safety_block_code",
+        "blocked_by_write_safety_gate",
+    )
+    changed = False
+    for key in residue_keys:
+        if key in metadata:
+            metadata.pop(key, None)
+            changed = True
+    if changed:
+        metadata["explicit_regeneration_residue_cleared"] = True
+        chapter.metadata_json = metadata
+        chapter.production_state = "ok"
+    return changed
+
+
+_EXPLICIT_SCENE_REGENERATION_RESIDUE_KEYS: frozenset[str] = frozenset(
+    {
+        "auto_repair_adjusted_target_word_count",
+        "auto_repair_attempt",
+        "auto_repair_hint",
+        "auto_repair_length_scale",
+        "auto_repair_min_scene_target_floor",
+        "auto_repair_original_target_word_count",
+        "auto_repair_scene_target_cap",
+        "auto_repair_source_block_code",
+        "auto_repair_target_word_count_clamped",
+        "auto_repair_block_codes",
+    }
+)
+
+
+def _compact_repair_instruction_text(value: Any, *, max_chars: int = 2600) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n...（已截断，仅保留高优先级修复要求）"
+
+
+def _render_chapter_first_repair_hard_constraints(
+    chapter: ChapterModel,
+    scenes: list[SceneCardModel] | tuple[SceneCardModel, ...] = (),
+) -> str:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    object_signal = metadata.get("object_signal_contract")
+    lines: list[str] = []
+    forbidden_terms: list[str] = []
+    if isinstance(object_signal, dict):
+        chapter_mode = str(object_signal.get("chapter_mode") or "").strip()
+        if chapter_mode:
+            lines.append(f"- 物件信号合同：{chapter_mode}")
+        values = object_signal.get("forbidden_signals")
+        if isinstance(values, list):
+            forbidden_terms.extend(str(item).strip() for item in values if str(item).strip())
+    if int(getattr(chapter, "chapter_number", 0) or 0) <= 10:
+        forbidden_terms.extend(_front10_forbidden_signal_terms(chapter))
+    foreshadowing = getattr(chapter, "foreshadowing_actions", None)
+    if isinstance(foreshadowing, dict):
+        values = foreshadowing.get("forbidden_early_leaks")
+        if isinstance(values, list):
+            forbidden_terms.extend(str(item).strip() for item in values if str(item).strip())
+    scene_forbidden: list[str] = []
+    seen_scene_forbidden: set[str] = set()
+    for scene in scenes:
+        for action in getattr(scene, "forbidden_actions", None) or []:
+            text = str(action or "").strip()
+            if text and text not in seen_scene_forbidden:
+                seen_scene_forbidden.add(text)
+                scene_forbidden.append(text)
+    if scene_forbidden:
+        safe_scene_forbidden = _prompt_safe_forbidden_actions(scene_forbidden)
+        lines.append("- 场景卡禁写动作：" + "；".join(safe_scene_forbidden[:30]))
+    unique_terms: list[str] = []
+    seen_terms: set[str] = set()
+    for term in forbidden_terms:
+        if term and term not in seen_terms:
+            seen_terms.add(term)
+            unique_terms.append(term)
+    if unique_terms:
+        lines.append("- 禁写/暂缓词：" + "、".join(unique_terms[:30]))
+    if not lines:
+        return ""
+    rendered = (
+        "【章节硬约束优先级】以下约束来自章节细纲、物件信号合同和场景卡，"
+        "高于本次自动修复目标；补长、修尾、修时间线时也不得突破。\n"
+        + "\n".join(lines)
+    )
+    return _redact_front10_prompt_leaks(rendered, chapter, scenes)
+
+
+def _render_chapter_first_local_repair_instructions(
+    *,
+    chapter: ChapterModel,
+    block_codes: tuple[str, ...],
+    scene_hints: list[str],
+    scenes: list[SceneCardModel] | tuple[SceneCardModel, ...] = (),
+) -> str:
+    chapter_meta = dict(getattr(chapter, "metadata_json", None) or {})
+    strict_hint = str(chapter_meta.get("retention_retry_strict_prompt") or "").strip()
+    merged_hints = "\n".join(dict.fromkeys(item for item in scene_hints if item.strip()))
+    if strict_hint:
+        merged_hints = "\n".join(item for item in (merged_hints, strict_hint) if item)
+    if not merged_hints:
+        merged_hints = "本章触发章节级质量门，请只修复命中的阻断点。"
+    structural_opening_codes = {"OPENING_SCENE_DRIFT"}
+    structural_signal_codes = {
+        "FRONT10_FORBIDDEN_SIGNAL",
+        "FRONT10_SCENE_FORBIDDEN_ACTION",
+        "FRONT10_RULE_LECTURE_DENSITY",
+    }
+    normalized_codes = {str(code).strip().upper() for code in block_codes if str(code).strip()}
+    needs_opening_rebuild = bool(normalized_codes & structural_opening_codes)
+    needs_signal_rebuild = bool(normalized_codes & structural_signal_codes)
+    hard_constraints = _render_chapter_first_repair_hard_constraints(chapter, scenes)
+    if needs_opening_rebuild or needs_signal_rebuild:
+        opening_contract = str(getattr(chapter, "opening_situation", None) or "").strip()
+        forbidden_terms = _front10_forbidden_signal_terms(chapter)
+        structural_lines = [
+            "【结构性开篇修复合同】",
+            "本次命中了前10章结构性门禁，不按普通 patch-first 处理。",
+        ]
+        if needs_opening_rebuild:
+            structural_lines.extend(
+                [
+                    "必须重写开篇前500字；如果首场使用了章节合同未规划的电话/手机/微信/"
+                    "短信/语音/录音桥段来承担入场或召唤逻辑，直接替换整个首场开头段落。",
+                    "开篇必须从第一场现场可见动作进入；电话、手机、微信、短信、语音、录音、"
+                    "来电等媒介不是绝对禁用，但只有在章节合同已经交代来源、转交人、可信原因"
+                    "和到场动机时才能使用，不能作为突兀背景或捷径。",
+                ]
+            )
+            if opening_contract:
+                structural_lines.append(f"第一场开局合同：{opening_contract}")
+        if needs_signal_rebuild and forbidden_terms:
+            structural_lines.append(
+                "物件/符号异常不得再写成发热发烫捷径；禁用词："
+                + "、".join(forbidden_terms[:40])
+            )
+        structural_lines.extend(
+            [
+                "保留章内核心事件顺序、人物在场关系和章末主钩子；允许为了修掉结构性开篇问题重写首场，"
+                "但不要新增额外场景或另起支线。",
+                "全文仍需落在章节动态字数带内，优先 2200-3000 字，最多不超过 3500 字。",
+                hard_constraints,
+                "【具体修复要求】",
+                _compact_repair_instruction_text(merged_hints),
+            ]
+        )
+        return _redact_front10_prompt_leaks(
+            "\n".join(line for line in structural_lines if str(line or "").strip()),
+            chapter,
+            scenes,
+        )
+    lines = [
+        "【章节自动修复任务｜局部替换优先】",
+        f"命中阻断码：{', '.join(block_codes) if block_codes else 'unknown'}。",
+        "本次不是重新生成章节，也不是按场景卡扩写新稿。必须以当前草稿为底稿，只替换问题段、"
+        "补一两句必要桥接、或删除/合并导致问题的句段。",
+        "除非命中 LENGTH_UNDER/CHAPTER_LENGTH_BLOCK_LOW，不得大幅扩写环境、心理、设定解释或新增场景；"
+        "除非命中全文结构不可用，不得改变核心事件顺序、章末主钩子、人物在场关系。",
+        "如果修复一个问题需要新增信息，必须删掉等量解释或重复句，保持当前篇幅基本稳定。",
+        "输出仍然是一章完整正文，但改动策略必须是 patch-first：问题点替换、局部段落重写、全章一致性轻校准。",
+        hard_constraints,
+        "【具体修复要求】",
+        _compact_repair_instruction_text(merged_hints),
+    ]
+    return _redact_front10_prompt_leaks(
+        "\n".join(line for line in lines if str(line or "").strip()),
+        chapter,
+        scenes,
+    )
+
+
+async def _create_chapter_first_local_auto_repair_task(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    block_codes: tuple[str, ...],
+    attempt_number: int,
+) -> RewriteTaskModel:
+    scenes = list(
+        await session.scalars(
+            select(SceneCardModel)
+            .where(SceneCardModel.chapter_id == chapter.id)
+            .order_by(SceneCardModel.scene_number.asc())
+        )
+    )
+    scene_hints: list[str] = []
+    seen_scene_hints: set[str] = set()
+    for scene in scenes:
+        metadata = dict(getattr(scene, "metadata_json", None) or {})
+        hint = str(metadata.get("auto_repair_hint") or "").strip()
+        if hint and hint not in seen_scene_hints:
+            seen_scene_hints.add(hint)
+            scene_hints.append(f"场景{scene.scene_number}：{hint}")
+    task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_auto_repair",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="localized_patch_first_chapter_repair",
+        priority=1,
+        status="pending",
+        instructions=_render_chapter_first_local_repair_instructions(
+            chapter=chapter,
+            block_codes=block_codes,
+            scene_hints=scene_hints,
+            scenes=scenes,
+        ),
+        context_required=[
+            "current_chapter_draft",
+            "chapter_context",
+            "quality_gate_findings",
+        ],
+        metadata_json={
+            "source": "chapter_first_auto_repair",
+            "patch_first": True,
+            "attempt_number": attempt_number,
+            "block_codes": list(block_codes),
+        },
+    )
+    session.add(task)
+    await session.flush()
+    return task
+
+
+def _clear_explicit_scene_regeneration_residue(
+    scenes: list[SceneCardModel],
+    *,
+    chapter_target_word_count: int | None,
+) -> dict[str, Any]:
+    """Normalize stale scene repair state before explicit chapter regeneration."""
+
+    metadata_cleared = 0
+    for scene in scenes:
+        metadata = dict(getattr(scene, "metadata_json", None) or {})
+        next_metadata = {
+            key: value
+            for key, value in metadata.items()
+            if key not in _EXPLICIT_SCENE_REGENERATION_RESIDUE_KEYS
+        }
+        if next_metadata != metadata:
+            scene.metadata_json = next_metadata
+            metadata_cleared += 1
+
+    target_rebalanced = False
+    try:
+        chapter_target = int(chapter_target_word_count or 0)
+    except (TypeError, ValueError):
+        chapter_target = 0
+    if scenes and chapter_target > 0:
+        scene_count = len(scenes)
+        current_targets: list[int] = []
+        for scene in scenes:
+            try:
+                target = int(getattr(scene, "target_word_count", 0) or 0)
+            except (TypeError, ValueError):
+                target = 0
+            current_targets.append(target)
+
+        expected = chapter_target / scene_count
+        low_scene_threshold = max(350, int(expected * 0.65))
+        high_scene_threshold = max(low_scene_threshold + 1, int(expected * 1.75))
+        target_sum = sum(current_targets)
+        scene_sum_min_threshold, scene_sum_max_threshold = chapter_scene_budget_sum_thresholds(
+            chapter_target
+        )
+        budget_is_stale = (
+            target_sum < scene_sum_min_threshold
+            or target_sum > scene_sum_max_threshold
+            or any(target <= 0 for target in current_targets)
+            or any(target < low_scene_threshold for target in current_targets)
+            or any(target > high_scene_threshold for target in current_targets)
+        )
+        if budget_is_stale:
+            base_target = chapter_target // scene_count
+            remainder = chapter_target - base_target * scene_count
+            for index, scene in enumerate(scenes):
+                scene.target_word_count = base_target + (1 if index < remainder else 0)
+            target_rebalanced = True
+
+    return {
+        "scene_count": len(scenes),
+        "metadata_residue_cleared": metadata_cleared,
+        "target_rebalanced": target_rebalanced,
+        "target_word_count_sum": sum(int(getattr(scene, "target_word_count", 0) or 0) for scene in scenes),
+    }
+
+
+def _chapter_first_requested(
+    settings: AppSettings,
+    chapter_number: int,
+    explicit: bool | None,
+) -> bool:
+    if explicit is not None:
+        return bool(explicit)
+    return bool(getattr(settings.pipeline, "enable_chapter_first_generation", False)) and (
+        chapter_number <= int(getattr(settings.pipeline, "chapter_first_max_chapter_number", 3) or 3)
+    )
+
+
 async def _recover_session_after_nonfatal_error(
     session: AsyncSession,
     exc: Exception,
@@ -2769,12 +3644,15 @@ async def run_scene_pipeline(
                 logger.debug("Premium genre engine injection failed (non-fatal)", exc_info=True)
 
         # ── Inject opening diversity block (only for scene 1 — chapter opener) ──
-        # Show the LLM the last 5 chapter openings so it avoids repeating the
+        # Show the LLM the last 12 chapter openings so it avoids repeating the
         # same sentence structure or setting description.
         if shared_context is not None and scene_number == 1:
             try:
                 from bestseller.infra.db.models import ChapterDraftVersionModel
-                from bestseller.services.deduplication import build_opening_diversity_block
+                from bestseller.services.deduplication import (
+                    build_opening_diversity_block,
+                    extract_chapter_opening,
+                )
 
                 _recent_drafts = await session.execute(
                     select(
@@ -2791,16 +3669,13 @@ async def run_scene_pipeline(
                         ChapterDraftVersionModel.is_current.is_(True),
                     )
                     .order_by(ChapterModel.chapter_number.desc())
-                    .limit(5)
+                    .limit(12)
                 )
                 _recent_openings: list[tuple[int, str]] = []
                 for _ch_num, _content in _recent_drafts.fetchall():
-                    _lines = [
-                        l.strip() for l in (_content or "").split("\n")
-                        if l.strip() and not l.strip().startswith("#")
-                    ]
-                    if _lines:
-                        _recent_openings.append((_ch_num, _lines[0]))
+                    _opening = extract_chapter_opening(_content or "")
+                    if _opening:
+                        _recent_openings.append((_ch_num, _opening))
                 if _recent_openings:
                     _lang = getattr(project, "language", None) or settings.generation.language
                     shared_context.opening_diversity_block = build_opening_diversity_block(
@@ -4003,6 +4878,8 @@ async def run_chapter_pipeline(
     requested_by: str = "system",
     export_markdown: bool = False,
     allow_structural_repair: bool = False,
+    chapter_first: bool | None = None,
+    supersede_pending_rewrites: bool | None = None,
     progress: ProgressCallback | None = None,
 ) -> ChapterPipelineResult:
     project = await get_project_by_slug(session, project_slug)
@@ -4032,6 +4909,13 @@ async def run_chapter_pipeline(
     )
     if not scenes:
         raise ValueError(f"Chapter {chapter_number} does not have any scene cards to process.")
+
+    use_chapter_first = _chapter_first_requested(settings, chapter_number, chapter_first)
+    should_supersede_pending_rewrites = (
+        bool(supersede_pending_rewrites)
+        if supersede_pending_rewrites is not None
+        else bool(getattr(settings.pipeline, "chapter_first_supersede_pending_rewrites", False))
+    )
 
     await _ensure_emotion_kernel_backfill_for_pipeline(
         session,
@@ -4067,12 +4951,14 @@ async def run_chapter_pipeline(
             "chapter_number": chapter_number,
             "scene_count": len(scenes),
             "export_markdown": export_markdown,
+            "chapter_first": use_chapter_first,
         },
     )
 
     step_order = 1
     current_step_name = "load_chapter_context"
     scene_results: list[ChapterPipelineSceneSummary] = []
+    chapter_first_context_packet = None
 
     try:
         _emit_progress(
@@ -4111,17 +4997,273 @@ async def run_chapter_pipeline(
         # errors. Persist the chapter workflow shell before descending.
         await _checkpoint_commit(session)
 
+        if use_chapter_first and should_supersede_pending_rewrites:
+            residue_cleared = _clear_explicit_chapter_regeneration_residue(chapter)
+            scene_residue_report = _clear_explicit_scene_regeneration_residue(
+                scenes,
+                chapter_target_word_count=chapter.target_word_count,
+            )
+            superseded_count = await _supersede_pending_chapter_rewrite_tasks_for_regeneration(
+                session,
+                project_id=project.id,
+                chapter_id=chapter.id,
+                reason="explicit_chapter_first_regeneration",
+            )
+            if superseded_count:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "chapter_first_superseded_pending_rewrite_tasks": superseded_count,
+                }
+            if residue_cleared:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "chapter_first_regeneration_residue_cleared": True,
+                }
+            if (
+                scene_residue_report["metadata_residue_cleared"]
+                or scene_residue_report["target_rebalanced"]
+            ):
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "chapter_first_scene_regeneration_residue": scene_residue_report,
+                }
+            if (
+                superseded_count
+                or residue_cleared
+                or scene_residue_report["metadata_residue_cleared"]
+                or scene_residue_report["target_rebalanced"]
+            ):
+                await _checkpoint_commit(session)
+
+        if (
+            use_chapter_first
+            and settings.pipeline.enable_chapter_scene_contract_materializer
+            and int(getattr(project, "target_chapters", 0) or 0)
+            >= int(settings.pipeline.commercial_planning_min_target_chapters)
+        ):
+            current_step_name = "chapter_scene_contract_materializer"
+            workflow_run.current_step = current_step_name
+            chapter_contract = await session.scalar(
+                select(ChapterContractModel).where(
+                    ChapterContractModel.project_id == project.id,
+                    ChapterContractModel.chapter_id == chapter.id,
+                )
+            )
+            chapter_materialization_report = materialize_chapter_contract_from_chapter(
+                chapter=chapter,
+                chapter_contract=chapter_contract,
+            )
+            materialization_report = materialize_chapter_scene_contracts(
+                chapter=chapter,
+                scenes=scenes,
+            )
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref={
+                    "chapter_contract": chapter_materialization_report.to_dict(),
+                    "scene_contracts": materialization_report.to_dict(),
+                },
+            )
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "chapter_scene_contract_materialization": materialization_report.to_dict(),
+                "chapter_contract_materialization": chapter_materialization_report.to_dict(),
+            }
+            step_order += 1
+            await session.flush()
+            await _checkpoint_commit(session)
+
+        chapter_outline_readiness_required = (
+            settings.pipeline.enable_chapter_outline_readiness_gate
+            and int(getattr(project, "target_chapters", 0) or 0)
+            >= int(settings.pipeline.commercial_planning_min_target_chapters)
+        )
+        if chapter_outline_readiness_required:
+            current_step_name = "chapter_outline_readiness_gate"
+            workflow_run.current_step = current_step_name
+            await _supersede_obsolete_stitched_draft_tasks(
+                session,
+                project_id=project.id,
+                chapter_id=chapter.id,
+            )
+            pending_rewrite_task_count = await _count_pending_chapter_rewrite_tasks(
+                session,
+                project_id=project.id,
+                chapter_id=chapter.id,
+            )
+            readiness_report = evaluate_chapter_outline_readiness(
+                chapter_number=chapter_number,
+                chapter_title=chapter.title,
+                chapter_target_word_count=chapter.target_word_count,
+                chapter_metadata=chapter.metadata_json or {},
+                scene_cards=scenes,
+                pending_rewrite_task_count=pending_rewrite_task_count,
+            )
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=(
+                    WorkflowStatus.MACHINE_BLOCKED
+                    if readiness_report.blocked
+                    and settings.pipeline.chapter_outline_readiness_block_on_failure
+                    else WorkflowStatus.COMPLETED
+                ),
+                output_ref=readiness_report.to_dict(),
+            )
+            step_order += 1
+            if (
+                readiness_report.blocked
+                and settings.pipeline.chapter_outline_readiness_block_on_failure
+            ):
+                blocking_issues = readiness_report.blocking_issues
+                first_issue = blocking_issues[0] if blocking_issues else None
+                issue_codes = [issue.code for issue in blocking_issues]
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "blocked_by_chapter_outline_readiness_gate": True,
+                    "chapter_outline_readiness_block_codes": issue_codes,
+                    "chapter_outline_readiness_hint": (
+                        first_issue.repair_hint
+                        if first_issue
+                        else "Repair the chapter outline before rerunning."
+                    ),
+                    "chapter_outline_readiness_report": readiness_report.to_dict(),
+                }
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.current_step = current_step_name
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "requires_human_review": True,
+                    "blocked_before_scene_generation": True,
+                    "chapter_outline_readiness_report": readiness_report.to_dict(),
+                }
+                await session.flush()
+                await _checkpoint_commit(session)
+                return ChapterPipelineResult(
+                    workflow_run_id=workflow_run.id,
+                    project_id=project.id,
+                    chapter_id=chapter.id,
+                    chapter_number=chapter.chapter_number,
+                    scene_results=scene_results,
+                    chapter_draft_id=None,
+                    chapter_draft_version_no=None,
+                    export_artifact_id=None,
+                    output_path=None,
+                    requires_human_review=True,
+                )
+
+        chapter_predraft_gate_required = (
+            use_chapter_first
+            and settings.pipeline.enable_chapter_predraft_quality_gate
+            and int(getattr(project, "target_chapters", 0) or 0)
+            >= int(settings.pipeline.commercial_planning_min_target_chapters)
+        )
+        if chapter_predraft_gate_required:
+            current_step_name = "chapter_predraft_quality_gate"
+            workflow_run.current_step = current_step_name
+            target_word_count = int(
+                chapter.target_word_count
+                or settings.generation.words_per_chapter.target
+                or 2500
+            )
+            chapter_first_context_packet = await build_chapter_writer_context(
+                session,
+                settings,
+                project_slug,
+                chapter_number,
+            )
+            predraft_bundle = build_chapter_generation_input_bundle(
+                project=project,
+                chapter=chapter,
+                scenes=scenes,
+                context_packet=chapter_first_context_packet,
+                target_word_count=target_word_count,
+            )
+            predraft_report = evaluate_chapter_predraft_quality(predraft_bundle)
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=(
+                    WorkflowStatus.MACHINE_BLOCKED
+                    if predraft_report.blocked
+                    and settings.pipeline.chapter_predraft_quality_gate_block_on_failure
+                    else WorkflowStatus.COMPLETED
+                ),
+                output_ref=predraft_report.to_dict(),
+            )
+            step_order += 1
+            if (
+                predraft_report.blocked
+                and settings.pipeline.chapter_predraft_quality_gate_block_on_failure
+            ):
+                blocking_issues = predraft_report.blocking_issues
+                first_issue = blocking_issues[0] if blocking_issues else None
+                issue_codes = [issue.code for issue in blocking_issues]
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "blocked_by_chapter_predraft_quality_gate": True,
+                    "chapter_predraft_quality_block_codes": issue_codes,
+                    "chapter_predraft_quality_hint": (
+                        first_issue.repair_hint
+                        if first_issue
+                        else "Repair the chapter generation input bundle before rerunning."
+                    ),
+                    "chapter_predraft_quality_report": predraft_report.to_dict(),
+                    "chapter_generation_input_bundle": predraft_bundle.model_dump(mode="json"),
+                }
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.current_step = current_step_name
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "requires_human_review": True,
+                    "blocked_before_chapter_generation": True,
+                    "chapter_predraft_quality_report": predraft_report.to_dict(),
+                }
+                await session.flush()
+                await _checkpoint_commit(session)
+                return ChapterPipelineResult(
+                    workflow_run_id=workflow_run.id,
+                    project_id=project.id,
+                    chapter_id=chapter.id,
+                    chapter_number=chapter.chapter_number,
+                    scene_results=scene_results,
+                    chapter_draft_id=None,
+                    chapter_draft_version_no=None,
+                    export_artifact_id=None,
+                    output_path=None,
+                    requires_human_review=True,
+                )
+
         scene_requires_human_review = False
-        # Resume support: filter out already-completed scenes
-        pending_scenes = [
-            s for s in scenes
-            if s.status != SceneStatus.APPROVED.value
-        ] if settings.pipeline.resume_enabled else scenes
+        # Resume support: filter out already-completed scenes. In chapter-first
+        # mode we intentionally skip per-scene prose generation: scene cards are
+        # used as beat constraints inside one full-chapter writer call.
+        pending_scenes = [] if use_chapter_first else (
+            [
+                s for s in scenes
+                if s.status != SceneStatus.APPROVED.value
+            ] if settings.pipeline.resume_enabled else scenes
+        )
         skipped_scene_count = len(scenes) - len(pending_scenes)
         if skipped_scene_count > 0:
             logger.info(
-                "Chapter %d resume: skipping %d completed scenes, %d pending",
-                chapter_number, skipped_scene_count, len(pending_scenes),
+                "Chapter %d %s: skipping %d scene pipeline(s), %d pending",
+                chapter_number,
+                "chapter-first" if use_chapter_first else "resume",
+                skipped_scene_count,
+                len(pending_scenes),
             )
             _emit_progress(
                 progress,
@@ -4235,11 +5377,23 @@ async def run_chapter_pipeline(
                 "project_slug": project_slug,
                 "chapter_number": chapter_number,
                 "step": current_step_name,
+                "chapter_first": use_chapter_first,
             },
         )
         chapter_draft = None
         _existing_chapter_draft: ChapterDraftVersionModel | None = None
-        if (
+        if use_chapter_first and not _scene_loop_blocked:
+            current_step_name = "generate_chapter_draft_once"
+            workflow_run.current_step = current_step_name
+            chapter_draft = await generate_chapter_draft_once(
+                session,
+                project_slug,
+                chapter_number,
+                settings=settings,
+                workflow_run_id=workflow_run.id,
+                context_packet=chapter_first_context_packet,
+            )
+        elif (
             settings.pipeline.resume_enabled
             and not pending_scenes
             and getattr(chapter, "production_state", None) != "blocked"
@@ -4390,6 +5544,25 @@ async def run_chapter_pipeline(
         auto_repair_enabled = bool(
             getattr(settings.pipeline, "enable_chapter_auto_repair", False)
         )
+        # Cross-run cumulative budget. ``auto_repair_cap`` above is intra-run
+        # only; this counter survives across ``chapter_pipeline`` invocations
+        # via ``chapter.metadata_json['auto_repair_total_attempts']``, which
+        # gets bumped inside ``maybe_prepare_chapter_auto_repair`` and wiped
+        # whenever the chapter clears the quality gate. When the cumulative
+        # budget is spent we refuse to enter the loop and route to human
+        # review — prevents the cross-run loops we observed on 青囊 ch1.
+        auto_repair_total_cap = int(
+            getattr(
+                settings.pipeline,
+                "chapter_auto_repair_total_max_attempts",
+                0,
+            )
+            or 0
+        )
+        auto_repair_total_used = int(
+            (chapter.metadata_json or {}).get("auto_repair_total_attempts") or 0
+        )
+        retention_auto_repair_exhausted = False
         auto_repair_codes = tuple(
             str(c) for c in getattr(
                 settings.pipeline,
@@ -4409,15 +5582,56 @@ async def run_chapter_pipeline(
             )
         except Exception:
             logger.debug("retention auto-repair code merge failed", exc_info=True)
+
+        cross_run_budget_exhausted = (
+            auto_repair_enabled
+            and auto_repair_total_cap > 0
+            and auto_repair_total_used >= auto_repair_total_cap
+            and (
+                getattr(chapter, "production_state", None) == "blocked"
+                or _scene_loop_blocked
+            )
+        )
+        if cross_run_budget_exhausted:
+            logger.warning(
+                "Chapter %d: cross-run auto_repair budget exhausted "
+                "(total_used=%d cap=%d); refusing to enter repair loop, "
+                "routing to human review.",
+                chapter_number,
+                auto_repair_total_used,
+                auto_repair_total_cap,
+            )
+            chapter.status = ChapterStatus.REVISION.value
+            chapter.production_state = "blocked"
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "auto_repair_exhausted": True,
+                "auto_repair_cross_run_exhausted": True,
+                "auto_repair_in_progress": False,
+                "auto_accepted": False,
+                "requires_human_review": True,
+            }
+            scene_requires_human_review = True
+            await session.flush()
+
         while (
             auto_repair_enabled
             and auto_repair_cap > 0
             and auto_repair_attempts < auto_repair_cap
+            and not cross_run_budget_exhausted
             and (
                 getattr(chapter, "production_state", None) == "blocked"
                 or _scene_loop_blocked
             )
         ):
+            if await _stop_auto_repair_if_latest_quality_clean(session, chapter):
+                _scene_loop_blocked = False
+                logger.info(
+                    "Chapter %d: stopped auto-repair loop after latest clean "
+                    "quality report",
+                    chapter_number,
+                )
+                break
             try:
                 _retry_cfg = get_quality_gates_config().originality_engine
                 _pre_repair_block_codes = _current_auto_repair_block_codes(chapter)
@@ -4437,6 +5651,15 @@ async def run_chapter_pipeline(
                             or 0
                         ),
                     )
+                    retention_auto_repair_exhausted = True
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "blocked"
+                    chapter.metadata_json = {
+                        **(chapter.metadata_json or {}),
+                        "auto_repair_exhausted": True,
+                        "retention_auto_repair_exhausted": True,
+                        "auto_accepted": False,
+                    }
                     scene_requires_human_review = True
                     await session.flush()
                     break
@@ -4495,6 +5718,132 @@ async def run_chapter_pipeline(
                     "block_codes": list(block_codes) if block_codes else [],
                 },
             )
+
+            if use_chapter_first:
+                full_regen_reason = _chapter_first_full_regeneration_reason(
+                    project,
+                    chapter,
+                    chapter_draft,
+                    block_codes,
+                    attempt_number=auto_repair_attempts,
+                )
+                chapter_repair_task = None
+                if full_regen_reason:
+                    current_step_name = (
+                        f"chapter_first_auto_repair_regenerate_{auto_repair_attempts}"
+                    )
+                    workflow_run.current_step = current_step_name
+                    chapter.metadata_json = {
+                        **(chapter.metadata_json or {}),
+                        "chapter_first_full_regeneration_instead_of_patch": True,
+                        "chapter_first_full_regeneration_reason": full_regen_reason,
+                        "chapter_first_full_regeneration_attempt": auto_repair_attempts,
+                    }
+                    _emit_progress(
+                        progress,
+                        "chapter_auto_repair_regenerating_full_chapter",
+                        {
+                            "project_slug": project_slug,
+                            "chapter_number": chapter_number,
+                            "attempt": auto_repair_attempts,
+                            "reason": full_regen_reason,
+                            "block_codes": list(block_codes) if block_codes else [],
+                        },
+                    )
+                    chapter_draft = await generate_chapter_draft_once(
+                        session,
+                        project_slug,
+                        chapter_number,
+                        settings=settings,
+                        workflow_run_id=workflow_run.id,
+                        context_packet=chapter_first_context_packet,
+                    )
+                    generation_mode = "chapter_first_full_regeneration"
+                else:
+                    current_step_name = (
+                        f"chapter_first_auto_repair_rewrite_{auto_repair_attempts}"
+                    )
+                    workflow_run.current_step = current_step_name
+                    chapter_repair_task = await _create_chapter_first_local_auto_repair_task(
+                        session,
+                        project=project,
+                        chapter=chapter,
+                        block_codes=block_codes,
+                        attempt_number=auto_repair_attempts,
+                    )
+                    chapter_draft, chapter_repair_task = await rewrite_chapter_from_task(
+                        session,
+                        project_slug,
+                        chapter_number,
+                        rewrite_task_id=chapter_repair_task.id,
+                        settings=settings,
+                        workflow_run_id=workflow_run.id,
+                    )
+                    generation_mode = "chapter_first_local_rewrite"
+                try:
+                    _orig_cfg = get_quality_gates_config().originality_engine
+                    if _orig_cfg.enabled and chapter_draft.content_md:
+                        await _evaluate_retention_safety_after_assembly(
+                            session,
+                            project=project,
+                            chapter=chapter,
+                            chapter_draft=chapter_draft,
+                            chapter_number=chapter_number,
+                            output_base_dir=settings.output.base_dir,
+                        )
+                except Exception:
+                    logger.debug(
+                        "retention_safety_gate chapter-first repair evaluation failed "
+                        "for ch%d (non-fatal)",
+                        chapter_number,
+                        exc_info=True,
+                    )
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref={
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                        "auto_repair_attempt": auto_repair_attempts,
+                        "generation_mode": generation_mode,
+                        "full_regeneration_reason": full_regen_reason,
+                        "rewrite_task_id": str(chapter_repair_task.id)
+                        if chapter_repair_task is not None
+                        else None,
+                    },
+                )
+                step_order += 1
+                _emit_progress(
+                    progress,
+                    "chapter_auto_repair_completed",
+                    {
+                        "project_slug": project_slug,
+                        "chapter_number": chapter_number,
+                        "attempt": auto_repair_attempts,
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                        "generation_mode": generation_mode,
+                        "full_regeneration_reason": full_regen_reason,
+                        "rewrite_task_id": str(chapter_repair_task.id)
+                        if chapter_repair_task is not None
+                        else None,
+                    },
+                )
+                if await _stop_auto_repair_if_latest_quality_clean(
+                    session,
+                    chapter,
+                ):
+                    _scene_loop_blocked = False
+                    logger.info(
+                        "Chapter %d: chapter-first auto-repair produced a clean "
+                        "quality report; stopping loop",
+                        chapter_number,
+                    )
+                    break
+                continue
 
             # Re-run scene pipelines — every scene was reset to NEEDS_REWRITE
             # by ``maybe_prepare_chapter_auto_repair``.  Iterate ALL scenes
@@ -4647,7 +5996,74 @@ async def run_chapter_pipeline(
                 requires_human_review=True,
             )
 
-        if auto_repair_attempts > 0 and getattr(chapter, "production_state", None) == "blocked":
+        if retention_auto_repair_exhausted:
+            workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+            workflow_run.current_step = "retention_auto_repair_exhausted"
+            workflow_run.metadata_json = {
+                **workflow_run.metadata_json,
+                "requires_human_review": True,
+                "chapter_draft_id": str(chapter_draft.id),
+                "chapter_draft_version_no": chapter_draft.version_no,
+                "retention_auto_repair_exhausted": True,
+                "auto_accepted": False,
+            }
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name="retention_auto_repair_exhausted",
+                step_order=step_order,
+                status=WorkflowStatus.MACHINE_BLOCKED,
+                output_ref={
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "retention_retry_count": int(
+                        (chapter.metadata_json or {}).get("retention_retry_count", 0)
+                        or 0
+                    ),
+                    "block_codes": list(_current_auto_repair_block_codes(chapter)),
+                },
+            )
+            _emit_progress(
+                progress,
+                "retention_auto_repair_exhausted",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                },
+            )
+            await session.flush()
+            return ChapterPipelineResult(
+                workflow_run_id=workflow_run.id,
+                project_id=project.id,
+                chapter_id=chapter.id,
+                chapter_number=chapter.chapter_number,
+                scene_results=scene_results,
+                chapter_draft_id=chapter_draft.id,
+                chapter_draft_version_no=chapter_draft.version_no,
+                final_verdict="rewrite",
+                export_artifact_id=None,
+                output_path=None,
+                requires_human_review=True,
+            )
+
+        stale_auto_repair_block_released = (
+            await _release_stale_auto_repair_block_if_latest_quality_clean(
+                session,
+                chapter,
+            )
+        )
+        if stale_auto_repair_block_released:
+            logger.info(
+                "Chapter %d: released stale auto-repair block after clean quality report",
+                chapter_number,
+            )
+
+        if (
+            auto_repair_attempts > 0
+            and getattr(chapter, "production_state", None) == "blocked"
+        ):
             logger.warning(
                 "Chapter %d: auto-repair exhausted %d attempt(s), still blocked — "
                 "routing best available draft to machine repair",
@@ -4738,6 +6154,15 @@ async def run_chapter_pipeline(
                     chapter_draft=chapter_draft,
                     block_on_failure=bool(
                         getattr(settings.pipeline, "fanqie_long_ranking_block_on_failure", False)
+                    ),
+                    chapter=chapter,
+                    block_attempt_cap=int(
+                        getattr(
+                            settings.pipeline,
+                            "fanqie_long_ranking_block_max_attempts",
+                            3,
+                        )
+                        or 3
                     ),
                 )
                 if fanqie_gate_payload["blocks_write"]:
@@ -4930,9 +6355,12 @@ async def run_chapter_pipeline(
         except Exception:
             logger.debug("anti-slop prose gates failed (non-fatal)", exc_info=True)
 
+        export_blocked_reason: str | None = None
+
         async def _export_current_chapter_markdown() -> tuple[UUID | None, str | None]:
             nonlocal current_step_name
             nonlocal step_order
+            nonlocal export_blocked_reason
             if not export_markdown:
                 return None, None
             current_step_name = "export_chapter_markdown"
@@ -4955,8 +6383,17 @@ async def run_chapter_pipeline(
                 )
             except (ValueError, OSError) as exc:
                 # Export blockers (hygiene checks, I/O errors) must not crash the
-                # entire chapter pipeline — the draft is already persisted and can
-                # be re-exported later once the issue is resolved.
+                # process, but they are still publication blockers. A chapter
+                # cannot be reported complete when the frontend/export surface
+                # would continue showing the previous artifact.
+                export_blocked_reason = str(exc)
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "export_blocked_reason": export_blocked_reason,
+                    "export_blocked_by_run_id": str(workflow_run.id),
+                }
                 logger.warning(
                     "Chapter %d export blocked for %s, continuing pipeline: %s",
                     chapter_number,
@@ -4982,6 +6419,15 @@ async def run_chapter_pipeline(
                     },
                 )
                 return None, None
+            export_blocked_reason = None
+            if chapter.metadata_json and (
+                chapter.metadata_json.get("export_blocked_reason")
+                or chapter.metadata_json.get("export_blocked_by_run_id")
+            ):
+                next_meta = dict(chapter.metadata_json)
+                next_meta.pop("export_blocked_reason", None)
+                next_meta.pop("export_blocked_by_run_id", None)
+                chapter.metadata_json = next_meta
             artifact_id = artifact.id
             artifact_output_path = str(artifact_path.resolve())
             await create_workflow_step_run(
@@ -5008,7 +6454,7 @@ async def run_chapter_pipeline(
             )
             return artifact_id, artifact_output_path
 
-        if scene_requires_human_review:
+        if scene_requires_human_review and not use_chapter_first:
             chapter.status = ChapterStatus.REVISION.value
             export_artifact_id, output_path = await _export_current_chapter_markdown()
             workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
@@ -5244,6 +6690,30 @@ async def run_chapter_pipeline(
             output_path: str | None = None
             if export_markdown:
                 export_artifact_id, output_path = await _export_current_chapter_markdown()
+                if export_blocked_reason:
+                    workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                    workflow_run.current_step = "export_blocked"
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "draft_mode": True,
+                        "requires_human_review": True,
+                        "export_blocked_reason": export_blocked_reason,
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                    }
+                    await session.flush()
+                    return ChapterPipelineResult(
+                        workflow_run_id=workflow_run.id,
+                        project_id=project.id,
+                        chapter_id=chapter.id,
+                        chapter_number=chapter.chapter_number,
+                        scene_results=scene_results,
+                        chapter_draft_id=chapter_draft.id,
+                        chapter_draft_version_no=chapter_draft.version_no,
+                        export_artifact_id=export_artifact_id,
+                        output_path=str(output_path) if output_path else None,
+                        requires_human_review=True,
+                    )
             workflow_run.status = WorkflowStatus.COMPLETED.value
             workflow_run.current_step = "completed"
             workflow_run.metadata_json = {
@@ -5348,11 +6818,7 @@ async def run_chapter_pipeline(
                 and not getattr(settings.pipeline, "chapter_review_block_on_failure", True)
                 and safe_draft_available
             )
-            if (
-                chapter_review_result.verdict == "pass"
-                or chapter_rewrite_task is None
-                or accept_chapter_on_stall
-            ):
+            if chapter_review_result.verdict == "pass" or accept_chapter_on_stall:
                 if accept_chapter_on_stall:
                     reached_chapter_revision_limit = True
                     logger.info(
@@ -5527,17 +6993,130 @@ async def run_chapter_pipeline(
                     )
                 break
 
+            if chapter_rewrite_task is None:
+                requires_human_review = True
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.current_step = "machine_repair_required"
+                workflow_run.metadata_json = {
+                    **workflow_run.metadata_json,
+                    "requires_human_review": True,
+                    "blocked_after_chapter_review_without_rewrite_task": True,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "final_verdict": chapter_review_result.verdict,
+                    "review_report_id": str(chapter_report.id),
+                    "quality_score_id": str(chapter_quality.id),
+                }
+                break
+
             if at_chapter_rewrite_limit:
                 # Either accept_on_stall is disabled or chapter review is
                 # configured as a hard quality gate. Do not mark a rejected
                 # chapter complete after exhausting rewrites.
                 reached_chapter_revision_limit = True
                 requires_human_review = True
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
                 workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
                 workflow_run.current_step = "machine_repair_required"
+                workflow_run.metadata_json = {
+                    **workflow_run.metadata_json,
+                    "requires_human_review": True,
+                    "blocked_after_chapter_rewrite_limit": True,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "final_verdict": chapter_review_result.verdict,
+                    "review_report_id": str(chapter_report.id),
+                    "quality_score_id": str(chapter_quality.id),
+                    "rewrite_task_id": str(chapter_rewrite_task.id),
+                }
                 break
 
+            review_full_regen_reason = None
+            if use_chapter_first:
+                review_full_regen_reason = _chapter_review_full_regeneration_reason(
+                    project,
+                    chapter,
+                    chapter_draft,
+                    chapter_report,
+                    chapter_quality,
+                    rewrite_iterations=chapter_rewrite_iterations,
+                )
+
             chapter_rewrite_iterations += 1
+            if review_full_regen_reason:
+                current_step_name = (
+                    f"chapter_first_review_regenerate_{chapter_rewrite_iterations}"
+                )
+                workflow_run.current_step = current_step_name
+                if chapter_rewrite_task is not None:
+                    chapter_rewrite_task.status = "superseded"
+                    chapter_rewrite_task.metadata_json = {
+                        **(chapter_rewrite_task.metadata_json or {}),
+                        "superseded_reason": (
+                            "chapter_review_full_regeneration_instead_of_rewrite"
+                        ),
+                        "full_regeneration_reason": review_full_regen_reason,
+                    }
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "chapter_review_full_regeneration_instead_of_rewrite": True,
+                    "chapter_review_full_regeneration_reason": review_full_regen_reason,
+                    "chapter_review_full_regeneration_iteration": chapter_rewrite_iterations,
+                }
+                _emit_progress(
+                    progress,
+                    "chapter_review_regenerating_full_chapter",
+                    {
+                        "project_slug": project_slug,
+                        "chapter_number": chapter_number,
+                        "iteration": chapter_rewrite_iterations,
+                        "rewrite_task_id": str(chapter_rewrite_task.id),
+                        "reason": review_full_regen_reason,
+                    },
+                )
+                chapter_draft = await generate_chapter_draft_once(
+                    session,
+                    project_slug,
+                    chapter_number,
+                    settings=settings,
+                    workflow_run_id=workflow_run.id,
+                    context_packet=chapter_first_context_packet,
+                )
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref={
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                        "rewrite_task_id": str(chapter_rewrite_task.id),
+                        "generation_mode": "chapter_first_review_full_regeneration",
+                        "full_regeneration_reason": review_full_regen_reason,
+                    },
+                )
+                step_order += 1
+                _emit_progress(
+                    progress,
+                    "chapter_rewrite_completed",
+                    {
+                        "project_slug": project_slug,
+                        "chapter_number": chapter_number,
+                        "iteration": chapter_rewrite_iterations,
+                        "rewrite_task_id": str(chapter_rewrite_task.id),
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                        "generation_mode": "chapter_first_review_full_regeneration",
+                        "full_regeneration_reason": review_full_regen_reason,
+                        "word_count": int(getattr(chapter_draft, "word_count", 0) or 0),
+                    },
+                )
+                continue
+
             current_step_name = f"rewrite_chapter_v{chapter_rewrite_iterations}"
             workflow_run.current_step = current_step_name
             _emit_progress(
@@ -5599,6 +7178,10 @@ async def run_chapter_pipeline(
             }
 
         if requires_human_review:
+            chapter.status = ChapterStatus.REVISION.value
+            chapter.production_state = "blocked"
+            workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+            workflow_run.current_step = "machine_repair_required"
             export_artifact_id, output_path = await _export_current_chapter_markdown()
             workflow_run.metadata_json = {
                 **workflow_run.metadata_json,
@@ -5636,6 +7219,42 @@ async def run_chapter_pipeline(
         output_path: str | None = None
         if export_markdown:
             export_artifact_id, output_path = await _export_current_chapter_markdown()
+            if export_blocked_reason:
+                requires_human_review = True
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.current_step = "export_blocked"
+                workflow_run.metadata_json = {
+                    **workflow_run.metadata_json,
+                    "requires_human_review": True,
+                    "export_blocked_reason": export_blocked_reason,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "chapter_review_iterations": chapter_review_iterations,
+                    "chapter_rewrite_iterations": chapter_rewrite_iterations,
+                    "final_verdict": chapter_review_result.verdict if chapter_review_result is not None else None,
+                    "review_report_id": str(chapter_report.id) if chapter_report is not None else None,
+                    "quality_score_id": str(chapter_quality.id) if chapter_quality is not None else None,
+                    "export_artifact_id": str(export_artifact_id) if export_artifact_id else None,
+                }
+                await session.flush()
+                return ChapterPipelineResult(
+                    workflow_run_id=workflow_run.id,
+                    project_id=project.id,
+                    chapter_id=chapter.id,
+                    chapter_number=chapter.chapter_number,
+                    scene_results=scene_results,
+                    chapter_draft_id=chapter_draft.id,
+                    chapter_draft_version_no=chapter_draft.version_no,
+                    final_verdict=chapter_review_result.verdict if chapter_review_result is not None else None,
+                    review_report_id=chapter_report.id if chapter_report is not None else None,
+                    quality_score_id=chapter_quality.id if chapter_quality is not None else None,
+                    rewrite_task_id=chapter_rewrite_task.id if chapter_rewrite_task is not None else None,
+                    chapter_review_iterations=chapter_review_iterations,
+                    chapter_rewrite_iterations=chapter_rewrite_iterations,
+                    export_artifact_id=export_artifact_id,
+                    output_path=output_path,
+                    requires_human_review=True,
+                )
         if getattr(chapter, "production_state", None) != "blocked":
             chapter.production_state = "ok"
             chapter_meta = dict(chapter.metadata_json or {})
@@ -6259,27 +7878,143 @@ async def run_project_pipeline(
                     **(workflow_run.metadata_json or {}),
                     "commercial_planning_readiness_report": commercial_gate_report,
                 }
-                should_block_commercial_gate = (
-                    not commercial_gate_report.get("passed", False)
-                    and getattr(
-                        settings.pipeline,
-                        "commercial_planning_readiness_block_on_failure",
-                        True,
-                    )
+
+                # ── LLM judge path (default) ────────────────────────────────
+                # The deterministic gate is advisory; the LLM gives the final
+                # verdict using the deterministic findings as reference context.
+                use_llm_judge = getattr(
+                    settings.pipeline, "enable_commercial_planning_llm_judge", True
                 )
-                if should_block_commercial_gate:
+                commercial_gate_passed: bool
+                llm_judge_payload: dict[str, Any] | None = None
+
+                if use_llm_judge:
+                    from bestseller.services.outline_llm_judge import (
+                        judge_commercial_planning_readiness,
+                    )
+                    from bestseller.services.prompt_packs import resolve_prompt_pack
+
+                    llm_threshold = float(
+                        getattr(
+                            settings.pipeline,
+                            "commercial_planning_llm_judge_threshold",
+                            0.75,
+                        )
+                        or 0.75
+                    )
+                    # Build chapters payload from the current chapter models
+                    _golden_payload = [
+                        {
+                            "chapter_number": int(getattr(ch, "chapter_number", 0) or 0),
+                            "title": getattr(ch, "title", None) or "",
+                            "chapter_goal": getattr(ch, "chapter_goal", None) or "",
+                            "opening_situation": getattr(ch, "opening_situation", None) or "",
+                            "main_conflict": getattr(ch, "main_conflict", None) or "",
+                            "hook_description": getattr(ch, "hook_description", None) or "",
+                            "hype_type": getattr(ch, "hype_type", None) or "",
+                            "hype_intensity": getattr(ch, "hype_intensity", None),
+                            "scenes": [
+                                {
+                                    "scene_number": int(
+                                        getattr(sc, "scene_number", 0) or 0
+                                    ),
+                                    "scene_type": getattr(sc, "scene_type", None) or "",
+                                    "title": getattr(sc, "title", None) or "",
+                                    "participants": list(
+                                        getattr(sc, "participants", []) or []
+                                    ),
+                                    "purpose": getattr(sc, "purpose", None),
+                                    "entry_state": getattr(sc, "entry_state", None),
+                                    "exit_state": getattr(sc, "exit_state", None),
+                                    "hook_requirement": getattr(
+                                        sc, "hook_requirement", None
+                                    ) or "",
+                                }
+                                for sc in (getattr(ch, "scenes", []) or [])
+                            ],
+                        }
+                        for ch in chapters
+                        if int(getattr(ch, "chapter_number", 0) or 0) in (1, 2, 3)
+                    ]
+                    _project_brief = {
+                        "title": getattr(project, "title", None),
+                        "genre": getattr(project, "genre", None),
+                        "slug": project_slug,
+                        "target_chapters": getattr(project, "target_chapters", None),
+                    }
+                    _project_metadata = (
+                        project.metadata_json
+                        if isinstance(getattr(project, "metadata_json", None), dict)
+                        else {}
+                    )
+                    _pack = resolve_prompt_pack(
+                        _project_metadata.get("prompt_pack_name")
+                        or _project_metadata.get("prompt_pack_key"),
+                        genre=str(
+                            getattr(project, "genre", "general-fiction")
+                            or "general-fiction"
+                        ),
+                        sub_genre=getattr(project, "sub_genre", None),
+                    )
+                    try:
+                        llm_judge_result = await judge_commercial_planning_readiness(
+                            session,
+                            settings,
+                            chapters_payload=_golden_payload,
+                            deterministic_findings=commercial_gate_report,
+                            project_brief=_project_brief,
+                            threshold=llm_threshold,
+                            workflow_run_id=str(workflow_run.id)
+                            if workflow_run.id
+                            else None,
+                            pack=_pack,
+                        )
+                        llm_judge_payload = llm_judge_result.model_dump(
+                            mode="json", by_alias=True
+                        )
+                        commercial_gate_passed = llm_judge_result.passed
+                        # Persist LLM judge result alongside deterministic report
+                        project.metadata_json = {
+                            **(getattr(project, "metadata_json", None) or {}),
+                            "commercial_planning_llm_judge": llm_judge_payload,
+                            "commercial_planning_readiness_status": (
+                                "llm_gate_passed"
+                                if commercial_gate_passed
+                                else "llm_gate_failed"
+                            ),
+                        }
+                    except Exception as _llm_exc:  # noqa: BLE001
+                        # LLM judge failure → safe fallback: let planning proceed
+                        logger.warning(
+                            "commercial_planning_llm_judge_error",
+                            exc_info=_llm_exc,
+                        )
+                        commercial_gate_passed = True
+                        llm_judge_payload = None
+                else:
+                    # Deterministic-only fallback (legacy behaviour)
+                    commercial_gate_passed = commercial_gate_report.get("passed", True)
+
+                if not commercial_gate_passed:
                     _emit_progress(
                         progress,
                         "commercial_planning_readiness_gate_failed",
                         {
                             "project_slug": project_slug,
                             "findings": commercial_gate_report.get("findings", []),
+                            "llm_judge": llm_judge_payload,
                         },
+                    )
+                    _block_reason = (
+                        "LLM judge"
+                        if use_llm_judge
+                        else "deterministic gate"
                     )
                     raise ValueError(
                         _commercial_planning_readiness_error_message(
                             commercial_gate_report
                         )
+                        + f" [{_block_reason}]"
                     )
                 await create_workflow_step_run(
                     session,
@@ -6287,7 +8022,11 @@ async def run_project_pipeline(
                     step_name=current_step_name,
                     step_order=step_order,
                     status=WorkflowStatus.COMPLETED,
-                    output_ref=commercial_gate_report,
+                    output_ref={
+                        "deterministic": commercial_gate_report,
+                        "llm_judge": llm_judge_payload,
+                        "passed": commercial_gate_passed,
+                    },
                 )
                 step_order += 1
                 _emit_progress(
@@ -6416,6 +8155,7 @@ async def run_project_pipeline(
                     chapter_result=chapter_result,
                     opening_texts=qimao_opening_texts,
                     workflow_run=workflow_run,
+                    settings=settings,
                     progress=progress,
                 )
             if _project_uses_whole_book_quality_gate(project):

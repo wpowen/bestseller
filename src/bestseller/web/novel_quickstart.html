@@ -330,6 +330,41 @@
     background: var(--border);
   }
 
+  .model-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .model-switcher label {
+    color: var(--text-faint);
+  }
+
+  .model-switcher select {
+    min-height: 28px;
+    max-width: 140px;
+    padding: 4px 24px 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--paper);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .model-switcher select:disabled {
+    color: var(--text-faint);
+    cursor: wait;
+  }
+
+  .model-switcher .state {
+    max-width: 120px;
+    overflow: hidden;
+    color: var(--text-faint);
+    text-overflow: ellipsis;
+  }
+
   .container {
     width: min(1280px, calc(100% - 64px));
     margin: 0 auto;
@@ -3602,6 +3637,12 @@
       <span class="sep"></span>
       <span id="hdrApiPing">API 28ms</span>
       <span class="sep"></span>
+      <div class="model-switcher" title="切换后，新的 LLM 调用会立即使用所选模型；已在运行中的单次调用不会被中断。">
+        <label for="llmProfileSelect">模型</label>
+        <select id="llmProfileSelect" aria-label="运行时模型"></select>
+        <span class="state" id="llmProfileState">读取中</span>
+      </div>
+      <span class="sep"></span>
       <span id="hdrQueue">队列 0 in / 0 wait</span>
     </div>
   </div>
@@ -3894,6 +3935,7 @@
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" onclick="switchView('dashboard')">← 返回仪表板</button>
+          <a class="btn btn-secondary btn-sm" id="pvFlowLink" href="#" target="_blank" style="display:none">数据流</a>
           <button class="btn btn-primary btn-sm" onclick="startNewCreationFlow()">+ 新建另一本</button>
         </div>
       </div>
@@ -4104,6 +4146,8 @@
   };
   let chapterCount = 500;
   let llmModel = '';
+  let llmProfileKey = '';
+  let llmProfileOptions = [];
   let allTasks = [];       // dashboard-visible rows, compacted by project
   let rawTaskCount = 0;    // raw records returned by /api/tasks
   let rawProjectCount = 0; // raw records returned by /api/projects
@@ -4224,6 +4268,54 @@
   const $ = s => document.querySelector(s);
   const $$ = s => document.querySelectorAll(s);
   const esc = s => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
+
+  function updateLlmProfileUi(profilePayload) {
+    const select = $('#llmProfileSelect');
+    const state = $('#llmProfileState');
+    if (!select || !state || !profilePayload) return;
+    llmProfileKey = profilePayload.active_key || '';
+    llmProfileOptions = profilePayload.profiles || [];
+    llmModel = String(profilePayload.writer_model || llmModel || '').replace('openai/', '');
+    select.innerHTML = llmProfileOptions.map(profile => {
+      const key = esc(profile.key || '');
+      const label = esc(profile.label || profile.key || '');
+      const missing = profile.api_key_configured === false ? '（未配 Key）' : '';
+      return `<option value="${key}">${label}${missing}</option>`;
+    }).join('');
+    if (llmProfileKey) select.value = llmProfileKey;
+    state.textContent = profilePayload.source === 'runtime' ? '运行时' : '配置';
+    state.title = `当前写作模型：${profilePayload.writer_model || '-'}`;
+    $('#pvModel') && ($('#pvModel').textContent = llmModel || '-');
+    $('#sumModel') && ($('#sumModel').textContent = llmModel || '-');
+  }
+
+  async function switchLlmProfile(profileKey) {
+    const select = $('#llmProfileSelect');
+    const state = $('#llmProfileState');
+    if (!profileKey || profileKey === llmProfileKey) return;
+    if (select) select.disabled = true;
+    if (state) state.textContent = '切换中';
+    try {
+      const res = await fetch('/api/llm-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: profileKey }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || '模型切换失败');
+      updateLlmProfileUi(payload);
+    } catch (err) {
+      alert('模型切换失败: ' + (err.message || err));
+      if (select && llmProfileKey) select.value = llmProfileKey;
+      if (state) state.textContent = '失败';
+    } finally {
+      if (select) select.disabled = false;
+    }
+  }
+
+  $('#llmProfileSelect')?.addEventListener('change', e => {
+    switchLlmProfile(e.target.value);
+  });
 
   function isEnglishGenre(genre) {
     return (genre?.language || 'zh-CN').startsWith('en');
@@ -6379,6 +6471,11 @@
     $('#pvTitle').textContent = status === 'completed' ? '创作完成!' : status === 'failed' ? '创作出错' : status === 'incomplete' ? '等待续跑' : '正在创作中...';
     $('#pvTitle').style.color = status === 'completed' ? 'var(--success)' : status === 'failed' ? 'var(--danger)' : status === 'incomplete' ? 'var(--warning)' : 'var(--text-bright)';
     $('#pvSub').textContent = data.title || slug || '';
+    const flowLink = $('#pvFlowLink');
+    if (flowLink && slug) {
+      flowLink.href = `/flow/${encodeURIComponent(slug)}`;
+      flowLink.style.display = '';
+    } else if (flowLink) { flowLink.style.display = 'none'; }
 
     // Total chapters — book-wide when multi-volume, falling back to the
     // per-volume count for single-volume projects.
@@ -7749,6 +7846,7 @@
       const ping = Math.round(performance.now() - pingStart);
       const d = await r.json();
       llmModel = (d.writer_model || d.planner_model || '').replace('openai/', '');
+      updateLlmProfileUi(d.llm_profile);
       if (typeof d.max_concurrent_tasks === 'number' && d.max_concurrent_tasks > 0) {
         maxConcurrentTasks = d.max_concurrent_tasks;
       }

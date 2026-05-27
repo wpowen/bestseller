@@ -406,6 +406,11 @@ class SceneCardCreate(BaseModel):
     purpose: dict[str, object] = Field(default_factory=dict)
     entry_state: dict[str, object] = Field(default_factory=dict)
     exit_state: dict[str, object] = Field(default_factory=dict)
+    key_dialogue_beats: list[str] = Field(default_factory=list)
+    sensory_anchors: dict[str, object] = Field(default_factory=dict)
+    forbidden_actions: list[str] = Field(default_factory=list)
+    hook_requirement: str | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
     target_word_count: int = Field(default=700, gt=0)
     status: SceneStatus = SceneStatus.PLANNED
 

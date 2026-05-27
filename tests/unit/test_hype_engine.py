@@ -375,16 +375,17 @@ class TestClassifyHype:
 class TestExtractEndingSentence:
     def test_chinese_last_sentence(self) -> None:
         text = "清晨的雾气散去。他端起茶杯。门外一道身影越来越近。"
-        assert extract_ending_sentence(text, "zh-CN") == "门外一道身影越来越近"
+        assert extract_ending_sentence(text, "zh-CN") == "门外一道身影越来越近。"
 
     def test_english_last_sentence(self) -> None:
         text = "The morning broke. He reached for the door. A shadow waited."
-        assert extract_ending_sentence(text, "en") == "A shadow waited"
+        assert extract_ending_sentence(text, "en") == "A shadow waited."
 
     def test_chinese_trailing_dialogue_quote_not_returned_as_sentence(self) -> None:
         text = "前文。老人说：“因为你们林家欠我们的，不只是一条命。”"
         sentence = extract_ending_sentence(text, "zh-CN")
         assert sentence != "”"
+        assert sentence.endswith("。”")
         assert "不只是一条命" in sentence
 
     def test_empty_returns_empty(self) -> None:

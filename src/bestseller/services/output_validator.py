@@ -558,6 +558,7 @@ _ZH_COMMON_NON_NAME_TAIL_WORDS: frozenset[str] = frozenset(
         "山正",
         "山来",
         "茅山",
+        "山术",
         "明灭",
         "严丝",
         "灭",
@@ -608,6 +609,9 @@ _ZH_COMMON_NON_NAME_TAIL_WORDS: frozenset[str] = frozenset(
         "停住",
         "压得",
         "缘硌",
+        "无",
+        "无五",
+        "无眼",
     }
 )
 
@@ -667,6 +671,10 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # Material/readiness/action false positives:
     # 朱砂 -> cinnabar; 齐备 -> ready; 铜钱按在 -> 钱按.
     "砂备按"
+    # Tool/action false positives: 铜钱压在/压上 -> 钱压.
+    "压"
+    # Tool/action false positives: 铜钱换到/换成 -> 钱换.
+    "换"
     # Tool/action false positives:
     # 毛笔写 / 毛笔画 are brush actions, not a "毛笔" character.
     "笔"
@@ -681,6 +689,31 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # Suspense case prose: 沈副捕头 / 张被河水 / 成一团 / 成两半 /
     # 李宅 is a case location, not a cast member.
     "副被一两宅把爷剑符丝游语灭"
+    # Qingnang audit false positives: 钱贴/和银雾/张临死/张麻木/
+    # 成八瓣/张惨白/皮绷/方同时/黄铜框/张无 are prose fragments.
+    "贴银临麻八惨绷同铜"
+    # Qingnang chapter 77/80/81 false positives: 一张黄纸 / 铜钱落地 /
+    # 铜钱还在掌心 / 铜钱碎片 / 茅山术 / 苏警官.
+    "黄落还碎术警"
+    # Qingnang chapter-first false positives: 皮鞋踩 / 钱塞进 /
+    # 时之前 / 张配送 are prose/action fragments, not character names.
+    "鞋塞之配"
+    # 青囊不语问阴阳 ch1 (2026-05-25) audit — single-char surname + sensory /
+    # object-state / verb compound is almost never a name:
+    #   钱烫 (钱烫手), 钱攥 (钱攥在手), 钱底 (钱底下), 水汽 (水汽弥漫),
+    #   孙头 (老孙头, 街头).
+    # Virtually no Chinese given name uses these as the 2nd character.
+    "烫攥汽底头"
+    # Ordinal fragments: 第三格和第四格 -> regex can see 和第四.
+    "第"
+    # 青囊 ch1 v182 audit (2026-05-26) — noun-phrase false positive:
+    #   水管 (from 水管漏 — literal water pipe).
+    # ``管`` is dominantly a noun (管子/水管/管事) or verb (管理) in modern
+    # fiction; surname use is rare and confined to historical contexts.
+    # ``无`` was *not* added here even though it tripped on "张无脸/张无奈"
+    # — there are real Chinese names like 赵无极 that we'd erroneously
+    # suppress. The "无" false positives stay audit-only.
+    "管"
 )
 
 # Third-character stoplist — for 3-char candidates the regex greedily
@@ -698,6 +731,8 @@ _ZH_GRAMMATICAL_TAIL_CHARS: frozenset[str] = frozenset(
     # Verb/adverb glue after a real 2-char name in action prose:
     # 苏砚一脚/苏砚上前/苏砚赶到/苏砚追出 should count as 苏砚.
     "一上停却已弯等耳能赶追"
+    # Action tails in prose fragments: 皮鞋踩 / 钱塞进.
+    "踩进"
 )
 
 
@@ -778,6 +813,10 @@ def _trim_zh_name_candidate(candidate: str) -> str | None:
     ):
         return None
     if len(candidate) >= 2 and candidate[1:] in _ZH_COMMON_NON_NAME_TAIL_WORDS:
+        return None
+    # "死于沈家/困于沈宅" are location/preposition phrases, not a
+    # surname 于 followed by a newly invented character.
+    if len(candidate) == 3 and candidate[0] == "于" and candidate[2] in {"家", "宅"}:
         return None
     # Reject if second char is stoplisted — the 2-char prefix is a word.
     if len(candidate) >= 2 and candidate[1] in _ZH_COMMON_WORD_2ND_CHARS:
@@ -1306,7 +1345,11 @@ def _canonicalize_zh_entity(
     if _trim_zh_name_candidate(candidate) is None:
         return None
     if allowed:
-        for name in sorted((item for item in allowed if isinstance(item, str)), key=len, reverse=True):
+        for name in sorted(
+            (item for item in allowed if isinstance(item, str)),
+            key=len,
+            reverse=True,
+        ):
             if len(name) < 2:
                 continue
             if candidate.startswith(name):

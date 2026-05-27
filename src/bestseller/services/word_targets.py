@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Any
 
-from bestseller.settings import AppSettings
 from bestseller.services.length_stability_gate import CHINESE_CHAPTER_HARD_MIN_WORDS
 from bestseller.services.writing_profile import is_english_language
+from bestseller.settings import AppSettings, apply_runtime_llm_profile
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,7 @@ class RewriteLengthBand:
 def resolve_llm_role_max_tokens(settings: AppSettings, role: str = "writer") -> int | None:
     """Return configured max output tokens for a writer role if present."""
 
+    settings = apply_runtime_llm_profile(settings)
     llm_settings = getattr(settings, "llm", None)
     if llm_settings is None:
         return None
@@ -48,6 +49,7 @@ def resolve_llm_role_max_tokens(settings: AppSettings, role: str = "writer") -> 
 def resolve_llm_role_model(settings: AppSettings, role: str = "writer") -> str | None:
     """Return the configured model name for an LLM role."""
 
+    settings = apply_runtime_llm_profile(settings)
     llm_settings = getattr(settings, "llm", None)
     if llm_settings is None:
         return None
@@ -69,6 +71,8 @@ def model_reasoning_token_reserve(model_name: str | None) -> int:
     """
 
     model = (model_name or "").strip().lower()
+    if "minimax-m2" in model and "highspeed" in model:
+        return 0
     if "minimax-m2" in model or "minimax-m1" in model:
         return 6000
     return 0

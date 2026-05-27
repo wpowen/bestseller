@@ -135,8 +135,19 @@ def build_batch() -> ChapterOutlineBatchInput:
                     "goal": "Introduce the investigation.",
                     "main_conflict": "沈砚必须在封港命令生效前确认信号来源。",
                     "hook_description": "封港倒计时只剩一小时。",
+                    "world_rule_refs": ["signal-countdown"],
+                    "world_rule_landing": "封港前一小时内，信号只会指向仍有行动资格的人。",
+                    "world_state_deltas": [
+                        {
+                            "entity": "沈砚",
+                            "state": "从旁观者变成信号追查者",
+                            "evidence": "沈砚接下港务官任务并进入码头。",
+                        }
+                    ],
                     "causal_contract": {
                         "chapter_function": "action",
+                        "opening_pressure": "封港命令倒计时一小时，异常信号正在消失。",
+                        "protagonist_flaw": "沈砚不愿承认自己上一次误判害同伴受罚。",
                         "pressure": "封港命令一小时后生效，沈砚必须立刻确认信号来源。",
                         "protagonist_desire": "沈砚要在封港前拿到异常信号的来源。",
                         "protagonist_choice": "沈砚选择接下调查任务并进入码头。",
@@ -144,8 +155,10 @@ def build_batch() -> ChapterOutlineBatchInput:
                         "resistance": "封港命令和倒计时压缩了他的调查窗口。",
                         "cost_or_tradeoff": "如果判断失误，沈砚会失去封港前最后一次追查机会。",
                         "gain_or_reveal": "沈砚获得异常信号来自码头深处的线索。",
+                        "payoff": "沈砚确认信号来自码头深处，获得第一枚可追查物证。",
                         "state_change": "沈砚从旁观封港变成承担调查责任的人。",
                         "next_reader_desire": "读者想知道一小时倒计时内他能否找到信号来源。",
+                        "tail_hook": "信号尽头传回沈砚自己的呼吸声。",
                     },
                     "scenes": [
                         {
@@ -157,6 +170,18 @@ def build_batch() -> ChapterOutlineBatchInput:
                             "purpose": {
                                 "story": "抛出封港命令并逼迫沈砚接下调查任务。",
                                 "emotion": "压迫感和抗拒同时上升。",
+                            },
+                            "entry_state": {
+                                "reader": "读者知道封港命令即将生效，但不知道信号来源。"
+                            },
+                            "exit_state": {
+                                "reader": "读者知道沈砚已接下任务，信号却反向指向他本人。"
+                            },
+                            "methodology_contract": {
+                                "conflict_stakes": "沈砚若不立刻入港，异常信号会被封港命令切断。",
+                                "information_control_mode": "先给倒计时和信号方向，暂不解释信号来源。",
+                                "signature_image": "黑水码头上空的信号灯一亮一灭，像一只闭不上的眼。",
+                                "cut_point": "信号尽头传回沈砚自己的呼吸声。",
                             },
                         }
                     ],
@@ -740,6 +765,8 @@ async def test_materialize_latest_chapter_outline_batch_updates_existing_planned
     assert result.source_artifact_id == artifact.id
     assert existing_chapter.title == "The Signal"
     assert existing_chapter.chapter_goal == "Introduce the investigation."
+    assert existing_chapter.metadata_json["world_rule_refs"] == ["signal-countdown"]
+    assert existing_chapter.metadata_json["world_state_deltas"][0]["entity"] == "沈砚"
     assert existing_scene.title == "Silent Dock"
     assert stale_chapter in session.deleted
     assert workflow_runs[0].metadata_json["chapters_updated"] == 1
@@ -1039,6 +1066,8 @@ async def test_materialize_chapter_outline_batch_skips_immutable_chapters_for_ca
                     "hook_description": "信号源指向港口暗门后的第二枚印记。",
                     "causal_contract": {
                         "chapter_function": "action",
+                        "opening_pressure": "封港倒计时继续压缩，暗门信号即将消失。",
+                        "protagonist_flaw": "沈砚急于证明上一轮判断没有错。",
                         "pressure": "封港命令一小时后生效，沈砚必须立刻确认信号来源。",
                         "protagonist_desire": "沈砚要在封港前拿到异常信号的来源。",
                         "protagonist_choice": "沈砚选择接下调查任务并进入码头。",
@@ -1046,8 +1075,10 @@ async def test_materialize_chapter_outline_batch_skips_immutable_chapters_for_ca
                         "resistance": "封港命令和倒计时压缩了他的调查窗口。",
                         "cost_or_tradeoff": "如果判断失误，沈砚会失去封港前最后一次追查机会。",
                         "gain_or_reveal": "沈砚获得异常信号来自码头深处的线索。",
+                        "payoff": "沈砚确认暗门后的第二枚印记。",
                         "state_change": "沈砚从旁观封港变成承担调查责任的人。",
                         "next_reader_desire": "读者想知道一小时倒计时内他能否找到信号来源。",
+                        "tail_hook": "暗门后第二枚印记反向亮起。",
                     },
                     "scenes": [
                         {
@@ -1057,6 +1088,14 @@ async def test_materialize_chapter_outline_batch_skips_immutable_chapters_for_ca
                             "purpose": {
                                 "story": "封港命令逼迫沈砚接下调查任务。",
                                 "emotion": "压迫感和抗拒同时上升。",
+                            },
+                            "entry_state": {"reader": "读者知道暗门信号即将消失。"},
+                            "exit_state": {"reader": "读者知道第二枚印记反向亮起。"},
+                            "methodology_contract": {
+                                "conflict_stakes": "沈砚若错过暗门，封港后再无追查窗口。",
+                                "information_control_mode": "先展示暗门信号，不解释印记来源。",
+                                "signature_image": "暗门缝里亮起第二枚潮湿印记。",
+                                "cut_point": "第二枚印记反向亮起。",
                             },
                         }
                     ],

@@ -300,6 +300,7 @@ class TestNamingConsistencyCheck:
             "林渊把铜钱按在掌心，铜钱按在符纸边缘不动。"
             "朱砂又被雨水冲开，齐备的器物只剩半数。"
             "林渊捏起康熙铜钱，康熙铜钱背面的锈色压住镜纹。"
+            "林渊把铜钱换到左手，铜钱换到右手时仍在发烫。"
         )
         violations = check.run(text, _ctx_with_allowed(inv))
         assert violations == []
@@ -372,6 +373,50 @@ class TestNamingConsistencyCheck:
             "元门只是门楣残字，元门旁边没有活人。"
             "钱封在纸包里，钱封外皮被雨泡开。"
             "钱婆婆拿毛笔写了两遍，毛笔写出的不是新名字。"
+        )
+
+        violations = check.run(text, _ctx_with_allowed(inv))
+
+        assert violations == []
+
+    def test_zh_qingnang_audit_fragments_do_not_create_rogue_names(self) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("林渊", "苏婉宁", "钱婆婆", "赵彤彤"))
+        text = (
+            "铜钱贴着门缝发烫，铜钱贴着门缝又震了一下。"
+            "银雾和银雾从镜面里漫出来，和银雾一起压住走廊。"
+            "老张临死前留下回执，张临死不是新角色。"
+            "镜中那张麻木的脸转向外面，张麻木只是画面。"
+            "玉镯碎成八瓣，碎成八瓣的声音很脆。"
+            "那张惨白的皮绷在骨头上，张惨白和皮绷都不是人名。"
+            "四面八方同时传来回声，方同时不是角色。"
+            "黄铜框镜子压在枕边，黄铜框只是物件。"
+            "黑暗里一张无五官的脸抬起来，张无不是姓名。"
+            "镜面里那张无眼的脸靠近，那张无眼也不是姓名。"
+            "林渊把铜钱压在伤口边缘，铜钱压上纸页也没有变色。"
+            "卷宗写着周氏夫妇死于沈家，另一页也写死于沈家宅中。"
+            "周老板从怀里掏出一张黄纸，后来又抽出两张黄纸。"
+            "铜钱落地后没有滚动，那枚铜钱落在纸页中央。"
+            "铜钱还在掌心发烫，那枚铜钱还贴着旧账页。"
+            "铜钱碎片硌进掌心，铜钱碎片边缘还沾着血。"
+            "他被茅山术反噬，茅山术不是新角色名。"
+            "苏警官在走廊外敲门，苏警官只是苏婉宁的职务称呼。"
+            "赵彤彤的名字被写在账页上，赵彤彤不是误报。"
+        )
+
+        violations = check.run(text, _ctx_with_allowed(inv))
+
+        assert violations == []
+
+    def test_zh_qingnang_chapter_first_action_fragments_do_not_create_rogue_names(
+        self,
+    ) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("林渊", "王建业"))
+        text = (
+            "皮鞋踩在水泥台阶上闷响。林渊把铜钱塞进口袋。"
+            "零点之前，张配送来的单子还压在柜台上。"
+            "第三格和第四格之间的缝隙有点不对，和第四格相连的铜齿发暗。"
         )
 
         violations = check.run(text, _ctx_with_allowed(inv))

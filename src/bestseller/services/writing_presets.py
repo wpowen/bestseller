@@ -19,14 +19,14 @@ def _dedupe_string_list(values: list[str]) -> list[str]:
 
 
 class ChapterWordPolicy(BaseModel):
-    # Chapter envelope locked to 1800-3000 chars (target 2200) — see
+    # Chapter envelope locked to 1800-3500 chars (target 2200) — see
     # ``config/default.yaml::generation.words_per_chapter`` and
     # ``services/invariants.py::_derive_length_envelope``. Keep all three
     # in sync; the L4 length-stability gate reads from the project
     # invariants which fall back to these defaults.
     min: int = Field(default=1800, ge=500)
     target: int = Field(default=2200, ge=500)
-    max: int = Field(default=3000, ge=500)
+    max: int = Field(default=3500, ge=500)
 
 
 class PlatformPreset(BaseModel):
@@ -399,7 +399,7 @@ _PLATFORM_PRESETS: list[dict[str, Any]] = [
                 "dialogue_ratio": 0.50,
             },
             "serialization": {
-                "opening_mandate": "First paragraph must establish voice and emotional stakes. Short chapters (1800-3000 chars) optimized for mobile reading.",
+                "opening_mandate": "First paragraph must establish voice and emotional stakes. Short chapters (1800-3500 chars) optimized for mobile reading.",
                 "chapter_ending_rule": "End on an emotional high, a question, or a dramatic reveal. Readers vote and comment — give them reasons to.",
             },
         },
@@ -3718,7 +3718,7 @@ def get_genre_preset_dimensions() -> dict[str, dict[str, object]]:
 @lru_cache(maxsize=1)
 def load_writing_preset_catalog() -> WritingPresetCatalog:
     return WritingPresetCatalog(
-        chapter_word_policy=ChapterWordPolicy(min=1800, target=2200, max=3000),
+        chapter_word_policy=ChapterWordPolicy(min=1800, target=2200, max=3500),
         platform_presets=[PlatformPreset.model_validate(item) for item in _PLATFORM_PRESETS],
         genre_presets=[
             GenrePreset.model_validate(_enrich_genre_preset_payload(item))

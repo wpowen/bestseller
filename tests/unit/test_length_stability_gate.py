@@ -165,11 +165,14 @@ def test_evaluate_chapter_length_hard_min_promotes_short_commercial_chapter_to_b
 
 
 def test_evaluate_chapter_length_hard_max_blocks_overlong_commercial_chapter() -> None:
+    # CHINESE_CHAPTER_HARD_MAX_WORDS was raised from 3500 → 4500 (2026-05-26) to
+    # reduce false positives when auto-repair iterations overshoot.  The hard-max
+    # gate should still BLOCK chapters that exceed the new ceiling (4500).
     report = evaluate_chapter_length(
-        word_count=3501,
+        word_count=CHINESE_CHAPTER_HARD_MAX_WORDS + 1,
         min_words=2000,
         target_words=2600,
-        max_words=4000,
+        max_words=CHINESE_CHAPTER_HARD_MAX_WORDS,
         hard_max_words=CHINESE_CHAPTER_HARD_MAX_WORDS,
     )
 

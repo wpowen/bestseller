@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def _load_build_report():
-    path = Path(__file__).resolve().parents[2] / "scripts/audit_qingnang_canon_pipeline_state.py"
+    path = Path(__file__).resolve().parents[2] / "scripts/_deprecated/qingnang_repair/audit_qingnang_canon_pipeline_state.py"
     spec = importlib.util.spec_from_file_location("audit_qingnang_canon_pipeline_state", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 
 from bestseller.domain.enums import SceneStatus
+from bestseller.services import drafts
 from bestseller.services.drafts import maybe_prepare_chapter_auto_repair
 
 
@@ -180,6 +181,51 @@ async def test_metadata_retention_code_triggers_repair_without_quality_report() 
     assert "第六个是谁" in scene.metadata_json["auto_repair_hint"]
     assert "倒计时" in scene.metadata_json["auto_repair_hint"]
     assert scene.metadata_json["auto_repair_block_codes"] == ["HOOK_ECHO_MISSING"]
+
+
+@pytest.mark.asyncio
+async def test_auto_repair_total_attempts_accumulates_across_invocations() -> None:
+    """Regression: 青囊不语问阴阳 ch1 looped because the intra-run counter
+    reset to 1 each ``chapter_pipeline`` invocation. The cumulative
+    ``auto_repair_total_attempts`` field now accumulates across calls so
+    the pipeline can refuse a chapter that has spent its cross-run
+    budget (see settings.chapter_auto_repair_total_max_attempts)."""
+
+    chapter = FakeChapter(
+        metadata_json={"auto_repair_last_block_codes": ["CAST_VIOLATION"]}
+    )
+    scene = FakeScene(chapter_id=chapter.id)
+    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+
+    triggered, _ = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("CAST_VIOLATION",),
+        attempt_number=1,
+    )
+    assert triggered is True
+    assert chapter.metadata_json["auto_repair_total_attempts"] == 1
+    # Intra-run counter is just whatever ``attempt_number`` says.
+    assert chapter.metadata_json["auto_repair_attempts"] == 1
+
+    # Simulate a fresh pipeline run hitting the same chapter — intra-run
+    # ``attempt_number`` resets to 1 but the cumulative counter must
+    # carry forward.
+    chapter.metadata_json["auto_repair_last_block_codes"] = ["CAST_VIOLATION"]
+    scene2 = FakeScene(chapter_id=chapter.id)
+    session2 = FakeSession(scalar_queue=[None], scalars_queue=[[scene2]])
+
+    triggered2, _ = await maybe_prepare_chapter_auto_repair(
+        session2,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("CAST_VIOLATION",),
+        attempt_number=1,
+    )
+    assert triggered2 is True
+    assert chapter.metadata_json["auto_repair_total_attempts"] == 2
+    assert chapter.metadata_json["auto_repair_attempts"] == 1
 
 
 @pytest.mark.asyncio
@@ -698,7 +744,8 @@ async def test_legacy_length_block_low_alias_triggers_block_low_repair() -> None
     assert codes == ("CHAPTER_LENGTH_BLOCK_LOW",)
     assert chapter.production_state == "pending"
     assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
-    assert "大幅扩写" in scenes[0].metadata_json["auto_repair_hint"]
+    assert "受控补写" in scenes[0].metadata_json["auto_repair_hint"]
+    assert "超过3500字视为失败" in scenes[0].metadata_json["auto_repair_hint"]
     assert scenes[0].target_word_count == 2520
 
 
@@ -743,6 +790,125 @@ async def test_block_low_after_overlong_trim_restores_publishable_scene_budgets(
 
 
 @pytest.mark.asyncio
+async def test_block_low_uses_original_scene_budget_and_publishable_sum_cap() -> None:
+    chapter = FakeChapter(chapter_number=2)
+    scenes = [
+        FakeScene(
+            chapter_id=chapter.id,
+            scene_number=i,
+            target_word_count=1608,
+            metadata_json={"auto_repair_original_target_word_count": 550},
+        )
+        for i in range(1, 5)
+    ]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["CHAPTER_LENGTH_BLOCK_LOW"],
+            "length_stability": {
+                "word_count": 1323,
+                "target_words": 2200,
+                "min_words": 2000,
+                "max_words": 3500,
+            },
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("BLOCK_LOW",),
+        attempt_number=3,
+    )
+
+    assert triggered is True
+    assert codes == ("CHAPTER_LENGTH_BLOCK_LOW",)
+    assert sum(scene.target_word_count for scene in scenes) <= 3500
+    for scene in scenes:
+        assert scene.target_word_count == 825
+        assert scene.metadata_json["auto_repair_original_target_word_count"] == 550
+        assert scene.metadata_json["auto_repair_adjusted_target_word_count"] == 825
+        assert scene.metadata_json["auto_repair_min_scene_target_floor"] == 688
+
+
+@pytest.mark.asyncio
+async def test_conflicting_length_codes_follow_latest_length_report_direction() -> None:
+    chapter = FakeChapter(
+        metadata_json={"auto_repair_last_block_codes": ["CHAPTER_TOO_SHORT"]}
+    )
+    scenes = [
+        FakeScene(chapter_id=chapter.id, scene_number=1, target_word_count=550),
+        FakeScene(chapter_id=chapter.id, scene_number=2, target_word_count=550),
+        FakeScene(chapter_id=chapter.id, scene_number=3, target_word_count=550),
+        FakeScene(chapter_id=chapter.id, scene_number=4, target_word_count=550),
+    ]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["LENGTH_OVER"],
+            "length_stability": {
+                "issue_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+                "word_count": 3156,
+                "target_words": 2200,
+                "min_words": 2000,
+                "max_words": 3000,
+            },
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("BLOCK_LOW", "BLOCK_HIGH", "CHAPTER_TOO_SHORT"),
+    )
+
+    assert triggered is True
+    assert codes == ("LENGTH_OVER",)
+    for scene in scenes:
+        assert scene.target_word_count < 550
+        assert scene.metadata_json["auto_repair_block_codes"] == ["LENGTH_OVER"]
+        assert "字数过长" in scene.metadata_json["auto_repair_hint"]
+        assert "大幅扩写" not in scene.metadata_json["auto_repair_hint"]
+
+
+@pytest.mark.asyncio
+async def test_metadata_quality_bundle_codes_merge_with_latest_length_report() -> None:
+    chapter = FakeChapter(
+        metadata_json={"auto_repair_last_block_codes": ["SCENE_JUMP_UNRESOLVED"]}
+    )
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1, target_word_count=550)]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["LENGTH_OVER"],
+            "length_stability": {
+                "issue_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+                "word_count": 3156,
+                "target_words": 2200,
+                "min_words": 2000,
+                "max_words": 3000,
+            },
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("BLOCK_HIGH", "SCENE_JUMP_UNRESOLVED"),
+    )
+
+    assert triggered is True
+    assert codes == ("SCENE_JUMP_UNRESOLVED", "LENGTH_OVER")
+    hint = scenes[0].metadata_json["auto_repair_hint"]
+    assert "补齐场景跳转桥" in hint
+    assert "字数过长" in hint
+    assert scenes[0].target_word_count < 550
+
+
+@pytest.mark.asyncio
 async def test_block_low_clamps_legacy_huge_scene_budget() -> None:
     chapter = FakeChapter(chapter_number=347)
     scenes = [
@@ -773,9 +939,9 @@ async def test_block_low_clamps_legacy_huge_scene_budget() -> None:
     assert triggered is True
     assert codes == ("CHAPTER_LENGTH_BLOCK_LOW",)
     for scene in scenes:
-        assert scene.target_word_count == 3200
+        assert scene.target_word_count == 1920
         assert scene.metadata_json["auto_repair_target_word_count_clamped"] is True
-        assert scene.metadata_json["auto_repair_scene_target_cap"] == 3200
+        assert scene.metadata_json["auto_repair_scene_target_cap"] == 1920
 
 
 @pytest.mark.asyncio
@@ -958,21 +1124,31 @@ async def test_block_high_resets_scenes_with_trim_hint_and_reduced_target() -> N
 
 
 @pytest.mark.asyncio
-async def test_existing_auto_repair_hint_is_preserved_across_cycles() -> None:
-    """Successive repair cycles must stack hints, not wipe them."""
+async def test_existing_auto_repair_hint_is_replaced_across_cycles() -> None:
+    """Repair attempts must not accumulate stale emergency prompts."""
     chapter = FakeChapter()
     scenes = [
         FakeScene(
             chapter_id=chapter.id,
             scene_number=1,
-            metadata_json={"auto_repair_hint": "first-cycle hint"},
-            target_word_count=1500,
+            metadata_json={
+                "auto_repair_hint": "first-cycle hint",
+                "auto_repair_block_codes": ["OLD_BLOCK"],
+                "auto_repair_original_target_word_count": 550,
+                "auto_repair_adjusted_target_word_count": 999,
+            },
+            target_word_count=999,
         ),
     ]
     report = FakeQualityReport(
         report_json={
             "blocking_codes": ["BLOCK_LOW"],
-            "length_stability": {"word_count": 4000, "target_words": 6400},
+            "length_stability": {
+                "word_count": 1981,
+                "target_words": 2200,
+                "min_words": 2000,
+                "max_words": 3500,
+            },
         },
     )
     session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
@@ -984,9 +1160,105 @@ async def test_existing_auto_repair_hint_is_preserved_across_cycles() -> None:
         repairable_codes=("BLOCK_LOW",),
     )
     assert triggered is True
-    merged = scenes[0].metadata_json["auto_repair_hint"]
-    assert merged.startswith("first-cycle hint\n")
-    assert "大幅扩写" in merged
+    hint = scenes[0].metadata_json["auto_repair_hint"]
+    assert "first-cycle hint" not in hint
+    assert "大幅扩写" in hint
+    assert scenes[0].target_word_count == 2310
+    assert scenes[0].metadata_json["auto_repair_block_codes"] == ["BLOCK_LOW"]
+    assert scenes[0].metadata_json["auto_repair_original_target_word_count"] == 550
+
+
+@pytest.mark.asyncio
+async def test_timeline_auto_repair_hint_includes_exact_anchor_replacements() -> None:
+    chapter = FakeChapter(
+        metadata_json={
+            "auto_repair_last_block_codes": ["TIMELINE_INCONSISTENT"],
+            "retention_gate_last_findings": [
+                {
+                    "code": "TIMELINE_INCONSISTENT",
+                    "evidence": {
+                        "violations": [
+                            {
+                                "found_anchor": "三十年前",
+                                "canonical_anchor": "23 年前",
+                                "paragraph_idx": 55,
+                                "detail": "林正淳第一次走进十七栋 happened 23 年前, not 30",
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+    )
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
+    report = FakeQualityReport(report_json={"blocking_codes": []})
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("TIMELINE_INCONSISTENT",),
+    )
+
+    assert triggered is True
+    assert codes == ("TIMELINE_INCONSISTENT",)
+    hint = scenes[0].metadata_json["auto_repair_hint"]
+    assert "时间线修复必须做局部替换" in hint
+    assert "将“三十年前”改为正典锚点“23 年前”" in hint
+    assert "不得重排全章事件" in hint
+
+
+@pytest.mark.asyncio
+async def test_scene_jump_auto_repair_hint_includes_exact_bridge_locations() -> None:
+    chapter = FakeChapter(
+        metadata_json={
+            "auto_repair_last_block_codes": ["SCENE_JUMP_UNRESOLVED"],
+            "retention_gate_last_findings": [
+                {
+                    "code": "SCENE_JUMP_UNRESOLVED",
+                    "evidence": {
+                        "jumps": [
+                            {
+                                "from": "十七栋",
+                                "to": "城南旧事馆",
+                                "paragraph_idx": 57,
+                                "detail": "abrupt jump 十七栋 → 城南旧事馆",
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+    )
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
+    report = FakeQualityReport(report_json={"blocking_codes": []})
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("SCENE_JUMP_UNRESOLVED",),
+    )
+
+    assert triggered is True
+    assert codes == ("SCENE_JUMP_UNRESOLVED",)
+    hint = scenes[0].metadata_json["auto_repair_hint"]
+    assert "场景跳转修复必须做局部补桥" in hint
+    assert "在“十七栋”到“城南旧事馆”之间补一到两句可见转场动作" in hint
+    assert "不得新增整场戏" in hint
+
+
+def test_auto_repair_hint_merge_deduplicates_repeated_lines() -> None:
+    merged = drafts._merge_auto_repair_hint(
+        "本章触发 TIMELINE_INCONSISTENT，请按对应质量门约束重写。\n旧提示",
+        "本章触发 TIMELINE_INCONSISTENT，请按对应质量门约束重写。\n新提示",
+    )
+
+    assert merged.count("TIMELINE_INCONSISTENT") == 1
+    assert "旧提示" in merged
+    assert "新提示" in merged
 
 
 @pytest.mark.asyncio

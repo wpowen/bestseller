@@ -237,3 +237,18 @@ def test_compile_distilled_strategy_card_returns_none_without_aggregate(tmp_path
     )
 
     assert card is None
+
+
+def test_compile_distilled_strategy_card_uses_suspense_specific_aggregate() -> None:
+    card = compile_distilled_strategy_card(
+        category_key="suspense-mystery",
+        genre="惊悚灵异",
+        sub_genre="驱魔探案综合",
+        project_context={"unique_hook": "民俗风水探案用现实证据链拆镜债伪证"},
+    )
+
+    assert card is not None
+    assert card.aggregate_key == "suspense-mystery"
+    assert "现实证据链完整度" in card.required_state_variables
+    assert any("证据" in item for item in card.reader_reward_mix + card.chapter_execution_patterns)
+    assert not any("siege_under_pressure" in item for item in card.required_state_variables)

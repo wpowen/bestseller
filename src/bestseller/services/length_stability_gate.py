@@ -58,12 +58,17 @@ __all__ = [
 PLATFORM_CHAPTER_WORD_WINDOWS: dict[str, dict[str, int]] = {
     "qimao": {"min": 2500, "target": 3200, "max": 4000},
     "qidian": {"min": 3000, "target": 3700, "max": 4500},
-    "tomato": {"min": 2000, "target": 2500, "max": 3000},
+    "tomato": {"min": 2000, "target": 2500, "max": 3500},
     "tomato_short": {"min": 1800, "target": 2500, "max": 3500},
 }
 
 CHINESE_CHAPTER_HARD_MIN_WORDS = 2000
-CHINESE_CHAPTER_HARD_MAX_WORDS = 3500
+# NOTE (2026-05-26): raised from 3500 → 4500 to reduce false positives when
+# auto-repair iterations overshoot the 2200-target band.  Length is a
+# secondary quality signal; the LLM judge gates story quality.  Repair will
+# still trim when chapter exceeds the per-platform band, but exceeding the
+# previous 3500 floor no longer immediately exhausts the auto-repair budget.
+CHINESE_CHAPTER_HARD_MAX_WORDS = 4500
 
 
 _PLATFORM_ALIASES: dict[str, tuple[str, ...]] = {

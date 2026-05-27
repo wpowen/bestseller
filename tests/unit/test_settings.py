@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from bestseller.settings import load_settings
+from bestseller.settings import (
+    apply_runtime_llm_profile,
+    load_settings,
+    runtime_llm_profile_payload,
+    set_runtime_llm_profile,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -107,6 +112,7 @@ def test_default_settings_treat_retention_codes_as_auto_repairable() -> None:
         "SIGNATURE_SCENE_MISSING",
         "EXPOSITION_DUMP",
         "CAST_VIOLATION",
+        "CHAPTER_OPENING_REPETITION",
     } <= repairable
 
 
@@ -317,3 +323,43 @@ logging:
     assert settings.database.url == "postgresql+asyncpg://dotenv-local"
     assert settings.llm.mock is True
     assert settings.retrieval.top_k == 17
+
+
+def test_runtime_llm_profile_overrides_roles_without_reloading_env(tmp_path: Path) -> None:
+    base = load_settings(env={})
+    settings = base.model_copy(
+        update={
+            "artifact_store": base.artifact_store.model_copy(
+                update={"local_dir": str(tmp_path)}
+            )
+        }
+    )
+
+    payload = set_runtime_llm_profile(settings, "deepseek")
+    effective = apply_runtime_llm_profile(settings)
+
+    assert payload["active_key"] == "deepseek"
+    assert effective.llm.writer.model == "deepseek/deepseek-v4-flash"
+    assert effective.llm.writer.api_base == "https://api.deepseek.com"
+    assert effective.llm.writer.api_key_env == "DEEPSEEK_API_KEY"
+    assert effective.llm.writer.model_override == "deepseek/deepseek-v4-flash"
+    assert settings.llm.writer.model != effective.llm.writer.model
+
+
+def test_runtime_llm_profile_payload_redacts_key_values(tmp_path: Path) -> None:
+    base = load_settings(env={})
+    settings = base.model_copy(
+        update={
+            "artifact_store": base.artifact_store.model_copy(
+                update={"local_dir": str(tmp_path)}
+            )
+        }
+    )
+
+    payload = set_runtime_llm_profile(settings, "nvidia")
+    profile = next(item for item in payload["profiles"] if item["key"] == "nvidia")
+
+    assert payload["active_key"] == "nvidia"
+    assert profile["api_key_envs"] == ["NVIDIA_API_KEY"]
+    assert "api_key" not in profile
+    assert runtime_llm_profile_payload(settings)["writer_model"] == "openai/z-ai/glm-5.1"

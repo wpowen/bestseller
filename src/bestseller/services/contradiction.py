@@ -56,7 +56,6 @@ from bestseller.infra.db.models import (
     ProjectModel,
     RelationshipEventModel,
     SceneCardModel,
-    SceneContractModel,
     TimelineEventModel,
 )
 from bestseller.services.writing_profile import is_english_language
@@ -485,8 +484,6 @@ async def _check_timeline_ordering(
 ) -> list[ContradictionViolation]:
     """Check that recent timeline events have monotonically increasing story_order."""
     violations: list[ContradictionViolation] = []
-
-    lookback_start = max(1, chapter_number - 5)
 
     stmt = (
         select(TimelineEventModel)
@@ -1327,19 +1324,11 @@ async def _check_character_name_consistency(
                     f"registered character '{ident.name}'. "
                     "Add as alias or correct to canonical name."
                 )
-                recommendation = (
-                    f"Either register '{name}' as an alias for '{ident.name}' "
-                    "or rewrite the scene to use the canonical name."
-                )
             else:
                 msg = (
                     f"未注册的角色名「{name}」与已注册角色"
                     f"「{ident.name}」同姓，可能是名字漂移。"
                     "请添加为别名或修正为标准名称。"
-                )
-                recommendation = (
-                    f"将「{name}」注册为「{ident.name}」的别名，"
-                    "或将场景中的名称修正为「{ident.name}」。"
                 )
             violations.append(
                 ContradictionViolation(
@@ -1609,17 +1598,12 @@ async def _check_state_transition(
                 f"('{prev_exit}') to free ('{current_entry}') without an "
                 "intervening rescue or escape scene."
             )
-            recommendation = (
-                "Add a scene showing the escape/rescue, or revise the "
-                "entry_state to reflect that characters are still trapped."
-            )
         else:
             msg = (
                 f"角色状态跳跃：上一场离场状态为「{prev_exit}」（被困/被抓），"
                 f"当前场入场状态为「{current_entry}」（已逃脱/获救），"
                 "中间缺少救援或逃脱场景。"
             )
-            recommendation = "请插入一场展示逃脱/救援过程的情景，或修正入场状态。"
         violations.append(
             ContradictionViolation(
                 check_type="state_transition_unexplained",
@@ -2068,28 +2052,85 @@ def _scan_premature_death_in_text(
 
     name_positions = _all_name_positions()
 
-    def _closest_name(idx: int) -> str | None:
+    def _closest_name(idx: int) -> tuple[str, int] | None:
         """Find the character name whose nearest occurrence is closest to
         the death-keyword position ``idx``, within the proximity window.
-        Returns the canonical name or ``None`` when no name is in range.
+        Returns ``(canonical_name, position)`` or ``None`` when no name is in
+        range.
         """
-        best: tuple[int, str] | None = None
+        best: tuple[int, str, int] | None = None
         for pos, canonical in name_positions:
             if abs(pos - idx) > window:
                 continue
             distance = abs(pos - idx)
             if best is None or distance < best[0]:
-                best = (distance, canonical)
-        return best[1] if best else None
+                best = (distance, canonical, pos)
+        return (best[1], best[2]) if best else None
+
+    def _is_quote_speaker_attribution(
+        *,
+        name_canonical: str,
+        name_pos: int,
+        kw_idx: int,
+    ) -> bool:
+        """Avoid treating a speaker tag as the subject of quoted death prose.
+
+        Example: ``“他不是死了二十三年了吗？”王建业的声音尖起来。``
+        mentions 王建业 closest to ``死了`` only because 王建业 is the speaker
+        after the closing quote. The death subject is the pronoun inside the
+        quote, not 王建业.
+        """
+
+        if is_en or name_pos <= kw_idx:
+            return False
+        close_quote_positions = [
+            chapter_md.rfind(mark, kw_idx, name_pos)
+            for mark in ("”", '"', "’", "'")
+        ]
+        close_quote = max(close_quote_positions)
+        if close_quote < 0:
+            return False
+        open_quote_positions = [
+            chapter_md.rfind(mark, 0, kw_idx)
+            for mark in ("“", '"', "‘", "'")
+        ]
+        open_quote = max(open_quote_positions)
+        quote_text = chapter_md[open_quote + 1 : close_quote] if open_quote >= 0 else ""
+        if name_canonical in quote_text:
+            return False
+        between_quote_and_name = chapter_md[close_quote + 1 : name_pos]
+        if between_quote_and_name.strip(" \t\r\n，。！？、：；") != "":
+            return False
+        speaker_tail = chapter_md[name_pos : name_pos + len(name_canonical) + 10]
+        return any(
+            marker in speaker_tail
+            for marker in (
+                f"{name_canonical}说",
+                f"{name_canonical}问",
+                f"{name_canonical}喊",
+                f"{name_canonical}叫",
+                f"{name_canonical}道",
+                f"{name_canonical}低声",
+                f"{name_canonical}喃喃",
+                f"{name_canonical}开口",
+                f"{name_canonical}的声音",
+            )
+        )
 
     findings: list[tuple[str, str, str]] = []
     seen_keys: set[tuple[str, str]] = set()
 
-    def _record(name_canonical: str, kind: str, kw_idx: int) -> None:
+    def _record(name_canonical: str, kind: str, kw_idx: int, name_pos: int) -> None:
         # Check protected membership using the canonical (case-preserved)
         # form when CJK, casefolded when EN.
         compare_form = name_canonical.casefold() if is_en else name_canonical
         if compare_form not in protected_set:
+            return
+        if _is_quote_speaker_attribution(
+            name_canonical=name_canonical,
+            name_pos=name_pos,
+            kw_idx=kw_idx,
+        ):
             return
         key = (name_canonical, kind)
         if key in seen_keys:
@@ -2113,7 +2154,8 @@ def _scan_premature_death_in_text(
                 attributed = _closest_name(hit)
                 if attributed is None:
                     continue
-                _record(attributed, kind, hit)
+                name_canonical, name_pos = attributed
+                _record(name_canonical, kind, hit, name_pos)
 
     # NOTE: no flashback exemption here.
     # The premature-death scanner targets *protected* characters whose

@@ -15,8 +15,12 @@ from bestseller.services.llm import (
     _rate_limit_fallback_until,
     complete_text,
 )
-from bestseller.settings import LLMRoleSettings, RetrySettings, load_settings
-
+from bestseller.settings import (
+    LLMRoleSettings,
+    RetrySettings,
+    load_settings,
+    set_runtime_llm_profile,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -226,6 +230,209 @@ def test_complete_text_uses_api_base_and_api_key_env_for_real_mode(
     asyncio.run(_run())
 
 
+def test_complete_text_uses_runtime_llm_profile_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class FakeUsage:
+        prompt_tokens = 12
+        completion_tokens = 34
+
+    class FakeMessage:
+        content = "runtime profile output"
+
+    class FakeChoice:
+        message = FakeMessage()
+        finish_reason = "stop"
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+        usage = FakeUsage()
+
+    class FakeLiteLLMModule:
+        @staticmethod
+        async def acompletion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return FakeResponse()
+
+    async def _run() -> None:
+        base = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "openai/not-used",
+                "BESTSELLER__LLM__WRITER__API_BASE": "https://unused.example/v1",
+                "BESTSELLER__LLM__WRITER__API_KEY_ENV": "UNUSED_KEY",
+                "BESTSELLER__LLM__WRITER__STREAM": "true",
+            }
+        )
+        settings = base.model_copy(
+            update={
+                "artifact_store": base.artifact_store.model_copy(
+                    update={"local_dir": str(tmp_path)}
+                )
+            }
+        )
+        set_runtime_llm_profile(settings, "nvidia")
+
+        result = await complete_text(
+            FakeSession(),
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+            ),
+        )
+
+        assert result.model_name == "openai/z-ai/glm-5.1"
+        assert captured_kwargs["model"] == "openai/z-ai/glm-5.1"
+        assert captured_kwargs["api_base"] == "https://integrate.api.nvidia.com/v1"
+        assert captured_kwargs["api_key"] == "test-nvidia-key"
+        assert captured_kwargs["stream"] is False
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
+    )
+    monkeypatch.setattr(
+        "bestseller.services.llm.get_runtime_env_value",
+        lambda name: "test-nvidia-key" if name == "NVIDIA_API_KEY" else None,
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_complete_text_forwards_deepseek_v4_thinking_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class FakeUsage:
+        prompt_tokens = 12
+        completion_tokens = 34
+
+    class FakeMessage:
+        content = "deepseek output"
+
+    class FakeChoice:
+        message = FakeMessage()
+        finish_reason = "stop"
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+        usage = FakeUsage()
+
+    class FakeLiteLLMModule:
+        @staticmethod
+        async def acompletion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return FakeResponse()
+
+    async def _run() -> None:
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__PLANNER__MODEL": "deepseek/deepseek-v4-flash",
+                "BESTSELLER__LLM__PLANNER__API_BASE": "https://api.deepseek.com",
+                "BESTSELLER__LLM__PLANNER__STREAM": "false",
+                "BESTSELLER__LLM__PLANNER__THINKING_TYPE": "enabled",
+                "BESTSELLER__LLM__PLANNER__REASONING_EFFORT": "high",
+            }
+        )
+        result = await complete_text(
+            FakeSession(),
+            settings,
+            LLMCompletionRequest(
+                logical_role="planner",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+            ),
+        )
+
+        assert result.content == "deepseek output"
+        assert captured_kwargs["model"] == "deepseek/deepseek-v4-flash"
+        assert captured_kwargs["api_base"] == "https://api.deepseek.com"
+        assert captured_kwargs["extra_body"] == {"thinking": {"type": "enabled"}}
+        assert captured_kwargs["reasoning_effort"] == "high"
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_complete_text_disables_deepseek_v4_thinking_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class FakeUsage:
+        prompt_tokens = 12
+        completion_tokens = 34
+
+    class FakeMessage:
+        content = "deepseek output"
+
+    class FakeChoice:
+        message = FakeMessage()
+        finish_reason = "stop"
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+        usage = FakeUsage()
+
+    class FakeLiteLLMModule:
+        @staticmethod
+        async def acompletion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return FakeResponse()
+
+    async def _run() -> None:
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "deepseek/deepseek-v4-flash",
+                "BESTSELLER__LLM__WRITER__API_BASE": "https://api.deepseek.com",
+                "BESTSELLER__LLM__WRITER__STREAM": "false",
+            }
+        )
+        result = await complete_text(
+            FakeSession(),
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+            ),
+        )
+
+        assert result.content == "deepseek output"
+        assert captured_kwargs["model"] == "deepseek/deepseek-v4-flash"
+        assert captured_kwargs["api_base"] == "https://api.deepseek.com"
+        assert captured_kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
+        assert "reasoning_effort" not in captured_kwargs
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
 def test_complete_text_applies_request_max_tokens_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -410,6 +617,7 @@ def test_complete_text_allows_minimax_output_override_above_role_cap(
 
         assert result.content == "full chapter output"
         assert captured_kwargs["max_tokens"] == 12000
+        assert captured_kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
 
     monkeypatch.setattr(
         "bestseller.services.llm._get_litellm",
@@ -419,6 +627,91 @@ def test_complete_text_allows_minimax_output_override_above_role_cap(
     import asyncio
 
     asyncio.run(_run())
+
+
+def test_empty_length_response_retries_with_lower_output_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_caps: list[int | None] = []
+
+    async def fake_call(request, role_settings):  # type: ignore[no-untyped-def]
+        seen_caps.append(request.max_tokens_override)
+        if len(seen_caps) == 1:
+            raise ValueError(
+                "LLM response content is empty (finish_reason='length', "
+                "output_tokens=12288)."
+            )
+        return ("ok", 10, 20, "stop", None, None)
+
+    async def _run() -> None:
+        result = await _call_litellm_with_retry(
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+                max_tokens_override=12288,
+            ),
+            LLMRoleSettings(
+                model="openai/MiniMax-M2.7-highspeed",
+                temperature=0.7,
+                max_tokens=32768,
+                timeout_seconds=30,
+            ),
+            RetrySettings(max_attempts=2),
+        )
+        assert result[0] == "ok"
+
+    monkeypatch.setattr("bestseller.services.llm._call_litellm", fake_call)
+
+    import asyncio
+
+    asyncio.run(_run())
+
+    assert seen_caps == [12288, 8232]
+
+
+def test_empty_length_response_lowers_prose_output_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_caps: list[int | None] = []
+
+    async def fake_call(request, role_settings):  # type: ignore[no-untyped-def]
+        seen_caps.append(request.max_tokens_override)
+        if len(seen_caps) == 1:
+            raise ValueError(
+                "LLM response content is empty (finish_reason='length', "
+                "output_tokens=12288)."
+            )
+        return ("full chapter", 10, 20, "stop", None, None)
+
+    async def _run() -> None:
+        result = await _call_litellm_with_retry(
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+                prompt_template="chapter_first_writer",
+                max_tokens_override=12288,
+            ),
+            LLMRoleSettings(
+                model="openai/MiniMax-M2.7-highspeed",
+                temperature=0.7,
+                max_tokens=32768,
+                timeout_seconds=30,
+            ),
+            RetrySettings(max_attempts=2),
+        )
+        assert result[0] == "full chapter"
+
+    monkeypatch.setattr("bestseller.services.llm._call_litellm", fake_call)
+
+    import asyncio
+
+    asyncio.run(_run())
+
+    assert seen_caps == [12288, 8232]
 
 
 def test_complete_text_fails_over_to_rate_limit_fallback_model(

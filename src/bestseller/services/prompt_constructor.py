@@ -58,6 +58,11 @@ from bestseller.services.invariants import (
 )
 from bestseller.services.kernel_composer import render_narrative_richness_prompt_block
 from bestseller.services.market_constraint_compiler import render_chapter_constraints_block
+from bestseller.services.methodology_compiler import (
+    ChapterPosition,
+    MethodologyStage,
+    compile_methodology,
+)
 from bestseller.services.reader_persona_simulator import render_persona_feedback_block
 from bestseller.services.voice_signature import render_voice_dna_block
 
@@ -724,14 +729,48 @@ def build_hype_constraints(
     return "\n".join(lines) if len(lines) > 1 else ""
 
 
-def build_methodology_inject(invariants: ProjectInvariants) -> str:
-    """Assemble forced methodology fragments.
+def build_methodology_inject(
+    invariants: ProjectInvariants,
+    *,
+    stage: MethodologyStage = MethodologyStage.PROSE_SCENE,
+    prompt_pack_key: str | None = None,
+    chapter_no: int | None = None,
+    chapter_position: ChapterPosition | None = None,
+    token_budget: int = 1500,
+) -> str:
+    """Assemble forced methodology fragments plus stage-aware methodology.
 
     These are treated as *unmodified* prose — the caller supplies them via
     ``invariants.forced_methodology_fragments``. Empty tuple → empty
-    section. Phase 1 treats this as a pass-through; Phase 3 will pick
-    per-chapter-beat fragments.
+    section. Calling with only ``invariants`` preserves the original legacy
+    block and appends compiled methodology only for zh paths.
     """
+
+    legacy = _legacy_forced_methodology(invariants)
+    compiled_text = ""
+    has_new_context = (
+        prompt_pack_key is not None
+        or chapter_no is not None
+        or chapter_position is not None
+        or stage is not MethodologyStage.PROSE_SCENE
+        or token_budget != 1500
+    )
+    if has_new_context and invariants.language.lower().startswith("zh"):
+        compiled = compile_methodology(
+            stage=stage,
+            prompt_pack_key=prompt_pack_key,
+            language=invariants.language,
+            chapter_no=chapter_no,
+            chapter_position=chapter_position,
+            token_budget=token_budget,
+        )
+        compiled_text = compiled.text
+
+    return "\n\n".join(section for section in (legacy, compiled_text) if section)
+
+
+def _legacy_forced_methodology(invariants: ProjectInvariants) -> str:
+    """Original build_methodology_inject behavior, preserved verbatim."""
 
     frags = invariants.forced_methodology_fragments
     if not frags:
@@ -794,6 +833,9 @@ def build_chapter_prompt(
     chapter_no: int | None = None,
     total_chapters: int | None = None,
     pacing_profile: str = "medium",
+    prompt_pack_key: str | None = None,
+    chapter_position: ChapterPosition | None = None,
+    methodology_token_budget: int = 1500,
     system: str = "",
     bible_slice: str = "",
     ranking_capability_profile_block: str = "",
@@ -814,6 +856,7 @@ def build_chapter_prompt(
     audit_report_block: str = "",
     scene_spec: str = "",
     prior_chapter_text: str | None = None,
+    linear_arc_summary_present: bool = False,
     preassigned_opening: OpeningArchetype | None = None,
     opening_pool: Sequence[OpeningArchetype] | None = None,
     cliffhanger_policy: CliffhangerPolicy | None = None,
@@ -947,7 +990,14 @@ def build_chapter_prompt(
         reader_contract_section=reader_contract,
         ledger_delta_section=ledger_section,
         audit_report_section=audit_section,
-        methodology_inject=build_methodology_inject(invariants),
+        methodology_inject=build_methodology_inject(
+            invariants,
+            stage=MethodologyStage.PROSE_SCENE,
+            prompt_pack_key=prompt_pack_key,
+            chapter_no=chapter_no,
+            chapter_position=chapter_position,
+            token_budget=methodology_token_budget,
+        ),
         hype_constraints=hype_section,
         diversity_constraints=build_diversity_constraints(
             invariants,
@@ -960,7 +1010,8 @@ def build_chapter_prompt(
         ),
         persona_feedback_section=persona_feedback_section,
         prior_chapter_tail=build_prior_chapter_tail(
-            prior_chapter_text, max_chars=prior_chapter_tail_chars
+        prior_chapter_text,
+        max_chars=300 if linear_arc_summary_present else prior_chapter_tail_chars,
         ),
         scene_spec=scene_spec,
         anti_slop_footer=build_anti_slop_footer(invariants.language),

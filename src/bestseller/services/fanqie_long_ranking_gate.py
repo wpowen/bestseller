@@ -43,6 +43,24 @@ _PRESSURE_TERMS = (
     "追杀",
     "危机",
     "债",
+    "少了我",
+    "少了一个人",
+    "刮擦",
+    "求救",
+    "子时",
+    "倒计时",
+    "敲门",
+    "三短一长",
+    "入账",
+    "认账",
+    "镜子",
+    "镜面",
+    "血",
+    "死",
+    "鬼",
+    "不在",
+    "消失",
+    "空的",
     "递解",
     "焚尸",
     "焚化",
@@ -56,6 +74,37 @@ _PRESSURE_TERMS = (
     "跪",
     "抢",
     "夺",
+    # ──────────────────────────────────────────────────────────────
+    # Sensory-anomaly tension cues — supernatural / horror / 民俗驱魔
+    # openings frequently signal pressure through body or object
+    # wrongness rather than direct threat words. Without these, the
+    # ``first_100_pressure_missing`` check falsely flagged otherwise
+    # strong "something is wrong" openings (青囊不语问阴阳 ch1, 2026-
+    # 05-25: 烫 / 旧疤 / 渗 / 水汽 / 跳 — all clear tension markers,
+    # none previously recognised). These tokens are intentionally
+    # narrow: each one alone signals anomaly/wrongness rather than
+    # routine description.
+    # ──────────────────────────────────────────────────────────────
+    "烫",        # hot/burning — physical wrongness on a normally-cool object
+    "渗",        # seeping — fluids/forces appearing where they shouldn't
+    "旧疤",      # old scar — implies past trauma still live
+    "异动",      # anomalous motion
+    "异常",      # abnormal
+    "异象",      # supernatural sign
+    "惊变",      # sudden change
+    "突变",      # mutation
+    "颤",        # trembling
+    "抽搐",      # twitching
+    "裂",        # cracking/splitting
+    "灼",        # scorching
+    "焦",        # burnt
+    "腥",        # bloody/fishy odor (visceral wrongness)
+    "嘶",        # hissing (object/creature wrongness)
+    "诡",        # uncanny
+    "邪",        # malevolent
+    "煞",        # ill-omen
+    "阴气",      # supernatural cold
+    "尸气",      # corpse-aura
     "threat",
     "forced",
     "must",

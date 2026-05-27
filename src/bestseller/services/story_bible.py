@@ -1606,10 +1606,8 @@ async def get_latest_character_state(
                     CharacterStateSnapshotModel.chapter_number < before_chapter_number,
                     and_(
                         CharacterStateSnapshotModel.chapter_number == before_chapter_number,
-                        or_(
-                            CharacterStateSnapshotModel.scene_number.is_(None),
-                            CharacterStateSnapshotModel.scene_number < before_scene_number,
-                        ),
+                        CharacterStateSnapshotModel.scene_number.is_not(None),
+                        CharacterStateSnapshotModel.scene_number < before_scene_number,
                     ),
                 )
             )
@@ -1646,6 +1644,7 @@ class EffectiveCharacterState:
     notes: str | None
     latest_chapter_number: int | None
     latest_scene_number: int | None
+    knowledge_state: dict[str, Any]
 
     # Delta-tracking — the value the field held BEFORE the most recent
     # change, plus the chapter number where the change was recorded.
@@ -1691,10 +1690,8 @@ async def get_effective_character_state(
                     CharacterStateSnapshotModel.chapter_number < before_chapter_number,
                     and_(
                         CharacterStateSnapshotModel.chapter_number == before_chapter_number,
-                        or_(
-                            CharacterStateSnapshotModel.scene_number.is_(None),
-                            CharacterStateSnapshotModel.scene_number < before_scene_number,
-                        ),
+                        CharacterStateSnapshotModel.scene_number.is_not(None),
+                        CharacterStateSnapshotModel.scene_number < before_scene_number,
                     ),
                 )
             )
@@ -1763,6 +1760,12 @@ async def get_effective_character_state(
     prev_state_chapter = max(change_chapters) if change_chapters else None
 
     latest = snapshots[0] if snapshots else None
+    if latest is not None and isinstance(latest.beliefs, list):
+        knowledge_state = {"knows": [str(item) for item in latest.beliefs if str(item).strip()]}
+    elif before_chapter_number is None and isinstance(character.knowledge_state_json, dict):
+        knowledge_state = dict(character.knowledge_state_json)
+    else:
+        knowledge_state = {}
     return EffectiveCharacterState(
         arc_state=arc_state,
         power_tier=power_tier,
@@ -1773,6 +1776,7 @@ async def get_effective_character_state(
         notes=latest.notes if latest is not None else None,
         latest_chapter_number=latest.chapter_number if latest is not None else None,
         latest_scene_number=latest.scene_number if latest is not None else None,
+        knowledge_state=knowledge_state,
         previous_arc_state=prev_arc,
         previous_power_tier=prev_power,
         previous_emotional_state=prev_emotion,
@@ -1861,7 +1865,7 @@ async def load_scene_story_bible_context(
                 "flaw": character.flaw,
                 "arc_state": effective.arc_state,
                 "power_tier": effective.power_tier,
-                "knowledge_state": character.knowledge_state_json,
+                "knowledge_state": effective.knowledge_state,
                 "voice_profile": character.voice_profile_json,
                 "moral_framework": character.moral_framework_json,
                 "ip_anchor": _ip_anchor if isinstance(_ip_anchor, dict) else None,

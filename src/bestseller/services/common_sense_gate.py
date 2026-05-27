@@ -40,15 +40,19 @@ def evaluate_common_sense_gate(
     findings: list[CommonSenseFinding] = []
     genre_mode = _genre_mode(genre, sub_genre)
 
-    findings.extend(_find_unexplained_bleeding(content))
+    findings.extend(_find_unexplained_bleeding(content, chapter_number=chapter_number))
     findings.extend(_find_ambiguous_or_conflicting_countdown(content))
     findings.extend(_find_remaining_time_arithmetic(content))
     findings.extend(_find_coin_state_jump(content))
+    findings.extend(_find_impossible_body_action_sounds(content))
     findings.extend(_find_stitched_chapter_markers(content, chapter_number=chapter_number))
     findings.extend(_find_unintroduced_mentor_reference(content, chapter_number=chapter_number))
     findings.extend(_find_repeated_rescue_or_debt_beat(content, chapter_number=chapter_number))
     findings.extend(_find_early_chapter_character_crowding(content, chapter_number=chapter_number))
     findings.extend(_find_rule_term_onboarding_failure(content, chapter_number=chapter_number))
+    findings.extend(_find_late_night_delivery_order(content, chapter_number=chapter_number))
+    findings.extend(_find_object_signal_overuse(content, chapter_number=chapter_number))
+    findings.extend(_find_lay_character_rule_knowledge_leak(content, chapter_number=chapter_number))
 
     blocking = [finding for finding in findings if finding.severity in {"high", "medium"}]
     return CommonSenseGateReport(
@@ -67,10 +71,18 @@ def _genre_mode(genre: str | None, sub_genre: str | None) -> str:
     return "default"
 
 
-def _find_unexplained_bleeding(text: str) -> list[CommonSenseFinding]:
+def _find_unexplained_bleeding(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
     findings: list[CommonSenseFinding] = []
     for match in re.finditer(r"(鼻血|流血|渗血|出血|血滴|血顺着)", text):
+        if _is_non_body_blood_marker(text, match):
+            continue
         window = text[max(0, match.start() - 220) : match.end() + 90]
+        if _is_continued_prior_chapter_bleeding(window, chapter_number=chapter_number):
+            continue
         if _has_bleeding_cause(window):
             continue
         findings.append(
@@ -82,6 +94,37 @@ def _find_unexplained_bleeding(text: str) -> list[CommonSenseFinding]:
             )
         )
     return findings
+
+
+def _is_non_body_blood_marker(text: str, match: re.Match[str]) -> bool:
+    """Ignore blood-colored glyphs/marks that are not a body state."""
+
+    marker = match.group(1)
+    suffix = text[match.end() : match.end() + 2]
+    prefix = text[max(0, match.start() - 8) : match.start()]
+    if marker == "出血" and suffix.startswith(("字", "线", "印", "纹", "光", "色")):
+        return True
+    if marker in {"渗血", "血滴"} and any(token in suffix for token in ("珠", "字", "线")):
+        return True
+    if marker in {"流血", "渗血", "出血", "血滴", "血顺着"} and any(
+        token in prefix for token in ("门缝", "门框", "镜面", "墙上", "地面", "铜钱")
+    ):
+        return True
+    if "门框" in prefix or "镜面" in prefix or "墙上" in prefix:
+        return suffix.startswith(("字", "线", "印", "纹"))
+    return False
+
+
+def _is_continued_prior_chapter_bleeding(
+    window: str,
+    *,
+    chapter_number: int | None,
+) -> bool:
+    if chapter_number is None or chapter_number <= 1:
+        return False
+    return any(marker in window for marker in ("还在", "仍在", "继续", "没止住")) and any(
+        body_part in window for body_part in ("拇指", "手指", "掌心", "手掌", "鼻血", "伤口", "旧伤")
+    )
 
 
 def _has_bleeding_cause(window: str) -> bool:
@@ -250,6 +293,22 @@ def _find_coin_state_jump(text: str) -> list[CommonSenseFinding]:
     return []
 
 
+def _find_impossible_body_action_sounds(text: str) -> list[CommonSenseFinding]:
+    findings: list[CommonSenseFinding] = []
+    pattern = r"(点了点头|点头|摇了摇头|摇头|颔首|眨眼)(?:的)?(声音|声响|声)"
+    for match in re.finditer(pattern, text):
+        window = text[max(0, match.start() - 60) : match.end() + 80]
+        findings.append(
+            CommonSenseFinding(
+                code="impossible_body_action_sound",
+                severity="medium",
+                message="身体动作被直接写成声音来源，例如点头/摇头本身不会发出声音。",
+                evidence={"phrase": match.group(0), "window": window.strip()},
+            )
+        )
+    return findings
+
+
 def _find_stitched_chapter_markers(
     text: str,
     *,
@@ -411,6 +470,117 @@ def _find_rule_term_onboarding_failure(
             },
         )
     ]
+
+
+def _find_late_night_delivery_order(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 10:
+        return []
+    pattern = (
+        r"(快递单|配送单|寄件单|运单)[^。！？\n]{0,80}"
+        r"(晚上|夜里|深夜|凌晨|子时|23[:：]\d{2}|零点|00[:：]\d{2})"
+    )
+    reverse_pattern = (
+        r"(晚上|夜里|深夜|凌晨|子时|23[:：]\d{2}|零点|00[:：]\d{2})"
+        r"[^。！？\n]{0,80}(快递单|配送单|寄件单|运单)"
+    )
+    match = re.search(pattern, text) or re.search(reverse_pattern, text)
+    if not match:
+        return []
+    window = text[max(0, match.start() - 120) : match.end() + 160]
+    if any(
+        marker in window
+        for marker in (
+            "不可能",
+            "伪造",
+            "假的",
+            "系统延迟",
+            "自助柜",
+            "预录",
+            "预生成",
+            "提前寄",
+            "无人柜",
+            "超时",
+            "异常",
+        )
+    ):
+        return []
+    return [
+        CommonSenseFinding(
+            code="late_night_delivery_plausibility",
+            severity="medium",
+            message="前十章使用深夜快递/配送单作为现实证据，但没有解释夜间寄送流程为什么成立。",
+            evidence={"window": window.strip()},
+        )
+    ]
+
+
+def _find_object_signal_overuse(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 10:
+        return []
+    signal_pattern = r"(铜钱|青囊|罗盘|镜片|账页)[^。！？\n]{0,12}(烫|发烫|烫得|炭火)"
+    matches = list(re.finditer(signal_pattern, text))
+    if len(matches) < 3:
+        return []
+    explanatory_markers = (
+        "这次",
+        "代表",
+        "说明",
+        "只有",
+        "而是",
+        "边界",
+        "代价",
+        "不能",
+    )
+    windows = [text[max(0, match.start() - 50) : match.end() + 80] for match in matches]
+    explained = sum(1 for window in windows if any(marker in window for marker in explanatory_markers))
+    if explained >= 2:
+        return []
+    return [
+        CommonSenseFinding(
+            code="object_signal_overuse",
+            severity="medium",
+            message="物件异常过度依赖“发烫”等同类信号，但没有给出稳定含义或边界。",
+            evidence={"hit_count": len(matches), "windows": [w.strip() for w in windows[:4]]},
+        )
+    ]
+
+
+def _find_lay_character_rule_knowledge_leak(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 3:
+        return []
+    speaker_pattern = r"(王建业|张建军|小雨|陈默|周雪)[^。！？\n]{0,24}[：:“”\"']"
+    rule_terms = r"(认账|入账|替认|代认|否认者|镜债|账线|下一笔|该轮到我)"
+    for match in re.finditer(speaker_pattern, text):
+        paragraph_end = text.find("\n\n", match.start())
+        if paragraph_end < 0:
+            paragraph_end = len(text)
+        window = text[match.start() : min(match.end() + 80, paragraph_end)]
+        if not re.search(rule_terms, window):
+            continue
+        lead_window = text[max(0, match.start() - 160) : match.start()]
+        if any(marker in lead_window for marker in ("附身", "替它说", "不是他的声音", "学着他说", "林渊刚解释")):
+            continue
+        return [
+            CommonSenseFinding(
+                code="lay_character_rule_knowledge_leak",
+                severity="medium",
+                message="前三章非专业角色主动使用或理解规则术语，缺少学习、附身或被操控铺垫。",
+                evidence={"window": window.strip()},
+            )
+        ]
+    return []
 
 
 def _has_rule_onboarding(window: str) -> bool:

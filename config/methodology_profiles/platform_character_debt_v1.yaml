@@ -1,0 +1,40 @@
+profile_id: platform_character_debt_v1
+title: "Platform character debt writing methodology"
+source_set_id: platform_character_debt
+card_deck: data/methodology_sources/platform_character_debt/cards.yaml
+default_mode: audit_only
+max_prompt_cards: 6
+pending_sources: []
+cards:
+  platform.anchor_character_gene:
+    enabled: true
+    gate_mode: block
+    priority: 5
+  platform.character_desire_collision:
+    enabled: true
+    gate_mode: block
+    priority: 15
+  platform.relationship_hook_matrix:
+    enabled: true
+    gate_mode: warn
+    priority: 20
+  platform.character_debt_ledger:
+    enabled: true
+    gate_mode: block
+    priority: 10
+  platform.triangle_conflict:
+    enabled: true
+    gate_mode: warn
+    priority: 25
+  platform.information_gap:
+    enabled: true
+    gate_mode: warn
+    priority: 35
+  platform.hype_four_beat:
+    enabled: true
+    gate_mode: warn
+    priority: 30
+  platform.reverse_climax_volume:
+    enabled: true
+    gate_mode: audit_only
+    priority: 40

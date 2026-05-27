@@ -601,6 +601,78 @@ async def test_create_quality_retrofit_rewrite_tasks_refreshes_existing_pending_
 
 
 @pytest.mark.asyncio
+async def test_create_quality_retrofit_rewrite_tasks_respects_per_chapter_budget() -> None:
+    """Regression: ``autonomous_quality_retrofit`` had no per-chapter cap,
+    so a chronically-failing chapter could collect retrofit tasks
+    indefinitely on every quality-closure audit pass. With the cap in
+    place, once a chapter has spent its budget further specs for it are
+    skipped and reported under ``budget_exhausted_chapters`` instead of
+    silently scheduling more work."""
+
+    project = _project()
+    chapter = _chapter(project, 13)
+    # Counter pre-seeded at the cap → next new task should be skipped.
+    chapter.metadata_json = {
+        "autonomous_quality_retrofit_attempts_active": 5,
+    }
+    spec = QualityRepairTaskSpec(
+        slug=project.slug,
+        chapter_number=13,
+        priority="critical",
+        task_priority=1,
+        cause_ids=("flat_narration",),
+        patch_points=({"location": "paragraph-2", "issue_summary": "AI 解释句"},),
+        audit_row={"chapter_number": "13", "priority": "critical"},
+    )
+    session = FakeSession(scalar_results=[chapter], execute_results=[[]])
+
+    result = await create_quality_retrofit_rewrite_tasks(
+        session,
+        project,
+        [spec],
+        max_attempts_per_chapter=5,
+    )
+
+    assert result.created == 0
+    assert result.budget_exhausted_chapters == (13,)
+    assert session.added == [], "no new rewrite task should be created"
+    assert chapter.metadata_json["autonomous_quality_retrofit_exhausted"] is True
+    assert chapter.metadata_json["requires_human_review"] is True
+    # Counter must stay at the cap — we did not consume another slot.
+    assert chapter.metadata_json["autonomous_quality_retrofit_attempts_active"] == 5
+
+
+@pytest.mark.asyncio
+async def test_create_quality_retrofit_rewrite_tasks_bumps_counter_when_creating() -> None:
+    """Each newly-created retrofit task bumps the per-chapter counter so
+    successive audit passes converge on the cap."""
+
+    project = _project()
+    chapter = _chapter(project, 14)
+    spec = QualityRepairTaskSpec(
+        slug=project.slug,
+        chapter_number=14,
+        priority="critical",
+        task_priority=1,
+        cause_ids=("flat_narration",),
+        patch_points=({"location": "paragraph-2", "issue_summary": "AI 解释句"},),
+        audit_row={"chapter_number": "14", "priority": "critical"},
+    )
+    session = FakeSession(scalar_results=[chapter], execute_results=[[]])
+
+    result = await create_quality_retrofit_rewrite_tasks(
+        session,
+        project,
+        [spec],
+        max_attempts_per_chapter=5,
+    )
+
+    assert result.created == 1
+    assert result.budget_exhausted_chapters == ()
+    assert chapter.metadata_json["autonomous_quality_retrofit_attempts_active"] == 1
+
+
+@pytest.mark.asyncio
 async def test_load_latest_quality_gate_violations_ignores_blocks_write_gate_only() -> None:
     project = _project()
     chapter = _chapter(project, 1)

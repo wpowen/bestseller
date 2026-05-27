@@ -12,6 +12,8 @@ import yaml
 MethodologyCategory = Literal[
     "action_scene",
     "character",
+    "debt",
+    "emotion_beat",
     "foreshadowing",
     "longform_control",
     "mainline",
@@ -19,6 +21,7 @@ MethodologyCategory = Literal[
     "outline",
     "power",
     "progression",
+    "relationship",
     "surface_subtext",
     "timeline",
     "worldview",
@@ -26,7 +29,7 @@ MethodologyCategory = Literal[
 MethodologyScope = Literal["asset", "book", "chapter", "project_health", "scene", "volume"]
 MethodologyStage = Literal["drafting", "health", "planning", "repair", "review"]
 MethodologyMaturity = Literal["deprecated", "draft", "pending_source", "verified"]
-MethodologyGateMode = Literal["advisory", "audit_only", "off", "strict", "warn"]
+MethodologyGateMode = Literal["advisory", "audit_only", "block", "off", "strict", "warn"]
 MethodologySourceStatus = Literal["failed", "ok", "partial", "pending"]
 MethodologyFindingSeverity = Literal["error", "info", "warning"]
 

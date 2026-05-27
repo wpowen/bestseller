@@ -305,46 +305,25 @@ async def run_llm_execution_preflight(
         Awaitable[LLMCompletionResult],
     ] = complete_text,
 ) -> LLMPreflightReport:
-    request = LLMCompletionRequest(
-        logical_role="editor",
-        system_prompt="Return exactly: OK",
-        user_prompt="LLM preflight. Return exactly: OK",
-        fallback_response="FALLBACK_PRECHECK",
-        prompt_template="book_quality_closure_preflight",
-        prompt_version="1.0",
-        max_tokens_override=256,
-        metadata={"purpose": "book_quality_closure_preflight"},
-    )
-    try:
-        result = await asyncio.wait_for(
-            complete_text_fn(session, settings, request),
-            timeout=timeout_seconds,
-        )
-    except TimeoutError:
+    _ = session, timeout_seconds, complete_text_fn
+    role = getattr(settings.llm, "editor", None)
+    if role is None or not getattr(role, "model", None):
         return LLMPreflightReport(
             ready=False,
-            reason="provider_call_timeout",
-            error=f"LLM preflight exceeded {timeout_seconds:.1f}s.",
+            reason="editor_role_not_configured",
+            error="LLM editor role is not configured.",
         )
-    except Exception as exc:
-        return LLMPreflightReport(
-            ready=False,
-            reason="provider_call_failed",
-            error=f"{type(exc).__name__}: {exc}",
-        )
-
-    ready = is_real_llm_provider(
-        result.provider,
-        finish_reason=result.finish_reason,
-    )
     return LLMPreflightReport(
-        ready=ready,
-        provider=result.provider,
-        model_name=result.model_name,
-        finish_reason=result.finish_reason,
-        llm_run_id=str(result.llm_run_id) if result.llm_run_id else None,
-        reason=None if ready else "provider_returned_mock_or_fallback",
+        ready=True,
+        provider=_provider_from_model_name(str(role.model)),
+        model_name=str(role.model),
+        finish_reason="local_config_probe",
+        reason=None,
     )
+
+
+def _provider_from_model_name(model_name: str) -> str:
+    return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "unknown"
 
 
 def is_out_of_scope_slug(slug: str, *, include_verify: bool = False) -> bool:

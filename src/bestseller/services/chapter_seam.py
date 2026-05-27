@@ -72,6 +72,10 @@ _NAME_STOPWORDS = frozenset({
     # Common dialogue / mood tokens that surface inside quoted speech
     "跑不", "跑得", "跑了", "走了", "走开", "走吧", "知道", "不知", "不是",
     "不能", "不行", "不要", "还是", "已经", "现在",
+    # Folk-horror prose fragments that showed up as fake participants in
+    # chapter seams ("镜子" / "然后" blocked 青囊 ch2 despite the actual
+    # cliffhanger being the man with the old copper key).
+    "然后", "镜子", "镜里", "镜中", "声音", "男人", "钥匙", "铜钱", "门外",
 })
 
 _NAME_BOUNDARY_CHARS = set("\n\t 　，。：；！？、「」『』\"\"''（）()【】…·—-")

@@ -116,6 +116,23 @@ def test_phone_and_route_location_mentions_do_not_count_as_scene_jump() -> None:
     assert report.has_critical is False
 
 
+def test_item_source_and_direction_mentions_do_not_count_as_scene_jump() -> None:
+    text = (
+        "“你在哪？”\n"
+        "“十七栋。303。”\n"
+        "林渊问：“王老板，那面镜子你从哪买的？”\n"
+        "“城北旧货市场，老孙头的铺子。三千块。”\n"
+        "电话断了。\n"
+        "林渊站在铺门口，罗盘指针没有指向南方——它正对着十七栋的方向。\n"
+        "二十三岁的林渊冲进雨里。\n"
+        "电梯门开的时候，轿厢里的灯在响。"
+    )
+
+    report = check_scene_coherence(text, chapter_position=1)
+
+    assert report.has_critical is False
+
+
 def test_jump_with_weak_marker_only_high_severity() -> None:
     text = (
         "林渊在十七栋二十三层。\n"

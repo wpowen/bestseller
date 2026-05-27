@@ -1,6 +1,114 @@
 l1_invariants:
   enabled: true
 
+judge_rubrics:
+  chapter_window:
+    system_prompt: |
+      你是连载小说滑窗留存审稿人，只输出严格 JSON。
+      你必须基于 rubric 评估章节窗口的留存表现，重点检查钩子健康、节奏呼吸、角色标签连续性、承接断裂和模板化重复。
+    rubric:
+      hook_health:
+        threshold: 0.70
+        weight: 0.35
+        description: 每章末必须有未解钩子或已推进旧钩子。
+      rhythm_balance:
+        threshold: 0.60
+        weight: 0.25
+        description: 连续高压后需要低压呼吸，不得机械重复同一压力。
+      character_tag_continuity:
+        threshold: 0.80
+        weight: 0.40
+        description: 出场角色的标签动作、声线和主动性不能漂移。
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+  volume_checkpoint:
+    system_prompt: |
+      你是长篇商业小说卷级主编，只输出严格 JSON。
+      你必须判断当前章节窗口是否仍服务于本卷目标、阻碍、高潮、解决和揭示预算；不得要求当前章节提前兑现未来章节职责。
+    rubric:
+      volume_alignment:
+        threshold: 0.80
+        weight: 0.50
+        description: 当前窗口必须推进本卷阶段目标。
+      escalation:
+        threshold: 0.70
+        weight: 0.25
+        description: 阻碍与信息释放需要递进，不能横向原地打转。
+      payoff_budget:
+        threshold: 0.70
+        weight: 0.25
+        description: 揭示与偿付不能透支卷尾预算。
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+  chapter_commercial:
+    system_prompt: |
+      你是中文商业小说平台终审编辑，只输出严格 JSON。
+      根据正文、生成输入和最近章节上下文，判断本章是否达到商业榜单可用标准；必须指出影响留存的具体问题。
+    rubric:
+      opening_pull:
+        threshold: 0.82
+        weight: 0.20
+      commercial_pull:
+        threshold: 0.82
+        weight: 0.25
+      scene_execution:
+        threshold: 0.80
+        weight: 0.20
+      methodology_compliance:
+        threshold: 0.80
+        weight: 0.20
+      hook_strength:
+        threshold: 0.80
+        weight: 0.15
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+  outline_commercial:
+    system_prompt: |
+      你是商业小说总编，只输出严格 JSON。
+      基于项目设定和卷/章/场景大纲，判断该大纲是否足以支撑榜单级正文生成；不要改写正文，只裁判大纲可执行性、商业吸引力、逻辑一致性、角色认知边界和方法论覆盖。
+    rubric:
+      opening_pull:
+        threshold: 0.80
+        weight: 0.20
+      front_ten_retention:
+        threshold: 0.80
+        weight: 0.20
+      scene_executability:
+        threshold: 0.80
+        weight: 0.20
+      methodology_compliance:
+        threshold: 0.80
+        weight: 0.20
+      logic_consistency:
+        threshold: 0.82
+        weight: 0.20
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+  commercial_planning:
+    system_prompt: |
+      你是商业小说总编，只输出严格 JSON。
+      任务：综合评判黄金三章章节规划是否足以支撑榜单级正文生成；确定性门禁发现仅供参考，最终结论必须基于规划数据的实质商业化质量。
+    rubric:
+      concrete_conflict:
+        threshold: 0.70
+        weight: 0.30
+      hook_quality:
+        threshold: 0.65
+        weight: 0.25
+      scene_executability:
+        threshold: 0.70
+        weight: 0.25
+      protagonist_entry_logic:
+        threshold: 0.70
+        weight: 0.20
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+
 l2_bible_gate:
   enabled: true
   regen_budget: 3
@@ -115,6 +223,10 @@ l6_write_gate:
     ANTAGONIST_MOTIVE_OVERLAP: block
     WORLD_TAXONOMY_BOILERPLATE: block
     NAMING_POOL_UNDERSIZED: block
+    OPENING_SCENE_DRIFT: block
+    FRONT10_FORBIDDEN_SIGNAL: audit_only
+    FRONT10_SCENE_FORBIDDEN_ACTION: audit_only
+    FRONT10_RULE_LECTURE_DENSITY: audit_only
     NAMING_OUT_OF_POOL: audit_only
     OPENING_ENTITY_OVERLOAD: audit_only
     POV_DRIFT: audit_only

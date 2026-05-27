@@ -56,6 +56,23 @@ class DashboardRunResult:
     skipped: bool
     skip_reason: str = ""
 
+    @property
+    def stop_required(self) -> bool:
+        return bool(
+            self.window
+            and any(alert.severity == "red" for alert in self.window.alerts)
+        )
+
+    @property
+    def stop_reasons(self) -> tuple[str, ...]:
+        if self.window is None:
+            return ()
+        return tuple(
+            alert.message
+            for alert in self.window.alerts
+            if alert.severity == "red"
+        )
+
 
 def build_dashboard_for_chapters(
     snapshots: Iterable[ChapterScoreSnapshot],

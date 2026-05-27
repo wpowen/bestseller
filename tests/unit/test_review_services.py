@@ -15,6 +15,8 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
 )
 from bestseller.services import reviews as review_services
+from bestseller.services.chapter_quality_bundle import ChapterQualityBundleReport
+from bestseller.services.quality_finding_schema import QualityFinding
 from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
 from bestseller.services.reviews import (
     _missing_required_rewrite_context_blocks,
@@ -77,6 +79,95 @@ class FakeSession:
 
 def build_settings():
     return load_settings(env={})
+
+
+def test_llm_judge_exception_merge_blocks_chapter_review() -> None:
+    base = review_services.ChapterReviewResult(
+        verdict="pass",
+        severity_max="low",
+        scores=review_services.ChapterReviewScores(
+            overall=0.86,
+            goal=0.9,
+            coverage=0.9,
+            coherence=0.9,
+            continuity=0.9,
+            main_plot_progression=0.9,
+            subplot_progression=0.9,
+            style=0.9,
+            hook=0.9,
+            ending_hook_effectiveness=0.9,
+            volume_mission_alignment=0.9,
+            pacing_rhythm=0.9,
+            character_voice_distinction=0.9,
+            thematic_resonance=0.9,
+            contract_alignment=0.9,
+        ),
+    )
+
+    merged = review_services._merge_llm_judge_exception_into_chapter_review(
+        base,
+        category="llm_commercial_quality",
+        message_prefix="LLM 商业质量评测",
+        error=RuntimeError("provider timeout"),
+    )
+
+    assert merged.verdict == "rewrite"
+    assert merged.severity_max == "critical"
+    assert merged.findings[-1].category == "llm_commercial_quality"
+    assert merged.findings[-1].severity == "critical"
+    assert merged.evidence_summary["llm_commercial_quality_exception"]["strict_block"] is True
+    assert "provider timeout" in (merged.rewrite_instructions or "")
+
+
+def test_chapter_quality_bundle_merge_blocks_review() -> None:
+    base = review_services.ChapterReviewResult(
+        verdict="pass",
+        severity_max="low",
+        scores=review_services.ChapterReviewScores(
+            overall=0.89,
+            goal=0.9,
+            coverage=0.9,
+            coherence=0.9,
+            continuity=0.9,
+            main_plot_progression=0.9,
+            subplot_progression=0.9,
+            style=0.9,
+            hook=0.9,
+            ending_hook_effectiveness=0.9,
+            volume_mission_alignment=0.9,
+            pacing_rhythm=0.9,
+            character_voice_distinction=0.9,
+            thematic_resonance=0.9,
+            contract_alignment=0.9,
+        ),
+    )
+    report = ChapterQualityBundleReport(
+        chapter_number=2,
+        findings=(
+            QualityFinding(
+                code="ANTI_META_ENDING_OUT_OF_SCENE",
+                severity="critical",
+                source="chapter_quality_bundle.anti_meta",
+                chapter_number=2,
+                evidence={"ending_excerpt": "那条线的位置，和王建业脖子上的一模一样。"},
+                repair_hint="章末没有落在动作、画面或新事实揭示的一帧。",
+                repair_scope="ending",
+                blocking=True,
+            ),
+        ),
+    )
+
+    merged = review_services._merge_chapter_quality_bundle_into_review(
+        base,
+        report,
+        language="zh-CN",
+    )
+
+    assert merged.verdict == "rewrite"
+    assert merged.severity_max == "critical"
+    assert any(f.category == "chapter_quality_bundle" for f in merged.findings)
+    assert "ANTI_META_ENDING_OUT_OF_SCENE" in (merged.rewrite_instructions or "")
+    assert "chapter_quality_bundle" in merged.evidence_summary
 
 
 def _qimao_project() -> SimpleNamespace:
@@ -271,6 +362,9 @@ def test_chapter_rewrite_prompt_includes_qimao_opening_contract() -> None:
     assert "黄金三章任务" in user_prompt
     assert "先保住账本并确认谁在灭口" in user_prompt
     assert "只输出一遍完整章节正文" in user_prompt
+    assert "局部替换和等量压缩式修复" in user_prompt
+    assert "已经死了，对吧？" in user_prompt
+    assert "最后300字连续叠加多个未解悬念" in user_prompt
 
 
 def test_quality_retrofit_rewrite_uses_tighter_output_cap(
@@ -377,7 +471,7 @@ def test_chinese_compression_repair_keeps_enough_output_budget(
     assert cap > 2768
 
 
-def test_quality_retrofit_rewrite_reserves_minimax_reasoning_tokens(
+def test_quality_retrofit_rewrite_uses_safe_model_runway_for_minimax_highspeed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = load_settings(
@@ -422,8 +516,101 @@ def test_quality_retrofit_rewrite_reserves_minimax_reasoning_tokens(
         task,
     )
 
-    assert base == 13552
-    assert cap == 18896
+    assert base == 6144
+    assert cap == 16384
+
+
+def test_chapter_review_rewrite_uses_safe_minimax_chapter_runway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings(
+        env={
+            "BESTSELLER__LLM__EDITOR__MODEL": "openai/MiniMax-M2.7-highspeed",
+            "BESTSELLER__LLM__EDITOR__MAX_TOKENS": "32768",
+        }
+    )
+    monkeypatch.setattr(review_services, "get_settings", lambda: settings)
+    project = ProjectModel(
+        slug="qingnang",
+        title="青囊不语问阴阳",
+        genre="urban-fantasy",
+        target_word_count=80000,
+        target_chapters=30,
+        language="zh-CN",
+        metadata_json={},
+    )
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=2,
+        title="第一名否认者",
+        target_word_count=2600,
+    )
+    task = RewriteTaskModel(
+        project_id=uuid4(),
+        trigger_type="chapter_review",
+        trigger_source_id=uuid4(),
+        rewrite_strategy="chapter_review",
+        instructions="修复章节滑窗质量。",
+        metadata_json={},
+    )
+
+    cap = review_services._rewrite_output_max_tokens_override(chapter, project, task)
+    expansion_cap = review_services._rewrite_output_max_tokens_override(
+        chapter,
+        project,
+        task,
+        force_expansion=True,
+    )
+
+    assert cap == 16384
+    assert expansion_cap == 16384
+
+
+def test_chapter_review_rewrite_instructions_filter_contract_conflicts() -> None:
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=2,
+        title="第一名否认者",
+        target_word_count=2200,
+        metadata_json={
+            "object_signal_contract": {
+                "chapter_mode": "铜钱本章不主动触碰张建军或小雨。",
+                "forbidden_signals": ["铜钱机制", "铜钱吸力", "铜钱按在手腕上"],
+            }
+        },
+        foreshadowing_actions={"forbidden_early_leaks": ["入门"]},
+    )
+    scene = SceneCardModel(
+        project_id=uuid4(),
+        chapter_id=uuid4(),
+        scene_number=4,
+        forbidden_actions=[
+            *(f"不得写重复禁令{i}" for i in range(14)),
+            "不得写电话、寄件、快递、跑腿或帮忙寄件。",
+            "不得引出陈默、七号入账、代父、入门、归人。",
+        ],
+    )
+
+    instructions = review_services._sanitize_chapter_review_rewrite_instructions(
+        "1. 统一铜钱机制：强化铜钱吸力。\n"
+        "2. 删除铜钱按在手腕上的段落。\n"
+        "3. 增强小雨角色细节。\n"
+        "4. 用死人寄件和跑腿身份承接上一章。",
+        chapter=chapter,
+        scenes=[scene],
+    )
+
+    assert instructions is not None
+    assert "章节硬约束优先级" in instructions
+    assert "已过滤冲突评审建议" in instructions
+    assert "统一铜钱机制" not in instructions
+    assert "强化铜钱吸力" not in instructions
+    assert "死人寄件" not in instructions
+    assert "跑腿身份" not in instructions
+    assert "删除铜钱按在手腕上的段落" in instructions
+    assert "增强小雨角色细节" in instructions
+    assert "不得写电话、寄件、快递、跑腿或帮忙寄件" in instructions
+    assert "不得引出陈默" in instructions
 
 
 def test_build_qimao_opening_rewrite_instructions_maps_findings() -> None:
@@ -998,6 +1185,55 @@ def test_evaluate_chapter_draft_no_longer_rewards_goal_scaffold() -> None:
     )
 
 
+def test_evaluate_chapter_draft_counts_assembled_scenes_without_visible_headings() -> None:
+    chapter = SimpleNamespace(
+        chapter_number=1,
+        title="十五分钟凶宅",
+        chapter_goal="在子时前判断王建业是否被困魂镜记账，并引出张建军第二笔账。",
+        target_word_count=2200,
+    )
+    scenes = [
+        SimpleNamespace(scene_number=1, title="电话求救"),
+        SimpleNamespace(scene_number=2, title="电梯错位"),
+        SimpleNamespace(scene_number=3, title="303认账"),
+        SimpleNamespace(scene_number=4, title="张建军敲门"),
+    ]
+    body = (
+        "# 第1章：十五分钟凶宅\n\n"
+        "林渊在二十三点四十五接到王建业的电话，镜子里少了一个人。"
+        "他必须在子时前判断这是不是困魂镜收账，否则王建业会被拖进镜面。\n\n"
+        "电梯门开了，里面没有王建业，只有镜面里偏开半个身位的倒影。"
+        "林渊用铜钱和罗盘确认坤位异常，走廊里响起三短一长。\n\n"
+        "303的门虚掩着，王建业承认见过三年前死在四楼的三叔。"
+        "他说出认识的一刻，镜中的倒影先替他点了头，否认者先入账。\n\n"
+        "王建业的倒影消失后，铜钱崩出缺口，血渗进方孔。"
+        "张建军站在门外，递来零点零三分寄出的快递单。"
+        "走廊尽头的电梯开着，七个人影里，最里面那个和林渊一模一样。"
+    )
+    draft = SimpleNamespace(
+        content_md=body,
+        word_count=2184,
+        assembled_from_scene_draft_ids=["s1", "s2", "s3", "s4"],
+    )
+
+    result = evaluate_chapter_draft(
+        chapter=chapter,
+        scenes=scenes,
+        draft=draft,
+        settings=build_settings(),
+    )
+
+    assert result.scores.coverage >= 0.8
+    assert result.scores.continuity >= 0.68
+    assert result.scores.ending_hook_effectiveness >= 0.7
+    assert result.scores.main_plot_progression >= 0.7
+    assert result.evidence_summary["assembled_scene_count"] == 4
+    assert all(
+        finding.category not in {"coverage", "continuity", "ending_hook_effectiveness"}
+        for finding in result.findings
+    )
+
+
 def test_evaluate_chapter_draft_allows_low_severity_polish_findings() -> None:
     chapter = SimpleNamespace(
         chapter_number=4,
@@ -1348,6 +1584,221 @@ async def test_review_chapter_draft_creates_rewrite_task_for_low_score(
     assert rewrite_task is not None
     assert rewrite_task.trigger_type == "chapter_review"
     assert chapter.status == "revision"
+
+
+@pytest.mark.asyncio
+async def test_review_chapter_draft_caps_chapter_review_at_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: 青囊不语问阴阳 ch1 generated 124 versions on 2026-05-25
+    because each ``chapter_review`` round created a fresh rewrite task,
+    bypassing ``chapter_auto_repair_max_attempts``. With the per-chapter
+    budget in place, once attempts >= budget we stop spinning."""
+
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=3,
+        title="静默航道",
+        chapter_goal="推进调查",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+        target_word_count=3000,
+    )
+    chapter.id = uuid4()
+    scenes = [
+        SceneCardModel(
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_number=1,
+            scene_type="setup",
+            title="旧搭档回舰",
+            participants=["沈砚"],
+            purpose={"story": "推进调查", "emotion": "警觉"},
+            entry_state={},
+            exit_state={},
+            metadata_json={},
+            target_word_count=1000,
+        ),
+    ]
+    for scene in scenes:
+        scene.id = uuid4()
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第3章 静默航道\n\n## 场景 1：旧搭档回舰\n\n很短的章节草稿。",
+        word_count=420,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    draft.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_build_chapter_writer_context(session, settings, project_slug, chapter_number):
+        return SimpleNamespace(
+            previous_scene_summaries=[],
+            chapter_scenes=[],
+            recent_timeline_events=[],
+            retrieval_chunks=[],
+        )
+
+    async def fake_complete_text(session, settings, request):
+        return SimpleNamespace(content="需要重写这一章。", model_name="mock-critic", llm_run_id=uuid4())
+
+    monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        review_services,
+        "build_chapter_writer_context",
+        fake_build_chapter_writer_context,
+    )
+    monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    monkeypatch.setattr(
+        review_services,
+        "_collect_post_assembly_duplicate_findings",
+        lambda *args, **kwargs: _empty_async_tuple(),
+    )
+
+    settings = build_settings()
+    budget = settings.pipeline.chapter_auto_repair_max_attempts
+    # Pre-seed the chapter's persistent counter at the budget so the next
+    # review tick trips the cap immediately.
+    chapter.metadata_json = {
+        **(chapter.metadata_json or {}),
+        "chapter_review_attempts_active": budget,
+    }
+
+    session = FakeSession(
+        scalar_results=[chapter, draft],
+        scalars_results=[scenes],
+    )
+
+    result, _report, _quality, rewrite_task = await review_services.review_chapter_draft(
+        session,
+        settings,
+        "my-story",
+        3,
+    )
+
+    assert result.verdict == "rewrite"
+    assert rewrite_task is None, "budget exhausted should suppress new task"
+    assert chapter.production_state == "repair_exhausted"
+    assert chapter.status == "review"
+
+
+@pytest.mark.asyncio
+async def test_review_chapter_draft_increments_active_counter_on_rewrite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When a chapter_review verdict is ``rewrite`` we increment the
+    persistent ``chapter_review_attempts_active`` counter so the next
+    review pass can see the cumulative pressure on the chapter."""
+
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=3,
+        title="静默航道",
+        chapter_goal="推进调查",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        # Counter already at 1 from a prior cycle — verify it bumps to 2.
+        metadata_json={"chapter_review_attempts_active": 1},
+        target_word_count=3000,
+    )
+    chapter.id = uuid4()
+    scene = SceneCardModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        scene_number=1,
+        scene_type="setup",
+        title="旧搭档回舰",
+        participants=["沈砚"],
+        purpose={"story": "推进调查", "emotion": "警觉"},
+        entry_state={},
+        exit_state={},
+        metadata_json={},
+        target_word_count=1000,
+    )
+    scene.id = uuid4()
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第3章 静默航道\n\n## 场景 1：旧搭档回舰\n\n很短的章节草稿。",
+        word_count=420,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    draft.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_build_chapter_writer_context(session, settings, project_slug, chapter_number):
+        return SimpleNamespace(
+            previous_scene_summaries=[],
+            chapter_scenes=[],
+            recent_timeline_events=[],
+            retrieval_chunks=[],
+        )
+
+    async def fake_complete_text(session, settings, request):
+        return SimpleNamespace(
+            content="需要重写这一章。",
+            model_name="mock-critic",
+            llm_run_id=uuid4(),
+        )
+
+    monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        review_services,
+        "build_chapter_writer_context",
+        fake_build_chapter_writer_context,
+    )
+    monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    monkeypatch.setattr(
+        review_services,
+        "_collect_post_assembly_duplicate_findings",
+        lambda *args, **kwargs: _empty_async_tuple(),
+    )
+
+    session = FakeSession(
+        scalar_results=[chapter, draft],
+        scalars_results=[[scene]],
+    )
+
+    result, _report, _quality, rewrite_task = await review_services.review_chapter_draft(
+        session,
+        build_settings(),
+        "my-story",
+        3,
+    )
+
+    assert result.verdict == "rewrite"
+    assert rewrite_task is not None
+    assert chapter.metadata_json["chapter_review_attempts_active"] == 2
 
 
 @pytest.mark.asyncio

@@ -679,6 +679,11 @@ async def _sync_acceptance_gap_repair_tasks(
             project,
             specs,
             replace_existing=replace_existing,
+            max_attempts_per_chapter=getattr(
+                settings.pipeline,
+                "autonomous_quality_retrofit_max_attempts",
+                None,
+            ),
         )
         cause_counts: dict[str, int] = {}
         priority_counts: dict[str, int] = {}
@@ -834,6 +839,11 @@ async def _sync_blocking_quality_gate_tasks(
             project,
             specs,
             replace_existing=replace_existing,
+            max_attempts_per_chapter=getattr(
+                settings.pipeline,
+                "autonomous_quality_retrofit_max_attempts",
+                None,
+            ),
         )
         plan = {
             "task_count": len(specs),

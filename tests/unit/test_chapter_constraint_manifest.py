@@ -11,12 +11,15 @@ from bestseller.services.chapter_constraint_manifest import (
     PrewritePlan,
     build_safe_prewrite_plan,
     compile_chapter_constraint_manifest,
+    normalize_prewrite_plan_for_manifest,
     parse_prewrite_plan,
     render_constraint_manifest_block,
     render_prewrite_plan_block,
+    render_prewrite_plan_prompt,
     validate_chapter_prose_for_promotion,
     validate_prewrite_plan,
 )
+from bestseller.services.prompt_packs import get_prompt_pack
 
 pytestmark = pytest.mark.unit
 
@@ -193,6 +196,74 @@ def test_parse_prewrite_plan_accepts_fenced_json() -> None:
     assert plan.time_anchors_to_use == ["今夜"]
 
 
+def test_parse_prewrite_plan_coerces_deepseek_schema_drift() -> None:
+    plan = parse_prewrite_plan(
+        """{
+          "characters_to_use": "林渊",
+          "time_budget_plan": [],
+          "body_object_state_plan": "铜钱在掌心",
+          "ending_hook_type": ["新变量", "未答问题"],
+          "ending_hook_target": ["病房玻璃"]
+        }"""
+    )
+
+    assert plan.characters_to_use == ["林渊"]
+    assert plan.time_budget_plan == {}
+    assert plan.body_object_state_plan == {"summary": "铜钱在掌心"}
+    assert plan.ending_hook_type == "新变量"
+    assert plan.ending_hook_target == "病房玻璃"
+
+
+def test_normalize_prewrite_plan_clamps_to_manifest_contract() -> None:
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=1,
+        scene_number=1,
+        participants=["林渊", "苏婉宁"],
+        scene_metadata={
+            "time_budget_contract": {
+                "start": "23:43",
+                "deadline": "子时",
+                "allowed_elapsed_events": ["验盒开封"],
+                "forbid_untracked_travel": True,
+            },
+            "body_object_state_contract": {
+                "tracked_objects": {"康熙铜钱": "必须说明位置"},
+            },
+        },
+        project_metadata={
+            "opening_causality_contract": {
+                "protagonist_entry_motivation": "林渊必须验证檀木盒真假",
+                "protagonist_function": "用林家验账法验物",
+                "visible_failure_cost": "错信沈家会被旧卷牵走",
+            },
+            "ending_hook_contract": {
+                "allowed_hook_types": ["新变量"],
+                "required_hook_target": "母亲手札",
+                "forbidden_ending_modes": ["总结主题"],
+            },
+        },
+    )
+    raw_plan = PrewritePlan(
+        characters_to_use=["林渊", "沈家临时人"],
+        time_budget_plan={"elapsed_events": ["骑车二十分钟去义庄"]},
+        body_object_state_plan={},
+        ending_hook_type="总结主题",
+        ending_hook_target="下一章继续",
+    )
+
+    normalized = normalize_prewrite_plan_for_manifest(raw_plan, manifest)
+
+    assert validate_prewrite_plan(normalized, manifest).passed is True
+    assert normalized.characters_to_use == ["林渊"]
+    assert normalized.time_budget_plan["elapsed_events"] == ["验盒开封"]
+    assert normalized.body_object_state_plan["tracked_objects"] == {
+        "康熙铜钱": "必须说明位置"
+    }
+    assert normalized.ending_hook_type == "新变量"
+    assert normalized.ending_hook_target == "母亲手札"
+    assert "总结主题" in normalized.ending_modes_to_avoid
+
+
 def test_render_blocks_put_machine_contract_in_prompt() -> None:
     manifest = compile_chapter_constraint_manifest(
         chapter_number=1,
@@ -331,3 +402,42 @@ def test_safe_opening_plan_satisfies_causality_contracts() -> None:
     assert plan.time_budget_plan["forbid_untracked_travel"] is True
     assert "康熙铜钱" in plan.body_object_state_plan["tracked_objects"]
     assert "总结主题" in plan.ending_modes_to_avoid
+
+
+def test_prewrite_prompt_includes_methodology_for_early_chapters() -> None:
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=1,
+        scene_number=1,
+        participants=["林渊"],
+        scene_metadata={"location_name": "十七栋 23 层"},
+    )
+    prompt = render_prewrite_plan_prompt(
+        manifest,
+        language="zh-CN",
+        pack=get_prompt_pack("suspense-mystery"),
+        chapter_number=1,
+    )
+
+    assert "写作方法论参考" in prompt
+    assert "信息密度" in prompt
+    assert "弹簧法" in prompt
+    assert "冲突筹码" in prompt
+
+
+def test_prewrite_prompt_omits_density_rule_for_late_chapters() -> None:
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=11,
+        scene_number=1,
+        participants=["林渊"],
+        scene_metadata={"location_name": "十七栋 23 层"},
+    )
+    prompt = render_prewrite_plan_prompt(
+        manifest,
+        language="zh-CN",
+        pack=get_prompt_pack("suspense-mystery"),
+        chapter_number=11,
+    )
+
+    assert "写作方法论参考" in prompt
+    assert "信息密度规则" not in prompt
+    assert "弹簧法" in prompt

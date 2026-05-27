@@ -1,0 +1,115 @@
+cards:
+  - id: platform.anchor_character_gene
+    source_ids: ["pcd.01"]
+    title: "主角定锚：主角基因必须驱动稳定行动循环"
+    category: character
+    scope: ["book", "chapter"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "主角不是旁观镜头，而是由价值底线、不可退让对象、能力依据和行动循环驱动剧情前进。"
+    anti_patterns: ["主角只被事件推着走", "主角强但没有价值底线", "行动循环无法复用到章节推进"]
+    required_contract_fields: ["value_axis", "non_negotiable", "action_loop", "capability_basis", "collateral_limit"]
+    framework_bindings: ["story_design_kernel.character_conflicts", "reader_power.golden_three", "prewrite_contract_gate.anchor"]
+    gate_bindings:
+      - gate: anchor_agency
+        default_mode: audit_only
+    maturity: verified
+  - id: platform.character_desire_collision
+    source_ids: ["pcd.02"]
+    title: "动机碰撞：人物欲望必须制造可持续阻碍"
+    category: character
+    scope: ["book", "chapter", "scene"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "剧情增长来自人物欲望相互挡路，而不是外部事件随机打断。"
+    anti_patterns: ["冲突只靠误会或巧合", "角色欲望和章节目标脱节", "阻碍消失后没有新欲望"]
+    required_contract_fields: ["desire", "obstacle", "choice_axis", "cost", "next_pressure"]
+    framework_bindings: ["story_design_kernel.character_conflicts", "chapter_causality_gate.contract", "emotion_driven_kernel.desire"]
+    gate_bindings:
+      - gate: chapter_causality
+        default_mode: warn
+    maturity: verified
+  - id: platform.relationship_hook_matrix
+    source_ids: ["pcd.03"]
+    title: "关系钩子：关系必须有状态、边界和情绪债"
+    category: relationship
+    scope: ["book", "chapter", "scene"]
+    stage: ["planning", "drafting", "review", "health"]
+    core_claim: "关系线的吸引力来自距离变化、边界选择、承诺压力和情绪绑定矩阵的持续变化。"
+    anti_patterns: ["关系只靠暧昧对白", "亲密度变化无代价", "承诺和背叛没有后效"]
+    required_contract_fields: ["relationship_state", "boundary", "promise_debt", "distance_delta", "agency_cost"]
+    framework_bindings: ["relationship-driven.state_model", "premium_state_ledger.relationship_state", "interpersonal_promises"]
+    gate_bindings:
+      - gate: relationship_distance_gate
+        default_mode: warn
+      - gate: promise_payoff_gate
+        default_mode: warn
+    maturity: verified
+  - id: platform.character_debt_ledger
+    source_ids: ["pcd.04"]
+    title: "人物债务：债必须有凭据、催收、违约后果和偿还方式"
+    category: debt
+    scope: ["book", "chapter", "asset"]
+    stage: ["planning", "drafting", "review", "health"]
+    core_claim: "人物债务是关系与剧情的发动机，必须可被催收、可违约、可偿还，并能改变后续选择。"
+    anti_patterns: ["欠情只停留在口头", "债务没有凭据或催收方式", "偿还后不改变关系和主线"]
+    required_contract_fields: ["debtor", "creditor", "evidence_or_handle", "due_condition", "breach_consequence", "repayment_modes"]
+    framework_bindings: ["interpersonal_promises.metadata", "premium_state_ledger.promise_debt_ledger", "relationship-driven.promise_debt_ledger"]
+    gate_bindings:
+      - gate: character_debt
+        default_mode: audit_only
+    maturity: verified
+  - id: platform.triangle_conflict
+    source_ids: ["pcd.05"]
+    title: "三角冲突：冲突必须有争夺物、三方杠杆和利益链"
+    category: mainline
+    scope: ["book", "chapter", "scene"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "强冲突不是两人吵架，而是至少三方围绕同一争夺物形成目标、误判、杠杆和利益链。"
+    anti_patterns: ["只有正反双方互怼", "争夺物不清", "第三方没有真实利益或杠杆"]
+    required_contract_fields: ["contested_asset", "protagonist_goal", "antagonist_goal", "third_party_goal", "leverage", "escalation_path"]
+    framework_bindings: ["story_design_kernel.event_pattern_inventory", "chapter_causality_gate.contract", "plan_judge.milestones"]
+    gate_bindings:
+      - gate: triangle_conflict
+        default_mode: audit_only
+    maturity: verified
+  - id: platform.information_gap
+    source_ids: ["pcd.06"]
+    title: "信息差：读者、主角和对手的信息必须错位"
+    category: foreshadowing
+    scope: ["chapter", "scene"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "信息差通过读者知道、角色不知道、对手误判来制造期待和优越感，并需要明确触发与兑现窗口。"
+    anti_patterns: ["所有人同时知道同一信息", "信息差只靠隐瞒作者信息", "没有触发点和兑现窗口"]
+    required_contract_fields: ["reader_knows", "character_does_not_know", "wrong_assumption", "trigger", "payoff_window"]
+    framework_bindings: ["foreshadowing.payoff_plan", "triangle_conflict_contract.reader_information_gap", "chapter_causality_gate.information"]
+    gate_bindings:
+      - gate: information_gap
+        default_mode: audit_only
+    maturity: verified
+  - id: platform.hype_four_beat
+    source_ids: ["pcd.07"]
+    title: "爽点四段式：压迫、底牌、碾压、反馈缺一不可"
+    category: emotion_beat
+    scope: ["chapter", "scene"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "爽点需要先压迫，再提示底牌，随后完成兑现，并给出围观反馈、实际收益和下一钩子。"
+    anti_patterns: ["主角直接赢没有压迫", "底牌从天而降", "赢了没有反馈和收益", "爽点后没有新钩子"]
+    required_contract_fields: ["pressure", "trump_card_cue", "domination_payoff", "audience_feedback", "tangible_gain", "next_seed"]
+    framework_bindings: ["hype_engine.hype_moment", "pacing_engine.beat_sheet", "reader_power.payoff"]
+    gate_bindings:
+      - gate: hype_four_beat
+        default_mode: audit_only
+    maturity: verified
+  - id: platform.reverse_climax_volume
+    source_ids: ["pcd.08"]
+    title: "高潮反推：每卷从终局名场面反推条件和节奏比例"
+    category: outline
+    scope: ["book", "volume"]
+    stage: ["planning", "review", "health"]
+    core_claim: "卷结构应从终局名场面反推硬条件、软条件、情绪条件、债务清算和下一卷钩子，并保持进入、压迫、转折、结算的比例。"
+    anti_patterns: ["高潮临时拼接", "前文没有为名场面准备条件", "高潮后债务和下一卷钩子缺失"]
+    required_contract_fields: ["ultimate_signature_scene", "hardware_conditions", "software_conditions", "emotional_conditions", "phase_ratio_plan", "debt_clearance", "next_volume_hook"]
+    framework_bindings: ["signature_scene_planner", "story_design_kernel.structure_strategy", "volume_plan.climax"]
+    gate_bindings:
+      - gate: reverse_climax_volume
+        default_mode: audit_only
+    maturity: verified

@@ -1789,6 +1789,66 @@ def test_chapter_pipeline_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert payload["export_artifact_id"] is not None
 
 
+def test_chapter_pipeline_command_can_fail_on_human_review(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session_events: list[str] = []
+
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        try:
+            yield object()
+        except BaseException as exc:
+            session_events.append(type(exc).__name__)
+            raise
+        else:
+            session_events.append("committed")
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        from bestseller.domain.pipeline import ChapterPipelineResult
+
+        return ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=uuid4(),
+            chapter_id=uuid4(),
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=1,
+            export_artifact_id=uuid4(),
+            output_path=str(tmp_path / "output" / "chapter-001.md"),
+            final_verdict="rewrite",
+            requires_human_review=True,
+        )
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.run_chapter_pipeline", fake_run_chapter_pipeline)
+
+    result = runner.invoke(
+        app,
+        [
+            "chapter",
+            "pipeline",
+            "my-story",
+            "1",
+            "--fail-on-requires-human-review",
+        ],
+    )
+
+    assert result.exit_code == 2
+    payload = json.loads(result.stdout)
+    assert payload["requires_human_review"] is True
+    assert payload["final_verdict"] == "rewrite"
+    assert session_events == ["committed"]
+
+
 def test_export_markdown_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     @asynccontextmanager
     async def fake_session_scope(settings):

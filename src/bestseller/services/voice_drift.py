@@ -14,6 +14,19 @@ from bestseller.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 
+def _build_system_prompt(language: str | None) -> str:
+    if str(language or "").lower().startswith("en"):
+        return (
+            "You are a literary voice consistency analyst. Detect character "
+            "voice drift by comparing recent text against established voice profiles."
+        )
+    return (
+        "你是文学声音一致性分析师：对照已建立的角色 voice 档案，"
+        "检测近期文本中是否出现声音漂移（用词、节奏、潜台词偏离设定）。"
+        "只输出严格 JSON，禁止解释。"
+    )
+
+
 class VoiceDriftResult(BaseModel):
     character_name: str
     drift_detected: bool = False
@@ -31,6 +44,7 @@ async def check_voice_drift(
     recent_chapter_end: int,
     *,
     workflow_run_id: UUID | None = None,
+    language: str = "zh-CN",
 ) -> VoiceDriftResult:
     """Compare recent dialogue against the character's voice profile to detect drift.
 
@@ -135,7 +149,7 @@ async def check_voice_drift(
         settings,
         LLMCompletionRequest(
             logical_role="critic",
-            system_prompt="You are a literary voice consistency analyst. Detect character voice drift by comparing recent text against established voice profiles.",
+            system_prompt=_build_system_prompt(language),
             user_prompt=user_prompt,
             fallback_response=f'{{"drift_score": 0.0, "analysis": "Voice drift analysis unavailable (fallback).", "correction_prompt": null}}',
             prompt_template="voice_drift_check",
@@ -162,11 +176,11 @@ async def check_voice_drift(
                 settings,
                 LLMCompletionRequest(
                     logical_role="critic",
-                    system_prompt="You are a literary voice consistency analyst. Detect character voice drift by comparing recent text against established voice profiles.",
+                    system_prompt=_build_system_prompt(language),
                     user_prompt=build_repair_user_prompt(
                         original_user_prompt=user_prompt,
                         findings=findings_from_exception(exc),
-                        language=None,
+                        language=language,
                     ),
                     fallback_response='{"drift_score": 0.0, "analysis": "Voice drift analysis unavailable (fallback).", "correction_prompt": null}',
                     prompt_template="voice_drift_check_repair",

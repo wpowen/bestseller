@@ -1,0 +1,10 @@
+{
+  "template": "scene_writer",
+  "language": "zh-CN",
+  "prompt_pack": "suspense-mystery",
+  "system_prompt_skeleton": "稳定 system：角色、写作画像、硬约束，不含 voice_corrections。",
+  "user_prompt_required_sections": [
+    "【题材方法论·正文场景】",
+    "【角色语音修正】"
+  ]
+}

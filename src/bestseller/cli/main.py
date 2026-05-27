@@ -100,6 +100,7 @@ from bestseller.services.narrative_tree import (
     get_narrative_tree_node_by_path,
     search_narrative_tree_for_project,
 )
+from bestseller.services.obsidian import export_obsidian_vault
 from bestseller.services.pipelines import (
     run_autowrite_pipeline,
     run_chapter_pipeline,
@@ -133,7 +134,9 @@ from bestseller.services.publishing.amazon_kdp import (
 )
 from bestseller.services.ranking_readiness import evaluate_project_ranking_readiness
 from bestseller.services.repair import clear_stale_write_safety_scene_drafts, run_project_repair
+from bestseller.services.retention_onboarding_gate import scan_retention_onboarding_package
 from bestseller.services.retrieval import refresh_project_retrieval_index, search_project_retrieval
+from bestseller.services.reveal_schedule_builder import write_reveal_schedule_for_book
 from bestseller.services.reviews import (
     review_chapter_draft,
     review_scene_draft,
@@ -1917,6 +1920,23 @@ def story_bible_show(
     asyncio.run(_run())
 
 
+@story_bible_app.command("build-reveal-schedule")
+def story_bible_build_reveal_schedule(
+    book: Annotated[str, typer.Argument(help="Book output slug under output/.")],
+    output_base_dir: Annotated[
+        Path,
+        typer.Option("--output-base-dir", help="Base output directory."),
+    ] = Path("output"),
+) -> None:
+    """Build story-bible/reveal-schedule.yaml for one output book package."""
+
+    book_dir = output_base_dir / book
+    if not book_dir.exists():
+        raise typer.BadParameter(f"book output directory not found: {book_dir}")
+    path = write_reveal_schedule_for_book(book_dir)
+    typer.echo(str(path.resolve()))
+
+
 @narrative_app.command("show")
 def narrative_show(project_slug: str) -> None:
     """Show the current narrative graph for one project."""
@@ -2146,6 +2166,57 @@ def commercial_gate_package(
             typer.echo(f"  fix: {issue.suggestion}")
 
     if fail and not report.passed:
+        raise typer.Exit(1)
+
+
+@commercial_gate_app.command("retention")
+def commercial_gate_retention(
+    package_dir: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+            help="Output book package directory, e.g. output/<book-id>.",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the full retention/onboarding gate verdict as JSON.",
+        ),
+    ] = False,
+    fail: Annotated[
+        bool,
+        typer.Option(
+            "--fail/--no-fail",
+            help="Exit non-zero when the retention gate blocks.",
+        ),
+    ] = True,
+) -> None:
+    """Evaluate opening retention and onboarding controls for one package."""
+
+    verdict = scan_retention_onboarding_package(package_dir)
+    if json_output:
+        typer.echo(
+            json.dumps(verdict.model_dump(mode="json"), ensure_ascii=False, indent=2)
+        )
+    else:
+        status = "PASS" if verdict.passed else verdict.verdict.upper()
+        typer.echo(
+            f"{status} retention_onboarding_gate "
+            f"coverage={verdict.coverage:.0%} findings={len(verdict.findings)}"
+        )
+        for finding in verdict.findings:
+            typer.echo(
+                f"- [{finding.severity}] {finding.code} {finding.path}: "
+                f"{finding.message}"
+            )
+            typer.echo(f"  fix: {finding.repair_action}")
+
+    if fail and verdict.critical:
         raise typer.Exit(1)
 
 
@@ -3214,11 +3285,27 @@ def chapter_pipeline(
         "--export-markdown/--no-export-markdown",
         help="Whether to export the assembled chapter draft to Markdown.",
     ),
+    chapter_first: bool = typer.Option(
+        False,
+        "--chapter-first/--scene-first",
+        help="Generate the chapter in one writer call from chapter plan + scene cards.",
+    ),
+    supersede_pending_rewrites: bool = typer.Option(
+        False,
+        "--supersede-pending-rewrites/--keep-pending-rewrites",
+        help="Supersede pending chapter rewrite tasks before explicit chapter-first regeneration.",
+    ),
+    fail_on_requires_human_review: bool = typer.Option(
+        False,
+        "--fail-on-requires-human-review/--allow-requires-human-review",
+        help="Exit non-zero when the pipeline ends in machine repair / human review state.",
+    ),
 ) -> None:
-    """Run all scene pipelines in one chapter and assemble the chapter draft."""
+    """Run a chapter pipeline and assemble or directly generate the chapter draft."""
 
     async def _run() -> None:
         settings = load_settings()
+        result = None
         async with session_scope(settings) as session:
             result = await run_chapter_pipeline(
                 session,
@@ -3227,8 +3314,16 @@ def chapter_pipeline(
                 chapter_number,
                 requested_by=requested_by,
                 export_markdown=export_markdown,
+                chapter_first=chapter_first,
+                supersede_pending_rewrites=supersede_pending_rewrites,
             )
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        if (
+            result is not None
+            and fail_on_requires_human_review
+            and result.requires_human_review
+        ):
+            raise typer.Exit(code=2)
 
     asyncio.run(_run())
 
@@ -3473,6 +3568,71 @@ def export_markdown(project_slug: str, chapter_number: int | None = None) -> Non
                         "checksum": artifact.checksum,
                         "version_label": artifact.version_label,
                         "output_path": str(output_path.resolve()),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+
+    asyncio.run(_run())
+
+
+@export_app.command("obsidian")
+def export_obsidian(
+    project_slug: str,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            help="Vault directory. Defaults to output/<project-slug>/obsidian-vault.",
+        ),
+    ] = None,
+    include_chapters: Annotated[
+        bool,
+        typer.Option(
+            "--include-chapters/--no-chapters",
+            help="Include current chapter draft snapshots in the vault.",
+        ),
+    ] = True,
+    include_raw: Annotated[
+        bool,
+        typer.Option(
+            "--include-raw/--no-raw",
+            help="Include raw JSON snapshots for traceability.",
+        ),
+    ] = True,
+    include_system_assets: Annotated[
+        bool,
+        typer.Option(
+            "--include-system-assets/--no-system-assets",
+            help="Include material, distillation, prompt, methodology, and model-call indexes.",
+        ),
+    ] = True,
+) -> None:
+    """Export an Obsidian vault for project knowledge management."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            result = await export_obsidian_vault(
+                session,
+                settings,
+                project_slug,
+                output_path=output,
+                include_chapters=include_chapters,
+                include_raw=include_raw,
+                include_system_assets=include_system_assets,
+            )
+            typer.echo(
+                json.dumps(
+                    {
+                        "id": str(result.artifact.id),
+                        "storage_uri": result.artifact.storage_uri,
+                        "checksum": result.checksum,
+                        "version_label": result.artifact.version_label,
+                        "vault_path": str(result.vault_path.resolve()),
+                        "manifest_path": str(result.manifest_path.resolve()),
+                        "file_count": result.file_count,
                     },
                     ensure_ascii=False,
                     indent=2,

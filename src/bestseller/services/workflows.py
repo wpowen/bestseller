@@ -58,6 +58,9 @@ from bestseller.services.methodology_overlay import (
     normalize_scene_overlay,
     resolve_methodology_contract_mode,
 )
+from bestseller.services.planning_readiness_gate import (
+    evaluate_chapter_outline_batch_planning_readiness,
+)
 from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.retrieval import refresh_story_bible_retrieval_index
 from bestseller.services.story_bible import (
@@ -727,6 +730,37 @@ def _sync_chapter_causality_metadata(
         metadata["methodology_contract"] = methodology_contract
     else:
         metadata.pop("methodology_contract", None)
+    for field_name in (
+        "world_rule_refs",
+        "world_rule_landing",
+        "world_state_deltas",
+        "world_asset_refs",
+        "authority_claim_refs",
+        "world_scene_template_ref",
+        "location_refs",
+        "faction_refs",
+        "key_reveals",
+    ):
+        value = getattr(chapter_outline, field_name, None)
+        if value:
+            metadata[field_name] = value
+        else:
+            metadata.pop(field_name, None)
+
+    # ── Outline-v2 executable script fields ──
+    for field_name in (
+        "protagonist_inner_state",
+        "chapter_concrete_actions",
+        "chapter_object_uses",
+        "chapter_information_introduced",
+        "chapter_information_held_back",
+    ):
+        value = getattr(chapter_outline, field_name, None)
+        if value:
+            metadata[field_name] = value
+        else:
+            metadata.pop(field_name, None)
+
     setattr(chapter, "metadata_json", metadata)
 
 
@@ -740,6 +774,13 @@ def _sync_existing_scene_from_outline(scene: SceneCardModel, scene_outline: Any)
     scene.purpose = scene_outline.purpose
     scene.entry_state = scene_outline.entry_state
     scene.exit_state = scene_outline.exit_state
+    scene.key_dialogue_beats = list(getattr(scene_outline, "key_dialogue_beats", None) or [])
+    scene.sensory_anchors = dict(getattr(scene_outline, "sensory_anchors", None) or {})
+    scene.forbidden_actions = list(getattr(scene_outline, "forbidden_actions", None) or [])
+    scene.hook_requirement = (
+        getattr(scene_outline, "hook_requirement", None)
+        or scene.hook_requirement
+    )
     scene.target_word_count = scene_outline.target_word_count
     _sync_scene_methodology_metadata(scene, scene_outline)
     return True
@@ -754,6 +795,24 @@ def _sync_scene_methodology_metadata(scene: SceneCardModel, scene_outline: Any) 
         metadata["methodology_contract"] = methodology_contract
     else:
         metadata.pop("methodology_contract", None)
+    rich_fields = {
+        "signature_image": getattr(scene_outline, "signature_image", None),
+        "cut_point": getattr(scene_outline, "cut_point", None),
+        "action_sequence": getattr(scene_outline, "action_sequence", None),
+        "relationship_debts": getattr(scene_outline, "relationship_debts", None),
+        "information_control_mode": getattr(scene_outline, "information_control_mode", None),
+        # Outline-v2 executable script fields
+        "concrete_goal": getattr(scene_outline, "concrete_goal", None),
+        "protagonist_state": getattr(scene_outline, "protagonist_state", None),
+        "information_introduced": getattr(scene_outline, "information_introduced", None) or None,
+        "information_held_back": getattr(scene_outline, "information_held_back", None) or None,
+        "object_signal": getattr(scene_outline, "object_signal", None),
+    }
+    for key, value in rich_fields.items():
+        if value:
+            metadata[key] = value
+        else:
+            metadata.pop(key, None)
     setattr(scene, "metadata_json", metadata)
 
 
@@ -1141,6 +1200,196 @@ async def materialize_chapter_outline_batch(
                     f"{len(_blocking_findings)} blocking finding(s)."
                 )
 
+        if (
+            getattr(settings.pipeline, "enable_methodology_planning_readiness_gate", True)
+            and _validation_batch.chapters
+        ):
+            _planning_readiness_report = evaluate_chapter_outline_batch_planning_readiness(
+                _validation_batch
+            )
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "methodology_planning_readiness_gate": (
+                    _planning_readiness_report.model_dump(mode="json")
+                ),
+            }
+            if (
+                not _planning_readiness_report.passed
+                and getattr(
+                    settings.pipeline,
+                    "methodology_planning_readiness_block_on_failure",
+                    True,
+                )
+            ):
+                raise ValueError(
+                    "Chapter outline batch blocked by methodology_planning_readiness_gate: "
+                    f"{len(_planning_readiness_report.blocking_findings)} "
+                    "blocking finding(s)."
+                )
+
+        from bestseller.services.prompt_packs import resolve_prompt_pack
+
+        _project_metadata = (
+            project.metadata_json if isinstance(project.metadata_json, dict) else {}
+        )
+        _project_brief = {
+            "slug": project.slug,
+            "title": project.title,
+            "genre": project.genre,
+            "sub_genre": project.sub_genre,
+            "target_chapters": project.target_chapters,
+            "reader_contract": project.reader_contract_json or {},
+            "hype_scheme": project.hype_scheme_json or {},
+            "metadata": _project_metadata,
+        }
+        _pack = resolve_prompt_pack(
+            _project_metadata.get("prompt_pack_name")
+            or _project_metadata.get("prompt_pack_key"),
+            genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+            sub_genre=getattr(project, "sub_genre", None),
+        )
+
+        if (
+            getattr(settings.pipeline, "enable_outline_llm_commercial_judge", False)
+            and _validation_batch.chapters
+        ):
+            current_step_name = "outline_llm_commercial_judge"
+            workflow_run.current_step = current_step_name
+            from bestseller.services.outline_llm_judge import (
+                judge_outline_commercial_readiness,
+            )
+
+            _outline_llm_result = await judge_outline_commercial_readiness(
+                session,
+                settings,
+                outline_payload=_validation_batch.model_dump(mode="json"),
+                project_brief=_project_brief,
+                threshold=float(
+                    getattr(
+                        settings.pipeline,
+                        "outline_llm_commercial_judge_threshold",
+                        0.82,
+                    )
+                    or 0.82
+                ),
+                workflow_run_id=workflow_run.id,
+                pack=_pack,
+            )
+            _outline_llm_payload = _outline_llm_result.model_dump(
+                mode="json",
+                by_alias=True,
+            )
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "outline_llm_commercial_judge": _outline_llm_payload,
+            }
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=(
+                    WorkflowStatus.MACHINE_BLOCKED
+                    if not _outline_llm_result.passed
+                    and getattr(
+                        settings.pipeline,
+                        "outline_llm_commercial_judge_block_on_failure",
+                        False,
+                    )
+                    else WorkflowStatus.COMPLETED
+                ),
+                output_ref=_outline_llm_payload,
+            )
+            step_order += 1
+            if (
+                not _outline_llm_result.passed
+                and getattr(
+                    settings.pipeline,
+                    "outline_llm_commercial_judge_block_on_failure",
+                    False,
+                )
+            ):
+                issue_summary = "; ".join(
+                    f"{issue.code}:{issue.evidence}"
+                    for issue in _outline_llm_result.blocking_issues[:3]
+                )
+                raise ValueError(
+                    "Chapter outline batch blocked by outline_llm_commercial_judge: "
+                    f"score={_outline_llm_result.overall_score:.3f}, "
+                    f"{len(_outline_llm_result.blocking_issues)} blocking issue(s). "
+                    f"{issue_summary}"
+                )
+
+        if (
+            getattr(settings.pipeline, "enable_outline_reader_experience_judge", True)
+            and _validation_batch.chapters
+        ):
+            current_step_name = "outline_reader_experience_judge"
+            workflow_run.current_step = current_step_name
+            from bestseller.services.outline_reader_experience_judge import (
+                judge_outline_reader_experience,
+            )
+
+            _reader_result = await judge_outline_reader_experience(
+                session,
+                settings,
+                chapters_payload=[
+                    ch.model_dump(mode="json") for ch in _validation_batch.chapters
+                ],
+                project_brief=_project_brief,
+                threshold=float(
+                    getattr(
+                        settings.pipeline,
+                        "outline_reader_experience_judge_threshold",
+                        0.78,
+                    )
+                    or 0.78
+                ),
+                workflow_run_id=workflow_run.id,
+                pack=_pack,
+            )
+            _reader_payload = _reader_result.model_dump(mode="json", by_alias=True)
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "outline_reader_experience_judge": _reader_payload,
+            }
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=(
+                    WorkflowStatus.MACHINE_BLOCKED
+                    if not _reader_result.passed
+                    and getattr(
+                        settings.pipeline,
+                        "outline_reader_experience_judge_block_on_failure",
+                        True,
+                    )
+                    else WorkflowStatus.COMPLETED
+                ),
+                output_ref=_reader_payload,
+            )
+            step_order += 1
+            if (
+                not _reader_result.passed
+                and getattr(
+                    settings.pipeline,
+                    "outline_reader_experience_judge_block_on_failure",
+                    True,
+                )
+            ):
+                issue_summary = "; ".join(
+                    f"{issue.code}:{issue.evidence}"
+                    for issue in _reader_result.blocking_issues[:3]
+                )
+                raise ValueError(
+                    "Chapter outline batch blocked by outline_reader_experience_judge: "
+                    f"score={_reader_result.overall_score:.3f}, "
+                    f"{len(_reader_result.blocking_issues)} blocking issue(s). "
+                    f"{issue_summary}"
+                )
+
         _story_principle_cfg = get_quality_gates_config().story_principle
         if (
             getattr(settings.pipeline, "enable_story_principle_gate", True)
@@ -1300,6 +1549,32 @@ async def materialize_chapter_outline_batch(
                             purpose=scene_outline.purpose,
                             entry_state=scene_outline.entry_state,
                             exit_state=scene_outline.exit_state,
+                            key_dialogue_beats=scene_outline.key_dialogue_beats,
+                            sensory_anchors=scene_outline.sensory_anchors,
+                            forbidden_actions=scene_outline.forbidden_actions,
+                            metadata={
+                                key: value
+                                for key, value in {
+                                    "signature_image": scene_outline.signature_image,
+                                    "cut_point": scene_outline.cut_point,
+                                    "action_sequence": scene_outline.action_sequence,
+                                    "relationship_debts": scene_outline.relationship_debts,
+                                    "information_control_mode": (
+                                        scene_outline.information_control_mode
+                                    ),
+                                    # Outline-v2 executable script fields
+                                    "concrete_goal": scene_outline.concrete_goal,
+                                    "protagonist_state": scene_outline.protagonist_state,
+                                    "information_introduced": (
+                                        scene_outline.information_introduced or None
+                                    ),
+                                    "information_held_back": (
+                                        scene_outline.information_held_back or None
+                                    ),
+                                    "object_signal": scene_outline.object_signal,
+                                }.items()
+                                if value
+                            },
                             target_word_count=scene_outline.target_word_count,
                         ),
                     )

@@ -53,6 +53,7 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
 )
 from bestseller.infra.db.session import get_server_session
+from bestseller.services.gate_registry import project_resume_is_terminally_blocked
 from bestseller.settings import AppSettings
 
 # Periodic self-heal must not reap legitimate long LLM calls.  A single
@@ -311,6 +312,8 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
     for project in projects:
         if _project_is_archived(project):
             continue
+        if _project_is_focus_paused(project):
+            continue
 
         # Skip projects with an active pipeline run.
         if await _has_active_pipeline_run(session, project.id):
@@ -486,6 +489,17 @@ def _project_is_archived(project: ProjectModel) -> bool:
         metadata = {}
     status = (getattr(project, "status", None) or "").lower()
     return status == ProjectStatus.ARCHIVED.value or bool(metadata.get("library_archived"))
+
+
+def _project_is_focus_paused(project: ProjectModel) -> bool:
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        return False
+    focus_pause = metadata.get("focus_pause")
+    reason = str(metadata.get("production_pause_reason") or "").strip()
+    if isinstance(focus_pause, dict):
+        reason = str(focus_pause.get("reason") or reason).strip()
+    return reason.startswith("focus_")
 
 
 async def _has_active_pipeline_run(session: Any, project_id: Any) -> bool:
@@ -681,7 +695,9 @@ async def _clear_auto_resumable_generation_gate_pause(
 def _project_resume_is_blocked(project: ProjectModel) -> bool:
     if _project_has_stale_auto_resumable_generation_gate(project):
         return False
-    return False
+    return project_resume_is_terminally_blocked(
+        getattr(project, "metadata_json", None)
+    )
 
 
 def _arq_redis_settings(settings: AppSettings) -> Any:

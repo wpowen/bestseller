@@ -7,7 +7,7 @@ import sys
 
 
 def _load_materializer():
-    path = Path(__file__).resolve().parents[2] / "scripts/audit_repair_qingnang_narrative_richness.py"
+    path = Path(__file__).resolve().parents[2] / "scripts/_deprecated/qingnang_repair/audit_repair_qingnang_narrative_richness.py"
     spec = importlib.util.spec_from_file_location("audit_repair_qingnang_narrative_richness", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

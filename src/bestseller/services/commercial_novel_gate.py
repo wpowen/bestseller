@@ -33,7 +33,19 @@ from bestseller.services.canon_guardrails import (
     CanonGuardrails,
     load_canon_guardrails_file,
 )
+from bestseller.services.forward_state_contract_gate import evaluate_forward_state_contract
+from bestseller.services.outline_reveal_alignment_gate import (
+    evaluate_outline_reveal_alignment,
+    load_reveal_schedule,
+)
+from bestseller.services.outline_specificity_gate import evaluate_outline_specificity
+from bestseller.services.prewrite_contract_gate import evaluate_prewrite_contract_readiness
 from bestseller.services.reader_power import analyze_golden_three
+from bestseller.services.retention_onboarding_gate import scan_retention_onboarding_package
+from bestseller.services.volume_plan_resolution_gate import (
+    evaluate_volume_plan_resolution,
+    load_volume_plan_v2_file,
+)
 
 GateSeverity = Literal["critical", "high", "medium", "low"]
 
@@ -67,6 +79,7 @@ class CommercialGatePolicy:
         "归墟之主",
         "真正敌人",
     )
+    outline_asset_gates_block_on_failure: bool = False
     anchors: tuple[CommercialAnchor, ...] = ()
 
 
@@ -183,6 +196,15 @@ def evaluate_book_package(
         _check_planning_artifact_drift(root, metadata, guardrails, effective_policy)
     )
     issues.extend(_check_golden_three(chapters))
+    retention_verdict = scan_retention_onboarding_package(root, chapters)
+    outline_specificity_verdicts = _evaluate_outline_specificity_audit_gates(root, chapters)
+    issues.extend(_retention_findings_to_commercial_issues(retention_verdict.findings))
+    if effective_policy.outline_asset_gates_block_on_failure:
+        issues.extend(
+            _outline_asset_gate_findings_to_commercial_issues(
+                outline_specificity_verdicts
+            )
+        )
     issues.extend(_check_package_integrity(root, chapters))
     issues.extend(_check_canon_guardrails(chapters, guardrails))
     issues.extend(_check_reader_contract(chapters, effective_policy))
@@ -203,6 +225,10 @@ def evaluate_book_package(
         "issue_counts": _issue_counts(issues),
         "blocking_severities": list(effective_policy.blocking_severities),
         "blocking_issue_counts": _issue_counts(blocking_issues),
+        "retention_onboarding_gate": retention_verdict.model_dump(mode="json"),
+        "outline_specificity_audit_gates": [
+            verdict.model_dump(mode="json") for verdict in outline_specificity_verdicts
+        ],
     }
 
     return CommercialGateReport(
@@ -243,6 +269,119 @@ def commercial_gate_report_to_dict(report: CommercialGateReport) -> dict[str, An
     }
 
 
+def _evaluate_outline_specificity_audit_gates(
+    root: Path,
+    chapters: Sequence[ChapterText],
+) -> tuple[GateVerdict, ...]:
+    """Run G8-G11 in audit mode without affecting commercial pass/fail yet."""
+
+    story_bible_dir = root / "story-bible"
+    verdicts: list[GateVerdict] = []
+    contract_payload = _load_json(story_bible_dir / "prewrite-contract.json")
+    chapter_contracts = contract_payload.get("chapters")
+    if isinstance(chapter_contracts, Mapping):
+        previous: Mapping[str, Any] | None = None
+        for key, item in sorted(
+            chapter_contracts.items(),
+            key=lambda pair: int(pair[0]) if str(pair[0]).isdigit() else 0,
+        ):
+            if not isinstance(item, Mapping):
+                continue
+            outline = {"chapter_no": int(key) if str(key).isdigit() else 0, **dict(item)}
+            verdicts.append(
+                evaluate_prewrite_contract_readiness(
+                    chapter_no=int(key) if str(key).isdigit() else 0,
+                    contract=contract_payload,
+                )
+            )
+            verdicts.append(evaluate_outline_specificity(outline, prev_outline=previous))
+            previous = outline
+
+    volume_v2_path = story_bible_dir / "volume-plan-v2.yaml"
+    if volume_v2_path.exists():
+        try:
+            verdicts.append(
+                evaluate_volume_plan_resolution(load_volume_plan_v2_file(volume_v2_path))
+            )
+        except (OSError, ValueError) as exc:
+            verdicts.append(
+                GateVerdict(
+                    gate_name="volume_plan_resolution_gate",
+                    verdict="error",
+                    coverage=0.0,
+                    findings=(
+                        GateFinding(
+                            code="VOLUME_PLAN_V2_LOAD_ERROR",
+                            severity="critical",
+                            message=str(exc),
+                            path="story-bible/volume-plan-v2.yaml",
+                        ),
+                    ),
+                )
+            )
+
+    ledger_path = story_bible_dir / "event-state-ledger.md"
+    if ledger_path.exists() and chapters:
+        verdicts.append(
+            evaluate_forward_state_contract(
+                ledger_path,
+                current_chapter=max(chapter.chapter_no for chapter in chapters),
+            )
+        )
+
+    reveal_schedule_path = story_bible_dir / "reveal-schedule.yaml"
+    if reveal_schedule_path.exists() and isinstance(chapter_contracts, Mapping):
+        schedule = load_reveal_schedule(reveal_schedule_path)
+        for key, item in sorted(
+            chapter_contracts.items(),
+            key=lambda pair: int(pair[0]) if str(pair[0]).isdigit() else 0,
+        ):
+            if not isinstance(item, Mapping):
+                continue
+            outline = {"chapter_no": int(key) if str(key).isdigit() else 0, **dict(item)}
+            verdicts.append(
+                evaluate_outline_reveal_alignment(outline, reveal_schedule=schedule)
+            )
+    return tuple(verdicts)
+
+
+def _outline_asset_gate_findings_to_commercial_issues(
+    verdicts: Sequence[GateVerdict],
+) -> tuple[CommercialGateIssue, ...]:
+    issues: list[CommercialGateIssue] = []
+    for verdict in verdicts:
+        if verdict.verdict not in {"blocked", "error"} and not verdict.critical_count:
+            continue
+        for finding in verdict.findings:
+            if finding.severity not in {"critical", "high"}:
+                continue
+            issues.append(
+                CommercialGateIssue(
+                    code=finding.code,
+                    severity=finding.severity,
+                    chapter_no=_chapter_no_from_gate_path(finding.path),
+                    detail=finding.message,
+                    suggestion=(
+                        finding.repair_action
+                        or "repair outline asset gate before approving this package"
+                    ),
+                    evidence={
+                        "gate_name": verdict.gate_name,
+                        "gate_verdict": verdict.verdict,
+                        "gate_path": finding.path,
+                    },
+                )
+            )
+    return tuple(issues)
+
+
+def _chapter_no_from_gate_path(path: str) -> int | None:
+    match = re.search(r"(?:chapter-|chapter:?)([0-9]{1,4})", path or "")
+    if match:
+        return int(match.group(1))
+    return None
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -252,6 +391,26 @@ def _load_json(path: Path) -> dict[str, Any]:
         return {}
     return raw if isinstance(raw, dict) else {}
 
+
+def _retention_findings_to_commercial_issues(
+    findings: Sequence[GateFinding],
+) -> list[CommercialGateIssue]:
+    issues: list[CommercialGateIssue] = []
+    for finding in findings:
+        issues.append(
+            CommercialGateIssue(
+                code=finding.code,
+                severity=finding.severity,
+                chapter_no=_chapter_no_from_gate_path(finding.path),
+                detail=finding.message,
+                suggestion=finding.repair_action,
+                evidence={
+                    "source_gate": "retention_onboarding_gate",
+                    "path": finding.path,
+                },
+            )
+        )
+    return issues
 
 def _load_chapters(root: Path) -> tuple[ChapterText, ...]:
     chapters: list[ChapterText] = []
@@ -738,7 +897,10 @@ def _check_location_anchor_conflicts(
         window = chapter.text[:1800] if chapter.chapter_no <= 3 else chapter.text[:900]
         floor_hits: dict[int, list[str]] = {}
         for match in _FLOOR_RE.finditer(window):
-            if any(window[match.start() : match.start() + len(prefix)] == prefix for prefix in _FLOOR_FALSE_POSITIVE_PREFIXES):
+            if any(
+                window[match.start() : match.start() + len(prefix)] == prefix
+                for prefix in _FLOOR_FALSE_POSITIVE_PREFIXES
+            ):
                 continue
             number = _parse_cjk_integer(match.group(1))
             if number is None:
@@ -1550,6 +1712,71 @@ def _closure_for_commercial_issue(issue: CommercialGateIssue) -> CommercialIssue
                 "重跑 premature payoff gate，确认开篇没有提前消耗第一卷核心悬念。"
             ),
             rerun_scope="book",
+        ),
+        "ONBOARDING_OVERLOAD": CommercialIssueClosure(
+            immediate_repair=(
+                "重做开篇名词预算：每章只保留当场冲突必需的新人物、物件和规则，"
+                "把钱婆婆、扣账人、三代为一户等后置。"
+            ),
+            recurrence_prevention=(
+                "维护 story-bible/canonical-terms.yaml，并在写前 plan 输出本章新增名词清单。"
+            ),
+            verification=(
+                "重跑 retention gate，确认 chapters 1-2/1-5/1-10 的新增名词数低于阈值。"
+            ),
+            rerun_scope="chapters:1-10",
+        ),
+        "TIME_ANCHOR_BACKWARDS": CommercialIssueClosure(
+            immediate_repair=(
+                f"统一{chapter}及前后章的时钟锚点；若不是倒叙，后一章时间必须晚于上一章。"
+            ),
+            recurrence_prevention=(
+                "把 clock state 写入 prewrite contract，下一章开头必须继承上一章尾部时间。"
+            ),
+            verification=(
+                "重跑 time-anchor monotonicity 和整包 commercial gate，确认时钟不再倒退。"
+            ),
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "BEAT_DENSITY_OVERLOAD": CommercialIssueClosure(
+            immediate_repair=(
+                f"拆解{chapter}的主任务，只保留一个主冲突、一个短回报和一个尾钩。"
+            ),
+            recurrence_prevention=(
+                "写前大纲必须列出 beat_count；超过阈值时先拆章或顺延新增人物/地点。"
+            ),
+            verification="重跑 retention gate，确认 BEAT_DENSITY_OVERLOAD 消失。",
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "PREMATURE_REVEAL": CommercialIssueClosure(
+            immediate_repair=(
+                f"撤回{chapter}中过早出现的终局词或核心机制名，改成局部物证/误导线索。"
+            ),
+            recurrence_prevention=(
+                "维护 story-bible/reveal-schedule.yaml；生成前后均按 earliest_chapter 扫描。"
+            ),
+            verification="重跑 premature reveal gate，确认 reveal floor 之前没有命中词。",
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "HOOK_TOO_ABSTRACT": CommercialIssueClosure(
+            immediate_repair=(
+                f"重写{chapter}章尾 200 字，至少落到具体人、物、地点、倒计时中的两个。"
+            ),
+            recurrence_prevention=(
+                "章节计划必须声明尾钩的具象元素，不能只写恐惧、命运、真相等抽象词。"
+            ),
+            verification="重跑 hook specificity gate，确认章尾具象度达标。",
+            rerun_scope=f"chapter:{issue.chapter_no}",
+        ),
+        "OPENING_PATTERN_OVERUSED": CommercialIssueClosure(
+            immediate_repair=(
+                "调整命中窗口内的开篇形态，避免连续用同一种时间、物证或人物动作起笔。"
+            ),
+            recurrence_prevention=(
+                "批次大纲增加 opening_mode 字段，6 章窗口内同类开篇不得超过 2 次。"
+            ),
+            verification="重跑 opening repetition gate，确认窗口内重复模式低于阈值。",
+            rerun_scope="chapters:window",
         ),
         "PLANNING_ARTIFACT_GENRE_DRIFT": CommercialIssueClosure(
             immediate_repair=(

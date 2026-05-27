@@ -8,8 +8,9 @@ adds that structured layer without touching the existing prose profiles.
 
 The loader reads ``config/genre_profile_thresholds/<genre_id>.yaml`` and
 caches the parsed dataclasses. Callers should access via
-``resolve_thresholds(genre_id)`` which falls back to
-``action-progression`` for unknown IDs.
+``resolve_thresholds(genre_id)`` which first normalizes common raw genre
+labels to canonical IDs, then falls back to ``action-progression`` for
+unknown IDs.
 
 Existing genre IDs (derived from genre_review_profiles.py):
     default
@@ -29,14 +30,14 @@ module is the structured default, not a replacement.
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
+import logging
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 import yaml
-
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,40 @@ KNOWN_GENRE_IDS: tuple[str, ...] = (
 
 
 DEFAULT_FALLBACK_GENRE = "action-progression"
+
+_RAW_GENRE_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("悬疑", "suspense-mystery"),
+    ("推理", "suspense-mystery"),
+    ("探案", "suspense-mystery"),
+    ("侦探", "suspense-mystery"),
+    ("怪谈", "suspense-mystery"),
+    ("惊悚", "suspense-mystery"),
+    ("灵异", "suspense-mystery"),
+    ("驱魔", "suspense-mystery"),
+    ("mystery", "suspense-mystery"),
+    ("thriller", "suspense-mystery"),
+    ("horror", "suspense-mystery"),
+    ("detective", "suspense-mystery"),
+    ("言情", "relationship-driven"),
+    ("恋爱", "relationship-driven"),
+    ("romance", "relationship-driven"),
+    ("修仙", "action-progression"),
+    ("玄幻", "action-progression"),
+    ("升级", "action-progression"),
+    ("litrpg", "action-progression"),
+    ("权谋", "strategy-worldbuilding"),
+    ("历史", "strategy-worldbuilding"),
+    ("争霸", "strategy-worldbuilding"),
+    ("电竞", "esports-competition"),
+    ("游戏", "esports-competition"),
+    ("大女主", "female-growth-ncp"),
+    ("无cp", "female-growth-ncp"),
+    ("种田", "base-building"),
+    ("基建", "base-building"),
+    ("经营", "base-building"),
+    ("国风", "eastern-aesthetic"),
+    ("东方美学", "eastern-aesthetic"),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -285,14 +320,14 @@ def _parse_override(data: Mapping[str, Any]) -> OverrideConfig:
     )
 
 
-def _coerce_strength(value: Any) -> Literal["strong", "medium", "weak"]:
+def _coerce_strength(value: object) -> Literal["strong", "medium", "weak"]:
     s = str(value).lower()
     if s in ("strong", "medium", "weak"):
         return s  # type: ignore[return-value]
     return "medium"
 
 
-def _coerce_density(value: Any) -> Literal["high", "medium", "low"]:
+def _coerce_density(value: object) -> Literal["high", "medium", "low"]:
     s = str(value).lower()
     if s in ("high", "medium", "low"):
         return s  # type: ignore[return-value]
@@ -339,8 +374,21 @@ def resolve_thresholds(genre_id: str | None) -> GenreProfileThresholds:
     ``genre_id=None`` always returns the fallback. The loader is already
     cached per-id; this wrapper just normalizes input."""
 
-    gid = (genre_id or DEFAULT_FALLBACK_GENRE).strip() or DEFAULT_FALLBACK_GENRE
+    gid = _normalize_genre_id(genre_id)
     return load_thresholds(gid)
+
+
+def _normalize_genre_id(genre_id: str | None) -> str:
+    rendered = (genre_id or "").strip()
+    if not rendered:
+        return DEFAULT_FALLBACK_GENRE
+    if rendered in KNOWN_GENRE_IDS:
+        return rendered
+    lowered = rendered.lower()
+    for needle, canonical in _RAW_GENRE_KEYWORDS:
+        if needle.lower() in lowered and canonical in KNOWN_GENRE_IDS:
+            return canonical
+    return rendered
 
 
 def _reset_cache() -> None:

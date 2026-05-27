@@ -910,6 +910,13 @@ def collect_publication_blockers(
         for chapter, _draft in chapter_payloads
         if getattr(chapter, "chapter_number", None) is not None
     }
+    comparison_for_quality = comparison_payloads if comparison_payloads is not None else chapter_payloads
+    all_quality_texts = [
+        (int(chapter.chapter_number), draft.content_md or "")
+        for chapter, draft in comparison_for_quality
+        if getattr(chapter, "chapter_number", None) is not None
+    ]
+    all_quality_texts.sort(key=lambda item: item[0])
 
     for chapter, draft in chapter_payloads:
         chapter_number = int(chapter.chapter_number)
@@ -939,6 +946,56 @@ def collect_publication_blockers(
                     if is_en else f"第{chapter_number}章：当前稿缺少场景来源记录，禁止发布"
                 )
             )
+        if not is_en:
+            try:
+                from bestseller.services.chapter_quality_bundle import (
+                    ChapterQualityBundleContext,
+                    run_chapter_quality_bundle,
+                )
+                from bestseller.settings import get_settings as _get_settings
+
+                _cfg = _get_settings()
+                chapter_meta = (
+                    chapter.metadata_json
+                    if isinstance(chapter.metadata_json, dict)
+                    else {}
+                )
+                has_quality_snapshot = isinstance(chapter_meta.get("quality_bundle"), dict)
+                commercial_quality_required = (
+                    bool(_cfg.pipeline.commercial_strict_quality_mode)
+                    and int(getattr(project, "target_chapters", 0) or 0)
+                    >= int(_cfg.pipeline.commercial_planning_min_target_chapters)
+                )
+                if has_quality_snapshot or commercial_quality_required:
+                    prior_texts = tuple(
+                        (number, text)
+                        for number, text in all_quality_texts
+                        if number < chapter_number
+                    )
+                    previous_number = prior_texts[-1][0] if prior_texts else None
+                    previous_text = prior_texts[-1][1] if prior_texts else None
+                    quality_report = run_chapter_quality_bundle(
+                        draft.content_md or "",
+                        ChapterQualityBundleContext(
+                            chapter_number=chapter_number,
+                            previous_chapter_text=previous_text,
+                            previous_chapter_position=previous_number,
+                            previous_chapter_texts=prior_texts,
+                            total_chapters=int(getattr(project, "target_chapters", 0) or 500),
+                            language=language or "zh-CN",
+                            target_chapter_words=int(_cfg.generation.words_per_chapter.target),
+                            commercial_strict=True,
+                        ),
+                    )
+                    if quality_report.blocking_findings:
+                        codes = ", ".join(quality_report.to_dict()["blocking_codes"])
+                        blockers.append(
+                            f"第{chapter_number}章：统一质量快照未通过（{codes}），禁止发布"
+                        )
+            except Exception:
+                blockers.append(
+                    f"第{chapter_number}章：统一质量快照执行失败，严格商业模式禁止发布"
+                )
         # Word-count deviations are logged as warnings but never block export.
         target = max(int(chapter.target_word_count or 0), 0)
         if target > 0:
@@ -1084,28 +1141,37 @@ def collect_publication_blockers(
             logger.debug("Publication gate: local duplicate check failed", exc_info=True)
 
     try:
-        from bestseller.services.deduplication import detect_cross_chapter_repetition
+        from bestseller.services.chapter_batch_quality_gate import (
+            evaluate_chapter_batch_quality,
+        )
 
-        comparison = comparison_payloads if comparison_payloads is not None else chapter_payloads
-        cross_findings = detect_cross_chapter_repetition(
-            [
-                (int(chapter.chapter_number), draft.content_md or "")
-                for chapter, draft in comparison
-                if getattr(chapter, "chapter_number", None) is not None
-            ]
+        batch_report = evaluate_chapter_batch_quality(all_quality_texts)
+        cross_findings = (
+            [finding.to_dict() for finding in batch_report.findings]
+            if batch_report is not None
+            else []
         )
         emitted = 0
         for finding in cross_findings:
-            if int(finding.get("chapter") or 0) not in target_chapter_numbers:
+            finding_chapter = int(
+                finding.get("chapter")
+                or finding.get("chapter_number")
+                or 0
+            )
+            if finding_chapter not in target_chapter_numbers:
                 continue
-            message = str(finding.get("message") or "cross-chapter duplicate content")
-            blockers.append(message if not is_en else f"Chapter {finding.get('chapter')}: {message}")
+            message = str(finding.get("message") or "batch quality regression")
+            code = str(finding.get("code") or "")
+            if code == "CROSS_CHAPTER_REPETITION" and "跨章段落重复" not in message:
+                message = f"跨章段落重复/整体重复：{message}"
+            blockers.append(message if not is_en else f"Chapter {finding_chapter}: {message}")
             emitted += 1
             if emitted >= 10:
                 break
         remaining = len([
             finding for finding in cross_findings
-            if int(finding.get("chapter") or 0) in target_chapter_numbers
+            if int(finding.get("chapter") or finding.get("chapter_number") or 0)
+            in target_chapter_numbers
         ]) - emitted
         if remaining > 0:
             blockers.append(

@@ -1,3 +1,4 @@
+# ruff: noqa: ANN401, I001, RUF001
 """Deterministic scene-beat planning for anti-slop prose prompts.
 
 The design goal is to keep abstract chapter contracts out of the prose-writing
@@ -9,9 +10,17 @@ in-scene ending.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
-from bestseller.domain.scene_beat import BeatCamera, BeatDialoguePlan, SceneBeat, SceneBeatSheet
+import yaml
+
+from bestseller.domain.scene_beat import (
+    BeatCamera,
+    BeatDialoguePlan,
+    SceneBeat,
+    SceneBeatSheet,
+)
 
 
 _DEFAULT_BANNED_DEVICES = [
@@ -86,7 +95,10 @@ def build_scene_beat_sheet(
             beat_type="opening",
             camera=BeatCamera(location=location, time=time, weather=_weather_hint(entry_state)),
             characters_present=people[:3],
-            external_event=_visible_lines(opening_events, fallback="让读者先看见人物处境，而不是听解释"),
+            external_event=_visible_lines(
+                opening_events,
+                fallback="让读者先看见人物处境，而不是听解释",
+            ),
             interior_reaction=_interior_lines(emotion_purpose, people[0]),
             sensory_anchor=_sensory_anchor(scene_title, entry_state),
             dialogue_lines=BeatDialoguePlan(
@@ -122,7 +134,10 @@ def build_scene_beat_sheet(
             beat_type="cliff",
             camera=BeatCamera(location=location, time=time, weather=_weather_hint(exit_state)),
             characters_present=people[:3],
-            external_event=_visible_lines(payoff_events, fallback="章场收束在动作、画面或揭示的一帧"),
+            external_event=_visible_lines(
+                payoff_events,
+                fallback="章场收束在动作、画面或揭示的一帧",
+            ),
             interior_reaction=_interior_lines(emotion_purpose, people[0]),
             sensory_anchor=_sensory_anchor(scene_title, exit_state),
             dialogue_lines=BeatDialoguePlan(
@@ -142,6 +157,57 @@ def build_scene_beat_sheet(
         scene_number=scene_number,
         beats=beats,
     )
+
+
+def persist_scene_beat_sheet(
+    sheet: SceneBeatSheet,
+    story_bible_dir: str | Path,
+) -> Path:
+    """Persist one scene beat sheet as an auditable story-bible YAML artifact."""
+
+    output_dir = Path(story_bible_dir) / "scene-beats"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"ch{sheet.chapter_number:04d}-s{sheet.scene_number:02d}.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            scene_beat_sheet_to_persisted_dict(sheet),
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def scene_beat_sheet_to_persisted_dict(sheet: SceneBeatSheet) -> dict[str, Any]:
+    first = sheet.beats[0]
+    last = sheet.beats[-1]
+    return {
+        "chapter_no": sheet.chapter_number,
+        "scene_no": sheet.scene_number,
+        "opening_pattern": _opening_pattern(first),
+        "camera_beats": [
+            {
+                "beat_id": beat.beat_id,
+                "beat_type": beat.beat_type,
+                "location": beat.camera.location,
+                "time_anchor": beat.camera.time,
+                "characters_present": list(beat.characters_present),
+                "external_event": list(beat.external_event),
+                "sensory_anchor": dict(beat.sensory_anchor),
+                "beat_payoff": list(beat.beat_payoff),
+            }
+            for beat in sheet.beats
+        ],
+        "named_entities": _named_entities(sheet),
+        "time_anchor": first.camera.time,
+        "ending_hook_target": "; ".join(last.external_event),
+    }
+
+
+def load_persisted_scene_beat(path: str | Path) -> dict[str, Any]:
+    loaded = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def _word_budget(word_target: int | None) -> tuple[int, int]:
@@ -213,7 +279,10 @@ def _visible_lines(events: Sequence[str], *, fallback: str) -> list[str]:
 def _interior_lines(emotion_purpose: str | None, pov_name: str) -> list[str]:
     if not emotion_purpose:
         return [f"{pov_name}的反应只能通过手势、停顿、呼吸或短句表现"]
-    return [f"{pov_name}: {_sanitize_design_terms(emotion_purpose)}（不要明说，用动作或短句表现）"]
+    return [
+        f"{pov_name}: {_sanitize_design_terms(emotion_purpose)}"
+        "（不要明说，用动作或短句表现）"
+    ]
 
 
 def _sensory_anchor(label: str | None, payload: Mapping[str, Any] | None) -> dict[str, str]:
@@ -263,4 +332,40 @@ def _sanitize_design_terms(text: str | None) -> str:
     return cleaned
 
 
-__all__ = ["build_scene_beat_sheet"]
+def _opening_pattern(beat: SceneBeat) -> str:
+    text = "\n".join([beat.camera.time, beat.camera.location, *beat.external_event])
+    if any(ch.isdigit() for ch in text) or any(term in text for term in ("时", "点", "分钟")):
+        return "time_anchor"
+    if any(term in text for term in ("证据", "物证", "账印", "回执", "尸体", "铜钱")):
+        return "realistic_evidence"
+    if beat.characters_present:
+        return "character_pressure"
+    return "environmental_pressure"
+
+
+def _named_entities(sheet: SceneBeatSheet) -> list[str]:
+    entities: list[str] = []
+    for beat in sheet.beats:
+        entities.extend(beat.characters_present)
+        for value in (beat.camera.location, beat.camera.time):
+            if value:
+                entities.append(value)
+        for event in beat.external_event:
+            entities.extend(_extract_quoted_or_numbered_entities(event))
+    return list(dict.fromkeys(item for item in entities if item))
+
+
+def _extract_quoted_or_numbered_entities(text: str) -> list[str]:
+    entities: list[str] = []
+    for token in ("303", "302", "青囊", "罗盘", "铜钱", "账印", "回执", "镜片"):
+        if token in text:
+            entities.append(token)
+    return entities
+
+
+__all__ = [
+    "build_scene_beat_sheet",
+    "load_persisted_scene_beat",
+    "persist_scene_beat_sheet",
+    "scene_beat_sheet_to_persisted_dict",
+]

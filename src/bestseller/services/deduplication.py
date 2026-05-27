@@ -32,6 +32,7 @@ _CJK_SHINGLE_SIZE = 4   # characters per shingle (Chinese/CJK)
 
 # Regex that matches any CJK Unified Ideograph
 _CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
+_MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+")
 
 
 def _normalize_text(text: str) -> str:
@@ -93,6 +94,20 @@ def compute_jaccard_similarity(text_a: str, text_b: str) -> float:
     intersection = len(set_a & set_b)
     union = len(set_a | set_b)
     return intersection / union if union > 0 else 0.0
+
+
+def extract_chapter_opening(text: str) -> str:
+    """Return the first publishable non-heading line of a chapter draft."""
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _MARKDOWN_HEADING_RE.match(line):
+            continue
+        if line in {"---", "***", "——"}:
+            continue
+        return line
+    return ""
 
 
 _CROSS_CHAPTER_PUNCT_RE = re.compile(r"[\s#*_`>\-=，。！？、；：“”‘’（）()【】\[\]《》,.!?;:'\"…·]+")
@@ -1033,14 +1048,24 @@ def build_opening_diversity_block(
             snippet = opening[:opening_length].replace("\n", " ")
             lines.append(f"• 第{ch_num}章开头：「{snippet}…」")
         lines.append("开场不得重复上述任何场景设定、视角切入或句式结构。")
+        lines.append("硬性禁用：不得逐字复用上述开头，也不得只替换一两个名词后复用同一模板。")
+        lines.append(
+            "本章第一段必须从本章独有的动作、冲突、新证据或人物决策切入；"
+            "禁止抽象总结句、泛化环境闪灯、道具在掌心异动、门槛停步等已用套式。"
+        )
     else:
         lines = ["[RECENT CHAPTER OPENINGS — this chapter MUST open differently]"]
         for ch_num, opening in recent_openings:
             snippet = opening[:opening_length].replace("\n", " ")
             lines.append(f"• Ch{ch_num} opened with: \"{snippet}…\"")
         lines.append(
-            "Do NOT start with the same noun phrase, setting, or sentence structure. "
-            "Especially avoid starting with \"The [noun] [verb]...\" if that pattern appears above."
+            "Hard ban: do not reuse any opening verbatim, and do not reuse the "
+            "same template by swapping one or two nouns."
+        )
+        lines.append(
+            "Open from this chapter's unique action, conflict, new evidence, or "
+            "character decision; avoid generic summary, flickering-setting, "
+            "object-twitch, and threshold-pause templates."
         )
 
     return "\n".join(lines)
@@ -1187,7 +1212,6 @@ def build_scene_purpose_diversity_block(
 ) -> str:
     """Render a prompt block listing recent scene purposes + required family switches."""
     from bestseller.services.scene_taxonomy import (
-        PURPOSE_FAMILIES,
         evaluate_purpose_rules,
         purpose_label,
     )
@@ -1644,6 +1668,28 @@ _EVENT_PROP_WORDS = (
     "灯", "烛", "镜", "符",
 )
 
+_BROAD_EVENT_PROP_WORDS = frozenset(
+    {
+        "灯",
+        "烛",
+        "镜",
+        "镜面",
+        "符",
+        "符纸",
+        "符文",
+        # Single-character weapon/object words frequently occur inside mundane
+        # compounds ("指甲刀套装", "钥匙扣上的小刀") and are too weak to prove two
+        # separate blocks are alternative drafts of the same event.
+        "刀",
+        "剑",
+        "斧",
+        "鞭",
+        "锤",
+        "弓",
+        "盾",
+    }
+)
+
 
 @dataclass(frozen=True)
 class EventSignature:
@@ -1765,6 +1811,7 @@ _NAME_STOPWORDS = frozenset({
     "有人", "无人",
     # Location words that can appear standalone
     "门口", "门外", "屋内", "屋外", "丹房", "藏经", "演武", "宿舍", "院子", "山门",
+    "从镜",
     # Adverbs / connectors
     "庄严", "突然", "忽然", "刚才", "片刻", "片晌", "瞬间", "果然", "终于", "原来",
     "其实", "其中", "另一", "其他", "其余", "那个", "这个", "什么", "怎么", "怎样",
@@ -1787,10 +1834,50 @@ _NAME_STOPWORDS = frozenset({
     # whitelisted via the project's character-aliases.yaml when present.
     "道种", "道典", "灵压", "灵气", "灵力", "灵根", "筑基", "炼气", "金丹", "元婴",
     "封面", "封印", "封禁", "符文", "阴阳", "按律", "照出", "宗门", "禁地",
+    # 民俗/悬疑常用物件或语法片段；这些不是人物名。若进入参与者池，
+    # 章节内重复使用同一法器会被误判成“双稿拼接”。
+    "符纸", "黄符", "铜钱", "罗盘", "账线", "红线", "暗红", "黑水",
+    "那道", "那道暗", "那条", "那枚", "那张", "那只", "那面", "那扇",
 })
 
 # Chars that mark the *left* boundary of a name in vernacular CJK prose.
 _NAME_BOUNDARY_CHARS = set("\n\t 　，。：；！？、「」『』\"\"''（）()【】…·—-")
+
+_COMMON_CJK_SURNAMES = frozenset(
+    "赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华"
+    "金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方"
+    "俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅"
+    "皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧"
+    "计伏成戴谈宋庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江"
+    "童颜郭梅盛林刁钟徐邱骆高夏蔡田胡凌霍虞万支柯昝管卢莫经房"
+    "裘缪干解应宗丁宣邓郁单杭洪包诸左石崔吉龚程邢裴陆荣翁荀羊"
+    "於惠甄曲家封芮羿储靳汲邴糜松井段富巫乌焦巴弓牧隗山谷车侯"
+    "宓蓬全郗班仰秋仲伊宫宁仇栾暴甘斜厉戎祖武符刘景詹束龙叶幸"
+    "司韶郜黎蓟薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴郁胥能"
+    "苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍璩桑桂濮牛寿通边扈燕"
+    "冀浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终"
+    "暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越夔隆师巩厍聂"
+    "晁勾敖融冷訾辛阚那简饶空曾毋沙乜养鞠须丰巢关蒯相查后荆红"
+    "游竺权逯盖益桓公"
+)
+
+_NAME_THIRD_CHAR_GRAMMAR_SUFFIXES = frozenset(
+    "的了着过把被给在从向对和与及跟为是有没不很都也又还才就已"
+    "会能要想看听说问答笑哭叫骂喊低转走跑冲推拉拿拾捡掏塞开关"
+    "里外上下载进出到起下去来住过站"
+)
+
+
+def _looks_like_cjk_name(candidate: str) -> bool:
+    if len(candidate) not in (2, 3):
+        return False
+    if candidate[0] in {"那", "这"}:
+        return False
+    if candidate[0] not in _COMMON_CJK_SURNAMES:
+        return False
+    if len(candidate) == 3 and candidate[-1] in _NAME_THIRD_CHAR_GRAMMAR_SUFFIXES:
+        return False
+    return True
 
 
 def _extract_chapter_name_pool(chapter_text: str, min_occurrences: int = 2) -> set[str]:
@@ -1829,22 +1916,21 @@ def _extract_chapter_name_pool(chapter_text: str, min_occurrences: int = 2) -> s
                 continue
             if candidate in _NAME_STOPWORDS:
                 continue
+            if not _looks_like_cjk_name(candidate):
+                continue
             counts[candidate] = counts.get(candidate, 0) + 1
 
-    # Suppress 3-char candidates that are just a 2-char name + 1-char verb
-    # particle. Heuristic: if "宁尘被" appears with count C3 and "宁尘"
-    # appears with count C2 >= C3, the 3-char form is almost certainly
-    # spurious. We keep "周元青" because 周元 is typically a different
-    # character (or doesn't appear) -- so the 3-char dominates.
+    # Suppress 2-char prefixes when the chapter consistently uses a 3-char
+    # full name (e.g. 王建业 / 张建军). The grammar-suffix filter above already
+    # removes spurious forms such as 林渊把, so a surviving 3-char surname token
+    # is a better participant identity than its first two characters.
     dropped: set[str] = set()
-    for token in list(counts):
-        if len(token) != 3:
+    for token, count in list(counts.items()):
+        if len(token) != 3 or count < min_occurrences:
             continue
         prefix = token[:2]
-        if prefix in _NAME_STOPWORDS:
-            dropped.add(token)
-        elif prefix in counts and counts[prefix] >= counts[token]:
-            dropped.add(token)
+        if prefix in counts and counts[prefix] <= count:
+            dropped.add(prefix)
     for t in dropped:
         del counts[t]
 
@@ -1963,6 +2049,9 @@ def detect_intra_chapter_stitched_drafts(
             if len(a.participants & b.participants) < min_participants_overlap:
                 continue
             if len(a.props & b.props) < min_props_overlap:
+                continue
+            shared_props = a.props & b.props
+            if shared_props and shared_props <= _BROAD_EVENT_PROP_WORDS:
                 continue
             # Stitched drafts are different prose RENDITIONS of the same scene
             # and therefore tend to have similar lengths. Two blocks with very

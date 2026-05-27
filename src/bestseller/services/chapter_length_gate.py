@@ -1,4 +1,4 @@
-"""Chapter Length Gate — enforce minimum chapter body size.
+"""Chapter Length Gate — enforce chapter body size.
 
 The framework previously had no gate on chapter body length, allowing
 1300-character chapters to ship even though commercial bestseller
@@ -14,20 +14,24 @@ Severity ladder
 ---------------
 - ``critical`` ``CHAPTER_TOO_SHORT`` — below the hard floor; auto-repair.
 - ``high`` ``CHAPTER_BELOW_TARGET`` — within "soft warning" band; advisory.
-- pass — at or above target.
+- ``critical`` ``CHAPTER_LENGTH_BLOCK_HIGH`` — above the hard max; auto-repair.
+- pass — in the target/max band.
 
 Default thresholds (overridable per project via series-bible):
 - hard floor: 2000 zh chars
 - soft warning: 2500 zh chars
+- hard max: 3000 zh chars
 
 Block code: ``CHAPTER_TOO_SHORT`` — eligible for auto-repair.
 """
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import re
-from dataclasses import dataclass
 from typing import Final
 
 logger = logging.getLogger(__name__)
@@ -35,11 +39,13 @@ logger = logging.getLogger(__name__)
 
 CHAPTER_TOO_SHORT_BLOCK_CODE: Final[str] = "CHAPTER_TOO_SHORT"
 CHAPTER_BELOW_TARGET_BLOCK_CODE: Final[str] = "CHAPTER_BELOW_TARGET"
+CHAPTER_LENGTH_BLOCK_HIGH_CODE: Final[str] = "CHAPTER_LENGTH_BLOCK_HIGH"
 
 # Default thresholds. Chinese commercial serial fiction lands 2500-4000
 # zh-chars per chapter; below 2000 reads as a sketch.
 DEFAULT_HARD_FLOOR_ZH_CHARS: Final[int] = 2000
 DEFAULT_SOFT_WARNING_ZH_CHARS: Final[int] = 2500
+DEFAULT_HARD_MAX_ZH_CHARS: Final[int] = 3000
 
 # Match any CJK unified ideograph plus the common extension. We
 # deliberately exclude latin chars, digits, and punctuation: a chapter
@@ -55,6 +61,7 @@ class ChapterLengthFinding:
     zh_char_count: int
     hard_floor: int
     soft_warning: int
+    hard_max: int
 
 
 @dataclass(frozen=True)
@@ -90,12 +97,20 @@ def check_chapter_length(
     chapter_position: int,
     hard_floor: int = DEFAULT_HARD_FLOOR_ZH_CHARS,
     soft_warning: int = DEFAULT_SOFT_WARNING_ZH_CHARS,
+    hard_max: int = DEFAULT_HARD_MAX_ZH_CHARS,
 ) -> ChapterLengthReport:
     """Score chapter body length against the configured thresholds."""
 
     zh_count = count_zh_chars(chapter_text)
 
-    if zh_count < hard_floor:
+    if zh_count > hard_max:
+        severity = "critical"
+        code = CHAPTER_LENGTH_BLOCK_HIGH_CODE
+        detail = (
+            f"chapter has {zh_count} CJK chars, "
+            f"above hard max {hard_max} — must shrink"
+        )
+    elif zh_count < hard_floor:
         severity = "critical"
         code = CHAPTER_TOO_SHORT_BLOCK_CODE
         detail = (
@@ -114,7 +129,7 @@ def check_chapter_length(
     else:
         severity = "info"
         code = "CHAPTER_LENGTH_OK"
-        detail = f"chapter has {zh_count} CJK chars ≥ target {soft_warning}"
+        detail = f"chapter has {zh_count} CJK chars in target band {soft_warning}-{hard_max}"
 
     return ChapterLengthReport(
         chapter_position=chapter_position,
@@ -125,6 +140,7 @@ def check_chapter_length(
             zh_char_count=zh_count,
             hard_floor=hard_floor,
             soft_warning=soft_warning,
+            hard_max=hard_max,
         ),
     )
 
@@ -133,23 +149,30 @@ def render_chapter_length_block(
     *,
     hard_floor: int = DEFAULT_HARD_FLOOR_ZH_CHARS,
     soft_warning: int = DEFAULT_SOFT_WARNING_ZH_CHARS,
+    hard_max: int = DEFAULT_HARD_MAX_ZH_CHARS,
+    scene_target_word_count: int | None = None,
     language: str = "zh-CN",
 ) -> str:
     """Render a writing-prompt block telling the LLM the target band."""
 
     if language.lower().startswith("zh"):
+        scene_limit = ""
+        if scene_target_word_count:
+            scene_limit = f"- 本场景独立硬上限：{int(scene_target_word_count * 1.2)} 字。\n"
         return (
-            "【章节体量门 — 必须满足商业连载标准】\n"
-            f"- 本章正文 CJK 字数下限：{hard_floor} 字（低于此数视为残章，触发重写）。\n"
-            f"- 本章正文 CJK 字数目标：{soft_warning} 字以上（榜单连载标准）。\n"
+            "【章节体量门 — 硬约束，违反即重写】\n"
+            f"- 硬下限：{hard_floor} 字（低于：BLOCK_LOW，扩写）。\n"
+            f"- 目标：{soft_warning} 字。\n"
+            f"- 硬上限：{hard_max} 字（高于：BLOCK_HIGH，删减）。\n"
+            f"{scene_limit}"
             "- CJK 字数 = 中文汉字（不含标点/空白/英文字母/数字）。\n"
-            "- 不要靠拼接重复段、堆描述性形容词凑字数；通过加签名场景、"
-            "深化情绪、补足因果链来扩展。"
+            "- 写完后自检：本章 CJK 汉字数应在硬下限与硬上限之间。\n"
+            "- 严禁多个 scene 内容糊在同一连续叙述里；每场需有明确分隔（一行空行或场景转换）。"
         )
 
     return (
         f"[Chapter length gate — minimum {hard_floor} CJK chars, "
-        f"target {soft_warning}]"
+        f"target {soft_warning}, max {hard_max}]"
     )
 
 
@@ -163,6 +186,18 @@ def render_chapter_length_violation_block(
     if report.passed:
         return ""
     if language.lower().startswith("zh"):
+        if report.finding.code == CHAPTER_LENGTH_BLOCK_HIGH_CODE:
+            lines = [
+                "【章节体量门 — 本章必须删减】",
+                f"- 当前 CJK 字数：{report.finding.zh_char_count}。",
+                f"- 硬上限 CJK 字数：≤ {report.finding.hard_max}。",
+                f"- 超出：{report.finding.zh_char_count - report.finding.hard_max} 字。",
+                "- 删减方法（按优先级）：",
+                "  ① 删除重复心理解释和同义对白。",
+                "  ② 合并只承担过场功能的段落。",
+                "  ③ 保留因果节点、异常物、人物选择和章末钩子。",
+            ]
+            return "\n".join(lines)
         lines = [
             "【章节体量门 — 本章必须扩写】",
             f"- 当前 CJK 字数：{report.finding.zh_char_count}。",
@@ -180,8 +215,10 @@ def render_chapter_length_violation_block(
 
 __all__ = [
     "CHAPTER_BELOW_TARGET_BLOCK_CODE",
+    "CHAPTER_LENGTH_BLOCK_HIGH_CODE",
     "CHAPTER_TOO_SHORT_BLOCK_CODE",
     "DEFAULT_HARD_FLOOR_ZH_CHARS",
+    "DEFAULT_HARD_MAX_ZH_CHARS",
     "DEFAULT_SOFT_WARNING_ZH_CHARS",
     "ChapterLengthFinding",
     "ChapterLengthReport",

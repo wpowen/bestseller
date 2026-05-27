@@ -114,7 +114,7 @@ generation:
   words_per_chapter:
     min: 1800
     target: 2200
-    max: 4500
+    max: 3000
 
   scenes_per_chapter:
     min: 2

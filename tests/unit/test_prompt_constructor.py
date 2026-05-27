@@ -301,8 +301,9 @@ class TestBuildChapterPrompt:
         assert plan.assigned_opening == OpeningArchetype.CRISIS
         assert plan.assigned_cliffhanger is not None
         rendered = plan.render()
-        # System first, footer last.
-        assert rendered.startswith("你是畅销小说作家")
+        # Golden-three opening directive is promoted ahead of the role charter.
+        assert rendered.startswith("【黄金三章·开篇硬契约")
+        assert "你是畅销小说作家" in rendered
         assert "禁止项" in rendered
         # All supplied sections present.
         assert "主角：林奚" in rendered
@@ -819,3 +820,23 @@ class TestPromptPlanSystemUserSplit:
 
 def test_default_prior_chapter_tail_chars() -> None:
     assert DEFAULT_PRIOR_CHAPTER_TAIL_CHARS == 800
+
+
+def test_golden_three_opening_directive_is_system_prefix() -> None:
+    budget = DiversityBudget(project_id=uuid4())
+    inv = _invariants("zh-CN")
+    plan = build_chapter_prompt(inv, budget, chapter_no=1, system="ROLE")
+    system = plan.render_system()
+    user = plan.render_user()
+    assert system.startswith("【黄金三章·开篇硬契约")
+    assert "第 200 字" not in system
+    assert "前 200 字必须出现至少 1 个不可解释的怪事" in system
+    assert "黄金三章·开篇硬契约" not in user
+
+
+def test_opening_directive_skips_non_golden_chapters() -> None:
+    budget = DiversityBudget(project_id=uuid4())
+    inv = _invariants("zh-CN")
+    plan = build_chapter_prompt(inv, budget, chapter_no=4, system="ROLE")
+    assert plan.render_system().startswith("ROLE")
+    assert "黄金三章·开篇硬契约" not in plan.render_system()

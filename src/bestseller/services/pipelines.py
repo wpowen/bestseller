@@ -301,6 +301,9 @@ async def _evaluate_retention_safety_after_assembly(
         _length_kwargs["chapter_length_soft_warning"] = max(
             2000, int(_proj_target_words * 0.85)
         )
+        _length_kwargs["chapter_length_hard_max"] = max(
+            3000, int(_proj_target_words * 1.2)
+        )
     # Honor the per-gate disable flag (default True; tests can opt out).
     try:
         from bestseller.services.quality_gates_config import (

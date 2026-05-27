@@ -1064,8 +1064,8 @@ def test_chapter_first_prompt_uses_publish_band_not_tight_target_delta() -> None
         target_word_count=chapter.target_word_count,
     )
 
-    assert "发布硬范围 2000-3500 字" in user_prompt
-    assert "篇幅硬范围是 2000-3500 个汉字" in user_prompt
+    assert "发布硬范围 2000-3000 字" in user_prompt
+    assert "篇幅硬范围是 2000-3000 个汉字" in user_prompt
     assert "补入林正淳和青囊线索" not in user_prompt
     assert "2024-2376" not in user_prompt
 
@@ -1419,18 +1419,15 @@ def test_chapter_first_prompt_enforces_scene_opening_and_front10_forbidden_terms
         target_word_count=chapter.target_word_count,
     )
 
-    assert "【开场场景硬合同】" in user_prompt
-    assert "本章开场不是【禁用通联转送桥段】戏" in user_prompt
-    assert "前500字禁止新增【禁用通联转送桥段】" in user_prompt
-    assert "这些词作为背景交代也不许出现" in user_prompt
+    assert "【开场场景指导】" in user_prompt
+    assert "第一段建议从这里开写" in user_prompt
+    assert "前200字应当出现第一场的地点/人物/异常" in user_prompt
     assert "【前十章禁写与物件信号硬约束】" in user_prompt
     assert "系统门禁已登记" in user_prompt
     assert "不要复述禁写清单" in user_prompt
-    assert "父辈姓名" in user_prompt
-    assert "电话" not in user_prompt
-    assert "手机" not in user_prompt
-    assert "短信" not in user_prompt
-    assert "快递" not in user_prompt
+    assert "家族本名" in user_prompt
+    assert "允许电话/短信作为同一 POV 内的现实沟通工具" in user_prompt
+    assert "不得引入快递员、配送员等额外活人 NPC" in user_prompt
     assert "铜钱发烫" not in user_prompt
 
 
@@ -1486,7 +1483,7 @@ def test_chapter_first_prompt_adds_total_scene_budget_guardrail() -> None:
     assert "不是每个场景各写一章" in user_prompt
     assert "全文建议22-32段" in user_prompt
     assert "每场5-8段" in user_prompt
-    assert "超过3500字" in user_prompt
+    assert "超过3000字" in user_prompt
     assert "离场状态和 forbidden_actions 是硬边界" in user_prompt
     assert "升级成“被拖进门、被吞掉、确认死亡、门合拢”" in user_prompt
 

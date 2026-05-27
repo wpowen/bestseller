@@ -91,6 +91,39 @@ def test_validate_prewrite_plan_rejects_forbidden_character_and_time() -> None:
     assert any("十七年前" in item for item in result.violations)
 
 
+def test_validate_prewrite_plan_allows_relative_time_expressions() -> None:
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=1,
+        participants=["林渊", "王建业"],
+        scene_time_label="23:43",
+    )
+    plan = PrewritePlan(
+        characters_to_use=["林渊"],
+        time_anchors_to_use=["23:43", "十几秒后"],
+        ending_hook_type="新变量",
+        ending_modes_to_avoid=["总结主题", "作者式预告", "硬转下一章", "口号式收束"],
+    )
+
+    result = validate_prewrite_plan(plan, manifest)
+
+    assert result.passed is True
+
+
+def test_off_screen_only_character_is_not_hard_banned_in_prose() -> None:
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=1,
+        participants=["林渊"],
+        project_metadata={"characters_off_screen_only": ["张建军"]},
+    )
+
+    result = validate_chapter_prose_for_promotion(
+        "门外响起三短一长的敲门声，张建军的声音隔着门板发颤。",
+        manifest,
+    )
+
+    assert result.passed is True
+
+
 def test_safe_plan_satisfies_manifest() -> None:
     manifest = compile_chapter_constraint_manifest(
         chapter_number=1,

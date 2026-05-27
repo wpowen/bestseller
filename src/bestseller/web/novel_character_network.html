@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>角色关系网络</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0e14;
+    color: #e0e6ed;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  .container {
+    display: flex;
+    height: 100vh;
+  }
+
+  .sidebar {
+    width: 320px;
+    background: #141a24;
+    border-right: 1px solid #1e2a3a;
+    overflow-y: auto;
+    padding: 16px;
+    flex-shrink: 0;
+  }
+
+  .sidebar h2 {
+    font-size: 14px;
+    color: #4a9eff;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e2a3a;
+  }
+
+  .character-card {
+    padding: 12px;
+    background: #1a2332;
+    border: 1px solid #1e2a3a;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .character-card:hover, .character-card.active {
+    background: #1e2a3a;
+    border-color: #4a9eff;
+  }
+  .character-card .name {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .character-card .role {
+    font-size: 11px;
+    color: #8899aa;
+  }
+  .character-card .arc {
+    font-size: 12px;
+    color: #6b7f96;
+    margin-top: 4px;
+  }
+
+  .graph-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .node {
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .node:hover {
+    filter: brightness(1.3);
+  }
+  .node circle {
+    stroke-width: 2;
+    transition: all 0.3s;
+  }
+  .node text {
+    font-size: 11px;
+    fill: #e0e6ed;
+    text-anchor: middle;
+    pointer-events: none;
+  }
+  .node.protagonist circle {
+    fill: #4a9eff;
+    stroke: #7bb8ff;
+  }
+  .node.antagonist circle {
+    fill: #f87171;
+    stroke: #fca5a5;
+  }
+  .node.supporting circle {
+    fill: #a78bfa;
+    stroke: #c4b5fd;
+  }
+  .node.mentor circle {
+    fill: #4ade80;
+    stroke: #86efac;
+  }
+  .node.broker circle {
+    fill: #fbbf24;
+    stroke: #fcd34d;
+  }
+
+  .link {
+    stroke-opacity: 0.4;
+    transition: all 0.3s;
+  }
+  .link.highlighted {
+    stroke-opacity: 1;
+    stroke-width: 3;
+  }
+
+  .link-label {
+    font-size: 9px;
+    fill: #6b7f96;
+    text-anchor: middle;
+    pointer-events: none;
+  }
+
+  .tooltip {
+    position: absolute;
+    background: #1a2332;
+    border: 1px solid #2d3f56;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    max-width: 280px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 100;
+  }
+  .tooltip.visible {
+    opacity: 1;
+  }
+  .tooltip .title {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: #4a9eff;
+  }
+  .tooltip .label {
+    color: #8899aa;
+    font-size: 11px;
+  }
+
+  .legend {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: #141a24;
+    border: 1px solid #1e2a3a;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 11px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .search-box {
+    width: 100%;
+    padding: 8px 12px;
+    background: #1a2332;
+    border: 1px solid #1e2a3a;
+    border-radius: 6px;
+    color: #e0e6ed;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .search-box:focus {
+    outline: none;
+    border-color: #4a9eff;
+  }
+
+  .relationship-detail {
+    margin-top: 12px;
+    padding: 12px;
+    background: #1a2332;
+    border: 1px solid #1e2a3a;
+    border-radius: 8px;
+    display: none;
+  }
+  .relationship-detail.visible {
+    display: block;
+  }
+  .relationship-detail h3 {
+    font-size: 13px;
+    color: #4a9eff;
+    margin-bottom: 8px;
+  }
+  .rel-item {
+    padding: 8px;
+    border-bottom: 1px solid #1e2a3a;
+    font-size: 12px;
+  }
+  .rel-item:last-child {
+    border-bottom: none;
+  }
+  .rel-target {
+    font-weight: 600;
+    color: #a78bfa;
+  }
+  .rel-type {
+    color: #8899aa;
+    font-size: 11px;
+  }
+  .rel-tension {
+    color: #6b7f96;
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="sidebar">
+    <h2>角色关系网络</h2>
+    <input type="text" class="search-box" id="searchInput" placeholder="搜索角色...">
+    <div id="characterList"></div>
+    <div class="relationship-detail" id="relationshipDetail">
+      <h3>关系详情</h3>
+      <div id="relationshipList"></div>
+    </div>
+  </div>
+
+  <div class="graph-container" id="graphContainer">
+    <svg id="graph"></svg>
+    <div class="tooltip" id="tooltip"></div>
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #4a9eff;"></div>
+        <span>主角</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #f87171;"></div>
+        <span>反派/对手</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #a78bfa;"></div>
+        <span>配角</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #4ade80;"></div>
+        <span>导师</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: #fbbf24;"></div>
+        <span>中间人</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const slug = location.pathname.split('/').filter(Boolean).pop() || '';
+let allCharacters = [];
+let allRelationships = [];
+let selectedNode = null;
+let simulation;
+
+async function loadData() {
+  const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/story-bible`);
+  const data = await res.json();
+  allCharacters = data.characters || [];
+  allRelationships = data.relationships || [];
+  renderCharacterList();
+  renderGraph();
+}
+
+function renderCharacterList() {
+  const container = document.getElementById('characterList');
+  const search = document.getElementById('searchInput').value.toLowerCase();
+
+  const mainChars = allCharacters.filter(c => {
+    const name = (c.name || '').toLowerCase();
+    const role = c.role || '';
+    return (role === 'protagonist' || role === 'antagonist' || role === 'mentor' || role === 'broker' || c.is_pov_character) &&
+           (search === '' || name.includes(search));
+  }).slice(0, 20);
+
+  container.innerHTML = mainChars.map(c => `
+    <div class="character-card ${selectedNode === c.name ? 'active' : ''}" data-name="${c.name}">
+      <div class="name">${c.name}</div>
+      <div class="role">${c.role} ${c.power_tier ? '· ' + c.power_tier : ''}</div>
+      <div class="arc">${(c.arc_state || '').substring(0, 40)}</div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.character-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const name = card.dataset.name;
+      selectedNode = name;
+      highlightNode(name);
+      renderCharacterList();
+      showRelationships(name);
+    });
+  });
+}
+
+function showRelationships(name) {
+  const detail = document.getElementById('relationshipDetail');
+  const list = document.getElementById('relationshipList');
+
+  const rels = allRelationships.filter(r =>
+    r.character_a === name || r.character_b === name
+  );
+
+  if (rels.length === 0) {
+    detail.classList.remove('visible');
+    return;
+  }
+
+  detail.classList.add('visible');
+  list.innerHTML = rels.map(r => {
+    const other = r.character_a === name ? r.character_b : r.character_a;
+    const direction = r.character_a === name ? '→' : '←';
+    return `
+      <div class="rel-item">
+        <div>
+          <span class="rel-target">${other}</span>
+          <span class="rel-type">${direction} ${r.relationship_type}</span>
+        </div>
+        ${r.tension_summary ? `<div class="rel-tension">${r.tension_summary}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderGraph() {
+  const container = document.getElementById('graphContainer');
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+
+  const svg = d3.select('#graph')
+    .attr('width', width)
+    .attr('height', height);
+
+  svg.selectAll('*').remove();
+
+  // Get characters that appear in relationships
+  const charSet = new Set();
+  allRelationships.forEach(r => {
+    charSet.add(r.character_a);
+    charSet.add(r.character_b);
+  });
+
+  // Build nodes
+  const nodes = allCharacters
+    .filter(c => charSet.has(c.name))
+    .slice(0, 50)
+    .map(c => ({
+      id: c.name,
+      role: c.role || 'supporting',
+      arc: c.arc_state || '',
+      goal: c.goal || '',
+      power: c.power_tier || ''
+    }));
+
+  // Build links
+  const nodeIds = new Set(nodes.map(n => n.id));
+  const links = allRelationships
+    .filter(r => nodeIds.has(r.character_a) && nodeIds.has(r.character_b))
+    .map(r => ({
+      source: r.character_a,
+      target: r.character_b,
+      type: r.relationship_type,
+      tension: r.tension_summary || '',
+      strength: r.strength || 0
+    }));
+
+  // Create simulation
+  simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(120))
+    .force('charge', d3.forceManyBody().strength(-300))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(30));
+
+  // Draw links
+  const link = svg.append('g')
+    .selectAll('line')
+    .data(links)
+    .join('line')
+    .attr('class', 'link')
+    .attr('stroke', d => {
+      if (d.type === 'conflict') return '#f87171';
+      if (d.type === 'ally') return '#4ade80';
+      if (d.type === '旧搭档') return '#4ade80';
+      if (d.type === '追捕对象') return '#fbbf24';
+      return '#4a9eff';
+    })
+    .attr('stroke-width', d => Math.abs(d.strength) * 3 + 1);
+
+  // Draw link labels
+  const linkLabel = svg.append('g')
+    .selectAll('text')
+    .data(links)
+    .join('text')
+    .attr('class', 'link-label')
+    .text(d => d.type);
+
+  // Draw nodes
+  const node = svg.append('g')
+    .selectAll('g')
+    .data(nodes)
+    .join('g')
+    .attr('class', d => `node ${d.role}`)
+    .call(d3.drag()
+      .on('start', dragstarted)
+      .on('drag', dragged)
+      .on('end', dragended));
+
+  node.append('circle')
+    .attr('r', d => d.role === 'protagonist' ? 20 : 14);
+
+  node.append('text')
+    .attr('dy', d => d.role === 'protagonist' ? 30 : 24)
+    .text(d => d.id);
+
+  // Tooltip
+  const tooltip = document.getElementById('tooltip');
+
+  node.on('mouseover', (event, d) => {
+    tooltip.innerHTML = `
+      <div class="title">${d.id}</div>
+      <div><span class="label">角色：</span>${d.role}</div>
+      <div><span class="label">能力：</span>${d.power || '-'}</div>
+      <div><span class="label">弧线：</span>${d.arc || '-'}</div>
+      <div><span class="label">目标：</span>${(d.goal || '-').substring(0, 80)}</div>
+    `;
+    tooltip.classList.add('visible');
+    tooltip.style.left = (event.pageX + 10) + 'px';
+    tooltip.style.top = (event.pageY - 10) + 'px';
+  });
+
+  node.on('mouseout', () => {
+    tooltip.classList.remove('visible');
+  });
+
+  node.on('click', (event, d) => {
+    selectedNode = d.id;
+    highlightNode(d.id);
+    renderCharacterList();
+    showRelationships(d.id);
+  });
+
+  // Update positions
+  simulation.on('tick', () => {
+    link
+      .attr('x1', d => d.source.x)
+      .attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x)
+      .attr('y2', d => d.target.y);
+
+    linkLabel
+      .attr('x', d => (d.source.x + d.target.x) / 2)
+      .attr('y', d => (d.source.y + d.target.y) / 2);
+
+    node.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+
+  function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+  }
+
+  function dragged(event, d) {
+    d.fx = event.x;
+    d.fy = event.y;
+  }
+
+  function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+  }
+}
+
+function highlightNode(name) {
+  const svg = d3.select('#graph');
+
+  svg.selectAll('.node').style('opacity', d => {
+    if (d.id === name) return 1;
+    const isConnected = allRelationships.some(r =>
+      (r.character_a === name && r.character_b === d.id) ||
+      (r.character_b === name && r.character_a === d.id)
+    );
+    return isConnected ? 1 : 0.2;
+  });
+
+  svg.selectAll('.link').style('opacity', d => {
+    return (d.source.id === name || d.target.id === name) ? 1 : 0.1;
+  }).classed('highlighted', d => {
+    return (d.source.id === name || d.target.id === name);
+  });
+
+  svg.selectAll('.link-label').style('opacity', d => {
+    return (d.source.id === name || d.target.id === name) ? 1 : 0;
+  });
+}
+
+document.getElementById('searchInput').addEventListener('input', renderCharacterList);
+
+window.addEventListener('resize', () => {
+  renderGraph();
+  if (selectedNode) highlightNode(selectedNode);
+});
+
+loadData();
+</script>
+</body>
+</html>

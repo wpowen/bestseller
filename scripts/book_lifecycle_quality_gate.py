@@ -15,6 +15,9 @@ if str(_SRC) not in sys.path:
 from bestseller.services.book_lifecycle_quality_gate import (  # noqa: E402
     build_lifecycle_quality_report_from_closure,
 )
+from bestseller.services.material_referential_integrity_gate import (  # noqa: E402
+    evaluate_material_referential_integrity,
+)
 from bestseller.settings import load_settings  # noqa: E402
 
 
@@ -75,6 +78,15 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print the report without writing output/<slug>/audits/lifecycle-quality/report.json.",
     )
+    parser.add_argument(
+        "--project-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional exported project directory. When provided, material "
+            "referential integrity is evaluated and included in lifecycle quality."
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="Print full JSON report.")
     return parser.parse_args()
 
@@ -83,6 +95,14 @@ def main() -> int:
     args = _parse_args()
     closure_path = args.closure_report or _default_closure_path(args.slug)
     closure = _read_json(closure_path)
+    project_dir = args.project_dir
+    if project_dir is None:
+        settings = load_settings()
+        inferred = Path(settings.output.base_dir) / args.slug
+        project_dir = inferred if inferred.exists() else None
+    if project_dir is not None and project_dir.exists():
+        material_report = evaluate_material_referential_integrity(project_dir)
+        closure["material_integrity_report"] = material_report.model_dump(mode="json")
     report = build_lifecycle_quality_report_from_closure(closure)
     payload = report.to_dict()
     output_path = args.output or _default_output_path(args.slug)

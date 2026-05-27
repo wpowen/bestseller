@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -31,6 +33,8 @@ class ChapterItem(BaseModel):
     title: str | None = None
     status: str
     word_count: int | None = None
+    version_no: int | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -39,6 +43,9 @@ class ChapterContentResponse(BaseModel):
     chapter_number: int
     title: str | None
     status: str
+    word_count: int | None = None
+    version_no: int | None = None
+    updated_at: datetime | None = None
     content: str | None  # markdown text of latest approved draft
 
 
@@ -86,6 +93,19 @@ async def get_full_novel(
             )
         )
         drafts_by_chapter = {d.chapter_id: d for d in drafts_result.scalars()}
+        missing_chapter_ids = [chapter_id for chapter_id in chapter_ids if chapter_id not in drafts_by_chapter]
+        if missing_chapter_ids:
+            fallback_result = await session.execute(
+                select(ChapterDraftVersionModel)
+                .where(ChapterDraftVersionModel.chapter_id.in_(missing_chapter_ids))
+                .order_by(
+                    ChapterDraftVersionModel.chapter_id,
+                    ChapterDraftVersionModel.version_no.desc(),
+                    ChapterDraftVersionModel.created_at.desc(),
+                )
+            )
+            for draft in fallback_result.scalars():
+                drafts_by_chapter.setdefault(draft.chapter_id, draft)
 
     parts: list[str] = []
     total_words = 0
@@ -155,6 +175,8 @@ async def list_chapters(
             title=ch.title if hasattr(ch, "title") else None,
             status=ch.status,
             word_count=drafts_by_chapter[ch.id].word_count if ch.id in drafts_by_chapter else None,
+            version_no=drafts_by_chapter[ch.id].version_no if ch.id in drafts_by_chapter else None,
+            updated_at=drafts_by_chapter[ch.id].created_at if ch.id in drafts_by_chapter else ch.updated_at,
         )
         for ch in chapters
     ]
@@ -186,11 +208,25 @@ async def get_chapter(
         )
     )
     draft = draft_result.scalar_one_or_none()
+    if draft is None:
+        fallback_result = await session.execute(
+            select(ChapterDraftVersionModel)
+            .where(ChapterDraftVersionModel.chapter_id == chapter.id)
+            .order_by(
+                ChapterDraftVersionModel.version_no.desc(),
+                ChapterDraftVersionModel.created_at.desc(),
+            )
+            .limit(1)
+        )
+        draft = fallback_result.scalar_one_or_none()
 
     return ChapterContentResponse(
         chapter_number=chapter.chapter_number,
         title=chapter.title if hasattr(chapter, "title") else None,
         status=chapter.status,
+        word_count=draft.word_count if draft else None,
+        version_no=draft.version_no if draft else None,
+        updated_at=draft.created_at if draft else chapter.updated_at,
         content=draft.content_md if draft else None,
     )
 

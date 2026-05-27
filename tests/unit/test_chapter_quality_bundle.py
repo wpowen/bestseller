@@ -119,3 +119,21 @@ def test_chapter_quality_bundle_blocks_common_sense_front_chapter_failures() -> 
     assert "OBJECT_SIGNAL_OVERUSE" in codes
     assert "LAY_CHARACTER_RULE_KNOWLEDGE_LEAK" in codes
     assert report.passed is False
+
+
+def test_chapter_quality_bundle_blocks_spliced_draft_artifacts() -> None:
+    current = (
+        "# 第8章\n\n"
+        "倒影里柜门开了一条缝，冷气从里面贴着地面爬出来。\n\n"
+        "林渊把证物袋压在水线旁，没有立刻伸手。\n\n"
+        "倒影里柜门开了一条缝，冷气从里面贴着地面爬出来。"
+    )
+
+    report = run_chapter_quality_bundle(
+        current,
+        ChapterQualityBundleContext(chapter_number=8, target_chapter_words=0),
+    )
+
+    codes = {finding.code for finding in report.blocking_findings}
+    assert "CHAPTER_SPLICE_REPEATED_SENTENCE" in codes
+    assert report.passed is False

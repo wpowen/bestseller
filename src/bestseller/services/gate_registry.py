@@ -52,6 +52,32 @@ _GATES: tuple[GateRegistration, ...] = (
         repair_strategy="rewrite_task",
     ),
     GateRegistration(
+        name="chapter_splice_coherence_gate",
+        metadata_keys=(
+            "blocked_by_chapter_splice_coherence_gate",
+            "chapter_splice_coherence_block_codes",
+        ),
+        repair_strategy="rewrite_task",
+    ),
+    GateRegistration(
+        name="material_referential_integrity_gate",
+        metadata_keys=(
+            "blocked_by_material_referential_integrity_gate",
+            "material_referential_integrity_block_codes",
+        ),
+        repair_strategy="auto",
+    ),
+    GateRegistration(
+        name="material_advancement_gate",
+        metadata_keys=("blocked_by_material_advancement_gate", "material_advancement_block_codes"),
+        repair_strategy="rewrite_task",
+    ),
+    GateRegistration(
+        name="signature_audit_gate",
+        metadata_keys=("blocked_by_signature_audit_gate", "signature_audit_block_codes"),
+        repair_strategy="rewrite_task",
+    ),
+    GateRegistration(
         name="chapter_outline_readiness_gate",
         metadata_keys=("blocked_by_chapter_outline_readiness_gate",),
         repair_strategy="human_review",

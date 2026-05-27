@@ -34,6 +34,7 @@ from bestseller.services.cast_compliance_gate import (
 )
 from bestseller.services.chapter_length_gate import (
     CHAPTER_BELOW_TARGET_BLOCK_CODE,
+    CHAPTER_LENGTH_BLOCK_HIGH_CODE,
     CHAPTER_TOO_SHORT_BLOCK_CODE,
     check_chapter_length,
 )
@@ -86,6 +87,7 @@ AUTO_REPAIR_RETENTION_CODES: tuple[str, ...] = (
     CHARACTER_ROLE_DRIFT_BLOCK_CODE,
     DIALOGUE_AI_FLAVOR_BLOCK_CODE,
     CHAPTER_TOO_SHORT_BLOCK_CODE,
+    CHAPTER_LENGTH_BLOCK_HIGH_CODE,
 )
 
 
@@ -140,6 +142,7 @@ def evaluate_retention_safety(
     skip_chapter_length: bool = False,
     chapter_length_hard_floor: int | None = None,
     chapter_length_soft_warning: int | None = None,
+    chapter_length_hard_max: int | None = None,
 ) -> RetentionGateReport:
     """Run the 3 retention gates on an assembled chapter.
 
@@ -477,6 +480,8 @@ def evaluate_retention_safety(
                 length_kwargs["hard_floor"] = chapter_length_hard_floor
             if chapter_length_soft_warning is not None:
                 length_kwargs["soft_warning"] = chapter_length_soft_warning
+            if chapter_length_hard_max is not None:
+                length_kwargs["hard_max"] = chapter_length_hard_max
             length_report = check_chapter_length(
                 chapter_text,
                 chapter_position=chapter_position,
@@ -492,10 +497,11 @@ def evaluate_retention_safety(
                             "zh_char_count": length_report.finding.zh_char_count,
                             "hard_floor": length_report.finding.hard_floor,
                             "soft_warning": length_report.finding.soft_warning,
+                            "hard_max": length_report.finding.hard_max,
                         },
                     )
                 )
-                auto_repair.append(CHAPTER_TOO_SHORT_BLOCK_CODE)
+                auto_repair.append(length_report.finding.code)
             elif length_report.finding.severity == "high":
                 findings.append(
                     RetentionGateFinding(
@@ -506,6 +512,7 @@ def evaluate_retention_safety(
                             "zh_char_count": length_report.finding.zh_char_count,
                             "hard_floor": length_report.finding.hard_floor,
                             "soft_warning": length_report.finding.soft_warning,
+                            "hard_max": length_report.finding.hard_max,
                         },
                     )
                 )

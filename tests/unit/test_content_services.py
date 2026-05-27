@@ -52,6 +52,23 @@ def test_count_words_handles_mixed_chinese_and_english() -> None:
     assert count_words("你好 world chapter 1") == 5
 
 
+def test_count_words_ignores_markdown_metadata_and_urls() -> None:
+    content = """---
+type: chapter-draft
+word_count: 9999
+---
+# 第1章 标题
+
+正文AI继续推进 [资料链接](https://example.com/path)
+<!-- internal note should not count -->
+```json
+{"debug": "not prose"}
+```
+"""
+
+    assert count_words(content) == 16
+
+
 def test_load_project_prewrite_contract_metadata_merges_story_bible_json(
     tmp_path: Path,
 ) -> None:
@@ -1003,6 +1020,20 @@ def test_build_markdown_reading_stats_counts_cjk_and_latin_text() -> None:
     assert stats["character_count"] == 18
     assert stats["paragraph_count"] == 2
     assert stats["estimated_read_minutes"] == 1
+
+
+def test_build_markdown_reading_stats_ignores_frontmatter() -> None:
+    stats = build_markdown_reading_stats("""---
+type: chapter-draft
+word_count: 9999
+---
+# 标题
+
+正文内容 Alpha beta 123
+""")
+
+    assert stats["word_count"] == 9
+    assert stats["character_count"] == 18
 
 
 def test_build_docx_bytes_creates_zip_package() -> None:

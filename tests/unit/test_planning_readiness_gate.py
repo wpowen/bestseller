@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from bestseller.services.planning_readiness_gate import evaluate_planning_readiness
+from bestseller.services.planning_readiness_gate import (
+    evaluate_chapter_outline_batch_planning_readiness,
+    evaluate_planning_readiness,
+)
 
 
 def _complete_chapter() -> dict[str, object]:
@@ -67,6 +70,7 @@ def test_missing_front_ten_tail_hook_blocks_outline() -> None:
     contract = chapter["causal_contract"]
     assert isinstance(contract, dict)
     contract.pop("tail_hook")
+    contract.pop("next_reader_desire")
     chapter["hook_description"] = ""
 
     report = evaluate_planning_readiness(chapter_outlines=[chapter])
@@ -151,3 +155,65 @@ def test_planning_readiness_blocks_front_logic_hard_errors() -> None:
     assert "PLANNING_REAL_WORLD_PLAUSIBILITY_GAP" in report.blocking_issue_codes
     assert "PLANNING_OBJECT_SIGNAL_UNBOUNDED" in report.blocking_issue_codes
     assert "PLANNING_KNOWLEDGE_BOUNDARY_LEAK" in report.blocking_issue_codes
+
+
+def test_evaluate_chapter_outline_batch_planning_readiness_accepts_dict_payload() -> None:
+    batch = {
+        "chapters": [
+            _complete_chapter(),
+            {
+                "chapter_number": 2,
+                "opening_situation": "17:59，林渊把张建军从门框里拉开来。",
+                "main_conflict": "张建军是否真的能认账成了本章的第一关。",
+                "causal_contract": {
+                    "chapter_function": "把否认者逼进账本可见区。",
+                    "opening_pressure": "17:59，林渊必须立刻决定是追责还是先稳住对方。",
+                    "protagonist_flaw": "林渊仍然先猜规则再做判断。",
+                    "protagonist_choice": "林渊先发起一次可见核验。",
+                    "visible_action": "林渊抓起门把手并拉开门口。",
+                    "cost": "迟疑会让关键账据散失。",
+                    "gain_or_reveal": "对方当场露出错认账迹象。",
+                    "state_change": "林渊从猜测转入实拍核验。",
+                    "next_reader_desire": "读者想知道他会如何收束第三方。",
+                    "pacing_mode": "窄口推进",
+                    "emotion_phase": "戒备上升",
+                    "loop_position": "开局压迫",
+                    "hooks_to_resolve": ["对方是否会立刻逃跑？"],
+                    "hooks_to_plant": ["下一章会出现更高处置压力。"],
+                    "relationship_debts": ["他与张建军的信任仍在倒退。"],
+                    "conflict_buffs": ["时间窗口快速缩短。"],
+                    "conflict_stakes": "核验不成功会失去窗口。",
+                    "required_payoff": "拿到第一笔可靠线索。",
+                    "payoff": "拿到第一笔可靠线索。",
+                },
+                "scenes": [
+                    {
+                        "scene_number": 1,
+                        "participants": ["林渊", "张建军"],
+                        "purpose": {
+                            "story": "林渊让张建军复述入账过程。",
+                            "emotion": "紧张中带着逼近。",
+                        },
+                        "entry_state": {"reader": "门口很晚的风压住脚步声。"},
+                        "exit_state": {"reader": "门口出现新的可见动作。"},
+                        "target_word_count": 800,
+                        "methodology_contract": {
+                            "conflict_stakes": "若不及时核验，张建军会改口。",
+                            "conflict_buffs": ["门外有监控，错一步会被抓到。"],
+                            "hook_type": "choice_pressure",
+                            "spotlight_character": "林渊",
+                            "information_control_mode": "先给读者看到张建军眼神再压缩解释。",
+                            "camera_distance": "中近景，镜头卡在门边。",
+                            "reveal_mode": "由张建军口误引出账据矛盾。",
+                            "signature_image": "张建军手上的账簿边缘起了白雾。",
+                            "cut_point": "张建军的喉结一抖，准备逃离。",
+                        },
+                    }
+                ],
+            },
+        ]
+    }
+
+    report = evaluate_chapter_outline_batch_planning_readiness(batch)
+    assert report.passed is True
+    assert report.blocking_issue_codes == ()

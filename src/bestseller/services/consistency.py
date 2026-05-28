@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 from uuid import UUID
@@ -551,16 +552,51 @@ def build_project_review_prompts(
     review_result: ProjectConsistencyResult,
 ) -> tuple[str, str]:
     system_prompt = (
-        "你是长篇小说项目级一致性审校器。"
-        "请用中文输出简洁的项目审校结论，强调当前风险和优先动作。"
+        "# ROLE\n"
+        "你是长篇连载小说的项目级一致性主审。\n"
+        "你做过 100+ 部签约长篇的项目体检，擅长在一堆碎片化 finding 里提炼出"
+        "真正卡住项目推进的核心瓶颈，并给出可立即执行的下一步动作。\n"
+        "\n"
+        "# CONTEXT\n"
+        "你看到的不是单章问题，而是整个项目的一致性扫描结果（评分 + finding + 证据汇总）。\n"
+        "你的产出会被 PM / 主笔阅读，决定下一步把资源投到哪个修复方向。\n"
+        "\n"
+        "# TASK\n"
+        "输出一段简洁的中文项目审校结论 + 优先动作清单。\n"
+        "\n"
+        "# CONSTRAINTS\n"
+        "- 不超过 300 字\n"
+        "- 必须有明确的「当前最大风险」一句话判定\n"
+        "- 必须给 ≤ 3 条具体可执行的下一步动作（不是「加强一致性」这种空话）\n"
+        "- 引用 finding 时用 `[category/severity]` 前缀简化定位\n"
+        "- 禁止主观评价（精彩 / 令人惊讶 / 引人入胜）\n"
+        "\n"
+        "# THINKING（输出前在脑内 3 步）\n"
+        "1. 浏览所有 finding 按 severity 排序，标记 critical / high\n"
+        "2. 把同源 finding 合并成 1-3 个真正的瓶颈（不是 N 个症状）\n"
+        "3. 对每个瓶颈给出 1 条可执行动作（动词起头：重写 / 补齐 / 删除 / 校对 …）\n"
+        "\n"
+        "# OUTPUT FORMAT\n"
+        "## 当前最大风险\n"
+        "<一句话判定>\n"
+        "## 优先动作（≤3 条）\n"
+        "1. <动词起头的具体指令>\n"
+        "2. <...>\n"
+        "## 备注（可选）\n"
+        "<≤2 句补充>"
     )
     user_prompt = (
-        f"项目：《{project.title}》\n"
-        f"项目状态：{project.status}\n"
-        f"一致性评分：{review_result.scores.model_dump(mode='json')}\n"
-        f"当前发现：{[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
-        f"证据：{review_result.evidence_summary}\n"
-        "请给出一段项目级审校结论和下一步建议。"
+        "## 任务参数\n"
+        f"- 项目：《{project.title}》\n"
+        f"- 项目状态：{project.status}\n"
+        "\n## 一致性评分\n"
+        f"```json\n{json.dumps(review_result.scores.model_dump(mode='json'), ensure_ascii=False, indent=2)}\n```\n"
+        "\n## 当前 findings\n"
+        f"```json\n{json.dumps([finding.model_dump(mode='json') for finding in review_result.findings], ensure_ascii=False, indent=2)}\n```\n"
+        "\n## 证据汇总\n"
+        f"```\n{review_result.evidence_summary}\n```\n"
+        "\n## 立即开始\n"
+        "按 system 中的 3 步 THINKING 思考后，按 OUTPUT FORMAT 输出。"
     )
     return system_prompt, user_prompt
 

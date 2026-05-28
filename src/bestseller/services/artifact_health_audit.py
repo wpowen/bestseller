@@ -64,10 +64,34 @@ async def audit_artifact_health(
 
 def _system_prompt() -> str:
     return (
-        "你是通用小说 artifact 健康度审计员。只看给定 artifact 和上游上下文，"
-        "不看正文。判断它是否足以写出独特、不可替换的下游章节。"
-        "如果这份 artifact 换一本书也能套用，必须判不健康。"
-        "不要建议新增硬规则 gate。严格只输出 JSON object。"
+        "# ROLE\n"
+        "你是通用小说 artifact 健康度审计员。\n"
+        "你做过 100+ 部签约长篇的物料独立性体检，特别擅长识别「换一本书也能套用」的模板化垃圾物料。\n"
+        "你的判断标准来自：编辑培训手册的「物料独特性 5 维度」+ 你自己反复见过的劣质物料样本。\n"
+        "\n"
+        "# CONTEXT\n"
+        "你只看 artifact 本身 + 上游上下文，**不看正文**。\n"
+        "你的产出会被另一个 LLM 用来决定：这份 artifact 是直接使用、还是触发回头补强。\n"
+        "\n"
+        "# TASK\n"
+        "判断这份 artifact 是否足以独立支撑下游产生**不可替换**的章节产物。\n"
+        "\n"
+        "# CONSTRAINTS · 判定核心\n"
+        "- 如果换一本书也能套用 → 必须判 is_healthy=false\n"
+        "- 如果只含「推进剧情 / 制造悬念 / 埋下伏笔」这种通用套话 → 必须判不健康\n"
+        "- 如果信息量过低 / 占位符过多 → 必须判不健康\n"
+        "- 不要建议新增硬规则 gate（不是你的工作）\n"
+        "- 严格只输出 JSON object，无 markdown 围栏\n"
+        "\n"
+        "# THINKING（产 JSON 前在脑内 4 步）\n"
+        "1. 通读 artifact，标记其中**只属于本书**的具体名词（人物 / 地点 / 物件 / 规则）\n"
+        "2. 比对：通用套话 vs 不可替换的本书事实——比例是多少？\n"
+        "3. 假想：把同类作品的物料换到这里，是否完全可以替换？能 = 不健康\n"
+        "4. 给 fix_directives 时必须具体（不要说「补充细节」，要说「补入主角的康熙铜钱在 ch5 的具体损耗描述」）\n"
+        "\n"
+        "# OUTPUT FORMAT（严格 JSON，无围栏）\n"
+        '{"artifact_path": str, "is_healthy": bool, "defects": [str], '
+        '"fix_directives": [str], "independence_score": float}'
     )
 
 
@@ -84,17 +108,23 @@ def _user_prompt(
     }
     refs = {path.name: _read_text(path, limit=4000) for path in distilled_refs[:6]}
     return (
-        f"## artifact_path\n{artifact_path.as_posix()}\n\n"
-        f"## artifact\n{artifact_text}\n\n"
-        f"## upstream_context\n{json.dumps(context, ensure_ascii=False, indent=2)}\n\n"
-        f"## distilled_refs\n{json.dumps(refs, ensure_ascii=False, indent=2)}\n\n"
-        "## 问题\n"
+        "## 任务参数\n"
+        f"- artifact_path：{artifact_path.as_posix()}\n"
+        f"- artifact 字数：{len(artifact_text)}\n"
+        f"- 上游上下文条数：{len(context)}\n"
+        f"- 蒸馏参照数：{len(refs)}\n"
+        "\n## artifact 内容\n"
+        f"```\n{artifact_text}\n```\n"
+        "\n## upstream_context（artifact 的上游依赖）\n"
+        f"```json\n{json.dumps(context, ensure_ascii=False, indent=2)}\n```\n"
+        "\n## distilled_refs（同类作品蒸馏参照）\n"
+        f"```json\n{json.dumps(refs, ensure_ascii=False, indent=2)}\n```\n"
+        "\n## 三大审视问题\n"
         "1. 如果让你写下游产物，这份 artifact 提供的信息够吗？\n"
         "2. 这份 artifact 是不是换一本书也能套用？\n"
-        "3. 和同类作品参照相比，它缺什么深度？\n\n"
-        "## 输出 schema\n"
-        '{"artifact_path": str, "is_healthy": bool, "defects": [str], '
-        '"fix_directives": [str], "independence_score": float}'
+        "3. 和同类作品参照相比，它缺什么深度？\n"
+        "\n## 立即开始\n"
+        "按 system 中的 4 步 THINKING 思考，输出严格 JSON。"
     )
 
 

@@ -73,10 +73,39 @@ async def attribute_root_causes(
 
 def _system_prompt() -> str:
     return (
-        "你是小说工程根因分析师。给你读者反馈和 artifact 拓扑。"
-        "对每条反馈判断根因在哪一层上游 artifact，指出具体 artifact 路径，"
-        "说明缺什么，并给出修复这份 artifact 的指令。"
-        "不要建议新增硬规则 gate，也不要直接改正文。严格只输出 JSON array。"
+        "# ROLE\n"
+        "你是小说工程根因分析师——专门把读者表层抱怨反推到上游物料的具体缺陷。\n"
+        "你深谙小说生产流水线：series_bible → world_bible → chapter_outline → scene_plan → 正文。\n"
+        "你做过 100+ 部签约长篇的归因诊断，能从读者「这段不对劲」精确定位到「rule_ledger 第 X 条缺触发条件」。\n"
+        "\n"
+        "# CONTEXT\n"
+        "你会收到：读者反馈清单 + artifact 拓扑（哪些上游产物存在）。\n"
+        "你的产出会驱动 artifact 修复工单——你写得越准，下游修得越对，避免再触发同一问题。\n"
+        "\n"
+        "# TASK\n"
+        "对每条 reader_feedback：\n"
+        "1. 判断**根因**在哪一层上游 artifact（不是表层正文）\n"
+        "2. 指出具体 artifact 路径\n"
+        "3. 说明这份 artifact 缺什么\n"
+        "4. 给出修复这份 artifact 的具体指令（不是修正文！）\n"
+        "\n"
+        "# CONSTRAINTS\n"
+        "- root_layer 必须是 topology 中的 key，不要造新名词\n"
+        "- 不要建议新增硬规则 gate（不是你的工作）\n"
+        "- 不要直接改正文（你的修复目标是物料，不是产物）\n"
+        "- 严格只输出 JSON array，无 markdown 围栏\n"
+        "- repair_directive 必须可执行（不要写「补充信息」，要写「在 rule_ledger 第 R-007 条加 trigger_condition: 子时入镜」）\n"
+        "\n"
+        "# THINKING（产 JSON 前在脑内 4 步）\n"
+        "1. 对每条 feedback：先判断它在抱怨哪一类问题（人物 / 规则 / 空间 / 节奏 / 物料）\n"
+        "2. 逆推到拓扑：这类问题最早可能由哪一层 artifact 失误导致？\n"
+        "3. 定位具体路径：从 book_root 出发，按 root_layer 找最匹配的文件\n"
+        "4. repair_directive 必须具体：给到字段级 / 条款级，不能停留在大方向\n"
+        "\n"
+        "# OUTPUT FORMAT（严格 JSON array）\n"
+        '[{"issue_id": "issue-1", "root_layer": "<topology key>", '
+        '"artifact_path": "<path>", "missing": "<缺什么>", '
+        '"repair_directive": "<具体可执行的修复指令>"}]'
     )
 
 
@@ -87,15 +116,16 @@ def _user_prompt(
     book_root: Path,
 ) -> str:
     return (
-        f"## book_root\n{book_root.as_posix()}\n\n"
-        "## artifact_topology\n"
-        f"{json.dumps(topology, ensure_ascii=False, indent=2)}\n\n"
-        "## reader_feedback\n"
-        f"{json.dumps(list(feedback), ensure_ascii=False, indent=2)}\n\n"
-        "## 输出 schema\n"
-        '[{ "issue_id": "issue-1", "root_layer": "<topology key>", '
-        '"artifact_path": "<path>", "missing": "<缺什么>", '
-        '"repair_directive": "<修复指令>" }]'
+        "## 任务参数\n"
+        f"- book_root：{book_root.as_posix()}\n"
+        f"- topology 层数：{len(topology)}\n"
+        f"- reader_feedback 条数：{len(feedback)}\n"
+        "\n## artifact_topology\n"
+        f"```json\n{json.dumps(topology, ensure_ascii=False, indent=2)}\n```\n"
+        "\n## reader_feedback\n"
+        f"```json\n{json.dumps(list(feedback), ensure_ascii=False, indent=2)}\n```\n"
+        "\n## 立即开始\n"
+        "按 system 中的 4 步 THINKING 逐条归因，输出严格 JSON array。"
     )
 
 

@@ -433,6 +433,7 @@ class PipelineSettings(BaseModel):
     # real framework output without manual prose intervention.
     enable_chapter_first_generation: bool = False
     chapter_first_max_chapter_number: int = 3
+    chapter_first_short_chapter_threshold: int = 3500
     chapter_first_supersede_pending_rewrites: bool = False
     # Project-level premium-readiness gate. It is enabled as telemetry by
     # default so every project pipeline records whether the structured genre

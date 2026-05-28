@@ -773,6 +773,78 @@ def _apply_retention_retry_budget(
     return exhausted
 
 
+def _apply_rewrite_escalation(
+    chapter: ChapterModel,
+    block_codes: tuple[str, ...],
+    originality_config: Any,
+) -> bool:
+    """Apply general rewrite escalation and keep legacy retention budgeting."""
+
+    retention_exhausted = _apply_retention_retry_budget(
+        chapter,
+        block_codes,
+        originality_config,
+    )
+    if not block_codes:
+        return retention_exhausted
+    try:
+        from bestseller.services.rewrite_escalation import (
+            EscalationLevel,
+            decide_escalation,
+        )
+    except Exception:
+        return retention_exhausted
+
+    target_word_count = int(getattr(chapter, "target_word_count", 0) or 2200)
+    try:
+        _hard_min, _hard_target, hard_max = _chapter_length_contract_band(
+            None,
+            target_word_count,
+        )
+        target_word_count = int(_hard_target)
+    except Exception:
+        hard_max = max(target_word_count, int(target_word_count * 1.2))
+    current_word_count = int(getattr(chapter, "current_word_count", 0) or target_word_count)
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    latest_audit = metadata.get("deterministic_audit_latest")
+    forbidden_terms_hit = tuple(
+        str(item.get("matched_text") or "")
+        for item in (
+            latest_audit.get("findings", [])
+            if isinstance(latest_audit, dict)
+            else []
+        )
+        if isinstance(item, dict)
+        and str(item.get("code") or "") in {"FORBIDDEN_TERM_HIT", "DEPRECATED_ENTITY_HIT"}
+    )
+    decision = decide_escalation(
+        chapter=chapter,
+        block_codes=block_codes,
+        current_word_count=current_word_count,
+        target_word_count=target_word_count,
+        hard_max_word_count=int(hard_max),
+        forbidden_terms_hit=forbidden_terms_hit,
+    )
+    attempts_by_kind = dict(metadata.get("rewrite_attempts_by_kind") or {})
+    attempts_by_kind[decision.block_kind] = decision.attempt_count
+    metadata["rewrite_attempts_by_kind"] = attempts_by_kind
+    metadata["rewrite_escalation"] = {
+        "level": decision.level.value,
+        "block_kind": decision.block_kind,
+        "attempt_count": decision.attempt_count,
+        "strict_directive": decision.strict_directive,
+        "post_process_action": decision.post_process_action,
+        "block_codes": list(block_codes),
+    }
+    if decision.level == EscalationLevel.HUMAN_REVIEW:
+        metadata["requires_human_review"] = True
+        metadata["auto_repair_exhausted"] = True
+        chapter.status = ChapterStatus.REVISION.value
+        chapter.production_state = "blocked"
+    chapter.metadata_json = metadata
+    return retention_exhausted or decision.level == EscalationLevel.HUMAN_REVIEW
+
+
 def _is_volume_outline_auto_repairable(exc: Exception) -> bool:
     message = str(exc)
     return (
@@ -2858,8 +2930,8 @@ def _render_chapter_first_local_repair_instructions(
         if needs_opening_rebuild:
             structural_lines.extend(
                 [
-                    "必须重写开篇前500字；如果首场使用了章节合同未规划的电话/手机/微信/"
-                    "短信/语音/录音桥段来承担入场或召唤逻辑，直接替换整个首场开头段落。",
+                    "必须重写开篇前500字；如果首场使用了章节合同未规划的【禁用通联转送桥段】"
+                    "来承担入场或召唤逻辑，直接替换整个首场开头段落。",
                     "开篇必须从第一场现场可见动作进入；电话、手机、微信、短信、语音、录音、"
                     "来电等媒介不是绝对禁用，但只有在章节合同已经交代来源、转交人、可信原因"
                     "和到场动机时才能使用，不能作为突兀背景或捷径。",
@@ -3027,12 +3099,21 @@ def _chapter_first_requested(
     settings: AppSettings,
     chapter_number: int,
     explicit: bool | None,
+    chapter: ChapterModel | None = None,
 ) -> bool:
     if explicit is not None:
         return bool(explicit)
-    return bool(getattr(settings.pipeline, "enable_chapter_first_generation", False)) and (
-        chapter_number <= int(getattr(settings.pipeline, "chapter_first_max_chapter_number", 3) or 3)
-    )
+    if not bool(getattr(settings.pipeline, "enable_chapter_first_generation", False)):
+        return False
+    cap = int(getattr(settings.pipeline, "chapter_first_max_chapter_number", 3) or 3)
+    if chapter_number <= cap:
+        return True
+    threshold = int(getattr(settings.pipeline, "chapter_first_short_chapter_threshold", 3500) or 0)
+    if chapter is not None and threshold > 0:
+        target = int(getattr(chapter, "target_word_count", 0) or 0)
+        if 0 < target <= threshold:
+            return True
+    return False
 
 
 async def _recover_session_after_nonfatal_error(
@@ -4925,7 +5006,7 @@ async def run_chapter_pipeline(
     if not scenes:
         raise ValueError(f"Chapter {chapter_number} does not have any scene cards to process.")
 
-    use_chapter_first = _chapter_first_requested(settings, chapter_number, chapter_first)
+    use_chapter_first = _chapter_first_requested(settings, chapter_number, chapter_first, chapter)
     should_supersede_pending_rewrites = (
         bool(supersede_pending_rewrites)
         if supersede_pending_rewrites is not None
@@ -5650,7 +5731,7 @@ async def run_chapter_pipeline(
             try:
                 _retry_cfg = get_quality_gates_config().originality_engine
                 _pre_repair_block_codes = _current_auto_repair_block_codes(chapter)
-                if _apply_retention_retry_budget(
+                if _apply_rewrite_escalation(
                     chapter,
                     _pre_repair_block_codes,
                     _retry_cfg,
@@ -8664,10 +8745,18 @@ async def run_project_pipeline(
         scorecard_quality_score_for_premium_gate: float | None = None
         scorecard_quality_score_ignored_reason: str | None = None
         try:
+            scorecard_project_dir = (
+                Path(getattr(settings.output, "base_dir", ".") or ".") / project_slug
+            )
             scorecard = await compute_scorecard(
                 session,
                 project.id,
                 expected_chapter_count=project.target_chapters,
+                project_dir=(
+                    scorecard_project_dir
+                    if scorecard_project_dir.exists()
+                    else None
+                ),
             )
             await save_scorecard(session, scorecard)
             scorecard_quality_score = scorecard.quality_score

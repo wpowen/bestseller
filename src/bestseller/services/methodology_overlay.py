@@ -335,7 +335,13 @@ def normalize_scene_overlay(value: Any) -> dict[str, Any]:
         "camera_distance": first_text(data, "camera_distance", "camera", "shot"),
         "reveal_mode": first_text(data, "reveal_mode", "information_reveal_mode"),
         "signature_image": first_text(data, "signature_image", "memorable_image"),
-        "cut_point": first_text(data, "cut_point", "scene_break", "ending_cut"),
+        "cut_point": first_text(
+            data,
+            "cut_point",
+            "breakpoint",
+            "scene_break",
+            "ending_cut",
+        ),
         "relationship_debts": text_list(
             data.get("relationship_debts")
             or data.get("relation_debts")

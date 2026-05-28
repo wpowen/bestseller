@@ -1500,6 +1500,32 @@ def test_generated_chapter_cleanup_removes_forbidden_signal_negation_echoes() ->
     assert stats["forbidden_signal_negations"] == 1
 
 
+def test_generated_chapter_cleanup_preserves_duplicates_when_dedup_would_underflow() -> None:
+    duplicate = (
+        "林夜把铜钱按在账册上，门外脚步停住，证物袋里的灰线同时绷紧。"
+    )
+    content = (
+        "# 第1章 旧案\n\n"
+        "林夜抬头，雨水顺着窗缝往下淌。\n\n"
+        f"{duplicate}\n\n"
+        f"{duplicate}\n\n"
+        "他没有后退，只把账册推向灯下。"
+    )
+    before = draft_services.count_words(content)
+
+    cleaned, stats = draft_services._clean_generated_chapter_text(
+        content,
+        chapter_number=1,
+        source="chapter_rewrite",
+        min_word_count=before - 1,
+    )
+
+    assert stats["duplicate_paragraphs"] == 0
+    assert stats["duplicate_paragraphs_preserved_under_min"] == 1
+    assert cleaned.count(duplicate) == 2
+    assert draft_services.count_words(cleaned) == before
+
+
 def test_chapter_review_flags_phone_prelude_when_first_scene_is_in_person() -> None:
     chapter = build_chapter(uuid4())
     chapter.opening_situation = "23:43，林渊赶到十七栋楼下，王建业站在雨棚下等他。"

@@ -465,9 +465,7 @@ def _merge_worker_progress_into_db_repair_summary(
     if not worker_progress:
         return summary
     summary["status"] = worker_progress.get("status") or summary.get("status")
-    summary["current_stage"] = worker_progress.get("current_stage") or summary.get(
-        "current_stage"
-    )
+    summary["current_stage"] = worker_progress.get("current_stage") or summary.get("current_stage")
     worker_events = worker_progress.get("progress_events")
     if isinstance(worker_events, list) and worker_events:
         existing_events = summary.get("progress_events")
@@ -500,9 +498,7 @@ def _task_progress_payload(task: dict[str, object]) -> dict[str, object]:
         (
             event
             for event in reversed(events)
-            if isinstance(event, dict)
-            and current_stage
-            and event.get("stage") == current_stage
+            if isinstance(event, dict) and current_stage and event.get("stage") == current_stage
         ),
         events[-1] if events else None,
     )
@@ -550,8 +546,7 @@ def _load_worker_task_summary(
         "title": slug,
         "project_title": slug,
         "project_slug": slug,
-        "current_stage": worker_progress.get("current_stage")
-        or "delegated_to_worker_self_heal",
+        "current_stage": worker_progress.get("current_stage") or "delegated_to_worker_self_heal",
         "progress_events": worker_progress.get("progress_events") or [],
         "result": worker_progress.get("latest_payload") or {},
         "error": None,
@@ -1270,7 +1265,10 @@ def _task_has_machine_repair_gate(task: WebTaskState) -> bool:
         payload = event.get("payload")
         if not isinstance(payload, dict):
             continue
-        if payload.get("requires_machine_repair") is True or payload.get("requires_human_review") is True:
+        if (
+            payload.get("requires_machine_repair") is True
+            or payload.get("requires_human_review") is True
+        ):
             return True
         verdict = (
             str(
@@ -1289,7 +1287,10 @@ def _task_has_machine_repair_gate(task: WebTaskState) -> bool:
 
 
 def _payload_requires_machine_attention(payload: dict[str, Any]) -> bool:
-    if payload.get("requires_machine_repair") is True or payload.get("requires_human_review") is True:
+    if (
+        payload.get("requires_machine_repair") is True
+        or payload.get("requires_human_review") is True
+    ):
         return True
     verdict = (
         str(
@@ -1839,18 +1840,14 @@ class WebTaskManager:
             task.updated_at = _utc_now()
             task.current_stage = stage
             normalized_stage = stage.lower()
-            if (
-                task.status in {"failed", "incomplete", "queued"}
-                and normalized_stage
-                not in {
-                    "failed",
-                    "error",
-                    "cancelled",
-                    "machine_blocked",
-                    "machine_repair_required",
-                    "blocked_generation_gate",
-                }
-            ):
+            if task.status in {"failed", "incomplete", "queued"} and normalized_stage not in {
+                "failed",
+                "error",
+                "cancelled",
+                "machine_blocked",
+                "machine_repair_required",
+                "blocked_generation_gate",
+            }:
                 task.status = "running"
                 task.error = None
             task.progress_events.append(
@@ -2366,10 +2363,7 @@ class WebTaskManager:
                 else:
                     heal_owned = bool(
                         slug
-                        and (
-                            slug in autowrite_heal_owned_slugs
-                            or slug in repair_heal_owned_slugs
-                        )
+                        and (slug in autowrite_heal_owned_slugs or slug in repair_heal_owned_slugs)
                     )
                 if task.task_type == "repair" and not heal_owned:
                     task.current_stage = "queued"
@@ -2546,9 +2540,7 @@ class WebTaskManager:
             effective_title = str(payload["title"])
             effective_writing_profile = payload.get("writing_profile")
             user_hints = (
-                payload.get("user_hints")
-                if isinstance(payload.get("user_hints"), dict)
-                else None
+                payload.get("user_hints") if isinstance(payload.get("user_hints"), dict) else None
             )
             conception_brief: dict[str, object] | None = None
             conception_log: list[dict[str, object]] | None = None
@@ -2833,9 +2825,7 @@ class WebTaskManager:
             )
         )
 
-        writing_profile = sanitize_genre_story_overrides(
-            genre_preset.writing_profile_overrides
-        )
+        writing_profile = sanitize_genre_story_overrides(genre_preset.writing_profile_overrides)
         if is_fanqie_short:
             from bestseller.domain.fanqie_short import apply_fanqie_short_writing_profile
 
@@ -3164,8 +3154,7 @@ class WebTaskManager:
                 ):
                     continue
                 if state_rank > selected_state_rank or (
-                    state_rank == selected_state_rank
-                    and candidate_latest_ts > selected_latest_ts
+                    state_rank == selected_state_rank and candidate_latest_ts > selected_latest_ts
                 ):
                     selected = (job_id, redis_key)
                     raw_events = candidate_events
@@ -3236,9 +3225,7 @@ class WebTaskManager:
                         error = latest_payload.get("error") or latest_payload.get("message")
                         reason = latest_payload.get("reason")
                         task.error = str(
-                            error
-                            or reason
-                            or "Task reached a machine-repair or attention gate."
+                            error or reason or "Task reached a machine-repair or attention gate."
                         )
                     elif normalized_stage in {"completed", "done", "finished"}:
                         task.status = "completed"
@@ -3257,9 +3244,7 @@ class WebTaskManager:
                         error = latest_payload.get("error") or latest_payload.get("message")
                         reason = latest_payload.get("reason")
                         task.error = str(
-                            error
-                            or reason
-                            or "Task is waiting for planning-gate repair."
+                            error or reason or "Task is waiting for planning-gate repair."
                         )
                         # When the worker emitted a structured sub-code (e.g.
                         # ``write_safety_gate_failed:identity_pronoun_mismatch``),
@@ -3269,9 +3254,7 @@ class WebTaskManager:
                         if reason and ":" in str(reason):
                             subcode = str(reason).split(":", 1)[1].strip()
                             if subcode:
-                                task.current_stage = (
-                                    f"{normalized_stage}:{subcode}"
-                                )
+                                task.current_stage = f"{normalized_stage}:{subcode}"
                     elif task.status in {"failed", "incomplete"}:
                         task.status = "running"
                         task.error = None
@@ -3859,13 +3842,14 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                     completed_chapters = int(fanqie_stats.get("completed_segments") or 0)
                     chapters_on_disk = completed_chapters
                     words_on_disk = int(fanqie_stats.get("word_count_total") or 0)
-                    last_updated_iso = str(
-                        fanqie_stats.get("current_export_modified_at") or last_updated_iso or ""
-                    ) or None
-                    current_export_filename = fanqie_stats.get("current_export_filename")
-                    current_export_modified_at = fanqie_stats.get(
-                        "current_export_modified_at"
+                    last_updated_iso = (
+                        str(
+                            fanqie_stats.get("current_export_modified_at") or last_updated_iso or ""
+                        )
+                        or None
                     )
+                    current_export_filename = fanqie_stats.get("current_export_filename")
+                    current_export_modified_at = fanqie_stats.get("current_export_modified_at")
 
             # Surface tags / category from listing profile if it exists
             listing_path = slug_dir / "listing_profile.json" if slug_dir else None
@@ -4017,10 +4001,14 @@ def _project_row_to_dashboard_task(row: dict[str, object]) -> dict[str, object]:
     slug = str(row.get("slug") or "").strip()
     title = str(row.get("title") or slug or "未命名").strip()
     book_state = str(row.get("book_state") or "").lower()
-    status = "completed" if book_state == "closed_complete" else (
-        "archived" if book_state == "archived" else "project"
+    status = (
+        "completed"
+        if book_state == "closed_complete"
+        else ("archived" if book_state == "archived" else "project")
     )
-    updated_at = row.get("last_updated") or row.get("updated_at") or row.get("created_at") or _utc_now()
+    updated_at = (
+        row.get("last_updated") or row.get("updated_at") or row.get("created_at") or _utc_now()
+    )
     target_units = int(row.get("target_chapters") or 0)
     completed_units = int(row.get("completed_chapters") or 0)
     word_count = int(row.get("words_on_disk") or 0)
@@ -4044,7 +4032,9 @@ def _project_row_to_dashboard_task(row: dict[str, object]) -> dict[str, object]:
         "progress_events": [
             {
                 "timestamp": updated_at,
-                "stage": "project_pipeline_completed" if status == "completed" else "project_registered",
+                "stage": "project_pipeline_completed"
+                if status == "completed"
+                else "project_registered",
                 "payload": {
                     "project_slug": slug,
                     "book_state": book_state,
@@ -4200,9 +4190,7 @@ def _is_nonblocking_rejected_candidate(
     if "chapter rewrite rejected by quality gate" not in error_text:
         return False
     metadata_dict = metadata if isinstance(metadata, dict) else {}
-    preserved = str(
-        metadata_dict.get("preserved_current_quality_gate_outcome") or ""
-    ).lower()
+    preserved = str(metadata_dict.get("preserved_current_quality_gate_outcome") or "").lower()
     production_state = str(chapter_production_state or "").lower()
     return preserved == "ok" or production_state == "ok"
 
@@ -4507,9 +4495,7 @@ def _project_autowrite_block_payload(project: Any) -> dict[str, object] | None:
     if not isinstance(metadata, dict):
         metadata = {}
     structural_blocked = any(bool(metadata.get(flag)) for flag in _STRUCTURAL_REPAIR_BLOCK_FLAGS)
-    generation_gate_blocked = any(
-        bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS
-    )
+    generation_gate_blocked = any(bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS)
     # These flags represent machine-repair work, not a human handoff. Older
     # deployments used them to return 409 and freeze resume attempts; keep the
     # metadata visible elsewhere, but never block autowrite/resume on it.
@@ -4580,9 +4566,7 @@ def _build_project_repair_status_payload(
 
     production_paused = bool(metadata.get("production_paused"))
     resume_blocked = bool(metadata.get("generation_resume_blocked_until_repair_audit"))
-    generation_gate_blocked = any(
-        bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS
-    )
+    generation_gate_blocked = any(bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS)
     structural_repair_required = bool(metadata.get("structural_repair_required"))
     project_status = str(getattr(project, "status", "") or "")
     library_archived = bool(metadata.get("library_archived")) or project_status == "archived"
@@ -4620,11 +4604,7 @@ def _build_project_repair_status_payload(
         label = "正常"
         detail = "当前没有检测到修复门控。"
 
-    is_repairing = (
-        False
-        if library_archived
-        else (phase != "normal" or project_status == "paused")
-    )
+    is_repairing = False if library_archived else (phase != "normal" or project_status == "paused")
     return {
         "phase": phase,
         "label": label,
@@ -4735,7 +4715,9 @@ def _resolve_story_bible_progress(
 
 
 def _is_fanqie_short_export_listing(listing_profile: Mapping[str, object] | None) -> bool:
-    return bool(listing_profile) and str(listing_profile.get("source") or "") == "fanqie_short_export"
+    return (
+        bool(listing_profile) and str(listing_profile.get("source") or "") == "fanqie_short_export"
+    )
 
 
 def _build_project_identity_payload(
@@ -4787,7 +4769,8 @@ def _build_project_identity_payload(
         payload.update(
             {
                 "status": "completed"
-                if book_state in {"closed_complete", "archived"} or serialization_status == "completed"
+                if book_state in {"closed_complete", "archived"}
+                or serialization_status == "completed"
                 else getattr(project, "status", None),
                 "book_state": book_state or None,
                 "library_archived": _project_library_archived(meta),
@@ -4888,9 +4871,7 @@ def _count_design_surface(
     if surface == "planning_artifacts":
         return len(planning_documents)
     if surface == "structure":
-        return int(structure.get("total_chapters") or 0) + int(
-            structure.get("total_scenes") or 0
-        )
+        return int(structure.get("total_chapters") or 0) + int(structure.get("total_scenes") or 0)
     if surface == "characters":
         return len(story_bible.get("characters") or [])
     if surface == "relationships":
@@ -5030,9 +5011,7 @@ async def _load_latest_current_chapter_preview_entry(
         return None
     stats = build_markdown_reading_stats(content)
     output_path = (
-        Path(settings.output.base_dir)
-        / str(project.slug)
-        / f"chapter-{int(chapter_number):03d}.md"
+        Path(settings.output.base_dir) / str(project.slug) / f"chapter-{int(chapter_number):03d}.md"
     )
     modified_at = created_at
     return {
@@ -5098,7 +5077,9 @@ async def _load_project_summary_payload(
         story_bible,
         current_chapter_number=int(project.current_chapter_number or 0),
     )
-    listing_profile = _build_fanqie_short_current_listing_profile(settings, project) or build_book_listing_profile(
+    listing_profile = _build_fanqie_short_current_listing_profile(
+        settings, project
+    ) or build_book_listing_profile(
         project=project,
         writing_profile=writing_profile,
         story_bible=story_bible,
@@ -5233,7 +5214,9 @@ async def _load_project_listing_payload(
         style_guide = await session.get(StyleGuideModel, project.id)
         writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
         story_bible = await build_story_bible_overview(session, project_slug)
-    listing = _build_fanqie_short_current_listing_profile(settings, project) or build_book_listing_profile(
+    listing = _build_fanqie_short_current_listing_profile(
+        settings, project
+    ) or build_book_listing_profile(
         project=project,
         writing_profile=writing_profile,
         story_bible=story_bible,
@@ -5330,9 +5313,7 @@ async def _load_project_design_dossier_payload(
         story_bible = await build_story_bible_overview(session, project_slug)
         narrative = await build_narrative_overview(session, project_slug)
         style_guide = await session.get(StyleGuideModel, project.id)
-        writing_profile = get_project_writing_profile(project, style_guide).model_dump(
-            mode="json"
-        )
+        writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
         from sqlalchemy import select
 
         artifact_rows = await session.execute(
@@ -5443,9 +5424,7 @@ async def _load_project_design_dossier_payload(
                 "completed_run_count": sum(
                     1 for row in workflow_documents if row.status == "completed"
                 ),
-                "failed_run_count": sum(
-                    1 for row in workflow_documents if row.status == "failed"
-                ),
+                "failed_run_count": sum(1 for row in workflow_documents if row.status == "failed"),
                 "latest_run_id": str(latest_workflow.id) if latest_workflow else None,
                 "latest_run_status": latest_workflow.status if latest_workflow else None,
             },
@@ -5507,9 +5486,7 @@ async def _load_project_design_artifact_payload(
             "scope_ref_id": str(artifact.scope_ref_id) if artifact.scope_ref_id else None,
             "status": artifact.status,
             "schema_version": artifact.schema_version,
-            "source_run_id": str(artifact.source_run_id)
-            if artifact.source_run_id
-            else None,
+            "source_run_id": str(artifact.source_run_id) if artifact.source_run_id else None,
             "notes": artifact.notes,
             "created_at": artifact.created_at.isoformat(),
             "created_by": artifact.created_by,
@@ -5567,10 +5544,7 @@ _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
     "title_candidates": {
         "label": "候选书名",
         "kind": "json_titles",
-        "system": (
-            "候选书名由平台化书名工作流确定性生成。"
-            "此模块不会调用大模型生成覆盖标题。"
-        ),
+        "system": ("候选书名由平台化书名工作流确定性生成。此模块不会调用大模型生成覆盖标题。"),
     },
     "reader_promise": {
         "label": "读者承诺",
@@ -5733,7 +5707,10 @@ async def _regenerate_listing_module(
     try:
         parsed_value = _parse_listing_module(raw)
     except Exception as exc:
-        from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
+        from bestseller.services.llm_closed_loop import (
+            build_repair_user_prompt,
+            findings_from_exception,
+        )
 
         findings = findings_from_exception(exc, default_path=f"listing.{module}")
         repair_request = request.model_copy(
@@ -6523,7 +6500,9 @@ def _extract_fanqie_short_character_names(
         first_pos.setdefault(name, match.start())
     ordered = [
         item
-        for item in sorted(counts, key=lambda item: (-counts[item], first_pos.get(item, 10**9), item))
+        for item in sorted(
+            counts, key=lambda item: (-counts[item], first_pos.get(item, 10**9), item)
+        )
         if counts[item] >= 2 or item == protagonist
     ]
     return ordered[:limit]
@@ -6805,7 +6784,13 @@ def _build_fanqie_short_current_listing_profile(
             "score": 100,
             "status": "ready",
             "checks": [],
-            "visual_motifs": ["黑屏提示", "全员群公告", "录音红点", "发布会大屏", "被抹掉的温暖记忆"],
+            "visual_motifs": [
+                "黑屏提示",
+                "全员群公告",
+                "录音红点",
+                "发布会大屏",
+                "被抹掉的温暖记忆",
+            ],
             "character_tags": characters[:5],
         },
         "current_export": {
@@ -6894,6 +6879,52 @@ def _reader_chapter_availability(production_state: str | None, word_count: int) 
     return "planned"
 
 
+_READER_STATE_LABELS: dict[str, str] = {
+    "formal": "正式版",
+    "active_repair": "正在修复",
+    "queued_repair": "排队修复",
+    "blocked": "阻塞待修",
+    "drafting": "生成中",
+    "planned": "待生成",
+}
+
+
+def _reader_chapter_state(
+    *,
+    chapter_status: str | None,
+    production_state: str | None,
+    availability: str | None,
+    pending_rewrite_task_count: int = 0,
+    auto_repair_in_progress: bool = False,
+) -> tuple[str, str]:
+    """Return the reader-facing state, separating queued work from live repair.
+
+    The legacy reader collapsed every readable non-``ok`` chapter into
+    ``repair``. That was truthful for availability but misleading for progress:
+    a blocked chapter, a queued rewrite, and an actively repairing chapter are
+    different operational states.
+    """
+
+    status = str(chapter_status or "").lower()
+    production = str(production_state or "").lower()
+    avail = str(availability or "").lower()
+    if production == "ok" or avail == "available":
+        state = "formal"
+    elif avail == "planned":
+        state = "planned"
+    elif auto_repair_in_progress:
+        state = "active_repair"
+    elif pending_rewrite_task_count > 0:
+        state = "queued_repair"
+    elif production == "blocked":
+        state = "blocked"
+    elif status in {"drafting", "review"} or production == "pending":
+        state = "drafting"
+    else:
+        state = "blocked"
+    return state, _READER_STATE_LABELS[state]
+
+
 def _load_project_chapter_index(
     settings: AppSettings,
     project_slug: str,
@@ -6925,6 +6956,8 @@ def _load_project_chapter_index(
         from bestseller.infra.db.models import (
             ChapterDraftVersionModel,
             ChapterModel,
+            RewriteTaskModel,
+            SceneCardModel,
             VolumeModel,
         )
 
@@ -6953,6 +6986,8 @@ def _load_project_chapter_index(
                         .order_by(ChapterModel.chapter_number)
                     )
                 )
+                chapter_number_by_id = {str(ch.id): int(ch.chapter_number) for ch in chapter_rows}
+                chapter_id_by_number = {int(ch.chapter_number): str(ch.id) for ch in chapter_rows}
 
                 # Look up which chapters have a current draft; we only
                 # surface *draftable* chapters (a placeholder row with no
@@ -6989,6 +7024,61 @@ def _load_project_chapter_index(
                         },
                     )
 
+                pending_rewrite_count_by_chapter: dict[int, int] = {}
+                pending_rewrite_rows = list(
+                    await sess.scalars(
+                        select(RewriteTaskModel).where(
+                            RewriteTaskModel.project_id == proj.id,
+                            RewriteTaskModel.status.in_(["pending", "queued"]),
+                        )
+                    )
+                )
+                scene_source_ids = [
+                    task.trigger_source_id
+                    for task in pending_rewrite_rows
+                    if task.trigger_source_id
+                    and str(task.trigger_source_id) not in chapter_number_by_id
+                ]
+                scene_chapter_by_id: dict[str, int] = {}
+                if scene_source_ids:
+                    scene_rows = list(
+                        await sess.scalars(
+                            select(SceneCardModel).where(SceneCardModel.id.in_(scene_source_ids))
+                        )
+                    )
+                    for scene in scene_rows:
+                        chapter_number = chapter_number_by_id.get(str(scene.chapter_id))
+                        if chapter_number is not None:
+                            scene_chapter_by_id[str(scene.id)] = chapter_number
+
+                def _task_chapter_number(task: RewriteTaskModel) -> int | None:
+                    source_id = str(task.trigger_source_id or "")
+                    if source_id in chapter_number_by_id:
+                        return chapter_number_by_id[source_id]
+                    if source_id in scene_chapter_by_id:
+                        return scene_chapter_by_id[source_id]
+                    metadata = task.metadata_json if isinstance(task.metadata_json, dict) else {}
+                    raw_number = metadata.get("chapter_number") or metadata.get(
+                        "target_chapter_number"
+                    )
+                    try:
+                        number = int(raw_number)
+                    except (TypeError, ValueError):
+                        number = None
+                    if number in chapter_id_by_number:
+                        return number
+                    raw_chapter_id = str(metadata.get("chapter_id") or "")
+                    if raw_chapter_id in chapter_number_by_id:
+                        return chapter_number_by_id[raw_chapter_id]
+                    return None
+
+                for task in pending_rewrite_rows:
+                    chapter_number = _task_chapter_number(task)
+                    if chapter_number is not None:
+                        pending_rewrite_count_by_chapter[chapter_number] = (
+                            pending_rewrite_count_by_chapter.get(chapter_number, 0) + 1
+                        )
+
                 chapters_out: list[dict[str, object]] = []
                 volume_map: dict[int, dict[str, object]] = {}
                 for ch in chapter_rows:
@@ -7013,15 +7103,29 @@ def _load_project_chapter_index(
                     chapter_status = str(ch.status or "").lower()
                     production_state = str(ch.production_state or "").lower()
                     revision_count = int(ch.revision_count or 0)
+                    chapter_metadata = (
+                        ch.metadata_json if isinstance(ch.metadata_json, dict) else {}
+                    )
 
-                    # The reader intentionally exposes only two user-facing
-                    # states: production_state=ok means "正式版"; any other
-                    # readable draft is still "修复中".  A chapter can remain
-                    # status=revision after a repair pass, so production_state
-                    # is the authoritative gate result here.
+                    # production_state=ok means "正式版"; other readable drafts
+                    # are split into blocked/queued/active states so the reader
+                    # does not imply every blocked chapter is being edited live.
                     availability = _reader_chapter_availability(
                         production_state,
                         word_count,
+                    )
+                    pending_rewrite_task_count = pending_rewrite_count_by_chapter.get(
+                        int(ch.chapter_number),
+                        0,
+                    )
+                    reader_state, reader_label = _reader_chapter_state(
+                        chapter_status=chapter_status,
+                        production_state=production_state,
+                        availability=availability,
+                        pending_rewrite_task_count=pending_rewrite_task_count,
+                        auto_repair_in_progress=bool(
+                            chapter_metadata.get("auto_repair_in_progress")
+                        ),
                     )
 
                     chapters_out.append(
@@ -7039,6 +7143,9 @@ def _load_project_chapter_index(
                             "revision_count": revision_count,
                             "has_draft": has_draft,
                             "availability": availability,
+                            "reader_state": reader_state,
+                            "reader_label": reader_label,
+                            "pending_rewrite_task_count": pending_rewrite_task_count,
                             "version_no": draft_meta.get("version_no"),
                             "updated_at": draft_meta.get("updated_at")
                             or (
@@ -7128,14 +7235,10 @@ async def _apply_project_titles_to_tasks(
 
         async with session_scope(settings) as sess:
             rows = await sess.execute(
-                select(ProjectModel.slug, ProjectModel.title).where(
-                    ProjectModel.slug.in_(slugs)
-                )
+                select(ProjectModel.slug, ProjectModel.title).where(ProjectModel.slug.in_(slugs))
             )
             titles = {
-                str(slug): str(title)
-                for slug, title in rows
-                if slug and str(title or "").strip()
+                str(slug): str(title) for slug, title in rows if slug and str(title or "").strip()
             }
     except Exception:
         logger.warning("Failed to apply DB project titles to task cards", exc_info=True)
@@ -7504,9 +7607,7 @@ def serve_web_app(
         try:
             recovered = await _recover_projects_from_output(settings)
             if recovered:
-                print(
-                    f"Auto-recovered {len(recovered)} projects from output directory"
-                )
+                print(f"Auto-recovered {len(recovered)} projects from output directory")
         except Exception:
             logger.exception("Project recovery from output directory failed")
 
@@ -7517,9 +7618,7 @@ def serve_web_app(
         try:
             recovered_tasks = await task_manager._recover_tasks_from_output(settings)
             if recovered_tasks:
-                print(
-                    f"Auto-recovered {recovered_tasks} task(s) from output directory"
-                )
+                print(f"Auto-recovered {recovered_tasks} task(s) from output directory")
         except Exception:
             logger.exception("Task recovery from output directory failed")
 
@@ -7798,9 +7897,7 @@ def serve_web_app(
                     if light_mode:
                         self._send_json(asyncio.run(_load_library_payload(settings)))
                         return
-                    self._send_json(
-                        asyncio.run(_load_projects_payload(settings, light=False))
-                    )
+                    self._send_json(asyncio.run(_load_projects_payload(settings, light=False)))
                     return
                 if path == "/api/writing-presets":
                     self._send_json(_public_writing_preset_catalog_payload())
@@ -7819,17 +7916,13 @@ def serve_web_app(
                     return
                 if path == "/api/tasks":
                     summary_mode = _query_bool((query.get("summary") or ["0"])[0])
-                    include_inactive = _query_bool(
-                        (query.get("include_inactive") or ["0"])[0]
-                    )
+                    include_inactive = _query_bool((query.get("include_inactive") or ["0"])[0])
                     tasks = task_manager.list_tasks()
                     if not include_inactive:
                         tasks = _filter_dashboard_visible_tasks(tasks)
                     if summary_mode:
                         tasks = [_compact_task_for_dashboard(task) for task in tasks]
-                    db_repair_tasks = asyncio.run(
-                        _load_db_repair_task_summaries(settings, tasks)
-                    )
+                    db_repair_tasks = asyncio.run(_load_db_repair_task_summaries(settings, tasks))
                     db_repair_tasks = asyncio.run(
                         _apply_project_titles_to_tasks(settings, db_repair_tasks)
                     )
@@ -7845,8 +7938,7 @@ def serve_web_app(
                             if not (
                                 str(task.get("task_id") or "").startswith("recovered-")
                                 and str(task.get("project_slug") or "") in db_repair_slugs
-                                and str(task.get("status") or "")
-                                in {"failed", "incomplete"}
+                                and str(task.get("status") or "") in {"failed", "incomplete"}
                             )
                         ]
                     tasks.extend(db_repair_tasks)
@@ -7888,9 +7980,7 @@ def serve_web_app(
                     if task is None:
                         task = _load_worker_task_summary(settings, task_id)
                     if task is None:
-                        task = asyncio.run(
-                            _load_db_repair_task_summary(settings, task_id)
-                        )
+                        task = asyncio.run(_load_db_repair_task_summary(settings, task_id))
                     if task is None and task_id.startswith("project:"):
                         task = asyncio.run(
                             _load_project_dashboard_task_payload(
@@ -7901,9 +7991,7 @@ def serve_web_app(
                     if task is None:
                         self._route_not_found()
                         return
-                    titled_tasks = asyncio.run(
-                        _apply_project_titles_to_tasks(settings, [task])
-                    )
+                    titled_tasks = asyncio.run(_apply_project_titles_to_tasks(settings, [task]))
                     task = titled_tasks[0] if titled_tasks else task
                     enriched_tasks = _attach_task_chapter_word_stats(settings, [task])
                     enriched_task = enriched_tasks[0] if enriched_tasks else task
@@ -7947,9 +8035,7 @@ def serve_web_app(
                     try:
                         self._send_json(
                             asyncio.run(
-                                _load_pipeline_flow_payload(
-                                    settings, project_slug, task_manager
-                                )
+                                _load_pipeline_flow_payload(settings, project_slug, task_manager)
                             )
                         )
                     except ValueError as exc:
@@ -7958,9 +8044,7 @@ def serve_web_app(
                 project_slug = _match_project_route(path, "design-dossier")
                 if project_slug is not None:
                     self._send_json(
-                        asyncio.run(
-                            _load_project_design_dossier_payload(settings, project_slug)
-                        )
+                        asyncio.run(_load_project_design_dossier_payload(settings, project_slug))
                     )
                     return
                 project_slug = _match_project_route(path, "design-artifact")
@@ -8204,11 +8288,7 @@ def serve_web_app(
                             title=project_title,
                             genre=str(project_summary.get("genre") or ""),
                         )
-                        toc = (
-                            [_fanqie_short_toc_entry_from_markdown(short_md)]
-                            if short_md
-                            else []
-                        )
+                        toc = [_fanqie_short_toc_entry_from_markdown(short_md)] if short_md else []
                         self._send_json(
                             {
                                 "project_slug": project_slug,
@@ -8354,9 +8434,7 @@ def serve_web_app(
                             f"chapter-{chapter_n:04d}.md",
                         )
                         fresh_content = (
-                            str(fresh_payload.get("content") or "")
-                            if fresh_payload
-                            else None
+                            str(fresh_payload.get("content") or "") if fresh_payload else None
                         )
                         if fresh_content is not None:
                             chapter_file = output_dir / f"chapter-{chapter_n:04d}.md"
@@ -8718,7 +8796,9 @@ def serve_web_app(
                         _load_project_autowrite_block_payload(settings, slug),
                     )
                     if block_payload:
-                        stage = str(block_payload.get("current_stage") or "blocked_structural_repair")
+                        stage = str(
+                            block_payload.get("current_stage") or "blocked_structural_repair"
+                        )
                         error = str(block_payload.get("error") or "")
                         if block_payload.get("blocked_generation_gate"):
                             task_manager.mark_task_blocked_by_project_gate(

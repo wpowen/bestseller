@@ -19,6 +19,7 @@ from bestseller.services.methodology_overlay import (
     methodology_contract_blocks,
     methodology_contract_requires_checks,
     normalize_methodology_contract_mode,
+    normalize_scene_overlay,
     validate_scene_methodology_contract,
 )
 
@@ -578,8 +579,9 @@ def repair_missing_scene_methodology_contract_pre_draft(
 
     metadata = dict(getattr(scene, "metadata_json", None) or {})
     existing = metadata.get("methodology_contract")
-    if isinstance(existing, dict) and existing:
-        return 0
+    raw_contract = dict(existing) if isinstance(existing, dict) else {}
+    contract: dict[str, Any] = {**raw_contract, **normalize_scene_overlay(existing)}
+    repaired = contract != raw_contract
 
     scene_number = getattr(scene, "scene_number", "?")
     participants = [_clean(item) for item in (getattr(scene, "participants", None) or []) if _clean(item)]
@@ -609,33 +611,53 @@ def repair_missing_scene_methodology_contract_pre_draft(
         hook,
         title,
         story,
+        raw_contract.get("signature_image"),
         fallback=f"{spotlight}面前出现一件无法立刻归档的异常物。",
     )
     cut_point = _first_non_generic_text(
         hook,
+        raw_contract.get("cut_point"),
+        raw_contract.get("breakpoint"),
         chapter_hook,
         story,
         fallback=f"{signature}改变{spotlight}的下一步选择。",
     )
 
-    contract: dict[str, Any] = {
-        "conflict_stakes": f"若处理失败，{anchor}",
-        "conflict_buffs": [
+    if not _clean(contract.get("conflict_stakes")):
+        contract["conflict_stakes"] = f"若处理失败，{anchor}"
+        repaired = True
+    if not contract.get("conflict_buffs"):
+        contract["conflict_buffs"] = [
             f"{signature}把{spotlight}的行动窗口压缩到当场。",
             f"{counterpart}的反应迫使{spotlight}不能只观察，必须立刻作出选择。",
-        ],
-        "hook_type": _derive_legacy_methodology_hook_type(scene),
-        "spotlight_character": spotlight,
-        "information_control_mode": f"先让读者看见{signature}，暂不解释完整来源。",
-        "camera_distance": f"贴近{spotlight}的手部动作、视线停顿和现场物件变化。",
-        "reveal_mode": f"通过{signature}释放一条会改变行动方向的可见信息。",
-        "signature_image": signature,
-        "cut_point": cut_point,
-    }
-    if len(participants) >= 2:
+        ]
+        repaired = True
+    if not _clean(contract.get("hook_type")):
+        contract["hook_type"] = _derive_legacy_methodology_hook_type(scene)
+        repaired = True
+    if not _clean(contract.get("spotlight_character")):
+        contract["spotlight_character"] = spotlight
+        repaired = True
+    if not _clean(contract.get("information_control_mode")):
+        contract["information_control_mode"] = f"先让读者看见{signature}，暂不解释完整来源。"
+        repaired = True
+    if not _clean(contract.get("camera_distance")):
+        contract["camera_distance"] = f"贴近{spotlight}的手部动作、视线停顿和现场物件变化。"
+        repaired = True
+    if not _clean(contract.get("reveal_mode")):
+        contract["reveal_mode"] = f"通过{signature}释放一条会改变行动方向的可见信息。"
+        repaired = True
+    if not _clean(contract.get("signature_image")):
+        contract["signature_image"] = signature
+        repaired = True
+    if not _clean(contract.get("cut_point")):
+        contract["cut_point"] = cut_point
+        repaired = True
+    if len(participants) >= 2 and not contract.get("relationship_debts"):
         contract["relationship_debts"] = [
             f"{spotlight}必须向{counterpart}交代、隐瞒或交换一部分关键信息。"
         ]
+        repaired = True
 
     scene_type = _clean(getattr(scene, "scene_type", None)).lower()
     action_like = scene_type in {
@@ -649,30 +671,44 @@ def repair_missing_scene_methodology_contract_pre_draft(
         "reveal",
     }
     if action_like:
-        contract.update(
-            {
-                "action_sequence": [
-                    f"{spotlight}先确认{signature}的异常。",
-                    f"{counterpart}或现场压力打断原定判断。",
-                    f"{spotlight}用一个可见动作把局面推向下一场。",
-                ],
-                "fight_objective": f"{spotlight}要在本场拿到能推进{anchor}的实证。",
-                "failure_cost": f"失败会让{signature}指向的线索当场失控。",
-                "opponent_advantage": f"{counterpart}掌握的信息或现场位置先压住{spotlight}。",
-                "tactic_shift": f"{spotlight}从观察转为当场逼问、验证或拦截。",
-                "emotion_driver": (
-                    f"{spotlight}被{emotion}推动，仍要在现场作决定。"
-                    if emotion
-                    else f"{spotlight}不愿让{signature}指向的代价落到同伴身上。"
-                ),
-                "turning_point": f"{signature}暴露第二层含义，迫使行动方向改变。",
-                "exit_state_delta": f"{spotlight}带着{cut_point}进入下一场。",
-            }
-        )
+        if not contract.get("action_sequence"):
+            contract["action_sequence"] = [
+                f"{spotlight}先确认{signature}的异常。",
+                f"{counterpart}或现场压力打断原定判断。",
+                f"{spotlight}用一个可见动作把局面推向下一场。",
+            ]
+            repaired = True
+        if not _clean(contract.get("fight_objective")):
+            contract["fight_objective"] = f"{spotlight}要在本场拿到能推进{anchor}的实证。"
+            repaired = True
+        if not _clean(contract.get("failure_cost")):
+            contract["failure_cost"] = f"失败会让{signature}指向的线索当场失控。"
+            repaired = True
+        if not _clean(contract.get("opponent_advantage")):
+            contract["opponent_advantage"] = f"{counterpart}掌握的信息或现场位置先压住{spotlight}。"
+            repaired = True
+        if not _clean(contract.get("tactic_shift")):
+            contract["tactic_shift"] = f"{spotlight}从观察转为当场逼问、验证或拦截。"
+            repaired = True
+        if not _clean(contract.get("emotion_driver")):
+            contract["emotion_driver"] = (
+                f"{spotlight}被{emotion}推动，仍要在现场作决定。"
+                if emotion
+                else f"{spotlight}不愿让{signature}指向的代价落到同伴身上。"
+            )
+            repaired = True
+        if not _clean(contract.get("turning_point")):
+            contract["turning_point"] = f"{signature}暴露第二层含义，迫使行动方向改变。"
+            repaired = True
+        if not _clean(contract.get("exit_state_delta")):
+            contract["exit_state_delta"] = f"{spotlight}带着{cut_point}进入下一场。"
+            repaired = True
 
+    if not repaired:
+        return 0
     metadata["methodology_contract"] = contract
     metadata["legacy_methodology_contract_repair"] = {
-        "source": "pre_draft_legacy_backfill",
+        "source": "pre_draft_methodology_upgrade" if raw_contract else "pre_draft_legacy_backfill",
         "chapter_number": chapter_number,
         "scene_number": scene_number,
     }

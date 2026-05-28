@@ -23,12 +23,13 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import pairwise
 import logging
 import math
 import statistics
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -128,6 +129,17 @@ class NovelScorecard:
     overrides_count: int = 0          # total active Override Contracts
     active_debts_count: int = 0       # ChaseDebt rows with status="active"
     overdue_debts_count: int = 0      # ChaseDebt rows with status="overdue"
+    # ------------------------------------------------------------------
+    # Quality-uplift plan §9/§10 — per-character action-verb diversity
+    # and cross-chapter arc tension. Populated when ``compute_scorecard``
+    # is given a ``project_dir`` (main characters + arc curve are derived
+    # there). ``character_action_diversity`` is a list of ``(name, score)``
+    # pairs sorted high→low so the snapshot is stable across runs;
+    # ``arc_tension_summary`` carries the headline averages and any
+    # sagging intervals identified by ``arc_tension_monitor``.
+    # ------------------------------------------------------------------
+    character_action_diversity: tuple[tuple[str, float], ...] = ()
+    arc_tension_summary: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -158,6 +170,11 @@ class NovelScorecard:
             "overrides_count": self.overrides_count,
             "active_debts_count": self.active_debts_count,
             "overdue_debts_count": self.overdue_debts_count,
+            "character_action_diversity": {
+                name: round(float(score), 4)
+                for name, score in self.character_action_diversity
+            },
+            "arc_tension_summary": dict(self.arc_tension_summary or {}),
         }
 
 
@@ -512,12 +529,21 @@ async def compute_scorecard(
     *,
     expected_chapter_count: int | None = None,
     top_overused_n: int = 10,
+    project_dir: Path | None = None,
+    max_idiolect_characters: int = 3,
 ) -> NovelScorecard:
     """Pull all the evidence and produce a ``NovelScorecard``.
 
     ``expected_chapter_count`` lets the caller override the gap-count
     logic when the project plan's expected total is known (e.g. from the
     outline). Without it we only count in-sequence gaps.
+
+    ``project_dir`` activates the Q9/Q10 quality-uplift fields
+    (``character_action_diversity`` + ``arc_tension_summary``). It must
+    point at the project root containing ``story-bible/`` so the main
+    character roster can be derived from ``canonical-terms.yaml``.
+    When omitted, both fields stay empty and ``quality_score`` is
+    unaffected — preserving legacy behavior.
     """
 
     # 1. Chapter list + current draft lengths + hype assignment.
@@ -851,6 +877,88 @@ async def compute_scorecard(
     ).all()
     debt_counts = {str(s): int(c) for s, c in debt_status_rows}
 
+    # Quality uplift §9/§10 — character idiolect diversity + arc tension.
+    # These are best-effort: any failure (missing YAML, no current drafts,
+    # etc.) falls back to empty values so the rest of the scorecard still
+    # ships. Caller must pass ``project_dir`` to opt in.
+    character_action_diversity: tuple[tuple[str, float], ...] = ()
+    arc_tension_summary: dict[str, Any] = {}
+    diversity_floor_penalty = 0.0
+    arc_sagging_penalty = 0.0
+    if project_dir is not None:
+        try:
+            project = await session.get(ProjectModel, project_id)
+            if project is not None:
+                main_character_names = _resolve_main_character_names(
+                    project_dir=project_dir,
+                    limit=max(1, int(max_idiolect_characters)),
+                )
+                if main_character_names:
+                    from bestseller.services.character_idiolect_tracker import (
+                        compute_character_idiolect,
+                    )
+
+                    profiles = []
+                    for name in main_character_names:
+                        try:
+                            profile = await compute_character_idiolect(
+                                session,
+                                project,
+                                name,
+                            )
+                        except Exception:
+                            logger.debug(
+                                "character idiolect failed for %s", name, exc_info=True
+                            )
+                            continue
+                        profiles.append(profile)
+                    character_action_diversity = tuple(
+                        (p.character_name, float(p.diversity_score))
+                        for p in sorted(
+                            profiles,
+                            key=lambda item: -float(item.diversity_score),
+                        )
+                    )
+                    # §9 — when the primary protagonist's action diversity is
+                    # below 0.30 the writing is mechanically templated. Apply
+                    # a small score nudge (max -3) so the scorecard surfaces
+                    # the problem without overwhelming legacy weights.
+                    if character_action_diversity:
+                        worst = min(score for _, score in character_action_diversity)
+                        if worst < 0.30:
+                            diversity_floor_penalty = min(3.0, (0.30 - worst) * 10.0)
+                try:
+                    from bestseller.services.arc_tension_monitor import (
+                        compute_arc_tension,
+                    )
+
+                    arc_report = await compute_arc_tension(session, project)
+                    arc_tension_summary = {
+                        "mean_tension": (
+                            statistics.fmean(
+                                [item.overall_tension for item in arc_report.per_chapter]
+                            )
+                            if arc_report.per_chapter
+                            else 0.0
+                        ),
+                        "sagging_intervals": [
+                            list(interval) for interval in arc_report.sagging_intervals
+                        ],
+                        "sagging_interval_count": len(arc_report.sagging_intervals),
+                    }
+                    # §10 — each sagging interval costs 1 point (cap 2).
+                    arc_sagging_penalty = min(
+                        2.0, float(len(arc_report.sagging_intervals))
+                    )
+                except Exception:
+                    logger.debug("arc tension computation failed", exc_info=True)
+        except Exception:
+            logger.debug("quality uplift scorecard integration failed", exc_info=True)
+    quality_score = max(
+        0.0,
+        quality_score - diversity_floor_penalty - arc_sagging_penalty,
+    )
+
     return NovelScorecard(
         project_id=project_id,
         total_chapters=total_chapters,
@@ -878,7 +986,50 @@ async def compute_scorecard(
         overrides_count=overrides_count,
         active_debts_count=debt_counts.get("active", 0),
         overdue_debts_count=debt_counts.get("overdue", 0),
+        character_action_diversity=character_action_diversity,
+        arc_tension_summary=arc_tension_summary,
     )
+
+
+def _resolve_main_character_names(
+    *,
+    project_dir: Path,
+    limit: int,
+) -> tuple[str, ...]:
+    """Read the first ``limit`` character terms from canonical-terms.yaml.
+
+    The YAML lists characters in narrative importance order (protagonists
+    first by convention), so the first N entries are a reasonable proxy
+    for the project's main cast. Returns () when the file is missing or
+    malformed — callers fall back to empty idiolect diagnostics.
+    """
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        return ()
+    path = project_dir / "story-bible" / "canonical-terms.yaml"
+    if not path.exists():
+        return ()
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return ()
+    terms = payload.get("terms") if isinstance(payload, Mapping) else None
+    if not isinstance(terms, Sequence):
+        return ()
+    names: list[str] = []
+    for entry in terms:
+        if not isinstance(entry, Mapping):
+            continue
+        category = str(entry.get("category") or "").lower()
+        if category != "character":
+            continue
+        name = str(entry.get("term") or "").strip()
+        if name and name not in names:
+            names.append(name)
+        if len(names) >= int(limit):
+            break
+    return tuple(names)
 
 
 async def save_scorecard(

@@ -147,6 +147,29 @@ def test_acceptance_gap_repair_specs_turn_scorecard_failures_into_chapter_tasks(
     assert by_audit[2]["word_count_reason"] == "overflow"
 
 
+def test_successful_execution_task_ids_excludes_failed_timeout_tasks() -> None:
+    selected = ["task-ok", "task-timeout", "task-rejected"]
+    execution = {
+        "executed": 1,
+        "failed": [{"task_id": "task-timeout", "error": "TimeoutError"}],
+        "gate_rejected": [{"task_id": "task-rejected"}],
+    }
+
+    assert closure_runner._successful_execution_task_ids(execution, selected) == [
+        "task-ok"
+    ]
+
+
+def test_successful_execution_task_ids_empty_when_nothing_executed() -> None:
+    assert (
+        closure_runner._successful_execution_task_ids(
+            {"executed": 0, "failed": [{"task_id": "task-timeout"}]},
+            ["task-timeout"],
+        )
+        == []
+    )
+
+
 @pytest.mark.asyncio
 async def test_run_stalls_after_repeated_metric_signature(monkeypatch: pytest.MonkeyPatch) -> None:
     args = _stub_args()

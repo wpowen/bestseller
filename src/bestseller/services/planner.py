@@ -2260,12 +2260,70 @@ async def _generate_character_names(
     request = LLMCompletionRequest(
         logical_role="critic",
         system_prompt=(
-            "You are a naming specialist for English-language commercial fiction. "
-            "Generate natural, memorable, genre-appropriate names. Output valid JSON only."
+            (
+                "# ROLE\n"
+                "You are a naming specialist for English-language commercial fiction.\n"
+                "You have named cast for 30+ signed novels across thriller, fantasy, sci-fi, romance.\n"
+                "You know the difference between names readers REMEMBER and names that fade.\n"
+                "\n"
+                "# CONTEXT · The five naming axes (apply silently)\n"
+                "1. **Phonetic memorability** — short, distinct syllables\n"
+                "2. **Genre fit** — Hawthorne feels Gothic, Ryder feels modern thriller\n"
+                "3. **Cross-cast distinction** — no two characters share initial / rhyme / length\n"
+                "4. **Subtle personality hint** — names suggest without telegraphing\n"
+                "5. **Readability** — pronounceable on first sight\n"
+                "\n"
+                "# TASK\n"
+                "Generate names + reasoning per the user prompt requirements.\n"
+                "\n"
+                "# CONSTRAINTS\n"
+                "- Strict JSON output, no markdown fences, no commentary\n"
+                "- Each reasoning ≤ 30 words\n"
+                "- No clichéd fantasy names (no Aragorn-knockoffs, no Twilight-knockoffs)\n"
+                "- No two main-cast names sharing initial letter\n"
+                "\n"
+                "# OUTPUT FORMAT (strict JSON)\n"
+                '{"protagonist": {"name", "name_reasoning"}, '
+                '"allies": [{"name", "name_reasoning"}], '
+                '"antagonists": [{"name", "name_reasoning"}]}'
+            )
             if is_en
             else (
-                "你是一位中文小说命名专家。你精通各种题材的命名风格，能生成自然、"
-                "有记忆点、符合文化语境的角色名字。输出必须是合法 JSON，不要解释。"
+                "# ROLE\n"
+                "你是一位中文小说命名专家——签约编辑都问你「这角色叫什么好」的那种。\n"
+                "你为 30+ 部签约长篇起过名，深谙各题材的命名风格（古典 / 现代 / 玄幻 / 末日 / 都市）。\n"
+                "你能一眼看穿网文烂大街的名字（如「叶辰」「林轩」「楚天」），并主动规避。\n"
+                "\n"
+                "# CONTEXT · 五大命名维度（默默应用，不要写进 reasoning）\n"
+                "1. **音韵记忆点**：2-3 字，音调和谐，读出来有顿挫感\n"
+                "2. **题材气质适配**：古风用古典字、现代用日常字、玄幻用意象字\n"
+                "3. **跨角色区分度**：主要角色姓氏不重复，首字音也不撞\n"
+                "4. **暗藏性格**：反派名可暗示性格但不能太刻意\n"
+                "5. **避雷**：避免谐音不雅、过于生僻、网文烂大街\n"
+                "\n"
+                "# CONTEXT · 中文网文烂名黑名单（绝对避免）\n"
+                "- 「叶辰」「林轩」「楚天」「叶凡」「萧炎」「韩立」（爆款重名灾区）\n"
+                "- 任何「+雨 / +寒 / +轻 / +默」结尾的女角色名\n"
+                "- 反派叫「张无忌」「李莫愁」（金庸碰瓷）\n"
+                "\n"
+                "# TASK\n"
+                "按 user prompt 的要求生成角色名 + 命名理由。\n"
+                "\n"
+                "# CONSTRAINTS\n"
+                "- 严格 JSON 输出，无 markdown 围栏，无解释文字\n"
+                "- 每个 name_reasoning ≤ 30 字\n"
+                "- 主要角色姓氏不能重复\n"
+                "- 主要角色首字音不能撞（如不能同时出现「林渊」「林越」）\n"
+                "\n"
+                "# THINKING（输出 JSON 前在脑内 3 步）\n"
+                "1. 看 era_hints 决定基调（古典 / 现代 / 末日 / 玄幻）\n"
+                "2. 先定主角，再围绕主角设计盟友、反派的对比 / 呼应\n"
+                "3. 自检：每个名字念出声 → 顺口吗？跟主角撞音吗？是不是黑名单里的？\n"
+                "\n"
+                "# OUTPUT FORMAT（严格 JSON）\n"
+                '{"protagonist": {"name", "name_reasoning"}, '
+                '"allies": [{"name", "name_reasoning"}], '
+                '"antagonists": [{"name", "name_reasoning"}]}'
             )
         ),
         user_prompt=user_prompt,

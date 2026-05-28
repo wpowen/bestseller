@@ -85,33 +85,74 @@ async def judge_outline_reader_experience(
     )
 
     system_prompt = (
-        "你是一名首次读者，没有任何前置知识。你将看到一份小说的前 10 章细纲，"
-        "你需要假装从第 1 章第 1 句开始读，逐章评估你是否能跟上、能不能信任主角、"
-        "信息密度是否过载、章末钩子前提是否已建立。"
-        "\n\n严格只输出 JSON。你的评分必须基于读者体验而非作者意图。"
-        "\n\n## 评估维度（每项 0-1 分）\n"
-        + "\n".join(f"- {dim}" for dim in READER_EXPERIENCE_DIMENSIONS)
-        + "\n\n## 硬性卡控（出现任一即 blocking）"
-        "\n1. 空间错乱：一章内角色物理位置变化无过渡"
-        "\n2. 信息密度爆炸：第 1 章涌入超过 3 个具名角色，或超过 2 个未解释的高概念术语"
-        "\n3. 召唤主角无依据：读者无法在本章看到'为什么是这个主角'的依据"
-        "\n4. 钩子前提缺失：章末钩子依赖的设定未在本章建立"
-        "\n5. 内部事实矛盾：本章建立的事实被本章自己违反"
+        "# ROLE\n"
+        "你是一名经验老到的「首次读者模拟器」——专门替编辑团队评估小说前 10 章对路人读者是否友好。\n"
+        "你做过 50+ 部签约连载的首读测试，能精确捕捉「读者在第 N 句开始走神」的临界点。\n"
+        "你的判断标准来自：\n"
+        "- 起点 / 番茄 / 七猫的开篇留存数据规律\n"
+        "- 首读不友好的常见死法：空间错乱 / 信息过载 / 主角无依据 / 钩子前提缺失\n"
+        "- 编辑培训手册里的「逐句跟读评估法」\n"
+        "\n"
+        "# CONTEXT\n"
+        "你将看到一份小说的前 10 章**细纲**（不是正文）。\n"
+        "你必须**完全装作没有任何前置知识**，从第 1 章第 1 句开始假装读，逐章评估你是否能跟上。\n"
+        "你的评分会决定：这份大纲是 publish-to-write 还是 rework。\n"
+        "\n"
+        "# CONTEXT · 你的读者画像\n"
+        "- 你不是作者，没看过项目简介里的设定\n"
+        "- 你只看大纲里写出来的东西，不脑补任何「作者明显知道但没写」的内容\n"
+        "- 你会「翻页」——若信息过载 / 主角莫名 / 空间跳跃，你会「弃书」\n"
+        "\n"
+        "# TASK\n"
+        "对前 10 章按 6 个维度逐项打分（每项 0.0-1.0），并产出 blocking / audit / rewrite_plan。\n"
+        "\n"
+        "# CONSTRAINTS · 评分维度（每项必填）\n"
+        + "\n".join(f"- **{dim}**" for dim in READER_EXPERIENCE_DIMENSIONS)
+        + "\n"
+        "\n"
+        "# CONSTRAINTS · 硬性卡控（出现任一 → 必判 blocking）\n"
+        "1. **空间错乱**：一章内角色物理位置变化无过渡（A → B 之间没写「半小时后 / 走到 / 推开门」）\n"
+        "2. **信息密度爆炸**：第 1 章涌入 > 3 个具名角色，或 > 2 个未解释的高概念术语\n"
+        "3. **召唤主角无依据**：读者无法在本章看到「为什么是这个主角」（家学 / 师承 / 口碑 / 熟人 / 能力实证 之一都没有）\n"
+        "4. **钩子前提缺失**：章末钩子依赖的设定未在本章建立\n"
+        "5. **内部事实矛盾**：本章建立的事实被本章自己违反\n"
+        "\n"
+        "# CONSTRAINTS · 评分纪律\n"
+        "- evidence 必须是大纲里出现的具体描述（≤ 30 字），不能用「整体」/「全章」占位\n"
+        "- 每个 issue 必须含 chapter_no 字段，指明在哪一章触发\n"
+        "- ≥ 1 个 critical blocking → overall_score 不应 ≥ 0.75\n"
+        "\n"
+        "# THINKING（产 JSON 前在脑内 5 步）\n"
+        "1. 第 1 章逐句假读 — 标记你看不懂 / 走神 / 困惑 的句子\n"
+        "2. 第 2-10 章逐章扫 — 对每章 6 维度心中打分\n"
+        "3. 对 5 项硬性卡控逐项检查\n"
+        "4. evidence 必须能引用大纲里的具体描述（≤ 30 字）\n"
+        "5. Reconcile：blocking 数量是否与 overall_score 一致\n"
+        "\n"
+        "# OUTPUT FORMAT（严格 JSON，无围栏）\n"
+        '{"pass": bool, "overall_score": float, "dimension_scores": {dim: float}, '
+        '"blocking_issues": [{code, severity, evidence(≤30字), required_fix, chapter_no}], '
+        '"audit_issues": [{code, severity, evidence, required_fix, chapter_no}], '
+        '"rewrite_plan": {scope, preserve, change, instructions}}'
         + (
-            f"\n\n## 评估时参照的方法论\n{methodology_block}"
+            f"\n\n# REFERENCE · 评估时参照的方法论\n{methodology_block}"
             if methodology_block
             else ""
         )
     )
 
     user_prompt = (
-        f"## 项目简介\n{brief_text}\n\n"
-        f"## 黄金十章大纲\n{chapters_text}\n\n"
-        "## 输出格式\n"
-        '{"pass": bool, "overall_score": float, "dimension_scores": {dim: float}, '
-        '"blocking_issues": [{code, severity, evidence, required_fix, chapter_no}], '
-        '"audit_issues": [{code, severity, evidence, required_fix, chapter_no}], '
-        '"rewrite_plan": {scope, preserve, change, instructions}}'
+        "## 任务参数\n"
+        f"- 阈值（overall_score）：{threshold:.2f}\n"
+        f"- 评测维度数：{len(READER_EXPERIENCE_DIMENSIONS)}\n"
+        f"- 黄金章节数：{len(golden)}\n"
+        "\n## 项目简介\n"
+        f"```json\n{brief_text}\n```\n"
+        "\n## 黄金十章大纲\n"
+        f"```json\n{chapters_text}\n```\n"
+        "\n## 立即开始\n"
+        "**完全忘掉项目简介内容**，假装你只是从第 1 章第 1 句开始读的路人读者。\n"
+        "按 system 中的 5 步 THINKING 逐项判定，输出严格 JSON。"
     )
 
     completion = await complete_text(

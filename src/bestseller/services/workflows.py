@@ -457,6 +457,407 @@ def _repair_chapter_outline_contract_inputs(
     protagonist_name = _outline_default_protagonist(identity_manifest)
     identity_index = _identity_index_from_manifest(identity_manifest)
     repaired = 0
+
+    generic_contract_markers = (
+        "推动剧情",
+        "推动本章",
+        "推进剧情",
+        "推进",
+        "承接上章",
+        "承接上一章",
+        "继续处理",
+        "主线",
+        "目标",
+        "目标达成",
+        "目的",
+        "继续",
+        "具体事件",
+    )
+
+    def _has_value(value: Any, *, generic: bool = True) -> bool:
+        text = _text_value(value)
+        if not text:
+            return False
+        if generic and any(token in text for token in generic_contract_markers):
+            return False
+        if len(text) < 6:
+            return False
+        return True
+
+    def _clean_list(values: list[str]) -> list[str]:
+        return [item for item in values if _has_value(item)]
+
+    def _first_non_generic(*candidates: Any, fallback: str) -> str:
+        for value in candidates:
+            text = _text_value(value)
+            if text and not any(token in text for token in generic_contract_markers) and len(text) >= 6:
+                return text
+        return fallback
+
+    def _derive_chapter_hooks(chapter: ChapterOutlineInput, label: str) -> list[str]:
+        hooks: list[str] = []
+        source = _first_non_generic(
+            chapter.hook_description,
+            chapter.main_conflict,
+            chapter.chapter_goal,
+            chapter.title,
+            fallback=f"{protagonist_name}在下一阶段需要立刻作出关键取舍。",
+        )
+        if chapter.scenes:
+            story_purposes = [
+                _first_non_generic(
+                    getattr(scene.purpose, "get", lambda _k: None)("story") if isinstance(scene.purpose, dict) else None,
+                    fallback="",
+                )
+                for scene in chapter.scenes
+            ]
+            scene_hook_parts = _clean_list(story_purposes)
+            if scene_hook_parts:
+                hooks.append(f"{label}中最先要落地的问题：{scene_hook_parts[0]}")
+        hooks.append(
+            f"{source}{'，' if source and not source.endswith('。') else ''}若未及时收束，"
+            f"将直接影响下一步{label}选择。"
+        )
+        return _clean_list(list(dict.fromkeys(hooks)))
+
+    def _derive_chapter_methodology_contract(
+        chapter: ChapterOutlineInput,
+    ) -> tuple[dict[str, Any], int]:
+        raw_contract = dict(chapter.methodology_contract or {})
+        existing_contract = normalize_chapter_overlay(raw_contract)
+        contract = {**existing_contract, **raw_contract}
+        repairs = 0
+
+        protagonist = protagonist_name
+        scenes = chapter.scenes or []
+        first_scene = scenes[0] if scenes else None
+        first_participants = first_scene.participants if first_scene is not None else []
+        opponent = ""
+        for participant in first_participants:
+            if _text_value(participant) != protagonist_name:
+                opponent = _text_value(participant)
+                break
+        if not opponent and scenes:
+            opponent = "对手"
+        base_conflict = _first_non_generic(
+            chapter.main_conflict,
+            chapter.chapter_goal,
+            chapter.hook_description,
+            chapter.title,
+            fallback=f"{chapter.title}的核心冲突推进。",
+        )
+        hook_summary = _first_non_generic(
+            chapter.hook_description,
+            chapter.opening_situation,
+            chapter.main_conflict,
+            chapter.chapter_goal,
+            chapter.title,
+            fallback=f"{chapter.title}中的关键推进。",
+        )
+        hook_pieces = _derive_chapter_hooks(chapter, "本章")
+        if not _has_value(contract.get("conflict_stakes")):
+            contract["conflict_stakes"] = (
+                f"若{protagonist}不能及时处理「{base_conflict}」，"
+                f"{opponent or '对手'}会立即触发更高代价并放大压力。"
+            )
+            repairs += 1
+
+        conflict_buffs = list(contract.get("conflict_buffs") or [])
+        if len([buff for buff in conflict_buffs if _has_value(buff)]) < 2:
+            conflict_buffs = [
+                f"{protagonist}面对{_text_value(opponent) or '外部势力'}的持续压迫，必须在有限时窗内完成选择。",
+                f"每一次试探都逼近时间边界，信息延误将导致代价从局部变成整体。",
+            ]
+            contract["conflict_buffs"] = conflict_buffs
+            repairs += 1
+
+        if not _has_value(contract.get("pacing_mode")):
+            contract["pacing_mode"] = "推进到关键动作与失误代价之间的高压节奏"
+            repairs += 1
+
+        if not _has_value(contract.get("emotion_phase")):
+            contract["emotion_phase"] = "从压迫到决断的情绪切换"
+            repairs += 1
+
+        if not contract.get("is_climax"):
+            contract["is_climax"] = "climax" in _text_value(
+                chapter.title + chapter.hook_description
+            ).lower()
+
+        if not _has_value(contract.get("loop_position"), generic=False):
+            if chapter.chapter_number <= 3:
+                contract["loop_position"] = "开局压迫"
+            elif chapter.chapter_number % 10 == 0:
+                contract["loop_position"] = "轮回收束"
+            else:
+                contract["loop_position"] = "推进"
+            repairs += 1
+
+        if not _clean_list(contract.get("hooks_to_resolve") or []):
+            contract["hooks_to_resolve"] = hook_pieces[:1]
+            repairs += 1
+
+        if not _clean_list(contract.get("hooks_to_plant") or []):
+            contract["hooks_to_plant"] = [
+                f"{hook_summary}引出下一步可被读者立即追问的延迟后果。"
+            ]
+            repairs += 1
+
+        if scenes:
+            if not _clean_list(contract.get("relationship_debts") or []):
+                if opponent:
+                    contract["relationship_debts"] = [
+                        f"{protagonist}与{opponent}因{base_conflict}形成新的可见债务，必须交换信息或承担后果。"
+                    ]
+                elif len(first_participants) >= 2:
+                    contract["relationship_debts"] = [
+                        "本章多人互动会形成可见信息换位，改变下一步信任与行动边界。"
+                    ]
+                repairs += 1
+            if _clean_list(contract.get("relationship_debts") or []):
+                if _clean_list(contract.get("relationship_debts")) != _clean_list(
+                    contract.get("relationship_debts") or []
+                ):
+                    contract["relationship_debts"] = _clean_list(contract["relationship_debts"])
+                    repairs += 1
+
+        if not _has_value(contract.get("chapter_function"), generic=False):
+            contract["chapter_function"] = _first_non_generic(
+                chapter.chapter_event_role,
+                chapter.hook_type,
+                chapter.opening_pressure,
+                chapter.main_conflict,
+                chapter.chapter_goal,
+                fallback=f"第{chapter.chapter_number}章通过「{base_conflict}」推进读者可见行动与转折。",
+            )
+            repairs += 1
+
+        if not _has_value(contract.get("protagonist_choice"), generic=False):
+            contract["protagonist_choice"] = (
+                f"{protagonist}在本章必须选择「{hook_summary}」对应的处理路径。"
+            )
+            repairs += 1
+
+        if not _has_value(contract.get("visible_action"), generic=False):
+            contract["visible_action"] = (
+                f"{protagonist}在场景里先做出「{base_conflict}」相关可见动作，"
+                f"再把结果导向下一层压力。"
+            )
+            repairs += 1
+
+        if not _has_value(contract.get("cost"), generic=False):
+            contract["cost"] = (
+                "失败代价是时间窗口、证据完整性或关键关系任一项的即时丢失，"
+                "直接决定下一章是否能追上真相线。"
+            )
+            repairs += 1
+
+        payoff_seed = _first_non_generic(
+            chapter.required_payoff,
+            chapter.title,
+            chapter.chapter_goal,
+            chapter.main_conflict,
+            chapter.hook_description,
+            fallback=f"{protagonist}在本章可兑现「{base_conflict}」相关关键信息。",
+        )
+        if not _has_value(contract.get("gain_reveal"), generic=False):
+            contract["gain_reveal"] = payoff_seed
+            repairs += 1
+        if not _has_value(contract.get("required_payoff"), generic=False):
+            contract["required_payoff"] = payoff_seed
+            repairs += 1
+        if not _has_value(contract.get("payoff"), generic=False):
+            contract["payoff"] = payoff_seed
+            repairs += 1
+
+        if not _has_value(contract.get("state_change"), generic=False):
+            contract["state_change"] = (
+                f"{protagonist}从本章前置状态进入「{base_conflict}」后的新局面，"
+                "并被迫承接下一步可见行动。"
+            )
+            repairs += 1
+
+        if chapter.chapter_number <= 10:
+            if not _has_value(contract.get("opening_pressure"), generic=False):
+                contract["opening_pressure"] = _first_non_generic(
+                    chapter.opening_pressure,
+                    chapter.opening_situation,
+                    chapter.main_conflict,
+                    chapter.chapter_goal,
+                    fallback=f"第{chapter.chapter_number}章开局压力：{base_conflict}",
+                )
+                repairs += 1
+            if not _has_value(contract.get("protagonist_flaw"), generic=False):
+                contract["protagonist_flaw"] = (
+                    f"{protagonist}先把{opponent or '局势中的不确定'}当作可控变量，"
+                    "忽略了后续代价会放大到关系与证据位移。"
+                )
+                repairs += 1
+            if not _has_value(contract.get("payoff"), generic=False):
+                contract["payoff"] = payoff_seed
+                repairs += 1
+            if not _has_value(contract.get("tail_hook"), generic=False):
+                contract["tail_hook"] = (
+                    f"第{chapter.chapter_number}章结尾留出「{chapter.title or chapter.chapter_goal}」的新钩子，"
+                    "下一步将直接接上更高代价的压力。"
+                )
+                repairs += 1
+
+        return contract, 1 if repairs else 0
+
+    def _derive_scene_methodology_contract(
+        chapter: ChapterOutlineInput,
+        scene: Any,
+        *,
+        scene_index: int,
+    ) -> tuple[dict[str, Any], int]:
+        raw_contract = dict(scene.methodology_contract or {})
+        existing_contract = normalize_scene_overlay(raw_contract)
+        contract = {**existing_contract, **raw_contract}
+        repairs = 0
+
+        participants = [_text_value(item) for item in scene.participants if _text_value(item)]
+        spotlight = participants[0] if participants else protagonist_name
+        opponent = participants[1] if len(participants) > 1 else "对手"
+        purpose = dict(scene.purpose or {})
+        story_purpose = _text_value(purpose.get("story"))
+        emotion_purpose = _text_value(purpose.get("emotion"))
+        hook_hint = _first_non_generic(
+            scene.hook_requirement,
+            purpose.get("story"),
+            purpose.get("emotion"),
+            chapter.hook_description,
+            chapter.title,
+            fallback="场景内有可见动作与信息代价。",
+        )
+        signature_hint = _first_non_generic(
+            scene.signature_image,
+            raw_contract.get("signature_image"),
+            story_purpose,
+            hook_hint,
+            fallback=f"{spotlight}场景中的关键视觉信息。",
+        )
+        cut_point_hint = _first_non_generic(
+            scene.cut_point,
+            raw_contract.get("cut_point"),
+            chapter.hook_description,
+            chapter.title,
+            fallback=f"{story_purpose}留下更高一步压力。",
+        )
+
+        if not _has_value(contract.get("conflict_stakes"), generic=False):
+            contract["conflict_stakes"] = (
+                f"若{spotlight}在场景{scene_index}里没有处理好「{story_purpose or hook_hint}」，"
+                f"{opponent}将快速把线索拉入不利方向。"
+            )
+            repairs += 1
+
+        existing_buffs = _clean_list(contract.get("conflict_buffs") or [])
+        if len(existing_buffs) < 2:
+            contract["conflict_buffs"] = [
+                f"{spotlight}被{opponent}的逼近时机持续施压，需尽快给出行动。",
+                "停顿会把局面推向更高代价和更窄的选择。",
+            ]
+            repairs += 1
+
+        if not _has_value(contract.get("hook_type"), generic=False):
+            contract["hook_type"] = "行动转折"
+            repairs += 1
+
+        if not _has_value(contract.get("spotlight_character"), generic=False):
+            contract["spotlight_character"] = spotlight
+            repairs += 1
+
+        if not _has_value(contract.get("information_control_mode"), generic=False):
+            contract["information_control_mode"] = (
+                f"先让读者看到{spotlight}与{opponent}的可见动作，再延后解释部分关联背景。"
+            )
+            repairs += 1
+
+        if not _has_value(contract.get("camera_distance"), generic=False):
+            contract["camera_distance"] = (
+                f"镜头保持中近景，贴近{spotlight}视线与手部动作，捕捉{signature_hint}触发点。"
+            )
+            repairs += 1
+
+        if not _has_value(contract.get("reveal_mode"), generic=False):
+            contract["reveal_mode"] = (
+                f"通过{signature_hint}的细节变化，在场景末端揭示下一步方向。"
+            )
+            repairs += 1
+
+        if not _has_value(contract.get("signature_image"), generic=False):
+            contract["signature_image"] = signature_hint
+            repairs += 1
+
+        if not _has_value(contract.get("cut_point"), generic=False):
+            contract["cut_point"] = cut_point_hint
+            repairs += 1
+
+        if len(participants) >= 2 and not _clean_list(contract.get("relationship_debts") or []):
+            contract["relationship_debts"] = [
+                f"{spotlight}与{opponent}在场景中被迫建立新借贷/隐瞒协议，关系线继续加压。"
+            ]
+            repairs += 1
+
+        scene_type = _text_value(scene.scene_type).lower()
+        action_like = scene_type in {
+            "action",
+            "battle",
+            "chase",
+            "climax",
+            "combat",
+            "confrontation",
+            "fight",
+            "reveal",
+        }
+        if action_like or any(
+            contract.get(key)
+            for key in ("action_sequence", "fight_objective", "opponent_advantage")
+        ):
+            if not contract.get("action_sequence"):
+                contract["action_sequence"] = [
+                    f"{spotlight}先确认{signature_hint}并识别{opponent}的真实意图。",
+                    f"{opponent}的下一步迫使{spotlight}改变节奏。",
+                    f"{spotlight}做出可见行动，推动局势进入{cut_point_hint}。",
+                ]
+                repairs += 1
+            if not _has_value(contract.get("fight_objective"), generic=False):
+                contract["fight_objective"] = (
+                    f"{spotlight}要通过场景行动拿到可持续推进下一步的关键证据。"
+                )
+                repairs += 1
+            if not _has_value(contract.get("failure_cost"), generic=False):
+                contract["failure_cost"] = (
+                    f"处理不当会让{signature_hint}失真，导致下一步误读风险上升。"
+                )
+                repairs += 1
+            if not _has_value(contract.get("opponent_advantage"), generic=False):
+                contract["opponent_advantage"] = (
+                    f"{opponent}先握有更多线索来源，可先发制人压缩{spotlight}行动窗口。"
+                )
+                repairs += 1
+            if not _has_value(contract.get("tactic_shift"), generic=False):
+                contract["tactic_shift"] = (
+                    "从观察转为验证，再到主动逼问并调整动作路线。"
+                )
+                repairs += 1
+            if not _has_value(contract.get("emotion_driver"), generic=False):
+                contract["emotion_driver"] = (
+                    f"{spotlight}因{emotion_purpose or '压力上升'}而保持决断，不能回避。"
+                )
+                repairs += 1
+            if not _has_value(contract.get("turning_point"), generic=False):
+                contract["turning_point"] = (
+                    f"{opponent}暴露一个关键动作后，{spotlight}不得不在现场重选路径。"
+                )
+                repairs += 1
+            if not _has_value(contract.get("exit_state_delta"), generic=False):
+                contract["exit_state_delta"] = f"场景结束时{spotlight}把{cut_point_hint}推进到下一拍。"
+                repairs += 1
+
+        return contract, 1 if repairs else 0
+
     for chapter in batch.chapters:
         # Story-semantic fields are not repaired here. If chapter goals,
         # openings, or hooks are missing/generic, the plan contract must fail
@@ -471,6 +872,10 @@ def _repair_chapter_outline_contract_inputs(
             or chapter.main_conflict
             or f"Chapter {chapter.chapter_number}"
         )
+        contract, method_repair_count = _derive_chapter_methodology_contract(chapter)
+        if method_repair_count:
+            chapter.methodology_contract = contract
+            repaired += method_repair_count
         for scene in chapter.scenes:
             if not _text_value(scene.time_label) or _is_generic_time_label(scene.time_label):
                 scene.time_label = _outline_scene_time_repair(
@@ -504,6 +909,42 @@ def _repair_chapter_outline_contract_inputs(
                         scene.participants.append(referenced_name)
                         participant_tokens.add(token)
                         repaired += 1
+
+            if not scene.entry_state:
+                scene.entry_state = {
+                    "reader": (
+                        f"{chapter.title or f'第{chapter.chapter_number}章'}场景{scene.scene_number}起始，"
+                        f"核心任务仍是推进「{story_purpose or chapter.chapter_goal or chapter.title}」的可见结果。"
+                    )
+                }
+                repaired += 1
+            if not scene.exit_state:
+                scene.exit_state = {
+                    "reader": (
+                        f"{chapter.title or f'第{chapter.chapter_number}章'}场景{scene.scene_number}结束，"
+                        f"读者已看到「{story_purpose or chapter.chapter_goal or chapter.title}」的关键变化。"
+                    )
+                }
+                repaired += 1
+
+            scene_method_contract, scene_method_repair_count = (
+                _derive_scene_methodology_contract(
+                    chapter,
+                    scene,
+                    scene_index=scene.scene_number,
+                )
+            )
+            if scene_method_repair_count:
+                scene.methodology_contract = scene_method_contract
+                repaired += scene_method_repair_count
+                if not _text_value(scene.signature_image):
+                    scene.signature_image = scene_method_contract.get("signature_image")
+                if not _text_value(scene.cut_point):
+                    scene.cut_point = scene_method_contract.get("cut_point")
+                if not _text_value(scene.information_control_mode):
+                    scene.information_control_mode = scene_method_contract.get(
+                        "information_control_mode"
+                    )
     return repaired
 
 

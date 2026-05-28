@@ -47,7 +47,7 @@ _FRONT_REQUIRED_FIELDS = {
     "opening_pressure": ("opening_pressure", "opening_situation", "pressure"),
     "protagonist_flaw": ("protagonist_flaw", "human_flaw"),
     "payoff": ("payoff", "required_payoff", "gain_or_reveal"),
-    "tail_hook": ("tail_hook", "hook_description"),
+    "tail_hook": ("tail_hook", "hook_description", "next_reader_desire"),
 }
 
 _PHONE_OPENING_PATTERN = re.compile(r"(电话|手机|微信|短信|语音|来电)")
@@ -272,12 +272,23 @@ def evaluate_chapter_outline_batch_planning_readiness(
     volume_plan: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None = None,
     material_anchors: Sequence[str] = (),
 ) -> PlanningReadinessReport:
-    chapters = list(getattr(batch, "chapters", []) or [])
+    raw_chapters: Any
+    if isinstance(batch, Mapping):
+        raw_chapters = batch.get("chapters")
+    else:
+        raw_chapters = getattr(batch, "chapters", None)
+    if isinstance(raw_chapters, Mapping):
+        chapter_sources = list(raw_chapters.values())
+    elif isinstance(raw_chapters, Sequence) and not isinstance(raw_chapters, (str, bytes, bytearray)):
+        chapter_sources = list(raw_chapters)
+    else:
+        chapter_sources = []
+
     chapter_payloads = [
         chapter.model_dump(mode="json", by_alias=True)
         if hasattr(chapter, "model_dump")
         else _mapping_or_empty(chapter)
-        for chapter in chapters
+        for chapter in chapter_sources
     ]
     return evaluate_planning_readiness(
         volume_plan=volume_plan,

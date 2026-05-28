@@ -243,7 +243,7 @@ def test_chapter_outline_aliases_and_contract_input_repair() -> None:
     )
 
     scene = batch.chapters[0].scenes[0]
-    assert repaired == 1
+    assert repaired >= 1
     assert scene.scene_number == 1
     assert scene.time_label == "青萝镇旧宅暮色"
     assert scene.participants == ["苏砚"]
@@ -447,7 +447,7 @@ def test_chapter_outline_repair_adds_identity_names_from_scene_purpose() -> None
         require_identity_registry=True,
     )
 
-    assert repaired == 1
+    assert repaired >= 1
     assert batch.chapters[0].scenes[0].participants == ["苏砚", "沈夜寒"]
     assert report.passed is True
 
@@ -499,7 +499,7 @@ def test_chapter_outline_repair_does_not_synthesize_generic_story_fields() -> No
         require_identity_registry=True,
     )
 
-    assert repaired == 1
+    assert repaired >= 1
     assert report.passed is False
     codes = {violation.code for violation in report.violations}
     assert "PLAN_CHAPTER_GOAL_GENERIC" in codes

@@ -205,11 +205,14 @@
     .toc-item .avail-dot.available,
     .toc-item .avail-dot.formal { background: #2c7a4d; }
     .toc-item .avail-dot.repair_in_progress,
-    .toc-item .avail-dot.repair {
+    .toc-item .avail-dot.repair,
+    .toc-item .avail-dot.active_repair {
       background: #c87f15;
       box-shadow: 0 0 0 2px rgba(200, 127, 21, 0.18);
       animation: tocPulse 1.4s ease-in-out infinite;
     }
+    .toc-item .avail-dot.queued_repair { background: #b86c0c; }
+    .toc-item .avail-dot.blocked { background: #8c2a1c; }
     .toc-item .avail-dot.drafting { background: #8c2a1c; animation: tocPulse 1.6s ease-in-out infinite; }
     .toc-item .avail-dot.planned { background: #b9b09c; }
     .toc-item.repair-flagged {
@@ -230,7 +233,10 @@
       letter-spacing: 0.04em;
     }
     .toc-item .avail-tag.formal { color: #2c7a4d; opacity: 1; font-weight: 600; }
-    .toc-item .avail-tag.repair { color: #b86c0c; opacity: 1; font-weight: 600; }
+    .toc-item .avail-tag.repair,
+    .toc-item .avail-tag.active_repair,
+    .toc-item .avail-tag.queued_repair { color: #b86c0c; opacity: 1; font-weight: 600; }
+    .toc-item .avail-tag.blocked { color: #8c2a1c; opacity: 1; font-weight: 600; }
     .toc-item .avail-tag.drafting { color: #8c2a1c; opacity: 1; font-weight: 600; }
     .toc-item .avail-tag.planned { color: var(--text-2); }
     @keyframes tocPulse {
@@ -262,7 +268,10 @@
     .toc-legend .legend-dot.available,
     .toc-legend .legend-dot.formal { background: #2c7a4d; }
     .toc-legend .legend-dot.repair_in_progress,
-    .toc-legend .legend-dot.repair { background: #c87f15; }
+    .toc-legend .legend-dot.repair,
+    .toc-legend .legend-dot.active_repair { background: #c87f15; }
+    .toc-legend .legend-dot.queued_repair { background: #b86c0c; }
+    .toc-legend .legend-dot.blocked { background: #8c2a1c; }
     .toc-legend .legend-dot.drafting { background: #8c2a1c; }
     .toc-legend .legend-dot.planned { background: #b9b09c; }
 
@@ -690,13 +699,24 @@
   // volume projects) render as a flat list exactly like before.
   const READER_STATE_LABEL = {
     formal: "正式版",
+    active_repair: "正在修复",
+    queued_repair: "排队修复",
+    blocked: "阻塞待修",
+    drafting: "生成中",
+    planned: "待生成",
     repair: "修复中",
   };
 
   function readerStateFor(ch) {
+    const explicitState = String(ch?.reader_state || "").toLowerCase();
+    if (READER_STATE_LABEL[explicitState]) return explicitState;
     const productionState = String(ch?.production_state || "").toLowerCase();
     const availability = String(ch?.availability || (ch?.exported === false ? "repair_in_progress" : "available")).toLowerCase();
     if (productionState === "ok" || availability === "available") return "formal";
+    if (availability === "planned") return "planned";
+    if (productionState === "blocked") return "blocked";
+    const status = String(ch?.status || "").toLowerCase();
+    if (status === "drafting" || status === "review" || productionState === "pending") return "drafting";
     return "repair";
   }
 
@@ -722,12 +742,17 @@
   }
 
   function buildTocLegend() {
-    const counts = { formal: 0, repair: 0 };
+    const counts = Object.fromEntries(Object.keys(READER_STATE_LABEL).map(k => [k, 0]));
     for (const ch of toc) {
       counts[readerStateFor(ch)] += 1;
     }
     const items = [
       ['formal', READER_STATE_LABEL.formal, counts.formal],
+      ['active_repair', READER_STATE_LABEL.active_repair, counts.active_repair],
+      ['queued_repair', READER_STATE_LABEL.queued_repair, counts.queued_repair],
+      ['blocked', READER_STATE_LABEL.blocked, counts.blocked],
+      ['drafting', READER_STATE_LABEL.drafting, counts.drafting],
+      ['planned', READER_STATE_LABEL.planned, counts.planned],
       ['repair', READER_STATE_LABEL.repair, counts.repair],
     ].filter(([, , n]) => n > 0);
     if (!items.length) return '';
@@ -778,7 +803,7 @@
   function renderTocItem(ch) {
     const avail = ch.availability || (ch.exported === false ? "drafting" : "available");
     const readerState = readerStateFor(ch);
-    const isRepair = readerState === "repair";
+    const isRepair = ["active_repair", "queued_repair", "blocked", "repair"].includes(readerState);
     const isPlanned = avail === "planned";
     const isSinglePiece = Boolean(ch.single_piece || ch.content_mode === "fanqie_short_story");
     const cls = [
@@ -843,11 +868,12 @@
       const prevDisabled = (isSinglePiece || n <= 1) ? "disabled" : "";
       const nextDisabled = (isSinglePiece || n >= toc.length) ? "disabled" : "";
       let banner = "";
-      if (readerState === "repair") {
+      if (["active_repair", "queued_repair", "blocked", "repair"].includes(readerState)) {
         const revText = ch?.revision_count ? ` · 已修订 ${ch.revision_count} 次` : "";
+        const pendingText = ch?.pending_rewrite_task_count ? ` · 待执行任务 ${ch.pending_rewrite_task_count} 个` : "";
         banner = `<div class="chapter-repair-banner">
-          <strong>本章修复中</strong>${revText}。系统正在重新生成本章以修正一致性问题，
-          下面显示的是当前最新草稿，重生成完成后会自动替换。
+          <strong>本章${readerStateLabel}</strong>${revText}${pendingText}。下面显示的是当前最新草稿，
+          修复闭环通过后会自动替换为正式版。
         </div>`;
       }
       const toolbarHtml = `

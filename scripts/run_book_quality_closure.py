@@ -42,6 +42,10 @@ from bestseller.services.book_lifecycle_evidence_repair import (  # noqa: E402
 from bestseller.services.book_lifecycle_quality_gate import (  # noqa: E402
     build_lifecycle_quality_report_from_closure,
 )
+from bestseller.services.chapter_block_recovery import (  # noqa: E402
+    summarize_block_recovery,
+    sweep_recoverable_blocks,
+)
 from bestseller.services.book_quality_closure import (  # noqa: E402
     BookClosureReport,
     ChapterGenerationAudit,
@@ -62,6 +66,8 @@ from bestseller.services.book_quality_closure import (  # noqa: E402
     repair_legacy_scene_cards_for_continuation,
     run_llm_execution_preflight,
 )
+from bestseller.services.material_plan_executor import execute_material_plan  # noqa: E402
+from bestseller.services.material_self_repair import plan_material_self_repair  # noqa: E402
 from bestseller.services.legacy_book_state_bootstrap import (  # noqa: E402
     bootstrap_legacy_project_state,
 )
@@ -110,6 +116,32 @@ def _repair_plan_summary(payload: object | None) -> dict[str, Any]:
     if isinstance(nested, dict):
         return _repair_plan_summary(nested)
     return {"task_count": 0, "priority_counts": {}, "cause_counts": {}}
+
+
+def _material_plan_summary(payload: object | None) -> dict[str, Any]:
+    if not hasattr(payload, "actions"):
+        return {
+            "action_count": 0,
+            "llm_action_count": 0,
+            "offline_actionable": 0,
+        }
+    actions = list(getattr(payload, "actions", ()) or ())
+    offline_actionable = sum(
+        1
+        for action in actions
+        if getattr(action, "confidence", "") == "high"
+        and not bool(getattr(action, "requires_llm", True))
+        and getattr(action, "action_type", "")
+        in {"replace_deprecated_reference", "merge_duplicate_entity"}
+    )
+    llm_action_count = sum(1 for action in actions if bool(getattr(action, "requires_llm", True)))
+    metrics = dict(getattr(payload, "metrics", {}) or {})
+    return {
+        **metrics,
+        "action_count": len(actions),
+        "llm_action_count": llm_action_count,
+        "offline_actionable": offline_actionable,
+    }
 
 
 def _load_existing_repair_plan(settings: AppSettings, slug: str) -> dict[str, Any]:
@@ -223,6 +255,25 @@ async def _repair_lifecycle_evidence(
     return payload, str(report_path)
 
 
+async def _sweep_recoverable_blocks(
+    settings: AppSettings,
+    slug: str,
+    *,
+    dry_run: bool,
+) -> dict[str, object]:
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, slug)
+        if project is None:
+            return {"checked": 0, "recovered": 0, "error": "project_not_found_in_db"}
+        reports = await sweep_recoverable_blocks(
+            session,
+            project,
+            package_dir=_book_dir(settings, slug),
+            dry_run=dry_run,
+        )
+    return summarize_block_recovery(reports)
+
+
 def _lifecycle_execution_override(
     *,
     status: str,
@@ -272,6 +323,9 @@ def _can_continue_closure_loop(
     return report.next_action in {
         "execute_next_repair_round",
         "generate_missing_chapters_under_state_gates",
+        "execute_offline_material_repair",
+        "extend_outline_planning_rows",
+        "reset_recoverable_blocks",
     }
 
 
@@ -427,6 +481,26 @@ async def _filter_task_ids_by_status(
 def _bounded_task_ids(task_ids: list[str], round_size: int) -> list[str]:
     limit = max(int(round_size or 0), 1)
     return [str(task_id) for task_id in task_ids if str(task_id)][:limit]
+
+
+def _successful_execution_task_ids(
+    execution: dict[str, object],
+    task_ids: list[str],
+) -> list[str]:
+    if int(execution.get("executed") or 0) <= 0:
+        return []
+    failed_ids = {
+        str(item.get("task_id"))
+        for item in execution.get("failed", [])
+        if isinstance(item, dict) and item.get("task_id")
+    }
+    gate_rejected_ids = {
+        str(item.get("task_id"))
+        for item in execution.get("gate_rejected", [])
+        if isinstance(item, dict) and item.get("task_id")
+    }
+    excluded = failed_ids | gate_rejected_ids
+    return [task_id for task_id in task_ids if task_id not in excluded]
 
 
 def _float_metric(value: object, default: float = 0.0) -> float:
@@ -1127,6 +1201,27 @@ async def _run_one_book(
     if bootstrap and isinstance(bootstrap.get("report_path"), str):
         report_paths["legacy_state_bootstrap"] = str(bootstrap["report_path"])
 
+    block_recovery = await _sweep_recoverable_blocks(
+        settings,
+        slug,
+        dry_run=dry_run or not execute_requested,
+    )
+
+    book_dir = _book_dir(settings, slug)
+    material_plan = plan_material_self_repair(book_dir)
+    material_offline_report = execute_material_plan(
+        book_dir,
+        material_plan,
+        dry_run=dry_run or not execute_requested,
+        confidence_min="high",
+        allow_llm_actions=False,
+    )
+    material_offline_execution = material_offline_report.to_dict()
+    if material_offline_report.applied > 0 and not dry_run:
+        material_plan = plan_material_self_repair(book_dir)
+    material_summary = _material_plan_summary(material_plan)
+    material_offline_execution["summary"] = material_summary
+
     existing_plan = _load_existing_repair_plan(settings, slug)
     before_acceptance = await _acceptance_payload(
         settings,
@@ -1206,6 +1301,7 @@ async def _run_one_book(
     pre_execution_status, pre_execution_next_action = determine_next_action(
         acceptance=before_acceptance,
         repair_plan=repair_plan,
+        material_plan_summary=material_summary,
         model_preflight=model_preflight,
         execute_requested=execute_requested,
     )
@@ -1218,6 +1314,8 @@ async def _run_one_book(
             bootstrap_report=bootstrap,
             before_acceptance=before_acceptance,
             repair_plan=repair_plan,
+            material_offline_execution=material_offline_execution,
+            block_recovery=block_recovery,
             task_sync=task_sync,
             after_acceptance=before_acceptance,
             lifecycle_evidence=lifecycle_evidence,
@@ -1261,6 +1359,8 @@ async def _run_one_book(
                 bootstrap_report=bootstrap,
                 before_acceptance=before_acceptance,
                 repair_plan=repair_plan,
+                material_offline_execution=material_offline_execution,
+                block_recovery=block_recovery,
                 task_sync=task_sync,
                 after_acceptance=before_acceptance,
                 lifecycle_evidence=lifecycle_evidence,
@@ -1293,7 +1393,10 @@ async def _run_one_book(
     elif dry_run:
         execution = {"skipped": True, "reason": "dry_run"}
 
-    generation_audit = await _audit_generation_modes(settings, executed_task_ids)
+    generation_audit = await _audit_generation_modes(
+        settings,
+        _successful_execution_task_ids(execution, executed_task_ids),
+    )
     executed_count = int(execution.get("executed") or 0)
     if executed_count > 0:
         refreshed = await repair_runner._run_for_slug(
@@ -1318,6 +1421,7 @@ async def _run_one_book(
     status, next_action = determine_next_action(
         acceptance=after_acceptance,
         repair_plan=repair_plan,
+        material_plan_summary=material_summary,
         model_preflight=model_preflight,
         execute_requested=execute_requested,
         invalid_generation_count=generation_audit.invalid,
@@ -1337,6 +1441,8 @@ async def _run_one_book(
             bootstrap_report=bootstrap,
             before_acceptance=before_acceptance,
             repair_plan=repair_plan,
+            material_offline_execution=material_offline_execution,
+            block_recovery=block_recovery,
             task_sync=task_sync,
             execution=execution,
             rewrite_generation_audit=generation_audit,
@@ -1410,6 +1516,7 @@ async def _run_one_book(
             status, next_action = determine_next_action(
                 acceptance=after_acceptance,
                 repair_plan=repair_plan,
+                material_plan_summary=material_summary,
                 model_preflight=model_preflight,
                 execute_requested=execute_requested,
                 invalid_generation_count=(
@@ -1431,6 +1538,8 @@ async def _run_one_book(
                     bootstrap_report=bootstrap,
                     before_acceptance=before_acceptance,
                     repair_plan=repair_plan,
+                    material_offline_execution=material_offline_execution,
+                    block_recovery=block_recovery,
                     task_sync=task_sync,
                     execution=execution,
                     rewrite_generation_audit=generation_audit,
@@ -1475,6 +1584,8 @@ async def _run_one_book(
         bootstrap_report=bootstrap,
         before_acceptance=before_acceptance,
         repair_plan=repair_plan,
+        material_offline_execution=material_offline_execution,
+        block_recovery=block_recovery,
         task_sync=task_sync,
         execution=execution,
         rewrite_generation_audit=generation_audit,

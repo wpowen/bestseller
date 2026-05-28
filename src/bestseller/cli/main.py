@@ -597,10 +597,20 @@ def scorecard(
                 )
                 raise typer.Exit(code=1)
 
+            from pathlib import Path as _Path
+
+            scorecard_project_dir = (
+                _Path(getattr(settings.output, "base_dir", ".") or ".") / slug
+            )
             card = await compute_scorecard(
                 session,
                 project.id,
                 expected_chapter_count=project.target_chapters,
+                project_dir=(
+                    scorecard_project_dir
+                    if scorecard_project_dir.exists()
+                    else None
+                ),
             )
             if save:
                 await save_scorecard(session, card)

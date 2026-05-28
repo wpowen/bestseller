@@ -79,8 +79,13 @@ _GATES: tuple[GateRegistration, ...] = (
     ),
     GateRegistration(
         name="chapter_outline_readiness_gate",
-        metadata_keys=("blocked_by_chapter_outline_readiness_gate",),
-        repair_strategy="human_review",
+        metadata_keys=(
+            "blocked_by_chapter_outline_readiness_gate",
+            "chapter_outline_readiness_block_codes",
+            "chapter_outline_readiness_hint",
+            "chapter_outline_readiness_report",
+        ),
+        repair_strategy="auto",
     ),
     GateRegistration(
         name="chapter_predraft_quality_gate",

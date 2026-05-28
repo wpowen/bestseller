@@ -136,6 +136,156 @@ def test_recent_length_failure_directive_detects_under_over_oscillation() -> Non
     assert "输出前必须在内部静默计数" in directive
 
 
+def test_only_length_over_blocking_codes_ignores_audit_only_violations() -> None:
+    assert review_services._only_length_over_blocking_codes(
+        ["LENGTH_OVER", "CHAPTER_LENGTH_BLOCK_HIGH"]
+    )
+    assert not review_services._only_length_over_blocking_codes(
+        ["LENGTH_OVER", "NAMING_OUT_OF_POOL"]
+    )
+    assert not review_services._only_length_over_blocking_codes([])
+
+
+def test_quality_retrofit_near_miss_accepts_repeated_length_oscillation() -> None:
+    findings = [
+        {
+            "code": "QUALITY_RETROFIT_WEAK_ATTRACTION",
+            "detail": "pulse_density=0.81 < 1.00; pulse_count=8",
+            "repair_action": "add pressure",
+        }
+    ]
+    failures = [
+        RewriteTaskModel(
+            project_id=uuid4(),
+            trigger_type="autonomous_quality_retrofit",
+            rewrite_strategy="quality_retrofit_chapter_rewrite",
+            status="failed",
+            priority=2,
+            instructions="",
+            context_required=[],
+            metadata_json={
+                "candidate_word_count": 3509,
+                "candidate_quality_gate_violations": [
+                    {"code": "CHAPTER_LENGTH_BLOCK_HIGH"}
+                ],
+            },
+        ),
+        RewriteTaskModel(
+            project_id=uuid4(),
+            trigger_type="autonomous_quality_retrofit",
+            rewrite_strategy="quality_retrofit_chapter_rewrite",
+            status="failed",
+            priority=2,
+            instructions="",
+            context_required=[],
+            metadata_json={
+                "candidate_word_count": 1647,
+                "candidate_quality_gate_violations": [
+                    {"code": "CHAPTER_LENGTH_BLOCK_LOW"}
+                ],
+            },
+        ),
+        RewriteTaskModel(
+            project_id=uuid4(),
+            trigger_type="autonomous_quality_retrofit",
+            rewrite_strategy="quality_retrofit_chapter_rewrite",
+            status="failed",
+            priority=2,
+            instructions="",
+            context_required=[],
+            metadata_json={},
+        ),
+    ]
+
+    accepted = review_services._quality_retrofit_near_miss_acceptance(
+        findings,
+        recent_failed_rewrites=failures,
+    )
+
+    assert accepted is not None
+    assert accepted["pulse_density"] == 0.81
+    assert accepted["pulse_count"] == 8
+
+
+def test_quality_retrofit_near_miss_rejects_low_signal() -> None:
+    accepted = review_services._quality_retrofit_near_miss_acceptance(
+        [
+            {
+                "code": "QUALITY_RETROFIT_WEAK_ATTRACTION",
+                "detail": "pulse_density=0.61 < 1.00; pulse_count=5",
+            }
+        ],
+        recent_failed_rewrites=[],
+    )
+
+    assert accepted is None
+
+
+async def test_select_rewrite_working_draft_uses_better_retrofit_candidate() -> None:
+    project_id = uuid4()
+    chapter_id = uuid4()
+    candidate_id = uuid4()
+    chapter = ChapterModel(
+        id=chapter_id,
+        project_id=project_id,
+        chapter_number=7,
+        title="第7章",
+        chapter_goal="补压力节点",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        target_word_count=2200,
+        metadata_json={},
+    )
+    current = ChapterDraftVersionModel(
+        id=uuid4(),
+        project_id=project_id,
+        chapter_id=chapter_id,
+        version_no=70,
+        content_md="当前稿" * 1200,
+        word_count=3509,
+        is_current=True,
+    )
+    candidate = ChapterDraftVersionModel(
+        id=candidate_id,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        version_no=74,
+        content_md="候选稿" * 900,
+        word_count=2952,
+        is_current=False,
+    )
+    task = RewriteTaskModel(
+        project_id=project_id,
+        trigger_type="autonomous_quality_retrofit",
+        rewrite_strategy="quality_retrofit_chapter_rewrite",
+        status="failed",
+        priority=2,
+        instructions="",
+        context_required=[],
+        metadata_json={
+            "quality_retrofit_rejected_current_promotion": True,
+            "candidate_chapter_draft_id": str(candidate_id),
+            "candidate_word_count": 2952,
+        },
+    )
+
+    class DraftSession(FakeSession):
+        async def get(self, model: object, key: object) -> object | None:
+            return candidate if key == candidate_id else None
+
+    selected = await review_services._select_rewrite_working_draft(
+        DraftSession(),
+        current_draft=current,
+        recent_failed_rewrites=[task],
+        settings=build_settings(),
+        chapter=chapter,
+        language="zh-CN",
+    )
+
+    assert selected is candidate
+
+
 def test_llm_judge_exception_merge_blocks_chapter_review() -> None:
     base = review_services.ChapterReviewResult(
         verdict="pass",

@@ -583,6 +583,68 @@ def test_repair_missing_scene_methodology_contract_backfills_strict_scene() -> N
     assert contract["signature_image"] == "账牌背面浮出活人的名字。"
 
 
+def test_repair_missing_scene_methodology_contract_upgrades_legacy_partial_contract() -> None:
+    chapter = SimpleNamespace(
+        chapter_number=85,
+        chapter_goal="林渊必须确认活章账路是否指向还活着的债主。",
+        main_conflict="旧账路把活人拖进下一笔镜债。",
+        hook_description="只要再迟一步，活章会自行改写签名。",
+    )
+    scene = SimpleNamespace(
+        scene_number=3,
+        scene_type="reveal",
+        title="活章上自己改写的名字",
+        participants=["林渊", "张建军"],
+        time_label="第85章场景3",
+        purpose={"story": "林渊核验活章账路，逼张建军承认签名不是他自己写的。"},
+        sensory_anchors={"visual": "账页上的墨迹像活物一样回流。"},
+        hook_requirement="账页上的签名当场改写成另一个活人的名字。",
+        metadata_json={
+            "methodology_contract": {
+                "stakes": "再迟一步，活章会把新债主直接写死。",
+                "pressure_stack": {"deadline": "活章只在这一轮回流里显示真名。"},
+                "focus_character": "林渊",
+                "reveal_mode": "由账页回流暴露真正的债主。",
+                "signature_image": "账页上的墨迹像活物一样回流。",
+                "breakpoint": "张建军看到新名字后当场失声。",
+            }
+        },
+    )
+    registry = [
+        CharacterIdentity(
+            name="林渊",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="张建军",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+    ]
+
+    repaired = repair_missing_scene_methodology_contract_pre_draft(
+        scene,
+        chapter=chapter,
+        chapter_number=85,
+    )
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+        methodology_contract_mode="strict",
+    )
+
+    assert repaired == 1
+    assert report.passed is True
+    contract = scene.metadata_json["methodology_contract"]
+    assert contract["hook_type"] == "evidence_reveal"
+    assert contract["spotlight_character"] == "林渊"
+    assert contract["cut_point"] == "张建军看到新名字后当场失声。"
+
+
 def test_repair_missing_scene_participants_pre_draft_uses_identity_context() -> None:
     scene = SimpleNamespace(
         scene_number=4,

@@ -259,6 +259,31 @@ def _missing_chapter_material_actions(
 
 def _candidate_replacement(name: str, registry: EntityRegistry) -> str | None:
     cleaned = str(name).strip()
+    if not cleaned:
+        return None
+
+    # Priority 1: explicit project-level alias overrides
+    # (story-bible/canonical-aliases.yaml). Operators use this to hand-curate
+    # deprecated→canonical mappings that the registry cannot infer on its own
+    # (e.g., 镜中局 → 镜中局张家开门人 when the successor was renamed and the
+    # old name has no canonical record left).
+    override = _project_alias_override(cleaned, registry)
+    if override is not None:
+        return override
+
+    # Priority 2: registry aliases. A deprecated name often appears as an
+    # alias of the surviving canonical record (e.g., 林渊 has alias
+    # ("林逸",)). The previous implementation only looked at canonical_name
+    # and silently missed these matches, forcing them into the LLM queue.
+    for record in registry.records:
+        if record.status != EntityStatus.ACTIVE:
+            continue
+        if record.canonical_name == cleaned:
+            continue
+        if cleaned in record.aliases:
+            return record.canonical_name
+
+    # Priority 3: substring fallback against active canonical names.
     active = [
         record.canonical_name
         for record in registry.records
@@ -267,8 +292,68 @@ def _candidate_replacement(name: str, registry: EntityRegistry) -> str | None:
     if not active:
         return None
     for candidate in active:
-        if cleaned and (cleaned in candidate or candidate in cleaned):
+        if cleaned in candidate or candidate in cleaned:
             return candidate
+    return None
+
+
+def _project_alias_override(cleaned: str, registry: EntityRegistry) -> str | None:
+    """Read story-bible/canonical-aliases.yaml for hand-curated overrides.
+
+    Format::
+
+        mappings:
+          - deprecated: 镜中局
+            canonical: 镜中局张家开门人
+          - deprecated: 林逸
+            canonical: 林渊
+
+    A mapping is only honored when the ``canonical`` target exists in the
+    registry as an ACTIVE record — preventing operators from resurrecting
+    retired entities through this file.
+    """
+    project_dir = _project_dir_for_registry(registry)
+    if project_dir is None:
+        return None
+    path = project_dir / "story-bible" / "canonical-aliases.yaml"
+    if not path.exists():
+        return None
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    mappings = payload.get("mappings") if isinstance(payload, dict) else None
+    if not isinstance(mappings, list):
+        return None
+    for entry in mappings:
+        if not isinstance(entry, dict):
+            continue
+        deprecated = str(entry.get("deprecated") or "").strip()
+        canonical = str(entry.get("canonical") or "").strip()
+        if not deprecated or not canonical or deprecated != cleaned:
+            continue
+        target = registry.by_name.get(canonical)
+        if target is None or target.status != EntityStatus.ACTIVE:
+            continue
+        return canonical
+    return None
+
+
+def _project_dir_for_registry(registry: EntityRegistry) -> Path | None:
+    """Best-effort: derive project root from any source file path the registry knows."""
+    for record in registry.records:
+        for source in record.source_files:
+            candidate = Path(source)
+            if "story-bible" in candidate.parts:
+                idx = candidate.parts.index("story-bible")
+                return Path(*candidate.parts[:idx]) if idx > 0 else None
+            if "obsidian-vault" in candidate.parts:
+                idx = candidate.parts.index("obsidian-vault")
+                return Path(*candidate.parts[:idx]) if idx > 0 else None
     return None
 
 

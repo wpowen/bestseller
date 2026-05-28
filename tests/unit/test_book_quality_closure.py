@@ -237,6 +237,72 @@ def test_determine_next_action_blocks_when_execution_would_use_fallback() -> Non
     ) == ("blocked", "inspect_fallback_or_invalid_rewrites")
 
 
+def test_offline_material_actions_outrank_llm_short_circuit() -> None:
+    blocked_model = LLMPreflightReport(ready=False, reason="dry_run")
+    acceptance = {
+        "acceptance": {
+            "passed": False,
+            "metrics": {
+                "quality_score": 70,
+                "chapters_blocked": 2,
+                "missing_chapters": 10,
+            },
+        }
+    }
+
+    assert determine_next_action(
+        acceptance=acceptance,
+        repair_plan={"task_count": 5},
+        material_plan_summary={"offline_actionable": 3, "llm_action_count": 2},
+        model_preflight=blocked_model,
+        execute_requested=True,
+    ) == ("repairing", "execute_offline_material_repair")
+
+
+def test_llm_short_circuit_only_when_needed() -> None:
+    blocked_model = LLMPreflightReport(ready=False, reason="dry_run")
+    acceptance = {
+        "acceptance": {
+            "passed": False,
+            "metrics": {
+                "quality_score": 70,
+                "chapters_blocked": 0,
+                "missing_chapters": 10,
+            },
+        }
+    }
+
+    assert determine_next_action(
+        acceptance=acceptance,
+        repair_plan={"task_count": 0},
+        material_plan_summary={"offline_actionable": 0, "llm_action_count": 0},
+        model_preflight=blocked_model,
+        execute_requested=True,
+    ) == ("continuing", "generate_missing_chapters_under_state_gates")
+
+
+def test_blocked_chapters_with_recoverable_returns_reset() -> None:
+    ready_model = LLMPreflightReport(ready=True, provider="deepseek")
+    acceptance = {
+        "acceptance": {
+            "passed": False,
+            "metrics": {
+                "quality_score": 82,
+                "chapters_blocked": 2,
+                "missing_chapters": 0,
+            },
+        }
+    }
+
+    assert determine_next_action(
+        acceptance=acceptance,
+        repair_plan={"task_count": 0},
+        material_plan_summary={"offline_actionable": 0, "llm_action_count": 0},
+        model_preflight=ready_model,
+        execute_requested=True,
+    ) == ("repairing", "reset_recoverable_blocks")
+
+
 def test_determine_next_action_rejects_invalid_generation_before_ready() -> None:
     ready_model = LLMPreflightReport(ready=True, provider="deepseek")
     acceptance = {

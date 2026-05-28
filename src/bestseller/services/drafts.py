@@ -583,6 +583,7 @@ def _clean_generated_chapter_text(
     *,
     chapter_number: int,
     source: str,
+    min_word_count: int | None = None,
 ) -> tuple[str, dict[str, int]]:
     """Apply deterministic prose cleanup shared by chapter-first and rewrites."""
 
@@ -592,6 +593,7 @@ def _clean_generated_chapter_text(
         "loop_paragraphs": 0,
         "short_cluster_paragraphs": 0,
         "duplicate_paragraphs": 0,
+        "duplicate_paragraphs_preserved_under_min": 0,
         "forbidden_signal_negations": 0,
     }
     try:
@@ -644,9 +646,24 @@ def _clean_generated_chapter_text(
                 chapter_number,
                 len(dup_findings),
             )
-            cleaned, stats["duplicate_paragraphs"] = remove_intra_chapter_duplicates_paraphrase(
-                cleaned
-            )
+            deduped, removed = remove_intra_chapter_duplicates_paraphrase(cleaned)
+            if (
+                min_word_count is not None
+                and min_word_count > 0
+                and count_words(deduped) < min_word_count
+            ):
+                stats["duplicate_paragraphs_preserved_under_min"] = removed
+                logger.warning(
+                    "%s chapter %d: preserving %d duplicate paragraph(s) because "
+                    "auto-removal would drop below min_word_count=%d",
+                    source,
+                    chapter_number,
+                    removed,
+                    min_word_count,
+                )
+            else:
+                cleaned = deduped
+                stats["duplicate_paragraphs"] = removed
         cleaned, stats["forbidden_signal_negations"] = (
             _remove_forbidden_signal_negation_echoes(cleaned)
         )
@@ -6470,16 +6487,6 @@ def _render_chapter_first_opening_contract(
     if not scenes or int(getattr(chapter, "chapter_number", 0) or 0) > 10:
         return ""
     first_scene = scenes[0]
-    first_surface = " ".join(
-        str(value or "")
-        for value in (
-            getattr(chapter, "opening_situation", None),
-            getattr(first_scene, "title", None),
-            getattr(first_scene, "hook_requirement", None),
-            (getattr(first_scene, "purpose", None) or {}).get("story"),
-            (getattr(first_scene, "entry_state", None) or {}).get("state"),
-        )
-    )
     # NOTE (2026-05-26 architecture cleanup): the "mediated_terms" hardcoded
     # ban (phone/text/voice) was removed.  Mediated openings are a quality
     # consideration handled by the LLM judge, not a deterministic source
@@ -7464,6 +7471,7 @@ def build_chapter_first_draft_prompts(
         chapter,
         project,
     )
+    quality_uplift_blocks = _quality_uplift_prompt_blocks_from_chapter(chapter)
     story_bible_block = _redact_front10_prompt_leaks(
         _compact_json_block(context_packet.story_bible, max_chars=3200),
         chapter,
@@ -7527,7 +7535,9 @@ def build_chapter_first_draft_prompts(
                 f"目标字数：约{hard_target_words}字，必须完整成章；发布硬范围 {hard_min_words}-{hard_max_words} 字\n"
                 f"章节目标：{chapter.chapter_goal or ''}"
             ),
+            quality_uplift_blocks.get("pre_scene", ""),
             "【场景卡节拍】\n" + _render_chapter_first_scene_cards(scenes),
+            quality_uplift_blocks.get("post_scene", ""),
             "【统一生成输入包】\n" + generation_input_block
             if generation_input_block
             else "",
@@ -7572,6 +7582,125 @@ def build_chapter_first_draft_prompts(
     system_prompt = _redact_front10_prompt_leaks(system_prompt, chapter, scenes)
     user_prompt = _redact_front10_prompt_leaks(user_prompt, chapter, scenes)
     return system_prompt, user_prompt
+
+
+def _quality_uplift_prompt_blocks_from_chapter(chapter: ChapterModel) -> dict[str, str]:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    blocks = metadata.get("quality_uplift_prompt_blocks")
+    if not isinstance(blocks, Mapping):
+        return {}
+    return {
+        "pre_scene": str(blocks.get("pre_scene") or "").strip(),
+        "post_scene": str(blocks.get("post_scene") or "").strip(),
+    }
+
+
+async def _prepare_quality_uplift_prompt_blocks(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scenes: Sequence[SceneCardModel],
+) -> None:
+    pre_blocks: list[str] = []
+    post_blocks: list[str] = []
+    callback_payload: list[dict[str, Any]] = []
+    try:
+        from bestseller.services.cross_chapter_ngram_tracker import (
+            compute_ngram_overuse,
+            render_ngram_avoidance_block,
+        )
+
+        ngram_report = await compute_ngram_overuse(
+            session,
+            project,
+            chapter_number_upto=int(chapter.chapter_number or 0),
+        )
+        block = render_ngram_avoidance_block(ngram_report, language=project.language)
+        if block:
+            pre_blocks.append(block)
+    except Exception:
+        logger.debug("quality uplift ngram block failed", exc_info=True)
+    try:
+        from bestseller.services.character_idiolect_tracker import (
+            compute_character_idiolect,
+            render_idiolect_avoidance_block,
+        )
+
+        participant_names = _chapter_first_participant_names(scenes)
+        profiles = [
+            await compute_character_idiolect(
+                session,
+                project,
+                name,
+                chapter_number_upto=int(chapter.chapter_number or 0),
+            )
+            for name in participant_names[:2]
+        ]
+        block = render_idiolect_avoidance_block(profiles, language=project.language)
+        if block:
+            pre_blocks.append(block)
+    except Exception:
+        logger.debug("quality uplift idiolect block failed", exc_info=True)
+    try:
+        from bestseller.services.arc_tension_monitor import (
+            compute_arc_tension,
+            render_arc_tension_block,
+        )
+
+        report = await compute_arc_tension(
+            session,
+            project,
+            chapter_number_upto=int(chapter.chapter_number or 0),
+        )
+        block = render_arc_tension_block(
+            report,
+            chapter_number=int(chapter.chapter_number or 0),
+            language=project.language,
+        )
+        if block:
+            pre_blocks.append(block)
+    except Exception:
+        logger.debug("quality uplift arc tension block failed", exc_info=True)
+    try:
+        from bestseller.services.chapter_callback_obligations import (
+            collect_callback_obligations,
+            render_callback_block,
+        )
+
+        obligations = await collect_callback_obligations(
+            session,
+            project,
+            int(chapter.chapter_number or 0),
+        )
+        callback_payload = [item.to_dict() for item in obligations]
+        block = render_callback_block(obligations, language=project.language)
+        if block:
+            post_blocks.append(block)
+    except Exception:
+        logger.debug("quality uplift callback block failed", exc_info=True)
+
+    if not pre_blocks and not post_blocks and not callback_payload:
+        return
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    metadata["quality_uplift_prompt_blocks"] = {
+        "pre_scene": "\n\n".join(pre_blocks),
+        "post_scene": "\n\n".join(post_blocks),
+    }
+    if callback_payload:
+        metadata["callback_obligations"] = callback_payload
+    chapter.metadata_json = metadata
+
+
+def _chapter_first_participant_names(scenes: Sequence[SceneCardModel]) -> list[str]:
+    names: list[str] = []
+    for scene in scenes:
+        participants = getattr(scene, "participants", None) or []
+        for raw in participants:
+            name = str(raw or "").strip()
+            if name and name not in names:
+                names.append(name)
+    return names
 
 
 async def generate_chapter_draft_once(
@@ -7627,6 +7756,12 @@ async def generate_chapter_draft_once(
         chapter.target_word_count
         or effective_settings.generation.words_per_chapter.target
         or 2500
+    )
+    await _prepare_quality_uplift_prompt_blocks(
+        session,
+        project=project,
+        chapter=chapter,
+        scenes=scenes,
     )
     system_prompt, user_prompt = build_chapter_first_draft_prompts(
         project,
@@ -7735,6 +7870,33 @@ async def generate_chapter_draft_once(
             count_words(content_md),
         )
 
+    deterministic_audit_report = None
+    try:
+        from bestseller.services.deterministic_post_write_audit import audit_chapter_prose
+
+        hard_min_words, _hard_target_words, hard_max_words = _chapter_length_contract_band(
+            project,
+            target_word_count,
+        )
+        deterministic_audit_report = audit_chapter_prose(
+            chapter_text=content_md,
+            chapter_number=chapter_number,
+            project_dir=Path(effective_settings.output.base_dir) / project.slug,
+            scenes=scenes,
+            chapter_metadata={
+                **(chapter.metadata_json or {}),
+                "hard_min_word_count": hard_min_words,
+                "hard_max_word_count": hard_max_words,
+            },
+        )
+        if not deterministic_audit_report.passed:
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "deterministic_audit_latest": deterministic_audit_report.to_dict(),
+            }
+    except Exception:
+        logger.debug("chapter_first deterministic audit failed", exc_info=True)
+
     duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
         session,
         project=project,
@@ -7788,6 +7950,9 @@ async def generate_chapter_draft_once(
     )
     if duplicate_gate_findings or (
         quality_bundle_report is not None and quality_bundle_report.blocking_findings
+    ) or (
+        deterministic_audit_report is not None
+        and not deterministic_audit_report.passed
     ):
         quality_gate_outcome = "blocked"
 
@@ -9141,6 +9306,34 @@ async def assemble_chapter_draft(
     except Exception:
         logger.debug("Post-assembly dedup failed (non-fatal)", exc_info=True)
 
+    deterministic_audit_report = None
+    try:
+        from bestseller.services.deterministic_post_write_audit import audit_chapter_prose
+
+        effective_settings_for_audit = settings or load_settings()
+        hard_min_words, _hard_target_words, hard_max_words = _chapter_length_contract_band(
+            project,
+            int(chapter.target_word_count or effective_settings_for_audit.generation.words_per_chapter.target),
+        )
+        deterministic_audit_report = audit_chapter_prose(
+            chapter_text=content_md,
+            chapter_number=chapter_number,
+            project_dir=Path(effective_settings_for_audit.output.base_dir) / project.slug,
+            scenes=scenes,
+            chapter_metadata={
+                **(chapter.metadata_json or {}),
+                "hard_min_word_count": hard_min_words,
+                "hard_max_word_count": hard_max_words,
+            },
+        )
+        if not deterministic_audit_report.passed:
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "deterministic_audit_latest": deterministic_audit_report.to_dict(),
+            }
+    except Exception:
+        logger.debug("post-assembly deterministic audit failed (non-fatal)", exc_info=True)
+
     duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
         session,
         project=project,
@@ -9225,6 +9418,9 @@ async def assemble_chapter_draft(
     )
     if duplicate_gate_findings or (
         quality_bundle_report is not None and quality_bundle_report.blocking_findings
+    ) or (
+        deterministic_audit_report is not None
+        and not deterministic_audit_report.passed
     ):
         quality_gate_outcome = "blocked"
     if quality_gate_outcome == "ok":
@@ -9383,8 +9579,6 @@ async def assemble_chapter_draft(
     # ── Eagerly sync disk file so web UI always shows current content ──
     if settings is not None:
         try:
-            from pathlib import Path  # noqa: PLC0415
-
             output_path = (
                 Path(settings.output.base_dir) / project.slug / f"chapter-{chapter_number:03d}.md"
             )

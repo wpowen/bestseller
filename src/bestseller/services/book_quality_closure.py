@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -183,6 +184,8 @@ class BookClosureReport:
     bootstrap_report: Mapping[str, object] | None = None
     before_acceptance: Mapping[str, object] | None = None
     repair_plan: Mapping[str, object] = field(default_factory=dict)
+    material_offline_execution: Mapping[str, object] = field(default_factory=dict)
+    block_recovery: Mapping[str, object] = field(default_factory=dict)
     task_sync: Mapping[str, object] = field(default_factory=dict)
     execution: Mapping[str, object] = field(default_factory=dict)
     rewrite_generation_audit: RewriteGenerationAudit | None = None
@@ -210,6 +213,8 @@ class BookClosureReport:
             "bootstrap_report": dict(self.bootstrap_report or {}),
             "before_acceptance": dict(self.before_acceptance or {}),
             "repair_plan": dict(self.repair_plan),
+            "material_offline_execution": dict(self.material_offline_execution),
+            "block_recovery": dict(self.block_recovery),
             "task_sync": dict(self.task_sync),
             "execution": dict(self.execution),
             "rewrite_generation_audit": (
@@ -285,6 +290,23 @@ def _blocking_repair_task_count(repair_plan: Mapping[str, Any]) -> int:
     return _int(plan.get("task_count"))
 
 
+def needs_llm_for_remaining_tasks(
+    repair_plan: Mapping[str, Any],
+    material_plan_summary: Mapping[str, Any] | None = None,
+) -> bool:
+    material = _as_mapping(material_plan_summary)
+    material_llm = _int(material.get("llm_action_count"))
+    return (_blocking_repair_task_count(repair_plan) + material_llm) > 0
+
+
+def has_recoverable_blocks(acceptance: Mapping[str, Any]) -> bool:
+    acceptance_payload = _as_mapping(acceptance.get("acceptance") or acceptance)
+    metrics = _as_mapping(acceptance_payload.get("metrics"))
+    if _int(metrics.get("chapters_blocked")) <= 0:
+        return False
+    return True
+
+
 def is_real_llm_provider(provider: str | None, *, finish_reason: str | None = None) -> bool:
     normalized = (provider or "").strip().lower()
     if not normalized or normalized in _REAL_PROVIDER_BLOCKLIST:
@@ -305,20 +327,40 @@ async def run_llm_execution_preflight(
         Awaitable[LLMCompletionResult],
     ] = complete_text,
 ) -> LLMPreflightReport:
-    _ = session, timeout_seconds, complete_text_fn
-    role = getattr(settings.llm, "editor", None)
-    if role is None or not getattr(role, "model", None):
+    try:
+        result = await asyncio.wait_for(
+            complete_text_fn(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="editor",
+                    system_prompt="closure-preflight",
+                    user_prompt="Return OK.",
+                    fallback_response="FALLBACK_PRECHECK",
+                    prompt_template="closure_preflight",
+                    prompt_version="v1",
+                    metadata={"purpose": "closure_preflight"},
+                    max_tokens_override=256,
+                ),
+            ),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError:
+        return LLMPreflightReport(ready=False, reason="provider_call_timeout")
+    except Exception as exc:
         return LLMPreflightReport(
             ready=False,
-            reason="editor_role_not_configured",
-            error="LLM editor role is not configured.",
+            reason="provider_call_failed",
+            error=f"{type(exc).__name__}: {exc}",
         )
+    ready = is_real_llm_provider(result.provider, finish_reason=result.finish_reason)
     return LLMPreflightReport(
-        ready=True,
-        provider=_provider_from_model_name(str(role.model)),
-        model_name=str(role.model),
-        finish_reason="local_config_probe",
-        reason=None,
+        ready=ready,
+        provider=result.provider,
+        model_name=result.model_name,
+        finish_reason=result.finish_reason,
+        llm_run_id=str(result.llm_run_id) if result.llm_run_id else None,
+        reason=None if ready else "provider_returned_mock_or_fallback",
     )
 
 
@@ -351,6 +393,7 @@ def determine_next_action(
     *,
     acceptance: Mapping[str, Any],
     repair_plan: Mapping[str, Any],
+    material_plan_summary: Mapping[str, Any] | None = None,
     model_preflight: LLMPreflightReport | None,
     execute_requested: bool,
     invalid_generation_count: int = 0,
@@ -363,13 +406,28 @@ def determine_next_action(
         return "ready", "no_action"
 
     repair_tasks = _blocking_repair_task_count(repair_plan)
-    if execute_requested and model_preflight and not model_preflight.ready and repair_tasks > 0:
-        return "blocked", "fix_llm_provider_preflight"
+    material_summary = _as_mapping(material_plan_summary)
+    if _int(material_summary.get("offline_actionable")) > 0:
+        return "repairing", "execute_offline_material_repair"
 
     missing_chapters = _int(metrics.get("missing_chapters"))
     draftless_chapters = _int(metrics.get("draftless_chapters"))
     blocked_chapters = _int(metrics.get("chapters_blocked"))
     quality_score = _float_or_none(metrics.get("quality_score")) or 0.0
+
+    if (
+        execute_requested
+        and model_preflight
+        and not model_preflight.ready
+        and needs_llm_for_remaining_tasks(repair_plan, material_summary)
+    ):
+        return "blocked", "fix_llm_provider_preflight"
+
+    if needs_llm_for_remaining_tasks(repair_plan, material_summary):
+        return "repairing", "execute_next_repair_round"
+
+    if blocked_chapters > 0 and has_recoverable_blocks(acceptance):
+        return "repairing", "reset_recoverable_blocks"
 
     if repair_tasks > 0 or blocked_chapters > 0:
         return "repairing", "execute_next_repair_round"
@@ -867,10 +925,14 @@ async def build_legacy_acceptance_payload(
     project = await get_project_by_slug(session, slug)
     if project is None:
         raise ValueError(f"Project '{slug}' was not found.")
+    project_dir = (
+        Path(getattr(settings.output, "base_dir", ".") or ".") / slug
+    )
     scorecard = await compute_scorecard(
         session,
         project.id,
         expected_chapter_count=project.target_chapters,
+        project_dir=project_dir if project_dir.exists() else None,
     )
     premium_report = evaluate_premium_project_readiness(project)
     current_chapters = await count_current_chapter_drafts(session, project)
@@ -976,9 +1038,11 @@ __all__ = [
     "determine_next_action",
     "filter_fleet_slugs",
     "fleet_row_from_acceptance",
+    "has_recoverable_blocks",
     "is_out_of_scope_slug",
     "is_real_llm_provider",
     "load_pending_autonomous_repair_task_ids",
+    "needs_llm_for_remaining_tasks",
     "out_of_scope_fleet_row",
     "repair_legacy_scene_card_for_continuation",
     "repair_legacy_scene_cards_for_continuation",

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Iterable
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -363,6 +364,62 @@ def _append_recent_length_failure_directive(
     base = (instructions or "").split("\n【章节字数收敛闸门·硬性要求】", 1)[0]
     base = base.split("\nLENGTH CONVERGENCE GATE (MANDATORY):", 1)[0]
     return f"{base.rstrip()}\n{directive}"
+
+
+async def _select_rewrite_working_draft(
+    session: AsyncSession,
+    *,
+    current_draft: ChapterDraftVersionModel,
+    recent_failed_rewrites: list[RewriteTaskModel],
+    settings: AppSettings,
+    chapter: ChapterModel,
+    language: str | None,
+) -> ChapterDraftVersionModel:
+    """Continue from a better rejected candidate when the current draft is worse.
+
+    A quality-retrofit retry can produce a publish-range candidate that misses
+    only the targeted retrofit detector. Reverting the next round to the older
+    current draft makes length oscillation likely, so use that candidate as the
+    next working draft when it is inside the hard chapter band.
+    """
+
+    band = chapter_rewrite_length_band(
+        settings,
+        getattr(chapter, "target_word_count", None),
+        language=language,
+        direction="normal",
+        role="editor",
+    )
+    current_words = int(getattr(current_draft, "word_count", 0) or 0)
+    current_in_band = band.hard_min <= current_words <= band.hard_max
+    for task in recent_failed_rewrites:
+        metadata = task.metadata_json if isinstance(task.metadata_json, dict) else {}
+        if not metadata.get("quality_retrofit_rejected_current_promotion"):
+            continue
+        draft_id_raw = metadata.get("candidate_chapter_draft_id")
+        if not draft_id_raw:
+            continue
+        try:
+            candidate_word_count = int(metadata.get("candidate_word_count") or 0)
+            candidate_draft_id = UUID(str(draft_id_raw))
+        except (TypeError, ValueError):
+            continue
+        if not (band.hard_min <= candidate_word_count <= band.hard_max):
+            continue
+        if current_in_band and candidate_word_count >= current_words:
+            continue
+        candidate_draft = await session.get(
+            ChapterDraftVersionModel,
+            candidate_draft_id,
+        )
+        if candidate_draft is None:
+            continue
+        if candidate_draft.chapter_id != current_draft.chapter_id:
+            continue
+        if not (candidate_draft.content_md or "").strip():
+            continue
+        return candidate_draft
+    return current_draft
 
 
 def _project_metadata(project: ProjectModel) -> dict[str, Any]:
@@ -2298,11 +2355,13 @@ def build_chapter_rewrite_prompts(
         chapter_context,
         language=language,
     )
+    _quality_uplift_rewrite_block = _render_quality_uplift_rewrite_block(chapter)
     user_prompt = (
         (
             f"Project: {project.title}\n"
             f"Chapter {chapter.chapter_number}: {chapter.title or ''}\n"
             f"Chapter goal: {chapter.chapter_goal}\n"
+            f"{_quality_uplift_rewrite_block}"
             f"{_wrap_rewrite_reference_for_language(rewrite_task.instructions, rewrite_task.rewrite_strategy, language=language)}"
             f"{_wc_directive}"
             f"{_ending_frame_gate}"
@@ -2326,6 +2385,7 @@ def build_chapter_rewrite_prompts(
             f"项目：《{project.title}》\n"
             f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
             f"章节目标：{chapter.chapter_goal}\n"
+            f"{_quality_uplift_rewrite_block}"
             f"{_wrap_rewrite_reference_for_language(rewrite_task.instructions, rewrite_task.rewrite_strategy, language=language)}"
             f"{_wc_directive}"
             f"{_ending_frame_gate}"
@@ -2352,6 +2412,23 @@ def build_chapter_rewrite_prompts(
     if _genre_ch_rewrite:
         user_prompt += f"\n\n{'[Genre rewrite focus]' if is_en else '【品类重写方向】'}\n{_genre_ch_rewrite}"
     return system_prompt, user_prompt
+
+
+def _render_quality_uplift_rewrite_block(chapter: ChapterModel) -> str:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    blocks = metadata.get("quality_uplift_prompt_blocks")
+    rewrite_escalation = metadata.get("rewrite_escalation")
+    parts: list[str] = []
+    if isinstance(rewrite_escalation, dict):
+        directive = str(rewrite_escalation.get("strict_directive") or "").strip()
+        if directive:
+            parts.append(directive)
+    if isinstance(blocks, dict):
+        for key in ("pre_scene", "post_scene"):
+            block = str(blocks.get(key) or "").strip()
+            if block:
+                parts.append(block)
+    return ("\n".join(parts) + "\n") if parts else ""
 
 
 # ── Dialogue distinctiveness measurement (mechanical, zero LLM cost) ────
@@ -7376,6 +7453,14 @@ def _length_over_max_from_violations(
     return None
 
 
+def _only_length_over_blocking_codes(codes: Iterable[str]) -> bool:
+    normalized = {str(code or "").strip() for code in codes if str(code or "").strip()}
+    return bool(normalized) and all(
+        code == "LENGTH_OVER" or code.endswith("_BLOCK_HIGH")
+        for code in normalized
+    )
+
+
 def _micro_trim_overlength_chapter_text(
     content: str,
     *,
@@ -7654,6 +7739,50 @@ def _quality_retrofit_candidate_findings(
     return findings
 
 
+def _quality_retrofit_near_miss_acceptance(
+    findings: list[dict[str, Any]],
+    *,
+    recent_failed_rewrites: list[RewriteTaskModel],
+) -> dict[str, Any] | None:
+    if not findings:
+        return None
+    if len(recent_failed_rewrites) < 3:
+        return None
+    if len(findings) != 1:
+        return None
+    finding = findings[0]
+    if str(finding.get("code") or "") != "QUALITY_RETROFIT_WEAK_ATTRACTION":
+        return None
+    detail = str(finding.get("detail") or "")
+    density_match = re.search(r"pulse_density=([0-9.]+)", detail)
+    count_match = re.search(r"pulse_count=(\d+)", detail)
+    if not density_match or not count_match:
+        return None
+    try:
+        density = float(density_match.group(1))
+        pulse_count = int(count_match.group(1))
+    except ValueError:
+        return None
+    if density < 0.80 or pulse_count < 8:
+        return None
+    length_failures = 0
+    for task in recent_failed_rewrites[:5]:
+        metadata = task.metadata_json if isinstance(task.metadata_json, dict) else {}
+        codes = _length_gate_codes_from_metadata(metadata)
+        if codes:
+            length_failures += 1
+    if length_failures < 2:
+        return None
+    return {
+        "mode": "quality_retrofit_near_miss_acceptance",
+        "accepted_code": "QUALITY_RETROFIT_WEAK_ATTRACTION",
+        "pulse_density": density,
+        "pulse_count": pulse_count,
+        "recent_length_failure_count": length_failures,
+        "residual_repair_action": finding.get("repair_action"),
+    }
+
+
 async def rewrite_chapter_from_task(
     session: AsyncSession,
     project_slug: str,
@@ -7696,6 +7825,15 @@ async def rewrite_chapter_from_task(
             .limit(5)
         )
     )
+    effective_settings = settings or get_settings()
+    working_draft = await _select_rewrite_working_draft(
+        session,
+        current_draft=current_draft,
+        recent_failed_rewrites=recent_failed_rewrites,
+        settings=effective_settings,
+        chapter=chapter,
+        language=_project_language(project),
+    )
     rewrite_task.instructions = _append_recent_length_failure_directive(
         rewrite_task.instructions or "",
         recent_failed_rewrites,
@@ -7711,10 +7849,21 @@ async def rewrite_chapter_from_task(
             project_slug,
             chapter_number,
         )
+    try:
+        from bestseller.services.drafts import _prepare_quality_uplift_prompt_blocks
+
+        await _prepare_quality_uplift_prompt_blocks(
+            session,
+            project=project,
+            chapter=chapter,
+            scenes=_scenes,
+        )
+    except Exception:
+        logger.debug("chapter rewrite quality uplift prompt blocks failed", exc_info=True)
     fallback_content = render_rewritten_chapter_markdown(
         project,
         chapter,
-        current_draft,
+        working_draft,
         rewrite_task,
         chapter_context,
     )
@@ -7727,7 +7876,7 @@ async def rewrite_chapter_from_task(
         system_prompt, user_prompt = build_chapter_rewrite_prompts(
             project,
             chapter,
-            current_draft,
+            working_draft,
             rewrite_task,
             chapter_context,
         )
@@ -7773,11 +7922,83 @@ async def rewrite_chapter_from_task(
     else:
         content_md = strip_scaffolding_echoes(sanitize_novel_markdown_content(content_md))
 
+    _cleanup_settings = settings or get_settings()
     content_md, _cleanup_stats = _clean_generated_chapter_text(
         content_md,
         chapter_number=chapter.chapter_number,
         source="chapter_rewrite",
+        min_word_count=chapter_rewrite_length_band(
+            _cleanup_settings,
+            getattr(chapter, "target_word_count", None),
+            language=_project_language(project),
+            direction="normal",
+            role="editor",
+        ).hard_min,
     )
+    deterministic_postprocess_metadata: dict[str, Any] | None = None
+    try:
+        from bestseller.services.rewrite_escalation import (
+            EscalationDecision,
+            EscalationLevel,
+            apply_post_process,
+        )
+
+        escalation_payload = dict((chapter.metadata_json or {}).get("rewrite_escalation") or {})
+        action = escalation_payload.get("post_process_action")
+        if action:
+            decision = EscalationDecision(
+                level=EscalationLevel(str(escalation_payload.get("level") or "normal")),
+                block_kind=str(escalation_payload.get("block_kind") or "general"),
+                attempt_count=int(escalation_payload.get("attempt_count") or 0),
+                strict_directive=str(escalation_payload.get("strict_directive") or ""),
+                post_process_action=str(action),
+            )
+            forbidden_terms = tuple(
+                str(item.get("matched_text") or "")
+                for item in (
+                    (chapter.metadata_json or {})
+                    .get("deterministic_audit_latest", {})
+                    .get("findings", [])
+                )
+                if isinstance(item, dict)
+            )
+            content_md, deterministic_postprocess_metadata = apply_post_process(
+                content_md,
+                decision,
+                forbidden_terms=forbidden_terms,
+            )
+    except Exception:
+        logger.debug("chapter rewrite deterministic post-process failed", exc_info=True)
+
+    deterministic_audit_report = None
+    try:
+        from bestseller.services.deterministic_post_write_audit import audit_chapter_prose
+
+        band = chapter_rewrite_length_band(
+            get_settings(),
+            getattr(chapter, "target_word_count", None),
+            language=project.language,
+            direction="normal",
+            role="editor",
+        )
+        deterministic_audit_report = audit_chapter_prose(
+            chapter_text=content_md,
+            chapter_number=chapter_number,
+            project_dir=Path((settings or get_settings()).output.base_dir) / project.slug,
+            scenes=_scenes,
+            chapter_metadata={
+                **(chapter.metadata_json or {}),
+                "hard_min_word_count": int(band.hard_min),
+                "hard_max_word_count": int(band.hard_max),
+            },
+        )
+        if not deterministic_audit_report.passed:
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "deterministic_audit_latest": deterministic_audit_report.to_dict(),
+            }
+    except Exception:
+        logger.debug("chapter rewrite deterministic audit failed", exc_info=True)
 
     duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
         session,
@@ -7800,6 +8021,8 @@ async def rewrite_chapter_from_task(
         content=content_md,
     )
     if duplicate_gate_findings:
+        quality_gate_outcome = "blocked"
+    if deterministic_audit_report is not None and not deterministic_audit_report.passed:
         quality_gate_outcome = "blocked"
     quality_gate_violations: list[dict[str, Any]] = []
     if quality_gate_outcome == "blocked":
@@ -7886,7 +8109,9 @@ async def rewrite_chapter_from_task(
                         f"{_chapter_band_over.safe_min}-{_chapter_band_over.safe_max} Chinese "
                         "characters. Silently count Chinese characters before the final "
                         "answer. Delete/merge redundant beats; "
-                        "do not add new scenes, people, places, titles, or factions."
+                        "do not add new scenes, people, places, titles, or factions. "
+                        "If deletion would drop below the lower bound, replace repeated "
+                        "material with one concise plot-bearing beat instead of summarizing."
                     )
                 elif code == "LENGTH_UNDER" or code.endswith("_BLOCK_LOW"):
                     repair_action = (
@@ -7922,8 +8147,10 @@ async def rewrite_chapter_from_task(
                         expected="No duplicate or near-duplicate paragraph blocks in the rewritten chapter.",
                         actual=str(finding)[:240],
                         repair_action=(
-                            "Remove repeated or near-repeated paragraphs. Replace repetition with fresh "
-                            "reader-visible action, consequence, or transition."
+                            "Remove or merge repeated and near-repeated paragraphs, but do not "
+                            "solve duplication by making the chapter too short. Replace repetition "
+                            "with fresh reader-visible action, consequence, clue movement, or "
+                            "transition that keeps the body inside the active length band."
                         ),
                     )
                 )
@@ -7991,6 +8218,13 @@ async def rewrite_chapter_from_task(
                 repaired_content,
                 chapter_number=chapter.chapter_number,
                 source="chapter_rewrite_repair",
+                min_word_count=chapter_rewrite_length_band(
+                    settings,
+                    getattr(chapter, "target_word_count", None),
+                    language=_project_language(project),
+                    direction="normal",
+                    role="editor",
+                ).hard_min,
             )
             repaired_duplicate_findings = await _collect_post_assembly_duplicate_findings(
                 session,
@@ -8048,6 +8282,7 @@ async def rewrite_chapter_from_task(
                 exc_info=True,
             )
     quality_retrofit_findings: list[dict[str, Any]] = []
+    quality_retrofit_near_miss_metadata: dict[str, Any] | None = None
     if quality_gate_outcome != "blocked":
         quality_retrofit_findings = _quality_retrofit_candidate_findings(
             content_md,
@@ -8129,6 +8364,13 @@ async def rewrite_chapter_from_task(
                     repaired_content,
                     chapter_number=chapter.chapter_number,
                     source="chapter_rewrite_quality_retrofit_repair",
+                    min_word_count=chapter_rewrite_length_band(
+                        settings,
+                        getattr(chapter, "target_word_count", None),
+                        language=_project_language(project),
+                        direction="normal",
+                        role="editor",
+                    ).hard_min,
                 )
                 repaired_duplicate_findings = await _collect_post_assembly_duplicate_findings(
                     session,
@@ -8202,7 +8444,119 @@ async def rewrite_chapter_from_task(
                     exc_info=True,
                 )
         if quality_retrofit_findings:
-            quality_gate_outcome = "blocked"
+            quality_retrofit_near_miss_metadata = (
+                _quality_retrofit_near_miss_acceptance(
+                    quality_retrofit_findings,
+                    recent_failed_rewrites=recent_failed_rewrites,
+                )
+            )
+            if quality_retrofit_near_miss_metadata:
+                logger.info(
+                    "chapter %d quality-retrofit near miss accepted: %s",
+                    chapter.chapter_number,
+                    quality_retrofit_near_miss_metadata,
+                )
+                quality_retrofit_findings = []
+            else:
+                quality_gate_outcome = "blocked"
+    candidate_micro_trim_metadata: dict[str, Any] | None = None
+    if quality_gate_outcome == "blocked" and content_md and not duplicate_gate_findings:
+        try:
+            latest_candidate_quality_report = await session.scalar(
+                select(ChapterQualityReportModel)
+                .where(ChapterQualityReportModel.chapter_id == chapter.id)
+                .order_by(ChapterQualityReportModel.created_at.desc())
+            )
+            candidate_report_json = (
+                latest_candidate_quality_report.report_json
+                if latest_candidate_quality_report is not None
+                and hasattr(latest_candidate_quality_report, "report_json")
+                and isinstance(latest_candidate_quality_report.report_json, dict)
+                else {}
+            )
+            candidate_blocking_codes = [
+                str(code).strip()
+                for code in candidate_report_json.get("blocking_codes", [])
+                if str(code).strip()
+            ]
+            candidate_violations = [
+                item
+                for item in candidate_report_json.get("violations", [])
+                if isinstance(item, dict)
+            ]
+            length_max = _length_over_max_from_violations(candidate_violations)
+            if _only_length_over_blocking_codes(candidate_blocking_codes) and length_max:
+                trimmed_content, trim_info = _micro_trim_overlength_chapter_text(
+                    content_md,
+                    max_words=length_max,
+                    max_overage=180,
+                    safety_margin=20,
+                )
+                if trim_info.get("applied"):
+                    trimmed_duplicate_findings = (
+                        await _collect_post_assembly_duplicate_findings(
+                            session,
+                            project=project,
+                            chapter=chapter,
+                            content_md=trimmed_content,
+                        )
+                    )
+                    trimmed_quality_outcome = await _evaluate_chapter_quality_gate(
+                        session=session,
+                        project=project,
+                        chapter_number=chapter_number,
+                        content=trimmed_content,
+                    )
+                    if trimmed_duplicate_findings:
+                        trimmed_quality_outcome = "blocked"
+                    trimmed_retrofit_findings = (
+                        []
+                        if trimmed_quality_outcome == "blocked"
+                        else _quality_retrofit_candidate_findings(
+                            trimmed_content,
+                            rewrite_task,
+                            platform="framework",
+                        )
+                    )
+                    trimmed_near_miss_metadata = (
+                        _quality_retrofit_near_miss_acceptance(
+                            trimmed_retrofit_findings,
+                            recent_failed_rewrites=recent_failed_rewrites,
+                        )
+                        if trimmed_retrofit_findings
+                        else None
+                    )
+                    if trimmed_quality_outcome != "blocked" and (
+                        not trimmed_retrofit_findings or trimmed_near_miss_metadata
+                    ):
+                        content_md = trimmed_content
+                        word_count = count_words(content_md)
+                        quality_gate_outcome = trimmed_quality_outcome
+                        quality_gate_violations = []
+                        duplicate_gate_findings = tuple()
+                        quality_retrofit_findings = []
+                        quality_retrofit_near_miss_metadata = trimmed_near_miss_metadata
+                        candidate_micro_trim_metadata = {
+                            **trim_info,
+                            "postprocess_mode": "micro_length_trim_candidate",
+                            "candidate_quality_gate_outcome_before_trim": "blocked",
+                            "candidate_blocking_codes_before_trim": candidate_blocking_codes,
+                        }
+                        logger.info(
+                            "chapter %d candidate micro-trimmed after length-only "
+                            "block: %s -> %s chars",
+                            chapter.chapter_number,
+                            trim_info.get("before_word_count"),
+                            trim_info.get("after_word_count"),
+                        )
+                    elif trimmed_retrofit_findings:
+                        quality_retrofit_findings = trimmed_retrofit_findings
+        except Exception:
+            logger.warning(
+                "chapter %d: candidate micro length trim failed",
+                chapter.chapter_number,
+                exc_info=True,
+            )
     quality_gate_rejected_current_promotion = quality_gate_outcome == "blocked"
     llm_candidate_quality_gate_outcome = quality_gate_outcome
     llm_candidate_word_count = word_count
@@ -8239,9 +8593,13 @@ async def rewrite_chapter_from_task(
                     for item in current_violations
                     if str(item.get("code") or "").strip()
                 }
-                only_length_over = bool(current_codes) and all(
-                    code == "LENGTH_OVER" or code.endswith("_BLOCK_HIGH")
-                    for code in current_codes
+                current_blocking_codes = [
+                    str(code).strip()
+                    for code in current_report_json.get("blocking_codes", [])
+                    if str(code).strip()
+                ]
+                only_length_over = _only_length_over_blocking_codes(
+                    current_blocking_codes or current_codes
                 )
                 length_max = _length_over_max_from_violations(current_violations)
                 if only_length_over and length_max:
@@ -8327,6 +8685,48 @@ async def rewrite_chapter_from_task(
     )
     session.add(new_draft)
     await session.flush()
+    rewrite_convergence_metadata: dict[str, Any] | None = None
+    try:
+        from bestseller.services.rewrite_convergence import (
+            assess_convergence,
+            record_rewrite_attempt,
+        )
+
+        audit_codes = tuple(
+            finding.code for finding in deterministic_audit_report.findings
+        ) if deterministic_audit_report is not None else ()
+        block_codes = tuple(
+            str(item.get("code") or "")
+            for item in quality_gate_violations
+            if isinstance(item, dict) and str(item.get("code") or "").strip()
+        )
+        record_rewrite_attempt(
+            chapter,
+            version=next_version,
+            block_codes=block_codes,
+            word_count=word_count,
+            audit_codes=audit_codes,
+        )
+        convergence = assess_convergence(
+            chapter,
+            new_candidate_audit={},
+        )
+        rewrite_convergence_metadata = {
+            "is_diverging": convergence.is_diverging,
+            "is_stuck": convergence.is_stuck,
+            "is_oscillating": convergence.is_oscillating,
+            "recommended_action": convergence.recommended_action,
+        }
+        if convergence.recommended_action == "stop_to_human":
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "rewrite_convergence_exhausted": True,
+                "requires_human_review": True,
+            }
+            chapter.status = ChapterStatus.REVISION.value
+            chapter.production_state = "blocked"
+    except Exception:
+        logger.debug("rewrite convergence tracking failed", exc_info=True)
     rewrite_task.attempts = int(rewrite_task.attempts or 0) + 1
     metadata = {
         **(rewrite_task.metadata_json or {}),
@@ -8340,6 +8740,11 @@ async def rewrite_chapter_from_task(
         "candidate_word_count": word_count,
         "candidate_quality_gate_outcome": quality_gate_outcome,
     }
+    if working_draft.id != current_draft.id:
+        metadata["working_chapter_draft_id"] = str(working_draft.id)
+        metadata["working_chapter_draft_version_no"] = working_draft.version_no
+        metadata["working_chapter_draft_word_count"] = working_draft.word_count
+        metadata["working_draft_source"] = "previous_failed_retrofit_candidate"
     if micro_trim_metadata:
         metadata["micro_length_trim"] = micro_trim_metadata
         metadata["llm_candidate_quality_gate_outcome"] = llm_candidate_quality_gate_outcome
@@ -8348,6 +8753,18 @@ async def rewrite_chapter_from_task(
             metadata["llm_candidate_quality_gate_violations"] = (
                 llm_candidate_quality_gate_violations[:12]
             )
+    if candidate_micro_trim_metadata:
+        metadata["candidate_micro_length_trim"] = candidate_micro_trim_metadata
+    if rewrite_convergence_metadata:
+        metadata["rewrite_convergence"] = rewrite_convergence_metadata
+    if deterministic_postprocess_metadata:
+        metadata["deterministic_post_process"] = deterministic_postprocess_metadata
+    if deterministic_audit_report is not None:
+        metadata["deterministic_audit"] = deterministic_audit_report.to_dict()
+    if quality_retrofit_near_miss_metadata:
+        metadata["quality_retrofit_near_miss_acceptance"] = (
+            quality_retrofit_near_miss_metadata
+        )
     if quality_gate_violations:
         metadata["candidate_quality_gate_violations"] = quality_gate_violations[:12]
     if duplicate_gate_findings:

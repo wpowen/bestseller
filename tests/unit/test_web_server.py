@@ -39,9 +39,7 @@ def test_resolve_project_artifact_path_blocks_path_escape(tmp_path: Path) -> Non
     (output_dir / "project.md").write_text("# Demo", encoding="utf-8")
 
     with pytest.raises(ValueError):
-        web_server.resolve_project_artifact_path(
-            _settings(tmp_path), "demo-story", "../project.md"
-        )
+        web_server.resolve_project_artifact_path(_settings(tmp_path), "demo-story", "../project.md")
 
 
 def test_resolve_project_artifact_path_allows_safe_nested_exports(tmp_path: Path) -> None:
@@ -223,9 +221,7 @@ def test_apply_project_titles_to_tasks_uses_database_title(
         }
     ]
 
-    titled = asyncio.run(
-        web_server._apply_project_titles_to_tasks(SimpleNamespace(), tasks)
-    )
+    titled = asyncio.run(web_server._apply_project_titles_to_tasks(SimpleNamespace(), tasks))
 
     assert titled[0]["title"] == "青囊不语问阴阳"
     assert titled[0]["project_title"] == "青囊不语问阴阳"
@@ -577,7 +573,7 @@ def test_project_identity_payload_overrides_fanqie_short_stale_chapter_fields(
 def test_reader_html_supports_fanqie_single_story_mode() -> None:
     html = web_server._READER_HTML_PATH.read_text(encoding="utf-8")
 
-    assert "content_mode === \"fanqie_short_story\"" in html
+    assert 'content_mode === "fanqie_short_story"' in html
     assert "正在加载全文" in html
     assert "单篇全文" in html
 
@@ -605,13 +601,9 @@ def test_quickstart_fanqie_length_default_matches_selected_button() -> None:
 
     assert "const DEFAULT_FANQIE_LENGTH_KEY = 'fanqie-short-15k';" in html
     assert "let fanqieLengthKey = DEFAULT_FANQIE_LENGTH_KEY;" in html
+    assert 'class="length-btn fanqie-len-btn selected" data-length-key="fanqie-short-15k"' in html
     assert (
-        'class="length-btn fanqie-len-btn selected" data-length-key="fanqie-short-15k"'
-        in html
-    )
-    assert (
-        'class="length-btn fanqie-len-btn selected" data-length-key="fanqie-short-8k"'
-        not in html
+        'class="length-btn fanqie-len-btn selected" data-length-key="fanqie-short-8k"' not in html
     )
 
 
@@ -749,7 +741,9 @@ def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.Monkey
     )
 
 
-def test_quickstart_task_passes_selected_creative_direction(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_quickstart_task_passes_selected_creative_direction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = web_server.WebTaskManager()
     captured: dict[str, object] = {}
 
@@ -870,6 +864,31 @@ def test_project_repair_status_payload_exposes_autonomous_repair_queue() -> None
     assert payload["pending_autonomous_repair_tasks"] == 246
     assert payload["failed_autonomous_repair_tasks"] == 0
     assert payload["autonomous_repair_tasks"]["total"] == 258
+
+
+def test_reader_chapter_state_separates_blocked_queued_and_active_repair() -> None:
+    assert web_server._reader_chapter_state(
+        chapter_status="revision",
+        production_state="ok",
+        availability="available",
+    ) == ("formal", "正式版")
+    assert web_server._reader_chapter_state(
+        chapter_status="revision",
+        production_state="blocked",
+        availability="repair_in_progress",
+        pending_rewrite_task_count=2,
+    ) == ("queued_repair", "排队修复")
+    assert web_server._reader_chapter_state(
+        chapter_status="revision",
+        production_state="blocked",
+        availability="repair_in_progress",
+        auto_repair_in_progress=True,
+    ) == ("active_repair", "正在修复")
+    assert web_server._reader_chapter_state(
+        chapter_status="revision",
+        production_state="blocked",
+        availability="repair_in_progress",
+    ) == ("blocked", "阻塞待修")
 
 
 def test_nonblocking_rejected_candidate_not_counted_as_failed_repair() -> None:
@@ -1149,12 +1168,8 @@ def test_load_worker_task_summary_surfaces_redis_owned_autowrite_job(
 
 def test_reader_chapter_availability_uses_production_gate() -> None:
     assert web_server._reader_chapter_availability("ok", 2100) == "available"
-    assert (
-        web_server._reader_chapter_availability("blocked", 2100) == "repair_in_progress"
-    )
-    assert (
-        web_server._reader_chapter_availability("pending", 2100) == "repair_in_progress"
-    )
+    assert web_server._reader_chapter_availability("blocked", 2100) == "repair_in_progress"
+    assert web_server._reader_chapter_availability("pending", 2100) == "repair_in_progress"
     assert web_server._reader_chapter_availability("ok", 0) == "planned"
 
 
@@ -1318,8 +1333,6 @@ def test_design_dossier_readiness_flags_missing_design_surfaces() -> None:
     assert "人物信息" not in missing_labels
 
 
-
-
 def test_pipeline_flow_html_contains_expected_mount_points() -> None:
     html = web_server._read_pipeline_flow_html()
 
@@ -1335,7 +1348,7 @@ def test_design_dossier_html_contains_expected_mount_points() -> None:
     assert "设计审查包" in html
     assert "/api/projects/${encodeURIComponent(slug)}/design-dossier" in html
     assert "/api/projects/${encodeURIComponent(slug)}/design-artifact" in html
-    assert "data-tab=\"relations\"" in html
+    assert 'data-tab="relations"' in html
     assert "展开后会自动加载这份规划产物的原始内容" in html
     assert "侦查式关系图谱" in html
     assert "relationship-map" in html
@@ -2536,8 +2549,7 @@ def test_sync_progress_ignores_stale_result_after_resume(
 
         def lrange(self, *_args: object) -> list[str]:
             return [
-                '{"ts": 1779097514.6, "message": "failed", '
-                '"data": {"error": "old repair failure"}}'
+                '{"ts": 1779097514.6, "message": "failed", "data": {"error": "old repair failure"}}'
             ]
 
         def close(self) -> None:
@@ -2749,6 +2761,7 @@ def test_watchdog_preserves_machine_repair_gate_as_incomplete(tmp_path: Path) ->
     assert incomplete["status"] == "incomplete"
     assert incomplete["current_stage"] == "machine_repair_required"
     assert incomplete["progress_events"][-1]["stage"] == "machine_repair_required"
+
 
 def test_query_bool_parses_truthy_values() -> None:
     assert web_server._query_bool("1") is True

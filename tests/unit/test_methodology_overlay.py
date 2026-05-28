@@ -54,6 +54,17 @@ def test_normalize_scene_overlay_keeps_camera_and_cut_point() -> None:
     assert overlay["cut_point"] == "周老板说出父亲旧名的前一秒。"
 
 
+def test_normalize_scene_overlay_accepts_breakpoint_alias() -> None:
+    overlay = normalize_scene_overlay(
+        {
+            "signature_image": "镜面上浮出第二张脸。",
+            "breakpoint": "门外先响起了第三个人的脚步声。",
+        }
+    )
+
+    assert overlay["cut_point"] == "门外先响起了第三个人的脚步声。"
+
+
 def test_render_overlay_prompt_block_includes_scene_execution_terms() -> None:
     block = render_overlay_prompt_block(
         scene_overlay={

@@ -14,6 +14,8 @@
   "bootstrap_report": {},
   "before_acceptance": {},
   "repair_plan": {},
+  "material_offline_execution": {},
+  "block_recovery": {},
   "task_sync": {
     "task_count": 4
   },

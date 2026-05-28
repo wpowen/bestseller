@@ -441,6 +441,51 @@ def test_append_previous_rewrite_failure_feedback_respects_english_language() ->
     assert "中文汉字" not in instructions
 
 
+def test_append_previous_rewrite_failure_feedback_uses_compression_for_overlength() -> None:
+    instructions = append_previous_rewrite_failure_feedback(
+        "基础要求",
+        (
+            {
+                "candidate_word_count": 3509,
+                "findings": [
+                    {
+                        "code": "CHAPTER_LENGTH_BLOCK_HIGH",
+                        "detail": "3509 > max 3000",
+                    },
+                ],
+            },
+        ),
+    )
+
+    assert "上一版触发长度硬门" in instructions
+    assert "压缩只能删并或替换重复信息" in instructions
+    assert "不得压成梗概" in instructions
+    assert "扩写只能补行动" not in instructions
+
+
+def test_append_previous_rewrite_failure_feedback_english_uses_compression_for_overlength() -> None:
+    instructions = append_previous_rewrite_failure_feedback(
+        "Language: English\nBase requirements",
+        (
+            {
+                "candidate_word_count": 3509,
+                "findings": [
+                    {
+                        "code": "CHAPTER_LENGTH_BLOCK_HIGH",
+                        "detail": "3509 > max 3000",
+                    },
+                ],
+            },
+        ),
+    )
+
+    assert "Previous candidate triggered the length hard gate" in instructions
+    assert "Compression must merge or replace redundant beats" in instructions
+    assert "too short" in instructions
+    assert "Expansion can only add" not in instructions
+    assert "中文汉字" not in instructions
+
+
 def test_append_previous_rewrite_failure_feedback_escalates_repeated_failures() -> None:
     instructions = append_previous_rewrite_failure_feedback(
         "基础要求",

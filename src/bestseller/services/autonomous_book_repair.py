@@ -503,6 +503,11 @@ def _build_english_quality_repair_instructions(
                         "English-word safe band."
                     ),
                     (
+                        "- Do not compress by deletion alone if that would drop "
+                        "below the lower bound; replace repeated material with "
+                        "one concise plot-bearing beat."
+                    ),
+                    (
                         "- Do not add new characters, locations, powers, factions, "
                         "titles, or side plots."
                     ),
@@ -734,6 +739,7 @@ def build_quality_repair_instructions(spec: QualityRepairTaskSpec) -> str:
                 [
                     "- 本章是长度稳定性压缩任务：必须保留主线功能，同时删并重复心理、重复环境、解释性铺陈和不改变局势的过渡段。",
                     f"- 重写后必须落入 {length_range} 个中文汉字安全带；超出会被质量门拒绝。",
+                    "- 不得用纯删除把章节压到下限以下；若删重复段会过短，必须替换成一段精简但有效的行动、对抗、证物变化或尾钩蓄压。",
                     "- 禁止新增人物、地点、称号、势力或支线桥段；只能压缩、合并、替换已有信息。",
                 ]
             )
@@ -1282,18 +1288,35 @@ def _append_previous_rewrite_failure_feedback_english(
             direction=length_direction,
             language=language,
         )
-        lines.extend(
-            [
-                (
-                    "- Previous candidate triggered the length hard gate: the next "
-                    f"version must use {safe_band} English words as the safe band."
-                ),
+        lines.append(
+            (
+                "- Previous candidate triggered the length hard gate: the next "
+                f"version must use {safe_band} English words as the safe band."
+            )
+        )
+        if length_direction == "over":
+            lines.extend(
+                [
+                    (
+                        "- Compression must merge or replace redundant beats; do "
+                        "not compensate with new scenes, new exposition, or a "
+                        "summary-thin chapter."
+                    ),
+                    (
+                        "- If removing repeated material would make the chapter "
+                        "too short, replace the repetition with one concise "
+                        "plot-bearing action, confrontation, evidence change, "
+                        "causal bridge, or ending hook pressure."
+                    ),
+                ]
+            )
+        else:
+            lines.append(
                 (
                     "- Expansion can only add action, confrontation, evidence "
                     "change, causal bridge, or ending hook pressure."
-                ),
-            ]
-        )
+                )
+            )
     if {"CANON_FORBIDDEN_TERM", "NAMING_OUT_OF_POOL"} & unique_codes:
         lines.extend(
             [
@@ -1433,13 +1456,21 @@ def append_previous_rewrite_failure_feedback(
         length_direction = "under"
         if any(code in {"LENGTH_OVER", "LENGTH_BLOCK_HIGH"} or str(code).endswith("_BLOCK_HIGH") for code in unique_codes):
             length_direction = "over"
-        lines.extend(
-            [
-                "- 上一版触发长度硬门: 下一版必须以 "
-                f"{_global_quality_repair_band(direction=length_direction, language=language)} 个有效中文汉字为安全区。",
-                "- 扩写只能补行动、对抗、证物变化、过场桥和尾钩，不得用解释、总结或重复心理凑字。",
-            ]
+        lines.append(
+            "- 上一版触发长度硬门: 下一版必须以 "
+            f"{_global_quality_repair_band(direction=length_direction, language=language)} 个有效中文汉字为安全区。"
         )
+        if length_direction == "over":
+            lines.extend(
+                [
+                    "- 压缩只能删并或替换重复信息、重复心理、重复环境、解释性铺陈和不改变局势的过渡段。",
+                    "- 如果删除重复段会跌破字数下限，必须把重复段替换成一段精简但有效的行动、对抗、证物变化、过场桥或尾钩蓄压；不得压成梗概。",
+                ]
+            )
+        else:
+            lines.append(
+                "- 扩写只能补行动、对抗、证物变化、过场桥和尾钩，不得用解释、总结或重复心理凑字。"
+            )
     if {"CANON_FORBIDDEN_TERM", "NAMING_OUT_OF_POOL"} & unique_codes:
         lines.extend(
             [

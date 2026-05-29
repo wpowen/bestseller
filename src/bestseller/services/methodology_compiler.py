@@ -8,10 +8,12 @@ their existing prompt without adopting a new prompt object model.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
+from bestseller.services.methodology_book_selector import render_book_methodology_block
 from bestseller.services.methodology_bridge import render_phase_block
 from bestseller.services.prompt_packs import (
     PromptPack,
@@ -35,7 +37,7 @@ from bestseller.services.quality_levers.prose_style_anchors import (
 from bestseller.services.quality_levers.rhythm_engineering import render_rhythm_block
 
 
-class MethodologyStage(str, Enum):
+class MethodologyStage(StrEnum):
     CONCEPTION = "conception"
     OUTLINE_BOOK = "outline_book"
     OUTLINE_VOLUME = "outline_volume"
@@ -44,7 +46,7 @@ class MethodologyStage(str, Enum):
     REVIEW = "review"
 
 
-class ChapterPosition(str, Enum):
+class ChapterPosition(StrEnum):
     OPENING = "opening"
     EARLY = "early"
     MIDGAME = "midgame"
@@ -72,18 +74,21 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         "prompt_pack_global_rules",
         "prompt_pack_profile_overrides",
         "writing_methodology_conception",
+        "book_methodology_current",
         "emotion_choreography_summary",
         "public_emotion_core",
     ),
     MethodologyStage.OUTLINE_BOOK: (
         "prompt_pack_global_rules",
         "writing_methodology_planner",
+        "book_methodology_current",
         "emotion_choreography_summary",
         "rhythm_engineering_framework",
         "information_choreography_framework",
     ),
     MethodologyStage.OUTLINE_VOLUME: (
         "writing_methodology_volume",
+        "book_methodology_current",
         "emotion_choreography_summary",
         "rhythm_engineering_framework",
         "information_choreography_framework",
@@ -92,6 +97,7 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
     MethodologyStage.OUTLINE_CHAPTER: (
         "prompt_pack_chapter_review",
         "writing_methodology_prewrite",
+        "book_methodology_current",
         "emotion_choreography_current",
         "rhythm_engineering_current",
         "information_choreography_current",
@@ -100,6 +106,7 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
     MethodologyStage.PROSE_SCENE: (
         "prompt_pack_scene_writer",
         "writing_methodology_scene",
+        "book_methodology_current",
         "prose_style_anchors",
         "public_emotion_role_tags",
         "emotion_choreography_current",
@@ -110,6 +117,7 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
     MethodologyStage.REVIEW: (
         "prompt_pack_chapter_review",
         "writing_methodology_review",
+        "book_methodology_current",
         "prose_style_anchors",
     ),
 }
@@ -204,7 +212,10 @@ def _sections_for_stage(
         sections.append(
             _Section(
                 "prompt_pack_profile_overrides",
-                _format_mapping("【writing_profile_overrides 摘要】", pack.writing_profile_overrides),
+                _format_mapping(
+                    "【writing_profile_overrides 摘要】",
+                    pack.writing_profile_overrides,
+                ),
                 pack_source,
             )
         )
@@ -220,7 +231,11 @@ def _sections_for_stage(
             fragment = render_prompt_pack_fragment(pack, "segment_writer")
         if fragment:
             sections.append(
-                _Section(f"prompt_pack_{fragment_key}", f"【prompt_pack.{fragment_key}】\n{fragment}", pack_source)
+                _Section(
+                    f"prompt_pack_{fragment_key}",
+                    f"【prompt_pack.{fragment_key}】\n{fragment}",
+                    pack_source,
+                )
             )
 
     phase = {
@@ -233,7 +248,32 @@ def _sections_for_stage(
     }[stage]
     bridge_block = render_phase_block(pack, phase=phase, heading=f"writing_methodology · {phase}")
     if bridge_block:
-        sections.append(_Section(f"writing_methodology_{phase}", bridge_block, "writing_methodology.yaml"))
+        sections.append(
+            _Section(
+                f"writing_methodology_{phase}",
+                bridge_block,
+                "writing_methodology.yaml",
+            )
+        )
+
+    book_block = _safe(
+        render_book_methodology_block,
+        stage=stage.value,
+        scope=_book_methodology_scope(stage),
+        language="zh-CN",
+        chapter_no=chapter_number,
+        chapter_position=chapter_position.value,
+        max_cards=4,
+        token_budget=700,
+    )
+    if book_block:
+        sections.append(
+            _Section(
+                "book_methodology_current",
+                book_block,
+                "methodology_books/books_core_selector",
+            )
+        )
 
     if stage in {
         MethodologyStage.CONCEPTION,
@@ -316,7 +356,7 @@ def _append_block(sections: list[_Section], *, key: str, text: str, source: str)
         sections.append(_Section(key, text.strip(), source))
 
 
-def _safe(func: Any, /, **kwargs: Any) -> str:
+def _safe(func: Callable[..., object], /, **kwargs: object) -> str:
     try:
         return str(func(**kwargs) if kwargs else func() or "").strip()
     except Exception:
@@ -345,9 +385,9 @@ def _format_mapping(title: str, data: dict[str, Any]) -> str:
     lines = [title]
     for key, value in data.items():
         if isinstance(value, dict):
-            preview = "；".join(f"{k}={v}" for k, v in list(value.items())[:6])
+            preview = ";".join(f"{k}={v}" for k, v in list(value.items())[:6])
         elif isinstance(value, list):
-            preview = "；".join(str(item) for item in value[:8])
+            preview = ";".join(str(item) for item in value[:8])
         else:
             preview = str(value)
         if preview.strip():
@@ -385,6 +425,18 @@ def _heading_for_stage(stage: MethodologyStage) -> str:
         MethodologyStage.REVIEW: "评审",
     }
     return f"【题材方法论·{names[stage]}】"
+
+
+def _book_methodology_scope(stage: MethodologyStage) -> str:
+    mapping = {
+        MethodologyStage.CONCEPTION: "book",
+        MethodologyStage.OUTLINE_BOOK: "book",
+        MethodologyStage.OUTLINE_VOLUME: "volume",
+        MethodologyStage.OUTLINE_CHAPTER: "chapter",
+        MethodologyStage.PROSE_SCENE: "scene",
+        MethodologyStage.REVIEW: "chapter",
+    }
+    return mapping[stage]
 
 
 def _estimate_tokens(text: str, *, language: str) -> int:

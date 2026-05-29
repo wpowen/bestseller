@@ -1255,24 +1255,37 @@ class ConflictForceInput(BaseModel):
     @field_validator("force_type", mode="before")
     @classmethod
     def _coerce_force_type(cls, v: Any) -> Any:
+        valid = {"character", "faction", "environment", "internal", "systemic"}
         if isinstance(v, str):
             normalized = v.strip().lower()
             aliases = {
                 "person": "character",
                 "individual": "character",
+                "entity": "character",
+                "being": "character",
+                "creature": "character",
                 "group": "faction",
                 "organization": "faction",
                 "org": "faction",
+                "guild": "faction",
                 "place": "environment",
                 "location": "environment",
                 "setting": "environment",
+                "nature": "environment",
                 "mental": "internal",
                 "psychological": "internal",
+                "emotional": "internal",
                 "system": "systemic",
                 "structural": "systemic",
+                "societal": "systemic",
+                "social": "systemic",
             }
-            return aliases.get(normalized, normalized)
-        return v
+            mapped = aliases.get(normalized, normalized)
+            # Robustness: never let an unknown value reach the Literal check
+            # (LLM output drift would otherwise hard-fail and burn repair
+            # loops). Fall back to the most generic external force.
+            return mapped if mapped in valid else "faction"
+        return "faction"
 
 
 _CHARACTER_DICT_INNER_KEYS: tuple[str, ...] = (

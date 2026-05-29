@@ -87,6 +87,15 @@ SELF_HEAL_LOCK_TTL_SECONDS = 180
 SELF_HEAL_SCAN_DONE_KEY = "bestseller:self_heal:scan_done"
 SELF_HEAL_SCAN_DONE_TTL_SECONDS = 7200
 
+# Give-up threshold. A project that self-heal re-queues this many times
+# WITHOUT the chapter count increasing is almost certainly hard-blocked
+# (planner schema failure, a blocking methodology/planning gate, etc.) — not
+# transiently stuck. Re-running it forever burns real LLM tokens on every
+# scan and never advances (observed on throwaway A/B projects stuck in
+# ``planning`` with 0 chapters). After this many no-progress heals we stamp
+# ``self_heal_abandoned`` + a human-review pause reason and stop re-queueing.
+MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS = 5
+
 # ARQ's default job expiry is 24 hours.  A single long-form autowrite job can
 # legitimately occupy a worker for longer than that, so startup self-heal jobs
 # queued behind it must survive a multi-day backlog instead of expiring before
@@ -313,6 +322,10 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
         if _project_is_archived(project):
             continue
         if _project_is_focus_paused(project):
+            continue
+        if _project_self_heal_abandoned(project):
+            # Gave up after repeated no-progress heals — surfaced for human
+            # review; do not re-queue (would burn LLM tokens indefinitely).
             continue
 
         # Skip projects with an active pipeline run.
@@ -605,6 +618,62 @@ def _metadata_int(metadata: dict[str, Any], key: str, default: int = 0) -> int:
         return int(metadata.get(key, default))
     except (TypeError, ValueError):
         return default
+
+
+def _project_self_heal_abandoned(project: ProjectModel) -> bool:
+    """True when self-heal has given up on a project (no-progress threshold).
+
+    Abandoned projects are excluded from the stuck scan so the heal loop
+    stops re-queueing them (and stops burning LLM tokens). The flag is
+    cleared when a human/UI explicitly resumes the project.
+    """
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        return False
+    return bool(metadata.get("self_heal_abandoned"))
+
+
+def _compute_heal_progress_state(
+    metadata: dict[str, Any],
+    chapters_total: int,
+    *,
+    max_attempts: int = MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS,
+) -> tuple[dict[str, Any], bool]:
+    """Pure helper: update the no-progress attempt counter and decide give-up.
+
+    Returns ``(new_metadata, abandoned)``. The chapter count is compared
+    against the count recorded on the previous heal cycle:
+
+    * progressed (count increased, or first ever) → counter resets to 0
+    * no progress → counter increments
+
+    When the counter reaches ``max_attempts`` the project is marked
+    abandoned (``self_heal_abandoned``) with a human-review pause reason so
+    the scan skips it instead of re-queueing forever.
+    """
+    updated = dict(metadata) if isinstance(metadata, dict) else {}
+    last = updated.get("self_heal_last_chapters_total")
+    try:
+        last_int = int(last) if last is not None else None
+    except (TypeError, ValueError):
+        last_int = None
+
+    progressed = last_int is None or chapters_total > last_int
+    if progressed:
+        attempts = 0
+    else:
+        attempts = _metadata_int(updated, "self_heal_no_progress_attempts", 0) + 1
+
+    updated["self_heal_last_chapters_total"] = int(chapters_total)
+    updated["self_heal_no_progress_attempts"] = attempts
+
+    abandoned = attempts >= max_attempts
+    if abandoned:
+        updated["self_heal_abandoned"] = True
+        updated["self_heal_abandoned_at"] = _dt.datetime.now(_dt.UTC).isoformat()
+        updated["production_pause_reason"] = "self_heal_no_progress_giveup"
+        updated["requires_human_review"] = True
+    return updated, abandoned
 
 
 def _is_auto_repairable_write_safety_block(block_code: str | None) -> bool:
@@ -1118,6 +1187,33 @@ async def heal_stuck_projects(
                     stuck.slug,
                 )
                 continue
+            # Record a heal attempt and give up if this project has been
+            # re-queued repeatedly without making any chapter-count progress.
+            try:
+                async with get_server_session() as session:
+                    project = await session.get(ProjectModel, stuck.project_id)
+                    if project is not None:
+                        new_meta, abandoned = _compute_heal_progress_state(
+                            project.metadata_json or {},
+                            stuck.chapters_total,
+                        )
+                        project.metadata_json = new_meta
+                        await session.commit()
+                        if abandoned:
+                            logger.warning(
+                                "self-heal: ABANDONED slug=%s after %d no-progress "
+                                "heals (chapters_total=%d) — flagged for human "
+                                "review, not re-queueing",
+                                stuck.slug,
+                                MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS,
+                                stuck.chapters_total,
+                            )
+                            continue
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "self-heal: failed to record heal progress for slug=%s",
+                    stuck.slug,
+                )
             try:
                 task_id = await _requeue_stuck_project(pool, stuck)
             except Exception as exc:  # noqa: BLE001

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 from collections import defaultdict
+import re
 from typing import Any
 from uuid import UUID
 
@@ -26,6 +26,7 @@ from bestseller.domain.narrative import (
     SubplotScheduleEntryRead,
     ThemeArcRead,
 )
+from bestseller.domain.structure_templates import StructureTemplate, resolve_structure_template
 from bestseller.infra.db.models import (
     AntagonistPlanModel,
     ArcBeatModel,
@@ -49,13 +50,14 @@ from bestseller.infra.db.models import (
     ThemeArcModel,
     VolumeModel,
 )
-from bestseller.domain.structure_templates import StructureTemplate, resolve_structure_template
-from bestseller.services.projects import get_project_by_slug
-from bestseller.services.story_bible import parse_volume_plan_input
+from bestseller.services.hook_ledger import is_methodology_v2_enabled
+from bestseller.services.methodology_lineage import METHODOLOGY_LINEAGE_METADATA_KEY
 from bestseller.services.methodology_overlay import (
     normalize_chapter_overlay,
     normalize_scene_overlay,
 )
+from bestseller.services.projects import get_project_by_slug
+from bestseller.services.story_bible import parse_volume_plan_input
 from bestseller.services.writing_profile import is_english_language
 
 
@@ -80,6 +82,38 @@ def _unique_preserve(items: list[str]) -> list[str]:
         seen.add(item)
         result.append(item)
     return result
+
+
+def _chapter_contract_metadata_from_chapter(chapter: ChapterModel) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    chapter_metadata = chapter.metadata_json or {}
+    chapter_methodology_contract = normalize_chapter_overlay(
+        chapter_metadata.get("methodology_contract")
+    )
+    if chapter_methodology_contract:
+        metadata["methodology_contract"] = chapter_methodology_contract
+    if is_methodology_v2_enabled():
+        for key in (
+            "causal_contract",
+            "event_cycle_contract",
+            "chapter_causality_axes",
+        ):
+            value = chapter_metadata.get(key)
+            if isinstance(value, dict) and value:
+                metadata[key] = value
+        lineage = chapter_metadata.get(METHODOLOGY_LINEAGE_METADATA_KEY)
+        if isinstance(lineage, dict):
+            metadata[METHODOLOGY_LINEAGE_METADATA_KEY] = lineage
+    return metadata
+
+
+def _metadata_dict(value: object) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _metadata_text(metadata: dict[str, Any], key: str) -> str | None:
+    text = _ensure_text(metadata.get(key), "")
+    return text or None
 
 
 def _dedupe_emotion_track_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1708,9 +1742,6 @@ async def rebuild_narrative_graph(
             for payoff in payoffs_by_code.values()
             if payoff.target_chapter_number == chapter.chapter_number
         ]
-        chapter_methodology_contract = normalize_chapter_overlay(
-            (chapter.metadata_json or {}).get("methodology_contract")
-        )
         contract = ChapterContractModel(
             project_id=project.id,
             chapter_id=chapter.id,
@@ -1729,11 +1760,7 @@ async def rebuild_narrative_graph(
             active_arc_beat_ids=[str(beat.id) for beat in chapter_beats if beat.scope_level == "chapter"],
             planted_clue_codes=planted_clue_codes,
             due_payoff_codes=due_payoff_codes,
-            metadata_json=(
-                {"methodology_contract": chapter_methodology_contract}
-                if chapter_methodology_contract
-                else {}
-            ),
+            metadata_json=_chapter_contract_metadata_from_chapter(chapter),
         )
         session.add(contract)
 
@@ -2293,6 +2320,20 @@ async def build_narrative_overview(
                 active_arc_beat_ids=[str(beat_id) for beat_id in item.active_arc_beat_ids],
                 planted_clue_codes=list(item.planted_clue_codes),
                 due_payoff_codes=list(item.due_payoff_codes),
+                causal_contract=_metadata_dict(
+                    (item.metadata_json or {}).get("causal_contract")
+                ),
+                event_cycle_contract=_metadata_dict(
+                    (item.metadata_json or {}).get("event_cycle_contract")
+                ),
+                character_delta=_metadata_text(
+                    _metadata_dict((item.metadata_json or {}).get("causal_contract")),
+                    "character_delta",
+                ),
+                protagonist_choice=_metadata_text(
+                    _metadata_dict((item.metadata_json or {}).get("causal_contract")),
+                    "protagonist_choice",
+                ),
             )
             for item in chapter_contracts
         ],

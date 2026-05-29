@@ -4,6 +4,7 @@ import pytest
 
 from bestseller.services.checker_schema import CheckerIssue, CheckerReport
 from bestseller.services.methodology_health import (
+    build_lineage_slot_health,
     build_methodology_health_report,
     compute_longform_chaos_index,
     methodology_repair_actions,
@@ -38,6 +39,21 @@ def test_methodology_health_reports_profile_coverage_and_top_issues() -> None:
             _report("OPENING_CH1_PRESSURE_MISSING"),
             _report("CHEKHOV_USE_OVERDUE"),
         ),
+        review_payloads=(
+            {
+                "evidence_summary": {
+                    "methodology_lineage_evidence": {
+                        "rules": [
+                            {
+                                "rule_id": "wm.scene.causality",
+                                "slot": "scene_causality_engine",
+                                "score": 0.85,
+                            }
+                        ]
+                    }
+                }
+            },
+        ),
         latest_chapter_number=35,
         longform_inputs={"overdue_clue_count": 3, "setup_payoff_debt_count": 2},
         longform_chaos_enabled=True,
@@ -53,6 +69,64 @@ def test_methodology_health_reports_profile_coverage_and_top_issues() -> None:
         "count": 2,
     }
     assert report["longform_chaos"]["enabled"] is True
+    assert report["lineage_slots"]["slots"]["scene_causality_engine"]["status"] == (
+        "dormant_to_active_candidate"
+    )
+
+
+def test_lineage_slot_health_tracks_evidence_and_candidates() -> None:
+    summary = build_lineage_slot_health(
+        (
+            {
+                "evidence_summary": {
+                    "methodology_lineage_evidence": {
+                        "rules": [
+                            {
+                                "rule_id": "wm.scene.causality",
+                                "slot": "scene_causality_engine",
+                                "score": 0.8,
+                            },
+                            {
+                                "rule_id": "wm.hook.ledger",
+                                "slot": "hook_ledger",
+                                "gate_mode": "block",
+                                "score": 0.4,
+                            },
+                        ]
+                    }
+                }
+            },
+            {
+                "evidence_summary": {
+                    "methodology_lineage_evidence": {
+                        "rules": [
+                            {
+                                "rule_id": "wm.scene.causality",
+                                "slot": "scene_causality_engine",
+                                "score": 0.9,
+                            }
+                        ]
+                    },
+                    "payoff_ledger_audit": {"findings": []},
+                }
+            },
+        ),
+        coverage_min=0.1,
+        evidence_min=0.5,
+    )
+
+    scene = summary["slots"]["scene_causality_engine"]
+    hook = summary["slots"]["hook_ledger"]
+    payoff = summary["slots"]["payoff_ledger"]
+
+    assert summary["review_count"] == 2
+    assert scene["coverage_count"] == 2
+    assert scene["evidence_rate"] == 1.0
+    assert hook["failure_count"] == 1
+    assert hook["gate_block_count"] == 1
+    assert payoff["coverage_count"] == 1
+    assert "scene_causality_engine" in summary["dormant_to_active_candidates"]
+    assert "premise_engine" in summary["inactive_slots"]
 
 
 def test_methodology_health_without_profile_is_disabled() -> None:

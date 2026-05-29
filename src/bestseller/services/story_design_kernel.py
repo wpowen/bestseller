@@ -611,6 +611,27 @@ class WorldviewKernel(BaseModel, frozen=True):
         if not data:
             return value
         data["anti_copy_boundaries"] = _text_list(data.get("anti_copy_boundaries"))
+        # Robustness: optional enrichment lists must not abort the whole
+        # kernel when the LLM emits a blank/placeholder entry (observed:
+        # empty key/value strings hard-failing ``min_length=1``). Drop
+        # entries that cannot validate as their item model instead of
+        # failing the entire book's planning.
+        for field_name, item_model in (
+            ("asset_ledger", WorldAssetLedgerItem),
+            ("scene_templates", WorldSceneTemplateBinding),
+            ("authority_claims", WorldAuthorityClaim),
+            ("state_variables", WorldStateVariable),
+        ):
+            raw = data.get(field_name)
+            if isinstance(raw, list):
+                kept: list[Any] = []
+                for entry in raw:
+                    try:
+                        item_model.model_validate(entry)
+                    except Exception:  # noqa: BLE001 - drop unsalvageable entry
+                        continue
+                    kept.append(entry)
+                data[field_name] = kept
         return data
 
 
@@ -653,9 +674,28 @@ class PlotTreeNode(BaseModel, frozen=True):
         if not data:
             return value
         line_type = _text(data.get("line_type")).lower()
-        if line_type in {"antagonist", "villain", "opposition", "rival", "supporting"}:
+        valid = {
+            "main",
+            "subplot",
+            "relationship",
+            "character",
+            "world",
+            "theme",
+            "mystery",
+            "progression",
+        }
+        if line_type in {
+            "antagonist",
+            "villain",
+            "opposition",
+            "rival",
+            "supporting",
+            "faction",
+            "organization",
+            "side",
+        }:
             data["line_type"] = "subplot"
-        elif line_type in {"romance", "emotion", "emotional"}:
+        elif line_type in {"romance", "emotion", "emotional", "love"}:
             data["line_type"] = "relationship"
         elif line_type in {
             "backstory",
@@ -667,10 +707,24 @@ class PlotTreeNode(BaseModel, frozen=True):
             "truth_backstory",
         }:
             data["line_type"] = "mystery"
-        elif line_type in {"power", "leveling", "upgrade", "growth"}:
+        elif line_type in {
+            "background",
+            "setting",
+            "worldbuilding",
+            "world_building",
+            "lore",
+            "environment",
+        }:
+            data["line_type"] = "world"
+        elif line_type in {"power", "leveling", "upgrade", "growth", "cultivation"}:
             data["line_type"] = "progression"
         elif line_type.startswith("main_") or line_type in {"mainline", "main-line"}:
             data["line_type"] = "main"
+        elif line_type and line_type not in valid:
+            # Robustness: never let an unknown line_type reach the Literal
+            # check (LLM drift would hard-fail and burn planner repair loops).
+            # Fall back to the most generic non-main line.
+            data["line_type"] = "subplot"
         return data
 
     @model_validator(mode="after")

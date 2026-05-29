@@ -41,17 +41,20 @@ from bestseller.services.chapter_constraint_manifest import (
     render_prewrite_plan_prompt,
     validate_prewrite_plan,
 )
+from bestseller.services.chapter_outline_readiness_gate import chapter_scene_budget_sum_thresholds
 from bestseller.services.chapter_quality_bundle import (
     ChapterQualityBundleContext,
     ChapterQualityBundleReport,
     run_chapter_quality_bundle,
 )
-from bestseller.services.chapter_outline_readiness_gate import chapter_scene_budget_sum_thresholds
 from bestseller.services.chapter_validator import classify_cliffhanger
 from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
 )
-from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context_from_models
+from bestseller.services.context import (
+    build_chapter_writer_context,
+    build_scene_writer_context_from_models,
+)
 from bestseller.services.dialogue_personality_bridge import (
     render_dialogue_personality_bridge_block,
 )
@@ -74,6 +77,7 @@ from bestseller.services.methodology_compiler import (
     MethodologyStage,
     compile_methodology,
 )
+from bestseller.services.methodology_lineage import render_methodology_lineage_prompt_block
 from bestseller.services.methodology_overlay import (
     render_overlay_prompt_block,
     resolve_methodology_contract_mode,
@@ -2109,6 +2113,15 @@ _CN_BRACKET_META_RE = re.compile(
     r"|章节钩子|场景钩子|hook|设定|本章目标|剧情任务|情绪任务)[：:].*】\s*$"
 )
 
+_WORD_COUNT_META_LINE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?[\(（【\[]?\s*"
+    r"(?:(?:全文|本章|本场|章节|场景|当前稿|最终)\s*)?"
+    r"(?:字数|word\s*count)\s*[:：]\s*"
+    r"(?:约\s*)?[\d０-９,，]+(?:\s*(?:字|words?))?"
+    r"\s*[\)）】\]]?\s*$",
+    re.IGNORECASE,
+)
+
 # Scene scaffold headings that must never appear in prose:
 #   "## 场景 1：xxx"  /  "### 第三场"  /  "第1场" / "第一场"
 # NOTE: This must NOT match chapter headings like "# 第1章：xxx" — those are
@@ -2273,6 +2286,8 @@ def sanitize_novel_markdown_content(content_md: str, *, language: str | None = N
         stripped = raw_line.strip()
         # --- Shared / structural metadata (both languages) ---
         if _STRUCTURED_METADATA_LINE_RE.match(stripped):
+            continue
+        if _WORD_COUNT_META_LINE_RE.match(stripped):
             continue
 
         # --- Chinese meta-leak line filters ---
@@ -2487,6 +2502,7 @@ _NOVEL_OUTPUT_PROHIBITION = """\
 - 不得出现 entry_state / exit_state / contract / scene_type 等英文结构化标签
 - 不得输出 Markdown 标题标记（# 或 ##）——正文中不需要章节标题、场景标题或任何层级标题
 - 不得把\u201c章节目标\u201d\u201c场景标题\u201d\u201c卷目标\u201d原文搬入正文——这些信息仅供理解意图
+- 不得输出\u201c字数：598\u201d\u201c（字数：598）\u201d等字数统计或自检标记
 - 所有策划信息（场景目的、情绪目标、contract 约束）仅供你理解意图，严禁直接输出到正文
 - 严禁使用AI味套话：\u201c显而易见\u201d\u201c毫无疑问\u201d\u201c不言而喻\u201d\u201c心中五味杂陈\u201d\u201c空气仿佛凝固了\u201d等
 - 严禁堆砌虚弱修饰副词（缓缓、轻轻、微微、淡淡），同类副词每千字不超过2次
@@ -2519,6 +2535,7 @@ FORBIDDEN OUTPUT — the following must NEVER appear in the prose:
 - Do not output structural labels: entry_state / exit_state / contract / scene_type
 - Do not output Markdown heading markers (# or ##) — the prose does not need chapter titles, scene titles, or any heading levels
 - Do not copy "chapter goal", "scene title", "volume goal" text verbatim into the prose — that information is for your understanding only
+- Do not output word-count reports such as "Word count: 598" or "(word count: 598)"
 - All planning information (scene purpose, emotional goals, contract constraints) is for your understanding ONLY — never output it into the prose
 - Avoid weak filler adverbs (slowly, gently, slightly, softly) — no more than 2 uses of the same adverb per 1000 words
 - Avoid template micro-expressions (eyes reddened, lips curled, pupils constricted) — use specific actions instead
@@ -2725,6 +2742,9 @@ async def _collect_post_assembly_duplicate_findings(
     content_md: str,
 ) -> tuple[WriteSafetyFinding, ...]:
     """Run final duplicate checks before an assembled chapter becomes usable."""
+    from bestseller.services.chapter_first_sentence_diversity_gate import (
+        check_first_sentence_diversity,
+    )
     from bestseller.services.deduplication import (
         check_opening_diversity,
         detect_chapter_text_loop,
@@ -2732,9 +2752,6 @@ async def _collect_post_assembly_duplicate_findings(
         detect_intra_chapter_repetition,
         detect_short_cluster_near_repeat,
         extract_chapter_opening,
-    )
-    from bestseller.services.chapter_first_sentence_diversity_gate import (
-        check_first_sentence_diversity,
     )
     from bestseller.services.opening_hook_density_gate import (
         check_opening_hook_density,
@@ -3843,12 +3860,25 @@ def _render_contract_section(
             sections.append(f"- {'Chapter core conflict' if is_en else '章节核心冲突'}：{chapter_contract['core_conflict']}")
         if chapter_contract.get("closing_hook"):
             sections.append(f"- {'Chapter ending turn' if is_en else '章节收尾转折'}：{chapter_contract['closing_hook']}")
+        causal_block = _render_character_causal_contract_block(
+            chapter_contract,
+            language=language,
+        )
+        if causal_block:
+            sections.append(causal_block)
         overlay_block = render_overlay_prompt_block(
             chapter_overlay=chapter_contract,
             language=language,
         )
         if overlay_block:
             sections.append(overlay_block)
+        lineage_block = render_methodology_lineage_prompt_block(
+            chapter_contract,
+            stage="prose_scene",
+            language=language,
+        )
+        if lineage_block:
+            sections.append(lineage_block)
         profile_block = render_configured_methodology_profile_block(
             stage="drafting",
             scope="chapter",
@@ -3902,6 +3932,78 @@ def _render_contract_section(
         if profile_block:
             sections.append(profile_block)
     return "\n".join(sections)
+
+
+def _render_character_causal_contract_block(
+    chapter_contract: Mapping[str, Any] | None,
+    *,
+    language: str | None = None,
+) -> str:
+    if not chapter_contract:
+        return ""
+    is_en = is_english_language(language)
+    causal_contract = _mapping_from_contract(chapter_contract.get("causal_contract"))
+    items: list[tuple[str, object]] = [
+        (
+            "Character delta" if is_en else "人物变化",
+            _first_contract_value(
+                chapter_contract.get("character_delta"),
+                causal_contract.get("character_delta"),
+                causal_contract.get("inner_state_delta"),
+                causal_contract.get("relationship_delta"),
+                causal_contract.get("state_change"),
+            ),
+        ),
+        (
+            "Protagonist choice" if is_en else "主角选择",
+            _first_contract_value(
+                chapter_contract.get("protagonist_choice"),
+                causal_contract.get("protagonist_choice"),
+                causal_contract.get("choice_or_action"),
+                causal_contract.get("visible_action_or_reaction"),
+            ),
+        ),
+        ("Pressure" if is_en else "压力", causal_contract.get("pressure")),
+        (
+            "Visible action/reaction" if is_en else "可见行动/反应",
+            causal_contract.get("visible_action_or_reaction"),
+        ),
+        ("Resistance" if is_en else "阻力", causal_contract.get("resistance")),
+        ("Cost/tradeoff" if is_en else "代价/取舍", causal_contract.get("cost_or_tradeoff")),
+        ("Gain/reveal" if is_en else "获得/揭示", causal_contract.get("gain_or_reveal")),
+        (
+            "Next reader desire" if is_en else "下一章读者欲望",
+            causal_contract.get("next_reader_desire"),
+        ),
+    ]
+    visible = [
+        f"- {label}: {str(value).strip()}"
+        if is_en
+        else f"- {label}：{str(value).strip()}"
+        for label, value in items
+        if str(value or "").strip()
+    ]
+    if not visible:
+        return ""
+    title = "Character/causal contract" if is_en else "人物变化与因果合同"
+    instruction = (
+        "Render these as reader-visible choices, costs, reactions, and state changes; "
+        "do not name the contract."
+        if is_en
+        else "这些必须落成读者可见的选择、代价、反应和状态变化；正文不要出现合同/方法论术语。"
+    )
+    return f"{title}:\n" + "\n".join(visible) + f"\n{instruction}"
+
+
+def _mapping_from_contract(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _first_contract_value(*values: object) -> object | None:
+    for value in values:
+        if str(value or "").strip():
+            return value
+    return None
 
 
 def _render_story_principle_execution_section(
@@ -7374,6 +7476,12 @@ def build_chapter_first_draft_prompts(
             for label, value in must_hit_items
             if str(value or "").strip()
         ]
+        causal_items = _render_character_causal_contract_block(
+            chapter_contract,
+            language=language,
+        )
+        if causal_items:
+            visible_items.append(causal_items)
         if visible_items:
             contract_must_hit_block = (
                 "【必须显性兑现的章节契约】\n"

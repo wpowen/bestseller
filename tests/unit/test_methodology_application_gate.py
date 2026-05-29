@@ -14,7 +14,7 @@ def _scene(
 ) -> dict[str, object]:
     return {
         "hook_requirement": hook,
-        "purpose": {"story": f"推进：{hook}", "emotion": emotion},
+        "purpose": {"story": f"推进:{hook}", "emotion": emotion},
         "metadata_json": {
             "methodology_contract": {
                 "signature_image": image,
@@ -51,12 +51,12 @@ def test_methodology_application_gate_blocks_repeated_scene_hooks_and_templates(
     scenes = [
         _scene(
             hook="手机黑屏里多出一张贴在屏幕外侧的脸。",
-            emotion="林渊从被动承压转为做出一个带代价的判断，读者能看见害怕、犹豫或信任变化。",
+            emotion="林渊从被动承压转为做出一个带代价的判断, 读者能看见害怕、犹豫或信任变化。",
             image="屏幕外侧的脸鼻尖压扁。",
         ),
         _scene(
             hook="手机黑屏里多出一张贴在屏幕外侧的脸。",
-            emotion="林渊从被动承压转为做出一个带代价的判断，读者能看见害怕、犹豫或信任变化。",
+            emotion="林渊从被动承压转为做出一个带代价的判断, 读者能看见害怕、犹豫或信任变化。",
             image="屏幕外侧的脸鼻尖压扁。",
         ),
     ]
@@ -91,6 +91,25 @@ def test_methodology_application_contract_covers_front_ten_required_cards() -> N
     assert "plova.opening.anti_pitfall" in card_ids
     assert "plova.mainline.stage_goal_obstacle_result" in card_ids
     assert "platform.character_debt_ledger" in card_ids
+
+
+def test_methodology_application_contract_records_book_methodology_lineage() -> None:
+    contract = build_methodology_application_contract(
+        chapter_number=12,
+        chapter_title="压力回声",
+        chapter_contract={"visible_action_or_reaction": "主角拒绝安全退路。"},
+        scene_cards=[],
+    )
+
+    lineage = contract["book_methodology_lineage"]
+
+    assert "books_core_v1" in contract["profile_ids"]
+    assert lineage["card_ids"]
+    assert lineage["priority_order"][-1] == "book_advisory"
+    assert any(
+        item["profile_id"] == "books_core_v1"
+        for item in contract["applications"]
+    )
 
 
 def test_methodology_application_gate_blocks_placeholder_relationship_debt() -> None:

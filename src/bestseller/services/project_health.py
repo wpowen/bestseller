@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from sqlalchemy import select
@@ -89,6 +90,17 @@ async def _load_methodology_checker_reports(
 ) -> tuple[CheckerReport, ...]:
     """Load current review-embedded methodology reports for health aggregation."""
 
+    payloads = await _load_methodology_review_payloads(session, project_id=project_id)
+    return _methodology_checker_reports_from_payloads(payloads)
+
+
+async def _load_methodology_review_payloads(
+    session: AsyncSession,
+    *,
+    project_id: Any,
+) -> tuple[dict[str, Any], ...]:
+    """Load current review structured outputs for methodology health aggregation."""
+
     if not hasattr(session, "execute"):
         return ()
     try:
@@ -108,7 +120,7 @@ async def _load_methodology_checker_reports(
     except Exception:
         return ()
 
-    reports: list[CheckerReport] = []
+    payloads: list[dict[str, Any]] = []
     rows = list(result) if result is not None else []
     for row in rows:
         payload = row
@@ -118,7 +130,16 @@ async def _load_methodology_checker_reports(
             except (TypeError, KeyError, IndexError):
                 payload = None
         if isinstance(payload, dict):
-            reports.extend(checker_reports_from_review_payload(payload))
+            payloads.append(payload)
+    return tuple(payloads)
+
+
+def _methodology_checker_reports_from_payloads(
+    payloads: Iterable[Mapping[str, Any]],
+) -> tuple[CheckerReport, ...]:
+    reports: list[CheckerReport] = []
+    for payload in payloads:
+        reports.extend(checker_reports_from_review_payload(payload))
     return tuple(reports)
 
 
@@ -216,12 +237,16 @@ async def build_project_health_report(
         )
     else:
         golden_three_report = {"enabled": False}
-    methodology_checker_reports = await _load_methodology_checker_reports(
+    methodology_review_payloads = await _load_methodology_review_payloads(
         session,
         project_id=project.id,
     )
+    methodology_checker_reports = _methodology_checker_reports_from_payloads(
+        methodology_review_payloads
+    )
     methodology_report = build_configured_methodology_health_report(
         checker_reports=methodology_checker_reports,
+        review_payloads=methodology_review_payloads,
         latest_chapter_number=latest_chapter_number,
         longform_inputs={
             "overdue_clue_count": len(overdue_clue_rows),

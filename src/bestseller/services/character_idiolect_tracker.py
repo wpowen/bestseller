@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import math
 import re
 
 from sqlalchemy import select
@@ -72,7 +73,12 @@ def compute_character_idiolect_from_texts(
         if found:
             chapters_seen.add(int(chapter_number))
     total = sum(counter.values())
-    diversity = 1.0 if total == 0 else min(1.0, len(counter) / total)
+    # Diversity = Shannon entropy normalized to [0, 1]. Sole-verb distributions
+    # score 0; a perfectly even spread across the verb pool scores 1. The
+    # earlier ``len(counter)/total`` formula was a bug — it punished common
+    # characters because total grows linearly with usage while unique verbs
+    # plateau (林渊 ended up at 0.026 with 24 unique verbs / 900 occurrences).
+    diversity = _shannon_diversity(counter) if total > 0 else 1.0
     top = tuple(verb for verb, count in counter.most_common(5) if count >= 2)
     return CharacterActionProfile(
         character_name=name,
@@ -111,6 +117,25 @@ def render_idiolect_avoidance_block(
             f"本章避免再使用：{common}；改用观察、判断、移动、取证、决断类动作。"
         )
     return "\n".join(lines)
+
+
+def _shannon_diversity(counter: Counter[str]) -> float:
+    """Shannon entropy of the verb-usage distribution, normalized to [0, 1].
+
+    ``1.0`` = perfectly uniform spread across observed verbs (max variety).
+    ``0.0`` = a single verb dominates everything.
+    """
+    total = sum(counter.values())
+    if total <= 0:
+        return 1.0
+    observed = [count for count in counter.values() if count > 0]
+    if len(observed) <= 1:
+        return 0.0
+    entropy = -sum((c / total) * math.log2(c / total) for c in observed)
+    max_entropy = math.log2(len(observed))
+    if max_entropy <= 0:
+        return 0.0
+    return max(0.0, min(1.0, entropy / max_entropy))
 
 
 __all__ = [

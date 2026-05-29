@@ -1128,6 +1128,10 @@ async def _call_litellm(
         api_key = get_runtime_env_value(role_settings.api_key_env)
         if api_key:
             completion_kwargs["api_key"] = api_key
+            if role_settings.api_key_header:
+                completion_kwargs["extra_headers"] = {
+                    str(role_settings.api_key_header): api_key
+                }
 
     # Enforce a hard wall-clock deadline via asyncio.wait_for.  litellm
     # passes ``timeout`` to httpx, but when a shared ``aclient_session`` is

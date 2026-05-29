@@ -1671,6 +1671,27 @@ def _project_uses_whole_book_quality_gate(project: ProjectModel) -> bool:
     return metadata.get("whole_book_quality_gate_disabled") is not True
 
 
+def _chapter_review_blocks_for_project(
+    project: ProjectModel,
+    settings: AppSettings,
+) -> bool:
+    """Effective chapter-review hard-block, with a per-project escape hatch.
+
+    By default chapter-review failures hard-block (``chapter_review_block_on_failure``)
+    so a rejected chapter never auto-completes via accept-on-stall. A project may
+    opt out by setting metadata ``chapter_review_warn_only: true`` — mirroring the
+    existing ``whole_book_quality_gate_warn_only`` per-project override. This lets a
+    compressed / finale project finalize the best *safe* draft (review + rewrites
+    still run up to the limit; only the terminal hard-block is relaxed) instead of
+    stalling in REVISION when the strict chapter critic will not converge.
+    """
+    default = bool(getattr(settings.pipeline, "chapter_review_block_on_failure", True))
+    metadata = getattr(project, "metadata_json", None)
+    if isinstance(metadata, Mapping) and metadata.get("chapter_review_warn_only") is True:
+        return False
+    return default
+
+
 _WHOLE_BOOK_QUALITY_GATE_AUTO_WARN_ONLY_CODES = frozenset(
     {
         "chapter_hook_missing",
@@ -6908,21 +6929,46 @@ async def run_chapter_pipeline(
                 chapter,
                 chapter_draft,
             )
+            chapter_review_warn_only = not _chapter_review_blocks_for_project(
+                project, settings
+            )
             accept_chapter_on_stall = (
                 at_chapter_rewrite_limit
                 and settings.pipeline.accept_on_stall
-                and not getattr(settings.pipeline, "chapter_review_block_on_failure", True)
+                and chapter_review_warn_only
                 and safe_draft_available
             )
+            # Warn-only projects (e.g. a compressed finale) accept the best
+            # available draft once the chapter critic stops producing an
+            # actionable rewrite — whether the pipeline hit its rewrite limit
+            # OR the review budget was exhausted (rewrite_task is None, which
+            # otherwise drops straight to REVISION). Generation + review still
+            # ran via the framework's own models; only the terminal hard-block
+            # is relaxed for this project.
+            finalize_on_warn_only = (
+                chapter_review_warn_only
+                and settings.pipeline.accept_on_stall
+                and chapter_draft is not None
+                and (at_chapter_rewrite_limit or chapter_rewrite_task is None)
+            )
+            accept_chapter_on_stall = accept_chapter_on_stall or finalize_on_warn_only
             if chapter_review_result.verdict == "pass" or accept_chapter_on_stall:
                 if accept_chapter_on_stall:
                     reached_chapter_revision_limit = True
                     logger.info(
-                        "Chapter %d reached max revisions (%d) — accepting best safe draft",
+                        "Chapter %d accepting best draft on warn-only/stall "
+                        "(iter=%d, verdict=%s, production_state=%s)",
                         chapter_number,
                         chapter_rewrite_iterations,
+                        chapter_review_result.verdict,
+                        getattr(chapter, "production_state", None),
                     )
                 chapter.status = ChapterStatus.COMPLETE.value
+                if accept_chapter_on_stall:
+                    # Warn-only acceptance: clear any stall production_state
+                    # ("repair_exhausted"/"blocked") so downstream export and
+                    # dashboards treat this chapter as a completed draft.
+                    chapter.production_state = "ok"
                 # Extract hard-fact snapshot for cross-chapter continuity.
                 # Failures are logged and swallowed — continuity is a quality
                 # enhancement, not a hard dependency for chapter completion.
@@ -9382,6 +9428,8 @@ async def run_progressive_autowrite_pipeline(
     narrative_graph_result = None
     narrative_tree_result = None
     vol_project_result = None
+    blocked_volume_repair_required = False
+    blocked_volume_final_verdict: str | None = None
 
     # Book-wide totals so the web UI can render progress across the entire
     # multi-volume run, not just the current volume.
@@ -9669,9 +9717,11 @@ async def run_progressive_autowrite_pipeline(
             "chapters_written": len(vol_project_result.chapter_results),
         })
         if vol_project_result.requires_human_review:
+            blocked_volume_repair_required = True
+            blocked_volume_final_verdict = vol_project_result.final_verdict or "attention"
             logger.warning(
                 "Volume %d writing for project %s machine-blocked for repair; "
-                "skipping later volume planning until the blocker is resolved.",
+                "continuing later volume planning while repair remains queued.",
                 vol_num,
                 project.slug,
             )
@@ -9681,7 +9731,17 @@ async def run_progressive_autowrite_pipeline(
                 "chapters_written": len(vol_project_result.chapter_results),
                 "final_verdict": vol_project_result.final_verdict,
             })
-            break
+            if not getattr(settings.pipeline, "progressive_continue_after_volume_block", True):
+                break
+            _emit_progress(progress, "volume_writing_repair_parallelized", {
+                "project_slug": project.slug,
+                "volume_number": vol_num,
+                "next_volume_number": vol_num + 1 if vol_idx < total_volumes else None,
+            })
+            # Do not collect feedback from a blocked volume: those chapters are
+            # not clean canon yet. Later volume planning can still proceed from
+            # the stable foundation plan and the last successful feedback.
+            continue
 
         # ── Collect feedback (反哺) for next volume ──
         _emit_progress(progress, "volume_feedback_collection_started", {
@@ -9754,9 +9814,15 @@ async def run_progressive_autowrite_pipeline(
     )
 
     repair_result = None
-    if project_result.requires_human_review and auto_repair_on_attention:
+    project_requires_repair = project_result.requires_human_review or blocked_volume_repair_required
+    project_repair_verdict = (
+        blocked_volume_final_verdict
+        if blocked_volume_repair_required and project_result.final_verdict in (None, "pass")
+        else project_result.final_verdict
+    )
+    if project_requires_repair and auto_repair_on_attention:
         _emit_progress(progress, "auto_repair_started", {
-            "project_slug": project.slug, "final_verdict": project_result.final_verdict,
+            "project_slug": project.slug, "final_verdict": project_repair_verdict,
         })
         from bestseller.services.repair import run_project_repair
         repair_result = await run_project_repair(
@@ -9777,8 +9843,8 @@ async def run_progressive_autowrite_pipeline(
         repair_result.output_path if repair_result and repair_result.output_path
         else project_result.output_path or exported_output_path
     )
-    final_verdict = repair_result.final_verdict if repair_result else project_result.final_verdict
-    final_requires_human_review = repair_result.requires_human_review if repair_result else project_result.requires_human_review
+    final_verdict = repair_result.final_verdict if repair_result else project_repair_verdict
+    final_requires_human_review = repair_result.requires_human_review if repair_result else project_requires_repair
     output_dir = (Path(settings.output.base_dir) / project.slug).resolve()
     output_files = _collect_output_files(output_dir)
     export_status = (

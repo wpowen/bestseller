@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WritingMethodologyLLMSectionJob",
+  "type": "object",
+  "required": [
+    "job_id",
+    "source_id",
+    "section_id",
+    "private_payload_ref",
+    "expected_output_schema",
+    "repo_output_target",
+    "status"
+  ],
+  "properties": {
+    "job_id": { "type": "string" },
+    "source_id": { "type": "string", "pattern": "^source-[0-9]{4,}$" },
+    "section_id": { "type": "string", "pattern": "^sec-[0-9]{4}$" },
+    "source_format": {
+      "type": "string",
+      "enum": ["txt", "md", "markdown", "html", "htm", "xhtml", "epub", "mobi", "azw3"]
+    },
+    "boundary_type": { "type": "string" },
+    "private_payload_ref": { "type": "string" },
+    "expected_output_schema": { "type": "string" },
+    "repo_output_target": { "type": "string" },
+    "status": { "type": "string" }
+  },
+  "additionalProperties": true
+}

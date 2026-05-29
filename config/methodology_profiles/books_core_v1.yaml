@@ -1,0 +1,583 @@
+profile_id: books_core_v1
+title: Writing books core methodology
+source_set_id: writing_methodology_books
+card_deck: data/methodology_sources/books_core/cards.yaml
+default_mode: advisory
+max_prompt_cards: 6
+pending_sources: []
+cards:
+  books_core.source-0001.sec-0002.emotional_experience_core_001:
+    enabled: true
+    gate_mode: warn
+    priority: 10
+    strict_when: []
+  books_core.source-0004.sec-0002.internal_change_focus:
+    enabled: true
+    gate_mode: warn
+    priority: 11
+    strict_when: []
+  books_core.source-0001.sec-0008.villain_motivation_rationalization:
+    enabled: true
+    gate_mode: warn
+    priority: 12
+    strict_when: []
+  books_core.source-0001.sec-0012.char_bible_creation:
+    enabled: true
+    gate_mode: warn
+    priority: 13
+    strict_when: []
+  books_core.source-0001.sec-0014.character_bible_creation:
+    enabled: true
+    gate_mode: warn
+    priority: 14
+    strict_when: []
+  books_core.source-0001.sec-0017.reactive_scene_structure:
+    enabled: true
+    gate_mode: warn
+    priority: 15
+    strict_when: []
+  books_core.source-0002.sec-0029.emotion_priming_primary:
+    enabled: true
+    gate_mode: warn
+    priority: 16
+    strict_when: []
+  books_core.source-0003.sec-0004.char_credibility_check:
+    enabled: true
+    gate_mode: warn
+    priority: 17
+    strict_when: []
+  books_core.source-0003.sec-0018.contradiction_complexity:
+    enabled: true
+    gate_mode: warn
+    priority: 18
+    strict_when: []
+  books_core.source-0004.sec-0002.motivation_driven:
+    enabled: true
+    gate_mode: warn
+    priority: 19
+    strict_when: []
+  books_core.source-0004.sec-0006.candidate_1:
+    enabled: true
+    gate_mode: warn
+    priority: 20
+    strict_when: []
+  books_core.source-0004.sec-0008.character_external_goal:
+    enabled: true
+    gate_mode: warn
+    priority: 21
+    strict_when: []
+  books_core.source-0007.sec-0009.method_002:
+    enabled: true
+    gate_mode: warn
+    priority: 22
+    strict_when: []
+  books_core.source-0006.sec-0013.subtle_theme_embedding:
+    enabled: true
+    gate_mode: advisory
+    priority: 23
+    strict_when: []
+  books_core.source-0001.sec-0015.dialogue_exposition_integration:
+    enabled: true
+    gate_mode: advisory
+    priority: 24
+    strict_when: []
+  books_core.source-0005.sec-0004.simple_dialogue_tags:
+    enabled: true
+    gate_mode: advisory
+    priority: 25
+    strict_when: []
+  books_core.source-0005.sec-0046.dialogue_flow_independence:
+    enabled: true
+    gate_mode: advisory
+    priority: 26
+    strict_when: []
+  books_core.source-0002.sec-0026.dialogue_based_thought_conveyance:
+    enabled: true
+    gate_mode: advisory
+    priority: 27
+    strict_when: []
+  books_core.source-0004.sec-0009.subjective_detail_craft:
+    enabled: true
+    gate_mode: advisory
+    priority: 28
+    strict_when: []
+  books_core.source-0004.sec-0024.candidate_005:
+    enabled: true
+    gate_mode: advisory
+    priority: 29
+    strict_when: []
+  books_core.source-0005.sec-0045.sec0045_c2:
+    enabled: true
+    gate_mode: advisory
+    priority: 30
+    strict_when: []
+  books_core.source-0005.sec-0046.clarity_multi_speaker:
+    enabled: true
+    gate_mode: advisory
+    priority: 31
+    strict_when: []
+  books_core.source-0005.sec-0046.said_default_tag:
+    enabled: true
+    gate_mode: advisory
+    priority: 32
+    strict_when: []
+  books_core.source-0001.sec-0011.conflict_backstory_revelation:
+    enabled: true
+    gate_mode: advisory
+    priority: 33
+    strict_when: []
+  books_core.source-0001.sec-0019.one_sentence_summary:
+    enabled: true
+    gate_mode: warn
+    priority: 34
+    strict_when: []
+  books_core.source-0002.sec-0037.opening_foreshadowing_setup:
+    enabled: true
+    gate_mode: warn
+    priority: 35
+    strict_when: []
+  books_core.source-0005.sec-0033.start_from_middle:
+    enabled: true
+    gate_mode: warn
+    priority: 36
+    strict_when: []
+  books_core.source-0006.sec-0015.prologue_eval_001:
+    enabled: true
+    gate_mode: warn
+    priority: 37
+    strict_when: []
+  books_core.source-0004.sec-0014.decisive_tick_opening_identification:
+    enabled: true
+    gate_mode: warn
+    priority: 38
+    strict_when: []
+  books_core.source-0004.sec-0012.candidate_003:
+    enabled: true
+    gate_mode: advisory
+    priority: 39
+    strict_when: []
+  books_core.source-0004.sec-0016.opening_detail_backstory:
+    enabled: true
+    gate_mode: advisory
+    priority: 40
+    strict_when: []
+  books_core.source-0005.sec-0003.sec003_c1:
+    enabled: true
+    gate_mode: advisory
+    priority: 41
+    strict_when: []
+  books_core.source-0005.sec-0039.immediate_danger_hook:
+    enabled: true
+    gate_mode: advisory
+    priority: 42
+    strict_when: []
+  books_core.source-0002.sec-0032.topic_sentence_mood_setting:
+    enabled: true
+    gate_mode: advisory
+    priority: 43
+    strict_when: []
+  books_core.source-0002.sec-0035.method_002:
+    enabled: true
+    gate_mode: advisory
+    priority: 44
+    strict_when: []
+  books_core.source-0002.sec-0035.method_004:
+    enabled: true
+    gate_mode: advisory
+    priority: 45
+    strict_when: []
+  books_core.source-0003.sec-0007.pov_consistency:
+    enabled: true
+    gate_mode: warn
+    priority: 46
+    strict_when: []
+  books_core.source-0002.sec-0026.single_pov_unity:
+    enabled: true
+    gate_mode: warn
+    priority: 47
+    strict_when: []
+  books_core.source-0003.sec-0024.distance_control_via_pov:
+    enabled: true
+    gate_mode: warn
+    priority: 48
+    strict_when: []
+  books_core.source-0004.sec-0009.pov_worldview_filter:
+    enabled: true
+    gate_mode: warn
+    priority: 49
+    strict_when: []
+  books_core.source-0004.sec-0010.internal_thought_integration:
+    enabled: true
+    gate_mode: warn
+    priority: 50
+    strict_when: []
+  books_core.source-0004.sec-0024.candidate_003:
+    enabled: true
+    gate_mode: warn
+    priority: 51
+    strict_when: []
+  books_core.source-0004.sec-0025.char_pov_immersion:
+    enabled: true
+    gate_mode: warn
+    priority: 52
+    strict_when: []
+  books_core.source-0005.sec-0009.pov_decision_matrix:
+    enabled: true
+    gate_mode: warn
+    priority: 53
+    strict_when: []
+  books_core.source-0005.sec-0040.pov_name_distance:
+    enabled: true
+    gate_mode: warn
+    priority: 54
+    strict_when: []
+  books_core.source-0003.sec-0024.audience_alignment_in_narration:
+    enabled: true
+    gate_mode: warn
+    priority: 55
+    strict_when: []
+  books_core.source-0005.sec-0032.tone_setting_opening:
+    enabled: true
+    gate_mode: warn
+    priority: 56
+    strict_when: []
+  books_core.source-0005.sec-0057.honest_writing:
+    enabled: true
+    gate_mode: warn
+    priority: 57
+    strict_when: []
+  books_core.source-0001.sec-0003.cand_001:
+    enabled: true
+    gate_mode: warn
+    priority: 58
+    strict_when: []
+  books_core.source-0001.sec-0004.one_sentence_summary:
+    enabled: true
+    gate_mode: warn
+    priority: 59
+    strict_when: []
+  books_core.source-0001.sec-0007.para_to_outline_expansion:
+    enabled: true
+    gate_mode: warn
+    priority: 60
+    strict_when: []
+  books_core.source-0001.sec-0011.expand_synopsis_full_outline:
+    enabled: true
+    gate_mode: warn
+    priority: 61
+    strict_when: []
+  books_core.source-0001.sec-0018.trans_plan_to_draft:
+    enabled: true
+    gate_mode: warn
+    priority: 62
+    strict_when: []
+  books_core.source-0001.sec-0019.three_act_outline:
+    enabled: true
+    gate_mode: warn
+    priority: 63
+    strict_when: []
+  books_core.source-0002.sec-0024.decision_story_structure:
+    enabled: true
+    gate_mode: warn
+    priority: 64
+    strict_when: []
+  books_core.source-0002.sec-0030.stim_char_react_categ:
+    enabled: true
+    gate_mode: warn
+    priority: 65
+    strict_when: []
+  books_core.source-0002.sec-0035.method_001:
+    enabled: true
+    gate_mode: warn
+    priority: 66
+    strict_when: []
+  books_core.source-0003.sec-0022.conflict_crisis_resolution:
+    enabled: true
+    gate_mode: warn
+    priority: 67
+    strict_when: []
+  books_core.source-0004.sec-0013.method_01:
+    enabled: true
+    gate_mode: warn
+    priority: 68
+    strict_when: []
+  books_core.source-0004.sec-0014.plot_problem_two_test_validation:
+    enabled: true
+    gate_mode: warn
+    priority: 69
+    strict_when: []
+  books_core.source-0005.sec-0021.sec0021_method02:
+    enabled: true
+    gate_mode: warn
+    priority: 70
+    strict_when: []
+  books_core.source-0006.sec-0019.resolution_structure:
+    enabled: true
+    gate_mode: warn
+    priority: 71
+    strict_when: []
+  books_core.source-0005.sec-0015.systematic_submission_tracking:
+    enabled: true
+    gate_mode: warn
+    priority: 72
+    strict_when: []
+  books_core.source-0004.sec-0025.logical_progression_questions:
+    enabled: true
+    gate_mode: advisory
+    priority: 73
+    strict_when: []
+  books_core.source-0005.sec-0025.pause_on_fatigue:
+    enabled: true
+    gate_mode: advisory
+    priority: 74
+    strict_when: []
+  books_core.source-0001.sec-0010.cand_004:
+    enabled: true
+    gate_mode: advisory
+    priority: 75
+    strict_when: []
+  books_core.source-0005.sec-0010.incremental_daily_output:
+    enabled: true
+    gate_mode: advisory
+    priority: 76
+    strict_when: []
+  books_core.source-0005.sec-0011.daily_incremental_writing:
+    enabled: true
+    gate_mode: advisory
+    priority: 77
+    strict_when: []
+  books_core.source-0005.sec-0017.accountability_collaboration:
+    enabled: true
+    gate_mode: advisory
+    priority: 78
+    strict_when: []
+  books_core.source-0005.sec-0021.sec0021_method01:
+    enabled: true
+    gate_mode: advisory
+    priority: 79
+    strict_when: []
+  books_core.source-0005.sec-0025.dynamic_quota_adjustment:
+    enabled: true
+    gate_mode: advisory
+    priority: 80
+    strict_when: []
+  books_core.source-0001.sec-0008.snowflake_alternating_deepening:
+    enabled: true
+    gate_mode: advisory
+    priority: 81
+    strict_when: []
+  books_core.source-0003.sec-0024.pov_consistency_enforcement:
+    enabled: true
+    gate_mode: warn
+    priority: 82
+    strict_when: []
+  books_core.source-0003.sec-0029.rev_04:
+    enabled: true
+    gate_mode: warn
+    priority: 83
+    strict_when: []
+  books_core.source-0005.sec-0047.targeted_verb_revision:
+    enabled: true
+    gate_mode: warn
+    priority: 84
+    strict_when: []
+  books_core.source-0005.sec-0050.factual_accuracy_caution:
+    enabled: true
+    gate_mode: warn
+    priority: 85
+    strict_when: []
+  books_core.source-0005.sec-0054.consistency_tracking_series:
+    enabled: true
+    gate_mode: warn
+    priority: 86
+    strict_when: []
+  books_core.source-0007.sec-0013.systematic_novel_revision:
+    enabled: true
+    gate_mode: warn
+    priority: 87
+    strict_when: []
+  books_core.source-0001.sec-0012.consistency_maintenance:
+    enabled: true
+    gate_mode: warn
+    priority: 88
+    strict_when: []
+  books_core.source-0004.sec-0023.cand_003:
+    enabled: true
+    gate_mode: warn
+    priority: 89
+    strict_when: []
+  books_core.source-0006.sec-0002.cand_sec0002_03:
+    enabled: true
+    gate_mode: warn
+    priority: 90
+    strict_when: []
+  books_core.source-0005.sec-0039.rationalization_of_events:
+    enabled: true
+    gate_mode: warn
+    priority: 91
+    strict_when: []
+  books_core.source-0005.sec-0007.genre_readability_gate:
+    enabled: true
+    gate_mode: advisory
+    priority: 92
+    strict_when: []
+  books_core.source-0001.sec-0004.adaptive_method_selection:
+    enabled: true
+    gate_mode: advisory
+    priority: 93
+    strict_when: []
+  books_core.source-0002.sec-0024.five_step_scene_framework:
+    enabled: true
+    gate_mode: warn
+    priority: 94
+    strict_when: []
+  books_core.source-0004.sec-0016.internal_epiphany_ending:
+    enabled: true
+    gate_mode: warn
+    priority: 95
+    strict_when: []
+  books_core.source-0001.sec-0014.scene_list_planning:
+    enabled: true
+    gate_mode: warn
+    priority: 96
+    strict_when: []
+  books_core.source-0001.sec-0017.active_scene_structure:
+    enabled: true
+    gate_mode: warn
+    priority: 97
+    strict_when: []
+  books_core.source-0001.sec-0019.scene_listing:
+    enabled: true
+    gate_mode: warn
+    priority: 98
+    strict_when: []
+  books_core.source-0001.sec-0020.goal_conflict_setback_scene:
+    enabled: true
+    gate_mode: warn
+    priority: 99
+    strict_when: []
+  books_core.source-0002.sec-0022.scene_as_mini_story:
+    enabled: true
+    gate_mode: warn
+    priority: 100
+    strict_when: []
+  books_core.source-0002.sec-0035.method_003:
+    enabled: true
+    gate_mode: warn
+    priority: 101
+    strict_when: []
+  books_core.source-0002.sec-0040.scene_crisis_pattern:
+    enabled: true
+    gate_mode: warn
+    priority: 102
+    strict_when: []
+  books_core.source-0001.sec-0003.cand_004:
+    enabled: true
+    gate_mode: warn
+    priority: 103
+    strict_when: []
+  books_core.source-0001.sec-0015.urgency_driven_pacing:
+    enabled: true
+    gate_mode: warn
+    priority: 104
+    strict_when: []
+  books_core.source-0001.sec-0019.scene_typing:
+    enabled: true
+    gate_mode: warn
+    priority: 105
+    strict_when: []
+  books_core.source-0002.sec-0029.realism_detail_layering:
+    enabled: true
+    gate_mode: warn
+    priority: 106
+    strict_when: []
+  books_core.source-0006.sec-0014.ticking_time_bomb_setup:
+    enabled: true
+    gate_mode: warn
+    priority: 107
+    strict_when: []
+  books_core.source-0005.sec-0035.embed_time_naturally:
+    enabled: true
+    gate_mode: warn
+    priority: 108
+    strict_when: []
+  books_core.source-0005.sec-0043.surprise_withhold_info:
+    enabled: true
+    gate_mode: warn
+    priority: 109
+    strict_when: []
+  books_core.source-0004.sec-0016.foreshadow_subtle:
+    enabled: true
+    gate_mode: warn
+    priority: 110
+    strict_when: []
+  books_core.source-0002.sec-0022.dramatic_foreshadowing:
+    enabled: true
+    gate_mode: advisory
+    priority: 111
+    strict_when: []
+  books_core.source-0005.sec-0036.strategic_delay_fp:
+    enabled: true
+    gate_mode: advisory
+    priority: 112
+    strict_when: []
+  books_core.source-0001.sec-0009.method_002:
+    enabled: true
+    gate_mode: warn
+    priority: 113
+    strict_when: []
+  books_core.source-0004.sec-0008.character_false_belief:
+    enabled: true
+    gate_mode: warn
+    priority: 114
+    strict_when: []
+  books_core.source-0007.sec-0010.hist_thematic_conflict:
+    enabled: true
+    gate_mode: warn
+    priority: 115
+    strict_when: []
+  books_core.source-0004.sec-0008.protagonist_worldview_design:
+    enabled: true
+    gate_mode: warn
+    priority: 116
+    strict_when: []
+  books_core.source-0007.sec-0010.sf_logical_consis:
+    enabled: true
+    gate_mode: warn
+    priority: 117
+    strict_when: []
+  books_core.source-0004.sec-0007.why_question_tool_for_motivation:
+    enabled: true
+    gate_mode: advisory
+    priority: 118
+    strict_when: []
+  books_core.source-0002.sec-0030.observ_record_prac:
+    enabled: true
+    gate_mode: advisory
+    priority: 119
+    strict_when: []
+  books_core.source-0004.sec-0005.establish_core_theme:
+    enabled: true
+    gate_mode: advisory
+    priority: 120
+    strict_when: []
+  books_core.source-0004.sec-0006.candidate_3:
+    enabled: true
+    gate_mode: advisory
+    priority: 121
+    strict_when: []
+  books_core.source-0004.sec-0007.desire_fear_conflict_definition:
+    enabled: true
+    gate_mode: advisory
+    priority: 122
+    strict_when: []
+  books_core.source-0004.sec-0009.origin_scene_def:
+    enabled: true
+    gate_mode: advisory
+    priority: 123
+    strict_when: []
+  books_core.source-0007.sec-0010.hist_fic_prep:
+    enabled: true
+    gate_mode: advisory
+    priority: 124
+    strict_when: []

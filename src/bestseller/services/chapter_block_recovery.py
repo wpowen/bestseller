@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import (
+    ChapterAuditFindingModel,
     ChapterModel,
     ChapterQualityReportModel,
     ProjectModel,
@@ -21,7 +22,6 @@ from bestseller.services.chapter_outline_readiness_gate import (
     evaluate_chapter_outline_readiness,
 )
 from bestseller.services.gate_registry import registered_block_metadata_keys
-
 
 _OUTLINE_KEYS = (
     "blocked_by_chapter_outline_readiness_gate",
@@ -66,6 +66,17 @@ _OK_REPAIR_RESIDUE_KEYS = (
     *_RETENTION_KEYS,
     "autonomous_quality_retrofit_attempts_active",
     "autonomous_quality_retrofit_exhausted",
+)
+_STALE_BLOCK_RESIDUE_KEYS = tuple(
+    dict.fromkeys(
+        (
+            *_QUALITY_BLOCK_KEYS,
+            *_RETENTION_KEYS,
+            *_OUTLINE_KEYS,
+            "autonomous_quality_retrofit_attempts_active",
+            "autonomous_quality_retrofit_exhausted",
+        )
+    )
 )
 
 
@@ -127,6 +138,20 @@ def _ok_repair_residue_keys(chapter: ChapterModel) -> tuple[str, ...]:
     return tuple(key for key in _OK_REPAIR_RESIDUE_KEYS if key in metadata)
 
 
+def _stale_block_residue_keys(chapter: ChapterModel) -> tuple[str, ...]:
+    if str(getattr(chapter, "production_state", "") or "").lower() != "blocked":
+        return ()
+    metadata = _metadata(chapter)
+    return tuple(
+        dict.fromkeys(
+            (
+                *(key for key in _STALE_BLOCK_RESIDUE_KEYS if key in metadata),
+                *_remaining_registered_block_keys(metadata),
+            )
+        )
+    )
+
+
 def _release_if_unblocked(chapter: ChapterModel, metadata: dict[str, Any]) -> str:
     if not _remaining_registered_block_keys(metadata):
         chapter.production_state = "ok"
@@ -163,6 +188,77 @@ async def _clear_scene_auto_repair_residue(
             scene.metadata_json = metadata
             cleared += 1
     return cleared
+
+
+async def _pending_rewrite_tasks(
+    session: AsyncSession,
+    chapter: ChapterModel,
+) -> tuple[RewriteTaskModel, ...]:
+    return tuple(
+        (
+            await session.scalars(
+                select(RewriteTaskModel).where(
+                    RewriteTaskModel.project_id == chapter.project_id,
+                    RewriteTaskModel.status.in_(["pending", "queued"]),
+                    or_(
+                        RewriteTaskModel.trigger_source_id == chapter.id,
+                        RewriteTaskModel.metadata_json["chapter_id"].astext == str(chapter.id),
+                        RewriteTaskModel.metadata_json["chapter_number"].astext
+                        == str(chapter.chapter_number),
+                    ),
+                )
+            )
+        )
+        .unique()
+        .all()
+    )
+
+
+async def _pending_rewrite_task_count(
+    session: AsyncSession,
+    chapter: ChapterModel,
+) -> int:
+    return len(await _pending_rewrite_tasks(session, chapter))
+
+
+def _supersede_pending_rewrite_tasks(
+    tasks: tuple[RewriteTaskModel, ...],
+    *,
+    chapter: ChapterModel,
+) -> int:
+    count = 0
+    for task in tasks:
+        metadata = dict(getattr(task, "metadata_json", None) or {})
+        metadata["superseded_reason"] = "current_chapter_quality_clean"
+        metadata["superseded_by_chapter_number"] = int(chapter.chapter_number)
+        task.metadata_json = metadata
+        task.status = "superseded"
+        count += 1
+    return count
+
+
+async def _latest_critical_audit_chapters(
+    session: AsyncSession,
+    project: ProjectModel,
+) -> frozenset[int]:
+    latest_at = await session.scalar(
+        select(func.max(ChapterAuditFindingModel.created_at)).where(
+            ChapterAuditFindingModel.project_id == project.id
+        )
+    )
+    if latest_at is None:
+        return frozenset()
+    rows = await session.execute(
+        select(ChapterAuditFindingModel.chapter_no)
+        .where(
+            ChapterAuditFindingModel.project_id == project.id,
+            ChapterAuditFindingModel.created_at == latest_at,
+            ChapterAuditFindingModel.chapter_no.is_not(None),
+            ChapterAuditFindingModel.severity == "critical",
+        )
+        .distinct()
+    )
+    return frozenset(int(row[0]) for row in rows if row[0] is not None)
 
 
 def _audit_writer(
@@ -265,6 +361,96 @@ async def clear_ok_chapter_repair_residue(
         actions_taken=tuple(actions),
         new_state=str(chapter.production_state),
         reason="production_state_ok",
+    )
+
+
+async def attempt_release_stale_production_block(
+    session: AsyncSession,
+    chapter: ChapterModel,
+    *,
+    latest_critical_audit_chapters: frozenset[int] = frozenset(),
+    dry_run: bool = False,
+) -> BlockRecoveryReport:
+    if str(getattr(chapter, "production_state", "") or "").lower() != "blocked":
+        return BlockRecoveryReport(
+            chapter_number=int(chapter.chapter_number),
+            block_kind="stale_production_block",
+            recoverable=False,
+            actions_taken=(),
+            new_state=str(chapter.production_state),
+            reason="not_production_blocked",
+        )
+
+    chapter_number = int(chapter.chapter_number)
+    if chapter_number in latest_critical_audit_chapters:
+        return BlockRecoveryReport(
+            chapter_number=chapter_number,
+            block_kind="stale_production_block",
+            recoverable=False,
+            actions_taken=(),
+            new_state=str(chapter.production_state),
+            reason="latest_audit_still_blocking",
+        )
+
+    latest = await _latest_quality_report(session, chapter)
+    pending_rewrite_tasks = await _pending_rewrite_tasks(session, chapter)
+    if pending_rewrite_tasks and not _latest_quality_report_is_clean(latest):
+        return BlockRecoveryReport(
+            chapter_number=chapter_number,
+            block_kind="stale_production_block",
+            recoverable=False,
+            actions_taken=(),
+            new_state=str(chapter.production_state),
+            reason="pending_rewrite_task",
+        )
+
+    residue_keys = _stale_block_residue_keys(chapter)
+    if latest is not None and not _latest_quality_report_is_clean(latest):
+        return BlockRecoveryReport(
+            chapter_number=chapter_number,
+            block_kind="stale_production_block",
+            recoverable=False,
+            actions_taken=(),
+            new_state=str(chapter.production_state),
+            reason="latest_quality_still_blocking",
+            issue_codes_now=_blocking_codes(latest),
+        )
+    if latest is None and residue_keys:
+        return BlockRecoveryReport(
+            chapter_number=chapter_number,
+            block_kind="stale_production_block",
+            recoverable=False,
+            actions_taken=(),
+            new_state=str(chapter.production_state),
+            reason="block_metadata_without_clean_quality_report",
+            issue_codes_now=residue_keys,
+        )
+
+    reason = "latest_quality_clean" if latest is not None else "no_active_block_signal"
+    actions = ["set:production_state=ok"]
+    actions.extend(f"removed:{key}" for key in residue_keys)
+    if pending_rewrite_tasks:
+        actions.append(f"superseded_pending_rewrite_tasks:{len(pending_rewrite_tasks)}")
+    if not dry_run:
+        metadata = _metadata(chapter)
+        _pop_keys(metadata, residue_keys)
+        metadata["stale_production_block_released_by_closure_loop"] = True
+        if pending_rewrite_tasks:
+            metadata["stale_rewrite_tasks_superseded_by_closure_loop"] = len(
+                pending_rewrite_tasks
+            )
+        chapter.metadata_json = metadata
+        chapter.production_state = "ok"
+        _supersede_pending_rewrite_tasks(pending_rewrite_tasks, chapter=chapter)
+        await _clear_scene_auto_repair_residue(session, chapter)
+        await session.flush()
+    return BlockRecoveryReport(
+        chapter_number=chapter_number,
+        block_kind="stale_production_block",
+        recoverable=True,
+        actions_taken=tuple(actions),
+        new_state="ok" if not dry_run else str(chapter.production_state),
+        reason=reason,
     )
 
 
@@ -436,6 +622,10 @@ async def sweep_recoverable_blocks(
     dry_run: bool = False,
 ) -> tuple[BlockRecoveryReport, ...]:
     writer = _audit_writer(package_dir)
+    latest_critical_audit_chapters = await _latest_critical_audit_chapters(
+        session,
+        project,
+    )
     chapters = list(
         await session.scalars(
             select(ChapterModel)
@@ -445,7 +635,6 @@ async def sweep_recoverable_blocks(
     )
     reports: list[BlockRecoveryReport] = []
     for chapter in chapters:
-        metadata = _metadata(chapter)
         residue_report = await clear_ok_chapter_repair_residue(
             session,
             chapter,
@@ -455,6 +644,20 @@ async def sweep_recoverable_blocks(
             reports.append(residue_report)
             if writer is not None:
                 writer(residue_report)
+        stale_block_report = await attempt_release_stale_production_block(
+            session,
+            chapter,
+            latest_critical_audit_chapters=latest_critical_audit_chapters,
+            dry_run=dry_run,
+        )
+        if stale_block_report.recoverable:
+            reports.append(stale_block_report)
+            if writer is not None:
+                writer(stale_block_report)
+            continue
+        if writer is not None and stale_block_report.issue_codes_now:
+            writer(stale_block_report)
+        metadata = _metadata(chapter)
         if not _has_recovery_marker(metadata):
             continue
         for recover in (

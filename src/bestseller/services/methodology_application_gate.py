@@ -13,6 +13,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from bestseller.services.methodology_book_selector import (
+    BookMethodologySelectionContext,
+    select_book_methodology_cards,
+)
 
 _BLOCKING_SEVERITIES = {"critical", "major"}
 
@@ -361,16 +365,60 @@ def build_methodology_application_contract(
             ),
         )
 
+    book_methodology_card_ids: list[str] = []
+    try:
+        book_selection = select_book_methodology_cards(
+            BookMethodologySelectionContext(
+                stage="outline_chapter",
+                scope="chapter",
+                chapter_no=chapter_number,
+                max_cards=3,
+                token_budget=500,
+            )
+        )
+        scene_selection = select_book_methodology_cards(
+            BookMethodologySelectionContext(
+                stage="prose_scene",
+                scope="scene",
+                chapter_no=chapter_number,
+                max_cards=3,
+                token_budget=500,
+            )
+        )
+    except Exception:
+        book_selection = None
+        scene_selection = None
+
+    if book_selection is not None:
+        for selected in book_selection.cards:
+            applications.append(selected.to_application(node_path="chapter.methodology_contract"))
+            book_methodology_card_ids.append(selected.card_id)
+    if scene_selection is not None:
+        for selected in scene_selection.cards:
+            applications.append(selected.to_application(node_path="scenes[*].methodology_contract"))
+            book_methodology_card_ids.append(selected.card_id)
+
+    profile_ids = [
+        "plova_structured_writing_v1",
+        "platform_character_debt_v1",
+    ] if front_ten else ["plova_structured_writing_v1"]
+    if book_methodology_card_ids:
+        profile_ids.append("books_core_v1")
+
     return {
         "schema_version": "methodology-application-contract.v1",
         "chapter_number": chapter_number,
         "chapter_title": chapter_title,
-        "profile_ids": [
-            "plova_structured_writing_v1",
-            "platform_character_debt_v1",
-        ]
-        if front_ten
-        else ["plova_structured_writing_v1"],
+        "profile_ids": profile_ids,
+        "book_methodology_lineage": {
+            "card_ids": list(dict.fromkeys(book_methodology_card_ids)),
+            "priority_order": [
+                "platform_required",
+                "writing_methodology.yaml",
+                "book_core_deck",
+                "book_advisory",
+            ],
+        },
         "applications": applications,
         "measurement_summary": {
             "outline": [
@@ -635,7 +683,10 @@ def _append_scene_repetition_findings(
                 code="METHODOLOGY_RELATIONSHIP_DEBT_PLACEHOLDER",
                 severity="critical",
                 message="场景人物债仍是占位模板，方法论没有落到具体关系变化。",
-                repair_hint="把 relationship_debts 改成具体债务：谁欠谁、因为什么、下一场如何回响。",
+                repair_hint=(
+                    "把 relationship_debts 改成具体债务：谁欠谁、因为什么、"
+                    "下一场如何回响。"
+                ),
                 path="scene_cards[*].metadata.methodology_contract.relationship_debts",
             )
         )

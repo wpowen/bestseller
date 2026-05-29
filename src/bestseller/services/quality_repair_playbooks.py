@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
+
+from bestseller.services.methodology_book_selector import render_book_methodology_block
 
 
 @dataclass(frozen=True)
@@ -137,9 +139,14 @@ def get_quality_repair_playbook(code: str) -> QualityRepairPlaybook | None:
     return _PLAYBOOKS.get(str(code or "").strip())
 
 
-def render_quality_repair_playbooks(codes: Iterable[str]) -> str:
+def render_quality_repair_playbooks(
+    codes: Iterable[str],
+    *,
+    include_book_methodology: bool = True,
+) -> str:
     rendered: list[str] = []
     seen: set[str] = set()
+    scopes: set[str] = set()
     for raw_code in codes:
         code = str(raw_code or "").strip()
         if not code or code in seen:
@@ -147,8 +154,27 @@ def render_quality_repair_playbooks(codes: Iterable[str]) -> str:
         seen.add(code)
         playbook = get_quality_repair_playbook(code)
         if playbook is not None:
+            scopes.add(playbook.scope)
             rendered.append(playbook.render())
+    if include_book_methodology and rendered:
+        methodology_block = _render_book_methodology_repair_block(scopes)
+        if methodology_block:
+            rendered.append(methodology_block)
     return "\n".join(rendered)
+
+
+def _render_book_methodology_repair_block(scopes: set[str]) -> str:
+    scope = "scene" if scopes and scopes.issubset({"paragraph", "ending"}) else "chapter"
+    try:
+        return render_book_methodology_block(
+            stage="repair",
+            scope=scope,
+            language="zh-CN",
+            max_cards=3,
+            token_budget=600,
+        )
+    except Exception:
+        return ""
 
 
 __all__ = [

@@ -64,6 +64,7 @@ from bestseller.services.entry_system_kernel import (
     entry_system_kernel_to_dict,
     render_entry_system_kernel_prompt_block,
 )
+from bestseller.services.hook_ledger_runtime import render_hook_ledger_planner_contract
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology_compiler import MethodologyStage
 from bestseller.services.planner_prompt_helpers import attach_planner_methodology
@@ -10726,6 +10727,8 @@ def _outline_prompts(
     _entry_registry_block = _entry_registry_prompt_block(project)
     _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
     _distilled_outline_block = _distilled_design_reference_block(project, "chapter_outline")
+    _hook_ledger_v2_block = render_hook_ledger_planner_contract(language=language)
+    _hook_ledger_v2_line = f"\n{_hook_ledger_v2_block}\n" if _hook_ledger_v2_block else ""
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -10745,6 +10748,7 @@ def _outline_prompts(
             f"{_character_drama_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_hook_ledger_v2_line}"
             "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. Each chapter needs at least 3 scenes. "
             "The first 3 chapters must rapidly establish the protagonist edge, the core anomaly, the first gain/loss cycle, and a strong read-on hook. "
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
@@ -10803,6 +10807,7 @@ def _outline_prompts(
             f"{_character_drama_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_hook_ledger_v2_line}"
             "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
             "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子；"
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
@@ -11086,6 +11091,8 @@ def _volume_outline_prompts(
     _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
     _distilled_outline_block = _distilled_design_reference_block(project, "chapter_outline")
     _ledger_line = f"{revealed_ledger_block}\n\n" if revealed_ledger_block else ""
+    _hook_ledger_v2_block = render_hook_ledger_planner_contract(language=language)
+    _hook_ledger_v2_line = f"\n{_hook_ledger_v2_block}\n" if _hook_ledger_v2_block else ""
     _prior_vols_block = render_prior_volumes_summary_block(
         volume_plan,
         current_volume_number=volume_number,
@@ -11124,6 +11131,7 @@ def _volume_outline_prompts(
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_hook_ledger_v2_line}"
             f"Generate a ChapterOutlineBatch JSON for volume {volume_number} ONLY ({chapter_count} chapters). "
             f"The chapters array must contain exactly {chapter_count} objects, one per chapter, with no summaries or grouped chapters. "
             f"{chapter_bounds_line_en}"
@@ -11187,6 +11195,7 @@ def _volume_outline_prompts(
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_hook_ledger_v2_line}"
             f"请仅生成第{volume_number}卷的 ChapterOutlineBatch JSON（共{chapter_count}章），"
             f"chapters 数组必须恰好包含 {chapter_count} 个章节对象，一章一个对象，不能概括、合并或分组，"
             f"{chapter_bounds_line_zh}"

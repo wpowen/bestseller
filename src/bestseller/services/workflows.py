@@ -14,13 +14,13 @@ from bestseller.domain.narrative_tree import NarrativeTreeMaterializationResult
 from bestseller.domain.project import ChapterCreate, SceneCardCreate, VolumeCreate
 from bestseller.domain.story_bible import StoryBibleMaterializationResult
 from bestseller.domain.workflow import (
-    ChapterOutlineInput,
     ChapterOutlineBatchInput,
+    ChapterOutlineInput,
     WorkflowMaterializationResult,
 )
 from bestseller.infra.db.models import (
-    CharacterModel,
     ChapterModel,
+    CharacterModel,
     PlanningArtifactVersionModel,
     ProjectModel,
     SceneCardModel,
@@ -37,10 +37,22 @@ from bestseller.services.chapter_causality_gate import (
     evaluate_chapter_causality_contract,
     is_methodology_causality_finding,
 )
+from bestseller.services.ensemble_arc_progress_gate import (
+    EnsembleArcReport,
+    scan_ensemble_arc_progress,
+)
+from bestseller.services.hook_ledger import is_methodology_v2_enabled
 from bestseller.services.invariants import invariants_from_dict
-from bestseller.services.projects import create_chapter, create_or_get_volume, create_scene_card, get_project_by_slug
+from bestseller.services.methodology_lineage import attach_methodology_lineage
+from bestseller.services.methodology_overlay import (
+    methodology_contract_blocks,
+    methodology_contract_requires_checks,
+    normalize_chapter_overlay,
+    normalize_scene_overlay,
+    resolve_methodology_contract_mode,
+)
+from bestseller.services.methodology_selection_engine import select_lineage_for_chapter_outline
 from bestseller.services.narrative import rebuild_narrative_graph
-from bestseller.services.narrative_tree import rebuild_narrative_tree
 from bestseller.services.narrative_contracts import (
     _extract_purpose_character_names,
     _identity_index_from_manifest,
@@ -51,15 +63,15 @@ from bestseller.services.narrative_contracts import (
     validate_chapter_plan_contract,
     validate_foundation_identity_contract,
 )
-from bestseller.services.methodology_overlay import (
-    methodology_contract_blocks,
-    methodology_contract_requires_checks,
-    normalize_chapter_overlay,
-    normalize_scene_overlay,
-    resolve_methodology_contract_mode,
-)
+from bestseller.services.narrative_tree import rebuild_narrative_tree
 from bestseller.services.planning_readiness_gate import (
     evaluate_chapter_outline_batch_planning_readiness,
+)
+from bestseller.services.projects import (
+    create_chapter,
+    create_or_get_volume,
+    create_scene_card,
+    get_project_by_slug,
 )
 from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.retrieval import refresh_story_bible_retrieval_index
@@ -76,7 +88,6 @@ from bestseller.services.word_targets import (
 )
 from bestseller.services.world_expansion import refresh_world_expansion_boundaries
 from bestseller.settings import load_settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -1205,6 +1216,79 @@ def _sync_chapter_causality_metadata(
     setattr(chapter, "metadata_json", metadata)
 
 
+def _sync_chapter_methodology_lineage(
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_outline: ChapterOutlineInput,
+) -> bool:
+    lineage = select_lineage_for_chapter_outline(
+        project=project,
+        chapter_outline=chapter_outline,
+        weak_indicators=_project_methodology_weak_indicators(project),
+    )
+    if lineage is None:
+        return False
+    chapter.metadata_json = attach_methodology_lineage(
+        getattr(chapter, "metadata_json", None),
+        lineage,
+    )
+    return True
+
+
+def _project_methodology_weak_indicators(project: ProjectModel) -> dict[str, float]:
+    metadata = getattr(project, "metadata_json", None)
+    if not isinstance(metadata, dict):
+        return {}
+    raw = metadata.get("methodology_weak_indicators") or metadata.get("weak_indicators")
+    if not isinstance(raw, dict):
+        return {}
+    indicators: dict[str, float] = {}
+    for key, value in raw.items():
+        try:
+            indicators[str(key)] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return indicators
+
+
+def _run_ensemble_arc_progress_gate(project: ProjectModel) -> EnsembleArcReport | None:
+    if not is_methodology_v2_enabled():
+        return None
+    metadata = getattr(project, "metadata_json", None)
+    if not isinstance(metadata, dict):
+        return None
+    raw_kernel = (
+        metadata.get("ensemble_arc_kernel")
+        or metadata.get("ensemble_arc")
+        or metadata.get("ensemble_arcs")
+    )
+    if isinstance(raw_kernel, list):
+        raw_kernel = {"arcs": raw_kernel}
+    if not isinstance(raw_kernel, dict) or not raw_kernel:
+        return None
+    return scan_ensemble_arc_progress(
+        raw_kernel,
+        total_chapters=int(getattr(project, "target_chapters", 0) or 0),
+        category=getattr(project, "sub_genre", None) or getattr(project, "genre", None),
+    )
+
+
+def _ensemble_arc_report_to_dict(report: EnsembleArcReport) -> dict[str, Any]:
+    return {
+        "findings": [
+            {
+                "code": finding.code,
+                "severity": finding.severity,
+                "message": finding.message,
+                "payload": finding.payload,
+            }
+            for finding in report.findings
+        ],
+        "is_critical": report.is_critical,
+    }
+
+
 def _sync_existing_scene_from_outline(scene: SceneCardModel, scene_outline: Any) -> bool:
     if scene.status not in _MATERIALIZATION_MUTABLE_SCENE_STATUSES:
         return False
@@ -1641,6 +1725,23 @@ async def materialize_chapter_outline_batch(
                     f"{len(_blocking_findings)} blocking finding(s)."
                 )
 
+        _ensemble_arc_report = _run_ensemble_arc_progress_gate(project)
+        if _ensemble_arc_report is not None:
+            _ensemble_payload = _ensemble_arc_report_to_dict(_ensemble_arc_report)
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "ensemble_arc_progress_gate": _ensemble_payload,
+            }
+            _metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+            if (
+                _ensemble_arc_report.is_critical
+                and _metadata.get("ensemble_arc_progress_gate_block_on_failure") is True
+            ):
+                raise ValueError(
+                    "Chapter outline batch blocked by ensemble_arc_progress_gate: "
+                    f"{len(_ensemble_arc_report.findings)} finding(s)."
+                )
+
         if (
             getattr(settings.pipeline, "enable_methodology_planning_readiness_gate", True)
             and _validation_batch.chapters
@@ -1930,6 +2031,11 @@ async def materialize_chapter_outline_batch(
                     chapter,
                     chapter_outline,
                     causality_results_by_chapter.get(chapter_outline.chapter_number),
+                )
+                _sync_chapter_methodology_lineage(
+                    project=project,
+                    chapter=chapter,
+                    chapter_outline=chapter_outline,
                 )
             await create_workflow_step_run(
                 session,

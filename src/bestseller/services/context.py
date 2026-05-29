@@ -59,6 +59,8 @@ from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
 )
 from bestseller.services.continuity import load_previous_chapter_snapshot
+from bestseller.services.hook_ledger import is_methodology_v2_enabled
+from bestseller.services.methodology_lineage import METHODOLOGY_LINEAGE_METADATA_KEY
 from bestseller.services.methodology_overlay import (
     normalize_chapter_overlay,
     normalize_scene_overlay,
@@ -548,8 +550,35 @@ def _chapter_contract_read(
     *,
     chapter: ChapterModel | None = None,
 ) -> ChapterContractRead:
-    methodology_contract = normalize_chapter_overlay(
-        (item.metadata_json or {}).get("methodology_contract")
+    metadata = item.metadata_json or {}
+    chapter_metadata = (
+        chapter.metadata_json
+        if chapter is not None and isinstance(chapter.metadata_json, dict)
+        else {}
+    )
+    methodology_contract = normalize_chapter_overlay(metadata.get("methodology_contract"))
+    causal_contract = _contract_metadata_dict(
+        metadata,
+        chapter_metadata,
+        "causal_contract",
+    )
+    event_cycle_contract = _contract_metadata_dict(
+        metadata,
+        chapter_metadata,
+        "event_cycle_contract",
+    )
+    character_delta = _causal_contract_text(
+        causal_contract,
+        "character_delta",
+        "inner_state_delta",
+        "relationship_delta",
+        "state_change",
+    )
+    protagonist_choice = _causal_contract_text(
+        causal_contract,
+        "protagonist_choice",
+        "choice_or_action",
+        "visible_action_or_reaction",
     )
     opening_state = dict(item.opening_state)
     if chapter is not None and _clean_text(chapter.opening_situation):
@@ -597,11 +626,46 @@ def _chapter_contract_read(
         relationship_debts=list(methodology_contract.get("relationship_debts") or []),
         is_climax=bool(methodology_contract.get("is_climax")),
         loop_position=methodology_contract.get("loop_position"),
+        causal_contract=causal_contract,
+        event_cycle_contract=event_cycle_contract,
+        character_delta=character_delta,
+        protagonist_choice=protagonist_choice,
+        methodology_lineage=(
+            dict(metadata[METHODOLOGY_LINEAGE_METADATA_KEY])
+            if isinstance(metadata.get(METHODOLOGY_LINEAGE_METADATA_KEY), dict)
+            else None
+        ),
     )
 
 
 def _clean_text(value: object) -> str:
     return str(value).strip() if value is not None else ""
+
+
+def _contract_metadata_dict(
+    metadata: dict[str, Any],
+    chapter_metadata: dict[str, Any],
+    key: str,
+) -> dict[str, object]:
+    value = metadata.get(key)
+    if isinstance(value, dict) and value:
+        return dict(value)
+    if not is_methodology_v2_enabled():
+        return {}
+    fallback = chapter_metadata.get(key)
+    return dict(fallback) if isinstance(fallback, dict) and fallback else {}
+
+
+def _causal_contract_text(
+    causal_contract: dict[str, object],
+    *keys: str,
+) -> str | None:
+    for key in keys:
+        value = causal_contract.get(key)
+        text = _clean_text(value)
+        if text:
+            return text
+    return None
 
 
 def _chapter_information_release_from_model(chapter: ChapterModel) -> str:

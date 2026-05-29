@@ -100,6 +100,11 @@ class ChapterContractRead(BaseModel):
     relationship_debts: list[str] = Field(default_factory=list)  # 本章必须推进/偿还/加码的关系债
     is_climax: bool = False  # 是否为高潮章节
     loop_position: str | None = Field(default=None, max_length=256)  # trigger/action/reward/invest
+    causal_contract: dict[str, object] = Field(default_factory=dict)
+    event_cycle_contract: dict[str, object] = Field(default_factory=dict)
+    character_delta: str | None = None
+    protagonist_choice: str | None = None
+    methodology_lineage: dict[str, object] | None = None
     seam_contract: ChapterSeamContract | None = None
 
 

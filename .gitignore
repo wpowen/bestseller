@@ -32,3 +32,15 @@ data/distillation/.prepare_source.lock
 
 # Douyin OCR pipeline: local downloaded frames only
 douyin_plova/images/
+
+# Methodology book distillation: private sources, runtime state & temp (local only)
+.methodology_private/
+config/staging/
+tmp/
+
+# Methodology distilled corpora & review data (local only; schemas stay in repo)
+data/methodology_books/**
+!data/methodology_books/schemas/
+!data/methodology_books/schemas/**
+data/methodology_unified/
+data/methodology_sources/

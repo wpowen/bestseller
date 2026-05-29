@@ -28,10 +28,25 @@ _METHODOLOGY_PREFIXES = (
     "OPENING_",
 )
 
+CAPABILITY_SLOTS = (
+    "premise_engine",
+    "character_change_tracker",
+    "worldview_theme",
+    "scene_causality_engine",
+    "hook_ledger",
+    "payoff_ledger",
+    "pacing_compression_engine",
+    "opening_three_function",
+    "pov_distance_controller",
+    "dialogue_subtext_engine",
+    "revision_repair_engine",
+)
+
 
 def build_configured_methodology_health_report(
     *,
     checker_reports: Iterable[CheckerReport] = (),
+    review_payloads: Iterable[Mapping[str, Any]] = (),
     latest_chapter_number: int = 0,
     longform_inputs: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -48,6 +63,7 @@ def build_configured_methodology_health_report(
     return build_methodology_health_report(
         profile_id=cfg.profile_id,
         checker_reports=checker_reports,
+        review_payloads=review_payloads,
         latest_chapter_number=latest_chapter_number,
         longform_inputs=longform_inputs,
         longform_chaos_enabled=cfg.longform_chaos_enabled,
@@ -59,6 +75,7 @@ def build_methodology_health_report(
     *,
     profile_id: str | None = "plova_structured_writing_v1",
     checker_reports: Iterable[CheckerReport] = (),
+    review_payloads: Iterable[Mapping[str, Any]] = (),
     latest_chapter_number: int = 0,
     longform_inputs: Mapping[str, Any] | None = None,
     longform_chaos_enabled: bool = False,
@@ -104,6 +121,7 @@ def build_methodology_health_report(
         enabled=longform_chaos_enabled,
         start_after_chapter=longform_chaos_start_after_chapter,
     )
+    lineage_slots = build_lineage_slot_health(review_payloads)
 
     return {
         "enabled": True,
@@ -115,6 +133,131 @@ def build_methodology_health_report(
         "findings": [finding.model_dump(mode="json") for finding in findings],
         "top_methodology_issues": top_issues,
         "longform_chaos": chaos,
+        "lineage_slots": lineage_slots,
+    }
+
+
+def build_lineage_slot_health(
+    review_payloads: Iterable[Mapping[str, Any]],
+    *,
+    coverage_min: float = 0.2,
+    evidence_min: float = 0.5,
+    failure_rate_max: float = 0.4,
+) -> dict[str, Any]:
+    payloads = [payload for payload in review_payloads if isinstance(payload, Mapping)]
+    slot_stats: dict[str, dict[str, Any]] = {
+        slot: {
+            "coverage_count": 0,
+            "rule_count": 0,
+            "scored_count": 0,
+            "evidence_count": 0,
+            "failure_count": 0,
+            "gate_block_count": 0,
+            "rule_ids": set(),
+        }
+        for slot in CAPABILITY_SLOTS
+    }
+
+    for payload in payloads:
+        evidence_summary = _review_evidence_summary(payload)
+        covered_slots: set[str] = set()
+        lineage = evidence_summary.get("methodology_lineage_evidence")
+        if isinstance(lineage, Mapping):
+            for rule in _iter_mapping_items(lineage.get("rules")):
+                slot = str(rule.get("slot") or "")
+                if slot not in slot_stats:
+                    continue
+                covered_slots.add(slot)
+                stats = slot_stats[slot]
+                stats["rule_count"] += 1
+                rule_id = str(rule.get("rule_id") or "").strip()
+                if rule_id:
+                    stats["rule_ids"].add(rule_id)
+                if rule.get("gate_mode") == "block":
+                    stats["gate_block_count"] += 1
+                score = _numeric_score(rule.get("score"))
+                if score is None:
+                    continue
+                stats["scored_count"] += 1
+                if score >= evidence_min:
+                    stats["evidence_count"] += 1
+                else:
+                    stats["failure_count"] += 1
+
+        _record_ledger_health_signal(
+            evidence_summary,
+            audit_key="hook_ledger_audit",
+            slot="hook_ledger",
+            covered_slots=covered_slots,
+            slot_stats=slot_stats,
+        )
+        _record_ledger_health_signal(
+            evidence_summary,
+            audit_key="payoff_ledger_audit",
+            slot="payoff_ledger",
+            covered_slots=covered_slots,
+            slot_stats=slot_stats,
+        )
+
+        for slot in covered_slots:
+            slot_stats[slot]["coverage_count"] += 1
+
+    total_reviews = len(payloads)
+    slot_reports: dict[str, dict[str, Any]] = {}
+    dormant_candidates: list[str] = []
+    inactive_slots: list[str] = []
+    denominator = max(total_reviews, 1)
+    for slot, stats in slot_stats.items():
+        coverage_count = int(stats["coverage_count"])
+        scored_count = int(stats["scored_count"])
+        evidence_count = int(stats["evidence_count"])
+        failure_count = int(stats["failure_count"])
+        coverage_ratio = coverage_count / denominator
+        evidence_rate = evidence_count / scored_count if scored_count else 0.0
+        failure_rate = failure_count / scored_count if scored_count else 0.0
+        is_candidate = (
+            coverage_count > 0
+            and coverage_ratio >= coverage_min
+            and evidence_rate >= evidence_min
+            and failure_rate <= failure_rate_max
+        )
+        if coverage_count == 0:
+            status = "inactive"
+            inactive_slots.append(slot)
+        elif is_candidate:
+            status = "dormant_to_active_candidate"
+            dormant_candidates.append(slot)
+        elif failure_rate > failure_rate_max:
+            status = "unstable"
+        elif evidence_rate < evidence_min:
+            status = "low_evidence"
+        else:
+            status = "observed"
+
+        slot_reports[slot] = {
+            "status": status,
+            "coverage_count": coverage_count,
+            "rule_count": int(stats["rule_count"]),
+            "scored_count": scored_count,
+            "evidence_count": evidence_count,
+            "failure_count": failure_count,
+            "gate_block_count": int(stats["gate_block_count"]),
+            "coverage_ratio": round(coverage_ratio, 3),
+            "evidence_rate": round(evidence_rate, 3),
+            "failure_rate": round(failure_rate, 3),
+            "rule_ids": sorted(stats["rule_ids"]),
+        }
+
+    return {
+        "review_count": total_reviews,
+        "slots": slot_reports,
+        "dormant_to_active_candidates": dormant_candidates,
+        "inactive_slots": inactive_slots,
+        "thresholds": {
+            "coverage_min": coverage_min,
+            "evidence_min": evidence_min,
+            "failure_rate_max": failure_rate_max,
+        },
     }
 
 
@@ -137,7 +280,11 @@ def compute_longform_chaos_index(
             count_keys=("overdue_clue_count", "setup_payoff_debt_count"),
         ),
         "timeline_stability": _component(raw, "timeline_stability", default=1.0),
-        "entry_freshness": _debt_component(raw, "entry_freshness", count_keys=("stale_truth_count",)),
+        "entry_freshness": _debt_component(
+            raw,
+            "entry_freshness",
+            count_keys=("stale_truth_count",),
+        ),
         "world_reveal_control": _component(raw, "world_reveal_control", default=1.0),
         "outline_executability": _component(raw, "outline_executability", default=1.0),
     }
@@ -183,9 +330,19 @@ def methodology_repair_actions(report: Mapping[str, Any]) -> list[dict[str, Any]
         if isinstance(item, Mapping)
     ]
     if any(code.startswith("OPENING_") for code in issue_codes):
-        actions.append({"action": "repair_opening_three_function", "status": "manual_or_rewrite_required"})
+        actions.append(
+            {
+                "action": "repair_opening_three_function",
+                "status": "manual_or_rewrite_required",
+            }
+        )
     if any(code.startswith("ACTION_SCENE_") for code in issue_codes):
-        actions.append({"action": "review_action_scene_structure", "status": "manual_or_rewrite_required"})
+        actions.append(
+            {
+                "action": "review_action_scene_structure",
+                "status": "manual_or_rewrite_required",
+            }
+        )
     if "CHEKHOV_USE_OVERDUE" in issue_codes:
         actions.append({"action": "review_chekhov_overdue", "status": "manual_required"})
     chaos = report.get("longform_chaos")
@@ -197,6 +354,26 @@ def methodology_repair_actions(report: Mapping[str, Any]) -> list[dict[str, Any]
                 "risk_level": chaos.get("risk_level"),
             }
         )
+    lineage_slots = report.get("lineage_slots")
+    if isinstance(lineage_slots, Mapping):
+        candidates = lineage_slots.get("dormant_to_active_candidates") or []
+        inactive = lineage_slots.get("inactive_slots") or []
+        if candidates:
+            actions.append(
+                {
+                    "action": "promote_dormant_methodology_slots",
+                    "status": "planning_required",
+                    "slots": list(candidates)[:10],
+                }
+            )
+        if inactive:
+            actions.append(
+                {
+                    "action": "review_inactive_methodology_slots",
+                    "status": "manual_required",
+                    "count": len(inactive),
+                }
+            )
     return actions
 
 
@@ -210,6 +387,62 @@ def _top_methodology_issues(reports: Iterable[CheckerReport]) -> list[dict[str, 
         {"code": code, "count": count}
         for code, count in counter.most_common(10)
     ]
+
+
+def _review_evidence_summary(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    direct = payload.get("evidence_summary")
+    if isinstance(direct, Mapping):
+        return direct
+    nested = payload.get("structured_output")
+    if isinstance(nested, Mapping):
+        nested_summary = nested.get("evidence_summary")
+        if isinstance(nested_summary, Mapping):
+            return nested_summary
+    return {}
+
+
+def _iter_mapping_items(value: object) -> Iterable[Mapping[str, Any]]:
+    if isinstance(value, Mapping):
+        yield value
+        return
+    if isinstance(value, str) or not isinstance(value, Iterable):
+        return
+    for item in value:
+        if isinstance(item, Mapping):
+            yield item
+
+
+def _numeric_score(value: object) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_ledger_health_signal(
+    evidence_summary: Mapping[str, Any],
+    *,
+    audit_key: str,
+    slot: str,
+    covered_slots: set[str],
+    slot_stats: Mapping[str, dict[str, Any]],
+) -> None:
+    audit = evidence_summary.get(audit_key)
+    if not isinstance(audit, Mapping) or slot not in slot_stats:
+        return
+    covered_slots.add(slot)
+    stats = slot_stats[slot]
+    stats["scored_count"] += 1
+    findings = audit.get("findings")
+    has_findings = (
+        bool(findings)
+        if isinstance(findings, Iterable) and not isinstance(findings, str)
+        else False
+    )
+    if has_findings:
+        stats["failure_count"] += 1
+    else:
+        stats["evidence_count"] += 1
 
 
 def _component(raw: Mapping[str, Any], key: str, *, default: float) -> float:

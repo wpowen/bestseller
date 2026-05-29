@@ -28,6 +28,7 @@ class LLMRoleSettings(BaseModel):
     n_candidates: int = 1
     api_base: str | None = None
     api_key_env: str | None = None
+    api_key_header: str | None = None
     model_override: str | None = None
     thinking_type: str | None = None
     reasoning_effort: str | None = None
@@ -236,7 +237,13 @@ class PipelineSettings(BaseModel):
     enable_chapter_outline_readiness_gate: bool = True
     chapter_outline_readiness_block_on_failure: bool = True
     enable_methodology_planning_readiness_gate: bool = True
-    methodology_planning_readiness_block_on_failure: bool = True
+    # Warn-by-default: this is a heuristic readiness gate (weak-mediated
+    # opening, plausibility gaps, knowledge-boundary leaks). Findings are
+    # recorded on the workflow run and drive downstream rewrite/repair, but
+    # they must NOT abort book generation outright — a hard block here left
+    # fresh books permanently stuck in ``planning`` (observed 2026-05-29).
+    # Only deterministic, low-false-positive gates should block.
+    methodology_planning_readiness_block_on_failure: bool = False
     enable_outline_llm_commercial_judge: bool = True
     outline_llm_commercial_judge_block_on_failure: bool = True
     outline_llm_commercial_judge_threshold: float = 0.82
@@ -267,6 +274,11 @@ class PipelineSettings(BaseModel):
     world_snapshot_enabled: bool = True  # Generate world snapshots at arc boundaries
     act_plan_threshold: int = 50  # Chapters > threshold enables act-level planning
     progressive_planning: bool = False  # Enable progressive volume planning with write-feedback loop
+    # Long-form projects should not stop all forward drafting just because
+    # older chapters are in the repair queue. When enabled, a blocked volume is
+    # still reported and repaired, but later volume planning/writing may
+    # continue using the last clean feedback snapshot.
+    progressive_continue_after_volume_block: bool = True
     category_aware_planning: bool = True  # Use novel-category research for genre-specific planning
     # ── Multi-dimensional material library (Batch 1-3 rollout) ─────────
     # Batch 1 gate: Curator + Research Agent + query API available when
@@ -412,6 +424,7 @@ class PipelineSettings(BaseModel):
             "INTRA_CHAPTER_REPETITION",
             "REPEATED_EVENT_BEAT",
             "CHAPTER_OPENING_REPETITION",
+            "CHAPTER_SPLICE_REPEATED_SENTENCE",
             "SCENE_JUMP_UNRESOLVED",
             "ANTI_META_LEAK",
             "ANTI_META_ENDING_OUT_OF_SCENE",
@@ -681,6 +694,73 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
                 "api_base": "https://integrate.api.nvidia.com/v1",
                 "api_key_env": "NVIDIA_API_KEY",
                 "timeout_seconds": 360,
+                "stream": False,
+                "model_override": None,
+                "thinking_type": None,
+                "reasoning_effort": None,
+            },
+        },
+    },
+    "xiaomi-mimo": {
+        "key": "xiaomi-mimo",
+        "label": "Xiaomi MiMo",
+        "description": "Xiaomi MiMo token-plan model via OpenAI-compatible China endpoint.",
+        "roles": {
+            "planner": {
+                "model": "openai/mimo-v2.5-pro",
+                "api_base": "https://token-plan-cn.xiaomimimo.com/v1",
+                "api_key_env": "XIAOMI_MIMO_API_KEY",
+                "api_key_header": "api-key",
+                "timeout_seconds": 900,
+                "max_tokens": 32768,
+                "stream": False,
+                "model_override": None,
+                "thinking_type": None,
+                "reasoning_effort": None,
+            },
+            "writer": {
+                "model": "openai/mimo-v2.5-pro",
+                "model_override": "openai/mimo-v2.5-pro",
+                "api_base": "https://token-plan-cn.xiaomimimo.com/v1",
+                "api_key_env": "XIAOMI_MIMO_API_KEY",
+                "api_key_header": "api-key",
+                "timeout_seconds": 360,
+                "max_tokens": 32768,
+                "stream": False,
+                "thinking_type": None,
+                "reasoning_effort": None,
+            },
+            "critic": {
+                "model": "openai/mimo-v2.5-pro",
+                "api_base": "https://token-plan-cn.xiaomimimo.com/v1",
+                "api_key_env": "XIAOMI_MIMO_API_KEY",
+                "api_key_header": "api-key",
+                "timeout_seconds": 180,
+                "max_tokens": 32768,
+                "stream": False,
+                "model_override": None,
+                "thinking_type": None,
+                "reasoning_effort": None,
+            },
+            "summarizer": {
+                "model": "openai/mimo-v2.5-pro",
+                "api_base": "https://token-plan-cn.xiaomimimo.com/v1",
+                "api_key_env": "XIAOMI_MIMO_API_KEY",
+                "api_key_header": "api-key",
+                "timeout_seconds": 300,
+                "max_tokens": 32768,
+                "stream": False,
+                "model_override": None,
+                "thinking_type": None,
+                "reasoning_effort": None,
+            },
+            "editor": {
+                "model": "openai/mimo-v2.5-pro",
+                "api_base": "https://token-plan-cn.xiaomimimo.com/v1",
+                "api_key_env": "XIAOMI_MIMO_API_KEY",
+                "api_key_header": "api-key",
+                "timeout_seconds": 360,
+                "max_tokens": 32768,
                 "stream": False,
                 "model_override": None,
                 "thinking_type": None,

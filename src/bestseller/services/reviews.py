@@ -50,15 +50,20 @@ from bestseller.infra.db.models import (
     VolumeModel,
 )
 from bestseller.services.action_scene_structure_gate import evaluate_action_scene_structure
+from bestseller.services.chapter_quality_bundle import (
+    ChapterQualityBundleContext,
+    ChapterQualityBundleReport,
+    run_chapter_quality_bundle,
+)
 from bestseller.services.checker_schema import CheckerReport
 from bestseller.services.chekhov_emphasis_gate import evaluate_chekhov_emphasis
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
 from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
     _NOVEL_OUTPUT_PROHIBITION_EN,
-    _collect_previous_current_chapter_texts,
-    _collect_post_assembly_duplicate_findings,
     _clean_generated_chapter_text,
+    _collect_post_assembly_duplicate_findings,
+    _collect_previous_current_chapter_texts,
     _evaluate_chapter_quality_gate,
     _front10_forbidden_signal_terms,
     _maybe_write_scene_prompt_trace,
@@ -72,15 +77,19 @@ from bestseller.services.drafts import (
     strip_scaffolding_echoes,
     validate_and_clean_novel_content,
 )
-from bestseller.services.chapter_quality_bundle import (
-    ChapterQualityBundleContext,
-    ChapterQualityBundleReport,
-    run_chapter_quality_bundle,
+from bestseller.services.hook_ledger_runtime import (
+    compute_hook_ledger_audit_for_review,
+    merge_hook_ledger_audit_into_chapter_review,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology import (
     render_methodology_scene_rules,
     render_qimao_opening_contract_block,
+)
+from bestseller.services.methodology_lineage import (
+    methodology_lineage_from_object,
+    methodology_lineage_review_expectations,
+    render_methodology_lineage_prompt_block,
 )
 from bestseller.services.methodology_overlay import render_overlay_prompt_block
 from bestseller.services.methodology_profile import render_configured_methodology_profile_block
@@ -90,6 +99,10 @@ from bestseller.services.methodology_runtime import (
 )
 from bestseller.services.opening_three_function_gate import evaluate_opening_three_function
 from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
+from bestseller.services.payoff_ledger_runtime import (
+    compute_payoff_ledger_audit_for_review,
+    merge_payoff_ledger_audit_into_chapter_review,
+)
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.prompt_packs import (
     render_methodology_block,
@@ -1022,7 +1035,7 @@ def _scene_contract_expectations(
             ("relationship_debts", "；".join(getattr(scene_contract, "relationship_debts", []) or [])),
         ]
     if chapter_contract is not None:
-        return [
+        expectations = [
             ("chapter_summary", getattr(chapter_contract, "contract_summary", None)),
             ("core_conflict", getattr(chapter_contract, "core_conflict", None)),
             ("emotional_shift", getattr(chapter_contract, "emotional_shift", None)),
@@ -1035,7 +1048,12 @@ def _scene_contract_expectations(
             ("hooks_to_resolve", "；".join(getattr(chapter_contract, "hooks_to_resolve", []) or [])),
             ("hooks_to_plant", "；".join(getattr(chapter_contract, "hooks_to_plant", []) or [])),
             ("relationship_debts", "；".join(getattr(chapter_contract, "relationship_debts", []) or [])),
+            ("character_delta", getattr(chapter_contract, "character_delta", None)),
+            ("protagonist_choice", getattr(chapter_contract, "protagonist_choice", None)),
         ]
+        expectations.extend(_causal_contract_expectations(chapter_contract))
+        expectations.extend(methodology_lineage_review_expectations(chapter_contract))
+        return expectations
     return []
 
 
@@ -1045,7 +1063,7 @@ def _chapter_contract_expectations(
 ) -> list[tuple[str, str | None]]:
     if chapter_contract is None:
         return []
-    return [
+    expectations = [
         ("chapter_summary", getattr(chapter_contract, "contract_summary", None)),
         ("core_conflict", getattr(chapter_contract, "core_conflict", None)),
         ("emotional_shift", getattr(chapter_contract, "emotional_shift", None)),
@@ -1058,7 +1076,130 @@ def _chapter_contract_expectations(
         ("hooks_to_resolve", "；".join(getattr(chapter_contract, "hooks_to_resolve", []) or [])),
         ("hooks_to_plant", "；".join(getattr(chapter_contract, "hooks_to_plant", []) or [])),
         ("relationship_debts", "；".join(getattr(chapter_contract, "relationship_debts", []) or [])),
+        ("character_delta", getattr(chapter_contract, "character_delta", None)),
+        ("protagonist_choice", getattr(chapter_contract, "protagonist_choice", None)),
     ]
+    expectations.extend(_causal_contract_expectations(chapter_contract))
+    expectations.extend(methodology_lineage_review_expectations(chapter_contract))
+    return expectations
+
+
+def _causal_contract_expectations(
+    chapter_contract: Any | None,
+) -> list[tuple[str, str | None]]:
+    causal_contract = getattr(chapter_contract, "causal_contract", None)
+    if not isinstance(causal_contract, dict):
+        return []
+    keys = (
+        "pressure",
+        "visible_action_or_reaction",
+        "resistance",
+        "cost_or_tradeoff",
+        "gain_or_reveal",
+        "state_change",
+        "next_reader_desire",
+    )
+    return [
+        (f"causal_contract.{key}", str(causal_contract.get(key)).strip())
+        for key in keys
+        if str(causal_contract.get(key) or "").strip()
+    ]
+
+
+def _methodology_lineage_evidence_summary(
+    content: str,
+    chapter_contract: Any | None,
+) -> dict[str, Any]:
+    lineage = methodology_lineage_from_object(chapter_contract)
+    if lineage is None:
+        return {"rules": [], "missing_rule_ids": []}
+    contract_payload = _json_dict_from_object(chapter_contract)
+    rules: list[dict[str, Any]] = []
+    missing_rule_ids: list[str] = []
+    for item in lineage.for_stage("review"):
+        field_results: list[dict[str, Any]] = []
+        scores: list[float] = []
+        for field_path in item.evidence_fields:
+            expected = _resolve_contract_evidence_path(contract_payload, field_path)
+            field_score = _contract_field_score(content, expected)
+            if field_score is not None:
+                scores.append(field_score)
+            field_results.append(
+                {
+                    "field": field_path,
+                    "expected": expected,
+                    "score": field_score,
+                    "matched": field_score is not None and field_score >= 0.5,
+                }
+            )
+        rule_score = _clamp_score(sum(scores) / len(scores)) if scores else None
+        if rule_score is not None and rule_score < 0.5:
+            missing_rule_ids.append(item.rule_id)
+        rules.append(
+            {
+                "rule_id": item.rule_id,
+                "slot": item.slot,
+                "gate_mode": item.gate_mode,
+                "verifiability": item.verifiability,
+                "score": rule_score,
+                "fields": field_results,
+            }
+        )
+    return {"rules": rules, "missing_rule_ids": missing_rule_ids}
+
+
+def _methodology_lineage_findings(
+    evidence: dict[str, Any],
+) -> list[ChapterReviewFinding]:
+    findings: list[ChapterReviewFinding] = []
+    rules = evidence.get("rules")
+    if not isinstance(rules, list):
+        return findings
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        score = rule.get("score")
+        if not isinstance(score, int | float) or float(score) >= 0.5:
+            continue
+        gate_mode = str(rule.get("gate_mode") or "warn")
+        findings.append(
+            ChapterReviewFinding(
+                category="methodology_evidence",
+                severity="medium" if gate_mode == "block" else "low",
+                message=(
+                    f"{rule.get('rule_id')} evidence not visible enough "
+                    f"(score={float(score):.2f})."
+                ),
+            )
+        )
+    return findings
+
+
+def _resolve_contract_evidence_path(
+    payload: dict[str, Any],
+    field_path: str,
+) -> str | None:
+    path_parts = [part for part in str(field_path).split(".") if part]
+    value: object = payload
+    for part in path_parts:
+        if isinstance(value, dict) and part in value:
+            value = value[part]
+            continue
+        value = None
+        break
+    if value is None and path_parts:
+        value = payload.get(path_parts[-1])
+    if isinstance(value, list | tuple | set):
+        text = "；".join(str(item).strip() for item in value if str(item).strip())
+    elif isinstance(value, dict):
+        text = "；".join(
+            str(item).strip()
+            for item in value.values()
+            if isinstance(item, str) and item.strip()
+        )
+    else:
+        text = str(value or "").strip()
+    return text or None
 
 
 def _max_severity(findings: list[SceneReviewFinding]) -> str:
@@ -1831,6 +1972,13 @@ def _render_chapter_context_section(packet, *, language: str | None = None) -> s
         )
         if overlay_block:
             lines.append(overlay_block)
+        lineage_block = render_methodology_lineage_prompt_block(
+            packet.chapter_contract,
+            stage="review",
+            language=language,
+        )
+        if lineage_block:
+            lines.append(lineage_block)
         profile_block = render_configured_methodology_profile_block(
             stage="review",
             scope="chapter",
@@ -2937,6 +3085,10 @@ def evaluate_scene_draft(
             "closing_hook": hook_strength,
         },
     )
+    methodology_evidence = _methodology_lineage_evidence_summary(
+        content,
+        chapter_contract,
+    )
     _sw = profile.scene_weights
     weighted_parts = [
         (goal, _sw.goal),
@@ -3317,6 +3469,7 @@ def evaluate_scene_draft(
             "identity_consistency": _identity_score,
             "duplication_score": _duplication_score_clamped,
             "duplication_findings": list(duplication_findings or []),
+            "methodology_lineage_evidence": methodology_evidence,
             **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
@@ -3707,6 +3860,10 @@ def evaluate_chapter_draft(
             "closing_hook": _clamp_score(ending_hook_effectiveness * 0.9),
         },
     )
+    methodology_evidence = _methodology_lineage_evidence_summary(
+        content,
+        chapter_contract,
+    )
     _cw = _ch_profile.chapter_weights
     _ch_weighted_parts = [
         (goal, _cw.goal),
@@ -3830,6 +3987,7 @@ def evaluate_chapter_draft(
                 ),
             )
         )
+    findings.extend(_methodology_lineage_findings(methodology_evidence))
 
     hygiene_issues = collect_unfinished_artifact_issues(content, language=language)
     for issue in hygiene_issues:
@@ -3950,6 +4108,7 @@ def evaluate_chapter_draft(
             "ending_hook_effectiveness": ending_hook_effectiveness,
             "volume_mission_alignment": volume_mission_alignment,
             "meta_leak_detected": meta_leak,
+            "methodology_lineage_evidence": methodology_evidence,
             **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
@@ -6563,6 +6722,32 @@ async def review_chapter_draft(
             methodology_reports,
             language=getattr(project, "language", None),
         )
+
+    hook_ledger_audit = await compute_hook_ledger_audit_for_review(
+        session=session,
+        project=project,
+        chapter=chapter,
+        chapter_contract=getattr(chapter_context, "chapter_contract", None),
+    )
+    review_result = merge_hook_ledger_audit_into_chapter_review(
+        review_result,
+        hook_ledger_audit,
+        chapter_number=chapter.chapter_number,
+        language=getattr(project, "language", None),
+    )
+
+    payoff_ledger_audit = await compute_payoff_ledger_audit_for_review(
+        session=session,
+        project=project,
+        chapter=chapter,
+        chapter_contract=getattr(chapter_context, "chapter_contract", None),
+    )
+    review_result = merge_payoff_ledger_audit_into_chapter_review(
+        review_result,
+        payoff_ledger_audit,
+        chapter_number=chapter.chapter_number,
+        language=getattr(project, "language", None),
+    )
 
     # Antagonist-scope gate (B10d): after the rule-based evaluator, fold
     # in the per-chapter antagonist audit so chapters that carry a

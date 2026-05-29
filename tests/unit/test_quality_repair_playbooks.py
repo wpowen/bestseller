@@ -28,3 +28,16 @@ def test_render_repair_playbooks_dedupes_and_skips_unknown_codes() -> None:
     assert rendered.count("[CHAPTER_TOO_SHORT]") == 1
     assert "[ANTI_META_LEAK]" in rendered
     assert "UNKNOWN" not in rendered
+
+
+def test_render_repair_playbooks_can_append_book_methodology(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "bestseller.services.quality_repair_playbooks.render_book_methodology_block",
+        lambda **kwargs: f"methodology stage={kwargs['stage']} scope={kwargs['scope']}",
+    )
+
+    rendered = render_quality_repair_playbooks(["ENDING_SENTENCE_WEAK"])
+
+    assert "methodology stage=repair scope=scene" in rendered

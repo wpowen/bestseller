@@ -222,6 +222,10 @@ pipeline:
   enable_truth_version_guard: true
   enable_story_query_brief: false
   story_query_brief_max_rounds: 4
+  # Let long-form drafting keep moving while earlier chapters are being
+  # repaired. Blocked volumes still skip feedback collection, so later planning
+  # never treats unresolved repairs as clean canon.
+  progressive_continue_after_volume_block: true
   contradiction_block_on_violation: true
   # Identity violations must fail closed. Earlier canary-only wiring left this
   # off in YAML, overriding the enabled default in settings.py and turning

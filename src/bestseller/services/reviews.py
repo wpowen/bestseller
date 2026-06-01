@@ -103,6 +103,7 @@ from bestseller.services.payoff_ledger_runtime import (
     compute_payoff_ledger_audit_for_review,
     merge_payoff_ledger_audit_into_chapter_review,
 )
+from bestseller.services.hook_ledger import is_methodology_v2_enabled
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.critic_evidence_gate import (
     build_critic_evidence_prompt_suffix,
@@ -4680,6 +4681,30 @@ async def _compute_chapter_methodology_reports(
                 exc_info=True,
             )
 
+    # Splice-coherence gate: returns a ``GateVerdict``; adapt into the unified
+    # Phase A ``CheckerReport`` envelope so the methodology_runtime can read
+    # ``can_override`` / ``allowed_rationales`` for override governance.
+    try:
+        from bestseller.services.chapter_splice_coherence_gate import (
+            as_checker_report as _splice_as_report,
+            evaluate_chapter_splice_coherence,
+        )
+
+        splice_verdict = evaluate_chapter_splice_coherence(
+            draft.content_md or "", chapter_number=chapter.chapter_number,
+        )
+        splice_report = _splice_as_report(
+            splice_verdict, chapter_number=chapter.chapter_number,
+        )
+        if splice_report.issues:
+            reports.append(splice_report)
+    except Exception:
+        logger.warning(
+            "splice-coherence gate failed for ch=%s",
+            chapter.chapter_number,
+            exc_info=True,
+        )
+
     return tuple(reports)
 
 
@@ -6794,7 +6819,61 @@ async def review_chapter_draft(
         payoff_ledger_audit,
         chapter_number=chapter.chapter_number,
         language=getattr(project, "language", None),
+        chapter_contract=getattr(chapter_context, "chapter_contract", None),
     )
+
+    # LLM output gate: when v2 is enabled, require the planner LLM to have
+    # declared at least one ``methodology_contract.payoffs_due`` entry.  We
+    # deliberately read ``methodology_declared_payoffs`` (the planner-LLM-only
+    # field), not ``due_payoff_codes`` (the union of LLM + ``PayoffModel``
+    # column) — otherwise the gate would falsely pass when the column has
+    # codes from earlier chapters but the current LLM call produced
+    # nothing.  Empty declaration triggers a soft warning only; severity_max is
+    # raised to warning but verdict is not promoted because the gate's job is
+    # to *flag* a drift, not to block publication.
+    if is_methodology_v2_enabled():
+        declared_payoffs = list(
+            (getattr(chapter_context, "chapter_contract", None)
+             and (
+                 getattr(
+                     chapter_context.chapter_contract,
+                     "methodology_declared_payoffs",
+                     None,
+                 )
+                 or []
+             ))
+            or []
+        )
+        if not declared_payoffs:
+            from bestseller.services.payoff_ledger_runtime import _max_severity as _pl_max
+
+            gate_finding = ChapterReviewFinding(
+                category="payoff_ledger",
+                severity="warning",
+                message=(
+                    "PAYOFFS_DUE_EMPTY: planner LLM did not declare any "
+                    "methodology_contract.payoffs_due for this chapter. "
+                    "Re-plan with explicit payoff list."
+                ),
+            )
+            review_result = ChapterReviewResult(
+                verdict=review_result.verdict,
+                severity_max=_pl_max(
+                    review_result.severity_max, ("warning",)
+                ),
+                scores=review_result.scores,
+                findings=[*review_result.findings, gate_finding],
+                evidence_summary={
+                    **review_result.evidence_summary,
+                    "payoff_ledger_output_gate": {
+                        "v2_enabled": True,
+                        "declared_count": 0,
+                        "verdict_action": "warning_only",
+                        "source_field": "methodology_declared_payoffs",
+                    },
+                },
+                rewrite_instructions=review_result.rewrite_instructions,
+            )
 
     # Antagonist-scope gate (B10d): after the rule-based evaluator, fold
     # in the per-chapter antagonist audit so chapters that carry a

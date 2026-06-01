@@ -82,6 +82,8 @@ def model_output_token_ceiling(model_name: str | None) -> int | None:
     """Best-known high output cap for provider/model families we tune for."""
 
     model = (model_name or "").strip().lower()
+    if "minimax-m3" in model:
+        return 32768
     if "minimax-m2" in model:
         return 32768
     if "minimax" in model:

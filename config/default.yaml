@@ -221,6 +221,19 @@ logging:
     - "sqlalchemy.engine"
 
 # -----------------------------------------------------------------------------
+# Anti-Commonsense Hook Engine
+# Premise-stage mechanism generation + H_norm soft gate.
+# -----------------------------------------------------------------------------
+hook_engine:
+  enabled: true
+  min_h_norm: 30.0
+  candidate_count: 6
+  quickstart_candidate_count: 4
+  rank_weight_h_norm: 0.62
+  rank_weight_novelty: 0.28
+  rank_weight_duplicate_risk: 0.10
+
+# -----------------------------------------------------------------------------
 # Pipeline
 # -----------------------------------------------------------------------------
 pipeline:

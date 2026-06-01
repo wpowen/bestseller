@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import html
+import hashlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -39,6 +40,8 @@ from bestseller.services.genre_creativity import (
     get_genre_creative_direction,
     get_genre_creativity_catalog_payload,
 )
+from bestseller.services.anti_commonsense_hook import generate_hook_candidates
+from bestseller.services.hook_propagation import coerce_hook_spec
 from bestseller.services.if_generation import run_if_pipeline_integrated
 from bestseller.services.inspection import (
     build_project_structure,
@@ -694,8 +697,28 @@ def _sanitize_preset_payload(item: dict[str, object]) -> dict[str, object]:
 def _public_writing_preset_catalog_payload() -> dict[str, object]:
     """Return a web-safe preset catalog without story-specific seed content."""
     catalog = load_writing_preset_catalog().model_dump(mode="json")
+    settings = load_settings()
     catalog["genre_dimensions"] = get_genre_preset_dimensions()
     catalog["genre_creativity"] = get_genre_creativity_catalog_payload()
+    hook_candidates: dict[str, object] = {}
+    for item in catalog.get("genre_presets") or []:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "")
+        genre = str(item.get("genre") or key)
+        language = str(item.get("language") or "zh-CN")
+        try:
+            candidates = generate_hook_candidates(
+                genre=genre,
+                locale=language,
+                count=max(1, int(getattr(settings.hook_engine, "quickstart_candidate_count", 4))),
+                seed=int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16),
+                min_h_norm=float(getattr(settings.hook_engine, "min_h_norm", 30.0)),
+            )
+            hook_candidates[key] = [candidate.model_dump(mode="json") for candidate in candidates]
+        except Exception:
+            logger.debug("Failed to generate quickstart hook candidates for %s", key, exc_info=True)
+    catalog["hook_candidates"] = hook_candidates
     catalog["platform_presets"] = [
         _sanitize_preset_payload(item) if isinstance(item, dict) else item
         for item in (catalog.get("platform_presets") or [])
@@ -2578,6 +2601,7 @@ class WebTaskManager:
             )
             conception_brief: dict[str, object] | None = None
             conception_log: list[dict[str, object]] | None = None
+            conception_hook_spec: dict[str, object] | None = None
             story_facets_obj = None
 
             # Use a single session scope for both conception and autowrite
@@ -2635,6 +2659,11 @@ class WebTaskManager:
                         effective_writing_profile = conception_result.writing_profile
                         conception_brief = conception_result.commercial_brief
                         conception_log = conception_result.conception_log
+                        conception_hook_spec = (
+                            conception_result.hook_spec
+                            if isinstance(conception_result.hook_spec, dict)
+                            else None
+                        )
                         effective_synopsis = conception_result.synopsis
                         effective_tags = conception_result.tags
                         progress(
@@ -2650,10 +2679,20 @@ class WebTaskManager:
                                 "commercial_brief_keys": list(
                                     conception_result.commercial_brief.keys()
                                 ),
+                                "hook_h_norm": (
+                                    conception_hook_spec.get("score", {}).get("h_norm")
+                                    if isinstance(conception_hook_spec, dict)
+                                    else None
+                                ),
                             },
                         )
 
                 project_metadata: dict[str, object] = {"premise": effective_premise}
+                payload_hook_spec = coerce_hook_spec(payload.get("hook_spec"))
+                if payload_hook_spec is not None:
+                    project_metadata["hook_spec"] = payload_hook_spec.model_dump(mode="json")
+                if conception_hook_spec:
+                    project_metadata["hook_spec"] = conception_hook_spec
                 if run_conception:
                     project_metadata["synopsis"] = effective_synopsis
                     project_metadata["tags"] = effective_tags
@@ -2850,6 +2889,9 @@ class WebTaskManager:
             else None
         )
         creative_hints = creative_direction_to_user_hints(creative_direction)
+        selected_hook_spec = coerce_hook_spec(payload.get("hook_spec"))
+        if selected_hook_spec is not None:
+            creative_hints["hook_spec"] = selected_hook_spec.model_dump(mode="json")
         premise = (
             f"A {genre_preset.genre} ({genre_preset.sub_genre}) novel: {genre_preset.description}"
             if is_en
@@ -2886,6 +2928,7 @@ class WebTaskManager:
             "creative_brief": (
                 creative_direction.model_dump(mode="json") if creative_direction else {}
             ),
+            "hook_spec": selected_hook_spec.model_dump(mode="json") if selected_hook_spec else {},
             "user_hints": creative_hints,
             # Enable AI conception for new projects (not resume)
             "_run_conception": is_new_project,
@@ -2907,6 +2950,7 @@ class WebTaskManager:
             "narrative_drives": genre_preset.narrative_drives,
             "creative_key": creative_direction.key if creative_direction else "",
             "creative_title": creative_direction.title if creative_direction else "",
+            "hook_spec": selected_hook_spec.model_dump(mode="json") if selected_hook_spec else {},
             "chapter_count": chapter_count,
             "target_words": target_words,
             "length_key": fanqie_length_key if is_fanqie_short else length_key,

@@ -500,12 +500,13 @@ def _rate_limit_fallback_key(logical_role: LLMRole, role_settings: LLMRoleSettin
 
 
 def _effective_thinking_type(role_settings: LLMRoleSettings) -> str | None:
-    """Return provider thinking mode, defaulting DeepSeek V4 prose to visible text.
+    """Return provider thinking mode, defaulting prose calls to visible text.
 
     DeepSeek V4 defaults to emitting reasoning tokens before normal content.
     Through LiteLLM this can exhaust the request's max_tokens budget and return
-    an empty assistant content string.  For this app, V4 is used for production
-    prose/review text, so disable thinking unless the role explicitly opts in.
+    an empty assistant content string. MiniMax-M3 also defaults to adaptive
+    thinking. For this app, these models are used for production prose/review
+    text, so disable thinking unless the role explicitly opts in.
     """
 
     if role_settings.thinking_type:
@@ -513,6 +514,8 @@ def _effective_thinking_type(role_settings: LLMRoleSettings) -> str | None:
     model = (role_settings.model or "").lower()
     api_base = (role_settings.api_base or "").lower()
     if "deepseek-v4" in model and "deepseek" in api_base:
+        return "disabled"
+    if "minimax-m3" in model:
         return "disabled"
     if "minimax-m2" in model and "highspeed" in model:
         return "disabled"

@@ -728,6 +728,19 @@ def test_public_writing_preset_catalog_exposes_genre_creativity() -> None:
     assert "必须根据所选类型动态创造主角目标" in creativity_json
 
 
+def test_public_writing_preset_catalog_exposes_hook_candidates() -> None:
+    payload = web_server._public_writing_preset_catalog_payload()
+
+    hooks = payload["hook_candidates"]
+    pack = hooks["apocalypse-supply"]
+    first = pack[0]
+
+    assert len(pack) >= 1
+    assert first["spec"]["one_liner"]
+    assert first["spec"]["core_rule"]
+    assert first["score"]["h_norm"] >= 0
+
+
 def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = web_server.WebTaskManager()
     captured: dict[str, object] = {}
@@ -752,6 +765,36 @@ def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.Monkey
     assert captured["payload"]["target_words"] == (
         12 * web_server.load_settings().generation.words_per_chapter.target
     )
+
+
+def test_quickstart_task_passes_selected_hook_spec(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+    catalog = web_server._public_writing_preset_catalog_payload()
+    hook_spec = catalog["hook_candidates"]["apocalypse-supply"][0]["spec"]
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "demo-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    task = manager.create_quickstart_task(
+        {
+            "genre_key": "apocalypse-supply",
+            "chapter_count": 12,
+            "hook_spec": hook_spec,
+        }
+    )
+
+    payload = captured["payload"]
+    assert payload["hook_spec"] == hook_spec
+    assert payload["user_hints"]["hook_spec"] == hook_spec
+    assert task["quickstart_meta"]["hook_spec"] == hook_spec
 
 
 def test_quickstart_task_passes_selected_creative_direction(

@@ -107,10 +107,10 @@
 | 字段 | 内容 |
 |------|------|
 | 角色 | planner |
-| 读入 | `meta.yaml` + 用户首条指令 |
-| 调用 prompt | [prompts/planner.md](prompts/planner.md) § premise |
-| 产出 | `story-bible/premise.md`（BookSpec：logline / pitch / stakes / themes / protagonist / external_goal） |
-| 验证 | 文件存在 + 所有必填字段非空 |
+| 读入 | `meta.yaml` + 用户首条指令 + [hook-engine.md](hook-engine.md) |
+| 调用 prompt | [prompts/planner.md](prompts/planner.md) § premise；先生成/选择 HookSpec 并评分 |
+| 产出 | `story-bible/premise.md`（BookSpec：logline / pitch / stakes / themes / protagonist / external_goal / anti_commonsense_hook） |
+| 验证 | 文件存在 + 所有必填字段非空 + HookSpec H_norm ≥ 15 |
 | 下一态 | `PLAN_WORLD` |
 
 ### 2.3 `PLAN_WORLD`

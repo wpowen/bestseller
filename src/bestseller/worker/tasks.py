@@ -737,7 +737,12 @@ async def run_project_pipeline_task(
 async def run_chapter_pipeline_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    """Single chapter pipeline (no progress callback — pipeline doesn't support it)."""
+    """Single chapter pipeline with progress reporting.
+
+    Forwards the ARQ-level ``reporter`` into the chapter pipeline as a sync
+    ``ProgressCallback`` (built via :func:`make_sync_callback`) so the inner
+    scene-level emits surface in the SSE stream consumed by the Web UI.
+    """
     from bestseller.services.pipelines import run_chapter_pipeline
 
     settings = get_settings()
@@ -762,6 +767,7 @@ async def run_chapter_pipeline_task(
                     settings=settings,
                     project_slug=project_slug,
                     chapter_number=payload["chapter_number"],
+                    progress=make_sync_callback(reporter),
                 )
         except Exception as exc:
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")

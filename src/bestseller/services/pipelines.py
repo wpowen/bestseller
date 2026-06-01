@@ -3404,12 +3404,22 @@ async def run_scene_pipeline(
     requested_by: str = "system",
     parent_workflow_run_id: UUID | None = None,
     allow_structural_repair: bool = False,
+    progress: ProgressCallback | None = None,
 ) -> ScenePipelineResult:
     project, chapter, scene = await _load_scene_identifiers(
         session,
         project_slug,
         chapter_number,
         scene_number,
+    )
+    _emit_progress(
+        progress,
+        "scene_pipeline_started",
+        {
+            "project_slug": project_slug,
+            "chapter_number": chapter_number,
+            "scene_number": scene_number,
+        },
     )
     _assert_project_not_blocked_for_structural_repair(
         project,
@@ -4794,6 +4804,17 @@ async def run_scene_pipeline(
                 },
             )
             step_order += 1
+            _emit_progress(
+                progress,
+                "scene_draft_generated",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "scene_number": scene_number,
+                    "draft_id": str(draft.id),
+                    "version_no": draft.version_no,
+                },
+            )
 
         # ── Post-draft identity validation (zero LLM cost) ──
         if draft is not None and draft.content_md:
@@ -4969,6 +4990,17 @@ async def run_scene_pipeline(
                 },
             )
             step_order += 1
+            _emit_progress(
+                progress,
+                "scene_review_completed",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "scene_number": scene_number,
+                    "review_iterations": review_iterations,
+                    "verdict": review_result.verdict,
+                },
+            )
             current_scene_score = getattr(getattr(review_result, "scores", None), "overall", None)
 
             if review_result.verdict == "pass" or rewrite_task is None:
@@ -5094,6 +5126,17 @@ async def run_scene_pipeline(
                 },
             )
             step_order += 1
+            _emit_progress(
+                progress,
+                "scene_knowledge_refreshed",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "scene_number": scene_number,
+                    "canon_fact_count": canon_fact_count,
+                    "timeline_event_count": timeline_event_count,
+                },
+            )
 
             # Bidirectional propagation: merge discoveries back into
             # CharacterModel/RelationshipModel (zero LLM cost).
@@ -5108,6 +5151,89 @@ async def run_scene_pipeline(
             except Exception:
                 logger.warning(
                     "Scene %d:%d discovery propagation failed (non-fatal)",
+                    chapter.chapter_number,
+                    scene.scene_number,
+                    exc_info=True,
+                )
+
+            # Scene-level bible delta (Phase B+ design).  Opt-in via
+            # BESTSELLER_BIBLE_INCREMENTAL_ENABLED; default off so existing
+            # projects use the chapter-end batch path.
+            try:
+                from bestseller.services.story_bible import (
+                    apply_scene_bible_delta,
+                    extract_scene_bible_deltas,
+                    filter_fresh_deltas,
+                    is_bible_incremental_enabled,
+                )
+                if is_bible_incremental_enabled() and len(draft.content_md or "") >= 500:
+                    project_id_str = str(project.id)
+                    metadata = project.metadata_json or {}
+                    seen_keys = set(
+                        (metadata.get("scene_bible_deltas") or {}).get(
+                            str(chapter.chapter_number), []
+                        )
+                        or []
+                    )
+                    scene_deltas = await extract_scene_bible_deltas(
+                        session,
+                        settings,
+                        project=project,
+                        chapter=chapter,
+                        scene=scene,
+                        scene_text=draft.content_md or "",
+                        project_id=project_id_str,
+                        workflow_run_id=workflow_run.id,
+                    )
+                    fresh = filter_fresh_deltas(
+                        project_id_str, chapter.chapter_number, scene_deltas, seen_keys
+                    )
+                    applied_count = 0
+                    for delta in fresh:
+                        ok = await apply_scene_bible_delta(
+                            session, project=project, delta=delta
+                        )
+                        if ok:
+                            applied_count += 1
+                            seen_keys.add(delta.delta_key)
+                    if applied_count:
+                        # Persist seen keys so next scene knows what's been
+                        # applied; idempotency is the only state we keep.
+                        scene_meta = dict(metadata.get("scene_bible_deltas") or {})
+                        scene_meta[str(chapter.chapter_number)] = sorted(seen_keys)
+                        project.metadata_json = {
+                            **metadata,
+                            "scene_bible_deltas": scene_meta,
+                        }
+                        await create_workflow_step_run(
+                            session,
+                            workflow_run_id=workflow_run.id,
+                            step_name="scene_bible_delta",
+                            step_order=step_order,
+                            status=WorkflowStatus.COMPLETED,
+                            output_ref={
+                                "scene_number": scene.scene_number,
+                                "extracted_count": len(scene_deltas),
+                                "fresh_count": len(fresh),
+                                "applied_count": applied_count,
+                            },
+                        )
+                        step_order += 1
+                        _emit_progress(
+                            progress,
+                            "scene_bible_delta_applied",
+                            {
+                                "project_slug": project_slug,
+                                "chapter_number": chapter_number,
+                                "scene_number": scene_number,
+                                "extracted": len(scene_deltas),
+                                "fresh": len(fresh),
+                                "applied": applied_count,
+                            },
+                        )
+            except Exception:
+                logger.warning(
+                    "Scene %d:%d bible delta path failed (non-fatal)",
                     chapter.chapter_number,
                     scene.scene_number,
                     exc_info=True,
@@ -5658,6 +5784,7 @@ async def run_chapter_pipeline(
                     requested_by=requested_by,
                     parent_workflow_run_id=workflow_run.id,
                     allow_structural_repair=allow_structural_repair,
+                    progress=progress,
                 )
             except WriteSafetyBlockError as exc:
                 # contradiction/identity block raised during scene pipeline —
@@ -6255,6 +6382,7 @@ async def run_chapter_pipeline(
                         requested_by=requested_by,
                         parent_workflow_run_id=workflow_run.id,
                         allow_structural_repair=allow_structural_repair,
+                        progress=progress,
                     )
                 except WriteSafetyBlockError as exc:
                     # The repair pass tripped the same kind of safety block as

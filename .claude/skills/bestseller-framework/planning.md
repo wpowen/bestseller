@@ -83,8 +83,10 @@ Scene count 规则：climax / reversal 章 = 4；post-climax 章 = 2；默认 = 
 ## 8. Mode B Planning Workflow（固定八步）
 
 1. **Premise → BookSpec**
+   - 先按 [hook-engine.md](hook-engine.md) 生成/选择 `HookSpec`，计算 H_norm；`H_norm < 15` 不进入写作，15–30 必须补限制/代价后再展开
    - protagonist{name, archetype, external_goal, internal_need, flaw, strength, fear}
-   - logline, themes[], reader_promise
+   - logline, themes[], reader_promise, anti_commonsense_hook
+   - HookSpec.constraints / costs / anti_cheat / misunderstanding 必须向 WorldSpec、VolumePlan、ChapterOutline 传播
    - stakes{personal, world}
    - three_act_structure
 

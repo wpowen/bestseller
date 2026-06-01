@@ -89,6 +89,17 @@ class ChapterContractRead(BaseModel):
     active_arc_beat_ids: list[str] = Field(default_factory=list)
     planted_clue_codes: list[str] = Field(default_factory=list)
     due_payoff_codes: list[str] = Field(default_factory=list)
+    # Provenance-preserved list of payoff codes declared by the **planner
+    # LLM** in ``methodology_contract.payoffs_due``.  Distinct from
+    # ``due_payoff_codes`` which is the union of LLM + ``PayoffModel``
+    # column; this field is what the LLM-output gate (reviews.py) and
+    # the planner-driven evidence chain should read.
+    methodology_declared_payoffs: list[str] = Field(default_factory=list)
+    # Per-payoff evidence paths — populated by planner LLM in
+    # ``methodology_contract.payoff_evidence_paths`` and lifted into this
+    # top-level read-only field by ``_chapter_contract_read``.  Each entry
+    # references a scene-level location where the chapter cashes a payoff.
+    payoff_evidence_paths: list[dict[str, str]] = Field(default_factory=list)
 
     # --- 方法论扩展字段 (Methodology extensions) ---
     conflict_stakes: str | None = None  # 筹码：输了会失去什么
@@ -129,6 +140,10 @@ class SceneContractRead(BaseModel):
     arc_beat_ids: list[str] = Field(default_factory=list)
     planted_clue_codes: list[str] = Field(default_factory=list)
     payoff_codes: list[str] = Field(default_factory=list)
+    # Scene-level evidence — which payoff is cashed at which sentence
+    # anchor.  Populated by the LLM in ``methodology_contract.payoff_evidence_paths``
+    # at scene-overlay time, lifted by ``_scene_contract_read``.
+    payoff_evidence_paths: list[dict[str, str]] = Field(default_factory=list)
 
     # --- 方法论扩展字段 (Methodology extensions) ---
     conflict_stakes: str | None = None  # 筹码：输了会失去什么

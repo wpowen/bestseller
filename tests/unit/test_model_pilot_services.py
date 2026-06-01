@@ -26,7 +26,7 @@ def test_load_builtin_model_pilot_includes_minimax_and_deepseek() -> None:
     assert any(item.pilot_id == "short-complete-30" for item in pilots)
     spec = model_pilot_services.load_model_pilot("short-complete-30")
     enabled = {variant.variant_id for variant in spec.variants if variant.enabled}
-    assert {"minimax-m27", "deepseek-official"} <= enabled
+    assert {"minimax-m3", "deepseek-official"} <= enabled
     assert spec.book.target_chapters == 30
     assert spec.quality.require_no_fallback is True
     assert spec.quality.require_sample_quality_parity is True
@@ -87,11 +87,11 @@ async def test_run_model_pilot_aggregates_variant_results(
         ),
         variants=[
             ModelPilotVariantSpec(
-                variant_id="minimax-m27",
+                variant_id="minimax-m3",
                 label="MiniMax",
                 roles={
                     "writer": ModelPilotRoleOverride(
-                        model="openai/MiniMax-M2.7-highspeed",
+                        model="openai/MiniMax-M3",
                         api_base="https://api.minimaxi.com/v1",
                     )
                 },
@@ -103,7 +103,7 @@ async def test_run_model_pilot_aggregates_variant_results(
         project_payload = kwargs["project_payload"]
         assert project_payload.target_chapters == 30
         assert project_payload.metadata["complete_story_required"] is True
-        assert settings.llm.writer.model == "openai/MiniMax-M2.7-highspeed"
+        assert settings.llm.writer.model == "openai/MiniMax-M3"
         return SimpleNamespace(
             project_id=uuid4(),
             project_slug=project_payload.slug,
@@ -143,7 +143,7 @@ async def test_run_model_pilot_aggregates_variant_results(
             total_input_tokens=1000,
             total_output_tokens=2000,
             total_latency_ms=3000,
-            model_counts={"openai/MiniMax-M2.7-highspeed": 12},
+            model_counts={"openai/MiniMax-M3": 12},
             provider_counts={"openai": 12},
             role_counts={"writer": 12},
         )

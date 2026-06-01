@@ -35,40 +35,40 @@ quality:
   sample_quality_min_scorecard_quality: 80.0
   sample_quality_min_reference_distance: 0.72
 variants:
-  - variant_id: minimax-m27
-    label: MiniMax M2.7 Highspeed
+  - variant_id: minimax-m3
+    label: MiniMax M3
     enabled: true
     notes: 当前主用模型；试点中关闭跨模型 rate-limit fallback，避免对比污染。
     roles:
       planner:
-        model: openai/MiniMax-M2.7-highspeed
+        model: openai/MiniMax-M3
         api_base: https://api.minimaxi.com/v1
         api_key_env: MINIMAX_API_KEY
         timeout_seconds: 900
         max_tokens: 32768
         n_candidates: 1
       writer:
-        model: openai/MiniMax-M2.7-highspeed
-        model_override: openai/MiniMax-M2.7-highspeed
+        model: openai/MiniMax-M3
+        model_override: openai/MiniMax-M3
         api_base: https://api.minimaxi.com/v1
         api_key_env: MINIMAX_API_KEY
         timeout_seconds: 360
         max_tokens: 12288
         stream: false
       critic:
-        model: openai/MiniMax-M2.7-highspeed
+        model: openai/MiniMax-M3
         api_base: https://api.minimaxi.com/v1
         api_key_env: MINIMAX_API_KEY
         timeout_seconds: 180
         max_tokens: 2048
       summarizer:
-        model: openai/MiniMax-M2.7-highspeed
+        model: openai/MiniMax-M3
         api_base: https://api.minimaxi.com/v1
         api_key_env: MINIMAX_API_KEY
         timeout_seconds: 120
         max_tokens: 1536
       editor:
-        model: openai/MiniMax-M2.7-highspeed
+        model: openai/MiniMax-M3
         api_base: https://api.minimaxi.com/v1
         api_key_env: MINIMAX_API_KEY
         timeout_seconds: 360

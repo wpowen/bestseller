@@ -65,6 +65,7 @@ from bestseller.services.entry_system_kernel import (
     render_entry_system_kernel_prompt_block,
 )
 from bestseller.services.hook_ledger_runtime import render_hook_ledger_planner_contract
+from bestseller.services.payoff_ledger_runtime import render_payoff_ledger_planner_contract
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology_compiler import MethodologyStage
 from bestseller.services.planner_prompt_helpers import attach_planner_methodology
@@ -90,7 +91,6 @@ from bestseller.services.methodology_bridge import (
     render_phase_block as render_methodology_phase_block,
 )
 from bestseller.services.prompt_packs import (
-    render_methodology_block,
     render_prompt_pack_fragment,
     render_prompt_pack_prompt_block,
     resolve_prompt_pack,
@@ -10151,6 +10151,16 @@ def _book_spec_prompts(
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
     _distilled_architecture_block = _distilled_design_reference_block(project, "architecture")
+    from bestseller.services.hook_propagation import (
+        hook_spec_from_metadata,
+        render_hook_spec_prompt_block,
+    )
+
+    _hook_contract_block = render_hook_spec_prompt_block(
+        hook_spec_from_metadata(project.metadata_json if isinstance(project.metadata_json, dict) else {}),
+        language=language,
+    )
+    _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
     if is_en:
         user_prompt = (
             f"Project title: {project.title}\n"
@@ -10165,6 +10175,7 @@ def _book_spec_prompts(
             f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_story_package_block}\n"
             f"{_distilled_architecture_block}"
+            f"{_hook_contract_line}"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "Generate a BookSpec JSON with title, logline, genre, target_audience, tone, themes, "
@@ -10186,6 +10197,7 @@ def _book_spec_prompts(
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_story_package_block}\n"
             f"{_distilled_architecture_block}"
+            f"{_hook_contract_line}"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "请生成一个 BookSpec JSON，包含 title、logline、genre、target_audience、tone、themes、"
@@ -10328,6 +10340,16 @@ def _world_spec_prompts(
     _mat_ref_block = f"\n{_mat_ref}\n" if _mat_ref else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
     _distilled_world_block = _distilled_design_reference_block(project, "world")
+    from bestseller.services.hook_propagation import (
+        hook_spec_from_metadata,
+        render_hook_spec_prompt_block,
+    )
+
+    _hook_contract_block = render_hook_spec_prompt_block(
+        hook_spec_from_metadata(project.metadata_json if isinstance(project.metadata_json, dict) else {}),
+        language=language,
+    )
+    _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -10339,6 +10361,7 @@ def _world_spec_prompts(
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
             f"{_story_package_block}\n"
             f"{_distilled_world_block}"
+            f"{_hook_contract_line}"
             f"{_pp_world_spec}"
             f"{_mat_ref_block}"
             "Generate a WorldSpec JSON with world_name, world_premise, rules, power_system, locations, factions, power_structure, history_key_events, and forbidden_zones. "
@@ -10355,6 +10378,7 @@ def _world_spec_prompts(
             f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
             f"{_story_package_block}\n"
             f"{_distilled_world_block}"
+            f"{_hook_contract_line}"
             f"{_pp_world_spec}"
             f"{_mat_ref_block}"
             "请生成一个 WorldSpec JSON，包含 world_name、world_premise、rules、power_system、locations、"
@@ -10682,6 +10706,16 @@ def _volume_plan_prompts(
     _entry_registry_block = _entry_registry_prompt_block(project)
     _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
     _distilled_volume_block = _distilled_design_reference_block(project, "volume_plan")
+    from bestseller.services.hook_propagation import (
+        hook_spec_from_metadata,
+        render_hook_spec_prompt_block,
+    )
+
+    _hook_contract_block = render_hook_spec_prompt_block(
+        hook_spec_from_metadata(project.metadata_json if isinstance(project.metadata_json, dict) else {}),
+        language=language,
+    )
+    _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -10695,6 +10729,7 @@ def _volume_plan_prompts(
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n"
             f"{_story_package_block}\n"
             f"{_distilled_volume_block}"
+            f"{_hook_contract_line}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
             f"{_public_emotion_block}\n"
@@ -10732,6 +10767,7 @@ def _volume_plan_prompts(
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n"
             f"{_story_package_block}\n"
             f"{_distilled_volume_block}"
+            f"{_hook_contract_line}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
             f"{_public_emotion_block}\n"
@@ -10897,6 +10933,23 @@ def _outline_prompts(
     _distilled_outline_block = _distilled_design_reference_block(project, "chapter_outline")
     _hook_ledger_v2_block = render_hook_ledger_planner_contract(language=language)
     _hook_ledger_v2_line = f"\n{_hook_ledger_v2_block}\n" if _hook_ledger_v2_block else ""
+    _payoff_ledger_v2_block = render_payoff_ledger_planner_contract(language=language)
+    _payoff_ledger_v2_line = f"\n{_payoff_ledger_v2_block}\n" if _payoff_ledger_v2_block else ""
+    from bestseller.services.hook_propagation import (
+        hook_spec_from_metadata,
+        render_hook_spec_prompt_block,
+    )
+
+    _hook_spec = hook_spec_from_metadata(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    )
+    _anti_commonsense_hook_block = render_hook_spec_prompt_block(
+        _hook_spec,
+        language=language,
+    )
+    _anti_commonsense_hook_line = (
+        f"\n{_anti_commonsense_hook_block}\n" if _anti_commonsense_hook_block else ""
+    )
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -10916,7 +10969,9 @@ def _outline_prompts(
             f"{_character_drama_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
+            f"{_payoff_ledger_v2_line}"
             "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. Each chapter needs at least 3 scenes. "
             "The first 3 chapters must rapidly establish the protagonist edge, the core anomaly, the first gain/loss cycle, and a strong read-on hook. "
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
@@ -10975,7 +11030,9 @@ def _outline_prompts(
             f"{_character_drama_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
+            f"{_payoff_ledger_v2_line}"
             "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
             "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子；"
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
@@ -11261,6 +11318,24 @@ def _volume_outline_prompts(
     _ledger_line = f"{revealed_ledger_block}\n\n" if revealed_ledger_block else ""
     _hook_ledger_v2_block = render_hook_ledger_planner_contract(language=language)
     _hook_ledger_v2_line = f"\n{_hook_ledger_v2_block}\n" if _hook_ledger_v2_block else ""
+    _payoff_ledger_v2_block = render_payoff_ledger_planner_contract(language=language)
+    _payoff_ledger_v2_line = f"\n{_payoff_ledger_v2_block}\n" if _payoff_ledger_v2_block else ""
+    from bestseller.services.hook_propagation import (
+        hook_outline_extra_constraints,
+        hook_spec_from_metadata,
+        render_hook_spec_prompt_block,
+    )
+
+    _hook_spec = hook_spec_from_metadata(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    )
+    _anti_commonsense_hook_block = render_hook_spec_prompt_block(
+        _hook_spec,
+        language=language,
+    )
+    _anti_commonsense_hook_line = (
+        f"\n{_anti_commonsense_hook_block}\n" if _anti_commonsense_hook_block else ""
+    )
     _prior_vols_block = render_prior_volumes_summary_block(
         volume_plan,
         current_volume_number=volume_number,
@@ -11299,7 +11374,9 @@ def _volume_outline_prompts(
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
+            f"{_payoff_ledger_v2_line}"
             f"Generate a ChapterOutlineBatch JSON for volume {volume_number} ONLY ({chapter_count} chapters). "
             f"The chapters array must contain exactly {chapter_count} objects, one per chapter, with no summaries or grouped chapters. "
             f"{chapter_bounds_line_en}"
@@ -11363,7 +11440,9 @@ def _volume_outline_prompts(
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
+            f"{_payoff_ledger_v2_line}"
             f"请仅生成第{volume_number}卷的 ChapterOutlineBatch JSON（共{chapter_count}章），"
             f"chapters 数组必须恰好包含 {chapter_count} 个章节对象，一章一个对象，不能概括、合并或分组，"
             f"{chapter_bounds_line_zh}"
@@ -11407,13 +11486,15 @@ def _volume_outline_prompts(
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
-    if extra_constraints:
+    hook_constraints = hook_outline_extra_constraints(_hook_spec, language=language)
+    merged_extra_constraints = [*(extra_constraints or []), *hook_constraints]
+    if merged_extra_constraints:
         header = (
             "[Hard constraints — MUST be reflected in the outline]"
             if is_en
             else "【硬约束 — 必须体现在章纲中】"
         )
-        constraint_lines = "\n".join(f"- {c}" for c in extra_constraints)
+        constraint_lines = "\n".join(f"- {c}" for c in merged_extra_constraints)
         user_prompt += f"\n\n{header}\n{constraint_lines}"
     return system_prompt, user_prompt
 
@@ -13880,6 +13961,100 @@ async def _run_prewrite_readiness_gate(
     return payload
 
 
+async def _run_hook_strength_gate(
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    premise: str,
+) -> tuple[Any | None, dict[str, Any] | None]:
+    if not getattr(settings.hook_engine, "enabled", True):
+        return None, None
+    from bestseller.services.anti_commonsense_hook import (
+        build_hook_duplicate_risk_fn,
+        generate_hook_candidates,
+    )
+    from bestseller.services.hook_propagation import (
+        coerce_hook_spec,
+        stash_hook_spec_on_project,
+    )
+    from bestseller.services.hook_strength_gate import (
+        evaluate_hook_strength_gate,
+        hook_strength_report_to_dict,
+        repair_hook_spec_once,
+    )
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    hook_spec = coerce_hook_spec(metadata.get("hook_spec"))
+    min_h_norm = float(getattr(settings.hook_engine, "min_h_norm", 30.0))
+    reference_texts: list[str] = [premise, str(getattr(project, "title", "") or "")]
+    for key in ("hook_history", "hook_candidates", "previous_hooks"):
+        raw = metadata.get(key)
+        if isinstance(raw, list):
+            for item in raw:
+                if isinstance(item, dict):
+                    spec_payload = item.get("spec") if isinstance(item.get("spec"), dict) else item
+                    reference_texts.extend(
+                        str(spec_payload.get(field) or "")
+                        for field in ("one_liner", "core_rule", "reversal")
+                        if isinstance(spec_payload, dict)
+                    )
+                else:
+                    reference_texts.append(str(item))
+    duplicate_risk_fn = build_hook_duplicate_risk_fn(reference_texts)
+    if hook_spec is None:
+        rank_weights = {
+            "h_norm": float(getattr(settings.hook_engine, "rank_weight_h_norm", 0.62)),
+            "novelty": float(getattr(settings.hook_engine, "rank_weight_novelty", 0.28)),
+            "duplicate_risk": float(
+                getattr(settings.hook_engine, "rank_weight_duplicate_risk", 0.10)
+            ),
+        }
+        candidates = generate_hook_candidates(
+            genre=project.genre,
+            locale=project.language,
+            role=None,
+            base_desire=None,
+            count=max(1, int(getattr(settings.hook_engine, "candidate_count", 6))),
+            seed=int(
+                hashlib.sha256(f"{project.slug}:{premise}".encode("utf-8")).hexdigest()[:8],
+                16,
+            ),
+            min_h_norm=min_h_norm,
+            duplicate_risk_fn=duplicate_risk_fn,
+            rank_weights=rank_weights,
+        )
+        if candidates:
+            hook_spec = candidates[0].spec
+            metadata = dict(metadata)
+            metadata["hook_candidates"] = [item.model_dump(mode="json") for item in candidates]
+            project.metadata_json = metadata
+    if hook_spec is None:
+        return None, None
+    report = evaluate_hook_strength_gate(
+        hook_spec,
+        min_h_norm=min_h_norm,
+    )
+    rewrite_attempted = False
+    rewrite_applied = False
+    if not report.passed:
+        rewrite_attempted = True
+        repaired = repair_hook_spec_once(hook_spec, report)
+        repaired_report = evaluate_hook_strength_gate(repaired, min_h_norm=min_h_norm)
+        if repaired_report.h_norm > report.h_norm:
+            hook_spec = repaired
+            report = repaired_report
+            rewrite_applied = True
+    if report.score.verdict == "reject":
+        raise PlannerFallbackError(
+            f"Anti-commonsense hook rejected: H_norm {report.h_norm:.2f} < 15.00"
+        )
+    payload = hook_strength_report_to_dict(report)
+    payload["rewrite_attempted"] = rewrite_attempted
+    payload["rewrite_applied"] = rewrite_applied
+    stash_hook_spec_on_project(project, hook_spec, score_payload=payload)
+    return hook_spec, payload
+
+
 async def _run_reverse_outline_gate(
     session: AsyncSession,
     settings: AppSettings,
@@ -14183,8 +14358,31 @@ async def generate_novel_plan(
         category_key=_category_key,
         settings=settings,
     )
+    hook_spec: Any | None = None
 
     try:
+        hook_gate_payload: dict[str, Any] | None = None
+        if getattr(settings.hook_engine, "enabled", True):
+            current_step_name = "hook_strength_gate"
+            workflow_run.current_step = current_step_name
+            hook_spec, hook_gate_payload = await _run_hook_strength_gate(
+                settings,
+                project=project,
+                premise=premise,
+            )
+            if hook_gate_payload is not None:
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref=hook_gate_payload,
+                )
+                step_order += 1
+            current_step_name = "store_premise"
+            workflow_run.current_step = current_step_name
+
         premise_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -14290,6 +14488,10 @@ async def generate_novel_plan(
             premise,
             book_spec_payload,
         )
+        if hook_spec is not None:
+            from bestseller.services.hook_propagation import apply_hook_to_book_spec
+
+            book_spec_payload = apply_hook_to_book_spec(book_spec_payload, hook_spec)
 
         # ── Narrative-lines gate: validate the four-layer macro contract
         # (明线/暗线/隐藏线/核心轴) is present in the BookSpec before
@@ -14314,6 +14516,10 @@ async def generate_novel_plan(
             premise,
             book_spec_payload,
         )
+        if hook_spec is not None:
+            from bestseller.services.hook_propagation import apply_hook_to_book_spec
+
+            book_spec_payload = apply_hook_to_book_spec(book_spec_payload, hook_spec)
 
         book_artifact = await import_planning_artifact(
             session,
@@ -14404,6 +14610,10 @@ async def generate_novel_plan(
         if world_richness_repair_llm_run_id is not None:
             llm_run_ids.append(world_richness_repair_llm_run_id)
             world_spec_payload = repaired_world_spec
+        if hook_spec is not None:
+            from bestseller.services.hook_propagation import apply_hook_to_world_spec
+
+            world_spec_payload = apply_hook_to_world_spec(world_spec_payload, hook_spec)
 
         world_artifact = await import_planning_artifact(
             session,
@@ -15017,6 +15227,10 @@ async def generate_novel_plan(
         )
         if foresh_repair_llm_run_id is not None:
             llm_run_ids.append(foresh_repair_llm_run_id)
+        if hook_spec is not None:
+            from bestseller.services.hook_propagation import apply_hook_to_volume_plan
+
+            volume_plan_payload = apply_hook_to_volume_plan(volume_plan_payload, hook_spec)
 
         volume_artifact = await import_planning_artifact(
             session,
@@ -15734,8 +15948,31 @@ async def generate_foundation_plan(
         category_key=_category_key,
         settings=settings,
     )
+    hook_spec: Any | None = None
 
     try:
+        hook_gate_payload: dict[str, Any] | None = None
+        if getattr(settings.hook_engine, "enabled", True):
+            current_step_name = "hook_strength_gate"
+            workflow_run.current_step = current_step_name
+            hook_spec, hook_gate_payload = await _run_hook_strength_gate(
+                settings,
+                project=project,
+                premise=premise,
+            )
+            if hook_gate_payload is not None:
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref=hook_gate_payload,
+                )
+                step_order += 1
+            current_step_name = "store_premise"
+            workflow_run.current_step = current_step_name
+
         # ── Premise ──
         premise_artifact = await import_planning_artifact(
             session,
@@ -15828,6 +16065,10 @@ async def generate_foundation_plan(
         if narrative_lines_repair_llm_run_id is not None:
             llm_run_ids.append(narrative_lines_repair_llm_run_id)
             book_spec_payload = repaired_book_spec
+        if hook_spec is not None:
+            from bestseller.services.hook_propagation import apply_hook_to_book_spec
+
+            book_spec_payload = apply_hook_to_book_spec(book_spec_payload, hook_spec)
 
         book_artifact = await import_planning_artifact(
             session,
@@ -15894,6 +16135,10 @@ async def generate_foundation_plan(
         if world_richness_repair_llm_run_id is not None:
             llm_run_ids.append(world_richness_repair_llm_run_id)
             world_spec_payload = repaired_world_spec
+        if hook_spec is not None:
+            from bestseller.services.hook_propagation import apply_hook_to_world_spec
+
+            world_spec_payload = apply_hook_to_world_spec(world_spec_payload, hook_spec)
 
         world_artifact = await import_planning_artifact(
             session,
@@ -16160,6 +16405,10 @@ async def generate_foundation_plan(
         )
         if foresh_repair_llm_run_id is not None:
             llm_run_ids.append(foresh_repair_llm_run_id)
+        if hook_spec is not None:
+            from bestseller.services.hook_propagation import apply_hook_to_volume_plan
+
+            volume_plan_payload = apply_hook_to_volume_plan(volume_plan_payload, hook_spec)
 
         volume_artifact = await import_planning_artifact(
             session,

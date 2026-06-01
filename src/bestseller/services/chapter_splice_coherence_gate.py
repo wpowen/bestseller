@@ -10,10 +10,14 @@ without setup.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from difflib import SequenceMatcher
 import re
+from typing import Any
 
 from bestseller.domain.gate_verdict import GateFinding, GateVerdict
+from bestseller.services.checker_schema import CheckerIssue, CheckerReport
+from bestseller.services.quality_finding_schema import QualityFinding
 
 _SENTENCE_SPLIT_RE = re.compile(r"[。！？!?]\s*|\n+")
 _PUNCT_RE = re.compile(r"[\s，。！？、；：,.!?;:\"'“”‘’（）()\[\]【】《》#*_`-]+")
@@ -39,6 +43,169 @@ _BRIDGE_RE = re.compile(
     r"(?:与此同时|另一边|随后|接着|不久|片刻后|十分钟后|半小时后|四十分钟后|"
     r"第二天|转场|回到|赶到|来到|到了|换了地方|车停在|他们进了)"
 )
+
+
+_SPLICE_CRITICAL_CODES: frozenset[str] = frozenset(
+    {
+        "CHAPTER_SPLICE_REPEATED_SENTENCE",
+        "CHAPTER_SPLICE_NEAR_DUPLICATE_BLOCK",
+        "CHAPTER_SPLICE_PRESENCE_CONTRADICTION",
+    }
+)
+
+_SPLICE_HIGH_RATIONALES: dict[str, tuple[str, ...]] = {
+    "CHAPTER_SPLICE_LOCATION_DRIFT": ("LOGIC_INTEGRITY", "WORLD_RULE_CONSTRAINT"),
+    "CHAPTER_SPLICE_UNSEEDED_LOCATION_REFERENCE": (
+        "WORLD_RULE_CONSTRAINT",
+        "LOGIC_INTEGRITY",
+    ),
+    "CHAPTER_SPLICE_TIME_JUMP": ("ARC_TIMING", "EDITORIAL_INTENT"),
+}
+_SPLICE_PARAGRAPH_SCOPE_CODES: frozenset[str] = frozenset(
+    {
+        "CHAPTER_SPLICE_REPEATED_SENTENCE",
+        "CHAPTER_SPLICE_NEAR_DUPLICATE_BLOCK",
+    }
+)
+_SPLICE_BLOCKING_SEVERITIES: frozenset[str] = frozenset({"critical", "high"})
+
+
+def _dedupe_findings(findings: Iterable[GateFinding]) -> tuple[GateFinding, ...]:
+    deduped: list[GateFinding] = []
+    seen: set[tuple[str, str, str]] = set()
+    for finding in findings:
+        key = (finding.code, finding.path, finding.message)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(finding)
+    return tuple(deduped)
+
+
+def blocking_splice_findings(verdict: GateVerdict) -> tuple[GateFinding, ...]:
+    """Return deduped splice findings that should trigger repair/governance."""
+    return tuple(
+        finding
+        for finding in _dedupe_findings(verdict.findings)
+        if finding.severity in _SPLICE_BLOCKING_SEVERITIES
+    )
+
+
+def splice_repair_scope(finding: GateFinding) -> str:
+    return "paragraph" if finding.code in _SPLICE_PARAGRAPH_SCOPE_CODES else "chapter"
+
+
+def _finding_to_issue(finding: GateFinding) -> CheckerIssue:
+    if finding.code in _SPLICE_CRITICAL_CODES:
+        can_override = False
+        rationales: tuple[str, ...] = ()
+    else:
+        can_override = True
+        rationales = _SPLICE_HIGH_RATIONALES.get(
+            finding.code, ("EDITORIAL_INTENT", "ARC_TIMING")
+        )
+    return CheckerIssue(
+        id=finding.code,
+        type="splice_coherence",
+        severity=finding.severity,
+        location=finding.path or "chapter",
+        description=finding.message,
+        suggestion=finding.repair_action or "",
+        can_override=can_override,
+        allowed_rationales=rationales,
+    )
+
+
+def as_checker_report(
+    verdict: GateVerdict,
+    *,
+    chapter_number: int | None = None,
+    issues: "Iterable[CheckerIssue] | None" = None,
+) -> CheckerReport:
+    materialised_issues = (
+        list(issues)
+        if issues is not None
+        else [_finding_to_issue(f) for f in _dedupe_findings(verdict.findings)]
+    )
+    passed = verdict.verdict == "pass"
+    return CheckerReport(
+        agent=verdict.gate_name,
+        chapter=chapter_number or 0,
+        overall_score=int(round((verdict.coverage or 0.0) * 100)),
+        passed=passed,
+        issues=tuple(materialised_issues),
+        metrics=dict(verdict.metrics),
+        summary=verdict.summary,
+    )
+
+
+def as_quality_findings(
+    verdict: GateVerdict,
+    *,
+    chapter_number: int | None = None,
+    source: str = "chapter_quality_bundle.splice_coherence",
+) -> tuple[QualityFinding, ...]:
+    """Adapt splice findings into the chapter quality bundle's normalized shape."""
+
+    findings: list[QualityFinding] = []
+    for finding in _dedupe_findings(verdict.findings):
+        issue = _finding_to_issue(finding)
+        findings.append(
+            QualityFinding(
+                code=finding.code,
+                severity=finding.severity,
+                source=source,
+                chapter_number=chapter_number,
+                evidence={
+                    "message": finding.message,
+                    "path": finding.path,
+                    "gate": verdict.gate_name,
+                    "can_override": issue.can_override,
+                    "allowed_rationales": list(issue.allowed_rationales),
+                    "schema_version": verdict.schema_version,
+                },
+                repair_hint=finding.repair_action or finding.message,
+                repair_scope=splice_repair_scope(finding),
+                blocking=finding.severity in _SPLICE_BLOCKING_SEVERITIES,
+            )
+        )
+    return tuple(findings)
+
+
+def as_repair_patch_points(
+    findings: Sequence[GateFinding],
+) -> tuple[Mapping[str, object], ...]:
+    """Adapt splice findings into autonomous repair patch-point payloads."""
+
+    return tuple(
+        {
+            "cause_id": finding.code,
+            "location": finding.path,
+            "issue_summary": finding.message,
+            "snippet": "",
+            "repair_action_summary": finding.repair_action,
+        }
+        for finding in _dedupe_findings(findings)
+    )
+
+
+def as_gate_summary(
+    verdict: GateVerdict,
+    *,
+    chapter_number: int | None,
+) -> dict[str, Any]:
+    """Return the WIP/reporting summary for one splice gate verdict."""
+
+    return {
+        "chapter_number": chapter_number,
+        "verdict": verdict.verdict,
+        "coverage": verdict.coverage,
+        "metrics": dict(verdict.metrics),
+        "blocking_findings": [
+            finding.model_dump(mode="json")
+            for finding in blocking_splice_findings(verdict)
+        ],
+    }
 
 
 def evaluate_chapter_splice_coherence(
@@ -269,4 +436,12 @@ def _looks_like_actor(value: str) -> bool:
     return value not in {"他们", "我们", "有人", "那人", "众人", "所有人", "电梯", "镜子"}
 
 
-__all__ = ["evaluate_chapter_splice_coherence"]
+__all__ = [
+    "as_checker_report",
+    "as_gate_summary",
+    "as_quality_findings",
+    "as_repair_patch_points",
+    "blocking_splice_findings",
+    "evaluate_chapter_splice_coherence",
+    "splice_repair_scope",
+]

@@ -302,3 +302,209 @@ class OverrideStore:
 
 # Re-export the callback type so call sites can type their variables.
 from bestseller.services.write_gate import OverrideLookup  # noqa: E402
+
+
+
+# =============================================================================
+# DB-persistence shim (Phase C+, P0-5)
+# =============================================================================
+#
+# ``OverrideStore`` keeps rows in module-level in-memory ``_rows: list``.
+# That is fine while ``quality_gates.yaml:phase_c_overrides.enabled`` stays
+# False (the production default), but enabling Phase C in a multi-worker
+# deployment would lose state across workers and across restarts.
+#
+# ``OverrideContractModel`` (``infra/db/models.py``) already defines a
+# backing table — the gap is that no code path writes to it.  The two
+# helpers below are a stepping stone:
+#   * ``persist_to_metadata_json`` snapshots the in-memory store into the
+#     project's ``metadata_json["override_contracts"]`` JSONB column.
+#   * ``load_from_metadata_json`` rebuilds an ``OverrideStore`` from the
+#     same column at worker startup.
+#
+# Full migration (Phase D-B) will replace these with direct ORM writes.
+# For now they are explicit shims so the migration is one PR.
+# =============================================================================
+
+
+def persist_to_metadata_json(
+    store: OverrideStore,
+    *,
+    project_id: str,
+) -> list[dict[str, Any]]:
+    """Return a JSON-safe snapshot of ``store`` rows for ``project_id``.
+
+    Callers (e.g. the chapter pipeline's checkpoint phase) write this list
+    to ``ProjectModel.metadata_json["override_contracts"]``.  The shape
+    is compatible with the future ``OverrideContractModel`` ORM write
+    path so callers can switch without touching consumers.
+    """
+    return [
+        {
+            "id": row.id,
+            "project_id": row.project_id,
+            "chapter_no": row.chapter_no,
+            "violation_code": row.violation_code,
+            "rationale_type": row.rationale_type,
+            "rationale_text": row.rationale_text,
+            "payback_plan": row.payback_plan,
+            "due_chapter": row.due_chapter,
+            "status": row.status,
+            "created_at": row.created_at,
+            "is_active": row.is_active,
+        }
+        for row in store._rows
+        if row.project_id == project_id
+    ]
+
+
+def load_from_metadata_json(
+    *,
+    project_id: str,
+    payload: list[dict[str, Any]] | None,
+) -> OverrideStore:
+    """Rebuild an :class:`OverrideStore` from a JSONB snapshot.
+
+    Empty / None ``payload`` returns a fresh empty store.  This is the
+    companion to :func:`persist_to_metadata_json` and is what the worker
+    should call at startup before processing any chapter for ``project_id``.
+    """
+    store = OverrideStore()
+    for entry in payload or []:
+        if entry.get("project_id") != project_id:
+            continue
+        store._rows.append(
+            OverrideContract(
+                id=str(entry.get("id") or ""),
+                project_id=str(entry.get("project_id") or ""),
+                chapter_no=int(entry.get("chapter_no") or 0),
+                violation_code=str(entry.get("violation_code") or ""),
+                rationale_type=str(entry.get("rationale_type") or "EDITORIAL_INTENT"),
+                rationale_text=str(entry.get("rationale_text") or ""),
+                payback_plan=str(entry.get("payback_plan") or ""),
+                due_chapter=int(entry.get("due_chapter") or 0) or None,
+                status=str(entry.get("status") or "active"),
+                created_at=str(entry.get("created_at") or ""),
+                is_active=bool(entry.get("is_active", True)),
+            )
+        )
+    return store
+
+
+
+# =============================================================================
+# Live DB write helpers (T7 — P0-5 落 DB)
+# =============================================================================
+#
+# These functions write/read ``OverrideContract`` rows to
+# ``OverrideContractModel`` (defined in ``infra/db/models.py``).  The pair
+# ``save_override_store`` + ``load_override_store`` is the canonical
+# way to make ``OverrideStore`` survive across worker processes and
+# across restarts.  The metadata_json shim above remains in place for
+# callers that prefer project-level snapshots.
+# =============================================================================
+
+
+async def save_override_store(
+    session: "AsyncSession",
+    *,
+    project: "ProjectModel",
+    store: OverrideStore,
+) -> int:
+    """Persist all rows of ``store`` that belong to ``project`` to
+    ``OverrideContractModel``.
+
+    Returns the number of rows newly inserted.  Existing rows with the
+    same ``(project_id, chapter_no, violation_code, status)`` tuple
+    are left alone (idempotent).  The function assumes the caller has
+    already validated that ``phase_c_overrides`` is enabled.
+    """
+    from sqlalchemy import select
+    from uuid import UUID as _UUID
+    from datetime import datetime, timezone
+    from bestseller.infra.db.models import OverrideContractModel
+
+    project_id = getattr(project, "id", None)
+    if project_id is None:
+        return 0
+
+    inserted = 0
+    for row in store._rows:
+        if str(row.project_id) != str(project_id):
+            continue
+        # Idempotency: skip if a row with the same composite key already exists
+        existing = await session.scalar(
+            select(OverrideContractModel).where(
+                OverrideContractModel.project_id == project_id,
+                OverrideContractModel.chapter_no == row.chapter_no,
+                OverrideContractModel.violation_code == row.violation_code,
+                OverrideContractModel.status == (row.status or "active"),
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(
+            OverrideContractModel(
+                project_id=project_id,
+                chapter_no=int(row.chapter_no or 0),
+                violation_code=str(row.violation_code or ""),
+                rationale_type=str(row.rationale_type or "EDITORIAL_INTENT"),
+                rationale_text=str(row.rationale_text or ""),
+                payback_plan=str(row.payback_plan or ""),
+                due_chapter=int(row.due_chapter or row.chapter_no + 10),
+                status=str(row.status or "active"),
+            )
+        )
+        inserted += 1
+    return inserted
+
+
+async def load_override_store(
+    session: "AsyncSession",
+    *,
+    project: "ProjectModel",
+) -> OverrideStore:
+    """Build an :class:`OverrideStore` from ``OverrideContractModel`` rows
+    belonging to ``project``.
+    """
+    from sqlalchemy import select
+    from bestseller.infra.db.models import OverrideContractModel
+
+    project_id = getattr(project, "id", None)
+    if project_id is None:
+        return OverrideStore()
+    rows = list(
+        await session.scalars(
+            select(OverrideContractModel).where(
+                OverrideContractModel.project_id == project_id,
+            )
+        )
+    )
+    store = OverrideStore()
+    from datetime import datetime as _dt
+    for row in rows:
+        # Map DB row.status (string) to OverrideStatus enum
+        status_value = str(row.status or "active")
+        try:
+            status_enum = OverrideStatus(status_value)
+        except ValueError:
+            status_enum = OverrideStatus.ACTIVE
+        store._rows.append(
+            OverrideContract(
+                id=int(row.id or 0),
+                project_id=str(row.project_id),
+                chapter_no=int(row.chapter_no or 0),
+                violation_code=str(row.violation_code or ""),
+                rationale_type=str(row.rationale_type or "EDITORIAL_INTENT"),
+                rationale_text=str(row.rationale_text or ""),
+                payback_plan=str(row.payback_plan or ""),
+                due_chapter=int(row.due_chapter or 0),
+                status=status_enum,
+                created_at=(
+                    row.created_at
+                    if isinstance(row.created_at, _dt)
+                    else _dt.now()
+                ),
+            )
+        )
+    return store

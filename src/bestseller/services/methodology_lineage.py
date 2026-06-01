@@ -8,8 +8,9 @@ inside ``ChapterContractModel.metadata_json`` without a schema migration.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, TypeAdapter, field_validator, model_validator
 
 METHODOLOGY_LINEAGE_METADATA_KEY = "methodology_lineage"
 
@@ -71,36 +72,60 @@ _STAGE_SLOTS: dict[str, frozenset[str]] = {
 }
 
 
-@dataclass(frozen=True)
-class AppliedMethodology:
+class AppliedMethodology(BaseModel):
+    """A single methodology rule selected for a chapter.
+
+    Migrated from frozen dataclass to Pydantic BaseModel for stronger
+    typing, automatic JSON serialisation, and TypeAdapter compatibility
+    in the rest of the lineage machinery.  Existing ``to_dict()`` /
+    ``from_dict()`` helpers are preserved as thin shims so callers that
+    round-trip through dicts (e.g. ``workflows.py:1580``) keep working.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
     rule_id: str
     slot: str
     craft_function: str
     target_artifact_path: str
     application_hint: str
-    evidence_fields: tuple[str, ...]
-    verifiability: str
-    gate_mode: str
-    indicator_targets: tuple[str, ...]
-    source_lineage: str
-    why_selected: str
+    evidence_fields: tuple[str, ...] = ()
+    verifiability: str = "advisory"
+    gate_mode: str = "advisory"
+    indicator_targets: tuple[str, ...] = ()
+    source_lineage: str = ""
+    why_selected: str = ""
 
-    def __post_init__(self) -> None:
-        if not self.rule_id.strip():
-            raise ValueError("AppliedMethodology.rule_id is required.")
-        if not self.slot.strip():
-            raise ValueError("AppliedMethodology.slot is required.")
-        if not self.target_artifact_path.strip():
-            raise ValueError("AppliedMethodology.target_artifact_path is required.")
+    @field_validator("rule_id", "slot", "target_artifact_path")
+    @classmethod
+    def _non_empty(cls, value: str) -> str:
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise ValueError("AppliedMethodology field is required.")
+        return cleaned
+
+    @field_validator("verifiability")
+    @classmethod
+    def _verifiability_ok(cls, value: str) -> str:
+        if value not in {"strict", "heuristic", "advisory"}:
+            raise ValueError(f"Unsupported verifiability: {value!r}.")
+        return value
+
+    @field_validator("gate_mode")
+    @classmethod
+    def _gate_mode_ok(cls, value: str) -> str:
+        if value not in {"advisory", "warn", "block"}:
+            raise ValueError(f"Unsupported gate_mode: {value!r}.")
+        return value
+
+    @model_validator(mode="after")
+    def _evidence_required(self) -> AppliedMethodology:
         if not self.evidence_fields:
             raise ValueError("AppliedMethodology.evidence_fields is required.")
-        if self.verifiability not in {"strict", "heuristic", "advisory"}:
-            raise ValueError(f"Unsupported verifiability: {self.verifiability!r}.")
-        if self.gate_mode not in {"advisory", "warn", "block"}:
-            raise ValueError(f"Unsupported gate_mode: {self.gate_mode!r}.")
+        return self
 
     def to_dict(self) -> dict[str, Any]:
-        payload = asdict(self)
+        payload = self.model_dump(mode="json")
         payload["evidence_fields"] = list(self.evidence_fields)
         payload["indicator_targets"] = list(self.indicator_targets)
         return payload
@@ -130,25 +155,44 @@ class AppliedMethodology:
         )
 
 
-@dataclass(frozen=True)
-class MethodologyLineage:
-    chapter_no: int
-    genre_profile: str
-    chapter_role: str
-    selected: tuple[AppliedMethodology, ...]
-    selection_seed: str
-    budget_tokens: int
-    budget_cards: int
+class MethodologyLineage(BaseModel):
+    """Selection of methodology rules for a single chapter.
 
-    def __post_init__(self) -> None:
-        if self.chapter_no < 1:
+    Migrated to Pydantic BaseModel.  The lineage is selected once during
+    chapter planning, then downstream stages consume it read-only via
+    :func:`render_methodology_lineage_prompt_block` and the slot-based
+    health machinery.  TypeAdapter (``MethodologyLineageAdapter``) gives
+    callers a single-call validation path for dict / dataclass / Pydantic
+    inputs, eliminating the older ``methodology_lineage_from_object``
+    branching.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    chapter_no: int
+    genre_profile: str = ""
+    chapter_role: str = ""
+    selected: tuple[AppliedMethodology, ...] = ()
+    selection_seed: str = ""
+    budget_tokens: int = 1
+    budget_cards: int = 1
+
+    @field_validator("chapter_no")
+    @classmethod
+    def _chapter_no_positive(cls, value: int) -> int:
+        if value < 1:
             raise ValueError("MethodologyLineage.chapter_no must be >= 1.")
+        return value
+
+    @model_validator(mode="after")
+    def _budgets_consistent(self) -> MethodologyLineage:
         if self.budget_cards < 1:
             raise ValueError("MethodologyLineage.budget_cards must be >= 1.")
         if self.budget_tokens < 1:
             raise ValueError("MethodologyLineage.budget_tokens must be >= 1.")
         if len(self.selected) > self.budget_cards:
             raise ValueError("MethodologyLineage.selected exceeds budget_cards.")
+        return self
 
     def for_slot(self, slot: str) -> tuple[AppliedMethodology, ...]:
         return tuple(item for item in self.selected if item.slot == slot)
@@ -186,6 +230,14 @@ class MethodologyLineage:
             budget_tokens=int(payload.get("budget_tokens") or 1),
             budget_cards=int(payload.get("budget_cards") or 1),
         )
+
+
+# Single-call TypeAdapter for the lineage so call sites can do
+# ``MethodologyLineageAdapter.validate_python(payload)`` without
+# branching on dict / dataclass / Pydantic input shape.
+MethodologyLineageAdapter: TypeAdapter[MethodologyLineage] = TypeAdapter(
+    MethodologyLineage
+)
 
 
 def methodology_lineage_to_dict(lineage: MethodologyLineage) -> dict[str, Any]:

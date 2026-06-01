@@ -18,7 +18,7 @@
 
 默认启用：
 
-- `minimax-m27`: `openai/MiniMax-M2.7-highspeed`
+- `minimax-m3`: `openai/MiniMax-M3`
 - `deepseek-official`: `deepseek/deepseek-reasoner`
 
 官方 DeepSeek 直连使用 `DEEPSEEK_API_KEY` 和 `https://api.deepseek.com/v1`。
@@ -37,7 +37,7 @@ uv run bestseller model-pilot list
 
 ```bash
 uv run bestseller model-pilot run short-complete-30 \
-  --variant minimax-m27 \
+  --variant minimax-m3 \
   --variant deepseek-official \
   --slug-prefix pilot30
 ```

@@ -581,3 +581,33 @@ async def test_build_chapter_writer_context_includes_scene_plan_and_filters_futu
     assert packet.retrieval_chunks[0].chunk_text == "本章之前的关键线索"
     assert packet.active_emotion_tracks[0].track_code == "bond-shenyan-gulin"
     assert packet.active_antagonist_plans[0].plan_code == "volume-01-pressure"
+
+
+def test_merge_due_payoff_codes_unions_column_and_methodology() -> None:
+    merge = context_services._merge_due_payoff_codes
+
+    # Both empty
+    assert merge(column_codes=[], methodology_codes=[]) == []
+
+    # Column-only
+    assert merge(column_codes=["p1", "p2"], methodology_codes=[]) == ["p1", "p2"]
+
+    # Methodology-only
+    assert merge(column_codes=[], methodology_codes=["p1", "p2"]) == ["p1", "p2"]
+
+    # Union with column-first ordering
+    assert merge(column_codes=["a", "b"], methodology_codes=["b", "c"]) == ["a", "b", "c"]
+
+    # Dedup across both
+    assert merge(column_codes=["a", "b", "c"], methodology_codes=["b", "d"]) == [
+        "a",
+        "b",
+        "c",
+        "d",
+    ]
+
+    # Strip whitespace and drop empty / non-string entries
+    assert merge(
+        column_codes=["", "p1", "  ", 42],
+        methodology_codes=[None, "p1", "p2", ""],
+    ) == ["p1", "p2"]

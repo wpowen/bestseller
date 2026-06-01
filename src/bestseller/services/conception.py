@@ -14,6 +14,7 @@ and ``chapter_count``, eliminating the gap between quickstart and studio paths.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -27,12 +28,13 @@ from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
 from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
 from bestseller.services.methodology import render_qimao_regeneration_contract
 from bestseller.services.methodology_compiler import MethodologyStage, compile_methodology
+from bestseller.services.hook_propagation import coerce_hook_spec, render_hook_spec_prompt_block
 from bestseller.services.platform_title_workflow import select_primary_platform_title
 from bestseller.services.writing_profile import (
     resolve_writing_profile,
     sanitize_genre_story_overrides,
 )
-from bestseller.services.writing_presets import list_genre_presets, list_platform_presets
+from bestseller.services.writing_presets import list_genre_presets
 from bestseller.settings import AppSettings
 
 # Import GenreReviewProfile type for type hints; actual resolution is guarded.
@@ -63,6 +65,7 @@ class ConceptionResult:
     commercial_brief: dict[str, Any] = field(default_factory=dict)
     synopsis: str = ""
     tags: list[str] = field(default_factory=list)
+    hook_spec: dict[str, Any] | None = None
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -393,7 +396,6 @@ def _build_genre_context(
         raise ValueError(f"Unknown genre_key: {genre_key}")
 
     is_en = preset.language.startswith("en")
-    platform_presets = {p.key: p for p in list_platform_presets()}
     recommended_platform = None
     if preset.recommended_platforms:
         priority = (
@@ -466,10 +468,17 @@ def _build_genre_context(
 def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
     brief = ctx.get("commercial_brief")
     qimao_block = _qimao_regeneration_prompt_block(ctx)
+    hook_spec = coerce_hook_spec(ctx.get("hook_spec"))
+    hook_block = ""
+    if hook_spec is not None:
+        hook_block = "\n\n" + render_hook_spec_prompt_block(
+            hook_spec,
+            language=str(ctx.get("language") or "zh-CN"),
+        )
     if not isinstance(brief, dict) or not brief:
-        return qimao_block
+        return f"{hook_block}{qimao_block}"
     label = "[Auto commercial positioning brief]" if str(ctx.get("language", "")).startswith("en") else "【自动商业化立项 brief】"
-    return f"\n\n{label}\n{json.dumps(brief, ensure_ascii=False, indent=2)}\n{qimao_block}"
+    return f"\n\n{label}\n{json.dumps(brief, ensure_ascii=False, indent=2)}{hook_block}\n{qimao_block}"
 
 
 def _normalize_string_list(values: Any) -> list[str]:
@@ -1406,6 +1415,57 @@ async def run_conception_pipeline(
     is_en = ctx.get("language", "zh-CN").startswith("en")
     ctx = _sanitize_forbidden_default_motifs(ctx, is_en=is_en)
 
+    selected_hook_spec = coerce_hook_spec(
+        user_hints.get("hook_spec") if isinstance(user_hints, dict) else None
+    )
+    hook_candidates_payload: list[dict[str, Any]] = []
+    if getattr(settings.hook_engine, "enabled", True):
+        try:
+            from bestseller.services.anti_commonsense_hook import (
+                build_hook_duplicate_risk_fn,
+                generate_hook_candidates,
+            )
+
+            candidate_count = max(1, int(getattr(settings.hook_engine, "candidate_count", 6)))
+            rank_weights = {
+                "h_norm": float(getattr(settings.hook_engine, "rank_weight_h_norm", 0.62)),
+                "novelty": float(getattr(settings.hook_engine, "rank_weight_novelty", 0.28)),
+                "duplicate_risk": float(
+                    getattr(settings.hook_engine, "rank_weight_duplicate_risk", 0.10)
+                ),
+            }
+            candidates = generate_hook_candidates(
+                genre=str(ctx.get("genre") or genre_key),
+                locale=str(ctx.get("language") or "zh-CN"),
+                role=(
+                    str(getattr(story_facets, "protagonist_role", "") or "")
+                    if story_facets is not None
+                    else None
+                ),
+                count=candidate_count,
+                seed=int(hashlib.sha256(genre_key.encode("utf-8")).hexdigest()[:8], 16),
+                min_h_norm=float(getattr(settings.hook_engine, "min_h_norm", 30.0)),
+                duplicate_risk_fn=build_hook_duplicate_risk_fn(
+                    [
+                        str(ctx.get("description") or ""),
+                        str(ctx.get("premise_seed") or ""),
+                        str(user_hints or ""),
+                    ]
+                ),
+                rank_weights=rank_weights,
+            )
+            hook_candidates_payload = [item.model_dump(mode="json") for item in candidates]
+            if selected_hook_spec is None and candidates:
+                selected_hook_spec = candidates[0].spec
+        except Exception:
+            logger.warning("Anti-commonsense hook candidate generation failed", exc_info=True)
+    if selected_hook_spec is not None:
+        hook_spec_payload = selected_hook_spec.model_dump(mode="json")
+        ctx["hook_spec"] = hook_spec_payload
+        ctx["anti_commonsense_hook"] = hook_spec_payload
+        if hook_candidates_payload:
+            ctx["hook_candidates"] = hook_candidates_payload
+
     # Resolve genre-specific review profile for prompt injection.
     _genre_profile: GenreReviewProfile | None = None
     try:
@@ -1600,6 +1660,12 @@ async def run_conception_pipeline(
     # Ensure writing_profile has all required sections
     writing_profile = _ensure_complete_profile(writing_profile, ctx, market_proposal, character_proposal, world_proposal)
     writing_profile = _apply_commercial_brief_to_profile(writing_profile, commercial_brief)
+    if selected_hook_spec is not None:
+        market_profile = writing_profile.setdefault("market", {})
+        if isinstance(market_profile, dict):
+            market_profile["logline"] = selected_hook_spec.one_liner
+            market_profile["reader_promise"] = selected_hook_spec.one_liner
+            market_profile["anti_commonsense_hook"] = selected_hook_spec.model_dump(mode="json")
 
     # Fallback premise if empty
     if not premise or len(premise) < 10:
@@ -1712,6 +1778,7 @@ async def run_conception_pipeline(
         llm_run_ids=llm_run_ids,
         synopsis=synopsis,
         tags=tags,
+        hook_spec=selected_hook_spec.model_dump(mode="json") if selected_hook_spec else None,
     )
 
 

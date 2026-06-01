@@ -325,21 +325,21 @@ EOF
 
   if [[ "$LLM_PROVIDER" == "minimax" ]]; then
     cat >>"$ENV_FILE" <<EOF
-export BESTSELLER__LLM__PLANNER__MODEL='openai/MiniMax-M2.7-highspeed'
+export BESTSELLER__LLM__PLANNER__MODEL='openai/MiniMax-M3'
 export BESTSELLER__LLM__PLANNER__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__PLANNER__API_KEY_ENV='MINIMAX_API_KEY'
-export BESTSELLER__LLM__WRITER__MODEL='openai/MiniMax-M2.7-highspeed'
-export BESTSELLER__LLM__WRITER__MODEL_OVERRIDE='openai/MiniMax-M2.7-highspeed'
+export BESTSELLER__LLM__WRITER__MODEL='openai/MiniMax-M3'
+export BESTSELLER__LLM__WRITER__MODEL_OVERRIDE='openai/MiniMax-M3'
 export BESTSELLER__LLM__WRITER__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__WRITER__API_KEY_ENV='MINIMAX_API_KEY'
 export BESTSELLER__LLM__WRITER__STREAM='false'
-export BESTSELLER__LLM__CRITIC__MODEL='openai/MiniMax-M2.7-highspeed'
+export BESTSELLER__LLM__CRITIC__MODEL='openai/MiniMax-M3'
 export BESTSELLER__LLM__CRITIC__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__CRITIC__API_KEY_ENV='MINIMAX_API_KEY'
-export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/MiniMax-M2.7-highspeed'
+export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/MiniMax-M3'
 export BESTSELLER__LLM__SUMMARIZER__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__SUMMARIZER__API_KEY_ENV='MINIMAX_API_KEY'
-export BESTSELLER__LLM__EDITOR__MODEL='openai/MiniMax-M2.7-highspeed'
+export BESTSELLER__LLM__EDITOR__MODEL='openai/MiniMax-M3'
 export BESTSELLER__LLM__EDITOR__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__EDITOR__API_KEY_ENV='MINIMAX_API_KEY'
 EOF
@@ -349,16 +349,16 @@ EOF
     # Mixed preset: MiniMax for planner/critic/summarizer, stronger writer/editor
     # Requires both MINIMAX_API_KEY and ANTHROPIC_API_KEY (or another strong-model key)
     cat >>"$ENV_FILE" <<EOF
-export BESTSELLER__LLM__PLANNER__MODEL='openai/MiniMax-M2.7'
+export BESTSELLER__LLM__PLANNER__MODEL='openai/MiniMax-M3'
 export BESTSELLER__LLM__PLANNER__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__PLANNER__API_KEY_ENV='MINIMAX_API_KEY'
 export BESTSELLER__LLM__WRITER__MODEL='anthropic/claude-sonnet-4-5'
 export BESTSELLER__LLM__WRITER__MODEL_OVERRIDE='anthropic/claude-opus-4-5'
 export BESTSELLER__LLM__WRITER__STREAM='true'
-export BESTSELLER__LLM__CRITIC__MODEL='openai/MiniMax-M2.7'
+export BESTSELLER__LLM__CRITIC__MODEL='openai/MiniMax-M3'
 export BESTSELLER__LLM__CRITIC__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__CRITIC__API_KEY_ENV='MINIMAX_API_KEY'
-export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/MiniMax-M2.7'
+export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/MiniMax-M3'
 export BESTSELLER__LLM__SUMMARIZER__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__SUMMARIZER__API_KEY_ENV='MINIMAX_API_KEY'
 export BESTSELLER__LLM__EDITOR__MODEL='anthropic/claude-sonnet-4-5'

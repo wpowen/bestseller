@@ -104,6 +104,15 @@ from bestseller.services.payoff_ledger_runtime import (
     merge_payoff_ledger_audit_into_chapter_review,
 )
 from bestseller.services.projects import get_project_by_slug
+from bestseller.services.critic_evidence_gate import (
+    build_critic_evidence_prompt_suffix,
+    validate_critic_commentary,
+)
+from bestseller.services.methodology_compiler import (
+    ChapterPosition,
+    MethodologyStage,
+    compile_methodology,
+)
 from bestseller.services.prompt_packs import (
     render_methodology_block,
     render_prompt_pack_fragment,
@@ -1402,10 +1411,22 @@ def build_scene_review_prompts(
     )
     if _genre_review_system:
         system_prompt += f"\n\n{'[Genre review requirements]' if is_en else '【品类审核要求】'}\n{_genre_review_system}"
+    system_prompt += build_critic_evidence_prompt_suffix(language=language or "zh-CN")
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_scene_review = f"{render_prompt_pack_fragment(prompt_pack, 'scene_review')}\n" if prompt_pack else ""
+    _compiled_review = compile_methodology(
+        stage=MethodologyStage.REVIEW,
+        prompt_pack_key=getattr(prompt_pack, "key", None) if prompt_pack else None,
+        language=language or "zh-CN",
+        chapter_no=chapter.chapter_number,
+        chapter_position=ChapterPosition.UNKNOWN,
+        token_budget=2000,
+    ).text
     _methodology_review_block = render_methodology_block(prompt_pack, phase="review")
-    _methodology_line = f"\n{_methodology_review_block}\n" if _methodology_review_block else ""
+    _methodology_line = ""
+    for _block in (_compiled_review, _methodology_review_block):
+        if _block and str(_block).strip():
+            _methodology_line += f"\n{_block}\n"
     # Quality-levers critic block (scene review). Wrapped in try/except so a
     # malformed meta.yaml never blocks the scene review path.
     try:
@@ -2135,8 +2156,19 @@ def build_chapter_review_prompts(
         system_prompt += f"\n\n{'[Genre review requirements]' if is_en else '【品类审核要求】'}\n{_genre_ch_review_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_chapter_review = f"{render_prompt_pack_fragment(prompt_pack, 'chapter_review')}\n" if prompt_pack else ""
+    _compiled_review = compile_methodology(
+        stage=MethodologyStage.REVIEW,
+        prompt_pack_key=getattr(prompt_pack, "key", None) if prompt_pack else None,
+        language=language or "zh-CN",
+        chapter_no=chapter.chapter_number,
+        chapter_position=ChapterPosition.UNKNOWN,
+        token_budget=2000,
+    ).text
     _methodology_review_block = render_methodology_block(prompt_pack, phase="review")
-    _methodology_line = f"\n{_methodology_review_block}\n" if _methodology_review_block else ""
+    _methodology_line = ""
+    for _block in (_compiled_review, _methodology_review_block):
+        if _block and str(_block).strip():
+            _methodology_line += f"\n{_block}\n"
     # Quality-levers critic block (chapter review).
     try:
         _levers_meta = extract_quality_levers_meta(_project_metadata(project))
@@ -4767,6 +4799,21 @@ async def review_scene_draft(
         critic_response = completion.content.strip() or critic_response
         reviewer_type = completion.model_name
         llm_run_id = completion.llm_run_id
+        try:
+            from bestseller.services.quality_gates_config import get_quality_gates_config
+
+            if get_quality_gates_config().reader_quality.require_critic_body_evidence:
+                _evidence = validate_critic_commentary(
+                    critic_response,
+                    chapter_text=draft.content_md,
+                )
+                if not _evidence.passed:
+                    critic_response = (
+                        critic_response
+                        + "\nEVIDENCE: （门禁：须引用正文具体句子；当前评注未达标，请重写时补摘录。）"
+                    )
+        except Exception:
+            pass
 
         # --- LLM verdict override ---
         # If the LLM explicitly says "rewrite" but rule-based said "pass",
@@ -8090,7 +8137,41 @@ async def rewrite_chapter_from_task(
                 },
             ),
         )
-        content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        candidate_md = sanitize_novel_markdown_content(completion.content)
+        content_md = candidate_md or fallback_content
+        # Guard against degenerate/truncated chapter rewrites (editor model hitting
+        # ``finish_reason='length'`` and returning a short partial). If the
+        # candidate falls below the chapter floor *and* is materially shorter than
+        # the working draft, keep the known-good draft so a truncated stub never
+        # replaces a healthy chapter and wastes a repair cycle.
+        if candidate_md:
+            try:
+                _floor_band = chapter_rewrite_length_band(
+                    settings,
+                    getattr(chapter, "target_word_count", None),
+                    language=_project_language(project),
+                    direction="normal",
+                    role="editor",
+                )
+                prev_words = count_words(fallback_content)
+                candidate_words = count_words(candidate_md)
+                if (
+                    prev_words > 0
+                    and candidate_words < int(_floor_band.hard_min)
+                    and candidate_words < int(prev_words * 0.85)
+                ):
+                    logger.warning(
+                        "Chapter %s %d rewrite produced degenerate short output "
+                        "(%d words < floor %d, working draft %d) — keeping prior draft.",
+                        project.slug,
+                        chapter.chapter_number,
+                        candidate_words,
+                        int(_floor_band.hard_min),
+                        prev_words,
+                    )
+                    content_md = fallback_content
+            except Exception:
+                logger.debug("chapter rewrite degenerate-output guard failed", exc_info=True)
         content_md = strip_scaffolding_echoes(content_md)
         if has_meta_leak(content_md):
             content_md = await validate_and_clean_novel_content(
@@ -9149,7 +9230,38 @@ async def rewrite_scene_from_task(
                 },
             ),
         )
-        content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        candidate_md = sanitize_novel_markdown_content(completion.content)
+        content_md = candidate_md or fallback_content
+        # Guard against degenerate/truncated rewrites: an editor model can hit
+        # ``finish_reason='length'`` and return a short partial scene. Accepting
+        # it would shrink the scene far below its floor, fire a spurious
+        # CHAPTER_LENGTH_BLOCK_LOW, and burn a repair cycle. If the candidate
+        # collapses below the scene floor *and* is materially shorter than the
+        # prior draft, keep the known-good draft (legitimate compression that
+        # stays above the floor is unaffected).
+        if candidate_md:
+            try:
+                scene_floor = max(300, int(int(getattr(scene, "target_word_count", 0) or 0) * 0.6))
+                prev_words = count_words(fallback_content)
+                candidate_words = count_words(candidate_md)
+                if (
+                    prev_words > 0
+                    and candidate_words < scene_floor
+                    and candidate_words < int(prev_words * 0.85)
+                ):
+                    logger.warning(
+                        "Scene %s %d.%d rewrite produced degenerate short output "
+                        "(%d words < floor %d, prior draft %d) — keeping prior draft.",
+                        project.slug,
+                        chapter.chapter_number,
+                        scene.scene_number,
+                        candidate_words,
+                        scene_floor,
+                        prev_words,
+                    )
+                    content_md = fallback_content
+            except Exception:
+                logger.debug("scene rewrite degenerate-output guard failed", exc_info=True)
         content_md = strip_scaffolding_echoes(content_md)
         if has_meta_leak(content_md):
             content_md = await validate_and_clean_novel_content(

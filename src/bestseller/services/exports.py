@@ -1278,6 +1278,49 @@ async def preflight_export_check(
     return warnings
 
 
+def _is_mode_b_project(project) -> bool:
+    metadata = getattr(project, "metadata_json", None) or {}
+    return bool(metadata.get("mode_b"))
+
+
+async def _resolve_chapter_export_path(
+    session: AsyncSession,
+    settings: AppSettings,
+    project,
+    chapter,
+) -> Path:
+    """Resolve the markdown output path, honoring the Mode B layout.
+
+    Production projects export to ``output/{slug}/chapter-NNN.md`` (flat).
+    Mode B projects (``metadata_json.mode_b`` true) export to the
+    ``output/ai-generated/{slug}/volumes/vol-NN/ch-NNN.md`` layout the
+    dialogue orchestrator expects, so gates/readers find the file.
+    """
+
+    base = Path(settings.output.base_dir)
+    if not _is_mode_b_project(project):
+        return base / project.slug / f"chapter-{chapter.chapter_number:03d}.md"
+
+    volume_number = 1
+    volume_id = getattr(chapter, "volume_id", None)
+    if volume_id is not None:
+        from bestseller.infra.db.models import VolumeModel
+
+        vol = await session.scalar(
+            select(VolumeModel).where(VolumeModel.id == volume_id)
+        )
+        if vol is not None:
+            volume_number = int(getattr(vol, "volume_number", 1) or 1)
+    return (
+        base
+        / "ai-generated"
+        / project.slug
+        / "volumes"
+        / f"vol-{volume_number:02d}"
+        / f"ch-{chapter.chapter_number:03d}.md"
+    )
+
+
 async def export_chapter_markdown(
     session: AsyncSession,
     settings: AppSettings,
@@ -1297,7 +1340,9 @@ async def export_chapter_markdown(
         [(chapter, draft)],
         comparison_payloads=comparison_payloads,
     )
-    output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.md"
+    output_path = await _resolve_chapter_export_path(
+        session, settings, project, chapter
+    )
     content_md = _ensure_chapter_heading(
         chapter,
         sanitize_novel_markdown_content(draft.content_md),

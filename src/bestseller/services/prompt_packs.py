@@ -314,31 +314,23 @@ def render_methodology_block(
     *,
     phase: str = "scene",
 ) -> str:
-    """Render combined methodology guidance block for a given phase.
+    """Render combined methodology guidance for a phase.
 
-    Args:
-        pack: Resolved prompt pack (may be None).
-        phase: One of "scene", "review", "planner".
-
-    Returns:
-        Multi-line string with all applicable methodology fragments, or "".
+    Delegates to ``methodology_bridge.render_phase_block`` so sparse prompt
+    packs still receive ``writing_methodology.yaml`` fallbacks.
     """
-    if pack is None:
-        return ""
+    from bestseller.services.methodology_bridge import render_phase_block
 
-    if phase == "review":
-        keys = _METHODOLOGY_REVIEW_FRAGMENTS
-    elif phase == "planner":
-        keys = _METHODOLOGY_PLANNER_FRAGMENTS
-    else:
-        keys = _METHODOLOGY_SCENE_FRAGMENTS
-
-    sections: list[str] = []
-    for key in keys:
-        value = getattr(pack.fragments, key, None)
-        if isinstance(value, str) and value.strip():
-            sections.append(f"【{key}】\n{value.strip()}")
-
-    if not sections:
-        return ""
-    return "## 写法方法论指导\n\n" + "\n\n".join(sections)
+    phase_map = {
+        "scene": "scene",
+        "review": "review",
+        "planner": "planner",
+        "prewrite": "prewrite",
+        "judge": "judge",
+    }
+    bridge_phase = phase_map.get(phase, "scene")
+    return render_phase_block(
+        pack,
+        phase=bridge_phase,  # type: ignore[arg-type]
+        heading="写法方法论指导",
+    )

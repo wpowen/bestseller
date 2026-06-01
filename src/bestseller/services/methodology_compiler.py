@@ -104,8 +104,8 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         "chapter_position_current",
     ),
     MethodologyStage.PROSE_SCENE: (
-        "prompt_pack_scene_writer",
         "writing_methodology_scene",
+        "prompt_pack_scene_writer",
         "book_methodology_current",
         "prose_style_anchors",
         "public_emotion_role_tags",

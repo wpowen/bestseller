@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -83,6 +84,39 @@ _FUNCTIONAL_TITLE_SUFFIXES_ZH = {
     "碎锁",
     "终幕",
 }
+
+
+def _normalize_str_dict_list(value: Any) -> list[dict[str, str]]:
+    """Coerce an LLM value into ``list[dict[str, str]]``.
+
+    Tolerates every shape models actually emit for fields like
+    ``world_state_deltas``: ``None``, a prose string, a single flat dict, or
+    a list whose dict values are ints/bools/None. Returns a clean list so the
+    schema never hard-fails in the planner outline repair loop.
+    """
+
+    def _coerce_dict(d: dict[Any, Any]) -> dict[str, str]:
+        return {str(k): ("" if v is None else str(v)) for k, v in d.items()}
+
+    if value is None:
+        return []
+    if isinstance(value, str):
+        s = value.strip()
+        return [{"change": s}] if s else []
+    if isinstance(value, dict):
+        coerced = _coerce_dict(value)
+        return [coerced] if coerced else []
+    if isinstance(value, list):
+        out: list[dict[str, str]] = []
+        for item in value:
+            if isinstance(item, dict):
+                ci = _coerce_dict(item)
+                if ci:
+                    out.append(ci)
+            elif isinstance(item, str) and item.strip():
+                out.append({"change": item.strip()})
+        return out
+    return []
 
 
 def _looks_like_functional_chapter_title(value: Any) -> bool:
@@ -471,6 +505,30 @@ class ChapterOutlineInput(BaseModel):
         if not isinstance(data, dict):
             return data
 
+        # Robustness: every list[str] field below may be emitted by the LLM as
+        # a single prose string (observed on key_reveals, anti_copy_boundary_notes,
+        # world_rule_refs, …). A bare string hard-fails `list_type` validation and
+        # exhausts the planner outline repair loop. Wrap str -> [str] so valid
+        # intent is never rejected on a type technicality.
+        _STR_LIST_FIELDS = (
+            "world_rule_refs",
+            "world_asset_refs",
+            "authority_claim_refs",
+            "anti_copy_boundary_notes",
+            "location_refs",
+            "faction_refs",
+            "key_reveals",
+            "chapter_concrete_actions",
+            "chapter_object_uses",
+            "chapter_information_introduced",
+            "chapter_information_held_back",
+        )
+        for _field in _STR_LIST_FIELDS:
+            _val = data.get(_field)
+            if isinstance(_val, str):
+                _s = _val.strip()
+                data[_field] = [_s] if _s else []
+
         story_title = data.get("chapter_title") or data.get("subtitle")
         if story_title and (
             not data.get("title") or _looks_like_functional_chapter_title(data.get("title"))
@@ -494,8 +552,29 @@ class ChapterOutlineInput(BaseModel):
         reveal_weight = data.get("reveal_weight")
         if isinstance(reveal_weight, (int, float)):
             data["reveal_weight"] = max(0, min(5, int(reveal_weight)))
-        elif isinstance(reveal_weight, str) and reveal_weight.strip().isdigit():
-            data["reveal_weight"] = max(0, min(5, int(reveal_weight.strip())))
+        elif isinstance(reveal_weight, str):
+            stripped = reveal_weight.strip()
+            if stripped.isdigit():
+                data["reveal_weight"] = max(0, min(5, int(stripped)))
+            else:
+                # Robustness: a model may emit a prose description here
+                # instead of an int (observed with MiniMax). Try to extract a
+                # leading 0-5 digit, else default to 0 rather than hard-fail.
+                m = re.search(r"[0-5]", stripped)
+                data["reveal_weight"] = int(m.group()) if m else 0
+        # str → list coercion for fields the schema requires as lists but a
+        # prose model may emit as a single string.
+        _notes = data.get("anti_copy_boundary_notes")
+        if isinstance(_notes, str):  # list[str]
+            _ns = _notes.strip()
+            data["anti_copy_boundary_notes"] = [_ns] if _ns else []
+        # world_state_deltas schema is list[dict[str, str]] but the LLM emits
+        # it in every possible shape: a prose string, a single flat dict, or a
+        # list whose dict values are ints/bools/None. Normalize ALL shapes so
+        # valid intent is never hard-failed in the outline repair loop.
+        data["world_state_deltas"] = _normalize_str_dict_list(
+            data.get("world_state_deltas")
+        )
         return data
 
 

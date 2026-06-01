@@ -54,8 +54,8 @@
 
 ### 硬约束
 
-1. **绝不调用仓库后端**（FastAPI / ARQ / DB / Redis）。Mode B 是"装作 pipeline"——你用纯文本输出模拟每一步。
-2. **所有输出写进** `output/ai-generated/{novel-slug}/`。`novel-slug` 是小说名的拼音小写连字符（中文书名）或 kebab-case（英文）。不得污染其他目录。
+1. **正文生成必须经生产流水线**（深度融合）。WRITE/REVIEW/REWRITE 不再由对话直接写 markdown，而是经 `scripts/mode_b_chapter_bridge.py`（内部调用 `run_chapter_pipeline`）生成单章——这样每章都过真实质量门禁、真实字数核验与评分，杜绝"虚报字数 / 模板复制 / 空壳完本"。规划阶段（story-bible / 大纲）仍可由对话产出，但需经 `bestseller workflow materialize-story-bible/outline` 物化到 DB 后才能写章。
+2. **所有输出写进** `output/ai-generated/{novel-slug}/`。`novel-slug` 是小说名的拼音小写连字符（中文书名）或 kebab-case（英文）。不得污染其他目录。流水线导出会按 Mode B 布局落到 `volumes/vol-NN/ch-NNN.md`（需 `ProjectModel.metadata_json.mode_b=true`）。
 3. **先计划、再落笔**：
    - target_chapters ≤ 50 → 至少写 story-bible/premise / world / characters / plot-arcs / volume-plan / writing-profile 共 6 份；volume-plan 内附 30 章大纲
    - target_chapters > 50 → 多写一份 `story-bible/act-plan.md`
@@ -67,8 +67,12 @@
 ```
 ask target → compute hierarchy → write story-bible →
 write volume READMEs (with per-chapter outline) →
+materialize story-bible + outline into DB (bestseller workflow materialize-*) →
 loop per chapter:
-    write 4 scenes (each 1200–2200 words) →
+    drive pipeline: python3 scripts/mode_b_chapter_bridge.py --slug S --chapter N →
+    bridge runs run_chapter_pipeline (gates + scoring + repair) →
+    exit 0 → COMMIT_CHAPTER；exit 2 → REWRITE_CHAPTER；exit 3 → 物化缺失，先 materialize →
+    (legacy 纯对话写作仅在无 DB 环境降级使用) →
     verify chapter word count ≥ 5000 →
     critic score (5 scene dims + 4 chapter dims) →
     if any dim < 0.70 → editor rewrite (max 2×) →

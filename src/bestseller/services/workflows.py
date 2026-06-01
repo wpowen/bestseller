@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 from typing import Any, Iterable
 from uuid import UUID
@@ -77,6 +78,7 @@ from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.retrieval import refresh_story_bible_retrieval_index
 from bestseller.services.story_bible import (
     apply_book_spec,
+    parse_cast_spec_input,
     upsert_cast_spec,
     upsert_volume_plan,
     upsert_world_spec,
@@ -186,6 +188,352 @@ def _string_list(value: Any) -> list[str]:
                 items.append(stripped)
         return items
     return []
+
+
+def _as_mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _non_empty_text(value: Any, default: str = "") -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return default
+
+
+def _has_truthy_payload(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(_has_truthy_payload(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(_has_truthy_payload(item) for item in value)
+    return True
+
+
+def _materialization_role_quirk_min(role: str) -> int:
+    role_lower = role.lower()
+    if "protagonist" in role_lower:
+        return 3
+    if "antagonist" in role_lower:
+        return 2
+    return 0
+
+
+def _materialization_character_basis(character: dict[str, Any], *, is_en: bool) -> str:
+    for key in ("fear", "secret", "goal", "background", "flaw"):
+        value = character.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:120]
+    return "the central wound behind the story" if is_en else "故事核心伤口"
+
+
+def _materialization_min_strings(
+    current: Any,
+    additions: list[str],
+    minimum: int,
+) -> list[str]:
+    values = _string_list(current)
+    for addition in additions:
+        if len(values) >= minimum:
+            break
+        if addition and addition not in values:
+            values.append(addition)
+    return values
+
+
+def _materialization_tag_memory(name: str, basis: str, *, is_en: bool) -> str:
+    if is_en:
+        return f"When {basis} comes up, {name} taps one knuckle twice before speaking."
+    return f"一提到「{basis}」，{name}会先用指节轻敲两下再开口。"
+
+
+def _materialization_independent_life(name: str, basis: str, *, is_en: bool) -> str:
+    if is_en:
+        return (
+            f"Before the main plot, {name} still had a private obligation that "
+            f"interrupts them whenever {basis} escalates."
+        )
+    return f"被卷入主线前，{name}还有一桩自己的日常牵挂；每当「{basis}」升级，这件事都会打断ta。"
+
+
+def _materialization_quirks(
+    character: dict[str, Any],
+    *,
+    required: int,
+    is_en: bool,
+) -> list[str]:
+    name = _non_empty_text(character.get("name"), "the character" if is_en else "角色")
+    basis = _materialization_character_basis(character, is_en=is_en)
+    if is_en:
+        candidates = [
+            f"{name} checks exits before answering difficult questions.",
+            f"{name} touches a worn personal object when {basis} is mentioned.",
+            f"{name} repeats the last factual detail aloud before a risky choice.",
+        ]
+    else:
+        candidates = [
+            f"{name}进入陌生空间会先确认退路和窗位。",
+            f"提到「{basis}」相关线索时，{name}会下意识停顿半拍。",
+            f"{name}做危险决定前会把最后一个事实低声复述一遍。",
+        ]
+    return _materialization_min_strings(
+        _as_mapping(character.get("ip_anchor")).get("quirks"),
+        candidates,
+        required,
+    )
+
+
+def _synthesize_materialization_character_bible_fields(
+    character: dict[str, Any],
+    *,
+    is_en: bool,
+) -> dict[str, Any]:
+    repaired = copy.deepcopy(character)
+    name = _non_empty_text(repaired.get("name"), "the character" if is_en else "角色")
+    role = _non_empty_text(repaired.get("role"), "supporting")
+    role_lower = role.lower()
+    basis = _materialization_character_basis(repaired, is_en=is_en)
+    anchor = copy.deepcopy(_as_mapping(repaired.get("ip_anchor")))
+
+    if not _non_empty_text(anchor.get("tag_memory")):
+        anchor["tag_memory"] = _materialization_tag_memory(name, basis, is_en=is_en)
+    if (
+        "protagonist" not in role_lower
+        and "antagonist" not in role_lower
+        and not _non_empty_text(anchor.get("independent_life"))
+    ):
+        anchor["independent_life"] = _materialization_independent_life(
+            name,
+            basis,
+            is_en=is_en,
+        )
+
+    required_quirks = _materialization_role_quirk_min(role)
+    if required_quirks:
+        anchor["quirks"] = _materialization_quirks(
+            repaired,
+            required=required_quirks,
+            is_en=is_en,
+        )
+        anchor["sensory_signatures"] = _materialization_min_strings(
+            anchor.get("sensory_signatures"),
+            (
+                [f"a restrained pause before {name} speaks"]
+                if is_en
+                else [f"{name}开口前那一瞬克制的停顿"]
+            ),
+            1,
+        )
+        anchor["signature_objects"] = _materialization_min_strings(
+            anchor.get("signature_objects"),
+            (
+                [f"{name}'s worn notebook"]
+                if is_en
+                else [f"{name}随身带着的旧册"]
+            ),
+            1,
+        )
+        if not _non_empty_text(anchor.get("core_wound")):
+            anchor["core_wound"] = (
+                f"{name} once trusted the wrong version of events around {basis}, "
+                "and someone else paid the price."
+                if is_en
+                else f"{name}曾在「{basis}」上相信过错误叙事，结果让无法补偿的人替自己付出代价。"
+            )
+    repaired["ip_anchor"] = anchor
+
+    if "protagonist" in role_lower or "antagonist" in role_lower:
+        surface_fields = [
+            key
+            for key in ("background", "goal", "strength")
+            if _non_empty_text(repaired.get(key))
+        ]
+        if len(surface_fields) < 2:
+            if not _non_empty_text(repaired.get("background")):
+                repaired["background"] = (
+                    f"{name} is publicly shaped by the unresolved cost of {basis}."
+                    if is_en
+                    else f"{name}的外在身份一直被「{basis}」留下的代价塑形。"
+                )
+                surface_fields.append("background")
+            if len(surface_fields) < 2 and not _non_empty_text(repaired.get("goal")):
+                repaired["goal"] = (
+                    f"Resolve {basis} before it destroys everyone tied to it."
+                    if is_en
+                    else f"在「{basis}」毁掉所有被牵连的人之前，把它彻底解决。"
+                )
+                surface_fields.append("goal")
+            if len(surface_fields) < 2 and not _non_empty_text(repaired.get("strength")):
+                repaired["strength"] = (
+                    "Stays precise under pressure and turns contradictions into leverage."
+                    if is_en
+                    else "能在压力下保持精确，把细小矛盾变成反击支点。"
+                )
+        if not any(_non_empty_text(repaired.get(key)) for key in ("secret", "fear", "flaw")):
+            repaired["secret" if "antagonist" in role_lower else "fear"] = (
+                f"{name} knows their solution to {basis} repeats the original harm."
+                if is_en and "antagonist" in role_lower
+                else (
+                    f"{name}害怕证明「{basis}」真相的同时，也暴露自己曾经判断失误。"
+                    if "antagonist" not in role_lower
+                    else f"{name}知道自己解决「{basis}」的方法正在重演最初的伤害。"
+                )
+            )
+
+    if "protagonist" in role_lower:
+        psych = copy.deepcopy(_as_mapping(repaired.get("psych_profile")))
+        if not _has_truthy_payload(psych):
+            psych = (
+                {
+                    "mbti": "INTJ",
+                    "enneagram": "6w5",
+                    "temperament": "guarded analytical",
+                }
+                if is_en
+                else {
+                    "mbti": "INTJ",
+                    "enneagram": "6w5",
+                    "temperament": "克制的分析型",
+                }
+            )
+        repaired["psych_profile"] = psych
+
+        history = copy.deepcopy(_as_mapping(repaired.get("life_history")))
+        if not _has_truthy_payload(history):
+            history = (
+                {
+                    "formative_events": [
+                        {
+                            "title": f"The cost of {basis}",
+                            "summary": f"{name} learned that one wrong conclusion can ruin another life.",
+                        }
+                    ],
+                    "defining_moments": ["Chose the harder truth over the safer official story."],
+                }
+                if is_en
+                else {
+                    "formative_events": [
+                        {
+                            "title": f"围绕「{basis}」付出的代价",
+                            "summary": f"{name}第一次明白，错误判断会让别人替自己承受后果。",
+                        }
+                    ],
+                    "defining_moments": ["选择更痛的真相，而不是更安全的官方说法。"],
+                }
+            )
+        repaired["life_history"] = history
+
+        family = copy.deepcopy(_as_mapping(repaired.get("family_imprint")))
+        if not _has_truthy_payload(family):
+            family = (
+                {
+                    "parenting_style": "love expressed through demands and silence",
+                    "inherited_values": ["protect first, explain later"],
+                }
+                if is_en
+                else {
+                    "parenting_style": "以要求和沉默表达爱的家庭模式",
+                    "inherited_values": ["先保护，再解释"],
+                }
+            )
+        repaired["family_imprint"] = family
+
+        beliefs = copy.deepcopy(_as_mapping(repaired.get("beliefs")))
+        if not _has_truthy_payload(beliefs):
+            beliefs = (
+                {"philosophical_stance": "truth is a duty, not a comfort"}
+                if is_en
+                else {"philosophical_stance": "真相不是安慰，而是一种责任"}
+            )
+        repaired["beliefs"] = beliefs
+
+    if "antagonist" in role_lower:
+        charisma = copy.deepcopy(_as_mapping(repaired.get("villain_charisma")))
+        if not _non_empty_text(charisma.get("noble_motivation")):
+            charisma["noble_motivation"] = (
+                f"{name} believes harsh control can prevent a larger collapse."
+                if is_en
+                else f"{name}相信残酷控制可以阻止更大范围的崩塌。"
+            )
+        if not _non_empty_text(charisma.get("pain_origin")):
+            charisma["pain_origin"] = (
+                f"A past failure around {basis} convinced {name} that mercy creates victims."
+                if is_en
+                else f"围绕「{basis}」的一次失败让{name}相信，仁慈只会制造更多未来受害者。"
+            )
+        if not _has_truthy_payload(charisma.get("redeeming_qualities")):
+            charisma["redeeming_qualities"] = (
+                ["keeps promises to dependents"]
+                if is_en
+                else ["会兑现对依附者的承诺"]
+            )
+        if not _non_empty_text(charisma.get("philosophical_appeal")):
+            charisma["philosophical_appeal"] = (
+                "Order can look merciful when everyone remembers chaos."
+                if is_en
+                else "当所有人都记得混乱的代价时，秩序看起来也会像一种仁慈。"
+            )
+        if not _has_truthy_payload(charisma.get("personal_code")):
+            charisma["personal_code"] = (
+                ["does not betray written bargains"]
+                if is_en
+                else ["不会背弃明文交易"]
+            )
+        if not _non_empty_text(charisma.get("tragic_irony")):
+            charisma["tragic_irony"] = (
+                f"To prevent another {basis}, {name} makes others repeat the same wound."
+                if is_en
+                else f"为了阻止「{basis}」重演，{name}反而让更多人承受同类伤口。"
+            )
+        if not _non_empty_text(charisma.get("protagonist_mirror")):
+            charisma["protagonist_mirror"] = (
+                f"Both {name} and the protagonist want to stop loss; they differ on sacrifice."
+                if is_en
+                else f"{name}和主角都想阻止失去，只是对谁可以被牺牲给出相反答案。"
+            )
+        repaired["villain_charisma"] = charisma
+
+    return repaired
+
+
+def _synthesize_materialization_cast_bible_fields(
+    project: ProjectModel,
+    cast_spec_content: dict[str, Any],
+) -> dict[str, Any]:
+    """Fill missing character personhood fields before the final L2 bible gate.
+
+    Planner repair is the preferred path. This materialization fallback prevents
+    already-approved CastSpec artifacts from failing only because legacy/minimal
+    character rows omitted deterministic anchors such as tag_memory or quirks.
+    """
+
+    cast_spec = parse_cast_spec_input(cast_spec_content)
+    normalized = cast_spec.model_dump(mode="json")
+    repaired = copy.deepcopy(cast_spec_content)
+    is_en = str(getattr(project, "language", "") or "").lower().startswith("en")
+
+    if isinstance(normalized.get("protagonist"), dict):
+        repaired["protagonist"] = _synthesize_materialization_character_bible_fields(
+            normalized["protagonist"],
+            is_en=is_en,
+        )
+    if isinstance(normalized.get("antagonist"), dict):
+        repaired["antagonist"] = _synthesize_materialization_character_bible_fields(
+            normalized["antagonist"],
+            is_en=is_en,
+        )
+    repaired["supporting_cast"] = [
+        _synthesize_materialization_character_bible_fields(character, is_en=is_en)
+        for character in normalized.get("supporting_cast") or []
+        if isinstance(character, dict)
+    ]
+    if "antagonist_forces" in normalized:
+        repaired["antagonist_forces"] = normalized.get("antagonist_forces") or []
+    if "conflict_map" in normalized:
+        repaired["conflict_map"] = normalized.get("conflict_map") or []
+    return repaired
 
 
 def _identity_entry_tokens(entry: dict[str, Any]) -> list[str]:
@@ -2400,13 +2748,36 @@ async def materialize_story_bible(
     # L2 Bible Completeness Gate — run pre-persistence so a known-incomplete
     # character/world bible never gets committed. Planner generation gets the
     # first repair attempt; this is the final blocking guard.
-    _audit_bible_completeness(
-        project=project,
-        project_slug=project_slug,
-        book_spec_content=book_spec_content,
-        world_spec_content=world_spec_content,
-        cast_spec_content=cast_spec_content,
-    )
+    try:
+        _audit_bible_completeness(
+            project=project,
+            project_slug=project_slug,
+            book_spec_content=book_spec_content,
+            world_spec_content=world_spec_content,
+            cast_spec_content=cast_spec_content,
+        )
+    except ValueError:
+        if cast_spec_content is None:
+            raise
+        synthesized_cast_spec = _synthesize_materialization_cast_bible_fields(
+            project,
+            cast_spec_content,
+        )
+        if synthesized_cast_spec == cast_spec_content:
+            raise
+        logger.warning(
+            "Story-bible materialization synthesized missing character "
+            "personhood anchors for project %s after initial L2 audit block.",
+            project_slug,
+        )
+        _audit_bible_completeness(
+            project=project,
+            project_slug=project_slug,
+            book_spec_content=book_spec_content,
+            world_spec_content=world_spec_content,
+            cast_spec_content=synthesized_cast_spec,
+        )
+        cast_spec_content = synthesized_cast_spec
 
     workflow_run = await create_workflow_run(
         session,

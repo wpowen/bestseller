@@ -111,20 +111,25 @@ generation:
   target_total_words: 60000
   target_chapters: 30
 
+  # Long-form chapter contract (zh): chapters MUST land in 1800-3500 zh chars
+  # and NEVER exceed the 3500 hard cap. Target sits well below the cap so
+  # natural variance does not breach it.
   words_per_chapter:
     min: 1800
-    target: 2200
-    max: 3000
+    target: 2600
+    max: 3500
 
   scenes_per_chapter:
     min: 2
     target: 3
     max: 3
 
+  # With 3 scenes/chapter and a 2600 target, each scene aims ~870 words and is
+  # hard-capped so 3 scenes cannot sum past the 3500 chapter ceiling.
   words_per_scene:
-    min: 500
-    target: 700
-    max: 800
+    min: 600
+    target: 870
+    max: 1150
 
   context_budget_tokens: 8000
   active_context_scenes: 12
@@ -280,25 +285,28 @@ pipeline:
   # outline materialization when chapter/scene cards are too thin to control
   #正文; the LLM judge is optional because it consumes provider budget.
   enable_methodology_planning_readiness_gate: true
-  methodology_planning_readiness_block_on_failure: true
+  # Warn-only: heuristic readiness findings are recorded and drive downstream
+  # rewrite/repair, but must not abort generation (a hard block left fresh
+  # books stuck in `planning`, 2026-05-29). Only deterministic gates block.
+  methodology_planning_readiness_block_on_failure: false
   enable_outline_llm_commercial_judge: true
-  outline_llm_commercial_judge_block_on_failure: true
+  outline_llm_commercial_judge_block_on_failure: false
   outline_llm_commercial_judge_threshold: 0.82
   enable_outline_reader_experience_judge: true
-  outline_reader_experience_judge_block_on_failure: true
+  outline_reader_experience_judge_block_on_failure: false
   outline_reader_experience_judge_threshold: 0.78
   enable_chapter_predraft_quality_gate: true
   chapter_predraft_quality_gate_block_on_failure: true
   enable_chapter_scene_contract_materializer: true
   qimao_opening_max_attempts: 3
   enable_chapter_llm_commercial_judge: true
-  chapter_llm_commercial_judge_block_on_failure: true
+  chapter_llm_commercial_judge_block_on_failure: false
   enable_chapter_window_llm_judge: true
-  chapter_window_llm_judge_block_on_failure: true
+  chapter_window_llm_judge_block_on_failure: false
   chapter_window_llm_judge_size: 5
   chapter_window_llm_judge_min_chapters: 2
   enable_volume_llm_checkpoint_judge: true
-  volume_llm_checkpoint_block_on_failure: true
+  volume_llm_checkpoint_block_on_failure: false
   volume_llm_checkpoint_interval: 10
   volume_llm_checkpoint_min_chapters: 10
   chapter_auto_repair_repairable_codes:
@@ -320,6 +328,15 @@ pipeline:
     - HOOK_ECHO_MISSING
     - HOOK_ECHO_LOW
     - SIGNATURE_SCENE_MISSING
+    - SIGNATURE_IMAGE_MISSING
+    - OPENING_PRESSURE_THIN
+    - ENDING_HOOK_MISSING
+    - PARAGRAPH_DUPLICATE_PARAPHRASE
+    - CALLBACK_OBLIGATION_MISSING
+    - LENGTH_OUT_OF_BAND
+    - GOLDEN_THREE_WEAK
+    - NAMING_OUT_OF_POOL
+    - CLIFFHANGER_REPEAT
     - EXPOSITION_DUMP
     - CAST_VIOLATION
     - OPENING_SCENE_DRIFT

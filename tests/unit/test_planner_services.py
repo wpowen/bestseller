@@ -509,6 +509,27 @@ def test_distilled_design_reference_blocks_enter_planner_prompts() -> None:
     assert "OUTLINE_STRATEGY_CARD" in outline_prompt
 
 
+def test_distilled_design_reference_blocks_are_prompt_budgeted() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "distilled_strategy_blocks": {
+            "chapter_outline": "STRATEGY\n" + ("策略细节" * 1000),
+        },
+        "distilled_design_reference_blocks": {
+            "chapter_outline": "DESIGN\n" + ("设计细节" * 1000),
+        },
+    }
+
+    block = planner_services._distilled_design_reference_block(
+        project, "chapter_outline"
+    )
+
+    assert "STRATEGY" in block
+    assert "DESIGN" in block
+    assert "trimmed for prompt budget" in block
+    assert len(block) < 2700
+
+
 def test_story_design_kernel_fallback_consumes_distilled_world_bindings() -> None:
     project = build_project()
     project.metadata_json = {
@@ -1131,7 +1152,7 @@ def test_generated_volume_outline_repairs_scene_contract_fields_before_validatio
         "chapters": [
             {
                 "title": "血雨前夜",
-                "goal": "沈青崖追查李宅血雨，必须在巡捕封锁前拿到第一条阴阳线索。",
+                "goal": "建立沈青崖的调查角色，完善阴阳交界世界观体系。",
                 "main_conflict": "李宅血雨把案发现场变成阴阳交界，沈青崖必须抢在巡捕房误判前锁定邪术痕迹。",
                 "hook_description": "沈青崖在封门前听见井底传来秦无咎的冷笑。",
                 "scenes": [
@@ -1176,6 +1197,8 @@ def test_generated_volume_outline_repairs_scene_contract_fields_before_validatio
     assert first_scene["purpose"]["story"].startswith("第1章场景1让沈青崖")
     assert second_scene["participants"] == ["沈青崖", "秦无咎"]
     assert second_scene["time_label"].startswith("第1章")
+    assert "建立沈青崖" not in repaired["chapters"][0]["goal"]
+    assert repaired["chapters"][0]["goal"].startswith("李宅血雨")
     assert "本章功能" not in repaired["chapters"][0]["scenes"][2]["purpose"]["story"]
 
 
@@ -1253,6 +1276,11 @@ async def test_volume_outline_repair_loop_regenerates_with_contract_diagnostics(
         chapter["main_conflict"] = "沈砚必须在封港命令生效前拿到航线记录，并避开港务官的封锁。"
 
     prompts: list[str] = []
+    monkeypatch.setattr(
+        planner_services,
+        "_repair_generated_volume_outline_contract_blocks",
+        lambda *args, **kwargs: 0,
+    )
 
     async def fake_generate_structured_artifact(
         session: object,
@@ -1998,7 +2026,10 @@ async def test_repair_cast_personhood_regenerates_incomplete_character_bible(
         "antagonist": {
             "name": "祁镇",
             "goal": "删光旧记录",
-            "ip_anchor": {"quirks": ["整理袖口", "永远戴白手套"]},
+            "ip_anchor": {
+                "quirks": ["整理袖口", "永远戴白手套"],
+                "core_wound": "曾亲眼看见混乱航线吞掉家人",
+            },
             "villain_charisma": {
                 "noble_motivation": "维护航道秩序",
                 "pain_origin": "曾因混乱失去家人",
@@ -2010,6 +2041,12 @@ async def test_repair_cast_personhood_regenerates_incomplete_character_bible(
         "conflict_map": [],
     }
     prompts: list[str] = []
+
+    monkeypatch.setattr(
+        planner_services,
+        "_synthesize_missing_cast_bible_fields",
+        lambda _project, payload: payload,
+    )
 
     async def fake_generate_structured_artifact(
         session: object,

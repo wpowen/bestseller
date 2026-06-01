@@ -346,6 +346,19 @@ def test_library_book_state_marks_finished_content_as_closed() -> None:
     assert web_server._library_book_state_label(state) == "已闭环"
 
 
+def test_library_book_state_manual_completed_overrides_repair_attention() -> None:
+    state = web_server._library_book_state(
+        status="completed",
+        completed_units=0,
+        target_units=10,
+        has_content=True,
+        repair_status={"is_repairing": True},
+        has_active_workflow=True,
+    )
+
+    assert state == "closed_complete"
+
+
 def test_library_book_state_archive_overrides_shelf_state() -> None:
     state = web_server._library_book_state(
         status="completed",
@@ -816,6 +829,25 @@ def test_project_repair_status_payload_archived_is_not_repairing() -> None:
     assert web_server._build_db_repair_task_summary(project, payload) is None
 
 
+def test_project_repair_status_payload_completed_is_not_repairing() -> None:
+    project = SimpleNamespace(
+        slug="xianxia-upgrade-1776137730",
+        title="道种破虚",
+        status="completed",
+        metadata_json={"manually_marked_completed": True},
+        target_chapters=551,
+    )
+    payload = web_server._build_project_repair_status_payload(
+        project,
+        [{"status": "revision", "production_state": "blocked", "count": 31}],
+    )
+
+    assert payload["phase"] == "completed"
+    assert payload["label"] == "已完成"
+    assert payload["is_repairing"] is False
+    assert web_server._build_db_repair_task_summary(project, payload) is None
+
+
 def test_library_book_state_active_workflow_overrides_repair_attention() -> None:
     state = web_server._library_book_state(
         status="revising",
@@ -993,6 +1025,37 @@ def test_request_visible_task_cancel_routes_worker_heal_task(
     assert called == {
         "redis_url": "redis://stub",
         "job_id": "repair:heal:xianxia-upgrade-1776137730",
+    }
+
+
+def test_request_visible_task_cancel_routes_project_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    settings = SimpleNamespace(redis=SimpleNamespace(url="redis://stub"))
+    called: dict[str, object] = {}
+
+    def fake_cancel_project_task(settings_arg: object, task_id: str) -> str:
+        called["settings"] = settings_arg
+        called["task_id"] = task_id
+        return "cancel_requested"
+
+    monkeypatch.setattr(
+        web_server,
+        "_cancel_project_task",
+        fake_cancel_project_task,
+    )
+
+    outcome = web_server._request_visible_task_cancel(
+        manager,
+        settings,
+        "project:xianxia-upgrade-1776137730",
+    )
+
+    assert outcome == "cancel_requested"
+    assert called == {
+        "settings": settings,
+        "task_id": "project:xianxia-upgrade-1776137730",
     }
 
 

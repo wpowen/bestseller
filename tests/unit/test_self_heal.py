@@ -19,6 +19,7 @@ from bestseller.worker.self_heal import (
     GENERATION_GATE_RESUME_COOLDOWN_SECONDS,
     SELF_HEAL_PENDING_REWRITE_TASK_LIMIT,
     STARTUP_GRACE_SECONDS,
+    UNDER_TARGET_SELF_HEAL_GRACE_SECONDS,
     WAITING_REPAIR_SUPPRESSION_SECONDS,
     StuckProject,
     _clear_auto_resumable_generation_gate_pause,
@@ -42,6 +43,8 @@ class _FakeProject:
     metadata_json: dict[str, Any] = field(default_factory=dict)
     target_chapters: int = 0
     status: str = "writing"
+    created_at: _dt.datetime | None = None
+    updated_at: _dt.datetime | None = None
 
 
 @dataclass
@@ -149,6 +152,7 @@ class _FakeSession:
             active = {"pending", "queued", "running"}
             pipeline_types = {
                 "autowrite_pipeline",
+                "generate_foundation_plan",
                 "generate_novel_plan",
                 "generate_volume_plan",
                 "project_pipeline",
@@ -945,6 +949,61 @@ async def test_find_stuck_projects_detects_under_target_chapters(
     assert stuck[0].stuck_at_chapter == 151
     assert stuck[0].chapters_total == 150
     assert stuck[0].chapters_with_draft == 150
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_skips_recent_under_target_project(
+    now: _dt.datetime,
+) -> None:
+    """Fresh quickstart projects can be under target while their first
+    workflow row is still being created; self-heal must not duplicate them.
+    """
+    p = _FakeProject(
+        id=uuid4(),
+        slug="fresh-short",
+        target_chapters=4,
+        status="planning",
+        created_at=now - _dt.timedelta(seconds=UNDER_TARGET_SELF_HEAL_GRACE_SECONDS - 5),
+        updated_at=now,
+    )
+    chapter = _FakeChapter(id=uuid4(), project_id=p.id)
+    draft = _FakeDraft(id=uuid4(), chapter_id=chapter.id, is_current=True)
+    session = _FakeSession(projects=[p], runs=[], chapters=[chapter], drafts=[draft])
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_skips_active_foundation_plan(
+    now: _dt.datetime,
+) -> None:
+    """Foundation planning is an active pipeline for short projects; do not
+    under-target heal it into duplicate foundation runs.
+    """
+    p = _FakeProject(
+        id=uuid4(),
+        slug="short-validation",
+        target_chapters=4,
+        status="planning",
+        created_at=now - _dt.timedelta(hours=1),
+        updated_at=now - _dt.timedelta(hours=1),
+    )
+    session = _FakeSession(
+        projects=[p],
+        runs=[
+            _FakeWorkflowRun(
+                id=uuid4(),
+                project_id=p.id,
+                workflow_type="generate_foundation_plan",
+                status="running",
+                updated_at=now,
+            )
+        ],
+        chapters=[],
+        drafts=[],
+    )
+
+    assert await find_stuck_projects(session) == []
 
 
 @pytest.mark.asyncio

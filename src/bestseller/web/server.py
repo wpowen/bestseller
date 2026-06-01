@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from uuid import UUID, uuid4
 import webbrowser
 
+from bestseller.domain.enums import ProjectStatus
 from bestseller.domain.fanqie_short import is_fanqie_short_project
 from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
 from bestseller.infra.db.models import (
@@ -2306,7 +2307,11 @@ class WebTaskManager:
             logger.exception("disk heartbeat rescue failed for %s", task_id)
             return False
 
-    def auto_resume_zombies(self, redis_url: str | None = None) -> list[str]:
+    def auto_resume_zombies(
+        self,
+        redis_url: str | None = None,
+        settings: AppSettings | None = None,
+    ) -> list[str]:
         """Re-dispatch every task ``_load_from_disk`` flagged as a zombie.
 
         Called once from ``serve_web`` after startup-recovery finishes.
@@ -2344,6 +2349,26 @@ class WebTaskManager:
         repair_heal_owned_slugs = (
             _fetch_heal_owned_slugs_by_kind(redis_url, "repair") if redis_url else set()
         )
+        with self._lock:
+            pending_slugs = {
+                str(self._tasks[task_id].project_slug or "").strip()
+                for task_id in pending
+                if task_id in self._tasks
+                and str(self._tasks[task_id].project_slug or "").strip()
+            }
+        active_workflow_slugs: set[str] = set()
+        if settings is not None and pending_slugs:
+            try:
+                active_workflow_slugs = asyncio.run(
+                    _load_active_workflow_slugs_by_slug(settings, pending_slugs)
+                )
+            except RuntimeError:
+                logger.warning(
+                    "Zombie auto-resume could not inspect active DB workflows "
+                    "from an active event loop"
+                )
+            except Exception:
+                logger.exception("Zombie auto-resume failed to inspect active DB workflows")
 
         delegated: list[str] = []
         for task_id in pending:
@@ -2365,6 +2390,7 @@ class WebTaskManager:
                         slug
                         and (slug in autowrite_heal_owned_slugs or slug in repair_heal_owned_slugs)
                     )
+                db_workflow_active = bool(slug and slug in active_workflow_slugs)
                 if task.task_type == "repair" and not heal_owned:
                     task.current_stage = "queued"
                     task.error = None
@@ -2381,8 +2407,12 @@ class WebTaskManager:
                     self._save_to_disk()
                     delegated.append(task_id)
                     logger.info("Resuming repair zombie task %s via web worker", task_id)
-                elif heal_owned:
-                    reason = "ARQ heal job already active"
+                elif heal_owned or db_workflow_active:
+                    reason = (
+                        "DB workflow already active"
+                        if db_workflow_active and not heal_owned
+                        else "ARQ heal job already active"
+                    )
                     task.status = "running"
                     task.current_stage = "delegated_to_worker_self_heal"
                     task.error = None
@@ -2391,7 +2421,11 @@ class WebTaskManager:
                         {
                             "timestamp": _utc_now(),
                             "stage": "delegated_to_worker_self_heal",
-                            "payload": {"reason": reason, "heal_owned": heal_owned},
+                            "payload": {
+                                "reason": reason,
+                                "heal_owned": heal_owned,
+                                "db_workflow_active": db_workflow_active,
+                            },
                         }
                     )
                     task.progress_events = task.progress_events[-300:]
@@ -3558,7 +3592,12 @@ async def _load_projects_payload(
                 stats = content_stats.get(row.id, {})
                 completed_units = _safe_int(stats.get("completed_chapters"))
                 word_total = _safe_int(stats.get("word_count_total"))
-                has_active_workflow = row.slug in active_project_slugs
+                is_closed = str(row.status or "").strip().lower() in _BOOK_CLOSED_STATUSES
+                has_active_workflow = (
+                    row.slug in active_project_slugs
+                    and not is_closed
+                    and not _project_library_archived(meta)
+                )
                 book_state = _library_book_state(
                     status=row.status,
                     completed_units=completed_units,
@@ -3609,7 +3648,12 @@ async def _load_projects_payload(
             stats = content_stats.get(row.id, {})
             completed_units = _safe_int(stats.get("completed_chapters"))
             word_total = _safe_int(stats.get("word_count_total"))
-            has_active_workflow = row.slug in active_project_slugs
+            is_closed = str(row.status or "").strip().lower() in _BOOK_CLOSED_STATUSES
+            has_active_workflow = (
+                row.slug in active_project_slugs
+                and not is_closed
+                and not _project_library_archived(meta)
+            )
             repair_status = _build_project_repair_status_payload(
                 row,
                 repair_counts.get(row.id, []),
@@ -3760,6 +3804,30 @@ async def _load_active_workflow_project_slugs(
     return {str(slug) for slug in result.scalars() if slug}
 
 
+async def _load_active_workflow_slugs_by_slug(
+    settings: AppSettings,
+    slugs: set[str],
+) -> set[str]:
+    if not slugs:
+        return set()
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+
+    async with session_scope(settings) as session:
+        result = await session.execute(
+            select(ProjectModel.slug)
+            .join(WorkflowRunModel, WorkflowRunModel.project_id == ProjectModel.id)
+            .where(
+                ProjectModel.slug.in_(slugs),
+                WorkflowRunModel.status.in_(("pending", "queued", "running")),
+            )
+            .distinct()
+        )
+        return {str(slug) for slug in result.scalars() if slug}
+
+
 async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]]:
     """Return a richer per-project payload for the library page.
 
@@ -3788,7 +3856,13 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
         for row in rows:
             slug = row.slug
             is_short = is_fanqie_short_project(row)
-            has_active_workflow = slug in active_project_slugs
+            is_archived = _project_library_archived(row.metadata_json)
+            is_closed = str(row.status or "").strip().lower() in _BOOK_CLOSED_STATUSES
+            has_active_workflow = (
+                slug in active_project_slugs
+                and not is_closed
+                and not is_archived
+            )
             slug_dir = output_base / slug if slug else None
             chapter_files: list[Path] = []
             project_md_exists = False
@@ -3881,7 +3955,6 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                 repair_status=repair_status,
                 has_active_workflow=has_active_workflow,
             )
-            is_archived = _project_library_archived(row.metadata_json)
             results.append(
                 {
                     "id": str(row.id),
@@ -3963,11 +4036,18 @@ async def _set_project_library_archived(
             return None
         meta = dict(project.metadata_json or {})
         if archived:
+            previous_status = str(getattr(project, "status", "") or "").strip()
+            if previous_status and previous_status != ProjectStatus.ARCHIVED.value:
+                meta.setdefault("library_archived_previous_status", previous_status)
             meta["library_archived"] = True
             meta["library_archived_at"] = _utc_now()
+            project.status = ProjectStatus.ARCHIVED.value
         else:
             meta.pop("library_archived", None)
             meta.pop("library_archived_at", None)
+            previous_status = str(meta.pop("library_archived_previous_status", "") or "").strip()
+            if getattr(project, "status", None) == ProjectStatus.ARCHIVED.value:
+                project.status = previous_status or ProjectStatus.PLANNING.value
         project.metadata_json = meta
         cancelled_workflows = 0
         if archived:
@@ -3995,6 +4075,142 @@ async def _set_project_library_archived(
             "archived_at": meta.get("library_archived_at"),
             "cancelled_workflows": cancelled_workflows,
         }
+
+
+async def _set_project_completed(
+    settings: AppSettings,
+    slug: str,
+) -> dict[str, object] | None:
+    from sqlalchemy import select, update
+
+    from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+
+    slug = str(slug or "").strip()
+    if not slug:
+        return None
+    async with session_scope(settings) as session:
+        project = (
+            await session.execute(select(ProjectModel).where(ProjectModel.slug == slug))
+        ).scalar_one_or_none()
+        if project is None:
+            return None
+        meta = dict(project.metadata_json or {})
+        meta["manually_marked_completed"] = True
+        meta["completed_at"] = _utc_now()
+        meta.pop("library_archived", None)
+        meta.pop("library_archived_at", None)
+        meta.pop("library_archived_previous_status", None)
+        project.metadata_json = meta
+        project.status = ProjectStatus.COMPLETED.value
+        cancel_result = await session.execute(
+            update(WorkflowRunModel)
+            .where(
+                WorkflowRunModel.project_id == project.id,
+                WorkflowRunModel.status.in_(("pending", "queued", "running", "machine_blocked")),
+            )
+            .values(
+                status="cancelled",
+                current_step="skipped_project_completed",
+                error_message="skipped because project was manually marked completed",
+                updated_at=datetime.now(UTC),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        redis_url = str(getattr(getattr(settings, "redis", None), "url", "") or "")
+        cancelled_jobs = 0
+        for job_id in (
+            f"autowrite:heal:{slug}",
+            f"project-pipeline:heal:{slug}",
+            f"repair:heal:{slug}",
+        ):
+            try:
+                if await _abort_worker_heal_job_async(redis_url, job_id):
+                    cancelled_jobs += 1
+            except Exception:
+                logger.exception("project complete: failed to abort heal job %s", job_id)
+
+        return {
+            "ok": True,
+            "project_slug": slug,
+            "status": ProjectStatus.COMPLETED.value,
+            "book_state": "closed_complete",
+            "cancelled_workflows": int(cancel_result.rowcount or 0),
+            "cancelled_jobs": cancelled_jobs,
+        }
+
+
+async def _cancel_project_task_async(settings: AppSettings, task_id: str) -> str:
+    """Cancel active work for a synthetic ``project:<slug>`` task card."""
+    if not task_id.startswith("project:"):
+        return "not_found"
+    slug = task_id.removeprefix("project:").strip()
+    if not slug:
+        return "not_found"
+
+    from sqlalchemy import select, update
+
+    from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+
+    async with session_scope(settings) as session:
+        project = (
+            await session.execute(select(ProjectModel).where(ProjectModel.slug == slug))
+        ).scalar_one_or_none()
+        if project is None:
+            return "not_found"
+        result = await session.execute(
+            update(WorkflowRunModel)
+            .where(
+                WorkflowRunModel.project_id == project.id,
+                WorkflowRunModel.status.in_(("pending", "queued", "running", "machine_blocked")),
+            )
+            .values(
+                status="cancelled",
+                current_step="cancelled_from_project_task",
+                error_message="Project task cancelled from web dashboard.",
+                updated_at=datetime.now(UTC),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        cancelled_rows = int(result.rowcount or 0)
+        status_changed = project.status not in (
+            ProjectStatus.COMPLETED.value,
+            ProjectStatus.ARCHIVED.value,
+            ProjectStatus.PAUSED.value,
+        )
+        if status_changed:
+            project.status = ProjectStatus.PAUSED.value
+
+    redis_url = str(getattr(getattr(settings, "redis", None), "url", "") or "")
+    job_cancelled = False
+    for job_id in (
+        f"autowrite:heal:{slug}",
+        f"project-pipeline:heal:{slug}",
+        f"repair:heal:{slug}",
+    ):
+        try:
+            job_cancelled = await _abort_worker_heal_job_async(redis_url, job_id) or job_cancelled
+        except Exception:
+            logger.exception("project task cancel: failed to abort heal job %s", job_id)
+    if cancelled_rows or job_cancelled or status_changed:
+        return "cancel_requested"
+    return "not_running"
+
+
+def _cancel_project_task(settings: AppSettings, task_id: str) -> str:
+    if not task_id.startswith("project:"):
+        return "not_found"
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning("task cancel: cannot cancel project task from an active event loop")
+        return "not_found"
+    try:
+        return asyncio.run(_cancel_project_task_async(settings, task_id))
+    except Exception:
+        logger.exception("task cancel: failed to cancel project task %s", task_id)
+        return "not_found"
 
 
 def _project_row_to_dashboard_task(row: dict[str, object]) -> dict[str, object]:
@@ -4213,6 +4429,9 @@ def _build_db_repair_task_summary(
     slug = str(getattr(project, "slug", "") or "")
     if not slug:
         return None
+    project_status = str(getattr(project, "status", "") or "").strip().lower()
+    if project_status in _BOOK_CLOSED_STATUSES or phase in {"completed", "closed_complete"}:
+        return None
     title = str(getattr(project, "title", "") or slug)
     if queued > 0:
         status = "queued"
@@ -4375,7 +4594,10 @@ async def _cancel_db_repair_task_async(settings: AppSettings, task_id: str) -> s
         )
         cancelled_rows = int(result.rowcount or 0)
 
-    job_cancelled = _abort_worker_heal_job(settings.redis.url, f"repair:heal:{slug}")
+    job_cancelled = await _abort_worker_heal_job_async(
+        settings.redis.url,
+        f"repair:heal:{slug}",
+    )
     return "cancel_requested" if cancelled_rows or job_cancelled else "not_running"
 
 
@@ -4420,6 +4642,9 @@ def _request_visible_task_cancel(
 
     if normalized_task_id.startswith("db-repair:"):
         return _cancel_db_repair_task(settings, normalized_task_id)
+
+    if normalized_task_id.startswith("project:"):
+        return _cancel_project_task(settings, normalized_task_id)
 
     if normalized_task_id.startswith(("autowrite:heal:", "repair:heal:")):
         return (
@@ -4570,11 +4795,16 @@ def _build_project_repair_status_payload(
     structural_repair_required = bool(metadata.get("structural_repair_required"))
     project_status = str(getattr(project, "status", "") or "")
     library_archived = bool(metadata.get("library_archived")) or project_status == "archived"
+    project_closed = project_status.lower() in _BOOK_CLOSED_STATUSES
 
     if library_archived:
         phase = "archived"
         label = "已归档"
         detail = "项目已归档，不会进入自动写作或自动修复。"
+    elif project_closed:
+        phase = "completed"
+        label = "已完成"
+        detail = "项目已标记完成，不会进入自动写作或自动修复。"
     elif generation_gate_blocked:
         phase = "planning_gate"
         label = "规划门禁续跑中"
@@ -4604,7 +4834,11 @@ def _build_project_repair_status_payload(
         label = "正常"
         detail = "当前没有检测到修复门控。"
 
-    is_repairing = False if library_archived else (phase != "normal" or project_status == "paused")
+    is_repairing = (
+        False
+        if library_archived or project_closed
+        else (phase != "normal" or project_status == "paused")
+    )
     return {
         "phase": phase,
         "label": label,
@@ -7275,16 +7509,16 @@ def _library_book_state(
     if archived:
         return "archived"
     normalized = str(status or "").lower()
-    if has_active_workflow:
-        return "in_progress"
-    if repair_status and repair_status.get("is_repairing"):
-        return "needs_attention"
-    if normalized in _BOOK_ATTENTION_STATUSES:
-        return "needs_attention"
     if normalized in _BOOK_CLOSED_STATUSES:
         return "closed_complete"
     if target_units > 0 and completed_units >= target_units and has_content:
         return "closed_complete"
+    if has_active_workflow:
+        return "in_progress"
+    if normalized in _BOOK_ATTENTION_STATUSES:
+        return "needs_attention"
+    if repair_status and repair_status.get("is_repairing"):
+        return "needs_attention"
     if normalized in _BOOK_RUNNING_STATUSES:
         return "in_progress"
     if has_content:
@@ -7654,6 +7888,7 @@ def serve_web_app(
         try:
             resumed_ids = task_manager.auto_resume_zombies(
                 redis_url=settings.redis.url,
+                settings=settings,
             )
             if resumed_ids:
                 print(
@@ -8617,6 +8852,21 @@ def serve_web_app(
                         return
                     result["tasks_deleted"] = task_manager.delete_tasks_by_project(
                         archive_slug,
+                        include_active=True,
+                    )
+                    self._send_json(result)
+                    return
+                complete_slug = _match_project_route(path, "complete")
+                if complete_slug is not None:
+                    result = asyncio.run(_set_project_completed(settings, complete_slug))
+                    if result is None:
+                        self._send_json(
+                            {"ok": False, "error": "Project not found"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    result["tasks_deleted"] = task_manager.delete_tasks_by_project(
+                        complete_slug,
                         include_active=True,
                     )
                     self._send_json(result)

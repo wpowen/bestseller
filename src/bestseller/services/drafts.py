@@ -225,6 +225,38 @@ def _drop_conflicting_length_repair_codes(
     return tuple(code for code in ordered if _canonical_repair_code(code) != dropped)
 
 
+_AUTO_REPAIR_EXTERNAL_QUALITY_SEVERITIES: frozenset[str] = frozenset(
+    {"critical", "high", "block", "blocker"}
+)
+
+
+def _metadata_external_quality_codes(metadata: Mapping[str, Any]) -> tuple[str, ...]:
+    """Collect fresh metadata findings that should enter chapter auto-repair.
+
+    Quality bundle codes already flow through ``auto_repair_last_block_codes``.
+    Deterministic post-write audits and retention findings can be stamped only
+    as structured metadata, so this helper turns those current findings into
+    the same code stream without requiring a schema change.
+    """
+
+    codes: list[str] = []
+    audit = metadata.get("deterministic_audit_latest")
+    if isinstance(audit, Mapping) and audit.get("passed") is False:
+        findings = audit.get("findings")
+        if isinstance(findings, Sequence) and not isinstance(findings, (str, bytes)):
+            for finding in findings:
+                if not isinstance(finding, Mapping):
+                    continue
+                severity = str(finding.get("severity") or "").strip().lower()
+                if severity not in _AUTO_REPAIR_EXTERNAL_QUALITY_SEVERITIES:
+                    continue
+                code = str(finding.get("code") or "").strip()
+                if code:
+                    codes.append(code)
+
+    return tuple(dict.fromkeys(codes))
+
+
 DUPLICATE_CONTENT_BLOCK_CODE = "CROSS_CHAPTER_REPETITION"
 INTRA_CHAPTER_DUPLICATE_BLOCK_CODE = "INTRA_CHAPTER_REPETITION"
 CHAPTER_OPENING_REPETITION_BLOCK_CODE = "CHAPTER_OPENING_REPETITION"
@@ -581,6 +613,14 @@ def count_words(text: str) -> int:
     non_ws = re.sub(r"\s+", "", plain)
     return len(_CJK_CHAR_PATTERN.findall(non_ws)) + len(_LATIN_WORD_PATTERN.findall(plain))
 
+
+
+def authoritative_word_count_for_language(text: str, *, language: str = "zh-CN") -> int:
+    """Body-truth word count for chapter/scene commit (CJK for zh)."""
+
+    from bestseller.services.chapter_word_count_truth import authoritative_zh_word_count
+
+    return authoritative_zh_word_count(text, language=language)
 
 def _clean_generated_chapter_text(
     content_md: str,
@@ -5237,7 +5277,7 @@ def build_scene_draft_prompts(
         language=language,
         chapter_no=chapter.chapter_number,
         chapter_position=_infer_chapter_position(project, chapter),
-        token_budget=1500,
+        token_budget=2500,
     ).text
     _methodology_line = ""
     if _methodology_pack_block or _methodology_rules or _compiled_methodology:
@@ -7148,7 +7188,22 @@ async def _enrich_chapter_first_context(
     try:
         from bestseller.services.chapter_length_gate import render_chapter_length_block
 
-        context_packet.chapter_length_block = render_chapter_length_block(language=language) or None
+        # Pass the project's resolved chapter band (config + per-chapter target,
+        # clamped to the 1800-3500 zh ceiling) instead of the generic defaults so
+        # the writer is told this book's exact, type-aware hard cap.
+        _band_min, _band_target, _band_max = _chapter_length_contract_band(
+            project,
+            int(getattr(chapter, "target_word_count", 0) or 0),
+        )
+        context_packet.chapter_length_block = (
+            render_chapter_length_block(
+                hard_floor=_band_min,
+                soft_warning=_band_target,
+                hard_max=_band_max,
+                language=language,
+            )
+            or None
+        )
     except Exception:
         logger.debug("chapter-first length block injection failed", exc_info=True)
     try:
@@ -8064,7 +8119,10 @@ async def generate_chapter_draft_once(
     ):
         quality_gate_outcome = "blocked"
 
-    word_count = count_words(content_md)
+    word_count = authoritative_word_count_for_language(
+        content_md,
+        language=project.language or "zh-CN",
+    )
     next_version = int(
         (
             await session.scalar(
@@ -9211,7 +9269,10 @@ async def generate_scene_draft(
     else:
         content_md = strip_scaffolding_echoes(sanitize_novel_markdown_content(content_md))
         scene_regen_count = 0
-    word_count = count_words(content_md)
+    word_count = authoritative_word_count_for_language(
+        content_md,
+        language=project.language or "zh-CN",
+    )
     next_version = int(
         (
             await session.scalar(
@@ -9414,6 +9475,13 @@ async def assemble_chapter_draft(
     except Exception:
         logger.debug("Post-assembly dedup failed (non-fatal)", exc_info=True)
 
+    # NOTE: chapter length is controlled at the SCENE level (each scene draft is
+    # converged into its word band before assembly) and by the prompt budget —
+    # NOT by deterministically trimming the assembled chapter. Blunt tail-trim
+    # was removed: it broke continuity (per-scene knowledge/clues are extracted
+    # before assembly, so cutting the assembled tail desynced the ledger from
+    # the prose, and dropped the chapter-ending hook).
+
     deterministic_audit_report = None
     try:
         from bestseller.services.deterministic_post_write_audit import audit_chapter_prose
@@ -9542,7 +9610,10 @@ async def assemble_chapter_draft(
                 cleared_repair_residue,
             )
 
-    word_count = count_words(content_md)
+    word_count = authoritative_word_count_for_language(
+        content_md,
+        language=project.language or "zh-CN",
+    )
     next_version = int(
         (
             await session.scalar(
@@ -9923,6 +9994,24 @@ async def maybe_prepare_chapter_auto_repair(
         "SCENE_JUMP_UNRESOLVED": (
             "本章存在地点/时间硬切。重写时必须只在命中的跳转位置补可见转场动作，禁止为了解决转场新增整场戏。"
         ),
+        "WORD_COUNT_METADATA_MISMATCH": (
+            "本章正文真实汉字数远低于声称字数（疑似只写了大纲/骨架）。重写时必须把每个场景写成完整现场：动作链、对白交锋、感官细节、人物选择与代价，直到真实字数达到章节硬下限；严禁形容词堆叠或重复同义句凑数。"
+        ),
+        "PAYOFF_LEDGER_LOW": (
+            "本章钩子多、兑现少。重写时必须在本章内至少落地一个具体兑现：揭示一项确凿事实、解决一个悬念、或让主角付出/赢得可见代价，并写成现场结果而非旁白预告。"
+        ),
+        "PAYOFF_HOOK_ONLY": (
+            "本章只抛钩子、几乎无兑现。重写时补一个当章闭环的小兑现（线索被证实/一次对抗分出胜负/一个秘密被揭开），再用新钩子收尾。"
+        ),
+        "PERSONA_ABANDON_RATE_HIGH": (
+            "模拟读者弃读率过高。重写时定位最可能弃读的段落（开篇拖沓、信息倾倒、缺冲突或兑现），改为更快进入冲突、把设定藏进动作、补足情绪与兑现，砍掉不推进的过场。"
+        ),
+        "PERSONA_WEIGHTED_SCORE_LOW": (
+            "模拟读者综合读感分偏低。重写时同时提升节奏、冲突清晰度、情绪冲击与新鲜感：强化主角主动选择、增加具体感官画面、避免套路桥段与模板化措辞。"
+        ),
+        "PERSONA_PAYOFF_DENSITY_LOW": (
+            "模拟读者反馈兑现密度过低。重写时把至少一处悬念在本章内落地为可见结果（证据/对抗结果/关系变化/代价），并以现场动作呈现而非概述交代。"
+        ),
     }
 
     def _retention_hint_for_codes(codes: Iterable[str]) -> str:
@@ -9933,7 +10022,12 @@ async def maybe_prepare_chapter_auto_repair(
         ]
         if not ordered_codes:
             return ""
-        hint_text = "\n".join(retention_hint_by_code[code] for code in ordered_codes)
+        hint_lines: list[str] = []
+        for code in ordered_codes:
+            hint_lines.append(retention_hint_by_code[code])
+            for detail in _details_for_retention_finding(code):
+                hint_lines.append(f"  \u00b7 {detail}")
+        hint_text = "\n".join(hint_lines)
         playbook_hint = render_quality_repair_playbooks(ordered_codes)
         if playbook_hint:
             hint_text = f"{hint_text}\n{playbook_hint}"
@@ -10131,6 +10225,9 @@ async def maybe_prepare_chapter_auto_repair(
             )
         )
         if c
+    )
+    metadata_codes = tuple(
+        dict.fromkeys((*metadata_codes, *_metadata_external_quality_codes(chapter_meta)))
     )
     latest_payload = dict(getattr(latest_report, "report_json", None) or {})
     latest_block_codes: tuple[str, ...] = tuple(

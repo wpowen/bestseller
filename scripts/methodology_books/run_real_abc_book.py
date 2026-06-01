@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import suppress
 import json
 import os
 import time
@@ -35,7 +36,8 @@ from typing import Any
 from sqlalchemy import select
 
 from bestseller.domain.project import ProjectCreate, ProjectType
-from bestseller.infra.db.models import ChapterModel
+from bestseller.domain.enums import ProjectStatus, WorkflowStatus
+from bestseller.infra.db.models import ChapterModel, WorkflowRunModel
 from bestseller.infra.db.session import session_scope
 from bestseller.services.pipelines import run_autowrite_pipeline
 from bestseller.services.projects import get_project_by_slug
@@ -68,6 +70,120 @@ def _progress(event: str, data: dict | None = None) -> None:
             f"result={data.get('result', '?')}",
             flush=True,
         )
+
+
+def _default_output_root() -> Path:
+    configured = os.environ.get("BESTSELLER_REAL_ABC_OUTPUT_ROOT")
+    if configured:
+        return Path(configured)
+    if Path("/app").exists():
+        return Path("/app/output")
+    return Path.cwd() / "output"
+
+
+def _apply_runtime_overrides(settings: Any, args: argparse.Namespace) -> None:
+    if args.llm_timeout_seconds is not None:
+        for role_name in ("planner", "writer", "critic", "summarizer", "editor"):
+            getattr(settings.llm, role_name).timeout_seconds = args.llm_timeout_seconds
+    if args.planner_timeout_seconds is not None:
+        settings.llm.planner.timeout_seconds = args.planner_timeout_seconds
+    if args.writer_timeout_seconds is not None:
+        settings.llm.writer.timeout_seconds = args.writer_timeout_seconds
+    if args.critic_timeout_seconds is not None:
+        settings.llm.critic.timeout_seconds = args.critic_timeout_seconds
+    if args.retry_max_attempts is not None:
+        settings.llm.retry.max_attempts = args.retry_max_attempts
+    if args.rate_limit_max_attempts is not None:
+        settings.llm.retry.rate_limit_max_attempts = args.rate_limit_max_attempts
+
+
+def _target_word_count_for_validation(settings: Any, chapters: int) -> int:
+    chapter_count = max(int(chapters or 0), 1)
+    chapter_budget = getattr(settings.generation, "words_per_chapter", None)
+    min_words = int(getattr(chapter_budget, "min", 5000) or 5000)
+    target_words = int(getattr(chapter_budget, "target", min_words) or min_words)
+    return chapter_count * max(min_words, target_words)
+
+
+async def _monitor_run(
+    settings: Any,
+    slug: str,
+    stop_event: asyncio.Event,
+    *,
+    interval_seconds: float,
+) -> None:
+    started = time.monotonic()
+    while not stop_event.is_set():
+        await asyncio.sleep(interval_seconds)
+        if stop_event.is_set():
+            break
+        elapsed = time.monotonic() - started
+        try:
+            async with session_scope(settings) as session:
+                project = await get_project_by_slug(session, slug)
+                if project is None:
+                    print(
+                        f"[monitor +{elapsed:.0f}s] project not created yet",
+                        flush=True,
+                    )
+                    continue
+                chapters = (
+                    await session.execute(
+                        select(ChapterModel.status)
+                        .where(ChapterModel.project_id == project.id)
+                        .order_by(ChapterModel.chapter_number)
+                    )
+                ).scalars().all()
+                status_counts: dict[str, int] = {}
+                for status in chapters:
+                    status_counts[str(status)] = status_counts.get(str(status), 0) + 1
+                print(
+                    f"[monitor +{elapsed:.0f}s] project={project.status} "
+                    f"chapters={len(chapters)} statuses={status_counts}",
+                    flush=True,
+                )
+        except Exception as exc:  # noqa: BLE001 - monitor must not kill validation
+            print(
+                f"[monitor +{elapsed:.0f}s] monitor_error={type(exc).__name__}: {exc}",
+                flush=True,
+            )
+
+
+async def _mark_running_workflows_failed(
+    settings: Any,
+    slug: str,
+    *,
+    message: str,
+) -> None:
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, slug)
+        if project is None:
+            return
+        metadata = dict(project.metadata_json or {})
+        now = datetime.now(timezone.utc).isoformat()
+        metadata.update(
+            {
+                "validation_run_timed_out": True,
+                "validation_timeout_at": now,
+                "validation_timeout_reason": message,
+                "production_paused": True,
+                "production_pause_reason": "validation_watchdog_timeout",
+            }
+        )
+        project.metadata_json = metadata
+        project.status = ProjectStatus.PAUSED.value
+        runs = (
+            await session.execute(
+                select(WorkflowRunModel).where(
+                    WorkflowRunModel.project_id == project.id,
+                    WorkflowRunModel.status == WorkflowStatus.RUNNING.value,
+                )
+            )
+        ).scalars().all()
+        for run in runs:
+            run.status = WorkflowStatus.FAILED.value
+            run.error_message = message
+        await session.flush()
 
 
 def _extract_lineage(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -105,10 +221,22 @@ def _extract_scores(metadata: dict[str, Any]) -> dict[str, Any]:
 
 async def run(args: argparse.Namespace) -> int:
     settings = load_settings()
+    _apply_runtime_overrides(settings, args)
     v2 = os.environ.get("BESTSELLER_METHODOLOGY_V2", "0")
     print(f"=== REAL A/B driver === slug={args.slug} chapters={args.chapters} "
           f"BESTSELLER_METHODOLOGY_V2={v2}", flush=True)
     print(f"LLM mock={settings.llm.mock} writer_model={settings.llm.writer.model}", flush=True)
+    print(
+        "timeouts: "
+        f"planner={settings.llm.planner.timeout_seconds}s "
+        f"writer={settings.llm.writer.timeout_seconds}s "
+        f"critic={settings.llm.critic.timeout_seconds}s "
+        f"pipeline={args.pipeline_timeout_seconds or 'none'}s "
+        "retries: "
+        f"max={settings.llm.retry.max_attempts} "
+        f"rate_limit={settings.llm.retry.rate_limit_max_attempts}",
+        flush=True,
+    )
 
     payload = ProjectCreate(
         slug=args.slug,
@@ -117,7 +245,7 @@ async def run(args: argparse.Namespace) -> int:
         sub_genre=DEFAULT_SUB_GENRE,
         audience="男频都市悬疑读者",
         language="zh-CN",
-        target_word_count=args.chapters * 2200,
+        target_word_count=_target_word_count_for_validation(settings, args.chapters),
         target_chapters=args.chapters,
         project_type=ProjectType.LINEAR,
         metadata={"validation_run": "methodology_abc_real", "v2_flag": v2},
@@ -125,9 +253,20 @@ async def run(args: argparse.Namespace) -> int:
 
     started = time.monotonic()
     pipeline_error: str | None = None
+    stop_monitor = asyncio.Event()
+    monitor_task: asyncio.Task[None] | None = None
     try:
+        if args.monitor_interval_seconds > 0:
+            monitor_task = asyncio.create_task(
+                _monitor_run(
+                    settings,
+                    args.slug,
+                    stop_monitor,
+                    interval_seconds=args.monitor_interval_seconds,
+                )
+            )
         async with session_scope(settings) as session:
-            await run_autowrite_pipeline(
+            pipeline_coro = run_autowrite_pipeline(
                 session=session,
                 settings=settings,
                 project_payload=payload,
@@ -135,9 +274,34 @@ async def run(args: argparse.Namespace) -> int:
                 export_markdown=True,
                 progress=_progress,
             )
+            if args.pipeline_timeout_seconds and args.pipeline_timeout_seconds > 0:
+                await asyncio.wait_for(
+                    pipeline_coro,
+                    timeout=args.pipeline_timeout_seconds,
+                )
+            else:
+                await pipeline_coro
+    except asyncio.TimeoutError:
+        pipeline_error = (
+            "TimeoutError: pipeline exceeded "
+            f"{args.pipeline_timeout_seconds}s watchdog"
+        )
+        print(f"\n=== pipeline timed out: {pipeline_error} ===", flush=True)
     except Exception as exc:  # noqa: BLE001 - always proceed to readback
         pipeline_error = f"{type(exc).__name__}: {exc}"
         print(f"\n=== pipeline raised (will still read back): {pipeline_error} ===", flush=True)
+    finally:
+        stop_monitor.set()
+        if monitor_task is not None:
+            with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                await asyncio.wait_for(monitor_task, timeout=2.0)
+        if pipeline_error and pipeline_error.startswith("TimeoutError:"):
+            with suppress(Exception):
+                await _mark_running_workflows_failed(
+                    settings,
+                    args.slug,
+                    message=pipeline_error,
+                )
     elapsed = time.monotonic() - started
     print(f"\n=== pipeline finished in {elapsed:.0f}s ({elapsed/60:.1f}m) ===", flush=True)
 
@@ -182,7 +346,7 @@ async def run(args: argparse.Namespace) -> int:
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    out_dir = Path("/app/output") / f"methodology-abc-real-{args.slug}"
+    out_dir = args.output_root / f"methodology-abc-real-{args.slug}"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "result.json"
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -206,6 +370,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--slug", required=True)
     p.add_argument("--chapters", type=int, default=4)
+    p.add_argument(
+        "--output-root",
+        type=Path,
+        default=_default_output_root(),
+        help="Directory where methodology-abc-real-<slug>/result.json is written.",
+    )
+    p.add_argument(
+        "--pipeline-timeout-seconds",
+        type=int,
+        default=0,
+        help="Wall-clock watchdog for the full pipeline. 0 disables it.",
+    )
+    p.add_argument(
+        "--monitor-interval-seconds",
+        type=float,
+        default=60.0,
+        help="DB progress logging interval. 0 disables monitor logging.",
+    )
+    p.add_argument(
+        "--llm-timeout-seconds",
+        type=int,
+        default=None,
+        help="Override all role LLM timeouts for this validation run.",
+    )
+    p.add_argument("--planner-timeout-seconds", type=int, default=None)
+    p.add_argument("--writer-timeout-seconds", type=int, default=None)
+    p.add_argument("--critic-timeout-seconds", type=int, default=None)
+    p.add_argument("--retry-max-attempts", type=int, default=None)
+    p.add_argument("--rate-limit-max-attempts", type=int, default=None)
     return p.parse_args(argv)
 
 

@@ -124,6 +124,49 @@ def test_bible_completeness_gate_blocks_incomplete_materialization() -> None:
         )
 
 
+def test_materialization_synthesizes_character_personhood_before_bible_gate() -> None:
+    project = build_project()
+    project.invariants_json = invariants_to_dict(
+        seed_invariants(
+            project_id=project.id,
+            language="zh-CN",
+            words_per_chapter=type(
+                "Words",
+                (),
+                {"min": 1800, "target": 2200, "max": 2600},
+            )(),
+        )
+    )
+    cast_spec = workflow_services._synthesize_materialization_cast_bible_fields(
+        project,
+        {
+            "protagonist": {"name": "陈羽", "role": "protagonist"},
+            "antagonist": {"name": "张远", "role": "antagonist"},
+            "supporting_cast": [{"name": "沈夜行", "role": "supporting"}],
+        },
+    )
+    draft = workflow_services.build_draft_from_materialization_content(
+        book_spec_content={"title": "档案室雨夜", "themes": ["真相"]},
+        world_spec_content={"rules": []},
+        cast_spec_content=cast_spec,
+    )
+    report = workflow_services.validate_bible_completeness(
+        draft,
+        workflow_services.invariants_from_dict(project.invariants_json),
+    )
+
+    personhood_codes = {
+        "CHARACTER_IP_ANCHOR_MISSING",
+        "CORE_WOUND_MISSING",
+        "TAG_MEMORY_MISSING",
+        "INDEPENDENT_LIFE_MISSING",
+        "CHARACTER_CONTRAST_MISSING",
+        "CHARACTER_RECOGNITION_ANCHORS_MISSING",
+        "VILLAIN_CHARISMA_MISSING",
+    }
+    assert not ({finding.code for finding in report.deficiencies} & personhood_codes)
+
+
 def build_batch() -> ChapterOutlineBatchInput:
     return ChapterOutlineBatchInput.model_validate(
         {

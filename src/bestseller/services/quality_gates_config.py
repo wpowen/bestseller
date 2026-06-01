@@ -222,6 +222,36 @@ class OriginalityEngineConfig:
 
 
 @dataclass(frozen=True)
+class ReaderQualityGateConfig:
+    """Hard gates from reader-persona simulation + payoff ledger heuristics."""
+
+    enabled: bool = True
+    block_on_persona_failure: bool = True
+    min_weighted_score: float = 0.62
+    max_abandon_rate: float = 0.35
+    min_payoff_density: float = 0.22
+    # Below-soft-target (but above the raised hard floor) is advisory: the
+    # 3000 hard floor is the real gate. Blocking the whole floor-target band
+    # caused excessive rewrite churn.
+    block_below_target_length: bool = False
+    block_word_count_metadata_mismatch: bool = True
+    block_chapter_duplicates: bool = True
+    # Run the payoff ledger heuristic, but keep it advisory by default; the
+    # persona / reader-judge payoff signal is the real hard gate.
+    block_payoff_ledger: bool = False
+    opening_similarity_threshold: float = 0.82
+    body_similarity_threshold: float = 0.88
+    require_critic_body_evidence: bool = True
+    # P2 LLM reader-judge. Default OFF: enable per-project after calibration.
+    # When on, feeds prose_quality_score into the persona simulator. When
+    # ``reader_judge_audit_only`` is True, the score is recorded but the
+    # persona hard gate keeps its existing thresholds (no behavior change).
+    enable_llm_reader_judge: bool = False
+    reader_judge_audit_only: bool = True
+    reader_judge_text_cap_chars: int = 8000
+
+
+@dataclass(frozen=True)
 class ProseQualityGateConfig:
     """Anti-slop prose gates and prompt sanitization posture."""
 
@@ -330,6 +360,9 @@ class QualityGatesConfig:
     originality_engine: OriginalityEngineConfig = field(
         default_factory=OriginalityEngineConfig
     )
+    reader_quality: ReaderQualityGateConfig = field(
+        default_factory=ReaderQualityGateConfig
+    )
 
 
 def _as_dict(payload: Any) -> dict[str, Any]:
@@ -395,6 +428,7 @@ def load_quality_gates_config(
     story_principle = _as_dict(raw.get("story_principle_gate"))
     methodology_framework = _as_dict(raw.get("methodology_framework"))
     originality_engine = _as_dict(raw.get("originality_engine"))
+    reader_quality = _as_dict(raw.get("reader_quality_gate"))
     prose_quality = _as_dict(raw.get("prose_quality"))
     narrative_richness = _as_dict(raw.get("narrative_richness"))
     l7 = _as_dict(raw.get("l7_continuous_audit"))
@@ -495,6 +529,35 @@ def load_quality_gates_config(
         narrative_richness=_build_narrative_richness(narrative_richness),
         methodology_framework=_build_methodology_framework(methodology_framework),
         originality_engine=_build_originality_engine(originality_engine),
+        reader_quality=_build_reader_quality_gate(reader_quality),
+    )
+
+
+def _build_reader_quality_gate(raw: dict[str, Any]) -> ReaderQualityGateConfig:
+    return ReaderQualityGateConfig(
+        enabled=_safe_bool(raw.get("enabled"), True),
+        block_on_persona_failure=_safe_bool(raw.get("block_on_persona_failure"), True),
+        min_weighted_score=float(raw.get("min_weighted_score", 0.62)),
+        max_abandon_rate=float(raw.get("max_abandon_rate", 0.35)),
+        min_payoff_density=float(raw.get("min_payoff_density", 0.22)),
+        block_below_target_length=_safe_bool(raw.get("block_below_target_length"), True),
+        block_word_count_metadata_mismatch=_safe_bool(
+            raw.get("block_word_count_metadata_mismatch"), True
+        ),
+        block_chapter_duplicates=_safe_bool(raw.get("block_chapter_duplicates"), True),
+        block_payoff_ledger=_safe_bool(raw.get("block_payoff_ledger"), False),
+        opening_similarity_threshold=float(
+            raw.get("opening_similarity_threshold", 0.82)
+        ),
+        body_similarity_threshold=float(raw.get("body_similarity_threshold", 0.88)),
+        require_critic_body_evidence=_safe_bool(
+            raw.get("require_critic_body_evidence"), True
+        ),
+        enable_llm_reader_judge=_safe_bool(raw.get("enable_llm_reader_judge"), False),
+        reader_judge_audit_only=_safe_bool(raw.get("reader_judge_audit_only"), True),
+        reader_judge_text_cap_chars=max(
+            500, _safe_int(raw.get("reader_judge_text_cap_chars"), 8000)
+        ),
     )
 
 

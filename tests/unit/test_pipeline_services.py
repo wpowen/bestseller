@@ -703,6 +703,82 @@ async def test_stop_auto_repair_when_latest_quality_report_is_clean() -> None:
     assert scene.metadata_json == {"methodology_contract": {"stakes": "保留"}}
 
 
+def test_latest_quality_report_is_not_clean_when_violation_severity_blocks() -> None:
+    report = SimpleNamespace(
+        blocks_write=False,
+        report_json={
+            "blocking_codes": [],
+            "violations": [
+                {
+                    "code": "GOLDEN_THREE_WEAK",
+                    "severity": "block",
+                    "detail": "golden-three hook is weak",
+                }
+            ],
+        },
+    )
+
+    assert pipeline_services._latest_quality_report_is_clean(report) is False
+
+
+def test_current_auto_repair_codes_include_fresh_metadata_audit_findings() -> None:
+    chapter = SimpleNamespace(
+        metadata_json={
+            "auto_repair_last_block_codes": ["PAYOFF_LEDGER_LOW"],
+            "deterministic_audit_latest": {
+                "passed": False,
+                "findings": [
+                    {
+                        "code": "ENDING_HOOK_MISSING",
+                        "severity": "high",
+                    }
+                ],
+            },
+        }
+    )
+
+    codes = pipeline_services._current_auto_repair_block_codes(chapter)
+
+    assert codes == (
+        "PAYOFF_LEDGER_LOW",
+        "ENDING_HOOK_MISSING",
+    )
+
+
+@pytest.mark.asyncio
+async def test_stop_auto_repair_preserves_deterministic_audit_blocks() -> None:
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        production_state="pending",
+        metadata_json={
+            "auto_repair_in_progress": True,
+            "auto_repair_last_block_codes": ["ENDING_HOOK_MISSING"],
+            "deterministic_audit_latest": {
+                "passed": False,
+                "findings": [
+                    {
+                        "code": "ENDING_HOOK_MISSING",
+                        "severity": "high",
+                    }
+                ],
+            },
+        },
+    )
+    report = SimpleNamespace(
+        blocks_write=False,
+        report_json={"violations": [], "blocking_codes": []},
+    )
+    session = FakeSession(scalar_results=[report])
+
+    stopped = await pipeline_services._stop_auto_repair_if_latest_quality_clean(
+        session,
+        chapter,
+    )
+
+    assert stopped is False
+    assert chapter.metadata_json["auto_repair_in_progress"] is True
+
+
 @pytest.mark.asyncio
 async def test_stop_auto_repair_preserves_other_hard_gate_blocks() -> None:
     chapter = SimpleNamespace(
@@ -861,6 +937,27 @@ def _disable_chapter_length_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         pipeline_module, "get_quality_gates_config", _patched, raising=False
     )
+
+
+def test_project_story_bible_root_prefers_mode_b_layout(tmp_path: Path) -> None:
+    project = build_project()
+    project.metadata_json = {**(project.metadata_json or {}), "mode_b": True}
+    mode_b_root = tmp_path / "ai-generated" / project.slug / "story-bible"
+    mode_b_root.mkdir(parents=True)
+
+    resolved = pipeline_services._project_story_bible_root(project, tmp_path)
+
+    assert resolved == mode_b_root
+
+
+def test_project_story_bible_root_keeps_classic_layout(tmp_path: Path) -> None:
+    project = build_project()
+    classic_root = tmp_path / project.slug / "story-bible"
+    classic_root.mkdir(parents=True)
+
+    resolved = pipeline_services._project_story_bible_root(project, tmp_path)
+
+    assert resolved == classic_root
 
 
 @pytest.mark.asyncio
@@ -2350,8 +2447,10 @@ async def test_assemble_chapter_draft_creates_assembled_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
+    project.language = "zh-CN"
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
+    observed_languages: list[str] = []
     scene_draft = SceneDraftVersionModel(
         project_id=project.id,
         scene_card_id=scene.id,
@@ -2366,7 +2465,16 @@ async def test_assemble_chapter_draft_creates_assembled_version(
     async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
         return project
 
+    def fake_word_count(content_md: str, *, language: str = "zh-CN") -> int:
+        observed_languages.append(language)
+        return 42
+
     monkeypatch.setattr(draft_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        draft_services,
+        "authoritative_word_count_for_language",
+        fake_word_count,
+    )
     session = FakeSession(
         scalar_results=[chapter, scene_draft, 0],
         scalars_results=[[scene]],
@@ -2376,7 +2484,8 @@ async def test_assemble_chapter_draft_creates_assembled_version(
 
     assert chapter_draft.version_no == 1
     assert chapter_draft.is_current is True
-    assert chapter.current_word_count > 0
+    assert chapter.current_word_count == 42
+    assert observed_languages == ["zh-CN"]
     assert any(isinstance(obj, ChapterDraftVersionModel) for obj in session.added)
 
 

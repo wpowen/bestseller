@@ -21,7 +21,14 @@
 - **已修复路径**：`chapter_constraint_manifest`（prewrite）、`chapter_llm_quality_judge`/`outline_llm_judge`（judge）已接 `get_fragment`。
 - **Mode B 断层**：`.claude/skills/.../prompts/*.md` 与 `services/` 流水线未打通。
 - **可观测性**：默认 `llm_runs.prompt_hash`；全量 prompt 需 `BESTSELLER_TRACE_SCENE_PROMPTS=full`。
-- **后续优先（P0）**：`render_methodology_block` 委托 bridge；Planner 中间阶段补 bridge；Prompt Contract Gate + 快照工具；Summarizer 补 hook/情绪摘要约束。
+- **已落地（2026-05-29）**：`render_methodology_block` 委托 `methodology_bridge`；`reader_quality_gate`（persona/字数真值/跨章重复/兑现台账）；`chapter_word_count_truth`；`scripts/eval_reader_persona_harness.py`。
+- **深度融合落地（2026-05-29 第二轮）**：
+  - 新 block code 接修复闭环：duplicate gate 改产出规范 code（`CHAPTER_OPENING_REPETITION`/`CROSS_CHAPTER_REPETITION`，复用既有 playbook）；`quality_repair_playbooks` 补 WORD_COUNT/PAYOFF/PERSONA playbook；PERSONA_* 进 `AUTO_REPAIR_RETENTION_CODES`；`drafts.maybe_prepare_chapter_auto_repair` 用 finding evidence 拼具体 hint。
+  - Mode B 接流水线：`services/mode_b_bridge.py`（drive_mode_b_chapter/sync_progress_yaml/enqueue_repair_item）+ `scripts/mode_b_chapter_bridge.py`；`exports._resolve_chapter_export_path` 支持 mode_b `volumes/vol-NN/ch-NNN.md`；`modes.md`/`orchestration.md`/`orchestrator.mdc` WRITE_CHAPTER 改为经 bridge 调 `run_chapter_pipeline`。
+  - LLM reader-judge：`services/reader_judge.py` → `grade_chapter(prose_quality_score=)`；配置 `reader_quality_gate.enable_llm_reader_judge`（默认 off）+ `reader_judge_audit_only`。
+  - planner World/Cast/Volume 已有 `attach_planner_methodology`（bridge），无需再补；`story_bible_write_gate` 阈值收紧；里程碑失败入 progress.yaml `repair_queue`。
+  - **payoff_ledger 与 below-target 改为 advisory 默认**（避免关键词启发式误杀 hook-heavy 章）：`block_payoff_ledger=False`、`block_below_target_length=False`；真正硬闸门是 3000 CJK 硬下限 + persona/reader-judge。
+- **后续优先**：reader-judge 校准后再开 enforce；Prompt Contract Gate + 快照工具；Summarizer 补 hook/情绪摘要约束。
 
 ## Working Conventions
 - For this repository, prefer adding runnable planning artifacts under `examples/planning/` when building story content through the framework.

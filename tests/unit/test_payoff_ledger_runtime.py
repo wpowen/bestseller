@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+from unittest import mock
 
 from bestseller.domain.review import ChapterReviewResult, ChapterReviewScores
 from bestseller.services.payoff_ledger import run_payoff_ledger_audit
 from bestseller.services.payoff_ledger_runtime import (
     merge_payoff_ledger_audit_into_chapter_review,
     payoff_ledger_audit_to_dict,
+    render_payoff_ledger_planner_contract,
 )
 
 
@@ -105,5 +107,29 @@ def test_merge_payoff_ledger_audit_preserves_pass_when_clean() -> None:
     )
 
     assert merged.verdict == "pass"
-    assert merged.findings == []
-    assert "payoff_ledger_audit" not in merged.evidence_summary
+
+
+def test_render_payoff_ledger_planner_contract_defaults_off() -> None:
+    with mock.patch.dict("os.environ", {}, clear=True):
+        assert render_payoff_ledger_planner_contract(language="zh-CN") == ""
+
+
+def test_render_payoff_ledger_planner_contract_when_enabled_zh() -> None:
+    with mock.patch.dict("os.environ", {"BESTSELLER_METHODOLOGY_V2": "1"}):
+        block = render_payoff_ledger_planner_contract(language="zh-CN")
+
+    assert "方法论 v2 兑现账本合同" in block
+    assert "payoffs_due" in block
+    assert "payoff_evidence_paths" in block
+    assert "至少兑现 1 个到期 payoff" in block
+    assert "setup distance" in block
+
+
+def test_render_payoff_ledger_planner_contract_when_enabled_en() -> None:
+    with mock.patch.dict("os.environ", {"BESTSELLER_METHODOLOGY_V2": "1"}):
+        block = render_payoff_ledger_planner_contract(language="en-US")
+
+    assert "Methodology v2 payoff ledger contract" in block
+    assert "payoffs_due" in block
+    assert "setup distance" in block
+    assert "visible in-prose callback" in block

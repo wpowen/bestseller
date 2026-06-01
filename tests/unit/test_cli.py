@@ -67,7 +67,7 @@ def test_model_pilot_list_command(monkeypatch: pytest.MonkeyPatch) -> None:
                 description="MiniMax vs DeepSeek",
                 path="/tmp/short_complete_30.yaml",
                 enabled_variant_count=2,
-                variant_ids=["minimax-m27", "deepseek-official"],
+                variant_ids=["minimax-m3", "deepseek-official"],
             )
         ],
     )

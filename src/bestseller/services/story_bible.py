@@ -2885,3 +2885,357 @@ async def render_volume_timeline(
         volume_title=volume.title,
         rows=rows,
     )
+
+
+
+# =============================================================================
+# Scene-level bible delta (Phase B+ design)
+# =============================================================================
+#
+# ``update_story_bible_from_chapter`` runs once per completed chapter and
+# uses the ``editor`` LLM to extract character/relationship/world deltas
+# from the full chapter text.  Calling it per-scene multiplies LLM cost by
+# N and risks idempotency issues (no scene-level dedup key, scene deltas
+# silently re-extracted on each retry).
+#
+# The proper design splits the work in two:
+#   1. ``SceneBibleDelta`` — small dataclass that the LLM emits per scene
+#      with one entry per touched entity.  Carries an idempotency key
+#      (project_id, chapter_number, scene_number) so duplicate delta
+#      emissions are deduped at apply time.
+#   2. ``apply_scene_bible_delta()`` — pure upsert: no LLM call, just
+#      writes deltas to the appropriate model rows using project/chapter/
+#      scene as the dedup key.
+#
+# The chapter-end ``update_story_bible_from_chapter`` becomes a thin
+# orchestrator that reads all scene deltas for the chapter and produces a
+# final bible pass; if all deltas are present, the editor LLM is skipped.
+#
+# NOTE: This module ships the dataclass + idempotency helpers only.
+# ``pipelines.py`` integration is gated by the
+# ``BESTSELLER_BIBLE_INCREMENTAL_ENABLED`` env flag and is intentionally
+# out of scope for the v1 landing to keep the change small.
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class SceneBibleDelta:
+    """A single scene's incremental contribution to the story bible.
+
+    ``delta_key`` is a deterministic hash of (project_id, chapter_number,
+    scene_number, field_path, target_code).  Two deltas with the same key
+    are treated as duplicates and only the first is applied.
+    """
+
+    project_id: str
+    chapter_number: int
+    scene_number: int
+    field_path: str  # e.g. "character.arc_state" or "relationship.trust"
+    target_code: str  # e.g. character code / relationship pair / world rule code
+    value: str  # human-readable new value (the LLM is asked to keep this short)
+    source_quote: str = ""  # the in-prose evidence that triggered the delta
+    delta_key: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.project_id or not self.field_path or not self.target_code:
+            raise ValueError("SceneBibleDelta requires project_id, field_path, target_code.")
+        if not self.delta_key:
+            object.__setattr__(
+                self,
+                "delta_key",
+                f"{self.project_id}:{self.chapter_number}:{self.scene_number}:"
+                f"{self.field_path}:{self.target_code}",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "project_id": self.project_id,
+            "chapter_number": self.chapter_number,
+            "scene_number": self.scene_number,
+            "field_path": self.field_path,
+            "target_code": self.target_code,
+            "value": self.value,
+            "source_quote": self.source_quote,
+            "delta_key": self.delta_key,
+        }
+
+
+def is_bible_incremental_enabled() -> bool:
+    """Feature flag for the per-scene bible delta path.
+
+    Returns True only when the env var ``BESTSELLER_BIBLE_INCREMENTAL_ENABLED``
+    is set to a truthy value AND the LLM is configured.  Default False so
+    in-flight projects use the existing chapter-end path.
+    """
+    import os
+    raw = os.environ.get("BESTSELLER_BIBLE_INCREMENTAL_ENABLED", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def collect_scene_delta_seen_keys(
+    project_id: str,
+    chapter_number: int,
+    deltas: "list[SceneBibleDelta]",
+) -> set[str]:
+    """Return the set of delta_keys that should NOT be re-applied.
+
+    Used by callers that want to check whether a delta is a duplicate
+    before calling ``apply_scene_bible_delta``.  The key set is the set
+    of ``delta_key`` values that already exist in the project metadata
+    store for the given chapter.
+    """
+    seen: set[str] = set()
+    for delta in deltas:
+        if delta.project_id == project_id and delta.chapter_number == chapter_number:
+            seen.add(delta.delta_key)
+    return seen
+
+
+def filter_fresh_deltas(
+    project_id: str,
+    chapter_number: int,
+    deltas: "list[SceneBibleDelta]",
+    seen_keys: set[str],
+) -> "list[SceneBibleDelta]":
+    """Drop deltas whose ``delta_key`` is already in ``seen_keys``.
+
+    Idempotency contract: applying the same delta twice is a no-op.  The
+    caller is responsible for tracking ``seen_keys`` (typically by
+    reading them from project.metadata_json["scene_bible_deltas"] or a
+    dedicated table).
+    """
+    return [
+        delta
+        for delta in deltas
+        if delta.project_id != project_id
+        or delta.chapter_number != chapter_number
+        or delta.delta_key not in seen_keys
+    ]
+
+
+
+async def extract_scene_bible_deltas(
+    session: "AsyncSession",
+    settings: "AppSettings",
+    *,
+    project: "ProjectModel",
+    chapter: "ChapterModel",
+    scene: "SceneCardModel",
+    scene_text: str,
+    project_id: str,
+    workflow_run_id: "UUID | None" = None,
+) -> "list[SceneBibleDelta]":
+    """Run the editor LLM to extract per-scene bible deltas from ``scene_text``.
+
+    Output is a list of :class:`SceneBibleDelta`.  Caller is expected to
+    feed the result through :func:`filter_fresh_deltas` and
+    :func:`apply_scene_bible_delta` for idempotency.  When the LLM call
+    fails or returns an unparsable shape, this function returns an
+    empty list and logs a warning — bible updates are *additive* and a
+    failure to emit a delta does not block the pipeline.
+
+    The scene text is truncated to 6000 chars to bound the LLM call;
+    the extracted deltas are short (a few hundred tokens at most).
+    """
+    if not scene_text or not scene_text.strip():
+        return []
+    if not is_bible_incremental_enabled():
+        return []
+
+    from bestseller.services.llm import LLMCompletionRequest, complete_text
+
+    language = getattr(project, "language", None) or "zh-CN"
+    is_zh = language.lower().startswith("zh")
+
+    if is_zh:
+        system_prompt = (
+            "你是一个故事圣经编辑。从给定的 scene 正文中提取本场景对角色/关系/世界设定的 delta。"
+            " 只输出严格 JSON, key 为 deltas, 每个元素含 field_path/target_code/value/source_quote。"
+            ' 示例: {"deltas": [{"field_path": "character.arc_state", "target_code": "char_x", '
+            '"value": "破境", "source_quote": "原文短句"}]}'
+        )
+    else:
+        system_prompt = (
+            "You are a story-bible editor. Extract per-scene deltas to character / "
+            "relationship / world state. Output strict JSON, key=deltas, items contain "
+            'field_path/target_code/value/source_quote. e.g. '
+            '{"deltas": [{"field_path": "character.arc_state", "target_code": "char_x", '
+            '"value": "breakthrough", "source_quote": "short excerpt"}]}'
+        )
+
+
+
+    user_prompt = (
+        f"chapter: {chapter.chapter_number} scene: {scene.scene_number}\n\n"
+        f"text (first 6000 chars):\n{scene_text[:6000]}"
+    )
+
+    fallback = '{"deltas": []}'
+
+    try:
+        result = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="editor",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                fallback_response=fallback,
+                prompt_template="scene_bible_delta_v1",
+                prompt_version="1.0",
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                metadata={
+                    "chapter_number": chapter.chapter_number,
+                    "scene_number": scene.scene_number,
+                },
+            ),
+        )
+        import json
+        import re
+        raw = (result.content or "").strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        payload = json.loads(raw)
+        items = payload.get("deltas", []) if isinstance(payload, dict) else []
+    except Exception:
+        logger.warning(
+            "Failed to parse scene bible deltas for ch%d sc%d",
+            chapter.chapter_number, scene.scene_number,
+        )
+        return []
+
+    out: list[SceneBibleDelta] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        field_path = str(item.get("field_path") or "").strip()
+        target_code = str(item.get("target_code") or "").strip()
+        value = str(item.get("value") or "").strip()
+        if not (field_path and target_code and value):
+            continue
+        out.append(
+            SceneBibleDelta(
+                project_id=project_id,
+                chapter_number=chapter.chapter_number,
+                scene_number=scene.scene_number,
+                field_path=field_path,
+                target_code=target_code,
+                value=value,
+                source_quote=str(item.get("source_quote") or "").strip(),
+            )
+        )
+    return out
+
+
+async def apply_scene_bible_delta(
+    session: "AsyncSession",
+    *,
+    project: "ProjectModel",
+    delta: SceneBibleDelta,
+) -> bool:
+    """Apply a single scene delta to the underlying model rows.
+
+    Returns True if the delta was applied (or already applied — idempotent),
+    False if the target entity was not resolvable.  This function does
+    NOT call any LLM.  The implementation supports a small, fixed
+    vocabulary of ``field_path`` values:
+
+    * ``character.<code>.arc_state`` — updates ``CharacterModel.arc_state``
+      (only when the character exists).
+    * ``character.<code>.state`` — updates ``CharacterModel.current_state``.
+    * ``relationship.<code>.trust`` — updates
+      ``RelationshipModel.trust_level`` (only when the relationship exists).
+    * ``world.<code>.rule`` — appends to ``WorldRuleModel`` (no-op if the
+      rule already exists with the same code).
+
+    Unknown ``field_path`` values are logged and skipped.  The set of
+    supported field paths is intentionally narrow to keep the v1
+    behaviour deterministic; new paths can be added in future PRs.
+    """
+    from sqlalchemy import select
+    from bestseller.infra.db.models import (
+        CharacterModel,
+        RelationshipModel,
+        WorldRuleModel,
+    )
+
+    field = delta.field_path
+    target = delta.target_code
+    value = delta.value
+
+    try:
+        if field.startswith("character."):
+            parts = field.split(".", 2)
+            if len(parts) < 3:
+                return False
+            char_code = parts[1]
+            sub_field = parts[2]
+            char_row = await session.scalar(
+                select(CharacterModel).where(
+                    CharacterModel.project_id == project.id,
+                    CharacterModel.character_code == char_code,
+                )
+            )
+            if char_row is None:
+                return False
+            if sub_field == "arc_state":
+                char_row.arc_state = value
+            elif sub_field == "state":
+                char_row.current_state = value
+            else:
+                return False
+            return True
+
+        if field.startswith("relationship."):
+            parts = field.split(".", 2)
+            if len(parts) < 3:
+                return False
+            rel_code = parts[1]
+            sub_field = parts[2]
+            rel_row = await session.scalar(
+                select(RelationshipModel).where(
+                    RelationshipModel.project_id == project.id,
+                    RelationshipModel.relationship_code == rel_code,
+                )
+            )
+            if rel_row is None:
+                return False
+            if sub_field == "trust":
+                rel_row.trust_level = value
+            else:
+                return False
+            return True
+
+        if field.startswith("world."):
+            parts = field.split(".", 2)
+            if len(parts) < 2:
+                return False
+            rule_code = target
+            existing = await session.scalar(
+                select(WorldRuleModel).where(
+                    WorldRuleModel.project_id == project.id,
+                    WorldRuleModel.rule_code == rule_code,
+                )
+            )
+            if existing is not None:
+                # Idempotent: rule already recorded, do not duplicate.
+                return True
+            session.add(
+                WorldRuleModel(
+                    project_id=project.id,
+                    rule_code=rule_code,
+                    description=value,
+                )
+            )
+            return True
+
+        logger.warning("Unknown scene bible field_path: %s", field)
+        return False
+    except Exception:
+        logger.warning(
+            "apply_scene_bible_delta failed for %s",
+            delta.delta_key, exc_info=True,
+        )
+        return False

@@ -2349,6 +2349,33 @@
     line-height: 1.6;
   }
 
+  .hook-score {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--hair);
+    background: var(--paper);
+    color: var(--red);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 780;
+  }
+
+  .hook-one-liner {
+    margin-top: 8px;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .hook-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
   .empty-state {
     padding: 42px 0;
     color: var(--text-dim);
@@ -3807,6 +3834,17 @@
         <div class="creative-options" id="creativeOptions"></div>
         <div class="creative-preview" id="creativePreview"></div>
       </div>
+      <div class="creative-lab" id="hookLab" aria-label="反常识钩子候选">
+        <div class="creative-lab-head">
+          <div>
+            <div class="creative-lab-title">反常识钩子</div>
+            <div class="creative-evidence" id="hookEvidence"></div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="shuffleHookBtn">换一批</button>
+        </div>
+        <div class="creative-options" id="hookOptions"></div>
+        <div class="creative-preview" id="hookPreview"></div>
+      </div>
       <div class="empty-state" id="emptyState" style="display:none;">没有找到匹配的题材</div>
       <div class="nav-buttons">
         <div></div>
@@ -3880,6 +3918,7 @@
         <div class="summary-row"><span class="lbl">子类型</span><span class="val" id="sumSub">-</span></div>
         <div class="summary-row"><span class="lbl">创作维度</span><span class="val" id="sumDims">-</span></div>
         <div class="summary-row"><span class="lbl">创意方向</span><span class="val" id="sumCreative">-</span></div>
+        <div class="summary-row"><span class="lbl">反常识钩子</span><span class="val" id="sumHook">-</span></div>
         <div class="summary-row"><span class="lbl" id="sumChLabel">章节数</span><span class="val" id="sumCh">-</span></div>
         <div class="summary-row"><span class="lbl">写作模型</span><span class="val" id="sumModel">-</span></div>
         <div class="summary-row summary-option">
@@ -4130,9 +4169,11 @@
   let genres = [];
   let genreDimensions = {};
   let genreCreativity = {};
+  let hookCandidates = {};
   let selectedGenreFilters = {};
   let selectedGenreKey = null;
   let selectedCreativeKey = null;
+  let selectedHookIndexByGenre = {};
   let selectedLang = 'zh';
   let creationMode = 'long_serial';
   let shortStoryGenreFilterOnly = false;
@@ -6868,15 +6909,18 @@
       syncCreationModeUi();
       genreDimensions = d.genre_dimensions || {};
       genreCreativity = d.genre_creativity || {};
+      hookCandidates = d.hook_candidates || {};
     } catch {
       genres = [];
       genreDimensions = {};
       genreCreativity = {};
+      hookCandidates = {};
     }
     selectedGenreFilters = {};
     renderGenreFilters();
     renderGenres(genres.filter(matchSearch));
     renderCreativeLab();
+    renderHookLab();
   }
 
   const GENRE_FILTER_FIELDS = ['heat_domains', 'reader_rewards', 'narrative_drives', 'content_modes', 'commercial_signals'];
@@ -6908,6 +6952,18 @@
     return pack.directions.find(item => item.key === selectedCreativeKey)
       || pack.directions.find(item => item.key === pack.default_key)
       || pack.directions[0];
+  }
+
+  function hookPackFor(g) {
+    return g && Array.isArray(hookCandidates[g.key]) ? hookCandidates[g.key] : [];
+  }
+
+  function selectedHookCandidate() {
+    const g = selectedGenre();
+    const pack = hookPackFor(g);
+    if (!g || !pack.length) return null;
+    const idx = selectedHookIndexByGenre[g.key] || 0;
+    return pack[idx % pack.length] || pack[0] || null;
   }
 
   function ensureCreativeSelection(g) {
@@ -6974,6 +7030,66 @@
     ` : '';
   }
 
+  function renderHookLab() {
+    const root = $('#hookLab');
+    if (!root) return;
+    const g = selectedGenre();
+    const pack = hookPackFor(g);
+    if (!g || !pack.length) {
+      root.classList.remove('active');
+      $('#hookOptions').innerHTML = '';
+      $('#hookPreview').innerHTML = '';
+      $('#hookEvidence').textContent = '';
+      return;
+    }
+    root.classList.add('active');
+    const selectedIdx = selectedHookIndexByGenre[g.key] || 0;
+    $('#hookEvidence').textContent = 'H_norm 命题强度 · 机制新颖度 · 代价/限制/反作弊约束';
+    $('#hookOptions').innerHTML = pack.map((candidate, idx) => {
+      const spec = candidate.spec || {};
+      const score = candidate.score || {};
+      const chips = [
+        spec.mechanism_key,
+        score.verdict,
+        `novelty ${Math.round((candidate.novelty_score || 0) * 100)}`
+      ].filter(Boolean).map(item => `<span class="creative-source-chip">${esc(String(item))}</span>`).join('');
+      return `
+        <button type="button" class="creative-card${idx === selectedIdx ? ' active' : ''}" data-hook-idx="${idx}">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+            <div class="title">${esc(spec.mechanism_key || 'hook')}</div>
+            <span class="hook-score">${Number(score.h_norm || 0).toFixed(1)}</span>
+          </div>
+          <div class="hook-one-liner">${esc(spec.one_liner || '')}</div>
+          ${chips ? `<div class="hook-meta">${chips}</div>` : ''}
+        </button>
+      `;
+    }).join('');
+    $$('#hookOptions .creative-card').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedHookIndexByGenre[g.key] = Number(btn.dataset.hookIdx || 0);
+        renderHookLab();
+        updateSummary();
+      });
+    });
+    const chosen = selectedHookCandidate();
+    const spec = chosen?.spec || {};
+    const constraintItems = [
+      ...Object.values(spec.constraints || {}),
+      ...(spec.anti_cheat || []),
+    ].slice(0, 7);
+    $('#hookPreview').innerHTML = chosen ? `
+      <div class="creative-preview-main">
+        <strong>${esc(spec.core_rule || '')}</strong><br>
+        ${esc((spec.costs || []).join('；'))}<br>
+        ${esc(spec.misunderstanding || '')}
+      </div>
+      <div class="creative-preview-side">
+        <div class="creative-preview-label">constraints / anti-cheat</div>
+        ${constraintItems.length ? `<ul class="creative-preview-list">${constraintItems.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '<div class="creative-evidence">机制库生成</div>'}
+      </div>
+    ` : '';
+  }
+
   function renderGenreFilters() {
     const root = $('#genreDimensionFilters');
     if (!root) return;
@@ -7011,6 +7127,7 @@
         renderGenreFilters();
         renderGenres(genres.filter(matchSearch));
         renderCreativeLab();
+        renderHookLab();
       };
       options.appendChild(allBtn);
 
@@ -7027,6 +7144,7 @@
           renderGenreFilters();
           renderGenres(genres.filter(matchSearch));
           renderCreativeLab();
+          renderHookLab();
         };
         options.appendChild(btn);
       });
@@ -7064,6 +7182,7 @@
         ensureCreativeSelection(g);
         renderGenres(genres.filter(matchSearch));
         renderCreativeLab();
+        renderHookLab();
         updateSummary();
         $('#toStep2').disabled = false;
       };
@@ -7241,6 +7360,7 @@
   function updateSummary() {
     const g = selectedGenre();
     const creative = selectedCreativeDirection();
+    const hook = selectedHookCandidate();
     $('#sumGenre').textContent = g ? g.name : '-';
     $('#sumSub').textContent = g ? `${g.genre}${g.sub_genre ? ' / ' + g.sub_genre : ''}` : '-';
     $('#sumDims').textContent = g
@@ -7252,6 +7372,7 @@
         ])].join(' · ')
       : '-';
     $('#sumCreative').textContent = creative ? creative.title : '-';
+    $('#sumHook').textContent = hook?.spec?.one_liner || '-';
     const sumLbl = $('#sumChLabel');
     if (creationMode === 'fanqie_short') {
       const opt = fanqieLengthOption(fanqieLengthKey);
@@ -7278,6 +7399,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> 提交中...';
     try {
+      const selectedHook = selectedHookCandidate();
       const res = await fetch('/api/tasks/quickstart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -7285,6 +7407,7 @@
           creation_mode: creationMode,
           genre_key: selectedGenreKey,
           creative_key: selectedCreativeKey,
+          hook_spec: selectedHook?.spec || undefined,
           chapter_count: creationMode === 'fanqie_short' ? chapterCount : chapterCount,
           length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
           pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
@@ -7336,6 +7459,7 @@
         creation_mode: creationMode,
         genre_key: selectedGenreKey,
         creative_key: selectedCreativeKey,
+        hook_spec: selectedHookCandidate()?.spec || undefined,
         chapter_count: chapterCount,
         length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
         pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
@@ -7387,6 +7511,14 @@
   });
   $('#startBtn').addEventListener('click', startCreation);
   $('#scheduleBtn')?.addEventListener('click', scheduleQuickstart);
+  $('#shuffleHookBtn')?.addEventListener('click', () => {
+    const g = selectedGenre();
+    const pack = hookPackFor(g);
+    if (!g || !pack.length) return;
+    selectedHookIndexByGenre[g.key] = ((selectedHookIndexByGenre[g.key] || 0) + 1) % pack.length;
+    renderHookLab();
+    updateSummary();
+  });
   $('#dashSearch')?.addEventListener('input', (event) => {
     dashboardQuery = event.target.value.trim().toLowerCase();
     renderDashboard();

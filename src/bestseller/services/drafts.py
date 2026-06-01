@@ -7330,6 +7330,7 @@ def build_chapter_first_draft_prompts(
     *,
     target_word_count: int,
     character_safety_block: str | None = None,
+    context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
     language = _project_language(project)
     is_en = is_english_language(language)
@@ -7547,6 +7548,10 @@ def build_chapter_first_draft_prompts(
                 "最后200字必须显性兑现“章末钩子”；如果钩子里有未在场景卡参与者出现的人名，"
                 "必须通过门外声音、监控提示或现场物件自然引入，不得省略。"
             )
+    must_keep_tail_blocks = _render_chapter_first_must_keep_tail_blocks(
+        chapter_contract,
+        language=language,
+    )
     volume_seed_block = ""
     if chapter.chapter_number <= 3 and not (
         isinstance(getattr(chapter, "metadata_json", None), Mapping)
@@ -7739,12 +7744,205 @@ def build_chapter_first_draft_prompts(
             "【时间线与硬事实快照】\n" + timeline_context_block,
             "【检索补充】\n" + retrieval_context_block,
             "【输出要求】\n" + output_rules,
+            *must_keep_tail_blocks,
         ]
         if section
     )
     system_prompt = _redact_front10_prompt_leaks(system_prompt, chapter, scenes)
     user_prompt = _redact_front10_prompt_leaks(user_prompt, chapter, scenes)
+    # Token-aware soft trim — chapter-first mode builds a single large
+    # user_prompt without per-section budget tracking.  When the assembled
+    # prompt exceeds the configured budget (rough CJK: 3.5 chars/token, EN
+    # ~0.75 token/word → use 3.0 chars/token as a conservative midpoint), we
+    # drop trailing low-priority sections and append a marker.  This avoids
+    # the LLM silently truncating the tail (which used to evict the chapter
+    # closing hook or the methodology evidence).
+    char_budget = max(2000, int(context_budget_tokens) * 3)
+    if len(user_prompt) > char_budget:
+        user_prompt = _soft_trim_user_prompt(
+            user_prompt,
+            char_budget=char_budget,
+            language=language,
+        )
     return system_prompt, user_prompt
+
+
+# Markers that identify "must-keep" tail blocks in the chapter-first user
+# prompt.  The chapter-first assembler appends these sections last; the
+# tier-aware trim must protect them by anchoring the cut to the last
+# boundary *before* the first must-keep section.
+_MUST_KEEP_TAIL_MARKERS_ZH: tuple[str, ...] = (
+    "【方法论证据】",
+    "【章末收尾钩子】",
+    "【收尾钩子】",
+)
+_MUST_KEEP_TAIL_MARKERS_EN: tuple[str, ...] = (
+    "[methodology evidence]",
+    "[chapter closing hook]",
+    "[closing hook]",
+)
+
+
+def _soft_trim_user_prompt(
+    user_prompt: str,
+    *,
+    char_budget: int,
+    language: str,
+) -> str:
+    """Tier-aware trim for the chapter-first user prompt.
+
+    Unlike the previous head-only truncation, this:
+
+    1. Identifies the first "must-keep" tail section by scanning known
+       markers (methodology evidence / chapter closing hook).  The cut
+       is anchored to the boundary *before* that section so the closing
+       hook and evidence block always survive.
+    2. Falls back to head-only truncation when no must-keep marker is
+       present.
+    3. If the protected tail alone exceeds ``char_budget``, **preserves
+       the protected tail verbatim** and trims only the head — better to
+       drop early scaffolding than to lose the closing hook.
+
+    For real per-section budget enforcement, callers should use
+    :func:`_budget_context_sections` on a structured ``ctx`` dict.
+    This trim is a safety net for the chapter-first path which builds
+    a single flat ``user_prompt`` string.
+    """
+    if len(user_prompt) <= char_budget:
+        return user_prompt
+
+    markers = (
+        _MUST_KEEP_TAIL_MARKERS_EN
+        if is_english_language(language)
+        else _MUST_KEEP_TAIL_MARKERS_ZH
+    )
+
+    # Find the earliest must-keep marker; the cut goes just before it so
+    # the marker (and everything after) is preserved.
+    first_protected_idx = -1
+    for marker in markers:
+        idx = user_prompt.find(marker)
+        if idx >= 0 and (first_protected_idx < 0 or idx < first_protected_idx):
+            first_protected_idx = idx
+
+    if first_protected_idx < 0:
+        # No protected section; trim from the head (legacy behaviour).
+        cut_at = char_budget
+    else:
+        # Keep the protected tail regardless of where the marker appears.
+        # The prior implementation only used this reverse strategy when the
+        # marker started after the budget; if the marker started inside the
+        # budget, it still cut exactly before the marker and dropped the
+        # must-keep block.  Always trim the head to make room for the tail.
+        protected_part = user_prompt[first_protected_idx:]
+        head_budget = max(0, char_budget - (len(user_prompt) - first_protected_idx))
+        head_part = user_prompt[: min(first_protected_idx, head_budget)]
+        dropped_chars = first_protected_idx - len(head_part)
+        if is_english_language(language):
+            marker = (
+                f"\n\n[…prompt head trimmed by {dropped_chars} chars to fit "
+                f"context_budget_tokens={char_budget // 3}; protected tail "
+                f"({len(protected_part)} chars) preserved…]\n"
+            )
+        else:
+            marker = (
+                f"\n\n[…开头已截断 {dropped_chars} 字以适配 "
+                f"context_budget_tokens={char_budget // 3}；尾部必保区"
+                f"（{len(protected_part)} 字）已保留…]\n"
+            )
+        return head_part + marker + protected_part
+
+    # Normal: trim the tail past the protected boundary (or past char_budget
+    # when there's no protected section).
+    dropped_chars = len(user_prompt) - cut_at
+    trimmed = user_prompt[:cut_at]
+    if is_english_language(language):
+        marker = (
+            f"\n\n[…prompt trimmed by {dropped_chars} chars to fit "
+            f"context_budget_tokens={char_budget // 3}; protected tail "
+            f"preserved…]\n"
+        )
+    else:
+        marker = (
+            f"\n\n[…已截断 {dropped_chars} 字以适配 context_budget_tokens="
+            f"{char_budget // 3}；尾部必保区已保留…]\n"
+        )
+    return trimmed + marker
+
+
+def _render_chapter_first_must_keep_tail_blocks(
+    chapter_contract: Mapping[str, Any] | None,
+    *,
+    language: str,
+) -> list[str]:
+    if not isinstance(chapter_contract, Mapping):
+        return []
+    is_en = is_english_language(language)
+    blocks: list[str] = []
+
+    closing_hook = str(chapter_contract.get("closing_hook") or "").strip()
+    if closing_hook:
+        if is_en:
+            blocks.append(
+                "[chapter closing hook]\n"
+                f"- Must land visibly in the final 200 words: {closing_hook}\n"
+                "- Preserve this block when trimming context; it is a hard acceptance item."
+            )
+        else:
+            blocks.append(
+                "【章末收尾钩子】\n"
+                f"- 最后200字必须可视化落地：{closing_hook}\n"
+                "- 这是裁剪时必须保留的验收项，不是可省略参考资料。"
+            )
+
+    declared_payoffs = [
+        str(item).strip()
+        for item in (chapter_contract.get("methodology_declared_payoffs") or [])
+        if str(item).strip()
+    ]
+    evidence_paths = [
+        item
+        for item in (chapter_contract.get("payoff_evidence_paths") or [])
+        if isinstance(item, Mapping)
+    ]
+    hooks_to_resolve = [
+        str(item).strip()
+        for item in (chapter_contract.get("hooks_to_resolve") or [])
+        if str(item).strip()
+    ]
+    hooks_to_plant = [
+        str(item).strip()
+        for item in (chapter_contract.get("hooks_to_plant") or [])
+        if str(item).strip()
+    ]
+    if declared_payoffs or evidence_paths or hooks_to_resolve or hooks_to_plant:
+        lines = ["[methodology evidence]" if is_en else "【方法论证据】"]
+        if declared_payoffs:
+            label = "Declared payoffs" if is_en else "本章声明兑现"
+            lines.append(f"- {label}: {'; '.join(declared_payoffs)}")
+        if evidence_paths:
+            label = "Evidence paths" if is_en else "证据落点"
+            rendered_paths = []
+            for item in evidence_paths[:5]:
+                scene_no = item.get("scene_number") or item.get("scene")
+                evidence = item.get("evidence") or item.get("path") or item.get("description")
+                rendered_paths.append(
+                    f"scene {scene_no}: {evidence}" if scene_no else str(evidence or item)
+                )
+            lines.append(f"- {label}: {'; '.join(rendered_paths)}")
+        if hooks_to_resolve:
+            label = "Hooks to resolve" if is_en else "本章应消解钩子"
+            lines.append(f"- {label}: {'; '.join(hooks_to_resolve)}")
+        if hooks_to_plant:
+            label = "Hooks to plant" if is_en else "本章应植入钩子"
+            lines.append(f"- {label}: {'; '.join(hooks_to_plant)}")
+        lines.append(
+            "- Preserve this block when trimming context; it is a hard acceptance item."
+            if is_en
+            else "- 这是裁剪时必须保留的验收项，不是可省略参考资料。"
+        )
+        blocks.append("\n".join(lines))
+    return blocks
 
 
 def _quality_uplift_prompt_blocks_from_chapter(chapter: ChapterModel) -> dict[str, str]:
@@ -7934,6 +8132,13 @@ async def generate_chapter_draft_once(
         context_packet,
         target_word_count=target_word_count,
         character_safety_block=character_safety_block,
+        context_budget_tokens=int(
+            getattr(
+                getattr(effective_settings, "generation", None),
+                "context_budget_tokens",
+                6000,
+            )
+        ),
     )
     try:
         from bestseller.services.prompt_compactor import compact_user_prompt

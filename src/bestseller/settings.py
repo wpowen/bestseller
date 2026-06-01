@@ -508,6 +508,16 @@ class BudgetSettings(BaseModel):
     cost_per_1k_output_tokens: float = 0.015
 
 
+class HookEngineSettings(BaseModel):
+    enabled: bool = True
+    min_h_norm: float = 30.0
+    candidate_count: int = 6
+    quickstart_candidate_count: int = 4
+    rank_weight_h_norm: float = 0.62
+    rank_weight_novelty: float = 0.28
+    rank_weight_duplicate_risk: float = 0.10
+
+
 class ApiSettings(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
@@ -529,6 +539,7 @@ class AppSettings(BaseModel):
     api: ApiSettings = Field(default_factory=ApiSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     budget: BudgetSettings = Field(default_factory=BudgetSettings)
+    hook_engine: HookEngineSettings = Field(default_factory=HookEngineSettings)
 
 
 LLM_ROLE_NAMES = ("planner", "writer", "critic", "summarizer", "editor")
@@ -540,29 +551,22 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "minimax": {
         "key": "minimax",
         "label": "MiniMax",
-        "description": "MiniMax prose writer + DeepSeek structured planner (hybrid).",
+        "description": "MiniMax-M3 for planning, writing, review, and repair.",
         "roles": {
-            # Planner runs on DeepSeek, not MiniMax. MiniMax-M2.7 emits prose
-            # strings where the planner schemas require lists / ints / dicts
-            # (locations, world_state_deltas, reveal_weight, …), which
-            # exhausted the outline repair loop and left books stuck in
-            # `planning` with 0 chapters (2026-05-29). DeepSeek reliably emits
-            # valid typed JSON for the same prompts. Writer/editor stay on
-            # MiniMax so prose style is unchanged.
             "planner": {
-                "model": "deepseek/deepseek-chat",
-                "api_base": "https://api.deepseek.com",
-                "api_key_env": "DEEPSEEK_API_KEY",
+                "model": "openai/MiniMax-M3",
+                "api_base": "https://api.minimaxi.com/v1",
+                "api_key_env": "MINIMAX_API_KEY",
                 "timeout_seconds": 900,
-                "max_tokens": 8192,
+                "max_tokens": 32768,
                 "stream": False,
                 "model_override": None,
                 "thinking_type": None,
                 "reasoning_effort": None,
             },
             "writer": {
-                "model": "openai/MiniMax-M2.7-highspeed",
-                "model_override": "openai/MiniMax-M2.7-highspeed",
+                "model": "openai/MiniMax-M3",
+                "model_override": "openai/MiniMax-M3",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
                 "timeout_seconds": 360,
@@ -572,7 +576,7 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
                 "reasoning_effort": None,
             },
             "critic": {
-                "model": "openai/MiniMax-M2.7-highspeed",
+                "model": "openai/MiniMax-M3",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
                 "timeout_seconds": 180,
@@ -583,7 +587,7 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
                 "reasoning_effort": None,
             },
             "summarizer": {
-                "model": "openai/MiniMax-M2.7-highspeed",
+                "model": "openai/MiniMax-M3",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
                 "timeout_seconds": 120,
@@ -593,7 +597,7 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
                 "reasoning_effort": None,
             },
             "editor": {
-                "model": "openai/MiniMax-M2.7-highspeed",
+                "model": "openai/MiniMax-M3",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
                 "timeout_seconds": 360,

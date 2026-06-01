@@ -346,6 +346,28 @@ def test_runtime_llm_profile_overrides_roles_without_reloading_env(tmp_path: Pat
     assert settings.llm.writer.model != effective.llm.writer.model
 
 
+def test_minimax_runtime_profile_uses_m3_for_all_roles(tmp_path: Path) -> None:
+    base = load_settings(env={})
+    settings = base.model_copy(
+        update={
+            "artifact_store": base.artifact_store.model_copy(
+                update={"local_dir": str(tmp_path)}
+            )
+        }
+    )
+
+    payload = set_runtime_llm_profile(settings, "minimax")
+    effective = apply_runtime_llm_profile(settings)
+
+    assert payload["active_key"] == "minimax"
+    assert effective.llm.planner.model == "openai/MiniMax-M3"
+    assert effective.llm.writer.model == "openai/MiniMax-M3"
+    assert effective.llm.writer.model_override == "openai/MiniMax-M3"
+    assert effective.llm.critic.model == "openai/MiniMax-M3"
+    assert effective.llm.summarizer.model == "openai/MiniMax-M3"
+    assert effective.llm.editor.model == "openai/MiniMax-M3"
+
+
 def test_runtime_llm_profile_payload_redacts_key_values(tmp_path: Path) -> None:
     base = load_settings(env={})
     settings = base.model_copy(

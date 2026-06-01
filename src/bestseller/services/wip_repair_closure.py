@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.gate_verdict import GateFinding, GateVerdict
+from bestseller.domain.gate_verdict import GateVerdict
 from bestseller.services.autonomous_book_repair import (
     QualityRepairPlan,
     QualityRepairTaskSpec,
@@ -20,6 +20,9 @@ from bestseller.services.book_quality_closure import (
     build_missing_chapter_continuation_plan,
 )
 from bestseller.services.chapter_splice_coherence_gate import (
+    as_gate_summary as _splice_gate_summary,
+    as_repair_patch_points as _splice_patch_points,
+    blocking_splice_findings,
     evaluate_chapter_splice_coherence,
 )
 from bestseller.services.material_self_repair import (
@@ -103,11 +106,7 @@ def build_wip_repair_plan_from_gates(
         chapter_number = _chapter_number_from_gate(gate)
         if chapter_number is None:
             continue
-        blocking_findings = tuple(
-            finding
-            for finding in gate.findings
-            if finding.severity in {"critical", "high"}
-        )
+        blocking_findings = blocking_splice_findings(gate)
         if not blocking_findings:
             continue
         seen_chapters.add(chapter_number)
@@ -259,7 +258,7 @@ async def build_wip_repair_closure_report(
         project_dir=str(project_dir),
         material_repair=_material_summary(material_plan),
         chapter_splice_gates=tuple(
-            _gate_summary(gate, chapter_number=_chapter_number_from_gate(gate))
+            _splice_gate_summary(gate, chapter_number=_chapter_number_from_gate(gate))
             for gate in splice_gates
         ),
         repair_plan=repair_plan.to_dict(),
@@ -303,19 +302,6 @@ def _chapter_number_from_gate(gate: GateVerdict) -> int | None:
     except (TypeError, ValueError):
         return None
     return number if number > 0 else None
-
-
-def _splice_patch_points(findings: Sequence[GateFinding]) -> tuple[Mapping[str, object], ...]:
-    return tuple(
-        {
-            "cause_id": finding.code,
-            "location": finding.path,
-            "issue_summary": finding.message,
-            "snippet": "",
-            "repair_action_summary": finding.repair_action,
-        }
-        for finding in findings
-    )
 
 
 def _material_patch_points(
@@ -365,25 +351,6 @@ def _material_summary(plan: MaterialSelfRepairPlan) -> dict[str, Any]:
         "top_targets": [
             {"target": target, "count": count} for target, count in top_targets
         ],
-    }
-
-
-def _gate_summary(
-    gate: GateVerdict,
-    *,
-    chapter_number: int | None,
-) -> dict[str, Any]:
-    findings = [
-        finding.model_dump(mode="json")
-        for finding in gate.findings
-        if finding.severity in {"critical", "high"}
-    ]
-    return {
-        "chapter_number": chapter_number,
-        "verdict": gate.verdict,
-        "coverage": gate.coverage,
-        "metrics": dict(gate.metrics),
-        "blocking_findings": findings,
     }
 
 

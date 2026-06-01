@@ -300,61 +300,6 @@ class GateVerdict:
         )
 
 
-@dataclass(frozen=True)
-class AggregateGateReport:
-    """Composite gate output backed by component GateVerdicts."""
-
-    gate_name: str
-    components: tuple[GateVerdict, ...]
-    schema_version: str = "aggregate-gate-report.v1"
-    summary: str = ""
-
-    @property
-    def coverage(self) -> float:
-        if not self.components:
-            return 0.0
-        return min(component.coverage for component in self.components)
-
-    @property
-    def overall_score(self) -> int:
-        return round(self.coverage * 100)
-
-    @property
-    def readiness(self) -> str:
-        if any(component.critical for component in self.components):
-            return "blocked"
-        return "not_blocked"
-
-    @property
-    def verdict(self) -> GateVerdictStatus:
-        if not self.components:
-            return "not_run"
-        if any(component.verdict == "error" for component in self.components):
-            return "error"
-        if any(component.critical for component in self.components):
-            return "blocked"
-        if all(component.passed for component in self.components):
-            return "pass"
-        return "warn_only"
-
-    @property
-    def passed(self) -> bool:
-        return self.verdict == "pass" and self.coverage >= 0.95
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": self.schema_version,
-            "gate_name": self.gate_name,
-            "verdict": self.verdict,
-            "coverage": self.coverage,
-            "overall_score": self.overall_score,
-            "readiness": self.readiness,
-            "passed": self.passed,
-            "components": [component.to_dict() for component in self.components],
-            "summary": self.summary,
-        }
-
-
 def classify_gate_verdict(
     *,
     gate_name: str,

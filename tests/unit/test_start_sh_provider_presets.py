@@ -95,6 +95,28 @@ def test_start_sh_writes_nvidia_summarizer_max_tokens_when_set(tmp_path: Path) -
     assert "export BESTSELLER__LLM__SUMMARIZER__MAX_TOKENS='8192'" in output
 
 
+def test_start_sh_writes_minimax_m3_preset(tmp_path: Path) -> None:
+    output = _render_start_env(
+        tmp_path,
+        {
+            "BESTSELLER_LLM_PROVIDER": "minimax",
+            "MINIMAX_API_KEY": "minimax-test",
+        },
+    )
+
+    assert "export BESTSELLER_LLM_PROVIDER='minimax'" in output
+    assert "export BESTSELLER__LLM__MOCK='false'" in output
+    assert "export BESTSELLER__LLM__PLANNER__MODEL='openai/MiniMax-M3'" in output
+    assert "export BESTSELLER__LLM__WRITER__MODEL='openai/MiniMax-M3'" in output
+    assert (
+        "export BESTSELLER__LLM__WRITER__MODEL_OVERRIDE='openai/MiniMax-M3'"
+        in output
+    )
+    assert "export BESTSELLER__LLM__CRITIC__MODEL='openai/MiniMax-M3'" in output
+    assert "export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/MiniMax-M3'" in output
+    assert "export BESTSELLER__LLM__EDITOR__MODEL='openai/MiniMax-M3'" in output
+
+
 def test_start_sh_writes_volcengine_coding_plan_preset(tmp_path: Path) -> None:
     output = _render_start_env(
         tmp_path,

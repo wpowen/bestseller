@@ -14,6 +14,7 @@
 - ❌ 主角**不得每卷全胜**；必须符合 [planning.md § Win/Loss Rhythm](planning.md)。
 - ❌ 不得跳过规划阶段直接写正文（即 story-bible 未建立时不写 ch-001）。
 - ❌ 不得以 "穿越 / 系统 / 金手指" 文本模式替代章节内容。
+- ❌ HookSpec 的 H_norm < 15 不得进入写作；HookSpec.constraints / costs 必须在首卷兑现，不能只停留在一句话文案。
 
 ## Mode B（高敏感位置）红线
 

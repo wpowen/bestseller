@@ -183,32 +183,12 @@ def run_chapter_quality_bundle(
 
     try:
         from bestseller.services.chapter_splice_coherence_gate import (
+            as_quality_findings,
             evaluate_chapter_splice_coherence,
         )
 
         report = evaluate_chapter_splice_coherence(text, chapter_number=chapter_number)
-        for raw in report.findings:
-            findings.append(
-                _finding(
-                    code=raw.code,
-                    source="chapter_quality_bundle.splice_coherence",
-                    chapter_number=chapter_number,
-                    severity=raw.severity,
-                    detail=raw.repair_action or raw.message,
-                    evidence={
-                        "message": raw.message,
-                        "path": raw.path,
-                        "gate": report.gate_name,
-                    },
-                    repair_scope="paragraph"
-                    if raw.code
-                    in {
-                        "CHAPTER_SPLICE_REPEATED_SENTENCE",
-                        "CHAPTER_SPLICE_NEAR_DUPLICATE_BLOCK",
-                    }
-                    else "chapter",
-                )
-            )
+        findings.extend(as_quality_findings(report, chapter_number=chapter_number))
     except Exception as exc:
         if context.commercial_strict:
             findings.append(

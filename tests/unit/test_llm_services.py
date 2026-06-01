@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from bestseller.services.llm import (
     complete_text,
 )
 from bestseller.settings import (
+    LLM_RUNTIME_PROFILE_ENV,
     LLMRoleSettings,
     RetrySettings,
     load_settings,
@@ -422,6 +424,73 @@ def test_complete_text_disables_deepseek_v4_thinking_by_default(
         assert captured_kwargs["api_base"] == "https://api.deepseek.com"
         assert captured_kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
         assert "reasoning_effort" not in captured_kwargs
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_complete_text_disables_minimax_m3_thinking_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+    monkeypatch.setenv(
+        LLM_RUNTIME_PROFILE_ENV,
+        str(tmp_path / "missing-runtime-profile.json"),
+    )
+
+    class FakeUsage:
+        prompt_tokens = 12
+        completion_tokens = 34
+
+    class FakeMessage:
+        content = "m3 output"
+
+    class FakeChoice:
+        message = FakeMessage()
+        finish_reason = "stop"
+
+    class FakeResponse:
+        def __init__(self) -> None:
+            self.choices = [FakeChoice()]
+            self.usage = FakeUsage()
+
+    class FakeLiteLLMModule:
+        @staticmethod
+        async def acompletion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return FakeResponse()
+
+    async def _run() -> None:
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M3",
+                "BESTSELLER__LLM__WRITER__MODEL_OVERRIDE": "openai/MiniMax-M3",
+                "BESTSELLER__LLM__WRITER__API_BASE": "https://api.minimaxi.com/v1",
+                "BESTSELLER__LLM__WRITER__STREAM": "false",
+            }
+        )
+        result = await complete_text(
+            FakeSession(),
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+            ),
+        )
+
+        assert result.content == "m3 output"
+        assert captured_kwargs["model"] == "openai/MiniMax-M3"
+        assert captured_kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
 
     monkeypatch.setattr(
         "bestseller.services.llm._get_litellm",

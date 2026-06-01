@@ -1,0 +1,105 @@
+mechanisms:
+  - key: death_grows
+    label: 作死变强
+    genres: ["玄幻", "都市", "fantasy", "urban"]
+    base_desire_pool: ["活下去", "保住家人", "守住身份", "获得力量"]
+    reversal_template: "越接近死亡或失败，越能获得真正的成长资源"
+    reward_pool: ["能力跃迁", "隐藏身份解锁", "资源暴涨", "敌方情报暴露"]
+    constraint_dimensions: ["time", "method", "ban", "must_explain"]
+    anti_cheat_rules: ["不能主动自杀刷奖励", "同一风险不能重复结算", "旁观者代死不触发"]
+    cost_templates: ["寿命折损", "身体不可逆伤痕", "亲友信任下降"]
+    misunderstanding_patterns: ["外界以为主角疯了", "敌人误判主角在求死"]
+    arc_escalation_axes: ["死亡阈值", "风险对象", "代价可见度", "真相暴露"]
+    saturation_score: 0.62
+    forbidden_overlaps: ["无脑送死", "无限复活"]
+  - key: forced_loss
+    label: 限制消费
+    genres: ["都市", "商业", "urban", "romance"]
+    base_desire_pool: ["赚钱", "守住资产", "赢得竞争", "翻身"]
+    reversal_template: "必须亏损、花钱或放弃收益，才能获得更高阶回报"
+    reward_pool: ["商业权限", "人脉资源", "系统等级", "公开声望"]
+    constraint_dimensions: ["object", "count", "method", "ban"]
+    anti_cheat_rules: ["不能左右手倒钱", "不能虚假交易", "必须让第三方受益"]
+    cost_templates: ["现金流断裂", "被家族误解败家", "核心机会窗口缩短"]
+    misunderstanding_patterns: ["所有人都以为主角败家", "对手把主角当冤大头"]
+    arc_escalation_axes: ["亏损规模", "受益对象", "市场反噬", "公开误判"]
+    saturation_score: 0.58
+    forbidden_overlaps: ["神豪无代价", "纯撒币"]
+  - key: emotion_value
+    label: 情绪值
+    genres: ["都市", "娱乐", "urban", "fanqie_short"]
+    base_desire_pool: ["被认可", "复仇", "证明清白", "获得流量"]
+    reversal_template: "必须引爆指定情绪，情绪越强，能力或资源越精准"
+    reward_pool: ["情绪货币", "证据显影", "能力强化", "舆论反转"]
+    constraint_dimensions: ["target", "emotion", "time", "ban"]
+    anti_cheat_rules: ["刷同一人的情绪会衰减", "虚假表演不结算", "越界伤害会反噬"]
+    cost_templates: ["记忆被扣除", "情绪迟钝", "亲密关系受损"]
+    misunderstanding_patterns: ["旁人以为主角在炒作", "反派误以为主角只会挑衅"]
+    arc_escalation_axes: ["情绪种类", "公众场域", "代价亲密度", "舆论规模"]
+    saturation_score: 0.52
+    forbidden_overlaps: ["无脑收割情绪", "直播刷分"]
+  - key: hide_anti_trope
+    label: 苟道反套路
+    genres: ["仙侠", "玄幻", "fantasy", "xianxia"]
+    base_desire_pool: ["低调活着", "不被卷入主线", "隐藏实力", "远离因果"]
+    reversal_template: "越想苟住，越会被规则推上必须出手的位置"
+    reward_pool: ["避劫权限", "隐藏传承", "因果豁免", "关键盟友"]
+    constraint_dimensions: ["location", "witness", "ban", "must_explain"]
+    anti_cheat_rules: ["不能装弱害死无辜者", "不能靠沉默逃避核心选择", "每次隐藏都会产生新债"]
+    cost_templates: ["身份暴露风险", "欠下人情债", "错失安全退路"]
+    misunderstanding_patterns: ["众人把低调误认为绝世高人", "敌人把避战误认为设局"]
+    arc_escalation_axes: ["目击者层级", "因果债", "出手公开度", "退路损耗"]
+    saturation_score: 0.48
+    forbidden_overlaps: ["纯装弱", "无责任苟命"]
+  - key: misunderstanding
+    label: 迪化误解
+    genres: ["玄幻", "都市", "fantasy", "comedy"]
+    base_desire_pool: ["说清真相", "维持普通身份", "减少麻烦", "完成小目标"]
+    reversal_template: "越解释越被误解成深层布局，误解本身推动局势升级"
+    reward_pool: ["威望误涨", "敌人自乱", "盟友过度脑补", "隐藏势力靠拢"]
+    constraint_dimensions: ["audience", "truth_gap", "ban", "time"]
+    anti_cheat_rules: ["主角不能主动撒谎骗取崇拜", "误解必须带来真实麻烦", "关键真相不能无限拖延"]
+    cost_templates: ["声望绑架", "无法退场", "被迫承担更大责任"]
+    misunderstanding_patterns: ["路人把巧合当布局", "敌人把解释当威胁", "盟友把否认当谦逊"]
+    arc_escalation_axes: ["误解人群", "责任规模", "真相缺口", "反噬节点"]
+    saturation_score: 0.44
+    forbidden_overlaps: ["无代价迪化", "全员降智"]
+  - key: fourth_disaster
+    label: 第四天灾
+    genres: ["游戏", "科幻", "fantasy", "sci-fi"]
+    base_desire_pool: ["守住世界", "管理玩家", "抵抗入侵", "重建秩序"]
+    reversal_template: "必须利用不可控玩家或观众的混乱，才能拯救秩序"
+    reward_pool: ["群体行动力", "异界资源", "规则漏洞", "阵营扩张"]
+    constraint_dimensions: ["player_rule", "respawn", "quest", "ban"]
+    anti_cheat_rules: ["玩家不能无限复活无成本", "任务奖励必须消耗世界资源", "NPC 不能失去主体性"]
+    cost_templates: ["世界稳定度下降", "原住民恐惧", "规则污染"]
+    misunderstanding_patterns: ["原住民把玩家当灾厄", "玩家误读主角真实意图"]
+    arc_escalation_axes: ["玩家规模", "世界污染", "阵营冲突", "规则公开度"]
+    saturation_score: 0.56
+    forbidden_overlaps: ["纯玩家沙雕", "无限复活无成本"]
+  - key: rule_horror
+    label: 规则怪谈
+    genres: ["悬疑", "灵异", "horror", "mystery"]
+    base_desire_pool: ["逃出去", "找回亲人", "破解规则", "证明清白"]
+    reversal_template: "必须遵守反直觉规则，违背常识反而能活"
+    reward_pool: ["安全窗口", "真相碎片", "权限提升", "同伴存活"]
+    constraint_dimensions: ["time", "location", "wording", "ban"]
+    anti_cheat_rules: ["不能靠暴力破坏规则", "规则必须有可验证代价", "漏洞只能一次性使用"]
+    cost_templates: ["记忆缺口", "同伴牺牲风险", "现实身份被替换"]
+    misunderstanding_patterns: ["同伴以为主角冷血", "外界把求生行为当犯罪"]
+    arc_escalation_axes: ["规则层级", "空间范围", "代价对象", "现实侵蚀"]
+    saturation_score: 0.50
+    forbidden_overlaps: ["规则堆砌", "无解谜底"]
+  - key: profession_reversal
+    label: 职业反差
+    genres: ["都市", "悬疑", "romance", "mystery"]
+    base_desire_pool: ["做好本职", "守住职业伦理", "维持普通生活", "解决委托"]
+    reversal_template: "最不适合战斗或主线的职业技能，反而是破局核心"
+    reward_pool: ["职业知识优势", "低关注行动权", "证据链突破", "关系网反转"]
+    constraint_dimensions: ["profession_rule", "tool", "client", "ban"]
+    anti_cheat_rules: ["不能让职业技能万能化", "每次越界都触发伦理代价", "必须遵守职业可见限制"]
+    cost_templates: ["执照风险", "客户信任受损", "职业身份暴露"]
+    misunderstanding_patterns: ["对手轻视主角职业", "委托人误会主角能力边界"]
+    arc_escalation_axes: ["职业场景", "伦理边界", "工具升级", "公开身份"]
+    saturation_score: 0.31
+    forbidden_overlaps: ["职业万能", "设定只当皮肤"]

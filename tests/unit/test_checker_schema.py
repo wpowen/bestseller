@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from bestseller.services.checker_schema import (
-    AggregateGateReport,
     CheckerIssue,
     CheckerReport,
     GateFinding,
@@ -222,31 +221,6 @@ class TestGateVerdict:
 
         assert verdict.verdict == "warn_only"
         assert verdict.passed is False
-
-    def test_aggregate_uses_component_min_coverage_and_criticality(self) -> None:
-        report = AggregateGateReport(
-            gate_name="lifecycle_quality",
-            components=(
-                GateVerdict(gate_name="a", verdict="pass", coverage=1.0),
-                GateVerdict(
-                    gate_name="b",
-                    verdict="warn_only",
-                    coverage=0.82,
-                    findings=(
-                        GateFinding(
-                            code="identity_registry_coverage_below_bar",
-                            severity="critical",
-                            message="Identity registry coverage is too low.",
-                        ),
-                    ),
-                ),
-            ),
-        )
-
-        assert report.coverage == 0.82
-        assert report.overall_score == 82
-        assert report.readiness == "blocked"
-        assert report.passed is False
 
     def test_merge_gate_verdicts_accepts_mappings(self) -> None:
         merged = merge_gate_verdicts(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any, Sequence
 
 from sqlalchemy import and_, or_, select
@@ -616,7 +617,19 @@ def _chapter_contract_read(
         supporting_arc_codes=list(item.supporting_arc_codes),
         active_arc_beat_ids=[str(beat_id) for beat_id in item.active_arc_beat_ids],
         planted_clue_codes=list(item.planted_clue_codes),
-        due_payoff_codes=list(item.due_payoff_codes),
+        due_payoff_codes=_merge_due_payoff_codes(
+            column_codes=list(item.due_payoff_codes),
+            methodology_codes=list(methodology_contract.get("payoffs_due") or []),
+        ),
+        methodology_declared_payoffs=list(
+            (methodology_contract.get("payoffs_due") or [])
+            if isinstance(methodology_contract, Mapping)
+            else []
+        ),
+        payoff_evidence_paths=_extract_payoff_evidence_paths(
+            raw=methodology_contract.get("payoff_evidence_paths"),
+            chapter_number=item.chapter_number,
+        ),
         conflict_stakes=methodology_contract.get("conflict_stakes"),
         conflict_buffs=list(methodology_contract.get("conflict_buffs") or []),
         pacing_mode=methodology_contract.get("pacing_mode"),
@@ -640,6 +653,78 @@ def _chapter_contract_read(
 
 def _clean_text(value: object) -> str:
     return str(value).strip() if value is not None else ""
+
+
+def _extract_payoff_evidence_paths(
+    *,
+    raw: object,
+    chapter_number: int,
+) -> list[dict[str, str]]:
+    """Lift ``methodology_contract.payoff_evidence_paths`` into the read schema.
+
+    Accepts either a list of dicts (preferred) or a free-text string.  Free
+    text is wrapped as a single ``{"chapter": str(chapter), "note": text}``
+    entry so downstream consumers (payoff audit, editor rewrite prompt) see
+    a uniform shape.  Invalid entries are dropped silently rather than
+    raising — the planner contract asks for evidence but should not break
+    review-time audit if the LLM hallucinated the structure.
+    """
+
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        cleaned_text = raw.strip()
+        if not cleaned_text:
+            return []
+        return [{"chapter": str(chapter_number), "note": cleaned_text}]
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            normalised = {
+                str(key): str(value).strip()
+                for key, value in entry.items()
+                if value is not None
+            }
+            if normalised:
+                out.append(normalised)
+            continue
+        if isinstance(entry, str):
+            cleaned = entry.strip()
+            if cleaned:
+                out.append({"chapter": str(chapter_number), "note": cleaned})
+    return out
+
+
+def _merge_due_payoff_codes(
+    *,
+    column_codes: list[str],
+    methodology_codes: list[str],
+) -> list[str]:
+    """Merge chapter-level payoff codes from the column and the methodology overlay.
+
+    The ``ChapterContractModel.due_payoff_codes`` column is populated from
+    ``PayoffModel.target_chapter_number`` at materialization time. The planner
+    LLM can additionally write ``methodology_contract.payoffs_due`` in the
+    chapter outline. This helper unions both sources so the review-time audit
+    sees the full set of payoffs the chapter is expected to cash.
+
+    Order is preserved: column codes first, then methodology codes, deduped
+    case-sensitively with empty strings dropped.
+    """
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for raw in (*column_codes, *methodology_codes):
+        if not isinstance(raw, str):
+            continue
+        cleaned = raw.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        merged.append(cleaned)
+    return merged
 
 
 def _contract_metadata_dict(
@@ -715,6 +800,10 @@ def _scene_contract_read(item: SceneContractModel) -> SceneContractRead:
         arc_beat_ids=[str(beat_id) for beat_id in item.arc_beat_ids],
         planted_clue_codes=list(item.planted_clue_codes),
         payoff_codes=list(item.payoff_codes),
+        payoff_evidence_paths=_extract_payoff_evidence_paths(
+            raw=methodology_contract.get("payoff_evidence_paths"),
+            chapter_number=item.chapter_number,
+        ),
         thematic_task=item.thematic_task,
         dramatic_irony_intent=item.dramatic_irony_intent,
         transition_type=item.transition_type,

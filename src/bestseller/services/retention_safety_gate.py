@@ -32,11 +32,30 @@ from bestseller.services.cast_compliance_gate import (
     CAST_VIOLATION_BLOCK_CODE,
     check_cast_compliance,
 )
+from bestseller.services.chapter_duplicate_gate import (
+    CHAPTER_BODY_TEMPLATE_REPEAT,
+    CHAPTER_OPENING_DUPLICATE,
+    check_chapter_duplicates,
+)
 from bestseller.services.chapter_length_gate import (
     CHAPTER_BELOW_TARGET_BLOCK_CODE,
     CHAPTER_LENGTH_BLOCK_HIGH_CODE,
     CHAPTER_TOO_SHORT_BLOCK_CODE,
     check_chapter_length,
+)
+from bestseller.services.chapter_word_count_truth import (
+    WORD_COUNT_METADATA_MISMATCH,
+    check_word_count_metadata_truth,
+)
+from bestseller.services.payoff_ledger_gate import (
+    PAYOFF_HOOK_ONLY,
+    PAYOFF_LEDGER_LOW,
+    evaluate_payoff_ledger,
+)
+from bestseller.services.persona_quality_gate import (
+    PERSONA_ABANDON_RATE_HIGH,
+    PERSONA_PAYOFF_DENSITY_LOW,
+    PERSONA_WEIGHTED_SCORE_LOW,
 )
 from bestseller.services.character_role_gate import (
     CHARACTER_ROLE_DRIFT_BLOCK_CODE,
@@ -88,6 +107,15 @@ AUTO_REPAIR_RETENTION_CODES: tuple[str, ...] = (
     DIALOGUE_AI_FLAVOR_BLOCK_CODE,
     CHAPTER_TOO_SHORT_BLOCK_CODE,
     CHAPTER_LENGTH_BLOCK_HIGH_CODE,
+    CHAPTER_BELOW_TARGET_BLOCK_CODE,
+    CHAPTER_OPENING_DUPLICATE,
+    CHAPTER_BODY_TEMPLATE_REPEAT,
+    WORD_COUNT_METADATA_MISMATCH,
+    PAYOFF_LEDGER_LOW,
+    PAYOFF_HOOK_ONLY,
+    PERSONA_ABANDON_RATE_HIGH,
+    PERSONA_WEIGHTED_SCORE_LOW,
+    PERSONA_PAYOFF_DENSITY_LOW,
 )
 
 
@@ -143,6 +171,16 @@ def evaluate_retention_safety(
     chapter_length_hard_floor: int | None = None,
     chapter_length_soft_warning: int | None = None,
     chapter_length_hard_max: int | None = None,
+    block_below_target: bool = False,
+    payoff_block: bool = False,
+    stored_word_count: int | None = None,
+    draft_word_count: int | None = None,
+    skip_word_count_truth: bool = False,
+    skip_duplicate_check: bool = False,
+    skip_payoff_ledger: bool = False,
+    opening_similarity_threshold: float = 0.82,
+    body_similarity_threshold: float = 0.88,
+    min_payoff_density: float = 0.18,
 ) -> RetentionGateReport:
     """Run the 3 retention gates on an assembled chapter.
 
@@ -503,10 +541,11 @@ def evaluate_retention_safety(
                 )
                 auto_repair.append(length_report.finding.code)
             elif length_report.finding.severity == "high":
+                below_severity = "critical" if block_below_target else "high"
                 findings.append(
                     RetentionGateFinding(
                         code=CHAPTER_BELOW_TARGET_BLOCK_CODE,
-                        severity="high",
+                        severity=below_severity,
                         detail=length_report.finding.detail,
                         evidence={
                             "zh_char_count": length_report.finding.zh_char_count,
@@ -516,9 +555,99 @@ def evaluate_retention_safety(
                         },
                     )
                 )
+                if block_below_target:
+                    auto_repair.append(CHAPTER_BELOW_TARGET_BLOCK_CODE)
         except Exception as exc:
             logger.warning(
                 "chapter length check failed for ch%d: %s",
+                chapter_position,
+                exc,
+            )
+
+    if not skip_word_count_truth:
+        try:
+            truth = check_word_count_metadata_truth(
+                chapter_text,
+                stored_word_count=stored_word_count,
+                draft_word_count=draft_word_count,
+            )
+            if truth.finding.severity == "critical":
+                findings.append(
+                    RetentionGateFinding(
+                        code=truth.finding.code,
+                        severity="critical",
+                        detail=truth.finding.detail,
+                        evidence={
+                            "actual_zh_chars": truth.actual_zh_chars,
+                            "stored_word_count": truth.finding.stored_word_count,
+                            "draft_word_count": truth.finding.draft_word_count,
+                        },
+                    )
+                )
+                auto_repair.append(WORD_COUNT_METADATA_MISMATCH)
+        except Exception as exc:
+            logger.warning(
+                "word count truth check failed for ch%d: %s",
+                chapter_position,
+                exc,
+            )
+
+    if not skip_duplicate_check and prev_chapter_text:
+        try:
+            dup = check_chapter_duplicates(
+                chapter_position=chapter_position,
+                chapter_text=chapter_text,
+                prev_chapter_text=prev_chapter_text,
+                opening_similarity_threshold=opening_similarity_threshold,
+                body_similarity_threshold=body_similarity_threshold,
+            )
+            for item in dup.findings:
+                findings.append(
+                    RetentionGateFinding(
+                        code=item.code,
+                        severity=item.severity,
+                        detail=item.detail,
+                        evidence=dict(item.evidence),
+                    )
+                )
+                if item.severity == "critical":
+                    auto_repair.append(item.code)
+        except Exception as exc:
+            logger.warning(
+                "duplicate check failed for ch%d: %s",
+                chapter_position,
+                exc,
+            )
+
+    if not skip_payoff_ledger:
+        try:
+            ledger = evaluate_payoff_ledger(
+                chapter_text,
+                chapter_position=chapter_position,
+                min_payoff_density=min_payoff_density,
+            )
+            if ledger.finding.severity == "critical":
+                # The deterministic keyword heuristic is noisy on legitimately
+                # hook-heavy chapters, so it is advisory by default. The real
+                # payoff enforcement is the persona / reader-judge gate; set
+                # ``payoff_block`` to hard-enforce after calibration.
+                findings.append(
+                    RetentionGateFinding(
+                        code=ledger.finding.code,
+                        severity="critical" if payoff_block else "high",
+                        detail=ledger.finding.detail,
+                        evidence={
+                            "hook_hits": ledger.finding.hook_hits,
+                            "payoff_hits": ledger.finding.payoff_hits,
+                            "payoff_density": ledger.finding.payoff_density,
+                        },
+                    )
+                )
+                if payoff_block:
+                    auto_repair.append(ledger.finding.code)
+        except Exception as exc:
+            logger.warning(
+                "payoff ledger check failed for ch%d: %s",
                 chapter_position,
                 exc,
             )

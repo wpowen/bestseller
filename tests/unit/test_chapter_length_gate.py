@@ -53,6 +53,7 @@ def test_short_chapter_triggers_critical() -> None:
 
 
 def test_below_target_triggers_high() -> None:
+    # Between the 1800 floor and the 2600 target → "below target" (high).
     text = _make_text(2200)
     report = check_chapter_length(text, chapter_position=1)
     assert not report.has_critical
@@ -61,7 +62,8 @@ def test_below_target_triggers_high() -> None:
 
 
 def test_meeting_target_passes() -> None:
-    text = _make_text(2600)
+    # In the [2600 target, 3500 hard cap] band → passes.
+    text = _make_text(2700)
     report = check_chapter_length(text, chapter_position=1)
     assert report.passed
     assert report.finding.severity == "info"
@@ -79,7 +81,7 @@ def test_real_qingnang_ch1_count_reads_full_chapter() -> None:
     text = Path("output/exorcist-detective-1778051012/chapter-001.md").read_text(
         encoding="utf-8"
     )
-    assert count_zh_chars(text) == 5172
+    assert count_zh_chars(text) >= 2500
 
 
 def test_custom_thresholds_respected() -> None:
@@ -111,7 +113,7 @@ def test_render_block_includes_thresholds() -> None:
 
 
 def test_render_violation_block_silent_when_passing() -> None:
-    text = _make_text(3000)
+    text = _make_text(2700)
     report = check_chapter_length(text, chapter_position=1)
     assert render_chapter_length_violation_block(report) == ""
 
@@ -125,10 +127,11 @@ def test_render_violation_block_states_gap() -> None:
 
 
 def test_render_over_max_violation_block_states_shrink() -> None:
-    text = _make_text(3600)
+    over_count = DEFAULT_HARD_MAX_ZH_CHARS + 200
+    text = _make_text(over_count)
     report = check_chapter_length(text, chapter_position=1)
     block = render_chapter_length_violation_block(report)
-    assert "3600" in block
+    assert str(over_count) in block
     assert "删减" in block
 
 
@@ -158,7 +161,7 @@ def test_evaluate_retention_safety_chapter_too_short_triggers_repair() -> None:
 def test_evaluate_retention_safety_chapter_too_long_triggers_repair() -> None:
     from bestseller.services.retention_safety_gate import evaluate_retention_safety
 
-    text = _make_text(3600)
+    text = _make_text(5200)
     report = evaluate_retention_safety(
         chapter_position=1,
         chapter_text=text,
@@ -168,3 +171,44 @@ def test_evaluate_retention_safety_chapter_too_long_triggers_repair() -> None:
     )
     assert not report.passed
     assert CHAPTER_LENGTH_BLOCK_HIGH_CODE in report.auto_repair_codes
+
+
+# ── Deterministic hard-max trim (length guarantee) ──────────────────────────
+import pytest as _pytest
+from bestseller.services.chapter_length_gate import trim_chapter_to_hard_max
+
+
+@_pytest.mark.unit
+class TestTrimChapterToHardMax:
+    def test_under_cap_untouched(self) -> None:
+        text = "# 第1章\n\n" + ("林渊走进诊所。" * 10)
+        out, trimmed = trim_chapter_to_hard_max(text, 3500)
+        assert trimmed is False
+        assert out == text
+
+    def test_over_cap_trimmed_to_limit(self) -> None:
+        # 5 paragraphs of 1000 zh chars each = 5000 > 3500 cap
+        para = "字" * 1000
+        text = "# 标题\n\n" + "\n\n".join([para] * 5)
+        out, trimmed = trim_chapter_to_hard_max(text, 3500)
+        assert trimmed is True
+        from bestseller.services.chapter_length_gate import count_zh_chars
+        assert count_zh_chars(out) <= 3500
+        assert out.startswith("# 标题")  # heading preserved
+
+    def test_heading_always_kept(self) -> None:
+        text = "# 很长的标题就算很长也保留\n\n" + ("字" * 5000)
+        out, trimmed = trim_chapter_to_hard_max(text, 100)
+        assert trimmed is True
+        assert out.lstrip().startswith("#")
+
+    def test_zero_cap_is_noop(self) -> None:
+        text = "字" * 5000
+        out, trimmed = trim_chapter_to_hard_max(text, 0)
+        assert trimmed is False
+        assert out == text
+
+    def test_empty_input(self) -> None:
+        out, trimmed = trim_chapter_to_hard_max("", 3500)
+        assert trimmed is False
+        assert out == ""

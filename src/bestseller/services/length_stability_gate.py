@@ -55,18 +55,21 @@ __all__ = [
 # values reflect the actual top-rank serial-fiction floors per platform; the
 # framework default (``config.generation.words_per_chapter``) is too lenient
 # for any commercial book targeting one of these platforms.
+# Per-platform chapter windows. Product rule (2026-05-30): a long-form chapter
+# must land in 1800-3500 zh chars and NEVER exceed the 3500 hard ceiling, so
+# every window's ``max`` is clamped to 3500 and targets sit below it.
 PLATFORM_CHAPTER_WORD_WINDOWS: dict[str, dict[str, int]] = {
-    "qimao": {"min": 2500, "target": 3200, "max": 4000},
-    "qidian": {"min": 3000, "target": 3700, "max": 4500},
-    "tomato": {"min": 2000, "target": 2500, "max": 3500},
+    "qimao": {"min": 2500, "target": 3000, "max": 3500},
+    "qidian": {"min": 2600, "target": 3100, "max": 3500},
+    "tomato": {"min": 2000, "target": 2600, "max": 3500},
     "tomato_short": {"min": 1800, "target": 2500, "max": 3500},
 }
 
-CHINESE_CHAPTER_HARD_MIN_WORDS = 2000
-# 2026-05-27: ch1 runtime audit showed 5000+ CJK chapters could pass as
-# "long but acceptable".  Keep the default serial-chapter wall tight; platform
-# profiles may still opt into larger envelopes explicitly.
-CHINESE_CHAPTER_HARD_MAX_WORDS = 3000
+# Absolute zh chapter ceiling/floor. ``_chapter_length_contract_band`` clamps the
+# effective hard_max to ``CHINESE_CHAPTER_HARD_MAX_WORDS``; keeping it at 3500
+# guarantees no generation/repair path can sanction a chapter above 3500 chars.
+CHINESE_CHAPTER_HARD_MIN_WORDS = 1800
+CHINESE_CHAPTER_HARD_MAX_WORDS = 3500
 
 
 _PLATFORM_ALIASES: dict[str, tuple[str, ...]] = {

@@ -184,6 +184,42 @@ async def test_metadata_retention_code_triggers_repair_without_quality_report() 
 
 
 @pytest.mark.asyncio
+async def test_deterministic_audit_code_triggers_repair_without_quality_report() -> None:
+    chapter = FakeChapter(
+        metadata_json={
+            "deterministic_audit_latest": {
+                "passed": False,
+                "findings": [
+                    {
+                        "code": "ENDING_HOOK_MISSING",
+                        "severity": "high",
+                        "detail": "last 120 chars have no unresolved pressure",
+                    }
+                ],
+            }
+        }
+    )
+    scene = FakeScene(chapter_id=chapter.id)
+    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("ENDING_HOOK_MISSING",),
+    )
+
+    assert triggered is True
+    assert codes == ("ENDING_HOOK_MISSING",)
+    assert chapter.production_state == "pending"
+    assert scene.status == SceneStatus.NEEDS_REWRITE.value
+    hint = scene.metadata_json["auto_repair_hint"]
+    assert "章末" in hint or "结尾" in hint
+    assert "下一章阅读动力" in hint
+    assert scene.metadata_json["auto_repair_block_codes"] == ["ENDING_HOOK_MISSING"]
+
+
+@pytest.mark.asyncio
 async def test_auto_repair_total_attempts_accumulates_across_invocations() -> None:
     """Regression: 青囊不语问阴阳 ch1 looped because the intra-run counter
     reset to 1 each ``chapter_pipeline`` invocation. The cumulative
@@ -673,7 +709,7 @@ async def test_block_low_resets_scenes_and_injects_hint() -> None:
         assert scene.status == SceneStatus.NEEDS_REWRITE.value
         hint = scene.metadata_json.get("auto_repair_hint")
         assert isinstance(hint, str)
-        assert "大幅扩写" in hint  # Chinese hint for BLOCK_LOW
+        assert "受控补写" in hint  # Chinese hint for BLOCK_LOW
         assert scene.metadata_json.get("auto_repair_block_codes") == ["BLOCK_LOW"]
     # target_word_count is bumped to at least the per-scene chapter target.
     # target=6400, 2 scenes, attempt 1 floor=6400/2*1.05 → 3360.
@@ -1162,7 +1198,7 @@ async def test_existing_auto_repair_hint_is_replaced_across_cycles() -> None:
     assert triggered is True
     hint = scenes[0].metadata_json["auto_repair_hint"]
     assert "first-cycle hint" not in hint
-    assert "大幅扩写" in hint
+    assert "受控补写" in hint
     assert scenes[0].target_word_count == 2310
     assert scenes[0].metadata_json["auto_repair_block_codes"] == ["BLOCK_LOW"]
     assert scenes[0].metadata_json["auto_repair_original_target_word_count"] == 550
@@ -1339,5 +1375,5 @@ async def test_mixed_blocking_codes_picks_only_repairable_subset() -> None:
     assert set(codes) == {"BLOCK_LOW", "NAMING"}
     # But only the BLOCK_LOW hint was applied.
     hint = scenes[0].metadata_json["auto_repair_hint"]
-    assert "大幅扩写" in hint
+    assert "受控补写" in hint
     assert scenes[0].metadata_json["auto_repair_block_codes"] == ["BLOCK_LOW"]

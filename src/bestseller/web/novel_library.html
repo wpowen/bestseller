@@ -963,6 +963,7 @@
           <a class="book-action" href="/flow/${encodeURIComponent(slug)}" target="_blank" title="查看从种类选择到章节产出的数据流与门禁状态">数据流</a>
           ${isArchived ? `<button class="book-action" onclick="archiveBook('${esc(slug)}', false)" title="把作品恢复到书稿库默认列表">取消归档</button>` : ''}
           ${!isArchived ? `<button class="book-action" onclick="reviseBook('${esc(slug)}')" title="为这本书创建新的修改任务">再修改</button>` : ''}
+          ${!isArchived && !isClosed ? `<button class="book-action" onclick="markBookComplete('${esc(slug)}')" title="把作品标记为已完成并取消后台未完成任务">标记完成</button>` : ''}
           ${isClosed ? `<button class="book-action" onclick="archiveBook('${esc(slug)}', true)" title="把已闭环作品移入归档列表">归档</button>` : ''}
           <a class="book-action" href="/quickstart" title="查看当前执行中的任务">任务台</a>
         </div>
@@ -1059,6 +1060,24 @@
       await loadLibrary();
     } catch (err) {
       alert(`${action}失败: ` + err.message);
+    }
+  };
+
+  window.markBookComplete = async function(slug) {
+    if (!slug) return;
+    if (!confirm('确认把这本书标记为已完成吗？后台未完成任务会被安全取消，正文和项目数据会保留。')) return;
+    try {
+      const r = await fetch(`/api/projects/${encodeURIComponent(slug)}/complete`, {
+        method: 'POST',
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(data.error || '标记完成失败');
+        return;
+      }
+      await loadLibrary();
+    } catch (err) {
+      alert('标记完成失败: ' + err.message);
     }
   };
 

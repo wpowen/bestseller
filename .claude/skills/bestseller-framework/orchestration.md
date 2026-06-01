@@ -170,17 +170,18 @@
 | 验证 | outline 数 = 本卷章数；章号连续；每章至少 3 个 scene 卡 |
 | 下一态 | `WRITE_CHAPTER(本卷第一章)` |
 
-### 2.10 `WRITE_CHAPTER(c)` 【核心循环】
+### 2.10 `WRITE_CHAPTER(c)` 【核心循环 · 深度融合】
 
 | 字段 | 内容 |
 |------|------|
-| 角色 | writer |
-| 读入 | `writing-profile.md` + `characters.md` 的本章参与者 + 本章在 `vol-NN/README.md` 的 outline 块 + 前一章最后 200–400 字 + `canon-facts.md` 最近 50 条 |
-| 调用 prompt | [prompts/writer.md](prompts/writer.md) |
-| 产出 | `volumes/vol-NN/ch-NNN-{slug}.md`，含 frontmatter（scores 暂留空）+ 全部 scene 正文 |
-| 验证 | **字数 ≥ 5 000**；frontmatter 字段齐全；scenes 数与 outline 对齐 |
-| 失败处理 | 字数不够 → 立即自我扩写（保留本状态，不推进）；最多扩写 2 次 |
-| 下一态 | `REVIEW_CHAPTER(c)` |
+| 角色 | writer（经 bridge 调用生产流水线，不再由对话直接写正文） |
+| 读入 | `writing-profile.md` + outline + 前章尾 + `canon-facts.md`（均已物化到 DB） |
+| 执行 | `python3 scripts/mode_b_chapter_bridge.py --slug {slug} --chapter {c}`——内部调 `run_chapter_pipeline`（drafts → 门禁 → 评分 → 自动返工），导出到 `volumes/vol-NN/ch-NNN.md`，并把真实字数/scores 回写 `progress.yaml` |
+| 前置 | 首次需 `bestseller project create` + `bestseller workflow materialize-story-bible/outline`（bridge exit 3 表示物化缺失） |
+| 验证 | bridge **exit 0** = 过所有门禁（真实 CJK 字数达标、无模板复制、兑现达标）；**exit 2** → `REWRITE_CHAPTER`；**exit 3** → 先物化再重试 |
+| 失败处理 | exit 2/3 由 orchestrator 路由；不再靠对话自评自扩 |
+| 下一态 | exit 0 → `REVIEW_CHAPTER(c)`（流水线内已评分）；exit 2 → `REWRITE_CHAPTER(c)` |
+| 降级 | 仅当无 DB / 无法物化时回退 [prompts/writer.md](prompts/writer.md) 纯对话写作（旧行为，质量无保障） |
 
 ### 2.11 `REVIEW_CHAPTER(c)`
 

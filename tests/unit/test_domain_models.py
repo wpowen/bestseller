@@ -8,6 +8,7 @@ from bestseller.domain.project import (
     AmazonKdpPublicationProfile,
     ProjectCreate,
     PublishingProfilesConfig,
+    WritingProfile,
 )
 from bestseller.domain.story_bible import (
     CastSpecInput,
@@ -50,6 +51,30 @@ def test_project_create_rejects_target_word_count_below_minimum() -> None:
             target_word_count=1999,
             target_chapters=1,
         )
+
+
+def test_writing_profile_coerces_llm_structured_text_fields() -> None:
+    profile = WritingProfile.model_validate(
+        {
+            "market": {
+                "chapter_hook_strategy": {
+                    "第一章": "尸体手心多出一枚不属于现场的钥匙。",
+                    "第二章": "监控里消失的十分钟只剩一声电梯铃。",
+                },
+                "selling_points": [
+                    {"公平线索": "每个揭示改变嫌疑结构"},
+                    "第一人称追凶",
+                ],
+            }
+        }
+    )
+
+    assert "第一章: 尸体手心多出一枚不属于现场的钥匙。" in profile.market.chapter_hook_strategy
+    assert "第二章: 监控里消失的十分钟只剩一声电梯铃。" in profile.market.chapter_hook_strategy
+    assert profile.market.selling_points == [
+        "公平线索: 每个揭示改变嫌疑结构",
+        "第一人称追凶",
+    ]
 
 
 def test_planning_artifact_create_keeps_content() -> None:

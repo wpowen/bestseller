@@ -2,6 +2,7 @@
 
 > 模拟参数：`logical_role=writer`, `model=claude-sonnet`, `temp=0.85`, `max_tokens=8000`, streaming=true
 > 用途：场景正文生成
+> **单一事实源**：生产流水线以 `config/writing_methodology.yaml` + `src/bestseller/services/methodology_bridge.py` / `methodology_compiler.py` 为准；本文件为 Mode B 对话式写作的补充 charter，规则冲突时以 Python 流水线为准。
 > 渲染契约：`<role_charter>` 到 `</style_anchors>` 之间为 system message（稳定，命中 prompt cache）；其后为 user message（每章变动）。
 
 ---

@@ -151,7 +151,7 @@ def test_evaluate_chapter_length_warn_margin_zero_promotes_to_block() -> None:
 
 def test_evaluate_chapter_length_hard_min_promotes_short_commercial_chapter_to_block() -> None:
     report = evaluate_chapter_length(
-        word_count=1900,
+        word_count=1700,
         min_words=1800,
         target_words=2200,
         max_words=3500,
@@ -165,9 +165,9 @@ def test_evaluate_chapter_length_hard_min_promotes_short_commercial_chapter_to_b
 
 
 def test_evaluate_chapter_length_hard_max_blocks_overlong_commercial_chapter() -> None:
-    # CHINESE_CHAPTER_HARD_MAX_WORDS was raised from 3500 → 4500 (2026-05-26) to
-    # reduce false positives when auto-repair iterations overshoot.  The hard-max
-    # gate should still BLOCK chapters that exceed the new ceiling (4500).
+    # Product rule (2026-05-30): CHINESE_CHAPTER_HARD_MAX_WORDS is pinned to 3500
+    # — a long-form chapter must never exceed it. The hard-max gate must BLOCK any
+    # chapter above this ceiling.
     report = evaluate_chapter_length(
         word_count=CHINESE_CHAPTER_HARD_MAX_WORDS + 1,
         min_words=2000,
@@ -180,6 +180,20 @@ def test_evaluate_chapter_length_hard_max_blocks_overlong_commercial_chapter() -
     assert report.issue_code == "CHAPTER_LENGTH_BLOCK_HIGH"
     assert report.max_words == CHINESE_CHAPTER_HARD_MAX_WORDS
     assert report.is_blocking is True
+
+
+def test_evaluate_chapter_length_hard_max_does_not_block_near_target_short_story() -> None:
+    report = evaluate_chapter_length(
+        word_count=3008,
+        min_words=2000,
+        target_words=3000,
+        max_words=3500,
+        hard_max_words=CHINESE_CHAPTER_HARD_MAX_WORDS,
+    )
+
+    assert report.band is LengthStabilityBand.OK
+    assert report.issue_code is None
+    assert report.is_blocking is False
 
 
 # ── summarize_length_stability ─────────────────────────────────────────

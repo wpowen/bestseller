@@ -5717,12 +5717,18 @@
 	    // ── Actions (right-edge of row 1) ──
 	    let actions = '';
 	    if (isSyntheticProject) {
-	      if (status === 'completed' && slug) {
+	      if ((status === 'running' || status === 'queued') && slug) {
+	        actions += `<button class="btn btn-primary btn-sm" onclick="openProgress('${esc(task.task_id)}')">→ 查看详情</button>`;
+	        const stopLabel = task.cancel_requested ? '强制停止' : '停止';
+	        actions += `<button class="btn btn-secondary btn-sm" onclick="cancelTask('${esc(task.task_id)}')">◾ ${stopLabel}</button>`;
+	        actions += `<button class="btn btn-secondary btn-sm" onclick="markProjectCompleteFromDashboard('${esc(slug)}')">标记完成</button>`;
+	      } else if (status === 'completed' && slug) {
 	        actions += `<a class="btn btn-primary btn-sm" href="/read/${esc(slug)}" target="_blank">📖 阅读</a>`;
 	        actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">📚 详情 / 资料</button>`;
 	        actions += `<button class="btn btn-secondary btn-sm" onclick="archiveProjectFromDashboard('${esc(slug)}')">归档</button>`;
 	      } else {
 	        actions += `<button class="btn btn-primary btn-sm" onclick="resumeProjectBySlug('${esc(slug)}')">▶ 续写</button>`;
+	        actions += `<button class="btn btn-secondary btn-sm" onclick="markProjectCompleteFromDashboard('${esc(slug)}')">标记完成</button>`;
 	      }
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','')">完全删除</button>`;
 	    } else if (status === 'running' || status === 'queued') {
@@ -5941,6 +5947,12 @@
             ? `<button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="查看详情、上架资料、候选书名">📚 详情 / 上架资料 <span class="op-count">${esc(opListingCount)}</span></button>`
             : `<button class="tc-op-btn" onclick="resumeProjectBySlug('${esc(slug)}')" title="为这个项目重新创建写作任务">▶ 续写 / 恢复任务 <span class="op-count">R</span></button>`}
 	        ${slug ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="如果已有正文，则在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
+	        ${(status === 'running' || status === 'queued') && slug
+            ? `<button class="tc-op-btn danger" onclick="cancelTask('${esc(task.task_id)}')" title="停止当前项目任务">◾ 停止 <span class="op-count">.</span></button>`
+            : ''}
+	        ${status !== 'completed' && slug
+            ? `<button class="tc-op-btn" onclick="markProjectCompleteFromDashboard('${esc(slug)}')" title="把这本书标记为已完成，并取消未完成后台任务">标记完成 <span class="op-count">✓</span></button>`
+            : ''}
 	        ${status === 'completed' && slug ? `<button class="tc-op-btn" onclick="archiveProjectFromDashboard('${esc(slug)}')" title="从任务台移入书稿库归档区">归档 <span class="op-count">A</span></button>` : ''}
 	        ${status === 'completed' && slug ? `<button class="tc-op-btn" onclick="reviseProjectFromDashboard('${esc(slug)}')" title="为这本书创建新的修改任务">再修改 <span class="op-count">R</span></button>` : ''}
 	        <button class="tc-op-btn danger" onclick="deleteProjectFull('${esc(slug)}','')" title="删除数据库记录、正文文件和任务记录">🗑 完全删除</button>
@@ -6250,6 +6262,25 @@
 	      refreshDashboard();
 	    } catch (err) {
 	      alert('归档失败: ' + err.message);
+	    }
+	  };
+
+	  window.markProjectCompleteFromDashboard = async function(slug) {
+	    if (!slug) return;
+	    if (!confirm('确认把这本书标记为已完成吗？后台未完成任务会被安全取消，正文和项目数据会保留。')) return;
+	    try {
+	      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/complete`, {
+	        method: 'POST',
+	      });
+	      const data = await res.json().catch(() => ({}));
+	      if (!res.ok) {
+	        alert(data.error || '标记完成失败');
+	        return;
+	      }
+	      selectedSlugs.delete(slug);
+	      refreshDashboard();
+	    } catch (err) {
+	      alert('标记完成失败: ' + err.message);
 	    }
 	  };
 

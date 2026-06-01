@@ -49,6 +49,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application source
 COPY src/ ./src/
 COPY config/ ./config/
+COPY data/ ./data/
 COPY migrations/ ./migrations/
 COPY scripts/ ./scripts/
 COPY alembic.ini ./

@@ -251,6 +251,19 @@ l6_write_gate:
     CHARACTER_NAME_MISMATCH: block
     NUMERICAL_CONTRADICTION: block
     STATE_TRANSITION_UNEXPLAINED: block
+    WORD_COUNT_METADATA_MISMATCH: block
+    CHAPTER_OPENING_REPETITION: block
+    CROSS_CHAPTER_REPETITION: block
+    PERSONA_ABANDON_RATE_HIGH: block
+    PERSONA_WEIGHTED_SCORE_LOW: block
+    PERSONA_PAYOFF_DENSITY_LOW: block
+    PAYOFF_LEDGER_LOW: block
+    PAYOFF_HOOK_ONLY: block
+    CRITIC_MISSING_BODY_EVIDENCE: block
+    CRITIC_EMPTY_REVIEW: block
+    MILESTONE_CONSISTENCY_FAIL: block
+    STORY_BIBLE_INCOMPLETE: block
+    STORY_BIBLE_MISSING_FILE: block
 
 story_principle_gate:
   enabled: true
@@ -366,6 +379,25 @@ ai_flavor_gate:
 # Keeps planning/market language out of prose prompts, then blocks chapter
 # boundary narration and out-of-scene endings after draft assembly.
 # ---------------------------------------------------------------------------
+# Reader-quality hard gates (persona simulation, payoff ledger, body-truth).
+reader_quality_gate:
+  enabled: true
+  block_on_persona_failure: true
+  min_weighted_score: 0.62
+  max_abandon_rate: 0.35
+  min_payoff_density: 0.22
+  block_below_target_length: false
+  block_word_count_metadata_mismatch: true
+  block_chapter_duplicates: true
+  block_payoff_ledger: false
+  opening_similarity_threshold: 0.82
+  body_similarity_threshold: 0.88
+  require_critic_body_evidence: true
+  # P2 LLM reader-judge: default off; enable per-project after calibration.
+  enable_llm_reader_judge: false
+  reader_judge_audit_only: true
+  reader_judge_text_cap_chars: 8000
+
 prose_quality:
   sanitize_prompt: true
   beat_planner:

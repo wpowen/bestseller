@@ -236,6 +236,8 @@ class PipelineSettings(BaseModel):
     # timeline anchors. It complements scene richness, which is scene-local.
     enable_chapter_outline_readiness_gate: bool = True
     chapter_outline_readiness_block_on_failure: bool = True
+    enable_story_bible_write_gate: bool = True
+    story_bible_write_block_on_failure: bool = True
     enable_methodology_planning_readiness_gate: bool = True
     # Warn-by-default: this is a heuristic readiness gate (weak-mediated
     # opening, plausibility gaps, knowledge-boundary leaks). Findings are
@@ -246,6 +248,10 @@ class PipelineSettings(BaseModel):
     methodology_planning_readiness_block_on_failure: bool = False
     enable_outline_llm_commercial_judge: bool = True
     outline_llm_commercial_judge_block_on_failure: bool = True
+    # Heuristic platform-fit gate (七猫 golden-three). Warn-only by default so
+    # a flagged opening becomes a rewrite directive rather than aborting the
+    # whole book at planning (2026-05-29).
+    qimao_planning_gate_block_on_failure: bool = False
     outline_llm_commercial_judge_threshold: float = 0.82
     enable_outline_reader_experience_judge: bool = True
     outline_reader_experience_judge_block_on_failure: bool = True
@@ -431,6 +437,15 @@ class PipelineSettings(BaseModel):
             "HOOK_ECHO_MISSING",
             "HOOK_ECHO_LOW",
             "SIGNATURE_SCENE_MISSING",
+            "SIGNATURE_IMAGE_MISSING",
+            "OPENING_PRESSURE_THIN",
+            "ENDING_HOOK_MISSING",
+            "PARAGRAPH_DUPLICATE_PARAPHRASE",
+            "CALLBACK_OBLIGATION_MISSING",
+            "LENGTH_OUT_OF_BAND",
+            "GOLDEN_THREE_WEAK",
+            "NAMING_OUT_OF_POOL",
+            "CLIFFHANGER_REPEAT",
             "EXPOSITION_DUMP",
             "CAST_VIOLATION",
             "OPENING_SCENE_DRIFT",
@@ -525,14 +540,21 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "minimax": {
         "key": "minimax",
         "label": "MiniMax",
-        "description": "Primary writing model via MiniMax OpenAI-compatible endpoint.",
+        "description": "MiniMax prose writer + DeepSeek structured planner (hybrid).",
         "roles": {
+            # Planner runs on DeepSeek, not MiniMax. MiniMax-M2.7 emits prose
+            # strings where the planner schemas require lists / ints / dicts
+            # (locations, world_state_deltas, reveal_weight, …), which
+            # exhausted the outline repair loop and left books stuck in
+            # `planning` with 0 chapters (2026-05-29). DeepSeek reliably emits
+            # valid typed JSON for the same prompts. Writer/editor stay on
+            # MiniMax so prose style is unchanged.
             "planner": {
-                "model": "openai/MiniMax-M2.7-highspeed",
-                "api_base": "https://api.minimaxi.com/v1",
-                "api_key_env": "MINIMAX_API_KEY",
+                "model": "deepseek/deepseek-chat",
+                "api_base": "https://api.deepseek.com",
+                "api_key_env": "DEEPSEEK_API_KEY",
                 "timeout_seconds": 900,
-                "max_tokens": 32768,
+                "max_tokens": 8192,
                 "stream": False,
                 "model_override": None,
                 "thinking_type": None,

@@ -46,6 +46,23 @@ _BEAT_CONTRACT_FIELDS = (
     "closure_contract",
     "continuity_contract",
 )
+_CONTRACT_LABEL_PATTERN = re.compile(
+    r"(开篇合同|30%解锁合同|能力代价合同|爽点合同|收束合同|连续性合同)[:：]"
+)
+_META_STORY_MARKERS = (
+    "读者",
+    "合同",
+    "字内",
+    "字左右",
+    "金手指",
+    "异能",
+    "必须",
+    "不得",
+    "禁止",
+    "爽点",
+    "视角焦点",
+    "章节末",
+)
 
 
 def _coerce_contract_payload(value: Any) -> dict[str, Any]:
@@ -65,6 +82,11 @@ def _normalize_beat_sheet_payload(payload: Any) -> Any:
     if not isinstance(payload, Mapping):
         return payload
     normalized = dict(payload)
+    unlock_value = normalized.get("unlock_milestone_segment")
+    if isinstance(unlock_value, str):
+        match = re.search(r"\d+", unlock_value)
+        if match:
+            normalized["unlock_milestone_segment"] = int(match.group(0))
     beats = normalized.get("beats")
     if not isinstance(beats, list):
         return normalized
@@ -95,10 +117,60 @@ def _contract_summary(value: Any) -> str:
     return ""
 
 
+def _visible_story_text(value: Any, *, protagonist_name: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = _CONTRACT_LABEL_PATTERN.split(text, maxsplit=1)[0]
+    text = re.split(r"[—-]{1,2}\s*(第\d+段)?\d+字内", text, maxsplit=1)[0]
+    text = re.sub(r"^(开篇|前30%段|中段|终段|单篇中段)[:：]\s*", "", text)
+    text = re.sub(r"(，|,|；|;)?\s*(第\d+段)?前\d+字[^。；;]*", "", text)
+    text = re.sub(r"(，|,|；|;)?\s*\d+字内[^。；;]*", "", text)
+    text = re.sub(r"(，|,|；|;)?\s*\d+字左右[^。；;]*", "", text)
+    lines: list[str] = []
+    for raw_line in re.split(r"[\n\r]+", text):
+        line = raw_line.strip(" ，,；;")
+        if not line:
+            continue
+        if _CONTRACT_LABEL_PATTERN.search(line):
+            line = _CONTRACT_LABEL_PATTERN.split(line, maxsplit=1)[0].strip(" ，,；;")
+        if not line:
+            continue
+        if line.startswith(("first_", "deadline:", "required_payoff:", "no_background_only:")):
+            continue
+        if any(marker in line for marker in _META_STORY_MARKERS):
+            continue
+        lines.append(line)
+    text = "；".join(lines)
+    text = text.replace("完成情绪反杀", "公开反击并改变胜负")
+    text = text.replace("催泪点兑现，", "")
+    text = text.replace("本篇单篇完结", "当前案件收束")
+    text = text.replace("主角", protagonist_name)
+    if protagonist_name:
+        text = re.sub(
+            rf"({re.escape(protagonist_name)})(?:\s*{re.escape(protagonist_name)})+",
+            protagonist_name,
+            text,
+        )
+    text = re.sub(r"\s+", " ", text).strip(" ，,；;")
+    if any(marker in text for marker in _META_STORY_MARKERS):
+        return ""
+    return text
+
+
 def _visible_contract_text(value: Any, *, protagonist_name: str) -> str:
     text = _contract_summary(value)
     if not text:
         return ""
+    visible = _visible_story_text(text, protagonist_name=protagonist_name)
+    if visible:
+        return visible
+    text = re.sub(
+        r"^(开篇合同|30%解锁合同|能力代价合同|爽点合同|收束合同|连续性合同)[:：]\s*",
+        "",
+        text,
+    )
+    text = re.sub(r"^(第\d+段)?前\d+字(内|左右|必须|出现|完成|给出)?", "", text)
     text = re.sub(r"^(第\d+段)?前\d+字[^:：]*[:：]\s*", "", text)
     text = re.sub(r"^前\d+%[^:：]*[:：]\s*", "", text)
     text = re.sub(
@@ -114,10 +186,16 @@ def _visible_contract_text(value: Any, *, protagonist_name: str) -> str:
     text = text.replace("催泪点兑现，", "")
     text = text.replace("情绪反杀", "公开反击")
     text = text.replace("主角", protagonist_name)
-    return re.sub(r"\s+", " ", text).strip(" ，,；;")
+    text = re.sub(r"\s+", " ", text).strip(" ，,；;")
+    if any(marker in text for marker in _META_STORY_MARKERS):
+        return ""
+    return text
 
 
 def _visible_goal_from_beat(beat: FanqieShortBeat, *, protagonist_name: str) -> str:
+    purpose = _visible_story_text(beat.purpose, protagonist_name=protagonist_name)
+    if purpose:
+        return purpose
     pieces = [
         _visible_contract_text(beat.opening_contract, protagonist_name=protagonist_name),
         _visible_contract_text(beat.payoff_contract, protagonist_name=protagonist_name),
@@ -144,13 +222,14 @@ def _hook_from_beat(
         return (
             _visible_contract_text(beat.closure_contract, protagonist_name=protagonist_name)
             or _visible_contract_text(beat.payoff_contract, protagonist_name=protagonist_name)
-            or f"{protagonist_name}听见关键器物重新自鸣，当前失语案的真相在众人面前落定。"
+            or _visible_story_text(beat.payoff, protagonist_name=protagonist_name)
+            or f"{protagonist_name}把关键证据摆到众人面前，当前案件的真相落定。"
         )
     return (
         _visible_contract_text(beat.closure_contract, protagonist_name=protagonist_name)
-        or _visible_contract_text(beat.continuity_contract, protagonist_name=protagonist_name)
         or _visible_contract_text(beat.payoff_contract, protagonist_name=protagonist_name)
-        or f"新的具体证据落到{protagonist_name}手里，逼他立刻做出下一步选择。"
+        or _visible_story_text(beat.payoff, protagonist_name=protagonist_name)
+        or f"新的具体证据落到{protagonist_name}手里，逼{protagonist_name}立刻做出下一步选择。"
     )
 
 
@@ -217,44 +296,44 @@ def _fallback_beat_sheet(project: ProjectModel, premise: str) -> FanqieShortBeat
                 f"开篇：{(premise or project.title)[:120]}——50字内把主角推入压迫现场，"
                 "300字内亮出不可退让的当前冲突。"
             )
-            payoff = "主角当场听见器物异常低语，拿到第一枚可见证据。"
+            payoff = "主角当场拿到第一枚可见证据。"
             emotional_turn = "被污名压迫→能力显形→争取第一口气"
         elif index <= unlock_segment:
             purpose = (
-                f"前30%段：让顾器在被怀疑和追责中用器语共感反制，"
-                f"拆出禁术封印的第一条证据链（第{index}段）。"
+                f"前30%段：让主角在被怀疑和追责中当场反制，"
+                f"拆出当前案件的第一条证据链（第{index}段）。"
             )
-            payoff = "公开或半公开地证明霜钟并非自然失语，完成第一次小反击。"
+            payoff = "公开或半公开地证明对手说法有漏洞，完成第一次反击。"
             emotional_turn = "孤立无援→抓住证据→压力升级"
         elif index == segment_count:
             purpose = (
-                "终段：顾器付出共感反噬代价唤回霜钟真声，揪出封印者，"
-                "收束霜钟失语案和主角守器人身份认同，禁止连载式悬念。"
+                "终段：主角付出代价逼出关键证据，揪出真正设局者，"
+                "收束当前案件和主角身份认同。"
             )
-            payoff = "霜钟重新自鸣，顾器洗清污名并完成单篇情绪落点。"
+            payoff = "真相公开，主角洗清污名并完成单篇情绪落点。"
             emotional_turn = "濒临失控→真相公开→温柔收束"
         else:
             mid_beats = {
                 3: (
-                    "越过阁内禁令潜入器库，顾器用牢门、琴匣、旧盏三件器物拼出篡改记忆的路线。",
-                    "器库证据反咬封印者，顾器从被告转为追查者。",
+                    "越过对手设下的禁令潜入关键现场，主角用三处细节拼出伪造证据的路线。",
+                    "现场证据反咬设局者，主角从被告转为追查者。",
                     "被动逃避→主动破局→发现更深黑手",
                 ),
                 4: (
-                    "顾器追入涔水旧祠，发现霜钟主动沉默是在保护一段被替换的器灵记忆。",
-                    "霜钟器灵给出半句真名，盟友立场出现反转。",
+                    "主角追到旧案现场，发现关键证人沉默是在保护一段被替换的记忆。",
+                    "证人给出半句真名，盟友立场出现反转。",
                     "误解加深→真相刺痛→同盟松动",
                 ),
                 5: (
-                    "公开堂审中反派反扣罪名，顾器以共感代价召来多件器物作证，完成情绪反杀。",
-                    "众人听见器物证词，封印者第一次失控露馅。",
+                    "公开对质中反派反扣罪名，主角用付出代价换来的证据完成反击。",
+                    "众人听见证词，设局者第一次失控露馅。",
                     "众怒压顶→证词爆发→胜负翻盘",
                 ),
             }
             purpose, payoff, emotional_turn = mid_beats.get(
                 index,
                 (
-                    f"单篇中段：围绕霜钟失语案推进一条独有证据链，并兑现第{index}段反转。",
+                    f"单篇中段：围绕当前案件推进一条独有证据链，并兑现第{index}段反转。",
                     "新的证据或盟友选择改变局面。",
                     "压迫延伸→信息爆点→下一步行动",
                 ),
@@ -428,12 +507,10 @@ def build_fanqie_segment_outline_batch(
                 lines.append(f"{label}：{compact}")
         return lines
 
-    def _goal_with_contract(beat: FanqieShortBeat | None, fallback: str) -> str:
+    def _story_goal(beat: FanqieShortBeat | None, fallback: str) -> str:
         if beat is None:
             return fallback
-        lines = [beat.purpose]
-        lines.extend(_contract_lines(beat))
-        return "\n".join(line for line in lines if line)
+        return fallback or beat.purpose
 
     def _non_empty_text(value: Any) -> str:
         if isinstance(value, str) and value.strip():
@@ -521,9 +598,7 @@ def build_fanqie_segment_outline_batch(
             )
         arc_item = arc_items[segment_number - 1] if segment_number <= len(arc_items) else ""
         visible_goal = _visible_goal_from_beat(beat, protagonist_name=protagonist_name)
-        story_goal = _goal_with_contract(beat, visible_goal)
-        if arc_item and arc_item not in story_goal:
-            story_goal = f"{story_goal}\n本段专属弧线：{arc_item}"
+        story_goal = _story_goal(beat, visible_goal)
         participants = [protagonist_name, *support_names]
         segment_conflict = arc_item or visible_goal
         scene_title = arc_item or f"{beat.beat_role}-{segment_number}"
@@ -564,10 +639,29 @@ def build_fanqie_segment_outline_batch(
             )
             or visible_goal
         )
+        visible_action = (
+            _visible_story_text(beat.payoff, protagonist_name=protagonist_name)
+            or visible_goal
+            or segment_conflict
+        )
+        protagonist_flaw = (
+            f"{protagonist_name}在污名和追责面前急于自证，容易被对手牵着节奏走。"
+        )
+        scene_stakes = (
+            f"如果{protagonist_name}不能用可见证据推进局面，当前嫌疑会继续压到{protagonist_name}身上。"
+        )
+        information_control = f"只释放当前段能验证的证据，把最终真凶动机留到后续反转。"
+        signature_image = (
+            opening_situation[:80]
+            if opening_situation
+            else f"{protagonist_name}在现场盯住一处异常证据。"
+        )
+        cut_point = hook_description if hook_description != protagonist_name else visible_action
         causal_contract = {
             "chapter_function": beat.beat_role,
             "pressure": segment_conflict,
             "protagonist_choice": visible_goal,
+            "visible_action_or_reaction": visible_action,
             "resistance": (
                 _visible_contract_text(
                     beat.closure_contract,
@@ -587,6 +681,7 @@ def build_fanqie_segment_outline_batch(
                     beat.payoff_contract,
                     protagonist_name=protagonist_name,
                 )
+                or _visible_story_text(beat.payoff, protagonist_name=protagonist_name)
                 or hook_description
             ),
             "state_change": (
@@ -605,11 +700,18 @@ def build_fanqie_segment_outline_batch(
                 "opening_situation": opening_situation,
                 "main_conflict": segment_conflict,
                 "hook_description": hook_description,
+                "protagonist_flaw": protagonist_flaw,
+                "visible_action_or_reaction": visible_action,
+                "payoff": _visible_story_text(beat.payoff, protagonist_name=protagonist_name)
+                or hook_description,
+                "tail_hook": hook_description,
                 "causal_contract": causal_contract,
                 "methodology_contract": {
                     "fanqie_short_visible_goal": visible_goal,
                     "fanqie_short_payoff": beat.payoff,
                     "fanqie_short_emotional_turn": beat.emotional_turn,
+                    "fanqie_short_contract_lines": _contract_lines(beat),
+                    "fanqie_short_v2": fanqie_contract,
                 },
                 "target_word_count": per_segment_words,
                 "volume_number": 1,
@@ -624,7 +726,17 @@ def build_fanqie_segment_outline_batch(
                             "story": story_goal,
                             "emotion": beat.emotional_turn or beat.payoff,
                         },
-                        "methodology_contract": {"fanqie_short_v2": fanqie_contract},
+                        "conflict_stakes": scene_stakes,
+                        "information_control": information_control,
+                        "signature_image": signature_image,
+                        "cut_point": cut_point,
+                        "methodology_contract": {
+                            "fanqie_short_v2": fanqie_contract,
+                            "conflict_stakes": scene_stakes,
+                            "information_control": information_control,
+                            "signature_image": signature_image,
+                            "cut_point": cut_point,
+                        },
                         "entry_state": {"pressure": segment_conflict},
                         "exit_state": {"hook": hook_description},
                         "target_word_count": per_segment_words,

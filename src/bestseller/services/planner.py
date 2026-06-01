@@ -324,11 +324,32 @@ def _story_package_prompt_block(project: ProjectModel, *, language: str | None =
     ) + _json_dumps(summary)
 
 
+_DISTILLED_REFERENCE_PHASE_CHAR_BUDGETS: dict[str, int] = {
+    "architecture": 4200,
+    "world": 3200,
+    "cast": 2800,
+    "story_design": 3200,
+    "volume_plan": 2800,
+    "chapter_outline": 2400,
+    "craft": 1800,
+}
+
+
+def _trim_distilled_reference_part(text: str, *, max_chars: int) -> str:
+    stripped = str(text or "").strip()
+    if max_chars <= 0 or len(stripped) <= max_chars:
+        return stripped
+    marker = "\n...[distilled reference trimmed for prompt budget]"
+    keep = max(max_chars - len(marker), 0)
+    return stripped[:keep].rstrip() + marker
+
+
 def _distilled_design_reference_block(project: ProjectModel, phase: str) -> str:
     """Return a pre-rendered distilled mature-fiction design block for a phase."""
 
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
     parts: list[str] = []
+    max_chars = _DISTILLED_REFERENCE_PHASE_CHAR_BUDGETS.get(phase, 2400)
     strategy_blocks = metadata.get("distilled_strategy_blocks")
     if isinstance(strategy_blocks, dict):
         strategy_block = strategy_blocks.get(phase)
@@ -343,7 +364,12 @@ def _distilled_design_reference_block(project: ProjectModel, phase: str) -> str:
     if phase == "architecture" and isinstance(block, str) and block.strip():
         parts.append(block.strip())
     if parts:
-        return "\n\n" + "\n\n".join(parts) + "\n"
+        per_part_budget = max(max_chars // len(parts), 800)
+        trimmed_parts = [
+            _trim_distilled_reference_part(part, max_chars=per_part_budget)
+            for part in parts
+        ]
+        return "\n\n" + "\n\n".join(trimmed_parts) + "\n"
     return ""
 
 
@@ -996,6 +1022,63 @@ def _outline_scene_story_repair(chapter: Any, scene: Any) -> str:
     )
 
 
+def _outline_visible_story_candidate(*values: Any) -> str:
+    try:
+        from bestseller.services.narrative_contracts import _has_meta_planning_language
+    except Exception:
+        _has_meta_planning_language = lambda _value: False  # type: ignore[assignment]
+
+    for value in values:
+        for raw_line in str(value or "").splitlines():
+            line = _non_empty_string(raw_line, "")
+            if not line:
+                continue
+            if re.match(r"^(开篇合同|30%解锁合同|能力代价合同|爽点合同|收束合同|连续性合同)[:：]", line):
+                continue
+            if re.match(r"^(第\d+段)?前\d+字", line):
+                continue
+            if "合同" in line or "读者" in line:
+                continue
+            if _has_meta_planning_language(line):
+                continue
+            return line
+    return ""
+
+
+def _outline_chapter_goal_repair(chapter: Any, *, protagonist_name: str) -> str:
+    candidate = _outline_visible_story_candidate(
+        getattr(chapter, "main_conflict", None),
+        getattr(chapter, "opening_situation", None),
+        getattr(chapter, "hook_description", None),
+    )
+    if candidate:
+        return candidate
+    label = _outline_chapter_label(chapter)
+    return f"{protagonist_name}在「{label}」中面对当前压力并做出可见选择。"
+
+
+def _outline_chapter_conflict_repair(chapter: Any, *, protagonist_name: str) -> str:
+    candidate = _outline_visible_story_candidate(
+        getattr(chapter, "opening_situation", None),
+        getattr(chapter, "chapter_goal", None),
+        getattr(chapter, "hook_description", None),
+    )
+    if candidate:
+        return candidate
+    label = _outline_chapter_label(chapter)
+    return f"{protagonist_name}必须在「{label}」里处理当前阻力，否则失去关键线索。"
+
+
+def _outline_chapter_hook_repair(chapter: Any, *, protagonist_name: str) -> str:
+    candidate = _outline_visible_story_candidate(
+        getattr(chapter, "hook_description", None),
+        getattr(chapter, "main_conflict", None),
+    )
+    if candidate:
+        return candidate
+    return f"{protagonist_name}拿到新的证据，但这条证据把压力推向下一步行动。"
+
+
 def _outline_purpose_character_names(
     story_purpose: str,
     identity_index: dict[str, dict[str, Any]],
@@ -1105,6 +1188,13 @@ def _outline_find_chapter_scene(
     return None
 
 
+def _outline_find_chapter(batch: Any, *, chapter_number: Any) -> Any | None:
+    for chapter in getattr(batch, "chapters", []) or []:
+        if getattr(chapter, "chapter_number", None) == chapter_number:
+            return chapter
+    return None
+
+
 def _repair_generated_volume_outline_contract_blocks(
     batch: Any,
     report: Any,
@@ -1150,6 +1240,54 @@ def _repair_generated_volume_outline_contract_blocks(
     for violation in getattr(report, "blocking_violations", ()) or ():
         code = getattr(violation, "code", "")
         metadata = getattr(violation, "metadata", {}) or {}
+        if code in {
+            "PLAN_CHAPTER_GOAL_GENERIC",
+            "PLAN_CHAPTER_GOAL_META",
+        }:
+            chapter = _outline_find_chapter(
+                batch,
+                chapter_number=metadata.get("chapter_number"),
+            )
+            if chapter is not None:
+                chapter.chapter_goal = _outline_chapter_goal_repair(
+                    chapter,
+                    protagonist_name=protagonist_name,
+                )
+                repaired += 1
+            continue
+
+        if code in {
+            "PLAN_CHAPTER_CONFLICT_GENERIC",
+            "PLAN_CHAPTER_CONFLICT_META",
+        }:
+            chapter = _outline_find_chapter(
+                batch,
+                chapter_number=metadata.get("chapter_number"),
+            )
+            if chapter is not None:
+                chapter.main_conflict = _outline_chapter_conflict_repair(
+                    chapter,
+                    protagonist_name=protagonist_name,
+                )
+                repaired += 1
+            continue
+
+        if code in {
+            "PLAN_CHAPTER_HOOK_GENERIC",
+            "PLAN_CHAPTER_HOOK_META",
+        }:
+            chapter = _outline_find_chapter(
+                batch,
+                chapter_number=metadata.get("chapter_number"),
+            )
+            if chapter is not None:
+                chapter.hook_description = _outline_chapter_hook_repair(
+                    chapter,
+                    protagonist_name=protagonist_name,
+                )
+                repaired += 1
+            continue
+
         found = _outline_find_chapter_scene(
             batch,
             chapter_number=metadata.get("chapter_number"),
@@ -4063,6 +4201,36 @@ async def _repair_cast_personhood_if_needed(
         "Cast personhood gate found %d actionable deficiency(ies); attempting repair.",
         len(actionable),
     )
+
+    try:
+        synthesized_payload = _synthesize_missing_cast_bible_fields(
+            project,
+            cast_spec_payload,
+        )
+        synthesized_draft = build_draft_from_materialization_content(
+            book_spec_content=book_spec_payload,
+            world_spec_content=world_spec_payload,
+            cast_spec_content=synthesized_payload,
+        )
+        synthesized_report = validate_bible_completeness(synthesized_draft, invariants)
+        synthesized_actionable = [
+            d
+            for d in synthesized_report.deficiencies
+            if d.code in _CAST_PERSONHOOD_REPAIR_CODES
+        ]
+        if len(synthesized_actionable) < len(actionable):
+            logger.info(
+                "Cast personhood deterministic repair reduced deficiencies "
+                "(%d -> %d); skipping LLM repair.",
+                len(actionable),
+                len(synthesized_actionable),
+            )
+            return synthesized_payload, None
+    except Exception:
+        logger.debug(
+            "Cast personhood deterministic repair failed; falling back to LLM repair.",
+            exc_info=True,
+        )
 
     try:
         language = _planner_language(project)
@@ -15123,9 +15291,25 @@ async def generate_novel_plan(
         all_outline_chapters: list[dict[str, Any]] = []
         chapter_offset = 1
 
+        _project_total_chapters = max(int(getattr(project, "target_chapters", 0) or 0), 1)
         for vol_entry in normalized_vp:
             vol_num = int(vol_entry.get("volume_number", 1))
             vol_ch_count = int(vol_entry.get("chapter_count_target", 10))
+            # Clamp: a single volume's chapter count can never exceed the
+            # project's total target. The LLM sometimes echoes target_word_count
+            # (e.g. 2200) into chapter_count_target, which makes the
+            # completeness guard demand thousands of chapters and abort. A
+            # volume cannot contain more chapters than the whole book.
+            if vol_ch_count > _project_total_chapters:
+                logger.warning(
+                    "volume %s chapter_count_target=%d exceeds project total %d; "
+                    "clamping (likely an LLM word-count/chapter-count confusion)",
+                    vol_num,
+                    vol_ch_count,
+                    _project_total_chapters,
+                )
+                vol_ch_count = _project_total_chapters
+            vol_ch_count = max(1, vol_ch_count)
 
             # Extract this volume's fallback chapters
             vol_fallback_chapters = [

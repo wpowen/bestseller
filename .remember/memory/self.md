@@ -99,6 +99,30 @@ Wrong: 反复用 StrReplace 改 Python 源文件导致写入被 block。
 Correct: 对非 Markdown 源码用 `python3` 脚本做精确字符串替换，或改完后跑 `pytest` 验证。
 ---
 
+Mistake: Cursor `pre:write:doc-file-warning` hook 拦截对 `pipelines.py` / `reviews.py` 等大文件的 StrReplace。
+Wrong: 反复用 StrReplace 改 Python 源文件导致写入被 block。
+Correct: 对非 Markdown 源码用 `python3` 脚本做精确字符串替换，改完后跑 `pytest --no-cov` 验证。
+
+---
+
+Mistake: 用 `git stash pop` 验证 baseline 时，把 pop 串在 `&& echo restored` 链里，pop 实际未生效（输出 restored 是假象），导致新增文件仍被 stash、后续测试 file-not-found。
+Wrong: `git stash push -u ... && pytest ... ; git stash pop >/dev/null 2>&1 && echo restored`——pop 失败被静默吞掉。
+Correct: stash 验证后**单独**运行 `git stash pop` 并检查输出确认文件恢复；用 `git stash list` 核对栈为空（注意区分本来就存在的旧 stash）。
+
+---
+
+Mistake: 新增"关键词启发式"质量门（payoff_ledger 数 钩子/兑现词）默认设为 critical 硬阻塞，误杀合法的 hook-heavy 悬疑章（payoff_density=0.14 触发 block）。
+Wrong: `evaluate_payoff_ledger` critical → auto_repair 默认开；`block_below_target` 默认 True 把"低于软目标但高于硬下限"也当 critical。
+Correct: 关键词启发式门默认 advisory（severity=high，不进 auto_repair）；真正硬闸门用硬下限字数 + persona/LLM reader-judge；提供 `payoff_block`/`block_below_target` 配置位，校准后再 enforce。
+
+---
+
+Mistake: 验证整仓回归时把 `test_pipeline_services.py`/`test_review_services.py` 的失败默认当成本次改动引入。
+Wrong: 直接假设 37 个失败是回归。
+Correct: 这些重型集成测试在**已提交 baseline**（stash 掉所有未提交改动）下同样失败（如 `test_rewrite_chapter_from_task_creates_new_version` 的 `_collect_post_assembly_duplicate_findings` 用 `deduplication` 模块，与新增 `chapter_duplicate_gate` 无关）；判定回归前必须 stash 验证 baseline。
+
+---
+
 Mistake: 任务台 `refreshDashboard` 每次拉全量 `/api/tasks` + `/api/projects`，含 300 条 progress_events/任务 + 全书章节明细，刷新极慢。
 Wrong: 列表接口返回完整 progress_events 与 `chapter_word_stats.chapters[]` 全量数组。
 Correct: `/api/tasks?summary=1` 截断 events + SQL 聚合字数；`/api/projects?light=1` 跳过 repair 统计；前端防并发刷新 + 轮询 15s。

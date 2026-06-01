@@ -72,7 +72,7 @@ WHILE true:
 | PLAN_WORLD_EXPANSION | volume-plan | planner | `world-expansion.md` | 仅当 volumes > 3；DeferredReveal ≥ 1 | PLAN_WRITING_PROFILE |
 | PLAN_WRITING_PROFILE | 前五份 | planner | `writing-profile.md` | POV/tense/taboo 全量 | PLAN_VOL_README(1) |
 | PLAN_VOL_README(v) | volume-plan + act-plan | planner | `volumes/vol-NN-*/README.md` | outline 数 = 本卷章数 | WRITE_CHAPTER(本卷首章) |
-| WRITE_CHAPTER(c) | writing-profile + characters + outline + 前章尾 200–400 字 + 最近 50 canon facts | writer | `volumes/vol-NN/ch-NNN-*.md`（frontmatter + 正文） | **字数 ≥ 5000** + frontmatter 齐全 | REVIEW_CHAPTER(c) |
+| WRITE_CHAPTER(c) | writing-profile + characters + outline + 前章尾 200–400 字 + 最近 50 canon facts | writer（经 bridge 调流水线） | `volumes/vol-NN/ch-NNN-*.md`（流水线导出，含真实字数 + frontmatter） | **经 `scripts/mode_b_chapter_bridge.py` 跑流水线**：exit 0 = 过门禁；exit 2 → REWRITE；exit 3 → 先 materialize | REVIEW_CHAPTER(c) |
 | REVIEW_CHAPTER(c) | 章节草稿 | critic | 更新 frontmatter.scores + `reviews/chapter-reviews.md` 追加 | 5 维 ≥ 0.70 AND 4 维 ≥ 0.75 | 通过→EXTRACT / 未过→REWRITE |
 | REWRITE_CHAPTER(c) | RewriteTask（含 `=== reference only ===` 围栏）| editor | 覆盖 scope 内段落 | 未改 frontmatter 以外元信息 | REVIEW_CHAPTER(c)；累计 2 次未过→accept_on_stall |
 | EXTRACT_KNOWLEDGE(c) | 章终稿 + canon-facts.md | summarizer | 追加 canon-facts.md + timeline.md | 新 fact 无硬冲突（有冲突→supersedes） | COMMIT_CHAPTER(c) |

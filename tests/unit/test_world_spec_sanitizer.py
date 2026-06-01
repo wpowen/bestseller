@@ -115,3 +115,27 @@ def test_normalizes_overlong_rule_id_before_validation() -> None:
     assert spec.rules[0].rule_id is not None
     assert len(spec.rules[0].rule_id) <= 32
     assert spec.rules[0].rule_id.startswith("reputation_recovery_imp")
+
+
+def test_coerces_string_locations_and_factions_into_structured_entries() -> None:
+    """LLMs often emit world locations/factions as prose strings in lists."""
+    spec = parse_world_spec_input(
+        {
+            "locations": [
+                "林渊诊所（城南昼夜诊所）：林渊的执业场所，建在旧债清偿地遗址上。",
+                "月牙巷: 城南老城区一条弯月形的窄巷，是债市最常显现的地点之一。",
+            ],
+            "factions": [
+                "收账人公会：旧账体系的执行组织，负责催收复杂债务。",
+                "账房: 旧账体系的行政中枢，负责维护账册完整性。",
+            ],
+        }
+    )
+
+    assert [location.name for location in spec.locations] == [
+        "林渊诊所（城南昼夜诊所）",
+        "月牙巷",
+    ]
+    assert spec.locations[0].story_role == "林渊的执业场所，建在旧债清偿地遗址上。"
+    assert [faction.name for faction in spec.factions] == ["收账人公会", "账房"]
+    assert spec.factions[1].goal == "旧账体系的行政中枢，负责维护账册完整性。"

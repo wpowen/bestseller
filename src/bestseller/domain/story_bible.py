@@ -346,6 +346,22 @@ _VOLUME_RANGE_PATTERN = re.compile(r"(\d+)\s*[-–—~到至]\s*(\d+)")
 _VOLUME_INT_PATTERN = re.compile(r"\d+")
 
 
+def _split_label_description(value: str) -> tuple[str, str | None]:
+    """Split common LLM ``"name: description"`` strings into structured fields."""
+    text = value.strip()
+    if not text:
+        return "", None
+    for separator in ("：", ":", " - ", "—", "——", "，", ",", "。"):
+        if separator not in text:
+            continue
+        left, right = text.split(separator, 1)
+        left = left.strip()
+        right = right.strip()
+        if left:
+            return left, right or None
+    return text, None
+
+
 def coerce_to_int_list(value: Any) -> Any:
     """Coerce human-shaped descriptors like ``'1-10章'`` / ``'1,3,5'`` into ``list[int]``.
 
@@ -445,6 +461,14 @@ class LocationInput(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _accept_location_name_aliases(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            name, description = _split_label_description(data)
+            if not name:
+                return data
+            payload: dict[str, Any] = {"name": name}
+            if description:
+                payload["story_role"] = description
+            return payload
         if not isinstance(data, dict):
             return data
         if "name" not in data:
@@ -475,6 +499,14 @@ class FactionInput(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _accept_faction_name_aliases(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            name, description = _split_label_description(data)
+            if not name:
+                return data
+            payload: dict[str, Any] = {"name": name}
+            if description:
+                payload["goal"] = description
+            return payload
         if not isinstance(data, dict):
             return data
         if "name" not in data:

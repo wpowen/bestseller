@@ -217,7 +217,16 @@ def normalize_chapter_word_target(raw_target: Any, project: Any, settings: AppSe
     policy = word_target_policy(settings)
     parsed = _positive_int(raw_target)
     if parsed is not None and policy.chapter_min <= parsed <= policy.chapter_max:
-        return parsed
+        # The chapter WRITING goal must aim at ``chapter_target``, not at
+        # ``chapter_max``. ``chapter_max`` is only the hard publication ceiling.
+        # LLM-proposed outlines routinely echo the max (e.g. 3500) into
+        # target_word_count; if accepted verbatim, per-scene allocation
+        # (target / scene_count) leaves ZERO headroom for the model's natural
+        # +10–20% overshoot, so the chapter blows past the cap and needs 5–7
+        # whole-chapter re-rolls to converge. Aiming at the target instead
+        # keeps scenes small enough that a normal overshoot still lands inside
+        # the band. Shorter LLM proposals are honored as-is.
+        return min(parsed, policy.chapter_target)
     return effective_chapter_word_target(project, settings)
 
 

@@ -17,6 +17,7 @@ from bestseller.domain.fanqie_short import (
     validate_fanqie_short_project,
 )
 from bestseller.domain.project import ProjectCreate
+from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.services.fanqie_short_export import (
     build_signing_readiness_report,
     insert_unlock_line_marker,
@@ -32,6 +33,10 @@ from bestseller.services.fanqie_short_ranking_gate import (
     evaluate_fanqie_closure_gate,
     evaluate_fanqie_ranking_readiness,
     evaluate_fanqie_unlock_ranking_gate,
+)
+from bestseller.services.narrative_contracts import validate_chapter_plan_contract
+from bestseller.services.planning_readiness_gate import (
+    evaluate_chapter_outline_batch_planning_readiness,
 )
 from bestseller.services.story_shape_router import derive_story_shape
 
@@ -119,6 +124,9 @@ def test_fallback_beat_sheet_segment_count() -> None:
     assert sheet.unlock_milestone_segment >= 2
     assert sheet.beats[0].opening_contract
     assert sheet.beats[-1].closure_contract
+    dumped = str(sheet.model_dump(mode="json"))
+    assert "顾器" not in dumped
+    assert "霜钟" not in dumped
 
 
 def test_normalize_beat_sheet_payload_accepts_string_contracts() -> None:
@@ -126,7 +134,7 @@ def test_normalize_beat_sheet_payload_accepts_string_contracts() -> None:
         "title": "器语者",
         "logline": "顾器被冤后用器语共感自证清白。",
         "pov": "first_person",
-        "unlock_milestone_segment": 2,
+        "unlock_milestone_segment": "第2段结束时",
         "beats": [
             {
                 "segment_number": 1,
@@ -141,6 +149,7 @@ def test_normalize_beat_sheet_payload_accepts_string_contracts() -> None:
     normalized = _normalize_beat_sheet_payload(payload)
     sheet = FanqieShortBeatSheet.model_validate(normalized)
 
+    assert sheet.unlock_milestone_segment == 2
     assert sheet.beats[0].opening_contract == {"summary": "前50字让主角进入压迫现场。"}
     assert sheet.beats[0].payoff_contract == {"item_1": "当众拿到第一枚证据"}
 
@@ -384,7 +393,180 @@ def test_build_segment_outline_single_scene_per_segment() -> None:
         assert ch["title"].endswith("段")
         assert "章" not in ch["title"]
         assert len(ch["scenes"]) == 1
-    assert "爽点合同" in batch["chapters"][0]["chapter_goal"]
+        assert "爽点合同" not in ch["chapter_goal"]
+        assert "开篇合同" not in ch["scenes"][0]["purpose"]["story"]
+        assert ch["hook_description"] != "我"
+        assert ch["causal_contract"]["visible_action_or_reaction"]
+        assert ch["protagonist_flaw"]
+        assert ch["scenes"][0]["conflict_stakes"]
+        assert "他身上" not in ch["scenes"][0]["conflict_stakes"]
+        assert ch["scenes"][0]["information_control"]
+        assert ch["scenes"][0]["signature_image"]
+        assert ch["scenes"][0]["cut_point"]
+    assert "爽点合同" in str(batch["chapters"][0]["methodology_contract"])
+
+
+def test_fallback_segment_outline_satisfies_planning_readiness_gate() -> None:
+    project = type(
+        "P",
+        (),
+        {
+            "target_chapters": 4,
+            "target_word_count": 8_000,
+            "slug": "fanqie-fallback-readiness",
+            "title": "追凶笔迹",
+            "language": "zh-CN",
+            "metadata_json": {"pov": "first_person"},
+        },
+    )()
+    sheet = _fallback_beat_sheet(
+        project,
+        "犯罪心理侧写师林彻收到一具尸体的委托，现场指纹指向被嫁祸的嫌疑人。",
+    )
+    batch = build_fanqie_segment_outline_batch(
+        project,
+        sheet,
+        cast_spec={
+            "protagonist": {"name": "林彻"},
+            "supporting_cast": [{"name": "裴远"}, {"name": "程珞"}],
+        },
+    )
+
+    report = evaluate_chapter_outline_batch_planning_readiness(batch)
+    story_dump = " ".join(
+        [
+            chapter["chapter_goal"]
+            + " "
+            + chapter["hook_description"]
+            + " "
+            + chapter["scenes"][0]["purpose"]["story"]
+            for chapter in batch["chapters"]
+        ]
+    )
+
+    assert report.passed
+    assert "开篇合同" not in story_dump
+    assert "30%解锁合同" not in story_dump
+    assert "顾器" not in story_dump
+    assert "霜钟" not in story_dump
+    assert "我 我" not in story_dump
+
+
+def test_build_segment_outline_keeps_fanqie_contract_out_of_story_fields() -> None:
+    project = type(
+        "P",
+        (),
+        {
+            "target_chapters": 1,
+            "target_word_count": 8_000,
+            "slug": "fanqie-contract-clean-test",
+            "title": "追凶笔迹",
+            "language": "zh-CN",
+        },
+    )()
+    beats = FanqieShortBeatSheet(
+        beats=[
+            FanqieShortBeat(
+                segment_number=1,
+                beat_role="hook",
+                purpose=(
+                    "开篇：犯罪侧写师陆鸣接手一起连环凶杀案：四名死者均与一个心理治疗小组有关，"
+                    "凶手在每个现场留下相同符号。——50字内把主角推入压迫现场，"
+                    "300字内亮出不可退让的当前冲突。\n"
+                    "开篇合同：first_50_words: 主角直接进入压迫现场；若有金手指/异能，必须在50字左右可见并参与当前冲突。"
+                ),
+                opening_contract={
+                    "summary": (
+                        "开篇：会议室里，队长周沉当众宣布连环凶杀案由陆鸣独立负责。\n"
+                        "开篇合同：first_50_words: 主角直接进入压迫现场；若有金手指/异能，必须在50字左右可见并参与当前冲突。"
+                    )
+                },
+                unlock_contract={
+                    "summary": "前100字主角成为视角焦点并出现明确污名：周沉公开提到三年前误诊案。"
+                },
+                ability_cost_contract={
+                    "summary": "陆鸣的笔迹分析精准度极高，但过度专注会导致偏头痛发作。"
+                },
+                payoff_contract={
+                    "summary": "前200字给出可见小反馈：陆鸣发现死者手背上有白颖葬礼上出现过的扭曲眼睛图案。"
+                },
+                closure_contract={
+                    "summary": "陆鸣独自前往第一个现场，从笔迹残留中判断凶手受过专业训练。"
+                },
+            )
+        ],
+        unlock_milestone_segment=1,
+    )
+    batch = build_fanqie_segment_outline_batch(
+        project,
+        beats,
+        cast_spec={
+            "protagonist": {"name": "陆鸣"},
+            "supporting_cast": [{"name": "周沉"}, {"name": "白颖"}],
+        },
+    )
+
+    chapter = batch["chapters"][0]
+    story_fields = " ".join(
+        [
+            chapter["chapter_goal"],
+            chapter["main_conflict"],
+            chapter["hook_description"],
+            chapter["scenes"][0]["purpose"]["story"],
+        ]
+    )
+
+    assert "开篇合同" not in story_fields
+    assert "30%解锁合同" not in story_fields
+    assert "爽点合同" not in story_fields
+    assert "50字" not in story_fields
+    assert "金手指" not in story_fields
+    assert "犯罪侧写师陆鸣接手一起连环凶杀案" in chapter["chapter_goal"]
+    assert "fanqie_short_v2" in chapter["methodology_contract"]
+
+    report = validate_chapter_plan_contract(
+        ChapterOutlineBatchInput.model_validate(batch),
+        identity_manifest=[
+            {"name": "陆鸣", "aliases": []},
+            {"name": "周沉", "aliases": []},
+            {"name": "白颖", "aliases": []},
+        ],
+    )
+    assert report.blocks is False
+
+
+def test_build_segment_outline_dedupes_protagonist_name_after_subject_rewrite() -> None:
+    project = type(
+        "P",
+        (),
+        {
+            "target_chapters": 1,
+            "target_word_count": 8_000,
+            "slug": "fanqie-name-dedupe-test",
+            "title": "追凶笔迹",
+            "language": "zh-CN",
+        },
+    )()
+    beats = FanqieShortBeatSheet(
+        beats=[
+            FanqieShortBeat(
+                segment_number=1,
+                beat_role="hook",
+                purpose="主角顾言蹊在会议室提出侧写分析，被组长当众质疑。",
+            )
+        ],
+        unlock_milestone_segment=1,
+    )
+
+    batch = build_fanqie_segment_outline_batch(
+        project,
+        beats,
+        cast_spec={"protagonist": {"name": "顾言蹊"}},
+    )
+
+    chapter = batch["chapters"][0]
+    assert "顾言蹊顾言蹊" not in chapter["chapter_goal"]
+    assert "顾言蹊顾言蹊" not in chapter["scenes"][0]["purpose"]["story"]
 
 
 def test_build_segment_outline_with_book_spec_does_not_use_generic_fallback() -> None:
@@ -454,7 +636,9 @@ def test_build_segment_outline_with_book_spec_does_not_use_generic_fallback() ->
     contract_dump = str(batch["chapters"][0]["causal_contract"])
     assert "continuity_contract" in contract_dump
     assert "陆砚" in contract_dump
-    assert "第1章技术亮相" in batch["chapters"][0]["chapter_goal"]
+    assert "第1章技术亮相" in batch["chapters"][0]["main_conflict"]
+    assert "爽点合同" not in batch["chapters"][0]["chapter_goal"]
+    assert "fanqie_short_v2" in batch["chapters"][0]["methodology_contract"]
     assert batch["chapters"][-1]["main_conflict"] == "第6章规则改写"
 
 

@@ -24,6 +24,45 @@ def _dedupe_string_list(values: list[str]) -> list[str]:
     return deduped
 
 
+def _coerce_profile_text(value: object) -> object:
+    """Keep LLM-shaped profile fragments compatible with string fields."""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key, item in value.items():
+            text = _coerce_profile_text(item)
+            if isinstance(text, str) and text.strip():
+                parts.append(f"{key}: {text.strip()}")
+        return "；".join(parts)
+    if isinstance(value, (list, tuple, set)):
+        parts = []
+        for item in value:
+            text = _coerce_profile_text(item)
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+        return "；".join(parts)
+    return str(value)
+
+
+def _coerce_profile_text_list(value: object) -> object:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        text = _coerce_profile_text(value)
+        return [text] if isinstance(text, str) and text.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        items: list[str] = []
+        for item in value:
+            text = _coerce_profile_text(item)
+            if isinstance(text, str) and text.strip():
+                items.append(text.strip())
+        return items
+    return [str(value)]
+
+
 class MarketPositioningConfig(BaseModel):
     platform_target: str = Field(default="番茄小说", min_length=1, max_length=4000)
     content_mode: str = Field(default="中文网文长篇连载", min_length=1, max_length=4000)
@@ -48,6 +87,28 @@ class MarketPositioningConfig(BaseModel):
     payoff_rhythm: str = Field(default="短回报密集，长回报递延", min_length=1, max_length=4000)
     update_strategy: str = Field(default="日更连载", min_length=1, max_length=4000)
 
+    @field_validator(
+        "platform_target",
+        "content_mode",
+        "prompt_pack_key",
+        "reader_promise",
+        "opening_contract",
+        "opening_strategy",
+        "chapter_hook_strategy",
+        "pacing_profile",
+        "payoff_rhythm",
+        "update_strategy",
+        mode="before",
+    )
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
+    @field_validator("selling_points", "trope_keywords", "hook_keywords", mode="before")
+    @classmethod
+    def coerce_list_fields(cls, values: object) -> object:
+        return _coerce_profile_text_list(values)
+
     @field_validator("selling_points", "trope_keywords", "hook_keywords")
     @classmethod
     def normalize_list_fields(cls, values: list[str]) -> list[str]:
@@ -68,6 +129,11 @@ class CharacterEngineConfig(BaseModel):
     antagonist_mode: str = Field(default="层级递进的系统性对手", min_length=1, max_length=4000)
     ensemble_mode: str = Field(default="配角围绕主角选择形成镜像与反差", min_length=1, max_length=4000)
 
+    @field_validator("*", mode="before")
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
 
 class WorldDesignConfig(BaseModel):
     worldbuilding_density: str = Field(default="medium", min_length=1, max_length=4000)
@@ -80,6 +146,23 @@ class WorldDesignConfig(BaseModel):
     power_system_style: str | None = Field(default=None, max_length=4000)
     mystery_density: str = Field(default="medium", min_length=1, max_length=4000)
     setting_tags: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "worldbuilding_density",
+        "info_reveal_strategy",
+        "rule_hardness",
+        "power_system_style",
+        "mystery_density",
+        mode="before",
+    )
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
+    @field_validator("setting_tags", mode="before")
+    @classmethod
+    def coerce_list_fields(cls, values: object) -> object:
+        return _coerce_profile_text_list(values)
 
     @field_validator("setting_tags")
     @classmethod
@@ -99,6 +182,30 @@ class StylePreferenceConfig(BaseModel):
     taboo_words: list[str] = Field(default_factory=list)
     reference_works: list[str] = Field(default_factory=list)
     custom_rules: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "pov_type",
+        "tense",
+        "prose_style",
+        "sentence_style",
+        "info_density",
+        mode="before",
+    )
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
+    @field_validator(
+        "tone_keywords",
+        "taboo_topics",
+        "taboo_words",
+        "reference_works",
+        "custom_rules",
+        mode="before",
+    )
+    @classmethod
+    def coerce_list_fields(cls, values: object) -> object:
+        return _coerce_profile_text_list(values)
 
     @field_validator(
         "tone_keywords",
@@ -143,6 +250,11 @@ class SerializationStrategyConfig(BaseModel):
         min_length=1,
         max_length=4000,
     )
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
 
 
 _IF_VALID_GENRES = {"都市逆袭", "修仙升级", "悬疑生存", "职场商战", "末日爽文"}

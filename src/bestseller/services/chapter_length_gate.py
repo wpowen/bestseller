@@ -18,9 +18,9 @@ Severity ladder
 - pass — in the target/max band.
 
 Default thresholds (overridable per project via series-bible):
-- hard floor: 2000 zh chars
-- soft warning: 2500 zh chars
-- hard max: 3000 zh chars
+- hard floor: 3000 zh chars
+- soft warning: 3500 zh chars
+- hard max: 5000 zh chars
 
 Block code: ``CHAPTER_TOO_SHORT`` — eligible for auto-repair.
 """
@@ -41,11 +41,13 @@ CHAPTER_TOO_SHORT_BLOCK_CODE: Final[str] = "CHAPTER_TOO_SHORT"
 CHAPTER_BELOW_TARGET_BLOCK_CODE: Final[str] = "CHAPTER_BELOW_TARGET"
 CHAPTER_LENGTH_BLOCK_HIGH_CODE: Final[str] = "CHAPTER_LENGTH_BLOCK_HIGH"
 
-# Default thresholds. Chinese commercial serial fiction lands 2500-4000
-# zh-chars per chapter; below 2000 reads as a sketch.
-DEFAULT_HARD_FLOOR_ZH_CHARS: Final[int] = 2000
-DEFAULT_SOFT_WARNING_ZH_CHARS: Final[int] = 2500
-DEFAULT_HARD_MAX_ZH_CHARS: Final[int] = 3000
+# Default thresholds (zh long-form). Product rule (2026-05-30): chapters land in
+# 1800-3500 zh chars and NEVER exceed 3500. The target sits below the cap so
+# natural variance stays inside the band. Callers that know a project's exact
+# band pass it explicitly; these defaults are the safe long-form fallback.
+DEFAULT_HARD_FLOOR_ZH_CHARS: Final[int] = 1800
+DEFAULT_SOFT_WARNING_ZH_CHARS: Final[int] = 2600
+DEFAULT_HARD_MAX_ZH_CHARS: Final[int] = 3500
 
 # Match any CJK unified ideograph plus the common extension. We
 # deliberately exclude latin chars, digits, and punctuation: a chapter
@@ -89,6 +91,49 @@ def count_zh_chars(text: str) -> int:
     if not text:
         return 0
     return sum(1 for _ in _CJK_CHAR_RE.finditer(text))
+
+
+def trim_chapter_to_hard_max(
+    content_md: str,
+    hard_max_zh_chars: int,
+) -> tuple[str, bool]:
+    """Deterministically cap a chapter at ``hard_max_zh_chars`` CJK characters.
+
+    Last-resort, model-independent guarantee: when an LLM ignores the length
+    contract and writes past the hard ceiling (observed: 5462 zh chars vs a
+    3500 cap), the LLM-rewrite path may fail to shrink it. This function
+    guarantees the cap by keeping whole leading paragraphs up to the limit and
+    dropping the overflow tail. The chapter heading (a leading ``#`` line) is
+    always preserved.
+
+    Returns ``(text, trimmed)`` where ``trimmed`` is True when content was cut.
+    Trimming is a backstop — it runs after compression rewrites, so it should
+    rarely fire; when it does, the hard requirement (never exceed the cap)
+    takes priority over preserving the trailing paragraph.
+    """
+    if hard_max_zh_chars <= 0 or not content_md:
+        return content_md, False
+    if count_zh_chars(content_md) <= hard_max_zh_chars:
+        return content_md, False
+
+    blocks = content_md.split("\n\n")
+    kept: list[str] = []
+    running = 0
+    for block in blocks:
+        block_zh = count_zh_chars(block)
+        is_heading = block.lstrip().startswith("#")
+        # Always keep a leading heading even if it (alone) had no budget.
+        if is_heading and not kept:
+            kept.append(block)
+            running += block_zh
+            continue
+        if running + block_zh > hard_max_zh_chars and kept:
+            break
+        kept.append(block)
+        running += block_zh
+
+    trimmed_text = "\n\n".join(kept).rstrip()
+    return trimmed_text, True
 
 
 def check_chapter_length(
@@ -162,11 +207,11 @@ def render_chapter_length_block(
         return (
             "【章节体量门 — 硬约束，违反即重写】\n"
             f"- 硬下限：{hard_floor} 字（低于：BLOCK_LOW，扩写）。\n"
-            f"- 目标：{soft_warning} 字。\n"
-            f"- 硬上限：{hard_max} 字（高于：BLOCK_HIGH，删减）。\n"
+            f"- 目标：{soft_warning} 字（请向目标靠拢，不要顶着上限写）。\n"
+            f"- 硬上限：{hard_max} 字（绝对红线，超过一个字即判废重写）。\n"
             f"{scene_limit}"
             "- CJK 字数 = 中文汉字（不含标点/空白/英文字母/数字）。\n"
-            "- 写完后自检：本章 CJK 汉字数应在硬下限与硬上限之间。\n"
+            f"- 写完后必须自检：本章 CJK 汉字数 ≤ {hard_max}，否则当场删减到 {soft_warning} 字附近再输出。\n"
             "- 严禁多个 scene 内容糊在同一连续叙述里；每场需有明确分隔（一行空行或场景转换）。"
         )
 
@@ -226,4 +271,5 @@ __all__ = [
     "count_zh_chars",
     "render_chapter_length_block",
     "render_chapter_length_violation_block",
+    "trim_chapter_to_hard_max",
 ]

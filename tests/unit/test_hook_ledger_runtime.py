@@ -67,6 +67,8 @@ def test_render_hook_ledger_planner_contract_when_enabled() -> None:
     assert "方法论 v2 钩子账本合同" in block
     assert "hooks_to_resolve" in block
     assert "information_gap" in block
+    assert "第 1 章可植入 2-3 个钩子" in block
+    assert "消解数不少于植入数" in block
 
 
 def test_hook_ledger_audit_payload_is_json_safe() -> None:

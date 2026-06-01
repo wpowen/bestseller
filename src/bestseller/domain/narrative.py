@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from bestseller.domain.chapter_seam_contract import ChapterSeamContract
 
@@ -150,6 +150,28 @@ class SceneContractRead(BaseModel):
     signature_image: str | None = None  # 本场必须留下的画面
     cut_point: str | None = None  # 场景断点/章尾刀尖位置
     relationship_debts: list[str] = Field(default_factory=list)  # 场景内必须兑现或加压的关系债
+
+    @model_validator(mode="before")
+    @classmethod
+    def _truncate_capped_short_fields(cls, data: object) -> object:
+        # These are short enum-ish tags (camera_distance, reveal_mode, …) but
+        # an LLM may emit a full prose sentence, overflowing the max_length and
+        # hard-failing scene-context assembly mid-draft (2026-05-29). Truncate
+        # instead of aborting; the tag's leading words carry the intent.
+        if not isinstance(data, dict):
+            return data
+        caps = {
+            "transition_type": 32,
+            "hook_type": 32,
+            "information_control_mode": 64,
+            "camera_distance": 64,
+            "reveal_mode": 64,
+        }
+        for field, limit in caps.items():
+            value = data.get(field)
+            if isinstance(value, str) and len(value) > limit:
+                data[field] = value[:limit]
+        return data
 
 
 class EmotionTrackRead(BaseModel):

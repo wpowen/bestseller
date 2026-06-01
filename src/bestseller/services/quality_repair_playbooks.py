@@ -96,6 +96,60 @@ _PLAYBOOKS: dict[str, QualityRepairPlaybook] = {
         instruction="补足本章应有的招牌场景。围绕核心卖点写出不可替代的视觉/仪式/推理/对抗场面，不得只用旁白说明已经发生。",
         acceptance="招牌场景以完整现场呈现，包含角色选择、阻力、代价和新信息。",
     ),
+    "SIGNATURE_IMAGE_MISSING": QualityRepairPlaybook(
+        code="SIGNATURE_IMAGE_MISSING",
+        scope="chapter",
+        instruction="补足方法论场景契约里的招牌意象。每个 scene 的 signature_image 必须被写成可见物件、动作、声响、光影或身体反应，不得只复述抽象主题。",
+        acceptance="所有关键场景都有可被读者看见的标志性画面，且画面推动冲突或揭示新信息。",
+    ),
+    "OPENING_PRESSURE_THIN": QualityRepairPlaybook(
+        code="OPENING_PRESSURE_THIN",
+        scope="paragraph",
+        instruction="重写开篇前100字。必须从当下压力进入：可见动作、感官刺激、异常物证、逼问或危险逼近至少出现两项，禁止先解释背景。",
+        acceptance="前100字内有正在发生的行动和具体压力，读者能立刻知道问题正在逼近。",
+    ),
+    "ENDING_HOOK_MISSING": QualityRepairPlaybook(
+        code="ENDING_HOOK_MISSING",
+        scope="ending",
+        instruction="重写章末最后120-300字。结尾必须抛出新的未解问题、可见威胁、反转信息、未完成动作或选择后果；不得以总结、平静离场或已经解决的问题收束。",
+        acceptance="最后120字内存在明确下一章阅读动力，且钩子落在故事现场而非作者解释。",
+    ),
+    "PARAGRAPH_DUPLICATE_PARAPHRASE": QualityRepairPlaybook(
+        code="PARAGRAPH_DUPLICATE_PARAPHRASE",
+        scope="paragraph",
+        instruction="删除或合并语义重复段落。保留第一次有效表达，后续重复必须改为新证据、新阻力、新选择或直接删除。",
+        acceptance="章内不存在同义改写式循环段，每个段落都产生新的状态变化。",
+    ),
+    "CALLBACK_OBLIGATION_MISSING": QualityRepairPlaybook(
+        code="CALLBACK_OBLIGATION_MISSING",
+        scope="chapter",
+        instruction="补回本章必须兑现的 callback obligation。把指定 clue_surface 写进现场：被角色看见、验证、误解、利用或付出代价，不能只在旁白里说已经处理。",
+        acceptance="本章应兑现的回调义务至少一个以现场结果落地，并同步种下新的后续压力。",
+    ),
+    "LENGTH_OUT_OF_BAND": QualityRepairPlaybook(
+        code="LENGTH_OUT_OF_BAND",
+        scope="chapter",
+        instruction="把章节压回发布字数硬范围。过短时补足行动链、对白交锋、证据变化和代价；过长时删除重复心理、解释性背景和不改变局面的铺陈。",
+        acceptance="章节真实字数回到硬范围内，新增或删除内容不破坏主冲突和章末牵引。",
+    ),
+    "GOLDEN_THREE_WEAK": QualityRepairPlaybook(
+        code="GOLDEN_THREE_WEAK",
+        scope="opening",
+        instruction="强化黄金三章。前1000字必须兑现卖点信号、主角处境压力、核心冲突和至少一个具体悬念，避免慢热铺陈和抽象介绍。",
+        acceptance="前三章读者能迅速看见题材卖点、主角困境、冲突方向和继续阅读的问题。",
+    ),
+    "NAMING_OUT_OF_POOL": QualityRepairPlaybook(
+        code="NAMING_OUT_OF_POOL",
+        scope="chapter",
+        instruction="移除角色池外姓名。重要角色改用项目角色池/本章参与者中的既有人名；功能性人物改为身份称谓，不再临时创造专名。",
+        acceptance="正文中的专名均来自允许名单、正典实体或明确的案卷/记录引用。",
+    ),
+    "CLIFFHANGER_REPEAT": QualityRepairPlaybook(
+        code="CLIFFHANGER_REPEAT",
+        scope="ending",
+        instruction="更换章末悬念类型。若前文已用身体反应、门外来人、电话/传讯、突然停顿等模板，本章必须改用新证据、代价选择、关系反转或行动未完成态。",
+        acceptance="章末钩子与近期章节不重复，并提供新的信息压力或行动压力。",
+    ),
     "EXPOSITION_DUMP": QualityRepairPlaybook(
         code="EXPOSITION_DUMP",
         scope="paragraph",
@@ -131,6 +185,42 @@ _PLAYBOOKS: dict[str, QualityRepairPlaybook] = {
         scope="chapter",
         instruction="修复正典状态倒退。以最新故事事实为准重写角色状态、地点控制权、物件归属和组织关系。",
         acceptance="本章状态与最新正典一致，没有回退到旧版本设定。",
+    ),
+    "WORD_COUNT_METADATA_MISMATCH": QualityRepairPlaybook(
+        code="WORD_COUNT_METADATA_MISMATCH",
+        scope="chapter",
+        instruction="本章正文实际汉字数远低于声称字数（疑似只写了大纲摘要/骨架）。必须把每个场景写成完整现场：动作链、对白交锋、感官细节、人物选择与代价，直到正文真实汉字数达到章节目标硬下限。严禁用形容词堆叠或重复同义句凑数。",
+        acceptance="正文真实 CJK 汉字数达到章节硬下限，且新增内容均为可读现场而非概述。",
+    ),
+    "PAYOFF_LEDGER_LOW": QualityRepairPlaybook(
+        code="PAYOFF_LEDGER_LOW",
+        scope="chapter",
+        instruction="本章钩子多、兑现少（读者一直被吊、很少被满足）。在本章内至少落地一个具体兑现：揭示一项确凿事实、解决一个悬念、让主角付出或赢得可见代价，并写成现场结果而非旁白预告。",
+        acceptance="本章存在至少一个读者可感知的明确兑现，兑现/钩子比回到健康区间。",
+    ),
+    "PAYOFF_HOOK_ONLY": QualityRepairPlaybook(
+        code="PAYOFF_HOOK_ONLY",
+        scope="chapter",
+        instruction="本章只抛钩子、几乎无兑现。补一个当章闭环的小兑现（线索被证实/一次对抗分出胜负/一个秘密被揭开），再用新钩子收尾，避免空转。",
+        acceptance="本章至少兑现一个此前埋设或本章新生的悬念，且仍保留下一章动力。",
+    ),
+    "PERSONA_ABANDON_RATE_HIGH": QualityRepairPlaybook(
+        code="PERSONA_ABANDON_RATE_HIGH",
+        scope="chapter",
+        instruction="模拟读者弃读率过高。定位最可能弃读的段落（开篇拖沓、信息倾倒、缺乏冲突或兑现），重写为：更快进入冲突、把设定藏进动作、补足情绪与兑现，砍掉不推进的过场。",
+        acceptance="开篇即有钩子与张力，全章无大段说明倾倒，弃读风险段被改写。",
+    ),
+    "PERSONA_WEIGHTED_SCORE_LOW": QualityRepairPlaybook(
+        code="PERSONA_WEIGHTED_SCORE_LOW",
+        scope="chapter",
+        instruction="模拟读者综合读感分偏低。同时提升节奏、冲突清晰度、情绪冲击与新鲜感：强化主角主动选择、增加具体感官画面、避免套路化桥段与模板化措辞。",
+        acceptance="综合读感分回到合格线以上，章节在节奏/冲突/情绪/新鲜感各维均无明显短板。",
+    ),
+    "PERSONA_PAYOFF_DENSITY_LOW": QualityRepairPlaybook(
+        code="PERSONA_PAYOFF_DENSITY_LOW",
+        scope="chapter",
+        instruction="模拟读者反馈兑现密度过低。把至少一处悬念在本章内落地为可见结果（证据/对抗结果/关系变化/代价），并确保兑现以现场动作呈现而非概述交代。",
+        acceptance="兑现密度回到目标阈值以上，读者能在本章获得明确满足感。",
     ),
 }
 

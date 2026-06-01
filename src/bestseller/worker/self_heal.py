@@ -108,6 +108,12 @@ SELF_HEAL_JOB_EXPIRES_DAYS = 7
 # ghost and must be cleared before deterministic requeue can succeed.
 STALE_ARQ_IN_PROGRESS_GRACE_SECONDS = 5 * 60
 
+# A freshly-created quickstart project can have zero/partial chapter rows for
+# a few minutes while the web autowrite thread is still creating its first
+# workflow row. Treating that as ``under_target_chapters`` immediately spawns a
+# duplicate autowrite job that races the real one through planning.
+UNDER_TARGET_SELF_HEAL_GRACE_SECONDS = 15 * 60
+
 # Project repair writes a DB heartbeat through worker.tasks while it is alive,
 # so a stale running repair row can be safely reaped by the periodic orphan
 # scanner. A project_repair run that has already reached MACHINE_BLOCKED should
@@ -172,6 +178,7 @@ _ORPHAN_ERROR_MESSAGE = "reaped by self-heal (abandoned by prior worker)"
 _REAPABLE_WORKFLOW_TYPES = frozenset(
     {
         "autowrite_pipeline",
+        "generate_foundation_plan",
         "generate_novel_plan",
         "generate_volume_plan",
         "project_pipeline",
@@ -482,6 +489,12 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             "",
         } or auto_resumable_generation_gate
         if target_chapters > 0 and chapters_total < target_chapters and under_target_status:
+            if _project_is_recent_for_under_target_heal(project):
+                logger.info(
+                    "self-heal: skipped slug=%s — project is too recent for under-target recovery",
+                    project.slug,
+                )
+                continue
             stuck.append(
                 StuckProject(
                     project_id=project.id,
@@ -513,6 +526,18 @@ def _project_is_focus_paused(project: ProjectModel) -> bool:
     if isinstance(focus_pause, dict):
         reason = str(focus_pause.get("reason") or reason).strip()
     return reason.startswith("focus_")
+
+
+def _project_is_recent_for_under_target_heal(project: ProjectModel) -> bool:
+    touched_at = _ensure_utc(getattr(project, "updated_at", None)) or _ensure_utc(
+        getattr(project, "created_at", None)
+    )
+    if touched_at is None:
+        return False
+    cutoff = _dt.datetime.now(tz=_dt.UTC) - _dt.timedelta(
+        seconds=UNDER_TARGET_SELF_HEAL_GRACE_SECONDS,
+    )
+    return touched_at >= cutoff
 
 
 async def _has_active_pipeline_run(session: Any, project_id: Any) -> bool:

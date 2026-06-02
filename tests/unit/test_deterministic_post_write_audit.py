@@ -43,6 +43,59 @@ def test_signature_image_present_passes(tmp_path):
     assert not any(item.code == "SIGNATURE_IMAGE_MISSING" for item in report.findings)
 
 
+def test_signature_image_match_normalizes_chinese_quote_variants(tmp_path):
+    class QuoteScene:
+        scene_number = 1
+        metadata_json: ClassVar[dict] = {
+            "methodology_contract": {
+                "signature_image": "开场以「熟悉地点出现不该存在的第二层空间」切入"
+            }
+        }
+
+    report = audit_chapter_prose(
+        chapter_text="他按住铜钱，冷光一闪。开场以“熟悉地点出现不该存在的第二层空间”切入。最后他问：是谁？",
+        chapter_number=1,
+        project_dir=_project_dir(tmp_path),
+        scenes=[QuoteScene()],
+    )
+
+    assert not any(item.code == "SIGNATURE_IMAGE_MISSING" for item in report.findings)
+
+
+def test_signature_image_global_presence_survives_segment_misalignment(tmp_path):
+    class FirstScene:
+        scene_number = 1
+        metadata_json: ClassVar[dict] = {
+            "methodology_contract": {
+                "signature_image": "铜钱发亮",
+                "cut_point": "第一场断点没有出现在正文里",
+            }
+        }
+
+    class SecondScene:
+        scene_number = 2
+        metadata_json: ClassVar[dict] = {
+            "methodology_contract": {
+                "signature_image": "门后传来响声",
+                "cut_point": "第二场断点没有出现在正文里",
+            }
+        }
+
+    report = audit_chapter_prose(
+        chapter_text=(
+            "他推开门，先听见风声压住楼道。"
+            "门后传来响声。"
+            "直到第二段调查结束，铜钱发亮，照出墙上的旧痕。"
+            "最后他问：是谁？"
+        ),
+        chapter_number=1,
+        project_dir=_project_dir(tmp_path),
+        scenes=[FirstScene(), SecondScene()],
+    )
+
+    assert not any(item.code == "SIGNATURE_IMAGE_MISSING" for item in report.findings)
+
+
 def test_opening_first_100_chars_lacking_action_verb_fails(tmp_path):
     report = audit_chapter_prose(
         chapter_text="夜色非常安静，空气沉闷得像一块布。最后他问：是谁？",

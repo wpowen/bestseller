@@ -22,7 +22,6 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,6 +65,7 @@ async def forge_all_materials(
     settings: AppSettings,
     *,
     sub_genre: str | None = None,
+    concept_lab_context: str | None = None,
     max_rounds_per_dimension: int = 10,
     cold_start_min_seeds: int = 1,
 ) -> list[ForgeResult]:
@@ -86,6 +86,9 @@ async def forge_all_materials(
         Global :class:`AppSettings` — drives LLM role config.
     sub_genre:
         Optional sub-genre refinement forwarded to library queries.
+    concept_lab_context:
+        Optional selected Concept Lab material contract forwarded to every
+        forge, so project materials follow the same reader-promise lineage.
     max_rounds_per_dimension:
         Hard cap on LLM tool-loop rounds per dimension.
     cold_start_min_seeds:
@@ -147,6 +150,7 @@ async def forge_all_materials(
                 settings=settings,
                 sub_genre=sub_genre,
                 existing_materials=existing,
+                concept_lab_context=concept_lab_context,
                 max_rounds=max_rounds_per_dimension,
             )
         except Exception:  # noqa: BLE001 — one forge failure must not abort entire pipeline

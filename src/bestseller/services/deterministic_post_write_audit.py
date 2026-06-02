@@ -149,6 +149,8 @@ def _scan_signature_images(text: str, scenes: Sequence[Any]) -> list[Determinist
         segment_text = segment.text if segment is not None else text
         if _phrase_present_fuzzy(segment_text, image):
             continue
+        if segment is not None and _phrase_present_fuzzy(text, image):
+            continue
         findings.append(
             DeterministicAuditFinding(
                 code="SIGNATURE_IMAGE_MISSING",
@@ -299,8 +301,8 @@ def _scene_signature_image(scene: Any) -> str:
 
 
 def _phrase_present_fuzzy(text: str, phrase: str) -> bool:
-    clean_text = re.sub(r"\s+", "", text or "")
-    clean_phrase = re.sub(r"\s+", "", phrase or "")
+    clean_text = _normalize_phrase_for_presence(text)
+    clean_phrase = _normalize_phrase_for_presence(phrase)
     if not clean_phrase:
         return True
     if clean_phrase in clean_text:
@@ -310,6 +312,26 @@ def _phrase_present_fuzzy(text: str, phrase: str) -> bool:
         if SequenceMatcher(None, clean_text[index : index + window], clean_phrase).ratio() >= 0.7:
             return True
     return False
+
+
+def _normalize_phrase_for_presence(value: str) -> str:
+    table = str.maketrans(
+        {
+            "“": '"',
+            "”": '"',
+            "「": '"',
+            "」": '"',
+            "『": '"',
+            "』": '"',
+            "，": ",",
+            "。": ".",
+            "；": ";",
+            "：": ":",
+            "！": "!",
+            "？": "?",
+        }
+    )
+    return re.sub(r"\s+", "", (value or "").translate(table))
 
 
 def _char_bigram_similarity(left: str, right: str) -> float:

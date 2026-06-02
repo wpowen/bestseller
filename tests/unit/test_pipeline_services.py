@@ -33,6 +33,7 @@ from bestseller.services import exports as export_services
 from bestseller.services import identity_guard as identity_guard_services
 from bestseller.services import pipelines as pipeline_services
 from bestseller.services import reviews as review_services
+from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.truth_version import TruthVersionStaleError
 from bestseller.services.write_safety_gate import WriteSafetyBlockError, WriteSafetyFinding
 from bestseller.settings import load_settings
@@ -636,6 +637,29 @@ async def test_release_stale_auto_repair_block_when_latest_quality_report_is_cle
 
 
 @pytest.mark.asyncio
+async def test_release_stale_block_even_after_auto_repair_metadata_was_cleared() -> None:
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        production_state="blocked",
+        metadata_json={},
+    )
+    report = SimpleNamespace(
+        blocks_write=False,
+        report_json={"violations": [], "blocking_codes": []},
+    )
+    session = FakeSession(scalar_results=[report])
+
+    released = await pipeline_services._release_stale_auto_repair_block_if_latest_quality_clean(
+        session,
+        chapter,
+    )
+
+    assert released is True
+    assert chapter.production_state == "ok"
+    assert chapter.metadata_json["auto_repair_resolved_by_clean_quality_report"] is True
+
+
+@pytest.mark.asyncio
 async def test_release_stale_auto_repair_block_preserves_other_hard_gate_blocks() -> None:
     chapter = SimpleNamespace(
         id=uuid4(),
@@ -1165,6 +1189,57 @@ def test_chapter_first_prompt_uses_publish_band_not_tight_target_delta() -> None
     assert "篇幅硬范围是 2000-3000 个汉字" in user_prompt
     assert "补入林正淳和青囊线索" not in user_prompt
     assert "2024-2376" not in user_prompt
+
+
+def test_chapter_first_prompt_includes_selected_concept_lab_contract() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "concept_lab": bundle.model_dump(mode="json"),
+    }
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    context_packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        story_bible={},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+    )
+
+    assert "【已选脑洞组合合同】" in user_prompt
+    assert bundle.reader_promise in user_prompt
+    assert "per_chapter_contract" in user_prompt
 
 
 def test_chapter_first_prompt_uses_current_scene_contract_not_stale_metadata() -> None:
@@ -4957,6 +5032,144 @@ async def test_run_project_pipeline_exports_project_checkpoint_when_machine_repa
 
 
 @pytest.mark.asyncio
+async def test_run_project_pipeline_passes_concept_lab_context_to_material_forge(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "concept_lab": bundle.model_dump(mode="json"),
+    }
+    chapter = build_chapter(project.id)
+    captured: dict[str, object] = {}
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=uuid4(),
+        chapter_draft_version_no=1,
+        export_artifact_id=uuid4(),
+        output_path=str(tmp_path / "output" / "chapter-001.md"),
+        requires_human_review=False,
+    )
+    export_artifact = ExportArtifactModel(
+        project_id=project.id,
+        export_type="markdown",
+        source_scope="project",
+        source_id=project.id,
+        storage_uri=str(tmp_path / "output" / "project.md"),
+        checksum="f" * 64,
+        version_label="project-current",
+    )
+    export_artifact.id = uuid4()
+
+    class _CountResult:
+        def scalar_one(self) -> int:
+            return 0
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_forge_all_materials(*args: object, **kwargs: object) -> list[object]:
+        captured["concept_lab_context"] = kwargs.get("concept_lab_context")
+        return [SimpleNamespace(emitted_count=3)]
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return chapter_result
+
+    async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
+        output_path = tmp_path / "output" / "project.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("# My Story", encoding="utf-8")
+        return export_artifact, output_path
+
+    async def fake_review_project_consistency(
+        session,
+        settings,
+        project_slug: str,
+        **kwargs,
+    ):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "pass"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
+    from bestseller.services import material_forge
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(material_forge, "forge_all_materials", fake_forge_all_materials)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(pipeline_services, "export_project_markdown", fake_export_project_markdown)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        AsyncMock(
+            return_value=type(
+                "NarrativeGraphResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "plot_arc_count": 3, "clue_count": 1},
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        AsyncMock(
+            return_value=type(
+                "NarrativeTreeResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "node_count": 16},
+            )()
+        ),
+    )
+
+    settings = build_settings()
+    settings.pipeline.enable_forge_pipeline = True
+    session = FakeSession(execute_results=[_CountResult()])
+    progress_events: list[tuple[str, dict[str, object]]] = []
+
+    result = await pipeline_services.run_project_pipeline(
+        session,
+        settings,
+        "my-story",
+        requested_by="tester",
+        export_markdown=True,
+        progress=lambda stage, payload: progress_events.append((stage, payload)),
+    )
+
+    context = str(captured["concept_lab_context"])
+    assert result.final_verdict == "pass"
+    assert "已选脑洞物料合同" in context
+    assert bundle.reader_promise in context
+    assert bundle.material_brief.query_terms[0] in context
+    assert ("material_forge_completed", {
+        "project_slug": project.slug,
+        "total_forged": 3,
+        "concept_lab_material_brief": True,
+    }) in progress_events
+
+
+@pytest.mark.asyncio
 async def test_run_project_pipeline_stops_after_machine_repair_chapter(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -5413,6 +5626,102 @@ async def test_run_project_pipeline_warns_on_partial_project_consistency_failure
 
 
 @pytest.mark.asyncio
+async def test_run_project_pipeline_warns_on_draft_mode_project_consistency_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=uuid4(),
+        chapter_draft_version_no=1,
+        requires_human_review=False,
+    )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return chapter_result
+
+    async def fake_review_project_consistency(
+        session,
+        settings,
+        project_slug: str,
+        **kwargs,
+    ):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "attention"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        AsyncMock(
+            return_value=type(
+                "NarrativeGraphResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "plot_arc_count": 3, "clue_count": 1},
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        AsyncMock(
+            return_value=type(
+                "NarrativeTreeResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "node_count": 16},
+            )()
+        ),
+    )
+
+    settings = build_settings()
+    settings.pipeline.project_consistency_block_on_failure = True
+    settings.quality.draft_mode = True
+    session = FakeSession()
+    result = await pipeline_services.run_project_pipeline(
+        session,
+        settings,
+        "my-story",
+        requested_by="tester",
+        export_markdown=False,
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+    assert result.requires_human_review is False
+    assert result.final_verdict == "draft"
+    assert workflow_runs[0].status == "completed"
+    assert workflow_runs[0].metadata_json["project_consistency_warn_only"] is True
+    assert workflow_runs[0].metadata_json["project_consistency_scope"] == "draft_mode"
+
+
+@pytest.mark.asyncio
 async def test_run_project_pipeline_backfills_qimao_planning_contract_from_outline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -5612,6 +5921,47 @@ def test_record_commercial_planning_readiness_gate_blocks_thin_long_serial(
     assert (tmp_path / "story-bible" / "series-brief.md").exists()
     assert (tmp_path / "story-bible" / "volume-plan.csv").exists()
     assert project.metadata_json["commercial_planning_readiness_status"] == "planned_gate_failed"
+
+
+def test_commercial_planning_error_message_includes_llm_blocking_codes() -> None:
+    message = pipeline_services._commercial_planning_readiness_error_message(
+        {"passed": True, "findings": []},
+        llm_judge_payload={
+            "pass": False,
+            "blocking_issues": [
+                {
+                    "code": "CONFLICT_TOO_ABSTRACT",
+                    "severity": "high",
+                    "evidence": "conflict has no opponent or stakes",
+                }
+            ],
+        },
+    )
+
+    assert message == (
+        "Commercial planning readiness gate failed: llm:CONFLICT_TOO_ABSTRACT"
+    )
+
+
+def test_commercial_planning_llm_judge_does_not_block_without_actionable_issues() -> None:
+    judge_result = SimpleNamespace(passed=False, blocking_issues=())
+
+    assert (
+        pipeline_services._commercial_planning_llm_judge_should_block(judge_result)
+        is False
+    )
+
+
+def test_commercial_planning_llm_judge_blocks_with_actionable_issues() -> None:
+    judge_result = SimpleNamespace(
+        passed=False,
+        blocking_issues=(SimpleNamespace(code="CONFLICT_TOO_ABSTRACT"),),
+    )
+
+    assert (
+        pipeline_services._commercial_planning_llm_judge_should_block(judge_result)
+        is True
+    )
 
 
 def test_record_commercial_planning_readiness_repairs_only_weak_hype_assignment(

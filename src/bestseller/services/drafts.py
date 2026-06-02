@@ -55,6 +55,7 @@ from bestseller.services.context import (
     build_chapter_writer_context,
     build_scene_writer_context_from_models,
 )
+from bestseller.services.concept_lab import render_concept_lab_prompt_block
 from bestseller.services.dialogue_personality_bridge import (
     render_dialogue_personality_bridge_block,
 )
@@ -1534,8 +1535,13 @@ async def _evaluate_chapter_quality_gate(
     # This keeps autonomous runs moving forward while preserving the debt
     # ledger for later payback accountability.
     override_autosign_count = 0
+    _phase_c_only_from = gates_cfg.phase_c.only_enforce_from_chapter
+    _phase_c_in_window = (
+        _phase_c_only_from is None or chapter_number >= _phase_c_only_from
+    )
     if (
         gates_cfg.phase_c.enabled
+        and _phase_c_in_window
         and blocking
         and invariants.soft_constraint_codes
         and all(v.code in invariants.soft_constraint_codes for v in blocking)
@@ -5218,6 +5224,36 @@ def build_scene_draft_prompts(
     emotion_track_section = _render_emotion_track_section(active_emotion_tracks, language=language)
     antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans, language=language)
     contract_section = _render_contract_section(chapter_contract, scene_contract, language=language)
+    _scene_metadata, _scene_methodology_contract, _scene_controls = _scene_current_contract_controls(
+        scene
+    )
+    _current_scene_contract: dict[str, Any] = {
+        "methodology_contract": _scene_methodology_contract,
+        "signature_image": _scene_controls.get("signature_image"),
+        "cut_point": _scene_controls.get("cut_point"),
+        "ending_hook_payload": _scene_controls.get("ending_hook_payload"),
+        "action_sequence": _scene_controls.get("action_sequence"),
+        "information_control_mode": _scene_controls.get("information_control_mode"),
+    }
+    _current_scene_contract = {
+        key: value
+        for key, value in _current_scene_contract.items()
+        if value not in (None, "", [], {})
+    }
+    current_scene_contract_line = ""
+    if _current_scene_contract:
+        current_scene_contract_line = (
+            "=== Current scene execution contract ===\n"
+            "These fields are hard prose obligations. The signature image and cut point "
+            "must appear visibly in this scene body.\n"
+            f"{_compact_json_block(_current_scene_contract, max_chars=1400)}\n\n"
+            if is_en
+            else (
+                "=== 当前场景执行合同（必须写入正文）===\n"
+                "以下字段是硬性正文义务：signature_image / 标志画面 与 cut_point / 断点必须在本场正文中可见落地。\n"
+                f"{_compact_json_block(_current_scene_contract, max_chars=1400)}\n\n"
+            )
+        )
     story_principle_line = _render_story_principle_execution_section(
         chapter,
         scene,
@@ -5486,6 +5522,10 @@ def build_scene_draft_prompts(
     _reader_contract_line = ""
     if reader_contract_block:
         _reader_contract_line = f"{reader_contract_block}\n\n"
+    _concept_lab_contract_line = ""
+    _concept_lab_contract_block = render_concept_lab_prompt_block(_project_meta, language=language)
+    if _concept_lab_contract_block:
+        _concept_lab_contract_line = f"{_concept_lab_contract_block}\n\n"
     _hype_constraints_line = ""
     if hype_constraints_block:
         _hype_constraints_line = f"{hype_constraints_block}\n\n"
@@ -5699,7 +5739,9 @@ def build_scene_draft_prompts(
             "scene_scope_isolation_line": _scene_scope_isolation_line,
             "plan_richness_line": _plan_richness_line,
             "reader_contract_line": _reader_contract_line,
+            "concept_lab_contract_line": _concept_lab_contract_line,
             "hype_constraints_line": _hype_constraints_line,
+            "current_scene_contract_line": current_scene_contract_line,
             "qimao_opening_contract_line": _qimao_opening_contract_line,
             "l3_prompt_line": _l3_prompt_line,
             "voice_dna_line": _voice_dna_line,
@@ -5777,7 +5819,9 @@ def build_scene_draft_prompts(
     _scene_scope_isolation_line = _ctx["scene_scope_isolation_line"]
     _plan_richness_line = _ctx["plan_richness_line"]
     _reader_contract_line = _ctx["reader_contract_line"]
+    _concept_lab_contract_line = _ctx["concept_lab_contract_line"]
     _hype_constraints_line = _ctx["hype_constraints_line"]
+    current_scene_contract_line = _ctx["current_scene_contract_line"]
     _qimao_opening_contract_line = _ctx["qimao_opening_contract_line"]
     _l3_prompt_line = _ctx["l3_prompt_line"]
     _voice_dna_line = _ctx["voice_dna_line"]
@@ -5836,7 +5880,9 @@ def build_scene_draft_prompts(
             f"{_contradiction_line}"
             f"{_query_brief_line}"
             f"{_reader_contract_line}"
+            f"{_concept_lab_contract_line}"
             f"{_hype_constraints_line}"
+            f"{current_scene_contract_line}"
             f"{_qimao_opening_contract_line}"
             f"{_l3_prompt_line}"
             f"{_voice_dna_line}"
@@ -5943,7 +5989,9 @@ def build_scene_draft_prompts(
             f"{_contradiction_line}"
             f"{_query_brief_line}"
             f"{_reader_contract_line}"
+            f"{_concept_lab_contract_line}"
             f"{_hype_constraints_line}"
+            f"{current_scene_contract_line}"
             f"{_qimao_opening_contract_line}"
             f"{_l3_prompt_line}"
             f"{_voice_dna_line}"
@@ -7476,6 +7524,9 @@ def build_chapter_first_draft_prompts(
         scenes,
     )
     acceptance_contract_block = _redact_front10_prompt_leaks(acceptance_contract_block, chapter, scenes)
+    project_meta = getattr(project, "metadata_json", None)
+    project_meta = project_meta if isinstance(project_meta, Mapping) else {}
+    concept_lab_contract_block = render_concept_lab_prompt_block(project_meta, language=language)
     knowledge_boundary_block = _render_knowledge_state_section(
         getattr(context_packet, "participant_knowledge_states", None),
         is_en=is_en,
@@ -7729,6 +7780,7 @@ def build_chapter_first_draft_prompts(
             opening_scene_contract,
             front_forbidden_terms_block,
             opening_retention_rules,
+            concept_lab_contract_block,
             contract_must_hit_block,
             volume_seed_block,
             "【章节契约】\n" + _compact_json_block(chapter_contract, max_chars=3500)

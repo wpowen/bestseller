@@ -9,6 +9,7 @@ from typing import Any
 from bestseller.domain.anti_commonsense_hook import HookCandidate, HookMechanism, HookSpec
 from bestseller.services.anti_commonsense_mechanisms import (
     get_mechanism,
+    list_mechanisms,
     select_mechanisms_for_genre,
 )
 from bestseller.services.deduplication import compute_jaccard_similarity
@@ -20,17 +21,43 @@ from bestseller.services.hook_strength_gate import (
 
 DuplicateRiskFn = Callable[[HookSpec], float]
 
+HOOK_METHODOLOGY_TYPES: tuple[tuple[str, str], ...] = (
+    ("information_gap", "信息差"),
+    ("deadline", "倒计时"),
+    ("mystery", "悬念"),
+    ("desire", "欲望兑现"),
+    ("threat", "逼近威胁"),
+)
+
+OPENING_FRAMES: tuple[tuple[str, str], ...] = (
+    ("countdown_threat", "倒计时威胁开场"),
+    ("forbidden_witness", "撞见禁忌开场"),
+    ("betrayed_first_paragraph", "首段背叛开场"),
+    ("identity_crash", "身份崩塌起笔"),
+    ("body_anomaly", "身体失控异象"),
+    ("public_misread", "公开误读/围观压力"),
+)
+
+EXPRESSION_STYLES: tuple[str, ...] = (
+    "rule_collision",
+    "public_misread",
+    "opening_deadlock",
+    "cost_first",
+    "reader_question",
+    "market_logline",
+)
+
 
 def _seed_from_parts(*parts: object) -> int:
     raw = "|".join(str(part or "") for part in parts)
     return int(hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12], 16)
 
 
-def _pick(rng: random.Random, values: Iterable[str], fallback: str) -> str:
+def _pick_indexed(values: Iterable[str], fallback: str, index: int) -> str:
     items = [str(item).strip() for item in values if str(item).strip()]
     if not items:
         return fallback
-    return rng.choice(items)
+    return items[index % len(items)]
 
 
 def _render_reversal_phrase(reversal: str) -> str:
@@ -40,6 +67,109 @@ def _render_reversal_phrase(reversal: str) -> str:
     if text.startswith(("必须", "越", "最", "反而", "不能", "只有")):
         return f"偏偏{text}"
     return f"却只能{text}"
+
+
+def _quote_reversal(reversal: str) -> str:
+    text = str(reversal or "").strip(" ，。；;")
+    return f"「{text or '反常识规则'}」"
+
+
+def _mechanism_pool_for_generation(
+    genre: str,
+    mechanism_keys: list[str] | tuple[str, ...] | None,
+) -> list[HookMechanism]:
+    if mechanism_keys:
+        return [get_mechanism(key) for key in mechanism_keys]
+    primary = list(select_mechanisms_for_genre(genre))
+    primary_keys = {item.key for item in primary}
+    adjacent = [item for item in list_mechanisms() if item.key not in primary_keys]
+    adjacent.sort(key=lambda item: item.saturation_score)
+    return [*primary, *adjacent]
+
+
+def _methodology_pair(index: int) -> tuple[str, str]:
+    return HOOK_METHODOLOGY_TYPES[index % len(HOOK_METHODOLOGY_TYPES)]
+
+
+def _opening_pair(index: int) -> tuple[str, str]:
+    return OPENING_FRAMES[index % len(OPENING_FRAMES)]
+
+
+def _render_one_liner(
+    *,
+    role: str,
+    desire: str,
+    mechanism: HookMechanism,
+    reversal: str,
+    reward: str,
+    cost: str,
+    misunderstanding: str,
+    hook_type_label: str,
+    opening_label: str,
+    style: str,
+) -> str:
+    """Render the one-liner using the YAML formula pool.
+
+    Kept as a thin wrapper around ``render_one_liner_for_spec`` for backwards
+    compatibility with code that calls it directly. The 6 legacy ``style`` ids
+    (public_misread, opening_deadlock, cost_first, reader_question,
+    market_logline, rule_collision) are now formula ids in the pool and
+    render exactly the same way as before.
+    """
+
+    from bestseller.services.hook_formula_pool import render_one_liner_for_spec
+
+    # Build a temporary spec with the slot values; the spec.mechanism_key is
+    # the only attribute the formula selector reads (via select_formula_for_mechanism).
+    proxy_spec = HookSpec(
+        mechanism_key=mechanism.key,
+        genre=getattr(mechanism, "_genre_for_pool", "") or "",
+        setting_locale=None,
+        protagonist_role=role,
+        base_desire=desire,
+        reversal=reversal,
+        rewards=(reward,),
+        costs=(cost,),
+        misunderstanding=misunderstanding or None,
+        hook_type=hook_type_label or "",
+        opening_frame=opening_label or "",
+        expression_style=style,
+        one_liner="placeholder",
+        core_rule="placeholder",
+    )
+    return render_one_liner_for_spec(
+        proxy_spec,
+        formula_id=style or None,
+        mechanism=mechanism,
+        mechanism_label=mechanism.label,
+    )
+
+
+def _render_one_liner_from_spec(spec: HookSpec, *, style: str | None = None) -> str:
+    """Public alias for tests / external callers that already hold a HookSpec."""
+
+    from bestseller.services.hook_formula_pool import render_one_liner_for_spec
+
+    return render_one_liner_for_spec(spec, formula_id=style)
+
+
+def _render_design_brief(
+    *,
+    mechanism: HookMechanism,
+    desire: str,
+    reward: str,
+    cost: str,
+    misunderstanding: str,
+    hook_type_label: str,
+    opening_label: str,
+) -> str:
+    return (
+        "给大模型的机制融合任务: 不要照抄固定能力名, 先围绕题材重新设计可执行规则。"
+        f"底层机制={mechanism.label}; 读者欲望={desire}; 反常识规则={mechanism.reversal_template}; "
+        f"首章钩子形态={opening_label}; 章节钩子类型={hook_type_label}; "
+        f"爽点回报={reward}; 必付代价={cost}; 持续误解={misunderstanding or '外界误读'}。"
+        "输出时必须把它落成世界规则、限制、反作弊、代价升级和章节循环, 不能只写成一句设定说明。"
+    )
 
 
 def _reference_text(spec: HookSpec) -> str:
@@ -70,6 +200,55 @@ def build_hook_duplicate_risk_fn(
     return _risk
 
 
+def _diversify_by_mechanism(
+    candidates: list[HookCandidate],
+    *,
+    count: int,
+    min_h_norm: float,
+    rotation_seed: int | None = None,
+) -> list[HookCandidate]:
+    """Keep ranking quality while preventing one mechanism from flooding previews.
+
+    When ``rotation_seed`` is set, the order in which mechanism buckets are
+    sampled is rotated so the visible page changes on each fresh request
+    (e.g. the "换一批" button). Falling candidates still fill in at the end
+    if there are not enough passing candidates to fill the quota.
+    """
+
+    passing_buckets: dict[str, list[HookCandidate]] = {}
+    fallback_buckets: dict[str, list[HookCandidate]] = {}
+    for item in candidates:
+        key = item.spec.mechanism_key
+        target = passing_buckets if item.score.h_norm >= min_h_norm else fallback_buckets
+        target.setdefault(key, []).append(item)
+
+    passing_keys = list(passing_buckets.keys())
+    falling_keys = [key for key in fallback_buckets.keys() if key not in passing_buckets]
+
+    if rotation_seed is not None:
+        rng = random.Random(int(rotation_seed))
+        rng.shuffle(passing_keys)
+        rng.shuffle(falling_keys)
+
+    selected: list[HookCandidate] = []
+    seen_ids: set[str] = set()
+    for walk_order, source in ((passing_keys, passing_buckets), (falling_keys, fallback_buckets)):
+        for key in walk_order:
+            bucket = source[key]
+            while bucket and bucket[0].spec.one_liner in seen_ids:
+                bucket.pop(0)
+            if not bucket:
+                continue
+            item = bucket.pop(0)
+            selected.append(item)
+            seen_ids.add(item.spec.one_liner)
+            if len(selected) >= count:
+                break
+        if len(selected) >= count:
+            break
+    return selected
+
+
 def _sample_constraints(
     rng: random.Random,
     mechanism: HookMechanism,
@@ -97,6 +276,13 @@ def _sample_constraints(
         "client": "委托人或客户关系会限制行动",
         "truth_gap": "读者和角色之间必须保留信息差",
         "audience": "误解必须发生在具体人群中",
+        "relationship": "关系变动必须被关键关系人感知",
+        "public_eye": "代价或收益必须在公开场合被看见",
+        "oath": "誓言、契约或承诺会反向约束行动",
+        "inheritance": "传承、师徒或血脉会绑定不可卸下的责任",
+        "ledger": "因果账本必须实时结算，不可预支或抹除",
+        "disguise": "身份伪装必须有可被验证的失效条件",
+        "script": "剧本、规则文本或设定本身会反向约束角色",
     }
     return {
         dimension: labels.get(dimension, f"{dimension} 维度必须可验证")
@@ -112,26 +298,76 @@ def build_hook_spec_from_mechanism(
     protagonist_role: str | None = None,
     base_desire: str | None = None,
     rng: random.Random | None = None,
+    variant_index: int = 0,
+    expression_style: str | None = None,
 ) -> HookSpec:
     rng = rng or random.Random(
         _seed_from_parts(mechanism.key, genre, locale, protagonist_role)
     )
-    desire = base_desire or _pick(rng, mechanism.base_desire_pool, "改变命运")
-    reward = _pick(rng, mechanism.reward_pool, "命运翻盘")
-    cost = _pick(rng, mechanism.cost_templates, "每次成功都会留下可见代价")
-    misunderstanding = _pick(rng, mechanism.misunderstanding_patterns, "外界误读主角真实意图")
+    desire = base_desire or _pick_indexed(
+        mechanism.base_desire_pool,
+        "改变命运",
+        variant_index,
+    )
+    reward = _pick_indexed(
+        mechanism.reward_pool,
+        "命运翻盘",
+        variant_index // max(1, len(mechanism.base_desire_pool)),
+    )
+    cost = _pick_indexed(
+        mechanism.cost_templates,
+        "每次成功都会留下可见代价",
+        variant_index // max(1, len(mechanism.base_desire_pool) * len(mechanism.reward_pool)),
+    )
+    misunderstanding = _pick_indexed(
+        mechanism.misunderstanding_patterns,
+        "外界误读主角真实意图",
+        variant_index,
+    )
+    hook_type, hook_type_label = _methodology_pair(variant_index)
+    opening_frame, opening_label = _opening_pair(variant_index)
     role = protagonist_role or "主角"
     constraints = _sample_constraints(rng, mechanism)
     anti_cheat = tuple(list(mechanism.anti_cheat_rules)[:3])
-    arc_engine = tuple(list(mechanism.arc_escalation_axes)[:4])
-    reversal_phrase = _render_reversal_phrase(mechanism.reversal_template)
-    one_liner = f"{role}想{desire}，{reversal_phrase}；赢来{reward}，也付出{cost}。"
-    core_rule = (
-        f"{mechanism.label}机制：当{role}追求「{desire}」时，核心反常识规则是"
-        f"「{mechanism.reversal_template}」；每次获得「{reward}」都绑定「{cost}」，"
-        "且不可通过重复刷分或绕开限制作弊。"
+    arc_engine = tuple(
+        dict.fromkeys(
+            [
+                *list(mechanism.arc_escalation_axes)[:4],
+                hook_type,
+                opening_frame,
+            ]
+        )
     )
-    return HookSpec(
+    core_rule = (
+        f"{mechanism.label}机制骨架：当{role}追求「{desire}」时，必须把"
+        f"「{mechanism.reversal_template}」改造成题材内可验证的行动规则；"
+        f"每次获得「{reward}」都绑定「{cost}」，并通过「{hook_type_label}」"
+        "维持钩子生命周期。"
+    )
+    design_brief = _render_design_brief(
+        mechanism=mechanism,
+        desire=desire,
+        reward=reward,
+        cost=cost,
+        misunderstanding=misunderstanding,
+        hook_type_label=hook_type_label,
+        opening_label=opening_label,
+    )
+    # Build a provisional spec so the formula pool can pick the right template
+    # via the mechanism's formula_affinity and genre, then render the one_liner.
+    from bestseller.services.hook_formula_pool import (
+        render_one_liner_for_spec,
+        select_formula_for_mechanism,
+    )
+
+    formula = select_formula_for_mechanism(
+        mechanism,
+        genre=genre,
+        variant_index=variant_index,
+        formula_id=expression_style,
+    )
+    style = formula.id
+    provisional = HookSpec(
         mechanism_key=mechanism.key,
         genre=genre,
         setting_locale=locale,
@@ -144,9 +380,27 @@ def build_hook_spec_from_mechanism(
         costs=(cost,),
         misunderstanding=misunderstanding,
         arc_engine=arc_engine,
-        one_liner=one_liner,
+        hook_type=hook_type,
+        opening_frame=opening_frame,
+        expression_style=style,
+        methodology_axes=(
+            hook_type,
+            opening_frame,
+            "hook_lifecycle",
+            "core_loop_trigger_action_reward_investment",
+            "but_rule",
+        ),
+        llm_design_brief=design_brief,
+        one_liner="placeholder",
         core_rule=core_rule,
     )
+    one_liner = render_one_liner_for_spec(
+        provisional,
+        formula_id=style,
+        mechanism=mechanism,
+        mechanism_label=mechanism.label,
+    )
+    return provisional.model_copy(update={"one_liner": one_liner})
 
 
 def generate_hook_candidates(
@@ -162,12 +416,15 @@ def generate_hook_candidates(
     duplicate_risk_fn: DuplicateRiskFn | None = None,
     rank_weights: Mapping[str, float] | None = None,
 ) -> list[HookCandidate]:
-    """Generate deterministic HookSpec candidates and rank them."""
+    """Generate deterministic HookSpec candidates and rank them.
 
-    if mechanism_keys:
-        mechanisms = [get_mechanism(key) for key in mechanism_keys]
-    else:
-        mechanisms = list(select_mechanisms_for_genre(genre))
+    The ``seed`` argument doubles as the rotation seed: a different seed
+    produces a different first-page composition (different mechanisms surfaced
+    first), not just a different score ordering. Pass ``None`` to fall back
+    to the genre-derived default seed.
+    """
+
+    mechanisms = _mechanism_pool_for_generation(genre, mechanism_keys)
     if not mechanisms:
         return []
     rng = random.Random(
@@ -184,6 +441,7 @@ def generate_hook_candidates(
     seen_one_liners: set[str] = set()
     for idx in range(attempts):
         mechanism = mechanisms[idx % len(mechanisms)]
+        variant_index = idx // len(mechanisms)
         local_rng = random.Random(rng.randint(1, 10_000_000) + idx)
         spec = build_hook_spec_from_mechanism(
             mechanism,
@@ -192,6 +450,7 @@ def generate_hook_candidates(
             protagonist_role=role,
             base_desire=base_desire,
             rng=local_rng,
+            variant_index=variant_index,
         )
         if spec.one_liner in seen_one_liners:
             continue
@@ -217,9 +476,12 @@ def generate_hook_candidates(
                 combined_rank=round(max(0.0, min(1.0, combined)), 4),
             )
         )
-    if candidates and not any(item.score.h_norm >= min_h_norm for item in candidates):
+    if candidates:
         repaired_candidates: list[HookCandidate] = []
         for item in candidates:
+            if item.score.h_norm >= min_h_norm:
+                repaired_candidates.append(item)
+                continue
             report = evaluate_hook_strength_gate(item.spec, min_h_norm=min_h_norm)
             repaired = repair_hook_spec_once(item.spec, report)
             repaired_score = score_hook(repaired)
@@ -245,7 +507,12 @@ def generate_hook_candidates(
     passing = [item for item in candidates if item.score.h_norm >= min_h_norm]
     failing = [item for item in candidates if item.score.h_norm < min_h_norm]
     ordered = [*passing, *failing]
-    return ordered[: max(0, count)]
+    return _diversify_by_mechanism(
+        ordered,
+        count=max(0, count),
+        min_h_norm=min_h_norm,
+        rotation_seed=seed,
+    )
 
 
 def hook_candidates_to_payload(candidates: list[HookCandidate]) -> list[dict[str, Any]]:

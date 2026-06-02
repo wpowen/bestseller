@@ -34,6 +34,11 @@ from bestseller.services.book_listing import (
     build_book_listing_profile,
     validate_book_listing_profile,
 )
+from bestseller.services.concept_lab import (
+    build_concept_lab_catalog,
+    concept_lab_to_user_hints,
+    select_concept_lab_bundle,
+)
 from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
 from bestseller.services.genre_creativity import (
     creative_direction_to_user_hints,
@@ -41,6 +46,7 @@ from bestseller.services.genre_creativity import (
     get_genre_creativity_catalog_payload,
 )
 from bestseller.services.anti_commonsense_hook import generate_hook_candidates
+from bestseller.services.anti_commonsense_mechanisms import get_mechanism
 from bestseller.services.hook_propagation import coerce_hook_spec
 from bestseller.services.if_generation import run_if_pipeline_integrated
 from bestseller.services.inspection import (
@@ -715,7 +721,18 @@ def _public_writing_preset_catalog_payload() -> dict[str, object]:
                 seed=int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16),
                 min_h_norm=float(getattr(settings.hook_engine, "min_h_norm", 30.0)),
             )
-            hook_candidates[key] = [candidate.model_dump(mode="json") for candidate in candidates]
+            serialized: list[dict[str, object]] = []
+            for candidate in candidates:
+                payload = candidate.model_dump(mode="json")
+                # Attach the Chinese label so the UI never falls back to the
+                # raw mechanism_key when the JS label map is missing an entry.
+                try:
+                    mech = get_mechanism(candidate.spec.mechanism_key)
+                    payload["mechanism_label"] = mech.label
+                except Exception:
+                    payload["mechanism_label"] = candidate.spec.mechanism_key
+                serialized.append(payload)
+            hook_candidates[key] = serialized
         except Exception:
             logger.debug("Failed to generate quickstart hook candidates for %s", key, exc_info=True)
     catalog["hook_candidates"] = hook_candidates
@@ -2712,6 +2729,9 @@ class WebTaskManager:
                 creative_brief = payload.get("creative_brief")
                 if isinstance(creative_brief, dict) and creative_brief:
                     project_metadata["creative_brief"] = creative_brief
+                concept_lab_bundle = payload.get("concept_lab_bundle")
+                if isinstance(concept_lab_bundle, dict) and concept_lab_bundle:
+                    project_metadata["concept_lab"] = concept_lab_bundle
                 extra_meta = payload.get("metadata")
                 if isinstance(extra_meta, dict):
                     project_metadata.update(extra_meta)
@@ -2892,6 +2912,29 @@ class WebTaskManager:
         selected_hook_spec = coerce_hook_spec(payload.get("hook_spec"))
         if selected_hook_spec is not None:
             creative_hints["hook_spec"] = selected_hook_spec.model_dump(mode="json")
+        concept_bundle = (
+            select_concept_lab_bundle(
+                genre_key=genre_key,
+                bundle_id=str(payload.get("concept_lab_bundle_id") or ""),
+                creative_key=creative_direction.key if creative_direction else "",
+                hook_spec=selected_hook_spec,
+                bundle_payload=(
+                    payload.get("concept_lab_bundle")
+                    if isinstance(payload.get("concept_lab_bundle"), dict)
+                    else None
+                ),
+            )
+            if is_new_project
+            else None
+        )
+        if concept_bundle is not None:
+            concept_hints = concept_lab_to_user_hints(concept_bundle)
+            previous_usage_rule = str(creative_hints.get("usage_rule") or "")
+            creative_hints.update(concept_hints)
+            if previous_usage_rule and concept_hints.get("usage_rule"):
+                creative_hints["usage_rule"] = (
+                    f"{previous_usage_rule}\n{concept_hints['usage_rule']}"
+                )
         premise = (
             f"A {genre_preset.genre} ({genre_preset.sub_genre}) novel: {genre_preset.description}"
             if is_en
@@ -2929,6 +2972,9 @@ class WebTaskManager:
                 creative_direction.model_dump(mode="json") if creative_direction else {}
             ),
             "hook_spec": selected_hook_spec.model_dump(mode="json") if selected_hook_spec else {},
+            "concept_lab_bundle": (
+                concept_bundle.model_dump(mode="json") if concept_bundle is not None else {}
+            ),
             "user_hints": creative_hints,
             # Enable AI conception for new projects (not resume)
             "_run_conception": is_new_project,
@@ -2951,6 +2997,23 @@ class WebTaskManager:
             "creative_key": creative_direction.key if creative_direction else "",
             "creative_title": creative_direction.title if creative_direction else "",
             "hook_spec": selected_hook_spec.model_dump(mode="json") if selected_hook_spec else {},
+            "concept_lab_bundle": (
+                concept_bundle.model_dump(mode="json") if concept_bundle is not None else {}
+            ),
+            "concept_lab_summary": (
+                {
+                    "bundle_id": concept_bundle.bundle_id,
+                    "reader_promise": concept_bundle.reader_promise,
+                    "one_liner": concept_bundle.one_liner,
+                    "title_seed": (
+                        concept_bundle.title_seeds[0].text
+                        if concept_bundle.title_seeds
+                        else ""
+                    ),
+                }
+                if concept_bundle is not None
+                else {}
+            ),
             "chapter_count": chapter_count,
             "target_words": target_words,
             "length_key": fanqie_length_key if is_fanqie_short else length_key,
@@ -8181,6 +8244,23 @@ def serve_web_app(
                 if path == "/api/writing-presets":
                     self._send_json(_public_writing_preset_catalog_payload())
                     return
+                if path == "/api/concept-lab":
+                    genre_key = str((query.get("genre_key") or [""])[0] or "")
+                    if not genre_key:
+                        raise ValueError("Field 'genre_key' is required.")
+                    creative_key = str((query.get("creative_key") or [""])[0] or "")
+                    count_raw = str((query.get("count") or ["12"])[0] or "12")
+                    try:
+                        count = max(1, min(12, int(count_raw)))
+                    except ValueError:
+                        count = 12
+                    catalog = build_concept_lab_catalog(
+                        genre_key,
+                        creative_key=creative_key,
+                        count=count,
+                    )
+                    self._send_json(catalog.model_dump(mode="json"))
+                    return
                 if path == "/api/prompt-packs":
                     from bestseller.services.prompt_packs import list_prompt_packs
 
@@ -8978,6 +9058,66 @@ def serve_web_app(
                             return
                     task = task_manager.create_quickstart_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
+                    return
+                if path == "/api/concept-lab/preview":
+                    payload = self._read_json_body()
+                    genre_key = str(payload.get("genre_key") or "")
+                    if not genre_key:
+                        raise ValueError("Field 'genre_key' is required.")
+                    seed_raw = payload.get("seed")
+                    try:
+                        seed_value = int(seed_raw) if seed_raw is not None else None
+                    except (TypeError, ValueError):
+                        seed_value = None
+                    catalog = build_concept_lab_catalog(
+                        genre_key,
+                        creative_key=str(payload.get("creative_key") or ""),
+                        hook_spec=(
+                            payload.get("hook_spec")
+                            if isinstance(payload.get("hook_spec"), dict)
+                            else None
+                        ),
+                        count=max(1, min(12, int(payload.get("count") or 12))),
+                        seed=seed_value,
+                    )
+                    self._send_json(catalog.model_dump(mode="json"))
+                    return
+                if path == "/api/hook-candidates":
+                    payload = self._read_json_body()
+                    genre_key = str(payload.get("genre_key") or payload.get("genre") or "")
+                    if not genre_key:
+                        raise ValueError("Field 'genre_key' is required.")
+                    seed_raw = payload.get("seed")
+                    try:
+                        seed_value = int(seed_raw) if seed_raw is not None else None
+                    except (TypeError, ValueError):
+                        seed_value = None
+                    count_value = max(1, min(12, int(payload.get("count") or 6)))
+                    candidates = generate_hook_candidates(
+                        genre=genre_key,
+                        locale=str(payload.get("locale") or "zh-CN"),
+                        count=count_value,
+                        seed=seed_value,
+                        min_h_norm=float(
+                            getattr(settings.hook_engine, "min_h_norm", 30.0)
+                        ),
+                    )
+                    serialized: list[dict[str, object]] = []
+                    for candidate in candidates:
+                        cand_payload = candidate.model_dump(mode="json")
+                        try:
+                            mech = get_mechanism(candidate.spec.mechanism_key)
+                            cand_payload["mechanism_label"] = mech.label
+                        except Exception:
+                            cand_payload["mechanism_label"] = candidate.spec.mechanism_key
+                        serialized.append(cand_payload)
+                    self._send_json(
+                        {
+                            "genre_key": genre_key,
+                            "seed": seed_value,
+                            "candidates": serialized,
+                        }
+                    )
                     return
                 if path == "/api/llm-profile":
                     payload = self._read_json_body()

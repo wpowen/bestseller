@@ -118,3 +118,39 @@ vol2 cost_paid（保留+追加）         : 既有代价；同伴牺牲风险
 
 ## 5. 一句话总评
 **重建镜像后引擎真实可用、传播真实生效、无运行错误——核心能力 PASS。** 主要遗留是"评分只看结构不看语义"带来的两个连带问题：reject 红线被 repair 架空（F1）、弱命题被注入空壳字段刷分并污染下游（F2）；这两点对"用户自带弱命题"的场景影响最大，建议本轮一并修复。引擎自生成的主流程（mechanism 驱动）质量良好，可放心使用。
+
+---
+
+# 附录 C · 全链路真机验证（live end-to-end）
+
+> 2026-06-01 通过生产路径 `POST /api/tasks/quickstart` 触发真实 LLM 生成（MiniMax-M3），
+> 题材 `apocalypse-rule`（末日规则求生流），chapter_count=3，未预设 hook（验证引擎自动生成路径）。
+> 项目 slug：`apocalypse-rule-1780305533`，task：`ae13b15f-…`。
+
+## C.1 已实时确认（生产环境，真 LLM）
+
+| 链路环节 | 证据 | 结论 |
+|---|---|---|
+| 1. 触发 | HTTP 202，autowrite 任务入队，worker 接管 | ✅ |
+| 2. 构思（conception，多步真 LLM） | 走完 story_architect→commercial→market→character→world→review→creative_exploration→finalize，无错 | ✅ |
+| 3. **钩子自动生成** | 项目 `metadata.hook_spec` 落地，机制 `fourth_disaster` | ✅ |
+| 4. **强度门禁 gate** | `hook_strength_gate`: h_norm=**96.0**, verdict=**pass** | ✅ |
+| 5. **传播→book_spec** | `book_spec.logline` **逐字等于** hook one_liner；`series_engine.reader_promise` 同步 | ✅ |
+| 6. **传播→world_spec** | `rules` 含 `hook_fourth_disaster`；`power_system.hard_limits` 实装钩子限制+反作弊（"禁止用最直观捷径绕过代价；任务奖励不能凭空生成；复活或重试必须消耗世界资源；玩家行动受任务和资源上限约束；…NPC 不能失去主体性"） | ✅ |
+| 7. 运行健康 | api/worker×10 全程无 hook 相关报错 | ✅ |
+
+实测 hook 一句话钩子（生产产物）：
+> 主角想抵抗入侵，偏偏必须利用不可控玩家或观众的混乱，才能拯救秩序；赢来异界资源、权限提升，也付出规则污染；每次成功都会留下公开误解或资源债务。
+
+## C.2 全链路中再次确认 F2（repair 样板话外泄到成品）
+上面这句**生产 logline** 末尾的 "；每次成功都会留下公开误解或资源债务" 正是 `repair_hook_spec_once` 注入的**通用样板代价**（非本书特有）。说明附录 B 的 F2 不仅是理论缺陷，已在真机产物里出现：repair 注入的空壳文本会**逐字写进对外卖点 logline**。**建议把 F2 提为本轮必修。**
+
+## C.3 仍在后台采集（M3 吞吐慢，foundation 阶段 ~25min+）
+- `volume_plan` 的逐卷 `anti_commonsense_escalation_axis` / `volume_resolution.cost_paid` 追加；
+- 章节契约 `conflict_stakes / conflict_buffs` 是否呼应钩子代价/限制；
+- 3 章正文生成 + 导出。
+
+> 这两处传播用的是 `apply_hook_to_volume_plan` / `hook_outline_extra_constraints`，已在附录 2.3 容器内运行级验证通过（vol1 escalation_axis=规则层级、vol1/vol2 cost_paid 追加正确）。本次真机 live 采集仍在后台监控脚本 `/tmp/hook_e2e2.out` 中进行，待 task 终态自动落最终巡检。
+
+## C.4 全链路阶段性结论
+**核心链路（构思→钩子→门禁→book/world 传播）在生产环境真机跑通，零报错——全链路 PASS。** 唯一需注意的是 F2（repair 样板话进入对外 logline），已在真机复现，建议本轮修复。volume/chapter 两处传播机制已在容器内验证通过，真机 live 采集后台进行中。

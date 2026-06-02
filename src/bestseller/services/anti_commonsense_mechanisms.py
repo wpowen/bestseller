@@ -35,6 +35,22 @@ def load_hook_mechanisms(
     keys = [item.key for item in mechanisms]
     if len(keys) != len(set(keys)):
         raise ValueError("Hook mechanism keys must be unique")
+    from bestseller.services.hook_formula_pool import list_formulas
+
+    formula_ids = {formula.id for formula in list_formulas()}
+    missing_formula_ids = sorted(
+        {
+            formula_id
+            for mechanism in mechanisms
+            for formula_id in mechanism.formula_affinity
+            if formula_id not in formula_ids
+        }
+    )
+    if missing_formula_ids:
+        raise ValueError(
+            "Hook mechanism formula_affinity references unknown ids: "
+            f"{missing_formula_ids}"
+        )
     return mechanisms
 
 

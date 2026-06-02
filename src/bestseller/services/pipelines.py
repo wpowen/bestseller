@@ -37,6 +37,7 @@ from bestseller.infra.db.models import (
     ChapterModel,
     ChapterQualityReportModel,
     ChapterStateSnapshotModel,
+    ChaseDebtModel,
     ProjectModel,
     RewriteTaskModel,
     SceneCardModel,
@@ -48,7 +49,7 @@ from bestseller.services.audit_loop import (
     build_phase1_audit,
     run_and_persist_audit,
 )
-from bestseller.services.chase_debt_ledger import ChaseDebtLedger
+from bestseller.services.chase_debt_ledger import accrue_debt_rows
 from bestseller.services.chapter_generation_input_builder import (
     build_chapter_generation_input_bundle,
 )
@@ -822,12 +823,6 @@ async def _release_stale_auto_repair_block_if_latest_quality_clean(
     if str(getattr(chapter, "production_state", "") or "").lower() != "blocked":
         return False
     metadata = dict(getattr(chapter, "metadata_json", None) or {})
-    if not (
-        metadata.get("auto_repair_in_progress")
-        or metadata.get("auto_repair_exhausted")
-        or metadata.get("auto_repair_last_block_codes")
-    ):
-        return False
     if _chapter_has_non_quality_block_metadata(chapter):
         return False
     latest_report = await session.scalar(
@@ -1817,17 +1812,58 @@ def _record_commercial_planning_readiness_gate(
     return payload
 
 
+def _commercial_planning_issue_codes_from_payload(
+    payload: Mapping[str, Any] | None,
+    *,
+    key: str,
+    critical_only: bool,
+) -> list[str]:
+    if not isinstance(payload, Mapping):
+        return []
+    issues = payload.get(key)
+    if not isinstance(issues, list):
+        return []
+    codes: list[str] = []
+    for item in issues:
+        if not isinstance(item, Mapping):
+            continue
+        severity = str(item.get("severity") or "").strip().lower()
+        if critical_only and severity not in {
+            "critical",
+            "block",
+            "blocking",
+            "blocker",
+        }:
+            continue
+        code = str(item.get("code") or item.get("issue_code") or "").strip()
+        if code:
+            codes.append(code)
+    return codes
+
+
+def _commercial_planning_llm_judge_should_block(judge_result: Any) -> bool:
+    if bool(getattr(judge_result, "passed", False)):
+        return False
+    blocking_issues = getattr(judge_result, "blocking_issues", ()) or ()
+    return bool(blocking_issues)
+
+
 def _commercial_planning_readiness_error_message(
     report_payload: dict[str, Any],
+    *,
+    llm_judge_payload: Mapping[str, Any] | None = None,
 ) -> str:
-    findings = report_payload.get("findings")
-    codes: list[str] = []
-    if isinstance(findings, list):
-        codes = [
-            str(item.get("code"))
-            for item in findings
-            if isinstance(item, dict) and item.get("severity") == "critical"
-        ]
+    codes = _commercial_planning_issue_codes_from_payload(
+        report_payload,
+        key="findings",
+        critical_only=True,
+    )
+    llm_codes = _commercial_planning_issue_codes_from_payload(
+        llm_judge_payload,
+        key="blocking_issues",
+        critical_only=False,
+    )
+    codes.extend(f"llm:{code}" for code in llm_codes)
     suffix = ", ".join(codes) if codes else "unknown"
     return f"Commercial planning readiness gate failed: {suffix}"
 
@@ -2286,19 +2322,6 @@ def _collect_output_files(output_dir: Path) -> list[str]:
     ]
 
 
-# Process-local ledger cache. Once a DB-backed ``ChaseDebtLedger`` lands we
-# can replace this with a repository, but until then in-memory state shared
-# across the workflow run is enough to exercise the accrual path end-to-end.
-_CHASE_DEBT_LEDGER: ChaseDebtLedger | None = None
-
-
-def _get_chase_debt_ledger() -> ChaseDebtLedger:
-    global _CHASE_DEBT_LEDGER
-    if _CHASE_DEBT_LEDGER is None:
-        _CHASE_DEBT_LEDGER = ChaseDebtLedger()
-    return _CHASE_DEBT_LEDGER
-
-
 async def _apply_post_chapter_phase_b(
     *,
     session: AsyncSession,
@@ -2346,27 +2369,50 @@ async def _apply_post_chapter_phase_b(
 
 async def _apply_post_chapter_phase_c(
     *,
+    session: AsyncSession,
     project_id: UUID,
     chapter_number: int,
 ) -> None:
-    """Run Phase C3 ledger interest accrual for the chapter tick.
+    """Run Phase C3 debt interest accrual for the chapter tick — DB-backed.
 
-    Controlled by ``phase_c_overrides.enabled``. In-memory ledger until a
-    DB-backed model lands; the accrual path is idempotent per chapter so
-    repeated calls for the same ``current_chapter`` are safe.
+    Controlled by ``phase_c_overrides.enabled``. The debts written by the
+    override auto-sign path live in ``ChaseDebtModel`` rows (the durable
+    source of truth across workers/runs), so accrual loads those rows,
+    compounds their balances + flips overdue ones forward to
+    ``chapter_number``, and persists the mutations via ``session.flush``.
+
+    Idempotent per chapter: ``accrued_through_chapter`` catches up on the
+    first call, so a repeat for the same chapter is a no-op. Honors the
+    ``only_enforce_from_chapter`` gray-out and is a no-op when Phase C is
+    off. Errors are logged and swallowed — a debt-ledger crash must never
+    fail the chapter.
     """
 
     try:
         cfg = get_quality_gates_config()
         if not cfg.phase_c.enabled:
             return
-        ledger = _get_chase_debt_ledger()
-        touched = ledger.accrue_interest(str(project_id), chapter_number)
-        if touched:
+        only_from = cfg.phase_c.only_enforce_from_chapter
+        if only_from is not None and chapter_number < only_from:
+            return
+        rows = list(
+            await session.scalars(
+                select(ChaseDebtModel).where(
+                    ChaseDebtModel.project_id == project_id,
+                    ChaseDebtModel.status.in_(("active", "overdue")),
+                )
+            )
+        )
+        if not rows:
+            return
+        accrued, newly_overdue = accrue_debt_rows(rows, chapter_number)
+        if accrued or newly_overdue:
+            await session.flush()
             logger.info(
-                "Phase C accrued interest on %d debt(s) at ch%d",
-                touched,
+                "Phase C ch%d: accrued interest on %d debt(s), %d newly overdue",
                 chapter_number,
+                accrued,
+                newly_overdue,
             )
     except Exception:
         logger.debug("Phase C accrual failed (non-fatal)", exc_info=True)
@@ -7022,6 +7068,7 @@ async def run_chapter_pipeline(
                     )
                     # Phase C — accrue interest on any outstanding debts.
                     await _apply_post_chapter_phase_c(
+                        session=session,
                         project_id=project.id,
                         chapter_number=chapter.chapter_number,
                     )
@@ -7450,6 +7497,7 @@ async def run_chapter_pipeline(
                         )
                         # Phase C — accrue interest on outstanding debts.
                         await _apply_post_chapter_phase_c(
+                            session=session,
                             project_id=project.id,
                             chapter_number=chapter.chapter_number,
                         )
@@ -8083,6 +8131,9 @@ async def run_project_pipeline(
             from sqlalchemy import func, select
 
             from bestseller.infra.db.models import ProjectMaterialModel
+            from bestseller.services.concept_lab import (
+                render_concept_lab_material_brief_block,
+            )
             from bestseller.services.material_forge import forge_all_materials
 
             existing_count_result = await session.execute(
@@ -8113,19 +8164,32 @@ async def run_project_pipeline(
                     getattr(project, "sub_genre", None)
                     or project_metadata.get("sub_genre")
                 )
+                concept_lab_context = render_concept_lab_material_brief_block(
+                    project_metadata,
+                    language=(
+                        getattr(project, "language", None)
+                        or project_metadata.get("language")
+                        or "zh-CN"
+                    ),
+                )
                 forge_results = await forge_all_materials(
                     session,
                     project_id=project.id,
                     genre=genre,
                     settings=settings,
                     sub_genre=sub_genre,
+                    concept_lab_context=concept_lab_context or None,
                 )
                 await _checkpoint_commit(session)
                 total_forged = sum(r.emitted_count for r in forge_results)
                 _emit_progress(
                     progress,
                     "material_forge_completed",
-                    {"project_slug": project_slug, "total_forged": total_forged},
+                    {
+                        "project_slug": project_slug,
+                        "total_forged": total_forged,
+                        "concept_lab_material_brief": bool(concept_lab_context),
+                    },
                 )
         except Exception:
             logger.exception(
@@ -8586,13 +8650,28 @@ async def run_project_pipeline(
                         llm_judge_payload = llm_judge_result.model_dump(
                             mode="json", by_alias=True
                         )
-                        commercial_gate_passed = llm_judge_result.passed
+                        llm_judge_should_block = (
+                            _commercial_planning_llm_judge_should_block(
+                                llm_judge_result
+                            )
+                        )
+                        if not llm_judge_result.passed and not llm_judge_should_block:
+                            logger.warning(
+                                "commercial_planning_llm_judge_unactionable_failure",
+                                extra={
+                                    "project_slug": project_slug,
+                                    "overall_score": llm_judge_result.overall_score,
+                                },
+                            )
+                        commercial_gate_passed = not llm_judge_should_block
                         # Persist LLM judge result alongside deterministic report
                         project.metadata_json = {
                             **(getattr(project, "metadata_json", None) or {}),
                             "commercial_planning_llm_judge": llm_judge_payload,
                             "commercial_planning_readiness_status": (
                                 "llm_gate_passed"
+                                if llm_judge_result.passed
+                                else "llm_gate_unactionable_warn_only"
                                 if commercial_gate_passed
                                 else "llm_gate_failed"
                             ),
@@ -8626,7 +8705,8 @@ async def run_project_pipeline(
                     )
                     raise ValueError(
                         _commercial_planning_readiness_error_message(
-                            commercial_gate_report
+                            commercial_gate_report,
+                            llm_judge_payload=llm_judge_payload,
                         )
                         + f" [{_block_reason}]"
                     )
@@ -9171,7 +9251,20 @@ async def run_project_pipeline(
             chapter_numbers=requested_chapter_numbers,
         )
         if project_review_not_pass:
-            if project_consistency_warn_only_scope is not None:
+            if settings.quality.draft_mode:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "project_consistency_warn_only": True,
+                    "project_consistency_scope": "draft_mode",
+                    "project_consistency_verdict": review_result.verdict,
+                }
+                logger.warning(
+                    "Project %s consistency verdict=%s during draft mode — recorded "
+                    "as warning; draft-mode writes are not whole-book blockers.",
+                    project_slug,
+                    review_result.verdict,
+                )
+            elif project_consistency_warn_only_scope is not None:
                 workflow_run.metadata_json = {
                     **(workflow_run.metadata_json or {}),
                     "project_consistency_warn_only": True,
@@ -9412,6 +9505,14 @@ async def run_project_pipeline(
         workflow_run.current_step = (
             "machine_repair_required" if requires_human_review else "completed"
         )
+        final_project_verdict = (
+            "draft"
+            if settings.quality.draft_mode
+            and review_result is not None
+            and review_result.verdict != "pass"
+            and not requires_human_review
+            else (review_result.verdict if review_result is not None else None)
+        )
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
             "audit_finding_count": audit_finding_count,
@@ -9431,7 +9532,7 @@ async def run_project_pipeline(
             {
                 "project_slug": project.slug,
                 "workflow_run_id": str(workflow_run.id),
-                "final_verdict": review_result.verdict if review_result is not None else None,
+                "final_verdict": final_project_verdict,
                 "requires_human_review": requires_human_review,
                 "output_path": output_path,
                 "audit_finding_count": audit_finding_count,
@@ -9459,7 +9560,7 @@ async def run_project_pipeline(
             else None,
             review_report_id=report.id if report is not None else None,
             quality_score_id=quality.id if quality is not None else None,
-            final_verdict=review_result.verdict if review_result is not None else None,
+            final_verdict=final_project_verdict,
             export_artifact_id=export_artifact_id,
             output_path=output_path,
             requires_human_review=requires_human_review,

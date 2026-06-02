@@ -512,7 +512,7 @@ class HookEngineSettings(BaseModel):
     enabled: bool = True
     min_h_norm: float = 30.0
     candidate_count: int = 6
-    quickstart_candidate_count: int = 4
+    quickstart_candidate_count: int = 12
     rank_weight_h_norm: float = 0.62
     rank_weight_novelty: float = 0.28
     rank_weight_duplicate_risk: float = 0.10

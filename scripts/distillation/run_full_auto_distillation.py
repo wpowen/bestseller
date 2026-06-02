@@ -133,6 +133,26 @@ def _count_incomplete_packages(source_paths: list[Path]) -> tuple[int, list[str]
     return len(bad), bad
 
 
+def _jsonl_row_count(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    count = 0
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        stripped = raw.strip()
+        if stripped and not stripped.startswith("#"):
+            count += 1
+    return count
+
+
+def _package_needs_tail_backfill(package_dir: Path) -> bool:
+    """Return True when required book-phase files exist but the reusable tail is empty."""
+
+    return (
+        _jsonl_row_count(package_dir / "mechanism_candidates.jsonl") == 0
+        or _jsonl_row_count(package_dir / "material_entries.review.jsonl") == 0
+    )
+
+
 def _load_state(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {"version": 1, "book_complete_sources": [], "notes": []}
@@ -352,8 +372,11 @@ async def _run_one_pass(
             continue
 
         # --- Phase 3: book aggregation ---
+        force_book_aggregation = bool(getattr(args, "force_book_aggregation", False))
+        backfill_empty_tail = bool(getattr(args, "backfill_empty_tail_artifacts", False))
+        needs_tail_backfill = backfill_empty_tail and _package_needs_tail_backfill(pkg)
         if package_book_phase_complete(pkg) and not (
-            refresh_craft and processed > 0
+            force_book_aggregation or needs_tail_backfill or (refresh_craft and processed > 0)
         ):
             book_done.add(sid)
             report.sources_succeeded.append(sid)
@@ -872,6 +895,19 @@ def main() -> None:
             "Re-run existing chapter_cards rows that lack craft_observations before book aggregation. "
             "Use when backfilling the anonymous author-craft layer."
         ),
+    )
+    parser.add_argument(
+        "--backfill-empty-tail-artifacts",
+        action="store_true",
+        help=(
+            "Run book aggregation for packages whose mechanism_candidates.jsonl or "
+            "material_entries.review.jsonl is empty even if the package already validates."
+        ),
+    )
+    parser.add_argument(
+        "--force-book-aggregation",
+        action="store_true",
+        help="Rebuild book-phase artifacts for every selected source package.",
     )
     parser.add_argument(
         "--resume",

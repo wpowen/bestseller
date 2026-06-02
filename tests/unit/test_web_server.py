@@ -668,6 +668,18 @@ def test_quickstart_exposes_runtime_llm_profile_switcher() -> None:
     assert "updateLlmProfileUi(d.llm_profile)" in html
 
 
+def test_quickstart_exposes_batch_concept_lab_picker() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert 'id="conceptLab"' in html
+    assert "脑洞组合 · 批量候选" in html
+    assert "const CONCEPT_LAB_BATCH_COUNT = 12;" in html
+    assert "count: CONCEPT_LAB_BATCH_COUNT" in html
+    assert "脑洞候选 ${bundles.length} 组" in html
+    assert "concept_lab_bundle_id" in html
+    assert "concept_lab_bundle" in html
+
+
 def test_public_writing_preset_catalog_payload_sanitizes_story_specific_overrides() -> None:
     payload = web_server._public_writing_preset_catalog_payload()
 
@@ -735,9 +747,11 @@ def test_public_writing_preset_catalog_exposes_hook_candidates() -> None:
     pack = hooks["apocalypse-supply"]
     first = pack[0]
 
-    assert len(pack) >= 1
+    assert len(pack) >= 12
+    assert len({item["spec"]["mechanism_key"] for item in pack}) >= 6
     assert first["spec"]["one_liner"]
     assert first["spec"]["core_rule"]
+    assert first["spec"]["llm_design_brief"]
     assert first["score"]["h_norm"] >= 0
 
 
@@ -827,6 +841,42 @@ def test_quickstart_task_passes_selected_creative_direction(
     assert payload["creative_brief"]["key"] == "cross-genre-friction"
     assert hints["creative_direction"] == "奇幻/玄幻/异世界 × 言情/女性向"
     assert "固定套路" in hints["usage_rule"]
+
+
+def test_quickstart_task_passes_selected_concept_lab_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+    catalog = web_server.build_concept_lab_catalog("apocalypse-supply", count=1)
+    bundle = catalog.bundles[0].model_dump(mode="json")
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "demo-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    task = manager.create_quickstart_task(
+        {
+            "genre_key": "apocalypse-supply",
+            "chapter_count": 12,
+            "creative_key": bundle["creative_key"],
+            "hook_spec": bundle["hook_spec"],
+            "concept_lab_bundle_id": bundle["bundle_id"],
+            "concept_lab_bundle": bundle,
+        }
+    )
+
+    payload = captured["payload"]
+    hints = payload["user_hints"]
+    assert payload["concept_lab_bundle"]["bundle_id"] == bundle["bundle_id"]
+    assert hints["concept_lab"]["bundle_id"] == bundle["bundle_id"]
+    assert hints["material_brief"]["query_terms"]
+    assert hints["story_loop"]["per_chapter_contract"]
+    assert task["quickstart_meta"]["concept_lab_summary"]["bundle_id"] == bundle["bundle_id"]
 
 
 def test_project_repair_status_payload_marks_repair_gate() -> None:
@@ -1349,6 +1399,144 @@ def test_autowrite_worker_marks_structural_repair_pause_without_traceback(
     assert task["current_stage"] == "blocked_structural_repair"
     assert "paused for structural repair" in str(task["error"])
     assert "Traceback" not in str(task["error"])
+
+
+def test_quickstart_concept_lab_reaches_worker_project_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
+    task_id = "concept-worker-task"
+    bundle = web_server.build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+    captured: dict[str, object] = {}
+
+    def _capture_autowrite_task(
+        self: web_server.WebTaskManager,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        captured["autowrite_payload"] = payload
+        return {
+            "task_id": task_id,
+            "task_type": "autowrite",
+            "status": "queued",
+            "project_slug": payload["slug"],
+            "title": payload["title"],
+        }
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager,
+        "create_autowrite_task",
+        _capture_autowrite_task,
+    )
+
+    quickstart_task = manager.create_quickstart_task(
+        {
+            "genre_key": "apocalypse-supply",
+            "chapter_count": 12,
+            "creative_key": bundle.creative_key,
+            "hook_spec": bundle.hook_spec,
+            "concept_lab_bundle_id": bundle.bundle_id,
+            "concept_lab_bundle": bundle.model_dump(mode="json"),
+        }
+    )
+    autowrite_payload = captured["autowrite_payload"]
+    assert (
+        quickstart_task["quickstart_meta"]["concept_lab_summary"]["bundle_id"]
+        == bundle.bundle_id
+    )
+    assert autowrite_payload["user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
+
+    with manager._lock:
+        manager._tasks[task_id] = web_server.WebTaskState(
+            task_id=task_id,
+            task_type="autowrite",
+            status="queued",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            project_slug=str(autowrite_payload["slug"]),
+            title=str(autowrite_payload["title"]),
+            current_stage="queued",
+        )
+
+    class _SessionScope:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    class _PipelineResult:
+        def model_dump(self, *, mode: str = "json") -> dict[str, object]:
+            return {"project_slug": "concept-worker", "mode": mode}
+
+    async def _fake_architect_story_facets(
+        _session: object,
+        _settings: object,
+        **kwargs: object,
+    ) -> object:
+        captured["architect_user_hints"] = kwargs.get("user_hints")
+        return SimpleNamespace(
+            tone="高压",
+            narrative_drive="生存升级",
+            trope_tags=("末日",),
+            setting="倒计时城市",
+            generation_source="unit-test",
+            model_dump=lambda mode="json": {"tone": "高压", "mode": mode},
+        )
+
+    async def _fake_run_conception_pipeline(
+        _session: object,
+        _settings: object,
+        **kwargs: object,
+    ) -> object:
+        captured["conception_user_hints"] = kwargs.get("user_hints")
+        return SimpleNamespace(
+            premise="脑洞合同驱动的末日故事。",
+            title="脑洞合同标题",
+            writing_profile={"market": {"reader_promise": bundle.reader_promise}},
+            commercial_brief={"benchmark_works": [], "target_audiences": ["番茄读者"]},
+            conception_log=[{"stage": "concept_lab"}],
+            hook_spec=bundle.hook_spec,
+            synopsis="用脑洞合同推进故事循环。",
+            tags=["末日", "脑洞"],
+        )
+
+    async def _fake_run_autowrite_pipeline(**kwargs: object) -> object:
+        captured["pipeline_kwargs"] = kwargs
+        return _PipelineResult()
+
+    from bestseller.services import conception as conception_services
+    from bestseller.services import story_architect as story_architect_services
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(
+        web_server,
+        "load_settings",
+        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
+    )
+    monkeypatch.setattr(
+        story_architect_services,
+        "architect_story_facets",
+        _fake_architect_story_facets,
+    )
+    monkeypatch.setattr(
+        conception_services,
+        "run_conception_pipeline",
+        _fake_run_conception_pipeline,
+    )
+    monkeypatch.setattr(web_server, "run_autowrite_pipeline", _fake_run_autowrite_pipeline)
+
+    manager._run_autowrite_worker(task_id, autowrite_payload)
+
+    task = manager.get_task(task_id)
+    assert task is not None
+    assert task["status"] == "completed"
+    assert captured["architect_user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
+    assert captured["conception_user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
+    project_payload = captured["pipeline_kwargs"]["project_payload"]
+    assert project_payload.metadata["concept_lab"]["bundle_id"] == bundle.bundle_id
+    assert project_payload.metadata["hook_spec"]["one_liner"] == bundle.hook_spec["one_liner"]
+    assert project_payload.writing_profile.market.reader_promise == bundle.reader_promise
 
 
 def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -> None:

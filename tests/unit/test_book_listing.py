@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from bestseller.services.book_listing import build_book_listing_profile
+from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.platform_title_workflow import build_platform_title_workflow
 
 pytestmark = pytest.mark.unit
@@ -127,6 +128,32 @@ def test_build_book_listing_profile_generates_required_fallbacks() -> None:
     assert profile["marketing_assets"]["short_video_scripts"][0]["duration_seconds"] == 15
     assert "ip_readiness" in profile
     assert profile["compliance"]["blocker_count"] == 0
+
+
+def test_build_book_listing_profile_uses_concept_lab_listing_seed() -> None:
+    bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+    project = SimpleNamespace(
+        slug="book-concept",
+        title="末日仓单",
+        genre="末世",
+        sub_genre="囤货求生",
+        audience="男频",
+        status="planning",
+        language="zh-CN",
+        metadata_json={"concept_lab": bundle.model_dump(mode="json")},
+    )
+
+    profile = build_book_listing_profile(
+        project=project,
+        writing_profile={"market": {"platform_target": "番茄小说"}},
+        story_bible=None,
+    )
+
+    assert profile["logline"] == bundle.one_liner
+    assert profile["short_intro"]
+    assert bundle.reader_promise in profile["promo_copy"]
+    assert profile["title_candidates"][0]["title"] == bundle.title_seeds[0].text
+    assert profile["title_workflow"]["candidate_source"] == "concept_lab+platform_title_workflow"
 
 
 def test_fallback_title_candidates_follow_fanqie_workflow() -> None:

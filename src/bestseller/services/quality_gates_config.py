@@ -314,6 +314,11 @@ class PhaseCOverridesConfig:
     enabled: bool = False
     default_interest_rate: float = 0.10
     payback_window_default: int = 10
+    # Chapters before this number are exempt from override auto-sign and debt
+    # accrual even when ``enabled`` is True — a gray-out so flipping Phase C on
+    # does not retroactively penalize early/in-flight chapters. ``None`` means
+    # enforce from chapter 1.
+    only_enforce_from_chapter: int | None = None
 
 
 @dataclass(frozen=True)
@@ -584,10 +589,19 @@ def _build_phase_c(raw: dict[str, Any]) -> PhaseCOverridesConfig:
         window = int(window_raw) if window_raw is not None else 10
     except (TypeError, ValueError):
         window = 10
+    only_from_raw = raw.get("only_enforce_from_chapter")
+    only_from: int | None
+    try:
+        only_from = int(only_from_raw) if only_from_raw is not None else None
+    except (TypeError, ValueError):
+        only_from = None
+    if only_from is not None and only_from < 1:
+        only_from = None
     return PhaseCOverridesConfig(
         enabled=bool(raw.get("enabled", False)),
         default_interest_rate=max(0.0, rate),
         payback_window_default=max(1, window),
+        only_enforce_from_chapter=only_from,
     )
 
 

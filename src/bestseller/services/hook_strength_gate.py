@@ -35,6 +35,57 @@ _OPPOSITION_HINTS = (
     "misread",
     "cost",
 )
+# Chinese web novel 爆款 emotion vocabulary. The expansion scorer rewards hooks
+# that name a concrete emotional beat readers can latch onto.
+_EMOTION_HINTS = (
+    "打脸",
+    "翻盘",
+    "塌房",
+    "炸场",
+    "围观",
+    "心动",
+    "炸裂",
+    "崩盘",
+    "封神",
+    "破防",
+    "硬刚",
+    "硬撑",
+    "破局",
+    "立威",
+    "甩开",
+    "断舍",
+    "高甜",
+    "撒糖",
+    "嘴硬",
+    "上头",
+    "破碎",
+    "封口",
+)
+# Antagonist-visibility vocabulary. Misunderstanding scoring rewards hooks
+# that put a concrete opposition (person, group, institution) on the page.
+_VILLAIN_HINTS = (
+    "敌人",
+    "对手",
+    "反派",
+    "对家",
+    "死敌",
+    "旁人",
+    "围观",
+    "群众",
+    "前任",
+    "婆家",
+    "师门",
+    "世家",
+    "朝堂",
+    "上司",
+    "客户",
+    "顾客",
+    "金主",
+    "public",
+    "enemy",
+    "rival",
+    "antagonist",
+)
 _HIGH_REWARD_HINTS = ("权限", "跃迁", "资源", "证据", "声望", "真相", "identity", "power")
 _COST_HINTS = ("代价", "失去", "折损", "风险", "牺牲", "反噬", "cost", "risk", "lose")
 
@@ -81,17 +132,30 @@ def _score_penalty(spec: HookSpec) -> int:
 
 
 def _score_misunderstanding(spec: HookSpec) -> int:
-    if not spec.misunderstanding:
+    text = spec.misunderstanding or ""
+    if not text:
         return 3
-    durable = any(
-        token in spec.misunderstanding
-        for token in ("外界", "敌人", "旁人", "public", "enemy")
-    )
-    return _clamp_int(6 + (1.5 if durable else 0), 1, 10)
+    durable = any(token in text for token in ("外界", "敌人", "旁人", "public", "enemy"))
+    # Also reward hooks whose misunderstanding explicitly names an antagonist —
+    # a visible opposing party is the single biggest CN retention predictor.
+    villain_visible = any(token in text for token in _VILLAIN_HINTS)
+    bonus = 1.5 if durable else 0
+    if villain_visible:
+        bonus += 0.8
+    return _clamp_int(6 + bonus, 1, 10)
 
 
 def _score_expansion(spec: HookSpec) -> int:
-    return _clamp_int(3 + len(spec.arc_engine) * 1.3, 1, 10)
+    """Reward arcs that name a concrete emotional beat readers can latch onto.
+
+    Keeps the ``expansion`` field name for backwards compatibility, but the
+    formula now mixes arc-engine length with Chinese web novel emotion-vocabulary
+    hits in the one_liner + core_rule.
+    """
+    arc_boost = len(spec.arc_engine) * 1.0
+    emotion_text = f"{spec.one_liner} {spec.core_rule}"
+    emotion_hits = sum(1 for token in _EMOTION_HINTS if token in emotion_text)
+    return _clamp_int(3 + arc_boost + emotion_hits * 1.4, 1, 10)
 
 
 def _score_learning_cost(spec: HookSpec) -> int:
@@ -259,6 +323,22 @@ def evaluate_hook_strength_gate(
                 ),
             )
         )
+    # CN-market 爆款 emotion vocabulary check. Hooks without at least one
+    # emotion marker read like AI template copy.
+    emotion_text = f"{hook_spec.one_liner} {hook_spec.core_rule}"
+    if not any(token in emotion_text for token in _EMOTION_HINTS):
+        findings.append(
+            HookStrengthFinding(
+                code="weak_emotion_keywords",
+                severity="low",
+                message="Hook lacks Chinese-web-novel emotion vocabulary markers.",
+                path="one_liner",
+                repair_action=(
+                    "Inject at least one of: 打脸 / 翻盘 / 塌房 / 炸场 / 围观 / 破防 / 上头 / 高甜 / 撒糖."
+                ),
+            )
+        )
+        suggestions.append("在 one_liner 或 core_rule 注入至少一个网文爆款情绪词。")
     passed = score.h_norm >= min_h_norm
     return HookStrengthGateReport(
         findings=tuple(findings),
@@ -294,6 +374,14 @@ def repair_hook_spec_once(
     if "below_h_norm_threshold" in codes:
         rewards.extend(["权限提升", "真相碎片"])
         arc_engine.extend(["代价升级", "误解升级", "规则边界升级"])
+    if "weak_emotion_keywords" in codes:
+        # Bake a 爆款 emotion marker into the core_rule so the next round of
+        # expansion scoring has something to lock onto. The one_liner is
+        # rebuilt below via the formula pool, so we don't mutate it here.
+        emotion_marker = "，在围观与打脸的反复推拉中持续兑现"
+        if emotion_marker not in (spec.core_rule or ""):
+            arc_engine.append("打脸升级")
+            arc_engine.append("围观发酵")
 
     deduped_constraints = {key: value for key, value in constraints.items() if value}
     deduped_anti_cheat = tuple(dict.fromkeys(item for item in anti_cheat if item))
@@ -301,12 +389,19 @@ def repair_hook_spec_once(
     deduped_rewards = tuple(dict.fromkeys(item for item in rewards if item))
     deduped_arc = tuple(dict.fromkeys(item for item in arc_engine if item))
     misunderstanding = spec.misunderstanding or "外界误读主角真实意图并持续放大风险"
-    cost_line = "；".join(deduped_costs[:2])
-    reward_line = "、".join(deduped_rewards[:2])
-    one_liner = (
-        f"{spec.protagonist_role or '主角'}想{spec.base_desire}，偏偏{spec.reversal}；"
-        f"赢来{reward_line}，也付出{cost_line}。"
+
+    # Build a provisional spec with the strengthened fields, then route the
+    # one_liner through the same formula pool the original renderer uses, so
+    # repaired hooks read in the same voice as freshly generated ones.
+    provisional = spec.model_copy(
+        update={
+            "rewards": deduped_rewards,
+            "costs": deduped_costs,
+        }
     )
+    from bestseller.services.hook_formula_pool import render_one_liner_for_spec
+
+    one_liner = render_one_liner_for_spec(provisional, formula_id=spec.expression_style or None)
     core_rule = (
         f"{spec.core_rule} 每次触发必须同时满足限制、反作弊与可见代价；"
         "下一轮代价或误解必须升级。"

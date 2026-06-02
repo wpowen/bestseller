@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from bestseller.services.concept_lab import concept_lab_listing_overrides
 from bestseller.services.platform_title_workflow import (
     DEFAULT_TITLE_CANDIDATE_COUNT,
     build_platform_title_workflow,
@@ -387,6 +388,36 @@ def _normalize_legacy_title_candidates(value: Any) -> list[dict[str, Any]]:
     return rows[:REQUIRED_TITLE_CANDIDATE_COUNT]
 
 
+def _merge_preferred_title_candidates(
+    preferred: list[dict[str, Any]],
+    generated: list[dict[str, Any]],
+    *,
+    platform: str,
+) -> list[dict[str, Any]]:
+    if not preferred:
+        return generated
+    label_fields = _title_label_fields(platform)
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in [*preferred, *generated]:
+        if not isinstance(raw, dict):
+            continue
+        title = _clean_text(raw.get("title"))
+        title_key = title.casefold()
+        if not title or title_key in seen:
+            continue
+        seen.add(title_key)
+        row = dict(raw)
+        row["id"] = len(rows) + 1
+        row["title"] = title
+        for key, value in label_fields.items():
+            row.setdefault(key, value)
+        rows.append(row)
+        if len(rows) >= REQUIRED_TITLE_CANDIDATE_COUNT:
+            break
+    return rows
+
+
 def _title_candidate_csv_cell(value: object) -> str:
     text = _compact_text(value).replace('"', '""')
     return f'"{text}"'
@@ -636,6 +667,7 @@ def build_book_listing_profile(
     output_base_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     metadata = _get_value(project, "metadata_json", {}) or {}
+    concept_overrides = concept_lab_listing_overrides(metadata)
     file_overrides = load_book_listing_file_overrides(
         output_base_dir=output_base_dir,
         project_slug=_clean_text(_get_value(project, "slug")),
@@ -645,7 +677,10 @@ def build_book_listing_profile(
         if isinstance(metadata.get("listing_profile"), dict)
         else {}
     )
-    overrides = {**file_overrides, **metadata_overrides}
+    overrides = {**concept_overrides, **file_overrides, **metadata_overrides}
+    concept_title_candidates = _normalize_legacy_title_candidates(
+        concept_overrides.get("title_candidates")
+    )
 
     project_language = (
         _clean_text(_get_value(project, "language")) or "zh-CN"
@@ -811,6 +846,13 @@ def build_book_listing_profile(
     )
     profile["title_candidates"] = title_workflow["candidates"]
     title_candidate_source = "platform_title_workflow"
+    if concept_title_candidates:
+        profile["title_candidates"] = _merge_preferred_title_candidates(
+            concept_title_candidates,
+            profile["title_candidates"],
+            platform=platform,
+        )
+        title_candidate_source = "concept_lab+platform_title_workflow"
     if len(profile["title_candidates"]) < REQUIRED_TITLE_CANDIDATE_COUNT:
         profile["title_candidates"] = (
             profile["title_candidates"] + _fallback_title_candidates(profile)

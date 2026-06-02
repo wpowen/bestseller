@@ -28,6 +28,10 @@ from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
 from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
 from bestseller.services.methodology import render_qimao_regeneration_contract
 from bestseller.services.methodology_compiler import MethodologyStage, compile_methodology
+from bestseller.services.concept_lab import (
+    coerce_concept_lab_bundle,
+    render_concept_lab_prompt_block,
+)
 from bestseller.services.hook_propagation import coerce_hook_spec, render_hook_spec_prompt_block
 from bestseller.services.platform_title_workflow import select_primary_platform_title
 from bestseller.services.writing_profile import (
@@ -468,6 +472,8 @@ def _build_genre_context(
 def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
     brief = ctx.get("commercial_brief")
     qimao_block = _qimao_regeneration_prompt_block(ctx)
+    concept_block = render_concept_lab_prompt_block(ctx, language=str(ctx.get("language") or "zh-CN"))
+    concept_block = f"\n\n{concept_block}" if concept_block else ""
     hook_spec = coerce_hook_spec(ctx.get("hook_spec"))
     hook_block = ""
     if hook_spec is not None:
@@ -476,9 +482,12 @@ def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
             language=str(ctx.get("language") or "zh-CN"),
         )
     if not isinstance(brief, dict) or not brief:
-        return f"{hook_block}{qimao_block}"
+        return f"{concept_block}{hook_block}{qimao_block}"
     label = "[Auto commercial positioning brief]" if str(ctx.get("language", "")).startswith("en") else "【自动商业化立项 brief】"
-    return f"\n\n{label}\n{json.dumps(brief, ensure_ascii=False, indent=2)}{hook_block}\n{qimao_block}"
+    return (
+        f"\n\n{label}\n{json.dumps(brief, ensure_ascii=False, indent=2)}"
+        f"{concept_block}{hook_block}\n{qimao_block}"
+    )
 
 
 def _normalize_string_list(values: Any) -> list[str]:
@@ -1410,6 +1419,9 @@ async def run_conception_pipeline(
     ctx = _build_genre_context(genre_key, chapter_count, story_facets=story_facets)
     if user_hints:
         ctx["user_hints"] = user_hints
+        concept_bundle = coerce_concept_lab_bundle(user_hints.get("concept_lab"))
+        if concept_bundle is not None:
+            ctx["concept_lab"] = concept_bundle.model_dump(mode="json")
         _apply_qimao_hints_to_context(ctx)
 
     is_en = ctx.get("language", "zh-CN").startswith("en")
@@ -1666,6 +1678,26 @@ async def run_conception_pipeline(
             market_profile["logline"] = selected_hook_spec.one_liner
             market_profile["reader_promise"] = selected_hook_spec.one_liner
             market_profile["anti_commonsense_hook"] = selected_hook_spec.model_dump(mode="json")
+    concept_bundle = coerce_concept_lab_bundle(ctx.get("concept_lab"))
+    if concept_bundle is not None:
+        market_profile = writing_profile.setdefault("market", {})
+        if isinstance(market_profile, dict):
+            market_profile["logline"] = concept_bundle.one_liner
+            market_profile["reader_promise"] = concept_bundle.reader_promise or concept_bundle.one_liner
+            market_profile["concept_lab"] = concept_bundle.model_dump(mode="json")
+            market_profile["title_seed"] = (
+                concept_bundle.title_seeds[0].text
+                if concept_bundle.title_seeds
+                else ""
+            )
+            market_profile["selling_points"] = list(
+                dict.fromkeys(
+                    [
+                        *list(market_profile.get("selling_points") or []),
+                        *list(concept_bundle.hype_targets[:6]),
+                    ]
+                )
+            )
 
     # Fallback premise if empty
     if not premise or len(premise) < 10:

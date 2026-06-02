@@ -228,7 +228,7 @@ hook_engine:
   enabled: true
   min_h_norm: 30.0
   candidate_count: 6
-  quickstart_candidate_count: 4
+  quickstart_candidate_count: 12
   rank_weight_h_norm: 0.62
   rank_weight_novelty: 0.28
   rank_weight_duplicate_risk: 0.10

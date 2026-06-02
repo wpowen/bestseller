@@ -1,0 +1,62 @@
+formulas:
+  # ───────── 6 经典模板（保留原 EXPRESSION_STYLES id 兼容老逻辑）─────────
+  - id: public_misread
+    template: "所有人都以为{role}该按常理去{desire}，但真正生路是{reversal}；{reward}刚到手，{misunderstanding}就把局面推向下一轮。"
+    requires: [role, desire, reversal, reward, misunderstanding]
+    genre_affinity: [都市, 言情, romance, urban]
+
+  - id: public_reveal
+    template: "{role}刚想{desire}，规则就当众翻面：{reversal}。{reward}越公开，{misunderstanding}越坐实，下一轮围观也越难收场。"
+    requires: [role, desire, reversal, reward, misunderstanding]
+    genre_affinity: [都市, 言情, 玄幻, 仙侠, 悬疑, romance, urban, fantasy, xianxia, mystery]
+
+  - id: opening_deadlock
+    template: "{role}被钉在开场死局里：常识解法会输，照「{mechanism_label}」反着来才有{reward}，代价是{cost}。"
+    requires: [role, mechanism_label, reward, cost]
+    genre_affinity: [末日, 悬疑, 玄幻, fantasy]
+
+  - id: cost_first
+    template: "先付{cost}，才换得到{reward}；{role}越想{desire}，越会被迫{reversal}，并让{misunderstanding}持续发酵。"
+    requires: [role, desire, reversal, reward, cost, misunderstanding]
+    genre_affinity: [玄幻, 仙侠, 悬疑, xianxia, mystery]
+
+  - id: reader_question
+    template: "如果{role}真的{desire}，为什么生路偏偏落在{reversal}上？每揭开一层，就多一层{cost}。"
+    requires: [role, desire, reversal, cost]
+    genre_affinity: [悬疑, 规则, 灵异, mystery, horror]
+
+  - id: market_logline
+    template: "{mechanism_label}不是金手指，是镣铐：{role}靠{reversal}抢到{reward}，却把{cost}和{misunderstanding}全部带进主线。"
+    requires: [role, mechanism_label, reversal, reward, cost, misunderstanding]
+    genre_affinity: [全平台]
+
+  - id: rule_collision
+    template: "{role}以为只要{desire}就够了——偏偏世界塞来一条铁律：{reversal}；不签就出局，签了字{cost}马上结算。"
+    requires: [role, desire, reversal, cost]
+    genre_affinity: [都市, 规则, 灵异, mystery]
+
+  # ───────── 4 个新爆款句式 ─────────
+  - id: bawang_clause
+    template: "所有人都等着看{role}{desire}的瞬间塌房，可惜——{reversal}才是真规则，{reward}先到，{misunderstanding}紧跟着炸场。"
+    requires: [role, desire, reversal, reward, misunderstanding]
+    genre_affinity: [都市, 商战, 系统, urban]
+
+  - id: xia_bai_bo
+    template: "上半场{role}还在{desire}，下半场规则突变：{reversal}。{reward}是真的，{cost}也是真的，只看你敢不敢接。"
+    requires: [role, desire, reversal, reward, cost]
+    genre_affinity: [都市, 言情, fanqie_short]
+
+  - id: villain_taunt
+    template: "想{desire}？可以，但请你先答应——{reversal}。{role}签了，全场都以为{misunderstanding}，只有他知道{reward}已经在路上。"
+    requires: [role, desire, reversal, reward, misunderstanding]
+    genre_affinity: [都市, 言情, romance, urban]
+
+  - id: heart_beat_clock
+    template: "倒计时已经在响：{role}不{desire}会死，可一旦{reversal}，{cost}就开始计费；每章都要重新结算。"
+    requires: [role, desire, reversal, cost]
+    genre_affinity: [末日, 系统, 悬疑]
+
+  - id: identity_collapse
+    template: "原来{role}从一开始就不是来{desire}的——{reversal}才是真任务。{reward}是奖励，也是把他钉在新身份上的铆钉；{misunderstanding}注定收不回来。"
+    requires: [role, desire, reversal, reward, misunderstanding]
+    genre_affinity: [仙侠, 玄幻, 群穿, 身份反转]

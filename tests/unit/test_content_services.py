@@ -24,6 +24,7 @@ from bestseller.services.drafts import (
     sanitize_novel_markdown_content,
     strip_scaffolding_echoes,
 )
+from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.exports import _ensure_chapter_heading
 from bestseller.services.exports import (
     build_docx_bytes,
@@ -227,6 +228,66 @@ def test_render_scene_draft_markdown_context_flows_via_llm_prompt() -> None:
     # Rich context still reaches the LLM prompt
     assert "故事圣经约束" in user_prompt
     assert "本卷目标：找到第一份铁证" in user_prompt
+
+
+def test_scene_draft_prompt_includes_selected_concept_lab_contract() -> None:
+    bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+    project = SimpleNamespace(
+        title="末日仓单",
+        slug="apocalypse-concept",
+        metadata_json={"concept_lab": bundle.model_dump(mode="json")},
+    )
+    chapter = SimpleNamespace(chapter_number=1, chapter_goal="兑现仓库清单", title="开仓")
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="清单响起",
+        participants=["周燃"],
+        purpose={"story": "亮出清单规则", "emotion": "危机压迫"},
+        time_label="末日前夜",
+        entry_state={},
+        exit_state={},
+        scene_type="opening",
+        target_word_count=1000,
+    )
+    style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["高压"])
+
+    _, user_prompt = build_scene_draft_prompts(project, chapter, scene, style_guide)
+
+    assert "【已选脑洞组合合同】" in user_prompt
+    assert bundle.reader_promise in user_prompt
+    assert "per_chapter_contract" in user_prompt
+
+
+def test_scene_draft_prompt_surfaces_current_methodology_contract() -> None:
+    project = SimpleNamespace(title="末日仓单", slug="apocalypse-contract")
+    chapter = SimpleNamespace(chapter_number=1, chapter_goal="立下仓库规则", title="开仓")
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="冷库门开",
+        participants=["周燃"],
+        purpose={"story": "亮出第一批药品", "emotion": "资源压迫"},
+        time_label="暴雨夜",
+        entry_state={},
+        exit_state={},
+        scene_type="opening",
+        target_word_count=1000,
+        hook_requirement="冷库里出现不该存在的私仓门禁卡。",
+        metadata_json={
+            "methodology_contract": {
+                "signature_image": "冷库灯管照亮三箱胰岛素。",
+                "cut_point": "门禁卡显示城北私仓正在转移。",
+                "action_sequence": ["撬锁", "清点", "公开登记"],
+            }
+        },
+    )
+    style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["高压"])
+
+    _, user_prompt = build_scene_draft_prompts(project, chapter, scene, style_guide)
+
+    assert "当前场景执行合同" in user_prompt
+    assert "冷库灯管照亮三箱胰岛素。" in user_prompt
+    assert "门禁卡显示城北私仓正在转移。" in user_prompt
+    assert "signature_image" in user_prompt
 
 
 def test_scene_draft_prompt_puts_prewrite_contract_first() -> None:

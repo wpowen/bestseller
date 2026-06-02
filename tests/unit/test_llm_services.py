@@ -100,6 +100,74 @@ def test_complete_text_records_mock_run_when_mock_enabled() -> None:
     asyncio.run(_run())
 
 
+def test_mock_scene_writer_uses_apocalypse_supply_prompt_signal() -> None:
+    async def _run() -> None:
+        session = FakeSession()
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        result = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt=(
+                    "题材：末日囤货。已选脑洞组合合同：重生囤货、避难所、重建秩序。\n"
+                    '当前场景执行合同：{"signature_image":"冷库灯管照亮三箱胰岛素。",'
+                    '"cut_point":"门禁卡显示城北私仓正在转移。"}'
+                ),
+                fallback_response='<!-- scene-draft-fallback project="demo" chapter=1 scene=1 -->',
+                prompt_template="scene_writer",
+                metadata={
+                    "project_slug": "apocalypse-supply-demo",
+                    "chapter_number": 1,
+                    "scene_number": 1,
+                    "context_query": "末日囤货 物资 避难所",
+                    "protagonist_name": "林野",
+                    "supporting_name": "周眠",
+                },
+            ),
+        )
+
+        assert result.provider == "mock"
+        assert "净水片" in result.content
+        assert "仓库" in result.content
+        assert len(result.content.split("。", 1)[0]) <= 25
+        assert "冷库灯管照亮三箱胰岛素。" in result.content
+        assert "门禁卡显示城北私仓正在转移。" in result.content
+        assert "胸口" in result.content or "心头" in result.content
+        assert any(term in result.content[-120:] for term in ("？", "忽然", "突然", "倒计时"))
+        assert "星港" not in result.content
+        assert "航标" not in result.content
+        assert "带来的压力没有重复上一段" not in result.content
+
+        scene_two = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="题材：末日囤货。已选脑洞组合合同：重生囤货、避难所、重建秩序。",
+                fallback_response='<!-- scene-draft-fallback project="demo" chapter=1 scene=2 -->',
+                prompt_template="scene_writer",
+                metadata={
+                    "project_slug": "apocalypse-supply-demo",
+                    "chapter_number": 1,
+                    "scene_number": 2,
+                    "context_query": "末日囤货 物资 避难所",
+                    "protagonist_name": "林野",
+                    "supporting_name": "周眠",
+                },
+            ),
+        )
+        assert "地下车库" in scene_two.content
+        assert "柴油机" in scene_two.content
+        assert "三箱胰岛素" not in scene_two.content
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
 def test_complete_text_does_not_fail_when_llm_run_logging_flush_fails() -> None:
     async def _run() -> None:
         session = FailingFlushSession()

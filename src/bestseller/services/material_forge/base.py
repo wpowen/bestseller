@@ -33,14 +33,13 @@ import logging
 import re
 from dataclasses import dataclass, field
 from textwrap import dedent
-from typing import Any, Sequence
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.services.llm_tool_runtime import ToolRegistry, ToolSpec, run_tool_loop
 from bestseller.services.material_library import (
     MaterialEntry,
-    insert_entry,
     query_library,
 )
 from bestseller.settings import AppSettings
@@ -165,6 +164,7 @@ class BaseForge:
         *,
         sub_genre: str | None = None,
         existing_materials: dict[str, list[ProjectMaterial]] | None = None,
+        concept_lab_context: str | None = None,
         max_rounds: int = 10,
     ) -> list[ForgeResult]:
         """Run this forge for all covered dimensions.
@@ -185,6 +185,10 @@ class BaseForge:
             Already-forged project materials keyed by dimension — passed in
             so later Forges can reference earlier forge outputs for
             cross-forge consistency.
+        concept_lab_context:
+            Optional selected Concept Lab material contract. When present, it
+            narrows seed retrieval and forces forged materials to serve the
+            same reader promise instead of drifting into generic genre stock.
         max_rounds:
             Maximum tool-loop rounds per dimension.
         """
@@ -198,6 +202,7 @@ class BaseForge:
                 sub_genre=sub_genre,
                 settings=settings,
                 existing_materials=existing_materials or {},
+                concept_lab_context=concept_lab_context,
                 max_rounds=max_rounds,
             )
             results.append(result)
@@ -215,15 +220,20 @@ class BaseForge:
         sub_genre: str | None,
         settings: AppSettings,
         existing_materials: dict[str, list[ProjectMaterial]],
+        concept_lab_context: str | None,
         max_rounds: int,
     ) -> ForgeResult:
         # 1. Retrieve seed entries from the global library
+        concept_query = (concept_lab_context or "").strip()
+        library_query = f"{genre} {dimension}"
+        if concept_query:
+            library_query = f"{library_query}\n{concept_query[:1000]}"
         seeds: list[MaterialEntry] = await query_library(
             session,
             dimension=dimension,
             genre=genre,
             sub_genre=sub_genre,
-            query=f"{genre} {dimension}",
+            query=library_query,
             top_k=8,
         )
 
@@ -236,6 +246,7 @@ class BaseForge:
             seeds=seeds,
             existing_materials=existing_materials,
             project_id=project_id,
+            concept_lab_context=concept_lab_context,
         )
 
         # 3. Collect emitted materials in a mutable box
@@ -328,6 +339,7 @@ class BaseForge:
         seeds: list[MaterialEntry],
         existing_materials: dict[str, list[ProjectMaterial]],
         project_id: str,
+        concept_lab_context: str | None = None,
     ) -> str:
         seed_block = ""
         if seeds:
@@ -346,6 +358,15 @@ class BaseForge:
             )
             existing_block = f"## 本项目已有物料（避免重复）\n{ex_lines}"
 
+        concept_block = ""
+        if concept_lab_context:
+            from bestseller.services.concept_lab import CONCEPT_LAB_MATERIAL_LABEL
+
+            concept_block = (
+                f"## {CONCEPT_LAB_MATERIAL_LABEL}（必须服务）\n"
+                f"{concept_lab_context.strip()}"
+            )
+
         return dedent(
             f"""
             # 锻造任务
@@ -360,6 +381,8 @@ class BaseForge:
             - narrative_summary：1-3 句话概括，供其他 Agent 检索时判断相关性
             - content_json：结构化内容（{self.content_schema_hint}）
             - variation_notes：一句话说明本条与库中同类条目的差异
+
+            {concept_block}
 
             {seed_block}
 
@@ -584,4 +607,3 @@ def _coerce_emit_args(
         source_library_ids=source_ids,
         variation_notes=variation_notes or "",
     )
-

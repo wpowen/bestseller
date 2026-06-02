@@ -9,13 +9,12 @@ Covers:
 from __future__ import annotations
 
 import json
-import pytest
-from dataclasses import dataclass, field
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from bestseller.services.material_forge.base import (
-    BaseForge,
     ProjectMaterial,
     ForgeResult,
     _coerce_emit_args,
@@ -264,6 +263,24 @@ class TestBaseForge:
             assert isinstance(cls.dimensions, tuple), f"{cls.__name__}.dimensions not a tuple"
             assert len(cls.dimensions) > 0, f"{cls.__name__}.dimensions is empty"
 
+    def test_build_user_prompt_includes_concept_lab_context(self) -> None:
+        """Forge prompts must preserve the selected quickstart concept contract."""
+        from bestseller.services.material_forge.world_forge import WorldForge
+
+        prompt = WorldForge()._build_user_prompt(
+            dimension="world_settings",
+            genre="末世",
+            sub_genre="囤货求生",
+            target_count=2,
+            seeds=[],
+            existing_materials={},
+            project_id="proj-concept",
+            concept_lab_context="读者承诺：仓库清单每章兑现一次现实破局。",
+        )
+
+        assert "已选脑洞物料合同" in prompt
+        assert "仓库清单每章兑现一次现实破局" in prompt
+
     async def test_run_calls_forge_per_dimension(self) -> None:
         """BaseForge.run() calls _forge_dimension once per dimension."""
         from bestseller.services.material_forge.world_forge import WorldForge
@@ -343,6 +360,7 @@ class TestBaseForge:
                     sub_genre=None,
                     settings=settings,
                     existing_materials={},
+                    concept_lab_context=None,
                     max_rounds=3,
                 )
         finally:
@@ -359,10 +377,8 @@ class TestBaseForge:
     async def test_forge_dimension_query_library_tool_returns_error_for_empty_query(self) -> None:
         """query_library tool handler returns {'error': 'empty_query'} for empty query."""
         from bestseller.services.material_forge.world_forge import WorldForge
-        from bestseller.settings import load_settings
 
         forge = WorldForge()
-        settings = load_settings(env={})
         session = AsyncMock()
 
         ql_tool = forge._build_query_library_tool(
@@ -456,7 +472,6 @@ class TestForgeAllMaterials:
 
         # Each forge returns ForgeResults; WorldForge has 3 dims, others 1-2
         def make_forge_results(forge_cls: Any) -> list[ForgeResult]:
-            from bestseller.services.material_forge.base import BaseForge
             forge_instance = forge_cls()
             return [
                 ForgeResult(

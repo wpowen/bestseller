@@ -3824,26 +3824,37 @@
       </div>
       <div class="genre-dimension-filters" id="genreDimensionFilters" aria-label="题材多维筛选"></div>
       <div class="genre-grid" id="genreGrid"></div>
-      <div class="creative-lab" id="creativeLab" aria-label="题材创意发散">
+      <div class="creative-lab" id="creativeLab" aria-label="题材脑洞发散">
         <div class="creative-lab-head">
           <div>
-            <div class="creative-lab-title">创意发散</div>
+            <div class="creative-lab-title">题材脑洞发散</div>
             <div class="creative-evidence" id="creativeEvidence"></div>
           </div>
         </div>
         <div class="creative-options" id="creativeOptions"></div>
         <div class="creative-preview" id="creativePreview"></div>
       </div>
-      <div class="creative-lab" id="hookLab" aria-label="反常识钩子候选">
+      <div class="creative-lab" id="hookLab" aria-label="反常识爽点候选">
         <div class="creative-lab-head">
           <div>
-            <div class="creative-lab-title">反常识钩子</div>
+            <div class="creative-lab-title">反常识爽点</div>
             <div class="creative-evidence" id="hookEvidence"></div>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm" id="shuffleHookBtn">换一批</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="shuffleHookBtn">换一批爽点</button>
         </div>
         <div class="creative-options" id="hookOptions"></div>
         <div class="creative-preview" id="hookPreview"></div>
+      </div>
+      <div class="creative-lab" id="conceptLab" aria-label="脑洞组合候选">
+        <div class="creative-lab-head">
+          <div>
+            <div class="creative-lab-title">脑洞组合 · 批量候选</div>
+            <div class="creative-evidence" id="conceptEvidence"></div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="refreshConceptLabBtn">换一批脑洞</button>
+        </div>
+        <div class="creative-options" id="conceptOptions"></div>
+        <div class="creative-preview" id="conceptPreview"></div>
       </div>
       <div class="empty-state" id="emptyState" style="display:none;">没有找到匹配的题材</div>
       <div class="nav-buttons">
@@ -3916,9 +3927,10 @@
         <h3>创作计划</h3>
         <div class="summary-row"><span class="lbl">题材</span><span class="val" id="sumGenre">-</span></div>
         <div class="summary-row"><span class="lbl">子类型</span><span class="val" id="sumSub">-</span></div>
-        <div class="summary-row"><span class="lbl">创作维度</span><span class="val" id="sumDims">-</span></div>
-        <div class="summary-row"><span class="lbl">创意方向</span><span class="val" id="sumCreative">-</span></div>
-        <div class="summary-row"><span class="lbl">反常识钩子</span><span class="val" id="sumHook">-</span></div>
+        <div class="summary-row"><span class="lbl">脑洞维度</span><span class="val" id="sumDims">-</span></div>
+        <div class="summary-row"><span class="lbl">题材脑洞</span><span class="val" id="sumCreative">-</span></div>
+        <div class="summary-row"><span class="lbl">反常识爽点</span><span class="val" id="sumHook">-</span></div>
+        <div class="summary-row"><span class="lbl">脑洞组合</span><span class="val" id="sumConcept">-</span></div>
         <div class="summary-row"><span class="lbl" id="sumChLabel">章节数</span><span class="val" id="sumCh">-</span></div>
         <div class="summary-row"><span class="lbl">写作模型</span><span class="val" id="sumModel">-</span></div>
         <div class="summary-row summary-option">
@@ -4174,9 +4186,57 @@
   let selectedGenreKey = null;
   let selectedCreativeKey = null;
   let selectedHookIndexByGenre = {};
+  let conceptLabCatalog = null;
+  let selectedConceptBundleId = null;
+  let conceptLabLoading = false;
+  let conceptLabRequestSeq = 0;
   let selectedLang = 'zh';
   let creationMode = 'long_serial';
   let shortStoryGenreFilterOnly = false;
+  // Maps mechanism key (e.g. "dog_chaser") to its Chinese display label
+  // (e.g. "追妻火葬场").  Keys not in this map fall back to the raw key.
+  const MECHANISM_LABEL_BY_KEY = {
+    death_grows: "作死变强",
+    sign_in_overload: "签到反噬",
+    system_levy: "系统抽税",
+    lottery_curse: "锦鲤代价",
+    gold_finger_leak: "金手指泄密",
+    trial_loop: "试炼套环",
+    time_loop: "时间循环",
+    mastered_disciple: "师徒反杀",
+    forced_loss: "限制消费",
+    profession_reversal: "职业反差",
+    divine_doctor: "神医冷脸",
+    mind_reader: "读心代价",
+    fake_heir: "真假千金",
+    dog_chaser: "追妻火葬场",
+    silver_lining_loser: "舔狗翻身",
+    playboy_pivot: "海王翻篇",
+    emotion_value: "情绪值",
+    misunderstanding: "迪化误解",
+    green_tea_reveal: "绿茶反白",
+    crazy_girlfriend: "疯批攻心",
+    sicko_devotion: "病娇献祭",
+    everyone_loves_me: "万人迷围城",
+    villain_redeem: "反派洗白",
+    revenge_then_what: "复仇后路",
+    hide_anti_trope: "苟道反套路",
+    master_above: "师尊在上",
+    substitute_bride: "替嫁顶罪",
+    joy_wedding: "冲喜逆运",
+    cannon_fodder_rises: "炮灰逆袭",
+    mass_transmigration: "群穿合谋",
+    withdraw_engagement: "退婚换天",
+    divorce_husband: "女主休夫",
+    rule_horror: "规则怪谈",
+    fourth_disaster: "第四天灾",
+    script_within_script: "剧本杀套中套",
+    apocalypse_hoard: "末日囤货",
+    npc_resistance: "NPC觉醒",
+    body_swap: "灵魂错位",
+    loop_killer: "循环连环案",
+    proxy_war: "代理人战争",
+  };
   const DEFAULT_FANQIE_LENGTH_KEY = 'fanqie-short-15k';
   let fanqieLengthKey = DEFAULT_FANQIE_LENGTH_KEY;
   let fanqiePov = 'first_person';
@@ -4208,6 +4268,7 @@
   let visibleDashboardTasks = [];
   const DEFAULT_LANG = 'zh';
   const DEFAULT_CHAPTER_COUNT = 500;
+  const CONCEPT_LAB_BATCH_COUNT = 12;
   const ENGLISH_GENRE_DESCRIPTION_ZH = {
     'dark-romance': '道德灰度男主、权力失衡关系、囚禁式拉扯和高浓度情欲并存，卖点就是危险感包裹下的强烈欲望。',
     romantasy: '以爱情为核心的奇幻题材，常见精灵宫廷、天选之人、慢热拉扯和浓郁世界观，是近年最强势的流行类型之一。',
@@ -4388,6 +4449,9 @@
   function resetWizardState() {
     selectedGenreKey = null;
     selectedCreativeKey = null;
+    selectedConceptBundleId = null;
+    conceptLabCatalog = null;
+    conceptLabLoading = false;
     selectedGenreFilters = {};
     selectedLang = DEFAULT_LANG;
     chapterCount = DEFAULT_CHAPTER_COUNT;
@@ -4406,6 +4470,8 @@
     renderGenreFilters();
     renderGenres(genres.filter(matchSearch));
     renderCreativeLab();
+    renderHookLab();
+    renderConceptLab();
     updateSummary();
     wizGo(1);
   }
@@ -6921,6 +6987,7 @@
     renderGenres(genres.filter(matchSearch));
     renderCreativeLab();
     renderHookLab();
+    renderConceptLab();
   }
 
   const GENRE_FILTER_FIELDS = ['heat_domains', 'reader_rewards', 'narrative_drives', 'content_modes', 'commercial_signals'];
@@ -7008,8 +7075,10 @@
     $$('#creativeOptions .creative-card').forEach(btn => {
       btn.addEventListener('click', () => {
         selectedCreativeKey = btn.dataset.creativeKey || '';
+        selectedConceptBundleId = null;
         renderCreativeLab();
         updateSummary();
+        void loadConceptLab();
       });
     });
 
@@ -7024,7 +7093,7 @@
         ${esc(direction.opening_hook || '')}
       </div>
       <div class="creative-preview-side">
-        <div class="creative-preview-label">mechanism / guardrail</div>
+        <div class="creative-preview-label">脑洞机制 / 反套路护栏</div>
         ${listItems.length ? `<ul class="creative-preview-list">${listItems.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '<div class="creative-evidence">题材库 + 调研库生成</div>'}
       </div>
     ` : '';
@@ -7044,20 +7113,26 @@
     }
     root.classList.add('active');
     const selectedIdx = selectedHookIndexByGenre[g.key] || 0;
-    $('#hookEvidence').textContent = 'H_norm 命题强度 · 机制新颖度 · 代价/限制/反作弊约束';
+    $('#hookEvidence').textContent = '爽点强度 · 设定新颖度 · 代价/限制/反作弊约束';
     $('#hookOptions').innerHTML = pack.map((candidate, idx) => {
       const spec = candidate.spec || {};
       const score = candidate.score || {};
+      const noveltyPct = Math.round((candidate.novelty_score || 0) * 100);
+      const scorePill = `爽点 ${Math.round(Number(score.h_norm || 0))}`;
       const chips = [
-        spec.mechanism_key,
-        score.verdict,
-        `novelty ${Math.round((candidate.novelty_score || 0) * 100)}`
+        `新颖 ${noveltyPct}`,
       ].filter(Boolean).map(item => `<span class="creative-source-chip">${esc(String(item))}</span>`).join('');
+      const key = spec.mechanism_key || '';
+      const mechanismLabel =
+        MECHANISM_LABEL_BY_KEY[key]
+        || spec.mechanism_label
+        || key
+        || '爽点';
       return `
         <button type="button" class="creative-card${idx === selectedIdx ? ' active' : ''}" data-hook-idx="${idx}">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
-            <div class="title">${esc(spec.mechanism_key || 'hook')}</div>
-            <span class="hook-score">${Number(score.h_norm || 0).toFixed(1)}</span>
+            <div class="title">${esc(mechanismLabel)}</div>
+            <span class="hook-score">${esc(scorePill)}</span>
           </div>
           <div class="hook-one-liner">${esc(spec.one_liner || '')}</div>
           ${chips ? `<div class="hook-meta">${chips}</div>` : ''}
@@ -7067,8 +7142,10 @@
     $$('#hookOptions .creative-card').forEach(btn => {
       btn.addEventListener('click', () => {
         selectedHookIndexByGenre[g.key] = Number(btn.dataset.hookIdx || 0);
+        selectedConceptBundleId = null;
         renderHookLab();
         updateSummary();
+        void loadConceptLab();
       });
     });
     const chosen = selectedHookCandidate();
@@ -7084,8 +7161,145 @@
         ${esc(spec.misunderstanding || '')}
       </div>
       <div class="creative-preview-side">
-        <div class="creative-preview-label">constraints / anti-cheat</div>
+        <div class="creative-preview-label">限制 / 反作弊</div>
         ${constraintItems.length ? `<ul class="creative-preview-list">${constraintItems.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '<div class="creative-evidence">机制库生成</div>'}
+      </div>
+    ` : '';
+  }
+
+  function selectedConceptBundle() {
+    const bundles = conceptLabCatalog?.bundles || [];
+    if (!bundles.length) return null;
+    return bundles.find(item => item.bundle_id === selectedConceptBundleId)
+      || bundles.find(item => item.bundle_id === conceptLabCatalog.default_bundle_id)
+      || bundles[0];
+  }
+
+  async function loadConceptLab() {
+    const g = selectedGenre();
+    if (!g) {
+      conceptLabCatalog = null;
+      selectedConceptBundleId = null;
+      conceptLabLoading = false;
+      renderConceptLab();
+      updateSummary();
+      return;
+    }
+    const requestSeq = ++conceptLabRequestSeq;
+    conceptLabLoading = true;
+    renderConceptLab();
+    try {
+      const selectedHook = selectedHookCandidate();
+      // Reuse the cached bundle if both the genre and the picked hook are
+      // unchanged, unless the user explicitly asked for a fresh batch.
+      const seed = Date.now() ^ Math.floor(Math.random() * 1_000_000);
+      const res = await fetch('/api/concept-lab/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          genre_key: g.key,
+          creative_key: selectedCreativeKey || selectedCreativeDirection()?.key || '',
+          hook_spec: selectedHook?.spec || undefined,
+          count: CONCEPT_LAB_BATCH_COUNT,
+          seed,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || '脑洞组合生成失败');
+      if (requestSeq !== conceptLabRequestSeq) return;
+      conceptLabCatalog = payload;
+      const bundles = conceptLabCatalog?.bundles || [];
+      if (!bundles.some(item => item.bundle_id === selectedConceptBundleId)) {
+        selectedConceptBundleId = conceptLabCatalog.default_bundle_id || bundles[0]?.bundle_id || null;
+      }
+    } catch {
+      if (requestSeq !== conceptLabRequestSeq) return;
+      conceptLabCatalog = { bundles: [] };
+      selectedConceptBundleId = null;
+    } finally {
+      if (requestSeq === conceptLabRequestSeq) {
+        conceptLabLoading = false;
+        renderConceptLab();
+        updateSummary();
+      }
+    }
+  }
+
+  function renderConceptLab() {
+    const root = $('#conceptLab');
+    if (!root) return;
+    const g = selectedGenre();
+    const options = $('#conceptOptions');
+    const preview = $('#conceptPreview');
+    const evidence = $('#conceptEvidence');
+    if (!g) {
+      root.classList.remove('active');
+      options.innerHTML = '';
+      preview.innerHTML = '';
+      evidence.textContent = '';
+      return;
+    }
+    root.classList.add('active');
+    if (conceptLabLoading) {
+      evidence.textContent = `正在批量生成 ${CONCEPT_LAB_BATCH_COUNT} 组脑洞 · 含标题、读者承诺、素材组合、故事循环`;
+      options.innerHTML = '<div class="creative-evidence">脑洞合成中...</div>';
+      preview.innerHTML = '';
+      return;
+    }
+    const bundles = conceptLabCatalog?.bundles || [];
+    if (!bundles.length) {
+      evidence.textContent = '暂无可用脑洞组合';
+      options.innerHTML = '';
+      preview.innerHTML = '';
+      return;
+    }
+    const selected = selectedConceptBundle();
+    selectedConceptBundleId = selected?.bundle_id || selectedConceptBundleId;
+    evidence.textContent = `脑洞候选 ${bundles.length} 组 · 标题 · 读者承诺 · 素材 · 故事循环`;
+    options.innerHTML = bundles.map(bundle => {
+      const titleSeed = bundle.title_seeds?.[0]?.text || bundle.one_liner || bundle.bundle_id;
+      const score = bundle.scores?.h_norm ? Math.round(Number(bundle.scores.h_norm)) : '';
+      const chips = [
+        ...(bundle.source_mix || []).slice(0, 2),
+        score ? `爽 ${score}` : '',
+      ].filter(Boolean).map(item => `<span class="creative-source-chip">${esc(String(item))}</span>`).join('');
+      return `
+        <button type="button" class="creative-card${bundle.bundle_id === selectedConceptBundleId ? ' active' : ''}" data-concept-id="${esc(bundle.bundle_id)}">
+          <div class="title">${esc(titleSeed)}</div>
+          <div class="stance">${esc(bundle.one_liner || '')}</div>
+          ${chips ? `<div class="sources">${chips}</div>` : ''}
+        </button>
+      `;
+    }).join('');
+    $$('#conceptOptions .creative-card').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedConceptBundleId = btn.dataset.conceptId || '';
+        renderConceptLab();
+        updateSummary();
+      });
+    });
+    const listing = selected?.listing_seeds?.[0] || {};
+    const loop = selected?.story_loop || {};
+    const material = selected?.material_brief || {};
+    const bullets = [
+      selected?.reader_promise,
+      listing.hook,
+      loop.opening_question,
+      loop.recurring_pressure,
+    ].filter(Boolean).slice(0, 5);
+    const materialTerms = (material.query_terms || []).slice(0, 8);
+    preview.innerHTML = selected ? `
+      <div class="creative-preview-main">
+        <strong>${esc(selected.reader_promise || selected.one_liner || '')}</strong><br>
+        ${esc(listing.blurb || selected.one_liner || '')}
+        ${bullets.length ? `<ul class="creative-preview-list">${bullets.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}
+      </div>
+      <div class="creative-preview-side">
+        <div class="creative-preview-label">素材 / 故事循环</div>
+        ${materialTerms.length ? `<div class="hook-meta">${materialTerms.map(item => `<span class="creative-source-chip">${esc(item)}</span>`).join('')}</div>` : ''}
+        <ul class="creative-preview-list">
+          ${(loop.per_chapter_contract || []).slice(0, 4).map(item => `<li>${esc(item)}</li>`).join('')}
+        </ul>
       </div>
     ` : '';
   }
@@ -7123,11 +7337,14 @@
         selectedGenreFilters[field] = '';
         selectedGenreKey = null;
         selectedCreativeKey = null;
+        selectedConceptBundleId = null;
+        conceptLabCatalog = null;
         $('#toStep2').disabled = true;
         renderGenreFilters();
         renderGenres(genres.filter(matchSearch));
         renderCreativeLab();
         renderHookLab();
+        renderConceptLab();
       };
       options.appendChild(allBtn);
 
@@ -7140,11 +7357,14 @@
           selectedGenreFilters[field] = selectedGenreFilters[field] === value ? '' : value;
           selectedGenreKey = null;
           selectedCreativeKey = null;
+          selectedConceptBundleId = null;
+          conceptLabCatalog = null;
           $('#toStep2').disabled = true;
           renderGenreFilters();
           renderGenres(genres.filter(matchSearch));
           renderCreativeLab();
           renderHookLab();
+          renderConceptLab();
         };
         options.appendChild(btn);
       });
@@ -7179,11 +7399,14 @@
       card.innerHTML = `<div class="genre-card-kicker">题 · ${String(idx + 1).padStart(2, '0')}</div><div class="name">${esc(g.name)}</div><div class="genre-tag">${esc(g.genre)}${g.sub_genre ? ' / ' + esc(g.sub_genre) : ''}</div><div class="desc">${esc(getGenreDisplayDescription(g))}</div>${chips ? `<div class="genre-card-meta">${chips}</div>` : ''}`;
       card.onclick = () => {
         selectedGenreKey = g.key;
+        selectedConceptBundleId = null;
+        conceptLabCatalog = null;
         ensureCreativeSelection(g);
         renderGenres(genres.filter(matchSearch));
         renderCreativeLab();
         renderHookLab();
         updateSummary();
+        void loadConceptLab();
         $('#toStep2').disabled = false;
       };
       grid.appendChild(card);
@@ -7216,6 +7439,8 @@
     selectedLang = lang;
     selectedGenreKey = null;
     selectedCreativeKey = null;
+    selectedConceptBundleId = null;
+    conceptLabCatalog = null;
     selectedGenreFilters = {};
     $('#toStep2').disabled = true;
     $$('.lang-tab').forEach(t => t.classList.toggle('active', t.dataset.lang === lang));
@@ -7224,6 +7449,8 @@
     renderGenreFilters();
     renderGenres(genres.filter(matchSearch));
     renderCreativeLab();
+    renderHookLab();
+    renderConceptLab();
   }
   $('#langTabZh').addEventListener('click', () => switchLangTab('zh'));
   $('#langTabEn').addEventListener('click', () => switchLangTab('en'));
@@ -7254,10 +7481,14 @@
     if (isFanqie && g && !g.suitable_for_short_story) {
       selectedGenreKey = null;
       selectedCreativeKey = null;
+      selectedConceptBundleId = null;
+      conceptLabCatalog = null;
       $('#toStep2').disabled = true;
     }
     renderGenres(genres.filter(matchSearch));
     renderCreativeLab();
+    renderHookLab();
+    renderConceptLab();
   }
 
   function fanqieLengthOption(key) {
@@ -7361,6 +7592,7 @@
     const g = selectedGenre();
     const creative = selectedCreativeDirection();
     const hook = selectedHookCandidate();
+    const concept = selectedConceptBundle();
     $('#sumGenre').textContent = g ? g.name : '-';
     $('#sumSub').textContent = g ? `${g.genre}${g.sub_genre ? ' / ' + g.sub_genre : ''}` : '-';
     $('#sumDims').textContent = g
@@ -7373,6 +7605,7 @@
       : '-';
     $('#sumCreative').textContent = creative ? creative.title : '-';
     $('#sumHook').textContent = hook?.spec?.one_liner || '-';
+    $('#sumConcept').textContent = concept?.title_seeds?.[0]?.text || concept?.one_liner || '-';
     const sumLbl = $('#sumChLabel');
     if (creationMode === 'fanqie_short') {
       const opt = fanqieLengthOption(fanqieLengthKey);
@@ -7400,6 +7633,7 @@
     btn.innerHTML = '<span class="loading-spinner"></span> 提交中...';
     try {
       const selectedHook = selectedHookCandidate();
+      const selectedConcept = selectedConceptBundle();
       const res = await fetch('/api/tasks/quickstart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -7408,6 +7642,8 @@
           genre_key: selectedGenreKey,
           creative_key: selectedCreativeKey,
           hook_spec: selectedHook?.spec || undefined,
+          concept_lab_bundle_id: selectedConcept?.bundle_id || undefined,
+          concept_lab_bundle: selectedConcept || undefined,
           chapter_count: creationMode === 'fanqie_short' ? chapterCount : chapterCount,
           length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
           pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
@@ -7460,6 +7696,8 @@
         genre_key: selectedGenreKey,
         creative_key: selectedCreativeKey,
         hook_spec: selectedHookCandidate()?.spec || undefined,
+        concept_lab_bundle_id: selectedConceptBundle()?.bundle_id || undefined,
+        concept_lab_bundle: selectedConceptBundle() || undefined,
         chapter_count: chapterCount,
         length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
         pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
@@ -7511,13 +7749,33 @@
   });
   $('#startBtn').addEventListener('click', startCreation);
   $('#scheduleBtn')?.addEventListener('click', scheduleQuickstart);
-  $('#shuffleHookBtn')?.addEventListener('click', () => {
+  $('#shuffleHookBtn')?.addEventListener('click', async () => {
     const g = selectedGenre();
-    const pack = hookPackFor(g);
-    if (!g || !pack.length) return;
-    selectedHookIndexByGenre[g.key] = ((selectedHookIndexByGenre[g.key] || 0) + 1) % pack.length;
+    if (!g) return;
+    const seed = Date.now() ^ Math.floor(Math.random() * 1_000_000);
+    try {
+      const res = await fetch('/api/hook-candidates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ genre_key: g.key, seed, count: 6 }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || '反常识爽点换一批失败');
+      hookCandidates[g.key] = payload.candidates || [];
+    } catch (err) {
+      // Soft-fail: keep the existing pack if the server is down.
+      console.warn('shuffleHookBtn fallback:', err);
+    }
+    selectedHookIndexByGenre[g.key] = 0;
+    selectedConceptBundleId = null;
     renderHookLab();
     updateSummary();
+    void loadConceptLab();
+  });
+  $('#refreshConceptLabBtn')?.addEventListener('click', () => {
+    selectedConceptBundleId = null;
+    conceptLabCatalog = null;
+    void loadConceptLab();
   });
   $('#dashSearch')?.addEventListener('input', (event) => {
     dashboardQuery = event.target.value.trim().toLowerCase();

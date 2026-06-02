@@ -14,6 +14,8 @@ class HookMechanism(BaseModel):
 
     key: str = Field(min_length=1, max_length=64)
     label: str = Field(min_length=1, max_length=120)
+    category: str = Field(default="", max_length=64)
+    formula_affinity: tuple[str, ...] = Field(default_factory=tuple)
     base_desire_pool: tuple[str, ...] = Field(default_factory=tuple)
     reversal_template: str = Field(min_length=1)
     reward_pool: tuple[str, ...] = Field(default_factory=tuple)
@@ -36,6 +38,7 @@ class HookMechanism(BaseModel):
         "arc_escalation_axes",
         "forbidden_overlaps",
         "genres",
+        "formula_affinity",
         mode="before",
     )
     @classmethod
@@ -66,10 +69,22 @@ class HookSpec(BaseModel):
     costs: tuple[str, ...] = Field(default_factory=tuple)
     misunderstanding: str | None = Field(default=None, max_length=400)
     arc_engine: tuple[str, ...] = Field(default_factory=tuple)
+    hook_type: str = Field(default="", max_length=80)
+    opening_frame: str = Field(default="", max_length=160)
+    expression_style: str = Field(default="", max_length=80)
+    methodology_axes: tuple[str, ...] = Field(default_factory=tuple)
+    llm_design_brief: str = Field(default="", max_length=800)
     one_liner: str = Field(min_length=1, max_length=240)
     core_rule: str = Field(min_length=1, max_length=500)
 
-    @field_validator("rewards", "anti_cheat", "costs", "arc_engine", mode="before")
+    @field_validator(
+        "rewards",
+        "anti_cheat",
+        "costs",
+        "arc_engine",
+        "methodology_axes",
+        mode="before",
+    )
     @classmethod
     def _coerce_tuple(cls, value: object) -> tuple[str, ...]:
         if value is None:
@@ -135,4 +150,3 @@ class HookStrengthGateReport(BaseModel):
     rewrite_suggestions: tuple[str, ...] = Field(default_factory=tuple)
     score: HookScore
     verdict: str
-

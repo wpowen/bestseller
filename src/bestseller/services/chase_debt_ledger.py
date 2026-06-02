@@ -135,6 +135,51 @@ def compound_balance(
     return balance * (1.0 + interest_rate) ** periods
 
 
+def accrue_debt_rows(rows: Any, current_chapter: int) -> tuple[int, int]:
+    """Accrue interest + flip overdue on DB-backed debt rows, in place.
+
+    Pure arithmetic over ``ChaseDebtModel``-like duck-typed rows (string
+    ``status`` of ``active``/``overdue``/``paid``; numeric ``balance`` /
+    ``interest_rate``; integer ``accrued_through_chapter`` / ``due_chapter``).
+    The caller persists the mutations via the ORM session flush — this
+    function never touches a session, mirroring :func:`compound_balance` so
+    the arithmetic stays unit-testable without a database.
+
+    For each ``active``/``overdue`` row where
+    ``current_chapter > accrued_through_chapter`` the balance is compounded
+    forward and the accrual pointer advanced. After accrual, an ``active``
+    row whose ``due_chapter`` has passed is flipped to ``overdue``.
+
+    Idempotent per chapter: a second call with the same ``current_chapter``
+    is a no-op because ``accrued_through_chapter`` already caught up.
+
+    Returns ``(accrued_count, newly_overdue_count)``.
+    """
+
+    accrued = 0
+    newly_overdue = 0
+    for row in rows:
+        status = str(getattr(row, "status", "") or "")
+        if status not in ("active", "overdue"):
+            continue
+        try:
+            through = int(getattr(row, "accrued_through_chapter", 0) or 0)
+            due = int(getattr(row, "due_chapter", 0) or 0)
+            rate = float(getattr(row, "interest_rate", 0.0) or 0.0)
+            balance = float(getattr(row, "balance", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        periods = current_chapter - through
+        if periods > 0:
+            row.balance = compound_balance(balance, rate, periods)
+            row.accrued_through_chapter = current_chapter
+            accrued += 1
+        if status == "active" and current_chapter > due:
+            row.status = "overdue"
+            newly_overdue += 1
+    return accrued, newly_overdue
+
+
 # ---------------------------------------------------------------------------
 # In-memory store. Mirrors the surface of the eventual DB-backed service
 # so call sites can swap one for the other without refactoring.

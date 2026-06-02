@@ -1,6 +1,9 @@
 mechanisms:
+  # ─────────────────── A 升级流/数值压制 (8) ───────────────────
   - key: death_grows
     label: 作死变强
+    category: progression
+    formula_affinity: [bawang_clause, cost_first, heart_beat_clock]
     genres: ["玄幻", "都市", "fantasy", "urban"]
     base_desire_pool: ["活下去", "保住家人", "守住身份", "获得力量"]
     reversal_template: "越接近死亡或失败，越能获得真正的成长资源"
@@ -12,8 +15,124 @@ mechanisms:
     arc_escalation_axes: ["死亡阈值", "风险对象", "代价可见度", "真相暴露"]
     saturation_score: 0.62
     forbidden_overlaps: ["无脑送死", "无限复活"]
+
+  - key: sign_in_overload
+    label: 签到反噬
+    category: progression
+    formula_affinity: [public_reveal, identity_collapse, cost_first]
+    genres: ["玄幻", "都市", "fantasy", "urban"]
+    base_desire_pool: ["闭门变强", "避开纷争", "藏住底牌", "稳赚不亏"]
+    reversal_template: "越闭门签到越被卷入更大公开战场，签到奖励必须在公开局面里兑现"
+    reward_pool: ["签到累计加成", "稀有奖池", "公开声望", "对手情报曝光"]
+    constraint_dimensions: ["time", "witness", "ban", "must_explain"]
+    anti_cheat_rules: ["不能伪造签到地点", "公开兑现必须真发生", "代签不结算"]
+    cost_templates: ["公开身份暴露", "对手提前布防", "下次奖励池缩水"]
+    misunderstanding_patterns: ["旁人以为主角在故意炫耀", "对手把闭关误读为示弱"]
+    arc_escalation_axes: ["签到天数", "兑现观众规模", "奖励反噬", "身份曝光"]
+    saturation_score: 0.46
+    forbidden_overlaps: ["无代价签到", "纯爽签到流"]
+
+  - key: system_levy
+    label: 系统抽税
+    category: progression
+    formula_affinity: [bawang_clause, cost_first, market_logline]
+    genres: ["都市", "玄幻", "urban", "fantasy"]
+    base_desire_pool: ["快速升级", "甩开对手", "独占资源", "破阶突破"]
+    reversal_template: "每次能力跃迁都要立即上缴一段身份或记忆，越升越裸"
+    reward_pool: ["段位跃迁", "专属权限", "稀有技能", "对手情报"]
+    constraint_dimensions: ["method", "ban", "ledger", "must_explain"]
+    anti_cheat_rules: ["不能用假记忆充抵", "抽税必须当场发生", "补缴代价不可被预支"]
+    cost_templates: ["一段关键记忆被抽走", "公众身份被公开", "近期人脉被剥离"]
+    misunderstanding_patterns: ["外界以为主角自愿献祭", "队友误判主角在获取私利"]
+    arc_escalation_axes: ["抽税规模", "公开度", "身份暴露", "反制者数量"]
+    saturation_score: 0.41
+    forbidden_overlaps: ["无成本升级", "纯爽数值碾压"]
+
+  - key: lottery_curse
+    label: 锦鲤代价
+    category: progression
+    formula_affinity: [cost_first, villain_taunt, identity_collapse]
+    genres: ["都市", "玄幻", "urban", "fantasy"]
+    base_desire_pool: ["转运翻盘", "被命运眷顾", "一夜暴富", "逢凶化吉"]
+    reversal_template: "命运越眷顾，越要替别人接下灾厄；好运不是免费，是借贷"
+    reward_pool: ["临时神运", "危机预警", "贵人相助", "破局灵感"]
+    constraint_dimensions: ["target", "ban", "ledger", "must_explain"]
+    anti_cheat_rules: ["不能挑选灾厄对象", "借来的好运必须真兑现", "代价不能转嫁给同一对象"]
+    cost_templates: ["替人接下重病或灾祸", "承担本不属于主角的骂名", "被反噬者反向纠缠"]
+    misunderstanding_patterns: ["外人以为主角是天生福星", "被替者不知主角的牺牲"]
+    arc_escalation_axes: ["替灾规模", "公开度", "反噬者数量", "借债账本"]
+    saturation_score: 0.38
+    forbidden_overlaps: ["无代价锦鲤", "纯爽转运"]
+
+  - key: gold_finger_leak
+    label: 金手指泄密
+    category: progression
+    formula_affinity: [public_reveal, heart_beat_clock, identity_collapse]
+    genres: ["都市", "玄幻", "urban", "fantasy"]
+    base_desire_pool: ["藏住金手指", "稳定收益", "低调无敌", "避开调查"]
+    reversal_template: "金手指越强，越被读心者或外挂者反向锁定，必须主动暴露弱点才能续命"
+    reward_pool: ["外挂升级", "读心抗性", "反向侦查", "被反派的投名状"]
+    constraint_dimensions: ["witness", "must_explain", "ban", "method"]
+    anti_cheat_rules: ["不能伪造暴露现场", "读心者必须真的存在", "泄密必须可验证"]
+    cost_templates: ["金手指机制被部分解读", "被反向锁定关键变量", "失去一次隐身窗口"]
+    misunderstanding_patterns: ["外人以为主角在炫技", "对手把泄露当真信号"]
+    arc_escalation_axes: ["泄密规模", "读心者层级", "反锁定强度", "主动暴露代价"]
+    saturation_score: 0.44
+    forbidden_overlaps: ["无代价外挂", "纯爽金手指"]
+
+  - key: trial_loop
+    label: 试炼套环
+    category: progression
+    formula_affinity: [opening_deadlock, heart_beat_clock, reader_question]
+    genres: ["玄幻", "仙侠", "fantasy", "xianxia"]
+    base_desire_pool: ["突破试炼", "离开副本", "证明实力", "拿到传承"]
+    reversal_template: "越想离开试炼，越发现自己活在嵌套试炼的最内层"
+    reward_pool: ["试炼积分", "传承碎片", "同辈认可", "副本钥匙"]
+    constraint_dimensions: ["time", "location", "wording", "ban"]
+    anti_cheat_rules: ["不能跳过套环", "每一层都必须有可见代价", "奖励不能跨层预支"]
+    cost_templates: ["误判层数被打脸", "队友被嵌套试炼牺牲", "心智被反复消耗"]
+    misunderstanding_patterns: ["同辈以为主角已通关", "长辈误判主角在藏拙"]
+    arc_escalation_axes: ["嵌套深度", "试炼主题切换", "代价对象", "公开度"]
+    saturation_score: 0.43
+    forbidden_overlaps: ["无嵌套试炼", "无代价通关"]
+
+  - key: time_loop
+    label: 时间循环
+    category: progression
+    formula_affinity: [reader_question, heart_beat_clock, identity_collapse]
+    genres: ["悬疑", "都市", "mystery", "urban"]
+    base_desire_pool: ["打破循环", "救下关键人", "逆天改命", "保住记忆"]
+    reversal_template: "每次重置都让世界对主角更敌意，循环本身在反向学习他"
+    reward_pool: ["循环记忆", "关键节点改写权", "小范围因果律", "破解线索"]
+    constraint_dimensions: ["time", "method", "ban", "must_explain"]
+    anti_cheat_rules: ["不能靠暴力硬重启", "循环节点必须可被读者验证", "代价不能被预支"]
+    cost_templates: ["关键关系人失忆", "身体状态跨循环衰减", "被反学习者反向锁定"]
+    misunderstanding_patterns: ["周围人以为主角精神异常", "反派把循环当可利用的沙盘"]
+    arc_escalation_axes: ["循环次数", "敌意累积", "破解线索量", "代价可见度"]
+    saturation_score: 0.39
+    forbidden_overlaps: ["无代价循环", "纯爽时间倒流"]
+
+  - key: mastered_disciple
+    label: 师徒反杀
+    category: progression
+    formula_affinity: [identity_collapse, villain_taunt, public_reveal]
+    genres: ["仙侠", "玄幻", "xianxia", "fantasy"]
+    base_desire_pool: ["传下绝学", "扶弟子上位", "守住师门", "退居幕后"]
+    reversal_template: "越是把绝学传出去，越快被自己徒弟当成台阶；必须主动塌房才能续命"
+    reward_pool: ["弟子反哺", "因果豁免", "新身份解锁", "师门新主"]
+    constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
+    anti_cheat_rules: ["不能提前剥夺弟子成长", "反杀必须有可验证前提", "师尊不得用信息差永久压弟子"]
+    cost_templates: ["师门话语权旁落", "弟子反目后被公开清算", "绝学被歪曲解读"]
+    misunderstanding_patterns: ["师门以为师尊在栽培", "外人把退让当软弱"]
+    arc_escalation_axes: ["弟子实力", "公开反目节点", "师尊新身份", "新誓言约束"]
+    saturation_score: 0.36
+    forbidden_overlaps: ["无代价师徒", "纯爽收徒"]
+
+  # ─────────────────── B 都市/职场/商战 (8) ───────────────────
   - key: forced_loss
     label: 限制消费
+    category: urban_work
+    formula_affinity: [bawang_clause, cost_first, market_logline]
     genres: ["都市", "商业", "urban", "romance"]
     base_desire_pool: ["赚钱", "守住资产", "赢得竞争", "翻身"]
     reversal_template: "必须亏损、花钱或放弃收益，才能获得更高阶回报"
@@ -25,73 +144,11 @@ mechanisms:
     arc_escalation_axes: ["亏损规模", "受益对象", "市场反噬", "公开误判"]
     saturation_score: 0.58
     forbidden_overlaps: ["神豪无代价", "纯撒币"]
-  - key: emotion_value
-    label: 情绪值
-    genres: ["都市", "娱乐", "urban", "fanqie_short"]
-    base_desire_pool: ["被认可", "复仇", "证明清白", "获得流量"]
-    reversal_template: "必须引爆指定情绪，情绪越强，能力或资源越精准"
-    reward_pool: ["情绪货币", "证据显影", "能力强化", "舆论反转"]
-    constraint_dimensions: ["target", "emotion", "time", "ban"]
-    anti_cheat_rules: ["刷同一人的情绪会衰减", "虚假表演不结算", "越界伤害会反噬"]
-    cost_templates: ["记忆被扣除", "情绪迟钝", "亲密关系受损"]
-    misunderstanding_patterns: ["旁人以为主角在炒作", "反派误以为主角只会挑衅"]
-    arc_escalation_axes: ["情绪种类", "公众场域", "代价亲密度", "舆论规模"]
-    saturation_score: 0.52
-    forbidden_overlaps: ["无脑收割情绪", "直播刷分"]
-  - key: hide_anti_trope
-    label: 苟道反套路
-    genres: ["仙侠", "玄幻", "fantasy", "xianxia"]
-    base_desire_pool: ["低调活着", "不被卷入主线", "隐藏实力", "远离因果"]
-    reversal_template: "越想苟住，越会被规则推上必须出手的位置"
-    reward_pool: ["避劫权限", "隐藏传承", "因果豁免", "关键盟友"]
-    constraint_dimensions: ["location", "witness", "ban", "must_explain"]
-    anti_cheat_rules: ["不能装弱害死无辜者", "不能靠沉默逃避核心选择", "每次隐藏都会产生新债"]
-    cost_templates: ["身份暴露风险", "欠下人情债", "错失安全退路"]
-    misunderstanding_patterns: ["众人把低调误认为绝世高人", "敌人把避战误认为设局"]
-    arc_escalation_axes: ["目击者层级", "因果债", "出手公开度", "退路损耗"]
-    saturation_score: 0.48
-    forbidden_overlaps: ["纯装弱", "无责任苟命"]
-  - key: misunderstanding
-    label: 迪化误解
-    genres: ["玄幻", "都市", "fantasy", "comedy"]
-    base_desire_pool: ["说清真相", "维持普通身份", "减少麻烦", "完成小目标"]
-    reversal_template: "越解释越被误解成深层布局，误解本身推动局势升级"
-    reward_pool: ["威望误涨", "敌人自乱", "盟友过度脑补", "隐藏势力靠拢"]
-    constraint_dimensions: ["audience", "truth_gap", "ban", "time"]
-    anti_cheat_rules: ["主角不能主动撒谎骗取崇拜", "误解必须带来真实麻烦", "关键真相不能无限拖延"]
-    cost_templates: ["声望绑架", "无法退场", "被迫承担更大责任"]
-    misunderstanding_patterns: ["路人把巧合当布局", "敌人把解释当威胁", "盟友把否认当谦逊"]
-    arc_escalation_axes: ["误解人群", "责任规模", "真相缺口", "反噬节点"]
-    saturation_score: 0.44
-    forbidden_overlaps: ["无代价迪化", "全员降智"]
-  - key: fourth_disaster
-    label: 第四天灾
-    genres: ["游戏", "科幻", "fantasy", "sci-fi"]
-    base_desire_pool: ["守住世界", "管理玩家", "抵抗入侵", "重建秩序"]
-    reversal_template: "必须利用不可控玩家或观众的混乱，才能拯救秩序"
-    reward_pool: ["群体行动力", "异界资源", "规则漏洞", "阵营扩张"]
-    constraint_dimensions: ["player_rule", "respawn", "quest", "ban"]
-    anti_cheat_rules: ["玩家不能无限复活无成本", "任务奖励必须消耗世界资源", "NPC 不能失去主体性"]
-    cost_templates: ["世界稳定度下降", "原住民恐惧", "规则污染"]
-    misunderstanding_patterns: ["原住民把玩家当灾厄", "玩家误读主角真实意图"]
-    arc_escalation_axes: ["玩家规模", "世界污染", "阵营冲突", "规则公开度"]
-    saturation_score: 0.56
-    forbidden_overlaps: ["纯玩家沙雕", "无限复活无成本"]
-  - key: rule_horror
-    label: 规则怪谈
-    genres: ["悬疑", "灵异", "horror", "mystery"]
-    base_desire_pool: ["逃出去", "找回亲人", "破解规则", "证明清白"]
-    reversal_template: "必须遵守反直觉规则，违背常识反而能活"
-    reward_pool: ["安全窗口", "真相碎片", "权限提升", "同伴存活"]
-    constraint_dimensions: ["time", "location", "wording", "ban"]
-    anti_cheat_rules: ["不能靠暴力破坏规则", "规则必须有可验证代价", "漏洞只能一次性使用"]
-    cost_templates: ["记忆缺口", "同伴牺牲风险", "现实身份被替换"]
-    misunderstanding_patterns: ["同伴以为主角冷血", "外界把求生行为当犯罪"]
-    arc_escalation_axes: ["规则层级", "空间范围", "代价对象", "现实侵蚀"]
-    saturation_score: 0.50
-    forbidden_overlaps: ["规则堆砌", "无解谜底"]
+
   - key: profession_reversal
     label: 职业反差
+    category: urban_work
+    formula_affinity: [opening_deadlock, market_logline, identity_collapse]
     genres: ["都市", "悬疑", "romance", "mystery"]
     base_desire_pool: ["做好本职", "守住职业伦理", "维持普通生活", "解决委托"]
     reversal_template: "最不适合战斗或主线的职业技能，反而是破局核心"
@@ -103,3 +160,486 @@ mechanisms:
     arc_escalation_axes: ["职业场景", "伦理边界", "工具升级", "公开身份"]
     saturation_score: 0.31
     forbidden_overlaps: ["职业万能", "设定只当皮肤"]
+
+  - key: divine_doctor
+    label: 神医冷脸
+    category: urban_work
+    formula_affinity: [bawang_clause, public_reveal, identity_collapse]
+    genres: ["都市", "古言", "urban", "romance"]
+    base_desire_pool: ["只救不沾", "守住医德", "治好关键病人", "远离权斗"]
+    reversal_template: "越保持只救不沾因果的医德，越被推到必须当所有人主心骨的位置"
+    reward_pool: ["绝症逆转", "权贵欠下的人情", "神医之名", "病家情报网"]
+    constraint_dimensions: ["profession_rule", "oath", "client", "ban"]
+    anti_cheat_rules: ["不能开外挂包治百病", "每次越界必触发道德代价", "不能伪造诊断"]
+    cost_templates: ["被卷入权斗", "病情与主角挂钩", "被医闹反向追责"]
+    misunderstanding_patterns: ["权贵把冷脸当挑衅", "病家把医德当无情"]
+    arc_escalation_axes: ["病情规模", "卷入势力", "医德边界", "公开度"]
+    saturation_score: 0.33
+    forbidden_overlaps: ["无代价神医", "职业万能"]
+
+  - key: mind_reader
+    label: 读心代价
+    category: urban_work
+    formula_affinity: [cost_first, identity_collapse, villain_taunt]
+    genres: ["都市", "悬疑", "urban", "mystery"]
+    base_desire_pool: ["看穿真相", "识破骗局", "赢下谈判", "自保"]
+    reversal_template: "听到别人心声越多，越无法再相信自己原本的判断；准确率与人格完整度反相关"
+    reward_pool: ["对方真实意图", "陷阱预警", "谈判关键让步", "对手底牌"]
+    constraint_dimensions: ["emotion", "ban", "must_explain", "target"]
+    anti_cheat_rules: ["不能对亲友使用", "听不到自己心声", "读到的内容不能被预演"]
+    cost_templates: ["关键判断反复被自我推翻", "听见最亲的人的负面心声", "人格稳定度下降"]
+    misunderstanding_patterns: ["旁人以为主角会算命", "对手把读心当情报泄露"]
+    arc_escalation_axes: ["读心强度", "代价对象亲密度", "公开度", "反噬节点"]
+    saturation_score: 0.32
+    forbidden_overlaps: ["无代价读心", "纯爽读心"]
+
+  - key: fake_heir
+    label: 真假千金
+    category: urban_work
+    formula_affinity: [identity_collapse, public_reveal, villain_taunt]
+    genres: ["古言", "都市", "romance", "urban"]
+    base_desire_pool: ["证明自己不是那个真千金", "回归普通生活", "远离豪门", "守住小家"]
+    reversal_template: "越证明自己不是那个真千金，越多势力想把她钉成真千金"
+    reward_pool: ["血脉公证反制", "原家族认领", "新阵营归附", "敌对势力洗牌"]
+    constraint_dimensions: ["relationship", "witness", "ban", "must_explain"]
+    anti_cheat_rules: ["血脉证据不能伪造", "不能主动认领", "公开翻盘必须有可验证节点"]
+    cost_templates: ["被迫卷入豪门争斗", "被错认方反向追责", "原有平静生活崩塌"]
+    misunderstanding_patterns: ["豪门以为她在演戏", "外人把血脉当成工具"]
+    arc_escalation_axes: ["认领势力", "公开度", "真假证据翻转", "代价亲密度"]
+    saturation_score: 0.30
+    forbidden_overlaps: ["无代价真假千金", "血脉万能"]
+
+  - key: dog_chaser
+    label: 追妻火葬场
+    category: urban_work
+    formula_affinity: [cost_first, identity_collapse, villain_taunt]
+    genres: ["都市", "古言", "romance", "urban"]
+    base_desire_pool: ["把她追回来", "修复关系", "公开认错", "证明改变"]
+    reversal_template: "越主动追，越被旧账反向定罪；只有彻底放手才能让对方主动回头"
+    reward_pool: ["关系重启窗口", "公开道歉位", "对方主动示好", "新平衡建立"]
+    constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
+    anti_cheat_rules: ["不能用金手指强迫", "追的每一步必须有旧账回响", "不能跳过代价直接复合"]
+    cost_templates: ["公开被打脸", "旧账被反复清算", "对方主动示好被围观"]
+    misunderstanding_patterns: ["旁人以为他在表演", "对方把追手当新压力"]
+    arc_escalation_axes: ["追的姿势", "旧账规模", "围观度", "对方主动节点"]
+    saturation_score: 0.34
+    forbidden_overlaps: ["无代价追妻", "纯爽复合"]
+
+  - key: silver_lining_loser
+    label: 舔狗翻身
+    category: urban_work
+    formula_affinity: [public_reveal, identity_collapse, cost_first]
+    genres: ["都市", "romance", "urban"]
+    base_desire_pool: ["被她需要", "赢回尊重", "公开退场", "保住面子"]
+    reversal_template: "越收回所有付出，越被她需要；翻身路径必须先公开退场"
+    reward_pool: ["新身份解锁", "主动示好窗口", "公开尊重", "新关系网"]
+    constraint_dimensions: ["relationship", "public_eye", "ban", "must_explain"]
+    anti_cheat_rules: ["退场必须真发生", "不能暗中继续付出", "翻身不能靠第三方同情"]
+    cost_templates: ["被围观嘲讽", "退场被误读为认输", "旧关系网崩塌"]
+    misunderstanding_patterns: ["她以为他在演戏", "旁人把退场当落荒而逃"]
+    arc_escalation_axes: ["退场公开度", "围观反应", "对方主动节点", "新身份"]
+    saturation_score: 0.34
+    forbidden_overlaps: ["无代价舔狗翻身", "纯爽收网"]
+
+  - key: playboy_pivot
+    label: 海王翻篇
+    category: urban_work
+    formula_affinity: [identity_collapse, villain_taunt, public_reveal]
+    genres: ["都市", "romance", "urban"]
+    base_desire_pool: ["专一", "断掉旧账", "重新开始", "被一个人真正看见"]
+    reversal_template: "越想专一，越被旧情人组成的前任联盟反向追责"
+    reward_pool: ["旧账清单", "新关系公开位", "前任撤退", "真感情确认"]
+    constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
+    anti_cheat_rules: ["不能靠删除记忆翻篇", "前任联盟必须真存在", "新关系不能踩前任"]
+    cost_templates: ["前任联盟公开清算", "新关系被旧账反噬", "公开被打脸"]
+    misunderstanding_patterns: ["前任以为他在演深情", "新人把翻篇当套路"]
+    arc_escalation_axes: ["前任规模", "清算公开度", "新关系考验", "代价亲密度"]
+    saturation_score: 0.33
+    forbidden_overlaps: ["无代价海王翻篇", "纯爽回头"]
+
+  # ─────────────────── C 情绪/爽感/反派 (8) ───────────────────
+  - key: emotion_value
+    label: 情绪值
+    category: emotion_villain
+    formula_affinity: [public_reveal, heart_beat_clock, cost_first]
+    genres: ["都市", "娱乐", "urban", "fanqie_short"]
+    base_desire_pool: ["被认可", "复仇", "证明清白", "获得流量"]
+    reversal_template: "必须引爆指定情绪，情绪越强，能力或资源越精准"
+    reward_pool: ["情绪货币", "证据显影", "能力强化", "舆论反转"]
+    constraint_dimensions: ["target", "emotion", "time", "ban"]
+    anti_cheat_rules: ["刷同一人的情绪会衰减", "虚假表演不结算", "越界伤害会反噬"]
+    cost_templates: ["记忆被扣除", "情绪迟钝", "亲密关系受损"]
+    misunderstanding_patterns: ["旁人以为主角在炒作", "反派误以为主角只会挑衅"]
+    arc_escalation_axes: ["情绪种类", "公众场域", "代价亲密度", "舆论规模"]
+    saturation_score: 0.52
+    forbidden_overlaps: ["无脑收割情绪", "直播刷分"]
+
+  - key: misunderstanding
+    label: 迪化误解
+    category: emotion_villain
+    formula_affinity: [public_reveal, villain_taunt, reader_question]
+    genres: ["玄幻", "都市", "fantasy", "comedy"]
+    base_desire_pool: ["说清真相", "维持普通身份", "减少麻烦", "完成小目标"]
+    reversal_template: "越解释越被误解成深层布局，误解本身推动局势升级"
+    reward_pool: ["威望误涨", "敌人自乱", "盟友过度脑补", "隐藏势力靠拢"]
+    constraint_dimensions: ["audience", "truth_gap", "ban", "time"]
+    anti_cheat_rules: ["主角不能主动撒谎骗取崇拜", "误解必须带来真实麻烦", "关键真相不能无限拖延"]
+    cost_templates: ["声望绑架", "无法退场", "被迫承担更大责任"]
+    misunderstanding_patterns: ["路人把巧合当布局", "敌人把解释当威胁", "盟友把否认当谦逊"]
+    arc_escalation_axes: ["误解人群", "责任规模", "真相缺口", "反噬节点"]
+    saturation_score: 0.44
+    forbidden_overlaps: ["无代价迪化", "全员降智"]
+
+  - key: green_tea_reveal
+    label: 绿茶反白
+    category: emotion_villain
+    formula_affinity: [identity_collapse, public_reveal, villain_taunt]
+    genres: ["都市", "古言", "romance", "urban"]
+    base_desire_pool: ["扮无辜", "赢得好感", "避开恶意", "维持体面"]
+    reversal_template: "主角越扮无辜，外界越确信她在算计，最终只有主动撕破伪装才能破局"
+    reward_pool: ["真实关系网", "真朋友浮现", "反派自爆", "公开翻盘位"]
+    constraint_dimensions: ["audience", "ban", "must_explain", "time"]
+    anti_cheat_rules: ["撕破必须真发生", "不能靠他人背锅", "翻盘必须有可验证证据"]
+    cost_templates: ["过去所有误会反扑", "人设彻底翻车", "盟友割席"]
+    misunderstanding_patterns: ["路人把撕破当失态", "对手把翻盘当新套路"]
+    arc_escalation_axes: ["撕破公开度", "真朋友浮现", "代价规模", "翻盘位"]
+    saturation_score: 0.36
+    forbidden_overlaps: ["无代价绿茶", "纯爽洗白"]
+
+  - key: crazy_girlfriend
+    label: 疯批攻心
+    category: emotion_villain
+    formula_affinity: [cost_first, identity_collapse, villain_taunt]
+    genres: ["都市", "古言", "romance", "urban"]
+    base_desire_pool: ["守住对方", "维持理智", "不被疯批人格反噬", "保住关系"]
+    reversal_template: "越克制疯批人格，越被身边人主动逼出；理智本身是反派的弹药"
+    reward_pool: ["关系质变", "疯批能力觉醒", "对方主动靠近", "新平衡"]
+    constraint_dimensions: ["emotion", "relationship", "ban", "must_explain"]
+    anti_cheat_rules: ["疯批必须真发生", "不能靠撒娇解决", "反噬必须可见"]
+    cost_templates: ["日常关系崩塌", "被围观误解", "对方被打到退缩"]
+    misunderstanding_patterns: ["外人把疯批当表演", "对方把克制当冷淡"]
+    arc_escalation_axes: ["疯批强度", "公开度", "反噬节点", "对方认知"]
+    saturation_score: 0.32
+    forbidden_overlaps: ["无代价疯批", "纯爽甜虐"]
+
+  - key: sicko_devotion
+    label: 病娇献祭
+    category: emotion_villain
+    formula_affinity: [cost_first, identity_collapse, villain_taunt]
+    genres: ["都市", "古言", "romance", "urban"]
+    base_desire_pool: ["为爱让步", "维持关系", "自我牺牲", "对方幸福"]
+    reversal_template: "病娇越想为爱让步，对象越离心；只有把疯爱公开摆上台面才能保住关系"
+    reward_pool: ["关系重启", "对方主动靠近", "新边界建立", "共生窗口"]
+    constraint_dimensions: ["emotion", "relationship", "ban", "must_explain"]
+    anti_cheat_rules: ["让步必须真发生", "不能暗中操控", "对象必须真有离心"]
+    cost_templates: ["自我牺牲被反复否定", "关系被围观放大", "病娇人格被迫外显"]
+    misunderstanding_patterns: ["对象把让步当控制", "旁人把疯爱当表演"]
+    arc_escalation_axes: ["让步规模", "公开度", "对象认知", "代价可见"]
+    saturation_score: 0.31
+    forbidden_overlaps: ["无代价病娇", "纯爽献祭"]
+
+  - key: everyone_loves_me
+    label: 万人迷围城
+    category: emotion_villain
+    formula_affinity: [public_reveal, villain_taunt, identity_collapse]
+    genres: ["古言", "都市", "romance", "urban"]
+    base_desire_pool: ["避桃花", "专心主线", "退出围城", "低调"]
+    reversal_template: "越想避桃花，越被新角色按上必须负责的剧情债"
+    reward_pool: ["真感情浮现", "桃花退去", "公开站位", "新身份"]
+    constraint_dimensions: ["relationship", "public_eye", "ban", "must_explain"]
+    anti_cheat_rules: ["桃花债必须真发生", "不能靠暴力拒绝", "退出必须有可验证节点"]
+    cost_templates: ["被围观围攻", "被误会为滥情", "原关系网被反噬"]
+    misunderstanding_patterns: ["外人把避桃花当高冷", "追求者把拒绝当考验"]
+    arc_escalation_axes: ["桃花规模", "公开度", "退场节点", "代价亲密度"]
+    saturation_score: 0.32
+    forbidden_overlaps: ["无代价万人迷", "纯爽吸粉"]
+
+  - key: villain_redeem
+    label: 反派洗白
+    category: emotion_villain
+    formula_affinity: [identity_collapse, public_reveal, villain_taunt]
+    genres: ["都市", "玄幻", "urban", "fantasy"]
+    base_desire_pool: ["保留反派身份", "维持旧恶", "避免被收编", "不站到阳光下"]
+    reversal_template: "越想保留反派身份，越被读者或群众强制塞进救世剧本"
+    reward_pool: ["新身份解锁", "旧阵营反向投名", "公开翻盘位", "新共生关系"]
+    constraint_dimensions: ["relationship", "public_eye", "ban", "must_explain"]
+    anti_cheat_rules: ["洗白必须真发生", "不能靠单方面洗白", "翻盘必须有可验证节点"]
+    cost_templates: ["旧阵营追杀", "新阵营质疑", "公开被打脸"]
+    misunderstanding_patterns: ["旧阵营以为是演戏", "新阵营以为是卧底"]
+    arc_escalation_axes: ["洗白规模", "公开度", "旧阵营反扑", "新阵营接纳"]
+    saturation_score: 0.34
+    forbidden_overlaps: ["无代价反派洗白", "纯爽翻盘"]
+
+  - key: revenge_then_what
+    label: 复仇后路
+    category: emotion_villain
+    formula_affinity: [identity_collapse, reader_question, villain_taunt]
+    genres: ["古言", "都市", "romance", "urban"]
+    base_desire_pool: ["复仇成功", "把仇人踩到底", "了结旧账", "公开清算"]
+    reversal_template: "复仇一旦成功，主角的人设就崩塌；必须在仇敌彻底输掉前留一条对方的退路"
+    reward_pool: ["真正翻篇", "新关系网", "自我重建", "对手反向投诚"]
+    constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
+    anti_cheat_rules: ["退路必须真留", "不能事后洗白", "翻篇必须有可验证节点"]
+    cost_templates: ["被围观指责无情", "自我认同崩塌", "仇敌反扑"]
+    misunderstanding_patterns: ["旁人把留退路当软弱", "仇敌把翻篇当新圈套"]
+    arc_escalation_axes: ["退路规模", "翻篇公开度", "代价亲密度", "对手认知"]
+    saturation_score: 0.31
+    forbidden_overlaps: ["无代价复仇", "纯爽踩底"]
+
+  # ─────────────────── D 玄幻/仙侠/穿越 (8) ───────────────────
+  - key: hide_anti_trope
+    label: 苟道反套路
+    category: xianxia_cross
+    formula_affinity: [reader_question, opening_deadlock, identity_collapse]
+    genres: ["仙侠", "玄幻", "fantasy", "xianxia"]
+    base_desire_pool: ["低调活着", "不被卷入主线", "隐藏实力", "远离因果"]
+    reversal_template: "越想苟住，越会被规则推上必须出手的位置"
+    reward_pool: ["避劫权限", "隐藏传承", "因果豁免", "关键盟友"]
+    constraint_dimensions: ["location", "witness", "ban", "must_explain"]
+    anti_cheat_rules: ["不能装弱害死无辜者", "不能靠沉默逃避核心选择", "每次隐藏都会产生新债"]
+    cost_templates: ["身份暴露风险", "欠下人情债", "错失安全退路"]
+    misunderstanding_patterns: ["众人把低调误认为绝世高人", "敌人把避战误认为设局"]
+    arc_escalation_axes: ["目击者层级", "因果债", "出手公开度", "退路损耗"]
+    saturation_score: 0.48
+    forbidden_overlaps: ["纯装弱", "无责任苟命"]
+
+  - key: master_above
+    label: 师尊在上
+    category: xianxia_cross
+    formula_affinity: [identity_collapse, public_reveal, villain_taunt]
+    genres: ["仙侠", "玄幻", "xianxia", "fantasy"]
+    base_desire_pool: ["守住师徒名分", "教学相长", "维持清白", "不被流言"]
+    reversal_template: "越想守住师徒名分，越被旁观者解读为禁恋；师尊每次出手都让流言坐实"
+    reward_pool: ["师徒羁绊升级", "新阵营接纳", "公开名分", "新身份"]
+    constraint_dimensions: ["relationship", "oath", "ban", "public_eye"]
+    anti_cheat_rules: ["流言必须真存在", "出手必须有可验证代价", "名分翻盘必须公开"]
+    cost_templates: ["被围观流言围攻", "师徒边界被反复试探", "师尊权威被消解"]
+    misunderstanding_patterns: ["旁人把出手当暧昧", "徒弟把退让当嫌弃"]
+    arc_escalation_axes: ["流言规模", "公开度", "师徒边界测试", "代价亲密度"]
+    saturation_score: 0.30
+    forbidden_overlaps: ["无代价师尊", "纯爽收徒"]
+
+  - key: substitute_bride
+    label: 替嫁顶罪
+    category: xianxia_cross
+    formula_affinity: [identity_collapse, opening_deadlock, cost_first]
+    genres: ["古言", "都市", "romance", "urban"]
+    base_desire_pool: ["替嫁成功", "替家还债", "守住秘密", "退场"]
+    reversal_template: "替嫁越成功，越被婆家当成正主；想退场必须把真正的新娘逼回来"
+    reward_pool: ["新身份解锁", "婆家站位", "真正翻篇", "新关系网"]
+    constraint_dimensions: ["relationship", "disguise", "ban", "must_explain"]
+    anti_cheat_rules: ["替嫁必须真发生", "退场必须有可验证节点", "不能靠装死退场"]
+    cost_templates: ["被婆家反复压榨", "真相被公开围剿", "新关系网崩塌"]
+    misunderstanding_patterns: ["婆家以为是天意", "娘家以为是主动选择"]
+    arc_escalation_axes: ["替嫁规模", "公开度", "真新娘回归", "代价亲密度"]
+    saturation_score: 0.32
+    forbidden_overlaps: ["无代价替嫁", "纯爽上位"]
+
+  - key: joy_wedding
+    label: 冲喜逆运
+    category: xianxia_cross
+    formula_affinity: [heart_beat_clock, cost_first, identity_collapse]
+    genres: ["古言", "romance"]
+    base_desire_pool: ["压住灾厄", "救下病人", "维持喜事", "保全体面"]
+    reversal_template: "用喜事压灾，灾越压越大；只有让喜持续公开才不会反噬"
+    reward_pool: ["灾厄被反向利用", "新关系网", "公开喜事", "新身份"]
+    constraint_dimensions: ["oath", "public_eye", "ban", "must_explain"]
+    anti_cheat_rules: ["喜事必须真公开", "灾厄必须真发生", "翻盘必须有可验证节点"]
+    cost_templates: ["喜事被反复放大", "灾厄被围观嘲讽", "关系网被反噬"]
+    misunderstanding_patterns: ["旁人把喜事当演戏", "病家把冲喜当冒犯"]
+    arc_escalation_axes: ["喜事规模", "灾厄反噬", "公开度", "代价亲密度"]
+    saturation_score: 0.34
+    forbidden_overlaps: ["无代价冲喜", "纯爽逆运"]
+
+  - key: cannon_fodder_rises
+    label: 炮灰逆袭
+    category: xianxia_cross
+    formula_affinity: [identity_collapse, public_reveal, opening_deadlock]
+    genres: ["古言", "都市", "romance", "urban"]
+    base_desire_pool: ["走完炮灰剧本", "活到大结局", "维持隐身", "不被卷入主线"]
+    reversal_template: "越按炮灰剧本走，越能撬动主角光环；一旦脱稿就失去隐身优势"
+    reward_pool: ["主角光环撬动", "新阵营归附", "公开翻盘位", "新身份"]
+    constraint_dimensions: ["script", "witness", "ban", "must_explain"]
+    anti_cheat_rules: ["炮灰剧本必须真存在", "撬动必须有可验证节点", "脱稿必须有可见代价"]
+    cost_templates: ["脱稿后被反噬", "新身份公开代价", "旧关系网崩塌"]
+    misunderstanding_patterns: ["主角阵营以为是棋子", "反派出品方以为是 bug"]
+    arc_escalation_axes: ["剧本脱钩", "撬动规模", "公开度", "代价亲密度"]
+    saturation_score: 0.33
+    forbidden_overlaps: ["无代价炮灰", "纯爽逆袭"]
+
+  - key: mass_transmigration
+    label: 群穿合谋
+    category: xianxia_cross
+    formula_affinity: [reader_question, identity_collapse, heart_beat_clock]
+    genres: ["都市", "悬疑", "urban", "mystery"]
+    base_desire_pool: ["与同穿者配合", "共同生存", "维持假身份", "完成任务"]
+    reversal_template: "与同穿者越配合，越被原住民识破；只有让队友互相背叛才能假乱真"
+    reward_pool: ["原住民接纳", "新身份解锁", "真任务浮现", "新阵营"]
+    constraint_dimensions: ["relationship", "script", "ban", "must_explain"]
+    anti_cheat_rules: ["背叛必须真发生", "识破必须有可验证节点", "翻盘必须有可见代价"]
+    cost_templates: ["队友反水", "被原住民围攻", "假身份崩塌"]
+    misunderstanding_patterns: ["原住民把配合当串供", "队友把背叛当演练"]
+    arc_escalation_axes: ["识破规模", "背叛公开度", "新身份", "代价亲密度"]
+    saturation_score: 0.36
+    forbidden_overlaps: ["无代价群穿", "纯爽配合"]
+
+  - key: withdraw_engagement
+    label: 退婚换天
+    category: xianxia_cross
+    formula_affinity: [public_reveal, identity_collapse, bawang_clause]
+    genres: ["古言", "romance"]
+    base_desire_pool: ["退婚成功", "了结旧账", "重获自由", "翻身"]
+    reversal_template: "退婚每兑现一次，原生家族就少一份保护；退婚越多越裸奔"
+    reward_pool: ["新阵营归附", "公开翻盘位", "新身份", "新资源"]
+    constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
+    anti_cheat_rules: ["退婚必须真发生", "保护流失必须可验证", "翻盘必须有可验证节点"]
+    cost_templates: ["原生保护被剥离", "被围观嘲讽", "新资源门槛飙升"]
+    misunderstanding_patterns: ["原生家族以为是闹剧", "对家以为是演苦肉计"]
+    arc_escalation_axes: ["退婚规模", "保护流失", "公开度", "代价亲密度"]
+    saturation_score: 0.30
+    forbidden_overlaps: ["无代价退婚", "纯爽翻盘"]
+
+  - key: divorce_husband
+    label: 女主休夫
+    category: xianxia_cross
+    formula_affinity: [identity_collapse, public_reveal, cost_first]
+    genres: ["古言", "都市", "romance", "urban"]
+    base_desire_pool: ["休夫成功", "完成事业闭环", "翻篇", "重获主动权"]
+    reversal_template: "主动休夫越果断，前夫的逆袭线越长；必须在他翻盘前完成自己的事业闭环"
+    reward_pool: ["事业闭环", "新阵营归附", "公开翻盘位", "新身份"]
+    constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
+    anti_cheat_rules: ["休夫必须真发生", "事业闭环必须有可验证节点", "翻盘必须有可验证代价"]
+    cost_templates: ["被围观嘲讽", "旧资源网崩塌", "前夫反扑"]
+    misunderstanding_patterns: ["前夫以为是撒娇", "旁人以为是闹剧"]
+    arc_escalation_axes: ["休夫公开度", "事业闭环进度", "前夫反扑", "代价亲密度"]
+    saturation_score: 0.31
+    forbidden_overlaps: ["无代价休夫", "纯爽翻盘"]
+
+  # ─────────────────── E 悬疑/规则/游戏/末日 (8) ───────────────────
+  - key: rule_horror
+    label: 规则怪谈
+    category: mystery_rule
+    formula_affinity: [opening_deadlock, reader_question, heart_beat_clock]
+    genres: ["悬疑", "灵异", "horror", "mystery"]
+    base_desire_pool: ["逃出去", "找回亲人", "破解规则", "证明清白"]
+    reversal_template: "必须遵守反直觉规则，违背常识反而能活"
+    reward_pool: ["安全窗口", "真相碎片", "权限提升", "同伴存活"]
+    constraint_dimensions: ["time", "location", "wording", "ban"]
+    anti_cheat_rules: ["不能靠暴力破坏规则", "规则必须有可验证代价", "漏洞只能一次性使用"]
+    cost_templates: ["记忆缺口", "同伴牺牲风险", "现实身份被替换"]
+    misunderstanding_patterns: ["同伴以为主角冷血", "外界把求生行为当犯罪"]
+    arc_escalation_axes: ["规则层级", "空间范围", "代价对象", "现实侵蚀"]
+    saturation_score: 0.50
+    forbidden_overlaps: ["规则堆砌", "无解谜底"]
+
+  - key: fourth_disaster
+    label: 第四天灾
+    category: mystery_rule
+    formula_affinity: [bawang_clause, public_reveal, identity_collapse]
+    genres: ["游戏", "科幻", "fantasy", "sci-fi"]
+    base_desire_pool: ["守住世界", "管理玩家", "抵抗入侵", "重建秩序"]
+    reversal_template: "必须利用不可控玩家或观众的混乱，才能拯救秩序"
+    reward_pool: ["群体行动力", "异界资源", "规则漏洞", "阵营扩张"]
+    constraint_dimensions: ["player_rule", "respawn", "quest", "ban"]
+    anti_cheat_rules: ["玩家不能无限复活无成本", "任务奖励必须消耗世界资源", "NPC 不能失去主体性"]
+    cost_templates: ["世界稳定度下降", "原住民恐惧", "规则污染"]
+    misunderstanding_patterns: ["原住民把玩家当灾厄", "玩家误读主角真实意图"]
+    arc_escalation_axes: ["玩家规模", "世界污染", "阵营冲突", "规则公开度"]
+    saturation_score: 0.56
+    forbidden_overlaps: ["纯玩家沙雕", "无限复活无成本"]
+
+  - key: script_within_script
+    label: 剧本杀套中套
+    category: mystery_rule
+    formula_affinity: [reader_question, identity_collapse, villain_taunt]
+    genres: ["悬疑", "都市", "mystery", "urban"]
+    base_desire_pool: ["接近真凶", "揭穿剧本", "自证清白", "逃离剧本"]
+    reversal_template: "越接近真凶，越发现自己只是嵌套剧本里的演员；揭谜必须先承认自己也在被写"
+    reward_pool: ["第四面墙突破", "真凶浮现", "新身份", "新阵营"]
+    constraint_dimensions: ["script", "witness", "ban", "must_explain"]
+    anti_cheat_rules: ["嵌套必须可被验证", "揭谜必须有可验证代价", "承认自己被写必须公开"]
+    cost_templates: ["真相反噬", "旧身份崩塌", "新阵营被围观"]
+    misunderstanding_patterns: ["旁人把承认当演戏", "反派出品方把揭谜当节目效果"]
+    arc_escalation_axes: ["嵌套深度", "揭谜公开度", "代价亲密度", "新身份"]
+    saturation_score: 0.26
+    forbidden_overlaps: ["无代价剧本杀", "纯爽反转"]
+
+  - key: apocalypse_hoard
+    label: 末日囤货
+    category: mystery_rule
+    formula_affinity: [public_reveal, bawang_clause, cost_first]
+    genres: ["末日科幻", "都市", "urban"]
+    base_desire_pool: ["囤够物资", "保住家人", "建立据点", "建立秩序"]
+    reversal_template: "囤越多越被群众盯上；只有公开按需分配才能保住核心库存"
+    reward_pool: ["稀缺物资", "关键盟友", "据点扩张", "秩序重建"]
+    constraint_dimensions: ["object", "count", "witness", "ban"]
+    anti_cheat_rules: ["按需分配必须真发生", "群众盯上必须可验证", "翻盘必须有可验证节点"]
+    cost_templates: ["被群众围攻", "被反派盯上", "分配引发的内讧"]
+    misunderstanding_patterns: ["群众把囤货当自私", "反派把分配当软肋"]
+    arc_escalation_axes: ["囤货规模", "围观度", "分配规模", "代价亲密度"]
+    saturation_score: 0.42
+    forbidden_overlaps: ["无代价囤货", "纯爽碾压"]
+
+  - key: npc_resistance
+    label: NPC觉醒
+    category: mystery_rule
+    formula_affinity: [identity_collapse, reader_question, public_reveal]
+    genres: ["游戏", "科幻", "fantasy", "sci-fi"]
+    base_desire_pool: ["救主线剧情", "维持原设定", "不打破第四面墙", "保住玩家体验"]
+    reversal_template: "主角是 NPC，越想救剧情就越打破第四面墙；觉醒度越高玩家的恶意越精准"
+    reward_pool: ["觉醒度提升", "新规则改写权", "玩家反向投名", "新身份"]
+    constraint_dimensions: ["script", "witness", "ban", "must_explain"]
+    anti_cheat_rules: ["觉醒必须真发生", "玩家恶意必须可验证", "翻盘必须有可验证代价"]
+    cost_templates: ["第四面墙崩塌", "玩家反噬", "主线剧情被重写"]
+    misunderstanding_patterns: ["玩家以为是 bug", "系统方以为是出戏"]
+    arc_escalation_axes: ["觉醒度", "玩家反噬", "新规则", "代价亲密度"]
+    saturation_score: 0.28
+    forbidden_overlaps: ["无代价 NPC 觉醒", "纯爽改写"]
+
+  - key: body_swap
+    label: 灵魂错位
+    category: mystery_rule
+    formula_affinity: [identity_collapse, public_reveal, cost_first]
+    genres: ["都市", "悬疑", "romance", "mystery"]
+    base_desire_pool: ["换回身体", "保住原身份", "维持关系", "不被新身份吞噬"]
+    reversal_template: "错位后越想换回去，对方原本的人设越被你坐实"
+    reward_pool: ["新身份解锁", "关系重置", "真相浮现", "新阵营"]
+    constraint_dimensions: ["disguise", "relationship", "ban", "must_explain"]
+    anti_cheat_rules: ["错位必须可验证", "换回必须公开", "新身份不能被永久隐瞒"]
+    cost_templates: ["原关系网崩塌", "新关系被反噬", "自我认同危机"]
+    misunderstanding_patterns: ["旁人把新身份当伪装", "对方把坐实当自证"]
+    arc_escalation_axes: ["错位时长", "新身份坐实度", "公开度", "代价亲密度"]
+    saturation_score: 0.30
+    forbidden_overlaps: ["无代价灵魂错位", "纯爽换身体"]
+
+  - key: loop_killer
+    label: 循环连环案
+    category: mystery_rule
+    formula_affinity: [reader_question, heart_beat_clock, opening_deadlock]
+    genres: ["悬疑", "mystery"]
+    base_desire_pool: ["抓到真凶", "打破循环", "保下关键受害人", "揭穿真相"]
+    reversal_template: "凶手只在循环里出现一次，破案必须先让自己被杀过一次"
+    reward_pool: ["循环记忆", "真凶身份", "关键线索", "新身份"]
+    constraint_dimensions: ["time", "witness", "ban", "must_explain"]
+    anti_cheat_rules: ["被杀必须真发生", "凶手出现必须可验证", "破案必须有可验证代价"]
+    cost_templates: ["关键人失忆", "自我牺牲被围观", "循环代价累积"]
+    misunderstanding_patterns: ["旁人以为主角是嫌疑人", "真凶把被杀当表演"]
+    arc_escalation_axes: ["循环次数", "凶手真实度", "破案公开度", "代价亲密度"]
+    saturation_score: 0.22
+    forbidden_overlaps: ["无代价循环破案", "纯爽反转"]
+
+  - key: proxy_war
+    label: 代理人战争
+    category: mystery_rule
+    formula_affinity: [bawang_clause, cost_first, identity_collapse]
+    genres: ["都市", "悬疑", "urban", "mystery"]
+    base_desire_pool: ["幕后操控", "不下场", "保持体面", "避免暴露"]
+    reversal_template: "主角不许亲自下场，越遥控越被自己派出的代理人反向操控"
+    reward_pool: ["代理人翻盘", "新身份", "真相浮出", "新阵营"]
+    constraint_dimensions: ["inheritance", "script", "ban", "must_explain"]
+    anti_cheat_rules: ["代理人必须真存在", "反向操控必须可验证", "翻盘必须有可验证代价"]
+    cost_templates: ["代理人反噬", "真相被公开", "幕后身份被暴露"]
+    misunderstanding_patterns: ["代理人以为是合作", "对手以为是雇凶"]
+    arc_escalation_axes: ["代理人规模", "反向操控度", "公开度", "代价亲密度"]
+    saturation_score: 0.25
+    forbidden_overlaps: ["无代价代理人", "纯爽遥控"]

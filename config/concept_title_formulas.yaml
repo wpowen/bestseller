@@ -1,0 +1,58 @@
+mechanism_title_cores:
+  # ───────── A 升级流/数值压制 ─────────
+  death_grows: "死线越近，底牌越真"
+  sign_in_overload: "签到一次，全网围观一次"
+  system_levy: "升级一档，剥掉一层"
+  lottery_curse: "好运借来的，都得还"
+  gold_finger_leak: "金手指越强，泄得越快"
+  trial_loop: "试炼套环，谁都别想通关"
+  time_loop: "死一万次后我终于记住"
+  mastered_disciple: "徒弟越强，师尊越先死"
+  # ───────── B 都市/职场/商战 ─────────
+  forced_loss: "越亏越能翻盘"
+  profession_reversal: "冷门职业，专破死局"
+  divine_doctor: "只救人，从不沾因果"
+  mind_reader: "听得见的真心，全是炸药"
+  fake_heir: "真假千金，都不是她"
+  dog_chaser: "我退一步，她追三步"
+  silver_lining_loser: "舔狗翻篇，全网见证"
+  playboy_pivot: "海王上岸，前任结盟"
+  # ───────── C 情绪/爽感/反派 ─────────
+  emotion_value: "情绪越烈，证据越清"
+  misunderstanding: "越解释，布局越大"
+  green_tea_reveal: "绿茶撕破自己，全场认错"
+  crazy_girlfriend: "疯批克制，理智反而是反派的弹药"
+  sicko_devotion: "病娇让步，越让越离心"
+  everyone_loves_me: "万人迷围城，越退越被围"
+  villain_redeem: "反派想留黑，读者偏要他白"
+  revenge_then_what: "仇人输之前，先给他留条路"
+  # ───────── D 玄幻/仙侠/穿越 ─────────
+  hide_anti_trope: "越想低调，越被推上主线"
+  master_above: "师尊出手一次，流言就坐实一次"
+  substitute_bride: "替嫁越成功，婆家越认她是真的"
+  joy_wedding: "冲喜喜越大，灾越压越凶"
+  cannon_fodder_rises: "炮灰越按剧本走，越撬动主角光环"
+  mass_transmigration: "同穿者越配合，原住民越识破"
+  withdraw_engagement: "退婚每退一次，娘家少一层护"
+  divorce_husband: "休夫越果断，前夫翻盘线越长"
+  # ───────── E 悬疑/规则/游戏/末日 ─────────
+  rule_horror: "守怪规矩，活过常识"
+  fourth_disaster: "混乱玩家，反成救命秩序"
+  script_within_script: "越接近真凶，越发现自己也在被写"
+  apocalypse_hoard: "囤得越多，群众盯得越死"
+  npc_resistance: "NPC越想救剧情，第四面墙越裂"
+  body_swap: "错位越久，对方人设越被你坐实"
+  loop_killer: "凶手只在循环里出现一次"
+  proxy_war: "越遥控，代理人越反向操控"
+
+formulas:
+  - id: contrarian_truth
+    template: "{title_core}"
+  - id: genre_deadlock
+    template: "{genre_label}死局：{reward}要用{cost}来换"
+  - id: direction_x_hook
+    template: "{direction_title} · {hook_type}"
+  - id: shortform_punch
+    template: "{cost}的人，凭什么{reward}"
+  - id: bawang_promise
+    template: "第{n}天：{reward}归我，{cost}归世界"

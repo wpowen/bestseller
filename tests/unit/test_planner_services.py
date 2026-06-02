@@ -13,6 +13,7 @@ from bestseller.services.distilled_strategy_compiler import (
     DistilledStrategyCard,
     SelectedMechanism,
 )
+from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services import planner as planner_services
 from bestseller.services.methodology_overlay import validate_ability_origin_contract
 from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
@@ -507,6 +508,63 @@ def test_distilled_design_reference_blocks_enter_planner_prompts() -> None:
     assert "VOLUME_STRATEGY_CARD" in volume_prompt
     assert "OUTLINE_DISTILLED_REFERENCE" in outline_prompt
     assert "OUTLINE_STRATEGY_CARD" in outline_prompt
+
+
+def test_concept_lab_contract_enters_core_planner_prompts() -> None:
+    project = build_project()
+    bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+    project.metadata_json = {"concept_lab": bundle.model_dump(mode="json")}
+    premise = "一名仓库管理员在末世前夜收到来自未来的缺货清单。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    prompts = [
+        planner_services._book_spec_prompts(project, premise, book_spec)[1],
+        planner_services._world_spec_prompts(project, premise, book_spec)[1],
+        planner_services._cast_spec_prompts(project, book_spec, world_spec)[1],
+        planner_services._story_design_kernel_prompts(
+            project,
+            premise,
+            book_spec,
+            world_spec,
+            cast_spec,
+            planner_services._fallback_story_design_kernel(
+                project,
+                premise,
+                book_spec,
+                world_spec,
+                cast_spec,
+            ),
+        )[1],
+        planner_services._volume_plan_prompts(project, book_spec, world_spec, cast_spec)[1],
+        planner_services._volume_outline_prompts(
+            project,
+            book_spec,
+            cast_spec,
+            volume_plan,
+            volume_plan[0],
+        )[1],
+    ]
+
+    for prompt in prompts:
+        assert "已选脑洞组合合同" in prompt
+        assert bundle.reader_promise in prompt
+        assert "per_chapter_contract" in prompt
+
+    fallback_kernel = planner_services._fallback_story_design_kernel(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast_spec,
+    )
+    assert fallback_kernel["reader_promise"] == bundle.reader_promise
+    assert fallback_kernel["premise_contract"]["unique_hook"] == bundle.one_liner
+    assert bundle.story_loop.opening_question in fallback_kernel["beat_schedule"][0][
+        "hook_or_aftereffect"
+    ]
 
 
 def test_distilled_design_reference_blocks_are_prompt_budgeted() -> None:

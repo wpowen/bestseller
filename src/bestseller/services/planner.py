@@ -51,6 +51,10 @@ from bestseller.services.compliance_boundary_kernel import (
     compliance_boundary_kernel_to_dict,
     render_compliance_boundary_prompt_block,
 )
+from bestseller.services.concept_lab import (
+    concept_lab_from_source,
+    render_concept_lab_prompt_block,
+)
 from bestseller.services.entry_registry import (
     build_entry_coverage_matrix,
     build_fallback_entry_registry,
@@ -10071,6 +10075,12 @@ def _distilled_strategy_project_context(project: ProjectModel) -> dict[str, obje
     }
 
 
+def _concept_lab_contract_block(project: ProjectModel, *, language: str) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    block = render_concept_lab_prompt_block(metadata, language=language)
+    return f"{block}\n" if block else ""
+
+
 def _stash_distilled_strategy_card(
     project: ProjectModel,
     *,
@@ -10161,6 +10171,7 @@ def _book_spec_prompts(
         language=language,
     )
     _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
+    _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     if is_en:
         user_prompt = (
             f"Project title: {project.title}\n"
@@ -10176,6 +10187,7 @@ def _book_spec_prompts(
             f"{_story_package_block}\n"
             f"{_distilled_architecture_block}"
             f"{_hook_contract_line}"
+            f"{_concept_lab_contract_line}"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "Generate a BookSpec JSON with title, logline, genre, target_audience, tone, themes, "
@@ -10198,6 +10210,7 @@ def _book_spec_prompts(
             f"{_story_package_block}\n"
             f"{_distilled_architecture_block}"
             f"{_hook_contract_line}"
+            f"{_concept_lab_contract_line}"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "请生成一个 BookSpec JSON，包含 title、logline、genre、target_audience、tone、themes、"
@@ -10350,6 +10363,7 @@ def _world_spec_prompts(
         language=language,
     )
     _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
+    _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -10362,6 +10376,7 @@ def _world_spec_prompts(
             f"{_story_package_block}\n"
             f"{_distilled_world_block}"
             f"{_hook_contract_line}"
+            f"{_concept_lab_contract_line}"
             f"{_pp_world_spec}"
             f"{_mat_ref_block}"
             "Generate a WorldSpec JSON with world_name, world_premise, rules, power_system, locations, factions, power_structure, history_key_events, and forbidden_zones. "
@@ -10379,6 +10394,7 @@ def _world_spec_prompts(
             f"{_story_package_block}\n"
             f"{_distilled_world_block}"
             f"{_hook_contract_line}"
+            f"{_concept_lab_contract_line}"
             f"{_pp_world_spec}"
             f"{_mat_ref_block}"
             "请生成一个 WorldSpec JSON，包含 world_name、world_premise、rules、power_system、locations、"
@@ -10444,6 +10460,7 @@ def _cast_spec_prompts(
     _pp_cast_spec = _planner_fragment_or_ref(prompt_pack, project, "planner_cast_spec")
     _story_package_block = _story_package_prompt_block(project, language=language)
     _distilled_cast_block = _distilled_design_reference_block(project, "cast")
+    _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     user_prompt = (
         (
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
@@ -10453,6 +10470,7 @@ def _cast_spec_prompts(
             f"{_pp_block}"
             f"{_story_package_block}\n"
             f"{_distilled_cast_block}"
+            f"{_concept_lab_contract_line}"
             f"{_pp_cast_spec}"
             "Generate a CastSpec JSON with protagonist, antagonist, antagonist_forces, supporting_cast, and conflict_map. "
             "The protagonist needs a vivid desire, a real weakness, visible growth space, and a memorable edge; the antagonist must actively counter the protagonist and keep escalating. "
@@ -10460,7 +10478,10 @@ def _cast_spec_prompts(
             "IDENTITY LOCK — every protagonist, antagonist, and supporting_cast character must include "
             "gender (male/female/nonbinary/unknown), pronoun_set_en, and pronoun_set_zh. "
             "Do not omit these fields. For named person characters, gender must be male/female/nonbinary; "
-            "unknown is only allowed for explicitly non-person entities marked with entity_type.\n\n"
+            "unknown is only allowed for explicitly non-person entities marked with entity_type. "
+            "For Chinese-language (zh) web fiction the PROTAGONIST gender must be male or female — "
+            "do NOT use nonbinary for the protagonist unless the premise explicitly requires a "
+            "genderless/AI/entity lead. pronoun_set_zh must be 他 or 她; never the pinyin 'ta'.\n\n"
             "PERSONHOOD LAYER — every protagonist must read as a real person, not a plot function. "
             "Populate ALL of:\n"
             "  - psych_profile: {mbti (e.g. 'INTJ'), big_five (OCEAN scores 0-100), enneagram (e.g. '5w4'), "
@@ -10500,6 +10521,7 @@ def _cast_spec_prompts(
             f"{_pp_block}"
             f"{_story_package_block}\n"
             f"{_distilled_cast_block}"
+            f"{_concept_lab_contract_line}"
             f"{_pp_cast_spec}"
             "请生成一个 CastSpec JSON，包含 protagonist、antagonist、antagonist_forces、supporting_cast、conflict_map。"
             "主角必须有鲜明欲望、明显短板、可持续升级点和可被读者快速记住的差异化优势；"
@@ -10515,7 +10537,9 @@ def _cast_spec_prompts(
             "【身份锁定】protagonist、antagonist、supporting_cast 中每个角色都必须包含 "
             "gender（male/female/nonbinary/unknown）、pronoun_set_zh、pronoun_set_en。"
             "不要省略。具名人物角色的 gender 必须是 male/female/nonbinary；"
-            "unknown 只允许用于明确标记 entity_type 的非人物实体。\n\n"
+            "unknown 只允许用于明确标记 entity_type 的非人物实体。"
+            "中文网文【主角】的 gender 必须是 male 或 female——除非命题明确要求无性别/AI/实体主角，"
+            "否则不得给主角用 nonbinary；pronoun_set_zh 必须是 他 或 她，禁止使用拼音 'ta'。\n\n"
             "【人格底层 — 让角色像真人，不是剧情齿轮】\n"
             "主角必须完整填写以下五块（参考真实心理学数据，不要写抽象类型）：\n"
             "  - psych_profile：{mbti（如 'INTJ'）、big_five（OCEAN 五维 0-100 分）、enneagram（如 '5w4'）、"
@@ -10716,6 +10740,7 @@ def _volume_plan_prompts(
         language=language,
     )
     _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
+    _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -10730,6 +10755,7 @@ def _volume_plan_prompts(
             f"{_story_package_block}\n"
             f"{_distilled_volume_block}"
             f"{_hook_contract_line}"
+            f"{_concept_lab_contract_line}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
             f"{_public_emotion_block}\n"
@@ -10768,6 +10794,7 @@ def _volume_plan_prompts(
             f"{_story_package_block}\n"
             f"{_distilled_volume_block}"
             f"{_hook_contract_line}"
+            f"{_concept_lab_contract_line}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
             f"{_public_emotion_block}\n"
@@ -10950,6 +10977,7 @@ def _outline_prompts(
     _anti_commonsense_hook_line = (
         f"\n{_anti_commonsense_hook_block}\n" if _anti_commonsense_hook_block else ""
     )
+    _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -10969,6 +10997,7 @@ def _outline_prompts(
             f"{_character_drama_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_concept_lab_contract_line}"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
@@ -11336,6 +11365,7 @@ def _volume_outline_prompts(
     _anti_commonsense_hook_line = (
         f"\n{_anti_commonsense_hook_block}\n" if _anti_commonsense_hook_block else ""
     )
+    _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     _prior_vols_block = render_prior_volumes_summary_block(
         volume_plan,
         current_volume_number=volume_number,
@@ -11374,6 +11404,7 @@ def _volume_outline_prompts(
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_concept_lab_contract_line}"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
@@ -11440,6 +11471,7 @@ def _volume_outline_prompts(
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{_concept_lab_contract_line}"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
@@ -12292,6 +12324,7 @@ def _fallback_story_design_kernel(
     category_key: str | None = None,
 ) -> dict[str, Any]:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    concept_bundle = concept_lab_from_source(metadata)
     shape = derive_story_shape(
         project,
         genre=project.genre,
@@ -12343,12 +12376,14 @@ def _fallback_story_design_kernel(
         default="核心体系" if not is_english_language(project.language) else "core system",
     )
     reader_promise = _first_non_empty_text(
+        concept_bundle.reader_promise if concept_bundle else "",
         series_engine.get("reader_promise"),
         book_spec.get("reader_promise"),
         ", ".join(grammar.reader_rewards[:3]),
         default="每章都必须产生可见状态变化。",
     )
     unique_hook = _first_non_empty_text(
+        concept_bundle.one_liner if concept_bundle else "",
         metadata.get("unique_hook"),
         book_spec.get("unique_hook"),
         book_spec.get("creative_hook"),
@@ -12357,15 +12392,23 @@ def _fallback_story_design_kernel(
         default=project.title,
     )
     commercial_pull = _first_non_empty_text(
+        concept_bundle.one_liner if concept_bundle else "",
         series_engine.get("core_serial_engine"),
         series_engine.get("core_engine"),
         book_spec.get("commercial_pull"),
         reader_promise,
     )
     change_vectors = (
-        list(grammar.chapter_change_vectors[:5])
+        list(concept_bundle.story_loop.escalation_axis[:5] if concept_bundle else ())
+        or list(grammar.chapter_change_vectors[:5])
         or list(shape.primary_duties[:5])
         or ["目标变化", "压力变化", "关系变化"]
+    )
+    concept_material_basis = (
+        list(concept_bundle.material_brief.query_terms[:4]) if concept_bundle else []
+    )
+    concept_proof_criteria = (
+        list(concept_bundle.story_loop.per_chapter_contract[:4]) if concept_bundle else []
     )
     macro_options = list(grammar.macro_structure_options)
     macro_structure_type = (
@@ -12447,6 +12490,7 @@ def _fallback_story_design_kernel(
                 protagonist_goal,
                 rule_name,
                 power_system_name,
+                *concept_material_basis,
             ],
             "formal_pattern": macro_structure_type,
             "driving_forces": [
@@ -12458,6 +12502,7 @@ def _fallback_story_design_kernel(
                 ),
             ],
             "proof_criteria": [
+                *concept_proof_criteria,
                 "每个事件单元必须产生可见状态变化。",
                 "事件六步跨章节分布，不要求每章完整重复。",
             ],
@@ -12667,11 +12712,15 @@ def _fallback_story_design_kernel(
                 "duty": "建立读者承诺、主线目标和第一轮状态变化。",
                 "state_change": "主角从被动处境转入带代价的主动选择。",
                 "payoff": "读者看到本书独有机制第一次产生结果。",
-                "hook_or_aftereffect": "第一次选择留下未还清的代价或新压力源。",
+                "hook_or_aftereffect": _first_non_empty_text(
+                    concept_bundle.story_loop.opening_question if concept_bundle else "",
+                    default="第一次选择留下未还清的代价或新压力源。",
+                ),
             }
         ],
         "change_vectors": change_vectors[:5],
         "uniqueness_constraints": [
+            *list(concept_bundle.guardrails[:4] if concept_bundle else ()),
             "不得把亲属失踪/死亡、身世旧案、神秘信物、退婚羞辱作为默认驱动。",
             "每章必须写出具体状态变化，而不是只推进作者笔记。",
         ],
@@ -12709,6 +12758,7 @@ def _story_design_kernel_prompts(
     distilled_story_design_block = _distilled_design_reference_block(project, "story_design")
     public_emotion_block = _public_emotion_kernel_prompt_block(project)
     compliance_boundary_block = _compliance_boundary_prompt_block(project)
+    concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     system_prompt = (
         "You are a story architect. Output one valid JSON object only."
         if is_en
@@ -12720,6 +12770,7 @@ def _story_design_kernel_prompts(
             f"Premise:\n{premise}\n\n"
             f"Story shape: {shape.model_dump(mode='json')}\n"
             f"{grammar_block}\n\n"
+            f"{concept_lab_contract_line}"
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
             f"WorldSpec summary:\n{summarize_world_spec(world_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n\n"
@@ -12751,6 +12802,7 @@ def _story_design_kernel_prompts(
             f"前提：\n{premise}\n\n"
             f"故事形态：{shape.model_dump(mode='json')}\n"
             f"{grammar_block}\n\n"
+            f"{concept_lab_contract_line}"
             f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
             f"WorldSpec 摘要：\n{summarize_world_spec(world_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n\n"

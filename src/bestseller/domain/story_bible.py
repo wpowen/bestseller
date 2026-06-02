@@ -1230,7 +1230,10 @@ class CharacterInput(BaseModel):
             self.pronoun_set_zh = self.pronoun_set_zh or "她"
             self.pronoun_set_en = self.pronoun_set_en or "she/her"
         elif self.gender == "nonbinary":
-            self.pronoun_set_zh = self.pronoun_set_zh or "ta"
+            # Chinese narration has no natural gender-neutral pronoun; the pinyin
+            # placeholder "ta" leaks into prose and reads as machine-generated.
+            # Use the conventional generic 他 for zh narration instead.
+            self.pronoun_set_zh = self.pronoun_set_zh or "他"
             self.pronoun_set_en = self.pronoun_set_en or "they/them"
         return self
 

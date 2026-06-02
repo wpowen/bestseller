@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from bestseller.domain.facets import StoryFacets
+from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.story_architect import (
     _build_system_prompt,
     _build_user_prompt,
@@ -190,6 +190,27 @@ class TestBuildPrompts:
         )
         assert "lighthearted" in prompt
         assert "dark themes" in prompt
+
+    def test_user_prompt_renders_concept_lab_contract(self) -> None:
+        bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+
+        prompt = _build_user_prompt(
+            primary_genre="apocalypse-supply",
+            language="zh-CN",
+            user_hints={
+                "concept_lab": bundle.model_dump(mode="json"),
+                "mood": "高压破局",
+            },
+            existing_facets=[],
+            trend_data={},
+            dimensions_summary="test",
+        )
+
+        assert "Selected Concept Lab Contract" in prompt
+        assert "已选脑洞组合合同" in prompt
+        assert bundle.reader_promise in prompt
+        assert "per_chapter_contract" in prompt
+        assert "高压破局" in prompt
 
 
 class TestStoryFacetsSimilarity:

@@ -5,6 +5,7 @@ import json
 import pytest
 
 from bestseller.services import conception as conception_services
+from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.writing_presets import get_platform_preset
 
 
@@ -95,6 +96,21 @@ def test_apply_commercial_brief_merges_market_and_style_signals() -> None:
     assert merged["style"]["reference_works"] == ["旧参考", "全球高武"]
     assert "拖沓开局" in merged["style"]["taboo_topics"]
     assert "优先保证前三章留存。" in merged["style"]["custom_rules"]
+
+
+def test_commercial_brief_prompt_includes_concept_lab_contract() -> None:
+    bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+
+    block = conception_services._commercial_brief_prompt_block(
+        {
+            "language": "zh-CN",
+            "concept_lab": bundle.model_dump(mode="json"),
+        }
+    )
+
+    assert "已选脑洞组合合同" in block
+    assert bundle.reader_promise in block
+    assert "per_chapter_contract" in block
 
 
 def test_qimao_platform_preset_carries_regeneration_contract() -> None:

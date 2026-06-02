@@ -325,6 +325,11 @@ phase_c_overrides:
   # Default payback window (chapters) for a new override contract when
   # the caller doesn't specify one.
   payback_window_default: 10
+  # Gray-out: when enabling Phase C on a project that already has history,
+  # set this to the next chapter to be written so early/in-flight chapters
+  # are not retroactively auto-signed or charged interest. ``null`` enforces
+  # from chapter 1. Recommended when flipping ``enabled`` to true mid-run.
+  only_enforce_from_chapter: null
 
 phase_d_time:
   enabled: true

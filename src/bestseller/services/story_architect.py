@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +34,7 @@ from bestseller.services.llm_closed_loop import (
     build_repair_user_prompt,
     findings_from_exception,
 )
+from bestseller.services.concept_lab import render_concept_lab_prompt_block
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -296,8 +296,16 @@ def _build_user_prompt(
     # Section 1: User input
     parts.append(f"## User Input\n- primary_genre: {primary_genre}\n- language: {language}")
     if user_hints:
-        hints_str = "\n".join(f"  - {k}: {v}" for k, v in user_hints.items())
-        parts.append(f"- User preferences:\n{hints_str}")
+        concept_block = render_concept_lab_prompt_block(user_hints, language=language)
+        if concept_block:
+            parts.append(f"\n## Selected Concept Lab Contract\n{concept_block}")
+        hints_str = "\n".join(
+            f"  - {k}: {v}"
+            for k, v in user_hints.items()
+            if k not in {"concept_lab", "concept_lab_bundle"}
+        )
+        if hints_str:
+            parts.append(f"- User preferences:\n{hints_str}")
 
     # Section 2: Existing projects (for anti-repetition)
     if existing_facets:

@@ -559,6 +559,32 @@ def _clear_rate_limit_fallback(key: str) -> None:
     _rate_limit_fallback_until.pop(key, None)
 
 
+def _extract_prompt_contract_text(prompt: str, *field_names: str) -> str:
+    """Best-effort extraction for deterministic mock prose.
+
+    The real model receives structured prompt blocks and can obey them
+    semantically. The mock writer needs a small parser so E2E smoke tests still
+    exercise the same hard obligations instead of failing because the fixture
+    ignored visible contract fields.
+    """
+
+    if not prompt:
+        return ""
+    for name in field_names:
+        for pattern in (
+            rf'"{re.escape(name)}"\s*:\s*"([^"]{{2,120}})"',
+            rf"'{re.escape(name)}'\s*:\s*'([^']{{2,120}})'",
+            rf"{re.escape(name)}[：:]\s*([^\n，,；;]{{2,120}})",
+        ):
+            match = re.search(pattern, prompt)
+            if not match:
+                continue
+            value = match.group(1).strip().strip("\"' ")
+            if value and value.lower() not in {"null", "none", "false"}:
+                return value
+    return ""
+
+
 def _mock_content_for_request(request: LLMCompletionRequest) -> str:
     """Return deterministic mock content that can pass local functional verification."""
 
@@ -572,6 +598,30 @@ def _mock_content_for_request(request: LLMCompletionRequest) -> str:
         protagonist_name = str(request.metadata.get("protagonist_name") or "").strip() or "沈砚"
         supporting_name = str(request.metadata.get("supporting_name") or "").strip() or "顾临"
         context_query = str(request.metadata.get("context_query") or "")
+        prompt_signal = "\n".join(
+            [
+                request.system_prompt,
+                request.user_prompt,
+                context_query,
+                str(request.metadata.get("project_slug") or ""),
+            ]
+        )
+        prompt_signature_image = _extract_prompt_contract_text(
+            prompt_signal,
+            "signature_image",
+            "标志画面",
+        )
+        prompt_cut_point = _extract_prompt_contract_text(
+            prompt_signal,
+            "cut_point",
+            "breakpoint",
+            "断点",
+            "ending_hook_payload",
+        )
+        is_apocalypse_supply = any(
+            term in prompt_signal
+            for term in ("apocalypse-supply", "末日", "囤货", "物资", "避难所", "重建秩序")
+        )
         scene_focus = (
             "顾临与失踪巡逻舰"
             if "顾临" in context_query or chapter_number >= 2
@@ -609,7 +659,165 @@ def _mock_content_for_request(request: LLMCompletionRequest) -> str:
             "封港闸下落到三分之二时，沈砚终于把证据包推送出去，代价是自己的实时位置被系统标红。",
             "下一秒，静默航道传回坐标回声，回声里夹着一个不该存活的舰队呼号。",
         ]
-        if chapter_number >= 2:
+        if is_apocalypse_supply:
+            scene_focus = "地下冷库、社区仓库与第一条物资秩序"
+            details = [
+                ("冷库", f"{protagonist_name}撬开地下冷库的外锁时，先闻到断电肉类的酸味，再看见货架深处还冻着三箱胰岛素。"),
+                ("筹码", "邻居们挤在消防门外等水，他手里的清单却显示整栋楼只剩二十七桶可饮用水。"),
+                ("误判", "物业群里有人直播骂他囤货，下一秒楼下超市卷帘门被人群砸出第一道裂缝。"),
+                ("选择", f"{protagonist_name}没有急着解释，而是把退烧药、净水片和柴油分成三组，先换来最缺人的巡楼班。"),
+                ("阻力", "一个自称救援队亲戚的人拿着空白证明闯进来，开口就要接管仓库钥匙。"),
+                ("发现", "旧账本里夹着一张停电前的配送单，目的地不是医院，而是城北一处刚搭起围挡的私仓。"),
+                ("代价", "如果他现在追查私仓，避难所今晚的分粮就会少一个能压住局面的人。"),
+                ("反应", "孩子的咳嗽声从楼道拐角传来，所有争吵都停了一秒，又在缺水的现实里重新变硬。"),
+                ("人物", f"{supporting_name}把菜刀反扣在桌面上，没有威胁谁，只问每个人愿不愿意按登记表领物资。"),
+                ("推进", f"{scene_focus}不再是口号，而变成写在墙上的领用规则、巡逻路线和违规后果。"),
+                ("情绪", f"{protagonist_name}忽然明白，重生最大的优势不是知道灾难，而是敢在别人还等救援时先建立秩序。"),
+                ("行动", "他把仓库钥匙拆成两把，一把交给登记员，一把压在公共白板下，让每次开仓都被所有人看见。"),
+                ("压力", "暴雨开始倒灌地下车库，备用柴油最多撑六小时，冰柜里的药比任何金条都更怕时间。"),
+                ("钩子", "配送单背面忽然浮出一行水印：城北私仓的签收人，竟然是他上一世临死前救过的那个人。"),
+            ]
+            extensions = [
+                "他没有把物资当成胜利奖杯，而是把每件东西都换成可执行的规则。",
+                "楼道里的目光从敌意变成计算，说明这套秩序还没有赢，却已经开始被认真衡量。",
+                "水声贴着台阶往上爬，逼每个人承认时间比面子更值钱。",
+                "有人想趁乱多拿两瓶药，被登记员当众划掉下一轮优先权，现场第一次安静下来。",
+                "重生记忆只能告诉他哪里会塌，不能替他决定该先救谁。",
+                "他在白板上写下第一条硬规则：谁维护秩序，谁先获得下一轮物资信用。",
+                "那张配送单让囤货线从个人自救变成对隐藏仓储网络的追查。",
+                "每一次分配都在制造新的同盟，也在制造下一次背叛的理由。",
+                "楼外的雨水把城市泡成灰色，楼内的秤砣却第一次让人相信还能活过今晚。",
+                "他知道这不是善良问题，而是避难所能不能熬到第二天的问题。",
+                "当第一支巡楼班出发时，反对他的人也不得不把门缝开大一点。",
+                "柴油味、湿衣服和退烧药的苦味混在一起，构成末日第一夜真正的权力气味。",
+                "城北私仓像一枚还没拆开的雷，既可能救命，也可能把刚立起来的秩序炸碎。",
+                "他把签收人的名字记下来，决定明天用一箱净水片换一次出城机会。",
+            ]
+            apocalypse_profiles = [
+                (
+                    "地下冷库与第一张分粮表",
+                    [
+                        ("冷库", f"{protagonist_name}撬开地下冷库的外锁时，先闻到断电肉类的酸味，再看见货架深处还冻着三箱胰岛素。"),
+                        ("清点", "楼道里挤满等水的人，他把矿泉水、净水片和退烧药分成三栏，当众写下剩余数量。"),
+                        ("误判", "物业群里有人直播骂他囤货，下一秒楼下超市卷帘门被人群砸出第一道裂缝。"),
+                        ("分工", f"{supporting_name}把登记本摊到消防箱上，要求每户派一个人加入夜巡，才有下一轮领用资格。"),
+                        ("试探", "一个自称救援队亲戚的人拿着空白证明闯进来，开口就要接管仓库钥匙。"),
+                        ("证据", "旧账本里夹着一张停电前的配送单，目的地不是医院，而是城北一处刚搭起围挡的私仓。"),
+                        ("取舍", "如果他现在追查私仓，避难所今晚的分粮就会少一个能压住局面的人。"),
+                        ("公开", "他把仓库钥匙拆成两把，一把交给登记员，一把压在公共白板下，让每次开仓都被所有人看见。"),
+                        ("压力", "暴雨开始倒灌地下车库，备用柴油最多撑六小时，冰柜里的药比任何金条都更怕时间。"),
+                        ("钩子", "配送单背面浮出一行水印：城北私仓的签收人，是他上一世临死前救过的人。"),
+                    ],
+                    [
+                        "他没有把物资当成胜利奖杯，而是把每件东西都换成可执行的规则。",
+                        "楼道里的目光从敌意变成计算，说明这套秩序还没有赢，却已经开始被认真衡量。",
+                        "水声贴着台阶往上爬，逼每个人承认时间比面子更值钱。",
+                        "登记本第一次让争吵有了边界，也让反对者看见可以讨价还价的筹码。",
+                        "他没有解释重生，只让对方在所有人面前报出所属单位和物资去向。",
+                        "那张配送单把囤货线从个人自救推向隐藏仓储网络。",
+                        "他知道善良不是免费发放，而是让明天还能继续发放。",
+                        "透明规则让人不舒服，却比黑箱更难被立刻推翻。",
+                        "柴油味、湿衣服和药片苦味混在一起，构成末日第一夜真正的权力气味。",
+                        "他记下签收人的名字，决定用一箱净水片换一次出城机会。",
+                    ],
+                ),
+                (
+                    "地下车库抽水线",
+                    [
+                        ("水位", "地下车库的积水已经淹过脚踝，漂起来的纸箱撞在车门上，像一排没有声音的警告。"),
+                        ("电源", f"{protagonist_name}把柴油机推上坡道，发现油箱盖被人撬过，地上只剩一圈新鲜油渍。"),
+                        ("交换", "三户人家愿意拿私藏电瓶换净水片，却要求先给自己家楼层恢复照明。"),
+                        ("病人", "七楼老人低烧不退，家属跪在楼梯口要药，身后的人群开始质问凭什么他能插队。"),
+                        ("规则", f"{supporting_name}把体温计递给登记员，让病情优先级代替哭声大小。"),
+                        ("背刺", "昨晚支持他的保安偷偷放进两个外来人，理由是对方手里有半桶柴油。"),
+                        ("损耗", "抽水泵每运行十分钟就要停三分钟，错过窗口，整层仓库都会泡进污水。"),
+                        ("承诺", f"{protagonist_name}当众承诺先救药品，再保食物，最后才轮到私人物资。"),
+                        ("惩罚", "偷油的人被要求带队下水搬沙袋，若能补回损耗，下一轮口粮不扣给家属。"),
+                        ("钩子", "抽水泵重新启动时，排水口冲出一枚印着城北私仓标识的塑封门禁卡。"),
+                    ],
+                    [
+                        "这个现场不再是分粮争吵，而是避难所能不能守住底层基础设施。",
+                        "他看见的不是偷窃本身，而是规则还没硬到让人相信违规会付代价。",
+                        "电瓶成了临时货币，也把每个人的自救算盘摆到台面上。",
+                        "哭声不能成为分配标准，否则今晚的队伍会被最会崩溃的人接管。",
+                        "医疗优先级让人难堪，却把无序的人情压回可核验的流程。",
+                        "他没有立刻赶人，因为末日里每一份燃料都有可能买来下一小时。",
+                        "机器的喘息声提醒所有人，秩序不是口号，而是会被水位直接检验的东西。",
+                        "这条承诺把他自己也绑进规则里，下一次偏私会更容易被抓住。",
+                        "惩罚不是泄愤，而是把破坏者临时改造成可用劳力。",
+                        "那张门禁卡证明，外部仓储网络已经伸进小区内部。",
+                    ],
+                ),
+                (
+                    "超市废墟与私仓线索",
+                    [
+                        ("出门", f"{protagonist_name}带着三个人穿过被雨水泡胀的商业街，背包里只有净水片和一把断柄消防斧。"),
+                        ("废墟", "超市货架被抢空，地上却散着没拆封的婴儿奶粉，说明有人只拿指定清单。"),
+                        ("伏击", "收银台后方传来金属碰撞声，两个戴袖章的人要求他们交出避难所地址。"),
+                        ("谈判", f"{supporting_name}没有拔刀，只把一瓶抗生素放到台面上，问对方知道不知道城北私仓入口。"),
+                        ("骗局", "对方报出的路线绕过三处积水，却故意漏掉一座已经坍塌的人行桥。"),
+                        ("验证", f"{protagonist_name}用上一世记忆校对街区广告牌，确认真正入口藏在冷链配送站后院。"),
+                        ("救人", "他们在冷柜下救出一个被压住的配送员，对方手腕上还扣着私仓临时通行环。"),
+                        ("代价", "配送员愿意带路，条件是先把一袋奶粉送回隔壁楼的婴儿房。"),
+                        ("选择", f"{protagonist_name}同意绕路，却把净水片拆成两份，防止带路人半途反悔。"),
+                        ("钩子", "冷链站后门打开时，里面亮着不该存在的应急灯，还有人正在按名单分装药品。"),
+                    ],
+                    [
+                        "这次离开避难所，让物资秩序第一次面对外部势力。",
+                        "奶粉被留下不是善意，而是抢货者有更准确的目标。",
+                        "避难所地址变成新的资源，泄露出去会比少一箱食物更危险。",
+                        "抗生素的出现把谈判从恐吓拉回交易，因为双方都知道药比刀更稀缺。",
+                        "错误路线暴露了对方想让他们死在路上，却又不敢亲自动手。",
+                        "重生记忆在这里不是外挂，而是校准谎言的一把尺。",
+                        "这个配送员既是累赘，也是第一把能打开私仓的钥匙。",
+                        "婴儿房让任务多出人命重量，也逼队伍承认秩序不能只服务强者。",
+                        "拆分净水片不是不信任，而是让背叛成本变得可计算。",
+                        "应急灯把城北私仓从传闻变成了眼前的敌人。",
+                    ],
+                ),
+                (
+                    "避难所第一次公开审判",
+                    [
+                        ("回归", f"{protagonist_name}回到小区时，白板上的分粮表被人撕掉一半，只剩药品栏还挂在墙上。"),
+                        ("谣言", "有人散播他说服外人搬空仓库，楼道里每一扇门都只开出一条审视的缝。"),
+                        ("证人", "被救回的配送员坐在折叠椅上，颤声说出私仓名单里有本楼三户人的名字。"),
+                        ("摊牌", f"{supporting_name}把门禁卡、配送单和半袋奶粉摆成一排，要求所有领过额外物资的人站出来。"),
+                        ("失控", "一名住户抱着孩子冲出来，承认拿过药，却说那是给孩子换命。"),
+                        ("规则", f"{protagonist_name}没有没收她的药，只要求她公开私仓联系人，并加入夜间医疗队。"),
+                        ("反扑", "真正的中间人趁人群松动想下楼，刚到转角就被巡楼班堵回公共大厅。"),
+                        ("审判", "第一次公开处罚不是逐出避难所，而是取消三轮优先权、补齐两班最危险的巡逻。"),
+                        ("认可", "沉默最久的老人把自家半桶水推到白板下，说这一轮按新规登记。"),
+                        ("钩子", "中间人的手机忽然亮起新消息：城北私仓今晚转移，目标正是他们刚守住的地下冷库。"),
+                    ],
+                    [
+                        "外出带回的不只是线索，还有足以撕裂内部信任的新证据。",
+                        "谣言逼他证明规则不是个人权力，而是所有人能共同核验的东西。",
+                        "配送员的证词让敌人从外部影子变成邻里之间的真实名字。",
+                        "证据摆出来以后，争吵终于不能只靠嗓门决定输赢。",
+                        "孩子让规则遇到最难看的例外，也让所有人盯住他会不会偏私。",
+                        "他把惩罚改造成义务，因为避难所不能浪费任何一个还能工作的人。",
+                        "巡楼班的存在证明上一场分粮换来的不是服从，而是可执行的组织。",
+                        "处罚不够痛快，却足够让下一次违规前先计算代价。",
+                        "这桶水不是投降，而是避难所第一次用行动承认新秩序。",
+                        "新消息把内部审判直接推向下一场仓库保卫战。",
+                    ],
+                ),
+            ]
+            profile_focus, profile_details, profile_extensions = apocalypse_profiles[
+                (scene_number - 1) % len(apocalypse_profiles)
+            ]
+            scene_focus = profile_focus
+            details = [*profile_details[:3], profile_details[-1]]
+            extensions = [*profile_extensions[:3], profile_extensions[-1]]
+            if prompt_signature_image:
+                label, sentence = details[0]
+                if prompt_signature_image not in sentence:
+                    details[0] = (label, f"{sentence}{prompt_signature_image}")
+            if prompt_cut_point:
+                label, sentence = details[-1]
+                if prompt_cut_point not in sentence:
+                    details[-1] = (label, f"{sentence}{prompt_cut_point}")
+        if chapter_number >= 2 and not is_apocalypse_supply:
             details = [
                 ("重逢", "顾临站在巡逻舰断裂的登舰桥尽头，军装肩章被冷雾打湿，却始终没有放低枪口。"),
                 ("黑匣", "失踪巡逻舰的黑匣子卡在主控台下方，外壳有烧灼痕，仍按旧军规每隔九秒闪一次蓝灯。"),
@@ -642,7 +850,7 @@ def _mock_content_for_request(request: LLMCompletionRequest) -> str:
                 "那排名字让顾临终于变了脸，因为他认出其中一人曾在事故前夜给自己发过空白讯息。",
                 "坐标出现时，整艘巡逻舰短暂恢复供电，像某个被压住的亡魂终于睁开眼睛。",
             ]
-        if chapter_number >= 3:
+        if chapter_number >= 3 and not is_apocalypse_supply:
             stage = "审计塔数据库" if chapter_number == 3 else "边境校准总库"
             secondary = supporting_name if supporting_name != protagonist_name else "沈远"
             objects = [
@@ -692,7 +900,7 @@ def _mock_content_for_request(request: LLMCompletionRequest) -> str:
                 )
                 for index in range(len(details))
             ]
-        if chapter_number >= 4:
+        if chapter_number >= 4 and not is_apocalypse_supply:
             secondary = supporting_name if supporting_name != protagonist_name else "沈远"
             final_events = [
                 f"{protagonist_name}关闭总库检索屏，改用公开频道播放第一段遇难者回声。",
@@ -727,7 +935,31 @@ def _mock_content_for_request(request: LLMCompletionRequest) -> str:
             "他没有抬头看任何人，只盯住那枚新出现的异常签名。"
             f"如果第{scene_number}轮警戒切换前不能判断真伪，他会失去本章唯一能撬开真相的入口。"
         )
-        if chapter_number == 2:
+        if is_apocalypse_supply:
+            apocalypse_leads = [
+                (
+                    f"{protagonist_name}把净水片倒进周转箱。"
+                    "楼道里有人哭着问救援什么时候来，手机信号却只剩一格灰色。"
+                    "如果第一轮分粮前不能立下公开规则，仓库会先于城市失守。"
+                ),
+                (
+                    f"{protagonist_name}踩进地下车库的污水里，手电照见柴油机旁边一串新鲜脚印。"
+                    "抽水泵停摆后，整栋楼的药品和食物都会在天亮前泡烂。"
+                    "他必须先找回燃料，再决定谁有资格用电瓶换药。"
+                ),
+                (
+                    f"{protagonist_name}推开超市后门时，货架上的灰尘被雨风卷成一层白雾。"
+                    "这里没有幸存者欢呼，只有被精准挑空的补给位和一条通向城北私仓的假线索。"
+                    "他带出来的净水片只够谈判一次。"
+                ),
+                (
+                    f"{protagonist_name}回到避难所，看见白板上的分粮表被撕掉一半。"
+                    "每扇门后都有人听着，等他解释外出的代价。"
+                    "他不能只带回物资，还必须带回一套能处理背叛的公开规则。"
+                ),
+            ]
+            lead = apocalypse_leads[(scene_number - 1) % len(apocalypse_leads)]
+        elif chapter_number == 2:
             lead = (
                 f"{protagonist_name}踏进失踪巡逻舰的断裂舰桥时，先看见顾临没有放下的枪口，"
                 "再看见主控台下仍在闪蓝灯的黑匣子。"
@@ -756,23 +988,32 @@ def _mock_content_for_request(request: LLMCompletionRequest) -> str:
             "这一次判断会留下痕迹，也会暴露他的位置。",
             "没有人替他解释，事实只能靠行动抢回来。",
         ]
+        pressure_clauses = [
+            "这一步把矛盾从口头争执压到可以验证的现场。",
+            "新的阻力没有重复旧问题，而是逼出下一层代价。",
+            "场面因此换了重心，旁观者也被拖进选择里。",
+            "他没有赢得轻松喘息，只换来一次更危险的主动权。",
+            "局势继续收紧，却终于出现可以抓住的缝隙。",
+            "这次推进让每个人都看见行动会留下后果。",
+            "旧压力被拆开后，真正要命的部分反而更清楚。",
+        ]
         decision_clauses = [
             f"{protagonist_name}必须在第{scene_number}轮警戒切换前做出判断。",
-            f"{protagonist_name}把可疑字段和旧案时间线重新对齐。",
+            f"{protagonist_name}把可疑字段和旧案时间线重新对齐，胸口的紧意没有散。",
             f"{protagonist_name}选择先保留证据，再承受被追踪的风险。",
-            f"{protagonist_name}没有争辩，只把下一步拆成能执行的动作。",
+            f"{protagonist_name}没有争辩，只把心头的急跳压进能执行的动作。",
             f"{protagonist_name}逼自己记住每一个偏移值。",
             f"{protagonist_name}知道现在撤退只会让真相再次被封存。",
-            f"{protagonist_name}把恐惧压低到不影响手指的程度。",
+            f"{protagonist_name}把胸口的恐惧压低到不影响手指的程度。",
         ]
         consequence_clauses = [
-            "于是证据链多出一枚可以落地的钉子。",
-            "而门外的压力也因此提前变得可见。",
-            "这一步没有解决全部问题，却切开了旧叙事的第一道缝。",
-            "下一次阻拦来临时，他至少知道该质问谁。",
-            "沉默多年的记录终于开始指向一个活人。",
-            "局势被迫向更危险、也更清楚的方向移动。",
-            "读数归零前，他已经把下一枚线索送了出去。",
+            "于是证据链多出一枚可以落地的钉子，可下一次阻拦会从哪里突然出现？",
+            "而门外的压力也因此提前变得可见，谁会先动手抢走这条线索？",
+            "这一步没有解决全部问题，却切开了旧叙事的第一道缝，缝后忽然传来新的动静。",
+            "下一次阻拦来临时，他至少知道该质问谁，可答案为什么现在才露头？",
+            "沉默多年的记录终于开始指向一个活人，那个名字忽然变得不能再回避。",
+            "局势被迫向更危险、也更清楚的方向移动，倒计时还在继续缩短。",
+            "读数归零前，他已经把下一枚线索送了出去，可回传信号为什么立刻亮起？",
         ]
         if chapter_number >= 4:
             connectors = [
@@ -807,15 +1048,26 @@ def _mock_content_for_request(request: LLMCompletionRequest) -> str:
             start=1,
         ):
             connector = connectors[(index + scene_number) % len(connectors)]
+            pressure = pressure_clauses[(index + scene_number + chapter_number) % len(pressure_clauses)]
             decision = decision_clauses[(index + chapter_number) % len(decision_clauses)]
             consequence = consequence_clauses[(index + chapter_number + scene_number) % len(consequence_clauses)]
             paragraphs.append(
                 f"{sentence}"
-                f"{label}带来的压力没有重复上一段，而是把场面推向新的选择。"
+                f"{pressure}"
                 f"{connector}"
                 f"{decision}"
                 f"{extension}"
                 f"{consequence}"
+            )
+        if prompt_cut_point:
+            paragraphs.append(
+                f"第{scene_number}场断点落下时，{prompt_cut_point}"
+                f"为什么会在这时候出现？"
+            )
+        elif is_apocalypse_supply:
+            paragraphs.append(
+                f"第{scene_number}场的城北私仓消息忽然亮起，"
+                "为什么目标会改成他们刚守住的仓库？"
             )
         return "\n\n".join(paragraphs)
     return content

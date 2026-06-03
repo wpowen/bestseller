@@ -119,6 +119,56 @@ def _normalize_str_dict_list(value: Any) -> list[dict[str, str]]:
     return []
 
 
+def _normalize_str_list(value: Any) -> list[str]:
+    """Coerce common LLM shapes into ``list[str]``.
+
+    Reference fields are sometimes emitted as structured objects such as
+    ``{"asset_key": "...", "description": "..."}``. Preserve the stable key
+    when present, and fall back to a compact key-value string so schema
+    validation does not reject otherwise usable outline intent.
+    """
+
+    def _coerce_item(item: Any) -> str | None:
+        if item is None:
+            return None
+        if isinstance(item, str):
+            stripped = item.strip()
+            return stripped or None
+        if isinstance(item, dict):
+            for key in (
+                "asset_key",
+                "claim_key",
+                "key",
+                "id",
+                "ref",
+                "reference",
+                "name",
+                "title",
+            ):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            parts = [
+                f"{str(k).strip()}={str(v).strip()}"
+                for k, v in item.items()
+                if v is not None and str(k).strip() and str(v).strip()
+            ]
+            return "; ".join(parts) or None
+        return str(item).strip() or None
+
+    if value is None:
+        return []
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value:
+            coerced = _coerce_item(item)
+            if coerced:
+                out.append(coerced)
+        return out
+    coerced = _coerce_item(value)
+    return [coerced] if coerced else []
+
+
 def _looks_like_functional_chapter_title(value: Any) -> bool:
     text = str(value or "").strip()
     if not text or len(text) > 8:
@@ -506,10 +556,8 @@ class ChapterOutlineInput(BaseModel):
             return data
 
         # Robustness: every list[str] field below may be emitted by the LLM as
-        # a single prose string (observed on key_reveals, anti_copy_boundary_notes,
-        # world_rule_refs, …). A bare string hard-fails `list_type` validation and
-        # exhausts the planner outline repair loop. Wrap str -> [str] so valid
-        # intent is never rejected on a type technicality.
+        # a single prose string or as structured reference objects. Normalize
+        # these shapes so valid intent is never rejected on a type technicality.
         _STR_LIST_FIELDS = (
             "world_rule_refs",
             "world_asset_refs",
@@ -524,10 +572,7 @@ class ChapterOutlineInput(BaseModel):
             "chapter_information_held_back",
         )
         for _field in _STR_LIST_FIELDS:
-            _val = data.get(_field)
-            if isinstance(_val, str):
-                _s = _val.strip()
-                data[_field] = [_s] if _s else []
+            data[_field] = _normalize_str_list(data.get(_field))
 
         story_title = data.get("chapter_title") or data.get("subtitle")
         if story_title and (

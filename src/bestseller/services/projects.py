@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import shutil
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.enums import ProjectType
@@ -425,6 +426,17 @@ async def import_planning_artifact(
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    original_content = payload.content
+    content = original_content
+    if isinstance(content, dict):
+        from bestseller.services.prewrite_quality_profile import planning_artifact_meta
+
+        content = copy.deepcopy(content)
+        meta = content.get("_meta") if isinstance(content.get("_meta"), dict) else {}
+        content["_meta"] = {
+            **planning_artifact_meta(project),
+            **meta,
+        }
 
     version_filters = [
         PlanningArtifactVersionModel.project_id == project.id,
@@ -434,6 +446,52 @@ async def import_planning_artifact(
         version_filters.append(PlanningArtifactVersionModel.scope_ref_id.is_(None))
     else:
         version_filters.append(PlanningArtifactVersionModel.scope_ref_id == payload.scope_ref_id)
+
+    input_hash = None
+    if isinstance(content, dict):
+        meta = content.get("_meta")
+        if isinstance(meta, dict):
+            raw_hash = meta.get("input_hash")
+            if isinstance(raw_hash, str) and raw_hash.strip():
+                input_hash = raw_hash.strip()
+
+    if input_hash:
+        reusable_stmt = (
+            select(PlanningArtifactVersionModel)
+            .where(
+                *version_filters,
+                PlanningArtifactVersionModel.status == "approved",
+                PlanningArtifactVersionModel.content["_meta"]["input_hash"].astext == input_hash,
+            )
+            .order_by(
+                PlanningArtifactVersionModel.version_no.desc(),
+                PlanningArtifactVersionModel.created_at.desc(),
+            )
+            .limit(1)
+        )
+        reusable = await session.scalar(reusable_stmt)
+        if reusable is not None:
+            return reusable
+
+    exact_stmt = (
+        select(PlanningArtifactVersionModel)
+        .where(
+            *version_filters,
+            PlanningArtifactVersionModel.status == "approved",
+            or_(
+                PlanningArtifactVersionModel.content == content,
+                PlanningArtifactVersionModel.content == original_content,
+            ),
+        )
+        .order_by(
+            PlanningArtifactVersionModel.version_no.desc(),
+            PlanningArtifactVersionModel.created_at.desc(),
+        )
+        .limit(1)
+    )
+    exact = await session.scalar(exact_stmt)
+    if exact is not None:
+        return exact
 
     version_stmt = select(func.coalesce(func.max(PlanningArtifactVersionModel.version_no), 0)).where(
         *version_filters
@@ -447,7 +505,8 @@ async def import_planning_artifact(
         version_no=next_version,
         status="approved",
         schema_version="1.0",
-        content=payload.content,
+        content=content,
+        source_run_id=payload.source_run_id,
         notes=payload.notes,
     )
     session.add(artifact)

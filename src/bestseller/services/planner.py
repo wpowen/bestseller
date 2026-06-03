@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 import copy
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
 import hashlib
 import json
 import logging
@@ -28,7 +28,14 @@ from bestseller.domain.story_bible import (
     normalize_character_age,
     normalize_character_role_label,
 )
-from bestseller.infra.db.models import ChapterModel, ProjectModel, VolumeModel
+from bestseller.infra.db.models import (
+    ChapterModel,
+    PlanningArtifactVersionModel,
+    ProjectModel,
+    VolumeModel,
+    WorkflowRunModel,
+    WorkflowStepRunModel,
+)
 from bestseller.services.character_drama_engine import (
     build_character_drama_map,
     character_drama_map_to_dict,
@@ -91,6 +98,21 @@ from bestseller.services.public_emotion_kernel import (
     render_public_emotion_prompt_block,
 )
 from bestseller.services.projects import get_project_by_slug, import_planning_artifact
+from bestseller.services.prewrite_quality_profile import (
+    evaluate_book_spec_quality,
+    evaluate_cast_spec_function_quality,
+    evaluate_concept_quality,
+    evaluate_story_design_kernel_quality,
+    evaluate_volume_plan_quality,
+    evaluate_world_spec_source_quality,
+    is_strict_prewrite_project,
+    planning_artifact_meta,
+    repair_target_for_block_code,
+    repair_zh_book_spec_language,
+    strict_blocks,
+    strict_outline_batch_size,
+    strict_outline_shrink_size,
+)
 from bestseller.services.methodology_bridge import (
     render_phase_block as render_methodology_phase_block,
 )
@@ -103,6 +125,11 @@ from bestseller.services.story_bible import (
     parse_cast_spec_input,
     parse_volume_plan_input,
     parse_world_spec_input,
+)
+from bestseller.services.narrative_contracts import (
+    IDENTITY_POLICY_VERSION,
+    repair_commercial_zh_identity_policy,
+    validate_commercial_zh_identity_policy,
 )
 from bestseller.services.story_design_grammars import (
     render_story_design_grammar_prompt_block,
@@ -118,6 +145,12 @@ from bestseller.services.title_dedup import (
     TitleCollisionError,
     derive_title_from_content,
     find_title_collisions,
+)
+from bestseller.services.platform_title_workflow import (
+    build_platform_title_workflow,
+    build_story_grounded_title_revision_messages,
+    finalize_revised_title,
+    title_readability_issue,
 )
 from bestseller.services.workflows import create_workflow_run, create_workflow_step_run
 from bestseller.services.writing_profile import (
@@ -152,6 +185,10 @@ class PlannerFallbackError(RuntimeError):
     Prevents downstream corruption such as partial chapter outlines
     producing gaps like "missing chapters [151..350]".
     """
+
+
+class OutlineBatchShrinkRequired(PlannerFallbackError):
+    """Raised when a strict outline batch must be split before retrying."""
 
 
 def _emit_planner_progress(
@@ -669,6 +706,24 @@ def _persist_failing_planner_output(
         )
 
 
+def _planner_length_retry_prompt(user_prompt: str, logical_name: str) -> str:
+    compact_contract = (
+        "\n\n[STRICT RETRY AFTER TRUNCATED OUTPUT]\n"
+        "The previous response hit the output token limit. Regenerate a compact, complete JSON object only. "
+        "Do not include optional empty/null-heavy subobjects. Keep every free-text field to one concise sentence. "
+        "Prefer fewer, sharper entries over exhaustive lists. The JSON must close cleanly."
+    )
+    if logical_name == "cast_spec":
+        compact_contract += (
+            "\nFor CastSpec specifically: output protagonist, one primary antagonist, "
+            "2 antagonist_forces, 3-4 supporting_cast entries, and a compact conflict_map. "
+            "For each character include only plot function, goal/desire, flaw, voice_profile, "
+            "moral_framework, relationships, gender, pronoun_set_zh, pronoun_set_en, and name_reasoning. "
+            "Do not emit large psych_profile/life_history/social_network/family_imprint objects unless they contain concrete story-useful values."
+        )
+    return f"{user_prompt.rstrip()}{compact_contract}"
+
+
 def _merge_planning_payload(fallback_payload: Any, generated_payload: Any) -> Any:
     """Merge LLM output with fallback — **LLM-primary** strategy.
 
@@ -742,6 +797,408 @@ def _string_list(value: Any) -> list[str]:
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
 
 
+def _planner_title_text(value: Any, *, max_chars: int = 1200) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            text = str(value)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:max_chars]
+
+
+def _extract_planning_title_terms(text: str, markers: tuple[str, ...]) -> list[str]:
+    found: list[str] = []
+    for marker in markers:
+        if marker in text and marker not in found:
+            found.append(marker)
+    return found[:8]
+
+
+def _extract_title_identity_from_planning(
+    premise: str,
+    cast_spec_payload: Any,
+    story_text: str,
+) -> str:
+    cast = _mapping(cast_spec_payload)
+    protagonist = _mapping(cast.get("protagonist"))
+    for key in ("identity", "occupation", "profession", "role_label", "function"):
+        text = _non_empty_string(protagonist.get(key), "")
+        if text and text != "protagonist":
+            return text
+    for pattern in (
+        r"「([^」]{2,12}(?:验房师|师|官|员|士|客|者))」",
+        r"([\u4e00-\u9fff]{2,12}(?:验房师|风水师|炼丹师|剑修|法医|捕头|秘书|神医|道士|执照))",
+    ):
+        match = re.search(pattern, premise)
+        if match:
+            return match.group(1).strip()
+    cast_text = _planner_title_text(cast_spec_payload, max_chars=1600)
+    for pattern in (
+        r'"identity"\s*:\s*"([^"]{2,24})"',
+        r'"role"\s*:\s*"([^"]{2,24})"',
+    ):
+        match = re.search(pattern, cast_text)
+        if match:
+            return match.group(1).strip()
+    match = re.search(r"([\u4e00-\u9fff]{2,12}(?:师|官|员|士|客|者))", story_text)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_title_protagonist(cast_spec_payload: Any, premise: str) -> str:
+    cast = _mapping(cast_spec_payload)
+    protagonist = _mapping(cast.get("protagonist"))
+    name = _non_empty_string(protagonist.get("name"), "")
+    if name and name not in {"主角", "读者", "平台"}:
+        return name
+    cast_text = _planner_title_text(cast_spec_payload, max_chars=1600)
+    for pattern in (r'"name"\s*:\s*"([^"]{2,6})"', r"主角[：:]\s*([\u4e00-\u9fff]{2,6})"):
+        match = re.search(pattern, cast_text)
+        if match:
+            name = match.group(1).strip()
+            if name not in {"主角", "读者", "平台"}:
+                return name
+    match = re.search(r"([\u4e00-\u9fff]{2,4})挂靠", premise)
+    return match.group(1).strip() if match else ""
+
+
+def _build_story_grounded_title_profile(
+    project: ProjectModel,
+    *,
+    premise: str,
+    book_spec_payload: Any,
+    cast_spec_payload: Any,
+    story_design_payload: Any,
+    volume_plan_payload: Any,
+    prewrite_payload: Any | None = None,
+) -> dict[str, Any]:
+    metadata = project.metadata_json or {}
+    writing_profile = _mapping(metadata.get("writing_profile"))
+    market = _mapping(writing_profile.get("market"))
+    volume_plan = _mapping_list(volume_plan_payload)
+    first_volume = volume_plan[0] if volume_plan else {}
+    story_text = " ".join(
+        filter(
+            None,
+            [
+                premise,
+                _planner_title_text(book_spec_payload, max_chars=700),
+                _planner_title_text(story_design_payload, max_chars=900),
+                _planner_title_text(first_volume, max_chars=900),
+                _planner_title_text(prewrite_payload, max_chars=500),
+            ],
+        )
+    )
+    protagonist = _extract_title_protagonist(cast_spec_payload, premise)
+    identity = _extract_title_identity_from_planning(
+        premise, cast_spec_payload, story_text
+    )
+    action_terms = _extract_planning_title_terms(
+        story_text,
+        (
+            "签出",
+            "签发",
+            "强制复检",
+            "双人交叉验房",
+            "指出违规",
+            "钉死",
+            "倒查",
+            "触发复检",
+            "写进现场笔记",
+            "条款反杀",
+        ),
+    )
+    object_terms = _extract_planning_title_terms(
+        story_text,
+        (
+            "验房报告",
+            "终版报告",
+            "现场笔记",
+            "岗位说明书",
+            "豁免清单",
+            "合规台账",
+            "执照扣分",
+            "48小时",
+            "写字楼",
+        ),
+    )
+    stakes_terms = _extract_planning_title_terms(
+        story_text,
+        (
+            "执照扣分",
+            "吊销线",
+            "冷门岗位",
+            "职业边界",
+            "越权",
+            "曝光度",
+            "存续审查",
+            "签约前",
+        ),
+    )
+    return {
+        "language": project.language or "zh-CN",
+        "primary_title": project.title,
+        "primary_category": project.genre or "",
+        "secondary_category": project.sub_genre or "",
+        "target_platform": market.get("platform_target") or "",
+        "tags": [
+            tag
+            for tag in _string_list(metadata.get("tags"))
+            if tag and tag not in {project.genre, project.sub_genre}
+        ][:8],
+        "logline": premise,
+        "reader_promise": market.get("reader_promise") or "",
+        "story_title_dna": {
+            "protagonist": protagonist,
+            "identity": identity,
+            "opening": premise,
+            "central_action": first_volume.get("volume_goal") or "",
+            "conflict": first_volume.get("volume_obstacle") or "",
+            "stakes": _mapping(first_volume.get("volume_resolution")).get("cost_paid")
+            or "",
+            "payoff": first_volume.get("volume_climax")
+            or first_volume.get("volume_goal")
+            or "",
+        },
+        "title_anchor_groups": {
+            "identity": [term for term in [identity, protagonist] if term],
+            "action": action_terms,
+            "object": object_terms,
+            "stakes": stakes_terms,
+        },
+    }
+
+
+def _apply_project_title_workflow_metadata(
+    project: ProjectModel,
+    *,
+    metadata: Mapping[str, Any],
+    title_record: Mapping[str, Any],
+    title_workflow: Mapping[str, Any],
+) -> None:
+    workflow_candidates = (
+        title_workflow.get("candidates")
+        if isinstance(title_workflow.get("candidates"), list)
+        else []
+    )
+    next_metadata = dict(metadata)
+    next_metadata["title_workflow_primary"] = dict(title_record)
+    next_metadata["title_workflow"] = dict(title_workflow)
+    next_metadata["title_candidates"] = workflow_candidates
+    writing_profile = dict(_mapping(next_metadata.get("writing_profile")))
+    market = dict(_mapping(writing_profile.get("market")))
+    market["title_workflow_primary"] = dict(title_record)
+    market["title_workflow_summary"] = {
+        "schema_version": title_workflow.get("schema_version"),
+        "candidate_policy": title_workflow.get("candidate_policy"),
+        "candidate_count": len(workflow_candidates),
+        "platform_count": title_workflow.get("platform_count"),
+        "recommended_primary_title": dict(title_record),
+    }
+    writing_profile["market"] = market
+    next_metadata["writing_profile"] = writing_profile
+    project.metadata_json = next_metadata
+
+
+async def _refresh_story_grounded_project_title(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    premise: str,
+    book_spec_payload: Any,
+    cast_spec_payload: Any,
+    story_design_payload: Any,
+    volume_plan_payload: Any,
+    prewrite_payload: Any | None,
+    workflow_run_id: UUID,
+) -> tuple[str, bool, UUID | None, dict[str, Any]]:
+    if is_english_language(project.language):
+        return project.title, False, None, {"skipped": "english_title_path"}
+    if not getattr(settings.generation, "title_llm_revision_enabled", True):
+        return project.title, False, None, {"skipped": "title_llm_revision_disabled"}
+
+    profile = _build_story_grounded_title_profile(
+        project,
+        premise=premise,
+        book_spec_payload=book_spec_payload,
+        cast_spec_payload=cast_spec_payload,
+        story_design_payload=story_design_payload,
+        volume_plan_payload=volume_plan_payload,
+        prewrite_payload=prewrite_payload,
+    )
+    current_title = project.title
+    metadata = project.metadata_json or {}
+    writing_profile = _mapping(metadata.get("writing_profile"))
+    market = _mapping(writing_profile.get("market"))
+    title_meta = _mapping(market.get("title_workflow_primary")) or _mapping(
+        metadata.get("title_workflow_primary")
+    )
+    issue = title_readability_issue(current_title)
+    has_full_title_workflow = isinstance(metadata.get("title_workflow"), Mapping) and isinstance(
+        metadata.get("title_candidates"), list
+    )
+    should_refresh = bool(issue or title_meta.get("llm_revised") or not has_full_title_workflow)
+    if not should_refresh:
+        return current_title, False, None, {
+            "skipped": "current_title_not_marked_weak",
+            "title_anchor_groups": profile.get("title_anchor_groups"),
+        }
+
+    target_platform = str(profile.get("target_platform") or "")
+    current_workflow_profile = dict(profile)
+    current_workflow_profile["primary_title"] = current_title
+    current_title_workflow = build_platform_title_workflow(
+        current_workflow_profile,
+        target_platform=target_platform,
+    )
+    current_primary = _mapping(current_title_workflow.get("recommended_primary_title"))
+    current_evaluation = _mapping(current_primary.get("title_evaluation"))
+    if (
+        _non_empty_string(current_primary.get("title"), "") == current_title
+        and current_evaluation.get("decision") == "pass"
+    ):
+        workflow_candidates = (
+            current_title_workflow.get("candidates")
+            if isinstance(current_title_workflow.get("candidates"), list)
+            else []
+        )
+        title_record = {
+            "title": current_title,
+            "pre_revision_title": title_meta.get("pre_revision_title"),
+            "llm_revised": bool(title_meta.get("llm_revised")),
+            "llm_run_id": title_meta.get("llm_run_id"),
+            "source": title_meta.get("source") or "story_grounded_planning_revision",
+            "platform_label": current_primary.get("platform_label")
+            or current_title_workflow.get("platform_label"),
+            "scope_label": current_primary.get("scope_label"),
+            "pattern": current_primary.get("pattern"),
+            "title_evaluation": current_evaluation,
+            "anchor_groups": profile.get("title_anchor_groups"),
+            "candidate_count": len(workflow_candidates),
+            "platform_count": current_title_workflow.get("platform_count"),
+            "candidate_policy": current_title_workflow.get("candidate_policy"),
+        }
+        _apply_project_title_workflow_metadata(
+            project,
+            metadata=metadata,
+            title_record=title_record,
+            title_workflow=current_title_workflow,
+        )
+        return current_title, False, None, {
+            "skipped": "current_title_passed_full_title_workflow",
+            "title_evaluation": current_evaluation,
+            "title_anchor_groups": profile.get("title_anchor_groups"),
+            "candidate_count": len(workflow_candidates),
+        }
+    system_prompt, user_prompt = build_story_grounded_title_revision_messages(
+        profile,
+        current_title=current_title,
+        target_platform=target_platform,
+        reason=issue or "conception_title_needs_planning_grounding",
+    )
+    completion = await complete_text(
+        session,
+        settings,
+        LLMCompletionRequest(
+            logical_role="editor",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_response=current_title,
+            prompt_template="title_story_grounded_revision",
+            prompt_version="1.0",
+            project_id=project.id,
+            workflow_run_id=workflow_run_id,
+            max_tokens_override=512,
+            metadata={
+                "project_slug": project.slug,
+                "current_title": current_title,
+                "title_anchor_groups": profile.get("title_anchor_groups"),
+                "reason": issue or "planning_grounding",
+            },
+        ),
+    )
+    adopted, was_revised = finalize_revised_title(
+        profile,
+        current_title,
+        completion.content,
+        target_platform=target_platform,
+    )
+    evidence = {
+        "previous_title": current_title,
+        "adopted_title": adopted,
+        "was_revised": was_revised,
+        "llm_run_id": str(completion.llm_run_id) if completion.llm_run_id else None,
+        "reason": issue or "planning_grounding",
+        "title_anchor_groups": profile.get("title_anchor_groups"),
+    }
+    if was_revised:
+        workflow_profile = dict(profile)
+        workflow_profile["primary_title"] = adopted
+        title_workflow = build_platform_title_workflow(
+            workflow_profile,
+            target_platform=target_platform,
+        )
+        primary_candidate = _mapping(title_workflow.get("recommended_primary_title"))
+        primary_evaluation = _mapping(primary_candidate.get("title_evaluation"))
+        if (
+            _non_empty_string(primary_candidate.get("title"), "")
+            and primary_evaluation.get("decision") == "pass"
+        ):
+            adopted = _non_empty_string(primary_candidate.get("title"), adopted)
+        else:
+            adopted_evaluation = _mapping(
+                title_workflow.get("candidate_evaluations", {}).get(adopted)
+                if isinstance(title_workflow.get("candidate_evaluations"), Mapping)
+                else {}
+            )
+            if adopted_evaluation.get("decision") != "pass":
+                evidence["blocked"] = "title_workflow_primary_not_pass"
+                evidence["title_evaluation"] = adopted_evaluation
+                return current_title, False, completion.llm_run_id, evidence
+            primary_candidate = {
+                "title": adopted,
+                "title_evaluation": adopted_evaluation,
+                "platform_label": title_workflow.get("platform_label"),
+                "scope_label": "目标平台",
+                "pattern": "story_grounded_planning_revision",
+            }
+        project.title = adopted
+        metadata = dict(project.metadata_json or {})
+        workflow_candidates = (
+            title_workflow.get("candidates")
+            if isinstance(title_workflow.get("candidates"), list)
+            else []
+        )
+        title_record = {
+            "title": adopted,
+            "pre_revision_title": current_title,
+            "llm_revised": True,
+            "llm_run_id": str(completion.llm_run_id) if completion.llm_run_id else None,
+            "source": "story_grounded_planning_revision",
+            "platform_label": primary_candidate.get("platform_label")
+            or title_workflow.get("platform_label"),
+            "scope_label": primary_candidate.get("scope_label"),
+            "pattern": primary_candidate.get("pattern"),
+            "title_evaluation": primary_candidate.get("title_evaluation"),
+            "anchor_groups": profile.get("title_anchor_groups"),
+            "candidate_count": len(workflow_candidates),
+            "platform_count": title_workflow.get("platform_count"),
+            "candidate_policy": title_workflow.get("candidate_policy"),
+        }
+        _apply_project_title_workflow_metadata(
+            project,
+            metadata=metadata,
+            title_record=title_record,
+            title_workflow=title_workflow,
+        )
+    return adopted, was_revised, completion.llm_run_id, evidence
+
+
 def _non_empty_string(value: Any, default: str) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
@@ -776,6 +1233,11 @@ def _require_complete_volume_outline(
         "chapters because that would turn a broken story architecture into valid-looking "
         "downstream input."
     )
+
+
+def _is_outline_count_contract_error(error: Exception) -> bool:
+    message = str(error)
+    return "returned " in message and "/" in message and "chapters for volume" in message
 
 
 def _normalize_generated_outline_titles_or_fail(
@@ -1672,6 +2134,7 @@ async def _generate_volume_outline_with_repair_loop(
     )
 
     for attempt in range(1, max_repair_attempts + 1):
+        attempt_finish_reason: str | None = None
         _emit_planner_progress(
             progress,
             "planning_outline_attempt_started",
@@ -1715,6 +2178,10 @@ async def _generate_volume_outline_with_repair_loop(
                 merge_fallback=False,
             )
             last_llm_run_id = llm_run_id
+            raw_meta = (
+                _mapping(raw_payload.get("_meta")) if isinstance(raw_payload, dict) else {}
+            )
+            attempt_finish_reason = _non_empty_string(raw_meta.get("finish_reason"), "")
             payload = _validate_generated_volume_outline_or_raise(
                 raw_payload,
                 project=project,
@@ -1725,6 +2192,8 @@ async def _generate_volume_outline_with_repair_loop(
                 cast_spec=cast_spec,
                 existing_titles=existing_titles,
             )
+            if raw_meta:
+                payload["_meta"] = raw_meta
             if repair_history:
                 repair_history.append({"attempt": attempt, "status": "passed"})
             _emit_planner_progress(
@@ -1744,6 +2213,19 @@ async def _generate_volume_outline_with_repair_loop(
             return payload, llm_run_id, repair_history
         except Exception as exc:
             last_error = exc
+            if (
+                is_strict_prewrite_project(project)
+                and expected_count > strict_outline_shrink_size(project, settings)
+                and (
+                    attempt_finish_reason == "length"
+                    or _is_outline_count_contract_error(exc)
+                )
+            ):
+                raise OutlineBatchShrinkRequired(
+                    f"Planner artifact '{logical_name}' requires smaller outline batches "
+                    f"after attempt {attempt}: finish_reason={attempt_finish_reason or 'unknown'}, "
+                    f"error={exc}"
+                ) from exc
             directives = _outline_repair_directives_from_error(
                 exc,
                 language=project.language,
@@ -1789,6 +2271,360 @@ async def _generate_volume_outline_with_repair_loop(
         f"{max_repair_attempts} attempt(s). Last error: {last_error}. "
         f"Last LLM run id: {last_llm_run_id}"
     )
+
+
+def _chapter_outline_batch_size(settings: AppSettings, project: ProjectModel) -> int:
+    strict_size = strict_outline_batch_size(project, settings)
+    if strict_size is not None:
+        return min(strict_size, max(1, int(getattr(project, "target_chapters", 0) or strict_size)))
+    configured = int(getattr(settings.pipeline, "chapter_outline_batch_size", 10) or 10)
+    target_chapters = int(getattr(project, "target_chapters", 0) or 0)
+    if target_chapters <= 12:
+        return max(2, min(configured, 3))
+    if target_chapters > 120:
+        return max(8, min(configured, 10))
+    return max(8, min(configured, 12))
+
+
+def _chapter_outline_batch_ranges(
+    *,
+    chapter_number_offset: int,
+    expected_count: int,
+    batch_size: int,
+) -> list[tuple[int, int, int]]:
+    """Return ``(chapter_start, chapter_end, count)`` ranges for outline batches."""
+
+    if expected_count <= 0:
+        return []
+    size = max(1, batch_size)
+    ranges: list[tuple[int, int, int]] = []
+    next_start = max(1, chapter_number_offset)
+    remaining = expected_count
+    while remaining > 0:
+        count = min(size, remaining)
+        chapter_end = next_start + count - 1
+        ranges.append((next_start, chapter_end, count))
+        next_start = chapter_end + 1
+        remaining -= count
+    return ranges
+
+
+def _volume_entry_for_outline_batch(
+    volume_entry: dict[str, Any],
+    *,
+    chapter_start: int,
+    chapter_end: int,
+    count: int,
+) -> dict[str, Any]:
+    batch_entry = copy.deepcopy(_mapping(volume_entry))
+    batch_entry["chapter_count_target"] = count
+    batch_entry["chapter_range"] = [chapter_start, chapter_end]
+    batch_entry["outline_batch_range"] = [chapter_start, chapter_end]
+    return batch_entry
+
+
+def _fallback_payload_for_outline_batch(
+    fallback_payload: dict[str, Any],
+    *,
+    volume_number: int,
+    chapter_start: int,
+    chapter_end: int,
+) -> dict[str, Any]:
+    chapters = []
+    for chapter in _mapping_list(_mapping(fallback_payload).get("chapters")):
+        chapter_number = _int_or_none(chapter.get("chapter_number"))
+        if chapter_number is None:
+            continue
+        if chapter_start <= chapter_number <= chapter_end:
+            chapters.append(copy.deepcopy(chapter))
+    return {
+        "batch_name": f"volume-{volume_number}-outline-{chapter_start}-{chapter_end}",
+        "chapters": chapters,
+    }
+
+
+def _outline_batch_constraints(
+    project: ProjectModel,
+    *,
+    volume_number: int,
+    chapter_start: int,
+    chapter_end: int,
+    count: int,
+    previous_exit_state: str | None,
+) -> list[str]:
+    is_en = is_english_language(_planner_language(project))
+    if is_en:
+        constraints = [
+            (
+                f"Generate ONLY volume {volume_number} chapters {chapter_start}-{chapter_end}: "
+                f"exactly {count} chapter objects. Do not generate earlier or later chapters."
+            ),
+            (
+                "Treat this as a resumable outline batch. Preserve the book/volume goal, but keep "
+                "the JSON output limited to this batch's chapter cards."
+            ),
+        ]
+        if previous_exit_state:
+            constraints.append(
+                "Continue from the previous batch exit state; the first chapter must visibly react "
+                f"to this state: {previous_exit_state[:800]}"
+            )
+        return constraints
+
+    constraints = [
+        (
+            f"只生成第{volume_number}卷第{chapter_start}-{chapter_end}章："
+            f"chapters 数组必须恰好 {count} 个章节对象，不得生成更早或更晚章节。"
+        ),
+        "这是可断点续跑的章纲批次；保留全书/本卷目标，但 JSON 输出只能包含本批章节卡。",
+    ]
+    if previous_exit_state:
+        constraints.append(
+            f"必须承接上一批 exit state；本批第一章要读者可见地回应该状态：{previous_exit_state[:800]}"
+        )
+    return constraints
+
+
+def _chapter_exit_state_summary(chapter: dict[str, Any]) -> str | None:
+    for key in (
+        "exit_state",
+        "state_change",
+        "hook_description",
+        "next_reader_desire",
+        "main_conflict",
+    ):
+        value = chapter.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    causal = _mapping(chapter.get("causal_contract"))
+    for key in ("state_change", "next_reader_desire", "gain_or_reveal", "cost_or_tradeoff"):
+        value = causal.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+async def _generate_volume_outline_batched(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    workflow_run_id: UUID,
+    logical_name: str,
+    book_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    volume_plan: list[dict[str, Any]],
+    volume_entry: dict[str, Any],
+    fallback_payload: dict[str, Any],
+    volume_number: int,
+    expected_count: int,
+    chapter_number_offset: int,
+    revealed_ledger_block: str | None,
+    base_constraints: list[str],
+    progress: PlanningProgressCallback | None = None,
+) -> tuple[dict[str, Any], list[UUID], list[dict[str, Any]]]:
+    batch_size = _chapter_outline_batch_size(settings, project)
+    batch_ranges = _chapter_outline_batch_ranges(
+        chapter_number_offset=chapter_number_offset,
+        expected_count=expected_count,
+        batch_size=batch_size,
+    )
+    if len(batch_ranges) <= 1 and not is_strict_prewrite_project(project):
+        payload, llm_run_id, repair_history = await _generate_volume_outline_with_repair_loop(
+            session,
+            settings,
+            project=project,
+            workflow_run_id=workflow_run_id,
+            logical_name=logical_name,
+            book_spec=book_spec,
+            cast_spec=cast_spec,
+            volume_plan=volume_plan,
+            volume_entry=volume_entry,
+            fallback_payload=fallback_payload,
+            volume_number=volume_number,
+            expected_count=expected_count,
+            chapter_number_offset=chapter_number_offset,
+            revealed_ledger_block=revealed_ledger_block,
+            base_constraints=base_constraints,
+            progress=progress,
+        )
+        return payload, [llm_run_id] if llm_run_id is not None else [], repair_history
+
+    all_chapters: list[dict[str, Any]] = []
+    llm_run_ids: list[UUID] = []
+    repair_history: list[dict[str, Any]] = []
+    previous_exit_state: str | None = None
+    reused_batch_count = 0
+
+    for chapter_start, chapter_end, count in batch_ranges:
+        batch_logical_name = f"{logical_name}_batch_{chapter_start}_{chapter_end}"
+        batch_constraints = [
+            *base_constraints,
+            *_outline_batch_constraints(
+                project,
+                volume_number=volume_number,
+                chapter_start=chapter_start,
+                chapter_end=chapter_end,
+                count=count,
+                previous_exit_state=previous_exit_state,
+            ),
+        ]
+        try:
+            generated_batches = [
+                await _generate_volume_outline_with_repair_loop(
+                    session,
+                    settings,
+                    project=project,
+                    workflow_run_id=workflow_run_id,
+                    logical_name=batch_logical_name,
+                    book_spec=book_spec,
+                    cast_spec=cast_spec,
+                    volume_plan=volume_plan,
+                    volume_entry=_volume_entry_for_outline_batch(
+                        volume_entry,
+                        chapter_start=chapter_start,
+                        chapter_end=chapter_end,
+                        count=count,
+                    ),
+                    fallback_payload=_fallback_payload_for_outline_batch(
+                        fallback_payload,
+                        volume_number=volume_number,
+                        chapter_start=chapter_start,
+                        chapter_end=chapter_end,
+                    ),
+                    volume_number=volume_number,
+                    expected_count=count,
+                    chapter_number_offset=chapter_start,
+                    revealed_ledger_block=revealed_ledger_block,
+                    base_constraints=batch_constraints,
+                    progress=progress,
+                )
+            ]
+        except OutlineBatchShrinkRequired as exc:
+            shrink_size = strict_outline_shrink_size(project, settings)
+            shrink_ranges = _chapter_outline_batch_ranges(
+                chapter_number_offset=chapter_start,
+                expected_count=count,
+                batch_size=shrink_size,
+            )
+            repair_history.append(
+                {
+                    "batch": [chapter_start, chapter_end],
+                    "logical_name": batch_logical_name,
+                    "status": "shrunk",
+                    "reason": str(exc)[:1200],
+                    "shrink_size": shrink_size,
+                    "shrink_ranges": [[start, end] for start, end, _count in shrink_ranges],
+                }
+            )
+            generated_batches = []
+            for sub_start, sub_end, sub_count in shrink_ranges:
+                sub_constraints = [
+                    *base_constraints,
+                    *_outline_batch_constraints(
+                        project,
+                        volume_number=volume_number,
+                        chapter_start=sub_start,
+                        chapter_end=sub_end,
+                        count=sub_count,
+                        previous_exit_state=previous_exit_state,
+                    ),
+                    "本批次是上一轮长输出/章数失败后的缩小批次；只输出当前缩小范围，不得补写其他章节。",
+                ]
+                generated_batches.append(
+                    await _generate_volume_outline_with_repair_loop(
+                        session,
+                        settings,
+                        project=project,
+                        workflow_run_id=workflow_run_id,
+                        logical_name=f"{logical_name}_batch_{sub_start}_{sub_end}",
+                        book_spec=book_spec,
+                        cast_spec=cast_spec,
+                        volume_plan=volume_plan,
+                        volume_entry=_volume_entry_for_outline_batch(
+                            volume_entry,
+                            chapter_start=sub_start,
+                            chapter_end=sub_end,
+                            count=sub_count,
+                        ),
+                        fallback_payload=_fallback_payload_for_outline_batch(
+                            fallback_payload,
+                            volume_number=volume_number,
+                            chapter_start=sub_start,
+                            chapter_end=sub_end,
+                        ),
+                        volume_number=volume_number,
+                        expected_count=sub_count,
+                        chapter_number_offset=sub_start,
+                        revealed_ledger_block=revealed_ledger_block,
+                        base_constraints=sub_constraints,
+                        progress=progress,
+                    )
+                )
+
+        for batch_payload, llm_run_id, batch_repair_history in generated_batches:
+            if llm_run_id is not None:
+                llm_run_ids.append(llm_run_id)
+            batch_meta = _mapping(_mapping(batch_payload).get("_meta"))
+            if batch_meta.get("reused"):
+                reused_batch_count += 1
+            await import_planning_artifact(
+                session,
+                project.slug,
+                PlanningArtifactCreate(
+                    artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                    content=batch_payload,
+                    source_run_id=llm_run_id,
+                ),
+            )
+            if batch_repair_history:
+                repair_history.append(
+                    {
+                        "batch": [
+                            _mapping_list(batch_payload.get("chapters"))[0].get("chapter_number")
+                            if _mapping_list(batch_payload.get("chapters"))
+                            else chapter_start,
+                            _mapping_list(batch_payload.get("chapters"))[-1].get("chapter_number")
+                            if _mapping_list(batch_payload.get("chapters"))
+                            else chapter_end,
+                        ],
+                        "logical_name": _mapping(batch_meta).get("source_step") or batch_logical_name,
+                        "attempts": batch_repair_history,
+                    }
+                )
+            batch_chapters = _mapping_list(batch_payload.get("chapters"))
+            all_chapters.extend(copy.deepcopy(batch_chapters))
+            if batch_chapters:
+                previous_exit_state = _chapter_exit_state_summary(batch_chapters[-1])
+
+    combined = {
+        "batch_name": f"volume-{volume_number}-outline",
+        "chapters": all_chapters,
+        "_meta": {
+            "batch_size": batch_size,
+            "batch_count": len(batch_ranges),
+            "batch_ranges": [[start, end] for start, end, _count in batch_ranges],
+            "reused_batch_count": reused_batch_count,
+            "reused": reused_batch_count == len(batch_ranges),
+        },
+    }
+    existing_titles = await _fetch_existing_chapter_titles(
+        session,
+        project.id,
+        exclude_volume_number=volume_number,
+    )
+    validated = _validate_generated_volume_outline_or_raise(
+        combined,
+        project=project,
+        logical_name=logical_name,
+        volume_number=volume_number,
+        expected_count=expected_count,
+        chapter_number_offset=chapter_number_offset,
+        cast_spec=cast_spec,
+        existing_titles=existing_titles,
+    )
+    validated["_meta"] = combined["_meta"]
+    return validated, llm_run_ids, repair_history
 
 
 _SIGNING_PLATFORM_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -3324,15 +4160,262 @@ def _repair_cast_identity_locks_for_planner(
     )
     if not isinstance(repaired_payload, dict):
         return cast_spec_payload
+    repaired_payload, commercial_repair_count = repair_commercial_zh_identity_policy(
+        repaired_payload,
+        language=getattr(project, "language", None) or "zh-CN",
+        premise_text=_cast_identity_policy_premise(project),
+    )
+    repair_count += int(commercial_repair_count or 0)
+    if not isinstance(repaired_payload, dict):
+        return cast_spec_payload
     report = validate_foundation_identity_contract(repaired_payload)
     report.raise_for_blocks(project_slug=project.slug, artifact="cast_spec")
+    commercial_report = validate_commercial_zh_identity_policy(
+        repaired_payload,
+        language=getattr(project, "language", None) or "zh-CN",
+        premise_text=_cast_identity_policy_premise(project),
+    )
+    commercial_report.raise_for_blocks(project_slug=project.slug, artifact="cast_spec")
     if repair_count:
         logger.warning(
             "Planner CastSpec identity locks auto-repaired for project '%s' (%d field(s)).",
             project.slug,
             repair_count,
         )
-    return parse_cast_spec_input(repaired_payload).model_dump(mode="json")
+    normalized_payload = parse_cast_spec_input(repaired_payload).model_dump(mode="json")
+    prior_meta = _mapping(repaired_payload.get("_meta"))
+    prior_policy_versions = _mapping(prior_meta.get("policy_versions"))
+    normalized_payload["_meta"] = {
+        **prior_meta,
+        "policy_versions": {
+            **prior_policy_versions,
+            "identity_policy": IDENTITY_POLICY_VERSION,
+        },
+    }
+    return normalized_payload
+
+
+def _protagonist_name_from_payload(payload: dict[str, Any]) -> str:
+    protagonist = _mapping(payload.get("protagonist"))
+    return _first_non_empty_text(protagonist.get("name"), default="")
+
+
+def _planner_forbidden_protagonist_names(
+    project: ProjectModel,
+    *,
+    protagonist_name: str,
+) -> set[str]:
+    metadata = _mapping(getattr(project, "metadata_json", None))
+    forbidden: set[str] = {
+        _role_label("protagonist", language=getattr(project, "language", None)),
+        _role_label("protagonist", language="zh-CN"),
+        _role_label("protagonist", language="en"),
+    }
+    raw_forbidden = metadata.get("protagonist_forbidden_names")
+    if isinstance(raw_forbidden, (list, tuple, set)):
+        forbidden.update(str(item).strip() for item in raw_forbidden if str(item).strip())
+    forbidden.discard("")
+    forbidden.discard(protagonist_name)
+    return forbidden
+
+
+def _replace_name_drift_in_value(value: Any, *, forbidden_names: set[str], replacement: str) -> Any:
+    if not forbidden_names or not replacement:
+        return value
+    if isinstance(value, str):
+        repaired = value
+        for forbidden in sorted(forbidden_names, key=len, reverse=True):
+            repaired = repaired.replace(forbidden, replacement)
+        return repaired
+    if isinstance(value, list):
+        return [
+            _replace_name_drift_in_value(
+                item,
+                forbidden_names=forbidden_names,
+                replacement=replacement,
+            )
+            for item in value
+        ]
+    if isinstance(value, dict):
+        return {
+            key: _replace_name_drift_in_value(
+                item,
+                forbidden_names=forbidden_names,
+                replacement=replacement,
+            )
+            for key, item in value.items()
+        }
+    return value
+
+
+def _count_name_drift_occurrences(value: Any, *, forbidden_names: set[str]) -> int:
+    if not forbidden_names:
+        return 0
+    if isinstance(value, str):
+        return sum(value.count(forbidden) for forbidden in forbidden_names)
+    if isinstance(value, list):
+        return sum(_count_name_drift_occurrences(item, forbidden_names=forbidden_names) for item in value)
+    if isinstance(value, dict):
+        return sum(_count_name_drift_occurrences(item, forbidden_names=forbidden_names) for item in value.values())
+    return 0
+
+
+def _repair_protagonist_name_drift_for_planner(
+    project: ProjectModel,
+    payload: dict[str, Any],
+    *,
+    protagonist_name: str | None = None,
+    artifact_type: str,
+) -> dict[str, Any]:
+    """Remove default protagonist-name drift before planning artifacts feed prompts."""
+
+    if not isinstance(payload, dict):
+        return payload
+    locked_name = _first_non_empty_text(
+        protagonist_name,
+        _protagonist_name_from_payload(payload),
+        _mapping(getattr(project, "metadata_json", None)).get("protagonist_name"),
+        default="",
+    )
+    if not locked_name:
+        return payload
+    forbidden_names = _planner_forbidden_protagonist_names(
+        project,
+        protagonist_name=locked_name,
+    )
+    drift_count = _count_name_drift_occurrences(payload, forbidden_names=forbidden_names)
+    if drift_count <= 0:
+        return payload
+    repaired = _replace_name_drift_in_value(
+        copy.deepcopy(payload),
+        forbidden_names=forbidden_names,
+        replacement=locked_name,
+    )
+    meta = _mapping(repaired.get("_meta"))
+    repairs = list(meta.get("name_drift_repair") or [])
+    repairs.append(
+        {
+            "artifact_type": artifact_type,
+            "protagonist_name": locked_name,
+            "forbidden_name_count": len(forbidden_names),
+            "replacement_count": drift_count,
+        }
+    )
+    repaired["_meta"] = {**meta, "name_drift_repair": repairs}
+    logger.warning(
+        "Planner %s protagonist name drift auto-repaired for project '%s' (%d occurrence(s)).",
+        artifact_type,
+        project.slug,
+        drift_count,
+    )
+    return repaired
+
+
+def _looks_like_rule_survival_project(project: ProjectModel, premise: str = "") -> bool:
+    haystack = " ".join(
+        str(part or "")
+        for part in (
+            getattr(project, "genre", ""),
+            getattr(project, "sub_genre", ""),
+            getattr(project, "title", ""),
+            premise,
+        )
+    ).lower()
+    return any(
+        marker in haystack
+        for marker in (
+            "规则生存",
+            "规则怪谈",
+            "规则审查",
+            "meta博弈",
+            "元叙事",
+            "免责剧本",
+            "副本规则",
+        )
+    )
+
+
+def _generic_power_progression_text(value: Any) -> bool:
+    text = str(value or "")
+    return any(
+        marker in text
+        for marker in (
+            "不断变强",
+            "获取足够的力量",
+            "力量不足",
+            "保护想保护",
+            "强大不等于正确",
+            "求力者",
+        )
+    )
+
+
+def _rule_survival_goal_contract(protagonist_name: str) -> dict[str, str]:
+    subject = protagonist_name or "主角"
+    return {
+        "archetype": "规则破局者",
+        "core_wound": f"{subject}曾因相信官方规则流程而背负停职与同伴受害的代价。",
+        "external_goal": (
+            f"{subject}必须在六章内利用规则之间的矛盾破局，"
+            "证明通关提示是幕后审判者写给自己的免责剧本。"
+        ),
+        "internal_need": f"{subject}需要从服从规则审查程序，转向判断规则背后的责任与牺牲。",
+        "golden_finger": "能捕捉规则改写前后的矛盾痕迹。",
+    }
+
+
+def _repair_rule_survival_goal_drift_for_planner(
+    project: ProjectModel,
+    payload: dict[str, Any],
+    *,
+    premise: str,
+    artifact_type: str,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict) or not _looks_like_rule_survival_project(project, premise):
+        return payload
+    protagonist_name = _protagonist_name_from_payload(payload) or _first_non_empty_text(
+        _mapping(getattr(project, "metadata_json", None)).get("protagonist_name"),
+        default="",
+    )
+    if not protagonist_name:
+        return payload
+    contract = _rule_survival_goal_contract(protagonist_name)
+    repaired = copy.deepcopy(payload)
+    target = repaired.setdefault("protagonist", {})
+    if not isinstance(target, dict):
+        return payload
+    changed_fields: list[str] = []
+    for field in ("archetype", "core_wound", "external_goal", "internal_need"):
+        current = target.get(field)
+        if not current or _generic_power_progression_text(current):
+            target[field] = contract[field]
+            changed_fields.append(field)
+    goal = target.get("goal")
+    if not goal or _generic_power_progression_text(goal):
+        target["goal"] = contract["external_goal"]
+        changed_fields.append("goal")
+    if not target.get("golden_finger"):
+        target["golden_finger"] = contract["golden_finger"]
+        changed_fields.append("golden_finger")
+    if not changed_fields:
+        return payload
+    meta = _mapping(repaired.get("_meta"))
+    repairs = list(meta.get("rule_survival_goal_repair") or [])
+    repairs.append(
+        {
+            "artifact_type": artifact_type,
+            "protagonist_name": protagonist_name,
+            "fields": sorted(set(changed_fields)),
+        }
+    )
+    repaired["_meta"] = {**meta, "rule_survival_goal_repair": repairs}
+    logger.warning(
+        "Planner %s rule-survival goal drift auto-repaired for project '%s' (%s).",
+        artifact_type,
+        project.slug,
+        ", ".join(sorted(set(changed_fields))),
+    )
+    return repaired
 
 
 _CAST_PERSONHOOD_REPAIR_CODES: frozenset[str] = frozenset(
@@ -4641,6 +5724,77 @@ async def _repair_volume_plan_foreshadowing_if_needed(
         return volume_plan_payload, None
 
 
+def _fill_missing_book_spec_narrative_lines(
+    *,
+    project: ProjectModel,
+    premise: str,
+    book_spec_payload: dict[str, Any],
+    volume_count: int,
+) -> dict[str, Any]:
+    payload = copy.deepcopy(_mapping(book_spec_payload))
+    existing = _mapping(payload.get("narrative_lines"))
+    narrative_lines = copy.deepcopy(existing)
+
+    volume_count = max(1, int(volume_count or 1))
+    title = _non_empty_string(project.title, "本书")
+    protagonist = _mapping(payload.get("protagonist"))
+    protagonist_name = _non_empty_string(protagonist.get("name"), "主角")
+    premise_text = _non_empty_string(premise, _non_empty_string(payload.get("logline"), title))
+
+    if not _mapping_list(narrative_lines.get("overt_line")):
+        arc_count = max(1, min(max(3, volume_count), 6))
+        arcs: list[dict[str, Any]] = []
+        for index in range(arc_count):
+            start = 1 + math.floor(index * volume_count / arc_count)
+            end = min(volume_count, math.floor((index + 1) * volume_count / arc_count))
+            if end < start:
+                end = start
+            arcs.append(
+                {
+                    "name": f"{title}明线弧{index + 1}",
+                    "start_volume": start,
+                    "end_volume": end,
+                    "surface_goal": f"{protagonist_name}在第{start}-{end}卷解决阶段性外部压力。",
+                    "reader_payoff": "每卷给出可见推进、代价和新的下一步欲望。",
+                }
+            )
+        narrative_lines["overt_line"] = arcs
+
+    if not _mapping_list(narrative_lines.get("undercurrent_line")):
+        narrative_lines["undercurrent_line"] = [
+            {
+                "name": f"{title}暗线压力",
+                "start_volume": 1,
+                "end_volume": volume_count,
+                "shadow_conflict": f"{premise_text[:120]}背后的长期压力持续改写每卷选择。",
+                "connection_rule": "每条明线弧至少暴露一次暗线代价或误导。",
+            }
+        ]
+
+    hidden = _mapping(narrative_lines.get("hidden_thread"))
+    if not _non_empty_string(hidden.get("statement"), ""):
+        narrative_lines["hidden_thread"] = {
+            **hidden,
+            "statement": f"{protagonist_name}面对的关键真相从第一卷已被埋入，但完整含义直到终局才揭开。",
+            "seed_volumes": [1],
+            "payoff_volumes": [volume_count],
+            "reader_experience": "早期像线索，中段像代价，末段变成重新解释全书的真相。",
+        }
+
+    core_axis = _mapping(narrative_lines.get("core_axis"))
+    if not _non_empty_string(core_axis.get("statement"), ""):
+        narrative_lines["core_axis"] = {
+            **core_axis,
+            "statement": f"{title}的核心轴：{protagonist_name}如何在外部压力与自身代价之间夺回主动权。",
+            "phrasing_tokens": [protagonist_name, "主动权", "代价", "真相"],
+        }
+
+    if narrative_lines == existing:
+        return book_spec_payload
+    payload["narrative_lines"] = narrative_lines
+    return payload
+
+
 async def _repair_book_spec_narrative_lines_if_needed(
     *,
     session: AsyncSession,
@@ -4713,6 +5867,29 @@ async def _repair_book_spec_narrative_lines_if_needed(
                 len(report.findings),
             )
         return book_spec_payload, None
+
+    deterministic_payload = _fill_missing_book_spec_narrative_lines(
+        project=project,
+        premise=premise,
+        book_spec_payload=book_spec_payload,
+        volume_count=volume_count,
+    )
+    if deterministic_payload != book_spec_payload:
+        try:
+            deterministic_report = scan_narrative_lines(
+                _mapping(deterministic_payload).get("narrative_lines") or {},
+                total_chapters=max(project.target_chapters, 1),
+                volume_count=volume_count,
+                language=_planner_language(project),
+            )
+            if not deterministic_report.is_critical:
+                logger.info(
+                    "Narrative lines critical findings repaired deterministically; "
+                    "continuing without LLM repair."
+                )
+                return deterministic_payload, None
+        except Exception:
+            logger.debug("Deterministic narrative-lines repair scan failed", exc_info=True)
 
     logger.warning(
         "Narrative lines critical (%d critical, %d warning); attempting single repair.",
@@ -5535,6 +6712,43 @@ def _ensure_book_spec_bible_fields(
     return normalized
 
 
+_EN_TAXONOMY_TOKEN_RE = re.compile(
+    r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b"  # hyphenated genre slugs
+    r"|\b[a-zA-Z]{4,}(?:_[a-zA-Z0-9]+)+\b"  # underscored mechanism labels
+    r"|\b[a-zA-Z]{8,}\b"  # long bare English words
+)
+
+
+def _sanitize_zh_tone(
+    raw_tone: Any,
+    fallback_tones: Any,
+    *,
+    language: str | None,
+) -> list[str]:
+    """Strip English taxonomy/mechanism tokens from tone for Chinese books.
+
+    A zh-CN book must never carry English genre slugs ("suspense-mystery") or
+    mechanism labels in reader-visible prose. The model sometimes echoes the
+    genre string it was given; this removes those tokens and falls back to the
+    clean Chinese genre-profile tones when nothing usable remains.
+    (2026-06-03 zh/en separation — book_spec gate regression.)
+    """
+
+    items = raw_tone if isinstance(raw_tone, list) else ([raw_tone] if raw_tone else [])
+    if is_english_language(language):
+        return [str(item).strip() for item in items if str(item).strip()]
+    cleaned: list[str] = []
+    for item in items:
+        text = _EN_TAXONOMY_TOKEN_RE.sub("", str(item)).strip(" ，,、；;:：.。-")
+        text = re.sub(r"\s{2,}", " ", text)
+        if text and re.search(r"[一-鿿]", text):
+            cleaned.append(text)
+    if cleaned:
+        return cleaned
+    fb = fallback_tones if isinstance(fallback_tones, list) else ([fallback_tones] if fallback_tones else [])
+    return [str(item).strip() for item in fb if str(item).strip()]
+
+
 def _fallback_book_spec(
     project: ProjectModel, premise: str, *, category_key: str | None = None
 ) -> dict[str, Any]:
@@ -5570,7 +6784,11 @@ def _fallback_book_spec(
         ),
         "genre": project.genre,
         "target_audience": project.audience or "web-serial",
-        "tone": writing_profile.style.tone_keywords or profile["tones"],
+        "tone": _sanitize_zh_tone(
+            writing_profile.style.tone_keywords or profile["tones"],
+            profile["tones"],
+            language=project.language,
+        ),
         "themes": [
             *profile["themes"],
             *[item for item in story_themes[:2] if item not in profile["themes"]],
@@ -6060,9 +7278,9 @@ def _fallback_cast_spec(
                 else "对异常细节和风险变化高度敏感。"
             ),
             "secret": (
-                "Has always suspected the past failure was not what it appeared."
+                f"Suspects the losses around {home_location['name']} were engineered by record tampering inside {ruling_faction['name']}."
                 if is_en
-                else "主角一直怀疑过去的失败并非表面原因。"
+                else f"他怀疑{home_location['name']}的异常不是自然损耗，而是{ruling_faction['name']}内部改写记录造成。"
             ),
             "arc_trajectory": (
                 "From lone wolf to building a sustainable alliance."
@@ -10081,6 +11299,34 @@ def _concept_lab_contract_block(project: ProjectModel, *, language: str) -> str:
     return f"{block}\n" if block else ""
 
 
+def _compact_concept_lab_contract_block(project: ProjectModel, *, language: str) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    bundle = concept_lab_from_source(metadata)
+    if bundle is None:
+        return ""
+    is_en = is_english_language(language)
+    loop = bundle.story_loop
+    payload = {
+        "reader_promise": bundle.reader_promise,
+        "one_liner": bundle.one_liner,
+        "story_loop": {
+            "opening_question": loop.opening_question,
+            "recurring_pressure": loop.recurring_pressure,
+            "payoff_window_chapters": loop.payoff_window_chapters,
+            "per_chapter_contract": list(loop.per_chapter_contract[:6]),
+        },
+        "methodology_targets": list(bundle.methodology_targets[:6]),
+        "guardrails": list(bundle.guardrails[:6]),
+    }
+    label = "[Selected Concept Lab contract]" if is_en else "【已选脑洞组合合同】"
+    directive = (
+        "Keep this reader-promise lineage visible in every chapter outline."
+        if is_en
+        else "短书章纲必须保留这条读者承诺链路，每章循环不得退化成普通题材模板。"
+    )
+    return f"\n\n{label}\n{directive}\n{_json_dumps(payload)}\n"
+
+
 def _stash_distilled_strategy_card(
     project: ProjectModel,
     *,
@@ -10573,6 +11819,22 @@ def _cast_spec_prompts(
     )
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
+    if is_en:
+        user_prompt += (
+            "\n\n[Compact output contract]\n"
+            "- Keep character free-text fields to one concise sentence.\n"
+            "- Do not emit large empty/null-heavy psych_profile, life_history, social_network, beliefs, or family_imprint objects.\n"
+            "- Supporting cast target: 3-5 named characters unless the project explicitly needs more.\n"
+            "- The JSON must be complete and must not hit the output token limit."
+        )
+    else:
+        user_prompt += (
+            "\n\n【紧凑输出合同】\n"
+            "- 每个角色的自由文本字段控制在一句具体中文内。\n"
+            "- 不要输出大块空值/null 的 psych_profile、life_history、social_network、beliefs、family_imprint。\n"
+            "- supporting_cast 默认 3-5 名具名角色，除非项目规模明确需要更多。\n"
+            "- JSON 必须完整闭合，禁止打满输出 token 上限。"
+        )
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
 
     # Inject foundation-richness floor constraints so the FIRST cast-spec
@@ -11276,7 +12538,10 @@ def _volume_outline_prompts(
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
     volume_number = int(volume_entry.get("volume_number", 1))
     chapter_count = int(volume_entry.get("chapter_count_target", 10))
-    short_complete_outline_mode = project.target_chapters <= 60 and chapter_count >= 12
+    compact_outline_mode = project.target_chapters <= 12 or chapter_count <= 12
+    short_complete_outline_mode = compact_outline_mode or (
+        project.target_chapters <= 60 and chapter_count >= 12
+    )
     if short_complete_outline_mode:
         scene_count_contract_en = (
             "Each chapter needs 2 compact scenes by default; use 3 only for climax, reversal, "
@@ -11327,28 +12592,83 @@ def _volume_outline_prompts(
     if _genre_system:
         system_prompt += f"\n{_genre_system}"
     _pp_block = (
-        f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+        ""
+        if compact_outline_mode
+        else f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n"
+        if prompt_pack
+        else ""
     )
-    _pp_outline = _planner_fragment_or_ref(prompt_pack, project, "planner_outline")
+    _pp_outline = "" if compact_outline_mode else _planner_fragment_or_ref(
+        prompt_pack,
+        project,
+        "planner_outline",
+    )
     _methodology_planner_block = render_methodology_phase_block(
         prompt_pack,
         phase="planner",
     )
-    _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
-    _story_package_block = _story_package_prompt_block(project, language=language)
-    _story_design_block = _story_design_kernel_prompt_block(project)
-    _emotion_driven_block = _emotion_driven_kernel_prompt_block(project)
-    _public_emotion_block = _public_emotion_kernel_prompt_block(project)
-    _compliance_boundary_block = _compliance_boundary_prompt_block(project)
-    _entry_system_block = _entry_system_kernel_prompt_block(project)
-    _entry_registry_block = _entry_registry_prompt_block(project)
-    _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
-    _distilled_outline_block = _distilled_design_reference_block(project, "chapter_outline")
+    _methodology_line = (
+        ""
+        if compact_outline_mode
+        else f"\n{_methodology_planner_block}\n"
+        if _methodology_planner_block
+        else ""
+    )
+    _story_package_block = "" if compact_outline_mode else _story_package_prompt_block(
+        project,
+        language=language,
+    )
+    _story_design_block = (
+        _compact_outline_context_block(project)
+        if compact_outline_mode
+        else _story_design_kernel_prompt_block(project)
+    )
+    _emotion_driven_block = (
+        _compact_prompt_block_text(_emotion_driven_kernel_prompt_block(project), max_chars=1000)
+        if compact_outline_mode
+        else _emotion_driven_kernel_prompt_block(project)
+    )
+    _public_emotion_block = (
+        _compact_prompt_block_text(_public_emotion_kernel_prompt_block(project), max_chars=800)
+        if compact_outline_mode
+        else _public_emotion_kernel_prompt_block(project)
+    )
+    _compliance_boundary_block = "" if compact_outline_mode else _compliance_boundary_prompt_block(project)
+    _entry_system_block = "" if compact_outline_mode else _entry_system_kernel_prompt_block(project)
+    _entry_registry_block = "" if compact_outline_mode else _entry_registry_prompt_block(project)
+    _character_drama_block = (
+        _compact_prompt_block_text(
+            _character_drama_prompt_block(project, cast_spec=cast_spec),
+            max_chars=1200,
+        )
+        if compact_outline_mode
+        else _character_drama_prompt_block(project, cast_spec=cast_spec)
+    )
+    _distilled_outline_block = (
+        _compact_prompt_block_text(
+            _distilled_design_reference_block(project, "chapter_outline"),
+            max_chars=1200,
+        )
+        if compact_outline_mode
+        else _distilled_design_reference_block(project, "chapter_outline")
+    )
     _ledger_line = f"{revealed_ledger_block}\n\n" if revealed_ledger_block else ""
     _hook_ledger_v2_block = render_hook_ledger_planner_contract(language=language)
-    _hook_ledger_v2_line = f"\n{_hook_ledger_v2_block}\n" if _hook_ledger_v2_block else ""
+    _hook_ledger_v2_line = (
+        ""
+        if compact_outline_mode
+        else f"\n{_hook_ledger_v2_block}\n"
+        if _hook_ledger_v2_block
+        else ""
+    )
     _payoff_ledger_v2_block = render_payoff_ledger_planner_contract(language=language)
-    _payoff_ledger_v2_line = f"\n{_payoff_ledger_v2_block}\n" if _payoff_ledger_v2_block else ""
+    _payoff_ledger_v2_line = (
+        ""
+        if compact_outline_mode
+        else f"\n{_payoff_ledger_v2_block}\n"
+        if _payoff_ledger_v2_block
+        else ""
+    )
     from bestseller.services.hook_propagation import (
         hook_outline_extra_constraints,
         hook_spec_from_metadata,
@@ -11363,9 +12683,17 @@ def _volume_outline_prompts(
         language=language,
     )
     _anti_commonsense_hook_line = (
-        f"\n{_anti_commonsense_hook_block}\n" if _anti_commonsense_hook_block else ""
+        ""
+        if compact_outline_mode
+        else f"\n{_anti_commonsense_hook_block}\n"
+        if _anti_commonsense_hook_block
+        else ""
     )
-    _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
+    _concept_lab_contract_line = (
+        _compact_concept_lab_contract_block(project, language=language)
+        if compact_outline_mode
+        else _concept_lab_contract_block(project, language=language)
+    )
     _prior_vols_block = render_prior_volumes_summary_block(
         volume_plan,
         current_volume_number=volume_number,
@@ -11379,14 +12707,32 @@ def _volume_outline_prompts(
     vol_plan_summary = summarize_volume_plan_context(
         volume_plan, current_volume=volume_number, language=language
     )
+    if compact_outline_mode:
+        _writing_profile_text = (
+            "Writing profile: compact commercial opening validation; keep chapters executable.\n"
+            if is_en
+            else "写作画像：短篇开局验证；章纲只保留可执行剧情动作。\n"
+        )
+        _serial_guardrails_text = ""
+    else:
+        _writing_profile_text = (
+            f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
+            if is_en
+            else f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
+        )
+        _serial_guardrails_text = (
+            f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
+            if is_en
+            else f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
+        )
     user_prompt = (
         (
             f"Project title: {project.title}\n"
             f"Volume {volume_number} — {chapter_count} chapters\n"
             "Write all planning artifacts in English.\n"
-            f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
+            f"{_writing_profile_text}"
             f"{_pp_block}"
-            f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
+            f"{_serial_guardrails_text}"
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en', volume_number=volume_number)}\n"
             f"VolumePlan context:\n{vol_plan_summary}\n"
@@ -11451,9 +12797,9 @@ def _volume_outline_prompts(
         else (
             f"项目标题：{project.title}\n"
             f"第{volume_number}卷 — 共{chapter_count}章\n"
-            f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
+            f"{_writing_profile_text}"
             f"{_pp_block}"
-            f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
+            f"{_serial_guardrails_text}"
             f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh', volume_number=volume_number)}\n"
             f"VolumePlan 上下文：\n{vol_plan_summary}\n"
@@ -11515,9 +12861,10 @@ def _volume_outline_prompts(
     _genre_instruction = getattr(
         _genre_profile.planner_prompts, f"outline_instruction_{_lang_key}", ""
     )
-    if _genre_instruction:
+    if _genre_instruction and not compact_outline_mode:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
-    user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
+    if not compact_outline_mode:
+        user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
     hook_constraints = hook_outline_extra_constraints(_hook_spec, language=language)
     merged_extra_constraints = [*(extra_constraints or []), *hook_constraints]
     if merged_extra_constraints:
@@ -11958,8 +13305,64 @@ async def _generate_structured_artifact(
             token_budget=400 if "repair" in logical_name else 800,
         )
     )
+    input_hash = _planner_artifact_input_hash(
+        logical_name=logical_name,
+        system_prompt=system_prompt,
+        user_prompt=effective_user_prompt,
+        fallback_payload=fallback_payload,
+    )
+    artifact_type = _planner_artifact_type_for_logical_name(logical_name)
+    if (
+        bool(getattr(settings.pipeline, "planning_artifact_reuse_enabled", True))
+        and artifact_type is not None
+    ):
+        reusable = await _latest_reusable_planning_artifact(
+            session,
+            project=project,
+            artifact_type=artifact_type,
+            input_hash=input_hash,
+            validator=validator,
+            allow_legacy_latest=bool(
+                getattr(settings.pipeline, "planning_artifact_reuse_allow_legacy", True)
+            )
+            and artifact_type != ArtifactType.VOLUME_CHAPTER_OUTLINE,
+        )
+        if reusable is not None:
+            await _heartbeat_planner_workflow(
+                session,
+                workflow_run_id=workflow_run_id,
+                logical_name=logical_name,
+                phase="reused",
+            )
+            logger.info(
+                "Reusing %s planning artifact %s v%s for project '%s'.",
+                artifact_type.value,
+                reusable.id,
+                reusable.version_no,
+                project.slug,
+            )
+            return (
+                _with_planning_meta(
+                    reusable.content,
+                    logical_name=logical_name,
+                    input_hash=input_hash,
+                    workflow_run_id=workflow_run_id,
+                    reused_artifact_id=reusable.id,
+                    project=project,
+                ),
+                None,
+            )
+
     semantic_repair_history: list[dict[str, Any]] = []
     for attempt in range(_max_attempts):
+        await _heartbeat_planner_workflow(
+            session,
+            workflow_run_id=workflow_run_id,
+            logical_name=logical_name,
+            phase="llm_started",
+            attempt=attempt + 1,
+        )
+        max_tokens_override = _planner_stage_max_tokens(logical_name)
         completion = await complete_text(
             session,
             settings,
@@ -11973,16 +13376,27 @@ async def _generate_structured_artifact(
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
+                max_tokens_override=max_tokens_override,
                 metadata={
                     "project_slug": project.slug,
                     "artifact": logical_name,
                     "attempt": attempt + 1,
                     "fail_closed": effective_abort_on_fallback,
+                    "input_hash": input_hash,
+                    "max_tokens_override": max_tokens_override,
                     "semantic_repair_history": semantic_repair_history[-3:],
                 },
             ),
         )
+        await _heartbeat_planner_workflow(
+            session,
+            workflow_run_id=workflow_run_id,
+            logical_name=logical_name,
+            phase="llm_completed",
+            attempt=attempt + 1,
+        )
         last_llm_run_id = completion.llm_run_id
+        finish_reason = _non_empty_string(getattr(completion, "finish_reason", None), "")
         # If the LLM call itself exhausted retries, complete_text flips
         # ``provider`` to "fallback".  For structural artifacts where the
         # fallback would silently corrupt downstream (e.g. per-volume
@@ -11992,6 +13406,41 @@ async def _generate_structured_artifact(
                 f"Planner artifact '{logical_name}' had to fall back after LLM retries "
                 f"exhausted. Refusing to continue because downstream requires a real validated output."
             )
+        if effective_abort_on_fallback and finish_reason == "length":
+            error = PlannerFallbackError(
+                f"Planner artifact '{logical_name}' returned finish_reason=length on "
+                f"attempt {attempt + 1}; refusing to approve a truncated planning artifact."
+            )
+            semantic_repair_history.append(
+                {
+                    "attempt": attempt + 1,
+                    "error_type": "finish_reason_length",
+                    "findings": [
+                        {
+                            "code": "outline_batch_truncated"
+                            if "outline" in logical_name
+                            else "planner_artifact_truncated",
+                            "severity": "critical",
+                            "message": str(error),
+                            "path": logical_name,
+                        }
+                    ],
+                }
+            )
+            _persist_failing_planner_output(
+                project=project,
+                logical_name=logical_name,
+                attempt=attempt + 1,
+                content=completion.content,
+                error=error,
+            )
+            if attempt < _max_attempts - 1:
+                effective_user_prompt = _planner_length_retry_prompt(
+                    effective_user_prompt,
+                    logical_name,
+                )
+                continue
+            raise error
         try:
             generated = _extract_json_payload(completion.content)
             payload = (
@@ -12000,8 +13449,18 @@ async def _generate_structured_artifact(
                 else copy.deepcopy(generated)
             )
             if validator is not None:
-                validator(payload)
-            return payload, last_llm_run_id
+                validator(_without_planning_meta(payload))
+            return (
+                _with_planning_meta(
+                    payload,
+                    logical_name=logical_name,
+                    input_hash=input_hash,
+                    workflow_run_id=workflow_run_id,
+                    project=project,
+                    finish_reason=finish_reason,
+                ),
+                last_llm_run_id,
+            )
         except Exception as exc:
             from bestseller.services.llm_closed_loop import (
                 build_repair_user_prompt,
@@ -12087,6 +13546,244 @@ def _validate_entry_system_kernel_payload(payload: Any) -> None:
     entry_system_kernel_from_dict(payload)
 
 
+_PLANNER_REUSABLE_ARTIFACTS: dict[str, ArtifactType] = {
+    "book_spec": ArtifactType.BOOK_SPEC,
+    "world_spec": ArtifactType.WORLD_SPEC,
+    "cast_spec": ArtifactType.CAST_SPEC,
+    "volume_plan": ArtifactType.VOLUME_PLAN,
+    "story_design_kernel": ArtifactType.STORY_DESIGN_KERNEL,
+    "public_emotion_kernel": ArtifactType.PUBLIC_EMOTION_KERNEL,
+    "compliance_boundary_kernel": ArtifactType.COMPLIANCE_BOUNDARY_KERNEL,
+    "entry_system_kernel": ArtifactType.ENTRY_SYSTEM_KERNEL,
+    "emotion_driven_kernel": ArtifactType.EMOTION_DRIVEN_KERNEL,
+    "prewrite_readiness": ArtifactType.PREWRITE_READINESS,
+}
+
+
+def _planner_artifact_type_for_logical_name(logical_name: str) -> ArtifactType | None:
+    if logical_name in _PLANNER_REUSABLE_ARTIFACTS:
+        return _PLANNER_REUSABLE_ARTIFACTS[logical_name]
+    if re.fullmatch(r"volume_\d+_world_disclosure", logical_name):
+        return ArtifactType.VOLUME_WORLD_DISCLOSURE
+    if re.fullmatch(r"volume_\d+_chapter_outline(_batch_\d+_\d+)?", logical_name):
+        return ArtifactType.VOLUME_CHAPTER_OUTLINE
+    return None
+
+
+def _planner_stage_max_tokens(logical_name: str) -> int | None:
+    if re.fullmatch(r"volume_\d+_chapter_outline(_batch_\d+_\d+)?", logical_name):
+        return 9000
+    if logical_name in {"story_design_kernel", "emotion_driven_kernel"}:
+        return 12288
+    if logical_name in {
+        "book_spec",
+        "book_spec_narrative_lines_repair",
+        "world_spec",
+        "cast_spec",
+        "volume_plan",
+        "volume_plan_repair",
+        "volume_plan_foreshadowing_repair",
+        "volume_plan_convergence_repair",
+    }:
+        return 8192
+    if logical_name.endswith("_world_disclosure") or logical_name.endswith("_cast_expansion"):
+        return 4096
+    return None
+
+
+def _planner_artifact_input_hash(
+    *,
+    logical_name: str,
+    system_prompt: str,
+    user_prompt: str,
+    fallback_payload: Any,
+) -> str:
+    payload = {
+        "logical_name": logical_name,
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+        "fallback_payload": fallback_payload,
+    }
+    return hashlib.sha256(_json_dumps(payload).encode("utf-8")).hexdigest()
+
+
+def _without_planning_meta(payload: Any) -> Any:
+    if not isinstance(payload, dict) or "_meta" not in payload:
+        return payload
+    clean = copy.deepcopy(payload)
+    clean.pop("_meta", None)
+    return clean
+
+
+def _with_planning_meta(
+    payload: Any,
+    *,
+    logical_name: str,
+    input_hash: str,
+    workflow_run_id: UUID,
+    reused_artifact_id: UUID | None = None,
+    project: ProjectModel | None = None,
+    finish_reason: str | None = None,
+) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    enriched = copy.deepcopy(payload)
+    prior_meta = enriched.get("_meta") if isinstance(enriched.get("_meta"), dict) else {}
+    strict_meta = planning_artifact_meta(project) if project is not None else {}
+    enriched["_meta"] = {
+        **strict_meta,
+        **prior_meta,
+        "input_hash": input_hash,
+        "source_step": logical_name,
+        "workflow_run_id": str(workflow_run_id),
+        "reused": reused_artifact_id is not None,
+        "reused_artifact_id": str(reused_artifact_id) if reused_artifact_id else None,
+    }
+    if finish_reason:
+        enriched["_meta"]["finish_reason"] = finish_reason
+    if logical_name == "cast_spec":
+        policy_versions = enriched["_meta"].get("policy_versions")
+        if not isinstance(policy_versions, dict):
+            policy_versions = {}
+        policy_versions["identity_policy"] = IDENTITY_POLICY_VERSION
+        enriched["_meta"]["policy_versions"] = policy_versions
+    return enriched
+
+
+def _cast_identity_policy_premise(project: ProjectModel) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    parts = [
+        getattr(project, "title", "") or "",
+        getattr(project, "genre", "") or "",
+        getattr(project, "sub_genre", "") or "",
+        str(metadata.get("premise") or ""),
+        str(metadata.get("concept") or ""),
+        str(metadata.get("description") or ""),
+    ]
+    return "\n".join(part for part in parts if part)
+
+
+def _reusable_artifact_policy_report(
+    project: ProjectModel,
+    *,
+    artifact_type: ArtifactType,
+    content: Any,
+) -> Any | None:
+    if artifact_type != ArtifactType.CAST_SPEC or not isinstance(content, dict):
+        return None
+    return validate_commercial_zh_identity_policy(
+        content,
+        language=getattr(project, "language", None) or "zh-CN",
+        premise_text=_cast_identity_policy_premise(project),
+        require_policy_version=True,
+    )
+
+
+async def _heartbeat_planner_workflow(
+    session: AsyncSession,
+    *,
+    workflow_run_id: UUID,
+    logical_name: str,
+    phase: str,
+    attempt: int | None = None,
+) -> None:
+    metadata_patch = {
+        "planner_last_heartbeat_at": datetime.now(UTC).isoformat(),
+        "planner_last_artifact": logical_name,
+        "planner_last_phase": phase,
+    }
+    if attempt is not None:
+        metadata_patch["planner_last_attempt"] = attempt
+    session_get = getattr(session, "get", None)
+    if session_get is None:
+        return
+    workflow_run = await session_get(WorkflowRunModel, workflow_run_id)
+    if workflow_run is None:
+        return
+    workflow_run.updated_at = datetime.now(UTC)
+    workflow_run.metadata_json = {
+        **(workflow_run.metadata_json or {}),
+        **metadata_patch,
+    }
+    await session.flush()
+
+
+async def _latest_reusable_planning_artifact(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    artifact_type: ArtifactType,
+    input_hash: str,
+    validator: Callable[[Any], Any] | None,
+    allow_legacy_latest: bool,
+) -> PlanningArtifactVersionModel | None:
+    hash_stmt = (
+        select(PlanningArtifactVersionModel)
+        .where(
+            PlanningArtifactVersionModel.project_id == project.id,
+            PlanningArtifactVersionModel.artifact_type == artifact_type.value,
+            PlanningArtifactVersionModel.status == "approved",
+            PlanningArtifactVersionModel.content["_meta"]["input_hash"].astext == input_hash,
+        )
+        .order_by(
+            PlanningArtifactVersionModel.version_no.desc(),
+            PlanningArtifactVersionModel.created_at.desc(),
+        )
+        .limit(1)
+    )
+    artifact = await session.scalar(hash_stmt)
+    if artifact is None and allow_legacy_latest:
+        legacy_stmt = (
+            select(PlanningArtifactVersionModel)
+            .where(
+                PlanningArtifactVersionModel.project_id == project.id,
+                PlanningArtifactVersionModel.artifact_type == artifact_type.value,
+                PlanningArtifactVersionModel.status == "approved",
+            )
+            .order_by(
+                PlanningArtifactVersionModel.version_no.desc(),
+                PlanningArtifactVersionModel.created_at.desc(),
+            )
+            .limit(1)
+        )
+        artifact = await session.scalar(legacy_stmt)
+    if artifact is None:
+        return None
+    policy_report = _reusable_artifact_policy_report(
+        project,
+        artifact_type=artifact_type,
+        content=artifact.content,
+    )
+    if policy_report is not None and not getattr(policy_report, "passed", False):
+        logger.debug(
+            "Skipping reusable %s artifact %s for project '%s': policy validation failed: %s",
+            artifact_type.value,
+            artifact.id,
+            project.slug,
+            getattr(policy_report, "to_dict", lambda: {})(),
+        )
+        return None
+    if isinstance(artifact.content, dict):
+        meta = artifact.content.get("_meta")
+        if isinstance(meta, dict):
+            artifact_hash = meta.get("input_hash")
+            if isinstance(artifact_hash, str) and artifact_hash and artifact_hash != input_hash:
+                return None
+    if validator is not None:
+        try:
+            validator(_without_planning_meta(artifact.content))
+        except Exception:
+            logger.debug(
+                "Skipping reusable %s artifact %s for project '%s': validation failed",
+                artifact_type.value,
+                artifact.id,
+                project.slug,
+                exc_info=True,
+            )
+            return None
+    return artifact
+
+
 def _story_design_kernel_prompt_block(project: ProjectModel) -> str:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
     raw = _mapping(metadata.get("story_design_kernel"))
@@ -12112,6 +13809,41 @@ def _emotion_driven_kernel_prompt_block(project: ProjectModel) -> str:
     except Exception:
         logger.debug("Failed to render EmotionDrivenKernel prompt block", exc_info=True)
         return ""
+
+
+def _truncate_for_prompt(value: Any, max_chars: int) -> str:
+    text = str(value or "").strip()
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    return text[: max(max_chars - 24, 0)].rstrip() + "\n...[truncated]"
+
+
+def _compact_prompt_block_text(text: str, *, max_chars: int) -> str:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return ""
+    return "\n\n" + _truncate_for_prompt(stripped, max_chars) + "\n"
+
+
+def _compact_outline_context_block(project: ProjectModel, *, max_chars: int = 1600) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    picked: dict[str, Any] = {}
+    for key in (
+        "story_design_kernel",
+        "emotion_driven_kernel",
+        "public_emotion_kernel",
+        "compliance_boundary_kernel",
+        "entry_system_kernel",
+    ):
+        raw = _mapping(metadata.get(key))
+        if raw:
+            picked[key] = _truncate_for_prompt(_json_dumps(raw), max_chars // 7)
+    if not picked:
+        return ""
+    return (
+        "\n\n【压缩核心执行上下文】\n"
+        f"{_truncate_for_prompt(_json_dumps(picked), max_chars)}\n"
+    )
 
 
 def _public_emotion_kernel_prompt_block(project: ProjectModel) -> str:
@@ -12880,6 +14612,24 @@ async def _generate_story_design_kernel(
         payload = fallback
 
     story_design_kernel_from_dict(payload)
+    quality_report = evaluate_story_design_kernel_quality(
+        payload,
+        target_chapters=int(getattr(project, "target_chapters", 0) or 0),
+    )
+    await _record_prewrite_quality_gate(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name="story_design_kernel_gate",
+        step_order=step_order,
+        report=quality_report,
+        strict=is_strict_prewrite_project(project),
+    )
+    payload = _attach_prewrite_quality_report(
+        payload,
+        step_name="story_design_kernel_gate",
+        report=quality_report,
+        project=project,
+    )
     try:
         character_drama_payload = character_drama_map_to_dict(
             build_character_drama_map(cast_spec_payload, language=_planner_language(project))
@@ -12913,7 +14663,7 @@ async def _generate_story_design_kernel(
         session,
         workflow_run_id=workflow_run_id,
         step_name="generate_story_design_kernel",
-        step_order=step_order,
+        step_order=step_order + 1,
         status=WorkflowStatus.COMPLETED,
         output_ref={
             "artifact_id": str(artifact.id),
@@ -13991,7 +15741,9 @@ async def _run_prewrite_readiness_gate(
         if item.get("code")
     ]
     passed = bool(report.get("passed"))
-    should_block = settings.pipeline.prewrite_readiness_block_on_failure and not passed
+    should_block = (
+        strict_blocks(project, settings, "prewrite_readiness_block_on_failure") and not passed
+    )
     await create_workflow_step_run(
         session,
         workflow_run_id=workflow_run_id,
@@ -14011,6 +15763,190 @@ async def _run_prewrite_readiness_gate(
     if should_block:
         raise PlannerFallbackError("Prewrite readiness gate failed: " + ", ".join(blocking_codes))
     return payload
+
+
+async def _record_prewrite_quality_gate(
+    session: AsyncSession,
+    *,
+    workflow_run_id: UUID,
+    step_name: str,
+    step_order: int,
+    report: Any,
+    strict: bool,
+) -> None:
+    payload = report.to_dict() if hasattr(report, "to_dict") else dict(report or {})
+    blocking_codes = [
+        str(item.get("code"))
+        for item in _mapping_list(payload.get("blocking_findings"))
+        if item.get("code")
+    ]
+    output_ref = {
+        **payload,
+        "blocking_codes": blocking_codes,
+        "repair_targets": {
+            code: repair_target_for_block_code(code) for code in blocking_codes
+        },
+    }
+    should_block = strict and not bool(payload.get("passed"))
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name=step_name,
+        step_order=step_order,
+        status=WorkflowStatus.FAILED if should_block else WorkflowStatus.COMPLETED,
+        output_ref=output_ref,
+        error_message=(
+            f"{step_name} failed: " + ", ".join(blocking_codes) if should_block else None
+        ),
+    )
+    if should_block:
+        raise PlannerFallbackError(f"{step_name} failed: " + ", ".join(blocking_codes))
+
+
+async def _workflow_step_run_exists(
+    session: AsyncSession,
+    *,
+    workflow_run_id: UUID,
+    step_order: int,
+) -> bool:
+    existing_id = await session.scalar(
+        select(WorkflowStepRunModel.id).where(
+            WorkflowStepRunModel.workflow_run_id == workflow_run_id,
+            WorkflowStepRunModel.step_order == step_order,
+        )
+    )
+    return existing_id is not None
+
+
+async def _record_planner_failure_step_once(
+    session: AsyncSession,
+    *,
+    workflow_run_id: UUID,
+    step_name: str,
+    step_order: int,
+    error_message: str,
+) -> None:
+    if await _workflow_step_run_exists(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_order=step_order,
+    ):
+        return
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name=step_name,
+        step_order=step_order,
+        status=WorkflowStatus.FAILED,
+        error_message=error_message,
+    )
+
+
+async def _run_planner_outline_commercial_judge(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    workflow_run_id: UUID,
+    step_name: str,
+    step_order: int,
+    outline_payload: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    if not is_strict_prewrite_project(project):
+        return None
+    from bestseller.services.outline_llm_judge import judge_outline_commercial_readiness
+    from bestseller.services.prompt_packs import resolve_prompt_pack
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    pack = resolve_prompt_pack(
+        metadata.get("prompt_pack_name") or metadata.get("prompt_pack_key"),
+        genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+        sub_genre=getattr(project, "sub_genre", None),
+    )
+    result = await judge_outline_commercial_readiness(
+        session,
+        settings,
+        outline_payload=outline_payload,
+        project_brief={
+            "slug": project.slug,
+            "title": project.title,
+            "genre": project.genre,
+            "sub_genre": project.sub_genre,
+            "target_chapters": project.target_chapters,
+            "reader_contract": project.reader_contract_json or {},
+            "hype_scheme": project.hype_scheme_json or {},
+            "metadata": metadata,
+        },
+        threshold=float(
+            getattr(
+                settings.pipeline,
+                "commercial_strict_prewrite_planning_judge_threshold",
+                0.82,
+            )
+            or 0.82
+        ),
+        workflow_run_id=workflow_run_id,
+        pack=pack,
+    )
+    payload = result.model_dump(mode="json", by_alias=True)
+    blocking_codes = [
+        str(issue.get("code"))
+        for issue in _mapping_list(payload.get("blocking_issues"))
+        if issue.get("code")
+    ]
+    if not blocking_codes and not result.passed:
+        blocking_codes = ["outline_llm_commercial_judge_failed"]
+    output_ref = {
+        **payload,
+        "blocking_codes": blocking_codes,
+        "repair_targets": {
+            code: repair_target_for_block_code(code) for code in blocking_codes
+        },
+    }
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name=step_name,
+        step_order=step_order,
+        status=WorkflowStatus.MACHINE_BLOCKED if not result.passed else WorkflowStatus.COMPLETED,
+        output_ref=output_ref,
+        error_message=(
+            f"{step_name} failed: score={result.overall_score:.3f}, "
+            + ", ".join(blocking_codes)
+            if not result.passed
+            else None
+        ),
+    )
+    if not result.passed:
+        raise PlannerFallbackError(
+            f"{step_name} failed: score={result.overall_score:.3f}, "
+            + ", ".join(blocking_codes)
+        )
+    return payload
+
+
+def _attach_prewrite_quality_report(
+    payload: Any,
+    *,
+    step_name: str,
+    report: Any,
+    project: ProjectModel,
+) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    enriched = copy.deepcopy(payload)
+    meta = enriched.get("_meta") if isinstance(enriched.get("_meta"), dict) else {}
+    gate_reports = meta.get("gate_reports") if isinstance(meta.get("gate_reports"), dict) else {}
+    report_payload = report.to_dict() if hasattr(report, "to_dict") else dict(report or {})
+    enriched["_meta"] = {
+        **planning_artifact_meta(project),
+        **meta,
+        "gate_reports": {
+            **gate_reports,
+            step_name: report_payload,
+        },
+    }
+    return enriched
 
 
 async def _run_hook_strength_gate(
@@ -14126,7 +16062,7 @@ async def _run_reverse_outline_gate(
 
     report = evaluate_reverse_outline_gate(story_design_kernel, outline_payload)
     report_payload = reverse_outline_report_to_dict(report)
-    should_block = settings.pipeline.reverse_outline_gate_block_on_failure and not report.passed
+    should_block = strict_blocks(project, settings, "reverse_outline_gate_block_on_failure") and not report.passed
     metadata = dict(project.metadata_json or {})
     kernel = _mapping(metadata.get("story_design_kernel"))
     if kernel:
@@ -14180,7 +16116,8 @@ async def _run_worldview_compliance_gate(
     report = evaluate_worldview_compliance_gate(story_design_kernel, outline_payload)
     report_payload = worldview_compliance_report_to_dict(report)
     should_block = (
-        settings.pipeline.worldview_compliance_gate_block_on_failure and not report.passed
+        strict_blocks(project, settings, "worldview_compliance_gate_block_on_failure")
+        and not report.passed
     )
     metadata = dict(project.metadata_json or {})
     kernel = _mapping(metadata.get("story_design_kernel"))
@@ -14303,7 +16240,7 @@ async def _run_worldview_progression_gate(
     )
     report_payload = worldview_progression_report_to_dict(report)
     should_block = (
-        settings.pipeline.worldview_progression_gate_block_on_failure
+        strict_blocks(project, settings, "worldview_progression_gate_block_on_failure")
         and not report.passed
     )
     metadata = dict(project.metadata_json or {})
@@ -14440,7 +16377,10 @@ async def generate_novel_plan(
             project_slug,
             PlanningArtifactCreate(
                 artifact_type=ArtifactType.PREMISE,
-                content={"premise": premise},
+                content={
+                    "premise": premise,
+                    "_meta": planning_artifact_meta(project),
+                },
             ),
         )
         artifact_records.append(
@@ -14457,6 +16397,24 @@ async def generate_novel_plan(
             step_order=step_order,
             status=WorkflowStatus.COMPLETED,
             output_ref={"artifact_id": str(premise_artifact.id)},
+        )
+        step_order += 1
+
+        current_step_name = "concept_quality_gate"
+        workflow_run.current_step = current_step_name
+        concept_report = evaluate_concept_quality(
+            title=project.title,
+            premise=premise,
+            writing_profile=_mapping(_mapping(project.metadata_json or {}).get("writing_profile")),
+            language=project.language,
+        )
+        await _record_prewrite_quality_gate(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name=current_step_name,
+            step_order=step_order,
+            report=concept_report,
+            strict=is_strict_prewrite_project(project),
         )
         step_order += 1
 
@@ -14493,6 +16451,19 @@ async def generate_novel_plan(
                 seed_text=_project_name_seed(project, premise),
             )["protagonist"]["name"]
         )
+        await create_workflow_step_run(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name=current_step_name,
+            step_order=step_order,
+            status=WorkflowStatus.COMPLETED,
+            output_ref={
+                "protagonist_name": llm_protagonist_name,
+                "ally_count": len(_mapping_list(character_name_pool.get("allies"))),
+                "antagonist_count": len(_mapping_list(character_name_pool.get("antagonists"))),
+            },
+        )
+        step_order += 1
         _emit_planner_progress(
             progress,
             "planning_step_completed",
@@ -14540,6 +16511,18 @@ async def generate_novel_plan(
             premise,
             book_spec_payload,
         )
+        book_spec_payload = _repair_protagonist_name_drift_for_planner(
+            project,
+            book_spec_payload,
+            protagonist_name=llm_protagonist_name,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+        )
+        book_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+            project,
+            book_spec_payload,
+            premise=premise,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+        )
         if hook_spec is not None:
             from bestseller.services.hook_propagation import apply_hook_to_book_spec
 
@@ -14568,11 +16551,66 @@ async def generate_novel_plan(
             premise,
             book_spec_payload,
         )
+        book_spec_payload = _repair_protagonist_name_drift_for_planner(
+            project,
+            book_spec_payload,
+            protagonist_name=llm_protagonist_name,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+        )
+        book_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+            project,
+            book_spec_payload,
+            premise=premise,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+        )
         if hook_spec is not None:
             from bestseller.services.hook_propagation import apply_hook_to_book_spec
 
             book_spec_payload = apply_hook_to_book_spec(book_spec_payload, hook_spec)
+        book_spec_payload = _repair_protagonist_name_drift_for_planner(
+            project,
+            book_spec_payload,
+            protagonist_name=llm_protagonist_name,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+        )
+        book_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+            project,
+            book_spec_payload,
+            premise=premise,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+        )
 
+        current_step_name = "book_spec_quality_gate"
+        workflow_run.current_step = current_step_name
+        # zh/en separation: run the mapped language repair so English taxonomy
+        # tokens the model echoed into Chinese prose are stripped before the gate
+        # blocks (2026-06-03). Identifier fields keep their slugs.
+        book_spec_payload = repair_zh_book_spec_language(
+            book_spec_payload,
+            language=project.language,
+        )
+        book_spec_quality_report = evaluate_book_spec_quality(
+            book_spec_payload,
+            language=project.language,
+        )
+        await _record_prewrite_quality_gate(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name=current_step_name,
+            step_order=step_order,
+            report=book_spec_quality_report,
+            strict=is_strict_prewrite_project(project),
+        )
+        book_spec_payload = _attach_prewrite_quality_report(
+            book_spec_payload,
+            step_name=current_step_name,
+            report=book_spec_quality_report,
+            project=project,
+        )
+        step_order += 1
+
+        current_step_name = "generate_book_spec"
+        workflow_run.current_step = current_step_name
         book_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -14667,6 +16705,27 @@ async def generate_novel_plan(
 
             world_spec_payload = apply_hook_to_world_spec(world_spec_payload, hook_spec)
 
+        current_step_name = "world_spec_source_gate"
+        workflow_run.current_step = current_step_name
+        world_spec_quality_report = evaluate_world_spec_source_quality(world_spec_payload)
+        await _record_prewrite_quality_gate(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name=current_step_name,
+            step_order=step_order,
+            report=world_spec_quality_report,
+            strict=is_strict_prewrite_project(project),
+        )
+        world_spec_payload = _attach_prewrite_quality_report(
+            world_spec_payload,
+            step_name=current_step_name,
+            report=world_spec_quality_report,
+            project=project,
+        )
+        step_order += 1
+
+        current_step_name = "generate_world_spec"
+        workflow_run.current_step = current_step_name
         world_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -14741,6 +16800,19 @@ async def generate_novel_plan(
             validator=parse_cast_spec_input,
         )
         cast_spec_payload = _repair_cast_identity_locks_for_planner(project, cast_spec_payload)
+        cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+            project,
+            cast_spec_payload,
+            protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+            or llm_protagonist_name,
+            artifact_type=ArtifactType.CAST_SPEC.value,
+        )
+        cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+            project,
+            cast_spec_payload,
+            premise=premise,
+            artifact_type=ArtifactType.CAST_SPEC.value,
+        )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
         cast_artifact = await import_planning_artifact(
@@ -14795,6 +16867,19 @@ async def generate_novel_plan(
             cast_spec_payload = _repair_cast_identity_locks_for_planner(
                 project, repaired_cast_spec
             )
+            cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+                project,
+                cast_spec_payload,
+                protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+                or llm_protagonist_name,
+                artifact_type=ArtifactType.CAST_SPEC.value,
+            )
+            cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+                project,
+                cast_spec_payload,
+                premise=premise,
+                artifact_type=ArtifactType.CAST_SPEC.value,
+            )
             cast_artifact = await import_planning_artifact(
                 session,
                 project_slug,
@@ -14837,6 +16922,19 @@ async def generate_novel_plan(
                 llm_run_ids.append(foundation_repair_llm_run_id)
                 cast_spec_payload = _repair_cast_identity_locks_for_planner(
                     project, repaired_cast_spec
+                )
+                cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+                    or llm_protagonist_name,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
+                cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    premise=premise,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
                 )
                 # Persist repaired cast spec as a new artifact version so
                 # downstream readers (retrieval, plan judge, review stages)
@@ -14882,6 +16980,19 @@ async def generate_novel_plan(
                 cast_spec_payload = _repair_cast_identity_locks_for_planner(
                     project, repaired_cast_spec
                 )
+                cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+                    or llm_protagonist_name,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
+                cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    premise=premise,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
                 cast_artifact = await import_planning_artifact(
                     session,
                     project_slug,
@@ -14924,6 +17035,19 @@ async def generate_novel_plan(
                 cast_spec_payload = _repair_cast_identity_locks_for_planner(
                     project, repaired_cast_spec
                 )
+                cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+                    or llm_protagonist_name,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
+                cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    premise=premise,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
                 cast_artifact = await import_planning_artifact(
                     session,
                     project_slug,
@@ -14939,6 +17063,40 @@ async def generate_novel_plan(
                         version_no=cast_artifact.version_no,
                     )
                 )
+
+        current_step_name = "cast_spec_function_gate"
+        workflow_run.current_step = current_step_name
+        cast_spec_quality_report = evaluate_cast_spec_function_quality(cast_spec_payload)
+        await _record_prewrite_quality_gate(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name=current_step_name,
+            step_order=step_order,
+            report=cast_spec_quality_report,
+            strict=is_strict_prewrite_project(project),
+        )
+        cast_spec_payload = _attach_prewrite_quality_report(
+            cast_spec_payload,
+            step_name=current_step_name,
+            report=cast_spec_quality_report,
+            project=project,
+        )
+        cast_artifact = await import_planning_artifact(
+            session,
+            project_slug,
+            PlanningArtifactCreate(
+                artifact_type=ArtifactType.CAST_SPEC,
+                content=cast_spec_payload,
+            ),
+        )
+        artifact_records.append(
+            PlanningArtifactRecord(
+                artifact_type=ArtifactType.CAST_SPEC,
+                artifact_id=cast_artifact.id,
+                version_no=cast_artifact.version_no,
+            )
+        )
+        step_order += 1
 
         current_step_name = "generate_public_emotion_kernel"
         workflow_run.current_step = current_step_name
@@ -15033,7 +17191,7 @@ async def generate_novel_plan(
                 current_step=current_step_name,
                 artifact_type=ArtifactType.STORY_DESIGN_KERNEL.value,
             )
-            step_order += 1
+            step_order += 2
 
         current_step_name = "generate_entry_system_kernel"
         workflow_run.current_step = current_step_name
@@ -15284,6 +17442,43 @@ async def generate_novel_plan(
 
             volume_plan_payload = apply_hook_to_volume_plan(volume_plan_payload, hook_spec)
 
+        current_step_name = "volume_plan_gate"
+        workflow_run.current_step = current_step_name
+        volume_plan_quality_report = evaluate_volume_plan_quality(
+            volume_plan_payload if isinstance(volume_plan_payload, list) else [],
+            target_chapters=int(getattr(project, "target_chapters", 0) or 0),
+        )
+        await _record_prewrite_quality_gate(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name=current_step_name,
+            step_order=step_order,
+            report=volume_plan_quality_report,
+            strict=is_strict_prewrite_project(project),
+        )
+        if isinstance(volume_plan_payload, dict):
+            volume_plan_payload = _attach_prewrite_quality_report(
+                volume_plan_payload,
+                step_name=current_step_name,
+                report=volume_plan_quality_report,
+                project=project,
+            )
+        elif isinstance(volume_plan_payload, list):
+            volume_plan_payload = [
+                _attach_prewrite_quality_report(
+                    entry,
+                    step_name=current_step_name,
+                    report=volume_plan_quality_report,
+                    project=project,
+                )
+                if isinstance(entry, dict)
+                else entry
+                for entry in volume_plan_payload
+            ]
+        step_order += 1
+
+        current_step_name = "generate_volume_plan"
+        workflow_run.current_step = current_step_name
         volume_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -15504,6 +17699,7 @@ async def generate_novel_plan(
             }
 
         prewrite_repair_directives: list[str] = []
+        prewrite_payload: dict[str, Any] | None = None
         if settings.pipeline.enable_prewrite_readiness_gate:
             current_step_name = "prewrite_readiness_gate"
             workflow_run.current_step = current_step_name
@@ -15544,6 +17740,59 @@ async def generate_novel_plan(
                 artifact_type=ArtifactType.PREWRITE_READINESS.value,
             )
             step_order += 1
+
+        current_step_name = "story_grounded_title_revision"
+        workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+        )
+        (
+            refreshed_title,
+            title_was_revised,
+            title_llm_run_id,
+            title_refresh_evidence,
+        ) = await _refresh_story_grounded_project_title(
+            session,
+            settings,
+            project=project,
+            premise=premise,
+            book_spec_payload=book_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            story_design_payload=story_design_payload,
+            volume_plan_payload=volume_plan_payload,
+            prewrite_payload=prewrite_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if title_llm_run_id is not None:
+            llm_run_ids.append(title_llm_run_id)
+        await create_workflow_step_run(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name=current_step_name,
+            step_order=step_order,
+            status=WorkflowStatus.COMPLETED,
+            output_ref={
+                **title_refresh_evidence,
+                "title": refreshed_title,
+                "llm_run_id": str(title_llm_run_id) if title_llm_run_id else None,
+                "reused": not title_was_revised,
+            },
+        )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            title=refreshed_title,
+            revised=title_was_revised,
+            llm_run_id=str(title_llm_run_id) if title_llm_run_id else None,
+        )
+        step_order += 1
 
         # ── Per-volume chapter outline generation ──
         normalized_vp = _mapping_list(volume_plan_payload)
@@ -15624,9 +17873,9 @@ async def generate_novel_plan(
             ]
             (
                 vol_outline_payload,
-                llm_run_id,
+                outline_llm_run_ids,
                 outline_repair_history,
-            ) = await _generate_volume_outline_with_repair_loop(
+            ) = await _generate_volume_outline_batched(
                 session,
                 settings,
                 project=project,
@@ -15644,8 +17893,7 @@ async def generate_novel_plan(
                 base_constraints=_outline_constraints,
                 progress=progress,
             )
-            if llm_run_id is not None:
-                llm_run_ids.append(llm_run_id)
+            llm_run_ids.extend(outline_llm_run_ids)
             if outline_repair_history:
                 workflow_run.metadata_json = {
                     **(workflow_run.metadata_json or {}),
@@ -15669,6 +17917,28 @@ async def generate_novel_plan(
             )
             all_outline_chapters.extend(vol_chapters)
 
+            current_step_name = f"volume_{vol_num}_outline_commercial_judge"
+            workflow_run.current_step = current_step_name
+            outline_commercial_report = await _run_planner_outline_commercial_judge(
+                session,
+                settings,
+                project=project,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                outline_payload=vol_outline_payload if isinstance(vol_outline_payload, dict) else {},
+            )
+            if outline_commercial_report is not None:
+                vol_outline_payload = _attach_prewrite_quality_report(
+                    vol_outline_payload,
+                    step_name=current_step_name,
+                    report=outline_commercial_report,
+                    project=project,
+                )
+                step_order += 1
+
+            current_step_name = f"generate_volume_{vol_num}_outline"
+            workflow_run.current_step = current_step_name
             # Save per-volume artifact
             vol_outline_artifact = await import_planning_artifact(
                 session,
@@ -15676,6 +17946,7 @@ async def generate_novel_plan(
                 PlanningArtifactCreate(
                     artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
                     content=vol_outline_payload,
+                    source_run_id=outline_llm_run_ids[-1] if outline_llm_run_ids else None,
                 ),
             )
             artifact_records.append(
@@ -15693,7 +17964,13 @@ async def generate_novel_plan(
                 status=WorkflowStatus.COMPLETED,
                 output_ref={
                     "artifact_id": str(vol_outline_artifact.id),
-                    "llm_run_id": str(llm_run_id) if llm_run_id else None,
+                    "llm_run_ids": [str(item) for item in outline_llm_run_ids],
+                    "reused": bool(
+                        _mapping(_mapping(vol_outline_payload).get("_meta")).get("reused")
+                    ),
+                    "batch_count": _mapping(_mapping(vol_outline_payload).get("_meta")).get(
+                        "batch_count"
+                    ),
                 },
             )
             _emit_planner_progress(
@@ -15706,7 +17983,7 @@ async def generate_novel_plan(
                 volume_number=vol_num,
                 generated_chapters=len(vol_chapters),
                 artifact_id=str(vol_outline_artifact.id),
-                llm_run_id=str(llm_run_id) if llm_run_id else None,
+                llm_run_ids=[str(item) for item in outline_llm_run_ids],
             )
             step_order += 1
             chapter_offset += vol_ch_count
@@ -15715,6 +17992,7 @@ async def generate_novel_plan(
         outline_payload = {
             "batch_name": "auto-generated-full-outline",
             "chapters": all_outline_chapters,
+            "_meta": planning_artifact_meta(project),
         }
         outline_artifact = await import_planning_artifact(
             session,
@@ -15888,12 +18166,11 @@ async def generate_novel_plan(
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
-        await create_workflow_step_run(
+        await _record_planner_failure_step_once(
             session,
             workflow_run_id=workflow_run.id,
             step_name=current_step_name,
             step_order=step_order,
-            status=WorkflowStatus.FAILED,
             error_message=str(exc),
         )
         await session.flush()
@@ -16070,6 +18347,19 @@ async def generate_foundation_plan(
                 seed_text=_project_name_seed(project, premise),
             )["protagonist"]["name"]
         )
+        await create_workflow_step_run(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name="generate_character_names",
+            step_order=step_order,
+            status=WorkflowStatus.COMPLETED,
+            output_ref={
+                "protagonist_name": llm_protagonist_name,
+                "ally_count": len(_mapping_list(character_name_pool.get("allies"))),
+                "antagonist_count": len(_mapping_list(character_name_pool.get("antagonists"))),
+            },
+        )
+        step_order += 1
 
         # ── BookSpec ──
         book_spec_fallback = _fallback_book_spec(project, premise, category_key=_category_key)
@@ -16246,6 +18536,19 @@ async def generate_foundation_plan(
             validator=parse_cast_spec_input,
         )
         cast_spec_payload = _repair_cast_identity_locks_for_planner(project, cast_spec_payload)
+        cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+            project,
+            cast_spec_payload,
+            protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+            or llm_protagonist_name,
+            artifact_type=ArtifactType.CAST_SPEC.value,
+        )
+        cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+            project,
+            cast_spec_payload,
+            premise=premise,
+            artifact_type=ArtifactType.CAST_SPEC.value,
+        )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
 
@@ -16265,6 +18568,19 @@ async def generate_foundation_plan(
             llm_run_ids.append(personhood_repair_llm_run_id)
             cast_spec_payload = _repair_cast_identity_locks_for_planner(
                 project, repaired_cast_spec
+            )
+            cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+                project,
+                cast_spec_payload,
+                protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+                or llm_protagonist_name,
+                artifact_type=ArtifactType.CAST_SPEC.value,
+            )
+            cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+                project,
+                cast_spec_payload,
+                premise=premise,
+                artifact_type=ArtifactType.CAST_SPEC.value,
             )
 
         # ── Foundation richness gate (see long-form generator for rationale) ──
@@ -16289,6 +18605,19 @@ async def generate_foundation_plan(
                 cast_spec_payload = _repair_cast_identity_locks_for_planner(
                     project, repaired_cast_spec
                 )
+                cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+                    or llm_protagonist_name,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
+                cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    premise=premise,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
 
             # ── Antagonist lifecycle gate ──
             (
@@ -16309,6 +18638,19 @@ async def generate_foundation_plan(
                 cast_spec_payload = _repair_cast_identity_locks_for_planner(
                     project, repaired_cast_spec
                 )
+                cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+                    or llm_protagonist_name,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
+                cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    premise=premise,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
 
             # ── Relationship scaling gate ──
             (
@@ -16328,6 +18670,19 @@ async def generate_foundation_plan(
                 llm_run_ids.append(relationship_repair_llm_run_id)
                 cast_spec_payload = _repair_cast_identity_locks_for_planner(
                     project, repaired_cast_spec
+                )
+                cast_spec_payload = _repair_protagonist_name_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    protagonist_name=_protagonist_name_from_payload(book_spec_payload)
+                    or llm_protagonist_name,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
+                )
+                cast_spec_payload = _repair_rule_survival_goal_drift_for_planner(
+                    project,
+                    cast_spec_payload,
+                    premise=premise,
+                    artifact_type=ArtifactType.CAST_SPEC.value,
                 )
 
         cast_artifact = await import_planning_artifact(
@@ -16571,12 +18926,11 @@ async def generate_foundation_plan(
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
-        await create_workflow_step_run(
+        await _record_planner_failure_step_once(
             session,
             workflow_run_id=workflow_run.id,
             step_name=current_step_name,
             step_order=step_order,
-            status=WorkflowStatus.FAILED,
             error_message=str(exc),
         )
         await session.flush()
@@ -16926,9 +19280,9 @@ async def generate_volume_plan(
         _all_constraints = (_all_constraints or []) + _deceased_constraints
         (
             vol_outline_payload,
-            llm_run_id,
+            outline_llm_run_ids,
             outline_repair_history,
-        ) = await _generate_volume_outline_with_repair_loop(
+        ) = await _generate_volume_outline_batched(
             session,
             settings,
             project=project,
@@ -16948,8 +19302,7 @@ async def generate_volume_plan(
             base_constraints=_all_constraints or [],
             progress=progress,
         )
-        if llm_run_id is not None:
-            llm_run_ids.append(llm_run_id)
+        llm_run_ids.extend(outline_llm_run_ids)
         if outline_repair_history:
             workflow_run.metadata_json = {
                 **(workflow_run.metadata_json or {}),
@@ -16974,7 +19327,9 @@ async def generate_volume_plan(
             session,
             project_slug,
             PlanningArtifactCreate(
-                artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE, content=vol_outline_payload
+                artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                content=vol_outline_payload,
+                source_run_id=outline_llm_run_ids[-1] if outline_llm_run_ids else None,
             ),
         )
         artifact_records.append(
@@ -16990,7 +19345,14 @@ async def generate_volume_plan(
             step_name=current_step_name,
             step_order=step_order,
             status=WorkflowStatus.COMPLETED,
-            output_ref={"artifact_id": str(vol_outline_artifact.id)},
+            output_ref={
+                "artifact_id": str(vol_outline_artifact.id),
+                "llm_run_ids": [str(item) for item in outline_llm_run_ids],
+                "reused": bool(_mapping(_mapping(vol_outline_payload).get("_meta")).get("reused")),
+                "batch_count": _mapping(_mapping(vol_outline_payload).get("_meta")).get(
+                    "batch_count"
+                ),
+            },
         )
         step_order += 1
 
@@ -17016,12 +19378,11 @@ async def generate_volume_plan(
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
-        await create_workflow_step_run(
+        await _record_planner_failure_step_once(
             session,
             workflow_run_id=workflow_run.id,
             step_name=current_step_name,
             step_order=step_order,
-            status=WorkflowStatus.FAILED,
             error_message=str(exc),
         )
         await session.flush()

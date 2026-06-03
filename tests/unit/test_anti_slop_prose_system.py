@@ -7,7 +7,6 @@ from bestseller.services.scene_beat_planner import build_scene_beat_sheet
 from bestseller.services.scene_beat_renderer import render_scene_beat_sheet_block
 from bestseller.services.show_dont_tell_gate import check_show_dont_tell_gate
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -54,6 +53,20 @@ def test_anti_meta_gate_blocks_design_language_and_summary_ending() -> None:
     assert not report.ending_passed
 
 
+def test_anti_meta_gate_protects_dialogue_and_physical_aftermath() -> None:
+    text = (
+        "陆沉跟上他的步伐：“那接下来——”\n"
+        "“回杂役峰。”宁尘打断他。\n"
+        "灵压的余波掀飞碎石，井壁裂开一道黑缝。"
+    )
+    report = check_anti_meta_gate(text, chapter_position=1)
+
+    terms = {finding.term for finding in report.findings}
+    assert "接下来" not in terms
+    assert "余波" not in terms
+    assert report.passed
+
+
 @pytest.mark.parametrize(
     "ending",
     [
@@ -81,6 +94,13 @@ def test_show_dont_tell_gate_flags_telling_patterns() -> None:
     assert "SHOW_DONT_TELL_MOTIVE_EXPLANATION" in codes
     assert "SHOW_DONT_TELL_EMOTION_NAMING" in codes
     assert "SHOW_DONT_TELL_RELATIONSHIP_LABEL" in codes
+
+
+def test_show_dont_tell_gate_protects_dialogue_explanations() -> None:
+    text = "017说：“他知道你要用证人，所以他在清场。”林鸢把名单翻到最后一页。"
+    report = check_show_dont_tell_gate(text, chapter_position=1)
+
+    assert not report.findings
 
 
 def test_show_dont_tell_gate_allows_visible_seeing_action() -> None:

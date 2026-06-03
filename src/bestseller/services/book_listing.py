@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
 import json
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from bestseller.services.concept_lab import concept_lab_listing_overrides
 from bestseller.services.platform_title_workflow import (
     DEFAULT_TITLE_CANDIDATE_COUNT,
     build_platform_title_workflow,
+    evaluate_platform_title_candidate,
     resolve_title_style,
 )
 from bestseller.services.ranking_readiness import (
@@ -397,8 +399,15 @@ def _merge_preferred_title_candidates(
     if not preferred:
         return generated
     label_fields = _title_label_fields(platform)
+    label_quotas = Counter(
+        _clean_text(item.get("display_label"))
+        for item in generated
+        if isinstance(item, dict) and _clean_text(item.get("display_label"))
+    )
+    default_label = _clean_text(label_fields.get("display_label"))
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
+    label_counts: Counter[str] = Counter()
     for raw in [*preferred, *generated]:
         if not isinstance(raw, dict):
             continue
@@ -406,13 +415,71 @@ def _merge_preferred_title_candidates(
         title_key = title.casefold()
         if not title or title_key in seen:
             continue
-        seen.add(title_key)
         row = dict(raw)
         row["id"] = len(rows) + 1
         row["title"] = title
         for key, value in label_fields.items():
             row.setdefault(key, value)
+        label = _clean_text(row.get("display_label")) or default_label
+        if label and label_quotas and label_counts[label] >= label_quotas.get(label, 0):
+            continue
+        seen.add(title_key)
+        if label:
+            label_counts[label] += 1
         rows.append(row)
+        if len(rows) >= REQUIRED_TITLE_CANDIDATE_COUNT:
+            break
+    return rows
+
+
+def _attach_title_candidate_evaluations(
+    candidates: list[dict[str, Any]],
+    workflow: dict[str, Any],
+    *,
+    profile: dict[str, Any],
+    platform: str,
+) -> None:
+    evaluations = (
+        workflow.get("candidate_evaluations")
+        if isinstance(workflow.get("candidate_evaluations"), dict)
+        else {}
+    )
+    for candidate in candidates:
+        if not isinstance(candidate, dict) or isinstance(candidate.get("title_evaluation"), dict):
+            continue
+        title = _clean_text(candidate.get("title"))
+        evaluation = evaluations.get(title)
+        if not isinstance(evaluation, dict):
+            evaluation = evaluate_platform_title_candidate(
+                profile,
+                title,
+                target_platform=platform,
+            )
+        candidate["title_evaluation"] = evaluation
+        checks = evaluation.get("checks")
+        if isinstance(checks, dict):
+            candidate["reader_review"] = checks
+
+
+def _drop_blocked_title_candidates(
+    candidates: list[dict[str, Any]],
+    blocked_titles: list[str],
+    fill_pool: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    blocked = {_clean_text(title).casefold() for title in blocked_titles if _clean_text(title)}
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for candidate in [*candidates, *fill_pool]:
+        if not isinstance(candidate, dict):
+            continue
+        title = _clean_text(candidate.get("title"))
+        key = title.casefold()
+        if not title or key in blocked or key in seen:
+            continue
+        row = dict(candidate)
+        row["id"] = len(rows) + 1
+        rows.append(row)
+        seen.add(key)
         if len(rows) >= REQUIRED_TITLE_CANDIDATE_COUNT:
             break
     return rows
@@ -454,6 +521,12 @@ def write_platform_title_workflow_artifacts(
         "display_label",
         "pattern",
         "score",
+        "score_breakdown",
+        "evaluation_decision",
+        "reader_attraction",
+        "story_transmission",
+        "platform_fit",
+        "revision_prompt",
         "angle",
         "recommendation",
     ]
@@ -461,6 +534,18 @@ def write_platform_title_workflow_artifacts(
     for index, candidate in enumerate(candidates, start=1):
         if not isinstance(candidate, dict):
             continue
+        values = [
+            candidate_evaluation := (
+                candidate.get("title_evaluation")
+                if isinstance(candidate.get("title_evaluation"), dict)
+                else {}
+            ),
+        ]
+        checks = (
+            candidate_evaluation.get("checks")
+            if isinstance(candidate_evaluation.get("checks"), dict)
+            else {}
+        )
         values = [
             candidate.get("id") or index,
             candidate.get("title"),
@@ -470,6 +555,16 @@ def write_platform_title_workflow_artifacts(
             candidate.get("display_label"),
             candidate.get("pattern"),
             candidate.get("score"),
+            json.dumps(candidate.get("score_breakdown") or {}, ensure_ascii=False, sort_keys=True),
+            candidate_evaluation.get("decision"),
+            json.dumps(checks.get("reader_attraction") or {}, ensure_ascii=False, sort_keys=True),
+            json.dumps(checks.get("story_transmission") or {}, ensure_ascii=False, sort_keys=True),
+            json.dumps(checks.get("platform_fit") or {}, ensure_ascii=False, sort_keys=True),
+            (
+                candidate_evaluation.get("feedback", {}).get("revision_prompt")
+                if isinstance(candidate_evaluation.get("feedback"), dict)
+                else ""
+            ),
             candidate.get("angle"),
             candidate.get("recommendation"),
         ]
@@ -835,6 +930,8 @@ def build_book_listing_profile(
         "legacy_title_candidates": _normalize_legacy_title_candidates(
             overrides.get("title_candidates")
         ),
+        "previous_title": _clean_text(metadata.get("previous_title")),
+        "previous_titles": _string_list(metadata.get("previous_titles")),
         "source_files": _string_list(file_overrides.get("source_files")),
         "load_warnings": _string_list(file_overrides.get("load_warnings")),
     }
@@ -858,6 +955,32 @@ def build_book_listing_profile(
             profile["title_candidates"] + _fallback_title_candidates(profile)
         )[:REQUIRED_TITLE_CANDIDATE_COUNT]
         title_candidate_source = f"{title_candidate_source}+fallback"
+    _attach_title_candidate_evaluations(
+        profile["title_candidates"],
+        title_workflow,
+        profile=profile,
+        platform=platform,
+    )
+    blocked_titles = _string_list(metadata.get("previous_titles")) + [
+        _clean_text(metadata.get("previous_title"))
+    ]
+    if blocked_titles:
+        profile["title_candidates"] = _drop_blocked_title_candidates(
+            profile["title_candidates"],
+            blocked_titles,
+            (
+                title_workflow.get("candidates", [])
+                if isinstance(title_workflow.get("candidates"), list)
+                else []
+            )
+            + _fallback_title_candidates(profile),
+        )
+        _attach_title_candidate_evaluations(
+            profile["title_candidates"],
+            title_workflow,
+            profile=profile,
+            platform=platform,
+        )
 
     profile["title_workflow"] = {
         **title_workflow,

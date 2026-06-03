@@ -92,6 +92,30 @@ def test_repair_scope_normalizers_discard_invalid_values() -> None:
     assert repair_services._normalize_chapter_scope([1, "2", 0, -1, "bad"]) == {1, 2}
 
 
+@pytest.mark.asyncio
+async def test_repair_scope_filter_skips_unwritten_planned_chapters() -> None:
+    project_id = uuid4()
+    draft_id = uuid4()
+    session = FakeSession(
+        execute_results=[
+            [
+                (86, "revision", "blocked", draft_id),
+                (88, "revision", "blocked", draft_id),
+                (89, "planned", "pending", None),
+                (101, "planned", "pending", None),
+            ]
+        ]
+    )
+
+    filtered = await repair_services._filter_unwritten_chapter_numbers_from_repair_scope(
+        session,
+        project_id=project_id,
+        chapter_numbers={86, 88, 89, 101},
+    )
+
+    assert filtered == {86, 88}
+
+
 def build_project() -> ProjectModel:
     project = ProjectModel(
         slug="my-story",

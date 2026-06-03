@@ -329,7 +329,12 @@ def _normalize_channels(s: ChapterSignalPack) -> dict[str, float]:
 
     if s.target_length_min and s.target_length_max:
         target_mid = (s.target_length_min + s.target_length_max) / 2
-        target_width = max(1, (s.target_length_max - s.target_length_min) / 2)
+        raw_width = max(0.0, (s.target_length_max - s.target_length_min) / 2)
+        target_width = (
+            max(200.0, target_mid * 0.20)
+            if raw_width < 200.0
+            else raw_width
+        )
         length_gap = abs(s.chapter_text_chars - target_mid) / target_width
         pacing_score = _clamp01(1.0 - 0.6 * min(2.0, length_gap))
     else:

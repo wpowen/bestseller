@@ -990,6 +990,137 @@ def test_merge_planning_payload_preserves_fallback_nested_fields() -> None:
     assert merged["stakes"]["personal"] == fallback_book_spec["stakes"]["personal"]
 
 
+def test_planner_repairs_book_spec_default_protagonist_name_drift() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    payload = {
+        "title": "规则生存重启验证案卷",
+        "protagonist": {
+            "name": "沈照",
+            "external_goal": "林逸必须在六章内证明规则提示是免责剧本。",
+        },
+        "stakes": {"personal": "林逸如果失败，同伴会被规则抹名。"},
+    }
+
+    repaired = planner_services._repair_protagonist_name_drift_for_planner(
+        project,
+        payload,
+        protagonist_name="沈照",
+        artifact_type="book_spec",
+    )
+
+    assert "林逸" not in json.dumps(repaired, ensure_ascii=False)
+    assert repaired["protagonist"]["external_goal"].startswith("沈照必须")
+    assert repaired["_meta"]["name_drift_repair"][0]["replacement_count"] == 2
+
+
+def test_planner_repairs_cast_spec_default_protagonist_name_drift() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    payload = {
+        "protagonist": {
+            "name": "沈照",
+            "role": "protagonist",
+            "goal": "林逸必须不断变强，获取足够力量。",
+            "background": "林逸曾在旧教学楼体系工作。",
+        },
+        "supporting_cast": [],
+    }
+
+    repaired = planner_services._repair_protagonist_name_drift_for_planner(
+        project,
+        payload,
+        protagonist_name="沈照",
+        artifact_type="cast_spec",
+    )
+
+    assert "林逸" not in json.dumps(repaired, ensure_ascii=False)
+    assert repaired["protagonist"]["goal"].startswith("沈照必须")
+    assert repaired["_meta"]["name_drift_repair"][0]["artifact_type"] == "cast_spec"
+
+
+def test_planner_repairs_rule_survival_book_goal_drift() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    project.genre = "规则生存 / meta博弈"
+    premise = "沈照必须用规则之间的矛盾破局，证明通关提示是免责剧本。"
+    payload = {
+        "protagonist": {
+            "name": "沈照",
+            "archetype": "求力者",
+            "core_wound": "曾因力量不足失去重要的人。",
+            "external_goal": "沈照必须不断变强，获取足够的力量来保护想保护的一切。",
+            "internal_need": "沈照需要学会接受力量的代价，理解强大不等于正确。",
+        }
+    }
+
+    repaired = planner_services._repair_rule_survival_goal_drift_for_planner(
+        project,
+        payload,
+        premise=premise,
+        artifact_type="book_spec",
+    )
+
+    protagonist = repaired["protagonist"]
+    assert protagonist["archetype"] == "规则破局者"
+    assert "免责剧本" in protagonist["external_goal"]
+    assert "不断变强" not in json.dumps(repaired, ensure_ascii=False)
+    assert repaired["_meta"]["rule_survival_goal_repair"][0]["artifact_type"] == "book_spec"
+
+
+def test_planner_repairs_rule_survival_cast_goal_drift() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    project.genre = "规则怪谈"
+    premise = "沈照要拆穿旧教学楼规则提示里的免责剧本。"
+    payload = {
+        "protagonist": {
+            "name": "沈照",
+            "goal": "沈照必须不断变强，获取足够力量。",
+            "golden_finger": None,
+        },
+        "supporting_cast": [],
+    }
+
+    repaired = planner_services._repair_rule_survival_goal_drift_for_planner(
+        project,
+        payload,
+        premise=premise,
+        artifact_type="cast_spec",
+    )
+
+    protagonist = repaired["protagonist"]
+    assert "免责剧本" in protagonist["goal"]
+    assert protagonist["golden_finger"] == "能捕捉规则改写前后的矛盾痕迹。"
+    assert "不断变强" not in json.dumps(repaired, ensure_ascii=False)
+
+
+def test_short_volume_outline_prompt_uses_compact_context() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    project.genre = "规则生存 / meta博弈"
+    project.target_chapters = 6
+    project.metadata_json = {
+        "story_design_kernel": {"long_field": "规则结构" * 2000},
+        "emotion_driven_kernel": {"long_field": "情绪结构" * 2000},
+        "public_emotion_kernel": {"long_field": "公众情绪" * 2000},
+        "entry_system_kernel": {"long_field": "入口系统" * 2000},
+    }
+
+    _, user_prompt = planner_services._volume_outline_prompts(
+        project,
+        {"protagonist": {"name": "沈照", "external_goal": "拆穿免责剧本"}},
+        {"protagonist": {"name": "沈照", "goal": "拆穿免责剧本"}},
+        [{"volume_number": 1, "chapter_count_target": 6}],
+        {"volume_number": 1, "chapter_count_target": 6, "chapter_range": "1-6"},
+    )
+
+    assert "【压缩核心执行上下文】" in user_prompt
+    assert "每章默认只需 2 个紧凑 scenes" in user_prompt
+    assert len(user_prompt) < 13000
+    assert user_prompt.count("规则结构") < 100
+
+
 def test_fallback_cast_spec_tolerates_partial_or_malformed_inputs() -> None:
     project = build_project()
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
@@ -1012,6 +1143,8 @@ def test_fallback_cast_spec_tolerates_partial_or_malformed_inputs() -> None:
     assert cast_spec["protagonist"]["name"] == "沈砚"
     assert cast_spec["protagonist"]["goal"]
     assert cast_spec["protagonist"]["background"]
+    assert "并非表面原因" not in cast_spec["protagonist"]["secret"]
+    assert "改写记录" in cast_spec["protagonist"]["secret"]
     assert cast_spec["antagonist"]["background"]
 
 
@@ -1867,6 +2000,60 @@ async def test_generate_structured_artifact_can_disable_fallback_merge(
 
 
 @pytest.mark.asyncio
+async def test_generate_structured_artifact_retries_truncated_fail_closed_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    fallback_book_spec = planner_services._fallback_book_spec(
+        project,
+        "一名被放逐的导航员发现帝国正在篡改边境航线记录。",
+    )
+    calls: list[str] = []
+
+    async def fake_complete_text(session: object, settings: object, request: object):
+        calls.append(request.user_prompt)
+        if len(calls) == 1:
+            return type(
+                "CompletionStub",
+                (),
+                {
+                    "content": json.dumps({"title": "truncated"}, ensure_ascii=False),
+                    "llm_run_id": uuid4(),
+                    "finish_reason": "length",
+                    "provider": "openai",
+                },
+            )()
+        return type(
+            "CompletionStub",
+            (),
+            {
+                "content": json.dumps({"title": "Compact Book"}, ensure_ascii=False),
+                "llm_run_id": uuid4(),
+                "finish_reason": "stop",
+                "provider": "openai",
+            },
+        )()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+
+    payload, llm_run_id = await planner_services._generate_structured_artifact(
+        FakeSession(),
+        build_settings(),
+        project=project,
+        logical_name="book_spec",
+        system_prompt="system",
+        user_prompt="user",
+        fallback_payload=fallback_book_spec,
+        workflow_run_id=uuid4(),
+    )
+
+    assert llm_run_id is not None
+    assert payload["title"] == "Compact Book"
+    assert len(calls) == 2
+    assert "STRICT RETRY AFTER TRUNCATED OUTPUT" in calls[1]
+
+
+@pytest.mark.asyncio
 async def test_generate_structured_artifact_fails_closed_when_validator_rejects_critical_artifact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1904,6 +2091,65 @@ async def test_generate_structured_artifact_fails_closed_when_validator_rejects_
             workflow_run_id=uuid4(),
             validator=reject_non_mapping_protagonist,
         )
+
+
+@pytest.mark.asyncio
+async def test_record_planner_failure_step_once_skips_existing_step() -> None:
+    class ExistingStepSession(FakeSession):
+        async def scalar(self, _stmt: object):
+            return uuid4()
+
+    session = ExistingStepSession()
+
+    await planner_services._record_planner_failure_step_once(
+        session,
+        workflow_run_id=uuid4(),
+        step_name="book_spec_quality_gate",
+        step_order=4,
+        error_message="book_spec_quality_gate failed: english_mechanism_leak",
+    )
+
+    assert session.added == []
+
+
+@pytest.mark.asyncio
+async def test_record_planner_failure_step_once_skips_existing_order() -> None:
+    class ExistingOrderSession(FakeSession):
+        async def scalar(self, _stmt: object):
+            return uuid4()
+
+    session = ExistingOrderSession()
+
+    await planner_services._record_planner_failure_step_once(
+        session,
+        workflow_run_id=uuid4(),
+        step_name="generate_story_design_kernel",
+        step_order=13,
+        error_message="story_design_kernel_gate failed: fallback_source_leak",
+    )
+
+    assert session.added == []
+
+
+@pytest.mark.asyncio
+async def test_record_planner_failure_step_once_records_missing_step() -> None:
+    session = FakeSession()
+
+    await planner_services._record_planner_failure_step_once(
+        session,
+        workflow_run_id=uuid4(),
+        step_name="book_spec_quality_gate",
+        step_order=4,
+        error_message="book_spec_quality_gate failed: english_mechanism_leak",
+    )
+
+    workflow_steps = [item for item in session.added if isinstance(item, WorkflowStepRunModel)]
+    assert len(workflow_steps) == 1
+    assert workflow_steps[0].step_name == "book_spec_quality_gate"
+    assert workflow_steps[0].status == "failed"
+    assert workflow_steps[0].error_message == (
+        "book_spec_quality_gate failed: english_mechanism_leak"
+    )
 
 
 @pytest.mark.asyncio
@@ -2013,6 +2259,13 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) >= 7
+    assert any(step.step_name == "generate_character_names" for step in workflow_steps)
+    step_orders = [
+        (step.workflow_run_id, step.step_order)
+        for step in workflow_steps
+        if step.workflow_run_id is not None
+    ]
+    assert len(step_orders) == len(set(step_orders))
     assert any(step.step_name == "prewrite_readiness_gate" for step in workflow_steps)
     assert any(step.step_name == "reverse_outline_gate" for step in workflow_steps)
     assert any(step.step_name == "worldview_progression_gate" for step in workflow_steps)
@@ -2048,7 +2301,7 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     outline_prompt = next(
         prompt
         for logical_name, prompt in prompts_by_logical_name.items()
-        if logical_name.endswith("_chapter_outline")
+        if "chapter_outline" in logical_name
     )
     assert "world_rule_refs" in outline_prompt
     assert "world_rule_landing" in outline_prompt

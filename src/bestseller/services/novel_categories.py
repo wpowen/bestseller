@@ -268,7 +268,6 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "耽美": "relationship-driven",
     "bl": "relationship-driven",
     "现实": "relationship-driven",
-    "职场": "relationship-driven",
     "romance": "relationship-driven",
     "romantasy": "relationship-driven",
     # suspense-mystery
@@ -322,6 +321,21 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
 
 
 _PRIORITY_KEYWORD_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "suspense-mystery",
+        (
+            "规则生存",
+            "规则怪谈",
+            "规则类",
+            "副本规则",
+            "meta博弈",
+            "元叙事",
+            "剧本杀",
+            "infinite flow",
+            "rule horror",
+            "rule survival",
+        ),
+    ),
     (
         "urban-contemporary",
         (

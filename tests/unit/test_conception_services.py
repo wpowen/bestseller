@@ -213,3 +213,107 @@ def test_conception_prompts_ban_fixed_family_loss_motivation() -> None:
     assert "默认动机禁用" in prompt
     assert "动态生成" in prompt
     assert "父母失踪" not in prompt
+
+
+# --- P2: LLM platform-title revision wiring (2026-06-03) --------------------
+
+import asyncio  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+
+def _revision_title_profile() -> dict:
+    return {
+        "language": "zh-CN",
+        "primary_title": "宗门案卷规则破局录",
+        "primary_category": "玄幻",
+        "secondary_category": "修真·复仇·宗门权谋",
+        "tags": ["复仇", "宗门", "逆袭"],
+        "logline": "废柴弟子被逐出宗门，靠一缕残魂逆命登天，向背叛者复仇。",
+        "reader_promise": "越被打压越爽的逆袭复仇",
+        "main_characters": [{"name": "萧烬", "identity": "被逐废柴弟子"}],
+    }
+
+
+def _weak_candidate(
+    title: str, decision: str = "revise", pattern: str = "当前主书名校准"
+) -> dict:
+    return {
+        "title": title,
+        "pattern": pattern,
+        "title_evaluation": {"decision": decision, "feedback": {}},
+    }
+
+
+def test_maybe_revise_adopts_valid_llm_revision(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        generation=SimpleNamespace(title_llm_revision_enabled=True)
+    )
+
+    async def fake_complete_text(session, settings, request):
+        return SimpleNamespace(content="《逆命焚骨录》", llm_run_id=None)
+
+    monkeypatch.setattr(conception_services, "complete_text", fake_complete_text)
+    title, was_revised, _ = asyncio.run(
+        conception_services._maybe_revise_platform_title(
+            None,
+            settings,
+            title_profile=_revision_title_profile(),
+            primary_candidate=_weak_candidate("宗门案卷规则破局录"),
+            target_platform="qimao",
+            workflow_title="宗门案卷规则破局录",
+        )
+    )
+    assert was_revised
+    assert title == "逆命焚骨录"
+
+
+def test_maybe_revise_skips_clean_ip_name(monkeypatch) -> None:
+    calls = {"n": 0}
+
+    async def fake_complete_text(session, settings, request):
+        calls["n"] += 1
+        return SimpleNamespace(content="改写了", llm_run_id=None)
+
+    monkeypatch.setattr(conception_services, "complete_text", fake_complete_text)
+    settings = SimpleNamespace(
+        generation=SimpleNamespace(title_llm_revision_enabled=True)
+    )
+    title, was_revised, _ = asyncio.run(
+        conception_services._maybe_revise_platform_title(
+            None,
+            settings,
+            title_profile={**_revision_title_profile(), "primary_title": "烬骨登天录"},
+            primary_candidate=_weak_candidate("烬骨登天录"),
+            target_platform="qimao",
+            workflow_title="烬骨登天录",
+        )
+    )
+    assert not was_revised
+    assert title == "烬骨登天录"
+    assert calls["n"] == 0  # clean IP name must not trigger an LLM call
+
+
+def test_maybe_revise_respects_disable_flag(monkeypatch) -> None:
+    calls = {"n": 0}
+
+    async def fake_complete_text(session, settings, request):
+        calls["n"] += 1
+        return SimpleNamespace(content="改写了", llm_run_id=None)
+
+    monkeypatch.setattr(conception_services, "complete_text", fake_complete_text)
+    settings = SimpleNamespace(
+        generation=SimpleNamespace(title_llm_revision_enabled=False)
+    )
+    title, was_revised, _ = asyncio.run(
+        conception_services._maybe_revise_platform_title(
+            None,
+            settings,
+            title_profile=_revision_title_profile(),
+            primary_candidate=_weak_candidate("宗门案卷规则破局录"),
+            target_platform="qimao",
+            workflow_title="宗门案卷规则破局录",
+        )
+    )
+    assert not was_revised
+    assert title == "宗门案卷规则破局录"
+    assert calls["n"] == 0

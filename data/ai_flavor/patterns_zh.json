@@ -36,7 +36,40 @@
     {"id": "cn.tier1.transition.001", "phrase": "时间仿佛在这一刻静止", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
     {"id": "cn.tier1.transition.002", "phrase": "空气仿佛凝固了", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
     {"id": "cn.tier1.transition.003", "phrase": "世界仿佛安静了下来", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
-    {"id": "cn.tier1.transition.004", "phrase": "时间仿佛停止了", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"}
+    {"id": "cn.tier1.transition.004", "phrase": "时间仿佛停止了", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
+
+    {"id": "cn.humanizer.signpost.001", "phrase": "此外", "severity": "block", "category": "essay_signpost", "suggestions": [""], "remove_sentence_on_block": false, "why": "Humanizer-zh: 论文式连接词，小说叙述中通常是 AI 路标"},
+    {"id": "cn.humanizer.signpost.002", "phrase": "值得一提的是", "severity": "block", "category": "essay_signpost", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 论文式提示读者"},
+    {"id": "cn.humanizer.signpost.003", "phrase": "为了实现这一目标", "severity": "warn", "category": "padding_phrase", "suggestions": ["为此"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 填充短语"},
+
+    {"id": "cn.humanizer.inflated.001", "pattern": "作为[^。！？\\n]{0,24}(?:证明|体现|见证|提醒)", "severity": "block", "category": "inflated_significance", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 夸大象征意义"},
+    {"id": "cn.humanizer.inflated.002", "phrase": "不断演变的格局", "severity": "block", "category": "inflated_significance", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 抽象宏大化表述"},
+    {"id": "cn.humanizer.inflated.003", "phrase": "关键作用", "severity": "warn", "category": "inflated_significance", "suggestions": ["作用"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 空泛抬高重要性"},
+    {"id": "cn.humanizer.inflated.004", "phrase": "至关重要", "severity": "warn", "category": "inflated_significance", "suggestions": ["重要"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 过度强调"},
+    {"id": "cn.humanizer.inflated.005", "phrase": "彰显", "severity": "warn", "category": "inflated_significance", "suggestions": ["显出"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 宣告式抽象评价"},
+
+    {"id": "cn.humanizer.promo.001", "phrase": "充满活力", "severity": "warn", "category": "promo_language", "suggestions": ["热闹"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 宣传式空泛形容"},
+    {"id": "cn.humanizer.promo.002", "phrase": "丰富的文化底蕴", "severity": "block", "category": "promo_language", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 宣传文案式套话"},
+    {"id": "cn.humanizer.promo.003", "phrase": "迷人的自然美景", "severity": "block", "category": "promo_language", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 宣传文案式套话"},
+    {"id": "cn.humanizer.promo.004", "phrase": "无缝", "severity": "warn", "category": "promo_language", "suggestions": [""], "remove_sentence_on_block": false, "why": "Humanizer-zh: 产品文案式 AI 词"},
+
+    {"id": "cn.humanizer.abstract_word.001", "phrase": "深入探讨", "severity": "block", "category": "abstract_ai_word", "suggestions": ["细查"], "remove_sentence_on_block": false, "why": "Humanizer-zh: AI 高频抽象动词"},
+    {"id": "cn.humanizer.abstract_word.002", "phrase": "复杂性", "severity": "warn", "category": "abstract_ai_word", "suggestions": ["麻烦"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 抽象名词化"},
+    {"id": "cn.humanizer.abstract_word.003", "phrase": "宝贵的", "severity": "warn", "category": "abstract_ai_word", "suggestions": [""], "remove_sentence_on_block": false, "why": "Humanizer-zh: 泛化褒义词"},
+
+    {"id": "cn.humanizer.negated_parallel.001", "pattern": "这?不仅仅是[^。！？\\n]{0,36}(?:而是|更是)", "severity": "warn", "category": "negated_parallelism", "suggestions": [], "remove_sentence_on_block": false, "why": "Humanizer-zh: 否定式排比过度使用"},
+    {"id": "cn.humanizer.vague_attribution.001", "pattern": "(?:行业报告|观察者|专家|一些批评者|多个来源|多家媒体)(?:显示|指出|认为|称)", "severity": "block", "category": "vague_attribution", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 模糊归因"},
+
+    {"id": "cn.humanizer.chat.001", "phrase": "希望这对您有帮助", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 聊天机器人残留"},
+    {"id": "cn.humanizer.chat.002", "phrase": "如果您想让我", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 聊天机器人残留"},
+    {"id": "cn.humanizer.chat.003", "phrase": "请告诉我", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 聊天机器人残留"},
+    {"id": "cn.humanizer.chat.004", "phrase": "您说得完全正确", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 谄媚式助手语气"},
+    {"id": "cn.humanizer.disclaimer.001", "phrase": "根据我最后的训练更新", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 知识截止日期免责声明"},
+    {"id": "cn.humanizer.disclaimer.002", "phrase": "基于可用信息", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 信息不足免责声明"},
+    {"id": "cn.humanizer.disclaimer.003", "phrase": "虽然具体细节有限", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 信息不足免责声明"},
+    {"id": "cn.humanizer.ending.001", "phrase": "未来看起来光明", "severity": "block", "category": "generic_positive_closer", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 通用积极结论"},
+    {"id": "cn.humanizer.ending.002", "phrase": "激动人心的时代即将到来", "severity": "block", "category": "generic_positive_closer", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 通用积极结论"},
+    {"id": "cn.humanizer.ending.003", "phrase": "向正确方向迈出的重要一步", "severity": "block", "category": "generic_positive_closer", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 通用积极结论"}
   ],
 
   "cluster_rules": [

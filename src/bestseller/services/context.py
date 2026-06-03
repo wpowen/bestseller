@@ -857,6 +857,62 @@ def _chapter_query_text(project: ProjectModel, chapter: ChapterModel, scenes: li
     return " ".join(part.strip() for part in query_parts if part and str(part).strip())
 
 
+def _chapter_draft_summary_from_current_text(
+    previous_chapter: ChapterModel,
+    previous_text: str,
+) -> RecentSceneSummary | None:
+    compact_text = " ".join(
+        line.strip()
+        for line in previous_text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    if not compact_text:
+        return None
+    return RecentSceneSummary(
+        chapter_number=previous_chapter.chapter_number,
+        scene_number=1,
+        scene_title=previous_chapter.title,
+        summary=(
+            f"上一章当前稿摘录：{compact_text[:420]}"
+            + ("..." if len(compact_text) > 420 else "")
+        ),
+        story_purpose=previous_chapter.chapter_goal,
+        opening_lines=compact_text[:500],
+        closing_lines=compact_text[-800:],
+        extended_tail=compact_text[-1200:],
+    )
+
+
+async def _load_previous_chapter_draft_summary(
+    session: AsyncSession,
+    *,
+    project_id: Any,
+    current_chapter_number: int,
+) -> RecentSceneSummary | None:
+    if current_chapter_number <= 1:
+        return None
+    previous_chapter = await session.scalar(
+        select(ChapterModel).where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.chapter_number == current_chapter_number - 1,
+        )
+    )
+    if previous_chapter is None:
+        return None
+    previous_draft = await session.scalar(
+        select(ChapterDraftVersionModel)
+        .where(
+            ChapterDraftVersionModel.chapter_id == previous_chapter.id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(ChapterDraftVersionModel.version_no.desc())
+    )
+    previous_text = str(getattr(previous_draft, "content_md", "") or "").strip()
+    if not previous_text:
+        return None
+    return _chapter_draft_summary_from_current_text(previous_chapter, previous_text)
+
+
 def _tree_paths_for_scene_context(
     *,
     chapter: ChapterModel,
@@ -1153,6 +1209,22 @@ async def build_scene_writer_context_from_models(
                 if len(_ext_clean) > 1000:
                     _ext_clean = _ext_clean[-1000:]
                 summary.extended_tail = _ext_clean
+
+    if (
+        scene.scene_number == 1
+        and chapter.chapter_number > 1
+        and not any(
+            summary.chapter_number == chapter.chapter_number - 1
+            for summary in recent_scene_summaries
+        )
+    ):
+        previous_chapter_summary = await _load_previous_chapter_draft_summary(
+            session,
+            project_id=project.id,
+            current_chapter_number=chapter.chapter_number,
+        )
+        if previous_chapter_summary is not None:
+            recent_scene_summaries.insert(0, previous_chapter_summary)
 
     current_story_order = float(f"{chapter.chapter_number}.{scene.scene_number:02d}")
     # Adaptive lookback: only load recent timeline events within a window
@@ -2084,43 +2156,20 @@ async def build_chapter_writer_context(
         for fact in previous_summary_facts
         if fact.value_json.get("summary") or fact.notes
     ]
-    if not previous_scene_summary_reads and chapter.chapter_number > 1:
-        previous_chapter = await session.scalar(
-            select(ChapterModel).where(
-                ChapterModel.project_id == project.id,
-                ChapterModel.chapter_number == chapter.chapter_number - 1,
-            )
+    if (
+        chapter.chapter_number > 1
+        and not any(
+            summary.chapter_number == chapter.chapter_number - 1
+            for summary in previous_scene_summary_reads
         )
-        previous_draft: ChapterDraftVersionModel | None = None
-        if previous_chapter is not None:
-            previous_draft = await session.scalar(
-                select(ChapterDraftVersionModel)
-                .where(
-                    ChapterDraftVersionModel.chapter_id == previous_chapter.id,
-                    ChapterDraftVersionModel.is_current.is_(True),
-                )
-                .order_by(ChapterDraftVersionModel.version_no.desc())
-            )
-        previous_text = str(getattr(previous_draft, "content_md", "") or "").strip()
-        if previous_chapter is not None and previous_text:
-            compact_text = " ".join(
-                line.strip() for line in previous_text.splitlines() if line.strip()
-            )
-            previous_scene_summary_reads.append(
-                RecentSceneSummary(
-                    chapter_number=previous_chapter.chapter_number,
-                    scene_number=1,
-                    scene_title=previous_chapter.title,
-                    summary=(
-                        f"上一章当前稿摘录：{compact_text[:420]}"
-                        + ("..." if len(compact_text) > 420 else "")
-                    ),
-                    story_purpose=previous_chapter.chapter_goal,
-                    opening_lines=compact_text[:500],
-                    closing_lines=compact_text[-800:],
-                    extended_tail=compact_text[-1200:],
-                )
-            )
+    ):
+        previous_chapter_summary = await _load_previous_chapter_draft_summary(
+            session,
+            project_id=project.id,
+            current_chapter_number=chapter.chapter_number,
+        )
+        if previous_chapter_summary is not None:
+            previous_scene_summary_reads.insert(0, previous_chapter_summary)
 
     # Chapter-level generation must not read stale facts extracted from a
     # previous draft of the same chapter. Current scene cards are supplied

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
+import re
 
 from bestseller.services.checker_schema import CheckerIssue, CheckerReport
-
 
 _PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     (
@@ -29,6 +28,13 @@ _PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
         "关系定性",
         re.compile(r"(?:他|她|[一-鿿]{2,4})和[一-鿿]{2,4}的关系(?:开始|正在|已经)?(?:变化|改变|升温|破裂)"),
     ),
+)
+_QUOTE_PAIRS: tuple[tuple[str, str], ...] = (
+    ("“", "”"),
+    ("‘", "’"),
+    ("「", "」"),
+    ("『", "』"),
+    ('"', '"'),
 )
 
 
@@ -86,9 +92,12 @@ def check_show_dont_tell_gate(
 ) -> ShowDontTellReport:
     if not text:
         return ShowDontTellReport(chapter_position=chapter_position)
+    dialogue_ranges = _find_dialogue_ranges(text)
     findings: list[ShowDontTellFinding] = []
     for code, category, pattern in _PATTERNS:
         for match in pattern.finditer(text):
+            if _is_in_ranges(match.start(), dialogue_ranges):
+                continue
             findings.append(
                 ShowDontTellFinding(
                     code=code,
@@ -109,6 +118,32 @@ def check_show_dont_tell_gate(
 
 def _excerpt(text: str, start: int, end: int, radius: int = 36) -> str:
     return text[max(0, start - radius): min(len(text), end + radius)].replace("\n", " ")
+
+
+def _find_dialogue_ranges(text: str) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    for open_q, close_q in _QUOTE_PAIRS:
+        i = 0
+        while True:
+            start = text.find(open_q, i)
+            if start < 0:
+                break
+            end = text.find(close_q, start + 1)
+            if end < 0:
+                break
+            ranges.append((start, end + 1))
+            i = end + 1
+    ranges.sort()
+    return ranges
+
+
+def _is_in_ranges(pos: int, ranges: list[tuple[int, int]]) -> bool:
+    for start, end in ranges:
+        if start <= pos < end:
+            return True
+        if start > pos:
+            break
+    return False
 
 
 __all__ = [

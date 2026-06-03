@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from math import ceil
 from pathlib import Path
+import re
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import (
-    CharacterModel,
     ChapterModel,
+    CharacterModel,
     FactionModel,
     LocationModel,
     ProjectModel,
@@ -22,6 +22,10 @@ from bestseller.infra.db.models import (
 from bestseller.services.category_hard_engines import (
     get_category_hard_engine_contract,
     resolve_category_hard_engine_key,
+)
+from bestseller.services.distilled_strategy_compiler import (
+    compile_distilled_strategy_card,
+    distilled_strategy_card_to_dict,
 )
 from bestseller.services.planner import build_emotion_driven_kernel_backfill_payload
 from bestseller.services.planning_kernel import persist_project_planning_kernel
@@ -146,6 +150,30 @@ def _project_metadata(project: ProjectModel) -> dict[str, Any]:
     return _as_mapping(getattr(project, "metadata_json", None))
 
 
+def _project_context_for_distillation(
+    project: ProjectModel,
+    metadata: Mapping[str, Any],
+    *,
+    protagonist_name: str,
+) -> dict[str, object]:
+    return {
+        "title": getattr(project, "title", None),
+        "genre": getattr(project, "genre", None),
+        "sub_genre": getattr(project, "sub_genre", None),
+        "audience": getattr(project, "audience", None),
+        "unique_hook": _first_text(
+            metadata.get("unique_hook"),
+            metadata.get("creative_hook"),
+            metadata.get("premise_variation"),
+            metadata.get("premise"),
+            metadata.get("logline"),
+        ),
+        "dramatic_question": getattr(project, "dramatic_question", None),
+        "theme_statement": getattr(project, "theme_statement", None),
+        "protagonist": protagonist_name,
+    }
+
+
 def _category_key(project: ProjectModel, metadata: Mapping[str, Any]) -> str | None:
     return resolve_category_hard_engine_key(
         metadata,
@@ -160,6 +188,250 @@ def _protagonist(characters: Sequence[CharacterModel]) -> CharacterModel | None:
             if _text(getattr(character, "role", "")).lower() == role.lower():
                 return character
     return characters[0] if characters else None
+
+
+def _dedupe_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    key_fields: Sequence[str],
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        data = dict(row)
+        key = next(
+            (_text(data.get(field)) for field in key_fields if _text(data.get(field))),
+            "",
+        )
+        if not key:
+            key = str(data)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(data)
+        if limit is not None and len(result) >= limit:
+            break
+    return result
+
+
+def _distilled_strategy_payload(
+    project: ProjectModel,
+    metadata: Mapping[str, Any],
+    *,
+    category_key: str | None,
+    protagonist_name: str,
+) -> dict[str, Any] | None:
+    existing = _as_mapping(metadata.get("distilled_strategy_card"))
+    if existing:
+        return existing
+    if not category_key:
+        return None
+    card = compile_distilled_strategy_card(
+        category_key=category_key,
+        genre=getattr(project, "genre", None),
+        sub_genre=getattr(project, "sub_genre", None),
+        project_context=_project_context_for_distillation(
+            project,
+            metadata,
+            protagonist_name=protagonist_name,
+        ),
+    )
+    if card is None:
+        return None
+    return distilled_strategy_card_to_dict(card)
+
+
+def _strategy_mechanisms(strategy_card: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [
+        _as_mapping(item)
+        for item in _as_sequence(strategy_card.get("selected_mechanisms"))
+        if _as_mapping(item).get("mechanism_id")
+    ]
+
+
+def _strategy_binding_payloads(strategy_card: Mapping[str, Any]) -> list[dict[str, Any]]:
+    worldview_bindings = _as_mapping(strategy_card.get("worldview_bindings"))
+    bindings = [
+        _as_mapping(item)
+        for item in _as_sequence(worldview_bindings.get("distilled_mechanism_bindings"))
+        if _as_mapping(item).get("mechanism_id")
+    ]
+    if not bindings:
+        bindings = [
+            _as_mapping(item)
+            for item in _as_sequence(strategy_card.get("world_mechanism_bindings"))
+            if _as_mapping(item).get("mechanism_id")
+        ]
+    if bindings:
+        sanitized: list[dict[str, Any]] = []
+        for item in bindings:
+            payload = dict(item)
+            # Anti-copy boundaries remain on the strategy card. If copied into
+            # planning JSON, the consumption gate correctly treats them as leaks.
+            payload["anti_copy_boundaries"] = []
+            sanitized.append(payload)
+        return sanitized
+
+    aggregate_key = _first_text(strategy_card.get("aggregate_key"), default="legacy")
+    states = _string_list(strategy_card.get("required_state_variables"))
+    result: list[dict[str, Any]] = []
+    for mechanism in _strategy_mechanisms(strategy_card)[:6]:
+        mechanism_id = _text(mechanism.get("mechanism_id"))
+        if not mechanism_id:
+            continue
+        result.append(
+            {
+                "aggregate_key": aggregate_key,
+                "mechanism_id": mechanism_id,
+                "design_role": _first_text(mechanism.get("design_role"), default="world_pressure"),
+                "source_confidence": float(mechanism.get("source_confidence") or 0.7),
+                "required_project_binding": _first_text(
+                    mechanism.get("required_project_specific_binding"),
+                    mechanism.get("adaptation_instruction"),
+                    default="绑定到本书的世界规则、人物选择、资源代价或兑现窗口。",
+                ),
+                "state_variables": states[:4],
+                "required_cost": "每次消费该机制都必须产生可见状态变化或资源代价。",
+                "anti_copy_boundaries": [],
+            }
+        )
+    return result
+
+
+def _bind_distilled_strategy_to_planning(
+    *,
+    story_design: Mapping[str, Any],
+    volume_plan: Sequence[Mapping[str, Any]],
+    strategy_card: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
+    if not strategy_card:
+        return dict(story_design), [dict(item) for item in volume_plan], False
+
+    mechanisms = _strategy_mechanisms(strategy_card)
+    bindings = _strategy_binding_payloads(strategy_card)
+    required_states = _string_list(strategy_card.get("required_state_variables"))
+    required_vectors = _string_list(strategy_card.get("required_change_vectors"))
+    reader_rewards = _string_list(strategy_card.get("reader_reward_mix"))
+    worldview_extensions = _as_mapping(strategy_card.get("worldview_bindings"))
+
+    patched_story = dict(story_design)
+    worldview = dict(_as_mapping(patched_story.get("worldview_kernel")))
+    existing_state_rows = [
+        _as_mapping(item)
+        for item in _as_sequence(worldview.get("state_variables"))
+        if _as_mapping(item).get("key")
+    ]
+    extension_state_rows = [
+        _as_mapping(item)
+        for item in _as_sequence(worldview_extensions.get("state_variables"))
+        if _as_mapping(item).get("key")
+    ]
+    state_rows = [*existing_state_rows, *extension_state_rows]
+    existing_keys = {_text(item.get("key")) for item in state_rows}
+    source_ids = [
+        _text(item.get("mechanism_id"))
+        for item in mechanisms
+        if _text(item.get("mechanism_id"))
+    ]
+    for state in required_states:
+        if state in existing_keys:
+            continue
+        state_rows.append(
+            {
+                "key": state,
+                "variable_type": "state",
+                "current_value": "",
+                "desired_direction": "track_visible_change",
+                "change_triggers": ["卷纲阶段推进", "章节选择代价", "兑现窗口变化"],
+                "failure_mode": "该蒸馏状态变量没有被卷章显性追踪。",
+                "source_mechanism_ids": source_ids[:4],
+            }
+        )
+
+    worldview["distilled_mechanism_bindings"] = _dedupe_rows(
+        [
+            *[
+                _as_mapping(item)
+                for item in _as_sequence(worldview.get("distilled_mechanism_bindings"))
+                if _as_mapping(item).get("mechanism_id")
+            ],
+            *bindings,
+        ],
+        key_fields=("mechanism_id", "aggregate_key"),
+        limit=12,
+    )
+    worldview["state_variables"] = _dedupe_rows(
+        state_rows,
+        key_fields=("key",),
+        limit=16,
+    )
+    for field_name, key_fields, limit in (
+        ("asset_ledger", ("key",), 12),
+        ("authority_claims", ("target", "claimant"), 12),
+        ("scene_templates", ("key",), 12),
+    ):
+        existing = [
+            _as_mapping(item)
+            for item in _as_sequence(worldview.get(field_name))
+            if _as_mapping(item)
+        ]
+        additions = [
+            _as_mapping(item)
+            for item in _as_sequence(worldview_extensions.get(field_name))
+            if _as_mapping(item)
+        ]
+        worldview[field_name] = _dedupe_rows(
+            [*existing, *additions],
+            key_fields=key_fields,
+            limit=limit,
+        )
+
+    patched_story["worldview_kernel"] = worldview
+    patched_story["distilled_strategy_consumption"] = {
+        "aggregate_key": strategy_card.get("aggregate_key"),
+        "mechanism_ids": source_ids[:8],
+        "required_state_variables": required_states[:8],
+        "required_change_vectors": required_vectors[:8],
+        "reader_reward_mix": reader_rewards[:8],
+        "binding_rule": (
+            "Every volume must translate the distilled card into project-specific "
+            "state deltas."
+        ),
+    }
+
+    patched_volumes: list[dict[str, Any]] = []
+    fallback_mechanism = source_ids[0] if source_ids else _text(strategy_card.get("aggregate_key"))
+    fallback_state = required_states[0] if required_states else "story_state"
+    fallback_vector = required_vectors[0] if required_vectors else "visible_state_change"
+    fallback_reward = reader_rewards[0] if reader_rewards else "chapter_payoff"
+    for index, volume in enumerate(volume_plan):
+        item = dict(volume)
+        mechanism_id = source_ids[index % len(source_ids)] if source_ids else fallback_mechanism
+        state = required_states[index % len(required_states)] if required_states else fallback_state
+        vector = (
+            required_vectors[index % len(required_vectors)]
+            if required_vectors
+            else fallback_vector
+        )
+        reward = reader_rewards[index % len(reader_rewards)] if reader_rewards else fallback_reward
+        item["distilled_strategy_consumption"] = {
+            "aggregate_key": strategy_card.get("aggregate_key"),
+            "mechanism_id": mechanism_id,
+            "state_variable": state,
+            "change_vector": vector,
+            "reader_reward": reward,
+            "project_binding": (
+                "Convert the strategy into this volume's world rule, character "
+                "choice, resource cost, or payoff window."
+            ),
+        }
+        item["distilled_state_delta"] = f"{state} -> {vector}"
+        item["distilled_reader_reward"] = reward
+        patched_volumes.append(item)
+
+    story_design_kernel_from_dict(dict(patched_story))
+    return patched_story, patched_volumes, True
 
 
 def _chapter_range_end(value: object) -> int:
@@ -982,6 +1254,17 @@ async def repair_book_lifecycle_evidence(
         cast_spec=cast_spec,
         volume_plan=volume_plan,
     )
+    distilled_strategy_card = _distilled_strategy_payload(
+        project,
+        metadata,
+        category_key=category_key,
+        protagonist_name=protagonist_name,
+    )
+    story_design, volume_plan, distilled_strategy_bound = _bind_distilled_strategy_to_planning(
+        story_design=story_design,
+        volume_plan=volume_plan,
+        strategy_card=distilled_strategy_card,
+    )
     reverse_outline = build_reverse_outline_payload(
         chapters=chapters,
         story_design_kernel=story_design,
@@ -1020,6 +1303,8 @@ async def repair_book_lifecycle_evidence(
             "volume_plan": volume_plan,
             "premium_volume_plan": volume_plan,
             "story_design_kernel": story_design,
+            "distilled_strategy_card": distilled_strategy_card,
+            "distilled_strategy_expected": bool(distilled_strategy_card),
             "emotion_driven_kernel": emotion_kernel,
             "emotion_driven_kernel_backfill": {
                 "status": "created",
@@ -1051,6 +1336,8 @@ async def repair_book_lifecycle_evidence(
             "volume_plan": volume_plan,
             "premium_volume_plan": volume_plan,
             "story_design_kernel": story_design,
+            "distilled_strategy_card": distilled_strategy_card,
+            "distilled_strategy_expected": bool(distilled_strategy_card),
             "emotion_driven_kernel": emotion_kernel,
             "emotion_driven_kernel_backfill": next_metadata.get(
                 "emotion_driven_kernel_backfill"
@@ -1086,6 +1373,11 @@ async def repair_book_lifecycle_evidence(
     operations = (
         "materialized_story_design_kernel",
         "materialized_target_length_volume_plan",
+        *(
+            ("bound_distilled_strategy_to_planning",)
+            if distilled_strategy_bound
+            else ()
+        ),
         "reran_prewrite_readiness_gate",
         "reran_reverse_outline_gate",
         "backfilled_emotion_driven_kernel",

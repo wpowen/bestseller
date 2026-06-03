@@ -1,0 +1,149 @@
+version: 2026.06.01
+source_report: /Users/owen/Downloads/deep-research-report (5).md
+source_name: 中文小说平台近三个月榜单书名研究与命名方法论
+observation_window: 2026-03-01..2026-06-01
+method_summary:
+  sample_scope: 8 platforms, 23 public ranking/listing surfaces, 202 ranked rows, 190 complete title samples.
+  core_principle: 先定平台与卖点，再定句法与信息密度，最后做搜索性与复读性校验。
+  scoring_weights:
+    attraction: 30
+    readability: 25
+    platform_fit: 30
+    searchability: 15
+  title_versions:
+    - 4-6 字短题
+    - 6-10 字平衡题
+    - 12-18 字强钩子题
+patterns:
+  qidian:
+    platform_label: 起点中文网
+    average_chars: 6.1
+    group: 世界观驱动短标题
+    preferred_chars: [3, 12]
+    syntax:
+      - 名词主导短标题
+      - 核心意象 + 力量/职业/地点
+      - 世界观对象 + 长线 IP 感
+    token_bags:
+      setting: [仙, 武, 道, 天, 山, 星, 夜, 城, 宗门, 位面]
+      identity: [行刑官, 巡狩, 道君, 矿主, 铸兵师, 打更人]
+      object: [秘卷, 案卷, 神灯, 天书, 鉴, 司辰]
+    avoid:
+      - 过度广告化长句
+      - 把简介压成标题
+      - 空泛大词单独成题
+  jinjiang:
+    platform_label: 晋江文学城
+    average_chars: 5.7
+    group: 关系张力/情绪型
+    preferred_chars: [3, 16]
+    syntax:
+      - 关系 + 情绪意象
+      - 人物处境 + 轻反转
+      - 可用方括号补题材标签
+    token_bags:
+      relation: [协议, 前任, 夫君, 同桌, 暗恋, 旧友, 小殿下]
+      emotion: [失眠, 旧梦, 玫瑰, 月色, 盛夏, 潮湿, 倒计时]
+      action: [动心, 逃离, 成婚, 复合, 回岛, 请别吻我]
+    avoid:
+      - 男频强爽命令式
+      - 只堆设定词
+      - 热词伤害人物气质
+  qq_read:
+    platform_label: QQ阅读
+    average_chars: 10.2
+    group: 强钩子叙事型
+    preferred_chars: [10, 24]
+    syntax:
+      - 时间/条件 + 冲突 + 结果承诺
+      - 逗号/问号连接前情和反转
+      - 身份反差 + 公开场面
+    token_bags:
+      entry: [开局, 重生, 离婚当天, 替嫁当天, 成婚不圆房, 领证三年]
+      conflict: [撑腰, 不嫁, 掉马, 翻盘, 杀回, 找上门]
+      identity: [娇娇, 萌宝, 霍总, 全警局, 隐藏大佬, 炮灰儿女]
+    avoid:
+      - 过短意象题
+      - 语法断裂的简介拼接
+      - 看不出爽点结果
+  hongxiu:
+    platform_label: 红袖添香
+    average_chars: 6.5
+    group: 女频关系/钩子混合型
+    preferred_chars: [6, 18]
+    syntax:
+      - 重生/替嫁/退婚 + 高位身份 + 情感反转
+      - 古言短题可保留精致意象
+      - 现言可用夫人/掉马/豪门关系词
+    token_bags:
+      identity: [权臣, 王爷, 东宫, 夫君, 夫人, 黑月光]
+      conflict: [重生后, 替嫁后, 退婚后, 掉马, 藏娇, 不对劲]
+      emotion: [心尖宠, 小月光, 春色, 失心, 动情]
+    avoid:
+      - 男频世界观硬词压过关系
+      - 总裁的某某式陈旧组合
+  zongheng:
+    platform_label: 纵横中文网
+    average_chars: 8.9
+    group: 传统类型/热血长线型
+    preferred_chars: [3, 14]
+    syntax:
+      - 传统类型名 + 气势/格局/功法
+      - 女频榜可用冲突长句
+      - 比番茄稳重，比起点直观
+    token_bags:
+      setting: [王朝, 江湖, 乱世, 星河, 道门, 玄门]
+      identity: [侯, 剑仙, 天师, 权臣, 盛总, 贺总]
+      conflict: [硬刚, 跑路, 去父留子, 真香, 半年才怀]
+    avoid:
+      - 过多问号和口播式标题
+      - 只重格式不重卖点
+  zhangyue:
+    platform_label: 掌阅
+    average_chars: 6.0
+    group: 出版感/意象型
+    preferred_chars: [3, 10]
+    syntax:
+      - 场景/物象 + 留白
+      - 低噪音短标题
+      - 主标题克制，副标题补卖点
+    token_bags:
+      image: [山河, 长街, 清河, 春山, 庭前雪, 归舟, 旧梦]
+      action: [来信, 归来, 雪落, 风起, 慢]
+      mood: [平安, 悔, 故人, 旧影, 青黛]
+    avoid:
+      - 免费平台式长钩子
+      - 过多标点
+      - 强网感热词堆叠
+  douban:
+    platform_label: 豆瓣读书
+    average_chars: 5.9
+    group: 文学留白/象征型
+    preferred_chars: [2, 8]
+    syntax:
+      - 短而稳的象征标题
+      - 地域/时间/证词/旧物
+      - 类型信息放副标题或简介
+    token_bags:
+      image: [雨停, 北方, 山中, 空椅子, 雪线, 河流, 灯塔]
+      action: [来信, 证词, 练习册, 归航]
+      mood: [迟来, 无人, 旧, 夜色]
+    avoid:
+      - 长钩子广告题
+      - 直接堆热词或爽点承诺
+  17k:
+    platform_label: 17K小说网
+    average_chars: 5.5
+    group: 短硬类型/IP型
+    preferred_chars: [3, 10]
+    syntax:
+      - 短、硬、名词化
+      - 力量/职业/江湖/玄门对象
+      - 标题先给类型，再由简介展开卖点
+    token_bags:
+      image: [夜, 龙, 武, 破军, 荒城, 山海, 逆火, 北地]
+      suffix: [行, 令, 诀, 祭, 猎人, 第一剑, 王牌司机]
+      identity: [镖客, 司机, 剑修, 女帝, 龙纹战神]
+    avoid:
+      - 过长前情提要
+      - 空泛大词单独成题

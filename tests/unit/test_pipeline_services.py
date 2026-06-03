@@ -59,6 +59,54 @@ def test_clean_assembly_clears_scene_auto_repair_residue() -> None:
     assert scene.metadata_json == {"methodology_contract": {"stakes": "keep"}}
 
 
+def test_outline_readiness_retry_clears_only_stale_auto_repair_residue() -> None:
+    scenes = [
+        SimpleNamespace(
+            target_word_count=867,
+            metadata_json={
+                "auto_repair_hint": "上一轮修复残留",
+                "auto_repair_block_codes": ["OLD_BLOCK"],
+                "methodology_contract": {
+                    "stakes": "主角必须当场验明铜钱来源。",
+                    "pressure_stack": ["证据时限收窄"],
+                    "focus_character": "林渊",
+                    "reveal_mode": "用实物细节揭示下一步方向。",
+                    "signature_image": "发烫铜钱",
+                    "breakpoint": "铜钱背面露出新刻痕。",
+                },
+            },
+        )
+    ]
+    report = pipeline_services.evaluate_chapter_outline_readiness(
+        chapter_number=86,
+        chapter_title="第86章 反扑",
+        chapter_target_word_count=867,
+        chapter_metadata={},
+        scene_cards=scenes,
+        pending_rewrite_task_count=0,
+    )
+
+    assert pipeline_services._readiness_blocked_only_by_stale_auto_repair_residue(
+        report
+    )
+    cleared = pipeline_services._clear_stale_scene_auto_repair_residue_for_outline_retry(
+        scenes
+    )
+    retry_report = pipeline_services.evaluate_chapter_outline_readiness(
+        chapter_number=86,
+        chapter_title="第86章 反扑",
+        chapter_target_word_count=867,
+        chapter_metadata={},
+        scene_cards=scenes,
+        pending_rewrite_task_count=0,
+    )
+
+    assert cleared == 1
+    assert retry_report.passed is True
+    assert "auto_repair_hint" not in scenes[0].metadata_json
+    assert "auto_repair_block_codes" not in scenes[0].metadata_json
+
+
 def test_chapter_first_uses_minimax_safe_cap_not_target_length_cap() -> None:
     settings = load_settings(
         env={
@@ -661,12 +709,14 @@ async def test_release_stale_block_even_after_auto_repair_metadata_was_cleared()
 
 @pytest.mark.asyncio
 async def test_release_stale_auto_repair_block_preserves_other_hard_gate_blocks() -> None:
+    # WS-C2: ``phase_d_time_gate`` moved to advanced tier; use a true core
+    # tier key so the test still exercises "other hard gate block present".
     chapter = SimpleNamespace(
         id=uuid4(),
         production_state="blocked",
         metadata_json={
             "auto_repair_in_progress": True,
-            "blocked_by_phase_d_time_gate": True,
+            "blocked_by_write_safety_gate": True,
         },
     )
     report = SimpleNamespace(
@@ -805,12 +855,14 @@ async def test_stop_auto_repair_preserves_deterministic_audit_blocks() -> None:
 
 @pytest.mark.asyncio
 async def test_stop_auto_repair_preserves_other_hard_gate_blocks() -> None:
+    # WS-C2: ``phase_d_time_gate`` moved to advanced tier; use a true core
+    # tier key so the test still exercises "other hard gate block present".
     chapter = SimpleNamespace(
         id=uuid4(),
         production_state="blocked",
         metadata_json={
             "auto_repair_in_progress": True,
-            "blocked_by_phase_d_time_gate": True,
+            "blocked_by_write_safety_gate": True,
         },
     )
     report = SimpleNamespace(
@@ -924,6 +976,43 @@ class FakeScalarOneOrNone:
 
 def build_settings():
     return load_settings(env={})
+
+
+def test_progressive_volume_block_continue_defaults_to_sequential() -> None:
+    settings = build_settings()
+
+    assert settings.pipeline.progressive_continue_after_volume_block is False
+
+
+def test_sequential_chapter_generation_guard_defaults_enabled() -> None:
+    settings = build_settings()
+
+    assert settings.pipeline.enforce_sequential_chapter_generation is True
+
+
+@pytest.mark.asyncio
+async def test_load_prior_incomplete_chapter_numbers_flags_status_and_draft_gaps() -> None:
+    project_id = uuid4()
+    session = FakeSession(
+        execute_results=[
+            FakeExecuteRows(
+                [
+                    (1, "ok", 1),
+                    (2, "blocked", 1),
+                    (3, "ok", 0),
+                    (4, "pending", 0),
+                ]
+            )
+        ]
+    )
+
+    result = await pipeline_services._load_prior_incomplete_chapter_numbers(
+        session,
+        project_id=project_id,
+        before_chapter_number=5,
+    )
+
+    assert result == [2, 3, 4]
 
 
 def _disable_chapter_length_gate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2088,6 +2177,85 @@ def test_structural_repair_pause_guard_allows_explicit_repair() -> None:
         project_slug="my-story",
         operation="chapter pipeline 1",
         allow_structural_repair=True,
+    )
+
+
+def test_local_quality_pause_does_not_block_forward_writing() -> None:
+    """A local opening-gate pause must not stall new-chapter writing.
+
+    Regression: 青囊不语问阴阳 paused the whole project after exhausting the
+    qimao opening gate (a *local* prose check) and never advanced. The write
+    gate must treat a local-reason pause as non-blocking.
+    """
+    project = build_project()
+    project.status = "paused"
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "production_paused": True,
+        "production_pause_reason": "qimao_opening_gate_exhausted",
+        "last_generation_gate_reason": "qimao_opening_gate_exhausted",
+    }
+
+    assert pipeline_services._project_blocked_for_structural_repair(project) is False
+    # Must NOT raise — forward writing proceeds in parallel with the local repair.
+    pipeline_services._assert_project_not_blocked_for_structural_repair(
+        project,
+        project_slug="my-story",
+        operation="chapter pipeline 42",
+    )
+
+
+def test_structural_repair_required_still_blocks() -> None:
+    """An explicit structural marker must keep blocking forward writing."""
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "production_paused": True,
+        "production_pause_reason": "material_referential_integrity_gate",
+        "structural_repair_required": True,
+    }
+
+    assert pipeline_services._project_blocked_for_structural_repair(project) is True
+    with pytest.raises(pipeline_services.ProjectRepairPauseError):
+        pipeline_services._assert_project_not_blocked_for_structural_repair(
+            project,
+            project_slug="my-story",
+            operation="chapter pipeline 5",
+        )
+
+
+@pytest.mark.asyncio
+async def test_autowrite_clears_temporary_planning_throttle_pause() -> None:
+    project = build_project()
+    project.status = "paused"
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "production_paused": True,
+        "production_pause_reason": pipeline_services.TEMPORARY_PLANNING_THROTTLE_REASON,
+        "generation_resume_blocked_until_repair_audit": True,
+        "paused_at": "2026-06-02T08:00:00+00:00",
+    }
+    session = FakeSession()
+
+    cleared = await pipeline_services._clear_auto_resumable_project_pause(
+        session,
+        project,
+    )
+
+    assert cleared is True
+    assert project.status == "revising"
+    assert "production_paused" not in project.metadata_json
+    assert "production_pause_reason" not in project.metadata_json
+    assert "generation_resume_blocked_until_repair_audit" not in project.metadata_json
+    assert "paused_at" not in project.metadata_json
+    assert (
+        project.metadata_json["last_project_pause_auto_resumed_reason"]
+        == pipeline_services.TEMPORARY_PLANNING_THROTTLE_REASON
+    )
+    pipeline_services._assert_project_not_blocked_for_structural_repair(
+        project,
+        project_slug="my-story",
+        operation="autowrite pipeline",
     )
 
 
@@ -3631,6 +3799,7 @@ async def test_run_scene_pipeline_stops_after_stalled_rewrite(
                 quality_a,
                 rewrite_task,
             )
+        score = 0.51 if calls == 2 else 0.515
         return (
             type(
                 "ReviewResultStub",
@@ -3638,7 +3807,7 @@ async def test_run_scene_pipeline_stops_after_stalled_rewrite(
                 {
                     "verdict": "rewrite",
                     "severity_max": "medium",
-                    "scores": type("ScoreStub", (), {"overall": 0.51})(),
+                    "scores": type("ScoreStub", (), {"overall": score})(),
                     "rewrite_instructions": "补强冲突和尾钩",
                 },
             )(),
@@ -3680,12 +3849,14 @@ async def test_run_scene_pipeline_stops_after_stalled_rewrite(
     workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
 
     assert result.final_verdict == "rewrite"
-    assert result.review_iterations == 2
-    assert result.rewrite_iterations == 1
+    assert result.review_iterations == 3
+    assert result.rewrite_iterations == 2
     assert result.requires_human_review is True
-    assert getattr(fake_rewrite_scene_from_task, "calls", 0) == 1
+    assert getattr(fake_rewrite_scene_from_task, "calls", 0) == 2
     assert workflow_runs[0].status == "machine_blocked"
     assert workflow_runs[0].metadata_json["stalled_rewrite"] is True
+    assert workflow_runs[0].metadata_json["stalled_rewrite_count"] == 2
+    assert workflow_runs[0].current_step == "scene_rewrite_stalled_blocked"
 
 
 @pytest.mark.asyncio
@@ -4385,6 +4556,23 @@ async def test_run_chapter_pipeline_exports_checkpoint_when_scene_needs_machine_
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
     monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
     monkeypatch.setattr(pipeline_services, "export_chapter_markdown", fake_export_chapter_markdown)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_evaluate_retention_safety_after_assembly",
+        AsyncMock(
+            side_effect=AssertionError(
+                "scene machine-blocked drafts must not enter retention auto-repair"
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "bestseller.services.drafts.maybe_prepare_chapter_auto_repair",
+        AsyncMock(
+            side_effect=AssertionError(
+                "scene machine-blocked drafts must not trigger chapter auto-repair"
+            )
+        ),
+    )
 
     session = FakeSession(
         scalar_results=[chapter],
@@ -4403,6 +4591,10 @@ async def test_run_chapter_pipeline_exports_checkpoint_when_scene_needs_machine_
     assert result.chapter_draft_id == chapter_draft.id
     assert result.export_artifact_id == export_artifact.id
     assert result.output_path is not None
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert workflow_runs[0].status == "machine_blocked"
+    assert workflow_runs[0].current_step == "scene_machine_repair_required"
+    assert workflow_runs[0].metadata_json["auto_repair_skipped_reason"] == "scene_machine_blocked"
 
 
 @pytest.mark.asyncio
@@ -6619,7 +6811,14 @@ async def test_run_project_pipeline_filters_requested_chapter_numbers_and_checkp
         fake_sync_world_expansion_progress,
     )
 
-    session = FakeSession()
+    session = FakeSession(
+        # The pipeline issues several ``session.execute`` calls before reaching
+        # ``_load_prior_incomplete_chapter_numbers`` (invariants checks, identity
+        # manifest, etc). Pre-load enough empty ``FakeExecuteRows`` so the
+        # prior-incomplete-chapters SELECT finds a real ``.all()`` and the
+        # pipeline can proceed to the chapter run.
+        execute_results=[FakeExecuteRows([]) for _ in range(16)],
+    )
     result = await pipeline_services.run_project_pipeline(
         session,
         build_settings(),
@@ -6876,6 +7075,292 @@ async def test_run_autowrite_pipeline_reroutes_large_target_to_progressive(
     assert result is sentinel
     assert captured["called"] is True
     assert captured["target_chapters"] == pipeline_services.PROGRESSIVE_CHAPTER_THRESHOLD + 1
+
+
+@pytest.mark.asyncio
+async def test_run_autowrite_pipeline_reroutes_partial_foundation_resume_to_progressive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A short-book resume with VOLUME_PLAN but no merged outline must continue
+    at volume outline generation instead of rerunning the foundation planner."""
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.progressive_planning = False
+    settings.pipeline.resume_enabled = True
+
+    existing_volume_plan = type(
+        "PlanningArtifactStub",
+        (),
+        {"source_run_id": uuid4(), "content": [{"volume_number": 1}]},
+    )()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        assert project_id == project.id
+        if artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH:
+            return None
+        if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
+            return existing_volume_plan
+        return None
+
+    sentinel = object()
+    captured: dict[str, object] = {}
+
+    async def fake_progressive(session, settings_arg, **kwargs):
+        captured["called"] = True
+        captured["project_slug"] = kwargs["project_payload"].slug
+        return sentinel
+
+    async def fake_generate_novel_plan(*args, **kwargs):
+        raise AssertionError("partial foundation resume must not rerun generate_novel_plan")
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "run_progressive_autowrite_pipeline",
+        fake_progressive,
+    )
+    monkeypatch.setattr(pipeline_services, "generate_novel_plan", fake_generate_novel_plan)
+
+    progress_events: list[str] = []
+
+    def fake_progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append(stage)
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug, title=project.title, genre=project.genre,
+        target_word_count=project.target_word_count, target_chapters=6,
+    )
+    result = await pipeline_services.run_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="premise",
+        progress=fake_progress,
+    )
+
+    assert result is sentinel
+    assert captured["called"] is True
+    assert captured["project_slug"] == project.slug
+    assert "planning_resume_rerouted_progressive" in progress_events
+
+
+@pytest.mark.asyncio
+async def test_run_autowrite_pipeline_reuses_materializations_on_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.resume_enabled = True
+
+    outline_artifact = type(
+        "PlanningArtifactStub",
+        (),
+        {"source_run_id": uuid4(), "content": {"chapters": []}},
+    )()
+    completed_runs = {
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_TREE,
+    }
+    completed_run_ids = {workflow_type: uuid4() for workflow_type in completed_runs}
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        assert project_id == project.id
+        if artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH:
+            return outline_artifact
+        return None
+
+    async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
+        assert project_id == project.id
+        if workflow_type not in completed_runs:
+            return None
+        run = WorkflowRunModel(
+            project_id=project.id,
+            workflow_type=workflow_type,
+            status="completed",
+        )
+        run.id = completed_run_ids[workflow_type]
+        return run
+
+    async def fail_materializer(*args, **kwargs):
+        raise AssertionError("completed materialization should be reused on resume")
+
+    async def fake_run_project_pipeline(*args, **kwargs):
+        return ProjectPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_results=[],
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(
+        pipeline_services, "materialize_latest_story_bible", fail_materializer
+    )
+    monkeypatch.setattr(
+        pipeline_services, "materialize_latest_chapter_outline_batch", fail_materializer
+    )
+    monkeypatch.setattr(
+        pipeline_services, "materialize_latest_narrative_graph", fail_materializer
+    )
+    monkeypatch.setattr(
+        pipeline_services, "materialize_latest_narrative_tree", fail_materializer
+    )
+    monkeypatch.setattr(
+        pipeline_services, "run_project_pipeline", fake_run_project_pipeline
+    )
+
+    progress_events: list[str] = []
+
+    def fake_progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append(stage)
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug,
+        title=project.title,
+        genre=project.genre,
+        target_word_count=project.target_word_count,
+        target_chapters=project.target_chapters,
+    )
+
+    result = await pipeline_services.run_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="premise",
+        progress=fake_progress,
+    )
+
+    assert result.project_workflow_run_id
+    assert "planning_skipped_resume" in progress_events
+    assert "story_bible_materialization_skipped_resume" in progress_events
+    assert "outline_materialization_skipped_resume" in progress_events
+    assert "narrative_graph_materialization_skipped_resume" in progress_events
+    assert "narrative_tree_materialization_skipped_resume" in progress_events
+    assert "outline_materialization_started" not in progress_events
+
+
+@pytest.mark.asyncio
+async def test_run_autowrite_pipeline_skips_project_repair_for_scene_machine_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.resume_enabled = True
+
+    outline_artifact = type(
+        "PlanningArtifactStub",
+        (),
+        {"source_run_id": uuid4(), "content": {"chapters": []}},
+    )()
+    completed_runs = {
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_TREE,
+    }
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        if artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH:
+            return outline_artifact
+        return None
+
+    async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
+        if workflow_type not in completed_runs:
+            return None
+        run = WorkflowRunModel(
+            project_id=project.id,
+            workflow_type=workflow_type,
+            status="completed",
+        )
+        run.id = uuid4()
+        return run
+
+    async def fake_run_project_pipeline(*args, **kwargs):
+        return ProjectPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_results=[],
+            final_verdict="attention",
+            requires_human_review=True,
+        )
+
+    async def fake_has_scene_machine_blocked(session, project_id):
+        assert project_id == project.id
+        return True
+
+    async def fail_project_repair(*args, **kwargs):
+        raise AssertionError("scene-machine-blocked chapters must not enter project repair")
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(
+        pipeline_services, "run_project_pipeline", fake_run_project_pipeline
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_project_has_scene_machine_blocked_chapter",
+        fake_has_scene_machine_blocked,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.repair.run_project_repair",
+        fail_project_repair,
+    )
+
+    progress_events: list[str] = []
+
+    def fake_progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append(stage)
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug,
+        title=project.title,
+        genre=project.genre,
+        target_word_count=project.target_word_count,
+        target_chapters=project.target_chapters,
+    )
+
+    result = await pipeline_services.run_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="premise",
+        progress=fake_progress,
+    )
+
+    assert result.repair_attempted is False
+    assert result.requires_human_review is True
+    assert "auto_repair_skipped_scene_machine_blocked" in progress_events
+    assert "auto_repair_started" not in progress_events
 
 
 @pytest.mark.asyncio
@@ -7278,6 +7763,165 @@ async def test_progressive_autowrite_stops_later_volume_planning_when_volume_blo
 
 
 @pytest.mark.asyncio
+async def test_progressive_autowrite_stops_when_current_volume_remains_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.resume_enabled = True
+    settings.pipeline.require_foundation_identity_lock = False
+
+    completed_bible_run = WorkflowRunModel(
+        project_id=project.id,
+        workflow_type=pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        status="completed",
+    )
+    completed_bible_run.id = uuid4()
+
+    volume_plan_artifact = type(
+        "PlanningArtifactStub",
+        (),
+        {
+            "source_run_id": uuid4(),
+            "content": [
+                {"volume_number": 1, "title": "Volume 1", "chapter_count_target": 2},
+                {"volume_number": 2, "title": "Volume 2", "chapter_count_target": 2},
+            ],
+        },
+    )()
+    run_volumes: list[int] = []
+    progress_events: list[str] = []
+    repair_kwargs: dict[str, object] = {}
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
+            return volume_plan_artifact
+        return type("ArtifactStub", (), {"content": {}})()
+
+    async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
+        if workflow_type == pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE:
+            return completed_bible_run
+        return None
+
+    async def fake_volume_fully_written(session, project_id, volume_number):
+        assert volume_number == 1
+        return False, 1, 2
+
+    async def fake_chapter_numbers_in_volume(session, project_id, volume_number):
+        assert volume_number == 1
+        return {1, 2}
+
+    async def fake_refresh_truth(*args, **kwargs):
+        return False
+
+    async def fake_run_project_pipeline(*args, **kwargs):
+        run_volumes.append(kwargs["current_volume_number"])
+        return ProjectPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_results=[
+                pipeline_services.ProjectPipelineChapterSummary(
+                    chapter_number=1,
+                    workflow_run_id=uuid4(),
+                    chapter_draft_version_no=1,
+                    requires_human_review=False,
+                )
+            ],
+            final_verdict="pass",
+            requires_human_review=False,
+        )
+
+    async def fake_run_project_repair(*args, **kwargs):
+        repair_kwargs.update(kwargs)
+        return ProjectRepairResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            pending_rewrite_task_count=0,
+            superseded_task_count=0,
+            processed_chapters=[],
+            review_report_id=None,
+            quality_score_id=None,
+            final_verdict="attention",
+            export_artifact_id=None,
+            output_path=None,
+            remaining_pending_rewrite_count=0,
+            requires_human_review=True,
+        )
+
+    async def fake_collect_volume_writing_feedback(*args, **kwargs):
+        raise AssertionError("incomplete volume must not collect feedback or advance")
+
+    async def fake_checkpoint_commit(session) -> None:
+        return None
+
+    def fake_progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append(stage)
+
+    import bestseller.services.planning_context as planning_context
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(pipeline_services, "_volume_fully_written", fake_volume_fully_written)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_chapter_numbers_in_volume",
+        fake_chapter_numbers_in_volume,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_refresh_stale_truth_materializations_for_resume",
+        fake_refresh_truth,
+    )
+    monkeypatch.setattr(pipeline_services, "run_project_pipeline", fake_run_project_pipeline)
+    monkeypatch.setattr(pipeline_services, "_checkpoint_commit", fake_checkpoint_commit)
+    monkeypatch.setattr(
+        "bestseller.services.repair.run_project_repair",
+        fake_run_project_repair,
+    )
+    monkeypatch.setattr(
+        planning_context,
+        "collect_volume_writing_feedback",
+        fake_collect_volume_writing_feedback,
+    )
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug,
+        title=project.title,
+        genre=project.genre,
+        target_word_count=project.target_word_count,
+        target_chapters=project.target_chapters,
+    )
+
+    result = await pipeline_services.run_progressive_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="...",
+        export_markdown=False,
+        auto_repair_on_attention=True,
+        progress=fake_progress,
+    )
+
+    assert result.requires_human_review is True
+    assert result.final_verdict == "attention"
+    assert run_volumes == [1]
+    assert repair_kwargs["target_chapter_numbers"] == {1, 2}
+    assert "volume_writing_incomplete_current_volume" in progress_events
+
+
+@pytest.mark.asyncio
 async def test_progressive_autowrite_can_continue_after_volume_blocks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -7308,6 +7952,7 @@ async def test_progressive_autowrite_can_continue_after_volume_blocks(
     run_volumes: list[int] = []
     feedback_volumes: list[int] = []
     progress_events: list[str] = []
+    volume_written_checks: dict[int, int] = {}
 
     async def fake_get_project_by_slug(session, slug: str):
         return project
@@ -7323,8 +7968,15 @@ async def test_progressive_autowrite_can_continue_after_volume_blocks(
         return None
 
     async def fake_volume_fully_written(session, project_id, volume_number):
+        volume_written_checks[volume_number] = volume_written_checks.get(volume_number, 0) + 1
         if volume_number == 1:
-            return False, 0, 2
+            if volume_written_checks[volume_number] == 1:
+                return False, 1, 2
+            return True, 2, 2
+        if volume_number == 2:
+            if volume_written_checks[volume_number] == 1:
+                return False, 0, 2
+            return True, 2, 2
         return False, 0, 0
 
     async def fake_chapter_numbers_in_volume(session, project_id, volume_number):

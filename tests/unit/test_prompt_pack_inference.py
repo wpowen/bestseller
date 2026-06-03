@@ -14,6 +14,7 @@ from bestseller.services.prompt_packs import infer_default_prompt_pack_key
         # Suspense & mystery
         ("推理探案", None, "suspense-mystery"),
         ("规则怪谈", "民俗诡事", "suspense-mystery"),
+        ("规则生存 / meta博弈", "末日科幻规则实验", "suspense-mystery"),
         ("悬疑惊悚", None, "suspense-mystery"),
         # History
         ("历史争霸", None, "history-strategy"),

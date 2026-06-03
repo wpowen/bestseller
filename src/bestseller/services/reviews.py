@@ -1220,6 +1220,237 @@ def _max_severity(findings: list[SceneReviewFinding]) -> str:
     return "low"
 
 
+_SCENE_REWRITE_FIELD_SOUP_TERMS: frozenset[str] = frozenset(
+    {
+        "camera_distance",
+        "relationship_debts",
+        "information_control_mode",
+        "reveal_mode",
+        "signature_image",
+        "cut_point",
+        "action_sequence",
+        "hook_type",
+        "conflict_buffs",
+    }
+)
+
+
+def _score_value(scores: SceneReviewScores, name: str) -> float:
+    return float(getattr(scores, name, 1.0))
+
+
+def _scene_review_findings_text(review_result: SceneReviewResult) -> str:
+    return " ".join(finding.message for finding in review_result.findings)
+
+
+def _scene_rewrite_strategy_for_review(review_result: SceneReviewResult) -> str:
+    findings_text = _scene_review_findings_text(review_result)
+    findings_text_lower = findings_text.lower()
+    if "超出目标字数" in findings_text or "exceeds target" in findings_text_lower:
+        return "scene_trim_and_tighten"
+    if "低于目标字数" in findings_text or "below target" in findings_text_lower:
+        return "scene_dialogue_conflict_expansion"
+
+    scores = review_result.scores
+    if (
+        _score_value(scores, "conflict_clarity") < 0.55
+        or _score_value(scores, "emotional_movement") < 0.50
+    ):
+        return "scene_conflict_emotion_rewrite"
+    if _score_value(scores, "hook_strength") < 0.50:
+        return "scene_hook_payoff_rewrite"
+    if _score_value(scores, "contract_alignment") < 0.50:
+        return "scene_contract_alignment_rewrite"
+    return "scene_focused_revision"
+
+
+def _scene_contract_text_from_payload(payload: Any, key: str) -> str | None:
+    if isinstance(payload, dict):
+        value = payload.get(key)
+        if value is None:
+            value = payload.get({"story": "story_purpose", "emotion": "emotion_purpose"}.get(key, key))
+        if isinstance(value, str):
+            return value.strip() or None
+        if isinstance(value, list | tuple | set):
+            text = "；".join(str(item).strip() for item in value if str(item).strip())
+            return text or None
+        if isinstance(value, dict):
+            text = _resolve_contract_evidence_path(value, key)
+            return text or None
+    return None
+
+
+def _scene_story_goal(scene: SceneCardModel) -> str:
+    return (
+        _scene_contract_text_from_payload(getattr(scene, "purpose", None), "story")
+        or getattr(scene, "hook_requirement", None)
+        or "推进本场主线目标"
+    )
+
+
+def _scene_emotion_goal(scene: SceneCardModel) -> str:
+    return (
+        _scene_contract_text_from_payload(getattr(scene, "purpose", None), "emotion")
+        or "让主角情绪/判断发生可见变化"
+    )
+
+
+def _scene_exit_goal(scene: SceneCardModel) -> str:
+    exit_state = getattr(scene, "exit_state", None)
+    if isinstance(exit_state, dict):
+        preferred_keys = (
+            "reader",
+            "story",
+            "protagonist",
+            "emotion",
+            "state",
+            "result",
+            "consequence",
+        )
+        parts: list[str] = []
+        for key in preferred_keys:
+            value = _scene_contract_text_from_payload(exit_state, key)
+            if value and value not in parts:
+                parts.append(value)
+        if parts:
+            return "；".join(parts[:3])
+        fallback = _resolve_contract_evidence_path(exit_state, "exit_state")
+        if fallback:
+            return fallback
+    return "用一个可见结果、威胁推进或主角选择结束本场"
+
+
+def _compact_scene_review_findings(review_result: SceneReviewResult, *, limit: int = 3) -> list[str]:
+    compacted: list[str] = []
+    for finding in review_result.findings:
+        message = str(finding.message or "").strip()
+        if not message:
+            continue
+        if any(term in message for term in _SCENE_REWRITE_FIELD_SOUP_TERMS):
+            continue
+        item = f"{finding.category}: {message}"
+        if len(item) > 140:
+            item = item[:137].rstrip() + "..."
+        compacted.append(item)
+        if len(compacted) >= limit:
+            break
+    return compacted
+
+
+def _scene_rewrite_focus_lines(review_result: SceneReviewResult, *, language: str | None) -> list[str]:
+    is_en = is_english_language(language)
+    scores = review_result.scores
+    candidates: list[tuple[int, str]] = []
+    if _score_value(scores, "hook_strength") < 0.60:
+        candidates.append(
+            (
+                30,
+                (
+                    "Put a visible threat or unanswered question in the first 120 words, "
+                    "then land a next-step hook in the final 80 words."
+                    if is_en
+                    else "前120字加入立即可见的威胁或未答问题；结尾80字留下下一步钩子。"
+                ),
+            )
+        )
+    if _score_value(scores, "conflict_clarity") < 0.60:
+        candidates.append(
+            (
+                10,
+                (
+                    "Name the obstacle, opposing pressure, and failure cost through one action beat or line of dialogue."
+                    if is_en
+                    else "明确阻力方、规则阻力和失败代价，用一个动作或一句对白把赌注明说。"
+                ),
+            )
+        )
+    if _score_value(scores, "emotional_movement") < 0.60:
+        candidates.append(
+            (
+                20,
+                (
+                    "Show the protagonist's before/after emotional judgment and bind it to an irreversible choice."
+                    if is_en
+                    else "写出主角从旧判断到新判断的情绪变化，并绑定一个不可逆动作。"
+                ),
+            )
+        )
+    if _score_value(scores, "contract_alignment") < 0.60:
+        candidates.append(
+            (
+                40,
+                (
+                    "Do not add metadata fields; turn the scene contract into visible action and a completed result."
+                    if is_en
+                    else "不要补元数据字段；把场景目标写成可见动作和已完成结果。"
+                ),
+            )
+        )
+    candidates.sort(key=lambda item: item[0])
+    return [line for _, line in candidates[:3]]
+
+
+def _build_scene_rewrite_instructions(
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+    review_result: SceneReviewResult,
+    *,
+    language: str | None = None,
+) -> str:
+    is_en = is_english_language(language)
+    story_goal = _scene_story_goal(scene)
+    emotion_goal = _scene_emotion_goal(scene)
+    exit_goal = _scene_exit_goal(scene)
+    focus_lines = _scene_rewrite_focus_lines(review_result, language=language)
+    if not focus_lines:
+        focus_lines = [
+            (
+                "Revise only the flagged weakness while preserving length, POV, characters, and place."
+                if is_en
+                else "只修复被标记的弱点，保持字数、POV、人物和地点稳定。"
+            )
+        ]
+    contract_guard = ""
+    if _score_value(review_result.scores, "contract_alignment") < 0.60:
+        contract_guard = (
+            "Contract guard: do not add metadata fields; make the contract visible through action and result."
+            if is_en
+            else "合同对齐防偏：不要补元数据字段；把场景目标写成可见动作和已完成结果。"
+        )
+    finding_lines = _compact_scene_review_findings(review_result)
+
+    if is_en:
+        lines = [
+            f"Rewrite Chapter {chapter.chapter_number} Scene {scene.scene_number} as prose only.",
+            "Do not explain the strategy, output lists, or echo metadata field names.",
+            f"Scene must accomplish: {story_goal}.",
+            f"Emotional turn must accomplish: {emotion_goal}.",
+            f"Exit must land on: {exit_goal}.",
+            "Repair focus:",
+            *[f"- {line}" for line in focus_lines],
+        ]
+        if contract_guard:
+            lines.append(contract_guard)
+        if finding_lines:
+            lines.extend(["Critic evidence:", *[f"- {line}" for line in finding_lines]])
+        return "\n".join(lines)
+
+    lines = [
+        f"只改正文：重写第{chapter.chapter_number}章第{scene.scene_number}场，不解释策略，不输出清单/字段名。",
+        "保留 POV、人物、地点和既有核心事件顺序；不要把策划语写进正文。",
+        f"本场必须完成：{story_goal}。",
+        f"情绪必须完成：{emotion_goal}。",
+        f"出口必须落到：{exit_goal}。",
+        "修复焦点：",
+        *[f"- {line}" for line in focus_lines],
+    ]
+    if contract_guard:
+        lines.append(contract_guard)
+    if finding_lines:
+        lines.extend(["评审证据：", *[f"- {line}" for line in finding_lines]])
+    return "\n".join(lines)
+
+
 def render_scene_review_summary(
     review_result: SceneReviewResult,
     *,
@@ -4905,17 +5136,13 @@ async def review_scene_draft(
 
     rewrite_task: RewriteTaskModel | None = None
     if review_result.verdict == "rewrite":
-        # Strategy selection: don't default to "expansion" — pick based on what
-        # the findings actually say. Over-length scenes must be TRIMMED, not
-        # expanded further, or we enter a bloat spiral.
-        _findings_text = " ".join(f.message for f in review_result.findings)
-        if ("超出目标字数" in _findings_text) or ("exceeds target" in _findings_text.lower()):
-            _strategy = "scene_trim_and_tighten"
-        elif ("低于目标字数" in _findings_text) or ("below target" in _findings_text.lower()):
-            _strategy = "scene_dialogue_conflict_expansion"
-        else:
-            # Mixed/other findings — focused revision that preserves length
-            _strategy = "scene_focused_revision"
+        _strategy = _scene_rewrite_strategy_for_review(review_result)
+        _instructions = _build_scene_rewrite_instructions(
+            chapter,
+            scene,
+            review_result,
+            language=getattr(project, "language", None),
+        )
         rewrite_task = RewriteTaskModel(
             project_id=project.id,
             trigger_type="scene_review",
@@ -4923,7 +5150,7 @@ async def review_scene_draft(
             rewrite_strategy=_strategy,
             priority=3,
             status="pending",
-            instructions=review_result.rewrite_instructions or "请补强当前场景。",
+            instructions=_instructions,
             context_required=[
                 "scene_card",
                 "chapter_context",

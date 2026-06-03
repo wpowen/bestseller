@@ -85,6 +85,39 @@ def test_simulate_readers_strong_signals_high_score_low_abandon() -> None:
     assert len(result.high_risk_personas) <= 2
 
 
+def test_simulate_readers_narrow_length_band_uses_tolerance() -> None:
+    signals = ChapterSignalPack(
+        chapter_position=1,
+        chapter_text_chars=2411,
+        hook_count=5,
+        payoff_count=3,
+        cliffhanger_strength=0.7,
+        voice_dna_drift=0.1,
+        market_hooks_hit=2,
+        market_hooks_required=2,
+        novelty_score=0.7,
+        consistency_score=0.9,
+        emotional_beat_count=3,
+        saturated_trope_hits=0,
+        target_length_min=2200,
+        target_length_max=2200,
+        dialogue_ratio=0.3,
+        action_ratio=0.3,
+        interior_ratio=0.2,
+        prose_quality_score=0.8,
+    )
+
+    result = simulate_readers(signals)
+    pacing = result.per_persona[0].channel_scores["pacing"]
+
+    assert pacing > 0.70
+    assert not any(
+        "节奏偏离" in concern
+        for persona in result.per_persona
+        for concern in persona.concerns
+    )
+
+
 def test_simulate_readers_weak_signals_low_score_high_abandon() -> None:
     result = simulate_readers(_weak_signals())
 

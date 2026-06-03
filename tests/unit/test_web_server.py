@@ -125,6 +125,86 @@ def test_default_preview_falls_back_to_latest_chapter_not_readme() -> None:
     assert selected["name"] == "chapter-002.md"
 
 
+def test_clear_repair_resume_focus_pause_releases_paused_project() -> None:
+    project = SimpleNamespace(
+        status="paused",
+        metadata_json={
+            "production_paused": True,
+            "production_pause_reason": "focus_latest_book_validation",
+            "focus_pause": {
+                "reason": "focus_manual_resume_autowrite",
+                "set_by": "codex",
+            },
+            "generation_resume_blocked_until_repair_audit": True,
+        },
+    )
+
+    changed = web_server._clear_repair_resume_focus_pause_on_project(project)
+
+    assert changed is True
+    assert project.status == "revising"
+    assert "focus_pause" not in project.metadata_json
+    assert "production_pause_reason" not in project.metadata_json
+    assert project.metadata_json["generation_resume_blocked_until_repair_audit"] is True
+    assert (
+        project.metadata_json["last_repair_resume_focus_pause_reason"]
+        == "focus_manual_resume_autowrite"
+    )
+
+
+def test_clear_repair_resume_focus_pause_preserves_structural_pause() -> None:
+    project = SimpleNamespace(
+        status="paused",
+        metadata_json={
+            "production_paused": True,
+            "production_pause_reason": "structural_repair_before_continuation",
+            "generation_resume_blocked_until_repair_audit": True,
+        },
+    )
+
+    changed = web_server._clear_repair_resume_focus_pause_on_project(project)
+
+    assert changed is False
+    assert project.status == "paused"
+    assert project.metadata_json["production_pause_reason"] == (
+        "structural_repair_before_continuation"
+    )
+
+
+def test_attach_repair_heal_owner_preserves_running_db_workflow() -> None:
+    summary = {
+        "status": "running",
+        "current_stage": "repair_chapter_87",
+    }
+
+    web_server._attach_repair_heal_owner_to_db_summary(
+        summary,
+        "repair:heal:novel-a",
+        None,
+    )
+
+    assert summary["worker_job_id"] == "repair:heal:novel-a"
+    assert summary["status"] == "running"
+    assert summary["current_stage"] == "repair_chapter_87"
+
+
+def test_attach_repair_heal_owner_marks_nonrunning_summary_queued() -> None:
+    summary = {
+        "status": "failed",
+        "current_stage": "old_failure",
+    }
+
+    web_server._attach_repair_heal_owner_to_db_summary(
+        summary,
+        "repair:heal:novel-a",
+        None,
+    )
+
+    assert summary["worker_job_id"] == "repair:heal:novel-a"
+    assert summary["status"] == "queued"
+    assert summary["current_stage"] == "delegated_to_worker_self_heal"
+
+
 def test_upsert_artifact_entry_replaces_stale_file_metadata() -> None:
     stale = {
         "name": "chapter-001.md",
@@ -318,6 +398,110 @@ def test_fanqie_short_export_task_stats_uses_current_full_export(tmp_path: Path)
             "single_piece": True,
         }
     ]
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _stuck_autowrite_task(slug: str, *, stage: str = "machine_repair_required") -> web_server.WebTaskState:
+    return web_server.WebTaskState(
+        task_id=str(uuid4()),
+        task_type="autowrite",
+        status="incomplete",
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+        project_slug=slug,
+        title=slug,
+        current_stage=stage,
+        error="Task is waiting for machine repair or attention-gate repair.",
+    )
+
+
+def test_create_autowrite_reuses_stuck_card_instead_of_duplicating(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new autowrite for a blocked slug must reuse its stuck card in place.
+
+    Regression guard: a structurally blocked book used to mint a fresh uuid card
+    on every attempt, piling up identical ``machine_repair_required`` zombies.
+    """
+    started: list[str] = []
+
+    class _NoopThread:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            task_id = kwargs.get("args", (None,))[0]
+            started.append(str(task_id))
+
+        def start(self) -> None:  # pragma: no cover - trivial
+            pass
+
+    monkeypatch.setattr(web_server.threading, "Thread", _NoopThread)
+
+    manager = web_server.WebTaskManager(persist_path=tmp_path / "tasks.json")
+    stuck = _stuck_autowrite_task("exorcist-detective-1778051012")
+    manager._tasks[stuck.task_id] = stuck
+
+    result = manager.create_autowrite_task(
+        {"slug": "exorcist-detective-1778051012", "title": "驱魔侦探"}
+    )
+
+    # Same card reused — no duplicate, id preserved, status reset to queued.
+    assert result["task_id"] == stuck.task_id
+    assert len(manager._tasks) == 1
+    assert manager._tasks[stuck.task_id].status == "queued"
+    assert started == [stuck.task_id]
+
+
+def test_create_autowrite_returns_active_card_without_second_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A queued/running card for the slug short-circuits — no competing thread."""
+    started: list[str] = []
+
+    class _NoopThread:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            task_id = kwargs.get("args", (None,))[0]
+            started.append(str(task_id))
+
+        def start(self) -> None:  # pragma: no cover - trivial
+            pass
+
+    monkeypatch.setattr(web_server.threading, "Thread", _NoopThread)
+
+    manager = web_server.WebTaskManager(persist_path=tmp_path / "tasks.json")
+    active = _stuck_autowrite_task("busy-book")
+    active.status = "running"
+    active.current_stage = "drafting"
+    manager._tasks[active.task_id] = active
+
+    result = manager.create_autowrite_task({"slug": "busy-book", "title": "Busy"})
+
+    assert result["task_id"] == active.task_id
+    assert len(manager._tasks) == 1
+    # No thread spawned — the live run keeps ownership.
+    assert started == []
+
+
+def test_create_autowrite_mints_new_card_for_fresh_slug(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slug with no prior card still gets a brand-new task."""
+    monkeypatch.setattr(
+        web_server.threading,
+        "Thread",
+        lambda *a, **k: type("T", (), {"start": lambda self: None})(),
+    )
+
+    manager = web_server.WebTaskManager(persist_path=tmp_path / "tasks.json")
+    result = manager.create_autowrite_task({"slug": "brand-new", "title": "New"})
+
+    assert result["status"] == "queued"
+    assert len(manager._tasks) == 1
+    assert result["task_id"] in manager._tasks
 
 
 def test_dashboard_task_filter_keeps_only_executing_tasks() -> None:
@@ -811,6 +995,26 @@ def test_quickstart_task_passes_selected_hook_spec(
     assert task["quickstart_meta"]["hook_spec"] == hook_spec
 
 
+def test_quickstart_task_title_uses_local_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "demo-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+    monkeypatch.setattr(web_server, "_local_now", lambda: datetime(2026, 6, 2, 10, 27))
+
+    manager.create_quickstart_task({"genre_key": "urban-blacktech", "chapter_count": 12})
+
+    assert captured["payload"]["title"].endswith("06-02 10:27")
+
+
 def test_quickstart_task_passes_selected_creative_direction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -850,6 +1054,7 @@ def test_quickstart_task_passes_selected_concept_lab_bundle(
     captured: dict[str, object] = {}
     catalog = web_server.build_concept_lab_catalog("apocalypse-supply", count=1)
     bundle = catalog.bundles[0].model_dump(mode="json")
+    stale_top_level_hook = {**bundle["hook_spec"], "one_liner": "stale top-level hook"}
 
     def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
         captured["payload"] = payload
@@ -864,7 +1069,7 @@ def test_quickstart_task_passes_selected_concept_lab_bundle(
             "genre_key": "apocalypse-supply",
             "chapter_count": 12,
             "creative_key": bundle["creative_key"],
-            "hook_spec": bundle["hook_spec"],
+            "hook_spec": stale_top_level_hook,
             "concept_lab_bundle_id": bundle["bundle_id"],
             "concept_lab_bundle": bundle,
         }
@@ -873,9 +1078,12 @@ def test_quickstart_task_passes_selected_concept_lab_bundle(
     payload = captured["payload"]
     hints = payload["user_hints"]
     assert payload["concept_lab_bundle"]["bundle_id"] == bundle["bundle_id"]
+    assert payload["hook_spec"] == bundle["hook_spec"]
+    assert hints["hook_spec"] == bundle["hook_spec"]
     assert hints["concept_lab"]["bundle_id"] == bundle["bundle_id"]
     assert hints["material_brief"]["query_terms"]
     assert hints["story_loop"]["per_chapter_contract"]
+    assert task["quickstart_meta"]["hook_spec"] == bundle["hook_spec"]
     assert task["quickstart_meta"]["concept_lab_summary"]["bundle_id"] == bundle["bundle_id"]
 
 
@@ -1057,6 +1265,110 @@ def test_build_db_repair_task_summary_surfaces_project_queue() -> None:
     assert task["title"] == "道种破虚"
     assert task["result"]["pending_autonomous_repair_tasks"] == 246
     assert task["synthetic_db_repair_task"] is True
+
+
+def test_db_repair_summary_rehydrates_latest_workflow_progress() -> None:
+    project = SimpleNamespace(
+        slug="exorcist-detective-1778051012",
+        title="青囊不语问阴阳",
+        status="paused",
+        target_chapters=200,
+        created_at=datetime(2026, 6, 2, 17, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 2, 17, 45, tzinfo=UTC),
+        metadata_json={"production_pause_reason": "focus_latest_book_validation"},
+    )
+    run_id = uuid4()
+    run = SimpleNamespace(
+        id=run_id,
+        status="cancelled",
+        current_step="focus_latest_book_validation_cancelled",
+        error_message="Cancelled to focus validation on latest project apocalypse-rule-1780385156.",
+        requested_by="worker_self_heal",
+        created_at=datetime(2026, 6, 2, 9, 36, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 2, 9, 45, tzinfo=UTC),
+        metadata_json={
+            "project_slug": project.slug,
+            "target_chapter_numbers": list(range(51, 101)),
+            "focus_cancelled": True,
+            "focus_primary_slug": "apocalypse-rule-1780385156",
+        },
+    )
+    steps = [
+        SimpleNamespace(
+            workflow_run_id=run_id,
+            step_order=2,
+            step_name="collect_pending_rewrite_tasks",
+            created_at=datetime(2026, 6, 2, 9, 37, tzinfo=UTC),
+            output_ref={
+                "target_chapter_numbers": list(range(86, 101)),
+                "repair_gate_chapter_numbers": [86, 87, 88],
+            },
+        ),
+        SimpleNamespace(
+            workflow_run_id=run_id,
+            step_order=4,
+            step_name="repair_chapter_86",
+            created_at=datetime(2026, 6, 2, 9, 38, tzinfo=UTC),
+            output_ref={
+                "chapter_number": 86,
+                "chapter_status": "revision",
+                "production_state": "blocked",
+                "requires_human_review": True,
+                "chapter_workflow_run_id": str(uuid4()),
+            },
+        ),
+    ]
+
+    latest = web_server._project_repair_workflow_snapshot(run, steps)
+    repair_status = web_server._build_project_repair_status_payload(
+        project,
+        [{"status": "revision", "production_state": "blocked", "count": 2}],
+        {},
+        latest,
+    )
+    task = web_server._build_db_repair_task_summary(project, repair_status)
+
+    assert repair_status["label"] == "修复已中断"
+    assert repair_status["production_pause_reason"] == "focus_latest_book_validation"
+    assert task is not None
+    assert task["status"] == "incomplete"
+    assert task["current_stage"] == "focus_latest_book_validation_cancelled"
+    assert task["error"] == run.error_message
+    assert task["result"]["target_chapter_numbers"] == list(range(86, 101))
+    assert task["result"]["repair_gate_chapter_numbers"] == [86, 87, 88]
+    assert task["result"]["processed_chapter_numbers"] == [86]
+    stages = [event["stage"] for event in task["progress_events"]]
+    assert "project_repair_targets_collected" in stages
+    assert "project_repair_chapter_started" in stages
+    assert "project_repair_chapter_completed" in stages
+
+
+def test_stale_autowrite_repair_block_task_can_be_hidden_by_db_repair() -> None:
+    task = {
+        "task_id": "old-autowrite",
+        "task_type": "autowrite",
+        "status": "cancelled",
+        "current_stage": "blocked_structural_repair",
+        "project_slug": "exorcist-detective-1778051012",
+        "error": "项目 'exorcist-detective-1778051012' 当前处于结构修复暂停状态。",
+    }
+
+    assert web_server._is_stale_autowrite_repair_block_task(
+        task,
+        {"exorcist-detective-1778051012"},
+    )
+    assert not web_server._is_stale_autowrite_repair_block_task(task, set())
+
+
+def test_repair_attention_task_is_dashboard_visible() -> None:
+    task = {
+        "task_id": "db-repair:exorcist-detective-1778051012",
+        "task_type": "repair",
+        "status": "incomplete",
+        "repair_status": {"is_repairing": True, "label": "修复已中断"},
+    }
+
+    assert web_server._is_dashboard_visible_task(task)
 
 
 def test_request_visible_task_cancel_routes_db_repair_task(

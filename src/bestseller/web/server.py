@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-import html
 import hashlib
+import html
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -20,6 +20,7 @@ from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import UUID, uuid4
 import webbrowser
+from zoneinfo import ZoneInfo
 
 from bestseller.domain.enums import ProjectStatus
 from bestseller.domain.fanqie_short import is_fanqie_short_project
@@ -28,8 +29,11 @@ from bestseller.infra.db.models import (
     PlanningArtifactVersionModel,
     StyleGuideModel,
     WorkflowRunModel,
+    WorkflowStepRunModel,
 )
 from bestseller.infra.db.session import session_scope
+from bestseller.services.anti_commonsense_hook import generate_hook_candidates
+from bestseller.services.anti_commonsense_mechanisms import get_mechanism
 from bestseller.services.book_listing import (
     build_book_listing_profile,
     validate_book_listing_profile,
@@ -45,8 +49,6 @@ from bestseller.services.genre_creativity import (
     get_genre_creative_direction,
     get_genre_creativity_catalog_payload,
 )
-from bestseller.services.anti_commonsense_hook import generate_hook_candidates
-from bestseller.services.anti_commonsense_mechanisms import get_mechanism
 from bestseller.services.hook_propagation import coerce_hook_spec
 from bestseller.services.if_generation import run_if_pipeline_integrated
 from bestseller.services.inspection import (
@@ -106,6 +108,15 @@ class _FastThreadingHTTPServer(ThreadingHTTPServer):
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _local_now() -> datetime:
+    tz_name = os.getenv("TZ", "Asia/Shanghai")
+    try:
+        return datetime.now(ZoneInfo(tz_name))
+    except Exception:
+        logger.warning("Invalid TZ=%s; falling back to system local time", tz_name)
+        return datetime.now()
 
 
 def _timestamp_seconds(value: object) -> float | None:
@@ -499,6 +510,20 @@ def _merge_worker_progress_into_db_repair_summary(
     return summary
 
 
+def _attach_repair_heal_owner_to_db_summary(
+    summary: dict[str, object],
+    job_id: str,
+    worker_progress: dict[str, object] | None,
+) -> dict[str, object]:
+    summary["worker_job_id"] = job_id
+    if worker_progress:
+        return _merge_worker_progress_into_db_repair_summary(summary, worker_progress)
+    if str(summary.get("status") or "").strip().lower() != "running":
+        summary["status"] = "queued"
+        summary["current_stage"] = "delegated_to_worker_self_heal"
+    return summary
+
+
 def _task_progress_payload(task: dict[str, object]) -> dict[str, object]:
     events = task.get("progress_events")
     if not isinstance(events, list):
@@ -529,6 +554,28 @@ def _task_progress_payload(task: dict[str, object]) -> dict[str, object]:
         "error": task.get("error"),
         "result": task.get("result"),
     }
+
+
+def _is_stale_autowrite_repair_block_task(
+    task: Mapping[str, object],
+    db_repair_slugs: set[str],
+) -> bool:
+    slug = _task_project_slug(task)
+    if not slug or slug not in db_repair_slugs:
+        return False
+    task_type = str(task.get("task_type") or "")
+    if task_type != "autowrite":
+        return False
+    status = str(task.get("status") or "")
+    if status not in {"failed", "cancelled", "incomplete"}:
+        return False
+    stage = str(task.get("current_stage") or "")
+    error = str(task.get("error") or "")
+    return (
+        stage == "blocked_structural_repair"
+        or "paused for structural repair" in error
+        or "当前处于结构修复暂停状态" in error
+    )
 
 
 def _load_worker_task_summary(
@@ -688,6 +735,91 @@ def _enqueue_repair_heal_job(redis_url: str, slug: str) -> str | None:
             slug,
         )
         return None
+
+
+def _clear_repair_resume_focus_pause_on_project(project: Any) -> bool:
+    """Clear stale focus-pause metadata when a human explicitly resumes repair."""
+
+    metadata = getattr(project, "metadata_json", None)
+    if not isinstance(metadata, dict):
+        return False
+
+    focus_pause = metadata.get("focus_pause")
+    focus_reason = ""
+    if isinstance(focus_pause, dict):
+        focus_reason = str(focus_pause.get("reason") or "").strip()
+    production_reason = str(metadata.get("production_pause_reason") or "").strip()
+    gate_reason = str(metadata.get("last_generation_gate_reason") or "").strip()
+    reason = next(
+        (
+            value
+            for value in (focus_reason, production_reason, gate_reason)
+            if value.startswith("focus_")
+        ),
+        "",
+    )
+    if not reason and "focus_pause" not in metadata:
+        return False
+
+    updated = dict(metadata)
+    updated["last_repair_resume_focus_pause_cleared_at"] = _utc_now()
+    updated["last_repair_resume_focus_pause_reason"] = reason or focus_reason or "focus_pause"
+    updated.pop("focus_pause", None)
+    updated.pop("focus_primary_slug", None)
+    for key in ("production_pause_reason", "last_generation_gate_reason"):
+        if str(updated.get(key) or "").strip().startswith("focus_"):
+            updated.pop(key, None)
+    if production_reason.startswith("focus_") or focus_reason.startswith("focus_"):
+        updated.pop("production_paused", None)
+        updated.pop("paused_at", None)
+
+    project.metadata_json = updated
+    if (getattr(project, "status", None) or "").lower() == ProjectStatus.PAUSED.value:
+        project.status = ProjectStatus.REVISING.value
+    return True
+
+
+async def _clear_repair_resume_focus_pause(
+    settings: AppSettings,
+    slug: str,
+) -> bool:
+    """Release stale focus pause before enqueueing an explicit repair resume."""
+
+    if not slug:
+        return False
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, slug)
+        if project is None:
+            return False
+        changed = _clear_repair_resume_focus_pause_on_project(project)
+        if changed:
+            await session.flush()
+        return changed
+
+
+def _clear_repair_resume_focus_pause_sync(
+    settings: AppSettings,
+    slug: str,
+) -> bool:
+    if not slug:
+        return False
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning(
+            "repair resume: cannot clear focus pause from an active event loop",
+        )
+        return False
+    try:
+        return asyncio.run(_clear_repair_resume_focus_pause(settings, slug))
+    except Exception:
+        logger.exception(
+            "repair resume: failed to clear focus pause for slug=%s",
+            slug,
+        )
+        return False
 
 
 def _sanitize_preset_payload(item: dict[str, object]) -> dict[str, object]:
@@ -1295,6 +1427,16 @@ _TERMINAL_ATTENTION_STAGES = frozenset(
     }
 )
 
+# A slug that already owns a queued/running card must not spawn a second one —
+# returning the live card avoids a concurrent double-run on the same project.
+_ACTIVE_TASK_STATUSES = frozenset({"queued", "running"})
+# Stuck, non-terminal cards (a run that hit the machine-repair / attention gate,
+# failed, or was cancelled by a structural-repair block). A fresh autowrite for
+# the same slug reuses one of these in place instead of minting a new task_id,
+# which is what previously let zombie cards pile up — e.g. 9 identical
+# ``machine_repair_required`` cards for a single blocked book.
+_REUSABLE_TASK_STATUSES = frozenset({"incomplete", "failed", "cancelled"})
+
 
 def _task_has_machine_repair_gate(task: WebTaskState) -> bool:
     for event in reversed(task.progress_events or []):
@@ -1701,20 +1843,33 @@ class WebTaskManager:
             )
             return [task.to_dict() for task in tasks]
 
+    def _latest_task_for_slug(
+        self,
+        slug: str,
+        statuses: frozenset[str],
+    ) -> WebTaskState | None:
+        """Most-recently-updated task for *slug* whose status is in *statuses*.
+
+        Caller must hold ``self._lock``. Returns the live ``WebTaskState`` (not a
+        dict) so callers can mutate it in place.
+        """
+        matches = [
+            task
+            for task in self._tasks.values()
+            if task.project_slug == slug and task.status in statuses
+        ]
+        if not matches:
+            return None
+        matches.sort(key=lambda item: item.updated_at or item.created_at, reverse=True)
+        return matches[0]
+
     def find_active_task_by_project_slug(self, slug: str) -> dict[str, object] | None:
         slug = str(slug or "").strip()
         if not slug:
             return None
         with self._lock:
-            matches = [
-                task
-                for task in self._tasks.values()
-                if task.project_slug == slug and task.status in {"queued", "running"}
-            ]
-            if not matches:
-                return None
-            matches.sort(key=lambda item: item.updated_at or item.created_at, reverse=True)
-            return matches[0].to_dict()
+            task = self._latest_task_for_slug(slug, _ACTIVE_TASK_STATUSES)
+            return task.to_dict() if task is not None else None
 
     def get_task(self, task_id: str) -> dict[str, object] | None:
         with self._lock:
@@ -1722,27 +1877,65 @@ class WebTaskManager:
             return task.to_dict() if task is not None else None
 
     def create_autowrite_task(self, payload: dict[str, object]) -> dict[str, object]:
-        task_id = str(uuid4())
-        task = WebTaskState(
-            task_id=task_id,
-            task_type="autowrite",
-            status="queued",
-            created_at=_utc_now(),
-            updated_at=_utc_now(),
-            project_slug=str(payload.get("slug") or ""),
-            title=str(payload.get("title") or ""),
-            current_stage="queued",
-        )
+        slug = str(payload.get("slug") or "").strip()
+        title = str(payload.get("title") or "")
         with self._lock:
-            self._tasks[task_id] = task
+            # An autowrite already queued/running for this slug owns the project;
+            # return it instead of spawning a competing second run.
+            if slug:
+                active = self._latest_task_for_slug(slug, _ACTIVE_TASK_STATUSES)
+                if active is not None:
+                    return active.to_dict()
+            # Reuse a stuck card for the same slug in place (same task_id) rather
+            # than minting a new one, so blocked books don't accumulate duplicate
+            # zombie cards in the dashboard.
+            reusable = (
+                self._latest_task_for_slug(slug, _REUSABLE_TASK_STATUSES)
+                if slug
+                else None
+            )
+            now = _utc_now()
+            if reusable is not None:
+                task_id = reusable.task_id
+                task = reusable
+                task.status = "queued"
+                task.current_stage = "queued"
+                task.error = None
+                task.result = None
+                task.cancel_requested = False
+                task.updated_at = now
+                if title:
+                    task.title = title
+                task.progress_events.append(
+                    {
+                        "timestamp": now,
+                        "stage": "queued",
+                        "payload": {"reason": "reused_stuck_card"},
+                    }
+                )
+                task.progress_events = task.progress_events[-300:]
+            else:
+                task_id = str(uuid4())
+                task = WebTaskState(
+                    task_id=task_id,
+                    task_type="autowrite",
+                    status="queued",
+                    created_at=now,
+                    updated_at=now,
+                    project_slug=slug,
+                    title=title,
+                    current_stage="queued",
+                )
+                self._tasks[task_id] = task
             self._save_to_disk()
+            snapshot = task.to_dict()
         thread = threading.Thread(
             target=self._run_with_slot,
             args=(task_id, self._run_autowrite_worker, payload),
             daemon=True,
         )
         thread.start()
-        return task.to_dict()
+        return snapshot
 
     def resume_autowrite_task(
         self,
@@ -2887,9 +3080,9 @@ class WebTaskManager:
         resume_slug = str(payload.get("project_slug") or "")
         is_en = genre_preset.language.startswith("en")
         placeholder = (
-            f"{genre_preset.name} - Drafting {datetime.now().strftime('%m-%d %H:%M')}"
+            f"{genre_preset.name} - Drafting {_local_now().strftime('%m-%d %H:%M')}"
             if is_en
-            else f"{genre_preset.name}·构思中 {datetime.now().strftime('%m-%d %H:%M')}"
+            else f"{genre_preset.name}·构思中 {_local_now().strftime('%m-%d %H:%M')}"
         )
         if resume_slug:
             slug = resume_slug
@@ -2931,6 +3124,10 @@ class WebTaskManager:
             concept_hints = concept_lab_to_user_hints(concept_bundle)
             previous_usage_rule = str(creative_hints.get("usage_rule") or "")
             creative_hints.update(concept_hints)
+            bundle_hook_spec = coerce_hook_spec(concept_bundle.hook_spec)
+            if bundle_hook_spec is not None:
+                selected_hook_spec = bundle_hook_spec
+                creative_hints["hook_spec"] = bundle_hook_spec.model_dump(mode="json")
             if previous_usage_rule and concept_hints.get("usage_rule"):
                 creative_hints["usage_rule"] = (
                     f"{previous_usage_rule}\n{concept_hints['usage_rule']}"
@@ -3748,6 +3945,10 @@ async def _load_projects_payload(
             session,
             [row.id for row in rows],
         )
+        latest_repair_workflows = await _load_latest_project_repair_workflow_snapshots(
+            session,
+            [row.id for row in rows],
+        )
         payload_rows: list[dict[str, object]] = []
         for row in rows:
             meta = row.metadata_json if isinstance(row.metadata_json, dict) else {}
@@ -3765,6 +3966,7 @@ async def _load_projects_payload(
                 row,
                 repair_counts.get(row.id, []),
                 autonomous_repair_counts.get(row.id, {}),
+                latest_repair_workflows.get(row.id),
             )
             book_state = _library_book_state(
                 status=row.status,
@@ -4462,10 +4664,8 @@ async def _load_project_autonomous_repair_task_counts(
         return {}
     from sqlalchemy import select
 
-    from bestseller.infra.db.models import RewriteTaskModel
+    from bestseller.infra.db.models import ChapterModel, RewriteTaskModel
     from bestseller.services.autonomous_book_repair import AUTONOMOUS_REPAIR_TRIGGER
-
-    from bestseller.infra.db.models import ChapterModel
 
     result = await session.execute(
         select(
@@ -4493,6 +4693,226 @@ async def _load_project_autonomous_repair_task_counts(
             status_key = "rejected_candidate"
         bucket[status_key] = int(bucket.get(status_key, 0)) + 1
     return grouped
+
+
+def _coerce_int_list(value: object) -> list[int]:
+    if not isinstance(value, list | tuple | set):
+        return []
+    numbers: set[int] = set()
+    for item in value:
+        try:
+            number = int(item)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            numbers.add(number)
+    return sorted(numbers)
+
+
+def _workflow_dt(value: object) -> datetime | None:
+    return value if isinstance(value, datetime) else None
+
+
+def _workflow_dt_text(value: object, fallback: str | None = None) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return fallback or _utc_now()
+
+
+def _repair_workflow_status_stage(status: str, current_step: object) -> str:
+    normalized = status.strip().lower()
+    step = str(current_step or "").strip()
+    if normalized in {"pending", "queued", "running"}:
+        return step or "project_repair_running"
+    if normalized == "cancelled":
+        return step or "project_repair_cancelled"
+    if normalized == "failed":
+        return step or "project_repair_failed"
+    if normalized == "machine_blocked":
+        return step or "project_repair_requires_attention"
+    if normalized == "completed":
+        return step or "project_repair_completed"
+    return step or f"project_repair_{normalized or 'latest'}"
+
+
+def _project_repair_workflow_snapshot(
+    run: WorkflowRunModel,
+    steps: list[WorkflowStepRunModel],
+) -> dict[str, object]:
+    metadata = run.metadata_json if isinstance(run.metadata_json, dict) else {}
+    created_text = _workflow_dt_text(getattr(run, "created_at", None))
+    updated_text = _workflow_dt_text(getattr(run, "updated_at", None), created_text)
+    status = str(getattr(run, "status", "") or "")
+    current_step = str(getattr(run, "current_step", "") or "")
+
+    target_chapter_numbers = _coerce_int_list(metadata.get("target_chapter_numbers"))
+    repair_gate_chapter_numbers: list[int] = []
+    processed_chapter_numbers: list[int] = []
+    passed_chapter_numbers: list[int] = []
+    review_chapter_numbers: list[int] = []
+    progress_events: list[dict[str, object]] = []
+
+    for step in sorted(steps, key=lambda item: int(getattr(item, "step_order", 0) or 0)):
+        output = step.output_ref if isinstance(step.output_ref, dict) else {}
+        step_text = _workflow_dt_text(getattr(step, "created_at", None), updated_text)
+        step_name = str(getattr(step, "step_name", "") or "")
+        if step_name == "collect_pending_rewrite_tasks":
+            collected_targets = _coerce_int_list(output.get("target_chapter_numbers"))
+            collected_gate = _coerce_int_list(output.get("repair_gate_chapter_numbers"))
+            if collected_targets:
+                target_chapter_numbers = collected_targets
+            if collected_gate:
+                repair_gate_chapter_numbers = collected_gate
+            progress_events.append(
+                {
+                    "timestamp": step_text,
+                    "stage": "project_repair_targets_collected",
+                    "payload": {
+                        "project_slug": metadata.get("project_slug"),
+                        "target_chapter_numbers": target_chapter_numbers,
+                        "repair_gate_chapter_numbers": repair_gate_chapter_numbers,
+                        "scope_total": len(target_chapter_numbers),
+                    },
+                }
+            )
+            continue
+
+        chapter_number = None
+        if step_name.startswith("repair_chapter_"):
+            chapter_number = _safe_int(output.get("chapter_number"))
+            if chapter_number <= 0:
+                match = re.search(r"(\d+)$", step_name)
+                chapter_number = int(match.group(1)) if match else 0
+        if not chapter_number:
+            continue
+
+        if chapter_number not in processed_chapter_numbers:
+            processed_chapter_numbers.append(chapter_number)
+        production_state = str(output.get("production_state") or "").lower()
+        requires_review = bool(output.get("requires_human_review"))
+        if production_state == "ok" and not requires_review:
+            passed_chapter_numbers.append(chapter_number)
+        else:
+            review_chapter_numbers.append(chapter_number)
+        started_payload = {
+            "project_slug": metadata.get("project_slug"),
+            "chapter_number": chapter_number,
+        }
+        completed_payload = {
+            **started_payload,
+            "workflow_run_id": output.get("chapter_workflow_run_id"),
+            "requires_human_review": requires_review,
+            "chapter_status": output.get("chapter_status"),
+            "production_state": output.get("production_state"),
+        }
+        progress_events.append(
+            {
+                "timestamp": step_text,
+                "stage": "project_repair_chapter_started",
+                "payload": started_payload,
+            }
+        )
+        progress_events.append(
+            {
+                "timestamp": step_text,
+                "stage": "project_repair_chapter_completed",
+                "payload": completed_payload,
+            }
+        )
+
+    current_chapter_number = 0
+    match = re.search(r"repair_chapter_(\d+)", current_step)
+    if match:
+        current_chapter_number = int(match.group(1))
+        if (
+            status in {"pending", "queued", "running"}
+            and current_chapter_number not in processed_chapter_numbers
+        ):
+            progress_events.append(
+                {
+                    "timestamp": updated_text,
+                    "stage": "project_repair_chapter_started",
+                    "payload": {
+                        "project_slug": metadata.get("project_slug"),
+                        "chapter_number": current_chapter_number,
+                    },
+                }
+            )
+
+    progress_events.append(
+        {
+            "timestamp": updated_text,
+            "stage": _repair_workflow_status_stage(status, current_step),
+            "payload": {
+                "project_slug": metadata.get("project_slug"),
+                "workflow_run_id": str(getattr(run, "id", "")),
+                "workflow_status": status,
+                "current_step": current_step,
+                "error": getattr(run, "error_message", None),
+            },
+        }
+    )
+
+    return {
+        "workflow_run_id": str(getattr(run, "id", "")),
+        "status": status,
+        "current_step": current_step,
+        "error_message": getattr(run, "error_message", None),
+        "requested_by": getattr(run, "requested_by", None),
+        "created_at": created_text,
+        "updated_at": updated_text,
+        "target_chapter_numbers": target_chapter_numbers,
+        "repair_gate_chapter_numbers": repair_gate_chapter_numbers,
+        "processed_chapter_numbers": sorted(set(processed_chapter_numbers)),
+        "passed_chapter_numbers": sorted(set(passed_chapter_numbers)),
+        "review_chapter_numbers": sorted(set(review_chapter_numbers)),
+        "current_chapter_number": current_chapter_number or None,
+        "focus_cancelled": bool(metadata.get("focus_cancelled")),
+        "focus_primary_slug": metadata.get("focus_primary_slug"),
+        "progress_events": progress_events,
+    }
+
+
+async def _load_latest_project_repair_workflow_snapshots(
+    session: Any,
+    project_ids: list[UUID],
+) -> dict[UUID, dict[str, object]]:
+    if not project_ids:
+        return {}
+    from sqlalchemy import select
+
+    rows = await session.scalars(
+        select(WorkflowRunModel)
+        .where(
+            WorkflowRunModel.project_id.in_(project_ids),
+            WorkflowRunModel.workflow_type == "project_repair",
+        )
+        .order_by(
+            WorkflowRunModel.project_id.asc(),
+            WorkflowRunModel.created_at.desc(),
+            WorkflowRunModel.updated_at.desc(),
+        )
+    )
+    latest_runs: dict[UUID, WorkflowRunModel] = {}
+    for run in rows:
+        if run.project_id is not None and run.project_id not in latest_runs:
+            latest_runs[run.project_id] = run
+    if not latest_runs:
+        return {}
+
+    step_rows = await session.scalars(
+        select(WorkflowStepRunModel)
+        .where(WorkflowStepRunModel.workflow_run_id.in_([run.id for run in latest_runs.values()]))
+        .order_by(WorkflowStepRunModel.workflow_run_id.asc(), WorkflowStepRunModel.step_order.asc())
+    )
+    steps_by_run: dict[UUID, list[WorkflowStepRunModel]] = {}
+    for step in step_rows:
+        steps_by_run.setdefault(step.workflow_run_id, []).append(step)
+
+    return {
+        project_id: _project_repair_workflow_snapshot(run, steps_by_run.get(run.id, []))
+        for project_id, run in latest_runs.items()
+    }
 
 
 def _is_nonblocking_rejected_candidate(
@@ -4530,6 +4950,8 @@ def _build_db_repair_task_summary(
     rejected = _safe_int(task_counts.get("rejected_candidate"))
     active_total = pending + queued + failed
     phase = str(repair_status.get("phase") or "")
+    latest_workflow = repair_status.get("latest_repair_workflow")
+    latest_workflow = latest_workflow if isinstance(latest_workflow, dict) else {}
     if active_total <= 0 and phase in {"normal", "archived"}:
         return None
 
@@ -4540,7 +4962,31 @@ def _build_db_repair_task_summary(
     if project_status in _BOOK_CLOSED_STATUSES or phase in {"completed", "closed_complete"}:
         return None
     title = str(getattr(project, "title", "") or slug)
-    if queued > 0:
+    latest_status = str(latest_workflow.get("status") or "").strip().lower()
+    latest_stage = _repair_workflow_status_stage(
+        latest_status,
+        latest_workflow.get("current_step"),
+    )
+    latest_error = str(latest_workflow.get("error_message") or "").strip()
+    latest_events = latest_workflow.get("progress_events")
+    workflow_events = latest_events if isinstance(latest_events, list) else []
+    if latest_status in {"pending", "queued"}:
+        status = "queued"
+        stage = latest_stage
+        error = None
+    elif latest_status == "running":
+        status = "running"
+        stage = latest_stage
+        error = None
+    elif latest_status == "failed":
+        status = "failed"
+        stage = latest_stage
+        error = latest_error or "project repair workflow failed"
+    elif latest_status == "cancelled":
+        status = "incomplete"
+        stage = latest_stage
+        error = latest_error or "project repair workflow was cancelled"
+    elif queued > 0:
         status = "queued"
         stage = "legacy_quality_closure_repair_queued"
         error = None
@@ -4559,8 +5005,26 @@ def _build_db_repair_task_summary(
 
     updated_at = getattr(project, "updated_at", None)
     created_at = getattr(project, "created_at", None) or updated_at
-    updated_text = updated_at.isoformat() if isinstance(updated_at, datetime) else _utc_now()
-    created_text = created_at.isoformat() if isinstance(created_at, datetime) else updated_text
+    updated_text = str(latest_workflow.get("updated_at") or "") or (
+        updated_at.isoformat() if isinstance(updated_at, datetime) else _utc_now()
+    )
+    created_text = str(latest_workflow.get("created_at") or "") or (
+        created_at.isoformat() if isinstance(created_at, datetime) else updated_text
+    )
+    generic_event = {
+        "timestamp": updated_text,
+        "stage": stage,
+        "payload": {
+            "project_slug": slug,
+            "pending_autonomous_repair_tasks": pending,
+            "queued_autonomous_repair_tasks": queued,
+            "failed_autonomous_repair_tasks": failed,
+            "rejected_autonomous_repair_candidates": rejected,
+            "blocked_chapters": repair_status.get("blocked_chapters"),
+            "repair_phase": phase,
+            "latest_workflow_status": latest_status or None,
+        },
+    }
     return {
         "task_id": f"db-repair:{slug}",
         "task_type": "repair",
@@ -4571,21 +5035,7 @@ def _build_db_repair_task_summary(
         "title": title,
         "project_title": title,
         "current_stage": stage,
-        "progress_events": [
-            {
-                "timestamp": updated_text,
-                "stage": stage,
-                "payload": {
-                    "project_slug": slug,
-                    "pending_autonomous_repair_tasks": pending,
-                    "queued_autonomous_repair_tasks": queued,
-                    "failed_autonomous_repair_tasks": failed,
-                    "rejected_autonomous_repair_candidates": rejected,
-                    "blocked_chapters": repair_status.get("blocked_chapters"),
-                    "repair_phase": phase,
-                },
-            }
-        ],
+        "progress_events": [generic_event, *workflow_events],
         "result": {
             "project_slug": slug,
             "target_chapters": _safe_int(getattr(project, "target_chapters", 0)),
@@ -4593,12 +5043,22 @@ def _build_db_repair_task_summary(
             "queued_autonomous_repair_tasks": queued,
             "failed_autonomous_repair_tasks": failed,
             "rejected_autonomous_repair_candidates": rejected,
+            "latest_repair_workflow_id": latest_workflow.get("workflow_run_id"),
+            "target_chapter_numbers": latest_workflow.get("target_chapter_numbers"),
+            "repair_gate_chapter_numbers": latest_workflow.get(
+                "repair_gate_chapter_numbers"
+            ),
+            "processed_chapter_numbers": latest_workflow.get("processed_chapter_numbers"),
         },
         "error": error,
         "payload": {
             "slug": slug,
             "title": title,
             "include_pending_rewrite_tasks": True,
+            "target_chapter_numbers": latest_workflow.get("target_chapter_numbers"),
+            "repair_gate_chapter_numbers": latest_workflow.get(
+                "repair_gate_chapter_numbers"
+            ),
         },
         "repair_status": repair_status,
         "synthetic_db_repair_task": True,
@@ -4623,6 +5083,10 @@ async def _load_db_repair_task_summaries(
             session,
             project_ids,
         )
+        latest_repair_workflows = await _load_latest_project_repair_workflow_snapshots(
+            session,
+            project_ids,
+        )
         repair_heal_owned_slugs = _fetch_heal_owned_slugs_by_kind(
             settings.redis.url,
             "repair",
@@ -4635,24 +5099,21 @@ async def _load_db_repair_task_summaries(
                 row,
                 repair_counts.get(row.id, []),
                 autonomous_repair_counts.get(row.id, {}),
+                latest_repair_workflows.get(row.id),
             )
             summary = _build_db_repair_task_summary(row, repair_status)
             if summary is not None:
                 if row.slug in repair_heal_owned_slugs:
                     job_id = f"repair:heal:{row.slug}"
-                    summary["worker_job_id"] = job_id
                     worker_progress = _load_worker_heal_progress_snapshot(
                         settings.redis.url,
                         job_id,
                     )
-                    if worker_progress:
-                        _merge_worker_progress_into_db_repair_summary(
-                            summary,
-                            worker_progress,
-                        )
-                    else:
-                        summary["status"] = "queued"
-                        summary["current_stage"] = "delegated_to_worker_self_heal"
+                    _attach_repair_heal_owner_to_db_summary(
+                        summary,
+                        job_id,
+                        worker_progress,
+                    )
                 summaries.append(summary)
         return summaries
 
@@ -4843,6 +5304,7 @@ def _build_project_repair_status_payload(
     project: Any,
     chapter_state_counts: list[dict[str, object]],
     autonomous_repair_task_counts: dict[str, int] | None = None,
+    latest_repair_workflow: dict[str, object] | None = None,
 ) -> dict[str, object]:
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
@@ -4897,9 +5359,15 @@ def _build_project_repair_status_payload(
     )
 
     production_paused = bool(metadata.get("production_paused"))
+    production_pause_reason = str(metadata.get("production_pause_reason") or "").strip()
     resume_blocked = bool(metadata.get("generation_resume_blocked_until_repair_audit"))
     generation_gate_blocked = any(bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS)
     structural_repair_required = bool(metadata.get("structural_repair_required"))
+    latest_workflow = latest_repair_workflow if isinstance(latest_repair_workflow, dict) else {}
+    latest_workflow_status = str(latest_workflow.get("status") or "").strip().lower()
+    latest_workflow_error = str(latest_workflow.get("error_message") or "").strip()
+    latest_workflow_active = latest_workflow_status in {"pending", "queued", "running"}
+    latest_workflow_interrupted = latest_workflow_status in {"cancelled", "failed"}
     project_status = str(getattr(project, "status", "") or "")
     library_archived = bool(metadata.get("library_archived")) or project_status == "archived"
     project_closed = project_status.lower() in _BOOK_CLOSED_STATUSES
@@ -4916,10 +5384,22 @@ def _build_project_repair_status_payload(
         phase = "planning_gate"
         label = "规划门禁续跑中"
         detail = "规划/世界观门禁未闭合，系统会携带诊断重新进入自动修复链路。"
+    elif latest_workflow_active:
+        phase = "repair_gate"
+        label = "结构修复执行中"
+        detail = "后台正在执行项目结构修复，页面会按 workflow 记录回填章节进度。"
+    elif latest_workflow_interrupted and (blocked_chapters > 0 or project_status == "paused"):
+        phase = "needs_attention"
+        label = "修复已中断"
+        detail = latest_workflow_error or "最近一次项目结构修复未完成，需要重新运行修复流程。"
     elif production_paused or resume_blocked:
         phase = "repair_gate"
         label = "修复续跑中"
-        detail = "项目存在阻塞章节，后台会继续执行修复并通过审计。"
+        detail = (
+            f"项目暂停原因：{production_pause_reason}。"
+            if production_pause_reason
+            else "项目存在阻塞章节，后台会继续执行修复并通过审计。"
+        )
     elif structural_repair_required:
         phase = "repair_required"
         label = "需要结构修复"
@@ -4952,8 +5432,10 @@ def _build_project_repair_status_payload(
         "detail": detail,
         "is_repairing": is_repairing,
         "production_paused": production_paused,
+        "production_pause_reason": production_pause_reason or None,
         "resume_blocked_until_repair_audit": resume_blocked,
         "structural_repair_required": structural_repair_required,
+        "latest_repair_workflow": latest_workflow or None,
         "total_chapters": total_chapters,
         "repair_scope_total": repair_scope_total,
         "repair_completed": repair_completed,
@@ -5391,6 +5873,10 @@ async def _load_project_summary_payload(
             session,
             [project.id],
         )
+        latest_repair_workflows = await _load_latest_project_repair_workflow_snapshots(
+            session,
+            [project.id],
+        )
         latest_current_chapter_entry = await _load_latest_current_chapter_preview_entry(
             session,
             settings,
@@ -5400,6 +5886,7 @@ async def _load_project_summary_payload(
             project,
             repair_counts.get(project.id, []),
             autonomous_repair_counts.get(project.id, {}),
+            latest_repair_workflows.get(project.id),
         )
     outputs = collect_project_artifact_entries(settings, project_slug)
     outputs = _upsert_artifact_entry(outputs, latest_current_chapter_entry)
@@ -7525,7 +8012,15 @@ def _query_bool(value: object) -> bool:
 
 
 def _is_dashboard_visible_task(task: dict[str, object]) -> bool:
-    return str(task.get("status") or "").lower() in _DASHBOARD_VISIBLE_TASK_STATUSES
+    status = str(task.get("status") or "").lower()
+    if status in _DASHBOARD_VISIBLE_TASK_STATUSES:
+        return True
+    repair_status = task.get("repair_status")
+    return (
+        str(task.get("task_type") or "") == "repair"
+        and isinstance(repair_status, dict)
+        and bool(repair_status.get("is_repairing"))
+    )
 
 
 def _filter_dashboard_visible_tasks(
@@ -8295,9 +8790,18 @@ def serve_web_app(
                             task
                             for task in tasks
                             if not (
-                                str(task.get("task_id") or "").startswith("recovered-")
-                                and str(task.get("project_slug") or "") in db_repair_slugs
-                                and str(task.get("status") or "") in {"failed", "incomplete"}
+                                (
+                                    str(task.get("task_id") or "").startswith("recovered-")
+                                    and str(task.get("project_slug") or "") in db_repair_slugs
+                                    and str(task.get("status") or "") in {
+                                        "failed",
+                                        "incomplete",
+                                    }
+                                )
+                                or _is_stale_autowrite_repair_block_task(
+                                    task,
+                                    db_repair_slugs,
+                                )
                             )
                         ]
                     tasks.extend(db_repair_tasks)
@@ -8336,6 +8840,19 @@ def serve_web_app(
                         task_id = task_id.removesuffix("/progress")
                     task_id = task_id.strip("/")
                     task = task_manager.get_task(task_id)
+                    if task is not None and _is_stale_autowrite_repair_block_task(
+                        task,
+                        {_task_project_slug(task)},
+                    ):
+                        repair_slug = _task_project_slug(task)
+                        repair_task = asyncio.run(
+                            _load_db_repair_task_summary(
+                                settings,
+                                f"db-repair:{repair_slug}",
+                            )
+                        )
+                        if repair_task is not None:
+                            task = repair_task
                     if task is None:
                         task = _load_worker_task_summary(settings, task_id)
                     if task is None:
@@ -9174,6 +9691,7 @@ def serve_web_app(
                     if old is None:
                         if task_id.startswith("db-repair:"):
                             slug = task_id.removeprefix("db-repair:").strip()
+                            _clear_repair_resume_focus_pause_sync(settings, slug)
                             job_id = _enqueue_repair_heal_job(settings.redis.url, slug)
                             if job_id:
                                 self._send_json(

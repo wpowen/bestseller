@@ -86,6 +86,19 @@ CANONICAL_LINES: tuple[str, ...] = (
 )
 
 
+def hidden_thread_min_span_for_volume_count(volume_count: int) -> int:
+    """Return the hidden-thread span floor for the given book length.
+
+    Long books still require a multi-volume hidden thread. One-volume
+    validation novellas cannot span two volumes, so the floor is capped by the
+    available volume count.
+    """
+
+    volume_count = max(int(volume_count or 0), 1)
+    ratio_floor = int(round(volume_count * HIDDEN_THREAD_MIN_VOLUME_SPAN_RATIO))
+    return min(volume_count, max(2, ratio_floor))
+
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -483,7 +496,7 @@ def scan_narrative_lines(
                 line_id=LINE_HIDDEN, arc_count=1, volume_span=span,
             )
         )
-        min_span_needed = max(2, int(round(volume_count * HIDDEN_THREAD_MIN_VOLUME_SPAN_RATIO)))
+        min_span_needed = hidden_thread_min_span_for_volume_count(volume_count)
         observed_span = (span[1] - span[0] + 1) if span else 0
         if observed_span < min_span_needed:
             findings.append(
@@ -628,7 +641,7 @@ def render_narrative_lines_constraints_block(
     """
 
     volume_count = max(int(volume_count or 0), 1)
-    hidden_span_floor = max(2, int(round(volume_count * HIDDEN_THREAD_MIN_VOLUME_SPAN_RATIO)))
+    hidden_span_floor = hidden_thread_min_span_for_volume_count(volume_count)
     core_ref_floor_pct = int(CORE_AXIS_MIN_VOLUME_REFERENCE_RATIO * 100)
 
     if _is_english(language):

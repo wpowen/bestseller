@@ -155,6 +155,24 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
         return "villainess-reincarnation"
 
     # ── Pre-existing routes ──
+    # Rule-survival/meta games are suspense engines even when the label also
+    # contains apocalypse/sci-fi terms; route them before generic apocalypse.
+    if any(
+        token in label
+        for token in (
+            "规则生存",
+            "规则怪谈",
+            "规则类",
+            "副本规则",
+            "meta博弈",
+            "元叙事",
+            "剧本杀",
+            "rule survival",
+            "rule horror",
+            "infinite flow",
+        )
+    ):
+        return "suspense-mystery"
     # Apocalypse / survival (check before sci-fi to catch "末日科幻" correctly)
     if any(token in label for token in ("末日", "囤货", "废土")):
         return "apocalypse-supply-chain"

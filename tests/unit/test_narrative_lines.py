@@ -20,6 +20,7 @@ from bestseller.services.narrative_lines import (
     OVERT_LINE_MAX_VOLUMES_PER_ARC,
     OVERT_LINE_MIN_ARCS_FLOOR,
     UNDERCURRENT_MIN_VOLUME_SPAN,
+    hidden_thread_min_span_for_volume_count,
     render_narrative_lines_constraints_block,
     scan_narrative_lines,
 )
@@ -223,6 +224,28 @@ def test_shallow_hidden_thread_critical():
     )
     codes = {f.code for f in report.findings}
     assert "shallow_hidden_thread" in codes
+
+
+def test_single_volume_hidden_thread_can_span_one_volume():
+    """A one-volume validation novella cannot be required to span two volumes."""
+
+    spec = _healthy_lines(1)
+    spec["overt_line"] = [{"name": "收费站第一案", "volumes": [1]}]
+    spec["undercurrent_line"] = [{"name": "登记员暗线", "start_volume": 1, "end_volume": 1}]
+    spec["hidden_thread"] = {
+        "statement": "规则可以被契约表演反制",
+        "seed_volumes": [1],
+        "payoff_volumes": [1],
+    }
+    report = scan_narrative_lines(
+        spec,
+        total_chapters=2,
+        volume_count=1,
+        volume_plan=_healthy_volume_plan(1),
+    )
+    codes = {f.code for f in report.findings}
+    assert hidden_thread_min_span_for_volume_count(1) == 1
+    assert "shallow_hidden_thread" not in codes
 
 
 # ---------------------------------------------------------------------------

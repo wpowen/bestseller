@@ -308,6 +308,226 @@ def _reset_scene_auto_repair_residue_for_attempt(scene: SceneCardModel) -> int |
     return restored_target
 
 
+# ---------------------------------------------------------------------------
+# Per-scene auto-repair hard cap (WS-C3)
+# ---------------------------------------------------------------------------
+# ``scene.metadata_json["scene_auto_repair_total_attempts"]`` is a
+# *cumulative*, scene-scoped counter that survives residue cleanup, the
+# inner auto-repair loop, the outer project_repair loop, and the
+# chapter_pipeline cross-run re-entry.  Once the counter reaches the
+# configured cap, the scene is stamped with ``auto_accepted_with_debt=True``
+# and the assembler keeps the prior draft — the cap MUST NOT cause
+# ``machine_repair_required``.  See
+# docs/质量回归修复-开发计划-20260602.md §WS-C3.
+
+_SCENE_AUTO_REPAIR_TOTAL_ATTEMPTS_KEY = "scene_auto_repair_total_attempts"
+_SCENE_AUTO_REPAIR_LAST_PASS_ID_KEY = "scene_auto_repair_last_pass_id"
+_SCENE_AUTO_REPAIR_DEBT_KEY = "auto_accepted_with_debt"
+_SCENE_AUTO_REPAIR_DEBT_CAP_KEY = "auto_accepted_with_debt_cap"
+_SCENE_AUTO_REPAIR_DEBT_ATTEMPT_KEY = "auto_accepted_with_debt_at_attempt"
+_SCENE_AUTO_REPAIR_DEBT_REASON_KEY = "auto_accepted_with_debt_reason"
+
+
+def read_scene_auto_repair_counter(scene: SceneCardModel) -> int:
+    """Return the cumulative number of auto-repair attempts for ``scene``.
+
+    The counter is read from ``scene.metadata_json`` and defaults to 0 when
+    the scene has never been put through the auto-repair loop.  Stale or
+    non-numeric values are coerced to 0 to keep callers defensive against
+    bad historical rows.
+    """
+
+    raw = (getattr(scene, "metadata_json", None) or {}).get(
+        _SCENE_AUTO_REPAIR_TOTAL_ATTEMPTS_KEY
+    )
+    try:
+        return max(0, int(raw or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def bump_scene_auto_repair_counter(scene: SceneCardModel) -> int:
+    """Increment the per-scene cumulative auto-repair counter by 1.
+
+    Returns the *new* counter value.  The counter lives in scene metadata,
+    is never reset by the residue cleanup helper, and is the authoritative
+    signal for ``is_scene_at_auto_repair_cap``.  Production callers should
+    not reset the counter; use ``reset_scene_auto_repair_counter`` only in
+    deterministic replays / operator actions.
+    """
+
+    new_value = read_scene_auto_repair_counter(scene) + 1
+    metadata = dict(getattr(scene, "metadata_json", None) or {})
+    metadata[_SCENE_AUTO_REPAIR_TOTAL_ATTEMPTS_KEY] = new_value
+    scene.metadata_json = metadata
+    return new_value
+
+
+def reset_scene_auto_repair_counter(scene: SceneCardModel) -> None:
+    """Wipe the per-scene counter.
+
+    Intended for deterministic replays and operator-driven re-runs.  The
+    production auto-repair / project_repair / chapter_pipeline paths must
+    not call this — the cap is the protective contract.
+    """
+
+    metadata = dict(getattr(scene, "metadata_json", None) or {})
+    metadata.pop(_SCENE_AUTO_REPAIR_TOTAL_ATTEMPTS_KEY, None)
+    scene.metadata_json = metadata
+
+
+def is_scene_at_auto_repair_cap(
+    scene: SceneCardModel,
+    *,
+    cap: int | None = None,
+) -> bool:
+    """Return True when ``scene`` has exhausted its rewrite budget.
+
+    ``cap`` defaults to ``settings.pipeline.chapter_auto_repair_max_scene_rewrites``.
+    Callers can override for unit tests.  ``cap <= 0`` disables the check
+    (a configured cap of 0 keeps the historical unbounded behavior).
+    """
+
+    if cap is None:
+        from bestseller.settings import get_settings  # noqa: PLC0415
+
+        cap = int(
+            get_settings().pipeline.chapter_auto_repair_max_scene_rewrites or 0
+        )
+    if cap <= 0:
+        return False
+    return read_scene_auto_repair_counter(scene) >= cap
+
+
+def mark_scene_auto_accepted_with_debt(
+    scene: SceneCardModel,
+    *,
+    cap: int,
+    reason: str,
+) -> None:
+    """Stamp the scene so the assembler keeps the prior draft.
+
+    Idempotent — calling twice does not reset the at-attempt counter; the
+    first call's attempt is the one that tripped the cap.  The
+    ``auto_accepted_with_debt`` flag is consumed by the project review
+    overview so a human reviewer sees exactly which scenes reached the cap.
+    """
+
+    metadata = dict(getattr(scene, "metadata_json", None) or {})
+    if metadata.get(_SCENE_AUTO_REPAIR_DEBT_KEY):
+        return  # already marked; preserve original attempt/reason
+    metadata[_SCENE_AUTO_REPAIR_DEBT_KEY] = True
+    metadata[_SCENE_AUTO_REPAIR_DEBT_CAP_KEY] = int(cap)
+    metadata[_SCENE_AUTO_REPAIR_DEBT_ATTEMPT_KEY] = read_scene_auto_repair_counter(
+        scene
+    )
+    metadata[_SCENE_AUTO_REPAIR_DEBT_REASON_KEY] = str(reason or "").strip()[:2000]
+    scene.metadata_json = metadata
+
+
+def _resolve_scene_auto_repair_cap() -> int:
+    """Read the per-scene cap from settings; never raises during repair prep."""
+
+    try:
+        from bestseller.settings import get_settings  # noqa: PLC0415
+
+        cap = int(
+            get_settings().pipeline.chapter_auto_repair_max_scene_rewrites or 0
+        )
+    except Exception:
+        cap = 0
+    return max(0, cap)
+
+
+def scene_should_skip_auto_repair_reset(
+    scene: SceneCardModel,
+    *,
+    block_codes: tuple[str, ...] | list[str] | None = None,
+) -> bool:
+    """Return True when ``scene`` has reached its per-scene cap.
+
+    On True, callers must:
+      * NOT reset ``scene.status`` to ``NEEDS_REWRITE`` (the assembler
+        needs the prior draft to remain ``is_current``).
+      * NOT invalidate the current scene draft.
+      * Stamp ``auto_accepted_with_debt`` via
+        :func:`mark_scene_auto_accepted_with_debt` so the project review
+        report surfaces the cap.
+    """
+
+    cap = _resolve_scene_auto_repair_cap()
+    if not is_scene_at_auto_repair_cap(scene, cap=cap):
+        return False
+    if not (getattr(scene, "metadata_json", None) or {}).get(
+        _SCENE_AUTO_REPAIR_DEBT_KEY
+    ):
+        codes_text = ", ".join(str(c) for c in (block_codes or ())) or "n/a"
+        mark_scene_auto_accepted_with_debt(
+            scene,
+            cap=cap,
+            reason=(
+                "per-scene auto-repair cap reached "
+                f"(attempt {read_scene_auto_repair_counter(scene)}/{cap}); "
+                f"preserving prior draft; block codes: {codes_text}"
+            ),
+        )
+    return True
+
+
+def _read_scene_last_pass_id(scene: SceneCardModel) -> int:
+    """Return the last chapter-level auto-repair pass id seen by this scene.
+
+    Stale or non-numeric values coerce to 0 so callers can compare against
+    a fresh pass id without an extra try/except.
+    """
+
+    raw = (getattr(scene, "metadata_json", None) or {}).get(
+        _SCENE_AUTO_REPAIR_LAST_PASS_ID_KEY
+    )
+    try:
+        return max(0, int(raw or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def claim_scene_auto_repair_attempt(
+    scene: SceneCardModel,
+    *,
+    pass_id: int,
+) -> int:
+    """Claim one auto-repair pass for ``scene``, idempotent within a pass.
+
+    The chapter pipeline reuses :func:`maybe_prepare_chapter_auto_repair`
+    for three different reset paths (write-safety / metadata-code /
+    length-stability). A single chapter-level auto-repair pass can hit
+    one scene from more than one of these paths; without dedup the per-
+    scene counter would over-count, hitting the cap before the chapter
+    sees the configured number of real rewrite cycles.
+
+    ``pass_id`` should be the chapter-level auto-repair attempt number
+    (e.g. ``chapter.metadata_json["auto_repair_attempts"]``) — it
+    monotonically increases per chapter-level pass and resets only when
+    the chapter leaves the auto-repair loop. Returns the **new** counter
+    value if this call bumped it, or the current value if a same-pass
+    call already claimed the slot.
+    """
+
+    if pass_id <= 0:
+        # Defensive: pass_id is supposed to be 1-based.  Without this guard
+        # a caller passing 0 would mean "always dedup" and never increment.
+        return read_scene_auto_repair_counter(scene)
+
+    if _read_scene_last_pass_id(scene) >= pass_id:
+        # Same (or older) chapter pass — already counted this scene.
+        return read_scene_auto_repair_counter(scene)
+
+    new_value = bump_scene_auto_repair_counter(scene)
+    metadata = dict(getattr(scene, "metadata_json", None) or {})
+    metadata[_SCENE_AUTO_REPAIR_LAST_PASS_ID_KEY] = int(pass_id)
+    scene.metadata_json = metadata
+    return new_value
+
+
 def _scene_current_contract_controls(
     scene: SceneCardModel,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -2048,6 +2268,25 @@ _CONTEXT_TIER_1 = frozenset({
     "faction_ecology_line",
     "relationship_agency_line",
     "plan_richness_line",
+    # Story-integrity guardrails (2026-06-02): these were previously NOT in any
+    # tier, which meant _budget_context_sections silently kept them full AND
+    # uncounted. They are genuine coherence guardrails ("inviolable" per the
+    # build_scene_draft_prompts header) and MUST survive budgeting, so they are
+    # now explicit Tier 1 members rather than accidental budget bypassers.
+    "canon_guardrails_line",
+    "timeline_canon_line",
+    "scene_coherence_line",
+    "character_role_line",
+    "chapter_length_line",
+    "current_scene_contract_line",
+    # Hard per-chapter commercial contracts (opening-chapter signing gates):
+    # these are binding obligations, not advisory garnish, so they must not be
+    # trimmed by the budget when present. (concept_lab_contract_line was
+    # untiered and therefore silently Pass-4 trimmed — promoted 2026-06-03 so
+    # the selected Concept-Lab contract always reaches the writer.)
+    "qimao_opening_contract_line",
+    "reader_contract_line",
+    "concept_lab_contract_line",
 })
 _CONTEXT_TIER_2 = frozenset({
     "recent_scene_section",
@@ -2057,6 +2296,13 @@ _CONTEXT_TIER_2 = frozenset({
     "scene_sequel_line",
     "structure_beat_line",
     "pacing_line",
+    # Scene-craft helpers (medium value): keep when budget allows.
+    "scene_beat_line",
+    "hook_echo_line",
+    "dialogue_voice_line",
+    "arc_beat_line",
+    "scene_scope_isolation_line",
+    "project_material_obligation_line",
 })
 _CONTEXT_TIER_3 = frozenset({
     "story_bible_section",
@@ -2077,19 +2323,159 @@ _CONTEXT_TIER_3 = frozenset({
 })
 
 
+def _truncate_section_to_tokens(
+    text: str,
+    max_tokens: int,
+) -> str:
+    """Hard-cap a single section's text at ``max_tokens`` (F2 — single-block cap).
+
+    Keeps the head (first 60%) + a one-line "…[truncated]…" marker + the tail
+    (last 40%) so both the opening context (often the rule/contract) and the
+    most recent state (often the live constraint) survive. The exact split is
+    deliberate: head carries "what this section is about" and tail carries
+    "what changed recently"; pure head-only truncation would drop live state,
+    pure tail-only would drop the rule.
+
+    Capped at 0 returns the original text unchanged (treat as "no cap"). A
+    negative cap is clamped to 0 which forces an empty string.
+    """
+    if max_tokens <= 0 or not text:
+        if max_tokens < 0:
+            return ""
+        return text
+    cost = _estimate_tokens(text)
+    if cost <= max_tokens:
+        return text
+    # Estimate the slice: target ~ ``max_tokens`` chars at the conservative
+    # 1 token-per-CJK-char rate. We don't try to be exact — over-truncating
+    # slightly is fine; the cap is a safety net, not a precision instrument.
+    char_budget = max(64, int(max_tokens))
+    if len(text) <= char_budget:
+        return text
+    head_budget = int(char_budget * 0.6)
+    tail_budget = char_budget - head_budget
+    head = text[:head_budget]
+    tail = text[-tail_budget:] if tail_budget > 0 else ""
+    return f"{head}\n…[truncated; was {cost} tokens]…\n{tail}"
+
+
+# Default single-block token cap. Plan §WS-B2 asks for ≤600字 which translates
+# to ~300-400 tokens for CJK. We round up to 600 to avoid breaking natural
+# sentence boundaries while still preventing one canon block from eating the
+# entire 8000-token budget on its own.
+_DEFAULT_PER_BLOCK_TOKEN_CAP = 600
+# Tier 1 soft cap: even the structural safety net must respect the budget.
+# If Tier 1 alone would consume more than this fraction of the budget, we drop
+# the LARGEST Tier 1 items first so the next passes (continuity / clue /
+# pacing) can still get budget. 80% matches the typical Tier 2 footprint.
+_TIER_1_BUDGET_FRACTION = 0.80
+
+# F1 soft-cap may free budget for Tier-2 continuity by dropping Tier-1 items,
+# but it must drop ONLY the redundant integrity *guardrails* below — never the
+# binding craft/contract blocks (contract, methodology, rule_system,
+# story_principle, hard_fact, …). The guardrails (canon / timeline /
+# scene_coherence / character_role) are the blocks that ballooned Tier-1 to
+# ~12.4k tokens in the starvation regression and are largely re-derivable from
+# story_bible + hard_facts, so they are the safe ones to sacrifice. Dropping a
+# binding block instead would produce off-contract or canon-contradicting prose
+# (CD5, 2026-06-03).
+_TIER_1_DROPPABLE_GUARDRAILS = frozenset({
+    "canon_guardrails_line",
+    "timeline_canon_line",
+    "scene_coherence_line",
+    "character_role_line",
+})
+
+
 def _budget_context_sections(
     sections: dict[str, str],
     budget_tokens: int,
+    *,
+    per_block_token_cap: int = _DEFAULT_PER_BLOCK_TOKEN_CAP,
 ) -> dict[str, str]:
     """Enforce a token budget on rendered context sections by tier priority.
 
     Tier 1 sections are always kept.  Tier 2 sections are added next.
-    Tier 3 sections fill remaining budget.  Sections that don't fit are blanked.
+    Tier 3 sections fill remaining budget.  Pass 4 covers every *remaining*
+    section (anything not explicitly tiered — the "advanced garnish" blocks
+    such as voice_dna / diversity / l3_prompt / signature_scene): these are the
+    lowest priority and are trimmed first when over budget.
+
+    2026-06-02 fix: previously only the ~39 explicitly-tiered keys were
+    considered, so the other ~37 sections passed in by ``build_scene_draft_prompts``
+    bypassed the budget entirely (kept full, never counted). That is why the
+    writer prompt ballooned to ~17.7k tokens regardless of ``budget_tokens``.
+    Pass 4 closes that hole so NO section can silently bypass the budget.
+
+    2026-06-03 fix (WS-B starvation regression, F1+F2):
+      * **F2** — every section is first hard-capped at
+        ``per_block_token_cap`` (default 600 tokens) before budgeting. A
+        single bloated canon block can no longer eat the entire budget on
+        its own; it gets head+tail truncated instead.
+      * **F1** — Tier 1 is now also subject to a soft cap
+        (``_TIER_1_BUDGET_FRACTION`` of the budget). If Tier 1 alone
+        exceeds that share, the LARGEST Tier 1 items are dropped first.
+        This protects Tier 2 (which holds continuity sections like
+        ``recent_scene_section``, ``emotion_track_section``, ``clue_section``)
+        from being starved when the integrity guardrails (canon /
+        timeline / character_role) are very large.
     """
     result = dict(sections)
-    used = 0
+    # F2: per-block cap — applied ONLY to the untiered Pass-4 "garnish" blocks
+    # (voice_dna / diversity / l3_prompt / signature_scene / …). Those are the
+    # blocks that bypassed the budget and ballooned the prompt to ~17.7k tokens,
+    # and a single one can be several thousand tokens, so capping them protects
+    # the budget.
+    #
+    # Tiered sections (Tier 1/2/3) are NOT per-block truncated: they carry
+    # structured craft + contract content where head+tail truncation silently
+    # deletes obligations in the middle (e.g. ``methodology_line`` bundles
+    # 七猫签约门槛 / 七猫再生成合同; ``rule_system_line`` / ``story_principle_line``
+    # carry binding constraints). They are bounded instead by the tier budget
+    # passes below, and Tier 1 additionally by the F1 soft cap. (CD5 + the
+    # F2-over-truncation regression, 2026-06-03.)
+    _tiered_keys = _CONTEXT_TIER_1 | _CONTEXT_TIER_2 | _CONTEXT_TIER_3
+    for key in list(result.keys()):
+        if key in _tiered_keys:
+            continue
+        result[key] = _truncate_section_to_tokens(
+            result.get(key, ""), per_block_token_cap
+        )
 
-    # Pass 1: Tier 1 — always include (sum their tokens, never blank them)
+    used = 0
+    _tier1_total = sum(_estimate_tokens(result.get(k, "")) for k in _CONTEXT_TIER_1)
+    _tier1_ceiling = max(0, int(budget_tokens * _TIER_1_BUDGET_FRACTION))
+
+    # F1: if Tier 1 alone exceeds its soft ceiling, drop the LARGEST *droppable*
+    # integrity guardrails (``_TIER_1_DROPPABLE_GUARDRAILS``) first until Tier 1
+    # fits.  Binding craft/contract blocks are never dropped (CD5).
+    #
+    # IMPORTANT (futility guard): only sacrifice guardrails when doing so can
+    # actually bring Tier 1 under the ceiling — i.e. when the binding core
+    # (Tier 1 minus the droppable guardrails) already fits.  Otherwise the
+    # overflow is caused by the binding blocks, which F1 cannot touch, and
+    # dropping the guardrails just loses canon/timeline for nothing (observed:
+    # an 8-token canon block dropped against a 5176-token binding overflow).
+    _guardrail_total = sum(
+        _estimate_tokens(result.get(k, "")) for k in _TIER_1_DROPPABLE_GUARDRAILS
+    )
+    _binding_core_total = _tier1_total - _guardrail_total
+    if _tier1_total > _tier1_ceiling and _binding_core_total <= _tier1_ceiling:
+        _tier1_droppable = sorted(
+            (k for k in _CONTEXT_TIER_1 if k in _TIER_1_DROPPABLE_GUARDRAILS),
+            key=lambda k: _estimate_tokens(result.get(k, "")),
+            reverse=True,
+        )
+        for key in _tier1_droppable:
+            if _tier1_total <= _tier1_ceiling:
+                break
+            cost = _estimate_tokens(result.get(key, ""))
+            if cost <= 0:
+                continue
+            result[key] = ""
+            _tier1_total -= cost
+
+    # Pass 1: Tier 1 — sum tokens (never blank them in normal flow)
     for key in _CONTEXT_TIER_1:
         used += _estimate_tokens(result.get(key, ""))
 
@@ -2103,6 +2489,20 @@ def _budget_context_sections(
 
     # Pass 3: Tier 3 — add remaining while budget allows
     for key in _CONTEXT_TIER_3:
+        cost = _estimate_tokens(result.get(key, ""))
+        if used + cost <= budget_tokens:
+            used += cost
+        else:
+            result[key] = ""
+
+    # Pass 4: everything else (advanced garnish + any future/untiered section)
+    # is the lowest priority. Process cheapest-first so a few small advanced
+    # blocks can still ride along, while large ones (voice_dna, l3_prompt, ...)
+    # are blanked once the budget is exhausted.
+    _tiered = _CONTEXT_TIER_1 | _CONTEXT_TIER_2 | _CONTEXT_TIER_3
+    _remaining = [key for key in result if key not in _tiered]
+    _remaining.sort(key=lambda k: _estimate_tokens(result.get(k, "")))
+    for key in _remaining:
         cost = _estimate_tokens(result.get(key, ""))
         if used + cost <= budget_tokens:
             used += cost
@@ -4050,6 +4450,41 @@ def _first_contract_value(*values: object) -> object | None:
         if str(value or "").strip():
             return value
     return None
+
+
+def _writer_prompt_mode_for_chapter(settings: AppSettings, chapter_number: int) -> str:
+    generation = getattr(settings, "generation", None)
+    mode = str(getattr(generation, "writer_prompt_mode", "") or "").strip().lower()
+    if mode not in {"full", "lean", "ab"}:
+        mode = "lean" if bool(getattr(generation, "lean_writer_prompt", True)) else "full"
+    if mode == "ab":
+        until = int(getattr(generation, "writer_prompt_ab_until_chapter", 3) or 0)
+        if chapter_number > max(until, 0):
+            winner = str(getattr(generation, "writer_prompt_ab_winner", "") or "").strip().lower()
+            return winner if winner in {"full", "lean"} else "full"
+    return mode
+
+
+def _score_writer_candidate(content: str, *, target_word_count: int | None, language: str) -> float:
+    text = content or ""
+    score = 0.0
+    if text.strip():
+        score += 10.0
+    if language.lower().startswith("zh") and re.search(
+        r"(?<![A-Za-z0-9_])ta(?![A-Za-z0-9_])",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        score -= 100.0
+    word_count = authoritative_word_count_for_language(text, language=language)
+    target = max(int(target_word_count or 0), 1)
+    if word_count:
+        score += min(word_count / target, 1.15) * 10.0
+        if word_count < target * 0.45:
+            score -= 8.0
+    if has_meta_leak(text):
+        score -= 15.0
+    return score
 
 
 def _render_story_principle_execution_section(
@@ -9037,6 +9472,8 @@ async def generate_scene_draft(
     generation_mode = "template-fallback"
     content_md = fallback_content
     prompt_trace_path: str | None = None
+    writer_prompt_selected_mode = "template-fallback"
+    writer_prompt_ab_metrics: list[dict[str, Any]] = []
     prewrite_manifest = None
     prewrite_plan: PrewritePlan | None = None
     prewrite_plan_meta: dict[str, Any] = {"mode": "not_run"}
@@ -9368,80 +9805,137 @@ async def generate_scene_draft(
                 voice_corrections_block = f"{header}\n" + "\n".join(correction_lines)
         if voice_corrections_block:
             user_prompt = f"{user_prompt}\n\n{voice_corrections_block}"
-        try:
-            from bestseller.services.prompt_compactor import compact_user_prompt
-
-            user_prompt, compaction_report = compact_user_prompt(
-                user_prompt,
-                chapter_no=int(chapter.chapter_number or 0),
-                forbidden_terms_full=_front10_forbidden_signal_terms(chapter, project=project),
-            )
-        except Exception:
-            compaction_report = None
-            logger.debug("scene prompt compaction failed", exc_info=True)
+        raw_user_prompt = user_prompt
         _model_tier = _determine_model_tier(
             chapter,
             scene,
             _packet_chapter_contract(context_packet),
         )
-        prompt_trace_path = _maybe_write_scene_prompt_trace(
-            settings,
-            project,
-            chapter,
-            scene,
-            context_packet,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            workflow_run_id=workflow_run_id,
-            step_run_id=step_run_id,
-            model_tier=_model_tier,
+        prompt_mode = _writer_prompt_mode_for_chapter(
+            effective_settings,
+            int(chapter.chapter_number or 0),
         )
-        completion = await complete_text(
-            session,
-            settings,
-            LLMCompletionRequest(
-                logical_role="writer",
-                model_tier=_model_tier,
+        prompt_variants = ("full", "lean") if prompt_mode == "ab" else (prompt_mode,)
+        candidate_records: list[dict[str, Any]] = []
+        completion = None
+        prompt_trace_path = None
+        user_prompt = raw_user_prompt
+        for variant in prompt_variants:
+            try:
+                from bestseller.services.prompt_compactor import compact_user_prompt
+
+                variant_user_prompt, variant_compaction_report = compact_user_prompt(
+                    raw_user_prompt,
+                    chapter_no=int(chapter.chapter_number or 0),
+                    forbidden_terms_full=_front10_forbidden_signal_terms(chapter, project=project),
+                    lean=variant == "lean",
+                )
+            except Exception:
+                variant_user_prompt = raw_user_prompt
+                variant_compaction_report = None
+                logger.debug("scene prompt compaction failed", exc_info=True)
+            variant_trace_path = _maybe_write_scene_prompt_trace(
+                settings,
+                project,
+                chapter,
+                scene,
+                context_packet,
                 system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                cache_system=True,
-                fallback_response=fallback_content,
-                prompt_template="scene_writer",
-                prompt_version="1.0",
-                project_id=project.id,
+                user_prompt=variant_user_prompt,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
-                max_tokens_override=prose_output_max_tokens_for_target(
-                    scene.target_word_count,
-                    language=_project_language(project),
-                    settings=settings,
-                    role="writer",
+                model_tier=_model_tier,
+                trace_kind=f"scene-{variant}",
+            )
+            variant_completion = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="writer",
+                    model_tier=_model_tier,
+                    system_prompt=system_prompt,
+                    user_prompt=variant_user_prompt,
+                    cache_system=True,
+                    fallback_response=fallback_content,
+                    prompt_template="scene_writer",
+                    prompt_version="1.0",
+                    project_id=project.id,
+                    workflow_run_id=workflow_run_id,
+                    step_run_id=step_run_id,
+                    max_tokens_override=prose_output_max_tokens_for_target(
+                        scene.target_word_count,
+                        language=_project_language(project),
+                        settings=settings,
+                        role="writer",
+                    ),
+                    metadata={
+                        "project_slug": project.slug,
+                        "chapter_number": chapter.chapter_number,
+                        "scene_number": scene.scene_number,
+                        "context_query": context_packet.query_text,
+                        "prompt_mode": variant,
+                        "prompt_mode_ab": prompt_mode == "ab",
+                        "prompt_compaction": (
+                            None
+                            if variant_compaction_report is None
+                            else {
+                                "original_chars": variant_compaction_report.original_chars,
+                                "compacted_chars": variant_compaction_report.compacted_chars,
+                                "saved_tokens_estimate": variant_compaction_report.saved_tokens_estimate,
+                            }
+                        ),
+                        "protagonist_name": str((scene.participants or [""])[0] or "").strip(),
+                        "supporting_name": str(
+                            (scene.participants or ["", ""])[1]
+                            if len(scene.participants or []) > 1
+                            else ""
+                        ).strip(),
+                        "model_tier": _model_tier,
+                        **({"prompt_trace_path": variant_trace_path} if variant_trace_path else {}),
+                    },
                 ),
-                metadata={
-                    "project_slug": project.slug,
-                    "chapter_number": chapter.chapter_number,
-                    "scene_number": scene.scene_number,
-                    "context_query": context_packet.query_text,
+            )
+            candidate_score = _score_writer_candidate(
+                variant_completion.content,
+                target_word_count=scene.target_word_count,
+                language=_project_language(project),
+            )
+            candidate_records.append(
+                {
+                    "prompt_mode": variant,
+                    "llm_run_id": str(variant_completion.llm_run_id)
+                    if variant_completion.llm_run_id
+                    else None,
+                    "model_name": variant_completion.model_name,
+                    "provider": variant_completion.provider,
+                    "latency_ms": variant_completion.latency_ms,
+                    "input_tokens": variant_completion.input_tokens,
+                    "output_tokens": variant_completion.output_tokens,
+                    "score": round(candidate_score, 4),
+                    "prompt_trace_path": variant_trace_path,
                     "prompt_compaction": (
                         None
-                        if compaction_report is None
+                        if variant_compaction_report is None
                         else {
-                            "original_chars": compaction_report.original_chars,
-                            "compacted_chars": compaction_report.compacted_chars,
-                            "saved_tokens_estimate": compaction_report.saved_tokens_estimate,
+                            "original_chars": variant_compaction_report.original_chars,
+                            "compacted_chars": variant_compaction_report.compacted_chars,
+                            "saved_tokens_estimate": variant_compaction_report.saved_tokens_estimate,
                         }
                     ),
-                    "protagonist_name": str((scene.participants or [""])[0] or "").strip(),
-                    "supporting_name": str(
-                        (scene.participants or ["", ""])[1]
-                        if len(scene.participants or []) > 1
-                        else ""
-                    ).strip(),
-                    "model_tier": _model_tier,
-                    **({"prompt_trace_path": prompt_trace_path} if prompt_trace_path else {}),
-                },
-            ),
-        )
+                    "_completion": variant_completion,
+                    "_user_prompt": variant_user_prompt,
+                    "_compaction_report": variant_compaction_report,
+                }
+            )
+        selected_record = max(candidate_records, key=lambda item: float(item.get("score") or 0.0))
+        completion = selected_record["_completion"]
+        user_prompt = selected_record["_user_prompt"]
+        prompt_trace_path = selected_record.get("prompt_trace_path")
+        writer_prompt_ab_metrics = [
+            {key: value for key, value in record.items() if not key.startswith("_")}
+            for record in candidate_records
+        ]
+        writer_prompt_selected_mode = str(selected_record.get("prompt_mode") or prompt_mode)
         if completion.provider == "fallback":
             # LLM call failed after all retries. Log clearly but let the
             # pipeline continue — the chapter-level guard in
@@ -9579,6 +10073,8 @@ async def generate_scene_draft(
             "query_brief_used": bool(getattr(context_packet, "query_brief", None)),
             "query_tool_call_count": len(getattr(context_packet, "query_trace", []) or []),
             "regen_count": int(scene_regen_count),
+            "writer_prompt_selected_mode": writer_prompt_selected_mode,
+            "writer_prompt_ab_metrics": writer_prompt_ab_metrics,
             "prewrite_manifest": (
                 prewrite_manifest.model_dump(mode="json")
                 if prewrite_manifest is not None
@@ -10420,6 +10916,19 @@ async def maybe_prepare_chapter_auto_repair(
             )
             reset_draft_count = 0
             for sc in scenes:
+                # WS-C3: per-scene auto-repair hard cap (write-safety path).
+                # Cumulative counter lives on the scene; outer project_repair
+                # cannot reset it.  At cap we keep the prior draft and stamp
+                # ``auto_accepted_with_debt`` so the chapter does not block.
+                if scene_should_skip_auto_repair_reset(sc, block_codes=repairable_hit):
+                    logger.info(
+                        "chapter %d scene %d: per-scene cap reached (write-safety path); "
+                        "skipping reset, keeping prior draft (auto_accepted_with_debt)",
+                        chapter.chapter_number,
+                        sc.scene_number,
+                    )
+                    continue
+                claim_scene_auto_repair_attempt(sc, pass_id=attempt_number)
                 sc.status = SceneStatus.NEEDS_REWRITE.value
                 result = await session.execute(
                     update(SceneDraftVersionModel)
@@ -10536,6 +11045,17 @@ async def maybe_prepare_chapter_auto_repair(
             )
             reset_draft_count = 0
             for sc in scenes:
+                # WS-C3: per-scene auto-repair hard cap (metadata-code path).
+                # See the matching comment in the write-safety path above.
+                if scene_should_skip_auto_repair_reset(sc, block_codes=repairable_hit):
+                    logger.info(
+                        "chapter %d scene %d: per-scene cap reached (metadata path); "
+                        "skipping reset, keeping prior draft (auto_accepted_with_debt)",
+                        chapter.chapter_number,
+                        sc.scene_number,
+                    )
+                    continue
+                claim_scene_auto_repair_attempt(sc, pass_id=attempt_number)
                 sc.status = SceneStatus.NEEDS_REWRITE.value
                 result = await session.execute(
                     update(SceneDraftVersionModel)
@@ -10921,6 +11441,19 @@ async def maybe_prepare_chapter_auto_repair(
     reset_count = 0
     reset_draft_count = 0
     for sc in scenes:
+        # WS-C3: per-scene auto-repair hard cap (length-stability path).
+        # Identical contract to the other two reset sites in
+        # ``maybe_prepare_chapter_auto_repair``; documented in one place
+        # above to keep the three call sites in sync.
+        if scene_should_skip_auto_repair_reset(sc, block_codes=canonical_hits):
+            logger.info(
+                "chapter %d scene %d: per-scene cap reached (length-stability path); "
+                "skipping reset, keeping prior draft (auto_accepted_with_debt)",
+                chapter.chapter_number,
+                sc.scene_number,
+            )
+            continue
+        claim_scene_auto_repair_attempt(sc, pass_id=attempt_number)
         sc.status = SceneStatus.NEEDS_REWRITE.value
         result = await session.execute(
             update(SceneDraftVersionModel)

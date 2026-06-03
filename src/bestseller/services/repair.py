@@ -639,6 +639,61 @@ def _normalize_chapter_scope(values: Iterable[int] | None) -> set[int] | None:
     return scope
 
 
+async def _filter_unwritten_chapter_numbers_from_repair_scope(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_numbers: Iterable[int],
+) -> set[int]:
+    """Keep project repair from turning future outline chapters into drafts.
+
+    Rewrite-impact analysis can correctly mark future chapters as affected by a
+    structural issue, but project repair must only rerun chapters that already
+    have content or are actively blocked. Planned/pending chapters with no
+    current draft belong to the normal sequential generation path.
+    """
+
+    requested = _normalize_chapter_scope(chapter_numbers) or set()
+    if not requested:
+        return set()
+
+    rows = await session.execute(
+        select(
+            ChapterModel.chapter_number,
+            ChapterModel.status,
+            ChapterModel.production_state,
+            ChapterDraftVersionModel.id,
+        )
+        .outerjoin(
+            ChapterDraftVersionModel,
+            and_(
+                ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            ),
+        )
+        .where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.chapter_number.in_(requested),
+        )
+    )
+    keep: set[int] = set()
+    seen: set[int] = set()
+    for chapter_number, status, production_state, draft_id in rows.all():
+        number = int(chapter_number)
+        seen.add(number)
+        if (
+            str(status or "").lower() == "planned"
+            and str(production_state or "").lower() == "pending"
+            and draft_id is None
+        ):
+            continue
+        keep.add(number)
+    # Preserve unknown numbers rather than silently dropping data if a caller
+    # hands us a partially materialized test/session object.
+    keep.update(requested - seen)
+    return keep
+
+
 async def _load_publication_blocked_chapter_numbers(
     session: AsyncSession,
     *,
@@ -1604,6 +1659,11 @@ async def run_project_repair(
                     for number in chapter_numbers
                     if number in target_chapter_scope
                 ]
+            chapter_numbers = await _filter_unwritten_chapter_numbers_from_repair_scope(
+                session,
+                project_id=project.id,
+                chapter_numbers=chapter_numbers,
+            )
             _stamp_project_repair_task_metadata(
                 project,
                 task,
@@ -1625,6 +1685,11 @@ async def run_project_repair(
                 for number in repair_gate_chapter_numbers
                 if number in target_chapter_scope
             }
+        repair_gate_chapter_numbers = await _filter_unwritten_chapter_numbers_from_repair_scope(
+            session,
+            project_id=project.id,
+            chapter_numbers=repair_gate_chapter_numbers,
+        )
         for chapter_number in repair_gate_chapter_numbers:
             chapter_task_ids.setdefault(chapter_number, [])
 

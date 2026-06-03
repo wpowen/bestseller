@@ -227,7 +227,7 @@ class GenreReviewProfile(BaseModel):
 _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     # action-progression
     "apocalypse-supply": "action-progression",
-    "apocalypse-rule": "action-progression",
+    "apocalypse-rule": "suspense-mystery",
     "xianxia-upgrade": "action-progression",
     "urban-power-reversal": "action-progression",
     "beast-taming-upgrade": "action-progression",
@@ -3495,6 +3495,21 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
 
 
 _PRIORITY_KEYWORD_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "suspense-mystery",
+        (
+            "规则生存",
+            "规则怪谈",
+            "规则类",
+            "副本规则",
+            "meta博弈",
+            "元叙事",
+            "剧本杀",
+            "infinite flow",
+            "rule horror",
+            "rule survival",
+        ),
+    ),
     (
         "urban-contemporary",
         (

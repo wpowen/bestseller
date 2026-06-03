@@ -1168,3 +1168,11 @@ def test_validate_empty_text_no_violations() -> None:
 def test_validate_empty_registry_no_violations() -> None:
     violations = validate_scene_text_identity("Some text here", [], language="zh-CN")
     assert violations == []
+
+
+def test_validate_zh_blocks_standalone_pinyin_ta_even_without_registry() -> None:
+    violations = validate_scene_text_identity("陆岑抬头，ta听见规则在墙里响。", [], language="zh-CN")
+
+    assert len(violations) == 1
+    assert violations[0].violation_type == "pinyin_ta_pronoun"
+    assert violations[0].severity == "critical"

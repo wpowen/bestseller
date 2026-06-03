@@ -14,6 +14,7 @@ from bestseller.infra.db.models import (
     SceneDraftVersionModel,
     StyleGuideModel,
 )
+from bestseller.domain.review import SceneReviewFinding, SceneReviewResult, SceneReviewScores
 from bestseller.services import reviews as review_services
 from bestseller.services.chapter_quality_bundle import ChapterQualityBundleReport
 from bestseller.services.quality_finding_schema import QualityFinding
@@ -548,6 +549,46 @@ def test_scene_rewrite_prompt_includes_required_context_blocks() -> None:
     assert "RANKING_SENTINEL" in user_prompt
     assert "RELATIONSHIP_SENTINEL" in user_prompt
     assert "L3_SENTINEL" in user_prompt
+
+
+def test_rule_survival_scene_review_prompt_uses_suspense_not_action_progression() -> None:
+    project = SimpleNamespace(
+        title="规则生存重启验证案卷",
+        genre="规则生存 / meta博弈",
+        sub_genre="规则怪谈式密室审判",
+        language="zh-CN",
+        metadata_json={"writing_profile": {"market": {"platform_target": "番茄小说"}}},
+    )
+    chapter = SimpleNamespace(chapter_number=1)
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="灰楼验牌",
+        purpose={"story": "验证第一条规则的漏洞", "emotion": "不安中寻找反制"},
+    )
+    draft = SimpleNamespace(content_md="沈照盯着提示牌，发现两条规则互相矛盾。")
+    review_result = _scene_review_result_for_rewrite(
+        findings=[
+            SceneReviewFinding(
+                category="conflict",
+                severity="high",
+                message="当前的信息对抗还不够清楚。",
+            )
+        ]
+    )
+
+    system_prompt, user_prompt = review_services.build_scene_review_prompts(
+        project,
+        chapter,
+        scene,
+        draft,
+        review_result,
+    )
+    combined = system_prompt + "\n" + user_prompt
+
+    assert "规则" in combined
+    assert "信息" in combined
+    assert "升级流" not in combined
+    assert "战斗场景" not in combined
 
 
 def test_chapter_rewrite_prompt_includes_qimao_opening_contract() -> None:
@@ -1172,6 +1213,136 @@ def test_review_summaries_switch_to_english_for_english_projects() -> None:
     assert "Verdict：" in chapter_summary
     assert "Findings:" in chapter_summary
     assert "问题列表" not in chapter_summary
+
+
+def _scene_review_result_for_rewrite(
+    *,
+    hook_strength: float = 0.11,
+    conflict_clarity: float = 0.34,
+    emotional_movement: float = 0.2,
+    contract_alignment: float = 0.21,
+    findings: list[SceneReviewFinding] | None = None,
+) -> SceneReviewResult:
+    return SceneReviewResult(
+        verdict="rewrite",
+        severity_max="medium",
+        scores=SceneReviewScores(
+            overall=0.52,
+            goal=1.0,
+            conflict=0.6,
+            conflict_clarity=conflict_clarity,
+            emotion=0.6,
+            emotional_movement=emotional_movement,
+            dialogue=0.92,
+            style=1.0,
+            hook=0.6,
+            hook_strength=hook_strength,
+            payoff_density=0.62,
+            voice_consistency=1.0,
+            character_voice_distinction=0.8,
+            thematic_resonance=0.6,
+            worldbuilding_integration=0.8,
+            prose_variety=0.8,
+            moral_complexity=0.8,
+            contract_alignment=contract_alignment,
+        ),
+        findings=findings
+        if findings is not None
+        else [
+            SceneReviewFinding(
+                category="hook_strength",
+                severity="medium",
+                message="结尾没有形成足够下一步钩子。",
+            ),
+            SceneReviewFinding(
+                category="contract_alignment",
+                severity="medium",
+                message=(
+                    "并对齐 scene contract，补齐这些缺口：camera_distance, "
+                    "relationship_debts, information_control_mode。"
+                ),
+            ),
+        ],
+    )
+
+
+def test_scene_rewrite_strategy_targets_conflict_emotion_before_field_repair() -> None:
+    result = _scene_review_result_for_rewrite()
+
+    strategy = review_services._scene_rewrite_strategy_for_review(result)
+
+    assert strategy == "scene_conflict_emotion_rewrite"
+
+
+def test_scene_rewrite_instructions_focus_prose_and_filter_field_soup() -> None:
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=1,
+        title="第1章",
+        chapter_goal="让沈照第一次确认灰楼规则会改写。",
+        target_word_count=2200,
+    )
+    scene = SceneCardModel(
+        project_id=uuid4(),
+        chapter_id=uuid4(),
+        scene_number=2,
+        scene_type="decision",
+        title="镜前朗读",
+        purpose={
+            "story": "沈照在一楼镜面前完成第一段公开朗读，拿到第一枚豁免印。",
+            "emotion": "从试探转为公开下注。",
+        },
+        entry_state={"protagonist": "沈照只掌握提示牌会改写的矛盾。"},
+        exit_state={
+            "reader": "读者知道豁免印真实存在，但季霜的噪音会稀释指认。",
+            "protagonist": "沈照必须立刻判断季霜是不是敌人。",
+        },
+        target_word_count=1100,
+    )
+    result = _scene_review_result_for_rewrite()
+
+    instructions = review_services._build_scene_rewrite_instructions(
+        chapter,
+        scene,
+        result,
+        language="zh-CN",
+    )
+
+    assert "只改正文" in instructions
+    assert "沈照在一楼镜面前完成第一段公开朗读" in instructions
+    assert "读者知道豁免印真实存在" in instructions
+    assert "明确阻力方、规则阻力和失败代价" in instructions
+    assert "不要补元数据字段" in instructions
+    assert "camera_distance" not in instructions
+    assert "relationship_debts" not in instructions
+    assert "information_control_mode" not in instructions
+
+
+def test_scene_rewrite_strategy_keeps_length_gates_first() -> None:
+    over = _scene_review_result_for_rewrite(
+        findings=[
+            SceneReviewFinding(
+                category="length",
+                severity="high",
+                message="当前场景超出目标字数 300 字。",
+            )
+        ]
+    )
+    under = _scene_review_result_for_rewrite(
+        findings=[
+            SceneReviewFinding(
+                category="length",
+                severity="high",
+                message="当前场景低于目标字数 300 字。",
+            )
+        ]
+    )
+
+    assert review_services._scene_rewrite_strategy_for_review(over) == "scene_trim_and_tighten"
+    assert (
+        review_services._scene_rewrite_strategy_for_review(under)
+        == "scene_dialogue_conflict_expansion"
+    )
 
 
 def test_chapter_context_section_switches_to_english_for_english_projects() -> None:

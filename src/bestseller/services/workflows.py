@@ -68,6 +68,7 @@ from bestseller.services.narrative_tree import rebuild_narrative_tree
 from bestseller.services.planning_readiness_gate import (
     evaluate_chapter_outline_batch_planning_readiness,
 )
+from bestseller.services.prewrite_quality_profile import strict_blocks
 from bestseller.services.projects import (
     create_chapter,
     create_or_get_volume,
@@ -925,7 +926,7 @@ def _repair_chapter_outline_contract_inputs(
         if len([buff for buff in conflict_buffs if _has_value(buff)]) < 2:
             conflict_buffs = [
                 f"{protagonist}面对{_text_value(opponent) or '外部势力'}的持续压迫，必须在有限时窗内完成选择。",
-                f"每一次试探都逼近时间边界，信息延误将导致代价从局部变成整体。",
+                "每一次试探都逼近时间边界，信息延误将导致代价从局部变成整体。",
             ]
             contract["conflict_buffs"] = conflict_buffs
             repairs += 1
@@ -2105,10 +2106,10 @@ async def materialize_chapter_outline_batch(
             }
             if (
                 not _planning_readiness_report.passed
-                and getattr(
-                    settings.pipeline,
+                and strict_blocks(
+                    project,
+                    settings,
                     "methodology_planning_readiness_block_on_failure",
-                    True,
                 )
             ):
                 raise ValueError(
@@ -2181,10 +2182,10 @@ async def materialize_chapter_outline_batch(
                 status=(
                     WorkflowStatus.MACHINE_BLOCKED
                     if not _outline_llm_result.passed
-                    and getattr(
-                        settings.pipeline,
+                    and strict_blocks(
+                        project,
+                        settings,
                         "outline_llm_commercial_judge_block_on_failure",
-                        False,
                     )
                     else WorkflowStatus.COMPLETED
                 ),
@@ -2193,10 +2194,10 @@ async def materialize_chapter_outline_batch(
             step_order += 1
             if (
                 not _outline_llm_result.passed
-                and getattr(
-                    settings.pipeline,
+                and strict_blocks(
+                    project,
+                    settings,
                     "outline_llm_commercial_judge_block_on_failure",
-                    False,
                 )
             ):
                 issue_summary = "; ".join(

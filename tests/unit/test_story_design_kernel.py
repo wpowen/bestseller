@@ -163,6 +163,25 @@ def test_story_design_kernel_round_trips_and_renders_prompt_block() -> None:
     assert "灵田经营权主线" in block
 
 
+def test_story_design_kernel_normalizes_worldview_system_list_limits() -> None:
+    payload = deepcopy(_kernel_payload())
+    worldview = payload["worldview_kernel"]
+    assert isinstance(worldview, dict)
+    systems = worldview["systems"]
+    assert isinstance(systems, list)
+    system = systems[0]
+    assert isinstance(system, dict)
+    system["limits"] = ["短期压榨可以提速", "但会透支后续产出"]
+    system["costs"] = ["偿还关系债务", "留下制度风险"]
+
+    kernel = story_design_kernel_from_dict(payload)
+    dumped = story_design_kernel_to_dict(kernel)
+    normalized = dumped["worldview_kernel"]["systems"][0]
+
+    assert normalized["limits"] == "短期压榨可以提速；但会透支后续产出"
+    assert normalized["costs"] == "偿还关系债务；留下制度风险"
+
+
 def test_story_design_kernel_accepts_story_principle_contracts() -> None:
     payload = deepcopy(_kernel_payload())
     payload.update(

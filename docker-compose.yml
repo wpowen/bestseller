@@ -6,6 +6,7 @@ x-env-common: &env-common
   BESTSELLER__OUTPUT__BASE_DIR: /app/output
   BESTSELLER__ARTIFACT_STORE__LOCAL_DIR: /app/artifacts
   BESTSELLER_TASK_STALE_SECONDS: ${BESTSELLER_TASK_STALE_SECONDS:-2700}
+  TZ: ${TZ:-Asia/Shanghai}
 
 # ── Shared build config ─────────────────────────────────────────────────────
 # Docker Desktop injects http.docker.internal:3128 as a build proxy that is
@@ -54,6 +55,8 @@ services:
       POSTGRES_USER: ${DB_USER:-bestseller}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-bestseller}
       POSTGRES_DB: ${DB_NAME:-bestseller}
+      TZ: ${TZ:-Asia/Shanghai}
+      PGTZ: ${TZ:-Asia/Shanghai}
       # Cap shared_buffers + work_mem so Postgres stays within its memory limit.
       # shared_buffers=128MB: page cache for hot data (default 128MB, kept low)
       # work_mem=16MB:        per-sort / per-hash allocation (16 concurrent ops → 256MB max)
@@ -73,6 +76,7 @@ services:
         -c wal_buffers=8MB
         -c checkpoint_completion_target=0.9
         -c random_page_cost=1.1
+        -c timezone=${TZ:-Asia/Shanghai}
         -c log_min_duration_statement=2000
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -94,6 +98,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     # maxmemory: cap Redis heap; allkeys-lru evicts least-recently-used keys
     # when full so the process never grows past the container limit.
     command: >
@@ -261,6 +267,9 @@ services:
       # If you raise this further, bump WEB_MEMORY_LIMIT and postgres max_connections
       # together — each task opens 2-4 async DB connections concurrently.
       WEB_MAX_CONCURRENT_TASKS: ${WEB_MAX_CONCURRENT_TASKS:-5}
+      # Keep web startup observable and avoid silently resuming old generation
+      # tasks after a validation restart. Operators can opt in explicitly.
+      BESTSELLER_AUTO_RESUME_ON_STARTUP: ${BESTSELLER_AUTO_RESUME_ON_STARTUP:-0}
     env_file:
       - .env
     ports:
@@ -278,7 +287,7 @@ services:
         reservations:
           memory: 256M
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8787/ || exit 0"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8787/"]
       interval: 30s
       timeout: 5s
       start_period: 15s

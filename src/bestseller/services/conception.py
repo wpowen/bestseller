@@ -33,7 +33,12 @@ from bestseller.services.concept_lab import (
     render_concept_lab_prompt_block,
 )
 from bestseller.services.hook_propagation import coerce_hook_spec, render_hook_spec_prompt_block
-from bestseller.services.platform_title_workflow import select_primary_platform_title
+from bestseller.services.platform_title_workflow import (
+    build_title_revision_messages,
+    finalize_revised_title,
+    select_primary_platform_title,
+    should_revise_primary_title,
+)
 from bestseller.services.writing_profile import (
     resolve_writing_profile,
     sanitize_genre_story_overrides,
@@ -309,6 +314,52 @@ async def _llm_call(
         ),
     )
     return result.content, result.llm_run_id
+
+
+async def _maybe_revise_platform_title(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    title_profile: dict[str, Any],
+    primary_candidate: dict[str, Any],
+    target_platform: str,
+    workflow_title: str,
+) -> tuple[str, bool, UUID | None]:
+    """Optionally LLM-revise a weak platform title for platform-口播 fit.
+
+    Returns ``(title, was_revised, llm_run_id)``. No-op (returns the original
+    title) when the feature is disabled, the title is already strong (clean IP
+    name / passing), or the revised candidate fails validation. See
+    platform_title_workflow.py § P2 (2026-06-03 book-title regression fix).
+    """
+
+    if not getattr(settings.generation, "title_llm_revision_enabled", True):
+        return workflow_title, False, None
+    if not should_revise_primary_title(primary_candidate):
+        return workflow_title, False, None
+    messages = build_title_revision_messages(
+        title_profile, primary_candidate, target_platform=target_platform
+    )
+    if messages is None:
+        return workflow_title, False, None
+    revision_system, revision_user = messages
+    revised_raw, revision_llm_id = await _llm_call(
+        session,
+        settings,
+        role="editor",
+        system_prompt=revision_system,
+        user_prompt=revision_user,
+        # On LLM failure, fall back to the original title so finalize keeps it.
+        fallback=workflow_title or "未命名",
+        template="title_platform_revision",
+    )
+    adopted_title, was_revised = finalize_revised_title(
+        title_profile,
+        workflow_title,
+        revised_raw,
+        target_platform=target_platform,
+    )
+    return adopted_title, was_revised, revision_llm_id
 
 
 async def _llm_call_json(
@@ -1787,12 +1838,31 @@ async def run_conception_pipeline(
         workflow_title = str(primary_title_candidate.get("title") or "").strip()
         if workflow_title:
             title = workflow_title
-            writing_profile.setdefault("market", {})["title_workflow_primary"] = {
+            title_workflow_primary = {
                 "title": workflow_title,
                 "platform_label": primary_title_candidate.get("platform_label"),
                 "scope_label": primary_title_candidate.get("scope_label"),
                 "pattern": primary_title_candidate.get("pattern"),
             }
+            writing_profile.setdefault("market", {})["title_workflow_primary"] = (
+                title_workflow_primary
+            )
+            # P2 (2026-06-03): single LLM platform-口播 revision for weak titles.
+            adopted_title, was_revised, revision_llm_id = await _maybe_revise_platform_title(
+                session,
+                settings,
+                title_profile=title_profile,
+                primary_candidate=primary_title_candidate,
+                target_platform=str(target_platform or ""),
+                workflow_title=workflow_title,
+            )
+            if revision_llm_id is not None:
+                llm_run_ids.append(revision_llm_id)
+            if was_revised:
+                title = adopted_title
+                title_workflow_primary["title"] = adopted_title
+                title_workflow_primary["pre_revision_title"] = workflow_title
+                title_workflow_primary["llm_revised"] = True
     except Exception:
         logger.warning("Platform title workflow failed during conception", exc_info=True)
 

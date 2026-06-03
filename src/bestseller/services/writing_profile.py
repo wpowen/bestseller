@@ -13,6 +13,7 @@ from bestseller.domain.project import (
 )
 from bestseller.infra.db.models import ProjectModel, StyleGuideModel
 from bestseller.services.prompt_packs import (
+    infer_default_prompt_pack_key,
     render_prompt_pack_fragment,
     render_prompt_pack_prompt_block,
     resolve_prompt_pack,
@@ -323,8 +324,15 @@ def resolve_writing_profile(
     platform_preset = get_platform_preset(str(platform_name) if platform_name else None)
     if platform_preset is not None:
         merged = _deep_merge(merged, platform_preset.writing_profile_overrides)
+    auto_prompt_pack_key = infer_default_prompt_pack_key(genre, sub_genre)
     prompt_pack = resolve_prompt_pack(
-        pack_key or (inferred_genre_preset.prompt_pack_key if inferred_genre_preset is not None else None),
+        pack_key
+        or auto_prompt_pack_key
+        or (
+            inferred_genre_preset.prompt_pack_key
+            if inferred_genre_preset is not None
+            else None
+        ),
         genre=genre,
         sub_genre=sub_genre,
     )
@@ -357,7 +365,11 @@ def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingPro
 
 
 def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfile) -> dict[str, Any]:
-    metadata = initialize_truth_metadata(payload.metadata)
+    from bestseller.services.prewrite_quality_profile import (
+        apply_default_prewrite_quality_profile,
+    )
+
+    metadata = apply_default_prewrite_quality_profile(initialize_truth_metadata(payload.metadata))
     metadata["writing_profile"] = writing_profile.model_dump(mode="json")
     metadata.setdefault("platform_target", writing_profile.market.platform_target)
     metadata.setdefault("reader_promise", writing_profile.market.reader_promise)

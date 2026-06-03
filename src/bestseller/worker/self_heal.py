@@ -33,6 +33,7 @@ import asyncio
 import datetime as _dt
 import logging
 import os
+import pickle
 import time
 import uuid
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from sqlalchemy import and_, func, or_, select, text, update
+from redis.asyncio.client import NEVER_DECODE
 
 if TYPE_CHECKING:  # pragma: no cover — import only for type hints
     from arq.connections import ArqRedis
@@ -53,7 +55,11 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
 )
 from bestseller.infra.db.session import get_server_session
-from bestseller.services.gate_registry import project_resume_is_terminally_blocked
+from bestseller.services.gate_registry import (
+    gate_continuation_impact,
+    project_resume_is_terminally_blocked,
+)
+from bestseller.services.repair_impact import compute_continuation_readiness
 from bestseller.settings import AppSettings
 
 # Periodic self-heal must not reap legitimate long LLM calls.  A single
@@ -155,10 +161,12 @@ _AUTO_REPAIRABLE_WRITE_SAFETY_BLOCK_CODES = frozenset(
 GENERATION_GATE_RESUME_COOLDOWN_SECONDS = int(
     os.getenv("BESTSELLER_GENERATION_GATE_RESUME_COOLDOWN_SECONDS", "60")
 )
+TEMPORARY_PLANNING_THROTTLE_REASON = "temporary_planning_throttle_for_new_books"
 _AUTO_RESUMABLE_GENERATION_GATE_REASONS = frozenset(
     {
         "scene_plan_richness_gate_failed",
         "story_bible_gate_failed",
+        TEMPORARY_PLANNING_THROTTLE_REASON,
         "volume_outline_gate_failed",
     }
 )
@@ -217,6 +225,7 @@ async def reap_orphan_workflow_runs(
     session: Any,
     timeout_seconds: int = ORPHAN_WORKFLOW_TIMEOUT_SECONDS,
     startup_cutoff: _dt.datetime | None = None,
+    protected_project_ids: set[Any] | None = None,
 ) -> int:
     """Flip active ``WorkflowRunModel`` rows that look abandoned to ``failed``.
 
@@ -236,6 +245,7 @@ async def reap_orphan_workflow_runs(
     """
     now = _dt.datetime.now(_dt.UTC)
     heartbeat_cutoff = now - _dt.timedelta(seconds=timeout_seconds)
+    protected_project_ids = protected_project_ids or set()
 
     stale_conditions = [WorkflowRunModel.updated_at < heartbeat_cutoff]
     if startup_cutoff is not None:
@@ -245,7 +255,7 @@ async def reap_orphan_workflow_runs(
         # heartbeat shortly before the container was replaced.
         stale_conditions.append(WorkflowRunModel.created_at < startup_cutoff)
 
-    result = await session.execute(
+    reap_stmt = (
         update(WorkflowRunModel)
         .where(
             WorkflowRunModel.workflow_type.in_(_REAPABLE_WORKFLOW_TYPES),
@@ -257,10 +267,16 @@ async def reap_orphan_workflow_runs(
             error_message=_ORPHAN_ERROR_MESSAGE,
         )
     )
+    if protected_project_ids:
+        reap_stmt = reap_stmt.where(
+            WorkflowRunModel.project_id.not_in(list(protected_project_ids)),
+        )
+
+    result = await session.execute(reap_stmt)
     reaped = int(result.rowcount or 0)
 
     if startup_cutoff is not None:
-        startup_result = await session.execute(
+        startup_stmt = (
             update(WorkflowRunModel)
             .where(
                 WorkflowRunModel.workflow_type.in_(_STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES),
@@ -275,6 +291,12 @@ async def reap_orphan_workflow_runs(
                 error_message=_ORPHAN_ERROR_MESSAGE,
             )
         )
+        if protected_project_ids:
+            startup_stmt = startup_stmt.where(
+                WorkflowRunModel.project_id.not_in(list(protected_project_ids)),
+            )
+
+        startup_result = await session.execute(startup_stmt)
         reaped += int(startup_result.rowcount or 0)
 
     # Parent/child workflow rows can be left inconsistent during rolling
@@ -300,6 +322,85 @@ async def reap_orphan_workflow_runs(
         },
     )
     return reaped + int(child_result.rowcount or 0)
+
+
+async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
+    """Return project slugs owned by currently in-progress ARQ jobs.
+
+    Worker startup self-heal runs while other workers may already be executing
+    long autowrite jobs.  Those jobs have a durable ``arq:in-progress:*`` key,
+    but their workflow rows can look pre-boot from the new worker's point of
+    view.  Protecting the in-progress job's project prevents startup reaping
+    from marking legitimate live work as abandoned.
+    """
+    if redis is None:
+        return set()
+
+    slugs: set[str] = set()
+    try:
+        scan_iter = getattr(redis, "scan_iter", None)
+        patterns = ("arq:in-progress:*", "arq:job:*", "arq:retry:*")
+        if scan_iter is not None:
+            keys = []
+            for pattern in patterns:
+                keys.extend([key async for key in scan_iter(match=pattern)])
+        else:
+            keys = [
+                key
+                for pattern in patterns
+                for key in await redis.keys(pattern)
+            ]
+    except Exception:  # noqa: BLE001
+        logger.exception("self-heal: failed to scan ARQ in-progress jobs")
+        return set()
+
+    for key in keys:
+        key_text = key.decode() if isinstance(key, bytes) else str(key)
+        if key_text.startswith("arq:in-progress:"):
+            job_id = key_text.removeprefix("arq:in-progress:")
+        elif key_text.startswith("arq:job:"):
+            job_id = key_text.removeprefix("arq:job:")
+        elif key_text.startswith("arq:retry:"):
+            job_id = key_text.removeprefix("arq:retry:")
+        else:
+            continue
+        try:
+            raw = await _redis_get_bytes(redis, f"arq:job:{job_id}")
+        except Exception:  # noqa: BLE001
+            logger.exception("self-heal: failed to read ARQ job %s", job_id)
+            continue
+        if not raw:
+            continue
+        try:
+            job_payload = pickle.loads(raw)
+        except Exception:  # noqa: BLE001
+            logger.exception("self-heal: failed to decode ARQ job %s", job_id)
+            continue
+        kwargs = job_payload.get("k") if isinstance(job_payload, dict) else None
+        payload = kwargs.get("payload") if isinstance(kwargs, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        slug = payload.get("project_slug")
+        if isinstance(slug, str) and slug:
+            slugs.add(slug)
+
+    return slugs
+
+
+async def _redis_get_bytes(redis: Any, key: str) -> bytes | None:
+    execute_command = getattr(redis, "execute_command", None)
+    if execute_command is not None:
+        return await execute_command("GET", key, **{NEVER_DECODE: True})
+    return await redis.get(key)
+
+
+async def _resolve_project_ids_for_slugs(session: Any, slugs: set[str]) -> set[Any]:
+    if not slugs:
+        return set()
+    result = await session.scalars(
+        select(ProjectModel.id).where(ProjectModel.slug.in_(sorted(slugs))),
+    )
+    return set(result)
 
 
 async def find_stuck_projects(session: Any) -> list[StuckProject]:
@@ -390,40 +491,81 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                 )
             )
         ) or 0
+        # A blocked chapter only forces repair-FIRST (starving continuation)
+        # when its defect is *structural* — i.e. it corrupts the canon /
+        # continuity snapshot that later chapters inherit. A purely *local*
+        # block (opening tension, length, style) is confined to that chapter's
+        # prose, so new-chapter writing proceeds in parallel and the local
+        # repair is drained once writing has caught up to the plan. See
+        # ``services.repair_impact`` (青囊不语问阴阳 looped ch1 opening repair
+        # forever while later chapters waited).
+        local_repair_pending = False
         if blocked_chapters > 0:
-            if await _blocked_chapters_have_recent_waiting_repair(session, project.id):
-                logger.info(
-                    "self-heal: skipped slug=%s — blocked chapters already reached machine_blocked repair",
-                    project.slug,
+            readiness = await compute_continuation_readiness(session, project.id)
+            if not readiness.can_continue:
+                if await _blocked_chapters_have_scene_machine_blocker(
+                    session, project.id
+                ):
+                    logger.info(
+                        "self-heal: skipped slug=%s — scene repair already reached machine_blocked",
+                        project.slug,
+                    )
+                    continue
+                if await _blocked_chapters_have_recent_waiting_repair(
+                    session, project.id
+                ):
+                    logger.info(
+                        "self-heal: skipped slug=%s — blocked chapters already reached machine_blocked repair",
+                        project.slug,
+                    )
+                    continue
+                stuck.append(
+                    StuckProject(
+                        project_id=project.id,
+                        slug=project.slug,
+                        reason="blocked_chapters",
+                        stuck_at_chapter=None,
+                        chapters_total=int(chapters_total),
+                        chapters_with_draft=int(chapters_with_draft),
+                        heal_kind="repair",
+                    )
                 )
                 continue
-            stuck.append(
-                StuckProject(
-                    project_id=project.id,
-                    slug=project.slug,
-                    reason="blocked_chapters",
-                    stuck_at_chapter=None,
-                    chapters_total=int(chapters_total),
-                    chapters_with_draft=int(chapters_with_draft),
-                    heal_kind="repair",
-                )
+            # Only local-quality blocks remain — do not starve continuation.
+            local_repair_pending = True
+            logger.info(
+                "self-heal: slug=%s has %d local-quality block(s) — writing "
+                "continues in parallel (%s)",
+                project.slug,
+                len(readiness.local_blocked_chapters),
+                readiness.reason,
             )
-            continue
 
         pending_rewrite_tasks = await _pending_rewrite_task_count(session, project.id)
         if pending_rewrite_tasks > 0:
-            stuck.append(
-                StuckProject(
-                    project_id=project.id,
-                    slug=project.slug,
-                    reason="pending_rewrite_tasks",
-                    stuck_at_chapter=None,
-                    chapters_total=int(chapters_total),
-                    chapters_with_draft=int(chapters_with_draft),
-                    heal_kind="repair",
+            if await _pending_rewrite_tasks_block_continuation(session, project.id):
+                if await _blocked_chapters_have_scene_machine_blocker(
+                    session, project.id
+                ):
+                    logger.info(
+                        "self-heal: skipped slug=%s — pending scene rewrite tasks belong to machine_blocked scene repair",
+                        project.slug,
+                    )
+                    continue
+                stuck.append(
+                    StuckProject(
+                        project_id=project.id,
+                        slug=project.slug,
+                        reason="pending_rewrite_tasks",
+                        stuck_at_chapter=None,
+                        chapters_total=int(chapters_total),
+                        chapters_with_draft=int(chapters_with_draft),
+                        heal_kind="repair",
+                    )
                 )
-            )
-            continue
+                continue
+            # Pending rewrite tasks are all local-gate polish — let writing run.
+            local_repair_pending = True
 
         if auto_resumable_generation_gate:
             stuck.append(
@@ -505,6 +647,28 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                     chapters_with_draft=int(chapters_with_draft),
                 )
             )
+            continue
+
+        # Drain local-quality repairs only once forward writing has caught up to
+        # the plan (no missing drafts, not under target). Continuation always
+        # wins while there are new chapters to write; local repair is the
+        # lower-priority tail — this is what makes repair and new-chapter
+        # writing "分别去做" without ever starving forward progress.
+        if local_repair_pending:
+            if await _blocked_chapters_have_scene_machine_blocker(session, project.id):
+                continue
+            stuck.append(
+                StuckProject(
+                    project_id=project.id,
+                    slug=project.slug,
+                    reason="local_quality_repair_drain",
+                    stuck_at_chapter=None,
+                    chapters_total=int(chapters_total),
+                    chapters_with_draft=int(chapters_with_draft),
+                    heal_kind="repair",
+                )
+            )
+            continue
 
     return stuck
 
@@ -602,6 +766,46 @@ async def _blocked_chapters_have_recent_waiting_repair(
     return latest_waiting_repair_update >= latest_blocked_update
 
 
+async def _blocked_chapters_have_scene_machine_blocker(
+    session: Any,
+    project_id: Any,
+) -> bool:
+    """True when a blocked chapter already exhausted bounded scene repair.
+
+    ``scene_rewrite_stalled_blocked`` and ``scene_machine_repair_required`` are
+    explicit stop states: the scene pipeline tried its bounded machine repairs
+    and still could not pass.  Self-heal must not treat the leftover blocked
+    chapter or pending scene rewrite tasks as recoverable work, otherwise every
+    worker scan replays the same scene repair loop and burns LLM tokens.
+    """
+    latest_scene_blocker_update = await session.scalar(
+        select(func.max(WorkflowRunModel.updated_at)).where(
+            WorkflowRunModel.project_id == project_id,
+            WorkflowRunModel.status == WorkflowStatus.MACHINE_BLOCKED.value,
+            WorkflowRunModel.current_step.in_(
+                [
+                    "scene_machine_repair_required",
+                    "scene_rewrite_stalled_blocked",
+                ]
+            ),
+        )
+    )
+    latest_scene_blocker_update = _ensure_utc(latest_scene_blocker_update)
+    if latest_scene_blocker_update is None:
+        return False
+
+    latest_blocked_update = await session.scalar(
+        select(func.max(ChapterModel.updated_at)).where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.production_state == "blocked",
+        )
+    )
+    latest_blocked_update = _ensure_utc(latest_blocked_update)
+    if latest_blocked_update is None:
+        return True
+    return latest_scene_blocker_update >= latest_blocked_update
+
+
 async def _pending_rewrite_task_count(session: Any, project_id: Any) -> int:
     count = await session.scalar(
         select(func.count())
@@ -612,6 +816,31 @@ async def _pending_rewrite_task_count(session: Any, project_id: Any) -> int:
         )
     )
     return int(count or 0)
+
+
+async def _pending_rewrite_tasks_block_continuation(
+    session: Any,
+    project_id: Any,
+) -> bool:
+    """True when a pending rewrite task is structural (must gate writing).
+
+    A rewrite task triggered by a *local* quality gate (e.g. the opening gate)
+    only polishes its own chapter's prose, so it must not stall new-chapter
+    writing. Unknown / non-gate trigger types resolve to ``"structural"`` via
+    :func:`gate_continuation_impact`, keeping the conservative default.
+    """
+
+    rows = await session.scalars(
+        select(RewriteTaskModel).where(
+            RewriteTaskModel.project_id == project_id,
+            RewriteTaskModel.status.in_(["pending", "queued"]),
+        )
+    )
+    for task in rows:
+        trigger = str(getattr(task, "trigger_type", "") or "")
+        if gate_continuation_impact(trigger) == "structural":
+            return True
+    return False
 
 
 def _ensure_utc(value: _dt.datetime | None) -> _dt.datetime | None:
@@ -734,6 +963,13 @@ def _project_has_stale_auto_resumable_generation_gate(project: ProjectModel) -> 
         metadata.get("generation_gate_auto_retry_needed")
         or metadata.get("generation_resume_blocked_by_planning_gate")
         or metadata.get("generation_auto_repair_exhausted")
+        or (
+            base_reason == TEMPORARY_PLANNING_THROTTLE_REASON
+            and (
+                metadata.get("production_paused")
+                or metadata.get("generation_resume_blocked_until_repair_audit")
+            )
+        )
     ):
         return False
     blocked_at = _metadata_datetime(
@@ -769,9 +1005,11 @@ async def _clear_auto_resumable_generation_gate_pause(
         "generation_gate_auto_retry_needed",
         "generation_resume_blocked_by_planning_gate",
         "generation_auto_repair_exhausted",
+        "generation_resume_blocked_until_repair_audit",
         "production_paused",
         "production_pause_reason",
         "last_generation_gate_blocked_at",
+        "paused_at",
     ):
         metadata.pop(key, None)
     project.metadata_json = metadata
@@ -1050,7 +1288,7 @@ def _coalesce_stuck_projects_for_enqueue(
 
     chosen: dict[str, StuckProject] = {}
     order: list[str] = []
-    priority = {"autowrite": 1, "project_pipeline": 2, "repair": 3}
+    priority = {"autowrite": 3, "project_pipeline": 2, "repair": 1}
     for stuck in stuck_list:
         if stuck.slug not in chosen:
             chosen[stuck.slug] = stuck
@@ -1174,15 +1412,25 @@ async def heal_stuck_projects(
                 logger.exception("self-heal: failed to clear stale scan-done marker")
 
         async with get_server_session() as session:
+            protected_project_ids = await _resolve_project_ids_for_slugs(
+                session,
+                await _active_arq_project_slugs(redis),
+            )
             reaped = await reap_orphan_workflow_runs(
                 session,
                 startup_cutoff=startup_cutoff,
+                protected_project_ids=protected_project_ids,
             )
             if reaped:
                 await session.commit()
                 logger.info(
                     "self-heal: reaped %d orphan workflow run(s)",
                     reaped,
+                )
+            if protected_project_ids:
+                logger.info(
+                    "self-heal: protected %d project(s) with in-progress ARQ jobs",
+                    len(protected_project_ids),
                 )
             stuck_list = await find_stuck_projects(session)
 

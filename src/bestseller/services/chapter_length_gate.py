@@ -17,10 +17,14 @@ Severity ladder
 - ``critical`` ``CHAPTER_LENGTH_BLOCK_HIGH`` — above the hard max; auto-repair.
 - pass — in the target/max band.
 
-Default thresholds (overridable per project via series-bible):
-- hard floor: 3000 zh chars
-- soft warning: 3500 zh chars
-- hard max: 5000 zh chars
+Default thresholds (overridable per project via series-bible). These MUST
+match the enforced constants below and ``config/default.yaml::words_per_chapter``
+(single source of truth: the zh long-form 1800-2600-3500 band). The previous
+docstring quoted a stale 3000/3500/5000 ladder that contradicted both the
+constants and the runtime config — fixed 2026-06-02.
+- hard floor: 1800 zh chars
+- soft warning (target): 2600 zh chars
+- hard max: 3500 zh chars
 
 Block code: ``CHAPTER_TOO_SHORT`` — eligible for auto-repair.
 """

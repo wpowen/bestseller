@@ -333,7 +333,11 @@ def _looks_like_meta_payoff(value: str) -> bool:
     )
 
 
-def evaluate_qimao_planning_gate(payload: Mapping[str, Any] | None) -> QimaoPlanningGateReport:
+def evaluate_qimao_planning_gate(
+    payload: Mapping[str, Any] | None,
+    *,
+    target_chapters: int | None = None,
+) -> QimaoPlanningGateReport:
     contract = _contract_from_payload(payload)
     findings: list[QimaoPlanningFinding] = []
 
@@ -389,12 +393,18 @@ def evaluate_qimao_planning_gate(payload: Mapping[str, Any] | None) -> QimaoPlan
             evidence=first_page_conflict,
         ))
 
-    required_fields = (
+    enable_chapter_3_gate = target_chapters is None or int(target_chapters or 0) >= 3
+    enable_opening_arc_loop_gate = target_chapters is None or int(target_chapters or 0) >= 6
+
+    required_fields = [
         ("protagonist_immediate_goal", "missing_protagonist_goal", "缺少主角即时目标，代入感会弱。"),
         ("visible_loss_if_fail", "missing_visible_loss", "缺少失败损失，第一章压力不足。"),
         ("protagonist_edge", "missing_protagonist_edge", "缺少主角差异化优势，第二章前无法建立追读理由。"),
-        ("chapter_3_payoff", "missing_chapter_3_payoff", "缺少第三章小爽点或回报，黄金三章闭环不成立。"),
-    )
+    ]
+    if enable_chapter_3_gate:
+        required_fields.append(
+            ("chapter_3_payoff", "missing_chapter_3_payoff", "缺少第三章小爽点或回报，黄金三章闭环不成立。")
+        )
     for field, code, message in required_fields:
         if _is_blank(contract.get(field)):
             findings.append(QimaoPlanningFinding(
@@ -430,7 +440,7 @@ def evaluate_qimao_planning_gate(payload: Mapping[str, Any] | None) -> QimaoPlan
         ))
 
     chapter_3_payoff = _text(contract.get("chapter_3_payoff"))
-    if chapter_3_payoff and _looks_like_meta_payoff(chapter_3_payoff):
+    if enable_chapter_3_gate and chapter_3_payoff and _looks_like_meta_payoff(chapter_3_payoff):
         findings.append(QimaoPlanningFinding(
             code="meta_chapter_3_payoff",
             severity="critical",
@@ -439,7 +449,9 @@ def evaluate_qimao_planning_gate(payload: Mapping[str, Any] | None) -> QimaoPlan
         ))
 
     first_10k_loop = _text(contract.get("first_10000_loop"))
-    if not first_10k_loop:
+    if not enable_opening_arc_loop_gate:
+        pass
+    elif not first_10k_loop:
         findings.append(QimaoPlanningFinding(
             code="first_10k_loop_missing",
             severity="critical",

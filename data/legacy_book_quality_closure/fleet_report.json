@@ -1,56 +1,41 @@
 {
-  "model_execution_ready": false,
+  "model_execution_ready": true,
   "model_preflight": {
-    "ready": false,
-    "provider": null,
-    "model_name": null,
+    "ready": true,
+    "provider": "deepseek",
+    "model_name": "deepseek-chat",
     "finish_reason": null,
     "llm_run_id": null,
-    "reason": "dry_run",
+    "reason": null,
     "error": null
   },
-  "book_count": 1,
-  "max_rounds": 1,
-  "rows": [
-    {
-      "slug": "exorcist-detective-1778051012",
-      "category": "suspense-mystery",
-      "target_chapters": 500,
-      "current_chapters": 85,
-      "quality_score": 63.47,
-      "blocked_chapters": 3,
-      "repair_tasks": 2,
-      "missing_chapters": 400,
-      "acceptance_status": "blocked",
-      "status": "repairing",
-      "next_action": "execute_next_repair_round",
-      "error": null
-    }
-  ],
+  "book_count": 0,
+  "max_rounds": 4,
+  "rows": [],
   "lifecycle_rows": [
     {
-      "slug": "exorcist-detective-1778051012",
+      "slug": "human-nature-game-1779104696",
       "passed": false,
-      "readiness_level": "blocked",
-      "finding_count": 10,
-      "report_path": "output/exorcist-detective-1778051012/audits/lifecycle-quality/report.json"
+      "readiness_level": null,
+      "finding_count": 0,
+      "report_path": null
     }
   ],
   "rounds": [
     {
-      "slug": "exorcist-detective-1778051012",
+      "slug": "human-nature-game-1779104696",
       "round": 1,
       "status": "repairing",
       "next_action": "execute_next_repair_round",
       "progress_signature": [
         "repairing",
         "execute_next_repair_round",
-        85,
-        3,
-        2,
-        15,
-        400,
-        63.47
+        57,
+        0,
+        0,
+        0,
+        0,
+        70.0
       ]
     }
   ]

@@ -142,6 +142,18 @@ def test_all_mechanism_one_liners_avoid_broken_must_prefixes() -> None:
         assert spec.methodology_axes
 
 
+def test_chinese_hook_spec_localizes_visible_methodology_axes() -> None:
+    mechanism = list_mechanisms()[0]
+
+    spec = build_hook_spec_from_mechanism(mechanism, genre="都市修真", variant_index=1)
+
+    visible_axes = " ".join([*spec.arc_engine, *spec.methodology_axes])
+    assert "deadline" not in visible_axes
+    assert "countdown_threat" not in visible_axes
+    assert "hook_lifecycle" not in visible_axes
+    assert "倒计时" in visible_axes or "信息差" in visible_axes or "悬念" in visible_axes
+
+
 def test_large_hook_batch_diversifies_mechanisms_and_sentence_shapes() -> None:
     candidates = generate_hook_candidates(genre="末日科幻", count=12, seed=7, min_h_norm=30)
 

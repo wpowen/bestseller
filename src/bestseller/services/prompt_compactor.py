@@ -15,16 +15,96 @@ class CompactionReport:
     saved_tokens_estimate: int
 
 
+# Craft-theory / metadata / reference-dump sections that belong to the planner
+# and critic stages, not the writer's generation prompt. The writer still needs
+# the compact execution core (distilled strategy, emotion kernel, public emotion,
+# and event-unit contract), so those sections are intentionally preserved.
+# Matched against the leading text of each top-level section; dropped in lean
+# mode.
+_LEAN_STRIP_MARKERS: tuple[str, ...] = (
+    "【方法论 lineage",
+    "## 文化原型",
+    "文化原型 [cultural_archetypes",
+    "### scene_templates",
+    "### locale_templates",
+    "### character_templates",
+    "### power_systems",
+    "### device_templates",
+    "### world_settings",
+    # Material-Forge reference catalogs (§slug dumps). The writer already gets a
+    # short "素材锚点 §slug" pointer list; the full catalogs are reference, not
+    # prose instructions.
+    "### factions",
+    "### character_archetypes",
+    "### plot_patterns",
+    "### thematic_motifs",
+    "### emotion_arcs",
+    "### dialogue_styles",
+    "### anti_cliche_patterns",
+    "### real_world_references",
+    "## 风格参照 [reference_corpora",
+    "# Reference corpus",
+)
+
+# A new top-level section begins at a line starting with 【, a markdown header
+# (#, ##, ###), or a === fence.
+_SECTION_BOUNDARY = re.compile(r"(?=\n【)|(?=\n#{1,3} )|(?=\n=== )")
+
+# Only dedupe / strip substantial sections so short repeated tags (【语言】…) are
+# never touched.
+_MIN_SECTION_CHARS = 200
+
+
+def _split_sections(text: str) -> list[str]:
+    return _SECTION_BOUNDARY.split(text)
+
+
+def _strip_meta_sections(text: str) -> str:
+    kept: list[str] = []
+    for part in _split_sections(text):
+        head = part.lstrip()[:60]
+        if any(marker in head for marker in _LEAN_STRIP_MARKERS):
+            continue
+        kept.append(part)
+    return "".join(kept)
+
+
+def _dedupe_repeated_sections(text: str) -> str:
+    """Drop verbatim-duplicate sections (e.g. 题材方法论 / choreography contracts
+    that get injected twice). Exact-match only — zero risk of over-stripping."""
+
+    seen: set[str] = set()
+    kept: list[str] = []
+    for part in _split_sections(text):
+        key = part.strip()
+        if len(key) >= _MIN_SECTION_CHARS:
+            if key in seen:
+                continue
+            seen.add(key)
+        kept.append(part)
+    return "".join(kept)
+
+
 def compact_user_prompt(
     raw_user_prompt: str,
     *,
     chapter_no: int,
     forbidden_terms_full: list[str],
+    lean: bool = True,
 ) -> tuple[str, CompactionReport]:
-    """Return a compacted user prompt plus a small savings report."""
+    """Return a compacted user prompt plus a small savings report.
+
+    When ``lean`` is set, abstract craft-theory / metadata / reference-dump
+    sections are stripped and verbatim-duplicate sections collapsed so the
+    scene-writer prompt stays focused on *what to write* rather than *writing
+    theory*.
+    """
 
     original = raw_user_prompt or ""
     compacted = original
+    if lean:
+        compacted = _dedupe_repeated_sections(compacted)
+        compacted = _strip_meta_sections(compacted)
     compacted = _dedupe_chapter_contract_digest_blocks(compacted)
     compacted = _slice_forbidden_terms(compacted, chapter_no, forbidden_terms_full)
     compacted = _wrap_retention_findings(compacted)

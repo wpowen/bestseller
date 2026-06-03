@@ -56,6 +56,16 @@ def test_resolve_writing_profile_keeps_genre_presets_framework_level_only() -> N
     assert profile.world.rule_hardness == "hard"
 
 
+def test_rule_survival_writing_profile_uses_suspense_prompt_pack() -> None:
+    profile = resolve_writing_profile(
+        {"market": {"platform_target": "番茄小说"}},
+        genre="规则生存 / meta博弈",
+        sub_genre="规则怪谈式密室审判",
+    )
+
+    assert profile.market.prompt_pack_key == "suspense-mystery"
+
+
 def test_writing_preset_catalog_exposes_super_serial_length_stages() -> None:
     catalog = preset_services.load_writing_preset_catalog()
 

@@ -72,6 +72,7 @@ async def _touch_workflow_run_heartbeat(
     workflow_run_id: str,
     *,
     project_slug: str | None = None,
+    active_since: _dt.datetime | None = None,
 ) -> None:
     run_uuid = _coerce_workflow_run_uuid(workflow_run_id)
     async with get_server_session() as session:
@@ -91,7 +92,7 @@ async def _touch_workflow_run_heartbeat(
                 .where(ProjectModel.slug == project_slug)
                 .scalar_subquery()
             )
-            await session.execute(
+            heartbeat_stmt = (
                 update(WorkflowRunModel)
                 .where(
                     WorkflowRunModel.project_id == project_id,
@@ -100,6 +101,11 @@ async def _touch_workflow_run_heartbeat(
                 )
                 .values(updated_at=func.now())
             )
+            if active_since is not None:
+                heartbeat_stmt = heartbeat_stmt.where(
+                    WorkflowRunModel.created_at >= active_since,
+                )
+            await session.execute(heartbeat_stmt)
 
         await session.commit()
 
@@ -149,6 +155,7 @@ async def _workflow_heartbeat_loop(
     workflow_run_id: str,
     *,
     project_slug: str | None = None,
+    active_since: _dt.datetime | None = None,
     interval_seconds: int = _WORKFLOW_HEARTBEAT_SECONDS,
 ) -> None:
     interval = max(15, int(interval_seconds or 60))
@@ -158,6 +165,7 @@ async def _workflow_heartbeat_loop(
             await _touch_workflow_run_heartbeat(
                 workflow_run_id,
                 project_slug=project_slug,
+                active_since=active_since,
             )
         except Exception:
             logger.debug(
@@ -174,8 +182,13 @@ async def _workflow_db_heartbeat(
     project_slug: str | None = None,
 ) -> AsyncIterator[None]:
     """Keep long-running workflow rows fresh while a worker awaits LLM calls."""
+    active_since = _dt.datetime.now(_dt.UTC)
     task = asyncio.create_task(
-        _workflow_heartbeat_loop(workflow_run_id, project_slug=project_slug)
+        _workflow_heartbeat_loop(
+            workflow_run_id,
+            project_slug=project_slug,
+            active_since=active_since,
+        )
     )
     try:
         yield

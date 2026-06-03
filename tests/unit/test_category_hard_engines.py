@@ -109,6 +109,28 @@ def test_resolve_category_key_from_genre_text() -> None:
     assert resolve_category_hard_engine_key({}, genre="武侠江湖", sub_genre="门派侠义") == "wuxia-jianghu"
 
 
+def test_rule_survival_meta_genre_does_not_resolve_to_scifi_progression() -> None:
+    assert (
+        resolve_category_hard_engine_key(
+            {},
+            genre="规则生存 / meta博弈",
+            sub_genre="末日科幻规则实验",
+        )
+        is None
+    )
+
+
+def test_explicit_category_still_wins_for_scifi_progression() -> None:
+    assert (
+        resolve_category_hard_engine_key(
+            {"canonical_category": "science-fiction-progression"},
+            genre="规则生存 / meta博弈",
+            sub_genre="末日科幻规则实验",
+        )
+        == "science-fiction-progression"
+    )
+
+
 def test_fixture_benchmark_covers_good_and_bad_cases() -> None:
     rows = run_category_engine_fixture_benchmark(
         ["otherworld-cross-system", "base-building", "suspense-mystery"]

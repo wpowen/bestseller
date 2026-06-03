@@ -21,11 +21,11 @@ Design contract
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
 from functools import lru_cache
+import json
 from pathlib import Path
+import re
 from typing import Any
 
 from bestseller.services.ai_flavor.types import (
@@ -33,7 +33,6 @@ from bestseller.services.ai_flavor.types import (
     AiFlavorSpan,
     Severity,
 )
-
 
 # Default data location resolved relative to the repo root, matching how
 # ``DEFAULT_QUALITY_GATES_PATH`` is referenced in
@@ -245,23 +244,36 @@ def detect(
 
     spans: list[AiFlavorSpan] = []
 
-    # ── Phrase rules ────────────────────────────────────────────────────
+    # ── Phrase / pattern rules ──────────────────────────────────────────
     for rule in rules.phrase_rules:
         phrase = rule.get("phrase") or ""
-        if not phrase:
+        pattern = rule.get("pattern") or ""
+        if not phrase and not pattern:
             continue
-        needle = phrase.lower() if rules.case_insensitive else phrase
         severity = _coerce_severity(rule.get("severity"), default="block")
         suggestions = tuple(s for s in (rule.get("suggestions") or ()) if isinstance(s, str))
         remove_on_block = bool(rule.get("remove_sentence_on_block", True))
-        rule_id = str(rule.get("id") or f"{lang}.phrase.{phrase}")
+        rule_id = str(rule.get("id") or f"{lang}.phrase.{phrase or pattern}")
         category = str(rule.get("category") or "phrase")
         why = str(rule.get("why") or "")
 
-        for offset in _find_all_occurrences(haystack, needle):
+        matches: list[tuple[int, int]] = []
+        if pattern:
+            flags = 0
+            if rules.case_insensitive or bool(rule.get("case_insensitive")):
+                flags |= re.IGNORECASE
+            compiled = re.compile(str(pattern), flags)
+            matches = [(m.start(), m.end()) for m in compiled.finditer(content_md)]
+        else:
+            needle = phrase.lower() if rules.case_insensitive else phrase
+            matches = [
+                (offset, offset + len(needle))
+                for offset in _find_all_occurrences(haystack, needle)
+            ]
+
+        for offset, end in matches:
             if _is_in_ranges(offset, dialogue_ranges):
                 continue
-            end = offset + len(needle)
             sent_span = _sentence_bounds(content_md, offset, lang)
             spans.append(
                 AiFlavorSpan(

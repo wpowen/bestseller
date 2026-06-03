@@ -130,6 +130,21 @@ def test_action_progression_has_power_seeker_archetype() -> None:
     assert "power_seeker" in archetype_keys
 
 
+def test_rule_survival_meta_resolves_to_suspense_mystery_category() -> None:
+    cat = resolve_novel_category(
+        "规则生存 / meta博弈",
+        "规则怪谈式密室审判",
+    )
+
+    assert cat.key == "suspense-mystery"
+
+
+def test_apocalypse_rule_preset_resolves_to_suspense_mystery_category() -> None:
+    cat = resolve_novel_category("", None, genre_preset_key="apocalypse-rule")
+
+    assert cat.key == "suspense-mystery"
+
+
 # ---------------------------------------------------------------------------
 # World rule templates
 # ---------------------------------------------------------------------------

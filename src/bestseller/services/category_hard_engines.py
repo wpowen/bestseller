@@ -532,14 +532,42 @@ def resolve_category_hard_engine_key(
         )
         if part
     ).lower()
-    matches: list[tuple[int, str]] = []
+    if _looks_like_rule_survival_meta(haystack):
+        return None
+    matches: dict[str, set[str]] = {}
     for contract in _CONTRACTS.values():
         for signal in contract.keyword_signals:
             if signal.lower() in haystack:
-                matches.append((len(signal), contract.category_key))
+                matches.setdefault(contract.category_key, set()).add(signal)
     if matches:
-        return max(matches)[1]
+        ranked: list[tuple[int, int, str]] = []
+        for category_key, signals in matches.items():
+            strong_signals = {
+                signal
+                for signal in signals
+                if len(signal) >= 2
+                and signal not in {"科幻", "末日", "系统", "游戏", "现实", "urban"}
+            }
+            if len(signals) >= 2 or strong_signals:
+                ranked.append((len(signals), max(len(signal) for signal in signals), category_key))
+        if ranked:
+            return max(ranked)[2]
     return None
+
+
+def _looks_like_rule_survival_meta(haystack: str) -> bool:
+    return any(
+        marker in haystack
+        for marker in (
+            "规则生存",
+            "规则怪谈",
+            "规则类",
+            "meta博弈",
+            "元叙事",
+            "剧本杀",
+            "副本规则",
+        )
+    )
 
 
 def build_category_engine_fixture(

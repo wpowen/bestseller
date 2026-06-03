@@ -25,6 +25,7 @@ from bestseller.services.methodology_overlay import (
 
 
 BLOCKING_SEVERITIES = {"critical", "major"}
+IDENTITY_POLICY_VERSION = "zh-commercial-identity-v2"
 GENERIC_TIME_LABELS = {
     "章节开场",
     "章节中段",
@@ -382,6 +383,171 @@ def validate_foundation_identity_contract(
         gate_name="foundation_identity_contract",
         violations=tuple(violations),
     )
+
+
+def validate_commercial_zh_identity_policy(
+    cast_spec_content: dict[str, Any] | None,
+    *,
+    language: str = "zh-CN",
+    premise_text: str = "",
+    require_policy_version: bool = False,
+) -> NarrativeContractReport:
+    """Validate the stricter Chinese commercial identity policy for CastSpec.
+
+    Foundation identity locks only require a stable gender/pronoun pair. This
+    policy is narrower: for Chinese commercial web-fiction, person characters
+    should not default to ``nonbinary / ta`` unless the premise explicitly
+    makes the lead a genderless, non-human, AI, or entity protagonist.
+    """
+
+    if cast_spec_content is None or not _language_is_zh(language):
+        return NarrativeContractReport(gate_name="commercial_zh_identity_policy")
+
+    violations: list[NarrativeContractViolation] = []
+    meta = cast_spec_content.get("_meta") if isinstance(cast_spec_content, dict) else None
+    policy_versions = meta.get("policy_versions") if isinstance(meta, dict) else None
+    stamped_version = (
+        _clean(policy_versions.get("identity_policy"))
+        if isinstance(policy_versions, dict)
+        else ""
+    )
+    if require_policy_version and stamped_version != IDENTITY_POLICY_VERSION:
+        violations.append(
+            NarrativeContractViolation(
+                code="IDENTITY_POLICY_VERSION_MISSING",
+                location="cast_spec._meta.policy_versions.identity_policy",
+                message="CastSpec was approved before the current Chinese identity policy and must be regenerated.",
+                metadata={
+                    "expected": IDENTITY_POLICY_VERSION,
+                    "found": stamped_version,
+                },
+            )
+        )
+
+    allow_nonbinary = _premise_allows_nonbinary_lead(premise_text)
+    try:
+        parsed = CastSpecInput.model_validate(cast_spec_content)
+    except Exception as exc:
+        violations.append(
+            NarrativeContractViolation(
+                code="FOUNDATION_CAST_SCHEMA_INVALID",
+                location="cast_spec",
+                message=f"CastSpec cannot be parsed: {exc}",
+            )
+        )
+        return NarrativeContractReport(
+            gate_name="commercial_zh_identity_policy",
+            violations=tuple(violations),
+        )
+
+    for location, character in _iter_cast_characters(parsed):
+        data = character.model_dump(mode="json")
+        if not _requires_identity_lock(data):
+            continue
+        role = _clean(data.get("role")).lower()
+        is_protagonist = location == "protagonist" or role == "protagonist"
+        name = _clean(data.get("name")) or location
+        gender = _clean(data.get("gender")).lower()
+        pronoun_zh = _clean(data.get("pronoun_set_zh")).lower()
+        if pronoun_zh == "ta":
+            violations.append(
+                NarrativeContractViolation(
+                    code="ZH_PINYIN_TA_PRONOUN_FORBIDDEN",
+                    location=f"{location}.pronoun_set_zh",
+                    message=f"Chinese commercial CastSpec cannot use pinyin 'ta' for character '{name}'.",
+                    metadata={"character": name, "role": role or location},
+                )
+            )
+        if gender == "nonbinary" and (is_protagonist or not allow_nonbinary):
+            violations.append(
+                NarrativeContractViolation(
+                    code="ZH_NONBINARY_DEFAULT_FORBIDDEN",
+                    location=f"{location}.gender",
+                    message=(
+                        f"Character '{name}' is nonbinary without an explicit genderless/non-human/AI premise basis."
+                    ),
+                    metadata={"character": name, "role": role or location},
+                )
+            )
+
+    return NarrativeContractReport(
+        gate_name="commercial_zh_identity_policy",
+        violations=tuple(violations),
+    )
+
+
+def repair_commercial_zh_identity_policy(
+    cast_spec_content: dict[str, Any] | None,
+    *,
+    language: str = "zh-CN",
+    premise_text: str = "",
+) -> tuple[dict[str, Any] | None, int]:
+    """Normalize forbidden Chinese ``nonbinary / ta`` defaults in CastSpec."""
+
+    if not isinstance(cast_spec_content, dict) or not _language_is_zh(language):
+        return cast_spec_content, 0
+    patched = _deepcopy_json_mapping(cast_spec_content)
+    allow_nonbinary = _premise_allows_nonbinary_lead(premise_text)
+    repaired = 0
+    for character in _iter_raw_cast_character_dicts(patched):
+        if not _requires_identity_lock(character):
+            continue
+        role = _clean(character.get("role")).lower()
+        is_protagonist = role == "protagonist"
+        gender = _clean(character.get("gender")).lower()
+        pronoun_zh = _clean(character.get("pronoun_set_zh")).lower()
+        should_force_binary = pronoun_zh == "ta" or (
+            gender == "nonbinary" and (is_protagonist or not allow_nonbinary)
+        )
+        if not should_force_binary:
+            if _clean(character.get("gender")).lower() == "female":
+                if _clean(character.get("pronoun_set_zh")) != "她":
+                    character["pronoun_set_zh"] = "她"
+                    repaired += 1
+                if not _clean(character.get("pronoun_set_en")):
+                    character["pronoun_set_en"] = "she/her"
+                    repaired += 1
+            elif _clean(character.get("gender")).lower() == "male":
+                if _clean(character.get("pronoun_set_zh")) != "他":
+                    character["pronoun_set_zh"] = "他"
+                    repaired += 1
+                if not _clean(character.get("pronoun_set_en")):
+                    character["pronoun_set_en"] = "he/him"
+                    repaired += 1
+            continue
+        repaired += _set_character_identity(character, gender="male", pronoun_zh="他", pronoun_en="he/him")
+    _stamp_identity_policy_version(patched)
+    return patched, repaired
+
+
+def _set_character_identity(
+    character: dict[str, Any],
+    *,
+    gender: str,
+    pronoun_zh: str,
+    pronoun_en: str,
+) -> int:
+    repaired = 0
+    if _clean(character.get("gender")).lower() != gender:
+        character["gender"] = gender
+        repaired += 1
+    if _clean(character.get("pronoun_set_zh")) != pronoun_zh:
+        character["pronoun_set_zh"] = pronoun_zh
+        repaired += 1
+    if _clean(character.get("pronoun_set_en")) != pronoun_en:
+        character["pronoun_set_en"] = pronoun_en
+        repaired += 1
+    return repaired
+
+
+def _stamp_identity_policy_version(payload: dict[str, Any]) -> None:
+    meta = payload.setdefault("_meta", {})
+    if not isinstance(meta, dict):
+        payload["_meta"] = meta = {}
+    policy_versions = meta.setdefault("policy_versions", {})
+    if not isinstance(policy_versions, dict):
+        meta["policy_versions"] = policy_versions = {}
+    policy_versions["identity_policy"] = IDENTITY_POLICY_VERSION
 
 
 def build_identity_manifest(cast_spec_content: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -1495,6 +1661,37 @@ def _pronouns_for_gender(gender: str) -> tuple[str, str]:
     if gender == "female":
         return ("她", "she/her")
     return ("ta", "they/them")
+
+
+def _language_is_zh(language: str | None) -> bool:
+    return (language or "").strip().lower().startswith("zh")
+
+
+_NONBINARY_PREMISE_MARKERS = (
+    "无性别",
+    "非二元",
+    "无固定性别",
+    "ai主角",
+    "人工智能主角",
+    "机器人主角",
+    "非人主角",
+    "实体主角",
+    "器物主角",
+    "genderless",
+    "nonbinary protagonist",
+    "non-binary protagonist",
+    "nonbinary lead",
+    "non-binary lead",
+    "ai protagonist",
+)
+
+
+def _premise_allows_nonbinary_lead(premise_text: str | None) -> bool:
+    text = _clean(premise_text).lower().replace(" ", "")
+    if not text:
+        return False
+    compact_markers = tuple(marker.lower().replace(" ", "") for marker in _NONBINARY_PREMISE_MARKERS)
+    return any(marker in text for marker in compact_markers)
 
 
 _LEGACY_FEMALE_NAME_MARKERS = {

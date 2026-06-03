@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections import Counter
 import json
 from pathlib import Path
@@ -8,6 +9,10 @@ import shutil
 from types import SimpleNamespace
 from typing import Any
 
+from sqlalchemy import select
+
+from bestseller.infra.db.models import ProjectModel
+from bestseller.infra.db.session import session_scope
 from bestseller.services.book_listing import (
     build_book_listing_profile,
     write_platform_title_workflow_artifacts,
@@ -96,11 +101,76 @@ def _iter_listing_dirs(output_base: Path) -> list[Path]:
     )
 
 
-def regenerate(output_base: Path, *, backup_legacy_csv: bool = True) -> list[dict[str, Any]]:
+async def _load_project_metadata_by_slug() -> dict[str, dict[str, Any]]:
+    try:
+        async with session_scope() as session:
+            result = await session.execute(
+                select(
+                    ProjectModel.slug,
+                    ProjectModel.title,
+                    ProjectModel.genre,
+                    ProjectModel.sub_genre,
+                    ProjectModel.audience,
+                    ProjectModel.status,
+                    ProjectModel.language,
+                    ProjectModel.metadata_json,
+                )
+            )
+            rows = result.all()
+    except Exception:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for slug, title, genre, sub_genre, audience, status, language, raw_metadata in rows:
+        metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+        out[str(slug)] = {
+            **metadata,
+            "title": title,
+            "primary_title": metadata.get("primary_title") or title,
+            "genre": genre,
+            "primary_category": metadata.get("primary_category") or genre,
+            "sub_genre": sub_genre,
+            "secondary_category": metadata.get("secondary_category") or sub_genre,
+            "audience": audience,
+            "status": status,
+            "language": language,
+            "platform_target": (
+                metadata.get("platform_target")
+                or metadata.get("target_platform")
+                or metadata.get("platform")
+            ),
+        }
+    return out
+
+
+def _merge_metadata(
+    listing_metadata: dict[str, Any],
+    db_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(db_metadata)
+    merged.update(listing_metadata)
+    for key in ("platform_target", "target_platform", "platform"):
+        if _text(merged.get(key)):
+            continue
+        db_value = _text(db_metadata.get(key))
+        if db_value:
+            merged[key] = db_value
+    return merged
+
+
+def regenerate(
+    output_base: Path,
+    *,
+    backup_legacy_csv: bool = True,
+    use_db_metadata: bool = True,
+) -> list[dict[str, Any]]:
     summaries: list[dict[str, Any]] = []
+    db_by_slug = asyncio.run(_load_project_metadata_by_slug()) if use_db_metadata else {}
     for listing_dir in _iter_listing_dirs(output_base):
         slug = listing_dir.parent.name
-        metadata = _load_json(listing_dir / "book-listing-metadata.json")
+        metadata = _merge_metadata(
+            _load_json(listing_dir / "book-listing-metadata.json"),
+            db_by_slug.get(slug, {}),
+        )
         if not metadata:
             continue
         title_csv = listing_dir / "title-candidates.csv"
@@ -148,8 +218,17 @@ def main() -> None:
         action="store_true",
         help="Do not preserve an existing title-candidates.csv as title-candidates.legacy.csv.",
     )
+    parser.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Do not merge target platform/category fields from the projects table.",
+    )
     args = parser.parse_args()
-    summaries = regenerate(Path(args.output_base).resolve(), backup_legacy_csv=not args.no_backup)
+    summaries = regenerate(
+        Path(args.output_base).resolve(),
+        backup_legacy_csv=not args.no_backup,
+        use_db_metadata=not args.no_db,
+    )
     print(json.dumps({"updated": summaries}, ensure_ascii=False, indent=2))
 
 

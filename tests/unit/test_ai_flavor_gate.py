@@ -22,7 +22,6 @@ from bestseller.services.ai_flavor_gate import (
     run_ai_flavor_gate,
 )
 
-
 # ---------------------------------------------------------------------------
 # Detector — offset accuracy.
 # ---------------------------------------------------------------------------
@@ -35,6 +34,47 @@ def test_phrase_offsets_are_exact_cn() -> None:
     assert block, "expected at least one block-severity span"
     span = block[0]
     assert text[span.start : span.end] == "毫无疑问"
+
+
+def test_humanizer_regex_rule_catches_inflated_significance_cn() -> None:
+    text = "前面无事。这座旧楼作为家族荣耀延续的证明，仍然矗立。后面继续。"
+    report = detect(text, language="zh-CN")
+    spans = [s for s in report.spans if s.category == "inflated_significance"]
+
+    assert spans
+    assert spans[0].matched_text == "作为家族荣耀延续的证明"
+    assert spans[0].severity == "block"
+
+
+def test_humanizer_chat_artifact_is_removed_cn() -> None:
+    text = "林烬推开门。希望这对您有帮助！如果您想让我扩展任何部分，请告诉我。门后传来脚步声。"
+    out = run_ai_flavor_gate(
+        chapter_number=101,
+        content_md=text,
+        language="zh-CN",
+        config=_cfg(),
+    )
+
+    assert out.decision == "patched"
+    assert out.patched_text is not None
+    assert "希望这对您有帮助" not in out.patched_text
+    assert "请告诉我" not in out.patched_text
+    assert "林烬推开门" in out.patched_text
+    assert "门后传来脚步声" in out.patched_text
+
+
+def test_humanizer_static_replacement_removes_essay_signpost_cn() -> None:
+    text = "林烬推开门。此外，墙上的血字还在往下淌。"
+    out = run_ai_flavor_gate(
+        chapter_number=102,
+        content_md=text,
+        language="zh-CN",
+        config=_cfg(),
+    )
+
+    assert out.patched_text is not None
+    assert "此外" not in out.patched_text
+    assert "墙上的血字还在往下淌" in out.patched_text
 
 
 def test_phrase_offsets_are_exact_en() -> None:
@@ -268,7 +308,10 @@ def test_gate_routes_by_language_en() -> None:
 def test_checker_report_severity_mapping() -> None:
     """block→high, warn→medium, info→low in the CheckerIssue surface."""
 
-    text = "前文。毫无疑问，A。中文。不禁。不禁。不禁。不禁。事实上，没什么。事实上。事实上。事实上。结束。"
+    text = (
+        "前文。毫无疑问，A。中文。不禁。不禁。不禁。不禁。"
+        "事实上，没什么。事实上。事实上。事实上。结束。"
+    )
     out = run_ai_flavor_gate(
         chapter_number=6,
         content_md=text,

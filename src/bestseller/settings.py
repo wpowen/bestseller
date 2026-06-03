@@ -116,6 +116,18 @@ class GenerationSettings(BaseModel):
     structure_template: str
     methodology_compiler_enabled: bool = True
     methodology_budget_tokens: int = 1500
+    # Strip abstract craft-theory / metadata / reference-dump sections and
+    # verbatim-duplicate blocks from the scene-writer prompt so the model writes
+    # prose instead of drowning in ~28K tokens of instructions. See
+    # services/prompt_compactor.py.
+    lean_writer_prompt: bool = True
+    writer_prompt_mode: str = "ab"
+    writer_prompt_ab_until_chapter: int = 3
+    # When true, a weak platform title (keyword-soup / rejected) is sent for a
+    # single LLM revision pass during conception. Clean concise IP names and
+    # already-passing titles are never revised. See platform_title_workflow.py
+    # § P2 and services/conception.py. (2026-06-03 book-title regression fix.)
+    title_llm_revision_enabled: bool = True
 
 
 class RepetitionSettings(BaseModel):
@@ -211,6 +223,12 @@ class PipelineSettings(BaseModel):
     project_consistency_block_on_failure: bool = True  # Whole-book consistency failures must pause, not accept_on_stall
     chapter_review_block_on_failure: bool = True  # Chapter review failures must not be completed via accept_on_stall
     chapter_outline_repair_attempts: int = 3  # Regenerate invalid chapter outlines before surfacing failure
+    planning_artifact_reuse_enabled: bool = True
+    planning_artifact_reuse_allow_legacy: bool = True
+    chapter_outline_batch_size: int = 10
+    commercial_strict_prewrite_chapter_outline_batch_size: int = 5
+    commercial_strict_prewrite_outline_batch_shrink_size: int = 3
+    commercial_strict_prewrite_planning_judge_threshold: float = 0.82
     enable_chapter_feedback: bool = True  # Post-chapter feedback extraction
     enable_contradiction_checks: bool = True  # Pre-scene contradiction checks
     # Turn continuity/identity violations into hard write blocks.
@@ -280,11 +298,14 @@ class PipelineSettings(BaseModel):
     world_snapshot_enabled: bool = True  # Generate world snapshots at arc boundaries
     act_plan_threshold: int = 50  # Chapters > threshold enables act-level planning
     progressive_planning: bool = False  # Enable progressive volume planning with write-feedback loop
-    # Long-form projects should not stop all forward drafting just because
-    # older chapters are in the repair queue. When enabled, a blocked volume is
-    # still reported and repaired, but later volume planning/writing may
-    # continue using the last clean feedback snapshot.
-    progressive_continue_after_volume_block: bool = True
+    # Default to strict sequential volume writing. A blocked or incomplete
+    # volume must be repaired before later volumes are planned/written, or
+    # long-form resumes can skip visible chapter gaps.
+    progressive_continue_after_volume_block: bool = False
+    # Final entry guard: a requested chapter may not draft while any earlier
+    # chapter lacks an approved current draft. This prevents manual or stale
+    # workflow slices such as 101/151 from jumping over 86-100.
+    enforce_sequential_chapter_generation: bool = True
     category_aware_planning: bool = True  # Use novel-category research for genre-specific planning
     # ── Multi-dimensional material library (Batch 1-3 rollout) ─────────
     # Batch 1 gate: Curator + Research Agent + query API available when
@@ -399,6 +420,17 @@ class PipelineSettings(BaseModel):
     # was never insufficient — the cross-run cap was missing).
     chapter_auto_repair_max_attempts: int = 3
     chapter_auto_repair_total_max_attempts: int = 9
+    # Per-scene hard cap on the number of auto-repair rewrites a single
+    # scene may receive across the lifetime of the book.  WS-C3 of
+    # docs/质量回归修复-开发计划-20260602.md: the historical 青囊 ch1 case
+    # generated 43 draft versions for 3 scenes (≈14 versions per scene)
+    # because outer ``project_repair`` could re-enter the chapter pipeline
+    # and implicitly reset the per-scene counter.  This setting caps the
+    # *cumulative* rewrites per scene — once hit, the scene is stamped
+    # ``auto_accepted_with_debt=True`` and the assembler keeps the prior
+    # draft.  Outer repair must not reset the counter (see
+    # ``bump_scene_auto_repair_counter`` / ``is_scene_at_auto_repair_cap``).
+    chapter_auto_repair_max_scene_rewrites: int = 3
     # Cross-run cap on ``autonomous_quality_retrofit`` rewrite tasks
     # generated per chapter. ``autonomous_book_repair`` schedules these from
     # the quality-levers audit; without a per-chapter cap a chapter that

@@ -62,6 +62,41 @@ def test_chapter_outline_preserves_worldview_compliance_fields() -> None:
     assert chapter["key_reveals"] == ["信任债会改变灵田产出。"]
 
 
+def test_chapter_outline_normalizes_structured_reference_fields() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "volume-1-outline",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "goal": "主角验证第一条规则。",
+                    "world_asset_refs": [
+                        {
+                            "asset_key": "toll-constitution-ledger",
+                            "description": "收费规则第一次被观测层降权。",
+                        }
+                    ],
+                    "authority_claim_refs": [
+                        {
+                            "claim_key": "register-has-final-word",
+                            "description": "登记员派立场错位。",
+                        }
+                    ],
+                    "location_refs": [{"name": "废弃收费站"}],
+                    "key_reveals": [{"key": "第一条剧本规则可以被表演反制"}],
+                }
+            ],
+        }
+    )
+
+    chapter = batch.model_dump(mode="json", by_alias=True)["chapters"][0]
+
+    assert chapter["world_asset_refs"] == ["toll-constitution-ledger"]
+    assert chapter["authority_claim_refs"] == ["register-has-final-word"]
+    assert chapter["location_refs"] == ["废弃收费站"]
+    assert chapter["key_reveals"] == ["第一条剧本规则可以被表演反制"]
+
+
 def test_chapter_outline_clamps_reveal_weight() -> None:
     batch = ChapterOutlineBatchInput.model_validate(
         {

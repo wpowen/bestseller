@@ -441,7 +441,7 @@ async def test_import_planning_artifact_uses_null_scope_filter_and_increments_ve
         return project
 
     monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
-    session = FakeSession(scalar_results=[2])
+    session = FakeSession(scalar_results=[None, 2])
 
     artifact = await project_services.import_planning_artifact(
         session,
@@ -492,7 +492,7 @@ async def test_import_planning_artifact_bumps_truth_version_when_core_artifact_c
         return project
 
     monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
-    session = FakeSession(scalar_results=[0])
+    session = FakeSession(scalar_results=[None, 0])
 
     await project_services.import_planning_artifact(
         session,
@@ -507,6 +507,130 @@ async def test_import_planning_artifact_bumps_truth_version_when_core_artifact_c
     assert project.metadata_json["truth_last_changed_artifact_type"] == ArtifactType.BOOK_SPEC.value
     assert project.metadata_json["truth_updated_at"] is not None
     assert len(project.metadata_json["_truth_change_log"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_import_planning_artifact_adds_strict_prewrite_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="strict-story",
+        title="严格规划书",
+        genre="都市修真",
+        target_word_count=40000,
+        target_chapters=20,
+        metadata_json={
+            "quality_profile": "commercial_strict_prewrite",
+            "methodology_contract_mode": "strict",
+        },
+    )
+    project.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[None, 0])
+
+    artifact = await project_services.import_planning_artifact(
+        session,
+        "strict-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.BOOK_SPEC,
+            content={"logline": "主角用现代修真协议打破旧秩序。"},
+        ),
+    )
+
+    assert artifact.content["_meta"]["quality_profile"] == "commercial_strict_prewrite"
+    assert (
+        artifact.content["_meta"]["methodology_lineage"]["methodology_contract_mode"]
+        == "strict"
+    )
+    assert artifact.content["_meta"]["repair_attempts"] == []
+
+
+@pytest.mark.asyncio
+async def test_import_planning_artifact_reuses_legacy_exact_content_without_meta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="legacy-story",
+        title="Legacy Story",
+        genre="fantasy",
+        target_word_count=120000,
+        target_chapters=60,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    reusable = project_services.PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.BOOK_SPEC.value,
+        version_no=2,
+        status="approved",
+        schema_version="1.0",
+        content={"logline": "A hero survives."},
+    )
+    reusable.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[reusable])
+
+    artifact = await project_services.import_planning_artifact(
+        session,
+        "legacy-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.BOOK_SPEC,
+            content={"logline": "A hero survives."},
+        ),
+    )
+
+    assert artifact is reusable
+    assert session.added == []
+
+
+@pytest.mark.asyncio
+async def test_import_planning_artifact_reuses_matching_input_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="my-story",
+        title="My Story",
+        genre="fantasy",
+        target_word_count=120000,
+        target_chapters=60,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    reusable = project_services.PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.BOOK_SPEC.value,
+        version_no=4,
+        status="approved",
+        schema_version="1.0",
+        content={"logline": "A hero survives.", "_meta": {"input_hash": "same-input"}},
+    )
+    reusable.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[reusable])
+
+    artifact = await project_services.import_planning_artifact(
+        session,
+        "my-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.BOOK_SPEC,
+            content={"logline": "A hero survives.", "_meta": {"input_hash": "same-input"}},
+        ),
+    )
+
+    assert artifact is reusable
+    assert session.added == []
 
 
 def test_load_json_file_reads_payload(tmp_path: Path) -> None:

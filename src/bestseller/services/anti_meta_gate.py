@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
+import re
 
 from bestseller.services.checker_schema import CheckerIssue, CheckerReport
-
 
 HARD_META_TERMS = (
     "这一章",
@@ -27,7 +26,8 @@ HARD_META_TERMS = (
     "读者期待",
     "读者会",
     "我们的主角",
-    "余波",
+    "章末余波",
+    "余波未平",
     "涟漪暂歇",
     "暂告一段落",
 )
@@ -57,6 +57,13 @@ _SUMMARY_ENDING_RE = re.compile(
     r"(?:知道|明白|意识到|觉得|感觉|想起|想到).{0,24}(?:答案|意思|意味|真相|不对)"
 )
 _DIRECT_SPEECH_RE = re.compile(r"[“\"].{1,90}[”\"]?$")
+_QUOTE_PAIRS: tuple[tuple[str, str], ...] = (
+    ("“", "”"),
+    ("‘", "’"),
+    ("「", "」"),
+    ("『", "』"),
+    ('"', '"'),
+)
 
 
 @dataclass(frozen=True)
@@ -136,9 +143,12 @@ def check_anti_meta_gate(
             ending_passed=True,
             metrics={"hard_count": 0, "soft_count": 0},
         )
+    dialogue_ranges = _find_dialogue_ranges(text)
     findings: list[AntiMetaFinding] = []
     for term in HARD_META_TERMS:
         for match in re.finditer(re.escape(term), text):
+            if _is_in_ranges(match.start(), dialogue_ranges):
+                continue
             findings.append(
                 AntiMetaFinding(
                     code="ANTI_META_HARD_TERM",
@@ -150,6 +160,8 @@ def check_anti_meta_gate(
             )
     for term in SOFT_META_TERMS:
         for match in re.finditer(re.escape(term), text):
+            if _is_in_ranges(match.start(), dialogue_ranges):
+                continue
             findings.append(
                 AntiMetaFinding(
                     code="ANTI_META_SOFT_TERM",
@@ -178,6 +190,47 @@ def _excerpt(text: str, start: int, end: int, radius: int = 36) -> str:
     return text[max(0, start - radius): min(len(text), end + radius)].replace("\n", " ")
 
 
+def _find_dialogue_ranges(text: str) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    for open_q, close_q in _QUOTE_PAIRS:
+        i = 0
+        while True:
+            start = text.find(open_q, i)
+            if start < 0:
+                break
+            end = text.find(close_q, start + 1)
+            if end < 0:
+                break
+            ranges.append((start, end + 1))
+            i = end + 1
+    ranges.sort()
+    return ranges
+
+
+def _is_in_ranges(pos: int, ranges: list[tuple[int, int]]) -> bool:
+    for start, end in ranges:
+        if start <= pos < end:
+            return True
+        if start > pos:
+            break
+    return False
+
+
+def _strip_dialogue(text: str) -> str:
+    ranges = _find_dialogue_ranges(text)
+    if not ranges:
+        return text
+    chunks: list[str] = []
+    cursor = 0
+    for start, end in ranges:
+        if cursor < start:
+            chunks.append(text[cursor:start])
+        cursor = end
+    if cursor < len(text):
+        chunks.append(text[cursor:])
+    return "".join(chunks)
+
+
 def _last_sentences(text: str, *, count: int) -> list[str]:
     body = re.sub(r"^#+\s*.*$", "", text.strip(), flags=re.MULTILINE).strip()
     sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(body) if s.strip()]
@@ -188,8 +241,9 @@ def _ending_is_in_scene(sentences: list[str]) -> bool:
     if not sentences:
         return True
     ending = "".join(sentences)
+    ending_without_dialogue = _strip_dialogue(ending)
     tail = sentences[-1]
-    if any(term in ending for term in HARD_META_TERMS + SOFT_META_TERMS):
+    if any(term in ending_without_dialogue for term in HARD_META_TERMS + SOFT_META_TERMS):
         return False
     if _SUMMARY_ENDING_RE.search(tail) and not _VISIBLE_REVEAL_RE.search(tail):
         return False
@@ -210,7 +264,12 @@ def _ending_is_in_scene(sentences: list[str]) -> bool:
         if _VISIBLE_REVEAL_RE.search(last_two) or _DIRECT_SPEECH_RE.search(last_two):
             return True
     # Image endings often end on a concrete noun rather than a verb.
-    return bool(re.search(r"[一-鿿]{1,8}(?:光|影|门|井|水|火|血|字|脸|眼|手|刀|剑|石|雨|雪|风|灯|墙|纸|镜|戒)[。！？!?]?$", tail))
+    image_ending = (
+        r"[一-鿿]{1,8}"
+        r"(?:光|影|门|井|水|火|血|字|脸|眼|手|刀|剑|石|雨|雪|风|灯|墙|纸|镜|戒)"
+        r"[。！？!?]?$"
+    )
+    return bool(re.search(image_ending, tail))
 
 
 __all__ = [

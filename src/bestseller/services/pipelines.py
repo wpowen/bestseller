@@ -8,7 +8,7 @@ import traceback
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import DBAPIError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -107,7 +107,10 @@ from bestseller.services.fanqie_market_repository import (
     evaluate_and_persist_fanqie_long_readiness,
     load_current_chapter_texts_for_fanqie_gate,
 )
-from bestseller.services.gate_registry import registered_block_metadata_keys
+from bestseller.services.gate_registry import (
+    core_block_metadata_keys,
+    pause_reason_is_structural,
+)
 from bestseller.services.public_emotion_backfill import ensure_project_public_emotion_kernels
 from bestseller.services.invariants import (
     InvariantSeedError,
@@ -171,6 +174,7 @@ from bestseller.services.whole_book_quality_gate import (
 from bestseller.services.workflows import (
     WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE,
     WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH,
+    WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_TREE,
     WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
     create_workflow_run,
     create_workflow_step_run,
@@ -385,11 +389,20 @@ async def _evaluate_retention_safety_after_assembly(
             if _feedback_path.is_file():
                 _payload = json.loads(_feedback_path.read_text(encoding="utf-8"))
                 _persona_result = PersonaSimulationResult.model_validate(_payload)
+                _target_chapters = int(getattr(project, "target_chapters", 0) or 0)
+                _target_words = int(getattr(chapter, "target_word_count", 0) or 0)
+                _block_on_payoff = not (
+                    _target_chapters
+                    and _target_chapters <= 12
+                    and chapter_number == 1
+                    and 0 < _target_words <= 2500
+                )
                 _pq = evaluate_persona_quality(
                     _persona_result,
                     min_weighted_score=_rq_cfg.min_weighted_score,
                     max_abandon_rate=_rq_cfg.max_abandon_rate,
                     min_payoff_density=_rq_cfg.min_payoff_density,
+                    block_on_payoff=_block_on_payoff,
                 )
                 if not _pq.passed:
                     merged_findings = list(report.findings) + [
@@ -686,7 +699,16 @@ def _chapter_review_full_regeneration_reason(
     return None
 
 
-_NON_QUALITY_BLOCK_METADATA_KEYS: tuple[str, ...] = registered_block_metadata_keys()
+# Runtime blocking predicate uses ONLY ``core`` tier block keys.
+# ``advanced`` tier gates (ai_flavor, show_dont_tell, signature_audit) are
+# prose polish — a single weak-model style regression should never loop
+# the chapter through machine_repair_required. They still surface
+# through project review reports and overview schemas via the full
+# ``registered_block_metadata_keys()`` set.
+# ``phase_d_time_gate`` and ``material_advancement_gate`` deliberately
+# stay in ``core`` — they enforce timeline arithmetic and story-contract
+# delivery, which are correctness concerns, not polish.
+_NON_QUALITY_BLOCK_METADATA_KEYS: tuple[str, ...] = core_block_metadata_keys()
 
 
 def _latest_quality_report_is_clean(report: Any) -> bool:
@@ -859,6 +881,26 @@ async def _clear_scene_auto_repair_residue_for_clean_chapter(
     )
 
     return _clear_scene_auto_repair_residue_after_clean_assembly(scenes)
+
+
+def _readiness_blocked_only_by_stale_auto_repair_residue(
+    report: Any,
+) -> bool:
+    blocking_issues = tuple(getattr(report, "blocking_issues", ()) or ())
+    return bool(blocking_issues) and all(
+        getattr(issue, "code", None) == "OUTLINE_STALE_AUTO_REPAIR_RESIDUE"
+        for issue in blocking_issues
+    )
+
+
+def _clear_stale_scene_auto_repair_residue_for_outline_retry(
+    scenes: Sequence[SceneCardModel],
+) -> int:
+    from bestseller.services.drafts import (
+        _clear_scene_auto_repair_residue_after_clean_assembly,
+    )
+
+    return _clear_scene_auto_repair_residue_after_clean_assembly(list(scenes))
 
 
 async def _stop_auto_repair_if_latest_quality_clean(
@@ -1086,13 +1128,34 @@ class ProjectRepairPauseError(RuntimeError):
     """Raised when normal writing is blocked by a structural repair pause."""
 
 
+TEMPORARY_PLANNING_THROTTLE_REASON = "temporary_planning_throttle_for_new_books"
+
+
 def _project_blocked_for_structural_repair(project: ProjectModel) -> bool:
+    """Whether a pause should block *forward* writing.
+
+    Explicit structural markers (``structural_repair_required``,
+    ``generation_resume_blocked_until_repair_audit``) always block. A generic
+    ``production_paused`` only blocks when its reason maps to a *structural*
+    gate — a pause caused by a *local* quality gate (opening tension, length,
+    style) is confined to one chapter's prose and must not stall new-chapter
+    writing. See ``services.repair_impact`` and the 青囊不语问阴阳 regression
+    (looped ch1 opening repair forever while later chapters waited).
+    """
+
     metadata = getattr(project, "metadata_json", None) or {}
-    return bool(
-        metadata.get("generation_resume_blocked_until_repair_audit")
-        or metadata.get("production_paused")
-        or metadata.get("structural_repair_required")
-    )
+    if metadata.get("structural_repair_required") or metadata.get(
+        "generation_resume_blocked_until_repair_audit"
+    ):
+        return True
+    if metadata.get("production_paused"):
+        reason = metadata.get("production_pause_reason") or metadata.get(
+            "last_generation_gate_reason"
+        )
+        return pause_reason_is_structural(
+            str(reason) if reason is not None else None
+        )
+    return False
 
 
 async def _run_fanqie_long_gate_for_chapter(
@@ -1361,6 +1424,40 @@ def _assert_project_not_blocked_for_structural_repair(
     )
 
 
+async def _clear_auto_resumable_project_pause(
+    session: AsyncSession,
+    project: ProjectModel,
+) -> bool:
+    metadata = dict(getattr(project, "metadata_json", None) or {})
+    reason = str(
+        metadata.get("production_pause_reason")
+        or metadata.get("last_generation_gate_reason")
+        or ""
+    ).strip()
+    if reason != TEMPORARY_PLANNING_THROTTLE_REASON:
+        return False
+    if not (
+        metadata.get("production_paused")
+        or metadata.get("generation_resume_blocked_until_repair_audit")
+        or (getattr(project, "status", None) or "").lower() == ProjectStatus.PAUSED.value
+    ):
+        return False
+
+    metadata["last_project_pause_auto_resumed_reason"] = reason
+    for key in (
+        "generation_resume_blocked_until_repair_audit",
+        "production_paused",
+        "production_pause_reason",
+        "paused_at",
+    ):
+        metadata.pop(key, None)
+    project.metadata_json = metadata
+    if (getattr(project, "status", None) or "").lower() == ProjectStatus.PAUSED.value:
+        project.status = ProjectStatus.REVISING.value
+    await session.flush()
+    return True
+
+
 def _chapter_by_number(chapters: list[ChapterModel], number: int) -> ChapterModel | None:
     for chapter in chapters:
         if chapter.chapter_number == number:
@@ -1569,11 +1666,15 @@ def _record_qimao_planning_gate(
     metadata = getattr(project, "metadata_json", None) or {}
     contract = metadata.get("opening_quality_contract") or metadata.get("qimao_opening_contract")
     payload_to_check = {"qimao_opening_contract": contract} if contract else metadata
-    report = evaluate_qimao_planning_gate(payload_to_check)
+    report = evaluate_qimao_planning_gate(
+        payload_to_check,
+        target_chapters=getattr(project, "target_chapters", None),
+    )
     if not contract and not report.passed and chapters:
         backfilled_contract = _build_qimao_opening_contract_from_outline(project, chapters)
         backfilled_report = evaluate_qimao_planning_gate(
-            {"qimao_opening_contract": backfilled_contract}
+            {"qimao_opening_contract": backfilled_contract},
+            target_chapters=getattr(project, "target_chapters", None),
         )
         if backfilled_report.passed:
             contract = backfilled_contract
@@ -1584,7 +1685,8 @@ def _record_qimao_planning_gate(
             chapters,
         )
         repaired_report = evaluate_qimao_planning_gate(
-            {"qimao_opening_contract": repaired_contract}
+            {"qimao_opening_contract": repaired_contract},
+            target_chapters=getattr(project, "target_chapters", None),
         )
         if repaired_report.passed:
             contract = repaired_contract
@@ -2737,6 +2839,37 @@ async def _chapter_numbers_in_volume(
         for chapter_number in rows.all()
         if isinstance(chapter_number, int) and chapter_number > 0
     }
+
+
+async def _project_has_scene_machine_blocked_chapter(
+    session: AsyncSession,
+    project_id: UUID,
+) -> bool:
+    """Return True when chapter repair must stop at the scene blocker.
+
+    A scene-level ``scene_rewrite_stalled_blocked`` means the bounded machine
+    repair loop already failed to improve the draft. Letting the outer
+    autowrite/project-repair layer start another project repair only repeats
+    the same scene rewrites and burns LLM calls.
+    """
+
+    rows = await session.scalars(
+        select(WorkflowRunModel)
+        .where(
+            WorkflowRunModel.project_id == project_id,
+            WorkflowRunModel.workflow_type == WORKFLOW_TYPE_CHAPTER_PIPELINE,
+            WorkflowRunModel.status == WorkflowStatus.MACHINE_BLOCKED.value,
+            WorkflowRunModel.current_step == "scene_machine_repair_required",
+        )
+        .order_by(WorkflowRunModel.updated_at.desc())
+        .limit(5)
+    )
+    candidates = rows.all() if hasattr(rows, "all") else list(rows)
+    for run in candidates:
+        metadata = dict(getattr(run, "metadata_json", None) or {})
+        if metadata.get("auto_repair_skipped_reason") == "scene_machine_blocked":
+            return True
+    return False
 
 
 async def _ensure_project_invariants(
@@ -5065,27 +5198,36 @@ async def run_scene_pipeline(
                     same_rewrite_plan
                     and score_delta < settings.quality.min_scene_rewrite_improvement
                 ):
-                    reached_revision_limit = True
+                    stalled_count = int(
+                        (workflow_run.metadata_json or {}).get("stalled_rewrite_count") or 0
+                    ) + 1
                     workflow_run.metadata_json = {
                         **workflow_run.metadata_json,
                         "stalled_rewrite": True,
+                        "stalled_rewrite_count": stalled_count,
                         "stalled_rewrite_score_delta": round(score_delta, 4),
                         "stalled_rewrite_threshold": settings.quality.min_scene_rewrite_improvement,
                     }
-                    if settings.pipeline.accept_on_stall:
-                        logger.info(
-                            "Scene %d.%d rewrite stalled (delta=%.4f) — accepting best draft",
-                            chapter_number, scene_number, score_delta,
-                        )
-                    else:
+                    if stalled_count >= 2:
+                        reached_revision_limit = True
                         requires_human_review = True
                         workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
-                        workflow_run.current_step = "machine_repair_required"
-                    break
+                        workflow_run.current_step = "scene_rewrite_stalled_blocked"
+                        workflow_run.metadata_json = {
+                            **(workflow_run.metadata_json or {}),
+                            "machine_blocker": "scene_rewrite_stalled_after_two_attempts",
+                        }
+                        break
+                    logger.info(
+                        "Scene %d.%d rewrite stalled once (delta=%.4f) — trying one more bounded rewrite",
+                        chapter_number,
+                        scene_number,
+                        score_delta,
+                    )
 
             if rewrite_iterations >= settings.quality.max_scene_revisions:
                 reached_revision_limit = True
-                if settings.pipeline.accept_on_stall:
+                if settings.pipeline.accept_on_stall and rewrite_iterations < 2:
                     logger.info(
                         "Scene %d.%d reached max revisions (%d) — accepting best draft",
                         chapter_number, scene_number, rewrite_iterations,
@@ -5093,7 +5235,11 @@ async def run_scene_pipeline(
                 else:
                     requires_human_review = True
                     workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
-                    workflow_run.current_step = "machine_repair_required"
+                    workflow_run.current_step = "scene_rewrite_stalled_blocked"
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "machine_blocker": "scene_rewrite_revision_limit",
+                    }
                 break
 
             previous_scene_score = current_scene_score
@@ -5632,6 +5778,27 @@ async def run_chapter_pipeline(
                 scene_cards=scenes,
                 pending_rewrite_task_count=pending_rewrite_task_count,
             )
+            cleared_outline_residue = 0
+            if _readiness_blocked_only_by_stale_auto_repair_residue(readiness_report):
+                cleared_outline_residue = (
+                    _clear_stale_scene_auto_repair_residue_for_outline_retry(scenes)
+                )
+                if cleared_outline_residue:
+                    chapter.metadata_json = {
+                        **(chapter.metadata_json or {}),
+                        "outline_readiness_auto_cleared_stale_repair_residue": (
+                            cleared_outline_residue
+                        ),
+                    }
+                    await session.flush()
+                    readiness_report = evaluate_chapter_outline_readiness(
+                        chapter_number=chapter_number,
+                        chapter_title=chapter.title,
+                        chapter_target_word_count=chapter.target_word_count,
+                        chapter_metadata=chapter.metadata_json or {},
+                        scene_cards=scenes,
+                        pending_rewrite_task_count=pending_rewrite_task_count,
+                    )
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,
@@ -5985,6 +6152,104 @@ async def run_chapter_pipeline(
                     "word_count": int(getattr(chapter_draft, "word_count", 0) or 0),
                 },
             )
+
+            if scene_requires_human_review and not use_chapter_first:
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                export_artifact_id: UUID | None = None
+                output_path: str | None = None
+                if export_markdown:
+                    current_step_name = "export_chapter_markdown"
+                    workflow_run.current_step = current_step_name
+                    _emit_progress(
+                        progress,
+                        "chapter_export_started",
+                        {
+                            "project_slug": project_slug,
+                            "chapter_number": chapter_number,
+                        },
+                    )
+                    try:
+                        artifact, artifact_path = await export_chapter_markdown(
+                            session,
+                            settings,
+                            project_slug,
+                            chapter_number,
+                            created_by_run_id=workflow_run.id,
+                        )
+                    except (ValueError, OSError) as exc:
+                        chapter.metadata_json = {
+                            **(chapter.metadata_json or {}),
+                            "export_blocked_reason": str(exc),
+                            "export_blocked_by_run_id": str(workflow_run.id),
+                        }
+                        await create_workflow_step_run(
+                            session,
+                            workflow_run_id=workflow_run.id,
+                            step_name=current_step_name,
+                            step_order=step_order,
+                            status=WorkflowStatus.COMPLETED,
+                            output_ref={"export_blocked": str(exc)},
+                        )
+                        step_order += 1
+                        _emit_progress(
+                            progress,
+                            "chapter_export_blocked",
+                            {
+                                "project_slug": project_slug,
+                                "chapter_number": chapter_number,
+                                "reason": str(exc),
+                            },
+                        )
+                    else:
+                        export_artifact_id = artifact.id
+                        output_path = str(artifact_path.resolve())
+                        await create_workflow_step_run(
+                            session,
+                            workflow_run_id=workflow_run.id,
+                            step_name=current_step_name,
+                            step_order=step_order,
+                            status=WorkflowStatus.COMPLETED,
+                            output_ref={
+                                "export_artifact_id": str(export_artifact_id),
+                                "output_path": output_path,
+                            },
+                        )
+                        step_order += 1
+                        _emit_progress(
+                            progress,
+                            "chapter_export_completed",
+                            {
+                                "project_slug": project_slug,
+                                "chapter_number": chapter_number,
+                                "export_artifact_id": str(export_artifact_id),
+                                "output_path": output_path,
+                            },
+                        )
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.current_step = "scene_machine_repair_required"
+                workflow_run.metadata_json = {
+                    **workflow_run.metadata_json,
+                    "requires_human_review": True,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "scene_requires_human_review": True,
+                    "export_artifact_id": str(export_artifact_id) if export_artifact_id else None,
+                    "auto_repair_skipped_reason": "scene_machine_blocked",
+                }
+                await session.flush()
+                return ChapterPipelineResult(
+                    workflow_run_id=workflow_run.id,
+                    project_id=project.id,
+                    chapter_id=chapter.id,
+                    chapter_number=chapter.chapter_number,
+                    scene_results=scene_results,
+                    chapter_draft_id=chapter_draft.id,
+                    chapter_draft_version_no=chapter_draft.version_no,
+                    export_artifact_id=export_artifact_id,
+                    output_path=output_path,
+                    requires_human_review=True,
+                )
 
             # ── P1 Originality Engine — post-write persona feedback ──
             # Grade the assembled chapter against the 7 reader personas
@@ -8053,6 +8318,47 @@ async def _select_pending_chapters_for_resume(
     return pending, draftless_revisions
 
 
+async def _load_prior_incomplete_chapter_numbers(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    before_chapter_number: int,
+) -> list[int]:
+    """Return earlier chapters that are not safe to skip before drafting."""
+    if before_chapter_number <= 1:
+        return []
+
+    rows = await session.execute(
+        select(
+            ChapterModel.chapter_number,
+            ChapterModel.production_state,
+            func.count(ChapterDraftVersionModel.id).label("current_draft_count"),
+        )
+        .outerjoin(
+            ChapterDraftVersionModel,
+            and_(
+                ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            ),
+        )
+        .where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.chapter_number < before_chapter_number,
+        )
+        .group_by(
+            ChapterModel.id,
+            ChapterModel.chapter_number,
+            ChapterModel.production_state,
+        )
+        .order_by(ChapterModel.chapter_number.asc())
+    )
+    incomplete: list[int] = []
+    for chapter_number, production_state, current_draft_count in rows.all():
+        if production_state != "ok" or int(current_draft_count or 0) <= 0:
+            incomplete.append(int(chapter_number))
+    return incomplete
+
+
 async def run_project_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -8485,6 +8791,74 @@ async def run_project_pipeline(
             },
         )
         step_order += 1
+
+        if (
+            getattr(settings.pipeline, "enforce_sequential_chapter_generation", True)
+            and pending_chapters
+        ):
+            first_pending_chapter = min(chapter.chapter_number for chapter in pending_chapters)
+            prior_incomplete_chapters = await _load_prior_incomplete_chapter_numbers(
+                session,
+                project_id=project.id,
+                before_chapter_number=first_pending_chapter,
+            )
+            if prior_incomplete_chapters:
+                current_step_name = "chapter_sequence_gap_guard"
+                workflow_run.current_step = current_step_name
+                project.status = ProjectStatus.REVISING.value
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "requires_human_review": True,
+                    "sequence_gap_guard": {
+                        "first_requested_chapter_number": first_pending_chapter,
+                        "prior_incomplete_chapter_numbers": prior_incomplete_chapters[:50],
+                        "prior_incomplete_chapter_count": len(prior_incomplete_chapters),
+                    },
+                }
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.MACHINE_BLOCKED,
+                    output_ref={
+                        "first_requested_chapter_number": first_pending_chapter,
+                        "prior_incomplete_chapter_numbers": prior_incomplete_chapters[:50],
+                        "prior_incomplete_chapter_count": len(prior_incomplete_chapters),
+                    },
+                )
+                await _checkpoint_commit(session)
+                _emit_progress(
+                    progress,
+                    "chapter_sequence_gap_guard_blocked",
+                    {
+                        "project_slug": project_slug,
+                        "first_requested_chapter_number": first_pending_chapter,
+                        "prior_incomplete_chapter_numbers": prior_incomplete_chapters[:50],
+                        "prior_incomplete_chapter_count": len(prior_incomplete_chapters),
+                    },
+                )
+                return ProjectPipelineResult(
+                    workflow_run_id=workflow_run.id,
+                    project_id=project.id,
+                    project_slug=project.slug,
+                    chapter_results=[],
+                    story_bible_workflow_run_id=story_bible_result.workflow_run_id
+                    if story_bible_result is not None
+                    else None,
+                    materialization_workflow_run_id=materialization_result.workflow_run_id
+                    if materialization_result is not None
+                    else None,
+                    narrative_graph_workflow_run_id=narrative_graph_result.workflow_run_id
+                    if narrative_graph_result is not None
+                    else None,
+                    narrative_tree_workflow_run_id=narrative_tree_result.workflow_run_id
+                    if narrative_tree_result is not None
+                    else None,
+                    final_verdict="chapter_sequence_gap",
+                    requires_human_review=True,
+                )
 
         qimao_gate_report = _record_qimao_planning_gate(project, chapters=chapters)
         if qimao_gate_report is not None:
@@ -9648,18 +10022,51 @@ async def run_autowrite_pipeline(
                 "project_id": str(project.id),
             },
         )
+    if await _clear_auto_resumable_project_pause(session, project):
+        await _checkpoint_commit(session)
     _assert_project_not_blocked_for_structural_repair(
         project,
         project_slug=project.slug,
         operation="autowrite pipeline",
     )
 
-    # Resume: check if planning artifact already exists
+    # Resume: check if planning artifact already exists. Short books can also
+    # land in a partial-planning state: foundation artifacts and VOLUME_PLAN are
+    # approved, but the first per-volume chapter outline failed before the
+    # merged CHAPTER_OUTLINE_BATCH was imported. In that case the non-progressive
+    # path would rerun generate_novel_plan from BookSpec, wasting tokens and
+    # risking drift. Delegate to the progressive resume loop so it skips the
+    # foundation and continues at volume outline generation.
     existing_plan_artifact = await get_latest_planning_artifact(
         session,
         project_id=project.id,
         artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
     )
+    if existing_plan_artifact is None and settings.pipeline.resume_enabled:
+        existing_volume_plan_artifact = await get_latest_planning_artifact(
+            session,
+            project_id=project.id,
+            artifact_type=ArtifactType.VOLUME_PLAN,
+        )
+        if existing_volume_plan_artifact is not None:
+            _emit_progress(
+                progress,
+                "planning_resume_rerouted_progressive",
+                {
+                    "project_slug": project.slug,
+                    "reason": "volume_plan_exists_without_chapter_outline_batch",
+                },
+            )
+            return await run_progressive_autowrite_pipeline(
+                session,
+                settings,
+                project_payload=project_payload,
+                premise=premise,
+                requested_by=requested_by,
+                export_markdown=export_markdown,
+                auto_repair_on_attention=auto_repair_on_attention,
+                progress=progress,
+            )
     if existing_plan_artifact is not None and settings.pipeline.resume_enabled:
         _emit_progress(
             progress,
@@ -9702,85 +10109,179 @@ async def run_autowrite_pipeline(
             },
         )
 
-    _emit_progress(
-        progress,
-        "story_bible_materialization_started",
-        {"project_slug": project.slug},
+    completed_bible_run = (
+        await get_latest_completed_workflow_run(
+            session,
+            project_id=project.id,
+            workflow_type=WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        )
+        if existing_plan_artifact is not None and settings.pipeline.resume_enabled
+        else None
     )
-    story_bible_result = await materialize_latest_story_bible(
-        session,
-        project.slug,
-        requested_by=requested_by,
+    if completed_bible_run is not None:
+        from bestseller.domain.story_bible import StoryBibleMaterializationResult
+
+        story_bible_result = StoryBibleMaterializationResult(
+            workflow_run_id=completed_bible_run.id,
+            project_id=project.id,
+        )
+        _emit_progress(
+            progress,
+            "story_bible_materialization_skipped_resume",
+            {"project_slug": project.slug, "workflow_run_id": str(completed_bible_run.id)},
+        )
+    else:
+        _emit_progress(
+            progress,
+            "story_bible_materialization_started",
+            {"project_slug": project.slug},
+        )
+        story_bible_result = await materialize_latest_story_bible(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        _emit_progress(
+            progress,
+            "story_bible_materialization_completed",
+            {
+                "project_slug": project.slug,
+                "workflow_run_id": str(story_bible_result.workflow_run_id),
+            },
+        )
+
+    completed_outline_run = (
+        await get_latest_completed_workflow_run(
+            session,
+            project_id=project.id,
+            workflow_type=WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE,
+        )
+        if existing_plan_artifact is not None and settings.pipeline.resume_enabled
+        else None
     )
-    await _checkpoint_commit(session)
-    _emit_progress(
-        progress,
-        "story_bible_materialization_completed",
-        {
-            "project_slug": project.slug,
-            "workflow_run_id": str(story_bible_result.workflow_run_id),
-        },
+    if completed_outline_run is not None:
+        from bestseller.domain.workflow import WorkflowMaterializationResult
+
+        outline_result = WorkflowMaterializationResult(
+            workflow_run_id=completed_outline_run.id,
+            project_id=project.id,
+            batch_name="resume-reused-outline",
+            chapters_created=0,
+            scenes_created=0,
+        )
+        _emit_progress(
+            progress,
+            "outline_materialization_skipped_resume",
+            {"project_slug": project.slug, "workflow_run_id": str(completed_outline_run.id)},
+        )
+    else:
+        _emit_progress(
+            progress,
+            "outline_materialization_started",
+            {"project_slug": project.slug},
+        )
+        outline_result = await materialize_latest_chapter_outline_batch(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        _emit_progress(
+            progress,
+            "outline_materialization_completed",
+            {
+                "project_slug": project.slug,
+                "workflow_run_id": str(outline_result.workflow_run_id),
+            },
+        )
+
+    completed_graph_run = (
+        await get_latest_completed_workflow_run(
+            session,
+            project_id=project.id,
+            workflow_type=WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH,
+        )
+        if existing_plan_artifact is not None and settings.pipeline.resume_enabled
+        else None
     )
-    _emit_progress(
-        progress,
-        "outline_materialization_started",
-        {"project_slug": project.slug},
+    if completed_graph_run is not None:
+        from bestseller.domain.narrative import NarrativeGraphMaterializationResult
+
+        narrative_graph_result = NarrativeGraphMaterializationResult(
+            workflow_run_id=completed_graph_run.id,
+            project_id=project.id,
+        )
+        _emit_progress(
+            progress,
+            "narrative_graph_materialization_skipped_resume",
+            {"project_slug": project.slug, "workflow_run_id": str(completed_graph_run.id)},
+        )
+    else:
+        _emit_progress(
+            progress,
+            "narrative_graph_materialization_started",
+            {"project_slug": project.slug},
+        )
+        narrative_graph_result = await materialize_latest_narrative_graph(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        _emit_progress(
+            progress,
+            "narrative_graph_materialization_completed",
+            {
+                "project_slug": project.slug,
+                "workflow_run_id": str(narrative_graph_result.workflow_run_id),
+                "plot_arc_count": narrative_graph_result.plot_arc_count,
+                "clue_count": narrative_graph_result.clue_count,
+            },
+        )
+
+    completed_tree_run = (
+        await get_latest_completed_workflow_run(
+            session,
+            project_id=project.id,
+            workflow_type=WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_TREE,
+        )
+        if existing_plan_artifact is not None and settings.pipeline.resume_enabled
+        else None
     )
-    outline_result = await materialize_latest_chapter_outline_batch(
-        session,
-        project.slug,
-        requested_by=requested_by,
-    )
-    await _checkpoint_commit(session)
-    _emit_progress(
-        progress,
-        "outline_materialization_completed",
-        {
-            "project_slug": project.slug,
-            "workflow_run_id": str(outline_result.workflow_run_id),
-        },
-    )
-    _emit_progress(
-        progress,
-        "narrative_graph_materialization_started",
-        {"project_slug": project.slug},
-    )
-    narrative_graph_result = await materialize_latest_narrative_graph(
-        session,
-        project.slug,
-        requested_by=requested_by,
-    )
-    await _checkpoint_commit(session)
-    _emit_progress(
-        progress,
-        "narrative_graph_materialization_completed",
-        {
-            "project_slug": project.slug,
-            "workflow_run_id": str(narrative_graph_result.workflow_run_id),
-            "plot_arc_count": narrative_graph_result.plot_arc_count,
-            "clue_count": narrative_graph_result.clue_count,
-        },
-    )
-    _emit_progress(
-        progress,
-        "narrative_tree_materialization_started",
-        {"project_slug": project.slug},
-    )
-    narrative_tree_result = await materialize_latest_narrative_tree(
-        session,
-        project.slug,
-        requested_by=requested_by,
-    )
-    await _checkpoint_commit(session)
-    _emit_progress(
-        progress,
-        "narrative_tree_materialization_completed",
-        {
-            "project_slug": project.slug,
-            "workflow_run_id": str(narrative_tree_result.workflow_run_id),
-            "node_count": narrative_tree_result.node_count,
-        },
-    )
+    if completed_tree_run is not None:
+        from bestseller.domain.narrative_tree import NarrativeTreeMaterializationResult
+
+        narrative_tree_result = NarrativeTreeMaterializationResult(
+            workflow_run_id=completed_tree_run.id,
+            project_id=project.id,
+        )
+        _emit_progress(
+            progress,
+            "narrative_tree_materialization_skipped_resume",
+            {"project_slug": project.slug, "workflow_run_id": str(completed_tree_run.id)},
+        )
+    else:
+        _emit_progress(
+            progress,
+            "narrative_tree_materialization_started",
+            {"project_slug": project.slug},
+        )
+        narrative_tree_result = await materialize_latest_narrative_tree(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        _emit_progress(
+            progress,
+            "narrative_tree_materialization_completed",
+            {
+                "project_slug": project.slug,
+                "workflow_run_id": str(narrative_tree_result.workflow_run_id),
+                "node_count": narrative_tree_result.node_count,
+            },
+        )
     project_result = await run_project_pipeline(
         session,
         settings,
@@ -9794,7 +10295,24 @@ async def run_autowrite_pipeline(
         progress=progress,
     )
     repair_result = None
-    if project_result.requires_human_review and auto_repair_on_attention:
+    skip_auto_repair_for_scene_block = (
+        project_result.requires_human_review
+        and await _project_has_scene_machine_blocked_chapter(session, project.id)
+    )
+    if skip_auto_repair_for_scene_block:
+        _emit_progress(
+            progress,
+            "auto_repair_skipped_scene_machine_blocked",
+            {
+                "project_slug": project.slug,
+                "project_workflow_run_id": str(project_result.workflow_run_id),
+            },
+        )
+    if (
+        project_result.requires_human_review
+        and auto_repair_on_attention
+        and not skip_auto_repair_for_scene_block
+    ):
         _emit_progress(
             progress,
             "auto_repair_started",
@@ -9926,6 +10444,8 @@ async def run_progressive_autowrite_pipeline(
         project = await create_project(session, project_payload, settings)
         await _checkpoint_commit(session)
         _emit_progress(progress, "project_creation_completed", {"project_slug": project.slug, "project_id": str(project.id)})
+    if await _clear_auto_resumable_project_pause(session, project):
+        await _checkpoint_commit(session)
     _assert_project_not_blocked_for_structural_repair(
         project,
         project_slug=project.slug,
@@ -10031,6 +10551,7 @@ async def run_progressive_autowrite_pipeline(
     vol_project_result = None
     blocked_volume_repair_required = False
     blocked_volume_final_verdict: str | None = None
+    blocked_volume_repair_chapter_numbers: set[int] | None = None
 
     # Book-wide totals so the web UI can render progress across the entire
     # multi-volume run, not just the current volume.
@@ -10299,15 +10820,21 @@ async def run_progressive_autowrite_pipeline(
             chapter_numbers=current_volume_chapter_numbers,
         )
         await _checkpoint_commit(session)
+        volume_fully_written_after_run = False
+        volume_written_count_after_run = 0
+        volume_total_count_after_run = 0
+        if settings.pipeline.resume_enabled:
+            (
+                volume_fully_written_after_run,
+                volume_written_count_after_run,
+                volume_total_count_after_run,
+            ) = await _volume_fully_written(session, project.id, vol_num)
         # For the next volume's baseline, add both:
         # 1) chapters already written in this volume before this run; and
         # 2) chapters processed by this run in this volume.
         if settings.pipeline.resume_enabled:
-            _vw_fully_written, _vw_written_count, _vw_total_count = await _volume_fully_written(
-                session, project.id, vol_num,
-            )
-            if _vw_fully_written:
-                global_completed_chapter_offset += int(_vw_written_count or 0)
+            if volume_fully_written_after_run:
+                global_completed_chapter_offset += int(volume_written_count_after_run or 0)
             else:
                 global_completed_chapter_offset += len(vol_project_result.chapter_results)
         else:
@@ -10316,23 +10843,54 @@ async def run_progressive_autowrite_pipeline(
         _emit_progress(progress, "volume_writing_completed", {
             "project_slug": project.slug, "volume_number": vol_num,
             "chapters_written": len(vol_project_result.chapter_results),
+            "written": volume_written_count_after_run,
+            "total": volume_total_count_after_run,
+            "fully_written": volume_fully_written_after_run,
         })
-        if vol_project_result.requires_human_review:
+        volume_incomplete_after_run = (
+            settings.pipeline.resume_enabled
+            and volume_total_count_after_run > 0
+            and not volume_fully_written_after_run
+        )
+        if vol_project_result.requires_human_review or volume_incomplete_after_run:
             blocked_volume_repair_required = True
-            blocked_volume_final_verdict = vol_project_result.final_verdict or "attention"
-            logger.warning(
-                "Volume %d writing for project %s machine-blocked for repair; "
-                "continuing later volume planning while repair remains queued.",
-                vol_num,
-                project.slug,
-            )
-            _emit_progress(progress, "volume_writing_machine_repair_required", {
-                "project_slug": project.slug,
-                "volume_number": vol_num,
-                "chapters_written": len(vol_project_result.chapter_results),
-                "final_verdict": vol_project_result.final_verdict,
-            })
-            if not getattr(settings.pipeline, "progressive_continue_after_volume_block", True):
+            blocked_volume_repair_chapter_numbers = set(current_volume_chapter_numbers)
+            blocked_volume_final_verdict = (
+                vol_project_result.final_verdict
+                if vol_project_result.requires_human_review
+                else "attention"
+            ) or "attention"
+            if vol_project_result.requires_human_review:
+                logger.warning(
+                    "Volume %d writing for project %s machine-blocked for repair.",
+                    vol_num,
+                    project.slug,
+                )
+                _emit_progress(progress, "volume_writing_machine_repair_required", {
+                    "project_slug": project.slug,
+                    "volume_number": vol_num,
+                    "chapters_written": len(vol_project_result.chapter_results),
+                    "final_verdict": vol_project_result.final_verdict,
+                })
+            if volume_incomplete_after_run:
+                logger.warning(
+                    "Volume %d writing for project %s stopped incomplete (%d/%d written); "
+                    "not advancing to later volumes.",
+                    vol_num,
+                    project.slug,
+                    volume_written_count_after_run,
+                    volume_total_count_after_run,
+                )
+                _emit_progress(progress, "volume_writing_incomplete_current_volume", {
+                    "project_slug": project.slug,
+                    "volume_number": vol_num,
+                    "written": volume_written_count_after_run,
+                    "total": volume_total_count_after_run,
+                    "chapters_written": len(vol_project_result.chapter_results),
+                    "final_verdict": vol_project_result.final_verdict,
+                })
+                break
+            if not getattr(settings.pipeline, "progressive_continue_after_volume_block", False):
                 break
             _emit_progress(progress, "volume_writing_repair_parallelized", {
                 "project_slug": project.slug,
@@ -10416,19 +10974,35 @@ async def run_progressive_autowrite_pipeline(
 
     repair_result = None
     project_requires_repair = project_result.requires_human_review or blocked_volume_repair_required
+    skip_auto_repair_for_scene_block = (
+        project_requires_repair
+        and await _project_has_scene_machine_blocked_chapter(session, project.id)
+    )
     project_repair_verdict = (
         blocked_volume_final_verdict
         if blocked_volume_repair_required and project_result.final_verdict in (None, "pass")
         else project_result.final_verdict
     )
-    if project_requires_repair and auto_repair_on_attention:
+    if skip_auto_repair_for_scene_block:
+        _emit_progress(progress, "auto_repair_skipped_scene_machine_blocked", {
+            "project_slug": project.slug,
+            "final_verdict": project_repair_verdict,
+        })
+    if (
+        project_requires_repair
+        and auto_repair_on_attention
+        and not skip_auto_repair_for_scene_block
+    ):
         _emit_progress(progress, "auto_repair_started", {
             "project_slug": project.slug, "final_verdict": project_repair_verdict,
         })
         from bestseller.services.repair import run_project_repair
         repair_result = await run_project_repair(
             session, settings, project.slug,
-            requested_by=requested_by, export_markdown=export_markdown, progress=progress,
+            requested_by=requested_by,
+            export_markdown=export_markdown,
+            target_chapter_numbers=blocked_volume_repair_chapter_numbers,
+            progress=progress,
         )
         _emit_progress(progress, "auto_repair_completed", {
             "project_slug": project.slug, "workflow_run_id": str(repair_result.workflow_run_id),

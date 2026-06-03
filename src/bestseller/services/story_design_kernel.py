@@ -165,6 +165,55 @@ class WorldviewSystem(BaseModel, frozen=True):
     costs: str = Field(min_length=1)
     failure_modes: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        data = _mapping(value)
+        if not data:
+            return value
+        data.setdefault("name", _first_text(data, "system_name", "key", "id"))
+        if not _text(data.get("operating_logic")):
+            data["operating_logic"] = _first_text(
+                data,
+                "logic",
+                "rule",
+                "description",
+                "mechanism",
+                "execution_rule",
+            )
+        if not _text(data.get("resources_or_authority")):
+            data["resources_or_authority"] = _first_text(
+                data,
+                "resource",
+                "resources",
+                "authority",
+                "authority_basis",
+                "control_source",
+            )
+        for key in ("name", "operating_logic", "resources_or_authority", "limits", "costs"):
+            if key in data:
+                data[key] = _text(data.get(key))
+        data["failure_modes"] = _text_list(
+            data.get("failure_modes") or data.get("failure_mode") or data.get("risks")
+        )
+        if not data.get("limits"):
+            data["limits"] = _first_text(
+                data,
+                "constraints",
+                "constraint",
+                "hard_limits",
+                "limitation",
+                "forbidden_uses",
+            )
+        if not data.get("costs"):
+            data["costs"] = _first_text(data, "cost", "visible_cost", "price", "tradeoff")
+        data.setdefault("name", "未命名世界系统")
+        data.setdefault("operating_logic", "该系统以本书规则压力运转。")
+        data.setdefault("resources_or_authority", "该系统依托既定权威、资源或规则授权。")
+        data.setdefault("limits", "系统推进必须受到明确条件、代价或反制窗口限制。")
+        data.setdefault("costs", "每次使用都必须产生读者可见的风险、损耗或责任。")
+        return data
+
 
 class WorldviewFaction(BaseModel, frozen=True):
     """A force in the world with resources, motives, and pressure on the protagonist."""

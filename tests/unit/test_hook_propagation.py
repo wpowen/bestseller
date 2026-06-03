@@ -38,6 +38,9 @@ def test_apply_hook_to_book_and_world_spec() -> None:
 
     assert book["logline"] == spec.one_liner
     assert book["series_engine"]["anti_cheat_rules"] == list(spec.anti_cheat)
+    assert book["series_engine"]["chapter_ending_hook_strategy"] == (
+        "每次成功使用核心规则，都必须制造可见代价、误解升级或反作弊压力。"
+    )
     assert world["rules"][0]["story_consequence"] == "；".join(spec.constraints.values())
     assert "虚假表演不结算" in world["power_system"]["hard_limits"]
 

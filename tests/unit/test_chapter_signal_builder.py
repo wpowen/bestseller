@@ -35,6 +35,17 @@ def test_build_signal_pack_minimal_inputs() -> None:
     assert pack.market_hooks_required == 0
 
 
+def test_build_signal_pack_counts_rule_survival_payoff_markers() -> None:
+    text = (
+        "沈照把反证贴上提示牌，豁免印落进他掌心。\n"
+        "门缝里的红字当场改判，规则修正即时生效。\n"
+    )
+
+    pack = build_signal_pack(text, chapter_position=1)
+
+    assert pack.payoff_count >= 3
+
+
 def test_build_signal_pack_rejects_invalid_position() -> None:
     with pytest.raises(ValueError):
         build_signal_pack(_STRONG_CHAPTER, chapter_position=0)

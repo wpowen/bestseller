@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import re
 from typing import Any
 
 from bestseller.domain.anti_commonsense_hook import HookSpec
@@ -102,10 +103,25 @@ def apply_hook_to_book_spec(book_spec: dict[str, Any], spec: HookSpec | None) ->
     series_engine.setdefault("core_serial_engine", spec.core_rule)
     series_engine["reader_promise"] = spec.one_liner
     series_engine["first_three_chapter_hook"] = spec.core_rule
-    series_engine["chapter_ending_hook_strategy"] = (
-        "Every successful use of the core rule creates a visible cost, "
-        "misunderstanding, or anti-cheat pressure."
+    spec_text = " ".join(
+        [
+            spec.one_liner,
+            spec.core_rule,
+            spec.genre,
+            spec.protagonist_role,
+            *(str(item) for item in spec.costs),
+            *(str(item) for item in spec.anti_cheat),
+        ]
     )
+    if re.search(r"[\u4e00-\u9fff]", spec_text):
+        series_engine["chapter_ending_hook_strategy"] = (
+            "每次成功使用核心规则，都必须制造可见代价、误解升级或反作弊压力。"
+        )
+    else:
+        series_engine["chapter_ending_hook_strategy"] = (
+            "Every successful use of the core rule creates a visible cost, "
+            "misunderstanding, or anti-cheat pressure."
+        )
     series_engine["anti_commonsense_constraints"] = dict(spec.constraints)
     series_engine["anti_cheat_rules"] = list(spec.anti_cheat)
     series_engine["cost_engine"] = list(spec.costs)

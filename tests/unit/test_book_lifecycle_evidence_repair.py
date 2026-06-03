@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from bestseller.infra.db.models import CharacterModel, ChapterModel, ProjectModel
+from bestseller.infra.db.models import ChapterModel, CharacterModel, ProjectModel
 from bestseller.services.book_lifecycle_evidence import (
     build_book_lifecycle_evidence_from_project_state,
 )
 from bestseller.services.book_lifecycle_evidence_repair import (
+    _bind_distilled_strategy_to_planning,
     build_lifecycle_book_spec,
     build_lifecycle_cast_spec,
     build_lifecycle_story_design_kernel,
@@ -21,7 +22,6 @@ from bestseller.services.planning_kernel import (
 )
 from bestseller.services.reverse_outline_gate import evaluate_reverse_outline_gate
 from bestseller.services.story_design_kernel import story_design_kernel_from_dict
-
 
 pytestmark = pytest.mark.unit
 
@@ -98,6 +98,121 @@ def test_lifecycle_evidence_repair_builds_target_length_planning_contract() -> N
     )
 
     assert report.passed is True
+
+
+def test_lifecycle_evidence_repair_consumes_distilled_strategy_card() -> None:
+    strategy_card = {
+        "aggregate_key": "suspense-mystery",
+        "maturity_score": 0.72,
+        "maturity_status": "review",
+        "source_count": 3,
+        "selected_mechanisms": [
+            {
+                "mechanism_id": "evidence-ledger-pressure",
+                "source_confidence": 0.86,
+                "design_role": "series_engine",
+                "adaptation_instruction": "转化为本项目证据账本。",
+                "required_project_specific_binding": "绑定到林渊每卷必须付出的公开证据代价。",
+                "failure_mode": "证据只作背景说明。",
+            }
+        ],
+        "required_state_variables": ["evidence_pressure"],
+        "required_change_vectors": ["public_cost_reversal"],
+        "reader_reward_mix": ["deduction_payoff"],
+        "anti_copy_boundaries": ["exact-source-opening-chain"],
+        "worldview_bindings": {
+            "distilled_mechanism_bindings": [
+                {
+                    "aggregate_key": "suspense-mystery",
+                    "mechanism_id": "evidence-ledger-pressure",
+                    "design_role": "world_pressure",
+                    "source_confidence": 0.86,
+                    "required_project_binding": "把证据账本改写成本书独有的公开代价。",
+                    "state_variables": ["evidence_pressure"],
+                    "required_cost": "每次推进都会暴露一层关系风险。",
+                    "anti_copy_boundaries": ["exact-source-opening-chain"],
+                }
+            ],
+            "state_variables": [
+                {
+                    "key": "evidence_pressure",
+                    "variable_type": "information",
+                    "current_value": "线索压力尚未公开。",
+                    "desired_direction": "逐卷转为公开代价。",
+                    "change_triggers": ["证据公开", "关系反制"],
+                    "failure_mode": "推理退化为资料说明。",
+                    "source_mechanism_ids": ["evidence-ledger-pressure"],
+                }
+            ],
+        },
+    }
+    project = _project()
+    metadata = {**dict(project.metadata_json), "distilled_strategy_card": strategy_card}
+    volume_plan = build_lifecycle_volume_plan(
+        project,
+        category_key="suspense-mystery",
+        metadata=metadata,
+    )
+    book_spec = build_lifecycle_book_spec(
+        project,
+        category_key="suspense-mystery",
+        metadata=metadata,
+        protagonist_name="林渊",
+    )
+    world_spec = build_lifecycle_world_spec(
+        project,
+        category_key="suspense-mystery",
+        metadata=metadata,
+    )
+    cast_spec = build_lifecycle_cast_spec(
+        project,
+        characters=[CharacterModel(name="林渊", role="protagonist")],
+    )
+    story_design = build_lifecycle_story_design_kernel(
+        project,
+        category_key="suspense-mystery",
+        metadata=metadata,
+        book_spec=book_spec,
+        world_spec=world_spec,
+        cast_spec=cast_spec,
+        volume_plan=volume_plan,
+    )
+    story_design, volume_plan, bound = _bind_distilled_strategy_to_planning(
+        story_design=story_design,
+        volume_plan=volume_plan,
+        strategy_card=strategy_card,
+    )
+
+    assert bound is True
+    assert "exact-source-opening-chain" not in str(story_design)
+    assert volume_plan[0]["distilled_state_delta"] == (
+        "evidence_pressure -> public_cost_reversal"
+    )
+
+    kernel = build_project_planning_kernel(
+        project,
+        project_metadata={
+            **metadata,
+            "benchmark_works": ["anonymous-category-benchmark:suspense-mystery"],
+            "unique_hook": book_spec["unique_hook"],
+        },
+        book_spec=book_spec,
+        world_spec=world_spec,
+        cast_spec=cast_spec,
+        volume_plan=volume_plan,
+        story_design_kernel=story_design,
+    )
+    report = evaluate_prewrite_readiness(
+        kernel,
+        genre=project.genre,
+        sub_genre=project.sub_genre,
+        target_chapters=project.target_chapters,
+    )
+    codes = {finding.code for finding in report.blocking_findings}
+
+    assert report.passed is True
+    assert "distilled_strategy_not_consumed" not in codes
+    assert report.capability_snapshot["distilled_strategy_ready"] is True
 
 
 def test_lifecycle_evidence_repair_builds_reverse_outline_that_passes_gate() -> None:

@@ -611,10 +611,10 @@ def validate_scene_text_identity(
     This is a heuristic, zero-LLM-cost check. It looks for pronoun usage
     near character name mentions and flags mismatches.
     """
-    if not text or not registry:
+    if not text:
         return []
 
-    entries = registry
+    violations: list[IdentityViolation] = []
     if participant_names:
         name_set = set(participant_names)
         entries = [
@@ -622,9 +622,25 @@ def validate_scene_text_identity(
             if _entry_matches_name_set(r, name_set)
             or _entry_mentioned_in_text(r, text)
         ]
+    else:
+        entries = registry
 
-    violations: list[IdentityViolation] = []
     is_zh = language.lower().startswith("zh")
+    if is_zh:
+        ta_evidence = _zh_pinyin_ta_pronoun_evidence(text)
+        if ta_evidence:
+            violations.append(
+                IdentityViolation(
+                    character_name="identity_policy",
+                    violation_type="pinyin_ta_pronoun",
+                    expected="他/她",
+                    found="ta",
+                    severity="critical",
+                    evidence=ta_evidence,
+                )
+            )
+    if not entries:
+        return violations
     names_by_entry = {entry.name: _identity_names(entry) for entry in entries}
 
     for entry in entries:
@@ -686,6 +702,15 @@ def validate_scene_text_identity(
                     )
 
     return violations
+
+
+def _zh_pinyin_ta_pronoun_evidence(text: str) -> str:
+    match = re.search(r"(?<![A-Za-z0-9_])ta(?![A-Za-z0-9_])", text, flags=re.IGNORECASE)
+    if match is None:
+        return ""
+    start = max(0, match.start() - 24)
+    end = min(len(text), match.end() + 36)
+    return text[start:end].strip()
 
 
 def _identity_is_dead_for_validation(

@@ -13,6 +13,7 @@ class PlanningArtifactCreate(BaseModel):
     artifact_type: ArtifactType
     content: Any = Field(default_factory=dict)
     scope_ref_id: UUID | None = None
+    source_run_id: UUID | None = None
     notes: str | None = None
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 import hashlib
 import random
+import re
 from typing import Any
 
 from bestseller.domain.anti_commonsense_hook import HookCandidate, HookMechanism, HookSpec
@@ -93,6 +94,10 @@ def _methodology_pair(index: int) -> tuple[str, str]:
 
 def _opening_pair(index: int) -> tuple[str, str]:
     return OPENING_FRAMES[index % len(OPENING_FRAMES)]
+
+
+def _uses_chinese_hook_labels(*values: object) -> bool:
+    return any(re.search(r"[\u4e00-\u9fff]", str(value or "")) for value in values)
 
 
 def _render_one_liner(
@@ -327,14 +332,26 @@ def build_hook_spec_from_mechanism(
     hook_type, hook_type_label = _methodology_pair(variant_index)
     opening_frame, opening_label = _opening_pair(variant_index)
     role = protagonist_role or "主角"
+    use_chinese_labels = _uses_chinese_hook_labels(
+        genre,
+        locale,
+        role,
+        desire,
+        reward,
+        cost,
+        misunderstanding,
+        mechanism.label,
+    )
     constraints = _sample_constraints(rng, mechanism)
     anti_cheat = tuple(list(mechanism.anti_cheat_rules)[:3])
+    arc_hook_type = hook_type_label if use_chinese_labels else hook_type
+    arc_opening_frame = opening_label if use_chinese_labels else opening_frame
     arc_engine = tuple(
         dict.fromkeys(
             [
                 *list(mechanism.arc_escalation_axes)[:4],
-                hook_type,
-                opening_frame,
+                arc_hook_type,
+                arc_opening_frame,
             ]
         )
     )
@@ -384,11 +401,13 @@ def build_hook_spec_from_mechanism(
         opening_frame=opening_frame,
         expression_style=style,
         methodology_axes=(
-            hook_type,
-            opening_frame,
-            "hook_lifecycle",
-            "core_loop_trigger_action_reward_investment",
-            "but_rule",
+            hook_type_label if use_chinese_labels else hook_type,
+            opening_label if use_chinese_labels else opening_frame,
+            "钩子生命周期" if use_chinese_labels else "hook_lifecycle",
+            "核心循环触发-行动-回报-投入"
+            if use_chinese_labels
+            else "core_loop_trigger_action_reward_investment",
+            "转折规则" if use_chinese_labels else "but_rule",
         ),
         llm_design_brief=design_brief,
         one_liner="placeholder",

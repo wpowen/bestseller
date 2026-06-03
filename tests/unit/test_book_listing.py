@@ -7,7 +7,11 @@ import pytest
 
 from bestseller.services.book_listing import build_book_listing_profile
 from bestseller.services.concept_lab import build_concept_lab_catalog
-from bestseller.services.platform_title_workflow import build_platform_title_workflow
+from bestseller.services.platform_title_workflow import (
+    DEFAULT_TITLE_CANDIDATE_COUNT,
+    PLATFORM_TITLE_MATRIX_KEYS,
+    build_platform_title_workflow,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -69,7 +73,7 @@ def test_build_book_listing_profile_uses_listing_files(tmp_path) -> None:
 
     assert profile["primary_title"] == "青囊不语问阴阳"
     assert profile["primary_category"] == "悬疑灵异"
-    assert len(profile["title_candidates"]) == 40
+    assert len(profile["title_candidates"]) == DEFAULT_TITLE_CANDIDATE_COUNT
     assert profile["title_workflow"]["candidate_source"] == "platform_title_workflow"
     assert profile["legacy_title_candidates"][0]["title"] == "标题1"
     assert profile["title_candidates"][0]["title"] != "标题1"
@@ -120,9 +124,9 @@ def test_build_book_listing_profile_generates_required_fallbacks() -> None:
 
     assert profile["primary_title"] == "长夜巡航"
     assert profile["secondary_category"] == "星际悬疑"
-    assert len(profile["title_candidates"]) == 40
+    assert len(profile["title_candidates"]) == DEFAULT_TITLE_CANDIDATE_COUNT
     assert any(item.get("scope_label") == "全平台" for item in profile["title_candidates"])
-    assert len(profile["title_workflow"]["platform_groups"]) == 8
+    assert len(profile["title_workflow"]["platform_groups"]) == len(PLATFORM_TITLE_MATRIX_KEYS)
     assert len(profile["tags"]) >= 5
     assert profile["main_characters"][0]["role"] == "主角"
     assert profile["marketing_assets"]["short_video_scripts"][0]["duration_seconds"] == 15
@@ -310,11 +314,131 @@ def test_platform_title_workflow_uses_clickable_identity_and_entry_tokens() -> N
     )
 
     titles = [item["title"] for item in workflow["candidates"]]
-    assert len(titles) == 40
+    assert len(titles) == DEFAULT_TITLE_CANDIDATE_COUNT
     assert any("巡捕房副捕头" in title for title in titles)
     assert any("灭门旧案" in title for title in titles)
     assert any("归墟会" in title for title in titles)
     assert not any("驱魔探案综合" in title for title in titles)
+
+
+def test_platform_title_workflow_recommends_real_target_platform_group() -> None:
+    workflow = build_platform_title_workflow(
+        {
+            "primary_title": "雨夜旧账",
+            "primary_category": "都市悬疑",
+            "secondary_category": "轻玄幻",
+            "target_platform": "起点中文网",
+            "tags": ["雨夜", "旧账", "审计", "轻玄幻"],
+            "logline": "审计员在雨夜收到一份旧账本，追查城市地下规则。",
+            "main_characters": [{"name": "周砚", "identity": "审计员"}],
+            "reader_promise": "旧账牵出城市规则，主角以审计能力逐层破局。",
+        },
+        target_platform="起点中文网",
+    )
+
+    recommended = workflow["recommended_primary_title"]
+
+    assert recommended["platform"] == "qidian"
+    assert recommended["scope_label"] == "目标平台"
+    assert recommended["score_breakdown"].keys() == {
+        "attraction",
+        "readability",
+        "platform_fit",
+        "searchability",
+    }
+    assert not recommended["title"].startswith(("开局", "我在", "让你", "全民"))
+
+
+def test_platform_title_workflow_exposes_title_evaluation_standards() -> None:
+    workflow = build_platform_title_workflow(
+        {
+            "primary_title": "我只想卖黑科技，他们全当我在布局",
+            "primary_category": "都市异能",
+            "secondary_category": "黑科技创业",
+            "target_platform": "起点中文网",
+            "tags": ["黑科技商战", "迪化误解", "产业博弈", "技术碾压"],
+            "logline": (
+                "主角只想卖黑科技做生意，外界却把每次解释都当成深层布局，"
+                "误解本身推动商业局势升级。"
+            ),
+            "reader_promise": "主角想拿到能力回报，却必须先处理势力经营带来的误判。",
+        },
+        target_platform="起点中文网",
+    )
+
+    recommended = workflow["recommended_primary_title"]
+
+    assert workflow["evaluation_standards"]["decision_levels"] == {
+        "pass": "可直接作为平台候选或主推标题。",
+        "revise": "有可用信息，但需要按反馈改写后再入选。",
+        "reject": "不应进入候选池或不能作为该平台主推。",
+    }
+    assert recommended["title_evaluation"]["decision"] == "pass"
+    assert recommended["title_evaluation"]["checks"]["reader_attraction"]["passed"] is True
+    assert recommended["title_evaluation"]["checks"]["story_transmission"]["passed"] is True
+    assert recommended["title_evaluation"]["checks"]["platform_fit"]["passed"] is True
+    assert recommended["title_evaluation"]["feedback"]["revision_prompt"] == ""
+
+
+def test_platform_title_workflow_rejects_topic_label_title() -> None:
+    workflow = build_platform_title_workflow(
+        {
+            "primary_title": "黑科技创业死局",
+            "primary_category": "都市异能",
+            "secondary_category": "黑科技创业",
+            "target_platform": "起点中文网",
+            "tags": ["黑科技商战", "迪化误解", "产业博弈"],
+            "logline": "主角只想卖黑科技做生意，外界却把每次解释都当成深层布局。",
+        },
+        target_platform="起点中文网",
+    )
+
+    evaluated = workflow["candidate_evaluations"]["黑科技创业死局"]
+
+    assert evaluated["decision"] in {"revise", "reject"}
+    assert evaluated["checks"]["story_transmission"]["passed"] is False
+    assert "人物动作" in evaluated["feedback"]["revision_prompt"]
+
+
+def test_platform_title_workflow_flags_platform_mismatch_title() -> None:
+    workflow = build_platform_title_workflow(
+        {
+            "primary_title": "我只想卖黑科技，他们全当我在布局",
+            "primary_category": "都市异能",
+            "secondary_category": "黑科技创业",
+            "target_platform": "豆瓣读书",
+            "tags": ["黑科技商战", "迪化误解", "产业博弈"],
+            "logline": "主角只想卖黑科技做生意，外界却把每次解释都当成深层布局。",
+        },
+        target_platform="豆瓣读书",
+    )
+
+    evaluated = workflow["candidate_evaluations"]["我只想卖黑科技，他们全当我在布局"]
+
+    assert evaluated["checks"]["platform_fit"]["passed"] is False
+    assert "豆瓣读书" in evaluated["feedback"]["revision_prompt"]
+
+
+def test_platform_title_workflow_supports_report_platforms() -> None:
+    workflow = build_platform_title_workflow(
+        {
+            "primary_title": "玫瑰岛来信",
+            "primary_category": "言情",
+            "secondary_category": "幻想现言",
+            "tags": ["破镜重圆", "旧案", "玫瑰岛"],
+            "logline": "女主收到亡夫旧友的来信，被迫回到玫瑰岛重查旧案。",
+            "reader_promise": "关系反转、旧案重查、暗恋拉扯。",
+            "main_characters": [{"name": "许知夏", "identity": "回岛调查的遗孀"}],
+        },
+        target_platform="QQ阅读",
+    )
+
+    groups = {group["platform_key"]: group for group in workflow["platform_groups"]}
+
+    for key in {"qq_read", "hongxiu", "zhangyue", "douban", "17k"}:
+        assert groups[key]["candidate_count"] == 5
+    assert groups["qq_read"]["candidates"][0]["scope_label"] == "目标平台"
+    assert workflow["recommended_primary_title"]["platform"] == "qq_read"
 
 
 def test_platform_title_workflow_uses_project_public_emotion_bridge() -> None:
@@ -405,7 +529,7 @@ def test_platform_title_workflow_filters_high_risk_public_emotion_title() -> Non
     titles = [item["title"] for item in workflow["candidates"]]
     assert "被真实学校欺负后，我要报复现实所有人" not in titles
     assert all(item.get("risk_blocked") is not True for item in workflow["candidates"])
-    assert len(workflow["candidates"]) == 40
+    assert len(workflow["candidates"]) == DEFAULT_TITLE_CANDIDATE_COUNT
     assert all(group["candidate_count"] == 5 for group in workflow["platform_groups"])
 
 

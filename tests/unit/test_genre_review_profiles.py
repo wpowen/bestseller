@@ -116,6 +116,27 @@ def test_resolve_otherworld_cross_system_by_preset() -> None:
     assert "identity_debt_tracking" in profile.plan_rubric.required_checks
 
 
+def test_rule_survival_meta_resolves_to_suspense_mystery_before_progression() -> None:
+    profile = resolve_genre_review_profile(
+        "规则生存 / meta博弈",
+        "规则怪谈式密室审判",
+    )
+
+    assert profile.category_key == "suspense-mystery"
+    assert "战斗" not in profile.finding_messages.conflict_low_zh
+    assert "升级流" not in profile.finding_messages.conflict_low_zh
+
+
+def test_apocalypse_rule_preset_uses_rule_profile_not_action_progression() -> None:
+    profile = resolve_genre_review_profile(
+        "",
+        None,
+        genre_preset_key="apocalypse-rule",
+    )
+
+    assert profile.category_key == "suspense-mystery"
+
+
 def test_resolve_new_self_closure_categories() -> None:
     urban = resolve_genre_review_profile("都市职场", "娱乐圈项目")
     scifi = resolve_genre_review_profile("科幻机甲", "星际舰队")

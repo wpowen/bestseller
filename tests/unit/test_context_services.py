@@ -134,6 +134,28 @@ def build_scene(project_id, chapter_id, scene_number: int, title: str) -> SceneC
     return scene
 
 
+def test_chapter_draft_summary_from_current_text_keeps_previous_tail() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id, 100, "镜债换手")
+    text = "\n".join(
+        [
+            "# 第100章 镜债换手",
+            "林渊把青囊压在账簿边缘，发现第二经手人的账印。",
+            "苏婉宁说，身份记录已经开始改写。",
+            "尾声里，监控屏上的脸慢慢换成了另一个人。",
+        ]
+    )
+
+    summary = context_services._chapter_draft_summary_from_current_text(chapter, text)
+
+    assert summary is not None
+    assert summary.chapter_number == 100
+    assert "上一章当前稿摘录" in summary.summary
+    assert "第二经手人的账印" in summary.opening_lines
+    assert "监控屏上的脸" in summary.closing_lines
+    assert summary.extended_tail.endswith("另一个人。")
+
+
 @pytest.mark.asyncio
 async def test_build_scene_writer_context_includes_visible_history_and_filters_future(
     monkeypatch: pytest.MonkeyPatch,

@@ -100,6 +100,49 @@ def test_qimao_planning_gate_fails_rejection_shaped_contract() -> None:
     assert "missing_forbidden_opening_modes" in codes
 
 
+def test_qimao_planning_gate_short_two_chapter_sample_skips_chapter_three_and_10k_loop() -> None:
+    report = evaluate_qimao_planning_gate(
+        {
+            "qimao_opening_contract": {
+                "opening_incident": "主角进门时，黑板上的规则当场改字，逼他立刻签下错误答案。",
+                "first_page_conflict": "主角在前600字内被逼签字，否则同桌会被规则抹名。",
+                "protagonist_immediate_goal": "先保住同桌名字并查出谁改了黑板。",
+                "visible_loss_if_fail": "失败会让同桌身份消失，自己也会背上违规记录。",
+                "protagonist_edge": "他能看见规则改字前残留的一笔。",
+                "chapter_1_small_turn": "主角用粉笔灰遮住错误字，逼规则露出第二行。",
+                "forbidden_opening_modes": ["normal_day"],
+            }
+        },
+        target_chapters=2,
+    )
+
+    codes = {finding.code for finding in report.findings}
+    assert "missing_chapter_3_payoff" not in codes
+    assert "meta_chapter_3_payoff" not in codes
+    assert "first_10k_loop_missing" not in codes
+
+
+def test_qimao_planning_gate_six_chapter_sample_keeps_opening_arc_gates() -> None:
+    report = evaluate_qimao_planning_gate(
+        {
+            "qimao_opening_contract": {
+                "opening_incident": "主角进门时，黑板上的规则当场改字，逼他立刻签下错误答案。",
+                "first_page_conflict": "主角在前600字内被逼签字，否则同桌会被规则抹名。",
+                "protagonist_immediate_goal": "先保住同桌名字并查出谁改了黑板。",
+                "visible_loss_if_fail": "失败会让同桌身份消失，自己也会背上违规记录。",
+                "protagonist_edge": "他能看见规则改字前残留的一笔。",
+                "chapter_1_small_turn": "主角用粉笔灰遮住错误字，逼规则露出第二行。",
+                "forbidden_opening_modes": ["normal_day"],
+            }
+        },
+        target_chapters=6,
+    )
+
+    codes = {finding.code for finding in report.findings}
+    assert "missing_chapter_3_payoff" in codes
+    assert "first_10k_loop_missing" in codes
+
+
 def test_qimao_planning_gate_report_serializes_to_dict() -> None:
     report = evaluate_qimao_planning_gate({"qimao_opening_contract": {}})
     payload = qimao_planning_gate_report_to_dict(report)

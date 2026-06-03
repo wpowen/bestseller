@@ -263,7 +263,9 @@ class TestBuildPriorChapterTail:
 class TestBuildAntiSlopFooter:
     def test_chinese_language(self) -> None:
         out = build_anti_slop_footer("zh-CN")
-        assert "禁止项" in out
+        assert "去AI味写作铁律" in out
+        assert "信任读者" in out
+        assert "把意义压进动作" in out
 
     def test_english_language(self) -> None:
         out = build_anti_slop_footer("en")

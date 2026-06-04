@@ -13,7 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.infra.db.models import LlmRunModel
+from bestseller.infra.db.models import LlmRunModel, ProjectModel
 from bestseller.services.word_targets import model_output_token_ceiling
 from bestseller.settings import (
     AppSettings,
@@ -1538,6 +1538,52 @@ async def _call_litellm_with_retry(
             await asyncio.sleep(backoff)
 
 
+# Per-project model override cache (project_id -> (expiry_monotonic, entry)).
+# Lets a book pick a vendor/version from the model catalog without a DB hit on
+# every LLM call. Short TTL so a UI model switch takes effect within seconds.
+_PROJECT_MODEL_OVERRIDE_CACHE: dict[str, tuple[float, Any]] = {}
+_PROJECT_MODEL_OVERRIDE_TTL_SECONDS = 15.0
+
+
+async def _resolve_project_model_override(
+    session: AsyncSession, project_id: UUID | None
+) -> Any:
+    """Return the project's selected, available ModelCatalogEntry (or None)."""
+    if project_id is None:
+        return None
+    from bestseller.services.model_catalog import resolve_project_model_entry
+
+    key = str(project_id)
+    now = time.monotonic()
+    cached = _PROJECT_MODEL_OVERRIDE_CACHE.get(key)
+    if cached is not None and cached[0] > now:
+        return cached[1]
+    try:
+        from sqlalchemy import select
+
+        metadata = await session.scalar(
+            select(ProjectModel.metadata_json).where(ProjectModel.id == project_id)
+        )
+    except Exception:
+        logger.debug("model override lookup failed for %s", project_id, exc_info=True)
+        metadata = None
+    entry = resolve_project_model_entry(metadata if isinstance(metadata, dict) else None)
+    _PROJECT_MODEL_OVERRIDE_CACHE[key] = (now + _PROJECT_MODEL_OVERRIDE_TTL_SECONDS, entry)
+    return entry
+
+
+def _apply_model_override(role_settings: LLMRoleSettings, entry: Any) -> LLMRoleSettings:
+    update: dict[str, Any] = {"model": entry.model}
+    if entry.api_base is not None:
+        update["api_base"] = entry.api_base
+    if entry.api_key_env:
+        update["api_key_env"] = entry.api_key_env
+    # Keep model_override consistent so the strong-tier path uses the same model.
+    if role_settings.model_override:
+        update["model_override"] = entry.model
+    return role_settings.model_copy(update=update)
+
+
 async def complete_text(
     session: AsyncSession,
     settings: AppSettings,
@@ -1545,6 +1591,9 @@ async def complete_text(
 ) -> LLMCompletionResult:
     settings = apply_runtime_llm_profile(settings)
     role_settings = _get_role_settings(settings, request.logical_role)
+    _project_model_entry = await _resolve_project_model_override(session, request.project_id)
+    if _project_model_entry is not None:
+        role_settings = _apply_model_override(role_settings, _project_model_entry)
     _warn_language_system_mismatch(request)
     _validate_prompt_template_name(request)
     if request.model_tier == "strong" and role_settings.model_override:

@@ -897,6 +897,67 @@ def _match_project_route(path: str, suffix: str) -> str | None:
     return middle
 
 
+def _model_catalog_payload(
+    settings: AppSettings, slug: str | None = None
+) -> dict[str, object]:
+    """Return the switchable model catalog plus the project's current selection."""
+    from bestseller.services.model_catalog import load_model_catalog, selected_model_id
+
+    selected: str | None = None
+    if slug:
+
+        async def _load_selected() -> str | None:
+            async with session_scope(settings) as session:
+                project = await get_project_by_slug(session, slug)
+                if project is None:
+                    return None
+                return selected_model_id(project.metadata_json)
+
+        selected = asyncio.run(_load_selected())
+    return {
+        "models": [entry.model_dump(mode="json") for entry in load_model_catalog()],
+        "selected": selected,
+    }
+
+
+def _set_project_model_payload(
+    settings: AppSettings, slug: str, model_id: str | None
+) -> dict[str, object]:
+    """Set (or clear when falsy) the project's selected catalog model id."""
+    from bestseller.services.model_catalog import (
+        PROJECT_MODEL_ID_KEY,
+        get_model_catalog_entry,
+    )
+
+    normalized = (model_id or "").strip() or None
+    if normalized is not None:
+        entry = get_model_catalog_entry(normalized)
+        if entry is None:
+            raise ValueError(f"Unknown model id: {normalized}")
+        if not entry.available:
+            raise ValueError(
+                f"Model '{entry.display_name}' is not available — set its API key "
+                f"({entry.api_key_env})."
+            )
+
+    async def _apply() -> str | None:
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, slug)
+            if project is None:
+                raise ValueError(f"Project '{slug}' was not found.")
+            metadata = dict(project.metadata_json or {})
+            if normalized is None:
+                metadata.pop(PROJECT_MODEL_ID_KEY, None)
+            else:
+                metadata[PROJECT_MODEL_ID_KEY] = normalized
+            project.metadata_json = metadata
+            await session.commit()
+            return normalized
+
+    selected = asyncio.run(_apply())
+    return {"slug": slug, "selected": selected, "ok": True}
+
+
 def _delete_project_full(
     slug: str,
     task_manager: WebTaskManager,
@@ -4271,6 +4332,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                     "title": display_title,
                     "genre": row.genre,
                     "primary_category": primary_category,
+                    "llm_model_id": (row.metadata_json or {}).get("llm_model_id"),
                     "status": row.status,
                     "book_state": book_state,
                     "book_state_label": _library_book_state_label(book_state),
@@ -8762,6 +8824,14 @@ def serve_web_app(
                     packs = list_prompt_packs()
                     self._send_json([p.model_dump(mode="json") for p in packs])
                     return
+                if path == "/api/model-catalog":
+                    slug = (query.get("slug") or [None])[0] or None
+                    self._send_json(_model_catalog_payload(settings, slug))
+                    return
+                model_route_slug = _match_project_route(path, "model")
+                if model_route_slug is not None:
+                    self._send_json(_model_catalog_payload(settings, model_route_slug))
+                    return
                 if path == "/api/budget/estimate":
                     from bestseller.services.budget import estimate_project_cost
 
@@ -9408,6 +9478,17 @@ def serve_web_app(
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             try:
+                model_post_slug = _match_project_route(path, "model")
+                if model_post_slug is not None:
+                    payload = self._read_json_body()
+                    self._send_json(
+                        _set_project_model_payload(
+                            settings,
+                            model_post_slug,
+                            str(payload.get("model_id") or ""),
+                        )
+                    )
+                    return
                 if path == "/api/tasks/autowrite":
                     payload = self._read_json_body()
                     required = [

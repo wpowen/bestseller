@@ -1002,6 +1002,21 @@
     color: var(--hair);
   }
 
+  .tc-model-wrap { display: inline-flex; align-items: center; gap: 4px; }
+  .tc-model-select {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 1px 4px;
+    max-width: 220px;
+    border: 1px solid var(--hair);
+    border-radius: 3px;
+    background: var(--paper, #fff);
+    color: var(--text, #2b2b2b);
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .tc-model-select:disabled { opacity: .6; cursor: progress; }
+
   .tc-actionsrow {
     display: flex;
     flex-shrink: 0;
@@ -4259,6 +4274,44 @@
   let projectTitleBySlug = new Map();
   let focusTaskId = null;  // currently viewing in progress view
   let pollTimer = null;
+
+  // ── Per-book model selection (task-console dimension) ──
+  let modelCatalog = [];
+  async function loadModelCatalog() {
+    try {
+      const r = await fetch('/api/model-catalog', { cache: 'no-store' });
+      if (r.ok) { const d = await r.json(); modelCatalog = d.models || []; }
+    } catch (e) { modelCatalog = []; }
+  }
+  function taskModelSelectHtml(slug, curId, globalModel) {
+    const g = ((globalModel || '').replace('openai/', '') || '默认');
+    let html = `<select class="tc-model-select" title="这本书使用的大模型 · 切换后下次执行生效" `
+      + `onclick="event.stopPropagation();" onchange="changeTaskModel('${esc(slug)}', this.value, this)">`;
+    html += `<option value="" ${!curId ? 'selected' : ''}>全局默认 · ${esc(g)}</option>`;
+    html += (modelCatalog || []).map(m => {
+      const sel = m.id === curId ? 'selected' : '';
+      const dis = m.available ? '' : 'disabled';
+      const label = (m.vendor ? m.vendor + ' · ' : '') + m.display_name + (m.available ? '' : '（未配置）');
+      return `<option value="${esc(m.id)}" ${sel} ${dis}>${esc(label)}</option>`;
+    }).join('');
+    html += `</select>`;
+    return html;
+  }
+  async function changeTaskModel(slug, modelId, el) {
+    if (!slug) return;
+    el.disabled = true;
+    try {
+      const r = await fetch(`/api/projects/${encodeURIComponent(slug)}/model`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: modelId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+      const p = projectBySlug.get(slug); if (p) p.llm_model_id = modelId || null;
+    } catch (e) {
+      alert('模型切换失败：' + e.message);
+    } finally { el.disabled = false; }
+  }
   let elapsedTimer = null;
   let taskStartTime = null;
   let maxConcurrentTasks = 3;  // populated from /api/status; default matches backend env
@@ -6116,7 +6169,9 @@
           <div class="tc-meta-line">
             ${slug ? `SLUG · ${esc(slug)}` : 'SLUG · —'}
             <span class="pipe">|</span>
-            模型 · ${esc(llmModel || meta.writer_model || meta.model || '—')}
+            <span class="tc-model-wrap">模型 · ${slug
+              ? taskModelSelectHtml(slug, (projectBySlug.get(slug) || {}).llm_model_id, llmModel || meta.writer_model || meta.model)
+              : esc(llmModel || meta.writer_model || meta.model || '—')}</span>
             <span class="pipe">|</span>
             创建 ${esc(timeStr)}
             ${task.cancel_requested ? `<span class="pipe">|</span><span style="color:var(--warning);">⚠ 停止请求中</span>` : ''}
@@ -8275,8 +8330,9 @@
       if (pingEl) pingEl.textContent = `API ${ping}ms`;
     } catch {}
 
-    // Load genres in background
+    // Load genres + per-book model catalog in background
     loadGenres();
+    loadModelCatalog();
     resetWizardState();
 
 	    // Load tasks & always stay on the dashboard.

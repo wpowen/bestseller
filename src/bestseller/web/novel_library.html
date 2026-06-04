@@ -662,26 +662,6 @@
     background: var(--blue-dark);
   }
 
-  .book-model-wrap {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    color: var(--text-faint);
-  }
-  .book-model-label { white-space: nowrap; }
-  .book-model-select {
-    font-size: 11px;
-    padding: 2px 4px;
-    border: 1px solid var(--border, #d8d2c4);
-    border-radius: 4px;
-    background: var(--paper, #fff);
-    color: var(--text, #222);
-    max-width: 150px;
-    cursor: pointer;
-  }
-  .book-model-select:disabled { opacity: .6; cursor: progress; }
-
   .lib-empty {
     grid-column: 1 / -1;
     display: grid;
@@ -981,12 +961,6 @@
           <a class="book-action primary" href="${esc(readHref)}" target="_blank">${book.unit_kind === 'single_story' ? '阅读全文' : '阅读章节'}</a>
           <a class="book-action" href="/design/${encodeURIComponent(slug)}" target="_blank" title="查看大纲、人物、关系图、世界观、叙事线和规划产物">设计审查</a>
           <a class="book-action" href="/flow/${encodeURIComponent(slug)}" target="_blank" title="查看从种类选择到章节产出的数据流与门禁状态">数据流</a>
-          <label class="book-model-wrap" title="这本书使用的大模型（切换后下次执行生效）">
-            <span class="book-model-label">模型</span>
-            <select class="book-model-select" data-prev="${esc(book.llm_model_id || '')}" onchange="changeBookModel('${esc(slug)}', this.value, this)">
-              ${modelOptionsHtml(book.llm_model_id || '')}
-            </select>
-          </label>
           ${isArchived ? `<button class="book-action" onclick="archiveBook('${esc(slug)}', false)" title="把作品恢复到书稿库默认列表">取消归档</button>` : ''}
           ${!isArchived ? `<button class="book-action" onclick="reviseBook('${esc(slug)}')" title="为这本书创建新的修改任务">再修改</button>` : ''}
           ${!isArchived && !isClosed ? `<button class="book-action" onclick="markBookComplete('${esc(slug)}')" title="把作品标记为已完成并取消后台未完成任务">标记完成</button>` : ''}
@@ -1114,44 +1088,6 @@
     if (dateEl) dateEl.textContent = s;
   }
 
-  // ── Per-book model selection ──
-  let modelCatalog = [];
-  async function loadModelCatalog() {
-    try {
-      const r = await fetch('/api/model-catalog');
-      if (r.ok) { const d = await r.json(); modelCatalog = d.models || []; }
-    } catch (err) { console.warn('model catalog load failed', err); modelCatalog = []; }
-  }
-  function modelOptionsHtml(selectedId) {
-    let html = `<option value="" ${!selectedId ? 'selected' : ''}>全局默认</option>`;
-    html += (modelCatalog || []).map(m => {
-      const sel = m.id === selectedId ? 'selected' : '';
-      const dis = m.available ? '' : 'disabled';
-      const label = m.display_name + (m.available ? '' : '（未配置密钥）');
-      return `<option value="${esc(m.id)}" ${sel} ${dis}>${esc(label)}</option>`;
-    }).join('');
-    return html;
-  }
-  async function changeBookModel(slug, modelId, el) {
-    const prev = el.dataset.prev || '';
-    el.disabled = true;
-    try {
-      const r = await fetch(`/api/projects/${encodeURIComponent(slug)}/model`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_id: modelId })
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || data.error) throw new Error(data.error || ('HTTP ' + r.status));
-      const b = allBooks.find(x => x.slug === slug); if (b) b.llm_model_id = modelId || null;
-      el.dataset.prev = modelId || '';
-      const m = (modelCatalog || []).find(x => x.id === modelId);
-      el.title = modelId ? ('当前模型：' + (m ? m.display_name : modelId) + ' · 下次执行生效') : '使用全局默认模型';
-    } catch (e) {
-      alert('模型切换失败：' + e.message);
-      el.value = prev;
-    } finally { el.disabled = false; }
-  }
-
   async function loadLibrary() {
     try {
       const r = await fetch('/api/library');
@@ -1190,7 +1126,7 @@
   });
 
   setMastheadDate();
-  loadModelCatalog().then(loadLibrary);
+  loadLibrary();
 
   // Refresh every 30s while page is visible
   setInterval(() => {

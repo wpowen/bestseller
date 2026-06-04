@@ -163,3 +163,72 @@ def test_missing_book_spec_narrative_lines_are_filled_deterministically() -> Non
     assert report.has_undercurrent is True
     assert report.has_hidden_thread is True
     assert report.has_core_axis is True
+
+
+def _outline_batch_with_empty_executable_fields():
+    from bestseller.domain.workflow import ChapterOutlineBatchInput
+
+    return ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "v1",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "签字",
+                    "protagonist_flaw": None,
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "title": "站点对峙",
+                            "protagonist_state": "被HR堵在站点，只想保住工作。",
+                            "cut_point": "签字瞬间异能觉醒。",
+                            "participants": ["纪渊"],
+                            "entry_state": {},
+                            "exit_state": {},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+
+def test_repair_backfills_entry_exit_state_and_protagonist_flaw() -> None:
+    batch = _outline_batch_with_empty_executable_fields()
+    repaired = planner._repair_generated_volume_outline_contract_inputs(
+        batch,
+        identity_manifest=[{"name": "纪渊", "role": "protagonist"}],
+        protagonist_flaw_default="习惯把压力全部扛在自己身上。",
+    )
+    assert repaired >= 3
+    chapter = batch.chapters[0]
+    scene = chapter.scenes[0]
+    assert scene.entry_state and scene.entry_state.get("summary")
+    assert scene.exit_state and scene.exit_state.get("summary")
+    assert chapter.protagonist_flaw == "习惯把压力全部扛在自己身上。"
+
+
+def test_repair_passes_planning_readiness_gate() -> None:
+    from bestseller.services.planning_readiness_gate import (
+        evaluate_chapter_outline_batch_planning_readiness,
+    )
+
+    batch = _outline_batch_with_empty_executable_fields()
+    before = evaluate_chapter_outline_batch_planning_readiness(batch)
+    assert not before.passed  # empty executable fields block
+
+    planner._repair_generated_volume_outline_contract_inputs(
+        batch,
+        identity_manifest=[{"name": "纪渊", "role": "protagonist"}],
+        protagonist_flaw_default="习惯把压力全部扛在自己身上。",
+    )
+    after = evaluate_chapter_outline_batch_planning_readiness(batch)
+    # The repair specifically resolves the entry_state / exit_state / protagonist_flaw
+    # findings (other sparse-fixture fields may still flag, which is expected).
+    resolved_paths = {"entry_state", "exit_state", "protagonist_flaw"}
+    remaining_targeted = [
+        f
+        for f in after.blocking_findings
+        if any(p in (f.path or "") for p in resolved_paths)
+    ]
+    assert remaining_targeted == [], [f.path for f in remaining_targeted]

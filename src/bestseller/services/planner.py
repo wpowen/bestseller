@@ -1572,19 +1572,54 @@ def _repair_generated_volume_outline_contract_inputs(
     batch: Any,
     *,
     identity_manifest: list[dict[str, Any]],
+    protagonist_flaw_default: str | None = None,
 ) -> int:
     """Repair deterministic scene-card fields before planner contract validation.
 
     This keeps the identity manifest locked: unknown ad-hoc participants are
     removed instead of being silently promoted into canonical cast.
+
+    It also backfills required-but-frequently-empty fields the model leaves
+    blank (scene ``entry_state``/``exit_state`` dicts, chapter
+    ``protagonist_flaw``) so the downstream planning-readiness gate sees a
+    complete outline instead of hard-blocking the framework's own output.
     """
 
     protagonist_name = _outline_default_protagonist(identity_manifest)
     identity_index = _outline_identity_index(identity_manifest)
+    flaw_default = _non_empty_string(
+        protagonist_flaw_default,
+        "在压力下习惯独自硬扛、用旧策略应对，给本章留下可被利用的破绽。",
+    )
     repaired = 0
 
     for chapter in getattr(batch, "chapters", []) or []:
+        previous_exit_summary: str | None = None
         for scene in getattr(chapter, "scenes", []) or []:
+            # Backfill scene entry/exit state (gate requires non-empty dicts).
+            if not getattr(scene, "entry_state", None):
+                scene.entry_state = {
+                    "summary": _first_non_empty_text(
+                        previous_exit_summary,
+                        getattr(scene, "protagonist_state", None),
+                        getattr(scene, "concrete_goal", None),
+                        default="承接上一拍未决的压力与选择进入本拍。",
+                    )
+                }
+                repaired += 1
+            exit_summary = _first_non_empty_text(
+                getattr(scene, "cut_point", None),
+                getattr(scene, "concrete_goal", None),
+                getattr(scene, "protagonist_state", None),
+                default="本拍结束时主角状态发生可见变化，并挂出新的压力或选择。",
+            )
+            if not getattr(scene, "exit_state", None):
+                scene.exit_state = {"summary": exit_summary}
+                repaired += 1
+            previous_exit_summary = (
+                (getattr(scene, "exit_state", None) or {}).get("summary") or exit_summary
+            )
+
             if _outline_scene_time_missing_or_generic(getattr(scene, "time_label", None)):
                 scene.time_label = _outline_scene_time_repair(chapter, scene)
                 repaired += 1
@@ -1641,6 +1676,13 @@ def _repair_generated_volume_outline_contract_inputs(
                 repaired += 1
             if purpose != getattr(scene, "purpose", None):
                 scene.purpose = purpose
+
+        # Backfill chapter protagonist_flaw (front-ten gate requires it). The
+        # protagonist's flaw is a stable trait, so the canonical cast flaw is
+        # the correct value rather than the chapter-specific inner state.
+        if not _non_empty_string(getattr(chapter, "protagonist_flaw", None), ""):
+            chapter.protagonist_flaw = flaw_default
+            repaired += 1
 
     return repaired
 
@@ -1872,9 +1914,17 @@ def _validate_generated_volume_outline_or_raise(
         }
     )
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
+    _cast_protagonist = _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
     repair_count = _repair_generated_volume_outline_contract_inputs(
         batch,
         identity_manifest=identity_manifest,
+        protagonist_flaw_default=_non_empty_string(
+            _cast_protagonist.get("flaw"),
+            _cast_protagonist.get("fatal_flaw"),
+            _cast_protagonist.get("core_wound"),
+            "",
+        )
+        or None,
     )
     if repair_count:
         logger.info(

@@ -4285,7 +4285,8 @@
   }
   function taskModelSelectHtml(slug, curId, globalModel) {
     const g = ((globalModel || '').replace('openai/', '') || '默认');
-    let html = `<select class="tc-model-select" title="这本书使用的大模型 · 切换后下次执行生效" `
+    let html = `<select class="tc-model-select" data-slug="${esc(slug)}" data-val="${esc(curId || '')}" `
+      + `title="这本书使用的大模型 · 切换后下次执行生效" `
       + `onclick="event.stopPropagation();" onchange="changeTaskModel('${esc(slug)}', this.value, this)">`;
     html += `<option value="" ${!curId ? 'selected' : ''}>全局默认 · ${esc(g)}</option>`;
     html += (modelCatalog || []).map(m => {
@@ -4308,6 +4309,7 @@
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
       const p = projectBySlug.get(slug); if (p) p.llm_model_id = modelId || null;
+      el.dataset.val = modelId || '';  // keep guard in sync so polls don't re-render
     } catch (e) {
       alert('模型切换失败：' + e.message);
     } finally { el.disabled = false; }
@@ -4440,7 +4442,9 @@
     if (llmProfileKey) select.value = llmProfileKey;
     state.textContent = profilePayload.source === 'runtime' ? '运行时' : '配置';
     state.title = `当前写作模型：${profilePayload.writer_model || '-'}`;
-    $('#pvModel') && ($('#pvModel').textContent = llmModel || '-');
+    // Don't clobber the per-book model dropdown rendered by the progress view.
+    const _pvm = $('#pvModel');
+    if (_pvm && !_pvm.querySelector('select')) _pvm.textContent = llmModel || '-';
     $('#sumModel') && ($('#sumModel').textContent = llmModel || '-');
   }
 
@@ -6871,8 +6875,19 @@
     else if (bookDoneCount > 0) { pvs.textContent = '写作中'; pvs.style.color = 'var(--blue)'; }
     else { pvs.textContent = '准备中'; pvs.style.color = ''; }
 
-    // Model
-    $('#pvModel').textContent = llmModel || '-';
+    // Model — interactive per-book selector (switch which model this book uses).
+    // Only (re)render when the value actually changes, so frequent progress
+    // polls don't reset/close the dropdown while the user is interacting.
+    if (slug) {
+      const pvm = $('#pvModel');
+      const cur = (projectBySlug.get(slug) || {}).llm_model_id || '';
+      const existing = pvm.querySelector('select');
+      if (!existing || existing.dataset.slug !== slug || (existing.dataset.val || '') !== cur) {
+        pvm.innerHTML = taskModelSelectHtml(slug, cur, llmModel);
+      }
+    } else {
+      $('#pvModel').textContent = llmModel || '-';
+    }
 
     // Timeline
     const tl = events.slice(-20).reverse();

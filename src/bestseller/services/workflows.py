@@ -5,6 +5,7 @@ import logging
 from typing import Any, Iterable
 from uuid import UUID
 
+from sqlalchemy import delete as _sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -2226,8 +2227,23 @@ async def materialize_chapter_outline_batch(
                     )
                     _md["outline_commercial_repair_round"] = _round + 1
                     project.metadata_json = _md
-                    # Persist the directives before raising so the gate-driven
-                    # regeneration retry can actually consume them.
+                    # Invalidate the stale outline so the retry regenerates it
+                    # (otherwise autowrite reuses the existing artifact and just
+                    # re-judges the same low-quality outline). With the artifact
+                    # gone, the planner regenerates using the injected directives.
+                    await session.execute(
+                        _sa_delete(PlanningArtifactVersionModel).where(
+                            PlanningArtifactVersionModel.project_id == project.id,
+                            PlanningArtifactVersionModel.artifact_type.in_(
+                                [
+                                    ArtifactType.VOLUME_CHAPTER_OUTLINE.value,
+                                    ArtifactType.CHAPTER_OUTLINE_BATCH.value,
+                                ]
+                            ),
+                        )
+                    )
+                    # Persist the directives + invalidation before raising so the
+                    # gate-driven regeneration retry can actually consume them.
                     await session.commit()
                 issue_summary = "; ".join(
                     f"{issue.code}:{issue.evidence}"

@@ -89,6 +89,57 @@ _OFF_GENRE_STATE_RE = re.compile(
     r"double_reversal_revelation|fallback_progress",
     re.IGNORECASE,
 )
+
+
+def has_kernel_leak(text: str) -> bool:
+    """True when ``text`` carries off-genre or fallback-distillation markers
+    that the story_design_kernel_gate flags as ``fallback_source_leak``."""
+    if not text:
+        return False
+    return bool(_FALLBACK_SOURCE_RE.search(text) or _OFF_GENRE_STATE_RE.search(text))
+
+
+def sanitize_distilled_leak(value: Any) -> Any:
+    """Recursively strip off-genre / fallback-distillation markers from distilled
+    material before it is injected into the StoryDesignKernel (prompt or payload).
+
+    Polluted distilled cards (e.g. ``fallback_progress`` from a low-confidence
+    aggregate, or war-strategy tokens leaked from another genre's sources) would
+    otherwise trip :func:`evaluate_story_design_kernel_quality`. This keeps the
+    structure intact while dropping only the leaves/entries that carry the
+    blocked tokens. Single-sourced with the gate regexes so the two never drift.
+    """
+    if isinstance(value, str):
+        if not has_kernel_leak(value):
+            return value
+        kept = [line for line in value.splitlines() if not has_kernel_leak(line)]
+        return "\n".join(kept)
+    if isinstance(value, Mapping):
+        cleaned: dict[Any, Any] = {}
+        for key, item in value.items():
+            if isinstance(key, str) and has_kernel_leak(key):
+                continue
+            sanitized = sanitize_distilled_leak(item)
+            if isinstance(item, str) and item.strip() and (
+                not isinstance(sanitized, str) or not sanitized.strip()
+            ):
+                continue  # entry fully emptied by sanitization → drop it
+            cleaned[key] = sanitized
+        return cleaned
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        cleaned_list: list[Any] = []
+        for item in value:
+            if isinstance(item, str):
+                if has_kernel_leak(item):
+                    continue
+                cleaned_list.append(item)
+                continue
+            sanitized = sanitize_distilled_leak(item)
+            if sanitized in ({}, []) and item not in ({}, []):
+                continue  # nested container emptied by sanitization → drop it
+            cleaned_list.append(sanitized)
+        return cleaned_list
+    return value
 _AWKWARD_TITLE_PATTERNS = (
     "构思中",
     "/",
@@ -421,13 +472,24 @@ def evaluate_volume_plan_quality(
     forces = {_text(entry.get("primary_force_name") or entry.get("primary_force")) for entry in entries if _text(entry.get("primary_force_name") or entry.get("primary_force"))}
     primary_force_count = len(forces)
     phase_count = len(phases)
-    if target_chapters >= 20 and (primary_force_count <= 1 or phase_count <= 1):
+    # Pressure/phase variety is measured ACROSS volumes. A short book that maps
+    # to a single volume (e.g. 20 chapters -> 1 volume via compute_linear_hierarchy)
+    # structurally has exactly one volume-level conflict_phase / primary_force, so
+    # demanding >=2 of each would be an unsatisfiable contradiction that hard-blocks
+    # the framework's own single-volume plan. Only enforce variety for multi-volume
+    # plans; single-volume thinness is still caught by the climax/turn/payoff check.
+    multi_volume = len(entries) >= 2
+    if (
+        target_chapters >= 20
+        and multi_volume
+        and (primary_force_count <= 1 or phase_count <= 1)
+    ):
         findings.append(
             _finding(
                 "volume_plan_thin",
                 "critical",
                 "volume_plan",
-                "20+ chapter plan lacks enough pressure owners or conflict phases.",
+                "Multi-volume 20+ chapter plan collapses to a single pressure owner or conflict phase.",
                 evidence={"unique_primary_force_count": primary_force_count, "unique_conflict_phase_count": phase_count},
             )
         )

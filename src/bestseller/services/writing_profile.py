@@ -212,22 +212,10 @@ def _genre_preset(genre: str, sub_genre: str | None = None) -> dict[str, Any]:
                 "dialogue_ratio": 0.42,
             },
         }
-    if any(token in label for token in ("仙", "玄幻", "奇幻", "升级")):
-        return {
-            "market": {
-                "pacing_profile": "fast",
-            },
-            "character": {
-            },
-            "world": {
-                "worldbuilding_density": "medium",
-                "rule_hardness": "hard",
-                "mystery_density": "medium",
-            },
-            "style": {
-                "dialogue_ratio": 0.32,
-            },
-        }
+    # Urban / suspense — MUST precede the generic xianxia "升级" branch below,
+    # so a 都市/异能 book whose label mentions 升级 keeps light, realistic
+    # style defaults instead of xianxia world density. Mirrors the ordering
+    # fix in prompt_packs.infer_default_prompt_pack_key. Regression: 误读成神.
     if any(token in label for token in ("都市", "异能", "悬疑", "现实")):
         return {
             "market": {
@@ -257,6 +245,25 @@ def _genre_preset(genre: str, sub_genre: str | None = None) -> dict[str, Any]:
             },
             "style": {
                 "dialogue_ratio": 0.48,
+            },
+        }
+    # Generic xianxia / xuanhuan — runs after urban/romance so a 都市/异能 or
+    # 女频 label that also contains 升级 wins above; a pure 仙/玄幻/升级 label
+    # with no urban or romance token lands here.
+    if any(token in label for token in ("仙", "玄幻", "奇幻", "升级")):
+        return {
+            "market": {
+                "pacing_profile": "fast",
+            },
+            "character": {
+            },
+            "world": {
+                "worldbuilding_density": "medium",
+                "rule_hardness": "hard",
+                "mystery_density": "medium",
+            },
+            "style": {
+                "dialogue_ratio": 0.32,
             },
         }
     # ── English genre fallbacks ──

@@ -59,6 +59,43 @@ def _present_items(blob: str, values: Sequence[str]) -> list[str]:
     return [value for value in values if _contains(blob, value)]
 
 
+# Fields that legitimately carry the anti-copy boundaries themselves. The
+# framework injects ``card.anti_copy_boundaries`` verbatim into planning
+# artifacts (e.g. ``story_design_kernel.anti_copy_boundaries``) as guidance the
+# plan must FOLLOW. Matching those boundaries back against the same field is a
+# self-referential false positive, so they are excluded from the copy-risk blob.
+_BOUNDARY_CARRIER_KEYS = frozenset(
+    {
+        "anti_copy_boundaries",
+        "uniqueness_constraints",
+    }
+)
+
+
+def _strip_boundary_fields(value: Any) -> Any:
+    """Recursively drop boundary-carrier fields before the copy-risk scan."""
+    if isinstance(value, Mapping):
+        return {
+            key: _strip_boundary_fields(item)
+            for key, item in value.items()
+            if not (isinstance(key, str) and key.lower() in _BOUNDARY_CARRIER_KEYS)
+        }
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_strip_boundary_fields(item) for item in value]
+    return value
+
+
+def _is_substantive_boundary(value: str) -> bool:
+    """A copy-risk boundary must be a concrete signature phrase, not a bare
+    field-name token (e.g. ``character_names``) that appears structurally in
+    every plan regardless of source copying."""
+    text = value.strip()
+    if len(text) < 8:
+        return False
+    # Bare snake_case / identifier tokens are field names, not copyable prose.
+    return any(sep in text for sep in (" ", "—", "-"))
+
+
 def _issue(
     issue_id: str,
     *,
@@ -175,7 +212,26 @@ def evaluate_distilled_strategy_consumption(
             )
         )
 
-    blocked_hits = _present_items(blob, card.anti_copy_boundaries)
+    # Copy-risk must be scanned against a blob with the boundary-carrier fields
+    # removed (otherwise the boundaries the framework injected into the plan
+    # match themselves), and only against substantive signature phrases (bare
+    # field-name tokens like ``character_names`` are not copyable content).
+    copy_check_blob = "\n".join(
+        item
+        for item in (
+            _json_blob(_strip_boundary_fields(story_design_kernel)),
+            _json_blob(_strip_boundary_fields(volume_plan)),
+            _json_blob(_strip_boundary_fields(chapter_outlines)),
+            plan_text or "",
+        )
+        if item
+    )
+    substantive_boundaries = [
+        boundary
+        for boundary in card.anti_copy_boundaries
+        if isinstance(boundary, str) and _is_substantive_boundary(boundary)
+    ]
+    blocked_hits = _present_items(copy_check_blob, substantive_boundaries)
     if blocked_hits:
         issues.append(
             _issue(

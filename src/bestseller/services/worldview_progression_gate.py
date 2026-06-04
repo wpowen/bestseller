@@ -223,6 +223,13 @@ def _check_state_variable_progression(
 ) -> list[WorldviewProgressionFinding]:
     if not worldview.state_variables:
         return []
+    # "Progression across the volume plan" is only meaningful when there are
+    # multiple volumes. A short book that maps to a single volume (e.g. 20
+    # chapters -> 1 volume) cannot show cross-volume state movement, so the
+    # check would unsatisfiably stall the framework's own single-volume plan.
+    # Within-volume state changes are validated at the chapter/beat level.
+    if len(volumes) < 2:
+        return []
     plan_text = _normalize(" ".join(_volume_state_target_texts(volumes)))
     stalled = [
         variable.key

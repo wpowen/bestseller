@@ -109,6 +109,7 @@ from bestseller.services.prewrite_quality_profile import (
     planning_artifact_meta,
     repair_target_for_block_code,
     repair_zh_book_spec_language,
+    sanitize_distilled_leak,
     strict_blocks,
     strict_outline_batch_size,
     strict_outline_shrink_size,
@@ -410,7 +411,12 @@ def _distilled_design_reference_block(project: ProjectModel, phase: str) -> str:
             _trim_distilled_reference_part(part, max_chars=per_part_budget)
             for part in parts
         ]
-        return "\n\n" + "\n\n".join(trimmed_parts) + "\n"
+        # Strip off-genre / fallback markers so they neither leak into the
+        # kernel via LLM echo nor trip the story_design_kernel_gate.
+        block = sanitize_distilled_leak("\n\n".join(trimmed_parts))
+        if not block.strip():
+            return ""
+        return "\n\n" + block + "\n"
     return ""
 
 
@@ -13570,11 +13576,21 @@ def _planner_artifact_type_for_logical_name(logical_name: str) -> ArtifactType |
     return None
 
 
+# The planner role's configured completion budget (config/default.yaml
+# `models.planner.max_tokens`). Heavy structured stages (chapter-outline
+# batches, story-design / emotion kernels) emit large JSON and were being
+# clamped BELOW this budget, so the model truncated mid-object
+# (finish_reason="length") -> invalid JSON -> validation failure -> slow retry
+# loop / fallback. Use the full budget for those stages so the real output can
+# complete. See memory: story-design-kernel-gate-blocker / model-strategy-minimax-m3.
+_PLANNER_MAX_OUTPUT_TOKENS = 16384
+
+
 def _planner_stage_max_tokens(logical_name: str) -> int | None:
     if re.fullmatch(r"volume_\d+_chapter_outline(_batch_\d+_\d+)?", logical_name):
-        return 9000
+        return _PLANNER_MAX_OUTPUT_TOKENS
     if logical_name in {"story_design_kernel", "emotion_driven_kernel"}:
-        return 12288
+        return _PLANNER_MAX_OUTPUT_TOKENS
     if logical_name in {
         "book_spec",
         "book_spec_narrative_lines_repair",
@@ -13907,13 +13923,13 @@ def _distilled_worldview_bindings_for_project(project: ProjectModel) -> dict[str
         return {}
     world_bindings = _mapping(distilled_card.get("worldview_bindings"))
     if world_bindings:
-        return world_bindings
+        return _mapping(sanitize_distilled_leak(world_bindings))
     try:
         from bestseller.services.distilled_worldview_bridge import (
             build_distilled_worldview_bindings,
         )
 
-        return build_distilled_worldview_bindings(distilled_card)
+        return _mapping(sanitize_distilled_leak(build_distilled_worldview_bindings(distilled_card)))
     except Exception:
         logger.debug("Failed to rebuild distilled worldview bindings", exc_info=True)
         return {}
@@ -14044,6 +14060,49 @@ def _persist_character_drama_map(project: ProjectModel, cast_spec: dict[str, Any
         **(project.metadata_json or {}),
         "character_drama_map": character_drama_payload,
     }
+
+
+def _fallback_beat_schedule(target_chapters: int, opening_hook: str) -> list[dict[str, Any]]:
+    """Build a beat schedule whose ranges span the full target chapter count.
+
+    The story_design_kernel_gate flags ``beat_schedule_incomplete`` when the
+    schedule only covers the opening (max covered chapter <= 3) for a 10+ chapter
+    book. The previous single ``1-3`` fallback entry tripped that gate against the
+    framework's own fallback. This distributes structural phases across 1..N so
+    the fallback satisfies its own gate and the embedded example stops teaching
+    the LLM to emit opening-only beats.
+    """
+    n = max(1, int(target_chapters or 0))
+    phases = [
+        ("建立读者承诺、主线目标和第一轮状态变化。", "主角从被动处境转入带代价的主动选择。", "读者看到本书独有机制第一次产生结果。"),
+        ("压力源升级，误解或对手抬升一档。", "主角的普通身份出现新裂缝，代价显形。", "一次中等兑现，同时挂出更高倒计时。"),
+        ("中段转折，信息差反转，旧策略失效。", "主角被迫改变核心选择模式。", "关键真相或势力浮出，赌注跳档。"),
+        ("逼近高潮，多线压力收束到单一抉择。", "代价全面兑现，退路被自己的胜利吃掉。", "倒数第二轮大兑现，锁死最终对决。"),
+        ("高潮与闭环，完成或颠覆最终抉择。", "身份与权力关系被永久重写。", "全书核心承诺兑现并埋下续作钩子。"),
+    ]
+    phases = phases[: n] if n < len(phases) else phases
+    count = len(phases)
+    base, rem = divmod(n, count)
+    beats: list[dict[str, Any]] = []
+    start = 1
+    for i, (duty, state_change, payoff) in enumerate(phases):
+        size = max(1, base + (1 if i < rem else 0))
+        end = min(n, start + size - 1)
+        beats.append(
+            {
+                "chapter_range": str(start) if start == end else f"{start}-{end}",
+                "duty": duty,
+                "state_change": state_change,
+                "payoff": payoff,
+                "hook_or_aftereffect": opening_hook
+                if i == 0
+                else "上一阶段的代价转为下一阶段的新压力源。",
+            }
+        )
+        start = end + 1
+        if start > n:
+            break
+    return beats
 
 
 def _fallback_story_design_kernel(
@@ -14438,18 +14497,13 @@ def _fallback_story_design_kernel(
                 "failure_if_removed": "主线会退化为事件流水账。",
             },
         ],
-        "beat_schedule": [
-            {
-                "chapter_range": "1-3",
-                "duty": "建立读者承诺、主线目标和第一轮状态变化。",
-                "state_change": "主角从被动处境转入带代价的主动选择。",
-                "payoff": "读者看到本书独有机制第一次产生结果。",
-                "hook_or_aftereffect": _first_non_empty_text(
-                    concept_bundle.story_loop.opening_question if concept_bundle else "",
-                    default="第一次选择留下未还清的代价或新压力源。",
-                ),
-            }
-        ],
+        "beat_schedule": _fallback_beat_schedule(
+            int(getattr(project, "target_chapters", 0) or 0),
+            _first_non_empty_text(
+                concept_bundle.story_loop.opening_question if concept_bundle else "",
+                default="第一次选择留下未还清的代价或新压力源。",
+            ),
+        ),
         "change_vectors": change_vectors[:5],
         "uniqueness_constraints": [
             *list(concept_bundle.guardrails[:4] if concept_bundle else ()),

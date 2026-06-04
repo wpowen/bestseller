@@ -251,16 +251,23 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
         )
     ):
         return "cozy-fantasy"
-    # Generic Xianxia / xuanhuan (catch-all) — intentionally runs LAST so
-    # the specific sub-routes above win first.
-    if any(token in label for token in ("仙", "玄幻", "奇幻", "升级", "修真")):
-        return "xianxia-upgrade-core"
-    # Urban power
+    # Urban power — MUST run before the generic xianxia catch-all below.
+    # The catch-all matches the over-broad token "升级", which appears in
+    # nearly every 爽文 (including urban). A 都市/异能 book whose generated
+    # sub-genre or tone mentions 升级 (e.g. "迪化升级", "系统升级流") would
+    # otherwise be hijacked to xianxia-upgrade-core. Regression: 误读成神.
     if any(token in label for token in ("都市", "异能", "现实")):
         return "urban-power-reversal"
-    # Romance / female-frequency (general)
+    # Romance / female-frequency (general) — also runs before the xianxia
+    # catch-all, since "成长" frequently pairs with "升级" in these labels.
     if any(token in label for token in ("女频", "言情", "成长", "恋爱")):
         return "romance-tension-growth"
+    # Generic Xianxia / xuanhuan (catch-all) — intentionally runs LAST so the
+    # specific sub-routes above and the urban/romance routes just above win
+    # first. A pure 升级流 / 仙侠 / 玄幻 label with no urban or romance token
+    # still lands here.
+    if any(token in label for token in ("仙", "玄幻", "奇幻", "升级", "修真")):
+        return "xianxia-upgrade-core"
     return None
 
 

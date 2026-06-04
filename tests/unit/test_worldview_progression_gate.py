@@ -231,6 +231,19 @@ def test_worldview_progression_gate_flags_state_variable_stall() -> None:
     assert "state_variable_stalls" in codes
 
 
+def test_single_volume_plan_does_not_stall_state_variables() -> None:
+    # A short book that maps to a single volume cannot show cross-volume state
+    # progression; the gate must not flag state_variable_stalls against it
+    # (otherwise it hard-blocks the framework's own single-volume plan).
+    plan = [_healthy_volume_plan()[0]]
+    plan[0]["world_state_targets"] = []
+
+    report = evaluate_worldview_progression_gate(_story_design_kernel(), plan)
+    codes = {finding.code for finding in report.blocking_findings}
+
+    assert "state_variable_stalls" not in codes
+
+
 def test_worldview_progression_gate_flags_map_function_missing() -> None:
     plan = _healthy_volume_plan()
     plan[0]["map_function"] = "灰港审计厅作为场景背景出现。"

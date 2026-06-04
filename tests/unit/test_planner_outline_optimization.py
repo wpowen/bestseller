@@ -31,10 +31,15 @@ def _project(*, target_chapters: int, strict: bool = False) -> ProjectModel:
 
 
 def test_planner_stage_token_policy_caps_chapter_outline() -> None:
-    assert planner._planner_stage_max_tokens("volume_1_chapter_outline") == 9000
-    assert planner._planner_stage_max_tokens("volume_1_chapter_outline_batch_1_10") == 9000
+    # Heavy structured stages use the full planner completion budget so the
+    # model does not truncate mid-JSON (finish_reason="length") and fall into a
+    # validation-failure retry loop. Lighter stages keep their smaller caps.
+    assert planner._planner_stage_max_tokens("volume_1_chapter_outline") == 16384
+    assert planner._planner_stage_max_tokens("volume_1_chapter_outline_batch_1_10") == 16384
+    assert planner._planner_stage_max_tokens("story_design_kernel") == 16384
+    assert planner._planner_stage_max_tokens("emotion_driven_kernel") == 16384
     assert planner._planner_stage_max_tokens("volume_plan") == 8192
-    assert planner._planner_stage_max_tokens("story_design_kernel") == 12288
+    assert planner._planner_stage_max_tokens("book_spec") == 8192
 
 
 def test_planner_artifact_type_maps_outline_batches_to_volume_outline() -> None:

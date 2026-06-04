@@ -87,3 +87,44 @@ def test_distilled_strategy_gate_reports_missing_card() -> None:
 
     assert report.passed is True
     assert any(issue.id == "DISTILLED_STRATEGY_MISSING" for issue in report.issues)
+
+
+_SIG = "Reversal mechanism deployed without prior proof-of-concept"
+
+
+def test_copy_risk_ignores_boundaries_carried_in_artifact_boundary_fields() -> None:
+    # The plan legitimately CARRIES the anti-copy boundaries as guidance it must
+    # follow; matching them back against the field that holds them is a
+    # self-referential false positive and must not trip copy-risk.
+    card = _card().model_copy(update={"anti_copy_boundaries": [_SIG]})
+    report = evaluate_distilled_strategy_consumption(
+        card,
+        story_design_kernel={
+            "anti_copy_boundaries": [_SIG],
+            "uniqueness_constraints": [_SIG],
+            "change_vectors": ["exploit_rule_gap"],
+        },
+    )
+    assert not any(i.id == "DISTILLED_STRATEGY_COPY_RISK" for i in report.issues)
+
+
+def test_copy_risk_still_flags_boundary_in_non_carrier_field() -> None:
+    # A genuine copy: the signature phrase appears in story content, not in the
+    # boundary-carrier field — that must still trip copy-risk.
+    card = _card().model_copy(update={"anti_copy_boundaries": [_SIG]})
+    report = evaluate_distilled_strategy_consumption(
+        card,
+        story_design_kernel={"plot_tree": [{"label": _SIG}]},
+    )
+    assert any(i.id == "DISTILLED_STRATEGY_COPY_RISK" for i in report.issues)
+
+
+def test_copy_risk_ignores_bare_field_name_boundary() -> None:
+    # Bare field-name tokens (e.g. ``character_names``) appear structurally in
+    # every plan and are not copyable signature content.
+    card = _card().model_copy(update={"anti_copy_boundaries": ["character_names"]})
+    report = evaluate_distilled_strategy_consumption(
+        card,
+        story_design_kernel={"character_names": ["纪渊"]},
+    )
+    assert not any(i.id == "DISTILLED_STRATEGY_COPY_RISK" for i in report.issues)

@@ -59,6 +59,12 @@ from bestseller.services.prompt_packs import infer_default_prompt_pack_key
         ("玄幻", None, "xianxia-upgrade-core"),
         # Urban
         ("都市异能", None, "urban-power-reversal"),
+        ("都市异能", "身份反转", "urban-power-reversal"),
+        # Urban book whose generated sub-genre/tone mentions 升级 must NOT be
+        # hijacked by the generic xianxia "升级" catch-all (regression: 误读成神).
+        ("都市异能", "迪化升级", "urban-power-reversal"),
+        ("都市异能", "系统升级流", "urban-power-reversal"),
+        ("异能", "现实升级打脸", "urban-power-reversal"),
         # Romance
         ("女频言情", None, "romance-tension-growth"),
         # Unknown

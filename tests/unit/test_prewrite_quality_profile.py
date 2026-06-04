@@ -282,5 +282,17 @@ def test_volume_plan_gate_blocks_thin_20_chapter_plan() -> None:
     assert "volume_plan_thin" in codes
 
 
+def test_planning_kernel_repair_action_codes_have_repair_targets() -> None:
+    from bestseller.services.planning_kernel import _REPAIR_ACTIONS
+
+    missing_targets = {
+        code: repair_target_for_block_code(code)
+        for code in sorted(_REPAIR_ACTIONS)
+        if repair_target_for_block_code(code) == "machine_blocked"
+    }
+
+    assert missing_targets == {}
+
+
 def test_unknown_repair_code_defaults_to_machine_blocked() -> None:
     assert repair_target_for_block_code("new_unmapped_gate_code") == "machine_blocked"

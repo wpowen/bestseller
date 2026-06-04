@@ -8,8 +8,11 @@ PYTHON="${REPO_ROOT}/.venv/bin/python"
 PRIVATE_DIR="${REPO_ROOT}/.distillation_private"
 REPORT_DIR="${PRIVATE_DIR}/reports"
 LOG_PATH="${PRIVATE_DIR}/host_nvidia_glm_distillation.log"
+TMUX_LOG_PATH="${PRIVATE_DIR}/host_nvidia_glm_distillation.tmux.log"
 PID_PATH="${PRIVATE_DIR}/host_nvidia_glm_distillation.pid"
 STATUS_PATH="${REPORT_DIR}/host_nvidia_glm_distillation_status.json"
+RUNTIME_PROFILE_PATH="${PRIVATE_DIR}/host_nvidia_glm_runtime-profile.disabled.json"
+TMUX_SESSION="${TMUX_SESSION:-bestseller-glm-distill}"
 
 SOURCE_START="${SOURCE_START:-0001}"
 SOURCE_END="${SOURCE_END:-9999}"
@@ -55,9 +58,12 @@ load_env() {
   : "${NVIDIA_API_KEY:?Please set NVIDIA_API_KEY or NIM_API_KEY in .env/.env.local.}"
 
   export BESTSELLER_LLM_PROVIDER="nvidia"
+  rm -f "${RUNTIME_PROFILE_PATH}"
+  export BESTSELLER_LLM_RUNTIME_PROFILE_PATH="${RUNTIME_PROFILE_PATH}"
   export NVIDIA_API_KEY
   export NVIDIA_API_BASE
   export NVIDIA_LLM_MODEL
+  export NVIDIA_SUMMARIZER_MODEL
   export NVIDIA_SUMMARIZER_MAX_TOKENS
   export BESTSELLER__LLM__PLANNER__MODEL="openai/${NVIDIA_LLM_MODEL}"
   export BESTSELLER__LLM__PLANNER__API_BASE="${NVIDIA_API_BASE}"
@@ -191,6 +197,7 @@ run_supervisor() {
   echo "$$" >"${PID_PATH}"
   trap 'rm -f "${PID_PATH}"; write_status stopped 130 >/dev/null || true; exit 130' INT TERM
   echo "$(ts) [supervisor] start provider=nvidia model=${NVIDIA_LLM_MODEL} source=${SOURCE_START}-${SOURCE_END} workers=${CHAPTER_WORKERS}"
+  echo "$(ts) [supervisor] runtime_profile_path=${BESTSELLER_LLM_RUNTIME_PROFILE_PATH} api_base=${NVIDIA_API_BASE} summarizer_model=${BESTSELLER__LLM__SUMMARIZER__MODEL}"
 
   while true; do
     local status_json
@@ -230,8 +237,23 @@ start_supervisor() {
       echo "already running pid=${existing}"
       exit 0
     fi
+    rm -f "${PID_PATH}"
   fi
   cd "${REPO_ROOT}"
+  if command -v tmux >/dev/null 2>&1; then
+    if tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
+      echo "already running tmux_session=${TMUX_SESSION}"
+      echo "log=${TMUX_LOG_PATH}"
+      echo "status=${STATUS_PATH}"
+      exit 0
+    fi
+    tmux new-session -d -s "${TMUX_SESSION}" -c "${REPO_ROOT}" \
+      "/bin/bash '$0' run >>'${TMUX_LOG_PATH}' 2>&1"
+    echo "started tmux_session=${TMUX_SESSION}"
+    echo "log=${TMUX_LOG_PATH}"
+    echo "status=${STATUS_PATH}"
+    exit 0
+  fi
   nohup "$0" run >>"${LOG_PATH}" 2>&1 &
   local pid=$!
   echo "${pid}" >"${PID_PATH}"
@@ -252,6 +274,10 @@ stop_supervisor() {
     echo "stopped pid=${pid}"
   else
     echo "stale pid=${pid}"
+  fi
+  if command -v tmux >/dev/null 2>&1 && tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
+    tmux kill-session -t "${TMUX_SESSION}"
+    echo "stopped tmux_session=${TMUX_SESSION}"
   fi
   rm -f "${PID_PATH}"
 }

@@ -136,6 +136,9 @@ from bestseller.services.story_design_grammars import (
     render_story_design_grammar_prompt_block,
     resolve_story_design_grammar,
 )
+from bestseller.services.simulation_oracle_planner import (
+    augment_story_design_kernel_with_oracle,
+)
 from bestseller.services.story_design_kernel import (
     render_story_design_kernel_prompt_block,
     story_design_kernel_from_dict,
@@ -14714,6 +14717,16 @@ async def _generate_story_design_kernel(
         llm_run_ids.append(llm_run_id)
     if not isinstance(payload, dict):
         payload = fallback
+
+    # MiroFish Simulation Oracle 增强(默认关闭 / 失败安全降级 / 见 simulation_oracle_planner)。
+    payload = await augment_story_design_kernel_with_oracle(
+        session,
+        settings,
+        payload=payload,
+        project=project,
+        premise=premise,
+        cast_spec_payload=cast_spec_payload,
+    )
 
     story_design_kernel_from_dict(payload)
     quality_report = evaluate_story_design_kernel_quality(

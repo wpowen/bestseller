@@ -7,6 +7,9 @@ x-env-common: &env-common
   BESTSELLER__ARTIFACT_STORE__LOCAL_DIR: /app/artifacts
   BESTSELLER_TASK_STALE_SECONDS: ${BESTSELLER_TASK_STALE_SECONDS:-2700}
   TZ: ${TZ:-Asia/Shanghai}
+  # MiroFish Simulation Oracle:规划期自动增强 story_design_kernel(走向/支线/动机)。
+  # 默认关闭;此处开启做深度融合。oracle 走 complete_text(planner=deepseek-v4-flash)。
+  MIROFISH_ORACLE_PLANNER: ${MIROFISH_ORACLE_PLANNER:-true}
 
 # ── Shared build config ─────────────────────────────────────────────────────
 # Docker Desktop injects http.docker.internal:3128 as a build proxy that is

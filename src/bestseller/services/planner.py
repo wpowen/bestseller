@@ -17971,9 +17971,19 @@ async def generate_novel_plan(
                     vol_num,
                     _deceased_constraints,
                 )
+            # Outline commercial-judge feedback from a prior blocked attempt:
+            # injecting these directives both instructs the model to fix the
+            # flagged scenes and changes the planner input-hash so the outline
+            # is regenerated (not reused). Bounded by the round counter the
+            # materialize gate maintains.
+            _outline_meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+            _commercial_repair_directives = _string_list(
+                _outline_meta.get("outline_commercial_repair_directives")
+            )
             _outline_constraints = [
                 *prewrite_repair_directives,
                 *_deceased_constraints,
+                *_commercial_repair_directives,
             ]
             (
                 vol_outline_payload,

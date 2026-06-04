@@ -100,6 +100,10 @@ WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE = "materialize_story_bible"
 WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH = "materialize_narrative_graph"
 WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_TREE = "materialize_narrative_tree"
 
+# Max rounds of outline commercial-judge feedback fed back into regeneration
+# before giving up and leaving the block for human review (bounds token spend).
+_MAX_OUTLINE_COMMERCIAL_REPAIR_ROUNDS = 3
+
 _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES = {
     ChapterStatus.PLANNED.value,
     ChapterStatus.OUTLINING.value,
@@ -2192,14 +2196,39 @@ async def materialize_chapter_outline_batch(
                 output_ref=_outline_llm_payload,
             )
             step_order += 1
-            if (
-                not _outline_llm_result.passed
-                and strict_blocks(
-                    project,
-                    settings,
-                    "outline_llm_commercial_judge_block_on_failure",
-                )
+            if _outline_llm_result.passed:
+                # Clear any accumulated repair directives once the judge passes.
+                _md = dict(project.metadata_json or {})
+                if "outline_commercial_repair_directives" in _md or (
+                    "outline_commercial_repair_round" in _md
+                ):
+                    _md.pop("outline_commercial_repair_directives", None)
+                    _md.pop("outline_commercial_repair_round", None)
+                    project.metadata_json = _md
+            elif strict_blocks(
+                project,
+                settings,
+                "outline_llm_commercial_judge_block_on_failure",
             ):
+                # Feed the judge's concrete fixes back so the next outline
+                # regeneration repairs exactly the flagged scenes (the changed
+                # constraints alter the planner input-hash -> forced regen),
+                # capped to avoid an unbounded repair/token loop.
+                from bestseller.services.outline_llm_judge import (
+                    build_outline_repair_directives,
+                )
+
+                _md = dict(project.metadata_json or {})
+                _round = int(_md.get("outline_commercial_repair_round", 0) or 0)
+                if _round < _MAX_OUTLINE_COMMERCIAL_REPAIR_ROUNDS:
+                    _md["outline_commercial_repair_directives"] = (
+                        build_outline_repair_directives(_outline_llm_result)
+                    )
+                    _md["outline_commercial_repair_round"] = _round + 1
+                    project.metadata_json = _md
+                    # Persist the directives before raising so the gate-driven
+                    # regeneration retry can actually consume them.
+                    await session.commit()
                 issue_summary = "; ".join(
                     f"{issue.code}:{issue.evidence}"
                     for issue in _outline_llm_result.blocking_issues[:3]

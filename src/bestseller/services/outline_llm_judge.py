@@ -603,3 +603,31 @@ async def judge_commercial_planning_readiness(
         llm_run_id=str(completion.llm_run_id) if completion.llm_run_id else None,
         raw_excerpt=completion.content[:4000],
     )
+
+
+def build_outline_repair_directives(
+    result: LLMQualityJudgeResult, *, max_issues: int = 12
+) -> list[str]:
+    """Turn a failed outline commercial-judge result into concrete regeneration
+    directives, so the next outline generation fixes exactly the flagged scenes
+    instead of blindly retrying the same low-quality output."""
+    directives: list[str] = []
+    for issue in (result.blocking_issues or ())[:max_issues]:
+        evidence = str(getattr(issue, "evidence", "") or "").strip()
+        required_fix = str(getattr(issue, "required_fix", "") or "").strip()
+        code = str(getattr(issue, "code", "") or "").strip()
+        if not required_fix and not evidence:
+            continue
+        directives.append(
+            f"【大纲商业评审整改·{code}】问题定位：{evidence[:220]}；"
+            f"必须修正：{required_fix[:320] or '按评审维度补齐具体人/物/动作/代价/信息释放/章末钩子。'}"
+        )
+    plan = getattr(result, "rewrite_plan", None)
+    instructions = ""
+    if isinstance(plan, Mapping):
+        instructions = str(plan.get("instructions") or "").strip()
+    elif plan is not None:
+        instructions = str(getattr(plan, "instructions", "") or "").strip()
+    if instructions:
+        directives.append(f"【大纲整改总纲】{instructions[:400]}")
+    return directives

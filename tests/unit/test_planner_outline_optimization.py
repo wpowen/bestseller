@@ -232,3 +232,50 @@ def test_repair_passes_planning_readiness_gate() -> None:
         if any(p in (f.path or "") for p in resolved_paths)
     ]
     assert remaining_targeted == [], [f.path for f in remaining_targeted]
+
+
+def test_validate_volume_outline_backfills_flaw_via_caller_path() -> None:
+    # Regression: the caller must extract the multi-candidate protagonist flaw
+    # with _first_non_empty_text, not _non_empty_string (which takes 2 args).
+    # This exercises _validate_generated_volume_outline_or_raise, which the
+    # repair-loop runs on every attempt — a TypeError here fails all attempts.
+    project = _project(target_chapters=20, strict=True)
+    cast_spec = {
+        "protagonist": {"name": "纪渊", "flaw": "习惯把压力全部扛在自己身上。"}
+    }
+    chapters = [
+        {
+            "chapter_number": i,
+            "title": f"第{i}章 站点{i}",
+            "protagonist_flaw": None,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "title": f"场景{i}",
+                    "participants": ["纪渊"],
+                    "protagonist_state": "被HR堵在站点。",
+                    "cut_point": "签字瞬间异能觉醒。",
+                    "entry_state": {},
+                    "exit_state": {},
+                }
+            ],
+        }
+        for i in range(1, 6)
+    ]
+    payload = {"batch_name": "v1", "chapters": chapters}
+    try:
+        planner._validate_generated_volume_outline_or_raise(
+            payload,
+            project=project,
+            logical_name="volume_1_chapter_outline_batch_1_5",
+            volume_number=1,
+            expected_count=5,
+            chapter_number_offset=1,
+            cast_spec=cast_spec,
+        )
+    except TypeError as exc:  # the specific regression
+        raise AssertionError(f"caller flaw extraction crashed: {exc}") from exc
+    except Exception:
+        # Other downstream contract validations may still reject this minimal
+        # fixture — that is fine; this test only guards the flaw-extraction crash.
+        pass

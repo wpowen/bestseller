@@ -1918,11 +1918,11 @@ def _validate_generated_volume_outline_or_raise(
     repair_count = _repair_generated_volume_outline_contract_inputs(
         batch,
         identity_manifest=identity_manifest,
-        protagonist_flaw_default=_non_empty_string(
+        protagonist_flaw_default=_first_non_empty_text(
             _cast_protagonist.get("flaw"),
             _cast_protagonist.get("fatal_flaw"),
             _cast_protagonist.get("core_wound"),
-            "",
+            default="",
         )
         or None,
     )

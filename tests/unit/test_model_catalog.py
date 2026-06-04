@@ -75,3 +75,56 @@ def test_apply_model_override_to_role_settings(monkeypatch):
     assert out.model_override == "deepseek/deepseek-v4-flash"
     # original untouched (immutability)
     assert rs.model == "openai/MiniMax-M3"
+
+
+def test_mimo_entry_has_custom_api_key_header(monkeypatch):
+    monkeypatch.setenv("XIAOMI_MIMO_API_KEY", "x")
+    entry = mc.get_model_catalog_entry("xiaomi-mimo-v2.5-pro")
+    assert entry is not None
+    assert entry.model == "openai/mimo-v2.5-pro"
+    assert entry.api_base == "https://token-plan-cn.xiaomimimo.com/v1"
+    assert entry.api_key_env == "XIAOMI_MIMO_API_KEY"
+    assert entry.api_key_header == "api-key"
+
+
+def test_apply_override_sets_custom_header_for_mimo():
+    from bestseller.services.llm import _apply_model_override
+    from bestseller.settings import LLMRoleSettings
+
+    rs = LLMRoleSettings(
+        model="openai/MiniMax-M3", temperature=0.7, max_tokens=8192,
+        timeout_seconds=120, api_base="https://api.minimaxi.com/v1",
+        api_key_env="MINIMAX_API_KEY", api_key_header=None,
+    )
+    mimo = mc.get_model_catalog_entry("xiaomi-mimo-v2.5-pro")
+    out = _apply_model_override(rs, mimo)
+    assert out.model == "openai/mimo-v2.5-pro"
+    assert out.api_key_header == "api-key"
+    assert out.api_key_env == "XIAOMI_MIMO_API_KEY"
+
+
+def test_apply_override_clears_header_when_switching_to_bearer():
+    # Switching from a header-auth model (MiMo) to a Bearer model must clear
+    # the custom header, else auth breaks.
+    from bestseller.services.llm import _apply_model_override
+    from bestseller.settings import LLMRoleSettings
+
+    rs = LLMRoleSettings(
+        model="openai/mimo-v2.5-pro", temperature=0.7, max_tokens=8192,
+        timeout_seconds=120, api_base="https://token-plan-cn.xiaomimimo.com/v1",
+        api_key_env="XIAOMI_MIMO_API_KEY", api_key_header="api-key",
+    )
+    ds = mc.get_model_catalog_entry("nim-deepseek-v4-pro")
+    out = _apply_model_override(rs, ds)
+    assert out.model == "openai/deepseek-ai/deepseek-v4-pro"
+    assert out.api_key_header is None
+    assert out.api_key_env == "NVIDIA_API_KEY"
+
+
+def test_catalog_has_expanded_vendors():
+    ids = {e.id for e in mc.load_model_catalog()}
+    for expected in (
+        "xiaomi-mimo-v2.5-pro", "nim-deepseek-v4-pro", "nim-kimi-k2.6",
+        "nim-mistral-large-3", "nim-llama-3.3-70b", "minimax-m3",
+    ):
+        assert expected in ids, expected

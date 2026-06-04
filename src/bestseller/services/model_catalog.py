@@ -36,6 +36,7 @@ class ModelCatalogEntry(BaseModel):
     model: str
     api_base: str | None = None
     api_key_env: str | None = None
+    api_key_header: str | None = None
     notes: str = ""
     available: bool = Field(
         default=True,

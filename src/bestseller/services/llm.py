@@ -1573,9 +1573,14 @@ async def _resolve_project_model_override(
 
 
 def _apply_model_override(role_settings: LLMRoleSettings, entry: Any) -> LLMRoleSettings:
-    update: dict[str, Any] = {"model": entry.model}
-    if entry.api_base is not None:
-        update["api_base"] = entry.api_base
+    update: dict[str, Any] = {
+        "model": entry.model,
+        "api_base": entry.api_base,
+        # Always set the auth scheme from the entry: a model may need a custom
+        # header (e.g. MiMo's "api-key") or plain Bearer (None). Carrying over
+        # the previous role's header would break auth on a different vendor.
+        "api_key_header": getattr(entry, "api_key_header", None),
+    }
     if entry.api_key_env:
         update["api_key_env"] = entry.api_key_env
     # Keep model_override consistent so the strong-tier path uses the same model.

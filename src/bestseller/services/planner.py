@@ -11520,11 +11520,13 @@ def _book_spec_prompts(
             f"{_methodology_line}"
             "请生成一个 BookSpec JSON，包含 title、logline、genre、target_audience、tone、themes、"
             "theme_statement、dramatic_question、expected_character_count、naming_pool、"
-            "protagonist、stakes、series_engine。"
+            "protagonist、stakes、series_engine、unique_hook、benchmark_works。"
             "theme_statement 必须是一句可被全书证明/反证的核心命题；dramatic_question 必须是结尾才能回答的 yes/no 问题；"
             "naming_pool 至少包含 expected_character_count 两倍数量、风格一致的候选姓名。"
             "其中 series_engine 必须清楚写出：核心连载引擎、读者承诺、前三章抓手、章节尾钩策略、"
             "短回报与长回报的节奏安排。"
+            "unique_hook 必须用一句话写出本书区别于同题材作品的唯一卖点/反套路设定（具体到机制或选择，不能是泛词）。"
+            "benchmark_works 必须列出 3-5 部与本书题材和卖点真实可比的已发表作品名（数组），作为结构与能力对标。"
         )
     _genre_instruction = getattr(
         _genre_profile.planner_prompts, f"book_spec_instruction_{_lang_key}", ""
@@ -14600,9 +14602,19 @@ def _story_design_kernel_prompts(
     compliance_boundary_block = _compliance_boundary_prompt_block(project)
     concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     system_prompt = (
-        "You are a story architect. Output one valid JSON object only."
+        "You are a story architect. Output one valid, fully-closed JSON object only. "
+        "HARD COMPACTNESS CONSTRAINT: the JSON MUST be emitted complete in a single "
+        "response and must never be truncated. Keep every explanatory string field "
+        "terse (≤ 60 chars each), cap plot_tree at ≤ 10 nodes, keep beat_schedule beats "
+        "≤ the target chapter count, and keep every list short. Do not expand any field "
+        "verbosely. Keep the entire JSON under ~9000 characters — prefer terse over "
+        "long-and-truncated. Include all required fields, but concisely."
         if is_en
-        else "你是长篇小说剧情架构师。只输出一个合法 JSON 对象，不要解释。"
+        else "你是长篇小说剧情架构师。只输出一个合法且完整闭合的 JSON 对象，不要解释。"
+        "【硬性紧凑约束】整个 JSON 必须一次性完整输出、绝不能被截断："
+        "所有说明性字符串字段保持精炼（单条 ≤ 60 字），plot_tree 节点 ≤ 10 个、"
+        "beat_schedule 节拍数 ≤ 目标章节数，各列表项从简；禁止任何字段长篇展开；"
+        "确保整个 JSON 总长 ≤ 9000 字符。必填字段都要有，但宁可精炼也不可超长被截断。"
     )
     user_prompt = (
         (

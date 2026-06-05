@@ -329,6 +329,7 @@ def _extract_unique_hook(
     metadata: Mapping[str, object],
     story_facets: Mapping[str, object],
     commercial_brief: Mapping[str, object],
+    book_spec: Mapping[str, object] | None = None,
 ) -> str:
     for key in ("unique_hook", "creative_hook", "hook", "premise_variation"):
         value = _text(metadata.get(key) or commercial_brief.get(key))
@@ -339,6 +340,23 @@ def _extract_unique_hook(
     drive = _text(story_facets.get("narrative_drive"))
     if tags or setting or drive:
         return " / ".join([item for item in (setting, drive, ", ".join(tags[:5])) if item])
+    # Fallback: a fresh book always has a hook in its own spec — pull it from
+    # book_spec so a populated premise is never falsely flagged unique_hook_missing.
+    spec = _as_mapping(book_spec)
+    for key in (
+        "unique_hook",
+        "creative_hook",
+        "hook",
+        "core_hook",
+        "selling_point",
+        "one_liner",
+        "logline",
+        "dramatic_question",
+        "premise",
+    ):
+        value = _text(spec.get(key))
+        if value:
+            return value
     return ""
 
 
@@ -346,13 +364,17 @@ def _extract_benchmark_works(
     metadata: Mapping[str, object],
     commercial_brief: Mapping[str, object],
     writing_profile: Mapping[str, object],
+    book_spec: Mapping[str, object] | None = None,
 ) -> list[str]:
     style = _as_mapping(writing_profile.get("style"))
     market = _as_mapping(writing_profile.get("market"))
+    spec = _as_mapping(book_spec)
     values: list[str] = []
     for raw in (
         metadata.get("benchmark_works"),
         commercial_brief.get("benchmark_works"),
+        spec.get("benchmark_works"),
+        spec.get("comparables"),
         style.get("reference_works"),
         market.get("reference_works"),
     ):
@@ -649,6 +671,7 @@ def build_project_planning_kernel(
         metadata,
         commercial_brief,
         writing_profile,
+        book,
     )
     story_design = _story_design_kernel_from(metadata, story_design_kernel)
     emotion_driven = _emotion_driven_kernel_from(metadata, emotion_driven_kernel)
@@ -707,6 +730,7 @@ def build_project_planning_kernel(
                 metadata,
                 story_facets,
                 commercial_brief,
+                book,
             ),
             "story_facets_present": bool(story_facets),
             "target_audiences": _string_list(

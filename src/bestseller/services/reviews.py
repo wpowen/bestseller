@@ -7202,7 +7202,7 @@ async def review_chapter_draft(
                 build_chapter_generation_input_bundle,
             )
             from bestseller.services.chapter_llm_quality_judge import (
-                judge_chapter_commercial_quality,
+                judge_chapter_commercial_quality_stable,
             )
             from bestseller.services.prompt_packs import resolve_prompt_pack
 
@@ -7239,7 +7239,21 @@ async def review_chapter_draft(
                 genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
                 sub_genre=getattr(project, "sub_genre", None),
             )
-            llm_judge_result = await judge_chapter_commercial_quality(
+            # 题材中立判官上下文:按本书 genre/sub_genre + 自有 bible 解析,
+            # 决定参考语料与故事合理性核查,绝不再默认探案悬疑(F1/F3 融合绑定)。
+            from bestseller.services.judge_genre_context import (
+                resolve_judge_genre_context,
+            )
+
+            judge_genre_context = resolve_judge_genre_context(
+                genre=getattr(project, "genre", None),
+                sub_genre=getattr(project, "sub_genre", None),
+                story_bible=generation_input.get("story_bible")
+                if isinstance(generation_input, dict)
+                else None,
+            )
+            # 稳定版:多采样取中位,消除单次判官方差,让榜单门禁可信、可收敛。
+            llm_judge_result = await judge_chapter_commercial_quality_stable(
                 session,
                 settings,
                 chapter_number=chapter.chapter_number,
@@ -7247,6 +7261,10 @@ async def review_chapter_draft(
                 generation_input=generation_input,
                 workflow_run_id=workflow_run_id,
                 pack=prompt_pack,
+                genre_context=judge_genre_context,
+                language="en"
+                if str(getattr(project, "language", "") or "").lower().startswith("en")
+                else "zh",
             )
             llm_commercial_judge_payload = llm_judge_result.model_dump(mode="json", by_alias=True)
             if (

@@ -51,7 +51,11 @@ def evaluate_common_sense_gate(
     findings.extend(_find_early_chapter_character_crowding(content, chapter_number=chapter_number))
     findings.extend(_find_rule_term_onboarding_failure(content, chapter_number=chapter_number))
     findings.extend(_find_late_night_delivery_order(content, chapter_number=chapter_number))
-    findings.extend(_find_object_signal_overuse(content, chapter_number=chapter_number))
+    findings.extend(
+        _find_object_signal_overuse(
+            content, chapter_number=chapter_number, genre=genre, sub_genre=sub_genre
+        )
+    )
     findings.extend(_find_lay_character_rule_knowledge_leak(content, chapter_number=chapter_number))
 
     blocking = [finding for finding in findings if finding.severity in {"high", "medium"}]
@@ -522,10 +526,25 @@ def _find_object_signal_overuse(
     text: str,
     *,
     chapter_number: int | None,
+    genre: str | None = None,
+    sub_genre: str | None = None,
 ) -> list[CommonSenseFinding]:
     if chapter_number is None or chapter_number > 10:
         return []
-    signal_pattern = r"(铜钱|青囊|罗盘|镜片|账页)[^。！？\n]{0,12}(烫|发烫|烫得|炭火)"
+    # Object terms: detective defaults + THIS genre's own signal objects, so the
+    # "single repeated sensory shortcut" anti-pattern is caught across genres — not
+    # only for 铜钱/罗盘/青囊 books. Sensory verbs broadened beyond 发烫 to the universal
+    # single-sensory-tic set (发凉/刺痛/心头一跳/眩晕…).
+    from bestseller.services.genre_signal_terms import resolve_genre_signal_terms
+
+    default_objects = ["铜钱", "青囊", "罗盘", "镜片", "账页"]
+    genre_objects = list(
+        resolve_genre_signal_terms(genre=genre, sub_genre=sub_genre).all_terms()
+    )
+    objects = [o for o in dict.fromkeys(default_objects + genre_objects) if 1 <= len(o) <= 6]
+    obj_alt = "|".join(re.escape(o) for o in objects)
+    sensory_alt = "烫|发烫|烫得|炭火|发热|滚烫|发凉|冰凉|刺痛|一颤|一跳|眩晕|发麻"
+    signal_pattern = rf"({obj_alt})[^。！？\n]{{0,12}}({sensory_alt})"
     matches = list(re.finditer(signal_pattern, text))
     if len(matches) < 3:
         return []
@@ -560,7 +579,11 @@ def _find_lay_character_rule_knowledge_leak(
 ) -> list[CommonSenseFinding]:
     if chapter_number is None or chapter_number > 3:
         return []
-    speaker_pattern = r"(王建业|张建军|小雨|陈默|周雪)[^。！？\n]{0,24}[：:“”\"']"
+    # Generic quoted-speaker detector (a short Han name before speech punctuation),
+    # NOT one detective book's hardcoded cast (王建业/张建军/小雨/陈默/周雪) — that only
+    # ever fired for that one book. The rule-term requirement below gates false
+    # positives, so a loose speaker match is acceptable and now works for any book.
+    speaker_pattern = r"([一-鿿]{2,4})[^。！？\n]{0,12}[：:“”\"']"
     rule_terms = r"(认账|入账|替认|代认|否认者|镜债|账线|下一笔|该轮到我)"
     for match in re.finditer(speaker_pattern, text):
         paragraph_end = text.find("\n\n", match.start())

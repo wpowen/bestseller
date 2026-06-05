@@ -1,0 +1,132 @@
+# Genre-NEUTRAL reference corpus — the universal fallback.
+#
+# Used by the commercial chapter judge for any book whose genre does NOT have a
+# hand-authored corpus of its own. Before this file existed, every such book was
+# scored against config/reference_corpora/suspense-mystery.yaml — i.e. a 言情 or
+# 科幻 chapter was judged against detective/exorcism samples and a detective
+# binary checklist (capability_demonstrated / call_plausibility). That made the
+# scores structurally wrong for non-detective genres.
+#
+# This corpus contains NO genre-specific prose samples (so it injects zero genre
+# bias) and a binary checklist phrased in universal commercial-retention terms.
+# The genre-appropriate "story-logic checks" are supplied dynamically by
+# services/judge_genre_context.py from the project's own genre + bible.
+#
+# genre: generic / 通用
+# chapter length: platform-driven (see platform_profiles.yaml)
+
+version: "1.0"
+genre: generic
+
+# Intentionally empty: a neutral corpus must not push any one genre's prose moves.
+samples: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BINARY CHECKLIST — universal, genre-neutral. Each item is PASS/FAIL with an
+# evidence quote. Missing 2+ → score ≤ 0.75; 3+ → ≤ 0.65; 4+ → ≤ 0.55.
+# ─────────────────────────────────────────────────────────────────────────────
+binary_checklist:
+  - id: core_hook_demonstrated
+    label: "核心卖点在场展示"
+    description: |
+      本书的核心爽点/钩子/金手指(无论它在本题材里是什么——力量、谜题、情感张力、
+      谋略、成长)在本章必须有一次"在场可见"的展示或推进,而不是只在背景里宣称。
+      读者要在合上书前看到这本书"会兑现"它承诺的那种快感。
+    failing_examples:
+      - "全章都在交代设定/背景,本书承诺的那种爽感一次都没真正发生"
+      - "其他角色反复说主角很厉害/这段感情很特别,但读者没看到任何实证"
+    passing_examples:
+      - "本书的核心机制被主角实际使用并产生可观察的结果"
+      - "承诺给读者的那种张力(危机/逆袭/心动/反转)在本章真实落地一次"
+
+  - id: protagonist_motive_clear
+    label: "主角驱动力清晰"
+    description: |
+      主角为什么卷入本章的核心冲突,必须可被读者重构:欲望/威胁/旧账/责任/
+      野心/好奇之一。纯被动、无所谓的主角无法让读者投入。
+    failing_examples:
+      - "主角没有任何想要或害怕的东西,只是被剧情推着走"
+      - "主角莫名其妙出现在冲突中心,读者无法说出他图什么"
+    passing_examples:
+      - "主角的目标/恐惧/旧债在本章通过动作或内心被点明一次"
+      - "读者能用一句话说清主角此刻在追什么、怕失去什么"
+
+  - id: supporting_char_hook
+    label: "配角情感挂钩"
+    description: |
+      至少一个配角有足以让读者产生情感投入的具体细节(职业/家庭/习惯/物件/
+      一句透露个人生活的话)。即使该角色随后退场,读者应感到损失而非无感。
+    failing_examples:
+      - "配角只是功能性符号,没有任何让读者记住或关心的特质"
+    passing_examples:
+      - "配角有一个标签动作或一句透露背景的话,让读者记住他"
+
+  - id: internal_logic_intact
+    label: "内部逻辑自洽"
+    description: |
+      本书自己设定的规则(力量体系/社会规则/谜题规则/情感逻辑——以本书为准)
+      在本章内部一致:规则被建立后必须被执行,不允许建立后立刻无后果地违反,
+      也不允许靠单一感官捷径替代推理。
+    failing_examples:
+      - "前文建立的规则在本章被违反且无任何解释或代价"
+      - "关键转折靠'心头一跳/发烫'等单一感官捷径,而非可推理的线索"
+    passing_examples:
+      - "本书规则的触发条件与后果在本章前后一致"
+      - "主角的判断基于可被读者复核的线索,而非作者直接告知"
+
+  - id: info_density_controlled
+    label: "信息密度可控"
+    description: |
+      黄金三章不堆砌私设术语:具名角色克制、高概念术语循序释放,读者在第一章
+      就能跟上故事。超出限制不自动失败,但必须有对应的读者理解锚点。
+    failing_examples:
+      - "第一章一次性抛出大量私设术语/设定且无解释"
+      - "出场具名角色过多,读者跟不上谁是谁"
+    passing_examples:
+      - "术语通过现象/行动/对话循序带出,读者无需停下来查设定"
+
+  - id: reader_orientation
+    label: "读者定位清晰"
+    description: |
+      读者在本章应能稳定地知道:这是谁的故事、发生在哪、此刻的赌注是什么。
+      开篇迷失方向(不知道跟谁、在哪、为什么紧张)是高流失原因。
+    failing_examples:
+      - "读完整章仍不清楚主视角是谁、身处何地、在紧张什么"
+    passing_examples:
+      - "前几段就锚定了视角人物、场景与当前赌注"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CALIBRATION ANCHORS — genre-neutral, model-band-aware floors.
+# Floors match the configured-writer band (MiniMax-M3). When the writer is
+# upgraded to a Claude-tier model, services.chapter_llm_quality_judge raises the
+# floor to 0.92/0.90 automatically (see model-tier binding), so this file does
+# not need a manual edit per model swap.
+# ─────────────────────────────────────────────────────────────────────────────
+calibration:
+  score_anchors:
+    - score: 0.95
+      label: "榜单 Top 级别"
+      description: "全部二元检查通过,无逻辑硬伤,配角有厚度,核心卖点强力兑现,信息密度刚好。"
+    - score: 0.90
+      label: "可上榜,读者不会在第一章跳走"
+      description: "≥5 项二元检查通过,最多 1 处轻微逻辑瑕疵,核心卖点有清晰展示。"
+    - score: 0.85
+      label: "可发布,但首章留存偏低"
+      description: "4 项通过,核心卖点展示偏弱或配角厚度不足。"
+    - score: 0.78
+      label: "有问题,读者会在前 5 章流失"
+      description: "3 项通过,存在驱动力不清或内部逻辑瑕疵,但基本可读。"
+    - score: 0.70
+      label: "不可发布,需要重写"
+      description: "≤2 项通过,有明显逻辑错误或术语堆砌,核心卖点缺位。"
+    - score: 0.55
+      label: "完全不合格"
+      description: "核心卖点、主角驱动力、配角厚度全部缺失,读者无法建立信任。"
+
+  # ACCEPTANCE BAND (not a single hard number): 达标 = overall ≥ golden_three_floor
+  # AND every hard dimension ≥ golden_three_dimension_floor. Calibrated to the
+  # configured writer (MiniMax-M3); model-tier binding raises it for Claude-tier.
+  golden_three_floor: 0.85
+  golden_three_dimension_floor: 0.82
+  chapter_4_to_10_floor: 0.85
+  general_floor: 0.80

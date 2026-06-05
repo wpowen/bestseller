@@ -13,6 +13,13 @@ from bestseller.domain.llm_quality_judge import (
     LLMQualityJudgeResult,
     quality_judge_result_from_mapping,
 )
+from bestseller.services.chapter_llm_quality_judge import (
+    resolve_commercial_judge_model_key,
+)
+from bestseller.services.judge_genre_context import (
+    JudgeGenreContext,
+    resolve_judge_genre_context,
+)
 from bestseller.services.judge_rubrics import get_judge_rubric
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology_bridge import get_fragment
@@ -64,13 +71,32 @@ def _render_outline_commercial_system_prompt(
     *,
     rubric: Any,
     methodology_reference: str,
+    genre_context: JudgeGenreContext | None = None,
+    language: str = "zh",
 ) -> str:
     """Assemble outline_commercial_judge system prompt in 7-段式.
 
-    Was: rubric.system_prompt + 6-pt 故事合理性 + methodology_reference + rubric.render —
-    pieces collided and lacked clear sections. Now stable ordering, all hard
-    rules promoted into CONSTRAINTS (was in user_prompt before).
+    When ``genre_context`` is supplied, the 故事合理性 checks render for THIS book's
+    genre (services/judge_genre_context.py) instead of the hardcoded commission/
+    detective 6-项. Falls back to the legacy block when absent.
     """
+    if genre_context is not None:
+        story_logic_section = (
+            genre_context.render_story_logic_block(language)
+            + genre_context.render_own_terms_block(language)
+            + "这些是商业网文留存的底层规律，按本书题材缺失会直接掉读者。\n"
+        )
+    else:
+        story_logic_section = (
+            "# CONTEXT · 故事合理性 — 黄金三章必查 6 项（任一缺失即 blocking）\n"
+            "1. **主角召唤合理性**：读者凭什么信主角能解决（家学 / 师承 / 口碑 / 熟人 / 能力实证）\n"
+            "2. **委托人选择动机**：为什么找主角而不是 110 / 物业 / 家人\n"
+            "3. **主角入场动机**：钱 / 旧账 / 家族线索 / 职业惯性 之一\n"
+            "4. **能力展示场景**：黄金三章必须有可见的能力实证，不能只在背景里说他厉害\n"
+            "5. **现实流程合理性**：报警 / 物业 / 医院 / 快递的反应符合常识或被明确标记为异常\n"
+            "6. **信息密度节奏**：第一章不能术语堆砌，靠现象 + 反应 + 怀疑铺垫\n"
+            "这六项是商业网文留存的底层规律，缺失会直接掉读者。\n"
+        )
     return (
         "# ROLE\n"
         "你是商业网文签约编辑，主审「大纲是否能撑起榜单级正文」。\n"
@@ -82,24 +108,20 @@ def _render_outline_commercial_system_prompt(
         "你的评分决定：这份大纲是 publish-to-write 还是 rework。\n"
         "不要改写正文——只裁判大纲的可执行性、商业吸引力、逻辑一致性、角色认知边界和方法论覆盖。\n"
         "\n"
-        "# CONTEXT · 故事合理性 — 黄金三章必查 6 项（任一缺失即 blocking）\n"
-        "1. **主角召唤合理性**：读者凭什么信主角能解决（家学 / 师承 / 口碑 / 熟人 / 能力实证）\n"
-        "2. **委托人选择动机**：为什么找主角而不是 110 / 物业 / 家人\n"
-        "3. **主角入场动机**：钱 / 旧账 / 家族线索 / 职业惯性 之一\n"
-        "4. **能力展示场景**：黄金三章必须有可见的能力实证，不能只在背景里说他厉害\n"
-        "5. **现实流程合理性**：报警 / 物业 / 医院 / 快递的反应符合常识或被明确标记为异常\n"
-        "6. **信息密度节奏**：第一章不能术语堆砌，靠现象 + 反应 + 怀疑铺垫\n"
-        "这六项是商业网文留存的底层规律，缺失会直接掉读者。\n"
-        "\n"
+        + story_logic_section
+        + "\n"
         "# TASK\n"
         "对大纲打 13 个维度分（见 user 段维度列表），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
         "\n"
         "# CONSTRAINTS · 硬性卡控（违反即 blocking，不可降为 audit）\n"
         "1. 黄金三章若只靠电话 / 短信 / 语音开局，且没有更强现场画面压力 → blocking。\n"
-        "2. 非专业角色不得天然理解专业规则；若普通客户 / 快递员 / 邻居等主动讲出认账 / 入账 / 替认 / "
-        "镜债 / 账线等术语 → blocking。\n"
-        "3. 快递 / 配送 / 警方 / 医院 / 监控 / 门禁等现实流程必须合理；若不合理，必须明确标记为异常证据 → 否则 blocking。\n"
-        "4. 铜钱 / 罗盘 / 青囊等物件信号必须有稳定含义、触发条件和限制；不能反复用「发烫」替代推理。\n"
+        "2. 认知边界：非专业 / 普通角色不得无来由地理解并主动讲出本题材的专业 / 超自然规则术语；"
+        "除非正文已交代其来源（被传授 / 亲历 / 身份揭示）→ 否则 blocking。（用本书实际的设定术语判断，不要套用其它题材的词。）\n"
+        "3. 现实流程合理性：本题材涉及的现实机构 / 流程（如报警、就医、平台、机构审批等）反应必须符合常识；"
+        "若反常，正文必须明确标记为异常 → 否则 blocking。\n"
+        "4. 关键道具 / 能力 / 信号逻辑：本书的核心金手指 / 法宝 / 系统 / 线索物等，每次表现都要有稳定含义、"
+        "触发条件与限制，主角能据此合理推断；不能反复用单一感官捷径（如「发烫」「心头一跳」）替代推理或推进。"
+        "（以本书设定中的道具为准，不要预设为某一特定题材的器物。）\n"
         "5. 场景卡必须含具体人 / 物 / 动作 / 代价 / 信息释放 / 章末钩子；只写抽象目的 → blocking。\n"
         "\n"
         "# CONSTRAINTS · 评分纪律\n"
@@ -135,8 +157,37 @@ def _render_planning_readiness_system_prompt(
     *,
     rubric: Any,
     methodology_reference: str,
+    genre_context: JudgeGenreContext | None = None,
+    language: str = "zh",
 ) -> str:
-    """7-段式 system prompt for commercial_planning_readiness_judge."""
+    """7-段式 system prompt for commercial_planning_readiness_judge.
+
+    When ``genre_context`` is supplied, the story-logic checks render for THIS
+    book's genre (services/judge_genre_context.py) instead of the hardcoded
+    commission/detective 6-项. Falls back to the legacy block when absent.
+    """
+    if genre_context is not None:
+        story_logic_section = (
+            genre_context.render_story_logic_block(language)
+            + genre_context.render_own_terms_block(language)
+        )
+    else:
+        story_logic_section = (
+            "# CONTEXT · 故事合理性核心审视（6 项，任一缺失即 blocking）\n"
+            "A. **主角召唤路径**：规划是否交代读者凭什么信主角能解决？\n"
+            "   - 必须看到：家学传承 / 师承 / 前案口碑 / 熟人引介 / 行业身份 之一。\n"
+            "   - 仅靠「物业修不好 / 警察不管」不充分。\n"
+            "B. **委托人选择动机**：规划是否让读者相信委托人会主动找主角，而非 110/120/物业？\n"
+            "   - 委托人和主角的关系链必须可被读者重构。\n"
+            "C. **主角入场动机**：规划是否给了主角足够强的入场理由？\n"
+            "   - 钱 / 家族旧账 / 职业惯性 / 旧债 / 好奇心 + 关键线索 之一。\n"
+            "D. **能力可见性**：黄金三章规划是否安排了主角能力的具体展示场景？\n"
+            "   - 不能只在背景设定里说他厉害，必须有「在场可见」的展示动作。\n"
+            "E. **现实世界连接**：规划是否考虑了报警 / 物业 / 医院等现实流程？\n"
+            "   - 完全无视这些流程或处理过于轻描淡写都不合理。\n"
+            "F. **信息密度节奏**：第一章是否避免把核心规则术语全部抛给读者？\n"
+            "   - 高概念词应通过现象铺垫，不应在 ch1 就堆砌术语。\n"
+        )
     return (
         "# ROLE\n"
         "你是商业网文签约编辑，专审「黄金三章规划是否能撑起榜单级正文」。\n"
@@ -153,21 +204,8 @@ def _render_planning_readiness_system_prompt(
         "- 如果确定性门禁报告了问题但规划数据实质上合格 → 通过（pass=true）。\n"
         "- 如果规划数据存在实质性商业化缺陷（冲突空洞 / 无代价 / 无钩子 / 场景抽象）→ 不通过。\n"
         "\n"
-        "# CONTEXT · 故事合理性核心审视（6 项，任一缺失即 blocking）\n"
-        "A. **主角召唤路径**：规划是否交代读者凭什么信主角能解决？\n"
-        "   - 必须看到：家学传承 / 师承 / 前案口碑 / 熟人引介 / 行业身份 之一。\n"
-        "   - 仅靠「物业修不好 / 警察不管」不充分。\n"
-        "B. **委托人选择动机**：规划是否让读者相信委托人会主动找主角，而非 110/120/物业？\n"
-        "   - 委托人和主角的关系链必须可被读者重构。\n"
-        "C. **主角入场动机**：规划是否给了主角足够强的入场理由？\n"
-        "   - 钱 / 家族旧账 / 职业惯性 / 旧债 / 好奇心 + 关键线索 之一。\n"
-        "D. **能力可见性**：黄金三章规划是否安排了主角能力的具体展示场景？\n"
-        "   - 不能只在背景设定里说他厉害，必须有「在场可见」的展示动作。\n"
-        "E. **现实世界连接**：规划是否考虑了报警 / 物业 / 医院等现实流程？\n"
-        "   - 完全无视这些流程或处理过于轻描淡写都不合理。\n"
-        "F. **信息密度节奏**：第一章是否避免把核心规则术语全部抛给读者？\n"
-        "   - 高概念词应通过现象铺垫，不应在 ch1 就堆砌术语。\n"
-        "\n"
+        + story_logic_section
+        + "\n"
         "# TASK\n"
         "对黄金三章规划打 N 项维度分（见 user 段维度列表），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
         "\n"
@@ -177,8 +215,11 @@ def _render_planning_readiness_system_prompt(
         "3. 三章中无一章有明确的章末钩子\n"
         "\n"
         "# CONSTRAINTS · 判 blocking 时务必避免误伤\n"
-        "- 心理博弈 / 怀疑 / 试探 / 规则压力（如「否认者先死」）/ 超自然威胁（镜局 / 镜债 / 邪祟）"
-        "均属于**合格的具体冲突**，不应判 blocking。\n"
+        "- 只要冲突落在本书自身题材的具体压力上即算**合格的具体冲突**，不应判 blocking。"
+        "不同题材的合格冲突形态不同：升级流=实力差距 / 越级挑战 / 资源争夺；"
+        "情感向=关系拉扯 / 身份错位 / 情感代价；悬疑向=心理博弈 / 怀疑试探 / 规则压力；"
+        "都市现实=职位 / 合同 / 舆论 / 利益博弈；科幻向=技术失控 / 规则冲突等。"
+        "**按本书题材判断,不要要求它必须写成悬疑/驱魔式的冲突。**\n"
         "- 即使确定性门禁报告 abstract_chapter_conflict，只要场景或钩子中存在具体的压力 / 代价 / 对手描述，"
         "应当通过。\n"
         "\n"
@@ -214,7 +255,18 @@ async def judge_outline_commercial_readiness(
     threshold: float = 0.82,
     workflow_run_id: Any | None = None,
     pack: PromptPack | None = None,
+    genre_context: JudgeGenreContext | None = None,
 ) -> LLMQualityJudgeResult:
+    brief = project_brief or {}
+    if genre_context is None:
+        genre_context = resolve_judge_genre_context(
+            genre=brief.get("genre"),
+            sub_genre=brief.get("sub_genre"),
+            story_bible=brief.get("story_bible"),
+        )
+    _judge_language = (
+        "en" if str(brief.get("language") or "").lower().startswith("en") else "zh"
+    )
     payload_text = json.dumps(
         _compact_outline_payload(outline_payload),
         ensure_ascii=False,
@@ -260,6 +312,8 @@ async def judge_outline_commercial_readiness(
             system_prompt=_render_outline_commercial_system_prompt(
                 rubric=rubric,
                 methodology_reference=methodology_reference,
+                genre_context=genre_context,
+                language=_judge_language,
             ),
             user_prompt=(
                 "## 任务参数\n"
@@ -278,6 +332,7 @@ async def judge_outline_commercial_readiness(
             fallback_response=fallback,
             prompt_template="outline_commercial_judge",
             prompt_version="v1",
+            model_catalog_key=resolve_commercial_judge_model_key(settings),
             workflow_run_id=workflow_run_id,
             metadata={"judge_scope": "outline", "threshold": threshold, "rubric": rubric.name},
             max_tokens_override=4096,
@@ -486,6 +541,7 @@ async def judge_commercial_planning_readiness(
     threshold: float = 0.75,
     workflow_run_id: Any | None = None,
     pack: PromptPack | None = None,
+    genre_context: JudgeGenreContext | None = None,
 ) -> LLMQualityJudgeResult:
     """LLM judge for the commercial planning readiness gate.
 
@@ -558,6 +614,17 @@ async def judge_commercial_planning_readiness(
     methodology_reference = _render_judge_methodology_reference(pack)
     rubric = get_judge_rubric("commercial_planning")
 
+    _brief = project_brief or {}
+    if genre_context is None:
+        genre_context = resolve_judge_genre_context(
+            genre=_brief.get("genre"),
+            sub_genre=_brief.get("sub_genre"),
+            story_bible=_brief.get("story_bible"),
+        )
+    _judge_language = (
+        "en" if str(_brief.get("language") or "").lower().startswith("en") else "zh"
+    )
+
     completion = await complete_text(
         session,
         settings,
@@ -567,6 +634,8 @@ async def judge_commercial_planning_readiness(
             system_prompt=_render_planning_readiness_system_prompt(
                 rubric=rubric,
                 methodology_reference=methodology_reference,
+                genre_context=genre_context,
+                language=_judge_language,
             ),
             user_prompt=(
                 "## 任务参数\n"
@@ -585,6 +654,7 @@ async def judge_commercial_planning_readiness(
             fallback_response=fallback,
             prompt_template="commercial_planning_readiness_judge",
             prompt_version="v1",
+            model_catalog_key=resolve_commercial_judge_model_key(settings),
             workflow_run_id=workflow_run_id,
             metadata={"judge_scope": "commercial_planning", "threshold": threshold, "rubric": rubric.name},
             max_tokens_override=3000,

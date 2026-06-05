@@ -1194,10 +1194,12 @@ def _validate_prose_body_object_state(
             window = text[max(0, start - 80) : start + 80]
             if not any(cause in window for cause in ("割", "咬", "硌", "划", "裂", "伤")):
                 violations.append(f"body state '{marker}' lacks a visible local cause")
+    # Flag ANY contract-tracked object missing from the prose — using THIS book's own
+    # tracked_objects, not a detective whitelist (康熙铜钱/青囊秘卷/罗盘). The old whitelist
+    # made this check fire only for the one detective book; every other book's missing
+    # key object went unchecked.
     for object_name in contract.tracked_objects:
-        if object_name and object_name in text:
-            continue
-        if object_name in ("康熙铜钱", "青囊秘卷", "罗盘"):
+        if object_name and object_name not in text:
             violations.append(f"tracked object '{object_name}' is not visible in chapter prose")
 
 

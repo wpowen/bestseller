@@ -71,8 +71,11 @@ _EXPOSITION_MARKERS = (
 # Pure-info-dump phrases that mean "the next paragraph is going to be
 # walking through the rulebook". Heavier weight.
 _HEAVY_DUMP_PHRASES = (
-    "茅山术法分为", "镜中局的规则是", "三族指的是",
-    "青囊秘卷记载", "罗盘的用法是",
+    # Genre-neutral structural markers of a "rulebook walkthrough" exposition dump —
+    # NOT one detective book's nouns (青囊/罗盘/镜中局/三族/茅山). The anti-pattern is
+    # "the next sentence explains a rule/system/lore", whatever the genre's terms are.
+    "术法分为", "功法分为", "体系分为", "的规则是", "的用法是",
+    "秘卷记载", "典籍记载", "古籍记载", "记载道",
     "解释一下", "解释道", "解释说",
 )
 

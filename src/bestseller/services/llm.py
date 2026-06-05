@@ -14,7 +14,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import LlmRunModel, ProjectModel
-from bestseller.services.word_targets import model_output_token_ceiling
+from bestseller.services.word_targets import (
+    model_min_output_tokens,
+    model_output_token_ceiling,
+)
 from bestseller.settings import (
     AppSettings,
     LLMRoleSettings,
@@ -370,6 +373,12 @@ class LLMCompletionRequest(BaseModel):
     step_run_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     max_tokens_override: int | None = Field(default=None, ge=1)
+    #: Per-call model-catalog override (a ``config/model_catalog.yaml`` entry id).
+    #: When set and available, it overrides the resolved role model for THIS call —
+    #: and wins over the book's per-project model. Used so the commercial judges can
+    #: score ranking quality with a capable (Claude-tier) model even when the book's
+    #: writer runs on a budget model. ``None`` = use the configured role model.
+    model_catalog_key: str | None = Field(default=None, max_length=128)
     cache_system: bool = Field(
         default=False,
         description=(
@@ -437,15 +446,31 @@ def _effective_request_max_tokens(
     request: LLMCompletionRequest,
 ) -> int:
     role_cap = int(role_settings.max_tokens)
-    if request.max_tokens_override is None:
-        return role_cap
-    requested = max(1, int(request.max_tokens_override))
-    if requested <= role_cap:
-        return requested
     model_ceiling = model_output_token_ceiling(role_settings.model)
-    if model_ceiling is None:
-        return role_cap
-    return min(requested, int(model_ceiling))
+    # 防截断:正文角色(writer/editor)按模型给足输出预算,不被固定 role_cap 卡短。
+    # 关 thinking 时模型会在 finish_reason="stop" 提前收尾,留头空间不浪费 token。
+    base = role_cap
+    if request.logical_role in ("writer", "editor"):
+        model_floor = model_min_output_tokens(role_settings.model)
+        if model_floor and model_floor > base:
+            base = model_floor
+    if model_ceiling is not None:
+        base = min(base, int(model_ceiling))
+    if request.max_tokens_override is None:
+        return base
+    # An explicit override is the caller's deliberate cap and must be RESPECTED,
+    # including when it intentionally LOWERS the budget (empty-length recovery retry,
+    # chapter-first runaway guard). Do NOT max() it against the role/floor base — that
+    # silently ignored low overrides. For prose roles still floor it to the per-model
+    # minimum so a too-small override can't truncate a reasoning model mid-chapter.
+    target = max(1, int(request.max_tokens_override))
+    if request.logical_role in ("writer", "editor"):
+        model_floor = model_min_output_tokens(role_settings.model)
+        if model_floor and target < model_floor:
+            target = model_floor
+    if model_ceiling is not None:
+        return min(target, int(model_ceiling))
+    return target
 
 
 def _is_empty_length_response_error(exc: BaseException) -> bool:
@@ -509,17 +534,53 @@ def _effective_thinking_type(role_settings: LLMRoleSettings) -> str | None:
     text, so disable thinking unless the role explicitly opts in.
     """
 
-    if role_settings.thinking_type:
-        return role_settings.thinking_type
     model = (role_settings.model or "").lower()
     api_base = (role_settings.api_base or "").lower()
-    if "deepseek-v4" in model and "deepseek" in api_base:
+    if role_settings.thinking_type:
+        tt: str | None = role_settings.thinking_type
+    elif "deepseek-v4" in model and "deepseek" in api_base:
+        tt = "disabled"
+    elif "minimax-m3" in model:
+        tt = "disabled"
+    elif "minimax-m2" in model and "highspeed" in model:
+        tt = "disabled"
+    else:
+        tt = None
+    return _normalize_thinking_type_for_model(tt, model)
+
+
+def _normalize_thinking_type_for_model(thinking_type: str | None, model: str) -> str | None:
+    """Coerce thinking.type to each provider's accepted vocabulary.
+
+    MiniMax M-series only accepts {"adaptive","disabled"} — passing "enabled"
+    (a generic value some other providers use) raises a 400 BadRequestError and
+    breaks every call once that model is selected. Map invalid values safely.
+    """
+
+    if not thinking_type:
+        return None
+    m = (model or "").lower()
+    if "minimax" in m:
+        if thinking_type in ("adaptive", "disabled"):
+            return thinking_type
+        if thinking_type in ("enabled", "on", "auto", "high", "true"):
+            return "adaptive"
         return "disabled"
-    if "minimax-m3" in model:
-        return "disabled"
-    if "minimax-m2" in model and "highspeed" in model:
-        return "disabled"
-    return None
+    return thinking_type
+
+
+def _model_supports_n_param(model: str | None) -> bool:
+    """Whether the provider accepts OpenAI-style ``n`` (multiple choices) param.
+
+    MiniMax raises ``model does not support n > 1`` (400) — forwarding ``n`` there
+    breaks every writer call. Application-level best-of-N (drafts.py) loops the
+    request instead, so the param must simply not be sent for such models.
+    """
+
+    m = (model or "").lower()
+    if "minimax" in m:
+        return False
+    return True
 
 
 def _build_rate_limit_fallback_settings(
@@ -1371,9 +1432,15 @@ async def _call_litellm(
             completion_kwargs["tool_choice"] = request.tool_choice
         completion_kwargs["stream"] = False
 
-    # Only pass n when >1 — many providers (MiniMax, Gemini) ignore or
-    # reject the parameter, and n=1 is the default anyway.
-    if role_settings.n_candidates > 1 and not request.tools:
+    # Only pass n when >1 AND the model actually supports it. MiniMax 400s on
+    # n>1 (model does not support n > 1); Gemini ignores it. n_candidates>1 is
+    # still honoured at the application layer (drafts.py loops the call and keeps
+    # the best-scoring draft), so we simply must not forward the unsupported param.
+    if (
+        role_settings.n_candidates > 1
+        and not request.tools
+        and _model_supports_n_param(role_settings.model)
+    ):
         # n>1 + tools is rarely meaningful and more likely to confuse
         # providers; keep n=1 whenever tools are involved.
         completion_kwargs["n"] = role_settings.n_candidates
@@ -1599,6 +1666,15 @@ async def complete_text(
     _project_model_entry = await _resolve_project_model_override(session, request.project_id)
     if _project_model_entry is not None:
         role_settings = _apply_model_override(role_settings, _project_model_entry)
+    # A per-call model-catalog override (e.g. a capable commercial-judge model) wins
+    # over the book's per-project model so judging quality is independent of the
+    # writer tier. Falls back silently when the entry is missing/unavailable.
+    if request.model_catalog_key:
+        from bestseller.services.model_catalog import get_model_catalog_entry
+
+        _override_entry = get_model_catalog_entry(request.model_catalog_key)
+        if _override_entry is not None and _override_entry.available:
+            role_settings = _apply_model_override(role_settings, _override_entry)
     _warn_language_system_mismatch(request)
     _validate_prompt_template_name(request)
     if request.model_tier == "strong" and role_settings.model_override:

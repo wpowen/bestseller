@@ -10,7 +10,7 @@ _DEFAULT_REVEAL_FLOORS: tuple[tuple[str, int, tuple[str, ...]], ...] = (
     ("kou_zhang_ren", 9, ("扣账人",)),
     ("san_dai_wei_yi_hu", 25, ("三代为一户", "父债子偿")),
     ("jing_ying_lin_yuan_self_aware", 18, ("镜影林渊",)),
-    ("father_complete_truth", 50, ("父亲完整真相", "林正淳完整真相")),
+    ("father_complete_truth", 50, ("父亲完整真相",)),
 )
 
 

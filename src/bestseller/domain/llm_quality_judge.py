@@ -23,6 +23,11 @@ QualityJudgeScope = Literal[
     "reader_experience",
 ]
 _PASS_TRUE_DIMENSION_THRESHOLD_TOLERANCE = 0.015
+# Float-representation tolerance for gate comparisons. Median/mean aggregation of
+# dimension scores can yield e.g. 0.8999999999999999 for a value that is logically
+# 0.90, which a naive ``< 0.90`` would wrongly fail. Only treat a score as below a
+# floor when it is below by more than this epsilon.
+_GATE_EPSILON = 1e-6
 
 
 class LLMQualityIssue(BaseModel):
@@ -264,10 +269,10 @@ class LLMQualityJudgeResult(BaseModel):
     ) -> bool:
         if self.has_critical or not self.passed:
             return False
-        if self.overall_score < min_overall:
+        if self.overall_score < min_overall - _GATE_EPSILON:
             return False
         for key, threshold in (min_dimensions or {}).items():
-            if float(self.dimension_scores.get(key, 0.0)) < float(threshold):
+            if float(self.dimension_scores.get(key, 0.0)) < float(threshold) - _GATE_EPSILON:
                 return False
         return True
 
@@ -371,7 +376,7 @@ def _synthetic_threshold_issues(
         return ()
 
     issues: list[LLMQualityIssue] = []
-    if result.overall_score < min_overall:
+    if result.overall_score < min_overall - _GATE_EPSILON:
         issues.append(
             LLMQualityIssue(
                 code="LLM_SCORE_BELOW_THRESHOLD",
@@ -398,7 +403,7 @@ def _synthetic_threshold_issues(
             and 0.0 < gap <= _PASS_TRUE_DIMENSION_THRESHOLD_TOLERANCE
         ):
             continue
-        if actual < float(threshold):
+        if actual < float(threshold) - _GATE_EPSILON:
             issues.append(
                 LLMQualityIssue(
                     code=f"LLM_DIMENSION_BELOW_THRESHOLD_{key.upper()}",

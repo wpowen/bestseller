@@ -56,6 +56,9 @@ from bestseller.services.quality_levers.rejection_repair_playbook import (
 from bestseller.services.quality_levers.rhythm_engineering import (
     render_rhythm_block,
 )
+from bestseller.services.quality_levers.scene_grounding import (
+    render_scene_grounding_block,
+)
 from bestseller.services.quality_levers.sensory_inventory import (
     render_sensory_requirement_block,
 )
@@ -169,6 +172,11 @@ def build_writer_quality_levers_block(context: WriterLeverContext) -> str:
     blocks.append(render_emotion_choreography_block())
     blocks.append(
         render_information_choreography_block(chapter_number=context.chapter_number)
+    )
+    # Whole-chapter camera discipline (soft). Genre terms are unavailable on this
+    # dialogue-path context, so it falls back to the default emphasis set.
+    blocks.append(
+        render_scene_grounding_block(chapter_number=context.chapter_number)
     )
     if context.emotion_driven_kernel:
         blocks.append(

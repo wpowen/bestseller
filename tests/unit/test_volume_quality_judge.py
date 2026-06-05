@@ -173,6 +173,7 @@ async def test_volume_quality_judge_prompt_scopes_future_reveals_to_stage(
 
     async def fake_complete_text(session, settings, request):
         captured_prompt["user"] = request.user_prompt
+        captured_prompt["system"] = request.system_prompt
         return LLMCompletionResult(
             content=json.dumps(
                 {
@@ -200,6 +201,10 @@ async def test_volume_quality_judge_prompt_scopes_future_reveals_to_stage(
         volume_checkpoint_min_chapters=10,
     )
 
-    assert "不得要求提前兑现未来章节" in captured_prompt["user"]
-    assert "当前章节号：10" in captured_prompt["user"]
-    assert "未来章节计划只能作为方向校验" in captured_prompt["user"]
+    # The "scope to current stage" constraints live in the system prompt; the chapter
+    # context (current chapter number, future-plan-as-direction-only) is in the user
+    # prompt. Check across both so prompt-section refactors don't break the contract.
+    _judge_prompt = captured_prompt["system"] + "\n" + captured_prompt["user"]
+    assert "不得要求提前兑现未来章节" in _judge_prompt
+    assert "当前章节号：10" in _judge_prompt
+    assert "未来章节计划只能作为方向校验" in _judge_prompt

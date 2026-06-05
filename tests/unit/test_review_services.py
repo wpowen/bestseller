@@ -1174,7 +1174,9 @@ def test_scene_rewrite_prompts_switch_to_english_for_english_projects() -> None:
     )
     combined = system_prompt + "\n" + user_prompt
 
-    assert "English-language fiction rewriting editor" in system_prompt
+    # scene-rewrite editor prompt rewording: confirm the English ROLE block is used
+    # for an English project (was "English-language fiction rewriting editor").
+    assert "senior scene-rewrite editor for long-form commercial fiction" in system_prompt
     assert "Rewrite the current scene in English only" in user_prompt
     assert "Project: Storm Ledger" in user_prompt
     assert "Chapter 1" in user_prompt
@@ -2473,7 +2475,9 @@ async def test_rewrite_chapter_from_task_creates_new_version(
         )
 
     async def fake_complete_text(session, settings, request):
-        rewritten_body = "真相开始浮出水面，" * 120
+        # ~2000 zh chars so the rewrite lands inside the 1800-3500 publish band and is
+        # accepted (a too-short rewrite is correctly rejected by the length gate).
+        rewritten_body = "真相开始浮出水面，" * 250
         return SimpleNamespace(
             content=(
                 "# 第3章 静默航道\n\n## 场景 1：旧搭档回舰\n\n"
@@ -2484,6 +2488,9 @@ async def test_rewrite_chapter_from_task_creates_new_version(
             provider="mock",
         )
 
+    async def _ok_quality_gate(**kwargs):
+        return "ok"
+
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
         review_services,
@@ -2491,6 +2498,15 @@ async def test_rewrite_chapter_from_task_creates_new_version(
         fake_build_chapter_writer_context,
     )
     monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    # This test exercises the ACCEPT path (a new version is promoted). Mock the chapter
+    # quality gate to "ok" and the duplicate gate to empty so the test is decoupled from
+    # gate strictness (the gate behaviour has its own dedicated tests).
+    monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", _ok_quality_gate)
+    monkeypatch.setattr(
+        review_services,
+        "_collect_post_assembly_duplicate_findings",
+        lambda *args, **kwargs: _empty_async_tuple(),
+    )
 
     session = FakeSession(
         scalar_results=[chapter, current_draft, rewrite_task, None, 1],
@@ -2596,12 +2612,12 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
             provider="mock",
         )
 
-    quality_gate_calls = 0
-
     async def fake_quality_gate(**kwargs):
-        nonlocal quality_gate_calls
-        quality_gate_calls += 1
-        return "ok" if quality_gate_calls >= 3 else "blocked"
+        # Decide by CONTENT, not call-count: the rewrite candidate is blocked, the
+        # existing current draft passes. This keeps the test robust to changes in how
+        # many times the gate is consulted (micro-trim / recheck paths).
+        content = str(kwargs.get("content") or "")
+        return "blocked" if "过长候选稿" in content else "ok"
 
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
@@ -2637,7 +2653,9 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
     assert len(rejected) == 1
     assert rejected[0].version_no == 2
     assert rejected[0].is_current is False
-    assert session.executed == []
+    # Preserve/reject path must not DEMOTE the current draft (no UPDATE statement).
+    # Read-only SELECTs (e.g. inter-chapter duplication scoring) are expected/harmless.
+    assert all("UPDATE" not in str(stmt).upper() for stmt in session.executed)
     assert completed_task.status == "failed"
     assert completed_task.metadata_json["quality_gate_rejected_current_promotion"] is True
     assert completed_task.metadata_json["preserved_current_chapter_draft_id"] == str(current_draft.id)
@@ -2732,14 +2750,15 @@ async def test_rewrite_chapter_from_task_micro_trims_minor_current_overflow(
             provider="deepseek",
         )
 
-    quality_gate_calls = 0
-
     async def fake_quality_gate(**kwargs):
-        nonlocal quality_gate_calls
-        quality_gate_calls += 1
-        if quality_gate_calls <= 3:
+        # Decide by CONTENT, not call-count (robust to how many times the gate is
+        # consulted across candidate-eval / micro-trim / recheck paths):
+        #   * the overlong rewrite candidate is always rejected;
+        #   * the current draft is over-length until micro-trimmed within `max_words`.
+        content = str(kwargs.get("content") or "")
+        if "过长候选稿" in content:
             return "blocked"
-        return "ok" if review_services.count_words(kwargs["content"]) <= max_words else "blocked"
+        return "ok" if review_services.count_words(content) <= max_words else "blocked"
 
     report = SimpleNamespace(
         report_json={
@@ -2763,8 +2782,13 @@ async def test_rewrite_chapter_from_task_micro_trims_minor_current_overflow(
         lambda *args, **kwargs: _empty_async_tuple(),
     )
 
+    # Quality-report scalar queries fire before the version query, in order:
+    #   8620 candidate-blocked report, 8849 repair-pass report,
+    #   9056 candidate-micro-trim report, 9165 current-micro-trim report.
+    # The current-micro-trim report MUST carry the LENGTH_OVER violation so the
+    # overlong current draft is micro-trimmed (not preserved).
     session = FakeSession(
-        scalar_results=[chapter, current_draft, rewrite_task, report, report, report, 1],
+        scalar_results=[chapter, current_draft, rewrite_task, report, report, report, report, 1],
         scalars_results=[[scene]],
     )
 
@@ -2914,7 +2938,9 @@ async def test_rewrite_chapter_from_task_rejects_unfixed_quality_retrofit_candid
     assert completed_task.metadata_json["candidate_model_name"] == "deepseek-chat"
     assert completed_task.metadata_json["quality_retrofit_rejected_current_promotion"] is True
     assert completed_task.metadata_json["candidate_quality_retrofit_findings"][0]["cause_id"] == "ai_voice"
-    assert session.executed == []
+    # Preserve/reject path must not DEMOTE the current draft (no UPDATE statement).
+    # Read-only SELECTs (e.g. inter-chapter duplication scoring) are expected/harmless.
+    assert all("UPDATE" not in str(stmt).upper() for stmt in session.executed)
 
 
 @pytest.mark.asyncio
@@ -3053,7 +3079,9 @@ async def test_rewrite_chapter_from_task_preserves_current_when_duplicate_gate_b
     assert returned_draft is current_draft
     assert len(rejected) == 1
     assert rejected[0].is_current is False
-    assert session.executed == []
+    # Preserve/reject path must not DEMOTE the current draft (no UPDATE statement).
+    # Read-only SELECTs (e.g. inter-chapter duplication scoring) are expected/harmless.
+    assert all("UPDATE" not in str(stmt).upper() for stmt in session.executed)
     assert completed_task.status == "failed"
     assert completed_task.metadata_json["candidate_quality_gate_outcome"] == "blocked"
     assert completed_task.metadata_json["candidate_duplicate_gate_findings"][0]["code"] == "CROSS_CHAPTER_REPETITION"

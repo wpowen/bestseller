@@ -311,12 +311,10 @@ def builtin_premium_benchmark_cases() -> tuple[PremiumBenchmarkCase, ...]:
             sub_genre="规则怪谈",
             metadata=_bad_rule_mystery_metadata(),
             expected_gate_passed=False,
-            expected_blocking_codes=(
-                "rule_system_missing",
-                "category_state_ledger_missing",
-                "category_hard_gate_missing",
-                "category_chapter_update_missing",
-            ),
+            # Rule-survival genres are routed to their dedicated rule_system gate, NOT
+            # the generic category-hard engine (resolve_category_hard_engine_key returns
+            # None for rule-survival metadata), so only rule_system_missing fires here.
+            expected_blocking_codes=("rule_system_missing",),
         ),
         PremiumBenchmarkCase(
             case_id="female-no-cp-good",

@@ -68,7 +68,9 @@ async def test_reader_panel_normalizes_strict_feedback_schema(
             "suggested_attribution_hint": "chapter_outline 缺少差异化场景目标",
         }
     ]
-    assert "不要依赖预设类型" in captured["system"]
+    # reader-panel prompt rewording (genre-neutral): "不要依赖预设类型" →
+    # "不能依赖任何预设类型 / 术语 / 本书问题清单".
+    assert "不能依赖任何预设类型" in captured["system"]
 
 
 @pytest.mark.asyncio

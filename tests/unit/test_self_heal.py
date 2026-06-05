@@ -176,6 +176,7 @@ class _FakeSession:
 
         if target is WorkflowRunModel:
             sql_text = str(stmt).lower()
+            workflow_types = self._filter_workflow_types(stmt)
             if "max(" in sql_text:
                 if "current_step" in sql_text:
                     machine_steps = {
@@ -200,7 +201,7 @@ class _FakeSession:
                 return max(matching, default=None)
 
             active = {"pending", "queued", "running"}
-            pipeline_types = {
+            pipeline_types = workflow_types or {
                 "autowrite_pipeline",
                 "generate_foundation_plan",
                 "generate_novel_plan",
@@ -402,6 +403,25 @@ class _FakeSession:
         return _walk(whereclause)
 
     @staticmethod
+    def _filter_workflow_types(stmt: Any) -> set[str]:
+        try:
+            params = stmt.compile().params
+        except Exception:  # noqa: BLE001
+            return set()
+        values: set[str] = set()
+        for key, value in params.items():
+            if not str(key).startswith("workflow_type"):
+                continue
+            if isinstance(value, str):
+                values.add(value)
+            else:
+                try:
+                    values.update(str(item) for item in value)
+                except TypeError:
+                    pass
+        return values
+
+    @staticmethod
     def _filter_updated_before(stmt: Any) -> _dt.datetime:
         def _walk(node: Any) -> Any:
             try:
@@ -501,8 +521,14 @@ class _FakeSession:
 
 
 class _FakeInProgressRedis:
-    def __init__(self, jobs: dict[str, dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        jobs: dict[str, dict[str, Any]],
+        *,
+        queue_scores: dict[str, float] | None = None,
+    ) -> None:
         self.jobs = jobs
+        self.queue_scores = queue_scores or {}
 
     async def scan_iter(self, match: str) -> Any:  # noqa: ARG002
         for job_id in self.jobs:
@@ -519,6 +545,9 @@ class _FakeInProgressRedis:
         if job is None:
             return None
         return pickle.dumps(job)
+
+    async def zscore(self, key: str, member: str) -> float | None:
+        return self.queue_scores.get(f"{key}:{member}")
 
 
 # ---------------------------------------------------------------------------
@@ -728,6 +757,50 @@ async def test_local_block_does_not_starve_continuation(
 
 
 @pytest.mark.asyncio
+async def test_active_repair_does_not_starve_local_block_continuation(
+    now: _dt.datetime,
+) -> None:
+    """An active repair workflow must not suppress safe forward writing."""
+    p = _FakeProject(id=uuid4(), slug="book-local-block-active-repair")
+    blocked = _FakeChapter(
+        id=uuid4(),
+        project_id=p.id,
+        production_state="blocked",
+        chapter_number=86,
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+        },
+    )
+    planned = _FakeChapter(
+        id=uuid4(), project_id=p.id, production_state="pending", chapter_number=87
+    )
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=blocked.id, is_current=True)]
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="project_repair",
+            status="running",
+            updated_at=now,
+        )
+    ]
+    session = _FakeSession(
+        projects=[p],
+        runs=runs,
+        chapters=[blocked, planned],
+        drafts=drafts,
+    )
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-local-block-active-repair"
+    assert stuck[0].heal_kind == "project_pipeline"
+    assert stuck[0].reason == "missing_drafts"
+
+
+@pytest.mark.asyncio
 async def test_local_block_drains_repair_once_caught_up(
     now: _dt.datetime,
 ) -> None:
@@ -804,6 +877,50 @@ async def test_local_pending_rewrite_tasks_do_not_block_continuation(
             project_id=p.id,
             status="pending",
             trigger_type="qimao_opening_gate",
+        )
+    ]
+    session = _FakeSession(
+        projects=[p],
+        runs=[],
+        chapters=chapters,
+        drafts=drafts,
+        rewrite_tasks=rewrite_tasks,
+    )
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].heal_kind == "project_pipeline"
+    assert stuck[0].reason == "missing_drafts"
+
+
+@pytest.mark.asyncio
+async def test_scene_review_pending_rewrite_task_does_not_block_continuation(
+    now: _dt.datetime,
+) -> None:
+    p = _FakeProject(id=uuid4(), slug="book-scene-review-rewrite")
+    chapters = [
+        _FakeChapter(
+            id=uuid4(),
+            project_id=p.id,
+            production_state="blocked",
+            chapter_number=87,
+            metadata_json={
+                "blocked_by_write_safety_gate": True,
+                "write_safety_block_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+            },
+        ),
+        _FakeChapter(
+            id=uuid4(), project_id=p.id, production_state="pending", chapter_number=88
+        ),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    rewrite_tasks = [
+        _FakeRewriteTask(
+            id=uuid4(),
+            project_id=p.id,
+            status="pending",
+            trigger_type="scene_review",
         )
     ]
     session = _FakeSession(
@@ -953,10 +1070,10 @@ async def test_find_stuck_projects_repairs_pending_rewrite_tasks_behind_gate(
 
 
 @pytest.mark.asyncio
-async def test_find_stuck_projects_skips_scene_machine_blocked_repair_loop(
+async def test_find_stuck_projects_retries_old_scene_machine_blocked_repair_loop(
     now: _dt.datetime,
 ) -> None:
-    """A scene machine-block is a terminal machine stop, not self-heal work."""
+    """Old scene machine-blocks are history, not permanent self-heal stops."""
     p = _FakeProject(
         id=uuid4(),
         slug="book-scene-machine-blocked",
@@ -999,7 +1116,50 @@ async def test_find_stuck_projects_skips_scene_machine_blocked_repair_loop(
 
     stuck = await find_stuck_projects(session)
 
-    assert stuck == []
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-scene-machine-blocked"
+    assert stuck[0].reason == "blocked_chapters"
+    assert stuck[0].heal_kind == "repair"
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_skips_fresh_scene_machine_blocked_repair_loop(
+    now: _dt.datetime,
+) -> None:
+    """Fresh scene machine-blocks suppress duplicate repair dispatch briefly."""
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-fresh-scene-machine-blocked",
+        status="revising",
+        target_chapters=6,
+        metadata_json={},
+    )
+    chapter = _FakeChapter(
+        id=uuid4(),
+        project_id=p.id,
+        production_state="blocked",
+        updated_at=now - _dt.timedelta(seconds=30),
+    )
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="scene_pipeline",
+            status="machine_blocked",
+            current_step="scene_rewrite_stalled_blocked",
+            updated_at=now - _dt.timedelta(seconds=20),
+        ),
+    ]
+    rewrite_tasks = [_FakeRewriteTask(id=uuid4(), project_id=p.id, status="pending")]
+    session = _FakeSession(
+        projects=[p],
+        runs=runs,
+        chapters=[chapter],
+        drafts=[_FakeDraft(id=uuid4(), chapter_id=chapter.id, is_current=True)],
+        rewrite_tasks=rewrite_tasks,
+    )
+
+    assert await find_stuck_projects(session) == []
 
 
 @pytest.mark.asyncio
@@ -1667,6 +1827,24 @@ async def test_active_arq_project_slugs_reads_retry_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_active_arq_project_slugs_ignores_stale_in_progress_owner() -> None:
+    redis = _FakeInProgressRedis(
+        {
+            "job-stale": {
+                "k": {
+                    "payload": {
+                        "project_slug": "book-stale",
+                    },
+                },
+            },
+        },
+        queue_scores={"arq:queue:job-stale": 0.0},
+    )
+
+    assert await _active_arq_project_slugs(redis) == set()
+
+
+@pytest.mark.asyncio
 async def test_stuck_project_is_frozen_dataclass() -> None:
     sp = StuckProject(
         project_id="p1",
@@ -1941,6 +2119,31 @@ async def test_requeue_project_pipeline_returns_job_id_on_success() -> None:
     assert pool.enqueued[0]["_job_id"] == "project-pipeline:heal:book-continue"
     assert pool.enqueued[0]["payload"] == {"project_slug": "book-continue"}
     assert pool.enqueued[0]["_expires"].days >= 7
+
+
+@pytest.mark.asyncio
+async def test_requeue_project_pipeline_allows_parallel_repair_owner() -> None:
+    from bestseller.worker.self_heal import _requeue_project_pipeline
+
+    pool = _FakeArqPool(
+        existing_keys={"arq:in-progress:repair:heal:book-continue"}
+    )
+    stuck = StuckProject(
+        project_id="p1",
+        slug="book-continue",
+        reason="missing_drafts",
+        stuck_at_chapter=89,
+        chapters_total=200,
+        chapters_with_draft=88,
+        heal_kind="project_pipeline",
+    )
+
+    job_id = await _requeue_project_pipeline(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id == "project-pipeline:heal:book-continue"
+    assert len(pool.enqueued) == 1
+    assert pool.enqueued[0]["function"] == "run_project_pipeline_task"
+    assert pool.enqueued[0]["_job_id"] == "project-pipeline:heal:book-continue"
 
 
 @pytest.mark.asyncio

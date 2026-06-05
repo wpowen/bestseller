@@ -50,7 +50,8 @@ help:
 	@echo "    make format         Auto-format source files (ruff format)"
 	@echo "    make format-check   Check formatting without modifying files"
 	@echo "    make type-check     Run mypy static type checker"
-	@echo "    make check          Run lint + format-check + type-check"
+	@echo "    make secrets-scan   Scan tracked/untracked files for likely secrets"
+	@echo "    make check          Run lint + format-check + type-check + secrets-scan"
 	@echo ""
 	@echo "  Testing"
 	@echo "    make test           Run all tests (unit + integration)"
@@ -105,6 +106,8 @@ dev: $(VENV_DIR)/pyvenv.cfg
 hooks:
 	@if command -v pre-commit >/dev/null 2>&1; then \
 		pre-commit install; \
+	elif command -v $(UV) >/dev/null 2>&1; then \
+		$(UV) run pre-commit install; \
 	else \
 		echo "pre-commit not found, skipping hook installation."; \
 	fi
@@ -132,8 +135,12 @@ format-check:
 type-check:
 	$(UV) run mypy src/bestseller
 
+.PHONY: secrets-scan
+secrets-scan:
+	$(PYTHON) scripts/scan_secrets.py --all-files
+
 .PHONY: check
-check: lint format-check type-check
+check: lint format-check type-check secrets-scan
 	@echo "All checks passed."
 
 # ---------------------------------------------------------------------------

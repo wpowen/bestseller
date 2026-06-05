@@ -3415,9 +3415,14 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     # action-progression
     "仙": "action-progression",
     "修仙": "action-progression",
+    "修真": "action-progression",
+    "修炼": "action-progression",
+    "武道": "action-progression",
     "末日": "action-progression",
     "异能": "action-progression",
+    "超能": "action-progression",
     "升级": "action-progression",
+    "高武": "action-progression",
     "litrpg": "action-progression",
     "progression": "action-progression",
     "xianxia": "action-progression",
@@ -3559,14 +3564,33 @@ _PRIORITY_KEYWORD_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+# Setting-only priority categories: 都市/职场/娱乐圈 describe a BACKDROP, not a genre
+# driver. 都市异能 / 都市修真 / 都市种田 are driven by the OTHER marker, so a bare setting
+# word must NOT short-circuit to urban-contemporary when a stronger driver is present
+# (this misrouted 都市异能 → 都市职业现实 and homogenised every urban book toward realism).
+_SETTING_ONLY_PRIORITY_CATEGORIES: frozenset[str] = frozenset({"urban-contemporary"})
+
+
 def _resolve_priority_keyword_category(
     genre: str,
     sub_genre: str | None,
 ) -> str | None:
     haystack = " ".join(part for part in [genre, sub_genre] if part).lower()
+    setting_fallback: str | None = None
     for category_key, keywords in _PRIORITY_KEYWORD_MAP:
         if any(keyword in haystack for keyword in keywords):
+            if category_key in _SETTING_ONLY_PRIORITY_CATEGORIES:
+                # Remember it, but keep scanning — a real genre driver wins.
+                if setting_fallback is None:
+                    setting_fallback = category_key
+                continue
             return category_key
+    if setting_fallback is not None:
+        # A strong genre driver anywhere in the name map beats the bare setting word.
+        for keyword, category in _GENRE_NAME_KEYWORD_MAP.items():
+            if keyword in haystack and category not in _SETTING_ONLY_PRIORITY_CATEGORIES:
+                return category
+        return setting_fallback
     return None
 
 

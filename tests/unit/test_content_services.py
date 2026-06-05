@@ -578,7 +578,9 @@ def test_scene_draft_prompts_switch_to_english_for_english_project() -> None:
 
     assert "English-language commercial fantasy serial" in combined
     assert "Write the scene in English only" in combined
-    assert "You are an expert fiction writer" in system_prompt
+    # 7-段 system prompt rewording: "You are an expert fiction writer" →
+    # "You are a senior commercial fiction writer …" (still an English ROLE block).
+    assert "You are a senior commercial fiction writer" in system_prompt
     assert "Project: Storm Ledger" in user_prompt
     assert "Chapter 1: Storm Wake" in user_prompt
     assert "Scene 1: The Order Arrives" in user_prompt
@@ -1492,5 +1494,6 @@ def test_scene_draft_system_prompt_contains_writing_profile() -> None:
     assert "番茄小说" in system_prompt or "番茄小说" in user_prompt
     # Prohibition rules in system_prompt
     assert "严禁出现以下内容" in system_prompt
-    # Opening diversity requirement in system_prompt
-    assert "开场必须" in system_prompt
+    # Opening diversity requirement in system_prompt (7-段 system prompt rewording:
+    # "开场必须…" → "开场：禁止与前 3 章重复同一开场模式…").
+    assert "开场：禁止与前 3 章重复" in system_prompt

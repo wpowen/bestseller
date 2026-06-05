@@ -108,6 +108,7 @@ def compact_user_prompt(
     compacted = _dedupe_chapter_contract_digest_blocks(compacted)
     compacted = _slice_forbidden_terms(compacted, chapter_no, forbidden_terms_full)
     compacted = _wrap_retention_findings(compacted)
+    compacted = _prune_placeholder_lines(compacted)
     compacted = _collapse_blank_lines(compacted)
     report = CompactionReport(
         original_chars=len(original),
@@ -170,24 +171,16 @@ def _slice_forbidden_terms(text: str, chapter_no: int, forbidden_terms_full: lis
 
 
 def _terms_for_chapter(chapter_no: int, terms: list[str]) -> list[str]:
-    if chapter_no <= 10:
-        keep = {
-            "玩家",
-            "副本",
-            "通关",
-            "系统",
-            "困魂镜",
-            "母镜",
-            "源门",
-            "扣账人",
-            "林正淳",
-            "林家辉",
-            "林远山",
-            "三代以内",
-            "血债血偿",
-        }
-        return [term for term in terms if term in keep]
-    return [term for term in terms if term in {"玩家", "副本", "通关", "系统"}]
+    """Which forbidden-leak terms stay active for this chapter.
+
+    ``terms`` is already the project-derived front-10 forbidden-signal list, so it is
+    book-specific by construction. We MUST NOT intersect it with hardcoded proper nouns
+    from any one book (that emptied the list for every other book and leaked the 青囊
+    cast into all projects). Keeping the full list for early chapters is the safe,
+    genre-neutral behaviour: no late-reveal term leaks early.
+    """
+
+    return list(terms)
 
 
 def _wrap_retention_findings(text: str) -> str:
@@ -204,6 +197,55 @@ def _wrap_retention_findings(text: str) -> str:
         return f"\n<REPAIR_HINT>\n{block}\n</REPAIR_HINT>\n"
 
     return pattern.sub(replace, text, count=1)
+
+
+# Placeholder values various render_* producers emit when a field is unset. These
+# lines carry zero signal and dilute the writer's instructions, so they are pruned
+# from every scene-writer prompt.
+_PLACEHOLDER_VALUES: frozenset[str] = frozenset(
+    {
+        "暂无",
+        "未指定",
+        "自动/未指定",
+        "暂无明确卖点",
+        "暂无明确开篇合同",
+        "待定",
+        "未设置",
+        "无",
+        "none",
+        "unspecified",
+        "auto/unspecified",
+        "none specified",
+        "n/a",
+        "tbd",
+    }
+)
+
+# A human-readable "label: value" line: optional bullet, a short label (no quotes /
+# braces so JSON object lines are never matched), a colon, then the value.
+_LABEL_VALUE_LINE = re.compile(
+    r"^[\s\-*•]*(?:\*\*|【)?[^:：{}\"\n]{1,40}(?:\*\*|】)?\s*[:：]\s*(?P<value>.+?)\s*$"
+)
+
+
+def _prune_placeholder_lines(text: str) -> str:
+    """Drop ``label: <placeholder>`` lines (暂无 / 未指定 / none …). Conservative:
+    only single-line ``label: value`` bullets are considered, and any line carrying
+    a quote or brace is skipped so JSON payloads are never corrupted."""
+
+    kept: list[str] = []
+    for line in text.split("\n"):
+        if '"' in line or "{" in line or "}" in line:
+            kept.append(line)
+            continue
+        match = _LABEL_VALUE_LINE.match(line)
+        if match:
+            value = match.group("value").strip().strip("。.！!；;，,、 ")
+            value = value.strip("【】[]()（）").strip().lower()
+            if value in _PLACEHOLDER_VALUES:
+                continue
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def _collapse_blank_lines(text: str) -> str:

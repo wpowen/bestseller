@@ -4298,7 +4298,9 @@
     html += `</select>`;
     return html;
   }
-  async function changeTaskModel(slug, modelId, el) {
+  // Exposed on window: inline onchange handlers run in global scope, but this
+  // file's script is an IIFE — a plain function would be unreachable.
+  window.changeTaskModel = async function(slug, modelId, el) {
     if (!slug) return;
     el.disabled = true;
     try {
@@ -6627,6 +6629,7 @@
      ═══════════════════════════════════════ */
   function startProgressPoll(taskId) {
     stopProgressPoll();
+    window.__activePreviewTaskId = taskId;  // 防异步竞态串台:记录当前聚焦任务
     updateProgressView(taskId);
     pollTimer = setInterval(() => updateProgressView(taskId), 3000);
     elapsedTimer = setInterval(updateElapsed, 1000);
@@ -6650,6 +6653,9 @@
       if (!res.ok) return;
       data = await res.json();
     } catch { return; }
+
+    // 若 fetch 期间用户已切换聚焦任务,丢弃这次旧任务的渲染(防串台)。
+    if (window.__activePreviewTaskId && window.__activePreviewTaskId !== taskId) return;
 
     const events = data.progress_events || [];
     const status = data.status;
@@ -6928,6 +6934,9 @@
     }).join('');
 
     // Chapters / single-piece reader entry.
+    // 先重置章节区,避免切换书时残留上一本的章节(陈旧 DOM 串台)。
+    $('#pvChSec').style.display = 'none';
+    $('#pvChGrid').innerHTML = '';
     if (isFanqieShort && slug) {
       $('#pvChSec').style.display = '';
       const chHeader = $('#pvChSec h4 span');
@@ -6951,8 +6960,11 @@
       $('#pvReadAll').href = `/read/${encodeURIComponent(slug)}`;
       try {
         const tocRes = await fetch(`/api/reader/${encodeURIComponent(slug)}/toc`);
+        // 异步返回后,若用户已切到别的任务/书,丢弃本次结果,杜绝串台。
+        if (window.__activePreviewTaskId !== taskId) return;
         if (tocRes.ok) {
           const tocData = await tocRes.json();
+          if (window.__activePreviewTaskId !== taskId) return;
           const chs = tocData.chapters || [];
           $('#pvChGrid').innerHTML = chs.map(ch =>
             `<a class="pv-ch-link" href="/read/${esc(slug)}#${ch.number}" target="_blank"><span class="n">第${ch.number}章</span><span class="t">${esc(ch.title || '')}</span><span class="m">${esc(Number(ch.word_count || 0) > 0 ? `${fmtWords(ch.word_count)} · 约 ${Number(ch.estimated_read_minutes || 0)} 分钟` : '文件生成中')}</span></a>`

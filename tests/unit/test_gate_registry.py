@@ -7,6 +7,7 @@ from bestseller.services.gate_registry import (
     advanced_block_metadata_keys,
     advanced_gate_names,
     chapter_block_is_structural,
+    chapter_outline_readiness_block_is_structural,
     core_block_metadata_keys,
     core_gate_names,
     gate_continuation_impact,
@@ -187,6 +188,10 @@ def test_write_safety_block_code_classification() -> None:
     # Prose-surface findings are local.
     assert not write_safety_block_is_structural("block_low")
     assert not write_safety_block_is_structural(["block_high", "dialog_unpaired"])
+    assert not write_safety_block_is_structural("CHAPTER_LENGTH_BLOCK_HIGH")
+    assert not write_safety_block_is_structural(
+        ["CHAPTER_LENGTH_BLOCK_LOW", "CHAPTER_TOO_SHORT", "LENGTH_OVER"]
+    )
     # Canon / continuity findings are structural.
     assert write_safety_block_is_structural("canon_state_regression")
     assert write_safety_block_is_structural(["block_low", "character_resurrection"])
@@ -195,12 +200,49 @@ def test_write_safety_block_code_classification() -> None:
     assert write_safety_block_is_structural("some_future_code")
 
 
+def test_chapter_outline_readiness_block_code_classification() -> None:
+    assert not chapter_outline_readiness_block_is_structural(
+        "OUTLINE_STALE_AUTO_REPAIR_RESIDUE"
+    )
+    assert not chapter_outline_readiness_block_is_structural(
+        ["OUTLINE_STALE_AUTO_REPAIR_RESIDUE", "OUTLINE_PENDING_REWRITE_TASK"]
+    )
+    assert chapter_outline_readiness_block_is_structural("OUTLINE_NO_SCENES")
+    assert chapter_outline_readiness_block_is_structural(
+        ["OUTLINE_PENDING_REWRITE_TASK", "OUTLINE_NO_SCENES"]
+    )
+    assert chapter_outline_readiness_block_is_structural(None)
+
+
 def test_chapter_block_is_structural_for_local_opening_gate() -> None:
     # A chapter blocked only by the opening gate must NOT block continuation.
     assert not chapter_block_is_structural({"qimao_opening_gate_blocked": True})
     assert not chapter_block_is_structural({"opening_quality_gate_blocked": True})
     assert not chapter_block_is_structural(
         {"blocked_by_fanqie_long_ranking_gate": True}
+    )
+
+
+def test_chapter_block_is_local_for_outline_process_locks() -> None:
+    assert not chapter_block_is_structural(
+        {
+            "blocked_by_chapter_outline_readiness_gate": True,
+            "chapter_outline_readiness_block_codes": [
+                "OUTLINE_STALE_AUTO_REPAIR_RESIDUE"
+            ],
+        }
+    )
+    assert not chapter_block_is_structural(
+        {
+            "blocked_by_chapter_outline_readiness_gate": True,
+            "chapter_outline_readiness_block_codes": ["OUTLINE_PENDING_REWRITE_TASK"],
+        }
+    )
+    assert chapter_block_is_structural(
+        {
+            "blocked_by_chapter_outline_readiness_gate": True,
+            "chapter_outline_readiness_block_codes": ["OUTLINE_NO_SCENES"],
+        }
     )
 
 

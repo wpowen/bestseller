@@ -188,3 +188,59 @@ class TestRenderLibrarySoftReferenceBlock:
 
     def test_truncate_empty_returns_empty(self) -> None:
         assert mlr._truncate("") == ""
+
+
+class TestSelectSoftReferenceDims:
+    """Phase-aware dimension/top_k gate for scene-bank surfacing."""
+
+    def test_setpiece_climax_leads_with_scene_bank_and_widens_topk(self) -> None:
+        dims, top_k = mlr.select_soft_reference_dims(
+            pacing_mode="climax", is_climax=True, base_top_k=4
+        )
+        assert dims is not None
+        assert dims[0] == "scene_templates"
+        assert "scene_templates" in dims
+        assert top_k == 5  # widened by one for the big beat
+
+    def test_accelerate_is_setpiece(self) -> None:
+        dims, top_k = mlr.select_soft_reference_dims(
+            pacing_mode="accelerate", is_climax=False, base_top_k=4
+        )
+        assert dims == mlr._SETPIECE_DIMS
+        assert top_k == 5
+
+    def test_is_climax_flag_alone_triggers_setpiece(self) -> None:
+        dims, _ = mlr.select_soft_reference_dims(
+            pacing_mode=None, is_climax=True, base_top_k=3
+        )
+        assert dims == mlr._SETPIECE_DIMS
+
+    def test_release_emotion_triggers_setpiece_when_pacing_absent(self) -> None:
+        dims, _ = mlr.select_soft_reference_dims(
+            pacing_mode=None, is_climax=False, emotion_phase="release", base_top_k=4
+        )
+        assert dims == mlr._SETPIECE_DIMS
+
+    def test_breather_drops_scene_bank_and_narrows_topk(self) -> None:
+        dims, top_k = mlr.select_soft_reference_dims(
+            pacing_mode="breathe", is_climax=False, base_top_k=4
+        )
+        assert dims == mlr._QUIET_DIMS
+        assert "scene_templates" not in dims
+        assert top_k == 3  # narrowed by one
+
+    def test_breather_topk_floor_is_two(self) -> None:
+        _, top_k = mlr.select_soft_reference_dims(
+            pacing_mode="breathe", is_climax=False, base_top_k=1
+        )
+        assert top_k == 2
+
+    def test_build_or_unknown_falls_back_to_default_dims(self) -> None:
+        # build / setup / unknown → dims=None means "use renderer default",
+        # i.e. no behaviour change vs. the legacy path.
+        for pacing in ("build", "", None, "setup", "随便"):
+            dims, top_k = mlr.select_soft_reference_dims(
+                pacing_mode=pacing, is_climax=False, base_top_k=4
+            )
+            assert dims is None
+            assert top_k == 4

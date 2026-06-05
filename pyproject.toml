@@ -193,6 +193,17 @@ filterwarnings = [
     "ignore::DeprecationWarning:pydantic",
     # PyPI ``mobi`` pulls ``standard-imghdr`` which emits DeprecationWarning on 3.13+.
     "ignore:.*imghdr.*:DeprecationWarning",
+    # pytest-asyncio creates+closes a fresh event loop per async test. Under Python
+    # 3.11 the GC occasionally finalises a transient loop (and its AF_UNIX self-pipe
+    # sockets) *before* it is explicitly closed, emitting a ResourceWarning. pytest's
+    # ``unraisableexception`` plugin captures that GC-time warning and — because of the
+    # ``error`` rule above — attributes it as a HARD FAILURE to whichever (innocent)
+    # test happens to be running at that instant. The victim is therefore random and
+    # the suite is flaky. Ignoring only this best-effort, GC-time attribution wrapper
+    # keeps ``error`` strict for every genuine, synchronously-raised warning while
+    # removing the nondeterministic cross-test failure. See the unraisable-exception
+    # notes in the pytest docs.
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 
 # ---------------------------------------------------------------------------

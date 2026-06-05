@@ -62,4 +62,7 @@ def test_chapter_rewrite_prompt_injects_p1_retention_blocks() -> None:
         "铺垫节制",
     ):
         assert marker in user_prompt
-    assert user_prompt.index("【正典守护】") < user_prompt.index("当前草稿")
+    # P1 retention blocks (incl. canon guard) must precede the DRAFT SECTION. Anchor on
+    # the section header "当前草稿：" (full-width colon) — instruction blocks now also
+    # mention "当前草稿中…" earlier, which is not the draft body.
+    assert user_prompt.index("【正典守护】") < user_prompt.index("当前草稿：")

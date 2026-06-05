@@ -2312,6 +2312,8 @@ def commercial_gate_planning(
                     "commercial_planning_min_target_chapters",
                     50,
                 ),
+                genre=getattr(project, "genre", None),
+                sub_genre=getattr(project, "sub_genre", None),
             )
 
     report = asyncio.run(_run())
@@ -2442,6 +2444,8 @@ def commercial_gate_project(
                     "commercial_planning_min_target_chapters",
                     50,
                 ),
+                genre=getattr(project, "genre", None),
+                sub_genre=getattr(project, "sub_genre", None),
             )
             gate_findings.extend(
                 commercial_planning_readiness_report_to_dict(planning_report)["findings"]

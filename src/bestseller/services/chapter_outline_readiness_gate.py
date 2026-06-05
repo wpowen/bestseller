@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
+from bestseller.services.genre_neutral_signals import object_sensory_shortcut_hits
 from bestseller.services.methodology_application_gate import evaluate_methodology_application
 
 _AUTO_REPAIR_RESIDUE_KEYS = frozenset(
@@ -38,17 +39,11 @@ _METHODOLOGY_CONTRACT_KEYS = frozenset(
 _DIRECT_KINSHIP_PATTERN = r"(父亲|母亲|爷爷|奶奶|祖父|祖母|外公|外婆)"
 _PHONE_OPENING_PATTERN = re.compile(r"(电话|手机|微信|短信|语音|来电)")
 _IN_PERSON_OPENING_PATTERN = re.compile(r"(楼下|门口|电梯|走廊|屋里|现场|房间|巷口|楼道|进门|推门)")
-_OBJECT_HEAT_PATTERN = re.compile(r"(铜钱|青囊|罗盘|镜片|账页)[^。！？\n]{0,16}(烫|发烫|烫得|炭火)")
 _LATE_NIGHT_DELIVERY_PATTERN = re.compile(
     r"(快递|配送单|寄件单|运单|揽收|派送)[^。！？\n]{0,40}(23[:：]\d{2}|凌晨|深夜|半夜|子时)"
     r"|(?:23[:：]\d{2}|凌晨|深夜|半夜|子时)[^。！？\n]{0,40}(快递|配送单|寄件单|运单|揽收|派送)"
 )
 _IMPOSSIBLE_DELIVERY_MARKER = re.compile(r"(不可能|异常|伪造|自助柜|系统延迟|补录|死后|被改过|不是活人)")
-_SPECIALIST_RULE_TERMS = ("认账", "入账", "替认", "代认", "镜债", "账线", "下一笔", "该轮到我")
-_NON_EXPERT_RULE_LEAK_PATTERN = re.compile(
-    r"(王建业|张建军|小雨|陈默|周雪)[^。！？\n]{0,36}"
-    r"(认账|入账|替认|代认|镜债|账线|下一笔|该轮到我)"
-)
 _STORY_GUARDRAIL_KEYS = frozenset(
     {
         "alternatives_rejected",
@@ -420,9 +415,9 @@ def evaluate_chapter_outline_readiness(
                     ),
                 )
             )
-    heat_hits = _OBJECT_HEAT_PATTERN.findall(timeline_text)
+    heat_hits = object_sensory_shortcut_hits(timeline_text)
     object_signal_contract = _mapping_or_empty(_mapping_or_empty(chapter_metadata).get("object_signal_contract"))
-    if chapter_number <= 10 and len(heat_hits) >= 3 and not object_signal_contract:
+    if chapter_number <= 10 and heat_hits >= 3 and not object_signal_contract:
         issues.append(
             ChapterOutlineReadinessIssue(
                 code="OUTLINE_OBJECT_SIGNAL_UNBOUNDED",
@@ -461,22 +456,12 @@ def evaluate_chapter_outline_readiness(
                 _textify(methodology.get("breakpoint") or methodology.get("cut_point")),
             ]
         )
-        if chapter_number <= 3 and _NON_EXPERT_RULE_LEAK_PATTERN.search(hookish_text):
-            issues.append(
-                ChapterOutlineReadinessIssue(
-                    code="OUTLINE_KNOWLEDGE_BOUNDARY_LEAK",
-                    severity="critical",
-                    message=(
-                        f"Scene {index} lets a non-expert character speak as if they "
-                        "understand specialist debt rules."
-                    ),
-                    path=f"scene_cards[{index - 1}].hook_requirement",
-                    repair_hint=(
-                        "非专业角色只能说症状、恐惧和目击事实；认账/入账/替认/账线等规则"
-                        "只能由林渊等专业角色判断，或明确写成附身/复述。"
-                    ),
-                )
-            )
+        # Knowledge-boundary leaks are book-specific (they depend on the cast's
+        # ordinary characters and the book's own specialist glossary) and are now
+        # enforced genre-neutrally by the outline_commercial_judge "认知边界"
+        # constraint. The deterministic check here hardcoded one detective book's
+        # cast (王建业/小雨/…) + jargon (认账/镜债/…), leaking it into every project,
+        # so it was removed.
 
     methodology_application_report = evaluate_methodology_application(
         chapter_number=chapter_number,
@@ -634,28 +619,38 @@ def _scene_forbidden_action_surface_terms(scene: Mapping[str, Any] | Any) -> lis
     return list(dict.fromkeys(term for term in terms if term))
 
 
+_CONTACT_VERBS: tuple[str, ...] = (
+    "按", "贴", "压", "放", "搁", "扣", "摁", "塞", "缠", "绑",
+    "挂", "顶", "抵", "蒙", "盖", "捂", "划", "点", "碰", "触",
+)
+_CONTACT_VERB_CLASS = "[" + "".join(_CONTACT_VERBS) + "]"
+
+
 def _surface_terms_from_forbidden_action(action: str) -> list[str]:
+    # Genre-neutral: derive surface variants from the action text itself via verb-swap
+    # generation + the generic token / 不得-clause extraction below. (Previously this
+    # hardcoded one detective book's forbidden actions — 湿纸条/铜钱 + 小雨手腕 — which
+    # were dead weight for every other book and a cross-book leak.)
     terms: list[str] = []
-    if "湿纸条" in action and "小雨手腕" in action:
-        terms.extend(
-            [
-                "湿纸条按在小雨手腕",
-                "湿纸条贴在小雨手腕",
-                "湿纸条贴到小雨手腕",
-                "湿纸条贴住小雨手腕",
-                "湿纸条压在小雨手腕",
-                "压在小雨手腕影子",
-                "小雨手腕影子",
-            ]
-        )
-    if "铜钱" in action and "小雨手腕" in action:
-        terms.extend(
-            [
-                "铜钱按到小雨手腕",
-                "铜钱按在小雨手腕",
-                "铜钱贴在小雨手腕",
-            ]
-        )
+    # Verb-swap variants: an OBJECT placed-on a TARGET via a contact verb is the same
+    # forbidden action regardless of which contact verb the prose chooses, so emit the
+    # object × {contact verbs} × {在/到/""} × target cross-product for re-use detection.
+    head = re.split(r"[；;。\n]", action.strip(), maxsplit=1)[0]
+    head = re.sub(r"^(不得|禁止|不能|不要|严禁)\s*", "", head)
+    head = re.sub(r"^把\s*", "", head).rstrip("，,。 ")
+    obj_match = re.match(rf"([一-鿿]{{2,4}}?){_CONTACT_VERB_CLASS}", head)
+    target_match = re.search(
+        rf"{_CONTACT_VERB_CLASS}(?:在|到|住)?([一-鿿]{{2,5}}?)(?:影子|身上|上|里|中)?$",
+        head,
+    )
+    if obj_match and target_match:
+        obj = obj_match.group(1)
+        target = target_match.group(1)
+        if obj and target and obj != target:
+            for verb in _CONTACT_VERBS:
+                terms.append(f"{obj}{verb}{target}")
+                terms.append(f"{obj}{verb}在{target}")
+                terms.append(f"{obj}{verb}到{target}")
     if any(token in action for token in ("离场", "下楼", "坐电梯", "回店")):
         terms.extend(["离场", "下楼", "坐电梯", "回店"])
     if any(token in action for token in ("门吞", "拖进门", "合拢")):

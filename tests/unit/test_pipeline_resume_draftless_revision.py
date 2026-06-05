@@ -61,6 +61,7 @@ class _FakeChapter:
     chapter_number: int
     status: str
     production_state: str = "ok"
+    metadata_json: dict[str, Any] = field(default_factory=dict)
     id: UUID = field(default_factory=uuid4)
 
 
@@ -172,11 +173,7 @@ async def test_revision_always_pending_when_accept_on_stall_disabled() -> None:
     )
 
     assert [ch.chapter_number for ch in pending] == [1]
-    # accept_on_stall=False → no drafted-id lookup → every REVISION is
-    # flagged as draftless here (the caller uses the list only for
-    # logging so this is fine; the important invariant is that they
-    # stayed in `pending`).
-    assert draftless == [1]
+    assert draftless == []
 
 
 @pytest.mark.asyncio
@@ -216,6 +213,58 @@ async def test_non_ok_production_state_forces_complete_chapter_to_rerun() -> Non
     )
 
     assert [ch.chapter_number for ch in pending] == [1]
+    assert draftless == []
+
+
+@pytest.mark.asyncio
+async def test_local_blocked_chapter_with_draft_skips_for_forward_resume() -> None:
+    """Local repair can run in parallel; resume should continue after it."""
+    chapters = [
+        _FakeChapter(
+            chapter_number=86,
+            status=ChapterStatus.REVISION.value,
+            production_state="blocked",
+            metadata_json={
+                "blocked_by_write_safety_gate": True,
+                "write_safety_block_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+            },
+        ),
+        _FakeChapter(chapter_number=89, status=ChapterStatus.PLANNED.value),
+    ]
+    session = _FakeSession(drafted_chapter_ids={chapters[0].id})
+
+    pending, draftless = await _select_pending_chapters_for_resume(
+        session,  # type: ignore[arg-type]
+        chapters,  # type: ignore[arg-type]
+        resume_enabled=True,
+        accept_on_stall=True,
+    )
+
+    assert [ch.chapter_number for ch in pending] == [89]
+    assert draftless == []
+
+
+@pytest.mark.asyncio
+async def test_structural_blocked_chapter_with_draft_stays_pending() -> None:
+    chapters = [
+        _FakeChapter(
+            chapter_number=86,
+            status=ChapterStatus.REVISION.value,
+            production_state="blocked",
+            metadata_json={"blocked_by_material_referential_integrity_gate": True},
+        ),
+        _FakeChapter(chapter_number=89, status=ChapterStatus.PLANNED.value),
+    ]
+    session = _FakeSession(drafted_chapter_ids={chapters[0].id})
+
+    pending, draftless = await _select_pending_chapters_for_resume(
+        session,  # type: ignore[arg-type]
+        chapters,  # type: ignore[arg-type]
+        resume_enabled=True,
+        accept_on_stall=True,
+    )
+
+    assert [ch.chapter_number for ch in pending] == [86, 89]
     assert draftless == []
 
 

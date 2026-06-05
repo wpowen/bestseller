@@ -221,7 +221,8 @@ def test_evaluate_word_count_framework_uses_generation_budget() -> None:
     result = evaluate_word_count(text, platform="framework")
 
     assert result.min_chars == 1800
-    assert result.max_chars == 3000
+    # framework word-count band ceiling is 3500 (matches the zh 1800-3500 publish band)
+    assert result.max_chars == 3500
     assert result.passed is True
 
 

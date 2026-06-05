@@ -1692,6 +1692,8 @@ class WebTaskManager:
                         )
                     changed = True
                 self._tasks[task.task_id] = task
+            if self._dedupe_loaded_active_tasks():
+                changed = True
             # Persist the recovered state so the file on disk matches memory.
             # Without this, a crash before the next _save_to_disk would leave
             # orphaned "running" entries that never get cleaned up.
@@ -1699,6 +1701,50 @@ class WebTaskManager:
                 self._save_to_disk()
         except (OSError, json.JSONDecodeError, KeyError):
             pass  # corrupt file — start fresh
+
+    def _dedupe_loaded_active_tasks(self) -> bool:
+        """Collapse duplicate recovered active cards for the same book.
+
+        Disk persistence can contain several pre-crash cards for one slug. All
+        would be normalized to ``queued`` on boot and compete for the same
+        concurrency slots, producing a fake backlog. Keep the newest active
+        card per task type + slug and drop the older zombies.
+        """
+        latest_by_owner: dict[tuple[str, str], WebTaskState] = {}
+        duplicate_ids: set[str] = set()
+
+        def rank(task: WebTaskState) -> tuple[float, str]:
+            updated = _timestamp_seconds(task.updated_at)
+            created = _timestamp_seconds(task.created_at)
+            return (updated if updated is not None else created or 0.0, task.task_id)
+
+        for task in self._tasks.values():
+            if task.status not in _ACTIVE_TASK_STATUSES or not task.project_slug:
+                continue
+            key = (task.task_type, task.project_slug)
+            incumbent = latest_by_owner.get(key)
+            if incumbent is None:
+                latest_by_owner[key] = task
+                continue
+            if rank(task) >= rank(incumbent):
+                duplicate_ids.add(incumbent.task_id)
+                latest_by_owner[key] = task
+            else:
+                duplicate_ids.add(task.task_id)
+
+        if not duplicate_ids:
+            return False
+        for task_id in duplicate_ids:
+            self._tasks.pop(task_id, None)
+        pending: list[str] = []
+        seen: set[str] = set()
+        for task_id in self._pending_auto_resume_ids:
+            if task_id in duplicate_ids or task_id in seen or task_id not in self._tasks:
+                continue
+            pending.append(task_id)
+            seen.add(task_id)
+        self._pending_auto_resume_ids = pending
+        return True
 
     def _save_to_disk(self) -> None:
         """Persist current task states to a JSON file.  Caller must hold *_lock*."""
@@ -5040,6 +5086,10 @@ def _build_db_repair_task_summary(
         status = "running"
         stage = latest_stage
         error = None
+    elif latest_status == "failed" and phase == "planning_gate":
+        status = "queued"
+        stage = "planning_gate_auto_retry_pending"
+        error = None
     elif latest_status == "failed":
         status = "failed"
         stage = latest_stage
@@ -5057,9 +5107,9 @@ def _build_db_repair_task_summary(
         stage = "legacy_quality_closure_repair_pending"
         error = None
     elif failed > 0:
-        status = "failed"
-        stage = "legacy_quality_closure_repair_failed"
-        error = f"{failed} autonomous repair task(s) failed"
+        status = "incomplete"
+        stage = "legacy_quality_closure_repair_retry_pending"
+        error = None
     else:
         status = "incomplete"
         stage = f"legacy_quality_closure_{phase or 'repair'}"
@@ -6153,6 +6203,229 @@ async def _load_workflow_payload(
     async with session_scope(settings) as session:
         overview = await build_project_workflow_overview(session, project_slug)
     return overview.model_dump(mode="json")
+
+
+# 执行进度面板:把"规划→写作"全过程拍平成人类可读的阶段/产物/实时步骤,消除黑盒。
+_EXECUTION_PHASES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("premise", "立意 · Premise", ("premise",)),
+    ("book_spec", "作品契约 · BookSpec", ("book_spec",)),
+    ("world_spec", "世界观 · WorldSpec", ("world_spec",)),
+    ("cast_spec", "角色阵容 · CastSpec", ("cast_spec",)),
+    ("story_design_kernel", "故事内核 + AI 推演", ("story_design_kernel",)),
+    ("volume_plan", "卷规划 · VolumePlan", ("volume_plan",)),
+    ("outline", "章节细纲 · Outline", ("volume_chapter_outline", "chapter_outline_batch")),
+    ("materialize", "章节物化 · Materialize", ()),
+    ("writing", "正文写作 · Writing", ()),
+    ("export", "导出 · Export", ("promotional_brief", "export_artifact")),
+)
+
+_ARTIFACT_LABELS: dict[str, str] = {
+    "premise": "立意",
+    "book_spec": "作品契约",
+    "world_spec": "世界观",
+    "cast_spec": "角色阵容",
+    "story_design_kernel": "故事内核",
+    "emotion_driven_kernel": "情绪内核",
+    "entry_system_kernel": "开篇系统",
+    "public_emotion_kernel": "大众情绪内核",
+    "compliance_boundary_kernel": "合规边界",
+    "volume_plan": "卷规划",
+    "volume_chapter_outline": "分卷细纲",
+    "chapter_outline_batch": "章节大纲批次",
+    "plan_validation": "规划校验",
+    "prewrite_readiness": "开写就绪检查",
+    "promotional_brief": "营销文案",
+    "volume_world_disclosure": "世界揭示节奏",
+}
+
+
+async def _load_execution_progress_payload(
+    settings: AppSettings,
+    project_slug: str,
+) -> dict[str, object]:
+    """聚合一本书的执行进度:阶段状态 + 已产出规划 + 当前活动 + 实时步骤流 + 章节进度。"""
+
+    from sqlalchemy import func, select
+
+    from bestseller.infra.db.models import (
+        ChapterModel,
+        PlanningArtifactVersionModel,
+        ProjectModel,
+    )
+
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' was not found.")
+        overview = (await build_project_workflow_overview(session, project_slug)).model_dump(
+            mode="json"
+        )
+
+        # 最新版本的各类规划产物
+        rows = list(
+            await session.execute(
+                select(
+                    PlanningArtifactVersionModel.artifact_type,
+                    PlanningArtifactVersionModel.version_no,
+                    PlanningArtifactVersionModel.content,
+                )
+                .where(PlanningArtifactVersionModel.project_id == project.id)
+                .order_by(
+                    PlanningArtifactVersionModel.artifact_type.asc(),
+                    PlanningArtifactVersionModel.version_no.desc(),
+                )
+            )
+        )
+        latest_by_type: dict[str, tuple[int, dict]] = {}
+        count_by_type: dict[str, int] = {}
+        for atype, vno, content in rows:
+            count_by_type[atype] = count_by_type.get(atype, 0) + 1
+            if atype not in latest_by_type:
+                latest_by_type[atype] = (vno, content if isinstance(content, dict) else {})
+
+        chapters_total = int(
+            await session.scalar(
+                select(func.count(ChapterModel.id)).where(ChapterModel.project_id == project.id)
+            )
+            or 0
+        )
+        chapters_written = int(
+            await session.scalar(
+                select(func.count(ChapterModel.id)).where(
+                    ChapterModel.project_id == project.id,
+                    ChapterModel.current_word_count > 0,
+                )
+            )
+            or 0
+        )
+        target_chapters = int(getattr(project, "target_chapters", 0) or 0)
+
+    # ---- 阶段状态 ----
+    runs = overview.get("runs", [])
+    latest_run = runs[0] if runs else None
+    active = bool(latest_run and latest_run.get("status") == "running")
+    failed_run = bool(latest_run and latest_run.get("status") == "failed")
+
+    phases: list[dict[str, object]] = []
+    current_marked = False
+    for key, label, atypes in _EXECUTION_PHASES:
+        if key == "materialize":
+            done = chapters_total > 0
+        elif key == "writing":
+            done = chapters_written > 0 and chapters_written >= target_chapters > 0
+        else:
+            done = any(t in count_by_type for t in atypes)
+        detail = ""
+        if key == "story_design_kernel" and "story_design_kernel" in latest_by_type:
+            content = latest_by_type["story_design_kernel"][1]
+            meta = content.get("oracle_meta") if isinstance(content, dict) else None
+            beats = len(content.get("beat_schedule") or []) if isinstance(content, dict) else 0
+            plots = len(content.get("plot_tree") or []) if isinstance(content, dict) else 0
+            if isinstance(meta, dict):
+                src = meta.get("source", "?")
+                detail = f"AI推演({src}):{beats} beat / {plots} 线"
+                if meta.get("needs_enrichment"):
+                    detail += "(草稿待升级)"
+            else:
+                detail = f"{beats} beat / {plots} 线"
+        if key == "writing":
+            detail = f"已写 {chapters_written}/{target_chapters or '—'} 章"
+        elif key == "materialize" and chapters_total:
+            detail = f"已建 {chapters_total} 章"
+
+        status = "done" if done else "pending"
+        if not done and not current_marked:
+            if failed_run:
+                status = "failed"
+            elif active:
+                status = "running"
+            current_marked = True
+        phases.append({"key": key, "label": label, "status": status, "detail": detail})
+
+    # ---- 已产出规划产物清单 ----
+    artifacts = [
+        {
+            "type": atype,
+            "label": _ARTIFACT_LABELS.get(atype, atype),
+            "count": count_by_type[atype],
+            "version": latest_by_type[atype][0],
+        }
+        for atype in sorted(count_by_type)
+    ]
+
+    # ---- 最近步骤流水(跨所有 run,按时间倒序)----
+    all_steps: list[dict[str, object]] = []
+    for run in runs:
+        for step in run.get("steps", []):
+            all_steps.append(
+                {
+                    "name": step.get("step_name"),
+                    "status": step.get("status"),
+                    "created_at": step.get("created_at"),
+                    "run_type": run.get("workflow_type"),
+                    "error": step.get("error_message"),
+                }
+            )
+    all_steps.sort(key=lambda s: str(s.get("created_at") or ""), reverse=True)
+    recent_steps = all_steps[:18]
+
+    # ---- 当前活动 + 健康 ----
+    health = "ok"
+    if failed_run:
+        health = "failed"
+    elif any(int(r.get("failed_step_count") or 0) > 0 for r in runs):
+        health = "warning"
+    current = {
+        "workflow_type": latest_run.get("workflow_type") if latest_run else None,
+        "status": latest_run.get("status") if latest_run else None,
+        "current_step": latest_run.get("current_step") if latest_run else None,
+        "updated_at": latest_run.get("updated_at") if latest_run else None,
+        "error": latest_run.get("error_message") if latest_run else None,
+    }
+
+    return {
+        "project": {
+            "slug": project_slug,
+            "title": getattr(project, "title", project_slug),
+            "status": getattr(project, "status", None),
+            "target_chapters": target_chapters,
+            "chapters_total": chapters_total,
+            "chapters_written": chapters_written,
+        },
+        "phases": phases,
+        "artifacts": artifacts,
+        "current": current,
+        "recent_steps": recent_steps,
+        "health": health,
+        "run_count": overview.get("run_count", 0),
+    }
+
+
+def _load_model_bakeoff_payload(settings: AppSettings) -> dict[str, object]:
+    """读取 output/model-bakeoff/ 下各模型第一章产出,供平台对比阅读。"""
+
+    base = Path(getattr(settings.output, "base_dir", "/app/output")) / "model-bakeoff"
+    items: list[dict[str, object]] = []
+    prompt_used = ""
+    if base.is_dir():
+        for f in sorted(base.glob("第一章-*.md")):
+            try:
+                text = f.read_text(encoding="utf-8")
+            except Exception:  # noqa: BLE001
+                continue
+            label = f.stem.replace("第一章-", "")
+            items.append({
+                "model": label,
+                "chars": len(text),
+                "content": text,
+            })
+        pu = base / "_prompt_used.md"
+        if pu.is_file():
+            try:
+                prompt_used = pu.read_text(encoding="utf-8")
+            except Exception:  # noqa: BLE001
+                prompt_used = ""
+    return {"book": "借运成神 · 第一章多模型对比", "models": items, "prompt_used": prompt_used}
 
 
 async def _load_pipeline_flow_payload(
@@ -8739,6 +9012,12 @@ def serve_web_app(
                 if path == "/library":
                     self._send_text(_read_library_html(), content_type="text/html; charset=utf-8")
                     return
+                if path == "/bakeoff":
+                    self._send_text(
+                        Path(__file__).with_name("novel_bakeoff.html").read_text(encoding="utf-8"),
+                        content_type="text/html; charset=utf-8",
+                    )
+                    return
                 if path.startswith("/design/"):
                     project_slug = path.removeprefix("/design/").strip("/")
                     if not project_slug:
@@ -8771,6 +9050,9 @@ def serve_web_app(
                     return
                 if path == "/api/library":
                     self._send_json(asyncio.run(_load_library_payload(settings)))
+                    return
+                if path == "/api/bakeoff":
+                    self._send_json(_load_model_bakeoff_payload(settings))
                     return
                 if path == "/api/status":
                     llm_profile = runtime_llm_profile_payload(settings)
@@ -8975,6 +9257,17 @@ def serve_web_app(
                 project_slug = _match_project_route(path, "workflow")
                 if project_slug is not None:
                     self._send_json(asyncio.run(_load_workflow_payload(settings, project_slug)))
+                    return
+                project_slug = _match_project_route(path, "execution-progress")
+                if project_slug is not None:
+                    try:
+                        self._send_json(
+                            asyncio.run(
+                                _load_execution_progress_payload(settings, project_slug)
+                            )
+                        )
+                    except ValueError as exc:
+                        self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
                     return
                 project_slug = _match_project_route(path, "pipeline-flow")
                 if project_slug is not None:

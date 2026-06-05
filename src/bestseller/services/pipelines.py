@@ -108,6 +108,7 @@ from bestseller.services.fanqie_market_repository import (
     load_current_chapter_texts_for_fanqie_gate,
 )
 from bestseller.services.gate_registry import (
+    chapter_block_is_structural,
     core_block_metadata_keys,
     pause_reason_is_structural,
 )
@@ -903,6 +904,31 @@ def _clear_stale_scene_auto_repair_residue_for_outline_retry(
     return _clear_scene_auto_repair_residue_after_clean_assembly(list(scenes))
 
 
+_CHAPTER_OUTLINE_READINESS_BLOCK_KEYS = (
+    "blocked_by_chapter_outline_readiness_gate",
+    "chapter_outline_readiness_block_codes",
+    "chapter_outline_readiness_hint",
+    "chapter_outline_readiness_report",
+)
+
+
+def _clear_chapter_outline_readiness_block_metadata(
+    chapter: ChapterModel,
+    *,
+    recovered_by: str,
+) -> bool:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    removed = [key for key in _CHAPTER_OUTLINE_READINESS_BLOCK_KEYS if key in metadata]
+    if not removed:
+        return False
+    for key in removed:
+        metadata.pop(key, None)
+    metadata["chapter_outline_readiness_block_cleared_by"] = recovered_by
+    metadata["chapter_outline_readiness_block_cleared_keys"] = removed
+    chapter.metadata_json = metadata
+    return True
+
+
 async def _stop_auto_repair_if_latest_quality_clean(
     session: AsyncSession,
     chapter: ChapterModel,
@@ -988,7 +1014,7 @@ def _apply_retention_retry_budget(
         metadata["retention_retry_strict_prompt"] = (
             f"【留存自修复第 {retry_count} 次】本章连续触发留存门禁 "
             f"{', '.join(retention_codes)}。本次重写必须在前1000字内显式修复这些问题；"
-            "若仍未通过，将转入人工审核。不要开新支线，不要扩写设定，优先兑现上一章钩子、"
+            "若仍未通过，将转入机器深度修复。不要开新支线，不要扩写设定，优先兑现上一章钩子、"
             "招牌场景、铺垫节制与 cast/正典约束。"
         )
     else:
@@ -997,7 +1023,9 @@ def _apply_retention_retry_budget(
     exhausted = retry_count > max_retries
     if exhausted:
         metadata["retention_auto_repair_exhausted"] = True
-        metadata["requires_human_review"] = True
+        metadata["retention_machine_repair_required"] = True
+        metadata["requires_machine_repair"] = True
+        metadata["requires_human_review"] = False
         chapter.status = ChapterStatus.REVISION.value
         chapter.production_state = "blocked"
 
@@ -1068,13 +1096,14 @@ def _apply_rewrite_escalation(
         "post_process_action": decision.post_process_action,
         "block_codes": list(block_codes),
     }
-    if decision.level == EscalationLevel.HUMAN_REVIEW:
-        metadata["requires_human_review"] = True
-        metadata["auto_repair_exhausted"] = True
+    if decision.level == EscalationLevel.MACHINE_REPAIR:
+        metadata["requires_machine_repair"] = True
+        metadata["requires_human_review"] = False
+        metadata["auto_repair_machine_escalated"] = True
         chapter.status = ChapterStatus.REVISION.value
         chapter.production_state = "blocked"
     chapter.metadata_json = metadata
-    return retention_exhausted or decision.level == EscalationLevel.HUMAN_REVIEW
+    return retention_exhausted or decision.level == EscalationLevel.MACHINE_REPAIR
 
 
 def _is_volume_outline_auto_repairable(exc: Exception) -> bool:
@@ -1900,6 +1929,8 @@ def _record_commercial_planning_readiness_gate(
         target_chapters=int(getattr(project, "target_chapters", 0) or 0),
         package_root=package_root,
         long_serial_min_chapters=long_serial_min_chapters,
+        genre=getattr(project, "genre", None),
+        sub_genre=getattr(project, "sub_genre", None),
     )
     payload = commercial_planning_readiness_report_to_dict(report)
     project.metadata_json = {
@@ -4845,6 +4876,9 @@ async def run_scene_pipeline(
             and getattr(settings.pipeline, "enable_scene_plan_richness_gate", True)
         ):
             try:
+                from bestseller.services.prewrite_quality_profile import (
+                    is_strict_prewrite_project,
+                )
                 from bestseller.services.scene_plan_richness import (
                     repair_scene_model_state_defaults,
                     validate_scene_model,
@@ -4903,9 +4937,13 @@ async def run_scene_pipeline(
                             exc_info=True,
                         )
                     # Optionally block: raise so caller triggers re-plan path.
+                    # 仅严格档(commercial_strict_prewrite)在 critical 稠密度上硬阻断;
+                    # 非严格档降级为警告(已注入提示块+矛盾告警),writer 带着指引继续,
+                    # 避免薄卡在写作期把整本书拖进死循环(闸门自伤)。
                     if (
                         _richness.severity == "critical"
                         and getattr(settings.pipeline, "scene_richness_block_on_critical", False)
+                        and is_strict_prewrite_project(project)
                     ):
                         workflow_run.metadata_json = {
                             **workflow_run.metadata_json,
@@ -5799,6 +5837,19 @@ async def run_chapter_pipeline(
                         scene_cards=scenes,
                         pending_rewrite_task_count=pending_rewrite_task_count,
                     )
+            if not readiness_report.blocked:
+                cleared_chapter_outline_block = (
+                    _clear_chapter_outline_readiness_block_metadata(
+                        chapter,
+                        recovered_by=(
+                            "stale_scene_auto_repair_residue_retry"
+                            if cleared_outline_residue
+                            else "readiness_passed"
+                        ),
+                    )
+                )
+                if cleared_chapter_outline_block:
+                    await session.flush()
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,
@@ -6421,7 +6472,7 @@ async def run_chapter_pipeline(
             logger.warning(
                 "Chapter %d: cross-run auto_repair budget exhausted "
                 "(total_used=%d cap=%d); refusing to enter repair loop, "
-                "routing to human review.",
+                "routing to machine repair.",
                 chapter_number,
                 auto_repair_total_used,
                 auto_repair_total_cap,
@@ -6434,9 +6485,10 @@ async def run_chapter_pipeline(
                 "auto_repair_cross_run_exhausted": True,
                 "auto_repair_in_progress": False,
                 "auto_accepted": False,
-                "requires_human_review": True,
+                "requires_machine_repair": True,
+                "requires_human_review": False,
             }
-            scene_requires_human_review = True
+            scene_requires_human_review = False
             await session.flush()
 
         while (
@@ -6467,7 +6519,7 @@ async def run_chapter_pipeline(
                 ):
                     logger.warning(
                         "Chapter %d: retention auto-repair exhausted after %d attempt(s); "
-                        "routing to human review",
+                        "routing to machine repair",
                         chapter_number,
                         int(
                             (chapter.metadata_json or {}).get(
@@ -6483,9 +6535,11 @@ async def run_chapter_pipeline(
                         **(chapter.metadata_json or {}),
                         "auto_repair_exhausted": True,
                         "retention_auto_repair_exhausted": True,
+                        "requires_machine_repair": True,
+                        "requires_human_review": False,
                         "auto_accepted": False,
                     }
-                    scene_requires_human_review = True
+                    scene_requires_human_review = False
                     await session.flush()
                     break
                 from bestseller.services.drafts import (
@@ -6827,7 +6881,8 @@ async def run_chapter_pipeline(
             workflow_run.current_step = "retention_auto_repair_exhausted"
             workflow_run.metadata_json = {
                 **workflow_run.metadata_json,
-                "requires_human_review": True,
+                "requires_machine_repair": True,
+                "requires_human_review": False,
                 "chapter_draft_id": str(chapter_draft.id),
                 "chapter_draft_version_no": chapter_draft.version_no,
                 "retention_auto_repair_exhausted": True,
@@ -6871,7 +6926,7 @@ async def run_chapter_pipeline(
                 final_verdict="rewrite",
                 export_artifact_id=None,
                 output_path=None,
-                requires_human_review=True,
+                requires_human_review=False,
             )
 
         stale_auto_repair_block_released = (
@@ -8279,14 +8334,12 @@ async def _select_pending_chapters_for_resume(
     if not resume_enabled:
         return list(chapters), []
 
-    revision_ids = [
-        ch.id for ch in chapters if ch.status == ChapterStatus.REVISION.value
-    ]
+    chapter_ids = [ch.id for ch in chapters]
     drafted_ids: set[UUID] = set()
-    if accept_on_stall and revision_ids:
+    if chapter_ids:
         drafted_rows = await session.scalars(
             select(func.distinct(ChapterDraftVersionModel.chapter_id)).where(
-                ChapterDraftVersionModel.chapter_id.in_(revision_ids)
+                ChapterDraftVersionModel.chapter_id.in_(chapter_ids)
             )
         )
         drafted_ids = {row for row in drafted_rows}
@@ -8297,6 +8350,10 @@ async def _select_pending_chapters_for_resume(
         # but if the quality gate or a bulk repair reset it to pending/blocked
         # it must be regenerated instead of accepted as a resume skip.
         if getattr(ch, "production_state", None) != "ok":
+            if ch.id in drafted_ids and not chapter_block_is_structural(
+                getattr(ch, "metadata_json", None)
+            ):
+                return True
             return False
         if ch.status == ChapterStatus.COMPLETE.value:
             return True
@@ -8332,6 +8389,7 @@ async def _load_prior_incomplete_chapter_numbers(
         select(
             ChapterModel.chapter_number,
             ChapterModel.production_state,
+            ChapterModel.metadata_json,
             func.count(ChapterDraftVersionModel.id).label("current_draft_count"),
         )
         .outerjoin(
@@ -8349,12 +8407,17 @@ async def _load_prior_incomplete_chapter_numbers(
             ChapterModel.id,
             ChapterModel.chapter_number,
             ChapterModel.production_state,
+            ChapterModel.metadata_json,
         )
         .order_by(ChapterModel.chapter_number.asc())
     )
     incomplete: list[int] = []
-    for chapter_number, production_state, current_draft_count in rows.all():
-        if production_state != "ok" or int(current_draft_count or 0) <= 0:
+    for chapter_number, production_state, metadata_json, current_draft_count in rows.all():
+        has_current_draft = int(current_draft_count or 0) > 0
+        if not has_current_draft:
+            incomplete.append(int(chapter_number))
+            continue
+        if production_state != "ok" and chapter_block_is_structural(metadata_json):
             incomplete.append(int(chapter_number))
     return incomplete
 

@@ -2202,12 +2202,32 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
             return payload, uuid4()
         return fallback_payload, uuid4()
 
+    def fake_evaluate_worldview_compliance_gate(story_design_kernel, outline_payload):
+        # The worldview-compliance gate (deterministic) is exercised by its own suite
+        # (test_worldview_compliance_gate). This test only verifies the plan run
+        # produces all artifacts + workflow records, so return a passing report rather
+        # than evaluating it against the mock structured artifacts. The outer
+        # _run_worldview_compliance_gate still runs (it records the workflow step).
+        from bestseller.services.worldview_compliance_gate import WorldviewComplianceReport
+
+        return WorldviewComplianceReport(
+            passed=True,
+            score=100,
+            blocking_findings=(),
+            warnings=(),
+            worldview_snapshot={},
+        )
+
     monkeypatch.setattr(planner_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(planner_services, "import_planning_artifact", fake_import_planning_artifact)
     monkeypatch.setattr(
         planner_services,
         "_generate_structured_artifact",
         fake_generate_structured_artifact,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.worldview_compliance_gate.evaluate_worldview_compliance_gate",
+        fake_evaluate_worldview_compliance_gate,
     )
 
     session = FakeSession()

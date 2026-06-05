@@ -68,6 +68,12 @@ def test_schema_step_names_exist_in_pipeline_or_planner_source() -> None:
         for name in missing
         if not any(name.startswith(prefix) for prefix in allowed_dynamic_prefixes)
     ]
+    # Registry-driven gates (e.g. chapter_splice_coherence_gate, signature_audit_gate,
+    # material_referential_integrity_gate) are real pipeline steps invoked through the
+    # gate registry / reviews.py / book_lifecycle_quality_gate.py rather than as string
+    # literals in pipelines.py / planner.py, so a registered gate name is not drift.
+    _registered = set(registered_gate_names())
+    missing = [name for name in missing if name not in _registered]
     assert not missing, f"step names missing from pipelines/planner: {missing}"
 
 

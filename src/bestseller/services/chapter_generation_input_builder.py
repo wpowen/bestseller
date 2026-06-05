@@ -37,18 +37,6 @@ _REQUIRED_CONTEXT_KEYS: tuple[str, ...] = (
     "quality_targets",
 )
 
-_SPECIALIST_RULE_TERMS: tuple[str, ...] = (
-    "认账",
-    "入账",
-    "否认",
-    "否认者",
-    "替认",
-    "代认",
-    "镜债",
-    "账线",
-    "回执",
-)
-
 _TRANSIENT_CHAPTER_METADATA_KEYS: frozenset[str] = frozenset(
     {
         "chapter_first_generation",
@@ -472,6 +460,60 @@ def _acceptance_contract(
     }
 
 
+def _derive_specialist_rule_terms(story_bible: Mapping[str, Any]) -> list[str]:
+    """Pull THIS book's own specialist / rule terminology out of its worldview so the
+    knowledge-boundary contract references the right terms — instead of hardcoding one
+    detective book's jargon (认账/镜债/账线…) into every project."""
+
+    terms: list[str] = []
+
+    def _collect(value: Any, depth: int = 0) -> None:
+        if depth > 3 or len(terms) >= 24:
+            return
+        if isinstance(value, str):
+            t = value.strip()
+            if 2 <= len(t) <= 8 and t not in terms:
+                terms.append(t)
+        elif isinstance(value, Mapping):
+            # Prefer the names/keys of systems/rules/terms over free prose.
+            for key in ("name", "term", "title", "key", "label"):
+                if isinstance(value.get(key), str):
+                    _collect(value[key], depth + 1)
+            for nested_key in (
+                "terms",
+                "rules",
+                "systems",
+                "power_system",
+                "power_systems",
+                "entries",
+                "items",
+                "glossary",
+            ):
+                if nested_key in value:
+                    _collect(value[nested_key], depth + 1)
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for item in value:
+                _collect(item, depth + 1)
+
+    for field in (
+        "worldview_kernel",
+        "worldview",
+        "power_system",
+        "power_systems",
+        "systems",
+        "rules",
+        "rule",
+        "glossary",
+        "terminology",
+        "rule_terms",
+        "specialist_terms",
+        "key_terms",
+    ):
+        if field in story_bible:
+            _collect(story_bible.get(field))
+    return list(dict.fromkeys(terms))
+
+
 def _knowledge_boundary_contract(
     story_bible: Mapping[str, Any],
     *,
@@ -492,18 +534,22 @@ def _knowledge_boundary_contract(
     specialist_names = [name for name in specialist_names if name]
     if not specialist_names:
         specialist_names = _fallback_scene_explainers(scenes)
+    # THIS book's own specialist terms (genre-neutral, derived from its worldview).
+    specialist_rule_terms = _derive_specialist_rule_terms(story_bible)
+    explainer_label = "、".join(specialist_names) if specialist_names else "本书的专业 / 主角角色"
     return {
         "rule": (
-            "Only specialist/protagonist characters may infer or name hidden folk-rule "
-            "mechanics. Lay characters can describe visible symptoms, fear, memories, "
-            "or hearsay, but cannot accurately explain rule terms unless the prose shows "
-            "teaching, possession, or coercion."
+            "Only specialist/protagonist characters may infer or name this book's hidden "
+            "rule mechanics (whatever they are for this genre/setting). Lay characters can "
+            "describe visible symptoms, fear, memories, or hearsay, but cannot accurately "
+            "explain rule terms unless the prose shows teaching, possession, or coercion."
         ),
-        "specialist_rule_terms": list(_SPECIALIST_RULE_TERMS),
+        "specialist_rule_terms": specialist_rule_terms,
         "allowed_explainers": specialist_names,
         "lay_character_rule": (
-            "王建业、张建军、小雨、周雪等非专业角色只能说自己看见了什么、害怕什么、"
-            "被谁警告过什么；不能自然地懂“认账/替认/镜债/账线”的完整逻辑。"
+            f"非专业 / 普通角色（{explainer_label} 以外）只能说自己看见了什么、害怕什么、"
+            "被谁警告过什么；不能自然地讲出本书设定中的专业 / 超自然规则术语的完整逻辑，"
+            "除非正文已写明被传授 / 附身 / 胁迫。"
         ),
     }
 
@@ -533,7 +579,8 @@ def _object_signal_contract(chapter: Any) -> dict[str, Any]:
             "is not enough; each signal needs a visible meaning, cost, and limit."
         ),
         "forbidden_shortcut": (
-            "Do not use 铜钱/青囊/罗盘 repeatedly '发烫' as the only engine of discovery."
+            "Do not reduce this book's key objects/abilities to a repeated '发烫' "
+            "(or any single sensory tic) as the only engine of discovery."
         ),
         "preferred_signals": [
             "cold/weight change for direction",

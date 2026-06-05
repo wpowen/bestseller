@@ -107,10 +107,41 @@ def test_outline_readiness_retry_clears_only_stale_auto_repair_residue() -> None
     assert "auto_repair_block_codes" not in scenes[0].metadata_json
 
 
+def test_outline_readiness_pass_clears_stale_chapter_block_metadata() -> None:
+    chapter = SimpleNamespace(
+        metadata_json={
+            "blocked_by_chapter_outline_readiness_gate": True,
+            "chapter_outline_readiness_block_codes": [
+                "OUTLINE_STALE_AUTO_REPAIR_RESIDUE"
+            ],
+            "chapter_outline_readiness_hint": "旧阻塞提示",
+            "chapter_outline_readiness_report": {"blocked": True},
+            "keep": "value",
+        }
+    )
+
+    cleared = pipeline_services._clear_chapter_outline_readiness_block_metadata(
+        chapter,
+        recovered_by="readiness_passed",
+    )
+
+    assert cleared is True
+    assert chapter.metadata_json["keep"] == "value"
+    assert (
+        chapter.metadata_json["chapter_outline_readiness_block_cleared_by"]
+        == "readiness_passed"
+    )
+    assert "blocked_by_chapter_outline_readiness_gate" not in chapter.metadata_json
+    assert "chapter_outline_readiness_block_codes" not in chapter.metadata_json
+    assert "chapter_outline_readiness_hint" not in chapter.metadata_json
+    assert "chapter_outline_readiness_report" not in chapter.metadata_json
+
+
 def test_chapter_first_uses_minimax_safe_cap_not_target_length_cap() -> None:
     settings = load_settings(
         env={
             "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+            "BESTSELLER__LLM__WRITER__MODEL_OVERRIDE": "openai/MiniMax-M2.7-highspeed",
             "BESTSELLER__LLM__WRITER__MAX_TOKENS": "32768",
         }
     )
@@ -122,6 +153,7 @@ def test_chapter_first_falls_back_to_model_family_ceiling() -> None:
     settings = load_settings(
         env={
             "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+            "BESTSELLER__LLM__WRITER__MODEL_OVERRIDE": "openai/MiniMax-M2.7-highspeed",
             "BESTSELLER__LLM__WRITER__MAX_TOKENS": "0",
         }
     )
@@ -133,6 +165,7 @@ def test_chapter_first_keeps_provider_safe_minimax_cap_for_full_chapters() -> No
     settings = load_settings(
         env={
             "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+            "BESTSELLER__LLM__WRITER__MODEL_OVERRIDE": "openai/MiniMax-M2.7-highspeed",
             "BESTSELLER__LLM__WRITER__MAX_TOKENS": "32768",
         }
     )
@@ -323,7 +356,8 @@ def test_chapter_first_auto_repair_instruction_rebuilds_structural_opening() -> 
     assert "第一场开局合同：林渊赶到十七栋楼下" in instructions
     assert "铜钱发烫" not in instructions
     assert "【物件触感捷径】" in instructions
-    assert "最多不超过 3500 字" in instructions
+    # structural-repair contract caps length with a 3500-char hard ceiling.
+    assert "硬上限 3500 字" in instructions
 
 
 def test_chapter_first_auto_repair_instruction_treats_scene_forbidden_as_structural() -> None:
@@ -997,10 +1031,15 @@ async def test_load_prior_incomplete_chapter_numbers_flags_status_and_draft_gaps
         execute_results=[
             FakeExecuteRows(
                 [
-                    (1, "ok", 1),
-                    (2, "blocked", 1),
-                    (3, "ok", 0),
-                    (4, "pending", 0),
+                    (1, "ok", {}, 1),
+                    (
+                        2,
+                        "blocked",
+                        {"blocked_by_material_referential_integrity_gate": True},
+                        1,
+                    ),
+                    (3, "ok", {}, 0),
+                    (4, "pending", {}, 0),
                 ]
             )
         ]
@@ -1013,6 +1052,43 @@ async def test_load_prior_incomplete_chapter_numbers_flags_status_and_draft_gaps
     )
 
     assert result == [2, 3, 4]
+
+
+@pytest.mark.asyncio
+async def test_load_prior_incomplete_chapter_numbers_ignores_local_blocks_with_drafts() -> None:
+    project_id = uuid4()
+    session = FakeSession(
+        execute_results=[
+            FakeExecuteRows(
+                [
+                    (
+                        86,
+                        "blocked",
+                        {
+                            "blocked_by_write_safety_gate": True,
+                            "write_safety_block_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+                        },
+                        1,
+                    ),
+                    (
+                        87,
+                        "blocked",
+                        {"blocked_by_material_referential_integrity_gate": True},
+                        1,
+                    ),
+                    (88, "ok", {}, 1),
+                ]
+            )
+        ]
+    )
+
+    result = await pipeline_services._load_prior_incomplete_chapter_numbers(
+        session,
+        project_id=project_id,
+        before_chapter_number=89,
+    )
+
+    assert result == [87]
 
 
 def _disable_chapter_length_gate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1038,8 +1114,25 @@ def _disable_chapter_length_gate(monkeypatch: pytest.MonkeyPatch) -> None:
         new_orig = dataclasses.replace(
             cfg.originality_engine,
             chapter_length_gate_enabled=False,
+            # Synthetic 50-char integration drafts also fail the reader-persona
+            # simulation (high abandon / low weighted score), which would block the
+            # chapter and route it to machine repair — drowning out what these
+            # review/export pipeline tests actually exercise. Don't persist persona
+            # feedback so the gate finds no file to evaluate.
+            persist_persona_feedback=False,
         )
-        return dataclasses.replace(cfg, originality_engine=new_orig)
+        # block_on_persona_failure lives on ReaderQualityGateConfig (reader_quality),
+        # not OriginalityEngineConfig — also disable it so persona never blocks even
+        # if a feedback file is present. (Dedicated persona-gate tests set it back.)
+        new_reader_quality = dataclasses.replace(
+            cfg.reader_quality,
+            block_on_persona_failure=False,
+        )
+        return dataclasses.replace(
+            cfg,
+            originality_engine=new_orig,
+            reader_quality=new_reader_quality,
+        )
 
     monkeypatch.setattr(
         quality_gates_config, "get_quality_gates_config", _patched
@@ -1274,8 +1367,9 @@ def test_chapter_first_prompt_uses_publish_band_not_tight_target_delta() -> None
         target_word_count=chapter.target_word_count,
     )
 
-    assert "发布硬范围 2000-3000 字" in user_prompt
-    assert "篇幅硬范围是 2000-3000 个汉字" in user_prompt
+    # zh publish band is the wide 1800-3500 (target 2200), not a tight target±delta.
+    assert "发布硬范围 1800-3500 字" in user_prompt
+    assert "篇幅硬范围是 1800-3500 个汉字" in user_prompt
     assert "补入林正淳和青囊线索" not in user_prompt
     assert "2024-2376" not in user_prompt
 
@@ -1744,7 +1838,8 @@ def test_chapter_first_prompt_adds_total_scene_budget_guardrail() -> None:
     assert "不是每个场景各写一章" in user_prompt
     assert "全文建议22-32段" in user_prompt
     assert "每场5-8段" in user_prompt
-    assert "超过3000字" in user_prompt
+    # hard_max for the zh band is 3500 (target 2600 → band 1800-2600-3500).
+    assert "超过3500字" in user_prompt
     assert "离场状态和 forbidden_actions 是硬边界" in user_prompt
     assert "升级成“被拖进门、被吞掉、确认死亡、门合拢”" in user_prompt
 
@@ -1846,8 +1941,11 @@ def test_front10_contract_gate_blocks_phone_drift_and_forbidden_signal() -> None
         "电话响第三遍的时候，林渊掌心里的铜钱忽然变热，热得像刚烧开的水。困魂镜正在醒来。",
     )
 
+    # Phone/mediated-opening drift is no longer a deterministic hard block (2026-05-26
+    # architecture cleanup: it wrongly forbade legitimate phone openings and is now an
+    # audit dimension in chapter_llm_quality_judge). The deterministic gate still
+    # hard-blocks forbidden-signal leaks (e.g. 困魂镜).
     assert {violation.code for violation in violations} == {
-        "OPENING_SCENE_DRIFT",
         "FRONT10_FORBIDDEN_SIGNAL",
     }
     assert all(violation.severity == "block" for violation in violations)
@@ -2026,7 +2124,8 @@ def test_chapter_auto_repair_length_contract_allows_dynamic_publish_range() -> N
 
     contract = draft_services._chapter_auto_repair_length_contract(project, chapter)
 
-    assert "2000-3500" in contract
+    # zh publish band is 1800-3500 (target ~2200); see _chapter_length_contract_band.
+    assert "1800-3500" in contract
     assert "不得新增无关场景" in contract
     assert "目标约 2200 字" in contract
 
@@ -3228,7 +3327,9 @@ def test_publication_gate_blocks_short_chinese_commercial_chapter() -> None:
 
     blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
 
-    assert any("章节体量" in blocker and "2000" in blocker for blocker in blockers)
+    # zh commercial hard floor is 1800 (CHINESE_CHAPTER_HARD_MIN_WORDS); a ~1440-char
+    # chapter is below it and must be export-blocked.
+    assert any("章节体量" in blocker and "1800" in blocker for blocker in blockers)
 
 
 def test_publication_gate_blocks_failed_unified_quality_snapshot() -> None:
@@ -4185,11 +4286,16 @@ async def test_run_chapter_pipeline_short_circuits_after_retention_budget_exhaus
 
     workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
 
-    assert result.requires_human_review is True
+    # Retention-budget exhaustion routes to the MACHINE deep-repair tier (consumed by
+    # the web machine-repair gate / resume flow), not straight to human review: the
+    # chapter is MACHINE_BLOCKED with requires_machine_repair, and the pipeline still
+    # short-circuits before review (fail_review_chapter_draft would raise if reached).
+    assert result.requires_human_review is False
     assert result.final_verdict == "rewrite"
     assert result.chapter_draft_id == draft.id
     assert chapter.production_state == "blocked"
     assert chapter.metadata_json["retention_auto_repair_exhausted"] is True
+    assert chapter.metadata_json["requires_machine_repair"] is True
     assert workflow_runs[0].status == "machine_blocked"
     assert workflow_runs[0].current_step == "retention_auto_repair_exhausted"
 

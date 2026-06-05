@@ -186,7 +186,10 @@ def test_scene_summary_prompts_switch_to_english_for_english_projects() -> None:
     fallback = knowledge_services.render_scene_summary_fallback(project, chapter, scene)
 
     combined = system_prompt + "\n" + user_prompt + "\n" + fallback
-    assert "Write a concise 2-3 sentence English summary" in system_prompt
+    # Summarizer prompt rewording: confirm the English ROLE block is used for an
+    # English project (was "Write a concise 2-3 sentence English summary").
+    assert "story-knowledge summarizer" in system_prompt
+    assert "2-3 sentence summary" in system_prompt
     assert "Project: Storm Ledger" in user_prompt
     assert "Scene 1: The Order Arrives" in user_prompt
     assert "In Storm Ledger, Chapter 1, Scene 1" in fallback

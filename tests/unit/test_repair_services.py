@@ -1332,8 +1332,10 @@ async def test_run_project_repair_normalizes_stale_word_targets_before_collectin
     workflow_steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
 
     assert result.processed_chapters == []
-    assert chapter.target_word_count == 2200
-    assert {scene.target_word_count for scene in scenes} == {550}
+    # Stale 6400 is normalized to the policy chapter target (now 2600; was 2200),
+    # split evenly across the 4 scenes (2600 / 4 = 650).
+    assert chapter.target_word_count == 2600
+    assert {scene.target_word_count for scene in scenes} == {650}
     assert workflow_steps[0].step_name == "source_artifact_audit"
     assert workflow_steps[0].status == "completed"
     assert workflow_steps[1].step_name == "normalize_word_targets"

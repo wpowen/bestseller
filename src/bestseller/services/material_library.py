@@ -138,6 +138,17 @@ def genre_aliases(genre: str | None, sub_genre: str | None = None) -> tuple[str,
 
     _add(genre)
     haystack = f"{genre or ''} {sub_genre or ''}"
+    # 玄幻 ↔ 仙侠 ↔ 修真/修仙 share one reader promise (cultivation power
+    # ladder, sect politics, secret realms, tribulation). The global library
+    # is seeded under the two real buckets "玄幻" and "仙侠"; bridge them so a
+    # 玄幻 book can draw on 仙侠 scene/plot material and vice versa. Excluded
+    # for 都市* — urban cultivation has its own bucket with a distinct
+    # modern-setting promise and should not pull classical 宗门/渡劫 stock.
+    if "都市" not in haystack and any(
+        token in haystack for token in ("玄幻", "仙侠", "修真", "修仙")
+    ):
+        _add("玄幻")
+        _add("仙侠")
     if any(token in haystack for token in ("灵异", "驱魔", "民俗", "玄学", "鬼")):
         _add("灵异")
     if any(token in haystack for token in ("悬疑", "探案", "断案", "推理", "惊悚")):

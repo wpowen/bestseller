@@ -75,5 +75,7 @@ def test_retention_retry_budget_exhausts_after_max_retries() -> None:
     assert exhausted is True
     assert chapter.status == "revision"
     assert chapter.production_state == "blocked"
-    assert chapter.metadata_json["requires_human_review"] is True
+    assert chapter.metadata_json["requires_machine_repair"] is True
+    assert chapter.metadata_json["requires_human_review"] is False
     assert chapter.metadata_json["retention_auto_repair_exhausted"] is True
+    assert chapter.metadata_json["retention_machine_repair_required"] is True

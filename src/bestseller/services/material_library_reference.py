@@ -66,6 +66,73 @@ _DRAFTER_PRIORITY_DIMS: tuple[str, ...] = (
     "anti_cliche_patterns",
 )
 
+# ── Phase-aware dimension selection ────────────────────────────────────
+#
+# A scene-bank桥段 (e.g. 闯阵法 / 秘境夺宝 / 越阶反杀) belongs on a
+# *set-piece* beat, not in a quiet breather. Rather than always surfacing
+# ``scene_templates``, we pick the dimension set by the chapter's pacing /
+# climax flag so the right kind of material shows up at the right beat —
+# "对的环节插对的场景". The scene-bank itself stays a *candidate pool*: even
+# on a set-piece beat the model only sees the top-k most relevant entries
+# and is told they are optional inspiration.
+
+# Set-piece beats lead with the scene-bank + anti-cliché guard.
+_SETPIECE_DIMS: tuple[str, ...] = (
+    "scene_templates",
+    "anti_cliche_patterns",
+    "emotion_arcs",
+    "dialogue_styles",
+    "thematic_motifs",
+)
+
+# Breather beats step the scene-bank aside; keep emotion / voice / motif
+# so the chapter still gets atmosphere help without being pushed toward a
+# new set-piece it doesn't want.
+_QUIET_DIMS: tuple[str, ...] = (
+    "emotion_arcs",
+    "dialogue_styles",
+    "thematic_motifs",
+)
+
+
+def select_soft_reference_dims(
+    *,
+    pacing_mode: str | None = None,
+    is_climax: bool = False,
+    emotion_phase: str | None = None,
+    base_top_k: int = 4,
+) -> tuple[tuple[str, ...] | None, int]:
+    """Choose (dimensions, top_k) for soft-reference retrieval by chapter phase.
+
+    Pure function — no IO — so it is unit-testable in isolation.
+
+    Returns
+    -------
+    (dimensions, top_k)
+        ``dimensions is None`` means "use the renderer's default
+        :data:`_DRAFTER_PRIORITY_DIMS`" — the legacy behaviour, returned for
+        ``build`` / unknown beats so we never regress chapters that carry no
+        phase signal.
+
+    Decision
+    --------
+    * **Set-piece** (``is_climax`` or pacing ∈ {accelerate, climax}, or — when
+      pacing is absent — ``emotion_phase == 'release'``): lead with the
+      scene-bank, widen ``top_k`` by one so the big beat has more candidates.
+    * **Breather** (pacing == ``breathe``): drop ``scene_templates`` /
+      ``plot_patterns``, keep only emotion / dialogue / motif, narrow ``top_k``.
+    * **Otherwise**: ``(None, base_top_k)`` → default dims, unchanged.
+    """
+    pacing = (pacing_mode or "").strip().lower()
+    emotion = (emotion_phase or "").strip().lower()
+    base = max(1, int(base_top_k or 4))
+
+    if is_climax or pacing in {"accelerate", "climax"} or (not pacing and emotion == "release"):
+        return _SETPIECE_DIMS, base + 1
+    if pacing == "breathe":
+        return _QUIET_DIMS, max(2, base - 1)
+    return None, base
+
 
 def _truncate(text: str, limit: int = 90) -> str:
     if not text:
@@ -171,4 +238,5 @@ async def render_library_soft_reference_block(
 
 __all__ = [
     "render_library_soft_reference_block",
+    "select_soft_reference_dims",
 ]

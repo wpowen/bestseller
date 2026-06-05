@@ -180,13 +180,23 @@ def _append_acceptance_contract_findings(
                 path="acceptance_contract.knowledge_boundary_contract",
             )
         )
-    elif chapter_number <= 10 and not knowledge_contract.get("specialist_rule_terms"):
+    elif (
+        chapter_number <= 10
+        and bool(knowledge_contract.get("allowed_explainers"))
+        and not knowledge_contract.get("specialist_rule_terms")
+    ):
+        # Only nudge when the book has specialist explainers but no rule terms — genres
+        # without specialist/supernatural mechanics legitimately have none, so we must
+        # not force a detective-style rule glossary onto every book.
         findings.append(
             ChapterPreDraftQualityFinding(
                 code="PREDRAFT_KNOWLEDGE_BOUNDARY_TERMS_MISSING",
                 severity="major",
                 message="角色认知边界契约缺少需要管控的规则术语。",
-                repair_hint="补齐认账、入账、替认、镜债、账线等规则术语的可见知识边界。",
+                repair_hint=(
+                    "若本书设定包含专业 / 超自然规则，补齐这些术语的可见知识边界"
+                    "（用本书自己的设定术语，不要套用其它题材）。"
+                ),
                 path="acceptance_contract.knowledge_boundary_contract.specialist_rule_terms",
             )
         )
@@ -197,7 +207,10 @@ def _append_acceptance_contract_findings(
                 code="PREDRAFT_OBJECT_SIGNAL_CONTRACT_MISSING",
                 severity="major",
                 message="正文生成缺少物件信号边界契约。",
-                repair_hint="明确铜钱、罗盘、青囊等物件异常分别代表什么、不能做什么。",
+                repair_hint=(
+                    "明确本书关键物件 / 能力的每种异常分别代表什么、触发条件与不能做什么"
+                    "（用本书自己的设定，不要套用其它题材的器物）。"
+                ),
                 path="acceptance_contract.object_signal_contract",
             )
         )

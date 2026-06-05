@@ -1,0 +1,241 @@
+# =============================================================================
+# Scene Grounding · 镜头化场景锚定（叙事落地层）
+# =============================================================================
+# 目的：
+#   框架已有「神描写」（visual_writing 单段画面）、「金句」（prose_craft_techniques）、
+#   「情绪契约」（emotion_choreography 禁情绪标签）、「悬念工程」（information_choreography）。
+#   但缺一条贯穿【整章】的轴：让正文像镜头一样【站在主角立场即时落地场景、
+#   每处描写都服务剧情、转场不悬空、设定靠演不靠讲】——否则正文会塌成
+#   「解释剧情背景与人物关系的作文」（2026-06《借运成神》试点暴露的问题）。
+#
+# 与既有杠杆的正交关系（重要，别重叠）：
+#   - visual_writing      → 单【段】画面鲜烈（show-don't-tell 的"怎么写一段"）
+#   - prose_craft         → 单【句】可摘抄（金句的修辞结构）
+#   - emotion_choreography→ 禁【情绪标签词】（愤怒/震惊…）
+#   - scene_grounding(本) → 整【章/场】的镜头纪律：定场、转场、设定外显、专名节流
+#   四者正交互补。本文件治的是"作者在旁白解说" / "场景悬空跳切" / "人名数字砸脸"。
+#
+# 使用方式（soft，永不硬阻断）：
+#   1. methodology_compiler 的 PROSE_SCENE（可选 OUTLINE_CHAPTER）阶段渲染
+#      render_scene_grounding_block()，按题材选 2-3 条技法、按章号轮换，注入 writer。
+#   2. 它是【写每一场怎么落地】的方法，不是"每句都要"——功能性快节奏段可省略定场。
+#   3. detector_thresholds 供确定性检测器（detect_authorial_intrusion /
+#      measure_grounding_coverage / detect_proper_noun_flood）打分用；正文普通章
+#      默认【soft 计分、不进 must_rewrite】，避免 fallback 级联硬卡的历史回归。
+#
+# 蒸馏原则（避免历史回归）：
+#   - 蒸「技法骨架」，不蒸「成品词句」——防模板直拼盖掉模型输出、全书同质化。
+#   - micro_examples 全部为【合成原创】且【跨题材】，正例来自"主角立场+具体物+动作"，
+#     反例（authorial_intrusion_guard）来自"作者解说+抽象议论"。严禁原样进正文。
+# =============================================================================
+
+version: 2026.06.06
+
+# =============================================================================
+# 技法库（每条 = 一种让整章"镜头化、服务剧情"的写法骨架）
+# =============================================================================
+techniques:
+
+  establishing_through_want:
+    display_name: 定场即过滤
+    category: camera
+    principle: |
+      开场/进入新场景时，环境信息必须从【主角此刻正在争取或对抗的那一个点】渗出，
+      而不是客观罗列全景。读者通过"主角在意什么"认识这个世界，而不是被导游讲解。
+    structure: 主角身体/注意力正咬住的那一个点 → 由它带出最小必要环境 → 不写上帝全景
+    genre_fit:
+      good: [全题材]
+      strong: [都市, 都市异能, 悬疑, 科幻, 职场, 现实]
+    purple_risk: 把"过滤"写成大段内心独白；环境词空泛（繁华/喧嚣/阴森）→ 又回告知
+    micro_examples:
+      - tag: 都市异能
+        line: 拇指按在二号杆塔的螺栓上，电弧咬进掌心。他没松手——松手，下面三十二户全带电。
+      - tag: 职场
+        line: 工位灯还亮着，屏幕右下角跳着 23:47。他盯的不是时间，是那封发件箱里卡了一晚的辞呈。
+
+  grounded_transition:
+    display_name: 转场落地
+    principle: |
+      换场景/换时间时，先落一个"此刻在哪 + 身体在做什么 + 什么时间"的锚点（三选二），
+      再展开剧情。绝不让读者凭空出现在一个新地方却不知道人怎么来的。
+    structure: 锚点句（地点/动作/时间，至少两项具体）→ 主角对本场的目标 → 冲突推进
+    genre_fit:
+      good: [全题材]
+    purple_risk: 锚点写成"时光荏苒/不知过了多久"这类虚词 → 等于没锚
+    micro_examples:
+      - tag: 都市
+        line: 出租车拐进学校后街时雨更大了。他攥着手机，屏幕还停在那张截图上。
+      - tag: 悬疑
+        line: 回到分局已是凌晨两点。他把物证袋摊在台灯下，第一件就是那张接送卡。
+
+  show_dont_explain:
+    display_name: 设定靠演
+    principle: |
+      世界规则、人物关系、阴谋因果，要通过【动作 / 对峙 / 物件外显 / 被逼出的台词】
+      翻出来，禁止作者跳出来用一段议论替读者总结剧情或点题。
+    structure: 不写"之所以…是因为…" → 把这条因果拆成一个动作或一句被逼出来的台词
+    genre_fit:
+      good: [全题材]
+    purple_risk: 借角色之口长篇背诵设定（对白信息倒斗）= 换皮的作者旁白
+    micro_examples:
+      - tag: 都市异能
+        line: 「借一还二，每七日翻一番。」老头说完，他掌心的「7」跳成了「6」。
+      - tag: 悬疑
+        line: 他没解释动机。只把两张照片并排推过去，让对面自己去看那张重叠的脸。
+
+  detail_serves_plot:
+    display_name: 描写服务剧情
+    principle: |
+      没有"背景描写"这种东西，只有"对主角构成压力或线索的环境"。任何一处景物，
+      若删掉不影响主角处境与读者悬念，它就是布景——该砍，或改造成钩子。
+    structure: 每处描写问一句"它给主角添了什么压力/线索/代价？"答不上 → 删或改
+    genre_fit:
+      good: [全题材]
+    purple_risk: 为"有画面感"硬塞与剧情无关的环境长描 → 拖节奏的精致空转
+    micro_examples:
+      - tag: 科幻
+        line: 舱壁结的霜不是为了好看——它在告诉他，制氧机已经停了十九分钟。
+      - tag: 都市
+        line: 桌上那杯咖啡早凉了。凉到能让他确定：她在他来之前，已经等了很久。
+
+  one_name_at_a_time:
+    display_name: 专名逐个登场
+    principle: |
+      一次只引入一个新专名（人名/机构/术语），且立刻绑一张脸、一个动作或一个物件。
+      前期章节专名与数字越克制越好——读者记不住的名字等于噪音。
+    structure: 新专名 ＋ 同句给它一个可感载体（一张脸/一个动作/一件物）；一段最多一个新名
+    genre_fit:
+      good: [全题材]
+      strong: [都市, 悬疑, 群像, 权谋]
+    purple_risk: 一段里甩出 ≥3 个新人名/机构/数字 → 信息砸脸，读者弃
+    micro_examples:
+      - tag: 悬疑
+        line: 来的人姓沈。她没递证件，只把一张刻着独眼蛇纹的金属卡拍在桌上。
+      - tag: 都市
+        line: 卫东把烟按灭在照片边缘——那是第一次，有人把他妹妹的脸摆到他面前。
+
+  pov_camera_continuity:
+    display_name: 镜头连续
+    principle: |
+      贴紧 spotlight_character 的连续感官流：他看到、听到、碰到、想到，按时间顺序推进，
+      不做无过渡的全知蒙太奇（一会儿钻进 A 脑子、一会儿跳到 B 的密谋）。
+    structure: 锁定一个视角 → 信息只能是该视角此刻能感知到的 → 切视角必须显式断行/换场
+    genre_fit:
+      good: [全题材]
+      careful: [群像, 史诗]   # 多视角题材可切，但每段内仍须单视角连续
+    purple_risk: 一段内同时知道在场所有人的心理活动 → 摄影机失焦，读者抽离
+    micro_examples:
+      - tag: 都市异能
+        line: 他只看见老头的背影没入雨里，看不见对方在笑还是没笑——他也不需要看见。
+      - tag: 职场
+        line: 会议室里每个人都在说话，他却只听见自己工牌被收走时，挂绳擦过桌沿的那声。
+
+# =============================================================================
+# 反面教材 · 作者旁白守卫（治"像作文"的核心）
+# =============================================================================
+# 从《借运成神》chapter-005 的失败段反向蒸馏：这些是"看着在叙事，其实是作者在解说"。
+authorial_intrusion_guard:
+  description: |
+    镜头化 ≠ 作者旁白。下列写法会让正文塌成议论文/读后感，是必须避开的反例。
+    判断标准：这句话是"主角在经历"，还是"作者在替读者总结/点题/解说因果"？
+  banned_moves:
+    - id: plot_causation_lecture
+      bad: 用议论句解说剧情因果（"X 之所以 Y，是因为…" / "这意味着…" / "他被当成了工具"）
+      why: 读者没"看到"任何东西，只被告知了一段分析，等于剥夺了推理与代入的乐趣
+      fix: 把这条因果拆成一个动作、一个物件变化，或一句被逼出来的台词，让读者自己拼
+    - id: theme_summary
+      bad: 作者直接点题/下价值判断（"原来这一切都是命运的安排"）
+      why: 主题靠故事长出来；直接说出来 = 不信任读者，也杀死回味
+      fix: 只给可见事实与选择，把判断留给读者
+    - id: relationship_dump
+      bad: 用一段叙述铺陈人物关系网与背景（谁是谁的谁、几年前发生过什么）
+      why: 平铺的关系表没有戏剧张力，是设定文档不是小说
+      fix: 让关系在一次具体的对峙/交易/为难里浮现，一次只露一条
+    - id: name_number_pileup
+      bad: 一段里塞 ≥3 个新专名或一串数字（"二十三个、一百个、七十七个、百分之十二"）
+      why: 信息密度超过读者短期记忆，名字与数字全成噪音
+      fix: 一次一个，绑具体载体；数字落到一个能想象的画面上
+
+# =============================================================================
+# 题材路由 · 每个题材族强调哪些技法（renderer 按此选 2-3 个）
+# =============================================================================
+# 这些技法多为"全题材通用"；路由主要决定每章先突出哪几条 + 轮换，避免选择过载。
+# 未命中的题材落到 default。
+genre_emphasis:
+  default:
+    - establishing_through_want
+    - grounded_transition
+    - show_dont_explain
+    - detail_serves_plot
+  都市:
+    - establishing_through_want
+    - show_dont_explain
+    - one_name_at_a_time
+    - grounded_transition
+  都市异能:
+    - establishing_through_want
+    - show_dont_explain
+    - detail_serves_plot
+    - one_name_at_a_time
+  悬疑:
+    - detail_serves_plot
+    - show_dont_explain
+    - one_name_at_a_time
+    - pov_camera_continuity
+  科幻:
+    - establishing_through_want
+    - detail_serves_plot
+    - show_dont_explain
+  职场:
+    - establishing_through_want
+    - show_dont_explain
+    - detail_serves_plot
+  现实:
+    - establishing_through_want
+    - detail_serves_plot
+    - show_dont_explain
+  古风:
+    - establishing_through_want
+    - grounded_transition
+    - detail_serves_plot
+    - pov_camera_continuity
+  仙侠:
+    - establishing_through_want
+    - detail_serves_plot
+    - show_dont_explain
+  权谋:
+    - show_dont_explain
+    - one_name_at_a_time
+    - pov_camera_continuity
+  群像:
+    - pov_camera_continuity
+    - one_name_at_a_time
+    - grounded_transition
+
+# =============================================================================
+# Writer 注入策略（供 renderer 参考，渲染出的块必须 compact）
+# =============================================================================
+injection_policy:
+  techniques_per_scene: 3        # 每场给 2-3 条，避免选择过载
+  example_per_technique: 1       # 每条带 1 个 micro_example，控 token
+  rotate_by_chapter: true        # 按章号轮换技法子集，避免每章同一套 → 同质化
+  position_hint: 用于本场"定场 / 转场 / 设定外显"的写法，不是每句都要这样写
+  hard_rule: 正文主体仍是连续的镜头化动作与对白；定场/转场/抖设定时套用上面骨架
+
+# =============================================================================
+# 确定性检测器阈值（detectors 用；正文普通章 soft 计分，不硬阻断）
+# =============================================================================
+# 初值保守，靠 A/B 实验调优；single source of truth 在这里，detector 不写死。
+detector_thresholds:
+  # A. 作者旁白/议论文式告知：叙述层每千字命中"解说连接词"的密度上限。
+  #    【主判别器】标定自 6 个真实样本：两个镜头化 GOOD 版=0.00，flat ch5=5.95。
+  #    3.5 干净分离最糟糕的"作文段"而不误伤正常叙事。
+  authorial_intrusion_per_kchars: 3.5
+  # B. 场景锚定覆盖率：含具体空间/身体/时间锚点的叙述段占比下限。
+  #    【诊断指标】区分力弱（vivid 比喻易被算作抽象），阈值放低只抓真悬空章。
+  grounding_coverage_floor: 0.5
+  # C. 专名/数字洪流：单段新专名上限 + 数字 token 每千字密度上限。
+  #    【补充启发式】数字密度受题材混淆（借运本身数字多，GOOD 也 ~13），
+  #    阈值放宽到只抓真洪流（ch5=23.77）；name 启发式有噪声，cap 取 4。
+  max_new_names_per_paragraph: 4
+  number_tokens_per_kchars: 20.0

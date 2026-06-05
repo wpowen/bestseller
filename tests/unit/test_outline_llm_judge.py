@@ -22,6 +22,7 @@ async def test_outline_llm_judge_enforces_threshold(monkeypatch: pytest.MonkeyPa
 
     async def fake_complete_text(session, settings, request):
         captured_prompts["user"] = request.user_prompt
+        captured_prompts["system"] = request.system_prompt
         return LLMCompletionResult(
             content=json.dumps(
                 {
@@ -58,8 +59,14 @@ async def test_outline_llm_judge_enforces_threshold(monkeypatch: pytest.MonkeyPa
     assert result.overall_score == 0.79
     assert result.rewrite_plan.instructions == "重做第一章开场压力。"
     assert "knowledge_boundary" in captured_prompts["user"]
-    assert "非专业角色不得天然理解专业规则" in captured_prompts["user"]
-    assert "铜钱/罗盘/青囊等物件信号必须有稳定含义" in captured_prompts["user"]
+    # Genre-neutral constraints live in the system prompt (no longer hardcode the
+    # 青囊 detective props/jargon).
+    _judge_prompt = captured_prompts["system"] + captured_prompts["user"]
+    assert "认知边界" in _judge_prompt
+    assert "不要套用其它题材" in _judge_prompt
+    assert "关键道具 / 能力 / 信号逻辑" in _judge_prompt
+    # The old detective-specific props must be gone.
+    assert "铜钱 / 罗盘 / 青囊等物件信号必须有稳定含义" not in _judge_prompt
 
 
 @pytest.mark.asyncio

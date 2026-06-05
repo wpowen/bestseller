@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+import re
 from typing import Any
 
 import yaml
@@ -336,7 +337,10 @@ def _opening_pattern(beat: SceneBeat) -> str:
     text = "\n".join([beat.camera.time, beat.camera.location, *beat.external_event])
     if any(ch.isdigit() for ch in text) or any(term in text for term in ("时", "点", "分钟")):
         return "time_anchor"
-    if any(term in text for term in ("证据", "物证", "账印", "回执", "尸体", "铜钱")):
+    if any(
+        term in text
+        for term in ("证据", "物证", "线索", "痕迹", "凭证", "遗物", "现场", "尸体", "失踪")
+    ):
         return "realistic_evidence"
     if beat.characters_present:
         return "character_pressure"
@@ -355,12 +359,25 @@ def _named_entities(sheet: SceneBeatSheet) -> list[str]:
     return list(dict.fromkeys(item for item in entities if item))
 
 
+_QUOTED_OR_NUMBERED_ENTITY = re.compile(
+    r"[「『“”\"'《【]([^」』“”\"'》】\n]{1,12})[」』“”\"'》】]"  # quoted names/objects
+    r"|((?<![0-9])\d{2,4}(?:室|号|栋|楼|区|层|街|路|班|队|期)?)"  # numbered identifiers
+)
+
+
 def _extract_quoted_or_numbered_entities(text: str) -> list[str]:
+    """Pull quoted phrases and numbered identifiers out of beat text — genre-neutral.
+
+    Previously this hardcoded one detective book's room numbers and props (303 / 青囊
+    / 罗盘 …), so it extracted nothing for any other book. Now it actually does what
+    its name says, for any genre."""
+
     entities: list[str] = []
-    for token in ("303", "302", "青囊", "罗盘", "铜钱", "账印", "回执", "镜片"):
-        if token in text:
-            entities.append(token)
-    return entities
+    for match in _QUOTED_OR_NUMBERED_ENTITY.finditer(text or ""):
+        entity = (match.group(1) or match.group(2) or "").strip()
+        if entity:
+            entities.append(entity)
+    return list(dict.fromkeys(entities))
 
 
 __all__ = [

@@ -14,7 +14,7 @@ class EscalationLevel(StrEnum):
     STRICT = "strict"
     FORCE_REDUCE = "force_reduce"
     DETERMINISTIC_TRUNCATE = "deterministic_truncate"
-    HUMAN_REVIEW = "human_review"
+    MACHINE_REPAIR = "machine_repair"
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ def decide_escalation(
     level = EscalationLevel.NORMAL
     post_process_action: str | None = None
     if attempt_count >= 6:
-        level = EscalationLevel.HUMAN_REVIEW
+        level = EscalationLevel.MACHINE_REPAIR
     elif (
         block_kind == "length"
         and current_word_count > hard_max_word_count * 1.3
@@ -151,10 +151,10 @@ def _render_directive(
 ) -> str:
     if level == EscalationLevel.NORMAL:
         return ""
-    if level == EscalationLevel.HUMAN_REVIEW:
+    if level == EscalationLevel.MACHINE_REPAIR:
         return (
-            f"【人工复核】本章 {block_kind} 已连续 {attempt_count} 次未修复。"
-            "不要继续自动扩写；保留当前最佳版本等待人工处理。"
+            f"【机器深度修复】本章 {block_kind} 已连续 {attempt_count} 次未修复。"
+            "停止重复同一改写策略；改用更小步的约束收敛修复，优先删除或替换命中问题。"
         )
     if block_kind == "forbidden_term":
         terms = "、".join(dict.fromkeys(str(t) for t in forbidden_terms_hit if str(t).strip()))

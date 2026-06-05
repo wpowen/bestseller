@@ -453,6 +453,30 @@
 </header>
 
 <div class="container">
+  <!-- 执行进度面板:规划→写作全过程实时可视化 -->
+  <div class="card" id="execCard" style="margin-bottom:20px;border:1px solid #e3e6ee;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <h2 style="margin:0;"><span class="icon">⚙️</span> 执行进度
+        <span id="execHealth" style="font-size:12px;padding:2px 10px;border-radius:10px;margin-left:8px;"></span>
+      </h2>
+      <div style="font-size:12px;color:#888;">
+        <span id="execAuto">自动刷新 5s</span> · <span id="execUpdated">-</span>
+      </div>
+    </div>
+    <div id="execCurrent" style="margin:12px 0;font-size:13px;color:#444;">加载中...</div>
+    <div id="execPhases" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;" id="execLower">
+      <div>
+        <div class="info-label" style="margin-bottom:6px;">已产出规划内容</div>
+        <div id="execArtifacts" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+      </div>
+      <div>
+        <div class="info-label" style="margin-bottom:6px;">最近执行步骤</div>
+        <div id="execSteps" style="max-height:220px;overflow:auto;font-size:12px;font-family:'JetBrains Mono',monospace;"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="stats-grid" id="statsGrid">
     <div class="stat-card">
       <div class="stat-value" id="statChapters">-</div>
@@ -869,6 +893,74 @@ async function loadData() {
 }
 
 loadData();
+
+// ===== 执行进度面板(实时,独立于上面的设计审查数据)=====
+const PHASE_COLORS = {
+  done: ['#e6f7ee', '#1a7f48', '✓'],
+  running: ['#e7f0ff', '#2257d6', '▶'],
+  failed: ['#fdecec', '#c0392b', '✗'],
+  pending: ['#f1f2f5', '#9aa0ab', '○'],
+};
+
+function execStepTag(status) {
+  const m = { completed: '#1a7f48', running: '#2257d6', failed: '#c0392b',
+              machine_blocked: '#c0392b', queued: '#b8860b', pending: '#9aa0ab' };
+  return m[status] || '#9aa0ab';
+}
+
+function fmtTime(s) {
+  if (!s) return '';
+  try { return new Date(s).toLocaleTimeString('zh-CN', { hour12: false }); } catch (e) { return s; }
+}
+
+async function loadExecProgress() {
+  try {
+    const d = await fetchData('execution-progress');
+    // 健康标
+    const h = document.getElementById('execHealth');
+    const hm = { ok: ['#e6f7ee', '#1a7f48', '正常'], warning: ['#fff6e5', '#b8860b', '有重试'],
+                 failed: ['#fdecec', '#c0392b', '失败需处理'] }[d.health] || ['#f1f2f5', '#888', '-'];
+    h.style.background = hm[0]; h.style.color = hm[1]; h.textContent = hm[2];
+    document.getElementById('execUpdated').textContent = '更新于 ' + fmtTime(d.current?.updated_at) || '';
+
+    // 当前活动
+    const c = d.current || {};
+    const cur = document.getElementById('execCurrent');
+    if (c.workflow_type) {
+      cur.innerHTML = `当前任务:<b>${escapeHtml(c.workflow_type)}</b> · 状态 <b style="color:${execStepTag(c.status)}">${escapeHtml(c.status || '-')}</b>`
+        + (c.current_step ? ` · 步骤 <code>${escapeHtml(c.current_step)}</code>` : '')
+        + (c.error ? `<div style="color:#c0392b;margin-top:4px;">⚠ ${escapeHtml(c.error).slice(0, 200)}</div>` : '');
+    } else { cur.textContent = '尚未开始执行。'; }
+
+    // 阶段轨道
+    document.getElementById('execPhases').innerHTML = (d.phases || []).map(p => {
+      const [bg, fg, icon] = PHASE_COLORS[p.status] || PHASE_COLORS.pending;
+      return `<div style="background:${bg};color:${fg};border-radius:8px;padding:6px 10px;font-size:12px;min-width:96px;">
+        <div style="font-weight:600;">${icon} ${escapeHtml(p.label)}</div>
+        ${p.detail ? `<div style="opacity:.85;margin-top:2px;">${escapeHtml(p.detail)}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    // 已产出规划
+    document.getElementById('execArtifacts').innerHTML = (d.artifacts || []).length
+      ? d.artifacts.map(a => `<span class="tag" title="${escapeHtml(a.type)} v${a.version}">${escapeHtml(a.label)}${a.count > 1 ? ' ×' + a.count : ''}</span>`).join('')
+      : '<span style="color:#9aa0ab;font-size:12px;">暂无</span>';
+
+    // 最近步骤流水
+    document.getElementById('execSteps').innerHTML = (d.recent_steps || []).length
+      ? d.recent_steps.map(s => `<div style="padding:2px 0;border-bottom:1px solid #f0f0f3;">
+          <span style="color:${execStepTag(s.status)};">●</span>
+          <span style="color:#888;">${fmtTime(s.created_at)}</span>
+          ${escapeHtml(s.name)} <span style="color:${execStepTag(s.status)};">${escapeHtml(s.status)}</span>
+        </div>`).join('')
+      : '<span style="color:#9aa0ab;">暂无步骤</span>';
+  } catch (e) {
+    document.getElementById('execCurrent').textContent = '执行进度加载失败:' + e.message;
+  }
+}
+
+loadExecProgress();
+setInterval(loadExecProgress, 5000);
 </script>
 </body>
 </html>

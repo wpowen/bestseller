@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from bestseller.domain.project import (
@@ -435,6 +436,44 @@ def get_project_writing_profile(
     )
 
 
+_PROFILE_PLACEHOLDER_VALUES: frozenset[str] = frozenset({
+    "暂无", "未指定", "自动/未指定", "暂无明确卖点", "暂无明确开篇合同", "无",
+    "none", "unspecified", "auto/unspecified", "none specified", "n/a",
+})
+
+
+def _prune_profile_lines(lines: list[str]) -> list[str]:
+    """剪掉占位值行(暂无/未指定/none…)和随之变空的段标题,杜绝无效约束噪声。"""
+
+    def _is_header(s: str) -> bool:
+        t = s.strip()
+        return (not t.startswith("-")) and (t.endswith("：") or t.endswith(":"))
+
+    kept: list[str] = []
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("- ") and ("：" in s or ":" in s):
+            val = re.split(r"[：:]", s, maxsplit=1)[-1]
+            if val.strip().lower() in _PROFILE_PLACEHOLDER_VALUES:
+                continue
+        kept.append(ln)
+
+    out: list[str] = []
+    for i, ln in enumerate(kept):
+        if _is_header(ln):
+            has_child = False
+            for nxt in kept[i + 1:]:
+                if _is_header(nxt):
+                    break
+                if nxt.strip().startswith("-"):
+                    has_child = True
+                    break
+            if not has_child:
+                continue
+        out.append(ln)
+    return out
+
+
 def render_writing_profile_prompt_block(profile: WritingProfile, *, language: str | None = None) -> str:
     prompt_pack = resolve_prompt_pack(
         profile.market.prompt_pack_key,
@@ -485,6 +524,7 @@ def render_writing_profile_prompt_block(profile: WritingProfile, *, language: st
             f"- {profile.serialization.chapter_ending_rule}",
             f"- {profile.serialization.free_chapter_strategy}",
         ]
+        lines = _prune_profile_lines(lines)
         pack_block = render_prompt_pack_prompt_block(prompt_pack)
         if pack_block:
             lines.extend(["Prompt Pack Notes:", pack_block])
@@ -532,6 +572,7 @@ def render_writing_profile_prompt_block(profile: WritingProfile, *, language: st
         f"- {profile.serialization.chapter_ending_rule}",
         f"- {profile.serialization.free_chapter_strategy}",
     ]
+    lines = _prune_profile_lines(lines)
     pack_block = render_prompt_pack_prompt_block(prompt_pack)
     if pack_block:
         lines.extend(["Prompt Pack 设计：", pack_block])

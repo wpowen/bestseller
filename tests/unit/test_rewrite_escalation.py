@@ -54,6 +54,20 @@ def test_forbidden_term_persistent_triggers_regex_strip():
     assert decision.post_process_action == "regex_strip"
 
 
+def test_persistent_general_failure_triggers_machine_repair_not_human_review():
+    decision = decide_escalation(
+        chapter=_chapter({"canon_state": 5}),
+        block_codes=["CANON_STATE_REGRESSION"],
+        current_word_count=2200,
+        target_word_count=2200,
+        hard_max_word_count=3000,
+    )
+
+    assert decision.level == EscalationLevel.MACHINE_REPAIR
+    assert "机器深度修复" in decision.strict_directive
+    assert "等待人工" not in decision.strict_directive
+
+
 def test_post_process_truncate_preserves_ending_hook():
     decision = decide_escalation(
         chapter=_chapter({"length": 4}),

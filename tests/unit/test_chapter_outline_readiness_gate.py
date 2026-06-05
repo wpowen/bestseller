@@ -345,7 +345,13 @@ def test_blocks_scene_contract_that_contains_forbidden_action_surface() -> None:
     }
 
 
-def test_blocks_non_expert_rule_knowledge_in_front_hook() -> None:
+def test_knowledge_boundary_leak_is_not_hardcoded_per_book() -> None:
+    """Knowledge-boundary leaks are book-specific (they depend on the cast's ordinary
+    characters and the book's own glossary) and are now enforced genre-neutrally by the
+    outline_commercial_judge. The deterministic gate must NOT emit a finding driven by
+    one detective book's hardcoded cast/jargon (王建业/认账/下一笔) — that leaked the
+    青囊 cast into every project."""
+
     report = evaluate_chapter_outline_readiness(
         chapter_number=1,
         chapter_title="子时前，镜中缺一张脸",
@@ -364,8 +370,7 @@ def test_blocks_non_expert_rule_knowledge_in_front_hook() -> None:
         ],
     )
 
-    assert report.verdict == "blocked"
-    assert "OUTLINE_KNOWLEDGE_BOUNDARY_LEAK" in {
+    assert "OUTLINE_KNOWLEDGE_BOUNDARY_LEAK" not in {
         issue.code for issue in report.issues
     }
 

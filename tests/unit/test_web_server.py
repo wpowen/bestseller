@@ -1267,6 +1267,30 @@ def test_build_db_repair_task_summary_surfaces_project_queue() -> None:
     assert task["synthetic_db_repair_task"] is True
 
 
+def test_build_db_repair_task_summary_keeps_failed_rewrite_feedback_retryable() -> None:
+    project = SimpleNamespace(
+        slug="romantasy-1776330993",
+        title="Shadowbound",
+        status="revising",
+        target_chapters=800,
+        created_at=datetime(2026, 6, 4, 13, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 4, 13, 10, tzinfo=UTC),
+    )
+    repair_status = {
+        "phase": "needs_attention",
+        "blocked_chapters": 0,
+        "autonomous_repair_tasks": {"failed": 1, "total": 1},
+        "detail": "部分闭环修复任务未通过，需要携带失败反馈进入下一轮修复。",
+    }
+
+    task = web_server._build_db_repair_task_summary(project, repair_status)
+
+    assert task is not None
+    assert task["status"] == "incomplete"
+    assert task["current_stage"] == "legacy_quality_closure_repair_retry_pending"
+    assert task["error"] is None
+
+
 def test_db_repair_summary_rehydrates_latest_workflow_progress() -> None:
     project = SimpleNamespace(
         slug="exorcist-detective-1778051012",
@@ -1341,6 +1365,43 @@ def test_db_repair_summary_rehydrates_latest_workflow_progress() -> None:
     assert "project_repair_targets_collected" in stages
     assert "project_repair_chapter_started" in stages
     assert "project_repair_chapter_completed" in stages
+
+
+def test_db_repair_summary_keeps_generation_gate_retry_out_of_failed_state() -> None:
+    project = SimpleNamespace(
+        slug="oracle-pilot-dianshen",
+        title="借运成神",
+        status="writing",
+        target_chapters=12,
+        created_at=datetime(2026, 6, 4, 13, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 4, 13, 3, tzinfo=UTC),
+        metadata_json={
+            "generation_gate_auto_retry_needed": True,
+            "last_generation_gate_reason": "scene_plan_richness_gate_failed:no_state_delta",
+        },
+    )
+    latest = {
+        "status": "failed",
+        "current_step": "repair_chapter_1",
+        "error_message": "Scene 1.2 blocked by plan-richness gate",
+        "created_at": "2026-06-04T13:00:54+00:00",
+        "updated_at": "2026-06-04T13:03:28+00:00",
+        "progress_events": [],
+    }
+
+    repair_status = web_server._build_project_repair_status_payload(
+        project,
+        [{"status": "revision", "production_state": "pending", "count": 1}],
+        {},
+        latest,
+    )
+    task = web_server._build_db_repair_task_summary(project, repair_status)
+
+    assert repair_status["phase"] == "planning_gate"
+    assert task is not None
+    assert task["status"] == "queued"
+    assert task["current_stage"] == "planning_gate_auto_retry_pending"
+    assert task["error"] is None
 
 
 def test_stale_autowrite_repair_block_task_can_be_hidden_by_db_repair() -> None:
@@ -2004,6 +2065,49 @@ def test_load_from_disk_flags_resumable_zombies_as_queued(tmp_path: Path) -> Non
     # The auto_resume_queued marker event was appended for UI visibility
     stages = [e["stage"] for e in task["progress_events"]]
     assert "auto_resume_queued" in stages
+
+
+def test_load_from_disk_dedupes_active_same_slug_zombies(tmp_path: Path) -> None:
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z-old",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "demo",
+                "title": "Demo",
+                "current_stage": "chapter_pipeline_started",
+                "progress_events": [],
+                "payload": {"slug": "demo", "title": "Demo"},
+            },
+            {
+                "task_id": "z-new",
+                "task_type": "autowrite",
+                "status": "queued",
+                "created_at": "2026-01-01T00:10:00+00:00",
+                "updated_at": "2026-01-01T00:15:00+00:00",
+                "project_slug": "demo",
+                "title": "Demo",
+                "current_stage": "queued",
+                "progress_events": [],
+                "payload": {"slug": "demo", "title": "Demo"},
+            },
+        ],
+    )
+
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    assert manager.get_task("z-old") is None
+    task = manager.get_task("z-new")
+    assert task is not None
+    assert task["status"] == "queued"
+    assert task["current_stage"] == "auto_resume_pending"
+    assert manager._pending_auto_resume_ids == ["z-new"]
+    persisted = json.loads(persist_path.read_text(encoding="utf-8"))
+    assert [item["task_id"] for item in persisted] == ["z-new"]
 
 
 def test_load_from_disk_fails_zombies_without_payload(tmp_path: Path) -> None:

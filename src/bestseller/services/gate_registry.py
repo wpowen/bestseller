@@ -270,6 +270,7 @@ def project_resume_is_terminally_blocked(metadata: Mapping[str, object] | None) 
 # ---------------------------------------------------------------------------
 
 _WRITE_SAFETY_GATE_NAME = "write_safety_gate"
+_CHAPTER_OUTLINE_READINESS_GATE_NAME = "chapter_outline_readiness_gate"
 
 _LOCAL_GATE_NAMES = frozenset(
     gate.name for gate in _GATES if gate.continuation_impact == "local"
@@ -287,11 +288,31 @@ LOCAL_WRITE_SAFETY_BLOCK_CODES = frozenset(
     {
         "block_low",
         "block_high",
+        "length_under",
+        "length_over",
+        "chapter_too_short",
+        "chapter_too_long",
+        "chapter_length_block_low",
+        "chapter_length_block_high",
         "dialog_unpaired",
+        "dialogue_ping_pong",
         "ending_sentence_weak",
         "intra_chapter_repetition",
         "cross_chapter_repetition",
+        "chapter_opening_repetition",
     }
+)
+LOCAL_CHAPTER_OUTLINE_READINESS_BLOCK_CODES = frozenset(
+    {
+        "outline_stale_auto_repair_residue",
+        "outline_pending_rewrite_task",
+    }
+)
+_CHAPTER_OUTLINE_READINESS_METADATA_KEYS = (
+    "blocked_by_chapter_outline_readiness_gate",
+    "chapter_outline_readiness_block_codes",
+    "chapter_outline_readiness_hint",
+    "chapter_outline_readiness_report",
 )
 
 # Block-metadata keys grouped by continuation impact. ``write_safety_gate`` is
@@ -311,6 +332,7 @@ _STRUCTURAL_BLOCK_METADATA_KEYS: tuple[str, ...] = tuple(
         for gate in _GATES
         if gate.continuation_impact == "structural"
         and gate.name != _WRITE_SAFETY_GATE_NAME
+        and gate.name != _CHAPTER_OUTLINE_READINESS_GATE_NAME
         for key in gate.metadata_keys
     )
 )
@@ -374,6 +396,17 @@ def write_safety_block_is_structural(block_code: object) -> bool:
     return any(code not in LOCAL_WRITE_SAFETY_BLOCK_CODES for code in codes)
 
 
+def chapter_outline_readiness_block_is_structural(block_code: object) -> bool:
+    """Decide whether an outline-readiness hit blocks forward writing."""
+
+    codes = _normalize_block_codes(block_code)
+    if not codes:
+        return True
+    return any(
+        code not in LOCAL_CHAPTER_OUTLINE_READINESS_BLOCK_CODES for code in codes
+    )
+
+
 def chapter_block_is_structural(metadata: Mapping[str, object] | None) -> bool:
     """Whether a blocked chapter's failure blocks forward writing.
 
@@ -386,12 +419,24 @@ def chapter_block_is_structural(metadata: Mapping[str, object] | None) -> bool:
 
     data = metadata if isinstance(metadata, Mapping) else {}
 
-    # 1. Any non-write-safety structural gate hit dominates.
+    # 1. chapter_outline_readiness_gate is structural for missing/broken
+    # outline data, but stale repair residue or pending local rewrite tasks are
+    # process-local locks. They must not starve forward writing.
+    recognized_local = False
+    if bool(data.get("blocked_by_chapter_outline_readiness_gate")) or data.get(
+        "chapter_outline_readiness_block_codes"
+    ):
+        if chapter_outline_readiness_block_is_structural(
+            data.get("chapter_outline_readiness_block_codes")
+        ):
+            return True
+        recognized_local = True
+
+    # 2. Any non-write-safety structural gate hit dominates.
     if any(bool(data.get(key)) for key in _STRUCTURAL_BLOCK_METADATA_KEYS):
         return True
 
-    # 2. write_safety_gate is decided by its block code.
-    recognized_local = False
+    # 3. write_safety_gate is decided by its block code.
     if bool(data.get("blocked_by_write_safety_gate")) or data.get(
         "write_safety_block_code"
     ):
@@ -399,13 +444,13 @@ def chapter_block_is_structural(metadata: Mapping[str, object] | None) -> bool:
             return True
         recognized_local = True
 
-    # 3. Any local gate hit → confined to this chapter's prose.
+    # 4. Any local gate hit → confined to this chapter's prose.
     if recognized_local or any(
         bool(data.get(key)) for key in _LOCAL_BLOCK_METADATA_KEYS
     ):
         return False
 
-    # 4. Blocked for an unrecognized reason → stay conservative.
+    # 5. Blocked for an unrecognized reason → stay conservative.
     return True
 
 

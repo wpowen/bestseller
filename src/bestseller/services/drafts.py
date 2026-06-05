@@ -5512,6 +5512,19 @@ def build_scene_draft_prompts(
     # cache；写作画像 + 商业守则随项目变化，放在 CONSTRAINTS 末尾独立子段。
     _pack_label = getattr(prompt_pack, "key", None) or getattr(prompt_pack, "name", None) or "general"
     _genre_label = getattr(writing_profile.market, "platform_target", None) or "商业长篇连载"
+    # Ranking-tier self-check: tell the writer the EXACT hard dimensions (and floors)
+    # the commercial gate will score it against. Single-sourced from
+    # chapter_commercial_thresholds so it can never drift from the gate.
+    try:
+        from bestseller.services.chapter_llm_quality_judge import (
+            render_ranking_self_check_block,
+        )
+
+        ranking_self_check_block = render_ranking_self_check_block(
+            int(getattr(chapter, "chapter_number", 0) or 0), language
+        )
+    except Exception:  # pragma: no cover - never let self-check break generation
+        ranking_self_check_block = ""
     if is_en:
         system_prompt = (
             "# ROLE\n"
@@ -5565,7 +5578,8 @@ def build_scene_draft_prompts(
             "- 'mixed feelings' / 'inexplicable dread' / 'electric sensation'\n"
             "- Closing lines like 'this was only the beginning' or 'the real answer waited to be revealed'\n"
             "\n"
-            "# PROJECT-SPECIFIC PROFILE (varies per project)\n"
+            + (ranking_self_check_block + "\n" if ranking_self_check_block else "")
+            + "# PROJECT-SPECIFIC PROFILE (varies per project)\n"
             f"Writing profile:\n{writing_profile_section}\n"
             f"Serial fiction guardrails:\n{serial_guardrails}\n"
         )
@@ -5630,7 +5644,8 @@ def build_scene_draft_prompts(
             "- 任何以「显而易见」/「毫无疑问」/「不言而喻」开头的句子\n"
             "- 章末「这一切才刚刚开始」/「真正的答案还在等待揭开」/「欲知后事如何」\n"
             "\n"
-            "# PROJECT PROFILE（项目级变量内容）\n"
+            + (ranking_self_check_block + "\n" if ranking_self_check_block else "")
+            + "# PROJECT PROFILE（项目级变量内容）\n"
             f"## 写作画像\n{writing_profile_section}\n\n"
             f"## 商业网文硬约束\n{serial_guardrails}\n"
         )
@@ -6531,7 +6546,10 @@ def _render_project_material_obligation_packet(
         base_dir = Path(load_settings().output.base_dir)
     except Exception:
         return ""
-    project_dir = base_dir / project.slug
+    project_slug = getattr(project, "slug", None)
+    if not project_slug:
+        return ""
+    project_dir = base_dir / project_slug
     if not project_dir.exists():
         return ""
     try:
@@ -9113,6 +9131,7 @@ async def _maybe_render_library_soft_reference(
     project: ProjectModel,
     chapter: ChapterModel,
     scene: SceneCardModel,
+    chapter_contract: Any = None,
 ) -> str | None:
     """Render the soft-reference library block when the feature flag is on.
 
@@ -9155,10 +9174,29 @@ async def _maybe_render_library_soft_reference(
     try:
         from bestseller.services.material_library_reference import (  # noqa: PLC0415
             render_library_soft_reference_block,
+            select_soft_reference_dims,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("library soft-reference import failed: %s", exc)
         return None
+
+    # Phase-aware gate: surface scene-bank桥段 on set-piece beats, step them
+    # aside on breathers. Pacing / climax come from the chapter contract; when
+    # absent (legacy / cold-start) the helper returns dims=None → default dims,
+    # so behaviour is unchanged. Read fields defensively (model or mapping).
+    def _contract_get(key: str) -> Any:
+        if chapter_contract is None:
+            return None
+        if isinstance(chapter_contract, dict):
+            return chapter_contract.get(key)
+        return getattr(chapter_contract, key, None)
+
+    dims, eff_top_k = select_soft_reference_dims(
+        pacing_mode=_contract_get("pacing_mode"),
+        is_climax=bool(_contract_get("is_climax")),
+        emotion_phase=_contract_get("emotion_phase"),
+        base_top_k=top_k,
+    )
 
     try:
         return await render_library_soft_reference_block(
@@ -9166,7 +9204,8 @@ async def _maybe_render_library_soft_reference(
             query=query_text,
             genre=getattr(project, "genre", None),
             sub_genre=getattr(project, "sub_genre", None),
-            top_k=top_k,
+            dimensions=dims,
+            top_k=eff_top_k,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("library soft-reference render failed: %s", exc)
@@ -9736,6 +9775,9 @@ async def generate_scene_draft(
                 project=project,
                 chapter=chapter,
                 scene=scene,
+                chapter_contract=(
+                    context_packet.chapter_contract if context_packet else None
+                ),
             ),
             # P1 Originality Engine — pre-rendered by pipelines.py from
             # chapter_orchestrator.prepare_chapter_context. None on legacy
@@ -9816,11 +9858,23 @@ async def generate_scene_draft(
             int(chapter.chapter_number or 0),
         )
         prompt_variants = ("full", "lean") if prompt_mode == "ab" else (prompt_mode,)
+        # App-level best-of-N for golden-three (strong tier) chapters: the 0.92
+        # bar is highest there and MiniMax ignores the provider-side ``n`` param,
+        # so we sample the writer n_candidates times and keep the best-scoring draft
+        # (via _score_writer_candidate). Restricted to strong tier to concentrate the
+        # extra cost where it matters; standard-tier chapters stay single-shot.
+        _writer_n = max(1, int(getattr(settings.llm.writer, "n_candidates", 1) or 1))
+        _best_of_n = _writer_n if _model_tier == "strong" else 1
+        variant_plan = [
+            (variant, attempt)
+            for variant in prompt_variants
+            for attempt in range(_best_of_n)
+        ]
         candidate_records: list[dict[str, Any]] = []
         completion = None
         prompt_trace_path = None
         user_prompt = raw_user_prompt
-        for variant in prompt_variants:
+        for variant, _candidate_attempt in variant_plan:
             try:
                 from bestseller.services.prompt_compactor import compact_user_prompt
 
@@ -9845,7 +9899,11 @@ async def generate_scene_draft(
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
                 model_tier=_model_tier,
-                trace_kind=f"scene-{variant}",
+                trace_kind=(
+                    f"scene-{variant}"
+                    if _best_of_n <= 1
+                    else f"scene-{variant}-c{_candidate_attempt}"
+                ),
             )
             variant_completion = await complete_text(
                 session,
@@ -9875,6 +9933,8 @@ async def generate_scene_draft(
                         "context_query": context_packet.query_text,
                         "prompt_mode": variant,
                         "prompt_mode_ab": prompt_mode == "ab",
+                        "candidate_attempt": _candidate_attempt,
+                        "best_of_n": _best_of_n,
                         "prompt_compaction": (
                             None
                             if variant_compaction_report is None

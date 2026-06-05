@@ -153,8 +153,13 @@ def test_planning_readiness_blocks_front_logic_hard_errors() -> None:
 
     assert report.passed is False
     assert "PLANNING_REAL_WORLD_PLAUSIBILITY_GAP" in report.blocking_issue_codes
+    # Object-signal-unbounded is now detected genre-neutrally (any object + 发烫,
+    # not a hardcoded 青囊 prop list).
     assert "PLANNING_OBJECT_SIGNAL_UNBOUNDED" in report.blocking_issue_codes
-    assert "PLANNING_KNOWLEDGE_BOUNDARY_LEAK" in report.blocking_issue_codes
+    # Knowledge-boundary leak detection was removed from this deterministic gate
+    # (it hardcoded one detective book's cast/jargon, leaking it into every project)
+    # and is now enforced genre-neutrally by the outline_commercial_judge.
+    assert "PLANNING_KNOWLEDGE_BOUNDARY_LEAK" not in report.blocking_issue_codes
 
 
 def test_evaluate_chapter_outline_batch_planning_readiness_accepts_dict_payload() -> None:

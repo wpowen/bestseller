@@ -11,7 +11,11 @@ pytestmark = pytest.mark.unit
 
 
 def test_chinese_chapter_rewrite_band_uses_commercial_hard_floor() -> None:
-    settings = load_settings(env={})
+    # Give the editor a production-realistic completion budget so the band reflects the
+    # length-band logic rather than a tight model-output clamp (in production the editor
+    # runs on a large-context model). Without this the band's safe_min is pinned just
+    # above the floor by output_chars_for_token_limit on a small default budget.
+    settings = load_settings(env={"BESTSELLER__LLM__EDITOR__MAX_TOKENS": "16000"})
 
     band = chapter_rewrite_length_band(
         settings,

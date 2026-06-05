@@ -93,13 +93,12 @@ SELF_HEAL_LOCK_TTL_SECONDS = 180
 SELF_HEAL_SCAN_DONE_KEY = "bestseller:self_heal:scan_done"
 SELF_HEAL_SCAN_DONE_TTL_SECONDS = 7200
 
-# Give-up threshold. A project that self-heal re-queues this many times
-# WITHOUT the chapter count increasing is almost certainly hard-blocked
-# (planner schema failure, a blocking methodology/planning gate, etc.) — not
-# transiently stuck. Re-running it forever burns real LLM tokens on every
-# scan and never advances (observed on throwaway A/B projects stuck in
-# ``planning`` with 0 chapters). After this many no-progress heals we stamp
-# ``self_heal_abandoned`` + a human-review pause reason and stop re-queueing.
+# Escalation threshold. A project that self-heal re-queues this many times
+# WITHOUT the chapter count increasing is likely hard-blocked (planner schema
+# failure, a blocking methodology/planning gate, etc.) rather than transiently
+# stuck. Hitting the threshold must escalate to a stronger machine-repair path,
+# not a manual-review stop state; autonomous production treats that as another
+# repair strategy, not as permission to abandon the book.
 MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS = 5
 
 # ARQ's default job expiry is 24 hours.  A single long-form autowrite job can
@@ -162,12 +161,25 @@ GENERATION_GATE_RESUME_COOLDOWN_SECONDS = int(
     os.getenv("BESTSELLER_GENERATION_GATE_RESUME_COOLDOWN_SECONDS", "60")
 )
 TEMPORARY_PLANNING_THROTTLE_REASON = "temporary_planning_throttle_for_new_books"
+_SELF_HEAL_AUTO_RESUMABLE_PAUSE_REASONS = frozenset(
+    {
+        "self_heal_no_progress_giveup",
+        "self_heal_no_progress_machine_repair",
+    }
+)
 _AUTO_RESUMABLE_GENERATION_GATE_REASONS = frozenset(
     {
         "scene_plan_richness_gate_failed",
         "story_bible_gate_failed",
         TEMPORARY_PLANNING_THROTTLE_REASON,
         "volume_outline_gate_failed",
+    }
+)
+_LOCAL_REWRITE_TRIGGER_TYPES = frozenset(
+    {
+        "scene_review",
+        "chapter_review",
+        "chapter_auto_repair",
     }
 )
 
@@ -207,6 +219,19 @@ _SELF_HEAL_BLOCKING_WORKFLOW_TYPES = (
             "materialize_narrative_tree",
         }
     )
+)
+_SELF_HEAL_CONTINUATION_BLOCKING_WORKFLOW_TYPES = frozenset(
+    {
+        "autowrite_pipeline",
+        "generate_foundation_plan",
+        "generate_novel_plan",
+        "generate_volume_plan",
+        "project_pipeline",
+        "materialize_story_bible",
+        "materialize_chapter_outline_batch",
+        "materialize_narrative_graph",
+        "materialize_narrative_tree",
+    }
 )
 
 
@@ -337,6 +362,7 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
         return set()
 
     slugs: set[str] = set()
+    job_states: dict[str, set[str]] = {}
     try:
         scan_iter = getattr(redis, "scan_iter", None)
         patterns = ("arq:in-progress:*", "arq:job:*", "arq:retry:*")
@@ -358,11 +384,24 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
         key_text = key.decode() if isinstance(key, bytes) else str(key)
         if key_text.startswith("arq:in-progress:"):
             job_id = key_text.removeprefix("arq:in-progress:")
+            state = "in-progress"
         elif key_text.startswith("arq:job:"):
             job_id = key_text.removeprefix("arq:job:")
+            state = "job"
         elif key_text.startswith("arq:retry:"):
             job_id = key_text.removeprefix("arq:retry:")
+            state = "retry"
         else:
+            continue
+        job_states.setdefault(job_id, set()).add(state)
+
+    for job_id, states in job_states.items():
+        if await _arq_owner_is_stale(redis, job_id, states):
+            logger.info(
+                "self-heal: ignoring stale ARQ owner job_id=%s states=%s",
+                job_id,
+                sorted(states),
+            )
             continue
         try:
             raw = await _redis_get_bytes(redis, f"arq:job:{job_id}")
@@ -387,6 +426,34 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
     return slugs
 
 
+async def _arq_owner_is_stale(redis: Any, job_id: str, states: set[str]) -> bool:
+    """True when an ARQ owner key is old enough to be a ghost lock.
+
+    ``arq:job:*`` by itself can represent a real queued job, so stale filtering
+    is limited to ownership states that claim execution/scheduled retry. Missing
+    queue scores are treated as live because ARQ variants differ in how they
+    retain scores for active jobs.
+    """
+    if "in-progress" not in states and "retry" not in states:
+        return False
+    zscore = getattr(redis, "zscore", None)
+    if zscore is None:
+        return False
+    try:
+        score = await zscore("arq:queue", job_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("self-heal: failed to read ARQ queue score %s", job_id)
+        return False
+    if score is None:
+        return False
+    try:
+        score_ms = float(score)
+    except (TypeError, ValueError):
+        return False
+    cutoff_ms = (time.time() - STALE_ARQ_IN_PROGRESS_GRACE_SECONDS) * 1000
+    return score_ms < cutoff_ms
+
+
 async def _redis_get_bytes(redis: Any, key: str) -> bytes | None:
     execute_command = getattr(redis, "execute_command", None)
     if execute_command is not None:
@@ -404,7 +471,7 @@ async def _resolve_project_ids_for_slugs(session: Any, slugs: set[str]) -> set[A
 
 
 async def find_stuck_projects(session: Any) -> list[StuckProject]:
-    """Return every project that looks stuck and has no active pipeline.
+    """Return projects that need self-heal and have no active continuation run.
 
     Three detection paths:
 
@@ -431,13 +498,12 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             continue
         if _project_is_focus_paused(project):
             continue
-        if _project_self_heal_abandoned(project):
-            # Gave up after repeated no-progress heals — surfaced for human
-            # review; do not re-queue (would burn LLM tokens indefinitely).
-            continue
 
-        # Skip projects with an active pipeline run.
-        if await _has_active_pipeline_run(session, project.id):
+        # Skip only when a forward-writing/planning run is active. A repair run
+        # may coexist with continuation when all current blocks are local prose
+        # defects; treating project_repair/scene_pipeline as globally active
+        # starves the intended repair+new-chapter parallelism.
+        if await _has_active_continuation_pipeline_run(session, project.id):
             continue
 
         auto_resumable_generation_gate = _project_has_stale_auto_resumable_generation_gate(
@@ -717,6 +783,21 @@ async def _has_active_pipeline_run(session: Any, project_id: Any) -> bool:
     return active is not None
 
 
+async def _has_active_continuation_pipeline_run(session: Any, project_id: Any) -> bool:
+    active = await session.scalar(
+        select(WorkflowRunModel.id)
+        .where(
+            WorkflowRunModel.project_id == project_id,
+            WorkflowRunModel.workflow_type.in_(
+                _SELF_HEAL_CONTINUATION_BLOCKING_WORKFLOW_TYPES
+            ),
+            WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
+        )
+        .limit(1)
+    )
+    return active is not None
+
+
 async def _blocked_chapters_have_recent_waiting_repair(
     session: Any,
     project_id: Any,
@@ -770,13 +851,13 @@ async def _blocked_chapters_have_scene_machine_blocker(
     session: Any,
     project_id: Any,
 ) -> bool:
-    """True when a blocked chapter already exhausted bounded scene repair.
+    """True when a blocked chapter just exhausted bounded scene repair.
 
     ``scene_rewrite_stalled_blocked`` and ``scene_machine_repair_required`` are
-    explicit stop states: the scene pipeline tried its bounded machine repairs
-    and still could not pass.  Self-heal must not treat the leftover blocked
-    chapter or pending scene rewrite tasks as recoverable work, otherwise every
-    worker scan replays the same scene repair loop and burns LLM tokens.
+    short-lived duplicate-suppression states: the scene pipeline tried its
+    bounded machine repairs and still could not pass.  Self-heal should not
+    replay the same scene repair immediately, but an old machine-blocked row is
+    evidence for another autonomous repair pass, not a permanent stop.
     """
     latest_scene_blocker_update = await session.scalar(
         select(func.max(WorkflowRunModel.updated_at)).where(
@@ -792,6 +873,10 @@ async def _blocked_chapters_have_scene_machine_blocker(
     )
     latest_scene_blocker_update = _ensure_utc(latest_scene_blocker_update)
     if latest_scene_blocker_update is None:
+        return False
+    if latest_scene_blocker_update < _dt.datetime.now(_dt.UTC) - _dt.timedelta(
+        seconds=WAITING_REPAIR_SUPPRESSION_SECONDS
+    ):
         return False
 
     latest_blocked_update = await session.scalar(
@@ -838,6 +923,8 @@ async def _pending_rewrite_tasks_block_continuation(
     )
     for task in rows:
         trigger = str(getattr(task, "trigger_type", "") or "")
+        if trigger in _LOCAL_REWRITE_TRIGGER_TYPES:
+            continue
         if gate_continuation_impact(trigger) == "structural":
             return True
     return False
@@ -875,16 +962,13 @@ def _metadata_int(metadata: dict[str, Any], key: str, default: int = 0) -> int:
 
 
 def _project_self_heal_abandoned(project: ProjectModel) -> bool:
-    """True when self-heal has given up on a project (no-progress threshold).
+    """Compatibility shim for old ``self_heal_abandoned`` metadata.
 
-    Abandoned projects are excluded from the stuck scan so the heal loop
-    stops re-queueing them (and stops burning LLM tokens). The flag is
-    cleared when a human/UI explicitly resumes the project.
+    Older deployments wrote this flag and then excluded the project from every
+    future stuck scan. Autonomous production now treats that historical marker
+    as diagnostic metadata only; no book should require a human click to resume.
     """
-    metadata = getattr(project, "metadata_json", None) or {}
-    if not isinstance(metadata, dict):
-        return False
-    return bool(metadata.get("self_heal_abandoned"))
+    return False
 
 
 def _compute_heal_progress_state(
@@ -893,17 +977,17 @@ def _compute_heal_progress_state(
     *,
     max_attempts: int = MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS,
 ) -> tuple[dict[str, Any], bool]:
-    """Pure helper: update the no-progress attempt counter and decide give-up.
+    """Pure helper: update the no-progress attempt counter and decide escalation.
 
-    Returns ``(new_metadata, abandoned)``. The chapter count is compared
+    Returns ``(new_metadata, abandoned)``. ``abandoned`` is retained for caller
+    compatibility but is always ``False`` in autonomous runtime. The chapter count is compared
     against the count recorded on the previous heal cycle:
 
     * progressed (count increased, or first ever) → counter resets to 0
     * no progress → counter increments
 
-    When the counter reaches ``max_attempts`` the project is marked
-    abandoned (``self_heal_abandoned``) with a human-review pause reason so
-    the scan skips it instead of re-queueing forever.
+    When the counter reaches ``max_attempts`` the project is marked for a
+    stronger machine-repair pass; it is not excluded from future self-heal scans.
     """
     updated = dict(metadata) if isinstance(metadata, dict) else {}
     last = updated.get("self_heal_last_chapters_total")
@@ -921,13 +1005,16 @@ def _compute_heal_progress_state(
     updated["self_heal_last_chapters_total"] = int(chapters_total)
     updated["self_heal_no_progress_attempts"] = attempts
 
-    abandoned = attempts >= max_attempts
-    if abandoned:
-        updated["self_heal_abandoned"] = True
-        updated["self_heal_abandoned_at"] = _dt.datetime.now(_dt.UTC).isoformat()
-        updated["production_pause_reason"] = "self_heal_no_progress_giveup"
-        updated["requires_human_review"] = True
-    return updated, abandoned
+    if attempts >= max_attempts:
+        updated.pop("self_heal_abandoned", None)
+        updated.pop("self_heal_abandoned_at", None)
+        updated["self_heal_no_progress_escalated"] = True
+        updated["self_heal_no_progress_escalated_at"] = _dt.datetime.now(_dt.UTC).isoformat()
+        updated["self_heal_repair_strategy"] = "deep_machine_repair"
+        updated["production_pause_reason"] = "self_heal_no_progress_machine_repair"
+        updated["requires_machine_repair"] = True
+        updated["requires_human_review"] = False
+    return updated, False
 
 
 def _is_auto_repairable_write_safety_block(block_code: str | None) -> bool:
@@ -1027,6 +1114,11 @@ async def _clear_auto_resumable_generation_gate_pause(
 def _project_resume_is_blocked(project: ProjectModel) -> bool:
     if _project_has_stale_auto_resumable_generation_gate(project):
         return False
+    metadata = getattr(project, "metadata_json", None) or {}
+    if isinstance(metadata, dict):
+        reason = str(metadata.get("production_pause_reason") or "").strip()
+        if reason in _SELF_HEAL_AUTO_RESUMABLE_PAUSE_REASONS:
+            return False
     return project_resume_is_terminally_blocked(
         getattr(project, "metadata_json", None)
     )
@@ -1214,19 +1306,6 @@ async def _requeue_project_pipeline(
     stuck: StuckProject,
 ) -> str | None:
     """Enqueue project pipeline continuation for planned chapters without drafts."""
-    repair_job_id = _repair_heal_job_id(stuck.slug)
-    if await _heal_job_exists(pool, repair_job_id):
-        if not await _clear_stale_heal_job_if_needed(pool, repair_job_id):
-            logger.info(
-                "self-heal: skipped project pipeline slug=%s — repair job already owns project",
-                stuck.slug,
-            )
-            return None
-        logger.info(
-            "self-heal: cleared stale repair owner before project pipeline slug=%s",
-            stuck.slug,
-        )
-
     autowrite_job_id = _autowrite_heal_job_id(stuck.slug)
     if await _heal_job_exists(pool, autowrite_job_id):
         if not await _clear_stale_heal_job_if_needed(pool, autowrite_job_id):
@@ -1396,12 +1475,25 @@ async def heal_stuck_projects(
     dispatched: list[dict[str, Any]] = []
 
     effective_worker_id = worker_id or str(uuid.uuid4())
+    previous_scan_done_marker: Any | None = None
+    if redis is not None:
+        try:
+            previous_scan_done_marker = await redis.get(SELF_HEAL_SCAN_DONE_KEY)
+        except Exception:  # noqa: BLE001
+            logger.exception("self-heal: failed to read existing scan-done marker")
+
     if not await _try_acquire_heal_lock(redis, effective_worker_id):
         logger.info(
             "self-heal: another worker holds the boot lock — skipping scan",
         )
-        await _wait_for_scan_done(redis)
-        return dispatched
+        if await _wait_for_scan_done(redis, previous_marker=previous_scan_done_marker):
+            return dispatched
+        logger.warning(
+            "self-heal: boot lock holder did not publish scan-done marker; retrying lock",
+        )
+        if not await _try_acquire_heal_lock(redis, effective_worker_id):
+            logger.warning("self-heal: boot lock still held after scan wait — skipping scan")
+            return dispatched
 
     pool: "ArqRedis | None" = None
     try:
@@ -1443,7 +1535,15 @@ async def heal_stuck_projects(
         for stuck in stuck_list:
             try:
                 async with get_server_session() as session:
-                    if await _has_active_pipeline_run(session, stuck.project_id):
+                    if stuck.heal_kind in {"autowrite", "project_pipeline"}:
+                        active_workflow = await _has_active_continuation_pipeline_run(
+                            session, stuck.project_id
+                        )
+                    else:
+                        active_workflow = await _has_active_pipeline_run(
+                            session, stuck.project_id
+                        )
+                    if active_workflow:
                         logger.info(
                             "self-heal: skipped slug=%s — active workflow appeared before enqueue",
                             stuck.slug,
@@ -1537,7 +1637,10 @@ async def heal_stuck_projects(
             try:
                 await redis.set(
                     SELF_HEAL_SCAN_DONE_KEY,
-                    str(int(_dt.datetime.now(tz=_dt.timezone.utc).timestamp())),
+                    (
+                        f"{effective_worker_id}:"
+                        f"{int(_dt.datetime.now(tz=_dt.timezone.utc).timestamp())}"
+                    ),
                     ex=SELF_HEAL_SCAN_DONE_TTL_SECONDS,
                 )
             except Exception:  # noqa: BLE001 — marker is advisory
@@ -1549,16 +1652,19 @@ async def heal_stuck_projects(
 async def _wait_for_scan_done(
     redis: Any | None,
     timeout_seconds: int = SELF_HEAL_LOCK_TTL_SECONDS,
-) -> None:
+    previous_marker: Any | None = None,
+) -> bool:
     if redis is None:
-        return
+        return True
     deadline = time.monotonic() + max(1, timeout_seconds)
     while time.monotonic() < deadline:
         try:
-            if await redis.get(SELF_HEAL_SCAN_DONE_KEY):
-                return
+            marker = await redis.get(SELF_HEAL_SCAN_DONE_KEY)
+            if marker and marker != previous_marker:
+                return True
         except Exception:  # noqa: BLE001
             logger.exception("self-heal: failed while waiting for scan-done marker")
-            return
+            return False
         await asyncio.sleep(0.5)
     logger.warning("self-heal: timed out waiting for scan-done marker")
+    return False

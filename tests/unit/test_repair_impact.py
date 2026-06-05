@@ -123,6 +123,63 @@ async def test_compute_readiness_local_only_continues() -> None:
 
 
 @pytest.mark.asyncio
+async def test_compute_readiness_modern_length_codes_are_local() -> None:
+    session = _FakeSession(
+        [
+            _FakeChapter(
+                project_id="p1",
+                chapter_number=86,
+                metadata_json={
+                    "blocked_by_write_safety_gate": True,
+                    "write_safety_block_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+                },
+            ),
+            _FakeChapter(
+                project_id="p1",
+                chapter_number=87,
+                metadata_json={
+                    "blocked_by_write_safety_gate": True,
+                    "write_safety_block_code": ["CHAPTER_TOO_SHORT", "LENGTH_UNDER"],
+                },
+            ),
+        ]
+    )
+
+    readiness = await compute_continuation_readiness(session, "p1", next_chapter=88)
+
+    assert readiness.can_continue is True
+    assert readiness.local_blocked_chapters == (86, 87)
+    assert readiness.blocking_chapters == ()
+
+
+@pytest.mark.asyncio
+async def test_compute_readiness_outline_process_locks_are_local() -> None:
+    session = _FakeSession(
+        [
+            _FakeChapter(
+                project_id="p1",
+                chapter_number=87,
+                metadata_json={
+                    "blocked_by_chapter_outline_readiness_gate": True,
+                    "chapter_outline_readiness_block_codes": [
+                        "OUTLINE_STALE_AUTO_REPAIR_RESIDUE",
+                        "OUTLINE_PENDING_REWRITE_TASK",
+                    ],
+                    "blocked_by_write_safety_gate": True,
+                    "write_safety_block_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+                },
+            ),
+        ]
+    )
+
+    readiness = await compute_continuation_readiness(session, "p1", next_chapter=88)
+
+    assert readiness.can_continue is True
+    assert readiness.local_blocked_chapters == (87,)
+    assert readiness.blocking_chapters == ()
+
+
+@pytest.mark.asyncio
 async def test_compute_readiness_structural_blocks() -> None:
     session = _FakeSession(
         [

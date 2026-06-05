@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: bestseller-secret-scan
+        name: BestSeller secret scan
+        entry: python3 scripts/scan_secrets.py --staged
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]

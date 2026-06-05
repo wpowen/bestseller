@@ -91,6 +91,28 @@ def model_output_token_ceiling(model_name: str | None) -> int | None:
     return None
 
 
+def model_min_output_tokens(model_name: str | None) -> int | None:
+    """Per-model floor for completion budget on PROSE roles, to prevent truncation.
+
+    Fixed role caps cause large cross-model variance: a cap that fits DeepSeek may
+    truncate a reasoning model (MiniMax-M3) whose thinking tokens share the output
+    budget. We floor prose-role output per model so a full chapter never gets cut
+    off. Models stop at finish_reason="stop" when done, so a generous floor only
+    provides headroom (it does not waste tokens). None => keep the role's own cap.
+    """
+
+    model = (model_name or "").strip().lower()
+    if "minimax-m3" in model:
+        return 16000  # reasoning(adaptive) headroom + full chapter prose
+    if "minimax" in model:
+        return 8192
+    if "deepseek" in model:
+        return 8192
+    if "mimo" in model or "xiaomi" in model:
+        return 8192
+    return None
+
+
 def output_chars_for_token_limit(
     token_limit: int | None,
     *,

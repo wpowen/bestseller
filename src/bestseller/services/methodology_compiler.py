@@ -31,10 +31,19 @@ from bestseller.services.quality_levers.emotion_choreography import (
 from bestseller.services.quality_levers.information_choreography import (
     render_information_choreography_block,
 )
+from bestseller.services.quality_levers.prose_craft_techniques import (
+    render_prose_craft_block,
+)
 from bestseller.services.quality_levers.prose_style_anchors import (
     render_style_anchor_block,
 )
 from bestseller.services.quality_levers.rhythm_engineering import render_rhythm_block
+from bestseller.services.quality_levers.material_concreteness import (
+    render_concretization_directive,
+)
+from bestseller.services.quality_levers.scene_grounding import (
+    render_scene_grounding_block,
+)
 
 
 class MethodologyStage(StrEnum):
@@ -108,6 +117,9 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         "prompt_pack_scene_writer",
         "book_methodology_current",
         "prose_style_anchors",
+        "material_concretization_current",
+        "scene_grounding_current",
+        "prose_craft_techniques",
         "public_emotion_role_tags",
         "emotion_choreography_current",
         "rhythm_engineering_current",
@@ -313,6 +325,47 @@ def _sections_for_stage(
             text=_safe(render_style_anchor_block, anchor_ids=("anti_ai_voice",)),
             source="prose_style_anchors.yaml",
         )
+    if stage is MethodologyStage.PROSE_SCENE:
+        # Layer 3 — material concretization. A/B proved abstract §default material
+        # is the dominant cause of essay-like prose; this directive tells the
+        # writer to instantiate abstract mechanism material into the book's
+        # concrete people/objects/actions before writing. Soft, genre-neutral.
+        _append_block(
+            sections,
+            key="material_concretization_current",
+            text=_safe(
+                render_concretization_directive,
+                genre_terms=_pack_genre_terms(pack),
+                chapter_number=chapter_number,
+            ),
+            source="material_concreteness.yaml",
+        )
+        # Whole-chapter camera discipline (定场/转场/设定外显/专名节流). Soft only:
+        # treats the "像作文" failure mode — author summary, floating jump-cuts,
+        # name floods. Orthogonal to visual_writing (单段) / prose_craft (单句).
+        _append_block(
+            sections,
+            key="scene_grounding_current",
+            text=_safe(
+                render_scene_grounding_block,
+                genre_terms=_pack_genre_terms(pack),
+                chapter_number=chapter_number,
+            ),
+            source="scene_grounding.yaml",
+        )
+        # Genre-aware 文采 (golden-line) craft. Soft only: this is *how to write*
+        # an optional signature line, never a gate. Genre terms route modern
+        # genres away from 古风 imagery (see prose_craft_techniques.yaml).
+        _append_block(
+            sections,
+            key="prose_craft_techniques",
+            text=_safe(
+                render_prose_craft_block,
+                genre_terms=_pack_genre_terms(pack),
+                chapter_number=chapter_number,
+            ),
+            source="prose_craft_techniques.yaml",
+        )
     if stage in {
         MethodologyStage.OUTLINE_VOLUME,
         MethodologyStage.OUTLINE_CHAPTER,
@@ -354,6 +407,28 @@ def _prioritize_sections(stage: MethodologyStage, sections: list[_Section]) -> l
 def _append_block(sections: list[_Section], *, key: str, text: str, source: str) -> None:
     if text.strip():
         sections.append(_Section(key, text.strip(), source))
+
+
+def _pack_genre_terms(pack: PromptPack | None) -> tuple[str, ...]:
+    """Collect genre/tag/key/name strings from a prompt pack for craft routing.
+
+    The 文采 renderer matches these (substring) against ``genre_emphasis`` keys,
+    so a wider net (genres + tags + pack key + display name) gives the best
+    chance of routing to the right technique set; it falls back to ``default``.
+    """
+
+    if pack is None:
+        return ()
+    terms: list[str] = []
+    for value in (*(pack.genres or ()), *(pack.tags or ())):
+        text = str(value).strip()
+        if text:
+            terms.append(text)
+    for attr in ("key", "name"):
+        text = str(getattr(pack, attr, "") or "").strip()
+        if text:
+            terms.append(text)
+    return tuple(dict.fromkeys(terms))
 
 
 def _safe(func: Callable[..., object], /, **kwargs: object) -> str:

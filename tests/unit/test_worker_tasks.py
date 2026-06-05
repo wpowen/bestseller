@@ -544,10 +544,11 @@ async def test_run_project_repair_task_auto_continues_generation_gate_failures(
         "status": "generation_gate_auto_retry_pending",
         "project_slug": "novel",
         "reason": expected_reason,
-        "repair_queued": True,
+        "repair_queued": False,
     }
     assert marked == [("novel", expected_reason)]
-    assert enqueued[0]["function"] == "run_project_repair_task"
-    assert enqueued[0]["workflow_run_id"] == "repair:heal:novel"
-    assert events[-1][0] == "repairable_auto_continue"
-    assert events[-1][2] == "repairable_auto_continue"
+    assert enqueued == []
+    assert events[-2][0] == "repairable_auto_continue_deferred"
+    assert events[-2][2] == "repairable_auto_continue_pending"
+    assert events[-1][0] == "repairable_auto_continue_pending"
+    assert events[-1][2] == "repairable_auto_continue_pending"

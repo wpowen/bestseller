@@ -9,6 +9,7 @@ from bestseller.domain.planning_readiness import (
     PlanningReadinessFinding,
     PlanningReadinessReport,
 )
+from bestseller.services.genre_neutral_signals import object_sensory_shortcut_hits
 
 _VOLUME_REQUIRED_FIELDS = {
     "goal": ("goal", "volume_goal", "core_goal", "mission"),
@@ -57,11 +58,6 @@ _LATE_NIGHT_DELIVERY_PATTERN = re.compile(
     r"|(?:23[:：]\d{2}|凌晨|深夜|半夜|子时)[^。！？\n]{0,40}(快递|配送单|寄件单|运单|揽收|派送)"
 )
 _IMPOSSIBLE_DELIVERY_MARKER = re.compile(r"(不可能|异常|伪造|自助柜|系统延迟|补录|死后|被改过|不是活人)")
-_OBJECT_HEAT_PATTERN = re.compile(r"(铜钱|青囊|罗盘|镜片|账页)[^。！？\n]{0,16}(烫|发烫|烫得|炭火)")
-_NON_EXPERT_RULE_LEAK_PATTERN = re.compile(
-    r"(王建业|张建军|小雨|陈默|周雪)[^。！？\n]{0,36}"
-    r"(认账|入账|替认|代认|镜债|账线|下一笔|该轮到我)"
-)
 
 
 def evaluate_planning_readiness(
@@ -167,7 +163,7 @@ def evaluate_planning_readiness(
                         repair_hint="删除夜间寄送/揽收硬伤，或明确写成伪造、死后生成、自助柜补录、系统延迟等异常证据。",
                     )
                 )
-            if len(_OBJECT_HEAT_PATTERN.findall(chapter_text)) >= 3 and not _has_key(
+            if object_sensory_shortcut_hits(chapter_text) >= 3 and not _has_key(
                 chapter_source,
                 "object_signal_contract",
             ):
@@ -183,21 +179,11 @@ def evaluate_planning_readiness(
                         repair_hint="补齐物件信号契约，说明触发条件、含义、代价和不能做什么，并替换重复发烫。",
                     )
                 )
-            if chapter_no <= 3 and _NON_EXPERT_RULE_LEAK_PATTERN.search(
-                _front_hookish_text(chapter)
-            ):
-                blocking.append(
-                    PlanningReadinessFinding(
-                        code="PLANNING_KNOWLEDGE_BOUNDARY_LEAK",
-                        severity="critical",
-                        message=(
-                            f"Chapter {chapter_no} lets non-expert characters speak "
-                            "as if they understand specialist debt rules."
-                        ),
-                        path=f"chapters[{chapter_index}].knowledge_boundary",
-                        repair_hint="非专业角色只能描述症状、目击事实和恐惧；规则判断必须交给专业角色或明确附身/复述。",
-                    )
-                )
+            # Knowledge-boundary leaks (an ordinary character speaking specialist
+            # rules) are book-specific and now enforced genre-neutrally by the
+            # outline_commercial_judge ("认知边界" constraint), so the deterministic
+            # check that hardcoded one detective book's cast + jargon was removed to
+            # stop it leaking that cast into every project.
 
         scenes = _sequence_value(_get(chapter, "scenes", "scene_beats"))
         if not scenes:

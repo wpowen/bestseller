@@ -1,0 +1,306 @@
+# =============================================================================
+# Prose Craft Techniques · 文采技法（金句构造层）
+# =============================================================================
+# 目的：
+#   框架已有「神描写」能力（visual_writing 镜头公式 + prose_style_anchors 声口
+#   一致性 + chapter_signature_audit 截图段）。但 golden_line（金句）这一类
+#   ——「一句话离开本章语境也成立、读者想截图摘抄」——只有 3 个例子、零技法。
+#   writer 被要求「植入金句」却没人告诉它「金句怎么构造」。
+#
+#   本文件把一批中文名句/绝句蒸馏成【可迁移的修辞技法】（不是词句样本，是骨架），
+#   让 writer 在写 signature_image / 签名段时，有「怎么把一句话写到值得摘抄」的
+#   具体方法，而不是靠运气。
+#
+# 与框架既有哲学的关系（重要）：
+#   writing_methodology.yaml 明确「文笔提升优先靠动作、感官、环境交互和具体后果，
+#   不靠华丽修辞」。本文件**不违背**它，而是补齐它缺的一块：
+#   - visual_writing 解决「神描写」（画面鲜烈、show-don't-tell）；
+#   - 本文件解决「神句子」（一句话的修辞结构，让它可记忆、可摘抄）；
+#   两者正交且互补。技法靠【结构 + 具体物】产生记忆点，**辞藻堆砌是反面教材**
+#   （见 purple_prose_guard）。
+#
+# 使用方式（soft，永不硬阻断）：
+#   1. methodology_compiler 的 PROSE_SCENE 阶段渲染 render_prose_craft_block()，
+#      按题材选 2-3 个技法、按章号轮换，注入到 writer system prompt。
+#   2. 它是【建议】：升级既有「签名段：金句任选其一」的薄指示，给出「怎么写」。
+#   3. 不进任何 hard_gate / must_rewrite / floor。金句本就是 6 种 signature 之一，
+#      可被神细节 / 神反转等替代——文采永远不拦故事。
+#
+# 蒸馏原则（避免历史回归）：
+#   - 蒸「技法骨架」，不蒸「成品词句」——防止模板直拼盖掉模型输出、全书同质化。
+#   - micro_examples 全部为【合成原创】且【跨题材】，证明技法可迁移到都市/科幻/
+#     职场/悬疑，不只服务古风。严禁把源句原样搬进正文。
+# =============================================================================
+
+version: 2026.06.05
+
+# =============================================================================
+# 技法库（每条 = 一种让单句可摘抄的修辞骨架）
+# =============================================================================
+techniques:
+
+  image_juxtaposition:
+    display_name: 意象并置
+    category: structure
+    principle: |
+      把两个具体意象/画面并列，不解释它们的关系，让张力从「落差」或「同构」里
+      自己长出来。读者补全关系的那一下，就是记忆点。
+    structure: 具象A ＋ 具象B（反差或同构）→ 收一句点睛或干脆留白；不写「因为/所以」
+    genre_fit:
+      good: [古风, 仙侠, 言情, 治愈, 东方美学, 武侠]
+      careful: [都市, 科幻, 职场]   # 可用，但意象要换成本世界的物，别带古风滤镜
+      avoid: [硬核推理]             # 功能性推理场会被意象拖慢节奏
+    purple_risk: 并置 ≥3 个意象还不收口 → 变成辞藻流水账；意象不具体（红尘/繁华）→ 空对空
+    micro_examples:
+      - tag: 都市
+        line: 电梯停在十九层，他停在三十岁。
+      - tag: 科幻
+        line: 舷窗外是死了三亿年的星，舱里是还没死的我们。
+
+  parallelism:
+    display_name: 对仗·排比
+    category: structure
+    principle: |
+      句式骨架相同、内容对照或递进。整齐的结构本身制造节奏与可记忆性，
+      落差/递进在对称里被放大。
+    structure: A 句式 ∥ A′ 句式（字数与结构对齐）；2 句为对仗，3 句为排比，最多 3 句
+    genre_fit:
+      good: [古风, 权谋, 武侠, 史诗, 历史架空, 演讲独白]
+      careful: [都市, 职场, 言情]
+      avoid: [快节奏追击场]          # 对称句会打断动作的急促
+    purple_risk: 排比 >3 句空转 → 像口号；两句都堆大词没落差 → 没信息
+    micro_examples:
+      - tag: 职场
+        line: 会上他讲方案，会后他讲人情；台上谈规则，台下谈交情。
+      - tag: 悬疑
+        line: 他记得每一个死者的名字，记不得自己女儿的生日。
+
+  synesthesia:
+    display_name: 通感
+    category: texture
+    principle: |
+      用一种感官（或一个可数的量）去写另一种感官、写抽象情感，把不可称量的东西
+      落成可触可数的。读者「摸到」了那个情绪。
+    structure: 抽象/情感 → 借具体感官的动作、温度、重量、量词落地
+    genre_fit:
+      good: [全题材]
+      careful: [言情, 治愈]          # 易过度，克制使用
+    purple_risk: 通感叠加再加形容词 → 矫情；一句里塞两种通感 → 失焦
+    micro_examples:
+      - tag: 都市
+        line: 她那句「还好」，凉得像冰箱门开了整整一夜。
+      - tag: 科幻
+        line: 警报响到第七遍，恐惧开始有了重量，压在每个人的肩章上。
+
+  concrete_abstract_pivot:
+    display_name: 虚实相生
+    category: structure
+    principle: |
+      把抽象的东西（时间/命运/乡愁/青春）等同、锚定到一个极具体、自带质感或动作
+      的物上。虚靠实立——抽象因为有了实体而被记住。
+    structure: 抽象 X ＝/成了 具体物 Y；Y 必须具体到能看见、能动，不能也是抽象的
+    genre_fit:
+      good: [全题材]
+    purple_risk: Y 也抽象（「是一场繁华」「是一缕轻愁」）→ 空对空，等于没写
+    micro_examples:
+      - tag: 职场
+        line: 三年青春，缩成工牌上那张褪了色的照片。
+      - tag: 悬疑
+        line: 真相是把钝刀，不快，可一直在割。
+
+  numeric_tension:
+    display_name: 数量词张力
+    category: texture
+    principle: |
+      用具体数字 + 量词承载情感强度，把「很多/很深/很久」换成可数的具体。
+      精确的数字比模糊的程度副词更扎，因为它逼读者去想象那个量。
+    structure: 数字 ＋ 量词 替换抽象程度副词（很/非常/极其/无数）
+    genre_fit:
+      good: [全题材]
+      strong: [古风, 热血, 言情]
+    purple_risk: 数字纯虚张（动辄三千/万世/亿载）→ 通货膨胀，越大越假；要可信的具体数
+    micro_examples:
+      - tag: 都市
+        line: 他发了四十七条消息，她回一个字：嗯。
+      - tag: 科幻
+        line: 返航要四百年，而他只剩八十年的命。
+
+  end_on_image:
+    display_name: 以景结情·留白
+    category: structure
+    principle: |
+      情绪到了顶点，不点破、不抒情，落一个具体动作或景物的镜头就收。
+      把余味留给读者——「没说出来的」比「说出来的」更重。
+    structure: 高情绪点之后 → 不解说，给一个具体动作/物的特写，戛然而止
+    genre_fit:
+      good: [全题材]
+      strong: [悬疑, 古风, 言情, 治愈]   # 章末/场末尤佳，与既有 ending_hook 协同
+    purple_risk: 收尾又补一句抒情总结（「他的心碎了」）→ 留白破功；动作不具体 → 没画面
+    micro_examples:
+      - tag: 悬疑
+        line: 他把女孩的照片放回抽屉，最底下，压着自己女儿的那张。
+      - tag: 职场
+        line: 散会了。他留下来，把白板上别人的名字，一个一个擦掉。
+
+  contrast_turn:
+    display_name: 反差·顿挫
+    category: structure
+    principle: |
+      前半立起一个宏大/沉重的东西，后半用一个轻、小、或反向的东西把它一击击穿。
+      落差越大、转得越快，越扎心。
+    structure: 大 vs 小 / 重 vs 轻 / 进 vs 退；转折点在句中，后半短促
+    genre_fit:
+      good: [全题材]
+    purple_risk: 两端都堆大词 → 没有落差，等于两句空话相加
+    micro_examples:
+      - tag: 都市
+        line: 他签下八位数的单子，回到家，钥匙插不进自己的门。
+      - tag: 科幻
+        line: 人类飞出了银河系，却还是飞不出那间十平米的病房。
+
+  sober_aphorism:
+    display_name: 白描克制
+    category: voice
+    principle: |
+      名人名句式：不修饰、近口语，却有哲理或价值观的硬度。一句顶一段。
+      力量来自「判断的准」和「话的短」，不来自漂亮。
+    structure: 极简陈述句 ＋ 一个精准的判断/价值；不用比喻、不堆形容词
+    genre_fit:
+      good: [全题材]
+      strong: [现实, 严肃, 成长, 都市, 历史]
+    purple_risk: 一旦加形容词或语气词（「其实啊」「深深地」）→ 力度被稀释
+    micro_examples:
+      - tag: 职场
+        line: 成年人的崩溃，往往是从算清一笔账开始的。
+      - tag: 悬疑
+        line: 谎不会把人变成另一个人，它只是把他本来的样子说了出来。
+
+  colloquial_blade:
+    display_name: 口语锋利
+    category: voice
+    principle: |
+      丧系/现代网感：用最日常的大白话，藏一把刀——自嘲或反讽，扎心却不端着。
+      它的杀伤力恰恰来自「不像在写句子」。
+    structure: 大白话 ＋ 一个意外的转折或自嘲；短，落点要狠
+    genre_fit:
+      good: [都市, 现实, 青春, 职场, 丧系, 现言]
+      avoid: [古风, 仙侠, 正剧]       # 书面/古雅语境里出戏
+    purple_risk: 端起来用书面语或成语 → 立刻失去锋利；硬凑网络梗 → 廉价
+    micro_examples:
+      - tag: 都市
+        line: 通讯录三千人，崩溃那晚，没一个能拨出去的号码。
+      - tag: 青春
+        line: 我们说好不再联系——他做到了，我没有。
+
+# =============================================================================
+# 反面教材 · 辞藻堆砌守卫（与框架「不靠华丽修辞」哲学一致）
+# =============================================================================
+# 这是从「绝句」素材里最差的那批长抒情段反向蒸馏出来的失败模式。
+# 上面的技法都【具体、克制、有结构】；下面这些是【空、堆、滥】。
+purple_prose_guard:
+  description: |
+    文采 ≠ 辞藻华丽。下列写法会让句子显得「很美」其实空洞，是必须避开的反例。
+    技法的目标是「具体到能截图」，不是「形容词叠到看不懂」。
+  banned_moves:
+    - id: empty_grand_words
+      bad: 堆砌「红尘 / 繁华 / 轮回 / 天涯 / 苍茫 / 浮生 / 沧桑」等无指向的大词
+      why: 这些词不指向任何具体的人/物/事，读者无法在脑中成像
+      fix: 换成本故事世界里一个具体的物或动作
+    - id: imagery_pileup
+      bad: 一句里并置 ≥3 个意象且不收口（「落花、流水、残月、孤舟、断雁……」）
+      why: 意象越多，单个意象越廉价，整句变成辞藻流水账
+      fix: 最多 2 个意象，留一个清晰的落点
+    - id: abstract_sigh
+      bad: 无具体物的抽象感叹（「浮生若梦，百折千回」「繁华落尽终成空」）
+      why: 听着像金句，其实没有任何信息和画面
+      fix: 让感叹挂在一个具体的物/动作/数字上（虚实相生 / 数量词张力）
+    - id: adjective_stacking
+      bad: 形容词叠加冒充文采（「凄美绝艳、缠绵悱恻、惊心动魄的爱恋」）
+      why: 形容词是「告诉」，不是「展示」；叠加只是更用力地告诉
+      fix: 删掉形容词，用一个具体动作或后果代替（呼应 visual_writing.action_over_adjective）
+
+# =============================================================================
+# 题材路由 · 每个题材族强调哪些技法（renderer 按此选 2-3 个）
+# =============================================================================
+# 关键设计：避免「全题材一律古风金句」。现代题材抽【可迁移的结构/口语】技法，
+# 不抽古风意象，防止都市/科幻/职场被紫色滤镜污染。
+# 未命中的题材落到 default。
+genre_emphasis:
+  default:
+    - concrete_abstract_pivot
+    - contrast_turn
+    - end_on_image
+    - sober_aphorism
+  古风:
+    - image_juxtaposition
+    - parallelism
+    - concrete_abstract_pivot
+    - end_on_image
+  仙侠:
+    - image_juxtaposition
+    - numeric_tension
+    - parallelism
+    - end_on_image
+  武侠:
+    - parallelism
+    - contrast_turn
+    - end_on_image
+    - image_juxtaposition
+  东方美学:
+    - image_juxtaposition
+    - concrete_abstract_pivot
+    - end_on_image
+    - synesthesia
+  权谋:
+    - parallelism
+    - contrast_turn
+    - sober_aphorism
+  历史架空:
+    - parallelism
+    - sober_aphorism
+    - contrast_turn
+  都市:
+    - colloquial_blade
+    - contrast_turn
+    - sober_aphorism
+    - end_on_image
+  职场:
+    - sober_aphorism
+    - contrast_turn
+    - colloquial_blade
+  现实:
+    - sober_aphorism
+    - colloquial_blade
+    - end_on_image
+  青春:
+    - colloquial_blade
+    - synesthesia
+    - end_on_image
+  言情:
+    - synesthesia
+    - concrete_abstract_pivot
+    - numeric_tension
+    - end_on_image
+  科幻:
+    - contrast_turn
+    - concrete_abstract_pivot
+    - numeric_tension
+  悬疑:
+    - end_on_image
+    - sober_aphorism
+    - numeric_tension
+    - contrast_turn
+  恐怖:
+    - end_on_image
+    - synesthesia
+    - contrast_turn
+
+# =============================================================================
+# Writer 注入策略（供 renderer 参考，渲染出的块必须 compact）
+# =============================================================================
+injection_policy:
+  techniques_per_scene: 3        # 每场只给 2-3 个，避免选择过载
+  example_per_technique: 1       # 每个技法只带 1 个 micro_example，控 token
+  rotate_by_chapter: true        # 按章号轮换技法子集，避免每章同一套 → 同质化
+  position_hint: 通常落在场景 60-80% 处（小爽点之后、章末勾子之前），与 signature_image 协同
+  hard_rule: 这是写「签名段/金句」时的可选方法，不是每句都要这样写；正文主体仍走 show-don't-tell

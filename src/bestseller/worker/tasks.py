@@ -385,11 +385,24 @@ async def _enqueue_project_repair_if_needed(
     *,
     source: str,
     reason: str,
+    current_job_id: str | None = None,
 ) -> bool:
     project_slug = str(project_slug or "").strip()
     if not project_slug:
         return False
     job_id = _project_repair_job_id(project_slug)
+    if current_job_id and job_id == current_job_id:
+        await reporter.emit(
+            "repairable_auto_continue_deferred",
+            {
+                "project_slug": project_slug,
+                "job_id": job_id,
+                "source": source,
+                "reason": reason,
+            },
+            event_type="repairable_auto_continue_pending",
+        )
+        return False
     repair_payload = {
         "project_slug": project_slug,
         "requested_by": source,
@@ -505,6 +518,7 @@ async def _handle_generation_gate_auto_continue(
     reason: str,
     message: str,
     source: str,
+    current_job_id: str | None = None,
 ) -> dict[str, Any]:
     await _mark_project_generation_repair_exhausted(
         project_slug,
@@ -517,6 +531,7 @@ async def _handle_generation_gate_auto_continue(
         project_slug,
         source=source,
         reason=reason,
+        current_job_id=current_job_id,
     )
     if not queued:
         await reporter.emit(
@@ -642,6 +657,7 @@ async def run_autowrite_task(
                     reason=reason,
                     message=message,
                     source="autowrite",
+                    current_job_id=workflow_run_id,
                 )
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
@@ -726,6 +742,7 @@ async def run_project_pipeline_task(
                     reason=reason,
                     message=message,
                     source="project_pipeline",
+                    current_job_id=workflow_run_id,
                 )
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
@@ -847,6 +864,7 @@ async def run_project_repair_task(
                     reason=reason,
                     message=message,
                     source="project_repair",
+                    current_job_id=workflow_run_id,
                 )
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise

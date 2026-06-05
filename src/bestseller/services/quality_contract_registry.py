@@ -291,6 +291,93 @@ _CONTRACTS: dict[str, QualityContract] = {
         repair_scope="package",
         pass_condition="the gate executes successfully and returns a clean result",
     ),
+    # Retention / hook / signature repairable codes that were added to
+    # ``chapter_auto_repair_repairable_codes`` without a registered contract.
+    "SIGNATURE_IMAGE_MISSING": _contract(
+        "SIGNATURE_IMAGE_MISSING",
+        "retention",
+        required_evidence=("signature_mandate",),
+        pass_condition="the chapter's signature image lands visibly in the prose",
+    ),
+    "OPENING_PRESSURE_THIN": _contract(
+        "OPENING_PRESSURE_THIN",
+        "retention",
+        pass_condition="the opening lands a concrete pressure / danger / anomaly",
+    ),
+    "ENDING_HOOK_MISSING": _contract(
+        "ENDING_HOOK_MISSING",
+        "retention",
+        pass_condition="the chapter ends on a concrete unresolved hook",
+    ),
+    "GOLDEN_THREE_WEAK": _contract(
+        "GOLDEN_THREE_WEAK",
+        "retention",
+        pass_condition="the golden-three chapter clears the commercial pull bar",
+    ),
+    "CALLBACK_OBLIGATION_MISSING": _contract(
+        "CALLBACK_OBLIGATION_MISSING",
+        "continuity",
+        required_evidence=("missed_callbacks",),
+        pass_condition="every due callback obligation is paid off in the chapter",
+    ),
+    # Length.
+    "LENGTH_OUT_OF_BAND": _contract(
+        "LENGTH_OUT_OF_BAND",
+        "length",
+        required_evidence=("zh_char_count", "hard_band"),
+        pass_condition="chapter body sits inside the hard publish band",
+    ),
+    # Repetition / prose.
+    "PARAGRAPH_DUPLICATE_PARAPHRASE": _contract(
+        "PARAGRAPH_DUPLICATE_PARAPHRASE",
+        "prose",
+        required_evidence=("duplicate_spans",),
+        pass_condition="no near-duplicate paraphrased paragraphs remain",
+    ),
+    "CLIFFHANGER_REPEAT": _contract(
+        "CLIFFHANGER_REPEAT",
+        "retention",
+        required_evidence=("repeated_hooks",),
+        pass_condition="the chapter ending hook is not a repeat of a recent chapter's",
+    ),
+    "FRONT10_RULE_LECTURE_DENSITY": _contract(
+        "FRONT10_RULE_LECTURE_DENSITY",
+        "prose",
+        pass_condition="front-10 chapters avoid dense rule-lecture exposition",
+    ),
+    # Canon / naming.
+    "NAMING_OUT_OF_POOL": _contract(
+        "NAMING_OUT_OF_POOL",
+        "canon",
+        repair_scope="scene",
+        required_evidence=("offending_names",),
+        pass_condition="all character names come from the approved cast pool",
+    ),
+    "FRONT10_FORBIDDEN_SIGNAL": _contract(
+        "FRONT10_FORBIDDEN_SIGNAL",
+        "canon",
+        required_evidence=("forbidden_terms",),
+        pass_condition="no late-reveal forbidden term leaks in the front-10 window",
+    ),
+    "FRONT10_SCENE_FORBIDDEN_ACTION": _contract(
+        "FRONT10_SCENE_FORBIDDEN_ACTION",
+        "canon",
+        repair_scope="scene",
+        required_evidence=("forbidden_actions",),
+        pass_condition="no scene re-uses a forbidden action in the front-10 window",
+    ),
+    # Logic / opening.
+    "OPENING_SCENE_DRIFT": _contract(
+        "OPENING_SCENE_DRIFT",
+        "logic",
+        pass_condition="the opening enters from the planned first-scene situation",
+    ),
+    "UNEXPLAINED_BODY_STATE": _contract(
+        "UNEXPLAINED_BODY_STATE",
+        "logic",
+        required_evidence=("findings",),
+        pass_condition="every abnormal body/world state has an in-text cause",
+    ),
 }
 
 

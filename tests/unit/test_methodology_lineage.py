@@ -90,7 +90,17 @@ def test_applied_methodology_requires_evidence_fields() -> None:
 
 
 @pytest.mark.unit
-def test_workflow_lineage_sync_is_noop_when_selector_returns_none() -> None:
+def test_workflow_lineage_sync_is_noop_when_selector_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deterministically exercise the None branch: force the selector to return None.
+    # (The real selector now returns a default lineage even for an empty project — that
+    # path is covered by test_workflow_lineage_sync_attaches_selected_lineage.)
+    monkeypatch.setattr(
+        workflows,
+        "select_lineage_for_chapter_outline",
+        lambda **_: None,
+    )
     chapter = SimpleNamespace(metadata_json={"methodology_contract": {"keep": True}})
     changed = workflows._sync_chapter_methodology_lineage(
         project=SimpleNamespace(metadata_json={}),

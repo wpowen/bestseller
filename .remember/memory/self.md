@@ -123,6 +123,12 @@ Correct: 这些重型集成测试在**已提交 baseline**（stash 掉所有未�
 
 ---
 
+Mistake: 把 ``.env`` 备份（如 ``.env.bak-m3-*``）随功能提交进 Git；``.gitignore`` 只忽略 ``.env`` 不忽略 ``.env.*``。
+Wrong: ``git add`` 整批改动时带上本地 ``.env.bak-*``，密钥进入 ``80a545d`` 并推到 ``origin``。
+Correct: ``.gitignore`` 增加 ``.env.*`` 与 ``!.env.example``；``git rm --cached .env.bak-*`` 后单独提交；已推送则轮换 ``NVIDIA_API_KEY`` / ``DEEPSEEK_API_KEY`` / ``MINIMAX_API_KEY`` / ``XIAOMI_MIMO_API_KEY`` 等；历史仍含密钥时需 ``git filter-repo`` 或 BFG 清史再 force-push。
+
+---
+
 Mistake: 任务台 `refreshDashboard` 每次拉全量 `/api/tasks` + `/api/projects`，含 300 条 progress_events/任务 + 全书章节明细，刷新极慢。
 Wrong: 列表接口返回完整 progress_events 与 `chapter_word_stats.chapters[]` 全量数组。
 Correct: `/api/tasks?summary=1` 截断 events + SQL 聚合字数；`/api/projects?light=1` 跳过 repair 统计；前端防并发刷新 + 轮询 15s。

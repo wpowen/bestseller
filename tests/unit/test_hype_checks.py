@@ -337,11 +337,15 @@ class TestEndingSentenceImpactCheck:
         ctx = _ctx(chapter_no=2)
         text = "他回到家坐下。\n\n一切都平静下来圆满收场皆大欢喜人人满意家和万事兴。"
         violations = list(EndingSentenceImpactCheck().run(text, ctx))
+        # The weak-ending violation is still DETECTED…
         assert len(violations) == 1
+        assert violations[0].code == "ENDING_SENTENCE_WEAK"
+        # …but as of 2026-05-27 it is audit_only (the golden-three forced-block
+        # promotion was removed because it caused infinite auto-repair loops), so it
+        # no longer blocks write — even in chapter 2. See write_gate._GOLDEN_THREE_BLOCK_CODES.
         report = QualityReport(tuple(violations))
         blocking = filter_blocking(report, chapter_no=2)
-        assert len(blocking) == 1
-        assert blocking[0].code == "ENDING_SENTENCE_WEAK"
+        assert len(blocking) == 0
 
     def test_chapter_four_weak_ending_not_blocking(self) -> None:
         """Chapter 4+ stays audit_only — weak endings log but don't gate."""

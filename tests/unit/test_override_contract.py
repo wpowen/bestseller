@@ -349,11 +349,14 @@ class TestWriteGateIntegration:
             )
         )
         lookup = store.as_lookup("p1")
-        # Golden-three policy must win — resolve_mode returns block even with override.
+        # 2026-05-27: the golden-three forced-block promotion was removed (it caused
+        # infinite auto-repair loops; see write_gate._GOLDEN_THREE_BLOCK_CODES).
+        # ENDING_SENTENCE_WEAK is now audit_only in every chapter, so resolve_mode
+        # returns "audit_only" regardless of the (ch1-scoped) override.
         mode = resolve_mode(
             "ENDING_SENTENCE_WEAK",
             DEFAULT_GATE_CONFIG,
             chapter_no=2,
             override_lookup=lookup,
         )
-        assert mode == "block"
+        assert mode == "audit_only"

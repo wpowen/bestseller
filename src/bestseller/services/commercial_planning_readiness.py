@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import lru_cache
 import json
 from pathlib import Path
 from typing import Any
@@ -427,7 +428,10 @@ def _chapter_has_external_pressure(chapter: ChapterPlanProbe) -> bool:
     return False
 
 
-def _chapter_is_solo_chain(chapter: ChapterPlanProbe) -> bool:
+def _chapter_is_solo_chain(
+    chapter: ChapterPlanProbe,
+    concrete_pressure_terms: tuple[str, ...] = _CONCRETE_PRESSURE_TERMS,
+) -> bool:
     if not chapter.scenes:
         return False
     every_scene_solo = all(
@@ -445,7 +449,7 @@ def _chapter_is_solo_chain(chapter: ChapterPlanProbe) -> bool:
     if not _contains_any(scene_text + " " + chapter.main_conflict, _VISIBLE_LOSS_TERMS):
         return True
     return (
-        not _contains_any(scene_text, _CONCRETE_PRESSURE_TERMS)
+        not _contains_any(scene_text, concrete_pressure_terms)
         or _contains_any(scene_text, _SOLO_PASSIVITY_TERMS)
     )
 
@@ -570,6 +574,40 @@ def scene_plan_probe_from_mapping(value: Mapping[str, Any]) -> ScenePlanProbe:
     )
 
 
+@lru_cache(maxsize=64)
+def _genre_pressure_terms(genre: str, sub_genre: str | None) -> tuple[str, ...]:
+    """Genre-specific concrete-conflict vocabulary, pulled from the resolved genre
+    review profile so a book's conflicts are scored against ITS genre's pressure
+    words. Without this the shared ``_CONCRETE_PRESSURE_TERMS`` skews toward the one
+    detective book it was hand-tuned on, and e.g. an 升级流 plan whose conflict is
+    碾压/突破/夺宝/打脸 gets falsely flagged ``abstract_chapter_conflict``."""
+
+    if not (genre or sub_genre):
+        return ()
+    try:
+        from bestseller.services.genre_review_profiles import (
+            resolve_genre_review_profile,
+        )
+
+        profile = resolve_genre_review_profile(genre or "", sub_genre)
+        sk = profile.signal_keywords
+        terms = {
+            *sk.conflict_terms_zh,
+            *sk.conflict_terms_en,
+            *sk.hook_terms_zh,
+            *sk.hook_terms_en,
+        }
+        return tuple(term for term in terms if term)
+    except Exception:
+        return ()
+
+
+def _augmented_concrete_pressure_terms(
+    genre: str | None, sub_genre: str | None
+) -> tuple[str, ...]:
+    return _CONCRETE_PRESSURE_TERMS + _genre_pressure_terms(genre or "", sub_genre)
+
+
 def evaluate_commercial_planning_readiness(
     chapters: Sequence[ChapterPlanProbe | Mapping[str, Any]],
     *,
@@ -579,8 +617,17 @@ def evaluate_commercial_planning_readiness(
     min_strong_hype_chapters: int = 2,
     long_serial_min_chapters: int = 50,
     require_package_artifacts: bool = True,
+    genre: str | None = None,
+    sub_genre: str | None = None,
 ) -> CommercialPlanningReadinessReport:
-    """Validate the first three chapter/scene plans against commercial needs."""
+    """Validate the first three chapter/scene plans against commercial needs.
+
+    ``genre``/``sub_genre`` make the concrete-pressure check genre-aware so plans are
+    scored against their own genre's conflict vocabulary, not one book's hand-tuned
+    detective terms. Omitting them preserves the legacy (genre-neutral core) behaviour.
+    """
+
+    concrete_pressure_terms = _augmented_concrete_pressure_terms(genre, sub_genre)
 
     probes = tuple(
         chapter
@@ -652,7 +699,7 @@ def evaluate_commercial_planning_readiness(
                     ),
                 )
             )
-        elif not _contains_any(chapter.main_conflict, _CONCRETE_PRESSURE_TERMS):
+        elif not _contains_any(chapter.main_conflict, concrete_pressure_terms):
             # Fallback: check hook_description and scene text. When the planner
             # produces identical boilerplate for main_conflict/chapter_goal/
             # opening_situation (a known LLM planning failure mode), the hook
@@ -664,7 +711,7 @@ def evaluate_commercial_planning_readiness(
                 [chapter.hook_description]
                 + [_scene_text(scene) for scene in chapter.scenes]
             )
-            if not _contains_any(_hook_scene_text, _CONCRETE_PRESSURE_TERMS):
+            if not _contains_any(_hook_scene_text, concrete_pressure_terms):
                 findings.append(
                     _finding(
                         "abstract_chapter_conflict",
@@ -754,7 +801,7 @@ def evaluate_commercial_planning_readiness(
                         ),
                     )
                 )
-            if _chapter_is_solo_chain(chapter):
+            if _chapter_is_solo_chain(chapter, concrete_pressure_terms):
                 findings.append(
                     _finding(
                         "golden_three_solo_scene_chain",

@@ -135,6 +135,7 @@ def _has_bleeding_cause(window: str) -> bool:
     return any(
         token in window
         for token in (
+            # Physical wounds / impacts (genre-neutral).
             "割",
             "划",
             "咬",
@@ -145,8 +146,30 @@ def _has_bleeding_cause(window: str) -> bool:
             "刺",
             "裂",
             "伤",
+            # Accident / trauma / crash context. A car-crash or fall victim's
+            # bleeding is self-evidently explained by the wreck; these words let
+            # an 都市/现实 accident scene pass without inventing a "cause" clause.
+            "车祸",
+            "事故",
+            "戳穿",
+            "贯穿",
+            "穿透",
+            "气囊",
+            "车窗",
+            "碎玻璃",
+            "玻璃碴",
+            "翻起",
+            "摔",
+            "跌",
+            "扎进",
+            "骨折",
+            "断裂",
+            # Speculative / power cost (xianxia, 都市异能, supernatural).
             "反噬",
             "代价",
+            "异能",
+            "能力",
+            "典当",
             "符",
             "咒",
             "阴气",

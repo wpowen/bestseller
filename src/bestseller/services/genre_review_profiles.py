@@ -613,52 +613,68 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
         },
         "judge_prompts": {
             "scene_review_system_zh": (
-                "你是升级流网文的场景审稿专家。你的评估标准以战斗节奏、力量碰撞的紧凑性和升级回报的可感知度为核心。"
-                "当场景是战斗场景时，重点评估对碰阶段感、压力递进和反转时机。"
-                "当场景是准备/升级场景时，重点评估信息释放密度和对下一场战斗的悬念铺设。"
+                "你是升级流网文的场景审稿专家。评估前必须先判定本场景的类型：战斗、升级、"
+                "悬疑/调查、对峙/谈判、情感/关系、日常/铺垫等。务必按场景的真实类型评估——"
+                "战斗与升级场景看力量碰撞和兑现感；非战斗场景（悬疑、调查、对峙、情感）则看"
+                "信息控制、张力递进、人物处境与代价、尾钩牵引力。"
+                "严禁因为一个非战斗场景里没有打斗、没有力量差距、没有战利品而判定其失败——"
+                "那不是缺陷，而是该场景类型的正常形态。"
             ),
             "scene_review_system_en": (
                 "You are a scene review specialist for action-progression fiction. "
-                "Your evaluation criteria center on combat rhythm, power-collision intensity, and perceivable upgrade payoff. "
-                "For combat scenes, focus on clash phasing, pressure escalation, and reversal timing. "
-                "For preparation/upgrade scenes, focus on information release density and suspense building for the next battle."
+                "First classify this scene's type: combat, upgrade, mystery/investigation, "
+                "confrontation/negotiation, emotional/relational, or setup/daily. "
+                "Evaluate by the scene's ACTUAL type — combat/upgrade scenes by power-collision "
+                "and payoff; non-combat scenes (mystery, investigation, confrontation, emotion) by "
+                "information control, rising tension, the protagonist's stakes and cost, and hook pull. "
+                "NEVER fail a non-combat scene merely for lacking a fight, a power gap, or loot — "
+                "their absence is normal for that scene type, not a defect."
             ),
             "scene_review_instruction_zh": (
-                "评估当前场景时请关注：\n"
-                "1. 如果是战斗场景：对碰是否有阶段感？双方底牌和力量差距是否清晰？是否有至少一个反转或压力峰值？\n"
-                "2. 如果是升级场景：升级过程是否有阻碍和突破的戏剧性？获得的能力是否被具象展示？\n"
-                "3. 尾钩是否指向更大的威胁或更高的升级诱惑？\n"
-                "4. 整体节奏是否避免了冗长的内心独白或说明文式的力量解说？"
+                "评估当前场景时，先判定场景类型，再按对应标准评估：\n"
+                "1. 战斗场景：对碰是否有阶段感？双方底牌和力量差距是否清晰？是否有反转或压力峰值？\n"
+                "2. 升级场景：升级过程是否有阻碍和突破的戏剧性？获得的能力是否被具象展示？\n"
+                "3. 悬疑/调查场景：信息是否一层层受控释放？读者的疑问与主角的处境是否同步收紧？\n"
+                "4. 对峙/情感场景：双方意图与筹码是否清晰？情绪与关系是否发生可感知的位移？代价是否真实？\n"
+                "5. 任意类型：尾钩是否指向更大的威胁、更深的谜题或更高的诱惑？\n"
+                "只对与本场景类型相符的维度提出问题；不要要求一个非战斗场景去补战斗、力量差距或战利品。"
             ),
             "scene_review_instruction_en": (
-                "When evaluating this scene, focus on:\n"
-                "1. Combat scenes: Do clashes have phased structure? Are both sides' cards and power gap clear? Is there at least one reversal or pressure peak?\n"
-                "2. Upgrade scenes: Does the process have dramatic obstacles and breakthroughs? Are acquired abilities concretely demonstrated?\n"
-                "3. Does the ending hook point to a greater threat or higher upgrade lure?\n"
-                "4. Does the overall rhythm avoid lengthy inner monologues or expository power explanations?"
+                "Classify the scene type first, then evaluate by the matching criteria:\n"
+                "1. Combat: Do clashes have phased structure? Are both sides' cards and power gap clear? Is there a reversal or pressure peak?\n"
+                "2. Upgrade: Does the process have dramatic obstacles and breakthroughs? Are acquired abilities concretely shown?\n"
+                "3. Mystery/investigation: Is information released in controlled layers? Do the reader's questions and the protagonist's situation tighten together?\n"
+                "4. Confrontation/emotion: Are both sides' intents and leverage clear? Do emotion and relationship shift perceptibly? Is the cost real?\n"
+                "5. Any type: Does the ending hook point to a bigger threat, deeper mystery, or higher lure?\n"
+                "Raise issues only on dimensions that fit THIS scene's type; never ask a non-combat scene to add a fight, power gap, or loot."
             ),
             "chapter_review_system_zh": (
-                "你是升级流网文的章节审稿专家。章节级评估关注的是一章之内战斗节奏的完整性、"
+                "你是升级流网文的章节审稿专家。章节级评估关注一章之内主线节奏的完整性、"
                 "场景之间的推进逻辑，以及章末钩子对下一章追读欲望的牵引力。"
+                "升级流也包含大量非战斗章节（悬疑、调查、布局、情感）——请按本章的真实重心评估，"
+                "不要因为一章没有战斗或升级就判定它不合格。"
             ),
             "chapter_review_system_en": (
                 "You are a chapter review specialist for action-progression fiction. "
-                "Chapter-level evaluation focuses on combat-rhythm completeness within a chapter, "
-                "scene-to-scene progression logic, and chapter-ending hook pull toward the next chapter."
+                "Chapter-level evaluation focuses on main-line rhythm completeness within a chapter, "
+                "scene-to-scene progression logic, and chapter-ending hook pull toward the next chapter. "
+                "Action-progression books include many non-combat chapters (mystery, investigation, "
+                "setup, emotion) — judge by the chapter's actual focus; do not fail a chapter merely "
+                "because it contains no combat or upgrade."
             ),
             "chapter_review_instruction_zh": (
                 "评估当前章节时请关注：\n"
-                "1. 本章是否围绕一个清晰的升级/战斗阶段展开？\n"
+                "1. 本章是否围绕一个清晰的主线阶段展开（可以是升级/战斗，也可以是悬疑推进、布局或情感转折）？\n"
                 "2. 场景之间的衔接是否有逻辑推力（因果、压力升级、新信息触发）？\n"
-                "3. 章节末尾是否留下了让读者无法停下来的悬念或升级期待？\n"
-                "4. 如果本章包含战斗，战斗的阶段完整性如何（铺垫-交锋-结果-后果）？"
+                "3. 章节末尾是否留下了让读者无法停下来的悬念、威胁或期待？\n"
+                "4. 如果本章包含战斗，战斗的阶段完整性如何（铺垫-交锋-结果-后果）？非战斗章节不要套用此条。"
             ),
             "chapter_review_instruction_en": (
                 "When evaluating this chapter, focus on:\n"
-                "1. Does the chapter revolve around a clear upgrade/combat phase?\n"
+                "1. Does the chapter revolve around a clear main-line phase (upgrade/combat, OR mystery progression, setup, or emotional turn)?\n"
                 "2. Are scene transitions driven by causal logic (cause-effect, pressure escalation, new info triggers)?\n"
-                "3. Does the chapter ending leave a cliffhanger or upgrade anticipation that compels continued reading?\n"
-                "4. If the chapter contains combat, how complete is the battle arc (setup - clash - outcome - aftermath)?"
+                "3. Does the chapter ending leave a cliffhanger, threat, or anticipation that compels continued reading?\n"
+                "4. If the chapter contains combat, how complete is the battle arc (setup - clash - outcome - aftermath)? Do not apply this to non-combat chapters."
             ),
             "scene_rewrite_system_zh": (
                 "你是升级流网文的场景重写专家。重写时必须强化战斗碰撞的力量感、"

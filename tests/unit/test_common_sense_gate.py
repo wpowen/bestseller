@@ -52,6 +52,35 @@ def test_common_sense_gate_ignores_blood_glyphs_as_body_bleeding() -> None:
     assert not any(finding.code == "unexplained_body_state" for finding in report.findings)
 
 
+def test_common_sense_gate_allows_accident_trauma_bleeding() -> None:
+    # Regression (2026-06): a car-crash victim's bleeding is self-evidently
+    # caused by the wreck. The gate's cause vocabulary was detective/xianxia
+    # flavored (符/咒/反噬…) and lacked accident/trauma words, so an 都市 crash
+    # scene tripped a false unexplained_body_state and blocked export.
+    report = evaluate_common_sense_gate(
+        "方向盘戳穿司机胸口，白色气囊上全是烟。半截指甲翻起来，血顺着指缝往下淌。"
+        "车窗已经碎了。",
+        genre="都市异能",
+        sub_genre="身份反转",
+        chapter_number=1,
+    )
+
+    assert not any(finding.code == "unexplained_body_state" for finding in report.findings)
+
+
+def test_common_sense_gate_allows_urban_power_cost_bleeding() -> None:
+    # The book's own cost mechanic (memory-pawn → nosebleed) uses 都市异能
+    # vocabulary the detective token list did not cover (异能/能力/记忆/典当).
+    report = evaluate_common_sense_gate(
+        "他收走那段记忆的瞬间，异能的代价涌上来，鼻血毫无预兆地淌下来。",
+        genre="都市异能",
+        sub_genre="身份反转",
+        chapter_number=1,
+    )
+
+    assert not any(finding.code == "unexplained_body_state" for finding in report.findings)
+
+
 def test_common_sense_gate_ignores_supernatural_door_gap_bleeding() -> None:
     report = evaluate_common_sense_gate(
         "303的门虚掩着。林渊在门口停下。门缝里正往外渗血，不往下流，反而顺着门框往上爬。",

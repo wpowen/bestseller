@@ -8,7 +8,7 @@
 set -u
 cd "$(dirname "$0")/.."
 
-SLUG="${1:-memory-pawn-v2}"
+SLUG="${1:-memory-pawn-v3}"
 LOG="${2:-/tmp/_autowrite_validation.log}"
 
 PREMISE="网约车司机周野在一场连环车祸中觉醒「记忆典当」异能：他能买走他人脑中的一段记忆据为己有，借此获得对应的技能、情报或人脉；但每典当一段记忆，他自己最珍视的一段记忆就被抵押扣押，七天内赎不回便永久消失。他从第一笔典当来的车祸现场记忆里，认出了三年前害死妹妹的真凶——本市顶级催眠师、能批量抹除他人记忆的「静默会」会长沈隅。周野必须在赎金清单一天天加码、自己的过去被一点点抽空之前，用别人的记忆拼出真相、扳倒静默会。"
@@ -39,6 +39,12 @@ export BESTSELLER__PIPELINE__REVERSE_OUTLINE_GATE_BLOCK_ON_FAILURE="false"
 export BESTSELLER__PIPELINE__VOLUME_LLM_CHECKPOINT_BLOCK_ON_FAILURE="false"
 export BESTSELLER__PIPELINE__QIMAO_OPENING_BLOCK_ON_FAILURE="false"
 export BESTSELLER__PIPELINE__WHOLE_BOOK_QUALITY_GATE_BLOCK_ON_FAILURE="false"
+# Per-chapter review + whole-book consistency: run + report + repair, but a
+# non-converging critic verdict must not halt the whole-book loop (the user's
+# chosen "跑+报告+修复但不硬中止" semantic). Lets all 10 chapters generate so the
+# full pipeline can be validated end-to-end.
+export BESTSELLER__PIPELINE__CHAPTER_REVIEW_BLOCK_ON_FAILURE="false"
+export BESTSELLER__PIPELINE__PROJECT_CONSISTENCY_BLOCK_ON_FAILURE="false"
 
 exec .venv/bin/bestseller project autowrite "$SLUG" "典当记忆" "都市异能" 25000 10 \
   --sub-genre "身份反转" --premise "$PREMISE" --prompt-pack urban-power-reversal \

@@ -1,0 +1,118 @@
+# 核心理念(母题)评审器配置 — Ideology / 母题 advisory judge
+# =============================================================================
+# Scores whether an OUTLINE actually *expresses* its core ideology (a thesis that
+# generates the world &走向, like 天地不仁 in 诛仙) versus merely filling genre
+# tropes. This is the "depth / 思想" axis the commercial judge does not measure.
+#
+# Advisory ONLY (mirrors litstyle_prose.yaml): the judge never gates — it scores
+# 0-100 across 9 positive dimensions minus a 反口号化 penalty, and emits
+# revision_priority for a soft repair loop. Loaded by services/ideology_judge.py.
+# =============================================================================
+
+version: ideology-judge.v1
+
+# --- 9 positive dimensions (max sums to 100) ---
+dimensions:
+  - key: thesis_clarity
+    display_name: 主题清晰度
+    max: 12
+    definition: 主题宣言是否清晰、可一句话复述, 且指向具体人物与代价, 而非空泛大词。
+    observable: 能否在不看母题标签的情况下, 从大纲反推出全书想说的那一句话。
+    scoring_rule: 清晰且本书专属=满分; 模糊/正确的废话/同题材通用=低分。
+    pos_example: 世界不保佑善者, 但守城人仍选择互相托底。
+    neg_example: 本书探讨人性与成长。
+  - key: core_question_dramatization
+    display_name: 核心问题戏剧化
+    max: 14
+    definition: 贯穿全书的核心问题(如"天若不仁, 人为何还要善")是否被情节反复逼问, 而非旁白宣布。
+    observable: 是否存在迫使主角对核心问题做出代价性回答的关键场景/抉择。
+    scoring_rule: 核心问题落在抉择/事件上=高; 只在简介里被说出=低。
+    pos_example: 主角每救一人折一寿, 把"该不该善"变成可计量的抉择。
+    neg_example: 大纲写道"本书追问善恶", 但情节与之无关。
+  - key: belief_arc_integrity
+    display_name: 信念弧完整性
+    max: 14
+    definition: 主角"最初相信→中段打碎→结尾重建"三段是否在卷/章结构里真正落地。
+    observable: 能否在卷纲里指出 initial / shatter / reconstruction 各自的落点。
+    scoring_rule: 三段都有结构落点=满分; 缺打碎或缺重建=腰斩。
+    pos_example: 第1卷信祭天, 中段全村覆灭打碎, 终局立人间誓约重建。
+    neg_example: 主角从头到尾信念不变, 只是变强。
+  - key: cost_binding
+    display_name: 代价绑定
+    max: 12
+    definition: 力量/真相/救赎的获取是否绑定可见、会反复侵入日常的代价。
+    observable: 每次重大获得后是否有对应的账单(肉身/关系/记忆/寿命/身份)。
+    scoring_rule: 代价系统贯穿=高; 力量白给/代价一次性即忘=低。
+    pos_example: 每次破境抽走一段记忆, 后续章节持续因此受损。
+    neg_example: 主角拿到法宝后毫无代价, 一路碾压。
+  - key: layer_coverage_depth
+    display_name: 四层覆盖深度
+    max: 10
+    definition: 宇宙秩序/主体抉择/认知危机/伦理反转四层是否都被实质承载, 而非贴标签。
+    observable: 每层是否对应到具体的世界规则/主角抉择/揭秘机关/价值反转。
+    scoring_rule: 四层都有戏=满分; 只覆盖1-2层(只有压力或只有揭秘)=低。
+    pos_example: 冷宇宙(层1)+付代价(层2)+揭真相(层3)+善恶反转(层4)各有专属情节。
+    neg_example: 全书只是不断升级打怪, 其余三层缺席。
+  - key: cosmic_premise_consistency
+    display_name: 宇宙前提一致性
+    max: 12
+    definition: 世界是否真的按"不偏爱善者/规则高于人情"运行, 没有偷偷给主角德福奖励。
+    observable: 是否存在"因为主角善良/努力, 世界就自动补偿"的廉价机制。
+    scoring_rule: 世界冷峻一致=高; 关键处主角总被气运/巧合搭救=低。
+    pos_example: 主角行善仍连遭背叛, 收益只来自其抉择与代价。
+    neg_example: 每逢绝境必有机缘/贵人/系统奖励无偿降临。
+  - key: anti_sloganization
+    display_name: 反口号化
+    max: 12
+    definition: 母题是叙事发动机还是被反复喊出的口号/标签。
+    observable: 删掉所有直接点题的句子后, 故事是否仍能让读者感到该主题。
+    scoring_rule: 主题靠事件自然涌现=高; 靠角色/旁白反复念主题词=低。
+    pos_example: 不喊"天地不仁", 但每个转折都让读者亲历世界的不公。
+    neg_example: 人物反复念叨"这世道真是天地不仁啊"。
+  - key: hidden_motif_setup
+    display_name: 隐藏母题铺垫
+    max: 6
+    definition: 隐藏终局母题是否提前埋伏笔、留后劲, 且不过早泄底。
+    observable: 是否有跨卷的伏笔指向终局的价值反转。
+    scoring_rule: 伏笔早布、晚揭=高; 无隐藏线或一开始就摊牌=低。
+    pos_example: 守护神细节自首卷起反常, 第4卷才揭其为收割者。
+    neg_example: 没有任何指向终局反转的铺垫。
+  - key: commercial_compatibility
+    display_name: 商业兼容性
+    max: 8
+    definition: 思想深度是否与爽感、章末钩子、连载推进力共存, 没有把书写成纯文青。
+    observable: 主题加压的同时是否仍有爽点兑现、钩子与追更动力。
+    scoring_rule: 深度与爽感并存=高; 为深度牺牲节奏与钩子=低。
+    pos_example: 沉重主题下仍每卷有打脸/逆袭/真相升级的爽点。
+    neg_example: 通篇沉郁说理, 没有任何追更钩子。
+
+# --- 反口号化扣分 (单列, 不并入正向维度) ---
+penalty:
+  penalty_max: 16
+  high_risk_threshold: 12
+  strong_ceiling: 4
+  markers:
+    - id: sloganization
+      problem: 母题只在简介/旁白被命名, 没有被事件戏剧化
+      penalty_max: 6
+      deterministic: false
+    - id: theme_homogenization
+      problem: 主题是同题材通用句, 换一本同类书也成立(无本书专属抓手)
+      penalty_max: 4
+      deterministic: false
+    - id: forbidden_resolution
+      problem: 用廉价反转/无偿气运背叛了主题宣言(如天道最终奖励好人)
+      penalty_max: 6
+      deterministic: false
+
+# --- FinalScore → 等级 ---
+levels:
+  - {min: 82, level: 灵魂贯通, desc: 核心理念成为故事发动机, 世界观与走向由它生长}
+  - {min: 68, level: 立得住, desc: 主题清晰且大体落地, 个别层或代价偏弱}
+  - {min: 50, level: 有形无神, desc: 有母题标签但未真正戏剧化, 深度浮于表面}
+  - {min: 0, level: 题材堆砌, desc: 仅靠题材套路推进, 缺核心理念}
+
+# --- 写手分档目标 (target, 非 gate) ---
+targets:
+  premium_writer: 78
+  budget_writer: 68

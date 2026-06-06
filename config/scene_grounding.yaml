@@ -130,6 +130,23 @@ techniques:
       - tag: 职场
         line: 会议室里每个人都在说话，他却只听见自己工牌被收走时，挂绳擦过桌沿的那声。
 
+  withhold_to_resonate:
+    display_name: 留白生余味
+    category: camera
+    principle: |
+      情绪到顶时不点破、不抒情，落一个具体动作或景物的镜头就收；抒情段里直白解释
+      情绪/主题的句子不超过三分之一，把"没说出来的"留给读者自己补。主动留白 ≠ 信息缺失。
+    structure: 高情绪点 → 不解说 → 给一个具体动作/物的特写收束；删掉"他很难过/这就是命运"这类替读者下的判断
+    genre_fit:
+      good: [全题材]
+      strong: [悬疑, 古风, 言情, 治愈, 现实]
+    purple_risk: 收尾又补一句抒情总结（"他的心碎了"）→ 留白破功；动作不具体 → 没画面；把"留白"误写成"信息缺失"
+    micro_examples:
+      - tag: 现实
+        line: 她把最后一只碗留在水里，没洗。灯关了，水龙头还在滴。
+      - tag: 悬疑
+        line: 他没再问，把那张照片推回去，扣在桌面上。
+
 # =============================================================================
 # 反面教材 · 作者旁白守卫（治"像作文"的核心）
 # =============================================================================
@@ -167,6 +184,7 @@ genre_emphasis:
     - grounded_transition
     - show_dont_explain
     - detail_serves_plot
+    - withhold_to_resonate
   都市:
     - establishing_through_want
     - show_dont_explain
@@ -182,6 +200,7 @@ genre_emphasis:
     - show_dont_explain
     - one_name_at_a_time
     - pov_camera_continuity
+    - withhold_to_resonate
   科幻:
     - establishing_through_want
     - detail_serves_plot
@@ -194,11 +213,13 @@ genre_emphasis:
     - establishing_through_want
     - detail_serves_plot
     - show_dont_explain
+    - withhold_to_resonate
   古风:
     - establishing_through_want
     - grounded_transition
     - detail_serves_plot
     - pov_camera_continuity
+    - withhold_to_resonate
   仙侠:
     - establishing_through_want
     - detail_serves_plot

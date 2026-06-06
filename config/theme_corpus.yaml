@@ -1,0 +1,152 @@
+# 主题语料库 (Theme Corpus) — 大范围、可扩展、与题材完全解耦
+# =============================================================================
+# 这是「核心理念层」的**表层主题池**：一个很大的、可增长到 1000-2000 条的子题
+# (sub-theme / thematic proposition) 集合。每本书选 1 个**主主题 (primary theme)** +
+# 若干**穿插子题 (sub-themes)**，贯穿整个故事。
+#
+# 关键设计（回应"主题不能绑死题材"的硬要求）：
+#   * **没有 genre 字段** —— 主题与题材完全解耦。同一题材的不同书会落到不同主题，
+#     避免"所有仙侠都是天地不仁"式的同质化与乏味。
+#   * 每条只标 `motif`(13 母题之一，用于组织/深度) 与 `tone`(情绪基调，用于按"前提氛围"
+#     而非"题材"做软匹配)。`layer` 由 motif 推导，不重复存。
+#   * 选择由 **premise/书目身份的确定性 seed** 驱动（见 ideology_library.select_themes），
+#     而不是 genre；故不同前提→不同主题，且同一本书可复现。
+#   * 这是**单一事实源**，可由 scripts/expand_theme_corpus.py 用 LLM 扩充并去重，
+#     loader 不限条数（current seed = 104，目标 1000-2000）。
+#
+# 一条主题 = 一句能当作一本书"灵魂"的命题。它是灵感与多样性之源，不是限制：LLM 推导
+# 时可直接选用、改写，或据前提另创——语料库提供"可能性的广度"。
+# =============================================================================
+
+version: theme-corpus.v1
+
+themes:
+  # --- 天地不仁 (宇宙秩序层) ---
+  - {id: tiandi_buren_01, motif: tiandi_buren, tone: 苍凉, proposition: "灾难从不挑选好人，活下来的只是离得远的人。"}
+  - {id: tiandi_buren_02, motif: tiandi_buren, tone: 沉郁, proposition: "你拜的神早搬走了，神龛里住的是回声。"}
+  - {id: tiandi_buren_03, motif: tiandi_buren, tone: 悲悯, proposition: "救人没有报酬，唯一的回报是下一次还能救。"}
+  - {id: tiandi_buren_04, motif: tiandi_buren, tone: 冷峻, proposition: "天不塌在恶人头上，它只是塌在最近的人头上。"}
+  - {id: tiandi_buren_05, motif: tiandi_buren, tone: 孤独, proposition: "幸存本身就是一种亏欠，欠那些替你死的人。"}
+  - {id: tiandi_buren_06, motif: tiandi_buren, tone: 荒诞, proposition: "世道不公不是要惩罚你，它根本没在看你。"}
+  - {id: tiandi_buren_07, motif: tiandi_buren, tone: 温柔, proposition: "善良换不来庇护，但能换来另一个善良的人。"}
+  - {id: tiandi_buren_08, motif: tiandi_buren, tone: 压抑, proposition: "最大的残忍不是天降灾祸，而是灾祸毫无道理。"}
+
+  # --- 大道无情 (宇宙秩序层) ---
+  - {id: dadao_wuqing_01, motif: dadao_wuqing, tone: 冷峻, proposition: "规则从不心软，它只问你够不够格。"}
+  - {id: dadao_wuqing_02, motif: dadao_wuqing, tone: 压抑, proposition: "你以为的保护伞，是还没收紧的绞索。"}
+  - {id: dadao_wuqing_03, motif: dadao_wuqing, tone: 沉郁, proposition: "眼泪不能兑换资源，跪下也不能。"}
+  - {id: dadao_wuqing_04, motif: dadao_wuqing, tone: 冷峻, proposition: "天平不会因为你可怜就倾斜，它只称重量。"}
+  - {id: dadao_wuqing_05, motif: dadao_wuqing, tone: 苍凉, proposition: "越往上走，越发现善意是最贵的奢侈品。"}
+  - {id: dadao_wuqing_06, motif: dadao_wuqing, tone: 冷峻, proposition: "法则面前没有例外，例外要付出更大的例外代价。"}
+  - {id: dadao_wuqing_07, motif: dadao_wuqing, tone: 反讽, proposition: "公平不是给弱者的，是给懂规则的人的。"}
+  - {id: dadao_wuqing_08, motif: dadao_wuqing, tone: 沉郁, proposition: "这世界讲道理，只是它的道理里没有人情。"}
+
+  # --- 众生皆苦 (宇宙秩序层) ---
+  - {id: zhongsheng_jieku_01, motif: zhongsheng_jieku, tone: 悲悯, proposition: "你救得了一个人，救不了那个人身后的队伍。"}
+  - {id: zhongsheng_jieku_02, motif: zhongsheng_jieku, tone: 苍凉, proposition: "强者的苦是没人能分担，弱者的苦是没人来分担。"}
+  - {id: zhongsheng_jieku_03, motif: zhongsheng_jieku, tone: 沉郁, proposition: "看见别人的苦之后，自保就成了一种残忍。"}
+  - {id: zhongsheng_jieku_04, motif: zhongsheng_jieku, tone: 反讽, proposition: "谁都在受苦，区别只是苦得体不体面。"}
+  - {id: zhongsheng_jieku_05, motif: zhongsheng_jieku, tone: 悲悯, proposition: "慈悲不是没有边界，是明知没用还伸手。"}
+  - {id: zhongsheng_jieku_06, motif: zhongsheng_jieku, tone: 温柔, proposition: "把别人的苦背上身，你才第一次觉得自己活着。"}
+  - {id: zhongsheng_jieku_07, motif: zhongsheng_jieku, tone: 压抑, proposition: "苦难不会让人高尚，它只会逼人选边。"}
+  - {id: zhongsheng_jieku_08, motif: zhongsheng_jieku, tone: 壮烈, proposition: "渡人者最先沉没，因为他停下来回头看了。"}
+
+  # --- 因果 (宇宙秩序层) ---
+  - {id: yinguo_01, motif: yinguo, tone: 冷峻, proposition: "你今天省下的那一刀，会在最坏的时候连本带利讨回来。"}
+  - {id: yinguo_02, motif: yinguo, tone: 沉郁, proposition: "没有凭空的好运，只有还没到期的账单。"}
+  - {id: yinguo_03, motif: yinguo, tone: 冷峻, proposition: "善因未必结善果，但恶因一定结果。"}
+  - {id: yinguo_04, motif: yinguo, tone: 惊悚, proposition: "每一个被你跳过的人，都会变成回来找你的人。"}
+  - {id: yinguo_05, motif: yinguo, tone: 苍凉, proposition: "因果不是报应，是你忘了的事记得你。"}
+  - {id: yinguo_06, motif: yinguo, tone: 压抑, proposition: "救错一个人，比放过一个人后果更重。"}
+  - {id: yinguo_07, motif: yinguo, tone: 惊悚, proposition: "旧账从不消失，它只是换了张脸等你。"}
+  - {id: yinguo_08, motif: yinguo, tone: 沉郁, proposition: "你种下的不是结果，是迟早要面对的自己。"}
+
+  # --- 命运 (主体抉择层) ---
+  - {id: mingyun_01, motif: mingyun, tone: 苍凉, proposition: "预言没有错，错的是你以为能躲开它。"}
+  - {id: mingyun_02, motif: mingyun, tone: 沉郁, proposition: "你逃的每一步，都是命替你画好的路。"}
+  - {id: mingyun_03, motif: mingyun, tone: 壮烈, proposition: "知道结局之后，怎么走才是你的部分。"}
+  - {id: mingyun_04, motif: mingyun, tone: 冷峻, proposition: "命定的是死期，不是你死前做什么。"}
+  - {id: mingyun_05, motif: mingyun, tone: 反讽, proposition: "算命的人最不信命，因为他们见过太多人改不动。"}
+  - {id: mingyun_06, motif: mingyun, tone: 温柔, proposition: "接受限度不是认输，是终于看清能争的是什么。"}
+  - {id: mingyun_07, motif: mingyun, tone: 苍凉, proposition: "注定要失去的，至少可以选择怎么失去。"}
+  - {id: mingyun_08, motif: mingyun, tone: 热血, proposition: "命运给你剧本，没规定你怎么演。"}
+
+  # --- 逆天 (主体抉择层) ---
+  - {id: nitian_01, motif: nitian, tone: 壮烈, proposition: "当规则把你定成祭品，掀桌就是唯一的尊严。"}
+  - {id: nitian_02, motif: nitian, tone: 压抑, proposition: "第一次反抗很小，但从此没有退路。"}
+  - {id: nitian_03, motif: nitian, tone: 热血, proposition: "不是你想反，是活着这件事本身已经犯规。"}
+  - {id: nitian_04, motif: nitian, tone: 壮烈, proposition: "改写天条的人，要先把自己写进死刑名单。"}
+  - {id: nitian_05, motif: nitian, tone: 冷峻, proposition: "弑神不难，难的是杀完之后谁来当神。"}
+  - {id: nitian_06, motif: nitian, tone: 沉郁, proposition: "每一次逆天都要更高的代价，直到代价就是你自己。"}
+  - {id: nitian_07, motif: nitian, tone: 热血, proposition: "被压到最低的人，才敢去够最高的东西。"}
+  - {id: nitian_08, motif: nitian, tone: 壮烈, proposition: "翻天的人不是无所畏惧，是已经无所可失。"}
+
+  # --- 人定胜天 (主体抉择层) ---
+  - {id: rending_shengtian_01, motif: rending_shengtian, tone: 昂扬, proposition: "打赢一场灾不算赢，让下一场灾死不了人才算。"}
+  - {id: rending_shengtian_02, motif: rending_shengtian, tone: 冷峻, proposition: "真正的敌人不是天，是没人修的渠和没人管的账。"}
+  - {id: rending_shengtian_03, motif: rending_shengtian, tone: 昂扬, proposition: "英雄能救一次，制度能救很多次。"}
+  - {id: rending_shengtian_04, motif: rending_shengtian, tone: 沉郁, proposition: "胜利如果不能被复制，就只是侥幸。"}
+  - {id: rending_shengtian_05, motif: rending_shengtian, tone: 壮烈, proposition: "改天换地之后，最难的是有人愿意守下去。"}
+  - {id: rending_shengtian_06, motif: rending_shengtian, tone: 热血, proposition: "一个人能扛多久，不如一群人学会怎么扛。"}
+  - {id: rending_shengtian_07, motif: rending_shengtian, tone: 昂扬, proposition: "不靠神迹靠图纸，不靠气运靠人手。"}
+  - {id: rending_shengtian_08, motif: rending_shengtian, tone: 苍凉, proposition: "打赢之后才发现，建设比战斗更要命。"}
+
+  # --- 代价 (主体抉择层) ---
+  - {id: daijia_01, motif: daijia, tone: 苍凉, proposition: "天赋是借来的，迟早连本带利还回去。"}
+  - {id: daijia_02, motif: daijia, tone: 冷峻, proposition: "你拿到力量的那天，就抵押了某个还不知道的东西。"}
+  - {id: daijia_03, motif: daijia, tone: 沉郁, proposition: "变强的人越来越空，因为强是用别的东西换的。"}
+  - {id: daijia_04, motif: daijia, tone: 压抑, proposition: "救赎不打折，它只接受你最不舍得的那一样。"}
+  - {id: daijia_05, motif: daijia, tone: 惊悚, proposition: "代价从不当场结算，它专挑你最幸福的时候来收。"}
+  - {id: daijia_06, motif: daijia, tone: 苍凉, proposition: "忘了母亲的脸，才换来记住所有敌人的本事。"}
+  - {id: daijia_07, motif: daijia, tone: 冷峻, proposition: "没有白来的奇迹，只有迟到的账单。"}
+  - {id: daijia_08, motif: daijia, tone: 反讽, proposition: "你以为占了便宜，其实是签了一张看不懂的契约。"}
+
+  # --- 真相 (认知危机层) ---
+  - {id: zhenxiang_01, motif: zhenxiang, tone: 冷峻, proposition: "每揭开一层真相，之前所有的对错都要重新算。"}
+  - {id: zhenxiang_02, motif: zhenxiang, tone: 压抑, proposition: "你想知道的真相，知道之后就回不去了。"}
+  - {id: zhenxiang_03, motif: zhenxiang, tone: 迷惘, proposition: "真相不是答案，是一个更大的问题。"}
+  - {id: zhenxiang_04, motif: zhenxiang, tone: 惊悚, proposition: "历史是被人删改过的，删的人还在。"}
+  - {id: zhenxiang_05, motif: zhenxiang, tone: 冷峻, proposition: "墓里的骨头和史书对不上，对不上的那段才是真的。"}
+  - {id: zhenxiang_06, motif: zhenxiang, tone: 沉郁, proposition: "查清真相会救人，也会亲手毁掉你想救的人。"}
+  - {id: zhenxiang_07, motif: zhenxiang, tone: 迷惘, proposition: "越接近核心，越发现自己也是被写进去的一笔。"}
+  - {id: zhenxiang_08, motif: zhenxiang, tone: 孤独, proposition: "知道得越多，能信的人越少。"}
+
+  # --- 真实与虚幻 (认知危机层) ---
+  - {id: zhenshi_xuhuan_01, motif: zhenshi_xuhuan, tone: 迷惘, proposition: "你救下的人只活在另一条线里，但你手上的伤是真的。"}
+  - {id: zhenshi_xuhuan_02, motif: zhenshi_xuhuan, tone: 惊悚, proposition: "醒来之后才发现，分不清的不是梦，是自己是谁。"}
+  - {id: zhenshi_xuhuan_03, motif: zhenshi_xuhuan, tone: 壮烈, proposition: "当你无法确认什么是真，就只能用行动证明你还在。"}
+  - {id: zhenshi_xuhuan_04, motif: zhenshi_xuhuan, tone: 惊悚, proposition: "这座城可能是被维护的一场梦，而你是清醒的故障。"}
+  - {id: zhenshi_xuhuan_05, motif: zhenshi_xuhuan, tone: 冷峻, proposition: "记忆会骗人，但痛不会，所以跟着痛走。"}
+  - {id: zhenshi_xuhuan_06, motif: zhenshi_xuhuan, tone: 迷惘, proposition: "两个世界都说自己是真的，只有代价能分辨。"}
+  - {id: zhenshi_xuhuan_07, motif: zhenshi_xuhuan, tone: 沉郁, proposition: "不必知道哪个是真，只需决定为哪个负责。"}
+  - {id: zhenshi_xuhuan_08, motif: zhenshi_xuhuan, tone: 孤独, proposition: "最可怕的不是世界是假的，是只有你觉得它假。"}
+
+  # --- 神佛皆伪 (认知危机层) ---
+  - {id: shenfo_jiewei_01, motif: shenfo_jiewei, tone: 惊悚, proposition: "你年年供奉的神，亲手吃了最虔诚的人。"}
+  - {id: shenfo_jiewei_02, motif: shenfo_jiewei, tone: 冷峻, proposition: "神圣若不靠救人证明，就只是一种统治。"}
+  - {id: shenfo_jiewei_03, motif: shenfo_jiewei, tone: 反讽, proposition: "信的不是神，是那些借神说话的人。"}
+  - {id: shenfo_jiewei_04, motif: shenfo_jiewei, tone: 壮烈, proposition: "庙越庄严，塌下来时压死的人越多。"}
+  - {id: shenfo_jiewei_05, motif: shenfo_jiewei, tone: 热血, proposition: "把神请下神坛，是为了让神重新有用。"}
+  - {id: shenfo_jiewei_06, motif: shenfo_jiewei, tone: 沉郁, proposition: "经文是真的，写经文的人是假的。"}
+  - {id: shenfo_jiewei_07, motif: shenfo_jiewei, tone: 冷峻, proposition: "废黜一个神之后，谁来填那个位置才是问题。"}
+  - {id: shenfo_jiewei_08, motif: shenfo_jiewei, tone: 壮烈, proposition: "怀疑神不是亵渎，是终于开始为自己负责。"}
+
+  # --- 长生是诅咒 (伦理反转层) ---
+  - {id: changsheng_zhouzhou_01, motif: changsheng_zhouzhou, tone: 苍凉, proposition: "活得更久，只是看着更多人先走。"}
+  - {id: changsheng_zhouzhou_02, motif: changsheng_zhouzhou, tone: 孤独, proposition: "每三年醒一天，故人已换了三代。"}
+  - {id: changsheng_zhouzhou_03, motif: changsheng_zhouzhou, tone: 沉郁, proposition: "长生不是奖赏，是被时间反复审问你为什么还活着。"}
+  - {id: changsheng_zhouzhou_04, motif: changsheng_zhouzhou, tone: 苍凉, proposition: "不死的人最怕的不是死，是再也找不到值得的事。"}
+  - {id: changsheng_zhouzhou_05, motif: changsheng_zhouzhou, tone: 苍凉, proposition: "时间给你无限，却拿走了来不及这件珍贵的事。"}
+  - {id: changsheng_zhouzhou_06, motif: changsheng_zhouzhou, tone: 温柔, proposition: "看尽成住坏空之后，还能为一朵花停留才是修行。"}
+  - {id: changsheng_zhouzhou_07, motif: changsheng_zhouzhou, tone: 孤独, proposition: "永恒是一种孤独，因为没人陪你记得。"}
+  - {id: changsheng_zhouzhou_08, motif: changsheng_zhouzhou, tone: 温柔, proposition: "长生者的慈悲，是替所有短命的人记住他们。"}
+
+  # --- 善恶颠倒 (伦理反转层) ---
+  - {id: shane_diandao_01, motif: shane_diandao, tone: 冷峻, proposition: "你奉命去诛的妖，正在护着你想救的村。"}
+  - {id: shane_diandao_02, motif: shane_diandao, tone: 反讽, proposition: "名门未必高义，异端未必无情。"}
+  - {id: shane_diandao_03, motif: shane_diandao, tone: 压抑, proposition: "正统屠村，邪道收尸，正邪从此换了位。"}
+  - {id: shane_diandao_04, motif: shane_diandao, tone: 冷峻, proposition: "判断一个人善恶，靠的是他做了什么，不是他叫什么。"}
+  - {id: shane_diandao_05, motif: shane_diandao, tone: 反讽, proposition: "最干净的旗号下，往往藏着最脏的手。"}
+  - {id: shane_diandao_06, motif: shane_diandao, tone: 压抑, proposition: "当正义需要你闭眼，邪恶反而睁着眼。"}
+  - {id: shane_diandao_07, motif: shane_diandao, tone: 冷峻, proposition: "给反派一个站得住的理由，戏才真正开始。"}
+  - {id: shane_diandao_08, motif: shane_diandao, tone: 沉郁, proposition: "善恶不是阵营，是每一次具体选择的总和。"}

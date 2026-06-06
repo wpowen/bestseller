@@ -1,0 +1,545 @@
+# 核心母题库 (Core Motif / Ideology Library)
+# =============================================================================
+# Single source of truth for the framework's "core ideology" layer — the 13
+# high-frequency, composable, commercial 母题 grouped into 4 structural layers,
+# distilled from《从天地不仁到逆命而行的小说方法论》(deep-research-report).
+#
+# Design contract (mirrors litstyle_prose.yaml / writing_methodology.yaml):
+#   * Genre-NEUTRAL: a motif is a worldview thesis, not a genre. The SAME motif
+#     (e.g. 代价) can shell into 仙侠 / 都市 / 科幻 / 悬疑.
+#   * Each motif tells the planner WHAT to build, not WHICH words to copy:
+#     thesis_template + core_question + belief_arc + concrete_symbol_hints.
+#   * Consumed by: services/ideology_library.py (typed loader),
+#     services/ideology_kernel.py (LLM derivation menu + deterministic fallback),
+#     services/ideology_judge.py (advisory scoring reference),
+#     services/ideology_coherence_gate.py (structural checks).
+#
+# A book binds ONE primary motif + TWO secondary motifs (one drives ACTION, one
+# drives SUSPENSE) + ONE hidden endgame motif, per the report's
+# "一强主母题 + 两个副母题 + 一个隐藏终局母题" rule.
+# =============================================================================
+
+version: ideology-motif.v1
+
+# --- The 4 structural layers (构思顺序: 先问世界, 再问人, 再问认知, 最后问代价/价值) ---
+layers:
+  - key: cosmic_order
+    display_name: 宇宙秩序层
+    function: 决定世界"是否会偏爱人"
+    question: 这个世界会不会因为你善良就奖励你？
+    order: 1
+    genre_shells: [仙侠, 玄幻, 志怪, 末世, 克苏鲁]
+    motif_keys: [tiandi_buren, dadao_wuqing, zhongsheng_jieku, yinguo]
+  - key: subject_choice
+    display_name: 主体抉择层
+    function: 决定人物"如何回应世界"
+    question: 在不被世界保证的前提下，人如何做出选择并支付代价？
+    order: 2
+    genre_shells: [升级流, 成长流, 热血流, 悲剧流]
+    motif_keys: [mingyun, nitian, rending_shengtian, daijia]
+  - key: cognitive_crisis
+    display_name: 认知危机层
+    function: 决定故事"靠什么推进悬念"
+    question: 你能相信你看到的一切吗？
+    order: 3
+    genre_shells: [悬疑修仙, 中式克苏鲁, 历史揭秘]
+    motif_keys: [zhenxiang, zhenshi_xuhuan, shenfo_jiewei]
+  - key: ethical_reversal
+    display_name: 伦理反转层
+    function: 决定故事"最终要颠覆什么价值"
+    question: 故事最终要重估、颠覆哪一种价值？
+    order: 4
+    genre_shells: [黑暗仙侠, 反套路武侠, 反乌托邦]
+    motif_keys: [changsheng_zhouzhou, shane_diandao]
+
+# --- Composition rule: how a book assembles its motif formula ---
+composition_rule:
+  formula: "[宇宙层] + [主体层] + [认知层] + [伦理层] = 长篇骨架"
+  structure: 一强主母题 + 两个副母题(一管行动, 一管悬念) + 一个隐藏终局母题
+  secondary_roles:
+    action: 推进"主角如何回应世界"——优先选主体抉择层母题(逆天/代价/人定胜天/命运)
+    suspense: 推进"靠什么揭秘/翻面"——优先选认知危机层母题(真相/真实与虚幻/神佛皆伪)
+  hidden_endgame: 晚揭(常在 50-60% 进度后)的伦理反转层母题, 提供全书后劲与价值重估
+  three_binding_questions:
+    - 主角最初相信什么 (initial_belief)
+    - 故事中段打碎什么 (midpoint_shatter)
+    - 结尾重新建立什么 (final_reconstruction)
+  longevity_rule: 能建立新秩序的母题才适合长篇与 IP; 只破不立的母题只适合短篇。
+
+# --- The 13 motifs ---------------------------------------------------------
+motifs:
+  - key: tiandi_buren
+    layer: cosmic_order
+    display_name: 天地不仁
+    one_line: 宇宙对个体无善恶偏爱, 苦难不是即时惩罚, 幸运也不是德福奖励。
+    philosophical_origin: 《老子》第五章"天地不仁, 以万物为刍狗"; 注家重在"任自然", 非鼓吹残虐。
+    representative_work: 《诛仙》以此为显性总题, 开启仙侠流。
+    thesis_template: 世界不保佑善者, 但人仍可彼此托底。
+    core_question_template: 天若不仁, 人为何还要善？
+    conflict_type: 人对天地 / 人对灾异 / 人对无意义
+    character_arc: 受难者 → 不再求天的自立者
+    worldview_setting: 天灾、机缘、灭门、偶遇都不讲公平; 善不必得报, 恶不必即罚。
+    plot_template: 相信天 → 失望 → 自建人间秩序
+    suspense_technique: 先给"神迹希望", 再证明"神不救你"
+    belief_arc:
+      initial: 相信祭天 / 行善能换来庇佑
+      shatter: 祭天之后全村照样覆灭
+      reconstruction: 不再求天, 转向人与人之间的托底与誓约
+    common_traps: 只有苦没有温度, 沦为苦难展览
+    trap_guard: 必须给凡俗日常与局部胜利; 副线写灾民互助、旧友重逢、师门赈灾。
+    concrete_symbol_hints: [祭坛余烬, 雨夜浅坟, 被神像压住的活人, 照常下沉的村庄]
+    commercial: {appeal: high, serializability: high, adaptation: high}
+    reader_segment: 男频仙侠 / 重情绪读者
+    pairs_well_with: [daijia, zhongsheng_jieku, shane_diandao, zhenxiang, nitian, shenfo_jiewei]
+
+  - key: dadao_wuqing
+    layer: cosmic_order
+    display_name: 大道无情
+    one_line: 世界不是恶意, 而是高于人情; 规则只问条件, 不问眼泪。
+    philosophical_origin: 荀子《天论》"天行有常, 不为尧存, 不为桀亡"; 强调利用规律而非祈神求恩。
+    representative_work: 《凡人修仙传》残酷修仙环境 / 金字塔世界 / 凡人如履薄冰。
+    thesis_template: 不是天恶, 而是规则高于眼泪; 你要学会使用规则而非抱怨规则。
+    core_question_template: 你是要抱怨规则, 还是学会使用规则？
+    conflict_type: 人情与规则冲突
+    character_arc: 热血少年 → 理解规则的冷静者
+    worldview_setting: 境界、法则、寿元、资源皆可量化; 规则一开始像保护, 后来变成绞索。
+    plot_template: 不懂规则 → 被规则打伤 → 借规则升级活下去
+    suspense_technique: 规则一开始像保护, 后来变成绞索
+    belief_arc:
+      initial: 相信努力 / 善意能换来公平对待
+      shatter: 第一次闭关就目睹师兄因资源不足而死
+      reconstruction: 学会精算规则、借规则反制规则而存活
+    common_traps: 把冷酷写成无聊的说明书
+    trap_guard: 用规则触发具体损失; 副线写同门竞逐、宗门财政、资源黑市。
+    concrete_symbol_hints: [寿元兑换的沙漏, 法宝竞拍的号牌, 门规石碑, 灵石账册]
+    commercial: {appeal: high, serializability: very_high, adaptation: very_high}
+    reader_segment: 凡人流 / 升级流 / 策略型读者
+    pairs_well_with: [yinguo, mingyun, zhenxiang, daijia, changsheng_zhouzhou, zhenshi_xuhuan]
+
+  - key: zhongsheng_jieku
+    layer: cosmic_order
+    display_name: 众生皆苦
+    one_line: 生命总体处于生老病死、轮回、缺失与不安; 强者也苦, 只是苦的形式不同。
+    philosophical_origin: 佛教四谛"知苦、断集、慕灭、修道"; "众生"为众缘所生、众处受生。
+    representative_work: 《道诡异仙》把"抽象之苦"写成"具体现实感", 映射当代精神困厄。
+    thesis_template: 苦并不高贵, 但看见苦会改变人。
+    core_question_template: 自保是否足够, 还是必须为他人的苦做点什么？
+    conflict_type: 个体苦与群体苦冲突
+    character_arc: 自保者 → 悲悯者
+    worldview_setting: 底层遍苦, 强者也苦, 苦的形式不同。
+    plot_template: 个人苦 → 群体苦 → 被逼选"我"还是"众生"
+    suspense_technique: 把"别人"的苦变成主角无法回避的现实
+    belief_arc:
+      initial: 只想护住自己与最亲的人
+      shatter: 救妹妹失败, 却在路边看见更大的苦海
+      reconstruction: 从自私转向悲悯, 但悲悯带来新的负担与选择
+    common_traps: 苦难堆砌而不改变关系与决策
+    trap_guard: 让苦难改变关系与决策; 副线写医者、难民营、孤儿群像。
+    concrete_symbol_hints: [施粥的破碗, 逃难队伍的脚印, 疫村的白幡, 卖儿的草标]
+    commercial: {appeal: medium_high, serializability: high, adaptation: medium_high}
+    reader_segment: 情绪向 / 群像向读者
+    pairs_well_with: [tiandi_buren, daijia, yinguo, changsheng_zhouzhou, shenfo_jiewei]
+
+  - key: yinguo
+    layer: cosmic_order
+    display_name: 因果
+    one_line: 行为与结果并非随机断裂, 而是在时间、条件、业力上持续结算。
+    philosophical_origin: 佛教核心教义之一, 入华后与传统报应观结合, 深入六朝志怪与明清劝世小说。
+    representative_work: 从六朝志怪到明清劝世小说, 大量依靠因果回环组织故事。
+    thesis_template: 今天的每一刀, 迟早会回来; 你要能承担自己种下的果。
+    core_question_template: 你能不能承担自己种下的果？
+    conflict_type: 当下选择与滞后结算冲突
+    character_arc: 任性者 → 知其后果的承担者
+    worldview_setting: 有明确的因果 / 业报机制; 伏笔必有结算感。
+    plot_template: 埋恶因 / 善因 → 中段看似无事 → 终局回收 → 主动偿还
+    suspense_technique: 让回收结果"意料之外、因果之中"
+    belief_arc:
+      initial: 相信小恶可以无声无息地翻篇
+      shatter: 为脱困做的一个"小恶"在中段开始反噬至亲
+      reconstruction: 主动追溯并偿还旧因, 接受承担的代价
+    common_traps: 说教味重, 因果靠旁白宣布
+    trap_guard: 让因果通过戏剧事件实现; 副线写前世线、旁支人物的报应链。
+    concrete_symbol_hints: [反复出现的旧账本, 同一道伤疤, 误伤者的遗物, 回到原点的渡口]
+    commercial: {appeal: high, serializability: very_high, adaptation: high}
+    reader_segment: 传统文化读者 / 悬疑读者
+    pairs_well_with: [dadao_wuqing, mingyun, zhenxiang, daijia, zhenshi_xuhuan, shane_diandao]
+
+  - key: mingyun
+    layer: subject_choice
+    display_name: 命运
+    one_line: 个体遭遇受命、时、天、势约束, 但并不等于只能瘫倒; 关键在顺命/知命/立命/正命。
+    philosophical_origin: 《孟子》"莫非命也, 顺受其正" 与 "修身以俟之, 所以立命也"; 承认限度后建立人格。
+    representative_work: 古代叙事常同时保留"命运注定"与"命运可改"的双面张力。
+    thesis_template: 接受限度, 不等于放弃主动。
+    core_question_template: 命是天定, 还是由我立？
+    conflict_type: 注定与主动冲突
+    character_arc: 顺受者 → 立命者
+    worldview_setting: 预言、生死簿、师承安排、出生诅咒等"命定"装置在场。
+    plot_template: 先被命定 → 尝试逃避 → 发现逃避本身也是命 → 改为正面立命
+    suspense_technique: 预言不一定错, 错的是主角对预言的理解
+    belief_arc:
+      initial: 相信只要逃得够远就能躲过命数
+      shatter: 发现逃避的每一步恰恰是预言成真的轨迹
+      reconstruction: 不再逃避, 在承认限度后正面立命
+    common_traps: 把宿命写成机械剧透, 取消悬念
+    trap_guard: 让"知命"改变选择而非取消悬念; 副线写家族旧命、师傅旧预言。
+    concrete_symbol_hints: [写着死期的生死簿, 批命的卦象, 反复出现的预言残句, 倒计时的香]
+    commercial: {appeal: high, serializability: high, adaptation: high}
+    reader_segment: 大众向读者
+    pairs_well_with: [yinguo, nitian, rending_shengtian, zhenxiang, dadao_wuqing, daijia]
+
+  - key: nitian
+    layer: subject_choice
+    display_name: 逆天
+    one_line: 对既定天命、寿数、神权、规则发起正面抗争。
+    philosophical_origin: 《愚公移山》"子子孙孙无穷匮也"; 孙悟空改生死簿; 荀子"制天命而用之"。
+    representative_work: 孙悟空改生死簿, 是中国小说史上最强"逆命"形象之一。
+    thesis_template: 规则不公时, 反抗本身就是意义。
+    core_question_template: 什么时候必须翻桌？
+    conflict_type: 个体与天命 / 神权正面对撞
+    character_arc: 被压迫者 → 破局者
+    worldview_setting: 有可被挑战的"天条"; 每次逆天都必须有更高代价。
+    plot_template: 发现不公天律 → 小逆 → 大逆 → 弑神 / 改律
+    suspense_technique: 每次逆天都必须有更高代价
+    belief_arc:
+      initial: 相信认命、配合天条还能活下去
+      shatter: 被告知自己天生只配做祭品 / 燃料
+      reconstruction: 失去退路后召集同盟, 真付代价去改天换律
+    common_traps: 嘴上逆天、行动仍抱大腿
+    trap_guard: 让主角真付代价; 副线写地下组织、失败前辈、反抗史。
+    concrete_symbol_hints: [被划掉名字的生死簿, 焚毁的天条石碑, 断裂的镇压锁链, 祭坛上的反咬]
+    commercial: {appeal: very_high, serializability: medium_high, adaptation: very_high}
+    reader_segment: 爽文 / 热血 / 男性向读者
+    pairs_well_with: [tiandi_buren, shenfo_jiewei, zhenxiang, daijia, rending_shengtian, mingyun]
+
+  - key: rending_shengtian
+    layer: subject_choice
+    display_name: 人定胜天
+    one_line: 人的意志、谋略与组织能力可以在一定条件下胜过"天"; 更像行动信念而非宇宙真理。
+    philosophical_origin: 古义近"人谋/人强胜天", 今义偏主观能动性; 不宜把荀子"用天"曲解为粗暴"胜天"。
+    representative_work: 适合现实主义热血玄幻、书院/军旅/改革/群体建设叙事。
+    thesis_template: 人的组织、技术、制度可以压过天灾与坏秩序。
+    core_question_template: 打赢之后, 谁来建设？
+    conflict_type: 人与环境 / 制度 / 资源的建设性对抗
+    character_arc: 个人英雄 → 组织者 / 建制者
+    worldview_setting: 天并非敌人, 关键是能否利用规律; 胜利可被众人复制。
+    plot_template: 个人试错 → 拉队伍 → 建制度 → 让众人能复制胜利
+    suspense_technique: 真反转不在打赢, 而在"规则被改写后谁来负责"
+    belief_arc:
+      initial: 相信只要打赢眼前的灾 / 敌就能解决问题
+      shatter: 发现真正的问题是水利、官制、人心而非单点强敌
+      reconstruction: 从个人英雄转向建制者, 让胜利可被复制
+    common_traps: 只会喊口号, 不写具体流程与成本
+    trap_guard: 写具体流程与成本; 副线写工匠、书院、吏治、后勤。
+    concrete_symbol_hints: [新修的水渠, 学宫的第一块匾, 改制的税册, 量产的农具]
+    commercial: {appeal: medium_high, serializability: high, adaptation: high}
+    reader_segment: 热血成长 / 现实映照读者
+    pairs_well_with: [mingyun, daijia, shane_diandao, shenfo_jiewei, nitian, zhenxiang]
+
+  - key: daijia
+    layer: subject_choice
+    display_name: 代价
+    one_line: 任何力量、知识、救赎、复仇都不是免费得来; 代价可以是肉身、关系、伦理、记忆、寿命与身份。
+    philosophical_origin: 《老子》第九章"持而盈之, 不如其已"; 佛教因果"种因—遇缘—结果"的支付逻辑。
+    representative_work: 《十日终焉》把"生命代价"制度化; 《凡人修仙传》把谨慎求生写成日常代价。
+    thesis_template: 没有白来的力量, 只有迟到的账单。
+    core_question_template: 你愿意用什么换力量？
+    conflict_type: 欲望与支付能力冲突
+    character_arc: 贪求者 → 会计算损失的人
+    worldview_setting: 力量系统必须绑定价格; 每次获得都有可见或延迟的支付。
+    plot_template: 先得 → 后失 → 想补救 → 发现代价不可逆
+    suspense_technique: 让"代价"延迟出现, 比即时损失更痛
+    belief_arc:
+      initial: 相信这次的力量是占了便宜、没有附带条件
+      shatter: 一夜暴涨修为, 却忘了母亲的脸 / 失去不可逆的东西
+      reconstruction: 学会预先标价、为每一次获得保留偿付能力
+    common_traps: 代价没有持续性, 一次性损失后即遗忘
+    trap_guard: 让代价反复侵入日常; 副线写价格市场、禁术事件、被代价压垮的前人。
+    concrete_symbol_hints: [缺页的记忆, 换血后的白发, 抵押出去的名字, 越用越短的寿线]
+    commercial: {appeal: very_high, serializability: very_high, adaptation: high}
+    reader_segment: 全类型通吃
+    pairs_well_with: [tiandi_buren, dadao_wuqing, nitian, zhenxiang, zhongsheng_jieku, changsheng_zhouzhou]
+
+  - key: zhenxiang
+    layer: cognitive_crisis
+    display_name: 真相
+    one_line: 故事推进依赖于世界历史、身份来源、权力结构、旧案根因的层层揭示。
+    philosophical_origin: 现代母题命名, 接续中国小说"拨云见史""案中案""壳中壳"传统。
+    representative_work: 《牧神记》以"千层饼式历史揭秘"+地图扩展+时空闭环制造持续真相升级。
+    thesis_template: 真相不是答案, 而是不断改写问题。
+    core_question_template: 你真的想知道一切吗？
+    conflict_type: 表层史与底层史冲突
+    character_arc: 局中人 → 解密者
+    worldview_setting: 每个时代真相只露一层; 每解开一层, 前一层全部改义。
+    plot_template: 旧案 → 遗物 → 师门秘史 → 大历史真相
+    suspense_technique: 每解开一层, 前一层全部改义
+    belief_arc:
+      initial: 相信查清真相就能解决问题、还人清白
+      shatter: 墓中遗骨与史书年龄对不上, 世界观第一次翻面
+      reconstruction: 接受真相会伤人, 用真相重新定义自己与责任
+    common_traps: 只有谜面没有情感
+    trap_guard: 让真相伤到人物关系; 副线写旧案、支线城市、各派版本史。
+    concrete_symbol_hints: [年龄对不上的遗骨, 被涂改的族谱, 缺一角的地图, 自相矛盾的碑文]
+    commercial: {appeal: very_high, serializability: very_high, adaptation: very_high}
+    reader_segment: 悬疑玄幻 / 长篇追更读者
+    pairs_well_with: [dadao_wuqing, yinguo, mingyun, shenfo_jiewei, zhenshi_xuhuan, daijia]
+
+  - key: zhenshi_xuhuan
+    layer: cognitive_crisis
+    display_name: 真实与虚幻
+    one_line: '"我看到的世界"不一定真实, 甚至"我自己是谁"都可能被怀疑。'
+    philosophical_origin: 《庄子·齐物论》庄周梦蝶, 直指梦与醒、主客体、真实与梦境的模糊界限。
+    representative_work: 《道诡异仙》在真实与虚幻的纠结中探求自我与世界秘密, 双线双视角为核心结构。
+    thesis_template: 所有认知都可能失真, 但人仍要决定如何行动。
+    core_question_template: 如果你无法确认真实, 你还如何爱与负责？
+    conflict_type: 所见与所是冲突
+    character_arc: 认知稳定者 → 自我怀疑者 → 自我确认者
+    worldview_setting: 双世界、梦境、精神病院、幻阵、时间环; 用可靠细节支持不可靠世界。
+    plot_template: 现实线与幻线并行推进 → 认知崩裂 → 找锚点 → 用行动而非知识定义自我
+    suspense_technique: 用"可靠细节"支持"不可靠世界"
+    belief_arc:
+      initial: 相信自己的眼睛、记忆与身份是稳定可靠的
+      shatter: 醒来发现昨日救下的人只存在于另一条线
+      reconstruction: 放弃"先确认真假再行动", 用行动与责任反向锚定自我
+    common_traps: 故弄玄虚, 真假无可追踪
+    trap_guard: 设置可追踪的真假标记; 副线写心理医生、旧友见证、梦中案件。
+    concrete_symbol_hints: [两条线都出现的同一枚硬币, 错位的记忆照片, 醒来仍在的梦中伤口, 数不对的台阶]
+    commercial: {appeal: medium_high, serializability: high, adaptation: high}
+    reader_segment: 悬疑 / 文气向 / 克系读者
+    pairs_well_with: [zhenxiang, yinguo, changsheng_zhouzhou, dadao_wuqing, shane_diandao]
+
+  - key: shenfo_jiewei
+    layer: cognitive_crisis
+    display_name: 神佛皆伪
+    one_line: 神圣权威并非天然正确; 神佛可能只是统治装置、话术、伪装, 或早已失去救人能力。
+    philosophical_origin: 现代母题命名, 资源来自古代天道观、民间信仰与志怪中"神灵并不完美"。
+    representative_work: 《牧神记》"推倒神的统治使神为人用"; 《择日飞升》"村神草菅人命"。
+    thesis_template: 神圣性若不通过救人来证明, 就只是统治。
+    core_question_template: 你信的是神, 还是相信神的人？
+    conflict_type: 信仰与权力冲突
+    character_arc: 信徒 → 叛徒 / 改革者
+    worldview_setting: 神圣机构真实存在, 但其正当性存疑; 神圣场面越庄严, 塌方越震撼。
+    plot_template: 先信神 → 发现谎言 → 推翻神权 → 重建可检验的秩序
+    suspense_technique: 把"神圣场面"做得越庄严, 塌方越震撼
+    belief_arc:
+      initial: 虔诚供奉, 相信神会庇佑最虔诚的人
+      shatter: 年年供奉的村神亲手吞了最虔诚的老人
+      reconstruction: 破除神话, 建立可检验、靠救人证明的新秩序
+    common_traps: 单纯亵渎、缺少思想替代
+    trap_guard: 给出新秩序或新人道替代; 副线写教团、神职、底层信众。
+    concrete_symbol_hints: [显灵翻车的神像, 吃人的功德箱, 伪造的经卷, 塌掉的庙顶]
+    commercial: {appeal: high, serializability: medium_high, adaptation: high}
+    reader_segment: 反套路 / 反权威读者
+    pairs_well_with: [tiandi_buren, nitian, zhenxiang, shane_diandao, rending_shengtian, zhongsheng_jieku]
+
+  - key: changsheng_zhouzhou
+    layer: ethical_reversal
+    display_name: 长生是诅咒
+    one_line: 永生不再是纯奖励, 而是时间错位、关系凋零、记忆负担与意义流失。
+    philosophical_origin: 修仙题材根在道教文化与古代求仙小说; 现代仙侠把"长生"反写为孤独与负担。
+    representative_work: 《长生仙游》把"蜉蝣诅咒""故人凋零、人去楼空"写成母题中心。
+    thesis_template: 活得更久, 不等于活得更好。
+    core_question_template: 时间延长后, 什么还能留下？
+    conflict_type: 长寿与意义冲突
+    character_arc: 求生者 → 倦生者 → 重新找到有限意义的人
+    worldview_setting: 时间流速、苏醒周期、关系代差; 一觉百年, 旧址荒芜, 后代陌生。
+    plot_template: 追求长生 → 故人凋零 → 价值迷失 → 找到新的锚点
+    suspense_technique: 反转不在"不想活", 而在"为什么还要继续活"
+    belief_arc:
+      initial: 把长生当作终极奖励去追求
+      shatter: 每三年苏醒一天, 故人已换三代, 时间福利变成时间刑罚
+      reconstruction: 在有限事物里重新找到继续活下去的锚点
+    common_traps: 纯抒情、无主线
+    trap_guard: 以单元故事串主线谜团; 副线写故地重返、代际家书、城池兴亡。
+    concrete_symbol_hints: [刻满忌日的木牌, 三代人的同一扇门, 长满草的旧址, 写给已故人的信]
+    commercial: {appeal: medium_high, serializability: very_high, adaptation: medium_high}
+    reader_segment: 文艺向仙侠 / 单元故事读者
+    pairs_well_with: [zhongsheng_jieku, zhenxiang, daijia, dadao_wuqing, zhenshi_xuhuan]
+
+  - key: shane_diandao
+    layer: ethical_reversal
+    display_name: 善恶颠倒
+    one_line: 正统未必正义, 异端未必邪恶; "名分—道德"脱钩。
+    philosophical_origin: 《聊斋》借狐鬼反照人心、"鬼比人更有情义"; 金庸"不以正邪观念, 而以实践知人论事"。
+    representative_work: 《聊斋志异》借鬼狐反照人心; 《笑傲江湖》以正邪互渗拆掉教条。
+    thesis_template: 名门未必高义, 异端未必无情。
+    core_question_template: 你凭什么判断一个人是善是恶？
+    conflict_type: 名分与德性冲突
+    character_arc: 教条信徒 → 以人论人的判断者
+    worldview_setting: 正道可能更坏, 妖邪可能更真; 把反派的"正当性"写足, 戏才成立。
+    plot_template: 相信名分 → 看见反证 → 与异端同行 → 重写正邪
+    suspense_technique: 把反派的"正当性"写足, 戏才成立
+    belief_arc:
+      initial: 相信正统即正义, 奉命诛妖
+      shatter: 发现奉命要诛的"妖"在护村, 而正派在屠村
+      reconstruction: 抛弃名分判断, 以人论人重写正邪标准
+    common_traps: 为了反转而反转
+    trap_guard: 给各方充分动机; 副线写同门撕裂、百姓视角、旧恩旧怨。
+    concrete_symbol_hints: [屠村正派的令牌, 护村妖物的伤, 翻案的旧卷宗, 被供错的牌位]
+    commercial: {appeal: high, serializability: high, adaptation: very_high}
+    reader_segment: 武侠 / 悬疑 / 群像读者
+    pairs_well_with: [tiandi_buren, shenfo_jiewei, rending_shengtian, yinguo, zhenshi_xuhuan, zhongsheng_jieku]
+
+# --- Per-motif writing scaffolding (母题模板表) ------------------------------
+# Concrete, ready-to-write scaffolding distilled from the report's 母题模板 +
+# 叙事机制 tables: an opening hook, the 3-act spine, a character paradigm, key
+# scene samples, and extensible subplots. Loaded onto each Motif and surfaced in
+# the derivation menu so a chosen motif comes with proven, mainstream execution
+# patterns (not invented from scratch).
+motif_templates:
+  - motif: tiandi_buren
+    opening_hook: 祭天后全村照样覆灭。
+    three_act: 相信天 → 失望 → 自建人间秩序。
+    character_paradigm: 温吞凡人 + 冷面同伴
+    key_scenes: [灾后余生, 雨夜埋亲, 拒绝再拜神]
+    extensible_subplots: [灾民互助, 旧友重逢, 师门赈灾]
+  - motif: dadao_wuqing
+    opening_hook: 主角第一次闭关, 就目睹师兄因资源不足而死。
+    three_act: 不懂规则 → 被规则打伤 → 借规则升级。
+    character_paradigm: 慢热型谨慎主角
+    key_scenes: [考核, 门规, 寿元兑换, 法宝竞拍]
+    extensible_subplots: [同门竞逐, 宗门财政, 资源黑市]
+  - motif: zhongsheng_jieku
+    opening_hook: 主角救妹妹失败, 却在路边看见更大的苦海。
+    three_act: 个人苦 → 群体苦 → 选择站位。
+    character_paradigm: 先自私后悲悯的主角
+    key_scenes: [饥荒, 疫病逃难, 路边施粥]
+    extensible_subplots: [医者, 难民营, 孤儿群像]
+  - motif: yinguo
+    opening_hook: 主角为脱困做了一个"小恶"。
+    three_act: 种因 → 逃避 → 果报回收 → 主动偿还。
+    character_paradigm: 精明但心软的决策者
+    key_scenes: [回收旧案, 反噬, 误伤至亲, 补偿之旅]
+    extensible_subplots: [前世线, 旁支人物的报应链]
+  - motif: mingyun
+    opening_hook: 生死簿写着主角三十岁必死。
+    three_act: 被命限定 → 误以为能逃 → 发现只能立命。
+    character_paradigm: 背着死期活的人
+    key_scenes: [批命, 改命, 误解预言, 赴死而活]
+    extensible_subplots: [家族旧命, 师傅旧预言]
+  - motif: nitian
+    opening_hook: 主角被告知自己天生只配做祭品。
+    three_act: 小反抗 → 失去退路 → 召集同盟 → 改天换律。
+    character_paradigm: 失去一切才敢硬抗的人
+    key_scenes: [破阵, 焚书, 改簿, 弑神]
+    extensible_subplots: [地下组织, 失败前辈, 反抗史]
+  - motif: rending_shengtian
+    opening_hook: 一座城连年受灾, 主角却发现真正问题是水利与官制。
+    three_act: 个人试错 → 拉队伍 → 建制度 → 让众人能复制胜利。
+    character_paradigm: 会做事的主角
+    key_scenes: [筑城, 治河, 造器, 开学宫]
+    extensible_subplots: [工匠, 书院, 吏治, 后勤]
+  - motif: daijia
+    opening_hook: 主角一夜暴涨修为, 却忘了母亲的脸。
+    three_act: 先得 → 后失 → 想补救 → 发现代价不可逆。
+    character_paradigm: 越强越空的人
+    key_scenes: [失忆, 折寿, 换血, 献祭]
+    extensible_subplots: [价格市场, 禁术事件, 被代价压垮的前人]
+  - motif: zhenxiang
+    opening_hook: 墓中遗骨与史书记载年龄对不上。
+    three_act: 局部解谜 → 世界观翻面 → 最终真相反过来定义主角。
+    character_paradigm: 被卷进秘密的人
+    key_scenes: [旧档案, 地图缺口, 遗言, 谎言史]
+    extensible_subplots: [旧案, 支线城市, 各派版本史]
+  - motif: zhenshi_xuhuan
+    opening_hook: 主角醒来时, 发现昨日救下的人只存在于另一条线。
+    three_act: 认知崩裂 → 找锚点 → 用行动而非知识定义自我。
+    character_paradigm: 认知不稳定但情感强烈的人
+    key_scenes: [梦醒反转, 双线互证, 错位记忆]
+    extensible_subplots: [心理医生, 旧友见证, 梦中案件]
+  - motif: shenfo_jiewei
+    opening_hook: 主角年年供奉的村神, 亲手吞了最虔诚的老人。
+    three_act: 虔信 → 发现伪神 → 破除神话 → 重建可检验的秩序。
+    character_paradigm: 失去信仰后仍要活的人
+    key_scenes: [假神显灵, 祭仪翻车, 庙宇塌方, 伪经曝光]
+    extensible_subplots: [教团, 神职, 底层信众]
+  - motif: changsheng_zhouzhou
+    opening_hook: 主角每三年苏醒一天, 故人已换三代。
+    three_act: 追求长生 → 发现孤独 → 寻找有限事物的价值。
+    character_paradigm: 外表年轻、内里苍老的人
+    key_scenes: [一觉百年, 旧址荒芜, 后代陌生]
+    extensible_subplots: [故地重返, 代际家书, 城池兴亡]
+  - motif: shane_diandao
+    opening_hook: 主角奉命诛妖, 却发现"妖"在护村。
+    three_act: 相信名分 → 看见反证 → 站到异端一边 → 重写正邪。
+    character_paradigm: 道德判断成长型主角
+    key_scenes: [正派屠村, 妖物救人, 法庭翻案]
+    extensible_subplots: [同门撕裂, 百姓视角, 旧恩旧怨]
+
+# --- Battle-tested combination recipes (组合矩阵) ----------------------------
+# Each = 1 primary + 2 secondary (action+suspense) + 1 hidden endgame.
+combinations:
+  - name: 黑暗仙侠 / 悲剧群像
+    primary: tiandi_buren
+    secondary: [daijia, zhongsheng_jieku]
+    hidden: shane_diandao
+    logic: 冷宇宙里, 人只能在人间辨善恶、付代价。
+    emotion: 压抑、悲悯、后劲强
+    selling_point: 世界不救你, 但有人陪你熬。
+    fits_genres: [仙侠, 玄幻, 悲剧]
+  - name: 凡人流 / 悬疑修仙
+    primary: dadao_wuqing
+    secondary: [yinguo, zhenxiang]
+    hidden: mingyun
+    logic: 规则稳定、结算清楚、揭秘不断。
+    emotion: 冷静、烧脑、稳推进
+    selling_point: 越升级越发现世界解释错了。
+    fits_genres: [仙侠, 玄幻, 悬疑]
+  - name: 反体制仙侠
+    primary: tiandi_buren
+    secondary: [nitian, zhenxiang]
+    hidden: shenfo_jiewei
+    logic: 世界无情, 天上还在骗人, 于是反天反神反史。
+    emotion: 爽、怒、史诗感
+    selling_point: 不是我要反, 是你们逼我反。
+    fits_genres: [仙侠, 玄幻, 历史]
+  - name: 热血玄幻 / 改革流
+    primary: rending_shengtian
+    secondary: [mingyun, zhenxiang]
+    hidden: shane_diandao
+    logic: 承认限度, 但用组织与技术破局; 边建设边揭开旧制度的真相。
+    emotion: 昂扬、艰苦、建设感
+    selling_point: 打赢容易, 重建更难。
+    fits_genres: [玄幻, 历史, 现实]
+  - name: 中式克苏鲁 / 悬疑志怪
+    primary: zhenshi_xuhuan
+    secondary: [yinguo, zhenxiang]
+    hidden: shane_diandao
+    logic: 认知不可靠, 但结算仍可靠; 终局发现善恶早已颠倒。
+    emotion: 迷惘、惊悚、强反转
+    selling_point: 你不知道什么是真, 但你知道什么会痛。
+    fits_genres: [悬疑, 志怪, 恐怖]
+  - name: 长寿流仙侠 / 治愈向志怪
+    primary: changsheng_zhouzhou
+    secondary: [daijia, zhenxiang]
+    hidden: zhongsheng_jieku
+    logic: 借时间跨度做单元故事, 再用主线谜团牵引。
+    emotion: 苍凉、温柔、回味久
+    selling_point: 一人长生, 看尽人间成住坏空。
+    fits_genres: [仙侠, 志怪, 文艺]
+  - name: 反套路武侠 / 剧集化
+    primary: shane_diandao
+    secondary: [nitian, shenfo_jiewei]
+    hidden: rending_shengtian
+    logic: 先拆掉旧正义, 再建立新秩序。
+    emotion: 情绪高、对抗性强
+    selling_point: 名门正统全面失效之后, 谁来定义天下。
+    fits_genres: [武侠, 仙侠, 历史]
+  - name: 哲学向修仙 / 游戏向叙事
+    primary: dadao_wuqing
+    secondary: [daijia, zhenshi_xuhuan]
+    hidden: changsheng_zhouzhou
+    logic: 法则很硬, 生命很长, 认知很脆。
+    emotion: 冷、怪、文气重
+    selling_point: 活得太久, 连真实都开始磨损。
+    fits_genres: [仙侠, 科幻, 文艺]
+
+# --- NO genre→theme binding (HARD REQUIREMENT) ------------------------------
+# There is deliberately NO `genre_affinity` map. Binding a genre to a fixed motif
+# (e.g. 仙侠→天地不仁) would make every same-genre book share one theme and go
+# stale — exactly the homogenisation we must prevent. Motif/theme selection is
+# driven by a per-book DIVERSITY SEED (premise + title identity) in
+# `ideology_library.suggest_motif_formula(seed=...)` / `select_themes(seed=...)`,
+# never by genre. `combinations[*].fits_genres` is descriptive only and is NOT
+# used for selection. So two different 仙侠 premises land on different spines and
+# different 主主题/子题; the LLM derivation is told to AVOID the genre cliché.

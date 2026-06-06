@@ -1,0 +1,257 @@
+# =============================================================================
+# LitStyle-100R · 文采评审模型（advisory 判官单源配置）
+# =============================================================================
+# 来源：外部 deep-research《小说文采的定义、提升与评审方法》。
+# 角色：给「打动读者（语言质感 / 文采）」一面镜子——框架现有 16 维商业判官全是
+#       「留住读者（留存 / 钩子 / 付费）」，从不评文采。本文件是文采判官的单一真源。
+#
+# 硬设计（不是配置开关）：
+#   - 文采判官 **永不进 passed / blocking / must_rewrite / 任何 floor**。
+#     它只产出分数 + 证据 + 修改优先级，写进 evidence_summary，给可选 polish 自闭环用。
+#   - 只判「AI腔语言症候」，**绝不判定作者是否使用 AI**（现有检测有误报，定性不可靠）。
+#   - 题材中立：古风重意象 / 留白，都市重口语锋利 / 反差——评分尺按题材族微调。
+#
+# 公式（domain/litstyle_judge.py 防御性重算，不信模型自报的 final）：
+#   BaseScore   = 九个正向维度之和（满分 100）
+#   FinalScore  = max(0, BaseScore − ai_tone_penalty)
+#   ai_tone_penalty ≥ 15 → 标记 high_risk_template（高风险模板化文本）
+#   FinalScore ≥ 80 且 ai_tone_penalty ≤ 4 → 标记 mature（文采成熟）
+# =============================================================================
+
+version: 2026.06.06
+
+# -----------------------------------------------------------------------------
+# 九个正向维度（权重之和 = 100）
+# -----------------------------------------------------------------------------
+# key 即判官 JSON 的字段名；max 即该维满分（也是权重）。
+dimensions:
+  - key: concrete
+    display_name: 具象度
+    max: 14
+    definition: 以具体物象、动作、方位替代抽象判断。
+    observable: 每 200 字至少 4-6 个具体物/人/动作/空间点；抽象词不应压过具体词。
+    scoring_rule: 0-4 抽象空泛；5-9 有具体点但不稳定；10-14 细节足以支撑情绪与人物。
+    pos_example: 钥匙插了三次才插进锁孔。
+    neg_example: 他很害怕。
+
+  - key: visuality
+    display_name: 画面感
+    max: 10
+    definition: 文字能否被读者迅速"拍成镜头"。
+    observable: 一段内最好具备人物、动作、空间、光影/方位四要素中的三项以上。
+    scoring_rule: 0-3 无法成像；4-7 能成像但模糊；8-10 镜头稳定且有氛围。
+    pos_example: 月亮压在楼顶，单元门的灯忽明忽暗。
+    neg_example: 夜晚环境很压抑。
+
+  - key: sensory
+    display_name: 感官密度
+    max: 10
+    definition: 视觉之外是否调动听觉、嗅觉、触觉、味觉。
+    observable: 每 200-300 字最好出现 2 种以上感官，优质段落常有 3 种。
+    scoring_rule: 0-3 只有视觉；4-7 有单一补充；8-10 多感官协同且不过载。
+    pos_example: 风把杨树叶拍得哗哗响，土腥味往屋里钻。
+    neg_example: 夜色令人恐惧。
+
+  - key: rhythm
+    display_name: 节奏感
+    max: 10
+    definition: 句长、停顿、标点、段落推进是否形成气息。
+    observable: 连续三句同长同式通常扣分；关键句前后应有节拍变化。
+    scoring_rule: 0-3 平直板滞；4-7 有波动但不稳；8-10 有收放、停顿和推进力。
+    pos_example: 他没回头。门却慢慢响了一下。
+    neg_example: 他没有回头并且门响了一下使人紧张。
+
+  - key: imagery_system
+    display_name: 意象系统
+    max: 10
+    definition: 意象是否反复回返并推进意义。
+    observable: 3k-10k 字宜稳定使用 2-3 个主意象；同一意象二次出现应有意义变化。
+    scoring_rule: 0-3 随手堆砌；4-7 有重复但不成系统；8-10 回返有效且能统摄主题。
+    pos_example: 镜子先照脸，后照罪证，再照出分裂。
+    neg_example: 镜子、海、火车、银河都很美。
+
+  - key: blank_space
+    display_name: 留白
+    max: 10
+    definition: 是否给读者保留推断空间。
+    observable: 抒情段里直白解释句不宜超过三分之一；结尾可留含义，不宜留信息漏洞。
+    scoring_rule: 0-3 全靠作者解释；4-7 有含蓄但仍过满；8-10 回味空间充足。
+    pos_example: 她把最后一只碗留在水里。
+    neg_example: 她很悲伤，因为父亲去世了。
+
+  - key: originality
+    display_name: 原创度
+    max: 12
+    definition: 语言是否摆脱陈词滥调与模板句法。
+    observable: 陈词套语密度低；比喻新但贴切；角色声音不雷同。
+    scoring_rule: 0-4 套话明显；5-8 偶有新句；9-12 有稳定辨识度。
+    pos_example: 雨把招牌字泡得像快脱落的鱼鳞。
+    neg_example: 悲伤如潮水般将他吞没。
+
+  - key: theme_unity
+    display_name: 主题统一度
+    max: 12
+    definition: 华彩是否围绕主题而非飘散。
+    observable: 偏题华句占比最好低于 10%；意象与细节应能回扣主题核。
+    scoring_rule: 0-4 漂亮但散；5-8 大体一致；9-12 细节与立意形成闭环。
+    pos_example: 全章都围着"亏欠"展开。
+    neg_example: 写丧父时突然炫技山水。
+
+  - key: narrative_fit
+    display_name: 叙事适配度
+    max: 12
+    definition: 文采是否服务人物、冲突、氛围或情节。
+    observable: 每一段至少承担 1 项功能：推进、塑造、造境、映照主题。
+    scoring_rule: 0-4 拖叙事；5-8 局部有效；9-12 美感与推进兼具。
+    pos_example: 描写既交代冷清，也交代她在等谁。
+    neg_example: 漂亮句很多，但剧情停住。
+
+# -----------------------------------------------------------------------------
+# AI腔扣分项（单列，不并入正向维度；0-20）
+# -----------------------------------------------------------------------------
+# deterministic=true 的项可被 detect_ai_tone 确定性抓到，作为判官先验；
+# deterministic=false 的项确定性不可靠（语义判断），仅由 LLM 判官评。
+ai_tone:
+  penalty_max: 20
+  high_risk_threshold: 15     # ai_tone_penalty ≥ 此值 → high_risk_template
+  mature_ceiling: 4           # mature 要求 ai_tone_penalty ≤ 此值
+  markers:
+    - id: abstract_value_density
+      problem: 成长/希望/命运/意义/治愈 等抽象价值判断连续出现，缺细节承托。
+      penalty_max: 4
+      deterministic: true
+    - id: symmetric_syntax
+      problem: 高频 不是…而是 / 他终于明白 等对称句式。
+      penalty_max: 4
+      deterministic: true
+    - id: emotion_label_substitution
+      problem: 直接说 震惊/痛苦/无助，而不展示身体反应和场景。
+      penalty_max: 3
+      deterministic: true
+    - id: cliche_aphorism_ending
+      problem: 段末总想输出一句"道理"收束（套路金句/鸡汤）。
+      penalty_max: 3
+      deterministic: false
+    - id: homogeneous_voice
+      problem: 不同人物说话方式几乎一样。
+      penalty_max: 3
+      deterministic: false
+    - id: auto_complete_logic
+      problem: 语义衔接太顺/逻辑跳跃，像自动补全。
+      penalty_max: 3
+      deterministic: false
+
+# -----------------------------------------------------------------------------
+# 等级阈值（按 FinalScore）
+# -----------------------------------------------------------------------------
+levels:
+  - min: 90
+    level: 卓越
+    desc: 文采稳定，辨识度高，语言与叙事高度统一。
+  - min: 80
+    level: 成熟
+    desc: 已具发表或上线水准，局部仍可精修。
+  - min: 70
+    level: 可用
+    desc: 有亮点，但某两三项尚不稳定。
+  - min: 60
+    level: 待修
+    desc: 常见问题是空泛、装饰化或叙事失衡。
+  - min: 0
+    level: 较弱
+    desc: 文采不足，或 AI腔/套话明显压过文本个性。
+
+# -----------------------------------------------------------------------------
+# 文采达标线（target，**只用于自闭环触发，永不 gate**）
+# 绑写手模型档：强模型能到"成熟"线，预算模型按"可用"线。
+# -----------------------------------------------------------------------------
+targets:
+  premium_writer: 80    # Claude/GPT-4o 档：成熟线
+  budget_writer: 72     # MiniMax/DeepSeek 档：可用线偏上
+
+# -----------------------------------------------------------------------------
+# detect_ai_tone 确定性检测词表 / 阈值（services/litstyle_prose.py 用）
+# 诚实：只标定能可靠抓的三类；密度阈值保守，靠 A/B 调优。
+# -----------------------------------------------------------------------------
+deterministic_detector:
+  # 抽象价值判断词（连发即 AI腔）
+  abstract_value_words:
+    [成长, 希望, 命运, 意义, 治愈, 救赎, 信念, 时光, 岁月, 灵魂, 永恒, 宿命, 轮回, 苍茫, 浮生, 繁华, 红尘]
+  abstract_value_per_kchars: 6.0      # 每千字密度上限，超过计 penalty
+  # 对称/模板句式（正则，CJK 友好）
+  symmetric_patterns:
+    - "不是.{1,12}而是"
+    - "与其说.{1,12}不如说"
+    - "他终于明白"
+    - "她终于明白"
+    - "他意识到"
+    - "她意识到"
+    - "真正.{0,6}的不是"
+    - "也许.{1,12}也许"
+  symmetric_per_kchars: 3.0
+  # 情感标签词（直陈情绪而非展示）
+  emotion_label_words:
+    [震惊, 痛苦, 无助, 绝望, 崩溃, 悲伤, 恐惧, 愤怒, 狂喜, 欣喜, 悲痛, 心碎, 凄凉, 孤独, 彷徨, 迷茫]
+  emotion_label_per_kchars: 5.0
+
+# -----------------------------------------------------------------------------
+# 校准锚点（LitStyle 三则判例，给判官打分做参照，提升收敛）
+# scores 为 9 维 + ai_tone_penalty；final 已按公式核算。
+# -----------------------------------------------------------------------------
+calibration_anchors:
+  - id: anchor-mature-82
+    final: 82
+    level: 成熟
+    excerpt: |
+      雨停后，院里那棵枣树还滴着水。她把父亲的旧雨衣搭回门后，摸到口袋里那盒潮了的火柴，
+      才想起今年清明，他没有回来。厨房里水开了两次，她都没去下面。
+    scores:
+      concrete: 13
+      visuality: 9
+      sensory: 7
+      rhythm: 8
+      imagery_system: 8
+      blank_space: 9
+      originality: 9
+      theme_unity: 11
+      narrative_fit: 10
+      ai_tone_penalty: 2
+    note: 细节精准、留白有效，没有直接说"想念/悲伤"；"旧雨衣—潮火柴—水开两次"让缺席感自然显影。
+
+  - id: anchor-weak-21
+    final: 21
+    level: 较弱
+    excerpt: |
+      暮色像绸缎般华丽地铺陈于苍茫天地，命运在时光深处发出沉重叹息，他的心坠入无边深渊，
+      悲伤如潮水般将他彻底吞没。
+    scores:
+      concrete: 3
+      visuality: 4
+      sensory: 2
+      rhythm: 5
+      imagery_system: 3
+      blank_space: 1
+      originality: 2
+      theme_unity: 4
+      narrative_fit: 3
+      ai_tone_penalty: 6
+    note: 词藻密、信息少。绸缎/命运/深渊/潮水/吞没都是高频装饰词，情绪被说尽，无人物动作物件。
+
+  - id: anchor-template-5
+    final: 5
+    level: 较弱
+    excerpt: |
+      他意识到，真正可怕的不是失败，而是在失败中失去希望。不是世界抛弃了他，而是他抛弃了自己。
+      他感到震惊、痛苦、无助，但也明白成长总要付出代价。
+    scores:
+      concrete: 2
+      visuality: 2
+      sensory: 1
+      rhythm: 4
+      imagery_system: 1
+      blank_space: 1
+      originality: 2
+      theme_unity: 5
+      narrative_fit: 3
+      ai_tone_penalty: 16
+    note: 高风险模板化文本。对称句式 + 价值总结 + 情感标签 + 道理收束齐全，无一可见动作或场景。改法是整段重建为场景，不是换同义词。

@@ -281,6 +281,17 @@ class PipelineSettings(BaseModel):
     qimao_opening_max_attempts: int = 3
     enable_chapter_llm_commercial_judge: bool = True
     chapter_llm_commercial_judge_block_on_failure: bool = True
+    # Advisory LitStyle-100R 文采 judge. Scores the "打动读者" (literary craft)
+    # axis the 16-dim commercial judge never covers. ADVISORY ONLY — there is no
+    # block_on_failure flag; it can never change a chapter's verdict. Off by
+    # default (opt-in) because it adds one critic call per chapter; enabling it
+    # only writes evidence_summary["litstyle"], so behaviour is otherwise
+    # unchanged. See docs/litstyle-prose-craft-fusion-2026-06.md.
+    enable_chapter_litstyle_judge: bool = False
+    # Design + persist a book's imagery system (LitStyle imagery_system lever) once
+    # per book at first scene draft, so the writer gets a soft per-chapter imagery
+    # recall block. Idempotent + soft (failure = no-op). One cheap LLM call per book.
+    enable_imagery_system_design: bool = True
     enable_chapter_window_llm_judge: bool = True
     chapter_window_llm_judge_block_on_failure: bool = True
     chapter_window_llm_judge_size: int = 5

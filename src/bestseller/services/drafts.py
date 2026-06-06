@@ -2267,6 +2267,17 @@ _CONTEXT_TIER_1 = frozenset({
     "rule_system_line",
     "faction_ecology_line",
     "relationship_agency_line",
+    # 榜单级能力 Profile + 番茄市场工艺卡 — sibling writing/commercial constraint blocks
+    # left untiered (so Pass-4-trimmed under budget pressure, which the文采 methodology
+    # levers increase). Promoted to Tier 1 alongside the constraint blocks they belong
+    # with (progression/decision/rule/faction).
+    "ranking_profile_line",
+    "chapter_market_constraints_line",
+    # 词条体系约束/注册表/状态账本 — entry-system hard constraints, same family as
+    # rule_system/progression above; also left untiered (Pass-4-trimmed).
+    "entry_system_line",
+    "entry_registry_line",
+    "entry_state_ledger_line",
     "plan_richness_line",
     # Story-integrity guardrails (2026-06-02): these were previously NOT in any
     # tier, which meant _budget_context_sections silently kept them full AND
@@ -2287,6 +2298,10 @@ _CONTEXT_TIER_1 = frozenset({
     "qimao_opening_contract_line",
     "reader_contract_line",
     "concept_lab_contract_line",
+    # 本章爽点约束 — a hard per-chapter commercial contract (like reader_contract),
+    # not advisory garnish. Promoted to Tier 1 (2026-06) after the文采 methodology
+    # levers grew the Tier-1 methodology_line and silently evicted this Tier-2 block.
+    "hype_constraints_line",
 })
 _CONTEXT_TIER_2 = frozenset({
     "recent_scene_section",
@@ -5763,7 +5778,13 @@ def build_scene_draft_prompts(
         language=language,
         chapter_no=chapter.chapter_number,
         chapter_position=_infer_chapter_position(project, chapter),
-        token_budget=2500,
+        # O3 fix (2026-06): raised 2500 → 3600 so the文采 craft levers (注入总则 +
+        # prose_craft 金句 + imagery 意象回返) actually fit. At 2500 they were silently
+        # starved by material_concreteness + scene_grounding, so the writer-levers
+        # A/B win (+10.2 LitStyle, 9 dims up) never reached production prose. The full
+        # PROSE_SCENE block caps at ~3.8k tokens; 3600 fits every文采 lever.
+        token_budget=3200,
+        story_bible=story_bible_context,
     ).text
     _methodology_line = ""
     if _methodology_pack_block or _methodology_rules or _compiled_methodology:
@@ -9330,6 +9351,19 @@ async def generate_scene_draft(
         )
 
     style_guide = await session.get(StyleGuideModel, project.id)
+    # Book-level imagery system (LitStyle imagery_system lever): design once per book
+    # (idempotent) + persist to metadata_json so the bible loader exposes it and the
+    # writer gets a soft per-chapter imagery-recall block. Soft + zh-only; any failure
+    # is a no-op (imagery simply won't render). Runs before the bible is (re)loaded.
+    if settings is not None:
+        try:
+            from bestseller.services.imagery_system_design import (
+                ensure_book_imagery_system,
+            )
+
+            await ensure_book_imagery_system(session, settings, project)
+        except Exception:
+            logger.debug("ensure_book_imagery_system failed (non-fatal)", exc_info=True)
     if context_packet is not None:
         # Caller (run_scene_pipeline) already built a shared context for this scene —
         # reuse it instead of re-running the 10+ DB/retrieval queries inside

@@ -331,6 +331,10 @@ pipeline:
   qimao_opening_max_attempts: 3
   enable_chapter_llm_commercial_judge: true
   chapter_llm_commercial_judge_block_on_failure: false
+  # Advisory 文采 judge (LitStyle-100R). Opt-in; never gates. No block flag exists.
+  enable_chapter_litstyle_judge: false
+  # Design + persist a book's imagery system once per book (LitStyle imagery lever).
+  enable_imagery_system_design: true
   enable_chapter_window_llm_judge: true
   chapter_window_llm_judge_block_on_failure: false
   chapter_window_llm_judge_size: 5

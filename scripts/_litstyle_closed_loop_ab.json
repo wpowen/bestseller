@@ -1,0 +1,107 @@
+[
+  {
+    "chapter": "chapter-001.md",
+    "base_final": 79,
+    "base_ai_tone": 4,
+    "base_dims": {
+      "concrete": 11,
+      "visuality": 9,
+      "sensory": 8,
+      "rhythm": 8,
+      "imagery_system": 9,
+      "blank_space": 8,
+      "originality": 10,
+      "theme_unity": 10,
+      "narrative_fit": 10
+    },
+    "base_chars": 2112,
+    "polished": true,
+    "polished_final": 81,
+    "polished_ai_tone": 2,
+    "polished_dims": {
+      "concrete": 12,
+      "visuality": 9,
+      "sensory": 8,
+      "rhythm": 9,
+      "imagery_system": 8,
+      "blank_space": 8,
+      "originality": 8,
+      "theme_unity": 11,
+      "narrative_fit": 10
+    },
+    "polished_chars": 2227,
+    "delta_final": 2,
+    "kept_polished": true,
+    "length_ratio": 1.054
+  },
+  {
+    "chapter": "chapter-005.md",
+    "base_final": 73,
+    "base_ai_tone": 4,
+    "base_dims": {
+      "concrete": 12,
+      "visuality": 8,
+      "sensory": 7,
+      "rhythm": 7,
+      "imagery_system": 8,
+      "blank_space": 8,
+      "originality": 9,
+      "theme_unity": 9,
+      "narrative_fit": 9
+    },
+    "base_chars": 2602,
+    "polished": true,
+    "polished_final": 70,
+    "polished_ai_tone": 2,
+    "polished_dims": {
+      "concrete": 11,
+      "visuality": 8,
+      "sensory": 6,
+      "rhythm": 8,
+      "imagery_system": 7,
+      "blank_space": 6,
+      "originality": 8,
+      "theme_unity": 10,
+      "narrative_fit": 8
+    },
+    "polished_chars": 2768,
+    "delta_final": -3,
+    "kept_polished": false,
+    "length_ratio": 1.064
+  },
+  {
+    "chapter": "chapter-008.md",
+    "base_final": 78,
+    "base_ai_tone": 2,
+    "base_dims": {
+      "concrete": 10,
+      "visuality": 8,
+      "sensory": 8,
+      "rhythm": 8,
+      "imagery_system": 8,
+      "blank_space": 8,
+      "originality": 10,
+      "theme_unity": 10,
+      "narrative_fit": 10
+    },
+    "base_chars": 2824,
+    "polished": true,
+    "polished_final": 77,
+    "polished_ai_tone": 4,
+    "polished_dims": {
+      "concrete": 12,
+      "visuality": 9,
+      "sensory": 8,
+      "rhythm": 8,
+      "imagery_system": 8,
+      "blank_space": 8,
+      "originality": 8,
+      "theme_unity": 10,
+      "narrative_fit": 10
+    },
+    "polished_chars": 2801,
+    "delta_final": -1,
+    "kept_polished": false,
+    "length_ratio": 0.992
+  }
+]

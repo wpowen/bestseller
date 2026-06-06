@@ -8,11 +8,12 @@ their existing prompt without adopting a new prompt object model.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from bestseller.services.litstyle_prose import render_prose_lever_framing
 from bestseller.services.methodology_book_selector import render_book_methodology_block
 from bestseller.services.methodology_bridge import render_phase_block
 from bestseller.services.prompt_packs import (
@@ -28,8 +29,15 @@ from bestseller.services.quality_levers.chapter_position_profiles import (
 from bestseller.services.quality_levers.emotion_choreography import (
     render_emotion_choreography_block,
 )
+from bestseller.services.quality_levers.imagery_system import (
+    extract_imagery_system,
+    render_imagery_system_block,
+)
 from bestseller.services.quality_levers.information_choreography import (
     render_information_choreography_block,
+)
+from bestseller.services.quality_levers.material_concreteness import (
+    render_concretization_directive,
 )
 from bestseller.services.quality_levers.prose_craft_techniques import (
     render_prose_craft_block,
@@ -38,9 +46,6 @@ from bestseller.services.quality_levers.prose_style_anchors import (
     render_style_anchor_block,
 )
 from bestseller.services.quality_levers.rhythm_engineering import render_rhythm_block
-from bestseller.services.quality_levers.material_concreteness import (
-    render_concretization_directive,
-)
 from bestseller.services.quality_levers.scene_grounding import (
     render_scene_grounding_block,
 )
@@ -117,9 +122,11 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         "prompt_pack_scene_writer",
         "book_methodology_current",
         "prose_style_anchors",
+        "prose_lever_framing",
         "material_concretization_current",
         "scene_grounding_current",
         "prose_craft_techniques",
+        "imagery_system_current",
         "public_emotion_role_tags",
         "emotion_choreography_current",
         "rhythm_engineering_current",
@@ -146,11 +153,16 @@ def compile_methodology(
     chapter_no: int | None = None,
     chapter_position: ChapterPosition | None = None,
     token_budget: int = 1500,
+    story_bible: Mapping[str, Any] | None = None,
 ) -> CompiledMethodology:
     """Compile a stage-aware methodology block.
 
     English paths are intentionally left unchanged for Sprint 1. Missing YAML
     or prompt packs are treated as absent sections, never as fatal errors.
+
+    ``story_bible`` is optional and backward-compatible: when a book has a
+    designed ``imagery_system`` in its bible, PROSE_SCENE renders a soft
+    per-chapter imagery-recall block. Absent → that block is simply skipped.
     """
 
     if str(language or "").lower().startswith("en") or token_budget <= 0:
@@ -170,6 +182,7 @@ def compile_methodology(
         prompt_pack_key=prompt_pack_key,
         chapter_number=chapter_number,
         chapter_position=position,
+        story_bible=story_bible,
     )
     if not sections:
         return _EMPTY
@@ -212,6 +225,7 @@ def _sections_for_stage(
     prompt_pack_key: str | None,
     chapter_number: int,
     chapter_position: ChapterPosition,
+    story_bible: Mapping[str, Any] | None = None,
 ) -> list[_Section]:
     pack_source = f"prompt_packs/{prompt_pack_key}.yaml" if prompt_pack_key else "prompt_packs"
     sections: list[_Section] = []
@@ -326,6 +340,16 @@ def _sections_for_stage(
             source="prose_style_anchors.yaml",
         )
     if stage is MethodologyStage.PROSE_SCENE:
+        # Framing FIRST (anti-regression): the writer-levers A/B showed a budget
+        # writer reads the stacked 留白/克制 guards as "write less" and cuts ~30%
+        # length → lower文采. This总则 reframes: 文采=更具体不更短; pick 1-2 techniques;
+        # 留白 deletes author-narration, not plot. Cheap + high-priority.
+        _append_block(
+            sections,
+            key="prose_lever_framing",
+            text=_safe(render_prose_lever_framing, language="zh"),
+            source="litstyle_prose.py",
+        )
         # Layer 3 — material concretization. A/B proved abstract §default material
         # is the dominant cause of essay-like prose; this directive tells the
         # writer to instantiate abstract mechanism material into the book's
@@ -366,6 +390,23 @@ def _sections_for_stage(
             ),
             source="prose_craft_techniques.yaml",
         )
+        # Book-level imagery system (LitStyle imagery_system dimension). Soft recall
+        # of THIS book's 2-3 designed core images, telling the writer to advance an
+        # image's meaning a step when it recurs. No-ops when the bible has no
+        # designed imagery_system (graceful degrade). Genre-routed anti-purple.
+        imagery_artifact = extract_imagery_system(story_bible)
+        if imagery_artifact:
+            _append_block(
+                sections,
+                key="imagery_system_current",
+                text=_safe(
+                    render_imagery_system_block,
+                    artifact=imagery_artifact,
+                    genre_terms=_pack_genre_terms(pack),
+                    chapter_number=chapter_number,
+                ),
+                source="imagery_system.yaml",
+            )
     if stage in {
         MethodologyStage.OUTLINE_VOLUME,
         MethodologyStage.OUTLINE_CHAPTER,

@@ -2105,6 +2105,9 @@ async def load_scene_story_bible_context(
         "cast_spec": project.metadata_json.get("cast_spec", {}),
         "logline": project.metadata_json.get("logline"),
         "themes": project.metadata_json.get("themes", []),
+        # Book-level imagery system (LitStyle imagery_system lever). Populated once
+        # per book by ensure_book_imagery_system; absent → the recall block no-ops.
+        "imagery_system": project.metadata_json.get("imagery_system"),
         "stakes": project.metadata_json.get("stakes", {}),
         "series_engine": project.metadata_json.get("series_engine", {}),
         **world_expansion_context,

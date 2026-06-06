@@ -13932,6 +13932,19 @@ def _compact_prompt_block_text(text: str, *, max_chars: int) -> str:
 
 def _compact_outline_context_block(project: ProjectModel, *, max_chars: int = 1600) -> str:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    # Always lead with a compact ideology block so even token-tight (compact-mode)
+    # 细纲 prompts reference the book's core ideology — a raw truncated JSON dump
+    # would drop the deeply-nested ideology_kernel and lose the thematic spine.
+    ideology_block = ""
+    sdk = _mapping(metadata.get("story_design_kernel"))
+    ideology_raw = _mapping(sdk.get("ideology_kernel"))
+    if ideology_raw:
+        try:
+            from bestseller.domain.ideology import render_ideology_compact_block
+
+            ideology_block = render_ideology_compact_block(ideology_raw)
+        except Exception:
+            ideology_block = ""
     picked: dict[str, Any] = {}
     for key in (
         "story_design_kernel",
@@ -13943,9 +13956,13 @@ def _compact_outline_context_block(project: ProjectModel, *, max_chars: int = 16
         raw = _mapping(metadata.get(key))
         if raw:
             picked[key] = _truncate_for_prompt(_json_dumps(raw), max_chars // 7)
-    if not picked:
+    if not picked and not ideology_block:
         return ""
+    head = f"\n\n{ideology_block}\n" if ideology_block else ""
+    if not picked:
+        return head
     return (
+        f"{head}"
         "\n\n【压缩核心执行上下文】\n"
         f"{_truncate_for_prompt(_json_dumps(picked), max_chars)}\n"
     )

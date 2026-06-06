@@ -7429,6 +7429,53 @@ async def review_chapter_draft(
                     error=exc,
                 )
 
+    # Advisory 文采 (LitStyle-100R) judge — scores the "打动读者" (literary craft)
+    # axis the 16-dim commercial judge never covers. ADVISORY ONLY: it records its
+    # reading into evidence_summary["litstyle"] and NEVER touches verdict / scores /
+    # severity / rewrite_instructions, so it can never block or rewrite a chapter.
+    # zh-only (the rubric is Chinese) and opt-in via enable_chapter_litstyle_judge.
+    if getattr(settings.pipeline, "enable_chapter_litstyle_judge", False) and not str(
+        getattr(project, "language", "") or ""
+    ).lower().startswith("en"):
+        try:
+            from bestseller.services.judge_genre_context import (
+                resolve_judge_genre_context,
+            )
+            from bestseller.services.litstyle_prose_judge import (
+                judge_chapter_litstyle_stable,
+            )
+
+            litstyle_genre_context = resolve_judge_genre_context(
+                genre=getattr(project, "genre", None),
+                sub_genre=getattr(project, "sub_genre", None),
+            )
+            litstyle_result = await judge_chapter_litstyle_stable(
+                session,
+                settings,
+                chapter_number=chapter.chapter_number,
+                content_md=draft.content_md,
+                genre_context=litstyle_genre_context,
+                language="zh",
+                workflow_run_id=workflow_run_id,
+            )
+            review_result = ChapterReviewResult(
+                verdict=review_result.verdict,
+                scores=review_result.scores,
+                findings=review_result.findings,
+                severity_max=review_result.severity_max,
+                evidence_summary={
+                    **review_result.evidence_summary,
+                    "litstyle": litstyle_result.model_dump(mode="json"),
+                },
+                rewrite_instructions=review_result.rewrite_instructions,
+            )
+        except Exception:
+            # Advisory: a 文采 judge failure must never affect the chapter outcome.
+            logger.exception(
+                "advisory litstyle prose judge failed for ch%d (ignored)",
+                chapter_number,
+            )
+
     if getattr(settings.pipeline, "enable_chapter_window_llm_judge", False):
         try:
             from bestseller.services.chapter_window_quality_judge import (

@@ -1,0 +1,296 @@
+# 主流主题库 (Mainstream Theme Library) — 公认、耳熟能详、站得住脚的核心选题
+# =============================================================================
+# 为什么需要它（回应"主题必须符合主流认知，不能生搬硬造"）：
+#   一个主题若是为了标新立异而硬造，容易扭曲、不符合实际，读者会觉得"理念不对"而弃读。
+#   所以核心主题必须取自**公认的、读者已知的主流主题**——文学界共识的普世主题 +
+#   中文网文的主流母题/价值观。我们在这个框架上做**分化、设计、具体化**，而不是另起炉灶。
+#
+# 一条主题 = 主题域(subject) + 论断(insight)。
+#   subject 是公认的"territory"(爱/权力/死亡/正义…)，insight 是这本书对它的"argument"
+#   （如"真爱需要牺牲""权力使人腐化""身份由选择而非出身定义"）。主题是被演出来的，不是喊出来的。
+#
+# 取材依据（2026-06 网络检索 + 母题调研报告）：
+#   - 西方文学共识的普世主题(reedsy / prowritingaid / scribophile / hireawriter)：
+#     love, good vs evil, death, identity, coming-of-age, power, faith, fate,
+#     individual vs society, loss of innocence, redemption, justice, survival,
+#     family, rebellion, revenge, truth vs deception, hope vs despair, memory。
+#   - 中文网文主流母题/价值观(中国作家网 / 知乎创作攻略)：屌丝逆袭、成长(骨架)、
+#     复仇、寻找；"守护/亲我主义"(护亲友→由近及远，源《孟子》"老吾老以及人之老")、
+#     自强不息。
+#
+# 每个 subject 映射到 13 母题之一(motif，用于把主题"戏剧化"的深层结构)；layer 由 motif 推导。
+# 被 ideology_library 加载为带 subject 标签的 ThemeEntry；select_themes 优先用这些"接地"主题做主主题。
+# =============================================================================
+
+version: mainstream-themes.v1
+
+subjects:
+  # ---------- 爱 / 关系 ----------
+  - id: love_sacrifice
+    name: 爱与牺牲
+    aka: love & sacrifice
+    motif: daijia
+    grounding: 文学最普遍主题; 牺牲是"爱的证明"机制(romance 内核)
+    examples: ["《罗密欧与朱丽叶》", "《飘》", "《泰坦尼克号》"]
+    statements:
+      - 真正的爱，是愿意为对方付出自己最不舍得的东西。
+      - 守护所爱，迟早要在所爱与原则之间选一次。
+      - 爱不是占有，而是愿意成全。
+      - 越深的感情，越要在失去面前才看清。
+      - 有些人用一生证明：值得的爱，从来都要付出代价。
+
+  - id: family_belonging
+    name: 家与归属
+    aka: family & belonging
+    motif: zhongsheng_jieku
+    grounding: 普世主题; 家庭天然蕴含冲突与羁绊
+    examples: ["《活着》", "《请回答1988》"]
+    statements:
+      - 家不是一个地方，而是一群无论如何都想回去的人。
+      - 走得再远，心里也要有个想回去的方向。
+      - 血缘给你家人，选择才给你归属。
+      - 最难原谅的，往往是最亲的人；最舍不得的，也是。
+      - 一个人真正长大，是开始愿意为家人遮风挡雨。
+
+  - id: friendship_loyalty
+    name: 友情与忠诚
+    aka: friendship & loyalty
+    motif: rending_shengtian
+    grounding: 普世主题(尤 YA); 网文"护队友"价值观
+    examples: ["《指环王》", "《灌篮高手》"]
+    statements:
+      - 真正的朋友，是在你跌到底时仍站在你这边的人。
+      - 忠诚不是从不怀疑，而是怀疑之后仍选择并肩。
+      - 一个人能走多远，看他身边愿意陪他走的人。
+      - 背叛之所以痛，是因为它只来自你信过的人。
+
+  # ---------- 成长 / 自我 ----------
+  - id: coming_of_age
+    name: 成长
+    aka: coming of age
+    motif: mingyun
+    grounding: 网文骨架("主题是灵魂，成长体系是骨架"); 西方 bildungsroman
+    examples: ["《麦田里的守望者》", "《大卫·科波菲尔》", "《凡人修仙传》"]
+    statements:
+      - 长大，是接受世界没有想象中公平，却仍选择善良。
+      - 成长的代价，是失去一部分回不去的纯真。
+      - 真正的成熟，是开始为自己的选择买单。
+      - 没有谁天生强大，都是被逼着、扛着，一步步长出来的。
+      - 你以为在打怪升级，其实是在变成想成为的人。
+
+  - id: identity_self
+    name: 身份与自我
+    aka: identity & self-discovery
+    motif: zhenshi_xuhuan
+    grounding: 普世主题; 主题=选择定义身份而非命运
+    examples: ["《简·爱》", "《楚门的世界》"]
+    statements:
+      - 我是谁，由我的选择定义，而不是我的出身。
+      - 认清自己是谁，比战胜任何人都难。
+      - 你戴久了面具，最怕的是摘下来时认不出自己。
+      - 找回自己，往往要先承认自己曾经弄丢过。
+
+  - id: loss_of_innocence
+    name: 失去纯真
+    aka: loss of innocence
+    motif: yinguo
+    grounding: 普世主题; 不可逆的清醒
+    examples: ["《蝇王》", "《杀死一只知更鸟》"]
+    statements:
+      - 看清世界的真相后仍愿温柔，才是真的勇敢。
+      - 有些门一旦推开，就再也回不到不知道的那天。
+      - 长大的那一刻，是你发现大人也会犯错、世界也会骗人。
+
+  # ---------- 命运 / 信念 ----------
+  - id: fate_freewill
+    name: 命运与选择
+    aka: fate vs free will
+    motif: mingyun
+    grounding: 古典核心主题; "性格决定命运"
+    examples: ["《俄狄浦斯王》", "《麦克白》", "《了不起的盖茨比》"]
+    statements:
+      - 命运给你处境，怎么走由你。
+      - 性格决定命运；打败你的往往是自己。
+      - 越想逃开的结局，越是亲手把自己推过去。
+      - 接受限度不是认输，而是终于看清能争的是什么。
+
+  - id: perseverance
+    name: 自强不息
+    aka: perseverance / self-reliance
+    motif: rending_shengtian
+    grounding: 网文主流价值(卧牛真人"修真三部曲"); 《周易》
+    examples: ["《老人与海》", "《肖申克的救赎》"]
+    statements:
+      - 天行健，君子以自强不息。
+      - 靠别人是一时，靠自己是一世。
+      - 一个人可以被毁灭，但不能被打败。
+      - 真正托住你的，从来是你没放弃的那口气。
+
+  - id: faith
+    name: 信仰
+    aka: faith
+    motif: shenfo_jiewei
+    grounding: 普世主题; 含对神、对人、对己的信
+    examples: ["《沉默》", "《少年Pi的奇幻漂流》"]
+    statements:
+      - 信仰若不能让人向善，就只是枷锁。
+      - 人可以失去一切，唯独不能失去相信。
+      - 你信的究竟是神，还是借神说话的人？
+      - 在没有回应的黑暗里仍选择相信，才叫信仰。
+
+  - id: hope_despair
+    name: 希望与绝望
+    aka: hope vs despair
+    motif: zhongsheng_jieku
+    grounding: 普世主题; 绝境中的微光
+    examples: ["《肖申克的救赎》", "《活着》"]
+    statements:
+      - 只要不放弃希望，绝境里也会裂开一道缝。
+      - 黑暗越深，一点光就越重要。
+      - 真正的勇敢，是看清生活的残酷后依然热爱它。
+
+  # ---------- 善恶 / 正义 / 权力 ----------
+  - id: good_vs_evil
+    name: 善恶
+    aka: good vs evil
+    motif: shane_diandao
+    grounding: 文学最经典冲突; 忌脸谱化
+    examples: ["《魔戒》", "《哈利·波特》", "《笑傲江湖》"]
+    statements:
+      - 善恶不在名分，而在每一次具体的选择。
+      - 再小的善，在黑暗里也是光。
+      - 最干净的旗号下，常藏着最脏的手。
+      - 名门未必高义，异端未必无情。
+
+  - id: justice
+    name: 正义
+    aka: justice
+    motif: shane_diandao
+    grounding: 普世主题; 律法失灵时谁来扛
+    examples: ["《基督山伯爵》", "《十二怒汉》"]
+    statements:
+      - 正义会迟到，但不该缺席。
+      - 当律法开始保护恶人，正义就要有人亲手去扛。
+      - 比恶更可怕的，是好人选择沉默。
+      - 程序可以被收买，人心里的那杆秤不能。
+
+  - id: power_corruption
+    name: 权力与腐化
+    aka: power & corruption
+    motif: dadao_wuqing
+    grounding: 普世主题; "绝对的权力绝对地腐化"
+    examples: ["《1984》", "《动物农场》", "《权力的游戏》"]
+    statements:
+      - 权力使人腐化，绝对的权力绝对地腐化。
+      - 你为打败怪物而战，要小心别活成怪物。
+      - 坐上那个位置的人会变，变的方向取决于他怕失去什么。
+      - 真正考验一个人的，不是逆境，而是权力。
+
+  - id: rebellion
+    name: 反抗
+    aka: rebellion
+    motif: nitian
+    grounding: 反乌托邦/YA 主流; 网文逆袭底色
+    examples: ["《饥饿游戏》", "《V字仇杀队》", "《西游记》"]
+    statements:
+      - 不公面前的沉默，就是帮凶。
+      - 当规则把你定成祭品，掀桌就是唯一的尊严。
+      - 有些秩序，本就是用来被打破的。
+      - 不是我想反，是你们逼到我退无可退。
+
+  # ---------- 网文核心：逆袭 / 守护 / 复仇 ----------
+  - id: underdog
+    name: 逆袭
+    aka: underdog counterattack
+    motif: nitian
+    grounding: 网络文学最核心母题(屌丝逆袭/爽感/异托邦)
+    examples: ["《斗破苍穹》", "《射雕英雄传》"]
+    statements:
+      - 不肯认命的人，命也拿他没办法。
+      - 你越被踩到底，越要记得自己想站到哪里去。
+      - 今天看不起我的，明天我让你高攀不起——但别为这句话丢了自己。
+      - 真正的翻盘，不是金手指，而是那股不服输的劲。
+
+  - id: protection
+    name: 守护
+    aka: protection / 亲我主义
+    motif: zhongsheng_jieku
+    grounding: 网文主流价值观("护亲友→由近及远"，源《孟子》老吾老以及人之老)
+    examples: ["《家有儿女》式日常→英雄叙事", "《海贼王》"]
+    statements:
+      - 真正的强大不是无敌，而是有想护住的人。
+      - 英雄不是天生伟大，是先想护住身边人，才一步步扛起更多。
+      - 我变强不是为了凌驾谁，是为了我在乎的人不再受欺负。
+      - 护得了一时不算本事，让他们不再需要被护，才算。
+
+  - id: revenge
+    name: 复仇
+    aka: revenge
+    motif: yinguo
+    grounding: 传统母题 + 网文常青(废柴逆袭复仇)
+    examples: ["《基督山伯爵》", "《哈姆雷特》"]
+    statements:
+      - 复仇者最终要面对的，是变成自己曾经痛恨的样子。
+      - 仇恨能带你走很远，却带不你回家。
+      - 在踏上复仇路前，先掘好两个坟——其中一个是自己的。
+      - 真正的了结，不是杀光仇人，而是放过被仇恨绑架的自己。
+
+  # ---------- 生死 / 真相 / 生存 ----------
+  - id: mortality
+    name: 生死
+    aka: death & mortality
+    motif: changsheng_zhouzhou
+    grounding: 最古老主题; 向死而生
+    examples: ["《伊凡·伊里奇之死》", "《寻梦环游记》"]
+    statements:
+      - 向死而生，才知道什么值得。
+      - 死亡面前，人才看清自己真正在乎什么。
+      - 真正的死亡，是被所有人遗忘。
+      - 活得更久，不等于活得更好。
+
+  - id: truth_deception
+    name: 真相与欺骗
+    aka: truth vs deception
+    motif: zhenxiang
+    grounding: 悬疑/揭秘核心; 真相伤人但谎言杀人
+    examples: ["《罗生门》", "《嫌疑人X的献身》"]
+    statements:
+      - 真相会伤人，但谎言会杀人。
+      - 你能骗过所有人，骗不过自己知道的那件事。
+      - 每揭开一层真相，之前所有的对错都要重新算。
+      - 你真的想知道一切吗？知道之后就回不去了。
+
+  - id: survival
+    name: 生存
+    aka: survival
+    motif: tiandi_buren
+    grounding: 普世主题; 末世/灾难; 活着的代价
+    examples: ["《鲁滨逊漂流记》", "《活着》", "《釜山行》"]
+    statements:
+      - 活下去，有时是最难的勇敢。
+      - 为了活着可以妥协，但别忘了当初为什么要活。
+      - 灾难从不挑选好人，活下来的只是离得远一点的人。
+      - 在没有人保证明天的世界里，人仍要选择如何活着。
+
+  - id: redemption
+    name: 救赎与宽恕
+    aka: redemption & forgiveness
+    motif: daijia
+    grounding: 跨类型最稳主题(错—果—赎)
+    examples: ["《悲惨世界》", "《追风筝的人》"]
+    statements:
+      - 犯过错的人，依然有回头的机会。
+      - 救赎不是被原谅，而是不再是从前那个自己。
+      - 真正放过别人之前，要先学会放过自己。
+      - 有些债要用一生去还，但开始还，本身就是赎。
+
+  - id: individual_society
+    name: 个人与世界
+    aka: individual vs society / alienation
+    motif: tiandi_buren
+    grounding: 普世主题; 归属与孤独的张力
+    examples: ["《局外人》", "《狂人日记》"]
+    statements:
+      - 做自己，注定要承受不被理解的孤独。
+      - 与全世界为敌不可怕，可怕的是开始怀疑自己。
+      - 合群很容易，难的是合群时不弄丢自己。

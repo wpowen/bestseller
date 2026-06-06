@@ -14,6 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from bestseller.domain.calendar_system import CalendarSystem
 from bestseller.domain.cultural_texture import CulturalTextureModule
 from bestseller.domain.honorific_system import HonorificSystem
+from bestseller.domain.ideology import (
+    IdeologyKernel,
+    render_ideology_kernel_prompt_block,
+)
 from bestseller.domain.religious_organization import ReligiousOrganization
 from bestseller.services.story_shape_router import StoryShape
 
@@ -1002,6 +1006,7 @@ class StoryDesignKernel(BaseModel, frozen=True):
     version: int = 1
     shape: StoryShape
     reader_promise: str = Field(min_length=1)
+    ideology_kernel: IdeologyKernel | None = None
     premise_contract: PremiseContract
     character_conflict_contracts: list[CharacterConflictContract] = Field(min_length=1)
     world_conflict_contracts: list[WorldConflictContract] = Field(default_factory=list)
@@ -1081,6 +1086,13 @@ def render_story_design_kernel_prompt_block(
             f"{kernel.shape.length_class} / {kernel.shape.publication_mode} / "
             f"{kernel.shape.outline_depth}"
         ),
+    ]
+    ideology_block = render_ideology_kernel_prompt_block(kernel.ideology_kernel)
+    if ideology_block:
+        # The ideology kernel is the thematic spine — surface it first so every
+        # downstream contract (worldview, plot tree, beats) is read as serving it.
+        lines.append(ideology_block)
+    lines += [
         f"- Primary duties: {', '.join(kernel.shape.primary_duties)}",
         f"- Unique hook: {kernel.premise_contract.unique_hook}",
         f"- Core question: {kernel.premise_contract.core_question}",

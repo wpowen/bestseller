@@ -28,14 +28,26 @@ def test_new_project_metadata_defaults_to_commercial_strict_prewrite() -> None:
     assert metadata["commercial_strict_prewrite"] is True
 
 
-def test_strict_profile_blocks_even_when_global_gate_is_warn() -> None:
+def test_strict_profile_runs_thoroughly_but_does_not_force_hard_block() -> None:
+    # Self-harm fix (2026-06): strict mode no longer cascade-aborts. Whether a
+    # gate hard-blocks is governed by its own config flag — a warn-configured
+    # gate does NOT hard-block even in strict mode (it still runs + reports +
+    # repairs). But strict mode still drives thorough run-mode behaviour.
     project = SimpleNamespace(metadata_json={"quality_profile": STRICT_PREWRITE_PROFILE})
-    settings = SimpleNamespace(
+    warn_settings = SimpleNamespace(
         pipeline=SimpleNamespace(prewrite_readiness_block_on_failure=False)
     )
-
-    assert strict_blocks(project, settings, "prewrite_readiness_block_on_failure") is True
-    assert strict_outline_batch_size(project, settings) == 5
+    assert strict_blocks(project, warn_settings, "prewrite_readiness_block_on_failure") is False
+    # Run-mode stays strict-aware (thorough evaluation + repair batch sizing).
+    assert strict_outline_batch_size(project, warn_settings) == 5
+    # A gate explicitly configured to block still hard-blocks.
+    hard_settings = SimpleNamespace(
+        pipeline=SimpleNamespace(commercial_planning_readiness_block_on_failure=True)
+    )
+    assert (
+        strict_blocks(project, hard_settings, "commercial_planning_readiness_block_on_failure")
+        is True
+    )
 
 
 def test_concept_gate_blocks_award_title_and_english_mechanism_leak() -> None:

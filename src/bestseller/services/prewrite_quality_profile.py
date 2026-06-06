@@ -218,8 +218,15 @@ def is_strict_prewrite_project(project: Any) -> bool:
 
 
 def strict_blocks(project: Any, settings: Any, key: str) -> bool:
-    if is_strict_prewrite_project(project):
-        return True
+    # 2026-06 self-harm fix: strict-prewrite mode still RUNS every gate
+    # thoroughly and drives auto-repair (see ``strict_methodology_mode`` /
+    # ``strict_outline_batch_size`` which remain strict-aware), but whether a
+    # gate HARD-ABORTS the whole book is now governed solely by its own
+    # ``*_block_on_failure`` config flag — strict mode no longer forces every
+    # gate to fail-closed. This removes the documented cascade where a single
+    # high-severity planning finding (e.g. ``benchmark_alignment_missing``)
+    # aborted generation entirely instead of being reported + repaired.
+    # Flip the relevant flag to ``true`` to keep a gate hard.
     return bool(getattr(getattr(settings, "pipeline", settings), key, False))
 
 

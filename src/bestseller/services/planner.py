@@ -16048,9 +16048,26 @@ async def _run_planner_outline_commercial_judge(
         ),
     )
     if not result.passed:
-        raise PlannerFallbackError(
-            f"{step_name} failed: score={result.overall_score:.3f}, "
-            + ", ".join(blocking_codes)
+        # Honor the soft-block flag, consistent with the workflows.py outline
+        # judge path and the sibling planner gates (reverse_outline,
+        # worldview_compliance). In strict mode this raises to drive outline
+        # repair; in "run + report + repair, no hard abort" mode it records the
+        # MACHINE_BLOCKED step (above) and returns the report so the pipeline
+        # continues instead of killing the whole book.
+        if strict_blocks(
+            project, settings, "outline_llm_commercial_judge_block_on_failure"
+        ):
+            raise PlannerFallbackError(
+                f"{step_name} failed: score={result.overall_score:.3f}, "
+                + ", ".join(blocking_codes)
+            )
+        logger.warning(
+            "%s failed (score=%.3f, codes=%s) — soft mode "
+            "(outline_llm_commercial_judge_block_on_failure=false): recording "
+            "report and continuing without hard abort.",
+            step_name,
+            result.overall_score,
+            ", ".join(blocking_codes),
         )
     return payload
 

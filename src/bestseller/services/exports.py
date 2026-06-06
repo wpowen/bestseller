@@ -1104,8 +1104,20 @@ def collect_publication_blockers(
                 sub_genre=getattr(project, "sub_genre", None),
                 chapter_number=chapter_number,
             )
+            # Codes an LLM adjudicator already dismissed as false positives at
+            # review time (context made the flagged phenomenon legitimate). The
+            # export gate re-runs the same blind regex, so honor that ruling
+            # instead of re-litigating prose causality without context.
+            _adjudicated_clear = set(
+                (getattr(chapter, "metadata_json", None) or {}).get(
+                    "common_sense_dismissed_codes"
+                )
+                or []
+            )
             for finding in common_sense.findings[:5]:
                 if finding.severity not in {"high", "medium"}:
+                    continue
+                if finding.code in _adjudicated_clear:
                     continue
                 blockers.append(
                     (

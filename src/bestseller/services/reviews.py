@@ -109,6 +109,10 @@ from bestseller.services.critic_evidence_gate import (
     build_critic_evidence_prompt_suffix,
     validate_critic_commentary,
 )
+from bestseller.services.gate_adjudicator import (
+    adjudicate_findings,
+    is_adjudicable,
+)
 from bestseller.services.methodology_compiler import (
     ChapterPosition,
     MethodologyStage,
@@ -7008,6 +7012,69 @@ async def review_chapter_draft(
         duplication_score=ch_duplication_score,
         duplication_findings=ch_duplication_findings,
     )
+
+    # --- LLM adjudication of context-dependent gate findings ---
+    # The deterministic verdict above can be forced to "rewrite" by a brittle
+    # regex finding (e.g. common-sense "unexplained_body_state" firing on a
+    # car-crash victim's bleeding). Before such a finding is allowed to block,
+    # an LLM reads the prose and CONFIRMs or DISMISSes it. Only context-dependent
+    # categories are adjudicated; structural findings are untouched. Fail-closed.
+    if review_result.verdict == "rewrite" and any(
+        is_adjudicable(_f) for _f in review_result.findings
+    ):
+        try:
+            _adj = await adjudicate_findings(
+                session,
+                settings,
+                project,
+                chapter_number=chapter_number,
+                text=draft.content_md or "",
+                findings=list(review_result.findings),
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+            )
+        except Exception:
+            logger.debug("Chapter %d gate adjudication failed", chapter_number, exc_info=True)
+            _adj = None
+        if _adj is not None and _adj.dismissed:
+            _dismissed_ids = {id(_f) for _f in _adj.dismissed}
+            _kept = [_f for _f in review_result.findings if id(_f) not in _dismissed_ids]
+            _new_blocking = [_f for _f in _kept if _f.severity in {"high", "medium"}]
+            from bestseller.services.genre_review_profiles import (
+                resolve_genre_review_profile,
+            )
+
+            _prof = resolve_genre_review_profile(project.genre or "", project.sub_genre)
+            _threshold = (
+                _prof.chapter_threshold_override
+                or settings.quality.thresholds.chapter_coherence_min_score
+            )
+            _new_verdict = (
+                "pass"
+                if (review_result.scores.overall >= _threshold and not _new_blocking)
+                else "rewrite"
+            )
+            # Record dismissed common-sense codes so the export publication gate
+            # (which re-runs the same regex) trusts the adjudicated result.
+            _dismissed_codes = sorted(
+                {str(_f.message).split(":", 1)[0].strip() for _f in _adj.dismissed}
+            )
+            chapter.metadata_json = {
+                **(getattr(chapter, "metadata_json", None) or {}),
+                "common_sense_dismissed_codes": _dismissed_codes,
+            }
+            logger.info(
+                "Chapter %d adjudication dismissed %d false-positive finding(s) "
+                "(codes=%s); verdict rewrite->%s",
+                chapter_number,
+                len(_adj.dismissed),
+                ",".join(_dismissed_codes),
+                _new_verdict,
+            )
+            review_result = review_result.model_copy(
+                update={"findings": _kept, "verdict": _new_verdict}
+            )
+
     methodology_reports = await _compute_chapter_methodology_reports(
         session=session,
         project=project,

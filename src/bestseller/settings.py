@@ -222,6 +222,7 @@ class PipelineSettings(BaseModel):
     accept_on_stall: bool = True  # Accept best draft when rewrite is stalled (no score improvement)
     project_consistency_block_on_failure: bool = True  # Whole-book consistency failures must pause, not accept_on_stall
     chapter_review_block_on_failure: bool = True  # Chapter review failures must not be completed via accept_on_stall
+    gate_llm_adjudication_enabled: bool = True  # Context-dependent gate findings (common-sense) get an LLM CONFIRM/DISMISS pass before they may block
     chapter_outline_repair_attempts: int = 3  # Regenerate invalid chapter outlines before surfacing failure
     planning_artifact_reuse_enabled: bool = True
     planning_artifact_reuse_allow_legacy: bool = True

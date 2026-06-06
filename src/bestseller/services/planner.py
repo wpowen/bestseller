@@ -143,6 +143,14 @@ from bestseller.services.story_design_kernel import (
     render_story_design_kernel_prompt_block,
     story_design_kernel_from_dict,
 )
+from bestseller.domain.ideology import (
+    ideology_kernel_to_dict,
+    render_ideology_kernel_prompt_block,
+)
+from bestseller.services.ideology_coherence_gate import (
+    evaluate_ideology_kernel_coherence,
+)
+from bestseller.services.ideology_kernel import derive_ideology_kernel
 from bestseller.services.story_shape_router import derive_story_shape
 from bestseller.services.title_dedup import (
     DEFAULT_NEAR_DUP_THRESHOLD,
@@ -2672,6 +2680,31 @@ async def _generate_volume_outline_batched(
         project.id,
         exclude_volume_number=volume_number,
     )
+    # Deterministic last-resort title dedupe. The per-batch LLM repair loop
+    # cannot see other batches' titles, so a cross-batch duplicate (e.g. ch1 and
+    # ch6 both "后视镜") only surfaces here, where the validation below would
+    # otherwise hard-raise TitleCollisionError and kill the whole book. A
+    # duplicate chapter title is cosmetic — rewrite it deterministically (prefer
+    # a content-derived phrase, fall back to a conventional 「（二）」numeral)
+    # rather than aborting.
+    from bestseller.services.title_dedup import make_titles_unique
+
+    _deduped_chapters, _title_changes = make_titles_unique(
+        _mapping_list(combined.get("chapters")),
+        existing_titles=existing_titles,
+        language=getattr(project, "language", None),
+    )
+    if _title_changes:
+        combined["chapters"] = _deduped_chapters
+        logger.warning(
+            "Volume %d outline: deterministically deduped %d colliding chapter "
+            "title(s) the LLM repair did not converge on: %s",
+            volume_number,
+            len(_title_changes),
+            "; ".join(
+                f"ch{cn} '{old}'->'{new}'" for cn, old, new in _title_changes
+            ),
+        )
     validated = _validate_generated_volume_outline_or_raise(
         combined,
         project=project,
@@ -14579,6 +14612,7 @@ def _story_design_kernel_prompts(
     fallback_payload: dict[str, Any],
     *,
     category_key: str | None = None,
+    ideology_block: str = "",
 ) -> tuple[str, str]:
     language = _planner_language(project)
     is_en = is_english_language(language)
@@ -14679,6 +14713,20 @@ def _story_design_kernel_prompts(
             f"以下 fallback 是最低结构要求，请在此基础上做出本书独有设计：\n{_json_dumps(fallback_payload)}"
         )
     )
+    # Inject the ideology (母题) kernel right after the premise so the worldview /
+    # plot_tree / beat_schedule are read as serving the book's thematic spine,
+    # not just its genre. Insert once, after the first occurrence of the premise.
+    if ideology_block and premise and premise in user_prompt:
+        header = (
+            "\n\n## Ideology Kernel — the book's thematic spine "
+            "(worldview/plot_tree/beat_schedule MUST serve it)\n"
+            if is_en
+            else "\n\n## 核心理念内核 — 本书思想脊柱"
+            "（worldview_kernel / plot_tree / beat_schedule 都必须服务它）\n"
+        )
+        user_prompt = user_prompt.replace(
+            premise, premise + header + ideology_block, 1
+        )
     return system_prompt, user_prompt
 
 
@@ -14706,6 +14754,31 @@ async def _generate_story_design_kernel(
         cast_spec_payload,
         category_key=category_key,
     )
+    # Derive the core-ideology (母题) kernel BEFORE the story-design kernel so the
+    # worldview / plot_tree / beat_schedule grow from the book's thematic spine
+    # instead of genre tropes alone. Fully fail-safe: any failure degrades to a
+    # no-ideology prompt rather than breaking planning.
+    ideology_payload: dict[str, Any] | None = None
+    ideology_block = ""
+    target_chapters = int(getattr(project, "target_chapters", 0) or 0)
+    est_volumes = max(1, round(target_chapters / 50)) if target_chapters else 1
+    try:
+        ideology_kernel = await derive_ideology_kernel(
+            session,
+            settings,
+            premise=premise,
+            genre=getattr(project, "genre", None),
+            book_spec=book_spec_payload,
+            volumes=est_volumes,
+            title=str(getattr(project, "title", "") or ""),
+            language=_planner_language(project),
+            project_id=getattr(project, "id", None),
+            workflow_run_id=workflow_run_id,
+        )
+        ideology_payload = ideology_kernel_to_dict(ideology_kernel)
+        ideology_block = render_ideology_kernel_prompt_block(ideology_kernel)
+    except Exception:  # noqa: BLE001 - ideology is additive; never block planning
+        logger.debug("Ideology kernel derivation failed; planning without it", exc_info=True)
     system_prompt, user_prompt = _story_design_kernel_prompts(
         project,
         premise,
@@ -14714,6 +14787,7 @@ async def _generate_story_design_kernel(
         cast_spec_payload,
         fallback,
         category_key=category_key,
+        ideology_block=ideology_block,
     )
     payload, llm_run_id = await _generate_structured_artifact(
         session,
@@ -14740,6 +14814,25 @@ async def _generate_story_design_kernel(
         premise=premise,
         cast_spec_payload=cast_spec_payload,
     )
+
+    # Carry the ideology (母题) kernel inside the StoryDesignKernel so it propagates
+    # to every downstream prompt via render_story_design_kernel_prompt_block. Run
+    # the structural coherence gate as an ADVISORY check (never hard-aborts; per
+    # the 2026-05/06 regression lesson the theme levers report+repair, not block).
+    if isinstance(payload, dict) and ideology_payload and not payload.get("ideology_kernel"):
+        payload["ideology_kernel"] = ideology_payload
+        try:
+            ideology_gate = evaluate_ideology_kernel_coherence(
+                ideology_payload, volumes=est_volumes, total_chapters=target_chapters
+            )
+            logger.info(
+                "Ideology kernel attached: thesis=%r gate=%s coverage=%.2f",
+                ideology_payload.get("thesis_statement", ""),
+                ideology_gate.verdict,
+                ideology_gate.coverage,
+            )
+        except Exception:  # noqa: BLE001 - advisory gate must never break planning
+            logger.debug("Ideology coherence gate failed", exc_info=True)
 
     story_design_kernel_from_dict(payload)
     quality_report = evaluate_story_design_kernel_quality(

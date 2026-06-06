@@ -22,7 +22,60 @@ from bestseller.services.title_dedup import (
     find_title_collisions,
     is_template_shaped_title,
     jaccard_similarity,
+    make_titles_unique,
 )
+
+
+# ---------------------------------------------------------------------------
+# make_titles_unique (deterministic last-resort dedupe)
+# ---------------------------------------------------------------------------
+
+
+def test_make_titles_unique_noop_when_all_unique() -> None:
+    chapters = [
+        {"chapter_number": 1, "title": "后视镜"},
+        {"chapter_number": 2, "title": "静默会"},
+    ]
+    out, changes = make_titles_unique(chapters)
+    assert changes == []
+    assert [c["title"] for c in out] == ["后视镜", "静默会"]
+
+
+def test_make_titles_unique_resolves_exact_cross_chapter_collision() -> None:
+    # The real v5 failure: ch1 and ch6 both titled 后视镜.
+    chapters = [
+        {"chapter_number": 1, "title": "后视镜"},
+        {"chapter_number": 6, "title": "后视镜", "main_conflict": "周野在拍卖行赎回记忆"},
+    ]
+    out, changes = make_titles_unique(chapters)
+    titles = [c["title"] for c in out]
+    assert titles[0] == "后视镜"  # first occurrence preserved
+    assert titles[1] != "后视镜"  # second rewritten
+    assert len(set(titles)) == 2  # all unique now
+    assert changes and changes[0][0] == 6 and changes[0][1] == "后视镜"
+
+
+def test_make_titles_unique_numeral_fallback_when_no_content() -> None:
+    chapters = [
+        {"chapter_number": 1, "title": "后视镜"},
+        {"chapter_number": 6, "title": "后视镜"},  # no content fields to derive from
+    ]
+    out, changes = make_titles_unique(chapters)
+    assert out[1]["title"] == "后视镜（二）"
+    # The deduped volume must now pass the same collision check the planner runs.
+    report = find_title_collisions(
+        [(c["chapter_number"], c["title"]) for c in out]
+    )
+    assert report.ok
+
+
+def test_make_titles_unique_respects_existing_titles() -> None:
+    chapters = [{"chapter_number": 11, "title": "后视镜"}]
+    out, changes = make_titles_unique(
+        chapters, existing_titles=[(1, "后视镜")]
+    )
+    assert out[0]["title"] != "后视镜"
+    assert changes and changes[0][0] == 11
 
 
 # ---------------------------------------------------------------------------

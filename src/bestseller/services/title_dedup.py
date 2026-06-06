@@ -215,6 +215,99 @@ def find_title_collisions(
     return TitleDedupReport(accepted=accepted, collisions=collisions)
 
 
+_CJK_DISAMBIG_NUMERALS = "二三四五六七八九十"
+
+
+def make_titles_unique(
+    chapters: list[dict],
+    *,
+    existing_titles: Iterable[tuple[int | None, str]] = (),
+    near_dup_threshold: float = DEFAULT_NEAR_DUP_THRESHOLD,
+    language: str | None = None,
+) -> tuple[list[dict], list[tuple[int, str, str]]]:
+    """Deterministically resolve colliding chapter titles as a last resort.
+
+    The planner's LLM repair loop normally fixes colliding titles, but it can
+    fail to converge — e.g. a thematically central word ("后视镜") that the
+    model reuses across batches even when told not to. A duplicate chapter
+    title is cosmetic and must never abort a whole book, so this pass rewrites
+    only the colliding titles to be unique, preferring a content-derived phrase
+    and falling back to a conventional Chinese parenthetical numeral.
+
+    Returns ``(chapters, changes)`` where ``chapters`` is a new list (colliding
+    entries shallow-copied with a new ``title``) and ``changes`` is a list of
+    ``(chapter_number, old_title, new_title)`` for logging/tests. Non-colliding
+    chapters are returned unchanged.
+    """
+
+    used: list[tuple[int | None, str]] = [
+        (cn, (t or "").strip()) for cn, t in existing_titles if (t or "").strip()
+    ]
+    out: list[dict] = []
+    changes: list[tuple[int, str, str]] = []
+
+    for chapter in chapters:
+        chapter_number = int(chapter.get("chapter_number") or 0)
+        title = str(chapter.get("title") or "").strip()
+        if not title:
+            out.append(chapter)
+            continue
+        if _find_collision_in_list(chapter_number, title, used, near_dup_threshold) is None:
+            used.append((chapter_number, title))
+            out.append(chapter)
+            continue
+
+        used_titles = {t for _, t in used}
+        replacement = derive_title_from_content(
+            main_conflict=chapter.get("main_conflict"),
+            hook_description=chapter.get("hook_description"),
+            unique_beat=chapter.get("unique_beat"),
+            chapter_goal=chapter.get("chapter_goal"),
+            language=language,
+            exclude=used_titles,
+        )
+        if replacement is None or (
+            _find_collision_in_list(chapter_number, replacement, used, near_dup_threshold)
+            is not None
+        ):
+            replacement = _disambiguate_with_numeral(title, used, near_dup_threshold)
+
+        used.append((chapter_number, replacement))
+        changes.append((chapter_number, title, replacement))
+        out.append({**chapter, "title": replacement})
+
+    return out, changes
+
+
+def _disambiguate_with_numeral(
+    title: str,
+    used: list[tuple[int | None, str]],
+    near_dup_threshold: float,
+) -> str:
+    """Append a conventional parenthetical numeral until the title is unique.
+
+    Web fiction conventionally disambiguates same-named chapters as
+    ``后视镜（二）``, ``后视镜（三）`` … This guarantees a unique, natural-looking
+    title without inventing content the chapter does not contain.
+    """
+
+    base = title.strip() or "本章"
+    # Keep the base short enough that ``base（numeral）`` stays readable.
+    if len(base) > TITLE_MAX_LEN:
+        base = base[:TITLE_MAX_LEN]
+    for numeral in _CJK_DISAMBIG_NUMERALS:
+        candidate = f"{base}（{numeral}）"
+        if _find_collision_in_list(0, candidate, used, near_dup_threshold) is None:
+            return candidate
+    # Pathological fallback: ascending integer suffix (still guaranteed unique).
+    index = 11
+    while True:
+        candidate = f"{base}（{index}）"
+        if _find_collision_in_list(0, candidate, used, near_dup_threshold) is None:
+            return candidate
+        index += 1
+
+
 def _find_collision_in_list(
     chapter_number: int,
     title: str,

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from bestseller.domain.gate_verdict import GateFinding, GateVerdict
+from bestseller.services.hook_signals import SHARED_HOOK_TERMS as _SHARED_HOOK_TERMS
 from bestseller.services.emotion_driven_kernel import (
     EmotionDrivenKernel,
     emotion_driven_kernel_from_dict,
@@ -120,6 +121,9 @@ _HOOK_TERMS = (
     "？", "?", "否则", "就在这时", "突然", "门外", "真相", "谁", "不能", "必须",
     "只剩", "却", "响起", "下一刻", "不是", "而是", "等你", "送回来", "第七",
     "or else", "suddenly", "truth", "who", "must", "cannot", "only", "but", "then", "next",
+    # Broadened, genre-neutral hook vocabulary (appointment/threat/open-question).
+    # See services.hook_signals — single source of truth across the three gates.
+    *_SHARED_HOOK_TERMS,
 )
 
 _STRATEGY_BY_CODE = {

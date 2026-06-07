@@ -4127,6 +4127,9 @@ async def test_run_chapter_pipeline_blocks_chapter_first_on_predraft_gate(
 
     settings = build_settings()
     settings.pipeline.enable_chapter_outline_readiness_gate = False
+    # Predraft gate is soft by default now (autonomous-completion self-harm fix);
+    # pin the legacy hard-block to keep validating the machine-blocked path.
+    settings.pipeline.chapter_predraft_quality_gate_block_on_failure = True
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
@@ -5468,10 +5471,17 @@ async def test_run_project_pipeline_passes_concept_lab_context_to_material_forge
 
 
 @pytest.mark.asyncio
-async def test_run_project_pipeline_stops_after_machine_repair_chapter(
+@pytest.mark.parametrize("pause_mode, expected_calls", [(False, [1, 2]), (True, [1])])
+async def test_run_project_pipeline_review_flagged_chapter_pause_vs_continue(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    pause_mode: bool,
+    expected_calls: list[int],
 ) -> None:
+    # Default (pause_mode=False): a chapter whose scenes only "require human
+    # review" no longer halts the whole book — the loop continues writing the
+    # remaining chapters and flags them. Legacy hard-pause is opt-in via
+    # ``whole_book_pause_on_scene_review=True`` (pause_mode=True → stops at [1]).
     project = build_project()
     chapter1 = build_chapter(project.id)
     chapter2 = build_chapter(project.id)
@@ -5566,16 +5576,23 @@ async def test_run_project_pipeline_stops_after_machine_repair_chapter(
         ),
     )
 
+    settings = load_settings(
+        env={
+            "BESTSELLER__PIPELINE__WHOLE_BOOK_PAUSE_ON_SCENE_REVIEW": (
+                "true" if pause_mode else "false"
+            )
+        }
+    )
     result = await pipeline_services.run_project_pipeline(
         FakeSession(),
-        build_settings(),
+        settings,
         "my-story",
         requested_by="tester",
         export_markdown=True,
     )
 
-    assert calls == [1]
-    assert [item.chapter_number for item in result.chapter_results] == [1]
+    assert calls == expected_calls
+    assert [item.chapter_number for item in result.chapter_results] == expected_calls
     assert result.requires_human_review is True
 
 
@@ -6415,10 +6432,13 @@ async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_gen
     monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
 
     session = FakeSession(get_map={(ChapterDraftVersionModel, draft_id): chapter_draft})
+    # Legacy hard-block mode keeps the gate raising (soft-continue is now default).
+    gate_settings = build_settings()
+    gate_settings.pipeline.qimao_opening_gate_block_on_failure = True
     with pytest.raises(ValueError, match="Qimao opening gate failed"):
         await pipeline_services.run_project_pipeline(
             session,
-            build_settings(),
+            gate_settings,
             "my-story",
             requested_by="tester",
             export_markdown=False,
@@ -6501,6 +6521,8 @@ async def test_run_project_pipeline_pauses_after_qimao_opening_attempts_exhauste
 
     settings = build_settings()
     settings.pipeline.qimao_opening_max_attempts = 1
+    # Legacy hard-pause mode keeps the exhausted gate raising (soft is now default).
+    settings.pipeline.qimao_opening_gate_block_on_failure = True
     session = FakeSession(get_map={(ChapterDraftVersionModel, draft_id): chapter_draft})
 
     with pytest.raises(ValueError, match="Qimao opening gate failed"):
@@ -6643,10 +6665,13 @@ async def test_run_project_pipeline_creates_whole_book_quality_rewrite_task(
 
     progress_events: list[str] = []
     session = FakeSession(get_map=draft_by_id)
+    # Legacy hard-block mode keeps the gate raising (soft-continue is now default).
+    gate_settings = build_settings()
+    gate_settings.pipeline.whole_book_quality_gate_block_on_failure = True
     with pytest.raises(ValueError, match="Whole-book quality gate failed"):
         await pipeline_services.run_project_pipeline(
             session,
-            build_settings(),
+            gate_settings,
             "my-story",
             requested_by="tester",
             export_markdown=False,
@@ -6670,6 +6695,128 @@ async def test_run_project_pipeline_creates_whole_book_quality_rewrite_task(
     )
     assert len(project.metadata_json["whole_book_engagement_ledger"]) == 4
     assert "whole_book_quality_gate_failed" in progress_events
+
+
+@pytest.mark.asyncio
+async def test_whole_book_quality_gate_soft_continue_does_not_raise() -> None:
+    """Default soft-continue: a failed whole-book quality gate queues a rewrite
+    task and flags the chapter, but does NOT raise (the book keeps writing)."""
+    project = build_project()
+    project.metadata_json = {**(project.metadata_json or {}), "volume_plan": [], "emotion_driven_kernel": {}}
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 1
+    draft_id = uuid4()
+    draft = ChapterDraftVersionModel(
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="沈姝回到房间, 整理了一天的想法。天色渐暗, 一切平静, 没有冲突也没有新钩子。",
+        word_count=60,
+        is_current=True,
+    )
+    draft.id = draft_id
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=draft_id,
+        chapter_draft_version_no=1,
+        export_artifact_id=None,
+        output_path=None,
+        requires_human_review=False,
+    )
+    workflow_run = WorkflowRunModel(project_id=project.id, workflow_type="project", status="running")
+    workflow_run.id = uuid4()
+    workflow_run.metadata_json = {}
+    session = FakeSession(get_map={(ChapterDraftVersionModel, draft_id): draft})
+    settings = build_settings()  # default: whole_book_quality_gate_block_on_failure=False
+
+    # Must NOT raise even though the gate fails — soft-continue is the default.
+    await pipeline_services._enforce_whole_book_quality_gate_after_chapter(
+        session,
+        project=project,
+        chapter=chapter,
+        chapter_result=chapter_result,
+        chapter_texts={},
+        workflow_run=workflow_run,
+        progress=None,
+        settings=settings,
+    )
+
+    rewrite_tasks = [obj for obj in session.added if isinstance(obj, RewriteTaskModel)]
+    assert len(rewrite_tasks) == 1
+    assert rewrite_tasks[0].trigger_type == "whole_book_quality_gate"
+
+
+@pytest.mark.asyncio
+async def test_qimao_opening_gate_soft_continue_does_not_raise() -> None:
+    """Default soft-continue: a failed Qimao opening gate queues a rewrite task
+    and flags the chapter, but does NOT raise the whole book down."""
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "opening_quality_contract": {
+            "platform_target": "商业网文签约口径",
+            "protagonist_name": "沈姝",
+            "opening_incident": "沈姝推门进账房时，族叔正按着账童抢账本。",
+            "first_page_conflict": "前600字内被逼交出账本。",
+            "protagonist_immediate_goal": "保住账本。",
+            "visible_loss_if_fail": "失败会失去唯一翻案证据。",
+            "protagonist_edge": "她能从账目细节看出隐藏漏洞。",
+            "edge_limit": "账本不能直接推翻主谋。",
+            "chapter_1_small_turn": "主角当众反制逼迫者。",
+            "chapter_2_reveal": "逼迫者背后另有主谋。",
+            "chapter_3_payoff": "拿到第一份签押证据。",
+            "first_10000_loop": "触发冲突 -> 行动 -> 代价 -> 新钩子",
+            "forbidden_opening_modes": ["background_exposition", "normal_day"],
+        },
+    }
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 1
+    draft_id = uuid4()
+    draft = ChapterDraftVersionModel(
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="天玄大陆有三千年历史。沈姝站在窗前看天气, 街道安静, 没有冲突, 没有人逼她行动。",
+        word_count=70,
+        is_current=True,
+    )
+    draft.id = draft_id
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=draft_id,
+        chapter_draft_version_no=1,
+        export_artifact_id=None,
+        output_path=None,
+        requires_human_review=False,
+    )
+    workflow_run = WorkflowRunModel(project_id=project.id, workflow_type="project", status="running")
+    workflow_run.id = uuid4()
+    workflow_run.metadata_json = {}
+    session = FakeSession(get_map={(ChapterDraftVersionModel, draft_id): draft})
+    settings = build_settings()  # default soft; max_attempts default so this is a queue-rewrite (non-exhausted) pass
+
+    # Must NOT raise — soft-continue queues the rewrite task and returns.
+    await pipeline_services._enforce_qimao_opening_gate_after_chapter(
+        session,
+        project=project,
+        chapter=chapter,
+        chapter_result=chapter_result,
+        opening_texts={},
+        workflow_run=workflow_run,
+        settings=settings,
+        progress=None,
+    )
+
+    rewrite_tasks = [obj for obj in session.added if isinstance(obj, RewriteTaskModel)]
+    assert len(rewrite_tasks) == 1
+    assert rewrite_tasks[0].trigger_type == "qimao_opening_gate"
+    assert project.metadata_json.get("qimao_opening_gate_blocked") is True
 
 
 @pytest.mark.asyncio
@@ -7371,6 +7518,8 @@ async def test_run_autowrite_pipeline_skips_project_repair_for_scene_machine_blo
     project = build_project()
     settings = build_settings()
     settings.pipeline.resume_enabled = True
+    # Legacy hard-pause mode is what suppresses auto-repair on scene-machine-block.
+    settings.pipeline.whole_book_pause_on_scene_review = True
 
     outline_artifact = type(
         "PlanningArtifactStub",
@@ -7467,6 +7616,127 @@ async def test_run_autowrite_pipeline_skips_project_repair_for_scene_machine_blo
     assert result.requires_human_review is True
     assert "auto_repair_skipped_scene_machine_blocked" in progress_events
     assert "auto_repair_started" not in progress_events
+
+
+@pytest.mark.asyncio
+async def test_run_autowrite_pipeline_runs_project_repair_in_soft_continue_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default soft-continue: a scene-machine-blocked chapter no longer suppresses
+    the project-repair pass — the framework's own remediation engages on the
+    "attention" verdict instead of leaving it a dead end."""
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.resume_enabled = True
+    # Default mode (whole_book_pause_on_scene_review=False) — leave it off.
+
+    outline_artifact = type(
+        "PlanningArtifactStub",
+        (),
+        {"source_run_id": uuid4(), "content": {"chapters": []}},
+    )()
+    completed_runs = {
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH,
+        pipeline_services.WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_TREE,
+    }
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        if artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH:
+            return outline_artifact
+        return None
+
+    async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
+        if workflow_type not in completed_runs:
+            return None
+        run = WorkflowRunModel(
+            project_id=project.id,
+            workflow_type=workflow_type,
+            status="completed",
+        )
+        run.id = uuid4()
+        return run
+
+    async def fake_run_project_pipeline(*args, **kwargs):
+        return ProjectPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_results=[],
+            final_verdict="attention",
+            requires_human_review=True,
+        )
+
+    async def fake_has_scene_machine_blocked(session, project_id):
+        return True
+
+    repair_calls: list[str] = []
+
+    async def fake_project_repair(*args, **kwargs):
+        repair_calls.append("called")
+        return type(
+            "RepairResultStub",
+            (),
+            {
+                "workflow_run_id": uuid4(),
+                "review_report_id": uuid4(),
+                "quality_score_id": uuid4(),
+                "export_artifact_id": None,
+                "output_path": None,
+                "final_verdict": "attention",
+                "requires_human_review": True,
+            },
+        )()
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(pipeline_services, "run_project_pipeline", fake_run_project_pipeline)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_project_has_scene_machine_blocked_chapter",
+        fake_has_scene_machine_blocked,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.repair.run_project_repair",
+        fake_project_repair,
+    )
+
+    progress_events: list[str] = []
+
+    def fake_progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append(stage)
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug,
+        title=project.title,
+        genre=project.genre,
+        target_word_count=project.target_word_count,
+        target_chapters=project.target_chapters,
+    )
+
+    result = await pipeline_services.run_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="premise",
+        progress=fake_progress,
+    )
+
+    assert repair_calls == ["called"]
+    assert result.repair_attempted is True
+    assert "auto_repair_started" in progress_events
+    assert "auto_repair_skipped_scene_machine_blocked" not in progress_events
 
 
 @pytest.mark.asyncio

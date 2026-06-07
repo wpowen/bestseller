@@ -241,6 +241,49 @@ def test_no_state_delta_is_critical():
 
 
 @pytest.mark.unit
+def test_repair_resolves_no_state_delta():
+    """Regression: identical non-empty states must be auto-repairable.
+
+    Previously ``repair_scene_card_state_defaults`` only filled empty/generic
+    states and returned ``changed=False`` for the ``no_state_delta`` case, so a
+    thin scene card with entry_state == exit_state was structurally
+    un-repairable and hard-blocked the whole book (framework self-harm).
+    """
+    card = _rich_card()
+    same_state = {"location": "禁地外围", "林风": "藏匿中"}
+    card["entry_state"] = dict(same_state)
+    card["exit_state"] = dict(same_state)
+
+    # Pre-condition: the gate flags no_state_delta.
+    before = validate_scene_card_richness(**card)
+    assert any(i.code == "no_state_delta" for i in before.issues)
+
+    entry_state, exit_state, changed = repair_scene_card_state_defaults(
+        scene_type=card["scene_type"],
+        title="夺取核心灵石",
+        purpose=card["purpose"],
+        entry_state=card["entry_state"],
+        exit_state=card["exit_state"],
+        participants=card["participants"],
+        language="zh-CN",
+    )
+    assert changed is True
+    assert entry_state != exit_state  # a real delta now exists
+
+    # Post-condition: re-validating with the repaired states clears the block.
+    repaired = validate_scene_card_richness(
+        scene_type=card["scene_type"],
+        purpose=card["purpose"],
+        entry_state=entry_state,
+        exit_state=exit_state,
+        participants=card["participants"],
+        language="zh-CN",
+    )
+    assert not any(i.code == "no_state_delta" for i in repaired.issues)
+    assert repaired.is_rich_enough
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("generic", ["待定", "TBD", "unknown", "N/A", "状态不变"])
 def test_generic_state_placeholder_is_flagged(generic: str):
     card = _rich_card()

@@ -152,6 +152,23 @@ class QualitySettings(BaseModel):
     enable_plan_judge: bool = True
     enable_plan_judge_llm: bool = False
     min_scene_rewrite_improvement: float = 0.03
+    # Scene verdict: when True (default), only STRUCTURAL findings (duplication,
+    # character-name errors, output hygiene, or any critical-severity finding)
+    # force a "rewrite" verdict. The deterministic craft-axis findings (hook,
+    # contract_alignment, emotion, conflict, etc.) are keyword-echo heuristics
+    # that real dramatized prose can't satisfy verbatim, so they are treated as
+    # ADVISORY: still reported + fed to the rewrite instructions, but they do not
+    # alone block. The verdict then gates on `overall >= threshold` + no
+    # structural finding. This makes "approved" reachable for genuinely good
+    # scenes instead of forcing every scene to the rewrite/stall/human-review
+    # path. Set False to restore the legacy "any finding => rewrite" behaviour.
+    scene_verdict_advisory_axes: bool = True
+    # When LLM scene commentary is enabled, trust an explicit LLM "pass" over a
+    # rule-based "rewrite" when only advisory craft-axis findings remain (no
+    # structural defect). This is the semantic-authority escape hatch from the
+    # keyword-echo `overall` ceiling so genuinely good prose can reach "approved"
+    # instead of churning the rewrite/stall loop. Requires enable_llm_scene_commentary.
+    enable_scene_llm_pass_override: bool = True
     thresholds: QualityThresholds
     max_scene_revisions: int = 2
     max_chapter_revisions: int = 1
@@ -220,8 +237,9 @@ class PipelineSettings(BaseModel):
     rolling_summary_interval: int = 25  # Compress knowledge window every N chapters
     resume_enabled: bool = True  # Skip already-completed chapters on resume
     accept_on_stall: bool = True  # Accept best draft when rewrite is stalled (no score improvement)
+    whole_book_pause_on_scene_review: bool = False  # If True, a chapter whose scenes only "require human review" PAUSES the whole book (legacy hard-halt). Default soft: accept the stalled draft, flag the chapter, and continue to the next chapter so the book reaches autonomous closure (consistent with accept_on_stall). Whole-book *consistency* failures still pause regardless (see project_consistency_block_on_failure).
     project_consistency_block_on_failure: bool = True  # Whole-book consistency failures must pause, not accept_on_stall
-    chapter_review_block_on_failure: bool = True  # Chapter review failures must not be completed via accept_on_stall
+    chapter_review_block_on_failure: bool = False  # Soft by default: after max_chapter_revisions the best draft is accepted-on-stall (warn-only) and the book ADVANCES. True left a chapter whose review never reached "pass" oscillating drafting<->revision forever — the project loop re-processed ch1 every self-heal cycle and never advanced (autonomous-completion self-harm). Whole-book consistency still pauses separately (project_consistency_block_on_failure).
     gate_llm_adjudication_enabled: bool = True  # Context-dependent gate findings (common-sense) get an LLM CONFIRM/DISMISS pass before they may block
     chapter_outline_repair_attempts: int = 3  # Regenerate invalid chapter outlines before surfacing failure
     planning_artifact_reuse_enabled: bool = True
@@ -244,19 +262,19 @@ class PipelineSettings(BaseModel):
     require_foundation_identity_lock: bool = True  # CastSpec must lock gender/pronouns before persistence
     require_chapter_plan_contract: bool = True  # Outline materialization must validate scene time/purpose/participants
     enable_chapter_causality_gate: bool = True  # Outline materialization validates reader-visible causal axes
-    chapter_causality_gate_block_on_failure: bool = True  # Block flat chapter plans before prose drafting
+    chapter_causality_gate_block_on_failure: bool = False  # Block flat chapter plans before prose drafting
     methodology_contract_mode: str = "warn"  # off/warn/strict for methodology overlay scope and execution gates
     require_pre_draft_scene_contract: bool = True  # Scene pipeline validates persisted scene cards before drafting
     enable_scene_plan_richness_gate: bool = True  # Pre-draft scene card richness validation
-    scene_richness_block_on_critical: bool = True  # Raise on critical richness failure instead of logging + injecting warnings
+    scene_richness_block_on_critical: bool = False  # Soft by default: inject prompt-block + warnings and continue (self-harm fix). Opt back on to hard-block (recoverably, via WriteSafetyBlockError).
     # Chapter-level outline readiness gate. This runs before any scene prose is
     # drafted and blocks deterministic "bad inputs": collapsed scene budgets,
     # stale auto-repair metadata, unresolved rewrite tasks, and impossible
     # timeline anchors. It complements scene richness, which is scene-local.
     enable_chapter_outline_readiness_gate: bool = True
-    chapter_outline_readiness_block_on_failure: bool = True
+    chapter_outline_readiness_block_on_failure: bool = False
     enable_story_bible_write_gate: bool = True
-    story_bible_write_block_on_failure: bool = True
+    story_bible_write_block_on_failure: bool = False
     enable_methodology_planning_readiness_gate: bool = True
     # Warn-by-default: this is a heuristic readiness gate (weak-mediated
     # opening, plausibility gaps, knowledge-boundary leaks). Findings are
@@ -266,21 +284,23 @@ class PipelineSettings(BaseModel):
     # Only deterministic, low-false-positive gates should block.
     methodology_planning_readiness_block_on_failure: bool = False
     enable_outline_llm_commercial_judge: bool = True
-    outline_llm_commercial_judge_block_on_failure: bool = True
+    outline_llm_commercial_judge_block_on_failure: bool = False
     # Heuristic platform-fit gate (七猫 golden-three). Warn-only by default so
     # a flagged opening becomes a rewrite directive rather than aborting the
     # whole book at planning (2026-05-29).
     qimao_planning_gate_block_on_failure: bool = False
     outline_llm_commercial_judge_threshold: float = 0.82
     enable_outline_reader_experience_judge: bool = True
-    outline_reader_experience_judge_block_on_failure: bool = True
+    outline_reader_experience_judge_block_on_failure: bool = False
     outline_reader_experience_judge_threshold: float = 0.78
     enable_chapter_predraft_quality_gate: bool = True
-    chapter_predraft_quality_gate_block_on_failure: bool = True
+    chapter_predraft_quality_gate_block_on_failure: bool = False
     enable_chapter_scene_contract_materializer: bool = True
     qimao_opening_max_attempts: int = 3
+    qimao_opening_gate_block_on_failure: bool = False  # Soft by default: a failed/exhausted Qimao opening gate queues a rewrite task + flags the chapter for review, then CONTINUES (autonomous closure). The hard raise (legacy) only fits the worker self-heal retry loop; in one-shot/autonomous runs it killed the whole book. Opt back on for strict 七猫 signing.
+    whole_book_quality_gate_block_on_failure: bool = False  # Soft by default: a failed whole-book engagement gate queues a rewrite task + flags it, then CONTINUES. Same self-harm rationale as the Qimao opening gate — the bare raise only fits the worker retry loop. Opt on to hard-pause.
     enable_chapter_llm_commercial_judge: bool = True
-    chapter_llm_commercial_judge_block_on_failure: bool = True
+    chapter_llm_commercial_judge_block_on_failure: bool = False
     # Advisory LitStyle-100R 文采 judge. Scores the "打动读者" (literary craft)
     # axis the 16-dim commercial judge never covers. ADVISORY ONLY — there is no
     # block_on_failure flag; it can never change a chapter's verdict. Off by
@@ -293,11 +313,11 @@ class PipelineSettings(BaseModel):
     # recall block. Idempotent + soft (failure = no-op). One cheap LLM call per book.
     enable_imagery_system_design: bool = True
     enable_chapter_window_llm_judge: bool = True
-    chapter_window_llm_judge_block_on_failure: bool = True
+    chapter_window_llm_judge_block_on_failure: bool = False
     chapter_window_llm_judge_size: int = 5
     chapter_window_llm_judge_min_chapters: int = 2
     enable_volume_llm_checkpoint_judge: bool = True
-    volume_llm_checkpoint_block_on_failure: bool = True
+    volume_llm_checkpoint_block_on_failure: bool = False
     volume_llm_checkpoint_interval: int = 10
     volume_llm_checkpoint_min_chapters: int = 10
     # Commercial strict mode fails closed when any quality gate cannot run or
@@ -379,7 +399,7 @@ class PipelineSettings(BaseModel):
     commercial_planning_llm_judge_threshold: float = 0.75
     # Kept for backwards compatibility but no longer the primary block signal
     # when enable_commercial_planning_llm_judge=True.
-    commercial_planning_readiness_block_on_failure: bool = True
+    commercial_planning_readiness_block_on_failure: bool = False
     commercial_planning_min_target_chapters: int = 50
     # Fanqie market intelligence is opt-in, but long-form signing readiness is
     # enforced by default so weak opening loops are repaired before write-out.

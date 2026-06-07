@@ -1033,6 +1033,12 @@ async def test_materialize_chapter_outline_batch_blocks_weak_causality(
     monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
     session = FakeSession(scalars_results=[[]])
 
+    # Causality gate is soft by default now (autonomous-completion self-harm fix);
+    # this test pins the legacy hard-block to keep validating the raise path.
+    _gate_settings = workflow_services.load_settings(env={})
+    _gate_settings.pipeline.chapter_causality_gate_block_on_failure = True
+    monkeypatch.setattr(workflow_services, "load_settings", lambda *a, **k: _gate_settings)
+
     with pytest.raises(ValueError, match="chapter_causality_contract"):
         await workflow_services.materialize_chapter_outline_batch(
             session,

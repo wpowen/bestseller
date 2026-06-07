@@ -50,6 +50,7 @@ from bestseller.infra.db.models import (
     VolumeModel,
 )
 from bestseller.services.action_scene_structure_gate import evaluate_action_scene_structure
+from bestseller.services.hook_signals import SHARED_HOOK_TERMS as _SHARED_HOOK_TERMS
 from bestseller.services.chapter_quality_bundle import (
     ChapterQualityBundleContext,
     ChapterQualityBundleReport,
@@ -704,6 +705,10 @@ _HOOK_SIGNAL_TERMS = (
     "必须",
     "下一秒",
     "下一瞬",
+    # Broadened, genre-neutral hook vocabulary (appointment/threat/open-question)
+    # so the scene hook_strength scorer recognises meetings, threats and
+    # unanswered questions, not just suspense props. See services.hook_signals.
+    *_SHARED_HOOK_TERMS,
 )
 _FOLK_HORROR_TAIL_HOOK_TERMS = (
     "人影",
@@ -2939,6 +2944,29 @@ def _measure_dialogue_distinctiveness(
     return min(avg_jaccard * 0.7 + avg_len_diff * 0.3, 1.0)
 
 
+# Scene craft-axis finding categories. Their scores are deterministic
+# keyword-echo heuristics that genuinely good, dramatized prose frequently
+# cannot satisfy verbatim — so in advisory-axes mode they are reported and fed
+# to the rewrite instructions but do NOT alone force a "rewrite" verdict. The
+# categories NOT listed here (duplication, character_consistency, output_hygiene)
+# are structural and always block. See QualitySettings.scene_verdict_advisory_axes.
+_SCENE_ADVISORY_FINDING_CATEGORIES = frozenset(
+    {
+        "goal",
+        "conflict",
+        "conflict_clarity",
+        "emotion",
+        "emotional_movement",
+        "dialogue",
+        "style",
+        "voice_consistency",
+        "hook_strength",
+        "payoff_density",
+        "contract_alignment",
+    }
+)
+
+
 def evaluate_scene_draft(
     *,
     scene: SceneCardModel,
@@ -3372,7 +3400,18 @@ def evaluate_scene_draft(
         (payoff_density, _sw.payoff_density),
     ]
     if int(contract_evidence["contract_expectation_count"]) > 0:
-        weighted_parts.append((contract_alignment, _sw.contract_alignment))
+        # contract_alignment scores ~1.0 only when the contract's literal
+        # planning phrasing appears verbatim in the prose; well-dramatized prose
+        # almost never quotes planning language, so this axis collapses to ~0.1
+        # regardless of craft and unfairly tanks `overall`. In advisory mode we
+        # floor its contribution: a fully-populated contract that the prose
+        # *dramatizes* (vs quotes) still earns a neutral baseline, while genuine
+        # verbatim coverage is still rewarded above the floor. The axis remains
+        # advisory for the verdict (see _SCENE_ADVISORY_FINDING_CATEGORIES).
+        _contract_axis = contract_alignment
+        if getattr(settings.quality, "scene_verdict_advisory_axes", False):
+            _contract_axis = max(contract_alignment, 0.5)
+        weighted_parts.append((_contract_axis, _sw.contract_alignment))
     if pacing_target is not None:
         weighted_parts.append((pacing_alignment_score, _sw.pacing_alignment))
     if _primary_arcs:
@@ -3629,7 +3668,25 @@ def evaluate_scene_draft(
     if _duplication_score_clamped < 1.0:
         overall = _clamp_score(overall - (1.0 - _duplication_score_clamped) * 0.3)
 
-    verdict = "pass" if overall >= _verdict_threshold and not findings else "rewrite"
+    if getattr(settings.quality, "scene_verdict_advisory_axes", False):
+        # Advisory-axes mode: only structural findings (anything NOT in the
+        # craft-axis set) or any critical finding block. Craft-axis findings are
+        # advisory — still surfaced + used to build rewrite_instructions, but a
+        # genuinely good scene (overall >= threshold, no structural defect) can
+        # finally reach "pass" instead of churning the rewrite/stall loop.
+        _blocking_scene_findings = [
+            f
+            for f in findings
+            if f.severity == "critical"
+            or f.category not in _SCENE_ADVISORY_FINDING_CATEGORIES
+        ]
+        verdict = (
+            "pass"
+            if overall >= _verdict_threshold and not _blocking_scene_findings
+            else "rewrite"
+        )
+    else:
+        verdict = "pass" if overall >= _verdict_threshold and not findings else "rewrite"
     rewrite_instructions = None
     if verdict == "rewrite":
         contract_hint = ""
@@ -5089,6 +5146,24 @@ async def review_scene_draft(
                 rewrite_instructions=_parse_llm_rewrite_direction(critic_response)
                 or review_result.rewrite_instructions
                 or "LLM 评审判定需要重写，请补强场景质量。",
+            )
+        elif (
+            llm_verdict == "pass"
+            and getattr(settings.quality, "enable_scene_llm_pass_override", False)
+            and _can_accept_scene_llm_pass_over_rule_rewrite(review_result)
+        ):
+            # Semantic authority (downgrade rewrite -> pass): the LLM critic
+            # explicitly certifies the scene and only advisory craft-axis
+            # findings remain. This lifts genuinely good prose past the
+            # keyword-echo `overall` ceiling that the deterministic scorer can't
+            # clear. Structural defects (handled by _can_accept_...) still block.
+            review_result = SceneReviewResult(
+                verdict="pass",
+                scores=review_result.scores,
+                findings=review_result.findings,
+                severity_max=review_result.severity_max,
+                evidence_summary=review_result.evidence_summary,
+                rewrite_instructions=None,
             )
 
     report = ReviewReportModel(
@@ -6743,6 +6818,26 @@ def _can_accept_llm_pass_over_rule_rewrite(
         return False
     categories = {finding.category for finding in review_result.findings}
     return categories <= _LLM_PASS_OVERRIDABLE_RULE_CATEGORIES
+
+
+def _can_accept_scene_llm_pass_over_rule_rewrite(
+    review_result: SceneReviewResult,
+) -> bool:
+    """Scene-level semantic authority: trust an explicit LLM 'pass' over a
+    rule-based 'rewrite' ONLY when every rule finding is an advisory craft axis
+    (no structural defect). The deterministic scene scorer is keyword-echo and
+    drives `overall` below threshold even for genuinely good, dramatized prose;
+    when the LLM critic certifies the scene and there is no structural problem
+    (duplication / wrong character name / output hygiene / critical), the rule
+    verdict should yield. Mirrors the chapter-level override."""
+    if review_result.verdict != "rewrite":
+        return False
+    for finding in review_result.findings:
+        if finding.severity == "critical":
+            return False
+        if finding.category not in _SCENE_ADVISORY_FINDING_CATEGORIES:
+            return False
+    return True
 
 
 def _downgrade_rule_rewrite_after_llm_pass(

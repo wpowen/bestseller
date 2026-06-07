@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from bestseller.services.hook_signals import SHARED_HOOK_TERMS as _SHARED_HOOK_TERMS
 from bestseller.services.output_validator import EntityDensityCheck
 
 
@@ -247,6 +248,11 @@ _HOOK_TERMS = (
     "but",
     "then",
     "next",
+    # Broadened, genre-neutral hook vocabulary (appointment/time-bomb, threat/
+    # pursuit, open identity question) — fixes false-negative weak_hook on
+    # endings that set up a meeting, a threat, or an unanswered question rather
+    # than using one of the narrow legacy suspense-prop words. See hook_signals.
+    *_SHARED_HOOK_TERMS,
 )
 
 _PAYOFF_TERMS = (

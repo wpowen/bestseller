@@ -510,7 +510,20 @@ def repair_scene_card_state_defaults(
     """
     entry_empty, _ = _state_is_empty_or_generic(entry_state)
     exit_empty, _ = _state_is_empty_or_generic(exit_state)
-    if not entry_empty and not exit_empty:
+    # no_state_delta: both halves are non-empty but textually identical, so the
+    # empty-fill path below can't help. Rebuild BOTH halves from the anchor —
+    # the two deterministic framings (entry=unresolved pressure /
+    # exit=forced adjustment) guarantee a real delta. Without this branch
+    # ``no_state_delta`` was structurally un-repairable and hard-blocked the
+    # whole book even though the gate listed it as auto-repairable
+    # (framework self-harm; see 2026-06 richness-gate fix).
+    identical_nonempty = (
+        not entry_empty
+        and not exit_empty
+        and _normalize_for_match(_coerce_to_string(entry_state))
+        == _normalize_for_match(_coerce_to_string(exit_state))
+    )
+    if not entry_empty and not exit_empty and not identical_nonempty:
         return dict(entry_state or {}), dict(exit_state or {}), False
 
     purpose = purpose or {}
@@ -527,7 +540,7 @@ def repair_scene_card_state_defaults(
 
     repaired_entry = dict(entry_state or {})
     repaired_exit = dict(exit_state or {})
-    if entry_empty:
+    if entry_empty or identical_nonempty:
         repaired_entry = _build_repaired_state(
             names,
             anchor=anchor,
@@ -535,7 +548,7 @@ def repair_scene_card_state_defaults(
             phase="entry",
             language=language,
         )
-    if exit_empty:
+    if exit_empty or identical_nonempty:
         repaired_exit = _build_repaired_state(
             names,
             anchor=anchor,

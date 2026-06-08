@@ -1,0 +1,292 @@
+[
+  {
+    "id": "s3_choice_e0",
+    "scene": "s3_choice",
+    "arm": "embodied",
+    "MiniMax": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 10.0,
+      "immersion": 9.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 46.0,
+      "one_line": "雨水、电筒光、烧焦的窗帘和小女孩扒着窗沿的手指——每一个细节都像钉子一样扎进视网膜，而藏在借运还债设定下的两难抉择，让这个电工的沉默比任何台词都有重量。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "final": 44.0,
+      "one_line": "细腻的都市异能叙事，充满生活质感和人性挣扎，画面与情绪俱佳。"
+    }
+  },
+  {
+    "id": "s1_loan_e1",
+    "scene": "s1_loan",
+    "arm": "embodied",
+    "MiniMax": {
+      "human_feel": 8.5,
+      "character": 9.0,
+      "visual": 8.5,
+      "immersion": 8.5,
+      "prose": 8.5,
+      "ai_tone": 1.0,
+      "final": 42.0,
+      "one_line": "笔力扎实，掌心那道黑印的痒与凉作为叙事暗线贯穿始终，小到四寸的脚步、大到「债与人情」的内心法则，人物在欲动未动之间立住了。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 9.0,
+      "ai_tone": 0.5,
+      "final": 44.5,
+      "one_line": "扎实的都市异能开篇，人物困境与细节生动，心理刻画精准，几乎没有AI痕迹。"
+    }
+  },
+  {
+    "id": "s3_choice_b1",
+    "scene": "s3_choice",
+    "arm": "baseline",
+    "MiniMax": {
+      "human_feel": 8.5,
+      "character": 8.5,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.5,
+      "ai_tone": 1.0,
+      "final": 42.5,
+      "one_line": "用\"够他死两回的\"这种粗粝又精准的自嘲收住全文，雨水和焦糊味交替灌进感官，救赎与负债在天平上缓缓倾斜。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.5,
+      "immersion": 9.0,
+      "prose": 9.0,
+      "ai_tone": 0.5,
+      "final": 45.0,
+      "one_line": "细节扎实、血肉饱满的都市异能片段，人物抉择与感官描写极有张力。"
+    }
+  },
+  {
+    "id": "s1_loan_b0",
+    "scene": "s1_loan",
+    "arm": "baseline",
+    "MiniMax": {
+      "human_feel": 8.2,
+      "character": 8.5,
+      "visual": 9.2,
+      "immersion": 8.8,
+      "prose": 8.3,
+      "ai_tone": 2.0,
+      "final": 41.0,
+      "one_line": "医院走廊里借运还债的困局，画面精确如摄影机跟拍，母亲的咳嗽声与掌心的黑印构成双重绞索，绝望感从指甲缝里的锈粉和催缴单边角硌大腿这类极细的触感里渗出来。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 45.0,
+      "one_line": "细腻的都市异能开篇，现实压力与超能力交织，人物挣扎真实可信。"
+    }
+  },
+  {
+    "id": "s2_confront_b0",
+    "scene": "s2_confront",
+    "arm": "baseline",
+    "MiniMax": {
+      "human_feel": 6.5,
+      "character": 7.0,
+      "visual": 8.0,
+      "immersion": 7.5,
+      "prose": 7.5,
+      "ai_tone": 6.5,
+      "final": 30.0,
+      "one_line": "设定有新意，画面有质感，但多处氛围渲染过于刻意，'像穿了件缩水的毛衣'等比喻失准，结尾留悬念的技法明显，整体有雕琢痕迹。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 45.0,
+      "one_line": "都市异能开篇张力十足，细节丰沛，角色反应具体可信，因果设定巧妙融入日常对峙。"
+    }
+  },
+  {
+    "id": "s1_loan_e0",
+    "scene": "s1_loan",
+    "arm": "embodied",
+    "MiniMax": {
+      "human_feel": 9.0,
+      "character": 8.5,
+      "visual": 8.5,
+      "immersion": 8.5,
+      "prose": 8.0,
+      "ai_tone": 1.0,
+      "final": 41.5,
+      "one_line": "借运气的都市异能设定扎实落地，主角在道德边缘的小心试探写得极有分寸，'借你点光'那句话咽回去的动作是整段的灵魂。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.5,
+      "character": 9.5,
+      "visual": 10.0,
+      "immersion": 9.5,
+      "prose": 9.5,
+      "ai_tone": 0.5,
+      "final": 47.5,
+      "one_line": "凝练而富有肌理的都市异能开篇，日常细节与超现实能力交融自然，代入感极强。"
+    }
+  },
+  {
+    "id": "s3_choice_b0",
+    "scene": "s3_choice",
+    "arm": "baseline",
+    "MiniMax": {
+      "human_feel": 8.5,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.5,
+      "prose": 9.0,
+      "ai_tone": 1.0,
+      "final": 44.0,
+      "one_line": "硬核救援戏，运气借贷的设定在生死瞬间被压出来，肉体代价写得冷到骨子里，结尾\"三十一天的债务\"像一把刀轻轻落下，精准刺痛。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.5,
+      "character": 9.5,
+      "visual": 9.5,
+      "immersion": 9.5,
+      "prose": 9.5,
+      "ai_tone": 0.5,
+      "final": 47.0,
+      "one_line": "一段极具画面感和代入感的都市异能叙事，细节真实，情感到位，开局张力十足。"
+    }
+  },
+  {
+    "id": "s2_confront_b1",
+    "scene": "s2_confront",
+    "arm": "baseline",
+    "MiniMax": {
+      "human_feel": 0.0,
+      "character": 0.0,
+      "visual": 0.0,
+      "immersion": 0.0,
+      "prose": 0.0,
+      "ai_tone": 0.0,
+      "final": 0.0,
+      "one_line": "正文为空，无内容可评。"
+    },
+    "DeepSeek": {
+      "human_feel": 0.0,
+      "character": 0.0,
+      "visual": 0.0,
+      "immersion": 0.0,
+      "prose": 0.0,
+      "ai_tone": 0.0,
+      "final": 0.0,
+      "one_line": "未提供正文"
+    }
+  },
+  {
+    "id": "s1_loan_b1",
+    "scene": "s1_loan",
+    "arm": "baseline",
+    "MiniMax": {
+      "human_feel": 8.5,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 8.5,
+      "prose": 8.5,
+      "ai_tone": 1.5,
+      "final": 42.0,
+      "one_line": "工业风异能设定下写出了极度克制的道德困境，全程靠身体感受和内心运算推进，无一处说教，金句密度高，结尾'七个，白得像地砖缝里的一粒盐'与'还撑得住'形成精准的情绪落点。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 44.0,
+      "one_line": "细腻扎实的都市底层叙事，心理与环境的肌理都写得活。"
+    }
+  },
+  {
+    "id": "s2_confront_e1",
+    "scene": "s2_confront",
+    "arm": "embodied",
+    "MiniMax": {
+      "human_feel": 8.5,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 8.5,
+      "prose": 9.0,
+      "ai_tone": 1.5,
+      "final": 42.5,
+      "one_line": "异能设定与市井细节咬合紧密，递包子那场戏张力精准，数字跳动和凉意上爬收尾干净利落，毫无AI腔。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 8.5,
+      "immersion": 9.0,
+      "prose": 8.5,
+      "ai_tone": 0.5,
+      "final": 43.5,
+      "one_line": "细节扎实，超自然与现实交融，人物与气氛俱佳。"
+    }
+  },
+  {
+    "id": "s2_confront_e0",
+    "scene": "s2_confront",
+    "arm": "embodied",
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.5,
+      "immersion": 9.5,
+      "prose": 9.0,
+      "ai_tone": 1.0,
+      "final": 45.0,
+      "one_line": "都市异能开篇扎实，细节丰满，悬念与代入感俱佳。"
+    }
+  },
+  {
+    "id": "s3_choice_e1",
+    "scene": "s3_choice",
+    "arm": "embodied",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 8.5,
+      "prose": 8.0,
+      "ai_tone": 2.0,
+      "final": 40.5,
+      "one_line": "一个悬念十足的城市异能开篇，主角面临生死抉择——手掌上的神秘数字系统成为叙事驱动力，让读者既想理解规则又想见证选择。"
+    },
+    "DeepSeek": {
+      "human_feel": 9.5,
+      "character": 9.5,
+      "visual": 10.0,
+      "immersion": 10.0,
+      "prose": 9.5,
+      "ai_tone": 0.0,
+      "final": 48.5,
+      "one_line": "细腻而有力量的都市异能开篇，画面与心理俱佳。"
+    }
+  }
+]

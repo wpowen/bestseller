@@ -1,0 +1,270 @@
+[
+  {
+    "id": "choice_A_abstract_direct_1",
+    "arm": "A_abstract_direct",
+    "MiniMax": {
+      "human_feel": 7.0,
+      "character": 7.0,
+      "visual": 8.0,
+      "immersion": 7.0,
+      "prose": 7.0,
+      "ai_tone": 2.0,
+      "abstract_leak": 4.0,
+      "final": 34.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 4.0,
+      "final": 43.0
+    }
+  },
+  {
+    "id": "loan_A_abstract_direct_1",
+    "arm": "A_abstract_direct",
+    "MiniMax": {
+      "human_feel": 6.0,
+      "character": 5.0,
+      "visual": 7.0,
+      "immersion": 5.0,
+      "prose": 6.0,
+      "ai_tone": 3.0,
+      "abstract_leak": 6.0,
+      "final": 26.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 3.0,
+      "final": 41.0
+    }
+  },
+  {
+    "id": "choice_B_abstract_embodied_1",
+    "arm": "B_abstract_embodied",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 1.0,
+      "final": 43.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 0.0,
+      "final": 44.0
+    }
+  },
+  {
+    "id": "loan_A_abstract_direct_0",
+    "arm": "A_abstract_direct",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 9.0,
+      "visual": 8.0,
+      "immersion": 9.0,
+      "prose": 7.0,
+      "ai_tone": 3.0,
+      "abstract_leak": 4.0,
+      "final": 38.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "visual": 7.0,
+      "immersion": 7.0,
+      "prose": 7.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 3.0,
+      "final": 37.0
+    }
+  },
+  {
+    "id": "loan_B_abstract_embodied_1",
+    "arm": "B_abstract_embodied",
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 0.0,
+      "final": 45.0
+    }
+  },
+  {
+    "id": "loan_B_abstract_embodied_0",
+    "arm": "B_abstract_embodied",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 0.0,
+      "final": 42.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 0.0,
+      "final": 44.0
+    }
+  },
+  {
+    "id": "choice_C_concrete_direct_0",
+    "arm": "C_concrete_direct",
+    "MiniMax": {
+      "human_feel": 7.0,
+      "character": 7.0,
+      "visual": 8.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 1.0,
+      "abstract_leak": 2.0,
+      "final": 37.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 1.0,
+      "abstract_leak": 0.0,
+      "final": 41.0
+    }
+  },
+  {
+    "id": "choice_A_abstract_direct_0",
+    "arm": "A_abstract_direct",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 7.0,
+      "ai_tone": 4.0,
+      "abstract_leak": 7.0,
+      "final": 36.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 4.0,
+      "final": 43.0
+    }
+  },
+  {
+    "id": "loan_C_concrete_direct_0",
+    "arm": "C_concrete_direct",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "visual": 7.0,
+      "immersion": 8.0,
+      "prose": 7.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 0.0,
+      "final": 38.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 0.0,
+      "final": 43.0
+    }
+  },
+  {
+    "id": "choice_B_abstract_embodied_0",
+    "arm": "B_abstract_embodied",
+    "DeepSeek": {
+      "human_feel": 10.0,
+      "character": 10.0,
+      "visual": 10.0,
+      "immersion": 10.0,
+      "prose": 10.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 5.0,
+      "final": 50.0
+    }
+  },
+  {
+    "id": "loan_C_concrete_direct_1",
+    "arm": "C_concrete_direct",
+    "MiniMax": {
+      "human_feel": 7.0,
+      "character": 7.0,
+      "visual": 8.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 1.0,
+      "abstract_leak": 2.0,
+      "final": 37.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 1.0,
+      "final": 41.0
+    }
+  },
+  {
+    "id": "choice_C_concrete_direct_1",
+    "arm": "C_concrete_direct",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 9.0,
+      "visual": 8.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "abstract_leak": 1.0,
+      "final": 41.0
+    },
+    "DeepSeek": {
+      "human_feel": 7.0,
+      "character": 8.0,
+      "visual": 9.0,
+      "immersion": 7.0,
+      "prose": 7.0,
+      "ai_tone": 1.0,
+      "abstract_leak": 2.0,
+      "final": 37.0
+    }
+  }
+]

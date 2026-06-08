@@ -1,0 +1,280 @@
+[
+  {
+    "id": "deal_A_baseline_1",
+    "arm": "A_baseline",
+    "MiniMax": {
+      "human_feel": 6.0,
+      "character": 5.5,
+      "agency": 6.5,
+      "visual": 8.0,
+      "immersion": 7.0,
+      "prose": 6.5,
+      "ai_tone": 0.0,
+      "final": 39.5
+    },
+    "DeepSeek": {
+      "human_feel": 7.0,
+      "character": 7.0,
+      "agency": 6.0,
+      "visual": 8.0,
+      "immersion": 7.0,
+      "prose": 7.0,
+      "ai_tone": 1.0,
+      "final": 41.0
+    }
+  },
+  {
+    "id": "confront_A_baseline_1",
+    "arm": "A_baseline",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 7.0,
+      "visual": 8.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 2.0,
+      "final": 45.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 7.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "final": 48.0
+    }
+  },
+  {
+    "id": "deal_B_embodied_1",
+    "arm": "B_embodied",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 8.0,
+      "visual": 8.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 1.0,
+      "final": 47.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 9.0,
+      "agency": 9.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 54.0
+    }
+  },
+  {
+    "id": "confront_A_baseline_0",
+    "arm": "A_baseline",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 8.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 9.0,
+      "ai_tone": 1.0,
+      "final": 49.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 7.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "final": 48.0
+    }
+  },
+  {
+    "id": "confront_B_embodied_1",
+    "arm": "B_embodied",
+    "MiniMax": {
+      "human_feel": 7.0,
+      "character": 7.0,
+      "agency": 6.0,
+      "visual": 8.0,
+      "immersion": 7.0,
+      "prose": 8.0,
+      "ai_tone": 3.0,
+      "final": 40.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 7.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "final": 49.0
+    }
+  },
+  {
+    "id": "confront_B_embodied_0",
+    "arm": "B_embodied",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 7.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 8.0,
+      "ai_tone": 1.0,
+      "final": 48.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 8.0,
+      "agency": 7.0,
+      "visual": 9.0,
+      "immersion": 9.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 51.0
+    }
+  },
+  {
+    "id": "deal_C_group_sim_0",
+    "arm": "C_group_sim",
+    "MiniMax": {
+      "human_feel": 7.0,
+      "character": 7.0,
+      "agency": 8.0,
+      "visual": 8.0,
+      "immersion": 7.0,
+      "prose": 8.0,
+      "ai_tone": 3.0,
+      "final": 42.0
+    },
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 8.0,
+      "agency": 9.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "final": 51.0
+    }
+  },
+  {
+    "id": "deal_A_baseline_0",
+    "arm": "A_baseline",
+    "DeepSeek": {
+      "human_feel": 9.0,
+      "character": 8.0,
+      "agency": 9.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 52.0
+    }
+  },
+  {
+    "id": "confront_C_group_sim_0",
+    "arm": "C_group_sim",
+    "MiniMax": {
+      "human_feel": 7.0,
+      "character": 7.0,
+      "agency": 6.0,
+      "visual": 8.0,
+      "immersion": 7.0,
+      "prose": 7.0,
+      "ai_tone": 1.0,
+      "final": 41.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 9.0,
+      "agency": 7.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "final": 49.0
+    }
+  },
+  {
+    "id": "deal_B_embodied_0",
+    "arm": "B_embodied",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 8.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 50.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 9.0,
+      "agency": 9.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 9.0,
+      "ai_tone": 0.0,
+      "final": 52.0
+    }
+  },
+  {
+    "id": "confront_C_group_sim_1",
+    "arm": "C_group_sim",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 7.0,
+      "agency": 7.0,
+      "visual": 8.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "final": 46.0
+    },
+    "DeepSeek": {
+      "human_feel": 7.0,
+      "character": 7.0,
+      "agency": 5.0,
+      "visual": 8.0,
+      "immersion": 6.0,
+      "prose": 6.0,
+      "ai_tone": 2.0,
+      "final": 37.0
+    }
+  },
+  {
+    "id": "deal_C_group_sim_1",
+    "arm": "C_group_sim",
+    "MiniMax": {
+      "human_feel": 8.0,
+      "character": 8.0,
+      "agency": 9.0,
+      "visual": 8.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 0.0,
+      "final": 49.0
+    },
+    "DeepSeek": {
+      "human_feel": 8.0,
+      "character": 7.0,
+      "agency": 8.0,
+      "visual": 9.0,
+      "immersion": 8.0,
+      "prose": 8.0,
+      "ai_tone": 1.0,
+      "final": 47.0
+    }
+  }
+]

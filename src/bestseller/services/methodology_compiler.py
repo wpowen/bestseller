@@ -26,6 +26,10 @@ from bestseller.services.quality_levers._loader import load_yaml
 from bestseller.services.quality_levers.chapter_position_profiles import (
     render_chapter_position_block,
 )
+from bestseller.services.quality_levers.character_embodiment import (
+    extract_embodiment,
+    render_embodiment_block,
+)
 from bestseller.services.quality_levers.emotion_choreography import (
     render_emotion_choreography_block,
 )
@@ -118,6 +122,9 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         "chapter_position_current",
     ),
     MethodologyStage.PROSE_SCENE: (
+        # Proven #1 prose lever (单人入戏): raw per-scene first-person interiority.
+        # Highest priority so it is never starved by the token budget; it is small.
+        "character_embodiment_current",
         "writing_methodology_scene",
         "prompt_pack_scene_writer",
         "book_methodology_current",
@@ -340,6 +347,19 @@ def _sections_for_stage(
             source="prose_style_anchors.yaml",
         )
     if stage is MethodologyStage.PROSE_SCENE:
+        # Character embodiment (单人入戏) — the proven #1 prose lever (3 A/B exps,
+        # two judge families): raw first-person interiority for THIS scene, generated
+        # at draft time and threaded through story_bible. Rendered VERBATIM (the
+        # group-sim arm proved any summary hop re-abstracts and erases the gain).
+        # No-ops when the scene context has no embodiment (graceful degrade).
+        embodiment_text = extract_embodiment(story_bible)
+        if embodiment_text:
+            _append_block(
+                sections,
+                key="character_embodiment_current",
+                text=_safe(render_embodiment_block, interiority=embodiment_text),
+                source="character_embodiment.py",
+            )
         # Framing FIRST (anti-regression): the writer-levers A/B showed a budget
         # writer reads the stacked 留白/克制 guards as "write less" and cuts ~30%
         # length → lower文采. This总则 reframes: 文采=更具体不更短; pick 1-2 techniques;

@@ -335,6 +335,9 @@ pipeline:
   enable_chapter_litstyle_judge: false
   # Design + persist a book's imagery system once per book (LitStyle imagery lever).
   enable_imagery_system_design: true
+  # Character embodiment (单人入戏): raw per-scene first-person interiority → writer.
+  # Proven #1 prose lever (3 A/B exps). Soft + zh-only; one cheap LLM call per scene.
+  enable_character_embodiment: true
   enable_chapter_window_llm_judge: true
   chapter_window_llm_judge_block_on_failure: false
   chapter_window_llm_judge_size: 5

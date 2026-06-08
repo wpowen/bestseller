@@ -292,6 +292,11 @@ class PipelineSettings(BaseModel):
     # per book at first scene draft, so the writer gets a soft per-chapter imagery
     # recall block. Idempotent + soft (failure = no-op). One cheap LLM call per book.
     enable_imagery_system_design: bool = True
+    # Character embodiment (单人入戏) — proven #1 prose lever (3 A/B exps, 2 judge
+    # families). Before drafting each scene, the model inhabits the protagonist and
+    # emits RAW first-person interiority, injected verbatim into the writer prompt.
+    # Soft + zh-only; one cheap LLM call per scene; failure = no-op.
+    enable_character_embodiment: bool = True
     enable_chapter_window_llm_judge: bool = True
     chapter_window_llm_judge_block_on_failure: bool = True
     chapter_window_llm_judge_size: int = 5

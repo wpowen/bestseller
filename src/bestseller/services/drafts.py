@@ -9520,6 +9520,41 @@ async def generate_scene_draft(
                 "Premium genre engine direct-draft injection failed (non-fatal)",
                 exc_info=True,
             )
+        # Character embodiment (单人入戏) — proven #1 prose lever. Before the writer
+        # prompt is built, have the model inhabit the protagonist and emit RAW
+        # first-person interiority for THIS scene, threaded into the writer prompt
+        # via story_bible (rendered verbatim by methodology_compiler PROSE_SCENE).
+        # Soft + zh-only + gated (enable_character_embodiment); any failure is a
+        # no-op so the writer proceeds exactly as before. NOT summarized.
+        if settings is not None:
+            try:
+                from bestseller.services.character_embodiment import (
+                    generate_scene_embodiment,
+                )
+
+                _emb_story_bible = (
+                    context_packet.story_bible
+                    if isinstance(context_packet.story_bible, dict)
+                    else {}
+                )
+                _interiority = await generate_scene_embodiment(
+                    session,
+                    settings,
+                    project=project,
+                    chapter=chapter,
+                    scene=scene,
+                    story_bible=_emb_story_bible,
+                )
+                if _interiority:
+                    context_packet.story_bible = {
+                        **_emb_story_bible,
+                        "character_embodiment": _interiority,
+                    }
+            except Exception:
+                logger.debug(
+                    "character embodiment direct-draft injection failed (non-fatal)",
+                    exc_info=True,
+                )
     fallback_content = render_scene_draft_markdown(
         project,
         chapter,

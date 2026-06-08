@@ -808,9 +808,14 @@ def test_empty_length_response_retries_with_lower_output_cap(
     assert seen_caps == [12288, 8232]
 
 
-def test_empty_length_response_lowers_prose_output_cap(
+def test_empty_length_response_keeps_prose_output_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Prose generation that returns empty with finish_reason='length' was
+    # TRUNCATED — it needs at least as many tokens next time, not fewer. Prose
+    # writer templates must KEEP their cap on the empty-length retry (the
+    # keep-cap set was previously empty, so every prose writer wrongly shrank,
+    # churning without ever emitting a full scene).
     seen_caps: list[int | None] = []
 
     async def fake_call(request, role_settings):  # type: ignore[no-untyped-def]
@@ -848,7 +853,8 @@ def test_empty_length_response_lowers_prose_output_cap(
 
     asyncio.run(_run())
 
-    assert seen_caps == [12288, 8232]
+    # chapter_first_writer is a prose template -> keep cap, do NOT shrink.
+    assert seen_caps == [12288, 12288]
 
 
 def test_complete_text_fails_over_to_rate_limit_fallback_model(

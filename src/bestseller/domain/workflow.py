@@ -289,6 +289,32 @@ class SceneOutlineInput(BaseModel):
         if not isinstance(data, dict):
             return data
 
+        # ── Coerce list-typed fields that LLMs frequently emit as a single
+        # string (an arrow/comma-separated sequence, or a placeholder like '无').
+        # Without this, deepseek/MiniMax outputs such as
+        # action_sequence='扫视→锁定→确认' or relationship_debts='无' hard-fail
+        # Pydantic list validation and force the ENTIRE outline batch to retry,
+        # wasting planning time (observed on deepseek-v4-flash, 2026-06).
+        for _list_field in (
+            "participants",
+            "key_dialogue_beats",
+            "forbidden_actions",
+            "action_sequence",
+            "relationship_debts",
+        ):
+            if _list_field not in data:
+                continue
+            _val = data[_list_field]
+            if _val is None:
+                data[_list_field] = []
+            elif isinstance(_val, str):
+                _s = _val.strip()
+                if not _s or _s in {"无", "暂无", "没有", "None", "null", "N/A", "n/a", "-", "—", "/"}:
+                    data[_list_field] = []
+                else:
+                    _parts = re.split(r"[→、,，;；/\n|]+", _s)
+                    data[_list_field] = [p.strip() for p in _parts if p.strip()]
+
         # ── scene_number: MiniMax uses float like 1.1, 1.2, 2.1 (chapter.scene)
         # Extract the fractional part as the scene-within-chapter ordinal.
         sn = data.get("scene_number")

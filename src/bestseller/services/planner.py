@@ -1604,22 +1604,49 @@ def _repair_generated_volume_outline_contract_inputs(
     )
     repaired = 0
 
+    def _mc(scene_obj: Any, *keys: str) -> str | None:
+        """Pull the first non-empty value from the scene's methodology_contract.
+
+        The planner LLM frequently nests the concrete scene data (cut_point,
+        conflict_stakes, signature_image, action_sequence, …) inside
+        ``methodology_contract`` rather than on the top-level scene fields the
+        backfill historically read. Reading both salvages real, specific anchors
+        instead of falling through to the generic placeholder that starved the
+        writer of a concrete scene contract.
+        """
+        contract = getattr(scene_obj, "methodology_contract", None)
+        if not isinstance(contract, Mapping):
+            return None
+        for key in keys:
+            value = contract.get(key)
+            text = _non_empty_string(value, "") if not isinstance(value, (list, tuple)) else " ".join(
+                str(v) for v in value if v
+            )
+            if text and text.strip():
+                return text.strip()
+        return None
+
     for chapter in getattr(batch, "chapters", []) or []:
         previous_exit_summary: str | None = None
         for scene in getattr(chapter, "scenes", []) or []:
             # Backfill scene entry/exit state (gate requires non-empty dicts).
+            # Prefer concrete anchors — top-level fields first, then the rich
+            # methodology_contract — and only fall back to the generic
+            # placeholder when the scene truly carries nothing specific.
             if not getattr(scene, "entry_state", None):
                 scene.entry_state = {
                     "summary": _first_non_empty_text(
                         previous_exit_summary,
                         getattr(scene, "protagonist_state", None),
                         getattr(scene, "concrete_goal", None),
+                        _mc(scene, "conflict_stakes", "information_held_back", "spotlight_character"),
                         default="承接上一拍未决的压力与选择进入本拍。",
                     )
                 }
                 repaired += 1
             exit_summary = _first_non_empty_text(
                 getattr(scene, "cut_point", None),
+                _mc(scene, "cut_point", "reveal_mode", "signature_image", "action_sequence"),
                 getattr(scene, "concrete_goal", None),
                 getattr(scene, "protagonist_state", None),
                 default="本拍结束时主角状态发生可见变化，并挂出新的压力或选择。",
@@ -1627,6 +1654,43 @@ def _repair_generated_volume_outline_contract_inputs(
             if not getattr(scene, "exit_state", None):
                 scene.exit_state = {"summary": exit_summary}
                 repaired += 1
+            # Derive a tail hook from the scene's own cut_point / hook_type when
+            # the planner left hook_requirement blank, so the writer gets a
+            # concrete ending target instead of nothing.
+            if not getattr(scene, "hook_requirement", None):
+                _hook = _first_non_empty_text(
+                    getattr(scene, "cut_point", None),
+                    _mc(scene, "cut_point", "hook_type"),
+                    default="",
+                )
+                if _hook:
+                    scene.hook_requirement = _hook
+                    repaired += 1
+            # Derive key_dialogue_beats from the scene's action_sequence when the
+            # planner left the beat list empty — concrete action beats give the
+            # writer scene structure instead of nothing to render.
+            if not getattr(scene, "key_dialogue_beats", None):
+                _seq = getattr(scene, "action_sequence", None)
+                _beats: list[str] = []
+                if isinstance(_seq, (list, tuple)):
+                    _beats = [str(x).strip() for x in _seq if str(x).strip()][:4]
+                if not _beats:
+                    _mc_seq = _mc(scene, "action_sequence")
+                    if _mc_seq:
+                        _beats = [_mc_seq]
+                if _beats:
+                    scene.key_dialogue_beats = _beats
+                    repaired += 1
+            # Derive a sensory anchor from the scene's signature_image.
+            if not getattr(scene, "sensory_anchors", None):
+                _sig = _first_non_empty_text(
+                    getattr(scene, "signature_image", None),
+                    _mc(scene, "signature_image"),
+                    default="",
+                )
+                if _sig:
+                    scene.sensory_anchors = {"signature_image": _sig}
+                    repaired += 1
             previous_exit_summary = (
                 (getattr(scene, "exit_state", None) or {}).get("summary") or exit_summary
             )
@@ -12395,6 +12459,13 @@ def _outline_prompts(
             "— each is a tension gap pulling readers to the next chapter.\n"
             "Scenes should also include concrete_goal, protagonist_state, information_introduced, "
             "information_held_back, object_signal.\n"
+            "Each scene MUST ALSO carry concrete, scene-specific (non-generic, non-duplicated) card fields "
+            "— these become the writer's contract, so generic placeholders here produce flat prose:\n"
+            "- entry_state: {\"summary\": ...} — the protagonist's concrete situation / knowledge / emotional baseline ENTERING the scene.\n"
+            "- exit_state: {\"summary\": ...} — the visible state change by the scene's END (MUST differ from entry_state to show progression).\n"
+            "- key_dialogue_beats: 2-4 concrete dialogue/action beats for THIS scene (specific intent, not a summary).\n"
+            "- sensory_anchors: concrete sensory anchors grounded in image / sound / touch.\n"
+            "- hook_requirement: the scene's concrete tail hook (a question / threat / appointment / unfinished action; required especially for a chapter's LAST scene).\n"
             "These fields are evaluated by the commercial quality judge: the judge checks whether "
             "the drafted prose delivers on the capability demonstration and information pacing promised in the outline."
         )
@@ -12454,6 +12525,12 @@ def _outline_prompts(
             "- chapter_information_introduced: 读者在本章结束后知道的具体事实，每条可以写进侦探白板的线索。\n"
             "- chapter_information_held_back: 作者知道但本章故意不告诉读者的事实，每条是下一章节的悬念来源。\n"
             "每个场景也应包含 concrete_goal、protagonist_state、information_introduced、information_held_back、object_signal。\n"
+            "每个场景还必须给出具体的场景卡字段（这些字段就是写手的写作契约，写套话/与其它场景雷同会直接导致正文变流水账）：\n"
+            "- entry_state: {\"summary\": ...}：进入本场景时主角的具体处境 / 掌握的信息 / 情绪底色。\n"
+            "- exit_state: {\"summary\": ...}：本场景结束时发生的可见状态变化（必须与 entry_state 不同，体现推进）。\n"
+            "- key_dialogue_beats: 2-4 条本场景的关键对白或动作拍子（具体台词意图，不要概述）。\n"
+            "- sensory_anchors: 本场景的具体感官锚点（落到画面 / 声音 / 触感）。\n"
+            "- hook_requirement: 本场景结尾的具体钩子（问题 / 威胁 / 约定 / 未完成动作之一；章末场景尤其必须有）。\n"
             "这些字段是商业质量评测的核心依据：裁判模型会检查正文是否兑现了大纲里承诺的能力实证和信息节奏。"
         )
     )

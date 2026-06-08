@@ -2493,6 +2493,11 @@ async def materialize_chapter_outline_batch(
                             key_dialogue_beats=scene_outline.key_dialogue_beats,
                             sensory_anchors=scene_outline.sensory_anchors,
                             forbidden_actions=scene_outline.forbidden_actions,
+                            # Bug fix: the create path dropped hook_requirement
+                            # (the re-sync path at _sync_existing_scene_from_outline
+                            # always set it). A new scene card silently lost its
+                            # tail-hook contract — restore parity.
+                            hook_requirement=scene_outline.hook_requirement,
                             metadata={
                                 key: value
                                 for key, value in {

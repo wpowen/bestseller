@@ -481,14 +481,40 @@ def _is_empty_length_response_error(exc: BaseException) -> bool:
     )
 
 
-_PROSE_LENGTH_RETRY_KEEP_CAP_TEMPLATES = frozenset()
+_PROSE_LENGTH_RETRY_KEEP_CAP_TEMPLATES = frozenset(
+    {
+        "scene_writer",
+        "scene_writer_regen",
+        "chapter_first_writer",
+        "scene_rewrite",
+        "chapter_rewrite",
+        "chapter_rewrite_repair",
+        "chapter_rewrite_quality_retrofit_repair",
+    }
+)
+# Prefixes catch A/B / variant suffixes (e.g. scene_writer_lean, scene_writer_c0,
+# chapter_rewrite_v2). Prose generation that returns empty with
+# finish_reason='length' was TRUNCATED — lowering max_tokens makes the next
+# attempt truncate sooner, so prose templates must keep (not shrink) their cap.
+# The set was previously empty, so EVERY prose writer wrongly lowered its cap on
+# an empty-length retry and could churn without ever emitting a full scene.
+_PROSE_LENGTH_RETRY_KEEP_CAP_PREFIXES = (
+    "scene_writer",
+    "chapter_first_writer",
+    "scene_rewrite",
+    "chapter_rewrite",
+)
 _PROMPT_TEMPLATE_RE = re.compile(r"^[a-z_]+(\.[a-z_]+)*(_repair|_v\d+)?$")
 _PROMPT_TEMPLATE_ALLOWLIST_PREFIXES = ("planner_", "listing.regenerate.")
 
 
 def _should_lower_max_tokens_after_empty_length(request: LLMCompletionRequest) -> bool:
     template = str(request.prompt_template or "").strip()
-    return template not in _PROSE_LENGTH_RETRY_KEEP_CAP_TEMPLATES
+    if template in _PROSE_LENGTH_RETRY_KEEP_CAP_TEMPLATES:
+        return False
+    if template.startswith(_PROSE_LENGTH_RETRY_KEEP_CAP_PREFIXES):
+        return False
+    return True
 
 
 def _validate_prompt_template_name(request: LLMCompletionRequest) -> None:

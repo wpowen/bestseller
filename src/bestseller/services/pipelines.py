@@ -2232,7 +2232,13 @@ async def _enforce_qimao_opening_gate_after_chapter(
             },
         )
         await session.flush()
-        raise ValueError(error_message)
+        # Soft by default: the opening is flagged for human review and the
+        # chapter marked needs_human_review, but the autonomous run continues to
+        # the next chapter instead of dying. Only the legacy worker-retry mode
+        # (qimao_opening_gate_block_on_failure=True) hard-aborts here.
+        if getattr(settings.pipeline, "qimao_opening_gate_block_on_failure", False):
+            raise ValueError(error_message)
+        return
 
     rejection_reasons = (
         metadata.get("editor_rejection_reasons")
@@ -2284,7 +2290,12 @@ async def _enforce_qimao_opening_gate_after_chapter(
             "rewrite_strategy": strategy,
         },
     )
-    raise ValueError(_qimao_opening_gate_error_message(report_payload))
+    # Soft by default: the rewrite task is queued above for the worker/human to
+    # pick up, but the autonomous run continues instead of dying on a weak hook.
+    # The hard raise only suits the worker self-heal retry loop and is opt-in via
+    # qimao_opening_gate_block_on_failure (framework self-harm fix).
+    if getattr(settings.pipeline, "qimao_opening_gate_block_on_failure", False):
+        raise ValueError(_qimao_opening_gate_error_message(report_payload))
 
 
 async def _enforce_whole_book_quality_gate_after_chapter(
@@ -2296,6 +2307,7 @@ async def _enforce_whole_book_quality_gate_after_chapter(
     chapter_texts: dict[int, str],
     workflow_run: WorkflowRunModel,
     progress: ProgressCallback | None,
+    settings: AppSettings | None = None,
 ) -> None:
     if not _project_uses_whole_book_quality_gate(project):
         return
@@ -2411,7 +2423,15 @@ async def _enforce_whole_book_quality_gate_after_chapter(
     )
     if warn_only:
         return
-    raise ValueError(_whole_book_quality_gate_error_message(report_payload))
+    # Soft by default (autonomous closure): the rewrite task is queued above; flag
+    # the chapter and continue instead of killing the whole book on a weak
+    # engagement reading. The bare raise only suits the worker self-heal retry
+    # loop and is opt-in via whole_book_quality_gate_block_on_failure.
+    _block = settings is not None and getattr(
+        settings.pipeline, "whole_book_quality_gate_block_on_failure", False
+    )
+    if _block:
+        raise ValueError(_whole_book_quality_gate_error_message(report_payload))
 
 
 # Books above this chapter target require progressive planning: a single
@@ -4936,10 +4956,17 @@ async def run_scene_pipeline(
                             "Failed to persist richness findings on scene metadata (non-fatal)",
                             exc_info=True,
                         )
-                    # Optionally block: raise so caller triggers re-plan path.
-                    # 仅严格档(commercial_strict_prewrite)在 critical 稠密度上硬阻断;
-                    # 非严格档降级为警告(已注入提示块+矛盾告警),writer 带着指引继续,
-                    # 避免薄卡在写作期把整本书拖进死循环(闸门自伤)。
+                    # Optionally block — but RECOVERABLY. Default is soft:
+                    # prompt-block + contradiction warnings are already injected
+                    # above, so the writer continues with explicit guidance.
+                    # Only when ``scene_richness_block_on_critical`` is opted back
+                    # on (strict prewrite) do we block — and even then we raise
+                    # ``WriteSafetyBlockError`` so the chapter pipeline's existing
+                    # recovery path (mark chapter blocked → auto-repair/self-heal)
+                    # engages instead of a bare ``ValueError`` that aborts the
+                    # whole book. The previous code raised a plain ``ValueError``
+                    # which NOTHING caught — a single thin scene card killed the
+                    # entire run (framework self-harm; 2026-06 fix).
                     if (
                         _richness.severity == "critical"
                         and getattr(settings.pipeline, "scene_richness_block_on_critical", False)
@@ -4950,11 +4977,25 @@ async def run_scene_pipeline(
                             "blocked_by_richness_gate": True,
                             "richness_issue_codes": _codes,
                         }
-                        raise ValueError(
-                            f"Scene {chapter_number}.{scene_number} blocked by plan-richness "
-                            f"gate: {_codes}. Re-plan required (card too thin)."
+                        from bestseller.services.write_safety_gate import (
+                            WriteSafetyFinding,
                         )
-            except ValueError:
+
+                        raise WriteSafetyBlockError(
+                            f"Scene {chapter_number}.{scene_number} blocked by plan-richness "
+                            f"gate: {_codes}. Re-plan required (card too thin).",
+                            findings=[
+                                WriteSafetyFinding(
+                                    source="plan_richness",
+                                    code=str(_codes[0]) if _codes else "thin_card",
+                                    severity="critical",
+                                    message=(
+                                        f"场景 {chapter_number}.{scene_number} 卡片过薄: {_codes}"
+                                    ),
+                                )
+                            ],
+                        )
+            except WriteSafetyBlockError:
                 raise
             except Exception:
                 logger.debug("Plan-richness gate failed (non-fatal)", exc_info=True)
@@ -5248,13 +5289,27 @@ async def run_scene_pipeline(
                     }
                     if stalled_count >= 2:
                         reached_revision_limit = True
-                        requires_human_review = True
-                        workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
-                        workflow_run.current_step = "scene_rewrite_stalled_blocked"
-                        workflow_run.metadata_json = {
-                            **(workflow_run.metadata_json or {}),
-                            "machine_blocker": "scene_rewrite_stalled_after_two_attempts",
-                        }
+                        # accept_on_stall: two rewrites with no score gain means
+                        # the loop has converged on its best — accept it and
+                        # continue rather than hard-flagging human review.
+                        if settings.pipeline.accept_on_stall:
+                            logger.info(
+                                "Scene %d.%d rewrite stalled twice (delta=%.4f) — accepting best draft (accept_on_stall)",
+                                chapter_number, scene_number, score_delta,
+                            )
+                            workflow_run.metadata_json = {
+                                **(workflow_run.metadata_json or {}),
+                                "scene_accepted_on_stall": True,
+                                "scene_accept_reason": "scene_rewrite_stalled_after_two_attempts",
+                            }
+                        else:
+                            requires_human_review = True
+                            workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                            workflow_run.current_step = "scene_rewrite_stalled_blocked"
+                            workflow_run.metadata_json = {
+                                **(workflow_run.metadata_json or {}),
+                                "machine_blocker": "scene_rewrite_stalled_after_two_attempts",
+                            }
                         break
                     logger.info(
                         "Scene %d.%d rewrite stalled once (delta=%.4f) — trying one more bounded rewrite",
@@ -5265,11 +5320,24 @@ async def run_scene_pipeline(
 
             if rewrite_iterations >= settings.quality.max_scene_revisions:
                 reached_revision_limit = True
-                if settings.pipeline.accept_on_stall and rewrite_iterations < 2:
+                # accept_on_stall: when the bounded rewrite budget is exhausted,
+                # accept the best draft and CONTINUE (the scene draft exists and
+                # downstream chapter/book gates + repair still evaluate quality).
+                # NOTE: the old guard `accept_on_stall and rewrite_iterations < 2`
+                # was dead code — this block only runs when
+                # rewrite_iterations >= max_scene_revisions (=2), so `< 2` was
+                # always False and EVERY stalled scene was force-flagged for human
+                # review, defeating accept_on_stall entirely (closure bug fix).
+                if settings.pipeline.accept_on_stall:
                     logger.info(
-                        "Scene %d.%d reached max revisions (%d) — accepting best draft",
+                        "Scene %d.%d reached max revisions (%d) — accepting best draft (accept_on_stall)",
                         chapter_number, scene_number, rewrite_iterations,
                     )
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "scene_accepted_on_stall": True,
+                        "scene_accept_reason": "scene_rewrite_revision_limit",
+                    }
                 else:
                     requires_human_review = True
                     workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
@@ -9254,28 +9322,55 @@ async def run_project_pipeline(
             step_order += 1
             if chapter_result.requires_human_review:
                 requires_human_review = True
+                # Soft-continue (default): a chapter whose scenes only stalled on
+                # quality review (accept_on_stall already accepted a usable draft)
+                # must NOT halt the whole book. Flag the chapter for human review
+                # and keep writing the remaining chapters so the book reaches
+                # autonomous closure. Only the legacy opt-in
+                # ``whole_book_pause_on_scene_review`` restores the hard pause.
+                # Whole-book *consistency* review still pauses separately.
+                _pause_whole_book = bool(
+                    getattr(settings.pipeline, "whole_book_pause_on_scene_review", False)
+                )
+                _flagged = list(
+                    (workflow_run.metadata_json or {}).get("chapters_requiring_review") or []
+                )
+                if chapter.chapter_number not in _flagged:
+                    _flagged.append(chapter.chapter_number)
                 _emit_progress(
                     progress,
-                    "chapter_pipeline_machine_repair_required",
+                    "chapter_pipeline_machine_repair_required"
+                    if _pause_whole_book
+                    else "chapter_flagged_for_review_continuing",
                     {
                         "project_slug": project_slug,
                         "chapter_number": chapter.chapter_number,
                         "workflow_run_id": str(chapter_result.workflow_run_id),
+                        "chapters_requiring_review": _flagged,
                     },
                 )
-                project.status = ProjectStatus.REVISING.value
-                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
-                workflow_run.current_step = "machine_repair_required"
+                if _pause_whole_book:
+                    project.status = ProjectStatus.REVISING.value
+                    workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                    workflow_run.current_step = "machine_repair_required"
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "requires_human_review": True,
+                        "paused_after_chapter_number": chapter.chapter_number,
+                        "blocked_chapter_workflow_run_id": str(chapter_result.workflow_run_id),
+                        "processed_chapter_count": len(chapter_results),
+                        "chapters_requiring_review": _flagged,
+                    }
+                    await sync_world_expansion_progress(session, project=project)
+                    await _checkpoint_commit(session)
+                    break
+                # soft-continue: record the flag and move on to the next chapter
                 workflow_run.metadata_json = {
                     **(workflow_run.metadata_json or {}),
                     "requires_human_review": True,
-                    "paused_after_chapter_number": chapter.chapter_number,
-                    "blocked_chapter_workflow_run_id": str(chapter_result.workflow_run_id),
-                    "processed_chapter_count": len(chapter_results),
+                    "chapters_requiring_review": _flagged,
                 }
-                await sync_world_expansion_progress(session, project=project)
                 await _checkpoint_commit(session)
-                break
             if project_uses_signing_quality_gate(project) and chapter.chapter_number <= 3:
                 current_step_name = f"qimao_opening_gate_chapter_{chapter.chapter_number}"
                 workflow_run.current_step = current_step_name
@@ -9300,6 +9395,7 @@ async def run_project_pipeline(
                     chapter_texts=whole_book_quality_texts,
                     workflow_run=workflow_run,
                     progress=progress,
+                    settings=settings,
                 )
             _completed_local = len(chapter_results) + skipped_count
             _completed_global = global_chapter_offset + _completed_local
@@ -10358,8 +10454,13 @@ async def run_autowrite_pipeline(
         progress=progress,
     )
     repair_result = None
+    # Only suppress auto-repair for scene-machine-blocked chapters in the legacy
+    # hard-pause mode. In soft-continue mode (default) we WANT the framework's own
+    # project-repair pass to engage on the flagged chapters instead of leaving the
+    # "attention" verdict with no automatic remediation.
     skip_auto_repair_for_scene_block = (
         project_result.requires_human_review
+        and getattr(settings.pipeline, "whole_book_pause_on_scene_review", False)
         and await _project_has_scene_machine_blocked_chapter(session, project.id)
     )
     if skip_auto_repair_for_scene_block:
@@ -11037,8 +11138,11 @@ async def run_progressive_autowrite_pipeline(
 
     repair_result = None
     project_requires_repair = project_result.requires_human_review or blocked_volume_repair_required
+    # See note above: only skip auto-repair on scene-machine-block in legacy
+    # hard-pause mode; soft-continue lets the repair pass remediate flagged chapters.
     skip_auto_repair_for_scene_block = (
         project_requires_repair
+        and getattr(settings.pipeline, "whole_book_pause_on_scene_review", False)
         and await _project_has_scene_machine_blocked_chapter(session, project.id)
     )
     project_repair_verdict = (

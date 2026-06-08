@@ -97,5 +97,5 @@ async def main(slug: str) -> int:
 
 
 if __name__ == "__main__":
-    slug = sys.argv[1] if len(sys.argv) > 1 else "memory-pawn-v3"
+    slug = sys.argv[1] if len(sys.argv) > 1 else "validation-book"
     raise SystemExit(asyncio.run(main(slug)))

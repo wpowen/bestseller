@@ -68,6 +68,16 @@ from bestseller.settings import AppSettings
 # reaps old rows immediately via ``startup_cutoff``; this longer periodic
 # timeout prevents active workers from being marked failed mid-call.
 ORPHAN_WORKFLOW_TIMEOUT_SECONDS = 3 * 60 * 60
+# Writing-stage workflow runs (project/chapter/scene pipelines) heartbeat
+# frequently — they emit a workflow-row update on every scene/step, so a gap
+# much shorter than the planning timeout reliably means the owning worker died.
+# The long 3h timeout above exists for the PLANNING repair loop (multiple 15-min
+# planner attempts with no row update); applying it to writing runs left a book
+# orphaned for up to 3h after a worker crash before self-heal could resume it.
+ORPHAN_WRITING_WORKFLOW_TIMEOUT_SECONDS = 30 * 60
+_WRITING_WORKFLOW_TYPES = frozenset(
+    {"project_pipeline", "chapter_pipeline", "scene_pipeline"}
+)
 
 # Anything active + older than this at worker startup is, by definition,
 # a ghost from a prior container that died before updating its row. The
@@ -117,7 +127,11 @@ STALE_ARQ_IN_PROGRESS_GRACE_SECONDS = 5 * 60
 # a few minutes while the web autowrite thread is still creating its first
 # workflow row. Treating that as ``under_target_chapters`` immediately spawns a
 # duplicate autowrite job that races the real one through planning.
-UNDER_TARGET_SELF_HEAL_GRACE_SECONDS = 15 * 60
+# 5min (was 15min): the ``_has_active_pipeline_run`` check is the PRIMARY guard
+# against racing an in-flight pipeline; this grace is only a secondary "brand new
+# project still being created" buffer. 15min left an actively-writing book idle
+# for up to 15min between self-heal bursts, badly slowing autonomous completion.
+UNDER_TARGET_SELF_HEAL_GRACE_SECONDS = 5 * 60
 
 # Project repair writes a DB heartbeat through worker.tasks while it is alive,
 # so a stale running repair row can be safely reaped by the periodic orphan
@@ -272,7 +286,17 @@ async def reap_orphan_workflow_runs(
     heartbeat_cutoff = now - _dt.timedelta(seconds=timeout_seconds)
     protected_project_ids = protected_project_ids or set()
 
-    stale_conditions = [WorkflowRunModel.updated_at < heartbeat_cutoff]
+    writing_cutoff = now - _dt.timedelta(
+        seconds=ORPHAN_WRITING_WORKFLOW_TIMEOUT_SECONDS
+    )
+    stale_conditions = [
+        WorkflowRunModel.updated_at < heartbeat_cutoff,
+        # Writing-stage runs reap on the shorter heartbeat window.
+        and_(
+            WorkflowRunModel.workflow_type.in_(_WRITING_WORKFLOW_TYPES),
+            WorkflowRunModel.updated_at < writing_cutoff,
+        ),
+    ]
     if startup_cutoff is not None:
         stale_conditions.append(WorkflowRunModel.updated_at < startup_cutoff)
         # At process startup, any active workflow created before the new
@@ -397,8 +421,21 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
 
     for job_id, states in job_states.items():
         if await _arq_owner_is_stale(redis, job_id, states):
+            # Clear the stale ``arq:in-progress`` lock a dead worker left behind.
+            # ARQ keeps that lock for the job timeout (~24h here); while it
+            # exists, ARQ silently DEDUPES any re-enqueue of the same job_id, so
+            # self-heal would mark the project eligible, try to re-queue, and the
+            # enqueue would be dropped — deadlocking the book for up to 24h.
+            # Deleting the lock lets the still-queued job (or a fresh re-queue)
+            # dispatch to a live worker. Safe: the owner is confirmed stale.
+            try:
+                await _arq_clear_stale_inprogress_lock(redis, job_id)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "self-heal: failed to clear stale ARQ lock job_id=%s", job_id
+                )
             logger.info(
-                "self-heal: ignoring stale ARQ owner job_id=%s states=%s",
+                "self-heal: cleared stale ARQ owner job_id=%s states=%s",
                 job_id,
                 sorted(states),
             )
@@ -426,6 +463,19 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
     return slugs
 
 
+async def _arq_clear_stale_inprogress_lock(redis: Any, job_id: str) -> None:
+    """Delete the stale ``arq:in-progress:<job_id>`` lock left by a dead worker.
+
+    Only the in-progress lock is removed — the job payload and its queue entry
+    are left intact so ARQ can re-dispatch the already-scheduled job to a live
+    worker. The caller has already confirmed the owner is stale.
+    """
+    delete = getattr(redis, "delete", None)
+    if delete is None:
+        return
+    await delete(f"arq:in-progress:{job_id}")
+
+
 async def _arq_owner_is_stale(redis: Any, job_id: str, states: set[str]) -> bool:
     """True when an ARQ owner key is old enough to be a ghost lock.
 
@@ -439,19 +489,32 @@ async def _arq_owner_is_stale(redis: Any, job_id: str, states: set[str]) -> bool
     zscore = getattr(redis, "zscore", None)
     if zscore is None:
         return False
-    try:
-        score = await zscore("arq:queue", job_id)
-    except Exception:  # noqa: BLE001
-        logger.exception("self-heal: failed to read ARQ queue score %s", job_id)
-        return False
-    if score is None:
-        return False
-    try:
-        score_ms = float(score)
-    except (TypeError, ValueError):
-        return False
     cutoff_ms = (time.time() - STALE_ARQ_IN_PROGRESS_GRACE_SECONDS) * 1000
-    return score_ms < cutoff_ms
+    # Check BOTH the main queue and the retry queue. A failed job is moved out of
+    # ``arq:queue`` into ``arq:retry``, so a job stuck in retry with a stale
+    # in-progress lock (dead worker) has a None ``arq:queue`` score — the old
+    # code then treated it as "live" and never cleared the ghost lock, so the job
+    # deadlocked for the full ~24h in-progress TTL (observed on a worker-crash +
+    # job-retry race). If EITHER queue's score is older than the grace, the owner
+    # is a ghost.
+    found_score = False
+    for zset in ("arq:queue", "arq:retry"):
+        try:
+            score = await zscore(zset, job_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("self-heal: failed to read %s score %s", zset, job_id)
+            continue
+        if score is None:
+            continue
+        try:
+            score_ms = float(score)
+        except (TypeError, ValueError):
+            continue
+        if score_ms < cutoff_ms:
+            return True
+    # A present-but-recent score (or no score at all) is treated as live — ARQ
+    # variants differ in how they retain scores for active jobs.
+    return False
 
 
 async def _redis_get_bytes(redis: Any, key: str) -> bytes | None:
@@ -1169,16 +1232,45 @@ async def _heal_job_exists(pool: "ArqRedis", job_id: str) -> bool:
         return False
 
 
+async def _is_ghost_heal_job(pool: "ArqRedis", job_id: str) -> bool:
+    """A bare ``arq:job:<id>`` definition with NO active schedule.
+
+    A consumed/abandoned run can leave the job-definition key behind with no
+    in-progress lock, no retry entry, and no queue score. ARQ will never dispatch
+    such a job, yet ``enqueue_job`` dedup-rejects (returns None) a fresh re-queue
+    while the key exists — and the self-heal "in_flight = exists(job_key, ...)"
+    guard treats the bare key as live — so the project is stranded permanently
+    (observed after worker restarts mid-run). A ghost must be cleared so the
+    project can be re-queued.
+    """
+    try:
+        if not await pool.exists(f"arq:job:{job_id}"):
+            return False
+        if await pool.exists(
+            f"arq:in-progress:{job_id}", f"arq:retry:{job_id}"
+        ):
+            return False
+        return await pool.zscore("arq:queue", job_id) is None
+    except Exception:  # noqa: BLE001
+        logger.exception("self-heal: failed ghost-job check %s", job_id)
+        return False
+
+
 async def _clear_stale_heal_job_if_needed(pool: "ArqRedis", job_id: str) -> bool:
     """Clear a deterministic heal job only when ARQ left a ghost owner.
 
     Callers use this after DB-level active workflow checks have already decided
     the project is stuck. That context matters: a live long-running generation
     can legitimately hold ``arq:in-progress:*`` for many minutes, so this helper
-    must not be used as a general liveness probe.
+    must not be used as a general liveness probe. Two ghost shapes are cleared:
+    a stale in-progress lock (dead worker mid-run) and a bare job-definition key
+    with no schedule at all (consumed/abandoned run).
     """
 
-    if not await _stale_in_progress_job(pool, job_id):
+    if not (
+        await _stale_in_progress_job(pool, job_id)
+        or await _is_ghost_heal_job(pool, job_id)
+    ):
         return False
     await pool.delete(
         f"arq:job:{job_id}",

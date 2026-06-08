@@ -8,10 +8,17 @@
 set -u
 cd "$(dirname "$0")/.."
 
-SLUG="${1:-memory-pawn-v3}"
+# Book-specific fields are all overridable args so this harness is not tied to any
+# one title. Provide a SLUG (arg 1) and, if you want a real run, a PREMISE
+# (BESTSELLER_VALIDATION_PREMISE) + TITLE/GENRE/SUBGENRE/PROMPT_PACK envs.
+SLUG="${1:-validation-book}"
 LOG="${2:-/tmp/_autowrite_validation.log}"
 
-PREMISE="网约车司机周野在一场连环车祸中觉醒「记忆典当」异能：他能买走他人脑中的一段记忆据为己有，借此获得对应的技能、情报或人脉；但每典当一段记忆，他自己最珍视的一段记忆就被抵押扣押，七天内赎不回便永久消失。他从第一笔典当来的车祸现场记忆里，认出了三年前害死妹妹的真凶——本市顶级催眠师、能批量抹除他人记忆的「静默会」会长沈隅。周野必须在赎金清单一天天加码、自己的过去被一点点抽空之前，用别人的记忆拼出真相、扳倒静默会。"
+TITLE="${BESTSELLER_VALIDATION_TITLE:-验证样书}"
+GENRE="${BESTSELLER_VALIDATION_GENRE:-都市异能}"
+SUBGENRE="${BESTSELLER_VALIDATION_SUBGENRE:-身份反转}"
+PROMPT_PACK="${BESTSELLER_VALIDATION_PROMPT_PACK:-urban-power-reversal}"
+PREMISE="${BESTSELLER_VALIDATION_PREMISE:-主角在一场意外中觉醒一种带代价的异能：每使用一次，都要付出一段珍贵的东西作为抵押。他借此一步步逼近多年前那桩悬案的真凶，必须在代价彻底吞没自己之前查明真相。}"
 
 DS_BASE="https://api.deepseek.com/v1"
 DS_MODEL="openai/deepseek-chat"
@@ -46,6 +53,6 @@ export BESTSELLER__PIPELINE__WHOLE_BOOK_QUALITY_GATE_BLOCK_ON_FAILURE="false"
 export BESTSELLER__PIPELINE__CHAPTER_REVIEW_BLOCK_ON_FAILURE="false"
 export BESTSELLER__PIPELINE__PROJECT_CONSISTENCY_BLOCK_ON_FAILURE="false"
 
-exec .venv/bin/bestseller project autowrite "$SLUG" "典当记忆" "都市异能" 25000 10 \
-  --sub-genre "身份反转" --premise "$PREMISE" --prompt-pack urban-power-reversal \
+exec .venv/bin/bestseller project autowrite "$SLUG" "$TITLE" "$GENRE" 25000 10 \
+  --sub-genre "$SUBGENRE" --premise "$PREMISE" --prompt-pack "$PROMPT_PACK" \
   --progress --auto-repair --export-markdown

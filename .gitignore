@@ -53,3 +53,4 @@ scripts/_ab*_run.log
 # Scene-grounding / material A/B generated draft dumps (scratch data, not source)
 scripts/_*_drafts.json
 scripts/_ab2_*.json
+docker-compose.override.yml

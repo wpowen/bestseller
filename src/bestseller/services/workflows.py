@@ -945,8 +945,8 @@ def _repair_chapter_outline_contract_inputs(
             repairs += 1
 
         if not contract.get("is_climax"):
-            contract["is_climax"] = "climax" in _text_value(
-                chapter.title + chapter.hook_description
+            contract["is_climax"] = "climax" in (
+                _text_value(chapter.title) + _text_value(chapter.hook_description)
             ).lower()
 
         if not _has_value(contract.get("loop_position"), generic=False):

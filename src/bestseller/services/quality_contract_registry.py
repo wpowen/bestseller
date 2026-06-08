@@ -75,6 +75,26 @@ _CONTRACTS: dict[str, QualityContract] = {
         required_evidence=("zh_char_count", "soft_warning"),
         pass_condition="chapter body reaches the configured soft target",
     ),
+    # Output completeness / truncation (source-artifact audit, branch feat/quality-gate-repair).
+    "UNFINISHED_ARTIFACT": _contract(
+        "UNFINISHED_ARTIFACT",
+        "completeness",
+        required_evidence=("finish_reason", "llm_output_truncated"),
+        pass_condition="chapter/scene body is fully written (no truncated or unfinished artifact)",
+    ),
+    "LLM_OUTPUT_TRUNCATED": _contract(
+        "LLM_OUTPUT_TRUNCATED",
+        "completeness",
+        required_evidence=("finish_reason",),
+        pass_condition="LLM completion finished normally (finish_reason is not length/max_tokens)",
+    ),
+    "SCENE_COMPLETION_INCOMPLETE": _contract(
+        "SCENE_COMPLETION_INCOMPLETE",
+        "completeness",
+        repair_scope="scene",
+        required_evidence=("scene_completion",),
+        pass_condition="every scene reaches a complete final sentence and beat resolution",
+    ),
     # Continuity / retention.
     "HOOK_ECHO_MISSING": _contract(
         "HOOK_ECHO_MISSING",

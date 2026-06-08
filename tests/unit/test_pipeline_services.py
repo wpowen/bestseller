@@ -3274,7 +3274,7 @@ def test_publication_gate_allows_repaired_revision_ok_chapter() -> None:
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# Chapter 30\n\n" + ("clean prose " * 1700),
+        content_md="# Chapter 30\n\n" + ("clean prose " * 1699) + "clean prose.",
         word_count=3400,
         assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,

@@ -1472,6 +1472,7 @@ async def _call_litellm(
         completion_kwargs["n"] = role_settings.n_candidates
     if role_settings.api_base:
         completion_kwargs["api_base"] = role_settings.api_base
+        completion_kwargs["base_url"] = role_settings.api_base
     if role_settings.api_key_env:
         api_key = get_runtime_env_value(role_settings.api_key_env)
         if api_key:

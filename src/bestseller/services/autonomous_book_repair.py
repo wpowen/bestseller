@@ -22,6 +22,7 @@ from bestseller.services.quality_failure_events import (
     failure_events_from_retrofit_row,
     quality_failure_events_to_dicts,
 )
+from bestseller.services.source_artifact_audit import SourceArtifactAuditReport
 from bestseller.services.word_targets import chapter_rewrite_length_band
 from bestseller.settings import AppSettings, load_settings
 
@@ -114,6 +115,9 @@ class TaskSyncResult:
     # already spent. Reported for observability so operators can see
     # which chapters need human attention.
     budget_exhausted_chapters: tuple[int, ...] = ()
+    source_blocked: bool = False
+    blocked_chapters: tuple[int, ...] = ()
+    source_audit_report: Mapping[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -123,6 +127,9 @@ class TaskSyncResult:
             "missing_chapters": list(self.missing_chapters),
             "task_ids": list(self.task_ids),
             "budget_exhausted_chapters": list(self.budget_exhausted_chapters),
+            "source_blocked": self.source_blocked,
+            "blocked_chapters": list(self.blocked_chapters),
+            "source_audit_report": dict(self.source_audit_report),
         }
 
 
@@ -300,6 +307,16 @@ def _quality_failure_events_for_spec(spec: QualityRepairTaskSpec) -> list[dict[s
             repair_task_id=spec.repair_id,
         )
     )
+
+
+def _source_audit_payload(
+    report: SourceArtifactAuditReport | None,
+) -> dict[str, object]:
+    return report.to_dict() if report is not None else {}
+
+
+def _source_audit_blocks_repair(report: SourceArtifactAuditReport | None) -> bool:
+    return bool(report is not None and report.blocking_findings)
 
 
 def _length_unit_label(language: str | None) -> str:
@@ -1556,6 +1573,7 @@ async def create_quality_retrofit_rewrite_tasks(
     *,
     replace_existing: bool = False,
     max_attempts_per_chapter: int | None = None,
+    source_audit_report: SourceArtifactAuditReport | None = None,
 ) -> TaskSyncResult:
     """Schedule autonomous_quality_retrofit rewrite tasks from quality
     levers specs.
@@ -1572,6 +1590,17 @@ async def create_quality_retrofit_rewrite_tasks(
     disable the budget — useful for tests and for one-off operator
     backfills.
     """
+    if _source_audit_blocks_repair(source_audit_report):
+        return TaskSyncResult(
+            created=0,
+            skipped_existing=0,
+            superseded=0,
+            missing_chapters=(),
+            task_ids=(),
+            source_blocked=True,
+            blocked_chapters=tuple(spec.chapter_number for spec in specs),
+            source_audit_report=_source_audit_payload(source_audit_report),
+        )
 
     created = 0
     skipped = 0
@@ -1647,6 +1676,7 @@ async def create_quality_retrofit_rewrite_tasks(
                     "cause_ids": list(spec.cause_ids),
                     "patch_points": [dict(point) for point in spec.patch_points],
                     "audit_row": dict(spec.audit_row),
+                    "source_audit_report": _source_audit_payload(source_audit_report),
                     "quality_failure_events": _quality_failure_events_for_spec(spec),
                     "latest_quality_gate_violations": [
                         dict(item) for item in quality_gate_violations
@@ -1725,6 +1755,7 @@ async def create_quality_retrofit_rewrite_tasks(
                 "cause_ids": list(spec.cause_ids),
                 "patch_points": [dict(point) for point in spec.patch_points],
                 "audit_row": dict(spec.audit_row),
+                "source_audit_report": _source_audit_payload(source_audit_report),
                 "quality_failure_events": _quality_failure_events_for_spec(spec),
                 "latest_quality_gate_violations": [
                     dict(item) for item in quality_gate_violations

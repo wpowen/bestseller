@@ -357,6 +357,9 @@ pipeline:
     - CHAPTER_BELOW_TARGET
     - DIALOG_UNPAIRED
     - ENDING_SENTENCE_WEAK
+    - UNFINISHED_ARTIFACT
+    - LLM_OUTPUT_TRUNCATED
+    - SCENE_COMPLETION_INCOMPLETE
     - dead_alive
     - pronoun_mismatch
     - character_resurrection
@@ -393,8 +396,10 @@ pipeline:
     - ANTI_META_LEAK
     - ANTI_META_ENDING_OUT_OF_SCENE
   # Records a project-level planning kernel before chapter production entry
-  # points. Telemetry-only by default; flip block_on_failure for strict runs.
+  # points. Mode supports off/warn/block_on_critical/block; legacy
+  # block_on_failure=true still forces strict blocking for production canaries.
   enable_prewrite_readiness_gate: true
+  prewrite_readiness_gate_mode: warn
   prewrite_readiness_block_on_failure: false
   # Story design kernel rollout.  Generates and injects a structured plot
   # contract before downstream chapter planning.  Reverse-outline checks stay

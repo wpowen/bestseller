@@ -119,7 +119,7 @@ uv run ruff check --select F,E9 src/bestseller/services/quality_failure_events.p
 
 ### P1-B. Source Artifact Audit
 
-状态：基础服务 Done。已完成文件级源资产审计，下一步接入批次生成/修复入口。
+状态：闭环接入 Done。已完成文件级源资产审计，并接入自动修复任务创建前置阻断。
 
 目标：批次写作和章节修复前，先审计 listing/story bible/chapter outline/canon 是否污染。
 
@@ -140,6 +140,10 @@ uv run ruff check --select F,E9 src/bestseller/services/quality_failure_events.p
 - 支持默认旧设定污染词检查：`玩家`、`副本`、`主神`、`无限流`、`系统面板`、`任务奖励`、`游戏提示`。
 - 支持 `expected_language`、`expected_platform`、`expected_category` 检查。
 - 输出 `SourceArtifactAuditReport`，包含 `blocking_findings` 和可序列化 dict。
+- `scripts/autonomous_book_repair.py` 每次生成 repair plan 时同步输出 `audits/source-artifacts/report.json`。
+- `create_quality_retrofit_rewrite_tasks(...)` 接收 `source_audit_report`；有 critical/high blocking findings 时不创建、不刷新 rewrite task。
+- `TaskSyncResult` 增加 `source_blocked`、`blocked_chapters`、`source_audit_report`，供闭环脚本判断阻断原因。
+- `scripts/run_book_quality_closure.py` 的 acceptance gap / blocking quality gate fallback 也会传入 source audit，避免绕过源资产阻断。
 
 新增验证：
 
@@ -155,6 +159,20 @@ uv run pytest tests/unit/test_quality_levers_detectors.py tests/unit/test_qualit
 
 结果：`82 passed`
 
+接入后验证：
+
+```bash
+uv run pytest tests/unit/test_quality_levers_detectors.py tests/unit/test_quality_levers_retrofit_audit.py tests/unit/test_autonomous_book_repair.py tests/unit/test_quality_failure_events.py tests/unit/test_source_artifact_audit.py tests/unit/test_run_book_quality_closure.py tests/unit/test_book_quality_closure.py -q --no-cov
+```
+
+结果：`83 passed`
+
+```bash
+uv run ruff check --select F,E9 src/bestseller/services/source_artifact_audit.py src/bestseller/services/quality_failure_events.py src/bestseller/services/quality_levers/detectors.py src/bestseller/services/quality_levers/rhythm_engineering.py scripts/quality_levers_retrofit_audit.py scripts/autonomous_book_repair.py scripts/run_book_quality_closure.py src/bestseller/services/autonomous_book_repair.py tests/unit/test_source_artifact_audit.py tests/unit/test_quality_failure_events.py tests/unit/test_quality_levers_detectors.py tests/unit/test_quality_levers_retrofit_audit.py tests/unit/test_autonomous_book_repair.py tests/unit/test_run_book_quality_closure.py
+```
+
+结果：`All checks passed`
+
 真实项目只读抽样：
 
 ```bash
@@ -163,17 +181,70 @@ uv run python -c "from pathlib import Path; from bestseller.services.source_arti
 
 结果：`False 2 [('SOURCE_FORBIDDEN_TERM', 'critical', {'term_counts': {'无限流': 1}})]`
 
+闭环阻断验证：
+
+```bash
+uv run python scripts/autonomous_book_repair.py --slug exorcist-detective-1778051012 --platform qimao --limit 1 --create-tasks --json
+```
+
+结果：`task_sync.source_blocked=true`、`created=0`、`task_ids=[]`、`blocked_chapters=[1]`，阻断原因是 `SOURCE_FORBIDDEN_TERM`，证据为 listing 源资产中的 `无限流`。
+
+干净英文项目抽样：
+
+```bash
+uv run python scripts/autonomous_book_repair.py --slug romantasy-1776330993 --platform tomato --limit 1 --json
+```
+
+结果：`source_audit_report.passed=true`，只保留 `SOURCE_PLATFORM_MISSING` medium warning，不阻断 repair plan。
+
 ### P1-C. Prewrite Readiness staged block
+
+状态：第一批 Done。已完成分级阻断决策，并接入 planner 的 `prewrite_readiness_gate` workflow step。
 
 目标：新项目默认 block，存量高风险项目 block_on_critical，老项目允许 migration override。
 
 配置策略：
 
-- new project：`prewrite_readiness_block_on_failure=true`
-- legacy high-risk：`block_on_critical`
-- legacy override：写入 `legacy_risk_accepted`
+- new/canary project：`prewrite_readiness_gate_mode=block` 或 `prewrite_readiness_block_on_failure=true`
+- legacy high-risk：`prewrite_readiness_gate_mode=block_on_critical`
+- legacy default：`prewrite_readiness_gate_mode=warn`
 
 预期收益：避免弱规划进入写作后再由章节门禁反复拦截。
+
+已完成：
+
+- 新增 `PrewriteReadinessGateDecision` 与 `decide_prewrite_readiness_gate(...)`。
+- 支持 `off`、`warn`、`block_on_critical`、`block` 四档模式。
+- 保留 `prewrite_readiness_block_on_failure=true` 的旧严格阻断语义，避免生产配置回退。
+- `planner._run_prewrite_readiness_gate(...)` 的 workflow step 现在写入 `gate_decision`、`critical_codes`、`warning_codes`。
+- 当 gate 决策为阻断时，step 标记为 `FAILED` 并在章节生成前抛出 `PlannerFallbackError`。
+
+新增验证：
+
+```bash
+uv run pytest tests/unit/test_planning_kernel.py tests/unit/test_story_design_settings.py -q --no-cov
+```
+
+结果：`17 passed`
+
+```bash
+uv run ruff check --select F,E9 src/bestseller/services/planning_kernel.py src/bestseller/services/planner.py src/bestseller/settings.py tests/unit/test_planning_kernel.py tests/unit/test_story_design_settings.py
+```
+
+结果：`All checks passed`
+
+最终闭环验证：
+
+```bash
+uv run pytest tests/unit -q --no-cov
+```
+
+结果：`4213 passed`
+
+真实项目抽样保持闭环：
+
+- `exorcist-detective-1778051012`：`SOURCE_FORBIDDEN_TERM` critical，`source_blocked=true`，`created=0`。
+- `romantasy-1776330993`：source audit `passed=true`，仅 `SOURCE_PLATFORM_MISSING` medium warning，无 blocking findings。
 
 ## 5. 需要单独处理的存量数据
 

@@ -60,7 +60,12 @@ async def _chapter_has_incomplete_scene_drafts(
     *,
     language: str | None,
 ) -> bool:
-    """Return True when current scene drafts suggest a chapter stopped mid-build."""
+    """Return True when current scene drafts suggest a chapter stopped mid-build.
+
+    This catches historical chapters whose assembled markdown may end with a
+    syntactically complete sentence but whose final scene or an interior scene
+    is plainly under-produced compared with its own target.
+    """
 
     from bestseller.services.drafts import count_words  # noqa: PLC0415
     from bestseller.services.output_hygiene import (  # noqa: PLC0415

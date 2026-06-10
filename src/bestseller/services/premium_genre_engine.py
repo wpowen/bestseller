@@ -295,7 +295,16 @@ def _build_entry_system_context_blocks(
     )
     if kernel_payload:
         try:
-            kernel_block = render_entry_system_kernel_prompt_block(kernel_payload)
+            # Scene-writer diet: the full kernel (8 types / 5 ladders / 6 axes)
+            # is planning material; the writer needs the promise + hard rule +
+            # the few types/ladders a single scene can exercise. Both callers
+            # of this builder are writer paths (drafts/pipelines).
+            kernel_block = render_entry_system_kernel_prompt_block(
+                kernel_payload,
+                max_types=4,
+                max_ladders=2,
+                max_axes=4,
+            )
         except Exception as exc:
             warnings.append(f"entry_system_kernel_invalid:{exc.__class__.__name__}")
 
@@ -306,7 +315,7 @@ def _build_entry_system_context_blocks(
     if registry_payload:
         try:
             registry = entry_registry_from_dict(registry_payload)
-            registry_block = render_entry_registry_prompt_block(registry)
+            registry_block = render_entry_registry_prompt_block(registry, max_entries=6)
         except Exception as exc:
             warnings.append(f"entry_registry_invalid:{exc.__class__.__name__}")
 
@@ -323,6 +332,7 @@ def _build_entry_system_context_blocks(
                 registry_block = render_entry_registry_prompt_block(
                     registry,
                     current_state=snapshot_payload,
+                    max_entries=6,
                 )
         except Exception as exc:
             warnings.append(f"entry_state_snapshot_invalid:{exc.__class__.__name__}")
@@ -338,6 +348,7 @@ def _build_entry_system_context_blocks(
             registry_block = render_entry_registry_prompt_block(
                 registry,
                 current_state=snapshot,
+                max_entries=6,
             )
         except Exception as exc:
             warnings.append(f"entry_state_ledger_invalid:{exc.__class__.__name__}")

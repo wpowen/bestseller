@@ -524,7 +524,9 @@ def render_writing_profile_prompt_block(
         lines += [
             f"- Reader promise: {profile.market.reader_promise or 'Establish a durable read-on desire fast.'}",
         ]
-        if not scene_mode:
+        # Opening chapters must deliver the selling points (golden-three
+        # contract), so they survive scene-mode trimming there.
+        if not scene_mode or opening_phase:
             lines += [
                 f"- Selling points: {', '.join(profile.market.selling_points) or 'none specified'}",
                 f"- Trope tags: {', '.join(profile.market.trope_keywords) or 'none'}",
@@ -616,7 +618,8 @@ def render_writing_profile_prompt_block(
     lines += [
         f"- 读者承诺：{profile.market.reader_promise or '必须快速建立持续追读欲。'}",
     ]
-    if not scene_mode:
+    # 开篇章节（黄金三章窗口）必须兑现核心卖点，scene 模式下保留。
+    if not scene_mode or opening_phase:
         lines += [
             f"- 核心卖点：{'、'.join(profile.market.selling_points) or '暂无明确卖点'}",
             f"- 套路标签：{'、'.join(profile.market.trope_keywords) or '暂无'}",

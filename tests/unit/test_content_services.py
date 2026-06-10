@@ -230,6 +230,60 @@ def test_render_scene_draft_markdown_context_flows_via_llm_prompt() -> None:
     assert "本卷目标：找到第一份铁证" in user_prompt
 
 
+def test_dedupe_methodology_sections_drops_exact_duplicates_only() -> None:
+    from bestseller.services.drafts import _dedupe_methodology_sections
+
+    text = (
+        "## 写法方法论指导\n前言行\n"
+        "【场景锚定 · 镜头化叙事】\n- 规则A\n- 规则B\n"
+        "【情绪契约】\n- 压缩三章\n"
+        "【场景锚定 · 镜头化叙事】\n- 规则A\n- 规则B\n"
+        "【反应放大法】\n- 旁观者反应\n"
+        "【情绪契约】\n- 压缩五章（变体内容，必须保留）\n"
+    )
+    result = _dedupe_methodology_sections(text)
+    assert result.count("【场景锚定 · 镜头化叙事】") == 1
+    # Variant body with the same header is NOT a duplicate — keep both.
+    assert result.count("【情绪契约】") == 2
+    assert "【反应放大法】" in result
+    assert result.startswith("## 写法方法论指导")
+
+
+def test_scene_draft_prompt_methodology_has_no_duplicate_sections() -> None:
+    """Regression: methodology assembly must not render the same section twice.
+
+    The prompt-pack bridge block, the compiled methodology, and the
+    quality-levers block used to each re-render overlapping levers, pushing
+    the Tier-1 methodology block alone past the whole context budget and
+    silently evicting every Tier-2/3 narrative section (story bible, recent
+    scenes, clues) from the writer prompt.
+    """
+    import re as _re
+
+    project = SimpleNamespace(title="长夜巡航", slug="chang-ye-xun-hang")
+    chapter = SimpleNamespace(chapter_number=1, chapter_goal="调查失踪舰队", title="失准星图")
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="封港命令",
+        participants=["沈砚"],
+        purpose={"story": "抛出禁令任务", "emotion": "压迫感"},
+        time_label="深夜",
+        entry_state={},
+        exit_state={},
+        scene_type="setup",
+        target_word_count=1000,
+    )
+    _, user_prompt = build_scene_draft_prompts(project, chapter, scene, None, {"logline": "x"})
+    bodies: dict[str, int] = {}
+    for section in _re.split(r"\n(?=【)", user_prompt):
+        fingerprint = _re.sub(r"\s+", " ", section).strip()
+        if len(fingerprint) < 40:
+            continue
+        bodies[fingerprint] = bodies.get(fingerprint, 0) + 1
+    duplicated = {body[:60] for body, count in bodies.items() if count > 1}
+    assert not duplicated, f"duplicate methodology sections: {duplicated}"
+
+
 def test_scene_draft_prompt_includes_selected_concept_lab_contract() -> None:
     bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
     project = SimpleNamespace(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -9,6 +10,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from bestseller.domain.gate_verdict import GateFinding, GateVerdict
+
+logger = logging.getLogger(__name__)
 from bestseller.services.hook_signals import SHARED_HOOK_TERMS as _SHARED_HOOK_TERMS
 from bestseller.services.emotion_driven_kernel import (
     EmotionDrivenKernel,
@@ -904,6 +907,32 @@ def evaluate_whole_book_quality(
         ledger,
     )
     findings.extend(emotion_findings)
+
+    # 结构对标线（榜单对标闭环 P3.3）：与真榜单书的结构分布做 advisory 对比。
+    # 永不阻断（severity=info）；基线缺失时静默跳过。
+    try:
+        from bestseller.services.benchmark_structure import (
+            compare_to_baseline,
+            profile_chapter,
+        )
+
+        structure_profiles = [
+            profile
+            for _, text in chapters
+            if (profile := profile_chapter(str(text)))
+        ]
+        for deviation in compare_to_baseline(structure_profiles, tier="t2"):
+            findings.append(
+                WholeBookQualityFinding(
+                    code="structure_baseline_deviation",
+                    severity="info",
+                    scope="book",
+                    message=f"结构偏离真书基线：{deviation}",
+                    evidence="data/benchmark_capability/structure_baseline.json",
+                )
+            )
+    except Exception:  # noqa: BLE001 — advisory comparison must never break the gate
+        logger.debug("structure baseline comparison skipped", exc_info=True)
 
     high_or_critical = any(finding.severity in {"critical", "high"} for finding in findings)
     metrics = {

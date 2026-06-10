@@ -879,7 +879,33 @@
       12,
       `${reviews.length}`
     ) : '';
-    $('#tab-artifacts').innerHTML = `<div class="grid">${conceptionBody}${reviewsBody}${body}</div>`;
+    // 榜单对标回归（advisory）：vs 真书 Arena win-rate（跨家族判官口径）。
+    const bench = obj(dossier.benchmark_report);
+    const benchBody = bench.summaries ? panel(
+      '榜单对标（vs 真书盲评）',
+      (() => {
+        const s = obj(bench.summaries);
+        const ev = obj(bench.evaluation);
+        const row = (tier, label) => {
+          const t = obj(s[tier]);
+          if (t.pairs == null) return '';
+          return `<details class="artifact">
+            <summary>
+              <span>${ev.passed ? '✅ ' : '⚠️ '}<strong>${label}</strong> win-rate ${esc(String(t.win_rate))} ${tag(`${t.wins}胜/${t.ties}平/${t.losses}负`)}</span>
+              <span class="panel-count">n=${esc(String(t.pairs))}</span>
+            </summary>
+            <pre class="json">${asJson({ dimension_win_rates: t.dimension_win_rates })}</pre>
+          </details>`;
+        };
+        const warning = bench.judge_family_warning
+          ? `<div class="muted">⚠️ ${esc(bench.judge_family_warning)}</div>` : '';
+        return `<div class="list">${warning}${row('t1', 'vs 头部榜单书 (T1)')}${row('t2', 'vs 题材完本 (T2)')}
+          <div class="muted">判官：${esc(bench.judge_model || '')} · ${esc(bench.generated_at || '')} · 章位 ${esc(String(bench.chapters || ''))}</div></div>`;
+      })(),
+      12,
+      bench.evaluation && bench.evaluation.passed ? 'PASS' : 'FAIL'
+    ) : '';
+    $('#tab-artifacts').innerHTML = `<div class="grid">${conceptionBody}${benchBody}${reviewsBody}${body}</div>`;
   }
 
   function renderOutline() {

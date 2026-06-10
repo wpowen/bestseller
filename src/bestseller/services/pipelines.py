@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 import json
 import logging
+import os
 from pathlib import Path
 import traceback
 from typing import Any
@@ -7760,6 +7761,61 @@ async def run_chapter_pipeline(
                     step_order += 1
         except Exception:
             logger.debug("ai_flavor_gate failed (non-fatal)", exc_info=True)
+
+        # ── 文采 advisory（榜单对标闭环 P2.1）──────────────────────────
+        # 短篇管线已验证的 LitStyle 判官接入长篇 finalize：仅记录分数供
+        # 对标回归与 dossier 展示，绝不影响章节状态或阻断成书。
+        # LITSTYLE_LONGFORM_ADVISORY=0 可关（默认开，单采样、critic 档）。
+        try:
+            if (
+                os.getenv("LITSTYLE_LONGFORM_ADVISORY", "1").strip().lower()
+                not in {"0", "false", "off"}
+                and chapter_draft is not None
+                and chapter_draft.content_md
+                and not is_english_language(getattr(project, "language", None))
+            ):
+                from bestseller.services.judge_genre_context import (
+                    resolve_judge_genre_context,
+                )
+                from bestseller.services.litstyle_prose_judge import (
+                    judge_chapter_litstyle_stable,
+                )
+
+                _litstyle_result = await judge_chapter_litstyle_stable(
+                    session,
+                    settings,
+                    chapter_number=chapter_number,
+                    content_md=chapter_draft.content_md,
+                    genre_context=resolve_judge_genre_context(
+                        genre=getattr(project, "genre", None),
+                        sub_genre=getattr(project, "sub_genre", None),
+                    ),
+                    language="zh",
+                    workflow_run_id=workflow_run.id,
+                )
+                if "LITSTYLE_JUDGE_UNAVAILABLE" not in _litstyle_result.top_issues:
+                    await create_workflow_step_run(
+                        session,
+                        workflow_run_id=workflow_run.id,
+                        step_name="litstyle_advisory",
+                        step_order=step_order,
+                        status=WorkflowStatus.COMPLETED,
+                        output_ref={
+                            "final_score": _litstyle_result.final_score,
+                            "level": _litstyle_result.level,
+                            "ai_tone_penalty": _litstyle_result.ai_tone_penalty,
+                            "top_issues": list(_litstyle_result.top_issues)[:3],
+                        },
+                    )
+                    step_order += 1
+                    logger.info(
+                        "litstyle_advisory ch%d: score=%s level=%s",
+                        chapter_number,
+                        _litstyle_result.final_score,
+                        _litstyle_result.level,
+                    )
+        except Exception:
+            logger.debug("litstyle advisory failed (non-fatal)", exc_info=True)
 
         # ── Anti-slop prose gates ───────────────────────────────────────
         # Structural prose checks added by the Anti-Slop Prose System:

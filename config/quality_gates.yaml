@@ -242,6 +242,11 @@ l6_write_gate:
     PLEASURE_HYPE_GAP: audit_only
     PLEASURE_COMEDIC_BEAT_STARVED: audit_only
     PLEASURE_SETUP_PAYOFF_DEBT: audit_only
+    # Phase B 软启动（榜单对标闭环 P3.1）：code 默认 LINE_GAP_OVER=block，但
+    # Phase C Override 契约未上线时 block 无软化出口 → 显式降为 audit_only。
+    # Phase C 启用后可移除这两行恢复 code 默认。
+    LINE_GAP_OVER: audit_only
+    LINE_GAP_WARN: audit_only
     # Character lifecycle — Phase A. Deceased speakers and stance flips
     # without a turning-point beat must block; power-tier drift is advisory.
     CHARACTER_RESURRECTION: block
@@ -311,8 +316,12 @@ l8_scorecard:
 # enabled per-project. Toggle a flag to ``true`` to opt that project into
 # the new validators / ledgers.
 # ---------------------------------------------------------------------------
+# 榜单对标闭环 P3.1（2026-06-10）：激活叙事线追踪（主导线分类 + 断线检测）。
+# 软启动：LINE_GAP_OVER 在 l6 mode_by_violation 显式路由为 audit_only —— 在
+# Phase C（Override 契约）上线前 block 没有软化出口，hard block 会复刻
+# "闸门自伤拍死整本书" 的自主跑回归。中后期章位 Arena win-rate 稳定后再评估升档。
 phase_b_line_tracker:
-  enabled: false
+  enabled: true
   # Chapters before this number stay in audit_only regardless of gap
   # threshold — a project needs history before the gap check is meaningful.
   warmup_until_chapter: 10

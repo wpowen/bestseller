@@ -298,6 +298,93 @@ async def _emit_terminal_pipeline_event(
         )
         return
     await reporter.emit("completed", event_payload, event_type="completed")
+    # 榜单对标闭环 P4.2：干净完成的书自动入队对标回归（advisory，永不影响成书）。
+    await _enqueue_benchmark_regression_if_needed(reporter, payload)
+
+
+def _benchmark_regression_job_id(slug: str) -> str:
+    return f"benchmark-regression:{slug}"
+
+
+async def _enqueue_benchmark_regression_if_needed(
+    reporter: RedisProgressReporter,
+    payload: dict[str, Any],
+) -> bool:
+    from bestseller.services.benchmark_regression import (
+        auto_benchmark_regression_enabled,
+    )
+
+    if not auto_benchmark_regression_enabled():
+        return False
+    project_slug = str(payload.get("project_slug") or "").strip()
+    if not project_slug:
+        return False
+    job_id = _benchmark_regression_job_id(project_slug)
+    try:
+        job = await reporter._redis.enqueue_job(  # noqa: SLF001 — worker-internal reporter
+            "run_benchmark_regression_task",
+            workflow_run_id=job_id,
+            payload={"project_slug": project_slug},
+            _job_id=job_id,
+            _expires=_dt.timedelta(days=2),
+        )
+    except (AttributeError, OSError):
+        return False
+    if job is not None:
+        await reporter.emit(
+            "benchmark_regression_queued",
+            {"project_slug": project_slug, "job_id": job_id},
+            event_type="benchmark_regression_queued",
+        )
+    return True
+
+
+async def run_benchmark_regression_task(
+    ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Post-book benchmark arena vs 真书语料（advisory；榜单对标闭环 P4.2）。"""
+    from bestseller.services.benchmark_regression import run_benchmark_regression
+    from bestseller.settings import get_settings
+
+    redis = ctx["redis"]
+    reporter = RedisProgressReporter(redis, workflow_run_id)
+    project_slug = str(payload.get("project_slug") or "").strip()
+    await reporter.emit(
+        "benchmark_regression_started",
+        {"project_slug": project_slug},
+        event_type="benchmark_regression_started",
+    )
+    try:
+        report = await run_benchmark_regression(
+            project_slug,
+            output_base_dir=get_settings().output.base_dir,
+        )
+    except Exception as exc:  # noqa: BLE001 — advisory job must never crash the worker
+        logger.warning("benchmark regression failed for %s", project_slug, exc_info=True)
+        await reporter.emit(
+            "benchmark_regression_failed",
+            {"project_slug": project_slug, "error": str(exc)},
+            event_type="benchmark_regression_failed",
+        )
+        return {"project_slug": project_slug, "status": "failed"}
+    if report is None:
+        await reporter.emit(
+            "benchmark_regression_skipped",
+            {"project_slug": project_slug, "reason": "corpus/judge unavailable"},
+            event_type="benchmark_regression_skipped",
+        )
+        return {"project_slug": project_slug, "status": "skipped"}
+    await reporter.emit(
+        "benchmark_regression_completed",
+        {
+            "project_slug": project_slug,
+            "vs_t1_win_rate": report["summaries"]["t1"]["win_rate"],
+            "vs_t2_win_rate": report["summaries"]["t2"]["win_rate"],
+            "passed": report["evaluation"]["passed"],
+        },
+        event_type="benchmark_regression_completed",
+    )
+    return {"project_slug": project_slug, "status": "completed", "report": report}
 
 
 def _quality_closure_job_id(slug: str) -> str:

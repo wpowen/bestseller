@@ -1148,10 +1148,110 @@ def _try_load_chapter_draft_from_db(
     project_slug: str,
     artifact_name: str,
 ) -> str | None:
-    payload = _try_load_chapter_draft_payload_from_db(settings, project_slug, artifact_name)
-    if payload is None:
+    m = re.match(r"chapter-(\d{3,4})\.md$", artifact_name)
+    if m is None:
         return None
-    return str(payload.get("content") or "")
+
+    async def _fetch_content() -> str | None:
+        payload = await _async_load_chapter_draft_payload(
+            settings, project_slug, artifact_name
+        )
+        if payload is None:
+            return None
+        return str(payload.get("content") or "")
+
+    try:
+        return asyncio.run(_fetch_content())
+    except Exception:
+        logger.warning(
+            "Failed to load chapter draft from DB for %s/%s",
+            project_slug,
+            artifact_name,
+            exc_info=True,
+        )
+        return None
+
+
+async def _async_load_chapter_draft_payload(
+    settings: AppSettings,
+    project_slug: str,
+    artifact_name: str,
+) -> dict[str, object] | None:
+    """Async core: fetch chapter draft payload dict from the DB.
+
+    Returns *None* if the artifact name doesn't look like a chapter export or
+    no draft is found.
+    """
+    m = re.match(r"chapter-(\d{3,4})\.md$", artifact_name)
+    if m is None:
+        return None
+    chapter_number = int(m.group(1))
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import (
+        ChapterDraftVersionModel,
+        ChapterModel,
+        ProjectModel,
+    )
+    from bestseller.services.exports import format_chapter_heading
+
+    def _content_has_chapter_heading(content_md: str, ch_number: int) -> bool:
+        return bool(
+            re.match(
+                rf"^\s*#\s*第\s*{ch_number}\s*章(?:[：:].*)?$",
+                content_md or "",
+                flags=re.MULTILINE,
+            )
+        )
+
+    async with session_scope(settings) as session:
+        proj = (
+            await session.execute(select(ProjectModel).where(ProjectModel.slug == project_slug))
+        ).scalar_one_or_none()
+        if proj is None:
+            return None
+        chapter = (
+            await session.execute(
+                select(ChapterModel).where(
+                    ChapterModel.project_id == proj.id,
+                    ChapterModel.chapter_number == chapter_number,
+                )
+            )
+        ).scalar_one_or_none()
+        if chapter is None:
+            return None
+        draft = (
+            await session.execute(
+                select(ChapterDraftVersionModel)
+                .where(ChapterDraftVersionModel.chapter_id == chapter.id)
+                .order_by(
+                    ChapterDraftVersionModel.is_current.desc(),
+                    ChapterDraftVersionModel.version_no.desc(),
+                    ChapterDraftVersionModel.created_at.desc(),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if draft is None:
+            return None
+        content_md = draft.content_md or ""
+        if not _content_has_chapter_heading(content_md, chapter.chapter_number):
+            heading = format_chapter_heading(
+                chapter.chapter_number,
+                chapter.title,
+                language=proj.language,
+            )
+            content_md = f"{heading}\n\n{content_md}"
+        return {
+            "content": content_md,
+            "version_no": int(draft.version_no or 0),
+            "updated_at": draft.created_at.isoformat()
+            if isinstance(draft.created_at, datetime)
+            else None,
+            "word_count": int(draft.word_count or 0),
+            "chapter_title": chapter.title,
+        }
 
 
 def _try_load_chapter_draft_payload_from_db(
@@ -1168,76 +1268,8 @@ def _try_load_chapter_draft_payload_from_db(
     if m is None:
         return None
     chapter_number = int(m.group(1))
-
-    from sqlalchemy import select
-
-    from bestseller.infra.db.models import (
-        ChapterDraftVersionModel,
-        ChapterModel,
-        ProjectModel,
-    )
-    from bestseller.services.exports import format_chapter_heading
-
-    def _content_has_chapter_heading(content_md: str, chapter_number: int) -> bool:
-        return bool(
-            re.match(
-                rf"^\s*#\s*第\s*{chapter_number}\s*章(?:[：:].*)?$",
-                content_md or "",
-                flags=re.MULTILINE,
-            )
-        )
-
-    async def _fetch() -> dict[str, object] | None:
-        async with session_scope(settings) as session:
-            proj = (
-                await session.execute(select(ProjectModel).where(ProjectModel.slug == project_slug))
-            ).scalar_one_or_none()
-            if proj is None:
-                return None
-            chapter = (
-                await session.execute(
-                    select(ChapterModel).where(
-                        ChapterModel.project_id == proj.id,
-                        ChapterModel.chapter_number == chapter_number,
-                    )
-                )
-            ).scalar_one_or_none()
-            if chapter is None:
-                return None
-            draft = (
-                await session.execute(
-                    select(ChapterDraftVersionModel)
-                    .where(ChapterDraftVersionModel.chapter_id == chapter.id)
-                    .order_by(
-                        ChapterDraftVersionModel.is_current.desc(),
-                        ChapterDraftVersionModel.version_no.desc(),
-                        ChapterDraftVersionModel.created_at.desc(),
-                    )
-                    .limit(1)
-                )
-            ).scalar_one_or_none()
-            if draft is None:
-                return None
-            content_md = draft.content_md or ""
-            if not _content_has_chapter_heading(content_md, chapter.chapter_number):
-                heading = format_chapter_heading(
-                    chapter.chapter_number,
-                    chapter.title,
-                    language=proj.language,
-                )
-                content_md = f"{heading}\n\n{content_md}"
-            return {
-                "content": content_md,
-                "version_no": int(draft.version_no or 0),
-                "updated_at": draft.created_at.isoformat()
-                if isinstance(draft.created_at, datetime)
-                else None,
-                "word_count": int(draft.word_count or 0),
-                "chapter_title": chapter.title,
-            }
-
     try:
-        return asyncio.run(_fetch())
+        return asyncio.run(_async_load_chapter_draft_payload(settings, project_slug, artifact_name))
     except Exception:
         logger.warning(
             "Failed to load chapter %d draft from DB for %s",
@@ -6742,8 +6774,18 @@ async def _load_project_design_dossier_payload(
         narrative=narrative_payload,
     )
     conception_artifacts = (project.metadata_json or {}).get("conception_artifacts") or {}
+    # 榜单对标回归（P4.2 产物，advisory）：最近一次 vs 真书 Arena win-rate。
+    try:
+        from bestseller.services.benchmark_regression import load_benchmark_report
+
+        benchmark_report = load_benchmark_report(
+            project.slug, output_base_dir=settings.output.base_dir
+        )
+    except Exception:  # noqa: BLE001 — dossier must render without the report
+        benchmark_report = None
     return {
         "generated_at": _utc_now(),
+        "benchmark_report": benchmark_report,
         # Conception-phase artifacts (heat search / methodology / hook candidates
         # / commercial brief) persisted in project metadata. Surfaced inline so
         # the book document view can render them as a "构思产物" group.

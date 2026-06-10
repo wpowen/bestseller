@@ -19,8 +19,27 @@ from bestseller.services.drafts import (
     _dedupe_methodology_sections,
     build_scene_draft_prompts,
 )
+from bestseller.services.methodology import render_methodology_scene_rules
 
 pytestmark = pytest.mark.unit
+
+
+def test_baseline_craft_rules_gate_drops_only_paraphrase_restatements() -> None:
+    """画面感规则/对话规则 are paraphrase-duplicates of compile_methodology's
+    visual_writing/dialogue_rules; the scene-writer path suppresses them while
+    keeping the context-specific bridge rules (开篇/七猫签约)."""
+    common = dict(chapter_number=1, is_opening=True, pacing_mode="build")
+    with_baseline = render_methodology_scene_rules(**common, include_baseline_craft_rules=True)
+    without_baseline = render_methodology_scene_rules(**common, include_baseline_craft_rules=False)
+
+    # default keeps them (review/other callers rely on this)
+    assert "【画面感规则】" in with_baseline
+    assert "【对话规则】" in with_baseline
+    # gated path drops the paraphrase restatements …
+    assert "【画面感规则】" not in without_baseline
+    assert "【对话规则】" not in without_baseline
+    # … but keeps the context-specific opening rule (unique to the bridge)
+    assert "黄金三章" in without_baseline
 
 
 def test_exact_duplicate_sections_are_dropped() -> None:

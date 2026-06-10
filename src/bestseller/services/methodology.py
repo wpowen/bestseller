@@ -596,31 +596,43 @@ def render_methodology_scene_rules(
     platform_target: str | None = None,
     language: str | None = None,
     rejection_reasons: str | None = None,
+    include_baseline_craft_rules: bool = True,
 ) -> str:
     """Render methodology rules applicable to the current scene context.
 
     Returns a prompt-ready string to inject into scene writer instructions.
+
+    ``include_baseline_craft_rules`` (default True) gates the always-on
+    画面感规则 / 对话规则 blocks. They restate the SAME craft (show-don't-tell,
+    subtext, multi-sense) that ``compile_methodology`` renders in full via its
+    visual_writing / dialogue_rules sections AND that the scene system prompt
+    already states in its craft-philosophy section — so "show don't tell"
+    reached the writer prompt 3× in 3 phrasings, a top source of the
+    instruction-dilution the prompt-ablation ladder measured. The scene-writer
+    path passes False when the compiled methodology is present (it owns these);
+    review / other callers keep True so the rules still surface elsewhere.
     """
     rules: list[str] = []
 
-    # Always-on visual writing rules
-    rules.append(
-        "【画面感规则】\n"
-        "- 展示不讲述：用动作代替形容词，用后果代替本体描写\n"
-        '- 情绪隐藏：不写\u201c愤怒/伤心\u201d等情绪词，通过动作和环境传达\n'
-        "- 环境交互：人物必须与环境产生物理连接，不做背景板\n"
-        "- 五感叠加：每个重要场景至少调用2个感官通道\n"
-        "- 一笔多用：单段文字同时承载环境+人设+伏笔+情感"
-    )
+    if include_baseline_craft_rules:
+        # Always-on visual writing rules
+        rules.append(
+            "【画面感规则】\n"
+            "- 展示不讲述：用动作代替形容词，用后果代替本体描写\n"
+            "- 情绪隐藏：不写“愤怒/伤心”等情绪词，通过动作和环境传达\n"
+            "- 环境交互：人物必须与环境产生物理连接，不做背景板\n"
+            "- 五感叠加：每个重要场景至少调用2个感官通道\n"
+            "- 一笔多用：单段文字同时承载环境+人设+伏笔+情感"
+        )
 
-    # Always-on dialogue rules
-    rules.append(
-        "【对话规则】\n"
-        "- 身份化语言：每个角色说话带有独特的身份烙印\n"
-        "- 潜台词：表面表达≠内心意图，张力来自反差\n"
-        "- 打破问答：不要有问必答，用打岔/反问/情绪切断\n"
-        "- 动作卡位：对话间穿插微动作细节反映真实内心"
-    )
+        # Always-on dialogue rules
+        rules.append(
+            "【对话规则】\n"
+            "- 身份化语言：每个角色说话带有独特的身份烙印\n"
+            "- 潜台词：表面表达≠内心意图，张力来自反差\n"
+            "- 打破问答：不要有问必答，用打岔/反问/情绪切断\n"
+            "- 动作卡位：对话间穿插微动作细节反映真实内心"
+        )
 
     # Opening-specific rules
     if is_opening or chapter_number <= 3:

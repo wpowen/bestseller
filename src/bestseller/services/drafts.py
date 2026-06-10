@@ -5865,15 +5865,6 @@ def build_scene_draft_prompts(
             _pacing_mode_val = "breathe"  # periodic breathing room
         else:
             _pacing_mode_val = "build"
-    _methodology_rules = render_methodology_scene_rules(
-        chapter_number=chapter.chapter_number,
-        is_opening=(chapter.chapter_number <= 3),
-        is_climax=_is_climax,
-        pacing_mode=_pacing_mode_val,
-        platform_target=getattr(writing_profile.market, "platform_target", ""),
-        language=language,
-        rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
-    )
     # 爽文融合 (enable_shuangwen_fusion, default True): lift the 爽点 engines above
     # the 文采 flourish levers in PROSE_SCENE so 爽点 is never starved by the budget.
     # 文采 still ships — fusion reorders, it does not remove. See methodology_compiler.
@@ -5882,6 +5873,11 @@ def build_scene_draft_prompts(
     _shuangwen_on = bool(
         getattr(get_settings().pipeline, "enable_shuangwen_fusion", True)
     )
+    # Compile FIRST (before the scene-rules bridge) so we know whether the
+    # compiled methodology owns the prose-craft sections (visual_writing /
+    # dialogue_rules). When it does, the bridge must NOT re-state 画面感规则 /
+    # 对话规则 — that paraphrase-duplication put "show don't tell" into the
+    # prompt 3× and is a top dilution source (prompt-ablation ladder).
     _compiled_methodology = compile_methodology(
         stage=MethodologyStage.PROSE_SCENE,
         prompt_pack_key=_resolve_prompt_pack_key(project),
@@ -5897,13 +5893,27 @@ def build_scene_draft_prompts(
         story_bible=story_bible_context,
         shuangwen_mode=_shuangwen_on,
     ).text
+    _compiled_has_methodology = "writing_methodology · scene" in _compiled_methodology
+    _methodology_rules = render_methodology_scene_rules(
+        chapter_number=chapter.chapter_number,
+        is_opening=(chapter.chapter_number <= 3),
+        is_climax=_is_climax,
+        pacing_mode=_pacing_mode_val,
+        platform_target=getattr(writing_profile.market, "platform_target", ""),
+        language=language,
+        rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
+        # Drop the always-on 画面感规则 / 对话规则 restatements when the compiled
+        # methodology already renders visual_writing / dialogue_rules in full;
+        # the context-specific bridge rules (开篇/高潮/节奏期/七猫签约·重生) stay.
+        include_baseline_craft_rules=not _compiled_has_methodology,
+    )
     # The compiled methodology is the budget-managed single source for the
     # writing methodology: it renders the same writing_methodology.yaml (plus
     # the pack's 题材方法论) that the bridge block above renders, but under the
     # compiler's token budget and priority order. Keeping both copies costs
     # ~2k Tier-1 tokens, which starves every Tier-2/3 narrative section
     # (story bible, recent scenes, clues) out of the writer prompt.
-    if "writing_methodology · scene" in _compiled_methodology:
+    if _compiled_has_methodology:
         _methodology_pack_block = ""
     _methodology_line = ""
     if _methodology_pack_block or _methodology_rules or _compiled_methodology:

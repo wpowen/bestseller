@@ -84,6 +84,22 @@ _FUNCTIONAL_TITLE_SUFFIXES_ZH = {
     "碎锁",
     "终幕",
 }
+# Procedural / structural beat labels prepended to a concrete event with a
+# middot — "取证·义庄铜镜登记", "反证·林正淳取镜签名". Keep in sync with
+# ``services/narrative_contracts.FUNCTIONAL_TITLE_DOT_LABELS_ZH`` (domain may
+# not import from services, so the set is intentionally duplicated here).
+_FUNCTIONAL_TITLE_DOT_LABELS_ZH = {
+    "取证", "举证", "质证", "反证", "验尸", "验骨", "验明", "勘验", "勘查",
+    "踏勘", "立案", "结案", "销案", "并案", "破案", "报案", "追凶", "缉凶",
+    "缉拿", "缉捕", "查案", "查证", "查访", "排查", "走访", "盘问", "审讯",
+    "提审", "对峙", "对质", "布局", "设局", "收网", "定罪", "翻供", "翻案",
+    "申冤", "伸冤", "复盘", "推演", "推理", "解谜", "寻凶", "辨伪",
+    "开局", "终局", "起手", "落子", "楔子", "引子", "序章", "伏笔", "铺垫",
+    "转折", "高潮", "反转", "过渡", "收束", "序幕", "过场", "尾声",
+    *_FUNCTIONAL_TITLE_PREFIXES_ZH,
+    *_FUNCTIONAL_TITLE_SUFFIXES_ZH,
+}
+_TITLE_DOT_SEPARATORS = ("·", "・", "•", "‧", "∙", "·")
 
 
 def _normalize_str_dict_list(value: Any) -> list[dict[str, str]]:
@@ -171,7 +187,14 @@ def _normalize_str_list(value: Any) -> list[str]:
 
 def _looks_like_functional_chapter_title(value: Any) -> bool:
     text = str(value or "").strip()
-    if not text or len(text) > 8:
+    if not text:
+        return False
+    for separator in _TITLE_DOT_SEPARATORS:
+        if separator in text:
+            head = text.split(separator, 1)[0].strip()
+            if head and head in _FUNCTIONAL_TITLE_DOT_LABELS_ZH:
+                return True
+    if len(text) > 8:
         return False
     return any(text.startswith(prefix) for prefix in _FUNCTIONAL_TITLE_PREFIXES_ZH) and any(
         text.endswith(suffix) for suffix in _FUNCTIONAL_TITLE_SUFFIXES_ZH

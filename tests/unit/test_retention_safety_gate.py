@@ -74,18 +74,19 @@ def test_evaluate_retention_safety_critical_hook_echo() -> None:
     assert report.findings[0].evidence["missed_tokens"]
 
 
-def test_evaluate_retention_safety_low_hook_echo_triggers_repair() -> None:
+def test_evaluate_retention_safety_low_hook_echo_is_advisory() -> None:
     report = evaluate_retention_safety(
         chapter_position=2,
-        chapter_text="门外脚步声响起。下一刻，他握紧剑柄。",
-        prev_chapter_text=_PREV_CHAPTER,
+        chapter_text="名单还在桌上，他先按住第一页。",
+        prev_chapter_text="那份名单还在抽屉里，回执被他扣在掌心。",
         prev_chapter_position=1,
         skip_signature=True,
+        skip_chapter_length=True,
     )
 
-    assert not report.passed
-    assert HOOK_ECHO_LOW_BLOCK_CODE in report.auto_repair_codes
-    assert report.findings[0].code == HOOK_ECHO_LOW_BLOCK_CODE
+    assert report.passed
+    assert HOOK_ECHO_LOW_BLOCK_CODE not in report.auto_repair_codes
+    assert any(f.code == HOOK_ECHO_LOW_BLOCK_CODE for f in report.findings)
 
 
 def test_evaluate_retention_safety_signature_missing() -> None:

@@ -30,6 +30,8 @@ import logging
 import re
 from typing import Any
 
+from bestseller.services.progress_context import emit_gate_result
+
 logger = logging.getLogger(__name__)
 
 
@@ -286,7 +288,7 @@ def extract_hook_tokens(
     high_signal_tokens = [
         token for token in tokens if token not in _LOW_SIGNAL_HOOK_TOKENS
     ]
-    if len(high_signal_tokens) >= 6:
+    if high_signal_tokens:
         tokens = high_signal_tokens
 
     return tokens[:max_tokens]
@@ -465,6 +467,14 @@ def check_hook_echo(
             f"chapter likely fails to honor prior promises"
         )
 
+    emit_gate_result(
+        "hook_echo_gate",
+        verdict="pass" if severity == "info" else "blocked",
+        severity=severity,
+        score=round(coverage * 100, 1),
+        reasons=missed,
+        chapter=current_chapter_position,
+    )
     return HookEchoReport(
         chapter_position=current_chapter_position,
         coverage=coverage,

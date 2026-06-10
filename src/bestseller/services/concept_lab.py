@@ -221,14 +221,15 @@ def render_concept_lab_prompt_block(source: Any, *, language: str = "zh-CN") -> 
     }
     label = "[Selected Concept Lab contract]" if is_en else CONCEPT_LAB_PROMPT_LABEL
     directive = (
-        "Use this as the single reader-promise lineage for titles, material "
-        "selection, story design, and chapter loops. Do not dilute it into a "
-        "generic genre summary."
+        "Use this as a soft reference for titles, material selection, story "
+        "design, and chapter loops. You MAY adapt it to better fit the genre; "
+        "transform any mechanism into an original, cost-bearing, escalating rule "
+        "rather than copying fixed ability names."
         if is_en
         else (
-            "这是标题、素材选择、故事设计和章节循环的单一读者承诺链路。"
-            "不得把它稀释成普通题材说明；不要照抄固定能力名，必须按 hook_design "
-            "把机制重新融合成该题材内可执行、可付代价、可升级的原创规则。"
+            "把它当作标题、素材选择、故事设计和章节循环的软参考（非硬合同）。"
+            "可按题材自由改造；不要照抄固定能力名，请按 hook_design 把机制重新融合成"
+            "该题材内可执行、可付代价、可升级的原创规则。"
         )
     )
     return f"{label}\n{directive}\n{json_dumps(payload)}"

@@ -295,6 +295,11 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     # wuxia-jianghu
     "wuxia-jianghu": "wuxia-jianghu",
     "martial-arts-sect": "wuxia-jianghu",
+    # 调研报告新增热门题材（2025-2026）
+    "folk-occult-trade": "suspense-mystery",
+    "isekai-rise": "otherworld-cross-system",
+    "sweet-romance-ceo": "relationship-driven",
+    "cyberpunk-nearfuture": "science-fiction-progression",
 }
 
 
@@ -3464,6 +3469,10 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "suspense": "suspense-mystery",
     "恐怖": "suspense-mystery",
     "无限流": "suspense-mystery",
+    "捞尸人": "suspense-mystery",
+    "赶尸": "suspense-mystery",
+    "民俗": "suspense-mystery",
+    "民间灵异": "suspense-mystery",
     # strategy-worldbuilding
     "争霸": "strategy-worldbuilding",
     "战争": "strategy-worldbuilding",
@@ -3505,6 +3514,9 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "scifi": "science-fiction-progression",
     "sci-fi": "science-fiction-progression",
     "mecha": "science-fiction-progression",
+    "赛博朋克": "science-fiction-progression",
+    "近未来": "science-fiction-progression",
+    "cyberpunk": "science-fiction-progression",
     # wuxia-jianghu
     "武侠": "wuxia-jianghu",
     "江湖": "wuxia-jianghu",

@@ -6,6 +6,7 @@ from bestseller.services.chapter_quality_bundle import (
     ChapterQualityBundleContext,
     run_chapter_quality_bundle,
 )
+from bestseller.services.chapter_length_gate import CHAPTER_LENGTH_BLOCK_HIGH_CODE
 
 pytestmark = pytest.mark.unit
 
@@ -33,6 +34,23 @@ def test_chapter_quality_bundle_preserves_multiple_blocking_findings() -> None:
     assert "ANTI_META_LEAK" in codes
     assert "CHAPTER_TOO_SHORT" in codes
     assert report.passed is False
+
+
+def test_chapter_quality_bundle_preserves_over_max_length_code() -> None:
+    text = "# 第2章\n\n" + ("陆沉把申诉表压在窗口前，旧楼灯影一层层晃下来。" * 260)
+
+    report = run_chapter_quality_bundle(
+        text,
+        ChapterQualityBundleContext(chapter_number=2, target_chapter_words=2000),
+    )
+
+    codes = {finding.code for finding in report.blocking_findings}
+    assert CHAPTER_LENGTH_BLOCK_HIGH_CODE in codes
+    assert "CHAPTER_TOO_SHORT" not in codes
+    finding = next(
+        item for item in report.blocking_findings if item.code == CHAPTER_LENGTH_BLOCK_HIGH_CODE
+    )
+    assert finding.repair_scope == "chapter"
 
 
 def test_chapter_quality_bundle_clean_control_passes() -> None:

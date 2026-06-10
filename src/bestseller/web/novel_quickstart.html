@@ -2771,6 +2771,17 @@
     flex: 1;
     color: var(--text);
   }
+  .pv-tl-text .pv-tl-info { color: var(--text-dim); }
+  .pv-tl-text.blocked { color: var(--danger); font-weight: 640; }
+  .pv-tl-text.warn { color: var(--warning); }
+  .pv-tl-dot.milestone { background: var(--blue); }
+  .pv-tl-dot.blocked { background: var(--danger); }
+  #pvMilestones:empty::after,
+  #pvTimeline:empty::after {
+    content: '暂无记录';
+    color: var(--text-faint);
+    font-size: 12px;
+  }
 
   .pv-error {
     display: none;
@@ -3839,6 +3850,15 @@
       </div>
       <div class="genre-dimension-filters" id="genreDimensionFilters" aria-label="题材多维筛选"></div>
       <div class="genre-grid" id="genreGrid"></div>
+      <div class="genre-dimension-row" id="audienceOrientationRow" style="margin-top:14px;display:none;align-items:center;">
+        <div class="genre-dimension-label">读者取向</div>
+        <div class="genre-dimension-options">
+          <button type="button" class="genre-filter-chip active" data-audience="" id="audienceAuto">智能判定</button>
+          <button type="button" class="genre-filter-chip" data-audience="male" id="audienceMale">男频</button>
+          <button type="button" class="genre-filter-chip" data-audience="female" id="audienceFemale">女频</button>
+        </div>
+        <div class="creative-evidence" style="margin-left:10px;">默认按题材+市场热度自动判定；可手动锁定男频/女频</div>
+      </div>
       <div class="creative-lab" id="creativeLab" aria-label="题材脑洞发散">
         <div class="creative-lab-head">
           <div>
@@ -4002,6 +4022,7 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" onclick="switchView('dashboard')">← 返回仪表板</button>
           <a class="btn btn-secondary btn-sm" id="pvFlowLink" href="#" target="_blank" style="display:none">数据流</a>
+          <a class="btn btn-secondary btn-sm" id="pvDesignLink" href="#" target="_blank" style="display:none">书籍文档</a>
           <button class="btn btn-primary btn-sm" onclick="startNewCreationFlow()">+ 新建另一本</button>
         </div>
       </div>
@@ -4048,7 +4069,12 @@
     </div>
 
     <div class="pv-timeline">
-      <h4>执行日志</h4>
+      <h4>关键节点 <span style="font-weight:400;color:var(--text-faint);">书籍全流程里程碑</span></h4>
+      <div id="pvMilestones"></div>
+    </div>
+
+    <div class="pv-timeline">
+      <h4>实时活动 <span style="font-weight:400;color:var(--text-faint);">每个动作的状态追踪</span></h4>
       <div id="pvTimeline"></div>
     </div>
 
@@ -4199,6 +4225,7 @@
   let hookCandidates = {};
   let selectedGenreFilters = {};
   let selectedGenreKey = null;
+  let selectedAudience = '';  // '' = 智能判定(交给热度Agent); 'male' = 男频; 'female' = 女频
   let selectedCreativeKey = null;
   let selectedHookIndexByGenre = {};
   let conceptLabCatalog = null;
@@ -4274,6 +4301,8 @@
   let projectTitleBySlug = new Map();
   let focusTaskId = null;  // currently viewing in progress view
   let pollTimer = null;
+  let renderedChapterListSignature = null;
+  let renderedChapterListTaskId = null;
 
   // ── Per-book model selection (task-console dimension) ──
   let modelCatalog = [];
@@ -4372,6 +4401,14 @@
 	    machine_blocked: '修复待续跑',
 	    machine_repair_required: '待机器修复',
     // AI Conception stages
+    heat_search_started: '🔥 热度搜索中', heat_search_completed: '🔥 热度搜索完成',
+    methodology_selection_started: '🧠 方法论匹配中', methodology_selected: '🧠 方法论已选定',
+    hook_candidates_started: '🪝 钩子候选生成中', hook_candidates_generated: '🪝 钩子候选就绪',
+    concept_commercial_positioning: '💼 商业定位',
+    concept_creative_exploration: '🎨 创意探索', conception_creative_exploration: '🎨 创意探索',
+    concept_artifacts_persisted: '🗂️ 构思物料已归档',
+    narrative_lines_repair_started: '🩹 叙事线补强中', narrative_lines_repair_completed: '🩹 叙事线补强完成',
+    world_richness_repair_started: '🌍 世界观补强中', world_richness_repair_completed: '🌍 世界观补强完成',
     conception_market: '📊 市场策略构思', conception_character: '👤 角色体系构思',
     conception_world: '🌍 世界观构思', conception_review: '🔍 交叉审查',
     conception_finalize: '✨ 构思定稿', conception_complete: '🎯 构思完成',
@@ -4411,6 +4448,15 @@
     chapter_pipeline_started: '写作章节', chapter_pipeline_completed: '章节完成',
     chapter_pipeline_machine_repair_required: '机器修复排队',
     // Quality assurance stages
+    // 质量闸门评估（payload.verdict/severity/score/reasons；blocked 红色高亮）
+    chapter_quality_gate_evaluated: '🚦 章节质量闸门',
+    anti_meta_gate_evaluated: '🚦 防出戏闸门',
+    retention_safety_gate_evaluated: '🚦 留存安全闸门',
+    hook_echo_gate_evaluated: '🚦 钩子回声闸门',
+    splice_coherence_gate_evaluated: '🚦 拼接连贯闸门',
+    scene_review_evaluated: '🔍 场景评审',
+    chapter_review_evaluated: '🔍 章节评审',
+    review_gate_evaluated: '🔍 评审闸门',
     periodic_consistency_check_started: '一致性检查', periodic_consistency_check_completed: '一致性检查完成',
     rolling_summary_started: '📝 知识压缩', rolling_summary_completed: '📝 知识压缩完成',
     rolling_summary_failed: '📝 知识压缩失败',
@@ -4507,6 +4553,13 @@
 
   function resetWizardState() {
     selectedGenreKey = null;
+    selectedAudience = '';
+    const audRow = document.getElementById('audienceOrientationRow');
+    if (audRow) {
+      audRow.style.display = 'none';
+      audRow.querySelectorAll('.genre-filter-chip').forEach((c) =>
+        c.classList.toggle('active', (c.getAttribute('data-audience') || '') === ''));
+    }
     selectedCreativeKey = null;
     selectedConceptBundleId = null;
     conceptLabCatalog = null;
@@ -6322,6 +6375,12 @@
   window.openProgress = function(taskId) {
     focusTaskId = taskId;
     listingLoadedForSlug = null;
+    listingLoadedForStatus = null;
+    listingRenderedSignature = null;
+    listingRequestGeneration += 1;
+    listingLoadInFlight = null;
+    renderedChapterListSignature = null;
+    renderedChapterListTaskId = null;
     $('#pvListing').classList.remove('visible');
     switchView('progress');
     startProgressPoll(taskId);
@@ -6679,6 +6738,11 @@
       flowLink.href = `/flow/${encodeURIComponent(slug)}`;
       flowLink.style.display = '';
     } else if (flowLink) { flowLink.style.display = 'none'; }
+    const designLink = $('#pvDesignLink');
+    if (designLink && slug) {
+      designLink.href = `/design/${encodeURIComponent(slug)}`;
+      designLink.style.display = '';
+    } else if (designLink) { designLink.style.display = 'none'; }
 
     // Total chapters — book-wide when multi-volume, falling back to the
     // per-volume count for single-volume projects.
@@ -6895,69 +6959,114 @@
       $('#pvModel').textContent = llmModel || '-';
     }
 
-    // Timeline
-    const tl = events.slice(-20).reverse();
-    $('#pvTimeline').innerHTML = tl.map((e, i) => {
-      const label = STAGE[e.stage] || e.stage;
-      let detail = '';
-      if (e.stage === 'chapter_pipeline_started' && e.payload) {
-        const cn = e.payload.chapter_number ?? '-';
-        const pg = e.payload.progress ?? '';
-        const targetText = Number(e.payload.target_word_count || 0) > 0
-          ? ` · 目标约 ${fmtWords(e.payload.target_word_count)}`
-          : '';
-        detail = ` — 第${cn}${unitLabel}${pg ? ` (${pg})` : ''}${targetText}`;
+    // ── Timeline rendering ───────────────────────────────────────────
+    // Friendly fallback label for any stage missing a STAGE entry, so a new
+    // pipeline event never leaks a raw snake_case id to the user.
+    const prettifyStage = (s) => String(s || '-')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+
+    // Per-stage one-line detail. Keeps the rich special-cases and otherwise
+    // falls back to a generic summary driven by a stable, ordered set of
+    // payload keys — so ANY new stage shows "状态 + 一行信息" with no frontend
+    // change, as long as emitters use the documented payload key names.
+    const stageDetail = (e) => {
+      const p = e.payload || {};
+      if (e.stage === 'chapter_pipeline_started') {
+        const cn = p.chapter_number ?? '-';
+        const pg = p.progress ?? '';
+        const targetText = Number(p.target_word_count || 0) > 0 ? ` · 目标约 ${fmtWords(p.target_word_count)}` : '';
+        return ` — 第${cn}${unitLabel}${pg ? ` (${pg})` : ''}${targetText}`;
       }
-      else if (e.stage === 'fanqie_segment_writing_completed' && e.payload) {
-        const seg = e.payload.segment_number ?? '-';
-        const segTotal = e.payload.segment_total ?? '';
-        detail = segTotal ? ` — 写作进度 ${seg}/${segTotal}` : ` — 写作进度 ${seg}`;
+      if (e.stage === 'fanqie_segment_writing_completed') {
+        const seg = p.segment_number ?? '-';
+        const segTotal = p.segment_total ?? '';
+        return segTotal ? ` — 写作进度 ${seg}/${segTotal}` : ` — 写作进度 ${seg}`;
       }
-      else if (e.stage === 'chapter_pipeline_completed' && e.payload) {
+      if (e.stage === 'chapter_pipeline_completed') {
         if (isFanqieShort) {
-          const wordCount = Number(e.payload.word_count || 0);
-          detail = wordCount > 0 ? ` — 第${e.payload.chapter_number ?? '-'}${unitLabel}已写入 ${fmtWords(wordCount)}` : '';
-        } else {
-        const chapterTitle = e.payload.chapter_title ? `《${e.payload.chapter_title}》` : '';
-        const chapterNumber = Number(e.payload.chapter_number || 0);
-        const dbChapter = chapterWordStats.byNumber.get(chapterNumber);
-        const wordCount = dbChapter ? dbChapter.word_count : Number(e.payload.word_count || 0);
-        const wordText = Number(wordCount || 0) > 0 ? ` · ${fmtWords(wordCount)}` : '';
-        detail = ` — 第${e.payload.chapter_number ?? '-'}章${chapterTitle}${wordText}`;
+          const wordCount = Number(p.word_count || 0);
+          return wordCount > 0 ? ` — 第${p.chapter_number ?? '-'}${unitLabel}已写入 ${fmtWords(wordCount)}` : '';
         }
+        const chapterTitle = p.chapter_title ? `《${p.chapter_title}》` : '';
+        const chapterNumber = Number(p.chapter_number || 0);
+        const dbChapter = chapterWordStats.byNumber.get(chapterNumber);
+        const wordCount = dbChapter ? dbChapter.word_count : Number(p.word_count || 0);
+        const wordText = Number(wordCount || 0) > 0 ? ` · ${fmtWords(wordCount)}` : '';
+        return ` — 第${p.chapter_number ?? '-'}章${chapterTitle}${wordText}`;
       }
-      else if (e.stage === 'planning_completed' && e.payload) detail = isFanqieShort ? ` — ${e.payload.chapter_count ?? '-'}段` : ` — ${e.payload.volume_count ?? '-'}卷 ${e.payload.chapter_count ?? '-'}章`;
-      else if (e.stage === 'resume_skipped_chapters' && e.payload) detail = ` — 跳过${e.payload.skipped_count ?? '-'}${unitLabel}`;
-      const dot = (i === 0 && status === 'running') ? 'active' : 'done';
+      if (e.stage === 'planning_completed') return isFanqieShort ? ` — ${p.chapter_count ?? '-'}段` : ` — ${p.volume_count ?? '-'}卷 ${p.chapter_count ?? '-'}章`;
+      if (e.stage === 'resume_skipped_chapters') return ` — 跳过${p.skipped_count ?? '-'}${unitLabel}`;
+      // Generic fallback: surface a few well-known payload keys, in priority order.
+      const labelMap = {
+        target: '对象', verdict: '判定', severity: '严重度', score: '评分',
+        framework: '方法论', candidate_count: '候选', count: '数量',
+        volume_number: '卷', chapter_number: '章', scene_number: '场景',
+        segment_number: '段', step_name: '步骤', keywords: '关键词', reason: '原因',
+      };
+      const order = ['target', 'verdict', 'severity', 'score', 'framework', 'candidate_count', 'count', 'volume_number', 'chapter_number', 'scene_number', 'segment_number', 'step_name', 'keywords', 'reason'];
+      const parts = [];
+      for (const k of order) {
+        let v = p[k];
+        if (v === undefined || v === null || v === '') continue;
+        if (Array.isArray(v)) v = v.slice(0, 3).join('、');
+        if (typeof v === 'object') continue;
+        v = String(v);
+        if (v.length > 40) v = v.slice(0, 40) + '…';
+        parts.push(`${labelMap[k] || k}:${v}`);
+        if (parts.length >= 3) break;
+      }
+      return parts.length ? ` — ${parts.join(' · ')}` : '';
+    };
+
+    const isBlockedStage = (e) => {
+      const p = e.payload || {};
+      return p.blocked === true
+        || String(e.stage).endsWith('_blocked')
+        || /blocked|machine_repair_required|_failed$|^failed$/.test(String(e.stage))
+        || p.verdict === 'blocked';
+    };
+
+    const tlItemHtml = (e, i, isMilestone) => {
+      const label = STAGE[e.stage] || prettifyStage(e.stage);
+      const detail = stageDetail(e);
+      const p = e.payload || {};
+      const blocked = isBlockedStage(e);
+      const sev = String(p.severity || '').toLowerCase();
+      const toneCls = blocked ? 'blocked' : ((sev === 'high' || sev === 'warn' || sev === 'warning') ? 'warn' : '');
+      const dotCls = isMilestone
+        ? (blocked ? 'blocked' : 'milestone')
+        : ((i === 0 && status === 'running') ? 'active' : 'done');
       const time = new Date(e.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
-      return `<div class="pv-tl-item"><div class="pv-tl-dot ${dot}"></div><span class="pv-tl-time">${time}</span><span class="pv-tl-text">${esc(label)}${esc(detail)}</span></div>`;
-    }).join('');
+      return `<div class="pv-tl-item"><div class="pv-tl-dot ${dotCls}"></div><span class="pv-tl-time">${time}</span><span class="pv-tl-text ${toneCls}">${esc(label)}<span class="pv-tl-info">${esc(detail)}</span></span></div>`;
+    };
+
+    // Activity stream (high-frequency, last 20) + durable milestone axis.
+    const tl = events.slice(-20).reverse();
+    $('#pvTimeline').innerHTML = tl.map((e, i) => tlItemHtml(e, i, false)).join('');
+    const milestones = (data.milestone_events || []).slice(-50).reverse();
+    $('#pvMilestones').innerHTML = milestones.map((e, i) => tlItemHtml(e, i, true)).join('');
 
     // Chapters / single-piece reader entry.
-    // 先重置章节区,避免切换书时残留上一本的章节(陈旧 DOM 串台)。
-    $('#pvChSec').style.display = 'none';
-    $('#pvChGrid').innerHTML = '';
     if (isFanqieShort && slug) {
-      $('#pvChSec').style.display = '';
-      const chHeader = $('#pvChSec h4 span');
-      if (chHeader) chHeader.innerHTML = '短故事全文 <span style="font-weight:400;color:var(--text-dim);">（单篇阅读）</span>';
-      $('#pvReadAll').textContent = '阅读作品';
-      $('#pvReadAll').href = `/read/${encodeURIComponent(slug)}`;
       const wordText = completedWordCount > 0
         ? `${fmtWords(completedWordCount)} · 单篇完结`
         : '单篇导出';
-      $('#pvChGrid').innerHTML = `
+      const html = `
         <a class="pv-ch-link" href="/read/${esc(slug)}" target="_blank">
           <span class="n">全文</span>
           <span class="t">${esc(data.title || data.project_title || slug)}</span>
           <span class="m">${esc(wordText)} · 点击打开阅读器</span>
         </a>`;
+      renderChapterGridIfChanged(
+        taskId,
+        `${taskId}:fanqie:${slug}:${data.title || data.project_title || ''}:${wordText}`,
+        '短故事全文 <span style="font-weight:400;color:var(--text-dim);">（单篇阅读）</span>',
+        '阅读作品',
+        `/read/${encodeURIComponent(slug)}`,
+        html
+      );
     } else if (bookDoneCount > 0 && slug) {
-      $('#pvChSec').style.display = '';
-      const chHeader = $('#pvChSec h4 span');
-      if (chHeader) chHeader.innerHTML = '已完成章节 <span style="font-weight:400;color:var(--text-dim);">（点击预览）</span>';
-      $('#pvReadAll').textContent = '阅读全部';
-      $('#pvReadAll').href = `/read/${encodeURIComponent(slug)}`;
       try {
         const tocRes = await fetch(`/api/reader/${encodeURIComponent(slug)}/toc`);
         // 异步返回后,若用户已切到别的任务/书,丢弃本次结果,杜绝串台。
@@ -6966,11 +7075,32 @@
           const tocData = await tocRes.json();
           if (window.__activePreviewTaskId !== taskId) return;
           const chs = tocData.chapters || [];
-          $('#pvChGrid').innerHTML = chs.map(ch =>
+          const html = chs.map(ch =>
             `<a class="pv-ch-link" href="/read/${esc(slug)}#${ch.number}" target="_blank"><span class="n">第${ch.number}章</span><span class="t">${esc(ch.title || '')}</span><span class="m">${esc(Number(ch.word_count || 0) > 0 ? `${fmtWords(ch.word_count)} · 约 ${Number(ch.estimated_read_minutes || 0)} 分钟` : '文件生成中')}</span></a>`
           ).join('') || '<span style="color:var(--text-dim);font-size:13px;">文件生成中...</span>';
+          const signature = [
+            taskId,
+            'toc',
+            slug,
+            ...chs.map(ch => [
+              ch.number,
+              ch.title || '',
+              Number(ch.word_count || 0),
+              Number(ch.estimated_read_minutes || 0),
+            ].join(':')),
+          ].join('|');
+          renderChapterGridIfChanged(
+            taskId,
+            signature,
+            '已完成章节 <span style="font-weight:400;color:var(--text-dim);">（点击预览）</span>',
+            '阅读全部',
+            `/read/${encodeURIComponent(slug)}`,
+            html
+          );
         }
       } catch { /* ignore */ }
+    } else {
+      hideChapterGridIfChanged(taskId);
     }
 
     // Error
@@ -7098,9 +7228,10 @@
   function selectedCreativeDirection() {
     const pack = creativePackFor(selectedGenre());
     if (!pack || !Array.isArray(pack.directions) || !pack.directions.length) return null;
-    return pack.directions.find(item => item.key === selectedCreativeKey)
-      || pack.directions.find(item => item.key === pack.default_key)
-      || pack.directions[0];
+    // Optional — only the explicitly-picked direction counts (no default), so the
+    // preview/summary stay empty until the user actively chooses one.
+    if (!selectedCreativeKey) return null;
+    return pack.directions.find(item => item.key === selectedCreativeKey) || null;
   }
 
   function hookPackFor(g) {
@@ -7111,8 +7242,13 @@
     const g = selectedGenre();
     const pack = hookPackFor(g);
     if (!g || !pack.length) return null;
-    const idx = selectedHookIndexByGenre[g.key] || 0;
-    return pack[idx % pack.length] || pack[0] || null;
+    // Optional — only return a hook when the user explicitly picked one for this
+    // genre. No implicit default (otherwise an unselected hook leaks into the
+    // submission and pins the framework to a preset).
+    if (!Object.prototype.hasOwnProperty.call(selectedHookIndexByGenre, g.key)) return null;
+    const idx = selectedHookIndexByGenre[g.key];
+    if (idx === null || idx === undefined || idx < 0) return null;
+    return pack[idx % pack.length] || null;
   }
 
   function ensureCreativeSelection(g) {
@@ -7121,8 +7257,11 @@
       selectedCreativeKey = null;
       return;
     }
-    if (!pack.directions.some(item => item.key === selectedCreativeKey)) {
-      selectedCreativeKey = pack.default_key || pack.directions[0].key;
+    // Optional — do NOT auto-select a default direction. Only keep an existing
+    // selection if it is still valid for this genre; otherwise leave it unset so
+    // the framework grows the 脑洞 itself from genre + market heat.
+    if (selectedCreativeKey && !pack.directions.some(item => item.key === selectedCreativeKey)) {
+      selectedCreativeKey = null;
     }
   }
 
@@ -7141,7 +7280,7 @@
     }
 
     root.classList.add('active');
-    $('#creativeEvidence').textContent = (pack.evidence_summary || []).join(' · ');
+    $('#creativeEvidence').textContent = ['可选 · 不选则由AI按题材+市场热度自动决定', ...(pack.evidence_summary || [])].join(' · ');
     $('#creativeOptions').innerHTML = pack.directions.map(direction => {
       const sources = (direction.source_mix || []).slice(0, 4)
         .map(item => `<span class="creative-source-chip">${esc(item)}</span>`)
@@ -7156,7 +7295,9 @@
     }).join('');
     $$('#creativeOptions .creative-card').forEach(btn => {
       btn.addEventListener('click', () => {
-        selectedCreativeKey = btn.dataset.creativeKey || '';
+        const key = btn.dataset.creativeKey || '';
+        // Toggle: clicking the active direction deselects it (optional field).
+        selectedCreativeKey = (selectedCreativeKey === key) ? null : key;
         selectedConceptBundleId = null;
         renderCreativeLab();
         updateSummary();
@@ -7194,8 +7335,10 @@
       return;
     }
     root.classList.add('active');
-    const selectedIdx = selectedHookIndexByGenre[g.key] || 0;
-    $('#hookEvidence').textContent = '爽点强度 · 设定新颖度 · 代价/限制/反作弊约束';
+    const hasHookPick = Object.prototype.hasOwnProperty.call(selectedHookIndexByGenre, g.key)
+      && selectedHookIndexByGenre[g.key] !== null && selectedHookIndexByGenre[g.key] >= 0;
+    const selectedIdx = hasHookPick ? selectedHookIndexByGenre[g.key] : -1;
+    $('#hookEvidence').textContent = '可选 · 不选则由AI按题材自然生成 · 爽点强度 · 设定新颖度 · 代价/限制约束';
     $('#hookOptions').innerHTML = pack.map((candidate, idx) => {
       const spec = candidate.spec || {};
       const score = candidate.score || {};
@@ -7223,7 +7366,13 @@
     }).join('');
     $$('#hookOptions .creative-card').forEach(btn => {
       btn.addEventListener('click', () => {
-        selectedHookIndexByGenre[g.key] = Number(btn.dataset.hookIdx || 0);
+        const idx = Number(btn.dataset.hookIdx || 0);
+        // Toggle: clicking the active hook clears the selection (optional field).
+        if (selectedHookIndexByGenre[g.key] === idx) {
+          delete selectedHookIndexByGenre[g.key];
+        } else {
+          selectedHookIndexByGenre[g.key] = idx;
+        }
         selectedConceptBundleId = null;
         renderHookLab();
         updateSummary();
@@ -7251,10 +7400,10 @@
 
   function selectedConceptBundle() {
     const bundles = conceptLabCatalog?.bundles || [];
-    if (!bundles.length) return null;
-    return bundles.find(item => item.bundle_id === selectedConceptBundleId)
-      || bundles.find(item => item.bundle_id === conceptLabCatalog.default_bundle_id)
-      || bundles[0];
+    // Optional — only the explicitly-picked bundle counts. No default fallback,
+    // so an unselected 脑洞组合 never leaks into the submission.
+    if (!bundles.length || !selectedConceptBundleId) return null;
+    return bundles.find(item => item.bundle_id === selectedConceptBundleId) || null;
   }
 
   async function loadConceptLab() {
@@ -7291,8 +7440,10 @@
       if (requestSeq !== conceptLabRequestSeq) return;
       conceptLabCatalog = payload;
       const bundles = conceptLabCatalog?.bundles || [];
-      if (!bundles.some(item => item.bundle_id === selectedConceptBundleId)) {
-        selectedConceptBundleId = conceptLabCatalog.default_bundle_id || bundles[0]?.bundle_id || null;
+      // Optional — do not auto-select a default bundle. Drop the selection only
+      // if a previously-picked bundle is no longer present in the fresh batch.
+      if (selectedConceptBundleId && !bundles.some(item => item.bundle_id === selectedConceptBundleId)) {
+        selectedConceptBundleId = null;
       }
     } catch {
       if (requestSeq !== conceptLabRequestSeq) return;
@@ -7336,8 +7487,7 @@
       return;
     }
     const selected = selectedConceptBundle();
-    selectedConceptBundleId = selected?.bundle_id || selectedConceptBundleId;
-    evidence.textContent = `脑洞候选 ${bundles.length} 组 · 标题 · 读者承诺 · 素材 · 故事循环`;
+    evidence.textContent = `可选 · 不选则由AI按方法论生成 · 脑洞候选 ${bundles.length} 组 · 标题 · 读者承诺 · 素材 · 故事循环`;
     options.innerHTML = bundles.map(bundle => {
       const titleSeed = bundle.title_seeds?.[0]?.text || bundle.one_liner || bundle.bundle_id;
       const score = bundle.scores?.h_norm ? Math.round(Number(bundle.scores.h_norm)) : '';
@@ -7355,7 +7505,9 @@
     }).join('');
     $$('#conceptOptions .creative-card').forEach(btn => {
       btn.addEventListener('click', () => {
-        selectedConceptBundleId = btn.dataset.conceptId || '';
+        const id = btn.dataset.conceptId || '';
+        // Toggle: clicking the active bundle clears the selection (optional field).
+        selectedConceptBundleId = (selectedConceptBundleId === id) ? null : id;
         renderConceptLab();
         updateSummary();
       });
@@ -7489,6 +7641,8 @@
         renderHookLab();
         updateSummary();
         void loadConceptLab();
+        const audRow = $('#audienceOrientationRow');
+        if (audRow) audRow.style.display = 'flex';
         $('#toStep2').disabled = false;
       };
       grid.appendChild(card);
@@ -7515,6 +7669,19 @@
     ].some(v => (v || '').toLowerCase().includes(q));
   }
   $('#genreSearch').addEventListener('input', () => renderGenres(genres.filter(matchSearch)));
+
+  // Reader-orientation (男频/女频) optional override. Default '' = let the heat-search
+  // agent decide from genre + market trends; never forces a preset on the framework.
+  ['audienceAuto', 'audienceMale', 'audienceFemale'].forEach((id) => {
+    const chip = document.getElementById(id);
+    if (!chip) return;
+    chip.addEventListener('click', () => {
+      selectedAudience = chip.getAttribute('data-audience') || '';
+      document.querySelectorAll('#audienceOrientationRow .genre-filter-chip')
+        .forEach((c) => c.classList.toggle('active', c === chip));
+      updateSummary();
+    });
+  });
 
   // Language tab switching
   function switchLangTab(lang) {
@@ -7685,9 +7852,9 @@
           ...dimensionValues(g, 'commercial_signals').slice(0, 1),
         ])].join(' · ')
       : '-';
-    $('#sumCreative').textContent = creative ? creative.title : '-';
-    $('#sumHook').textContent = hook?.spec?.one_liner || '-';
-    $('#sumConcept').textContent = concept?.title_seeds?.[0]?.text || concept?.one_liner || '-';
+    $('#sumCreative').textContent = creative ? creative.title : (g ? 'AI自动决定（未选）' : '-');
+    $('#sumHook').textContent = hook?.spec?.one_liner || (g ? 'AI自动决定（未选）' : '-');
+    $('#sumConcept').textContent = concept?.title_seeds?.[0]?.text || concept?.one_liner || (g ? 'AI自动决定（未选）' : '-');
     const sumLbl = $('#sumChLabel');
     if (creationMode === 'fanqie_short') {
       const opt = fanqieLengthOption(fanqieLengthKey);
@@ -7722,6 +7889,7 @@
         body: JSON.stringify({
           creation_mode: creationMode,
           genre_key: selectedGenreKey,
+          audience_orientation: selectedAudience || undefined,
           creative_key: selectedCreativeKey,
           hook_spec: selectedHook?.spec || undefined,
           concept_lab_bundle_id: selectedConcept?.bundle_id || undefined,
@@ -7869,6 +8037,9 @@
      ═══════════════════════════════════════ */
   let listingLoadedForSlug = null;
   let listingLoadedForStatus = null;
+  let listingRenderedSignature = null;
+  let listingLoadInFlight = null;
+  let listingRequestGeneration = 0;
   const listingCopyStore = new Map();
   let listingCopyCounter = 0;
 
@@ -7886,6 +8057,14 @@
     const key = `listing-copy-${++listingCopyCounter}`;
     listingCopyStore.set(key, String(text || '').trim());
     return key;
+  }
+
+  function listingPayloadSignature(listing, project) {
+    try {
+      return JSON.stringify({ listing, project });
+    } catch {
+      return `${project?.slug || listing?.book_id || ''}:${listing?.primary_title || ''}`;
+    }
   }
 
   function copyButton(label, key, className = '') {
@@ -7944,6 +8123,9 @@
       // Re-render the listing panel with the fresh profile.
       const project = (window.__lastListingProject) || { slug };
       renderListingProfile(data.listing_profile, project);
+      listingRenderedSignature = listingPayloadSignature(data.listing_profile, project);
+      listingLoadedForSlug = slug;
+      listingLoadedForStatus = null;
       if (btn) {
         btn.classList.add('ok');
         btn.innerHTML = `✓ 已更新「${esc(label)}」`;
@@ -8011,6 +8193,29 @@
     }
   };
 
+  function renderChapterGridIfChanged(taskId, signature, headerHtml, readLabel, readHref, html) {
+    const section = $('#pvChSec');
+    const grid = $('#pvChGrid');
+    const header = $('#pvChSec h4 span');
+    section.style.display = '';
+    if (header) header.innerHTML = headerHtml;
+    $('#pvReadAll').textContent = readLabel;
+    $('#pvReadAll').href = readHref;
+    if (renderedChapterListTaskId === taskId && renderedChapterListSignature === signature) return;
+    grid.innerHTML = html;
+    renderedChapterListTaskId = taskId;
+    renderedChapterListSignature = signature;
+  }
+
+  function hideChapterGridIfChanged(taskId) {
+    const signature = `${taskId}:hidden`;
+    if (renderedChapterListTaskId === taskId && renderedChapterListSignature === signature) return;
+    $('#pvChSec').style.display = 'none';
+    $('#pvChGrid').innerHTML = '';
+    renderedChapterListTaskId = taskId;
+    renderedChapterListSignature = signature;
+  }
+
   function buildShelfIntro(listing, project) {
     const direct = compactListingText(listing.shelf_intro);
     if (direct) return limitListingText(direct, 500);
@@ -8074,20 +8279,38 @@
     // For running tasks, refresh every poll cycle.
     const isTerminal = taskStatus === 'completed' || taskStatus === 'failed' || taskStatus === 'cancelled';
     if (!slug) return;
-    if (isTerminal && listingLoadedForSlug === slug) return;
+    if (isTerminal && listingLoadedForSlug === slug && listingLoadedForStatus === taskStatus) return;
+    if (listingLoadInFlight && listingLoadInFlight.slug === slug && listingLoadInFlight.status === taskStatus) {
+      return listingLoadInFlight.promise;
+    }
     const panel = $('#pvListing');
+    const generation = listingRequestGeneration;
+    const promise = (async () => {
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/listing`);
+        if (generation !== listingRequestGeneration) return;
+        if (!res.ok) { panel.classList.remove('visible'); return; }
+        const summary = await res.json();
+        if (generation !== listingRequestGeneration) return;
+        const listing = summary?.listing_profile;
+        if (!listing) { panel.classList.remove('visible'); return; }
+        const signature = listingPayloadSignature(listing, summary?.project);
+        if (listingRenderedSignature !== signature) {
+          renderListingProfile(listing, summary?.project);
+          listingRenderedSignature = signature;
+        }
+        listingLoadedForSlug = slug;
+        listingLoadedForStatus = taskStatus;
+        panel.classList.add('visible');
+      } catch {
+        panel.classList.remove('visible');
+      }
+    })();
+    listingLoadInFlight = { slug, status: taskStatus, promise };
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/listing`);
-      if (!res.ok) { panel.classList.remove('visible'); return; }
-      const summary = await res.json();
-      const listing = summary?.listing_profile;
-      if (!listing) { panel.classList.remove('visible'); return; }
-      renderListingProfile(listing, summary?.project);
-      listingLoadedForSlug = slug;
-      listingLoadedForStatus = taskStatus;
-      panel.classList.add('visible');
-    } catch {
-      panel.classList.remove('visible');
+      await promise;
+    } finally {
+      if (listingLoadInFlight?.promise === promise) listingLoadInFlight = null;
     }
   }
 

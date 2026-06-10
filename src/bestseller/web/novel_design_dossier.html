@@ -784,16 +784,40 @@
 
   function renderArtifacts() {
     const docs = arr(obj(dossier.planning_artifacts).documents);
-    if (!docs.length) {
+    const conception = obj(dossier.conception_artifacts);
+    const conceptionKeys = Object.keys(conception);
+    const reviews = arr(dossier._reviews);
+    if (!docs.length && !conceptionKeys.length && !reviews.length) {
       $('#tab-artifacts').innerHTML = empty('暂无规划产物');
       return;
     }
+    // Conception-phase artifacts ship inline (no lazy load) since they are
+    // small and live in project metadata rather than PlanningArtifactVersion.
+    const conceptionLabels = {
+      heat_search: '热度搜索', concept_methodology: '脑洞/爽点方法论',
+      concept_fusion: '脑洞融合', hook_candidates: '钩子候选', commercial_brief: '商业定位简报',
+    };
+    const conceptionBody = conceptionKeys.length ? panel(
+      '构思产物',
+      `<div class="list">${conceptionKeys.map(k => `
+        <details class="artifact">
+          <summary>
+            <span><strong>${esc(conceptionLabels[k] || k)}</strong></span>
+            <span class="panel-count">${esc(k)}</span>
+          </summary>
+          <pre class="json">${asJson(conception[k])}</pre>
+        </details>
+      `).join('')}</div>`,
+      12,
+      `${conceptionKeys.length}`
+    ) : '';
     const grouped = docs.reduce((acc, doc) => {
       const phase = doc.phase || 'other';
       (acc[phase] ||= []).push(doc);
       return acc;
     }, {});
     const phaseLabels = {
+      conception: '构思产物',
       foundation: '基础设计',
       macro_plan: '宏观规划',
       outline: '大纲与批次',
@@ -827,7 +851,35 @@
       12,
       `${items.length}`
     )).join('');
-    $('#tab-artifacts').innerHTML = `<div class="grid">${body}</div>`;
+    // Judge reviews — verdict + per-dimension scores + evidence/findings.
+    const reviewsBody = reviews.length ? panel(
+      '判官评审',
+      `<div class="list">${reviews.slice(0, 80).map(r => {
+        const sc = obj(r.scores);
+        const blocked = /block|reject|rewrite|fail|attention/i.test(String(r.verdict || ''));
+        const where = r.chapter_number != null ? `第${r.chapter_number}章` : (r.target_type || '评审');
+        const overall = sc.overall != null ? `总分 ${esc(String(sc.overall))}` : '';
+        return `
+        <details class="artifact">
+          <summary>
+            <span>${blocked ? '⛔ ' : '✅ '}<strong>${esc(where)}</strong> ${tag(esc(r.reviewer_type || 'judge'))} ${tag(esc(r.verdict || ''))}</span>
+            <span class="panel-count">${esc(overall)}</span>
+          </summary>
+          <pre class="json">${asJson({
+            verdict: r.verdict,
+            severity_max: r.severity_max,
+            scores: sc,
+            evidence_summary: sc.evidence_summary,
+            findings: r.structured_output,
+            created_at: r.created_at,
+          })}</pre>
+        </details>
+      `;
+      }).join('')}</div>`,
+      12,
+      `${reviews.length}`
+    ) : '';
+    $('#tab-artifacts').innerHTML = `<div class="grid">${conceptionBody}${reviewsBody}${body}</div>`;
   }
 
   function renderOutline() {
@@ -1157,6 +1209,10 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || '加载失败');
       dossier = data;
+      try {
+        const reviewsResp = await fetch(`/api/projects/${encodeURIComponent(slug)}/reviews`);
+        if (reviewsResp.ok) dossier._reviews = (await reviewsResp.json()).reviews || [];
+      } catch (e) { /* judge reviews are optional */ }
       $('#status').style.display = 'none';
       renderAll();
     } catch (err) {

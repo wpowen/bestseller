@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import datetime as _dt
 import pickle
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -27,6 +28,7 @@ from bestseller.worker.self_heal import (
     _clear_auto_resumable_generation_gate_pause,
     _project_resume_is_blocked,
     find_stuck_projects,
+    heal_stuck_projects,
     reap_orphan_workflow_runs,
 )
 
@@ -2328,3 +2330,118 @@ async def test_requeue_repair_clears_stale_autowrite_owner() -> None:
     assert job_id == "repair:heal:book-cross-stale"
     assert f"arq:in-progress:{autowrite_job_id}" in pool.deleted
     assert ("arq:queue", autowrite_job_id) in pool.zremoved
+
+
+# ---------------------------------------------------------------------------
+# heal_stuck_projects: delete-tombstone guard
+# ---------------------------------------------------------------------------
+
+
+class _NullSessionCM:
+    """Async context manager yielding a session that satisfies the dispatch loop."""
+
+    def __init__(self, project: Any) -> None:
+        self._project = project
+
+    async def __aenter__(self) -> Any:
+        project = self._project
+
+        class _S:
+            async def get(self, _model: Any, _pid: Any) -> Any:
+                return project
+
+            async def commit(self) -> None:
+                return None
+
+        return _S()
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
+@pytest.mark.asyncio
+async def test_heal_stuck_projects_skips_delete_tombstoned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bestseller.worker import self_heal as sh
+
+    tombstoned = StuckProject(
+        project_id="p-dead",
+        slug="book-deleted",
+        reason="under_target",
+        stuck_at_chapter=None,
+        chapters_total=3,
+        chapters_with_draft=3,
+    )
+    alive = StuckProject(
+        project_id="p-alive",
+        slug="book-alive",
+        reason="under_target",
+        stuck_at_chapter=None,
+        chapters_total=3,
+        chapters_with_draft=3,
+    )
+
+    async def _fake_find(_session: Any) -> list[StuckProject]:
+        return [tombstoned, alive]
+
+    async def _async_true(*_a: Any, **_k: Any) -> bool:
+        return True
+
+    async def _async_false(*_a: Any, **_k: Any) -> bool:
+        return False
+
+    async def _async_zero(*_a: Any, **_k: Any) -> int:
+        return 0
+
+    async def _async_empty_set(*_a: Any, **_k: Any) -> set[Any]:
+        return set()
+
+    class _Pool:
+        async def aclose(self) -> None:
+            return None
+
+    async def _fake_create_pool(*_a: Any, **_k: Any) -> Any:
+        return _Pool()
+
+    requeued: list[str] = []
+
+    async def _fake_requeue(_pool: Any, stuck: StuckProject) -> str:
+        requeued.append(stuck.slug)
+        return f"task:{stuck.slug}"
+
+    monkeypatch.setattr(sh, "find_stuck_projects", _fake_find)
+    monkeypatch.setattr(sh, "reap_orphan_workflow_runs", _async_zero)
+    monkeypatch.setattr(sh, "_active_arq_project_slugs", _async_empty_set)
+    monkeypatch.setattr(sh, "_resolve_project_ids_for_slugs", _async_empty_set)
+    monkeypatch.setattr(sh, "_try_acquire_heal_lock", _async_true)
+    monkeypatch.setattr(sh, "_has_active_continuation_pipeline_run", _async_false)
+    monkeypatch.setattr(sh, "_has_active_pipeline_run", _async_false)
+    monkeypatch.setattr(sh, "_clear_auto_resumable_generation_gate_pause", _async_false)
+    monkeypatch.setattr(sh, "_requeue_stuck_project", _fake_requeue)
+    monkeypatch.setattr(
+        sh, "_compute_heal_progress_state", lambda meta, total: (meta, False)
+    )
+    monkeypatch.setattr(
+        sh, "get_server_session", lambda: _NullSessionCM(_FakeProject(id="p", slug="x"))
+    )
+    monkeypatch.setattr(
+        sh,
+        "is_project_delete_tombstoned",
+        lambda _settings, slug: slug == "book-deleted",
+    )
+
+    import arq.connections as arq_connections
+
+    monkeypatch.setattr(arq_connections, "create_pool", _fake_create_pool)
+
+    settings = SimpleNamespace(
+        output=SimpleNamespace(base_dir="/tmp/does-not-matter"),
+        redis=SimpleNamespace(url="redis://localhost:6379/0"),
+    )
+
+    dispatched = await heal_stuck_projects(settings, redis=None)
+
+    # The tombstoned project is never re-queued; the live one still is.
+    assert requeued == ["book-alive"]
+    assert [d["slug"] for d in dispatched] == ["book-alive"]

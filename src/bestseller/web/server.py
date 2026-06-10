@@ -58,6 +58,11 @@ from bestseller.services.inspection import (
 )
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.pipelines import ProjectRepairPauseError, run_autowrite_pipeline
+from bestseller.services.progress_context import (
+    TIER_KEY,
+    TIER_MILESTONE,
+    bind_progress,
+)
 from bestseller.services.projects import (
     delete_project_completely,
     get_project_by_slug,
@@ -444,6 +449,13 @@ def _load_worker_heal_progress_snapshot(
         if job_state is None:
             return None
         raw_events = client.lrange(f"task:{job_id}:progress", -limit, -1)
+        # Milestones live in a separate, untrimmed list so the durable axis
+        # survives the activity list's tail window on reconnect. This read is a
+        # best-effort enhancement: a failure must not sink the whole snapshot.
+        try:
+            raw_milestones = client.lrange(f"task:{job_id}:milestones", 0, -1)
+        except Exception:
+            raw_milestones = []
     except Exception:
         return None
     finally:
@@ -453,6 +465,9 @@ def _load_worker_heal_progress_snapshot(
             pass
 
     events, latest_stage, latest_payload = _normalise_worker_progress_events(raw_events or [])
+    milestone_events, _ms_stage, _ms_payload = _normalise_worker_progress_events(
+        raw_milestones or []
+    )
     if job_state == "running":
         status = "running"
     elif job_state == "queued":
@@ -473,6 +488,7 @@ def _load_worker_heal_progress_snapshot(
         "status": status,
         "current_stage": latest_stage or "delegated_to_worker_self_heal",
         "progress_events": events,
+        "milestone_events": milestone_events,
         "latest_payload": latest_payload,
     }
 
@@ -498,6 +514,11 @@ def _merge_worker_progress_into_db_repair_summary(
             summary["updated_at"] = datetime.fromtimestamp(float(latest_ts), UTC).isoformat()
         elif isinstance(latest_ts, str):
             summary["updated_at"] = latest_ts
+    worker_milestones = worker_progress.get("milestone_events")
+    if isinstance(worker_milestones, list) and worker_milestones:
+        existing_ms = summary.get("milestone_events")
+        base_ms = existing_ms if isinstance(existing_ms, list) else []
+        summary["milestone_events"] = base_ms + worker_milestones
     latest_payload = worker_progress.get("latest_payload")
     if (
         summary.get("status") == "failed"
@@ -605,6 +626,7 @@ def _load_worker_task_summary(
         "project_slug": slug,
         "current_stage": worker_progress.get("current_stage") or "delegated_to_worker_self_heal",
         "progress_events": worker_progress.get("progress_events") or [],
+        "milestone_events": worker_progress.get("milestone_events") or [],
         "result": worker_progress.get("latest_payload") or {},
         "error": None,
         "synthetic_worker_task": True,
@@ -1424,6 +1446,12 @@ class WebTaskState:
     title: str | None = None
     current_stage: str | None = None
     progress_events: list[dict[str, object]] = field(default_factory=list)
+    # Milestone events are the durable "where is this book in the pipeline"
+    # axis. Unlike ``progress_events`` (a ring buffer capped at
+    # ``_ACTIVITY_EVENT_CAP``), milestones are NOT evicted by the high-volume
+    # chapter/scene/gate activity stream, so the front-end can always show the
+    # full stage history even on a 1000-chapter run.
+    milestone_events: list[dict[str, object]] = field(default_factory=list)
     result: dict[str, object] | None = None
     error: str | None = None
     cancel_requested: bool = False
@@ -1440,12 +1468,110 @@ class WebTaskState:
             "title": self.title,
             "current_stage": self.current_stage,
             "progress_events": list(self.progress_events),
+            "milestone_events": list(self.milestone_events),
             "result": self.result,
             "error": self.error,
             "cancel_requested": self.cancel_requested,
             "payload": self.payload,
         }
 
+    def record_event(
+        self,
+        stage: str,
+        payload: dict[str, object] | None = None,
+        *,
+        timestamp: str | None = None,
+        milestone: bool = False,
+    ) -> dict[str, object]:
+        """Append a progress event, mirroring milestones to the durable axis.
+
+        Every event lands in ``progress_events`` (capped ring buffer). When the
+        event is a milestone — either ``milestone=True`` or its ``stage`` is in
+        :data:`_MILESTONE_STAGES` — it is also appended to ``milestone_events``,
+        which is only trimmed at a much larger defensive cap. The same event
+        dict object is shared between both lists.
+        """
+
+        event: dict[str, object] = {
+            "timestamp": timestamp or _utc_now(),
+            "stage": stage,
+            "payload": payload or {},
+        }
+        self.progress_events.append(event)
+        if len(self.progress_events) > _ACTIVITY_EVENT_CAP:
+            self.progress_events = self.progress_events[-_ACTIVITY_EVENT_CAP:]
+        if milestone or stage in _MILESTONE_STAGES:
+            self.milestone_events.append(event)
+            if len(self.milestone_events) > _MILESTONE_EVENT_CAP:
+                self.milestone_events = self.milestone_events[-_MILESTONE_EVENT_CAP:]
+        return event
+
+
+# Ring-buffer cap for the high-frequency activity stream (unchanged behaviour).
+_ACTIVITY_EVENT_CAP = 300
+# Defensive cap for the durable milestone axis; milestones are low-cardinality
+# (a few hundred per book at most), this only guards against pathological runs.
+_MILESTONE_EVENT_CAP = 2000
+
+# Stages that belong on the durable milestone axis: pipeline phase boundaries,
+# state transitions, and per-chapter completion. High-frequency, paired, or
+# fine-grained events (chapter_pipeline_started, *_gate_evaluated, scene drafts)
+# stay activity-only so they never evict milestones. Deep code can still force a
+# milestone via the ``_tier`` payload hint regardless of this set.
+_MILESTONE_STAGES: frozenset[str] = frozenset(
+    {
+        # terminal / state transitions
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "incomplete",
+        "cancelled",
+        "cancel_requested",
+        "resume_requested",
+        "auto_resume_pending",
+        "auto_resume_queued",
+        "auto_resume_not_claimed",
+        "delegated_to_worker_self_heal",
+        "watchdog_failure_normalized",
+        # blocked / machine-repair gates
+        "blocked_structural_repair",
+        "blocked_generation_gate",
+        "machine_blocked",
+        "machine_repair_required",
+        # conception phase
+        "conception_complete",
+        "story_architect_complete",
+        "methodology_selected",
+        "heat_search_completed",
+        "hook_candidates_generated",
+        # planning phase
+        "planning_started",
+        "planning_completed",
+        "foundation_planning_started",
+        "foundation_planning_completed",
+        "story_bible_materialization_started",
+        "story_bible_materialization_completed",
+        "outline_materialization_started",
+        "outline_materialization_completed",
+        "narrative_lines_repair_completed",
+        "world_richness_repair_completed",
+        # multi-volume + writing phase
+        "progressive_autowrite_started",
+        "volume_planning_started",
+        "volume_planning_completed",
+        "volume_writing_started",
+        "volume_writing_completed",
+        "volume_complete",
+        "project_pipeline_started",
+        "project_pipeline_completed",
+        "chapter_pipeline_completed",
+        "project_export_completed",
+        # repair phase
+        "project_repair_started",
+        "project_repair_completed",
+    }
+)
 
 _WATCHDOG_STALE_PREFIX = "Task watchdog: no progress for >"
 _MACHINE_REPAIR_STAGES = frozenset(
@@ -1604,6 +1730,7 @@ class WebTaskManager:
                     title=item.get("title"),
                     current_stage=item.get("current_stage"),
                     progress_events=item.get("progress_events") or [],
+                    milestone_events=item.get("milestone_events") or [],
                     result=item.get("result"),
                     error=item.get("error"),
                     cancel_requested=bool(item.get("cancel_requested", False)),
@@ -1655,14 +1782,10 @@ class WebTaskManager:
                         "Task reached a machine-repair or attention gate; "
                         "normalized from an old stale-watchdog failure."
                     )
-                    task.progress_events.append(
-                        {
-                            "timestamp": _utc_now(),
-                            "stage": "watchdog_failure_normalized",
-                            "payload": {"reason": "machine_repair_gate"},
-                        }
+                    task.record_event(
+                        "watchdog_failure_normalized",
+                        {"reason": "machine_repair_gate"},
                     )
-                    task.progress_events = task.progress_events[-300:]
                     changed = True
                 # Running/queued tasks from a previous session need recovery.
                 # If the task has a rebuildable payload, move it to queued and
@@ -1675,14 +1798,10 @@ class WebTaskManager:
                         task.current_stage = "auto_resume_pending"
                         task.error = None
                         task.cancel_requested = False
-                        task.progress_events.append(
-                            {
-                                "timestamp": _utc_now(),
-                                "stage": "auto_resume_queued",
-                                "payload": {"reason": "server restart"},
-                            }
+                        task.record_event(
+                            "auto_resume_queued",
+                            {"reason": "server restart"},
                         )
-                        task.progress_events = task.progress_events[-300:]
                         self._pending_auto_resume_ids.append(task.task_id)
                     else:
                         task.status = "failed"
@@ -2013,14 +2132,9 @@ class WebTaskManager:
                 task.updated_at = now
                 if title:
                     task.title = title
-                task.progress_events.append(
-                    {
-                        "timestamp": now,
-                        "stage": "queued",
-                        "payload": {"reason": "reused_stuck_card"},
-                    }
+                task.record_event(
+                    "queued", {"reason": "reused_stuck_card"}, timestamp=now
                 )
-                task.progress_events = task.progress_events[-300:]
             else:
                 task_id = str(uuid4())
                 task = WebTaskState(
@@ -2081,14 +2195,11 @@ class WebTaskManager:
                 task.cancel_requested = False
                 task.updated_at = now
                 task.payload = serialized_payload
-                task.progress_events.append(
-                    {
-                        "timestamp": now,
-                        "stage": "delegated_to_worker_self_heal",
-                        "payload": {"reason": reason, "heal_owned": heal_owned},
-                    }
+                task.record_event(
+                    "delegated_to_worker_self_heal",
+                    {"reason": reason, "heal_owned": heal_owned},
+                    timestamp=now,
                 )
-                task.progress_events = task.progress_events[-300:]
                 self._save_to_disk()
                 return task.to_dict()
             task.status = "queued"
@@ -2098,14 +2209,7 @@ class WebTaskManager:
             task.cancel_requested = False
             task.updated_at = now
             task.payload = serialized_payload
-            task.progress_events.append(
-                {
-                    "timestamp": now,
-                    "stage": "resume_requested",
-                    "payload": {},
-                }
-            )
-            task.progress_events = task.progress_events[-300:]
+            task.record_event("resume_requested", {}, timestamp=now)
             self._save_to_disk()
             task_snapshot = task.to_dict()
         thread = threading.Thread(
@@ -2191,18 +2295,16 @@ class WebTaskManager:
             }:
                 task.status = "running"
                 task.error = None
-            task.progress_events.append(
-                {
-                    "timestamp": task.updated_at,
-                    "stage": stage,
-                    "payload": payload or {},
-                }
+            tier = payload.get(TIER_KEY) if isinstance(payload, dict) else None
+            is_milestone = tier == TIER_MILESTONE or stage in _MILESTONE_STAGES
+            task.record_event(
+                stage, payload, timestamp=task.updated_at, milestone=is_milestone
             )
-            task.progress_events = task.progress_events[-300:]
             # Persist immediately for key milestones; batch minor updates
             # to avoid excessive disk I/O during large pipelines.
             if (
-                stage in self._PERSIST_STAGES
+                is_milestone
+                or stage in self._PERSIST_STAGES
                 or len(task.progress_events) % self._PROGRESS_FLUSH_INTERVAL == 0
             ):
                 self._save_to_disk()
@@ -2273,14 +2375,11 @@ class WebTaskManager:
             task.current_stage = "blocked_structural_repair"
             task.error = error
             task.cancel_requested = False
-            task.progress_events.append(
-                {
-                    "timestamp": task.updated_at,
-                    "stage": "blocked_structural_repair",
-                    "payload": {"reason": error},
-                }
+            task.record_event(
+                "blocked_structural_repair",
+                {"reason": error},
+                timestamp=task.updated_at,
             )
-            task.progress_events = task.progress_events[-300:]
             self._save_to_disk()
         logger.info("Task %s blocked by structural repair pause", task_id)
 
@@ -2300,14 +2399,9 @@ class WebTaskManager:
             task.current_stage = stage
             task.error = error
             task.cancel_requested = False
-            task.progress_events.append(
-                {
-                    "timestamp": task.updated_at,
-                    "stage": stage,
-                    "payload": {"reason": error},
-                }
+            task.record_event(
+                stage, {"reason": error}, timestamp=task.updated_at, milestone=True
             )
-            task.progress_events = task.progress_events[-300:]
             self._save_to_disk()
         logger.info("Task %s blocked by project gate %s", task_id, stage)
 
@@ -2325,14 +2419,9 @@ class WebTaskManager:
             force = bool(task.cancel_requested)
             task.cancel_requested = True
             task.updated_at = _utc_now()
-            task.progress_events.append(
-                {
-                    "timestamp": task.updated_at,
-                    "stage": "cancel_requested",
-                    "payload": {"force": force},
-                }
+            task.record_event(
+                "cancel_requested", {"force": force}, timestamp=task.updated_at
             )
-            task.progress_events = task.progress_events[-300:]
             self._save_to_disk()
         logger.info("Cancellation requested for task %s (force=%s)", task_id, force)
         if force:
@@ -2536,14 +2625,11 @@ class WebTaskManager:
             task.current_stage = "machine_repair_required"
             task.error = "Task is waiting for machine repair or attention-gate repair."
             task.updated_at = _utc_now()
-            task.progress_events.append(
-                {
-                    "timestamp": task.updated_at,
-                    "stage": "machine_repair_required",
-                    "payload": {"reason": "watchdog_preserved_attention_gate"},
-                }
+            task.record_event(
+                "machine_repair_required",
+                {"reason": "watchdog_preserved_attention_gate"},
+                timestamp=task.updated_at,
             )
-            task.progress_events = task.progress_events[-300:]
             self._save_to_disk()
         logger.info("Task %s is waiting for machine repair; marked incomplete", task_id)
         return True
@@ -2591,14 +2677,11 @@ class WebTaskManager:
                 "Worker self-heal no longer has an active job for this task; "
                 "resume manually after reviewing the latest gate or repair state."
             )
-            task.progress_events.append(
-                {
-                    "timestamp": now,
-                    "stage": "auto_resume_not_claimed",
-                    "payload": {"reason": "worker self-heal job no longer active"},
-                }
+            task.record_event(
+                "auto_resume_not_claimed",
+                {"reason": "worker self-heal job no longer active"},
+                timestamp=now,
             )
-            task.progress_events = task.progress_events[-300:]
             self._save_to_disk()
         logger.info("Task %s no longer has a worker self-heal owner; marked incomplete", task_id)
         return True
@@ -2735,14 +2818,7 @@ class WebTaskManager:
                     task.current_stage = "queued"
                     task.error = None
                     task.cancel_requested = False
-                    task.progress_events.append(
-                        {
-                            "timestamp": _utc_now(),
-                            "stage": "resume_requested",
-                            "payload": {"reason": "server restart"},
-                        }
-                    )
-                    task.progress_events = task.progress_events[-300:]
+                    task.record_event("resume_requested", {"reason": "server restart"})
                     repair_payload = dict(task.payload)
                     self._save_to_disk()
                     delegated.append(task_id)
@@ -2757,18 +2833,14 @@ class WebTaskManager:
                     task.current_stage = "delegated_to_worker_self_heal"
                     task.error = None
                     task.cancel_requested = False
-                    task.progress_events.append(
+                    task.record_event(
+                        "delegated_to_worker_self_heal",
                         {
-                            "timestamp": _utc_now(),
-                            "stage": "delegated_to_worker_self_heal",
-                            "payload": {
-                                "reason": reason,
-                                "heal_owned": heal_owned,
-                                "db_workflow_active": db_workflow_active,
-                            },
-                        }
+                            "reason": reason,
+                            "heal_owned": heal_owned,
+                            "db_workflow_active": db_workflow_active,
+                        },
                     )
-                    task.progress_events = task.progress_events[-300:]
                     self._save_to_disk()
                     delegated.append(task_id)
                     logger.info(
@@ -2792,14 +2864,10 @@ class WebTaskManager:
                         "resume manually to continue."
                     )
                     task.cancel_requested = False
-                    task.progress_events.append(
-                        {
-                            "timestamp": _utc_now(),
-                            "stage": "auto_resume_not_claimed",
-                            "payload": {"reason": reason, "heal_owned": False},
-                        }
+                    task.record_event(
+                        "auto_resume_not_claimed",
+                        {"reason": reason, "heal_owned": False},
                     )
-                    task.progress_events = task.progress_events[-300:]
                     self._save_to_disk()
                     logger.info(
                         "Zombie task %s (slug=%s) was not claimed by worker "
@@ -2819,19 +2887,16 @@ class WebTaskManager:
                         task.current_stage = "delegated_to_worker_self_heal"
                         task.error = None
                         task.cancel_requested = False
-                        task.progress_events.append(
+                        task.record_event(
+                            "delegated_to_worker_self_heal",
                             {
-                                "timestamp": now,
-                                "stage": "delegated_to_worker_self_heal",
-                                "payload": {
-                                    "reason": "web auto-resume enqueued worker self-heal job",
-                                    "heal_owned": True,
-                                    "enqueued_by_web": True,
-                                    "job_id": job_id,
-                                },
-                            }
+                                "reason": "web auto-resume enqueued worker self-heal job",
+                                "heal_owned": True,
+                                "enqueued_by_web": True,
+                                "job_id": job_id,
+                            },
+                            timestamp=now,
                         )
-                        task.progress_events = task.progress_events[-300:]
                         self._save_to_disk()
                         delegated.append(task_id)
                         logger.info(
@@ -2854,18 +2919,14 @@ class WebTaskManager:
                             "resume manually to continue."
                         )
                         task.cancel_requested = False
-                        task.progress_events.append(
+                        task.record_event(
+                            "auto_resume_not_claimed",
                             {
-                                "timestamp": _utc_now(),
-                                "stage": "auto_resume_not_claimed",
-                                "payload": {
-                                    "reason": reason,
-                                    "heal_owned": False,
-                                    "enqueue_failed": True,
-                                },
-                            }
+                                "reason": reason,
+                                "heal_owned": False,
+                                "enqueue_failed": True,
+                            },
                         )
-                        task.progress_events = task.progress_events[-300:]
                         self._save_to_disk()
                         logger.info(
                             "Zombie task %s (slug=%s) could not be enqueued "
@@ -2919,6 +2980,8 @@ class WebTaskManager:
             conception_brief: dict[str, object] | None = None
             conception_log: list[dict[str, object]] | None = None
             conception_hook_spec: dict[str, object] | None = None
+            conception_methodology: dict[str, object] | None = None
+            conception_hook_candidates: list[dict[str, object]] | None = None
             story_facets_obj = None
 
             # Use a single session scope for both conception and autowrite
@@ -2983,6 +3046,12 @@ class WebTaskManager:
                         )
                         effective_synopsis = conception_result.synopsis
                         effective_tags = conception_result.tags
+                        conception_methodology = getattr(
+                            conception_result, "concept_methodology", None
+                        )
+                        conception_hook_candidates = getattr(
+                            conception_result, "hook_candidates", None
+                        )
                         progress(
                             "conception_complete",
                             {
@@ -3026,6 +3095,17 @@ class WebTaskManager:
                     )
                 if conception_log:
                     project_metadata["conception_log"] = conception_log
+                # Persist conception artifacts so they are inspectable in the
+                # book document view (/design/{slug}) alongside planning output.
+                conception_artifacts: dict[str, object] = {}
+                if conception_methodology:
+                    conception_artifacts["concept_methodology"] = conception_methodology
+                if conception_hook_candidates:
+                    conception_artifacts["hook_candidates"] = conception_hook_candidates
+                if conception_brief:
+                    conception_artifacts["commercial_brief"] = conception_brief
+                if conception_artifacts:
+                    project_metadata["conception_artifacts"] = conception_artifacts
                 creative_brief = payload.get("creative_brief")
                 if isinstance(creative_brief, dict) and creative_brief:
                     project_metadata["creative_brief"] = creative_brief
@@ -3085,7 +3165,11 @@ class WebTaskManager:
             return await asyncio.wait_for(runner(), timeout=pipeline_timeout)
 
         try:
-            result = asyncio.run(guarded_runner())
+            # Bind the ambient progress emitter so deep pipeline actions
+            # (concept agents, quality gates, repair sub-steps) can surface
+            # status without threading ``progress`` through every signature.
+            with bind_progress(progress):
+                result = asyncio.run(guarded_runner())
             self._mark_completed(task_id, result)
         except TaskCancelledError as exc:
             self._mark_cancelled(task_id)
@@ -3203,28 +3287,39 @@ class WebTaskManager:
         # For new projects, use AI conception to generate premise + writing_profile.
         # For resume, use the stored premise from the existing project.
         is_new_project = not resume_slug
+        # Stop auto-baking concrete creative results (2026-06-09). Previously the
+        # framework silently injected a *default* creative direction + an
+        # auto-generated concept bundle (catalog.bundles[0]) + a bundle-derived
+        # hook_spec as (semi-)hard contracts, even when the user picked nothing.
+        # Those baked presets over-constrained planning and frequently mismatched
+        # the genre. Now we only carry forward what the user *explicitly* selected;
+        # otherwise the heat-search/methodology agents let the model grow
+        # genre-fitting concepts naturally. See memory: shuangwen-fusion-switch.
+        explicit_creative_key = str(payload.get("creative_key") or "").strip()
         creative_direction = (
-            get_genre_creative_direction(genre_key, str(payload.get("creative_key") or ""))
-            if is_new_project
+            get_genre_creative_direction(genre_key, explicit_creative_key)
+            if (is_new_project and explicit_creative_key)
             else None
         )
         creative_hints = creative_direction_to_user_hints(creative_direction)
         selected_hook_spec = coerce_hook_spec(payload.get("hook_spec"))
         if selected_hook_spec is not None:
             creative_hints["hook_spec"] = selected_hook_spec.model_dump(mode="json")
+        explicit_bundle_id = str(payload.get("concept_lab_bundle_id") or "").strip()
+        explicit_bundle_payload = (
+            payload.get("concept_lab_bundle")
+            if isinstance(payload.get("concept_lab_bundle"), dict) and payload.get("concept_lab_bundle")
+            else None
+        )
         concept_bundle = (
             select_concept_lab_bundle(
                 genre_key=genre_key,
-                bundle_id=str(payload.get("concept_lab_bundle_id") or ""),
+                bundle_id=explicit_bundle_id,
                 creative_key=creative_direction.key if creative_direction else "",
                 hook_spec=selected_hook_spec,
-                bundle_payload=(
-                    payload.get("concept_lab_bundle")
-                    if isinstance(payload.get("concept_lab_bundle"), dict)
-                    else None
-                ),
+                bundle_payload=explicit_bundle_payload,
             )
-            if is_new_project
+            if (is_new_project and (explicit_bundle_id or explicit_bundle_payload))
             else None
         )
         if concept_bundle is not None:
@@ -3284,6 +3379,16 @@ class WebTaskManager:
             "_run_conception": is_new_project,
             "_genre_key": genre_key,
         }
+        # Optional reader-orientation override (男频/女频). Empty/None lets the
+        # heat-search agent + genre preset decide; an explicit pick is threaded
+        # through as the project audience and a conception hint.
+        _orientation = str(payload.get("audience_orientation") or "").strip().lower()
+        _explicit_audience = {"male": "男频", "female": "女频"}.get(_orientation)
+        if _explicit_audience:
+            autowrite_payload["audience"] = _explicit_audience
+            autowrite_payload["audience_orientation"] = _orientation
+            if isinstance(autowrite_payload.get("user_hints"), dict):
+                autowrite_payload["user_hints"]["audience_orientation"] = _explicit_audience
         if fanqie_meta is not None:
             autowrite_payload["metadata"] = fanqie_meta
             autowrite_payload["creation_mode"] = "fanqie_short"
@@ -3422,7 +3527,8 @@ class WebTaskManager:
                 )
                 return str(out_path)
 
-            out_path = asyncio.run(_run_if())
+            with bind_progress(progress):
+                out_path = asyncio.run(_run_if())
             self._mark_completed(task_id, {"story_package": out_path})
         except TaskCancelledError:
             self._mark_cancelled(task_id)
@@ -3466,7 +3572,8 @@ class WebTaskManager:
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
 
         try:
-            result = asyncio.run(runner())
+            with bind_progress(progress):
+                result = asyncio.run(runner())
             self._mark_completed(task_id, result)
         except TaskCancelledError:
             self._mark_cancelled(task_id)
@@ -5732,6 +5839,11 @@ def _build_project_identity_payload(
 
 
 _DESIGN_ARTIFACT_LABELS: dict[str, str] = {
+    "heat_search": "热度搜索",
+    "concept_methodology": "脑洞/爽点方法论",
+    "concept_fusion": "脑洞融合",
+    "hook_candidates": "钩子候选",
+    "commercial_brief": "商业定位简报",
     "premise": "命题与核心承诺",
     "book_spec": "全书设定",
     "world_spec": "世界观设定",
@@ -5754,6 +5866,11 @@ _DESIGN_ARTIFACT_LABELS: dict[str, str] = {
 }
 
 _DESIGN_ARTIFACT_PHASES: dict[str, str] = {
+    "heat_search": "conception",
+    "concept_methodology": "conception",
+    "concept_fusion": "conception",
+    "hook_candidates": "conception",
+    "commercial_brief": "conception",
     "premise": "foundation",
     "book_spec": "foundation",
     "world_spec": "foundation",
@@ -6239,6 +6356,95 @@ _ARTIFACT_LABELS: dict[str, str] = {
 }
 
 
+async def _load_project_reviews_payload(
+    settings: AppSettings,
+    project_slug: str,
+    *,
+    limit: int = 200,
+) -> dict[str, object]:
+    """聚合一本书的判官评审:verdict + 维度评分 + 证据理由,按时间倒序。"""
+
+    from sqlalchemy import desc, select
+
+    from bestseller.infra.db.models import (
+        ChapterModel,
+        QualityScoreModel,
+        ReviewReportModel,
+    )
+
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' was not found.")
+        quality_rows = list(
+            (
+                await session.execute(
+                    select(QualityScoreModel).where(QualityScoreModel.project_id == project.id)
+                )
+            ).scalars()
+        )
+        quality_by_report = {
+            q.review_report_id: q for q in quality_rows if q.review_report_id is not None
+        }
+        chapter_rows = list(
+            await session.execute(
+                select(ChapterModel.id, ChapterModel.chapter_number).where(
+                    ChapterModel.project_id == project.id
+                )
+            )
+        )
+        chapter_number_by_id = {cid: num for cid, num in chapter_rows}
+        report_rows = list(
+            (
+                await session.execute(
+                    select(ReviewReportModel)
+                    .where(ReviewReportModel.project_id == project.id)
+                    .order_by(desc(ReviewReportModel.created_at))
+                    .limit(limit)
+                )
+            ).scalars()
+        )
+
+    reviews: list[dict[str, object]] = []
+    for report in report_rows:
+        quality = quality_by_report.get(report.id)
+        scores = None
+        if quality is not None:
+            scores = {
+                "overall": quality.score_overall,
+                "goal": quality.score_goal,
+                "conflict": quality.score_conflict,
+                "emotion": quality.score_emotion,
+                "dialogue": quality.score_dialogue,
+                "style": quality.score_style,
+                "hook": quality.score_hook,
+                "evidence_summary": quality.evidence_summary,
+            }
+        reviews.append(
+            {
+                "id": str(report.id),
+                "target_type": report.target_type,
+                "target_id": str(report.target_id) if report.target_id else None,
+                "chapter_number": chapter_number_by_id.get(report.target_id),
+                "reviewer_type": report.reviewer_type,
+                "verdict": report.verdict,
+                "severity_max": report.severity_max,
+                "created_at": report.created_at.isoformat() if report.created_at else None,
+                "structured_output": report.structured_output
+                if isinstance(report.structured_output, dict)
+                else {},
+                "scores": scores,
+            }
+        )
+
+    return {
+        "generated_at": _utc_now(),
+        "project_slug": project_slug,
+        "count": len(reviews),
+        "reviews": reviews,
+    }
+
+
 async def _load_execution_progress_payload(
     settings: AppSettings,
     project_slug: str,
@@ -6535,8 +6741,13 @@ async def _load_project_design_dossier_payload(
         story_bible=story_bible_payload,
         narrative=narrative_payload,
     )
+    conception_artifacts = (project.metadata_json or {}).get("conception_artifacts") or {}
     return {
         "generated_at": _utc_now(),
+        # Conception-phase artifacts (heat search / methodology / hook candidates
+        # / commercial brief) persisted in project metadata. Surfaced inline so
+        # the book document view can render them as a "构思产物" group.
+        "conception_artifacts": conception_artifacts,
         "project": {
             "id": str(project.id),
             "slug": project.slug,
@@ -9276,6 +9487,15 @@ def serve_web_app(
                             asyncio.run(
                                 _load_pipeline_flow_payload(settings, project_slug, task_manager)
                             )
+                        )
+                    except ValueError as exc:
+                        self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                    return
+                project_slug = _match_project_route(path, "reviews")
+                if project_slug is not None:
+                    try:
+                        self._send_json(
+                            asyncio.run(_load_project_reviews_payload(settings, project_slug))
                         )
                     except ValueError as exc:
                         self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)

@@ -18,6 +18,10 @@ from bestseller.domain.fanqie_short import (
     FanqieShortBeatSheet,
     segment_target_words,
 )
+from bestseller.domain.ideology import (
+    ideology_kernel_from_dict,
+    render_ideology_compact_block,
+)
 from bestseller.domain.planning import PlanningArtifactCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import ProjectModel
@@ -367,6 +371,126 @@ def _fallback_beat_sheet(project: ProjectModel, premise: str) -> FanqieShortBeat
     )
 
 
+def build_short_ideology_compact(kernel: Any) -> dict[str, Any]:
+    """Extract the load-bearing ideology spine for a short story (serializable).
+
+    Keeps only what a single short can actually carry — 主主题/核心问题/信念弧/
+    一强母题/1-2 条代价/禁用解法 — and drops 长篇-only fields (副母题、隐藏终局、
+    per-volume 压力). Returns ``{}`` on any failure so callers stay non-blocking.
+    """
+
+    if kernel is None:
+        return {}
+    if isinstance(kernel, Mapping):
+        try:
+            kernel = ideology_kernel_from_dict(dict(kernel))
+        except Exception:
+            logger.warning("build_short_ideology_compact: invalid kernel dict", exc_info=True)
+            return {}
+    try:
+        belief = kernel.belief_arc
+        primary = kernel.primary_motif
+        return {
+            "thesis_statement": kernel.thesis_statement,
+            "core_question": kernel.core_question,
+            "belief_arc": {
+                "initial": belief.initial_belief,
+                "shatter": belief.midpoint_shatter,
+                "reconstruction": belief.final_reconstruction,
+            },
+            "primary_motif": {
+                "key": primary.motif_key,
+                "display_name": primary.display_name,
+                "thesis": primary.book_thesis,
+                "symbols": list(primary.concrete_symbols)[:4],
+            },
+            "sub_themes": [t.proposition for t in kernel.sub_themes[:2]],
+            "cost_laws": [
+                {"acquires": law.acquires, "costs": law.costs}
+                for law in kernel.cost_system[:2]
+            ],
+            "forbidden": list(kernel.forbidden_resolutions)[:2],
+        }
+    except Exception:
+        logger.warning("build_short_ideology_compact failed", exc_info=True)
+        return {}
+
+
+def derive_short_thesis_vectors(
+    segment_count: int,
+    unlock_segment: int,
+    ideology_compact: Mapping[str, Any] | None,
+) -> dict[int, str]:
+    """Map a belief arc (建立→受压→碎裂→代价→重建) onto each segment.
+
+    Gives a short story an explicit value spine so every segment makes a
+    thematic move instead of only delivering platform 爽点. Deterministic.
+    """
+
+    if not ideology_compact:
+        return {}
+    arc = _mapping(ideology_compact.get("belief_arc"))
+    initial = str(arc.get("initial") or "").strip()
+    shatter = str(arc.get("shatter") or "").strip()
+    reconstruction = str(arc.get("reconstruction") or "").strip()
+    if not (initial or shatter or reconstruction):
+        return {}
+    n = max(int(segment_count), 1)
+    midpoint = min(n, max(2, round(n / 2)))
+    vectors: dict[int, str] = {}
+    for seg in range(1, n + 1):
+        if seg == 1:
+            vectors[seg] = f"建立初始信念：{initial}" if initial else "建立初始信念"
+        elif seg == n:
+            vectors[seg] = (
+                f"重建新信念：{reconstruction}" if reconstruction else "重建新信念"
+            )
+        elif seg == midpoint:
+            vectors[seg] = f"信念碎裂：{shatter}" if shatter else "信念碎裂"
+        elif seg < midpoint:
+            vectors[seg] = "信念受压：旧信念在压力下出现裂缝"
+        else:
+            vectors[seg] = "代价显形：碎裂后付出代价并摸索新解"
+    return vectors
+
+
+def render_short_ideology_scene_block(
+    ideology_compact: Mapping[str, Any] | None,
+    *,
+    thesis_vector: str = "",
+) -> str:
+    """Compact per-scene ideology prompt block for the PROSE_SCENE writer."""
+
+    if not ideology_compact:
+        return ""
+    lines = ["【本篇内核(在剧情里兑现,严禁说教/口号)】"]
+    thesis = str(ideology_compact.get("thesis_statement") or "").strip()
+    if thesis:
+        lines.append(f"主主题：{thesis}")
+    core_question = str(ideology_compact.get("core_question") or "").strip()
+    if core_question:
+        lines.append(f"核心问题：{core_question}")
+    motif = _mapping(ideology_compact.get("primary_motif"))
+    motif_name = str(motif.get("display_name") or "").strip()
+    motif_thesis = str(motif.get("thesis") or "").strip()
+    if motif_name or motif_thesis:
+        joined = "——".join(part for part in (motif_name, motif_thesis) if part)
+        lines.append(f"母题：{joined}")
+    cost_laws = ideology_compact.get("cost_laws") or []
+    if cost_laws:
+        law = _mapping(cost_laws[0])
+        acquires = str(law.get("acquires") or "").strip()
+        costs = str(law.get("costs") or "").strip()
+        if acquires and costs:
+            lines.append(f"代价律：获得「{acquires}」必付「{costs}」，禁止无代价开挂")
+    forbidden = ideology_compact.get("forbidden") or []
+    if forbidden:
+        lines.append(f"禁用廉价解法：{forbidden[0]}")
+    if thesis_vector:
+        lines.append(f"本段信念位置：{thesis_vector}")
+    return "\n".join(lines)
+
+
 async def generate_fanqie_beat_sheet(
     session: AsyncSession,
     settings: AppSettings,
@@ -375,6 +499,7 @@ async def generate_fanqie_beat_sheet(
     *,
     book_spec: dict[str, Any] | None = None,
     cast_spec: dict[str, Any] | None = None,
+    ideology_kernel: Any | None = None,
     requested_by: str = "system",
 ) -> FanqieShortBeatSheet:
     project = await get_project_by_slug(session, project_slug)
@@ -398,6 +523,9 @@ async def generate_fanqie_beat_sheet(
         premise=premise,
     )
     resource_block = render_short_resource_prompt_block(resource_cards)
+    ideology_compact = build_short_ideology_compact(ideology_kernel)
+    ideology_block = render_ideology_compact_block(ideology_kernel) if ideology_kernel else ""
+    ideology_prompt = f"{ideology_block}\n" if ideology_block else ""
     user_prompt = (
         f"书名：{project.title}\n"
         f"类型：{project.genre} / {project.sub_genre or ''}\n"
@@ -405,7 +533,10 @@ async def generate_fanqie_beat_sheet(
         f"段数：{project.target_chapters}\n"
         f"目标全文：{project.target_word_count} 字\n"
         f"{emotion_block}\n"
+        f"{ideology_prompt}"
         f"{resource_block}\n"
+        "内核要求：每段的 emotional_turn 必须推进上面的信念弧（建立→受压→碎裂→重建），"
+        "母题与代价律在剧情冲突里兑现，严禁说教或口号；末段完成信念重建。\n"
         "榜单级硬要求：第1段前50字主角进入压迫现场，若有金手指/异能必须立刻可见并生效；"
         "前100字主角成为视角焦点并出现明确污名/威胁/损失；前200字必须给一次可见小反馈；"
         "前300字出现当前冲突/威胁/代价和第一次小爽点结果，前800字出现第一次动作反应或能力使用；"
@@ -446,6 +577,21 @@ async def generate_fanqie_beat_sheet(
     except Exception:
         logger.warning("Fanqie beat sheet LLM failed; using fallback", exc_info=True)
         sheet = fallback_sheet
+
+    if ideology_compact:
+        segment_count = len(sheet.beats) or max(project.target_chapters, 1)
+        vectors = derive_short_thesis_vectors(
+            segment_count, sheet.unlock_milestone_segment, ideology_compact
+        )
+        new_beats = [
+            beat.model_copy(
+                update={"thesis_vector": vectors.get(beat.segment_number, beat.thesis_vector)}
+            )
+            for beat in sheet.beats
+        ]
+        sheet = sheet.model_copy(
+            update={"ideology_compact": ideology_compact, "beats": new_beats}
+        )
 
     await import_planning_artifact(
         session,
@@ -586,6 +732,7 @@ def build_fanqie_segment_outline_batch(
         f"爽点兑现={emotion_stack.payoff_point or emotion_stack.primary.payoff}"
     )
 
+    ideology_compact = dict(beat_sheet.ideology_compact or {})
     chapters: list[dict[str, Any]] = []
     segment_count = max(project.target_chapters, len(beat_sheet.beats), 1)
     for segment_number in range(1, segment_count + 1):
@@ -650,15 +797,19 @@ def build_fanqie_segment_outline_batch(
         scene_stakes = (
             f"如果{protagonist_name}不能用可见证据推进局面，当前嫌疑会继续压到{protagonist_name}身上。"
         )
-        information_control = f"只释放当前段能验证的证据，把最终真凶动机留到后续反转。"
+        information_control = "只释放当前段能验证的证据，把最终真凶动机留到后续反转。"
         signature_image = (
             opening_situation[:80]
             if opening_situation
             else f"{protagonist_name}在现场盯住一处异常证据。"
         )
         cut_point = hook_description if hook_description != protagonist_name else visible_action
+        scene_ideology = render_short_ideology_scene_block(
+            ideology_compact, thesis_vector=beat.thesis_vector
+        )
         causal_contract = {
             "chapter_function": beat.beat_role,
+            "thesis_vector": beat.thesis_vector,
             "pressure": segment_conflict,
             "protagonist_choice": visible_goal,
             "visible_action_or_reaction": visible_action,
@@ -712,6 +863,8 @@ def build_fanqie_segment_outline_batch(
                     "fanqie_short_emotional_turn": beat.emotional_turn,
                     "fanqie_short_contract_lines": _contract_lines(beat),
                     "fanqie_short_v2": fanqie_contract,
+                    "fanqie_short_ideology": scene_ideology,
+                    "thesis_vector": beat.thesis_vector,
                 },
                 "target_word_count": per_segment_words,
                 "volume_number": 1,
@@ -736,6 +889,8 @@ def build_fanqie_segment_outline_batch(
                             "information_control": information_control,
                             "signature_image": signature_image,
                             "cut_point": cut_point,
+                            "fanqie_short_ideology": scene_ideology,
+                            "thesis_vector": beat.thesis_vector,
                         },
                         "entry_state": {"pressure": segment_conflict},
                         "exit_state": {"hook": hook_description},

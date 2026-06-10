@@ -17,6 +17,7 @@ from bestseller.domain.enums import ProjectStatus, WorkflowStatus
 from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
 from bestseller.infra.db.session import get_server_session
 from bestseller.settings import get_settings
+from bestseller.services.progress_context import set_ambient
 from bestseller.worker.progress import RedisProgressReporter, make_sync_callback
 
 logger = logging.getLogger(__name__)
@@ -587,6 +588,9 @@ async def run_autowrite_task(
     settings = get_settings()
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
+    # Bind ambient emitter so deep gate/agent emits reach this job's Redis sink.
+    # ARQ runs each job in its own copied context, so no paired reset is needed.
+    set_ambient(make_sync_callback(reporter))
 
     project_slug = payload["project_slug"]
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
@@ -690,6 +694,9 @@ async def run_project_pipeline_task(
     settings = get_settings()
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
+    # Bind ambient emitter so deep gate/agent emits reach this job's Redis sink.
+    # ARQ runs each job in its own copied context, so no paired reset is needed.
+    set_ambient(make_sync_callback(reporter))
     project_slug = payload["project_slug"]
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
@@ -778,6 +785,9 @@ async def run_chapter_pipeline_task(
     settings = get_settings()
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
+    # Bind ambient emitter so deep gate/agent emits reach this job's Redis sink.
+    # ARQ runs each job in its own copied context, so no paired reset is needed.
+    set_ambient(make_sync_callback(reporter))
     project_slug = payload["project_slug"]
 
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
@@ -822,6 +832,9 @@ async def run_project_repair_task(
     settings = get_settings()
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
+    # Bind ambient emitter so deep gate/agent emits reach this job's Redis sink.
+    # ARQ runs each job in its own copied context, so no paired reset is needed.
+    set_ambient(make_sync_callback(reporter))
 
     project_slug = payload["project_slug"]
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
@@ -900,6 +913,9 @@ async def run_book_quality_closure_task(
     """Run whole-book acceptance closure after generation finishes repairable."""
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
+    # Bind ambient emitter so deep gate/agent emits reach this job's Redis sink.
+    # ARQ runs each job in its own copied context, so no paired reset is needed.
+    set_ambient(make_sync_callback(reporter))
     project_slug = str(payload["project_slug"])
     round_size = max(int(payload.get("round_size") or _DEFAULT_CLOSURE_ROUND_SIZE), 1)
     max_rounds = max(int(payload.get("max_rounds") or _DEFAULT_CLOSURE_MAX_ROUNDS), 1)

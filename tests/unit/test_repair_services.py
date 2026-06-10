@@ -1102,6 +1102,72 @@ async def test_run_project_repair_does_not_sweep_in_progress_revision_drafts(
 
 
 @pytest.mark.asyncio
+async def test_run_project_repair_targets_quality_bundle_blocked_ok_chapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter2 = build_chapter(project.id, 2)
+    chapter2.status = "revision"
+    chapter2.production_state = "ok"
+    chapter2.metadata_json = {
+        "quality_bundle": {
+            "passed": False,
+            "blocking_codes": ["CHAPTER_LENGTH_BLOCK_HIGH"],
+        }
+    }
+    draft2 = build_chapter_draft(project.id, chapter2.id, content="# 第2章\n\n需要压缩。")
+    processed: list[int] = []
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_run_chapter_pipeline(session, settings, project_slug: str, chapter_number: int, **kwargs):
+        processed.append(chapter_number)
+        return ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter2.id,
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=2,
+            final_verdict="pass",
+            requires_human_review=False,
+        )
+
+    async def fake_review_project_consistency(session, settings, project_slug: str, **kwargs):
+        return (
+            type("ReviewResultStub", (), {"verdict": "pass"})(),
+            type("ReportStub", (), {"id": uuid4()})(),
+            type("QualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(repair_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        repair_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+
+    session = FakeSession(
+        scalar_results=[0],
+        scalars_results=[[], []],
+        execute_results=[[(chapter2, draft2)]],
+    )
+    result = await repair_services.run_project_repair(
+        session,
+        build_settings(),
+        "my-story",
+        export_markdown=False,
+        include_pending_rewrite_tasks=False,
+    )
+
+    assert processed == [2]
+    assert [item.chapter_number for item in result.processed_chapters] == [2]
+
+
+@pytest.mark.asyncio
 async def test_run_project_repair_targets_retention_failed_ok_chapters_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

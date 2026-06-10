@@ -1523,6 +1523,81 @@ def _fanqie_gate_protagonist_name(project: ProjectModel) -> str | None:
     return None
 
 
+def _voice_dna_excluded_names(project: ProjectModel) -> list[str]:
+    """Character names to suppress from self-extracted Voice DNA.
+
+    Without these, high-frequency cast names surface as "catchphrases"
+    the writer is then instructed to keep repeating.
+    """
+
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def _add(value: object) -> None:
+        name = str(value or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+
+    _add(_fanqie_gate_protagonist_name(project))
+    metadata = getattr(project, "metadata_json", None) or {}
+    cast_spec = metadata.get("cast_spec")
+    if isinstance(cast_spec, dict):
+        for value in cast_spec.values():
+            entries = value if isinstance(value, list) else [value]
+            for entry in entries:
+                if isinstance(entry, dict):
+                    _add(entry.get("name"))
+    return names
+
+
+async def _refresh_overused_phrase_block(
+    session: AsyncSession,
+    project: ProjectModel,
+    settings: AppSettings,
+) -> None:
+    """Recompute the book-level overused-phrase avoidance block.
+
+    Persists into ``project.metadata_json["_overused_phrase_block"]``
+    which the scene pre-write path injects into the writer context.
+    Must run on BOTH the draft-mode and full-quality post-chapter paths
+    — it originally lived only inside the draft branch, leaving the
+    block permanently absent for production (full-quality) runs.
+    """
+
+    from bestseller.services.deduplication import (
+        build_overused_phrase_avoidance_block,
+        extract_frequent_phrases,
+    )
+
+    _all_scene_texts_q = await session.scalars(
+        select(SceneDraftVersionModel.content).join(
+            SceneCardModel,
+            SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
+        ).join(
+            ChapterModel,
+            SceneCardModel.chapter_id == ChapterModel.id,
+        ).where(
+            ChapterModel.project_id == project.id,
+            SceneDraftVersionModel.is_current.is_(True),
+            SceneDraftVersionModel.content.isnot(None),
+        )
+    )
+    _all_scene_texts = [t for t in _all_scene_texts_q if t]
+    if len(_all_scene_texts) < 3:
+        return
+    _lang = getattr(project, "language", None) or settings.generation.language
+    _phrases = extract_frequent_phrases(_all_scene_texts, language=_lang)
+    if _phrases:
+        _phrase_block = build_overused_phrase_avoidance_block(
+            _phrases, language=_lang
+        )
+        project.metadata_json = {
+            **(project.metadata_json or {}),
+            "_overused_phrase_block": _phrase_block,
+        }
+
+
 async def _ensure_emotion_kernel_backfill_for_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -4829,6 +4904,7 @@ async def run_scene_pipeline(
                 _orig_cfg = get_quality_gates_config().originality_engine
                 if _orig_cfg.enabled:
                     from bestseller.services.chapter_orchestrator import (
+                        ensure_signature_plan as _ensure_signature_plan,
                         prepare_chapter_context as _prepare_chapter_context,
                     )
                     from bestseller.services.market_constraint_compiler import (
@@ -4869,6 +4945,35 @@ async def run_scene_pipeline(
                             exc_info=True,
                         )
                         _prev_text = None
+                    # Self-bootstrap the signature-scene plan: the CLI
+                    # ``book bootstrap`` is the only other producer and
+                    # platform-run books never execute it. Deterministic,
+                    # never overwrites an existing plan on disk.
+                    if _orig_cfg.auto_signature_plan:
+                        try:
+                            _sig_total = int(
+                                getattr(project, "target_chapters", 0)
+                                or (project.metadata_json or {}).get(
+                                    "target_chapter_count"
+                                )
+                                or 0
+                            )
+                            if _sig_total >= 1:
+                                _ensure_signature_plan(
+                                    project.slug,
+                                    total_chapters=max(
+                                        _sig_total, chapter_number
+                                    ),
+                                    output_base_dir=settings.output.base_dir,
+                                    mode_b=_orig_mode_b,
+                                )
+                        except Exception:
+                            logger.debug(
+                                "signature plan auto-bootstrap failed for "
+                                "ch%d (non-fatal)",
+                                chapter_number,
+                                exc_info=True,
+                            )
                     _orig_ctx = _prepare_chapter_context(
                         project.slug,
                         chapter_number,
@@ -6753,6 +6858,7 @@ async def run_chapter_pipeline(
                     and chapter_draft.content_md
                 ):
                     from bestseller.services.chapter_orchestrator import (
+                        ensure_voice_dna as _ensure_voice_dna,
                         grade_chapter as _grade_chapter,
                         prepare_chapter_context as _prep_for_grade,
                     )
@@ -6766,6 +6872,37 @@ async def run_chapter_pipeline(
                         and len(_grade_text) > _orig_cfg.grading_text_cap_chars
                     ):
                         _grade_text = _grade_text[: _orig_cfg.grading_text_cap_chars]
+                    # Self-bootstrap Voice DNA from the book's own earliest
+                    # accepted prose — platform projects have no external
+                    # reference corpus, so the first chapter long enough to
+                    # extract from becomes the voice anchor later chapters
+                    # are held to. No-op once voice-dna.json exists.
+                    if _orig_cfg.auto_voice_dna:
+                        try:
+                            _ensure_voice_dna(
+                                project_slug,
+                                sample_text=chapter_draft.content_md or "",
+                                source_id=f"self-ch{chapter_number}",
+                                source_label=(
+                                    f"{project_slug} self-anchor "
+                                    f"ch{chapter_number}"
+                                ),
+                                excluded_phrases=_voice_dna_excluded_names(
+                                    project
+                                ),
+                                min_sample_chars=(
+                                    _orig_cfg.voice_dna_min_sample_chars
+                                ),
+                                output_base_dir=settings.output.base_dir,
+                                mode_b=_grade_mode_b,
+                            )
+                        except Exception:
+                            logger.debug(
+                                "voice DNA auto-bootstrap failed for ch%d "
+                                "(non-fatal)",
+                                chapter_number,
+                                exc_info=True,
+                            )
                     _grade_ctx = _prep_for_grade(
                         project_slug,
                         chapter_number,
@@ -7993,33 +8130,9 @@ async def run_chapter_pipeline(
 
                     # ── Book-level overused phrase tracking ──
                     try:
-                        from bestseller.services.deduplication import (
-                            build_overused_phrase_avoidance_block,
-                            extract_frequent_phrases,
+                        await _refresh_overused_phrase_block(
+                            session, project, settings
                         )
-                        _all_scene_texts_q = await session.scalars(
-                            select(SceneDraftVersionModel.content).join(
-                                SceneCardModel,
-                                SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
-                            ).join(
-                                ChapterModel,
-                                SceneCardModel.chapter_id == ChapterModel.id,
-                            ).where(
-                                ChapterModel.project_id == project.id,
-                                SceneDraftVersionModel.is_current.is_(True),
-                                SceneDraftVersionModel.content.isnot(None),
-                            )
-                        )
-                        _all_scene_texts = [t for t in _all_scene_texts_q if t]
-                        if len(_all_scene_texts) >= 3:
-                            _lang = getattr(project, "language", None) or settings.generation.language
-                            _phrases = extract_frequent_phrases(_all_scene_texts, language=_lang)
-                            if _phrases:
-                                _phrase_block = build_overused_phrase_avoidance_block(_phrases, language=_lang)
-                                project.metadata_json = {
-                                    **(project.metadata_json or {}),
-                                    "_overused_phrase_block": _phrase_block,
-                                }
                     except Exception:
                         logger.debug("Overused phrase tracking failed (non-fatal)", exc_info=True)
 
@@ -8399,6 +8512,17 @@ async def run_chapter_pipeline(
                         "Chapter %d bible update failed (non-fatal): %s",
                         chapter.chapter_number,
                         exc,
+                    )
+
+                # ── Book-level overused phrase tracking (non-draft path) ──
+                try:
+                    await _refresh_overused_phrase_block(
+                        session, project, settings
+                    )
+                except Exception:
+                    logger.debug(
+                        "Overused phrase tracking failed (non-fatal)",
+                        exc_info=True,
                     )
 
                 # ── L7 per-chapter audit (lightweight) ──

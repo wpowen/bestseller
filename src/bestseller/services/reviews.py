@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 import re
@@ -21,6 +22,8 @@ _LLM_PASS_OVERRIDABLE_RULE_CATEGORIES: frozenset[str] = frozenset(
         "volume_mission_alignment",
     }
 )
+
+_OPTIONAL_CHAPTER_REVIEW_LLM_TIMEOUT_SECONDS = 90.0
 
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +53,7 @@ from bestseller.infra.db.models import (
     VolumeModel,
 )
 from bestseller.services.action_scene_structure_gate import evaluate_action_scene_structure
+from bestseller.services.progress_context import emit_gate_result
 from bestseller.services.hook_signals import SHARED_HOOK_TERMS as _SHARED_HOOK_TERMS
 from bestseller.services.chapter_quality_bundle import (
     ChapterQualityBundleContext,
@@ -1527,6 +1531,24 @@ def _should_generate_scene_review_commentary(settings: AppSettings) -> bool:
 def _should_generate_chapter_review_commentary(settings: AppSettings) -> bool:
     """Return whether chapter review should spend an extra LLM call on commentary."""
     return settings.quality.enable_llm_chapter_commentary
+
+
+async def _await_optional_chapter_review_llm(
+    awaitable: Any,
+    *,
+    label: str,
+    chapter_number: int,
+    timeout_seconds: float = _OPTIONAL_CHAPTER_REVIEW_LLM_TIMEOUT_SECONDS,
+) -> Any:
+    """Bound optional LLM review layers so they cannot stall chapter closure."""
+
+    try:
+        return await asyncio.wait_for(awaitable, timeout=timeout_seconds)
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(
+            f"{label} timed out after {timeout_seconds:.1f}s for chapter "
+            f"{chapter_number}"
+        ) from exc
 
 
 def _resolve_project_writing_profile(project: Any, style_guide: StyleGuideModel | None = None):
@@ -5259,6 +5281,17 @@ async def review_scene_draft(
         chapter.status = ChapterStatus.REVIEW.value
 
     await session.flush()
+    emit_gate_result(
+        "scene_review",
+        verdict=str(review_result.verdict),
+        severity=getattr(review_result, "severity_max", None),
+        score=round(
+            float(getattr(getattr(review_result, "scores", None), "overall", 0) or 0) * 100, 1
+        ),
+        reasons=[getattr(f, "message", f) for f in (getattr(review_result, "findings", None) or [])],
+        chapter=chapter_number,
+        extra={"scene_number": scene_number},
+    )
     return review_result, report, quality, rewrite_task
 
 
@@ -7415,18 +7448,22 @@ async def review_chapter_draft(
                 else None,
             )
             # 稳定版:多采样取中位,消除单次判官方差,让榜单门禁可信、可收敛。
-            llm_judge_result = await judge_chapter_commercial_quality_stable(
-                session,
-                settings,
+            llm_judge_result = await _await_optional_chapter_review_llm(
+                judge_chapter_commercial_quality_stable(
+                    session,
+                    settings,
+                    chapter_number=chapter.chapter_number,
+                    content_md=draft.content_md,
+                    generation_input=generation_input,
+                    workflow_run_id=workflow_run_id,
+                    pack=prompt_pack,
+                    genre_context=judge_genre_context,
+                    language="en"
+                    if str(getattr(project, "language", "") or "").lower().startswith("en")
+                    else "zh",
+                ),
+                label="chapter_llm_commercial_judge",
                 chapter_number=chapter.chapter_number,
-                content_md=draft.content_md,
-                generation_input=generation_input,
-                workflow_run_id=workflow_run_id,
-                pack=prompt_pack,
-                genre_context=judge_genre_context,
-                language="en"
-                if str(getattr(project, "language", "") or "").lower().startswith("en")
-                else "zh",
             )
             llm_commercial_judge_payload = llm_judge_result.model_dump(mode="json", by_alias=True)
             if (
@@ -7593,11 +7630,15 @@ async def review_chapter_draft(
                 window_size=window_size,
             )
             if len(window_payload) >= min_chapters:
-                window_judge_result = await judge_chapter_window_quality(
-                    session,
-                    settings,
-                    chapters=window_payload,
-                    workflow_run_id=workflow_run_id,
+                window_judge_result = await _await_optional_chapter_review_llm(
+                    judge_chapter_window_quality(
+                        session,
+                        settings,
+                        chapters=window_payload,
+                        workflow_run_id=workflow_run_id,
+                    ),
+                    label="chapter_window_llm_judge",
+                    chapter_number=chapter.chapter_number,
                 )
                 window_judge_payload = window_judge_result.model_dump(
                     mode="json",
@@ -7675,15 +7716,19 @@ async def review_chapter_draft(
                     chapter=chapter,
                     draft=draft,
                 )
-                volume_judge_result = await judge_volume_quality_checkpoint(
-                    session,
-                    settings,
-                    volume_plan=volume_plan,
-                    chapter_summaries=chapter_summaries,
-                    current_chapter_number=chapter_number,
-                    volume_checkpoint_interval=interval,
-                    volume_checkpoint_min_chapters=min_chapters,
-                    workflow_run_id=workflow_run_id,
+                volume_judge_result = await _await_optional_chapter_review_llm(
+                    judge_volume_quality_checkpoint(
+                        session,
+                        settings,
+                        volume_plan=volume_plan,
+                        chapter_summaries=chapter_summaries,
+                        current_chapter_number=chapter_number,
+                        volume_checkpoint_interval=interval,
+                        volume_checkpoint_min_chapters=min_chapters,
+                        workflow_run_id=workflow_run_id,
+                    ),
+                    label="volume_llm_checkpoint_judge",
+                    chapter_number=chapter.chapter_number,
                 )
                 volume_judge_payload = volume_judge_result.model_dump(
                     mode="json",
@@ -7745,47 +7790,58 @@ async def review_chapter_draft(
             chapter_context,
             review_result,
         )
-        completion = await complete_text(
-            session,
-            settings,
-            LLMCompletionRequest(
-                logical_role="critic",
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                fallback_response=critic_response,
-                prompt_template="chapter_review",
-                prompt_version="1.0",
-                project_id=project.id,
-                workflow_run_id=workflow_run_id,
-                step_run_id=step_run_id,
-                metadata={
-                    "project_slug": project.slug,
-                    "chapter_number": chapter.chapter_number,
-                    "verdict": review_result.verdict,
-                },
-            ),
-        )
-        critic_response = completion.content.strip() or critic_response
-        reviewer_type = completion.model_name
-        llm_run_id = completion.llm_run_id
-
-        # --- LLM verdict override for chapter review ---
-        llm_verdict = _parse_llm_verdict(critic_response)
-        if (
-            llm_verdict == "rewrite"
-            and review_result.verdict == "pass"
-            and review_result.severity_max in {"major", "critical", "high"}
-        ):
-            review_result = ChapterReviewResult(
-                verdict="rewrite",
-                scores=review_result.scores,
-                findings=review_result.findings,
-                severity_max=review_result.severity_max,
-                evidence_summary=review_result.evidence_summary,
-                rewrite_instructions=_parse_llm_rewrite_direction(critic_response)
-                or review_result.rewrite_instructions
-                or "LLM 评审判定章节需要重写。",
+        try:
+            completion = await _await_optional_chapter_review_llm(
+                complete_text(
+                    session,
+                    settings,
+                    LLMCompletionRequest(
+                        logical_role="critic",
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        fallback_response=critic_response,
+                        prompt_template="chapter_review",
+                        prompt_version="1.0",
+                        project_id=project.id,
+                        workflow_run_id=workflow_run_id,
+                        step_run_id=step_run_id,
+                        metadata={
+                            "project_slug": project.slug,
+                            "chapter_number": chapter.chapter_number,
+                            "verdict": review_result.verdict,
+                        },
+                    ),
+                ),
+                label="chapter_review_commentary",
+                chapter_number=chapter.chapter_number,
             )
+        except Exception:
+            logger.exception(
+                "chapter review commentary failed for ch%d (ignored)",
+                chapter_number,
+            )
+        else:
+            critic_response = completion.content.strip() or critic_response
+            reviewer_type = completion.model_name
+            llm_run_id = completion.llm_run_id
+
+            # --- LLM verdict override for chapter review ---
+            llm_verdict = _parse_llm_verdict(critic_response)
+            if (
+                llm_verdict == "rewrite"
+                and review_result.verdict == "pass"
+                and review_result.severity_max in {"major", "critical", "high"}
+            ):
+                review_result = ChapterReviewResult(
+                    verdict="rewrite",
+                    scores=review_result.scores,
+                    findings=review_result.findings,
+                    severity_max=review_result.severity_max,
+                    evidence_summary=review_result.evidence_summary,
+                    rewrite_instructions=_parse_llm_rewrite_direction(critic_response)
+                    or review_result.rewrite_instructions
+                    or "LLM 评审判定章节需要重写。",
+                )
 
     report = ReviewReportModel(
         project_id=project.id,
@@ -7961,6 +8017,16 @@ async def review_chapter_draft(
         chapter.metadata_json = chapter_meta_after_pass
 
     await session.flush()
+    emit_gate_result(
+        "chapter_review",
+        verdict=str(review_result.verdict),
+        severity=getattr(review_result, "severity_max", None),
+        score=round(
+            float(getattr(getattr(review_result, "scores", None), "overall", 0) or 0) * 100, 1
+        ),
+        reasons=[getattr(f, "message", f) for f in (getattr(review_result, "findings", None) or [])],
+        chapter=chapter_number,
+    )
     return review_result, report, quality, rewrite_task
 
 

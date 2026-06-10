@@ -830,6 +830,28 @@ def test_quickstart_listing_profile_content_is_copyable() -> None:
     assert "area.focus();" in html
 
 
+def test_quickstart_progress_panels_skip_unchanged_dom_rebuilds() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert "let renderedChapterListSignature = null;" in html
+    assert (
+        "function renderChapterGridIfChanged("
+        "taskId, signature, headerHtml, readLabel, readHref, html)"
+    ) in html
+    assert (
+        "if (renderedChapterListTaskId === taskId "
+        "&& renderedChapterListSignature === signature) return;"
+    ) in html
+    assert "renderChapterGridIfChanged(" in html
+    assert "先重置章节区" not in html
+
+    assert "let listingRenderedSignature = null;" in html
+    assert "let listingLoadInFlight = null;" in html
+    assert "function listingPayloadSignature(listing, project)" in html
+    assert "listingLoadInFlight && listingLoadInFlight.slug === slug" in html
+    assert "if (listingRenderedSignature !== signature)" in html
+
+
 def test_quickstart_incomplete_tasks_are_not_labeled_stopped() -> None:
     html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
 
@@ -862,6 +884,34 @@ def test_quickstart_exposes_batch_concept_lab_picker() -> None:
     assert "脑洞候选 ${bundles.length} 组" in html
     assert "concept_lab_bundle_id" in html
     assert "concept_lab_bundle" in html
+
+
+def test_quickstart_exposes_optional_audience_orientation_switch() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert 'id="audienceOrientationRow"' in html
+    assert 'data-audience="male"' in html
+    assert 'data-audience="female"' in html
+    assert "智能判定" in html
+    # Default is empty ('') so the heat-search agent decides; the explicit pick
+    # is sent as audience_orientation in the quickstart payload.
+    assert "audience_orientation: selectedAudience || undefined" in html
+
+
+def test_quickstart_creative_hook_concept_are_optional_not_auto_selected() -> None:
+    """After picking a genre, 题材脑洞发散 / 反常识爽点 / 脑洞组合 must default to
+    UNSELECTED (the framework grows them itself). Guards against the regression
+    where the UI auto-selected a default and leaked it into the submission."""
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    # No implicit default creative direction.
+    assert "pack.default_key || pack.directions[0].key" not in html
+    # No implicit default hook (index 0) or default concept bundle.
+    assert "selectedHookIndexByGenre[g.key] || 0" not in html
+    assert "conceptLabCatalog.default_bundle_id || bundles[0]?.bundle_id" not in html
+    # Optional hints are shown so the user knows skipping is intentional.
+    assert "可选 · 不选则由AI按题材+市场热度自动决定" in html
+    assert "AI自动决定（未选）" in html
 
 
 def test_public_writing_preset_catalog_payload_sanitizes_story_specific_overrides() -> None:
@@ -1045,6 +1095,62 @@ def test_quickstart_task_passes_selected_creative_direction(
     assert payload["creative_brief"]["key"] == "cross-genre-friction"
     assert hints["creative_direction"] == "奇幻/玄幻/异世界 × 言情/女性向"
     assert "固定套路" in hints["usage_rule"]
+
+
+def test_quickstart_task_without_explicit_selection_skips_autobake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Genre-only quickstart must NOT auto-bake a default creative direction,
+    concept bundle, or bundle-derived hook_spec. The framework should grow
+    genre-fitting concepts itself instead of being pinned to a preset."""
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "demo-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    manager.create_quickstart_task({"genre_key": "apocalypse-supply", "chapter_count": 12})
+
+    payload = captured["payload"]
+    assert payload["creative_key"] == ""
+    assert payload["creative_brief"] == {}
+    assert payload["concept_lab_bundle"] == {}
+    assert payload["hook_spec"] == {}
+    assert "hook_spec" not in payload["user_hints"]
+    assert "audience" not in payload
+
+
+def test_quickstart_task_threads_explicit_audience_orientation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "demo-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    manager.create_quickstart_task(
+        {
+            "genre_key": "apocalypse-supply",
+            "chapter_count": 12,
+            "audience_orientation": "female",
+        }
+    )
+
+    payload = captured["payload"]
+    assert payload["audience"] == "女频"
+    assert payload["audience_orientation"] == "female"
+    assert payload["user_hints"]["audience_orientation"] == "女频"
 
 
 def test_quickstart_task_passes_selected_concept_lab_bundle(
@@ -3489,3 +3595,73 @@ def test_compact_task_for_dashboard_trims_progress_events() -> None:
     assert compacted.get("progress_events_truncated") is True
     assert compacted["progress_events"][0]["stage"] == "stage-0"
     assert compacted["progress_events"][-1]["stage"] == "stage-119"
+
+
+def test_web_task_state_record_event_splits_tiers() -> None:
+    """Milestones survive the activity ring buffer; tier routing works."""
+    task = web_server.WebTaskState(
+        task_id="t1",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    # Flood the activity ring buffer well past its cap.
+    for i in range(web_server._ACTIVITY_EVENT_CAP + 120):
+        task.record_event("scene_activity", {"i": i})
+    assert len(task.progress_events) == web_server._ACTIVITY_EVENT_CAP
+    assert task.milestone_events == []
+
+    # A stage in _MILESTONE_STAGES is mirrored to the durable axis.
+    assert "methodology_selected" in web_server._MILESTONE_STAGES
+    task.record_event("methodology_selected", {"framework": "F"})
+    # An arbitrary stage can be forced onto the milestone axis.
+    task.record_event("custom_event", {"reason": "x"}, milestone=True)
+    assert [e["stage"] for e in task.milestone_events] == [
+        "methodology_selected",
+        "custom_event",
+    ]
+
+    # More activity must NOT evict the milestones.
+    for i in range(web_server._ACTIVITY_EVENT_CAP + 50):
+        task.record_event("noise", {"i": i})
+    assert len(task.milestone_events) == 2
+    assert len(task.progress_events) == web_server._ACTIVITY_EVENT_CAP
+
+
+def test_web_task_state_to_dict_includes_milestones() -> None:
+    task = web_server.WebTaskState(
+        task_id="t2",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    task.record_event("methodology_selected", {"framework": "F"})
+    payload = task.to_dict()
+    assert "milestone_events" in payload
+    assert payload["milestone_events"][0]["stage"] == "methodology_selected"
+
+
+def test_push_progress_routes_tier_payload_hint() -> None:
+    """A `_tier=milestone` payload hint promotes an otherwise-activity stage."""
+    from bestseller.services.progress_context import TIER_KEY, TIER_MILESTONE
+
+    manager = web_server.WebTaskManager(persist_path=None)
+    with manager._lock:
+        manager._tasks["task"] = web_server.WebTaskState(
+            task_id="task",
+            task_type="autowrite",
+            status="running",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+        )
+    # Stage not in _MILESTONE_STAGES, but the deep emitter tagged it milestone.
+    manager._push_progress("task", "anti_meta_gate_blocked", {TIER_KEY: TIER_MILESTONE})
+    task = manager._tasks["task"]
+    assert task.milestone_events[-1]["stage"] == "anti_meta_gate_blocked"
+
+    # An ordinary activity event stays off the milestone axis.
+    manager._push_progress("task", "scene_draft_review_evaluated", {"score": 7})
+    assert all(e["stage"] != "scene_draft_review_evaluated" for e in task.milestone_events)

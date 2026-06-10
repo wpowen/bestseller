@@ -67,6 +67,28 @@ def test_anti_meta_gate_protects_dialogue_and_physical_aftermath() -> None:
     assert report.passed
 
 
+def test_anti_meta_gate_allows_in_story_next_action() -> None:
+    text = (
+        "申诉提交了。钟黛的名字公开了。"
+        "戚敛舟那个名字一旦被系统关联上，他接下来每走一步，都会被审计线盯得死紧。"
+        "门外那双鞋没有走，鞋跟又磕了一下门框。"
+    )
+
+    report = check_anti_meta_gate(text, chapter_position=5)
+
+    assert {finding.term for finding in report.findings} == set()
+    assert report.passed
+
+
+def test_anti_meta_gate_still_blocks_contextual_next_chapter_language() -> None:
+    text = "接下来的章节会继续推进主线钩子。门外那盏灯灭了。"
+
+    report = check_anti_meta_gate(text, chapter_position=5)
+
+    assert any(finding.term == "接下来" for finding in report.findings)
+    assert not report.passed
+
+
 @pytest.mark.parametrize(
     "ending",
     [
@@ -74,6 +96,7 @@ def test_anti_meta_gate_protects_dialogue_and_physical_aftermath() -> None:
         "日期显示，今天凌晨两点十六分。比那条消息早一分钟。门外，有脚步声正在靠近。",
         "镜面裂开一道缝，从缝隙里，伸出一只青白的手。那只手的无名指上，戴着一枚戒指。",
         "然后它开口了。“你父亲也在这儿。”",
+        "页面弹出一行黑体：“本申诉已关联审计三处公开入口。”屏幕暗下去之前，横幅还在闪。倒计时：二十三小时五十一分。",
     ],
 )
 def test_anti_meta_gate_accepts_visible_in_scene_endings(ending: str) -> None:

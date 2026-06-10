@@ -91,6 +91,120 @@ async def test_delete_missing_project_writes_tombstone(tmp_path: Path) -> None:
     assert project_services.is_project_delete_tombstoned(settings, "already-gone") is True
 
 
+class _DeleteSession:
+    """Fake async session covering the ``delete_project_completely`` path.
+
+    ``get_project_by_slug`` reads through ``scalar``; the delete itself uses
+    ``execute`` (timeout pragmas), ``delete``, ``commit`` and ``rollback``.
+    """
+
+    def __init__(
+        self,
+        project: object,
+        *,
+        commit_failures: int = 0,
+        gone_on_refetch: bool = False,
+    ) -> None:
+        self._project = project
+        self._commit_failures = commit_failures
+        self._gone_on_refetch = gone_on_refetch
+        self.commit_count = 0
+        self.rollback_count = 0
+        self.delete_count = 0
+        self.execute_count = 0
+        self._scalar_calls = 0
+
+    async def scalar(self, stmt: object) -> object | None:
+        self._scalar_calls += 1
+        if self._scalar_calls > 1 and self._gone_on_refetch:
+            return None
+        return self._project
+
+    async def execute(self, stmt: object) -> None:
+        self.execute_count += 1
+
+    async def delete(self, obj: object) -> None:
+        self.delete_count += 1
+
+    async def commit(self) -> None:
+        if self._commit_failures > 0:
+            self._commit_failures -= 1
+            raise RuntimeError("canceling statement due to lock_timeout")
+        self.commit_count += 1
+
+    async def rollback(self) -> None:
+        self.rollback_count += 1
+
+
+@pytest.mark.asyncio
+async def test_delete_succeeds_and_tombstones(tmp_path: Path) -> None:
+    settings = SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path)))
+    session = _DeleteSession(SimpleNamespace(slug="book-x"))
+
+    result = await project_services.delete_project_completely(session, settings, "book-x")
+
+    assert result["db_deleted"] is True
+    assert result["fs_deleted"] is True
+    assert result["errors"] == []
+    assert session.delete_count == 1
+    assert session.commit_count == 1
+    assert project_services.is_project_delete_tombstoned(settings, "book-x") is True
+
+
+@pytest.mark.asyncio
+async def test_delete_retries_transient_lock_then_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(project_services, "_DB_DELETE_RETRY_DELAY_SECONDS", 0)
+    settings = SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path)))
+    session = _DeleteSession(SimpleNamespace(slug="book-y"), commit_failures=1)
+
+    result = await project_services.delete_project_completely(session, settings, "book-y")
+
+    assert result["db_deleted"] is True
+    assert all(not str(e).startswith("db_delete_failed") for e in result["errors"])
+    assert session.rollback_count == 1
+    assert session.commit_count == 1
+    assert project_services.is_project_delete_tombstoned(settings, "book-y") is True
+
+
+@pytest.mark.asyncio
+async def test_delete_gives_up_after_retries_but_tombstone_persists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(project_services, "_DB_DELETE_RETRY_DELAY_SECONDS", 0)
+    settings = SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path)))
+    session = _DeleteSession(SimpleNamespace(slug="book-z"), commit_failures=99)
+
+    result = await project_services.delete_project_completely(session, settings, "book-z")
+
+    assert result["db_deleted"] is False
+    # Disk is left untouched when the DB delete fails ...
+    assert result["fs_deleted"] is False
+    assert any(str(e).startswith("db_delete_failed") for e in result["errors"])
+    assert session.rollback_count == project_services._DB_DELETE_MAX_ATTEMPTS
+    # ... but the tombstone written FIRST keeps the project suppressed so it
+    # cannot be resurrected by self-heal — the core durability guarantee.
+    assert project_services.is_project_delete_tombstoned(settings, "book-z") is True
+
+
+@pytest.mark.asyncio
+async def test_delete_treats_concurrent_completion_as_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(project_services, "_DB_DELETE_RETRY_DELAY_SECONDS", 0)
+    settings = SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path)))
+    session = _DeleteSession(
+        SimpleNamespace(slug="book-c"), commit_failures=1, gone_on_refetch=True
+    )
+
+    result = await project_services.delete_project_completely(session, settings, "book-c")
+
+    assert result["db_deleted"] is True
+    assert all(not str(e).startswith("db_delete_failed") for e in result["errors"])
+    assert project_services.is_project_delete_tombstoned(settings, "book-c") is True
+
+
 @pytest.mark.asyncio
 async def test_create_project_creates_default_style_guide(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_get_project_by_slug(session: object, slug: str) -> None:

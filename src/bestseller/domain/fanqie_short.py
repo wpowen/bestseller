@@ -45,6 +45,8 @@ class FanqieShortBeat(BaseModel):
     payoff_contract: dict[str, Any] = Field(default_factory=dict)
     closure_contract: dict[str, Any] = Field(default_factory=dict)
     continuity_contract: dict[str, Any] = Field(default_factory=dict)
+    # 该段在「信念弧」上的位置：建立→受压→碎裂→重建。由母题内核派生，advisory。
+    thesis_vector: str = Field(default="", max_length=500)
 
 
 class FanqieShortBeatSheet(BaseModel):
@@ -53,6 +55,8 @@ class FanqieShortBeatSheet(BaseModel):
     pov: str = Field(default="first_person", max_length=64)
     beats: list[FanqieShortBeat] = Field(default_factory=list)
     unlock_milestone_segment: int = Field(default=2, ge=1)
+    # 精简母题/故事内核（主主题/核心问题/信念弧/一条代价/禁用解法）。空 dict = 未启用。
+    ideology_compact: dict[str, Any] = Field(default_factory=dict)
 
 
 def resolve_length_preset(length_key: str | None) -> dict[str, int]:

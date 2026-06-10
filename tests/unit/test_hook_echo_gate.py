@@ -59,12 +59,13 @@ def test_semantic_overlap_rescue_for_parallel_action_echo() -> None:
     )
 
 
-def test_extract_hook_tokens_finds_suspense_words() -> None:
+def test_extract_hook_tokens_prefers_concrete_hooks_over_connectors() -> None:
     tokens = extract_hook_tokens(_PREV_CHAPTER)
 
-    assert "突然" in tokens
-    assert "下一刻" in tokens
-    assert "竟是" in tokens or "竟然" in tokens or "竟敢" in tokens
+    assert "突然" not in tokens
+    assert "下一刻" not in tokens
+    assert "名单" in tokens
+    assert "门外" in tokens or "脚步声" in tokens
 
 
 def test_extract_hook_tokens_finds_cliffhanger_phrases() -> None:

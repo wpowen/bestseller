@@ -338,3 +338,45 @@ def test_orchestrator_builds_hook_echo_block_from_prev_chapter_text(
     block = ctx.hook_echo_block(language="zh-CN")
     assert "钩子回环" in block
     assert "脚步声" in block or "低咳" in block
+
+
+def test_originality_engine_auto_bootstrap_defaults() -> None:
+    """Platform self-bootstrap knobs default ON so signature plans and
+    voice DNA are produced without the CLI ``book bootstrap`` step."""
+
+    cfg = OriginalityEngineConfig()
+
+    assert cfg.auto_signature_plan is True
+    assert cfg.auto_voice_dna is True
+    assert cfg.voice_dna_min_sample_chars == 2000
+
+
+def test_originality_engine_auto_bootstrap_yaml_parsing(tmp_path: Path) -> None:
+    yaml_path = tmp_path / "qg.yaml"
+    yaml_path.write_text(
+        """
+originality_engine:
+  auto_signature_plan: false
+  auto_voice_dna: false
+  voice_dna_min_sample_chars: 5000
+""",
+        encoding="utf-8",
+    )
+
+    cfg = load_quality_gates_config(yaml_path)
+
+    assert cfg.originality_engine.auto_signature_plan is False
+    assert cfg.originality_engine.auto_voice_dna is False
+    assert cfg.originality_engine.voice_dna_min_sample_chars == 5000
+
+
+def test_originality_engine_voice_dna_min_chars_floor(tmp_path: Path) -> None:
+    yaml_path = tmp_path / "qg.yaml"
+    yaml_path.write_text(
+        "originality_engine:\n  voice_dna_min_sample_chars: 10\n",
+        encoding="utf-8",
+    )
+
+    cfg = load_quality_gates_config(yaml_path)
+
+    assert cfg.originality_engine.voice_dna_min_sample_chars == 200

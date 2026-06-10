@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -36,6 +37,17 @@ from bestseller.settings import load_settings
 
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.asyncio
+async def test_optional_chapter_review_llm_timeout_is_bounded() -> None:
+    with pytest.raises(TimeoutError, match="chapter_review_commentary timed out"):
+        await review_services._await_optional_chapter_review_llm(
+            asyncio.sleep(1),
+            label="chapter_review_commentary",
+            chapter_number=2,
+            timeout_seconds=0.001,
+        )
 
 
 class FakeSession:

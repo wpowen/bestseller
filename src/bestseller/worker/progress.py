@@ -9,8 +9,16 @@ from redis.asyncio import Redis
 
 # Redis key patterns
 _PROGRESS_LIST_KEY = "task:{task_id}:progress"
+# Durable milestone axis — mirrors milestone-tier events so they survive the
+# activity list's read window (lrange tail) on self-heal/resume reconnects.
+_MILESTONE_LIST_KEY = "task:{task_id}:milestones"
 _PROGRESS_CHANNEL = "task:{task_id}:events"
 _PROGRESS_TTL = 86_400  # 24 h
+
+# Payload key carrying the milestone/activity tier hint (mirrors
+# services.progress_context.TIER_KEY without importing it here).
+_TIER_KEY = "_tier"
+_TIER_MILESTONE = "milestone"
 
 
 class RedisProgressReporter:
@@ -21,17 +29,28 @@ class RedisProgressReporter:
         self._task_id = task_id
         self._ttl = ttl
         self._list_key = _PROGRESS_LIST_KEY.format(task_id=task_id)
+        self._milestone_key = _MILESTONE_LIST_KEY.format(task_id=task_id)
         self._channel = _PROGRESS_CHANNEL.format(task_id=task_id)
 
     async def emit(self, message: str, data: dict[str, Any] | None = None, *, event_type: str = "progress") -> None:
+        data = data or {}
+        is_milestone = data.get(_TIER_KEY) == _TIER_MILESTONE
         event = json.dumps(
-            {"ts": time.time(), "message": message, "data": data or {}, "event_type": event_type},
+            {
+                "ts": time.time(),
+                "message": message,
+                "data": data,
+                "event_type": _TIER_MILESTONE if is_milestone else event_type,
+            },
             ensure_ascii=False,
         )
         # Use pipeline to batch rpush + expire + publish in a single round-trip
         async with self._redis.pipeline(transaction=False) as pipe:
             pipe.rpush(self._list_key, event)  # type: ignore[misc]
             pipe.expire(self._list_key, self._ttl)
+            if is_milestone:
+                pipe.rpush(self._milestone_key, event)  # type: ignore[misc]
+                pipe.expire(self._milestone_key, self._ttl)
             pipe.publish(self._channel, event)
             await pipe.execute()
 

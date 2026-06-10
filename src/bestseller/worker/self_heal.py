@@ -59,6 +59,7 @@ from bestseller.services.gate_registry import (
     gate_continuation_impact,
     project_resume_is_terminally_blocked,
 )
+from bestseller.services.projects import is_project_delete_tombstoned
 from bestseller.services.repair_impact import compute_continuation_readiness
 from bestseller.settings import AppSettings
 
@@ -1625,6 +1626,15 @@ async def heal_stuck_projects(
 
         pool = await create_pool(_arq_redis_settings(settings))
         for stuck in stuck_list:
+            # A user-initiated delete records a tombstone before it touches the
+            # DB. Honor it here so a project whose delete is mid-flight (or whose
+            # DB delete lost a lock race) is never re-queued back to life.
+            if is_project_delete_tombstoned(settings, stuck.slug):
+                logger.info(
+                    "self-heal: skipped slug=%s — project is delete-tombstoned",
+                    stuck.slug,
+                )
+                continue
             try:
                 async with get_server_session() as session:
                     if stuck.heal_kind in {"autowrite", "project_pipeline"}:

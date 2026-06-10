@@ -53,6 +53,7 @@ def test_render_repair_playbooks_can_append_book_methodology(
         "PERSONA_WEIGHTED_SCORE_LOW",
         "PERSONA_PAYOFF_DENSITY_LOW",
         "SIGNATURE_IMAGE_MISSING",
+        "CHAPTER_LENGTH_BLOCK_HIGH",
         "OPENING_PRESSURE_THIN",
         "ENDING_HOOK_MISSING",
         "PARAGRAPH_DUPLICATE_PARAPHRASE",

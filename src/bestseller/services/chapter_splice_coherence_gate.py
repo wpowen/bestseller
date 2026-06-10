@@ -17,6 +17,7 @@ from typing import Any
 
 from bestseller.domain.gate_verdict import GateFinding, GateVerdict
 from bestseller.services.checker_schema import CheckerIssue, CheckerReport
+from bestseller.services.progress_context import emit_gate_result
 from bestseller.services.quality_finding_schema import QualityFinding
 
 _SENTENCE_SPLIT_RE = re.compile(r"[。！？!?]\s*|\n+")
@@ -42,6 +43,51 @@ _TIME_RE = re.compile(
 _BRIDGE_RE = re.compile(
     r"(?:与此同时|另一边|随后|接着|不久|片刻后|十分钟后|半小时后|四十分钟后|"
     r"第二天|转场|回到|赶到|来到|到了|换了地方|车停在|他们进了)"
+)
+_COUNTDOWN_CONTEXT_RE = re.compile(
+    r"(?:倒计时|接单时限|时限|窗口|归零|剩余|有效期|截止|倒数|还剩|"
+    r"剩下|扣减|申诉|余额|归档|清零|配额|体检券|待签|名单|截图|附件|"
+    r"回执|回电|审计|十五分钟|八分钟|四小时|五天)"
+)
+_NON_SCENE_TIME_CONTEXT_RE = re.compile(
+    r"(?:想起|记起|回忆|截图|名单|附件|提示|提示栏|待签|归档|清零|"
+    r"配额|体检券|审计|之前|以后|过了|剩下|还有|窗口|回电)"
+)
+_CLOCK_RE = re.compile(r"(?P<hour>\d{1,2})[:：](?P<minute>\d{2})")
+_CHINESE_HOUR_RE = re.compile(
+    r"(?P<hour>[一二三四五六七八九十两\d]{1,3})点(?P<minute>半|零|[一二三四五六七八九十两\d]{1,2}分)?"
+)
+_NON_TIME_POINT_SUFFIXES: frozenset[str] = frozenset(
+    {
+        "头",
+        "点",
+        "儿",
+        "余",
+        "钱",
+        "灵",
+        "学",
+        "配",
+        "震",
+        "光",
+        "红",
+        "灰",
+    }
+)
+_DAYPART_BUCKETS: dict[str, int] = {
+    "凌晨": 3,
+    "清晨": 6,
+    "早上": 7,
+    "上午": 9,
+    "中午": 12,
+    "下午": 15,
+    "傍晚": 18,
+    "黄昏": 18,
+    "晚上": 20,
+    "深夜": 23,
+    "半夜": 0,
+}
+_DAY_OFFSET_ANCHORS: frozenset[str] = frozenset(
+    {"明天", "昨天", "第二天", "第三天", "第四天", "第五天", "第六天", "第七天", "第八天", "第九天", "第十天"}
 )
 
 
@@ -226,6 +272,14 @@ def evaluate_chapter_splice_coherence(
     critical = sum(1 for finding in findings if finding.severity == "critical")
     high = sum(1 for finding in findings if finding.severity == "high")
     verdict = "blocked" if critical or high else "pass"
+    emit_gate_result(
+        "splice_coherence_gate",
+        verdict=verdict,
+        severity="critical" if critical else ("high" if high else "info"),
+        score=100 if not findings else 0,
+        reasons=[finding.message for finding in findings],
+        chapter=chapter_number,
+    )
     return GateVerdict(
         gate_name="chapter_splice_coherence",
         verdict=verdict,
@@ -317,7 +371,12 @@ def _presence_contradiction_findings(text: str) -> list[GateFinding]:
         return_match = _RETURN_RE.search(tail)
         search_tail = tail if return_match is None else tail[: return_match.start()]
         action_re = re.compile(_ACTION_RE.pattern.format(actor=re.escape(actor)))
-        action_match = action_re.search(search_tail)
+        action_match = None
+        for candidate in action_re.finditer(search_tail):
+            if _is_exit_continuation_action(candidate.group(0)):
+                continue
+            action_match = candidate
+            break
         if action_match is None:
             continue
         findings.append(
@@ -334,6 +393,17 @@ def _presence_contradiction_findings(text: str) -> list[GateFinding]:
         if len(findings) >= 3:
             break
     return findings
+
+
+def _is_exit_continuation_action(action_text: str) -> bool:
+    """Return True for movement that continues the same leaving beat."""
+
+    return bool(
+        re.search(
+            r"(?:没回头|脚步|电梯|门外|走廊|往[^。！？\n]{0,12}走|向[^。！？\n]{0,12}走)",
+            action_text,
+        )
+    )
 
 
 def _location_anchor_findings(text: str) -> list[GateFinding]:
@@ -391,7 +461,7 @@ def _location_anchor_findings(text: str) -> list[GateFinding]:
 
 
 def _time_jump_findings(text: str) -> list[GateFinding]:
-    anchors = [match.group(0) for match in _TIME_RE.finditer(text)]
+    anchors = _effective_time_jump_anchors(text)
     distinct = tuple(dict.fromkeys(anchors))
     if len(distinct) < 4 or _BRIDGE_RE.search(text):
         return []
@@ -404,6 +474,125 @@ def _time_jump_findings(text: str) -> list[GateFinding]:
             repair_action="统一到一条小时表，或补出每次时间跳转的因果桥。",
         )
     ]
+
+
+def _effective_time_jump_anchors(text: str) -> list[str]:
+    anchors: list[str] = []
+    numeric_minutes: list[int] = []
+    for match in _TIME_RE.finditer(text):
+        raw = match.group(0)
+        before = text[max(0, match.start() - 24) : match.start()]
+        after = text[match.end() : min(len(text), match.end() + 24)]
+        window = f"{before}{raw}{after}"
+        if _is_false_time_anchor(raw, after):
+            continue
+        if _COUNTDOWN_CONTEXT_RE.search(window) or _NON_SCENE_TIME_CONTEXT_RE.search(window):
+            minute = _clock_anchor_minutes(raw)
+            if minute is not None:
+                numeric_minutes.append(minute)
+            continue
+        minute = _clock_anchor_minutes(raw)
+        if minute is not None:
+            numeric_minutes.append(minute)
+            anchors.append(f"{minute // 60:02d}:xx")
+            continue
+        bucket = _daypart_bucket(raw)
+        if bucket is not None:
+            anchors.append(f"{bucket:02d}:daypart")
+            continue
+        anchors.append(raw)
+
+    anchors = _drop_same_hour_numeric_clusters(anchors, numeric_minutes)
+    return _collapse_nearby_daypart_and_clock_anchors(anchors)
+
+
+def _is_false_time_anchor(raw: str, after: str) -> bool:
+    if raw in _DAYPART_BUCKETS or raw in _DAY_OFFSET_ANCHORS:
+        return False
+    if not raw.endswith("点") and "点" not in raw:
+        return False
+    suffix = after[:1]
+    if suffix in _NON_TIME_POINT_SUFFIXES:
+        return True
+    return raw.endswith("点零") and suffix and suffix not in {"分", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+
+
+def _clock_anchor_minutes(raw: str) -> int | None:
+    match = _CLOCK_RE.fullmatch(raw)
+    if match:
+        hour = int(match.group("hour"))
+        minute = int(match.group("minute"))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour * 60 + minute
+        return None
+    match = _CHINESE_HOUR_RE.fullmatch(raw)
+    if not match:
+        return None
+    hour = _parse_chinese_hour(match.group("hour"))
+    if hour is None or hour > 23:
+        return None
+    minute_raw = match.group("minute")
+    minute = 0
+    if minute_raw == "半":
+        minute = 30
+    elif minute_raw and minute_raw.endswith("分"):
+        parsed_minute = _parse_chinese_hour(minute_raw[:-1])
+        if parsed_minute is None or parsed_minute > 59:
+            return None
+        minute = parsed_minute
+    return hour * 60 + minute
+
+
+def _parse_chinese_hour(raw: str) -> int | None:
+    if raw.isdigit():
+        return int(raw)
+    digits = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    if raw == "十":
+        return 10
+    if raw.startswith("十"):
+        tail = raw[1:]
+        return 10 + digits.get(tail, 0)
+    if "十" in raw:
+        head, tail = raw.split("十", 1)
+        if head not in digits:
+            return None
+        return digits[head] * 10 + digits.get(tail, 0)
+    if len(raw) == 1 and raw in digits:
+        return digits[raw]
+    return None
+
+
+def _daypart_bucket(raw: str) -> int | None:
+    if raw in _DAY_OFFSET_ANCHORS:
+        return 24
+    return _DAYPART_BUCKETS.get(raw)
+
+
+def _drop_same_hour_numeric_clusters(anchors: list[str], numeric_minutes: list[int]) -> list[str]:
+    if len(numeric_minutes) < 3:
+        return anchors
+    hours = {minute // 60 for minute in numeric_minutes}
+    if len(hours) != 1:
+        return anchors
+    # Dense timestamps such as 03:47, 03:46, 03:45 are usually a countdown or
+    # UI progress clock, not a stitched timeline jump.
+    return [anchor for anchor in anchors if anchor != f"{next(iter(hours)):02d}:xx"]
+
+
+def _collapse_nearby_daypart_and_clock_anchors(anchors: list[str]) -> list[str]:
+    collapsed: list[str] = []
+    for anchor in anchors:
+        if collapsed and _time_anchor_hour(collapsed[-1]) == _time_anchor_hour(anchor):
+            continue
+        collapsed.append(anchor)
+    return collapsed
+
+
+def _time_anchor_hour(anchor: str) -> int | None:
+    match = re.match(r"(\d{2}):", anchor)
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def _abrupt_location_reference(text: str, location: str) -> bool:

@@ -203,3 +203,126 @@ def test_extra_safety_notes_propagate(tmp_path: Path) -> None:
     )
 
     assert "不出现 X" in ctx.market_constraints.safety_boundary
+
+
+# ---------------------------------------------------------------------------
+# ensure_signature_plan / ensure_voice_dna — platform self-bootstrap
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_signature_plan_creates_when_absent(tmp_path: Path) -> None:
+    from bestseller.services.chapter_orchestrator import ensure_signature_plan
+
+    plan = ensure_signature_plan(
+        "boot-sig", total_chapters=30, output_base_dir=tmp_path
+    )
+
+    assert plan is not None
+    assert len(plan.mandates) > 0
+    plan_path = tmp_path / "boot-sig" / "story-bible" / "signature-scene-plan.json"
+    assert plan_path.exists()
+
+    # The freshly persisted plan is immediately visible to the pre-write
+    # loader — golden-three means chapter 1 carries a mandate.
+    ctx = prepare_chapter_context("boot-sig", 1, output_base_dir=tmp_path)
+    assert ctx.signature_scene_mandate is not None
+
+
+def test_ensure_signature_plan_never_overwrites_existing(tmp_path: Path) -> None:
+    from bestseller.services.chapter_orchestrator import ensure_signature_plan
+
+    original = plan_signature_scenes(total_chapters=30, cadence=10)
+    save_signature_plan(original, "keep-sig", output_base_dir=tmp_path)
+
+    plan = ensure_signature_plan(
+        "keep-sig", total_chapters=500, output_base_dir=tmp_path
+    )
+
+    assert plan is not None
+    assert len(plan.mandates) == len(original.mandates)
+
+
+def test_ensure_signature_plan_rejects_invalid_total(tmp_path: Path) -> None:
+    from bestseller.services.chapter_orchestrator import ensure_signature_plan
+
+    plan = ensure_signature_plan(
+        "bad-sig", total_chapters=0, output_base_dir=tmp_path
+    )
+
+    assert plan is None
+    assert not (tmp_path / "bad-sig" / "story-bible" / "signature-scene-plan.json").exists()
+
+
+def test_ensure_voice_dna_self_extracts_when_absent(tmp_path: Path) -> None:
+    from bestseller.services.chapter_orchestrator import ensure_voice_dna
+
+    dna = ensure_voice_dna(
+        "boot-dna",
+        sample_text=_SAMPLE_TEXT,
+        source_id="self-ch1",
+        output_base_dir=tmp_path,
+    )
+
+    assert dna is not None
+    assert dna.source_id == "self-ch1"
+    assert dna.sample_chars > 0
+    assert (tmp_path / "boot-dna" / "story-bible" / "voice-dna.json").exists()
+
+    ctx = prepare_chapter_context("boot-dna", 2, output_base_dir=tmp_path)
+    assert ctx.voice_dna is not None
+    assert ctx.diagnostics["voice_dna"] == "loaded"
+
+
+def test_ensure_voice_dna_never_overwrites_existing(tmp_path: Path) -> None:
+    from bestseller.services.chapter_orchestrator import ensure_voice_dna
+
+    first = extract_voice_dna_from_text(
+        _SAMPLE_TEXT, source_id="first", source_label="first"
+    )
+    save_voice_dna(first, "keep-dna", output_base_dir=tmp_path)
+
+    dna = ensure_voice_dna(
+        "keep-dna",
+        sample_text="完全不同的文本。" * 500,
+        source_id="self-ch9",
+        output_base_dir=tmp_path,
+    )
+
+    assert dna is not None
+    assert dna.source_id == "first"
+
+
+def test_ensure_voice_dna_skips_short_sample(tmp_path: Path) -> None:
+    from bestseller.services.chapter_orchestrator import ensure_voice_dna
+
+    dna = ensure_voice_dna(
+        "short-dna",
+        sample_text="太短了。",
+        source_id="self-ch1",
+        min_sample_chars=2000,
+        output_base_dir=tmp_path,
+    )
+
+    assert dna is None
+    assert not (tmp_path / "short-dna" / "story-bible" / "voice-dna.json").exists()
+
+
+def test_ensure_voice_dna_excludes_character_names(tmp_path: Path) -> None:
+    from bestseller.services.chapter_orchestrator import ensure_voice_dna
+
+    text = (
+        "林晚舟握紧剑柄。林晚舟回头看了一眼。\n"
+        "“林晚舟，你当真敢杀我？”那人冷冷一笑。\n"
+        "林晚舟不答，只是出剑，剑光如电。\n"
+    ) * 120
+
+    dna = ensure_voice_dna(
+        "excl-dna",
+        sample_text=text,
+        source_id="self-ch1",
+        excluded_phrases=["林晚舟"],
+        output_base_dir=tmp_path,
+    )
+
+    assert dna is not None
+    assert not any("林晚舟" in cp for cp in dna.catchphrases)

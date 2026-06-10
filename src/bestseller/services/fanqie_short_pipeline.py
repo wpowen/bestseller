@@ -46,6 +46,9 @@ from bestseller.services.fanqie_short_ranking_gate import (
     FanqieRankingGateReport,
     build_fanqie_ranking_rewrite_instructions,
 )
+from bestseller.services.ideology_kernel import derive_ideology_kernel
+from bestseller.services.judge_genre_context import resolve_judge_genre_context
+from bestseller.services.litstyle_prose_judge import judge_chapter_litstyle_stable
 from bestseller.services.pipelines import (
     ProgressCallback,
     _checkpoint_commit,
@@ -461,6 +464,43 @@ async def run_fanqie_short_pipeline(
     book_spec = book_artifact.content if book_artifact else {}
     cast_spec = cast_artifact.content if cast_artifact else {}
 
+    # 母题/故事内核（精简版，volumes=1）。advisory：失败一律降级为 None，绝不阻断成书。
+    ideology_kernel = None
+    _emit_progress(progress, "fanqie_ideology_kernel_started", {"project_slug": slug})
+    try:
+        ideology_kernel = await derive_ideology_kernel(
+            session,
+            settings,
+            premise=premise,
+            genre=project.genre,
+            book_spec=book_spec if isinstance(book_spec, dict) else None,
+            volumes=1,
+            title=project.title or "",
+            language="zh",
+            project_id=project.id,
+            workflow_run_id=planning_result.workflow_run_id,
+        )
+        _emit_progress(
+            progress,
+            "fanqie_ideology_kernel_completed",
+            {
+                "project_slug": slug,
+                "primary_motif": getattr(
+                    getattr(ideology_kernel, "primary_motif", None), "motif_key", ""
+                ),
+                "thesis_statement": getattr(ideology_kernel, "thesis_statement", ""),
+            },
+        )
+    except Exception:
+        logger.warning(
+            "Fanqie ideology kernel derivation failed for %s; continuing without it",
+            slug,
+            exc_info=True,
+        )
+        _emit_progress(
+            progress, "fanqie_ideology_kernel_skipped", {"project_slug": slug}
+        )
+
     _emit_progress(progress, "fanqie_beat_sheet_started", {"project_slug": slug})
     beat_sheet = await generate_fanqie_beat_sheet(
         session,
@@ -469,6 +509,7 @@ async def run_fanqie_short_pipeline(
         premise,
         book_spec=book_spec if isinstance(book_spec, dict) else None,
         cast_spec=cast_spec if isinstance(cast_spec, dict) else None,
+        ideology_kernel=ideology_kernel,
         requested_by=requested_by,
     )
     outline_payload = build_fanqie_segment_outline_batch(
@@ -571,6 +612,41 @@ async def run_fanqie_short_pipeline(
         "fanqie_whole_review_completed",
         {"project_slug": slug, "passed": whole_review.passed, **whole_review.to_dict()},
     )
+
+    # 文采 advisory：评全文文采分，仅记录/上报，绝不影响 passed 或阻断成书。
+    _emit_progress(progress, "fanqie_litstyle_advisory_started", {"project_slug": slug})
+    try:
+        litstyle_result = await judge_chapter_litstyle_stable(
+            session,
+            settings,
+            chapter_number=0,
+            content_md=full_text,
+            genre_context=resolve_judge_genre_context(
+                genre=project.genre,
+                sub_genre=project.sub_genre,
+            ),
+            language="zh",
+            workflow_run_id=planning_result.workflow_run_id,
+        )
+        _emit_progress(
+            progress,
+            "fanqie_litstyle_advisory_completed",
+            {
+                "project_slug": slug,
+                "litstyle_score": getattr(litstyle_result, "final_score", None),
+                "litstyle_level": getattr(litstyle_result, "level", ""),
+            },
+        )
+    except Exception:
+        logger.warning(
+            "Fanqie litstyle advisory judge failed for %s (non-fatal)",
+            slug,
+            exc_info=True,
+        )
+        _emit_progress(
+            progress, "fanqie_litstyle_advisory_skipped", {"project_slug": slug}
+        )
+
     ranking_rewrite_task_count = 0
     if not whole_review.passed and whole_review.ranking_report is not None:
         try:

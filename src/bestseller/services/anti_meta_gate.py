@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import re
 
 from bestseller.services.checker_schema import CheckerIssue, CheckerReport
+from bestseller.services.progress_context import emit_gate_result
 
 HARD_META_TERMS = (
     "这一章",
@@ -16,7 +17,6 @@ HARD_META_TERMS = (
     "卷末",
     "故事到此",
     "至此为止",
-    "接下来",
     "下一章",
     "钩子",
     "长线",
@@ -43,15 +43,21 @@ SOFT_META_TERMS = (
     "重新估算",
     "重新评估",
 )
+_CONTEXTUAL_HARD_META_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "接下来",
+        re.compile(r"接下来(?:的)?(?:章节|剧情|情节|故事|主线|副线|内容|发展|要写|会写|将写)"),
+    ),
+)
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])")
 _ACTION_ENDING_RE = re.compile(
-    r"(抬|低|回|转|伸|收|攥|握|松|推|拉|扣|按|踩|退|停|看|望|笑|跪|坐|站|走|落|响|亮|灭|开|合|碎|裂|渗|照|贴|碰|撞)"
+    r"(抬|低|回|转|伸|收|攥|握|松|推|拉|扣|按|踩|退|停|看|望|笑|跪|坐|站|走|落|响|亮|灭|开|合|碎|裂|渗|照|贴|碰|撞|闪)"
 )
 _REVEAL_ENDING_RE = re.compile(r"(竟是|竟然是|原来是|不是.+而是|正是|就是|只有|那是)")
 _VISIBLE_REVEAL_RE = re.compile(
     r"(出现|多了|写着|显示|映出|变成|裂开|亮了|发光|发烫|伸出|传来|响起|"
-    r"名单|名字|落款|日期|纸片|纸条|照片|印记|裂缝|红绳|铜钱|戒指|镜|门|井|账|字|血|手|脸|声音|脚步|疤)"
+    r"名单|名字|落款|日期|纸片|纸条|照片|印记|裂缝|红绳|铜钱|戒指|镜|门|井|账|字|血|手|脸|声音|脚步|疤|屏幕|横幅|倒计时)"
 )
 _SUMMARY_ENDING_RE = re.compile(
     r"(?:知道|明白|意识到|觉得|感觉|想起|想到).{0,24}(?:答案|意思|意味|真相|不对)"
@@ -142,9 +148,22 @@ def check_anti_meta_gate(
             chapter_position=chapter_position,
             ending_passed=True,
             metrics={"hard_count": 0, "soft_count": 0},
-        )
+    )
     dialogue_ranges = _find_dialogue_ranges(text)
     findings: list[AntiMetaFinding] = []
+    for term, pattern in _CONTEXTUAL_HARD_META_PATTERNS:
+        for match in pattern.finditer(text):
+            if _is_in_ranges(match.start(), dialogue_ranges):
+                continue
+            findings.append(
+                AntiMetaFinding(
+                    code="ANTI_META_HARD_TERM",
+                    severity="block",
+                    term=term,
+                    excerpt=_excerpt(text, match.start(), match.end()),
+                    location=f"chars {match.start()}-{match.end()}",
+                )
+            )
     for term in HARD_META_TERMS:
         for match in re.finditer(re.escape(term), text):
             if _is_in_ranges(match.start(), dialogue_ranges):
@@ -174,13 +193,23 @@ def check_anti_meta_gate(
     ending_sentences = _last_sentences(text, count=3)
     ending_excerpt = "".join(ending_sentences)
     ending_passed = _ending_is_in_scene(ending_sentences)
+    _hard_count = sum(1 for f in findings if f.severity == "block")
+    _passed = ending_passed and _hard_count == 0
+    emit_gate_result(
+        "anti_meta_gate",
+        verdict="pass" if _passed else "blocked",
+        severity="critical" if not ending_passed else ("high" if _hard_count else "info"),
+        score=100 if _passed else 50,
+        reasons=[f.term for f in findings],
+        chapter=chapter_position,
+    )
     return AntiMetaReport(
         chapter_position=chapter_position,
         findings=tuple(findings),
         ending_passed=ending_passed,
         ending_excerpt=ending_excerpt,
         metrics={
-            "hard_count": sum(1 for f in findings if f.severity == "block"),
+            "hard_count": _hard_count,
             "soft_count": sum(1 for f in findings if f.severity == "warn"),
         },
     )

@@ -13,6 +13,7 @@ from bestseller.services.deduplication import (
     detect_short_cluster_near_repeat,
     extract_chapter_opening,
 )
+from bestseller.services.progress_context import emit_gate_result
 from bestseller.services.quality_contract_registry import QUALITY_CONTRACT_VERSION
 from bestseller.services.quality_finding_schema import (
     QualityFinding,
@@ -386,10 +387,20 @@ def run_chapter_quality_bundle(
         seen.add(key)
         deduped.append(finding)
 
-    return ChapterQualityBundleReport(
+    report = ChapterQualityBundleReport(
         chapter_number=chapter_number,
         findings=tuple(deduped),
     )
+    _blocking = report.blocking_findings
+    emit_gate_result(
+        "chapter_quality_gate",
+        verdict="pass" if report.passed else "blocked",
+        severity="critical" if _blocking else "info",
+        score=100 if report.passed else 0,
+        reasons=[f.repair_hint for f in _blocking],
+        chapter=chapter_number,
+    )
+    return report
 
 
 __all__ = [

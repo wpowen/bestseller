@@ -50,7 +50,7 @@ def render_hook_spec_prompt_block(
         return ""
     if language.startswith("en"):
         lines = [
-            "[Anti-Commonsense HookSpec — hard premise contract]",
+            "[Anti-Commonsense HookSpec — soft reference, not a hard contract]",
             f"one_liner: {spec.one_liner}",
             f"core_rule: {spec.core_rule}",
             f"base_desire -> reversal: {spec.base_desire} -> {spec.reversal}",
@@ -63,13 +63,13 @@ def render_hook_spec_prompt_block(
             f"misunderstanding: {spec.misunderstanding or 'none'}",
             "arc_engine:",
             *[f"- {item}" for item in spec.arc_engine],
-            "Propagate this contract into BookSpec.logline/series_engine, "
-            "WorldSpec.rules/power_system.hard_limits, volume escalation, and "
-            "chapter methodology_contract conflict_stakes/conflict_buffs.",
+            "Use this as a direction. You MAY adapt or replace it to better fit "
+            "the genre, as long as the reader-reward/cost balance survives in "
+            "BookSpec.series_engine, world rules, and chapter conflict design.",
         ]
     else:
         lines = [
-            "【反常识 HookSpec — 命题硬合同】",
+            "【反常识 HookSpec — 软建议/方法论参考（非硬合同）】",
             f"一句话钩子：{spec.one_liner}",
             f"核心规则：{spec.core_rule}",
             f"正常欲望→反转：{spec.base_desire} → {spec.reversal}",
@@ -82,9 +82,8 @@ def render_hook_spec_prompt_block(
             f"误解机制：{spec.misunderstanding or '无'}",
             "连载升级轴：",
             *[f"- {item}" for item in spec.arc_engine],
-            "必须向下传播到 BookSpec.logline/series_engine、"
-            "WorldSpec.rules/power_system.hard_limits、卷升级、章节 "
-            "methodology_contract 的 conflict_stakes/conflict_buffs。",
+            "把它当方向参考：可按题材自由改造或替换，只要「读者回报↔代价」的爽感结构"
+            "仍体现在 BookSpec.series_engine、世界规则与章节冲突设计中即可。",
         ]
     return "\n".join(lines).strip()
 

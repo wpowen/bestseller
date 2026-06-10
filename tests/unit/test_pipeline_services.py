@@ -1302,6 +1302,181 @@ def build_chapter(project_id) -> ChapterModel:
     return chapter
 
 
+@pytest.mark.asyncio
+async def test_deterministic_length_trim_before_export_clears_sole_overlength_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bestseller.services import chapter_quality_bundle
+    from bestseller.services.chapter_length_gate import count_zh_chars
+
+    class _Report:
+        def __init__(self, *, over_max: bool) -> None:
+            self.blocking_findings = (
+                [
+                    SimpleNamespace(
+                        code="CHAPTER_LENGTH_BLOCK_HIGH",
+                        evidence={"hard_max": 3000},
+                    )
+                ]
+                if over_max
+                else []
+            )
+
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "passed": not self.blocking_findings,
+                "blocking_codes": [
+                    finding.code for finding in self.blocking_findings
+                ],
+            }
+
+    def _fake_bundle(text: str, context: object) -> _Report:
+        return _Report(over_max=count_zh_chars(text) > 3000)
+
+    monkeypatch.setattr(
+        chapter_quality_bundle,
+        "run_chapter_quality_bundle",
+        _fake_bundle,
+    )
+
+    project = build_project()
+    project.target_chapters = 500
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 2
+    chapter.target_word_count = 2000
+    chapter.production_state = "blocked"
+    chapter.metadata_json = {
+        "quality_bundle_blocking_codes": ["CHAPTER_LENGTH_BLOCK_HIGH"],
+        "quality_gate_block_codes": ["CHAPTER_LENGTH_BLOCK_HIGH"],
+        "chapter_review_attempts_active": 3,
+        "quality_bundle": {"passed": False},
+    }
+    blocks = [
+        "".join(chr(0x4E00 + ((start + i) % 2000)) for i in range(1200))
+        for start in (0, 1200, 2400)
+    ]
+    chapter_text = "# 第2章 临聘编号\n\n" + "\n\n".join(blocks)
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md=chapter_text,
+        word_count=pipeline_services.count_words(chapter_text),
+        is_current=True,
+    )
+    draft.id = uuid4()
+    session = FakeSession(scalar_results=[None])
+
+    applied = await pipeline_services._maybe_apply_deterministic_length_trim_before_export(
+        session,
+        settings=build_settings(),
+        project=project,
+        chapter=chapter,
+        chapter_draft=draft,
+        chapter_number=2,
+    )
+
+    assert applied is True
+    assert count_zh_chars(draft.content_md) <= 3000
+    assert draft.word_count == pipeline_services.count_words(draft.content_md)
+    assert chapter.current_word_count == draft.word_count
+    assert chapter.production_state == "ok"
+    assert chapter.status == "revision"
+    assert chapter.metadata_json["quality_bundle"] == {
+        "passed": True,
+        "blocking_codes": [],
+    }
+    assert chapter.metadata_json["deterministic_length_trim"]["hard_max"] == 3000
+    assert "quality_bundle_blocking_codes" not in chapter.metadata_json
+    assert "quality_gate_block_codes" not in chapter.metadata_json
+    assert "chapter_review_attempts_active" not in chapter.metadata_json
+
+
+@pytest.mark.asyncio
+async def test_deterministic_hook_echo_bridge_before_review_clears_hook_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bestseller.services import chapter_quality_bundle
+
+    class _Report:
+        def __init__(self, *, hook_block: bool) -> None:
+            self.blocking_findings = (
+                [
+                    SimpleNamespace(
+                        code="HOOK_ECHO_MISSING",
+                        evidence={
+                            "missed_tokens": [
+                                "名单",
+                                "回执",
+                                "陆临聘",
+                                "加密频",
+                            ]
+                        },
+                    )
+                ]
+                if hook_block
+                else []
+            )
+
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "passed": not self.blocking_findings,
+                "blocking_codes": [
+                    finding.code for finding in self.blocking_findings
+                ],
+            }
+
+    calls = {"count": 0}
+
+    def _fake_bundle(text: str, context: object) -> _Report:
+        calls["count"] += 1
+        return _Report(hook_block=calls["count"] == 1)
+
+    monkeypatch.setattr(
+        chapter_quality_bundle,
+        "run_chapter_quality_bundle",
+        _fake_bundle,
+    )
+
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 5
+    chapter.production_state = "blocked"
+    chapter.metadata_json = {
+        "quality_bundle_blocking_codes": ["HOOK_ECHO_MISSING"],
+        "chapter_review_attempts_active": 2,
+    }
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第5章 加密频\n\n陆沉推开门。",
+        word_count=12,
+        is_current=True,
+    )
+    draft.id = uuid4()
+
+    applied = await pipeline_services._maybe_apply_deterministic_hook_echo_bridge_before_review(
+        FakeSession(scalar_results=[None]),
+        settings=build_settings(),
+        project=project,
+        chapter=chapter,
+        chapter_draft=draft,
+        chapter_number=5,
+    )
+
+    assert applied is True
+    assert "名单、回执、陆临聘和加密频没有消失" in draft.content_md
+    assert chapter.production_state == "ok"
+    assert chapter.metadata_json["quality_bundle"] == {
+        "passed": True,
+        "blocking_codes": [],
+    }
+    assert "quality_bundle_blocking_codes" not in chapter.metadata_json
+    assert "chapter_review_attempts_active" not in chapter.metadata_json
+
+
 def build_scene(project_id, chapter_id) -> SceneCardModel:
     scene = SceneCardModel(
         project_id=project_id,
@@ -3832,6 +4007,148 @@ async def test_run_scene_pipeline_rewrites_until_review_passes(
 
 
 @pytest.mark.asyncio
+async def test_run_scene_pipeline_regenerates_when_rewrite_loses_current_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    initial_draft = SceneDraftVersionModel(
+        project_id=project.id,
+        scene_card_id=scene.id,
+        version_no=1,
+        content_md="初始草稿",
+        word_count=120,
+        is_current=True,
+        generation_params={},
+    )
+    initial_draft.id = uuid4()
+    initial_draft.llm_run_id = uuid4()
+
+    recovered_draft = SceneDraftVersionModel(
+        project_id=project.id,
+        scene_card_id=scene.id,
+        version_no=2,
+        content_md="重新生成后的草稿",
+        word_count=820,
+        is_current=True,
+        generation_params={},
+    )
+    recovered_draft.id = uuid4()
+    recovered_draft.llm_run_id = uuid4()
+
+    first_report = type("ReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    second_report = type("ReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    quality_a = type("QualityStub", (), {"id": uuid4()})()
+    quality_b = type("QualityStub", (), {"id": uuid4()})()
+    rewrite_task = type("RewriteTaskStub", (), {"id": uuid4(), "status": "pending"})()
+
+    async def fake_load_scene_identifiers(session, project_slug, chapter_number, scene_number):
+        return project, chapter, scene
+
+    async def fake_load_current_scene_draft(session, scene_id):
+        return initial_draft
+
+    async def fake_review_scene_draft(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        calls = getattr(fake_review_scene_draft, "calls", 0) + 1
+        fake_review_scene_draft.calls = calls
+        if calls == 1:
+            return (
+                type(
+                    "ReviewResultStub",
+                    (),
+                    {"verdict": "rewrite", "severity_max": "medium"},
+                )(),
+                first_report,
+                quality_a,
+                rewrite_task,
+            )
+        return (
+            type(
+                "ReviewResultStub",
+                (),
+                {"verdict": "pass", "severity_max": "low"},
+            )(),
+            second_report,
+            quality_b,
+            None,
+        )
+
+    async def fake_rewrite_scene_from_task(
+        session,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        raise ValueError("Scene 2 in chapter 2 does not have a current draft.")
+
+    async def fake_generate_scene_draft(*args, **kwargs):
+        fake_generate_scene_draft.calls = getattr(fake_generate_scene_draft, "calls", 0) + 1
+        return recovered_draft
+
+    async def fake_refresh_scene_knowledge(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        return SceneKnowledgeRefreshResult(
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=chapter.chapter_number,
+            scene_number=scene.scene_number,
+            canon_fact_ids=[],
+            timeline_event_ids=[],
+            canon_facts_created=0,
+            canon_facts_reused=0,
+            timeline_events_created=0,
+            timeline_events_reused=0,
+            summary_text="知识层摘要",
+            llm_run_id=None,
+        )
+
+    monkeypatch.setattr(pipeline_services, "_load_scene_identifiers", fake_load_scene_identifiers)
+    monkeypatch.setattr(pipeline_services, "_load_current_scene_draft", fake_load_current_scene_draft)
+    monkeypatch.setattr(pipeline_services, "review_scene_draft", fake_review_scene_draft)
+    monkeypatch.setattr(pipeline_services, "rewrite_scene_from_task", fake_rewrite_scene_from_task)
+    monkeypatch.setattr(pipeline_services, "generate_scene_draft", fake_generate_scene_draft)
+    monkeypatch.setattr(pipeline_services, "refresh_scene_knowledge", fake_refresh_scene_knowledge)
+
+    session = FakeSession()
+    result = await pipeline_services.run_scene_pipeline(
+        session,
+        build_settings(),
+        "my-story",
+        2,
+        2,
+        requested_by="tester",
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    workflow_steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
+
+    assert result.final_verdict == "pass"
+    assert result.current_draft_id == recovered_draft.id
+    assert result.review_iterations == 2
+    assert result.rewrite_iterations == 1
+    assert getattr(fake_generate_scene_draft, "calls", 0) == 1
+    assert workflow_runs[0].status == "completed"
+    assert workflow_runs[0].metadata_json["scene_rewrite_missing_current_draft_recovered"] is True
+    assert any(step.step_name == "recover_missing_scene_draft" for step in workflow_steps)
+
+
+@pytest.mark.asyncio
 async def test_run_scene_pipeline_stops_after_stalled_rewrite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4241,6 +4558,11 @@ async def test_run_chapter_pipeline_short_circuits_after_retention_budget_exhaus
     settings = build_settings()
     settings.pipeline.enable_chapter_outline_readiness_gate = False
     settings.pipeline.enable_chapter_predraft_quality_gate = False
+    # Opt into STRICT retention enforcement: this test covers the hard-block
+    # short-circuit (machine-repair before review). The default is now soft
+    # (accept-on-stall + advance) — see test_retention_safety_gate_soft.py and
+    # _retention_gate_blocks_for_project.
+    settings.pipeline.retention_safety_gate_block_on_failure = True
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(

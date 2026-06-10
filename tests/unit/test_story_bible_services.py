@@ -471,6 +471,33 @@ async def test_upsert_cast_spec_creates_characters_relationships_and_snapshots()
 
 
 @pytest.mark.asyncio
+async def test_upsert_cast_spec_skips_self_referential_relationships() -> None:
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None, None])
+    cast = build_cast_spec()
+    cast["protagonist"]["relationships"] = [
+        {"character": "沈砚", "type": "追捕对象", "tension": "误把自己的风险当成外部敌人"},
+        {"character": "顾临", "type": "旧搭档", "tension": "误会仍未解开"},
+    ]
+    cast["conflict_map"].append(
+        {
+            "character_a": "沈砚",
+            "character_b": "沈砚",
+            "conflict_type": "自我冲突",
+            "trigger_condition": "恐惧推动错误判断",
+        }
+    )
+
+    counts = await story_bible_services.upsert_cast_spec(session, project, cast)
+
+    relationships = [item for item in session.added if isinstance(item, RelationshipModel)]
+
+    assert counts["relationships_upserted"] >= 2
+    assert relationships
+    assert all(rel.character_a_id != rel.character_b_id for rel in relationships)
+
+
+@pytest.mark.asyncio
 async def test_upsert_cast_spec_backfills_active_volumes_from_forces() -> None:
     """antagonist_forces[].active_volumes must propagate into character.metadata_json
     so narrative._build_antagonist_plan_specs can route per-volume antagonists

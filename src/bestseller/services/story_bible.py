@@ -1350,6 +1350,15 @@ async def upsert_cast_spec(
                 project_id=project.id,
                 character_name=relation.character,
             )
+            if owner_model.id == other_model.id:
+                logger.warning(
+                    "Skipping self-referential cast relationship project=%s character=%s "
+                    "relationship_type=%s",
+                    project.slug,
+                    owner_model.name,
+                    relation.type,
+                )
+                continue
             left_id, right_id = sorted((owner_model.id, other_model.id), key=lambda item: str(item))
             relationship_id = _stable_relationship_id(project.id, left_id, right_id)
             relationship = await session.get(RelationshipModel, relationship_id)
@@ -1391,6 +1400,15 @@ async def upsert_cast_spec(
             project_id=project.id,
             character_name=conflict.character_b,
         )
+        if left_model.id == right_model.id:
+            logger.warning(
+                "Skipping self-referential conflict relationship project=%s character=%s "
+                "conflict_type=%s",
+                project.slug,
+                left_model.name,
+                conflict.conflict_type,
+            )
+            continue
         left_id, right_id = sorted((left_model.id, right_model.id), key=lambda item: str(item))
         conflict_buckets[(left_id, right_id)].append(conflict.model_dump(mode="json"))
 

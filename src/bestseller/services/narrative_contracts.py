@@ -139,6 +139,31 @@ FUNCTIONAL_TITLE_SUFFIXES_ZH = (
     "碎锁",
     "终幕",
 )
+# Procedural / structural beat labels that web-serial models love to prepend to
+# a concrete event with a middot — "取证·义庄铜镜登记", "反证·林正淳取镜签名".
+# The leading segment is an internal investigation/structure tag, not a story
+# image, so the title reads like an outline row instead of a chapter name. The
+# middot two-part shape is the strong signal; we only flag when the pre-dot
+# segment is a known function word, keeping false positives near zero.
+# NOTE: keep in sync with ``domain/workflow._FUNCTIONAL_TITLE_DOT_LABELS_ZH``
+# (domain may not import from services, so the set is intentionally duplicated).
+FUNCTIONAL_TITLE_DOT_LABELS_ZH: frozenset[str] = frozenset(
+    {
+        # detective / forensic / procedural verbs
+        "取证", "举证", "质证", "反证", "验尸", "验骨", "验明", "勘验", "勘查",
+        "踏勘", "立案", "结案", "销案", "并案", "破案", "报案", "追凶", "缉凶",
+        "缉拿", "缉捕", "查案", "查证", "查访", "排查", "走访", "盘问", "审讯",
+        "提审", "对峙", "对质", "布局", "设局", "收网", "定罪", "翻供", "翻案",
+        "申冤", "伸冤", "复盘", "推演", "推理", "解谜", "寻凶", "辨伪",
+        # narrative beat / structure labels
+        "开局", "终局", "起手", "落子", "楔子", "引子", "序章", "伏笔", "铺垫",
+        "转折", "高潮", "反转", "过渡", "收束", "序幕", "过场", "尾声",
+        # the imagery pools are equally template-y when used as a dot label
+        *FUNCTIONAL_TITLE_PREFIXES_ZH,
+        *FUNCTIONAL_TITLE_SUFFIXES_ZH,
+    }
+)
+_TITLE_DOT_SEPARATORS: tuple[str, ...] = ("·", "・", "•", "‧", "∙", "·")
 META_PLANNING_PATTERNS = (
     r"(建立|引入|完善|补足|补全|增加|扩大|深化|完成).{0,14}(世界观|设定|体系|背景|势力线|角色线|关系线|哲学|主题|叙事|闭环|复杂性)",
     r"(建立|引入|完善|补足|补全|增加|扩大|深化|完成).{0,14}(角色|势力|阵营|框架|结构)",
@@ -2002,9 +2027,29 @@ def _contains_marker(value: Any, markers: Iterable[str]) -> bool:
     return any(marker in text for marker in markers)
 
 
+def _title_has_functional_dot_label(title: str) -> bool:
+    """Detect ``function-word · concrete-event`` two-part chapter titles.
+
+    Catches the ``取证·义庄铜镜登记`` / ``反证·林正淳取镜签名`` shape regardless
+    of overall length: the pre-dot segment must be a known procedural/structural
+    function word for the title to count as functional.
+    """
+
+    for separator in _TITLE_DOT_SEPARATORS:
+        if separator in title:
+            head = title.split(separator, 1)[0].strip()
+            if head and head in FUNCTIONAL_TITLE_DOT_LABELS_ZH:
+                return True
+    return False
+
+
 def _is_functional_chapter_title(value: Any) -> bool:
     title = _clean(value)
-    if not title or len(title) > 8:
+    if not title:
+        return False
+    if _title_has_functional_dot_label(title):
+        return True
+    if len(title) > 8:
         return False
     return any(title.startswith(prefix) for prefix in FUNCTIONAL_TITLE_PREFIXES_ZH) and any(
         title.endswith(suffix) for suffix in FUNCTIONAL_TITLE_SUFFIXES_ZH

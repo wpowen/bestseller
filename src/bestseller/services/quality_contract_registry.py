@@ -75,6 +75,12 @@ _CONTRACTS: dict[str, QualityContract] = {
         required_evidence=("zh_char_count", "soft_warning"),
         pass_condition="chapter body reaches the configured soft target",
     ),
+    "CHAPTER_LENGTH_BLOCK_HIGH": _contract(
+        "CHAPTER_LENGTH_BLOCK_HIGH",
+        "length",
+        required_evidence=("zh_char_count", "hard_max"),
+        pass_condition="chapter body is at or below the configured hard max",
+    ),
     # Output completeness / truncation (source-artifact audit, branch feat/quality-gate-repair).
     "UNFINISHED_ARTIFACT": _contract(
         "UNFINISHED_ARTIFACT",

@@ -56,9 +56,14 @@ from bestseller.services.persona_feedback_repository import (
 )
 from bestseller.services.reader_persona_simulator import simulate_readers
 from bestseller.services.signature_scene_planner import (
+    plan_signature_scenes,
     render_signature_scene_block,
 )
-from bestseller.services.voice_dna_repository import load_voice_dna
+from bestseller.services.voice_dna_repository import (
+    load_voice_dna,
+    save_voice_dna,
+)
+from bestseller.services.voice_signature import extract_voice_dna_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +302,98 @@ def save_market_bundle(
     return path
 
 
+def ensure_signature_plan(
+    slug: str,
+    *,
+    total_chapters: int,
+    output_base_dir: str | Path = "output",
+    mode_b: bool = False,
+    cadence: int | None = None,
+) -> SignatureScenePlan | None:
+    """Load the persisted signature plan, creating one when absent.
+
+    The plan is deterministic (no LLM) so the platform pipeline can
+    self-bootstrap it lazily instead of requiring the CLI ``book
+    bootstrap`` step. An existing plan on disk is never overwritten —
+    mandates must stay stable across chapters of the same book.
+    Returns ``None`` only when no plan exists and ``total_chapters`` is
+    too small to plan for.
+    """
+
+    existing = _load_signature_plan(
+        slug, output_base_dir=output_base_dir, mode_b=mode_b
+    )
+    if existing is not None:
+        return existing
+    if total_chapters < 1:
+        return None
+    kwargs: dict[str, Any] = {"total_chapters": total_chapters}
+    if cadence is not None and cadence >= 1:
+        kwargs["cadence"] = cadence
+    plan = plan_signature_scenes(**kwargs)
+    path = save_signature_plan(
+        plan, slug, output_base_dir=output_base_dir, mode_b=mode_b
+    )
+    logger.info(
+        "signature plan auto-bootstrapped for %s (%d mandates): %s",
+        slug,
+        len(plan.mandates),
+        path,
+    )
+    return plan
+
+
+def ensure_voice_dna(
+    slug: str,
+    *,
+    sample_text: str,
+    source_id: str,
+    source_label: str = "",
+    excluded_phrases: list[str] | None = None,
+    min_sample_chars: int = 2000,
+    output_base_dir: str | Path = "output",
+    mode_b: bool = False,
+) -> VoiceDNA | None:
+    """Load the persisted Voice DNA, self-extracting one when absent.
+
+    Production projects have no external ``--reference`` corpus, so the
+    anchor is the book's own earliest accepted prose: the first chapter
+    whose text reaches ``min_sample_chars`` locks the voice that later
+    chapters are held to. Existing DNA on disk is never overwritten.
+    ``excluded_phrases`` should carry character names so they don't
+    surface as catchphrases the writer is told to repeat.
+    """
+
+    existing = load_voice_dna(
+        slug, output_base_dir=output_base_dir, mode_b=mode_b
+    )
+    if existing is not None:
+        return existing
+    text = (sample_text or "").strip()
+    if len(text) < min_sample_chars:
+        return None
+    dna = extract_voice_dna_from_text(
+        text,
+        source_id=source_id,
+        source_label=source_label or source_id,
+        excluded_phrases=excluded_phrases,
+    )
+    if dna.sample_chars <= 0:
+        return None
+    path = save_voice_dna(
+        dna, slug, output_base_dir=output_base_dir, mode_b=mode_b
+    )
+    logger.info(
+        "voice DNA auto-bootstrapped for %s from %s (%d chars, confidence=%.2f): %s",
+        slug,
+        source_id,
+        dna.sample_chars,
+        dna.confidence,
+        path,
+    )
+    return dna
+
+
 # ---------- internals ----------
 
 
@@ -375,6 +472,8 @@ __all__ = [
     "ChapterContext",
     "prepare_chapter_context",
     "grade_chapter",
+    "ensure_signature_plan",
+    "ensure_voice_dna",
     "save_signature_plan",
     "save_market_bundle",
 ]

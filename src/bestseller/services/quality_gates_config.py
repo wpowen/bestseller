@@ -219,6 +219,17 @@ class OriginalityEngineConfig:
     # In PRODUCTION this should stay True — short chapters are the
     # single biggest "省事感" tell.
     chapter_length_gate_enabled: bool = True
+    # 2026-06-10: platform self-bootstrap. The CLI ``book bootstrap``
+    # step was the only producer of signature-scene-plan.json and
+    # voice-dna.json, so platform-run books never got those two prompt
+    # blocks (0% hit across traces). When enabled, the pipeline lazily
+    # plans signature scenes from the project's target chapter count and
+    # self-extracts Voice DNA from the first accepted chapter whose text
+    # reaches the minimum sample size. Existing artifacts are never
+    # overwritten, so CLI-bootstrapped books are unaffected.
+    auto_signature_plan: bool = True
+    auto_voice_dna: bool = True
+    voice_dna_min_sample_chars: int = 2000
 
 
 @dataclass(frozen=True)
@@ -706,6 +717,11 @@ def _build_originality_engine(raw: dict[str, Any]) -> OriginalityEngineConfig:
         ),
         retention_escalate_after=max(
             1, _safe_int(raw.get("retention_escalate_after"), 3)
+        ),
+        auto_signature_plan=_safe_bool(raw.get("auto_signature_plan"), True),
+        auto_voice_dna=_safe_bool(raw.get("auto_voice_dna"), True),
+        voice_dna_min_sample_chars=max(
+            200, _safe_int(raw.get("voice_dna_min_sample_chars"), 2000)
         ),
     )
 

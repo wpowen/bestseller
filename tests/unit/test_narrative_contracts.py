@@ -4,9 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from bestseller.domain.workflow import ChapterOutlineBatchInput
+from bestseller.domain.workflow import (
+    ChapterOutlineBatchInput,
+    _looks_like_functional_chapter_title,
+)
 from bestseller.services.identity_guard import CharacterIdentity
 from bestseller.services.narrative_contracts import (
+    _is_functional_chapter_title,
     build_identity_manifest,
     repair_legacy_foundation_identity_locks,
     repair_legacy_scene_contract_model_pre_draft,
@@ -270,6 +274,63 @@ def test_chapter_plan_contract_blocks_functional_phase_title() -> None:
 
     assert report.blocks is True
     assert "PLAN_CHAPTER_TITLE_FUNCTIONAL" in {violation.code for violation in report.violations}
+
+
+def test_chapter_plan_contract_blocks_dot_function_title() -> None:
+    # Regression: the "功能词·具体事" two-part title leaks an investigative
+    # phase tag into the chapter name (青囊不语问阴阳: 取证·义庄铜镜登记 /
+    # 反证·林正淳取镜签名). It is >8 chars and a different shape than the legacy
+    # "意象+尾词" template, so the old detector waved it through.
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "dot-function-title",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "取证·义庄铜镜登记",
+                    "chapter_goal": "苏砚在义庄登记铜镜，确认它与旧案的关联。",
+                    "main_conflict": "苏砚必须在镇民封宅前登记铜镜里的火场残相。",
+                    "hook_description": "铜镜裂开后，碎片指向姜家祖坟。",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "investigation",
+                            "time_label": "义庄黄昏",
+                            "participants": ["苏砚"],
+                            "purpose": {
+                                "story": "苏砚在义庄取出铜镜并登记。",
+                                "emotion": "警觉与旧痛同时上升。",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = validate_chapter_plan_contract(
+        batch,
+        identity_manifest=[{"name": "苏砚", "aliases": []}],
+    )
+
+    assert report.blocks is True
+    assert "PLAN_CHAPTER_TITLE_FUNCTIONAL" in {violation.code for violation in report.violations}
+
+
+def test_functional_title_detectors_flag_dot_two_part_titles() -> None:
+    # Both parallel detectors (services + domain) must catch the dot two-part
+    # form, including titles longer than the legacy 8-char cap.
+    for title in ("取证·义庄铜镜登记", "反证·林正淳取镜签名", "破局·铜镜", "对峙・旧案"):
+        assert _is_functional_chapter_title(title) is True, title
+        assert _looks_like_functional_chapter_title(title) is True, title
+
+
+def test_functional_title_detectors_allow_concrete_dot_titles() -> None:
+    # A middot alone must not flag a title — only a known function-word head
+    # does. Concrete image/event names with a dot stay valid.
+    for title in ("铜镜·血字", "义庄铜镜", "林正淳的签名", "姜家祖坟"):
+        assert _is_functional_chapter_title(title) is False, title
+        assert _looks_like_functional_chapter_title(title) is False, title
 
 
 def test_chapter_plan_contract_blocks_meta_story_design_language() -> None:

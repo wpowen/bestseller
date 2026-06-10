@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import logging
@@ -31,6 +32,13 @@ from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 _DELETED_PROJECTS_REGISTRY = ".deleted-projects.json"
+
+# DB delete can momentarily race a concurrent self-heal / repair run that holds
+# row locks on the project. The tombstone written before the delete stops new
+# heal bursts, so a short bounded retry lets the in-flight one drain and the
+# delete succeed on the same user click instead of erroring out.
+_DB_DELETE_MAX_ATTEMPTS = 3
+_DB_DELETE_RETRY_DELAY_SECONDS = 1.0
 
 
 def _deleted_projects_registry_path(settings: AppSettings) -> Path:
@@ -167,22 +175,62 @@ async def delete_project_completely(
         "errors": [],
     }
 
-    # Step 1: DB delete (cascades via ondelete="CASCADE")
+    # Step 0: Tombstone FIRST. A delete is an explicit "intent to remove"; we
+    # record that intent before any fallible DB/disk work. If the DB delete
+    # then races an in-flight self-heal run and fails, the project still cannot
+    # be silently resurrected — self-heal and the project listing both honor
+    # the tombstone — so the book stays gone from the user's view and a retry
+    # finishes the cleanup, instead of looping forever as a half-dead project.
+    try:
+        mark_project_delete_tombstone(settings, slug)
+    except OSError as exc:
+        result["errors"].append(f"delete_tombstone_failed: {exc}")
+        logger.exception("Failed to write delete tombstone for project %s", slug)
+
+    # Step 1: DB delete (cascades via ondelete="CASCADE"), with bounded retry on
+    # transient lock contention from a concurrent self-heal / repair workflow.
     project = await get_project_by_slug(session, slug)
     if project is None:
         result["errors"].append("project_not_found_in_db")
     else:
-        try:
-            await session.execute(text("SET LOCAL statement_timeout = '5min'"))
-            await session.execute(text("SET LOCAL lock_timeout = '30s'"))
-            await session.delete(project)
-            await session.commit()
-            result["db_deleted"] = True
-        except Exception as exc:  # noqa: BLE001
-            await session.rollback()
-            result["errors"].append(f"db_delete_failed: {exc}")
-            logger.exception("Failed to delete project %s from DB", slug)
-            return result  # Don't touch disk if DB failed
+        last_exc: Exception | None = None
+        for attempt in range(1, _DB_DELETE_MAX_ATTEMPTS + 1):
+            try:
+                await session.execute(text("SET LOCAL statement_timeout = '5min'"))
+                await session.execute(text("SET LOCAL lock_timeout = '30s'"))
+                await session.delete(project)
+                await session.commit()
+                result["db_deleted"] = True
+                last_exc = None
+                break
+            except Exception as exc:  # noqa: BLE001
+                await session.rollback()
+                last_exc = exc
+                logger.warning(
+                    "Project %s DB delete attempt %d/%d failed: %s",
+                    slug,
+                    attempt,
+                    _DB_DELETE_MAX_ATTEMPTS,
+                    exc,
+                )
+                if attempt < _DB_DELETE_MAX_ATTEMPTS:
+                    await asyncio.sleep(_DB_DELETE_RETRY_DELAY_SECONDS)
+                    # Re-fetch in the fresh transaction; a concurrent actor may
+                    # have finished the delete (or freed the lock) meanwhile.
+                    project = await get_project_by_slug(session, slug)
+                    if project is None:
+                        result["db_deleted"] = True
+                        last_exc = None
+                        break
+        if last_exc is not None:
+            result["errors"].append(f"db_delete_failed: {last_exc}")
+            logger.error(
+                "Failed to delete project %s from DB after %d attempts",
+                slug,
+                _DB_DELETE_MAX_ATTEMPTS,
+            )
+            # Don't touch disk if DB failed; tombstone above keeps it suppressed.
+            return result
 
     # Step 2: Disk cleanup — strict path validation
     base_dir = Path(settings.output.base_dir).resolve()
@@ -205,12 +253,6 @@ async def delete_project_completely(
     else:
         # Nothing on disk — treat as success (idempotent)
         result["fs_deleted"] = True
-
-    try:
-        mark_project_delete_tombstone(settings, slug)
-    except OSError as exc:
-        result["errors"].append(f"delete_tombstone_failed: {exc}")
-        logger.exception("Failed to write delete tombstone for project %s", slug)
 
     return result
 

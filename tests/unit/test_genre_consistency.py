@@ -214,3 +214,33 @@ def test_genre_constraint_block_xianxia_en() -> None:
     block = build_genre_constraint_block(profile, states, language="en")
     assert "CULTIVATION TIER CONSTRAINTS" in block
     assert "Chen Wei" in block
+
+
+# ---------------------------------------------------------------------------
+# Chinese genre aliases (platform projects store genres in Chinese)
+# ---------------------------------------------------------------------------
+
+def test_get_profile_chinese_xianxia_aliases() -> None:
+    for genre in ("仙侠", "修仙", "修真"):
+        profile = get_genre_profile(genre)
+        assert profile is not None, genre
+        assert profile.progression_system == "cultivation_tiers"
+
+
+def test_get_profile_chinese_wuxia_alias() -> None:
+    profile = get_genre_profile("武侠")
+    assert profile is not None
+    assert profile.progression_system == "martial_arts_tiers"
+
+
+def test_get_profile_chinese_wangyou_alias() -> None:
+    profile = get_genre_profile("网游")
+    assert profile is not None
+    assert profile.progression_system == "stat_block"
+
+
+def test_get_profile_chinese_sub_genre_partial_match() -> None:
+    # Platform sub-genres are often longer labels containing the alias.
+    profile = get_genre_profile("玄幻", "仙侠修真")
+    assert profile is not None
+    assert profile.progression_system == "cultivation_tiers"

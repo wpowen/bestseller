@@ -72,6 +72,14 @@ GENRE_PROFILES: dict[str, GenreConsistencyProfile] = {
     "gamelit": LITRPG_PROFILE,
     "wuxia": WUXIA_PROFILE,
     "martial-arts": WUXIA_PROFILE,
+    # Chinese genre labels — platform projects store genres in Chinese,
+    # which previously never matched the English-only keys above, so
+    # build_genre_constraint_block was never injected for them.
+    "仙侠": XIANXIA_PROFILE,
+    "修仙": XIANXIA_PROFILE,
+    "修真": XIANXIA_PROFILE,
+    "武侠": WUXIA_PROFILE,
+    "网游": LITRPG_PROFILE,
 }
 
 

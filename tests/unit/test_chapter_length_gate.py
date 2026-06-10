@@ -171,6 +171,8 @@ def test_evaluate_retention_safety_chapter_too_long_triggers_repair() -> None:
     )
     assert not report.passed
     assert CHAPTER_LENGTH_BLOCK_HIGH_CODE in report.auto_repair_codes
+    assert CHAPTER_LENGTH_BLOCK_HIGH_CODE in {finding.code for finding in report.findings}
+    assert CHAPTER_TOO_SHORT_BLOCK_CODE not in {finding.code for finding in report.findings}
 
 
 # ── Deterministic hard-max trim (length guarantee) ──────────────────────────

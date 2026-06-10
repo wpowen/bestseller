@@ -755,6 +755,16 @@ async def _load_publication_blocked_chapter_numbers(
             if isinstance(getattr(chapter, "metadata_json", None), dict)
             else {}
         )
+        quality_bundle = metadata.get("quality_bundle")
+        quality_bundle_blocking_codes = (
+            tuple(
+                str(code)
+                for code in quality_bundle.get("blocking_codes", ())
+                if str(code).strip()
+            )
+            if isinstance(quality_bundle, dict)
+            else ()
+        )
 
         # Project repair is for chapters that have failed production gates. A
         # long-running book can legitimately have hundreds of current drafts in
@@ -780,6 +790,8 @@ async def _load_publication_blocked_chapter_numbers(
             production_state = (getattr(chapter, "production_state", "") or "").lower()
         publication_candidate = status == "complete"
         if explicitly_blocked:
+            blocked.add(chapter_number)
+        if draft is not None and quality_bundle_blocking_codes:
             blocked.add(chapter_number)
         if metadata.get("retention_gate_passed") is False:
             blocked.add(chapter_number)

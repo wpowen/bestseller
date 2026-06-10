@@ -149,6 +149,37 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
 }
 
 
+# 爽文融合 (enable_shuangwen_fusion) PROSE_SCENE ordering.
+#
+# Same sections as the default PROSE_SCENE priority — nothing is removed, so
+# 文采 fully coexists — but the 爽点 engines (弹簧法情绪压缩/释放、节奏、信息
+# 节奏、章节爽点) are lifted ABOVE the literary-flourish levers (留白框架 / 金句 /
+# 意象). Reason: sections are filled greedily in rank order until the token
+# budget is exhausted, so whatever sits last is the first to be starved. In the
+# default order the 爽点 engines sit last (ranks 11–14) and get dropped under
+# runtime budget pressure, which is why output reads literary instead of 爽.
+#
+# The anti-作文 grounding levers (物料具体化 / 镜头锚定) stay high — concrete,
+# camera-grounded action is what makes a 爽点 land, so they precede the spring.
+_PROSE_SCENE_SHUANGWEN_PRIORITY: tuple[str, ...] = (
+    "character_embodiment_current",
+    "writing_methodology_scene",
+    "prompt_pack_scene_writer",
+    "book_methodology_current",
+    "prose_style_anchors",
+    "material_concretization_current",  # 具体化 = 爽点落地，留高位
+    "scene_grounding_current",  # 镜头锚定 = 爽点可视，留高位
+    "public_emotion_role_tags",
+    "emotion_choreography_current",  # 弹簧法 · 爽点核心 → 顶到文采润色之前
+    "rhythm_engineering_current",
+    "information_choreography_current",
+    "chapter_position_current",
+    "prose_lever_framing",  # 留白/文采框架 → 降到爽点之后
+    "prose_craft_techniques",  # 金句 → 降后
+    "imagery_system_current",  # 意象 → 降后
+)
+
+
 _EMPTY = CompiledMethodology(text="", used_sources=(), estimated_tokens=0)
 
 
@@ -161,6 +192,7 @@ def compile_methodology(
     chapter_position: ChapterPosition | None = None,
     token_budget: int = 1500,
     story_bible: Mapping[str, Any] | None = None,
+    shuangwen_mode: bool = False,
 ) -> CompiledMethodology:
     """Compile a stage-aware methodology block.
 
@@ -194,7 +226,9 @@ def compile_methodology(
     if not sections:
         return _EMPTY
 
-    ordered = _prioritize_sections(stage, sections)
+    ordered = _prioritize_sections(
+        _priority_for_stage(stage, shuangwen_mode=shuangwen_mode), sections
+    )
     selected: list[_Section] = []
     used = 0
     for section in ordered:
@@ -459,8 +493,19 @@ def _sections_for_stage(
     return sections
 
 
-def _prioritize_sections(stage: MethodologyStage, sections: list[_Section]) -> list[_Section]:
-    priority = SECTION_PRIORITY.get(stage, ())
+def _priority_for_stage(
+    stage: MethodologyStage, *, shuangwen_mode: bool
+) -> tuple[str, ...]:
+    """Section ordering for a stage; 爽文 mode reprioritises only PROSE_SCENE."""
+
+    if shuangwen_mode and stage == MethodologyStage.PROSE_SCENE:
+        return _PROSE_SCENE_SHUANGWEN_PRIORITY
+    return SECTION_PRIORITY.get(stage, ())
+
+
+def _prioritize_sections(
+    priority: tuple[str, ...], sections: list[_Section]
+) -> list[_Section]:
     rank = {key: index for index, key in enumerate(priority)}
     return sorted(sections, key=lambda item: rank.get(item.key, len(priority)))
 

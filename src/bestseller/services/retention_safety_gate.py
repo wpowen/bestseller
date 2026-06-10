@@ -27,6 +27,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
+from bestseller.services.progress_context import emit_gate_result
 from bestseller.services.canon_guardrails import CanonGuardrails
 from bestseller.services.cast_compliance_gate import (
     CAST_VIOLATION_BLOCK_CODE,
@@ -232,7 +233,6 @@ def evaluate_retention_safety(
                         },
                     )
                 )
-                auto_repair.append(HOOK_ECHO_LOW_BLOCK_CODE)
         except Exception as exc:
             logger.warning(
                 "hook echo evaluation failed for ch%d: %s",
@@ -528,7 +528,7 @@ def evaluate_retention_safety(
             if length_report.has_critical:
                 findings.append(
                     RetentionGateFinding(
-                        code=CHAPTER_TOO_SHORT_BLOCK_CODE,
+                        code=length_report.finding.code,
                         severity="critical",
                         detail=length_report.finding.detail,
                         evidence={
@@ -652,10 +652,19 @@ def evaluate_retention_safety(
                 exc,
             )
 
+    _auto_repair_codes = tuple(dict.fromkeys(auto_repair))
+    emit_gate_result(
+        "retention_safety_gate",
+        verdict="pass" if not _auto_repair_codes else "blocked",
+        severity="critical" if _auto_repair_codes else ("high" if findings else "info"),
+        score=100 if not _auto_repair_codes else 0,
+        reasons=[f.detail for f in findings],
+        chapter=chapter_position,
+    )
     return RetentionGateReport(
         chapter_position=chapter_position,
         findings=tuple(findings),
-        auto_repair_codes=tuple(dict.fromkeys(auto_repair)),
+        auto_repair_codes=_auto_repair_codes,
     )
 
 

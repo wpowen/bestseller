@@ -56,6 +56,7 @@ from bestseller.services.novel_categories import (
     render_category_reader_promise,
     resolve_novel_category,
 )
+from bestseller.services.progress_context import emit_activity, emit_milestone
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,9 @@ class ConceptionResult:
     synopsis: str = ""
     tags: list[str] = field(default_factory=list)
     hook_spec: dict[str, Any] | None = None
+    # Surfaced so the web layer can persist these as inspectable book artifacts.
+    concept_methodology: dict[str, Any] = field(default_factory=dict)
+    hook_candidates: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -520,6 +524,13 @@ def _build_genre_context(
     return ctx
 
 
+def _concept_methodology_prompt_block(ctx: dict[str, Any]) -> str:
+    """Soft 脑洞/爽点 methodology block (Agent ①), empty when disabled/unset."""
+
+    block = ctx.get("concept_methodology_block")
+    return f"\n\n{block}" if isinstance(block, str) and block.strip() else ""
+
+
 def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
     brief = ctx.get("commercial_brief")
     qimao_block = _qimao_regeneration_prompt_block(ctx)
@@ -821,6 +832,7 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
         if instruction:
             prompt += f"\n\n【品类市场策略要求】\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=False)
+    prompt += _concept_methodology_prompt_block(ctx)
     return prompt
 
 
@@ -874,6 +886,7 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         if instruction:
             prompt += f"\n\n【品类角色设计要求】\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=False)
+    prompt += _concept_methodology_prompt_block(ctx)
     return prompt
 
 
@@ -899,6 +912,7 @@ def _world_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | 
         if instruction:
             prompt += f"\n\n【品类世界构建要求】\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=False)
+    prompt += _concept_methodology_prompt_block(ctx)
     return prompt
 
 
@@ -956,6 +970,7 @@ def _market_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         if instruction:
             prompt += f"\n\n[Genre market strategy requirements]\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=True)
+    prompt += _concept_methodology_prompt_block(ctx)
     return prompt
 
 
@@ -1008,6 +1023,7 @@ def _character_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewPro
         if instruction:
             prompt += f"\n\n[Genre character design requirements]\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=True)
+    prompt += _concept_methodology_prompt_block(ctx)
     return prompt
 
 
@@ -1033,6 +1049,7 @@ def _world_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfile
         if instruction:
             prompt += f"\n\n[Genre world-building requirements]\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=True)
+    prompt += _concept_methodology_prompt_block(ctx)
     return prompt
 
 
@@ -1124,6 +1141,7 @@ def _review_user_prompt(
         if review_instruction:
             prompt += f"\n\n【品类审查重点】\n{review_instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=False)
+    prompt += _concept_methodology_prompt_block(ctx)
     return prompt
 
 
@@ -1169,6 +1187,7 @@ def _review_user_prompt_en(
         if review_instruction:
             prompt += f"\n\n[Genre review focus]\n{review_instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=True)
+    prompt += _concept_methodology_prompt_block(ctx)
     return prompt
 
 
@@ -1445,6 +1464,70 @@ async def _creative_exploration(
 # ─────────────────────────────────────────────────────────────────────
 
 
+async def _attach_concept_methodology(
+    session: AsyncSession,
+    settings: AppSettings,
+    ctx: dict[str, Any],
+    *,
+    user_hints: dict[str, Any] | None,
+) -> None:
+    """Run Agent ① and attach its methodology to ctx (best-effort, non-fatal)."""
+
+    if not getattr(settings.pipeline, "enable_concept_methodology_agent", True):
+        return
+    try:
+        from bestseller.services.concept_methodology_agent import (
+            render_concept_methodology_block,
+            select_concept_methodology,
+        )
+
+        hints = user_hints if isinstance(user_hints, dict) else {}
+        orientation_raw = str(hints.get("audience_orientation") or "").strip()
+        orientation = {"男频": "male", "女频": "female", "male": "male", "female": "female"}.get(
+            orientation_raw, ""
+        )
+        language = str(ctx.get("language") or "zh-CN")
+        emit_activity(
+            "methodology_selection_started",
+            {
+                "genre": str(ctx.get("genre") or ""),
+                "orientation": orientation or "auto",
+            },
+        )
+        methodology = await select_concept_methodology(
+            session,
+            settings,
+            genre=str(ctx.get("genre") or ""),
+            sub_genre=str(ctx.get("sub_genre") or ""),
+            genre_key=str(ctx.get("genre_key") or ""),
+            description=str(ctx.get("description") or ""),
+            premise=str(ctx.get("premise_seed") or ctx.get("description") or ""),
+            audience_orientation=orientation,
+            recommended_audiences=list(ctx.get("recommended_audiences") or []),
+            trend_keywords=list(ctx.get("trend_keywords") or []),
+            language=language,
+        )
+        methodology_payload = methodology.model_dump(mode="json")
+        ctx["concept_methodology"] = methodology_payload
+        ctx["concept_methodology_block"] = render_concept_methodology_block(
+            methodology, language=language
+        )
+        emit_milestone(
+            "methodology_selected",
+            {
+                "framework": str(
+                    methodology_payload.get("framework_name")
+                    or methodology_payload.get("name")
+                    or methodology_payload.get("brain_hole_framework")
+                    or "已选定"
+                ),
+                "count": len(methodology_payload.get("trend_keywords") or []),
+            },
+        )
+    except Exception:  # pragma: no cover - never let Agent ① break conception
+        logger.debug("concept methodology agent failed; continuing without it", exc_info=True)
+
+
 async def run_conception_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -1475,6 +1558,11 @@ async def run_conception_pipeline(
             ctx["concept_lab"] = concept_bundle.model_dump(mode="json")
         _apply_qimao_hints_to_context(ctx)
 
+    # Agent ①: heat-search → 脑洞/爽点 *methodology* selection. Replaces the old
+    # baked concrete bundle with a soft methodology framework the conception
+    # agents grow genre-fitting concepts from. Fallback-safe: never blocks a run.
+    await _attach_concept_methodology(session, settings, ctx, user_hints=user_hints)
+
     is_en = ctx.get("language", "zh-CN").startswith("en")
     ctx = _sanitize_forbidden_default_motifs(ctx, is_en=is_en)
 
@@ -1497,6 +1585,7 @@ async def run_conception_pipeline(
                     getattr(settings.hook_engine, "rank_weight_duplicate_risk", 0.10)
                 ),
             }
+            emit_activity("hook_candidates_started", {"count": candidate_count})
             candidates = generate_hook_candidates(
                 genre=str(ctx.get("genre") or genre_key),
                 locale=str(ctx.get("language") or "zh-CN"),
@@ -1518,6 +1607,10 @@ async def run_conception_pipeline(
                 rank_weights=rank_weights,
             )
             hook_candidates_payload = [item.model_dump(mode="json") for item in candidates]
+            emit_milestone(
+                "hook_candidates_generated",
+                {"count": len(hook_candidates_payload)},
+            )
             if selected_hook_spec is None and candidates:
                 selected_hook_spec = candidates[0].spec
         except Exception:
@@ -1723,6 +1816,11 @@ async def run_conception_pipeline(
     # Ensure writing_profile has all required sections
     writing_profile = _ensure_complete_profile(writing_profile, ctx, market_proposal, character_proposal, world_proposal)
     writing_profile = _apply_commercial_brief_to_profile(writing_profile, commercial_brief)
+    # Persist Agent ① methodology onto the profile so the planner (Agents ②③)
+    # can fuse it into book_spec/outline and grow world/cast/plot from it.
+    _methodology = ctx.get("concept_methodology")
+    if isinstance(_methodology, dict) and _methodology:
+        writing_profile["concept_methodology"] = _methodology
     if selected_hook_spec is not None:
         market_profile = writing_profile.setdefault("market", {})
         if isinstance(market_profile, dict):
@@ -1881,6 +1979,8 @@ async def run_conception_pipeline(
         synopsis=synopsis,
         tags=tags,
         hook_spec=selected_hook_spec.model_dump(mode="json") if selected_hook_spec else None,
+        concept_methodology=dict(ctx.get("concept_methodology") or {}),
+        hook_candidates=list(ctx.get("hook_candidates") or []),
     )
 
 

@@ -32,6 +32,12 @@ _PLAYBOOKS: dict[str, QualityRepairPlaybook] = {
         instruction="本章接近但未达到目标篇幅。补强最薄的场景，使关键选择、代价、反应和章末悬念都落在可见动作里。",
         acceptance="正文达到目标区间下沿，章末仍保留明确下一章阅读动力。",
     ),
+    "CHAPTER_LENGTH_BLOCK_HIGH": QualityRepairPlaybook(
+        code="CHAPTER_LENGTH_BLOCK_HIGH",
+        scope="chapter",
+        instruction="本章超过发布硬上限。删减重复心理解释、同义对白、过场铺陈和不改变局面的说明，保留因果节点、异常物、人物选择和章末钩子。",
+        acceptance="正文 CJK 字数不超过硬上限，删减后主冲突、关键证据和章末牵引仍完整。",
+    ),
     "INTRA_CHAPTER_REPETITION": QualityRepairPlaybook(
         code="INTRA_CHAPTER_REPETITION",
         scope="paragraph",

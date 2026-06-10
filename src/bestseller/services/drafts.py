@@ -2590,6 +2590,40 @@ def _budget_context_sections(
     return result
 
 
+_METHODOLOGY_SECTION_HEAD_RE = re.compile(r"^(?:##\s|【[^】\n]{1,60}】)", re.MULTILINE)
+
+
+def _dedupe_methodology_sections(text: str) -> str:
+    """Drop later methodology sections whose body duplicates an earlier one.
+
+    ``_methodology_line`` is assembled from several independently rendered
+    sources (prompt-pack bridge, scene rules, compiled methodology, quality
+    levers). Sources can re-render the same lever — e.g. 场景锚定 / 情绪契约
+    appear in both the compiled methodology and the quality-levers block —
+    and the duplicate copies waste Tier-1 budget, which starves every Tier-2/3
+    narrative section (story bible, recent scenes, clues) out of the prompt.
+    Only exact-body duplicates are dropped; variant renderings are kept.
+    """
+    if not text:
+        return text
+    starts = [m.start() for m in _METHODOLOGY_SECTION_HEAD_RE.finditer(text)]
+    if not starts:
+        return text
+    pieces: list[str] = []
+    if starts[0] > 0:
+        pieces.append(text[: starts[0]])
+    seen: set[str] = set()
+    for idx, start in enumerate(starts):
+        end = starts[idx + 1] if idx + 1 < len(starts) else len(text)
+        section = text[start:end]
+        fingerprint = re.sub(r"\s+", " ", section).strip()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        pieces.append(section)
+    return "".join(pieces)
+
+
 _STRUCTURED_METADATA_KEYS = (
     "scene_summary",
     "chapter_summary",
@@ -5863,6 +5897,14 @@ def build_scene_draft_prompts(
         story_bible=story_bible_context,
         shuangwen_mode=_shuangwen_on,
     ).text
+    # The compiled methodology is the budget-managed single source for the
+    # writing methodology: it renders the same writing_methodology.yaml (plus
+    # the pack's 题材方法论) that the bridge block above renders, but under the
+    # compiler's token budget and priority order. Keeping both copies costs
+    # ~2k Tier-1 tokens, which starves every Tier-2/3 narrative section
+    # (story bible, recent scenes, clues) out of the writer prompt.
+    if "writing_methodology · scene" in _compiled_methodology:
+        _methodology_pack_block = ""
     _methodology_line = ""
     if _methodology_pack_block or _methodology_rules or _compiled_methodology:
         _methodology_line = (
@@ -5908,6 +5950,7 @@ def build_scene_draft_prompts(
         _quality_levers_block = ""
     if _quality_levers_block:
         _methodology_line += f"{_quality_levers_block}\n\n"
+    _methodology_line = _dedupe_methodology_sections(_methodology_line)
     _qimao_opening_contract_line = ""
     _qimao_opening_contract_block = render_qimao_opening_contract_block(
         _project_meta.get("opening_quality_contract") or _project_meta.get("qimao_opening_contract"),

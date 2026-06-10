@@ -1138,7 +1138,7 @@ async def build_scene_writer_context_from_models(
             story_purpose=str(fact.value_json.get("story_purpose")) if fact.value_json.get("story_purpose") else None,
             emotion_purpose=str(fact.value_json.get("emotion_purpose")) if fact.value_json.get("emotion_purpose") else None,
         )
-        for fact in summary_facts[: settings.generation.active_context_scenes]
+        for fact in summary_facts[: settings.generation.prompt_context_scenes]
         if fact.value_json.get("summary") or fact.notes
     ]
 
@@ -1262,7 +1262,7 @@ async def build_scene_writer_context_from_models(
             ],
             key=lambda event: float(event.story_order),
             reverse=True,
-        )[: settings.generation.active_context_scenes]
+        )[: settings.generation.prompt_context_scenes]
     ]
 
     participant_ids = [stable_character_id(project.id, name) for name in scene.participants]
@@ -1698,7 +1698,7 @@ async def build_scene_writer_context_from_models(
         story_bible=story_bible_context,
         recent_scene_summaries=recent_scene_summaries,
         recent_timeline_events=recent_timeline_events,
-        participant_canon_facts=participant_canon_facts[: max(4, settings.generation.active_context_scenes * 2)],
+        participant_canon_facts=participant_canon_facts[: max(4, settings.generation.prompt_context_scenes * 2)],
         active_plot_arcs=active_plot_arc_reads,
         active_arc_beats=active_arc_beat_reads,
         unresolved_clues=unresolved_clues[:6],
@@ -2207,7 +2207,7 @@ async def build_chapter_writer_context(
             ),
             key=lambda event: float(event.story_order),
             reverse=True,
-        )[: max(4, settings.generation.active_context_scenes * 2)]
+        )[: max(4, settings.generation.prompt_context_scenes * 2)]
     ]
 
     retrieval_chunks = []

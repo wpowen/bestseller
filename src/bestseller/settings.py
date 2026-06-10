@@ -109,7 +109,15 @@ class GenerationSettings(BaseModel):
     scenes_per_chapter: WordBudget
     words_per_scene: WordBudget
     context_budget_tokens: int
+    # ``active_context_scenes`` is overloaded: it is the diversity/dedup
+    # *lookback* window (deliberately wide — grows with novel length to fight
+    # chapter similarity, see context._adaptive_lookback_window) AND the
+    # candidate pool size. ``prompt_context_scenes`` decouples the much smaller
+    # number of recent scene/timeline/fact items actually *rendered into the
+    # writer prompt* — the writer cannot meaningfully use 12 prior-scene recaps;
+    # 4-5 carry continuity while arcs/clues/canon blocks carry long-range state.
     active_context_scenes: int
+    prompt_context_scenes: int = 5
     genre: str
     language: str
     pov: str
@@ -240,6 +248,7 @@ class PipelineSettings(BaseModel):
     whole_book_pause_on_scene_review: bool = False  # If True, a chapter whose scenes only "require human review" PAUSES the whole book (legacy hard-halt). Default soft: accept the stalled draft, flag the chapter, and continue to the next chapter so the book reaches autonomous closure (consistent with accept_on_stall). Whole-book *consistency* failures still pause regardless (see project_consistency_block_on_failure).
     project_consistency_block_on_failure: bool = True  # Whole-book consistency failures must pause, not accept_on_stall
     chapter_review_block_on_failure: bool = False  # Soft by default: after max_chapter_revisions the best draft is accepted-on-stall (warn-only) and the book ADVANCES. True left a chapter whose review never reached "pass" oscillating drafting<->revision forever — the project loop re-processed ch1 every self-heal cycle and never advanced (autonomous-completion self-harm). Whole-book consistency still pauses separately (project_consistency_block_on_failure).
+    retention_safety_gate_block_on_failure: bool = False  # Soft by default: when the reader-retention / persona auto-repair budget is exhausted (e.g. PERSONA_WEIGHTED_SCORE_LOW that the writer model structurally cannot clear — the gate's 0.62 bar sits above the model's ~0.51 ceiling per reader_persona_calibration), accept the best draft on-stall, flag it (retention_accepted_on_stall / low_retention_quality) and ADVANCE instead of pausing the whole book to machine-repair. True left every persona-failing chapter looping rewrites then hard-blocking, so the book never reached autonomous closure. Mirrors chapter_review_block_on_failure; opt on for strict retention enforcement. Per-project override via metadata `retention_safety_gate_warn_only: true`.
     gate_llm_adjudication_enabled: bool = True  # Context-dependent gate findings (common-sense) get an LLM CONFIRM/DISMISS pass before they may block
     chapter_outline_repair_attempts: int = 3  # Regenerate invalid chapter outlines before surfacing failure
     planning_artifact_reuse_enabled: bool = True
@@ -317,6 +326,13 @@ class PipelineSettings(BaseModel):
     # emits RAW first-person interiority, injected verbatim into the writer prompt.
     # Soft + zh-only; one cheap LLM call per scene; failure = no-op.
     enable_character_embodiment: bool = True
+    # 爽文融合层（爽点强化）。开启后正文阶段(PROSE_SCENE)把爽点引擎(弹簧法情绪
+    # 压缩/释放、节奏、信息节奏、章节爽点)顶到文采润色层(留白框架/金句/意象)之前。
+    # 文采层全部保留、仅排其后——文采与爽文并存，不二选一。修的是排序：爽点引擎
+    # 原本排在最低位(11–14)，运行时被 token 预算最先挤掉，正文遂"像作文不像爽文"。
+    # 默认 True：大多数商业书都该带爽点；文艺/慢热题材可按项目关掉。Soft：只改
+    # PROSE_SCENE 段落优先级，不新增闸门、不删任何能力。
+    enable_shuangwen_fusion: bool = True
     enable_chapter_window_llm_judge: bool = True
     chapter_window_llm_judge_block_on_failure: bool = False
     chapter_window_llm_judge_size: int = 5
@@ -344,6 +360,13 @@ class PipelineSettings(BaseModel):
     # workflow slices such as 101/151 from jumping over 86-100.
     enforce_sequential_chapter_generation: bool = True
     category_aware_planning: bool = True  # Use novel-category research for genre-specific planning
+    # ── Concept methodology agent (Agent ①: heat-search → 脑洞/爽点 methodology) ──
+    # When True, conception derives a *methodology selection* (which brainstorm
+    # mindset + 爽点 mechanism types fit this genre by market heat) instead of
+    # being fed a baked concrete bundle. Heat search degrades to a static market
+    # profile when no search API key is set, so this never blocks autonomous runs.
+    enable_concept_methodology_agent: bool = True
+    concept_methodology_heat_search: bool = True  # attempt live market-heat search (else static)
     # ── Multi-dimensional material library (Batch 1-3 rollout) ─────────
     # Batch 1 gate: Curator + Research Agent + query API available when
     # this is True.  Now **defaulted to True** after the L1–L4 recon

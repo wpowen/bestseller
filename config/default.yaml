@@ -144,7 +144,8 @@ generation:
     max: 1150
 
   context_budget_tokens: 8000
-  active_context_scenes: 12
+  active_context_scenes: 12        # diversity/dedup lookback + candidate pool (wide on purpose)
+  prompt_context_scenes: 5         # recent scenes/timeline/facts actually rendered into the writer prompt
   genre: "general-fiction"
   language: "zh-CN"
   pov: "third-limited"

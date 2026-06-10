@@ -51,7 +51,10 @@ def test_ai_tone_markers_and_thresholds(config):
 def test_calibration_anchors_are_self_consistent(config):
     """Each anchor's FinalScore must equal max(0, Σ dims − penalty)."""
 
-    assert len(config.calibration_anchors) == 3
+    # 4th anchor (anchor-commercial-58) added by the P1.0 real-book calibration:
+    # the original 3 anchored only literary-vignette style, which mis-scaled
+    # chart-level commercial prose ~35 points below framework ornament prose.
+    assert len(config.calibration_anchors) == 4
     dim_keys = set(config.dimension_keys)
     for anchor in config.calibration_anchors:
         base = sum(v for k, v in anchor.scores.items() if k in dim_keys)

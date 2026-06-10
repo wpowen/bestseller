@@ -1,0 +1,18 @@
+# 榜单对标验收线（榜单对标闭环 P1.3）
+#
+# 口径：Arena 成对盲评（position-swap 双向一致才计胜负，否则记平）
+# win-rate = (win + 0.5*tie) / pairs —— 框架文本对真书的得分率。
+#
+# 含义：
+# - vs T2（题材完本均值）≥ 0.50 —— 与普通完本打平即为"可上架水准"
+# - vs T1（头部榜单书）≥ 0.35 —— 头部书是行业天花板，0.35 已是"榜单级体感"
+# - min_pairs_per_tier：低于该样本数的层记 inconclusive，不参与判定
+#
+# 判官口径（2026-06-10 双判官对照实测）：与框架写手同源的判官（MiniMax）比
+# 跨家族判官（DeepSeek）系统性高估 win-rate ~0.15-0.20（自偏好偏置）。
+# 验收必须用 `--judge deepseek`（或未来的跨家族判官面板）跑出的数字；
+# 同源判官结果只作趋势参考，不作达标证据。
+benchmark_targets:
+  vs_t2_win_rate_min: 0.50
+  vs_t1_win_rate_min: 0.35
+  min_pairs_per_tier: 8

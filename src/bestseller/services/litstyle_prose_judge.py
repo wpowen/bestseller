@@ -109,7 +109,7 @@ def _render_ai_tone_block(config: LitStyleConfig) -> str:
     return "\n".join(lines)
 
 
-def _render_calibration_block(config: LitStyleConfig, *, max_anchors: int = 3) -> str:
+def _render_calibration_block(config: LitStyleConfig, *, max_anchors: int = 4) -> str:
     if not config.calibration_anchors:
         return ""
     parts = ["# 校准锚点（按这些已判样本对齐你的尺度，不要凭感觉打分）"]
@@ -146,6 +146,10 @@ def build_litstyle_system_prompt(
         "- 词藻密、信息少 = 低分；语言朴素但细节准、节奏稳、意象成体系、主题有回响 = 高分。\n"
         f"- 本题材文采侧重：{emphasis}\n"
         "- 只判 AI腔语言症候，**绝不判定作者是否使用 AI**（这是风格风险项，不是来源证明）。\n"
+        "- 【刻度校准（真书锚定）】商业连载语境下，好文采 = 快而具体、为叙事服务。"
+        "头部榜单书的正常水准在 45-65 段（见『商业一线』锚点）——不要因为缺少金句/"
+        "意象密度低而压分。反过来，金句、比喻、意象的**堆叠密度本身不加分**："
+        "80+ 仅留给叙事效率与语言质感兼得的罕见段落。\n"
         "\n"
         "# 九个正向维度（满分合计 100）\n"
         + _render_dimension_block(config)

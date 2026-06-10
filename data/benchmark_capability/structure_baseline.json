@@ -1,0 +1,85 @@
+{
+ "generated_at": "2026-06-10T18:17:06",
+ "max_chapter": 60,
+ "privacy": "aggregate statistics only — no source text",
+ "t1": {
+  "n_chapters": 1148,
+  "chars": {
+   "median": 2604.0,
+   "mean": 14868.399,
+   "p25": 2212.25,
+   "p75": 3134.25
+  },
+  "dialogue_ratio": {
+   "median": 0.375,
+   "mean": 0.385,
+   "p25": 0.25,
+   "p75": 0.514
+  },
+  "avg_paragraph": {
+   "median": 43.15,
+   "mean": 47.999,
+   "p25": 35.2,
+   "p75": 56.275
+  },
+  "avg_sentence": {
+   "median": 32.9,
+   "mean": 35.694,
+   "p25": 28.0,
+   "p75": 40.2
+  },
+  "short_sentence_ratio": {
+   "median": 0.056,
+   "mean": 0.066,
+   "p25": 0.032,
+   "p75": 0.089
+  },
+  "ending_hook": {
+   "median": 0.0,
+   "mean": 0.477,
+   "p25": 0.0,
+   "p75": 1.0
+  },
+  "n_books": 23
+ },
+ "t2": {
+  "n_chapters": 849,
+  "chars": {
+   "median": 2635,
+   "mean": 5727.839,
+   "p25": 2199.5,
+   "p75": 3249.0
+  },
+  "dialogue_ratio": {
+   "median": 0.489,
+   "mean": 0.486,
+   "p25": 0.31,
+   "p75": 0.692
+  },
+  "avg_paragraph": {
+   "median": 57.8,
+   "mean": 61.416,
+   "p25": 44.0,
+   "p75": 76.65
+  },
+  "avg_sentence": {
+   "median": 31.9,
+   "mean": 499.187,
+   "p25": 25.4,
+   "p75": 41.0
+  },
+  "short_sentence_ratio": {
+   "median": 0.083,
+   "mean": 0.092,
+   "p25": 0.036,
+   "p75": 0.138
+  },
+  "ending_hook": {
+   "median": 0,
+   "mean": 0.375,
+   "p25": 0.0,
+   "p75": 1.0
+  },
+  "n_books": 17
+ }
+}

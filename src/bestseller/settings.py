@@ -124,6 +124,15 @@ class GenerationSettings(BaseModel):
     structure_template: str
     methodology_compiler_enabled: bool = True
     methodology_budget_tokens: int = 1500
+    # When False, the abstract writing-methodology bridge (C1-rules:
+    # emotion_engineering / hook_design / core_loop / conflict_stakes /
+    # pacing_guidance / … 说教) is dropped from the PROSE_SCENE writer prompt.
+    # Prompt-ablation ladder (2026-06-10, 仙侠 ch1 n=4 + 探案 ch87 n=3) found it
+    # net-zero-to-negative for prose quality across both genres while costing
+    # ~7k chars and starving the A/B-proven craft levers; all related gates are
+    # soft so dropping it can't trigger a repair loop. Methodology belongs in
+    # the plan (planner phase), not the prose. Flip to True to A/B-revert.
+    prose_writer_methodology_rules: bool = False
     # Strip abstract craft-theory / metadata / reference-dump sections and
     # verbatim-duplicate blocks from the scene-writer prompt so the model writes
     # prose instead of drowning in ~28K tokens of instructions. See

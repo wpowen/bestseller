@@ -60,3 +60,28 @@ def test_compile_methodology_all_stages_no_exception():
                 chapter_position=position,
             )
             assert isinstance(result, CompiledMethodology)
+
+
+def test_writing_methodology_bridge_can_be_dropped_keeping_proven_levers():
+    """C1-rules trim (prompt-ablation ladder 2026-06-10): dropping the
+    writing_methodology·scene bridge removes the abstract说教 group while the
+    budget-managed proven craft levers (物料具体化/场景锚定/金句/意象) survive —
+    the freed budget refills with them rather than shrinking the block."""
+    common = dict(
+        stage=MethodologyStage.PROSE_SCENE,
+        prompt_pack_key="suspense-mystery",
+        language="zh-CN",
+        chapter_no=3,
+        token_budget=3200,
+    )
+    on = compile_methodology(**common, include_writing_methodology_bridge=True)
+    off = compile_methodology(**common, include_writing_methodology_bridge=False)
+
+    assert "writing_methodology · scene" in on.text
+    assert "writing_methodology · scene" not in off.text
+    # proven levers are NOT collateral damage
+    for lever in ("物料具体化", "场景锚定"):
+        assert lever in off.text, f"proven lever {lever} dropped by the C1 trim"
+    # default keeps the bridge (planner/review callers rely on it)
+    default = compile_methodology(**common)
+    assert "writing_methodology · scene" in default.text

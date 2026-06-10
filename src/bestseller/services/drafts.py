@@ -5870,8 +5870,16 @@ def build_scene_draft_prompts(
     # 文采 still ships — fusion reorders, it does not remove. See methodology_compiler.
     from bestseller.settings import get_settings  # noqa: PLC0415
 
+    _settings_for_methodology = get_settings()
     _shuangwen_on = bool(
-        getattr(get_settings().pipeline, "enable_shuangwen_fusion", True)
+        getattr(_settings_for_methodology.pipeline, "enable_shuangwen_fusion", True)
+    )
+    # C1-rules trim (prompt-ablation ladder, 2026-06-10): drop the abstract
+    # writing-methodology说教 bridge from the writer prompt unless explicitly
+    # re-enabled. Frees PROSE_SCENE budget for the proven craft levers and
+    # removes a confirmed net-zero/-negative, gate-safe (all soft) block.
+    _include_methodology_rules = bool(
+        getattr(_settings_for_methodology.generation, "prose_writer_methodology_rules", False)
     )
     # Compile FIRST (before the scene-rules bridge) so we know whether the
     # compiled methodology owns the prose-craft sections (visual_writing /
@@ -5892,6 +5900,7 @@ def build_scene_draft_prompts(
         token_budget=3200,
         story_bible=story_bible_context,
         shuangwen_mode=_shuangwen_on,
+        include_writing_methodology_bridge=_include_methodology_rules,
     ).text
     _compiled_has_methodology = "writing_methodology · scene" in _compiled_methodology
     _methodology_rules = render_methodology_scene_rules(
@@ -5913,7 +5922,9 @@ def build_scene_draft_prompts(
     # compiler's token budget and priority order. Keeping both copies costs
     # ~2k Tier-1 tokens, which starves every Tier-2/3 narrative section
     # (story bible, recent scenes, clues) out of the writer prompt.
-    if _compiled_has_methodology:
+    # Also blank it when trimming C1-rules — the pack's 题材方法论·scene block
+    # is the same说教 class and would half-defeat the trim if kept.
+    if _compiled_has_methodology or not _include_methodology_rules:
         _methodology_pack_block = ""
     _methodology_line = ""
     if _methodology_pack_block or _methodology_rules or _compiled_methodology:

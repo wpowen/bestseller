@@ -193,8 +193,23 @@ def compile_methodology(
     token_budget: int = 1500,
     story_bible: Mapping[str, Any] | None = None,
     shuangwen_mode: bool = False,
+    include_writing_methodology_bridge: bool = True,
 ) -> CompiledMethodology:
     """Compile a stage-aware methodology block.
+
+    ``include_writing_methodology_bridge`` (default True) controls the
+    ``writing_methodology · <phase>`` bridge section (the abstract
+    emotion_engineering / hook_design / core_loop / conflict_stakes /
+    pacing_guidance / … "方法论说教" subsections). The prompt-ablation ladder
+    (2026-06-10, 仙侠 ch1 n=4 + 探案 ch87 n=3) found this C1-rules group is
+    net-zero-to-negative for prose quality across both genres while costing
+    ~7k chars — and all related gates (show_dont_tell / methodology_framework /
+    opening_three_function) are soft, so dropping it can't trigger a
+    reject→repair loop. The scene-writer path passes False to free the
+    PROSE_SCENE token budget for the A/B-proven craft levers (embodiment /
+    物料具体化 / 金句 / 意象) that this说教 was starving. Outline/conception/
+    review callers keep True (those phases use the planner-phase bridge, which
+    is where methodology belongs — "bake into the plan, not the prose").
 
     English paths are intentionally left unchanged for Sprint 1. Missing YAML
     or prompt packs are treated as absent sections, never as fatal errors.
@@ -222,6 +237,7 @@ def compile_methodology(
         chapter_number=chapter_number,
         chapter_position=position,
         story_bible=story_bible,
+        include_writing_methodology_bridge=include_writing_methodology_bridge,
     )
     if not sections:
         return _EMPTY
@@ -267,6 +283,7 @@ def _sections_for_stage(
     chapter_number: int,
     chapter_position: ChapterPosition,
     story_bible: Mapping[str, Any] | None = None,
+    include_writing_methodology_bridge: bool = True,
 ) -> list[_Section]:
     pack_source = f"prompt_packs/{prompt_pack_key}.yaml" if prompt_pack_key else "prompt_packs"
     sections: list[_Section] = []
@@ -313,7 +330,11 @@ def _sections_for_stage(
         MethodologyStage.PROSE_SCENE: "scene",
         MethodologyStage.REVIEW: "review",
     }[stage]
-    bridge_block = render_phase_block(pack, phase=phase, heading=f"writing_methodology · {phase}")
+    bridge_block = (
+        render_phase_block(pack, phase=phase, heading=f"writing_methodology · {phase}")
+        if include_writing_methodology_bridge
+        else ""
+    )
     if bridge_block:
         sections.append(
             _Section(

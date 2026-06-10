@@ -46,6 +46,16 @@ models:
     api_key_header: "api-key"
     notes: "小米 MiMo token-plan，国内 OpenAI 兼容端点。"
 
+  # ── Aliyun Qwen coding plan (OpenAI-compatible, Bearer) ──
+  - id: qwen3.7-plus-coding-plan
+    display_name: "阿里 Qwen · 3.7 Plus (Coding Plan)"
+    vendor: "Aliyun 阿里云百炼"
+    version: "qwen3.7-plus"
+    model: "openai/qwen3.7-plus"
+    api_base: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    api_key_env: QWEN_CODING_PLAN_API_KEY
+    notes: "阿里云 coding plan (token-plan) 北京区，OpenAI 兼容端点，标准 Bearer 认证。"
+
   # ── NVIDIA NIM (Bearer; live-probed available + fast) ──
   - id: nim-deepseek-v4-pro
     display_name: "NVIDIA · DeepSeek V4 Pro"

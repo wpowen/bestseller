@@ -463,6 +463,219 @@ async def _evaluate_retention_safety_after_assembly(
     return blocked
 
 
+async def _maybe_apply_deterministic_length_trim_before_export(
+    session: AsyncSession,
+    *,
+    settings: Any,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_draft: ChapterDraftVersionModel,
+    chapter_number: int,
+) -> bool:
+    """Trim an over-max chapter only when length is its sole quality block."""
+
+    text = chapter_draft.content_md or ""
+    if not text:
+        return False
+
+    from bestseller.services.chapter_length_gate import trim_chapter_to_hard_max
+    from bestseller.services.chapter_quality_bundle import (
+        ChapterQualityBundleContext,
+        run_chapter_quality_bundle,
+    )
+
+    target_words = int(
+        getattr(chapter, "target_word_count", 0)
+        or getattr(project, "default_target_chapter_words", 0)
+        or getattr(project, "target_chapter_words", 0)
+        or getattr(settings.generation.words_per_chapter, "target", 0)
+        or 0
+    )
+    previous_text = await _load_prev_chapter_draft_text(session, project, chapter_number)
+    context = ChapterQualityBundleContext(
+        chapter_number=chapter_number,
+        previous_chapter_text=previous_text,
+        previous_chapter_position=chapter_number - 1 if previous_text else None,
+        previous_chapter_texts=(
+            ((chapter_number - 1, previous_text),)
+            if previous_text and chapter_number > 1
+            else ()
+        ),
+        total_chapters=int(getattr(project, "target_chapters", 0) or 500),
+        language=str(getattr(project, "language", None) or "zh-CN"),
+        target_chapter_words=target_words or None,
+        commercial_strict=True,
+    )
+    report = run_chapter_quality_bundle(text, context)
+    codes = tuple(finding.code for finding in report.blocking_findings)
+    if codes != ("CHAPTER_LENGTH_BLOCK_HIGH",):
+        return False
+
+    fallback_hard_max = max(3000, int(target_words * 1.2)) if target_words else 3000
+    hard_max = int(report.blocking_findings[0].evidence.get("hard_max") or fallback_hard_max)
+    trimmed_text, trimmed = trim_chapter_to_hard_max(text, hard_max)
+    if not trimmed:
+        return False
+    post_report = run_chapter_quality_bundle(trimmed_text, context)
+    if post_report.blocking_findings:
+        return False
+
+    original_word_count = int(getattr(chapter_draft, "word_count", 0) or 0)
+    trimmed_word_count = count_words(trimmed_text)
+    chapter_draft.content_md = trimmed_text
+    chapter_draft.word_count = trimmed_word_count
+    chapter.current_word_count = trimmed_word_count
+    chapter.status = ChapterStatus.REVISION.value
+    chapter.production_state = "ok"
+
+    metadata = dict(chapter.metadata_json or {})
+    for key in (
+        "quality_bundle_blocking_codes",
+        "quality_gate_block_codes",
+        "production_block_code",
+        "quality_gate_block_code",
+        "quality_gate_block_source",
+        "quality_gate_block_hint",
+        "blocked_by_write_safety_gate",
+        "write_safety_block_code",
+        "write_safety_hint",
+        "export_blocked_reason",
+        "export_blocked_by_run_id",
+        "auto_repair_exhausted",
+        "retention_auto_repair_exhausted",
+        "chapter_review_attempts_active",
+    ):
+        metadata.pop(key, None)
+    metadata["quality_bundle"] = post_report.to_dict()
+    metadata["deterministic_length_trim"] = {
+        "from_block_code": "CHAPTER_LENGTH_BLOCK_HIGH",
+        "hard_max": hard_max,
+        "original_word_count": original_word_count,
+        "trimmed_word_count": trimmed_word_count,
+    }
+    chapter.metadata_json = metadata
+    await session.flush()
+    return True
+
+
+def _insert_paragraph_after_chapter_heading(text: str, paragraph: str) -> str:
+    if not text.strip() or not paragraph.strip():
+        return text
+    blocks = text.split("\n\n")
+    if blocks and blocks[0].lstrip().startswith("#"):
+        return "\n\n".join([blocks[0], paragraph.strip(), *blocks[1:]]).rstrip()
+    return (paragraph.strip() + "\n\n" + text.lstrip()).rstrip()
+
+
+def _render_deterministic_hook_echo_bridge(tokens: list[str]) -> str:
+    visible = [str(token).strip() for token in tokens if str(token).strip()]
+    visible = [token for token in visible if len(token) >= 2][:4]
+    if not visible:
+        return ""
+    if len(visible) == 1:
+        subject = visible[0]
+    else:
+        subject = "、".join(visible[:-1]) + "和" + visible[-1]
+    return f"{subject}没有消失，反而成了清晨压到眼前的第一桩旧账。"
+
+
+async def _maybe_apply_deterministic_hook_echo_bridge_before_review(
+    session: AsyncSession,
+    *,
+    settings: Any,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_draft: ChapterDraftVersionModel,
+    chapter_number: int,
+) -> bool:
+    """Insert a small in-world bridge when hook echo is the only continuity block."""
+
+    text = chapter_draft.content_md or ""
+    if not text:
+        return False
+
+    from bestseller.services.chapter_quality_bundle import (
+        ChapterQualityBundleContext,
+        run_chapter_quality_bundle,
+    )
+
+    target_words = int(
+        getattr(chapter, "target_word_count", 0)
+        or getattr(project, "default_target_chapter_words", 0)
+        or getattr(project, "target_chapter_words", 0)
+        or getattr(settings.generation.words_per_chapter, "target", 0)
+        or 0
+    )
+    previous_text = await _load_prev_chapter_draft_text(session, project, chapter_number)
+    context = ChapterQualityBundleContext(
+        chapter_number=chapter_number,
+        previous_chapter_text=previous_text,
+        previous_chapter_position=chapter_number - 1 if previous_text else None,
+        previous_chapter_texts=(
+            ((chapter_number - 1, previous_text),)
+            if previous_text and chapter_number > 1
+            else ()
+        ),
+        total_chapters=int(getattr(project, "target_chapters", 0) or 500),
+        language=str(getattr(project, "language", None) or "zh-CN"),
+        target_chapter_words=target_words or None,
+        commercial_strict=True,
+    )
+    report = run_chapter_quality_bundle(text, context)
+    codes = {finding.code for finding in report.blocking_findings}
+    allowed_companion_codes = {"HOOK_ECHO_MISSING", "CHAPTER_LENGTH_BLOCK_HIGH"}
+    if "HOOK_ECHO_MISSING" not in codes or not codes <= allowed_companion_codes:
+        return False
+    hook_finding = next(
+        (
+            finding
+            for finding in report.blocking_findings
+            if finding.code == "HOOK_ECHO_MISSING"
+        ),
+        None,
+    )
+    missed_tokens = list((hook_finding.evidence or {}).get("missed_tokens") or [])
+    bridge = _render_deterministic_hook_echo_bridge(missed_tokens)
+    if not bridge or bridge in text:
+        return False
+    bridged_text = _insert_paragraph_after_chapter_heading(text, bridge)
+    post_report = run_chapter_quality_bundle(bridged_text, context)
+    post_codes = {finding.code for finding in post_report.blocking_findings}
+    if "HOOK_ECHO_MISSING" in post_codes or not post_codes <= {"CHAPTER_LENGTH_BLOCK_HIGH"}:
+        return False
+
+    bridged_word_count = count_words(bridged_text)
+    chapter_draft.content_md = bridged_text
+    chapter_draft.word_count = bridged_word_count
+    chapter.current_word_count = bridged_word_count
+    chapter.status = ChapterStatus.REVISION.value
+    chapter.production_state = "blocked" if post_codes else "ok"
+
+    metadata = dict(chapter.metadata_json or {})
+    metadata["quality_bundle"] = post_report.to_dict()
+    metadata["deterministic_hook_echo_bridge"] = {
+        "from_block_code": "HOOK_ECHO_MISSING",
+        "inserted_tokens": missed_tokens[:4],
+        "bridge": bridge,
+    }
+    metadata.pop("chapter_review_attempts_active", None)
+    if not post_codes:
+        for key in (
+            "quality_bundle_blocking_codes",
+            "quality_gate_block_codes",
+            "production_block_code",
+            "quality_gate_block_code",
+            "quality_gate_block_source",
+            "quality_gate_block_hint",
+            "auto_repair_exhausted",
+            "retention_auto_repair_exhausted",
+        ):
+            metadata.pop(key, None)
+    chapter.metadata_json = metadata
+    await session.flush()
+    return True
+
+
 def _signature_plan_file_exists(
     project: ProjectModel,
     *,
@@ -2052,6 +2265,30 @@ def _chapter_review_blocks_for_project(
     default = bool(getattr(settings.pipeline, "chapter_review_block_on_failure", True))
     metadata = getattr(project, "metadata_json", None)
     if isinstance(metadata, Mapping) and metadata.get("chapter_review_warn_only") is True:
+        return False
+    return default
+
+
+def _retention_gate_blocks_for_project(
+    project: ProjectModel,
+    settings: AppSettings,
+) -> bool:
+    """Effective reader-retention / persona-gate hard-block, with an escape hatch.
+
+    When the retention auto-repair budget is exhausted on a chapter the writer
+    model structurally cannot clear (e.g. ``PERSONA_WEIGHTED_SCORE_LOW`` — the gate's
+    0.62 weighted-score bar sits above the model's ~0.51 ceiling per
+    ``reader_persona_calibration``), the legacy behaviour hard-routes the chapter to
+    machine-repair and pauses the whole book. Soft by default
+    (``retention_safety_gate_block_on_failure=False``): accept the best draft on-stall,
+    flag it, and ADVANCE — mirroring ``_chapter_review_blocks_for_project``. A project
+    may force either mode via metadata ``retention_safety_gate_warn_only: true``.
+    """
+    default = bool(
+        getattr(settings.pipeline, "retention_safety_gate_block_on_failure", False)
+    )
+    metadata = getattr(project, "metadata_json", None)
+    if isinstance(metadata, Mapping) and metadata.get("retention_safety_gate_warn_only") is True:
         return False
     return default
 
@@ -4345,17 +4582,30 @@ async def run_scene_pipeline(
                     language=_lang,
                 )
 
-                _hook_types = await compute_recent_hook_types(
-                    session, project.id,
-                    current_chapter=chapter_number,
-                    window=5,
+                # Cliffhanger taxonomy guides the CHAPTER-END hook — only the
+                # closing scene writes it. Injecting it into every scene was
+                # mistargeted: openers/middles got ~200 tokens of hook-type
+                # rotation they must not act on (and sometimes did, planting
+                # mid-chapter fake-out hooks). Closer detection mirrors the
+                # DiversityBudget section below.
+                _max_scene_row = await session.execute(
+                    select(func.max(SceneCardModel.scene_number)).where(
+                        SceneCardModel.chapter_id == chapter.id,
+                    )
                 )
-                shared_context.cliffhanger_diversity_block = build_cliffhanger_diversity_block(
-                    _hook_types,
-                    chapter_number=chapter_number,
-                    total_chapters=int(_total_chapters),
-                    language=_lang,
-                )
+                _stage_d_max_scene = _max_scene_row.scalar_one_or_none() or scene_number
+                if int(scene_number) >= int(_stage_d_max_scene):
+                    _hook_types = await compute_recent_hook_types(
+                        session, project.id,
+                        current_chapter=chapter_number,
+                        window=5,
+                    )
+                    shared_context.cliffhanger_diversity_block = build_cliffhanger_diversity_block(
+                        _hook_types,
+                        chapter_number=chapter_number,
+                        total_chapters=int(_total_chapters),
+                        language=_lang,
+                    )
 
                 _tensions = await compute_recent_tension_scores(
                     session, project.id,
@@ -5354,16 +5604,74 @@ async def run_scene_pipeline(
             rewrite_iterations += 1
             current_step_name = f"rewrite_scene_v{rewrite_iterations}"
             workflow_run.current_step = current_step_name
-            draft, rewrite_task = await rewrite_scene_from_task(
-                session,
-                project_slug,
-                chapter_number,
-                scene_number,
-                rewrite_task_id=rewrite_task.id,
-                settings=settings,
-                workflow_run_id=workflow_run.id,
-                context_packet=shared_context,
-            )
+            try:
+                draft, rewrite_task = await rewrite_scene_from_task(
+                    session,
+                    project_slug,
+                    chapter_number,
+                    scene_number,
+                    rewrite_task_id=rewrite_task.id,
+                    settings=settings,
+                    workflow_run_id=workflow_run.id,
+                    context_packet=shared_context,
+                )
+            except ValueError as exc:
+                missing_current_draft = "does not have a current draft" in str(exc)
+                if not missing_current_draft:
+                    raise
+                logger.warning(
+                    "Scene %d.%d rewrite requested but current draft is missing; "
+                    "regenerating scene draft and continuing review loop",
+                    chapter_number,
+                    scene_number,
+                )
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "scene_rewrite_missing_current_draft_recovered": True,
+                    "scene_rewrite_missing_current_draft_error": str(exc),
+                    "scene_rewrite_missing_current_draft_iteration": rewrite_iterations,
+                }
+                current_step_name = "recover_missing_scene_draft"
+                workflow_run.current_step = current_step_name
+                draft = await generate_scene_draft(
+                    session,
+                    project_slug,
+                    chapter_number,
+                    scene_number,
+                    settings=settings,
+                    workflow_run_id=workflow_run.id,
+                    context_packet=shared_context,
+                )
+                if draft.llm_run_id is not None:
+                    llm_run_ids.append(draft.llm_run_id)
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref={
+                        "draft_id": str(draft.id),
+                        "draft_version_no": draft.version_no,
+                        "llm_run_id": str(draft.llm_run_id) if draft.llm_run_id else None,
+                        "recovered_from": "missing_current_scene_draft",
+                    },
+                )
+                step_order += 1
+                previous_scene_score = None
+                previous_rewrite_instructions = None
+                _emit_progress(
+                    progress,
+                    "scene_draft_regenerated_after_missing_current",
+                    {
+                        "project_slug": project_slug,
+                        "chapter_number": chapter_number,
+                        "scene_number": scene_number,
+                        "draft_id": str(draft.id),
+                        "version_no": draft.version_no,
+                    },
+                )
+                continue
             if draft.llm_run_id is not None:
                 llm_run_ids.append(draft.llm_run_id)
             await create_workflow_step_run(
@@ -6271,6 +6579,66 @@ async def run_chapter_pipeline(
                     "word_count": int(getattr(chapter_draft, "word_count", 0) or 0),
                 },
             )
+            try:
+                if await _maybe_apply_deterministic_hook_echo_bridge_before_review(
+                    session,
+                    settings=settings,
+                    project=project,
+                    chapter=chapter,
+                    chapter_draft=chapter_draft,
+                    chapter_number=chapter_number,
+                ):
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "deterministic_hook_echo_bridge_before_review": True,
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                    }
+                    _emit_progress(
+                        progress,
+                        "chapter_deterministic_hook_echo_bridge_applied",
+                        {
+                            "project_slug": project_slug,
+                            "chapter_number": chapter_number,
+                            "phase": "before_review",
+                            "chapter_draft_id": str(chapter_draft.id),
+                            "chapter_draft_version_no": chapter_draft.version_no,
+                        },
+                    )
+                if await _maybe_apply_deterministic_length_trim_before_export(
+                    session,
+                    settings=settings,
+                    project=project,
+                    chapter=chapter,
+                    chapter_draft=chapter_draft,
+                    chapter_number=chapter_number,
+                ):
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "deterministic_length_trim_before_review": True,
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                    }
+                    _emit_progress(
+                        progress,
+                        "chapter_deterministic_length_trim_applied",
+                        {
+                            "project_slug": project_slug,
+                            "chapter_number": chapter_number,
+                            "phase": "before_review",
+                            "chapter_draft_id": str(chapter_draft.id),
+                            "chapter_draft_version_no": chapter_draft.version_no,
+                            "word_count": int(
+                                getattr(chapter_draft, "word_count", 0) or 0
+                            ),
+                        },
+                    )
+            except Exception:
+                logger.debug(
+                    "deterministic pre-review cleanup failed for ch%d",
+                    chapter_number,
+                    exc_info=True,
+                )
 
             if scene_requires_human_review and not use_chapter_first:
                 chapter.status = ChapterStatus.REVISION.value
@@ -6944,6 +7312,53 @@ async def run_chapter_pipeline(
                 requires_human_review=True,
             )
 
+        if retention_auto_repair_exhausted and not _retention_gate_blocks_for_project(
+            project, settings
+        ):
+            # Soft retention gate (default). The writer model exhausted the
+            # retention/persona auto-repair budget on a bar it structurally
+            # cannot clear (e.g. PERSONA_WEIGHTED_SCORE_LOW: 0.62 gate vs ~0.51
+            # model ceiling per reader_persona_calibration). Rather than pausing
+            # the whole book to machine repair, accept the best draft on-stall,
+            # flag it, clear the blocked production_state set during exhaustion,
+            # and fall through to chapter-review finalization (accept_chapter_on_stall
+            # completes it). Mirrors chapter_review accept-on-stall — the gate still
+            # RAN and flagged the weak chapter; only the terminal hard-block relaxes.
+            chapter.production_state = "ok"
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "retention_auto_repair_exhausted": True,
+                "retention_accepted_on_stall": True,
+                "low_retention_quality": True,
+                "requires_machine_repair": False,
+                "auto_accepted": True,
+            }
+            retention_auto_repair_exhausted = False
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name="retention_auto_repair_accepted_on_stall",
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref={
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "block_codes": list(_current_auto_repair_block_codes(chapter)),
+                },
+            )
+            step_order += 1
+            _emit_progress(
+                progress,
+                "retention_auto_repair_accepted_on_stall",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                },
+            )
+            await session.flush()
+
         if retention_auto_repair_exhausted:
             workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
             workflow_run.current_step = "retention_auto_repair_exhausted"
@@ -7312,6 +7727,27 @@ async def run_chapter_pipeline(
             nonlocal export_blocked_reason
             if not export_markdown:
                 return None, None
+            try:
+                if await _maybe_apply_deterministic_length_trim_before_export(
+                    session,
+                    settings=settings,
+                    project=project,
+                    chapter=chapter,
+                    chapter_draft=chapter_draft,
+                    chapter_number=chapter_number,
+                ):
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "deterministic_length_trim_before_export": True,
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                    }
+            except Exception:
+                logger.debug(
+                    "deterministic length trim before export failed for ch%d",
+                    chapter_number,
+                    exc_info=True,
+                )
             current_step_name = "export_chapter_markdown"
             workflow_run.current_step = current_step_name
             _emit_progress(

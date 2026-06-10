@@ -474,7 +474,38 @@ def _prune_profile_lines(lines: list[str]) -> list[str]:
     return out
 
 
-def render_writing_profile_prompt_block(profile: WritingProfile, *, language: str | None = None) -> str:
+def render_writing_profile_prompt_block(
+    profile: WritingProfile,
+    *,
+    language: str | None = None,
+    mode: str = "full",
+    chapter_number: int | None = None,
+    include_pack_notes: bool | None = None,
+) -> str:
+    """Render the writing profile as a prompt block.
+
+    ``mode="full"`` (default) keeps the historical behaviour — every profile
+    field plus Prompt Pack notes — and is what planner/review prompts need.
+
+    ``mode="scene"`` is the per-scene writer diet. Trace audits showed the
+    full block (~3.7k chars) re-sent on EVERY scene call while most lines are
+    planning-time inputs the scene writer cannot act on (selling points,
+    worldbuilding density, growth curve …) and the Prompt Pack notes are
+    already injected into the scene user prompt separately (double-send).
+    Scene mode keeps only the lines that steer prose RIGHT NOW (promise, hook
+    strategy, pacing, romance/relationship axis, voice/POV/style, scene-level
+    serialization rules), renders the opening-contract lines only while they
+    apply (chapter ≤ 5), and skips the Prompt Pack tail.
+    """
+
+    scene_mode = mode == "scene"
+    opening_phase = chapter_number is None or chapter_number <= 5
+    # Pack notes default: full mode keeps them (planner/review need the pack
+    # design); scene mode drops them because the scene user prompt injects the
+    # same pack block separately (double-send). Callers whose user prompt does
+    # NOT carry the pack (e.g. chapter-first draft) opt back in explicitly.
+    if include_pack_notes is None:
+        include_pack_notes = not scene_mode
     prompt_pack = resolve_prompt_pack(
         profile.market.prompt_pack_key,
         genre=" ".join(profile.style.tone_keywords) or "通用",
@@ -484,98 +515,186 @@ def render_writing_profile_prompt_block(profile: WritingProfile, *, language: st
         lines = [
             "Platform and Reader Promise:",
             f"- Platform target: {profile.market.platform_target}",
-            f"- Prompt pack: {profile.market.prompt_pack_key or 'auto/unspecified'}",
-            f"- Content mode: {profile.market.content_mode}",
+        ]
+        if not scene_mode:
+            lines += [
+                f"- Prompt pack: {profile.market.prompt_pack_key or 'auto/unspecified'}",
+                f"- Content mode: {profile.market.content_mode}",
+            ]
+        lines += [
             f"- Reader promise: {profile.market.reader_promise or 'Establish a durable read-on desire fast.'}",
-            f"- Selling points: {', '.join(profile.market.selling_points) or 'none specified'}",
-            f"- Trope tags: {', '.join(profile.market.trope_keywords) or 'none'}",
+        ]
+        if not scene_mode:
+            lines += [
+                f"- Selling points: {', '.join(profile.market.selling_points) or 'none specified'}",
+                f"- Trope tags: {', '.join(profile.market.trope_keywords) or 'none'}",
+            ]
+        lines += [
             f"- Hook tags: {', '.join(profile.market.hook_keywords) or 'none'}",
-            f"- Opening contract: {profile.market.opening_contract or 'none specified'}",
-            f"- Opening strategy: {profile.market.opening_strategy}",
+        ]
+        if not scene_mode or opening_phase:
+            lines += [
+                f"- Opening contract: {profile.market.opening_contract or 'none specified'}",
+                f"- Opening strategy: {profile.market.opening_strategy}",
+            ]
+        lines += [
             f"- Chapter hook strategy: {profile.market.chapter_hook_strategy}",
             f"- Pace: {profile.market.pacing_profile} / Payoff rhythm: {profile.market.payoff_rhythm}",
             "Character and Story Engine:",
-            f"- Protagonist archetype: {profile.character.protagonist_archetype or 'unspecified'}",
+        ]
+        if not scene_mode:
+            lines += [
+                f"- Protagonist archetype: {profile.character.protagonist_archetype or 'unspecified'}",
+            ]
+        lines += [
             f"- Protagonist core drive: {profile.character.protagonist_core_drive or 'unspecified'}",
             f"- Unique edge: {profile.character.golden_finger or 'unspecified'}",
-            f"- Growth curve: {profile.character.growth_curve}",
+        ]
+        if not scene_mode:
+            lines += [
+                f"- Growth curve: {profile.character.growth_curve}",
+            ]
+        lines += [
             f"- Romance mode: {profile.character.romance_mode}",
             f"- Relationship tension: {profile.character.relationship_tension}",
-            f"- Antagonist mode: {profile.character.antagonist_mode}",
-            "World and Information Release:",
-            f"- Worldbuilding density: {profile.world.worldbuilding_density}",
-            f"- Reveal strategy: {profile.world.info_reveal_strategy}",
-            f"- Rule hardness: {profile.world.rule_hardness}",
-            f"- Power system: {profile.world.power_system_style or 'unspecified'}",
-            f"- Mystery density: {profile.world.mystery_density}",
-            f"- Setting tags: {', '.join(profile.world.setting_tags) or 'none'}",
+        ]
+        if not scene_mode:
+            lines += [
+                f"- Antagonist mode: {profile.character.antagonist_mode}",
+                "World and Information Release:",
+                f"- Worldbuilding density: {profile.world.worldbuilding_density}",
+                f"- Reveal strategy: {profile.world.info_reveal_strategy}",
+                f"- Rule hardness: {profile.world.rule_hardness}",
+                f"- Power system: {profile.world.power_system_style or 'unspecified'}",
+                f"- Mystery density: {profile.world.mystery_density}",
+                f"- Setting tags: {', '.join(profile.world.setting_tags) or 'none'}",
+            ]
+        lines += [
             "Style and Serialization Rules:",
             f"- POV: {profile.style.pov_type} / Tense: {profile.style.tense}",
             f"- Tone keywords: {', '.join(profile.style.tone_keywords) or 'unspecified'}",
             f"- Prose style: {profile.style.prose_style}",
             f"- Sentence style: {profile.style.sentence_style} / Info density: {profile.style.info_density} / Dialogue ratio: {profile.style.dialogue_ratio:.2f}",
-            f"- Reference works: {', '.join(profile.style.reference_works) or 'none'}",
+        ]
+        if not scene_mode:
+            lines += [
+                f"- Reference works: {', '.join(profile.style.reference_works) or 'none'}",
+            ]
+        lines += [
             f"- Extra rules: {'; '.join(profile.style.custom_rules) or 'none'}",
             "Serialization Guardrails:",
-            f"- {profile.serialization.opening_mandate}",
-            f"- {profile.serialization.first_three_chapter_goal}",
+        ]
+        if not scene_mode or opening_phase:
+            lines += [
+                f"- {profile.serialization.opening_mandate}",
+                f"- {profile.serialization.first_three_chapter_goal}",
+            ]
+        lines += [
             f"- {profile.serialization.scene_drive_rule}",
             f"- {profile.serialization.exposition_rule}",
             f"- {profile.serialization.chapter_ending_rule}",
-            f"- {profile.serialization.free_chapter_strategy}",
         ]
+        if not scene_mode or opening_phase:
+            lines += [
+                f"- {profile.serialization.free_chapter_strategy}",
+            ]
         lines = _prune_profile_lines(lines)
-        pack_block = render_prompt_pack_prompt_block(prompt_pack)
-        if pack_block:
-            lines.extend(["Prompt Pack Notes:", pack_block])
+        if include_pack_notes:
+            pack_block = render_prompt_pack_prompt_block(prompt_pack)
+            if pack_block:
+                lines.extend(["Prompt Pack Notes:", pack_block])
         return "\n".join(lines)
     lines = [
         "平台与读者承诺：",
         f"- 平台目标：{profile.market.platform_target}",
-        f"- Prompt Pack：{profile.market.prompt_pack_key or '自动/未指定'}",
-        f"- 内容模式：{profile.market.content_mode}",
+    ]
+    if not scene_mode:
+        lines += [
+            f"- Prompt Pack：{profile.market.prompt_pack_key or '自动/未指定'}",
+            f"- 内容模式：{profile.market.content_mode}",
+        ]
+    lines += [
         f"- 读者承诺：{profile.market.reader_promise or '必须快速建立持续追读欲。'}",
-        f"- 核心卖点：{'、'.join(profile.market.selling_points) or '暂无明确卖点'}",
-        f"- 套路标签：{'、'.join(profile.market.trope_keywords) or '暂无'}",
+    ]
+    if not scene_mode:
+        lines += [
+            f"- 核心卖点：{'、'.join(profile.market.selling_points) or '暂无明确卖点'}",
+            f"- 套路标签：{'、'.join(profile.market.trope_keywords) or '暂无'}",
+        ]
+    lines += [
         f"- 钩子标签：{'、'.join(profile.market.hook_keywords) or '暂无'}",
-        f"- 开篇合同：{profile.market.opening_contract or '暂无明确开篇合同'}",
-        f"- 开篇策略：{profile.market.opening_strategy}",
+    ]
+    if not scene_mode or opening_phase:
+        lines += [
+            f"- 开篇合同：{profile.market.opening_contract or '暂无明确开篇合同'}",
+            f"- 开篇策略：{profile.market.opening_strategy}",
+        ]
+    lines += [
         f"- 章节钩子策略：{profile.market.chapter_hook_strategy}",
         f"- 节奏：{profile.market.pacing_profile} / 回报节奏：{profile.market.payoff_rhythm}",
         "人物与故事引擎：",
-        f"- 主角原型：{profile.character.protagonist_archetype or '未指定'}",
+    ]
+    if not scene_mode:
+        lines += [
+            f"- 主角原型：{profile.character.protagonist_archetype or '未指定'}",
+        ]
+    lines += [
         f"- 主角核心驱动力：{profile.character.protagonist_core_drive or '未指定'}",
         f"- 外挂/差异化优势：{profile.character.golden_finger or '未指定'}",
-        f"- 成长曲线：{profile.character.growth_curve}",
+    ]
+    if not scene_mode:
+        lines += [
+            f"- 成长曲线：{profile.character.growth_curve}",
+        ]
+    lines += [
         f"- 感情线模式：{profile.character.romance_mode}",
         f"- 关系张力：{profile.character.relationship_tension}",
-        f"- 反派机制：{profile.character.antagonist_mode}",
-        "世界与信息释放：",
-        f"- 世界观密度：{profile.world.worldbuilding_density}",
-        f"- 设定揭示方式：{profile.world.info_reveal_strategy}",
-        f"- 规则硬度：{profile.world.rule_hardness}",
-        f"- 力量体系：{profile.world.power_system_style or '未指定'}",
-        f"- 悬念密度：{profile.world.mystery_density}",
-        f"- 设定标签：{'、'.join(profile.world.setting_tags) or '暂无'}",
+    ]
+    if not scene_mode:
+        lines += [
+            f"- 反派机制：{profile.character.antagonist_mode}",
+            "世界与信息释放：",
+            f"- 世界观密度：{profile.world.worldbuilding_density}",
+            f"- 设定揭示方式：{profile.world.info_reveal_strategy}",
+            f"- 规则硬度：{profile.world.rule_hardness}",
+            f"- 力量体系：{profile.world.power_system_style or '未指定'}",
+            f"- 悬念密度：{profile.world.mystery_density}",
+            f"- 设定标签：{'、'.join(profile.world.setting_tags) or '暂无'}",
+        ]
+    lines += [
         "文风与连载规则：",
         f"- 视角：{profile.style.pov_type} / 时态：{profile.style.tense}",
         f"- 语气关键词：{'、'.join(profile.style.tone_keywords) or '未指定'}",
         f"- prose style：{profile.style.prose_style}",
         f"- 句式：{profile.style.sentence_style} / 信息密度：{profile.style.info_density} / 对话占比：{profile.style.dialogue_ratio:.2f}",
-        f"- 参考作品：{'、'.join(profile.style.reference_works) or '暂无'}",
+    ]
+    if not scene_mode:
+        lines += [
+            f"- 参考作品：{'、'.join(profile.style.reference_works) or '暂无'}",
+        ]
+    lines += [
         f"- 额外规则：{'；'.join(profile.style.custom_rules) or '暂无'}",
         "连载硬约束：",
-        f"- {profile.serialization.opening_mandate}",
-        f"- {profile.serialization.first_three_chapter_goal}",
+    ]
+    if not scene_mode or opening_phase:
+        lines += [
+            f"- {profile.serialization.opening_mandate}",
+            f"- {profile.serialization.first_three_chapter_goal}",
+        ]
+    lines += [
         f"- {profile.serialization.scene_drive_rule}",
         f"- {profile.serialization.exposition_rule}",
         f"- {profile.serialization.chapter_ending_rule}",
-        f"- {profile.serialization.free_chapter_strategy}",
     ]
+    if not scene_mode or opening_phase:
+        lines += [
+            f"- {profile.serialization.free_chapter_strategy}",
+        ]
     lines = _prune_profile_lines(lines)
-    pack_block = render_prompt_pack_prompt_block(prompt_pack)
-    if pack_block:
-        lines.extend(["Prompt Pack 设计：", pack_block])
+    if include_pack_notes:
+        pack_block = render_prompt_pack_prompt_block(prompt_pack)
+        if pack_block:
+            lines.extend(["Prompt Pack 设计：", pack_block])
     return "\n".join(lines)
 
 

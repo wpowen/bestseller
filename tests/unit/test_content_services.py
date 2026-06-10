@@ -576,7 +576,9 @@ def test_scene_draft_prompts_switch_to_english_for_english_project() -> None:
     )
     combined = system_prompt + "\n" + user_prompt
 
-    assert "English-language commercial fantasy serial" in combined
+    # Profile-flow canary: scene mode renders the reader promise (actionable
+    # per-scene) and drops planner-only lines like content_mode.
+    assert "Fast-moving fantasy with escalating political danger" in combined
     assert "Write the scene in English only" in combined
     # 7-段 system prompt rewording: "You are an expert fiction writer" →
     # "You are a senior commercial fiction writer …" (still an English ROLE block).

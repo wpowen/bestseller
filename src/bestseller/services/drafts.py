@@ -91,7 +91,10 @@ from bestseller.services.output_validator import (
     Violation,
 )
 from bestseller.services.projects import get_project_by_slug
-from bestseller.services.prompt_constructor import render_fanqie_market_craft_profile_block
+from bestseller.services.prompt_constructor import (
+    build_opening_hook_directive,
+    render_fanqie_market_craft_profile_block,
+)
 from bestseller.services.prompt_packs import (
     render_methodology_block,
     render_prompt_pack_fragment,
@@ -5580,7 +5583,12 @@ def build_scene_draft_prompts(
         or _project_meta.get("rejection_reasons")
         or _project_meta.get("rejection_reason")
     )
-    writing_profile_section = render_writing_profile_prompt_block(writing_profile, language=language)
+    writing_profile_section = render_writing_profile_prompt_block(
+        writing_profile,
+        language=language,
+        mode="scene",
+        chapter_number=int(getattr(chapter, "chapter_number", 0) or 0),
+    )
     serial_guardrails = render_serial_fiction_guardrails(writing_profile, language=language)
     # Build system prompt — 7-段式骨架（ROLE / CONTEXT / TASK / CONSTRAINTS /
     # THINKING / OUTPUT / EXAMPLES）。前 6 段跨场景稳定，进 Anthropic prompt
@@ -5832,6 +5840,14 @@ def build_scene_draft_prompts(
         language=language,
         rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
     )
+    # 爽文融合 (enable_shuangwen_fusion, default True): lift the 爽点 engines above
+    # the 文采 flourish levers in PROSE_SCENE so 爽点 is never starved by the budget.
+    # 文采 still ships — fusion reorders, it does not remove. See methodology_compiler.
+    from bestseller.settings import get_settings  # noqa: PLC0415
+
+    _shuangwen_on = bool(
+        getattr(get_settings().pipeline, "enable_shuangwen_fusion", True)
+    )
     _compiled_methodology = compile_methodology(
         stage=MethodologyStage.PROSE_SCENE,
         prompt_pack_key=_resolve_prompt_pack_key(project),
@@ -5845,6 +5861,7 @@ def build_scene_draft_prompts(
         # PROSE_SCENE block caps at ~3.8k tokens; 3600 fits every文采 lever.
         token_budget=3200,
         story_bible=story_bible_context,
+        shuangwen_mode=_shuangwen_on,
     ).text
     _methodology_line = ""
     if _methodology_pack_block or _methodology_rules or _compiled_methodology:
@@ -6612,6 +6629,19 @@ def build_scene_draft_prompts(
             "【连续性】如果角色在前一场明确说了不做某事，不要无理由翻转。"
             "每个角色登场必须有动机——通过动作或暗示说明他/她为何出现在这里。"
         )
+    # 黄金三章·开篇硬契约 (ch1-3, zh). Previously this hard contract only lived in
+    # the chapter-first generation path (build_chapter_first_draft_prompts), which is
+    # gated OFF by default (enable_chapter_first_generation=False) — so the default
+    # scene-first writer never received the golden-three opening rules. Wire the
+    # (formerly orphaned) directive into the system prompt for ch1-3 so the strongest
+    # opening contract reaches the writer regardless of generation mode. The helper
+    # self-guards (returns "" for ch>3 / non-zh), and the system prompt is not
+    # budget-trimmed, so it always reaches the model.
+    _opening_hook_directive = build_opening_hook_directive(
+        chapter.chapter_number, language=language
+    )
+    if _opening_hook_directive:
+        system_prompt = f"{system_prompt}\n\n{_opening_hook_directive}"
     return system_prompt, user_prompt
 
 
@@ -7917,7 +7947,12 @@ def build_chapter_first_draft_prompts(
     language = _project_language(project)
     is_en = is_english_language(language)
     writing_profile = _resolve_project_writing_profile(project, style_guide)
-    writing_profile_section = render_writing_profile_prompt_block(writing_profile, language=language)
+    writing_profile_section = render_writing_profile_prompt_block(
+        writing_profile,
+        language=language,
+        mode="scene",
+        chapter_number=int(getattr(chapter, "chapter_number", 0) or 0),
+    )
     serial_guardrails = render_serial_fiction_guardrails(writing_profile, language=language)
     _genre_label = getattr(writing_profile.market, "platform_target", None) or "商业长篇连载"
     if is_en:

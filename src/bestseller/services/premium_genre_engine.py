@@ -962,7 +962,10 @@ def _build_relationship_agency_context_block(
         else ["[RELATIONSHIP / AGENCY CONSTRAINTS]"]
     )
     lines.extend(_relationship_mode_lines(metadata=metadata, language=language))
-    for entry in entries[:8]:
+    # Cap 4 (was 8): these are chapter-stable state dumps re-sent every scene;
+    # a single scene acts on 2-3 relationships at most. Entries are
+    # planner-ordered by importance, so the head is the right half to keep.
+    for entry in entries[:4]:
         lines.append(_render_relationship_entry(entry, is_zh=is_zh))
     if is_zh:
         lines.append(
@@ -1122,7 +1125,8 @@ def _build_faction_ecology_context_block(
         if is_zh
         else ["[FACTION ECOLOGY / REACTION CONSTRAINTS]"]
     )
-    for entry in entries[:8]:
+    # Cap 4 (was 8) — same rationale as the relationship block above.
+    for entry in entries[:4]:
         lines.append(_render_faction_entry(entry, is_zh=is_zh))
     if is_zh:
         lines.append(
@@ -1165,7 +1169,9 @@ def _build_rule_system_context_block(
 
     is_zh = language.lower().startswith("zh")
     lines = ["【规则系统约束】" if is_zh else "[RULE SYSTEM CONSTRAINTS]"]
-    for index, entry in enumerate(entries[:8], start=1):
+    # Cap 4 (was 8) — chapter-stable rule lattice re-sent every scene; one
+    # scene exercises 1-2 rules. Head entries are planner-ordered core rules.
+    for index, entry in enumerate(entries[:4], start=1):
         rule_id = _first_text(entry, "id", "rule_id", "rule_code", "code") or f"R-{index:03d}"
         name = _first_text(entry, "name", "rule", "title") or "unnamed rule"
         description = _first_text(entry, "description", "summary", "story_consequence")

@@ -209,14 +209,14 @@ anchors:
     banned_patterns:
       - id: parallel_action
         pattern: "X 一边 Y 一边 Z"
-        replacement: 拆成两个动作短句
+        replacement: 拆开动作，但别剁成等长短句——保留主语，让句子有长有短
         example_before: "他一边走路一边思考一边看着远方"
-        example_after: "他走着。他想着昨晚那件事。他看了一眼远方。"
+        example_after: "他走着，脑子里全是昨晚那件事。走到巷口，他才抬眼朝远处看了一眼。"
       - id: not_only_but_also
         pattern: "不仅 X 还 Y"
-        replacement: 拆成两个事实
+        replacement: 拆成事实，但用一句带出层次，不要两个干巴巴的判断句并排
         example_before: "他不仅是验尸员还是茅山弟子"
-        example_after: "他是验尸员。他也是茅山弟子。"
+        example_after: "他是验尸员，干这行十年。没人知道他还有另一重身份——茅山弟子。"
       - id: looks_like_actually
         pattern: "看似 X 实则 Y"
         replacement: 让读者自己发现，不要由叙述者宣告
@@ -241,6 +241,23 @@ anchors:
       - id: cliched_metaphor
         pattern: 像 X 一样 Y 套话型
         replacement: 物理对应比喻（让人能"看见"）
+      # 以下三条针对"伪文学短句"——LLM 把克制/凝练误读成"把整段剁成等长碎句"，
+      # 反而成了当前最高频的新 AI 腔，务必避免。
+      - id: over_fragmentation
+        pattern: 整段剁成 3+ 等长无主语短句（碎句癖："风是从楼上下来的。冷得不正常。带着铁锈味。"）
+        replacement: 用长短交错、带主语的句子写完整，别为凑"凝练"删光连接词和量词；短句是偶尔的重锤，不是默认节奏
+        example_before: "风是从楼上下来的。冷得不正常。带着铁锈味，夹着雪茄灰烬的焦。"
+        example_after: "从楼上灌下来的风冷得人一哆嗦，里头裹着铁锈的腥甜，还有一丝雪茄烧到尽头的焦糊。"
+      - id: abstract_verdict
+        pattern: 抽象判断词代替体感（冷得不正常 / 说不出的难受 / 有种奇怪的感觉）
+        replacement: 落到身体反应或具体可见物（"冷得指节发僵"），让读者自己得出结论
+        example_before: "冷得不正常。"
+        example_after: "冷得人指节发僵，呵出的白气没等散开就被风撕碎了。"
+      - id: nominalized_cool
+        pattern: 动词/形容词硬名词化求酷（"……的焦" / "一种近乎窒息的静"）
+        replacement: 还原成正常中文（焦味 / 烧焦的气味），这类名词化每段最多一次
+        example_before: "空气里浮着一层铁锈的冷，和一缕雪茄的焦。"
+        example_after: "空气里有铁锈的腥气，还混着雪茄烧焦的味道，冷得发沉。"
     enforcement: 任何上述模式出现一次 → critic.peer_author.ai_voice_detection 扣 0.05
 
 # =============================================================================
@@ -291,3 +308,6 @@ writer_injection_template: |
       - 不要让角色用对白替读者总结
       - 不要用弱动词（做 / 进行 / 完成）
       - 不要用套话比喻（"像 X 一样 Y" 的平铺型）
+      - 不要把整段剁成等长无主语短句（碎句癖："X。Y。Z。"）——句子要长短交错
+      - 不要用抽象判断代替体感（"冷得不正常"→写身体反应或具体物）
+      - 不要把动词/形容词硬名词化求酷（"……的焦"→"焦味"）

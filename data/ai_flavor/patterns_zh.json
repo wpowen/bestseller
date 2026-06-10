@@ -156,5 +156,17 @@
         "毕竟": [""]
       }
     }
+  ],
+  "rhythm_rules": [
+    {
+      "id": "cn.rhythm.choppy",
+      "category": "choppy_rhythm",
+      "severity": "warn",
+      "why": "句法节奏单调：整段被剁成等长短句堆叠，缺长短交错与连接，读起来像AI文案/伪文学断句",
+      "min_sentences": 3,
+      "short_sentence_chars": 8,
+      "choppy_mean_chars": 11,
+      "short_run_threshold": 4
+    }
   ]
 }

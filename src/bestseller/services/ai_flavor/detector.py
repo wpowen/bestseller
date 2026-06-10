@@ -79,6 +79,7 @@ class _LoadedRules:
     case_insensitive: bool
     phrase_rules: tuple[dict[str, Any], ...]
     cluster_rules: tuple[dict[str, Any], ...]
+    rhythm_rules: tuple[dict[str, Any], ...]
 
 
 @lru_cache(maxsize=4)
@@ -98,6 +99,7 @@ def _load_rules(language: str, data_dir_str: str) -> _LoadedRules:
             case_insensitive=False,
             phrase_rules=(),
             cluster_rules=(),
+            rhythm_rules=(),
         )
     raw = json.loads(path.read_text(encoding="utf-8"))
     return _LoadedRules(
@@ -105,6 +107,7 @@ def _load_rules(language: str, data_dir_str: str) -> _LoadedRules:
         case_insensitive=bool(raw.get("case_insensitive", language == "en")),
         phrase_rules=tuple(raw.get("phrase_rules") or ()),
         cluster_rules=tuple(raw.get("cluster_rules") or ()),
+        rhythm_rules=tuple(raw.get("rhythm_rules") or ()),
     )
 
 
@@ -191,6 +194,146 @@ def _find_all_occurrences(haystack: str, needle: str) -> list[int]:
         starts.append(idx)
         i = idx + max(1, len(needle))
     return starts
+
+
+# Sentence terminators used by the rhythm pass. Commas are deliberately
+# *not* terminators — a clause chain like "他走着，想着昨晚那事" is one
+# breathing sentence, whereas "他走着。想着昨晚那事。" is the staccato tic
+# this pass is built to catch.
+_RHYTHM_TERMINATORS = "。！？…"
+
+
+def _split_sentences_with_offsets(text: str, base: int) -> list[tuple[int, int]]:
+    """Split ``text`` into sentence ``(start, end)`` ranges (absolute offsets).
+
+    ``end`` is half-open and includes the run of trailing terminators
+    ("…。" etc.). Offsets are ``base``-relative so callers can splice back
+    into the original chapter markdown.
+    """
+
+    spans: list[tuple[int, int]] = []
+    start = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] in _RHYTHM_TERMINATORS:
+            j = i + 1
+            while j < n and text[j] in _RHYTHM_TERMINATORS:
+                j += 1
+            spans.append((base + start, base + j))
+            start = j
+            i = j
+        else:
+            i += 1
+    if start < n:
+        spans.append((base + start, base + n))
+    return spans
+
+
+def _rhythm_visible_len(sentence: str) -> int:
+    """Content length of a sentence: non-whitespace chars sans terminators.
+
+    Commas/、 count — they are part of the clause and a comma-rich sentence
+    is exactly the flowing prose we do *not* want to flag.
+    """
+
+    return sum(
+        1 for c in sentence if not c.isspace() and c not in _RHYTHM_TERMINATORS
+    )
+
+
+def _detect_rhythm(
+    content_md: str,
+    *,
+    lang: str,
+    dialogue_ranges: list[tuple[int, int]],
+    rhythm_rules: tuple[dict[str, Any], ...],
+) -> list[AiFlavorSpan]:
+    """Structural (not lexical) AI-flavor pass — catches 碎句癖.
+
+    The phrase/cluster rules are blind to syntax: a paragraph chopped into
+    subjectless equal-length fragments ("风是从楼上下来的。冷得不正常。带着
+    铁锈味。") contains no banned *word*, so it scores 0 there. This pass
+    measures rhythm instead — per narration paragraph, the mean sentence
+    length and the longest run of short sentences — and emits one advisory
+    ``warn`` span per choppy paragraph. Warns never auto-patch (no
+    suggestion, not block) so the writer-side prompt remains the real fix;
+    the span only surfaces the regression in the score + audit trail.
+    """
+
+    out: list[AiFlavorSpan] = []
+    for rule in rhythm_rules:
+        category = str(rule.get("category") or "choppy_rhythm")
+        severity = _coerce_severity(rule.get("severity"), default="warn")
+        rule_id = str(rule.get("id") or f"{lang}.rhythm.choppy")
+        why_base = str(rule.get("why") or "")
+        min_sentences = max(int(rule.get("min_sentences", 3)), 1)
+        short_chars = int(rule.get("short_sentence_chars", 8))
+        choppy_mean = float(rule.get("choppy_mean_chars", 11))
+        run_threshold = int(rule.get("short_run_threshold", 4))
+
+        offset = 0
+        for para in content_md.split("\n"):
+            base = offset
+            offset += len(para) + 1  # account for the consumed "\n"
+            stripped = para.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+
+            narration: list[tuple[int, int, int]] = []
+            for sent_start, sent_end in _split_sentences_with_offsets(para, base):
+                body = content_md[sent_start:sent_end]
+                if not body.strip() or _is_in_ranges(sent_start, dialogue_ranges):
+                    continue
+                vis = _rhythm_visible_len(body)
+                if vis == 0:
+                    continue
+                narration.append((sent_start, sent_end, vis))
+
+            if len(narration) < min_sentences:
+                continue
+
+            lengths = [v for (_, _, v) in narration]
+            mean_len = sum(lengths) / len(lengths)
+            max_run = run = 0
+            for v in lengths:
+                if v <= short_chars:
+                    run += 1
+                    max_run = max(max_run, run)
+                else:
+                    run = 0
+
+            mean_hit = mean_len <= choppy_mean
+            run_hit = max_run >= run_threshold
+            if not (mean_hit or run_hit):
+                continue
+
+            reasons: list[str] = []
+            if mean_hit:
+                reasons.append(f"段均句长{mean_len:.1f}字≤{choppy_mean:.0f}")
+            if run_hit:
+                reasons.append(f"连续{max_run}句≤{short_chars}字")
+            why = (
+                f"{why_base}（{'，'.join(reasons)}）" if why_base else "，".join(reasons)
+            )
+
+            span_start = narration[0][0]
+            span_end = narration[-1][1]
+            out.append(
+                AiFlavorSpan(
+                    start=span_start,
+                    end=span_end,
+                    matched_text=content_md[span_start:span_end],
+                    rule_id=rule_id,
+                    category=category,
+                    severity=severity,
+                    suggestions=(),
+                    sentence_span=(span_start, span_end),
+                    why=why,
+                    remove_sentence_on_block=False,
+                )
+            )
+    return out
 
 
 def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
@@ -339,6 +482,17 @@ def detect(
                     remove_sentence_on_block=False,
                 )
             )
+
+    # ── Structural rhythm rules (碎句癖) ────────────────────────────────
+    if rules.rhythm_rules:
+        spans.extend(
+            _detect_rhythm(
+                content_md,
+                lang=lang,
+                dialogue_ranges=dialogue_ranges,
+                rhythm_rules=rules.rhythm_rules,
+            )
+        )
 
     spans.sort(key=lambda s: (s.start, s.end))
     return AiFlavorReport(

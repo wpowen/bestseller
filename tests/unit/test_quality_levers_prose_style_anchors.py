@@ -65,3 +65,19 @@ def test_render_style_anchor_block_ignores_unknown_anchor() -> None:
     # Unknown ids are silently dropped but baseline still appended
     assert "totally_unknown" not in block
     assert "anti_ai_voice" in block
+
+
+def test_anti_ai_includes_over_fragmentation_patterns() -> None:
+    ids = {bp.pattern_id for bp in get_anti_ai_banned_patterns()}
+    # The new structural-AI-flavor (碎句癖) negatives must be present.
+    assert {"over_fragmentation", "abstract_verdict", "nominalized_cool"} <= ids
+
+
+def test_render_carries_over_fragmentation_rule() -> None:
+    # The 碎句癖 rule (with its inline negative example) must reach the
+    # writer's PROSE_SCENE block via the always-appended anti_ai_voice
+    # baseline — this is the prompt-side fix for the user's complaint.
+    block = render_style_anchor_block(anchor_ids=())
+    assert "over_fragmentation" in block
+    assert "碎句癖" in block
+    assert "风是从楼上下来的" in block

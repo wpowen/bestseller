@@ -171,7 +171,9 @@ def test_cluster_mixed_members_count_together_cn() -> None:
 def test_patch_reverse_order_keeps_offsets_valid_cn() -> None:
     text = "毫无疑问，A。毫无疑问，B。毫无疑问，C。"
     report = detect(text, language="zh-CN")
-    assert len(report.spans) == 3
+    # Three tier-1 phrase block-spans (the choppy text may also draw an
+    # advisory rhythm warn — counted separately, not auto-patched).
+    assert len(report.block_spans) == 3
     patched = apply_patches(text, report.spans, language="zh").patched_text
     # All three narrative tier-1 sentences gone, nothing else corrupted.
     assert "毫无疑问" not in patched
@@ -484,3 +486,78 @@ def test_span_struct_is_frozen() -> None:
     )
     with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
         span.start = 5  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Structural rhythm rule (碎句癖) — catches over-fragmentation the lexical
+# phrase/cluster rules are blind to.
+# ---------------------------------------------------------------------------
+
+
+def _rhythm_spans(text: str):
+    report = detect(text, language="zh-CN")
+    return [s for s in report.spans if s.category == "choppy_rhythm"]
+
+
+def test_rhythm_flags_choppy_subjectless_fragments_cn() -> None:
+    # The canonical AI-flavor example: one observation chopped into a stack
+    # of short subjectless fragments. Contains zero banned phrases.
+    text = "风是从楼上下来的。冷得不正常。带着铁锈味，夹着雪茄灰烬的焦。"
+    spans = _rhythm_spans(text)
+    assert spans, "expected the choppy paragraph to be flagged"
+    span = spans[0]
+    assert span.severity == "warn"
+    # Span is position-faithful and covers the choppy run.
+    assert text[span.start : span.end] == text
+    # Advisory only — no auto-fix suggestion, never a sentence-drop.
+    assert span.suggestions == ()
+    assert span.remove_sentence_on_block is False
+
+
+def test_rhythm_does_not_flag_flowing_prose_cn() -> None:
+    # Same content, written as flowing comma-joined sentences with subjects.
+    text = (
+        "从楼上灌下来的风冷得人一哆嗦，里头裹着铁锈的腥甜，还有一丝雪茄烧到尽头的"
+        "焦糊。他把领口又拢紧了些，没急着上楼。"
+    )
+    assert _rhythm_spans(text) == []
+
+
+def test_rhythm_ignores_normal_comma_joined_sentences_cn() -> None:
+    text = "他走进房间，看见桌上的信。信封是空的，里面什么都没有。他皱起眉，把信纸翻到背面。"
+    assert _rhythm_spans(text) == []
+
+
+def test_rhythm_protects_dialogue_cn() -> None:
+    # Choppy fragments inside quotes are a character's voice — never flagged.
+    text = "“风是从楼上下来的。冷得不正常。带着铁锈味。”他说。"
+    assert _rhythm_spans(text) == []
+
+
+def test_rhythm_respects_min_sentences_cn() -> None:
+    # A single deliberate punch line (below the 3-sentence floor) is fine.
+    text = "门开了。"
+    assert _rhythm_spans(text) == []
+
+
+def test_rhythm_long_run_of_short_sentences_cn() -> None:
+    # Run signal: 4+ consecutive ultra-short sentences trip the gate even if
+    # a stray long sentence would otherwise lift the mean.
+    text = "他冲上去。一拳。又一拳。再一拳。血溅出来。"
+    spans = _rhythm_spans(text)
+    assert spans
+    assert "连续" in spans[0].why
+
+
+def test_rhythm_warn_does_not_force_block_decision_cn() -> None:
+    # A single choppy paragraph is advisory: the gate must not route the
+    # chapter to machine-repair on rhythm alone.
+    text = "风是从楼上下来的。冷得不正常。带着铁锈味，夹着雪茄灰烬的焦。"
+    out = run_ai_flavor_gate(
+        chapter_number=7,
+        content_md=text,
+        language="zh-CN",
+        config=_cfg(),
+    )
+    assert out.decision in ("pass", "patched")
+    assert out.after_score < out.metrics["block_threshold"]

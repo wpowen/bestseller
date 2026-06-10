@@ -2070,9 +2070,9 @@ async def materialize_chapter_outline_batch(
                     for finding in _blocking_findings
                     if not is_methodology_causality_finding(finding)
                 )
-            if (
-                _blocking_findings
-                and getattr(settings.pipeline, "chapter_causality_gate_block_on_failure", True)
+            if _blocking_findings and (
+                methodology_contract_blocks(methodology_contract_mode)
+                or getattr(settings.pipeline, "chapter_causality_gate_block_on_failure", True)
             ):
                 raise ValueError(
                     "Chapter outline batch blocked by chapter_causality_contract: "

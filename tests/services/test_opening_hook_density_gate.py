@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from bestseller.services.opening_hook_density_gate import check_opening_hook_density
@@ -12,8 +10,14 @@ pytestmark = pytest.mark.unit
 
 
 def test_ch1_real_chapter_triggers_flashback_overuse() -> None:
-    text = Path("output/exorcist-detective-1778051012/chapter-001.md").read_text(
-        encoding="utf-8"
+    # Use inline text with enough flashback keywords to reliably trigger the gate
+    # (flashback_max=2, so we need >2 hits in the first 500 CJK chars).
+    text = (
+        "林渊记得那年他曾经跟着父亲走过这条路，当年的回忆像水一样漫上来，"
+        "那时候以前的事情已经过去很久，他想起父亲说的那句话。"
+        "楼道灯亮着，但电梯口那块区域黑得像一个洞。"
+        "他把铜钱压在门槛上，决定先拦住王建业再进楼。"
+        "电梯空井里传来一声轻响，像有人从下面敲了三下。"
     )
     findings = check_opening_hook_density(text, chapter_number=1)
     codes = {finding.code for finding in findings}

@@ -4371,11 +4371,19 @@ async def test_run_chapter_pipeline_assembles_and_exports(
             None,
         )
 
+    async def fake_retention_noop(*args, **kwargs) -> None:
+        pass
+
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
     monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
     monkeypatch.setattr(pipeline_services, "export_chapter_markdown", fake_export_chapter_markdown)
     monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_evaluate_retention_safety_after_assembly",
+        fake_retention_noop,
+    )
 
     session = FakeSession(
         scalar_results=[chapter],
@@ -4725,12 +4733,20 @@ async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
             "blocks_write": False,
         }
 
+    async def fake_retention_noop(*args, **kwargs) -> None:
+        pass
+
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
     monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
     monkeypatch.setattr(pipeline_services, "export_chapter_markdown", fake_export_chapter_markdown)
     monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
     monkeypatch.setattr(pipeline_services, "_run_fanqie_long_gate_for_chapter", fake_fanqie_gate)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_evaluate_retention_safety_after_assembly",
+        fake_retention_noop,
+    )
 
     settings = build_settings()
     settings.pipeline.enable_fanqie_long_ranking_gate = True
@@ -5295,6 +5311,9 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
         output_path.write_text(rewritten_draft.content_md, encoding="utf-8")
         return export_artifact, output_path
 
+    async def fake_retention_noop(*args, **kwargs) -> None:
+        pass
+
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
     monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
@@ -5305,6 +5324,11 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
         fake_rewrite_chapter_from_task,
     )
     monkeypatch.setattr(pipeline_services, "export_chapter_markdown", fake_export_chapter_markdown)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_evaluate_retention_safety_after_assembly",
+        fake_retention_noop,
+    )
 
     session = FakeSession(
         scalar_results=[chapter],
@@ -5403,10 +5427,18 @@ async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_sta
             rewrite_task,
         )
 
+    async def fake_retention_noop(*args, **kwargs) -> None:
+        pass
+
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
     monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
     monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_evaluate_retention_safety_after_assembly",
+        fake_retention_noop,
+    )
 
     settings = build_settings()
     settings.pipeline.accept_on_stall = True
@@ -5505,10 +5537,18 @@ async def test_run_chapter_pipeline_accepts_safe_draft_after_review_stall(
             rewrite_task,
         )
 
+    async def fake_retention_noop(*args, **kwargs) -> None:
+        pass
+
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
     monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
     monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_evaluate_retention_safety_after_assembly",
+        fake_retention_noop,
+    )
 
     settings = build_settings()
     settings.pipeline.accept_on_stall = True

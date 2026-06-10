@@ -21,7 +21,14 @@ def test_compactor_dedupes_chapter_contract_digest() -> None:
     assert "characters_must_not_appear" in compacted
 
 
-def test_compactor_slices_forbidden_early_leaks() -> None:
+def test_compactor_keeps_full_forbidden_leak_list() -> None:
+    """Early-leak terms are book-specific and must NOT be sliced per chapter.
+
+    The old per-chapter slicing intersected against one book's hardcoded
+    proper nouns, which emptied the list for every other book and leaked the
+    青囊 cast across projects. ``_terms_for_chapter`` now intentionally keeps
+    the full project-derived list, so the compactor leaves the block intact.
+    """
     terms = ["玩家", "副本", "困魂镜", "母镜", "源门", "爷爷", "守夜人"]
     raw = (
         "forbidden_early_leaks_archived: "
@@ -29,10 +36,10 @@ def test_compactor_slices_forbidden_early_leaks() -> None:
         "chapter_contract_digest: keep"
     )
     compacted, _ = compact_user_prompt(raw, chapter_no=1, forbidden_terms_full=terms)
-    assert "forbidden_early_leaks_active" in compacted
-    assert "困魂镜" in compacted
-    assert "爷爷" not in compacted
-    assert "守夜人" not in compacted
+    # No slicing: every term survives for early chapters (safe, genre-neutral).
+    for term in terms:
+        assert term in compacted
+    assert "chapter_contract_digest: keep" in compacted
 
 
 def test_compactor_wraps_retention_findings_as_repair_hint() -> None:

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>小说设计数据流</title>
+<title>流水线数据流</title>
 <link rel="icon" href="data:,">
 <style>
   :root {
@@ -454,7 +454,7 @@
 
 <div class="container">
   <!-- 执行进度面板:规划→写作全过程实时可视化 -->
-  <div class="card" id="execCard" style="margin-bottom:20px;border:1px solid #e3e6ee;">
+  <div class="card" id="issuesPanel" style="margin-bottom:20px;border:1px solid #e3e6ee;">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
       <h2 style="margin:0;"><span class="icon">⚙️</span> 执行进度
         <span id="execHealth" style="font-size:12px;padding:2px 10px;border-radius:10px;margin-left:8px;"></span>
@@ -464,7 +464,7 @@
       </div>
     </div>
     <div id="execCurrent" style="margin:12px 0;font-size:13px;color:#444;">加载中...</div>
-    <div id="execPhases" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;"></div>
+    <div id="phaseContainer" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;" id="execLower">
       <div>
         <div class="info-label" style="margin-bottom:6px;">已产出规划内容</div>
@@ -846,10 +846,11 @@ function renderChapters(chapters) {
 async function loadData() {
   try {
     document.getElementById('projectMeta').innerHTML = '<span class="loading-spinner"></span>加载中...';
-    
-    const [storyBible, narrative] = await Promise.all([
+
+    const [storyBible, narrative, _pipelineFlow] = await Promise.all([
       fetchData('story-bible'),
-      fetchData('narrative')
+      fetchData('narrative'),
+      fetch(`/api/projects/${encodeURIComponent(slug)}/pipeline-flow`).then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
 
     const project = storyBible.project || {};
@@ -933,7 +934,7 @@ async function loadExecProgress() {
     } else { cur.textContent = '尚未开始执行。'; }
 
     // 阶段轨道
-    document.getElementById('execPhases').innerHTML = (d.phases || []).map(p => {
+    document.getElementById('phaseContainer').innerHTML = (d.phases || []).map(p => {
       const [bg, fg, icon] = PHASE_COLORS[p.status] || PHASE_COLORS.pending;
       return `<div style="background:${bg};color:${fg};border-radius:8px;padding:6px 10px;font-size:12px;min-width:96px;">
         <div style="font-weight:600;">${icon} ${escapeHtml(p.label)}</div>

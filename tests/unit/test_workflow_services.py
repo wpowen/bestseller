@@ -697,7 +697,7 @@ async def test_materialize_chapter_outline_batch_creates_workflow_records(
     assert workflow_runs[0].status == "completed"
     assert workflow_runs[0].metadata_json["chapters_created"] == 1
     assert workflow_runs[0].metadata_json["scenes_created"] == 1
-    assert len(workflow_steps) == 3
+    assert len(workflow_steps) == 5
 
 
 @pytest.mark.asyncio
@@ -1067,6 +1067,16 @@ async def test_materialize_chapter_outline_batch_blocks_methodology_in_strict_mo
 
     monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
     session = FakeSession()
+
+    # The plan-contract input repair backfills missing methodology overlay
+    # fields (repair-first design), which would dissolve the strict-mode
+    # violations this test pins. Disable it so the strict BLOCK path itself
+    # stays covered for batches whose deficiencies repair cannot fix.
+    monkeypatch.setattr(
+        workflow_services,
+        "_repair_chapter_outline_contract_inputs",
+        lambda *args, **kwargs: 0,
+    )
 
     with pytest.raises(ValueError, match="chapter_causality_contract"):
         await workflow_services.materialize_chapter_outline_batch(

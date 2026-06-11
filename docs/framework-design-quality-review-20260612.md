@@ -62,6 +62,7 @@
 | R17 | LLM judge非确定性（商业闸门同数据两次结果不同） | 观察中 | judge结果缓存+多数票（对齐跨家族判官策略） |
 | R18 | merge合并大纲无整卷质量判官 | 未修 | P3-9 物化前整卷判官（重复度/单调度/钩子链） |
 | R19 | 规划层无场景容量匹配检查（场景信息密度 vs 字数目标失配→SCENE_COMPLETION_INCOMPLETE/LENGTH_OVER 反复触发，ch3/5/6 实证） | 未修 | P1-12 物化时估算每场景义务量（义务点数×均字耗）与 target_word_count 匹配，失配即调目标或建议拆场 |
+| R22 | 场景卡 metadata 字段更新黑洞：materialize 更新结构化列（purpose/participants/exit）但 **metadata 内的 signature_image/object_signal 残留旧值**——大纲改版后写手永远消费旧意象，SIGNATURE_IMAGE_MISSING 反复触发（ch9实证：卡purpose已是新章、sig仍是三版前内容） | 未修（本书已SQL直灌绕过） | P0-4 scene card upsert 把 outline scene 的全部 prompt-critical 字段（signature_image/object_signal/action_sequence等）纳入更新集；补"卡-纲一致性"回归测试 |
 | R21 | 章纲深层元数据与叙事层无一致性校验（key_reveals/world_state_deltas/location_refs 可与正文完全脱节而静默通过；人工/程序改纲后旧元数据残骸直接喂给写手prompt——v9手术后遗症实证，复核agent抓出9章残骸+1处认知矛盾） | 未修 | P1-13 物化时跑"元数据-叙事一致性"检查：reveals/deltas 的实体与正文goal/hook/scene文本交集为零即警告；编辑工具链提供"重生成元数据"功能 |
 | R20 | 章修复轮次预算结构性超标（场景3评2改×2场+章3修≈30轮上限 vs 质量目标≤5轮） | 设计层议题 | 满配卡首稿过闸为主路径；修复预算可配置收紧（fail-fast 出诊断），待 ch6+ 实测数据定参 |
 

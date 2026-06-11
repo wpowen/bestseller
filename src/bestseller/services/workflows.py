@@ -1081,6 +1081,20 @@ def _repair_chapter_outline_contract_inputs(
         contract = {**existing_contract, **raw_contract}
         repairs = 0
 
+        # R22: outline-provided prompt-critical fields must OVERRIDE stale card
+        # metadata. The merge above keeps old values whenever the new outline
+        # carries them on the scene object (not inside methodology_contract),
+        # so a re-plotted outline could never refresh signature imagery —
+        # writers consumed three-versions-old images (SIGNATURE_IMAGE_MISSING
+        # recurrence, zhaoshen-hr-v3 ch9 evidence, 2026-06-12).
+        for _key, _fresh in (
+            ("signature_image", getattr(scene, "signature_image", None)),
+            ("object_signal", getattr(scene, "object_signal", None)),
+            ("cut_point", getattr(scene, "cut_point", None)),
+        ):
+            if _has_value(_fresh, generic=False):
+                contract[_key] = _text_value(_fresh)
+
         participants = [_text_value(item) for item in scene.participants if _text_value(item)]
         spotlight = participants[0] if participants else protagonist_name
         opponent = participants[1] if len(participants) > 1 else "对手"

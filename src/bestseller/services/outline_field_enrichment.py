@@ -81,6 +81,15 @@ def _fill_participants(
         scene["participants"] = participants[:_MAX_PARTICIPANTS]
 
 
+def _fill_opening_pressure(chapter: dict[str, Any], stats: dict[str, int]) -> None:
+    if str(chapter.get("opening_pressure") or "").strip():
+        return
+    head = _clauses(chapter.get("main_conflict"), 2)
+    if head:
+        chapter["opening_pressure"] = head
+        stats["opening_pressure"] += 1
+
+
 def _fill_opening_situation(chapter: dict[str, Any], stats: dict[str, int]) -> None:
     if str(chapter.get("opening_situation") or "").strip():
         return
@@ -157,6 +166,7 @@ def enrich_outline_batch_fields(
     stats = {
         "participants": 0,
         "opening_situation": 0,
+        "opening_pressure": 0,
         "causal_contract": 0,
         "golden_hype": 0,
     }
@@ -167,6 +177,7 @@ def enrich_outline_batch_fields(
             continue
         _fill_participants(chapter, names, lead, stats)
         _fill_opening_situation(chapter, stats)
+        _fill_opening_pressure(chapter, stats)
         _fill_causal_contract(chapter, stats)
         _fill_golden_hype(chapter, stats)
     stats["total"] = sum(stats.values())

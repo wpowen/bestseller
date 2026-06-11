@@ -1774,6 +1774,289 @@ def _repair_generated_volume_outline_contract_inputs(
     return repaired
 
 
+_OUTLINE_CONTRACT_VALUE_MAX_CHARS = 400
+_OUTLINE_SCENE_PARTICIPANT_CAP = 5
+
+
+def _outline_first_clauses(text: Any, count: int = 1) -> str:
+    parts = [
+        part.strip()
+        for part in re.split(r"[；;。]", _non_empty_string(text, ""))
+        if part.strip()
+    ]
+    return "；".join(parts[:count])
+
+
+def _outline_state_dict_text(value: Any) -> str:
+    if isinstance(value, Mapping):
+        for item in value.values():
+            text = _non_empty_string(item, "")
+            if text:
+                return text
+    return ""
+
+
+def _outline_scene_match_text(scene: Any) -> str:
+    pieces: list[str] = []
+    purpose = getattr(scene, "purpose", None)
+    if isinstance(purpose, Mapping):
+        pieces.extend(_non_empty_string(value, "") for value in purpose.values())
+    pieces.extend(
+        _non_empty_string(getattr(scene, attr, None), "")
+        for attr in ("title", "concrete_goal", "protagonist_state", "cut_point")
+    )
+    return " ".join(piece for piece in pieces if piece)
+
+
+def _outline_chapter_match_text(chapter: Any) -> str:
+    pieces = [
+        _non_empty_string(getattr(chapter, attr, None), "")
+        for attr in (
+            "chapter_goal",
+            "main_conflict",
+            "hook_description",
+            "opening_situation",
+            "opening_pressure",
+            "tail_hook",
+        )
+    ]
+    return " ".join(piece for piece in pieces if piece)
+
+
+def _outline_identity_match_candidates(
+    identity_manifest: list[dict[str, Any]],
+) -> list[tuple[str, tuple[str, ...]]]:
+    """Return ``(canonical_name, search_tokens)`` pairs for text matching.
+
+    Tokens shorter than 2 characters are dropped: single-character matches
+    against free chapter text are overwhelmingly false positives.
+    """
+
+    candidates: list[tuple[str, tuple[str, ...]]] = []
+    for identity in identity_manifest:
+        if not isinstance(identity, dict):
+            continue
+        name = _non_empty_string(identity.get("name"), "")
+        if not name:
+            continue
+        tokens = tuple(
+            token.strip()
+            for token in (name, *_string_list(identity.get("aliases")))
+            if len(token.strip()) >= 2
+        )
+        if tokens:
+            candidates.append((name, tokens))
+    return candidates
+
+
+def _enrich_generated_volume_outline_systemic_fields(
+    batch: Any,
+    *,
+    identity_manifest: list[dict[str, Any]],
+    language: str | None = None,
+) -> int:
+    """Deterministically backfill systemically-missing outline batch fields.
+
+    Production 500-chapter runs showed three batch-level gaps that downstream
+    hard gates treat as fatal only much later: empty ``opening_situation``
+    (commercial_planning_readiness ``missing_opening_situation``),
+    protagonist-only scene ``participants`` on every scene
+    (``golden_three_solo_scene_chain``), and whole batches without
+    ``causal_contract`` (chapter_causality_contract at materialization).
+    All three are derivable from fields the model did emit, so they are
+    repaired here — before batch validation — instead of killing the book
+    hundreds of steps downstream.
+    """
+
+    is_en = is_english_language(language)
+    match_candidates = _outline_identity_match_candidates(identity_manifest)
+    repaired = 0
+
+    for chapter in getattr(batch, "chapters", []) or []:
+        chapter_text = _outline_chapter_match_text(chapter)
+        scenes = list(getattr(chapter, "scenes", []) or [])
+        main_conflict = getattr(chapter, "main_conflict", None)
+        chapter_goal = getattr(chapter, "chapter_goal", None)
+        hook_description = getattr(chapter, "hook_description", None)
+
+        # ── 1) participants: text-match cast names into under-populated scenes ──
+        for scene in scenes:
+            participants = [
+                item
+                for item in getattr(scene, "participants", []) or []
+                if _non_empty_string(item, "")
+            ]
+            tokens = {_outline_identity_token(item) for item in participants}
+            if len(tokens) < 2 and match_candidates:
+                haystack = f"{_outline_scene_match_text(scene)} {chapter_text}"
+                for canonical, search_tokens in match_candidates:
+                    canonical_token = _outline_identity_token(canonical)
+                    if canonical_token in tokens:
+                        continue
+                    if any(token in haystack for token in search_tokens):
+                        participants.append(canonical)
+                        tokens.add(canonical_token)
+                    if len(tokens) >= 2:
+                        break
+            participants = participants[:_OUTLINE_SCENE_PARTICIPANT_CAP]
+            if participants != list(getattr(scene, "participants", []) or []):
+                scene.participants = participants
+                repaired += 1
+
+        # ── 2) opening_situation: synthesize in-medias-res opening pressure ──
+        if not _non_empty_string(getattr(chapter, "opening_situation", None), ""):
+            first_scene = scenes[0] if scenes else None
+            first_purpose = getattr(first_scene, "purpose", None) if first_scene is not None else None
+            story = (
+                _non_empty_string(first_purpose.get("story"), "")
+                if isinstance(first_purpose, Mapping)
+                else ""
+            )
+            conflict_clause = _outline_first_clauses(main_conflict, 1)
+            seed = _first_non_empty_text(story, chapter_goal, conflict_clause, default="")
+            pressure = _first_non_empty_text(conflict_clause, hook_description, default="")
+            if seed:
+                if is_en:
+                    opening = f"In medias res: {seed}"
+                    if pressure and pressure != seed:
+                        opening += f"; immediate pressure — {pressure}"
+                else:
+                    opening = f"开章即事中：{seed}"
+                    if pressure and pressure != seed:
+                        opening += f"；当场压力——{pressure}"
+                chapter.opening_situation = opening
+                repaired += 1
+
+        # ── 3) causal_contract: map missing axes from chapter fields ──
+        existing = getattr(chapter, "causal_contract", None)
+        filled = dict(existing) if isinstance(existing, Mapping) else {}
+        last_scene = scenes[-1] if scenes else None
+        last_scene_text = (
+            _outline_scene_match_text(last_scene) if last_scene is not None else ""
+        )
+        exit_text = (
+            _outline_state_dict_text(getattr(last_scene, "exit_state", None))
+            if last_scene is not None
+            else ""
+        )
+        key_reveals = "；".join(_string_list(getattr(chapter, "key_reveals", None)))
+        volume_label = getattr(chapter, "volume_number", None) or "?"
+        derived = {
+            "pressure": _first_non_empty_text(
+                getattr(chapter, "opening_pressure", None),
+                _outline_first_clauses(main_conflict, 1),
+                default="",
+            ),
+            "resistance": _first_non_empty_text(
+                _outline_first_clauses(main_conflict, 2),
+                main_conflict,
+                default="",
+            ),
+            "protagonist_desire": _non_empty_string(chapter_goal, ""),
+            "protagonist_choice": _non_empty_string(chapter_goal, ""),
+            "visible_action_or_reaction": _first_non_empty_text(
+                last_scene_text, chapter_goal, default=""
+            ),
+            "state_change": _first_non_empty_text(exit_text, hook_description, default=""),
+            "gain_or_reveal": _first_non_empty_text(key_reveals, hook_description, default=""),
+            "cost_or_tradeoff": _outline_first_clauses(main_conflict, 1),
+            "chapter_function": _first_non_empty_text(
+                getattr(chapter, "chapter_event_role", None),
+                default=(
+                    f"Advance volume {volume_label} main line"
+                    if is_en
+                    else f"推进第{volume_label}卷主线"
+                ),
+            ),
+            "next_reader_desire": _first_non_empty_text(
+                hook_description,
+                getattr(chapter, "tail_hook", None),
+                default="",
+            ),
+        }
+        added = 0
+        for key, value in derived.items():
+            if filled.get(key):
+                continue
+            text = _non_empty_string(value, "")
+            if text:
+                filled[key] = text[:_OUTLINE_CONTRACT_VALUE_MAX_CHARS]
+                added += 1
+        if added:
+            chapter.causal_contract = filled
+            repaired += 1
+
+    return repaired
+
+
+def _require_outline_systemic_fields_or_raise(batch: Any, *, logical_name: str) -> None:
+    """Hard-require systemically-missing fields at batch validation time.
+
+    Runs AFTER :func:`_enrich_generated_volume_outline_systemic_fields`, so it
+    only fires when even the deterministic backfill could not derive a value —
+    exactly the cases the downstream hard gates (chapter_causality_contract,
+    commercial_planning_readiness golden-three checks) would otherwise kill the
+    book on hundreds of steps later. The semicolon-separated message chunks are
+    consumed by :func:`_outline_repair_directives_from_error` to build targeted
+    regeneration directives.
+    """
+
+    missing_opening: list[Any] = []
+    missing_causal: list[Any] = []
+    golden_solo: list[Any] = []
+    for chapter in getattr(batch, "chapters", []) or []:
+        number = getattr(chapter, "chapter_number", None)
+        if not _non_empty_string(getattr(chapter, "opening_situation", None), ""):
+            missing_opening.append(number)
+        contract = getattr(chapter, "causal_contract", None)
+        if not (isinstance(contract, Mapping) and any(bool(value) for value in contract.values())):
+            missing_causal.append(number)
+        if isinstance(number, int) and 1 <= number <= 3:
+            # Reuse the downstream golden-three solo-chain judgment verbatim
+            # (production-acceptance contract: only hard-fail here what the
+            # commercial readiness gate would hard-fail later anyway).
+            try:
+                from bestseller.services.commercial_planning_readiness import (
+                    _chapter_is_solo_chain,
+                    chapter_plan_probe_from_mapping,
+                )
+
+                probe = chapter_plan_probe_from_mapping(
+                    chapter.model_dump(mode="json", by_alias=True)
+                )
+                if _chapter_is_solo_chain(probe):
+                    golden_solo.append(number)
+            except Exception:
+                logger.debug(
+                    "Golden-three solo-chain probe failed during outline validation",
+                    exc_info=True,
+                )
+
+    problems: list[str] = []
+    if missing_opening:
+        problems.append(
+            f"chapters {missing_opening} missing opening_situation — every chapter must open "
+            "in medias res with the concrete pressure the protagonist is already facing"
+        )
+    if missing_causal:
+        problems.append(
+            f"chapters {missing_causal} missing causal_contract — every chapter must include "
+            "the reader-visible causal axes (pressure, protagonist_choice, resistance, "
+            "cost_or_tradeoff, gain_or_reveal, state_change, next_reader_desire)"
+        )
+    if golden_solo:
+        problems.append(
+            f"golden-three chapters {golden_solo} contain only protagonist-solo scenes — "
+            "at least one scene per chapter must list a second named cast participant "
+            "(opponent, ally, or pressure source) in participants"
+        )
+    if problems:
+        raise PlannerFallbackError(
+            f"Planner artifact '{logical_name}' systemic-field contract failed: "
+            + "; ".join(problems)
+        )
+
+
 def _outline_find_chapter_scene(
     batch: Any,
     *,
@@ -2002,6 +2285,23 @@ def _validate_generated_volume_outline_or_raise(
     )
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
     _cast_protagonist = _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
+    # Systemic enrichment runs BEFORE the identity-lock repair: a scene whose
+    # ad-hoc participants get stripped down to the protagonist there was not
+    # planned as a solo scene, so text-match backfill must only target scenes
+    # the model itself left under-populated.
+    enrich_count = _enrich_generated_volume_outline_systemic_fields(
+        batch,
+        identity_manifest=identity_manifest,
+        language=_planner_language(project),
+    )
+    if enrich_count:
+        logger.info(
+            "Backfilled %d systemic outline field(s) (opening_situation/participants/"
+            "causal_contract) before validating %s for project '%s'.",
+            enrich_count,
+            logical_name,
+            project.slug,
+        )
     repair_count = _repair_generated_volume_outline_contract_inputs(
         batch,
         identity_manifest=identity_manifest,
@@ -2049,6 +2349,7 @@ def _validate_generated_volume_outline_or_raise(
                 artifact=f"{logical_name}/chapter_plan_contract",
             )
         )
+    _require_outline_systemic_fields_or_raise(batch, logical_name=logical_name)
     return batch.model_dump(mode="json", by_alias=True)
 
 
@@ -2069,6 +2370,25 @@ def _outline_repair_directives_from_error(
     """
 
     is_en = is_english_language(language)
+
+    # Retry runs historically fixed the named problem but dropped fields the
+    # previous attempt already got right (causal_contract vanishing on retry
+    # batches was a systemic production failure). Every repair prompt therefore
+    # carries an explicit keep-what-passed directive.
+    preserve_directive = (
+        (
+            "Carry over every field that already passed in the previous version: "
+            "keep opening_situation, causal_contract, scene participants, "
+            "methodology_contract, and all scene cards intact for everything not "
+            "named above. Never drop or blank a previously-valid field while repairing."
+        )
+        if is_en
+        else (
+            "修复时必须保留上一版已通过的全部字段：未被点名的章节及其 opening_situation、"
+            "causal_contract、scene participants、methodology_contract、场景卡必须原样保留，"
+            "不得因为修复其他问题而丢弃或留空。"
+        )
+    )
 
     # ── Title-collision branch ──────────────────────────────────────
     # Surfaced from `_normalize_generated_outline_titles_or_fail` when
@@ -2128,6 +2448,7 @@ def _outline_repair_directives_from_error(
             )
         else:
             directives.append("其他章节保持不变。仅按上述指令重写指定章节的 title，不要重写整卷。")
+        directives.append(preserve_directive)
         return directives
 
     message = str(error).strip()
@@ -2233,6 +2554,7 @@ def _outline_repair_directives_from_error(
             if is_en
             else "从头重写受影响卷章纲，必须全部落到具体事件。"
         )
+    directives.append(preserve_directive)
     return directives
 
 
@@ -13011,6 +13333,8 @@ def _volume_outline_prompts(
             f"Include batch_name and chapters. {scene_count_contract_en}"
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
             "Each chapter must include causal_contract with flexible reader-visible axes: chapter_function, pressure, protagonist_desire, protagonist_choice, visible_action_or_reaction, resistance, cost_or_tradeoff, gain_or_reveal, state_change, next_reader_desire. "
+            "Each chapter must include a non-empty `opening_situation`: the concrete in-scene pressure the protagonist is already facing as the chapter opens — no recap, no scenery warm-up. "
+            "Each scene's `participants` must name every on-page character from the cast list. A chapter must not consist solely of protagonist-only scenes: whenever the cast allows, give at least one scene a second named participant (opponent, ally, or pressure source). "
             "Each chapter must include chapter-level `methodology_contract`: conflict_stakes, conflict_buffs, hooks_to_resolve, hooks_to_plant, relationship_debts, pacing_mode, emotion_phase, is_climax, loop_position. "
             "Do not put scene camera/reveal/cut fields in chapter methodology_contract, and do not put story-level ability_origin_contract or recognition_anchors in chapters. "
             "Each scene must include scene-level `methodology_contract`: conflict_stakes, conflict_buffs, hook_type, spotlight_character, information_control_mode, camera_distance, reveal_mode, signature_image, cut_point, action_sequence, relationship_debts. "
@@ -13078,6 +13402,8 @@ def _volume_outline_prompts(
             f"包含 batch_name 和 chapters。{scene_count_contract_zh}"
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
             "每章必须包含 causal_contract：chapter_function、pressure、protagonist_desire、protagonist_choice、visible_action_or_reaction、resistance、cost_or_tradeoff、gain_or_reveal、state_change、next_reader_desire。"
+            "每章必须写明非空的 opening_situation：开章即事中，写清主角此刻正面对的现场压力，不得用回顾或氛围铺垫开场。"
+            "每个 scene 的 participants 必须列出全部在场具名人物（从 CastSpec 名单中选取）；整章不得全是主角单人场景——只要卡司允许，至少一个场景要有第二个具名在场者（对手、盟友或施压方）。"
             "每章必须包含章节级 `methodology_contract`：conflict_stakes、conflict_buffs、hooks_to_resolve、hooks_to_plant、relationship_debts、pacing_mode、emotion_phase、is_climax、loop_position。"
             "章节级 methodology_contract 不得放镜头、揭示、断点等场景字段，也不得放 ability_origin_contract、recognition_anchors 等故事级字段。"
             "每个 scene 必须包含场景级 `methodology_contract`：conflict_stakes、conflict_buffs、hook_type、spotlight_character、information_control_mode、camera_distance、reveal_mode、signature_image、cut_point、action_sequence、relationship_debts。"

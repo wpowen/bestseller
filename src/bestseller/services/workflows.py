@@ -1889,6 +1889,37 @@ async def materialize_chapter_outline_batch(
     current_step_name = "validate_outline_batch"
     causality_results_by_chapter: dict[int, ChapterCausalityResult] = {}
 
+    # ── Deterministic field enrichment (P0-2) ──────────────────────────────
+    # The batch planner systematically omits opening_situation, non-solo scene
+    # participants and (sometimes) whole-batch causal contracts, which are hard
+    # requirements of the gates below. Derive them from planner-provided
+    # content before validating, so missing-field disease never hard-blocks a
+    # book at gates two layers away from the producer.
+    from bestseller.services.outline_field_enrichment import enrich_outline_batch_fields
+
+    _identity_entries = _project_identity_manifest(project)
+    _identity_names = [str(e.get("name") or "") for e in _identity_entries]
+    _protagonist_name = next(
+        (
+            str(e.get("name") or "")
+            for e in _identity_entries
+            if str(e.get("role") or "").lower() == "protagonist"
+        ),
+        "",
+    )
+    _batch_content = batch.model_dump(mode="json")
+    _batch_content, _enrich_stats = enrich_outline_batch_fields(
+        _batch_content,
+        _identity_names,
+        protagonist=_protagonist_name,
+    )
+    if _enrich_stats.get("total"):
+        batch = ChapterOutlineBatchInput.model_validate(_batch_content)
+        workflow_run.metadata_json = {
+            **(workflow_run.metadata_json or {}),
+            "outline_field_enrichment": _enrich_stats,
+        }
+
     try:
         methodology_contract_mode = resolve_methodology_contract_mode(
             project,

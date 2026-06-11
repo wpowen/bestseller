@@ -24,7 +24,7 @@ that miss the threshold. Pipeline integration is opt-in via
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import logging
 import re
@@ -239,8 +239,15 @@ def extract_hook_tokens(
     text: str,
     *,
     max_tokens: int = 20,
+    extra_domain_tokens: Sequence[str] = (),
 ) -> list[str]:
-    """Extract hook-signal tokens from a chapter."""
+    """Extract hook-signal tokens from a chapter.
+
+    ``extra_domain_tokens`` carries BOOK-derived hook vocabulary (e.g. the
+    book's imagery-system anchor phrases). Domain tokens are book content,
+    not framework content — callers on the production side and the
+    validation side must pass the same list so coverage stays consistent.
+    """
 
     if not text:
         return []
@@ -255,6 +262,13 @@ def extract_hook_tokens(
         seen.add(token)
         tokens.append(token)
 
+    # Book-derived domain objects/motifs are often the actual commercial
+    # hook — scan them first (highest signal).
+    for token in extra_domain_tokens:
+        token = str(token or "").strip()
+        if token and token in text:
+            _add(token)
+
     # Suspense words (high signal)
     for word in _SUSPENSE_TOKENS:
         if word in text:
@@ -266,8 +280,9 @@ def extract_hook_tokens(
         if phrase in tail:
             _add(phrase)
 
-    # Domain-specific objects/actions are often the actual commercial hook.
-    # They may be echoed semantically rather than with the exact same noun.
+    # Legacy static domain tokens (kept for existing books whose plans and
+    # prior chapters were produced with them; never extended — new domain
+    # vocabulary must come from the book via ``extra_domain_tokens``).
     for token in _DOMAIN_HOOK_TOKENS:
         if token in text:
             _add(token)
@@ -352,6 +367,7 @@ def check_hook_echo(
     min_coverage: float = 0.5,
     target_coverage: float = 0.65,
     early_chapter_threshold: int = 10,
+    extra_domain_tokens: Sequence[str] = (),
 ) -> HookEchoReport:
     """Score a chapter's hook continuity vs the previous chapter.
 
@@ -383,7 +399,9 @@ def check_hook_echo(
             ),
         )
 
-    prev_tokens = extract_hook_tokens(prev_chapter_text)
+    prev_tokens = extract_hook_tokens(
+        prev_chapter_text, extra_domain_tokens=extra_domain_tokens
+    )
     if not prev_tokens:
         return HookEchoReport(
             chapter_position=current_chapter_position,

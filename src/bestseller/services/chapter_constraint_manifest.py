@@ -652,6 +652,34 @@ def render_prewrite_plan_prompt(
     chapter_number: int | None = None,
 ) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    time_budget_rule_zh = ""
+    time_budget_rule_en = ""
+    tb_contract = manifest.time_budget_contract
+    if tb_contract is not None and tb_contract.forbid_untracked_travel:
+        if tb_contract.allowed_elapsed_events:
+            allowed = "、".join(tb_contract.allowed_elapsed_events)
+            time_budget_rule_zh = (
+                "【时间预算硬规则】time_budget_plan 中如出现任何赶路/通勤/耗时事件，"
+                f"必须逐字引用以下已登记事件之一：{allowed}。"
+                "未登记的旅行或时间跨度一律不要写进计划。\n"
+            )
+            allowed_en = ", ".join(tb_contract.allowed_elapsed_events)
+            time_budget_rule_en = (
+                "[TIME BUDGET HARD RULE] If time_budget_plan mentions any "
+                "travel/commute/elapsed-time event, it must reference one of "
+                f"these registered events verbatim: {allowed_en}. Do not plan "
+                "unregistered travel or time spans.\n"
+            )
+        else:
+            time_budget_rule_zh = (
+                "【时间预算硬规则】本场景没有已登记的耗时事件：time_budget_plan 中"
+                "不要出现赶路/通勤/耗时类描述（如骑车、开车、车程、路上、赶路）。\n"
+            )
+            time_budget_rule_en = (
+                "[TIME BUDGET HARD RULE] No elapsed-time events are registered "
+                "for this scene: do not mention travel/commute/elapsed-time "
+                "wording in time_budget_plan.\n"
+            )
     methodology_lines: list[str] = []
 
     density_rule = get_fragment(pack, phase="prewrite", fragment_key="information_density")
@@ -687,6 +715,7 @@ def render_prewrite_plan_prompt(
             "所有选择必须来自约束白名单; 如某项无白名单, 保持空数组/空对象。"
             "动机、主角作用、失败代价必须照抄合同值; "
             "时间消耗和身体/物件状态必须先登记再写正文。\n"
+            f"{time_budget_rule_zh}"
             f"约束清单：\n```json\n{payload}\n```{methodology_section}"
         )
     methodology_section = (
@@ -707,6 +736,7 @@ def render_prewrite_plan_prompt(
         "Type requirements: time_budget_plan, body_object_state_plan, and "
         "target_state_end must be JSON objects; ending_hook_type and "
         "ending_hook_target must be strings; plural fields must be arrays of strings.\n"
+        f"{time_budget_rule_en}"
         f"Manifest:\n```json\n{payload}\n```{methodology_section}"
     )
 
@@ -916,15 +946,21 @@ def _validate_time_budget_contract(
     if not budget:
         violations.append("plan omitted time_budget_plan")
         return
-    if contract.forbid_untracked_travel:
+    # With an empty whitelist the travel check is unsatisfiable (any travel
+    # mention auto-fails), so only enforce it when upstream actually
+    # registered allowed elapsed events for this scene.
+    if contract.forbid_untracked_travel and contract.allowed_elapsed_events:
         raw = json.dumps(budget, ensure_ascii=False)
         if _mentions_travel(raw) and not _budget_mentions_allowed_event(
             budget,
             contract.allowed_elapsed_events,
         ):
+            allowed = "、".join(contract.allowed_elapsed_events)
             violations.append(
                 "time_budget_plan includes travel or elapsed time not registered "
-                "in allowed_elapsed_events"
+                f"in allowed_elapsed_events; allowed events are: {allowed}. "
+                "Either reference one of these registered events verbatim or "
+                "remove the travel/elapsed-time wording from time_budget_plan"
             )
 
 

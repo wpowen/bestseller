@@ -134,6 +134,48 @@ def test_build_book_listing_profile_generates_required_fallbacks() -> None:
     assert profile["compliance"]["blocker_count"] == 0
 
 
+def test_build_book_listing_profile_falls_back_from_mismatched_logline() -> None:
+    project = SimpleNamespace(
+        slug="bureaucratic-cultivation-regression",
+        title="临聘仙官从工单考编开始",
+        genre="都市修仙·职业升级流",
+        sub_genre="修仙2.0·现实主义重写传统修仙·职业制度升级",
+        audience="男频",
+        status="writing",
+        language="zh-CN",
+        target_chapters=500,
+        metadata_json={
+            "logline": (
+                "想接近真凶？可以，但请你先答应——越接近真凶，"
+                "越发现自己只是嵌套剧本里的演员；揭谜必须先承认自己也在被写。"
+            ),
+            "premise": (
+                "灵气复苏第七年，沈砚是海城灵务署最底层的临聘巡检员，"
+                "靠岗位权限、公务工单和考编资格在修仙公共系统里升级。"
+            ),
+            "synopsis": (
+                "沈砚签下别人不敢接的灵务署高危工单，用最低岗位权限撬开审批黑箱，"
+                "一边保住妹妹灵石配额，一边把临聘身份考成正式编制。"
+            ),
+        },
+    )
+
+    profile = build_book_listing_profile(
+        project=project,
+        writing_profile={"market": {"platform_target": "番茄小说"}},
+        story_bible=None,
+    )
+
+    assert "真凶" not in profile["logline"]
+    assert "第四面墙" not in profile["logline"]
+    assert "灵务署" in profile["logline"]
+    assert "岗位权限" in profile["logline"] or "公务工单" in profile["logline"]
+    assert len(profile["reader_promise"]) >= 2
+    assert len(profile["selling_points"]) >= 2
+    assert len(profile["target_audiences"]) >= 1
+    assert len(profile["tags"]) >= 5
+
+
 def test_build_book_listing_profile_uses_concept_lab_listing_seed() -> None:
     bundle = build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
     project = SimpleNamespace(

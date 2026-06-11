@@ -450,3 +450,70 @@ def test_story_grounded_platform_matrix_rejects_topic_or_broken_candidates() -> 
         assert candidate["title_evaluation"]["decision"] == "pass", (
             f"weak candidate survived: {title!r}"
         )
+
+
+def _bureaucratic_cultivation_profile() -> dict:
+    return {
+        "language": "zh-CN",
+        "primary_title": "临聘仙官从工单考编开始",
+        "primary_category": "都市修仙",
+        "secondary_category": "职业升级流",
+        "target_platform": "番茄小说",
+        "tags": ["灵务署", "考编", "岗位权限", "公务工单", "临聘巡检"],
+        "logline": "沈砚是灵务署临聘巡检员，靠岗位权限和公务工单在修仙公共系统里考编升级。",
+        "reader_promise": [
+            "读者追看沈砚用最低岗位权限签高危工单，当众打脸卡编制的人。",
+            "每个公务案件都兑现一次考编积分、灵石配额或岗位权限升级。",
+        ],
+        "main_characters": [{"name": "沈砚", "identity": "灵务署临聘巡检员"}],
+        "title_anchor_groups": {
+            "identity": ["沈砚", "灵务署", "临聘巡检"],
+            "action": ["签工单", "考编", "岗位权限"],
+            "object": ["公务工单", "灵石配额", "审批黑箱"],
+            "stakes": ["扣考编分", "妹妹配额", "转正资格"],
+        },
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_title", ["证道录", "只准证道，我偏要签证道"])
+def test_bureaucratic_cultivation_rejects_ungrounded_zhengdao_titles(
+    bad_title: str,
+) -> None:
+    result = evaluate_platform_title_candidate(
+        _bureaucratic_cultivation_profile(),
+        bad_title,
+        target_platform="番茄小说",
+    )
+
+    assert result["decision"] == "reject"
+    assert result["checks"]["story_transmission"]["passed"] is False
+
+
+@pytest.mark.unit
+def test_bureaucratic_cultivation_title_candidates_keep_story_anchors() -> None:
+    workflow = build_platform_title_workflow(
+        _bureaucratic_cultivation_profile(),
+        target_platform="番茄小说",
+    )
+
+    titles = [str(candidate.get("title") or "") for candidate in workflow["candidates"]]
+    approved_anchors = (
+        "灵务署",
+        "考编",
+        "临聘",
+        "工单",
+        "岗位权限",
+        "沈砚",
+        "审批黑箱",
+        "转正资格",
+        "扣考编分",
+        "妹妹配额",
+        "灵石配额",
+    )
+    assert titles
+    assert not any(title in {"证道录", "只准证道，我偏要签证道"} for title in titles)
+    assert all(
+        any(anchor in title for anchor in approved_anchors)
+        for title in titles[:10]
+    )

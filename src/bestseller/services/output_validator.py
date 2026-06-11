@@ -987,8 +987,9 @@ class NamingConsistencyCheck:
         prompt_feedback = (
             f"本章出现命名池外的人名：{sample_str}。"
             f"命名池（部分）：{allowed_preview}{' …' if len(allowed) > 20 else ''}。"
-            "请将这些角色替换为命名池中合适的名字，或者如果确实需要引入新角色，"
-            "请使用命名池中预留的候选名。不要临时杜撰新名字。"
+            "逐个处理：若该名字是池内角色的笔误/变体，改回池内原名；"
+            "若是你新发明的路人，删除名字、改用职务/身份/外貌称谓"
+            "（如「值班科员」「那名中年男人」）。不要临时杜撰新名字。"
         )
         return [
             Violation(

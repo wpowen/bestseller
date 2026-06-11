@@ -2554,7 +2554,9 @@ def _evaluate_title_candidate(
         "title_quality": quality_check,
     }
     failed = [key for key, item in checks.items() if not item["passed"]]
-    if not failed:
+    if any(item.get("hard_reject") for item in checks.values()):
+        decision = "reject"
+    elif not failed:
         decision = "pass"
     elif "title_quality" in failed and len(failed) >= 2:
         decision = "reject"
@@ -2636,6 +2638,16 @@ def _evaluate_story_transmission(
     signals: Mapping[str, str],
     profile: Mapping[str, Any],
 ) -> dict[str, Any]:
+    if _has_explicit_title_anchor_groups(profile) and not _passes_story_anchor_contract(
+        profile,
+        title,
+    ):
+        return {
+            "passed": False,
+            "score": 35,
+            "hard_reject": True,
+            "reason": "标题没有命中已批准的主角身份、核心动作、关键物件或风险锚点。",
+        }
     story_marks = {
         "解释",
         "误解",

@@ -172,4 +172,31 @@ async def ensure_book_imagery_system(
     return stored
 
 
-__all__ = ["ensure_book_imagery_system", "imagery_system_design_enabled"]
+def imagery_anchor_phrases(project: Any, *, max_phrases: int = 6) -> tuple[str, ...]:
+    """Book-derived concrete anchor phrases from the persisted imagery artifact.
+
+    These feed the signature-scene mandates (verbatim anchors) and the
+    hook-echo domain tokens — the genre-neutral replacement for the old
+    hardcoded archetype/domain vocabularies. Returns () when the book has
+    no designed imagery system yet.
+    """
+
+    artifact = _existing_artifact(project)
+    if not artifact:
+        return ()
+    phrases: list[str] = []
+    for image in artifact.get("images") or ():
+        if not isinstance(image, dict):
+            continue
+        for key in ("name", "carrier"):
+            value = str(image.get(key) or "").strip()
+            if value and len(value) >= 2 and value not in phrases:
+                phrases.append(value)
+    return tuple(phrases[:max_phrases])
+
+
+__all__ = [
+    "ensure_book_imagery_system",
+    "imagery_anchor_phrases",
+    "imagery_system_design_enabled",
+]

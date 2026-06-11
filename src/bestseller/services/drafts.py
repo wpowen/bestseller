@@ -84,7 +84,10 @@ from bestseller.services.methodology_overlay import (
     resolve_methodology_contract_mode,
 )
 from bestseller.services.methodology_profile import render_configured_methodology_profile_block
+from bestseller.services.acceptance_contract import render_scene_acceptance_block
+from bestseller.services.naming_normalizer import normalize_out_of_pool_names
 from bestseller.services.output_validator import (
+    NamingConsistencyCheck,
     OutputValidator,
     QualityReport,
     ValidationContext,
@@ -475,6 +478,44 @@ def scene_should_skip_auto_repair_reset(
             ),
         )
     return True
+
+
+# Chapter-level block codes that only a specific scene position can fix.
+# When EVERY repair target is positional, resetting the other scenes destroys
+# verified work for zero benefit — the 2026-06-11 run's ch9 (persona 0.80,
+# retention passed) was regenerated wholesale for SIGNATURE_IMAGE_MISSING +
+# ENDING_HOOK_MISSING and ended up machine-blocked.
+_FIRST_SCENE_REPAIR_CODES = frozenset(
+    {"HOOK_ECHO_MISSING", "HOOK_ECHO_LOW", "OPENING_PRESSURE_THIN"}
+)
+_LAST_SCENE_REPAIR_CODES = frozenset({"ENDING_HOOK_MISSING"})
+
+
+def select_scenes_for_auto_repair(
+    scenes: list[SceneCardModel],
+    block_codes: tuple[str, ...] | list[str],
+) -> list[SceneCardModel]:
+    """Pick the scenes an auto-repair pass should actually reset.
+
+    Positional codes (opening echo, opening pressure, ending hook) map to
+    the first/last scene; any non-positional code keeps the legacy
+    whole-chapter reset. Returns scenes in ascending scene order.
+    """
+
+    codes = {str(c) for c in block_codes if c}
+    if not scenes or not codes:
+        return list(scenes)
+    positional = _FIRST_SCENE_REPAIR_CODES | _LAST_SCENE_REPAIR_CODES
+    if codes - positional:
+        return list(scenes)
+    selected: list[SceneCardModel] = []
+    if codes & _FIRST_SCENE_REPAIR_CODES:
+        selected.append(scenes[0])
+    if codes & _LAST_SCENE_REPAIR_CODES and scenes[-1] is not (
+        selected[0] if selected else None
+    ):
+        selected.append(scenes[-1])
+    return selected or list(scenes)
 
 
 def _read_scene_last_pass_id(scene: SceneCardModel) -> int:
@@ -2156,6 +2197,44 @@ async def _build_scene_validator(
     return validator, ctx
 
 
+def _normalize_scene_naming_or_none(
+    text: str,
+    ctx: ValidationContext,
+) -> str | None:
+    """Attempt a deterministic rogue-name substitution for a scene draft.
+
+    Re-runs the same detection the naming gate uses (same allowlist, same
+    frequency floor) so the substitution set exactly mirrors what the gate
+    flagged, then delegates to ``normalize_out_of_pool_names``.
+    """
+
+    try:
+        allowed = NamingConsistencyCheck._collect_allowed(ctx)
+        if not allowed:
+            return None
+        language = ctx.invariants.language
+        if not language.lower().startswith("zh"):
+            return None
+        rogue = NamingConsistencyCheck._rogue_names_zh(text, allowed)
+        # Mirror the gate's frequency floor (default 2): one-off hits are
+        # usually spurious regex matches and are not part of the violation.
+        rogue = {name: count for name, count in rogue.items() if count >= 2}
+        if not rogue:
+            return None
+        result = normalize_out_of_pool_names(
+            text,
+            rogue_names=rogue,
+            allowed_names=allowed,
+            language=language,
+        )
+    except Exception:
+        logger.debug("naming normalization failed (non-fatal)", exc_info=True)
+        return None
+    if result is None or not result.changed:
+        return None
+    return result.text
+
+
 async def _regenerate_scene_until_valid(
     *,
     session: AsyncSession,
@@ -2192,6 +2271,32 @@ async def _regenerate_scene_until_valid(
     initial_report = validator.validate(initial_content, ctx)
     if not initial_report.blocks_write or scene_budget == 0:
         return initial_content, None, None, "initial", 0
+
+    # Deterministic naming repair BEFORE any LLM regen: out-of-pool names are
+    # text-substitutable (pool variant or generic referent), and the regen
+    # path historically burned 1-3 full-context writer calls per scene on
+    # exactly this violation without converging.
+    if any(v.code == "NAMING_OUT_OF_POOL" for v in initial_report.violations):
+        normalized_text = _normalize_scene_naming_or_none(initial_content, ctx)
+        if normalized_text is not None and normalized_text != initial_content:
+            normalized_report = validator.validate(normalized_text, ctx)
+            if not normalized_report.blocks_write:
+                logger.info(
+                    "scene %d.%d: NAMING_OUT_OF_POOL resolved by deterministic "
+                    "substitution; skipping LLM regen",
+                    chapter_number,
+                    scene_number,
+                )
+                return normalized_text, None, None, "naming_normalized", 0
+            if not any(
+                v.code == "NAMING_OUT_OF_POOL"
+                for v in normalized_report.violations
+            ):
+                # Naming cleared but other blockers remain — continue the
+                # regen loop from the normalized text so the LLM never has
+                # to re-fix names.
+                initial_content = normalized_text
+                initial_report = normalized_report
 
     last_model_name: str | None = None
     last_llm_run_id: UUID | None = None
@@ -3048,6 +3153,24 @@ def strip_scaffolding_echoes(content_md: str) -> str:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _bundle_hook_domain_tokens(project) -> tuple[str, ...]:
+    """Book-derived hook vocabulary for the quality bundle's hook-echo check.
+
+    Same source as the production-side injection (imagery anchors) so the
+    duty block and validation always extract the same token set. Fails to
+    () — the generic extraction layers carry the gate without it.
+    """
+
+    try:
+        from bestseller.services.imagery_system_design import (
+            imagery_anchor_phrases,
+        )
+
+        return imagery_anchor_phrases(project)
+    except Exception:
+        return ()
 
 # Shared prohibition block injected into all writer / editor system prompts.
 # Uses triple-quoted string to safely contain Chinese fullwidth quotes.
@@ -5584,6 +5707,11 @@ def build_scene_draft_prompts(
     #   (rendered from canon_guardrails). Prevents premature cast drift.
     hook_echo_block: str | None = None,
     exposition_density_block: str | None = None,
+    # acceptance_duty_block: chapter-level acceptance criteria decomposed to
+    #   THIS scene (first scene: opening echo with verbatim hook tokens;
+    #   last scene: ending hook with the audit's anchor terms). Rendered by
+    #   acceptance_contract.render_scene_acceptance_block.
+    acceptance_duty_block: str | None = None,
     scene_beat_block: str | None = None,
     canon_guardrails_block: str | None = None,
     # ── Story Integrity blocks (LLM-first whitelists) ──
@@ -5673,6 +5801,8 @@ def build_scene_draft_prompts(
             "# CONSTRAINTS · Hard (violation → rewrite)\n"
             "- Word count: 90%-120% of target. Below or above = rejected.\n"
             "- Character names: EXACT match to the Participants list. No renaming / abbreviation.\n"
+            "- No named extras: never invent new personal names outside the Participants list; "
+            "refer to unnamed walk-ons by role or appearance ('the duty clerk', 'the man at the gate').\n"
             "- Language: English only. Do not switch to Chinese.\n"
             "- Opening: do not repeat the same opening pattern (time / place / action / angle) used in the last 3 chapters.\n"
             "- No Markdown headings (# or ##). No code fences. No `entry_state` / `exit_state` / `contract` tags.\n"
@@ -5733,6 +5863,8 @@ def build_scene_draft_prompts(
             "# CONSTRAINTS · 硬约束（违反即重写，不可绕过）\n"
             "- 字数：CJK 汉字数须在目标的 90%-120% 之间。不足或超出均会被退回。\n"
             "- 角色名：与「参与者」列表完全一致，一字不差，禁止改名 / 别名 / 缩写。\n"
+            "- 路人不取名：参与者列表之外不得出现任何新人名；无名路人/群众一律用职务、"
+            "身份或外貌称谓（如「值班科员」「那名中年男人」「门口的保安」）。\n"
             "- 语言：仅输出中文，禁止切到英文。\n"
             "- 开场：禁止与前 3 章重复同一开场模式（时间 / 地点 / 动作 / 视角四维至少一维必须变）。\n"
             "- 输出格式：纯 Markdown 正文，不带 # 标题、不带 ``` 代码块、不带「以下是」「以上是」前后缀。\n"
@@ -5811,13 +5943,17 @@ def build_scene_draft_prompts(
     if _current_scene_contract:
         current_scene_contract_line = (
             "=== Current scene execution contract ===\n"
-            "These fields are hard prose obligations. The signature image and cut point "
-            "must appear visibly in this scene body.\n"
+            "These fields are hard prose obligations. Write the signature image "
+            "phrase into this scene body using its original wording (the gate "
+            "matches the phrase text — a loose paraphrase fails); the cut point "
+            "must also land visibly.\n"
             f"{_compact_json_block(_current_scene_contract, max_chars=1400)}\n\n"
             if is_en
             else (
                 "=== 当前场景执行合同（必须写入正文）===\n"
-                "以下字段是硬性正文义务：signature_image / 标志画面 与 cut_point / 断点必须在本场正文中可见落地。\n"
+                "以下字段是硬性正文义务：signature_image / 标志画面必须以【原词或基本原词】"
+                "写进本场正文（质检按短语文本匹配，意译/换词会判失败）；"
+                "cut_point / 断点必须在本场正文中可见落地。\n"
                 f"{_compact_json_block(_current_scene_contract, max_chars=1400)}\n\n"
             )
         )
@@ -6178,6 +6314,11 @@ def build_scene_draft_prompts(
     _hook_echo_line = ""
     if hook_echo_block:
         _hook_echo_line = f"{hook_echo_block}\n\n"
+    # Chapter acceptance duties decomposed to this scene — placed alongside
+    # the hook-echo block so the writer reads them as primary constraints.
+    _acceptance_duty_line = ""
+    if acceptance_duty_block:
+        _acceptance_duty_line = f"{acceptance_duty_block}\n\n"
     _exposition_density_line = ""
     if exposition_density_block:
         _exposition_density_line = f"{exposition_density_block}\n\n"
@@ -6362,6 +6503,7 @@ def build_scene_draft_prompts(
             "signature_scene_line": _signature_scene_line,
             "prior_persona_feedback_line": _prior_persona_feedback_line,
             "hook_echo_line": _hook_echo_line,
+            "acceptance_duty_line": _acceptance_duty_line,
             "exposition_density_line": _exposition_density_line,
             "scene_beat_line": _scene_beat_line,
             "canon_guardrails_line": _canon_guardrails_line,
@@ -6442,6 +6584,7 @@ def build_scene_draft_prompts(
     _signature_scene_line = _ctx["signature_scene_line"]
     _prior_persona_feedback_line = _ctx["prior_persona_feedback_line"]
     _hook_echo_line = _ctx["hook_echo_line"]
+    _acceptance_duty_line = _ctx["acceptance_duty_line"]
     _exposition_density_line = _ctx["exposition_density_line"]
     _scene_beat_line = _ctx["scene_beat_line"]
     _canon_guardrails_line = _ctx["canon_guardrails_line"]
@@ -6503,6 +6646,7 @@ def build_scene_draft_prompts(
             f"{_signature_scene_line}"
             f"{_canon_guardrails_line}"
             f"{_hook_echo_line}"
+            f"{_acceptance_duty_line}"
             f"{_exposition_density_line}"
             f"{_scene_beat_line}"
             f"{_prior_persona_feedback_line}"
@@ -6612,6 +6756,7 @@ def build_scene_draft_prompts(
             f"{_signature_scene_line}"
             f"{_canon_guardrails_line}"
             f"{_hook_echo_line}"
+            f"{_acceptance_duty_line}"
             f"{_exposition_density_line}"
             f"{_scene_beat_line}"
             f"{_prior_persona_feedback_line}"
@@ -7910,6 +8055,8 @@ async def _enrich_chapter_first_context(
                 output_base_dir=settings.output.base_dir,
                 mode_b=mode_b,
                 prev_chapter_text=prev_text,
+                # Same book-derived hook vocabulary as the validation side.
+                hook_domain_tokens=_bundle_hook_domain_tokens(project),
             )
             if orig_ctx.voice_dna is not None:
                 context_packet.voice_dna_block = (
@@ -8991,6 +9138,7 @@ async def generate_chapter_draft_once(
                 language=project.language,
                 target_chapter_words=effective_settings.generation.words_per_chapter.target,
                 commercial_strict=bool(effective_settings.pipeline.commercial_strict_quality_mode),
+                hook_domain_tokens=_bundle_hook_domain_tokens(project),
             ),
         )
         _stamp_chapter_quality_bundle(chapter, quality_bundle_report)
@@ -10035,6 +10183,18 @@ async def generate_scene_draft(
             hook_echo_block=(
                 context_packet.hook_echo_block if context_packet else None
             ),
+            acceptance_duty_block=render_scene_acceptance_block(
+                scene_number=int(scene.scene_number or 1),
+                total_scenes=(
+                    context_packet.chapter_scene_total if context_packet else None
+                ),
+                chapter_number=int(chapter.chapter_number or 1),
+                prev_hook_tokens=(
+                    context_packet.prev_hook_tokens if context_packet else None
+                ),
+                language=_project_language(project),
+            )
+            or None,
             exposition_density_block=(
                 context_packet.exposition_density_block if context_packet else None
             ),
@@ -10682,6 +10842,7 @@ async def assemble_chapter_draft(
                 language=project.language,
                 target_chapter_words=generation_target_words,
                 commercial_strict=commercial_strict,
+                hook_domain_tokens=_bundle_hook_domain_tokens(project),
             ),
         )
         _stamp_chapter_quality_bundle(chapter, quality_bundle_report)
@@ -11145,13 +11306,21 @@ async def maybe_prepare_chapter_auto_repair(
             "本章只抛钩子、几乎无兑现。重写时补一个当章闭环的小兑现（线索被证实/一次对抗分出胜负/一个秘密被揭开），再用新钩子收尾。"
         ),
         "PERSONA_ABANDON_RATE_HIGH": (
-            "模拟读者弃读率过高。重写时定位最可能弃读的段落（开篇拖沓、信息倾倒、缺冲突或兑现），改为更快进入冲突、把设定藏进动作、补足情绪与兑现，砍掉不推进的过场。"
+            "模拟读者弃读率过高。弃读集中在三类段落：开篇拖沓、连续解释/信息倾倒、无冲突过场。"
+            "重写动作：①前200字内必须出现可见冲突或异常；②任何连续超过3句的设定解释切碎进动作与对话；"
+            "③删掉不推进目标的过场段，把字数还给冲突与兑现。"
         ),
         "PERSONA_WEIGHTED_SCORE_LOW": (
-            "模拟读者综合读感分偏低。重写时同时提升节奏、冲突清晰度、情绪冲击与新鲜感：强化主角主动选择、增加具体感官画面、避免套路桥段与模板化措辞。"
+            "模拟读者综合读感分低于线。该分由钩子密度、兑现密度、情绪冲击三个可写作通道主导，逐项执行："
+            "①钩子：章末与每个转折点各留一个具体未解问题（具体人/物/威胁，禁抽象感叹），全章至少3处；"
+            "②兑现：全章至少4处把已立悬念落为可见结果（证据到手/对抗分出胜负/关系或代价坐实），写成现场动作；"
+            "③情绪：每个冲突高点必须有主角的具身反应（动作/生理细节，不用抽象情绪词）。"
         ),
         "PERSONA_PAYOFF_DENSITY_LOW": (
-            "模拟读者反馈兑现密度过低。重写时把至少一处悬念在本章内落地为可见结果（证据/对抗结果/关系变化/代价），并以现场动作呈现而非概述交代。"
+            "模拟读者反馈兑现密度过低（目标：全章至少4处可见兑现）。"
+            "重写动作：先列出本章已立的悬念/承诺，为其中至少4处补上当场结果——"
+            "证据被拿到、一次对抗分出胜负、一段关系或代价发生可见变化；"
+            "每处兑现都写成现场动作与结果，禁止用旁白预告或「日后自见分晓」式悬置。"
         ),
     }
 
@@ -11394,6 +11563,38 @@ async def maybe_prepare_chapter_auto_repair(
         length_payload = {}
 
     if metadata_codes:
+        if latest_block_codes:
+            # Blocker-drift guard: retention/audit codes are re-derived on
+            # every assembly (always fresh), but plain quality codes in
+            # metadata are only current when the LATEST report still lists
+            # them. Carrying stale quality codes made repair rounds chase
+            # already-resolved findings instead of converging.
+            try:
+                from bestseller.services.retention_safety_gate import (
+                    AUTO_REPAIR_RETENTION_CODES as _fresh_retention_codes,
+                    RETENTION_AUDIT_SOFT_CODES as _fresh_audit_codes,
+                )
+
+                _always_fresh = set(_fresh_retention_codes) | set(_fresh_audit_codes)
+            except Exception:
+                _always_fresh = set()
+            _latest_set = set(latest_block_codes)
+            _stale = [
+                c
+                for c in metadata_codes
+                if c not in _always_fresh and c not in _latest_set
+            ]
+            if _stale:
+                logger.info(
+                    "chapter %d: dropping %d stale repair code(s) no longer in "
+                    "latest quality report: %s",
+                    chapter.chapter_number,
+                    len(_stale),
+                    _stale,
+                )
+            metadata_codes = tuple(
+                c for c in metadata_codes if c not in set(_stale)
+            )
         combined_codes = tuple(dict.fromkeys((*metadata_codes, *latest_block_codes)))
         combined_codes = _drop_conflicting_length_repair_codes(
             combined_codes,
@@ -11431,8 +11632,18 @@ async def maybe_prepare_chapter_auto_repair(
                     .order_by(SceneCardModel.scene_number.asc())
                 )
             )
+            scenes_to_reset = select_scenes_for_auto_repair(scenes, repairable_hit)
+            if len(scenes_to_reset) < len(scenes):
+                logger.info(
+                    "chapter %d: positional repair codes %s — resetting %d/%d "
+                    "scene(s), preserving the rest",
+                    chapter.chapter_number,
+                    list(repairable_hit),
+                    len(scenes_to_reset),
+                    len(scenes),
+                )
             reset_draft_count = 0
-            for sc in scenes:
+            for sc in scenes_to_reset:
                 # WS-C3: per-scene auto-repair hard cap (metadata-code path).
                 # See the matching comment in the write-safety path above.
                 if scene_should_skip_auto_repair_reset(sc, block_codes=repairable_hit):
@@ -11476,7 +11687,7 @@ async def maybe_prepare_chapter_auto_repair(
             logger.info(
                 "chapter %d: metadata auto-repair reset %d scenes and %d current drafts",
                 chapter.chapter_number,
-                len(scenes),
+                len(scenes_to_reset),
                 reset_draft_count,
             )
             return True, repairable_hit
@@ -11840,7 +12051,17 @@ async def maybe_prepare_chapter_auto_repair(
     )
     reset_count = 0
     reset_draft_count = 0
-    for sc in scenes:
+    _scenes_to_reset = select_scenes_for_auto_repair(scenes, repairable_hit)
+    if len(_scenes_to_reset) < len(scenes):
+        logger.info(
+            "chapter %d: positional repair codes %s — resetting %d/%d scene(s), "
+            "preserving the rest",
+            chapter.chapter_number,
+            list(repairable_hit),
+            len(_scenes_to_reset),
+            len(scenes),
+        )
+    for sc in _scenes_to_reset:
         # WS-C3: per-scene auto-repair hard cap (length-stability path).
         # Identical contract to the other two reset sites in
         # ``maybe_prepare_chapter_auto_repair``; documented in one place

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import csv
 from collections import Counter
+import csv
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from bestseller.services.concept_lab import concept_lab_listing_overrides
@@ -76,6 +77,160 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, list | tuple | set):
         return _dedupe_strings(list(value))
     return []
+
+
+def _logline_mismatches_premise(
+    logline: str,
+    *,
+    premise: str,
+    title: str,
+    genre: str,
+    sub_genre: str,
+    tags: list[str],
+) -> bool:
+    if not logline or not premise:
+        return False
+    from bestseller.services.hook_strength_gate import premise_anchor_groups
+
+    groups = premise_anchor_groups(
+        {
+            "premise": premise,
+            "title": title,
+            "genre": genre,
+            "sub_genre": sub_genre,
+            "tags": tags,
+        }
+    )
+    concrete_groups = {
+        key: values
+        for key, values in groups.items()
+        if key != "genre" and any(len(value) >= 2 for value in values)
+    }
+    if len(concrete_groups) < 2:
+        return False
+    matched_group_count = sum(
+        1
+        for values in concrete_groups.values()
+        if any(value and value in logline for value in values)
+    )
+    return matched_group_count < 2
+
+
+def _fallback_selling_points(
+    *,
+    title: str,
+    logline: str,
+    tags: list[str],
+    primary_category: str,
+    is_en: bool,
+) -> list[str]:
+    if is_en:
+        core = tags[0] if tags else primary_category or "the core hook"
+        return _dedupe_strings(
+            [
+                f"Visible protagonist choices and payoffs around {core}.",
+                "Escalating chapter hooks with a clear cost after each win.",
+            ]
+        )
+    anchor_terms = [
+        token
+        for token in re.findall(r"[\u4e00-\u9fff]{2,6}", " ".join([title, logline, *tags]))
+        if token not in {"主角", "读者", "故事", "小说", "都市", "修仙", "升级"}
+    ]
+    core = next((token for token in anchor_terms if token), tags[0] if tags else primary_category)
+    return _dedupe_strings(
+        [
+            f"{core}开局有明确身份、压力和破局目标。",
+            "每轮胜利都带来可见回报、公开误解或下一轮代价。",
+        ]
+    )
+
+
+def _fallback_reader_promise(
+    *,
+    title: str,
+    logline: str,
+    selling_points: list[str],
+    primary_category: str,
+    is_en: bool,
+) -> list[str]:
+    if is_en:
+        return _dedupe_strings(
+            [
+                "Readers get immediate pressure, visible choices, and staged payoffs.",
+                "Each win raises the next cost instead of resetting the story.",
+            ]
+        )
+    subject = title or "主角"
+    payoff = selling_points[0] if selling_points else logline
+    return _dedupe_strings(
+        [
+            f"读者追看{subject}如何在{primary_category or '核心赛道'}里持续破局、当众翻盘。",
+            payoff or "每章都要给出新的压力、爽点兑现和追读理由。",
+        ]
+    )
+
+
+def _fallback_target_audiences(
+    *,
+    primary_category: str,
+    secondary_category: str,
+    tags: list[str],
+    is_en: bool,
+) -> list[str]:
+    if is_en:
+        return _dedupe_strings(
+            [
+                (
+                    "Readers who want fast serialized "
+                    f"{primary_category or 'commercial fiction'} hooks."
+                ),
+                "Readers who prefer visible protagonist progress and escalating stakes.",
+            ]
+        )
+    tag_text = "、".join(tags[:3]) if tags else secondary_category or primary_category
+    return _dedupe_strings(
+        [
+            f"喜欢{primary_category or '商业类型'}强冲突和快速爽点兑现的读者。",
+            f"偏好{tag_text}、身份逆袭和持续升级的连载读者。",
+        ]
+    )
+
+
+def _supplement_listing_tags(
+    tags: list[str],
+    *,
+    title: str,
+    premise: str,
+    logline: str,
+) -> list[str]:
+    if len(tags) >= 5:
+        return tags
+    preferred_markers = (
+        "灵务局",
+        "考编",
+        "岗位权限",
+        "公务工单",
+        "临聘巡检",
+        "审批黑箱",
+        "灵石配额",
+        "转正资格",
+        "强制复检",
+        "合规台账",
+        "死亡名单",
+        "双穿门",
+    )
+    supplements: list[str] = []
+    source = " ".join([title, premise, logline])
+    for marker in preferred_markers:
+        if marker in source:
+            supplements.append(marker)
+    for token in re.findall(r"[\u4e00-\u9fff]{2,6}", source):
+        if token not in {"主角", "读者", "故事", "小说", "一部", "都市", "修仙"}:
+            supplements.append(token)
+        if len(tags) + len(supplements) >= 8:
+            break
+    return _dedupe_strings([*tags, *supplements])[:8]
 
 
 def _character_dict(item: Any) -> dict[str, Any]:
@@ -806,11 +961,46 @@ def build_book_listing_profile(
         or (tags[0] if tags else "")
     )
     tags = _dedupe_strings([primary_category, secondary_category] + tags)
+    premise_text = _clean_text(metadata.get("premise"))
+    override_logline = _clean_text(overrides.get("logline"))
+    metadata_logline = _clean_text(metadata.get("logline"))
+    if (
+        override_logline
+        and premise_text
+        and _logline_mismatches_premise(
+            override_logline,
+            premise=premise_text,
+            title=project_title,
+            genre=_clean_text(_get_value(project, "genre")),
+            sub_genre=_clean_text(_get_value(project, "sub_genre")),
+            tags=tags,
+        )
+    ):
+        override_logline = ""
+    if (
+        metadata_logline
+        and premise_text
+        and _logline_mismatches_premise(
+            metadata_logline,
+            premise=premise_text,
+            title=project_title,
+            genre=_clean_text(_get_value(project, "genre")),
+            sub_genre=_clean_text(_get_value(project, "sub_genre")),
+            tags=tags,
+        )
+    ):
+        metadata_logline = ""
     logline = (
-        _clean_text(overrides.get("logline"))
-        or _clean_text(metadata.get("logline"))
-        or _clean_text(metadata.get("premise"))
+        override_logline
+        or metadata_logline
+        or premise_text
         or _clean_text(_get_nested(writing_profile, "market", "reader_promise"))
+    )
+    tags = _supplement_listing_tags(
+        tags,
+        title=project_title,
+        premise=premise_text,
+        logline=logline,
     )
     if is_en:
         short_intro = (
@@ -871,6 +1061,44 @@ def build_book_listing_profile(
             _string_list(_get_nested(writing_profile, "market", "selling_points"))
             + [_clean_text(_get_nested(writing_profile, "market", "reader_promise"))]
         )
+    selling_points = _string_list(overrides.get("selling_points"))
+    if not selling_points:
+        selling_points = _dedupe_strings(
+            _string_list(metadata.get("selling_points"))
+            + _string_list(_get_nested(writing_profile, "market", "selling_points"))
+        )
+    if not selling_points:
+        selling_points = _fallback_selling_points(
+            title=project_title,
+            logline=logline,
+            tags=tags,
+            primary_category=primary_category,
+            is_en=is_en,
+        )
+    if len(reader_promise) < 2:
+        reader_promise = _dedupe_strings(
+            reader_promise
+            + _fallback_reader_promise(
+                title=project_title,
+                logline=logline,
+                selling_points=selling_points,
+                primary_category=primary_category,
+                is_en=is_en,
+            )
+        )
+    target_audiences = _string_list(overrides.get("target_audiences"))
+    if not target_audiences:
+        target_audiences = _dedupe_strings(
+            _string_list(metadata.get("target_audiences"))
+            + _string_list(_get_nested(writing_profile, "market", "target_audiences"))
+        )
+    if not target_audiences:
+        target_audiences = _fallback_target_audiences(
+            primary_category=primary_category,
+            secondary_category=secondary_category,
+            tags=tags,
+            is_en=is_en,
+        )
 
     profile: dict[str, Any] = {
         "schema_version": LISTING_SCHEMA_VERSION,
@@ -907,6 +1135,8 @@ def build_book_listing_profile(
             else _derive_characters(story_bible, writing_profile, language=project_language)
         ),
         "reader_promise": reader_promise,
+        "selling_points": selling_points,
+        "target_audiences": target_audiences,
         "public_emotion_kernel": (
             dict(overrides.get("public_emotion_kernel"))
             if isinstance(overrides.get("public_emotion_kernel"), dict)

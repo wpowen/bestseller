@@ -49,7 +49,11 @@ _SENSORY_TERMS = frozenset(
     "冷 热 疼 痛 腥 臭 香 亮 暗 黑 白 红 青 紫 声 响 哑 颤 湿 干 黏 烫 冰 光 影 "
     "血 雾 风 雨 霉 锈".split()
 )
-_HOOK_TERMS = ("？", "?", "什么", "谁", "为什么", "不对", "忽然", "突然", "响起", "裂开", "倒计时")
+# Single source of truth lives in acceptance_contract so the last scene's
+# writer prompt quotes exactly the terms this audit scans for.
+from bestseller.services.acceptance_contract import (  # noqa: E402
+    ENDING_HOOK_ANCHOR_TERMS as _HOOK_TERMS,
+)
 
 
 def audit_chapter_prose(

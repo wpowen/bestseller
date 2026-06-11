@@ -16440,20 +16440,38 @@ async def _run_hook_strength_gate(
     report = evaluate_hook_strength_gate(
         hook_spec,
         min_h_norm=min_h_norm,
+        premise_context={
+            "premise": premise,
+            "title": getattr(project, "title", None),
+            "genre": getattr(project, "genre", None),
+            "sub_genre": getattr(project, "sub_genre", None),
+            "tags": metadata.get("tags"),
+        },
     )
     rewrite_attempted = False
     rewrite_applied = False
     if not report.passed:
         rewrite_attempted = True
         repaired = repair_hook_spec_once(hook_spec, report)
-        repaired_report = evaluate_hook_strength_gate(repaired, min_h_norm=min_h_norm)
+        repaired_report = evaluate_hook_strength_gate(
+            repaired,
+            min_h_norm=min_h_norm,
+            premise_context={
+                "premise": premise,
+                "title": getattr(project, "title", None),
+                "genre": getattr(project, "genre", None),
+                "sub_genre": getattr(project, "sub_genre", None),
+                "tags": metadata.get("tags"),
+            },
+        )
         if repaired_report.h_norm > report.h_norm:
             hook_spec = repaired
             report = repaired_report
             rewrite_applied = True
-    if report.score.verdict == "reject":
+    if report.verdict == "reject" or report.score.verdict == "reject":
         raise PlannerFallbackError(
-            f"Anti-commonsense hook rejected: H_norm {report.h_norm:.2f} < 15.00"
+            f"Anti-commonsense hook rejected: verdict={report.verdict}, "
+            f"H_norm={report.h_norm:.2f}"
         )
     payload = hook_strength_report_to_dict(report)
     payload["rewrite_attempted"] = rewrite_attempted
@@ -16945,7 +16963,17 @@ async def generate_novel_plan(
         if hook_spec is not None:
             from bestseller.services.hook_propagation import apply_hook_to_book_spec
 
-            book_spec_payload = apply_hook_to_book_spec(book_spec_payload, hook_spec)
+            book_spec_payload = apply_hook_to_book_spec(
+                book_spec_payload,
+                hook_spec,
+                premise_context={
+                    "premise": premise,
+                    "title": getattr(project, "title", None),
+                    "genre": getattr(project, "genre", None),
+                    "sub_genre": getattr(project, "sub_genre", None),
+                    "tags": _mapping(project.metadata_json or {}).get("tags"),
+                },
+            )
 
         # ── Narrative-lines gate: validate the four-layer macro contract
         # (明线/暗线/隐藏线/核心轴) is present in the BookSpec before
@@ -16985,7 +17013,17 @@ async def generate_novel_plan(
         if hook_spec is not None:
             from bestseller.services.hook_propagation import apply_hook_to_book_spec
 
-            book_spec_payload = apply_hook_to_book_spec(book_spec_payload, hook_spec)
+            book_spec_payload = apply_hook_to_book_spec(
+                book_spec_payload,
+                hook_spec,
+                premise_context={
+                    "premise": premise,
+                    "title": getattr(project, "title", None),
+                    "genre": getattr(project, "genre", None),
+                    "sub_genre": getattr(project, "sub_genre", None),
+                    "tags": _mapping(project.metadata_json or {}).get("tags"),
+                },
+            )
         book_spec_payload = _repair_protagonist_name_drift_for_planner(
             project,
             book_spec_payload,
@@ -18839,7 +18877,17 @@ async def generate_foundation_plan(
         if hook_spec is not None:
             from bestseller.services.hook_propagation import apply_hook_to_book_spec
 
-            book_spec_payload = apply_hook_to_book_spec(book_spec_payload, hook_spec)
+            book_spec_payload = apply_hook_to_book_spec(
+                book_spec_payload,
+                hook_spec,
+                premise_context={
+                    "premise": premise,
+                    "title": getattr(project, "title", None),
+                    "genre": getattr(project, "genre", None),
+                    "sub_genre": getattr(project, "sub_genre", None),
+                    "tags": _mapping(project.metadata_json or {}).get("tags"),
+                },
+            )
 
         book_artifact = await import_planning_artifact(
             session,

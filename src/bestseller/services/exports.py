@@ -39,6 +39,24 @@ from bestseller.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 
+def _bundle_hook_domain_tokens(project) -> tuple[str, ...]:
+    """Book-derived hook vocabulary for the quality bundle's hook-echo check.
+
+    Same source as the production-side injection (imagery anchors) so the
+    duty block and validation always extract the same token set. Fails to
+    () — the generic extraction layers carry the gate without it.
+    """
+
+    try:
+        from bestseller.services.imagery_system_design import (
+            imagery_anchor_phrases,
+        )
+
+        return imagery_anchor_phrases(project)
+    except Exception:
+        return ()
+
+
 
 def _ensure_chapter_heading(
     chapter: ChapterModel,
@@ -991,6 +1009,7 @@ def collect_publication_blockers(
                             language=language or "zh-CN",
                             target_chapter_words=int(_cfg.generation.words_per_chapter.target),
                             commercial_strict=True,
+                            hook_domain_tokens=_bundle_hook_domain_tokens(project),
                         ),
                     )
                     if quality_report.blocking_findings:

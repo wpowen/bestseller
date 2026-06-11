@@ -287,6 +287,17 @@ class SceneWriterContextPacket(BaseModel):
     hook_echo_block: str | None = None
     exposition_density_block: str | None = None
 
+    # ── Chapter acceptance contract (scene-duty decomposition) ──
+    # ``prev_hook_tokens`` is the raw token list extracted from the previous
+    # chapter's tail (structured counterpart of ``hook_echo_block``); the
+    # FIRST scene's duty block instructs verbatim reuse so the hook-echo
+    # gate's coverage check is satisfiable by construction.
+    # ``chapter_scene_total`` lets the writer prompt resolve last-scene
+    # duties (ending hook) — chapter-level requirements only the final
+    # scene can deliver.
+    prev_hook_tokens: list[str] | None = None
+    chapter_scene_total: int | None = None
+
     # ── Anti-slop prose beat sheet ──
     # Rendered by scene_beat_planner / scene_beat_renderer. It translates
     # abstract chapter and scene contracts into visible camera beats before

@@ -32,6 +32,10 @@ class ChapterQualityBundleContext:
     language: str = "zh-CN"
     target_chapter_words: int | None = None
     commercial_strict: bool = True
+    # Book-derived hook vocabulary (imagery anchors) — must match what the
+    # production side injected so hook-echo coverage is computed against the
+    # same token set.
+    hook_domain_tokens: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -347,6 +351,7 @@ def run_chapter_quality_bundle(
             prev_chapter_text=context.previous_chapter_text,
             prev_chapter_position=context.previous_chapter_position,
             total_chapters=context.total_chapters,
+            hook_domain_tokens=context.hook_domain_tokens,
             skip_signature=True,
             skip_cast_compliance=True,
             skip_timeline=True,

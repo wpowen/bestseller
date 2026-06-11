@@ -88,19 +88,32 @@ def render_hook_spec_prompt_block(
     return "\n".join(lines).strip()
 
 
-def apply_hook_to_book_spec(book_spec: dict[str, Any], spec: HookSpec | None) -> dict[str, Any]:
+def apply_hook_to_book_spec(
+    book_spec: dict[str, Any],
+    spec: HookSpec | None,
+    *,
+    premise_context: Mapping[str, Any] | str | None = None,
+) -> dict[str, Any]:
     if spec is None:
         return book_spec
+    aligned = True
+    if premise_context is not None:
+        from bestseller.services.hook_strength_gate import hook_premise_alignment
+
+        aligned, _, _ = hook_premise_alignment(spec, premise_context)
     result = dict(book_spec)
-    result["logline"] = spec.one_liner
-    result["unique_hook"] = spec.one_liner
+    if not result.get("logline") and aligned:
+        result["logline"] = spec.one_liner
+    if not result.get("unique_hook") and aligned:
+        result["unique_hook"] = spec.one_liner
     result["anti_commonsense_hook"] = spec.model_dump(mode="json")
     series_engine = result.get("series_engine")
     if not isinstance(series_engine, dict):
         series_engine = {}
     series_engine = dict(series_engine)
     series_engine.setdefault("core_serial_engine", spec.core_rule)
-    series_engine["reader_promise"] = spec.one_liner
+    if not series_engine.get("reader_promise") and aligned:
+        series_engine["reader_promise"] = spec.one_liner
     series_engine["first_three_chapter_hook"] = spec.core_rule
     spec_text = " ".join(
         [

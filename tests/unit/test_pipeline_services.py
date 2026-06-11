@@ -6641,6 +6641,34 @@ def test_commercial_planning_llm_judge_blocks_with_actionable_issues() -> None:
     )
 
 
+def test_commercial_planning_actionable_retention_codes_are_hard_blockers() -> None:
+    report = {
+        "passed": False,
+        "findings": [
+            {
+                "code": "GOLDEN_FINGER_NOT_VISIBLE_IN_GT3",
+                "severity": "medium",
+            }
+        ],
+    }
+
+    assert pipeline_services._commercial_planning_has_actionable_blockers(report) is True
+
+
+def test_commercial_planning_non_actionable_codes_remain_soft() -> None:
+    report = {
+        "passed": False,
+        "findings": [
+            {
+                "code": "long_serial_artifacts_missing",
+                "severity": "warning",
+            }
+        ],
+    }
+
+    assert pipeline_services._commercial_planning_has_actionable_blockers(report) is False
+
+
 def test_record_commercial_planning_readiness_repairs_only_weak_hype_assignment(
     tmp_path: Path,
 ) -> None:

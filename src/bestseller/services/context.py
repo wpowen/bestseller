@@ -4,7 +4,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any, Sequence
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import (
@@ -1687,6 +1687,15 @@ async def build_scene_writer_context_from_models(
                     )
                 )
 
+    # Scene-duty resolution input: the last scene of a chapter carries the
+    # ending-hook acceptance duty, so the writer prompt must know how many
+    # scenes this chapter has.
+    _chapter_scene_total = await session.scalar(
+        select(func.count())
+        .select_from(SceneCardModel)
+        .where(SceneCardModel.chapter_id == chapter.id)
+    )
+
     return SceneWriterContextPacket(
         project_id=project.id,
         project_slug=project.slug,
@@ -1694,6 +1703,7 @@ async def build_scene_writer_context_from_models(
         scene_id=scene.id,
         chapter_number=chapter.chapter_number,
         scene_number=scene.scene_number,
+        chapter_scene_total=int(_chapter_scene_total or 0) or None,
         query_text=query_text,
         story_bible=story_bible_context,
         recent_scene_summaries=recent_scene_summaries,

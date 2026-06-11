@@ -474,3 +474,92 @@ def test_prewrite_prompt_omits_density_rule_for_late_chapters() -> None:
     assert "写作方法论参考" in prompt
     assert "信息密度规则" not in prompt
     assert "弹簧法" in prompt
+
+
+def test_empty_elapsed_whitelist_does_not_auto_reject_travel() -> None:
+    """空白名单时 travel 检查不可满足，必须跳过而非恒拒绝（500章跑书 100% prewrite 失败根因）。"""
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=2,
+        scene_number=1,
+        participants=["陆沉"],
+        scene_metadata={
+            "time_budget_contract": {
+                "forbid_untracked_travel": True,
+            }
+        },
+        project_metadata={},
+    )
+    plan = PrewritePlan(
+        characters_to_use=["陆沉"],
+        time_budget_plan={"elapsed_events": ["骑车二十分钟去灵务局"]},
+    )
+
+    result = validate_prewrite_plan(plan, manifest)
+
+    assert not any("allowed_elapsed_events" in item for item in result.violations)
+
+
+def test_travel_violation_message_carries_whitelist() -> None:
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=1,
+        scene_number=1,
+        participants=["陆沉"],
+        scene_metadata={
+            "time_budget_contract": {
+                "allowed_elapsed_events": ["上楼查镜", "巡查记录归档"],
+                "forbid_untracked_travel": True,
+            }
+        },
+        project_metadata={},
+    )
+    plan = PrewritePlan(
+        characters_to_use=["陆沉"],
+        time_budget_plan={"elapsed_events": ["骑车二十分钟去旧事馆"]},
+    )
+
+    result = validate_prewrite_plan(plan, manifest)
+
+    travel_violations = [
+        item for item in result.violations if "allowed_elapsed_events" in item
+    ]
+    assert travel_violations
+    assert "上楼查镜" in travel_violations[0]
+    assert "巡查记录归档" in travel_violations[0]
+
+
+def test_prewrite_prompt_surfaces_elapsed_event_whitelist() -> None:
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=1,
+        scene_number=1,
+        participants=["陆沉"],
+        scene_metadata={
+            "time_budget_contract": {
+                "allowed_elapsed_events": ["上楼查镜"],
+                "forbid_untracked_travel": True,
+            }
+        },
+        project_metadata={},
+    )
+
+    prompt = render_prewrite_plan_prompt(manifest, language="zh-CN")
+
+    assert "时间预算硬规则" in prompt
+    assert "上楼查镜" in prompt
+
+
+def test_prewrite_prompt_warns_when_no_registered_elapsed_events() -> None:
+    manifest = compile_chapter_constraint_manifest(
+        chapter_number=1,
+        scene_number=1,
+        participants=["陆沉"],
+        scene_metadata={
+            "time_budget_contract": {
+                "forbid_untracked_travel": True,
+            }
+        },
+        project_metadata={},
+    )
+
+    prompt = render_prewrite_plan_prompt(manifest, language="zh-CN")
+
+    assert "没有已登记的耗时事件" in prompt

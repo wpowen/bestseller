@@ -32,7 +32,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from bestseller.domain.fanqie_market import FanqieMarketAnalysisBundle
 from bestseller.domain.market_constraint import ChapterMarketConstraints
@@ -121,6 +121,7 @@ def prepare_chapter_context(
     target_length: int | None = None,
     extra_safety_notes: list[str] | None = None,
     prev_chapter_text: str | None = None,
+    hook_domain_tokens: Sequence[str] = (),
 ) -> ChapterContext:
     """Load DNA, market bundle, signature plan, and prior feedback for one chapter.
 
@@ -194,6 +195,7 @@ def prepare_chapter_context(
                 current_chapter_text="",
                 current_chapter_position=chapter_position,
                 prev_chapter_position=chapter_position - 1,
+                extra_domain_tokens=hook_domain_tokens,
             )
             diagnostics["hook_echo"] = (
                 f"{len(hook_echo_report.finding.prev_hook_tokens)} prev hook tokens extracted"
@@ -309,6 +311,8 @@ def ensure_signature_plan(
     output_base_dir: str | Path = "output",
     mode_b: bool = False,
     cadence: int | None = None,
+    anchor_images: Sequence[str] | None = None,
+    anchor_lines: Sequence[str] | None = None,
 ) -> SignatureScenePlan | None:
     """Load the persisted signature plan, creating one when absent.
 
@@ -318,6 +322,11 @@ def ensure_signature_plan(
     mandates must stay stable across chapters of the same book.
     Returns ``None`` only when no plan exists and ``total_chapters`` is
     too small to plan for.
+
+    ``anchor_images`` / ``anchor_lines`` are book-derived verbatim anchor
+    phrases (typically from the book's imagery system) baked into the
+    mandates at creation time — the framework supplies no anchor content
+    of its own.
     """
 
     existing = _load_signature_plan(
@@ -330,6 +339,10 @@ def ensure_signature_plan(
     kwargs: dict[str, Any] = {"total_chapters": total_chapters}
     if cadence is not None and cadence >= 1:
         kwargs["cadence"] = cadence
+    if anchor_images:
+        kwargs["anchor_images"] = list(anchor_images)
+    if anchor_lines:
+        kwargs["anchor_lines"] = list(anchor_lines)
     plan = plan_signature_scenes(**kwargs)
     path = save_signature_plan(
         plan, slug, output_base_dir=output_base_dir, mode_b=mode_b

@@ -370,8 +370,21 @@ def build_invariants_section(invariants: ProjectInvariants) -> str:
         ),
     ]
     if invariants.naming_scheme and invariants.naming_scheme.seed_pool:
-        pool_preview = ", ".join(invariants.naming_scheme.seed_pool[:10])
-        bits.append(f"【命名池】{pool_preview}…")
+        # Full pool, not a preview: the naming gate validates every detected
+        # name against the complete pool, so the writer must see the same
+        # contract it will be judged by (truncating to 10 caused recurring
+        # NAMING_OUT_OF_POOL regens in long runs).
+        pool_names = [
+            name.strip()
+            for name in invariants.naming_scheme.seed_pool[:60]
+            if name and name.strip()
+        ]
+        bits.append(f"【命名池·硬约束】{', '.join(pool_names)}")
+        bits.append(
+            "【命名规则】有名字的角色只能用命名池内的名字；"
+            "池外一律不得自创人名。无名路人/群众用职务、身份或外貌称谓"
+            "（如「值班科员」「那名中年男人」），不要给他们取名。"
+        )
     return "【故事不变量】\n" + "\n".join(bits)
 
 

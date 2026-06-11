@@ -118,11 +118,32 @@ def test_plan_intensity_curve_rises() -> None:
     assert all(0 <= v <= 1 for v in intensities)
 
 
-def test_plan_image_hints_populated() -> None:
+def test_plan_without_book_anchors_has_no_framework_anchor_content() -> None:
+    """通用性硬约束：框架自身不得提供任何题材味锚词。
+
+    无书内锚词时 mandate 锚词必须为空（验收走语义判官），而不是回落到
+    硬编码的仙侠/探案字典（旧行为，对其他题材是不可达噪声）。
+    """
     plan = plan_signature_scenes(total_chapters=30, cadence=10)
     for mandate in plan.mandates:
-        assert mandate.must_include_image
-        assert mandate.must_include_line
+        assert mandate.must_include_image == []
+        assert mandate.must_include_line == []
+
+
+def test_plan_book_anchors_flow_into_every_mandate() -> None:
+    plan = plan_signature_scenes(
+        total_chapters=30,
+        cadence=10,
+        anchor_images=["灵务局工牌", "审批红章", "巡查记录仪", "多余的"],
+        anchor_lines=["编制不是天道，是人定的"],
+    )
+    for mandate in plan.mandates:
+        assert mandate.must_include_image == [
+            "灵务局工牌",
+            "审批红章",
+            "巡查记录仪",
+        ]
+        assert mandate.must_include_line == ["编制不是天道，是人定的"]
 
 
 def test_mandate_for_chapter_lookup() -> None:
@@ -239,3 +260,37 @@ def test_render_block_supports_english() -> None:
     block = render_signature_scene_block(mandate, language="en")
 
     assert "Signature Scene Mandate" in block
+
+
+def test_render_block_requires_verbatim_anchor_inclusion() -> None:
+    """指令与验收对齐：验收是 exact substring，指令必须要求原词/原句出现。
+
+    旧措辞「择一改写出现」教写手输出改写台词 → 验收 0 命中 →
+    SIGNATURE_SCENE_MISSING critical（500章跑书 10/10 失败成因之一）。
+    """
+    from bestseller.services.signature_scene_planner import (
+        plan_signature_scenes,
+        render_signature_scene_block,
+    )
+
+    plan = plan_signature_scenes(
+        total_chapters=20,
+        anchor_images=["灵务局工牌"],
+        anchor_lines=["编制不是天道"],
+    )
+    mandate = plan.mandate_for_chapter(1)
+    block = render_signature_scene_block(mandate)
+
+    assert "原词完整出现" in block
+    assert "原句完整出现" in block
+    assert "灵务局工牌" in block
+    assert "择一改写" not in block
+
+
+def test_render_block_without_anchors_gives_concept_guidance_only() -> None:
+    plan = plan_signature_scenes(total_chapters=20)
+    mandate = plan.mandate_for_chapter(1)
+    block = render_signature_scene_block(mandate)
+
+    assert "场景概念要求" in block
+    assert "原词完整出现" not in block  # 无锚词时不得提出原词验收要求

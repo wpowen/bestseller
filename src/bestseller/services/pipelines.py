@@ -204,6 +204,24 @@ from bestseller.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 
+def _bundle_hook_domain_tokens(project) -> tuple[str, ...]:
+    """Book-derived hook vocabulary for the quality bundle's hook-echo check.
+
+    Same source as the production-side injection (imagery anchors) so the
+    duty block and validation always extract the same token set. Fails to
+    () — the generic extraction layers carry the gate without it.
+    """
+
+    try:
+        from bestseller.services.imagery_system_design import (
+            imagery_anchor_phrases,
+        )
+
+        return imagery_anchor_phrases(project)
+    except Exception:
+        return ()
+
+
 WORKFLOW_TYPE_SCENE_PIPELINE = "scene_pipeline"
 
 
@@ -338,11 +356,24 @@ async def _evaluate_retention_safety_after_assembly(
     chapter.current_word_count = _actual_wc
     chapter_draft.word_count = _actual_wc
 
+    # Same book-derived hook vocabulary as the production side
+    # (prepare_chapter_context) so duty-block tokens and validation tokens
+    # never diverge.
+    try:
+        from bestseller.services.imagery_system_design import (
+            imagery_anchor_phrases as _imagery_anchor_phrases,
+        )
+
+        _hook_domain_tokens: tuple[str, ...] = _imagery_anchor_phrases(project)
+    except Exception:
+        _hook_domain_tokens = ()
+
     report = evaluate_retention_safety(
         chapter_position=chapter_number,
         chapter_text=_body,
         prev_chapter_text=prev_text,
         prev_chapter_position=chapter_number - 1 if chapter_number > 1 else None,
+        hook_domain_tokens=_hook_domain_tokens,
         total_chapters=int(getattr(project, "target_chapters", 0) or 500),
         guardrails=load_canon_guardrails_for_project(
             project,
@@ -506,6 +537,7 @@ async def _maybe_apply_deterministic_length_trim_before_export(
         language=str(getattr(project, "language", None) or "zh-CN"),
         target_chapter_words=target_words or None,
         commercial_strict=True,
+        hook_domain_tokens=_bundle_hook_domain_tokens(project),
     )
     report = run_chapter_quality_bundle(text, context)
     codes = tuple(finding.code for finding in report.blocking_findings)
@@ -621,6 +653,7 @@ async def _maybe_apply_deterministic_hook_echo_bridge_before_review(
         language=str(getattr(project, "language", None) or "zh-CN"),
         target_chapter_words=target_words or None,
         commercial_strict=True,
+        hook_domain_tokens=_bundle_hook_domain_tokens(project),
     )
     report = run_chapter_quality_bundle(text, context)
     codes = {finding.code for finding in report.blocking_findings}
@@ -2263,6 +2296,31 @@ def _commercial_planning_issue_codes_from_payload(
     return codes
 
 
+_ACTIONABLE_COMMERCIAL_PLANNING_BLOCK_CODES = {
+    "OPENING_LACKS_LIVE_PRESSURE",
+    "GOLDEN_FINGER_NOT_VISIBLE_IN_GT3",
+    "SUSPENDED_FULFILLMENT_NO_PAYOFF",
+    "missing_opening_situation",
+    "golden_three_external_pressure_missing",
+    "golden_three_solo_scene_chain",
+    "llm:GOLDEN_FINGER_NOT_VISIBLE_IN_GT3",
+    "llm:SUSPENDED_FULFILLMENT_NO_PAYOFF",
+}
+
+
+def _commercial_planning_has_actionable_blockers(
+    report_payload: Mapping[str, Any] | None,
+) -> bool:
+    codes = set(
+        _commercial_planning_issue_codes_from_payload(
+            report_payload,
+            key="findings",
+            critical_only=False,
+        )
+    )
+    return bool(codes & _ACTIONABLE_COMMERCIAL_PLANNING_BLOCK_CODES)
+
+
 def _commercial_planning_llm_judge_should_block(judge_result: Any) -> bool:
     if bool(getattr(judge_result, "passed", False)):
         return False
@@ -2367,6 +2425,29 @@ def _retention_gate_blocks_for_project(
     if isinstance(metadata, Mapping) and metadata.get("retention_safety_gate_warn_only") is True:
         return False
     return default
+
+
+def _block_codes_are_retention_only(codes: tuple[str, ...]) -> bool:
+    """True when every remaining block code is a reader-retention code.
+
+    Used by the post-repair soft fuse: structural/text-integrity codes
+    (splice contradictions, duplicate paragraphs, …) must keep hard-blocking,
+    but retention-quality codes the writer model has already failed to clear
+    across the full repair budget follow the soft retention gate instead of
+    dead-ending the book in machine repair.
+    """
+
+    if not codes:
+        return False
+    try:
+        from bestseller.services.retention_safety_gate import (
+            AUTO_REPAIR_RETENTION_CODES,
+            RETENTION_AUDIT_SOFT_CODES,
+        )
+    except Exception:
+        return False
+    retention_set = set(AUTO_REPAIR_RETENTION_CODES) | RETENTION_AUDIT_SOFT_CODES
+    return all(code in retention_set for code in codes)
 
 
 _WHOLE_BOOK_QUALITY_GATE_AUTO_WARN_ONLY_CODES = frozenset(
@@ -4946,10 +5027,31 @@ async def run_scene_pipeline(
                             exc_info=True,
                         )
                         _prev_text = None
+                    # Book-derived anchor tokens: designed once per book
+                    # from its own premise (imagery system). They feed BOTH
+                    # the signature-scene mandates and the hook-echo domain
+                    # vocabulary — the framework supplies no genre-flavored
+                    # anchor content of its own.
+                    _book_anchor_tokens: tuple[str, ...] = ()
+                    try:
+                        from bestseller.services.imagery_system_design import (
+                            ensure_book_imagery_system as _ensure_imagery,
+                            imagery_anchor_phrases as _imagery_anchors,
+                        )
+
+                        await _ensure_imagery(session, settings, project)
+                        _book_anchor_tokens = _imagery_anchors(project)
+                    except Exception:
+                        logger.debug(
+                            "imagery anchor derivation failed for ch%d "
+                            "(non-fatal)",
+                            chapter_number,
+                            exc_info=True,
+                        )
                     # Self-bootstrap the signature-scene plan: the CLI
                     # ``book bootstrap`` is the only other producer and
-                    # platform-run books never execute it. Deterministic,
-                    # never overwrites an existing plan on disk.
+                    # platform-run books never execute it. Never overwrites
+                    # an existing plan on disk.
                     if _orig_cfg.auto_signature_plan:
                         try:
                             _sig_total = int(
@@ -4967,6 +5069,7 @@ async def run_scene_pipeline(
                                     ),
                                     output_base_dir=settings.output.base_dir,
                                     mode_b=_orig_mode_b,
+                                    anchor_images=_book_anchor_tokens or None,
                                 )
                         except Exception:
                             logger.debug(
@@ -4981,6 +5084,7 @@ async def run_scene_pipeline(
                         output_base_dir=settings.output.base_dir,
                         mode_b=_orig_mode_b,
                         prev_chapter_text=_prev_text,
+                        hook_domain_tokens=_book_anchor_tokens,
                     )
                     if _orig_ctx.voice_dna is not None:
                         shared_context.voice_dna_block = (
@@ -5013,6 +5117,12 @@ async def run_scene_pipeline(
                         shared_context.hook_echo_block = (
                             _orig_ctx.hook_echo_block(language=_orig_lang) or None
                         )
+                        # Raw tokens for the first scene's opening-echo duty
+                        # (acceptance_contract.render_scene_acceptance_block).
+                        _prev_tokens = list(
+                            _orig_ctx.hook_echo_report.finding.prev_hook_tokens
+                        )
+                        shared_context.prev_hook_tokens = _prev_tokens or None
                     try:
                         shared_context.exposition_density_block = (
                             _render_exposition_block(
@@ -5440,13 +5550,59 @@ async def run_scene_pipeline(
                     validate_scene_text_identity,
                 )
                 _id_registry = await load_identity_registry(session, project.id)
+                _id_language = getattr(project, "language", None) or "zh-CN"
                 _id_violations = validate_scene_text_identity(
                     draft.content_md,
                     _id_registry,
-                    language=getattr(project, "language", None) or "zh-CN",
+                    language=_id_language,
                     participant_names=list(scene.participants or []),
                     chapter_number=chapter_number,
                 )
+                if _id_violations and _id_language.lower().startswith("zh") and any(
+                    v.violation_type == "pronoun_mismatch" for v in _id_violations
+                ):
+                    # Deterministic in-place pronoun swap before any rewrite:
+                    # pronoun_mismatch used to consume a whole auto-repair
+                    # round even though the fix is a one-character edit.
+                    from bestseller.services.identity_guard import (
+                        fix_zh_pronoun_mismatches,
+                    )
+                    _fixed_text, _fix_count = fix_zh_pronoun_mismatches(
+                        draft.content_md,
+                        _id_registry,
+                        participant_names=list(scene.participants or []),
+                    )
+                    if _fix_count > 0:
+                        _revalidated = validate_scene_text_identity(
+                            _fixed_text,
+                            _id_registry,
+                            language=_id_language,
+                            participant_names=list(scene.participants or []),
+                            chapter_number=chapter_number,
+                        )
+                        _old_pronoun = sum(
+                            1
+                            for v in _id_violations
+                            if v.violation_type == "pronoun_mismatch"
+                        )
+                        _new_pronoun = sum(
+                            1
+                            for v in _revalidated
+                            if v.violation_type == "pronoun_mismatch"
+                        )
+                        if _new_pronoun < _old_pronoun:
+                            logger.info(
+                                "ch%d sc%d: deterministically fixed %d pronoun "
+                                "mismatch(es) (%d→%d remaining)",
+                                chapter_number,
+                                scene_number,
+                                _fix_count,
+                                _old_pronoun,
+                                _new_pronoun,
+                            )
+                            draft.content_md = _fixed_text
+                            await session.flush()
+                            _id_violations = _revalidated
                 if _id_violations:
                     logger.warning(
                         "Identity violations in ch%d sc%d: %s",
@@ -7449,6 +7605,30 @@ async def run_chapter_pipeline(
                 output_path=None,
                 requires_human_review=True,
             )
+
+        if (
+            not retention_auto_repair_exhausted
+            and auto_repair_attempts > 0
+            and getattr(chapter, "production_state", None) == "blocked"
+        ):
+            # Soft-retention fuse. The legacy soft path required
+            # retention_retry_count > retention_max_retries (default 5), but
+            # the repair loop exits after chapter_auto_repair_max_attempts
+            # (default 3) — 3 < 6 made the soft branch unreachable and every
+            # retention-blocked chapter dead-ended in machine repair. When
+            # the exhausted repair budget leaves ONLY retention-class codes,
+            # route through the same soft acceptance the retention gate was
+            # designed for.
+            _remaining_codes = _current_auto_repair_block_codes(chapter)
+            if _block_codes_are_retention_only(_remaining_codes):
+                logger.warning(
+                    "Chapter %d: auto-repair budget exhausted with only "
+                    "retention codes remaining (%s); applying soft retention "
+                    "fuse instead of machine repair",
+                    chapter_number,
+                    list(_remaining_codes),
+                )
+                retention_auto_repair_exhausted = True
 
         if retention_auto_repair_exhausted and not _retention_gate_blocks_for_project(
             project, settings
@@ -9677,6 +9857,9 @@ async def run_project_pipeline(
                     **(workflow_run.metadata_json or {}),
                     "commercial_planning_readiness_report": commercial_gate_report,
                 }
+                deterministic_actionable_block = (
+                    _commercial_planning_has_actionable_blockers(commercial_gate_report)
+                )
 
                 # ── LLM judge path (default) ────────────────────────────────
                 # The deterministic gate is advisory; the LLM gives the final
@@ -9784,7 +9967,10 @@ async def run_project_pipeline(
                                     "overall_score": llm_judge_result.overall_score,
                                 },
                             )
-                        commercial_gate_passed = not llm_judge_should_block
+                        commercial_gate_passed = (
+                            not llm_judge_should_block
+                            and not deterministic_actionable_block
+                        )
                         # Persist LLM judge result alongside deterministic report
                         project.metadata_json = {
                             **(getattr(project, "metadata_json", None) or {}),
@@ -9792,8 +9978,11 @@ async def run_project_pipeline(
                             "commercial_planning_readiness_status": (
                                 "llm_gate_passed"
                                 if llm_judge_result.passed
+                                and not deterministic_actionable_block
                                 else "llm_gate_unactionable_warn_only"
                                 if commercial_gate_passed
+                                else "deterministic_actionable_gate_failed"
+                                if deterministic_actionable_block
                                 else "llm_gate_failed"
                             ),
                         }
@@ -9807,7 +9996,10 @@ async def run_project_pipeline(
                         llm_judge_payload = None
                 else:
                     # Deterministic-only fallback (legacy behaviour)
-                    commercial_gate_passed = commercial_gate_report.get("passed", True)
+                    commercial_gate_passed = (
+                        commercial_gate_report.get("passed", True)
+                        and not deterministic_actionable_block
+                    )
 
                 if not commercial_gate_passed:
                     _emit_progress(

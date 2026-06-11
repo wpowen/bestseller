@@ -23,6 +23,7 @@ Gate severity → auto-repair behavior:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -119,6 +120,20 @@ AUTO_REPAIR_RETENTION_CODES: tuple[str, ...] = (
     PERSONA_PAYOFF_DENSITY_LOW,
 )
 
+# Deterministic post-write-audit codes that describe reader-retention quality
+# (as opposed to text-integrity defects). They participate in chapter
+# auto-repair via ``chapter_auto_repair_repairable_codes`` and are re-derived
+# on every assembly, so for repair-targeting purposes they count as "fresh"
+# alongside AUTO_REPAIR_RETENTION_CODES. Shared by the soft-retention fuse
+# (pipelines) and the repair-target builder (drafts).
+RETENTION_AUDIT_SOFT_CODES: frozenset[str] = frozenset(
+    {
+        "SIGNATURE_IMAGE_MISSING",
+        "ENDING_HOOK_MISSING",
+        "OPENING_PRESSURE_THIN",
+    }
+)
+
 
 @dataclass(frozen=True)
 class RetentionGateFinding:
@@ -182,6 +197,7 @@ def evaluate_retention_safety(
     opening_similarity_threshold: float = 0.82,
     body_similarity_threshold: float = 0.88,
     min_payoff_density: float = 0.18,
+    hook_domain_tokens: Sequence[str] = (),
 ) -> RetentionGateReport:
     """Run the 3 retention gates on an assembled chapter.
 
@@ -202,6 +218,10 @@ def evaluate_retention_safety(
                 current_chapter_position=chapter_position,
                 prev_chapter_position=prev_chapter_position
                 or (chapter_position - 1),
+                # Must match the production side (prepare_chapter_context):
+                # both source from the book's imagery anchors so the duty
+                # block and this validation extract the same token set.
+                extra_domain_tokens=hook_domain_tokens,
             )
             severity = he.finding.severity
             if severity == "critical":

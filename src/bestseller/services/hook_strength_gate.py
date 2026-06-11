@@ -88,6 +88,52 @@ _VILLAIN_HINTS = (
 )
 _HIGH_REWARD_HINTS = ("权限", "跃迁", "资源", "证据", "声望", "真相", "identity", "power")
 _COST_HINTS = ("代价", "失去", "折损", "风险", "牺牲", "反噬", "cost", "risk", "lose")
+_ANCHOR_STOPWORDS = {
+    "主角",
+    "读者",
+    "故事",
+    "小说",
+    "平台",
+    "一个",
+    "一部",
+    "核心",
+    "持续",
+    "升级",
+    "都市",
+    "修仙",
+    "职业",
+    "长篇",
+}
+_AUTO_ANCHOR_MARKERS = (
+    "灵务局",
+    "考编",
+    "岗位权限",
+    "公务工单",
+    "工单",
+    "临聘",
+    "巡检",
+    "巡检员",
+    "陆沉",
+    "灵石配额",
+    "配额",
+    "审批",
+    "审批黑箱",
+    "转正",
+    "正式编制",
+    "编制",
+    "验房",
+    "验房报告",
+    "强制复检",
+    "合规台账",
+    "执照扣分",
+    "审计",
+    "旧账",
+    "凶宅",
+    "困魂镜",
+    "风水师",
+    "死亡名单",
+    "双穿门",
+)
 
 
 def _clamp_int(value: float, low: int = 0, high: int = 10) -> int:
@@ -102,6 +148,151 @@ def _clamp_float(value: float, low: float = 0.0, high: float = 100.0) -> float:
 
 def _text(value: object) -> str:
     return str(value or "").strip()
+
+
+def _string_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in re.split(r"[,，、/／|]", value) if part.strip()]
+    if isinstance(value, Mapping):
+        return []
+    if isinstance(value, list | tuple | set):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def _clean_anchor(value: object) -> str:
+    text = re.sub(r"\s+", "", str(value or "").strip())
+    text = text.strip("《》“”\"'：:，,。.!！？?；;（）()[]【】")
+    if not (2 <= len(text) <= 12):
+        return ""
+    if text in _ANCHOR_STOPWORDS:
+        return ""
+    return text
+
+
+def _append_anchor(group: dict[str, list[str]], key: str, value: object) -> None:
+    text = _clean_anchor(value)
+    if not text:
+        return
+    values = group.setdefault(key, [])
+    if text not in values:
+        values.append(text)
+
+
+def _extract_context_texts(context: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        "premise": " ".join(
+            _text(context.get(key))
+            for key in ("premise", "synopsis", "short_intro", "logline")
+            if _text(context.get(key))
+        ),
+        "title": " ".join(
+            _text(context.get(key)) for key in ("title", "primary_title") if _text(context.get(key))
+        ),
+        "genre": " ".join(
+            [
+                _text(context.get("genre")),
+                _text(context.get("sub_genre")),
+                " ".join(_string_list(context.get("tags"))),
+            ]
+        ),
+    }
+
+
+def premise_anchor_groups(premise_context: Mapping[str, Any] | str | None) -> dict[str, list[str]]:
+    """Derive deterministic story anchors used to reject semantically wrong hooks.
+
+    The gate intentionally stays lightweight: it only enforces alignment when the
+    caller supplies enough concrete anchors. Generic genre labels alone do not
+    trigger a hard mismatch.
+    """
+
+    if premise_context is None:
+        return {}
+    context: Mapping[str, Any]
+    if isinstance(premise_context, str):
+        context = {"premise": premise_context}
+    elif isinstance(premise_context, Mapping):
+        context = premise_context
+    else:
+        return {}
+
+    groups: dict[str, list[str]] = {}
+    raw_groups = context.get("title_anchor_groups")
+    if isinstance(raw_groups, Mapping):
+        for key, value in raw_groups.items():
+            for item in _string_list(value):
+                _append_anchor(groups, str(key), item)
+
+    for item in context.get("main_characters") or ():
+        if not isinstance(item, Mapping):
+            continue
+        _append_anchor(groups, "protagonist", item.get("name"))
+        _append_anchor(groups, "identity", item.get("identity") or item.get("role"))
+
+    dna = context.get("story_title_dna")
+    if isinstance(dna, Mapping):
+        _append_anchor(groups, "protagonist", dna.get("protagonist"))
+        _append_anchor(groups, "identity", dna.get("identity"))
+        _append_anchor(groups, "mechanism", dna.get("central_action") or dna.get("payoff"))
+        _append_anchor(groups, "pressure", dna.get("stakes") or dna.get("conflict"))
+
+    texts = _extract_context_texts(context)
+    source_text = " ".join(texts.values())
+    for marker in _AUTO_ANCHOR_MARKERS:
+        if marker in source_text:
+            if marker in {"陆沉"}:
+                _append_anchor(groups, "protagonist", marker)
+            elif marker in {"灵务局", "临聘", "巡检", "巡检员", "风水师", "审计"}:
+                _append_anchor(groups, "identity", marker)
+            elif any(token in marker for token in ("权限", "工单", "考编", "报告", "复检", "台账", "双穿门")):
+                _append_anchor(groups, "mechanism", marker)
+            else:
+                _append_anchor(groups, "pressure", marker)
+
+    for token in _string_list(context.get("tags")):
+        _append_anchor(groups, "genre", token)
+    for token in re.findall(r"[\u4e00-\u9fff]{2,6}", texts["title"]):
+        _append_anchor(groups, "title", token)
+
+    return {key: values[:8] for key, values in groups.items() if values}
+
+
+def hook_premise_alignment(
+    spec: HookSpec,
+    premise_context: Mapping[str, Any] | str | None,
+) -> tuple[bool, dict[str, list[str]], dict[str, list[str]]]:
+    groups = premise_anchor_groups(premise_context)
+    concrete_groups = {
+        key: values
+        for key, values in groups.items()
+        if key != "genre" and any(value not in _ANCHOR_STOPWORDS for value in values)
+    }
+    if len(concrete_groups) < 2:
+        return True, {}, groups
+    hook_text = " ".join(
+        [
+            spec.one_liner,
+            spec.core_rule,
+            spec.genre,
+            spec.setting_locale or "",
+            spec.protagonist_role or "",
+            spec.base_desire,
+            spec.reversal,
+            *(str(item) for item in spec.rewards),
+            *(str(item) for item in spec.costs),
+            *(str(item) for item in spec.constraints.values()),
+            *(str(item) for item in spec.arc_engine),
+        ]
+    )
+    matched = {
+        key: [value for value in values if value and value in hook_text]
+        for key, values in concrete_groups.items()
+    }
+    matched = {key: values for key, values in matched.items() if values}
+    return len(matched) >= 2, matched, groups
 
 
 def _score_delta(spec: HookSpec) -> int:
@@ -267,6 +458,7 @@ def evaluate_hook_strength_gate(
     *,
     min_h_norm: float = SEED_H_NORM,
     platform_profile: Mapping[str, Any] | None = None,
+    premise_context: Mapping[str, Any] | str | None = None,
 ) -> HookStrengthGateReport:
     hook_spec = extract_hook_spec_from_text(spec) if isinstance(spec, str) else spec
     score = score_hook(hook_spec, platform_profile=platform_profile)
@@ -323,6 +515,24 @@ def evaluate_hook_strength_gate(
                 ),
             )
         )
+    aligned, _matched_anchor_groups, _anchor_groups = hook_premise_alignment(
+        hook_spec,
+        premise_context,
+    )
+    if not aligned:
+        findings.append(
+            HookStrengthFinding(
+                code="hook_premise_mismatch",
+                severity="high",
+                message="Hook does not match the concrete premise anchors.",
+                path="premise_context",
+                repair_action=(
+                    "Regenerate a hook that names the protagonist identity, core mechanism, "
+                    "or opening pressure from the approved premise."
+                ),
+            )
+        )
+        suggestions.append("重写 hook，使其明确贴合主角身份、核心机制或开局压力。")
     # CN-market 爆款 emotion vocabulary check. Hooks without at least one
     # emotion marker read like AI template copy.
     emotion_text = f"{hook_spec.one_liner} {hook_spec.core_rule}"
@@ -339,14 +549,18 @@ def evaluate_hook_strength_gate(
             )
         )
         suggestions.append("在 one_liner 或 core_rule 注入至少一个网文爆款情绪词。")
-    passed = score.h_norm >= min_h_norm
+    hard_failed = any(
+        finding.code == "hook_premise_mismatch" and finding.severity == "high"
+        for finding in findings
+    )
+    passed = score.h_norm >= min_h_norm and not hard_failed
     return HookStrengthGateReport(
         findings=tuple(findings),
         h_norm=score.h_norm,
         passed=passed,
         rewrite_suggestions=tuple(suggestions),
         score=score,
-        verdict="pass" if passed else "warn_only",
+        verdict="pass" if passed else "reject" if hard_failed else "warn_only",
     )
 
 
@@ -363,6 +577,8 @@ def repair_hook_spec_once(
     arc_engine = list(spec.arc_engine)
 
     codes = {finding.code for finding in report.findings}
+    if "hook_premise_mismatch" in codes:
+        return spec
     if "weak_reversal" in codes and "method" not in constraints:
         constraints["method"] = "每次兑现奖励前必须执行与正常欲望相反的可见动作"
     if "thin_constraints" in codes:
@@ -430,7 +646,9 @@ __all__ = [
     "SEED_H_NORM",
     "evaluate_hook_strength_gate",
     "extract_hook_spec_from_text",
+    "hook_premise_alignment",
     "hook_strength_report_to_dict",
+    "premise_anchor_groups",
     "repair_hook_spec_once",
     "score_hook",
 ]

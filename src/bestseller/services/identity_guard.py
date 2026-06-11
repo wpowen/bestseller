@@ -845,6 +845,139 @@ def _check_zh_pronoun_consistency(
     return violations
 
 
+def _mask_zh_quoted_dialogue(text: str) -> str:
+    """Blank quoted dialogue while preserving every character position.
+
+    ``_strip_zh_quoted_dialogue`` collapses each quote to one space, which is
+    fine for detection but breaks position mapping. The deterministic pronoun
+    fixer needs positions in the *original* text, so it scans a same-length
+    mask instead.
+    """
+
+    return _ZH_QUOTED_DIALOGUE_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
+_ZH_PRONOUN_SWAP = {"她": "他", "他": "她"}
+
+
+def fix_zh_pronoun_mismatches(
+    text: str,
+    registry: list[CharacterIdentity],
+    *,
+    participant_names: list[str] | None = None,
+    max_passes: int = 4,
+) -> tuple[str, int]:
+    """Deterministically swap wrong-gender pronouns near character mentions.
+
+    Mirrors the guard chain of ``_check_zh_pronoun_consistency`` (keep the
+    two in sync) but records the absolute position of each confirmed wrong
+    pronoun so it can be swapped in place — a single-character substitution
+    (她→他 / 他→她; suffixed forms 她的/她们 share the first char) that
+    replaces what used to cost a full scene regen cycle.
+
+    Returns ``(fixed_text, fix_count)``. ``fix_count == 0`` means nothing
+    was confidently fixable; callers should fall back to their existing
+    rewrite path.
+    """
+
+    if not text:
+        return text, 0
+
+    if participant_names:
+        name_set = set(participant_names)
+        entries = [
+            r
+            for r in registry
+            if _entry_matches_name_set(r, name_set)
+            or _entry_mentioned_in_text(r, text)
+        ]
+    else:
+        entries = list(registry)
+    entries = [e for e in entries if e.gender in ("male", "female")]
+    if not entries:
+        return text, 0
+
+    names_by_entry = {entry.name: _identity_names(entry) for entry in entries}
+    total_fixes = 0
+    current = text
+
+    for _ in range(max(1, max_passes)):
+        masked = _mask_zh_quoted_dialogue(current)
+        swap_positions: set[int] = set()
+
+        for entry in entries:
+            all_names = names_by_entry[entry.name]
+            other_entries = [o for o in entries if o.name != entry.name]
+            other_names = [
+                n for o in other_entries for n in names_by_entry[o.name]
+            ]
+            competing_names = [n for n in other_names if n]
+            if entry.gender == "male":
+                wrong_pronouns = _ZH_FEMALE_PRONOUNS
+                found_gender = "female"
+            else:
+                wrong_pronouns = frozenset({"他", "他的"})
+                found_gender = "male"
+
+            for name in all_names:
+                if name not in masked:
+                    continue
+                for match in re.finditer(re.escape(name), masked):
+                    if _zh_name_match_embedded_in_longer_name(
+                        masked, name, match.start(), competing_names
+                    ):
+                        continue
+                    start = match.start()
+                    left_context = masked[max(0, start - 14):start]
+                    if _zh_name_mention_is_likely_object(left_context):
+                        continue
+                    end = min(len(masked), match.end() + 60)
+                    right_context = masked[match.end():end]
+                    if right_context.lstrip().startswith(("：", ":")):
+                        continue
+                    for wrong in sorted(wrong_pronouns, key=len, reverse=True):
+                        wrong_pos = _find_zh_pronoun(right_context, wrong)
+                        if wrong_pos < 0:
+                            continue
+                        before_wrong = right_context[:wrong_pos]
+                        if any(other in before_wrong for other in competing_names):
+                            continue
+                        if _zh_wrong_pronoun_has_intervening_subject_anchor(
+                            before_wrong
+                        ):
+                            continue
+                        if _zh_context_already_shifted_to_gender(
+                            before_wrong, found_gender=found_gender
+                        ):
+                            continue
+                        if not _zh_wrong_pronoun_is_likely_subject(
+                            right_context,
+                            wrong_pos,
+                            wrong,
+                            found_gender=found_gender,
+                            competing_entries=other_entries,
+                        ):
+                            continue
+                        swap_positions.add(match.end() + wrong_pos)
+                        break  # One fix per context window per pass.
+
+        if not swap_positions:
+            break
+        chars = list(current)
+        applied = 0
+        for pos in swap_positions:
+            replacement = _ZH_PRONOUN_SWAP.get(chars[pos])
+            if replacement is not None:
+                chars[pos] = replacement
+                applied += 1
+        if applied == 0:
+            break
+        current = "".join(chars)
+        total_fixes += applied
+
+    return current, total_fixes
+
+
 _ZH_QUOTED_DIALOGUE_RE = re.compile(r"[“\"「『][^”\"」』]{0,500}[”\"」』]")
 _ZH_STRONG_BOUNDARY_RE = re.compile(r"[。！？；\n]")
 _ZH_DEAD_ALIVE_SPEECH_VERBS = (

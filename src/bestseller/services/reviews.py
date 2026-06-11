@@ -9,6 +9,24 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
+
+def _bundle_hook_domain_tokens(project) -> tuple[str, ...]:
+    """Book-derived hook vocabulary for the quality bundle's hook-echo check.
+
+    Same source as the production-side injection (imagery anchors) so the
+    duty block and validation always extract the same token set. Fails to
+    () — the generic extraction layers carry the gate without it.
+    """
+
+    try:
+        from bestseller.services.imagery_system_design import (
+            imagery_anchor_phrases,
+        )
+
+        return imagery_anchor_phrases(project)
+    except Exception:
+        return ()
+
 _LLM_PASS_OVERRIDABLE_RULE_CATEGORIES: frozenset[str] = frozenset(
     {
         "coverage",
@@ -6565,6 +6583,7 @@ async def _evaluate_chapter_quality_bundle_for_review(
             language=getattr(project, "language", None) or "zh-CN",
             target_chapter_words=int(settings.generation.words_per_chapter.target),
             commercial_strict=bool(settings.pipeline.commercial_strict_quality_mode),
+            hook_domain_tokens=_bundle_hook_domain_tokens(project),
         ),
     )
     _stamp_chapter_quality_bundle(chapter, report)

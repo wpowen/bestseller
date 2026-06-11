@@ -75,30 +75,23 @@ _DEFAULT_STAKE_ROTATION: tuple[SignatureSceneStake, ...] = (
     SignatureSceneStake.LOYALTY_HONOR,
 )
 
-_ARCHETYPE_IMAGE_HINTS: dict[SignatureSceneArchetype, tuple[str, ...]] = {
-    SignatureSceneArchetype.REVELATION: ("被揭开的封印", "灯下旧账", "尘封玉牌"),
-    SignatureSceneArchetype.OATH_BOUND: ("血印一笔", "断箭为誓", "焚契立誓"),
-    SignatureSceneArchetype.CONFRONTATION: ("剑指对方鼻尖", "崖头对峙", "一步不退"),
-    SignatureSceneArchetype.SACRIFICE: ("为人挡剑", "替死投火", "最后一笑"),
-    SignatureSceneArchetype.BETRAYAL: ("背后冷光", "熟悉的脸庞陌生的眼", "杯中毒"),
-    SignatureSceneArchetype.UNVEILING_NAME: ("揭面/卸冠", "真名出口", "印玺现"),
-    SignatureSceneArchetype.DEFIANCE: ("一人立于万军前", "断头钉地", "拒诏不跪"),
-    SignatureSceneArchetype.REUNION: ("雨中重逢", "万人之中一眼", "断巷尽头"),
-    SignatureSceneArchetype.APOTHEOSIS: ("登临破界", "天地为之让位", "一念成神"),
-    SignatureSceneArchetype.FAREWELL: ("背影远去", "最后一次回望", "钟声三响"),
-}
-
-_ARCHETYPE_LINE_HINTS: dict[SignatureSceneArchetype, tuple[str, ...]] = {
-    SignatureSceneArchetype.REVELATION: ("原来如此", "你早就知道", "我等了多久"),
-    SignatureSceneArchetype.OATH_BOUND: ("此誓不破", "纵死不悔", "以血为证"),
-    SignatureSceneArchetype.CONFRONTATION: ("再前一步，杀无赦", "你我之间，一步不让"),
-    SignatureSceneArchetype.SACRIFICE: ("替我活下去", "这一剑，我替你接"),
-    SignatureSceneArchetype.BETRAYAL: ("我从未把你当兄弟", "原来你也是"),
-    SignatureSceneArchetype.UNVEILING_NAME: ("我才是真正的", "记住这个名字"),
-    SignatureSceneArchetype.DEFIANCE: ("我偏不", "你们谁动一下试试"),
-    SignatureSceneArchetype.REUNION: ("一别经年", "你还活着"),
-    SignatureSceneArchetype.APOTHEOSIS: ("从此天地间，我自有道", "界破也是道"),
-    SignatureSceneArchetype.FAREWELL: ("送君千里", "不必送了"),
+# Genre-NEUTRAL archetype guidance — concept descriptions only, never anchor
+# phrases. The framework provides the *mechanism* (archetype slots, verbatim
+# anchor protocol, validation); concrete anchor content must come from the
+# book itself (imagery system / premise) via ``anchor_images``/``anchor_lines``.
+# The previous hardcoded image/line dictionaries were xianxia/detective
+# flavored and made every other genre's signature mandate unsatisfiable noise.
+_ARCHETYPE_GUIDANCE: dict[SignatureSceneArchetype, str] = {
+    SignatureSceneArchetype.REVELATION: "一件被长期遮蔽的事实/身份/物件在本章被当场揭开，读者与角色同时看见",
+    SignatureSceneArchetype.OATH_BOUND: "角色以可见的代价或仪式立下不可反悔的承诺",
+    SignatureSceneArchetype.CONFRONTATION: "双方在不可退让的立场上正面对峙，张力推到顶点",
+    SignatureSceneArchetype.SACRIFICE: "角色为他人/目标当场付出重大可见代价",
+    SignatureSceneArchetype.BETRAYAL: "信任关系在读者眼前当场断裂，背叛以具体动作呈现",
+    SignatureSceneArchetype.UNVEILING_NAME: "真实身份/名号当众揭晓，在场者的反应可见",
+    SignatureSceneArchetype.DEFIANCE: "角色公开违抗压倒性的权威/规则并承担后果",
+    SignatureSceneArchetype.REUNION: "重要关系在长久分离后重逢，场面具体可感",
+    SignatureSceneArchetype.APOTHEOSIS: "角色完成质变/登顶时刻，世界对其态度可见地改变",
+    SignatureSceneArchetype.FAREWELL: "重要角色以具体的动作与场景完成离别",
 }
 
 
@@ -113,6 +106,8 @@ def plan_signature_scenes(
     summary_hints: Sequence[str] | None = None,
     payoff_targets: Sequence[Sequence[str]] | None = None,
     include_golden_three: bool = True,
+    anchor_images: Sequence[str] | None = None,
+    anchor_lines: Sequence[str] | None = None,
 ) -> SignatureScenePlan:
     """Plan signature-scene mandates across a book.
 
@@ -123,6 +118,14 @@ def plan_signature_scenes(
 
     Set ``include_golden_three=False`` to opt out (legacy behavior:
     first mandate at chapter ``cadence``).
+
+    ``anchor_images`` / ``anchor_lines`` are BOOK-DERIVED verbatim anchor
+    phrases (e.g. from the book's imagery system); they become
+    ``must_include_image`` / ``must_include_line`` on every mandate so the
+    same signature motifs recur across slots — book identity by
+    construction. Without them mandates carry no literal anchors and the
+    signature gate validates purely semantically. The framework never
+    supplies genre-flavored anchor content itself.
     """
 
     if total_chapters < 1:
@@ -156,8 +159,12 @@ def plan_signature_scenes(
             intensity = intensity_values[idx]
             cadence_idx += 1
 
-        image_hints = list(_ARCHETYPE_IMAGE_HINTS.get(archetype, ()))[:3]
-        line_hints = list(_ARCHETYPE_LINE_HINTS.get(archetype, ()))[:3]
+        image_hints = [
+            str(s).strip() for s in (anchor_images or ()) if str(s).strip()
+        ][:3]
+        line_hints = [
+            str(s).strip() for s in (anchor_lines or ()) if str(s).strip()
+        ][:3]
 
         title_hint = ""
         if title_hints and idx < len(title_hints):
@@ -190,6 +197,18 @@ def plan_signature_scenes(
         cadence=cadence,
         mandates=mandates,
     )
+
+
+def _archetype_guidance_for(archetype: Any) -> str:
+    """Resolve genre-neutral guidance for an archetype enum or its value."""
+
+    if isinstance(archetype, SignatureSceneArchetype):
+        return _ARCHETYPE_GUIDANCE.get(archetype, "")
+    raw = str(archetype or "").strip().lower()
+    for key, guidance in _ARCHETYPE_GUIDANCE.items():
+        if key.value == raw:
+            return guidance
+    return ""
 
 
 def render_signature_scene_block(
@@ -229,9 +248,26 @@ def render_signature_scene_block(
         if summary:
             lines.append(f"- 场景内核: {summary}")
         if images:
-            lines.append("- 必须呈现的视觉意象（≥1 个）: " + "; ".join(images))
+            # Verbatim requirement: the signature gate validates by exact
+            # substring match — a paraphrased image scores zero. Keep the
+            # anchor phrase intact and build the surrounding prose freely.
+            lines.append(
+                "- 必须呈现的本书核心意象（以下短语至少 1 个【原词完整出现】，"
+                "前后文自由发挥，不得改写或拆散短语本身）: " + "; ".join(images)
+            )
         if lines_required:
-            lines.append("- 必须出现的台词/句式（择一改写出现）: " + "; ".join(lines_required))
+            lines.append(
+                "- 必须出现的台词（以下至少 1 句【原句完整出现】在对白或心声中，"
+                "可在其前后自然衔接，但句子本身不得改写）: "
+                + "; ".join(lines_required)
+            )
+        if not images and not lines_required:
+            # No book-derived anchors available — give the genre-neutral
+            # archetype concept instead. Validation falls to the semantic
+            # judge in this case, so no verbatim demand is made.
+            guidance = _archetype_guidance_for(archetype)
+            if guidance:
+                lines.append(f"- 场景概念要求（按本书自身的世界观具象化）: {guidance}")
         if invert:
             lines.append("- 必须反转的预期: " + "; ".join(invert))
         if targets:

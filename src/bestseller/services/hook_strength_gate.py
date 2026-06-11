@@ -104,36 +104,112 @@ _ANCHOR_STOPWORDS = {
     "职业",
     "长篇",
 }
-_AUTO_ANCHOR_MARKERS = (
-    "灵务局",
-    "考编",
-    "岗位权限",
-    "公务工单",
-    "工单",
-    "临聘",
-    "巡检",
-    "巡检员",
-    "陆沉",
-    "灵石配额",
-    "配额",
-    "审批",
-    "审批黑箱",
-    "转正",
-    "正式编制",
-    "编制",
-    "验房",
-    "验房报告",
-    "强制复检",
-    "合规台账",
-    "执照扣分",
-    "审计",
-    "旧账",
-    "凶宅",
-    "困魂镜",
-    "风水师",
-    "死亡名单",
-    "双穿门",
+# ── Generic anchor auto-extraction (通用型能力, 禁止题材绑定) ──────────
+# Anchors are derived from the premise text itself via the patterns below.
+# The vocabularies here are strictly *category-level* markers shared across
+# Chinese web-novel genres (mechanic nouns, stake nouns, occupation suffixes,
+# common surnames). Book-specific proper nouns must NEVER be added here —
+# that was the 2026-06-11 regression where a hardcoded word table from one
+# book left every new premise with almost no anchors.
+_COMMON_SURNAMES = (
+    "王李张刘陈杨黄赵周吴徐孙朱马胡郭林何高梁郑罗宋谢唐韩曹许邓萧冯曾程蔡彭"
+    "潘袁于董余苏叶吕魏蒋田杜丁沈姜范江傅钟卢汪戴崔任陆廖姚方金邱夏谭韦贾邹"
+    "石熊孟秦阎薛侯雷白龙段郝孔邵史毛常万顾赖武康贺严尹钱施牛洪龚"
 )
+_NAME_NOISE_CHARS = set("的了是在和有又不就也都要这那其之与及或被把对向从让使个一二三说着过来去为")
+_NAME_INTRO_RE = re.compile(
+    r"(?:主角|主人公|男主角?|女主角?)(是|叫|名叫|名为)?[：:\s]*([一-鿿]{2,4})"
+)
+_NAME_FOLLOW_PATTERN = r"(?:是|，|。|：|（|想|要|被|靠|发现|成为|获得|入职|刚|正)"
+_IDENTITY_VERB_RE = re.compile(
+    r"(?:成为|担任|身为|作为|当上|入职|应聘|考上|沦为|穿成)"
+    r"(?:了)?(?:一[名个位]|个)?"
+    r"([一-鿿A-Za-z]{2,10}?)(?=[，。！？；：、的（）()\s]|$)"
+)
+_IDENTITY_MARKERS = (
+    "员",
+    "师",
+    "官",
+    "经理",
+    "总监",
+    "助理",
+    "专员",
+    "主管",
+    "顾问",
+    "主播",
+    "老板",
+    "掌柜",
+    "掌门",
+    "宗主",
+    "城主",
+    "医生",
+    "警察",
+    "教授",
+    "队长",
+    "店长",
+    "侦探",
+    "特工",
+)
+_MECHANISM_MARKERS = (
+    "面板",
+    "系统",
+    "空间",
+    "签到",
+    "词条",
+    "天赋",
+    "神通",
+    "金手指",
+    "外挂",
+    "商城",
+    "抽奖",
+    "契约",
+    "血脉",
+    "图鉴",
+    "模拟器",
+    "副本",
+    "封神",
+)
+_PRESSURE_MARKERS = (
+    "裁员",
+    "失业",
+    "开除",
+    "辞退",
+    "降职",
+    "淘汰",
+    "考核",
+    "考编",
+    "转正",
+    "编制",
+    "审批",
+    "试用期",
+    "期限",
+    "倒计时",
+    "债务",
+    "欠债",
+    "破产",
+    "退婚",
+    "退学",
+    "除名",
+    "封杀",
+    "雪藏",
+    "处分",
+    "问责",
+    "追杀",
+    "灭门",
+    "通缉",
+    "诅咒",
+    "绝症",
+    "赔偿",
+    "违约",
+    "背锅",
+)
+_QUOTED_TERM_RE = re.compile(r"[「『【“\"']([一-鿿A-Za-z·]{2,8})[」』】”\"']")
+_LATIN_TERM_RE = re.compile(r"[A-Za-z][A-Za-z0-9]{1,11}")
+_TERM_BOUNDARY_CHARS = set(
+    "的地得在是和与或了把被向从对于里中内外上下又再们个各每"
+    "，。！？；：、（）()【】「」『』《》“”\"'·…—-～~ \t\n"
+)
+_TITLE_GRAM_NOISE_CHARS = set("的了是在我你他她它和与或就都也很不一这那有无之其为于把被向从")
 
 
 def _clamp_int(value: float, low: int = 0, high: int = 10) -> int:
@@ -179,6 +255,145 @@ def _append_anchor(group: dict[str, list[str]], key: str, value: object) -> None
     values = group.setdefault(key, [])
     if text not in values:
         values.append(text)
+
+
+def _strip_anchor_stopword_prefix(text: str) -> str:
+    for stop in _ANCHOR_STOPWORDS:
+        if text.startswith(stop) and len(text) - len(stop) >= 2:
+            return text[len(stop) :]
+    return text
+
+
+def _expand_marker_terms(text: str, marker: str, *, max_len: int = 8) -> list[str]:
+    """Expand each marker occurrence leftward to the enclosing content term.
+
+    With marker 面板, a premise span like "...识人面板..." yields 识人面板;
+    expansion stops at function words, punctuation, or ``max_len``.
+    """
+
+    terms: list[str] = []
+    for match in re.finditer(re.escape(marker), text):
+        start = match.start()
+        while (
+            start > 0
+            and match.end() - start < max_len
+            and text[start - 1] not in _TERM_BOUNDARY_CHARS
+            and re.match(r"[一-鿿A-Za-z0-9]", text[start - 1])
+        ):
+            start -= 1
+        terms.append(text[start : match.end()])
+    return terms
+
+
+def _latin_terms(text: str) -> list[tuple[str, list[str], int]]:
+    """Return (lowercase key, original-case variants, total count) tuples."""
+
+    variants: dict[str, list[str]] = {}
+    counts: dict[str, int] = {}
+    for token in _LATIN_TERM_RE.findall(text):
+        key = token.lower()
+        counts[key] = counts.get(key, 0) + 1
+        bucket = variants.setdefault(key, [])
+        if token not in bucket:
+            bucket.append(token)
+    return [(key, bucket, counts[key]) for key, bucket in variants.items()]
+
+
+def _auto_protagonist_anchors(text: str) -> list[str]:
+    explicit: list[str] = []
+    for connector, raw_name in _NAME_INTRO_RE.findall(text):
+        name = raw_name
+        for idx in range(1, len(raw_name)):
+            if raw_name[idx] in _NAME_NOISE_CHARS:
+                name = raw_name[:idx]
+                break
+        if len(name) < 2 or any(marker in name for marker in _MECHANISM_MARKERS):
+            continue
+        # Without an explicit naming connector, "主角" is often followed by a
+        # verb phrase, not a name — require a surname-led token in that case.
+        if not connector and name[0] not in _COMMON_SURNAMES:
+            continue
+        explicit.append(name)
+    candidates: dict[str, int] = {}
+    for match in re.finditer(rf"[{_COMMON_SURNAMES}][一-鿿]{{1,2}}", text):
+        token = match.group(0)
+        for cand in (token[:2], token):
+            if len(cand) < 2 or cand in candidates:
+                continue
+            if any(ch in _NAME_NOISE_CHARS for ch in cand[1:]):
+                continue
+            candidates[cand] = text.count(cand)
+    scored: list[tuple[int, str]] = []
+    for cand, freq in candidates.items():
+        introduced = bool(re.search(re.escape(cand) + _NAME_FOLLOW_PATTERN, text))
+        if freq >= 2 or introduced:
+            scored.append((freq + (1 if introduced else 0), cand))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [*explicit, *[cand for _, cand in scored[:4]]]
+
+
+def _auto_identity_anchors(text: str) -> list[str]:
+    anchors = [match.group(1) for match in _IDENTITY_VERB_RE.finditer(text)]
+    for _key, latin_variants, _count in _latin_terms(text):
+        for token in latin_variants:
+            if token.isupper() and 2 <= len(token) <= 5:
+                anchors.append(token)
+    for marker in _IDENTITY_MARKERS:
+        if marker not in text:
+            continue
+        for term in _expand_marker_terms(text, marker):
+            if len(marker) == 1 and len(term) < 3:
+                continue
+            if any(ch in _NAME_NOISE_CHARS for ch in term):
+                continue
+            anchors.append(term)
+    return anchors
+
+
+def _auto_mechanism_anchors(text: str, *, title: str) -> list[str]:
+    # Marker-expanded terms first: they are the highest-precision mechanism
+    # names and must survive the per-group cap; quoted spans also catch
+    # dialogue/nicknames, so they rank last.
+    anchors: list[str] = []
+    for marker in _MECHANISM_MARKERS:
+        if marker in text:
+            anchors.extend(_expand_marker_terms(text, marker))
+    for _key, latin_variants, count in _latin_terms(text):
+        if count < 2:
+            continue
+        if any(token.isupper() and len(token) <= 5 for token in latin_variants):
+            continue  # routed to identity (HR/CEO-style role tokens)
+        anchors.extend(latin_variants)
+    for quoted in _QUOTED_TERM_RE.findall(text):
+        if title and quoted in title:
+            continue
+        anchors.append(quoted)
+    return anchors
+
+
+def _auto_pressure_anchors(text: str) -> list[str]:
+    return [marker for marker in _PRESSURE_MARKERS if marker in text]
+
+
+def _title_anchor_tokens(title: str) -> list[str]:
+    """Short-gram title anchors: robust against partial title echoes in hooks.
+
+    The previous behavior emitted one contiguous up-to-6-char chunk, so a hook
+    had to quote the title nearly verbatim to count the title group.
+    """
+
+    tokens: list[str] = []
+    for run in re.findall(r"[一-鿿]{2,}", title):
+        if len(run) <= 6:
+            tokens.append(run)
+        for size in (3, 2):
+            for idx in range(len(run) - size + 1):
+                gram = run[idx : idx + size]
+                if any(ch in _TITLE_GRAM_NOISE_CHARS for ch in gram):
+                    continue
+                tokens.append(gram)
+    tokens.extend(_LATIN_TERM_RE.findall(title))
+    return list(dict.fromkeys(tokens))
 
 
 def _extract_context_texts(context: Mapping[str, Any]) -> dict[str, str]:
@@ -240,22 +455,32 @@ def premise_anchor_groups(premise_context: Mapping[str, Any] | str | None) -> di
         _append_anchor(groups, "pressure", dna.get("stakes") or dna.get("conflict"))
 
     texts = _extract_context_texts(context)
-    source_text = " ".join(texts.values())
-    for marker in _AUTO_ANCHOR_MARKERS:
-        if marker in source_text:
-            if marker in {"陆沉"}:
-                _append_anchor(groups, "protagonist", marker)
-            elif marker in {"灵务局", "临聘", "巡检", "巡检员", "风水师", "审计"}:
-                _append_anchor(groups, "identity", marker)
-            elif any(token in marker for token in ("权限", "工单", "考编", "报告", "复检", "台账", "双穿门")):
-                _append_anchor(groups, "mechanism", marker)
-            else:
-                _append_anchor(groups, "pressure", marker)
+    # Cross-group dedupe for auto-derived anchors: one premise word must not
+    # fill two groups, or a single hook word would count as two-group alignment.
+    seen = {value for values in groups.values() for value in values}
+
+    def _append_auto(key: str, value: object) -> None:
+        cleaned = _strip_anchor_stopword_prefix(_clean_anchor(value))
+        if len(cleaned) < 2 or cleaned in seen:
+            return
+        seen.add(cleaned)
+        _append_anchor(groups, key, cleaned)
+
+    premise_text = texts["premise"]
+    if premise_text:
+        for name in _auto_protagonist_anchors(premise_text):
+            _append_auto("protagonist", name)
+        for identity in _auto_identity_anchors(premise_text):
+            _append_auto("identity", identity)
+        for mechanism in _auto_mechanism_anchors(premise_text, title=texts["title"]):
+            _append_auto("mechanism", mechanism)
+        for pressure in _auto_pressure_anchors(premise_text):
+            _append_auto("pressure", pressure)
 
     for token in _string_list(context.get("tags")):
         _append_anchor(groups, "genre", token)
-    for token in re.findall(r"[\u4e00-\u9fff]{2,6}", texts["title"]):
-        _append_anchor(groups, "title", token)
+    for token in _title_anchor_tokens(texts["title"]):
+        _append_auto("title", token)
 
     return {key: values[:8] for key, values in groups.items() if values}
 
@@ -567,8 +792,16 @@ def evaluate_hook_strength_gate(
 def repair_hook_spec_once(
     spec: HookSpec,
     report: HookStrengthGateReport,
+    *,
+    premise_context: Mapping[str, Any] | str | None = None,
 ) -> HookSpec:
-    """Apply one deterministic strengthening pass based on gate findings."""
+    """Apply one deterministic strengthening pass based on gate findings.
+
+    When ``premise_context`` is supplied, the rewrite is checked against the
+    premise anchors: the formula-pool one_liner rebuild can drop anchor words
+    that only lived in the original one_liner, so a repair that breaks an
+    alignment the original spec had falls back to the original one_liner.
+    """
 
     constraints = dict(spec.constraints)
     anti_cheat = list(spec.anti_cheat)
@@ -622,7 +855,7 @@ def repair_hook_spec_once(
         f"{spec.core_rule} 每次触发必须同时满足限制、反作弊与可见代价；"
         "下一轮代价或误解必须升级。"
     )
-    return spec.model_copy(
+    repaired = spec.model_copy(
         update={
             "rewards": deduped_rewards,
             "constraints": deduped_constraints,
@@ -634,6 +867,12 @@ def repair_hook_spec_once(
             "core_rule": core_rule[:500],
         }
     )
+    if premise_context is not None:
+        aligned_before, _, _ = hook_premise_alignment(spec, premise_context)
+        aligned_after, _, _ = hook_premise_alignment(repaired, premise_context)
+        if aligned_before and not aligned_after:
+            repaired = repaired.model_copy(update={"one_liner": spec.one_liner})
+    return repaired
 
 
 def hook_strength_report_to_dict(report: HookStrengthGateReport) -> dict[str, Any]:

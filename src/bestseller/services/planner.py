@@ -16392,6 +16392,7 @@ async def _run_hook_strength_gate(
 
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
     hook_spec = coerce_hook_spec(metadata.get("hook_spec"))
+    provided_spec = hook_spec is not None
     min_h_norm = float(getattr(settings.hook_engine, "min_h_norm", 30.0))
     reference_texts: list[str] = [premise, str(getattr(project, "title", "") or "")]
     for key in ("hook_history", "hook_candidates", "previous_hooks"):
@@ -16437,38 +16438,60 @@ async def _run_hook_strength_gate(
             project.metadata_json = metadata
     if hook_spec is None:
         return None, None
+    premise_context: dict[str, Any] = {
+        "premise": premise,
+        "title": getattr(project, "title", None),
+        "genre": getattr(project, "genre", None),
+        "sub_genre": getattr(project, "sub_genre", None),
+        "tags": metadata.get("tags"),
+    }
+    # Structured anchor channel: when the title workflow already derived
+    # story-grounded anchor groups, feed them to the gate so alignment does
+    # not rely on premise-text auto-extraction alone.
+    _title_workflow_primary = metadata.get("title_workflow_primary")
+    if isinstance(_title_workflow_primary, dict):
+        _structured_anchor_groups = _title_workflow_primary.get("anchor_groups")
+        if isinstance(_structured_anchor_groups, dict) and _structured_anchor_groups:
+            premise_context["title_anchor_groups"] = _structured_anchor_groups
     report = evaluate_hook_strength_gate(
         hook_spec,
         min_h_norm=min_h_norm,
-        premise_context={
-            "premise": premise,
-            "title": getattr(project, "title", None),
-            "genre": getattr(project, "genre", None),
-            "sub_genre": getattr(project, "sub_genre", None),
-            "tags": metadata.get("tags"),
-        },
+        premise_context=premise_context,
     )
     rewrite_attempted = False
     rewrite_applied = False
     if not report.passed:
         rewrite_attempted = True
-        repaired = repair_hook_spec_once(hook_spec, report)
+        repaired = repair_hook_spec_once(hook_spec, report, premise_context=premise_context)
         repaired_report = evaluate_hook_strength_gate(
             repaired,
             min_h_norm=min_h_norm,
-            premise_context={
-                "premise": premise,
-                "title": getattr(project, "title", None),
-                "genre": getattr(project, "genre", None),
-                "sub_genre": getattr(project, "sub_genre", None),
-                "tags": metadata.get("tags"),
-            },
+            premise_context=premise_context,
         )
         if repaired_report.h_norm > report.h_norm:
             hook_spec = repaired
             report = repaired_report
             rewrite_applied = True
     if report.verdict == "reject" or report.score.verdict == "reject":
+        if not provided_spec:
+            # The rejected hook came from auto-generated template candidates,
+            # not from the author. A mismatch here only proves the template
+            # library lacks coverage for this premise — it must never hard-block
+            # the whole plan. Skip the advisory hook engine and record the demote.
+            payload = hook_strength_report_to_dict(report)
+            payload["rewrite_attempted"] = rewrite_attempted
+            payload["rewrite_applied"] = rewrite_applied
+            payload["auto_demoted"] = True
+            payload["demote_reason"] = "auto_generated_hook_rejected"
+            logger.warning(
+                "hook_strength_gate auto-demoted for project=%s: "
+                "auto-generated candidate rejected (verdict=%s, h_norm=%.2f); "
+                "continuing without hook_spec",
+                project.slug,
+                report.verdict,
+                report.h_norm,
+            )
+            return None, payload
         raise PlannerFallbackError(
             f"Anti-commonsense hook rejected: verdict={report.verdict}, "
             f"H_norm={report.h_norm:.2f}"

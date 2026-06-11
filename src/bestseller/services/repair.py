@@ -24,6 +24,7 @@ from bestseller.infra.db.models import (
     RewriteTaskModel,
     SceneCardModel,
     SceneDraftVersionModel,
+    WorkflowRunModel,
 )
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.exports import export_project_markdown
@@ -1447,6 +1448,51 @@ def _dedupe_sorted(values: Iterable[int]) -> list[int]:
     return sorted({value for value in values if value > 0})
 
 
+async def _mark_workflow_run_failed_isolated(
+    workflow_run_id: UUID,
+    *,
+    current_step: str,
+    error: str,
+) -> bool:
+    """Best-effort flip a workflow row to ``failed`` on a fresh, isolated session.
+
+    The primary repair session is poisoned after a flush-level failure
+    (e.g. an asyncpg lock timeout surfacing as ``PendingRollbackError``):
+    the rollback that clears it also discards the in-place
+    ``workflow_run.status = FAILED`` change. Without this recovery the row
+    stays ``running`` forever — a zombie that suppresses self-heal requeue and
+    freezes the dashboard Stop/Delete buttons (the synthetic ``db-repair:`` card
+    reports the row's ``running`` status) until the orphan reaper fires hours
+    later.
+
+    Returns ``True`` when the row was updated. Swallows every error: the orphan
+    reaper remains the final backstop, so recovery must never mask the original
+    exception that is about to propagate.
+    """
+    from bestseller.infra.db.session import get_server_session
+
+    try:
+        async with get_server_session() as recovery:
+            await recovery.execute(
+                update(WorkflowRunModel)
+                .where(WorkflowRunModel.id == workflow_run_id)
+                .values(
+                    status=WorkflowStatus.FAILED.value,
+                    current_step=current_step,
+                    error_message=error,
+                )
+            )
+        return True
+    except Exception:
+        logger.warning(
+            "project_repair: could not mark workflow %s failed on an isolated "
+            "session after poisoned-session rollback; relying on orphan reaper",
+            workflow_run_id,
+            exc_info=True,
+        )
+        return False
+
+
 async def run_project_repair(
     session: AsyncSession,
     settings: AppSettings,
@@ -2028,6 +2074,16 @@ async def run_project_repair(
             or not getattr(session, "is_active", True)
         ):
             await session.rollback()
+            # The rollback above discarded any in-place status change, and the
+            # poisoned session cannot flush a new one. Persist ``failed`` on a
+            # fresh session so the workflow row does not stay ``running`` forever
+            # (a zombie that blocks self-heal requeue and the dashboard
+            # Stop/Delete buttons). Best-effort: the orphan reaper is the backstop.
+            await _mark_workflow_run_failed_isolated(
+                workflow_run_id,
+                current_step=current_step_name,
+                error=str(exc),
+            )
             raise
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name

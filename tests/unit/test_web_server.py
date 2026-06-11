@@ -1569,6 +1569,89 @@ def test_request_visible_task_cancel_routes_db_repair_task(
     }
 
 
+def test_cancel_db_repair_task_flips_running_workflow_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A crashed repair can leave its workflow row stuck ``running`` with zero
+    pending rewrite tasks and no ARQ job. Stop must still report
+    ``cancel_requested`` by flipping that row — otherwise the synthetic
+    ``db-repair:`` card stays "running" and Stop/Delete deadlock.
+    """
+
+    class _Result:
+        def __init__(self, rowcount: int) -> None:
+            self.rowcount = rowcount
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.executed: list[object] = []
+
+        async def execute(self, stmt: object) -> _Result:
+            self.executed.append(stmt)
+            # 1st execute = RewriteTask update (none pending) -> 0 rows.
+            # 2nd execute = WorkflowRun update (the stuck zombie) -> 1 row.
+            return _Result(0 if len(self.executed) == 1 else 1)
+
+    fake_session = _FakeSession()
+
+    class _SessionScope:
+        async def __aenter__(self) -> _FakeSession:
+            return fake_session
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    async def fake_get_project_by_slug(_session: object, _slug: str) -> object:
+        return SimpleNamespace(id="proj-id")
+
+    async def fake_abort(_redis_url: str, _job_id: str) -> bool:
+        return False
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(web_server, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(web_server, "_abort_worker_heal_job_async", fake_abort)
+
+    settings = SimpleNamespace(redis=SimpleNamespace(url="redis://stub"))
+    outcome = asyncio.run(
+        web_server._cancel_db_repair_task_async(
+            settings,
+            "db-repair:xianxia-upgrade-1781106694",
+        )
+    )
+
+    assert outcome == "cancel_requested"
+    # Both the rewrite-task sweep and the workflow-row flip must be attempted.
+    assert len(fake_session.executed) == 2
+
+
+def test_cancel_db_repair_task_unknown_project_is_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeSession:
+        async def execute(self, _stmt: object) -> object:  # pragma: no cover
+            raise AssertionError("must not query when project is missing")
+
+    class _SessionScope:
+        async def __aenter__(self) -> _FakeSession:
+            return _FakeSession()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    async def fake_get_project_by_slug(_session: object, _slug: str) -> None:
+        return None
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(web_server, "get_project_by_slug", fake_get_project_by_slug)
+
+    settings = SimpleNamespace(redis=SimpleNamespace(url="redis://stub"))
+    outcome = asyncio.run(
+        web_server._cancel_db_repair_task_async(settings, "db-repair:ghost-book")
+    )
+
+    assert outcome == "not_found"
+
+
 def test_request_visible_task_cancel_routes_worker_heal_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

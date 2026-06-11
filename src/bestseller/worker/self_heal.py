@@ -69,16 +69,20 @@ from bestseller.settings import AppSettings
 # reaps old rows immediately via ``startup_cutoff``; this longer periodic
 # timeout prevents active workers from being marked failed mid-call.
 ORPHAN_WORKFLOW_TIMEOUT_SECONDS = 3 * 60 * 60
-# Writing-stage workflow runs (project/chapter/scene pipelines) heartbeat
-# frequently — they emit a workflow-row update on every scene/step, so a gap
-# much shorter than the planning timeout reliably means the owning worker died.
-# The long 3h timeout above exists for the PLANNING repair loop (multiple 15-min
-# planner attempts with no row update); applying it to writing runs left a book
-# orphaned for up to 3h after a worker crash before self-heal could resume it.
+# Heartbeating workflow runs emit a workflow-row update on every scene/step, so
+# a gap much shorter than the planning timeout reliably means the owning worker
+# died. The long 3h timeout above exists for the PLANNING repair loop (multiple
+# 15-min planner attempts with no row update); applying it to heartbeating runs
+# left a book orphaned for up to 3h after a worker crash before self-heal could
+# resume it. ``project_repair`` belongs here too: it writes a DB heartbeat per
+# repaired chapter (see worker.tasks._workflow_db_heartbeat), so a stalled repair
+# row is a dead worker — not a long planner call — and reaping it on the short
+# window unblocks the dashboard Stop/Delete buttons that key off that row.
 ORPHAN_WRITING_WORKFLOW_TIMEOUT_SECONDS = 30 * 60
 _WRITING_WORKFLOW_TYPES = frozenset(
     {"project_pipeline", "chapter_pipeline", "scene_pipeline"}
 )
+_HEARTBEAT_REAP_WORKFLOW_TYPES = _WRITING_WORKFLOW_TYPES | frozenset({"project_repair"})
 
 # Anything active + older than this at worker startup is, by definition,
 # a ghost from a prior container that died before updating its row. The
@@ -294,7 +298,7 @@ async def reap_orphan_workflow_runs(
         WorkflowRunModel.updated_at < heartbeat_cutoff,
         # Writing-stage runs reap on the shorter heartbeat window.
         and_(
-            WorkflowRunModel.workflow_type.in_(_WRITING_WORKFLOW_TYPES),
+            WorkflowRunModel.workflow_type.in_(_HEARTBEAT_REAP_WORKFLOW_TYPES),
             WorkflowRunModel.updated_at < writing_cutoff,
         ),
     ]

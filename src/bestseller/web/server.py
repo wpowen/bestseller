@@ -5392,8 +5392,10 @@ async def _cancel_db_repair_task_async(settings: AppSettings, task_id: str) -> s
 
     from sqlalchemy import update
 
-    from bestseller.infra.db.models import RewriteTaskModel
+    from bestseller.domain.enums import WorkflowStatus
+    from bestseller.infra.db.models import RewriteTaskModel, WorkflowRunModel
     from bestseller.services.autonomous_book_repair import AUTONOMOUS_REPAIR_TRIGGER
+    from bestseller.services.repair import WORKFLOW_TYPE_PROJECT_REPAIR
 
     async with session_scope(settings) as session:
         project = await get_project_by_slug(session, slug)
@@ -5413,11 +5415,36 @@ async def _cancel_db_repair_task_async(settings: AppSettings, task_id: str) -> s
         )
         cancelled_rows = int(result.rowcount or 0)
 
+        # The synthetic ``db-repair:<slug>`` card reports the project_repair
+        # workflow row's status. A crashed/abandoned repair can leave that row
+        # stuck in ``running`` (e.g. a flush-time lock timeout the worker could
+        # not record), so Stop must flip the row itself — otherwise the card
+        # stays "running", the cancel reports ``not_running``, and the dashboard
+        # Stop/Delete buttons deadlock against their own visibility model.
+        workflow_result = await session.execute(
+            update(WorkflowRunModel)
+            .where(
+                WorkflowRunModel.project_id == project.id,
+                WorkflowRunModel.workflow_type == WORKFLOW_TYPE_PROJECT_REPAIR,
+                WorkflowRunModel.status.in_(("pending", "queued", "running")),
+            )
+            .values(
+                status=WorkflowStatus.CANCELLED.value,
+                current_step="cancelled_from_web_dashboard",
+                error_message="Repair workflow cancelled from web dashboard.",
+            )
+        )
+        cancelled_workflow_rows = int(workflow_result.rowcount or 0)
+
     job_cancelled = await _abort_worker_heal_job_async(
         settings.redis.url,
         f"repair:heal:{slug}",
     )
-    return "cancel_requested" if cancelled_rows or job_cancelled else "not_running"
+    return (
+        "cancel_requested"
+        if cancelled_rows or cancelled_workflow_rows or job_cancelled
+        else "not_running"
+    )
 
 
 def _cancel_db_repair_task(settings: AppSettings, task_id: str) -> str:

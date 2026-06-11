@@ -292,7 +292,15 @@ class _FakeSession:
 
             return _ExecResult(count)
 
-        cutoff = self._filter_updated_before(stmt)
+        # The real reaper uses two ``updated_at <`` cutoffs OR'd together: the
+        # long heartbeat timeout (3h) for all reapable types, plus a short
+        # window (30min) that also applies to heartbeating types (writing
+        # pipelines + project_repair). Model both so the dual-window behavior is
+        # faithfully exercised. min() = oldest timestamp = long heartbeat cutoff;
+        # max() = most recent = short window cutoff.
+        cutoffs = self._filter_all_updated_before(stmt)
+        heartbeat_cutoff = min(cutoffs)
+        short_window_cutoff = max(cutoffs)
         created_cutoff = self._filter_created_before(stmt)
         protected_project_ids = self._filter_project_id_not_in(stmt)
         statuses = {"pending", "queued", "running"}
@@ -306,16 +314,26 @@ class _FakeSession:
             "scene_pipeline",
             "project_repair",
         }
+        short_window_types = {
+            "project_pipeline",
+            "chapter_pipeline",
+            "scene_pipeline",
+            "project_repair",
+        }
         count = 0
         for r in self.runs:
             created_at = r.created_at or r.updated_at
-            stale_by_heartbeat = r.updated_at < cutoff
+            stale_by_heartbeat = r.updated_at < heartbeat_cutoff
+            stale_by_short_window = (
+                r.workflow_type in short_window_types
+                and r.updated_at < short_window_cutoff
+            )
             stale_by_startup = created_cutoff is not None and created_at < created_cutoff
             if (
                 r.workflow_type in reapable_types
                 and r.status in statuses
                 and r.project_id not in protected_project_ids
-                and (stale_by_heartbeat or stale_by_startup)
+                and (stale_by_heartbeat or stale_by_short_window or stale_by_startup)
             ):
                 r.status = WorkflowStatus.FAILED.value
                 r.error_message = "reaped by self-heal (abandoned by prior worker)"
@@ -446,6 +464,37 @@ class _FakeSession:
         if whereclause is None:
             whereclause = getattr(stmt, "_whereclause", None)
         return _walk(whereclause) or _dt.datetime.now(_dt.UTC)
+
+    @staticmethod
+    def _filter_all_updated_before(stmt: Any) -> list[_dt.datetime]:
+        """Collect every ``updated_at < <ts>`` cutoff in the statement.
+
+        The reaper OR's multiple ``updated_at`` cutoffs (long heartbeat + short
+        window); a single-value extractor would only ever see the first.
+        """
+        found: list[_dt.datetime] = []
+
+        def _walk(node: Any) -> None:
+            try:
+                clauses = list(getattr(node, "clauses", []) or [])
+            except Exception:  # noqa: BLE001
+                clauses = []
+            for c in clauses:
+                _walk(c)
+            left = getattr(node, "left", None)
+            right = getattr(node, "right", None)
+            if left is not None and right is not None:
+                key = getattr(left, "key", None) or getattr(left, "name", None)
+                if key == "updated_at":
+                    value = getattr(right, "value", None)
+                    if value is not None:
+                        found.append(value)
+
+        whereclause = getattr(stmt, "whereclause", None)
+        if whereclause is None:
+            whereclause = getattr(stmt, "_whereclause", None)
+        _walk(whereclause)
+        return found or [_dt.datetime.now(_dt.UTC)]
 
     @staticmethod
     def _filter_created_before(stmt: Any) -> _dt.datetime | None:
@@ -1695,6 +1744,60 @@ async def test_reap_orphan_workflow_runs_reaps_project_repair_by_heartbeat(
 
     assert reaped == 1
     assert runs[0].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_reap_orphan_workflow_runs_reaps_project_repair_on_short_window(
+    now: _dt.datetime,
+) -> None:
+    """Project repair heartbeats per chapter (60s), so a 45-min-stale row is a
+    dead worker and must reap on the short (30-min) window — not wait the 3h
+    planning timeout. Leaving it ``running`` keeps the synthetic ``db-repair:``
+    card "running", which deadlocks the dashboard Stop/Delete buttons.
+    """
+    p = _FakeProject(id=uuid4(), slug="book-repair-short-window")
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="project_repair",
+            status="running",
+            # Stale by 45 min: past the 30-min heartbeat window but well within
+            # the 3h planning timeout. Under the old 3h-only rule this would NOT
+            # reap; it must now.
+            updated_at=now - _dt.timedelta(minutes=45),
+        ),
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=[], drafts=[])
+
+    reaped = await reap_orphan_workflow_runs(session)
+
+    assert reaped == 1
+    assert runs[0].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_reap_orphan_workflow_runs_preserves_live_project_repair_heartbeat(
+    now: _dt.datetime,
+) -> None:
+    """A project_repair row that heartbeated within the short window is a live
+    worker and must NOT be reaped (no startup_cutoff in play)."""
+    p = _FakeProject(id=uuid4(), slug="book-repair-live")
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="project_repair",
+            status="running",
+            updated_at=now - _dt.timedelta(minutes=2),
+        ),
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=[], drafts=[])
+
+    reaped = await reap_orphan_workflow_runs(session)
+
+    assert reaped == 0
+    assert runs[0].status == "running"
 
 
 @pytest.mark.asyncio

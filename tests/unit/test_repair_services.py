@@ -570,6 +570,22 @@ async def test_run_project_repair_rolls_back_db_level_failure_without_failure_st
     monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(repair_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
 
+    isolated_flips: list[dict[str, object]] = []
+
+    async def fake_mark_failed(workflow_run_id, *, current_step: str, error: str) -> bool:
+        isolated_flips.append(
+            {
+                "workflow_run_id": workflow_run_id,
+                "current_step": current_step,
+                "error": error,
+            }
+        )
+        return True
+
+    monkeypatch.setattr(
+        repair_services, "_mark_workflow_run_failed_isolated", fake_mark_failed
+    )
+
     session = FakeSession(
         scalars_results=[[task_chapter]],
         get_map={(ChapterModel, chapter.id): chapter},
@@ -582,9 +598,14 @@ async def test_run_project_repair_rolls_back_db_level_failure_without_failure_st
             "my-story",
         )
 
+    # Poisoned session is rolled back (cannot flush a failure step in-band) ...
     workflow_steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
     assert session.rollback_count == 1
     assert all(step.status != "failed" for step in workflow_steps)
+    # ... but the workflow row must still be flipped to failed on a fresh,
+    # isolated session so it never becomes a "running" zombie.
+    assert len(isolated_flips) == 1
+    assert "simulated DB transaction failure" in str(isolated_flips[0]["error"])
 
 
 @pytest.mark.asyncio

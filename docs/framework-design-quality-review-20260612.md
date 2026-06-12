@@ -62,6 +62,9 @@
 | R17 | LLM judge非确定性（商业闸门同数据两次结果不同） | 观察中 | judge结果缓存+多数票（对齐跨家族判官策略） |
 | R18 | merge合并大纲无整卷质量判官 | 未修 | P3-9 物化前整卷判官（重复度/单调度/钩子链） |
 | R19 | 规划层无场景容量匹配检查（场景信息密度 vs 字数目标失配→SCENE_COMPLETION_INCOMPLETE/LENGTH_OVER 反复触发，ch3/5/6 实证） | 未修 | P1-12 物化时估算每场景义务量（义务点数×均字耗）与 target_word_count 匹配，失配即调目标或建议拆场 |
+| R25 | 签名场景计划空壳自举：ensure_* 自举只生成骨架（archetype/stake），must_include_image/summary 全空——写手拿不到具体意象目标、闸门没有可兑现标准，SIGNATURE_SCENE/IMAGE_MISSING 结构性必发（zhaoshen-v3 实证：53条mandate全空壳） | 数据层已修（用v11大纲意象灌满8个关键位） | P0-5 自举时从章纲 signature_image/goal 派生具体 mandate；空壳mandate应视为未生成 |
+| R25b | 风格锚（voice-dna self-anchor）锚定首章旧文后不随重写刷新，置信度0.11带垃圾口头禅 | 暂不影响（权重低） | P3 重写后重采样 |
+| R24 | 自愈防重守卫死锁：arq:job 键存在但任务不在队列（重启窗口/入队半完成），守卫据键判"已排队"永不重试——项目无限期挂起（部署后首个 repair:heal 实证，手动删键解锁） | 未修（删键剧本可用） | P1-14 守卫同时校验队列成员资格或给 job 键配 TTL；入队改原子事务 |
 | R22 | 场景卡 metadata 字段更新黑洞：materialize 更新结构化列（purpose/participants/exit）但 **metadata 内的 signature_image/object_signal 残留旧值**——大纲改版后写手永远消费旧意象，SIGNATURE_IMAGE_MISSING 反复触发（ch9实证：卡purpose已是新章、sig仍是三版前内容） | 未修（本书已SQL直灌绕过） | P0-4 scene card upsert 把 outline scene 的全部 prompt-critical 字段（signature_image/object_signal/action_sequence等）纳入更新集；补"卡-纲一致性"回归测试 |
 | R21 | 章纲深层元数据与叙事层无一致性校验（key_reveals/world_state_deltas/location_refs 可与正文完全脱节而静默通过；人工/程序改纲后旧元数据残骸直接喂给写手prompt——v9手术后遗症实证，复核agent抓出9章残骸+1处认知矛盾） | 未修 | P1-13 物化时跑"元数据-叙事一致性"检查：reveals/deltas 的实体与正文goal/hook/scene文本交集为零即警告；编辑工具链提供"重生成元数据"功能 |
 | R20 | 章修复轮次预算结构性超标（场景3评2改×2场+章3修≈30轮上限 vs 质量目标≤5轮） | 设计层议题 | 满配卡首稿过闸为主路径；修复预算可配置收紧（fail-fast 出诊断），待 ch6+ 实测数据定参 |

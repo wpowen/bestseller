@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 # ruff: noqa: ANN401,RUF001
+import hashlib
 import json
+import logging
 import re
 from typing import Any
 
@@ -25,6 +27,110 @@ from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology_bridge import get_fragment
 from bestseller.services.prompt_packs import PromptPack
 from bestseller.settings import AppSettings
+
+logger = logging.getLogger(__name__)
+
+# ── R17: judge verdict cache ─────────────────────────────────────────────────
+# An LLM judge is non-deterministic: the same planning input judged twice can
+# flip between pass and fail, so a book can be blocked by a verdict that a
+# rerun would have passed. The fix: cache the parsed verdict keyed by
+# (project, judge type, input-content hash) in the project's metadata. A
+# repeat evaluation of byte-identical input reuses the recorded verdict
+# instead of re-rolling the dice.
+_JUDGE_CACHE_METADATA_KEY = "llm_judge_verdict_cache"
+COMMERCIAL_PLANNING_JUDGE_TYPE = "commercial_planning_readiness"
+
+
+def compute_judge_input_hash(payload: Any) -> str:
+    """Stable content hash for judge inputs (canonical JSON, sha256)."""
+
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _verdict_is_cacheable(parsed: Mapping[str, Any] | None) -> bool:
+    """Only real verdicts are cached — never the unavailable-fallback shape."""
+
+    if not isinstance(parsed, Mapping) or not parsed:
+        return False
+    for field in ("blocking_issues", "audit_issues"):
+        for issue in parsed.get(field) or ():
+            code = str(issue.get("code") or "") if isinstance(issue, Mapping) else ""
+            if "UNAVAILABLE" in code.upper():
+                return False
+    return True
+
+
+async def _load_project_for_judge_cache(session: AsyncSession, slug: str) -> Any:
+    try:
+        from bestseller.infra.db.models import ProjectModel  # noqa: PLC0415
+        from sqlalchemy import select  # noqa: PLC0415
+
+        return await session.scalar(
+            select(ProjectModel).where(ProjectModel.slug == slug)
+        )
+    except Exception:  # noqa: BLE001 — cache is best-effort, never fatal
+        logger.debug("judge cache: project lookup failed for %s", slug, exc_info=True)
+        return None
+
+
+async def load_cached_judge_verdict(
+    session: AsyncSession,
+    *,
+    project_slug: str,
+    judge_type: str,
+    input_hash: str,
+) -> dict[str, Any] | None:
+    """Return the cached parsed verdict for this exact input, or ``None``."""
+
+    project = await _load_project_for_judge_cache(session, project_slug)
+    if project is None:
+        return None
+    metadata = getattr(project, "metadata_json", None)
+    cache = metadata.get(_JUDGE_CACHE_METADATA_KEY) if isinstance(metadata, dict) else None
+    entry = cache.get(judge_type) if isinstance(cache, dict) else None
+    if not isinstance(entry, dict) or entry.get("input_hash") != input_hash:
+        return None
+    verdict = entry.get("verdict")
+    return dict(verdict) if isinstance(verdict, dict) else None
+
+
+async def store_judge_verdict(
+    session: AsyncSession,
+    *,
+    project_slug: str,
+    judge_type: str,
+    input_hash: str,
+    verdict: Mapping[str, Any],
+) -> None:
+    """Record the parsed verdict for this input on the project metadata.
+
+    Keeps one entry per judge type (latest input wins) so the cache stays
+    bounded. Never raises — caching is an optimization, not a contract.
+    """
+
+    try:
+        project = await _load_project_for_judge_cache(session, project_slug)
+        if project is None:
+            return
+        metadata = getattr(project, "metadata_json", None)
+        metadata = dict(metadata) if isinstance(metadata, dict) else {}
+        cache = metadata.get(_JUDGE_CACHE_METADATA_KEY)
+        cache = dict(cache) if isinstance(cache, dict) else {}
+        cache[judge_type] = {
+            "input_hash": input_hash,
+            "verdict": dict(verdict),
+        }
+        metadata[_JUDGE_CACHE_METADATA_KEY] = cache
+        project.metadata_json = metadata
+    except Exception:  # noqa: BLE001 — cache is best-effort, never fatal
+        logger.debug(
+            "judge cache: failed to store verdict for %s/%s",
+            project_slug,
+            judge_type,
+            exc_info=True,
+        )
+
 
 OUTLINE_JUDGE_DIMENSIONS: tuple[str, ...] = (
     "opening_pull",
@@ -582,6 +688,57 @@ async def judge_commercial_planning_readiness(
 
     brief_text = json.dumps(project_brief or {}, ensure_ascii=False, indent=2, default=str)
 
+    def _finalize(
+        parsed_verdict: Mapping[str, Any],
+        *,
+        llm_run_id: str | None,
+        raw_excerpt: str,
+    ) -> LLMQualityJudgeResult:
+        return quality_judge_result_from_mapping(
+            parsed_verdict,
+            scope="commercial_planning",
+            min_overall=threshold,
+            min_dimensions={
+                "concrete_conflict": threshold - 0.05,
+                "hook_quality": threshold - 0.10,
+                "scene_executability": threshold - 0.05,
+            },
+            llm_run_id=llm_run_id,
+            raw_excerpt=raw_excerpt,
+        )
+
+    # R17: same project + same input → reuse the recorded verdict instead of
+    # re-rolling a non-deterministic judge.
+    project_slug = str((project_brief or {}).get("slug") or "").strip()
+    input_hash = compute_judge_input_hash(
+        {
+            "judge_type": COMMERCIAL_PLANNING_JUDGE_TYPE,
+            "chapters": chapters_text,
+            "deterministic_findings": det_text,
+            "project_brief": brief_text,
+            "threshold": round(float(threshold), 4),
+        }
+    )
+    if project_slug:
+        cached_verdict = await load_cached_judge_verdict(
+            session,
+            project_slug=project_slug,
+            judge_type=COMMERCIAL_PLANNING_JUDGE_TYPE,
+            input_hash=input_hash,
+        )
+        if cached_verdict is not None:
+            logger.info(
+                "commercial planning judge cache hit: project=%s hash=%s — "
+                "reusing recorded verdict",
+                project_slug,
+                input_hash[:12],
+            )
+            return _finalize(
+                cached_verdict,
+                llm_run_id=None,
+                raw_excerpt="(cached verdict — judge not re-invoked)",
+            )
+
     fallback = json.dumps(
         {
             "pass": True,  # safe fallback — let planning proceed; prose gate will catch issues
@@ -661,15 +818,16 @@ async def judge_commercial_planning_readiness(
         ),
     )
     parsed = _parse_json_object(completion.content)
-    return quality_judge_result_from_mapping(
+    if project_slug and _verdict_is_cacheable(parsed):
+        await store_judge_verdict(
+            session,
+            project_slug=project_slug,
+            judge_type=COMMERCIAL_PLANNING_JUDGE_TYPE,
+            input_hash=input_hash,
+            verdict=parsed,
+        )
+    return _finalize(
         parsed,
-        scope="commercial_planning",
-        min_overall=threshold,
-        min_dimensions={
-            "concrete_conflict": threshold - 0.05,
-            "hook_quality": threshold - 0.10,
-            "scene_executability": threshold - 0.05,
-        },
         llm_run_id=str(completion.llm_run_id) if completion.llm_run_id else None,
         raw_excerpt=completion.content[:4000],
     )

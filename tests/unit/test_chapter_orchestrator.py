@@ -105,7 +105,18 @@ def test_prepare_chapter_context_loads_market_bundle(tmp_path: Path) -> None:
 
 
 def test_prepare_chapter_context_loads_signature_plan(tmp_path: Path) -> None:
-    plan = plan_signature_scenes(total_chapters=30, cadence=10)
+    # R25: mandates need a concrete target to render; outline hints supply it.
+    plan = plan_signature_scenes(
+        total_chapters=30,
+        cadence=10,
+        chapter_outline={
+            10: {
+                "title": "断剑之约",
+                "goal": "主角在崖边立誓夺回名单",
+                "signature_images": ["崖边火光中折断的剑"],
+            }
+        },
+    )
     save_signature_plan(plan, "with-sig", output_base_dir=tmp_path)
 
     ctx = prepare_chapter_context("with-sig", 10, output_base_dir=tmp_path)
@@ -115,6 +126,21 @@ def test_prepare_chapter_context_loads_signature_plan(tmp_path: Path) -> None:
 
     block = ctx.signature_scene_block()
     assert "招牌场景" in block
+    assert "崖边火光中折断的剑" in block
+
+
+def test_prepare_chapter_context_skeleton_mandate_not_rendered(
+    tmp_path: Path,
+) -> None:
+    # R25: a skeleton mandate (no concrete target) must not reach the writer.
+    plan = plan_signature_scenes(total_chapters=30, cadence=10)
+    save_signature_plan(plan, "skel-sig", output_base_dir=tmp_path)
+
+    ctx = prepare_chapter_context("skel-sig", 10, output_base_dir=tmp_path)
+
+    assert ctx.signature_scene_mandate is not None
+    assert ctx.signature_scene_mandate.is_skeleton
+    assert ctx.signature_scene_block() == ""
 
 
 def test_prepare_chapter_context_signature_mandate_absent_outside_slots(

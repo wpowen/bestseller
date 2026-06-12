@@ -462,9 +462,16 @@ def test_workflow_materialize_outline_accepts_file(monkeypatch: pytest.MonkeyPat
     async def fake_session_scope(settings):
         yield object()
 
-    async def fake_materialize(session, project_slug, batch, requested_by="system"):
+    async def fake_materialize(
+        session,
+        project_slug,
+        batch,
+        requested_by="system",
+        force_chapter_numbers=None,
+    ):
         assert project_slug == "my-story"
         assert batch.batch_name == "opening"
+        assert force_chapter_numbers is None
         return WorkflowMaterializationResult(
             workflow_run_id=uuid4(),
             project_id=uuid4(),

@@ -268,6 +268,11 @@ def evaluate_retention_safety(
                 cadence=signature_cadence,
             )
             mandate = plan.mandate_for_chapter(chapter_position)
+            if mandate is not None and getattr(mandate, "is_skeleton", False):
+                # R25: a skeleton mandate has no concrete target and was
+                # never rendered into the writer prompt — grading the
+                # chapter against an empty standard is self-harm, not QA.
+                mandate = None
             if mandate is not None:
                 line_hits = sum(
                     1 for hint in mandate.must_include_line if hint in chapter_text

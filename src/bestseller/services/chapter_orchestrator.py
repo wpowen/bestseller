@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
@@ -102,8 +103,13 @@ class ChapterContext:
     diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def signature_scene_block(self, *, language: str = "zh-CN") -> str:
-        return render_signature_scene_block(
-            self.signature_scene_mandate, language=language
+        # render returns None for skeleton mandates (R25) — keep this
+        # accessor's str contract by collapsing that to "".
+        return (
+            render_signature_scene_block(
+                self.signature_scene_mandate, language=language
+            )
+            or ""
         )
 
     def hook_echo_block(self, *, language: str = "zh-CN") -> str:
@@ -313,6 +319,7 @@ def ensure_signature_plan(
     cadence: int | None = None,
     anchor_images: Sequence[str] | None = None,
     anchor_lines: Sequence[str] | None = None,
+    chapter_outline: Mapping[int | str, Mapping[str, Any]] | None = None,
 ) -> SignatureScenePlan | None:
     """Load the persisted signature plan, creating one when absent.
 
@@ -327,6 +334,12 @@ def ensure_signature_plan(
     phrases (typically from the book's imagery system) baked into the
     mandates at creation time — the framework supplies no anchor content
     of its own.
+
+    ``chapter_outline`` (R25) carries per-chapter outline hints (title /
+    goal / scene signature images, see
+    ``signature_outline_hints.load_chapter_outline_hints``) so freshly
+    bootstrapped mandates get concrete, verifiable targets instead of
+    empty archetype shells.
     """
 
     existing = _load_signature_plan(
@@ -343,6 +356,8 @@ def ensure_signature_plan(
         kwargs["anchor_images"] = list(anchor_images)
     if anchor_lines:
         kwargs["anchor_lines"] = list(anchor_lines)
+    if chapter_outline:
+        kwargs["chapter_outline"] = chapter_outline
     plan = plan_signature_scenes(**kwargs)
     path = save_signature_plan(
         plan, slug, output_base_dir=output_base_dir, mode_b=mode_b

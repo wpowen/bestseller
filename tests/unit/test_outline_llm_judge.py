@@ -381,3 +381,160 @@ async def test_commercial_planning_judge_prompt_includes_methodology_reference(
 
     assert "评估时必须参照的方法论标准" in captured["system"]
     assert "【character_design】" in captured["system"]
+
+
+# ---------------------------------------------------------------------------
+# R17: commercial planning judge verdict cache — same project + same input
+# must reuse the recorded verdict instead of re-rolling a non-deterministic
+# LLM judge.
+# ---------------------------------------------------------------------------
+
+
+class _FakeProjectSession:
+    """Session double whose ``scalar`` always resolves the cached project."""
+
+    def __init__(self, project: object) -> None:
+        self.project = project
+
+    async def scalar(self, stmt: object) -> object:
+        return self.project
+
+
+def _fake_project(slug: str) -> object:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(slug=slug, metadata_json={})
+
+
+def _verdict_completion(overall_score: float):
+    async def fake_complete_text(session, settings, request):
+        fake_complete_text.calls += 1
+        return LLMCompletionResult(
+            content=json.dumps(
+                {
+                    "pass": True,
+                    "overall_score": overall_score,
+                    "dimension_scores": {"commercial_retention": overall_score},
+                    "blocking_issues": [],
+                    "audit_issues": [],
+                    "rewrite_plan": {"scope": "commercial_planning"},
+                },
+                ensure_ascii=False,
+            ),
+            provider="mock",
+            model_name="mock-critic",
+            llm_run_id=uuid4(),
+        )
+
+    fake_complete_text.calls = 0
+    return fake_complete_text
+
+
+@pytest.mark.asyncio
+async def test_commercial_planning_judge_reuses_cached_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_complete_text = _verdict_completion(0.84)
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fake_complete_text)
+
+    project = _fake_project("book-cache")
+    session = _FakeProjectSession(project)
+    settings = load_settings(env={})
+    kwargs = dict(
+        chapters_payload=[{"chapter_number": 1, "chapter_goal": "林渊接到委托"}],
+        project_brief={"slug": "book-cache", "genre": "fantasy"},
+        threshold=0.75,
+    )
+
+    first = await outline_llm_judge.judge_commercial_planning_readiness(
+        session, settings, **kwargs
+    )
+    assert fake_complete_text.calls == 1
+    assert first.overall_score == 0.84
+    cache = project.metadata_json["llm_judge_verdict_cache"]
+    assert "commercial_planning_readiness" in cache
+
+    second = await outline_llm_judge.judge_commercial_planning_readiness(
+        session, settings, **kwargs
+    )
+
+    # Cache hit — judge not re-invoked, identical verdict.
+    assert fake_complete_text.calls == 1
+    assert second.overall_score == first.overall_score
+    assert second.passed == first.passed
+
+
+@pytest.mark.asyncio
+async def test_commercial_planning_judge_cache_misses_on_changed_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_complete_text = _verdict_completion(0.80)
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fake_complete_text)
+
+    project = _fake_project("book-cache-miss")
+    session = _FakeProjectSession(project)
+    settings = load_settings(env={})
+    brief = {"slug": "book-cache-miss", "genre": "fantasy"}
+
+    await outline_llm_judge.judge_commercial_planning_readiness(
+        session,
+        settings,
+        chapters_payload=[{"chapter_number": 1, "chapter_goal": "旧目标"}],
+        project_brief=brief,
+        threshold=0.75,
+    )
+    await outline_llm_judge.judge_commercial_planning_readiness(
+        session,
+        settings,
+        chapters_payload=[{"chapter_number": 1, "chapter_goal": "改过的目标"}],
+        project_brief=brief,
+        threshold=0.75,
+    )
+
+    assert fake_complete_text.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_commercial_planning_judge_does_not_cache_unavailable_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fallback_complete_text(session, settings, request):
+        return LLMCompletionResult(
+            content=request.fallback_response,
+            provider="mock",
+            model_name="mock-critic",
+            llm_run_id=None,
+        )
+
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fallback_complete_text)
+
+    project = _fake_project("book-fallback")
+    session = _FakeProjectSession(project)
+
+    await outline_llm_judge.judge_commercial_planning_readiness(
+        session,
+        load_settings(env={}),
+        chapters_payload=[{"chapter_number": 1, "chapter_goal": "目标"}],
+        project_brief={"slug": "book-fallback"},
+        threshold=0.75,
+    )
+
+    assert "llm_judge_verdict_cache" not in project.metadata_json
+
+
+@pytest.mark.asyncio
+async def test_commercial_planning_judge_without_slug_skips_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_complete_text = _verdict_completion(0.82)
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fake_complete_text)
+
+    result = await outline_llm_judge.judge_commercial_planning_readiness(
+        FakeSession(),
+        load_settings(env={}),
+        chapters_payload=[{"chapter_number": 1, "chapter_goal": "目标"}],
+        threshold=0.75,
+    )
+
+    assert result.overall_score == 0.82
+    assert fake_complete_text.calls == 1

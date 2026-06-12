@@ -386,6 +386,7 @@ def prepare_chapter(
             )
         )
     if context.signature_scene_mandate is not None:
+        # None for skeleton mandates (R25) — filtered out below.
         blocks.append(
             render_signature_scene_block(
                 context.signature_scene_mandate, language=language
@@ -398,6 +399,7 @@ def prepare_chapter(
             )
         )
 
+    blocks = [block for block in blocks if block]
     if not blocks:
         typer.echo("(no context blocks present — run plan-concept / plan-signatures / "
                    "voice-dna extract first to populate)")

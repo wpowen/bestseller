@@ -209,8 +209,8 @@ class TestRepairDirectives:
         directives = _outline_repair_directives_from_error(
             err, language="zh"
         )
-        # 20-entry cap + 1 reminder line at the end.
-        assert len(directives) <= 21
+        # 20-entry cap + 1 reminder line + 1 keep-passed-fields line at the end.
+        assert len(directives) <= 22
 
     def test_non_title_error_fallthrough(self) -> None:
         # A normal PlannerFallbackError should hit the original path,

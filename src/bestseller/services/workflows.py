@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import logging
+import re
+from datetime import datetime, timezone
 from typing import Any, Iterable
 from uuid import UUID
 
@@ -26,6 +28,7 @@ from bestseller.infra.db.models import (
     PlanningArtifactVersionModel,
     ProjectModel,
     SceneCardModel,
+    SceneDraftVersionModel,
     WorkflowRunModel,
     WorkflowStepRunModel,
 )
@@ -112,6 +115,281 @@ _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES = {
 _MATERIALIZATION_MUTABLE_SCENE_STATUSES = {
     SceneStatus.PLANNED.value,
 }
+
+# ── R19: scene capacity matching ────────────────────────────────────────────
+# Average prose words a single narrative obligation (a story-purpose sentence,
+# an exit-state commitment, a dialogue beat, a participant to stage) costs to
+# honor. Deliberately coarse — the goal is catching gross density/word-target
+# mismatch, not precise budgeting.
+_SCENE_CAPACITY_WORDS_PER_OBLIGATION = 120
+# A scene is flagged only when the estimated word demand exceeds its target by
+# this ratio — small overshoot is normal writer headroom.
+_SCENE_CAPACITY_OVERFLOW_RATIO = 1.3
+# Platform bandwidth: a chapter's total scene budget never gets raised above
+# this many words by the capacity pass.
+_SCENE_CAPACITY_CHAPTER_WORD_CAP = 3500
+
+# ── R21: metadata-narrative coherence ───────────────────────────────────────
+# Deep chapter metadata fields that can survive outline rewrites as stale
+# residue completely disconnected from the narrative layer (goal/conflict/
+# hook/scenes) — and then get fed verbatim into writer prompts.
+_METADATA_COHERENCE_FIELDS = ("key_reveals", "world_state_deltas", "location_refs")
+# Minimum character-2-gram overlap between a metadata field's text and the
+# chapter's narrative text. Below this, the field is treated as residue.
+_METADATA_COHERENCE_MIN_OVERLAP = 0.05
+
+# ── R14: forced materialization active-draft guard ─────────────────────────
+# A chapter with an is-current scene draft created/updated within this window
+# is considered actively being written and is never force-overwritten.
+_FORCE_MATERIALIZE_ACTIVE_DRAFT_WINDOW_SECONDS = 300
+
+_SENTENCE_SPLIT_RE = re.compile(r"[。！？!?；;\n]+")
+
+
+def _count_sentences(text: Any) -> int:
+    if not isinstance(text, str) or not text.strip():
+        return 0
+    return sum(1 for part in _SENTENCE_SPLIT_RE.split(text) if part.strip())
+
+
+def _estimate_scene_obligation_points(scene: Any) -> int:
+    """Coarse, deterministic count of narrative obligations packed into a scene.
+
+    Counts only structural facts (sentence/entry counts), never vocabulary, so
+    the estimate is genre-agnostic by construction.
+    """
+    purpose = getattr(scene, "purpose", None)
+    story_text = purpose.get("story") if isinstance(purpose, dict) else purpose
+    points = _count_sentences(story_text if isinstance(story_text, str) else None)
+    exit_state = getattr(scene, "exit_state", None)
+    if isinstance(exit_state, dict):
+        points += len(exit_state)
+    elif exit_state:
+        points += 1
+    points += len(getattr(scene, "key_dialogue_beats", None) or [])
+    points += len(getattr(scene, "participants", None) or [])
+    return points
+
+
+def _apply_scene_capacity_normalization(
+    batch: ChapterOutlineBatchInput,
+    *,
+    words_per_obligation: int = _SCENE_CAPACITY_WORDS_PER_OBLIGATION,
+    overflow_ratio: float = _SCENE_CAPACITY_OVERFLOW_RATIO,
+    chapter_word_cap: int = _SCENE_CAPACITY_CHAPTER_WORD_CAP,
+) -> list[dict[str, Any]]:
+    """R19: match scene information density against scene word targets.
+
+    For every scene, estimate the word demand of its obligations. Scenes whose
+    demand exceeds ``target_word_count * overflow_ratio`` get a non-blocking
+    capacity warning and their target raised toward the estimate, bounded by
+    the chapter target and the platform bandwidth (``chapter_word_cap``).
+    Multiple overflowing scenes share the available headroom proportionally.
+    Targets are never reduced. Returns the warning records.
+    """
+    warnings: list[dict[str, Any]] = []
+    words_per_obligation = max(1, int(words_per_obligation))
+    for chapter in batch.chapters:
+        scenes = chapter.scenes
+        if not scenes:
+            continue
+        estimates = [
+            _estimate_scene_obligation_points(scene) * words_per_obligation
+            for scene in scenes
+        ]
+        overflow_indexes = {
+            idx
+            for idx, scene in enumerate(scenes)
+            if estimates[idx] > int(scene.target_word_count) * float(overflow_ratio)
+        }
+        if not overflow_indexes:
+            continue
+        chapter_target = int(chapter.target_word_count or 0)
+        non_overflow_total = sum(
+            int(scenes[idx].target_word_count)
+            for idx in range(len(scenes))
+            if idx not in overflow_indexes
+        )
+        overflow_desired_total = sum(
+            max(int(scenes[idx].target_word_count), estimates[idx])
+            for idx in overflow_indexes
+        )
+        total_desired = non_overflow_total + overflow_desired_total
+        # The scene budget may grow toward the estimated demand, but never
+        # beyond the platform bandwidth; an already-larger chapter target is
+        # honored as-is (this pass never shrinks anything).
+        allowed_total = max(chapter_target, min(int(chapter_word_cap), total_desired))
+        budget = max(0, allowed_total - non_overflow_total)
+        scale = 1.0
+        if overflow_desired_total > budget:
+            scale = budget / overflow_desired_total if overflow_desired_total else 0.0
+        for idx in sorted(overflow_indexes):
+            scene = scenes[idx]
+            old_target = int(scene.target_word_count)
+            desired = max(old_target, estimates[idx])
+            adjusted = max(old_target, int(desired * scale))
+            warnings.append(
+                {
+                    "chapter_number": chapter.chapter_number,
+                    "scene_number": scene.scene_number,
+                    "obligation_points": estimates[idx] // words_per_obligation,
+                    "estimated_words": estimates[idx],
+                    "target_word_count": old_target,
+                    "adjusted_target_word_count": adjusted,
+                }
+            )
+            if adjusted != old_target:
+                scene.target_word_count = adjusted
+        new_total = sum(int(scene.target_word_count) for scene in scenes)
+        if new_total > chapter_target:
+            chapter.target_word_count = min(
+                new_total,
+                max(int(chapter_word_cap), chapter_target),
+            )
+    return warnings
+
+
+def _char_bigrams(text: str) -> set[str]:
+    compact = re.sub(r"\s+", "", text or "")
+    return {compact[i : i + 2] for i in range(len(compact) - 1)}
+
+
+def _flatten_metadata_field_text(value: Any) -> str:
+    """Flatten a metadata field (str / list / dict trees) to comparison text.
+
+    Dict keys are schema labels rather than story content, so only values are
+    included.
+    """
+    parts: list[str] = []
+    if isinstance(value, str):
+        parts.append(value)
+    elif isinstance(value, dict):
+        parts.extend(
+            _flatten_metadata_field_text(item) for item in value.values()
+        )
+    elif isinstance(value, (list, tuple)):
+        parts.extend(_flatten_metadata_field_text(item) for item in value)
+    elif value is not None:
+        parts.append(str(value))
+    return " ".join(part for part in parts if part)
+
+
+def _chapter_narrative_text(chapter: Any) -> str:
+    """Concatenate the narrative-layer text of a chapter outline."""
+    parts: list[Any] = [
+        getattr(chapter, "chapter_goal", None),
+        getattr(chapter, "opening_situation", None),
+        getattr(chapter, "main_conflict", None),
+        getattr(chapter, "hook_description", None),
+        getattr(chapter, "tail_hook", None),
+        getattr(chapter, "opening_pressure", None),
+        getattr(chapter, "required_payoff", None),
+    ]
+    for scene in getattr(chapter, "scenes", None) or []:
+        parts.extend(
+            (
+                getattr(scene, "title", None),
+                getattr(scene, "time_label", None),
+                getattr(scene, "concrete_goal", None),
+                getattr(scene, "protagonist_state", None),
+            )
+        )
+        purpose = getattr(scene, "purpose", None)
+        if isinstance(purpose, dict):
+            parts.extend(value for value in purpose.values() if value)
+        for state_field in ("entry_state", "exit_state"):
+            state = getattr(scene, state_field, None)
+            if isinstance(state, dict):
+                parts.extend(value for value in state.values() if value)
+        parts.extend(getattr(scene, "key_dialogue_beats", None) or [])
+        parts.extend(getattr(scene, "information_introduced", None) or [])
+        parts.extend(getattr(scene, "participants", None) or [])
+    return " ".join(str(part) for part in parts if part)
+
+
+def _apply_metadata_narrative_coherence(
+    batch: ChapterOutlineBatchInput,
+    *,
+    min_overlap: float = _METADATA_COHERENCE_MIN_OVERLAP,
+) -> tuple[list[dict[str, Any]], int]:
+    """R21: detect deep-metadata residue disconnected from the narrative layer.
+
+    Compares the character-2-gram set of each deep metadata field against the
+    chapter's narrative text. A field whose overlap ratio falls below
+    ``min_overlap`` is treated as suspected residue: a non-blocking warning is
+    recorded and the field is cleared — feeding the writer nothing beats
+    feeding it stale facts (same principle as the P0-2 enrichment pass).
+    Returns ``(warnings, cleared_field_count)``.
+    """
+    warnings: list[dict[str, Any]] = []
+    cleared_fields = 0
+    for chapter in batch.chapters:
+        narrative_grams = _char_bigrams(_chapter_narrative_text(chapter))
+        if not narrative_grams:
+            continue
+        for field_name in _METADATA_COHERENCE_FIELDS:
+            value = getattr(chapter, field_name, None)
+            if not value:
+                continue
+            field_grams = _char_bigrams(_flatten_metadata_field_text(value))
+            if not field_grams:
+                continue
+            overlap = len(field_grams & narrative_grams) / len(field_grams)
+            if overlap >= float(min_overlap):
+                continue
+            warnings.append(
+                {
+                    "chapter_number": chapter.chapter_number,
+                    "field": field_name,
+                    "overlap_ratio": round(overlap, 4),
+                    "item_count": len(value) if isinstance(value, (list, tuple)) else 1,
+                    "action": "cleared",
+                }
+            )
+            setattr(chapter, field_name, [])
+            cleared_fields += 1
+    return warnings, cleared_fields
+
+
+def _is_recent_draft_timestamp(
+    timestamp: datetime | None,
+    *,
+    window_seconds: int = _FORCE_MATERIALIZE_ACTIVE_DRAFT_WINDOW_SECONDS,
+    now: datetime | None = None,
+) -> bool:
+    if timestamp is None:
+        return False
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    return (reference - timestamp).total_seconds() <= float(window_seconds)
+
+
+async def _chapter_has_recent_active_draft(
+    session: AsyncSession,
+    *,
+    chapter_id: UUID,
+    window_seconds: int = _FORCE_MATERIALIZE_ACTIVE_DRAFT_WINDOW_SECONDS,
+    now: datetime | None = None,
+) -> bool:
+    """R14 guard: True when the chapter has a fresh is-current scene draft."""
+    latest_created_at = await session.scalar(
+        select(SceneDraftVersionModel.created_at)
+        .join(SceneCardModel, SceneCardModel.id == SceneDraftVersionModel.scene_card_id)
+        .where(
+            SceneCardModel.chapter_id == chapter_id,
+            SceneDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(SceneDraftVersionModel.created_at.desc())
+        .limit(1)
+    )
+    return _is_recent_draft_timestamp(
+        latest_created_at,
+        window_seconds=window_seconds,
+        now=now,
+    )
 
 
 def _outline_fingerprint_scan_inputs(
@@ -1490,9 +1768,14 @@ async def _sync_existing_chapter_from_outline(
     project_id: UUID,
     chapter: ChapterModel,
     chapter_outline: Any,
+    force: bool = False,
 ) -> bool:
-    """Update an existing planned/outlining chapter from the latest outline."""
-    if chapter.status not in _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES:
+    """Update an existing planned/outlining chapter from the latest outline.
+
+    ``force=True`` (R14) bypasses the mutable-status guard for chapters that
+    the caller explicitly requested to re-materialize.
+    """
+    if not force and chapter.status not in _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES:
         return False
 
     volume = await create_or_get_volume(
@@ -1657,8 +1940,13 @@ def _ensemble_arc_report_to_dict(report: EnsembleArcReport) -> dict[str, Any]:
     }
 
 
-def _sync_existing_scene_from_outline(scene: SceneCardModel, scene_outline: Any) -> bool:
-    if scene.status not in _MATERIALIZATION_MUTABLE_SCENE_STATUSES:
+def _sync_existing_scene_from_outline(
+    scene: SceneCardModel,
+    scene_outline: Any,
+    *,
+    force: bool = False,
+) -> bool:
+    if not force and scene.status not in _MATERIALIZATION_MUTABLE_SCENE_STATUSES:
         return False
     scene.scene_type = scene_outline.scene_type
     scene.title = scene_outline.title
@@ -1869,6 +2157,7 @@ async def materialize_chapter_outline_batch(
     requested_by: str = "system",
     source_artifact_id: UUID | None = None,
     prune_missing_planned: bool = False,
+    force_chapter_numbers: list[int] | None = None,
 ) -> WorkflowMaterializationResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -1902,6 +2191,11 @@ async def materialize_chapter_outline_batch(
     chapters_skipped_immutable = 0
     current_step_name = "validate_outline_batch"
     causality_results_by_chapter: dict[int, ChapterCausalityResult] = {}
+    # R14: chapters the caller explicitly asked to re-materialize even though
+    # they are no longer in a mutable (planned/outlining) status.
+    _force_set: set[int] = {int(number) for number in (force_chapter_numbers or [])}
+    _forced_chapters: list[int] = []
+    _force_rejected_active_draft: list[int] = []
 
     # ── Deterministic field enrichment (P0-2) ──────────────────────────────
     # The batch planner systematically omits opening_situation, non-solo scene
@@ -1932,6 +2226,26 @@ async def materialize_chapter_outline_batch(
         workflow_run.metadata_json = {
             **(workflow_run.metadata_json or {}),
             "outline_field_enrichment": _enrich_stats,
+        }
+
+    # ── Metadata-narrative coherence check (R21) ───────────────────────────
+    # Deep chapter metadata (key_reveals / world_state_deltas / location_refs)
+    # can survive outline rewrites as stale residue the narrative layer no
+    # longer supports — and would be fed verbatim into writer prompts. Detect
+    # disconnected fields via char-2-gram overlap and clear them (non-blocking).
+    _coherence_warnings, _coherence_cleared = _apply_metadata_narrative_coherence(batch)
+    if _coherence_warnings:
+        logger.warning(
+            "Metadata-narrative coherence check flagged %d suspected residue "
+            "field(s) in batch '%s' (cleared before materialization): %s",
+            len(_coherence_warnings),
+            batch.batch_name,
+            _coherence_warnings[:10],
+        )
+        workflow_run.metadata_json = {
+            **(workflow_run.metadata_json or {}),
+            "metadata_coherence_warnings": _coherence_warnings,
+            "metadata_coherence_cleared_fields": _coherence_cleared,
         }
 
     try:
@@ -2416,6 +2730,29 @@ async def materialize_chapter_outline_batch(
                 },
             }
 
+        # ── Scene capacity matching (R19) ──────────────────────────────────
+        # Estimate each scene's word demand from its obligation density and
+        # raise mismatched scene targets (warning-only, never blocks) so dense
+        # scenes stop oscillating between SCENE_COMPLETION_INCOMPLETE and
+        # LENGTH_OVER at draft time.
+        _capacity_warnings = _apply_scene_capacity_normalization(batch)
+        _capacity_adjusted_chapters: set[int] = set()
+        if _capacity_warnings:
+            _capacity_adjusted_chapters = {
+                int(warning["chapter_number"]) for warning in _capacity_warnings
+            }
+            logger.warning(
+                "Scene capacity check flagged %d scene(s) in batch '%s' whose "
+                "obligation density exceeds the word target: %s",
+                len(_capacity_warnings),
+                batch.batch_name,
+                _capacity_warnings[:10],
+            )
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "scene_capacity_warnings": _capacity_warnings,
+            }
+
         for chapter_outline in batch.chapters:
             current_step_name = f"create_chapter_{chapter_outline.chapter_number}"
             workflow_run.current_step = current_step_name
@@ -2429,12 +2766,34 @@ async def materialize_chapter_outline_batch(
                     ChapterModel.chapter_number == chapter_outline.chapter_number,
                 )
             )
+            force_this_chapter = False
             if (
                 existing_chapter is not None
                 and existing_chapter.status not in _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES
             ):
-                chapters_skipped_immutable += 1
-                continue
+                if chapter_outline.chapter_number not in _force_set:
+                    chapters_skipped_immutable += 1
+                    continue
+                # R14 guard: never force-overwrite a chapter that is actively
+                # being written (an is-current scene draft updated within the
+                # protection window).
+                if await _chapter_has_recent_active_draft(
+                    session,
+                    chapter_id=existing_chapter.id,
+                ):
+                    logger.warning(
+                        "Refusing to force-materialize chapter %d of '%s': an "
+                        "is-current scene draft was updated within the last %d "
+                        "seconds (chapter is actively being written).",
+                        chapter_outline.chapter_number,
+                        project_slug,
+                        _FORCE_MATERIALIZE_ACTIVE_DRAFT_WINDOW_SECONDS,
+                    )
+                    _force_rejected_active_draft.append(chapter_outline.chapter_number)
+                    chapters_skipped_immutable += 1
+                    continue
+                force_this_chapter = True
+                _forced_chapters.append(chapter_outline.chapter_number)
 
             should_sync_causality_metadata = False
             if existing_chapter is not None:
@@ -2444,6 +2803,7 @@ async def materialize_chapter_outline_batch(
                     project_id=project.id,
                     chapter=chapter,
                     chapter_outline=chapter_outline,
+                    force=force_this_chapter,
                 ):
                     chapters_updated += 1
                     should_sync_causality_metadata = True
@@ -2519,7 +2879,11 @@ async def materialize_chapter_outline_batch(
                 existing_scene = existing_scenes_by_number.get(scene_outline.scene_number)
                 if existing_scene is not None:
                     scene = existing_scene
-                    if _sync_existing_scene_from_outline(scene, scene_outline):
+                    if _sync_existing_scene_from_outline(
+                        scene,
+                        scene_outline,
+                        force=force_this_chapter,
+                    ):
                         scenes_updated += 1
                 else:
                     scene = await create_scene_card(
@@ -2591,9 +2955,14 @@ async def materialize_chapter_outline_batch(
 
             # ── Normalize chapter + scene target_word_count to the shared budget ──
             # Defensive pass for legacy call sites that may bypass the outline
-            # normalization above.
+            # normalization above. Chapters adjusted by the scene capacity pass
+            # (R19) keep their differentiated per-scene targets — flattening
+            # them back to a uniform value would undo the capacity fix.
             _num_scenes = len(chapter_outline.scenes)
-            if _num_scenes > 0:
+            if (
+                _num_scenes > 0
+                and chapter_outline.chapter_number not in _capacity_adjusted_chapters
+            ):
                 chapter.target_word_count = normalize_chapter_word_target(
                     chapter.target_word_count,
                     project,
@@ -2631,6 +3000,16 @@ async def materialize_chapter_outline_batch(
                     continue
                 await session.delete(stale_chapter)
                 chapters_pruned += 1
+
+        if _force_set:
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "force_materialize": {
+                    "requested_chapters": sorted(_force_set),
+                    "forced_chapters": _forced_chapters,
+                    "rejected_active_draft_chapters": _force_rejected_active_draft,
+                },
+            }
 
         workflow_run.current_step = "completed"
         workflow_run.status = WorkflowStatus.COMPLETED.value
@@ -2676,6 +3055,7 @@ async def materialize_latest_chapter_outline_batch(
     project_slug: str,
     *,
     requested_by: str = "system",
+    force_chapter_numbers: list[int] | None = None,
 ) -> WorkflowMaterializationResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -2699,6 +3079,7 @@ async def materialize_latest_chapter_outline_batch(
         requested_by=requested_by,
         source_artifact_id=artifact.id,
         prune_missing_planned=True,
+        force_chapter_numbers=force_chapter_numbers,
     )
 
 

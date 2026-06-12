@@ -222,8 +222,19 @@ def test_orchestrator_to_packet_round_trip(tmp_path: Path) -> None:
     )
     save_voice_dna(dna, "rtbook", output_base_dir=tmp_path)
 
-    # Seed signature plan
-    plan = plan_signature_scenes(total_chapters=30, cadence=10)
+    # Seed signature plan — outline hints make the ch10 mandate concrete
+    # (R25: skeleton mandates are filtered out of the writer prompt).
+    plan = plan_signature_scenes(
+        total_chapters=30,
+        cadence=10,
+        chapter_outline={
+            10: {
+                "title": "断剑之约",
+                "goal": "主角在崖边立誓夺回名单",
+                "signature_images": ["崖边火光中折断的剑"],
+            }
+        },
+    )
     save_signature_plan(plan, "rtbook", output_base_dir=tmp_path)
 
     # Prepare context

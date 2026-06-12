@@ -128,6 +128,18 @@ SELF_HEAL_JOB_EXPIRES_DAYS = 7
 # ghost and must be cleared before deterministic requeue can succeed.
 STALE_ARQ_IN_PROGRESS_GRACE_SECONDS = 5 * 60
 
+# R24 orphan guard: an ``arq:job:<id>`` key that is in NO queue zset and has
+# NO in-progress lock will never be dispatched by ARQ, yet its mere existence
+# dedup-rejects every fresh enqueue of the same deterministic id — the project
+# never retries (observed after a deploy-restart window left a half-enqueued
+# ``repair:heal`` key; manual key deletion was the only unlock). A bare key
+# older than this cap is treated as an orphan and cleared before re-enqueue.
+# The generous default (90 min) keeps a genuinely just-enqueued job safe even
+# under heavy queue backlog.
+SELF_HEAL_ORPHAN_JOB_MAX_AGE_SECONDS = int(
+    os.environ.get("SELF_HEAL_ORPHAN_JOB_MAX_AGE_SECONDS", str(90 * 60))
+)
+
 # A freshly-created quickstart project can have zero/partial chapter rows for
 # a few minutes while the web autowrite thread is still creating its first
 # workflow row. Treating that as ``under_target_chapters`` immediately spawns a
@@ -1261,20 +1273,110 @@ async def _is_ghost_heal_job(pool: "ArqRedis", job_id: str) -> bool:
         return False
 
 
+async def _orphan_heal_job_age_seconds(pool: "ArqRedis", job_id: str) -> float | None:
+    """Best-effort age of a bare ``arq:job:<id>`` key, ``None`` if unknown.
+
+    Resolution order:
+
+    1. The pickled job payload's enqueue timestamp (``t``, epoch ms) — the
+       authoritative creation time when readable.
+    2. Fallback inference: no ``arq:result`` key (the job never completed)
+       plus the job key's remaining TTL — ARQ sets the key TTL to the job's
+       ``_expires`` window at enqueue time, so
+       ``age ≈ expires_window - remaining_ttl``.
+    """
+
+    try:
+        raw = await _redis_get_bytes(pool, f"arq:job:{job_id}")
+    except Exception:  # noqa: BLE001 — payload read is best-effort
+        raw = None
+    if raw:
+        try:
+            payload = pickle.loads(raw)
+            enqueue_ms = payload.get("t") if isinstance(payload, dict) else None
+            if isinstance(enqueue_ms, (int, float)) and enqueue_ms > 0:
+                return max(0.0, time.time() - float(enqueue_ms) / 1000.0)
+        except Exception:  # noqa: BLE001 — fall through to TTL inference
+            pass
+
+    try:
+        if await pool.exists(f"arq:result:{job_id}"):
+            return None
+        pttl_ms = await pool.pttl(f"arq:job:{job_id}")
+    except AttributeError:
+        return None
+    except Exception:  # noqa: BLE001
+        logger.exception("self-heal: failed TTL probe for ARQ job %s", job_id)
+        return None
+    if not isinstance(pttl_ms, (int, float)) or pttl_ms <= 0:
+        return None
+    expires_window_seconds = SELF_HEAL_JOB_EXPIRES_DAYS * 24 * 60 * 60
+    return max(0.0, expires_window_seconds - float(pttl_ms) / 1000.0)
+
+
+async def _is_orphan_heal_job(
+    pool: "ArqRedis",
+    job_id: str,
+    *,
+    max_age_seconds: float | None = None,
+) -> bool:
+    """R24: an over-age ``arq:job`` key with no schedule and no executor.
+
+    Three-step verdict: the job key exists, but ① it has no ``arq:queue``
+    score (not scheduled), ② it has no ``arq:in-progress`` lock (not
+    executing), and ③ it is older than the configurable cap. Such a key can
+    never run again, yet it dedup-blocks every re-enqueue — the project would
+    never retry. Unlike ``_is_ghost_heal_job`` this also covers keys with a
+    leftover ``arq:retry`` counter (the half-enqueued deploy-window shape).
+    """
+
+    cap = (
+        SELF_HEAL_ORPHAN_JOB_MAX_AGE_SECONDS
+        if max_age_seconds is None
+        else max_age_seconds
+    )
+    try:
+        if not await pool.exists(f"arq:job:{job_id}"):
+            return False
+        if await pool.zscore("arq:queue", job_id) is not None:
+            return False
+        if await pool.exists(f"arq:in-progress:{job_id}"):
+            return False
+    except AttributeError:
+        return False
+    except Exception:  # noqa: BLE001
+        logger.exception("self-heal: failed orphan-job check %s", job_id)
+        return False
+    age = await _orphan_heal_job_age_seconds(pool, job_id)
+    if age is None or age < cap:
+        return False
+    logger.info(
+        "self-heal: ARQ job %s is an orphan (age %.0fs > %.0fs, "
+        "not queued, not in progress) — clearing for re-enqueue",
+        job_id,
+        age,
+        cap,
+    )
+    return True
+
+
 async def _clear_stale_heal_job_if_needed(pool: "ArqRedis", job_id: str) -> bool:
     """Clear a deterministic heal job only when ARQ left a ghost owner.
 
     Callers use this after DB-level active workflow checks have already decided
     the project is stuck. That context matters: a live long-running generation
     can legitimately hold ``arq:in-progress:*`` for many minutes, so this helper
-    must not be used as a general liveness probe. Two ghost shapes are cleared:
-    a stale in-progress lock (dead worker mid-run) and a bare job-definition key
-    with no schedule at all (consumed/abandoned run).
+    must not be used as a general liveness probe. Three ghost shapes are cleared:
+    a stale in-progress lock (dead worker mid-run), a bare job-definition key
+    with no schedule at all (consumed/abandoned run), and an over-age orphan
+    job key that is neither queued nor executing (R24 — half-enqueued during a
+    deploy/restart window, possibly with a leftover retry counter).
     """
 
     if not (
         await _stale_in_progress_job(pool, job_id)
         or await _is_ghost_heal_job(pool, job_id)
+        or await _is_orphan_heal_job(pool, job_id)
     ):
         return False
     await pool.delete(

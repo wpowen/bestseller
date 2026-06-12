@@ -747,6 +747,144 @@ async def test_import_planning_artifact_reuses_matching_input_hash(
     assert session.added == []
 
 
+@pytest.mark.asyncio
+async def test_import_planning_artifact_forces_new_version_when_hash_matches_but_content_differs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R3 复用陷阱：内容已改但 _meta.input_hash 未变 → 不得静默返回旧版本。"""
+
+    project = ProjectModel(
+        slug="my-story",
+        title="My Story",
+        genre="fantasy",
+        target_word_count=120000,
+        target_chapters=60,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    stale = project_services.PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.BOOK_SPEC.value,
+        version_no=4,
+        status="approved",
+        schema_version="1.0",
+        content={"logline": "OLD cast.", "_meta": {"input_hash": "same-input"}},
+    )
+    stale.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    # scalar order: input_hash reuse → exact-content match (miss) → max version
+    session = FakeSession(scalar_results=[stale, None, 4])
+
+    artifact = await project_services.import_planning_artifact(
+        session,
+        "my-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.BOOK_SPEC,
+            content={"logline": "NEW cast.", "_meta": {"input_hash": "same-input"}},
+        ),
+    )
+
+    assert artifact is not stale
+    assert artifact in session.added
+    assert artifact.version_no == 5
+    assert artifact.content["logline"] == "NEW cast."
+    assert "input_hash matched but content differs" in (artifact.notes or "")
+
+
+@pytest.mark.asyncio
+async def test_import_planning_artifact_forced_version_preserves_caller_notes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="my-story",
+        title="My Story",
+        genre="fantasy",
+        target_word_count=120000,
+        target_chapters=60,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    stale = project_services.PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.BOOK_SPEC.value,
+        version_no=1,
+        status="approved",
+        schema_version="1.0",
+        content={"logline": "OLD.", "_meta": {"input_hash": "h1"}},
+    )
+    stale.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[stale, None, 1])
+
+    artifact = await project_services.import_planning_artifact(
+        session,
+        "my-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.BOOK_SPEC,
+            content={"logline": "NEW.", "_meta": {"input_hash": "h1"}},
+            notes="manual cast patch",
+        ),
+    )
+
+    assert "manual cast patch" in artifact.notes
+    assert "input_hash matched but content differs" in artifact.notes
+
+
+@pytest.mark.asyncio
+async def test_import_planning_artifact_still_reuses_when_only_meta_differs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """剥 _meta 后内容一致 → 复用旧版本（合法短路不受影响）。"""
+
+    project = ProjectModel(
+        slug="my-story",
+        title="My Story",
+        genre="fantasy",
+        target_word_count=120000,
+        target_chapters=60,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    reusable = project_services.PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.BOOK_SPEC.value,
+        version_no=2,
+        status="approved",
+        schema_version="1.0",
+        content={
+            "logline": "Same content.",
+            "_meta": {"input_hash": "h2", "extra_stamp": "old-run"},
+        },
+    )
+    reusable.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[reusable])
+
+    artifact = await project_services.import_planning_artifact(
+        session,
+        "my-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.BOOK_SPEC,
+            content={"logline": "Same content.", "_meta": {"input_hash": "h2"}},
+        ),
+    )
+
+    assert artifact is reusable
+    assert session.added == []
+
+
 def test_load_json_file_reads_payload(tmp_path: Path) -> None:
     payload_path = tmp_path / "payload.json"
     payload_path.write_text(json.dumps({"chapter": 1, "title": "Opening"}), encoding="utf-8")

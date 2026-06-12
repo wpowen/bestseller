@@ -1422,9 +1422,11 @@ def test_generated_volume_outline_accepts_raw_chapter_list_from_llm() -> None:
                 {
                     "scene_number": 1,
                     "time_label": "李宅封门前",
-                    "participants": ["沈青崖"],
+                    # 黄金三章批次校验复用下游 golden_three_solo_scene_chain 判定：
+                    # 全 solo 场景链会被硬拦，这里给场景配第二位 cast 在场者。
+                    "participants": ["沈青崖", "阿洛"],
                     "purpose": {
-                        "story": "沈青崖撬开井盖，发现血雨源头并付出暴露行踪的代价。",
+                        "story": "沈青崖撬开井盖，阿洛在巷口望风，两人付出暴露行踪的代价。",
                         "emotion": "压力上升。",
                     },
                 },

@@ -371,7 +371,11 @@ def test_scene_draft_prompt_puts_prewrite_contract_first() -> None:
         canon_guardrails_block="【正典守护 — 严禁出现以下违规】裴镜渊",
     )
 
-    assert user_prompt.startswith("【写前约束清单")
+    # R23: the scene hard-acceptance block (word budget) leads the prompt;
+    # the prewrite contract is the first block after it.
+    assert user_prompt.startswith("=== 本场硬验收")
+    assert user_prompt.index("=== 本场硬验收") < user_prompt.index("【写前约束清单")
+    assert user_prompt.index("【写前约束清单") < user_prompt.index("【已验证写作计划")
     assert user_prompt.index("【已验证写作计划") < user_prompt.index("【正典守护")
     assert "裴镜渊" in user_prompt
 

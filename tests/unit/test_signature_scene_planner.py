@@ -239,11 +239,16 @@ def test_plan_payoff_targets_propagate() -> None:
 
 
 def test_render_block_emits_zh() -> None:
-    plan = plan_signature_scenes(total_chapters=30, cadence=10)
+    plan = plan_signature_scenes(
+        total_chapters=30,
+        cadence=10,
+        summary_hints=["十年前的恩怨当场揭开"],
+    )
     mandate = plan.mandates[0]
 
     block = render_signature_scene_block(mandate)
 
+    assert block is not None
     assert "招牌场景指令" in block
     assert "本章质检硬指标" in block
     assert mandate.archetype.value in block
@@ -254,11 +259,16 @@ def test_render_block_handles_none() -> None:
 
 
 def test_render_block_supports_english() -> None:
-    plan = plan_signature_scenes(total_chapters=10, cadence=10)
+    plan = plan_signature_scenes(
+        total_chapters=10,
+        cadence=10,
+        summary_hints=["The decade-old feud is exposed on the spot."],
+    )
     mandate = plan.mandates[0]
 
     block = render_signature_scene_block(mandate, language="en")
 
+    assert block is not None
     assert "Signature Scene Mandate" in block
 
 
@@ -288,9 +298,120 @@ def test_render_block_requires_verbatim_anchor_inclusion() -> None:
 
 
 def test_render_block_without_anchors_gives_concept_guidance_only() -> None:
-    plan = plan_signature_scenes(total_chapters=20)
+    plan = plan_signature_scenes(
+        total_chapters=20,
+        summary_hints=["主角在众目睽睽之下揭开尘封十年的真相"],
+    )
     mandate = plan.mandate_for_chapter(1)
     block = render_signature_scene_block(mandate)
 
+    assert block is not None
     assert "场景概念要求" in block
     assert "原词完整出现" not in block  # 无锚词时不得提出原词验收要求
+
+
+# ── R25: 空壳 mandate 自举闭环 ──────────────────────────────────────────────
+
+
+def test_plan_without_any_concrete_target_marks_skeleton() -> None:
+    """无章纲、无锚词、无 hints → mandate 全部是 skeleton（空壳）。"""
+
+    plan = plan_signature_scenes(total_chapters=30, cadence=10)
+
+    for mandate in plan.mandates:
+        assert mandate.status == "skeleton"
+        assert mandate.is_skeleton
+
+
+def test_plan_with_anchors_marks_ready() -> None:
+    plan = plan_signature_scenes(
+        total_chapters=30, cadence=10, anchor_images=["灵务局工牌"]
+    )
+
+    for mandate in plan.mandates:
+        assert mandate.status == "ready"
+        assert not mandate.is_skeleton
+
+
+def test_render_block_returns_none_for_skeleton_mandate() -> None:
+    """空壳不下发：写手不能被拿空标准考核（R25）。"""
+
+    plan = plan_signature_scenes(total_chapters=20)
+    mandate = plan.mandate_for_chapter(1)
+
+    assert mandate is not None
+    assert render_signature_scene_block(mandate) is None
+    assert render_signature_scene_block(mandate, language="en") is None
+
+
+def test_legacy_persisted_empty_mandate_loads_as_skeleton() -> None:
+    """旧版持久化 plan（无 status 字段、全空 mandate）加载后判 skeleton。"""
+
+    from bestseller.domain.signature_scene import SignatureSceneMandate
+
+    legacy = SignatureSceneMandate.model_validate(
+        {
+            "chapter_position": 1,
+            "archetype": "revelation",
+            "stake": "identity_truth",
+        }
+    )
+
+    assert legacy.is_skeleton
+    assert render_signature_scene_block(legacy) is None
+
+
+def test_plan_derives_mandate_targets_from_chapter_outline() -> None:
+    """章纲存在时确定性派生 must_include_image(前2)/summary(120字)/title_hint。"""
+
+    long_goal = "主角在义庄的铜镜前发现自己倒影缺失，" * 20  # > 120 chars
+    outline = {
+        1: {
+            "title": "镜中无人",
+            "goal": long_goal,
+            "signature_images": ["铜镜里缺失的倒影", "义庄的长明灯", "第三个不该派生的意象"],
+        },
+    }
+
+    plan = plan_signature_scenes(total_chapters=30, cadence=10, chapter_outline=outline)
+    mandate = plan.mandate_for_chapter(1)
+
+    assert mandate is not None
+    assert mandate.must_include_image == ["铜镜里缺失的倒影", "义庄的长明灯"]
+    assert mandate.summary == long_goal[:120]
+    assert mandate.title_hint == "镜中无人"
+    assert mandate.status == "ready"
+
+    # 章纲没覆盖到的槽位仍是 skeleton，不下发。
+    uncovered = plan.mandate_for_chapter(10)
+    assert uncovered is not None
+    assert uncovered.is_skeleton
+
+
+def test_chapter_outline_tolerates_str_keys_and_chapter_goal_field() -> None:
+    outline = {
+        "2": {"chapter_goal": "第二章目标", "signature_image": "断裂的桃木剑"},
+    }
+
+    plan = plan_signature_scenes(total_chapters=30, cadence=10, chapter_outline=outline)
+    mandate = plan.mandate_for_chapter(2)
+
+    assert mandate is not None
+    assert mandate.summary == "第二章目标"
+    assert mandate.must_include_image == ["断裂的桃木剑"]
+    assert mandate.status == "ready"
+
+
+def test_chapter_outline_images_take_precedence_over_global_anchors() -> None:
+    outline = {1: {"signature_images": ["本章专属意象"]}}
+
+    plan = plan_signature_scenes(
+        total_chapters=30,
+        cadence=10,
+        anchor_images=["全书通用锚"],
+        chapter_outline=outline,
+    )
+
+    assert plan.mandate_for_chapter(1).must_include_image == ["本章专属意象"]
+    # 未覆盖章回落到全书锚词。
+    assert plan.mandate_for_chapter(10).must_include_image == ["全书通用锚"]

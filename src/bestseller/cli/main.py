@@ -3344,6 +3344,29 @@ def chapter_pipeline(
     asyncio.run(_run())
 
 
+def _parse_force_chapter_numbers(raw: str | None) -> list[int] | None:
+    """Parse the --force-chapters comma-separated chapter number list."""
+    if raw is None or not raw.strip():
+        return None
+    numbers: list[int] = []
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            value = int(token)
+        except ValueError as exc:
+            raise typer.BadParameter(
+                f"--force-chapters expects comma-separated integers, got '{token}'."
+            ) from exc
+        if value <= 0:
+            raise typer.BadParameter(
+                f"--force-chapters expects positive chapter numbers, got '{token}'."
+            )
+        numbers.append(value)
+    return numbers or None
+
+
 @workflow_app.command("materialize-outline")
 def workflow_materialize_outline(
     project_slug: str,
@@ -3355,8 +3378,19 @@ def workflow_materialize_outline(
         help="Optional JSON outline file. If omitted, the latest stored chapter_outline_batch artifact is used.",
     ),
     requested_by: str = "system",
+    force_chapters: str | None = typer.Option(
+        None,
+        "--force-chapters",
+        help=(
+            "Comma-separated chapter numbers to force-update even if they are "
+            "no longer in a planned status. Chapters with an is-current scene "
+            "draft updated in the last 5 minutes stay protected."
+        ),
+    ),
 ) -> None:
     """Materialize chapter and scene structure from a chapter outline batch."""
+
+    force_chapter_numbers = _parse_force_chapter_numbers(force_chapters)
 
     async def _run() -> None:
         settings = load_settings()
@@ -3368,12 +3402,14 @@ def workflow_materialize_outline(
                     project_slug,
                     batch,
                     requested_by=requested_by,
+                    force_chapter_numbers=force_chapter_numbers,
                 )
             else:
                 result = await materialize_latest_chapter_outline_batch(
                     session,
                     project_slug,
                     requested_by=requested_by,
+                    force_chapter_numbers=force_chapter_numbers,
                 )
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 

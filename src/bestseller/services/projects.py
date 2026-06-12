@@ -460,6 +460,19 @@ async def create_scene_card(
     return scene
 
 
+_FORCED_VERSION_NOTE = "input_hash matched but content differs — forced new version"
+
+
+def _strip_meta(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: item for key, item in value.items() if key != "_meta"}
+    return value
+
+
+def _canonical_content_json(value: Any) -> str:
+    return json.dumps(_strip_meta(value), ensure_ascii=False, sort_keys=True, default=str)
+
+
 async def import_planning_artifact(
     session: AsyncSession,
     project_slug: str,
@@ -497,6 +510,7 @@ async def import_planning_artifact(
             if isinstance(raw_hash, str) and raw_hash.strip():
                 input_hash = raw_hash.strip()
 
+    forced_new_version_note: str | None = None
     if input_hash:
         reusable_stmt = (
             select(PlanningArtifactVersionModel)
@@ -513,7 +527,24 @@ async def import_planning_artifact(
         )
         reusable = await session.scalar(reusable_stmt)
         if reusable is not None:
-            return reusable
+            # R3 reuse trap: a stale ``_meta.input_hash`` on edited content
+            # used to short-circuit the import and silently return the OLD
+            # version. Reuse is only safe when the content (sans _meta) is
+            # actually identical; otherwise force a new version and record
+            # why in its notes.
+            if _canonical_content_json(content) == _canonical_content_json(
+                reusable.content
+            ):
+                return reusable
+            forced_new_version_note = _FORCED_VERSION_NOTE
+            logger.warning(
+                "Planning artifact import for '%s' (%s): input_hash %s matched "
+                "version %s but content differs — forcing a new version",
+                project_slug,
+                payload.artifact_type.value,
+                input_hash,
+                reusable.version_no,
+            )
 
     exact_stmt = (
         select(PlanningArtifactVersionModel)
@@ -540,6 +571,9 @@ async def import_planning_artifact(
     )
     next_version = int((await session.scalar(version_stmt)) or 0) + 1
 
+    notes = "; ".join(
+        part for part in (payload.notes, forced_new_version_note) if part
+    ) or None
     artifact = PlanningArtifactVersionModel(
         project_id=project.id,
         artifact_type=payload.artifact_type.value,
@@ -549,7 +583,7 @@ async def import_planning_artifact(
         schema_version="1.0",
         content=content,
         source_run_id=payload.source_run_id,
-        notes=payload.notes,
+        notes=notes,
     )
     session.add(artifact)
     maybe_bump_project_truth_version(

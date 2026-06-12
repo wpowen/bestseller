@@ -6,6 +6,8 @@ import pytest
 from typer.testing import CliRunner
 
 from bestseller.cli.book_writer import book_app
+from bestseller.services.chapter_orchestrator import save_signature_plan
+from bestseller.services.signature_scene_planner import plan_signature_scenes
 from bestseller.services.voice_dna_repository import save_voice_dna
 from bestseller.services.voice_signature import extract_voice_dna_from_text
 
@@ -140,7 +142,7 @@ def test_prepare_chapter_with_voice_and_signatures(tmp_path: Path) -> None:
         "rich",
         output_base_dir=tmp_path,
     )
-    # Seed signature plan
+    # Seed signature plan via CLI — no anchors/outline → skeleton mandates.
     runner.invoke(
         book_app,
         [
@@ -169,7 +171,38 @@ def test_prepare_chapter_with_voice_and_signatures(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "作者声纹" in result.output  # voice DNA block rendered
-    assert "招牌场景指令" in result.output  # signature scene block rendered
+    # R25: a skeleton mandate (no concrete target) must NOT reach the writer.
+    assert "招牌场景指令" not in result.output
+
+    # Re-save the plan with outline-derived concrete targets → block renders.
+    concrete_plan = plan_signature_scenes(
+        total_chapters=30,
+        chapter_outline={
+            10: {
+                "title": "断剑之约",
+                "goal": "他在崖边立誓夺回名单",
+                "signature_images": ["崖边火光中折断的剑"],
+            }
+        },
+    )
+    save_signature_plan(concrete_plan, "rich", output_base_dir=tmp_path)
+
+    rich_result = runner.invoke(
+        book_app,
+        [
+            "prepare-chapter",
+            "--slug",
+            "rich",
+            "--chapter",
+            "10",
+            "--output-base-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert rich_result.exit_code == 0, rich_result.output
+    assert "招牌场景指令" in rich_result.output  # ready mandate rendered
+    assert "崖边火光中折断的剑" in rich_result.output
 
 
 def test_grade_chapter_persists_and_reports(tmp_path: Path) -> None:

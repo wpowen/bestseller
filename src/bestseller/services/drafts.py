@@ -480,6 +480,97 @@ def scene_should_skip_auto_repair_reset(
     return True
 
 
+# ---------------------------------------------------------------------------
+# R20 — chapter-level total scene-rounds budget (fail-fast mode)
+# ---------------------------------------------------------------------------
+# The per-scene cap (WS-C3 above) bounds each scene individually, but the
+# combined topology (scene 3-eval × 2-rewrite × chapter 3 repair passes)
+# still allows ~30 scene rounds per chapter.  When
+# ``settings.pipeline.max_total_scene_rounds_per_chapter`` is set to a
+# positive value, the chapter auto-repair loop stops as soon as the SUM of
+# every scene's cumulative round counter reaches the budget; the known block
+# codes are stamped into ``chapter.metadata_json["rounds_budget_exhausted"]``
+# and the chapter follows the existing machine-repair route.  Default 0 keeps
+# the historical (unbounded-by-total) behavior.
+
+CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY = "rounds_budget_exhausted"
+
+
+def total_chapter_scene_repair_rounds(
+    scenes: Iterable[SceneCardModel],
+) -> int:
+    """Sum the cumulative auto-repair round counters across ``scenes``."""
+
+    return sum(read_scene_auto_repair_counter(scene) for scene in scenes)
+
+
+def _resolve_chapter_scene_rounds_budget() -> int:
+    """Read ``pipeline.max_total_scene_rounds_per_chapter``; 0 = unlimited."""
+
+    try:
+        from bestseller.settings import get_settings  # noqa: PLC0415
+
+        budget = int(
+            getattr(
+                get_settings().pipeline,
+                "max_total_scene_rounds_per_chapter",
+                0,
+            )
+            or 0
+        )
+    except Exception:
+        budget = 0
+    return max(0, budget)
+
+
+def is_chapter_scene_rounds_budget_exhausted(
+    scenes: Iterable[SceneCardModel],
+    *,
+    budget: int | None = None,
+) -> bool:
+    """Return True when the chapter's total scene-rounds budget is spent.
+
+    ``budget`` defaults to ``settings.pipeline.max_total_scene_rounds_per_chapter``;
+    a budget of 0 (the default) disables the check entirely so the historical
+    behavior is preserved.
+    """
+
+    if budget is None:
+        budget = _resolve_chapter_scene_rounds_budget()
+    if budget <= 0:
+        return False
+    return total_chapter_scene_repair_rounds(scenes) >= budget
+
+
+def mark_chapter_rounds_budget_exhausted(
+    chapter: ChapterModel,
+    *,
+    block_codes: tuple[str, ...] | list[str],
+    total_scene_rounds: int,
+    budget: int,
+) -> None:
+    """Stamp ``chapter`` so it follows the existing machine-repair route.
+
+    Writes the known block codes (plus the observed round count and budget)
+    under ``rounds_budget_exhausted`` and sets ``requires_machine_repair`` —
+    the same metadata contract the cross-run exhaustion path uses, so the
+    downstream pipeline routing needs no new branches.
+    """
+
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    metadata[CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY] = {
+        "block_codes": [str(c) for c in block_codes if c],
+        "total_scene_rounds": int(total_scene_rounds),
+        "budget": int(budget),
+    }
+    metadata["requires_machine_repair"] = True
+    metadata["requires_human_review"] = False
+    metadata["auto_repair_in_progress"] = False
+    metadata["auto_accepted"] = False
+    chapter.metadata_json = metadata
+    chapter.production_state = "blocked"
+
+
 # Chapter-level block codes that only a specific scene position can fix.
 # When EVERY repair target is positional, resetting the other scenes destroys
 # verified work for zero benefit — the 2026-06-11 run's ch9 (persona 0.80,
@@ -627,6 +718,95 @@ def _scene_current_contract_controls(
         ),
     }
     return metadata, methodology_contract, controls
+
+
+# ---------------------------------------------------------------------------
+# R23 — per-scene hard-acceptance block (word budget + signature obligations)
+# ---------------------------------------------------------------------------
+# Empirically the scene writer systematically ignores
+# ``scene.target_word_count`` when it only appears mid-prompt among ~76
+# one-line constraint blocks (700-word scenes ballooning to 1800+ →
+# LENGTH_OVER, then over-corrected to LENGTH_UNDER in repair rounds; ch3/5/6/9
+# oscillation).  The fix is positional: render the scene's word budget (and
+# its signature-image / object-signal prose obligations) as ONE compact block
+# at the VERY FRONT of the user prompt so it reads as the scene's primary
+# acceptance contract rather than yet another buried constraint line.
+
+_SCENE_WORD_BUDGET_TOLERANCE = 0.15
+
+
+def _render_scene_word_budget_block(
+    scene: SceneCardModel,
+    *,
+    is_en: bool,
+) -> str:
+    """Render the R23 "scene hard acceptance" block for the scene writer.
+
+    Pulls live data from the scene object: ``target_word_count`` plus the
+    scene card's ``signature_image`` (via the current contract controls) and
+    top-level ``object_signal`` metadata.  Returns ``""`` when the scene has
+    neither a usable word target nor signature obligations, so callers can
+    drop the block without special-casing.
+    """
+
+    try:
+        target = int(getattr(scene, "target_word_count", 0) or 0)
+    except (TypeError, ValueError):
+        target = 0
+    metadata, _methodology_contract, controls = _scene_current_contract_controls(scene)
+    signature_image = str(controls.get("signature_image") or "").strip()
+    object_signal = str(metadata.get("object_signal") or "").strip()
+
+    lines: list[str] = []
+    if target > 0:
+        low = max(1, int(round(target * (1 - _SCENE_WORD_BUDGET_TOLERANCE))))
+        high = int(round(target * (1 + _SCENE_WORD_BUDGET_TOLERANCE)))
+        if is_en:
+            lines.append(
+                f"- Scene word budget: {target} words"
+                f" (binding range {low}-{high} words, ±15%)."
+            )
+            lines.append(
+                "- When you reach the budget ceiling you MUST wrap up this "
+                "scene — do not open a new event. If you are under the floor, "
+                "deepen the existing conflict instead of padding."
+            )
+        else:
+            lines.append(
+                f"- 本场字数预算：{target}字（硬性区间 {low}-{high} 字，±15%）。"
+            )
+            lines.append(
+                "- 写到预算上限必须收束本场，不得开新事件；"
+                "不足下限时把已有冲突写透，禁止注水拖长。"
+            )
+    if signature_image:
+        lines.append(
+            f'- This scene MUST render "{signature_image}" as a visible '
+            "on-page image, using the original wording (the gate matches the "
+            "phrase text)."
+            if is_en
+            else (
+                f"- 本场必须把「{signature_image}」写成可见画面"
+                "（原词或基本原词出现在正文中，质检按短语文本匹配）。"
+            )
+        )
+    if object_signal:
+        lines.append(
+            f'- The object signal "{object_signal}" must land visibly in '
+            "this scene's prose."
+            if is_en
+            else f"- 本场必须让物件信号「{object_signal}」在正文中可见落地。"
+        )
+    if not lines:
+        return ""
+    header = (
+        "=== Scene hard acceptance (highest priority) ==="
+        if is_en
+        else "=== 本场硬验收（最高优先级）==="
+    )
+    return header + "\n" + "\n".join(lines)
+
+
 UNFINISHED_ARTIFACT_BLOCK_CODE = "UNFINISHED_ARTIFACT"
 LLM_OUTPUT_TRUNCATED_BLOCK_CODE = "LLM_OUTPUT_TRUNCATED"
 SCENE_COMPLETION_BLOCK_CODE = "SCENE_COMPLETION_INCOMPLETE"
@@ -2457,6 +2637,11 @@ _CONTEXT_TIER_1 = frozenset({
     "scene_coherence_line",
     "character_role_line",
     "chapter_length_line",
+    # R23 — per-scene hard acceptance (word budget + signature obligations).
+    # Front-of-prompt anchor; must always survive budgeting and is NOT in
+    # ``_TIER_1_DROPPABLE_GUARDRAILS`` (dropping it re-opens the LENGTH_OVER /
+    # LENGTH_UNDER oscillation it exists to fix).
+    "scene_word_budget_line",
     "current_scene_contract_line",
     # Hard per-chapter commercial contracts (opening-chapter signing gates):
     # these are binding obligations, not advisory garnish, so they must not be
@@ -6341,6 +6526,15 @@ def build_scene_draft_prompts(
     _chapter_length_line = ""
     if chapter_length_block:
         _chapter_length_line = f"{chapter_length_block}\n\n"
+    # R23 — per-scene hard acceptance (word budget + signature obligations).
+    # Reads live data from the scene object and is prepended BEFORE every
+    # other constraint block in the user prompt; see
+    # ``_render_scene_word_budget_block``.  ``_chapter_length_line`` above is
+    # the CHAPTER-level band and is kept; the legacy mid-prompt scene-level
+    # word line is de-duplicated below when this block is present.
+    _scene_word_budget_line = _render_scene_word_budget_block(scene, is_en=is_en)
+    if _scene_word_budget_line:
+        _scene_word_budget_line += "\n\n"
     _prewrite_contract_line = ""
     if prewrite_contract_block:
         _prewrite_contract_line = f"{prewrite_contract_block}\n\n"
@@ -6511,6 +6705,7 @@ def build_scene_draft_prompts(
             "scene_coherence_line": _scene_coherence_line,
             "character_role_line": _character_role_line,
             "chapter_length_line": _chapter_length_line,
+            "scene_word_budget_line": _scene_word_budget_line,
             "project_material_reference_line": _project_material_reference_line,
             "project_material_obligation_line": _project_material_obligation_line,
             "library_reference_line": _library_reference_line,
@@ -6592,6 +6787,7 @@ def build_scene_draft_prompts(
     _scene_coherence_line = _ctx["scene_coherence_line"]
     _character_role_line = _ctx["character_role_line"]
     _chapter_length_line = _ctx["chapter_length_line"]
+    _scene_word_budget_line = _ctx["scene_word_budget_line"]
     _project_material_reference_line = _ctx["project_material_reference_line"]
     _project_material_obligation_line = _ctx["project_material_obligation_line"]
     _library_reference_line = _ctx["library_reference_line"]
@@ -6620,8 +6816,32 @@ def build_scene_draft_prompts(
     _pp_line = _ctx["pp_line"]
     _pp_writer_line = _ctx["pp_writer_line"]
 
+    # R23 de-dup: when the scene hard-acceptance block leads the prompt, do
+    # not repeat a second (numerically conflicting) scene-level word band
+    # mid-prompt — keep a short pointer to the top block instead.
+    if _scene_word_budget_line:
+        _scene_target_words_line = (
+            f"Target words: {scene.target_word_count} (binding range: see the "
+            "scene hard-acceptance block at the top)\n"
+            if is_en
+            else (
+                f"目标字数：{scene.target_word_count}"
+                "（硬性区间以顶部「本场硬验收」块为准）\n"
+            )
+        )
+    else:
+        _scene_target_words_line = (
+            f"Target words: {scene.target_word_count} (STRICT RANGE: {int(scene.target_word_count * 0.9)}-{int(scene.target_word_count * 1.2)} words. Scenes outside this range will be rejected. Do NOT cut short and do NOT over-write.)\n"
+            if is_en
+            else f"目标字数：{scene.target_word_count}（【硬性要求】正文字数必须在 {int(scene.target_word_count * 0.9)}-{int(scene.target_word_count * 1.2)} 字范围内。不足或超出均会退回重写。不要提前收束，也不要注水拖长。）\n"
+        )
+
     if is_en:
         user_prompt = (
+            # R23 — the scene's own hard acceptance contract (word budget +
+            # signature obligations) leads the prompt, before every other
+            # constraint block.
+            f"{_scene_word_budget_line}"
             # Story Integrity whitelists — these MUST come first so the
             # LLM treats them as inviolable constraints, not later
             # afterthoughts. Order: timeline → scene → character → length.
@@ -6701,7 +6921,7 @@ def build_scene_draft_prompts(
             f"Emotional purpose: {scene.purpose.get('emotion', 'raise tension')}\n"
             f"Entry state: {scene.entry_state}\n"
             f"Exit state: {scene.exit_state}\n"
-            f"Target words: {scene.target_word_count} (STRICT RANGE: {int(scene.target_word_count * 0.9)}-{int(scene.target_word_count * 1.2)} words. Scenes outside this range will be rejected. Do NOT cut short and do NOT over-write.)\n"
+            f"{_scene_target_words_line}"
             f"POV: {style_guide.pov_type if style_guide else 'third-limited'}\n"
             f"Tone keywords: {tone}\n"
             f"{_pp_line}"
@@ -6732,6 +6952,10 @@ def build_scene_draft_prompts(
         )
     else:
         user_prompt = (
+            # R23 — the scene's own hard acceptance contract (word budget +
+            # signature obligations) leads the prompt, before every other
+            # constraint block.
+            f"{_scene_word_budget_line}"
             # Story Integrity whitelists — these MUST come first so the
             # LLM treats them as inviolable constraints, not later
             # afterthoughts. Order: timeline → scene → character → length.
@@ -6809,8 +7033,8 @@ def build_scene_draft_prompts(
             f"时间标签：{scene.time_label or '未指定'}\n"
             f"参与者：{participants}\n"
             + _render_scene_v2_outline_block(scene)
-            + f"目标字数：{scene.target_word_count}（【硬性要求】正文字数必须在 {int(scene.target_word_count * 0.9)}-{int(scene.target_word_count * 1.2)} 字范围内。不足或超出均会退回重写。不要提前收束，也不要注水拖长。）\n"
-            f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
+            + _scene_target_words_line
+            + f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
             f"语气关键词：{tone}\n"
             f"{_pp_line}"
             f"故事圣经约束：\n{story_bible_section or '暂无额外故事圣经约束'}\n"
@@ -11200,6 +11424,59 @@ async def maybe_prepare_chapter_auto_repair(
     # Check chapter metadata for direct write-safety blocks that can bypass or
     # sit alongside the quality-report row.
     chapter_meta = dict(chapter.metadata_json or {})
+
+    # R20 — chapter-level total scene-rounds budget (fail-fast mode).  When
+    # configured (>0) and the chapter's scenes have collectively spent the
+    # budget, refuse to trigger another repair pass: stamp the known block
+    # codes under ``rounds_budget_exhausted`` + ``requires_machine_repair``
+    # and return not-triggered, so the pipeline loop breaks and the chapter
+    # follows the existing machine-repair route.
+    _rounds_budget = _resolve_chapter_scene_rounds_budget()
+    if _rounds_budget > 0:
+        _budget_scenes = list(
+            await session.scalars(
+                select(SceneCardModel).where(
+                    SceneCardModel.chapter_id == chapter.id
+                )
+            )
+        )
+        _total_rounds = total_chapter_scene_repair_rounds(_budget_scenes)
+        if _total_rounds >= _rounds_budget:
+            _latest_payload = dict(getattr(latest_report, "report_json", None) or {})
+            _known_codes = tuple(
+                dict.fromkeys(
+                    str(c)
+                    for c in (
+                        *(
+                            [chapter_meta.get("write_safety_block_code")]
+                            if chapter_meta.get("write_safety_block_code")
+                            else []
+                        ),
+                        *(chapter_meta.get("auto_repair_last_block_codes") or ()),
+                        *(chapter_meta.get("quality_gate_block_codes") or ()),
+                        *(_latest_payload.get("blocking_codes") or ()),
+                    )
+                    if c
+                )
+            )
+            logger.warning(
+                "chapter %d: total scene-rounds budget exhausted (%d/%d); "
+                "stopping auto-repair and routing to machine repair "
+                "(block codes: %s)",
+                chapter.chapter_number,
+                _total_rounds,
+                _rounds_budget,
+                list(_known_codes),
+            )
+            mark_chapter_rounds_budget_exhausted(
+                chapter,
+                block_codes=_known_codes,
+                total_scene_rounds=_total_rounds,
+                budget=_rounds_budget,
+            )
+            await session.flush()
+            return False, _known_codes
+
     retention_findings = [
         item
         for item in (chapter_meta.get("retention_gate_last_findings") or [])

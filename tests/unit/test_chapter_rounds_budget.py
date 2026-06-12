@@ -1,0 +1,200 @@
+"""R20 regression: configurable chapter-level total scene-rounds budget.
+
+The default repair topology (per scene ~3 evals × 2 rewrites; per chapter 3
+auto-repair passes) allows ~30 scene rounds per chapter.  R20 adds
+``settings.pipeline.max_total_scene_rounds_per_chapter``:
+
+* default ``0`` = unlimited (exact status-quo behavior);
+* a positive value makes ``maybe_prepare_chapter_auto_repair`` refuse to
+  trigger another repair pass once the SUM of every scene's cumulative
+  round counter reaches the budget — the known block codes are written to
+  ``chapter.metadata_json["rounds_budget_exhausted"]`` and the chapter is
+  stamped ``requires_machine_repair`` so it follows the existing
+  machine-repair route (fail-fast mode for ops, no business-logic change).
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+
+from bestseller.services import drafts
+from bestseller.services.drafts import (
+    CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY,
+    bump_scene_auto_repair_counter,
+    is_chapter_scene_rounds_budget_exhausted,
+    mark_chapter_rounds_budget_exhausted,
+    maybe_prepare_chapter_auto_repair,
+    total_chapter_scene_repair_rounds,
+)
+from bestseller.settings import get_settings
+
+pytestmark = pytest.mark.unit
+
+
+def _scene_with_rounds(rounds: int) -> SimpleNamespace:
+    scene = SimpleNamespace(metadata_json={})
+    for _ in range(rounds):
+        bump_scene_auto_repair_counter(scene)
+    return scene
+
+
+def _chapter(metadata: dict | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid4(),
+        chapter_number=3,
+        metadata_json=dict(metadata or {}),
+        production_state="blocked",
+    )
+
+
+class _FakeSession:
+    """Minimal async-session stub for the early budget guard path."""
+
+    def __init__(self, scenes: list[SimpleNamespace]) -> None:
+        self._scenes = scenes
+        self.flushed = False
+
+    async def scalar(self, *_args, **_kwargs):
+        return None  # no quality report row
+
+    async def scalars(self, *_args, **_kwargs):
+        return list(self._scenes)
+
+    async def flush(self) -> None:
+        self.flushed = True
+
+
+# ---------------------------------------------------------------------------
+# Config default + pure helpers
+# ---------------------------------------------------------------------------
+
+
+def test_settings_default_is_zero_unlimited() -> None:
+    assert get_settings().pipeline.max_total_scene_rounds_per_chapter == 0
+    assert drafts._resolve_chapter_scene_rounds_budget() == 0
+
+
+def test_total_rounds_sums_scene_counters() -> None:
+    scenes = [_scene_with_rounds(2), _scene_with_rounds(0), _scene_with_rounds(3)]
+    assert total_chapter_scene_repair_rounds(scenes) == 5
+
+
+def test_budget_zero_never_exhausts_status_quo() -> None:
+    scenes = [_scene_with_rounds(50)]
+    assert is_chapter_scene_rounds_budget_exhausted(scenes, budget=0) is False
+    # default settings (0) → also never exhausted
+    assert is_chapter_scene_rounds_budget_exhausted(scenes) is False
+
+
+def test_budget_threshold_behavior() -> None:
+    scenes = [_scene_with_rounds(2), _scene_with_rounds(2)]
+    assert is_chapter_scene_rounds_budget_exhausted(scenes, budget=5) is False
+    assert is_chapter_scene_rounds_budget_exhausted(scenes, budget=4) is True
+    assert is_chapter_scene_rounds_budget_exhausted(scenes, budget=3) is True
+
+
+def test_mark_chapter_rounds_budget_exhausted_stamps_machine_repair_route() -> None:
+    chapter = _chapter({"existing": "kept"})
+    mark_chapter_rounds_budget_exhausted(
+        chapter,
+        block_codes=("LENGTH_OVER", "HOOK_ECHO_LOW", ""),
+        total_scene_rounds=12,
+        budget=10,
+    )
+    meta = chapter.metadata_json
+    assert meta["existing"] == "kept"
+    payload = meta[CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY]
+    assert payload["block_codes"] == ["LENGTH_OVER", "HOOK_ECHO_LOW"]
+    assert payload["total_scene_rounds"] == 12
+    assert payload["budget"] == 10
+    assert meta["requires_machine_repair"] is True
+    assert meta["auto_repair_in_progress"] is False
+    assert meta["auto_accepted"] is False
+    assert chapter.production_state == "blocked"
+
+
+# ---------------------------------------------------------------------------
+# Guard inside maybe_prepare_chapter_auto_repair
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_repair_stops_when_rounds_budget_exhausted(monkeypatch) -> None:
+    monkeypatch.setattr(drafts, "_resolve_chapter_scene_rounds_budget", lambda: 4)
+    scenes = [_scene_with_rounds(2), _scene_with_rounds(2)]  # total 4 >= budget 4
+    session = _FakeSession(scenes)
+    chapter = _chapter(
+        {"auto_repair_last_block_codes": ["LENGTH_OVER", "HOOK_ECHO_LOW"]}
+    )
+    project = SimpleNamespace(id=uuid4())
+
+    repair_triggered, block_codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=project,
+        chapter=chapter,
+        repairable_codes=("LENGTH_OVER",),
+        attempt_number=2,
+    )
+
+    assert repair_triggered is False
+    assert block_codes == ("LENGTH_OVER", "HOOK_ECHO_LOW")
+    payload = chapter.metadata_json[CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY]
+    assert payload["block_codes"] == ["LENGTH_OVER", "HOOK_ECHO_LOW"]
+    assert payload["total_scene_rounds"] == 4
+    assert payload["budget"] == 4
+    assert chapter.metadata_json["requires_machine_repair"] is True
+    assert session.flushed is True
+    # scenes were NOT reset — fail-fast must not start another rewrite round
+    for scene in scenes:
+        assert "auto_repair_hint" not in scene.metadata_json
+
+
+@pytest.mark.asyncio
+async def test_repair_proceeds_when_under_rounds_budget(monkeypatch) -> None:
+    monkeypatch.setattr(drafts, "_resolve_chapter_scene_rounds_budget", lambda: 4)
+    scenes = [_scene_with_rounds(2), _scene_with_rounds(1)]  # total 3 < budget 4
+    session = _FakeSession(scenes)
+    chapter = _chapter({"auto_repair_last_block_codes": ["LENGTH_OVER"]})
+    project = SimpleNamespace(id=uuid4())
+
+    repair_triggered, _block_codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=project,
+        chapter=chapter,
+        repairable_codes=("NOT_A_REAL_CODE",),
+        attempt_number=2,
+    )
+
+    # not triggered here either (codes not repairable), but crucially the
+    # budget guard did NOT fire: no exhaustion stamp, no machine-repair flag.
+    assert repair_triggered is False
+    assert CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY not in chapter.metadata_json
+    assert "requires_machine_repair" not in chapter.metadata_json
+
+
+@pytest.mark.asyncio
+async def test_budget_zero_skips_guard_entirely(monkeypatch) -> None:
+    """Default 0 must keep status quo — the guard never queries scenes."""
+    monkeypatch.setattr(drafts, "_resolve_chapter_scene_rounds_budget", lambda: 0)
+
+    class _ExplodingSession(_FakeSession):
+        async def scalars(self, *_args, **_kwargs):  # pragma: no cover - guard
+            raise AssertionError("budget guard must not query scenes when 0")
+
+    session = _ExplodingSession([_scene_with_rounds(50)])
+    chapter = _chapter()
+    project = SimpleNamespace(id=uuid4())
+
+    repair_triggered, block_codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=project,
+        chapter=chapter,
+        repairable_codes=("LENGTH_OVER",),
+        attempt_number=1,
+    )
+    assert repair_triggered is False
+    assert block_codes == ()
+    assert CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY not in chapter.metadata_json

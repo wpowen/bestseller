@@ -135,6 +135,12 @@ Correct: `/api/tasks?summary=1` 截断 events + SQL 聚合字数；`/api/project
 
 ---
 
+Mistake: 大纲替换后只更新了 `chapters.title/chapter_goal`，误以为正文会随之重写。
+Wrong: 认为 materialize_chapter_outline_batch 会同步重写已写章节的正文。
+Correct: `_MATERIALIZATION_MUTABLE_*_STATUSES` 只允许改 planned/outlining 章与 planned 场景；已写章（revision/approved 场景）即使章级字段被改，场景卡/场景稿/章稿仍是旧内容，self_heal 重跑 chapter_pipeline 只会"旧场景稿重组+新标题"。要换正文必须显式重置：场景卡+场景稿+章稿回退、章状态回 planned，再 force 物化 + 重跑 pipeline。诊断时对比 `chapter_draft_versions` 相邻版本与 `scene_cards.purpose` 即可确认。
+
+---
+
 Mistake: 创作向导 Step2「定篇幅」中间空白，短篇三档不可见。
 Wrong: `stepper` 夹在标题与 `wpanel` 之间占满视口；`fanqieLengthBlock` 用 `style="display:none"` 且 `longSerialLengthBlock` 内 `length-presets` 未正确闭合；`syncCreationModeUi` 未在 `resetWizardState` 调用。
 Correct: `wizard-steps-footer` 将步骤条移到底部；`#viewWizard` flex 列 + `#ws2` 合法 DOM；`fanqieLengthBlock` 用 `hidden` + JS `longBlock.hidden`/`fanqieBlock.hidden`；`wizGo(2)` 与 `resetWizardState` 均调用 `syncCreationModeUi()`。

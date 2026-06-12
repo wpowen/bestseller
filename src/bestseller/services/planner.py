@@ -157,6 +157,7 @@ from bestseller.services.title_dedup import (
     TitleCollisionError,
     derive_title_from_content,
     find_title_collisions,
+    jaccard_similarity,
 )
 from bestseller.services.platform_title_workflow import (
     build_platform_title_workflow,
@@ -203,6 +204,27 @@ class PlannerFallbackError(RuntimeError):
 
 class OutlineBatchShrinkRequired(PlannerFallbackError):
     """Raised when a strict outline batch must be split before retrying."""
+
+
+class OutlineEventDuplicationError(PlannerFallbackError):
+    """Raised when a freshly generated outline batch re-narrates events that
+    earlier batches already consumed (R5: cross-batch narrative amnesia).
+
+    ``findings`` carries one entry per offending chapter:
+    ``{"chapter_number", "goal", "ledger_chapter_number", "ledger_goal",
+    "similarity"}`` so the repair loop can issue targeted per-chapter
+    directives instead of regenerating the whole batch blindly.
+    """
+
+    def __init__(self, message: str, *, findings: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.findings = findings
+
+
+# Default acceptance threshold for the R5 consumed-event dedup check
+# (character 2-gram Jaccard between a new chapter goal and ledger goals).
+# Defined here because it is a default argument of the outline repair loop.
+OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT = 0.55
 
 
 def _emit_planner_progress(
@@ -2390,6 +2412,45 @@ def _outline_repair_directives_from_error(
         )
     )
 
+    # ── Consumed-event duplication branch (R5) ──────────────────────
+    # Surfaced from the cross-batch ledger check when a fresh batch
+    # re-narrates an arc an earlier batch already consumed. Issue one
+    # targeted directive per offending chapter.
+    if isinstance(error, OutlineEventDuplicationError) and error.findings:
+        directives = []
+        for finding in error.findings[:20]:
+            chapter_number = finding.get("chapter_number")
+            ledger_chapter = finding.get("ledger_chapter_number")
+            ledger_goal = str(finding.get("ledger_goal") or "")[:120]
+            similarity = float(finding.get("similarity") or 0.0)
+            if is_en:
+                directives.append(
+                    f"Chapter {chapter_number}: its goal is a near-rewrite "
+                    f"(similarity {similarity:.2f}) of the already-consumed event from "
+                    f"chapter {ledger_chapter}: \"{ledger_goal}\". That event already "
+                    f"happened and is spent. Rewrite ONLY chapter {chapter_number} with a "
+                    "NEW concrete event that advances the main plot — different action, "
+                    "different obstacle, different state change. Do not produce a variant "
+                    "of the consumed event."
+                )
+            else:
+                directives.append(
+                    f"第{chapter_number}章的 chapter_goal 与已消耗事件台账中"
+                    f"第{ledger_chapter}章的事件高度重复（相似度 {similarity:.2f}）："
+                    f"「{ledger_goal}」。该事件已经发生并消耗完毕。"
+                    f"只需重写第{chapter_number}章——必须是推进主线的全新具体事件，"
+                    "行动、阻力、状态变化都要与台账事件不同，禁止生成其变体。"
+                )
+        if is_en:
+            directives.append(
+                "Keep all other chapters unchanged. Only rewrite the chapters named "
+                "above; do not regenerate the whole batch."
+            )
+        else:
+            directives.append("其他章节保持不变。仅按上述指令重写指定章节，不要重写整批。")
+        directives.append(preserve_directive)
+        return directives
+
     # ── Title-collision branch ──────────────────────────────────────
     # Surfaced from `_normalize_generated_outline_titles_or_fail` when
     # the new dedup pass catches exact or near-duplicate titles.
@@ -2576,8 +2637,18 @@ async def _generate_volume_outline_with_repair_loop(
     revealed_ledger_block: str | None,
     base_constraints: list[str],
     progress: PlanningProgressCallback | None = None,
+    consumed_event_entries: list[dict[str, Any]] | None = None,
+    event_dedup_threshold: float = OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT,
 ) -> tuple[dict[str, Any], UUID | None, list[dict[str, Any]]]:
-    """Generate a volume outline, then regenerate with diagnostics until valid."""
+    """Generate a volume outline, then regenerate with diagnostics until valid.
+
+    When ``consumed_event_entries`` is provided (R5 cross-batch ledger),
+    each accepted payload is additionally checked for chapters whose goal
+    re-narrates an already-consumed event; offenders trigger the same
+    repair-directive retry path as validation failures. The check is
+    deliberately soft on the final attempt — a residual near-duplicate is
+    flagged in ``_meta`` rather than killing the whole book.
+    """
 
     max_repair_attempts = max(
         1,
@@ -2659,7 +2730,54 @@ async def _generate_volume_outline_with_repair_loop(
             )
             if raw_meta:
                 payload["_meta"] = raw_meta
-            if repair_history:
+            if consumed_event_entries:
+                duplicate_findings = _outline_duplicate_event_findings(
+                    _mapping_list(payload.get("chapters")),
+                    consumed_event_entries,
+                    threshold=event_dedup_threshold,
+                )
+                if duplicate_findings:
+                    summary = "; ".join(
+                        (
+                            f"ch{f['chapter_number']} goal duplicates consumed event "
+                            f"ch{f['ledger_chapter_number']} "
+                            f"(similarity {f['similarity']:.2f})"
+                        )
+                        for f in duplicate_findings[:10]
+                    )
+                    if attempt >= max_repair_attempts:
+                        # Soft-accept: a residual near-duplicate event must not
+                        # abort the book; flag it for downstream auditing.
+                        logger.warning(
+                            "Volume %d outline batch '%s': accepting with %d "
+                            "unresolved consumed-event duplicate(s) after %d "
+                            "attempt(s): %s",
+                            volume_number,
+                            logical_name,
+                            len(duplicate_findings),
+                            attempt,
+                            summary,
+                        )
+                        meta = _mapping(payload.get("_meta"))
+                        meta["event_dedup_unresolved"] = duplicate_findings
+                        payload["_meta"] = meta
+                        repair_history.append(
+                            {
+                                "attempt": attempt,
+                                "status": "passed_with_event_duplicates",
+                                "event_duplicates": duplicate_findings[:10],
+                            }
+                        )
+                    else:
+                        raise OutlineEventDuplicationError(
+                            f"Planner artifact '{logical_name}' re-narrated "
+                            f"already-consumed events: {summary}",
+                            findings=duplicate_findings,
+                        )
+            if repair_history and repair_history[-1].get("status") not in (
+                "passed",
+                "passed_with_event_duplicates",
+            ):
                 repair_history.append({"attempt": attempt, "status": "passed"})
             _emit_planner_progress(
                 progress,
@@ -2816,8 +2934,10 @@ def _outline_batch_constraints(
     chapter_end: int,
     count: int,
     previous_exit_state: str | None,
+    consumed_event_ledger: list[str] | None = None,
 ) -> list[str]:
-    is_en = is_english_language(_planner_language(project))
+    language = _planner_language(project)
+    is_en = is_english_language(language)
     if is_en:
         constraints = [
             (
@@ -2834,6 +2954,10 @@ def _outline_batch_constraints(
                 "Continue from the previous batch exit state; the first chapter must visibly react "
                 f"to this state: {previous_exit_state[:800]}"
             )
+        if consumed_event_ledger:
+            constraints.append(
+                _outline_event_ledger_constraint(consumed_event_ledger, language=language)
+            )
         return constraints
 
     constraints = [
@@ -2846,6 +2970,10 @@ def _outline_batch_constraints(
     if previous_exit_state:
         constraints.append(
             f"必须承接上一批 exit state；本批第一章要读者可见地回应该状态：{previous_exit_state[:800]}"
+        )
+    if consumed_event_ledger:
+        constraints.append(
+            _outline_event_ledger_constraint(consumed_event_ledger, language=language)
         )
     return constraints
 
@@ -2867,6 +2995,342 @@ def _chapter_exit_state_summary(chapter: dict[str, Any]) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+# ── R5: cross-batch consumed-event ledger ──────────────────────────────
+# Progressive outline batches historically had no shared event state, so
+# the same plot arc was regenerated by multiple batches (production
+# evidence: one signing-scene arc rewritten ~6 times across 50 chapters;
+# cross-batch title collisions were the symptom, not the disease). The
+# ledger below is extracted deterministically (no LLM) from every accepted
+# batch, injected into the next batch's prompt, and enforced at acceptance
+# time with character n-gram similarity against each new chapter's goal.
+
+_OUTLINE_EVENT_LEDGER_GOAL_CHARS = 90
+_OUTLINE_EVENT_LEDGER_HOOK_CHARS = 60
+_OUTLINE_EVENT_LEDGER_MAX_PROMPT_LINES = 80
+
+
+def _outline_chapter_goal_text(chapter: dict[str, Any]) -> str:
+    return _first_non_empty_text(
+        chapter.get("chapter_goal"),
+        chapter.get("goal"),
+        chapter.get("main_conflict"),
+    ).strip()
+
+
+def _outline_chapter_hook_text(chapter: dict[str, Any]) -> str:
+    return _first_non_empty_text(
+        chapter.get("hook_description"),
+        chapter.get("hook"),
+    ).strip()
+
+
+def _outline_consumed_event_entries(
+    chapters: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Deterministically compress accepted chapters into ledger entries.
+
+    Each entry is ``{"chapter_number", "goal", "hook", "line"}`` where
+    ``line`` is the compact prompt-facing form ``ch<N> | goal | hook``.
+    Chapters without any goal/hook text yield no entry.
+    """
+
+    entries: list[dict[str, Any]] = []
+    for chapter in chapters:
+        if not isinstance(chapter, dict):
+            continue
+        goal = _outline_chapter_goal_text(chapter)[:_OUTLINE_EVENT_LEDGER_GOAL_CHARS]
+        hook = _outline_chapter_hook_text(chapter)[:_OUTLINE_EVENT_LEDGER_HOOK_CHARS]
+        if not goal and not hook:
+            continue
+        chapter_number = _int_or_none(chapter.get("chapter_number"))
+        parts = [f"ch{chapter_number if chapter_number is not None else '?'}"]
+        if goal:
+            parts.append(goal)
+        if hook:
+            parts.append(hook)
+        entries.append(
+            {
+                "chapter_number": chapter_number,
+                "goal": goal,
+                "hook": hook,
+                "line": " | ".join(parts),
+            }
+        )
+    return entries
+
+
+def _outline_event_ledger_lines(entries: list[dict[str, Any]]) -> list[str]:
+    lines = [str(entry.get("line") or "") for entry in entries if entry.get("line")]
+    # Keep prompt size bounded: most recent lines matter most for the
+    # next batch, but earlier arcs are exactly what re-bloom — keep both
+    # ends when over budget (drop the middle).
+    cap = _OUTLINE_EVENT_LEDGER_MAX_PROMPT_LINES
+    if len(lines) <= cap:
+        return lines
+    head = cap // 2
+    tail = cap - head
+    return [*lines[:head], *lines[-tail:]]
+
+
+def _outline_duplicate_event_findings(
+    chapters: list[dict[str, Any]],
+    consumed_event_entries: list[dict[str, Any]],
+    *,
+    threshold: float = OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT,
+) -> list[dict[str, Any]]:
+    """Deterministic acceptance check: flag new chapters whose goal is a
+    near-rewrite of an already-consumed ledger event.
+
+    Similarity is character 2-gram Jaccard (same primitive the title
+    dedup uses), computed goal-vs-goal. One finding per chapter (the
+    highest-similarity ledger match).
+    """
+
+    if threshold <= 0 or not consumed_event_entries:
+        return []
+    findings: list[dict[str, Any]] = []
+    for chapter in chapters:
+        if not isinstance(chapter, dict):
+            continue
+        goal = _outline_chapter_goal_text(chapter)[:_OUTLINE_EVENT_LEDGER_GOAL_CHARS]
+        if not goal:
+            continue
+        best: dict[str, Any] | None = None
+        for entry in consumed_event_entries:
+            ledger_goal = str(entry.get("goal") or "")
+            if not ledger_goal:
+                continue
+            similarity = jaccard_similarity(goal, ledger_goal)
+            if similarity >= threshold and (best is None or similarity > best["similarity"]):
+                best = {
+                    "chapter_number": _int_or_none(chapter.get("chapter_number")),
+                    "goal": goal,
+                    "ledger_chapter_number": entry.get("chapter_number"),
+                    "ledger_goal": ledger_goal,
+                    "similarity": round(similarity, 4),
+                }
+        if best is not None:
+            findings.append(best)
+    return findings
+
+
+def _outline_event_ledger_constraint(
+    ledger_lines: list[str],
+    *,
+    language: str | None,
+) -> str:
+    if is_english_language(language):
+        return (
+            "CONSUMED-EVENT LEDGER — the events below already happened in "
+            "earlier batches and are spent. Do NOT re-narrate them or write "
+            "variants of them (same characters doing the same kind of action, "
+            "or the same conflict re-occurring, counts as a variant). Every "
+            "chapter in this batch must advance the story with NEW events:\n"
+            + "\n".join(ledger_lines)
+        )
+    return (
+        "【已消耗事件台账】以下事件已在前序批次发生并消耗完毕，"
+        "禁止重写、复述或生成其变体（同一人物做同一类动作、同一冲突再次发生均算变体）。"
+        "本批每一章都必须推进全新事件：\n" + "\n".join(ledger_lines)
+    )
+
+
+def _outline_event_dedup_threshold(settings: AppSettings) -> float:
+    try:
+        value = float(
+            getattr(
+                getattr(settings, "pipeline", None),
+                "outline_event_dedup_threshold",
+                OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT,
+            )
+        )
+    except (TypeError, ValueError):
+        return OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT
+    if not (0.0 <= value <= 1.0):
+        return OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT
+    return value
+
+
+# ── R16: clipped-fragment guard for deterministic title dedupe ─────────
+# The deterministic dedupe fallback historically emitted sentence
+# fragments clipped from goal text as titles (production evidence:
+# 「霍听澜把一份」「试图让陈屿的」). Every check below is at the grammar
+# layer (particles, copulas, common auxiliary verbs) — NO genre words.
+
+_TITLE_FRAGMENT_LEADING_CHARS: frozenset[str] = frozenset(
+    "的了在是和与或但因所而从这那他她你我它之其也都已被把让叫将对向于就还又当若想要去来再没不"
+)
+_TITLE_FRAGMENT_LEADING_BIGRAMS: tuple[str, ...] = (
+    "试图", "打算", "开始", "继续", "决定", "想要", "准备", "必须", "已经", "正在",
+)
+_TITLE_FRAGMENT_TRAILING_CHARS: frozenset[str] = frozenset(
+    "的了着把被让将和与或对向从而之于在是就还也又个为"
+)
+_TITLE_FRAGMENT_INTERIOR_CHARS: frozenset[str] = frozenset("的了把被让将是")
+
+_TITLE_BRACKET_NOUN_RE = re.compile(r"[「『《【]([^」』》】]{2,4})[」』》】]")
+_TITLE_BOUNDED_CJK_RUN_RE = re.compile(r"(?:^|[^一-鿿])([一-鿿]{2,4})(?=[^一-鿿]|$)")
+_TITLE_CJK_CHAR_RE = re.compile(r"[一-鿿]")
+_TITLE_NUMERAL_SUFFIXES = "二三四五六七八九十"
+
+
+def _is_clipped_title_fragment(title: str) -> bool:
+    """True when ``title`` reads as a clipped sentence fragment rather
+    than a noun phrase — i.e. it starts with a particle/auxiliary verb,
+    ends dangling on a particle, or carries sentence-structure characters
+    (的/了/把/被/让/将/是) in its interior."""
+
+    s = (title or "").strip()
+    if not s:
+        return True
+    if not _TITLE_CJK_CHAR_RE.search(s):
+        # Latin titles are out of scope for this CJK grammar check.
+        return False
+    if s[0] in _TITLE_FRAGMENT_LEADING_CHARS:
+        return True
+    if any(s.startswith(bigram) for bigram in _TITLE_FRAGMENT_LEADING_BIGRAMS):
+        return True
+    if s[-1] in _TITLE_FRAGMENT_TRAILING_CHARS:
+        return True
+    if any(ch in _TITLE_FRAGMENT_INTERIOR_CHARS for ch in s):
+        return True
+    return False
+
+
+def _dedup_title_candidate_ok(candidate: str, used_titles: list[str]) -> bool:
+    if not candidate or _is_clipped_title_fragment(candidate):
+        return False
+    for used in used_titles:
+        if candidate == used:
+            return False
+        if jaccard_similarity(candidate, used) >= DEFAULT_NEAR_DUP_THRESHOLD:
+            return False
+    return True
+
+
+def _extract_concrete_title_phrase(
+    chapter: dict[str, Any],
+    used_titles: list[str],
+) -> str | None:
+    """Extract a 2-4 character noun phrase from THIS chapter's hook/goal.
+
+    Bracketed proper nouns win; otherwise boundary-delimited CJK runs
+    (longest first). Candidates that read as clipped fragments or collide
+    with ``used_titles`` (exact or near-dup) are skipped."""
+
+    sources = (
+        _outline_chapter_hook_text(chapter),
+        _outline_chapter_goal_text(chapter),
+    )
+    for text in sources:
+        if not text:
+            continue
+        for match in _TITLE_BRACKET_NOUN_RE.finditer(text):
+            candidate = match.group(1).strip()
+            if _dedup_title_candidate_ok(candidate, used_titles):
+                return candidate
+        runs = [match.group(1) for match in _TITLE_BOUNDED_CJK_RUN_RE.finditer(text)]
+        for desired_len in (4, 3, 2):
+            for candidate in runs:
+                if len(candidate) != desired_len:
+                    continue
+                if _dedup_title_candidate_ok(candidate, used_titles):
+                    return candidate
+    return None
+
+
+def _numbered_title_fallback(original_title: str, used_titles: list[str]) -> str:
+    """「原标题·二」-style numbered suffix; never a clipped goal fragment.
+
+    The base is shortened from the right until the suffixed candidate
+    clears both exact and near-dup checks against ``used_titles``, so the
+    result always survives the downstream Jaccard title validation."""
+
+    base = (original_title or "").strip() or "本章"
+    while len(base) >= 2:
+        for numeral in _TITLE_NUMERAL_SUFFIXES:
+            candidate = f"{base}·{numeral}"
+            if all(
+                candidate != used
+                and jaccard_similarity(candidate, used) < DEFAULT_NEAR_DUP_THRESHOLD
+                for used in used_titles
+            ):
+                return candidate
+        base = base[:-1]
+    # Pathological corner: ascending integer suffix is unique by construction.
+    index = 11
+    while True:
+        candidate = f"{base or '本章'}·{index}"
+        if candidate not in used_titles:
+            return candidate
+        index += 1
+
+
+def _repair_clipped_dedup_titles(
+    chapters: list[dict[str, Any]],
+    title_changes: list[tuple[int, str, str]],
+    *,
+    existing_titles: list[tuple[int | None, str]],
+    language: str | None = None,
+) -> tuple[list[dict[str, Any]], list[tuple[int, str, str]]]:
+    """Post-process deterministic dedupe rewrites (R16).
+
+    Any rewritten title that reads as a clipped sentence fragment is
+    replaced by (in order of preference) a concrete 2-4 character noun
+    phrase from the chapter's own hook/goal, else a numbered
+    「原标题·二」 suffix. Non-fragment rewrites pass through untouched.
+    Returns new lists; inputs are not mutated."""
+
+    if not title_changes:
+        return chapters, title_changes
+
+    fragment_changes = {
+        chapter_number: (old_title, new_title)
+        for chapter_number, old_title, new_title in title_changes
+        if _is_clipped_title_fragment(new_title)
+    }
+    if not fragment_changes:
+        return chapters, title_changes
+
+    used_titles: list[str] = [
+        title for _, title in existing_titles if (title or "").strip()
+    ]
+    used_titles.extend(
+        str(chapter.get("title") or "").strip()
+        for chapter in chapters
+        if isinstance(chapter, dict)
+        and _int_or_none(chapter.get("chapter_number")) not in fragment_changes
+        and str(chapter.get("title") or "").strip()
+    )
+
+    repaired_chapters: list[dict[str, Any]] = []
+    replacement_by_chapter: dict[int, str] = {}
+    for chapter in chapters:
+        chapter_number = (
+            _int_or_none(chapter.get("chapter_number")) if isinstance(chapter, dict) else None
+        )
+        if chapter_number is None or chapter_number not in fragment_changes:
+            repaired_chapters.append(chapter)
+            continue
+        old_title, _fragment = fragment_changes[chapter_number]
+        replacement = _extract_concrete_title_phrase(chapter, used_titles)
+        if replacement is None:
+            replacement = _numbered_title_fallback(old_title, used_titles)
+        used_titles.append(replacement)
+        replacement_by_chapter[chapter_number] = replacement
+        repaired_chapters.append({**chapter, "title": replacement})
+
+    repaired_changes = [
+        (
+            chapter_number,
+            old_title,
+            replacement_by_chapter.get(chapter_number, new_title),
+        )
+        for chapter_number, old_title, new_title in title_changes
+    ]
+    return repaired_chapters, repaired_changes
 
 
 async def _generate_volume_outline_batched(
@@ -2920,6 +3384,10 @@ async def _generate_volume_outline_batched(
     repair_history: list[dict[str, Any]] = []
     previous_exit_state: str | None = None
     reused_batch_count = 0
+    # R5: consumed-event ledger accumulated across batches so later batches
+    # cannot re-narrate arcs earlier batches already spent.
+    consumed_event_entries: list[dict[str, Any]] = []
+    event_dedup_threshold = _outline_event_dedup_threshold(settings)
 
     for chapter_start, chapter_end, count in batch_ranges:
         batch_logical_name = f"{logical_name}_batch_{chapter_start}_{chapter_end}"
@@ -2932,6 +3400,7 @@ async def _generate_volume_outline_batched(
                 chapter_end=chapter_end,
                 count=count,
                 previous_exit_state=previous_exit_state,
+                consumed_event_ledger=_outline_event_ledger_lines(consumed_event_entries),
             ),
         ]
         try:
@@ -2963,6 +3432,8 @@ async def _generate_volume_outline_batched(
                     revealed_ledger_block=revealed_ledger_block,
                     base_constraints=batch_constraints,
                     progress=progress,
+                    consumed_event_entries=consumed_event_entries,
+                    event_dedup_threshold=event_dedup_threshold,
                 )
             ]
         except OutlineBatchShrinkRequired as exc:
@@ -2993,6 +3464,9 @@ async def _generate_volume_outline_batched(
                         chapter_end=sub_end,
                         count=sub_count,
                         previous_exit_state=previous_exit_state,
+                        consumed_event_ledger=_outline_event_ledger_lines(
+                            consumed_event_entries
+                        ),
                     ),
                     "本批次是上一轮长输出/章数失败后的缩小批次；只输出当前缩小范围，不得补写其他章节。",
                 ]
@@ -3024,6 +3498,8 @@ async def _generate_volume_outline_batched(
                         revealed_ledger_block=revealed_ledger_block,
                         base_constraints=sub_constraints,
                         progress=progress,
+                        consumed_event_entries=consumed_event_entries,
+                        event_dedup_threshold=event_dedup_threshold,
                     )
                 )
 
@@ -3061,6 +3537,11 @@ async def _generate_volume_outline_batched(
             all_chapters.extend(copy.deepcopy(batch_chapters))
             if batch_chapters:
                 previous_exit_state = _chapter_exit_state_summary(batch_chapters[-1])
+                # R5: register this batch's events as consumed so the next
+                # batch is prompted with — and checked against — them.
+                consumed_event_entries.extend(
+                    _outline_consumed_event_entries(batch_chapters)
+                )
 
     combined = {
         "batch_name": f"volume-{volume_number}-outline",
@@ -3093,6 +3574,16 @@ async def _generate_volume_outline_batched(
         language=getattr(project, "language", None),
     )
     if _title_changes:
+        # R16: never let the deterministic dedupe ship a clipped goal
+        # fragment (「霍听澜把一份」-style) as a chapter title — prefer a
+        # 2-4 char noun phrase from the chapter's own hook/goal, else a
+        # numbered 「原标题·二」 suffix.
+        _deduped_chapters, _title_changes = _repair_clipped_dedup_titles(
+            _deduped_chapters,
+            _title_changes,
+            existing_titles=existing_titles,
+            language=getattr(project, "language", None),
+        )
         combined["chapters"] = _deduped_chapters
         logger.warning(
             "Volume %d outline: deterministically deduped %d colliding chapter "
@@ -3661,6 +4152,201 @@ def _derive_protagonist_name(
     return name if isinstance(name, str) and name else _fallback
 
 
+# ── R4: premise explicit-roster passthrough ────────────────────────────
+# When a premise explicitly names its cast (e.g. a "人物名册（正文必须沿用
+# 以下姓名）" section), those names are authoritative. Production evidence:
+# the LLM name pool + cast planner renamed an entire explicit roster. The
+# extraction below is generic (structural markers + frequency + a
+# language-level surname check) — deliberately NO genre vocabulary.
+
+_PREMISE_ROSTER_MARKERS: tuple[str, ...] = (
+    "人物名册",
+    "角色名册",
+    "人物表",
+    "角色表",
+    "必须沿用",
+    "沿用以下姓名",
+    "名册",
+    "cast roster",
+    "character roster",
+    "must use the following names",
+)
+
+# Grammatical / structural / role-label tokens only — these describe the
+# document or narrative function, never a specific genre's content.
+_PREMISE_ROSTER_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "人物", "角色", "名册", "姓名", "名单", "名字", "本名", "正文",
+        "必须", "沿用", "以下", "如下", "使用", "禁止", "改名", "主角",
+        "反派", "配角", "盟友", "对手", "男主", "女主", "主线", "支线",
+        "故事", "前提", "设定", "世界", "背景", "章节", "大纲", "自己",
+        "他们", "她们", "我们", "时候", "现在", "已经", "开始", "最后",
+        "突然", "所有", "知道", "发现", "没有", "可以", "什么", "这个",
+        "那个", "一个", "事情", "问题", "方法", "东西",
+    }
+)
+
+# Characters that never appear inside a Chinese person name in practice —
+# particles, copulas, pronouns, common function words. Pure grammar layer.
+_PREMISE_NAME_FUNCTION_CHARS: frozenset[str] = frozenset(
+    "的了在是和与或但因而从就都也很还又被把让将对向于之其这那他她你我它们个一不没有为以及等"
+)
+
+# Common Chinese surnames (language-level resource, not a genre word-list).
+# Used ONLY by the frequency fallback path to tell person names apart from
+# frequent common nouns; the explicit-marker path does not require it.
+_COMMON_ZH_SURNAMES: frozenset[str] = frozenset(
+    "王李张刘陈杨黄赵吴周徐孙马朱胡郭何林罗高郑梁谢宋唐许韩冯邓曹彭曾肖田董袁潘"
+    "蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江"
+    "尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤楚洛纪温庄晏柳霍盛"
+)
+
+_PREMISE_CJK_RUN_RE = re.compile(r"[一-鿿]+")
+
+
+def _premise_roster_segments(premise: str) -> list[str]:
+    """Return the text segments that follow explicit roster markers."""
+
+    segments: list[str] = []
+    lowered = premise.lower()
+    for marker in _PREMISE_ROSTER_MARKERS:
+        start = 0
+        marker_lower = marker.lower()
+        while True:
+            idx = lowered.find(marker_lower, start)
+            if idx < 0:
+                break
+            tail = premise[idx + len(marker) : idx + len(marker) + 400]
+            # A roster section ends at the first blank line.
+            cut = tail.find("\n\n")
+            segments.append(tail if cut < 0 else tail[:cut])
+            start = idx + len(marker)
+    return segments
+
+
+def _premise_name_candidate_ok(token: str) -> bool:
+    if not (2 <= len(token) <= 3):
+        return False
+    if token in _PREMISE_ROSTER_STOPWORDS:
+        return False
+    if any(ch in _PREMISE_NAME_FUNCTION_CHARS for ch in token):
+        return False
+    return True
+
+
+def _extract_premise_locked_names(
+    premise: str,
+    *,
+    language: str | None = None,
+    max_names: int = 12,
+) -> list[str]:
+    """Extract the explicit character roster from a premise, generically.
+
+    Two passes, both deterministic and genre-free:
+
+    1. **Marker pass** — names listed after structural roster markers
+       (「人物名册」/「必须沿用」…); authoritative when present.
+    2. **Frequency pass** — 2-3 character CJK tokens that occur >= 3
+       times in the premise AND start with a common surname (a
+       language-level check, not a genre word-list). Longer candidates
+       suppress their substrings ("赵小磊" suppresses "赵小"/"小磊").
+
+    English premises currently return only marker-pass names (Latin
+    rosters are rare and the cast prompt already receives them verbatim).
+    """
+
+    text = (premise or "").strip()
+    if not text:
+        return []
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str) -> None:
+        if name not in seen:
+            seen.add(name)
+            ordered.append(name)
+
+    # Pass 1: explicit roster markers.
+    for segment in _premise_roster_segments(text):
+        for run in _PREMISE_CJK_RUN_RE.findall(segment):
+            if _premise_name_candidate_ok(run):
+                _add(run)
+
+    if is_english_language(language):
+        return ordered[:max_names]
+
+    # Pass 2: high-frequency name-shaped tokens across the whole premise.
+    counts: dict[str, int] = {}
+    runs = _PREMISE_CJK_RUN_RE.findall(text)
+    for run in runs:
+        for n in (2, 3):
+            for i in range(len(run) - n + 1):
+                token = run[i : i + n]
+                counts[token] = counts.get(token, 0) + 1
+    frequent = [
+        (token, count)
+        for token, count in counts.items()
+        if count >= 3
+        and _premise_name_candidate_ok(token)
+        and token[0] in _COMMON_ZH_SURNAMES
+    ]
+    # Prefer longer tokens; suppress substrings of an already-kept token.
+    frequent.sort(key=lambda item: (-len(item[0]), -item[1], item[0]))
+    kept: list[str] = []
+    for token, _count in frequent:
+        if any(token in longer for longer in kept):
+            continue
+        kept.append(token)
+    for token in kept:
+        if any(token in name for name in ordered):
+            continue
+        _add(token)
+
+    return ordered[:max_names]
+
+
+def _merge_locked_names_into_pool(
+    pool: dict[str, Any],
+    locked_names: list[str],
+) -> dict[str, Any]:
+    """Return a new name pool with premise roster names merged in as locked.
+
+    The original pool is not mutated. Locked names are surfaced both as a
+    dedicated ``locked_names`` list (consumed by the cast-spec prompt) and
+    as ally entries so every deterministic fallback consumer sees them.
+    """
+
+    if not locked_names:
+        return pool
+    merged = copy.deepcopy(pool) if isinstance(pool, dict) else {}
+    merged["locked_names"] = list(locked_names)
+    existing = {
+        _non_empty_string(_mapping(merged.get("protagonist")).get("name"), ""),
+        *(
+            _non_empty_string(entry.get("name"), "")
+            for entry in _mapping_list(merged.get("allies"))
+        ),
+        *(
+            _non_empty_string(entry.get("name"), "")
+            for entry in _mapping_list(merged.get("antagonists"))
+        ),
+    }
+    allies = list(_mapping_list(merged.get("allies")))
+    for name in locked_names:
+        if name in existing:
+            continue
+        allies.append(
+            {
+                "name": name,
+                "locked": True,
+                "name_reasoning": "premise 名册既定人物，必须沿用",
+            }
+        )
+    merged["allies"] = allies
+    return merged
+
+
 async def _generate_character_names(
     session: AsyncSession,
     settings: AppSettings,
@@ -3684,6 +4370,8 @@ async def _generate_character_names(
     archetype = protagonist.get("archetype", "")
     era_hints = _detect_era_from_genre(genre)
     is_en = is_english_language(language)
+    # R4: premise explicit roster names survive every return path below.
+    locked_names = _extract_premise_locked_names(premise, language=language)
 
     if is_en:
         user_prompt = (
@@ -3821,7 +4509,7 @@ async def _generate_character_names(
     try:
         parsed = _extract_json_payload(result.content)
         if isinstance(parsed, dict) and parsed.get("protagonist", {}).get("name"):
-            return parsed
+            return _merge_locked_names_into_pool(parsed, locked_names)
         raise ValueError("character_names_schema_invalid: missing protagonist.name")
     except (ValueError, KeyError, TypeError) as exc:
         from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
@@ -3848,25 +4536,28 @@ async def _generate_character_names(
         try:
             parsed = _extract_json_payload(repair.content)
             if isinstance(parsed, dict) and parsed.get("protagonist", {}).get("name"):
-                return parsed
+                return _merge_locked_names_into_pool(parsed, locked_names)
         except (ValueError, KeyError, TypeError):
             logger.warning(
                 "Character name JSON repair failed; falling back to deterministic name pool.",
                 exc_info=True,
             )
 
-    return _genre_name_pool(
-        genre,
-        language=language,
-        seed_text=_seed_material(
+    return _merge_locked_names_into_pool(
+        _genre_name_pool(
             genre,
-            sub_genre,
-            language or "",
-            premise[:300],
-            archetype,
-            project_id or "",
-            workflow_run_id or "",
+            language=language,
+            seed_text=_seed_material(
+                genre,
+                sub_genre,
+                language or "",
+                premise[:300],
+                archetype,
+                project_id or "",
+                workflow_run_id or "",
+            ),
         ),
+        locked_names,
     )
 
 
@@ -12235,8 +12926,32 @@ def _world_spec_prompts(
     return system_prompt, user_prompt
 
 
+def _locked_roster_prompt_block(locked_names: list[str], *, is_en: bool) -> str:
+    """Render the R4 premise-roster lock instruction for the cast prompt."""
+
+    names = "、".join(locked_names) if not is_en else ", ".join(locked_names)
+    if is_en:
+        return (
+            "\n\n[LOCKED CAST ROSTER — premise passthrough]\n"
+            f"The premise explicitly fixes these character names: {names}.\n"
+            "These are established characters. Do NOT rename, replace, or alias "
+            "any of them — use the names verbatim in protagonist/antagonist/"
+            "supporting_cast. You may only ADD new characters beyond this roster."
+        )
+    return (
+        "\n\n【既定人物名册——premise 直通，最高优先级】\n"
+        f"premise 已明确给定以下人物姓名：{names}。\n"
+        "这些名字为既定人物，禁止改名、换名或同义替换——protagonist/antagonist/"
+        "supporting_cast 中必须原样沿用；只允许在此名册之外补充新角色名。"
+    )
+
+
 def _cast_spec_prompts(
-    project: ProjectModel, book_spec: dict[str, Any], world_spec: dict[str, Any]
+    project: ProjectModel,
+    book_spec: dict[str, Any],
+    world_spec: dict[str, Any],
+    *,
+    locked_names: list[str] | None = None,
 ) -> tuple[str, str]:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
 
@@ -12368,6 +13083,13 @@ def _cast_spec_prompts(
             f"{_CAST_SPEC_COUNTER_EXAMPLES_ZH}"
         )
     )
+    _locked = [
+        name.strip()
+        for name in (locked_names or [])
+        if isinstance(name, str) and name.strip()
+    ]
+    if _locked:
+        user_prompt += _locked_roster_prompt_block(_locked, is_en=is_en)
     _genre_instruction = getattr(
         _genre_profile.planner_prompts, f"cast_spec_instruction_{_lang_key}", ""
     )
@@ -17587,7 +18309,12 @@ async def generate_novel_plan(
             current_step=current_step_name,
             artifact_type=ArtifactType.CAST_SPEC.value,
         )
-        cast_system, cast_user = _cast_spec_prompts(project, book_spec_payload, world_spec_payload)
+        cast_system, cast_user = _cast_spec_prompts(
+            project,
+            book_spec_payload,
+            world_spec_payload,
+            locked_names=_string_list(character_name_pool.get("locked_names")),
+        )
         cast_user = attach_planner_methodology(
             cast_user,
             stage=MethodologyStage.OUTLINE_BOOK,
@@ -19343,7 +20070,12 @@ async def generate_foundation_plan(
         )
         current_step_name = "generate_cast_spec"
         workflow_run.current_step = current_step_name
-        cast_system, cast_user = _cast_spec_prompts(project, book_spec_payload, world_spec_payload)
+        cast_system, cast_user = _cast_spec_prompts(
+            project,
+            book_spec_payload,
+            world_spec_payload,
+            locked_names=_string_list(character_name_pool.get("locked_names")),
+        )
         cast_user = attach_planner_methodology(
             cast_user,
             stage=MethodologyStage.OUTLINE_BOOK,

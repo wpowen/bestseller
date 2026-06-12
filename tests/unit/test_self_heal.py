@@ -2548,3 +2548,182 @@ async def test_heal_stuck_projects_skips_delete_tombstoned(
     # The tombstoned project is never re-queued; the live one still is.
     assert requeued == ["book-alive"]
     assert [d["slug"] for d in dispatched] == ["book-alive"]
+
+
+# ---------------------------------------------------------------------------
+# R24: orphan ``arq:job`` key guard — a half-enqueued job key (not in queue,
+# not executing) must stop blocking re-enqueue once it is over the age cap.
+# ---------------------------------------------------------------------------
+
+
+class _FakeOrphanArqPool(_FakeArqPool):
+    """_FakeArqPool + the GET/PTTL surface the orphan-age probe needs."""
+
+    def __init__(
+        self,
+        *args: Any,
+        job_payloads: dict[str, bytes] | None = None,
+        pttls: dict[str, int] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.job_payloads = job_payloads or {}
+        self.pttls = pttls or {}
+
+    async def get(self, key: str) -> bytes | None:
+        return self.job_payloads.get(key)
+
+    async def pttl(self, key: str) -> int:
+        return self.pttls.get(key, -2)
+
+
+def _job_payload_bytes(age_seconds: float) -> bytes:
+    import time
+
+    return pickle.dumps({"t": (time.time() - age_seconds) * 1000})
+
+
+@pytest.mark.asyncio
+async def test_is_orphan_heal_job_clears_overage_bare_key() -> None:
+    from bestseller.worker.self_heal import _is_orphan_heal_job
+
+    job_id = "repair:heal:book-orphan"
+    pool = _FakeOrphanArqPool(
+        existing_keys={f"arq:job:{job_id}", f"arq:retry:{job_id}"},
+        job_payloads={f"arq:job:{job_id}": _job_payload_bytes(2 * 60 * 60)},
+    )
+
+    assert await _is_orphan_heal_job(pool, job_id) is True
+
+
+@pytest.mark.asyncio
+async def test_is_orphan_heal_job_respects_queue_membership() -> None:
+    from bestseller.worker.self_heal import _is_orphan_heal_job
+
+    job_id = "repair:heal:book-queued"
+    pool = _FakeOrphanArqPool(
+        existing_keys={f"arq:job:{job_id}"},
+        queue_scores={f"arq:queue:{job_id}": 12345.0},
+        job_payloads={f"arq:job:{job_id}": _job_payload_bytes(2 * 60 * 60)},
+    )
+
+    assert await _is_orphan_heal_job(pool, job_id) is False
+
+
+@pytest.mark.asyncio
+async def test_is_orphan_heal_job_respects_in_progress_lock() -> None:
+    from bestseller.worker.self_heal import _is_orphan_heal_job
+
+    job_id = "repair:heal:book-running"
+    pool = _FakeOrphanArqPool(
+        existing_keys={f"arq:job:{job_id}", f"arq:in-progress:{job_id}"},
+        job_payloads={f"arq:job:{job_id}": _job_payload_bytes(2 * 60 * 60)},
+    )
+
+    assert await _is_orphan_heal_job(pool, job_id) is False
+
+
+@pytest.mark.asyncio
+async def test_is_orphan_heal_job_keeps_young_key() -> None:
+    from bestseller.worker.self_heal import _is_orphan_heal_job
+
+    job_id = "repair:heal:book-fresh"
+    pool = _FakeOrphanArqPool(
+        existing_keys={f"arq:job:{job_id}"},
+        job_payloads={f"arq:job:{job_id}": _job_payload_bytes(10 * 60)},
+    )
+
+    assert await _is_orphan_heal_job(pool, job_id) is False
+
+
+@pytest.mark.asyncio
+async def test_is_orphan_heal_job_infers_age_from_ttl_when_payload_unreadable() -> None:
+    """No readable enqueue time + no result key → age from remaining TTL."""
+
+    from bestseller.worker.self_heal import (
+        SELF_HEAL_JOB_EXPIRES_DAYS,
+        _is_orphan_heal_job,
+    )
+
+    job_id = "repair:heal:book-ttl"
+    # 1 day of the 7-day expiry window remains → key is ~6 days old.
+    remaining_ms = 1 * 24 * 60 * 60 * 1000
+    assert SELF_HEAL_JOB_EXPIRES_DAYS >= 2
+    pool = _FakeOrphanArqPool(
+        existing_keys={f"arq:job:{job_id}"},
+        pttls={f"arq:job:{job_id}": remaining_ms},
+    )
+
+    assert await _is_orphan_heal_job(pool, job_id) is True
+
+
+@pytest.mark.asyncio
+async def test_is_orphan_heal_job_unknown_age_is_not_cleared() -> None:
+    """Age unresolvable (no payload, no TTL) → conservative keep."""
+
+    from bestseller.worker.self_heal import _is_orphan_heal_job
+
+    job_id = "repair:heal:book-unknown"
+    pool = _FakeOrphanArqPool(existing_keys={f"arq:job:{job_id}"})
+
+    assert await _is_orphan_heal_job(pool, job_id) is False
+
+
+@pytest.mark.asyncio
+async def test_requeue_repair_clears_overage_orphan_with_retry_counter() -> None:
+    """The exact R24 deploy-window shape: job key + retry counter, no queue
+    score, no in-progress lock. Ghost detection bails on the retry key, so
+    before the orphan guard the project never retried (manual DEL only)."""
+
+    from bestseller.worker.self_heal import _requeue_repair
+
+    job_id = "repair:heal:book-r24"
+    pool = _FakeOrphanArqPool(
+        reject_once_job_ids={job_id},
+        existing_keys={f"arq:job:{job_id}", f"arq:retry:{job_id}"},
+        job_payloads={f"arq:job:{job_id}": _job_payload_bytes(3 * 60 * 60)},
+    )
+    stuck = StuckProject(
+        project_id="p-r24",
+        slug="book-r24",
+        reason="blocked_chapters",
+        stuck_at_chapter=None,
+        chapters_total=10,
+        chapters_with_draft=10,
+        heal_kind="repair",
+    )
+
+    actual_job_id = await _requeue_repair(pool, stuck)  # type: ignore[arg-type]
+
+    assert actual_job_id == job_id
+    assert len(pool.enqueued) == 2
+    assert f"arq:job:{job_id}" in pool.deleted
+    assert f"arq:retry:{job_id}" in pool.deleted
+
+
+@pytest.mark.asyncio
+async def test_requeue_repair_keeps_young_half_enqueued_job() -> None:
+    """A job key younger than the cap is treated as live — no clearing."""
+
+    from bestseller.worker.self_heal import _requeue_repair
+
+    job_id = "repair:heal:book-young"
+    pool = _FakeOrphanArqPool(
+        reject_job_ids={job_id},
+        existing_keys={f"arq:job:{job_id}", f"arq:retry:{job_id}"},
+        job_payloads={f"arq:job:{job_id}": _job_payload_bytes(5 * 60)},
+    )
+    stuck = StuckProject(
+        project_id="p-young",
+        slug="book-young",
+        reason="blocked_chapters",
+        stuck_at_chapter=None,
+        chapters_total=10,
+        chapters_with_draft=10,
+        heal_kind="repair",
+    )
+
+    actual_job_id = await _requeue_repair(pool, stuck)  # type: ignore[arg-type]
+
+    assert actual_job_id is None
+    assert f"arq:job:{job_id}" not in pool.deleted

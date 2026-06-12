@@ -500,6 +500,18 @@ class PipelineSettings(BaseModel):
     # draft.  Outer repair must not reset the counter (see
     # ``bump_scene_auto_repair_counter`` / ``is_scene_at_auto_repair_cap``).
     chapter_auto_repair_max_scene_rewrites: int = 3
+    # R20 — chapter-level TOTAL scene-rounds budget (fail-fast knob).
+    # The default repair topology (per scene: ~3 evals × 2 rewrites; per
+    # chapter: 3 auto-repair passes) gives one chapter a theoretical ceiling
+    # of ~30 scene rounds.  ``0`` (default) keeps the historical behavior
+    # (no chapter-level total bound).  A positive value makes the chapter
+    # auto-repair loop stop as soon as the *cumulative* scene round count
+    # (sum of every scene's ``scene_auto_repair_total_attempts``) reaches
+    # the budget: the known block codes are written to
+    # ``chapter.metadata_json["rounds_budget_exhausted"]`` and the chapter
+    # is routed through the existing machine-repair path.  Ops can tighten
+    # this for fail-fast runs without changing repair business logic.
+    max_total_scene_rounds_per_chapter: int = 0
     # Cross-run cap on ``autonomous_quality_retrofit`` rewrite tasks
     # generated per chapter. ``autonomous_book_repair`` schedules these from
     # the quality-levers audit; without a per-chapter cap a chapter that

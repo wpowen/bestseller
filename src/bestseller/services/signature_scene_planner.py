@@ -22,6 +22,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from bestseller.domain.signature_scene import (
+    MANDATE_STATUS_SKELETON,
     SignatureSceneArchetype,
     SignatureSceneMandate,
     SignatureScenePlan,
@@ -32,6 +33,12 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_CADENCE = 10
+
+# R25 — outline-derived mandate targets. When a chapter outline exists, each
+# mandate gets at most this many chapter-specific signature images and a
+# summary trimmed to this many chars, derived deterministically (no LLM).
+_OUTLINE_IMAGE_LIMIT = 2
+_OUTLINE_SUMMARY_MAX_CHARS = 120
 
 # Golden Three mandates — pre-cadence positions that MUST have signature
 # scenes. The original signature_scene_planner skipped chapters 1/2/3
@@ -108,6 +115,7 @@ def plan_signature_scenes(
     include_golden_three: bool = True,
     anchor_images: Sequence[str] | None = None,
     anchor_lines: Sequence[str] | None = None,
+    chapter_outline: Mapping[int | str, Mapping[str, Any]] | None = None,
 ) -> SignatureScenePlan:
     """Plan signature-scene mandates across a book.
 
@@ -126,6 +134,16 @@ def plan_signature_scenes(
     construction. Without them mandates carry no literal anchors and the
     signature gate validates purely semantically. The framework never
     supplies genre-flavored anchor content itself.
+
+    ``chapter_outline`` (R25) maps chapter position → outline hints
+    (``title`` / ``goal`` or ``chapter_goal`` / ``signature_images``). When an
+    entry exists for a mandate position, concrete targets are derived
+    deterministically: ``must_include_image`` from the chapter's own scene
+    signature images (first 2), ``summary`` from the chapter goal
+    (first 120 chars), ``title_hint`` from the chapter title. Mandates
+    that end up with no concrete target at all are marked
+    ``status="skeleton"`` and are never rendered into the writer prompt —
+    an empty shell is not an acceptance standard.
     """
 
     if total_chapters < 1:
@@ -159,9 +177,17 @@ def plan_signature_scenes(
             intensity = intensity_values[idx]
             cadence_idx += 1
 
+        outline_title, outline_summary, outline_images = _outline_hints_for(
+            chapter_outline, position
+        )
+
         image_hints = [
             str(s).strip() for s in (anchor_images or ()) if str(s).strip()
         ][:3]
+        # Chapter-specific signature images beat book-global anchors: the
+        # outline already committed THIS chapter to those concrete images.
+        if outline_images:
+            image_hints = outline_images
         line_hints = [
             str(s).strip() for s in (anchor_lines or ()) if str(s).strip()
         ][:3]
@@ -169,9 +195,13 @@ def plan_signature_scenes(
         title_hint = ""
         if title_hints and idx < len(title_hints):
             title_hint = title_hints[idx]
+        if not title_hint:
+            title_hint = outline_title
         summary = ""
         if summary_hints and idx < len(summary_hints):
             summary = summary_hints[idx]
+        if not summary:
+            summary = outline_summary
         targets: list[str] = []
         if payoff_targets and idx < len(payoff_targets):
             targets = list(payoff_targets[idx])
@@ -199,6 +229,37 @@ def plan_signature_scenes(
     )
 
 
+def _outline_hints_for(
+    chapter_outline: Mapping[int | str, Mapping[str, Any]] | None,
+    position: int,
+) -> tuple[str, str, list[str]]:
+    """Deterministically derive (title_hint, summary, images) for one slot.
+
+    Tolerates ``str`` chapter keys (JSON round-trips) and both ``goal`` /
+    ``chapter_goal`` field spellings. Returns empty values when the outline
+    has no entry for ``position``.
+    """
+
+    if not chapter_outline:
+        return "", "", []
+    entry = chapter_outline.get(position)
+    if entry is None:
+        entry = chapter_outline.get(str(position))
+    if not isinstance(entry, Mapping):
+        return "", "", []
+    title = str(entry.get("title") or "").strip()
+    goal = str(entry.get("goal") or entry.get("chapter_goal") or "").strip()
+    raw_images = entry.get("signature_images") or entry.get("signature_image") or ()
+    if isinstance(raw_images, str):
+        raw_images = [raw_images]
+    images = [
+        str(item).strip()
+        for item in raw_images
+        if str(item or "").strip()
+    ][:_OUTLINE_IMAGE_LIMIT]
+    return title, goal[:_OUTLINE_SUMMARY_MAX_CHARS], images
+
+
 def _archetype_guidance_for(archetype: Any) -> str:
     """Resolve genre-neutral guidance for an archetype enum or its value."""
 
@@ -215,12 +276,19 @@ def render_signature_scene_block(
     mandate: SignatureSceneMandate | Mapping[str, Any] | None,
     *,
     language: str = "zh-CN",
-) -> str:
-    """Render an in-prompt mandate for the current chapter's signature scene."""
+) -> str | None:
+    """Render an in-prompt mandate for the current chapter's signature scene.
+
+    Returns ``None`` for a skeleton mandate (R25): an empty shell carries no
+    concrete target, so it must not be handed to the writer — the writer can
+    not be examined against a standard that was never delivered.
+    """
 
     payload = _to_payload(mandate)
     if not payload:
         return ""
+    if str(payload.get("status") or "").strip().lower() == MANDATE_STATUS_SKELETON:
+        return None
 
     archetype = payload.get("archetype", "")
     stake = payload.get("stake", "")

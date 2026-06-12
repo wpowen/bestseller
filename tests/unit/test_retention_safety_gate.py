@@ -89,8 +89,11 @@ def test_evaluate_retention_safety_low_hook_echo_is_advisory() -> None:
     assert any(f.code == HOOK_ECHO_LOW_BLOCK_CODE for f in report.findings)
 
 
-def test_evaluate_retention_safety_signature_missing() -> None:
-    """ch1 is a signature slot (revelation) — text without any hints triggers."""
+def test_evaluate_retention_safety_skips_skeleton_signature_mandate() -> None:
+    """R25: the gate replans without book anchors → all mandates are empty
+    skeletons that were never rendered into the writer prompt. Grading the
+    chapter against that empty standard made SIGNATURE_SCENE_MISSING
+    structurally unavoidable — skeleton mandates must be skipped."""
 
     no_signature_text = "他走进房间。喝了一杯水。然后睡觉。" * 30
 
@@ -102,7 +105,10 @@ def test_evaluate_retention_safety_signature_missing() -> None:
         skip_exposition=True,
     )
 
-    assert SIGNATURE_SCENE_BLOCK_CODE in report.auto_repair_codes
+    assert SIGNATURE_SCENE_BLOCK_CODE not in report.auto_repair_codes
+    assert all(
+        f.code != SIGNATURE_SCENE_BLOCK_CODE for f in report.findings
+    )
 
 
 def test_evaluate_retention_safety_exposition_critical() -> None:

@@ -5062,6 +5062,27 @@ async def run_scene_pipeline(
                                 or 0
                             )
                             if _sig_total >= 1:
+                                # R25: derive concrete mandate targets from
+                                # the project's own chapter outline so the
+                                # bootstrap never plants empty archetype
+                                # shells. Missing outline → mandates stay
+                                # skeletons and are withheld from prompts.
+                                _outline_hints = None
+                                try:
+                                    from bestseller.services.signature_outline_hints import (  # noqa: PLC0415
+                                        load_chapter_outline_hints as _load_outline_hints,
+                                    )
+
+                                    _outline_hints = await _load_outline_hints(
+                                        session, project.id
+                                    )
+                                except Exception:
+                                    logger.debug(
+                                        "chapter outline hint derivation "
+                                        "failed for ch%d (non-fatal)",
+                                        chapter_number,
+                                        exc_info=True,
+                                    )
                                 _ensure_signature_plan(
                                     project.slug,
                                     total_chapters=max(
@@ -5070,6 +5091,7 @@ async def run_scene_pipeline(
                                     output_base_dir=settings.output.base_dir,
                                     mode_b=_orig_mode_b,
                                     anchor_images=_book_anchor_tokens or None,
+                                    chapter_outline=_outline_hints or None,
                                 )
                         except Exception:
                             logger.debug(

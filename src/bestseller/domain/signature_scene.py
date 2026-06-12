@@ -20,7 +20,13 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+# Mandate readiness states (R25). A "skeleton" mandate carries only the
+# archetype/stake scaffold with no concrete, verifiable target — it must
+# never be handed to the writer nor used as an acceptance standard.
+MANDATE_STATUS_READY = "ready"
+MANDATE_STATUS_SKELETON = "skeleton"
 
 
 class SignatureSceneArchetype(str, Enum):
@@ -68,6 +74,11 @@ class SignatureSceneMandate(BaseModel):
     intensity_target: float = Field(default=0.75, ge=0, le=1)
     shareability_target: float = Field(default=0.7, ge=0, le=1)
 
+    # Empty string → derived in ``_derive_status``. Persisted legacy plans
+    # without the field therefore get the correct status on load: a mandate
+    # with no concrete target is a skeleton, not a deliverable standard.
+    status: str = Field(default="", max_length=32)
+
     @field_validator(
         "must_include_image",
         "must_include_line",
@@ -85,6 +96,26 @@ class SignatureSceneMandate(BaseModel):
             return [str(v).strip() for v in value if str(v).strip()]
         return [str(value).strip()] if str(value).strip() else []
 
+    @model_validator(mode="after")
+    def _derive_status(self) -> "SignatureSceneMandate":
+        if not self.status:
+            has_concrete_target = bool(
+                self.must_include_image
+                or self.must_include_line
+                or self.summary
+                or self.title_hint
+            )
+            self.status = (
+                MANDATE_STATUS_READY
+                if has_concrete_target
+                else MANDATE_STATUS_SKELETON
+            )
+        return self
+
+    @property
+    def is_skeleton(self) -> bool:
+        return self.status == MANDATE_STATUS_SKELETON
+
     def to_prompt_card(self) -> dict[str, Any]:
         return {
             "chapter_position": self.chapter_position,
@@ -98,6 +129,7 @@ class SignatureSceneMandate(BaseModel):
             "payoff_targets": list(self.payoff_targets),
             "intensity_target": self.intensity_target,
             "shareability_target": self.shareability_target,
+            "status": self.status,
         }
 
 

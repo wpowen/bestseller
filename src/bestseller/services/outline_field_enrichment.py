@@ -29,6 +29,25 @@ _DEFAULT_GOLDEN_HYPE = 8.0
 _MAX_PARTICIPANTS = 5
 _MAX_FIELD_LEN = 400
 
+# ── target_emotion fallback (webnovel method cards) ────────────────────────
+# Golden chapters of commercial serials default to 爽 (the blind-review loss
+# of《神仙都是我招的》ch1 traced to a 暖 opening); later chapters default to
+# the universal pull-forward emotion 紧张 unless hype_type hints otherwise.
+_GOLDEN_DEFAULT_EMOTION = "爽"
+_LATER_DEFAULT_EMOTION = "紧张"
+# Ordered specific → generic: first matching token wins.
+_HYPE_EMOTION_HINTS: tuple[tuple[str, str], ...] = (
+    ("打脸", "爽"),
+    ("逆袭", "爽"),
+    ("悬念", "悬疑"),
+    ("反转", "震撼"),
+    ("震撼", "震撼"),
+    ("热血", "燃"),
+    ("温情", "暖"),
+    ("情感", "虐"),
+    ("危机", "紧张"),
+)
+
 
 def _clauses(text: Any, count: int = 1) -> str:
     parts = [p.strip() for p in _CLAUSE_SPLIT.split(str(text or "")) if p.strip()]
@@ -140,6 +159,56 @@ def _fill_causal_contract(chapter: dict[str, Any], stats: dict[str, int]) -> Non
         stats["causal_contract"] += 1
 
 
+def _fill_target_emotion(chapter: dict[str, Any], stats: dict[str, int]) -> None:
+    """Deterministic target_emotion fallback — never overwrites planner values."""
+
+    if str(chapter.get("target_emotion") or "").strip():
+        return
+    try:
+        number = int(chapter.get("chapter_number") or 0)
+    except (TypeError, ValueError):
+        number = 0
+    if number in _GOLDEN_CHAPTERS:
+        # Position wins over hype hints: golden chapters of a commercial
+        # serial deliver 爽 unless the planner explicitly says otherwise.
+        derived = _GOLDEN_DEFAULT_EMOTION
+    else:
+        hype = str(chapter.get("hype_type") or "")
+        derived = next(
+            (
+                emotion
+                for token, emotion in _HYPE_EMOTION_HINTS
+                if token and token in hype
+            ),
+            _LATER_DEFAULT_EMOTION,
+        )
+    chapter["target_emotion"] = derived
+    stats["target_emotion"] += 1
+
+
+def _normalize_hook_type(chapter: dict[str, Any], stats: dict[str, int]) -> None:
+    """Map free-text hook_type onto the canonical 13-key taxonomy.
+
+    Soft by contract: unmatched values are kept verbatim, and any method-card
+    loading failure makes this a no-op (never blocks the batch).
+    """
+
+    raw = str(chapter.get("hook_type") or "").strip()
+    if not raw:
+        return
+    try:
+        from bestseller.services.quality_levers.webnovel_method_cards import (
+            match_hook_type_key,
+        )
+
+        matched = match_hook_type_key(raw)
+    except Exception:
+        return
+    if matched and matched != raw:
+        chapter["hook_type"] = matched
+        stats["hook_type_normalized"] += 1
+
+
 def _fill_golden_hype(chapter: dict[str, Any], stats: dict[str, int]) -> None:
     if chapter.get("chapter_number") not in _GOLDEN_CHAPTERS:
         return
@@ -169,6 +238,8 @@ def enrich_outline_batch_fields(
         "opening_pressure": 0,
         "causal_contract": 0,
         "golden_hype": 0,
+        "target_emotion": 0,
+        "hook_type_normalized": 0,
     }
     names = [str(n).strip() for n in identity_names if str(n or "").strip()]
     lead = protagonist or (names[0] if names else "")
@@ -180,5 +251,7 @@ def enrich_outline_batch_fields(
         _fill_opening_pressure(chapter, stats)
         _fill_causal_contract(chapter, stats)
         _fill_golden_hype(chapter, stats)
+        _fill_target_emotion(chapter, stats)
+        _normalize_hook_type(chapter, stats)
     stats["total"] = sum(stats.values())
     return content, stats

@@ -13516,6 +13516,35 @@ def _outline_prompts(
         f"\n{_anti_commonsense_hook_block}\n" if _anti_commonsense_hook_block else ""
     )
     _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
+    # ── Webnovel method cards (design-layer methodology, baked upstream) ──
+    # target_emotion discipline + hook_type taxonomy + golden-opening rules.
+    # Soft: any config/load failure degrades to empty fragments.
+    _method_cards_hook_line = ""
+    _golden_opening_line = ""
+    _emotion_vocab_csv = "爽、燃、暖、虐、悬疑、紧张、轻松、甜、震撼"
+    _hook_keys_csv = ""
+    try:
+        from bestseller.services.quality_levers.webnovel_method_cards import (
+            chapter_end_hook_keys,
+            render_golden_opening_rules_block,
+            render_outline_hook_taxonomy_block,
+            target_emotion_vocabulary,
+        )
+
+        _vocab = target_emotion_vocabulary()
+        if _vocab:
+            _emotion_vocab_csv = "、".join(_vocab)
+        _hook_keys_csv = ", ".join(chapter_end_hook_keys())
+        if not is_en:
+            _method_block = render_outline_hook_taxonomy_block("opening")
+            _method_cards_hook_line = f"\n{_method_block}\n" if _method_block else ""
+            _golden_block = render_golden_opening_rules_block()
+            _golden_opening_line = f"\n{_golden_block}\n" if _golden_block else ""
+    except Exception:
+        logger.debug(
+            "Webnovel method-cards block injection failed (non-fatal)",
+            exc_info=True,
+        )
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -13541,7 +13570,18 @@ def _outline_prompts(
             f"{_payoff_ledger_v2_line}"
             "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. Each chapter needs at least 3 scenes. "
             "The first 3 chapters must rapidly establish the protagonist edge, the core anomaly, the first gain/loss cycle, and a strong read-on hook. "
+            "[GOLDEN OPENING — chapters 1-3 hard rules] Start at the highest-conflict point; the protagonist must appear within the first 300 characters and the first payoff/expectation beat within 1000 characters; "
+            "no prologue, no flashback/POV-switch opening, no weather/scenery opening, no worldview lecture; "
+            "introduce at most 6 new proper nouns in chapter 1 and at most 5 in each of chapters 2-3 (names, factions, systems, jargon all count); "
+            "information release priority: crisis > characterization > golden-finger hint > worldview; chapter 1 must state the protagonist's goal and the book's selling point.\n"
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
+            f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
+            + (
+                f"`hook_type` must be chosen from these canonical keys: [{_hook_keys_csv}]; never use the same hook_type in two consecutive chapters (hook_description stays a concrete next event). "
+                if _hook_keys_csv
+                else ""
+            )
+            +
             "Each chapter should include `event_cycle_contract`, `chapter_event_role`, and `information_gap_mode`. "
             "`chapter_event_role` is the chapter's role inside a larger event unit, not a requirement to repeat all six event steps per chapter. "
             "Distribute roles such as trigger, desire_lock, obstacle_escalation, method_search, execution_turn, payoff_feedback, reaction_reset, and bridge_hook across the batch. "
@@ -13608,9 +13648,17 @@ def _outline_prompts(
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
+            f"{_method_cards_hook_line}"
+            f"{_golden_opening_line}"
             "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
-            "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子；"
+            "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子，"
+            "并严格执行上方【黄金三章硬约束】：主角300字内登场、1000字内出现第一个爽点或期待点、"
+            "禁止序章/插叙/大段世界观解说、新专有名词不超上限、第1章点明主角目标与本书卖点；"
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
+            f"每章必须写明 target_emotion：从受控词表【{_emotion_vocab_csv}】中只选一个，"
+            "并在 goal/main_conflict 中写清该情绪如何通过本章冲突交付（先定情绪再定故事）；"
+            "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
+            "hook_description 仍写具体下一步事件。"
             "每章建议包含 `event_cycle_contract`、`chapter_event_role`、`information_gap_mode`。"
             "`chapter_event_role` 表示本章在更大事件单元中的职责，不是要求每章完整复刻六步。"
             "请在批次中分配 trigger、desire_lock、obstacle_escalation、method_search、execution_turn、payoff_feedback、reaction_reset、bridge_hook 等角色。"
@@ -13878,6 +13926,55 @@ def _volume_outline_prompts(
     else:
         chapter_bounds_line_en = ""
         chapter_bounds_line_zh = ""
+    # ── Webnovel method cards (design-layer methodology, baked upstream) ──
+    # Stage-aware hook taxonomy + target_emotion discipline; golden-opening
+    # rules only for batches covering chapters 1-3. Soft-degrades to "".
+    _method_cards_hook_line = ""
+    _golden_opening_line = ""
+    _emotion_vocab_csv = "爽、燃、暖、虐、悬疑、紧张、轻松、甜、震撼"
+    _hook_keys_csv = ""
+    _covers_golden_opening = (
+        chapter_bounds[0] <= 3 if chapter_bounds is not None else volume_number == 1
+    )
+    try:
+        from bestseller.services.quality_levers.webnovel_method_cards import (
+            chapter_end_hook_keys,
+            render_golden_opening_rules_block,
+            render_outline_hook_taxonomy_block,
+            target_emotion_vocabulary,
+        )
+
+        _vocab = target_emotion_vocabulary()
+        if _vocab:
+            _emotion_vocab_csv = "、".join(_vocab)
+        _hook_keys_csv = ", ".join(chapter_end_hook_keys())
+        _total_volumes = max(
+            [
+                int(_mapping(v).get("volume_number") or 0)
+                for v in (volume_plan or [])
+                if isinstance(v, dict)
+            ]
+            or [volume_number]
+        )
+        if volume_number <= 1:
+            _method_stage = "opening"
+        elif volume_number >= _total_volumes:
+            _method_stage = "finale"
+        elif volume_number == _total_volumes - 1:
+            _method_stage = "pre_climax"
+        else:
+            _method_stage = "middle"
+        if not is_en:
+            _method_block = render_outline_hook_taxonomy_block(_method_stage)
+            _method_cards_hook_line = f"\n{_method_block}\n" if _method_block else ""
+            if _covers_golden_opening:
+                _golden_block = render_golden_opening_rules_block()
+                _golden_opening_line = f"\n{_golden_block}\n" if _golden_block else ""
+    except Exception:
+        logger.debug(
+            "Webnovel method-cards block injection failed (non-fatal)",
+            exc_info=True,
+        )
     system_prompt = (
         "You are a chapter-outline planner for long-form commercial fiction. Output valid JSON only."
         if is_en
@@ -14054,6 +14151,21 @@ def _volume_outline_prompts(
             f"{count_safety_en}"
             f"Include batch_name and chapters. {scene_count_contract_en}"
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
+            f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
+            + (
+                f"`hook_type` must be chosen from these canonical keys: [{_hook_keys_csv}]; never use the same hook_type in two consecutive chapters. "
+                if _hook_keys_csv
+                else ""
+            )
+            + (
+                "[GOLDEN OPENING — chapters 1-3 hard rules] Start at the highest-conflict point; the protagonist must appear within the first 300 characters and the first payoff/expectation beat within 1000 characters; "
+                "no prologue, no flashback/POV-switch opening, no weather/scenery opening, no worldview lecture; "
+                "introduce at most 6 new proper nouns in chapter 1 and at most 5 in each of chapters 2-3 (names, factions, systems, jargon all count); "
+                "information release priority: crisis > characterization > golden-finger hint > worldview; chapter 1 must state the protagonist's goal and the book's selling point. "
+                if _covers_golden_opening
+                else ""
+            )
+            +
             "Each chapter must include causal_contract with flexible reader-visible axes: chapter_function, pressure, protagonist_desire, protagonist_choice, visible_action_or_reaction, resistance, cost_or_tradeoff, gain_or_reveal, state_change, next_reader_desire. "
             "Each chapter must include a non-empty `opening_situation`: the concrete in-scene pressure the protagonist is already facing as the chapter opens — no recap, no scenery warm-up. "
             "Each scene's `participants` must name every on-page character from the cast list. A chapter must not consist solely of protagonist-only scenes: whenever the cast allows, give at least one scene a second named participant (opponent, ally, or pressure source). "
@@ -14117,12 +14229,26 @@ def _volume_outline_prompts(
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
+            f"{_method_cards_hook_line}"
+            f"{_golden_opening_line}"
             f"请仅生成第{volume_number}卷的 ChapterOutlineBatch JSON（共{chapter_count}章），"
             f"chapters 数组必须恰好包含 {chapter_count} 个章节对象，一章一个对象，不能概括、合并或分组，"
             f"{chapter_bounds_line_zh}"
             f"{count_safety_zh}"
             f"包含 batch_name 和 chapters。{scene_count_contract_zh}"
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
+            f"每章必须写明 target_emotion：从受控词表【{_emotion_vocab_csv}】中只选一个，"
+            "并在 goal/main_conflict 中写清该情绪如何通过本章冲突交付（先定情绪再定故事）；"
+            "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
+            "hook_description 仍写具体下一步事件。"
+            + (
+                "本批次覆盖第1-3章，必须严格执行上方【黄金三章硬约束】："
+                "主角300字内登场、1000字内出现第一个爽点或期待点、"
+                "禁止序章/插叙/大段世界观解说、新专有名词不超上限、第1章点明主角目标与本书卖点。"
+                if _covers_golden_opening
+                else ""
+            )
+            +
             "每章必须包含 causal_contract：chapter_function、pressure、protagonist_desire、protagonist_choice、visible_action_or_reaction、resistance、cost_or_tradeoff、gain_or_reveal、state_change、next_reader_desire。"
             "每章必须写明非空的 opening_situation：开章即事中，写清主角此刻正面对的现场压力，不得用回顾或氛围铺垫开场。"
             "每个 scene 的 participants 必须列出全部在场具名人物（从 CastSpec 名单中选取）；整章不得全是主角单人场景——只要卡司允许，至少一个场景要有第二个具名在场者（对手、盟友或施压方）。"

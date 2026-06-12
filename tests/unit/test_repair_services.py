@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.exc import PendingRollbackError
+from sqlalchemy.exc import MissingGreenlet, PendingRollbackError
 
 from bestseller.domain.pipeline import ChapterPipelineResult
 from bestseller.infra.db.models import (
@@ -606,6 +606,69 @@ async def test_run_project_repair_rolls_back_db_level_failure_without_failure_st
     # isolated session so it never becomes a "running" zombie.
     assert len(isolated_flips) == 1
     assert "simulated DB transaction failure" in str(isolated_flips[0]["error"])
+
+
+@pytest.mark.asyncio
+async def test_run_project_repair_rolls_back_missing_greenlet_without_failure_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id, 1)
+    task_chapter = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_review",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="chapter_coherence_bridge_rewrite",
+        priority=4,
+        status="pending",
+        instructions="补强章节",
+        context_required=[],
+        metadata_json={"chapter_id": str(chapter.id)},
+    )
+    task_chapter.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_run_chapter_pipeline(session, settings, project_slug: str, chapter_number: int, **kwargs):
+        raise MissingGreenlet("expired ORM attribute attempted async IO")
+
+    monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(repair_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+
+    isolated_flips: list[dict[str, object]] = []
+
+    async def fake_mark_failed(workflow_run_id, *, current_step: str, error: str) -> bool:
+        isolated_flips.append(
+            {
+                "workflow_run_id": workflow_run_id,
+                "current_step": current_step,
+                "error": error,
+            }
+        )
+        return True
+
+    monkeypatch.setattr(
+        repair_services, "_mark_workflow_run_failed_isolated", fake_mark_failed
+    )
+
+    session = FakeSession(
+        scalars_results=[[task_chapter]],
+        get_map={(ChapterModel, chapter.id): chapter},
+    )
+
+    with pytest.raises(MissingGreenlet):
+        await repair_services.run_project_repair(
+            session,
+            build_settings(),
+            "my-story",
+        )
+
+    workflow_steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
+    assert session.rollback_count == 1
+    assert all(step.status != "failed" for step in workflow_steps)
+    assert len(isolated_flips) == 1
+    assert "expired ORM attribute" in str(isolated_flips[0]["error"])
 
 
 @pytest.mark.asyncio

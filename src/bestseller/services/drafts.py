@@ -1102,15 +1102,18 @@ def _clean_generated_chapter_text(
         "short_cluster_paragraphs": 0,
         "duplicate_paragraphs": 0,
         "duplicate_paragraphs_preserved_under_min": 0,
+        "cross_scene_near_verbatim_paragraphs": 0,
         "forbidden_signal_negations": 0,
     }
     try:
         from bestseller.services.deduplication import (
             clean_meta_text_markers,
             detect_chapter_text_loop,
+            detect_cross_scene_beat_reenactment,
             detect_intra_chapter_repetition,
             detect_short_cluster_near_repeat,
             remove_chapter_text_loops,
+            remove_cross_scene_near_verbatim_repeats,
             remove_intra_chapter_duplicates_paraphrase,
             remove_short_cluster_near_repeats,
         )
@@ -1172,6 +1175,23 @@ def _clean_generated_chapter_text(
             else:
                 cleaned = deduped
                 stats["duplicate_paragraphs"] = removed
+
+        # Cross-scene beat re-enactment (节拍重演) — near-verbatim repeats of
+        # much-earlier paragraphs are removed deterministically (keep first);
+        # paraphrase-level re-enactment clusters are only logged here and are
+        # routed to repair via the post-assembly duplicate gate. Never raises.
+        beat_findings = detect_cross_scene_beat_reenactment(cleaned)
+        if beat_findings:
+            for beat_finding in beat_findings:
+                logger.warning(
+                    "%s chapter %d: %s",
+                    source,
+                    chapter_number,
+                    beat_finding.get("message"),
+                )
+            cleaned, stats["cross_scene_near_verbatim_paragraphs"] = (
+                remove_cross_scene_near_verbatim_repeats(cleaned)
+            )
         cleaned, stats["forbidden_signal_negations"] = (
             _remove_forbidden_signal_negation_echoes(cleaned)
         )
@@ -3606,8 +3626,16 @@ async def _collect_post_assembly_duplicate_findings(
     project: ProjectModel,
     chapter: ChapterModel,
     content_md: str,
+    extra_local_findings: Sequence[Mapping[str, Any]] | None = None,
 ) -> tuple[WriteSafetyFinding, ...]:
-    """Run final duplicate checks before an assembled chapter becomes usable."""
+    """Run final duplicate checks before an assembled chapter becomes usable.
+
+    ``extra_local_findings`` lets callers forward findings that were detected
+    on the *pre-cleanup* text (e.g. cross-scene beat re-enactment clusters
+    whose near-verbatim anchors were already removed deterministically — the
+    paraphrase-level cluster still needs a rewrite_task repair even though a
+    re-detection on the cleaned text may fall below the cluster threshold).
+    """
     from bestseller.services.chapter_first_sentence_diversity_gate import (
         check_first_sentence_diversity,
     )
@@ -3615,6 +3643,7 @@ async def _collect_post_assembly_duplicate_findings(
         check_opening_diversity,
         detect_chapter_text_loop,
         detect_cross_chapter_repetition,
+        detect_cross_scene_beat_reenactment,
         detect_intra_chapter_repetition,
         detect_short_cluster_near_repeat,
         extract_chapter_opening,
@@ -3628,7 +3657,23 @@ async def _collect_post_assembly_duplicate_findings(
         detect_chapter_text_loop(content_md or "")
         + detect_short_cluster_near_repeat(content_md or "")
         + detect_intra_chapter_repetition(content_md or "")
+        # Cross-scene beat re-enactment — paraphrase-level clusters carry
+        # repair_strategy="rewrite_task" in their payload so the repair
+        # pipeline rewrites the later cluster instead of deleting prose.
+        + detect_cross_scene_beat_reenactment(content_md or "")
+        + [dict(item) for item in (extra_local_findings or [])]
     )
+    # Forwarded pre-cleanup findings may coincide with a re-detection on the
+    # cleaned text — drop exact message duplicates so repair is not double-fed.
+    _seen_local_messages: set[str] = set()
+    _deduped_local: list[dict[str, Any]] = []
+    for finding in local_findings:
+        message_key = str(finding.get("message") or "")
+        if message_key and message_key in _seen_local_messages:
+            continue
+        _seen_local_messages.add(message_key)
+        _deduped_local.append(finding)
+    local_findings = _deduped_local
     for finding in local_findings:
         findings.append(
             WriteSafetyFinding(
@@ -10906,13 +10951,16 @@ async def assemble_chapter_draft(
     # ── Post-assembly intra-chapter deduplication ──
     # Detect and remove repeated paragraph blocks that can occur when multiple
     # scenes accidentally reproduce the same dialog or action.
+    _beat_cluster_findings: list[dict[str, Any]] = []
     try:
         from bestseller.services.deduplication import (
             clean_meta_text_markers,
             detect_chapter_text_loop,
+            detect_cross_scene_beat_reenactment,
             detect_intra_chapter_repetition,
             detect_short_cluster_near_repeat,
             remove_chapter_text_loops,
+            remove_cross_scene_near_verbatim_repeats,
             remove_intra_chapter_duplicates_paraphrase,
             remove_short_cluster_near_repeats,
         )
@@ -10969,6 +11017,38 @@ async def assemble_chapter_draft(
                 logger.warning("  %s", _f["message"])
             content_md, _removed = remove_intra_chapter_duplicates_paraphrase(content_md)
             logger.info("Chapter %d: removed %d duplicate paragraph(s).", chapter_number, _removed)
+
+        # 2c. Cross-scene beat re-enactment (节拍重演) — real incident
+        # zhaoshen-hr-v3 ch1: chapter-level cut_point fanned out into every
+        # scene card, so s01 wrote the full climax and s02 re-staged the same
+        # beats with fresh wording. Layers 1–2b are blind to long-form
+        # reworded re-enactment. Near-verbatim anchor paragraphs are removed
+        # deterministically (keep first occurrence); paraphrase-level
+        # re-enactment clusters are NOT deleted here — they surface as
+        # recoverable rewrite_task findings through the post-assembly
+        # duplicate gate below. This layer never raises.
+        _beat_findings = detect_cross_scene_beat_reenactment(content_md)
+        if _beat_findings:
+            logger.warning(
+                "Chapter %d: %d cross-scene beat re-enactment finding(s) after assembly.",
+                chapter_number, len(_beat_findings),
+            )
+            for _bf in _beat_findings:
+                logger.warning("  %s", _bf["message"])
+            # Preserve pre-cleanup cluster findings: removing the near-verbatim
+            # anchors below can drop the cluster under the detection threshold,
+            # but the paraphrase-level re-enactment still needs a rewrite_task
+            # repair — forward them to the duplicate gate explicitly.
+            _beat_cluster_findings = [
+                dict(_bf) for _bf in _beat_findings
+                if _bf.get("kind") == "beat_reenactment"
+            ]
+            content_md, _beat_removed = remove_cross_scene_near_verbatim_repeats(content_md)
+            if _beat_removed:
+                logger.info(
+                    "Chapter %d: removed %d near-verbatim cross-scene paragraph(s).",
+                    chapter_number, _beat_removed,
+                )
     except Exception:
         logger.debug("Post-assembly dedup failed (non-fatal)", exc_info=True)
 
@@ -11012,6 +11092,7 @@ async def assemble_chapter_draft(
         project=project,
         chapter=chapter,
         content_md=content_md,
+        extra_local_findings=_beat_cluster_findings,
     )
     if duplicate_gate_findings:
         logger.warning(

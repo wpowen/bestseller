@@ -1,0 +1,188 @@
+# 网文设计层方法卡（蒸馏自外部长篇写作方法论，已用框架口径重述）
+# 消费方：planner 大纲/卷纲 prompt（render_outline_hook_taxonomy_block /
+# render_golden_opening_rules_block）+ outline_field_enrichment 的 hook_type 归一化。
+# 架构约束：只进 planner 上游，严禁注入写手 PROSE_SCENE。
+version: "2026.06.12"
+
+# 先定情绪、再定故事：每章先选 target_emotion，再用冲突交付它。
+target_emotion_vocabulary: [爽, 燃, 暖, 虐, 悬疑, 紧张, 轻松, 甜, 震撼]
+
+# 核心情绪 → 适配的剧情模式（供章纲选 target_emotion 后落地冲突用）
+emotion_genre_map:
+  爽:
+    note: 男频商业文默认核心情绪；落差越大越爽
+    plot_modes: [打脸逆袭, 低调铺垫后实力暴露, 有分量的人当众震惊]
+  燃:
+    plot_modes: [逆境翻盘, 孤注一掷的对决, 并肩血战]
+  暖:
+    plot_modes: [雪中送炭, 守护兑现, 微小善意被记住]
+  虐:
+    plot_modes: [意难平错过, 牺牲换全局, 被迫亲手放弃]
+  悬疑:
+    plot_modes: [现场逻辑封死的异常, 信息差揭层, 身份存疑]
+  紧张:
+    plot_modes: [死线逼近, 威胁升级, 资源见底的对抗]
+  轻松:
+    plot_modes: [认知错位喜剧, 吐槽式反应, 日常装逼]
+  甜:
+    plot_modes: [双向奔赴推进, 关系确认, 高甜兑现]
+  震撼:
+    plot_modes: [世界观级反转, 全局信息一次掀开, 力量层级碾压亮相]
+
+# 章尾钩子 13 式：hook_type 受控枚举。formula 一句话即公式；
+# emotions 是该钩子最适配的 target_emotion；strength 为强度档。
+# aliases 供 enrichment 把模型自由文本 hook_type 归一化到 key（顺序敏感，先具体后泛化）。
+chapter_end_hooks:
+  sudden_reveal:
+    name: 突然揭示
+    formula: 章末抛出一条颠覆当前认知、改变全局的新信息
+    emotions: [悬疑, 震撼]
+    strength: 强
+    aliases: [突然揭示, 真相揭露, 揭示, 真相, reveal]
+  urgent_crisis:
+    name: 紧急危机
+    formula: 收尾时落下一个下章必须立刻回应的具体威胁
+    emotions: [紧张]
+    strength: 强
+    aliases: [紧急危机, 危机升级, 危机, crisis, 威胁逼近]
+  interrupted_action:
+    name: 未完成动作
+    formula: 关键动作进行到一半被新变量打断，停在半空收章
+    emotions: [紧张, 悬疑]
+    strength: 强
+    aliases: [未完成动作, 动作截断, 截断, 打断, cliffhanger]
+  identity_reversal:
+    name: 身份反转
+    formula: 揭出某个人物并非读者或主角以为的那个身份
+    emotions: [震撼, 悬疑]
+    strength: 强
+    aliases: [身份反转, 身份揭露, 身份, 反转]
+  dilemma_choice:
+    name: 两难抉择
+    formula: 主角被逼到必须在两个都有代价的选项中选一个
+    emotions: [虐, 紧张]
+    strength: 中强
+    aliases: [两难抉择, 两难, 抉择, 选择]
+  mysterious_object:
+    name: 神秘物品
+    formula: 出现一件分量很重但含义未明的具体物件
+    emotions: [悬疑]
+    strength: 中
+    aliases: [神秘物品, 神秘物件, 信物, 物品]
+  countdown:
+    name: 倒计时
+    formula: 给出一个明确不够用的时间期限并开始计时
+    emotions: [紧张]
+    strength: 强
+    aliases: [倒计时, 死线, 时限, deadline, 期限]
+  promise_threat:
+    name: 承诺威胁
+    formula: 有人当面宣布即将执行的行动意图——许诺或威胁
+    emotions: [紧张, 燃]
+    strength: 中强
+    aliases: [承诺威胁, 宣战, 威胁, 承诺]
+  impossible_disappearance:
+    name: 离奇消失
+    formula: 人或物以违背现场逻辑的方式消失，所有出口封死
+    emotions: [悬疑, 震撼]
+    strength: 中强
+    aliases: [离奇消失, 消失, 失踪]
+  hidden_meaning:
+    name: 隐藏含义
+    formula: 一句表面正常的话或细节与已知事实矛盾，暗藏信息
+    emotions: [悬疑]
+    strength: 中
+    aliases: [隐藏含义, 信息差, 一语双关, 话里有话, 暗示]
+  imagery_shift:
+    name: 意象变化
+    formula: 反复出现过的意象在章末发生异常变化
+    emotions: [悬疑, 暖]
+    strength: 中
+    aliases: [意象变化, 意象钩子, 意象]
+  echo_loop:
+    name: 回声钩子
+    formula: 章尾复现章首的句子或场面，但关键细节已经变了
+    emotions: [虐, 暖, 震撼]
+    strength: 中
+    aliases: [回声钩子, 首尾呼应, 回声, 呼应]
+  blank_space:
+    name: 留白钩子
+    formula: 只写人物对某信息的剧烈反应，信息本身按下不表
+    emotions: [悬疑]
+    strength: 中强
+    aliases: [留白钩子, 留白, 不揭示]
+
+# 章首钩子 7 式：每章前 100 字内起钩，禁止风景/天气暖场。
+chapter_open_hooks:
+  suspense_dialogue:
+    name: 悬念对话开局
+    formula: 直接从一段意味深长、信息不全的对话切入
+  flashforward_fragment:
+    name: 闪前碎片
+    formula: 先给一个结果的碎片，再退回正常叙事时间线
+  countdown_open:
+    name: 倒计时开局
+    formula: 第一句就立起一个具体的时间压力
+  mysterious_monologue:
+    name: 神秘独白
+    formula: 用一段反常的第一人称内心独白制造信息差
+  contrast_scene:
+    name: 反差场景
+    formula: 把两个气质截然相反的场景并置开篇
+  interrupted_action_open:
+    name: 未完成动作开局
+    formula: 从一个进行到一半就被截断的动作写起
+  imagery_omen:
+    name: 意象预示
+    formula: 用一个环境意象暗示即将发生的事，人物不点破
+
+# 故事阶段 → 推荐钩子强度与类型（planner 按当前批次所处阶段取档）
+stage_hook_strength:
+  opening:
+    label: 第1章
+    strength: 必须强
+    recommended: [urgent_crisis, interrupted_action, sudden_reveal]
+  early:
+    label: 第2-3章
+    strength: 强
+    recommended: [dilemma_choice, hidden_meaning, echo_loop]
+  middle:
+    label: 中期推进/日常
+    strength: 中
+    recommended: [hidden_meaning, mysterious_object, identity_reversal]
+  pre_climax:
+    label: 高潮前
+    strength: 强
+    recommended: [urgent_crisis, countdown, sudden_reveal]
+  finale:
+    label: 大结局收束
+    strength: 收束
+    recommended: [echo_loop, imagery_shift]
+
+hook_selection_rules:
+  - 连续两章不得使用同一 hook_type
+  - 钩子强度必须与故事阶段匹配；日常缓冲章可用弱钩，但不可无钩
+  - 先定本章 target_emotion，再按钩子卡的适配情绪选型
+  - 章末钩子约100字点到即止，不拖沓不解释
+
+# 黄金一章/黄金三章：开篇批次的硬约束
+golden_chapter_rules:
+  must:
+    - 从全书最有冲突的地方开写；主角开场处境三选一——身处危机/令人羡慕/被丢进陌生环境
+    - 主角300字内登场；1000字内出现第一个爽点或明确期待点
+    - 三基点前3章全部落位：人设基点、切入点基点（最好第1章）、金手指基点；切入点必须与主线强相关
+    - 第一个冲突分量要重，事先写明解决它的好处与不解决的代价
+    - 第1章必须点明主角目标与本书卖点
+  forbidden:
+    - 序章/楔子/引子
+    - 插叙/切视角/回忆梦境开局（正叙为主）
+    - 大段世界观或背景解说（至少等第一个事件单元结束）
+    - 天气/风景开头（除非反差极大）
+    - 第1章塞进3个以上需要读者记住的主要角色
+  info_release_priority: [危机感, 人设, 金手指暗示, 世界观]
+  info_release_note: 背景信息分批释放，每次释放服务于当章 target_emotion；背景尽量融进冲突（如借旁人议论同时完成交代与对抗）
+  new_proper_noun_caps:
+    ch1: 6
+    ch2: 5
+    ch3: 5
+  new_proper_noun_note: 人名、组织名、功法/系统名、专有术语都计入；超限即信息过载，把多余概念推迟到后续章节

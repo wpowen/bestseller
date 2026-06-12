@@ -907,6 +907,265 @@ def remove_intra_chapter_duplicates(chapter_text: str) -> tuple[str, int]:
     return "\n\n".join(kept), removed
 
 
+# ---------------------------------------------------------------------------
+# 4d. Cross-scene beat re-enactment detector (情节节拍级重复 / 节拍重演)
+# ---------------------------------------------------------------------------
+# Real incident: zhaoshen-hr-v3-1781180702 chapter 1 — the chapter-level
+# cut_point fanned out into EVERY scene card, so scene s01 wrote the full
+# climax (signing → golden paw-print → badge handover → 姜子牙 reveal) and
+# scene s02 re-staged the exact same beats with fresh wording (and fresh
+# contradictions: the cat became a hound, the badge came out of a different
+# container). Layers 1–4 above are literal / short-line / paragraph-paraphrase
+# detectors and are blind to this failure mode: the re-enactment is long-form
+# and almost fully reworded, with only a few near-verbatim "anchor" sentences
+# surviving verbatim (e.g.「金光顺着爪纹一道道亮起来」「爪印落进新岗合同的签名栏」).
+#
+# Strategy (deterministic, no LLM):
+#   * NEAR-VERBATIM tier — a later paragraph whose normalized char n-grams are
+#     almost entirely contained in much-earlier text is deleted outright
+#     (keep the first occurrence). Dialogue-dominant paragraphs are exempt:
+#     a character legitimately re-quoting someone's earlier line must survive.
+#   * PARAPHRASE tier — clusters of later paragraphs that echo earlier content
+#     (paragraph n-gram containment ≥ echo threshold, or near-verbatim long
+#     clauses embedded in otherwise-new prose) are NOT deleted here — blind
+#     deletion of reworded prose is too risky. They are reported as
+#     recoverable findings carrying repair_strategy="rewrite_task" so the
+#     existing repair pipeline rewrites the later cluster. This detector
+#     NEVER raises (scene-richness gate self-harm lesson: a quality gate must
+#     not kill the whole book).
+
+_BEAT_MIN_PARAGRAPH_GAP = 6      # paragraphs apart to count as "cross-scene"
+_BEAT_NGRAM = 8                  # char n-gram size for containment similarity
+_BEAT_CLAUSE_MIN_LEN = 12        # normalized chars for a "long clause" anchor
+_BEAT_NEAR_VERBATIM_CONTAINMENT = 0.85   # whole-paragraph deletion threshold
+_BEAT_ECHO_CONTAINMENT = 0.55    # paragraph counts as a paraphrase echo
+_BEAT_CLAUSE_CONTAINMENT = 0.9   # clause counts as near-verbatim anchor
+_BEAT_CLUSTER_WINDOW = 10        # echo signals within this span form a cluster
+_BEAT_CLUSTER_MIN_SIGNALS = 2    # ≥N signals (≥1 narrative) confirm re-enactment
+_BEAT_DIALOGUE_DOMINANT_RATIO = 0.6  # quoted chars / total chars ⇒ dialogue para
+
+_BEAT_QUOTE_SPAN_RE = re.compile(r"[“「‘]([^”」’]{1,300})[”」’]|\"([^\"]{1,300})\"")
+_BEAT_CLAUSE_SPLIT_RE = re.compile(r"[，。！？；：…、\n,.!?;:]+|——")
+
+
+def _beat_normalize(text: str) -> str:
+    """Normalize prose for beat comparison: strip punctuation + whitespace."""
+    return _normalize_cross_chapter_paragraph(text)
+
+
+def _beat_char_ngrams(normalized: str, n: int = _BEAT_NGRAM) -> set[str]:
+    if not normalized:
+        return set()
+    if len(normalized) < n:
+        return {normalized}
+    return {normalized[i : i + n] for i in range(len(normalized) - n + 1)}
+
+
+def _beat_containment(candidate: set[str], earlier: set[str]) -> float:
+    if not candidate:
+        return 0.0
+    return len(candidate & earlier) / len(candidate)
+
+
+def _beat_quoted_text(paragraph: str) -> str:
+    """Concatenated normalized text of all quoted spans in a paragraph."""
+    parts: list[str] = []
+    for match in _BEAT_QUOTE_SPAN_RE.finditer(paragraph):
+        span = match.group(1) or match.group(2) or ""
+        if span:
+            parts.append(span)
+    return _beat_normalize("".join(parts))
+
+
+def _beat_is_dialogue_dominant(paragraph: str, normalized: str) -> bool:
+    if not normalized:
+        return False
+    quoted = _beat_quoted_text(paragraph)
+    return len(quoted) / len(normalized) >= _BEAT_DIALOGUE_DOMINANT_RATIO
+
+
+def _beat_long_clauses(paragraph: str) -> list[tuple[str, bool]]:
+    """Split a paragraph into long normalized clauses.
+
+    Returns (normalized_clause, in_dialogue) tuples — ``in_dialogue`` is True
+    when the clause text lives inside a quoted span (a character re-quoting an
+    earlier line is legitimate recall, not a beat re-enactment by itself).
+    """
+    quoted = _beat_quoted_text(paragraph)
+    clauses: list[tuple[str, bool]] = []
+    for raw in _BEAT_CLAUSE_SPLIT_RE.split(paragraph):
+        norm = _beat_normalize(raw)
+        if len(norm) < _BEAT_CLAUSE_MIN_LEN:
+            continue
+        clauses.append((norm, bool(quoted) and norm in quoted))
+    return clauses
+
+
+def detect_cross_scene_beat_reenactment(
+    chapter_text: str,
+    *,
+    min_paragraph_gap: int = _BEAT_MIN_PARAGRAPH_GAP,
+    near_verbatim_containment: float = _BEAT_NEAR_VERBATIM_CONTAINMENT,
+    echo_containment: float = _BEAT_ECHO_CONTAINMENT,
+    clause_containment: float = _BEAT_CLAUSE_CONTAINMENT,
+    cluster_window: int = _BEAT_CLUSTER_WINDOW,
+    min_cluster_signals: int = _BEAT_CLUSTER_MIN_SIGNALS,
+) -> list[dict[str, Any]]:
+    """Detect plot-beat level re-enactment across scene boundaries.
+
+    Walks the assembled chapter paragraph stream and compares each paragraph
+    against the union of char n-grams from paragraphs at least
+    ``min_paragraph_gap`` positions earlier (a deterministic proxy for "a
+    different scene" — the assembled markdown does not carry scene markers).
+
+    Two finding kinds are produced:
+
+    * ``kind="near_verbatim"`` (severity ``critical``) — a later paragraph
+      almost entirely contained in earlier text. Safe to delete
+      deterministically via :func:`remove_cross_scene_near_verbatim_repeats`.
+      Dialogue-dominant paragraphs are never flagged at this tier.
+    * ``kind="beat_reenactment"`` (severity ``major``) — a cluster of ≥
+      ``min_cluster_signals`` echo signals (paraphrase-echo paragraphs and/or
+      near-verbatim narrative clauses) within ``cluster_window`` paragraphs,
+      with at least one non-dialogue signal. Carries
+      ``repair_strategy="rewrite_task"`` — callers must route these to the
+      repair pipeline instead of deleting prose or raising.
+
+    Never raises on malformed input; returns an empty list instead.
+    """
+    paragraphs = _split_paragraphs(chapter_text or "")
+    if len(paragraphs) <= min_paragraph_gap:
+        return []
+
+    findings: list[dict[str, Any]] = []
+    # signals: (paragraph_index, in_dialogue, kind, similarity, sample)
+    signals: list[tuple[int, bool, str, float, str]] = []
+    earlier_ngrams: set[str] = set()
+
+    for j, para in enumerate(paragraphs):
+        # Admit paragraph (j - gap) into the "earlier text" union so that the
+        # current paragraph is only compared against cross-scene-distance text.
+        admit = j - min_paragraph_gap
+        if admit >= 0:
+            earlier_ngrams |= _beat_char_ngrams(_beat_normalize(paragraphs[admit]))
+        if not earlier_ngrams:
+            continue
+
+        normalized = _beat_normalize(para)
+        if len(normalized) < _MIN_PARA_LEN:
+            continue
+
+        para_grams = _beat_char_ngrams(normalized)
+        containment = _beat_containment(para_grams, earlier_ngrams)
+        dialogue_dominant = _beat_is_dialogue_dominant(para, normalized)
+
+        if containment >= near_verbatim_containment and not dialogue_dominant:
+            findings.append({
+                "kind": "near_verbatim",
+                "second_pos": j,
+                "text": para[:120],
+                "similarity": round(containment, 3),
+                "severity": "critical",
+                "message": (
+                    f"[节拍重演·近逐字] 第{j+1}段与前文场景内容近逐字重复"
+                    f"（n-gram覆盖率 {containment:.0%}），保留先出现者、删除本段。"
+                ),
+            })
+            signals.append((j, False, "near_verbatim", containment, para[:60]))
+            continue
+
+        if containment >= echo_containment:
+            signals.append((j, dialogue_dominant, "echo", containment, para[:60]))
+            continue
+
+        # Clause-level anchors: a near-verbatim long sentence embedded in an
+        # otherwise-new paragraph (e.g.「金光顺着爪纹一道道亮起来」 re-staged
+        # inside a longer re-write of the same beat).
+        for clause, in_dialogue in _beat_long_clauses(para):
+            clause_score = _beat_containment(_beat_char_ngrams(clause), earlier_ngrams)
+            if clause_score >= clause_containment:
+                signals.append((j, in_dialogue, "clause", clause_score, clause[:60]))
+                break
+
+    # Cluster pass — group signals whose paragraph indices are within
+    # ``cluster_window`` of the previous signal; a confirmed cluster needs
+    # ≥ min_cluster_signals signals and ≥1 non-dialogue (narrative) signal.
+    cluster: list[tuple[int, bool, str, float, str]] = []
+
+    def _flush_cluster() -> None:
+        if len(cluster) < min_cluster_signals:
+            return
+        if not any(not in_dialogue for _, in_dialogue, _k, _s, _t in cluster):
+            return
+        positions = [pos for pos, *_rest in cluster]
+        best = max(cluster, key=lambda item: item[3])
+        findings.append({
+            "kind": "beat_reenactment",
+            "first_pos": positions[0],
+            "second_pos": positions[-1],
+            "positions": positions,
+            "text": best[4],
+            "similarity": round(best[3], 3),
+            "severity": "major",
+            "repair_strategy": "rewrite_task",
+            "message": (
+                f"[节拍重演] 第{positions[0]+1}–{positions[-1]+1}段构成与前文场景"
+                f"重复演绎同一事件节拍的段落簇（{len(positions)}个重复信号，"
+                f"最高覆盖率 {best[3]:.0%}）。疑似多场景卡共享同一cut_point导致"
+                f"高潮被完整重写两遍。不可直接删除——需走 rewrite_task 定向重写后簇。"
+            ),
+        })
+
+    for signal in signals:
+        if cluster and signal[0] - cluster[-1][0] > cluster_window:
+            _flush_cluster()
+            cluster = []
+        cluster.append(signal)
+    _flush_cluster()
+
+    return findings
+
+
+def remove_cross_scene_near_verbatim_repeats(
+    chapter_text: str,
+    *,
+    min_paragraph_gap: int = _BEAT_MIN_PARAGRAPH_GAP,
+    near_verbatim_containment: float = _BEAT_NEAR_VERBATIM_CONTAINMENT,
+) -> tuple[str, int]:
+    """Remove near-verbatim cross-scene paragraph repeats (keep first).
+
+    Only deletes paragraphs flagged ``kind="near_verbatim"`` by
+    :func:`detect_cross_scene_beat_reenactment` — i.e. paragraphs whose
+    content is almost entirely a repeat of much-earlier text and that are not
+    dialogue-dominant. Paraphrase-level re-enactment clusters are deliberately
+    left intact (they must go through the repair pipeline, not deletion).
+
+    Returns
+    -------
+    (cleaned_text, removed_count)
+    """
+    findings = detect_cross_scene_beat_reenactment(
+        chapter_text,
+        min_paragraph_gap=min_paragraph_gap,
+        near_verbatim_containment=near_verbatim_containment,
+    )
+    drop_indices = {
+        int(f["second_pos"]) for f in findings if f.get("kind") == "near_verbatim"
+    }
+    if not drop_indices:
+        return chapter_text, 0
+    paragraphs = _split_paragraphs(chapter_text)
+    for f in findings:
+        if f.get("kind") != "near_verbatim":
+            continue
+        logger.warning(
+            "Removing cross-scene near-verbatim paragraph: para=%d sim=%.2f '%s'",
+            f["second_pos"], f["similarity"], str(f["text"])[:40],
+        )
+    kept = [p for i, p in enumerate(paragraphs) if i not in drop_indices]
+    return "\n\n".join(kept), len(drop_indices)
+
+
 def build_overused_phrase_avoidance_block(
     phrases: list[tuple[str, int]],
     *,

@@ -1272,3 +1272,60 @@ def test_repair_legacy_scene_contract_model_removes_template_labels() -> None:
     assert "closing" not in scene_contract.information_release.lower()
     assert "bystander" in scene_contract.information_release
     assert scene_contract.contract_summary.startswith("Chapter 365 scene 3")
+
+
+def test_pre_draft_backfill_keeps_chapter_hook_out_of_non_final_scene_cut_point() -> None:
+    # Chapter-level cut_point fan-out guard (zhaoshen-hr-v3 ch1 incident):
+    # the chapter hook is the CHAPTER-ENDING climax; a non-final (or
+    # unknown-position) scene must not inherit it as its own cut_point.
+    chapter_hook = "哮天犬叼出天眼旧徽章，留话等第七个人事来交接。"
+    chapter = SimpleNamespace(
+        chapter_number=1,
+        chapter_goal="陈屿为哮天犬起草新岗位并完成转编。",
+        main_conflict="哮天犬要编制自由两全，陈屿必须当场给出方案。",
+        hook_description=chapter_hook,
+    )
+
+    def build_scene() -> SimpleNamespace:
+        return SimpleNamespace(
+            scene_number=1,
+            scene_type="setup",
+            title="前台递申请",
+            participants=["陈屿", "哮天犬"],
+            time_label="三垣前台·上午",
+            purpose={"story": "哮天犬端坐前台递出转编申请，陈屿被迫接单。"},
+            sensory_anchors={},
+            hook_requirement=None,
+            metadata_json={},
+        )
+
+    # Position unknown (legacy callers): err on the safe side, no chapter hook.
+    scene = build_scene()
+    repair_missing_scene_methodology_contract_pre_draft(
+        scene,
+        chapter=chapter,
+        chapter_number=1,
+    )
+    contract = scene.metadata_json["methodology_contract"]
+    assert contract["cut_point"] != chapter_hook
+    assert chapter_hook not in contract["cut_point"]
+
+    # Explicit non-final scene: same guard.
+    scene = build_scene()
+    repair_missing_scene_methodology_contract_pre_draft(
+        scene,
+        chapter=chapter,
+        chapter_number=1,
+        is_final_scene=False,
+    )
+    assert scene.metadata_json["methodology_contract"]["cut_point"] != chapter_hook
+
+    # Explicit final scene: chapter hook is allowed to land.
+    scene = build_scene()
+    repair_missing_scene_methodology_contract_pre_draft(
+        scene,
+        chapter=chapter,
+        chapter_number=1,
+        is_final_scene=True,
+    )
+    assert scene.metadata_json["methodology_contract"]["cut_point"] == chapter_hook

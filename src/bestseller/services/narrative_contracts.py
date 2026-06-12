@@ -758,6 +758,7 @@ def repair_missing_scene_methodology_contract_pre_draft(
     *,
     chapter: Any | None = None,
     chapter_number: int | None = None,
+    is_final_scene: bool | None = None,
 ) -> int:
     """Backfill a concrete scene methodology contract for legacy resume rows.
 
@@ -805,11 +806,17 @@ def repair_missing_scene_methodology_contract_pre_draft(
         raw_contract.get("signature_image"),
         fallback=f"{spotlight}面前出现一件无法立刻归档的异常物。",
     )
+    # Chapter-level cut_point fan-out guard (zhaoshen-hr-v3 ch1 incident):
+    # chapter.hook_description is the CHAPTER-ENDING climax. Copying it into
+    # every scene's cut_point made non-final scenes pre-enact / re-stage the
+    # finale. Only the chapter's final scene may inherit it; when the caller
+    # does not know the scene's position (is_final_scene=None), err on the
+    # safe side and keep the cut_point scene-local.
     cut_point = _first_non_generic_text(
         hook,
         raw_contract.get("cut_point"),
         raw_contract.get("breakpoint"),
-        chapter_hook,
+        chapter_hook if is_final_scene else None,
         story,
         fallback=f"{signature}改变{spotlight}的下一步选择。",
     )

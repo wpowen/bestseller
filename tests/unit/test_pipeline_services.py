@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import MissingGreenlet
 
 from bestseller.domain.chapter_generation_input import ChapterGenerationInputBundle
 from bestseller.domain.context import SceneWriterContextPacket
@@ -990,6 +991,18 @@ class FakeSession:
     async def rollback(self) -> None:
         self.rollback_calls += 1
         self.is_active = True
+
+
+@pytest.mark.asyncio
+async def test_recover_session_after_nonfatal_error_rolls_back_missing_greenlet() -> None:
+    session = FakeSession()
+
+    await pipeline_services._recover_session_after_nonfatal_error(
+        session,
+        MissingGreenlet("expired ORM attribute attempted async IO"),
+    )
+
+    assert session.rollback_calls == 1
 
 
 class FakeExecuteRows:
@@ -5356,7 +5369,12 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
     assert result.requires_human_review is False
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
-    assert len(workflow_steps) == 7
+    # 8 = the historical 7 chapter-loop steps + the warn-only
+    # opening_golden_chapter_gate step (the synthetic ch1 draft has no
+    # tension signal, so the advisory gate records its findings).
+    assert len(workflow_steps) == 8
+    step_names = {step.step_name for step in workflow_steps}
+    assert "opening_golden_chapter_gate" in step_names
 
 
 @pytest.mark.asyncio

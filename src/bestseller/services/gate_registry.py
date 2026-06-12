@@ -177,6 +177,18 @@ _GATES: tuple[GateRegistration, ...] = (
         tier="advanced",
         continuation_impact="local",
     ),
+    GateRegistration(
+        # 网文「黄金一章」工业标准 acceptance checks on ch1-3 prose
+        # (主角前置/期待点/信息节流/章末总结体/章末钩子/开篇禁忌).
+        # Deterministic heuristics on this chapter's own opening surface —
+        # warn-only (advanced tier, WS-C: must never set
+        # machine_repair_required) and strictly local to the chapter.
+        name="opening_golden_chapter_gate",
+        metadata_keys=("blocked_by_opening_golden_chapter_gate",),
+        repair_strategy="rewrite_task",
+        tier="advanced",
+        continuation_impact="local",
+    ),
 )
 
 _REGISTERED_GATE_NAMES = frozenset(gate.name for gate in _GATES)

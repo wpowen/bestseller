@@ -473,6 +473,18 @@ class ChapterOutlineInput(BaseModel):
         validation_alias=AliasChoices("hook_type", "chapter_hook_type"),
     )
     hook_description: str | None = None
+    # Webnovel method cards: the single emotion this chapter's conflict must
+    # deliver (controlled vocabulary, e.g. 爽/燃/暖/虐/悬疑/紧张/轻松/甜/震撼).
+    # Optional for backward compatibility with pre-existing outline payloads.
+    target_emotion: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "target_emotion",
+            "chapter_target_emotion",
+            "core_emotion",
+            "emotion_goal",
+        ),
+    )
     causal_contract: dict[str, Any] = Field(
         default_factory=dict,
         validation_alias=AliasChoices(

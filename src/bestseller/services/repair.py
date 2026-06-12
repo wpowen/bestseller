@@ -10,7 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, select, update
-from sqlalchemy.exc import DBAPIError, PendingRollbackError
+from sqlalchemy.exc import DBAPIError, MissingGreenlet, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.enums import ProjectStatus, SceneStatus, WorkflowStatus
@@ -2070,7 +2070,7 @@ async def run_project_repair(
         )
     except Exception as exc:
         if (
-            isinstance(exc, (PendingRollbackError, DBAPIError))
+            isinstance(exc, (PendingRollbackError, DBAPIError, MissingGreenlet))
             or not getattr(session, "is_active", True)
         ):
             await session.rollback()

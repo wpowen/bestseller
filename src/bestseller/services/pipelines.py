@@ -10,7 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
-from sqlalchemy.exc import DBAPIError, PendingRollbackError
+from sqlalchemy.exc import DBAPIError, MissingGreenlet, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -3962,15 +3962,20 @@ async def _recover_session_after_nonfatal_error(
 ) -> None:
     """Rollback when a tolerated helper error leaves the DB session dirty."""
 
-    if not (
-        isinstance(exc, (PendingRollbackError, DBAPIError))
-        or not getattr(session, "is_active", True)
-    ):
+    if not _is_db_session_failure(session, exc):
         return
     rollback = getattr(session, "rollback", None)
     if rollback is None:
         return
     await rollback()
+
+
+def _is_db_session_failure(session: AsyncSession, exc: Exception) -> bool:
+    """Return true when an exception means the current async DB session is unsafe."""
+
+    return isinstance(exc, (PendingRollbackError, DBAPIError, MissingGreenlet)) or not getattr(
+        session, "is_active", True
+    )
 
 
 async def _load_scene_identifiers(
@@ -6173,10 +6178,7 @@ async def run_scene_pipeline(
         # connection checkout → pool_pre_ping → ``MissingGreenlet`` which
         # masks the real error. Rollback first and re-raise so the reaper
         # can pick up the workflow_run row instead.
-        if (
-            isinstance(exc, (PendingRollbackError, DBAPIError))
-            or not session.is_active
-        ):
+        if _is_db_session_failure(session, exc):
             await session.rollback()
             raise
         workflow_run.status = WorkflowStatus.FAILED.value
@@ -6192,7 +6194,7 @@ async def run_scene_pipeline(
                 error_message=str(exc),
             )
             await session.flush()
-        except (PendingRollbackError, DBAPIError):
+        except (PendingRollbackError, DBAPIError, MissingGreenlet):
             await session.rollback()
         raise
 
@@ -6213,6 +6215,8 @@ async def run_chapter_pipeline(
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    project_id = project.id
+    project_target_chapters = project.target_chapters
     _assert_project_not_blocked_for_structural_repair(
         project,
         project_slug=project_slug,
@@ -6221,12 +6225,14 @@ async def run_chapter_pipeline(
     )
     chapter = await session.scalar(
         select(ChapterModel).where(
-            ChapterModel.project_id == project.id,
+            ChapterModel.project_id == project_id,
             ChapterModel.chapter_number == chapter_number,
         )
     )
     if chapter is None:
         raise ValueError(f"Chapter {chapter_number} was not found for '{project_slug}'.")
+    chapter_id = chapter.id
+    loaded_chapter_number = int(chapter.chapter_number or chapter_number)
 
     scenes = list(
         await session.scalars(
@@ -6267,11 +6273,11 @@ async def run_chapter_pipeline(
 
     workflow_run = await create_workflow_run(
         session,
-        project_id=project.id,
+        project_id=project_id,
         workflow_type=WORKFLOW_TYPE_CHAPTER_PIPELINE,
         status=WorkflowStatus.RUNNING,
         scope_type="chapter",
-        scope_id=chapter.id,
+        scope_id=chapter_id,
         requested_by=requested_by,
         current_step="load_chapter_context",
         metadata={
@@ -6282,6 +6288,7 @@ async def run_chapter_pipeline(
             "chapter_first": use_chapter_first,
         },
     )
+    workflow_run_id = workflow_run.id
 
     step_order = 1
     current_step_name = "load_chapter_context"
@@ -7616,10 +7623,10 @@ async def run_chapter_pipeline(
             }
             await session.flush()
             return ChapterPipelineResult(
-                workflow_run_id=workflow_run.id,
-                project_id=project.id,
-                chapter_id=chapter.id,
-                chapter_number=chapter.chapter_number,
+                workflow_run_id=workflow_run_id,
+                project_id=project_id,
+                chapter_id=chapter_id,
+                chapter_number=loaded_chapter_number,
                 scene_results=scene_results,
                 chapter_draft_id=None,
                 chapter_draft_version_no=None,
@@ -7739,10 +7746,10 @@ async def run_chapter_pipeline(
             )
             await session.flush()
             return ChapterPipelineResult(
-                workflow_run_id=workflow_run.id,
-                project_id=project.id,
-                chapter_id=chapter.id,
-                chapter_number=chapter.chapter_number,
+                workflow_run_id=workflow_run_id,
+                project_id=project_id,
+                chapter_id=chapter_id,
+                chapter_number=loaded_chapter_number,
                 scene_results=scene_results,
                 chapter_draft_id=chapter_draft.id,
                 chapter_draft_version_no=chapter_draft.version_no,
@@ -8114,6 +8121,56 @@ async def run_chapter_pipeline(
         except Exception:
             logger.debug("anti-slop prose gates failed (non-fatal)", exc_info=True)
 
+        # ── Opening golden-chapter gate (ch1-3, advisory only) ──────────
+        # Deterministic 黄金一章 acceptance checks on the opening chapters'
+        # prose. Advanced tier: a hit stamps warning metadata and records a
+        # step run but must NEVER block the chapter (WS-C policy).
+        try:
+            if (
+                chapter_draft is not None
+                and chapter_draft.content_md
+                and chapter_number <= 3
+            ):
+                from bestseller.services.opening_golden_chapter_gate import (
+                    check_opening_golden_chapter_gate,
+                )
+
+                _golden = check_opening_golden_chapter_gate(
+                    chapter_draft.content_md,
+                    chapter_position=chapter_number,
+                    protagonist_name=_fanqie_gate_protagonist_name(project),
+                )
+                _golden_report = _golden.to_checker_report()
+                if _golden_report.issues:
+                    # Warn-only: never stamps ``blocked_by_*`` and never
+                    # touches production_state — the metrics key is the
+                    # warning signal for downstream reviewers.
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "opening_golden_chapter_metrics": _golden_report.metrics,
+                        "opening_golden_chapter_issue_codes": [
+                            issue.id for issue in _golden_report.issues[:6]
+                        ],
+                    }
+                    await create_workflow_step_run(
+                        session,
+                        workflow_run_id=workflow_run.id,
+                        step_name="opening_golden_chapter_gate",
+                        step_order=step_order,
+                        status=WorkflowStatus.COMPLETED,
+                        output_ref={
+                            "passed": _golden_report.passed,
+                            "issues": len(_golden_report.issues),
+                            "metrics": _golden_report.metrics,
+                            "blocks_write": False,
+                        },
+                    )
+                    step_order += 1
+        except Exception:
+            logger.debug(
+                "opening golden-chapter gate failed (non-fatal)", exc_info=True
+            )
+
         export_blocked_reason: str | None = None
 
         async def _export_current_chapter_markdown() -> tuple[UUID | None, str | None]:
@@ -8432,10 +8489,10 @@ async def run_chapter_pipeline(
                 }
                 await session.flush()
                 return ChapterPipelineResult(
-                    workflow_run_id=workflow_run.id,
-                    project_id=project.id,
-                    chapter_id=chapter.id,
-                    chapter_number=chapter.chapter_number,
+                    workflow_run_id=workflow_run_id,
+                    project_id=project_id,
+                    chapter_id=chapter_id,
+                    chapter_number=loaded_chapter_number,
                     scene_results=scene_results,
                     chapter_draft_id=chapter_draft.id,
                     chapter_draft_version_no=chapter_draft.version_no,
@@ -8678,10 +8735,10 @@ async def run_chapter_pipeline(
                         _snapshot_row = await extract_chapter_state_snapshot(
                             session,
                             settings,
-                            project_id=project.id,
+                            project_id=project_id,
                             chapter=chapter,
                             chapter_md=chapter_draft.content_md,
-                            workflow_run_id=workflow_run.id,
+                            workflow_run_id=workflow_run_id,
                         )
                         # Phase B — classify + persist dominance history.
                         await _apply_post_chapter_phase_b(
@@ -8693,21 +8750,21 @@ async def run_chapter_pipeline(
                         # Phase C — accrue interest on outstanding debts.
                         await _apply_post_chapter_phase_c(
                             session=session,
-                            project_id=project.id,
-                            chapter_number=chapter.chapter_number,
+                            project_id=project_id,
+                            chapter_number=loaded_chapter_number,
                         )
                         # Phase D — run countdown / time-regression validators.
                         _phase_d_reports = await _collect_phase_d_reports(
                             session=session,
-                            project_id=project.id,
-                            chapter_number=chapter.chapter_number,
+                            project_id=project_id,
+                            chapter_number=loaded_chapter_number,
                             snapshot=_snapshot_row,
                         )
                         for _pd_report in _phase_d_reports:
                             if not _pd_report.passed:
                                 logger.warning(
                                     "Phase D ch%d %s: %s",
-                                    chapter.chapter_number,
+                                    loaded_chapter_number,
                                     _pd_report.agent,
                                     _pd_report.summary,
                                 )
@@ -8728,9 +8785,10 @@ async def run_chapter_pipeline(
                 except Exception as exc:
                     logger.warning(
                         "Chapter %d hard-fact extraction failed (non-fatal): %s",
-                        chapter.chapter_number,
+                        loaded_chapter_number,
                         exc,
                     )
+                    await _recover_session_after_nonfatal_error(session, exc)
 
                 # ── Post-chapter feedback extraction (1 LLM call) ──
                 if settings.pipeline.enable_chapter_feedback:
@@ -8741,17 +8799,18 @@ async def run_chapter_pipeline(
                             await extract_chapter_feedback(
                                 session,
                                 settings,
-                                project_id=project.id,
+                                project_id=project_id,
                                 chapter=chapter,
                                 chapter_md=chapter_draft.content_md,
-                                workflow_run_id=workflow_run.id,
+                                workflow_run_id=workflow_run_id,
                             )
                     except Exception as exc:
                         logger.warning(
                             "Chapter %d feedback extraction failed (non-fatal): %s",
-                            chapter.chapter_number,
+                            loaded_chapter_number,
                             exc,
                         )
+                        await _recover_session_after_nonfatal_error(session, exc)
 
                 # ── Living Story Bible update (non-draft path) ──
                 try:
@@ -8763,25 +8822,27 @@ async def run_chapter_pipeline(
                             project=project,
                             chapter=chapter,
                             chapter_text=chapter_draft.content_md or "",
-                            workflow_run_id=workflow_run.id,
+                            workflow_run_id=workflow_run_id,
                         )
                 except Exception as exc:
                     logger.warning(
                         "Chapter %d bible update failed (non-fatal): %s",
-                        chapter.chapter_number,
+                        loaded_chapter_number,
                         exc,
                     )
+                    await _recover_session_after_nonfatal_error(session, exc)
 
                 # ── Book-level overused phrase tracking (non-draft path) ──
                 try:
                     await _refresh_overused_phrase_block(
                         session, project, settings
                     )
-                except Exception:
+                except Exception as exc:
                     logger.debug(
                         "Overused phrase tracking failed (non-fatal)",
                         exc_info=True,
                     )
+                    await _recover_session_after_nonfatal_error(session, exc)
 
                 # ── L7 per-chapter audit (lightweight) ──
                 # Runs PleasureDistributionAudit + SetupPayoffTrackerAudit
@@ -8800,9 +8861,9 @@ async def run_chapter_pipeline(
                         async with session.begin_nested():
                             _audit_report = await run_and_persist_audit(
                                 session,
-                                project_id=project.id,
+                                project_id=project_id,
                                 audit=build_per_chapter_audit(),
-                                chapter_number=chapter.chapter_number,
+                                chapter_number=loaded_chapter_number,
                             )
                             _rewrites_created = await spawn_rewrite_tasks_from_findings(
                                 session, _audit_report
@@ -8810,15 +8871,16 @@ async def run_chapter_pipeline(
                             if _rewrites_created:
                                 logger.info(
                                     "Chapter %d L7 audit spawned %d rewrite task(s)",
-                                    chapter.chapter_number,
+                                    loaded_chapter_number,
                                     _rewrites_created,
                                 )
-                except Exception:
+                except Exception as exc:
                     logger.debug(
                         "Chapter %d L7 per-chapter audit failed (non-fatal)",
-                        chapter.chapter_number,
+                        loaded_chapter_number,
                         exc_info=True,
                     )
+                    await _recover_session_after_nonfatal_error(session, exc)
 
                 # ── L8 per-chapter scorecard refresh ──
                 # Upserts NovelScorecardModel so dashboards see post-chapter
@@ -8833,16 +8895,17 @@ async def run_chapter_pipeline(
                         async with session.begin_nested():
                             await update_scorecard_incrementally(
                                 session,
-                                project_id=project.id,
-                                chapter_number=chapter.chapter_number,
-                                expected_chapter_count=project.target_chapters,
+                                project_id=project_id,
+                                chapter_number=loaded_chapter_number,
+                                expected_chapter_count=project_target_chapters,
                             )
-                except Exception:
+                except Exception as exc:
                     logger.debug(
                         "Chapter %d L8 per-chapter scorecard failed (non-fatal)",
-                        chapter.chapter_number,
+                        loaded_chapter_number,
                         exc_info=True,
                     )
+                    await _recover_session_after_nonfatal_error(session, exc)
                 break
 
             if chapter_rewrite_task is None:
@@ -9090,10 +9153,10 @@ async def run_chapter_pipeline(
                 }
                 await session.flush()
                 return ChapterPipelineResult(
-                    workflow_run_id=workflow_run.id,
-                    project_id=project.id,
-                    chapter_id=chapter.id,
-                    chapter_number=chapter.chapter_number,
+                    workflow_run_id=workflow_run_id,
+                    project_id=project_id,
+                    chapter_id=chapter_id,
+                    chapter_number=loaded_chapter_number,
                     scene_results=scene_results,
                     chapter_draft_id=chapter_draft.id,
                     chapter_draft_version_no=chapter_draft.version_no,
@@ -9137,10 +9200,10 @@ async def run_chapter_pipeline(
         await session.flush()
 
         return ChapterPipelineResult(
-            workflow_run_id=workflow_run.id,
-            project_id=project.id,
-            chapter_id=chapter.id,
-            chapter_number=chapter.chapter_number,
+            workflow_run_id=workflow_run_id,
+            project_id=project_id,
+            chapter_id=chapter_id,
+            chapter_number=loaded_chapter_number,
             scene_results=scene_results,
             chapter_draft_id=chapter_draft.id,
             chapter_draft_version_no=chapter_draft.version_no,
@@ -9158,10 +9221,7 @@ async def run_chapter_pipeline(
         # Mirror the guard in ``run_scene_pipeline`` — any DB-level error
         # leaves the session unusable and follow-up writes explode with
         # ``MissingGreenlet``. Rollback first and let the reaper clean up.
-        if (
-            isinstance(exc, (PendingRollbackError, DBAPIError))
-            or not session.is_active
-        ):
+        if _is_db_session_failure(session, exc):
             await session.rollback()
             raise
         workflow_run.status = WorkflowStatus.FAILED.value
@@ -9177,7 +9237,7 @@ async def run_chapter_pipeline(
                 error_message=str(exc),
             )
             await session.flush()
-        except (PendingRollbackError, DBAPIError):
+        except (PendingRollbackError, DBAPIError, MissingGreenlet):
             await session.rollback()
         raise
 
@@ -10932,10 +10992,7 @@ async def run_project_pipeline(
         # Same guard as the scene/chapter pipelines — DB-level failures must
         # rollback-and-raise so follow-up writes don't trigger
         # ``MissingGreenlet`` during connection checkout.
-        if (
-            isinstance(exc, (PendingRollbackError, DBAPIError))
-            or not session.is_active
-        ):
+        if _is_db_session_failure(session, exc):
             await session.rollback()
             raise
         workflow_run.status = WorkflowStatus.FAILED.value
@@ -10951,7 +11008,7 @@ async def run_project_pipeline(
                 error_message=str(exc),
             )
             await session.flush()
-        except (PendingRollbackError, DBAPIError):
+        except (PendingRollbackError, DBAPIError, MissingGreenlet):
             await session.rollback()
         raise
 

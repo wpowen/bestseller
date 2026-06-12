@@ -1865,3 +1865,268 @@ async def test_materialize_latest_narrative_tree_delegates(
     )
 
     assert result.node_count == 7
+
+
+# ---------------------------------------------------------------------------
+# Chapter-level cut_point fan-out regression (zhaoshen-hr-v3 ch1 incident):
+# the chapter hook/title describe the CHAPTER-ENDING climax. It must only
+# flow into the FINAL scene's cut_point; non-final scenes keep their own
+# scene-level cut material (or stay empty), and entry_state must chain off
+# the previous scene's exit_state instead of a purpose recap.
+# ---------------------------------------------------------------------------
+
+_CUTPOINT_IDENTITY_MANIFEST = [
+    {
+        "name": "陈屿",
+        "role": "protagonist",
+        "gender": "male",
+        "pronoun_set_zh": "他",
+        "pronoun_set_en": "he/him",
+    }
+]
+
+_CHAPTER_CLIMAX_HOOK = "哮天犬叼出天眼旧徽章，留话等第七个人事来交接。"
+
+
+def _build_cutpoint_batch(scenes: list[dict]) -> ChapterOutlineBatchInput:
+    return ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "volume-1-outline",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "神犬转编",
+                    "goal": "陈屿为哮天犬起草新岗位并完成转编。",
+                    "main_conflict": "哮天犬要编制自由两全，陈屿必须当场给出方案。",
+                    "hook_description": _CHAPTER_CLIMAX_HOOK,
+                    "scenes": scenes,
+                }
+            ],
+        }
+    )
+
+
+def test_chapter_cut_point_only_enters_final_scene_in_multi_scene_chapter() -> None:
+    batch = _build_cutpoint_batch(
+        [
+            {
+                "scene_number": 1,
+                "scene_type": "setup",
+                "time_label": "三垣前台·上午",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "哮天犬端坐前台递出转编申请，陈屿被迫接单。",
+                    "emotion": "压力骤升。",
+                },
+                "exit_state": {"reader": "陈屿收下爪印申请表，门外传来杨戬的脚步声。"},
+            },
+            {
+                "scene_number": 2,
+                "scene_type": "development",
+                "time_label": "三垣档案室·午后",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "陈屿翻旧档案核对编制缺口，发现犬科岗位从未设立。",
+                    "emotion": "焦灼加深。",
+                },
+                "exit_state": {"reader": "陈屿在旧档案夹层里摸到一页被撕掉一半的编制表。"},
+            },
+            {
+                "scene_number": 3,
+                "scene_type": "climax",
+                "time_label": "三垣前台·夜",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "陈屿连夜起草新岗合同，哮天犬按下爪印。",
+                    "emotion": "释然与不安交织。",
+                },
+            },
+        ]
+    )
+
+    repaired = workflow_services._repair_chapter_outline_contract_inputs(
+        batch,
+        identity_manifest=_CUTPOINT_IDENTITY_MANIFEST,
+    )
+    assert repaired >= 1
+
+    scenes = batch.chapters[0].scenes
+    s1, s2, s3 = scenes[0], scenes[1], scenes[2]
+
+    # Final scene inherits the chapter-level climax cut_point.
+    assert s3.cut_point == _CHAPTER_CLIMAX_HOOK
+    assert s3.methodology_contract["cut_point"] == _CHAPTER_CLIMAX_HOOK
+
+    # Non-final scenes must NOT carry the chapter-level climax.
+    for scene in (s1, s2):
+        assert scene.cut_point != _CHAPTER_CLIMAX_HOOK
+        assert scene.methodology_contract.get("cut_point") != _CHAPTER_CLIMAX_HOOK
+
+    # Non-final scenes fall back to their own exit_state (scene-level value).
+    assert s1.methodology_contract.get("cut_point") == (
+        "陈屿收下爪印申请表，门外传来杨戬的脚步声。"
+    )
+    assert s2.methodology_contract.get("cut_point") == (
+        "陈屿在旧档案夹层里摸到一页被撕掉一半的编制表。"
+    )
+
+
+def test_non_final_scene_keeps_own_scene_level_cut_point() -> None:
+    own_cut = "茶杯里浮出一枚刻着天眼的铜钱，水面开始结冰。"
+    batch = _build_cutpoint_batch(
+        [
+            {
+                "scene_number": 1,
+                "scene_type": "setup",
+                "time_label": "三垣前台·上午",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "哮天犬端坐前台递出转编申请，陈屿被迫接单。",
+                    "emotion": "压力骤升。",
+                },
+                "cut_point": own_cut,
+            },
+            {
+                "scene_number": 2,
+                "scene_type": "climax",
+                "time_label": "三垣前台·夜",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "陈屿连夜起草新岗合同，哮天犬按下爪印。",
+                    "emotion": "释然与不安交织。",
+                },
+            },
+        ]
+    )
+
+    workflow_services._repair_chapter_outline_contract_inputs(
+        batch,
+        identity_manifest=_CUTPOINT_IDENTITY_MANIFEST,
+    )
+
+    scenes = batch.chapters[0].scenes
+    # Scene-level cut_point survives untouched on the non-final scene.
+    assert scenes[0].cut_point == own_cut
+    assert scenes[0].methodology_contract["cut_point"] == own_cut
+    # Final scene still gets the chapter-level hook.
+    assert scenes[1].methodology_contract["cut_point"] == _CHAPTER_CLIMAX_HOOK
+
+
+def test_non_final_scene_without_scene_material_leaves_cut_point_empty_or_local() -> None:
+    batch = _build_cutpoint_batch(
+        [
+            {
+                "scene_number": 1,
+                "scene_type": "setup",
+                "time_label": "三垣前台·上午",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "哮天犬端坐前台递出转编申请，陈屿被迫接单。",
+                    "emotion": "压力骤升。",
+                },
+            },
+            {
+                "scene_number": 2,
+                "scene_type": "climax",
+                "time_label": "三垣前台·夜",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "陈屿连夜起草新岗合同，哮天犬按下爪印。",
+                    "emotion": "释然与不安交织。",
+                },
+            },
+        ]
+    )
+
+    workflow_services._repair_chapter_outline_contract_inputs(
+        batch,
+        identity_manifest=_CUTPOINT_IDENTITY_MANIFEST,
+    )
+
+    s1 = batch.chapters[0].scenes[0]
+    s1_cut = s1.methodology_contract.get("cut_point") or ""
+    # Better empty (or a scene-local derivation) than the chapter climax.
+    assert _CHAPTER_CLIMAX_HOOK not in s1_cut
+    if s1.cut_point:
+        assert _CHAPTER_CLIMAX_HOOK not in s1.cut_point
+
+
+def test_scene_entry_state_chains_from_previous_scene_exit_state() -> None:
+    batch = _build_cutpoint_batch(
+        [
+            {
+                "scene_number": 1,
+                "scene_type": "setup",
+                "time_label": "三垣前台·上午",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "哮天犬端坐前台递出转编申请，陈屿被迫接单。",
+                    "emotion": "压力骤升。",
+                },
+                "exit_state": {"reader": "陈屿收下爪印申请表，门外传来杨戬的脚步声。"},
+            },
+            {
+                "scene_number": 2,
+                "scene_type": "development",
+                "time_label": "三垣档案室·午后",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "陈屿翻旧档案核对编制缺口，发现犬科岗位从未设立。",
+                    "emotion": "焦灼加深。",
+                },
+            },
+            {
+                "scene_number": 3,
+                "scene_type": "climax",
+                "time_label": "三垣前台·夜",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "陈屿连夜起草新岗合同，哮天犬按下爪印。",
+                    "emotion": "释然与不安交织。",
+                },
+            },
+        ]
+    )
+
+    workflow_services._repair_chapter_outline_contract_inputs(
+        batch,
+        identity_manifest=_CUTPOINT_IDENTITY_MANIFEST,
+    )
+
+    scenes = batch.chapters[0].scenes
+    # Scene 2 enters from where scene 1 actually ended (explicit exit_state).
+    assert scenes[1].entry_state == {
+        "reader": "陈屿收下爪印申请表，门外传来杨戬的脚步声。"
+    }
+    # Scene 3 enters from scene 2's (backfilled) exit_state — chained, not a
+    # purpose recap of scene 3 itself.
+    assert scenes[2].entry_state == scenes[1].exit_state
+    assert "场景3起始" not in str(scenes[2].entry_state)
+    # Scene 1 keeps the chapter-opening fallback (no predecessor).
+    assert "场景1" in str(scenes[0].entry_state)
+
+
+def test_single_scene_chapter_still_receives_chapter_cut_point() -> None:
+    batch = _build_cutpoint_batch(
+        [
+            {
+                "scene_number": 1,
+                "scene_type": "climax",
+                "time_label": "三垣前台·夜",
+                "participants": ["陈屿"],
+                "purpose": {
+                    "story": "陈屿连夜起草新岗合同，哮天犬按下爪印。",
+                    "emotion": "释然与不安交织。",
+                },
+            },
+        ]
+    )
+
+    workflow_services._repair_chapter_outline_contract_inputs(
+        batch,
+        identity_manifest=_CUTPOINT_IDENTITY_MANIFEST,
+    )
+
+    scene = batch.chapters[0].scenes[0]
+    assert scene.cut_point == _CHAPTER_CLIMAX_HOOK
+    assert scene.methodology_contract["cut_point"] == _CHAPTER_CLIMAX_HOOK

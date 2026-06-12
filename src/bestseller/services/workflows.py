@@ -1353,6 +1353,7 @@ def _repair_chapter_outline_contract_inputs(
         scene: Any,
         *,
         scene_index: int,
+        is_final_scene: bool = True,
     ) -> tuple[dict[str, Any], int]:
         raw_contract = dict(scene.methodology_contract or {})
         existing_contract = normalize_scene_overlay(raw_contract)
@@ -1394,13 +1395,40 @@ def _repair_chapter_outline_contract_inputs(
             hook_hint,
             fallback=f"{spotlight}场景中的关键视觉信息。",
         )
-        cut_point_hint = _first_non_generic(
+        # Chapter-level cut_point fan-out fix (zhaoshen-hr-v3 ch1 incident,
+        # 2026-06-12): chapter.hook_description / chapter.title describe the
+        # CHAPTER-ENDING climax. Falling back to them for EVERY scene copied
+        # the full finale script into each scene card, so s01 pre-enacted the
+        # chapter climax and s02 re-staged the exact same beats. Only the
+        # FINAL scene of a chapter may inherit chapter-level cut material;
+        # non-final scenes fall back to their own exit_state /
+        # hook_requirement, or stay EMPTY — an empty cut_point is safer than
+        # a wrong one (宽于错).
+        scene_level_cut_point = _first_non_generic(
             scene.cut_point,
             raw_contract.get("cut_point"),
-            chapter.hook_description,
-            chapter.title,
-            fallback=f"{story_purpose}留下更高一步压力。",
+            fallback="",
         )
+        if scene_level_cut_point:
+            cut_point_hint = scene_level_cut_point
+        elif is_final_scene:
+            cut_point_hint = _first_non_generic(
+                chapter.hook_description,
+                chapter.title,
+                fallback=f"{story_purpose}留下更高一步压力。",
+            )
+        else:
+            exit_state_text = ""
+            for _state_value in (scene.exit_state or {}).values():
+                _state_text = _text_value(_state_value)
+                if _state_text:
+                    exit_state_text = _state_text
+                    break
+            cut_point_hint = _first_non_generic(
+                exit_state_text,
+                scene.hook_requirement,
+                fallback="",
+            )
 
         if not _has_value(contract.get("conflict_stakes"), generic=False):
             contract["conflict_stakes"] = (
@@ -1447,7 +1475,7 @@ def _repair_chapter_outline_contract_inputs(
             contract["signature_image"] = signature_hint
             repairs += 1
 
-        if not _has_value(contract.get("cut_point"), generic=False):
+        if cut_point_hint and not _has_value(contract.get("cut_point"), generic=False):
             contract["cut_point"] = cut_point_hint
             repairs += 1
 
@@ -1476,7 +1504,7 @@ def _repair_chapter_outline_contract_inputs(
                 contract["action_sequence"] = [
                     f"{spotlight}先确认{signature_hint}并识别{opponent}的真实意图。",
                     f"{opponent}的下一步迫使{spotlight}改变节奏。",
-                    f"{spotlight}做出可见行动，推动局势进入{cut_point_hint}。",
+                    f"{spotlight}做出可见行动，推动局势进入{cut_point_hint or hook_hint}。",
                 ]
                 repairs += 1
             if not _has_value(contract.get("fight_objective"), generic=False):
@@ -1510,7 +1538,9 @@ def _repair_chapter_outline_contract_inputs(
                 )
                 repairs += 1
             if not _has_value(contract.get("exit_state_delta"), generic=False):
-                contract["exit_state_delta"] = f"场景结束时{spotlight}把{cut_point_hint}推进到下一拍。"
+                contract["exit_state_delta"] = (
+                    f"场景结束时{spotlight}把{cut_point_hint or hook_hint}推进到下一拍。"
+                )
                 repairs += 1
 
         return contract, 1 if repairs else 0
@@ -1533,7 +1563,16 @@ def _repair_chapter_outline_contract_inputs(
         if method_repair_count:
             chapter.methodology_contract = contract
             repaired += method_repair_count
-        for scene in chapter.scenes:
+        # The chapter-level cut_point/hook may only flow into the FINAL scene
+        # of the chapter (see _derive_scene_methodology_contract). Iterate in
+        # scene-number order so entry_state can chain off the previous
+        # scene's (possibly just-repaired) exit_state deterministically.
+        final_scene_number = max(
+            (s.scene_number for s in chapter.scenes),
+            default=None,
+        )
+        previous_exit_state: dict[str, Any] | None = None
+        for scene in sorted(chapter.scenes, key=lambda s: s.scene_number):
             if not _text_value(scene.time_label) or _is_generic_time_label(scene.time_label):
                 scene.time_label = _outline_scene_time_repair(
                     chapter,
@@ -1568,12 +1607,21 @@ def _repair_chapter_outline_contract_inputs(
                         repaired += 1
 
             if not scene.entry_state:
-                scene.entry_state = {
-                    "reader": (
-                        f"{chapter.title or f'第{chapter.chapter_number}章'}场景{scene.scene_number}起始，"
-                        f"核心任务仍是推进「{story_purpose or chapter.chapter_goal or chapter.title}」的可见结果。"
-                    )
-                }
+                # Scene N (N≥2) must enter from where scene N-1 actually
+                # ended — a purpose-summary placeholder leaves the writer
+                # blind to what the previous scene already resolved
+                # (zhaoshen-hr-v3 ch1 s02 re-staged s01's climax because its
+                # entry_state was its own purpose recap). Deterministic copy,
+                # no LLM call.
+                if previous_exit_state:
+                    scene.entry_state = dict(previous_exit_state)
+                else:
+                    scene.entry_state = {
+                        "reader": (
+                            f"{chapter.title or f'第{chapter.chapter_number}章'}场景{scene.scene_number}起始，"
+                            f"核心任务仍是推进「{story_purpose or chapter.chapter_goal or chapter.title}」的可见结果。"
+                        )
+                    }
                 repaired += 1
             if not scene.exit_state:
                 scene.exit_state = {
@@ -1589,6 +1637,7 @@ def _repair_chapter_outline_contract_inputs(
                     chapter,
                     scene,
                     scene_index=scene.scene_number,
+                    is_final_scene=scene.scene_number == final_scene_number,
                 )
             )
             if scene_method_repair_count:
@@ -1602,6 +1651,7 @@ def _repair_chapter_outline_contract_inputs(
                     scene.information_control_mode = scene_method_contract.get(
                         "information_control_mode"
                     )
+            previous_exit_state = dict(scene.exit_state) if scene.exit_state else None
     return repaired
 
 
@@ -2910,6 +2960,12 @@ async def materialize_chapter_outline_batch(
                             metadata={
                                 key: value
                                 for key, value in {
+                                    # Webnovel method cards: chapter-level
+                                    # target emotion threads into every scene
+                                    # card so downstream prompts can read it.
+                                    "chapter_target_emotion": (
+                                        chapter_outline.target_emotion
+                                    ),
                                     "signature_image": scene_outline.signature_image,
                                     "cut_point": scene_outline.cut_point,
                                     "action_sequence": scene_outline.action_sequence,

@@ -86,3 +86,48 @@ def test_golden_hype_only_for_first_three():
         else:
             assert "hype_type" not in ch or not ch.get("hype_type")
     assert stats["golden_hype"] == 3
+
+
+# ── 网文方法卡：target_emotion 兜底 + hook_type 归一化 ──────────────────────
+
+
+def test_target_emotion_golden_defaults_to_shuang():
+    """黄金三章缺 target_emotion 时按位置兜底为爽（盲评 4:0 输局的病因回归）。"""
+    chapters = [_diseased_chapter(n) for n in (1, 4)]
+    content, stats = enrich_outline_batch_fields({"chapters": chapters}, NAMES)
+    assert content["chapters"][0]["target_emotion"] == "爽"
+    assert content["chapters"][1]["target_emotion"] == "紧张"
+    assert stats["target_emotion"] == 2
+
+
+def test_target_emotion_keeps_planner_value_and_uses_hype_hint():
+    ch1 = _diseased_chapter(1)
+    ch1["target_emotion"] = "暖"  # planner 明确给的值不被位置默认覆盖
+    ch7 = _diseased_chapter(7)
+    ch7["hype_type"] = "热血对决"
+    content, stats = enrich_outline_batch_fields({"chapters": [ch1, ch7]}, NAMES)
+    assert content["chapters"][0]["target_emotion"] == "暖"
+    assert content["chapters"][1]["target_emotion"] == "燃"
+    assert stats["target_emotion"] == 1
+
+
+def test_hook_type_normalized_to_canonical_key():
+    ch = _diseased_chapter(5)
+    ch["hook_type"] = "身份反转"
+    content, stats = enrich_outline_batch_fields({"chapters": [ch]}, NAMES)
+    assert content["chapters"][0]["hook_type"] == "identity_reversal"
+    assert stats["hook_type_normalized"] == 1
+
+
+def test_hook_type_unmatched_kept_verbatim():
+    """映射不上保留原值不阻断（soft 契约）。"""
+    ch = _diseased_chapter(5)
+    ch["hook_type"] = "天降外星人"
+    canonical = _diseased_chapter(6)
+    canonical["hook_type"] = "countdown"
+    content, stats = enrich_outline_batch_fields(
+        {"chapters": [ch, canonical]}, NAMES
+    )
+    assert content["chapters"][0]["hook_type"] == "天降外星人"
+    assert content["chapters"][1]["hook_type"] == "countdown"
+    assert stats["hook_type_normalized"] == 0

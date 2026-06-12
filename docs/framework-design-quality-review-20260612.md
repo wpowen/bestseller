@@ -68,6 +68,7 @@
 | R22 | 场景卡 metadata 字段更新黑洞：materialize 更新结构化列（purpose/participants/exit）但 **metadata 内的 signature_image/object_signal 残留旧值**——大纲改版后写手永远消费旧意象，SIGNATURE_IMAGE_MISSING 反复触发（ch9实证：卡purpose已是新章、sig仍是三版前内容） | **已修已部署**（upsert 全 prompt-critical 字段覆盖，2fda9fe） | — |
 | R21 | 章纲深层元数据与叙事层无一致性校验（key_reveals/world_state_deltas/location_refs 可与正文完全脱节而静默通过；人工/程序改纲后旧元数据残骸直接喂给写手prompt——v9手术后遗症实证，复核agent抓出9章残骸+1处认知矛盾） | **已修已部署**（物化时一致性检查+残骸自动清除，2a49ad8；本次重物化实证清除48处） | 编辑工具链"重生成元数据"待做 |
 | R20 | 章修复轮次预算结构性超标（场景3评2改×2场+章3修≈30轮上限 vs 质量目标≤5轮） | **已修已部署**（章级场景轮次总预算 fail-fast，2a49ad8） | 预算参数待 ch6+ 实测定参 |
+| R26 | 部署/重启窗口多worker竞态孵化重复 project_pipeline 链（稳态守卫 R24 生效，但部署瞬间多 worker 同时通过"job键不存在"检查→各起一条；2026-06-12 实证 13:47+13:51 两条链踩踏 ch1-3） | 未修（已手动清理为单链） | 入队改 Redis 原子锁 SETNX（project 级单飞），替代"查 job 键存在"的非原子检查 |
 
 执行顺序建议（2026-06-12 14:00 更新）：部署批与 P0 批已全部完成并于 2026-06-12 镜像重建部署（commit 2a49ad8 / 20c34ea）。剩余未修：**P1（R7资产分配器/R8卷形态轮换/R9死字段检测/R10方法论规划注入）→ P2（R11资源库/R12规划闭环/R13黄金三章生成器）→ P3（R18整卷判官/R25b风格锚重采样）**。
 

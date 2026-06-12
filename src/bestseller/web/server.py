@@ -96,6 +96,10 @@ _LIBRARY_HTML_PATH = Path(__file__).with_name("novel_library.html")
 _DESIGN_DOSSIER_HTML_PATH = Path(__file__).with_name("novel_design_dossier.html")
 _PIPELINE_FLOW_HTML_PATH = Path(__file__).with_name("novel_pipeline_flow.html")
 _CHARACTER_NETWORK_HTML_PATH = Path(__file__).with_name("novel_character_network.html")
+_METHODOLOGY_COURSE_HTML_PATH = Path(__file__).with_name("novel_methodology_course.html")
+_METHODOLOGY_COURSE_MD_PATH = (
+    Path(__file__).resolve().parents[3] / "docs" / "novel-writing-methodology-course.md"
+)
 # Bounded LRU cache for markdown artifact metadata.  Previous unbounded dict
 # grew without limit over long server runs.  512 entries is enough for a few
 # large projects while capping memory usage.
@@ -7552,6 +7556,124 @@ def _read_character_network_html() -> str:
     return "<!DOCTYPE html><html><body><h1>Character network page not found.</h1></body></html>"
 
 
+def _read_methodology_course_html() -> str:
+    if _METHODOLOGY_COURSE_HTML_PATH.exists():
+        return _METHODOLOGY_COURSE_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Methodology course page not found.</h1></body></html>"
+
+
+def _load_methodology_course_markdown() -> tuple[str, str, str | None]:
+    if _METHODOLOGY_COURSE_MD_PATH.exists():
+        content_md = _METHODOLOGY_COURSE_MD_PATH.read_text(encoding="utf-8")
+        status = "ready"
+        updated_at = datetime.fromtimestamp(
+            _METHODOLOGY_COURSE_MD_PATH.stat().st_mtime, tz=UTC
+        ).isoformat()
+    else:
+        content_md = (
+            "# 写小说的方法论\n\n"
+            "教材文档尚未生成。请先创建 `docs/novel-writing-methodology-course.md`。"
+        )
+        status = "missing"
+        updated_at = None
+    return content_md, status, updated_at
+
+
+def _split_methodology_course_lessons(
+    content_md: str,
+) -> tuple[str, str, list[dict[str, object]]]:
+    title = "写小说的方法论"
+    for line in content_md.splitlines():
+        if line.startswith("# "):
+            title = line.removeprefix("# ").strip() or title
+            break
+
+    heading_re = re.compile(
+        r"^## 第\s*([0-9０-９]{1,2})\s*[章节期講讲][：:](.+)$",
+        re.MULTILINE,
+    )
+    matches = list(heading_re.finditer(content_md))
+    overview_md = content_md[: matches[0].start()].rstrip() if matches else content_md
+    lessons: list[dict[str, object]] = []
+    for idx, match in enumerate(matches):
+        raw_number, lesson_title = match.groups()
+        normalized_number = int(
+            raw_number.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+        )
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(content_md)
+        markdown = content_md[match.start() : end].strip()
+        excerpt = ""
+        for paragraph in markdown.split("\n\n"):
+            text = paragraph.strip()
+            if text and not text.startswith("#"):
+                excerpt = re.sub(r"\s+", " ", text)
+                break
+        lessons.append(
+            {
+                "number": normalized_number,
+                "label": f"第 {normalized_number:02d} 章",
+                "title": lesson_title.strip(),
+                "anchor": f"lesson-{normalized_number:02d}",
+                "path": f"/methodology-course/{normalized_number:02d}",
+                "markdown": markdown,
+                "html": markdown_to_html(markdown, language="zh"),
+                "stats": build_markdown_reading_stats(markdown),
+                "excerpt": excerpt[:180],
+            }
+        )
+
+    return title, overview_md, lessons
+
+
+def _build_methodology_course_payload() -> dict[str, object]:
+    content_md, status, updated_at = _load_methodology_course_markdown()
+    title, overview_md, lessons = _split_methodology_course_lessons(content_md)
+    return {
+        "status": status,
+        "title": title,
+        "updated_at": updated_at,
+        "lesson_count": len(lessons),
+        "lessons": lessons,
+        "overview_markdown": overview_md,
+        "overview_html": markdown_to_html(overview_md, language="zh"),
+        "markdown": content_md,
+        "html": markdown_to_html(content_md, language="zh"),
+        "stats": build_markdown_reading_stats(content_md),
+        "source_path": str(_METHODOLOGY_COURSE_MD_PATH),
+    }
+
+
+def _build_methodology_lesson_payload(lesson_number: int) -> dict[str, object] | None:
+    course = _build_methodology_course_payload()
+    for lesson in course["lessons"]:
+        if isinstance(lesson, dict) and lesson.get("number") == lesson_number:
+            return {
+                "status": course["status"],
+                "course_title": course["title"],
+                "updated_at": course["updated_at"],
+                "lesson_count": course["lesson_count"],
+                "lesson": lesson,
+                "previous": next(
+                    (
+                        item
+                        for item in course["lessons"]
+                        if isinstance(item, dict) and item.get("number") == lesson_number - 1
+                    ),
+                    None,
+                ),
+                "next": next(
+                    (
+                        item
+                        for item in course["lessons"]
+                        if isinstance(item, dict) and item.get("number") == lesson_number + 1
+                    ),
+                    None,
+                ),
+                "source_path": course["source_path"],
+            }
+    return None
+
+
 def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
     """Scan the output dir for story_package.json files and return metadata."""
     output_base = Path(settings.output.base_dir)
@@ -9292,6 +9414,22 @@ def serve_web_app(
                 if path == "/library":
                     self._send_text(_read_library_html(), content_type="text/html; charset=utf-8")
                     return
+                if path == "/methodology-course":
+                    self._send_text(
+                        _read_methodology_course_html(),
+                        content_type="text/html; charset=utf-8",
+                    )
+                    return
+                if path.startswith("/methodology-course/"):
+                    lesson_slug = path.removeprefix("/methodology-course/").strip("/")
+                    if re.fullmatch(r"\d{1,2}", lesson_slug or ""):
+                        self._send_text(
+                            _read_methodology_course_html(),
+                            content_type="text/html; charset=utf-8",
+                        )
+                        return
+                    self._route_not_found()
+                    return
                 if path == "/bakeoff":
                     self._send_text(
                         Path(__file__).with_name("novel_bakeoff.html").read_text(encoding="utf-8"),
@@ -9330,6 +9468,20 @@ def serve_web_app(
                     return
                 if path == "/api/library":
                     self._send_json(asyncio.run(_load_library_payload(settings)))
+                    return
+                if path == "/api/methodology-course":
+                    self._send_json(_build_methodology_course_payload())
+                    return
+                if path.startswith("/api/methodology-course/lessons/"):
+                    lesson_slug = path.removeprefix("/api/methodology-course/lessons/").strip("/")
+                    if not re.fullmatch(r"\d{1,2}", lesson_slug or ""):
+                        self._route_not_found()
+                        return
+                    payload = _build_methodology_lesson_payload(int(lesson_slug))
+                    if payload is None:
+                        self._route_not_found()
+                        return
+                    self._send_json(payload)
                     return
                 if path == "/api/bakeoff":
                     self._send_json(_load_model_bakeoff_payload(settings))

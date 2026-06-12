@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+import re
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -72,6 +73,103 @@ def test_build_preview_payload_includes_html_and_stats() -> None:
     assert payload["word_count"] >= 4
     assert payload["estimated_read_minutes"] == 1
     assert "<h1>标题</h1>" in str(payload["html"])
+
+
+def test_methodology_course_document_has_24_complete_lessons() -> None:
+    doc_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "novel-writing-methodology-course.md"
+    )
+    content = doc_path.read_text(encoding="utf-8")
+
+    lesson_matches = list(
+        re.finditer(r"^## 第\s*\d{2}\s*章[：:].+$", content, re.MULTILINE)
+    )
+
+    assert len(lesson_matches) == 24
+    required_parts = [
+        "### 问题定义",
+        "### 核心概念",
+        "### 原理模型",
+        "### 方法论展开",
+        "### 操作流程",
+        "### 文本示例与拆解",
+        "### 经典参照",
+        "### 常见误区",
+        "### 实作模板",
+        "### 诊断清单",
+        "### 应用边界与进阶用法",
+        "### 与其他章节的联动",
+        "### 练习产物",
+        "### 案例改写步骤",
+        "### 评估标准",
+        "### 教材提示",
+        "### 编辑验收问题",
+        "### 来源与框架映射",
+    ]
+    for idx, match in enumerate(lesson_matches):
+        end = lesson_matches[idx + 1].start() if idx + 1 < len(lesson_matches) else len(
+            content
+        )
+        lesson_body = content[match.start() : end]
+        assert len(lesson_body) >= 3000, f"{match.group(0)} too short"
+        for required in required_parts:
+            assert required in lesson_body, f"{match.group(0)} missing {required}"
+        assert "讲师" not in lesson_body
+        assert "口播" not in lesson_body
+
+
+def test_build_methodology_course_payload_extracts_lessons() -> None:
+    payload = web_server._build_methodology_course_payload()
+
+    assert payload["status"] == "ready"
+    assert payload["title"] == "写小说的方法论：长篇小说创作体系教材"
+    assert payload["lesson_count"] == 24
+    assert payload["lessons"][0]["label"] == "第 01 章"
+    assert payload["lessons"][0]["path"] == "/methodology-course/01"
+    assert payload["lessons"][-1]["anchor"] == "lesson-24"
+    assert "<h1>写小说的方法论" in str(payload["overview_html"])
+
+
+def test_build_methodology_lesson_payload_returns_single_detail_page() -> None:
+    payload = web_server._build_methodology_lesson_payload(1)
+
+    assert payload is not None
+    lesson = payload["lesson"]
+    assert lesson["number"] == 1
+    assert lesson["path"] == "/methodology-course/01"
+    assert "### 问题定义" in str(lesson["markdown"])
+    assert "### 原理模型" in str(lesson["markdown"])
+    assert "### 来源与框架映射" in str(lesson["markdown"])
+    assert payload["previous"] is None
+    assert payload["next"]["path"] == "/methodology-course/02"
+    assert web_server._build_methodology_lesson_payload(99) is None
+
+
+def test_build_methodology_course_payload_handles_missing_doc(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    missing_path = tmp_path / "missing-course.md"
+    monkeypatch.setattr(web_server, "_METHODOLOGY_COURSE_MD_PATH", missing_path)
+
+    payload = web_server._build_methodology_course_payload()
+
+    assert payload["status"] == "missing"
+    assert payload["lesson_count"] == 0
+    assert "教材文档尚未生成" in str(payload["markdown"])
+    assert "missing-course.md" in str(payload["source_path"])
+
+
+def test_read_methodology_course_html() -> None:
+    html = web_server._read_methodology_course_html()
+
+    assert "写小说的方法论" in html
+    assert "/api/methodology-course" in html
+    assert "/api/methodology-course/lessons/" in html
+    assert "lessonGrid" in html
+    assert "detailView" in html
 
 
 def test_default_preview_prefers_db_current_chapter_over_readme() -> None:

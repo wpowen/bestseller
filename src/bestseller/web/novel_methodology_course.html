@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BestSeller 写小说的方法论教材</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f3ede0;
+    --paper: #faf6ec;
+    --paper-2: #f7f1e2;
+    --ink: #1a1612;
+    --text: #2a2520;
+    --muted: #6f665a;
+    --faint: #9b8f7e;
+    --border: #cdc3ad;
+    --border-strong: #a99c86;
+    --accent: #8c2a1c;
+    --accent-soft: #ead2cc;
+    --green: #3a6e3a;
+    --green-soft: #dde8d6;
+    --mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, monospace;
+    --serif: "Source Serif 4", "Noto Serif SC", Georgia, "Times New Roman", serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    min-height: 100vh;
+    background:
+      linear-gradient(180deg, rgba(250,246,236,0.88), rgba(243,237,224,0.98)),
+      linear-gradient(90deg, rgba(42,37,32,0.035) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(42,37,32,0.03) 1px, transparent 1px),
+      var(--bg);
+    background-size: auto, 34px 34px, 34px 34px, auto;
+    color: var(--text);
+    font-family: var(--serif);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; text-decoration: none; }
+  button, input { font: inherit; }
+
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(243, 237, 224, 0.96);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(14px);
+  }
+
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 14px 40px 12px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  .brand h1 {
+    color: var(--ink);
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .brand .dot { color: var(--accent); }
+
+  .eyebrow {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 320px;
+  }
+
+  .search {
+    flex: 1;
+    min-width: 180px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+  }
+
+  .search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(140,42,28,0.14); }
+
+  .header-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 40px 12px;
+    overflow-x: auto;
+  }
+
+  .header-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 5px 12px;
+    border: 1px solid transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .header-nav a:hover,
+  .header-nav .active {
+    border-color: var(--border);
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  .shell {
+    width: min(1380px, calc(100vw - 48px));
+    margin: 24px auto 56px;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
+    gap: 18px;
+    align-items: stretch;
+    margin-bottom: 18px;
+  }
+
+  .hero-main,
+  .hero-side,
+  .content,
+  .lesson-card {
+    border: 1px solid var(--border);
+    background: rgba(250, 246, 236, 0.94);
+  }
+
+  .hero-main { padding: 24px 28px; }
+  .hero-side { padding: 18px; }
+
+  .kicker {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .hero h2 {
+    margin-top: 8px;
+    color: var(--ink);
+    font-size: clamp(30px, 5vw, 54px);
+    line-height: 1.08;
+  }
+
+  .hero p {
+    max-width: 760px;
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 17px;
+  }
+
+  .metrics {
+    display: grid;
+    gap: 10px;
+  }
+
+  .metric {
+    display: grid;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+  }
+
+  .metric:last-child { border-bottom: 0; padding-bottom: 0; }
+  .metric b { color: var(--ink); font-family: var(--mono); font-size: 20px; }
+  .metric span { color: var(--muted); font-size: 12px; }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 18px 0 12px;
+  }
+
+  .toolbar h3 {
+    color: var(--ink);
+    font-size: 19px;
+  }
+
+  .lesson-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .lesson-card {
+    display: grid;
+    min-height: 214px;
+    padding: 15px 16px;
+    transition: border-color .12s ease, background .12s ease;
+  }
+
+  .lesson-card:hover {
+    border-color: var(--accent);
+    background: var(--paper);
+  }
+
+  .lesson-card .num {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .lesson-card h4 {
+    margin-top: 8px;
+    color: var(--ink);
+    font-size: 19px;
+    line-height: 1.25;
+  }
+
+  .lesson-card p {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .lesson-card .meta {
+    align-self: end;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 14px;
+  }
+
+  .badge {
+    border: 1px solid var(--border);
+    background: var(--paper-2);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 7px;
+  }
+
+  .content {
+    padding: 24px 42px 46px;
+  }
+
+  .content-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .content-nav a {
+    border: 1px solid var(--border);
+    background: var(--paper-2);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 800;
+    padding: 8px 10px;
+  }
+
+  .content-nav a:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .markdown h1 {
+    color: var(--ink);
+    font-size: clamp(28px, 4vw, 44px);
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+
+  .markdown h2 {
+    color: var(--ink);
+    font-size: 30px;
+    line-height: 1.18;
+    margin-bottom: 18px;
+  }
+
+  .markdown h3 {
+    margin-top: 24px;
+    color: var(--accent);
+    font-size: 18px;
+  }
+
+  .markdown p,
+  .markdown li {
+    color: var(--text);
+    font-size: 16px;
+  }
+
+  .markdown p { margin-top: 10px; }
+  .markdown ul, .markdown ol { margin: 10px 0 0 22px; }
+  .markdown li + li { margin-top: 5px; }
+
+  .markdown table {
+    width: 100%;
+    margin-top: 14px;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .markdown th,
+  .markdown td {
+    border: 1px solid var(--border);
+    padding: 7px 9px;
+    vertical-align: top;
+  }
+
+  .markdown th {
+    background: var(--paper-2);
+    color: var(--ink);
+  }
+
+  .empty {
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--muted);
+    padding: 18px;
+  }
+
+  @media (max-width: 1040px) {
+    .hero { grid-template-columns: 1fr; }
+    .lesson-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 720px) {
+    .header-row { align-items: stretch; flex-direction: column; padding: 14px 18px 10px; }
+    .header-nav { padding: 0 18px 10px; }
+    .tools { min-width: 0; }
+    .shell { width: calc(100vw - 24px); margin-top: 12px; }
+    .lesson-grid { grid-template-columns: 1fr; }
+    .content { padding: 20px 18px 32px; }
+    .toolbar { align-items: stretch; flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="header-row">
+    <div class="brand">
+      <h1>写小说的方法论<span class="dot">.</span></h1>
+      <span class="eyebrow">Author Methodology Textbook</span>
+    </div>
+    <div class="tools">
+      <input id="courseSearch" class="search" type="search" placeholder="搜索 24 章方法论...">
+    </div>
+  </div>
+  <nav class="header-nav">
+    <a href="/quickstart">新建创作</a>
+    <a href="/quickstart">任务指挥台</a>
+    <a href="/library">书稿库</a>
+    <a href="/methodology-course" class="active">写作方法论</a>
+  </nav>
+</header>
+
+<main class="shell">
+  <section id="overviewView">
+    <div class="hero">
+      <div class="hero-main">
+        <div class="kicker">Methodology Textbook</div>
+        <h2 id="courseTitle">写小说的方法论</h2>
+        <p id="courseSummary">教材目录加载中。</p>
+      </div>
+      <aside class="hero-side">
+        <div class="metrics">
+          <div class="metric"><b id="lessonCount">--</b><span>教材章节</span></div>
+          <div class="metric"><b id="wordCount">--</b><span>估算字数</span></div>
+          <div class="metric"><b id="readMinutes">--</b><span>完整阅读分钟</span></div>
+          <div class="metric"><b id="updatedAt">--</b><span>最近更新</span></div>
+        </div>
+      </aside>
+    </div>
+    <div class="toolbar">
+      <h3>教材目录</h3>
+      <span id="filterStatus" class="badge">24 chapters</span>
+    </div>
+    <div id="lessonGrid" class="lesson-grid"></div>
+  </section>
+
+  <section id="detailView" hidden>
+    <article class="content">
+      <nav class="content-nav">
+        <a href="/methodology-course">← 返回目录</a>
+        <span id="lessonMeta" class="badge">loading</span>
+        <span>
+          <a id="prevLesson" href="/methodology-course">上一章</a>
+          <a id="nextLesson" href="/methodology-course">下一章</a>
+        </span>
+      </nav>
+      <div id="lessonContent" class="markdown">
+        <p class="empty">正在读取方法论详情...</p>
+      </div>
+    </article>
+  </section>
+</main>
+
+<script>
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const state = { lessons: [], query: '' };
+
+  function esc(text) {
+    return String(text || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  function normalize(text) {
+    return String(text || '').trim().toLowerCase();
+  }
+
+  function lessonNumberFromPath() {
+    const match = window.location.pathname.match(/\\/methodology-course\\/(\\d{1,2})\\/?$/);
+    return match ? Number(match[1]) : null;
+  }
+
+  function fmtDate(value) {
+    if (!value) return '--';
+    try {
+      return new Date(value).toLocaleString('zh-CN', {
+        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+    } catch {
+      return value;
+    }
+  }
+
+  function renderCards() {
+    const grid = $('#lessonGrid');
+    const q = normalize(state.query);
+    const visible = state.lessons.filter(item => {
+      if (!q) return true;
+      return normalize(`${item.label} ${item.title} ${item.excerpt}`).includes(q);
+    });
+    $('#filterStatus').textContent = `${visible.length} / ${state.lessons.length} chapters`;
+    if (!visible.length) {
+      grid.innerHTML = '<p class="empty">没有匹配章节。</p>';
+      return;
+    }
+    grid.innerHTML = visible.map(item => `
+      <a class="lesson-card" href="${esc(item.path)}">
+        <span class="num">${esc(item.label)}</span>
+        <h4>${esc(item.title)}</h4>
+        <p>${esc(item.excerpt || '方法论教材详情。')}</p>
+        <span class="meta">
+          <span class="badge">${esc(item.stats?.estimated_read_minutes || '--')} min</span>
+          <span class="badge">${esc(item.stats?.word_count || '--')} words</span>
+        </span>
+      </a>
+    `).join('');
+  }
+
+  async function loadOverview() {
+    $('#overviewView').hidden = false;
+    $('#detailView').hidden = true;
+    const res = await fetch('/api/methodology-course');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.lessons = data.lessons || [];
+    $('#courseTitle').textContent = data.title || '写小说的方法论';
+    $('#courseSummary').textContent = '24 章长篇小说创作方法论教材，每章独立详情页，包含问题定义、核心概念、原理模型、操作流程、案例拆解、诊断清单和 BestSeller 框架映射。';
+    $('#lessonCount').textContent = String(data.lesson_count || 0).padStart(2, '0');
+    $('#wordCount').textContent = data.stats?.word_count ?? '--';
+    $('#readMinutes').textContent = data.stats?.estimated_read_minutes ?? '--';
+    $('#updatedAt').textContent = fmtDate(data.updated_at);
+    renderCards();
+  }
+
+  async function loadDetail(number) {
+    $('#overviewView').hidden = true;
+    $('#detailView').hidden = false;
+    const res = await fetch(`/api/methodology-course/lessons/${String(number).padStart(2, '0')}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const lesson = data.lesson || {};
+    document.title = `${lesson.label || ''} ${lesson.title || ''} · 写小说的方法论`;
+    $('#lessonMeta').textContent = `${lesson.label || ''} · ${lesson.stats?.estimated_read_minutes || '--'} min`;
+    $('#lessonContent').innerHTML = lesson.html || '<p class="empty">方法论详情为空。</p>';
+    $('#prevLesson').style.visibility = data.previous ? 'visible' : 'hidden';
+    $('#nextLesson').style.visibility = data.next ? 'visible' : 'hidden';
+    if (data.previous) $('#prevLesson').href = data.previous.path;
+    if (data.next) $('#nextLesson').href = data.next.path;
+  }
+
+  $('#courseSearch').addEventListener('input', event => {
+    state.query = event.target.value || '';
+    renderCards();
+  });
+
+  (async function boot() {
+    try {
+      const number = lessonNumberFromPath();
+      if (number) await loadDetail(number);
+      else await loadOverview();
+    } catch (err) {
+      $('#lessonGrid').innerHTML = `<p class="empty">教材读取失败：${esc(err.message || err)}</p>`;
+      $('#lessonContent').innerHTML = `<p class="empty">教材读取失败：${esc(err.message || err)}</p>`;
+    }
+  })();
+</script>
+</body>
+</html>

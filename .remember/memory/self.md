@@ -135,6 +135,12 @@ Correct: `/api/tasks?summary=1` 截断 events + SQL 聚合字数；`/api/project
 
 ---
 
+Mistake: worker 重启/停机后 ARQ 队列堆积大量过期周期性 `run_self_heal_task`，每个要等 180s boot-lock 超时才返回，真实任务（project-pipeline/repair）排在后面被饿死约 1 小时。
+Wrong: 等队列自然消化。
+Correct: 用 `redis-cli zrange arq:queue 0 -1` 找出非 in-progress 的 `run_self_heal_task:*` 成员，`zrem` + `del arq:job:<id>` 批量清除（cron 会重新入队新的）；保留 `arq:in-progress:` 存在的成员。清完真实任务几分钟内被接走。
+
+---
+
 Mistake: 大纲替换后只更新了 `chapters.title/chapter_goal`，误以为正文会随之重写。
 Wrong: 认为 materialize_chapter_outline_batch 会同步重写已写章节的正文。
 Correct: `_MATERIALIZATION_MUTABLE_*_STATUSES` 只允许改 planned/outlining 章与 planned 场景；已写章（revision/approved 场景）即使章级字段被改，场景卡/场景稿/章稿仍是旧内容，self_heal 重跑 chapter_pipeline 只会"旧场景稿重组+新标题"。要换正文必须显式重置：场景卡+场景稿+章稿回退、章状态回 planned，再 force 物化 + 重跑 pipeline。诊断时对比 `chapter_draft_versions` 相邻版本与 `scene_cards.purpose` 即可确认。

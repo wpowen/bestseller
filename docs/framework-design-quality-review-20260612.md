@@ -43,12 +43,12 @@
 
 | # | 问题 | 状态 | 修复策略 |
 |---|---|---|---|
-| R1 | hook闸门模板自伤（自动候选被拒硬杀全流程） | **已修**（planner降级补丁+4测试，未部署容器） | 部署=镜像重建（跑书间隙执行） |
-| R2 | 锚点词表题材硬编码（_AUTO_ANCHOR_MARKERS旧书词表） | **已修**（并行会话：通用模式提取+回归测试） | 同R1部署 |
-| R3 | planning import 的 input_hash 复用陷阱（改了等于没改不报错） | 未修（已记忆规避：剥_meta） | 导入时内容hash不同应强制新版本+提示 |
-| R4 | cast名字池覆盖premise显式名册 | 未修（人工roster补丁流程已沉淀） | P0-3 premise名册直通 |
-| R5 | 批次叙事失忆→同弧线×6 | 未修（人工整卷重排兜底） | P0-1 批次叙事台账+事件级查重 |
-| R6 | 批次字段系统性缺失（opening_situation/参与者/因果契约） | 未修（enrich脚本人工兜底，任务卡task_530a94e9） | P0-2 字段契约前移+确定性补全 |
+| R1 | hook闸门模板自伤（自动候选被拒硬杀全流程） | **已修已部署**（2026-06-12 镜像重建） | — |
+| R2 | 锚点词表题材硬编码（_AUTO_ANCHOR_MARKERS旧书词表) | **已修已部署** | — |
+| R3 | planning import 的 input_hash 复用陷阱（改了等于没改不报错） | **已修已部署**（内容不同强制新版本，commit 2a49ad8） | — |
+| R4 | cast名字池覆盖premise显式名册 | **已修已部署**（premise名册直通名字池并锁定，2a49ad8） | — |
+| R5 | 批次叙事失忆→同弧线×6 | **已修已部署**（跨批次已消耗事件台账+事件级查重，2a49ad8） | — |
+| R6 | 批次字段系统性缺失（opening_situation/参与者/因果契约） | **已修已部署**（双层根治：批次验收必查+确定性补全，acf8338/66dd206） | — |
 | R7 | 卷计划资产蒸发（IP/组织线/历劫不进卷） | 未修（人工资产预排表兜底） | P1-4 资产分配器+coverage警告 |
 | R8 | 卷形态单调（签神配额×6卷） | 未修 | P1-5 arc形态轮换约束 |
 | R9 | 死字段模板兜底（十卷同句钩子） | 未修 | P1-6 跨卷同串检测 |
@@ -56,20 +56,20 @@
 | R11 | 神话/公版资源无结构化库，规划凭模型记忆 | 未修 | P2-11 资源库（人物/典故/关系）入material_library并接规划 |
 | R12 | 规划层闸门只拦不修（causality/商业闸门无修复通道→自愈死循环） | 未修（人工repair剧本兜底） | P2-7 规划层验收契约闭环 |
 | R13 | 黄金三章用通用批次生成（线性履历开局） | 未修（人工重写兜底） | P2-8 黄金三章专用生成器（冷开场/插叙模式库） |
-| R14 | 物化保护非planned章节与重置顺序坑（先物化后重置=白做） | 流程已知 | materialize加--force-chapters参数或文档化顺序 |
-| R15 | 自愈重复孵化+僵尸running行（崩溃rollback丢FAILED） | **修复已提交未部署**（83a1119） | 同R1部署；UI接力链归并展示 |
-| R16 | 章节标题去重产出句子碎片 | 未修（人工改名兜底） | 去重失败时回退编号后缀而非截取goal |
-| R17 | LLM judge非确定性（商业闸门同数据两次结果不同） | 观察中 | judge结果缓存+多数票（对齐跨家族判官策略） |
+| R14 | 物化保护非planned章节与重置顺序坑（先物化后重置=白做） | **已修已部署**（--force-chapters + 5min活跃稿保护窗，2a49ad8） | — |
+| R15 | 自愈重复孵化+僵尸running行（崩溃rollback丢FAILED） | **已修已部署**（83a1119） | UI接力链归并展示待做 |
+| R16 | 章节标题去重产出句子碎片 | **已修已部署**（碎片守卫+编号后缀回退，2a49ad8） | — |
+| R17 | LLM judge非确定性（商业闸门同数据两次结果不同） | **已修已部署**（同输入hash判定缓存，2a49ad8） | 多数票策略待评估 |
 | R18 | merge合并大纲无整卷质量判官 | 未修 | P3-9 物化前整卷判官（重复度/单调度/钩子链） |
-| R19 | 规划层无场景容量匹配检查（场景信息密度 vs 字数目标失配→SCENE_COMPLETION_INCOMPLETE/LENGTH_OVER 反复触发，ch3/5/6 实证） | 未修 | P1-12 物化时估算每场景义务量（义务点数×均字耗）与 target_word_count 匹配，失配即调目标或建议拆场 |
-| R25 | 签名场景计划空壳自举：ensure_* 自举只生成骨架（archetype/stake），must_include_image/summary 全空——写手拿不到具体意象目标、闸门没有可兑现标准，SIGNATURE_SCENE/IMAGE_MISSING 结构性必发（zhaoshen-v3 实证：53条mandate全空壳） | 数据层已修（用v11大纲意象灌满8个关键位） | P0-5 自举时从章纲 signature_image/goal 派生具体 mandate；空壳mandate应视为未生成 |
+| R19 | 规划层无场景容量匹配检查（场景信息密度 vs 字数目标失配→SCENE_COMPLETION_INCOMPLETE/LENGTH_OVER 反复触发，ch3/5/6 实证） | **已修已部署**（物化时义务量估算+目标自动调升，2a49ad8） | — |
+| R25 | 签名场景计划空壳自举：ensure_* 自举只生成骨架（archetype/stake），must_include_image/summary 全空——写手拿不到具体意象目标、闸门没有可兑现标准，SIGNATURE_SCENE/IMAGE_MISSING 结构性必发（zhaoshen-v3 实证：53条mandate全空壳） | **已修已部署**（大纲派生具体mandate；skeleton状态不进写手prompt，2a49ad8） | — |
 | R25b | 风格锚（voice-dna self-anchor）锚定首章旧文后不随重写刷新，置信度0.11带垃圾口头禅 | 暂不影响（权重低） | P3 重写后重采样 |
-| R24 | 自愈防重守卫死锁：arq:job 键存在但任务不在队列（重启窗口/入队半完成），守卫据键判"已排队"永不重试——项目无限期挂起（部署后首个 repair:heal 实证，手动删键解锁） | 未修（删键剧本可用） | P1-14 守卫同时校验队列成员资格或给 job 键配 TTL；入队改原子事务 |
-| R22 | 场景卡 metadata 字段更新黑洞：materialize 更新结构化列（purpose/participants/exit）但 **metadata 内的 signature_image/object_signal 残留旧值**——大纲改版后写手永远消费旧意象，SIGNATURE_IMAGE_MISSING 反复触发（ch9实证：卡purpose已是新章、sig仍是三版前内容） | 未修（本书已SQL直灌绕过） | P0-4 scene card upsert 把 outline scene 的全部 prompt-critical 字段（signature_image/object_signal/action_sequence等）纳入更新集；补"卡-纲一致性"回归测试 |
-| R21 | 章纲深层元数据与叙事层无一致性校验（key_reveals/world_state_deltas/location_refs 可与正文完全脱节而静默通过；人工/程序改纲后旧元数据残骸直接喂给写手prompt——v9手术后遗症实证，复核agent抓出9章残骸+1处认知矛盾） | 未修 | P1-13 物化时跑"元数据-叙事一致性"检查：reveals/deltas 的实体与正文goal/hook/scene文本交集为零即警告；编辑工具链提供"重生成元数据"功能 |
-| R20 | 章修复轮次预算结构性超标（场景3评2改×2场+章3修≈30轮上限 vs 质量目标≤5轮） | 设计层议题 | 满配卡首稿过闸为主路径；修复预算可配置收紧（fail-fast 出诊断），待 ch6+ 实测数据定参 |
+| R24 | 自愈防重守卫死锁：arq:job 键存在但任务不在队列（重启窗口/入队半完成），守卫据键判"已排队"永不重试——项目无限期挂起（部署后首个 repair:heal 实证，手动删键解锁） | **已修已部署**（孤儿键守卫自动放行，2a49ad8） | — |
+| R22 | 场景卡 metadata 字段更新黑洞：materialize 更新结构化列（purpose/participants/exit）但 **metadata 内的 signature_image/object_signal 残留旧值**——大纲改版后写手永远消费旧意象，SIGNATURE_IMAGE_MISSING 反复触发（ch9实证：卡purpose已是新章、sig仍是三版前内容） | **已修已部署**（upsert 全 prompt-critical 字段覆盖，2fda9fe） | — |
+| R21 | 章纲深层元数据与叙事层无一致性校验（key_reveals/world_state_deltas/location_refs 可与正文完全脱节而静默通过；人工/程序改纲后旧元数据残骸直接喂给写手prompt——v9手术后遗症实证，复核agent抓出9章残骸+1处认知矛盾） | **已修已部署**（物化时一致性检查+残骸自动清除，2a49ad8；本次重物化实证清除48处） | 编辑工具链"重生成元数据"待做 |
+| R20 | 章修复轮次预算结构性超标（场景3评2改×2场+章3修≈30轮上限 vs 质量目标≤5轮） | **已修已部署**（章级场景轮次总预算 fail-fast，2a49ad8） | 预算参数待 ch6+ 实测定参 |
 
-执行顺序建议：**部署批（R1/R2/R15镜像重建）→ P0批（R4/R5/R6）→ P1批（R7/R8/R9/R10）→ P2批（R3/R7规划闭环/R11/R13）→ P3**。部署批等卷一跑完验证后立即执行；P0批是下一本书开跑前的硬前置。
+执行顺序建议（2026-06-12 14:00 更新）：部署批与 P0 批已全部完成并于 2026-06-12 镜像重建部署（commit 2a49ad8 / 20c34ea）。剩余未修：**P1（R7资产分配器/R8卷形态轮换/R9死字段检测/R10方法论规划注入）→ P2（R11资源库/R12规划闭环/R13黄金三章生成器）→ P3（R18整卷判官/R25b风格锚重采样）**。
 
 ## 4. 对照实验结论（人工 vs 框架）
 

@@ -16,9 +16,10 @@
 - **根因（结构性自伤）**：框架的 `rhythm_engineering` 把「一句话独段」当作 `hard_stop` **正向锚点奖励**、且把「≤15 字短段占比 30–50%」标为「健康」，**却没有任何上限**；同时 span 检测器的碎句规则 `cn.rhythm.choppy` 是**段内 ≥3 句**判断，而 staccato 是靠**段落换行**把句子切成单句独段——每段只有 1 句，**全程逃过检测器评分**。于是模型把被奖励的技法开到最大（ch12 43 段），没有「短句独段是稀缺重击」的纪律。
 - **三轮修复（全部已落地，soft、数据驱动、不动正文主流程）**：
   - **R1 独行短句装腔 / 句式机械重复**：补检测盲区（跨段 staccato 饱和度 + 主语机械重复）＋ 写手 prompt「单句独段上限」与下限并列。ch12 detector 0.0→**4.0**；改写样例 **4.0→0.0**。
-  - **R2 复合微动作模板 + 终末裸对白标签**：`body_micro_action` 模板家族簇（簇机制新增 `family_flag`）＋ `terse_dialogue_tag` pass ＋ 写手 2 条 banned_patterns。改写样例微动作 **20.0→0.0**、裸标签 **4.0→0.0**；本书零误报。
-  - **R3 不是 X 而是 Y + 结论先行 + 顿悟宣告**：`negated_definition` 两条 pattern（对话保护）＋ `epiphany_announcement` 密度簇 ＋ 写手 2 条 banned_patterns。改写样例 **4.0→0.0 / 8.0→0.0**；干净书 `negated_definition` 0 误报，`epiphany` 浮出 ch4 真实过度依赖。
-- **共新增 4 个检测族 + 5 条写手 banned_patterns + 19 条测试，既有相关测试全绿，主流程/字数/版本/导出/门禁未动。**
+  - **R2 复合微动作模板 + 终末裸对白标签**：`body_micro_action` 模板家族簇（簇机制新增 `family_flag`）＋ `terse_dialogue_tag` pass。改写样例微动作 **20.0→0.0**、裸标签 **4.0→0.0**；本书零误报。
+  - **R3 不是 X 而是 Y + 结论先行 + 顿悟宣告**：`negated_definition` 两条 pattern（对话保护）＋ `epiphany_announcement` 密度簇。改写样例 **4.0→0.0 / 8.0→0.0**；干净书 `negated_definition` 0 误报，`epiphany` 浮出 ch4 真实过度依赖。
+- **写手 prompt 取舍（实测约束）**：PROSE_SCENE 已 token 饱和（suspense 例 2449/2500 上限），任何实质 prompt 增量都会把优先级最低的 `prose_craft_techniques`（A/B 验证过的金句层）挤出预算。故**只保留最高价值的 R1 节奏上限**（对冲框架自身 `hard_stop` 过奖励，+30 token 仍 ≤ 上限、craft 保留）；R2/R3 的反例改为 **detection-only**——gates 是真正的强制层，且 `anti_ai_voice` 既有 `looks_like_actually`/`emotion_label` 已覆盖近亲。详见 §5、§6。
+- **共新增 4 个检测族 + 1 条写手节奏上限 + 19 条测试，既有相关测试全绿，主流程/字数/版本/导出/门禁/PROSE_SCENE 预算未破。**
 
 ---
 
@@ -121,7 +122,7 @@
 
 1. **微动作模板族**：`patterns_zh.json` 新增 `cn.cluster.body_micro_action` 簇（瞳孔一缩/心一沉/眉心一皱/喉结一滚/指节一僵…）。簇机制扩展 `family_flag`：置真时把整组成员视为**同一模板家族**，过度依赖即便每句用词不同也计数（保留全章首次、其余越界即 warn）——与 `weak_adverb` 的「保留每个不同副词首次」语义区分。同章 ≥3 次触发。
 2. **终末裸标签**：`patterns_zh.json` 新增 `terse_tag_rules`；`detector.py` 新增 `_detect_terse_tag` pass：检测「短引号（≤3 字）＋裸 X说/道（其后即终止符/换行，无动作 beat）」，章内 ≥3 处发 1 个 warn span。标签在引号**外**，故不受对话保护误跳。
-3. **写手 prompt**：`anti_ai_voice` 锚点新增 `micro_action_template`、`terse_bare_tag` 两条 banned_patterns（含正反例）。
+3. **写手 prompt**：因 PROSE_SCENE 预算饱和（见 §0），R2 反例**未注入 prompt**，仅由检测层强制；`anti_ai_voice` 既有 `emotion_label`（他意识到X）已是近亲。
 
 **验证**：
 
@@ -133,7 +134,7 @@
 
 1. **否定式下定义**（per-occurrence）：`patterns_zh.json` 新增 `cn.conclusion.not_but.001/002` 两条 `pattern` 规则——「不是 X，而是 Y」（负向 lookbehind 排除「不仅/也不是」与既有 `negated_parallel` 不撞）、「与其说 X 不如说 Y」。warn、无 suggestion、对话内自动保护。
 2. **顿悟宣告**（density）：新增 `cn.cluster.epiphany_announcement` 簇（family_flag，阈值 3）——突然明白/忽然意识到/一切都变了…。按研究「每章 >2 次」判，容忍单/双次合法使用，只罚过度依赖。
-3. **写手 prompt**：`anti_ai_voice` 锚点新增 `not_x_but_y`、`epiphany_announcement` 两条 banned_patterns。
+3. **写手 prompt**：因 PROSE_SCENE 预算饱和，R3 反例**未注入 prompt**，仅由检测层强制；`anti_ai_voice` 既有 `looks_like_actually`（看似X实则Y）已是近亲。
 
 **验证**：
 
@@ -147,7 +148,8 @@
 
 - **R2 / R3 均已落地（见 §5）**。三轮聚焦修复完成。
 - **未解风险（如实记录）**：
-  - **治本在重新生成/改写时让 prompt 上限与 banned_patterns 生效**——本工作**未重跑整书**（重生成消耗付费模型额度，属暂停条件），故只验证了「检测能浮出问题」「prompt 已带上限/反例」「改写样例评分一致下降」，**未验证「下一次正常生成时命中率实际下降」**。需在下次跑书时观测 `staccato_saturation` / `body_micro_action` / `epiphany_announcement` 命中率。
+  - **治本在重新生成/改写时让 R1 节奏上限与检测层闸门生效**——本工作**未重跑整书**（重生成消耗付费模型额度，属暂停条件），故只验证了「检测能浮出问题」「R1 prompt 已带上限」「改写样例评分一致下降」，**未验证「下一次正常生成时命中率实际下降」**。需在下次跑书时观测 `staccato_saturation` / `body_micro_action` / `epiphany_announcement` 命中率。
+  - **PROSE_SCENE 预算饱和是一个独立的框架约束**：当前 prompt 已逼近 2500 token 上限，新质量指引会挤掉 A/B 验证过的 craft 层。要让更多反例进 prompt，须先给 PROSE_SCENE 扩预算或精简既有低价值块——这是超出本轮去 AI 味范围的独立优化项。
   - 阈值（staccato 0.25/run5/subj3、各簇 threshold 3、terse ≤3 字 ×3）为单本书 + 研究推断，**须用更多真实榜单语料校准分位数**。
   - ch4 因 epiphany 过度依赖升到 48 分（仍 < 50 block），属真实信号；若后续内容叠加可能越线触发机器修复——这是期望行为，非缺陷。
   - burstiness/TTR/连接词密度、对白 beat 覆盖率、head-hopping/上帝点评、转场锚点等更稳健的多指标尚未接入（研究建议，超出本轮三轮最小修复范围，列为后续）。

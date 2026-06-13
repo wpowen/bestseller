@@ -34,6 +34,26 @@ PlotLineType = Literal[
 ReverseOutlineStatus = Literal["not_started", "draft", "verified", "needs_repair"]
 
 
+def coerce_reverse_outline_status(value: object) -> str:
+    """Map any free-text status onto the controlled ReverseOutlineStatus literal.
+
+    LLMs invent progress markers ('completed_v1'/'done'/'finished'); since this
+    is a status marker (not content) it must never fail-close the fail-closed
+    StoryDesignKernel and abort planning. Unknown values fall back to 'draft'.
+    """
+
+    norm = str(value or "").strip().lower()
+    if norm in {"not_started", "draft", "verified", "needs_repair"}:
+        return norm
+    if any(k in norm for k in ("complete", "done", "finish", "pass", "ready", "final", "verif")):
+        return "verified"
+    if any(k in norm for k in ("repair", "fail", "reject", "invalid")):
+        return "needs_repair"
+    if any(k in norm for k in ("start", "init", "todo", "pending", "none")):
+        return "not_started"
+    return "draft"
+
+
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
@@ -1042,6 +1062,12 @@ class StoryDesignKernel(BaseModel, frozen=True):
             data["reader_promise"] = _text(data.get("reader_promise"))
         data["change_vectors"] = _text_list(data.get("change_vectors"))
         data["uniqueness_constraints"] = _text_list(data.get("uniqueness_constraints"))
+        # Coerce LLM-invented status strings ('completed_v1'/'done'/...) onto the
+        # controlled ReverseOutlineStatus literal (see coerce_reverse_outline_status).
+        if data.get("reverse_outline_status") is not None:
+            data["reverse_outline_status"] = coerce_reverse_outline_status(
+                data.get("reverse_outline_status")
+            )
         return data
 
     @model_validator(mode="after")

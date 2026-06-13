@@ -35,6 +35,7 @@ class RhythmEngineeringConfig:
     rhythm_anchors: dict[str, RhythmAnchorType]
     per_1500_min_count: int
     per_1500_min_types: int
+    solo_line_ceiling_rule: str = ""
 
 
 def _parse_anchor(anchor_id: str, raw: object) -> RhythmAnchorType:
@@ -74,11 +75,15 @@ def load_rhythm_engineering() -> RhythmEngineeringConfig:
     per_count = int(count_match.group(1)) if count_match else 4
     per_types = int(types_match.group(1)) if types_match else 3
 
+    ceiling = as_dict(raw.get("solo_line_ceiling"))
+    ceiling_rule = as_str(ceiling.get("rule"))
+
     return RhythmEngineeringConfig(
         version=as_str(raw.get("version")),
         rhythm_anchors=anchors,
         per_1500_min_count=per_count,
         per_1500_min_types=per_types,
+        solo_line_ceiling_rule=ceiling_rule,
     )
 
 
@@ -221,4 +226,10 @@ def render_rhythm_block() -> str:
         lines.append(
             f"  - {anchor.anchor_id} ({anchor.display}): {anchor.description}"
         )
+    if config.solo_line_ceiling_rule:
+        lines.append("- 上限（防碎句癖，与锚点下限同等重要）:")
+        for raw_line in config.solo_line_ceiling_rule.splitlines():
+            text = raw_line.strip()
+            if text:
+                lines.append(f"  · {text}")
     return "\n".join(lines)

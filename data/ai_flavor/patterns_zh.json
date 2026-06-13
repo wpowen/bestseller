@@ -168,5 +168,18 @@
       "choppy_mean_chars": 11,
       "short_run_threshold": 4
     }
+  ],
+  "staccato_rules": [
+    {
+      "id": "cn.staccato.saturation",
+      "category": "staccato_saturation",
+      "severity": "warn",
+      "why": "独行短句装腔过饱和：把每个动作/心理拍点单独切成一句一段，整章充斥单句独段，读起来像分镜脚本而非小说叙述。短句独段是偶尔的重锤，不能成为默认节奏",
+      "solo_line_max_chars": 12,
+      "min_solo_lines": 12,
+      "solo_ratio_threshold": 0.25,
+      "run_threshold": 5,
+      "subject_repeat_threshold": 3
+    }
   ]
 }

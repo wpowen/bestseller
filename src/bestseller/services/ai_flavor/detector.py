@@ -80,6 +80,7 @@ class _LoadedRules:
     phrase_rules: tuple[dict[str, Any], ...]
     cluster_rules: tuple[dict[str, Any], ...]
     rhythm_rules: tuple[dict[str, Any], ...]
+    staccato_rules: tuple[dict[str, Any], ...]
 
 
 @lru_cache(maxsize=4)
@@ -100,6 +101,7 @@ def _load_rules(language: str, data_dir_str: str) -> _LoadedRules:
             phrase_rules=(),
             cluster_rules=(),
             rhythm_rules=(),
+            staccato_rules=(),
         )
     raw = json.loads(path.read_text(encoding="utf-8"))
     return _LoadedRules(
@@ -108,6 +110,7 @@ def _load_rules(language: str, data_dir_str: str) -> _LoadedRules:
         phrase_rules=tuple(raw.get("phrase_rules") or ()),
         cluster_rules=tuple(raw.get("cluster_rules") or ()),
         rhythm_rules=tuple(raw.get("rhythm_rules") or ()),
+        staccato_rules=tuple(raw.get("staccato_rules") or ()),
     )
 
 
@@ -336,6 +339,155 @@ def _detect_rhythm(
     return out
 
 
+def _leading_subject(line: str) -> str:
+    """Heuristic sentence-initial subject token for repetition detection.
+
+    Returns a short opener key — a leading pronoun (他/她/它), a 2-3 char
+    proper-name-like run, or the first character otherwise. Used only to
+    spot the mechanical "他…。他…。他…。" hammering, so precision over
+    recall is fine.
+    """
+
+    s = line.strip().lstrip("　 ")
+    if not s:
+        return ""
+    if s[0] in "他她它":
+        return s[0]
+    # Leading run of CJK name-ish chars (stop at a verb-ish/particle char).
+    run = []
+    for ch in s[:3]:
+        if "一" <= ch <= "鿿":
+            run.append(ch)
+        else:
+            break
+    return "".join(run) if run else s[0]
+
+
+def _detect_staccato(
+    content_md: str,
+    *,
+    lang: str,
+    dialogue_ranges: list[tuple[int, int]],
+    staccato_rules: tuple[dict[str, Any], ...],
+) -> list[AiFlavorSpan]:
+    """Chapter-level staccato-saturation pass — the cross-paragraph 装腔病.
+
+    ``_detect_rhythm`` only sees choppiness *inside* one paragraph (needs
+    ≥3 sentences there). The dominant real-output tic is the inverse: every
+    short sentence gets its own paragraph, so each paragraph holds a single
+    sentence and the choppy rule scores 0. This pass walks paragraph units
+    (non-empty, non-heading lines), counts the ones that are a single short
+    narration sentence, and flags the chapter when those solo short lines
+    *saturate* — by ratio, by consecutive run, or by mechanically repeated
+    sentence-initial subjects. One advisory ``warn`` span per chapter; like
+    the rhythm pass it never auto-patches, so the writer-side ceiling is the
+    real fix and the span only surfaces the regression in score + audit.
+    """
+
+    out: list[AiFlavorSpan] = []
+    for rule in staccato_rules:
+        category = str(rule.get("category") or "staccato_saturation")
+        severity = _coerce_severity(rule.get("severity"), default="warn")
+        rule_id = str(rule.get("id") or f"{lang}.staccato.saturation")
+        why_base = str(rule.get("why") or "")
+        max_chars = int(rule.get("solo_line_max_chars", 12))
+        min_solo = int(rule.get("min_solo_lines", 8))
+        ratio_threshold = float(rule.get("solo_ratio_threshold", 0.33))
+        run_threshold = int(rule.get("run_threshold", 4))
+        subject_threshold = int(rule.get("subject_repeat_threshold", 3))
+
+        # Walk paragraph units (split on newlines; blank lines are skipped
+        # but do NOT break a run — in webnovel markdown every paragraph is
+        # blank-line separated, so "consecutive" means consecutive units).
+        narration_total = 0
+        solo_lines: list[tuple[int, int]] = []  # (offset, end) of each solo line
+        run = 0
+        max_run = 0
+        first_solo_offset: int | None = None
+        last_solo_end: int | None = None
+        subj_run = 0
+        max_subj_run = 0
+        prev_subject = ""
+
+        offset = 0
+        for raw_line in content_md.split("\n"):
+            base = offset
+            offset += len(raw_line) + 1
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if _is_in_ranges(base, dialogue_ranges) or stripped[0] in "“\"「『‘『":
+                # Dialogue paragraph — legit, and it breaks the staccato run.
+                narration_total += 1
+                run = 0
+                subj_run = 0
+                prev_subject = ""
+                continue
+            narration_total += 1
+
+            # Single-sentence? (no internal terminator before a trailing one)
+            core = stripped.rstrip("。！？…")
+            visible = sum(1 for c in core if not c.isspace())
+            is_single = not re.search(r"[。！？…].", core)
+            if is_single and 0 < visible <= max_chars:
+                line_start = base + (len(raw_line) - len(raw_line.lstrip()))
+                solo_lines.append((line_start, line_start + len(stripped)))
+                if first_solo_offset is None:
+                    first_solo_offset = line_start
+                last_solo_end = line_start + len(stripped)
+                run += 1
+                max_run = max(max_run, run)
+                subject = _leading_subject(stripped)
+                if subject and subject == prev_subject:
+                    subj_run += 1
+                else:
+                    subj_run = 1
+                prev_subject = subject
+                max_subj_run = max(max_subj_run, subj_run)
+            else:
+                run = 0
+                subj_run = 0
+                prev_subject = ""
+
+        solo_count = len(solo_lines)
+        if narration_total == 0 or solo_count == 0:
+            continue
+        ratio = solo_count / narration_total
+
+        ratio_hit = solo_count >= min_solo and ratio >= ratio_threshold
+        run_hit = max_run >= run_threshold
+        subject_hit = max_subj_run >= subject_threshold
+        if not (ratio_hit or run_hit or subject_hit):
+            continue
+
+        reasons: list[str] = []
+        if ratio_hit:
+            reasons.append(f"单句独段{solo_count}/{narration_total}段({ratio*100:.0f}%)")
+        if run_hit:
+            reasons.append(f"连续{max_run}段单句独行")
+        if subject_hit:
+            reasons.append(f"连续{max_subj_run}句同主语开头")
+        why = f"{why_base}（{'，'.join(reasons)}）" if why_base else "，".join(reasons)
+
+        span_start = first_solo_offset if first_solo_offset is not None else 0
+        span_end = last_solo_end if last_solo_end is not None else span_start
+        out.append(
+            AiFlavorSpan(
+                start=span_start,
+                end=span_end,
+                matched_text=content_md[span_start:span_end][:60],
+                rule_id=rule_id,
+                category=category,
+                severity=severity,
+                suggestions=(),
+                sentence_span=(span_start, span_end),
+                why=why,
+                remove_sentence_on_block=False,
+            )
+        )
+    return out
+
+
 def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
     """Heuristic 0-100 score. Higher = more AI-flavored.
 
@@ -491,6 +643,17 @@ def detect(
                 lang=lang,
                 dialogue_ranges=dialogue_ranges,
                 rhythm_rules=rules.rhythm_rules,
+            )
+        )
+
+    # ── Cross-paragraph staccato saturation (独行短句装腔) ───────────────
+    if rules.staccato_rules:
+        spans.extend(
+            _detect_staccato(
+                content_md,
+                lang=lang,
+                dialogue_ranges=dialogue_ranges,
+                staccato_rules=rules.staccato_rules,
             )
         )
 

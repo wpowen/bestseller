@@ -7934,7 +7934,11 @@ async def run_chapter_pipeline(
                 # 定向去AI味改写再复检，而不是直接打回人工修复。span 级 patcher 只
                 # 能删/换词，改不了"信息旁白/结论先行/解释规则"这类话语腔；这一步
                 # 用整段重写补上。改写后分数确实降到阈值下就采用，否则照常 block。
-                if ai_flavor_outcome.decision == "block" and getattr(
+                # 触发条件不止「block」：规则解释/对仗/结论先行这类话语腔分数低
+                # (advisory) 却恰是 deslop 专治、span patcher 改不掉的，必须也触发。
+                from bestseller.services.ai_flavor_gate import needs_deslop_revise
+
+                if needs_deslop_revise(ai_flavor_outcome) and getattr(
                     _af_gates_cfg.ai_flavor, "deslop_revise_enabled", True
                 ):
                     try:

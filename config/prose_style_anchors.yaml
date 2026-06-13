@@ -232,6 +232,21 @@ anchors:
         replacement: 改成"动作 + 物件 + 停顿"
         example_before: "沈青崖意识到事情不对"
         example_after: "沈青崖的指尖在喉骨上停了一拍。"
+      - id: authorial_spoiler
+        pattern: 他不知道的是 / 她不知道的是 / 一个更大的阴谋即将展开
+        replacement: 删除作者剧透，把未知信息藏进物证、旁人动作或下一场结果
+        example_before: "他不知道的是，一个更大的阴谋即将展开。"
+        example_after: "门缝底下多了一截红线，线头还在往屋里爬。"
+      - id: fate_cliche
+        pattern: 命运的齿轮开始转动 / 蝴蝶效应开始显现 / 暴风雨前总是平静
+        replacement: 改成具体不可逆事件，不要写命运旁白
+        example_before: "命运的齿轮开始转动。"
+        example_after: "封条被人从里面撕开了。"
+      - id: essay_progression
+        pattern: 随着 X 越来越 Y / 无论 X 都 Y / 既 X 又 Y
+        replacement: 删除趋势和鸡汤总结，用事件链或当场选择承载
+        example_before: "随着时间推移，他越来越紧张。"
+        example_after: "第三次看表时，他把表扣按裂了。"
       - id: explanatory_dialogue
         pattern: 角色用对白替读者总结"这意味着 X"
         replacement: 让读者自己拼，不要由角色总结

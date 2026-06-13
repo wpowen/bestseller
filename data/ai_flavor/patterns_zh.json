@@ -3,104 +3,774 @@
   "language": "zh",
   "description": "Chinese AI-flavor phrase rules. Block = remove sentence; warn cluster = drop excess repetitions.",
   "phrase_rules": [
-    {"id": "cn.tier1.hollow.001", "phrase": "显而易见", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞总结词，AI 高频"},
-    {"id": "cn.tier1.hollow.002", "phrase": "毫无疑问", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞断言"},
-    {"id": "cn.tier1.hollow.003", "phrase": "不言而喻", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞总结"},
-    {"id": "cn.tier1.hollow.004", "phrase": "众所周知", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "百科式开场"},
-    {"id": "cn.tier1.hollow.005", "phrase": "毋庸置疑", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞断言"},
-    {"id": "cn.tier1.hollow.006", "phrase": "值得注意的是", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI 路标式过渡"},
-    {"id": "cn.tier1.hollow.007", "phrase": "不可否认", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞断言"},
-    {"id": "cn.tier1.hollow.008", "phrase": "总而言之", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI 公文式收束"},
-    {"id": "cn.tier1.hollow.009", "phrase": "综上所述", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI 公文式收束"},
-    {"id": "cn.tier1.hollow.010", "phrase": "由此可见", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI 推导式总结"},
-
-    {"id": "cn.tier1.metaphor.001", "phrase": "令人叹为观止", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
-    {"id": "cn.tier1.metaphor.002", "phrase": "如同打翻了五味瓶", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
-    {"id": "cn.tier1.metaphor.003", "phrase": "仿佛被一只无形的手", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
-    {"id": "cn.tier1.metaphor.004", "phrase": "宛如一颗石子投入平静的湖面", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
-    {"id": "cn.tier1.metaphor.005", "phrase": "宛如一把锋利的刀", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
-    {"id": "cn.tier1.metaphor.006", "phrase": "如同一记重锤", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
-    {"id": "cn.tier1.metaphor.007", "phrase": "心中五味杂陈", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐情绪短语"},
-    {"id": "cn.tier1.metaphor.008", "phrase": "百感交集", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐情绪短语"},
-    {"id": "cn.tier1.metaphor.009", "phrase": "思绪万千", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐情绪短语"},
-    {"id": "cn.tier1.metaphor.010", "phrase": "感慨万千", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐情绪短语"},
-
-    {"id": "cn.tier1.tears.001", "phrase": "泪水模糊了双眼", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
-    {"id": "cn.tier1.tears.002", "phrase": "泪水在眼眶中打转", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
-    {"id": "cn.tier1.tears.003", "phrase": "泪水夺眶而出", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
-    {"id": "cn.tier1.tears.004", "phrase": "心如刀割", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
-    {"id": "cn.tier1.tears.005", "phrase": "心如死灰", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
-    {"id": "cn.tier1.tears.006", "phrase": "万箭穿心", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
-    {"id": "cn.tier1.tears.007", "phrase": "如释重负地长舒一口气", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
-
-    {"id": "cn.tier1.transition.001", "phrase": "时间仿佛在这一刻静止", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
-    {"id": "cn.tier1.transition.002", "phrase": "空气仿佛凝固了", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
-    {"id": "cn.tier1.transition.003", "phrase": "世界仿佛安静了下来", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
-    {"id": "cn.tier1.transition.004", "phrase": "时间仿佛停止了", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
-
-    {"id": "cn.humanizer.signpost.001", "phrase": "此外", "severity": "block", "category": "essay_signpost", "suggestions": [""], "remove_sentence_on_block": false, "why": "Humanizer-zh: 论文式连接词，小说叙述中通常是 AI 路标"},
-    {"id": "cn.humanizer.signpost.002", "phrase": "值得一提的是", "severity": "block", "category": "essay_signpost", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 论文式提示读者"},
-    {"id": "cn.humanizer.signpost.003", "phrase": "为了实现这一目标", "severity": "warn", "category": "padding_phrase", "suggestions": ["为此"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 填充短语"},
-
-    {"id": "cn.humanizer.inflated.001", "pattern": "作为[^。！？\\n]{0,24}(?:证明|体现|见证|提醒)", "severity": "block", "category": "inflated_significance", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 夸大象征意义"},
-    {"id": "cn.humanizer.inflated.002", "phrase": "不断演变的格局", "severity": "block", "category": "inflated_significance", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 抽象宏大化表述"},
-    {"id": "cn.humanizer.inflated.003", "phrase": "关键作用", "severity": "warn", "category": "inflated_significance", "suggestions": ["作用"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 空泛抬高重要性"},
-    {"id": "cn.humanizer.inflated.004", "phrase": "至关重要", "severity": "warn", "category": "inflated_significance", "suggestions": ["重要"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 过度强调"},
-    {"id": "cn.humanizer.inflated.005", "phrase": "彰显", "severity": "warn", "category": "inflated_significance", "suggestions": ["显出"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 宣告式抽象评价"},
-
-    {"id": "cn.humanizer.promo.001", "phrase": "充满活力", "severity": "warn", "category": "promo_language", "suggestions": ["热闹"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 宣传式空泛形容"},
-    {"id": "cn.humanizer.promo.002", "phrase": "丰富的文化底蕴", "severity": "block", "category": "promo_language", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 宣传文案式套话"},
-    {"id": "cn.humanizer.promo.003", "phrase": "迷人的自然美景", "severity": "block", "category": "promo_language", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 宣传文案式套话"},
-    {"id": "cn.humanizer.promo.004", "phrase": "无缝", "severity": "warn", "category": "promo_language", "suggestions": [""], "remove_sentence_on_block": false, "why": "Humanizer-zh: 产品文案式 AI 词"},
-
-    {"id": "cn.humanizer.abstract_word.001", "phrase": "深入探讨", "severity": "block", "category": "abstract_ai_word", "suggestions": ["细查"], "remove_sentence_on_block": false, "why": "Humanizer-zh: AI 高频抽象动词"},
-    {"id": "cn.humanizer.abstract_word.002", "phrase": "复杂性", "severity": "warn", "category": "abstract_ai_word", "suggestions": ["麻烦"], "remove_sentence_on_block": false, "why": "Humanizer-zh: 抽象名词化"},
-    {"id": "cn.humanizer.abstract_word.003", "phrase": "宝贵的", "severity": "warn", "category": "abstract_ai_word", "suggestions": [""], "remove_sentence_on_block": false, "why": "Humanizer-zh: 泛化褒义词"},
-
-    {"id": "cn.humanizer.negated_parallel.001", "pattern": "这?不仅仅是[^。！？\\n]{0,36}(?:而是|更是)", "severity": "warn", "category": "negated_parallelism", "suggestions": [], "remove_sentence_on_block": false, "why": "Humanizer-zh: 否定式排比过度使用"},
-
-    {"id": "cn.conclusion.not_but.001", "pattern": "(?<![不仅也])不是[^。！？，,\\n]{1,20}[，,][^。！？\\n]{0,8}而是", "severity": "warn", "category": "negated_definition", "suggestions": [], "remove_sentence_on_block": false, "why": "结论先行·否定式下定义「不是X，而是Y」：叙述者先抛抽象判断替读者下结论。改成让读者从感官/动作/物件自己得出，过程在前结论隐去"},
-    {"id": "cn.conclusion.not_but.002", "pattern": "与其说[^。！？\\n]{1,30}不如说", "severity": "warn", "category": "negated_definition", "suggestions": [], "remove_sentence_on_block": false, "why": "结论先行·「与其说X不如说Y」：叙述者代读者权衡定性。改成展示，不要宣告"},
-    {"id": "cn.conclusion.not_but.003", "pattern": "不是[^。！？，,\\n]{1,16}[，,]是[^。！？\\n]", "severity": "warn", "category": "negated_definition", "suggestions": [], "remove_sentence_on_block": false, "why": "结论先行·「不是X，是Y」逗号变体(描写物件常犯：不是黑墨，是暗金的浓墨)：直接写Y(墨里浮着一丝暗金)"},
-
-    {"id": "cn.info.backstory.001", "pattern": "那是[^。！？\\n]{0,16}(?:后遗症|的手段|惯用)", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "全知旁白·解释前情/机制(那是…的后遗症/手段)：删解释，只写人物看见的现象，让读者自己拼"},
-    {"id": "cn.info.backstory.002", "pattern": "没人(?:看见|知道|注意到|察觉)", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "全知旁白(没人看见/没人知道)：跳出单一视角替读者补背景。换成视角人物此刻一个具体动作或物证"},
-    {"id": "cn.info.backstory.003", "pattern": "[一-鿿]{2,5}是[^。！？\\n]{0,8}(?:分下来的|留下的|传下来的)", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "信息陈述·来历交代(X是…分下来的)：档案式交代来历。改成人物此刻摸到/认出它的那一下"},
-    {"id": "cn.info.rule.001", "pattern": "(?:堂规|宗规|门规|规矩)[^。！？\\n]{0,6}第[一二三四五六七八九十百零\\d]{1,4}条", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "旁白解释规则条款(堂规第X条)：跳出场景给读者讲规则。让规则从人物的反应/对白/后果里透出来"},
-    {"id": "cn.info.rule.002", "pattern": "[一-鿿]{2,4}即[一-鿿]{2,5}[，,][一-鿿]{2,5}即", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "旁白解释路数/意图(先逼落砚，落砚即离身，离身即失势)：叙述者把对方算计逐环讲明。改成只写可见的逼迫动作，算计让读者自己拼"},
-
-    {"id": "cn.physio.001", "pattern": "心跳漏了[一半]拍|心跳漏跳|心跳骤停|心跳漏了一下", "severity": "warn", "category": "physiological_cliche", "suggestions": [], "remove_sentence_on_block": false, "why": "生理套路(心跳漏了一拍)：万能身体反应陈词。换成一个具体的、跟当下情境绑定的身体动作"},
-    {"id": "cn.physio.002", "pattern": "(?:眼瞳|瞳孔)[一猛骤]{0,2}缩了?(?:一下)?|心头猛地一[紧颤沉]", "severity": "warn", "category": "physiological_cliche", "suggestions": [], "remove_sentence_on_block": false, "why": "生理套路·模板化微动作(眼瞳一缩/心头猛地一紧)：脸谱化身体反应。换成具体可见动作＋与物件互动＋后果"},
-    {"id": "cn.physio.003", "pattern": "呼吸[一猛]?[顿停滞滞]了?[半一]?拍|呼吸[一]?[滞窒]", "severity": "warn", "category": "physiological_cliche", "suggestions": [], "remove_sentence_on_block": false, "why": "生理套路(呼吸顿了半拍/呼吸一滞)：万能身体反应。换成一个具体、跟当下绑定的动作"},
-
-    {"id": "cn.info.pointbreak.001", "pattern": "本该[^。！？\\n]{0,6}(?:枯|死|被|拔|散|崩|碎|输|赢|断|到|在|是|属于)", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "旁白点破(三天苗本该枯在土里/那本该枯死的叶柄)：叙述者替读者点明'本来该如何'。删点破，只写当下现象，反差让读者自己感到"},
-    {"id": "cn.info.pointbreak.002", "pattern": "本是[^。！？\\n]{0,10}(?:取巧|为了|为的是|为的)", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "旁白解释用意/技法(袖中研墨本是取巧——不让旁人看见)：叙述者讲明手段目的。删解释，只写人物怎么做"},
-    {"id": "cn.conclusion.with_more.001", "pattern": "随着[^。！？\\n]{1,28}越来越", "severity": "warn", "category": "essay_progression", "suggestions": [], "remove_sentence_on_block": false, "why": "论文/公众号式推进「随着X越来越Y」：小说正文应改成具体事件链、动作后果或场景压力，不用趋势句概括"},
-    {"id": "cn.conclusion.no_matter.001", "pattern": "无论[^。！？\\n]{1,24}(?:都|也|总会|都会)", "severity": "warn", "category": "blank_vow", "suggestions": [], "remove_sentence_on_block": false, "why": "鸡汤式万能承诺「无论X都Y」：容易替角色总结意志。改成角色在当场做出的具体选择和代价"},
-    {"id": "cn.conclusion.both_and.001", "pattern": "既[^。！？\\n]{1,18}又", "severity": "warn", "category": "balanced_formula", "suggestions": [], "remove_sentence_on_block": false, "why": "平衡句式「既X又Y」过度工整，常见于模型总结。若不是角色口吻，拆成可见动作/结果"},
-    {"id": "cn.meta.author_intrusion.001", "phrase": "他不知道的是", "severity": "block", "category": "authorial_spoiler", "suggestions": [], "remove_sentence_on_block": true, "why": "作者上帝视角剧透，直接解释悬念。改成让未知信息通过物证、旁人动作或下一场事件显露"},
-    {"id": "cn.meta.author_intrusion.002", "phrase": "她不知道的是", "severity": "block", "category": "authorial_spoiler", "suggestions": [], "remove_sentence_on_block": true, "why": "作者上帝视角剧透，直接解释悬念。改成让未知信息通过物证、旁人动作或下一场事件显露"},
-    {"id": "cn.meta.author_intrusion.003", "phrase": "他们不知道的是", "severity": "block", "category": "authorial_spoiler", "suggestions": [], "remove_sentence_on_block": true, "why": "作者上帝视角剧透，直接解释悬念。改成让未知信息通过物证、旁人动作或下一场事件显露"},
-    {"id": "cn.meta.cliche_fate.001", "phrase": "命运的齿轮开始转动", "severity": "block", "category": "fate_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "万能金句式命运旁白，暴露 AI/网文模板腔。改成具体不可逆事件"},
-    {"id": "cn.meta.cliche_fate.002", "phrase": "命运的齿轮悄然转动", "severity": "block", "category": "fate_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "万能金句式命运旁白，暴露 AI/网文模板腔。改成具体不可逆事件"},
-    {"id": "cn.meta.cliche_fate.003", "phrase": "蝴蝶效应开始显现", "severity": "block", "category": "fate_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "万能因果金句，替代了真正的连锁后果。改成一个已经发生的可见后果"},
-    {"id": "cn.meta.cliche_fate.004", "phrase": "暴风雨前总是平静", "severity": "block", "category": "fate_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "套话式悬念宣告。改成具体异常：脚步声、灯灭、物证变化、来电等"},
-    {"id": "cn.meta.cliche_plot.001", "phrase": "事情并不简单", "severity": "block", "category": "plot_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "替读者总结悬念。改成让角色看到一个具体矛盾或异常"},
-    {"id": "cn.meta.cliche_plot.002", "phrase": "一个更大的阴谋即将展开", "severity": "block", "category": "plot_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "解释悬念而不是制造悬念。改成章末新变量或新威胁"},
-    {"id": "cn.humanizer.vague_attribution.001", "pattern": "(?:行业报告|观察者|专家|一些批评者|多个来源|多家媒体)(?:显示|指出|认为|称)", "severity": "block", "category": "vague_attribution", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 模糊归因"},
-
-    {"id": "cn.humanizer.chat.001", "phrase": "希望这对您有帮助", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 聊天机器人残留"},
-    {"id": "cn.humanizer.chat.002", "phrase": "如果您想让我", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 聊天机器人残留"},
-    {"id": "cn.humanizer.chat.003", "phrase": "请告诉我", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 聊天机器人残留"},
-    {"id": "cn.humanizer.chat.004", "phrase": "您说得完全正确", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 谄媚式助手语气"},
-    {"id": "cn.humanizer.disclaimer.001", "phrase": "根据我最后的训练更新", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 知识截止日期免责声明"},
-    {"id": "cn.humanizer.disclaimer.002", "phrase": "基于可用信息", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 信息不足免责声明"},
-    {"id": "cn.humanizer.disclaimer.003", "phrase": "虽然具体细节有限", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 信息不足免责声明"},
-    {"id": "cn.humanizer.ending.001", "phrase": "未来看起来光明", "severity": "block", "category": "generic_positive_closer", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 通用积极结论"},
-    {"id": "cn.humanizer.ending.002", "phrase": "激动人心的时代即将到来", "severity": "block", "category": "generic_positive_closer", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 通用积极结论"},
-    {"id": "cn.humanizer.ending.003", "phrase": "向正确方向迈出的重要一步", "severity": "block", "category": "generic_positive_closer", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 通用积极结论"}
+    {
+      "id": "cn.tier1.hollow.001",
+      "phrase": "显而易见",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "空洞总结词，AI 高频"
+    },
+    {
+      "id": "cn.tier1.hollow.002",
+      "phrase": "毫无疑问",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "空洞断言"
+    },
+    {
+      "id": "cn.tier1.hollow.003",
+      "phrase": "不言而喻",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "空洞总结"
+    },
+    {
+      "id": "cn.tier1.hollow.004",
+      "phrase": "众所周知",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "百科式开场"
+    },
+    {
+      "id": "cn.tier1.hollow.005",
+      "phrase": "毋庸置疑",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "空洞断言"
+    },
+    {
+      "id": "cn.tier1.hollow.006",
+      "phrase": "值得注意的是",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "AI 路标式过渡"
+    },
+    {
+      "id": "cn.tier1.hollow.007",
+      "phrase": "不可否认",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "空洞断言"
+    },
+    {
+      "id": "cn.tier1.hollow.008",
+      "phrase": "总而言之",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "AI 公文式收束"
+    },
+    {
+      "id": "cn.tier1.hollow.009",
+      "phrase": "综上所述",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "AI 公文式收束"
+    },
+    {
+      "id": "cn.tier1.hollow.010",
+      "phrase": "由此可见",
+      "severity": "block",
+      "category": "hollow_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "AI 推导式总结"
+    },
+    {
+      "id": "cn.tier1.metaphor.001",
+      "phrase": "令人叹为观止",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐比喻"
+    },
+    {
+      "id": "cn.tier1.metaphor.002",
+      "phrase": "如同打翻了五味瓶",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐比喻"
+    },
+    {
+      "id": "cn.tier1.metaphor.003",
+      "phrase": "仿佛被一只无形的手",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐比喻"
+    },
+    {
+      "id": "cn.tier1.metaphor.004",
+      "phrase": "宛如一颗石子投入平静的湖面",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐比喻"
+    },
+    {
+      "id": "cn.tier1.metaphor.005",
+      "phrase": "宛如一把锋利的刀",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐比喻"
+    },
+    {
+      "id": "cn.tier1.metaphor.006",
+      "phrase": "如同一记重锤",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐比喻"
+    },
+    {
+      "id": "cn.tier1.metaphor.007",
+      "phrase": "心中五味杂陈",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐情绪短语"
+    },
+    {
+      "id": "cn.tier1.metaphor.008",
+      "phrase": "百感交集",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐情绪短语"
+    },
+    {
+      "id": "cn.tier1.metaphor.009",
+      "phrase": "思绪万千",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐情绪短语"
+    },
+    {
+      "id": "cn.tier1.metaphor.010",
+      "phrase": "感慨万千",
+      "severity": "block",
+      "category": "dead_metaphor",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "陈腐情绪短语"
+    },
+    {
+      "id": "cn.tier1.tears.001",
+      "phrase": "泪水模糊了双眼",
+      "severity": "block",
+      "category": "tear_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "过度抒情套路"
+    },
+    {
+      "id": "cn.tier1.tears.002",
+      "phrase": "泪水在眼眶中打转",
+      "severity": "block",
+      "category": "tear_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "过度抒情套路"
+    },
+    {
+      "id": "cn.tier1.tears.003",
+      "phrase": "泪水夺眶而出",
+      "severity": "block",
+      "category": "tear_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "过度抒情套路"
+    },
+    {
+      "id": "cn.tier1.tears.004",
+      "phrase": "心如刀割",
+      "severity": "block",
+      "category": "tear_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "过度抒情套路"
+    },
+    {
+      "id": "cn.tier1.tears.005",
+      "phrase": "心如死灰",
+      "severity": "block",
+      "category": "tear_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "过度抒情套路"
+    },
+    {
+      "id": "cn.tier1.tears.006",
+      "phrase": "万箭穿心",
+      "severity": "block",
+      "category": "tear_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "过度抒情套路"
+    },
+    {
+      "id": "cn.tier1.tears.007",
+      "phrase": "如释重负地长舒一口气",
+      "severity": "block",
+      "category": "tear_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "过度抒情套路"
+    },
+    {
+      "id": "cn.tier1.transition.001",
+      "phrase": "时间仿佛在这一刻静止",
+      "severity": "block",
+      "category": "filler_transition",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "万能过渡"
+    },
+    {
+      "id": "cn.tier1.transition.002",
+      "phrase": "空气仿佛凝固了",
+      "severity": "block",
+      "category": "filler_transition",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "万能过渡"
+    },
+    {
+      "id": "cn.tier1.transition.003",
+      "phrase": "世界仿佛安静了下来",
+      "severity": "block",
+      "category": "filler_transition",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "万能过渡"
+    },
+    {
+      "id": "cn.tier1.transition.004",
+      "phrase": "时间仿佛停止了",
+      "severity": "block",
+      "category": "filler_transition",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "万能过渡"
+    },
+    {
+      "id": "cn.humanizer.signpost.001",
+      "phrase": "此外",
+      "severity": "block",
+      "category": "essay_signpost",
+      "suggestions": [
+        ""
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 论文式连接词，小说叙述中通常是 AI 路标"
+    },
+    {
+      "id": "cn.humanizer.signpost.002",
+      "phrase": "值得一提的是",
+      "severity": "block",
+      "category": "essay_signpost",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 论文式提示读者"
+    },
+    {
+      "id": "cn.humanizer.signpost.003",
+      "phrase": "为了实现这一目标",
+      "severity": "warn",
+      "category": "padding_phrase",
+      "suggestions": [
+        "为此"
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 填充短语"
+    },
+    {
+      "id": "cn.humanizer.inflated.001",
+      "pattern": "作为[^。！？\\n]{0,24}(?:证明|体现|见证|提醒)",
+      "severity": "block",
+      "category": "inflated_significance",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 夸大象征意义"
+    },
+    {
+      "id": "cn.humanizer.inflated.002",
+      "phrase": "不断演变的格局",
+      "severity": "block",
+      "category": "inflated_significance",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 抽象宏大化表述"
+    },
+    {
+      "id": "cn.humanizer.inflated.003",
+      "phrase": "关键作用",
+      "severity": "warn",
+      "category": "inflated_significance",
+      "suggestions": [
+        "作用"
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 空泛抬高重要性"
+    },
+    {
+      "id": "cn.humanizer.inflated.004",
+      "phrase": "至关重要",
+      "severity": "warn",
+      "category": "inflated_significance",
+      "suggestions": [
+        "重要"
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 过度强调"
+    },
+    {
+      "id": "cn.humanizer.inflated.005",
+      "phrase": "彰显",
+      "severity": "warn",
+      "category": "inflated_significance",
+      "suggestions": [
+        "显出"
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 宣告式抽象评价"
+    },
+    {
+      "id": "cn.humanizer.promo.001",
+      "phrase": "充满活力",
+      "severity": "warn",
+      "category": "promo_language",
+      "suggestions": [
+        "热闹"
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 宣传式空泛形容"
+    },
+    {
+      "id": "cn.humanizer.promo.002",
+      "phrase": "丰富的文化底蕴",
+      "severity": "block",
+      "category": "promo_language",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 宣传文案式套话"
+    },
+    {
+      "id": "cn.humanizer.promo.003",
+      "phrase": "迷人的自然美景",
+      "severity": "block",
+      "category": "promo_language",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 宣传文案式套话"
+    },
+    {
+      "id": "cn.humanizer.promo.004",
+      "phrase": "无缝",
+      "severity": "warn",
+      "category": "promo_language",
+      "suggestions": [
+        ""
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 产品文案式 AI 词"
+    },
+    {
+      "id": "cn.humanizer.abstract_word.001",
+      "phrase": "深入探讨",
+      "severity": "block",
+      "category": "abstract_ai_word",
+      "suggestions": [
+        "细查"
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: AI 高频抽象动词"
+    },
+    {
+      "id": "cn.humanizer.abstract_word.002",
+      "phrase": "复杂性",
+      "severity": "warn",
+      "category": "abstract_ai_word",
+      "suggestions": [
+        "麻烦"
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 抽象名词化"
+    },
+    {
+      "id": "cn.humanizer.abstract_word.003",
+      "phrase": "宝贵的",
+      "severity": "warn",
+      "category": "abstract_ai_word",
+      "suggestions": [
+        ""
+      ],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 泛化褒义词"
+    },
+    {
+      "id": "cn.humanizer.negated_parallel.001",
+      "pattern": "这?不仅仅是[^。！？\\n]{0,36}(?:而是|更是)",
+      "severity": "warn",
+      "category": "negated_parallelism",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "Humanizer-zh: 否定式排比过度使用"
+    },
+    {
+      "id": "cn.conclusion.not_but.001",
+      "pattern": "(?<![不仅也])不是[^。！？，,\\n]{1,20}[，,][^。！？\\n]{0,8}而是",
+      "severity": "warn",
+      "category": "negated_definition",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "结论先行·否定式下定义「不是X，而是Y」：叙述者先抛抽象判断替读者下结论。改成让读者从感官/动作/物件自己得出，过程在前结论隐去"
+    },
+    {
+      "id": "cn.conclusion.not_but.002",
+      "pattern": "与其说[^。！？\\n]{1,30}不如说",
+      "severity": "warn",
+      "category": "negated_definition",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "结论先行·「与其说X不如说Y」：叙述者代读者权衡定性。改成展示，不要宣告"
+    },
+    {
+      "id": "cn.conclusion.not_but.003",
+      "pattern": "不是[^。！？，,\\n]{1,16}[，,]是[^。！？\\n]",
+      "severity": "warn",
+      "category": "negated_definition",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "结论先行·「不是X，是Y」逗号变体(描写物件常犯：不是黑墨，是暗金的浓墨)：直接写Y(墨里浮着一丝暗金)"
+    },
+    {
+      "id": "cn.info.backstory.001",
+      "pattern": "那是[^。！？\\n]{0,16}(?:后遗症|的手段|惯用)",
+      "severity": "warn",
+      "category": "info_narration",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "全知旁白·解释前情/机制(那是…的后遗症/手段)：删解释，只写人物看见的现象，让读者自己拼"
+    },
+    {
+      "id": "cn.info.backstory.002",
+      "pattern": "没人(?:看见|知道|注意到|察觉)",
+      "severity": "warn",
+      "category": "info_narration",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "全知旁白(没人看见/没人知道)：跳出单一视角替读者补背景。换成视角人物此刻一个具体动作或物证"
+    },
+    {
+      "id": "cn.info.backstory.003",
+      "pattern": "[一-鿿]{2,5}是[^。！？\\n]{0,8}(?:分下来的|留下的|传下来的)",
+      "severity": "warn",
+      "category": "info_narration",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "信息陈述·来历交代(X是…分下来的)：档案式交代来历。改成人物此刻摸到/认出它的那一下"
+    },
+    {
+      "id": "cn.info.rule.001",
+      "pattern": "(?:堂规|宗规|门规|规矩)[^。！？\\n]{0,6}第[一二三四五六七八九十百零\\d]{1,4}条",
+      "severity": "warn",
+      "category": "info_narration",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "旁白解释规则条款(堂规第X条)：跳出场景给读者讲规则。让规则从人物的反应/对白/后果里透出来"
+    },
+    {
+      "id": "cn.info.rule.002",
+      "pattern": "[一-鿿]{2,4}即[一-鿿]{2,5}[，,][一-鿿]{2,5}即",
+      "severity": "warn",
+      "category": "info_narration",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "旁白解释路数/意图(先逼落砚，落砚即离身，离身即失势)：叙述者把对方算计逐环讲明。改成只写可见的逼迫动作，算计让读者自己拼"
+    },
+    {
+      "id": "cn.physio.001",
+      "pattern": "心跳漏了[一半]拍|心跳漏跳|心跳骤停|心跳漏了一下",
+      "severity": "warn",
+      "category": "physiological_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "生理套路(心跳漏了一拍)：万能身体反应陈词。换成一个具体的、跟当下情境绑定的身体动作"
+    },
+    {
+      "id": "cn.physio.002",
+      "pattern": "(?:眼瞳|瞳孔)[一猛骤]{0,2}缩了?(?:一下)?|心头猛地一[紧颤沉]",
+      "severity": "warn",
+      "category": "physiological_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "生理套路·模板化微动作(眼瞳一缩/心头猛地一紧)：脸谱化身体反应。换成具体可见动作＋与物件互动＋后果"
+    },
+    {
+      "id": "cn.physio.003",
+      "pattern": "呼吸[一猛]?[顿停滞滞]了?[半一]?拍|呼吸[一]?[滞窒]",
+      "severity": "warn",
+      "category": "physiological_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "生理套路(呼吸顿了半拍/呼吸一滞)：万能身体反应。换成一个具体、跟当下绑定的动作"
+    },
+    {
+      "id": "cn.info.pointbreak.001",
+      "pattern": "本该[^。！？\\n]{0,6}(?:枯|死|被|拔|散|崩|碎|输|赢|断|到|在|是|属于)",
+      "severity": "warn",
+      "category": "info_narration",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "旁白点破(三天苗本该枯在土里/那本该枯死的叶柄)：叙述者替读者点明'本来该如何'。删点破，只写当下现象，反差让读者自己感到"
+    },
+    {
+      "id": "cn.info.pointbreak.002",
+      "pattern": "本是[^。！？\\n]{0,10}(?:取巧|为了|为的是|为的)",
+      "severity": "warn",
+      "category": "info_narration",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "旁白解释用意/技法(袖中研墨本是取巧——不让旁人看见)：叙述者讲明手段目的。删解释，只写人物怎么做"
+    },
+    {
+      "id": "cn.conclusion.with_more.001",
+      "pattern": "随着[^。！？\\n]{1,28}越来越",
+      "severity": "warn",
+      "category": "essay_progression",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "论文/公众号式推进「随着X越来越Y」：小说正文应改成具体事件链、动作后果或场景压力，不用趋势句概括"
+    },
+    {
+      "id": "cn.conclusion.no_matter.001",
+      "pattern": "无论[^。！？\\n]{1,24}(?:都|也|总会|都会)",
+      "severity": "warn",
+      "category": "blank_vow",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "鸡汤式万能承诺「无论X都Y」：容易替角色总结意志。改成角色在当场做出的具体选择和代价"
+    },
+    {
+      "id": "cn.conclusion.both_and.001",
+      "pattern": "既[^。！？\\n]{1,18}又",
+      "severity": "warn",
+      "category": "balanced_formula",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "平衡句式「既X又Y」过度工整，常见于模型总结。若不是角色口吻，拆成可见动作/结果"
+    },
+    {
+      "id": "cn.meta.author_intrusion.001",
+      "phrase": "他不知道的是",
+      "severity": "block",
+      "category": "authorial_spoiler",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "作者上帝视角剧透，直接解释悬念。改成让未知信息通过物证、旁人动作或下一场事件显露"
+    },
+    {
+      "id": "cn.meta.author_intrusion.002",
+      "phrase": "她不知道的是",
+      "severity": "block",
+      "category": "authorial_spoiler",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "作者上帝视角剧透，直接解释悬念。改成让未知信息通过物证、旁人动作或下一场事件显露"
+    },
+    {
+      "id": "cn.meta.author_intrusion.003",
+      "phrase": "他们不知道的是",
+      "severity": "block",
+      "category": "authorial_spoiler",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "作者上帝视角剧透，直接解释悬念。改成让未知信息通过物证、旁人动作或下一场事件显露"
+    },
+    {
+      "id": "cn.meta.cliche_fate.001",
+      "phrase": "命运的齿轮开始转动",
+      "severity": "block",
+      "category": "fate_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "万能金句式命运旁白，暴露 AI/网文模板腔。改成具体不可逆事件"
+    },
+    {
+      "id": "cn.meta.cliche_fate.002",
+      "phrase": "命运的齿轮悄然转动",
+      "severity": "block",
+      "category": "fate_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "万能金句式命运旁白，暴露 AI/网文模板腔。改成具体不可逆事件"
+    },
+    {
+      "id": "cn.meta.cliche_fate.003",
+      "phrase": "蝴蝶效应开始显现",
+      "severity": "block",
+      "category": "fate_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "万能因果金句，替代了真正的连锁后果。改成一个已经发生的可见后果"
+    },
+    {
+      "id": "cn.meta.cliche_fate.004",
+      "phrase": "暴风雨前总是平静",
+      "severity": "block",
+      "category": "fate_cliche",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "套话式悬念宣告。改成具体异常：脚步声、灯灭、物证变化、来电等"
+    },
+    {
+      "id": "cn.meta.cliche_plot.001",
+      "phrase": "事情并不简单",
+      "severity": "block",
+      "category": "plot_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "替读者总结悬念。改成让角色看到一个具体矛盾或异常"
+    },
+    {
+      "id": "cn.meta.cliche_plot.002",
+      "phrase": "一个更大的阴谋即将展开",
+      "severity": "block",
+      "category": "plot_summary",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "解释悬念而不是制造悬念。改成章末新变量或新威胁"
+    },
+    {
+      "id": "cn.humanizer.vague_attribution.001",
+      "pattern": "(?:行业报告|观察者|专家|一些批评者|多个来源|多家媒体)(?:显示|指出|认为|称)",
+      "severity": "block",
+      "category": "vague_attribution",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 模糊归因"
+    },
+    {
+      "id": "cn.humanizer.chat.001",
+      "phrase": "希望这对您有帮助",
+      "severity": "block",
+      "category": "assistant_artifact",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 聊天机器人残留"
+    },
+    {
+      "id": "cn.humanizer.chat.002",
+      "phrase": "如果您想让我",
+      "severity": "block",
+      "category": "assistant_artifact",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 聊天机器人残留"
+    },
+    {
+      "id": "cn.humanizer.chat.003",
+      "phrase": "请告诉我",
+      "severity": "block",
+      "category": "assistant_artifact",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 聊天机器人残留"
+    },
+    {
+      "id": "cn.humanizer.chat.004",
+      "phrase": "您说得完全正确",
+      "severity": "block",
+      "category": "assistant_artifact",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 谄媚式助手语气"
+    },
+    {
+      "id": "cn.humanizer.disclaimer.001",
+      "phrase": "根据我最后的训练更新",
+      "severity": "block",
+      "category": "assistant_artifact",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 知识截止日期免责声明"
+    },
+    {
+      "id": "cn.humanizer.disclaimer.002",
+      "phrase": "基于可用信息",
+      "severity": "block",
+      "category": "assistant_artifact",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 信息不足免责声明"
+    },
+    {
+      "id": "cn.humanizer.disclaimer.003",
+      "phrase": "虽然具体细节有限",
+      "severity": "block",
+      "category": "assistant_artifact",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 信息不足免责声明"
+    },
+    {
+      "id": "cn.humanizer.ending.001",
+      "phrase": "未来看起来光明",
+      "severity": "block",
+      "category": "generic_positive_closer",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 通用积极结论"
+    },
+    {
+      "id": "cn.humanizer.ending.002",
+      "phrase": "激动人心的时代即将到来",
+      "severity": "block",
+      "category": "generic_positive_closer",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 通用积极结论"
+    },
+    {
+      "id": "cn.humanizer.ending.003",
+      "phrase": "向正确方向迈出的重要一步",
+      "severity": "block",
+      "category": "generic_positive_closer",
+      "suggestions": [],
+      "remove_sentence_on_block": true,
+      "why": "Humanizer-zh: 通用积极结论"
+    }
   ],
-
   "cluster_rules": [
     {
       "id": "cn.cluster.weak_adverb",
@@ -109,17 +779,46 @@
       "severity": "warn",
       "why": "弱化副词聚集——同章三次以上视为模式锁死",
       "members": {
-        "不禁": ["", "猛地"],
-        "忍不住": ["", "终于"],
-        "情不自禁": ["", "下意识"],
-        "缓缓": ["", "慢慢"],
-        "轻轻": ["", "悄悄"],
-        "深深": ["", "重重"],
-        "悠悠": [""],
-        "微微": [""],
-        "淡淡": [""],
-        "默默": ["", "悄悄"],
-        "静静": [""]
+        "不禁": [
+          "",
+          "猛地"
+        ],
+        "忍不住": [
+          "",
+          "终于"
+        ],
+        "情不自禁": [
+          "",
+          "下意识"
+        ],
+        "缓缓": [
+          "",
+          "慢慢"
+        ],
+        "轻轻": [
+          "",
+          "悄悄"
+        ],
+        "深深": [
+          "",
+          "重重"
+        ],
+        "悠悠": [
+          ""
+        ],
+        "微微": [
+          ""
+        ],
+        "淡淡": [
+          ""
+        ],
+        "默默": [
+          "",
+          "悄悄"
+        ],
+        "静静": [
+          ""
+        ]
       }
     },
     {
@@ -130,14 +829,30 @@
       "advisory_only": true,
       "why": "模板化微表情——同章三次以上视为脸谱化",
       "members": {
-        "眼眶微红": [""],
-        "嘴角微扬": [""],
-        "嘴角上扬": [""],
-        "嘴角勾起": [""],
-        "眉头微皱": [""],
-        "眉头紧锁": [""],
-        "瞳孔骤缩": [""],
-        "瞳孔微缩": [""]
+        "眼眶微红": [
+          ""
+        ],
+        "嘴角微扬": [
+          ""
+        ],
+        "嘴角上扬": [
+          ""
+        ],
+        "嘴角勾起": [
+          ""
+        ],
+        "眉头微皱": [
+          ""
+        ],
+        "眉头紧锁": [
+          ""
+        ],
+        "瞳孔骤缩": [
+          ""
+        ],
+        "瞳孔微缩": [
+          ""
+        ]
       }
     },
     {
@@ -149,25 +864,63 @@
       "advisory_only": true,
       "why": "复合微动作模板过度依赖——「瞳孔一缩/心一沉/眉心一皱/喉结一滚/指节一僵」这类身体反应被当成默认情绪出口，与场景物件无关、无后果，同章三次以上即脸谱化。改成具体可见动作＋与物件互动＋行为后果",
       "members": {
-        "瞳孔一缩": [""],
-        "瞳孔骤缩": [""],
-        "瞳孔猛地一缩": [""],
-        "眼皮一跳": [""],
-        "眼皮猛地一跳": [""],
-        "心头一紧": [""],
-        "心一沉": [""],
-        "心头一震": [""],
-        "心头一颤": [""],
-        "眉心一皱": [""],
-        "眉头一皱": [""],
-        "喉结一滚": [""],
-        "喉结滚动": [""],
-        "指节一僵": [""],
-        "指尖一颤": [""],
-        "肩膀一颤": [""],
-        "后背一僵": [""],
-        "呼吸一滞": [""],
-        "呼吸一窒": [""]
+        "瞳孔一缩": [
+          ""
+        ],
+        "瞳孔骤缩": [
+          ""
+        ],
+        "瞳孔猛地一缩": [
+          ""
+        ],
+        "眼皮一跳": [
+          ""
+        ],
+        "眼皮猛地一跳": [
+          ""
+        ],
+        "心头一紧": [
+          ""
+        ],
+        "心一沉": [
+          ""
+        ],
+        "心头一震": [
+          ""
+        ],
+        "心头一颤": [
+          ""
+        ],
+        "眉心一皱": [
+          ""
+        ],
+        "眉头一皱": [
+          ""
+        ],
+        "喉结一滚": [
+          ""
+        ],
+        "喉结滚动": [
+          ""
+        ],
+        "指节一僵": [
+          ""
+        ],
+        "指尖一颤": [
+          ""
+        ],
+        "肩膀一颤": [
+          ""
+        ],
+        "后背一僵": [
+          ""
+        ],
+        "呼吸一滞": [
+          ""
+        ],
+        "呼吸一窒": [
+          ""
+        ]
       }
     },
     {
@@ -179,21 +932,51 @@
       "advisory_only": true,
       "why": "顿悟宣告过度依赖——用「突然明白/忽然意识到/一切都变了」直接宣布心理转折，而非展示其发生过程。偶尔可用，同章 ≥3 次即情绪靠宣告而非演示。改成让念头逐步逼近、落到具体可见的变化",
       "members": {
-        "突然明白": [""],
-        "忽然明白": [""],
-        "猛然明白": [""],
-        "蓦然明白": [""],
-        "突然懂了": [""],
-        "瞬间懂了": [""],
-        "突然意识到": [""],
-        "忽然意识到": [""],
-        "猛然意识到": [""],
-        "突然醒悟": [""],
-        "瞬间醒悟": [""],
-        "突然想通": [""],
-        "一切都变了": [""],
-        "一切都不一样了": [""],
-        "一切都不同了": [""]
+        "突然明白": [
+          ""
+        ],
+        "忽然明白": [
+          ""
+        ],
+        "猛然明白": [
+          ""
+        ],
+        "蓦然明白": [
+          ""
+        ],
+        "突然懂了": [
+          ""
+        ],
+        "瞬间懂了": [
+          ""
+        ],
+        "突然意识到": [
+          ""
+        ],
+        "忽然意识到": [
+          ""
+        ],
+        "猛然意识到": [
+          ""
+        ],
+        "突然醒悟": [
+          ""
+        ],
+        "瞬间醒悟": [
+          ""
+        ],
+        "突然想通": [
+          ""
+        ],
+        "一切都变了": [
+          ""
+        ],
+        "一切都不一样了": [
+          ""
+        ],
+        "一切都不同了": [
+          ""
+        ]
       }
     },
     {
@@ -205,25 +988,63 @@
       "advisory_only": true,
       "why": "情绪标签过密——震惊/恐惧/愤怒/悲伤等词直接命名情绪，读者只能接收作者评价，不能看见体验。改成身体外显、动作选择、物件变化或对白留白",
       "members": {
-        "震惊": [""],
-        "惊讶": [""],
-        "震撼": [""],
-        "恐惧": [""],
-        "害怕": [""],
-        "紧张": [""],
-        "激动": [""],
-        "愤怒": [""],
-        "悲伤": [""],
-        "欣喜": [""],
-        "欣慰": [""],
-        "感慨": [""],
-        "感动": [""],
-        "失落": [""],
-        "绝望": [""],
-        "迷茫": [""],
-        "疑惑": [""],
-        "错愕": [""],
-        "难以置信": [""]
+        "震惊": [
+          ""
+        ],
+        "惊讶": [
+          ""
+        ],
+        "震撼": [
+          ""
+        ],
+        "恐惧": [
+          ""
+        ],
+        "害怕": [
+          ""
+        ],
+        "紧张": [
+          ""
+        ],
+        "激动": [
+          ""
+        ],
+        "愤怒": [
+          ""
+        ],
+        "悲伤": [
+          ""
+        ],
+        "欣喜": [
+          ""
+        ],
+        "欣慰": [
+          ""
+        ],
+        "感慨": [
+          ""
+        ],
+        "感动": [
+          ""
+        ],
+        "失落": [
+          ""
+        ],
+        "绝望": [
+          ""
+        ],
+        "迷茫": [
+          ""
+        ],
+        "疑惑": [
+          ""
+        ],
+        "错愕": [
+          ""
+        ],
+        "难以置信": [
+          ""
+        ]
       }
     },
     {
@@ -235,29 +1056,75 @@
       "advisory_only": true,
       "why": "过滤/模糊词过密——似乎/仿佛/感到/意识到/发现/某种等把读者隔在体验外。删除过滤层，直接呈现声音、动作、物证和结果",
       "members": {
-        "似乎": [""],
-        "好像": [""],
-        "仿佛": [""],
-        "隐约": [""],
-        "某种": [""],
-        "一种": [""],
-        "莫名": [""],
-        "不由得": [""],
-        "渐渐": [""],
-        "缓缓": [""],
-        "微微": [""],
-        "淡淡": [""],
-        "轻轻": [""],
-        "隐隐": [""],
-        "若有若无": [""],
-        "感到": [""],
-        "意识到": [""],
-        "知道": [""],
-        "明白": [""],
-        "发现": [""],
-        "原来": [""],
-        "实际上": [""],
-        "事实上": [""]
+        "似乎": [
+          ""
+        ],
+        "好像": [
+          ""
+        ],
+        "仿佛": [
+          ""
+        ],
+        "隐约": [
+          ""
+        ],
+        "某种": [
+          ""
+        ],
+        "一种": [
+          ""
+        ],
+        "莫名": [
+          ""
+        ],
+        "不由得": [
+          ""
+        ],
+        "渐渐": [
+          ""
+        ],
+        "缓缓": [
+          ""
+        ],
+        "微微": [
+          ""
+        ],
+        "淡淡": [
+          ""
+        ],
+        "轻轻": [
+          ""
+        ],
+        "隐隐": [
+          ""
+        ],
+        "若有若无": [
+          ""
+        ],
+        "感到": [
+          ""
+        ],
+        "意识到": [
+          ""
+        ],
+        "知道": [
+          ""
+        ],
+        "明白": [
+          ""
+        ],
+        "发现": [
+          ""
+        ],
+        "原来": [
+          ""
+        ],
+        "实际上": [
+          ""
+        ],
+        "事实上": [
+          ""
+        ]
       }
     },
     {
@@ -269,18 +1136,42 @@
       "advisory_only": true,
       "why": "抽象评价词过密——神秘/诡异/可怕/强大等直接替读者评价场景。改成可拍的异常、压迫动作、道具状态或旁观者反应",
       "members": {
-        "神秘": [""],
-        "诡异": [""],
-        "可怕": [""],
-        "恐怖": [""],
-        "惊人": [""],
-        "伟大": [""],
-        "特殊": [""],
-        "独特": [""],
-        "强大": [""],
-        "不凡": [""],
-        "神奇": [""],
-        "不可思议": [""]
+        "神秘": [
+          ""
+        ],
+        "诡异": [
+          ""
+        ],
+        "可怕": [
+          ""
+        ],
+        "恐怖": [
+          ""
+        ],
+        "惊人": [
+          ""
+        ],
+        "伟大": [
+          ""
+        ],
+        "特殊": [
+          ""
+        ],
+        "独特": [
+          ""
+        ],
+        "强大": [
+          ""
+        ],
+        "不凡": [
+          ""
+        ],
+        "神奇": [
+          ""
+        ],
+        "不可思议": [
+          ""
+        ]
       }
     },
     {
@@ -291,13 +1182,27 @@
       "advisory_only": true,
       "why": "万能内心描写聚集",
       "members": {
-        "心头一紧": [""],
-        "心头一震": [""],
-        "心中一沉": [""],
-        "心头涌起": [""],
-        "内心深处": [""],
-        "脑海中闪过": [""],
-        "脑海中浮现": [""]
+        "心头一紧": [
+          ""
+        ],
+        "心头一震": [
+          ""
+        ],
+        "心中一沉": [
+          ""
+        ],
+        "心头涌起": [
+          ""
+        ],
+        "内心深处": [
+          ""
+        ],
+        "脑海中闪过": [
+          ""
+        ],
+        "脑海中浮现": [
+          ""
+        ]
       }
     },
     {
@@ -307,10 +1212,18 @@
       "severity": "warn",
       "why": "万能时间标记聚集",
       "members": {
-        "在这一刻": [""],
-        "在那一瞬间": [""],
-        "就在这时": [""],
-        "下一秒": [""]
+        "在这一刻": [
+          ""
+        ],
+        "在那一瞬间": [
+          ""
+        ],
+        "就在这时": [
+          ""
+        ],
+        "下一秒": [
+          ""
+        ]
       }
     },
     {
@@ -320,14 +1233,30 @@
       "severity": "info",
       "why": "零信息量填充词——超阈值即应删",
       "members": {
-        "某种意义上": [""],
-        "从某种程度上来说": [""],
-        "不得不说": [""],
-        "说实话": [""],
-        "坦白说": [""],
-        "事实上": [""],
-        "换句话说": [""],
-        "毕竟": [""]
+        "某种意义上": [
+          ""
+        ],
+        "从某种程度上来说": [
+          ""
+        ],
+        "不得不说": [
+          ""
+        ],
+        "说实话": [
+          ""
+        ],
+        "坦白说": [
+          ""
+        ],
+        "事实上": [
+          ""
+        ],
+        "换句话说": [
+          ""
+        ],
+        "毕竟": [
+          ""
+        ]
       }
     }
   ],
@@ -383,6 +1312,22 @@
       "threshold": 4,
       "pattern": "(?:他|她|它)没(?:有)?(?:去)?[一-鿿]{1,3}(?=[。，,！？\\n])",
       "why": "「他没X」否定式克制做反应过密(没动声/没抬头/没接话)——填充感，假装沉稳实则没传达。要么删，要么换正向带戏剧载荷的动作；反预期的'不做'(众人等他研、他偏不研)可保留"
+    },
+    {
+      "id": "cn.info.rule_clause",
+      "category": "info_narration",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "(?:凡[^。！？\\n]{1,12}?者[，,]?[^。！？\\n]{0,6}?(?:[须必]|不得)[一-鿿])|(?:[^，。！？\\n]{2,8}者[，,]?[^。！？\\n]{0,4}?不得(?:入|出|动|言|语|议|为))|(?:[^，。！？\\n]{2,6}[，,][^，。！？\\n]{0,6}(?:司|院|堂|处)[^，。！？\\n]{0,5}(?:点人|议事)[才]?用)|(?:[诸众][^，。！？\\n]{0,4}必须[^，。！？\\n]{0,8}(?:活计|差遣|放下))",
+      "why": "叙述者解说规则/术语/职能（凡X者须/X者不得/X司点人用）——删解说，让规则从人物反应、对白、后果里透出来"
+    },
+    {
+      "id": "cn.info.parallel_gloss",
+      "category": "info_narration",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "([一-鿿]{1,2})的是[^，。！？\\n]{1,8}[，,]\\1的是",
+      "why": "对仗式排比下定义（验的是X，验的是Y）——旁白装腔，改成具体动作或直接陈述"
     }
   ],
   "terse_tag_rules": [

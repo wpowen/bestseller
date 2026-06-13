@@ -7930,6 +7930,49 @@ async def run_chapter_pipeline(
                 )
                 if ai_flavor_outcome.patched_text is not None:
                     chapter_draft.content_md = ai_flavor_outcome.patched_text
+                # 去 AI 味二次清洗：gate 判 block(AI 味过多)时，先让写手做一遍
+                # 定向去AI味改写再复检，而不是直接打回人工修复。span 级 patcher 只
+                # 能删/换词，改不了"信息旁白/结论先行/解释规则"这类话语腔；这一步
+                # 用整段重写补上。改写后分数确实降到阈值下就采用，否则照常 block。
+                if ai_flavor_outcome.decision == "block" and getattr(
+                    _af_gates_cfg.ai_flavor, "deslop_revise_enabled", True
+                ):
+                    try:
+                        from bestseller.services.deslop_revise import revise_prose_deslop
+
+                        _revised = await revise_prose_deslop(
+                            session,
+                            settings,
+                            content=chapter_draft.content_md,
+                            language=_af_lang,
+                            project_id=project.id,
+                            target_chars=len(chapter_draft.content_md),
+                            rounds=2,
+                        )
+                        _recheck = run_ai_flavor_gate(
+                            chapter_number=chapter_number,
+                            content_md=_revised,
+                            language=_af_lang,
+                            config=_af_gates_cfg.ai_flavor,
+                            project_output_dir=_af_output_dir,
+                        )
+                        if _recheck.decision != "block":
+                            chapter_draft.content_md = (
+                                _recheck.patched_text or _revised
+                            )
+                            ai_flavor_outcome = _recheck
+                            logger.info(
+                                "ai_flavor_gate ch%d: deslop revise cleared block "
+                                "(%.1f → %.1f)",
+                                chapter_number,
+                                _recheck.before_score,
+                                _recheck.after_score,
+                            )
+                    except Exception:
+                        logger.debug(
+                            "ai_flavor_gate: deslop revise failed (non-fatal)",
+                            exc_info=True,
+                        )
                 if ai_flavor_outcome.decision == "block":
                     logger.warning(
                         "ai_flavor_gate ch%d: residual score %.1f >= threshold, "

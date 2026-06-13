@@ -76,6 +76,11 @@ class AiFlavorGateConfig:
     # the pipeline marks the chapter for machine repair (recommended)
     # rather than letting it slip through with a warning.
     block_on_residual: bool = True
+    # On a block, run a whole-passage 去AI味 rewrite (deslop_revise) and
+    # re-check before routing to machine repair. The span patcher can only
+    # delete/swap words; this clears discourse-level flavor (info-narration,
+    # 结论先行, 解释规则) the patcher can't touch.
+    deslop_revise_enabled: bool = True
 
 
 @dataclass(frozen=True)

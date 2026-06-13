@@ -277,6 +277,16 @@ def _detect_rhythm(
         short_chars = int(rule.get("short_sentence_chars", 8))
         choppy_mean = float(rule.get("choppy_mean_chars", 11))
         run_threshold = int(rule.get("short_run_threshold", 4))
+        # Calibration (2026-06-13, validated on real MiniMax-M3 stress output):
+        # the bare ``mean_hit`` branch false-positives on skilled emotional
+        # restraint — short sentences that lead with *varied pronoun subjects*
+        # ("他…。她…。他…。") and carry distinct concrete actions read well.
+        # We therefore EXEMPT only that one shape (pronoun-led AND varied); every
+        # other low-mean paragraph still fires — subjectless fragments
+        # ("冷得不正常。带着铁锈味。"), same-pronoun droning ("他没…。他只…。"),
+        # and noun-staccato. ``run_hit`` (a long ultra-short run) always fires.
+        pronoun_lead_min = float(rule.get("pronoun_lead_min", 0.6))
+        pronoun_concentration_max = float(rule.get("pronoun_concentration_max", 0.75))
 
         offset = 0
         for para in content_md.split("\n"):
@@ -309,8 +319,25 @@ def _detect_rhythm(
                 else:
                     run = 0
 
-            mean_hit = mean_len <= choppy_mean
             run_hit = max_run >= run_threshold
+            # Exempt the one good-craft shape: pronoun-led AND varied.
+            pronoun_leads = [
+                content_md[s:e].strip()[:1] for (s, e, _) in narration
+            ]
+            pronoun_leads = [c for c in pronoun_leads if c in "他她它我你咱俺"]
+            pronoun_lead_ratio = len(pronoun_leads) / len(narration)
+            if pronoun_leads:
+                top_pronoun = max(
+                    pronoun_leads.count(c) for c in set(pronoun_leads)
+                )
+                concentration = top_pronoun / len(narration)
+            else:
+                concentration = 0.0
+            pronoun_led_varied = (
+                pronoun_lead_ratio >= pronoun_lead_min
+                and concentration < pronoun_concentration_max
+            )
+            mean_hit = mean_len <= choppy_mean and not pronoun_led_varied
             if not (mean_hit or run_hit):
                 continue
 
@@ -589,14 +616,31 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
     coarse and easy to reason about.
     """
 
+    # Structural-rhythm signals (choppy_rhythm / staccato_saturation) are
+    # content-blind: they cannot reliably tell skilled emotional fragments
+    # ("用袖口。" / "牙长齐了。") from 伪文学装腔 ("冷得不正常。带着铁锈味。").
+    # They stay advisory — visible in the report — but their *combined* score
+    # contribution is capped so a richly-fragmented but good chapter can never
+    # be pushed over the block threshold (→ quality-degrading repair) on rhythm
+    # alone. Reflective/lexical signals (epiphany / not-X-but-Y / tier-1
+    # clichés) are not capped and remain blockable.
+    _ADVISORY_STRUCTURAL = {"choppy_rhythm", "staccato_saturation"}
+    _STRUCTURAL_CAP = 24.0
+
     total = 0.0
+    structural = 0.0
     for span in spans:
         if span.severity == "block":
-            total += 12.0
+            weight = 12.0
         elif span.severity == "warn":
-            total += 4.0
+            weight = 4.0
         else:
-            total += 1.0
+            weight = 1.0
+        if span.category in _ADVISORY_STRUCTURAL:
+            structural += weight
+        else:
+            total += weight
+    total += min(structural, _STRUCTURAL_CAP)
     return min(total, 100.0)
 
 

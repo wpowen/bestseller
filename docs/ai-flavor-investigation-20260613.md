@@ -111,11 +111,23 @@
 - 测试：新增 `tests/unit/test_ai_flavor_staccato.py`（4 条，含 2 正例 2 负例）全绿；`rhythm/quality_levers/methodology/ai_flavor` 相关 **362 测试**全绿。
 - 诊断工具：`scripts/ai_flavor_diagnose.py`（只读章节，跑既有 detector + 6 个点名模式探针，输出每章/汇总表，可 `--json` 落盘），用于每轮前后对比。
 
+**R2：复合微动作模板 + 终末裸对白标签**（已落地，最小、数据驱动、soft）
+
+1. **微动作模板族**：`patterns_zh.json` 新增 `cn.cluster.body_micro_action` 簇（瞳孔一缩/心一沉/眉心一皱/喉结一滚/指节一僵…）。簇机制扩展 `family_flag`：置真时把整组成员视为**同一模板家族**，过度依赖即便每句用词不同也计数（保留全章首次、其余越界即 warn）——与 `weak_adverb` 的「保留每个不同副词首次」语义区分。同章 ≥3 次触发。
+2. **终末裸标签**：`patterns_zh.json` 新增 `terse_tag_rules`；`detector.py` 新增 `_detect_terse_tag` pass：检测「短引号（≤3 字）＋裸 X说/道（其后即终止符/换行，无动作 beat）」，章内 ≥3 处发 1 个 warn span。标签在引号**外**，故不受对话保护误跳。
+3. **写手 prompt**：`anti_ai_voice` 锚点新增 `micro_action_template`、`terse_bare_tag` 两条 banned_patterns（含正反例）。
+
+**验证**：
+
+- 改写样例评分变化：微动作 BEFORE **20.0**（staccato+4×body_micro_action）→ AFTER **0.0**；裸标签 BEFORE **4.0** → AFTER **0.0**。
+- 本书实测：两规则均**不触发**（每章微动作 ≤2、裸标签 0，低于阈值）——**零误报**，能力为回归预防而设，由单测保证。
+- 测试：新增 `tests/unit/test_ai_flavor_micro_action_terse_tag.py`（4 条）全绿；`prose_style_anchors/ai_flavor/dialogue/quality_levers` 相关 **269 测试**全绿。
+
 ---
 
 ## 6. 剩余风险与后续轮次（R2 / R3）
 
-- **R2 复合微动作模板 + 终末裸对白标签**：加 `cn.cluster.body_micro_action` 簇规则（身体部位＋微动作模板）＋ `dialogue_voice_gate` 终末裸标签检测（检测**标签位置**而非引号起点，避免被对话保护误跳）＋ 写手指令。
+- **R2（已落地，见 §5）**复合微动作模板 + 终末裸对白标签。
 - **R3 不是 X 而是 Y + 结论先行**：加 `detector` phrase/pattern 规则（「不是…，而是…」「与其说…不如说…」）＋ 顿悟宣告词＋ `show_dont_tell_gate` 扩展；在干净基准书上验证**无误报回归**（本书 ≈0，须保持 0）。
 - **未解风险（如实记录）**：
   - 真正的 staccato 治本在**重新生成/改写**时让 prompt 上限生效——本轮**未重跑整书**（重生成消耗付费模型额度，属暂停条件），故只验证了「检测能浮出」「prompt 已带上限」「改写样例评分下降」，未验证「下一次生成 ratio 实际下降」。需在下次正常跑书时观测 `staccato_saturation` 命中率。

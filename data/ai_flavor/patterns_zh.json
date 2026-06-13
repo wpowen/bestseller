@@ -111,6 +111,35 @@
       }
     },
     {
+      "id": "cn.cluster.body_micro_action",
+      "category": "body_micro_action",
+      "threshold": 3,
+      "severity": "warn",
+      "family_flag": true,
+      "why": "复合微动作模板过度依赖——「瞳孔一缩/心一沉/眉心一皱/喉结一滚/指节一僵」这类身体反应被当成默认情绪出口，与场景物件无关、无后果，同章三次以上即脸谱化。改成具体可见动作＋与物件互动＋行为后果",
+      "members": {
+        "瞳孔一缩": [""],
+        "瞳孔骤缩": [""],
+        "瞳孔猛地一缩": [""],
+        "眼皮一跳": [""],
+        "眼皮猛地一跳": [""],
+        "心头一紧": [""],
+        "心一沉": [""],
+        "心头一震": [""],
+        "心头一颤": [""],
+        "眉心一皱": [""],
+        "眉头一皱": [""],
+        "喉结一滚": [""],
+        "喉结滚动": [""],
+        "指节一僵": [""],
+        "指尖一颤": [""],
+        "肩膀一颤": [""],
+        "后背一僵": [""],
+        "呼吸一滞": [""],
+        "呼吸一窒": [""]
+      }
+    },
+    {
       "id": "cn.cluster.inner_monologue",
       "category": "inner_monologue",
       "threshold": 3,
@@ -167,6 +196,16 @@
       "short_sentence_chars": 8,
       "choppy_mean_chars": 11,
       "short_run_threshold": 4
+    }
+  ],
+  "terse_tag_rules": [
+    {
+      "id": "cn.terse_tag.bare",
+      "category": "terse_dialogue_tag",
+      "severity": "warn",
+      "why": "终末裸对白标签过密——单字/极短情绪台词紧跟无动作 beat 的「X说/道」（如「冷。」他说），连续多处读起来像模型腔。改成动作 beat 替代裸标签：先一个物理动作或物件互动，再让台词落下来",
+      "max_quote_chars": 3,
+      "threshold": 3
     }
   ],
   "staccato_rules": [

@@ -81,6 +81,7 @@ class _LoadedRules:
     cluster_rules: tuple[dict[str, Any], ...]
     rhythm_rules: tuple[dict[str, Any], ...]
     staccato_rules: tuple[dict[str, Any], ...]
+    terse_tag_rules: tuple[dict[str, Any], ...]
 
 
 @lru_cache(maxsize=4)
@@ -102,6 +103,7 @@ def _load_rules(language: str, data_dir_str: str) -> _LoadedRules:
             cluster_rules=(),
             rhythm_rules=(),
             staccato_rules=(),
+            terse_tag_rules=(),
         )
     raw = json.loads(path.read_text(encoding="utf-8"))
     return _LoadedRules(
@@ -111,6 +113,7 @@ def _load_rules(language: str, data_dir_str: str) -> _LoadedRules:
         cluster_rules=tuple(raw.get("cluster_rules") or ()),
         rhythm_rules=tuple(raw.get("rhythm_rules") or ()),
         staccato_rules=tuple(raw.get("staccato_rules") or ()),
+        terse_tag_rules=tuple(raw.get("terse_tag_rules") or ()),
     )
 
 
@@ -488,6 +491,95 @@ def _detect_staccato(
     return out
 
 
+# Bare-attribution verbs: the tag IS just "who said it", no action beat.
+_TERSE_TAG_VERBS = "说道问应答喝骂叫嚷"
+_OPEN_QUOTES = "“\"「『‘"
+_CLOSE_QUOTES = "”\"」』’"
+# A short emotional one-word line glued to a bare tag, e.g. 「冷。」他说。
+# Matched starting AT the closing quote.
+_TERSE_TAG_RE = re.compile(
+    r"[" + _CLOSE_QUOTES + r"]\s*[，,。]?\s*"
+    r"(?:他|她|它|[一-鿿]{2,3})[" + _TERSE_TAG_VERBS + r"]"
+    r"(?P<after>.?)"
+)
+
+
+def _detect_terse_tag(
+    content_md: str,
+    *,
+    lang: str,
+    terse_tag_rules: tuple[dict[str, Any], ...],
+) -> list[AiFlavorSpan]:
+    """Terse bare-dialogue-tag saturation — the 「冷。」他说 model-ism.
+
+    A one-word emotional line glued to a bare attribution with no action
+    beat is fine once; a chapter strung together from them reads like a
+    model. We count quotes whose *visible* content is ≤ ``max_quote_chars``
+    that are immediately followed by a bare ``X说/道`` tag (terminator or
+    newline right after — i.e. no trailing action beat), and flag the
+    chapter once the count crosses ``threshold``. One advisory ``warn``
+    span; never auto-patches (writer-side beat is the real fix).
+    """
+
+    out: list[AiFlavorSpan] = []
+    for rule in terse_tag_rules:
+        category = str(rule.get("category") or "terse_dialogue_tag")
+        severity = _coerce_severity(rule.get("severity"), default="warn")
+        rule_id = str(rule.get("id") or f"{lang}.terse_tag.bare")
+        why = str(rule.get("why") or "")
+        max_quote_chars = int(rule.get("max_quote_chars", 3))
+        threshold = int(rule.get("threshold", 3))
+
+        hits: list[tuple[int, int]] = []
+        # Walk quotes; for each short quote, inspect the immediately
+        # following bare tag.
+        i = 0
+        n = len(content_md)
+        while i < n:
+            ch = content_md[i]
+            if ch not in _OPEN_QUOTES:
+                i += 1
+                continue
+            # Find the matching close quote.
+            close_idx = -1
+            for j in range(i + 1, n):
+                if content_md[j] in _CLOSE_QUOTES:
+                    close_idx = j
+                    break
+            if close_idx < 0:
+                break
+            inner = content_md[i + 1 : close_idx]
+            visible = sum(1 for c in inner.rstrip("。！？，,") if not c.isspace())
+            if 0 < visible <= max_quote_chars:
+                m = _TERSE_TAG_RE.match(content_md, close_idx)
+                if m is not None:
+                    after = m.group("after")
+                    # Bare = the tag is end-of-clause: terminator/newline/EOF.
+                    if after == "" or after in "。！？，,\n":
+                        hits.append((i, m.end()))
+            i = close_idx + 1
+
+        if len(hits) < threshold:
+            continue
+        span_start = hits[0][0]
+        span_end = hits[-1][1]
+        out.append(
+            AiFlavorSpan(
+                start=span_start,
+                end=span_end,
+                matched_text=content_md[span_start : span_start + 30],
+                rule_id=rule_id,
+                category=category,
+                severity=severity,
+                suggestions=(),
+                sentence_span=(span_start, span_end),
+                why=f"{why}（共{len(hits)}处）" if why else f"{len(hits)} terse tags",
+                remove_sentence_on_block=False,
+            )
+        )
+    return out
+
+
 def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
     """Heuristic 0-100 score. Higher = more AI-flavored.
 
@@ -595,6 +687,12 @@ def detect(
         rule_id = str(cluster.get("id") or f"{lang}.cluster.{cluster.get('category', 'misc')}")
         category = str(cluster.get("category") or "cluster")
         why = str(cluster.get("why") or "")
+        # ``family_flag``: when true, the whole member set is one template
+        # *family* — over-reliance counts even when each hit is a different
+        # member (e.g. 瞳孔一缩 / 心一沉 / 眉心一皱 are all the same body-tic
+        # template). Default false keeps the per-member-first semantics used
+        # by weak_adverb etc. (preserve the first 缓缓, flag only repeats).
+        family_flag = bool(cluster.get("family_flag", False))
 
         # Collect every occurrence of every member, ordered by position.
         occurrences: list[tuple[int, str, tuple[str, ...]]] = []
@@ -609,12 +707,18 @@ def detect(
             continue
         occurrences.sort(key=lambda x: x[0])
 
-        # Keep first hit of each distinct member; flag the rest. This
-        # preserves the *first* legitimate use of e.g. "缓缓" so the gate
-        # doesn't strip prose down to monotone, but kills the lock-in.
+        # Keep first hit of each distinct member (or, in family mode, the
+        # first hit overall); flag the rest. This preserves the *first*
+        # legitimate use so the gate doesn't strip prose to monotone, but
+        # kills the lock-in.
         seen_members: set[str] = set()
+        family_seen = False
         for offset, member, sugg in occurrences:
-            if member not in seen_members:
+            if family_flag:
+                if not family_seen:
+                    family_seen = True
+                    continue
+            elif member not in seen_members:
                 seen_members.add(member)
                 continue
             needle = member.lower() if rules.case_insensitive else member
@@ -654,6 +758,16 @@ def detect(
                 lang=lang,
                 dialogue_ranges=dialogue_ranges,
                 staccato_rules=rules.staccato_rules,
+            )
+        )
+
+    # ── Terse bare dialogue-tag saturation (「冷。」他说) ─────────────────
+    if rules.terse_tag_rules:
+        spans.extend(
+            _detect_terse_tag(
+                content_md,
+                lang=lang,
+                terse_tag_rules=rules.terse_tag_rules,
             )
         )
 

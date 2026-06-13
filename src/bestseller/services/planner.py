@@ -4218,7 +4218,13 @@ _PREMISE_CJK_RUN_RE = re.compile(r"[一-鿿]+")
 
 
 def _premise_roster_segments(premise: str) -> list[str]:
-    """Return the text segments that follow explicit roster markers."""
+    """Return the text segments that follow explicit roster markers.
+
+    The window is generous (3000 chars) and ends at the first section break
+    — a blank line OR the next ``【…】`` section header — because hand-authored
+    rosters can list 20+ characters and run well past a few hundred chars
+    (the old 400-char cap truncated such rosters to their first few names).
+    """
 
     segments: list[str] = []
     lowered = premise.lower()
@@ -4229,9 +4235,10 @@ def _premise_roster_segments(premise: str) -> list[str]:
             idx = lowered.find(marker_lower, start)
             if idx < 0:
                 break
-            tail = premise[idx + len(marker) : idx + len(marker) + 400]
-            # A roster section ends at the first blank line.
-            cut = tail.find("\n\n")
+            tail = premise[idx + len(marker) : idx + len(marker) + 3000]
+            # A roster section ends at the first blank line or next 【…】 header.
+            cuts = [c for c in (tail.find("\n\n"), tail.find("【")) if c >= 0]
+            cut = min(cuts) if cuts else -1
             segments.append(tail if cut < 0 else tail[:cut])
             start = idx + len(marker)
     return segments
@@ -4249,32 +4256,47 @@ def _premise_name_candidate_ok(token: str) -> bool:
 
 _PREMISE_PARENTHETICAL_RE = re.compile(r"[（(][^）)]*[）)]")
 _PREMISE_LIST_SEP_RE = re.compile(r"[、,，;；]")
+_PREMISE_LEADING_PAREN_RE = re.compile(r"^[^一-鿿]*[（(][^）)]*[）)]")
+_PREMISE_LEADING_NONCJK_RE = re.compile(r"^[^一-鿿]+")
 
 
-def _name_from_phrase_tail(phrase: str) -> str | None:
-    """Pull a 2-3 char person name from the tail of a roster phrase (G2).
+def _name_from_roster_item(item: str) -> str | None:
+    """Pull one person name from a single roster list item (G2/G2b).
 
-    Natural-language roster phrases read "role/origin + name"
-    (``孤女宋拾`` / ``落魄执事关铎``); the name sits at the very end. Drop any
-    parenthetical aside, take the last CJK run, and keep a surname-anchored
-    2-3 char tail (falling back to the last 2 chars). Returns ``None`` when
-    the tail looks like a function word or a roster stopword rather than a
-    name.
+    Roster items name a character either at the HEAD followed by a
+    descriptive parenthetical (``陈屿（口头禅…）`` — common in hand-authored
+    rosters) or after a role/origin prefix at the TAIL (``…孤女宋拾`` —
+    natural-language rosters). Both reduce to: strip leading marker
+    brackets / punctuation, keep the text *before the first parenthesis*,
+    then a 2-3 char head IS the name while a longer head yields its
+    surname-anchored 2-3 char tail.
+
+    Crucially this takes ONE boundary name per item rather than harvesting
+    every 2-3 char run in the marker segment — the latter drowns real names
+    under description noise (``口头禅``/``测谎``/``差评``) and even seeds bogus
+    cast members.
     """
 
-    cleaned = _PREMISE_PARENTHETICAL_RE.sub("", phrase)
-    runs = _PREMISE_CJK_RUN_RE.findall(cleaned)
-    if not runs:
+    s = item.strip()
+    # Drop any leading parenthetical block(s) (e.g. the marker aside
+    # "（正文必须沿用以下姓名与设定）") and surrounding non-CJK punctuation.
+    prev = None
+    while s and s != prev:
+        prev = s
+        s = _PREMISE_LEADING_PAREN_RE.sub("", s)
+        s = _PREMISE_LEADING_NONCJK_RE.sub("", s)
+    if not s:
         return None
-    tail = runs[-1]
-    if len(tail) < 2:
+    # The name sits before the first descriptive parenthesis.
+    head_segment = re.split(r"[（(]", s, maxsplit=1)[0]
+    head = "".join(ch for ch in head_segment if "一" <= ch <= "鿿")
+    if len(head) < 2:
         return None
-    last3 = tail[-3:] if len(tail) >= 3 else None
-    last2 = tail[-2:]
-    if last3 is not None and last3[0] in _COMMON_ZH_SURNAMES:
-        candidate = last3
+    if len(head) <= 3:
+        candidate = head
     else:
-        candidate = last2
+        last3 = head[-3:]
+        candidate = last3 if last3[0] in _COMMON_ZH_SURNAMES else head[-2:]
     if candidate in _PREMISE_ROSTER_STOPWORDS:
         return None
     if any(ch in _PREMISE_NAME_FUNCTION_CHARS for ch in candidate):
@@ -4315,23 +4337,31 @@ def _extract_premise_locked_names(
             seen.add(name)
             ordered.append(name)
 
-    # Pass 1: explicit roster markers (formal name tables — names are their
-    # own 2-3 char tokens, e.g. "名册：周澈、九嶷、林晚").
+    # Marker pass (G2/G2b): split each roster segment into list items and
+    # take ONE boundary name per item. Handles formal tables
+    # ("名册：周澈、九嶷、林晚"), tail-embedded natural rosters
+    # ("…孤女宋拾、…执事关铎") and head-position hand-authored rosters
+    # ("陈屿（口头禅…）；老金（…）") in one pass — without harvesting every CJK
+    # run, which would drown names under description noise.
     for segment in _premise_roster_segments(text):
-        for run in _PREMISE_CJK_RUN_RE.findall(segment):
-            if _premise_name_candidate_ok(run):
-                _add(run)
-
-    # Pass 1.5 (G2): natural-language rosters where each name is embedded at
-    # the tail of a "role + name" phrase (孤女宋拾 / 落魄执事关铎). Only runs
-    # inside a marker segment, so ordinary prose is never harvested.
-    for segment in _premise_roster_segments(text):
-        for phrase in _PREMISE_LIST_SEP_RE.split(segment):
-            candidate = _name_from_phrase_tail(phrase)
+        # Remove descriptive parentheticals BEFORE splitting so their inner
+        # commas ("陈屿（主角，口头禅…）") don't fragment a single roster item
+        # into description-word "items" (口头禅/测谎/差评).
+        cleaned_segment = _PREMISE_PARENTHETICAL_RE.sub("、", segment)
+        for item in _PREMISE_LIST_SEP_RE.split(cleaned_segment):
+            candidate = _name_from_roster_item(item)
             if candidate is not None:
                 _add(candidate)
 
     if is_english_language(language):
+        return ordered[:max_names]
+
+    # When an explicit roster marker already yielded a substantial cast,
+    # treat it as authoritative and skip the frequency fallback — on long
+    # hand-authored premises that fallback harvests common nouns whose first
+    # char happens to be a surname (龙王/武职/百年). The fallback still runs
+    # for sparse/marker-less premises (e.g. a lone protagonist named inline).
+    if len(ordered) >= 6:
         return ordered[:max_names]
 
     # Pass 2: high-frequency name-shaped tokens across the whole premise.

@@ -55,3 +55,32 @@ def test_plain_narration_without_marker_is_not_mined() -> None:
     # The frequency fallback may legitimately find nothing here; the key
     # guarantee is that the tail pass did not fabricate names from prose.
     assert "梆子" not in names and "旧匾" not in names
+
+
+# G2b: "name（long description）；name（description）" roster format —
+# names sit at the HEAD of each ；-delimited item, followed by a long
+# parenthetical. The old Pass-1 (harvest every 2-3 char run in the marker
+# segment) drowned real names under description noise ("口头禅/测谎/差评")
+# and even seeded a literal "口头禅" character into the cast.
+_ZHAOSHEN_ROSTER = (
+    "【人物名册（正文必须沿用以下姓名与设定）】"
+    "陈屿（主角，口头禅“人没有废的，只有放错的”，压力下把东西摆直角，死穴是当年37人名单）；"
+    "老金（三垣主管/便利店老板，真身太白金星，六任候补带教人，泡过期茶）；"
+    "年糕（谛听幼崽工牌挂件，打哈欠=测谎，谎话分级“隔夜味/馊味/化粪池味”）；"
+    "赵小磊（外卖小哥→老街土地神，怕辜负差评）；"
+    "孟拂（轮回司HR/孟婆传人/女主，保温杯装真话茶）；"
+    "嫦娥（全天庭最想离职的神，离职审批卡了三百年）；"
+    "姜暮（第六候补黑化，从不撑开的黑伞，称主角“师弟”）。"
+)
+
+
+def test_extracts_head_position_roster_names() -> None:
+    names = set(_extract_premise_locked_names(_ZHAOSHEN_ROSTER, max_names=30))
+    for expected in ("陈屿", "老金", "年糕", "赵小磊", "孟拂", "嫦娥", "姜暮"):
+        assert expected in names, f"{expected} missing from {names}"
+
+
+def test_description_words_not_mistaken_for_names() -> None:
+    names = set(_extract_premise_locked_names(_ZHAOSHEN_ROSTER, max_names=30))
+    for noise in ("口头禅", "测谎", "差评", "直角", "过期茶", "隔夜味", "馊味", "挂件"):
+        assert noise not in names, f"description noise {noise} leaked into {names}"

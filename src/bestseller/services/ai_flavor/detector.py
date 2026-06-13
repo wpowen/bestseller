@@ -702,6 +702,7 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         "crowd_reaction_beat",
         "negative_action_filler",
         "face_emotion_label",
+        "empty_reaction_shot",
     }
     _STRUCTURAL_CAP = 24.0
 

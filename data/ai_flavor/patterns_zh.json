@@ -353,6 +353,22 @@
       "why": "「脸色X」成语化脸色词贴情绪标签(脸色骤变/面色铁青/青白交加)——看似外显实则贴标签。换成一个具体非成语的面部或身体动作(嘴唇抖/喉头滚/指节掐进掌心/眼神钉住)"
     },
     {
+      "id": "cn.discourse.empty_hands",
+      "category": "empty_reaction_shot",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "(?:袖中)?(?:交叠的)?(?:双手|十指)[^，。！？\\n]{0,4}(?:分开|松开了?)",
+      "why": "'双手分开/十指松开'是含义模糊的无效反应镜头(读者读不出代表什么)。换成被打断的意图动作或不受控的生理反应（要落的笔停在半空、握着的东西掐进掌心）"
+    },
+    {
+      "id": "cn.discourse.crowd_cadence",
+      "category": "crowd_reaction_beat",
+      "severity": "warn",
+      "threshold": 2,
+      "pattern": "谁(?:也|都)不(?:想|敢|愿)",
+      "why": "'谁也不想/谁都不敢…'群体反应句式重复——好手法用滥成新套路。每场最多一次，其余改成某个具体人的具体动作"
+    },
+    {
       "id": "cn.discourse.crowd_beat",
       "category": "crowd_reaction_beat",
       "severity": "warn",

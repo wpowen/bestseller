@@ -69,16 +69,26 @@ async def _revise_until_clean(
     rubric = render_cinematic_pov_block(language="zh")
     for rnd in range(1, rounds + 1):
         report = detect(content, language="zh")
-        if not report.spans:
-            trace.append(f"round {rnd}: clean (score 0) — stop")
+        cjk = sum(1 for c in content if "一" <= c <= "鿿")
+        too_short = cjk < int(target * 0.85)
+        # Stop only when BOTH clean AND long enough — a short clean draft still
+        # needs an "expand to target length" pass (then re-detect catches any
+        # flavor the expansion reintroduced).
+        if not report.spans and not too_short:
+            trace.append(f"round {rnd}: clean (score 0) & {cjk}字 — stop")
             break
         findings = "\n".join(
             f"- [{s.category}] 「{s.matched_text[:34]}」：{s.why[:60]}"
             for s in report.spans
-        )
+        ) or "（检测器未标出 AI 味）"
+        if too_short:
+            findings += (
+                f"\n- [字数不足] 当前 {cjk} 字，目标约 {target} 字：按现有拍点"
+                "逐拍展开（放慢关键动作、补足感官与物件细节），不许新增旁白/解释/抒情来凑字。"
+            )
         trace.append(
             f"round {rnd}: score {report.overall_score:.0f}, "
-            f"{len(report.spans)} 处 → 改写"
+            f"{len(report.spans)} 处, {cjk}字 → 改写"
         )
         system_prompt = (
             "你是最严苛的中文网文编辑，专做去 AI 味改写。下面是写作铁律；"
@@ -97,7 +107,8 @@ async def _revise_until_clean(
             "4) 对仗式装腔：'念的是名字，压的是刀'、'比路宽，比刃窄'、三词碎句堆叠。\n"
             "5) '不是X，是Y / 这一次不是…' 任何否定下定义；孤立到要读者脑补的碎片；回忆式前情概述；结论先行。\n"
             "6) 旁白点破：'那本该枯死的叶柄…'、'没动本身就是一种回答'、'袖中研墨本是取巧——'——删掉点评，只写现象。\n"
-            "7) '他没擦/他没去擦/他没动声'这类空洞否定克制当反应——换成一个正向、带含义的动作（'袖口的黑漫过腕骨，他盯着砚面，手没离开'之类要落到具体）。\n"
+            "7) '他没擦/他没去擦/他没动声'这类空洞否定克制当反应——换成一个正向、带含义的动作。\n"
+            "8) 含义模糊的无效反应镜头（'双手分开''十指松开'）；同一反应beat或'有人…有人…谁也不想…'句式重复使用（每种最多一次）；'她停了，是因为…'这类解释反应起因。\n"
             "改写后请自己再过一遍上面 5 条，确认一句不剩。\n\n"
             f"【目标字数】约 {target} 字，不足要补足、不许砍情节。\n\n"
             "【待改写正文】\n" + content

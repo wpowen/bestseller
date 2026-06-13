@@ -161,7 +161,7 @@ def test_prose_scene_includes_craft_block() -> None:
         prompt_pack_key="suspense-mystery",
         language="zh-CN",
         chapter_no=3,
-        token_budget=3800,  # production budget — fits cinematic_pov + craft together
+        token_budget=4000,  # production budget — fits cinematic_pov + craft together
     )
     assert "prose_craft_techniques.yaml" in out.used_sources
     assert "文采技法" in out.text

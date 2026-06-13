@@ -82,6 +82,7 @@ class _LoadedRules:
     rhythm_rules: tuple[dict[str, Any], ...]
     staccato_rules: tuple[dict[str, Any], ...]
     terse_tag_rules: tuple[dict[str, Any], ...]
+    discourse_rules: tuple[dict[str, Any], ...]
 
 
 @lru_cache(maxsize=4)
@@ -104,6 +105,7 @@ def _load_rules(language: str, data_dir_str: str) -> _LoadedRules:
             rhythm_rules=(),
             staccato_rules=(),
             terse_tag_rules=(),
+            discourse_rules=(),
         )
     raw = json.loads(path.read_text(encoding="utf-8"))
     return _LoadedRules(
@@ -114,6 +116,7 @@ def _load_rules(language: str, data_dir_str: str) -> _LoadedRules:
         rhythm_rules=tuple(raw.get("rhythm_rules") or ()),
         staccato_rules=tuple(raw.get("staccato_rules") or ()),
         terse_tag_rules=tuple(raw.get("terse_tag_rules") or ()),
+        discourse_rules=tuple(raw.get("discourse_rules") or ()),
     )
 
 
@@ -607,6 +610,64 @@ def _detect_terse_tag(
     return out
 
 
+def _detect_discourse(
+    content_md: str,
+    *,
+    lang: str,
+    dialogue_ranges: list[tuple[int, int]],
+    discourse_rules: tuple[dict[str, Any], ...],
+) -> list[AiFlavorSpan]:
+    """Density-gated discourse-level tells (the sticky ones prompt can't kill).
+
+    Each rule has a regex ``pattern`` and a ``threshold``: count narration-only
+    matches and, if they cross the threshold, emit ONE advisory ``warn`` span
+    for the chapter (anchored at the first hit). Used for constructs that are
+    fine in moderation but read as a tic when repeated — anonymous crowd-
+    reaction beats, 「他没X」negative-action filler. Advisory only (no
+    suggestion → patcher skips); capped at the score layer.
+    """
+
+    out: list[AiFlavorSpan] = []
+    for rule in discourse_rules:
+        raw_pat = rule.get("pattern")
+        if not raw_pat:
+            continue
+        try:
+            pattern = re.compile(str(raw_pat))
+        except re.error:
+            continue
+        category = str(rule.get("category") or "discourse")
+        severity = _coerce_severity(rule.get("severity"), default="warn")
+        rule_id = str(rule.get("id") or f"{lang}.discourse.{category}")
+        why = str(rule.get("why") or "")
+        threshold = int(rule.get("threshold", 3))
+
+        hits: list[tuple[int, int]] = []
+        for m in pattern.finditer(content_md):
+            if _is_in_ranges(m.start(), dialogue_ranges):
+                continue
+            hits.append((m.start(), m.end()))
+        if len(hits) < threshold:
+            continue
+        span_start, _ = hits[0]
+        _, span_end = hits[-1]
+        out.append(
+            AiFlavorSpan(
+                start=span_start,
+                end=span_end,
+                matched_text=content_md[span_start : span_start + 30],
+                rule_id=rule_id,
+                category=category,
+                severity=severity,
+                suggestions=(),
+                sentence_span=(span_start, span_end),
+                why=f"{why}（共{len(hits)}处）" if why else f"{len(hits)} hits",
+                remove_sentence_on_block=False,
+            )
+        )
+    return out
+
+
 def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
     """Heuristic 0-100 score. Higher = more AI-flavored.
 
@@ -638,6 +699,8 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         "emotion_label_density",
         "filter_word_density",
         "abstract_evaluation_density",
+        "crowd_reaction_beat",
+        "negative_action_filler",
     }
     _STRUCTURAL_CAP = 24.0
 
@@ -838,6 +901,17 @@ def detect(
                 content_md,
                 lang=lang,
                 terse_tag_rules=rules.terse_tag_rules,
+            )
+        )
+
+    # ── Discourse-level density tells (他没X 填充 / 群体反应beat重复) ─────
+    if rules.discourse_rules:
+        spans.extend(
+            _detect_discourse(
+                content_md,
+                lang=lang,
+                dialogue_ranges=dialogue_ranges,
+                discourse_rules=rules.discourse_rules,
             )
         )
 

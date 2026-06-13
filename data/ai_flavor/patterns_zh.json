@@ -61,6 +61,11 @@
 
     {"id": "cn.conclusion.not_but.001", "pattern": "(?<![不仅也])不是[^。！？，,\\n]{1,20}[，,][^。！？\\n]{0,8}而是", "severity": "warn", "category": "negated_definition", "suggestions": [], "remove_sentence_on_block": false, "why": "结论先行·否定式下定义「不是X，而是Y」：叙述者先抛抽象判断替读者下结论。改成让读者从感官/动作/物件自己得出，过程在前结论隐去"},
     {"id": "cn.conclusion.not_but.002", "pattern": "与其说[^。！？\\n]{1,30}不如说", "severity": "warn", "category": "negated_definition", "suggestions": [], "remove_sentence_on_block": false, "why": "结论先行·「与其说X不如说Y」：叙述者代读者权衡定性。改成展示，不要宣告"},
+    {"id": "cn.conclusion.not_but.003", "pattern": "不是[^。！？，,\\n]{1,16}[，,]是[^。！？\\n]", "severity": "warn", "category": "negated_definition", "suggestions": [], "remove_sentence_on_block": false, "why": "结论先行·「不是X，是Y」逗号变体(描写物件常犯：不是黑墨，是暗金的浓墨)：直接写Y(墨里浮着一丝暗金)"},
+
+    {"id": "cn.info.backstory.001", "pattern": "那是[^。！？\\n]{0,16}(?:后遗症|的手段|惯用)", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "全知旁白·解释前情/机制(那是…的后遗症/手段)：删解释，只写人物看见的现象，让读者自己拼"},
+    {"id": "cn.info.backstory.002", "pattern": "没人(?:看见|知道|注意到|察觉)", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "全知旁白(没人看见/没人知道)：跳出单一视角替读者补背景。换成视角人物此刻一个具体动作或物证"},
+    {"id": "cn.info.backstory.003", "pattern": "[一-鿿]{2,5}是[^。！？\\n]{0,8}(?:分下来的|留下的|传下来的)", "severity": "warn", "category": "info_narration", "suggestions": [], "remove_sentence_on_block": false, "why": "信息陈述·来历交代(X是…分下来的)：档案式交代来历。改成人物此刻摸到/认出它的那一下"},
     {"id": "cn.conclusion.with_more.001", "pattern": "随着[^。！？\\n]{1,28}越来越", "severity": "warn", "category": "essay_progression", "suggestions": [], "remove_sentence_on_block": false, "why": "论文/公众号式推进「随着X越来越Y」：小说正文应改成具体事件链、动作后果或场景压力，不用趋势句概括"},
     {"id": "cn.conclusion.no_matter.001", "pattern": "无论[^。！？\\n]{1,24}(?:都|也|总会|都会)", "severity": "warn", "category": "blank_vow", "suggestions": [], "remove_sentence_on_block": false, "why": "鸡汤式万能承诺「无论X都Y」：容易替角色总结意志。改成角色在当场做出的具体选择和代价"},
     {"id": "cn.conclusion.both_and.001", "pattern": "既[^。！？\\n]{1,18}又", "severity": "warn", "category": "balanced_formula", "suggestions": [], "remove_sentence_on_block": false, "why": "平衡句式「既X又Y」过度工整，常见于模型总结。若不是角色口吻，拆成可见动作/结果"},
@@ -327,6 +332,24 @@
       "short_sentence_chars": 8,
       "choppy_mean_chars": 11,
       "short_run_threshold": 4
+    }
+  ],
+  "discourse_rules": [
+    {
+      "id": "cn.discourse.crowd_beat",
+      "category": "crowd_reaction_beat",
+      "severity": "warn",
+      "threshold": 3,
+      "pattern": "[堂场][上中][^。！？\\n]{0,8}(?:有人|众人|众弟子)[^。！？\\n]{0,6}(?:吸气|倒抽|惊呼|低呼|哦|啊|骚动|嗤|嘀咕|应和)",
+      "why": "群体反应 beat 重复——「堂上有人吸气/哦/啊」连发当反应，成套路且替读者下'此刻很震撼'的判断。每场最多一次，且要落到一个具体的人一个具体动作"
+    },
+    {
+      "id": "cn.discourse.neg_action",
+      "category": "negative_action_filler",
+      "severity": "warn",
+      "threshold": 4,
+      "pattern": "(?:他|她|它)没(?:有)?(?:去)?[一-鿿]{1,3}(?=[。，,！？\\n])",
+      "why": "「他没X」否定式克制做反应过密(没动声/没抬头/没接话)——填充感，假装沉稳实则没传达。要么删，要么换正向带戏剧载荷的动作；反预期的'不做'(众人等他研、他偏不研)可保留"
     }
   ],
   "terse_tag_rules": [

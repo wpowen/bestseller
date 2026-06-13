@@ -78,6 +78,26 @@ def test_small_project_keeps_compact_default_zh() -> None:
     assert str(bounds.floor) in prompt or "3-5" in prompt
 
 
+def test_locked_roster_block_demands_named_villains() -> None:
+    """G2c: every locked name must surface as a NAMED character — including
+    villains in antagonist_forces. zhaoshen-hr-v5 dropped 白先生/姜暮 into
+    abstract faction names ("灵山功德理财化·钱塘分公司") instead of naming them.
+    """
+    from bestseller.services import planner as planner_services
+
+    block = planner_services._locked_roster_prompt_block(
+        ["陈屿", "白先生", "姜暮", "司衡"], is_en=False
+    )
+    assert "antagonist_forces" in block
+    assert "具名" in block
+    assert ("每一个" in block or "全部" in block or "禁止遗漏" in block)
+
+    block_en = planner_services._locked_roster_prompt_block(
+        ["Chen", "Mr White", "Jiang"], is_en=True
+    )
+    assert "antagonist_forces" in block_en
+
+
 def test_cast_spec_stage_cap_scales_with_roster() -> None:
     """A 15-30 character roster (10-volume book) cannot fit in the legacy
     8192-token cap (a single verification run emitted 12615 tokens for 23

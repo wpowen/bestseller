@@ -13029,19 +13029,28 @@ def _locked_roster_prompt_block(locked_names: list[str], *, is_en: bool) -> str:
     """Render the R4 premise-roster lock instruction for the cast prompt."""
 
     names = "、".join(locked_names) if not is_en else ", ".join(locked_names)
+    count = len(locked_names)
     if is_en:
         return (
             "\n\n[LOCKED CAST ROSTER — premise passthrough]\n"
-            f"The premise explicitly fixes these character names: {names}.\n"
-            "These are established characters. Do NOT rename, replace, or alias "
-            "any of them — use the names verbatim in protagonist/antagonist/"
-            "supporting_cast. You may only ADD new characters beyond this roster."
+            f"The premise explicitly fixes these {count} character names: {names}.\n"
+            "Every one of these names MUST appear as a NAMED character in exactly "
+            "one of protagonist / antagonist / antagonist_forces / supporting_cast — "
+            "none may be dropped. Do NOT rename, replace, or alias any of them.\n"
+            "For villains, the antagonist_forces[].name MUST be the person's own "
+            "name (e.g. 'Mr White'), NOT an abstract faction label — a faction may "
+            "be noted as that named villain's affiliation, but the name field is a "
+            "person. You may only ADD new characters beyond this roster."
         )
     return (
         "\n\n【既定人物名册——premise 直通，最高优先级】\n"
-        f"premise 已明确给定以下人物姓名：{names}。\n"
-        "这些名字为既定人物，禁止改名、换名或同义替换——protagonist/antagonist/"
-        "supporting_cast 中必须原样沿用；只允许在此名册之外补充新角色名。"
+        f"premise 已明确给定以下 {count} 个人物姓名：{names}。\n"
+        "这 N 个名字**每一个**都必须作为具名角色，出现在 protagonist / antagonist / "
+        "antagonist_forces / supporting_cast 之一中，禁止遗漏、禁止改名换名或同义替换。\n"
+        "反派人物放入 antagonist_forces 时，其 name 字段必须是该人物的**具名**"
+        "（如「白先生」「姜暮」），不得用抽象阵营名（如「某某集团·某分公司」）替代具名反派"
+        "——阵营只能作为该具名反派的归属描述写在其它字段，name 必须是人。"
+        "只允许在此名册之外补充新角色名。"
     )
 
 
@@ -13662,6 +13671,7 @@ def _outline_prompts(
     # Soft: any config/load failure degrades to empty fragments.
     _method_cards_hook_line = ""
     _golden_opening_line = ""
+    _tone_contract_line = ""
     _emotion_vocab_csv = "爽、燃、暖、虐、悬疑、紧张、轻松、甜、震撼"
     _hook_keys_csv = ""
     try:
@@ -13669,6 +13679,7 @@ def _outline_prompts(
             chapter_end_hook_keys,
             render_golden_opening_rules_block,
             render_outline_hook_taxonomy_block,
+            render_tone_emotion_contract_block,
             target_emotion_vocabulary,
         )
 
@@ -13676,6 +13687,10 @@ def _outline_prompts(
         if _vocab:
             _emotion_vocab_csv = "、".join(_vocab)
         _hook_keys_csv = ", ".join(chapter_end_hook_keys())
+        _tone_block = render_tone_emotion_contract_block(
+            _mapping(book_spec).get("tone"), language="en" if is_en else "zh"
+        )
+        _tone_contract_line = f"\n{_tone_block}\n" if _tone_block else ""
         if not is_en:
             _method_block = render_outline_hook_taxonomy_block("opening")
             _method_cards_hook_line = f"\n{_method_block}\n" if _method_block else ""
@@ -13717,6 +13732,7 @@ def _outline_prompts(
             "information release priority: crisis > characterization > golden-finger hint > worldview; chapter 1 must state the protagonist's goal and the book's selling point.\n"
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
             f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
+            f"{_tone_contract_line}"
             + (
                 f"`hook_type` must be chosen from these canonical keys: [{_hook_keys_csv}]; never use the same hook_type in two consecutive chapters (hook_description stays a concrete next event). "
                 if _hook_keys_csv
@@ -13798,6 +13814,7 @@ def _outline_prompts(
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
             f"每章必须写明 target_emotion：从受控词表【{_emotion_vocab_csv}】中只选一个，"
             "并在 goal/main_conflict 中写清该情绪如何通过本章冲突交付（先定情绪再定故事）；"
+            f"{_tone_contract_line}"
             "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
             "hook_description 仍写具体下一步事件。"
             "每章建议包含 `event_cycle_contract`、`chapter_event_role`、`information_gap_mode`。"
@@ -14072,6 +14089,7 @@ def _volume_outline_prompts(
     # rules only for batches covering chapters 1-3. Soft-degrades to "".
     _method_cards_hook_line = ""
     _golden_opening_line = ""
+    _tone_contract_line = ""
     _emotion_vocab_csv = "爽、燃、暖、虐、悬疑、紧张、轻松、甜、震撼"
     _hook_keys_csv = ""
     _covers_golden_opening = (
@@ -14082,6 +14100,7 @@ def _volume_outline_prompts(
             chapter_end_hook_keys,
             render_golden_opening_rules_block,
             render_outline_hook_taxonomy_block,
+            render_tone_emotion_contract_block,
             target_emotion_vocabulary,
         )
 
@@ -14089,6 +14108,10 @@ def _volume_outline_prompts(
         if _vocab:
             _emotion_vocab_csv = "、".join(_vocab)
         _hook_keys_csv = ", ".join(chapter_end_hook_keys())
+        _tone_block = render_tone_emotion_contract_block(
+            _mapping(book_spec).get("tone"), language="en" if is_en else "zh"
+        )
+        _tone_contract_line = f"\n{_tone_block}\n" if _tone_block else ""
         _total_volumes = max(
             [
                 int(_mapping(v).get("volume_number") or 0)
@@ -14293,6 +14316,7 @@ def _volume_outline_prompts(
             f"Include batch_name and chapters. {scene_count_contract_en}"
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
             f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
+            f"{_tone_contract_line}"
             + (
                 f"`hook_type` must be chosen from these canonical keys: [{_hook_keys_csv}]; never use the same hook_type in two consecutive chapters. "
                 if _hook_keys_csv
@@ -14380,6 +14404,7 @@ def _volume_outline_prompts(
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
             f"每章必须写明 target_emotion：从受控词表【{_emotion_vocab_csv}】中只选一个，"
             "并在 goal/main_conflict 中写清该情绪如何通过本章冲突交付（先定情绪再定故事）；"
+            f"{_tone_contract_line}"
             "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
             "hook_description 仍写具体下一步事件。"
             + (

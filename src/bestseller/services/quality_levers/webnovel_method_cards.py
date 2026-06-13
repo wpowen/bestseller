@@ -167,6 +167,117 @@ def target_emotion_vocabulary() -> tuple[str, ...]:
     return vocab or _DEFAULT_EMOTION_VOCAB
 
 
+# G7: map free-text tone/mood words (book_spec.tone) onto the controlled
+# target_emotion vocabulary so the planner can enforce a per-volume emotion
+# mix instead of letting the LLM default every chapter to 紧张.
+_TONE_TO_EMOTION: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("喜剧", "搞笑", "沙雕", "轻喜", "诙谐", "幽默", "comedy", "comedic"), "轻松"),
+    (("轻松", "日常", "悠闲", "治愈日常"), "轻松"),
+    (("暖", "治愈", "温情", "温暖", "暖心", "warm", "heartwarming"), "暖"),
+    (("甜", "甜宠", "糖", "sweet"), "甜"),
+    (("悬念", "悬疑", "推理", "解谜", "suspense", "mystery"), "悬疑"),
+    (("紧张", "危机", "压迫", "tension", "thriller"), "紧张"),
+    (("爽", "打脸", "逆袭", "装逼", "扮猪吃虎"), "爽"),
+    (("燃", "热血", "燃向", "epic"), "燃"),
+    (("虐", "虐心", "意难平", "be", "tragic"), "虐"),
+    (("震撼", "反转", "shock"), "震撼"),
+)
+# Emotions that read as "warm / light" vs "serious / heavy" — used to size
+# the dominant bucket and cap the serious one.
+_WARM_EMOTIONS = frozenset({"轻松", "暖", "甜", "爽", "燃"})
+
+
+def _map_tone_word(word: str) -> str | None:
+    lowered = word.lower()
+    for needles, emotion in _TONE_TO_EMOTION:
+        if any(n in word or n in lowered for n in needles):
+            return emotion
+    return None
+
+
+def render_tone_emotion_contract_block(tone: object, *, language: str = "zh") -> str:
+    """Render a per-volume target_emotion mix contract from ``book_spec.tone`` (G7).
+
+    Parses a tone string like ``"喜剧40% + 暖35% + 悬念25%"`` into
+    (vocabulary-emotion, weight) pairs, then instructs the planner which
+    emotions should dominate the volume and caps the serious bucket — so a
+    light-comedy book is not silently inverted into a tension thriller.
+    Returns ``""`` when tone is empty/unparseable (soft).
+    """
+
+    import re
+
+    text = str(tone or "").strip()
+    if not text:
+        return ""
+
+    # Extract "word + optional percent" fragments split on +/、/，/,/ / and 空白.
+    weighted: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for frag in re.split(r"[+、，,／/\s]+", text):
+        frag = frag.strip()
+        if not frag:
+            continue
+        m = re.search(r"(\d{1,3})\s*%?", frag)
+        weight = int(m.group(1)) if m else 0
+        word = re.sub(r"\d+%?", "", frag).strip("：:（）()")
+        emotion = _map_tone_word(word) if word else None
+        if emotion and emotion not in seen:
+            seen.add(emotion)
+            weighted.append((emotion, weight))
+
+    if not weighted:
+        return ""
+
+    warm = sum(w for e, w in weighted if e in _WARM_EMOTIONS)
+    serious = sum(w for e, w in weighted if e not in _WARM_EMOTIONS)
+    total = warm + serious
+    # When no explicit percentages were given, fall back to ordering only.
+    has_weights = any(w > 0 for _, w in weighted)
+    serious_cap = round(serious * 100 / total) if total else 35
+    warm_share = round(warm * 100 / total) if total else 65
+
+    ordered = sorted(weighted, key=lambda kv: -kv[1])
+    primary = [e for e, _ in ordered if e in _WARM_EMOTIONS] or [
+        e for e, _ in ordered
+    ]
+    mix_csv = "、".join(
+        f"{e}{'(' + str(w) + '%)' if (has_weights and w) else ''}" for e, w in ordered
+    )
+    primary_csv = "、".join(primary[:3])
+
+    if language == "en":
+        cap_line = (
+            f"serious emotions (紧张/悬疑/震撼/虐) together must not exceed ~{serious_cap}% of chapters"
+            if has_weights
+            else "serious emotions (紧张/悬疑/震撼/虐) must stay a clear minority"
+        )
+        return (
+            "[VOLUME EMOTION MIX — hard tone contract]\n"
+            f"BookSpec tone maps to target_emotion mix: {mix_csv}. "
+            f"The dominant colours ({primary_csv}) MUST cover the majority of chapters; {cap_line}. "
+            "Do NOT let the whole volume default to 紧张/悬疑 — that destroys the book's intended tone."
+        )
+
+    cap_line = (
+        f"紧张/悬疑/震撼/虐 等严肃情绪合计章节占比不得超过约 {serious_cap}%"
+        if has_weights
+        else "紧张/悬疑/震撼/虐 等严肃情绪必须是明显少数"
+    )
+    warm_line = (
+        f"暖色调情绪（{primary_csv}）应覆盖约 {warm_share}% 的章节（多数）"
+        if has_weights
+        else f"暖色调主色调情绪（{primary_csv}）应覆盖多数章节"
+    )
+    return (
+        "【整卷情绪配比 · 基调硬约束】\n"
+        f"BookSpec 基调映射到 target_emotion 词表：{mix_csv}。\n"
+        f"- {warm_line}；{cap_line}。\n"
+        "- 每章选 target_emotion 时先服务此配比再考虑单章戏剧性；"
+        "禁止整卷一边倒成「紧张/悬疑」——那会丢失本书应有的基调色彩。"
+    )
+
+
 def chapter_end_hook_keys() -> tuple[str, ...]:
     """Canonical hook_type keys (empty when config is missing)."""
 

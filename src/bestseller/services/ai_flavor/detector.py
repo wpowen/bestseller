@@ -624,7 +624,21 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
     # be pushed over the block threshold (→ quality-degrading repair) on rhythm
     # alone. Reflective/lexical signals (epiphany / not-X-but-Y / tier-1
     # clichés) are not capped and remain blockable.
-    _ADVISORY_STRUCTURAL = {"choppy_rhythm", "staccato_saturation"}
+    # Content-blind signals that count constructs/words which also appear
+    # abundantly in *normal* good prose (rhythm fragments; emotion words like
+    # 震惊/恐惧; filter/cognition words like 知道/明白/一种/似乎; abstract
+    # adjectives like 强大/神秘). Their score is real-but-noisy, so the family's
+    # *combined* contribution is capped — they stay advisory (visible) but can
+    # never alone push a normal chapter over the block threshold into
+    # quality-degrading repair. Distinctive high-confidence signals (tier-1
+    # clichés, epiphany/not-X-but-Y over-reliance, terse tags) are NOT capped.
+    _ADVISORY_STRUCTURAL = {
+        "choppy_rhythm",
+        "staccato_saturation",
+        "emotion_label_density",
+        "filter_word_density",
+        "abstract_evaluation_density",
+    }
     _STRUCTURAL_CAP = 24.0
 
     total = 0.0
@@ -737,12 +751,24 @@ def detect(
         # template). Default false keeps the per-member-first semantics used
         # by weak_adverb etc. (preserve the first 缓缓, flag only repeats).
         family_flag = bool(cluster.get("family_flag", False))
+        # ``advisory_only``: emit detection spans for scoring/audit but attach
+        # NO replacement suggestion, so the patcher leaves the prose untouched.
+        # Required for clusters whose members are *predicate phrases*
+        # (瞳孔一缩 / 心头一紧 / 忽然明白): a static empty-string "delete" would
+        # strip a load-bearing verb and break the sentence
+        # ("他忽然意识到一件事。" → "他一件事。"). Only safe-to-delete *modifier*
+        # clusters (缓缓 / 其实) should carry an empty-string suggestion.
+        advisory_only = bool(cluster.get("advisory_only", False))
 
         # Collect every occurrence of every member, ordered by position.
         occurrences: list[tuple[int, str, tuple[str, ...]]] = []
         for member, member_suggestions in members.items():
             needle = member.lower() if rules.case_insensitive else member
-            sugg = tuple(s for s in member_suggestions if isinstance(s, str))
+            sugg = (
+                ()
+                if advisory_only
+                else tuple(s for s in member_suggestions if isinstance(s, str))
+            )
             for offset in _find_all_occurrences(haystack, needle):
                 if _is_in_ranges(offset, dialogue_ranges):
                     continue

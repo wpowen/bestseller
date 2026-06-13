@@ -46,6 +46,59 @@ from bestseller.services.methodology_compiler import (
 from bestseller.settings import load_settings
 
 
+# The highest-priority去AI味 directive: "AI 写信息，人类写体验". Drafted from
+# the editor checklist + the line-level audit of the narration-style baseline.
+# Kept concrete (forbidden → rewrite) so the model actually changes behaviour.
+_EXPERIENCE_FIRST = """\
+【最高写作铁律·体验优先，违反即重写】
+这是凌驾一切的第一规则：**不要告诉读者发生了什么，要让读者亲眼看见、亲身体验。**
+AI 写"信息"，人写"体验"。下面四条必须逐句遵守：
+
+1. 单一视角沉浸。全程只写本场视角人物**能亲身感知到**的——他看见、听见、摸到、闻到、想到的。
+   别人的心理、来历、动机，只能从他观察到的外在(动作/神态/语气/物件)去**推断**，不能由叙述者直接说出。
+
+2. 体验先于信息，禁止旁白交代。每个拍点先落**视角人物当下的感知或动作**，再带出必要信息。
+   严禁把来历/前情/机制/背景当独立旁白丢出来。下列写法一出现就算违规，必须改写：
+   - 来历交代："X 是…分下来的 / 三年没人用" → 改成人物此刻摸到/掂到/认出它的那一下。
+     ✗「方砚是翠屏峰分下来的，三年没人用，边角磕掉了米粒大一块。」
+     ✓「他指腹先碰到那道缺口——米粒大，硌手。是这方砚没错，比记忆里更糙了。」
+   - 解释机制/前情："这是他惯用的手段：先…再…" / "那是她替人挡符箭的后遗症" → 删掉解释，
+     只写人物看见的现象 + 自己的判断闪念，让读者从动作里自己拼出机制。
+   - 全知旁白："没人看见她每夜…" / "他不知道的是…" / "一个更大的阴谋即将展开" → 一律删，
+     换成视角人物此刻具体的一个动作或一件能看见的物证。
+   - **回忆/前情概述同样禁止**。不许用"如今三年过去，他修为停滞、灵根驳杂、连着两次垫底……"
+     这种一口气罗列处境的概述。回忆只能是**一个具体的画面或一次具体的动作**，一两笔带过即收回当下。
+     ✗「如今三年过去，他修为停滞，灵根驳杂，月评连着两次垫底，殷泱步步紧逼。」
+     ✓「他想起上次月评，自己的名字也是这样被念到最后一个。指节在砚背上收紧了些。」
+
+3. 画面感。只用**具体可见**的物、动作、身体反应，让读者能在脑中拼出完整画面。
+   不下抽象评价(矮得可怜/强大/神秘/可怕)，不直接命名情绪(震惊/紧张/愤怒)——
+   情绪用身体外显写(手抖/咽口水/捏紧/说话变短/盯着不动)，让读者自己得出结论。
+
+4. 禁结论先行、禁否定排比。不要先抛判断再补过程；过程在前，结论留给读者。
+   禁止"不是…而是…""不是…不是…是…""不是…，是…""与其…不如…""既…又…"这类句式——
+   包括描写物件时的"不是黑墨，是暗金的浓墨"，直接写"墨里浮着一丝暗金"。
+
+5. 镜头跟着视角实时推进，先动作、后结果。结果是读者跟着人物一起发现的 payoff，
+   不是预先 announce 的标签。凡"先报结果/反应/含义，再回头补动作或解释"的句子，一律倒过来：
+   - ✗「砚心有什么动了一下。是一缕暗金的线。」(先报异动再说明)
+     ✓「墨面平得像镜子，映着满堂的脸。镜面忽然裂开一道缝——一根线，比发丝还细，金的，从墨底钻上来。」
+   - 禁群体反应贴标签:"倒抽一口冷气""死一般静""鸦雀无声" → 改成某一个具体的人一个具体动作。
+   - 禁情绪贴标签:"笑僵在脸上""脸一寸寸白" → 改成她做了什么/停了什么(要落的笔停在半空，再没落下)。
+   - 禁旁白解读:"她知道那声音意味着什么""等着看他走上那条线""按常理早该…" → 删，只留可见现象。
+
+6. 用电影镜头语言写场景，让读者脑中能放出画面：
+   - 反应镜头：主角的威慑/强大/震慑，**不直接写主角**，切到配角或在场 NPC、物件的反应来侧写。
+     ✗「殷泱认出了养墨，脸色煞白。」
+     ✓「点名的执事笔尖一滞，一滴朱砂坠在册页上，洇开。他没去擦。」
+   - 建立镜头→推近：进新场景先给一个空间广角锚点(高台、人群、案上九方砚)，再推到主角当下的手/眼。
+   - 特写/插入：关键物件或动作给放大细节(砚底那道缺口、封泥上没干的朱、墨面裂开的缝)，用细节顶张力。
+   - 揭示靠调度：信息靠人物走位、视线转移、物件位置推到读者眼前，不靠叙述者开口宣布。
+
+每写一句先自检两遍：①这句是"报信息"还是"让读者看见/体验"？②这是"先报结果再解释"还是"镜头跟着动作走、结果自己落地"？不对就重写。
+"""
+
+
 def _fmt(value: object) -> str:
     if isinstance(value, dict):
         return value.get("summary") or "; ".join(f"{k}:{v}" for k, v in value.items())
@@ -172,6 +225,11 @@ async def _run(args: argparse.Namespace) -> int:
                 "你是顶尖中文网络小说写手。严格遵守下列写作方法论与禁忌，只输出正文。\n\n"
                 + compiled.text
             )
+        if args.experience_first:
+            # The dominant去AI味 lever: write the *experience*, not the
+            # *information*. Placed FIRST and marked as overriding so it wins
+            # against any narration-style guidance below it.
+            system_prompt = _EXPERIENCE_FIRST + "\n\n" + system_prompt
         t0 = time.monotonic()
         req = LLMCompletionRequest(
             logical_role="writer",
@@ -210,6 +268,7 @@ def main() -> int:
     parser.add_argument("--scenes", nargs="*", default=[], help="chapter:scene pairs")
     parser.add_argument("--stress", action="store_true", help="use built-in pattern-eliciting briefs")
     parser.add_argument("--naked", action="store_true", help="omit methodology block (bare model baseline)")
+    parser.add_argument("--experience-first", action="store_true", help="prepend the 体验优先 POV-immersion directive")
     args = parser.parse_args()
     return asyncio.run(_run(args))
 

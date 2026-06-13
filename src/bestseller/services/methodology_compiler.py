@@ -49,6 +49,9 @@ from bestseller.services.quality_levers.prose_craft_techniques import (
 from bestseller.services.quality_levers.prose_style_anchors import (
     render_style_anchor_block,
 )
+from bestseller.services.quality_levers.cinematic_pov import (
+    render_cinematic_pov_block,
+)
 from bestseller.services.quality_levers.rhythm_engineering import render_rhythm_block
 from bestseller.services.quality_levers.scene_grounding import (
     render_scene_grounding_block,
@@ -125,6 +128,10 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         # Proven #1 prose lever (单人入戏): raw per-scene first-person interiority.
         # Highest priority so it is never starved by the token budget; it is small.
         "character_embodiment_current",
+        # 镜头化·体验优先 (always-on, ~50% of文风质量): write experience not info,
+        # real-time camera, effective reaction-shots. Top always-on block so the
+        # budget never starves it (embodiment above is data-dependent / often empty).
+        "cinematic_pov_current",
         "writing_methodology_scene",
         "prompt_pack_scene_writer",
         "book_methodology_current",
@@ -163,6 +170,7 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
 # camera-grounded action is what makes a 爽点 land, so they precede the spring.
 _PROSE_SCENE_SHUANGWEN_PRIORITY: tuple[str, ...] = (
     "character_embodiment_current",
+    "cinematic_pov_current",
     "writing_methodology_scene",
     "prompt_pack_scene_writer",
     "book_methodology_current",
@@ -415,6 +423,16 @@ def _sections_for_stage(
                 text=_safe(render_embodiment_block, interiority=embodiment_text),
                 source="character_embodiment.py",
             )
+        # 镜头化·体验优先 — the always-on #1 anti-AI prose discipline. Placed
+        # before every other always-on block so the budget never starves it.
+        # Soft: shapes how the writer drafts (experience not information, real-time
+        # camera, legible reaction-shots); never a gate.
+        _append_block(
+            sections,
+            key="cinematic_pov_current",
+            text=_safe(render_cinematic_pov_block, language="zh"),
+            source="cinematic_pov.yaml",
+        )
         # Framing FIRST (anti-regression): the writer-levers A/B showed a budget
         # writer reads the stacked 留白/克制 guards as "write less" and cuts ~30%
         # length → lower文采. This总则 reframes: 文采=更具体不更短; pick 1-2 techniques;

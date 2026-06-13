@@ -6258,12 +6258,13 @@ def build_scene_draft_prompts(
         language=language,
         chapter_no=chapter.chapter_number,
         chapter_position=_infer_chapter_position(project, chapter),
-        # O3 fix (2026-06): raised 2500 → 3600 so the文采 craft levers (注入总则 +
-        # prose_craft 金句 + imagery 意象回返) actually fit. At 2500 they were silently
-        # starved by material_concreteness + scene_grounding, so the writer-levers
-        # A/B win (+10.2 LitStyle, 9 dims up) never reached production prose. The full
-        # PROSE_SCENE block caps at ~3.8k tokens; 3600 fits every文采 lever.
-        token_budget=3200,
+        # Budget (2026-06): raised to 3800 so the new always-on #1 lever
+        # cinematic_pov (镜头化·体验优先, ~290 tok) fits ON TOP of the文采 levers
+        # (注入总则 + prose_craft 金句 + imagery 意象 + emotion choreography) without
+        # starving the tail — at 3200 adding cinematic_pov dropped craft/emotion from
+        # the shuangwen-mode tail, breaking the "文采 preserved" invariant. The full
+        # PROSE_SCENE block caps at ~3.8k tokens; 3800 fits every lever in both modes.
+        token_budget=3800,
         story_bible=story_bible_context,
         shuangwen_mode=_shuangwen_on,
         include_writing_methodology_bridge=_include_methodology_rules,

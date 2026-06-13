@@ -547,6 +547,56 @@ def parse_volume_plan_input(
     return [VolumePlanEntryInput.model_validate(item) for item in items]
 
 
+def enforce_volume_plan_contract(
+    volumes: list[dict[str, Any]] | list[VolumePlanEntryInput],
+    *,
+    expected_volume_count: int,
+    target_chapters: int,
+    coverage_floor: float = 0.9,
+) -> None:
+    """Reject volume plans that under-plan the book (P-6, xianxia benchmark).
+
+    Production evidence: a 500-chapter project accepted a 5-volume × 50-chapter
+    plan (half the book unplanned) with every ``reader_hook_to_next`` empty.
+    Raises ``ValueError`` whose message carries diagnostic codes so the
+    structured-artifact retry loop can feed them back to the model.
+    """
+
+    codes: list[str] = []
+
+    def _field(item: Any, key: str) -> Any:
+        if isinstance(item, dict):
+            return item.get(key)
+        return getattr(item, key, None)
+
+    count = len(volumes)
+    if expected_volume_count > 0 and count != expected_volume_count:
+        codes.append(
+            f"VOLUME_COUNT_MISMATCH: plan has {count} volume(s), project hierarchy requires {expected_volume_count}"
+        )
+
+    covered = sum(int(_field(v, "chapter_count_target") or 0) for v in volumes)
+    if target_chapters > 0 and covered < target_chapters * coverage_floor:
+        codes.append(
+            f"VOLUME_CHAPTER_COVERAGE_SHORT: volumes cover {covered} chapter(s), project targets {target_chapters}"
+        )
+
+    missing_hooks = [
+        str(_field(v, "volume_number") or index + 1)
+        for index, v in enumerate(volumes)
+        if index + 1 < count and not str(_field(v, "reader_hook_to_next") or "").strip()
+    ]
+    if missing_hooks:
+        codes.append(
+            "VOLUME_HOOK_MISSING: non-final volume(s) "
+            + ", ".join(missing_hooks)
+            + " lack a concrete reader_hook_to_next"
+        )
+
+    if codes:
+        raise ValueError("Volume plan contract violated: " + "; ".join(codes))
+
+
 # ── Volume title normalization ─────────────────────────────────────
 # A placeholder title is one that carries no narrative signal — e.g. the
 # generic "第N卷" / "Volume N" fallback patterns. These can slip in when

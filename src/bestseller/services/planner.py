@@ -123,6 +123,7 @@ from bestseller.services.prompt_packs import (
     resolve_prompt_pack,
 )
 from bestseller.services.story_bible import (
+    enforce_volume_plan_contract,
     parse_cast_spec_input,
     parse_volume_plan_input,
     parse_world_spec_input,
@@ -9122,6 +9123,33 @@ def _volume_goal_achieved(volume_number: int, volume_count: int) -> bool:
     return volume_number % 2 == 0
 
 
+def _volume_plan_validator_for(project: ProjectModel) -> Callable[[Any], Any]:
+    """Validator for freshly generated volume plans (P-6 contract).
+
+    Parses the payload, then rejects plans that under-plan the book
+    (volume count mismatch / chapter coverage shortfall / missing
+    next-volume hooks) so the structured-artifact retry loop feeds the
+    diagnostic codes back to the model. Repair paths keep using the plain
+    parser — they operate on already-accepted plans.
+    """
+
+    target_chapters = max(int(project.target_chapters or 0), 1)
+    expected_volume_count = int(
+        compute_linear_hierarchy(target_chapters).get("volume_count") or 1
+    )
+
+    def _validate(content: Any) -> Any:
+        parsed = parse_volume_plan_input(content)
+        enforce_volume_plan_contract(
+            parsed,
+            expected_volume_count=expected_volume_count,
+            target_chapters=target_chapters,
+        )
+        return parsed
+
+    return _validate
+
+
 def _fallback_volume_plan(
     project: ProjectModel,
     book_spec: dict[str, Any],
@@ -9328,48 +9356,24 @@ def _fallback_volume_plan(
                         else []
                     ),
                 ],
-                "foreshadowing_planted": (
-                    [
-                        (
-                            f"Plant one unresolved variable that must mature in Volume {volume_number + 1}."
-                            if is_en
-                            else f"埋下一条必须在第{volume_number + 1}卷继续发酵的未解变量。"
-                        )
-                    ]
-                    if volume_number < volume_count
-                    else []
-                ),
-                "foreshadowing_paid_off": (
-                    [
-                        (
-                            "Pay off at least one earlier setup in a way that changes the next stage."
-                            if is_en
-                            else "回收至少一条前序铺垫，并让它改变下一阶段。"
-                        )
-                    ]
-                    if volume_number > 1
-                    else []
-                ),
+                # P-3 (xianxia benchmark): these used to carry INSTRUCTION
+                # sentences / boilerplate hooks. Because the structured-artifact
+                # merge backfills fallback values into missing LLM fields, the
+                # scaffold text shipped inside production artifacts as if it
+                # were plan content (zhaoshen-hr-v4 vol1 hook verbatim). Honest
+                # emptiness instead: empty fields trip
+                # enforce_volume_plan_contract / foreshadowing gates, while
+                # boilerplate sails through everything.
+                "foreshadowing_planted": [],
+                "foreshadowing_paid_off": [],
                 "reader_hook_to_next": (
                     (
                         f"Milestone '{milestone_title}' lands, but the next commercial escalation is already visible."
-                        if milestone_title and volume_number < volume_count
-                        else (
-                            "The immediate pressure changes shape, but the story cannot settle yet."
-                            if volume_number < volume_count
-                            else "The story is ready for its final landing."
-                        )
+                        if is_en
+                        else f"「{milestone_title}」这个里程碑落地后，更大的商业钩子已经抬头。"
                     )
-                    if is_en
-                    else (
-                        f"「{milestone_title}」这个里程碑落地后，更大的商业钩子已经抬头。"
-                        if milestone_title and volume_number < volume_count
-                        else (
-                            "眼前压力虽然变形或后撤，但故事还不能停下来。"
-                            if volume_number < volume_count
-                            else "故事已经进入终局着陆阶段。"
-                        )
-                    )
+                    if milestone_title and volume_number < volume_count
+                    else ""
                 ),
                 "arc_ranges": arcs,
             "is_final_volume": volume_number == volume_count,
@@ -12870,7 +12874,11 @@ def _world_spec_prompts(
             f"{_pp_world_spec}"
             f"{_mat_ref_block}"
             "Generate a WorldSpec JSON with world_name, world_premise, rules, power_system, locations, factions, power_structure, history_key_events, and forbidden_zones. "
-            "World rules must create conflict, cost, upgrade space, and conspiracy leverage rather than empty lore.\n\n"
+            "World rules must create conflict, cost, upgrade space, and conspiracy leverage rather than empty lore.\n"
+            "power_system MUST be a structured object, never a prose paragraph: "
+            '{"name": str, "tiers": [ordered tier names, low to high — for cultivation/progression genres list every major tier], '
+            '"acquisition_method": str, "hard_limits": str, "protagonist_starting_tier": str}. '
+            "Downstream progression tracking and tier-consistency gates consume these fields; free text starves them.\n\n"
             f"{_WORLD_SPEC_COUNTER_EXAMPLES_EN}"
         )
         if is_en
@@ -12890,7 +12898,11 @@ def _world_spec_prompts(
             f"{_mat_ref_block}"
             "请生成一个 WorldSpec JSON，包含 world_name、world_premise、rules、power_system、locations、"
             "factions、power_structure、history_key_events、forbidden_zones。"
-            "要求世界规则能直接制造冲突、爽点成本、升级空间和阴谋推进空间，不要只写空背景。\n\n"
+            "要求世界规则能直接制造冲突、爽点成本、升级空间和阴谋推进空间，不要只写空背景。\n"
+            "power_system 必须是结构化对象，禁止写成一段散文："
+            '{"name": 体系名, "tiers": [境界/层级名列表，由低到高有序——修炼/升级类题材必须列全每个大境界], '
+            '"acquisition_method": 晋升机制, "hard_limits": 硬上限/天花板, "protagonist_starting_tier": 主角起始层级}。'
+            "下游的境界追踪与一致性闸门直接消费这些字段，写成自由文本会让它们全部失效。\n\n"
             f"{_WORLD_SPEC_COUNTER_EXAMPLES_ZH}"
         )
     )
@@ -13279,6 +13291,29 @@ def _volume_plan_prompts(
     )
     _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
     _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
+    # P-6 (xianxia benchmark): the prompt previously never stated how many
+    # volumes to plan or how many chapters they must cover, so a 500-chapter
+    # project shipped a 5-volume × 50-chapter plan (half the book unplanned).
+    # State the contract up front; enforce_volume_plan_contract() rejects
+    # violations at the validation boundary.
+    _contract_chapters = max(int(project.target_chapters or 0), 1)
+    _contract_volume_count = int(
+        compute_linear_hierarchy(_contract_chapters).get("volume_count") or 1
+    )
+    _coverage_contract_line = (
+        (
+            f"HARD CONTRACT: output EXACTLY {_contract_volume_count} volume(s); the sum of all "
+            f"chapter_count_target values MUST equal {_contract_chapters} (the full book — never plan only part of it); "
+            "every non-final volume MUST carry a concrete, volume-specific reader_hook_to_next "
+            "(empty or boilerplate hooks are rejected).\n"
+        )
+        if is_en
+        else (
+            f"【硬性契约】必须恰好输出 {_contract_volume_count} 卷；所有卷的 chapter_count_target 之和"
+            f"必须等于 {_contract_chapters} 章（覆盖全书，禁止只规划前半部）；"
+            "除最后一卷外，每卷的 reader_hook_to_next 必须是该卷专属的具体钩子，空值或套话会被拒收。\n"
+        )
+    )
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -13302,6 +13337,7 @@ def _volume_plan_prompts(
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
             f"{_pp_volume_plan}"
+            f"{_coverage_contract_line}"
             "Generate a VolumePlan JSON array. Each entry must include volume_number, volume_title, volume_theme, chapter_count_target, volume_goal, volume_obstacle, volume_climax, volume_resolution, conflict_phase, and primary_force_name. "
             "Each entry must also include worldview progression fields: `world_state_targets`, `active_authority_claims`, `map_function`, `world_asset_refs`, `asset_risk_escalation`, and `reveal_budget`. "
             "`world_state_targets` must name WorldviewKernel state variables and their intended movement; `map_function` must explain resource anomaly, faction/authority pressure, or rule demonstration; `asset_risk_escalation` must increase cost/exposure/attention when an asset repeats. "
@@ -13341,6 +13377,7 @@ def _volume_plan_prompts(
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
             f"{_pp_volume_plan}"
+            f"{_coverage_contract_line}"
             "请生成 VolumePlan JSON 数组，每个元素包含 volume_number、volume_title、volume_theme、"
             "chapter_count_target、volume_goal、volume_obstacle、volume_climax、volume_resolution、"
             "conflict_phase（冲突类型：survival/political_intrigue/betrayal/faction_war/existential_threat/internal_reckoning）、"
@@ -14786,7 +14823,7 @@ async def _generate_structured_artifact(
             phase="llm_started",
             attempt=attempt + 1,
         )
-        max_tokens_override = _planner_stage_max_tokens(logical_name)
+        max_tokens_override = _planner_stage_max_tokens(logical_name, project=project)
         completion = await complete_text(
             session,
             settings,
@@ -15004,11 +15041,25 @@ def _planner_artifact_type_for_logical_name(logical_name: str) -> ArtifactType |
 _PLANNER_MAX_OUTPUT_TOKENS = 16384
 
 
-def _planner_stage_max_tokens(logical_name: str) -> int | None:
+def _planner_stage_max_tokens(logical_name: str, *, project: Any | None = None) -> int | None:
     if re.fullmatch(r"volume_\d+_chapter_outline(_batch_\d+_\d+)?", logical_name):
         return _PLANNER_MAX_OUTPUT_TOKENS
     if logical_name in {"story_design_kernel", "emotion_driven_kernel"}:
         return _PLANNER_MAX_OUTPUT_TOKENS
+    if logical_name in {
+        "volume_plan",
+        "volume_plan_repair",
+        "volume_plan_foreshadowing_repair",
+        "volume_plan_convergence_repair",
+    } and project is not None:
+        # P-6 enabler (xianxia benchmark): a full 10-volume plan measures
+        # ~18k chars in production — physically impossible inside the legacy
+        # 8192-token cap, which is how a 500-chapter project shipped a
+        # truncation-shrunk 5-volume plan. Scale with the project's volume
+        # count; the coverage contract is unsatisfiable otherwise.
+        target_chapters = max(int(getattr(project, "target_chapters", 0) or 0), 1)
+        volume_count = int(compute_linear_hierarchy(target_chapters).get("volume_count") or 1)
+        return min(32768, max(8192, volume_count * 2560))
     if logical_name in {
         "book_spec",
         "book_spec_narrative_lines_repair",
@@ -19049,7 +19100,7 @@ async def generate_novel_plan(
             user_prompt=volume_user,
             fallback_payload=volume_plan_fallback,
             workflow_run_id=workflow_run.id,
-            validator=parse_volume_plan_input,
+            validator=_volume_plan_validator_for(project),
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
@@ -20474,7 +20525,7 @@ async def generate_foundation_plan(
             user_prompt=vp_user,
             fallback_payload=volume_plan_fallback,
             workflow_run_id=workflow_run.id,
-            validator=parse_volume_plan_input,
+            validator=_volume_plan_validator_for(project),
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)

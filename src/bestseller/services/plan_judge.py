@@ -258,8 +258,13 @@ def _check_power_tier_escalation(
 
     Also validates that the world_spec defines a power_system with >= 3 tiers.
     """
-    # Check power system depth
+    # Check power system depth. Production world_specs may carry the whole
+    # tier ladder as one free-text string (the WorldSpecInput coercion stuffs
+    # it into ``name`` with ``tiers=[]``) — mirror that coercion here so the
+    # check reports "tiers missing" instead of crashing out of the registry.
     power_system = world_spec.get("power_system") or {}
+    if isinstance(power_system, str):
+        power_system = {"name": power_system}
     tiers = power_system.get("tiers") or power_system.get("power_tiers") or []
     if isinstance(tiers, list) and len(tiers) < 3:
         return False, PlanValidationFinding(

@@ -69,3 +69,44 @@ def test_short_rewrite_is_rejected(monkeypatch) -> None:
 def test_empty_input_noop(monkeypatch) -> None:
     out = _run("", rounds=3)
     assert out == ""
+
+
+def test_production_discourse_flavor_triggers_deslop_then_clears(monkeypatch) -> None:
+    """The production guarantee (exact compose pipelines.py runs): a chapter
+    carrying discourse-level AI flavor (旁白解释来历 + 不是X而是Y) trips
+    ``needs_deslop_revise`` even though the span patcher can't touch it; after
+    the deslop rewrite the recheck no longer needs revise. Proven end-to-end on
+    real ch4 (gate block 88→pass); this is the fast deterministic regression."""
+    from bestseller.services.ai_flavor_gate import (
+        AiFlavorGateConfig,
+        needs_deslop_revise,
+        run_ai_flavor_gate,
+    )
+
+    cfg = AiFlavorGateConfig(llm_rewrite_enabled=False, write_audit_file=False)
+    # Discourse tells (advisory, no static fix → patcher leaves them in):
+    # info_narration (那是…的后遗症 / 没人看见) + negated_definition (不是X而是Y).
+    dirty = (
+        "那是他替师父挡刀留下的后遗症。没人看见他三年来每夜的苦练。"
+        "这不是一柄普通的剑，而是斩断因果的凶器。"
+    )
+    g0 = run_ai_flavor_gate(
+        chapter_number=1, content_md=dirty, language="zh-CN", config=cfg,
+        llm_rewriter=None, project_output_dir=None,
+    )
+    assert needs_deslop_revise(g0), "discourse flavor must trigger deslop"
+
+    clean = "他左肩一沉，刀尖在石上磕出一点火星。剑还在鞘里，鞘口缠着三圈旧布。"
+
+    async def fake_complete(_s, _set, req):
+        return _fake_result(clean)
+
+    monkeypatch.setattr(deslop, "complete_text", fake_complete)
+    revised = asyncio.run(
+        revise_prose_deslop(None, object(), content=dirty, target_chars=40, rounds=3)
+    )
+    g1 = run_ai_flavor_gate(
+        chapter_number=1, content_md=revised, language="zh-CN", config=cfg,
+        llm_rewriter=None, project_output_dir=None,
+    )
+    assert not needs_deslop_revise(g1), "after deslop the chapter must be clean"

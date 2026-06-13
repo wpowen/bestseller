@@ -105,6 +105,47 @@ class AiFlavorGateOutcome:
     metrics: dict[str, Any] = field(default_factory=dict)
 
 
+# Discourse-level tells the span patcher CANNOT fix (it only deletes/swaps
+# words): narrator rule-exposition, parallel gloss, conclusion-first. These
+# are the user's top AI-flavor complaint ("平白叙述/解释规则") and must trigger
+# the whole-passage deslop rewrite even when the total score stays under the
+# block threshold — otherwise they ship silently (each is advisory/capped).
+# These are the category strings the detector actually emits
+# (data/ai_flavor/patterns_zh.json): info_narration = 旁白解释规则/术语/来历/路数 +
+# 本该点破; negated_definition = 不是X而是Y / 与其…不如 (结论先行下定义);
+# epiphany_announcement = 顿悟宣告; face_emotion_label = 脸色X贴标签;
+# empty_reaction_shot = 双手分开无效镜头. All advisory (no static suggestion) → the
+# span patcher leaves them untouched, so only the whole-passage deslop can clear them.
+DESLOP_DISCOURSE_CATEGORIES = frozenset(
+    {
+        "info_narration",
+        "negated_definition",
+        "epiphany_announcement",
+        "face_emotion_label",
+        "empty_reaction_shot",
+    }
+)
+
+
+def needs_deslop_revise(outcome: "AiFlavorGateOutcome") -> bool:
+    """Whether the chapter should run the deslop rewrite.
+
+    True when the score blocked OR the (post-patch) report still carries a
+    discourse tell the patcher cannot touch. The latter is the fix for the
+    POV blind spot: rule-exposition scores low (advisory) yet is exactly what
+    deslop exists to rewrite.
+    """
+
+    if outcome.decision == "block":
+        return True
+    report = outcome.report
+    if report is None:
+        return False
+    # gate adapts each span into a CheckerIssue with id == AI_FLAVOR_<CATEGORY>.
+    deslop_ids = {f"AI_FLAVOR_{c.upper()}" for c in DESLOP_DISCOURSE_CATEGORIES}
+    return any(getattr(i, "id", "") in deslop_ids for i in report.issues)
+
+
 # ---------------------------------------------------------------------------
 # CheckerReport adaptation.
 # ---------------------------------------------------------------------------

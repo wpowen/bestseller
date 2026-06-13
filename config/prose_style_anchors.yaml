@@ -235,6 +235,18 @@ anchors:
       - id: explanatory_dialogue
         pattern: 角色用对白替读者总结"这意味着 X"
         replacement: 让读者自己拼，不要由角色总结
+      # 结论先行·否定式下定义——叙述者先抛抽象判断替读者下结论。
+      - id: not_x_but_y
+        pattern: "不是 X，而是 Y / 与其说 X 不如说 Y（叙述者代读者定性）"
+        replacement: 让读者从感官/动作/物件自己得出结论，过程在前、结论隐去，别由叙述者宣告
+        example_before: "他终于明白，这不是一场考核，而是一场针对他的清算。"
+        example_after: "考牌官把他的名字往名册末尾一划，没抬头。谢迟盯着那道墨线——这趟根本不是来录他的。"
+      # 顿悟宣告——用"突然明白/忽然意识到/一切都变了"直接宣布心理转折。
+      - id: epiphany_announcement
+        pattern: 突然明白 / 忽然意识到 / 瞬间懂了 / 一切都变了（宣布转折而非演示）
+        replacement: 让念头逐步逼近、落到一个具体可见的变化；同章这类宣告 ≤2 次
+        example_before: "他突然明白，一切都变了。"
+        example_after: "他盯着那行字，手心先出了汗，才反应过来自己刚才一直没敢呼吸。"
       - id: weak_verbs
         pattern: 做 / 进行 / 完成 / 实施 / 实现
         replacement: 具体动作动词

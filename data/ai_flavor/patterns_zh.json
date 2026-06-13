@@ -58,6 +58,9 @@
     {"id": "cn.humanizer.abstract_word.003", "phrase": "宝贵的", "severity": "warn", "category": "abstract_ai_word", "suggestions": [""], "remove_sentence_on_block": false, "why": "Humanizer-zh: 泛化褒义词"},
 
     {"id": "cn.humanizer.negated_parallel.001", "pattern": "这?不仅仅是[^。！？\\n]{0,36}(?:而是|更是)", "severity": "warn", "category": "negated_parallelism", "suggestions": [], "remove_sentence_on_block": false, "why": "Humanizer-zh: 否定式排比过度使用"},
+
+    {"id": "cn.conclusion.not_but.001", "pattern": "(?<![不仅也])不是[^。！？，,\\n]{1,20}[，,][^。！？\\n]{0,8}而是", "severity": "warn", "category": "negated_definition", "suggestions": [], "remove_sentence_on_block": false, "why": "结论先行·否定式下定义「不是X，而是Y」：叙述者先抛抽象判断替读者下结论。改成让读者从感官/动作/物件自己得出，过程在前结论隐去"},
+    {"id": "cn.conclusion.not_but.002", "pattern": "与其说[^。！？\\n]{1,30}不如说", "severity": "warn", "category": "negated_definition", "suggestions": [], "remove_sentence_on_block": false, "why": "结论先行·「与其说X不如说Y」：叙述者代读者权衡定性。改成展示，不要宣告"},
     {"id": "cn.humanizer.vague_attribution.001", "pattern": "(?:行业报告|观察者|专家|一些批评者|多个来源|多家媒体)(?:显示|指出|认为|称)", "severity": "block", "category": "vague_attribution", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 模糊归因"},
 
     {"id": "cn.humanizer.chat.001", "phrase": "希望这对您有帮助", "severity": "block", "category": "assistant_artifact", "suggestions": [], "remove_sentence_on_block": true, "why": "Humanizer-zh: 聊天机器人残留"},
@@ -137,6 +140,31 @@
         "后背一僵": [""],
         "呼吸一滞": [""],
         "呼吸一窒": [""]
+      }
+    },
+    {
+      "id": "cn.cluster.epiphany_announcement",
+      "category": "epiphany_announcement",
+      "threshold": 3,
+      "severity": "warn",
+      "family_flag": true,
+      "why": "顿悟宣告过度依赖——用「突然明白/忽然意识到/一切都变了」直接宣布心理转折，而非展示其发生过程。偶尔可用，同章 ≥3 次即情绪靠宣告而非演示。改成让念头逐步逼近、落到具体可见的变化",
+      "members": {
+        "突然明白": [""],
+        "忽然明白": [""],
+        "猛然明白": [""],
+        "蓦然明白": [""],
+        "突然懂了": [""],
+        "瞬间懂了": [""],
+        "突然意识到": [""],
+        "忽然意识到": [""],
+        "猛然意识到": [""],
+        "突然醒悟": [""],
+        "瞬间醒悟": [""],
+        "突然想通": [""],
+        "一切都变了": [""],
+        "一切都不一样了": [""],
+        "一切都不同了": [""]
       }
     },
     {

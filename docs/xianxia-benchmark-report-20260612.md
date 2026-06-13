@@ -84,6 +84,37 @@ S1 FAIL（power_system 自由文本）/ S2 PASS（26 势力，卷际主导力量
 - TDD：tests/unit/test_fallback_volume_plan_no_scaffold_leak.py 2 测（RED→GREEN）。
 - 全量回归：**6599 passed, 3 skipped**（含 planner/volume/judge/story_bible 全家族）。
 
+## 六.5、缺口修复记录 G1-G4（2026-06-13，第二轮目标）
+
+> 三轮修复（P-1/P-3/P-5/P-6）已由用户经 Cursor commit（A1-A5=cb4cf45，三轮+文档+工具=ed842a3）。本节为 G1→G4 顺序落地，每项 RED→GREEN+真实样本验证。
+
+### G1：cast 配角动机契约 + 名册下限/输出预算随卷数伸缩 ✅
+- 根因（P-2）：supporting_cast 结构契约只列 5 字段（无 goal/flaw）；「紧凑输出合同」硬编码"3-5 名"与 relationship-scaling 块（10 卷 floor=15）互斥，模型服从小数，500 章史诗只产 3 配角且 scaling 修复无法收敛。
+- 修改：① `_cast_spec_prompts` supporting_cast 结构加 goal（独立动机）/flaw（双语）；②「紧凑输出合同」3-5 改为 `compute_supporting_bounds(卷数)` 伸缩值（10 卷→15-30）；③ `_planner_stage_max_tokens` 对 cast_spec 加 cap 伸缩 `ceiling*600+2000`（短书回落 8192，10 卷→20k）——否则 23 配角带完整字段（实测 12615 tok）会被 8192 截断，G1 契约白做。
+- TDD：tests/unit/test_cast_motivation_contract.py 6 测。
+- 真实样本（v1 foundation + 新 prompt 单次）：**旧 3 配角缺 arc → 23 配角，goal/flaw/arc 全 23/23 填充**，finish_reason=stop。
+- 端到端（v4 全集重跑，完整管线含 identity-lock+repair）：supporting_cast **25 个**，goal/flaw/evolution_arc/relationship 全 **25/25**。
+
+### G2：premise 自然语态名册抓取 ✅
+- 根因（P-4）：标记词表无「关键配角」等自然表述；嵌入式命名（「孤女宋拾」人名在描述短语尾部）被只认 2-3 字独立 run 的旧逻辑漏掉，cast planner 自造配角顶替。
+- 修改：① `_PREMISE_ROSTER_MARKERS` 加「关键配角/主要配角/核心配角/重要配角/主要人物/核心人物」族（中英）；② 新增 Pass 1.5 `_name_from_phrase_tail`——marker 段内按「、，；」分割短语，去括号，取最后 CJK run 的姓锚定 2-3 字尾名；只在 marker 段内运行，普通叙述不挖。
+- TDD：tests/unit/test_premise_roster_extraction.py 4 测。
+- 真实样本（蚀漏砚完整 premise）：**宋拾/关铎/裴萤/白杪 4/4 全锁 + 主角谢迟锁定，零 role/aside noise**（试跑时这四个全丢失）。
+- 端到端（v4 全集重跑）：四配角全部进入 cast_spec 且排 supporting_cast 前四位（premise 名册直通生效）。
+
+### G3：卷纲伏笔 seed 标签闭环 + 物化按 seed 建链 ✅
+- 根因（实证修正认知）：物化 18 clue ≠「37→18 丢一半」（v1 只物化卷 1-2，18=两卷 planted 数，正常）；**真缺陷是 `_match_clue_code` 文本子串匹配关联 payoff→clue**——LLM plant/payoff 措辞不同则匹配失败。DB 实证：v1 **payoff source_clue 0/3 linked、clue 0/18 resolved**，伏笔从不闭环。
+- 修改：① 卷纲 foreshadowing 约束块（EN+ZH）要求每条 planted 以全书唯一 `[S<n>]` 开头、paid_off 以同一 `[S<n>]` 引用；② `_extract_seed_tag` 纯函数 + `_build_clues_and_payoffs` 用 `seed_to_clue_code`（跨卷累积）精确关联，无标签回退文本匹配（向后兼容）；③ payoff 关联后回写 clue status=resolved+actual_paid_off（闭环）；标签在 label 中 strip。
+- TDD：tests/unit/test_foreshadowing_seed_linkage.py 4 测。
+- 真实样本（v1 foundation + 新 prompt 单次）：**31 planted 全带唯一 seed 标签、26 paid_off 26/26 链接到已 planted 的 seed**（对比 v1 基线 0/3）。
+- 边界：只对新书生效（新 prompt 产 seed），不回填迁移老数据（合目标边界）。
+
+### G4：章纲商业判官 findings 同一次运行内回灌重生成 ✅
+- 根因（R12 规划层重演）：判官 fail 后仅 `_attach_prewrite_quality_report` 记录元数据即存 artifact；`_commercial_repair_directives` 只从 `metadata` 读（靠外层 heal 的**下一次** generate 填充），单次 planning generate 内从不重生成——卷一 0.340 直接入库。
+- 修改：① `_run_planner_outline_commercial_judge` 返回 payload 加 `repair_directives`（fail 时 `build_outline_repair_directives(result)`）；② 新增纯函数 `_outline_judge_repair_directives`（pass/轮次耗尽/无 directives 时停，防死循环）；③ 章纲生成调用点重构为 generate→judge→bounded-repair 循环，fail 时把 directives 追加 base_constraints **在同一次运行内**重生成（默认 1 轮，`outline_commercial_judge_repair_rounds` 可配）。
+- TDD：tests/unit/test_outline_judge_inloop_repair.py 5 测。
+- 端到端：待 v4 重跑到卷一章纲验证（判官 fail→in-run repair round 日志 + 分数提升）。
+
 ## 七、达标判定与剩余缺口
 
 ### 达标判定
@@ -91,23 +122,25 @@ S1 FAIL（power_system 自由文本）/ S2 PASS（26 势力，卷际主导力量
 
 ### 剩余缺口（按优先级，含应改模块/推荐改法/验证方式）
 
+**G1-G4 均已落地**（详见 §六.5：代码+RED→GREEN 单测+真实样本验证）。下表为剩余缺口 G5-G9。
+
 | # | 缺口 | 证据 | 应改模块 | 推荐改法 | 验证方式 |
 |---|---|---|---|---|---|
-| G1 | 配角动机字段不在 cast prompt 契约（P-2）：supporting_cast 结构只要 5 字段，goal/flaw 恒空 | v4 实测 0/18；基准书有 goal 无 evolution_arc（两路径各缺一半） | planner.py::_cast_spec_prompts 顶层结构指令 | supporting_cast 元素结构加 goal（独立动机）/flaw；500 章档提高名册下限（现仅 3 人） | 单测 prompt 含字段 + 重生成 cast 抽查填充率 |
-| G2 | premise 自然语态名册漏抓（P-4）：「关键配角：…孤女宋拾…」全部丢失 | 基准书 cast 实物（4 配角全没了） | planner.py::_PREMISE_ROSTER_MARKERS + 提取逻辑 | 标记词表补「关键配角/主要人物/核心配角」；对标记段内按「、」分隔的短语取**尾部 2-3 字 CJK**为候选名（修复"孤女宋拾"嵌入式命名提不出的缺口） | 用本基准 premise 做单测：4 名全锁 |
-| G3 | 伏笔无 ID 闭环（S3 结构性缺口）：卷纲 planted/paid_off 互不关联的自由文本；物化丢失约半数（37→18 线索、17→3 回收） | 本基准+v4 双书核对；narrative graph 计数 | domain/story_bible.py VolumePlanEntryInput + workflows 物化 | planted 条目加可选 `seed_id`，paid_off 引用 seed_id；物化时按 id 建 Clue/Payoff 链；卷纲验收查孤儿伏笔 | 结构核对脚本 S3 改为 id 闭环判定 |
-| G4 | 章纲商业判官只评不修（R12 规划层重演）：卷一 0.340 照常放行，findings 无消费者 | 试跑日志 volume_1/2_outline_commercial_judge failed 后直接进下一卷 | planner.py 章纲判官接线处 | 判官 critical findings 转 repair directives 回灌批次重生成（与批次验收修复指令同通道），设轮次上限防死循环 | 重跑卷一观察判官分>0.6 或修复轮触发 |
+| ~~G1~~ | ✅ 配角动机契约+名册/预算伸缩 | 见 §六.5 | — | — | 23 配角 goal/flaw/arc 23/23 |
+| ~~G2~~ | ✅ premise 自然语态名册抓取 | 见 §六.5 | — | — | 宋拾/关铎/裴萤/白杪 4/4 |
+| ~~G3~~ | ✅ 伏笔 seed 标签闭环+物化建链 | 见 §六.5 | — | — | 26/26 payoff 链接（基线 0/3） |
+| ~~G4~~ | ✅ 章纲判官 in-run repair 通道 | 见 §六.5 | — | — | 5 单测；端到端待 v4 |
 | G5 | 势力演化无结构化时间轴（R7 族） | FactionInput 全静态字段 | domain/story_bible.py FactionInput / VolumePlanEntryInput | 卷纲加 faction_state_deltas:[{faction,change}]（轻量），物化进 world_state | 结构核对 S2 升级为逐卷状态变化判定 |
 | G6 | 境界词汇污染检测缺失（P-7）：「元婴」混入原创七境无拦截 | 基准书卷纲实物（25 处） | plan_judge 或新 soft 闸门 | 用 world_spec.tiers 白名单扫卷纲/章纲中境界类词（题材通用境界词表做黑名单源），词表外境界词报 warning | 对基准书卷纲跑出 25 处命中 |
 | G7 | target_emotion 题材配比无约束：仙侠爽文 100 章中爽4/燃4 vs 紧张38 | 基准书章纲分布统计 | webnovel_method_cards.yaml + planner A2 注入 | 方法卡加题材→情绪配比建议表，批次验收做分布偏离 warning | 重跑卷一统计分布 |
 | G8 | 独角戏场景 18%（82%<90% 线） | 209 场景卡统计 | outline_field_enrichment（R6 同通道） | participants<2 时从章纲 participants/势力名册确定性补全 | 结构核对 S6 |
 | G9 | M2.7 思考 token 与产出共享 max_tokens 的预算学（P-5 残余）：outline 批次仍会截断（批次从 10 收缩到 5/3） | 试跑 17 次 outline 尝试、截断修复日志 | llm.py / 各 stage cap | 为 reasoning 模型在 stage cap 上加思考预留系数，或 MiniMax 侧 reasoning 单独计费参数 | 重跑卷一统计批次截断率 |
 
-### 下一步优先级建议
-1. **完整重跑验证**（新开 slug，同 premise）：确认三轮修复在端到端链路的复合效果，顺带验证 G4 前的判官基线分。
-2. G1+G2（cast 契约+名册抓取，半天）：直接决定"贴近作者意图"。
-3. G3（伏笔 ID 闭环，1-2 天）：500 章长篇的回收纪律根基。
-4. G4（规划层判官修复通道）：与正文层验收契约闭环对齐。
+### 下一步优先级建议（更新于 2026-06-13，G1-G4 落地后）
+1. **G6 境界词汇污染检测**（半天）：用 world_spec.tiers 白名单扫卷纲/章纲，「元婴」等题材通用词混入原创七境时报 warning——升级体系一致性的直接守卫，与 G1-G4 同属"原创设定保真"主线。
+2. **G5 势力演化时间轴**（1 天）：FactionInput 加逐卷 state_deltas，把 S2 从"静态入册"升级到"演化可核对"。
+3. **G7 情绪配比约束**（半天）：webnovel_method_cards 加题材→情绪配比建议表，批次验收做分布偏离 warning（仙侠爽文不应紧张 38/爽 4）。
+4. **G8 独角戏补全 + G9 reasoning 预算系数**（各半天）：R6 同通道确定性补全 participants；为 M2.7 思考 token 在 stage cap 加预留系数，降 outline 批次截断率。
 
 ### 运行记录（可复现）
 - premise/指标：docs/xianxia-benchmark-spec-20260612.md；tmp/shilouyan-premise.txt

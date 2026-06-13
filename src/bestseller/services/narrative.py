@@ -647,6 +647,28 @@ def _build_arc_beats(
     return beats
 
 
+# G3 (xianxia benchmark): plants/payoffs carry an inline seed tag like
+# "[S1] ..." so a payoff can reference its plant explicitly. This replaces the
+# fragile text-substring linkage (_match_clue_code), which left 0/3 payoffs
+# linked and 0/18 clues resolved on shilouyan-bench-v1 because the LLM phrases
+# a plant and its payoff differently.
+_SEED_TAG_RE = re.compile(r"^\s*\[\s*(S[\w-]{0,23})\s*\]\s*")
+
+
+def _extract_seed_tag(text: str) -> tuple[str | None, str]:
+    """Split an optional leading ``[S<n>]`` seed tag off a foreshadow entry.
+
+    Returns ``(seed_tag, text_without_tag)``. When no tag is present the tag is
+    ``None`` and the text is returned stripped of surrounding whitespace.
+    """
+
+    raw = str(text or "")
+    match = _SEED_TAG_RE.match(raw)
+    if match is None:
+        return None, raw.strip()
+    return match.group(1), raw[match.end() :].strip()
+
+
 def _match_clue_code(payoff_label: str, clue_specs: list[dict[str, Any]]) -> str | None:
     payoff_token = _normalized_token(payoff_label)
     if not payoff_token:
@@ -681,6 +703,9 @@ def _build_clues_and_payoffs(
     clue_index = 0
     payoff_index = 0
     mystery_arc_id = arc_ids.get("mystery_arc") or arc_ids.get("main_plot")
+    # G3: seed tag → clue_code, accumulated across volumes so a payoff in a
+    # later volume can resolve its plant in an earlier one (exact linkage).
+    seed_to_clue_code: dict[str, str] = {}
 
     for volume in volumes:
         entry = volume_entries.get(volume.volume_number)
@@ -697,10 +722,14 @@ def _build_clues_and_payoffs(
             planted_items = [first_chapter.hook_description]
         for item in planted_items:
             clue_index += 1
-            label = _ensure_text(item, f"伏笔{clue_index}")
+            seed_tag, item_text = _extract_seed_tag(item)
+            label = _ensure_text(item_text, f"伏笔{clue_index}")
+            clue_code = f"clue-{clue_index:03d}"
+            if seed_tag:
+                seed_to_clue_code[seed_tag] = clue_code
             clue_specs.append(
                 {
-                    "clue_code": f"clue-{clue_index:03d}",
+                    "clue_code": clue_code,
                     "label": label[:200],
                     "clue_type": "foreshadow",
                     "description": label,
@@ -721,8 +750,13 @@ def _build_clues_and_payoffs(
         payoff_items = list(getattr(entry, "foreshadowing_paid_off", []) if entry is not None else [])
         for item in payoff_items:
             payoff_index += 1
-            label = _ensure_text(item, f"兑现{payoff_index}")
-            matched_clue_code = _match_clue_code(label, clue_specs)
+            seed_tag, item_text = _extract_seed_tag(item)
+            label = _ensure_text(item_text, f"兑现{payoff_index}")
+            # Prefer exact seed-tag linkage; fall back to text matching for
+            # untagged (legacy / hand-authored) payoffs.
+            matched_clue_code = (
+                seed_to_clue_code.get(seed_tag) if seed_tag else None
+            ) or _match_clue_code(label, clue_specs)
             payoff_specs.append(
                 {
                     "payoff_code": f"payoff-{payoff_index:03d}",
@@ -738,6 +772,15 @@ def _build_clues_and_payoffs(
                     "status": "paid_off",
                 }
             )
+            # Close the loop: mark the resolved clue so it no longer reads as a
+            # dangling plant (0/18 resolved on shilouyan-bench-v1).
+            if matched_clue_code:
+                for clue_spec in clue_specs:
+                    if clue_spec["clue_code"] == matched_clue_code:
+                        clue_spec["status"] = "resolved"
+                        clue_spec["actual_paid_off_chapter_number"] = last_chapter.chapter_number
+                        clue_spec["actual_paid_off_scene_number"] = last_scene_number
+                        break
 
     return clue_specs, payoff_specs
 

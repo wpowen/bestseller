@@ -593,6 +593,12 @@ def render_foreshadowing_constraints_block(
             "'an omen' or 'a hidden truth'.\n"
             "- Plants and payoffs must reference DIFFERENT clues — don't "
             "plant and resolve the same clue inside one volume.\n"
+            "- Tag every planted clue with a unique inline id at the very "
+            "start: `[S1] ...`, `[S2] ...` (ids unique across the WHOLE "
+            "book). When a later volume pays off a clue, begin that payoff "
+            "entry with the SAME id, e.g. `[S1] ...now confirmed...`. This id "
+            "links plant→payoff exactly — do NOT rely on re-using the same "
+            "wording.\n"
         )
 
     return (
@@ -609,4 +615,9 @@ def render_foreshadowing_constraints_block(
         "- 伏笔条目必须具体——指名具体的物件/人物/日期/地点/事件。"
         "禁止『一个征兆』『一个隐藏的秘密』这种空泛占位。\n"
         "- 同一卷内不可『刚埋下就立即回收』——plant 与 pay_off 必须是不同伏笔。\n"
+        "- 每条 foreshadowing_planted 必须以全书唯一的内联编号开头："
+        "`[S1] ……`、`[S2] ……`（编号在全书范围内唯一）。后续卷回收某条伏笔时，"
+        "对应的 foreshadowing_paid_off 条目必须以同一个编号开头，如 "
+        "`[S1] ……（此处写回收/印证）`。此编号用于精确关联 plant→payoff，"
+        "不要靠重复相同措辞来暗示关联。\n"
     )

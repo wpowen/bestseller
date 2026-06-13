@@ -4168,9 +4168,21 @@ _PREMISE_ROSTER_MARKERS: tuple[str, ...] = (
     "必须沿用",
     "沿用以下姓名",
     "名册",
+    # G2 (xianxia benchmark): natural-language roster intros. Premises often
+    # list the supporting cast as "关键配角：…孤女宋拾、…执事关铎、…" rather
+    # than a formal name table; without these markers the embedded names were
+    # dropped and the cast planner invented replacements (P-4).
+    "关键配角",
+    "主要配角",
+    "核心配角",
+    "重要配角",
+    "主要人物",
+    "核心人物",
     "cast roster",
     "character roster",
     "must use the following names",
+    "key supporting cast",
+    "main characters",
 )
 
 # Grammatical / structural / role-label tokens only — these describe the
@@ -4235,6 +4247,41 @@ def _premise_name_candidate_ok(token: str) -> bool:
     return True
 
 
+_PREMISE_PARENTHETICAL_RE = re.compile(r"[（(][^）)]*[）)]")
+_PREMISE_LIST_SEP_RE = re.compile(r"[、,，;；]")
+
+
+def _name_from_phrase_tail(phrase: str) -> str | None:
+    """Pull a 2-3 char person name from the tail of a roster phrase (G2).
+
+    Natural-language roster phrases read "role/origin + name"
+    (``孤女宋拾`` / ``落魄执事关铎``); the name sits at the very end. Drop any
+    parenthetical aside, take the last CJK run, and keep a surname-anchored
+    2-3 char tail (falling back to the last 2 chars). Returns ``None`` when
+    the tail looks like a function word or a roster stopword rather than a
+    name.
+    """
+
+    cleaned = _PREMISE_PARENTHETICAL_RE.sub("", phrase)
+    runs = _PREMISE_CJK_RUN_RE.findall(cleaned)
+    if not runs:
+        return None
+    tail = runs[-1]
+    if len(tail) < 2:
+        return None
+    last3 = tail[-3:] if len(tail) >= 3 else None
+    last2 = tail[-2:]
+    if last3 is not None and last3[0] in _COMMON_ZH_SURNAMES:
+        candidate = last3
+    else:
+        candidate = last2
+    if candidate in _PREMISE_ROSTER_STOPWORDS:
+        return None
+    if any(ch in _PREMISE_NAME_FUNCTION_CHARS for ch in candidate):
+        return None
+    return candidate
+
+
 def _extract_premise_locked_names(
     premise: str,
     *,
@@ -4268,11 +4315,21 @@ def _extract_premise_locked_names(
             seen.add(name)
             ordered.append(name)
 
-    # Pass 1: explicit roster markers.
+    # Pass 1: explicit roster markers (formal name tables — names are their
+    # own 2-3 char tokens, e.g. "名册：周澈、九嶷、林晚").
     for segment in _premise_roster_segments(text):
         for run in _PREMISE_CJK_RUN_RE.findall(segment):
             if _premise_name_candidate_ok(run):
                 _add(run)
+
+    # Pass 1.5 (G2): natural-language rosters where each name is embedded at
+    # the tail of a "role + name" phrase (孤女宋拾 / 落魄执事关铎). Only runs
+    # inside a marker segment, so ordinary prose is never harvested.
+    for segment in _premise_roster_segments(text):
+        for phrase in _PREMISE_LIST_SEP_RE.split(segment):
+            candidate = _name_from_phrase_tail(phrase)
+            if candidate is not None:
+                _add(candidate)
 
     if is_english_language(language):
         return ordered[:max_names]
@@ -13107,12 +13164,24 @@ def _cast_spec_prompts(
     )
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
+    # G1 (xianxia benchmark): this contract used to hard-code "3-5 named
+    # characters", directly contradicting the relationship-scaling block
+    # (10-volume floor = 15). Models obey the smaller number: a 500-chapter
+    # epic shipped 3 supporting characters and the scaling repair could not
+    # recover. Scale the roster target with the project's volume count.
+    from bestseller.services.relationship_scaling import compute_supporting_bounds
+
+    _roster_volume_count = int(
+        compute_linear_hierarchy(max(project.target_chapters, 1)).get("volume_count") or 1
+    )
+    _roster_bounds = compute_supporting_bounds(_roster_volume_count)
     if is_en:
         user_prompt += (
             "\n\n[Compact output contract]\n"
             "- Keep character free-text fields to one concise sentence.\n"
             "- Do not emit large empty/null-heavy psych_profile, life_history, social_network, beliefs, or family_imprint objects.\n"
-            "- Supporting cast target: 3-5 named characters unless the project explicitly needs more.\n"
+            f"- Supporting cast target: {_roster_bounds.floor}-{_roster_bounds.ceiling} named characters "
+            f"(floor scaled to {_roster_volume_count} volume(s); never fewer than {_roster_bounds.floor}).\n"
             "- The JSON must be complete and must not hit the output token limit."
         )
     else:
@@ -13120,7 +13189,8 @@ def _cast_spec_prompts(
             "\n\n【紧凑输出合同】\n"
             "- 每个角色的自由文本字段控制在一句具体中文内。\n"
             "- 不要输出大块空值/null 的 psych_profile、life_history、social_network、beliefs、family_imprint。\n"
-            "- supporting_cast 默认 3-5 名具名角色，除非项目规模明确需要更多。\n"
+            f"- supporting_cast 需 {_roster_bounds.floor}-{_roster_bounds.ceiling} 名具名角色"
+            f"（下限按全书 {_roster_volume_count} 卷伸缩，不得少于 {_roster_bounds.floor} 名）。\n"
             "- JSON 必须完整闭合，禁止打满输出 token 上限。"
         )
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
@@ -13217,7 +13287,9 @@ def _cast_spec_prompts(
                     "entries shaped like:\n"
                     "  {name, role, active_volumes (list of volume numbers "
                     "or [{start_volume, end_volume}, ...]), "
-                    "relationship_to_protagonist, evolution_arc}\n"
+                    "relationship_to_protagonist, evolution_arc, "
+                    "goal (the character's OWN agenda, in tension with the protagonist's), "
+                    "flaw (an exploitable weakness the plot can use)}\n"
                     "Spread roles across mentor / ally / rival / family / "
                     "romantic / subordinate / confidant / broker — no single "
                     "category may exceed 40% of the roster. Every volume "
@@ -13229,7 +13301,9 @@ def _cast_spec_prompts(
                     "\n请在 CastSpec 顶层输出 `supporting_cast` 字段，每个元素结构：\n"
                     "  {name、role、active_volumes（卷号列表或 "
                     "[{start_volume, end_volume}, ...]）、"
-                    "relationship_to_protagonist、evolution_arc（关系随全书演化）}\n"
+                    "relationship_to_protagonist、evolution_arc（关系随全书演化）、"
+                    "goal（该角色自己的独立动机，需与主角目标存在张力）、"
+                    "flaw（可被剧情利用的缺陷）}\n"
                     "role 要在 mentor/ally/rival/family/romantic/subordinate/"
                     "confidant/broker 之间分布——单一类别不得超过 40%。"
                     "每一卷至少要有 1 名活跃的非敌人类 supporting_cast 成员。"
@@ -15060,6 +15134,21 @@ def _planner_stage_max_tokens(logical_name: str, *, project: Any | None = None) 
         target_chapters = max(int(getattr(project, "target_chapters", 0) or 0), 1)
         volume_count = int(compute_linear_hierarchy(target_chapters).get("volume_count") or 1)
         return min(32768, max(8192, volume_count * 2560))
+    if logical_name == "cast_spec" and project is not None:
+        # G1 enabler (xianxia benchmark): once the roster floor scales with
+        # volume count (3-5 → 15-30 for a 10-volume book), a full cast with
+        # goal/flaw/evolution_arc no longer fits in 8192 tokens (a single
+        # verification run emitted 12615 tokens for 23 characters). Scale the
+        # cap with the roster ceiling, or the new motivation fields get
+        # truncated away exactly like the P-6 volume-plan shrink.
+        from bestseller.services.relationship_scaling import compute_supporting_bounds
+
+        target_chapters = max(int(getattr(project, "target_chapters", 0) or 0), 1)
+        volume_count = int(compute_linear_hierarchy(target_chapters).get("volume_count") or 1)
+        ceiling = compute_supporting_bounds(volume_count).ceiling
+        # ~600 tokens/character + book-spec overhead; short books (ceiling ~7)
+        # fall back to the 8192 floor, a 10-volume roster (ceiling 30) gets 20k.
+        return min(32768, max(8192, ceiling * 600 + 2000))
     if logical_name in {
         "book_spec",
         "book_spec_narrative_lines_repair",
@@ -17469,6 +17558,29 @@ async def _record_planner_failure_step_once(
     )
 
 
+def _outline_judge_repair_directives(
+    judge_payload: Mapping[str, Any] | None,
+    *,
+    round_idx: int,
+    max_rounds: int,
+) -> list[str]:
+    """Decide whether to run another in-loop outline repair round (G4).
+
+    Returns the repair directives to feed the next regeneration when the
+    commercial judge failed AND the round budget is not yet spent; otherwise
+    ``[]`` (stop). The bound prevents the generate→reject→regenerate death
+    loop that the strict-prewrite cascade was prone to.
+    """
+
+    if judge_payload is None:
+        return []
+    if round_idx >= max_rounds:
+        return []
+    if judge_payload.get("passed"):
+        return []
+    return _string_list(judge_payload.get("repair_directives"))
+
+
 async def _run_planner_outline_commercial_judge(
     session: AsyncSession,
     settings: AppSettings,
@@ -17523,6 +17635,14 @@ async def _run_planner_outline_commercial_judge(
     ]
     if not blocking_codes and not result.passed:
         blocking_codes = ["outline_llm_commercial_judge_failed"]
+    # G4: surface concrete regeneration directives so the caller can repair the
+    # outline IN THE SAME RUN instead of shipping a failing outline verbatim.
+    from bestseller.services.outline_llm_judge import build_outline_repair_directives
+
+    payload["repair_directives"] = (
+        build_outline_repair_directives(result) if not result.passed else []
+    )
+    payload["passed"] = bool(result.passed)
     output_ref = {
         **payload,
         "blocking_codes": blocking_codes,
@@ -19591,28 +19711,75 @@ async def generate_novel_plan(
                 *_deceased_constraints,
                 *_commercial_repair_directives,
             ]
-            (
-                vol_outline_payload,
-                outline_llm_run_ids,
-                outline_repair_history,
-            ) = await _generate_volume_outline_batched(
-                session,
-                settings,
-                project=project,
-                workflow_run_id=workflow_run.id,
-                logical_name=f"volume_{vol_num}_chapter_outline",
-                book_spec=book_spec_payload,
-                cast_spec=cast_spec_payload,
-                volume_plan=normalized_vp,
-                volume_entry=vol_entry,
-                fallback_payload=vol_fallback,
-                volume_number=vol_num,
-                expected_count=vol_ch_count,
-                chapter_number_offset=chapter_offset,
-                revealed_ledger_block=_ledger_block,
-                base_constraints=_outline_constraints,
-                progress=progress,
+            # G4: generate → commercial judge → bounded in-run repair. A failing
+            # judge now regenerates the outline WITH its directives appended,
+            # instead of shipping a sub-threshold outline (shilouyan-bench-v1
+            # vol-1 0.340 shipped verbatim because directives only flowed via an
+            # outer heal run's metadata). The round counter prevents a loop.
+            _max_judge_repair_rounds = int(
+                getattr(settings.pipeline, "outline_commercial_judge_repair_rounds", 1) or 0
             )
+            outline_llm_run_ids: list[UUID] = []
+            outline_repair_history: list[Any] = []
+            outline_commercial_report: dict[str, Any] | None = None
+            _judge_directives: list[str] = []
+            for _judge_round in range(_max_judge_repair_rounds + 1):
+                _round_constraints = [*_outline_constraints, *_judge_directives]
+                (
+                    vol_outline_payload,
+                    _gen_run_ids,
+                    _gen_repair_history,
+                ) = await _generate_volume_outline_batched(
+                    session,
+                    settings,
+                    project=project,
+                    workflow_run_id=workflow_run.id,
+                    logical_name=f"volume_{vol_num}_chapter_outline",
+                    book_spec=book_spec_payload,
+                    cast_spec=cast_spec_payload,
+                    volume_plan=normalized_vp,
+                    volume_entry=vol_entry,
+                    fallback_payload=vol_fallback,
+                    volume_number=vol_num,
+                    expected_count=vol_ch_count,
+                    chapter_number_offset=chapter_offset,
+                    revealed_ledger_block=_ledger_block,
+                    base_constraints=_round_constraints,
+                    progress=progress,
+                )
+                outline_llm_run_ids.extend(_gen_run_ids)
+                if _gen_repair_history:
+                    outline_repair_history.extend(_gen_repair_history)
+
+                current_step_name = f"volume_{vol_num}_outline_commercial_judge"
+                workflow_run.current_step = current_step_name
+                outline_commercial_report = await _run_planner_outline_commercial_judge(
+                    session,
+                    settings,
+                    project=project,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    outline_payload=vol_outline_payload if isinstance(vol_outline_payload, dict) else {},
+                )
+                step_order += 1
+                _judge_directives = _outline_judge_repair_directives(
+                    outline_commercial_report,
+                    round_idx=_judge_round,
+                    max_rounds=_max_judge_repair_rounds,
+                )
+                if not _judge_directives:
+                    break
+                logger.warning(
+                    "volume_%d outline commercial judge failed (score=%.3f); "
+                    "in-run repair round %d/%d with %d directive(s).",
+                    vol_num,
+                    float((outline_commercial_report or {}).get("overall_score") or 0.0),
+                    _judge_round + 1,
+                    _max_judge_repair_rounds,
+                    len(_judge_directives),
+                )
+
             llm_run_ids.extend(outline_llm_run_ids)
             if outline_repair_history:
                 workflow_run.metadata_json = {
@@ -19637,17 +19804,6 @@ async def generate_novel_plan(
             )
             all_outline_chapters.extend(vol_chapters)
 
-            current_step_name = f"volume_{vol_num}_outline_commercial_judge"
-            workflow_run.current_step = current_step_name
-            outline_commercial_report = await _run_planner_outline_commercial_judge(
-                session,
-                settings,
-                project=project,
-                workflow_run_id=workflow_run.id,
-                step_name=current_step_name,
-                step_order=step_order,
-                outline_payload=vol_outline_payload if isinstance(vol_outline_payload, dict) else {},
-            )
             if outline_commercial_report is not None:
                 vol_outline_payload = _attach_prewrite_quality_report(
                     vol_outline_payload,

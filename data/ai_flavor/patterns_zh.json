@@ -336,6 +336,14 @@
   ],
   "discourse_rules": [
     {
+      "id": "cn.discourse.face_emotion",
+      "category": "face_emotion_label",
+      "severity": "warn",
+      "threshold": 3,
+      "pattern": "(?:脸色|面色|神色|脸)[^。！？\\n]{0,2}(?:骤变|大变|一变|铁青|铁灰|煞白|惨白|发白|发青|苍白|青白|阴沉)",
+      "why": "「脸色X」成语化脸色词贴情绪标签(脸色骤变/面色铁青/青白交加)——看似外显实则贴标签。换成一个具体非成语的面部或身体动作(嘴唇抖/喉头滚/指节掐进掌心/眼神钉住)"
+    },
+    {
       "id": "cn.discourse.crowd_beat",
       "category": "crowd_reaction_beat",
       "severity": "warn",

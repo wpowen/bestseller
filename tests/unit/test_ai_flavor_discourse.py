@@ -55,6 +55,11 @@ def test_info_narration_markers_fire() -> None:
     assert "info_narration" in _cats("没人看见她每夜往土里埋符灰。")
 
 
+def test_face_emotion_label_density_fires() -> None:
+    text = "殷泱脸色骤变。她面色铁青。半晌，她面色青白交加。"
+    assert "face_emotion_label" in _cats(text)
+
+
 def test_clean_cinematic_prose_not_flagged() -> None:
     text = (
         "殷泱的话头停了。那只要落黜落印的手抬到一半，没再落下，腰间佩玉还在晃。"

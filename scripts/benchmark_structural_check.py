@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from collections import Counter
@@ -107,21 +108,45 @@ def check_s3_foreshadowing(volumes: list | None) -> CheckResult:
     def _norm(s: str) -> str:
         return "".join(ch for ch in s if ch.isalnum())[:24]
 
-    long_span = 0
-    orphans = []
+    # G3: prefer explicit inline seed tags ([S<n>]) for plant→payoff linkage,
+    # matching narrative._build_clues_and_payoffs. Fall back to text matching
+    # for untagged (legacy) entries so the check also works on pre-G3 books.
+    seed_re = re.compile(r"^\s*\[\s*(S[\w-]+)\s*\]")
+    planted_seed_vol: dict[str, int] = {}
     for pv, ptext in planted:
-        key = _norm(ptext)
-        hits = [qv for qv, qtext in paid if key and (key in _norm(qtext) or _norm(qtext)[:12] in key)]
+        m = seed_re.match(ptext)
+        if m and m.group(1) not in planted_seed_vol:
+            planted_seed_vol[m.group(1)] = pv
+
+    long_span = 0
+    orphans: list[str] = []
+    seed_linked = 0
+    for qv, qtext in paid:
+        m = seed_re.match(qtext)
+        if m and m.group(1) in planted_seed_vol:
+            seed_linked += 1
+            if qv - planted_seed_vol[m.group(1)] >= 3:
+                long_span += 1
+            continue
+        if m:
+            orphans.append(f"卷{qv}: seed {m.group(1)} 无对应 plant")
+            continue
+        # untagged payoff → legacy text match against plants
+        key = _norm(qtext)
+        hits = [pv for pv, ptext in planted if key and (key in _norm(ptext) or _norm(ptext)[:12] in key)]
         if hits:
-            span = max(hits) - pv
-            if span >= 3:
+            seed_linked += 1
+            if qv - min(hits) >= 3:
                 long_span += 1
         else:
-            orphans.append(f"卷{pv}: {ptext[:40]}")
-    ok = len(planted) >= 10 and long_span >= 3
+            orphans.append(f"卷{qv}: {qtext[:40]}")
+
+    tagged = len(planted_seed_vol)
+    ok = len(planted) >= 10 and seed_linked >= 3 and long_span >= 3
     detail = (
-        f"登记伏笔={len(planted)} (需≥10); 跨度≥3卷且可匹配回收={long_span} (需≥3); "
-        f"字面无法匹配回收的伏笔={len(orphans)} 条(含转述误差,需人工复核)"
+        f"登记伏笔={len(planted)} (需≥10, 其中 {tagged} 条带 seed 标签); "
+        f"payoff 成功关联 plant={seed_linked} (需≥3); 跨度≥3卷的关联={long_span} (需≥3); "
+        f"孤儿 payoff={len(orphans)} 条"
     )
     return CheckResult("S3", "伏笔回收", ok, detail, orphans[:10])
 

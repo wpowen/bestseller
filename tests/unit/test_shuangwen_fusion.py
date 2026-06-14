@@ -63,13 +63,13 @@ def test_compile_orders_payoff_before_craft_in_shuangwen_mode(pack: str) -> None
         stage=MethodologyStage.PROSE_SCENE,
         prompt_pack_key=pack,
         chapter_no=7,
-        token_budget=4000,  # production budget — fits all levers + cinematic_pov
+        token_budget=4200,  # production budget — fits all levers + cinematic_pov
     )
     sw = compile_methodology(
         stage=MethodologyStage.PROSE_SCENE,
         prompt_pack_key=pack,
         chapter_no=7,
-        token_budget=4000,
+        token_budget=4200,
         shuangwen_mode=True,
     )
     base_srcs = list(base.used_sources)

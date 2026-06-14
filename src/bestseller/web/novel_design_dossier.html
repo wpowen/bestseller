@@ -356,6 +356,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+    flex-wrap: wrap;
     padding: 0 12px 12px;
   }
 
@@ -373,6 +374,26 @@
     cursor: wait;
     color: var(--faint);
   }
+
+  .artifact-action {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--blue);
+    padding: 6px 9px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .review-banner {
+    border: 1px solid var(--border);
+    background: rgba(250, 244, 232, 0.78);
+    padding: 12px;
+  }
+
+  .review-banner.ok { border-color: rgba(68,108,60,.45); }
+  .review-banner.warn { border-color: rgba(154,105,25,.45); }
+  .review-banner.miss { border-color: rgba(141,43,34,.45); }
 
   .artifact-hint {
     padding: 0 12px 12px;
@@ -597,6 +618,392 @@
     line-height: 1.35;
   }
 
+  .workbench {
+    display: grid;
+    gap: 14px;
+  }
+
+  .workbench-hero {
+    border: 1px solid var(--border);
+    background:
+      linear-gradient(135deg, rgba(255,250,240,0.94), rgba(244,234,220,0.72));
+    padding: 16px;
+  }
+
+  .workbench-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .workbench-title h3 {
+    font-size: 22px;
+    line-height: 1.15;
+  }
+
+  .workbench-title .meta {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .workbench-copy {
+    margin-top: 8px;
+    max-width: 900px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .control-bar {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto auto auto;
+    gap: 8px;
+    align-items: center;
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.68);
+    padding: 10px;
+  }
+
+  .control-bar input,
+  .control-bar select {
+    width: 100%;
+    min-height: 34px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--ink);
+    padding: 6px 9px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .toggle-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .toggle-line input { width: auto; min-height: auto; }
+
+  .facet-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .facet {
+    min-height: 32px;
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.72);
+    color: var(--muted);
+    padding: 6px 10px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .facet.active {
+    border-color: var(--strong);
+    background: var(--strong);
+    color: #fffaf0;
+  }
+
+  .insight-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .insight {
+    border: 1px solid var(--border);
+    background: rgba(250,244,232,0.62);
+    padding: 12px;
+  }
+
+  .insight .label {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .insight .value {
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .split-workspace {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .side-index {
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.76);
+    align-self: start;
+  }
+
+  .side-index h3 {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+
+  .index-list {
+    display: grid;
+    max-height: 620px;
+    overflow: auto;
+  }
+
+  .index-button {
+    display: grid;
+    gap: 3px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+    padding: 10px 12px;
+    cursor: pointer;
+  }
+
+  .index-button.active {
+    background: rgba(165,87,56,0.12);
+    box-shadow: inset 3px 0 0 var(--strong);
+  }
+
+  .index-button strong {
+    font-size: 13px;
+  }
+
+  .index-button span {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .artifact-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .artifact-card {
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.72);
+  }
+
+  .artifact-card summary {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .artifact-card summary::-webkit-details-marker { display: none; }
+
+  .artifact-card .card-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .artifact-card .card-title strong {
+    font-size: 15px;
+    line-height: 1.25;
+  }
+
+  .artifact-card .preview {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.42;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 52px;
+  }
+
+  .pager {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .pager button {
+    min-height: 30px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--ink);
+    padding: 5px 9px;
+    cursor: pointer;
+  }
+
+  .pager button:disabled {
+    color: var(--faint);
+    cursor: not-allowed;
+  }
+
+  .volume-board {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.34fr) minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .volume-card {
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.72);
+    padding: 12px;
+  }
+
+  .volume-card.active {
+    border-color: rgba(165,87,56,0.7);
+    background: rgba(244,234,220,0.9);
+  }
+
+  .chapter-table {
+    display: grid;
+    gap: 8px;
+  }
+
+  .chapter-row {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.72);
+    padding: 10px;
+  }
+
+  .chapter-row .num {
+    color: var(--strong-2);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .chapter-row h4 {
+    font-size: 14px;
+    line-height: 1.25;
+  }
+
+  .chapter-row p {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.42;
+  }
+
+  .storyline-board {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .arc-list {
+    display: grid;
+    gap: 8px;
+    max-height: 720px;
+    overflow: auto;
+  }
+
+  .arc-card {
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.72);
+    padding: 12px;
+    cursor: pointer;
+  }
+
+  .arc-card.active {
+    border-color: var(--strong);
+    background: rgba(244,234,220,0.9);
+  }
+
+  .arc-card strong {
+    display: block;
+    font-size: 14px;
+    line-height: 1.25;
+  }
+
+  .arc-card p {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.42;
+  }
+
+  .timeline {
+    display: grid;
+    gap: 10px;
+  }
+
+  .timeline-row {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 12px;
+    position: relative;
+  }
+
+  .timeline-row::before {
+    content: "";
+    position: absolute;
+    left: 40px;
+    top: 26px;
+    bottom: -10px;
+    border-left: 1px solid var(--border);
+  }
+
+  .timeline-row:last-child::before { display: none; }
+
+  .timeline-marker {
+    position: relative;
+    z-index: 1;
+    justify-self: start;
+    min-width: 78px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    padding: 5px 7px;
+    color: var(--strong-2);
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .timeline-card {
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.76);
+    padding: 10px;
+  }
+
+  .timeline-card strong {
+    font-size: 13px;
+  }
+
+  .timeline-card p {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .ledger-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
   .empty {
     border: 1px dashed var(--border);
     color: var(--muted);
@@ -615,6 +1022,13 @@
     .topbar-inner, .shell { width: min(100% - 28px, 1440px); }
     .hero { grid-template-columns: 1fr; }
     .relationship-map { grid-template-columns: 1fr; }
+    .control-bar,
+    .split-workspace,
+    .volume-board,
+    .storyline-board { grid-template-columns: 1fr; }
+    .artifact-grid,
+    .insight-grid,
+    .ledger-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .graph-stage { border-right: 0; border-bottom: 1px solid var(--border); }
     .panel.span-3, .panel.span-4, .panel.span-5,
     .panel.span-6, .panel.span-7, .panel.span-8 { grid-column: span 12; }
@@ -627,6 +1041,10 @@
     .brand { align-items: flex-start; flex-direction: column; gap: 6px; }
     .brand h1 { font-size: 22px; white-space: normal; }
     .metric-grid { grid-template-columns: 1fr; }
+    .artifact-grid,
+    .insight-grid,
+    .ledger-grid { grid-template-columns: 1fr; }
+    .chapter-row { grid-template-columns: 1fr; }
     .tab { padding: 0 12px; }
   }
 </style>
@@ -641,6 +1059,8 @@
     <div class="top-actions">
       <a class="btn" href="/library">书稿库</a>
       <a class="btn" id="readLink" href="#">阅读正文</a>
+      <button class="btn" id="approvePrewriteBtn" type="button">审核通过</button>
+      <button class="btn primary" id="enterWritingBtn" type="button">进入正文</button>
       <button class="btn primary" id="refreshBtn" type="button">刷新</button>
     </div>
   </div>
@@ -687,6 +1107,11 @@
   const esc = (s) => { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; };
   const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
   let dossier = null;
+  const PAGE_SIZE = 24;
+  const artifactState = { phase: 'all', status: 'all', query: '', latestOnly: true, page: 1 };
+  const outlineState = { volume: null, status: 'all', query: '', page: 1 };
+  const narrativeState = { arc: 'all', query: '', page: 1 };
+  const contractState = { kind: 'chapter', query: '', page: 1 };
 
   function arr(v) { return Array.isArray(v) ? v : []; }
   function obj(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
@@ -697,6 +1122,37 @@
     return String(v);
   }
   function count(v) { return arr(v).length; }
+  function norm(v) { return String(v ?? '').trim().toLowerCase(); }
+  function includesText(value, query) {
+    const q = norm(query);
+    if (!q) return true;
+    return norm(value).includes(q);
+  }
+  function clampPage(page, total, size = PAGE_SIZE) {
+    const max = Math.max(1, Math.ceil(total / size));
+    return Math.min(Math.max(1, Number(page) || 1), max);
+  }
+  function pageSlice(items, state, size = PAGE_SIZE) {
+    state.page = clampPage(state.page, items.length, size);
+    const start = (state.page - 1) * size;
+    return items.slice(start, start + size);
+  }
+  function pager(total, state, target, size = PAGE_SIZE) {
+    const max = Math.max(1, Math.ceil(total / size));
+    state.page = clampPage(state.page, total, size);
+    return `<div class="pager" data-page-target="${esc(target)}">
+      <span>${esc(state.page)} / ${esc(max)} · ${esc(total)} 项</span>
+      <button type="button" data-page-delta="-1" ${state.page <= 1 ? 'disabled' : ''}>上一页</button>
+      <button type="button" data-page-delta="1" ${state.page >= max ? 'disabled' : ''}>下一页</button>
+    </div>`;
+  }
+  function statusClass(status) {
+    const s = norm(status);
+    if (s.includes('approved') || s === 'ok' || s.includes('complete')) return 'ok';
+    if (s.includes('need') || s.includes('review') || s.includes('blocked') || s.includes('rewrite')) return 'warn';
+    if (s.includes('fail') || s.includes('miss')) return 'miss';
+    return '';
+  }
   function tag(value, cls = '') { return `<span class="tag ${cls}">${esc(value)}</span>`; }
   function panel(title, body, span = 6, countLabel = '') {
     return `<article class="panel span-${span}">
@@ -724,6 +1180,7 @@
     const project = obj(dossier.project);
     const summary = obj(dossier.summary);
     const readiness = obj(dossier.readiness);
+    const prewrite = obj(dossier.prewrite_review);
     const title = project.title || slug;
     $('#pageTitle').textContent = title;
     $('#heroTitle').textContent = `${title} · 设计阶段产物`;
@@ -736,6 +1193,7 @@
     const artifacts = obj(dossier.planning_artifacts);
     $('#scorePanel').innerHTML = `
       <div class="score-row"><span class="score-label">审查状态</span><span class="score-value">${readiness.status === 'ready' ? 'READY' : 'INCOMPLETE'}</span></div>
+      <div class="score-row"><span class="score-label">人工审核</span><span class="score-value">${prewrite.is_approved ? 'APPROVED' : String(prewrite.status || 'NEEDS_REVIEW').toUpperCase()}</span></div>
       <div class="score-row"><span class="score-label">规划产物</span><span class="score-value">${artifacts.document_count || 0}</span></div>
       <div class="score-row"><span class="score-label">卷/章/场</span><span class="score-value">${structure.volume_count || 0}/${structure.total_chapters || 0}/${structure.total_scenes || 0}</span></div>
       <div class="score-row"><span class="score-label">人物/关系</span><span class="score-value">${bible.character_count || 0}/${bible.relationship_count || 0}</span></div>
@@ -746,6 +1204,7 @@
   function renderOverview() {
     const summary = obj(dossier.summary);
     const readiness = obj(dossier.readiness);
+    const prewrite = obj(dossier.prewrite_review);
     const checks = arr(readiness.checks);
     const structure = obj(summary.structure_summary);
     const bible = obj(summary.story_bible_counts);
@@ -776,9 +1235,21 @@
       c.message,
       [tag(c.status === 'present' ? `已存在 · ${c.count}` : '缺失', c.status === 'present' ? 'ok' : 'miss')]
     )).join('')}</div>` : empty('暂无审查项');
+    const prewriteClass = prewrite.is_approved ? 'ok' : (arr(prewrite.stale_artifact_types).length ? 'warn' : 'miss');
+    const prewriteHtml = `<div class="review-banner ${prewriteClass}">
+      <div class="item-title"><span>${prewrite.is_approved ? '当前最新物料已人工审核' : '当前物料等待人工审核'}</span></div>
+      <div class="item-meta">状态 ${esc(prewrite.status || 'needs_review')} · 已审 ${esc(prewrite.approved_at || '—')} · 审核人 ${esc(prewrite.approved_by || '—')}</div>
+      <div class="item-text">${arr(prewrite.stale_artifact_types).length ? `审批后又变更：${arr(prewrite.stale_artifact_types).join('、')}` : (arr(prewrite.missing_required_artifacts).length ? `缺少关键物料：${arr(prewrite.missing_required_artifacts).join('、')}` : '可在规划产物页编辑物料或提交问题修复；审核通过后才能从本页进入正文阶段。')}</div>
+      <div class="tags">
+        ${tag(`物料 ${arr(prewrite.materials).length}`)}
+        ${tag(`问题 ${arr(prewrite.issues).length}`, arr(prewrite.issues).length ? 'warn' : '')}
+        ${prewrite.is_approved ? tag('门禁已开', 'ok') : tag('门禁关闭', 'miss')}
+      </div>
+    </div>`;
     $('#tab-overview').innerHTML = `<div class="grid">
       ${panel('产物覆盖', metricHtml, 8)}
       ${panel('缺口', checkHtml, 4)}
+      ${panel('写前人工审核', prewriteHtml, 12)}
     </div>`;
   }
 
@@ -811,11 +1282,6 @@
       12,
       `${conceptionKeys.length}`
     ) : '';
-    const grouped = docs.reduce((acc, doc) => {
-      const phase = doc.phase || 'other';
-      (acc[phase] ||= []).push(doc);
-      return acc;
-    }, {});
     const phaseLabels = {
       conception: '构思产物',
       foundation: '基础设计',
@@ -825,32 +1291,95 @@
       publishing: '上架资料',
       other: '其他',
     };
-    const body = Object.entries(grouped).map(([phase, items]) => panel(
-      phaseLabels[phase] || phase,
-      `<div class="list">${items.map(doc => `
-        <details class="artifact">
-          <summary>
-            <span><strong>${esc(doc.label || doc.artifact_type)}</strong> ${tag(`v${doc.version_no}`)} ${tag(doc.status || 'status')}</span>
-            <span class="panel-count">${esc(doc.artifact_type)}</span>
-          </summary>
-          <div class="artifact-hint">展开后会自动加载这份规划产物的原始内容。首屏只保留目录和版本信息，避免一次性拉取上万份大 JSON。</div>
-          <div class="artifact-actions">
-            <button class="artifact-load" type="button" data-artifact-id="${esc(doc.artifact_id || '')}">立即加载原始内容</button>
+    const latestKey = (doc) => `${doc.artifact_type || 'unknown'}::${doc.scope_ref_id || ''}`;
+    const latestByKey = docs.reduce((acc, doc) => {
+      const key = latestKey(doc);
+      if (!acc[key] || Number(doc.version_no || 0) > Number(acc[key].version_no || 0)) acc[key] = doc;
+      return acc;
+    }, {});
+    const latestIds = new Set(Object.values(latestByKey).map(doc => doc.artifact_id));
+    const phaseCounts = docs.reduce((acc, doc) => {
+      const phase = doc.phase || 'other';
+      acc[phase] = (acc[phase] || 0) + 1;
+      return acc;
+    }, {});
+    const statusCounts = docs.reduce((acc, doc) => {
+      const status = doc.status || 'unknown';
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+    const source = artifactState.latestOnly
+      ? docs.filter(doc => latestIds.has(doc.artifact_id))
+      : docs;
+    const filtered = source.filter(doc => {
+      const haystack = [
+        doc.label,
+        doc.artifact_type,
+        doc.status,
+        doc.phase,
+        doc.scope_ref_id,
+        doc.content_preview,
+      ].join(' ');
+      return (artifactState.phase === 'all' || (doc.phase || 'other') === artifactState.phase)
+        && (artifactState.status === 'all' || (doc.status || 'unknown') === artifactState.status)
+        && includesText(haystack, artifactState.query);
+    });
+    const pageItems = pageSlice(filtered, artifactState);
+    const phaseFacet = (phase, label, total) => `<button class="facet ${artifactState.phase === phase ? 'active' : ''}" type="button" data-artifact-phase="${esc(phase)}">${esc(label)} · ${esc(total)}</button>`;
+    const statusOptions = ['all', ...Object.keys(statusCounts).sort()];
+    const artifactCards = pageItems.length ? `<div class="artifact-grid">${pageItems.map(doc => `
+      <details class="artifact artifact-card">
+        <summary>
+          <div class="card-title">
+            <strong>${esc(doc.label || doc.artifact_type)}</strong>
+            <span>${tag(`v${doc.version_no}`)} ${tag(doc.status || 'status', statusClass(doc.status))}</span>
           </div>
-          <pre class="json">${asJson({
-            artifact_id: doc.artifact_id,
-            artifact_type: doc.artifact_type,
-            label: doc.label,
-            version_no: doc.version_no,
-            status: doc.status,
-            scope_ref_id: doc.scope_ref_id,
-            note: '展开或点击按钮后显示原始规划产物内容',
-          })}</pre>
-        </details>
-      `).join('')}</div>`,
-      12,
-      `${items.length}`
-    )).join('');
+          <div class="item-meta">${esc(phaseLabels[doc.phase] || doc.phase || '其他')} · ${esc(doc.artifact_type)}${latestIds.has(doc.artifact_id) ? ' · latest' : ' · history'}</div>
+          <div class="preview">${esc(doc.content_preview || '展开后查看物料摘要和原始 JSON。')}</div>
+        </summary>
+        <div class="artifact-hint">只在展开后加载原始内容；编辑会创建新版本并重新关闭正文门禁。</div>
+        <div class="artifact-actions">
+          <button class="artifact-load" type="button" data-artifact-id="${esc(doc.artifact_id || '')}">立即加载原始内容</button>
+          <button class="artifact-action artifact-edit" type="button" data-artifact-id="${esc(doc.artifact_id || '')}">编辑 JSON</button>
+          <button class="artifact-action artifact-issue" type="button" data-artifact-id="${esc(doc.artifact_id || '')}">提交问题修复</button>
+        </div>
+        <pre class="json">${asJson({
+          artifact_id: doc.artifact_id,
+          artifact_type: doc.artifact_type,
+          label: doc.label,
+          phase: doc.phase,
+          version_no: doc.version_no,
+          status: doc.status,
+          scope_ref_id: doc.scope_ref_id,
+          note: '展开或点击按钮后显示原始规划产物内容',
+        })}</pre>
+      </details>
+    `).join('')}</div>` : empty('当前筛选没有匹配的规划产物');
+    const body = `<div class="workbench">
+      <div class="workbench-hero">
+        <div class="workbench-title">
+          <h3>规划产物索引</h3>
+          <div class="meta">${esc(source.length)} 当前可见源 / ${esc(docs.length)} 总版本</div>
+        </div>
+        <p class="workbench-copy">默认只看每类物料的最新版；旧版本、失败评审和大 JSON 都需要显式展开，避免长篇项目一次性把页面撑成流水账。</p>
+        <div class="insight-grid">
+          ${Object.entries(phaseLabels).map(([phase, label]) => `<div class="insight"><div class="label">${esc(label)}</div><div class="value">${esc(phaseCounts[phase] || 0)}</div></div>`).join('')}
+        </div>
+      </div>
+      <div class="control-bar">
+        <input id="artifactSearch" type="search" value="${esc(artifactState.query)}" placeholder="搜索物料类型、标题、状态、摘要">
+        <select id="artifactStatus">
+          ${statusOptions.map(status => `<option value="${esc(status)}" ${artifactState.status === status ? 'selected' : ''}>${esc(status === 'all' ? '全部状态' : status)}${status === 'all' ? '' : ` · ${statusCounts[status]}`}</option>`).join('')}
+        </select>
+        <label class="toggle-line"><input id="artifactLatestOnly" type="checkbox" ${artifactState.latestOnly ? 'checked' : ''}> 只看最新版</label>
+        ${pager(filtered.length, artifactState, 'artifacts')}
+      </div>
+      <div class="facet-row">
+        ${phaseFacet('all', '全部阶段', source.length)}
+        ${Object.entries(phaseLabels).map(([phase, label]) => phaseFacet(phase, label, phaseCounts[phase] || 0)).join('')}
+      </div>
+      ${artifactCards}
+    </div>`;
     // Judge reviews — verdict + per-dimension scores + evidence/findings.
     const reviewsBody = reviews.length ? panel(
       '判官评审',
@@ -905,7 +1434,7 @@
       12,
       bench.evaluation && bench.evaluation.passed ? 'PASS' : 'FAIL'
     ) : '';
-    $('#tab-artifacts').innerHTML = `<div class="grid">${conceptionBody}${benchBody}${reviewsBody}${body}</div>`;
+    $('#tab-artifacts').innerHTML = `<div class="grid">${panel('物料工作台', body, 12, `${filtered.length}`)}${conceptionBody}${benchBody}${reviewsBody}</div>`;
   }
 
   function renderOutline() {
@@ -914,27 +1443,82 @@
       $('#tab-outline').innerHTML = empty('暂无卷章大纲');
       return;
     }
-    const html = volumes.map(volume => {
+    if (outlineState.volume === null) outlineState.volume = String(volumes[0]?.volume_number ?? 'all');
+    const allChapters = volumes.flatMap(volume => arr(volume.chapters).map(chapter => ({ ...chapter, _volume: volume })));
+    const statuses = Array.from(new Set(allChapters.map(ch => ch.production_state || ch.status || 'planned'))).sort();
+    const selectedVolume = outlineState.volume === 'all'
+      ? null
+      : volumes.find(volume => String(volume.volume_number) === String(outlineState.volume));
+    const baseChapters = selectedVolume
+      ? arr(selectedVolume.chapters).map(chapter => ({ ...chapter, _volume: selectedVolume }))
+      : allChapters;
+    const filtered = baseChapters.filter(chapter => {
+      const haystack = [
+        chapter.chapter_number,
+        chapter.title,
+        chapter.chapter_goal,
+        chapter.status,
+        chapter.production_state,
+        chapter._volume?.title,
+      ].join(' ');
+      const status = chapter.production_state || chapter.status || 'planned';
+      return (outlineState.status === 'all' || status === outlineState.status)
+        && includesText(haystack, outlineState.query);
+    });
+    const pageItems = pageSlice(filtered, outlineState);
+    const volumeCards = volumes.map(volume => {
       const chapters = arr(volume.chapters);
-      return `<div class="volume">
-        <div class="volume-head">
-          <strong>第${esc(volume.volume_number)}卷 · ${esc(volume.title || '未命名')}</strong>
-          <span class="panel-count">${chapters.length}章 / ${esc(volume.status || '')}</span>
-        </div>
-        <div class="chapters">${chapters.map(chapter => `
-          <div class="chapter">
-            <h4>第${esc(chapter.chapter_number)}章 · ${esc(chapter.title || '未命名')}</h4>
-            <p>${esc(chapter.chapter_goal || '暂无章节目标')}</p>
-            <div class="tags">
-              ${tag(chapter.status || 'planned')}
-              ${tag(`${arr(chapter.scenes).length}场`)}
-              ${chapter.production_state ? tag(chapter.production_state) : ''}
-            </div>
-          </div>
-        `).join('')}</div>
-      </div>`;
+      const blocked = chapters.filter(ch => /blocked|review|rewrite/i.test(`${ch.production_state || ''} ${ch.status || ''}`)).length;
+      const ok = chapters.filter(ch => /ok|complete|approved/i.test(`${ch.production_state || ''} ${ch.status || ''}`)).length;
+      const active = String(outlineState.volume) === String(volume.volume_number);
+      return `<button class="index-button ${active ? 'active' : ''}" type="button" data-outline-volume="${esc(volume.volume_number)}">
+        <strong>第${esc(volume.volume_number)}卷 · ${esc(volume.title || '未命名')}</strong>
+        <span>${esc(chapters.length)}章 · 正常 ${esc(ok)} · 待修 ${esc(blocked)}</span>
+      </button>`;
     }).join('');
-    $('#tab-outline').innerHTML = `<div class="outline">${html}</div>`;
+    const chapterRows = pageItems.length ? `<div class="chapter-table">${pageItems.map(chapter => `
+      <div class="chapter-row">
+        <div class="num">第${esc(chapter.chapter_number)}章</div>
+        <div>
+          <h4>${esc(chapter.title || '未命名')}</h4>
+          <p>${esc(chapter.chapter_goal || chapter.main_conflict || '暂无章节目标')}</p>
+          <div class="tags">
+            ${tag(chapter.status || 'planned', statusClass(chapter.status))}
+            ${chapter.production_state ? tag(chapter.production_state, statusClass(chapter.production_state)) : ''}
+            ${tag(`${arr(chapter.scenes).length}场`)}
+          </div>
+        </div>
+        <div class="panel-count">${esc(chapter._volume?.title || '')}</div>
+      </div>
+    `).join('')}</div>` : empty('当前筛选没有章节');
+    const currentTitle = selectedVolume
+      ? `第${selectedVolume.volume_number}卷 · ${selectedVolume.title || '未命名'}`
+      : '全书章节索引';
+    $('#tab-outline').innerHTML = `<div class="workbench">
+      <div class="workbench-hero">
+        <div class="workbench-title">
+          <h3>${esc(currentTitle)}</h3>
+          <div class="meta">${esc(filtered.length)} / ${esc(allChapters.length)} 章</div>
+        </div>
+        <p class="workbench-copy">长篇章节按卷进入，不在首屏展开全部 500 章；只浏览当前卷或当前筛选结果，必要时分页推进。</p>
+      </div>
+      <div class="control-bar">
+        <input id="outlineSearch" type="search" value="${esc(outlineState.query)}" placeholder="搜索章节标题、目标、卷名、状态">
+        <select id="outlineStatus">
+          <option value="all" ${outlineState.status === 'all' ? 'selected' : ''}>全部状态</option>
+          ${statuses.map(status => `<option value="${esc(status)}" ${outlineState.status === status ? 'selected' : ''}>${esc(status)}</option>`).join('')}
+        </select>
+        <button class="facet ${outlineState.volume === 'all' ? 'active' : ''}" type="button" data-outline-volume="all">全书</button>
+        ${pager(filtered.length, outlineState, 'outline')}
+      </div>
+      <div class="volume-board">
+        <aside class="side-index">
+          <h3>卷索引</h3>
+          <div class="index-list">${volumeCards}</div>
+        </aside>
+        <section>${chapterRows}</section>
+      </div>
+    </div>`;
   }
 
   function renderCharacters() {
@@ -1155,40 +1739,164 @@
     const payoffs = arr(narrative.payoffs);
     const antagonist = arr(narrative.antagonist_plans);
     const themes = arr(narrative.theme_arcs);
-    const arcHtml = arcs.length ? `<div class="list">${arcs.map(a => item(a.name, `${a.arc_code} / ${a.arc_type} / ${a.status}`, `${a.promise}\n${a.core_question}\n${a.target_payoff || ''}`, [tag(a.scope_level), a.scope_volume_number ? tag(`卷${a.scope_volume_number}`) : ''].filter(Boolean))).join('')}</div>` : empty('暂无叙事线');
-    const beatHtml = beats.length ? `<div class="list">${beats.slice(0, 80).map(b => item(`${b.arc_code} #${b.beat_order}`, `${b.beat_kind} / ${b.status}`, b.summary, [b.scope_chapter_number ? tag(`第${b.scope_chapter_number}章`) : '', b.emotional_shift ? tag(b.emotional_shift) : ''].filter(Boolean))).join('')}</div>` : empty('暂无弧线节拍');
-    const clueHtml = [...clues.map(c => item(c.label, `${c.clue_code} / ${c.status}`, c.description, [tag(`埋 ${c.planted_in_chapter_number || '?'}`), tag(`兑 ${c.expected_payoff_by_chapter_number || '?'}`)])), ...payoffs.map(p => item(p.label, `${p.payoff_code} / ${p.status}`, p.description, [tag(`目标 ${p.target_chapter_number || '?'}`)]))];
-    const antagonistHtml = antagonist.length ? `<div class="list">${antagonist.map(a => item(a.title, `${a.antagonist_label} / 压力 ${a.pressure_level}`, `${a.goal}\n${a.current_move}\n${a.next_countermove}`, [tag(a.threat_type), a.target_chapter_number ? tag(`目标章 ${a.target_chapter_number}`) : ''].filter(Boolean))).join('')}</div>` : empty('暂无反派计划');
-    const themeHtml = themes.length ? `<div class="list">${themes.map(t => item(t.theme_code, t.current_stage, t.theme_statement, arr(t.symbol_set).map(v => tag(v)))).join('')}</div>` : empty('暂无主题线');
-    $('#tab-narrative').innerHTML = `<div class="grid">
-      ${panel('叙事线', arcHtml, 5, `${arcs.length}`)}
-      ${panel('弧线节拍', beatHtml, 7, `${beats.length}`)}
-      ${panel('伏笔与兑现', clueHtml.length ? `<div class="list">${clueHtml.join('')}</div>` : empty('暂无伏笔兑现账本'), 6, `${clues.length}/${payoffs.length}`)}
-      ${panel('反派计划', antagonistHtml, 3, `${antagonist.length}`)}
-      ${panel('主题线', themeHtml, 3, `${themes.length}`)}
+    if (narrativeState.arc === 'all' && arcs[0]?.arc_code) narrativeState.arc = arcs[0].arc_code;
+    const selectedArc = arcs.find(arc => String(arc.arc_code) === String(narrativeState.arc)) || arcs[0] || null;
+    const selectedCode = selectedArc?.arc_code || 'all';
+    const arcCards = arcs.filter(arc => includesText([
+      arc.name,
+      arc.arc_code,
+      arc.arc_type,
+      arc.promise,
+      arc.core_question,
+      arc.target_payoff,
+    ].join(' '), narrativeState.query)).map(arc => {
+      const arcBeats = beats.filter(beat => beat.arc_code === arc.arc_code);
+      const active = String(arc.arc_code) === String(selectedCode);
+      return `<button class="arc-card ${active ? 'active' : ''}" type="button" data-narrative-arc="${esc(arc.arc_code || '')}">
+        <strong>${esc(arc.name || arc.arc_code || '未命名叙事线')}</strong>
+        <p>${esc(arc.promise || arc.core_question || '暂无承诺')}</p>
+        <div class="tags">
+          ${tag(arc.arc_code || 'arc')}
+          ${tag(arc.arc_type || 'type')}
+          ${tag(`${arcBeats.length}节拍`)}
+          ${arc.scope_volume_number ? tag(`卷${arc.scope_volume_number}`) : ''}
+        </div>
+      </button>`;
+    }).join('');
+    const selectedBeats = beats
+      .filter(beat => !selectedArc || beat.arc_code === selectedCode)
+      .sort((a, b) => Number(a.scope_chapter_number || 0) - Number(b.scope_chapter_number || 0) || Number(a.beat_order || 0) - Number(b.beat_order || 0));
+    const pageBeats = pageSlice(selectedBeats, narrativeState);
+    const timeline = pageBeats.length ? `<div class="timeline">${pageBeats.map(beat => `
+      <div class="timeline-row">
+        <div class="timeline-marker">${beat.scope_chapter_number ? `第${esc(beat.scope_chapter_number)}章` : `#${esc(beat.beat_order || '?')}`}</div>
+        <div class="timeline-card">
+          <strong>${esc(beat.beat_kind || '节拍')} · ${esc(beat.status || '')}</strong>
+          <p>${esc(beat.summary || '暂无节拍说明')}</p>
+          <div class="tags">
+            ${beat.emotional_shift ? tag(beat.emotional_shift) : ''}
+            ${beat.arc_code ? tag(beat.arc_code) : ''}
+          </div>
+        </div>
+      </div>
+    `).join('')}</div>` : empty('这条叙事线暂无节拍');
+    const relatedClues = clues.filter(clue => {
+      const haystack = `${clue.arc_code || ''} ${clue.clue_code || ''} ${clue.label || ''} ${clue.description || ''}`;
+      return !selectedArc || includesText(haystack, selectedCode) || includesText(haystack, selectedArc.name);
+    });
+    const relatedPayoffs = payoffs.filter(payoff => {
+      const haystack = `${payoff.arc_code || ''} ${payoff.payoff_code || ''} ${payoff.label || ''} ${payoff.description || ''}`;
+      return !selectedArc || includesText(haystack, selectedCode) || includesText(haystack, selectedArc.name);
+    });
+    const clueHtml = relatedClues.length ? `<div class="list">${relatedClues.slice(0, 18).map(c => item(
+      c.label || c.clue_code,
+      `${c.clue_code || ''} / ${c.status || ''}`,
+      c.description,
+      [tag(`埋 ${c.planted_in_chapter_number || '?'}`), tag(`兑 ${c.expected_payoff_by_chapter_number || '?'}`)]
+    )).join('')}</div>` : empty('当前叙事线暂无可识别伏笔');
+    const payoffHtml = relatedPayoffs.length ? `<div class="list">${relatedPayoffs.slice(0, 18).map(p => item(
+      p.label || p.payoff_code,
+      `${p.payoff_code || ''} / ${p.status || ''}`,
+      p.description,
+      [tag(`目标 ${p.target_chapter_number || '?'}`)]
+    )).join('')}</div>` : empty('当前叙事线暂无兑现项');
+    const antagonistHtml = antagonist.length ? `<div class="list">${antagonist.slice(0, 8).map(a => item(a.title, `${a.antagonist_label} / 压力 ${a.pressure_level}`, `${a.goal}\n${a.current_move}\n${a.next_countermove}`, [tag(a.threat_type), a.target_chapter_number ? tag(`目标章 ${a.target_chapter_number}`) : ''].filter(Boolean))).join('')}</div>` : empty('暂无反派计划');
+    const themeHtml = themes.length ? `<div class="list">${themes.slice(0, 8).map(t => item(t.theme_code, t.current_stage, t.theme_statement, arr(t.symbol_set).map(v => tag(v)))).join('')}</div>` : empty('暂无主题线');
+    const body = `<div class="workbench">
+      <div class="workbench-hero">
+        <div class="workbench-title">
+          <h3>${esc(selectedArc?.name || '叙事线工作台')}</h3>
+          <div class="meta">${esc(arcs.length)} 条线 · ${esc(beats.length)} 个节拍 · ${esc(clues.length)}/${esc(payoffs.length)} 伏笔兑现</div>
+        </div>
+        <p class="workbench-copy">${esc(selectedArc ? [selectedArc.promise, selectedArc.core_question, selectedArc.target_payoff].filter(Boolean).join(' / ') : '从左侧选择故事线，右侧按章节时间轴查看节拍和债务。')}</p>
+      </div>
+      <div class="control-bar">
+        <input id="narrativeSearch" type="search" value="${esc(narrativeState.query)}" placeholder="搜索故事线、承诺、问题、兑现">
+        <span class="panel-count">按线索阅读，不铺满全部节拍</span>
+        <span></span>
+        ${pager(selectedBeats.length, narrativeState, 'narrative')}
+      </div>
+      <div class="storyline-board">
+        <aside class="side-index">
+          <h3>故事线</h3>
+          <div class="arc-list">${arcCards || empty('暂无叙事线')}</div>
+        </aside>
+        <section class="workbench">
+          ${panel('章节时间轴', timeline, 12, `${selectedBeats.length}`)}
+          <div class="ledger-grid">
+            ${panel('伏笔', clueHtml, 12, `${relatedClues.length}`)}
+            ${panel('兑现', payoffHtml, 12, `${relatedPayoffs.length}`)}
+          </div>
+          <div class="ledger-grid">
+            ${panel('反派压力', antagonistHtml, 12, `${antagonist.length}`)}
+            ${panel('主题符号', themeHtml, 12, `${themes.length}`)}
+          </div>
+        </section>
+      </div>
     </div>`;
+    $('#tab-narrative').innerHTML = body;
   }
 
   function renderContracts() {
     const narrative = obj(dossier.narrative);
     const chapterContracts = arr(narrative.chapter_contracts);
     const sceneContracts = arr(narrative.scene_contracts);
-    const chapterHtml = chapterContracts.length ? `<div class="list">${chapterContracts.map(c => item(
-      `第${c.chapter_number}章`,
-      [c.pacing_mode, c.emotion_phase, c.loop_position].filter(Boolean).join(' / '),
-      [c.contract_summary, c.core_conflict ? `冲突：${c.core_conflict}` : '', c.emotional_shift ? `情绪：${c.emotional_shift}` : '', c.closing_hook ? `尾钩：${c.closing_hook}` : ''].filter(Boolean).join('\n'),
-      [...arr(c.primary_arc_codes).map(v => tag(v)), ...arr(c.hooks_to_plant).map(v => tag(v, 'ok')), ...arr(c.relationship_debts).map(v => tag(v, 'warn'))]
-    )).join('')}</div>` : empty('暂无章节合约');
-    const sceneHtml = sceneContracts.length ? `<div class="list">${sceneContracts.slice(0, 120).map(s => item(
-      `第${s.chapter_number}章 / 场${s.scene_number}`,
-      [s.hook_type, s.information_control_mode, s.spotlight_character].filter(Boolean).join(' / '),
-      [s.contract_summary, s.core_conflict ? `冲突：${s.core_conflict}` : '', s.information_release ? `信息：${s.information_release}` : '', s.tail_hook ? `尾钩：${s.tail_hook}` : '', s.failure_cost ? `代价：${s.failure_cost}` : ''].filter(Boolean).join('\n'),
-      [...arr(s.arc_codes).map(v => tag(v)), s.signature_image ? tag(s.signature_image, 'ok') : '', s.cut_point ? tag(s.cut_point, 'warn') : ''].filter(Boolean)
-    )).join('')}</div>` : empty('暂无场景合约');
-    $('#tab-contracts').innerHTML = `<div class="grid">
-      ${panel('章节合约', chapterHtml, 6, `${chapterContracts.length}`)}
-      ${panel('场景合约', sceneHtml, 6, `${sceneContracts.length}`)}
+    const source = contractState.kind === 'scene' ? sceneContracts : chapterContracts;
+    const filtered = source.filter(contract => includesText([
+      contract.chapter_number,
+      contract.scene_number,
+      contract.contract_summary,
+      contract.core_conflict,
+      contract.closing_hook,
+      contract.tail_hook,
+      contract.emotional_shift,
+      contract.spotlight_character,
+      arr(contract.primary_arc_codes).join(' '),
+      arr(contract.arc_codes).join(' '),
+    ].join(' '), contractState.query));
+    const pageItems = pageSlice(filtered, contractState);
+    const rows = pageItems.length ? `<div class="chapter-table">${pageItems.map(contract => {
+      const isScene = contractState.kind === 'scene';
+      return `<div class="chapter-row">
+        <div class="num">${isScene ? `第${esc(contract.chapter_number)}章 / 场${esc(contract.scene_number)}` : `第${esc(contract.chapter_number)}章`}</div>
+        <div>
+          <h4>${esc(isScene ? (contract.contract_summary || contract.core_conflict || '场景合约') : (contract.contract_summary || '章节合约'))}</h4>
+          <p>${esc([
+            contract.core_conflict ? `冲突：${contract.core_conflict}` : '',
+            contract.emotional_shift ? `情绪：${contract.emotional_shift}` : '',
+            contract.information_release ? `信息：${contract.information_release}` : '',
+            contract.closing_hook ? `尾钩：${contract.closing_hook}` : '',
+            contract.tail_hook ? `尾钩：${contract.tail_hook}` : '',
+            contract.failure_cost ? `代价：${contract.failure_cost}` : '',
+          ].filter(Boolean).join(' / ') || '暂无摘要')}</p>
+          <div class="tags">
+            ${[...arr(contract.primary_arc_codes), ...arr(contract.arc_codes)].slice(0, 6).map(v => tag(v)).join('')}
+            ${arr(contract.hooks_to_plant).slice(0, 3).map(v => tag(v, 'ok')).join('')}
+            ${arr(contract.relationship_debts).slice(0, 3).map(v => tag(v, 'warn')).join('')}
+            ${contract.signature_image ? tag(contract.signature_image, 'ok') : ''}
+            ${contract.cut_point ? tag(contract.cut_point, 'warn') : ''}
+          </div>
+        </div>
+        <div class="panel-count">${esc([contract.pacing_mode, contract.emotion_phase, contract.loop_position, contract.hook_type, contract.information_control_mode].filter(Boolean).join(' / '))}</div>
+      </div>`;
+    }).join('')}</div>` : empty('当前筛选没有合约');
+    const body = `<div class="workbench">
+      <div class="workbench-hero">
+        <div class="workbench-title">
+          <h3>${contractState.kind === 'scene' ? '场景合约索引' : '章节合约索引'}</h3>
+          <div class="meta">${esc(chapterContracts.length)} 章合约 · ${esc(sceneContracts.length)} 场景合约</div>
+        </div>
+        <p class="workbench-copy">合约是正文前最密集的执行资料；这里按合约类型分页阅读，避免一次性渲染几百章和上千场。</p>
+      </div>
+      <div class="control-bar">
+        <input id="contractSearch" type="search" value="${esc(contractState.query)}" placeholder="搜索章节、冲突、尾钩、情绪、弧线代码">
+        <button class="facet ${contractState.kind === 'chapter' ? 'active' : ''}" type="button" data-contract-kind="chapter">章节合约</button>
+        <button class="facet ${contractState.kind === 'scene' ? 'active' : ''}" type="button" data-contract-kind="scene">场景合约</button>
+        ${pager(filtered.length, contractState, 'contracts')}
+      </div>
+      ${rows}
     </div>`;
+    $('#tab-contracts').innerHTML = body;
   }
 
   async function loadArtifactContent(target) {
@@ -1205,13 +1913,99 @@
       const response = await fetch(`/api/projects/${encodeURIComponent(slug)}/design-artifact?artifact_id=${encodeURIComponent(artifactId)}`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || '加载失败');
-      pre.textContent = JSON.stringify(data.content ?? data, null, 2);
+      const content = data.content ?? data;
+      pre.textContent = JSON.stringify(content, null, 2);
+      artifact.dataset.contentJson = JSON.stringify(content);
       artifact.dataset.loaded = 'true';
       button.textContent = '已加载原始内容';
     } catch (err) {
       pre.textContent = `加载失败：${err.message}`;
       button.disabled = false;
       button.textContent = originalLabel;
+    }
+  }
+
+  async function postJson(url, payload) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }
+
+  async function editArtifact(button) {
+    const artifact = button.closest('.artifact');
+    if (!artifact) return;
+    await loadArtifactContent(button);
+    const artifactId = button.dataset.artifactId;
+    if (!artifact.dataset.contentJson) {
+      alert('原始内容未加载成功，暂不能编辑。');
+      return;
+    }
+    const current = artifact.dataset.contentJson || '{}';
+    const next = window.prompt('编辑这份物料 JSON。提交后会创建新版本并关闭正文门禁。', current);
+    if (next === null) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(next);
+    } catch (err) {
+      alert(`JSON 解析失败：${err.message}`);
+      return;
+    }
+    button.disabled = true;
+    try {
+      await postJson(`/api/projects/${encodeURIComponent(slug)}/prewrite/materials/${encodeURIComponent(artifactId)}/edit`, {
+        content: parsed,
+        notes: 'manual edit from design dossier',
+      });
+      await load();
+    } catch (err) {
+      alert(`编辑失败：${err.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function issueArtifact(button) {
+    const artifactId = button.dataset.artifactId;
+    const instructions = window.prompt('描述这份写前物料需要修复的问题。');
+    if (!instructions || !instructions.trim()) return;
+    button.disabled = true;
+    try {
+      const data = await postJson(`/api/projects/${encodeURIComponent(slug)}/prewrite/materials/${encodeURIComponent(artifactId)}/issue`, {
+        instructions: instructions.trim(),
+      });
+      alert(`已创建修复任务：${data.task?.task_id || data.rewrite_task?.rewrite_task_id || 'queued'}`);
+      await load();
+    } catch (err) {
+      alert(`提交失败：${err.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function approvePrewrite() {
+    try {
+      await postJson(`/api/projects/${encodeURIComponent(slug)}/prewrite/approve`, {
+        notes: 'approved from design dossier',
+      });
+      await load();
+    } catch (err) {
+      alert(`审核失败：${err.message}`);
+    }
+  }
+
+  async function enterWriting() {
+    try {
+      const data = await postJson(`/api/projects/${encodeURIComponent(slug)}/enter-writing`, {});
+      alert(`正文任务已提交：${data.task_id || 'queued'}`);
+      window.location.href = `/read/${encodeURIComponent(slug)}`;
+    } catch (err) {
+      alert(`进入正文失败：${err.message}`);
+      await load();
     }
   }
 
@@ -1249,8 +2043,132 @@
 
   $$('.tab').forEach(btn => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
   $('#refreshBtn').addEventListener('click', load);
+  $('#approvePrewriteBtn').addEventListener('click', approvePrewrite);
+  $('#enterWritingBtn').addEventListener('click', enterWriting);
+
+  function renderTarget(target) {
+    if (target === 'artifacts') renderArtifacts();
+    if (target === 'outline') renderOutline();
+    if (target === 'narrative') renderNarrative();
+    if (target === 'contracts') renderContracts();
+  }
+
+  function stateForTarget(target) {
+    if (target === 'artifacts') return artifactState;
+    if (target === 'outline') return outlineState;
+    if (target === 'narrative') return narrativeState;
+    if (target === 'contracts') return contractState;
+    return null;
+  }
+
+  document.addEventListener('change', event => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (!target) return;
+    if (target.id === 'artifactSearch') {
+      artifactState.query = target.value || '';
+      artifactState.page = 1;
+      renderArtifacts();
+      return;
+    }
+    if (target.id === 'artifactStatus') {
+      artifactState.status = target.value || 'all';
+      artifactState.page = 1;
+      renderArtifacts();
+      return;
+    }
+    if (target.id === 'artifactLatestOnly') {
+      artifactState.latestOnly = Boolean(target.checked);
+      artifactState.page = 1;
+      renderArtifacts();
+      return;
+    }
+    if (target.id === 'outlineSearch') {
+      outlineState.query = target.value || '';
+      outlineState.page = 1;
+      renderOutline();
+      return;
+    }
+    if (target.id === 'outlineStatus') {
+      outlineState.status = target.value || 'all';
+      outlineState.page = 1;
+      renderOutline();
+      return;
+    }
+    if (target.id === 'narrativeSearch') {
+      narrativeState.query = target.value || '';
+      narrativeState.page = 1;
+      renderNarrative();
+      return;
+    }
+    if (target.id === 'contractSearch') {
+      contractState.query = target.value || '';
+      contractState.page = 1;
+      renderContracts();
+    }
+  });
+
   document.addEventListener('click', event => {
     const target = event.target instanceof HTMLElement ? event.target : null;
+    const phaseButton = target?.closest('[data-artifact-phase]');
+    if (phaseButton) {
+      event.preventDefault();
+      artifactState.phase = phaseButton.dataset.artifactPhase || 'all';
+      artifactState.page = 1;
+      renderArtifacts();
+      return;
+    }
+
+    const volumeButton = target?.closest('[data-outline-volume]');
+    if (volumeButton) {
+      event.preventDefault();
+      outlineState.volume = volumeButton.dataset.outlineVolume || 'all';
+      outlineState.page = 1;
+      renderOutline();
+      return;
+    }
+
+    const arcButton = target?.closest('[data-narrative-arc]');
+    if (arcButton) {
+      event.preventDefault();
+      narrativeState.arc = arcButton.dataset.narrativeArc || 'all';
+      narrativeState.page = 1;
+      renderNarrative();
+      return;
+    }
+
+    const contractKindButton = target?.closest('[data-contract-kind]');
+    if (contractKindButton) {
+      event.preventDefault();
+      contractState.kind = contractKindButton.dataset.contractKind || 'chapter';
+      contractState.page = 1;
+      renderContracts();
+      return;
+    }
+
+    const pageButton = target?.closest('[data-page-delta]');
+    if (pageButton) {
+      const pageTarget = pageButton.closest('[data-page-target]')?.dataset.pageTarget;
+      const state = stateForTarget(pageTarget);
+      if (state) {
+        event.preventDefault();
+        state.page = Math.max(1, Number(state.page || 1) + Number(pageButton.dataset.pageDelta || 0));
+        renderTarget(pageTarget);
+      }
+      return;
+    }
+
+    const editButton = target?.closest('.artifact-edit');
+    if (editButton) {
+      event.preventDefault();
+      editArtifact(editButton);
+      return;
+    }
+    const issueButton = target?.closest('.artifact-issue');
+    if (issueButton) {
+      event.preventDefault();
+      issueArtifact(issueButton);
+      return;
+    }
     const button = target?.closest('.artifact-load');
     if (!button) return;
     event.preventDefault();

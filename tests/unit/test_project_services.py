@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from bestseller.domain.enums import ArtifactType, ProjectType
+from bestseller.domain.fanqie_short import FANQIE_SHORT_CONTENT_MODE
 from bestseller.domain.planning import PlanningArtifactCreate
 from bestseller.domain.project import (
     AmazonKdpPublicationProfile,
@@ -19,9 +20,12 @@ from bestseller.domain.project import (
     StylePreferenceConfig,
     WritingProfile,
 )
-from bestseller.domain.fanqie_short import FANQIE_SHORT_CONTENT_MODE
 from bestseller.infra.db.models import ProjectModel, StyleGuideModel
 from bestseller.services import projects as project_services
+from bestseller.services.genre_skill_profiles import (
+    GENRE_SKILL_PROFILE_METADATA_KEY,
+    GENRE_SKILL_PROFILE_VERSION,
+)
 from bestseller.settings import load_settings
 
 pytestmark = pytest.mark.unit
@@ -57,6 +61,28 @@ def build_settings() -> object:
         local_config_path=Path("config/does-not-exist.yaml"),
         env={},
     )
+
+
+@pytest.mark.asyncio
+async def test_create_project_persists_genre_skill_profile_snapshot() -> None:
+    settings = build_settings()
+    session = FakeSession()
+    payload = ProjectCreate(
+        slug="skill-profile-book",
+        title="Skill Profile Book",
+        genre="悬疑",
+        sub_genre="民俗怪谈",
+        target_word_count=120000,
+        target_chapters=60,
+    )
+
+    project = await project_services.create_project(session, payload, settings)
+
+    profile = project.metadata_json[GENRE_SKILL_PROFILE_METADATA_KEY]
+    assert profile["profile_key"] == "suspense-mystery"
+    assert profile["prompt_pack_key"] == "suspense-mystery"
+    assert "suspense-mystery" in profile["research_skill_keys"]
+    assert profile["activation"]["gate_mode"] == "audit_only"
 
 
 def test_project_delete_tombstone_round_trip(tmp_path: Path) -> None:
@@ -661,6 +687,52 @@ async def test_import_planning_artifact_adds_strict_prewrite_provenance(
         == "strict"
     )
     assert artifact.content["_meta"]["repair_attempts"] == []
+
+
+@pytest.mark.asyncio
+async def test_import_planning_artifact_records_genre_skill_profile_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="profile-story",
+        title="题材策略书",
+        genre="悬疑",
+        sub_genre="民俗怪谈",
+        target_word_count=40000,
+        target_chapters=20,
+        metadata_json={
+            GENRE_SKILL_PROFILE_METADATA_KEY: {
+                "version": GENRE_SKILL_PROFILE_VERSION,
+                "profile_key": "suspense-mystery",
+                "genre": "悬疑",
+                "sub_genre": "民俗怪谈",
+                "research_skill_keys": ["base-research-discipline", "suspense-mystery"],
+                "prompt_pack_key": "suspense-mystery",
+                "review_profile_key": "suspense-mystery",
+                "threshold_profile_key": "suspense-mystery",
+            }
+        },
+    )
+    project.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[None, 0])
+
+    artifact = await project_services.import_planning_artifact(
+        session,
+        "profile-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.BOOK_SPEC,
+            content={"logline": "主角按民俗禁忌追查失踪案。"},
+        ),
+    )
+
+    lineage = artifact.content["_meta"]["methodology_lineage"]
+    assert lineage["genre_skill_profile_key"] == "suspense-mystery"
+    assert lineage["genre_skill_profile_version"] == GENRE_SKILL_PROFILE_VERSION
 
 
 @pytest.mark.asyncio

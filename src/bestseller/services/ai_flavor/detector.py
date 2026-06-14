@@ -939,6 +939,11 @@ _SENSATION_STACK_RE = re.compile(
 # Function chars that recur naturally; a 4-gram made almost entirely of these
 # is structural, not a repeated *meaningful* phrase.
 _GRAM_FUNCTION_CHARS = frozenset("的了在是这那他她你我们个一不没有就都也很还又把被让将对向于之其着过再")
+# Near-copy line detection: an ≥8-char substring repeated within this char
+# window is the same line written twice (not far-apart 首尾呼应).
+_NEARCOPY_N = 8
+_NEARCOPY_WINDOW = 600
+_NEARCOPY_PUNCT = frozenset("，。、！？；：")
 
 
 def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
@@ -1000,6 +1005,46 @@ def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
                 suggestions=(),
                 sentence_span=(m.start(), m.end()),
                 why="身体感觉词排比堆叠（酸凉痒麻胀痛…）——装腔，改成一个具体的身体反应",
+                remove_sentence_on_block=False,
+            )
+        )
+
+    # 3. Near-copy lines: an ≥8-char meaningful substring repeated within a short
+    #    window (the same action/description written twice with minor reskinning,
+    #    e.g. "他低头看那道旧疤——疤的边缘沾着粉" / "他盯着那道旧疤——疤的边缘沾着粉").
+    #    The window excludes far-apart 首尾呼应; good drafts score 0, ch004 = 10.
+    #    This catches the residual that n-gram frequency can't (frequency误伤
+    #    legitimate prop names) and that逐句 deslop/LLM self-review can't see.
+    seen_pos: dict[str, int] = {}
+    near_copies: dict[str, int] = {}
+    for m in re.finditer(r"[一-鿿，。、]+", content_md):
+        run, base = m.group(), m.start()
+        for i in range(len(run) - _NEARCOPY_N + 1):
+            gram = run[i : i + _NEARCOPY_N]
+            if sum(1 for ch in gram if ch not in _NEARCOPY_PUNCT) < 6:
+                continue  # mostly punctuation — not a real repeated phrase
+            pos = base + i
+            prev = seen_pos.get(gram)
+            if prev is not None and pos - prev < _NEARCOPY_WINDOW:
+                near_copies.setdefault(gram, prev)
+            seen_pos[gram] = pos
+    if len(near_copies) >= 2:
+        first_gram = min(near_copies, key=lambda g: near_copies[g])
+        anchor = near_copies[first_gram]
+        out.append(
+            AiFlavorSpan(
+                start=anchor,
+                end=anchor + _NEARCOPY_N,
+                matched_text=first_gram,
+                rule_id=f"{lang}.repetition.near_copy",
+                category="narrative_repetition",
+                severity="warn",
+                suggestions=(),
+                sentence_span=(anchor, anchor + _NEARCOPY_N),
+                why=(
+                    f"近乎复制句：{len(near_copies)} 处≥8字描述在相邻段落里重复"
+                    f"（如「{first_gram}」）——同一个动作/描写写了两遍，删一处或并成一句"
+                ),
                 remove_sentence_on_block=False,
             )
         )

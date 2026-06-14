@@ -693,6 +693,17 @@
     return r.json();
   }
 
+  async function post(url, payload) {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+  }
+
   // ── Render TOC ──────────────────────────────────────────────────────────
   // Group the chapter list by volume_number so the reader can see which 卷
   // each chapter belongs to.  Chapters with no volume info (legacy single-
@@ -883,6 +894,14 @@
           <button class="tb-btn primary" id="copy-body-btn" onclick="copyChapterText(this)" title="一键复制正文（C B）">📋 复制正文</button>
           <button class="tb-btn" onclick="copyChapterFull(this)" title="一键复制：标题 + 正文（C A）">📦 标题+正文</button>
           <div class="tb-divider"></div>
+          ${isSinglePiece ? "" : `<div class="reader-toolbar-group" role="group" aria-label="正文修改">
+            <span class="label">修改</span>
+            <button class="tb-btn" onclick="submitChapterRevision('regenerate', this)" title="重新运行本章生成流程">重生</button>
+            <button class="tb-btn" onclick="submitChapterRevision('polish', this)" title="调用文采润色编辑生成新版本">润色</button>
+            <button class="tb-btn" onclick="submitChapterRevision('humanize', this)" title="复用 AI 味检测与局部修补能力">去AI</button>
+            <button class="tb-btn" onclick="submitChapterRevision('issue', this)" title="按问题描述修改本章">问题</button>
+          </div>
+          <div class="tb-divider"></div>`}
           <div class="reader-toolbar-group" role="group" aria-label="栏宽">
             <span class="label">栏宽</span>
             <button class="tb-btn" data-width="compact" onclick="setReaderWidth('compact')" title="紧凑">紧</button>
@@ -1123,6 +1142,51 @@
     flashCopied(btn, ok ? "全章已复制" : "复制失败");
   };
 
+  window.submitChapterRevision = async function(operation, btn) {
+    if (!currentChapter) return;
+    let instructions = "";
+    if (operation === "issue") {
+      instructions = window.prompt("描述本章需要修改的问题。") || "";
+      if (!instructions.trim()) return;
+    }
+    const labels = {
+      regenerate: "重新生成",
+      polish: "润色",
+      humanize: "去AI味",
+      issue: "问题修改",
+    };
+    const original = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = "提交中";
+    }
+    try {
+      const data = await post(`/api/reader/${slug}/chapter/${currentChapter}/revision`, {
+        operation,
+        instructions,
+      });
+      if (btn) btn.innerHTML = "已排队";
+      const taskId = data.task?.task_id || "";
+      const area = document.getElementById("reading-area");
+      const note = document.createElement("div");
+      note.className = "chapter-repair-banner";
+      note.innerHTML = `<strong>${labels[operation] || operation}任务已提交</strong>${taskId ? ` · ${escapeHtml(taskId)}` : ""}。完成后会以新版本显示。`;
+      const body = area.querySelector(".chapter-body");
+      if (body) area.insertBefore(note, body);
+      setTimeout(async () => {
+        try {
+          await loadTOC();
+          await loadChapter(currentChapter);
+        } catch {}
+      }, 1800);
+    } catch (err) {
+      alert(`${labels[operation] || operation}失败：${err.message}`);
+      if (btn) btn.innerHTML = original;
+    } finally {
+      if (btn) setTimeout(() => { btn.disabled = false; btn.innerHTML = original; }, 1600);
+    }
+  };
+
   // ── Reader preferences (persisted) ───────────────────────────────────────
   const READER_PREFS_KEY = "bestseller.reader.prefs.v1";
   const DEFAULT_PREFS = { width: "comfort", font: "md", theme: "cream" };
@@ -1184,6 +1248,16 @@
     else if (e.key === "]") { setReaderWidth("wide"); }
   });
 
+  async function loadTOC() {
+    const data = await get(`/api/reader/${slug}/toc`);
+    bookTitle = data.title || slug;
+    document.getElementById("book-title").textContent = bookTitle;
+    toc = data.chapters || [];
+    volumes = data.volumes || [];
+    renderToc();
+    return data;
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────
   async function init() {
     // Apply persisted reader prefs immediately so the first paint doesn't
@@ -1191,12 +1265,7 @@
     reflectReaderPrefs();
     document.getElementById("book-title").textContent = slug;
     try {
-      const data = await get(`/api/reader/${slug}/toc`);
-      bookTitle = data.title || slug;
-      document.getElementById("book-title").textContent = bookTitle;
-      toc = data.chapters || [];
-      volumes = data.volumes || [];
-      renderToc();
+      await loadTOC();
       // Load chapter from hash or default to first
       const hashN = parseInt(location.hash.replace("#", ""), 10);
       const startN = (!isNaN(hashN) && hashN >= 1) ? hashN : (toc[0]?.number ?? 1);

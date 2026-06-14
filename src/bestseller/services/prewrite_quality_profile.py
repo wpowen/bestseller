@@ -261,6 +261,8 @@ def strict_outline_shrink_size(project: Any, settings: Any) -> int:
 
 
 def planning_artifact_meta(project: Any, *, gate_reports: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    from bestseller.services.genre_skill_profiles import genre_skill_profile_from_metadata
+
     metadata = getattr(project, "metadata_json", None)
     metadata = metadata if isinstance(metadata, Mapping) else {}
     quality_profile = metadata.get("quality_profile") or (
@@ -273,6 +275,10 @@ def planning_artifact_meta(project: Any, *, gate_reports: Mapping[str, Any] | No
         "distilled_strategy_card": bool(metadata.get("distilled_strategy_card")),
         "material_reference_block": bool(metadata.get("material_reference_block")),
     }
+    genre_skill_profile = genre_skill_profile_from_metadata(metadata)
+    if genre_skill_profile is not None:
+        lineage["genre_skill_profile_key"] = genre_skill_profile.profile_key
+        lineage["genre_skill_profile_version"] = genre_skill_profile.version
     meta: dict[str, Any] = {
         "quality_profile": quality_profile,
         "methodology_lineage": lineage,

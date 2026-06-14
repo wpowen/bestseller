@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 import hashlib
 import html
 from http import HTTPStatus
@@ -27,6 +28,7 @@ from bestseller.domain.fanqie_short import is_fanqie_short_project
 from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
 from bestseller.infra.db.models import (
     PlanningArtifactVersionModel,
+    RewriteTaskModel,
     StyleGuideModel,
     WorkflowRunModel,
     WorkflowStepRunModel,
@@ -58,6 +60,19 @@ from bestseller.services.inspection import (
 )
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.pipelines import ProjectRepairPauseError, run_autowrite_pipeline
+from bestseller.services.pipelines import run_chapter_pipeline
+from bestseller.services.chapter_revision import (
+    apply_chapter_revision_task,
+    create_chapter_revision_task,
+)
+from bestseller.services.prewrite_review import (
+    approve_prewrite_materials,
+    assert_prewrite_review_approved,
+    create_prewrite_issue_task,
+    edit_prewrite_material,
+    load_prewrite_review_payload,
+    repair_prewrite_material_from_task,
+)
 from bestseller.services.progress_context import (
     TIER_KEY,
     TIER_MILESTONE,
@@ -146,6 +161,8 @@ def _json_default(value: object) -> object:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
@@ -2282,6 +2299,58 @@ class WebTaskManager:
         thread.start()
         return task.to_dict()
 
+    def create_prewrite_repair_task(self, payload: dict[str, object]) -> dict[str, object]:
+        task_id = str(uuid4())
+        task = WebTaskState(
+            task_id=task_id,
+            task_type="prewrite_repair",
+            status="queued",
+            created_at=_utc_now(),
+            updated_at=_utc_now(),
+            project_slug=str(payload.get("project_slug") or ""),
+            title=f"Prewrite repair {payload.get('project_slug') or ''}",
+            current_stage="queued",
+            payload=json.loads(json.dumps(payload, default=_json_default)),
+        )
+        with self._lock:
+            self._tasks[task_id] = task
+            self._save_to_disk()
+        thread = threading.Thread(
+            target=self._run_with_slot,
+            args=(task_id, self._run_prewrite_repair_worker, payload),
+            daemon=True,
+        )
+        thread.start()
+        return task.to_dict()
+
+    def create_chapter_revision_task(self, payload: dict[str, object]) -> dict[str, object]:
+        task_id = str(uuid4())
+        operation = str(payload.get("operation") or "")
+        task = WebTaskState(
+            task_id=task_id,
+            task_type="chapter_revision",
+            status="queued",
+            created_at=_utc_now(),
+            updated_at=_utc_now(),
+            project_slug=str(payload.get("project_slug") or ""),
+            title=(
+                f"Chapter {payload.get('chapter_number') or ''} "
+                f"{operation or 'revision'}"
+            ).strip(),
+            current_stage="queued",
+            payload=json.loads(json.dumps(payload, default=_json_default)),
+        )
+        with self._lock:
+            self._tasks[task_id] = task
+            self._save_to_disk()
+        thread = threading.Thread(
+            target=self._run_with_slot,
+            args=(task_id, self._run_chapter_revision_worker, payload),
+            daemon=True,
+        )
+        thread.start()
+        return task.to_dict()
+
     # Stages that warrant an immediate disk persist (state transitions,
     # milestones).  High-frequency progress events (scene_draft_completed
     # etc.) are kept in memory and flushed every _PROGRESS_FLUSH_INTERVAL
@@ -3616,6 +3685,139 @@ class WebTaskManager:
         except Exception:
             tb = traceback.format_exc()
             logger.exception("Repair task %s crashed", task_id)
+            self._mark_failed(task_id, tb)
+
+    def _run_prewrite_repair_worker(self, task_id: str, payload: dict[str, object]) -> None:
+        self._mark_running(task_id)
+        with self._lock:
+            t = self._tasks.get(task_id)
+            if t is not None:
+                t.payload = json.loads(json.dumps(payload, default=_json_default))
+                self._save_to_disk()
+
+        def progress(stage: str, progress_payload: dict[str, Any] | None = None) -> None:
+            self._check_cancelled(task_id)
+            serialized = json.loads(json.dumps(progress_payload or {}, default=_json_default))
+            self._push_progress(task_id, stage, serialized)
+
+        async def runner() -> dict[str, object]:
+            settings = load_settings()
+            project_slug = str(payload["project_slug"])
+            rewrite_task_id = UUID(str(payload["rewrite_task_id"]))
+            progress(
+                "prewrite_material_repair_started",
+                {
+                    "project_slug": project_slug,
+                    "rewrite_task_id": str(rewrite_task_id),
+                },
+            )
+            async with session_scope(settings) as session:
+                result = await repair_prewrite_material_from_task(
+                    session,
+                    settings,
+                    project_slug,
+                    rewrite_task_id=rewrite_task_id,
+                )
+            progress("prewrite_material_repair_completed", result)
+            return json.loads(json.dumps(result, default=_json_default))
+
+        try:
+            with bind_progress(progress):
+                result = asyncio.run(runner())
+            self._mark_completed(task_id, result)
+        except TaskCancelledError:
+            self._mark_cancelled(task_id)
+        except Exception:
+            tb = traceback.format_exc()
+            logger.exception("Prewrite repair task %s crashed", task_id)
+            self._mark_failed(task_id, tb)
+
+    def _run_chapter_revision_worker(self, task_id: str, payload: dict[str, object]) -> None:
+        self._mark_running(task_id)
+        with self._lock:
+            t = self._tasks.get(task_id)
+            if t is not None:
+                t.payload = json.loads(json.dumps(payload, default=_json_default))
+                self._save_to_disk()
+
+        def progress(stage: str, progress_payload: dict[str, Any] | None = None) -> None:
+            self._check_cancelled(task_id)
+            serialized = json.loads(json.dumps(progress_payload or {}, default=_json_default))
+            self._push_progress(task_id, stage, serialized)
+
+        async def runner() -> dict[str, object]:
+            settings = load_settings()
+            project_slug = str(payload["project_slug"])
+            chapter_number = int(payload["chapter_number"])
+            operation = str(payload["operation"])
+            rewrite_task_id = UUID(str(payload["rewrite_task_id"]))
+            progress(
+                "chapter_revision_started",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "operation": operation,
+                    "rewrite_task_id": str(rewrite_task_id),
+                },
+            )
+            async with session_scope(settings) as session:
+                if operation == "regenerate":
+                    chapter_result = await run_chapter_pipeline(
+                        session,
+                        settings,
+                        project_slug,
+                        chapter_number,
+                        requested_by="reader-ui",
+                        export_markdown=True,
+                        supersede_pending_rewrites=True,
+                        progress=progress,
+                    )
+                    task = await session.get(RewriteTaskModel, rewrite_task_id)
+                    if task is not None:
+                        task.status = "completed"
+                        task.attempts = int(task.attempts or 0) + 1
+                        task.metadata_json = {
+                            **(task.metadata_json or {}),
+                            "completed_at": _utc_now(),
+                            "chapter_workflow_run_id": str(chapter_result.workflow_run_id),
+                            "result_chapter_draft_version_no": (
+                                chapter_result.chapter_draft_version_no
+                            ),
+                            "export_artifact_id": str(chapter_result.export_artifact_id)
+                            if chapter_result.export_artifact_id
+                            else None,
+                        }
+                    result: dict[str, object] = {
+                        "ok": True,
+                        "operation": operation,
+                        "chapter_number": chapter_number,
+                        "rewrite_task_id": str(rewrite_task_id),
+                        "chapter_workflow_run_id": str(chapter_result.workflow_run_id),
+                        "result_version_no": chapter_result.chapter_draft_version_no,
+                    }
+                else:
+                    if operation not in {"polish", "humanize", "issue"}:
+                        raise ValueError("Unsupported chapter revision operation.")
+                    result = await apply_chapter_revision_task(
+                        session,
+                        settings,
+                        project_slug,
+                        chapter_number,
+                        rewrite_task_id=rewrite_task_id,
+                        operation=operation,  # type: ignore[arg-type]
+                    )
+            progress("chapter_revision_completed", result)
+            return json.loads(json.dumps(result, default=_json_default))
+
+        try:
+            with bind_progress(progress):
+                result = asyncio.run(runner())
+            self._mark_completed(task_id, result)
+        except TaskCancelledError:
+            self._mark_cancelled(task_id)
+        except Exception:
+            tb = traceback.format_exc()
+            logger.exception("Chapter revision task %s crashed", task_id)
             self._mark_failed(task_id, tb)
 
     # ------------------------------------------------------------------
@@ -6744,6 +6946,7 @@ async def _load_project_design_dossier_payload(
         structure = await build_project_structure(session, project_slug)
         story_bible = await build_story_bible_overview(session, project_slug)
         narrative = await build_narrative_overview(session, project_slug)
+        prewrite_review = await load_prewrite_review_payload(session, project_slug)
         style_guide = await session.get(StyleGuideModel, project.id)
         writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
         from sqlalchemy import select
@@ -6882,6 +7085,7 @@ async def _load_project_design_dossier_payload(
             "repair_status": {},
         },
         "readiness": readiness,
+        "prewrite_review": prewrite_review,
         "planning_artifacts": {
             **_planning_artifact_stats(artifact_documents),
             "documents": artifact_documents,
@@ -9727,6 +9931,14 @@ def serve_web_app(
                         asyncio.run(_load_project_design_dossier_payload(settings, project_slug))
                     )
                     return
+                project_slug = _match_project_route(path, "prewrite-review")
+                if project_slug is not None:
+                    async def _load_prewrite() -> dict[str, object]:
+                        async with session_scope(settings) as session:
+                            return await load_prewrite_review_payload(session, project_slug)
+
+                    self._send_json(asyncio.run(_load_prewrite()))
+                    return
                 project_slug = _match_project_route(path, "design-artifact")
                 if project_slug is not None:
                     artifact_id = (query.get("artifact_id") or [""])[0]
@@ -10259,6 +10471,120 @@ def serve_web_app(
                     task = task_manager.create_repair_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
+                approve_slug = _match_project_route(path, "prewrite/approve")
+                if approve_slug is not None:
+                    payload = self._read_json_body()
+
+                    async def _approve() -> dict[str, object]:
+                        async with session_scope(settings) as session:
+                            return await approve_prewrite_materials(
+                                session,
+                                approve_slug,
+                                approved_by=str(payload.get("approved_by") or "web-ui"),
+                                notes=str(payload.get("notes") or ""),
+                            )
+
+                    self._send_json({"ok": True, "prewrite_review": asyncio.run(_approve())})
+                    return
+                enter_writing_slug = _match_project_route(path, "enter-writing")
+                if enter_writing_slug is not None:
+                    active = task_manager.find_active_task_by_project_slug(enter_writing_slug)
+                    if active is not None:
+                        self._send_json({"ok": True, "already_running": True, **active})
+                        return
+
+                    async def _assert_and_payload() -> dict[str, object] | None:
+                        async with session_scope(settings) as session:
+                            await assert_prewrite_review_approved(session, enter_writing_slug)
+                        return await _rebuild_payload_from_db(settings, enter_writing_slug)
+
+                    try:
+                        payload = asyncio.run(_assert_and_payload())
+                    except PermissionError as exc:
+                        async def _load_block() -> dict[str, object]:
+                            async with session_scope(settings) as session:
+                                return await load_prewrite_review_payload(
+                                    session,
+                                    enter_writing_slug,
+                                )
+
+                        self._send_json(
+                            {
+                                "ok": False,
+                                "error": str(exc),
+                                "prewrite_review": asyncio.run(_load_block()),
+                            },
+                            status=HTTPStatus.CONFLICT,
+                        )
+                        return
+                    if not payload:
+                        self._send_json(
+                            {"ok": False, "error": "Project not found or cannot be rebuilt"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    payload = dict(payload)
+                    payload["_run_conception"] = False
+                    payload["revision_mode"] = True
+                    payload["prewrite_review_approved"] = True
+                    task = task_manager.create_autowrite_task(payload)
+                    self._send_json({"ok": True, **task}, status=HTTPStatus.ACCEPTED)
+                    return
+                if (
+                    path.startswith("/api/projects/")
+                    and "/prewrite/materials/" in path
+                    and (path.endswith("/edit") or path.endswith("/issue"))
+                ):
+                    parts = path.split("/")
+                    if len(parts) < 8:
+                        raise ValueError("Invalid prewrite material route.")
+                    project_slug = parts[3]
+                    artifact_id = UUID(parts[6])
+                    action = parts[7]
+                    payload = self._read_json_body()
+                    if action == "edit":
+                        raw_content = payload.get("content")
+                        if isinstance(raw_content, str):
+                            raw_content = json.loads(raw_content)
+                        if not isinstance(raw_content, dict):
+                            raise ValueError("Field 'content' must be a JSON object.")
+
+                        async def _edit_material() -> dict[str, object]:
+                            async with session_scope(settings) as session:
+                                return await edit_prewrite_material(
+                                    session,
+                                    project_slug,
+                                    artifact_id=artifact_id,
+                                    content=raw_content,
+                                    notes=str(payload.get("notes") or ""),
+                                    edited_by=str(payload.get("edited_by") or "web-ui"),
+                                )
+
+                        self._send_json(asyncio.run(_edit_material()))
+                        return
+                    instructions = str(payload.get("instructions") or "").strip()
+                    if not instructions:
+                        raise ValueError("Field 'instructions' is required.")
+
+                    async def _create_prewrite_issue() -> dict[str, object]:
+                        async with session_scope(settings) as session:
+                            rewrite_task = await create_prewrite_issue_task(
+                                session,
+                                project_slug,
+                                artifact_id=artifact_id,
+                                instructions=instructions,
+                                requested_by=str(payload.get("requested_by") or "web-ui"),
+                            )
+                            return {
+                                "rewrite_task_id": str(rewrite_task.id),
+                                "project_slug": project_slug,
+                                "artifact_id": str(artifact_id),
+                            }
+
+                    issue = asyncio.run(_create_prewrite_issue())
+                    task = task_manager.create_prewrite_repair_task(issue)
+                    self._send_json({"ok": True, "rewrite_task": issue, "task": task})
+                    return
                 if path.startswith("/api/projects/") and path.endswith("/listing/regenerate"):
                     slug = (
                         path.removeprefix("/api/projects/")
@@ -10357,6 +10683,26 @@ def serve_web_app(
                             status=HTTPStatus.ACCEPTED,
                         )
                         return
+                    try:
+                        async def _assert_revision_prewrite() -> None:
+                            async with session_scope(settings) as session:
+                                await assert_prewrite_review_approved(session, revision_slug)
+
+                        asyncio.run(_assert_revision_prewrite())
+                    except PermissionError as exc:
+                        async def _load_revision_block() -> dict[str, object]:
+                            async with session_scope(settings) as session:
+                                return await load_prewrite_review_payload(session, revision_slug)
+
+                        self._send_json(
+                            {
+                                "ok": False,
+                                "error": str(exc),
+                                "prewrite_review": asyncio.run(_load_revision_block()),
+                            },
+                            status=HTTPStatus.CONFLICT,
+                        )
+                        return
                     payload = asyncio.run(_rebuild_payload_from_db(settings, revision_slug))
                     if not payload:
                         self._send_json(
@@ -10376,12 +10722,72 @@ def serve_web_app(
                     task = task_manager.create_autowrite_task(payload)
                     self._send_json({"ok": True, **task}, status=HTTPStatus.ACCEPTED)
                     return
+                if (
+                    path.startswith("/api/reader/")
+                    and "/chapter/" in path
+                    and path.endswith("/revision")
+                ):
+                    parts = path.split("/")
+                    project_slug = parts[3]
+                    chapter_number = int(parts[5])
+                    payload = self._read_json_body()
+                    operation = str(payload.get("operation") or "").strip()
+                    if operation not in {"regenerate", "polish", "humanize", "issue"}:
+                        raise ValueError("Unsupported chapter revision operation.")
+                    instructions = str(payload.get("instructions") or "").strip()
+                    if operation == "issue" and not instructions:
+                        raise ValueError("Field 'instructions' is required for issue edits.")
+
+                    async def _create_chapter_revision() -> dict[str, object]:
+                        async with session_scope(settings) as session:
+                            rewrite_task = await create_chapter_revision_task(
+                                session,
+                                project_slug,
+                                chapter_number,
+                                operation=operation,
+                                instructions=instructions,
+                                requested_by=str(payload.get("requested_by") or "reader-ui"),
+                            )
+                            return {
+                                "project_slug": project_slug,
+                                "chapter_number": chapter_number,
+                                "operation": operation,
+                                "rewrite_task_id": str(rewrite_task.id),
+                            }
+
+                    revision = asyncio.run(_create_chapter_revision())
+                    task = task_manager.create_chapter_revision_task(revision)
+                    self._send_json(
+                        {"ok": True, "rewrite_task": revision, "task": task},
+                        status=HTTPStatus.ACCEPTED,
+                    )
+                    return
                 if path == "/api/tasks/quickstart":
                     payload = self._read_json_body()
                     if not payload.get("genre_key"):
                         raise ValueError("Field 'genre_key' is required.")
                     resume_slug = str(payload.get("project_slug") or "")
                     if resume_slug:
+                        try:
+                            async def _assert_quickstart_resume_prewrite() -> None:
+                                async with session_scope(settings) as session:
+                                    await assert_prewrite_review_approved(session, resume_slug)
+
+                            asyncio.run(_assert_quickstart_resume_prewrite())
+                        except PermissionError as exc:
+                            async def _load_quickstart_block() -> dict[str, object]:
+                                async with session_scope(settings) as session:
+                                    return await load_prewrite_review_payload(session, resume_slug)
+
+                            self._send_json(
+                                {
+                                    "ok": False,
+                                    "error": str(exc),
+                                    "prewrite_review": asyncio.run(_load_quickstart_block()),
+                                },
+                                status=HTTPStatus.CONFLICT,
+                            )
+                            return
                         block_payload = asyncio.run(
                             _load_project_autowrite_block_payload(settings, resume_slug),
                         )

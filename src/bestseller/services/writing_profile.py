@@ -373,6 +373,10 @@ def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingPro
 
 
 def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfile) -> dict[str, Any]:
+    from bestseller.services.genre_skill_profiles import (
+        GENRE_SKILL_PROFILE_METADATA_KEY,
+        resolve_genre_skill_profile,
+    )
     from bestseller.services.prewrite_quality_profile import (
         apply_default_prewrite_quality_profile,
     )
@@ -386,6 +390,14 @@ def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfi
     metadata.setdefault("opening_strategy", writing_profile.market.opening_strategy)
     metadata.setdefault("chapter_hook_strategy", writing_profile.market.chapter_hook_strategy)
     metadata.setdefault("prompt_pack_key", writing_profile.market.prompt_pack_key)
+    metadata.setdefault(
+        GENRE_SKILL_PROFILE_METADATA_KEY,
+        resolve_genre_skill_profile(
+            payload.genre,
+            payload.sub_genre,
+            prompt_pack_key=writing_profile.market.prompt_pack_key,
+        ).to_metadata(),
+    )
     metadata.setdefault("golden_finger", writing_profile.character.golden_finger)
     metadata.setdefault("protagonist_archetype", writing_profile.character.protagonist_archetype)
     metadata.setdefault("growth_curve", writing_profile.character.growth_curve)

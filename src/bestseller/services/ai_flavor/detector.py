@@ -21,6 +21,7 @@ Design contract
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 import json
@@ -917,6 +918,9 @@ def detect(
             )
         )
 
+    # ── Chapter-level repetition (车轱辘内心戏 / 感觉词堆叠) ─────────────
+    spans.extend(_detect_repetition(content_md, lang=lang))
+
     spans.sort(key=lambda s: (s.start, s.end))
     return AiFlavorReport(
         language=lang,
@@ -924,6 +928,82 @@ def detect(
         overall_score=_score(tuple(spans)),
         spans=tuple(spans),
     )
+
+
+# Body-sensation chars whose stacking/over-repetition signals 车轱辘 inner
+# monologue (the same feeling written over and over with new skin).
+_SENSATION_CHARS = "麻凉酸痒胀痛钻爬渗顶涩"
+_SENSATION_STACK_RE = re.compile(
+    r"(?:[" + _SENSATION_CHARS + r"][^一-鿿]{0,2}){2,}[" + _SENSATION_CHARS + r"]"
+)
+# Function chars that recur naturally; a 4-gram made almost entirely of these
+# is structural, not a repeated *meaningful* phrase.
+_GRAM_FUNCTION_CHARS = frozenset("的了在是这那他她你我们个一不没有就都也很还又把被让将对向于之其着过再")
+
+
+def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """Chapter-level narrative repetition (车轱辘内心戏) — CJK only.
+
+    Two篇章-level tells the sentence/span rules cannot see:
+    1. the same meaningful 4-gram repeated many times (one beat written over
+       and over with new skin), and
+    2. body-sensation words stacked into 排比 (酸,凉,痒,麻…).
+    Only a whole-passage deslop can collapse these, so each emits an advisory
+    ``narrative_repetition`` span that routes the chapter to deslop.
+    Calibrated on real samples: bad ch004 = 16 repeated grams, good drafts = 0.
+    """
+
+    if lang != "zh":
+        return []
+    out: list[AiFlavorSpan] = []
+
+    grams: Counter[str] = Counter()
+    for run in re.findall(r"[一-鿿]+", content_md):
+        for i in range(len(run) - 3):
+            grams[run[i : i + 4]] += 1
+    repeated = [
+        (g, c)
+        for g, c in grams.items()
+        if c >= 5 and sum(1 for ch in g if ch in _GRAM_FUNCTION_CHARS) <= 2
+    ]
+    if len(repeated) >= 4:
+        top_gram, top_count = max(repeated, key=lambda kv: kv[1])
+        pos = max(0, content_md.find(top_gram))
+        out.append(
+            AiFlavorSpan(
+                start=pos,
+                end=pos + len(top_gram),
+                matched_text=top_gram,
+                rule_id=f"{lang}.repetition.ngram",
+                category="narrative_repetition",
+                severity="warn",
+                suggestions=(),
+                sentence_span=(pos, pos + len(top_gram)),
+                why=(
+                    f"篇章级车轱辘：{len(repeated)} 个实义短语各重复≥5次"
+                    f"（如「{top_gram}」{top_count}次）——同一意思反复换皮写，"
+                    "删冗余、把重复的身体感觉/心理解读合并成一次"
+                ),
+                remove_sentence_on_block=False,
+            )
+        )
+
+    for m in _SENSATION_STACK_RE.finditer(content_md):
+        out.append(
+            AiFlavorSpan(
+                start=m.start(),
+                end=m.end(),
+                matched_text=content_md[m.start() : m.start() + 20],
+                rule_id=f"{lang}.repetition.sensation_stack",
+                category="narrative_repetition",
+                severity="warn",
+                suggestions=(),
+                sentence_span=(m.start(), m.end()),
+                why="身体感觉词排比堆叠（酸凉痒麻胀痛…）——装腔，改成一个具体的身体反应",
+                remove_sentence_on_block=False,
+            )
+        )
+    return out
 
 
 def _coerce_severity(raw: Any, *, default: Severity) -> Severity:

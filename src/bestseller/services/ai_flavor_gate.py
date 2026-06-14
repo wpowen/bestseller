@@ -123,6 +123,9 @@ DESLOP_DISCOURSE_CATEGORIES = frozenset(
         "epiphany_announcement",
         "face_emotion_label",
         "empty_reaction_shot",
+        # 篇章级车轱辘：同一意思反复换皮写 / 感觉词堆叠 — only a whole-passage
+        # deslop can collapse it (sentence rules can't see chapter-wide repetition).
+        "narrative_repetition",
     }
 )
 

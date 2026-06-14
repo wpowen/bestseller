@@ -278,6 +278,37 @@ def render_tone_emotion_contract_block(tone: object, *, language: str = "zh") ->
     )
 
 
+def render_logic_coherence_contract_block(*, language: str = "zh") -> str:
+    """Render the logic-consistency contract for chapter-outline generation (G10).
+
+    The commercial outline judge scores `logic_consistency` (threshold 0.82),
+    and it is the lowest-scoring dimension in practice (zhaoshen-hr-v5 vol-1 =
+    0.45). The judge checks for causal closure, mechanism rules/cost, and
+    character knowledge boundaries — but the generation prompt never stated
+    those as requirements, so the model produced logic jumps. This block puts
+    the judge's standard up front as a generation contract.
+    """
+
+    if language == "en":
+        return (
+            "[LOGIC-COHERENCE CONTRACT — the judge scores logic_consistency; make every chapter self-consistent]\n"
+            "1. Causal closure: each chapter's main_conflict has a cause seeded earlier and a result "
+            "that changes the next chapter's situation — nothing happens out of nowhere or in isolation.\n"
+            "2. Mechanism has rules & cost: every use of the golden-finger / core mechanism obeys an "
+            "explicit rule and pays an explicit cost; the same mechanism never contradicts its earlier rules.\n"
+            "3. Knowledge boundaries hold: each character only knows what they should know; a chapter's "
+            "reveal must fit that character's awareness (no information leaking across the gap)."
+        )
+    return (
+        "【逻辑自洽契约 — 商业判官按 logic_consistency 裁判，本书该项最弱，逐章自检】\n"
+        "1. 因果闭合：每章 main_conflict 的起因在前文有据，结果改变下一章处境——不凭空发生、不孤立成段。\n"
+        "2. 机制有规则有代价：金手指/核心机制每次使用都受明确规则约束、付明确代价；"
+        "同一机制前后规则不得自相矛盾。\n"
+        "3. 认知边界一致：每个角色只知道他应当知道的；本章的揭示必须落在该角色的认知范围内"
+        "（信息差不穿帮）。"
+    )
+
+
 def chapter_end_hook_keys() -> tuple[str, ...]:
     """Canonical hook_type keys (empty when config is missing)."""
 

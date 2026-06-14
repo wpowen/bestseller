@@ -13672,6 +13672,7 @@ def _outline_prompts(
     _method_cards_hook_line = ""
     _golden_opening_line = ""
     _tone_contract_line = ""
+    _logic_coherence_line = ""
     _emotion_vocab_csv = "爽、燃、暖、虐、悬疑、紧张、轻松、甜、震撼"
     _hook_keys_csv = ""
     try:
@@ -13679,6 +13680,7 @@ def _outline_prompts(
             chapter_end_hook_keys,
             render_golden_opening_rules_block,
             render_outline_hook_taxonomy_block,
+            render_logic_coherence_contract_block,
             render_tone_emotion_contract_block,
             target_emotion_vocabulary,
         )
@@ -13691,6 +13693,9 @@ def _outline_prompts(
             _mapping(book_spec).get("tone"), language="en" if is_en else "zh"
         )
         _tone_contract_line = f"\n{_tone_block}\n" if _tone_block else ""
+        _logic_coherence_line = "\n" + render_logic_coherence_contract_block(
+            language="en" if is_en else "zh"
+        ) + "\n"
         if not is_en:
             _method_block = render_outline_hook_taxonomy_block("opening")
             _method_cards_hook_line = f"\n{_method_block}\n" if _method_block else ""
@@ -13733,6 +13738,7 @@ def _outline_prompts(
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
             f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
             f"{_tone_contract_line}"
+            f"{_logic_coherence_line}"
             + (
                 f"`hook_type` must be chosen from these canonical keys: [{_hook_keys_csv}]; never use the same hook_type in two consecutive chapters (hook_description stays a concrete next event). "
                 if _hook_keys_csv
@@ -13815,6 +13821,7 @@ def _outline_prompts(
             f"每章必须写明 target_emotion：从受控词表【{_emotion_vocab_csv}】中只选一个，"
             "并在 goal/main_conflict 中写清该情绪如何通过本章冲突交付（先定情绪再定故事）；"
             f"{_tone_contract_line}"
+            f"{_logic_coherence_line}"
             "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
             "hook_description 仍写具体下一步事件。"
             "每章建议包含 `event_cycle_contract`、`chapter_event_role`、`information_gap_mode`。"
@@ -14090,6 +14097,7 @@ def _volume_outline_prompts(
     _method_cards_hook_line = ""
     _golden_opening_line = ""
     _tone_contract_line = ""
+    _logic_coherence_line = ""
     _emotion_vocab_csv = "爽、燃、暖、虐、悬疑、紧张、轻松、甜、震撼"
     _hook_keys_csv = ""
     _covers_golden_opening = (
@@ -14100,6 +14108,7 @@ def _volume_outline_prompts(
             chapter_end_hook_keys,
             render_golden_opening_rules_block,
             render_outline_hook_taxonomy_block,
+            render_logic_coherence_contract_block,
             render_tone_emotion_contract_block,
             target_emotion_vocabulary,
         )
@@ -14112,6 +14121,9 @@ def _volume_outline_prompts(
             _mapping(book_spec).get("tone"), language="en" if is_en else "zh"
         )
         _tone_contract_line = f"\n{_tone_block}\n" if _tone_block else ""
+        _logic_coherence_line = "\n" + render_logic_coherence_contract_block(
+            language="en" if is_en else "zh"
+        ) + "\n"
         _total_volumes = max(
             [
                 int(_mapping(v).get("volume_number") or 0)
@@ -14317,6 +14329,7 @@ def _volume_outline_prompts(
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
             f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
             f"{_tone_contract_line}"
+            f"{_logic_coherence_line}"
             + (
                 f"`hook_type` must be chosen from these canonical keys: [{_hook_keys_csv}]; never use the same hook_type in two consecutive chapters. "
                 if _hook_keys_csv
@@ -14405,6 +14418,7 @@ def _volume_outline_prompts(
             f"每章必须写明 target_emotion：从受控词表【{_emotion_vocab_csv}】中只选一个，"
             "并在 goal/main_conflict 中写清该情绪如何通过本章冲突交付（先定情绪再定故事）；"
             f"{_tone_contract_line}"
+            f"{_logic_coherence_line}"
             "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
             "hook_description 仍写具体下一步事件。"
             + (

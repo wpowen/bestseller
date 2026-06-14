@@ -47,3 +47,25 @@ def test_warm_bucket_share_reflects_tone() -> None:
     # 喜剧40+暖35 = 75% warm → serious cap around 25%.
     block = render_tone_emotion_contract_block("喜剧40% + 暖35% + 悬念25%")
     assert "75" in block or "25" in block
+
+
+def test_logic_coherence_contract_zh() -> None:
+    from bestseller.services.quality_levers.webnovel_method_cards import (
+        render_logic_coherence_contract_block,
+    )
+
+    block = render_logic_coherence_contract_block(language="zh")
+    assert "逻辑自洽" in block
+    assert "因果闭合" in block
+    assert "代价" in block  # mechanism rules & cost
+    assert "认知边界" in block
+
+
+def test_logic_coherence_contract_en() -> None:
+    from bestseller.services.quality_levers.webnovel_method_cards import (
+        render_logic_coherence_contract_block,
+    )
+
+    block = render_logic_coherence_contract_block(language="en")
+    assert "logic_consistency" in block
+    assert "Causal closure" in block

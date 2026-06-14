@@ -69,3 +69,51 @@ def test_logic_coherence_contract_en() -> None:
     block = render_logic_coherence_contract_block(language="en")
     assert "logic_consistency" in block
     assert "Causal closure" in block
+
+
+def test_opening_pull_contract_zh() -> None:
+    # opening_pull is the judge's 2nd-weakest dimension (zhaoshen-hr-v5 = 0.55).
+    # The contract must demand a spotlight payoff in ch1 *beyond* the existing
+    # GOLDEN OPENING rule (which only says the protagonist appears in 300 chars).
+    from bestseller.services.quality_levers.webnovel_method_cards import (
+        render_opening_pull_contract_block,
+    )
+
+    block = render_opening_pull_contract_block(language="zh")
+    assert "opening_pull" in block
+    assert "卖点" in block  # the core selling point must be visibly cashed once
+    assert "金手指" in block or "金钩" in block
+    # Must not merely repeat the 300-char rule verbatim — adds spotlight/reversal.
+    assert "反差" in block or "高光" in block or "聚光" in block
+
+
+def test_opening_pull_contract_en() -> None:
+    from bestseller.services.quality_levers.webnovel_method_cards import (
+        render_opening_pull_contract_block,
+    )
+
+    block = render_opening_pull_contract_block(language="en")
+    assert "opening_pull" in block
+
+
+def test_front_ten_retention_contract_zh() -> None:
+    # front_ten_retention (zhaoshen-hr-v5 = 0.58): each of ch1-10 needs a
+    # visible reward + a strong end-hook so the reader keeps turning.
+    from bestseller.services.quality_levers.webnovel_method_cards import (
+        render_front_ten_retention_contract_block,
+    )
+
+    block = render_front_ten_retention_contract_block(language="zh")
+    assert "front_ten_retention" in block
+    assert "前十章" in block
+    assert "章末" in block  # strong end-hook every chapter
+    assert "进展" in block or "回报" in block  # visible progress / payoff each chapter
+
+
+def test_front_ten_retention_contract_en() -> None:
+    from bestseller.services.quality_levers.webnovel_method_cards import (
+        render_front_ten_retention_contract_block,
+    )
+
+    block = render_front_ten_retention_contract_block(language="en")
+    assert "front_ten_retention" in block

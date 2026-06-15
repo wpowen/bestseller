@@ -144,6 +144,10 @@ from bestseller.services.story_design_kernel import (
     render_story_design_kernel_prompt_block,
     story_design_kernel_from_dict,
 )
+from bestseller.services.story_effect_skills import (
+    render_selected_story_effect_skill_contracts,
+    render_story_effect_skill_catalog_prompt_block,
+)
 from bestseller.domain.ideology import (
     ideology_kernel_to_dict,
     render_ideology_kernel_prompt_block,
@@ -13935,6 +13939,23 @@ def _outline_prompts(
     _entry_system_block = _entry_system_kernel_prompt_block(project)
     _entry_registry_block = _entry_registry_prompt_block(project)
     _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
+    _story_effect_catalog_block = render_story_effect_skill_catalog_prompt_block(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        language=language,
+    )
+    _story_effect_catalog_line = (
+        f"\n{_story_effect_catalog_block}\n" if _story_effect_catalog_block else ""
+    )
+    _selected_story_effect_contracts = render_selected_story_effect_skill_contracts(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        language=language,
+        stage="chapter_outline",
+    )
+    _selected_story_effect_contract_line = (
+        f"\n{_selected_story_effect_contracts}\n"
+        if _selected_story_effect_contracts
+        else ""
+    )
     _distilled_outline_block = _distilled_design_reference_block(project, "chapter_outline")
     _hook_ledger_v2_block = render_hook_ledger_planner_contract(language=language)
     _hook_ledger_v2_line = f"\n{_hook_ledger_v2_block}\n" if _hook_ledger_v2_block else ""
@@ -14025,6 +14046,8 @@ def _outline_prompts(
             f"{_entry_system_block}\n"
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
+            f"{_story_effect_catalog_line}"
+            f"{_selected_story_effect_contract_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"{_concept_lab_contract_line}"
@@ -14049,6 +14072,14 @@ def _outline_prompts(
             )
             +
             "Each chapter should include `event_cycle_contract`, `chapter_event_role`, and `information_gap_mode`. "
+            + (
+                "Because the Story Effect Skill Catalog is present, every chapter must include `selected_effect_skills` "
+                "with primary, secondary, reason, growth_stage_fit, and expected_contracts; output only the effect "
+                "contracts for the selected skills. "
+                if _story_effect_catalog_block
+                else ""
+            )
+            +
             "`chapter_event_role` is the chapter's role inside a larger event unit, not a requirement to repeat all six event steps per chapter. "
             "Distribute roles such as trigger, desire_lock, obstacle_escalation, method_search, execution_turn, payoff_feedback, reaction_reset, and bridge_hook across the batch. "
             "Each chapter must include worldview compliance fields: `world_rule_refs` (WorldviewKernel invariant keys or system names used), "
@@ -14109,6 +14140,8 @@ def _outline_prompts(
             f"{_entry_system_block}\n"
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
+            f"{_story_effect_catalog_line}"
+            f"{_selected_story_effect_contract_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"{_anti_commonsense_hook_line}"
@@ -14129,6 +14162,13 @@ def _outline_prompts(
             "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
             "hook_description 仍写具体下一步事件。"
             "每章建议包含 `event_cycle_contract`、`chapter_event_role`、`information_gap_mode`。"
+            + (
+                "因【故事效果 Skill 清单】已存在，每章必须输出 `selected_effect_skills`，包含 "
+                "primary、secondary、reason、growth_stage_fit、expected_contracts；只输出被选中 skill 的效果合同。"
+                if _story_effect_catalog_block
+                else ""
+            )
+            +
             "`chapter_event_role` 表示本章在更大事件单元中的职责，不是要求每章完整复刻六步。"
             "请在批次中分配 trigger、desire_lock、obstacle_escalation、method_search、execution_turn、payoff_feedback、reaction_reset、bridge_hook 等角色。"
             "每章必须包含世界观合规字段：`world_rule_refs`（使用到的 WorldviewKernel invariant key 或 system name）、"

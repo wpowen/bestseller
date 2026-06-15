@@ -399,6 +399,77 @@ def assemble_fanqie_whole_story(
     return "\n\n".join(parts).strip()
 
 
+async def _deslop_whole_short_story(
+    session: AsyncSession,
+    settings: AppSettings,
+    full_text: str,
+    *,
+    project: Any,
+    progress: ProgressCallback | None = None,
+) -> str:
+    """Whole-piece 去AI味 pass for a finished short story.
+
+    Mirrors the long-novel ``run_chapter_pipeline`` cleanup but on the assembled
+    piece: detect → if it carries the discourse tells the span patcher can't fix
+    (or blocks) → one bounded ``revise_prose_deslop``. The unlock line is added
+    later by the exporter from a word ratio (not embedded in the prose), so a
+    sentence-level rewrite never disturbs it. Soft: any failure keeps the
+    original text and never blocks publication.
+    """
+
+    if not full_text or not full_text.strip():
+        return full_text
+    try:
+        from bestseller.services.ai_flavor_gate import (
+            needs_deslop_revise,
+            run_ai_flavor_gate,
+        )
+        from bestseller.services.deslop_revise import revise_prose_deslop
+        from bestseller.services.quality_gates_config import get_quality_gates_config
+
+        cfg = get_quality_gates_config().ai_flavor
+        if not cfg.enabled or not getattr(cfg, "deslop_revise_enabled", True):
+            return full_text
+        lang = getattr(project, "language", None) or "zh-CN"
+        outcome = run_ai_flavor_gate(
+            chapter_number=0,
+            content_md=full_text,
+            language=lang,
+            config=cfg,
+            llm_rewriter=None,
+            project_output_dir=None,
+        )
+        if not needs_deslop_revise(outcome):
+            return full_text
+        _emit_progress(
+            progress,
+            "fanqie_deslop_started",
+            {"project_slug": project.slug, "before_score": outcome.before_score},
+        )
+        cleaned = await revise_prose_deslop(
+            session,
+            settings,
+            content=full_text,
+            language=lang,
+            project_id=project.id,
+            target_chars=count_words(full_text),
+            rounds=3,
+        )
+        _emit_progress(
+            progress,
+            "fanqie_deslop_completed",
+            {"project_slug": project.slug, "changed": cleaned != full_text},
+        )
+        return cleaned or full_text
+    except Exception:
+        logger.warning(
+            "Fanqie whole-story deslop failed for %s (non-fatal)",
+            getattr(project, "slug", "?"),
+            exc_info=True,
+        )
+        return full_text
+
+
 async def run_fanqie_short_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -598,6 +669,14 @@ async def run_fanqie_short_pipeline(
 
     chapter_payloads = await _load_chapter_drafts(session, project.id)
     full_text = assemble_fanqie_whole_story(project, chapter_payloads)
+
+    # 去 AI 味·整篇兜底：每段已在 run_chapter_pipeline 过了 cinematic_pov + gate +
+    # deslop，但拼成整篇后才看得见的跨段车轱辘（同一身体感觉/动作/潜台词反复换皮）
+    # 和句号变体「不是X。是Y」等残留，须在整篇层再清一遍。与长篇 gate 同款触发
+    # （block 或话语腔类别），soft、绝不阻断成书。
+    full_text = await _deslop_whole_short_story(
+        session, settings, full_text, project=project, progress=progress
+    )
     total_words = count_words(full_text)
 
     _emit_progress(progress, "fanqie_whole_review_started", {"project_slug": slug})

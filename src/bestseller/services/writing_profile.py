@@ -373,12 +373,20 @@ def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingPro
 
 
 def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfile) -> dict[str, Any]:
+    from bestseller.services.brainhole_engine import (
+        BRAINHOLE_PROFILE_METADATA_KEY,
+        resolve_brainhole_profile,
+    )
     from bestseller.services.genre_skill_profiles import (
         GENRE_SKILL_PROFILE_METADATA_KEY,
         resolve_genre_skill_profile,
     )
     from bestseller.services.prewrite_quality_profile import (
         apply_default_prewrite_quality_profile,
+    )
+    from bestseller.services.story_effect_skills import (
+        STORY_EFFECT_SKILL_CATALOG_METADATA_KEY,
+        resolve_story_effect_skill_catalog,
     )
 
     metadata = apply_default_prewrite_quality_profile(initialize_truth_metadata(payload.metadata))
@@ -393,6 +401,22 @@ def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfi
     metadata.setdefault(
         GENRE_SKILL_PROFILE_METADATA_KEY,
         resolve_genre_skill_profile(
+            payload.genre,
+            payload.sub_genre,
+            prompt_pack_key=writing_profile.market.prompt_pack_key,
+        ).to_metadata(),
+    )
+    metadata.setdefault(
+        BRAINHOLE_PROFILE_METADATA_KEY,
+        resolve_brainhole_profile(
+            payload.genre,
+            payload.sub_genre,
+            prompt_pack_key=writing_profile.market.prompt_pack_key,
+        ).to_metadata(),
+    )
+    metadata.setdefault(
+        STORY_EFFECT_SKILL_CATALOG_METADATA_KEY,
+        resolve_story_effect_skill_catalog(
             payload.genre,
             payload.sub_genre,
             prompt_pack_key=writing_profile.market.prompt_pack_key,

@@ -474,6 +474,15 @@
       "why": "结论先行·「不是X，是Y」逗号变体(描写物件常犯：不是黑墨，是暗金的浓墨)：直接写Y(墨里浮着一丝暗金)"
     },
     {
+      "id": "cn.conclusion.not_but.004",
+      "pattern": "不是[^。！？，,\\n]{1,12}[。！？]\\s*是[^。！？\\n]",
+      "severity": "warn",
+      "category": "negated_definition",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "结论先行·「不是X。是Y」句号/跨句变体(不是发芽。是皮壳先裂开)：先否定再下定义。直接写Y那个现象，别由叙述者纠正"
+    },
+    {
       "id": "cn.info.backstory.001",
       "pattern": "那是[^。！？\\n]{0,16}(?:后遗症|的手段|惯用)",
       "severity": "warn",

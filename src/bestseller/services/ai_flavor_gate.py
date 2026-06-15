@@ -126,6 +126,10 @@ DESLOP_DISCOURSE_CATEGORIES = frozenset(
         # 篇章级车轱辘：同一意思反复换皮写 / 感觉词堆叠 — only a whole-passage
         # deslop can collapse it (sentence rules can't see chapter-wide repetition).
         "narrative_repetition",
+        # 他没X 否定式克制扎堆 + 单句独段装腔：尤其紧张场景里这两样最招人厌，
+        # 是 patcher 删不掉的句式/节奏腔，必须整段重写。
+        "negative_action_filler",
+        "staccato_saturation",
     }
 )
 

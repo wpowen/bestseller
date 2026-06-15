@@ -21,6 +21,12 @@ def test_not_x_but_y_fires() -> None:
     assert "negated_definition" in _cats(text)
 
 
+def test_not_x_period_shi_y_variant_fires() -> None:
+    # 句号/跨句变体——真实生成里逃过只认逗号的规则的写法。
+    assert "negated_definition" in _cats("废种动了。不是发芽。是皮壳先裂开。")
+    assert "negated_definition" in _cats("那点光浮上来。不是墨。是光阴。")
+
+
 def test_yu_qi_shuo_fires() -> None:
     text = "与其说她在劝他，不如说她在替自己开脱。"
     assert "negated_definition" in _cats(text)

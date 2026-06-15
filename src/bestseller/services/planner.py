@@ -1895,6 +1895,19 @@ def _enrich_generated_volume_outline_systemic_fields(
     match_candidates = _outline_identity_match_candidates(identity_manifest)
     repaired = 0
 
+    try:
+        from bestseller.services.quality_levers.webnovel_method_cards import (
+            chapter_end_hook_keys as _chapter_end_hook_keys,
+            match_hook_type_key as _match_hook_type_key,
+        )
+
+        _HOOK_KEYS = _chapter_end_hook_keys()
+    except Exception:  # method-card config missing → skip hook backfill (soft)
+        _HOOK_KEYS = ()
+
+        def _match_hook_type_key(_value: str) -> str | None:
+            return None
+
     for chapter in getattr(batch, "chapters", []) or []:
         chapter_text = _outline_chapter_match_text(chapter)
         scenes = list(getattr(chapter, "scenes", []) or [])
@@ -2009,7 +2022,102 @@ def _enrich_generated_volume_outline_systemic_fields(
             chapter.causal_contract = filled
             repaired += 1
 
+        # ── 4) hook_type: derive a canonical taxonomy label when the planner
+        # left it blank (observed empty on whole batches, e.g. ch1-5 / ch21-30).
+        # The chapter already carries a concrete hook_description / tail_hook; we
+        # map it to the nearest canonical hook key, falling back to the first
+        # canonical key so the writability gate sees a non-empty label.
+        if not _non_empty_string(getattr(chapter, "hook_type", None), "") and _HOOK_KEYS:
+            hook_source = _first_non_empty_text(
+                hook_description, getattr(chapter, "tail_hook", None), default=""
+            )
+            derived_hook = _match_hook_type_key(hook_source) if hook_source else None
+            if not derived_hook:
+                derived_hook = _HOOK_KEYS[0]
+            chapter.hook_type = derived_hook
+            repaired += 1
+
     return repaired
+
+
+def _rescue_golden_three_solo_scenes(
+    batch: Any, *, identity_manifest: list[dict[str, Any]]
+) -> int:
+    """Final guard before the golden-three solo-chain gate (G8).
+
+    MUST run AFTER :func:`_repair_generated_volume_outline_contract_inputs`: that
+    identity-lock repair strips ad-hoc (non-roster) participants down to the
+    protagonist, so a scene the LLM wrote as a duo can collapse back to solo
+    *after* enrichment already judged it fine. A 凡人流 solo-discovery opening
+    then trips ``golden_three_solo_scene_chain`` and the whole volume outline is
+    hard-killed. For chapters 1-3 only, this promotes a canonical roster name
+    (which survives the identity lock) into the highest-tension scene so the
+    chapter is no longer a solo chain. Deterministic; never touches ch4+.
+    """
+
+    match_candidates = _outline_identity_match_candidates(identity_manifest)
+    if not match_candidates:
+        return 0
+    rescued = 0
+    for chapter in getattr(batch, "chapters", []) or []:
+        number = getattr(chapter, "chapter_number", None)
+        if not (isinstance(number, int) and 1 <= number <= 3):
+            continue
+        scenes = list(getattr(chapter, "scenes", []) or [])
+        if not scenes:
+            continue
+        token_sets = [
+            {
+                _outline_identity_token(p)
+                for p in getattr(sc, "participants", []) or []
+                if _non_empty_string(p, "")
+            }
+            for sc in scenes
+        ]
+        if any(len(tokens) >= 2 for tokens in token_sets):
+            continue
+        present = set().union(*token_sets) if token_sets else set()
+        chapter_text = _outline_chapter_match_text(chapter)
+        pick = next(
+            (
+                canonical
+                for canonical, search_tokens in match_candidates
+                if _outline_identity_token(canonical) not in present
+                and any(token in chapter_text for token in search_tokens)
+            ),
+            None,
+        )
+        if pick is None:
+            pick = next(
+                (
+                    canonical
+                    for canonical, _ in match_candidates
+                    if _outline_identity_token(canonical) not in present
+                ),
+                None,
+            )
+        if pick is None:
+            continue
+        idx = max(
+            range(len(scenes)),
+            key=lambda i: (len(token_sets[i]), len(_outline_scene_match_text(scenes[i]))),
+        )
+        target = scenes[idx]
+        merged = [
+            p for p in getattr(target, "participants", []) or [] if _non_empty_string(p, "")
+        ]
+        merged.append(pick)
+        distinct = {_outline_identity_token(m) for m in merged}
+        for canonical, _ in match_candidates:
+            if len(distinct) >= 2:
+                break
+            token = _outline_identity_token(canonical)
+            if token not in distinct:
+                merged.append(canonical)
+                distinct.add(token)
+        target.participants = merged[:_OUTLINE_SCENE_PARTICIPANT_CAP]
+        rescued += 1
+    return rescued
 
 
 def _require_outline_systemic_fields_or_raise(batch: Any, *, logical_name: str) -> None:
@@ -2371,6 +2479,20 @@ def _validate_generated_volume_outline_or_raise(
                 project_slug=project.slug,
                 artifact=f"{logical_name}/chapter_plan_contract",
             )
+        )
+    # Final golden-three solo-rescue, AFTER the identity-lock repair has stripped
+    # any ad-hoc participants — so a 凡人流 solo opening can no longer collapse
+    # back to solo and hard-kill the whole volume outline (G8).
+    golden_rescued = _rescue_golden_three_solo_scenes(
+        batch, identity_manifest=identity_manifest
+    )
+    if golden_rescued:
+        logger.info(
+            "Rescued %d golden-three solo chapter(s) with a named participant before "
+            "validating %s for project '%s'.",
+            golden_rescued,
+            logical_name,
+            project.slug,
         )
     _require_outline_systemic_fields_or_raise(batch, logical_name=logical_name)
     return batch.model_dump(mode="json", by_alias=True)
@@ -4392,6 +4514,166 @@ def _extract_premise_locked_names(
         _add(token)
 
     return ordered[:max_names]
+
+
+def _premise_character_descriptor(premise: str, name: str) -> str:
+    """Pull the premise clause that introduces ``name`` (role + parenthetical).
+
+    e.g. for "栖梧宗药圃监工裴萤（发现谢迟丹草异常的第一人）" returns
+    "栖梧宗药圃监工裴萤，发现谢迟丹草异常的第一人". Falls back to empty string.
+    """
+
+    text = premise or ""
+    idx = text.find(name)
+    if idx < 0:
+        return ""
+    # role prefix: the run of non-separator chars immediately before the name
+    start = idx
+    seps = "，。；、：（）()【】\n 　"
+    while start > 0 and text[start - 1] not in seps:
+        start -= 1
+    role = text[start:idx].strip()
+    # parenthetical right after the name
+    desc = ""
+    tail = text[idx + len(name):]
+    for open_p, close_p in (("（", "）"), ("(", ")")):
+        if tail.startswith(open_p):
+            end = tail.find(close_p)
+            if end > 0:
+                desc = tail[1:end].strip()
+            break
+    parts = [p for p in (f"{role}{name}" if role else name, desc) if p]
+    return "，".join(parts)
+
+
+_FEMALE_DESC_CUES = (
+    "孤女", "师姐", "少女", "女子", "妇人", "娘", "妃", "母", "姑", "婆",
+    "嬷", "姐", "妹", "夫人", "小姐", "婢", "尼姑", "女修",
+)
+_MALE_DESC_CUES = (
+    "师兄", "少年", "翁", "公子", "兄", "父", "爷", "郎", "叟", "汉子",
+    "先生", "和尚", "道长", "执事", "男子", "男修",
+)
+# Weak fallback only: given-name characters that skew strongly feminine.
+_FEMALE_NAME_CHARS = set("萤雪月兰婉莲香琴瑶玉珠媛娟妍蓉茵芷莹黛颜霜柔嫣")
+
+
+def _infer_premise_character_gender(
+    premise: str, name: str, descriptor: str = ""
+) -> str:
+    """Best-effort deterministic gender for a premise-locked character.
+
+    The foundation_identity_contract requires a non-unknown gender at
+    materialization. Premise-locked entries are appended after the LLM cast
+    gates that normally fill this, so they arrive blank. Infer from explicit
+    cues in the descriptor / premise window (孤女/师姐/翁/执事…), then a weak
+    feminine-name-character fallback, and finally default to ``male`` (the most
+    common xianxia supporting default) so materialization is never blocked.
+    The value is correctable later — a defaulted gender beats a dropped name.
+    """
+
+    window = descriptor or ""
+    idx = premise.find(name) if premise else -1
+    if idx != -1:
+        window += " " + premise[max(0, idx - 8):idx + 48]
+    for cue in _FEMALE_DESC_CUES:
+        if cue in window:
+            return "female"
+    for cue in _MALE_DESC_CUES:
+        if cue in window:
+            return "male"
+    if any(ch in _FEMALE_NAME_CHARS for ch in name[1:]):
+        return "female"
+    return "male"
+
+
+def _premise_locked_identity_fields(
+    premise: str, name: str, descriptor: str = ""
+) -> dict[str, str]:
+    """gender + zh/en pronoun set for a premise-locked character (contract-required)."""
+
+    gender = _infer_premise_character_gender(premise, name, descriptor)
+    if gender == "female":
+        return {"gender": "female", "pronoun_set_zh": "她", "pronoun_set_en": "she/her"}
+    return {"gender": "male", "pronoun_set_zh": "他", "pronoun_set_en": "he/him"}
+
+
+def _enforce_premise_locked_cast(
+    cast_spec: dict[str, Any],
+    premise: str,
+    *,
+    language: str | None = None,
+) -> dict[str, Any]:
+    """Guarantee every premise-locked character survives into the cast roster.
+
+    The cast prompt receives the locked names, but the model routinely renames
+    or drops premise supporting cast (蚀漏砚: 裴萤/关铎/宋拾/白杪 were all dropped
+    and replaced with invented names). The outline then faithfully references the
+    premise names, the identity lock strips them as non-roster ad-hoc mentions,
+    and their scenes collapse to false solo chains — breaking both 章级可写性 and
+    人物关系演化. This deterministic post-generation contract appends any missing
+    locked name as a named supporting_cast member with a premise-derived role and
+    arc, so the locked relationships propagate through the whole pipeline.
+    """
+
+    if not isinstance(cast_spec, dict):
+        return cast_spec
+    locked = _extract_premise_locked_names(premise, language=language)
+    if not locked:
+        return cast_spec
+
+    def _names_in(value: Any) -> set[str]:
+        found: set[str] = set()
+        for member in _mapping_list(value):
+            for key in ("name", "canonical_name", "title"):
+                n = _non_empty_string(member.get(key), "")
+                if n:
+                    found.add(n)
+            for alias in member.get("aliases") or []:
+                if _non_empty_string(alias, ""):
+                    found.add(str(alias).strip())
+        return found
+
+    protagonist = _mapping(cast_spec.get("protagonist"))
+    present = (
+        _names_in(cast_spec.get("supporting_cast"))
+        | _names_in(cast_spec.get("antagonist_forces"))
+        | {_non_empty_string(protagonist.get("name"), "")}
+    )
+    present.discard("")
+
+    missing = [n for n in locked if n not in present]
+    if not missing:
+        return cast_spec
+
+    updated = dict(cast_spec)
+    roster = list(_mapping_list(cast_spec.get("supporting_cast")))
+    for name in missing:
+        descriptor = _premise_character_descriptor(premise, name)
+        goal = descriptor or f"{name}在设定中既定的立场与目标"
+        roster.append(
+            {
+                "name": name,
+                "role": "supporting",
+                "goal": goal,
+                "motivation": goal,
+                "evolution_arc": (
+                    f"{name}随主线推进，与主角的关系/立场逐卷演化（设定锚定的关键配角）。"
+                ),
+                "arc_trajectory": (
+                    f"{name}从初遇到与主角阵营分合，立场随冲突升级而转变。"
+                ),
+                "relationship_to_protagonist": descriptor or "设定锚定的关键关系人",
+                "name_reasoning": "premise-locked 关键配角（设定锚定，禁止改名或丢弃）",
+                # Foundation identity contract requires a locked gender + zh/en
+                # pronouns at materialization; appended entries skip the LLM
+                # identity gates, so populate them deterministically here.
+                **_premise_locked_identity_fields(premise, name, descriptor),
+                "metadata": {"premise_locked_enforced": True},
+            }
+        )
+    updated["supporting_cast"] = roster
+    return updated
 
 
 def _merge_locked_names_into_pool(
@@ -12964,7 +13246,11 @@ def _world_spec_prompts(
             "World rules must create conflict, cost, upgrade space, and conspiracy leverage rather than empty lore.\n"
             "power_system MUST be a structured object, never a prose paragraph: "
             '{"name": str, "tiers": [ordered tier names, low to high — for cultivation/progression genres list every major tier], '
+            '"tier_progression": [{"tier": name, "breakthrough_cost": what advancing INTO this tier costs (resource/lifespan/risk — concrete, not "hard work"), '
+            '"bottleneck": the gate/wall that stalls most people at this tier}], '
             '"acquisition_method": str, "hard_limits": str, "protagonist_starting_tier": str}. '
+            "For cultivation/progression genres tier_progression MUST cover every tier in tiers — each tier needs an explicit cost AND bottleneck, "
+            "so the ladder is mechanically real (a 凡人修仙传-class ladder gates every realm with cost + wall), not a bare name list.\n"
             "Downstream progression tracking and tier-consistency gates consume these fields; free text starves them.\n\n"
             f"{_WORLD_SPEC_COUNTER_EXAMPLES_EN}"
         )
@@ -12988,7 +13274,11 @@ def _world_spec_prompts(
             "要求世界规则能直接制造冲突、爽点成本、升级空间和阴谋推进空间，不要只写空背景。\n"
             "power_system 必须是结构化对象，禁止写成一段散文："
             '{"name": 体系名, "tiers": [境界/层级名列表，由低到高有序——修炼/升级类题材必须列全每个大境界], '
+            '"tier_progression": [{"tier": 境界名, "breakthrough_cost": 突破进入该境界要付的代价(资源/寿数/风险——写具体，不许写"刻苦"这种空话), '
+            '"bottleneck": 卡住多数人无法跨过该境界的天槛/瓶颈}], '
             '"acquisition_method": 晋升机制, "hard_limits": 硬上限/天花板, "protagonist_starting_tier": 主角起始层级}。'
+            "修炼/升级类题材，tier_progression 必须覆盖 tiers 里每一个境界——每个境界都要有明确的突破代价 + 瓶颈/天槛，"
+            "让阶梯在机制上是真的(凡人修仙传级别的阶梯，每一境都用代价+天槛卡住)，而不是一串光秃秃的名字。\n"
             "下游的境界追踪与一致性闸门直接消费这些字段，写成自由文本会让它们全部失效。\n\n"
             f"{_WORLD_SPEC_COUNTER_EXAMPLES_ZH}"
         )
@@ -13673,6 +13963,7 @@ def _outline_prompts(
     _golden_opening_line = ""
     _tone_contract_line = ""
     _logic_coherence_line = ""
+    _appeal_line = ""
     _emotion_vocab_csv = "爽、燃、暖、虐、悬疑、紧张、轻松、甜、震撼"
     _hook_keys_csv = ""
     try:
@@ -13681,6 +13972,8 @@ def _outline_prompts(
             render_golden_opening_rules_block,
             render_outline_hook_taxonomy_block,
             render_logic_coherence_contract_block,
+            render_opening_pull_contract_block,
+            render_front_ten_retention_contract_block,
             render_tone_emotion_contract_block,
             target_emotion_vocabulary,
         )
@@ -13696,6 +13989,15 @@ def _outline_prompts(
         _logic_coherence_line = "\n" + render_logic_coherence_contract_block(
             language="en" if is_en else "zh"
         ) + "\n"
+        _appeal_line = (
+            "\n"
+            + render_opening_pull_contract_block(language="en" if is_en else "zh")
+            + "\n"
+            + render_front_ten_retention_contract_block(
+                language="en" if is_en else "zh"
+            )
+            + "\n"
+        )
         if not is_en:
             _method_block = render_outline_hook_taxonomy_block("opening")
             _method_cards_hook_line = f"\n{_method_block}\n" if _method_block else ""
@@ -13739,6 +14041,7 @@ def _outline_prompts(
             f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
             f"{_tone_contract_line}"
             f"{_logic_coherence_line}"
+            f"{_appeal_line}"
             + (
                 f"`hook_type` must be chosen from these canonical keys: [{_hook_keys_csv}]; never use the same hook_type in two consecutive chapters (hook_description stays a concrete next event). "
                 if _hook_keys_csv
@@ -13822,6 +14125,7 @@ def _outline_prompts(
             "并在 goal/main_conflict 中写清该情绪如何通过本章冲突交付（先定情绪再定故事）；"
             f"{_tone_contract_line}"
             f"{_logic_coherence_line}"
+            f"{_appeal_line}"
             "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
             "hook_description 仍写具体下一步事件。"
             "每章建议包含 `event_cycle_contract`、`chapter_event_role`、`information_gap_mode`。"
@@ -14098,6 +14402,7 @@ def _volume_outline_prompts(
     _golden_opening_line = ""
     _tone_contract_line = ""
     _logic_coherence_line = ""
+    _appeal_line = ""
     _emotion_vocab_csv = "爽、燃、暖、虐、悬疑、紧张、轻松、甜、震撼"
     _hook_keys_csv = ""
     _covers_golden_opening = (
@@ -14109,6 +14414,8 @@ def _volume_outline_prompts(
             render_golden_opening_rules_block,
             render_outline_hook_taxonomy_block,
             render_logic_coherence_contract_block,
+            render_opening_pull_contract_block,
+            render_front_ten_retention_contract_block,
             render_tone_emotion_contract_block,
             target_emotion_vocabulary,
         )
@@ -14124,6 +14431,15 @@ def _volume_outline_prompts(
         _logic_coherence_line = "\n" + render_logic_coherence_contract_block(
             language="en" if is_en else "zh"
         ) + "\n"
+        _appeal_line = (
+            "\n"
+            + render_opening_pull_contract_block(language="en" if is_en else "zh")
+            + "\n"
+            + render_front_ten_retention_contract_block(
+                language="en" if is_en else "zh"
+            )
+            + "\n"
+        )
         _total_volumes = max(
             [
                 int(_mapping(v).get("volume_number") or 0)
@@ -14330,6 +14646,7 @@ def _volume_outline_prompts(
             f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
             f"{_tone_contract_line}"
             f"{_logic_coherence_line}"
+            f"{_appeal_line}"
             + (
                 f"`hook_type` must be chosen from these canonical keys: [{_hook_keys_csv}]; never use the same hook_type in two consecutive chapters. "
                 if _hook_keys_csv
@@ -14419,6 +14736,7 @@ def _volume_outline_prompts(
             "并在 goal/main_conflict 中写清该情绪如何通过本章冲突交付（先定情绪再定故事）；"
             f"{_tone_contract_line}"
             f"{_logic_coherence_line}"
+            f"{_appeal_line}"
             "hook_type 必须从上方「章尾钩子13式」的 key 中选型，连续两章不得重复同一 hook_type，"
             "hook_description 仍写具体下一步事件。"
             + (
@@ -18712,6 +19030,9 @@ async def generate_novel_plan(
             premise=premise,
             artifact_type=ArtifactType.CAST_SPEC.value,
         )
+        cast_spec_payload = _enforce_premise_locked_cast(
+            cast_spec_payload, premise, language=_planner_language(project)
+        )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
         cast_artifact = await import_planning_artifact(
@@ -20509,6 +20830,9 @@ async def generate_foundation_plan(
             premise=premise,
             artifact_type=ArtifactType.CAST_SPEC.value,
         )
+        cast_spec_payload = _enforce_premise_locked_cast(
+            cast_spec_payload, premise, language=_planner_language(project)
+        )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
 
@@ -20644,6 +20968,17 @@ async def generate_foundation_plan(
                     premise=premise,
                     artifact_type=ArtifactType.CAST_SPEC.value,
                 )
+
+        # Final premise-locked-cast enforcement, AFTER every LLM repair gate
+        # (personhood / foundation richness / antagonist lifecycle / relationship
+        # scaling). Those gates regenerate the roster and can re-drop the
+        # premise's named key cast (蚀漏砚: 裴萤/关铎/宋拾/白杪), which the outline
+        # then references and the identity lock strips to false solo chains. The
+        # earlier enforcement at cast-generation time does not survive those
+        # regenerations, so it must run once more as the last step before store.
+        cast_spec_payload = _enforce_premise_locked_cast(
+            cast_spec_payload, premise, language=_planner_language(project)
+        )
 
         cast_artifact = await import_planning_artifact(
             session,

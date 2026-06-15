@@ -79,6 +79,48 @@ def test_world_spec_prompt_specifies_power_system_structure_en() -> None:
     assert "protagonist_starting_tier" in user_prompt
 
 
+def test_world_spec_prompt_requires_per_tier_cost_and_bottleneck() -> None:
+    """凡人对标 A2: every 境界 must carry a breakthrough cost + bottleneck.
+
+    A bare ordered name list (tiers=["引气","通脉",...]) clears tier-depth but
+    leaves the cultivation ladder mechanically empty — no 突破代价/天槛 per tier.
+    The prompt must demand a structured tier_progression so the model emits the
+    resource-cost mechanism that the《凡人修仙传》structural bar (A2) requires.
+    """
+    project = _build_project()
+    premise = "凡人少年捡到吞噬寿数的古砚，踏入七境修行路。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+
+    _, user_prompt = planner_services._world_spec_prompts(project, premise, book_spec)
+
+    assert "tier_progression" in user_prompt
+    assert "突破代价" in user_prompt or "代价" in user_prompt
+    assert "瓶颈" in user_prompt or "天槛" in user_prompt
+
+
+def test_power_system_input_preserves_tier_progression() -> None:
+    """The schema must keep per-tier cost/bottleneck, not flatten them away."""
+    from bestseller.domain.story_bible import PowerSystemInput
+
+    ps = PowerSystemInput.model_validate(
+        {
+            "name": "蚀漏砚体系",
+            "tiers": ["引气", "通脉", "凝府"],
+            "tier_progression": [
+                {"tier": "引气", "breakthrough_cost": "三月寿数", "bottleneck": "灵窍未开的浊脉天槛"},
+                {"tier": "通脉", "breakthrough_cost": "一年寿数+一枚通脉丹", "bottleneck": "脉络逆冲之险"},
+            ],
+            "acquisition_method": "以寿数换修为",
+            "hard_limits": "问衡之境三千年无人在世",
+            "protagonist_starting_tier": "引气",
+        }
+    )
+    assert len(ps.tier_progression) == 2
+    assert ps.tier_progression[0].tier == "引气"
+    assert "寿数" in (ps.tier_progression[0].breakthrough_cost or "")
+    assert "天槛" in (ps.tier_progression[0].bottleneck or "")
+
+
 def test_power_tier_escalation_tolerates_free_text_power_system() -> None:
     """A free-text power_system must yield a real finding, not a crash-skip."""
     world_spec: dict[str, Any] = {

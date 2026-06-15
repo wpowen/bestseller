@@ -44,6 +44,49 @@ def _load_artifact(slug: str, artifact_type: str) -> dict | list | None:
     return payload.get("content") if isinstance(payload, dict) else payload
 
 
+def _load_merged_chapter_outlines(slug: str, max_volume: int = 30) -> dict | None:
+    """Merge per-volume ``volume_chapter_outline`` artifacts into one batch.
+
+    The progressive planner stores each volume's full outline as
+    ``volume_chapter_outline`` (one artifact per volume), while
+    ``chapter_outline_batch`` only holds intermediate sub-batches (e.g. ch1-5).
+    S6 must score the authoritative full outline, so prefer the merged volume
+    outlines and fall back to the partial batch only when none exist.
+    """
+
+    chapters: dict[int, dict] = {}
+    proc = subprocess.run(
+        ["uv", "run", "bestseller", "planning", "show", slug, "volume_chapter_outline"],
+        capture_output=True,
+        text=True,
+    )
+    # --version-no enumerates volumes; iterate until a gap.
+    found_any = False
+    for version in range(1, max_volume + 1):
+        vproc = subprocess.run(
+            [
+                "uv", "run", "bestseller", "planning", "show", slug,
+                "volume_chapter_outline", "--version-no", str(version),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if vproc.returncode != 0:
+            continue
+        try:
+            content = json.loads(vproc.stdout).get("content")
+        except json.JSONDecodeError:
+            continue
+        rows = content if isinstance(content, list) else (content or {}).get("chapters", [])
+        for ch in rows or []:
+            if isinstance(ch, dict) and ch.get("chapter_number"):
+                chapters[int(ch["chapter_number"])] = ch
+                found_any = True
+    if not found_any:
+        return None
+    return {"chapters": [chapters[n] for n in sorted(chapters)]}
+
+
 def _non_empty(value: object) -> bool:
     if value is None:
         return False
@@ -238,7 +281,11 @@ def main() -> int:
     world = _load_artifact(args.slug, "world_spec")
     cast = _load_artifact(args.slug, "cast_spec")
     volumes = _load_artifact(args.slug, "volume_plan")
-    batch = _load_artifact(args.slug, "chapter_outline_batch")
+    # Prefer the authoritative merged per-volume outlines; the
+    # chapter_outline_batch artifact only holds partial intermediate sub-batches.
+    batch = _load_merged_chapter_outlines(args.slug)
+    if batch is None:
+        batch = _load_artifact(args.slug, "chapter_outline_batch")
     if batch is None and args.outline_file:
         with open(args.outline_file, encoding="utf-8") as fh:
             batch = json.load(fh)

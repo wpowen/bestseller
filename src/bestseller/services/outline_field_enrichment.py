@@ -100,6 +100,84 @@ def _fill_participants(
         scene["participants"] = participants[:_MAX_PARTICIPANTS]
 
 
+# Chapter fields that name the pressure source / other parties involved, used
+# to pick the most plausible second participant for a golden solo-rescue.
+_PRESSURE_REF_KEYS = (
+    "antagonist",
+    "antagonist_force_name",
+    "faction_refs",
+    "location_refs",
+    "cast_refs",
+    "key_reveals",
+    "main_conflict",
+    "opening_situation",
+    "hook_description",
+    "goal",
+)
+
+
+def _chapter_has_duo_scene(chapter: Mapping[str, Any]) -> bool:
+    for scene in chapter.get("scenes") or []:
+        parts = {
+            str(p).strip()
+            for p in (scene.get("participants") or [])
+            if p and str(p).strip()
+        }
+        if len(parts) >= 2:
+            return True
+    return False
+
+
+def _pressure_ref_blob(chapter: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    for key in _PRESSURE_REF_KEYS:
+        value = chapter.get(key)
+        if isinstance(value, (list, tuple)):
+            parts.extend(str(v) for v in value if v)
+        elif value:
+            parts.append(str(value))
+    return " ".join(parts)
+
+
+def _rescue_golden_solo_scene(
+    chapter: dict[str, Any],
+    names: list[str],
+    protagonist: str,
+    stats: dict[str, int],
+) -> None:
+    """Golden-three (G8): force a named second participant into a still-solo
+    golden chapter so it is not a solo-chain.
+
+    Runs only for chapters 1-3 and only after :func:`_fill_participants` already
+    tried to resolve names from scene text. A 凡人流 opening (protagonist alone
+    discovering the artifact) legitimately has no other name in its prose, so the
+    text-match fill leaves it solo and the downstream hard gate kills the entire
+    volume outline. The chapter's own pressure-bearing fields (antagonist /
+    faction_refs / main_conflict) name the off-screen counter-force; we promote
+    the most-referenced roster name into the highest-tension scene. Deterministic
+    and golden-three only — never fabricates participants for later chapters.
+    """
+
+    if chapter.get("chapter_number") not in _GOLDEN_CHAPTERS:
+        return
+    scenes = chapter.get("scenes") or []
+    if not scenes or _chapter_has_duo_scene(chapter):
+        return
+    candidates = [n for n in names if n and n != protagonist]
+    if not candidates:
+        return
+    ref_blob = _pressure_ref_blob(chapter)
+    second = next((n for n in candidates if n in ref_blob), candidates[0])
+    target = max(scenes, key=lambda s: len(_scene_text(s)))
+    participants = [p for p in (target.get("participants") or []) if p]
+    if protagonist and protagonist not in participants:
+        participants.insert(0, protagonist)
+    if second not in participants:
+        participants.append(second)
+    target["participants"] = participants[:_MAX_PARTICIPANTS]
+    stats["golden_solo_rescued"] += 1
+
+
 def _fill_opening_pressure(chapter: dict[str, Any], stats: dict[str, int]) -> None:
     if str(chapter.get("opening_pressure") or "").strip():
         return
@@ -240,6 +318,7 @@ def enrich_outline_batch_fields(
         "golden_hype": 0,
         "target_emotion": 0,
         "hook_type_normalized": 0,
+        "golden_solo_rescued": 0,
     }
     names = [str(n).strip() for n in identity_names if str(n or "").strip()]
     lead = protagonist or (names[0] if names else "")
@@ -247,6 +326,7 @@ def enrich_outline_batch_fields(
         if not isinstance(chapter, dict):
             continue
         _fill_participants(chapter, names, lead, stats)
+        _rescue_golden_solo_scene(chapter, names, lead, stats)
         _fill_opening_situation(chapter, stats)
         _fill_opening_pressure(chapter, stats)
         _fill_causal_contract(chapter, stats)

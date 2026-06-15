@@ -84,3 +84,107 @@ def test_description_words_not_mistaken_for_names() -> None:
     names = set(_extract_premise_locked_names(_ZHAOSHEN_ROSTER, max_names=30))
     for noise in ("口头禅", "测谎", "差评", "直角", "过期茶", "隔夜味", "馊味", "挂件"):
         assert noise not in names, f"description noise {noise} leaked into {names}"
+
+
+def test_enforce_premise_locked_cast_injects_missing_named_characters() -> None:
+    """Round-3: premise-locked supporting cast dropped by the model must be
+    deterministically restored into the roster (蚀漏砚: 裴萤/关铎/宋拾/白杪 were
+    dropped → outline references them → identity lock strips them → false solo
+    scenes). The contract injects each missing locked name as a named supporting
+    member with a premise-derived role and a non-empty arc/motivation."""
+    from bestseller.services.planner import _enforce_premise_locked_cast
+
+    cast = {
+        "protagonist": {"name": "谢迟"},
+        "supporting_cast": [
+            {"name": "周坎", "goal": "摆脱采药童命运", "evolution_arc": "..."},
+        ],
+        "antagonist_forces": [{"name": "雾外楼"}],
+    }
+    out = _enforce_premise_locked_cast(cast, _SHILOUYAN_TAIL, language="zh-CN")
+    roster_names = {m["name"] for m in out["supporting_cast"]}
+    for locked in ("宋拾", "关铎", "裴萤", "白杪"):
+        assert locked in roster_names, f"{locked} not restored into roster"
+    pei = next(m for m in out["supporting_cast"] if m["name"] == "裴萤")
+    assert pei.get("goal") and pei.get("evolution_arc")
+    assert "药圃" in pei["goal"] or "丹草" in pei["goal"]
+
+
+def test_enforce_premise_locked_cast_idempotent_when_present() -> None:
+    from bestseller.services.planner import _enforce_premise_locked_cast
+
+    cast = {
+        "protagonist": {"name": "谢迟"},
+        "supporting_cast": [
+            {"name": n, "goal": "g", "evolution_arc": "a"}
+            for n in ("宋拾", "关铎", "裴萤", "白杪")
+        ],
+    }
+    out = _enforce_premise_locked_cast(cast, _SHILOUYAN_TAIL, language="zh-CN")
+    assert len(out["supporting_cast"]) == 4  # nothing appended
+
+
+def test_enforce_premise_locked_cast_backfills_missing_names() -> None:
+    """瓶颈#3: the cast LLM (and downstream personhood/richness repair gates)
+    drop premise-locked key cast; enforcement must re-add every missing one as a
+    named supporting_cast member so the outline's references resolve to canonical
+    roster instead of collapsing to false solo chains."""
+    from bestseller.services.planner import _enforce_premise_locked_cast
+
+    # An LLM cast that invented its own names and dropped all 4 locked ones.
+    cast_spec = {
+        "protagonist": {"name": "谢迟"},
+        "supporting_cast": [
+            {"name": "周坎", "goal": "x", "evolution_arc": "y"},
+            {"name": "燕迟晚", "goal": "x", "evolution_arc": "y"},
+        ],
+        "antagonist_forces": [{"name": "雾外楼"}],
+    }
+    out = _enforce_premise_locked_cast(cast_spec, _SHILOUYAN_TAIL, language="zh-CN")
+    names = {c.get("name") for c in out.get("supporting_cast", [])}
+    for locked in ("宋拾", "关铎", "裴萤", "白杪"):
+        assert locked in names, f"locked cast {locked} not enforced into roster"
+    # Idempotent: a second pass adds nothing.
+    out2 = _enforce_premise_locked_cast(out, _SHILOUYAN_TAIL, language="zh-CN")
+    assert len(out2["supporting_cast"]) == len(out["supporting_cast"])
+
+
+def test_enforce_premise_locked_cast_preserves_existing() -> None:
+    """Names already present (even via aliases) must not be duplicated."""
+    from bestseller.services.planner import _enforce_premise_locked_cast
+
+    cast_spec = {
+        "protagonist": {"name": "谢迟"},
+        "supporting_cast": [
+            {"name": "裴萤", "goal": "x", "evolution_arc": "y"},
+            {"name": "关铎", "goal": "x", "evolution_arc": "y"},
+        ],
+        "antagonist_forces": [{"name": "宋拾"}],
+    }
+    out = _enforce_premise_locked_cast(cast_spec, _SHILOUYAN_TAIL, language="zh-CN")
+    names = [c.get("name") for c in out.get("supporting_cast", [])]
+    assert names.count("裴萤") == 1 and names.count("关铎") == 1
+    assert "白杪" in set(names)  # only the genuinely-missing one is added
+
+
+def test_premise_locked_cast_has_gender_and_pronouns() -> None:
+    """瓶颈#4: enforced premise-locked entries must carry gender + zh/en pronouns
+    so the foundation_identity_contract passes at materialization (they skip the
+    LLM identity gates). 孤女→female; cue-less default→male."""
+    from bestseller.services.planner import _enforce_premise_locked_cast
+
+    premise = (
+        "主角谢迟。关键配角：同乡幸存者孤女宋拾（后入雾外楼）、衡山院落魄执事关铎"
+        "（知晓内鬼线索）、栖梧宗药圃监工裴萤（第一人）、巫祠遗脉少祭白杪。"
+    )
+    cast = {"protagonist": {"name": "谢迟"}, "supporting_cast": []}
+    out = _enforce_premise_locked_cast(cast, premise, language="zh-CN")
+    by_name = {c["name"]: c for c in out["supporting_cast"]}
+    for n in ("宋拾", "关铎", "裴萤", "白杪"):
+        assert n in by_name, f"{n} not enforced"
+        assert (by_name[n].get("gender") or "").lower() in ("male", "female")
+        assert by_name[n].get("pronoun_set_zh")
+        assert by_name[n].get("pronoun_set_en")
+    # 孤女 → female; 萤 (feminine name char) → female
+    assert by_name["宋拾"]["gender"] == "female"
+    assert by_name["裴萤"]["gender"] == "female"

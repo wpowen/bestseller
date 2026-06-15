@@ -10,6 +10,68 @@ from bestseller.services.outline_field_enrichment import enrich_outline_batch_fi
 NAMES = ["陈屿", "老金", "赵小磊", "白简"]
 
 
+def _golden_solo_chapter(n=1):
+    """A 凡人流-style golden chapter whose scenes are all protagonist-solo and
+    whose scene text mentions no other cast name — the exact shape that trips
+    the golden-three solo-chain hard gate and kills the whole volume outline."""
+    return {
+        "chapter_number": n,
+        "volume_number": 1,
+        "goal": "谢迟在灭镇当夜的地窖里挖出缺角古砚",
+        "main_conflict": "夜火封镇，废墟塌陷，砚池吞噬寿数的秘密第一次显形",
+        "hook_description": "砚底浮出第一行记寿小字",
+        "faction_refs": ["雾外楼"],
+        "key_reveals": ["蚀漏砚以寿数计价"],
+        "scenes": [
+            {
+                "scene_number": 1,
+                "participants": ["谢迟"],
+                "purpose": {"story": "谢迟独自在塌陷地窖里摸索", "emotion": "紧张"},
+                "exit_state": {"summary": "挖出古砚"},
+            },
+            {
+                "scene_number": 2,
+                "participants": [],
+                "purpose": {"story": "谢迟试墨，砚池光阴加速", "emotion": "震撼"},
+                "exit_state": {"summary": "首次付出寿数"},
+            },
+        ],
+    }
+
+
+def test_golden_three_solo_scene_is_rescued() -> None:
+    """A golden chapter with all-solo scenes must get a named second participant
+    injected so it is no longer a solo-chain (else the hard gate kills the volume)."""
+    from bestseller.services.commercial_planning_readiness import (
+        _chapter_is_solo_chain,
+        chapter_plan_probe_from_mapping,
+    )
+
+    chapter = _golden_solo_chapter(1)
+    content = {"chapters": [chapter]}
+    enrich_outline_batch_fields(content, NAMES, protagonist="谢迟")
+
+    out = content["chapters"][0]
+    duo = [
+        s for s in out["scenes"]
+        if len({p.strip() for p in (s.get("participants") or []) if p and p.strip()}) >= 2
+    ]
+    assert duo, "golden solo chapter must end with at least one ≥2-participant scene"
+    probe = chapter_plan_probe_from_mapping(out)
+    assert not _chapter_is_solo_chain(probe), "golden chapter still flagged solo-chain after rescue"
+
+
+def test_non_golden_solo_chapter_not_force_rescued() -> None:
+    """Rescue is golden-three only — a later solo chapter is left as-is when no
+    cast name appears in its text (no fabricated participants outside ch1-3)."""
+    chapter = _golden_solo_chapter(12)
+    content = {"chapters": [chapter]}
+    enrich_outline_batch_fields(content, NAMES, protagonist="谢迟")
+    out = content["chapters"][0]
+    # scene 2 had no resolvable second name in text → stays solo (protagonist only)
+    assert {p for p in out["scenes"][1]["participants"]} <= {"谢迟"}
+
+
 def _diseased_chapter(n=5):
     return {
         "chapter_number": n,

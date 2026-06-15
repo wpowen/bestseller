@@ -309,6 +309,68 @@ def render_logic_coherence_contract_block(*, language: str = "zh") -> str:
     )
 
 
+def render_opening_pull_contract_block(*, language: str = "zh") -> str:
+    """Render the opening-pull contract for chapter-outline generation (G10).
+
+    The commercial outline judge scores `opening_pull` (the first-impression
+    hook), and it is the second-weakest dimension (zhaoshen-hr-v5 = 0.55). The
+    GOLDEN OPENING rule already guarantees the protagonist appears within 300
+    characters — this contract adds what the judge looks for beyond presence:
+    a spotlight reversal that makes the protagonist *memorable*, and the core
+    selling point / golden-finger cashed in *visibly once* inside chapter 1 so
+    the reader knows what they signed up for.
+    """
+
+    if language == "en":
+        return (
+            "[OPENING-PULL CONTRACT — the judge scores opening_pull; chapter 1 must hook, not just introduce]\n"
+            "1. Spotlight reversal: chapter 1 gives the protagonist one concrete high-contrast "
+            "beat (a flaw flipped into an edge, a humiliation turned, a hidden skill shown) — "
+            "memorable, not a neutral introduction.\n"
+            "2. Sell the premise once: the core selling point / golden-finger is *visibly* used "
+            "or revealed at least once inside chapter 1 — the reader sees the payoff the book promises, "
+            "not just a setup that defers it.\n"
+            "3. End chapter 1 on an open loop that makes skipping to chapter 2 feel costly."
+        )
+    return (
+        "【开篇拉力契约 — 商业判官按 opening_pull 裁判，第1章要『勾住』而非『介绍』，本项偏弱】\n"
+        "1. 聚光反差：第1章给主角一个具体的高反差高光beat（缺陷翻成优势、被踩后反转、藏拙乍现）"
+        "——让人记住，不是中性出场（黄金开篇已保证300字内登场，这里要的是『难忘』）。\n"
+        "2. 卖点兑现一次：核心卖点/金手指在第1章内至少『可见地』用出或揭示一次——"
+        "读者要看到这本书承诺的爽点真的发生，而不是只铺设定、把兑现往后拖。\n"
+        "3. 第1章收在一个开放回路上，让读者觉得不翻第2章会亏。"
+    )
+
+
+def render_front_ten_retention_contract_block(*, language: str = "zh") -> str:
+    """Render the front-ten-retention contract for chapter-outline generation (G10).
+
+    The commercial outline judge scores `front_ten_retention` — whether the
+    first ten chapters keep a reader turning pages (zhaoshen-hr-v5 = 0.58).
+    Web-novel platforms gate paid conversion on the first ten chapters, so each
+    one needs a *visible* payoff plus a strong end-hook; this block states that
+    as a per-chapter generation contract for chapters 1-10.
+    """
+
+    if language == "en":
+        return (
+            "[FRONT-TEN RETENTION CONTRACT — the judge scores front_ten_retention; chapters 1-10 carry the conversion]\n"
+            "1. Every one of chapters 1-10 delivers one visible payoff: a power jump, an information "
+            "reveal, a relationship shift, or a satisfying win — never a chapter that only sets up.\n"
+            "2. Every one of chapters 1-10 ends on a strong hook (threat, question, reversal, or promise) "
+            "that makes the next chapter feel mandatory.\n"
+            "3. Reward cadence escalates: small frequent payoffs early, stakes and suspense rising across "
+            "the ten — no flat stretch where two adjacent chapters give the reader nothing new."
+        )
+    return (
+        "【前十章留存契约 — 商业判官按 front_ten_retention 裁判，前十章决定付费转化，本项偏弱】\n"
+        "1. 第1-10章每一章都给一个可见回报：实力跃迁／信息揭示／关系突变／一次解气的赢——"
+        "不许出现『只铺垫、无兑现』的章。\n"
+        "2. 第1-10章每一章章末都收在强钩子上（威胁／悬问／反转／承诺），让下一章像是非读不可。\n"
+        "3. 回报节奏递进：开头小回报高频，越往后筹码与悬念越涨——不许出现相邻两章读者一无所获的平段。"
+    )
+
+
 def chapter_end_hook_keys() -> tuple[str, ...]:
     """Canonical hook_type keys (empty when config is missing)."""
 

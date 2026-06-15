@@ -429,11 +429,61 @@ class WorldRuleInput(BaseModel):
         return data
 
 
+class PowerTierProgressionInput(BaseModel):
+    """Per-tier breakthrough mechanics: the cost and bottleneck of each 境界.
+
+    A flat ``tiers`` name list clears tier-depth but leaves the cultivation
+    ladder mechanically empty. This carries the resource-cost mechanism the
+    《凡人修仙传》structural bar (A2) demands: every tier needs an explicit
+    breakthrough cost and the bottleneck/gate that stalls advancement.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    tier: str = Field(min_length=1, max_length=4000)
+    breakthrough_cost: str | None = None
+    bottleneck: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_tier_aliases(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            name, description = _split_label_description(data)
+            payload: dict[str, Any] = {"tier": name or data}
+            if description:
+                payload["bottleneck"] = description
+            return payload
+        if not isinstance(data, dict):
+            return data
+        if "tier" not in data:
+            for alias in ("tier_name", "name", "realm", "level", "境界"):
+                if data.get(alias):
+                    data = {**data, "tier": data.get(alias)}
+                    break
+        if "breakthrough_cost" not in data:
+            for alias in ("cost", "price", "突破代价", "代价"):
+                if data.get(alias):
+                    data = {**data, "breakthrough_cost": data.get(alias)}
+                    break
+        if "bottleneck" not in data:
+            for alias in ("gate", "threshold", "瓶颈", "天槛"):
+                if data.get(alias):
+                    data = {**data, "bottleneck": data.get(alias)}
+                    break
+        return data
+
+    @field_validator("tier", "breakthrough_cost", "bottleneck", mode="before")
+    @classmethod
+    def _coerce_text_field(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+
 class PowerSystemInput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     name: str | None = None
     tiers: list[str] = Field(default_factory=list)
+    tier_progression: list[PowerTierProgressionInput] = Field(default_factory=list)
     acquisition_method: str | None = None
     hard_limits: str | None = None
     protagonist_starting_tier: str | None = None
@@ -442,6 +492,17 @@ class PowerSystemInput(BaseModel):
     @classmethod
     def _coerce_tiers(cls, v: Any) -> Any:
         return coerce_to_string_list(v)
+
+    @field_validator("tier_progression", mode="before")
+    @classmethod
+    def _coerce_tier_progression(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        if isinstance(v, dict):
+            v = [v]
+        if not isinstance(v, list):
+            return []
+        return [item for item in v if isinstance(item, (dict, str)) and item]
 
     @field_validator("acquisition_method", "hard_limits", "protagonist_starting_tier", mode="before")
     @classmethod

@@ -154,12 +154,70 @@ async def initialize_project_genre_capabilities(
         return None
 
 
+def _redis_key_belongs_to_slug(key: str, slug: str) -> bool:
+    """True iff *slug* is a full colon-delimited segment of *key*.
+
+    Self-heal Redis keys embed the slug as a segment:
+    ``task:autowrite:heal:<slug>:progress`` / ``arq:job:repair:heal:<slug>``.
+    Matching whole segments (not substrings) prevents ``book-v1`` from also
+    sweeping ``book-v10``'s keys.
+    """
+
+    return bool(slug) and slug in key.split(":")
+
+
+async def _purge_project_redis_keys(settings: AppSettings, slug: str) -> dict[str, Any]:
+    """Delete a deleted project's Redis progress keys + scheduled self-heal jobs.
+
+    ``delete_project_completely`` removes DB rows and disk artifacts but, without
+    this, leaves ``task:*:heal:<slug>:*`` progress keys and
+    ``arq:job:*:heal:<slug>`` scheduled self-heal jobs in Redis. The frontend
+    task board reads those progress keys, so a deleted book keeps showing zombie
+    tasks that survive page refreshes, and the self-heal scheduler keeps firing
+    against the gone project. Scoped strictly to keys whose colon-delimited
+    segments include the exact slug. Best-effort: a Redis outage is non-fatal —
+    the DB/disk delete has already succeeded.
+    """
+
+    out: dict[str, Any] = {"deleted": 0, "error": None}
+    url = getattr(getattr(settings, "redis", None), "url", None)
+    if not url:
+        # No Redis configured (or minimal settings) → nothing to purge.
+        return out
+    try:
+        from redis.asyncio import from_url
+    except Exception as exc:  # noqa: BLE001 — redis optional at import time
+        out["error"] = f"redis_import_failed: {exc}"
+        return out
+
+    client = None
+    try:
+        client = from_url(url)
+        to_delete: list[str] = []
+        async for raw in client.scan_iter(match=f"*{slug}*"):
+            key = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
+            if _redis_key_belongs_to_slug(key, slug):
+                to_delete.append(key)
+        if to_delete:
+            out["deleted"] = int(await client.delete(*to_delete))
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = f"redis_purge_failed: {exc}"
+    finally:
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+    return out
+
+
 async def delete_project_completely(
     session: AsyncSession,
     settings: AppSettings,
     slug: str,
 ) -> dict[str, Any]:
-    """Fully remove a project: DB rows (cascades to all children) and disk artifacts.
+    """Fully remove a project: DB rows (cascades to all children), disk artifacts,
+    and stale Redis progress keys / scheduled self-heal jobs.
 
     Returns a status dict. Raises ValueError if *slug* is empty or escapes
     the configured output base directory.
@@ -171,6 +229,7 @@ async def delete_project_completely(
         "slug": slug,
         "db_deleted": False,
         "fs_deleted": False,
+        "redis_keys_deleted": 0,
         "path": None,
         "errors": [],
     }
@@ -253,6 +312,15 @@ async def delete_project_completely(
     else:
         # Nothing on disk — treat as success (idempotent)
         result["fs_deleted"] = True
+
+    # Step 3: Redis cleanup — clear the deleted project's progress keys and
+    # scheduled self-heal jobs so the frontend task board stops showing zombie
+    # tasks (which survive refreshes) and the self-heal scheduler stops firing
+    # against the gone book. Best-effort; a Redis outage is non-fatal.
+    redis_result = await _purge_project_redis_keys(settings, slug)
+    result["redis_keys_deleted"] = redis_result["deleted"]
+    if redis_result["error"]:
+        result["errors"].append(redis_result["error"])
 
     return result
 

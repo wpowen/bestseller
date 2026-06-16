@@ -1232,6 +1232,29 @@ def project_create(
         "--prompt-pack",
         help="Optional prompt pack key. Use `bestseller prompt-pack list` to inspect available packs.",
     ),
+    enhancer_skills: str | None = typer.Option(
+        None,
+        "--enhancer-skills",
+        help=(
+            "Comma-separated story-effect skills to hard-enforce in every chapter "
+            "(e.g. 'brainhole_engine,comedy_engine,twist_reversal_engine'). "
+            "See bestseller.services.story_effect_skills for the 18 keys."
+        ),
+    ),
+    brainhole: bool = typer.Option(
+        False, "--brainhole", help="Enforce a high-concept 脑洞 set-piece every 1-2 chapters."
+    ),
+    concept_lab: bool = typer.Option(
+        False, "--concept-lab", help="Enforce the concept-lab story-loop in every chapter."
+    ),
+    creativity_direction: str | None = typer.Option(
+        None,
+        "--creativity-direction",
+        help=(
+            "Anti-cliché conflict axis: genre-synthesis | cross-genre-friction | "
+            "distilled-mechanism-remix | anti-cliche-opening."
+        ),
+    ),
 ) -> None:
     """Create a project and its default style guide."""
 
@@ -1241,6 +1264,28 @@ def project_create(
         _load_structured_payload_file(profile_file),
         prompt_pack,
     )
+
+    # Story-enhancer checkboxes → metadata.story_enhancers (validated downstream).
+    from bestseller.services.story_enhancers import (
+        STORY_ENHANCERS_METADATA_KEY,
+        resolve_story_enhancers,
+    )
+
+    _skill_list = [s.strip() for s in (enhancer_skills or "").split(",") if s.strip()]
+    _enhancer_payload = {
+        "brainhole": brainhole,
+        "concept_lab": concept_lab,
+        "creativity_direction": creativity_direction,
+        "effect_skills": _skill_list,
+    }
+    _resolved_enhancers = resolve_story_enhancers(
+        {STORY_ENHANCERS_METADATA_KEY: _enhancer_payload}
+    )
+    _project_metadata: dict[str, object] = {}
+    if not _resolved_enhancers.is_empty():
+        _project_metadata[STORY_ENHANCERS_METADATA_KEY] = _resolved_enhancers.model_dump(
+            mode="json"
+        )
 
     async def _run() -> None:
         settings = load_settings()
@@ -1257,6 +1302,7 @@ def project_create(
                     target_word_count=target_words,
                     target_chapters=target_chapters,
                     writing_profile=writing_profile_payload,
+                    metadata=_project_metadata,
                 ),
                 settings,
             )
@@ -1269,6 +1315,11 @@ def project_create(
                         "prompt_pack": (
                             (writing_profile_payload or {}).get("market", {}).get("prompt_pack_key")
                             if isinstance((writing_profile_payload or {}).get("market"), dict)
+                            else None
+                        ),
+                        "story_enhancers": (
+                            _resolved_enhancers.model_dump(mode="json")
+                            if not _resolved_enhancers.is_empty()
                             else None
                         ),
                     },

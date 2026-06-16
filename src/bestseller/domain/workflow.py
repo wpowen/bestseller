@@ -185,6 +185,38 @@ def _normalize_str_list(value: Any) -> list[str]:
     return [coerced] if coerced else []
 
 
+def _normalize_information_gap_mode(value: Any) -> str | None:
+    """Coerce common LLM shapes for the chapter information-gap mode."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    if isinstance(value, dict):
+        for key in (
+            "mode",
+            "information_gap_mode",
+            "gap_mode",
+            "gap_type",
+            "type",
+            "value",
+            "label",
+        ):
+            item = value.get(key)
+            if item is not None:
+                coerced = str(item).strip()
+                if coerced:
+                    return coerced
+        parts = [
+            f"{str(k).strip()}={str(v).strip()}"
+            for k, v in value.items()
+            if k is not None and v is not None and str(k).strip() and str(v).strip()
+        ]
+        return "; ".join(parts) or None
+    return str(value).strip() or None
+
+
 def _looks_like_functional_chapter_title(value: Any) -> bool:
     text = str(value or "").strip()
     if not text:
@@ -608,6 +640,8 @@ class ChapterOutlineInput(BaseModel):
             "chapter_information_held_back", "information_held_back", "chapter_withheld"
         ),
     )
+    selected_effect_skills: dict[str, Any] = Field(default_factory=dict)
+    brainhole_contract: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -634,6 +668,13 @@ class ChapterOutlineInput(BaseModel):
         )
         for _field in _STR_LIST_FIELDS:
             data[_field] = _normalize_str_list(data.get(_field))
+        for _field in (
+            "information_gap_mode",
+            "info_gap_mode",
+            "reader_information_mode",
+        ):
+            if _field in data:
+                data[_field] = _normalize_information_gap_mode(data.get(_field))
 
         story_title = data.get("chapter_title") or data.get("subtitle")
         if story_title and (

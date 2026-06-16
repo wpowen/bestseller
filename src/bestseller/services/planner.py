@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -145,9 +145,17 @@ from bestseller.services.story_design_kernel import (
     story_design_kernel_from_dict,
 )
 from bestseller.services.story_effect_skills import (
+    STORY_EFFECT_SKILL_SELECTION_METADATA_KEY,
     render_selected_story_effect_skill_contracts,
     render_story_effect_skill_catalog_prompt_block,
 )
+from bestseller.services.story_enhancers import (
+    audit_story_enhancer_coverage,
+    render_story_enhancer_contract_block,
+    resolve_story_enhancers,
+    story_enhancer_repair_directives,
+)
+from bestseller.services.brainhole_engine import BRAINHOLE_PROFILE_METADATA_KEY
 from bestseller.domain.ideology import (
     ideology_kernel_to_dict,
     render_ideology_kernel_prompt_block,
@@ -224,6 +232,19 @@ class OutlineEventDuplicationError(PlannerFallbackError):
     def __init__(self, message: str, *, findings: list[dict[str, Any]]) -> None:
         super().__init__(message)
         self.findings = findings
+
+
+class StoryEnhancerCoverageError(PlannerFallbackError):
+    """Raised when a book-level selected story-enhancer effect (脑洞/喜剧/反转/…)
+    is systemically uncashed across an outline batch — the zhaoshen-hr-v13 failure
+    (logically rigorous but bland). ``directives`` carries ready repair lines so
+    the loop can demand the missing effects without regenerating blindly. Treated
+    as soft on the final attempt: a quality gap must never abort the book.
+    """
+
+    def __init__(self, message: str, *, directives: list[str]) -> None:
+        super().__init__(message)
+        self.directives = directives
 
 
 # Default acceptance threshold for the R5 consumed-event dedup check
@@ -2360,9 +2381,196 @@ def _repair_generated_volume_outline_contract_blocks(
             ]
             if character:
                 participants.append(character)
-            _set_participants(scene, participants)
+                _set_participants(scene, participants)
+                repaired += 1
+            continue
 
     return repaired
+
+
+def _selected_story_effect_skill_keys(
+    project: ProjectModel,
+    *,
+    stage: str,
+) -> tuple[str, ...]:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    selection = _mapping(metadata.get(STORY_EFFECT_SKILL_SELECTION_METADATA_KEY))
+    stage_selection = _mapping(selection.get(stage))
+    keys: list[str] = []
+    for field_name in ("primary", "secondary"):
+        skill_key = _non_empty_string(stage_selection.get(field_name), "")
+        if skill_key and skill_key not in keys:
+            keys.append(skill_key)
+    return tuple(keys)
+
+
+def _brainhole_required_contract_fields(project: ProjectModel) -> tuple[str, ...]:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    profile = _mapping(metadata.get(BRAINHOLE_PROFILE_METADATA_KEY))
+    fields = _string_list(profile.get("required_contract_fields"))
+    if fields:
+        return tuple(fields)
+    return (
+        "one_sentence_sell",
+        "character_core_used",
+        "modern_system",
+        "contrast_mechanism",
+        "visible_comedy",
+        "serious_underbelly",
+        "plot_consequence",
+        "protagonist_decision",
+        "growth_stage_fit",
+        "risk_check",
+    )
+
+
+def _story_effect_skill_key(value: Any) -> str:
+    key = _non_empty_string(value, "")
+    if key:
+        return key
+    value_map = _mapping(value)
+    for field_name in ("name", "skill_key", "key", "id", "engine"):
+        key = _non_empty_string(value_map.get(field_name), "")
+        if key:
+            return key
+    return ""
+
+
+def _missing_brainhole_contract_fields(
+    brainhole_contract: Mapping[str, Any],
+    required_contract_fields: Iterable[str],
+) -> list[str]:
+    return [
+        field_name
+        for field_name in required_contract_fields
+        if not _non_empty_string(brainhole_contract.get(field_name), "")
+    ]
+
+
+def _normalize_brainhole_effect_selection(
+    chapter: Any,
+    selected_effects: Mapping[str, Any],
+    *,
+    brainhole_contract: Mapping[str, Any],
+    required_contract_fields: Iterable[str],
+) -> dict[str, Any]:
+    if not brainhole_contract:
+        return dict(selected_effects)
+    if _missing_brainhole_contract_fields(brainhole_contract, required_contract_fields):
+        return dict(selected_effects)
+
+    normalized = dict(selected_effects)
+    primary_raw = normalized.get("primary")
+    secondary_raw = normalized.get("secondary")
+    primary_key = _story_effect_skill_key(primary_raw)
+    secondary_key = _story_effect_skill_key(secondary_raw)
+    if primary_key == "brainhole_engine":
+        if not isinstance(primary_raw, str):
+            primary_map = _mapping(primary_raw)
+            normalized["primary"] = "brainhole_engine"
+            if "reason" not in normalized and _non_empty_string(primary_map.get("reason"), ""):
+                normalized["reason"] = primary_map["reason"]
+        setattr(chapter, "selected_effect_skills", normalized)
+        return normalized
+
+    if secondary_key == "brainhole_engine":
+        normalized["primary"] = "brainhole_engine"
+        normalized["secondary"] = primary_key or secondary_key
+        secondary_map = _mapping(secondary_raw)
+        if "reason" not in normalized and _non_empty_string(secondary_map.get("reason"), ""):
+            normalized["reason"] = secondary_map["reason"]
+        setattr(chapter, "selected_effect_skills", normalized)
+        return normalized
+
+    if primary_key or secondary_key:
+        normalized["_normalized_from_selected_effect_skills"] = {
+            "primary": primary_key or primary_raw,
+            "secondary": secondary_key or secondary_raw,
+            "reason": (
+                "project-selected brainhole_engine restored because this chapter "
+                "already contains a complete brainhole_contract"
+            ),
+        }
+    normalized["primary"] = "brainhole_engine"
+    normalized.setdefault(
+        "reason",
+        "Project-selected brainhole_engine restored from complete brainhole_contract.",
+    )
+    normalized.setdefault("expected_contracts", ["brainhole_contract"])
+    setattr(chapter, "selected_effect_skills", normalized)
+    return normalized
+
+
+def _require_selected_story_effect_contracts_or_raise(
+    batch: Any,
+    *,
+    project: ProjectModel,
+    logical_name: str,
+) -> None:
+    selected_keys = _selected_story_effect_skill_keys(project, stage="chapter_outline")
+    if not selected_keys:
+        return
+
+    required_effect_keys = (
+        ("brainhole_engine",)
+        if "brainhole_engine" in selected_keys
+        else selected_keys[:1]
+    )
+    required_contract_fields = _brainhole_required_contract_fields(project)
+    findings: list[str] = []
+    for chapter in getattr(batch, "chapters", []) or []:
+        chapter_number = getattr(chapter, "chapter_number", "?")
+        selected_effects = _mapping(getattr(chapter, "selected_effect_skills", None))
+        brainhole_contract = _mapping(getattr(chapter, "brainhole_contract", None))
+        if "brainhole_engine" in selected_keys:
+            selected_effects = _normalize_brainhole_effect_selection(
+                chapter,
+                selected_effects,
+                brainhole_contract=brainhole_contract,
+                required_contract_fields=required_contract_fields,
+            )
+        effect_values = {
+            _story_effect_skill_key(selected_effects.get(field_name))
+            for field_name in ("primary", "secondary")
+        }
+        effect_values.discard("")
+        missing_effect_keys = [
+            skill_key for skill_key in required_effect_keys if skill_key not in effect_values
+        ]
+        if not selected_effects:
+            findings.append(
+                f"STORY_EFFECT_CONTRACT_MISSING ch{chapter_number}: "
+                "missing selected_effect_skills"
+            )
+        elif missing_effect_keys:
+            findings.append(
+                f"STORY_EFFECT_SELECTION_MISMATCH ch{chapter_number}: "
+                f"selected_effect_skills must include {', '.join(missing_effect_keys)}"
+            )
+
+        if "brainhole_engine" not in selected_keys:
+            continue
+        if not brainhole_contract:
+            findings.append(
+                f"BRAINHOLE_CONTRACT_MISSING ch{chapter_number}: "
+                "missing brainhole_contract required by selected brainhole_engine"
+            )
+            continue
+        missing_fields = _missing_brainhole_contract_fields(
+            brainhole_contract,
+            required_contract_fields,
+        )
+        if missing_fields:
+            findings.append(
+                f"BRAINHOLE_CONTRACT_INCOMPLETE ch{chapter_number}: "
+                f"brainhole_contract missing fields {', '.join(missing_fields)}"
+            )
+
+    if findings:
+        raise PlannerFallbackError(
+            f"Planner artifact '{logical_name}' failed selected story-effect contract: "
+            + "; ".join(findings[:20])
+        )
 
 
 def _validate_generated_volume_outline_or_raise(
@@ -2417,6 +2625,11 @@ def _validate_generated_volume_outline_or_raise(
             "batch_name": payload.get("batch_name") or f"volume-{volume_number}-outline",
             "chapters": vol_chapters,
         }
+    )
+    _require_selected_story_effect_contracts_or_raise(
+        batch,
+        project=project,
+        logical_name=logical_name,
     )
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
     _cast_protagonist = _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
@@ -2528,14 +2741,15 @@ def _outline_repair_directives_from_error(
         (
             "Carry over every field that already passed in the previous version: "
             "keep opening_situation, causal_contract, scene participants, "
-            "methodology_contract, and all scene cards intact for everything not "
-            "named above. Never drop or blank a previously-valid field while repairing."
+            "methodology_contract, selected_effect_skills, brainhole_contract, "
+            "and all scene cards intact for everything not named above. Never drop "
+            "or blank a previously-valid field while repairing."
         )
         if is_en
         else (
             "修复时必须保留上一版已通过的全部字段：未被点名的章节及其 opening_situation、"
-            "causal_contract、scene participants、methodology_contract、场景卡必须原样保留，"
-            "不得因为修复其他问题而丢弃或留空。"
+            "causal_contract、scene participants、methodology_contract、selected_effect_skills、"
+            "brainhole_contract、场景卡必须原样保留，不得因为修复其他问题而丢弃或留空。"
         )
     )
 
@@ -2543,6 +2757,8 @@ def _outline_repair_directives_from_error(
     # Surfaced from the cross-batch ledger check when a fresh batch
     # re-narrates an arc an earlier batch already consumed. Issue one
     # targeted directive per offending chapter.
+    if isinstance(error, StoryEnhancerCoverageError) and error.directives:
+        return [*error.directives, preserve_directive]
     if isinstance(error, OutlineEventDuplicationError) and error.findings:
         directives = []
         for finding in error.findings[:20]:
@@ -2724,6 +2940,29 @@ def _outline_repair_directives_from_error(
                     f"{volume_clause_zh}chapters 数组必须恰好包含 {target_count} 项；"
                     f"{range_clause_zh}不得概括、合并、遗漏、补白或拆卷。"
                 )
+    if (
+        "STORY_EFFECT_CONTRACT_MISSING" in message
+        or "STORY_EFFECT_SELECTION_MISMATCH" in message
+        or "BRAINHOLE_CONTRACT_MISSING" in message
+        or "BRAINHOLE_CONTRACT_INCOMPLETE" in message
+    ):
+        if is_en:
+            directives.append(
+                "Repair selected story-effect contracts: every chapter in this batch "
+                "must include selected_effect_skills containing the project-selected "
+                "brainhole_engine, and a complete brainhole_contract with one_sentence_sell, "
+                "character_core_used, modern_system, contrast_mechanism, visible_comedy, "
+                "serious_underbelly, plot_consequence, protagonist_decision, "
+                "growth_stage_fit, and risk_check."
+            )
+        else:
+            directives.append(
+                "修复故事效果合同：本批每章必须输出 selected_effect_skills，且必须包含项目选定的 "
+                "brainhole_engine；每章还必须输出完整 brainhole_contract，字段包含 "
+                "one_sentence_sell、character_core_used、modern_system、contrast_mechanism、"
+                "visible_comedy、serious_underbelly、plot_consequence、protagonist_decision、"
+                "growth_stage_fit、risk_check。"
+            )
     for chunk in chunks[:10]:
         if is_en:
             directives.append(
@@ -2901,8 +3140,52 @@ async def _generate_volume_outline_with_repair_loop(
                             f"already-consumed events: {summary}",
                             findings=duplicate_findings,
                         )
+            # Story-enhancer coverage gate (#28): if the book checked enhancer
+            # effects at creation, every batch must actually cash them. Systemic
+            # absence (the zhaoshen-hr-v13 bland-outline failure) triggers repair;
+            # soft-accept on the final attempt so a quality gap never aborts.
+            _enhancer_selection = resolve_story_enhancers(
+                project.metadata_json if isinstance(project.metadata_json, dict) else {}
+            )
+            _enhancer_gaps = audit_story_enhancer_coverage(
+                _mapping_list(payload.get("chapters")), _enhancer_selection
+            )
+            if _enhancer_gaps:
+                _enhancer_directives = story_enhancer_repair_directives(
+                    _mapping_list(payload.get("chapters")), _enhancer_selection
+                )
+                _gap_summary = ", ".join(
+                    f"{g['effect']}={int(g['coverage'] * 100)}%" for g in _enhancer_gaps
+                )
+                if attempt >= max_repair_attempts:
+                    logger.warning(
+                        "Volume %d outline batch '%s': accepting with %d "
+                        "under-delivered story enhancer(s) after %d attempt(s): %s",
+                        volume_number,
+                        logical_name,
+                        len(_enhancer_gaps),
+                        attempt,
+                        _gap_summary,
+                    )
+                    meta = _mapping(payload.get("_meta"))
+                    meta["story_enhancer_gaps"] = _enhancer_gaps
+                    payload["_meta"] = meta
+                    repair_history.append(
+                        {
+                            "attempt": attempt,
+                            "status": "passed_with_enhancer_gaps",
+                            "enhancer_gaps": _enhancer_gaps,
+                        }
+                    )
+                else:
+                    raise StoryEnhancerCoverageError(
+                        f"Planner artifact '{logical_name}' left selected story "
+                        f"enhancers uncashed: {_gap_summary}",
+                        directives=_enhancer_directives,
+                    )
             if repair_history and repair_history[-1].get("status") not in (
                 "passed",
+                "passed_with_enhancer_gaps",
                 "passed_with_event_duplicates",
             ):
                 repair_history.append({"attempt": attempt, "status": "passed"})
@@ -12885,6 +13168,18 @@ def _concept_lab_contract_block(project: ProjectModel, *, language: str) -> str:
     return f"{block}\n" if block else ""
 
 
+def _story_enhancer_contract_line(project: ProjectModel, language: str) -> str:
+    """Book-level story-enhancer hard contract (empty unless the user checked
+    capabilities at creation). Injected into every volume/chapter outline prompt
+    alongside the concept-lab contract."""
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    block = render_story_enhancer_contract_block(
+        resolve_story_enhancers(metadata), language=language
+    )
+    return f"\n{block}\n" if block else ""
+
+
 def _concept_methodology_block(project: ProjectModel, *, language: str) -> str:
     """Agent ②/③: soft 脑洞/爽点 methodology framework from Agent ①.
 
@@ -13032,6 +13327,7 @@ def _book_spec_prompts(
     )
     _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
     _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
+    _story_enhancer_line = _story_enhancer_contract_line(project, language)
     _concept_methodology_line = _concept_methodology_block(project, language=language)
     if is_en:
         user_prompt = (
@@ -13049,6 +13345,7 @@ def _book_spec_prompts(
             f"{_distilled_architecture_block}"
             f"{_hook_contract_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_concept_methodology_line}"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
@@ -13073,6 +13370,7 @@ def _book_spec_prompts(
             f"{_distilled_architecture_block}"
             f"{_hook_contract_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_concept_methodology_line}"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
@@ -13229,6 +13527,7 @@ def _world_spec_prompts(
     )
     _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
     _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
+    _story_enhancer_line = _story_enhancer_contract_line(project, language)
     _concept_methodology_line = _concept_methodology_block(project, language=language)
     user_prompt = (
         (
@@ -13243,6 +13542,7 @@ def _world_spec_prompts(
             f"{_distilled_world_block}"
             f"{_hook_contract_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_concept_methodology_line}"
             f"{_pp_world_spec}"
             f"{_mat_ref_block}"
@@ -13270,6 +13570,7 @@ def _world_spec_prompts(
             f"{_distilled_world_block}"
             f"{_hook_contract_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_concept_methodology_line}"
             f"{_pp_world_spec}"
             f"{_mat_ref_block}"
@@ -13378,6 +13679,7 @@ def _cast_spec_prompts(
     _story_package_block = _story_package_prompt_block(project, language=language)
     _distilled_cast_block = _distilled_design_reference_block(project, "cast")
     _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
+    _story_enhancer_line = _story_enhancer_contract_line(project, language)
     user_prompt = (
         (
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
@@ -13388,6 +13690,7 @@ def _cast_spec_prompts(
             f"{_story_package_block}\n"
             f"{_distilled_cast_block}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_pp_cast_spec}"
             "Generate a CastSpec JSON with protagonist, antagonist, antagonist_forces, supporting_cast, and conflict_map. "
             "The protagonist needs a vivid desire, a real weakness, visible growth space, and a memorable edge; the antagonist must actively counter the protagonist and keep escalating. "
@@ -13439,6 +13742,7 @@ def _cast_spec_prompts(
             f"{_story_package_block}\n"
             f"{_distilled_cast_block}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_pp_cast_spec}"
             "请生成一个 CastSpec JSON，包含 protagonist、antagonist、antagonist_forces、supporting_cast、conflict_map。"
             "主角必须有鲜明欲望、明显短板、可持续升级点和可被读者快速记住的差异化优势；"
@@ -13698,6 +14002,7 @@ def _volume_plan_prompts(
     )
     _hook_contract_line = f"{_hook_contract_block}\n" if _hook_contract_block else ""
     _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
+    _story_enhancer_line = _story_enhancer_contract_line(project, language)
     # P-6 (xianxia benchmark): the prompt previously never stated how many
     # volumes to plan or how many chapters they must cover, so a 500-chapter
     # project shipped a 5-volume × 50-chapter plan (half the book unplanned).
@@ -13736,6 +14041,7 @@ def _volume_plan_prompts(
             f"{_distilled_volume_block}"
             f"{_hook_contract_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
             f"{_public_emotion_block}\n"
@@ -13776,6 +14082,7 @@ def _volume_plan_prompts(
             f"{_distilled_volume_block}"
             f"{_hook_contract_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
             f"{_public_emotion_block}\n"
@@ -13977,6 +14284,7 @@ def _outline_prompts(
         f"\n{_anti_commonsense_hook_block}\n" if _anti_commonsense_hook_block else ""
     )
     _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
+    _story_enhancer_line = _story_enhancer_contract_line(project, language)
     # ── Webnovel method cards (design-layer methodology, baked upstream) ──
     # target_emotion discipline + hook_type taxonomy + golden-opening rules.
     # Soft: any config/load failure degrades to empty fragments.
@@ -14051,6 +14359,7 @@ def _outline_prompts(
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
@@ -14567,6 +14876,23 @@ def _volume_outline_prompts(
         if compact_outline_mode
         else _character_drama_prompt_block(project, cast_spec=cast_spec)
     )
+    _story_effect_catalog_block = render_story_effect_skill_catalog_prompt_block(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        language=language,
+    )
+    _story_effect_catalog_line = (
+        f"\n{_story_effect_catalog_block}\n" if _story_effect_catalog_block else ""
+    )
+    _selected_story_effect_contracts = render_selected_story_effect_skill_contracts(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        language=language,
+        stage="chapter_outline",
+    )
+    _selected_story_effect_contract_line = (
+        f"\n{_selected_story_effect_contracts}\n"
+        if _selected_story_effect_contracts
+        else ""
+    )
     _distilled_outline_block = (
         _compact_prompt_block_text(
             _distilled_design_reference_block(project, "chapter_outline"),
@@ -14617,6 +14943,7 @@ def _volume_outline_prompts(
         if compact_outline_mode
         else _concept_lab_contract_block(project, language=language)
     )
+    _story_enhancer_line = _story_enhancer_contract_line(project, language)
     _prior_vols_block = render_prior_volumes_summary_block(
         volume_plan,
         current_volume_number=volume_number,
@@ -14668,12 +14995,15 @@ def _volume_outline_prompts(
             f"{_entry_system_block}\n"
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
+            f"{_story_effect_catalog_line}"
+            f"{_selected_story_effect_contract_line}"
             f"{_prior_vols_line}"
             f"{_ledger_line}"
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
@@ -14755,12 +15085,15 @@ def _volume_outline_prompts(
             f"{_entry_system_block}\n"
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
+            f"{_story_effect_catalog_line}"
+            f"{_selected_story_effect_contract_line}"
             f"{_prior_vols_line}"
             f"{_ledger_line}"
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_line}"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"

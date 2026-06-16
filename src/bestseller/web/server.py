@@ -3179,6 +3179,23 @@ class WebTaskManager:
                         )
 
                 project_metadata: dict[str, object] = {"premise": effective_premise}
+                # Story-enhancer checkboxes (脑洞/反常识/18 故事 skill) from the
+                # create form → hard outline contracts. Validated so unknown
+                # skill keys are dropped; empty selection adds nothing.
+                from bestseller.services.story_enhancers import (
+                    STORY_ENHANCERS_METADATA_KEY,
+                    resolve_story_enhancers,
+                )
+
+                _enhancers = resolve_story_enhancers(
+                    {STORY_ENHANCERS_METADATA_KEY: payload.get("story_enhancers")}
+                    if isinstance(payload.get("story_enhancers"), dict)
+                    else {}
+                )
+                if not _enhancers.is_empty():
+                    project_metadata[STORY_ENHANCERS_METADATA_KEY] = _enhancers.model_dump(
+                        mode="json"
+                    )
                 payload_hook_spec = coerce_hook_spec(payload.get("hook_spec"))
                 if payload_hook_spec is not None:
                     project_metadata["hook_spec"] = payload_hook_spec.model_dump(mode="json")

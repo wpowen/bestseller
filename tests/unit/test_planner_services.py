@@ -15,6 +15,9 @@ from bestseller.services.distilled_strategy_compiler import (
 )
 from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services import planner as planner_services
+from bestseller.services.story_effect_skills import (
+    STORY_EFFECT_SKILL_SELECTION_METADATA_KEY,
+)
 from bestseller.services.methodology_overlay import validate_ability_origin_contract
 from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
 from bestseller.settings import load_settings
@@ -1280,6 +1283,36 @@ def test_chapter_outline_prefers_story_title_alias_over_functional_fallback() ->
     assert batch.chapters[0].title == "镜泣"
 
 
+def test_chapter_outline_normalizes_structured_information_gap_mode() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "opening",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "chapter_title": "司命入职",
+                    "goal": "沈照把神仙召进人力系统。",
+                    "information_gap_mode": {
+                        "gap_type": "partial_reveal",
+                        "reason": "读者知道香火 KPI 异常，但沈照只看见入职表。",
+                    },
+                    "scenes": [],
+                },
+                {
+                    "chapter_number": 2,
+                    "chapter_title": "土地爷工牌",
+                    "goal": "沈照发现土地爷刷不了门禁。",
+                    "info_gap_mode": {"mode": "withhold", "note": "暂不暴露工牌失效来源。"},
+                    "scenes": [],
+                },
+            ],
+        }
+    )
+
+    assert batch.chapters[0].information_gap_mode == "partial_reveal"
+    assert batch.chapters[1].information_gap_mode == "withhold"
+
+
 def test_volume_outline_length_mismatch_fails_closed_instead_of_padding() -> None:
     with pytest.raises(planner_services.PlannerFallbackError, match="Refusing to pad or trim"):
         planner_services._require_complete_volume_outline(
@@ -1446,6 +1479,381 @@ def test_generated_volume_outline_accepts_raw_chapter_list_from_llm() -> None:
 
     assert repaired["batch_name"] == "volume-1-outline"
     assert repaired["chapters"][0]["chapter_number"] == 1
+
+
+def test_volume_outline_requires_selected_brainhole_contract_when_selected() -> None:
+    project = build_project()
+    project.metadata_json = {
+        STORY_EFFECT_SKILL_SELECTION_METADATA_KEY: {
+            "chapter_outline": {
+                "primary": "brainhole_engine",
+                "secondary": "comedy_engine",
+            }
+        }
+    }
+    cast_spec = {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
+    }
+    payload = [
+        {
+            "title": "井底回声",
+            "goal": "沈青崖追查井底异响，必须在封门前找到血雨源头。",
+            "main_conflict": "巡捕房误封现场，沈青崖必须避开阻拦读取井底痕迹。",
+            "hook_description": "井底浮出一枚刻着沈家旧印的铜钱。",
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "time_label": "李宅封门前",
+                    "participants": ["沈青崖", "阿洛"],
+                    "purpose": {
+                        "story": "沈青崖撬开井盖，阿洛在巷口望风，两人付出暴露行踪的代价。",
+                        "emotion": "压力上升。",
+                    },
+                },
+            ],
+        }
+    ]
+
+    with pytest.raises(
+        planner_services.PlannerFallbackError,
+        match="STORY_EFFECT_CONTRACT_MISSING",
+    ):
+        planner_services._validate_generated_volume_outline_or_raise(
+            payload,
+            project=project,
+            logical_name="volume_1_chapter_outline_batch_1_5",
+            volume_number=1,
+            expected_count=1,
+            chapter_number_offset=1,
+            cast_spec=cast_spec,
+        )
+
+
+def test_volume_outline_repairs_purpose_character_into_participants() -> None:
+    project = build_project()
+    cast_spec = {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
+    }
+    payload = [
+        {
+            "title": "井底回声",
+            "goal": "沈青崖追查井底异响，必须在封门前找到血雨源头。",
+            "main_conflict": "巡捕房误封现场，沈青崖必须避开阻拦读取井底痕迹。",
+            "opening_situation": "李宅封门前，沈青崖按住井沿，井底传来断续敲击声。",
+            "hook_description": "井底浮出一枚刻着沈家旧印的铜钱。",
+            "causal_contract": {
+                "pressure": "封门队伍已经到巷口。",
+                "protagonist_choice": "沈青崖决定先让阿洛望风，再下井取证。",
+                "resistance": "巡捕房误封现场。",
+                "cost_or_tradeoff": "他必须暴露自己还在追查旧案。",
+                "gain_or_reveal": "他拿到铜钱旧印。",
+                "state_change": "沈青崖从旁观旧案转为正式介入。",
+                "next_reader_desire": "铜钱是谁故意丢进井里的？",
+            },
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "time_label": "李宅封门前",
+                    "participants": ["沈青崖"],
+                    "purpose": {
+                        "story": "沈青崖让阿洛在井口望风，自己下井取出铜钱。",
+                        "emotion": "压力上升。",
+                    },
+                },
+            ],
+        }
+    ]
+
+    repaired = planner_services._validate_generated_volume_outline_or_raise(
+        payload,
+        project=project,
+        logical_name="volume_1_chapter_outline_batch_1_5",
+        volume_number=1,
+        expected_count=1,
+        chapter_number_offset=1,
+        cast_spec=cast_spec,
+    )
+
+    participants = repaired["chapters"][0]["scenes"][0]["participants"]
+    assert participants == ["沈青崖", "阿洛"]
+
+
+def test_volume_outline_preserves_selected_brainhole_contract_when_valid() -> None:
+    project = build_project()
+    project.metadata_json = {
+        STORY_EFFECT_SKILL_SELECTION_METADATA_KEY: {
+            "chapter_outline": {
+                "primary": "brainhole_engine",
+                "secondary": "comedy_engine",
+            }
+        }
+    }
+    cast_spec = {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
+    }
+    brainhole_contract = {
+        "one_sentence_sell": "沈青崖把井底回声当成离职面谈，问出铜钱旧案。",
+        "character_core_used": "沈青崖遇事先查证，不靠情绪判断。",
+        "modern_system": "离职面谈与工单登记。",
+        "contrast_mechanism": "古宅怨声被纳入现代流程，荒诞但能推进取证。",
+        "visible_comedy": "阿洛在井口替怨声排队取号。",
+        "serious_underbelly": "失踪者的声音被系统吞掉，暴露旧案未结。",
+        "plot_consequence": "沈青崖拿到铜钱线索，下一章必须查登记源头。",
+        "protagonist_decision": "先登记证据，再冒险下井。",
+        "growth_stage_fit": "opening: observe/interview/recommend。",
+        "risk_check": "不破坏角色人设，不让主角提前拥有制度权力。",
+    }
+    payload = [
+        {
+            "title": "井底回声",
+            "goal": "沈青崖追查井底异响，必须在封门前找到血雨源头。",
+            "main_conflict": "巡捕房误封现场，沈青崖必须避开阻拦读取井底痕迹。",
+            "hook_description": "井底浮出一枚刻着沈家旧印的铜钱。",
+            "selected_effect_skills": {
+                "primary": "brainhole_engine",
+                "reason": "古宅怨声和现代工单形成反差。",
+                "growth_stage_fit": "opening observe。",
+                "expected_contracts": ["brainhole_contract"],
+            },
+            "brainhole_contract": brainhole_contract,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "time_label": "李宅封门前",
+                    "participants": ["沈青崖", "阿洛"],
+                    "purpose": {
+                        "story": "沈青崖撬开井盖，阿洛在巷口望风，两人付出暴露行踪的代价。",
+                        "emotion": "压力上升。",
+                    },
+                },
+            ],
+        }
+    ]
+
+    repaired = planner_services._validate_generated_volume_outline_or_raise(
+        payload,
+        project=project,
+        logical_name="volume_1_chapter_outline_batch_1_5",
+        volume_number=1,
+        expected_count=1,
+        chapter_number_offset=1,
+        cast_spec=cast_spec,
+    )
+
+    chapter = repaired["chapters"][0]
+    assert chapter["selected_effect_skills"]["primary"] == "brainhole_engine"
+    assert "secondary" not in chapter["selected_effect_skills"]
+    assert chapter["brainhole_contract"] == brainhole_contract
+
+
+def test_volume_outline_accepts_nested_brainhole_skill_selection() -> None:
+    project = build_project()
+    project.metadata_json = {
+        STORY_EFFECT_SKILL_SELECTION_METADATA_KEY: {
+            "chapter_outline": {
+                "primary": "brainhole_engine",
+                "secondary": "comedy_engine",
+            }
+        }
+    }
+    cast_spec = {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
+    }
+    brainhole_contract = {
+        "one_sentence_sell": "沈青崖把井底回声当成离职面谈，问出铜钱旧案。",
+        "character_core_used": "沈青崖遇事先查证，不靠情绪判断。",
+        "modern_system": "离职面谈与工单登记。",
+        "contrast_mechanism": "古宅怨声被纳入现代流程，荒诞但能推进取证。",
+        "visible_comedy": "阿洛在井口替怨声排队取号。",
+        "serious_underbelly": "失踪者的声音被系统吞掉，暴露旧案未结。",
+        "plot_consequence": "沈青崖拿到铜钱线索，下一章必须查登记源头。",
+        "protagonist_decision": "先登记证据，再冒险下井。",
+        "growth_stage_fit": "opening: observe/interview/recommend。",
+        "risk_check": "不破坏角色人设，不让主角提前拥有制度权力。",
+    }
+    payload = [
+        {
+            "title": "井底回声",
+            "goal": "沈青崖追查井底异响，必须在封门前找到血雨源头。",
+            "main_conflict": "巡捕房误封现场，沈青崖必须避开阻拦读取井底痕迹。",
+            "hook_description": "井底浮出一枚刻着沈家旧印的铜钱。",
+            "selected_effect_skills": {
+                "primary": {
+                    "name": "brainhole_engine",
+                    "reason": "古宅怨声和现代工单形成反差。",
+                },
+                "expected_contracts": ["brainhole_contract"],
+            },
+            "brainhole_contract": brainhole_contract,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "time_label": "李宅封门前",
+                    "participants": ["沈青崖", "阿洛"],
+                    "purpose": {
+                        "story": "沈青崖撬开井盖，付出暴露行踪的代价。",
+                        "emotion": "压力上升。",
+                    },
+                },
+            ],
+        }
+    ]
+
+    repaired = planner_services._validate_generated_volume_outline_or_raise(
+        payload,
+        project=project,
+        logical_name="volume_1_chapter_outline_batch_1_5",
+        volume_number=1,
+        expected_count=1,
+        chapter_number_offset=1,
+        cast_spec=cast_spec,
+    )
+
+    chapter = repaired["chapters"][0]
+    assert chapter["selected_effect_skills"]["primary"] == "brainhole_engine"
+    assert chapter["selected_effect_skills"]["reason"] == "古宅怨声和现代工单形成反差。"
+    assert chapter["brainhole_contract"] == brainhole_contract
+
+
+def test_volume_outline_normalizes_brainhole_selection_from_complete_contract() -> None:
+    project = build_project()
+    project.metadata_json = {
+        STORY_EFFECT_SKILL_SELECTION_METADATA_KEY: {
+            "chapter_outline": {
+                "primary": "brainhole_engine",
+                "secondary": "comedy_engine",
+            }
+        }
+    }
+    cast_spec = {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
+    }
+    brainhole_contract = {
+        "one_sentence_sell": "沈青崖把井底回声当成离职面谈，问出铜钱旧案。",
+        "character_core_used": "沈青崖遇事先查证，不靠情绪判断。",
+        "modern_system": "离职面谈与工单登记。",
+        "contrast_mechanism": "古宅怨声被纳入现代流程，荒诞但能推进取证。",
+        "visible_comedy": "阿洛在井口替怨声排队取号。",
+        "serious_underbelly": "失踪者的声音被系统吞掉，暴露旧案未结。",
+        "plot_consequence": "沈青崖拿到铜钱线索，下一章必须查登记源头。",
+        "protagonist_decision": "先登记证据，再冒险下井。",
+        "growth_stage_fit": "opening: observe/interview/recommend。",
+        "risk_check": "不破坏角色人设，不让主角提前拥有制度权力。",
+    }
+    payload = [
+        {
+            "title": "井底回声",
+            "goal": "沈青崖追查井底异响，必须在封门前找到血雨源头。",
+            "main_conflict": "巡捕房误封现场，沈青崖必须避开阻拦读取井底痕迹。",
+            "hook_description": "井底浮出一枚刻着沈家旧印的铜钱。",
+            "selected_effect_skills": {
+                "primary": {
+                    "name": "suspense_reveal_engine",
+                    "reason": "章尾用旧印做悬疑钩子。",
+                },
+                "secondary": "relationship_chemistry_engine",
+            },
+            "brainhole_contract": brainhole_contract,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "time_label": "李宅封门前",
+                    "participants": ["沈青崖", "阿洛"],
+                    "purpose": {
+                        "story": "沈青崖撬开井盖，付出暴露行踪的代价。",
+                        "emotion": "压力上升。",
+                    },
+                },
+            ],
+        }
+    ]
+
+    repaired = planner_services._validate_generated_volume_outline_or_raise(
+        payload,
+        project=project,
+        logical_name="volume_1_chapter_outline_batch_1_5",
+        volume_number=1,
+        expected_count=1,
+        chapter_number_offset=1,
+        cast_spec=cast_spec,
+    )
+
+    chapter = repaired["chapters"][0]
+    assert chapter["selected_effect_skills"]["primary"] == "brainhole_engine"
+    assert chapter["selected_effect_skills"]["_normalized_from_selected_effect_skills"][
+        "primary"
+    ] == "suspense_reveal_engine"
+    assert chapter["brainhole_contract"] == brainhole_contract
 
 
 @pytest.mark.asyncio

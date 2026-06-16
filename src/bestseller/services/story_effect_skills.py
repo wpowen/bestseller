@@ -797,6 +797,54 @@ def _render_world_texture_contract(*, language: str) -> str:
     )
 
 
+ALL_STORY_EFFECT_SKILL_KEYS: tuple[str, ...] = tuple(
+    skill.skill_key for skill in _base_story_effect_skills()
+)
+
+
+def _skill_entry_by_key(skill_key: str) -> StoryEffectSkillEntry | None:
+    for skill in _base_story_effect_skills():
+        if skill.skill_key == skill_key:
+            return skill
+    return None
+
+
+def _render_generic_story_effect_contract(
+    entry: StoryEffectSkillEntry, *, language: str
+) -> str:
+    """Hard per-chapter contract for a selected skill that lacks a bespoke
+    renderer — derived from its catalog entry so all 18 skills are usable, not
+    just the four with hand-written contracts.
+
+    The contract NAMES the skill's ``output_contract`` field and demands the
+    chapter cash the effect (not merely list it), mirroring the bespoke
+    renderers' shape so the gate can verify it downstream.
+    """
+
+    guardrails = "；".join(entry.misuse_guardrails[:2])
+    use_when = "、".join(entry.use_when[:3])
+    if language.lower().startswith("en"):
+        rails = "; ".join(entry.misuse_guardrails[:2])
+        return (
+            f"[{entry.skill_key.upper()} CONTRACT — selected at book level, every "
+            "chapter must cash it]\n"
+            f"Effect: {entry.description}\n"
+            f"Each chapter must output `{entry.output_contract}`: a concrete, "
+            "on-page beat that delivers this effect through action/choice/reveal "
+            "(not a label, not narration). Best used for: "
+            f"{', '.join(entry.use_when[:3])}.\n"
+            + (f"Guardrails: {rails}." if rails else "")
+        )
+    return (
+        f"【{entry.skill_key} 合同 — 建书时已勾选，每章必须兑现】\n"
+        f"效果：{entry.description}\n"
+        f"每章必须输出 `{entry.output_contract}`：一个落在页面上的具体 beat，"
+        "通过行动/选择/揭示真正兑现这个效果（不是贴标签、不是旁白概述）。"
+        f"适合用在：{use_when}。\n"
+        + (f"禁忌：{guardrails}。" if guardrails else "")
+    )
+
+
 def _render_selected_story_effect_contract(skill_key: str, *, language: str) -> str:
     renderers = {
         "tension_pressure_engine": _render_tension_pressure_contract,
@@ -805,9 +853,12 @@ def _render_selected_story_effect_contract(skill_key: str, *, language: str) -> 
         "world_texture_engine": _render_world_texture_contract,
     }
     renderer = renderers.get(skill_key)
-    if renderer is None:
+    if renderer is not None:
+        return renderer(language=language)
+    entry = _skill_entry_by_key(skill_key)
+    if entry is None:
         return ""
-    return renderer(language=language)
+    return _render_generic_story_effect_contract(entry, language=language)
 
 
 def render_selected_story_effect_skill_contracts(

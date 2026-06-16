@@ -15,14 +15,14 @@ from bestseller.services.brainhole_engine import (
     render_brainhole_planner_prompt_block,
     resolve_brainhole_profile,
 )
-from bestseller.services.writing_profile import (
-    build_project_metadata,
-    resolve_project_create_writing_profile,
-)
 from bestseller.services.story_effect_skills import (
     STORY_EFFECT_SKILL_CATALOG_METADATA_KEY,
     STORY_EFFECT_SKILL_SELECTION_METADATA_KEY,
     resolve_story_effect_skill_catalog,
+)
+from bestseller.services.writing_profile import (
+    build_project_metadata,
+    resolve_project_create_writing_profile,
 )
 
 pytestmark = pytest.mark.unit
@@ -197,6 +197,54 @@ def test_outline_prompt_expands_brainhole_contract_when_selected() -> None:
 
     _, user_prompt = planner_services._outline_prompts(
         project, book_spec, cast_spec, volume_plan
+    )
+
+    assert "【故事效果 Skill 清单】" in user_prompt
+    assert "【脑洞生成合同】" in user_prompt
+    assert "只要本合同存在，每章必须输出 `brainhole_contract`" in user_prompt
+    assert "comedy_engine" in user_prompt
+
+
+def test_volume_outline_prompt_expands_brainhole_contract_when_selected() -> None:
+    profile = resolve_brainhole_profile("都市神仙", "神仙招聘")
+    catalog = resolve_story_effect_skill_catalog("都市神仙", "神仙招聘")
+    project = ProjectModel(
+        slug="brainhole-progressive-planner-selected",
+        title="神仙都是我招的",
+        genre="都市神仙",
+        sub_genre="神仙招聘",
+        target_word_count=120000,
+        target_chapters=60,
+        audience="web-serial",
+        language="zh-CN",
+        metadata_json={
+            BRAINHOLE_PROFILE_METADATA_KEY: profile.to_metadata(),
+            STORY_EFFECT_SKILL_CATALOG_METADATA_KEY: catalog.to_metadata(),
+            STORY_EFFECT_SKILL_SELECTION_METADATA_KEY: {
+                "chapter_outline": {
+                    "primary": "brainhole_engine",
+                    "secondary": "comedy_engine",
+                }
+            },
+        },
+    )
+    project.id = uuid4()
+    premise = "神仙下凡找工作"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(
+        project, premise, book_spec, world_spec
+    )
+    volume_plan = [
+        {"volume_number": 1, "chapter_count_target": 10, "volume_goal": "招到第一位神仙"}
+    ]
+
+    _, user_prompt = planner_services._volume_outline_prompts(
+        project,
+        book_spec,
+        cast_spec,
+        volume_plan,
+        volume_plan[0],
     )
 
     assert "【故事效果 Skill 清单】" in user_prompt

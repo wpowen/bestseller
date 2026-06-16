@@ -1018,3 +1018,67 @@ def test_style_preference_accepts_annotated_pov_type() -> None:
 
     cfg = StylePreferenceConfig(pov_type=annotated)
     assert cfg.pov_type == annotated
+
+
+# ── delete_project_completely: Redis cleanup (zombie task-board fix) ──────────
+
+
+def test_redis_key_belongs_to_slug_matches_whole_segments_only() -> None:
+    f = project_services._redis_key_belongs_to_slug
+    # Real self-heal key shapes for the deleted slug → match.
+    assert f("task:autowrite:heal:fanren-bench-v4:progress", "fanren-bench-v4")
+    assert f("task:autowrite:heal:fanren-bench-v4:milestones", "fanren-bench-v4")
+    assert f("arq:job:repair:heal:fanren-bench-v4", "fanren-bench-v4")
+    # Substring collision must NOT match (v4 must not sweep v40 / v41).
+    assert not f("task:autowrite:heal:fanren-bench-v40:progress", "fanren-bench-v4")
+    # A different book's key must NOT match.
+    assert not f("task:autowrite:heal:shilouyan-bench-v2:progress", "fanren-bench-v4")
+    assert not f("arq:job:run_self_heal_task:1781513130123", "fanren-bench-v4")
+
+
+@pytest.mark.asyncio
+async def test_purge_project_redis_keys_scopes_to_slug(monkeypatch) -> None:
+    """Only the deleted slug's keys are removed; other books are untouched."""
+
+    store = {
+        "task:autowrite:heal:fanren-bench-v4:progress": 1,
+        "task:autowrite:heal:fanren-bench-v4:milestones": 1,
+        "arq:job:repair:heal:fanren-bench-v4": 1,
+        "task:autowrite:heal:fanren-bench-v40:progress": 1,  # collision guard
+        "task:autowrite:heal:shilouyan-bench-v2:progress": 1,  # other book
+        "arq:job:run_self_heal_task:1781513130123": 1,  # generic scheduler
+    }
+
+    class _FakeRedis:
+        def __init__(self, data):
+            self._data = data
+
+        async def scan_iter(self, match="*"):
+            needle = match.strip("*")
+            for k in list(self._data):
+                if needle in k:
+                    yield k.encode()
+
+        async def delete(self, *keys):
+            n = 0
+            for k in keys:
+                if k in self._data:
+                    del self._data[k]
+                    n += 1
+            return n
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(
+        "redis.asyncio.from_url", lambda *a, **k: _FakeRedis(store), raising=False
+    )
+    settings = SimpleNamespace(redis=SimpleNamespace(url="redis://localhost:6379/0"))
+
+    out = await project_services._purge_project_redis_keys(settings, "fanren-bench-v4")
+
+    assert out["error"] is None
+    assert out["deleted"] == 3  # only the 3 exact-segment v4 keys
+    assert "task:autowrite:heal:fanren-bench-v40:progress" in store  # collision kept
+    assert "task:autowrite:heal:shilouyan-bench-v2:progress" in store  # other book kept
+    assert "arq:job:run_self_heal_task:1781513130123" in store  # scheduler kept

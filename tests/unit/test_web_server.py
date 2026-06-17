@@ -168,6 +168,8 @@ def test_read_methodology_course_html() -> None:
     assert "写小说的方法论" in html
     assert "/api/methodology-course" in html
     assert "/api/methodology-course/lessons/" in html
+    assert r"match(/\/methodology-course\/(\d{1,2})\/?$/)" in html
+    assert r"match(/\\/methodology-course\\/" not in html
     assert "lessonGrid" in html
     assert "detailView" in html
 

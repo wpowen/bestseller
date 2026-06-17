@@ -117,6 +117,22 @@ def render_story_enhancer_contract_block(
             "【本书故事增强合同 — 建书时勾选，硬约束：每一章都必须可见地兑现下列被勾选的"
             "故事效果；只推进事务流程、不兑现这些效果的章视为未完成，会被打回重修】"
         )
+    if "comedy_engine" in selection.effect_skills:
+        parts.append(
+            "・【基调锚点·硬底线】本书是爽文喜剧，喜剧/脑洞是贯穿全书的基础基调，"
+            "不是某些章节才有的可选效果：每一章——哪怕该章主线极沉重、主推爽点/两难/"
+            "悬念——都必须保留至少一个'神仙在现代规则中报错'的喜剧或脑洞落点，让读者"
+            "全程保持愉悦。严禁整章只有沉重剧情而无喜剧落点；越往后主线越重，越要靠这条"
+            "基调锚点把'虐'压成'爽中带笑'。"
+            if not is_en
+            else "・[TONE ANCHOR · HARD FLOOR] This is a comedic feel-good web "
+            "novel. Comedy/brainhole is the book's baseline tone running through "
+            "EVERY chapter — not an optional per-chapter effect. Even chapters whose "
+            "primary engine is hype/dilemma/suspense MUST still carry at least one "
+            "visible 'deity mis-firing in modern rules' comic or brainhole beat so "
+            "the reader stays delighted. Never let a whole chapter be heavy drama "
+            "with no comedic landing."
+        )
     if selection.brainhole:
         parts.append(
             "・脑洞引擎：每章（或每 2 章至少一次）必须落地一个高概念反差名场面，"
@@ -183,16 +199,49 @@ _EFFECT_SIGNALS: dict[str, tuple[str, ...]] = {
 _COVERAGE_FLOOR = 0.34
 
 
+def _flatten_text(value: Any) -> str:
+    """Recursively collect all leaf text from nested dict/list/scalars."""
+    if value is None:
+        return ""
+    if isinstance(value, Mapping):
+        return " ".join(_flatten_text(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return " ".join(_flatten_text(v) for v in value)
+    return str(value)
+
+
+# Fields whose (possibly nested) text the audit scans for effect signals. The
+# selected effects are contractually delivered into the *structured* contract
+# fields (brainhole_contract, the per-skill *_effect_contract under
+# selected_effect_skills.expected_contracts, etc.), NOT only into main_conflict
+# /hook_description. Reading only the narrative fields under-counted real
+# coverage to ~0% and produced misleading repair directives.
+_BLOB_FIELDS = (
+    "main_conflict",
+    "title",
+    "hook_description",
+    "goal",
+    "opening_situation",
+    "opening_pressure",
+    "target_emotion",
+    "tail_hook",
+    "key_reveals",
+    "required_payoff",
+    "brainhole_contract",
+    "selected_effect_skills",
+    "methodology_contract",
+    "causal_contract",
+)
+
+
 def _chapter_blob(chapter: Mapping[str, Any]) -> str:
-    parts = [str(chapter.get(k) or "") for k in ("main_conflict", "title", "hook_description", "goal")]
+    parts = [_flatten_text(chapter.get(k)) for k in _BLOB_FIELDS]
     for scene in chapter.get("scenes") or []:
         if isinstance(scene, Mapping):
-            purpose = scene.get("purpose")
-            if isinstance(purpose, Mapping):
-                parts.append(" ".join(str(v) for v in purpose.values() if v))
-            else:
-                parts.append(str(purpose or ""))
-    return " ".join(parts)
+            parts.append(_flatten_text(scene.get("purpose")))
+            parts.append(_flatten_text(scene.get("summary")))
+            parts.append(_flatten_text(scene.get("beats")))
+    return " ".join(p for p in parts if p)
 
 
 def audit_story_enhancer_coverage(

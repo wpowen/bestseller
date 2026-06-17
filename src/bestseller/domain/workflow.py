@@ -135,6 +135,40 @@ def _normalize_str_dict_list(value: Any) -> list[dict[str, str]]:
     return []
 
 
+def _normalize_contract_dict(value: Any) -> dict[str, Any]:
+    """Coerce an LLM value into a ``dict`` for structured-contract fields.
+
+    Fields like ``event_cycle_contract`` / ``causal_contract`` declare
+    ``dict[str, Any]`` but models routinely emit them as a compact functional
+    string (e.g. ``"trigger(老街断香); obstacle_escalation(账本被截); bridge_hook(灵山名片)"``)
+    or as a list of such steps. Rejecting those on a type technicality used to
+    hard-fail the whole volume in the outline repair loop. Parse ``name(arg)``
+    segments into ``steps`` and always preserve the original text under ``raw``
+    so downstream consumers (which only need a non-empty dict) still work.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (list, tuple)):
+        text = "; ".join(str(v).strip() for v in value if str(v).strip())
+    elif isinstance(value, str):
+        text = value.strip()
+    else:
+        text = str(value).strip()
+    if not text:
+        return {}
+    steps: dict[str, str] = {}
+    for name, arg in re.findall(r"([A-Za-z_][\w]*)\s*\(([^()]*)\)", text):
+        key = name.strip()
+        if key:
+            steps[key] = arg.strip()
+    result: dict[str, Any] = {"raw": text}
+    if steps:
+        result["steps"] = steps
+    return result
+
+
 def _normalize_str_list(value: Any) -> list[str]:
     """Coerce common LLM shapes into ``list[str]``.
 
@@ -722,6 +756,40 @@ class ChapterOutlineInput(BaseModel):
         data["world_state_deltas"] = _normalize_str_dict_list(
             data.get("world_state_deltas")
         )
+        # Structured-contract fields are declared dict[str, Any] but models often
+        # emit them as a compact functional string or a list of steps. Coerce
+        # whichever alias key is present so a valid intent is never rejected on a
+        # type technicality (which used to hard-fail the outline repair loop).
+        for _contract_aliases in (
+            (
+                "event_cycle_contract",
+                "event_unit_contract",
+                "chapter_event_contract",
+                "event_six_step",
+            ),
+            (
+                "causal_contract",
+                "causality_contract",
+                "chapter_causal_skeleton",
+                "causal_skeleton",
+                "reader_desire_chain",
+            ),
+            ("brainhole_contract",),
+            ("methodology_contract", "chapter_methodology_contract"),
+        ):
+            for _alias in _contract_aliases:
+                if _alias in data and not isinstance(data.get(_alias), dict):
+                    data[_alias] = _normalize_contract_dict(data.get(_alias))
+        # ``selected_effect_skills`` is declared dict[str, Any] but models often
+        # wrap it in a single-element list ([{"primary": ..., "secondary": ...}]).
+        # Unwrap to the merged dict so a valid selection is never hard-failed.
+        _ses = data.get("selected_effect_skills")
+        if isinstance(_ses, (list, tuple)):
+            merged: dict[str, Any] = {}
+            for item in _ses:
+                if isinstance(item, dict):
+                    merged.update(item)
+            data["selected_effect_skills"] = merged
         return data
 
 

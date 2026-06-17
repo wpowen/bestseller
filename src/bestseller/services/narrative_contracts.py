@@ -1395,6 +1395,13 @@ def validate_chapter_plan_contract(
                         NarrativeContractViolation(
                             code="PLAN_SCENE_PURPOSE_CHARACTER_NOT_IN_PARTICIPANTS",
                             location=f"{scene_location}.participants",
+                            # Advisory, not blocking: a cast name mentioned in the
+                            # purpose text but absent from the structured participants
+                            # list is a trivial outline-stage inconsistency. The
+                            # deterministic repair still tries to backfill it, and the
+                            # prose writer reads the purpose text regardless — so this
+                            # must not hard-kill the whole volume outline.
+                            severity="warning",
                             message=(
                                 f"Scene purpose names '{referenced_name}', but the scene "
                                 "participants do not include that character."

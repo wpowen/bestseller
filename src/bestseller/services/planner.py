@@ -2583,6 +2583,7 @@ def _validate_generated_volume_outline_or_raise(
     chapter_number_offset: int,
     cast_spec: dict[str, Any],
     existing_titles: list[tuple[int | None, str]] | None = None,
+    strict_story_effects: bool = True,
 ) -> dict[str, Any]:
     """Normalize and validate a generated volume outline before persistence.
 
@@ -2626,11 +2627,28 @@ def _validate_generated_volume_outline_or_raise(
             "chapters": vol_chapters,
         }
     )
-    _require_selected_story_effect_contracts_or_raise(
-        batch,
-        project=project,
-        logical_name=logical_name,
-    )
+    if strict_story_effects:
+        _require_selected_story_effect_contracts_or_raise(
+            batch,
+            project=project,
+            logical_name=logical_name,
+        )
+    else:
+        # Final repair attempt: a selected story-effect contract (e.g. a missing
+        # structured brainhole_contract the model never emits as a field) must not
+        # abort the whole book — soft-accept. The effect content is still pushed by
+        # the prompt contract and audited softly by the story-enhancer gate (#28).
+        try:
+            _require_selected_story_effect_contracts_or_raise(
+                batch, project=project, logical_name=logical_name
+            )
+        except PlannerFallbackError as exc:
+            logger.warning(
+                "Soft-accepting %s with unmet story-effect contract after final "
+                "attempt: %s",
+                logical_name,
+                str(exc)[:600],
+            )
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
     _cast_protagonist = _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
     # Systemic enrichment runs BEFORE the identity-lock repair: a scene whose
@@ -3093,6 +3111,7 @@ async def _generate_volume_outline_with_repair_loop(
                 chapter_number_offset=chapter_number_offset,
                 cast_spec=cast_spec,
                 existing_titles=existing_titles,
+                strict_story_effects=attempt < max_repair_attempts,
             )
             if raw_meta:
                 payload["_meta"] = raw_meta
@@ -6054,6 +6073,8 @@ def _planner_forbidden_protagonist_names(
         forbidden.update(str(item).strip() for item in raw_forbidden if str(item).strip())
     forbidden.discard("")
     forbidden.discard(protagonist_name)
+    # Allowlisted public-domain mythological names must never be drift-repaired.
+    forbidden.difference_update(_public_domain_mythology_allowlist(project))
     return forbidden
 
 
@@ -13649,6 +13670,56 @@ def _locked_roster_prompt_block(locked_names: list[str], *, is_en: bool) -> str:
     )
 
 
+_PUBLIC_DOMAIN_MYTHOLOGY_ALLOWLIST_KEY = "public_domain_mythology_allowlist"
+
+
+def _public_domain_mythology_allowlist(project: ProjectModel) -> list[str]:
+    """Public-domain mythological names (西游/封神 etc.) the book may use as-is.
+
+    The base cast naming rules ("姓氏不能重复"、"避免网文烂大街名字"、"符合时代背景")
+    implicitly steer the model away from recognizable mythology, so it silently
+    humanizes a roster like 哮天犬/孙悟空 into original modern names. When a book
+    explicitly opts into public-domain mythology via this metadata key, those
+    names are allowlisted: encouraged as-is and exempt from the naming rules and
+    name-drift repair.
+    """
+
+    metadata = _mapping(getattr(project, "metadata_json", None))
+    raw = metadata.get(_PUBLIC_DOMAIN_MYTHOLOGY_ALLOWLIST_KEY)
+    if not isinstance(raw, (list, tuple, set)):
+        return []
+    seen: set[str] = set()
+    names: list[str] = []
+    for item in raw:
+        name = str(item).strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
+
+
+def _public_domain_mythology_block(names: list[str], *, is_en: bool) -> str:
+    """Override naming rules for explicitly-allowlisted public-domain names."""
+
+    joined = ", ".join(names) if is_en else "、".join(names)
+    if is_en:
+        return (
+            "\n\n[PUBLIC-DOMAIN MYTHOLOGY ALLOWLIST — overrides naming rules]\n"
+            f"These names are public-domain mythology and MUST be used verbatim: {joined}.\n"
+            "For these specific characters, IGNORE the originality/“avoid famous names”/"
+            "“no repeated surname”/era-fit naming rules — keep the classic name exactly. "
+            "Build each as a full character (motive, voice, relationships) under that name; "
+            "do NOT humanize, modernize, alias, or replace it with an original name."
+        )
+    return (
+        "\n\n【公有领域神话人物名单——优先级高于命名规则】\n"
+        f"以下名字属于公有领域神话（《西游记》《封神演义》等），必须原样使用：{joined}。\n"
+        "对这些特定角色，请**忽略**上面的「原创/避免烂大街名字/姓氏不重复/符合时代背景」命名规则，"
+        "保留经典本名一字不改；并以该本名为其设计完整人物（动机/声口/关系），"
+        "**禁止**人形化、现代化、改名、同义替换或换成原创名。"
+    )
+
+
 def _cast_spec_prompts(
     project: ProjectModel,
     book_spec: dict[str, Any],
@@ -13789,13 +13860,21 @@ def _cast_spec_prompts(
             f"{_CAST_SPEC_COUNTER_EXAMPLES_ZH}"
         )
     )
+    _mythology_allowlist = _public_domain_mythology_allowlist(project)
     _locked = [
         name.strip()
         for name in (locked_names or [])
         if isinstance(name, str) and name.strip()
     ]
+    # Allowlisted public-domain names are also force-locked into the roster so the
+    # model can't silently humanize them out of existence.
+    for _myth_name in _mythology_allowlist:
+        if _myth_name not in _locked:
+            _locked.append(_myth_name)
     if _locked:
         user_prompt += _locked_roster_prompt_block(_locked, is_en=is_en)
+    if _mythology_allowlist:
+        user_prompt += _public_domain_mythology_block(_mythology_allowlist, is_en=is_en)
     _genre_instruction = getattr(
         _genre_profile.planner_prompts, f"cast_spec_instruction_{_lang_key}", ""
     )

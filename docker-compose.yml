@@ -38,6 +38,7 @@ x-llm-env: &env-llm
   BESTSELLER__LLM__MOCK: ${BESTSELLER_LLM_MOCK:-false}
 
 x-volumes: &app-volumes
+  - ./docs:/app/docs:ro
   - ./output:/app/output
   - artifacts:/app/artifacts
 

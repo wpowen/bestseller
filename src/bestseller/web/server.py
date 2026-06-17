@@ -3486,6 +3486,11 @@ class WebTaskManager:
             "export_markdown": True,
             "auto_repair": True,
             "draft_mode": bool(payload.get("draft_mode", False)),
+            "story_enhancers": (
+                payload.get("story_enhancers")
+                if isinstance(payload.get("story_enhancers"), dict)
+                else None
+            ),
             "language": genre_preset.language,
             "writing_profile": writing_profile,
             "creative_key": creative_direction.key if creative_direction else "",

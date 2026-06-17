@@ -444,7 +444,7 @@
   }
 
   function lessonNumberFromPath() {
-    const match = window.location.pathname.match(/\\/methodology-course\\/(\\d{1,2})\\/?$/);
+    const match = window.location.pathname.match(/\/methodology-course\/(\d{1,2})\/?$/);
     return match ? Number(match[1]) : null;
   }
 

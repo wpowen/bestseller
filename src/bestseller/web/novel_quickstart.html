@@ -2556,6 +2556,27 @@
     color: var(--text-faint) !important;
   }
 
+  .se-dir, .se-skill {
+    font-size: 13px;
+    padding: 5px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text);
+    user-select: none;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .se-dir:hover, .se-skill:hover { border-color: var(--border-strong); }
+  .se-dir.on, .se-skill.on {
+    background: var(--blue-soft);
+    border-color: var(--blue);
+    color: var(--blue-dark);
+  }
+  .se-toggle:has(input:checked) {
+    background: var(--blue-soft);
+    border-color: var(--blue) !important;
+  }
+
   .schedule-card {
     display: flex !important;
     flex-direction: column !important;
@@ -3860,7 +3881,35 @@
         </div>
         <div class="creative-evidence" style="margin-left:10px;">默认按题材+市场热度自动判定；可手动锁定男频/女频</div>
       </div>
-      <div class="creative-lab" id="creativeLab" aria-label="题材脑洞发散">
+      <div class="creative-lab active" id="storyEnhancerLab" aria-label="故事增强">
+        <div class="creative-lab-head">
+          <div>
+            <div class="creative-lab-title">故事增强 — 让故事好看</div>
+            <div class="creative-evidence">勾选的能力 = 每章硬性大纲契约，生成后校验未兑现→打回重写。可全不勾。</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 12px;">
+          <label class="se-toggle" style="display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:9px 11px;">
+            <input type="checkbox" id="seBrainhole" checked style="width:16px;height:16px;">
+            <span style="font-size:13px;">脑洞引擎<span class="hint" style="display:block;font-size:11px;">高概念反差名场面</span></span>
+          </label>
+          <label class="se-toggle" style="display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:9px 11px;">
+            <input type="checkbox" id="seConceptLab" style="width:16px;height:16px;">
+            <span style="font-size:13px;">脑洞组合 story-loop<span class="hint" style="display:block;font-size:11px;">每章推进主回路</span></span>
+          </label>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">反常识方向 <span class="hint">单选 · 决定全书冲突轴</span></div>
+        <div id="seDirRow" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+          <span class="se-dir" data-v="genre-synthesis">题材合成</span>
+          <span class="se-dir" data-v="cross-genre-friction">跨题材摩擦</span>
+          <span class="se-dir" data-v="distilled-mechanism-remix">蒸馏机制重混</span>
+          <span class="se-dir" data-v="anti-cliche-opening">反套路开篇</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">18 个故事 skill <span class="hint">多选 · 每章兑现勾选项</span></div>
+        <div id="seSkillGrid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        <div class="hint" style="font-size:12px;margin-top:10px;">已选 <b id="seCount" style="color:var(--text);">5</b> 项 → 写入 story_enhancers</div>
+      </div>
+      <div class="creative-lab" id="creativeLab" aria-label="题材脑洞发散" style="display:none;">
         <div class="creative-lab-head">
           <div>
             <div class="creative-lab-title">题材脑洞发散</div>
@@ -3870,7 +3919,7 @@
         <div class="creative-options" id="creativeOptions"></div>
         <div class="creative-preview" id="creativePreview"></div>
       </div>
-      <div class="creative-lab" id="hookLab" aria-label="反常识爽点候选">
+      <div class="creative-lab" id="hookLab" aria-label="反常识爽点候选" style="display:none;">
         <div class="creative-lab-head">
           <div>
             <div class="creative-lab-title">反常识爽点</div>
@@ -3881,7 +3930,7 @@
         <div class="creative-options" id="hookOptions"></div>
         <div class="creative-preview" id="hookPreview"></div>
       </div>
-      <div class="creative-lab" id="conceptLab" aria-label="脑洞组合候选">
+      <div class="creative-lab" id="conceptLab" aria-label="脑洞组合候选" style="display:none;">
         <div class="creative-lab-head">
           <div>
             <div class="creative-lab-title">脑洞组合 · 批量候选</div>
@@ -7868,6 +7917,54 @@
     $('#sumModel').textContent = llmModel || '-';
   }
 
+  // Story enhancers (let the story be good): book-level hard outline contracts.
+  const SE_SKILLS = [
+    ['brainhole_engine','脑洞'],['comedy_engine','喜剧'],['hype_satisfaction_engine','爽点满足'],
+    ['twist_reversal_engine','反转'],['suspense_reveal_engine','悬念揭示'],['emotional_payoff_engine','情感兑现'],
+    ['relationship_chemistry_engine','关系化学'],['moral_dilemma_engine','道德困境'],['system_payoff_engine','系统兑现'],
+    ['tension_pressure_engine','张力压迫'],['danger_action_engine','危险动作'],['dialogue_spark_engine','对话火花'],
+    ['callback_motif_engine','回调母题'],['world_texture_engine','世界质感'],['wonder_awe_engine','惊奇敬畏'],
+    ['rhythm_pacing_engine','节奏'],['healing_grief_engine','治愈悲伤'],['romance_tenderness_engine','浪漫温柔'],
+  ];
+  const SE_DEFAULT = new Set(['brainhole_engine','comedy_engine','hype_satisfaction_engine','twist_reversal_engine']);
+  let seDirection = null;
+  function seUpdateCount() {
+    const cnt = (($('#seBrainhole')||{}).checked?1:0) + (($('#seConceptLab')||{}).checked?1:0)
+      + (seDirection?1:0) + document.querySelectorAll('#seSkillGrid .se-skill.on').length;
+    const el = $('#seCount'); if (el) el.textContent = cnt;
+  }
+  function initStoryEnhancers() {
+    const grid = $('#seSkillGrid'); if (!grid || grid.dataset.init) return;
+    grid.dataset.init = '1';
+    SE_SKILLS.forEach(([k, label]) => {
+      const el = document.createElement('span');
+      el.className = 'se-skill' + (SE_DEFAULT.has(k) ? ' on' : '');
+      el.dataset.k = k; el.textContent = label;
+      el.onclick = () => { el.classList.toggle('on'); seUpdateCount(); };
+      grid.appendChild(el);
+    });
+    document.querySelectorAll('#seDirRow .se-dir').forEach(chip => {
+      chip.onclick = () => {
+        const wasOn = chip.classList.contains('on');
+        document.querySelectorAll('#seDirRow .se-dir').forEach(c => c.classList.remove('on'));
+        if (!wasOn) { chip.classList.add('on'); seDirection = chip.dataset.v; }
+        else { seDirection = null; }
+        seUpdateCount();
+      };
+    });
+    ['#seBrainhole','#seConceptLab'].forEach(id => { const c = $(id); if (c) c.addEventListener('change', seUpdateCount); });
+    seUpdateCount();
+  }
+  function collectStoryEnhancers() {
+    const skills = Array.from(document.querySelectorAll('#seSkillGrid .se-skill.on')).map(e => e.dataset.k);
+    return {
+      brainhole: !!($('#seBrainhole')||{}).checked,
+      concept_lab: !!($('#seConceptLab')||{}).checked,
+      creativity_direction: seDirection,
+      effect_skills: skills,
+    };
+  }
+
   // Start
   async function startCreation() {
     if (creationMode === 'fanqie_short') {
@@ -7899,6 +7996,7 @@
           length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
           pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
           draft_mode: !!$('#draftModeToggle').checked,
+          story_enhancers: collectStoryEnhancers(),
         }),
       });
       const data = await res.json();
@@ -7953,6 +8051,7 @@
         length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
         pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
         draft_mode: !!$('#draftModeToggle').checked,
+        story_enhancers: collectStoryEnhancers(),
         scheduled_at: isoWithTz,
       };
       const res = await fetch('/api/tasks/quickstart/schedule', {
@@ -8000,6 +8099,7 @@
   });
   $('#startBtn').addEventListener('click', startCreation);
   $('#scheduleBtn')?.addEventListener('click', scheduleQuickstart);
+  initStoryEnhancers();
   $('#shuffleHookBtn')?.addEventListener('click', async () => {
     const g = selectedGenre();
     if (!g) return;

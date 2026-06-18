@@ -1215,6 +1215,8 @@ bestseller/
 
 | 文档 | 内容 |
 |:---|:---|
+| ⭐ [开发与验证标准](docs/开发与验证标准-feature-lifecycle-20260618.md) | **功能开发 / 验证 / 文档记录的强制标准（开发前先读）** |
+| [故事增强→正文 记录与验证](docs/story-enhancer-prose-wiring-记录与验证-20260618.md) | 故事增强接入正文层：特性记录 + 真机端到端验证（标准范本） |
 | [架构设计](docs/architecture.md) | 系统架构详解（真值源、分层、事务边界） |
 | [Story Design 集成计划](docs/plans/2026-05-12-story-design-core-capability-integration.md) | 剧情设计内核与规划链集成 |
 | [方法论框架优化方案](docs/methodology-framework-optimization-development-plan.md) | Plova 方法论资产化、profile、gate 与 health 设计 |

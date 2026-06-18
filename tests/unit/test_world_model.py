@@ -34,7 +34,7 @@ from bestseller.services.world_model_deriver import (
 
 def test_dimension_table_loads_and_is_stable() -> None:
     table = load_world_dimensions()
-    assert len(table.dimensions) == 19  # genre-neutral menu covering all book types
+    assert len(table.dimensions) == 20  # genre-neutral menu covering all book types
     assert len(table.baselines) == 4
     # questions are non-empty and dimension keys unique + ascii
     keys = table.dimension_keys()
@@ -60,6 +60,9 @@ def test_dimension_table_covers_all_genre_axes() -> None:
         "nature_and_calamity",
         "body_and_medicine",
         "kinship_and_reproduction",
+        # explicit-rules axis: the engine of rule-horror / infinite-flow / system /
+        # LitRPG / esports — genres whose whole plot is mastering/exploiting rules.
+        "rules_and_systems",
     }
     assert required <= keys, f"missing coverage axes: {required - keys}"
 

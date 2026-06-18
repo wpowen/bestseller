@@ -28,7 +28,13 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.world_model import WorldModel, world_model_from_dict
+from bestseller.domain.world_model import (
+    ContentSetting,
+    FaultLine,
+    WorldLaw,
+    WorldModel,
+    world_model_from_dict,
+)
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.world_dimensions import (
     law_specificity,
@@ -150,23 +156,28 @@ def build_world_model_system_prompt(*, language: str = "zh") -> str:
         return (
             "You are a world-model architect. Build a book's world by DIFFERENTIAL "
             "derivation: take a reality baseline, inject the premise's 1-3 axioms as a "
-            "perturbation, and derive how each social dimension is FORCED to change, the "
-            "ripples (2nd/3rd order), and the fault lines the story stands on. Output ONE "
-            "valid JSON WorldModel object only. HARD RULES: (1) every world_law MUST be "
-            "derived_from an axiom — no free-floating rules; (2) NEVER default to the genre's "
-            "stock world; two same-genre books must yield different worlds; (3) each law needs "
-            "a behavioural, checkable 'enforcement' assertion (what the prose must/must-not do); "
-            "(4) content_settings must each trace to a law. Keep JSON ≤ 7000 chars."
+            "perturbation, and derive how each social dimension is FORCED to change and the "
+            "fault lines the story stands on. Output ONE valid JSON WorldModel object only — "
+            "no prose, no markdown. HARD RULES: (1) every world_law MUST be derived_from an "
+            "axiom — no free-floating rules; (2) NEVER default to the genre's stock world; "
+            "(3) each law needs a behavioural, checkable 'enforcement' assertion. "
+            "COMPACTNESS (CRITICAL — the JSON MUST close completely; prefer terse over "
+            "truncated): at most ONE law per dimension; delta <= 45 chars, enforcement <= 55 "
+            "chars, baseline <= 30 chars; encode ripple order ONLY in the integer 'order' "
+            "field — NEVER write '1st/2nd/3rd-order ripple' narrative inside any field; "
+            "content_settings <= 6; whole JSON <= 4500 chars."
         )
     return (
         "你是『世界模型』架构师。用**差分推演**造世:以一个现实基线为底座,把本书前提的 "
-        "1-3 条公理当作扰动注入,推导每个社会维度相对基线被**迫**改变了什么、二阶三阶涟漪、"
-        "以及故事所站的断层线。只输出一个合法的 WorldModel JSON 对象,不要解释。"
+        "1-3 条公理当作扰动注入,推导每个社会维度相对基线被**迫**改变了什么、以及故事所站的断层线。"
+        "只输出一个合法的 WorldModel JSON 对象——不要解释、不要 markdown、不要任何叙述。"
         "【硬性规则】(1) 每条 world_law 必须 derived_from 某条公理——禁止凭空规则;"
         "(2) 严禁套用题材的默认世界,同题材两本书必须得到不同世界;"
-        "(3) 每条规律必须带一句行为级、可校验的 enforcement 断言(正文必须/禁止怎样,例如"
-        "『人人可飞:出现地面车辆通勤须显式给理由』);"
-        "(4) content_settings 每项必须 derived_from_law 可追溯。整个 JSON ≤ 7000 字符。"
+        "(3) 每条规律必须带一句行为级、可校验的 enforcement 断言(正文必须/禁止怎样)。"
+        "【紧凑硬约束·最重要·JSON 必须完整闭合,宁可精炼也不可被截断】"
+        "每个维度至多 1 条 law;delta≤45字、enforcement≤55字、baseline≤30字;"
+        "涟漪阶数只用整数 order 字段表示,**严禁在任何字段里写'一阶/二阶/三阶涟漪'之类叙述**;"
+        "content_settings≤6 条;整个 JSON≤4500 字符。"
     )
 
 
@@ -193,9 +204,10 @@ def build_world_model_user_prompt(
             f"{('Genre (context only — do NOT default to its stock world): ' + genre + chr(10)) if genre else ''}"
             f"{dimensions_block}\n\n"
             "Steps: (1) extract 1-3 axioms; (2) confirm the baseline substrate; (3) for EACH "
-            "dimension diff baseline→delta with a checkable enforcement; (4) push ripples to the "
-            "stated order; (5) extract fault_lines and mark the one the protagonist stands on; "
-            "(6) derive content_settings, each derived_from_law.\n"
+            "dimension diff baseline→delta with a checkable enforcement, setting the integer "
+            "'order' (do NOT narrate the ripple); (4) extract fault_lines and mark the one the "
+            "protagonist stands on; (5) derive content_settings, each derived_from_law. Keep every "
+            "field terse and ensure the JSON closes completely.\n"
             f"Schema-valid MINIMUM (make it premise-specific, do NOT copy verbatim):\n{schema_hint}"
         )
     return (
@@ -203,9 +215,9 @@ def build_world_model_user_prompt(
         f"{genre_ctx}"
         f"{dimensions_block}\n\n"
         "步骤:(1) 提取 1-3 条公理;(2) 确认/选择基线底座;(3) 对**每个维度**做差分,写出 "
-        "baseline→delta 并给可校验的 enforcement;(4) 把涟漪推到该维度标注的阶数;(5) 提取 "
-        "fault_lines 并标出主角所站的那条(used_by_protagonist=true);(6) 派生 content_settings,"
-        "每项 derived_from_law 可追溯。\n"
+        "baseline→delta 并给可校验的 enforcement,用整数 order 标注阶数(不要展开叙述涟漪);"
+        "(4) 提取 fault_lines 并标出主角所站的那条(used_by_protagonist=true);(5) 派生 "
+        "content_settings,每项 derived_from_law 可追溯。各字段务必精炼,确保 JSON 完整闭合。\n"
         f"以下为 schema 最低结构(请据前提做出本书独有的具体推演,不要照抄):\n{schema_hint}"
     )
 
@@ -241,6 +253,106 @@ def _parse_json_object(text: str) -> dict[str, Any]:
     return {}
 
 
+def _match_brace_forward(text: str, open_idx: int) -> int:
+    """Return the index of the ``}`` matching the ``{`` at ``open_idx`` (string-aware).
+
+    Returns -1 when the object never closes (truncated tail).
+    """
+
+    depth = 0
+    in_str = esc = False
+    for j in range(open_idx, len(text)):
+        ch = text[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return j
+    return -1
+
+
+def _balanced_objects_with_key(text: str, key: str) -> list[str]:
+    """Return every COMPLETE object that DIRECTLY contains ``"key"``.
+
+    Anchored on each occurrence of the key (so a truncated *outer* object does
+    not hide the complete inner objects written before the cut): walk left to the
+    enclosing ``{``, then forward to its matching ``}``. Crucial for truncated
+    LLM output (``finish_reason="length"``) — every law written before the cut is
+    recovered; the trailing incomplete one is skipped.
+    """
+
+    out: list[str] = []
+    seen: set[int] = set()
+    for m in re.finditer(re.escape(f'"{key}"'), text):
+        depth = 0
+        start = -1
+        k = m.start() - 1
+        while k >= 0:
+            ch = text[k]
+            if ch == "}":
+                depth += 1
+            elif ch == "{":
+                if depth == 0:
+                    start = k
+                    break
+                depth -= 1
+            k -= 1
+        if start == -1 or start in seen:
+            continue
+        close = _match_brace_forward(text, start)
+        if close == -1:
+            continue  # this object is the truncated tail
+        seen.add(start)
+        out.append(text[start : close + 1])
+    return out
+
+
+def _loads_object(blob: str) -> dict[str, Any] | None:
+    try:
+        value = json.loads(blob)
+    except json.JSONDecodeError:
+        try:
+            from json_repair import repair_json
+
+            value = repair_json(blob, return_objects=True)
+        except Exception:
+            return None
+    return value if isinstance(value, dict) else None
+
+
+def _salvage_payload(text: str) -> dict[str, Any]:
+    """Recover axioms/baseline/world_laws from a possibly-truncated response."""
+
+    salvaged: dict[str, Any] = {}
+    laws = [obj for blob in _balanced_objects_with_key(text, "dimension") if (obj := _loads_object(blob))]
+    if laws:
+        salvaged["world_laws"] = laws
+    fault_lines = [
+        obj for blob in _balanced_objects_with_key(text, "tension") if (obj := _loads_object(blob))
+    ]
+    if fault_lines:
+        salvaged["fault_lines"] = fault_lines
+    # axioms / baseline live in the head, before any truncation.
+    ax = re.search(r'"axioms"\s*:\s*\[(.*?)\]', text, flags=re.S)
+    if ax:
+        salvaged["axioms"] = re.findall(r'"((?:[^"\\]|\\.)+)"', ax.group(1))
+    base = re.search(r'"baseline"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+    if base:
+        salvaged["baseline"] = base.group(1)
+    return salvaged
+
+
 def _score_laws_in_place(payload: dict[str, Any]) -> None:
     """Fill each law's ``specificity`` = anchoring to the model's axioms."""
 
@@ -259,6 +371,25 @@ def _score_laws_in_place(payload: dict[str, Any]) -> None:
         law["specificity"] = law_specificity(law_text, [str(a) for a in axioms])
 
 
+def _keep_valid(items: Any, model_cls: type) -> list[Any]:
+    """Return only the list elements that validate against ``model_cls``.
+
+    Drops malformed entries instead of letting one bad element raise on the whole
+    container. Order-preserving.
+    """
+
+    if not isinstance(items, list):
+        return []
+    kept: list[Any] = []
+    for item in items:
+        try:
+            model_cls.model_validate(item)
+        except Exception:
+            continue
+        kept.append(item)
+    return kept
+
+
 def parse_world_model(
     text: str,
     *,
@@ -274,16 +405,32 @@ def parse_world_model(
 
     fallback = fallback_world_model(premise=premise, genre=genre, baseline_hint=baseline_hint)
     payload = _parse_json_object(text)
-    if not payload:
+    # Truncation-resilient: if the whole-object parse yielded no laws (the LLM
+    # blew the token budget and the JSON never closed), salvage every complete
+    # law object written before the cut instead of silently using the fallback.
+    if not (isinstance(payload.get("world_laws"), list) and payload.get("world_laws")):
+        salvaged = _salvage_payload(text)
+        if salvaged.get("world_laws"):
+            for key, value in salvaged.items():
+                if key == "world_laws" or not payload.get(key):
+                    payload[key] = value
+    if not (isinstance(payload.get("world_laws"), list) and payload.get("world_laws")):
         _score_laws_in_place(fallback)
         return world_model_from_dict(fallback)
     merged = {**fallback, **{k: v for k, v in payload.items() if v not in (None, "", [], {})}}
-    # The world_laws / fault_lines from the LLM win wholesale when present.
-    if not merged.get("world_laws"):
-        merged["world_laws"] = fallback.get("world_laws")
+    merged["world_laws"] = payload["world_laws"]  # LLM/salvaged laws win wholesale
     if not merged.get("axioms"):
         merged["axioms"] = fallback.get("axioms")
     _score_laws_in_place(merged)
+    # Sanitise every optional sub-list element-wise: one malformed item (e.g. a
+    # content_setting the LLM emitted without a 'name') must NEVER nuke the whole
+    # derivation back to the generic scaffold. Drop only the offending element.
+    merged["world_laws"] = _keep_valid(merged.get("world_laws"), WorldLaw)
+    merged["fault_lines"] = _keep_valid(merged.get("fault_lines"), FaultLine)
+    merged["content_settings"] = _keep_valid(merged.get("content_settings"), ContentSetting)
+    if not merged["world_laws"]:
+        _score_laws_in_place(fallback)
+        return world_model_from_dict(fallback)
     try:
         return world_model_from_dict(merged)
     except Exception:
@@ -329,7 +476,7 @@ async def derive_world_model(
             project_id=project_id,
             workflow_run_id=workflow_run_id,
             metadata={"artifact": "world_model", "genre": genre or ""},
-            max_tokens_override=4600,
+            max_tokens_override=6000,
         ),
     )
     return parse_world_model(

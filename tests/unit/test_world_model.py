@@ -20,6 +20,8 @@ from bestseller.services.world_dimensions import (
     text_similarity,
 )
 from bestseller.services.world_model_deriver import (
+    _balanced_objects_with_key,
+    _salvage_payload,
     extract_axioms,
     fallback_world_model,
     parse_world_model,
@@ -215,6 +217,85 @@ def test_parse_world_model_falls_back_on_garbage() -> None:
     model = parse_world_model("not json at all", premise="某前提", genre="武侠")
     assert isinstance(model, WorldModel)
     assert len(model.world_laws) >= 1  # fallback scaffold survives
+
+
+def test_balanced_objects_with_key_extracts_complete_objects() -> None:
+    text = '{"a":1,"items":[{"dimension":"x","v":1},{"dimension":"y","v":2},{"dimension":"z"'
+    objs = _balanced_objects_with_key(text, "dimension")
+    assert len(objs) == 2  # the truncated third is skipped
+    assert '"dimension":"x"' in objs[0]
+
+
+def test_parse_world_model_salvages_truncated_llm_output() -> None:
+    """The critical fanren-audit bug: finish_reason=length truncation must NOT
+
+    silently fall back to the generic scaffold — every complete law written
+    before the cut is recovered.
+    """
+
+    truncated = (
+        "```json\n{\n"
+        '  "version": 1,\n'
+        '  "axioms": ["灵根决定能否修炼", "境界决定实力与寿元"],\n'
+        '  "baseline": "古代农耕社会",\n'
+        '  "world_laws": [\n'
+        '    {"dimension": "value_and_currency", "delta": "灵石成为硬通货", "order": 2, "derived_from": ["灵根决定能否修炼"], "enforcement": "交易以灵石计价"},\n'
+        '    {"dimension": "mobility_and_transport", "delta": "御器飞行需筑基以上", "order": 2, "derived_from": ["境界决定实力与寿元"], "enforcement": "炼气期不得御器飞行"},\n'
+        '    {"dimension": "life_death_and_time", "delta": "寿元随境界增长", "order": 3, "derived_from": ["境界决定实力与寿元"], "enforcement": "角色寿元须符合其境界"},\n'
+        '    {"dimension": "class_and_stratification", "delta": "灵根有无划分修士与凡'  # cut mid-object
+    )
+    # Direct salvage: the extractor recovers the complete laws (drops the cut tail).
+    salv = _salvage_payload(truncated)
+    salv_dims = {law["dimension"] for law in salv["world_laws"]}
+    assert {"value_and_currency", "mobility_and_transport", "life_death_and_time"} <= salv_dims
+    assert salv["baseline"] == "古代农耕社会"
+
+    # End-to-end: truncation must NOT collapse to the generic 5-dim scaffold.
+    model = parse_world_model(truncated, premise="灵根决定修炼，境界决定实力寿元", genre="仙侠")
+    dims = model.covered_dimensions()
+    assert "mobility_and_transport" in dims  # recovered, not in the fallback set
+    assert "value_and_currency" in dims
+    assert len(model.world_laws) >= 3  # complete laws survived the cut
+    assert model.baseline == "古代农耕社会"
+    # recovered laws keep their real derived content (not the placeholder scaffold)
+    assert all("待具体推演" not in law.delta for law in model.world_laws)
+
+
+def test_parse_world_model_tolerates_nameless_content_setting() -> None:
+    """The fanren-audit root cause: a content_setting the LLM emits as
+
+    ``{"content": ..., "derived_from_law": ...}`` (no 'name') must NOT raise and
+    collapse the whole derivation to the generic scaffold — the valid world_laws
+    must survive.
+    """
+
+    payload = (
+        '{"axioms":["灵根决定能否修炼"],"baseline":"古代农耕社会",'
+        '"world_laws":['
+        '{"dimension":"value_and_currency","delta":"灵石成为硬通货","order":2,'
+        '"derived_from":["灵根决定能否修炼"],"enforcement":"交易以灵石计价"},'
+        '{"dimension":"mobility_and_transport","delta":"御器飞行需筑基以上","order":2,'
+        '"derived_from":["灵根决定能否修炼"],"enforcement":"炼气期不得御器飞行"}],'
+        '"content_settings":[{"content":"灵石是修仙界硬通货","derived_from_law":["value_and_currency"]}]}'
+    )
+    model = parse_world_model(payload, premise="灵根决定能否修炼", genre="仙侠")
+    assert len(model.world_laws) == 2  # NOT the 5-dim fallback
+    assert "mobility_and_transport" in model.covered_dimensions()
+    assert all("待具体推演" not in law.delta for law in model.world_laws)
+    # the nameless content_setting survived (value pulled from 'content')
+    assert model.content_settings and model.content_settings[0].value == "灵石是修仙界硬通货"
+
+
+def test_world_law_parses_stringified_derived_from() -> None:
+    law = WorldLaw.model_validate(
+        {
+            "dimension": "value_and_currency",
+            "delta": "灵石计价",
+            "enforcement": "交易以灵石计价",
+            "derived_from": "['灵根决定修炼', '灵气是资源']",
+        }
+    )
+    assert law.derived_from == ["灵根决定修炼", "灵气是资源"]
 
 
 def test_render_prompt_block_surfaces_enforcement() -> None:

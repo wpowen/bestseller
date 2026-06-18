@@ -56,7 +56,19 @@ def _text_list(value: Any) -> list[str]:
         return []
     if isinstance(value, str):
         text = value.strip()
-        return [text] if text else []
+        if not text:
+            return []
+        # LLMs (e.g. MiniMax) sometimes emit a stringified list: "['a', 'b']".
+        if text[0] in "[(" and text[-1] in "])":
+            import ast
+
+            try:
+                parsed = ast.literal_eval(text)
+                if isinstance(parsed, (list, tuple)):
+                    return [_text(item) for item in parsed if _text(item)]
+            except (ValueError, SyntaxError):
+                pass
+        return [text]
     if isinstance(value, (list, tuple, set)):
         out: list[str] = []
         for item in value:
@@ -170,7 +182,7 @@ class FaultLine(BaseModel, frozen=True):
 class ContentSetting(BaseModel, frozen=True):
     """A concrete derived setting, traceable to the law it descends from."""
 
-    name: str = Field(min_length=1)
+    name: str = ""
     dimension: str = ""
     value: str = Field(min_length=1)
     derived_from_law: str = ""
@@ -186,10 +198,11 @@ class ContentSetting(BaseModel, frozen=True):
             data["value"] = _first_text(
                 data, "description", "detail", "setting", "content", "summary"
             )
-        if not _text(data.get("derived_from_law")):
-            data["derived_from_law"] = _first_text(
-                data, "law", "law_ref", "from_law", "derived_from", "source_law"
-            )
+        # ``derived_from_law`` is a single str, but the LLM often emits a list
+        # (e.g. ["value_and_currency"]) — coerce so it never fails validation.
+        data["derived_from_law"] = _text(data.get("derived_from_law")) or _first_text(
+            data, "law", "law_ref", "from_law", "derived_from", "source_law"
+        )
         for key in ("name", "dimension", "value"):
             if key in data:
                 data[key] = _text(data.get(key))

@@ -34,7 +34,7 @@ from bestseller.services.world_model_deriver import (
 
 def test_dimension_table_loads_and_is_stable() -> None:
     table = load_world_dimensions()
-    assert len(table.dimensions) == 14
+    assert len(table.dimensions) == 19  # genre-neutral menu covering all book types
     assert len(table.baselines) == 4
     # questions are non-empty and dimension keys unique + ascii
     keys = table.dimension_keys()
@@ -43,6 +43,25 @@ def test_dimension_table_loads_and_is_stable() -> None:
         assert dim.question
         assert dim.key.isascii()
         assert dim.order >= 1
+
+
+def test_dimension_table_covers_all_genre_axes() -> None:
+    """The menu must span axes any book type needs, not just socio-economic ones.
+
+    The five cross-genre completions (species / cosmology / nature / body /
+    kinship) close the blind spots a cultivation-scale world like 凡人 exposed —
+    but they are phrased neutrally so sci-fi / romance / horror use them too.
+    """
+
+    keys = set(load_world_dimensions().dimension_keys())
+    required = {
+        "species_and_groups",
+        "cosmology_and_realms",
+        "nature_and_calamity",
+        "body_and_medicine",
+        "kinship_and_reproduction",
+    }
+    assert required <= keys, f"missing coverage axes: {required - keys}"
 
 
 def test_dimension_config_contains_no_baked_story_content() -> None:

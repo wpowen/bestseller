@@ -153,7 +153,7 @@ _SEMANTIC_HOOK_GROUPS: Mapping[str, tuple[str, ...]] = {
         "应答", "答应", "回声", "嗓音", "嗓子",
     ),
     "protagonist_self": (
-        "林渊", "渊", "他自己", "自己的",
+        "他自己", "自己的", "自己",
     ),}
 
 # Chinese question marks and exclamations attached to short phrases are

@@ -269,8 +269,8 @@ def render_canon_guardrails_block(
                     lines.append(f"    替代写法: {rule.allowed_next}")
         lines.append(
             "- 违反任何一条都会让本章被判违规并触发重写。如果有任何角色想"
-            "提前出场，请改用本章已锁定的现有角色（林渊/孙九斤/小雨/陈默/"
-            "老道士/老张/钱婆婆/苏婉宁/王建业等）。"
+            "提前出场，请改用故事圣经/本章角色清单中已存在且已可出场的角色，"
+            "不要为此新造角色。"
         )
         return "\n".join(lines)
 

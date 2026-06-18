@@ -104,10 +104,10 @@ schema:
     description: |
       角色的"识别符"——读者一看到就知道是他。
     required_fields:
-      object: 标志性物（沈青崖的银针 / 周神算的紫檀串）
-      action: 标志性动作（沈青崖压力下数物 / 周神算捻紫檀）
-      phrase: 标志性短句（沈青崖"按程序" / "证据不能只剩在嘴上"）
-      tic: 微习惯（沈青崖摸旧疤 / 周神算每三颗捻一下）
+      object: 标志性物（主角的银针 / 某术士的紫檀串）
+      action: 标志性动作（主角压力下数物 / 某术士捻紫檀）
+      phrase: 标志性短句（主角"按程序" / "证据不能只剩在嘴上"）
+      tic: 微习惯（主角摸旧疤 / 某术士每三颗捻一下）
 
   weakness_and_killshot:
     description: |
@@ -133,12 +133,12 @@ schema:
       lie_pattern: 不说谎 | 含糊 | 说半句 | 用动作误导
 
 # =============================================================================
-# Sample Profile · 沈青崖（演示）
+# Sample Profile · 主角（演示）
 # =============================================================================
 sample_profiles:
   shen_qingya:
     character_id: shen_qingya
-    display_name: 沈青崖
+    display_name: 主角
     role: protagonist (POV)
     age: 22
     profession: 巡捕房副捕头 + 茅山外门弟子
@@ -200,7 +200,7 @@ sample_profiles:
     relationship_memory:
       zhou_shensuan:
         good_will: -0.8
-        unfinished_business: 验尸格被强行盖章 + 怀疑他被归墟会渗透
+        unfinished_business: 验尸格被强行盖章 + 怀疑他被某神秘组织渗透
         current_stance: 警惕但不撕破脸
         evolution_trajectory: 暂时合作（必要时利用）→ 最终对决
       lin_jiushao:
@@ -262,20 +262,20 @@ sample_profiles:
 
   zhou_shensuan:
     character_id: zhou_shensuan
-    display_name: 周神算
+    display_name: 某术士
     role: antagonist_supporting (本卷主反派之一)
     age: 47
-    profession: 巡捕房探长 / 暗中归墟会渗透者
+    profession: 巡捕房探长 / 暗中某神秘组织渗透者
 
     want_vs_need:
-      want: 把"十五年前沈家旧案" 永远封死，保住自己在归墟会的位置
-      need: 摆脱归墟会对他家人的胁迫；可他不敢
-      tension: 越想立功越要灭口；越灭口越被归墟会拿捏更紧
+      want: 把"十五年前沈家旧案" 永远封死，保住自己在某神秘组织的位置
+      need: 摆脱某神秘组织对他家人的胁迫；可他不敢
+      tension: 越想立功越要灭口；越灭口越被某神秘组织拿捏更紧
 
     three_layer_motivation:
       surface: 我是巡捕房探长，我维护租界秩序
-      hidden: 我替归墟会做事，因为他们答应保我女儿
-      suppressed: 我女儿早就死在 5 年前；归墟会把我留下来当"还有家人" 的傀儡——我自己也不愿相信她死了
+      hidden: 我替某神秘组织做事，因为他们答应保我女儿
+      suppressed: 我女儿早就死在 5 年前；某神秘组织把我留下来当"还有家人" 的傀儡——我自己也不愿相信她死了
 
     values_and_redlines:
       core_value: 别让我女儿出事（其实是别让我意识到她已经出事）
@@ -295,7 +295,7 @@ sample_profiles:
       betrayal_by_close_one:
         step_1: 眼角抽一下
         step_2: 立刻撇清（"那是他自己的事")
-        step_3: 把背叛者递给归墟会
+        step_3: 把背叛者递给某神秘组织
       confrontation_with_villain:
         step_1: 沉默
         step_2: 在心里数自己手上还有几张牌
@@ -353,7 +353,7 @@ sample_profiles:
     display_name: 第四人（暂代号 "归"）
     role: ultimate_antagonist_volume_1
     age: 未知（看似中年，霜冻鬓角）
-    profession: 归墟会"执令人"
+    profession: 某神秘组织"执令人"
 
     want_vs_need:
       want: 完成"归" 字封印的最后一道——把十五年前未死的"还债者" 全部带回井底
@@ -384,7 +384,7 @@ sample_profiles:
     signature_assets:
       object: 暗金线绣"归" 字（袖口内侧）
       action: 无影子 / 借他人声音说话
-      phrase: 副捕头…… + 借尸 / 借周神算的声音说
+      phrase: 副捕头…… + 借尸 / 借某术士的声音说
       tic: 帽檐压低；露出霜冻鬓角；脚下从无影
 
     weakness_and_killshot:

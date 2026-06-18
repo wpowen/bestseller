@@ -2076,7 +2076,9 @@ def _build_chinese_candidates(
     candidate_count: int,
 ) -> list[dict[str, Any]]:
     signals = _signal_tokens(profile)
-    template_specs = _platform_template_specs(style.key, signals)
+    template_specs = _platform_template_specs(
+        style.key, signals, detective=_is_detective_title_genre(profile)
+    )
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -2938,9 +2940,30 @@ def _candidate_label_fields(style: PlatformTitleStyle) -> dict[str, str]:
     }
 
 
+_DETECTIVE_TITLE_MARKERS: tuple[str, ...] = (
+    "探案", "侦探", "悬疑", "推理", "刑侦", "诡案", "命案", "凶案",
+    "灵异", "怪谈", "诡事", "驱魔", "mystery", "detective", "thriller",
+)
+
+
+def _is_detective_title_genre(profile: Mapping[str, Any]) -> bool:
+    """True only when the book is genuinely a mystery/detective/occult-case
+    story. Gates the 案卷/诡案/神探/奇案 title templates so they stop being
+    stamped onto every 起点/七猫 book regardless of genre."""
+    haystack = " ".join(
+        str(profile.get(field) or "")
+        for field in ("genre", "sub_genre", "primary_category", "secondary_category", "category")
+    )
+    haystack += " " + " ".join(_string_list(profile.get("tags")))
+    haystack = haystack.lower()
+    return any(marker in haystack for marker in _DETECTIVE_TITLE_MARKERS)
+
+
 def _platform_template_specs(
     key: str,
     s: Mapping[str, str],
+    *,
+    detective: bool = False,
 ) -> list[tuple[str, str, str]]:
     title = s["title"]
     if key == "fanqie":
@@ -2959,8 +2982,16 @@ def _platform_template_specs(
         ]
     if key == "qidian":
         return [
-            (f"{s['threat']}案卷", "核心案件/组织 IP", "主推"),
-            (f"{s['setting']}诡案录", "世界观+案件长线", "A/B测试"),
+            (
+                (f"{s['threat']}案卷" if detective else f"{s['threat']}风云"),
+                "核心威胁/组织 IP",
+                "主推",
+            ),
+            (
+                (f"{s['setting']}诡案录" if detective else f"{s['setting']}秘录"),
+                "世界观长线 IP",
+                "A/B测试",
+            ),
             (f"{s['object']}夜巡人", "职业/能力 IP 名", "备选"),
             (f"{s['threat']}纪事", "世界规则纪事", "备选"),
             (f"苟在{s['setting']}查{s['hook']}", "策略型长线", "备选"),
@@ -2969,11 +3000,19 @@ def _platform_template_specs(
         ]
     if key == "qimao":
         return [
-            (f"{s['object']}神探", "强职业爽点", "主推"),
+            (
+                (f"{s['object']}神探" if detective else f"{s['object']}无双"),
+                "强职业爽点",
+                "主推",
+            ),
             (f"{s['hook']}巅峰：从{s['entry']}开始", "低位上升", "主推"),
             (f"{s['setting']}第一{s['identity']}", "地位承诺", "A/B测试"),
             (f"{s['identity']}归来，硬刚{s['threat']}", "身份反转", "广告测试"),
-            (f"{s['hook2']}奇案", "强题材入口", "备选"),
+            (
+                (f"{s['hook2']}奇案" if detective else f"{s['hook2']}风云"),
+                "强题材入口",
+                "备选",
+            ),
             (f"{s['object']}破局录", "器物/能力爽点", "垂类测试"),
             (f"寒门{s['identity']}", "底层逆袭", "备选"),
             (f"{s['protagonist']}归来，{s['hook']}不装了", "身份反转", "广告测试"),

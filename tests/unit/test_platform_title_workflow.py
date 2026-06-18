@@ -517,3 +517,29 @@ def test_bureaucratic_cultivation_title_candidates_keep_story_anchors() -> None:
         any(anchor in title for anchor in approved_anchors)
         for title in titles[:10]
     )
+
+
+def test_detective_title_templates_gated_by_genre() -> None:
+    """Batch B: 案卷/诡案/神探/奇案 must only appear for genuine detective
+    genres, not be stamped onto every 起点/七猫 book."""
+    from bestseller.services.platform_title_workflow import (
+        _is_detective_title_genre,
+        _platform_template_specs,
+    )
+
+    s = {
+        "title": "示例", "threat": "魔头", "setting": "天南", "object": "飞剑",
+        "hook": "灵气复苏", "hook2": "废灵根", "entry": "宗门", "origin": "杂役",
+        "action": "翻盘", "identity": "外门弟子", "protagonist": "主角",
+    }
+    detective_words = ("案卷", "诡案", "神探", "奇案")
+
+    for key in ("qidian", "qimao"):
+        neutral = " ".join(t for t, *_ in _platform_template_specs(key, s, detective=False))
+        assert not any(w in neutral for w in detective_words), neutral
+        detective = " ".join(t for t, *_ in _platform_template_specs(key, s, detective=True))
+        assert any(w in detective for w in detective_words)
+
+    assert _is_detective_title_genre({"genre": "都市修真", "sub_genre": "修仙2.0"}) is False
+    assert _is_detective_title_genre({"genre": "悬疑", "sub_genre": "探案"}) is True
+    assert _is_detective_title_genre({"genre": "都市", "tags": ["灵异", "怪谈"]}) is True

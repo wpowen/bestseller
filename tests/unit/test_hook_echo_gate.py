@@ -23,11 +23,11 @@ _PREV_CHAPTER = (
 
 
 def test_semantic_overlap_rescue_for_parallel_action_echo() -> None:
-    """Regression for 青囊 ch1→ch2 false-negative (2026-05-23).
+    """Regression for a parallel-action mirror/eye/self echo (2026-05-23).
 
     Original parallel-action echo:
-    - ch1 ends "镜中林渊忽然睁开了眼"
-    - ch2 opens "镜中的林渊睁眼时，真正的林渊先把自己的眼睛闭上"
+    - ch1 ends "镜中那张脸忽然睁开了眼"
+    - ch2 opens "镜中的那张脸睁眼时，真正的他先把自己的眼睛闭上"
 
     Token bag-of-words misses this (no shared nouns), but semantic
     groups overlap on {mirror_action, eye_action, protagonist_self}.
@@ -37,14 +37,14 @@ def test_semantic_overlap_rescue_for_parallel_action_echo() -> None:
     prev = (
         "镜面深处，那七张脸让开一道缝。\n"
         "第八张脸正在长成他。\n"
-        "门外的假王建业用父亲林正淳的声音笑了一下。\n"
-        "“渊，开门。”\n"
-        "林渊盯着镜子里的第八张脸，慢慢把铜钱按进镜框缺口。\n"
-        "“先查张建军。”\n"
-        "镜中那张快要长全的林渊，忽然睁开了眼。"
+        "门外的假面人用父亲的声音笑了一下。\n"
+        "“喂，开门。”\n"
+        "他盯着镜子里的第八张脸，慢慢把铜钱按进镜框缺口。\n"
+        "“先查那个证人。”\n"
+        "镜中那张正长成他自己模样的脸，忽然睁开了眼。"
     )
     curr = (
-        "镜中的“林渊”睁眼时，真正的林渊先把自己的眼睛闭上。\n"
+        "镜中的那张脸睁眼时，他先把自己的眼睛闭上。\n"
         "阴阳眼最忌硬看。"
     )
     report = check_hook_echo(

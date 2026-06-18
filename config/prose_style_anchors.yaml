@@ -195,7 +195,7 @@ anchors:
       register: 角色身份决定（江湖人粗 / 文人雅 / 武林前辈古）
     when_to_use:
       - 武侠 / 江湖 / 多角色对峙场面
-      - 本案部分场景适用（沈青崖与周神算的对峙）
+      - 本案部分场景适用（主角与某术士的对峙）
 
   # ===========================================================================
   # 反 AI 腔专项
@@ -225,13 +225,13 @@ anchors:
       - id: smooth_transition
         pattern: 那不是最要命的。最要命的是 X / 更重要的是 / 更糟的是
         replacement: 短句独段 + 视角转移 / 物理动作
-        example_before: "周神算袖口里养着东西。可那不是最要命的。最要命的是身后站着第四人。"
-        example_after: "周神算袖口里养着东西。可——沈青崖的视线越过周神算的肩。"
+        example_before: "某术士袖口里养着东西。可那不是最要命的。最要命的是身后站着第四人。"
+        example_after: "某术士袖口里养着东西。可——主角的视线越过某术士的肩。"
       - id: emotion_label
         pattern: 他感到 X / 他心想 X / 他意识到 X
         replacement: 改成"动作 + 物件 + 停顿"
-        example_before: "沈青崖意识到事情不对"
-        example_after: "沈青崖的指尖在喉骨上停了一拍。"
+        example_before: "主角意识到事情不对"
+        example_after: "主角的指尖在喉骨上停了一拍。"
       - id: authorial_spoiler
         pattern: 他不知道的是 / 她不知道的是 / 一个更大的阴谋即将展开
         replacement: 删除作者剧透，把未知信息藏进物证、旁人动作或下一场结果

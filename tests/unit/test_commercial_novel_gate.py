@@ -453,9 +453,12 @@ def test_commercial_gate_blocks_outline_asset_gates_when_policy_requires(
     assert issue.evidence["gate_name"] == "prewrite_contract_readiness"
 
 
-def test_batch_callback_matching_accepts_qingnang_aliases() -> None:
-    assert _callback_present("王老板回执", "王建业尸体手里攥着回执镜片。")
-    assert _callback_present("老张临死话", "张建军临死前留了一句话：那扇门不是张家开的。")
+def test_batch_callback_matching_accepts_generic_aliases() -> None:
+    # De-hardcoded: callback aliasing now covers genre-neutral term variants
+    # (回执↔回执镜片, 临死话↔临死前/遗言) rather than one pilot book's baked
+    # character-name aliases (王老板↔王建业 …).
+    assert _callback_present("回执", "他手里攥着回执镜片。")
+    assert _callback_present("临死话", "那人临死前留了一句话：门不是他开的。")
 
 
 def test_qingnang_core_rule_anchor_accepts_evolved_debt_vocabulary() -> None:

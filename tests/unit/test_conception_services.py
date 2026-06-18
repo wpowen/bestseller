@@ -317,3 +317,74 @@ def test_maybe_revise_respects_disable_flag(monkeypatch) -> None:
     assert not was_revised
     assert title == "宗门案卷规则破局录"
     assert calls["n"] == 0
+
+
+# ── Cross-book naming de-dup (Front A: stop recurring 陆沉/宁尘) ───────────
+
+
+def test_naming_constraint_block_zh_lists_cliche_and_avoid_names() -> None:
+    block = conception_services._naming_constraint_block(
+        {"avoid_names": ["陈屿", "谢迟"]}, is_en=False
+    )
+    # static blocklist surfaces the worst offenders
+    assert "陆沉" in block
+    assert "宁尘" in block
+    # dynamic cross-book list is injected
+    assert "陈屿" in block and "谢迟" in block
+    assert "硬约束" in block
+
+
+def test_naming_constraint_block_en_only_emits_with_avoid_names() -> None:
+    assert conception_services._naming_constraint_block({}, is_en=True) == ""
+    block = conception_services._naming_constraint_block(
+        {"avoid_names": ["Marcus Cole", "Rowan Ashford"]}, is_en=True
+    )
+    assert "Marcus Cole" in block and "Rowan Ashford" in block
+    # the Chinese cliché list must not leak into English prompts
+    assert "陆沉" not in block
+
+
+def test_character_user_prompt_embeds_naming_constraints() -> None:
+    ctx = {
+        "genre": "都市修真",
+        "sub_genre": "修仙2.0",
+        "description": "灵气复苏的都市修真。",
+        "chapter_count": 300,
+        "avoid_names": ["陆沉"],
+    }
+    prompt = conception_services._character_user_prompt(ctx)
+    assert "命名去重" in prompt
+    assert "陆沉" in prompt
+
+
+@pytest.mark.asyncio
+async def test_recent_cast_names_strips_qualifiers_and_dedups() -> None:
+    class _FakeScalarResult(list):
+        pass
+
+    class _FakeSession:
+        async def scalars(self, _stmt: object) -> _FakeScalarResult:
+            return _FakeScalarResult(
+                [
+                    "Rowan Ashford (18th daughter)",
+                    "Rowan Ashford",  # duplicate after stripping qualifier
+                    "陆沉",
+                    "沈青崖（心魔）",
+                    "沈青崖",  # duplicate
+                    "",  # skipped
+                    None,  # skipped
+                    "这个名字实在是太长了根本不应该被当作人名收录进去啊真的很长",  # >24 chars, skipped
+                ]
+            )
+
+    names = await conception_services._recent_cast_names(_FakeSession())  # type: ignore[arg-type]
+    assert names == ["Rowan Ashford", "陆沉", "沈青崖"]
+
+
+@pytest.mark.asyncio
+async def test_recent_cast_names_is_failure_safe() -> None:
+    class _BoomSession:
+        async def scalars(self, _stmt: object) -> object:
+            raise RuntimeError("db down")
+
+    assert await conception_services._recent_cast_names(_BoomSession()) == []  # type: ignore[arg-type]

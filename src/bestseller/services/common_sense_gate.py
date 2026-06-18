@@ -392,7 +392,7 @@ def _find_repeated_rescue_or_debt_beat(
 ) -> list[CommonSenseFinding]:
     if chapter_number is None or chapter_number > 5:
         return []
-    rescue_hits = re.findall(r"陈默的身体[^。！？\n]{0,24}(弹|滚|摔|滑脱)", text)
+    rescue_hits = re.findall(r"[一-鿿]{2,4}的身体[^。！？\n]{0,24}(弹|滚|摔|滑脱)", text)
     debt_push_hits = re.findall(r"(替.{0,8}押|账印|押上|替.{0,8}认)", text)
     if len(rescue_hits) >= 2 and len(debt_push_hits) >= 3:
         return [
@@ -417,16 +417,16 @@ def _find_early_chapter_character_crowding(
     if chapter_number is None or chapter_number > 3:
         return []
     role_markers = (
-        "小雨",
-        "陈默",
-        "老道士",
-        "老张",
         "眼镜男",
         "眼镜男生",
         "女白领",
         "老太太",
         "情侣",
         "外卖小哥",
+        "保安",
+        "店员",
+        "邻居",
+        "路人",
     )
     present = [marker for marker in role_markers if marker in text]
     if len(present) < 5:
@@ -616,7 +616,7 @@ def _find_lay_character_rule_knowledge_leak(
         if not re.search(rule_terms, window):
             continue
         lead_window = text[max(0, match.start() - 160) : match.start()]
-        if any(marker in lead_window for marker in ("附身", "替它说", "不是他的声音", "学着他说", "林渊刚解释")):
+        if any(marker in lead_window for marker in ("附身", "替它说", "不是他的声音", "学着他说", "刚解释过")):
             continue
         return [
             CommonSenseFinding(

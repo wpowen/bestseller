@@ -34,7 +34,7 @@ emotion_taxonomy:
       description: 自动化行为
       examples:
         anger: 把杯放重 / 转身 / 离开 / 咬唇
-        fear: 数物件 / 摸标志物（沈青崖摸旧疤）/ 找出口
+        fear: 数物件 / 摸标志物（主角摸旧疤）/ 找出口
         shame: 不看对方 / 退半步
 
     object_interaction:

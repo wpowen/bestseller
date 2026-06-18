@@ -1392,27 +1392,17 @@ def _callback_present(callback: str, text: str) -> bool:
 _CALLBACK_TOKEN_BANK = (
     "十五分钟",
     "委托",
-    "老张",
-    "张建军",
     "否认",
-    "小雨",
     "小镜子",
     "镜子",
-    "周雪",
     "聊天记录",
-    "陈默",
     "入镜",
-    "王老板",
-    "王建业",
     "回执",
     "手机屏幕",
     "手机",
     "外扩",
     "镜影",
-    "林渊",
-    "张家",
     "开门",
-    "林正淳",
     "旧照",
     "临死话",
 )
@@ -1430,11 +1420,7 @@ def _callback_terms(callback: str) -> tuple[str, ...]:
 
 
 _CALLBACK_ALIASES: dict[str, tuple[str, ...]] = {
-    "王老板": ("王老板", "王建业"),
-    "王建业": ("王建业", "王老板"),
     "回执": ("回执", "回执镜片", "小圆镜"),
-    "老张": ("老张", "张建军"),
-    "张建军": ("张建军", "老张"),
     "临死话": ("临死话", "临死前", "临死前留了一句话", "遗言"),
 }
 
@@ -1716,7 +1702,7 @@ def _closure_for_commercial_issue(issue: CommercialGateIssue) -> CommercialIssue
         "ONBOARDING_OVERLOAD": CommercialIssueClosure(
             immediate_repair=(
                 "重做开篇名词预算：每章只保留当场冲突必需的新人物、物件和规则，"
-                "把钱婆婆、扣账人、三代为一户等后置。"
+                "把次要新人物、专有规则名词等后置。"
             ),
             recurrence_prevention=(
                 "维护 story-bible/canonical-terms.yaml，并在写前 plan 输出本章新增名词清单。"

@@ -1,7 +1,7 @@
 profile_key: suspense-brain
 category: 悬疑脑洞
 reader_promise:
-  - 首章出现异常事件或案件压力
+  - 首章出现异常事件或危机压力
   - 主角拥有可验证但有限制的破局优势
   - 每章给线索、误导或真相推进
 entry_pressure_patterns:
@@ -10,13 +10,13 @@ entry_pressure_patterns:
   - 失踪或死亡倒计时
   - 规则怪谈触发
 advantage_patterns:
-  - 破案系统
+  - 破局/解谜优势
   - 专业知识
   - 异常感知
   - 现场信息差
 chapter_loop:
   - 异常压力
-  - 调查行动
+  - 探查行动
   - 线索反馈
   - 新嫌疑/新规则
   - 更危险的真相

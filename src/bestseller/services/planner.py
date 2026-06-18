@@ -5146,7 +5146,7 @@ async def _generate_character_names(
                 "- 严格 JSON 输出，无 markdown 围栏，无解释文字\n"
                 "- 每个 name_reasoning ≤ 30 字\n"
                 "- 主要角色姓氏不能重复\n"
-                "- 主要角色首字音不能撞（如不能同时出现「林渊」「林越」）\n"
+                "- 主要角色首字音不能撞（同姓且首字同音的两个主要角色不可并存）\n"
                 "\n"
                 "# THINKING（输出 JSON 前在脑内 3 步）\n"
                 "1. 看 era_hints 决定基调（古典 / 现代 / 末日 / 玄幻）\n"
@@ -5282,34 +5282,37 @@ def _project_name_seed(project: ProjectModel, premise: str = "") -> str:
 
 
 def _role_label(role: str, *, language: str | None = None, index: int = 0) -> str:
-    """Return a plausible placeholder *name* for the given role.
+    """Return a generic role *placeholder* for the given role.
 
-    These are used as emergency fallback when the LLM fails to produce character
-    names. They must look like real character names — NOT role descriptions such
-    as ``盟友甲`` — so that even in fallback mode the novel reads naturally.
+    Emergency fallback for when the LLM fails to produce character names. These
+    are intentionally NOT plausible proper names: baking real-looking names here
+    made the same handful of names (沈远/顾铭/Nora Chen/Victor Hale …) recur
+    across unrelated books. A neutral placeholder both avoids cross-book
+    homogenisation and signals that the naming pipeline fell through and needs
+    attention rather than silently shipping a baked name.
     """
     if is_english_language(language):
         if role == "protagonist":
-            return "Alex Reed"
+            return "the protagonist"
         if role == "ally":
-            return ["Sam Blake", "Nora Chen", "Jake Cross"][min(index, 2)]
+            return f"Ally {index + 1}"
         if role == "antagonist":
-            return "Victor Hale"
+            return "the antagonist"
         if role == "local_threat":
-            return "Marcus Webb"
+            return "the local threat"
         if role == "betrayer":
-            return "Dominic Pryce"
-        return "Jordan"
+            return "the betrayer"
+        return "the character"
     if role == "protagonist":
-        return "林逸"
+        return "主角"
     if role == "ally":
-        return ["沈远", "陆昭", "秦晗"][min(index, 2)]
+        return f"盟友{index + 1}"
     if role == "antagonist":
-        return "顾铭"
+        return "反派"
     if role == "local_threat":
-        return "周庆"
+        return "地方势力"
     if role == "betrayer":
-        return "方域"
+        return "背叛者"
     return "角色"
 
 
@@ -14586,7 +14589,7 @@ def _outline_prompts(
             "- protagonist_inner_state: 主角在本章开头的具体内心状态，必须绑定一个具体物件或事件，"
             "不能是「镇定」「冷静」等通用情绪词。\n"
             "- chapter_concrete_actions: 主角在本章实际完成的 3-5 个可观察动作（摄像机能拍到的），"
-            "每条用动词开头。禁止写「林渊思考了一下」「他感受到了威胁」等不可观察的行为。\n"
+            "每条用动词开头。禁止写「主角思考了一下」「他感受到了威胁」等不可观察的行为。\n"
             "- chapter_object_uses: 每个超自然/职业物件的使用方式，格式：「物件: 动作 → 结果或信号」。"
             "必须包含结果（失败也算），不能只写「使用了铜钱」。\n"
             "- chapter_information_introduced: 读者在本章结束后知道的具体事实，每条可以写进侦探白板的线索。\n"

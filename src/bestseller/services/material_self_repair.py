@@ -303,10 +303,10 @@ def _project_alias_override(cleaned: str, registry: EntityRegistry) -> str | Non
     Format::
 
         mappings:
-          - deprecated: 镜中局
-            canonical: 镜中局张家开门人
-          - deprecated: 林逸
-            canonical: 林渊
+          - deprecated: 旧机制名
+            canonical: 完整机制名
+          - deprecated: 旧人名
+            canonical: 当前人名
 
     A mapping is only honored when the ``canonical`` target exists in the
     registry as an ACTIVE record — preventing operators from resurrecting

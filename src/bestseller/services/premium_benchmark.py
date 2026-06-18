@@ -185,7 +185,7 @@ def _good_rule_mystery_metadata() -> dict[str, object]:
         ],
         "cast_spec": {
             "protagonist": {
-                "name": "林渊",
+                "name": "周牧",
                 "decision_policy": {"core_rule": "先验证规则，再用规则反制。"},
             }
         },
@@ -207,7 +207,7 @@ def _bad_rule_mystery_metadata() -> dict[str, object]:
     return {
         "cast_spec": {
             "protagonist": {
-                "name": "林渊",
+                "name": "周牧",
                 "decision_policy": {"core_rule": "遇到怪事就硬闯。"},
             }
         },

@@ -382,9 +382,11 @@ def test_fallback_cast_spec_uses_neutral_role_labels_when_names_are_missing() ->
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
     cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
 
-    assert cast_spec["protagonist"]["name"] == "林逸"
-    assert cast_spec["antagonist"]["name"] == "顾铭"
-    assert cast_spec["supporting_cast"][0]["name"] == "沈远"
+    # De-hardcoded: fallback uses neutral role placeholders, not baked names,
+    # so the same handful of names no longer recurs across unrelated books.
+    assert cast_spec["protagonist"]["name"] == "主角"
+    assert cast_spec["antagonist"]["name"] == "反派"
+    assert cast_spec["supporting_cast"][0]["name"] == "盟友1"
 
 
 def test_story_package_seed_informs_fallback_specs(tmp_path: Path) -> None:
@@ -1000,9 +1002,9 @@ def test_planner_repairs_book_spec_default_protagonist_name_drift() -> None:
         "title": "规则生存重启验证案卷",
         "protagonist": {
             "name": "沈照",
-            "external_goal": "林逸必须在六章内证明规则提示是免责剧本。",
+            "external_goal": "主角必须在六章内证明规则提示是免责剧本。",
         },
-        "stakes": {"personal": "林逸如果失败，同伴会被规则抹名。"},
+        "stakes": {"personal": "主角如果失败，同伴会被规则抹名。"},
     }
 
     repaired = planner_services._repair_protagonist_name_drift_for_planner(
@@ -1012,7 +1014,7 @@ def test_planner_repairs_book_spec_default_protagonist_name_drift() -> None:
         artifact_type="book_spec",
     )
 
-    assert "林逸" not in json.dumps(repaired, ensure_ascii=False)
+    assert "主角" not in json.dumps(repaired, ensure_ascii=False)
     assert repaired["protagonist"]["external_goal"].startswith("沈照必须")
     assert repaired["_meta"]["name_drift_repair"][0]["replacement_count"] == 2
 
@@ -1024,8 +1026,8 @@ def test_planner_repairs_cast_spec_default_protagonist_name_drift() -> None:
         "protagonist": {
             "name": "沈照",
             "role": "protagonist",
-            "goal": "林逸必须不断变强，获取足够力量。",
-            "background": "林逸曾在旧教学楼体系工作。",
+            "goal": "主角必须不断变强，获取足够力量。",
+            "background": "主角曾在旧教学楼体系工作。",
         },
         "supporting_cast": [],
     }
@@ -1037,7 +1039,7 @@ def test_planner_repairs_cast_spec_default_protagonist_name_drift() -> None:
         artifact_type="cast_spec",
     )
 
-    assert "林逸" not in json.dumps(repaired, ensure_ascii=False)
+    assert "主角" not in json.dumps(repaired, ensure_ascii=False)
     assert repaired["protagonist"]["goal"].startswith("沈照必须")
     assert repaired["_meta"]["name_drift_repair"][0]["artifact_type"] == "cast_spec"
 

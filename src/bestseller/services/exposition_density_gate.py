@@ -47,7 +47,7 @@ _THOUGHT_RE = re.compile(r"心想|心道|暗想|暗道|心念|脑海中|心里�
 
 # Action verbs — paragraphs leading with these are usually scene action.
 _ACTION_RE = re.compile(
-    r"^[\s]*(?:他|她|林渊|林|主角)?[\s]{0,2}"
+    r"^[\s]*(?:他|她|[一-鿿]{2,4}|主角)?[\s]{0,2}"
     r"(?:冲|扑|挥|砸|刺|踢|踹|撞|拔|斩|劈|抓|扯|甩|扔|推|拽|踩|跃|"
     r"扣|扫|落|腾|拔剑|出剑|出拳|握紧|抬手|抬眼|低头|转身|后退)"
 )

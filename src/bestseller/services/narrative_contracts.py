@@ -38,7 +38,7 @@ GENERIC_CHAPTER_GOAL_MARKERS = (
     "生存压力代表的势力角力",
     "完成本章的",
     "一种环境或体系层面的威胁出现",
-    "宁尘过去埋下的秘密突然浮现",
+    "主角过去埋下的秘密突然浮现",
 )
 GENERIC_OPENING_SITUATION_MARKERS = (
     "承接上一章尾钩，主角没有空档去长篇解释设定",

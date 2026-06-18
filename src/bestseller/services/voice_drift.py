@@ -53,7 +53,7 @@ _VOICE_DRIFT_SYSTEM_ZH = """# ROLE
     {"dim": "sentence_length", "quote": "原文中 ≤30 字的句子"},
     {"dim": "subtext", "quote": "原文中 ≤30 字的句子"}
   ],
-  "correction_prompt": "林渊的对白保持短句（≤15 字），不要长解释；潜台词靠动作（如摩挲铜钱）而非直白心理描写。"
+  "correction_prompt": "主角的对白保持短句（≤15 字），不要长解释；潜台词靠动作（如摩挲随身物件）而非直白心理描写。"
 }
 
 # NEGATIVE EXAMPLE（绝对不要这样）

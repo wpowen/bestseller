@@ -70,7 +70,7 @@ def test_qingnang_pack_meets_density_targets() -> None:
             "女性成长/末世异能",
             "无CP大女主",
             "zh-CN",
-            "方舟城 源初 代价转化 林鸢",
+            "方舟城 源初 代价转化 末世异能",
             "female_no_cp_apocalypse",
         ),
         (
@@ -78,7 +78,7 @@ def test_qingnang_pack_meets_density_targets() -> None:
             "仙侠升级流",
             "宗门逆袭",
             "zh-CN",
-            "宁尘 道种 炼气 宗门资源账",
+            "道种破虚 道种 炼气 宗门资源账",
             "xianxia_upgrade",
         ),
     ],
@@ -284,3 +284,93 @@ async def test_hydrate_story_bible_materials_apply_refreshes_reference_block(
     assert inserted == [material]
     session.flush.assert_awaited_once()
     assert result["reference_block"]["present"] is True
+
+
+@pytest.mark.parametrize(
+    ("signal", "title", "genre", "sub_genre"),
+    [
+        ("道种破虚 道种 炼气 宗门资源账", "道种破虚", "仙侠升级流", "宗门逆袭"),
+        ("方舟城 源初 代价转化 末世异能", "代价之鸢", "女性成长/末世异能", "无CP大女主"),
+    ],
+)
+def test_zh_packs_carry_no_baked_personal_names(
+    signal: str, title: str, genre: str, sub_genre: str
+) -> None:
+    """De-homogenisation guard: packs must not ship baked protagonist/ally
+    names (宁尘/苏瑶/陆沉/林鸢/...) that leak into every pack-hit book."""
+    banned = ("宁尘", "苏瑶", "方域", "陆沉", "林鸢", "姜澄", "周砚宁", "霍沉")
+    _pack_id, materials = _select_material_pack(
+        "proj-1", signal, title=title, genre=genre, sub_genre=sub_genre, language="zh-CN"
+    )
+    blob = "\n".join(
+        f"{m.name}\n{m.narrative_summary}\n{m.content_json}" for m in materials
+    )
+    leaked = [name for name in banned if name in blob]
+    assert not leaked, f"baked names leaked into {_pack_id}: {leaked}"
+
+
+@pytest.mark.parametrize("pack_id", ["xianxia_upgrade", "female_no_cp_apocalypse"])
+def test_de_named_zh_packs_default_neutral_and_respect_override(pack_id: str) -> None:
+    # No upstream name → neutral placeholder, never a baked proper name.
+    policy = _decision_policy_for_pack(pack_id)
+    ledger = _initial_premium_state_ledger_for_pack(pack_id)
+    assert policy["character_name"] == "主角"
+    assert ledger["progression_events"][0]["subject"] == "主角"
+    assert ledger["relationship_events"][0]["character_a"] == "主角"
+    assert validate_premium_state_ledger(ledger).passed
+
+    # Upstream name chosen → flows through consistently.
+    named = _initial_premium_state_ledger_for_pack(pack_id, protagonist_name="周临渊")
+    assert _decision_policy_for_pack(pack_id, protagonist_name="周临渊")["character_name"] == "周临渊"
+    assert named["progression_events"][0]["subject"] == "周临渊"
+    assert named["relationship_events"][0]["character_a"] == "周临渊"
+    assert validate_premium_state_ledger(named).passed
+
+
+def test_category_blueprints_carry_no_baked_protagonist_name() -> None:
+    # Batch A: the generic category path (most books) must not seed a baked
+    # protagonist name (许燃/江晚/沈砚/...) — neutral placeholder unless override.
+    from bestseller.services.material_density import _CATEGORY_BLUEPRINTS
+
+    baked = {
+        "许燃", "江晚", "沈砚", "顾衡", "周野", "林澈", "陆青舟", "云岫",
+        "Rowan Vale", "Mara Vale", "Elise Ward", "Adrien Vale",
+        "Kai Mercer", "Vera Lin", "Mira Chen", "Lin Yun",
+    }
+    for key, bp in _CATEGORY_BLUEPRINTS.items():
+        assert bp.protagonist_zh not in baked, f"{key} still bakes {bp.protagonist_zh}"
+        assert bp.protagonist_en not in baked, f"{key} still bakes {bp.protagonist_en}"
+        assert bp.protagonist_zh == "主角"
+        assert bp.protagonist_en == "The Protagonist"
+    # Override still flows through.
+    assert _decision_policy_for_pack(
+        "category_eastern_aesthetic_zh", protagonist_name="沈砚"
+    )["character_name"] == "沈砚"
+    # No override → neutral.
+    assert _decision_policy_for_pack("category_eastern_aesthetic_zh")["character_name"] == "主角"
+
+
+def test_all_bespoke_packs_carry_no_baked_person_names() -> None:
+    """Batch C/D: english + qingnang pilot packs must not ship baked person
+    names that recur across books."""
+    banned = (
+        "Cole", "Sophie", "Kade", "Maya", "Marcus Mercer", "Silas Crane",
+        "Elena Vasquez", "Victor Kane", "Rowan", "Nora Chen", "Victor Hale",
+        "林渊", "苏婉宁", "孙九斤", "钱婆婆", "陈默", "林家辉", "林正淳", "林远山",
+    )
+    triggers = [
+        ("shadowbound romantasy fae chosen one", "en"),
+        ("breaking point cole reservoir kinetics sophie deadline", "en"),
+        ("witness protocol kade sixty-second maya marcus mercer", "en"),
+        ("superhero urban power", "en"),
+        ("青囊 困魂镜 三族", "zh-CN"),
+    ]
+    for signal, lang in triggers:
+        _pack_id, materials = _select_material_pack(
+            "proj-1", signal, title=signal, genre=signal, sub_genre=signal, language=lang
+        )
+        blob = "\n".join(
+            f"{m.name}\n{m.narrative_summary}\n{m.content_json}" for m in materials
+        )
+        leaked = [n for n in banned if n in blob]
+        assert not leaked, f"{_pack_id} leaked baked names: {leaked}"

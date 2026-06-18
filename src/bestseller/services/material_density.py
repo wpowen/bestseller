@@ -456,10 +456,18 @@ def _decision_policy_for_pack(
     *,
     protagonist_name: str | None = None,
 ) -> dict[str, Any] | None:
+    # Neutral placeholder when no upstream name is chosen yet — the conception/
+    # planner LLM names the protagonist, instead of every pack-hit book reusing
+    # the same baked protagonist name. See conception._naming_constraint_block.
+    proto_override = (
+        protagonist_name.strip()
+        if isinstance(protagonist_name, str) and protagonist_name.strip()
+        else "主角"
+    )
     raw: dict[str, Any] | None = None
     if pack_id == "qingnang":
         raw = {
-            "character_name": "林渊",
+            "character_name": "主角",
             "archetype": "evidence-led-occult-ledger-investigator",
             "risk_tolerance": "medium",
             "pressure_responses": ["investigate", "observe", "prepare", "protect", "bargain", "retreat"],
@@ -473,23 +481,23 @@ def _decision_policy_for_pack(
             ],
             "forbidden_behaviors": [
                 {"key": "free_magic_solve", "description": "不得用无代价法术直接解题。"},
-                {"key": "ignore_police_evidence", "description": "不得无视苏婉宁的现实证据压力。"},
+                {"key": "ignore_police_evidence", "description": "不得无视警方负责人的现实证据压力。"},
                 {"key": "random_ghost_hunt", "description": "不得偏离十七栋、三族旧契和青囊因果账。"},
             ],
         }
     elif pack_id == "english_romantasy":
         raw = {
-            "character_name": "Nora Chen",
+            "character_name": "the heroine",
             "archetype": "agency-first-shadowbound-romantasy-heroine",
             "risk_tolerance": "medium",
             "pressure_responses": ["observe", "bargain", "conceal", "protect", "prepare", "retreat"],
             "preferred_tactics": [
                 {"key": "bargain_with_terms", "description": "Turn fae offers into explicit terms, witnesses, loopholes, and costs."},
-                {"key": "protect_agency", "description": "Preserve Nora's choice before accepting romance, court power, or prophecy."},
+                {"key": "protect_agency", "description": "Preserve the heroine's choice before accepting romance, court power, or prophecy."},
                 {"key": "test_shadow_cost", "description": "Verify shadow sight through a small cost before using it publicly."},
             ],
             "moral_boundaries": [
-                {"key": "do_not_trade_friend_consent", "description": "Nora cannot trade another person's freedom or consent for court advantage."},
+                {"key": "do_not_trade_friend_consent", "description": "the heroine cannot trade another person's freedom or consent for court advantage."},
             ],
             "forbidden_behaviors": [
                 {"key": "surrender_agency_for_romance", "description": "Romance cannot solve the central political or magical problem for her."},
@@ -499,7 +507,7 @@ def _decision_policy_for_pack(
         }
     elif pack_id in {"english_superhero_breaking_point", "english_superhero_progression"}:
         raw = {
-            "character_name": "Cole",
+            "character_name": "the protagonist",
             "archetype": "measured-civilian-protection-superhero-progression-lead",
             "risk_tolerance": "medium",
             "pressure_responses": ["protect", "prepare", "investigate", "conceal", "strike_after_certainty", "retreat"],
@@ -509,7 +517,7 @@ def _decision_policy_for_pack(
                 {"key": "train_before_escalation", "description": "Upgrade through training, data, and consequence rather than sudden mastery."},
             ],
             "moral_boundaries": [
-                {"key": "do_not_create_collateral_for_status", "description": "Cole cannot endanger civilians to prove he belongs among heroes."},
+                {"key": "do_not_create_collateral_for_status", "description": "the protagonist cannot endanger civilians to prove he belongs among heroes."},
             ],
             "forbidden_behaviors": [
                 {"key": "glory_fight", "description": "Do not accept public fights for vanity or leaderboard status."},
@@ -519,17 +527,17 @@ def _decision_policy_for_pack(
         }
     elif pack_id == "english_superhero_witness_protocol":
         raw = {
-            "character_name": "Kade",
+            "character_name": "the protagonist",
             "archetype": "evidence-first-mimicry-survivor",
             "risk_tolerance": "low",
             "pressure_responses": ["observe", "investigate", "conceal", "prepare", "protect", "retreat"],
             "preferred_tactics": [
                 {"key": "record_before_action", "description": "Secure witness evidence before confronting a stronger faction."},
                 {"key": "use_sixty_second_window", "description": "Plan mimicry actions around the sixty-second limit and aftermath."},
-                {"key": "protect_maya_boundary", "description": "Keep Maya's safety and consent visible in every escalation."},
+                {"key": "protect_maya_boundary", "description": "Keep the family anchor's safety and consent visible in every escalation."},
             ],
             "moral_boundaries": [
-                {"key": "do_not_frame_innocent", "description": "Kade cannot use mimicry to shift blame onto an innocent person."},
+                {"key": "do_not_frame_innocent", "description": "the protagonist cannot use mimicry to shift blame onto an innocent person."},
             ],
             "forbidden_behaviors": [
                 {"key": "identity_theft_without_cost", "description": "Mimicry must create evidence, trust, or legal consequences."},
@@ -539,7 +547,7 @@ def _decision_policy_for_pack(
         }
     elif pack_id == "female_no_cp_apocalypse":
         raw = {
-            "character_name": "林鸢",
+            "character_name": proto_override,
             "archetype": "no-cp-cost-conversion-female-lead",
             "risk_tolerance": "medium",
             "pressure_responses": ["observe", "prepare", "protect", "bargain", "strike_after_certainty", "retreat"],
@@ -559,7 +567,7 @@ def _decision_policy_for_pack(
         }
     elif pack_id == "xianxia_upgrade":
         raw = {
-            "character_name": "宁尘",
+            "character_name": proto_override,
             "archetype": "low-status-cautious-cultivation-upgrader",
             "risk_tolerance": "low",
             "pressure_responses": ["observe", "prepare", "conceal", "bargain", "retreat", "strike_after_certainty"],
@@ -656,12 +664,19 @@ def _initial_premium_state_ledger_for_pack(
     *,
     protagonist_name: str | None = None,
 ) -> dict[str, list[dict[str, Any]]] | None:
+    # Neutral placeholder unless an upstream name is chosen — keeps the de-named
+    # zh packs consistent with premium_cast_spec / decision_policy.
+    proto = (
+        protagonist_name.strip()
+        if isinstance(protagonist_name, str) and protagonist_name.strip()
+        else "主角"
+    )
     if pack_id == "qingnang":
         return {
             "progression_events": [
                 {
                     "event_type": "resource_gained",
-                    "subject": "林渊",
+                    "subject": "主角",
                     "resource_key": "青囊线索权",
                     "delta": 1,
                     "cause": "十七栋主镜门和三族旧契已锁定为第一卷主引擎",
@@ -677,22 +692,22 @@ def _initial_premium_state_ledger_for_pack(
             "faction_reactions": [
                 {
                     "faction": "林张钱三族旧契",
-                    "trigger": "林渊继续追查十七栋",
+                    "trigger": "主角继续追查十七栋",
                     "reaction": "各家只交出对自己有利的一半真相并试图转嫁旧债",
-                    "next_pressure": "张家门契与钱家守镜线继续加压",
+                    "next_pressure": "开门家族门契与守镜家族守镜线继续加压",
                 }
             ],
             "relationship_events": [
                 {
-                    "character_a": "林渊",
-                    "character_b": "苏婉宁",
+                    "character_a": "主角",
+                    "character_b": "警方负责人",
                     "axis": "trust",
                     "after": "证据互不完全信任但必须协作",
-                    "active_choice": "林渊优先给出可验证物证而非要求她相信灵异",
+                    "active_choice": "主角优先给出可验证物证而非要求她相信灵异",
                 }
             ],
             "agency_debts": [
-                {"owner": "林渊", "debt": "查清父亲入镜和三族第一账", "due_window": "第一卷后段"}
+                {"owner": "主角", "debt": "查清父亲入镜和三族第一账", "due_window": "第一卷后段"}
             ],
         }
     if pack_id == "english_romantasy":
@@ -700,7 +715,7 @@ def _initial_premium_state_ledger_for_pack(
             "progression_events": [
                 {
                     "event_type": "technique_unlock",
-                    "subject": "Nora Chen",
+                    "subject": "the heroine",
                     "technique": "Shadow Sight",
                     "cause": "Court exile record exposes her connection to the Two-Court Shadow Crown.",
                 }
@@ -709,29 +724,29 @@ def _initial_premium_state_ledger_for_pack(
                 {
                     "rule_code": "court-bargain-grammar",
                     "visible_effect": "Every fae bargain creates witnessable terms, loopholes, and a price.",
-                    "cost": "A vague promise can bind Nora's agency or court standing.",
+                    "cost": "A vague promise can bind the heroine's agency or court standing.",
                 }
             ],
             "faction_reactions": [
                 {
                     "faction": "Summer Court",
-                    "trigger": "Nora becomes legible to the Shadow Crown",
+                    "trigger": "the heroine becomes legible to the Shadow Crown",
                     "reaction": "They offer protection with ownership terms attached.",
-                    "next_pressure": "Force Nora to choose between safety and autonomy.",
+                    "next_pressure": "Force the heroine to choose between safety and autonomy.",
                 }
             ],
             "relationship_events": [
                 {
-                    "character_a": "Nora Chen",
-                    "character_b": "Victor Hale",
+                    "character_a": "the heroine",
+                    "character_b": "the records antagonist",
                     "axis": "trust",
                     "after": "attraction exists, but political trust remains conditional",
-                    "active_choice": "Nora demands terms before accepting Victor's help.",
+                    "active_choice": "the heroine demands terms before accepting the records antagonist's help.",
                 }
             ],
             "agency_debts": [
                 {
-                    "owner": "Nora Chen",
+                    "owner": "the heroine",
                     "debt": "Keep her own choice intact while using court power.",
                     "due_window": "next court bargain arc",
                 }
@@ -742,7 +757,7 @@ def _initial_premium_state_ledger_for_pack(
             "progression_events": [
                 {
                     "event_type": "technique_unlock",
-                    "subject": "Cole",
+                    "subject": "the protagonist",
                     "technique": "Reservoir Kinetics",
                     "cause": "Reservoir stress event makes his load-bearing power measurable but unstable.",
                 }
@@ -757,23 +772,23 @@ def _initial_premium_state_ledger_for_pack(
             "faction_reactions": [
                 {
                     "faction": "Municipal Enforcement",
-                    "trigger": "Cole's kinetic signature appears in public incident records",
+                    "trigger": "the protagonist's kinetic signature appears in public incident records",
                     "reaction": "They classify him as an unregistered escalation risk.",
                     "next_pressure": "Registry summons and surveillance pressure tighten.",
                 }
             ],
             "relationship_events": [
                 {
-                    "character_a": "Cole",
-                    "character_b": "Sophie",
+                    "character_a": "the protagonist",
+                    "character_b": "the family anchor",
                     "axis": "promise",
                     "after": "family deadline remains active",
-                    "active_choice": "Cole must protect Sophie without turning her into passive leverage.",
+                    "active_choice": "the protagonist must protect the family anchor without turning her into passive leverage.",
                 }
             ],
             "agency_debts": [
                 {
-                    "owner": "Cole",
+                    "owner": "the protagonist",
                     "debt": "Prove his power can protect civilians without becoming public collateral damage.",
                     "due_window": "next escalation sequence",
                 }
@@ -784,7 +799,7 @@ def _initial_premium_state_ledger_for_pack(
             "progression_events": [
                 {
                     "event_type": "technique_unlock",
-                    "subject": "Kade",
+                    "subject": "the protagonist",
                     "technique": "Sixty-Second Mimicry",
                     "cause": "Witness protocol exposure gives him a short identity-copy window.",
                 }
@@ -792,30 +807,30 @@ def _initial_premium_state_ledger_for_pack(
             "rule_events": [
                 {
                     "rule_code": "sixty-second-mimicry-limit",
-                    "visible_effect": "Kade can copy a visible power/identity trace for sixty seconds.",
+                    "visible_effect": "the protagonist can copy a visible power/identity trace for sixty seconds.",
                     "cost": "Every use creates surveillance, legal, or trust evidence.",
                 }
             ],
             "faction_reactions": [
                 {
                     "faction": "Registry",
-                    "trigger": "Kade's mimicry generates conflicting witness records",
+                    "trigger": "the protagonist's mimicry generates conflicting witness records",
                     "reaction": "They treat him as evidence contamination, not just a powered suspect.",
-                    "next_pressure": "Force Kade to preserve proof before each confrontation.",
+                    "next_pressure": "Force the protagonist to preserve proof before each confrontation.",
                 }
             ],
             "relationship_events": [
                 {
-                    "character_a": "Kade",
-                    "character_b": "Maya",
+                    "character_a": "the protagonist",
+                    "character_b": "the family anchor",
                     "axis": "trust",
-                    "after": "Maya helps only while Kade preserves consent and evidence integrity",
-                    "active_choice": "Kade records proof before asking Maya to take risk.",
+                    "after": "the family anchor helps only while the protagonist preserves consent and evidence integrity",
+                    "active_choice": "the protagonist records proof before asking the family anchor to take risk.",
                 }
             ],
             "agency_debts": [
                 {
-                    "owner": "Kade",
+                    "owner": "the protagonist",
                     "debt": "Clear the witness trail without framing an innocent person.",
                     "due_window": "next registry confrontation",
                 }
@@ -826,7 +841,7 @@ def _initial_premium_state_ledger_for_pack(
             "progression_events": [
                 {
                     "event_type": "technique_unlock",
-                    "subject": "林鸢",
+                    "subject": proto,
                     "technique": "代价转化",
                     "cause": "方舟城压力和源初追猎迫使她把痛感转成可计算资源。",
                 }
@@ -834,30 +849,30 @@ def _initial_premium_state_ledger_for_pack(
             "rule_events": [
                 {
                     "rule_code": "cost-conversion-rule",
-                    "visible_effect": "林鸢能把伤痛、记忆或关系代价转成异能收益",
+                    "visible_effect": "主角能把伤痛、记忆或关系代价转成异能收益",
                     "cost": "代价会留下身体、人格或源初侵蚀后账",
                 }
             ],
             "faction_reactions": [
                 {
                     "faction": "清道夫",
-                    "trigger": "林鸢的代价转化能力被记录",
-                    "reaction": "霍沉把她列为高价值追猎对象，同时评估她的弱点",
+                    "trigger": "主角的代价转化能力被记录",
+                    "reaction": "追猎者把她列为高价值追猎对象，同时评估她的弱点",
                     "next_pressure": "追猎、收容和联盟登记压力升级",
                 }
             ],
             "relationship_events": [
                 {
-                    "character_a": "林鸢",
-                    "character_b": "霍沉",
+                    "character_a": proto,
+                    "character_b": "追猎者",
                     "axis": "power",
                     "after": "敌对但互为价值观镜像",
-                    "active_choice": "林鸢拒绝被清道夫定义为污染源",
+                    "active_choice": "主角拒绝被清道夫定义为污染源",
                 }
             ],
             "agency_debts": [
                 {
-                    "owner": "林鸢",
+                    "owner": proto,
                     "debt": "建立非恋爱同盟并守住自我意志",
                     "due_window": "下一次方舟城/源初双压迫节点",
                 }
@@ -868,7 +883,7 @@ def _initial_premium_state_ledger_for_pack(
             "progression_events": [
                 {
                     "event_type": "resource_gained",
-                    "subject": "宁尘",
+                    "subject": proto,
                     "resource_key": "道种感应",
                     "delta": 1,
                     "cause": "废灵根旧事和黑铁残片触发有限因果感应。",
@@ -884,22 +899,22 @@ def _initial_premium_state_ledger_for_pack(
             "faction_reactions": [
                 {
                     "faction": "杂役峰与丹房",
-                    "trigger": "宁尘表现出不符合废灵根身份的进步",
+                    "trigger": "主角表现出不符合废灵根身份的进步",
                     "reaction": "执事先克扣资源再试探其后手",
                     "next_pressure": "配给账、考核台和秘境名额继续施压",
                 }
             ],
             "relationship_events": [
                 {
-                    "character_a": "宁尘",
-                    "character_b": "苏瑶",
+                    "character_a": proto,
+                    "character_b": "内门盟友",
                     "axis": "trust",
                     "after": "互相试探的有限同盟",
-                    "active_choice": "宁尘只交换可验证情报，不暴露道种核心",
+                    "active_choice": "主角只交换可验证情报，不暴露道种核心",
                 }
             ],
             "agency_debts": [
-                {"owner": "宁尘", "debt": "在秘境大考前证明低位反制不是侥幸", "due_window": "三个月大考前"}
+                {"owner": proto, "debt": "在秘境大考前证明低位反制不是侥幸", "due_window": "三个月大考前"}
             ],
         }
     if blueprint := _blueprint_for_pack(pack_id):
@@ -988,7 +1003,7 @@ def _premium_context_seed(
             "system": "青囊因果账",
             "tiers": ["接案", "试探规则", "认账破局", "旧账追索"],
             "starting_tier": "试探规则",
-            "protagonist": "林渊",
+            "protagonist": "主角",
             "power_structure": "青囊、困魂镜、三族旧契和现实证据链共同限制破局。",
             "volume_title": "十七栋主镜门",
         },
@@ -997,7 +1012,7 @@ def _premium_context_seed(
             "system": "Court Bargain and Shadow Sight",
             "tiers": ["Unbound Exile", "Shadow-Sighted", "Court-Bargained", "Crown-Claimant"],
             "starting_tier": "Shadow-Sighted",
-            "protagonist": "Nora Chen",
+            "protagonist": "the heroine",
             "power_structure": "Fae power moves through witnessed bargains, court status, agency, and visible price.",
             "volume_title": "The First Shadow Bargain",
         },
@@ -1006,7 +1021,7 @@ def _premium_context_seed(
             "system": "Reservoir Kinetics",
             "tiers": ["Unregistered", "Controlled Burst", "Public Incident", "Registry Target"],
             "starting_tier": "Controlled Burst",
-            "protagonist": "Cole",
+            "protagonist": "the protagonist",
             "power_structure": "Public records, measurable load, injuries, and enforcement response bound every upgrade.",
             "volume_title": "Reservoir Incident",
         },
@@ -1015,7 +1030,7 @@ def _premium_context_seed(
             "system": "Measured Power Progression",
             "tiers": ["Unregistered", "Controlled Burst", "Public Incident", "Registry Target"],
             "starting_tier": "Controlled Burst",
-            "protagonist": "Cole",
+            "protagonist": "the protagonist",
             "power_structure": "Power growth must be measurable and must change public, family, and faction pressure.",
             "volume_title": "First Public Incident",
         },
@@ -1024,7 +1039,7 @@ def _premium_context_seed(
             "system": "Sixty-Second Mimicry",
             "tiers": ["Witness", "Mimic Window", "Evidence Contaminant", "Protocol Breaker"],
             "starting_tier": "Mimic Window",
-            "protagonist": "Kade",
+            "protagonist": "the protagonist",
             "power_structure": "Mimicry power is constrained by time windows, evidence integrity, surveillance, and consent.",
             "volume_title": "The First False Record",
         },
@@ -1033,7 +1048,7 @@ def _premium_context_seed(
             "system": "代价转化",
             "tiers": ["觉醒", "代价可计量", "方舟城博弈", "源初对抗"],
             "starting_tier": "代价可计量",
-            "protagonist": "林鸢",
+            "protagonist": "主角",
             "power_structure": "异能收益必须经过痛感、记忆、关系或源初侵蚀的明确代价。",
             "volume_title": "方舟城代价账",
         },
@@ -1042,13 +1057,16 @@ def _premium_context_seed(
             "system": "道种修行",
             "tiers": ["炼气", "筑基", "金丹"],
             "starting_tier": "炼气",
-            "protagonist": "宁尘",
+            "protagonist": "主角",
             "power_structure": "境界突破受灵米、丹药、名额、道种痕迹和宗门反馈约束。",
             "volume_title": "杂役峰道种初动",
         },
     }
     if pack_id in seeds:
-        return seeds[pack_id]
+        seed = dict(seeds[pack_id])
+        if isinstance(protagonist_name, str) and protagonist_name.strip():
+            seed["protagonist"] = protagonist_name.strip()
+        return seed
     if blueprint := _blueprint_for_pack(pack_id):
         is_en = _pack_is_english(pack_id)
         protagonist = (
@@ -1158,7 +1176,7 @@ def _read_package_signal(package_root: Path) -> str:
 
 
 def _looks_like_qingnang(text: str) -> bool:
-    required = ("青囊", "困魂镜", "三族", "林渊")
+    required = ("青囊", "困魂镜", "三族")
     return all(token in text for token in required)
 
 
@@ -1203,7 +1221,7 @@ def _select_material_pack(
             project_id,
             _female_no_cp_pack_spec(),
         )
-    if _has_any(haystack, ("道种破虚", "仙侠升级", "宗门逆袭", "道种", "宁尘", "炼气")):
+    if _has_any(haystack, ("道种破虚", "仙侠升级", "宗门逆袭", "道种", "炼气")):
         return "xianxia_upgrade", _build_spec_pack(
             project_id,
             _xianxia_upgrade_pack_spec(),
@@ -1283,8 +1301,8 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         category_key="action-progression",
         name_zh="动作升级类",
         name_en="Action Progression",
-        protagonist_zh="许燃",
-        protagonist_en="Rowan Vale",
+        protagonist_zh="主角",
+        protagonist_en="The Protagonist",
         archetype_key="action-progression-state-ledger-lead",
         risk_tolerance="medium",
         system_zh="可计量成长引擎",
@@ -1315,8 +1333,8 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         category_key="relationship-driven",
         name_zh="关系情感类",
         name_en="Relationship Driven",
-        protagonist_zh="江晚",
-        protagonist_en="Mara Vale",
+        protagonist_zh="主角",
+        protagonist_en="The Protagonist",
         archetype_key="relationship-boundary-choice-lead",
         risk_tolerance="medium",
         system_zh="关系债务与边界选择",
@@ -1347,8 +1365,8 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         category_key="suspense-mystery",
         name_zh="悬疑推理类",
         name_en="Suspense Mystery",
-        protagonist_zh="沈砚",
-        protagonist_en="Elise Ward",
+        protagonist_zh="主角",
+        protagonist_en="The Protagonist",
         archetype_key="evidence-led-misdirection-investigator",
         risk_tolerance="low",
         system_zh="线索链与误导账",
@@ -1379,8 +1397,8 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         category_key="strategy-worldbuilding",
         name_zh="策略世界观类",
         name_en="Strategy Worldbuilding",
-        protagonist_zh="顾衡",
-        protagonist_en="Adrien Vale",
+        protagonist_zh="主角",
+        protagonist_en="The Protagonist",
         archetype_key="systems-strategy-worldbuilder",
         risk_tolerance="medium",
         system_zh="势力账与资源博弈",
@@ -1411,8 +1429,8 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         category_key="esports-competition",
         name_zh="电竞竞技类",
         name_en="Esports Competition",
-        protagonist_zh="周野",
-        protagonist_en="Kai Mercer",
+        protagonist_zh="主角",
+        protagonist_en="The Protagonist",
         archetype_key="competition-meta-adaptation-lead",
         risk_tolerance="medium",
         system_zh="训练-版本-赛点循环",
@@ -1443,8 +1461,8 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         category_key="female-growth-ncp",
         name_zh="女性成长无CP类",
         name_en="Female Growth No-CP",
-        protagonist_zh="林澈",
-        protagonist_en="Vera Lin",
+        protagonist_zh="主角",
+        protagonist_en="The Protagonist",
         archetype_key="agency-first-nonromantic-growth-lead",
         risk_tolerance="medium",
         system_zh="选择权与非恋爱同盟账",
@@ -1475,8 +1493,8 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         category_key="base-building",
         name_zh="基建经营类",
         name_en="Base Building",
-        protagonist_zh="陆青舟",
-        protagonist_en="Mira Chen",
+        protagonist_zh="主角",
+        protagonist_en="The Protagonist",
         archetype_key="resource-flywheel-builder-lead",
         risk_tolerance="medium",
         system_zh="资源-人口-设施飞轮",
@@ -1507,8 +1525,8 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         category_key="eastern-aesthetic",
         name_zh="东方美学类",
         name_en="Eastern Aesthetic",
-        protagonist_zh="云岫",
-        protagonist_en="Lin Yun",
+        protagonist_zh="主角",
+        protagonist_en="The Protagonist",
         archetype_key="image-rule-fantasy-investigator",
         risk_tolerance="low",
         system_zh="意象规则与志怪因果",
@@ -1847,27 +1865,27 @@ def _english_romantasy_pack_spec() -> MaterialPackSpec:
         "english_romantasy",
         {
             "world_settings": [
-                _s("two-court-shadow-crown", "Two-Court Shadow Crown", "Summer and Winter courts treat Rowan as leverage in a crown-binding system where romance, inheritance, and magic are inseparable.", rules=["court leverage", "crown-binding", "public bargains"]),
+                _s("two-court-shadow-crown", "Two-Court Shadow Crown", "Summer and Winter courts treat the heroine as leverage in a crown-binding system where romance, inheritance, and magic are inseparable.", rules=["court leverage", "crown-binding", "public bargains"]),
                 _s("exile-record-world", "Exile Record World", "The mother's exile is not backstory; every archive, witness, and glamour stain must expose who benefited from the banishment.", function="long mystery ladder"),
                 _s("shadow-sight-politics", "Shadow-Sight Politics", "Shadow sight reveals debt, desire, and betrayal, but every vision creates a political footprint someone can notice.", cost="visibility and misread risk"),
                 _s("fae-bargain-economy", "Fae Bargain Economy", "Gifts, dances, protection, and intimacy all carry hidden prices that constrain later choices.", rule="no free favor"),
             ],
             "factions": [
-                _s("summer-court-pressure", "Summer Court Pressure", "Summer Court weaponizes warmth, spectacle, and public favor to make Rowan's refusal look like treason.", tools=["revels", "public gifts", "shame"]),
-                _s("winter-court-pressure", "Winter Court Pressure", "Winter Court uses silence, protection, contracts, and old debts to pull Rowan into colder bargains.", tools=["oaths", "archives", "protective threats"]),
-                _s("nora-chen-network", "Nora Chen Network", "Nora Chen's informants trade secrets for survival; help from her network always shifts future leverage.", function="information broker"),
-                _s("victor-hale-bureaucracy", "Victor Hale Bureaucracy", "Victor Hale's records, offices, and procedural delays turn romance and magic into evidence.", function="paperwork antagonist"),
+                _s("summer-court-pressure", "Summer Court Pressure", "Summer Court weaponizes warmth, spectacle, and public favor to make the heroine's refusal look like treason.", tools=["revels", "public gifts", "shame"]),
+                _s("winter-court-pressure", "Winter Court Pressure", "Winter Court uses silence, protection, contracts, and old debts to pull the heroine into colder bargains.", tools=["oaths", "archives", "protective threats"]),
+                _s("nora-chen-network", "Information Broker Network", "the heroine's informants trade secrets for survival; help from her network always shifts future leverage.", function="information broker"),
+                _s("victor-hale-bureaucracy", "Records Bureaucracy", "the records antagonist's records, offices, and procedural delays turn romance and magic into evidence.", function="paperwork antagonist"),
             ],
             "locale_templates": [
                 _s("crown-ballroom", "Crown Ballroom", "Public intimacy, faction watching, and magical glamour collide during dances, introductions, and forced appearances.", use="romance plus exposure"),
-                _s("shadow-archive", "Shadow Archive", "Records shift under shadow sight; a page can answer one exile question while exposing Rowan's intrusion.", use="mystery reveal"),
+                _s("shadow-archive", "Shadow Archive", "Records shift under shadow sight; a page can answer one exile question while exposing the heroine's intrusion.", use="mystery reveal"),
                 _s("winter-glasshouse", "Winter Glasshouse", "A private negotiation space where protection sounds like tenderness but functions as leverage.", use="slow-burn pressure"),
                 _s("summer-revel", "Summer Revel", "A bright, crowded setting where refusal is visible and every smile becomes a political trap.", use="public bargain"),
                 _s("oath-chamber", "Oath Chamber", "Contracts, blood marks, and witnesses make choices irreversible.", use="cost lock-in"),
-                _s("exile-road", "Exile Road", "A liminal route tied to Rowan's mother, useful for chase, memory residue, and forbidden testimony.", use="exile callback"),
+                _s("exile-road", "Exile Road", "A liminal route tied to the heroine's mother, useful for chase, memory residue, and forbidden testimony.", use="exile callback"),
             ],
             "power_systems": [
-                _s("shadow-sight-cost", "Shadow Sight Cost", "Every use must specify what Rowan sees, what she misreads, what it costs, and who might notice.", fields=["vision", "misread", "cost", "watcher"]),
+                _s("shadow-sight-cost", "Shadow Sight Cost", "Every use must specify what the heroine sees, what she misreads, what it costs, and who might notice.", fields=["vision", "misread", "cost", "watcher"]),
                 _s("court-bargain-grammar", "Court Bargain Grammar", "A proper offer contains gift, hook, threat, and hidden price; missing one element means a trap is concealed.", fields=["gift", "hook", "threat", "price"]),
                 _s("glamour-residue-rule", "Glamour Residue Rule", "Strong emotions and broken oaths leave residue that shadow sight can read imperfectly.", limit="emotion distorts evidence"),
                 _s("crown-binding-mechanism", "Crown-Binding Mechanism", "The crown binds power through public recognition, private vows, and court witnesses.", cost="agency traded for legitimacy"),
@@ -1875,31 +1893,31 @@ def _english_romantasy_pack_spec() -> MaterialPackSpec:
             ],
             "character_archetypes": [
                 _s("agency-first-heroine", "Agency-First Heroine", "The heroine may desire love and safety, but each chapter must show the choice she makes and the cost she accepts.", function="anti-passive-romance"),
-                _s("morally-gray-protector", "Morally Gray Protector", "Protection is useful but suspect; the protector's agenda must sometimes oppose Rowan's truth.", function="romance conflict"),
+                _s("morally-gray-protector", "Morally Gray Protector", "Protection is useful but suspect; the protector's agenda must sometimes oppose the heroine's truth.", function="romance conflict"),
                 _s("court-broker-ally", "Court Broker Ally", "An ally sells access, not loyalty; every favor creates a later invoice.", function="information pressure"),
-                _s("beautiful-traitor", "Beautiful Traitor", "A charming court figure gives a real gift while steering Rowan into exposure.", function="double movement"),
+                _s("beautiful-traitor", "Beautiful Traitor", "A charming court figure gives a real gift while steering the heroine into exposure.", function="double movement"),
             ],
             "character_templates": [
-                _s("rowan", "Rowan", "Shadow-sighted chosen heroine whose power forces decisions instead of solving scenes.", role="protagonist"),
-                _s("sam", "Sam", "Infiltration-linked ally whose help may protect Rowan or expose her mother's trail.", role="ambiguous ally"),
-                _s("nora-chen", "Nora Chen", "Networked information broker who trades truth in fragments.", role="broker"),
-                _s("victor-hale", "Victor Hale", "Bureaucratic antagonist whose records can hurt more than blades.", role="records pressure"),
-                _s("winter-heir", "Winter Heir", "Potential romantic/political lead whose restraint hides a hard agenda.", role="slow-burn leverage"),
-                _s("summer-envoy", "Summer Envoy", "Public-facing court pressure who turns charm into obligation.", role="court threat"),
+                _s("shadow-sighted-heroine", "Shadow-Sighted Heroine Archetype", "Shadow-sighted chosen heroine whose power forces decisions instead of solving scenes. Name set per book.", role="protagonist"),
+                _s("infiltration-ally", "Infiltration Ally Archetype", "Infiltration-linked ally whose help may protect the heroine or expose her mother's trail.", role="ambiguous ally"),
+                _s("information-broker", "Information Broker Archetype", "Networked information broker who trades truth in fragments.", role="broker"),
+                _s("records-antagonist", "Records Antagonist Archetype", "Bureaucratic antagonist whose records can hurt more than blades.", role="records pressure"),
+                _s("slow-burn-lead", "Slow-Burn Lead Archetype", "Potential romantic/political lead whose restraint hides a hard agenda.", role="slow-burn leverage"),
+                _s("court-envoy", "Court Envoy Archetype", "Public-facing court pressure who turns charm into obligation.", role="court threat"),
             ],
             "plot_patterns": [
                 _s("intimacy-changes-leverage", "Intimacy Changes Leverage", "A touch, confession, rescue, or kiss must alter trust, exposure, faction position, or debt.", rule="no static romantic beat"),
                 _s("bargain-cost-callback", "Bargain Cost Callback", "A bargain accepted now must constrain a later scene in a concrete way.", rule="deferred price"),
                 _s("exile-clue-ladder", "Exile Clue Ladder", "Each clue answers one layer of the mother's exile and opens a sharper political question.", rule="fragmented reveal"),
-                _s("faction-reaction-loop", "Faction Reaction Loop", "After Rowan acts, at least one court or broker changes tactics.", rule="no reset"),
+                _s("faction-reaction-loop", "Faction Reaction Loop", "After the heroine acts, at least one court or broker changes tactics.", rule="no reset"),
             ],
             "scene_templates": [
                 _s("public-dance-bargain", "Public Dance Bargain", "A dance lets attraction, threat, witness pressure, and hidden contract operate in one scene.", beats=["invitation", "watchers", "offer", "cost"]),
-                _s("shadow-sight-misread", "Shadow-Sight Misread", "Rowan reads a shadow clue but later discovers emotion or glamour distorted it.", beats=["vision", "decision", "wrong inference"]),
+                _s("shadow-sight-misread", "Shadow-Sight Misread", "the heroine reads a shadow clue but later discovers emotion or glamour distorted it.", beats=["vision", "decision", "wrong inference"]),
                 _s("archive-theft", "Archive Theft", "A record retrieval becomes a political crime with a named witness or altered page.", beats=["entry", "page", "alarm"]),
                 _s("near-intimacy-under-threat", "Near Intimacy Under Threat", "A romantic beat happens because danger forces a choice, not because the plot pauses.", beats=["danger", "choice", "boundary"]),
                 _s("court-interrogation", "Court Interrogation", "Questions are weapons; answers must reveal motive while concealing vulnerability.", beats=["charge", "half-truth", "counterprice"]),
-                _s("protection-betrayal", "Protection Betrayal", "A protective act saves Rowan but proves someone withheld a crucial truth.", beats=["save", "debt", "breach"]),
+                _s("protection-betrayal", "Protection Betrayal", "A protective act saves the heroine but proves someone withheld a crucial truth.", beats=["save", "debt", "breach"]),
             ],
             "device_templates": [
                 _s("shadowbound-mark", "Shadowbound Mark", "A visible or hidden mark that reacts to bargains, desire, or crown pressure.", function="cost tracker"),
@@ -1917,15 +1935,15 @@ def _english_romantasy_pack_spec() -> MaterialPackSpec:
             "emotion_arcs": [
                 _s("mistrust-to-action-trust", "Mistrust to Action Trust", "Trust changes only when someone risks leverage, not through reassurance.", beats=["suspicion", "risk", "limited trust"]),
                 _s("desire-under-consequence", "Desire Under Consequence", "Attraction intensifies because refusing or accepting it has a price.", beats=["pull", "cost", "choice"]),
-                _s("betrayal-to-boundary", "Betrayal to Boundary", "A betrayal should make Rowan define new terms instead of merely forgive or flee.", beats=["hurt", "terms", "countermove"]),
+                _s("betrayal-to-boundary", "Betrayal to Boundary", "A betrayal should make the heroine define new terms instead of merely forgive or flee.", beats=["hurt", "terms", "countermove"]),
             ],
             "dialogue_styles": [
                 _s("court-double-speech", "Court Double Speech", "Courtiers say courtesy while negotiating threat, debt, and rumor.", style="polite menace"),
                 _s("intimate-restraint", "Intimate Restraint", "Romantic dialogue should be specific, withheld, and action-backed.", style="subtext and restraint"),
-                _s("bureaucratic-threat", "Bureaucratic Threat", "Victor-style pressure uses dates, records, signatures, and procedural consequence.", style="documentary precision"),
+                _s("bureaucratic-threat", "Bureaucratic Threat", "records-style pressure uses dates, records, signatures, and procedural consequence.", style="documentary precision"),
             ],
             "anti_cliche_patterns": [
-                _s("no-static-love-interest", "No Static Love Interest", "No love interest may exist only to comfort, rescue, or tempt Rowan.", avoid="decorative romance"),
+                _s("no-static-love-interest", "No Static Love Interest", "No love interest may exist only to comfort, rescue, or tempt the heroine.", avoid="decorative romance"),
                 _s("no-costless-shadow-sight", "No Costless Shadow Sight", "Shadow sight cannot solve a scene without risk, misread, or observer consequence.", avoid="free magic answer"),
                 _s("no-vague-court-intrigue", "No Vague Court Intrigue", "Every court scene needs a named gain, loss, witness, or debt.", avoid="empty scheming"),
             ],
@@ -1941,13 +1959,13 @@ def _english_romantasy_pack_spec() -> MaterialPackSpec:
 def _breaking_point_pack_spec() -> MaterialPackSpec:
     return _superhero_pack_spec(
         pack_id="english_superhero_breaking_point",
-        protagonist="Cole",
-        family_anchor="Sophie",
+        protagonist="the protagonist",
+        family_anchor="the protected family anchor",
         power_name="Reservoir Kinetics",
         power_slug="reservoir-kinetics",
-        faction_names=("Municipal Enforcement", "Victor Kane Network", "Elena Vasquez Leak Line", "Sports Sponsorship System"),
-        character_names=("Cole", "Sophie", "Elena Vasquez", "Victor Kane", "Municipal handler", "former coach"),
-        signature_clock="Sophie's treatment deadline",
+        faction_names=("Municipal Enforcement", "Rival Fixer Network", "Leak Line", "Sports Sponsorship System"),
+        character_names=("the protagonist", "family anchor", "leak-line informant", "rival fixer", "municipal handler", "former coach"),
+        signature_clock="the family anchor's treatment deadline",
         public_frame="track meets, body cameras, sponsorship paperwork, and viral footage",
         method_frame="sports biomechanics, reservoir capacity, leakage, overload, and precision release",
     )
@@ -1956,13 +1974,13 @@ def _breaking_point_pack_spec() -> MaterialPackSpec:
 def _witness_protocol_pack_spec() -> MaterialPackSpec:
     return _superhero_pack_spec(
         pack_id="english_superhero_witness_protocol",
-        protagonist="Kade",
-        family_anchor="Maya",
+        protagonist="the protagonist",
+        family_anchor="the protected family anchor",
         power_name="Sixty-Second Mimicry",
         power_slug="sixty-second-mimicry",
-        faction_names=("Aegis Coalition", "The Collective", "Registry Office", "Silas Crane Cell"),
-        character_names=("Kade", "Maya", "Marcus Mercer", "Silas Crane", "Aegis analyst", "Registry witness"),
-        signature_clock="Maya's school-and-guardianship exposure clock",
+        faction_names=("Aegis Coalition", "The Collective", "Registry Office", "Hostile Cell"),
+        character_names=("the protagonist", "family anchor", "coalition liaison", "hostile cell leader", "aegis analyst", "registry witness"),
+        signature_clock="the family anchor's school-and-guardianship exposure clock",
         public_frame="witness reports, surveillance clips, registry flags, and contradictory testimony",
         method_frame="trigger, borrowed ability, countdown, degradation, aftereffect, and trace",
     )
@@ -2098,12 +2116,12 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
             "world_settings": [
                 _s("ark-city-debt-system", "方舟城债务系统", "方舟城不是安全区背景，而是资源配给、异能登记、旧案遮掩和人情债组成的压迫机器。", rule="资源和旧债绑定"),
                 _s("cost-transfer-apocalypse", "代价转化末世", "救人必须决定谁受益、谁承担、承担什么，以及后遗症如何进入关系账本。", rule="无免费救援"),
-                _s("source-origin-hunt-world", "源初追猎世界", "源初通过观测、标记、诱饵、舆论和样本回收学习林鸢能力。", rule="敌人学习"),
+                _s("source-origin-hunt-world", "源初追猎世界", "源初通过观测、标记、诱饵、舆论和样本回收学习主角能力。", rule="敌人学习"),
                 _s("no-cp-growth-world", "无CP成长世界", "关系推进来自信任、债务、利用、清算和共同风险，不能靠恋爱线驱动。", rule="非恋爱关系网"),
             ],
             "factions": [
                 _s("ark-city-management", "方舟城管理部", "管理部以登记、配给、封锁、旧案档案控制异能者。", tools=["登记", "配给", "封锁"]),
-                _s("source-origin", "源初", "源初把林鸢的救人记录当作能力样本持续更新捕捉策略。", tools=["标记", "样本", "舆论"]),
+                _s("source-origin", "源初", "源初把主角的救人记录当作能力样本持续更新捕捉策略。", tools=["标记", "样本", "舆论"]),
                 _s("scavenger-network", "清道夫网络", "清道夫在兽潮边缘交易药品、情报、身份和背叛。", tools=["黑市", "路线", "药剂"]),
                 _s("old-exile-signers", "三年前签字者", "三年前放逐事件的签字者、受益者、沉默者构成旧债网络。", tools=["签名", "沉默", "旧证词"]),
             ],
@@ -2118,9 +2136,9 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
             "power_systems": [
                 _s("cost-transfer-ledger", "代价转化账本", "每次使用前必须写清请求方、受益方、承担方、代价类型和比例。", fields=["请求", "受益", "承担", "比例"]),
                 _s("aftereffect-rule", "后遗症规则", "代价必须留下身体、精神、记忆、稳定性或社会身份后果。", fields=["身体", "精神", "身份"]),
-                _s("nontransferable-boundary", "不可转移边界", "某些代价不能转移，错误估价会反噬林鸢。", use="边界反噬"),
-                _s("source-data-learning", "源初数据学习", "林鸢每救一次人，源初获得或误判一条能力数据。", use="敌人升级"),
-                _s("active-pricing-rule", "主动定价规则", "林鸢可以开价、拒绝、拆穿动机，把代价变成筹码。", use="大女主爽点"),
+                _s("nontransferable-boundary", "不可转移边界", "某些代价不能转移，错误估价会反噬主角。", use="边界反噬"),
+                _s("source-data-learning", "源初数据学习", "主角每救一次人，源初获得或误判一条能力数据。", use="敌人升级"),
+                _s("active-pricing-rule", "主动定价规则", "主角可以开价、拒绝、拆穿动机，把代价变成筹码。", use="大女主爽点"),
             ],
             "character_archetypes": [
                 _s("pricing-heroine", "主动定价女主", "女主的成长落在选择权扩大，不是被认可、拯救或原谅。", function="主角方法论"),
@@ -2129,23 +2147,23 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
                 _s("sample-hunter", "样本猎手", "敌人通过样本和诱饵学习主角能力。", function="源初压力"),
             ],
             "character_templates": [
-                _s("lin-yuan-female", "林鸢", "代价转化者，核心爽点是主动定价、拒绝无偿牺牲和清算旧债。", role="protagonist"),
-                _s("jiang-cheng", "姜澄", "旧背叛线人物，必须通过行动补偿和风险共担推进，不能滑向CP。", role="old debt ally"),
-                _s("zhou-yanning", "周砚宁", "方舟城信息/权力接口，帮助总带操控风险。", role="institutional ally"),
+                _s("pricing-protagonist", "主动定价女主原型", "代价转化者，核心爽点是主动定价、拒绝无偿牺牲和清算旧债。人名由本书按设定自取，勿套用模板名。", role="protagonist"),
+                _s("old-debt-ally", "旧背叛债务盟友原型", "旧背叛线人物，必须通过行动补偿和风险共担推进，不能滑向CP。", role="old debt ally"),
+                _s("institutional-ally", "体制信息盟友原型", "方舟城信息/权力接口，帮助总带操控风险。", role="institutional ally"),
                 _s("ark-officer", "管理部登记官", "以程序和配给制造压力。", role="bureaucratic pressure"),
                 _s("source-observer", "源初观测者", "追踪能力样本并更新捕捉策略。", role="hunter"),
                 _s("saved-debtor", "被救欠债者", "被救后必须改变立场、投靠、怀疑或背刺。", role="relationship ledger"),
             ],
             "plot_patterns": [
                 _s("rescue-to-debt-loop", "救援转债务循环", "救人后必须改变关系账本和资源局面。", rule="救援不归零"),
-                _s("price-refusal-payoff", "开价/拒绝爽点", "林鸢通过拒绝或抬价拿回选择权。", rule="主动权"),
+                _s("price-refusal-payoff", "开价/拒绝爽点", "主角通过拒绝或抬价拿回选择权。", rule="主动权"),
                 _s("source-hunt-feedback", "源初追猎反馈", "每次能力使用都让源初调整策略。", rule="敌人适应"),
                 _s("old-exile-fragment", "三年前旧债碎片", "旧案每次只揭一层签字者、受益者或沉默者。", rule="长线揭示"),
             ],
             "scene_templates": [
-                _s("pricing-negotiation", "代价定价场景", "请求方求救，林鸢问清受益和承担，再开出条件。", beats=["求救", "拆动机", "定价"]),
+                _s("pricing-negotiation", "代价定价场景", "请求方求救，主角问清受益和承担，再开出条件。", beats=["求救", "拆动机", "定价"]),
                 _s("beast-tide-rescue-cost", "兽潮救援代价场景", "救援和撤离路线必须带身体或资源成本。", beats=["兽潮", "取舍", "反噬"]),
-                _s("registration-pressure", "登记压迫场景", "管理部用流程逼林鸢暴露能力参数。", beats=["登记", "诱导", "反问"]),
+                _s("registration-pressure", "登记压迫场景", "管理部用流程逼主角暴露能力参数。", beats=["登记", "诱导", "反问"]),
                 _s("source-bait", "源初诱饵场景", "看似求救的信息其实在测能力边界。", beats=["诱饵", "使用", "数据泄露"]),
                 _s("old-debt-testimony", "旧债证词场景", "证人只说对自己有利的一半，推动旧案一层。", beats=["证词", "隐瞒", "新债"]),
                 _s("noncp-trust-action", "无CP信任行动场景", "信任通过行动、风险共担或利益让渡建立。", beats=["怀疑", "行动", "重估"]),
@@ -2153,7 +2171,7 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
             "device_templates": [
                 _s("cost-ledger-card", "代价账卡", "记录谁欠谁、欠什么、何时清算。", function="债务追踪"),
                 _s("ability-registration-file", "异能登记档案", "能力参数和身份风险的正式记录。", function="制度压力"),
-                _s("source-marker", "源初标记", "源初观测或定位林鸢的痕迹。", function="追猎线索"),
+                _s("source-marker", "源初标记", "源初观测或定位主角的痕迹。", function="追猎线索"),
                 _s("exile-signature-page", "放逐签字页", "三年前旧案签字者与沉默者的证物。", function="旧案证据"),
                 _s("ration-token", "配给令牌", "资源争夺和人情债的实体化道具。", function="资源账"),
             ],
@@ -2164,17 +2182,17 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
                 _s("shelter-as-cage", "安全区即牢笼", "方舟城保护与控制是一体两面。", symbols=["城门", "登记"]),
             ],
             "emotion_arcs": [
-                _s("pity-to-price", "怜悯到定价", "林鸢可以同情，但最终必须转化为有条件选择。", beats=["触动", "问价", "定价"]),
+                _s("pity-to-price", "怜悯到定价", "主角可以同情，但最终必须转化为有条件选择。", beats=["触动", "问价", "定价"]),
                 _s("betrayal-to-accounting", "背叛到记账", "旧背叛不靠原谅解决，靠补偿和新风险重估。", beats=["刺痛", "证据", "清算"]),
-                _s("exhaustion-to-agency", "疲惫到主动权", "代价反噬后仍由林鸢重新设定规则。", beats=["疲惫", "拒绝", "重订规则"]),
+                _s("exhaustion-to-agency", "疲惫到主动权", "代价反噬后仍由主角重新设定规则。", beats=["疲惫", "拒绝", "重订规则"]),
             ],
             "dialogue_styles": [
-                _s("price-cross-exam", "定价式逼问", "林鸢用短问句逼出谁受益谁承担。", style="冷静、具体、问责"),
+                _s("price-cross-exam", "定价式逼问", "主角用短问句逼出谁受益谁承担。", style="冷静、具体、问责"),
                 _s("bureaucratic-ration-speech", "配给官话术", "管理部台词以流程、配额、风险等级施压。", style="制度化压迫"),
                 _s("noncp-trust-speech", "无CP信任话术", "盟友少说保护，多说交换、路线、证据和风险。", style="行动导向"),
             ],
             "anti_cliche_patterns": [
-                _s("no-hidden-romance-drive", "禁止隐性恋爱主驱动", "姜澄线必须围绕补偿、风险和旧债，不能写成男主保护。", avoid="CP滑坡"),
+                _s("no-hidden-romance-drive", "禁止隐性恋爱主驱动", "旧债盟友线必须围绕补偿、风险和旧债，不能写成男主保护。", avoid="CP滑坡"),
                 _s("no-free-healing", "禁止无损治疗", "代价转化不能变成万能治疗或复活。", avoid="无成本能力"),
                 _s("no-monster-only-chapters", "禁止纯打怪章节", "兽潮必须推进代价规则、源初数据或方舟城旧债。", avoid="副本化"),
             ],
@@ -2200,7 +2218,7 @@ def _xianxia_upgrade_pack_spec() -> MaterialPackSpec:
             "factions": [
                 _s("outer-servant-peak", "杂役峰", "底层资源、羞辱和低位反制的主场。", role="低位压力"),
                 _s("alchemy-hall", "丹房", "丹药、灵草和执事利益构成资源争夺。", role="资源入口"),
-                _s("inner-sect-line", "内门线", "内门资格、长老眼线和苏瑶/陆沉关系推动身份升级。", role="上升通道"),
+                _s("inner-sect-line", "内门线", "内门资格、长老眼线和内门盟友关系推动身份升级。", role="上升通道"),
                 _s("old-root-conspiracy", "废灵根旧事势力", "二十年前旧事和道种来历背后的高层遮掩。", role="长线阴谋"),
             ],
             "locale_templates": [
@@ -2225,17 +2243,17 @@ def _xianxia_upgrade_pack_spec() -> MaterialPackSpec:
                 _s("ambiguous-inner-ally", "内门暧昧盟友", "盟友有利益位置，不能只送资源。", function="势力博弈"),
             ],
             "character_templates": [
-                _s("ning-chen", "宁尘", "废灵根低位主角，以道种、资源账和计算反制高位。", role="protagonist"),
-                _s("su-yao", "苏瑶", "内门线人物，帮忙和试探并存。", role="ambiguous ally"),
-                _s("fang-yu", "方域", "竞争者或派系压力，失败后推动更高层试探。", role="rival pressure"),
-                _s("lu-chen", "陆沉", "不能只做送资源工具人，必须有自身利益和选择。", role="ally with agenda"),
+                _s("low-status-protagonist", "低位计算型主角原型", "废灵根低位主角，以道种、资源账和计算反制高位。人名由本书按设定自取，勿套用模板名。", role="protagonist"),
+                _s("ambiguous-inner-ally", "内门暧昧盟友原型", "内门线人物，帮忙和试探并存。", role="ambiguous ally"),
+                _s("misjudging-rival", "误判型对手原型", "竞争者或派系压力，失败后推动更高层试探。", role="rival pressure"),
+                _s("ally-with-agenda", "带私利盟友原型", "不能只做送资源工具人，必须有自身利益和选择。", role="ally with agenda"),
                 _s("sect-steward", "执事", "通过配给、考核、账目压制主角。", role="bureaucratic antagonist"),
                 _s("old-servant", "老杂役", "提供底层秘辛和代价感。", role="early guide"),
             ],
             "plot_patterns": [
                 _s("small-resource-big-leverage", "小资源撬大机会", "低级资源通过道种或情报变成高阶机会。", rule="低位反制"),
                 _s("breakthrough-with-back-debt", "突破带后账", "每次突破必须引来关注、亏空或新敌意。", rule="无免费升级"),
-                _s("sect-feedback-loop", "宗门反馈循环", "宁尘行动改变配给、监视、拉拢或打压。", rule="势力适应"),
+                _s("sect-feedback-loop", "宗门反馈循环", "主角行动改变配给、监视、拉拢或打压。", rule="势力适应"),
                 _s("secret-realm-prep-payoff", "秘境准备兑现", "准备阶段每个技能/资源都要在秘境中兑现需求。", rule="准备-兑现"),
             ],
             "scene_templates": [
@@ -2266,7 +2284,7 @@ def _xianxia_upgrade_pack_spec() -> MaterialPackSpec:
             ],
             "dialogue_styles": [
                 _s("sect-rank-pressure", "宗门等级话术", "高位者用身份、配给、规矩压人。", style="等级压迫"),
-                _s("calculating-hero-speech", "计算型主角台词", "宁尘少放狠话，多问账、问规矩、问后果。", style="克制试探"),
+                _s("calculating-hero-speech", "计算型主角台词", "主角少放狠话，多问账、问规矩、问后果。", style="克制试探"),
                 _s("elder-half-truth", "长老半真话术", "高层只给局部真相，借机观察主角反应。", style="留白压迫"),
             ],
             "anti_cliche_patterns": [
@@ -2290,33 +2308,33 @@ def _build_qingnang_pack(project_id: str) -> list[ProjectMaterial]:
 
     rows += [
         _mat(project_id, "world_settings", "mirror-debt-city", "镜债外溢都市", "十七栋困魂镜局从凶宅向医院、旧货市场、警方证据和现实监控外溢，城市表层秩序与阴债规则互相污染。", {"rules": ["反光物成镜眼", "回执外开门", "现实证据可被污染"], "uses": ["现实压力", "案件升级"]}),
-        _mat(project_id, "world_settings", "three-clan-contract-world", "三族契约世界", "林家记账、张家开门、钱家守镜构成长期债务结构，所有单元案都必须回流到三族旧契。", {"clans": ["林家", "张家", "钱家"], "tension": "合作与互相甩债并存"}),
+        _mat(project_id, "world_settings", "three-clan-contract-world", "三族契约世界", "记账家族记账、开门家族开门、守镜家族守镜构成长期债务结构，所有单元案都必须回流到三族旧契。", {"clans": ["记账家族", "开门家族", "守镜家族"], "tension": "合作与互相甩债并存"}),
         _mat(project_id, "world_settings", "qingnang-causality-ledger-world", "青囊因果账世界", "青囊不是法术大全，而是只记录因果、账印、方位与代价的阴阳账本。", {"artifact": "青囊", "limit": "不给最终答案"}),
         _mat(project_id, "world_settings", "seventeen-building-main-gate", "十七栋主镜门", "第一卷固定入口，所有外部异闻必须证明是十七栋主镜门的回执、分账或反噬。", {"entry": "十七栋", "forbidden": "无关城市怪谈"}),
     ]
 
     rows += [
-        _mat(project_id, "factions", "lin-bookkeepers", "林家记账人", "林家承担记录和压账功能，但并非天然正义，林渊越用青囊越接近本金身份。", {"goal": "压住新名并追前账", "internal_conflict": "救人与认账冲突"}),
-        _mat(project_id, "factions", "zhang-door-openers", "张家开门人", "张家掌握旧门、门契和开门痕迹，王建业遗物与旧货市场都指向张家内鬼。", {"goal": "控制镜门开启时机", "tools": ["门契", "旧门", "三短一长"]}),
-        _mat(project_id, "factions", "qian-mirror-keepers", "钱家守镜人", "钱家知道守镜代价和过户规则，钱婆婆既怕镜子失控，也试图让林家付债。", {"goal": "守镜与甩债", "cost": "寿命和身份"}),
-        _mat(project_id, "factions", "police-evidence-pressure", "苏婉宁现实证据线", "警方不替灵异背书，只用监控、尸检、封楼和物证压缩林渊行动空间。", {"role": "现实压力", "lead": "苏婉宁"}),
+        _mat(project_id, "factions", "lin-bookkeepers", "记账家族记账人", "记账家族承担记录和压账功能，但并非天然正义，主角越用青囊越接近本金身份。", {"goal": "压住新名并追前账", "internal_conflict": "救人与认账冲突"}),
+        _mat(project_id, "factions", "zhang-door-openers", "开门家族开门人", "开门家族掌握旧门、门契和开门痕迹，死者遗物与旧货市场都指向开门家族内鬼。", {"goal": "控制镜门开启时机", "tools": ["门契", "旧门", "三短一长"]}),
+        _mat(project_id, "factions", "qian-mirror-keepers", "守镜家族守镜人", "守镜家族知道守镜代价和过户规则，守镜人既怕镜子失控，也试图让记账家族付债。", {"goal": "守镜与甩债", "cost": "寿命和身份"}),
+        _mat(project_id, "factions", "police-evidence-pressure", "警方负责人现实证据线", "警方不替灵异背书，只用监控、尸检、封楼和物证压缩主角行动空间。", {"role": "现实压力", "lead": "警方负责人"}),
     ]
 
     rows += [
         _mat(project_id, "locale_templates", "seventeen-building", "十七栋", "困魂镜主场，走廊、303、四楼窗口、灵位室和旧门共同组成镜债迷宫。", {"atmosphere": "潮湿、反光、封闭", "dangers": ["镜眼", "借脸", "照名"]}),
-        _mat(project_id, "locale_templates", "room-303-mirror-eye", "303 镜眼", "陈默入镜的核心人质点，后续救援必须先揭开替认对象。", {"function": "人质线", "callbacks": ["陈默", "小雨"]}),
-        _mat(project_id, "locale_templates", "mortuary-receipt-zone", "太平间回执区", "王建业尸体和回执镜片连接现实尸检与镜门外开，适合制造警方证据污染。", {"function": "现实外溢", "props": ["尸体", "镜片", "冷光"]}),
-        _mat(project_id, "locale_templates", "old-market-door-contract", "城北旧货市场", "王建业死前去过的旧货市场，张家门契和铜镜流转线索集中在这里。", {"function": "张家内鬼线", "props": ["铜镜", "门契"]}),
-        _mat(project_id, "locale_templates", "old-door-thirty-years", "三十年前旧门", "三短一长敲门节奏连接林正淳、旧门与真假父亲回应。", {"sound": "三短一长", "risk": "真假难辨"}),
-        _mat(project_id, "locale_templates", "ancestral-house-well", "老宅井口", "第32-37章目标地点，井口铜钱应揭开林家辉三十年前补镜代价。", {"future_use": "三百年第一账", "prop": "井口铜钱"}),
+        _mat(project_id, "locale_templates", "room-303-mirror-eye", "303 镜眼", "入镜人质入镜的核心人质点，后续救援必须先揭开替认对象。", {"function": "人质线", "callbacks": ["入镜人质", "孩童"]}),
+        _mat(project_id, "locale_templates", "mortuary-receipt-zone", "太平间回执区", "死者尸体和回执镜片连接现实尸检与镜门外开，适合制造警方证据污染。", {"function": "现实外溢", "props": ["尸体", "镜片", "冷光"]}),
+        _mat(project_id, "locale_templates", "old-market-door-contract", "城北旧货市场", "死者死前去过的旧货市场，开门家族门契和铜镜流转线索集中在这里。", {"function": "开门家族内鬼线", "props": ["铜镜", "门契"]}),
+        _mat(project_id, "locale_templates", "old-door-thirty-years", "三十年前旧门", "三短一长敲门节奏连接父亲、旧门与真假父亲回应。", {"sound": "三短一长", "risk": "真假难辨"}),
+        _mat(project_id, "locale_templates", "ancestral-house-well", "老宅井口", "第32-37章目标地点，井口铜钱应揭开祖父三十年前补镜代价。", {"future_use": "三百年第一账", "prop": "井口铜钱"}),
     ]
 
     rows += [
         _mat(project_id, "power_systems", "deny-admit-account-rule", "否认/认账/入账规则", "否认者先入账，认账者可活；承认不是洗罪，而是暂免被镜吞。", {"visible_effect": "灰线/死亡顺序", "counter": "逼出真事", "cost": "真相伤人"}),
         _mat(project_id, "power_systems", "receipt-door-system", "回执外开门规则", "死者回执可让困魂镜绕过十七栋从现实外开门，回执被夺会制造镜影行动。", {"visible_effect": "尸体遗物/镜片", "counter": "取回或暂封回执"}),
-        _mat(project_id, "power_systems", "debt-transfer-system", "镜债过户规则", "债可过户，替认必须付寿命、名字或现实身份，裴镜渊只作为旧账名方法线索存在。", {"visible_effect": "账页旧名", "cost": "寿命/身份"}),
+        _mat(project_id, "power_systems", "debt-transfer-system", "镜债过户规则", "债可过户，替认必须付寿命、名字或现实身份，旧账名只作为旧账名方法线索存在。", {"visible_effect": "账页旧名", "cost": "寿命/身份"}),
         _mat(project_id, "power_systems", "midnight-name-illumination", "午夜照名规则", "真话可活，假话入账；真话也必须交出亲族债或身份代价。", {"visible_effect": "名单点名", "counter": "说真话并付代价"}),
-        _mat(project_id, "power_systems", "old-account-priority", "前账优先规则", "前账未清，不书新名可暂压第七名真名，但会反向催林渊追三百年第一账。", {"visible_effect": "账本催促", "cost": "旧账反噬"}),
+        _mat(project_id, "power_systems", "old-account-priority", "前账优先规则", "前账未清，不书新名可暂压第七名真名，但会反向催主角追三百年第一账。", {"visible_effect": "账本催促", "cost": "旧账反噬"}),
     ]
 
     rows += [
@@ -2327,62 +2345,62 @@ def _build_qingnang_pack(project_id: str) -> list[ProjectMaterial]:
     ]
 
     rows += [
-        _mat(project_id, "character_templates", "lin-yuan", "林渊", "落魄风水师与青囊执卷人，核心爽点是用民俗方法和证据链拆解镜债规则。", {"role": "protagonist", "methods": ["青囊", "罗盘", "铜钱", "阴阳眼"]}),
-        _mat(project_id, "character_templates", "su-wanning", "苏婉宁", "现实案件线负责人，以监控、尸检和封楼持续压缩林渊空间，不应工具人化。", {"role": "police_pressure", "boundary": "不无条件相信灵异"}),
-        _mat(project_id, "character_templates", "sun-jiujin", "孙九斤", "懂旧城民俗和桃木铜钱的怕死盟友，前期提供资源，中期必须用命还债。", {"role": "folk_resource_ally", "wound": "欠林正淳一命"}),
-        _mat(project_id, "character_templates", "qian-poppo", "钱婆婆", "钱家守镜人，既恨林家又怕困魂镜失控，每次揭示真相都保留钱家利益。", {"role": "ambivalent_keeper"}),
-        _mat(project_id, "character_templates", "chen-mo", "陈默", "主动入镜的人质线，证明镜局会利用善意和替认；救他必须先揭示他替谁认账。", {"role": "hostage", "rule": "替认"}),
-        _mat(project_id, "character_templates", "lin-jiahui", "林家辉", "林渊祖父，三十年前补镜，眉心疤与康熙铜钱绑定。", {"role": "grandfather_debt", "must_not_confuse_with": "林远山"}),
-        _mat(project_id, "character_templates", "lin-zhengchun", "林正淳", "林渊父亲，二十三年前第一次入局，三年前再次入镜并替林渊挡债。", {"role": "father_mystery"}),
-        _mat(project_id, "character_templates", "lin-yuanshan", "林远山", "三百年前封镜先祖，只能作为契约源头和旧账源头出现。", {"role": "ancestor_contract", "forbidden": "父亲/爷爷"}),
+        _mat(project_id, "character_templates", "lin-yuan", "主角", "落魄风水师与青囊执卷人，核心爽点是用民俗方法和证据链拆解镜债规则。", {"role": "protagonist", "methods": ["青囊", "罗盘", "铜钱", "阴阳眼"]}),
+        _mat(project_id, "character_templates", "su-wanning", "警方负责人", "现实案件线负责人，以监控、尸检和封楼持续压缩主角空间，不应工具人化。", {"role": "police_pressure", "boundary": "不无条件相信灵异"}),
+        _mat(project_id, "character_templates", "sun-jiujin", "民俗盟友", "懂旧城民俗和桃木铜钱的怕死盟友，前期提供资源，中期必须用命还债。", {"role": "folk_resource_ally", "wound": "欠父亲一命"}),
+        _mat(project_id, "character_templates", "qian-poppo", "守镜人", "守镜家族守镜人，既恨记账家族又怕困魂镜失控，每次揭示真相都保留守镜家族利益。", {"role": "ambivalent_keeper"}),
+        _mat(project_id, "character_templates", "chen-mo", "入镜人质", "主动入镜的人质线，证明镜局会利用善意和替认；救他必须先揭示他替谁认账。", {"role": "hostage", "rule": "替认"}),
+        _mat(project_id, "character_templates", "lin-jiahui", "祖父", "主角祖父，三十年前补镜，眉心疤与康熙铜钱绑定。", {"role": "grandfather_debt", "must_not_confuse_with": "封镜先祖"}),
+        _mat(project_id, "character_templates", "lin-zhengchun", "父亲", "主角父亲，二十三年前第一次入局，三年前再次入镜并替主角挡债。", {"role": "father_mystery"}),
+        _mat(project_id, "character_templates", "lin-yuanshan", "封镜先祖", "三百年前封镜先祖，只能作为契约源头和旧账源头出现。", {"role": "ancestor_contract", "forbidden": "父亲/爷爷"}),
     ]
 
     rows += [
-        _mat(project_id, "plot_patterns", "case-to-contract-loop", "单元案回流三族契约", "每个短案先交付局部解谜爽点，再把线索回收到林家、张家、钱家的旧账结构。", {"steps": ["入口异常", "规则试探", "局部破局", "长线钩子"]}),
+        _mat(project_id, "plot_patterns", "case-to-contract-loop", "单元案回流三族契约", "每个短案先交付局部解谜爽点，再把线索回收到记账家族、开门家族、守镜家族的旧账结构。", {"steps": ["入口异常", "规则试探", "局部破局", "长线钩子"]}),
         _mat(project_id, "plot_patterns", "rule-reveal-cost-escalation", "规则揭示与代价升级", "规则第一次出现必须可见，第二次必须被利用，第三次必须反噬。", {"rhythm": "显规则-用规则-付代价"}),
-        _mat(project_id, "plot_patterns", "reality-and-occult-cross-pressure", "现实证据与灵异规则夹击", "苏婉宁推进现实物证，困魂镜污染证据，林渊必须同时解决法律和阴债压力。", {"pressure": ["警方", "镜影", "尸检"]}),
+        _mat(project_id, "plot_patterns", "reality-and-occult-cross-pressure", "现实证据与灵异规则夹击", "警方负责人推进现实物证，困魂镜污染证据，主角必须同时解决法律和阴债压力。", {"pressure": ["警方", "镜影", "尸检"]}),
         _mat(project_id, "plot_patterns", "old-account-reversal", "旧账反转结构", "新危机看似来自当前受害者，结尾反转为旧账催收，迫使主角回十七栋。", {"payoff": "前账未清"}),
     ]
 
     rows += [
-        _mat(project_id, "scene_templates", "folk-method-deduction", "民俗方法推理场景", "林渊用方位、铜钱、罗盘或门槛痕迹推理，而不是直接宣布答案。", {"beats": ["观察物证", "民俗解释", "现实验证", "代价显露"]}),
+        _mat(project_id, "scene_templates", "folk-method-deduction", "民俗方法推理场景", "主角用方位、铜钱、罗盘或门槛痕迹推理，而不是直接宣布答案。", {"beats": ["观察物证", "民俗解释", "现实验证", "代价显露"]}),
         _mat(project_id, "scene_templates", "receipt-object-horror", "回执物证恐怖场景", "尸体、镜片、手机或旧物成为回执载体，恐怖和证据同时推进。", {"beats": ["发现物", "反光异常", "身份风险"]}),
-        _mat(project_id, "scene_templates", "mirror-face-misidentification", "借脸误认场景", "镜影借林渊或林家辉的脸出场，重点制造关系误判而非普通打斗。", {"beats": ["熟脸出现", "细节不对", "关系崩裂"]}),
+        _mat(project_id, "scene_templates", "mirror-face-misidentification", "借脸误认场景", "镜影借主角或祖父的脸出场，重点制造关系误判而非普通打斗。", {"beats": ["熟脸出现", "细节不对", "关系崩裂"]}),
         _mat(project_id, "scene_templates", "account-page-reveal", "账页揭示场景", "账页出现新名字或旧印，只给账法和代价，不给完整答案。", {"beats": ["显字", "误读", "代价", "新钩子"]}),
-        _mat(project_id, "scene_templates", "police-evidence-interrupt", "警方物证打断场景", "苏婉宁带来监控、尸检或封楼命令，迫使林渊改变灵异处理节奏。", {"beats": ["物证压迫", "无法解释", "抢时间"]}),
+        _mat(project_id, "scene_templates", "police-evidence-interrupt", "警方物证打断场景", "警方负责人带来监控、尸检或封楼命令，迫使主角改变灵异处理节奏。", {"beats": ["物证压迫", "无法解释", "抢时间"]}),
         _mat(project_id, "scene_templates", "old-door-knock", "旧门敲门场景", "三短一长的敲门声召回父亲线，必须真假难辨并带出新账。", {"beats": ["敲门", "熟悉节奏", "验证失败", "账本催促"]}),
     ]
 
     rows += [
-        _mat(project_id, "device_templates", "qingnang-ledger", "青囊秘卷", "只记因果、账印、方位和代价，不替任何人赎罪。", {"power": "显字记账", "limit": "不给答案", "cost": "林家账压"}),
-        _mat(project_id, "device_templates", "kangxi-coin", "康熙铜钱", "林家辉补镜相关物，能暂封、验阴阳或缝镜，但会把债转成烙印。", {"power": "暂封/验痕", "cost": "债印扩散"}),
+        _mat(project_id, "device_templates", "qingnang-ledger", "青囊秘卷", "只记因果、账印、方位和代价，不替任何人赎罪。", {"power": "显字记账", "limit": "不给答案", "cost": "记账家族账压"}),
+        _mat(project_id, "device_templates", "kangxi-coin", "康熙铜钱", "祖父补镜相关物，能暂封、验阴阳或缝镜，但会把债转成烙印。", {"power": "暂封/验痕", "cost": "债印扩散"}),
         _mat(project_id, "device_templates", "receipt-mirror-shard", "回执镜片", "死者离局后的镜门凭证，能让镜债从现实外开门。", {"power": "外开门", "risk": "镜影行动"}),
-        _mat(project_id, "device_templates", "zhang-door-contract", "张家门契", "开门资格和张家内鬼交易的物证，连接旧货市场和十七栋旧门。", {"power": "标记门权", "risk": "被夺开门"}),
-        _mat(project_id, "device_templates", "well-mouth-coin", "井口铜钱", "第32-37章应出现的关键物，指向林家辉三十年前补镜代价。", {"future_use": "第一账入口"}),
+        _mat(project_id, "device_templates", "zhang-door-contract", "开门家族门契", "开门资格和开门家族内鬼交易的物证，连接旧货市场和十七栋旧门。", {"power": "标记门权", "risk": "被夺开门"}),
+        _mat(project_id, "device_templates", "well-mouth-coin", "井口铜钱", "第32-37章应出现的关键物，指向祖父三十年前补镜代价。", {"future_use": "第一账入口"}),
     ]
 
     rows += [
         _mat(project_id, "thematic_motifs", "debt-and-name", "债与名字", "名字不是身份标签，而是账本收人的入口；真名越清晰，代价越近。", {"symbols": ["名单", "账页", "照名"]}),
         _mat(project_id, "thematic_motifs", "mirror-and-face", "镜与脸", "镜子不只是恐怖物，而是身份、替罪和被冒名的象征。", {"symbols": ["无影", "借脸", "回执"]}),
         _mat(project_id, "thematic_motifs", "old-door-knocking", "旧门敲声", "三短一长连接亲情、骗局和旧账催收，任何回应都要先验真假。", {"symbols": ["旧门", "敲声", "父亲"]}),
-        _mat(project_id, "thematic_motifs", "coin-scar-ledger", "铜钱与疤", "康熙铜钱和眉心疤把林家辉旧债视觉化，是祖父线的重复意象。", {"symbols": ["铜钱", "眉心疤"]}),
+        _mat(project_id, "thematic_motifs", "coin-scar-ledger", "铜钱与疤", "康熙铜钱和眉心疤把祖父旧债视觉化，是祖父线的重复意象。", {"symbols": ["铜钱", "眉心疤"]}),
     ]
 
     rows += [
-        _mat(project_id, "emotion_arcs", "fear-to-rule-control", "恐惧到掌控规则", "场景情绪从被怪异压迫，转为林渊找到规则并反压对方，但结尾必须付出新代价。", {"beats": ["恐惧", "观察", "推断", "反压", "反噬"]}),
-        _mat(project_id, "emotion_arcs", "trust-to-evidence-conflict", "信任到证据冲突", "苏婉宁线的情绪不是暧昧，而是证据与经验互相不信任后的有限协作。", {"beats": ["怀疑", "物证", "无法解释", "临时合作"]}),
-        _mat(project_id, "emotion_arcs", "family-truth-wound", "亲情真相创伤", "林渊每接近父亲或祖父真相，都必须面对亲人可能也欠债的刺痛。", {"beats": ["想救", "发现隐瞒", "愤怒", "继续追"]}),
+        _mat(project_id, "emotion_arcs", "fear-to-rule-control", "恐惧到掌控规则", "场景情绪从被怪异压迫，转为主角找到规则并反压对方，但结尾必须付出新代价。", {"beats": ["恐惧", "观察", "推断", "反压", "反噬"]}),
+        _mat(project_id, "emotion_arcs", "trust-to-evidence-conflict", "信任到证据冲突", "警方负责人线的情绪不是暧昧，而是证据与经验互相不信任后的有限协作。", {"beats": ["怀疑", "物证", "无法解释", "临时合作"]}),
+        _mat(project_id, "emotion_arcs", "family-truth-wound", "亲情真相创伤", "主角每接近父亲或祖父真相，都必须面对亲人可能也欠债的刺痛。", {"beats": ["想救", "发现隐瞒", "愤怒", "继续追"]}),
     ]
 
     rows += [
-        _mat(project_id, "dialogue_styles", "ledger-cross-examination", "账本式逼问", "林渊逼问时不靠大段解释，而是用一个物证、一条规则、一个无法否认的问题推进。", {"style": "短句、反问、证据落点"}),
-        _mat(project_id, "dialogue_styles", "qian-poppo-half-truth", "钱婆婆半真半假", "钱婆婆说话要像砂纸，给真相也留缺口，每一句都带钱家自保。", {"style": "干涩、讽刺、避重就轻"}),
-        _mat(project_id, "dialogue_styles", "police-evidence-speech", "警方证据话术", "苏婉宁台词以时间、物证、程序和嫌疑链为核心，压迫感来自现实逻辑。", {"style": "冷静、具体、证据导向"}),
+        _mat(project_id, "dialogue_styles", "ledger-cross-examination", "账本式逼问", "主角逼问时不靠大段解释，而是用一个物证、一条规则、一个无法否认的问题推进。", {"style": "短句、反问、证据落点"}),
+        _mat(project_id, "dialogue_styles", "qian-poppo-half-truth", "守镜人半真半假", "守镜人说话要像砂纸，给真相也留缺口，每一句都带守镜家族自保。", {"style": "干涩、讽刺、避重就轻"}),
+        _mat(project_id, "dialogue_styles", "police-evidence-speech", "警方证据话术", "警方负责人台词以时间、物证、程序和嫌疑链为核心，压迫感来自现实逻辑。", {"style": "冷静、具体、证据导向"}),
     ]
 
     rows += [
         _mat(project_id, "anti_cliche_patterns", "no-random-ghost-case", "禁止无关怪谈", "第一卷所有异闻必须证明来自十七栋、三族契约、回执外溢或青囊反噬。", {"avoid": "每几章换鬼"}),
-        _mat(project_id, "anti_cliche_patterns", "no-all-knowing-elder", "禁止全知老人讲完真相", "钱婆婆、旧账页、父亲回声都只能给局部信息，真相必须通过物证和规则拼出。", {"avoid": "口述大揭秘"}),
+        _mat(project_id, "anti_cliche_patterns", "no-all-knowing-elder", "禁止全知老人讲完真相", "守镜人、旧账页、父亲回声都只能给局部信息，真相必须通过物证和规则拼出。", {"avoid": "口述大揭秘"}),
         _mat(project_id, "anti_cliche_patterns", "no-free-magic-solve", "禁止无代价法术解题", "铜钱、青囊、罗盘每次有效都必须带身体、身份或关系代价。", {"avoid": "主角突然开挂"}),
     ]
 

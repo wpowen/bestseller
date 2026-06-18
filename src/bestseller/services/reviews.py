@@ -1649,7 +1649,7 @@ def build_scene_review_prompts(
             "1. Read scene end-to-end; mark each axis as PASS or FAIL\n"
             "2. For each FAIL, locate the specific paragraph / sentence that triggered it\n"
             "3. If ≥2 axes FAIL, verdict = rewrite; otherwise verdict = pass\n"
-            "4. REWRITE_DIRECTION must be concrete (not 'improve dialogue' — 'cut林渊's line 3, replace with a single action: 拇指碾过铜钱缺口')\n"
+            "4. REWRITE_DIRECTION must be concrete (not 'improve dialogue' — 'cut the protagonist's line 3, replace with a single action: 拇指碾过随身物件的缺口')\n"
             "\n"
             "# OUTPUT FORMAT (exact lines, no extras)\n"
             "VERDICT: pass OR rewrite\n"
@@ -1681,7 +1681,7 @@ def build_scene_review_prompts(
             "1. 通读场景，对五项逐条心里打 PASS / FAIL\n"
             "2. 对每条 FAIL，定位到具体段落 / 句子\n"
             "3. ≥ 2 项 FAIL → verdict = rewrite；否则 verdict = pass\n"
-            "4. REWRITE_DIRECTION 必须具体（不要写「优化对话」—— 要写「删林渊第 3 句，换成单一动作：拇指碾过铜钱缺口」）\n"
+            "4. REWRITE_DIRECTION 必须具体（不要写「优化对话」—— 要写「删主角第 3 句，换成单一动作：拇指碾过随身物件的缺口」）\n"
             "\n"
             "# OUTPUT FORMAT（必须 4 行，每行一项，无前缀无后缀）\n"
             "VERDICT: pass 或 rewrite\n"
@@ -2393,7 +2393,7 @@ def build_chapter_review_prompts(
             "1. Read chapter end-to-end; mark each axis PASS / FAIL\n"
             "2. For each FAIL, locate triggering paragraphs / sentences\n"
             "3. ≥2 axes FAIL → verdict = rewrite; otherwise pass\n"
-            "4. REWRITE_DIRECTION must be specific (NOT 'strengthen ending' — 'after final dialogue add a single concrete object cue: 林渊的铜钱缺口又渗出一滴黑水')\n"
+            "4. REWRITE_DIRECTION must be specific (NOT 'strengthen ending' — 'after final dialogue add a single concrete object cue: 主角随身物件的缺口又渗出一滴黑水')\n"
             "\n"
             "# OUTPUT FORMAT (4 lines, exact)\n"
             "VERDICT: pass OR rewrite\n"
@@ -2424,7 +2424,7 @@ def build_chapter_review_prompts(
             "1. 通读本章，对四项逐条心里打 PASS / FAIL\n"
             "2. 对每条 FAIL，定位到具体段落 / 句子\n"
             "3. ≥ 2 项 FAIL → verdict = rewrite；否则 verdict = pass\n"
-            "4. REWRITE_DIRECTION 必须具体（不要写「加强尾钩」—— 要写「在最后对话后追加一个具象物件提示：林渊的铜钱缺口又渗出一滴黑水」）\n"
+            "4. REWRITE_DIRECTION 必须具体（不要写「加强尾钩」—— 要写「在最后对话后追加一个具象物件提示：主角随身物件的缺口又渗出一滴黑水」）\n"
             "\n"
             "# OUTPUT FORMAT（必须 4 行，每行一项）\n"
             "VERDICT: pass 或 rewrite\n"
@@ -7061,7 +7061,6 @@ def _forbidden_rewrite_terms_from_scene_action(action_text: str) -> list[str]:
         "黑泥鞋印",
         "水渍脚印",
         "新脚",
-        "陈默",
         "七号入账",
         "代父",
         "入门",

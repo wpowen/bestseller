@@ -6,12 +6,11 @@ from typing import Any
 
 import yaml
 
-_DEFAULT_REVEAL_FLOORS: tuple[tuple[str, int, tuple[str, ...]], ...] = (
-    ("kou_zhang_ren", 9, ("扣账人",)),
-    ("san_dai_wei_yi_hu", 25, ("三代为一户", "父债子偿")),
-    ("jing_ying_lin_yuan_self_aware", 18, ("镜影林渊",)),
-    ("father_complete_truth", 50, ("父亲完整真相",)),
-)
+# No baked per-book reveal floors: pilot-specific tokens (镜影<name>/扣账人/…)
+# were leaking one book's reveal schedule into every project. Reveal floors are
+# now derived purely from each book's own series-bible via
+# ``_extract_reveal_floor_terms`` below, so the scaffold is genre-neutral.
+_DEFAULT_REVEAL_FLOORS: tuple[tuple[str, int, tuple[str, ...]], ...] = ()
 
 
 def build_reveal_schedule(

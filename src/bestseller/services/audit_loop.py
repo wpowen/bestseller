@@ -1220,7 +1220,7 @@ class ChapterSignatureAudit:
     # Agent-verb patterns to EXCLUDE (these are action sentences, not
     # verdicts).
     _AGENT_ACTION_RE = re.compile(
-        r"^(?:他|她|它|我|你|林渊|王老板|孙九斤|苏婉宁|陈默|小雨|周雪|老张|张建军)"
+        r"^(?:他|她|它|我|你|[一-鿿]{2,4})"
         r"(?:[一-鿿]{0,4}着|[一-鿿]{0,2}了)?"
     )
 

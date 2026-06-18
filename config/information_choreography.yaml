@@ -103,16 +103,16 @@ information_modes:
 sample_belief_audit:
   ch1_b1:
     planted_in_chapter: 1
-    reader_belief: 第四人是周神算的同伙
-    truth: 第四人是归墟会"执令人"，周神算才是被胁迫的下层
+    reader_belief: 第四人是某术士的同伙
+    truth: 第四人是某神秘组织"执令人"，某术士才是被胁迫的下层
     payoff_chapter: 6  # 推迟到第 6 章揭穿
-    payoff_method: 通过周神算被灭口前的最后一句话
+    payoff_method: 通过某术士被灭口前的最后一句话
     misdirection_type: 角色错位
     curiosity_level: 5
 
   ch1_b2:
     planted_in_chapter: 1
-    reader_belief: 沈青崖只是要查李德盛溺死案
+    reader_belief: 主角只是要查死者溺死案
     truth: 这是十五年前沈家旧案的连锁灭口
     payoff_chapter: 3  # 在 ch3 信件里揭一半
     payoff_method: 清尘信件
@@ -122,7 +122,7 @@ sample_belief_audit:
   ch2_b1:
     planted_in_chapter: 2
     reader_belief: 林氏是无辜遗孀
-    truth: 林氏可能知道李德盛欠归墟会"债"的真相（但不敢说）
+    truth: 林氏可能知道死者欠某神秘组织"债"的真相（但不敢说）
     payoff_chapter: 5
     payoff_method: 林氏在被掳后泄密
     misdirection_type: 半真半假
@@ -130,17 +130,17 @@ sample_belief_audit:
 
   ch3_b1:
     planted_in_chapter: 3
-    reader_belief: 沈夫人马氏 - 沈青崖的母亲还活着
-    truth: 马氏是归墟会"留下来" 的人质 + 内奸（双重身份）
+    reader_belief: 某夫人 - 主角的母亲还活着
+    truth: 某夫人是某神秘组织"留下来" 的人质 + 内奸（双重身份）
     payoff_chapter: 15  # 卷末
-    payoff_method: 沈青崖找到马氏，发现她在归墟会卧底但身份复杂
+    payoff_method: 主角找到某夫人，发现她在某神秘组织卧底但身份复杂
     misdirection_type: 半真半假
     curiosity_level: 5
 
   ch3_b2:
     planted_in_chapter: 3
     reader_belief: 林九韶是反派
-    truth: 林九韶是被把柄拿住的"好人"（女儿在归墟会手里）
+    truth: 林九韶是被把柄拿住的"好人"（女儿在某神秘组织手里）
     payoff_chapter: 7
     payoff_method: 林九韶以命换主角情报
     misdirection_type: 角色错位

@@ -330,7 +330,7 @@ class SceneOutlineInput(BaseModel):
         description=(
             "Executable scene goal — a specific physical action or event "
             "that happens in this scene (not an abstract thematic intention). "
-            "E.g. '林渊用铜钱压住镜脚，阻止无脸人的手臂伸出' rather than '建立恐惧感'."
+            "E.g. '主角用随身物件卡住门缝，挡住正伸进来的手' rather than '建立恐惧感'."
         ),
         validation_alias=AliasChoices("concrete_goal", "scene_concrete_goal", "concrete_action"),
     )
@@ -339,7 +339,7 @@ class SceneOutlineInput(BaseModel):
         description=(
             "What the protagonist is specifically feeling or wanting at the START "
             "of this scene, tied to a concrete object or event — not a generic emotion. "
-            "E.g. '摸到铜钱时认出了和父亲记录本同一支笔的字，心里有一层什么东西开始松动'."
+            "E.g. '触到某件旧物时认出了与亲人遗物相同的细节，心里某处开始松动'."
         ),
     )
     information_introduced: list[str] = Field(
@@ -347,7 +347,7 @@ class SceneOutlineInput(BaseModel):
         description=(
             "Concrete facts/clues the reader learns in this scene. "
             "Each item should be specific enough that a reader could write it "
-            "down as a clue. E.g. ['303是父亲戊子年未结账的地址', '王建业裤脚黑水来自303门缝']."
+            "down as a clue. E.g. ['某房号是亲人多年前未了结的地址', '死者裤脚的污渍来自那扇门缝']."
         ),
         validation_alias=AliasChoices("information_introduced", "reader_learns", "clues_revealed"),
     )
@@ -356,7 +356,7 @@ class SceneOutlineInput(BaseModel):
         description=(
             "Facts the author knows but deliberately withholds from the reader "
             "in this scene — the deliberate tension gap. "
-            "E.g. ['镜子里的无脸人是谁', '父亲为什么没有回来']."
+            "E.g. ['那个威胁究竟是谁', '关键人物为什么至今没有回来']."
         ),
         validation_alias=AliasChoices(
             "information_held_back", "reader_does_not_learn", "withheld_info"
@@ -367,7 +367,7 @@ class SceneOutlineInput(BaseModel):
         description=(
             "How supernatural objects behave in this scene and what that signals. "
             "Must be specific: which object, what sensation, what it means. "
-            "E.g. '铜钱边缘发凉（不是发烫）——冷是警示，代表镜局有主动意识在看林渊'."
+            "E.g. '某个异常物件边缘发凉（不是发烫）——冷是警示，代表背后有意识在注视主角'."
         ),
     )
 
@@ -617,8 +617,8 @@ class ChapterOutlineInput(BaseModel):
         description=(
             "The protagonist's specific inner goal or emotional state at the START "
             "of this chapter — must be tied to a concrete event or object. "
-            "E.g. '看到名片背面字迹认出和父亲记录本的同一支笔，林渊的平静里有一层没有压下去的东西'. "
-            "NOT: '林渊很镇定'. The inner state should imply forward momentum."
+            "E.g. '看到某处字迹认出与亲人遗物同源的细节，主角的平静里有一层没压下去的东西'. "
+            "NOT: '主角很镇定'. The inner state should imply forward momentum."
         ),
         validation_alias=AliasChoices(
             "protagonist_inner_state",
@@ -631,8 +631,8 @@ class ChapterOutlineInput(BaseModel):
         description=(
             "The 3-5 specific physical actions the protagonist takes in this chapter. "
             "Each should be observable: something a camera could record. "
-            "E.g. ['用伞柄卡住电梯门防止门关上', '把铜钱甩向穿衣镜镜脚压住人影', "
-            "'抓住王建业被拽入镜的瞬间——只拿到一只鞋']."
+            "E.g. ['用伞柄卡住电梯门防止门关上', '把随身物件甩向角落压住人影', "
+            "'抓住某人被拽走的瞬间——只拿到一只鞋']."
         ),
         validation_alias=AliasChoices(
             "chapter_concrete_actions", "concrete_actions", "protagonist_actions"
@@ -643,8 +643,8 @@ class ChapterOutlineInput(BaseModel):
         description=(
             "How each supernatural/professional object is used in this chapter. "
             "Format: '<object>: <action> → <result or signal>'. "
-            "E.g. ['铜钱: 甩向镜脚→压住人影轮廓; 边缘崩裂→说明镜局力量超出铜钱承受极限', "
-            "'罗盘: 揣入内袋未使用→暗示本章没有勘测需要，情境已无需定位']."
+            "E.g. ['核心物件: 甩向角落→压住人影轮廓; 边缘崩裂→说明威胁超出物件承受极限', "
+            "'辅助物件: 揣入内袋未使用→暗示本章没有用到它的场景']."
         ),
         validation_alias=AliasChoices(
             "chapter_object_uses", "object_uses", "tool_uses"
@@ -655,8 +655,8 @@ class ChapterOutlineInput(BaseModel):
         description=(
             "Specific facts/clues the reader learns by the end of this chapter. "
             "Each should be concrete enough to write on a detective's whiteboard. "
-            "E.g. ['303是父亲戊子年未结账的地址', '铜钱崩裂意味着镜局中存在比铜钱能压制的更强存在', "
-            "'张建军手里有一枚铁片，形状和穿衣镜钥匙一模一样']."
+            "E.g. ['某房号是亲人多年前未了结的地址', '核心物件崩裂意味着存在更强的威胁', "
+            "'某配角手里有一枚铁片，形状和关键的钥匙一模一样']."
         ),
         validation_alias=AliasChoices(
             "chapter_information_introduced", "information_introduced", "chapter_reveals"
@@ -667,8 +667,8 @@ class ChapterOutlineInput(BaseModel):
         description=(
             "Facts the author knows but deliberately does NOT reveal in this chapter. "
             "These are the tension gaps that pull readers into the next chapter. "
-            "E.g. ['镜子里的无脸人的真实身份', '父亲是否还活着（在镜中）', "
-            "'张建军手里的铁片是怎么来的']."
+            "E.g. ['幕后威胁的真实身份', '失踪的关键人物是否还活着', "
+            "'某配角手里的铁片是怎么来的']."
         ),
         validation_alias=AliasChoices(
             "chapter_information_held_back", "information_held_back", "chapter_withheld"

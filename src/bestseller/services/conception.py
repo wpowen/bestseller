@@ -836,6 +836,98 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
     return prompt
 
 
+# Web-novel cast names so overused — or baked into legacy material packs — that
+# the conception LLM keeps defaulting to them, collapsing unrelated books onto
+# the same handful of protagonists (the recurring 陆沉/宁尘/苏瑶 problem). These
+# are banned outright in zh casts. Cross-book de-dup against actually-used names
+# is layered on top via ``_recent_cast_names`` → ``ctx['avoid_names']``.
+_CLICHE_NAME_BLOCKLIST: tuple[str, ...] = (
+    "陆沉", "陆尘", "陆轩", "陆离", "陆鸣", "陆晨",
+    "叶凡", "叶尘", "叶轩", "叶天", "叶辰",
+    "林轩", "林动", "林凡", "林夕", "林墨",
+    "苏瑶", "苏沐", "苏晴", "苏白",
+    "楚风", "楚枫", "萧炎", "萧晨",
+    "江晚", "沈追", "顾沉", "宁尘", "方域", "韩立", "秦尘",
+)
+
+
+def _naming_constraint_block(ctx: dict[str, Any], *, is_en: bool) -> str:
+    """Append a do-not-reuse name list to the cast prompt.
+
+    Two layers: a static blocklist of overused / legacy-baked names, and a
+    dynamic list of names already used by other projects in this system
+    (``ctx['avoid_names']``) — the cross-book de-dup that was missing at the
+    conception layer and let the same names recur book after book.
+    """
+
+    avoid = [str(n).strip() for n in (ctx.get("avoid_names") or []) if str(n).strip()]
+    if is_en:
+        if not avoid:
+            return ""
+        shown = ", ".join(avoid[:40])
+        return (
+            "\n\n[Naming de-duplication — hard constraint]\n"
+            f"These names are already used by other books in this system; do NOT "
+            f"reuse them or near-identical variants: {shown}.\n"
+            "Pick fresh names that fit this book's specific premise and protagonist."
+        )
+    lines = [
+        "\n\n【命名去重 · 硬约束】",
+        "以下名字在网文里被严重滥用、或被旧模板固化，主角与主要配角一律禁止使用，"
+        "也不要用仅差一字的高度雷同变体：",
+        "、".join(_CLICHE_NAME_BLOCKLIST) + "。",
+    ]
+    if avoid:
+        lines.append(
+            "以下名字已被本系统其他作品使用，为保证每本书差异化，禁止再用（含同姓近似变体）："
+            + "、".join(avoid[:40])
+            + "。"
+        )
+    lines.append("请主动避开以上所有名字，为本书取一个新鲜、贴合具体设定与主角气质的名字。")
+    return "\n".join(lines)
+
+
+async def _recent_cast_names(session: AsyncSession, *, limit: int = 60) -> list[str]:
+    """Names already used by existing projects, newest first, for cross-book
+    de-dup at the conception layer.
+
+    Best-effort: any failure returns an empty list so conception never blocks
+    on it. Parenthetical qualifiers (e.g. ``"Rowan Ashford (18th daughter)"``)
+    are stripped so a single character is not counted as many.
+    """
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from bestseller.infra.db.models import CharacterModel  # noqa: PLC0415
+
+    try:
+        rows = list(
+            await session.scalars(
+                select(CharacterModel.name)
+                .order_by(CharacterModel.created_at.desc())
+                .limit(limit * 5)
+            )
+        )
+    except Exception:
+        logger.debug("recent cast-name fetch failed", exc_info=True)
+        return []
+
+    seen: list[str] = []
+    for raw in rows:
+        name = (raw or "").strip()
+        for sep in ("（", "(", "·", "/"):
+            name = name.split(sep)[0].strip()
+        # Sanity guard: real names are short; longer strings are role/desc junk.
+        # Cap allows multi-word English full names ("Rowan Ashford") through.
+        if not name or len(name) > 24:
+            continue
+        if name not in seen:
+            seen.append(name)
+        if len(seen) >= limit:
+            break
+    return seen
+
+
 def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | None = None) -> str:
     prompt = (
         f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
@@ -887,6 +979,7 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
             prompt += f"\n\n【品类角色设计要求】\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=False)
     prompt += _concept_methodology_prompt_block(ctx)
+    prompt += _naming_constraint_block(ctx, is_en=False)
     return prompt
 
 
@@ -1024,6 +1117,7 @@ def _character_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewPro
             prompt += f"\n\n[Genre character design requirements]\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=True)
     prompt += _concept_methodology_prompt_block(ctx)
+    prompt += _naming_constraint_block(ctx, is_en=True)
     return prompt
 
 
@@ -1565,6 +1659,10 @@ async def run_conception_pipeline(
 
     is_en = ctx.get("language", "zh-CN").startswith("en")
     ctx = _sanitize_forbidden_default_motifs(ctx, is_en=is_en)
+
+    # Cross-book name de-dup: feed the cast prompt the names other projects
+    # already used so the LLM stops re-minting 陆沉/宁尘/etc. Best-effort.
+    ctx["avoid_names"] = await _recent_cast_names(session)
 
     selected_hook_spec = coerce_hook_spec(
         user_hints.get("hook_spec") if isinstance(user_hints, dict) else None

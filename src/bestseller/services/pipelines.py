@@ -8177,16 +8177,23 @@ async def run_chapter_pipeline(
             _wm_meta = _wm_meta if isinstance(_wm_meta, dict) else {}
             if chapter_draft is not None and chapter_draft.content_md and _wm_meta:
                 from bestseller.services.world_law_consistency_gate import (
-                    check_world_law_consistency_gate,
+                    evaluate_world_law_consistency_llm,
                 )
                 from bestseller.services.world_model_injection import extract_world_model
 
                 _world_model_payload = extract_world_model(_wm_meta)
                 if _world_model_payload:
-                    _wl_report = check_world_law_consistency_gate(
-                        chapter_draft.content_md,
-                        chapter_position=chapter_number,
-                        world_model=_world_model_payload,
+                    # LLM semantic judge + deterministic tier check; degrades to the
+                    # deterministic detector if the LLM is unavailable.
+                    _wl_report = (
+                        await evaluate_world_law_consistency_llm(
+                            session,
+                            settings,
+                            chapter_draft.content_md,
+                            chapter_position=chapter_number,
+                            world_model=_world_model_payload,
+                            language=getattr(project, "language", None) or "zh",
+                        )
                     ).to_checker_report()
                     if _wl_report.issues:
                         workflow_run.metadata_json = {

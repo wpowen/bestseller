@@ -11,7 +11,7 @@ The deterministic detector handles the common enforceable patterns of the
 LLM judge can be injected via ``judge=`` without changing the call sites.
 """
 
-# ruff: noqa: E501
+# ruff: noqa: E501, S110, ANN401
 
 from __future__ import annotations
 
@@ -62,12 +62,18 @@ class WorldLawConsistencyReport:
     active_law_count: int = 0
 
     def to_checker_report(self) -> CheckerReport:
+        _why = {
+            "prohibition": "(被该规律禁止)",
+            "missing_justification": "(未给出规律要求的理由)",
+            "tier_mismatch": "(与世界阶梯数值矛盾)",
+            "semantic": "(语义判定违背)",
+        }
         issues = tuple(
             CheckerIssue(
                 id=f"world_law_violation:{v.dimension}",
                 message=(
-                    f"[{v.dimension}] 正文可能违背世界规律:出现「{v.trigger}」"
-                    + ("(被该规律禁止)" if v.kind == "prohibition" else "(未给出规律要求的理由)")
+                    f"[{v.dimension}] 正文可能违背世界规律:「{v.trigger}」"
+                    + _why.get(v.kind, "")
                     + f"。约束:{v.enforcement}"
                 ),
             )
@@ -85,15 +91,54 @@ class WorldLawConsistencyReport:
 
 
 def _trigger_ngrams(phrase: str) -> set[str]:
-    """2-4 char shingles of a trigger phrase, for surface contact detection."""
+    """3-4 char shingles of a trigger phrase, for surface contact detection.
+
+    Deliberately drops 2-char shingles: they fire on incidental words (灵石/饮食)
+    and were the source of false positives. 3+ chars keeps precision acceptable
+    for the deterministic offline fallback (the LLM judge is the precise path).
+    """
 
     out: set[str] = set()
     phrase = phrase.strip()
     for run in _CJK_RUN.findall(phrase):
-        for size in (4, 3, 2):
+        for size in (4, 3):
             for i in range(len(run) - size + 1):
                 out.add(run[i : i + size])
     return out
+
+
+_NUM_RE = re.compile(r"[0-9零一二三四五六七八九十百千万两]+")
+
+
+def detect_tier_violations(text: str, laws: Sequence[WorldLaw]) -> list[WorldLawViolation]:
+    """Flag prose that states a tier value contradicting the law's ladder.
+
+    Precise + low-false-positive: only fires when a tier name appears in the prose
+    immediately followed by a number that is NOT the ladder's number for that tier
+    (e.g. ladder 筑基=三百岁 but prose "筑基…四百年").
+    """
+
+    violations: list[WorldLawViolation] = []
+    for law in laws:
+        for step in law.tiers:
+            tier, value = step.tier, step.value
+            ladder_nums = set(_NUM_RE.findall(value))
+            if not tier or not ladder_nums or tier not in text:
+                continue
+            for m in re.finditer(re.escape(tier), text):
+                window = text[m.end() : m.end() + 12]
+                prose_nums = set(_NUM_RE.findall(window))
+                if prose_nums and not (prose_nums & ladder_nums):
+                    violations.append(
+                        WorldLawViolation(
+                            dimension=law.dimension,
+                            enforcement=f"阶梯 {tier}={value}",
+                            trigger=f"{tier}{''.join(sorted(prose_nums))}",
+                            kind="tier_mismatch",
+                        )
+                    )
+                    break
+    return violations
 
 
 def _split_paragraphs(text: str) -> list[str]:
@@ -196,12 +241,137 @@ def check_world_law_consistency_gate(
         return WorldLawConsistencyReport(passed=True)
     try:
         detector = judge or detect_world_law_violations
-        violations = detector(text, laws)
+        violations = list(detector(text, laws))
     except Exception:
         violations = []
+    try:
+        violations.extend(detect_tier_violations(text, laws))  # precise numeric check, always on
+    except Exception:
+        pass
     return WorldLawConsistencyReport(
         passed=not violations,
         violations=tuple(violations),
+        active_law_count=len(laws),
+    )
+
+
+# ---------------------------------------------------------------------------
+# LLM semantic judge (high recall + precision) — the production path
+# ---------------------------------------------------------------------------
+
+
+def build_world_law_judge_prompts(text: str, laws: Sequence[WorldLaw]) -> tuple[str, str]:
+    """System + user prompts for the LLM violation judge."""
+
+    system = (
+        "你是世界观一致性审校。给定本书生效的『世界规律』和一段正文,只找出**明确违背**规律的地方"
+        "(例如规律说飞行需到某境界,正文却让低境界角色随意飞行;规律说以灵石计价,正文却用纸币)。"
+        "只输出 JSON:{\"violations\":[{\"dimension\":\"...\",\"reason\":\"≤30字\"}]};没有违背就输出 "
+        '{"violations":[]}。不要臆测,拿不准就不报。'
+    )
+    law_lines = "\n".join(f"- [{law.dimension}] {law.enforcement}" for law in laws)
+    user = f"【世界规律】\n{law_lines}\n\n【正文】\n{text[:2400]}\n\n只输出 JSON。"
+    return system, user
+
+
+def _parse_judge_violations(content: str, laws: Sequence[WorldLaw]) -> list[WorldLawViolation]:
+    import json
+
+    valid_dims = {law.dimension: law for law in laws}
+    stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", (content or "").strip(), flags=re.I | re.S)
+    match = re.search(r"\{.*\}", stripped, flags=re.S)
+    payload: Any = {}
+    for candidate in (stripped, match.group(0) if match else ""):
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(candidate)
+            break
+        except json.JSONDecodeError:
+            continue
+    out: list[WorldLawViolation] = []
+    for item in (payload or {}).get("violations", []) if isinstance(payload, dict) else []:
+        if not isinstance(item, Mapping):
+            continue
+        dim = str(item.get("dimension") or "").strip()
+        law = valid_dims.get(dim)
+        if law is None:
+            continue
+        out.append(
+            WorldLawViolation(
+                dimension=dim,
+                enforcement=law.enforcement,
+                trigger=str(item.get("reason") or "语义违背")[:30],
+                kind="semantic",
+            )
+        )
+    return out
+
+
+async def evaluate_world_law_consistency_llm(
+    session: Any,
+    settings: Any,
+    text: str,
+    *,
+    chapter_position: int = 1,
+    world_model: Mapping[str, Any] | None = None,
+    language: str = "zh",
+) -> WorldLawConsistencyReport:
+    """Production gate: LLM semantic judge + deterministic tier check (fallback-safe).
+
+    Never raises; on any LLM failure it degrades to the deterministic detector.
+    """
+
+    if not text or not world_model:
+        return WorldLawConsistencyReport(passed=True)
+    try:
+        laws = select_active_laws(world_model, context_text=text, max_laws=_MAX_ACTIVE_LAWS)
+    except Exception:
+        return WorldLawConsistencyReport(passed=True)
+    if not laws:
+        return WorldLawConsistencyReport(passed=True)
+
+    violations: list[WorldLawViolation] = []
+    try:
+        from bestseller.services.llm import LLMCompletionRequest, complete_text
+
+        system_prompt, user_prompt = build_world_law_judge_prompts(text, laws)
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="critic",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                fallback_response='{"violations":[]}',
+                prompt_template="world_law_consistency",
+                prompt_version="v1",
+                max_tokens_override=600,
+            ),
+        )
+        violations.extend(_parse_judge_violations(completion.content, laws))
+    except Exception:
+        # LLM unavailable → fall back to the deterministic enforcement detector.
+        try:
+            violations.extend(detect_world_law_violations(text, laws))
+        except Exception:
+            pass
+    try:
+        violations.extend(detect_tier_violations(text, laws))
+    except Exception:
+        pass
+    # De-dup by (dimension, kind).
+    seen: set[tuple[str, str]] = set()
+    deduped: list[WorldLawViolation] = []
+    for v in violations:
+        key = (v.dimension, v.kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(v)
+    return WorldLawConsistencyReport(
+        passed=not deduped,
+        violations=tuple(deduped),
         active_law_count=len(laws),
     )
 
@@ -211,6 +381,9 @@ __all__ = [
     "CheckerReport",
     "WorldLawConsistencyReport",
     "WorldLawViolation",
+    "build_world_law_judge_prompts",
     "check_world_law_consistency_gate",
+    "detect_tier_violations",
     "detect_world_law_violations",
+    "evaluate_world_law_consistency_llm",
 ]

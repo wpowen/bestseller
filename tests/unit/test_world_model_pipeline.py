@@ -6,7 +6,9 @@ from types import SimpleNamespace
 
 from bestseller.domain.world_model import world_model_from_dict
 from bestseller.services.world_law_consistency_gate import (
+    _parse_judge_violations,
     check_world_law_consistency_gate,
+    detect_tier_violations,
     detect_world_law_violations,
 )
 from bestseller.services.world_model_injection import (
@@ -125,14 +127,14 @@ def test_build_block_for_scene_reads_project_metadata() -> None:
 
 def test_detect_flags_missing_justification() -> None:
     model = world_model_from_dict(WORLD_MODEL)
-    prose = "他懒得飞，开车通勤穿过拥挤的城市街道。"  # 通勤 trigger, no reason
+    prose = "他懒得飞，驾着地面车辆通勤穿过拥挤的城市街道。"  # trigger present, no reason
     violations = detect_world_law_violations(prose, model.world_laws)
     assert any(v.kind == "missing_justification" for v in violations)
 
 
 def test_detect_clears_when_justification_present() -> None:
     model = world_model_from_dict(WORLD_MODEL)
-    prose = "因为灵力被封印无法飞行，他只能开车通勤穿过城市。"  # reason present
+    prose = "因为灵力被封印无法飞行，他只能改乘地面车辆通勤穿过城市。"  # reason present
     violations = detect_world_law_violations(prose, model.world_laws)
     assert not any(
         v.kind == "missing_justification" and v.dimension == "mobility_and_transport"
@@ -157,6 +159,40 @@ def test_gate_is_advisory_and_safe() -> None:
     # no world model / empty text → trivially passes, never raises
     assert check_world_law_consistency_gate("", world_model=WORLD_MODEL).passed
     assert check_world_law_consistency_gate("文本", world_model=None).passed
+
+
+def test_detect_tier_violations_flags_numeric_contradiction() -> None:
+    model = world_model_from_dict(
+        {
+            "axioms": ["境界决定寿元"],
+            "world_laws": [
+                {
+                    "dimension": "life_death_and_time",
+                    "delta": "寿元随境界增长",
+                    "enforcement": "寿元须符合境界",
+                    "derived_from": ["境界决定寿元"],
+                    "tiers": [{"tier": "筑基", "value": "三百岁"}],
+                }
+            ],
+        }
+    )
+    bad = detect_tier_violations("他筑基之后,寿元可达四百年。", model.world_laws)
+    assert any(v.kind == "tier_mismatch" for v in bad)
+    ok = detect_tier_violations("他筑基之后,寿元三百年。", model.world_laws)
+    assert not ok  # matches the ladder → no violation
+
+
+def test_parse_judge_violations_validates_dimensions() -> None:
+    model = world_model_from_dict(WORLD_MODEL)
+    content = (
+        '```json\n{"violations":[{"dimension":"value_and_currency","reason":"用纸币交易"},'
+        '{"dimension":"not_a_real_dim","reason":"x"}]}\n```'
+    )
+    viols = _parse_judge_violations(content, model.world_laws)
+    assert len(viols) == 1  # the bogus dimension is dropped
+    assert viols[0].dimension == "value_and_currency"
+    assert viols[0].kind == "semantic"
+    assert _parse_judge_violations('{"violations":[]}', model.world_laws) == []
 
 
 def test_gate_accepts_injected_judge() -> None:
@@ -231,3 +267,30 @@ def test_apply_ripples_safe_on_malformed_kernel() -> None:
     assert apply_ripples_to_kernel({}, "text", chapter_number=1) == ({}, [])
     _k, u = apply_ripples_to_kernel({"worldview_kernel": {}}, "text", chapter_number=1)
     assert u == []
+
+
+def test_compute_state_ripples_cascades_and_is_directional() -> None:
+    """A milestone must propagate causally across variables, not stamp one note."""
+
+    state_vars = [
+        {
+            "key": "韩立境界",
+            "current_value": "炼气期",
+            "desired_direction": "提升",
+            "change_triggers": ["突破筑基", "筑基成功"],
+            "cascades_to": ["韩立寿元", "御器飞行解锁"],
+        },
+        {"key": "韩立寿元", "current_value": "约百年", "desired_direction": "增长", "change_triggers": ["寿元增长"]},
+        {"key": "御器飞行解锁", "current_value": "未解锁", "desired_direction": "解锁", "change_triggers": ["筑基成功"]},
+        {"key": "无关变量", "current_value": "", "desired_direction": "升高", "change_triggers": ["毫不相干的事"]},
+    ]
+    updates = compute_state_ripples(state_vars, "他终于突破筑基,灵力暴涨。", chapter_number=42)
+    keys = {u["key"] for u in updates}
+    # primary (境界) + cascaded (寿元, 飞行解锁), but NOT the unrelated var
+    assert {"韩立境界", "韩立寿元", "御器飞行解锁"} <= keys
+    assert "无关变量" not in keys
+    realm_upd = next(u for u in updates if u["key"] == "韩立境界")
+    life_upd = next(u for u in updates if u["key"] == "韩立寿元")
+    assert realm_upd["cascaded_from"] is None  # primary
+    assert life_upd["cascaded_from"] == "韩立境界"  # causal propagation
+    assert "提升" in realm_upd["current_value"]  # directional, not a bare timestamp

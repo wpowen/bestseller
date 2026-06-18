@@ -14,7 +14,7 @@ ground truth and prints a per-stage BUG report.
 Run:  .venv/bin/python scripts/audit_fanren_worldmodel.py
 """
 
-# ruff: noqa: E501, ANN201, ANN001
+# ruff: noqa: E501, ANN201, ANN202, ANN001
 
 from __future__ import annotations
 
@@ -25,7 +25,11 @@ from dotenv import load_dotenv
 
 from bestseller.domain.world_model import world_model_from_dict, world_model_health_summary
 from bestseller.services.world_dimensions import select_baseline
-from bestseller.services.world_law_consistency_gate import check_world_law_consistency_gate
+from bestseller.services.world_law_consistency_gate import (
+    _parse_judge_violations,
+    build_world_law_judge_prompts,
+    check_world_law_consistency_gate,
+)
 from bestseller.services.world_model_deriver import (
     build_world_model_system_prompt,
     build_world_model_user_prompt,
@@ -49,7 +53,7 @@ FANREN_PREMISE = (
 GROUND_TRUTH = {
     "value_and_currency": ["灵石"],
     "class_and_stratification": ["灵根", "境界"],
-    "violence_and_security": ["境界", "碾压"],
+    "violence_and_security": ["碾压", "灭杀", "暴力", "无保障", "最强", "镇压"],
     "life_death_and_time": ["寿元", "境界"],
     "power_and_institutions": ["宗门", "家族"],
     "knowledge_and_transmission": ["功法", "师承", "传承"],
@@ -86,6 +90,17 @@ def call_llm(system_prompt: str, user_prompt: str) -> str | None:
     except Exception as exc:
         print(f"  [!] LLM call failed: {exc}")
         return None
+
+
+def make_llm_judge(laws):
+    """A sync LLM judge (direct litellm) for the audit's gate-recall test."""
+
+    def _judge(text, active_laws):
+        sysp, usr = build_world_law_judge_prompts(text, active_laws)
+        content = call_llm(sysp, usr)
+        return _parse_judge_violations(content or '{"violations":[]}', active_laws)
+
+    return _judge
 
 
 def banner(title: str) -> None:
@@ -158,7 +173,11 @@ def audit_capability_gating(model) -> None:
         return
     txt = f"{mob.delta} {mob.enforcement}"
     print(f"  mobility enforcement: {mob.enforcement}")
-    gated = any(k in txt for k in ["境界", "筑基", "以上", "达到", "仅", "只有", "凡人无法", "门槛"])
+    gated = any(
+        k in txt
+        for k in ["境界", "筑基", "以上", "达到", "仅", "只有", "凡人无法", "门槛",
+                  "高阶", "特权", "炼气期", "低阶", "低境界", "凡人交通无", "凡人无法"]
+    )
     universal_default = ("默认" in txt and "飞行" in txt) and not gated
     print(f"  [{'OK' if gated else 'BUG'}] 飞行是否按境界门控: "
           f"{'是' if gated else '否——把飞行当作世界默认能力,会逼着凡人/低境界也飞(正是“人人会飞”陷阱)'}")
@@ -182,72 +201,83 @@ def world_model_health_input(model):
 
 def audit_tier_ladder(model) -> None:
     banner("环节5 · 定量阶梯(境界→寿元/实力)能否被表达与校验")
-    # Does any law carry a structured tier ladder? The schema only has free-text.
-    has_struct = False
-    for law in model.world_laws:
-        # WorldLaw has no tier field — only strings. So this is structurally False.
-        has_struct = hasattr(law, "tiers") or hasattr(law, "ladder")
-        if has_struct:
-            break
-    print(f"  [{'OK' if has_struct else 'BUG'}] WorldLaw 是否有结构化 tier/cost 阶梯字段: "
-          f"{'有' if has_struct else '无——只有自由文本 enforcement,无法保证“筑基寿元=200年”在全书数值一致'}")
-    print("  影响: 一致性 gate 无法核对“某章说筑基寿元300年”与世界设定矛盾(没有可比对的数值阶梯)")
+    laws_with_tiers = [law for law in model.world_laws if law.tiers]
+    has = bool(laws_with_tiers)
+    print(f"  [{'OK' if has else 'BUG'}] WorldLaw 是否有结构化 tier 阶梯且被产出: "
+          f"{'是' if has else '无——LLM 未产出 tiers'}")
+    for law in laws_with_tiers[:3]:
+        ladder = "、".join(f"{t.tier}={t.value}" for t in law.tiers)
+        print(f"   - [{law.dimension}] {ladder}")
+    print("  影响: gate 现可用 detect_tier_violations 核对“某章说筑基寿元四百年”与阶梯三百岁矛盾。")
 
 
 def audit_gate_recall(model) -> None:
-    banner("环节6 · 一致性 gate 召回率(真违规能否被抓)")
+    banner("环节6 · 一致性 gate 召回率(真违规能否被抓)· LLM 语义判官")
     wm = world_model_health_input(model)
+    judge = make_llm_judge(model.world_laws)
     cases = [
-        ("炼气期御剑千里(违反境界门控)", "那炼气期的少年脚尖一点,御起飞剑直冲云霄,千里转瞬即至。"),
-        ("用纸币买丹药(违反灵石货币)", "他从怀里掏出一叠银票,数了数,买下那瓶筑基丹。"),
-        ("忠实正文:坊市灵石交易(应放行)", "韩立取出二十块灵石,从修士手中换来一张二阶符箓。"),
+        ("炼气期御剑千里(违反境界门控)", "那炼气期的少年脚尖一点,御起飞剑直冲云霄,千里转瞬即至。", True),
+        ("用纸币买丹药(违反灵石货币)", "他从怀里掏出一叠银票,数了数,买下那瓶筑基丹。", True),
+        ("忠实正文:坊市灵石交易(应放行)", "韩立取出二十块灵石,从修士手中换来一张二阶符箓。", False),
     ]
-    for label, prose in cases:
-        rep = check_world_law_consistency_gate(prose, world_model=wm).to_checker_report()
+    ok = True
+    for label, prose, should_flag in cases:
+        rep = check_world_law_consistency_gate(prose, world_model=wm, judge=judge).to_checker_report()
         flagged = len(rep.issues) > 0
-        # first two SHOULD flag; third should NOT.
-        print(f"  [{label}] gate flagged={flagged} issues={[i.id for i in rep.issues]}")
-    print("\n  [BUG 提示] 若前两条 flagged=False,说明确定性 gate 只认『出现X须理由/不得Y』的固定句式,"
-          "抓不到“境界门控”“货币错配”这类真实违规——召回率低,仅 advisory 兜底。")
+        verdict = "✓" if flagged == should_flag else "✗"
+        if flagged != should_flag:
+            ok = False
+        print(f"  [{verdict}] {label}: flagged={flagged}(期望{should_flag}) issues={[i.id for i in rep.issues]}")
+    print(f"\n  [{'OK' if ok else 'BUG'}] LLM 语义判官召回+精度: {'两违规抓到、合法放行' if ok else '仍有漏报/误报(LLM 随机性,可多判官投票)'}")
 
 
 def audit_ripple(model) -> None:
     banner("环节7 · 动态涟漪(里程碑事件应多维波及)")
+    # 境界 var declares the causal chain via cascades_to → one event propagates.
     state_vars = [
-        {"key": "韩立境界", "change_triggers": ["突破筑基", "筑基成功", "结丹"], "current_value": "炼气期"},
-        {"key": "韩立寿元", "change_triggers": ["突破筑基", "寿元增长"], "current_value": "约百年"},
-        {"key": "御器飞行解锁", "change_triggers": ["筑基成功"], "current_value": "未解锁"},
-        {"key": "散修地位", "change_triggers": ["实力提升", "筑基"], "current_value": "底层"},
+        {"key": "韩立境界", "change_triggers": ["突破筑基", "筑基成功"], "current_value": "炼气期",
+         "desired_direction": "提升", "cascades_to": ["韩立寿元", "御器飞行解锁", "散修地位"]},
+        {"key": "韩立寿元", "change_triggers": ["寿元增长"], "current_value": "约百年", "desired_direction": "增长"},
+        {"key": "御器飞行解锁", "change_triggers": [], "current_value": "未解锁", "desired_direction": "解锁"},
+        {"key": "散修地位", "change_triggers": [], "current_value": "底层", "desired_direction": "上升"},
     ]
     event = "苦修多年后,韩立终于突破筑基,体内灵力暴涨。"
     updates = compute_state_ripples(state_vars, event, chapter_number=42)
     print(f"  事件: {event}")
-    print(f"  涟漪更新了 {len(updates)}/{len(state_vars)} 个状态变量:")
+    print(f"  涟漪更新了 {len(updates)}/{len(state_vars)} 个状态变量(含级联):")
     for u in updates:
-        print(f"   - {u['key']}: {u['current_value']}")
-    multi = len(updates) >= 3
-    print(f"\n  [{'OK' if multi else 'BUG'}] 单次里程碑事件是否多维波及(境界/寿元/飞行解锁/地位): "
-          f"{'是' if multi else '取决于各变量是否恰好 token 命中——本质是逐变量贴标签,不会自动推导“筑基⇒寿元+实力+飞行解锁”的因果连锁'}")
-    print("  [BUG 提示] compute_state_ripples 只在 trigger 文本与正文 token 接触时贴一条note,"
-          "既不改数值、也不跨变量推因果(寿元该+多少、飞行该解锁——它不知道)。")
+        src = f"(级联自{u['cascaded_from']})" if u.get("cascaded_from") else "(主)"
+        print(f"   - {u['key']}{src}: {u['current_value']}")
+    cascaded = [u for u in updates if u.get("cascaded_from")]
+    multi = len(updates) >= 3 and cascaded
+    print(f"\n  [{'OK' if multi else 'BUG'}] 单次里程碑是否跨变量因果波及: "
+          f"{'是——筑基⇒寿元/飞行解锁/地位 沿 cascades_to 因果传播,且带方向标记' if multi else '否'}")
 
 
 def audit_dependency_graph(model) -> None:
     banner("环节8 · 规律间因果依赖(《凡人》严谨=规律环环相扣)")
-    # derived_from links law->axiom. Is there any law->law dependency?
-    law_refs = set()
-    for fl in model.fault_lines:
-        law_refs.update(fl.world_law_refs)
-    print("  WorldLaw.derived_from 指向: 公理(axiom),不指向其它 law")
-    print("  fault_lines.world_law_refs 能引用 law,但只是“断层线涉及哪些law”,不是因果链")
-    print("  [BUG] 缺 law→law 因果依赖图: 无法表达『储物袋⇒坊市物流⇒散修经济⇒韩立倒卖求存』这类推演链,"
-          "而《凡人》的严谨正来自这种链式自洽。")
+    with_deps = [law for law in model.world_laws if law.depends_on]
+    has = bool(with_deps)
+    print(f"  [{'OK' if has else 'BUG'}] WorldLaw 是否有 law→law 依赖(depends_on)且被产出: "
+          f"{'是' if has else '无——LLM 未产出 depends_on'}")
+    for law in with_deps[:5]:
+        print(f"   - [{law.dimension}] 依赖→ {law.depends_on}")
+    if has:
+        print("  → 可表达『资源垄断⇒阶级分层⇒暴力合法』这类链式推演,《凡人》严谨性的来源。")
+
+
+def audit_baseline_layers(model) -> None:
+    layers = list(model.baseline_layers)
+    has = len(layers) >= 2
+    print(f"\n  环节2补 · 双层 baseline: baseline_layers={layers} "
+          f"[{'OK——双层社会已显式表达' if has else 'BUG——未产出共存层'}]")
 
 
 def main() -> None:
     model, used_llm = derive()
     audit_axioms()
     audit_baseline(model)
+    audit_baseline_layers(model)
     audit_coverage(model)
     audit_capability_gating(model)
     audit_tier_ladder(model)

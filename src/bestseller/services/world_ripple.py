@@ -39,39 +39,79 @@ def _trigger_fires(trigger: str, chapter_tokens: set[str]) -> bool:
     return len(shared) >= _MIN_SHARED_SHINGLES
 
 
+def _cascade_targets(var: Mapping[str, Any]) -> list[str]:
+    raw = var.get("cascades_to") or var.get("affects") or var.get("propagates_to")
+    if isinstance(raw, str):
+        return [raw.strip()] if raw.strip() else []
+    if isinstance(raw, (list, tuple)):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    return []
+
+
 def compute_state_ripples(
     state_variables: Sequence[Mapping[str, Any]],
     chapter_text: str,
     *,
     chapter_number: int,
 ) -> list[dict[str, Any]]:
-    """Return per-variable updates for the variables this chapter advances.
+    """Return per-variable updates this chapter advances — directional + cascading.
 
-    Deterministic + conservative: a variable updates only when one of its
-    ``change_triggers`` makes real surface contact with the prose.
+    A variable updates when one of its ``change_triggers`` makes surface contact
+    with the prose (a *primary* update). It then CASCADES along ``cascades_to`` to
+    the variables it causally drives (筑基 ⇒ 寿元 + 实力 + 飞行解锁), so one milestone
+    propagates across the world instead of stamping a single note. Each update
+    records the variable's ``desired_direction`` so the move is directional, not a
+    bare timestamp. Conservative + loop-safe (BFS with a visited set).
     """
 
     chapter_tokens = _tokens(chapter_text)
     if not chapter_tokens:
         return []
-    updates: list[dict[str, Any]] = []
-    for var in state_variables:
-        if not isinstance(var, Mapping):
-            continue
-        key = str(var.get("key") or "").strip()
-        if not key:
-            continue
+    by_key: dict[str, Mapping[str, Any]] = {
+        str(v.get("key")).strip(): v
+        for v in state_variables
+        if isinstance(v, Mapping) and str(v.get("key") or "").strip()
+    }
+
+    fired_trigger: dict[str, str] = {}
+    for key, var in by_key.items():
         triggers = var.get("change_triggers") or []
         if isinstance(triggers, str):
             triggers = [triggers]
-        fired = next(
-            (str(t) for t in triggers if isinstance(t, (str,)) and _trigger_fires(str(t), chapter_tokens)),
+        hit = next(
+            (str(t) for t in triggers if isinstance(t, str) and _trigger_fires(str(t), chapter_tokens)),
             None,
         )
-        if fired is None:
+        if hit is not None:
+            fired_trigger[key] = hit
+    if not fired_trigger:
+        return []
+
+    # BFS: primary fired variables first, then cascade along cascades_to.
+    order: list[tuple[str, str | None]] = []  # (key, cascaded_from)
+    seen: set[str] = set()
+    queue: list[tuple[str, str | None]] = [(k, None) for k in fired_trigger]
+    while queue:
+        key, src = queue.pop(0)
+        if key in seen or key not in by_key:
             continue
+        seen.add(key)
+        order.append((key, src))
+        for nxt in _cascade_targets(by_key[key]):
+            if nxt not in seen and nxt in by_key:
+                queue.append((nxt, key))
+
+    updates: list[dict[str, Any]] = []
+    for key, src in order:
+        var = by_key[key]
         prev = str(var.get("current_value") or "").strip()
-        stamp = f"第{chapter_number}章:由「{fired[:24]}」推进"
+        direction = str(var.get("desired_direction") or "").strip()
+        dir_tag = f"[{direction[:10]}]" if direction else ""
+        if src is None:
+            cause = f"由「{fired_trigger[key][:24]}」推进"
+        else:
+            cause = f"因「{src}」级联推进"
+        stamp = f"第{chapter_number}章:{cause}{dir_tag}"
         new_value = stamp if not prev else f"{prev}；{stamp}"
         if len(new_value) > _MAX_VALUE_LEN:
             new_value = new_value[-_MAX_VALUE_LEN:]
@@ -80,7 +120,9 @@ def compute_state_ripples(
                 "key": key,
                 "previous_value": prev,
                 "current_value": new_value,
-                "triggered_by": fired,
+                "direction": direction,
+                "triggered_by": fired_trigger.get(key, f"cascade:{src}"),
+                "cascaded_from": src,
                 "chapter": chapter_number,
             }
         )

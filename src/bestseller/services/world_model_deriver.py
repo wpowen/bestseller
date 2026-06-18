@@ -129,6 +129,7 @@ def fallback_world_model(
         "version": 1,
         "axioms": axioms,
         "baseline": baseline_label,
+        "baseline_layers": [],
         "baseline_rationale": rationale,
         "uniqueness_principle": "每条世界规律必须可追溯到本书公理;具体设定必须从规律生长,不得凭空补充。",
         "world_laws": laws,
@@ -160,12 +161,15 @@ def build_world_model_system_prompt(*, language: str = "zh") -> str:
             "fault lines the story stands on. Output ONE valid JSON WorldModel object only — "
             "no prose, no markdown. HARD RULES: (1) every world_law MUST be derived_from an "
             "axiom — no free-floating rules; (2) NEVER default to the genre's stock world; "
-            "(3) each law needs a behavioural, checkable 'enforcement' assertion. "
-            "COMPACTNESS (CRITICAL — the JSON MUST close completely; prefer terse over "
-            "truncated): at most ONE law per dimension; delta <= 45 chars, enforcement <= 55 "
-            "chars, baseline <= 30 chars; encode ripple order ONLY in the integer 'order' "
-            "field — NEVER write '1st/2nd/3rd-order ripple' narrative inside any field; "
-            "content_settings <= 6; whole JSON <= 4500 chars."
+            "(3) each law needs a behavioural, checkable 'enforcement' assertion; "
+            "(4) for LADDER-like dimensions (lifespan/power/value) list key rungs in "
+            "tiers:[{tier,value}]; (5) use depends_on to point to other law dimension keys "
+            "(law->law chain); (6) if societies COEXIST (e.g. mundane + hidden), list them in "
+            "top-level baseline_layers. COMPACTNESS (CRITICAL — the JSON MUST close completely; "
+            "prefer terse over truncated): at most ONE law per dimension; delta <= 45 chars, "
+            "enforcement <= 55 chars, baseline <= 30 chars, tiers <= 6 rungs; encode ripple "
+            "order ONLY in the integer 'order' field — NEVER narrate ripples in any field; "
+            "content_settings <= 6; whole JSON <= 5000 chars."
         )
     return (
         "你是『世界模型』架构师。用**差分推演**造世:以一个现实基线为底座,把本书前提的 "
@@ -173,11 +177,14 @@ def build_world_model_system_prompt(*, language: str = "zh") -> str:
         "只输出一个合法的 WorldModel JSON 对象——不要解释、不要 markdown、不要任何叙述。"
         "【硬性规则】(1) 每条 world_law 必须 derived_from 某条公理——禁止凭空规则;"
         "(2) 严禁套用题材的默认世界,同题材两本书必须得到不同世界;"
-        "(3) 每条规律必须带一句行为级、可校验的 enforcement 断言(正文必须/禁止怎样)。"
+        "(3) 每条规律必须带一句行为级、可校验的 enforcement 断言(正文必须/禁止怎样);"
+        "(4) 寿命/实力/价值等**阶梯式**维度,用 tiers:[{tier,value}] 列关键档位(如{tier:炼气,value:百岁});"
+        "(5) 用 depends_on 标注本规律依赖的其它维度key(law→law链);"
+        "(6) 若世界有共存的多层社会(如世俗界/修仙界),在顶层用 baseline_layers 列出。"
         "【紧凑硬约束·最重要·JSON 必须完整闭合,宁可精炼也不可被截断】"
-        "每个维度至多 1 条 law;delta≤45字、enforcement≤55字、baseline≤30字;"
+        "每个维度至多 1 条 law;delta≤45字、enforcement≤55字、baseline≤30字;tiers≤6档,每档≤12字;"
         "涟漪阶数只用整数 order 字段表示,**严禁在任何字段里写'一阶/二阶/三阶涟漪'之类叙述**;"
-        "content_settings≤6 条;整个 JSON≤4500 字符。"
+        "content_settings≤6 条;整个 JSON≤5000 字符。"
     )
 
 

@@ -92,6 +92,31 @@ def _int(value: Any, default: int = 1) -> int:
 # ---------------------------------------------------------------------------
 
 
+class TierStep(BaseModel, frozen=True):
+    """One rung of a quantitative ladder, e.g. ``{tier:"筑基", value:"三百岁"}``.
+
+    Makes a power/cost/lifespan ladder machine-checkable so later chapters cannot
+    silently contradict it (e.g. "筑基寿元 400 年" when the ladder says 300).
+    """
+
+    tier: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        data = _mapping(value)
+        if not data:
+            return value
+        data.setdefault("tier", _first_text(data, "name", "level", "stage", "rank", "key"))
+        if not _text(data.get("value")):
+            data["value"] = _first_text(data, "amount", "lifespan", "cost", "multiplier", "detail")
+        for key in ("tier", "value"):
+            if key in data:
+                data[key] = _text(data.get(key))
+        return data
+
+
 class WorldLaw(BaseModel, frozen=True):
     """One derived rule of the world: baseline → delta, with an enforceable check."""
 
@@ -100,7 +125,9 @@ class WorldLaw(BaseModel, frozen=True):
     delta: str = Field(min_length=1)
     order: int = 1
     derived_from: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
     enforcement: str = Field(min_length=1)
+    tiers: list[TierStep] = Field(default_factory=list)
     story_use: str = ""
     specificity: float = 0.0
 
@@ -141,6 +168,20 @@ class WorldLaw(BaseModel, frozen=True):
             or data.get("from")
             or data.get("source_axioms")
         )
+        data["depends_on"] = _text_list(
+            data.get("depends_on")
+            or data.get("depends_on_laws")
+            or data.get("law_refs")
+            or data.get("upstream_laws")
+        )
+        raw_tiers = data.get("tiers") or data.get("ladder") or data.get("tier_ladder")
+        if isinstance(raw_tiers, dict):
+            # ``{"炼气":"百岁","筑基":"三百岁"}`` → list of TierStep dicts.
+            data["tiers"] = [{"tier": k, "value": v} for k, v in raw_tiers.items()]
+        elif isinstance(raw_tiers, list):
+            data["tiers"] = raw_tiers
+        else:
+            data["tiers"] = []
         data["order"] = max(1, _int(data.get("order"), 1))
         for key in ("dimension", "baseline", "story_use"):
             if key in data:
@@ -215,6 +256,7 @@ class WorldModel(BaseModel, frozen=True):
     version: int = 1
     axioms: list[str] = Field(default_factory=list)
     baseline: str = ""
+    baseline_layers: list[str] = Field(default_factory=list)
     baseline_rationale: str = ""
     uniqueness_principle: str = ""
     world_laws: list[WorldLaw] = Field(default_factory=list)
@@ -232,6 +274,12 @@ class WorldModel(BaseModel, frozen=True):
         )
         if not _text(data.get("baseline")):
             data["baseline"] = _first_text(data, "baseline_key", "substrate", "reality_baseline")
+        data["baseline_layers"] = _text_list(
+            data.get("baseline_layers")
+            or data.get("coexisting_societies")
+            or data.get("layers")
+            or data.get("strata")
+        )
         if not _text(data.get("uniqueness_principle")):
             data["uniqueness_principle"] = _first_text(
                 data, "uniqueness", "principle", "core_principle"
@@ -279,13 +327,19 @@ def render_world_model_prompt_block(model: WorldModel, *, max_laws: int = 14) ->
     if model.axioms:
         lines.append("· 公理:" + "；".join(model.axioms))
     if model.baseline:
-        lines.append(f"· 基线底座:{model.baseline}")
+        layers = f"(共存层:{'、'.join(model.baseline_layers)})" if model.baseline_layers else ""
+        lines.append(f"· 基线底座:{model.baseline}{layers}")
     if model.uniqueness_principle:
         lines.append(f"· 独特性原则:{model.uniqueness_principle}")
     if model.world_laws:
         lines.append("· 世界规律(dimension｜delta｜enforcement):")
         for law in model.world_laws[:max_laws]:
-            lines.append(f"  - [{law.dimension}] {law.delta}｜约束:{law.enforcement}")
+            ladder = (
+                "｜阶梯:" + "、".join(f"{t.tier}={t.value}" for t in law.tiers)
+                if law.tiers
+                else ""
+            )
+            lines.append(f"  - [{law.dimension}] {law.delta}｜约束:{law.enforcement}{ladder}")
     if model.fault_lines:
         lines.append("· 故事断层线:")
         for fl in model.fault_lines:
@@ -310,12 +364,16 @@ def world_model_health_summary(model: WorldModel) -> dict[str, Any]:
         "content_setting_count": len(model.content_settings),
         "mean_specificity": model.mean_specificity(),
         "laws_without_derivation": sum(1 for law in model.world_laws if not law.derived_from),
+        "baseline_layers": list(model.baseline_layers),
+        "laws_with_tiers": sum(1 for law in model.world_laws if law.tiers),
+        "laws_with_dependencies": sum(1 for law in model.world_laws if law.depends_on),
     }
 
 
 __all__ = [
     "ContentSetting",
     "FaultLine",
+    "TierStep",
     "WorldLaw",
     "WorldModel",
     "render_world_model_prompt_block",

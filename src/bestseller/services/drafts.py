@@ -6144,6 +6144,25 @@ def build_scene_draft_prompts(
         tone = "克制、紧张"
     participants = _scene_participant_text(scene.participants, language=language)
     story_bible_section = _render_story_bible_section(story_bible_context, language=language)
+    # World-model active-law injection: append only the laws relevant to this
+    # chapter/scene (selector caps the count to avoid prompt overload). Fully
+    # fail-safe — a missing/invalid world model leaves the section unchanged.
+    try:
+        from bestseller.services.world_model_injection import (
+            build_active_law_prose_block_for_scene,
+        )
+
+        _world_law_block = build_active_law_prose_block_for_scene(
+            project, chapter, scene, language=language
+        )
+        if _world_law_block:
+            story_bible_section = (
+                f"{story_bible_section}\n{_world_law_block}"
+                if story_bible_section
+                else _world_law_block
+            )
+    except Exception:  # noqa: BLE001 - world-law injection is additive; never break prompt build
+        logger.debug("world-model active-law injection skipped", exc_info=True)
     retrieval_section = _render_retrieval_section(retrieval_context)
     recent_scene_section = _render_recent_scene_section(recent_scene_summaries)
     recent_timeline_section = _render_timeline_section(recent_timeline_events)

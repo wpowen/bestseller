@@ -164,6 +164,11 @@ from bestseller.services.ideology_coherence_gate import (
     evaluate_ideology_kernel_coherence,
 )
 from bestseller.services.ideology_kernel import derive_ideology_kernel
+from bestseller.domain.world_model import (
+    render_world_model_prompt_block,
+    world_model_to_dict,
+)
+from bestseller.services.world_model_deriver import derive_world_model
 from bestseller.services.story_shape_router import derive_story_shape
 from bestseller.services.title_dedup import (
     DEFAULT_NEAR_DUP_THRESHOLD,
@@ -16941,6 +16946,7 @@ def _story_design_kernel_prompts(
     *,
     category_key: str | None = None,
     ideology_block: str = "",
+    world_model_block: str = "",
 ) -> tuple[str, str]:
     language = _planner_language(project)
     is_en = is_english_language(language)
@@ -17055,6 +17061,18 @@ def _story_design_kernel_prompts(
         user_prompt = user_prompt.replace(
             premise, premise + header + ideology_block, 1
         )
+    # Inject the world model (世界宪法) so worldview_kernel / invariants / systems
+    # are derived to OBEY the differential world laws, not bolted on. Additive and
+    # fail-safe: an empty block leaves the prompt unchanged.
+    if world_model_block:
+        wm_header = (
+            "\n\n## World Model — the book's world constitution "
+            "(worldview_kernel/invariants/systems MUST obey these derived laws)\n"
+            if is_en
+            else "\n\n## 世界模型 — 本书世界宪法"
+            "（worldview_kernel / invariants / systems 必须遵守并从这些推演规律生长）\n"
+        )
+        user_prompt = f"{user_prompt}{wm_header}{world_model_block}"
     return system_prompt, user_prompt
 
 
@@ -17107,6 +17125,26 @@ async def _generate_story_design_kernel(
         ideology_block = render_ideology_kernel_prompt_block(ideology_kernel)
     except Exception:  # noqa: BLE001 - ideology is additive; never block planning
         logger.debug("Ideology kernel derivation failed; planning without it", exc_info=True)
+    # Derive the WorldModel (世界宪法) by differential mapping so the worldview_kernel
+    # GROWS FROM the world's derived laws (currency/class/transport/...) instead of
+    # being bolted on. Genre is context-only; laws are anchored to THIS book's
+    # axioms. Fully fail-safe: any failure degrades to a no-world-model prompt.
+    world_model_payload: dict[str, Any] | None = None
+    world_model_block = ""
+    try:
+        world_model = await derive_world_model(
+            session,
+            settings,
+            premise=premise,
+            genre=getattr(project, "genre", None),
+            language=_planner_language(project),
+            project_id=getattr(project, "id", None),
+            workflow_run_id=workflow_run_id,
+        )
+        world_model_payload = world_model_to_dict(world_model)
+        world_model_block = render_world_model_prompt_block(world_model)
+    except Exception:  # noqa: BLE001 - world model is additive; never block planning
+        logger.debug("World model derivation failed; planning without it", exc_info=True)
     system_prompt, user_prompt = _story_design_kernel_prompts(
         project,
         premise,
@@ -17116,6 +17154,7 @@ async def _generate_story_design_kernel(
         fallback,
         category_key=category_key,
         ideology_block=ideology_block,
+        world_model_block=world_model_block,
     )
     payload, llm_run_id = await _generate_structured_artifact(
         session,
@@ -17142,6 +17181,13 @@ async def _generate_story_design_kernel(
         premise=premise,
         cast_spec_payload=cast_spec_payload,
     )
+
+    # Carry the derived WorldModel (世界宪法) on the kernel payload so downstream
+    # stages (prose injection, world-law consistency gate) read the SAME single
+    # source of truth. Stored on the raw payload (persisted in metadata_json),
+    # additive to the validated StoryDesignKernel schema.
+    if isinstance(payload, dict) and world_model_payload and not payload.get("world_model"):
+        payload["world_model"] = world_model_payload
 
     # Carry the ideology (母题) kernel inside the StoryDesignKernel so it propagates
     # to every downstream prompt via render_story_design_kernel_prompt_block. Run

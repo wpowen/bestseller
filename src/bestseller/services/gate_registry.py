@@ -189,6 +189,19 @@ _GATES: tuple[GateRegistration, ...] = (
         tier="advanced",
         continuation_impact="local",
     ),
+    GateRegistration(
+        # World-model consistency: prose must obey the book's derived world laws
+        # (catches "everyone can fly yet drives a car"). Advisory — stamps metrics
+        # only, never a ``blocked_by_*`` key, so it can never block the chapter.
+        name="world_law_consistency_gate",
+        metadata_keys=(
+            "world_law_consistency_metrics",
+            "world_law_consistency_issue_codes",
+        ),
+        repair_strategy="rewrite_task",
+        tier="advanced",
+        continuation_impact="local",
+    ),
 )
 
 _REGISTERED_GATE_NAMES = frozenset(gate.name for gate in _GATES)

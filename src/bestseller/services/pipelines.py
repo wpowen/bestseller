@@ -8168,6 +8168,50 @@ async def run_chapter_pipeline(
         except Exception:
             logger.debug("anti-slop prose gates failed (non-fatal)", exc_info=True)
 
+        # ── World-law consistency gate (advisory only) ─────────────────
+        # Prose must obey the book's derived world laws (catches "everyone can
+        # fly yet drives a car"). Advanced tier: stamps warning metadata + a
+        # step run but must NEVER block the chapter (WS-C policy).
+        try:
+            _wm_meta = getattr(project, "metadata_json", None)
+            _wm_meta = _wm_meta if isinstance(_wm_meta, dict) else {}
+            if chapter_draft is not None and chapter_draft.content_md and _wm_meta:
+                from bestseller.services.world_law_consistency_gate import (
+                    check_world_law_consistency_gate,
+                )
+                from bestseller.services.world_model_injection import extract_world_model
+
+                _world_model_payload = extract_world_model(_wm_meta)
+                if _world_model_payload:
+                    _wl_report = check_world_law_consistency_gate(
+                        chapter_draft.content_md,
+                        chapter_position=chapter_number,
+                        world_model=_world_model_payload,
+                    ).to_checker_report()
+                    if _wl_report.issues:
+                        workflow_run.metadata_json = {
+                            **workflow_run.metadata_json,
+                            "world_law_consistency_metrics": _wl_report.metrics,
+                            "world_law_consistency_issue_codes": [
+                                issue.id for issue in _wl_report.issues[:6]
+                            ],
+                        }
+                        await create_workflow_step_run(
+                            session,
+                            workflow_run_id=workflow_run.id,
+                            step_name="world_law_consistency_gate",
+                            step_order=step_order,
+                            status=WorkflowStatus.COMPLETED,
+                            output_ref={
+                                "passed": _wl_report.passed,
+                                "issues": len(_wl_report.issues),
+                                "metrics": _wl_report.metrics,
+                            },
+                        )
+                        step_order += 1
+        except Exception:
+            logger.debug("world_law_consistency_gate failed (non-fatal)", exc_info=True)
+
         # ── Opening golden-chapter gate (ch1-3, advisory only) ──────────
         # Deterministic 黄金一章 acceptance checks on the opening chapters'
         # prose. Advanced tier: a hit stamps warning metadata and records a
@@ -8858,6 +8902,28 @@ async def run_chapter_pipeline(
                             exc,
                         )
                         await _recover_session_after_nonfatal_error(session, exc)
+
+                # ── Dynamic world-state ripple (case law) ──
+                # When the chapter touches a state variable's change triggers,
+                # advance that variable's current_value so later chapters read an
+                # up-to-date world state. Non-fatal; additive to metadata.
+                try:
+                    from bestseller.services.world_ripple import apply_world_state_ripples
+
+                    async with session.begin_nested():
+                        await apply_world_state_ripples(
+                            session,
+                            project,
+                            chapter_number=getattr(chapter, "chapter_number", chapter_number),
+                            chapter_text=chapter_draft.content_md or "",
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Chapter %d world-state ripple failed (non-fatal): %s",
+                        loaded_chapter_number,
+                        exc,
+                    )
+                    await _recover_session_after_nonfatal_error(session, exc)
 
                 # ── Living Story Bible update (non-draft path) ──
                 try:

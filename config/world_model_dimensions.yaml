@@ -1,0 +1,117 @@
+# 世界模型 · 通用维度表(World-Model Dimension Table)
+#
+# 设计纪律(读 docs / memory: homogenization-baked-names-two-fronts):
+#   * 这张表是「机器」,不是「燃料」。它**零题材知识**——不含任何具体设定、
+#     人名、货币名、势力名。每个维度只是一个**问题**;答案永远由本书的公理在
+#     运行期推演得到,绝不写死在这里。
+#   * 通用性来源:任何人类(或类人)社会都有价值尺度、暴力归属、出行、饮食……
+#     所以这张表跨灵异/科幻/武侠/历史/都市都成立。换题材 = 换燃料,不换机器。
+#   * 推演方法 = 差分:以「基线(baseline)」为现实底座,把公理当扰动,算出
+#     每个维度相对基线被迫改变了什么(delta),再推涟漪。
+#
+# 字段:
+#   dimensions[].key          稳定标识(英文,代码引用)
+#   dimensions[].question     该维度要问的中性问题(推演提示,非答案)
+#   dimensions[].ripple_hint  二阶/三阶涟漪的追问方向
+#   dimensions[].order        建议至少推到第几阶(冲突常在 2-3 阶结晶)
+version: 1
+
+dimensions:
+  - key: energy_and_physics
+    question: "这个世界的力量/能量从何而来、遵循什么法则?相对基线,什么变得可能或不可能了?"
+    ripple_hint: "当一种能力被解锁,原先依赖旧法则运转的系统会失效或被替代。"
+    order: 2
+
+  - key: value_and_currency
+    question: "这个世界用什么衡量价值、什么充当硬通货?稀缺物是什么?"
+    ripple_hint: "新的稀缺物会成为新货币;谁控制它的来源谁掌握经济命脉。"
+    order: 3
+
+  - key: exchange_and_market
+    question: "价值如何流转、交易如何达成、市场围绕什么组织?"
+    ripple_hint: "交易媒介改变会催生新中介、新黑市、新信用关系。"
+    order: 2
+
+  - key: resources_and_production
+    question: "什么资源稀缺、由谁生产、生产方式相对基线如何改变?"
+    ripple_hint: "生产关系的改变重塑谁富谁穷、谁依附谁。"
+    order: 2
+
+  - key: class_and_stratification
+    question: "人因何被分层?这条新的不平等轴是什么?"
+    ripple_hint: "能力/资源分布不均会催生全新的阶级,与旧阶级并行或凌驾。"
+    order: 3
+
+  - key: power_and_institutions
+    question: "权力归谁、制度与法律如何规范这种新能力或新存在?"
+    ripple_hint: "旧制度管不住新能力时,会出现替代性秩序或法外地带。"
+    order: 3
+
+  - key: violence_and_security
+    question: "谁能对谁施加暴力、安全由谁保障、暴力垄断是否被打破?"
+    ripple_hint: "个体暴力一旦不对称,官方暴力垄断动摇,催生私人武力与法外秩序。"
+    order: 3
+
+  - key: settlement_and_space
+    question: "人如何聚居、城市或聚落的形态相对基线如何改变?"
+    ripple_hint: "移动方式与安全格局改变会重塑聚居密度、边界与建筑逻辑。"
+    order: 2
+
+  - key: mobility_and_transport
+    question: "人与物如何移动、出行方式相对基线如何改变?"
+    ripple_hint: "若个体获得新移动能力,旧交通系统贬值,新稀缺(如通道/空域)出现。"
+    order: 2
+
+  - key: daily_life_and_food
+    question: "衣食住行如何、人们吃什么、日常生活的质感相对基线如何改变?"
+    ripple_hint: "底层设定会渗进最日常的细节;饮食/居所是读者感知世界真实性的触点。"
+    order: 2
+
+  - key: information_and_media
+    question: "信息如何传播、由谁掌握话语与记录、真相如何被遮蔽?"
+    ripple_hint: "信息能力的不对称决定谁能操纵认知、谁被蒙蔽。"
+    order: 2
+
+  - key: knowledge_and_transmission
+    question: "知识或能力如何传承、教育与师承如何组织?"
+    ripple_hint: "传承壁垒决定阶层固化还是流动,催生门派/学院/秘藏等组织。"
+    order: 2
+
+  - key: belief_and_ethics
+    question: "人们信仰什么、伦理与禁忌相对基线如何改变?"
+    ripple_hint: "新存在会冲击旧道德,产生新禁忌、新崇拜或新的合法性来源。"
+    order: 2
+
+  - key: life_death_and_time
+    question: "生死观与时间感相对基线如何改变(尤其涉及寿命、轮回、永生时)?"
+    ripple_hint: "寿命改变会瓦解代际更替与继承制度,制造代际冲突与权力淤积。"
+    order: 3
+
+# 基线底座目录:差分的「现实参照系」。世界规律 = 公理把基线掰弯后的结果。
+baselines:
+  - key: ancient_agrarian
+    label: "古代农耕社会"
+    description: "前工业、王朝/封建、农业经济、宗族与官府秩序。"
+  - key: modern_urban
+    label: "现代都市社会"
+    description: "工业化后、法币与金融、科层制国家、城市化与现代科技。"
+  - key: near_future_or_interstellar
+    label: "近未来 / 星际文明"
+    description: "高科技、可能跨星际、信息与算力为核心生产力。"
+  - key: fully_invented
+    label: "纯架空底座"
+    description: "无现实对应,需由设定自行定义其'平凡日常'的底座。"
+
+# 基线启发式:仅用于 LLM 不可用时的确定性兜底。
+# 注意:这里映射的是「时代底座」而非「故事内容」——属于可接受的题材*感知*,
+# 不是写死的题材*内容*。生产路径以 LLM 选定基线为准,此表只兜底。
+baseline_signals:
+  ancient_agrarian: ["古代", "王朝", "皇朝", "江湖", "侠", "武林", "门派", "宗门", "朝廷", "古风", "修仙", "仙侠", "玄幻", "封建", "镖局"]
+  modern_urban: ["现代", "都市", "公司", "手机", "互联网", "都会", "职场", "校园", "民国", "近代", "悬疑", "刑侦", "灵异", "末世"]
+  near_future_or_interstellar: ["未来", "星际", "宇宙", "飞船", "机甲", "赛博", "人工智能", "AI", "克隆", "基因", "科幻", "星舰", "殖民"]
+
+# 推演产物的反同质化原则(给 deriver 的 prompt 用,也给评分函数参考)。
+anti_homogenization:
+  principle: "每条世界规律必须可追溯到本书的具体公理;凡是'任何同类设定都成立'的通用后果(如笼统的'出现黑市''颁布管制法')必须被本书公理具体化,否则视为低价值。"
+  require_derived_from: true
+  prefer_premise_specific: true

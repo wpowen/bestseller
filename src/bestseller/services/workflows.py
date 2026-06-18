@@ -1883,6 +1883,21 @@ def _sync_chapter_causality_metadata(
         metadata["methodology_contract"] = methodology_contract
     else:
         metadata.pop("methodology_contract", None)
+    # Book-level story-enhancer cashing: the chapter LLM lands the selected
+    # 脑洞/喜剧/爽点 effects into these structured fields. Persist them so the
+    # prose writer (drafts.build_scene_draft_prompts → render_story_enhancer_
+    # writer_block) can surface this chapter's planned beats — without this the
+    # cashed content is dropped at persistence and never reaches the prose.
+    brainhole_contract = getattr(chapter_outline, "brainhole_contract", None)
+    if isinstance(brainhole_contract, dict) and brainhole_contract:
+        metadata["brainhole_contract"] = brainhole_contract
+    else:
+        metadata.pop("brainhole_contract", None)
+    selected_effect_skills = getattr(chapter_outline, "selected_effect_skills", None)
+    if isinstance(selected_effect_skills, dict) and selected_effect_skills:
+        metadata["selected_effect_skills"] = selected_effect_skills
+    else:
+        metadata.pop("selected_effect_skills", None)
     for field_name in (
         "world_rule_refs",
         "world_rule_landing",

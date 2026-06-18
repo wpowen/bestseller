@@ -294,3 +294,127 @@ def story_enhancer_repair_directives(
             "的具体 beat（行动/选择/揭示兑现，不是贴标签），不要再退回到同质化的程序/合规微冲突。"
         )
     return directives
+
+
+# ── prose-writer injection ────────────────────────────────────────────────────
+# The outline layer renders the book-level contract into every outline prompt and
+# the chapter LLM cashes each selected effect into *structured* chapter fields
+# (brainhole_contract / selected_effect_skills). But the prose writer never saw
+# any of it — it only knew the genre label. That gap is why selected enhancers
+# (脑洞/喜剧/爽点) never showed up in the prose even when the outline planned them.
+# These renderers carry both the book-level mandate AND this chapter's planned
+# cashing into the writer prompt. Soft/advisory: empty selection + empty chapter
+# contract → empty string, so non-opted-in books get a byte-identical prompt.
+
+# Human-readable labels for the default brainhole_contract field keys
+# (see planner._brainhole_required_contract_fields). Unknown keys fall back to
+# the raw key so a customised profile still renders.
+_BRAINHOLE_FIELD_LABEL_ZH: dict[str, str] = {
+    "one_sentence_sell": "一句话卖点",
+    "character_core_used": "调用的人设内核",
+    "modern_system": "现代规则/系统",
+    "contrast_mechanism": "反差机制",
+    "visible_comedy": "可见喜剧落点",
+    "serious_underbelly": "严肃内核",
+    "plot_consequence": "剧情后果",
+    "protagonist_decision": "主角抉择",
+    "growth_stage_fit": "成长阶段契合",
+    "risk_check": "风险校验",
+}
+
+# Per-field text cap so a verbose contract can't blow up the prose prompt.
+_WRITER_FIELD_CHAR_CAP = 240
+
+
+def _render_chapter_cashed_effects_block(
+    chapter_metadata: Mapping[str, Any] | None,
+    *,
+    language: str,
+) -> str:
+    """Render the SPECIFIC effect beats the outline already planned for THIS
+    chapter (persisted into ``chapter.metadata_json`` by
+    ``workflows._sync_chapter_causality_metadata``). Empty when absent."""
+
+    if not isinstance(chapter_metadata, Mapping):
+        return ""
+    is_en = language.lower().startswith("en")
+    sections: list[str] = []
+
+    brainhole = chapter_metadata.get("brainhole_contract")
+    if isinstance(brainhole, Mapping) and brainhole:
+        rows: list[str] = []
+        for key, value in brainhole.items():
+            text = _flatten_text(value).strip()
+            if not text:
+                continue
+            label = key if is_en else _BRAINHOLE_FIELD_LABEL_ZH.get(key, key)
+            rows.append(f"  - {label}：{text[:_WRITER_FIELD_CHAR_CAP]}")
+        if rows:
+            head = (
+                "・This chapter's planned brainhole beat — render it as an on-page "
+                "spectacle the reader can see, not just a premise note:"
+                if is_en
+                else "・本章已规划的脑洞兑现点（把它写成读者眼见的名场面，不要停在设定层）："
+            )
+            sections.append(head + "\n" + "\n".join(rows[:10]))
+
+    effects = chapter_metadata.get("selected_effect_skills")
+    if isinstance(effects, Mapping) and effects:
+        rows = []
+        primary = _flatten_text(effects.get("primary")).strip()
+        secondary = _flatten_text(effects.get("secondary")).strip()
+        if primary:
+            rows.append((f"  - primary: {primary}" if is_en else f"  - 主效果：{primary}"))
+        if secondary:
+            rows.append((f"  - secondary: {secondary}" if is_en else f"  - 次效果：{secondary}"))
+        expected = effects.get("expected_contracts")
+        if isinstance(expected, Mapping):
+            for name, value in expected.items():
+                text = _flatten_text(value).strip()
+                if text:
+                    rows.append(f"  - {name}：{text[:_WRITER_FIELD_CHAR_CAP]}")
+        elif isinstance(expected, (list, tuple)):
+            names = "、".join(str(x).strip() for x in expected if str(x).strip())
+            if names:
+                rows.append(
+                    (f"  - contracts to cash: {names}" if is_en else f"  - 需兑现合同：{names}")
+                )
+        if rows:
+            head = (
+                "・This chapter's primary story-effect beats to cash in the prose:"
+                if is_en
+                else "・本章主推的故事效果兑现点（在正文里真正落地，不是贴标签）："
+            )
+            sections.append(head + "\n" + "\n".join(rows[:12]))
+
+    return "\n\n".join(sections)
+
+
+def render_story_enhancer_writer_block(
+    project_metadata: Mapping[str, Any] | None,
+    chapter_metadata: Mapping[str, Any] | None = None,
+    *,
+    language: str = "zh-CN",
+) -> str:
+    """Writer-facing story-enhancer block for the PROSE prompt.
+
+    Two layers, both soft/advisory (never a gate):
+      1. book-level — the same hard contract injected into outlines (tone anchor +
+         per-skill effect contracts). Tells the writer WHAT kind of story this is
+         and which effects every chapter owes. Single-sourced from
+         ``render_story_enhancer_contract_block`` so it can never drift from the
+         outline contract.
+      2. per-chapter — the SPECIFIC beats the outline already planned for this
+         chapter (brainhole_contract / selected_effect_skills), so the writer
+         lands the exact spectacle/comedy/hype beat instead of re-inventing it.
+
+    Returns "" when the book opted into nothing AND the chapter carries no cashed
+    contract → the prose prompt stays byte-identical for non-opted-in books.
+    """
+
+    book_block = render_story_enhancer_contract_block(
+        resolve_story_enhancers(project_metadata), language=language
+    )
+    chapter_block = _render_chapter_cashed_effects_block(chapter_metadata, language=language)
+    parts = [p for p in (book_block, chapter_block) if p]
+    return "\n\n".join(parts)

@@ -59,6 +59,7 @@ from bestseller.services.concept_lab import render_concept_lab_prompt_block
 from bestseller.services.dialogue_personality_bridge import (
     render_dialogue_personality_bridge_block,
 )
+from bestseller.services.story_enhancers import render_story_enhancer_writer_block
 from bestseller.services.diversity_budget import (
     load_diversity_budget,
     save_diversity_budget,
@@ -6524,6 +6525,18 @@ def build_scene_draft_prompts(
     _concept_lab_contract_block = render_concept_lab_prompt_block(_project_meta, language=language)
     if _concept_lab_contract_block:
         _concept_lab_contract_line = f"{_concept_lab_contract_block}\n\n"
+    # Book-level story-enhancer contract (脑洞/喜剧/爽点 + 基调锚点) + this
+    # chapter's planned cashing. Closes the gap where selected enhancers reached
+    # the outline but never the prose. Empty unless the book opted in / the
+    # chapter carries a cashed contract → prompt stays byte-identical otherwise.
+    _story_enhancer_writer_line = ""
+    _story_enhancer_writer_block = render_story_enhancer_writer_block(
+        _project_meta,
+        getattr(chapter, "metadata_json", None),
+        language=language,
+    )
+    if _story_enhancer_writer_block:
+        _story_enhancer_writer_line = f"{_story_enhancer_writer_block}\n\n"
     _hype_constraints_line = ""
     if hype_constraints_block:
         _hype_constraints_line = f"{hype_constraints_block}\n\n"
@@ -6921,6 +6934,7 @@ def build_scene_draft_prompts(
             f"{_query_brief_line}"
             f"{_reader_contract_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_writer_line}"
             f"{_hype_constraints_line}"
             f"{current_scene_contract_line}"
             f"{_qimao_opening_contract_line}"
@@ -7035,6 +7049,7 @@ def build_scene_draft_prompts(
             f"{_query_brief_line}"
             f"{_reader_contract_line}"
             f"{_concept_lab_contract_line}"
+            f"{_story_enhancer_writer_line}"
             f"{_hype_constraints_line}"
             f"{current_scene_contract_line}"
             f"{_qimao_opening_contract_line}"

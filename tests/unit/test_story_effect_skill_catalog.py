@@ -182,7 +182,18 @@ def test_selected_second_batch_skills_expand_only_when_selected(
     assert "【脑洞生成合同】" not in block
 
 
-def test_catalog_only_second_batch_skills_do_not_expand_contracts() -> None:
+def test_generic_second_batch_skills_expand_when_explicitly_selected() -> None:
+    """Effects WITHOUT a dedicated renderer (romance/twist/wonder/danger) now also
+    expand into a generic per-skill contract when explicitly selected.
+
+    This was previously asserted to stay empty, encoding the old behaviour where
+    only the four dedicated-renderer skills expanded. That premise was deliberately
+    overturned by the "all 18 skills render a non-empty contract" change (see
+    ``test_story_enhancer_contracts.test_all_18_skills_render_a_nonempty_contract``):
+    a selected effect must actually deliver a contract, otherwise picking it does
+    nothing and the prose stays bland. This test now pins the new truth at the
+    selection-renderer level (mirroring the single-skill renderer guarantee).
+    """
     catalog = resolve_story_effect_skill_catalog("都市神仙", "神仙招聘")
     metadata = {
         STORY_EFFECT_SKILL_CATALOG_METADATA_KEY: catalog.to_metadata(),
@@ -197,7 +208,10 @@ def test_catalog_only_second_batch_skills_do_not_expand_contracts() -> None:
 
     block = render_selected_story_effect_skill_contracts(metadata, language="zh-CN")
 
-    assert block == ""
+    assert block != ""
+    # The explicitly-selected primary/secondary effects each cash a contract.
+    assert "romance_tenderness_engine" in block
+    assert "twist_reversal_engine" in block
 
 
 def test_build_project_metadata_adds_story_effect_catalog_without_overriding_input() -> None:

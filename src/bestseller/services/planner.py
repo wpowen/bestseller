@@ -7128,6 +7128,12 @@ async def _repair_cast_personhood_if_needed(
         if getattr(project, "invariants_json", None):
             invariants = invariants_from_dict(project.invariants_json)
         else:
+            _planner_meta = getattr(project, "metadata_json", None)
+            _planner_pack_key = (
+                _planner_meta.get("prompt_pack_key")
+                if isinstance(_planner_meta, Mapping)
+                else None
+            )
             invariants = seed_invariants(
                 project_id=project.id,
                 language=getattr(project, "language", None),
@@ -7136,6 +7142,9 @@ async def _repair_cast_personhood_if_needed(
                     "words_per_chapter",
                     None,
                 ),
+                genre=getattr(project, "genre", None),
+                sub_genre=getattr(project, "sub_genre", None),
+                prompt_pack_key=_planner_pack_key,
             )
         draft = build_draft_from_materialization_content(
             book_spec_content=book_spec_payload,

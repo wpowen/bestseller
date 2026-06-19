@@ -210,3 +210,75 @@ class TestInferPovFromSample:
         text = (("她走进房间。她看着他。" * 20)
                 + "「我来了，」她说。「我不走了，」他回答。" * 10)
         assert infer_pov_from_sample(text, language="zh-CN") == "close_third"
+
+
+# ---------------------------------------------------------------------------
+# Tone-aware opening / cliffhanger pools (genre de-homogenisation).
+# Regression for 《福星甩不掉》: a 社畜摆烂治愈喜剧 had every chapter forced to open
+# on HUMILIATION + countdown-threat cliffs because the default pools are the
+# full tension-heavy enums, steamrolling the comedy pack's "低压力高期待" mandate.
+# ---------------------------------------------------------------------------
+
+from bestseller.services.invariants import (  # noqa: E402
+    LOW_PRESSURE_OPENING_POOL,
+    is_low_pressure_tone,
+)
+
+
+class TestLowPressureTone:
+    @pytest.mark.parametrize(
+        "pack,genre,sub,expected",
+        [
+            ("shezhu-bailan-comedy", "都市脑洞", "社畜摆烂·气运团宠·反向喜剧", True),
+            ("cozy-fantasy", "奇幻", "治愈日常", True),
+            (None, "都市", "治愈种田日常", True),       # token fallback
+            (None, "搞笑", "沙雕喜剧", True),
+            ("suspense-mystery", "悬疑推理", "探案", False),
+            ("xianxia-upgrade-core", "仙侠", "升级流", False),
+            (None, "玄幻", "热血争霸", False),
+        ],
+    )
+    def test_classifier(self, pack, genre, sub, expected) -> None:
+        assert is_low_pressure_tone(pack, genre, sub) is expected
+
+    def test_comedy_seed_uses_warm_opening_pool(self) -> None:
+        inv = seed_invariants(
+            project_id=uuid4(),
+            language="zh-CN",
+            words_per_chapter=_words(),
+            genre="都市脑洞",
+            sub_genre="社畜摆烂·气运团宠·反向喜剧",
+            prompt_pack_key="shezhu-bailan-comedy",
+        )
+        # The shame/threat cluster must be gone for a healing comedy.
+        assert OpeningArchetype.HUMILIATION not in inv.opening_archetype_pool
+        assert OpeningArchetype.BROKEN_ENGAGEMENT not in inv.opening_archetype_pool
+        assert OpeningArchetype.BANISHMENT not in inv.opening_archetype_pool
+        assert inv.opening_archetype_pool == LOW_PRESSURE_OPENING_POOL
+        # Cliffs are "低压力高期待", not countdown-dread.
+        assert CliffhangerType.INTERNAL_CRISIS not in inv.cliffhanger_policy.allowed_types
+        assert CliffhangerType.NEW_CHARACTER in inv.cliffhanger_policy.allowed_types
+
+    def test_tension_genre_keeps_full_pools(self) -> None:
+        inv = seed_invariants(
+            project_id=uuid4(),
+            language="zh-CN",
+            words_per_chapter=_words(),
+            genre="仙侠",
+            sub_genre="升级流",
+            prompt_pack_key="xianxia-upgrade-core",
+        )
+        assert inv.opening_archetype_pool == tuple(OpeningArchetype)
+        assert inv.cliffhanger_policy.allowed_types == tuple(CliffhangerType)
+
+    def test_explicit_override_wins_over_tone_default(self) -> None:
+        inv = seed_invariants(
+            project_id=uuid4(),
+            language="zh-CN",
+            words_per_chapter=_words(),
+            genre="都市脑洞",
+            sub_genre="社畜摆烂喜剧",
+            prompt_pack_key="shezhu-bailan-comedy",
+            overrides={"opening_archetype_pool": (OpeningArchetype.CRISIS,)},
+        )
+        assert inv.opening_archetype_pool == (OpeningArchetype.CRISIS,)

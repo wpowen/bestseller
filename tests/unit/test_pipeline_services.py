@@ -8895,3 +8895,35 @@ async def test_progressive_autowrite_can_continue_after_volume_blocks(
     assert feedback_volumes == [2]
     assert "volume_writing_machine_repair_required" in progress_events
     assert "volume_writing_repair_parallelized" in progress_events
+
+
+# ---------------------------------------------------------------------------
+# Genre-aware golden-three "visible loss" backfill.
+# Regression for 《福星甩不掉》: the backfill hard-coded a detective stake
+# ("失去关键证据，对手扩大优势") onto every book's first three chapters, which
+# is retention-killing nonsense in a 治愈喜剧 with no "对手" or "证据".
+# ---------------------------------------------------------------------------
+def test_visible_loss_backfill_is_tone_aware() -> None:
+    from bestseller.services.pipelines import _backfill_golden_three_visible_losses
+
+    def _ch(n: int) -> ChapterModel:
+        return ChapterModel(
+            project_id=uuid4(),
+            chapter_number=n,
+            chapter_goal="",
+            main_conflict="主角只想躺平摆烂",
+            information_revealed={},
+            information_withheld={},
+            foreshadowing_actions={},
+            metadata={},
+        )
+
+    low = [_ch(1)]
+    _backfill_golden_three_visible_losses(low, low_pressure=True)
+    assert "关键证据" not in low[0].main_conflict
+    assert "对手" not in low[0].main_conflict
+    assert "尴尬" in low[0].main_conflict  # warm/comedic escalation stake
+
+    default = [_ch(1)]
+    _backfill_golden_three_visible_losses(default, low_pressure=False)
+    assert "关键证据" in default[0].main_conflict  # legacy wording preserved

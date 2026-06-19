@@ -98,6 +98,90 @@ class CliffhangerPolicy:
 
 
 # ---------------------------------------------------------------------------
+# Tone-aware opening / cliffhanger pools (genre de-homogenisation).
+#
+# The default ``opening_archetype_pool`` is the *full* enum, which is dominated
+# by high-tension male-frequency archetypes (HUMILIATION first, plus CRISIS /
+# BROKEN_ENGAGEMENT / BANISHMENT / BETRAYAL / IDENTITY_FALL / RITUAL_INTERRUPTED).
+# Forcing those on a 沙雕喜剧 / 治愈日常 / 种田 / cozy book makes every chapter open
+# on shame or threat — directly contradicting the comedy pack's mandate of
+# "低压力高期待" hooks, "每章 ≥3 笑点 + 1 温度瞬间", and "严禁 2/3 前进入高强度冲突".
+# Low-pressure genres get a warm/light pool instead.
+LOW_PRESSURE_OPENING_POOL: tuple[OpeningArchetype, ...] = (
+    OpeningArchetype.MUNDANE_DAY,
+    OpeningArchetype.CONTRAST,
+    OpeningArchetype.ENCOUNTER,
+    OpeningArchetype.SUDDEN_POWER,
+    OpeningArchetype.SECRET_REVEAL,
+)
+
+# Cliffs that read as "低压力、高期待" (a new oddball shows up / the system pings a
+# silly task / tomorrow's small choice) rather than countdown-threat / internal
+# dread that kills a healing-comedy's lightness.
+LOW_PRESSURE_CLIFFHANGER_POLICY: CliffhangerPolicy = CliffhangerPolicy(
+    allowed_types=(
+        CliffhangerType.NEW_CHARACTER,
+        CliffhangerType.REVELATION,
+        CliffhangerType.ENVIRONMENTAL,
+        CliffhangerType.DECISION,
+    ),
+)
+
+# Prompt packs whose own guidance mandates a low-pressure, comedic/healing tone.
+_LOW_PRESSURE_PROMPT_PACKS: frozenset[str] = frozenset(
+    {
+        "shezhu-bailan-comedy",
+        "cozy-fantasy",
+        "cozy-litrpg",
+        "cozy-mystery",
+        "entertainment-sweet",
+    }
+)
+
+# Genre / sub-genre tokens that signal a low-pressure comedic/healing tone even
+# when the pack key is absent or generic.
+_LOW_PRESSURE_TONE_TOKENS: tuple[str, ...] = (
+    "喜剧",
+    "搞笑",
+    "沙雕",
+    "治愈",
+    "摆烂",
+    "躺平",
+    "团宠",
+    "种田",
+    "日常",
+    "轻松",
+    "温馨",
+    "甜宠",
+    "cozy",
+    "comedy",
+    "slice of life",
+    "slice-of-life",
+    "healing",
+    "wholesome",
+    "feel-good",
+)
+
+
+def is_low_pressure_tone(
+    prompt_pack_key: str | None = None,
+    genre: str | None = None,
+    sub_genre: str | None = None,
+) -> bool:
+    """Whether a book's tone is low-pressure comedic/healing.
+
+    Such books must NOT open every chapter on humiliation/crisis nor end on
+    countdown-threat cliffs — they need warm/light openings and "低压力高期待"
+    hooks. Matches by prompt-pack key first, then genre/sub-genre tone tokens.
+    """
+
+    if prompt_pack_key and str(prompt_pack_key).strip().lower() in _LOW_PRESSURE_PROMPT_PACKS:
+        return True
+    label = f"{genre or ''} {sub_genre or ''}".lower()
+    return any(token in label for token in _LOW_PRESSURE_TONE_TOKENS)
+
+
+# ---------------------------------------------------------------------------
 # ProjectInvariants — the frozen top-level contract.
 # ---------------------------------------------------------------------------
 
@@ -350,15 +434,31 @@ def seed_invariants(
     pov: PovStyle | str = "close_third",
     tense: TenseStyle | str = "past",
     overrides: Mapping[str, Any] | None = None,
+    genre: str | None = None,
+    sub_genre: str | None = None,
+    prompt_pack_key: str | None = None,
 ) -> ProjectInvariants:
     """Seed a ``ProjectInvariants`` from project data + global defaults.
 
     ``overrides`` is a free-form dict that can set any of: ``length_envelope``,
     ``naming_scheme``, ``banned_formulaic_phrases``, etc.  Used by the pipeline
     to bolt on category-specific adjustments without modifying this module.
+
+    ``genre`` / ``sub_genre`` / ``prompt_pack_key`` drive tone-aware defaults:
+    low-pressure comedic/healing books get a warm opening pool and "低压力高期待"
+    cliffhanger policy instead of the tension-heavy full-enum defaults — unless
+    the caller pins an explicit ``opening_archetype_pool`` / ``cliffhanger_policy``
+    override (which always wins).
     """
 
     overrides = dict(overrides or {})
+
+    # Tone-aware opening/cliff defaults (genre de-homogenisation). Explicit
+    # overrides win; otherwise low-pressure genres swap the tension-heavy
+    # defaults for warm/light pools.
+    if is_low_pressure_tone(prompt_pack_key, genre, sub_genre):
+        overrides.setdefault("opening_archetype_pool", LOW_PRESSURE_OPENING_POOL)
+        overrides.setdefault("cliffhanger_policy", LOW_PRESSURE_CLIFFHANGER_POLICY)
     length_envelope = overrides.get("length_envelope") or _derive_length_envelope(
         words_per_chapter, language
     )

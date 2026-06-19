@@ -118,6 +118,7 @@ from bestseller.services.invariants import (
     InvariantSeedError,
     invariants_from_dict,
     invariants_to_dict,
+    is_low_pressure_tone,
     seed_invariants,
 )
 from bestseller.services.knowledge import propagate_scene_discoveries, refresh_scene_knowledge
@@ -2197,7 +2198,18 @@ def _commercial_chapter_text(chapter: ChapterModel) -> str:
     return " ".join(str(part) for part in parts if part)
 
 
-def _backfill_golden_three_visible_losses(chapters: list[ChapterModel]) -> int:
+def _backfill_golden_three_visible_losses(
+    chapters: list[ChapterModel], *, low_pressure: bool = False
+) -> int:
+    # The "visible loss" stakes wording must match the book's tone. A detective
+    # / male-frequency framing ("失去关键证据，对手扩大优势") is nonsense — and
+    # actively retention-killing — in a 沙雕喜剧 / 治愈日常 where there is no
+    # "对手" or "证据"; the comedic stake is escalating entanglement/awkwardness.
+    visible_loss_clause = (
+        "；否则这桩麻烦会外溢到身边人头上，主角越想撇清越被缠得更紧，场面越闹越尴尬。"
+        if low_pressure
+        else "；否则主角会失去本章关键证据/机会，对手当场扩大优势。"
+    )
     repaired = 0
     for chapter in chapters:
         chapter_no = int(getattr(chapter, "chapter_number", 0) or 0)
@@ -2215,10 +2227,7 @@ def _backfill_golden_three_visible_losses(chapters: list[ChapterModel]) -> int:
         setattr(
             chapter,
             "main_conflict",
-            (
-                f"{base_conflict}；否则主角会失去本章关键证据/机会，"
-                "对手当场扩大优势。"
-            ),
+            f"{base_conflict}{visible_loss_clause}",
         )
         metadata = dict(getattr(chapter, "metadata_json", None) or {})
         metadata["commercial_planning_visible_loss_repair"] = {
@@ -2245,7 +2254,18 @@ def _record_commercial_planning_readiness_gate(
     if package_root is not None:
         write_commercial_package_sidecars(project, [], package_root)
     hype_repair_count = _strengthen_golden_three_hype_assignments(chapters)
-    visible_loss_repair_count = _backfill_golden_three_visible_losses(chapters)
+    _vl_meta = getattr(project, "metadata_json", None)
+    _vl_pack_key = (
+        _vl_meta.get("prompt_pack_key") if isinstance(_vl_meta, Mapping) else None
+    )
+    _vl_low_pressure = is_low_pressure_tone(
+        _vl_pack_key,
+        getattr(project, "genre", None),
+        getattr(project, "sub_genre", None),
+    )
+    visible_loss_repair_count = _backfill_golden_three_visible_losses(
+        chapters, low_pressure=_vl_low_pressure
+    )
     report = evaluate_commercial_planning_readiness(
         [_chapter_probe_from_model(chapter) for chapter in chapters],
         target_chapters=int(getattr(project, "target_chapters", 0) or 0),
@@ -3364,6 +3384,13 @@ async def _ensure_project_invariants(
     if genre_preset is not None:
         preset_overrides = dict(genre_preset.writing_profile_overrides)
 
+    _project_meta = getattr(project, "metadata_json", None)
+    _pack_key = (
+        _project_meta.get("prompt_pack_key")
+        if isinstance(_project_meta, Mapping)
+        else None
+    )
+
     try:
         invariants = seed_invariants(
             project_id=project.id,
@@ -3372,6 +3399,9 @@ async def _ensure_project_invariants(
             pov=pov,
             tense=tense,
             overrides={"preset_overrides": preset_overrides},
+            genre=getattr(project, "genre", None),
+            sub_genre=getattr(project, "sub_genre", None),
+            prompt_pack_key=_pack_key,
         )
     except Exception as exc:  # pragma: no cover - defensive
         raise InvariantSeedError(

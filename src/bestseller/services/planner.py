@@ -14319,6 +14319,14 @@ def _outline_prompts(
     _lang_key = "en" if is_en else "zh"
     writing_profile = _planner_writing_profile(project)
     prompt_pack = _planner_prompt_pack(project)
+    from bestseller.services.invariants import is_low_pressure_tone as _is_low_pressure_tone
+
+    _proj_meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    _outline_low_pressure = _is_low_pressure_tone(
+        getattr(prompt_pack, "key", None) or _proj_meta.get("prompt_pack_key"),
+        project.genre,
+        project.sub_genre,
+    )
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
     system_prompt = (
@@ -14426,7 +14434,9 @@ def _outline_prompts(
         if not is_en:
             _method_block = render_outline_hook_taxonomy_block("opening")
             _method_cards_hook_line = f"\n{_method_block}\n" if _method_block else ""
-            _golden_block = render_golden_opening_rules_block()
+            _golden_block = render_golden_opening_rules_block(
+                low_pressure=_outline_low_pressure
+            )
             _golden_opening_line = f"\n{_golden_block}\n" if _golden_block else ""
     except Exception:
         logger.debug(
@@ -14461,11 +14471,20 @@ def _outline_prompts(
             f"{_payoff_ledger_v2_line}"
             "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. Each chapter needs at least 3 scenes. "
             "The first 3 chapters must rapidly establish the protagonist edge, the core anomaly, the first gain/loss cycle, and a strong read-on hook. "
-            "[GOLDEN OPENING — chapters 1-3 hard rules] Start at the highest-conflict point; the protagonist must appear within the first 300 characters and the first payoff/expectation beat within 1000 characters; "
-            "no prologue, no flashback/POV-switch opening, no weather/scenery opening, no worldview lecture; "
-            "introduce at most 6 new proper nouns in chapter 1 and at most 5 in each of chapters 2-3 (names, factions, systems, jargon all count); "
-            "information release priority: crisis > characterization > golden-finger hint > worldview; chapter 1 must state the protagonist's goal and the book's selling point.\n"
-            "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
+            + (
+                "[GOLDEN OPENING — chapters 1-3 hard rules, low-pressure comedy/healing] Open on a warm, concrete present-day moment (an ordinary day disrupted / an enviable small joy / dropped into a homey unfamiliar setting); NEVER open on a crisis, countdown, or threat. "
+                "The golden finger / system MUST be SHOWN through a concrete, ideally funny event — the reader infers the rules from action and consequences; never have a system / customer-service voice / AI / narrator recite its own rules as a page-one infodump. "
+                "The protagonist must appear within the first 300 characters and the first laugh / warm beat / clear anticipation (not a crisis) within 1000 characters; no prologue, no flashback/POV-switch opening, no worldview lecture; "
+                "introduce at most 6 new proper nouns in chapter 1 and at most 5 in each of chapters 2-3 (names, factions, systems, jargon all count); "
+                "information release priority: warmth/comedy > golden-finger SHOWN > goal > worldview; no high-intensity conflict before the 2/3 mark; chapter 1 lightly states the protagonist's goal and the book's selling point.\n"
+                if _outline_low_pressure
+                else
+                "[GOLDEN OPENING — chapters 1-3 hard rules] Start at the highest-conflict point; the protagonist must appear within the first 300 characters and the first payoff/expectation beat within 1000 characters; "
+                "no prologue, no flashback/POV-switch opening, no weather/scenery opening, no worldview lecture; "
+                "introduce at most 6 new proper nouns in chapter 1 and at most 5 in each of chapters 2-3 (names, factions, systems, jargon all count); "
+                "information release priority: crisis > characterization > golden-finger hint > worldview; chapter 1 must state the protagonist's goal and the book's selling point.\n"
+            )
+            + "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
             f"Each chapter must also output `target_emotion` — exactly one of [{_emotion_vocab_csv}] — and goal/main_conflict must show how this chapter's conflict delivers that emotion. "
             f"{_tone_contract_line}"
             f"{_logic_coherence_line}"
@@ -14790,6 +14809,14 @@ def _volume_outline_prompts(
     _lang_key = "en" if is_en else "zh"
     writing_profile = _planner_writing_profile(project)
     prompt_pack = _planner_prompt_pack(project)
+    from bestseller.services.invariants import is_low_pressure_tone as _is_low_pressure_tone
+
+    _proj_meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    _outline_low_pressure = _is_low_pressure_tone(
+        getattr(prompt_pack, "key", None) or _proj_meta.get("prompt_pack_key"),
+        project.genre,
+        project.sub_genre,
+    )
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
     volume_number = int(volume_entry.get("volume_number", 1))
@@ -14905,7 +14932,9 @@ def _volume_outline_prompts(
             _method_block = render_outline_hook_taxonomy_block(_method_stage)
             _method_cards_hook_line = f"\n{_method_block}\n" if _method_block else ""
             if _covers_golden_opening:
-                _golden_block = render_golden_opening_rules_block()
+                _golden_block = render_golden_opening_rules_block(
+                    low_pressure=_outline_low_pressure
+                )
                 _golden_opening_line = f"\n{_golden_block}\n" if _golden_block else ""
     except Exception:
         logger.debug(
@@ -15119,10 +15148,19 @@ def _volume_outline_prompts(
                 else ""
             )
             + (
-                "[GOLDEN OPENING — chapters 1-3 hard rules] Start at the highest-conflict point; the protagonist must appear within the first 300 characters and the first payoff/expectation beat within 1000 characters; "
-                "no prologue, no flashback/POV-switch opening, no weather/scenery opening, no worldview lecture; "
-                "introduce at most 6 new proper nouns in chapter 1 and at most 5 in each of chapters 2-3 (names, factions, systems, jargon all count); "
-                "information release priority: crisis > characterization > golden-finger hint > worldview; chapter 1 must state the protagonist's goal and the book's selling point. "
+                (
+                    "[GOLDEN OPENING — chapters 1-3 hard rules, low-pressure comedy/healing] Open on a warm, concrete present-day moment (an ordinary day disrupted / an enviable small joy / dropped into a homey unfamiliar setting); NEVER open on a crisis, countdown, or threat. "
+                    "The golden finger / system MUST be SHOWN through a concrete, ideally funny event — never have a system / customer-service voice / AI / narrator recite its own rules as a page-one infodump. "
+                    "The protagonist must appear within the first 300 characters and the first laugh / warm beat / clear anticipation (not a crisis) within 1000 characters; no prologue, no flashback/POV-switch opening, no worldview lecture; "
+                    "introduce at most 6 new proper nouns in chapter 1 and at most 5 in each of chapters 2-3 (names, factions, systems, jargon all count); "
+                    "information release priority: warmth/comedy > golden-finger SHOWN > goal > worldview; no high-intensity conflict before the 2/3 mark; chapter 1 lightly states the protagonist's goal and the book's selling point. "
+                    if _outline_low_pressure
+                    else
+                    "[GOLDEN OPENING — chapters 1-3 hard rules] Start at the highest-conflict point; the protagonist must appear within the first 300 characters and the first payoff/expectation beat within 1000 characters; "
+                    "no prologue, no flashback/POV-switch opening, no weather/scenery opening, no worldview lecture; "
+                    "introduce at most 6 new proper nouns in chapter 1 and at most 5 in each of chapters 2-3 (names, factions, systems, jargon all count); "
+                    "information release priority: crisis > characterization > golden-finger hint > worldview; chapter 1 must state the protagonist's goal and the book's selling point. "
+                )
                 if _covers_golden_opening
                 else ""
             )

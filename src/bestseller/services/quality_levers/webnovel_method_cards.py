@@ -455,8 +455,40 @@ def render_outline_hook_taxonomy_block(stage: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def render_golden_opening_rules_block() -> str:
-    """Golden-opening (ch1-3) constraint fragment for planner prompts."""
+_LOW_PRESSURE_GOLDEN_OPENING_BLOCK = "\n".join(
+    [
+        "【黄金三章硬约束 — 低压力喜剧/治愈题材 — 仅适用于覆盖第1-3章的批次】",
+        "必达项：",
+        "- 从一个温暖、具体、当下的日常瞬间开写（最普通的一天被打破 / 令人羡慕的小确幸 / 被丢进一个有烟火气的陌生环境均可）；严禁从危机、倒计时或威胁开场。",
+        "- 金手指/系统必须通过一个当下正在发生的、最好好笑的具体事件被「演」出来：读者从动作、对白和可感后果里自己推断规则。严禁系统／客服／AI／旁白整段朗读自身设定或规则。",
+        "- 主角300字内登场；1000字内出现第一个笑点或微小治愈瞬间或明确的期待点（不是危机）。",
+        "- 三基点前3章全部落位：人设基点、切入点基点（最好第1章）、金手指基点；切入点与主线强相关。",
+        "- 第1章用轻松的方式点明主角目标与本书卖点（靠反差/误会/烟火气带出，不靠危机或说教）。",
+        "绝对禁止：",
+        "- 序章/楔子/引子；插叙/切视角/回忆梦境开局（正叙为主）。",
+        "- 系统／客服／AI／旁白整段朗读规则或设定的「说明书」式开场。",
+        "- 倒计时威胁、高强度危机开场；在全书 2/3 进度之前出现无法靠「多睡一觉 / 多喝一口汤 / 多跟邻居聊五分钟」消解的高强度冲突。",
+        "- 大段世界观解说；天气/风景开头（除非反差极大）。",
+        "- 第1章塞进3个以上需要读者记住的主要角色。",
+        "信息释放优先级：温度/笑点 > 金手指(用演的，不用讲的) > 人设与目标 > 世界观",
+        "- 每章至少 3 个笑点 + 1 个微小治愈瞬间；背景信息融进轻松事件，不整段解说。",
+        "新专有名词上限：ch1≤6个，ch2≤5个，ch3≤5个（人名、组织名、功法/系统名、专有术语都计入）。",
+    ]
+)
+
+
+def render_golden_opening_rules_block(low_pressure: bool = False) -> str:
+    """Golden-opening (ch1-3) constraint fragment for planner prompts.
+
+    The default rules are crisis-first ("从全书最有冲突的地方开写",
+    info_release_priority=[危机感, …]) — correct for high-tension male-frequency
+    genres but retention-killing for 沙雕喜剧 / 治愈日常, where the comedy pack
+    mandates a warm, low-pressure opening and a golden finger that is SHOWN, not
+    lectured. ``low_pressure`` swaps in the comedic/healing golden-opening rules.
+    """
+
+    if low_pressure:
+        return _LOW_PRESSURE_GOLDEN_OPENING_BLOCK
 
     rules = load_webnovel_method_cards().golden_chapter_rules
     if not rules.must and not rules.forbidden:

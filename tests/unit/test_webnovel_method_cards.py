@@ -88,3 +88,34 @@ def test_corrupt_config_degrades_without_raising(monkeypatch):
     assert mc.render_outline_hook_taxonomy_block(None) == ""
     assert mc.render_golden_opening_rules_block() == ""
     assert mc.target_emotion_vocabulary()
+
+
+# ── Tone-aware golden-opening (低压力喜剧/治愈) ──────────────────────────────
+# Regression for 《福星甩不掉》: the default golden-opening rules are crisis-first
+# ("从全书最有冲突的地方开写", info_release_priority=[危机感, …]) which forces a
+# tense, system-recitation opening onto a 治愈喜剧 and kills retention.
+def test_golden_opening_low_pressure_swaps_to_comedy_rules() -> None:
+    lo = mc.render_golden_opening_rules_block(low_pressure=True)
+    assert "严禁从危机" in lo
+    assert "说明书" in lo                      # bans system/AI rule-recitation opening
+    assert "温度/笑点 >" in lo                  # warmth/comedy-first info priority
+    assert "危机感" not in lo                   # crisis-first priority is gone
+
+
+def test_golden_opening_default_keeps_crisis_first() -> None:
+    hi = mc.render_golden_opening_rules_block()  # low_pressure=False
+    # Default high-tension rules preserved (no regression for male-frequency).
+    assert "严禁从危机" not in hi
+
+
+def test_golden_opening_low_pressure_survives_broken_config(monkeypatch) -> None:
+    # The low-pressure block is hard-coded (config-independent): it must still
+    # render even when the method-cards YAML is unreadable.
+    def _boom(*_a, **_k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(mc, "load_yaml", _boom)
+    mc.load_webnovel_method_cards.cache_clear()
+    assert "严禁从危机" in mc.render_golden_opening_rules_block(low_pressure=True)
+    assert mc.render_golden_opening_rules_block(low_pressure=False) == ""
+    mc.load_webnovel_method_cards.cache_clear()

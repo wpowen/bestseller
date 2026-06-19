@@ -74,3 +74,50 @@ from bestseller.services.prompt_packs import infer_default_prompt_pack_key
 def test_infer_prompt_pack_key(genre: str, sub_genre: str | None, expected_key: str | None) -> None:
     result = infer_default_prompt_pack_key(genre, sub_genre)
     assert result == expected_key, f"Expected '{expected_key}' for genre='{genre}', sub_genre='{sub_genre}', got '{result}'"
+
+
+# ── Cross-genre prompt-pack contamination guard ─────────────────────────────
+# Regression for the 《喜事公关》(都市修真2.0 喜剧) incident: a conception-stage
+# writing profile carried ``market.prompt_pack_key = "suspense-mystery"``
+# (inherited from prior detective/suspense projects) and, because the explicit
+# pack used to win over the genre route, it poisoned premise/world/cast/outline
+# and every drafted chapter with detective DNA. The genre route must win when an
+# explicit pack contradicts the book's own genre.
+
+
+@pytest.mark.parametrize(
+    "genre,sub_genre,explicit_pack,expected",
+    [
+        # Contamination: explicit suspense pack on an urban-cultivation book →
+        # genre route wins.
+        ("都市修真·职场升级流", "修仙2.0", "suspense-mystery", "urban-cultivation-2.0"),
+        # Different urban genre, different contaminating pack → still routes to
+        # the book's own (urban) family, never the foreign suspense/thriller pack.
+        ("都市异能", "现代都市", "psychological-thriller", "urban-power-reversal"),
+        # Genre-consistent explicit pack is preserved (no spurious override).
+        ("都市修真", "修仙2.0", "urban-cultivation-2.0", "urban-cultivation-2.0"),
+        # Unrecognised genre has no route → explicit pack is honoured as fallback.
+        ("完全未知的题材标签zzz", None, "suspense-mystery", "suspense-mystery"),
+    ],
+)
+def test_resolve_writing_profile_contamination_guard(
+    genre: str, sub_genre: str | None, explicit_pack: str, expected: str
+) -> None:
+    from bestseller.services.writing_profile import resolve_writing_profile
+
+    profile = resolve_writing_profile(
+        {"market": {"prompt_pack_key": explicit_pack}},
+        genre=genre,
+        sub_genre=sub_genre,
+    )
+    assert profile.market.prompt_pack_key == expected
+
+
+def test_resolve_writing_profile_no_explicit_uses_genre_route() -> None:
+    """With no explicit pack, the genre route alone drives the resolution."""
+    from bestseller.services.writing_profile import resolve_writing_profile
+
+    profile = resolve_writing_profile(
+        None, genre="都市修真·职场升级流", sub_genre="修仙2.0"
+    )
+    assert profile.market.prompt_pack_key == "urban-cultivation-2.0"

@@ -333,14 +333,37 @@ def resolve_writing_profile(
     if platform_preset is not None:
         merged = _deep_merge(merged, platform_preset.writing_profile_overrides)
     auto_prompt_pack_key = infer_default_prompt_pack_key(genre, sub_genre)
+    preset_prompt_pack_key = (
+        inferred_genre_preset.prompt_pack_key
+        if inferred_genre_preset is not None
+        else None
+    )
+    # Genre-derived route for the book's *own* genre. Mirrors the original
+    # precedence (token inference first, curated preset as fallback) so this
+    # guard never reorders the non-explicit resolution path.
+    genre_route_key = auto_prompt_pack_key or preset_prompt_pack_key
+    # Contamination guard (cross-genre prompt-pack leak):
+    # ``pack_key`` is an explicit pack carried on the incoming profile — in the
+    # conception flow it is produced by an LLM and can drift to whatever
+    # methodology the framework was historically dominated by (e.g. a 都市修真
+    # 2.0 / urban-cultivation comedy inheriting ``suspense-mystery`` from prior
+    # detective projects). When that explicit pack contradicts the book's own
+    # genre route, the genre is authoritative — the explicit pack only acts as a
+    # fallback for genres with no recognised route. This keeps deliberate,
+    # genre-consistent preset choices intact while refusing cross-genre leakage.
+    effective_pack_key = pack_key or genre_route_key
+    if genre_route_key and pack_key and pack_key != genre_route_key:
+        _logger.warning(
+            "prompt_pack contamination guard: explicit pack %r contradicts genre "
+            "route %r (genre=%r sub_genre=%r); using genre route.",
+            pack_key,
+            genre_route_key,
+            genre,
+            sub_genre,
+        )
+        effective_pack_key = genre_route_key
     prompt_pack = resolve_prompt_pack(
-        pack_key
-        or auto_prompt_pack_key
-        or (
-            inferred_genre_preset.prompt_pack_key
-            if inferred_genre_preset is not None
-            else None
-        ),
+        effective_pack_key,
         genre=genre,
         sub_genre=sub_genre,
     )

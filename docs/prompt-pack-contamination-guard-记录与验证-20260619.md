@@ -39,7 +39,14 @@ genre=`都市修真·职场升级流` / sub_genre=`修仙2.0`）跑出来是一�
   test_conception_services` 共 **153 passed**。
   - 关键回归点：`test_rule_survival_writing_profile_uses_suspense_prompt_pack`——
     规则生存书（无 explicit pack）仍正确得 `suspense-mystery`（修复初版误把 preset 提到 auto 前，已纠正）。
-- **L3 真机**：rebuild 后新建同题材书，核验 `metadata.prompt_pack_key` 落 `urban-cultivation-2.0`（见提交后验证）。
+- **L3 真机**：在含修复代码的容器内跑**真实建书代码路径** `build_project_metadata`，喂入被污染的
+  explicit profile（market.prompt_pack_key=suspense-mystery）+ genre=都市修真·职场升级流/修仙2.0，结果：
+  - `metadata.prompt_pack_key = urban-cultivation-2.0` ✅
+  - `genre_skill_profile.profile_key = urban-cultivation-2.0` ✅
+  - `genre_skill_profile.prompt_pack_key = urban-cultivation-2.0` ✅
+
+  即污染书里被写成 suspense-mystery 的那几个字段，新建链路已全部落正确。
+  （部署：需 Docker rebuild 让运行栈用上修复代码——用户惯常的构建流程。）
 
 ## 影响面
 - 不动既有污染书《喜事公关》（用户指示「只修框架不动这本」）。

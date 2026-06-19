@@ -30,8 +30,12 @@ anti_commonsense_hook 等张力引擎淹没,LLM 给治愈喜剧生成了倒计�
 ## 三层验证
 - **L1**:`test_webnovel_method_cards.py` 新增 3 测试(低压换喜剧规则/默认保留危机优先/低压块抗 config 损坏)。
 - **L2**:webnovel 10 passed;planner/outline 相关回归(见提交记录)。
-- **L3 真机**:rebuild 部署后重规划《福星》ch1-3,核验新 opening_situation/scene beats 从
-  「匿名电话+AI冷读规则」→暖日常+show金手指,A/B(见提交后)。
+- **L3 真机**:rebuild #2 部署后,在容器内用《福星甩不掉》真实 specs 构建
+  `_volume_outline_prompts` 章纲生成 prompt,核验:`COMEDY_GOLDEN_BLOCK=True`、
+  `SHOW_NOT_TELL_BAN=True`、`NO_CRISIS_FIRST=True`(危机优先已消除)、`WARMTH_FIRST=True`。
+  即福星今后生成的每份章纲都用喜剧开篇规则,不再烤倒计时威胁。
+  **注**:已写的 ch1-12 是旧(紧张)章纲+场景卡生成的;让 ch1-3 真正变好需「重规划」
+  (重生成 vol1 章纲→重物化场景卡→重写 draft),属对活书的受控操作(连续性/再生循环风险),单列。
 
 ## 影响面
 - 对所有喜剧/治愈/低压力书的**章纲生成**生效(未来新建书从细纲层就不再烤张力)。

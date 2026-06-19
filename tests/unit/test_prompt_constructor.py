@@ -158,6 +158,32 @@ class TestBuildDiversityConstraints:
         assert "收尾镜头" in text
         assert "revelation" in text
 
+    def test_opening_emits_anti_infodump_rule_zh(self) -> None:
+        # Regression for 《福星甩不掉》 ch1: a cold AI/客服 reciting system rules
+        # as page-one infodump. The opening directive must always carry the
+        # show-don't-lecture guard.
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("zh-CN")
+        text = build_diversity_constraints(
+            inv, budget, assigned_opening=OpeningArchetype.MUNDANE_DAY
+        )
+        assert "系统说明书" in text
+        assert "严禁用系统面板" in text
+
+    def test_opening_emits_anti_infodump_rule_en(self) -> None:
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("en")
+        text = build_diversity_constraints(
+            inv, budget, assigned_opening=OpeningArchetype.MUNDANE_DAY
+        )
+        assert "instruction-manual dump" in text
+
+    def test_no_opening_means_no_anti_infodump_rule(self) -> None:
+        # Empty-input contract: no assigned opening ⇒ no opening lines at all.
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("zh-CN")
+        assert build_diversity_constraints(inv, budget) == ""
+
     def test_includes_assigned_opening_en(self) -> None:
         budget = DiversityBudget(project_id=uuid4())
         inv = _invariants("en")

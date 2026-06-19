@@ -476,6 +476,29 @@ def build_diversity_constraints(
 
     if assigned_opening is not None:
         lines.append(f"- 开篇: {_archetype_directive(assigned_opening, language)}")
+        # Anti-"instruction-manual" opening (universal retention guard). The
+        # single biggest page-one bounce cause is a system panel / customer-
+        # service voice / AI / narrator reciting its own rules as a cold
+        # infodump. The golden finger must be SHOWN through a concrete present
+        # event, never lectured. Emitted alongside the opening directive so the
+        # empty-input contract (no opening ⇒ no opening lines) is preserved.
+        if language.lower().startswith("zh"):
+            lines.append(
+                "- 开篇手法（硬性）：严禁用系统面板／客服／AI／旁白整段朗读自身设定或规则来开场。"
+                "金手指、系统、世界规则必须通过一个当下正在发生的具体事件被「演」出来——"
+                "读者只能从动作、对白和可感后果里推断规则；第一页不得出现成段的规则背诵、"
+                "术语解释或「系统说明书」式信息倾倒。"
+            )
+        else:
+            lines.append(
+                "- Opening craft (hard rule): never open by having a system panel "
+                "/ customer-service voice / AI / narrator recite its own settings "
+                "or rules as a cold infodump. The golden finger / system / world "
+                "rules must be SHOWN through one concrete event happening now — "
+                "the reader infers the rules from action, dialogue, and tangible "
+                "consequences. No block of rule-recitation, term-glossing, or "
+                "instruction-manual dump on page one."
+            )
 
     if assigned_cliffhanger is not None:
         if language.lower().startswith("zh"):

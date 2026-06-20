@@ -81,6 +81,13 @@ def run_migrations_online() -> None:
             connection.commit()
             return
 
+        # Commit the preliminary work (alembic_version capacity DDL + the
+        # greenfield probe). Those statements autobegin a transaction on the
+        # connection; if it is left open, alembic's own begin_transaction()
+        # nests inside it and the migration + version bump are never committed
+        # (the upgrade "runs" in the log but nothing persists).
+        connection.commit()
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

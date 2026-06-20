@@ -48,11 +48,17 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # CORS
+    # CORS. Never combine wildcard origins with credentials: Starlette would
+    # otherwise reflect the caller's Origin back with
+    # Access-Control-Allow-Credentials: true, letting ANY site make
+    # credentialed cross-origin requests. Only allow credentials when an
+    # explicit origin allowlist is configured.
+    cors_origins = settings.api.cors_origins
+    allow_credentials = bool(cors_origins) and "*" not in cors_origins
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.api.cors_origins,
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )

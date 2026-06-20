@@ -530,7 +530,15 @@ class ExpansionGateModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "chapters"
-    __table_args__ = (UniqueConstraint("project_id", "chapter_number", name="uq_chapter_number"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "chapter_number", name="uq_chapter_number"),
+        # High-frequency access paths that were full-table scans (the only
+        # prior index was the unique constraint above).
+        Index("idx_chapters_volume", "volume_id"),
+        Index("idx_chapters_pov_character", "pov_character_id"),
+        Index("idx_chapters_project_production_state", "project_id", "production_state"),
+        Index("idx_chapters_project_status", "project_id", "status"),
+    )
 
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

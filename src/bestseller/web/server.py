@@ -1014,6 +1014,22 @@ def _genre_preset_from_selection(selection: dict) -> object:
     )
 
 
+def _quickstart_payload_has_genre(payload: dict) -> bool:
+    """A quickstart request is valid if it carries a genre source.
+
+    Either a legacy ``genre_key`` (热门开局模板) OR a structured taxonomy
+    ``selection`` (频道·题材·子题材·标签 free picker). The task handler
+    synthesises a preset from ``selection`` when ``genre_key`` is empty, so the
+    HTTP gate must accept either — not just ``genre_key``.
+    """
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("genre_key"):
+        return True
+    selection = payload.get("selection")
+    return isinstance(selection, dict) and bool(selection)
+
+
 def _project_output_dir(settings: AppSettings, project_slug: str) -> Path:
     return (Path(settings.output.base_dir) / project_slug).resolve()
 
@@ -7740,8 +7756,8 @@ def _create_book_generation_schedule(
             language=inner_payload.get("language"),
         )
     elif task_type == "quickstart":
-        if not inner_payload.get("genre_key"):
-            raise ValueError("Field 'genre_key' is required.")
+        if not _quickstart_payload_has_genre(inner_payload):
+            raise ValueError("请先选择题材(选一个频道·题材·子题材,或一张热门开局模板)。")
     else:
         raise ValueError(f"Unsupported task_type {task_type!r}")
 
@@ -7751,7 +7767,11 @@ def _create_book_generation_schedule(
     title = (
         (str(inner_payload.get("title") or "") or None)
         if task_type == "autowrite"
-        else (str(inner_payload.get("genre_key") or "") or None)
+        else (
+            str(inner_payload.get("genre_key") or "")
+            or str((inner_payload.get("selection") or {}).get("genre") or "")
+            or None
+        )
     )
     requested_by = str(payload.get("requested_by") or "").strip() or None
 
@@ -10936,8 +10956,10 @@ def serve_web_app(
                     return
                 if path == "/api/tasks/quickstart":
                     payload = self._read_json_body()
-                    if not payload.get("genre_key"):
-                        raise ValueError("Field 'genre_key' is required.")
+                    # Accept either a legacy genre_key (热门开局模板) OR a structured
+                    # taxonomy selection (频道·题材·子题材·标签 free picker).
+                    if not _quickstart_payload_has_genre(payload):
+                        raise ValueError("请先选择题材(选一个频道·题材·子题材,或一张热门开局模板)。")
                     resume_slug = str(payload.get("project_slug") or "")
                     if resume_slug:
                         try:

@@ -16,6 +16,39 @@ from bestseller.web import server as web_server
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"genre_key": "apocalypse-supply"}, True),  # 热门开局模板 (legacy)
+        # 自由组合 free picker: empty genre_key + structured selection
+        (
+            {
+                "genre_key": "",
+                "selection": {
+                    "channel": "male",
+                    "genre": "apocalypse",
+                    "sub_genre": "disaster-hoarding",
+                    "tags": ["囤货", "升级流"],
+                },
+            },
+            True,
+        ),
+        ({"selection": {"genre": "xuanhuan"}}, True),  # selection only
+        ({"genre_key": ""}, False),  # neither → reject
+        ({"genre_key": "", "selection": {}}, False),  # empty selection
+        ({"selection": None}, False),
+        ({}, False),
+    ],
+)
+def test_quickstart_payload_has_genre_accepts_genre_key_or_selection(
+    payload: dict, expected: bool
+) -> None:
+    # Regression: the /api/tasks/quickstart gate must accept the new
+    # 频道·题材·子题材·标签 selection, not only the legacy genre_key — otherwise
+    # the free picker fails with "Field 'genre_key' is required.".
+    assert web_server._quickstart_payload_has_genre(payload) is expected
+
+
 def _settings(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path)))
 

@@ -2903,6 +2903,90 @@ def test_ensure_book_spec_bible_fields_extends_thin_llm_payload() -> None:
     assert "沈砚" in normalized["naming_pool"]
 
 
+def _build_low_pressure_comedy_project() -> ProjectModel:
+    """A 社畜摆烂·气运团宠·反向喜剧 that misroutes to the realist
+    ``urban-contemporary`` category (reproduces 《福星甩不掉》)."""
+
+    project = ProjectModel(
+        slug="fuxing-test",
+        title="福星甩不掉",
+        genre="都市脑洞",
+        target_word_count=80000,
+        target_chapters=120,
+        audience="番茄都市·年轻读者·轻松解压向",
+        metadata_json={"prompt_pack_key": "shezhu-bailan-comedy"},
+    )
+    project.id = uuid4()
+    project.sub_genre = "社畜摆烂·气运团宠·反向喜剧"
+    return project
+
+
+def test_strip_leading_subject_zh_removes_subject_and_modal() -> None:
+    # Subject + modal stripped so the clause can embed after another subject.
+    assert (
+        planner_services._strip_leading_subject_zh(
+            "主角要在现实规则中拿到位置", ["江不闲"]
+        )
+        == "在现实规则中拿到位置"
+    )
+    assert (
+        planner_services._strip_leading_subject_zh("江不闲只想躲清静", ["江不闲"])
+        == "只想躲清静"
+    )
+    # A clause that already starts with a verb is left untouched.
+    assert (
+        planner_services._strip_leading_subject_zh("追查被篡改的航线记录", ["沈砚"])
+        == "追查被篡改的航线记录"
+    )
+
+
+def test_low_pressure_comedy_fallbacks_avoid_realist_subject_mash() -> None:
+    """Regression for 《福星甩不掉》: the realist urban-contemporary goal/need
+    templates jammed into theme/DQ frames produced ``真正的力量不是逃避主角进入
+    行业…`` and ``主角能否在主角要在…的同时，仍然主角需要…``."""
+
+    project = _build_low_pressure_comedy_project()
+    premise = "被甩不掉的好运缠上的社畜，越想躲清静越被气运推着办成好事。"
+    # The exact realist-misrouted payload that produced the garble.
+    realist_payload = {
+        "title": "福星甩不掉",
+        "themes": ["主角进入行业或组织，拿到一个有限但可撬动的机会。"],
+        "protagonist": {
+            "name": "主角",
+            "external_goal": "主角要在现实规则中拿到足以改变命运的位置。",
+            "internal_need": "主角需要学会把人情、专业和底线同时纳入决策。",
+        },
+        "expected_character_count": 4,
+        "naming_pool": ["江不闲"],
+    }
+
+    normalized = planner_services._ensure_book_spec_bible_fields(
+        project, premise, realist_payload
+    )
+    theme = normalized["theme_statement"]
+    dq = normalized["dramatic_question"]
+
+    # No realist career-goal sentence mashed into the theme frame.
+    assert "进入行业或组织" not in theme
+    assert "主角" not in theme
+    # No double-subject / double-在 mash, no literal 主角 placeholder.
+    assert dq.endswith("？")
+    assert "主角" not in dq
+    assert "主角要在" not in dq
+    assert "在在" not in dq
+
+
+def test_build_protagonist_low_pressure_uses_comedy_goal_need() -> None:
+    project = _build_low_pressure_comedy_project()
+    book_spec = planner_services._fallback_book_spec(
+        project, "社畜被好运缠上", category_key="urban-contemporary"
+    )
+    protagonist = book_spec["protagonist"]
+    # Comedy framing replaces the realist career-ladder templates.
+    assert "现实规则中拿到" not in protagonist["external_goal"]
+    assert "人情、专业和底线" not in protagonist["internal_need"]
+
+
 def test_synthesize_missing_cast_bible_fields_closes_character_gate_fields() -> None:
     project = build_project()
     cast_spec = {

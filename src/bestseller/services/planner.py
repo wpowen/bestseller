@@ -8288,6 +8288,7 @@ def _build_protagonist_from_category(
     writing_profile: Any,
     category_key: str | None = None,
     is_en: bool = False,
+    low_pressure: bool = False,
 ) -> dict[str, Any]:
     """Build protagonist dict using category archetype if available, else legacy defaults."""
     archetype = None
@@ -8304,6 +8305,14 @@ def _build_protagonist_from_category(
         int_need_tpl = (
             archetype.internal_need_template_en if is_en else archetype.internal_need_template_zh
         ) or ""
+        if low_pressure and not is_en:
+            # The urban-contemporary realist career-ladder templates ("{name}要在
+            # 现实规则中拿到足以改变命运的位置") misframe a comedy/healing book. Swap
+            # in low-pressure goals/needs so theme/DQ/contract derivation stays on
+            # tone (genre-misroute fix — only the fallback templates change; an
+            # explicit protagonist_core_drive from conception still wins below).
+            ext_goal_tpl = "{name}只想守住自己的清静日子，把缠上门的麻烦一件件甩利索。"
+            int_need_tpl = "{name}得学会与甩不掉的好运和麻烦和解，顺手接住身边人的善意。"
         ext_goal = (
             writing_profile.character.protagonist_core_drive
             or ext_goal_tpl.replace("{name}", protagonist_name)
@@ -8361,14 +8370,77 @@ def _fallback_expected_character_count(project: ProjectModel) -> int:
     return max(12, min(60, math.ceil(target_chapters / 15) + 8))
 
 
+_ZH_LEADING_SUBJECT_RE = re.compile(
+    r"^(?:主角|主人公|男主|女主|他|她|它|该角色|本角色)"
+    r"(?:要|想|想要|需要|必须|得|会|能|将|去|应|应该|准备|打算)?"
+)
+
+
+def _strip_leading_subject_zh(clause: str | None, names: list[str] | None = None) -> str:
+    """Strip a leading subject so a clause can be embedded *after* a subject.
+
+    Category goal/need templates and genre themes are full sentences that
+    already carry their own subject (e.g. ``主角要在现实规则中拿到位置``,
+    ``主角需要学会…``). Jamming them verbatim into a ``{name}能否在{X}的同时，
+    仍然{Y}？`` template produced the double-subject garble observed in
+    《福星甩不掉》(``主角能否在主角要在…的同时，仍然主角需要…``). This removes a
+    leading explicit name and/or a generic ``主角/他/她`` (+ optional modal verb)
+    so the embedded clause reads grammatically. Trailing zh punctuation is
+    trimmed by the caller.
+    """
+
+    text = (clause or "").strip()
+    if not text:
+        return ""
+    for name in names or []:
+        name = (name or "").strip()
+        if name and name not in {"主角", "主人公"} and text.startswith(name):
+            text = text[len(name) :].lstrip("，,、 　")
+            break
+    text = _ZH_LEADING_SUBJECT_RE.sub("", text).lstrip("，,、 　")
+    return text.strip()
+
+
+def _planner_tone_is_low_pressure(project: ProjectModel) -> bool:
+    """Whether the project is a low-pressure (comedy/healing/cozy) tone.
+
+    Reuses the canonical classifier so the planner fallbacks frame comedy books
+    with comedy goals/needs/themes instead of the realist career-drama templates
+    that the ``urban-contemporary`` category supplies (genre misroute fix).
+    """
+
+    try:
+        from bestseller.services.invariants import is_low_pressure_tone
+
+        meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+        pack_key = meta.get("prompt_pack_key") or meta.get("prompt_pack_name")
+        return bool(
+            is_low_pressure_tone(
+                pack_key,
+                getattr(project, "genre", None),
+                getattr(project, "sub_genre", None),
+            )
+        )
+    except Exception:
+        return False
+
+
 def _fallback_theme_statement(
     project: ProjectModel,
     premise: str,
     book_spec: dict[str, Any],
 ) -> str:
+    low_pressure = _planner_tone_is_low_pressure(project)
+    if low_pressure and not is_english_language(project.language):
+        # Comedy/healing: a clean, tone-appropriate theme. Never mash a realist
+        # career-goal sentence into a "真正的力量不是逃避X" frame.
+        return "真正的从容，不是逃开所有麻烦，而是被麻烦缠上时还能笑着把日子过顺。"
+
     themes = _string_list(book_spec.get("themes"))
     if themes:
-        first_theme = themes[0]
+        first_theme = _strip_leading_subject_zh(
+            themes[0], [str(_mapping(book_spec.get("protagonist")).get("name") or "")]
+        ) or themes[0]
         if is_english_language(project.language):
             return f"True power is proven by what a person refuses to sacrifice when {first_theme.lower()} is tested."
         return f"真正的力量不是逃避{first_theme}，而是在代价逼近时仍守住自己不愿牺牲的东西。"
@@ -8400,6 +8472,7 @@ def _fallback_dramatic_question(
     )
     external_goal = _non_empty_string(protagonist.get("external_goal"), "")
     internal_need = _non_empty_string(protagonist.get("internal_need"), "")
+    low_pressure = _planner_tone_is_low_pressure(project)
     if is_english_language(project.language):
         goal_clause = (
             external_goal.rstrip(".?!")
@@ -8410,8 +8483,31 @@ def _fallback_dramatic_question(
             internal_need.rstrip(".?!") if internal_need else "become someone who can trust others"
         )
         return f"Can {protagonist_name} {goal_clause} without losing the chance to {need_clause}?"
-    goal_clause = external_goal.rstrip("。？！") if external_goal else "查清核心危机背后的真相"
-    need_clause = internal_need.rstrip("。？！") if internal_need else "完成真正的自我转变"
+    # Guard against the literal "主角" placeholder leaking into the question:
+    # derive a real name, and if that also fails, drop the leading subject
+    # entirely (a subject-less rhetorical question is grammatical) rather than
+    # emitting "主角能否…".
+    if protagonist_name in {"主角", "主人公", ""}:
+        derived = _derive_protagonist_name(
+            premise,
+            project.genre,
+            language=project.language,
+            seed_text=_project_name_seed(project, premise),
+        )
+        protagonist_name = derived if derived and derived not in {"主角", "主人公"} else ""
+    # Strip the embedded clauses' own subject so the template doesn't produce
+    # the double-subject mash (主角能否在主角要在…的同时，仍然主角需要…). The
+    # template already supplies "能否在…", so also drop a redundant leading 在.
+    goal_clause = re.sub(
+        r"^在", "", _strip_leading_subject_zh(external_goal.rstrip("。？！"), [protagonist_name])
+    ).strip()
+    need_clause = _strip_leading_subject_zh(
+        internal_need.rstrip("。？！"), [protagonist_name]
+    )
+    if not goal_clause:
+        goal_clause = "把缠上门的麻烦一件件理顺" if low_pressure else "查清核心危机背后的真相"
+    if not need_clause:
+        need_clause = "守住自己想要的清静日子" if low_pressure else "完成真正的自我转变"
     return f"{protagonist_name}能否在{goal_clause}的同时，仍然{need_clause}？"
 
 
@@ -8709,6 +8805,7 @@ def _fallback_book_spec(
             writing_profile=writing_profile,
             category_key=category_key,
             is_en=is_english_language(project.language),
+            low_pressure=_planner_tone_is_low_pressure(project),
         ),
         "stakes": {
             "personal": f"{protagonist_name}会失去自己仍在意的人。",

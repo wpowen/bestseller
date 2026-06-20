@@ -277,7 +277,10 @@ services:
     env_file:
       - .env
     ports:
-      - "${WEB_PORT:-8787}:8787"
+      # Publish to host loopback only by default — the Web Studio UI has no
+      # auth unless BESTSELLER_WEB_TOKEN is set. To expose it on the network,
+      # set WEB_BIND=0.0.0.0 (and set BESTSELLER_WEB_TOKEN first).
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8787}:8787"
     volumes: *app-volumes
     depends_on:
       db:

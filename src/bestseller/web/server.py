@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import mimetypes
+import hmac
 import os
 from pathlib import Path
 import re
@@ -9490,6 +9491,23 @@ def _attach_task_chapter_word_stats(
     return tasks
 
 
+def _provided_web_token(get_header: Any) -> str:
+    """Extract the client-supplied web token from request headers."""
+    token = get_header("X-Web-Token") or ""
+    if not token:
+        auth = get_header("Authorization") or ""
+        if auth.startswith("Bearer "):
+            token = auth[len("Bearer ") :]
+    return token.strip()
+
+
+def _web_auth_ok(expected_token: str, provided_token: str) -> bool:
+    """True if auth is disabled (no token configured) or the token matches."""
+    if not expected_token:
+        return True
+    return bool(provided_token) and hmac.compare_digest(provided_token, expected_token)
+
+
 def serve_web_app(
     host: str = "127.0.0.1",
     port: int = 8787,
@@ -9664,11 +9682,28 @@ def serve_web_app(
     reader_html = _read_reader_html()
     if_reader_html = _read_if_reader_html()
 
+    # Optional shared-secret auth for mutating endpoints. When unset (default),
+    # the server stays open for local single-user use; set BESTSELLER_WEB_TOKEN
+    # to require a token whenever the UI is exposed beyond localhost.
+    web_auth_token = os.environ.get("BESTSELLER_WEB_TOKEN", "").strip()
+
     class RequestHandler(BaseHTTPRequestHandler):
         server_version = "BestSellerWeb/0.1"
 
         def log_message(self, format: str, *args: object) -> None:
             return
+
+        def _require_auth(self) -> bool:
+            """Return True if the request may mutate state.
+
+            No token configured -> open (local default). Otherwise the request
+            must present a matching token (constant-time compare).
+            """
+            provided = _provided_web_token(self.headers.get)
+            if _web_auth_ok(web_auth_token, provided):
+                return True
+            self._send_json({"error": "Unauthorized."}, status=HTTPStatus.UNAUTHORIZED)
+            return False
 
         def _send_json(self, payload: object, status: HTTPStatus = HTTPStatus.OK) -> None:
             body = json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default).encode(
@@ -10556,6 +10591,8 @@ def serve_web_app(
                 self._route_error(exc)
 
         def do_POST(self) -> None:
+            if not self._require_auth():
+                return
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             try:
@@ -11197,6 +11234,8 @@ def serve_web_app(
                 self._route_error(exc)
 
         def do_DELETE(self) -> None:
+            if not self._require_auth():
+                return
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             try:

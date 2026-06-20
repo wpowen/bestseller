@@ -364,3 +364,47 @@ async def test_p1_sc4_reservation_degrades_when_redis_unavailable() -> None:
 
     # Redis failure must not block legitimate work — fall through to DB guard.
     assert await pr._reserve_pipeline_start(_BrokenRedis(), uuid4()) is None
+
+
+# ---------------------------------------------------------------------------
+# P0-6 — defensive clamp: target_chapters=0 must not collapse to 1/volume
+# ---------------------------------------------------------------------------
+def test_p0_6_zero_target_uses_sane_default() -> None:
+    from bestseller.services.world_expansion import (
+        _DEFAULT_CHAPTERS_PER_VOLUME,
+        _estimate_volume_chapter_targets,
+    )
+
+    project = types.SimpleNamespace(target_chapters=0)
+    volumes = [
+        types.SimpleNamespace(volume_number=i, target_chapter_count=None)
+        for i in (1, 2, 3)
+    ]
+    targets = _estimate_volume_chapter_targets(project, volumes)
+    # Old behaviour gave every volume exactly 1 chapter; now each gets a sane
+    # default instead.
+    assert all(count >= _DEFAULT_CHAPTERS_PER_VOLUME - 1 for count in targets.values())
+    assert sum(targets.values()) == 3 * _DEFAULT_CHAPTERS_PER_VOLUME
+
+
+# ---------------------------------------------------------------------------
+# P0-13 — Web Studio auth gate (open when unset, enforced when configured)
+# ---------------------------------------------------------------------------
+def test_p0_13_web_auth_logic() -> None:
+    from bestseller.web.server import _provided_web_token, _web_auth_ok
+
+    # No token configured -> open (backward-compatible local default).
+    assert _web_auth_ok("", "anything") is True
+    assert _web_auth_ok("", "") is True
+
+    # Configured token must match exactly.
+    assert _web_auth_ok("s3cret", "s3cret") is True
+    assert _web_auth_ok("s3cret", "wrong") is False
+    assert _web_auth_ok("s3cret", "") is False
+
+    def header_getter(d: dict[str, str]):
+        return lambda key: d.get(key)
+
+    assert _provided_web_token(header_getter({"X-Web-Token": "abc"})) == "abc"
+    assert _provided_web_token(header_getter({"Authorization": "Bearer xyz"})) == "xyz"
+    assert _provided_web_token(header_getter({})) == ""

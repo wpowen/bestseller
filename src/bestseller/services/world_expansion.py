@@ -23,6 +23,11 @@ from bestseller.infra.db.models import (
 )
 
 
+# Fallback per-volume chapter estimate when a project's total chapter count is
+# unset (defensive only — creation paths enforce target_chapters > 0).
+_DEFAULT_CHAPTERS_PER_VOLUME = 40
+
+
 async def _scalars_list(session: AsyncSession, stmt: Any) -> list[Any]:
     scalars_method = getattr(session, "scalars", None)
     if callable(scalars_method):
@@ -67,7 +72,13 @@ def _estimate_volume_chapter_targets(
     if not missing:
         return {key: int(value) for key, value in explicit.items()}
 
-    remaining = max(project.target_chapters - sum(explicit.values()), len(missing))
+    # Defensive: target_chapters is validated > 0 at every project-creation
+    # path, but if that invariant ever lapses, fall back to a sane per-volume
+    # estimate instead of collapsing every volume to a single chapter.
+    configured_total = int(project.target_chapters or 0)
+    if configured_total <= 0:
+        configured_total = len(volumes) * _DEFAULT_CHAPTERS_PER_VOLUME
+    remaining = max(configured_total - sum(explicit.values()), len(missing))
     base = max(1, remaining // len(missing))
     extra = max(0, remaining - base * len(missing))
 

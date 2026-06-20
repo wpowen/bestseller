@@ -3733,6 +3733,21 @@ def resolve_genre_review_profile(
         if keyword in haystack and category in profiles:
             return profiles[category]
 
+    # --- strategy 3.5: canonical taxonomy fallback ---
+    # Only fires when the legacy maps above miss; maps the canonical genre to
+    # its default-category profile (e.g. 末世/天灾囤货 → apocalypse →
+    # action-progression). Additive — never overrides strategies 1-3, so the
+    # judge picks the right scoring weights + reference corpus instead of the
+    # genre-neutral default.
+    try:
+        from bestseller.services.genre_taxonomy import canonicalize, get_genre
+
+        node = get_genre(canonicalize(genre, sub_genre))
+        if node is not None and node.category_default in profiles:
+            return profiles[node.category_default]
+    except Exception:
+        logger.debug("genre_taxonomy profile fallback skipped", exc_info=True)
+
     # --- strategy 4: default ---
     return profiles["default"]
 

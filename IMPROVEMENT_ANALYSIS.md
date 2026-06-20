@@ -106,5 +106,45 @@
 
 ---
 
-**文档版本**：v3（验证 + 修复版）
+## 七、第二轮修复（用户要求"把剩余的都修掉"）
+
+在第一轮（§四）之后，又对剩余**真实**项做了第二轮，原则不变：**只修核验为真且可安全验证的；非 bug 不动；大改不盲改**。
+
+### 已修（提交 `5384c69` Batch C、`1829cc5` Batch E）
+
+| # | 问题 | 修复 |
+|---|------|------|
+| P1-EH-4 | regen_loop 任何异常都耗尽整个重写预算 | 区分瞬态(timeout/5xx/限流)与结构性错误，瞬态在预算内重试 |
+| P1-EH-7 | conception repair+fallback 都失败时静默返回 `{}` | 加 error 日志 |
+| P1-EH-12 | world_law 一致性门 7 处 except 静默吞 | 加日志（advisory 门不改放行语义）|
+| P1-IL-3 | planned_payoffs 含同章后续场景 payoff（剧透）| 收紧为仅当前场景或章级 |
+| P1-DB-1 | chapters 表仅唯一约束、无索引 | 4 个索引（volume_id/pov_character_id/(project_id,status\|production_state)）+ 迁移 0032，**真机 A/B 验证 greenfield + 增量两路** |
+| P1-SC-2 | CORS allow_credentials 配 `*` 等于裸奔 | 仅当配置了具体 origin 白名单才允许 credentials |
+| **env.py** | （连带发现）增量迁移"跑了但不落库" | 交给 alembic 前先 commit 预备事务——**补全了 P0-3 的增量路径**（之前只 greenfield 能用）|
+
+### 核验后"不是 bug / 不应改"（已加注释或保留）
+
+- **P1-IC-4**：kernel 缺省 `novella` 是**被测试锁定的有意设计**（test_story_design_kernel 显式断言），改成 `long` 会破坏既有契约——已回退。
+- **P1-IC-2**：`blocks_write` 与 `filter_blocking` 的差异**被下游权威写门兜底**（drafts.py 用 filter_blocking 落库），只影响 regen 内部停止判断，不影响成稿安全；彻底对齐需把 override_lookup 串进 regen，收益不抵风险。
+- **P1-EH-15**：volume_frontier 的 fail-open 是**正确缺省**——改 fail-closed 会让未启用分卷门控的项目"世界规律全饿死"，伤生成质量。
+- **P1-EH-10 / IL-1 / IL-6 / EH-8**：均已有日志或下游守卫（valid_from 默认值 / hash 校验 / fail-closed 工件白名单），属边际项。
+
+### 真实但**刻意搁置**（盲改会破坏在跑的生成管线，需专项）
+
+| # | 问题 | 为什么不在本轮 |
+|---|------|----------------|
+| P1-PF-2/3/9 | story_bible/assemble/propagate 的 N+1 | 现有测试是**按调用序列写死的 FakeSession**（不校验 SQL），批量化会打乱其序列；本仓标准要求 DB 改动走真机回归——需先建真机夹具才能安全落地。已实现并回退，留待专项。 |
+| P1-PF-1 | context build 700 行 / 30+ 查询并发化 | **AsyncSession 不支持同一 session 并发** asyncio.gather；要并发须多 session，是大改。 |
+| P1-PF-4 | 场景串行生成并发化 | 场景靠 entry_state/exit_state **链式衔接**，并行会断连续性——非机械改。 |
+| P1-PF-12 | planner.py 22k 行拆分 | 纯重构、321 个顶层定义，应独立 PR 防与功能改动混淆。 |
+| P1-DB-2 | 144 个 JSONB 列零校验 | 需建校验框架 + 确认上游 Pydantic 覆盖面。 |
+| P1-DB-3 | status 列缺 CHECK | 给存量库加 CHECK 可能因历史脏值导致迁移失败，需先枚举合法值。 |
+| P1-DB-4 | HNSW 用默认参 | "调参"需 recall/延迟基准，盲设参数不算调优。 |
+| P1-CF-2 | 5 个题材无专属阈值档 | 与本分支**正在进行的题材体系重构**重叠，且需逐题材调参判断，应并入该工作。 |
+| P1-EH-1 | 184 处裸 except | 绝大多数是**有意的 non-fatal advisory**（已带 logger.debug），逐个收紧收益低、噪音高；按需个案处理。 |
+| P0-16 / P0-10 / P0-8/9 / P0-14 / TS-* | 评分基线 / 双 Verdict 统一 / 检索 ANN / 测试覆盖 | 见 §五，均需 A/B 或专项。 |
+
+---
+
+**文档版本**：v4（两轮修复 + 验证版）
 **最后更新**：2026-06-20

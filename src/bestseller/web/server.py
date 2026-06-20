@@ -3241,6 +3241,8 @@ class WebTaskManager:
                             session,
                             settings,
                             genre_key=genre_key,
+                            genre=str(payload.get("genre") or ""),
+                            sub_genre=str(payload.get("sub_genre") or ""),
                             chapter_count=int(payload["target_chapters"]),
                             user_hints=user_hints,
                             story_facets=story_facets_obj,

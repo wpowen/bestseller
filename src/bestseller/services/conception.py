@@ -449,6 +449,9 @@ def _build_genre_context(
     genre_key: str,
     chapter_count: int,
     story_facets: object | None = None,
+    *,
+    genre: str | None = None,
+    sub_genre: str | None = None,
 ) -> dict[str, Any]:
     """Build context dict from genre preset for prompts.
 
@@ -458,7 +461,13 @@ def _build_genre_context(
     presets = {p.key: p for p in list_genre_presets()}
     preset = presets.get(genre_key)
     if preset is None:
-        raise ValueError(f"Unknown genre_key: {genre_key}")
+        # The free taxonomy picker (频道·题材·子题材·标签) yields a synthetic key
+        # (e.g. ``custom-xuanhuan``) that is absent from the 62-card registry.
+        # Rebuild a usable preset from the canonical taxonomy + the genre/
+        # sub_genre carried alongside, instead of hard-failing conception.
+        from bestseller.services.writing_presets import synthesize_genre_preset
+
+        preset = synthesize_genre_preset(genre_key, genre=genre, sub_genre=sub_genre)
 
     is_en = preset.language.startswith("en")
     recommended_platform = None
@@ -1637,6 +1646,8 @@ async def run_conception_pipeline(
     user_hints: dict[str, Any] | None = None,
     story_facets: object | None = None,
     progress: ProgressCallback | None = None,
+    genre: str | None = None,
+    sub_genre: str | None = None,
 ) -> ConceptionResult:
     """Multi-agent discussion to auto-generate a complete WritingProfile.
 
@@ -1650,7 +1661,13 @@ async def run_conception_pipeline(
 
     Returns a ConceptionResult with the complete writing_profile, premise, and title.
     """
-    ctx = _build_genre_context(genre_key, chapter_count, story_facets=story_facets)
+    ctx = _build_genre_context(
+        genre_key,
+        chapter_count,
+        story_facets=story_facets,
+        genre=genre,
+        sub_genre=sub_genre,
+    )
     if user_hints:
         ctx["user_hints"] = user_hints
         concept_bundle = coerce_concept_lab_bundle(user_hints.get("concept_lab"))

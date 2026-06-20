@@ -4022,6 +4022,53 @@ def get_platform_preset(key_or_name: str | None) -> PlatformPreset | None:
     return None
 
 
+def synthesize_genre_preset(
+    genre_key: str,
+    *,
+    genre: str | None = None,
+    sub_genre: str | None = None,
+) -> GenrePreset:
+    """Build an ephemeral GenrePreset for a custom/unknown genre_key.
+
+    The free taxonomy picker (频道·题材·子题材·标签) produces a synthetic key
+    like ``custom-xuanhuan`` that is absent from the curated 62-card registry.
+    Downstream consumers re-look-up by key and would otherwise crash; rebuild a
+    usable preset from the canonical taxonomy + the genre/sub_genre strings
+    carried alongside (full fidelity when both are passed).
+    """
+    from bestseller.services import genre_taxonomy as gt
+
+    g = (genre or "").strip()
+    sg = (sub_genre or "").strip()
+    if not g:
+        canon = (
+            genre_key[len("custom-") :]
+            if str(genre_key).startswith("custom-")
+            else str(genre_key)
+        )
+        node = gt.get_genre(canon) or gt.get_genre(gt.canonicalize(canon) or "")
+        g = (node.label if node else (canon or "通用")).strip() or "通用"
+    resolved = gt.resolve_selection(None, g, sg or None, [])
+    genre_str = (resolved.genre_str or g).strip() or g
+    sub_str = (sg or resolved.sub_genre_str or genre_str).strip() or genre_str
+    description = (
+        f"{genre_str}题材"
+        + (f"·{sub_str}" if sub_str and sub_str != genre_str else "")
+        + "。"
+    )
+    return GenrePreset(
+        key=str(genre_key or "custom"),
+        name=sub_str,
+        genre=genre_str,
+        sub_genre=sub_str,
+        description=description,
+        language="zh-CN",
+        prompt_pack_key=resolved.pack,
+        target_chapter_options=[120, 300, 600],
+        suitable_for_short_story=False,
+    )
+
+
 def get_genre_preset(key: str | None) -> GenrePreset | None:
     normalized = _normalize_text(key)
     if not normalized:
@@ -4029,6 +4076,10 @@ def get_genre_preset(key: str | None) -> GenrePreset | None:
     for preset in list_genre_presets():
         if normalized == _normalize_text(preset.key):
             return preset
+    # Synthetic key from the free taxonomy picker (e.g. ``custom-xuanhuan``) —
+    # best-effort synthesis so downstream lookups don't return None and crash.
+    if str(key).startswith("custom-"):
+        return synthesize_genre_preset(str(key))
     return None
 
 

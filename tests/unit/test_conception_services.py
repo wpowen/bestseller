@@ -65,6 +65,37 @@ def test_build_genre_context_sanitizes_story_content_overrides() -> None:
     assert character == {}
 
 
+def test_build_genre_context_synthesizes_custom_picker_key() -> None:
+    # Regression: the free taxonomy picker yields a synthetic key like
+    # custom-xuanhuan absent from the 62-card registry. _build_genre_context
+    # must synthesise (not raise "Unknown genre_key") so book creation/conception
+    # doesn't crash. Threaded genre/sub_genre keep full fidelity.
+    ctx = conception_services._build_genre_context(
+        "custom-apocalypse", 120, genre="末世", sub_genre="天灾囤货"
+    )
+    assert ctx["genre_key"] == "custom-apocalypse"
+    assert ctx["genre"] == "末世"
+    assert ctx["sub_genre"] == "天灾囤货"
+
+    # Even without threaded genre/sub_genre it derives from the canonical key.
+    ctx2 = conception_services._build_genre_context("custom-xuanhuan", 120)
+    assert ctx2["genre"] == "玄幻"
+
+
+def test_synthesize_genre_preset_and_get_preset_fallback() -> None:
+    from bestseller.services.writing_presets import (
+        get_genre_preset,
+        synthesize_genre_preset,
+    )
+
+    p = synthesize_genre_preset("custom-apocalypse", genre="末世", sub_genre="天灾囤货")
+    assert p.genre == "末世" and p.sub_genre == "天灾囤货"
+    assert p.prompt_pack_key == "apocalypse-supply-chain"
+    # get_genre_preset returns a best-effort preset for custom-* keys (not None).
+    assert get_genre_preset("custom-xuanhuan") is not None
+    assert get_genre_preset("nonexistent-key") is None
+
+
 def test_apply_commercial_brief_merges_market_and_style_signals() -> None:
     profile = {
         "market": {

@@ -3456,6 +3456,14 @@ class WebTaskManager:
                 genre_preset = _genre_preset_from_selection(selection)
                 if not genre_key:
                     genre_key = genre_preset.key
+            elif str(genre_key).startswith("custom-"):
+                # Resume / re-run of a custom-taxonomy book (slug-derived key like
+                # ``custom-xuanhuan``, no selection payload): rebuild the ephemeral
+                # preset from the synthetic key. The project's real genre/sub_genre
+                # are read from the DB downstream.
+                from bestseller.services.writing_presets import synthesize_genre_preset
+
+                genre_preset = synthesize_genre_preset(genre_key)
             else:
                 raise ValueError(
                     f"Unknown genre_key: {genre_key}. Provide a valid genre_key "

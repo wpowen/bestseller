@@ -309,3 +309,58 @@ async def test_p1_eh2_override_savepoint_rolls_back_on_debt_failure(
     assert out == 0  # debt failed -> proposal not counted as persisted
     assert sess.nested_entered == 1  # contract+debt wrapped in one savepoint
     assert sess.nested_rolled_back == 1  # savepoint rolled back on the failure
+
+
+# ---------------------------------------------------------------------------
+# P1-SC-4 — concurrent pipeline starts must be serialized by a reservation
+# ---------------------------------------------------------------------------
+class _FakeRedis:
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    async def set(
+        self, key: str, val: str, nx: bool = False, ex: int | None = None
+    ) -> object:
+        if nx and key in self.store:
+            return None
+        self.store[key] = val
+        return True
+
+    async def get(self, key: str) -> object:
+        return self.store.get(key)
+
+    async def delete(self, key: str) -> None:
+        self.store.pop(key, None)
+
+
+class _BrokenRedis:
+    async def set(self, *_a: object, **_k: object) -> object:
+        raise RuntimeError("redis down")
+
+
+async def test_p1_sc4_pipeline_start_reservation_serializes() -> None:
+    from fastapi import HTTPException
+
+    from bestseller.api.routers import pipelines as pr
+
+    redis = _FakeRedis()
+    project_id = uuid4()
+
+    token = await pr._reserve_pipeline_start(redis, project_id)
+    assert token is not None
+
+    # Second concurrent start is rejected while the first is in flight.
+    with pytest.raises(HTTPException) as exc_info:
+        await pr._reserve_pipeline_start(redis, project_id)
+    assert exc_info.value.status_code == 409
+
+    # Releasing (e.g. enqueue failed) lets a retry through.
+    await pr._release_pipeline_start(redis, project_id, token)
+    assert await pr._reserve_pipeline_start(redis, project_id) is not None
+
+
+async def test_p1_sc4_reservation_degrades_when_redis_unavailable() -> None:
+    from bestseller.api.routers import pipelines as pr
+
+    # Redis failure must not block legitimate work — fall through to DB guard.
+    assert await pr._reserve_pipeline_start(_BrokenRedis(), uuid4()) is None

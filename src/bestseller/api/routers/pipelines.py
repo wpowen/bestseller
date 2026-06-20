@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 from urllib.parse import urlparse
@@ -8,13 +9,75 @@ from arq.connections import ArqRedis, RedisSettings, create_pool
 from fastapi import APIRouter, HTTPException, Path, status
 from sqlalchemy import select
 
-from bestseller.api.deps import ApiKeyDep, SessionDep, SettingsDep
+from bestseller.api.deps import ApiKeyDep, RedisDep, SessionDep, SettingsDep
 from bestseller.api.schemas.tasks import AutowriteRequest, PipelineRequest, TaskEnqueuedResponse
 from bestseller.domain.enums import WorkflowStatus
 from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
 from bestseller.settings import AppSettings
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["pipelines"])
+
+# A pipeline handler only enqueues an ARQ job; the WorkflowRunModel row is
+# materialized later by the worker. That leaves a TOCTOU window where the DB
+# guard (`_assert_no_active_pipeline`) has nothing to observe, so two near
+# simultaneous requests both enqueue. A short-lived Redis NX marker bridges
+# that gap: it serializes the *start* until the worker creates the row, after
+# which the DB guard takes over. TTL keeps it self-healing if the job never
+# starts (no permanent lock), and it never blocks legitimate re-runs once a
+# pipeline has finished.
+_PIPELINE_START_TTL_SECONDS = 120
+
+
+def _pipeline_start_key(project_id: Any) -> str:
+    return f"pipeline:starting:{project_id}"
+
+
+async def _reserve_pipeline_start(redis: Any, project_id: Any) -> str | None:
+    """Reserve the per-project start slot.
+
+    Returns a release token on success; raises 409 if a start is already in
+    flight; returns None (degraded, proceed on the DB guard alone) if Redis is
+    unavailable so an infra hiccup never blocks legitimate work.
+    """
+    token = str(uuid.uuid4())
+    try:
+        reserved = await redis.set(
+            _pipeline_start_key(project_id),
+            token,
+            nx=True,
+            ex=_PIPELINE_START_TTL_SECONDS,
+        )
+    except Exception:
+        logger.warning(
+            "pipeline start reservation skipped (redis unavailable)", exc_info=True
+        )
+        return None
+    if not reserved:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A pipeline is already starting for this project. "
+                "Wait for it to begin, or retry shortly."
+            ),
+        )
+    return token
+
+
+async def _release_pipeline_start(redis: Any, project_id: Any, token: str | None) -> None:
+    """Best-effort release of our own reservation (used on enqueue failure)."""
+    if token is None:
+        return
+    key = _pipeline_start_key(project_id)
+    try:
+        current = await redis.get(key)
+        if isinstance(current, bytes):
+            current = current.decode()
+        if current == token:
+            await redis.delete(key)
+    except Exception:
+        logger.debug("pipeline start reservation release failed", exc_info=True)
 
 # Workflow types that count as "pipeline in progress" for concurrency guard
 _PIPELINE_WORKFLOW_TYPES = frozenset({
@@ -107,15 +170,21 @@ async def start_autowrite(
     body: AutowriteRequest,
     session: SessionDep,
     settings: SettingsDep,
+    redis: RedisDep,
     _key: ApiKeyDep,
 ) -> TaskEnqueuedResponse:
     project = await _get_project_or_404(slug, session)
     await _assert_no_active_pipeline(session, project)
-    return await _enqueue(
-        settings,
-        "run_autowrite_task",
-        {"project_slug": slug, "premise": body.premise},
-    )
+    token = await _reserve_pipeline_start(redis, project.id)
+    try:
+        return await _enqueue(
+            settings,
+            "run_autowrite_task",
+            {"project_slug": slug, "premise": body.premise},
+        )
+    except Exception:
+        await _release_pipeline_start(redis, project.id, token)
+        raise
 
 
 @router.post(
@@ -128,15 +197,21 @@ async def start_project_pipeline(
     body: PipelineRequest,
     session: SessionDep,
     settings: SettingsDep,
+    redis: RedisDep,
     _key: ApiKeyDep,
 ) -> TaskEnqueuedResponse:
     project = await _get_project_or_404(slug, session)
     await _assert_no_active_pipeline(session, project)
-    return await _enqueue(
-        settings,
-        "run_project_pipeline_task",
-        {"project_slug": slug},
-    )
+    token = await _reserve_pipeline_start(redis, project.id)
+    try:
+        return await _enqueue(
+            settings,
+            "run_project_pipeline_task",
+            {"project_slug": slug},
+        )
+    except Exception:
+        await _release_pipeline_start(redis, project.id, token)
+        raise
 
 
 @router.post(

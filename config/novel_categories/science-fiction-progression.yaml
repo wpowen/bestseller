@@ -46,6 +46,21 @@ challenge_evolution_pathway:
       pressure_zh: "能源、散热或通讯问题让优势不稳定。"
       reversal_zh: "{protagonist}把限制转成战术诱饵。"
       climax_zh: "战场状态因一次技术应用发生重排。"
+  - phase_key: scale_industrialization
+    phase_name_zh: "量产工业化"
+    phase_name_en: "Scaling & Industrialization"
+    description_zh: "单台原型要变成可量产的装备，瓶颈从「能不能造」转为「能不能规模化」——产线、标准、人才与供应链成为新战场。"
+    description_en: "A single prototype must become mass-producible; the bottleneck shifts from 'can it be built' to 'can it scale' — production lines, standards, talent, and supply chains become the new front."
+    typical_force_types: ["systemic", "faction"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}的封锁下把原型变成可量产、可维护的体系装备。"
+    volume_climax_template_zh: "第一条产线跑通，技术优势第一次具备战略规模。"
+    volume_obstacle_template_zh: "{force_name}用标准、专利、产能或人才壁垒卡住规模化。"
+    volume_resolution_template_zh: "主角拿到规模化能力，也背上了产线与供应链的脆弱性。"
+    chapter_conflict_templates:
+      setup_zh: "原型性能再好,产能却跟不上战局需求。"
+      pressure_zh: "{force_name}掐断关键材料或人才供给。"
+      reversal_zh: "{protagonist}用替代工艺或标准重构产线。"
+      climax_zh: "一次量产交付改变战略层面的力量对比。"
   - phase_key: system_warfare
     phase_name_zh: "体系战争"
     phase_name_en: "System Warfare"
@@ -65,6 +80,21 @@ challenge_evolution_pathway:
       pressure_zh: "{force_name}攻击科研、能源和指挥链的薄弱处。"
       reversal_zh: "{protagonist}用系统协同弥补单点短板。"
       climax_zh: "战役结果证明技术路线是否成立。"
+  - phase_key: civilization_frontier
+    phase_name_zh: "文明前沿"
+    phase_name_en: "Civilizational Frontier"
+    description_zh: "技术路线成熟到足以改变文明走向,主角面对的不再是敌人,而是技术伦理、文明存续与不可逆后果的抉择。"
+    description_en: "The technology matures enough to alter a civilization's trajectory; the protagonist faces not an enemy but choices of ethics, survival, and irreversible consequence."
+    typical_force_types: ["internal", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}揭示的文明级风险中,决定技术该走向哪里。"
+    volume_climax_template_zh: "一次不可逆的技术抉择,定义主角与文明的未来。"
+    volume_obstacle_template_zh: "最强大的方案可能带来最不可控的文明代价。"
+    volume_resolution_template_zh: "文明接受或拒绝主角划下的技术边界。"
+    chapter_conflict_templates:
+      setup_zh: "技术的威力大到足以改写文明规则。"
+      pressure_zh: "{force_name}逼主角在效率与伦理间二选一。"
+      reversal_zh: "{protagonist}发现真正的代价是不可逆。"
+      climax_zh: "一次抉择决定技术造福还是反噬文明。"
 
 protagonist_archetypes:
   - archetype_key: constraint_engineer
@@ -82,6 +112,21 @@ protagonist_archetypes:
     flaw_en: "Overtrusts data and underestimates human and organizational limits."
     strength_zh: "能从失败数据中找到真实边界。"
     strength_en: "Can find real boundaries in failed data."
+  - archetype_key: frontier_visionary
+    name_zh: "越界远见者"
+    name_en: "Frontier Visionary"
+    core_wound_zh: "曾因坚持一条不被理解的技术路线而被体制抛弃。"
+    core_wound_en: "Once abandoned by the establishment for insisting on a misunderstood technology route."
+    external_goal_template_zh: "{name}要把一条颠覆性的技术路线推到文明无法忽视的程度。"
+    external_goal_template_en: "{name} must push a disruptive route to where civilization cannot ignore it."
+    internal_need_template_zh: "{name}需要学会远见若无人承接,就会变成灾难。"
+    internal_need_template_en: "{name} must learn that vision unanchored in others becomes catastrophe."
+    arc_trajectory_zh: "从孤独的越界者到带动体系一起跨越的引路人。"
+    arc_trajectory_en: "From a lone boundary-crosser to a leader who carries the system across."
+    flaw_zh: "为了远见可能低估短期代价与人的承受力。"
+    flaw_en: "May underestimate short-term cost and human limits for the sake of vision."
+    strength_zh: "能看见三步之外的技术拐点,并为之承担风险。"
+    strength_en: "Sees the inflection point three steps ahead and bears the risk for it."
 
 world_rule_templates:
   - rule_template_key: energy_conservation
@@ -107,6 +152,14 @@ quality_traps:
     description_zh: "战斗状态每章重置，损伤、能源和敌方反制不延续。"
     description_en: "Battlefield state resets each chapter; damage, energy, and enemy counters do not persist."
     severity: warning
+  - trap_key: lone_genius_industry
+    description_zh: "主角一人包办科研到量产,无视工业、人才、供应链与组织协同的现实。"
+    description_en: "A lone genius covers research-to-mass-production, ignoring industry, talent, supply chain, and organizational reality."
+    severity: warning
+  - trap_key: consequence_free_power
+    description_zh: "颠覆性科技投入使用却没有任何社会、伦理或文明层面的涟漪后果。"
+    description_en: "Disruptive tech is deployed with zero social, ethical, or civilizational ripple consequence."
+    severity: warning
 
 disqualifiers:
   - rule_zh: "核心科技突破没有任何可追踪约束或验证过程。"
@@ -114,6 +167,9 @@ disqualifiers:
     severity: fatal
   - rule_zh: "能源、后勤和战场状态完全不影响行动。"
     rule_en: "Energy, logistics, and battlefield state do not affect action."
+    severity: critical
+  - rule_zh: "科技从研发到量产到应用全程无工业、组织或文明层面的代价与约束。"
+    rule_en: "Technology incurs no industrial, organizational, or civilizational cost from R&D to mass-production to deployment."
     severity: critical
 
 signal_keywords:

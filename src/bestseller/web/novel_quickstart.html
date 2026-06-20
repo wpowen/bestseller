@@ -3870,6 +3870,8 @@
       <div id="genreLangHint" style="display:none;margin:0 0 14px;font-size:13px;color:var(--text-dim);">
         题材名称保留英文，说明改为中文展示；实际生成仍输出英文小说。
       </div>
+      <div id="taxonomyPicker" aria-label="题材选择:频道→题材→子题材→标签" style="margin-bottom:12px;"></div>
+      <div id="taxonomyHint" style="font-size:12px;color:var(--text-dim);margin:0 0 14px;">自由组合:先选频道与题材,再选子题材并叠加流派标签;或直接从下方「热门开局模板」一键套用。</div>
       <div class="genre-dimension-filters" id="genreDimensionFilters" aria-label="题材多维筛选"></div>
       <div class="genre-grid" id="genreGrid"></div>
       <div class="genre-dimension-row" id="audienceOrientationRow" style="margin-top:14px;display:none;align-items:center;">
@@ -4275,6 +4277,10 @@
   let hookCandidates = {};
   let selectedGenreFilters = {};
   let selectedGenreKey = null;
+  // Canonical taxonomy picker state (频道→题材→子题材→标签).
+  let genreTaxonomy = null;
+  let customSelection = null;
+  let txSel = { channel: '', genreKey: '', subKey: '', tags: [] };
   let selectedAudience = '';  // '' = 智能判定(交给热度Agent); 'male' = 男频; 'female' = 女频
   let selectedCreativeKey = null;
   let selectedHookIndexByGenre = {};
@@ -7244,12 +7250,157 @@
       genreCreativity = {};
       hookCandidates = {};
     }
+    try {
+      const rt = await fetch('/api/genre-taxonomy');
+      genreTaxonomy = await rt.json();
+    } catch { genreTaxonomy = null; }
     selectedGenreFilters = {};
+    renderTaxonomyPicker();
     renderGenreFilters();
     renderGenres(genres.filter(matchSearch));
     renderCreativeLab();
     renderHookLab();
     renderConceptLab();
+  }
+
+  // ── Canonical taxonomy picker (频道→题材→子题材→标签) ───────────────────
+  function txMkChip(text, active, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'genre-filter-chip' + (active ? ' active' : '');
+    b.textContent = text;
+    b.onclick = onClick;
+    return b;
+  }
+  function txMkRow(labelText) {
+    const row = document.createElement('div');
+    row.className = 'genre-dimension-row';
+    row.style.marginBottom = '8px';
+    const label = document.createElement('div');
+    label.className = 'genre-dimension-label';
+    label.textContent = labelText;
+    const opts = document.createElement('div');
+    opts.className = 'genre-dimension-options';
+    row.appendChild(label);
+    row.appendChild(opts);
+    return { row, opts };
+  }
+  function txGenresForChannel() {
+    if (!genreTaxonomy) return [];
+    return (genreTaxonomy.genres || [])
+      .filter(g => !txSel.channel || (g.channel || []).includes(txSel.channel))
+      .slice()
+      .sort((a, b) => (b.heat || 0) - (a.heat || 0));
+  }
+  function txCurrentGenre() {
+    return ((genreTaxonomy && genreTaxonomy.genres) || []).find(g => g.key === txSel.genreKey) || null;
+  }
+  function txCurrentSub() {
+    const g = txCurrentGenre();
+    return g ? (g.sub_genres || []).find(s => s.key === txSel.subKey) || null : null;
+  }
+  function renderTaxonomyPicker() {
+    const root = $('#taxonomyPicker');
+    if (!root) return;
+    root.innerHTML = '';
+    if (!genreTaxonomy || !((genreTaxonomy.genres || []).length)) return;
+
+    const ch = txMkRow('频道');
+    (genreTaxonomy.channels || []).forEach(c => {
+      ch.opts.appendChild(txMkChip(c.label, txSel.channel === c.key, () => {
+        txSel = { channel: txSel.channel === c.key ? '' : c.key, genreKey: '', subKey: '', tags: [] };
+        customSelection = null;
+        renderTaxonomyPicker();
+      }));
+    });
+    root.appendChild(ch.row);
+
+    const gr = txMkRow('题材');
+    txGenresForChannel().forEach(g => {
+      gr.opts.appendChild(txMkChip(g.label, txSel.genreKey === g.key, () => {
+        txSel.genreKey = txSel.genreKey === g.key ? '' : g.key;
+        txSel.subKey = '';
+        txSel.tags = [];
+        customSelection = null;
+        renderTaxonomyPicker();
+      }));
+    });
+    root.appendChild(gr.row);
+
+    const cg = txCurrentGenre();
+    if (cg) {
+      const sr = txMkRow('子题材');
+      sr.opts.appendChild(txMkChip('不限', !!customSelection && txSel.subKey === '', () => {
+        txSel.subKey = '';
+        txSel.tags = [];
+        txCommit();
+      }));
+      (cg.sub_genres || []).forEach(s => {
+        sr.opts.appendChild(txMkChip(s.label, txSel.subKey === s.key, () => {
+          txSel.subKey = s.key;
+          txSel.tags = (s.default_tags || []).slice();
+          txCommit();
+        }));
+      });
+      root.appendChild(sr.row);
+    }
+
+    if (cg && customSelection) {
+      const sub = txCurrentSub();
+      const pool = [];
+      ((sub && sub.default_tags) || []).forEach(t => { if (!pool.includes(t)) pool.push(t); });
+      txSel.tags.forEach(t => { if (!pool.includes(t)) pool.push(t); });
+      const tr = txMkRow('流派标签');
+      pool.forEach(t => {
+        tr.opts.appendChild(txMkChip(t, txSel.tags.includes(t), () => {
+          const i = txSel.tags.indexOf(t);
+          if (i >= 0) txSel.tags.splice(i, 1);
+          else if (txSel.tags.length < 8) txSel.tags.push(t);
+          if (customSelection) customSelection.tags = txSel.tags.slice();
+          renderTaxonomyPicker();
+          updateSummary();
+        }));
+      });
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.placeholder = '+标签';
+      inp.style.cssText = 'width:96px;margin-left:6px;font-size:12px;padding:3px 7px;border:1px solid var(--hair);border-radius:6px;background:transparent;color:inherit;';
+      inp.onkeydown = (e) => {
+        if (e.key !== 'Enter') return;
+        const v = inp.value.trim();
+        if (v && !txSel.tags.includes(v) && txSel.tags.length < 8) {
+          txSel.tags.push(v);
+          if (customSelection) customSelection.tags = txSel.tags.slice();
+          inp.value = '';
+          renderTaxonomyPicker();
+          updateSummary();
+        }
+      };
+      tr.opts.appendChild(inp);
+      root.appendChild(tr.row);
+    }
+  }
+  function txCommit() {
+    const g = txCurrentGenre();
+    if (!g) { customSelection = null; return; }
+    const sub = txCurrentSub();
+    customSelection = {
+      channel: txSel.channel || (g.channel && g.channel[0]) || '',
+      genre: g.key,
+      sub_genre: sub ? sub.key : undefined,
+      tags: txSel.tags.slice(),
+    };
+    selectedGenreKey = '';
+    selectedCreativeKey = null;
+    selectedConceptBundleId = null;
+    conceptLabCatalog = null;
+    renderGenres(genres.filter(matchSearch));
+    renderTaxonomyPicker();
+    const audRow = $('#audienceOrientationRow');
+    if (audRow) audRow.style.display = 'flex';
+    const next = $('#toStep2');
+    if (next) next.disabled = false;
+    updateSummary();
   }
 
   const GENRE_FILTER_FIELDS = ['heat_domains', 'reader_rewards', 'narrative_drives', 'content_modes', 'commercial_signals'];
@@ -7682,6 +7833,10 @@
       const chips = [shortTag, ...genreCardChips(g).map((value, chipIdx) => `<span class="genre-meta-chip${chipIdx < 2 ? ' strong' : ''}">${esc(value)}</span>`)].filter(Boolean).join('');
       card.innerHTML = `<div class="genre-card-kicker">题 · ${String(idx + 1).padStart(2, '0')}</div><div class="name">${esc(g.name)}</div><div class="genre-tag">${esc(g.genre)}${g.sub_genre ? ' / ' + esc(g.sub_genre) : ''}</div><div class="desc">${esc(getGenreDisplayDescription(g))}</div>${chips ? `<div class="genre-card-meta">${chips}</div>` : ''}`;
       card.onclick = () => {
+        // Picking a 热门开局模板 switches off the custom taxonomy selection.
+        customSelection = null;
+        txSel = { channel: txSel.channel, genreKey: '', subKey: '', tags: [] };
+        renderTaxonomyPicker();
         selectedGenreKey = g.key;
         selectedConceptBundleId = null;
         conceptLabCatalog = null;
@@ -7888,7 +8043,13 @@
 
   // Summary
   function updateSummary() {
-    const g = selectedGenre();
+    let g = selectedGenre();
+    if (!g && customSelection) {
+      const cg = txCurrentGenre();
+      const cs = txCurrentSub();
+      const label = cg ? cg.label : (customSelection.genre || '-');
+      g = { name: label, genre: label, sub_genre: cs ? cs.label : '不限' };
+    }
     const creative = selectedCreativeDirection();
     const hook = selectedHookCandidate();
     const concept = selectedConceptBundle();
@@ -7905,6 +8066,9 @@
     $('#sumCreative').textContent = creative ? creative.title : (g ? 'AI自动决定（未选）' : '-');
     $('#sumHook').textContent = hook?.spec?.one_liner || (g ? 'AI自动决定（未选）' : '-');
     $('#sumConcept').textContent = concept?.title_seeds?.[0]?.text || concept?.one_liner || (g ? 'AI自动决定（未选）' : '-');
+    if (customSelection) {
+      $('#sumDims').textContent = (customSelection.tags || []).join(' · ') || '-';
+    }
     const sumLbl = $('#sumChLabel');
     if (creationMode === 'fanqie_short') {
       const opt = fanqieLengthOption(fanqieLengthKey);
@@ -7987,6 +8151,7 @@
         body: JSON.stringify({
           creation_mode: creationMode,
           genre_key: selectedGenreKey,
+          selection: customSelection || undefined,
           audience_orientation: selectedAudience || undefined,
           creative_key: selectedCreativeKey,
           hook_spec: selectedHook?.spec || undefined,
@@ -8043,6 +8208,7 @@
       const body = {
         creation_mode: creationMode,
         genre_key: selectedGenreKey,
+        selection: customSelection || undefined,
         creative_key: selectedCreativeKey,
         hook_spec: selectedHookCandidate()?.spec || undefined,
         concept_lab_bundle_id: selectedConceptBundle()?.bundle_id || undefined,

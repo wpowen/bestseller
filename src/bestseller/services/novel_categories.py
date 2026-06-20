@@ -226,6 +226,18 @@ def resolve_novel_category(
         if keyword in haystack and category_key in registry:
             return registry[category_key]
 
+    # Strategy 3.5: canonical taxonomy fallback. Only fires for inputs the
+    # legacy keyword maps above did not route; maps the canonical genre to its
+    # default category. Additive — never overrides Strategies 1-3.
+    try:
+        from bestseller.services.genre_taxonomy import canonicalize, get_genre
+
+        node = get_genre(canonicalize(genre, sub_genre))
+        if node is not None and node.category_default in registry:
+            return registry[node.category_default]
+    except Exception:
+        logger.debug("genre_taxonomy category fallback skipped", exc_info=True)
+
     # Strategy 4: default
     return registry.get("default", _empty_default())
 

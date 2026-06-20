@@ -922,6 +922,97 @@ def _public_writing_preset_catalog_payload() -> dict[str, object]:
     return catalog
 
 
+def _genre_taxonomy_payload() -> dict[str, object]:
+    """Canonical genre tree for the create wizard (channel→genre→sub→tags).
+
+    The 62 legacy preset cards are returned as ``templates`` (each tagged with
+    its canonical genre) so the front-end can render them as one-click "热门开局
+    模板" that pre-fill the four axes.
+    """
+    from bestseller.services import genre_taxonomy as gt
+    from bestseller.services.writing_presets import list_genre_presets
+
+    tax = gt.load_genre_taxonomy()
+    genres = [
+        {
+            "key": g.key,
+            "label": g.label,
+            "channel": list(g.channel),
+            "heat": g.heat,
+            "category_default": g.category_default,
+            "pack_default": g.pack_default,
+            "aliases": list(g.aliases),
+            "sub_genres": [
+                {
+                    "key": s.key,
+                    "label": s.label,
+                    "category": s.category or g.category_default,
+                    "pack": s.pack or g.pack_default,
+                    "power_system": s.power_system,
+                    "default_tags": list(s.default_tags),
+                }
+                for s in g.sub_genres
+            ],
+        }
+        for g in tax.genres
+    ]
+    templates = [
+        {
+            "key": p.key,
+            "name": p.name,
+            "genre": p.genre,
+            "sub_genre": p.sub_genre,
+            "language": p.language,
+            "suitable_for_short_story": p.suitable_for_short_story,
+            "canonical_genre": gt.canonicalize(p.genre, p.sub_genre),
+        }
+        for p in list_genre_presets()
+    ]
+    return {
+        "version": tax.version,
+        "channels": [{"key": c.key, "label": c.label} for c in tax.channels],
+        "genres": genres,
+        "tags": sorted(gt.tag_pool()),
+        "templates": templates,
+    }
+
+
+def _genre_preset_from_selection(selection: dict) -> object:
+    """Build an ephemeral GenrePreset from a canonical taxonomy selection.
+
+    Lets the quickstart handler accept a structured ``(channel, genre,
+    sub_genre, tags)`` selection without rewiring everything downstream — the
+    composed genre/sub-genre strings carry the choice and route correctly via
+    the existing prompt-pack / category inference (+ canonicalize).
+    """
+    from bestseller.services.genre_taxonomy import resolve_selection
+    from bestseller.services.writing_presets import GenrePreset
+
+    channel = selection.get("channel")
+    genre = selection.get("genre")
+    sub = selection.get("sub_genre")
+    tags = [t for t in (selection.get("tags") or []) if isinstance(t, str) and t.strip()]
+    resolved = resolve_selection(channel, genre, sub, tags)
+
+    genre_str = (resolved.genre_str or (genre or "自定义")).strip() or "自定义"
+    sub_str = (resolved.sub_genre_str or genre_str).strip() or genre_str
+    tag_str = "、".join(resolved.tags)
+    description = f"{genre_str}题材" + (f"，主打{tag_str}" if tag_str else "") + "。"
+
+    return GenrePreset(
+        key=f"custom-{resolved.genre_key or 'genre'}",
+        name=sub_str,
+        genre=genre_str,
+        sub_genre=sub_str,
+        description=description,
+        language="zh-CN",
+        prompt_pack_key=resolved.pack,
+        target_word_options=[],
+        target_chapter_options=[120, 300, 600],
+        suitable_for_short_story=False,
+    )
+
+
 def _project_output_dir(settings: AppSettings, project_slug: str) -> Path:
     return (Path(settings.output.base_dir) / project_slug).resolve()
 
@@ -3330,13 +3421,27 @@ class WebTaskManager:
         creation_mode = str(payload.get("creation_mode") or "long_serial")
         is_fanqie_short = creation_mode == "fanqie_short"
 
-        genre_key = str(payload["genre_key"])
+        genre_key = str(payload.get("genre_key") or "")
+        selection = (
+            payload.get("selection")
+            if isinstance(payload.get("selection"), dict) and payload.get("selection")
+            else None
+        )
         genre_presets = {p.key: p for p in list_genre_presets()}
         genre_preset = genre_presets.get(genre_key)
         if genre_preset is None:
-            raise ValueError(
-                f"Unknown genre_key: {genre_key}. Available: {list(genre_presets.keys())}"
-            )
+            if selection is not None:
+                # New canonical-taxonomy path: synthesise a preset from the
+                # user's (channel, genre, sub_genre, tags) selection so the rest
+                # of the handler is unchanged. Legacy genre_key path still works.
+                genre_preset = _genre_preset_from_selection(selection)
+                if not genre_key:
+                    genre_key = genre_preset.key
+            else:
+                raise ValueError(
+                    f"Unknown genre_key: {genre_key}. Provide a valid genre_key "
+                    f"or a 'selection'. Available: {list(genre_presets.keys())}"
+                )
 
         if is_fanqie_short and not genre_preset.suitable_for_short_story:
             from bestseller.domain.fanqie_short import ensure_fanqie_short_genre_compatible
@@ -9740,6 +9845,9 @@ def serve_web_app(
                     return
                 if path == "/api/writing-presets":
                     self._send_json(_public_writing_preset_catalog_payload())
+                    return
+                if path == "/api/genre-taxonomy":
+                    self._send_json(_genre_taxonomy_payload())
                     return
                 if path == "/api/concept-lab":
                     genre_key = str((query.get("genre_key") or [""])[0] or "")

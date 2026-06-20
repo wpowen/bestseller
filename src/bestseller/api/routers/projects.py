@@ -42,16 +42,29 @@ async def create_project(
     _key: ApiKeyDep,
 ) -> ProjectResponse:
     from bestseller.domain.project import ProjectCreate
+    from bestseller.services.genre_taxonomy import resolve_selection
     from bestseller.services.projects import create_project as svc_create
 
+    resolved = resolve_selection(body.channel, body.genre, body.sub_genre, body.tags)
+    metadata = {
+        "premise": body.premise,
+        "writing_preset": body.writing_preset,
+        "channel": body.channel,
+        "sub_genre": body.sub_genre or resolved.sub_genre_str,
+        "tags": list(body.tags),
+        "genre_canonical": resolved.genre_key,
+        "genre_category": resolved.category,
+        "genre_pack": resolved.pack,
+    }
     project_create = ProjectCreate(
         slug=body.slug,
         title=body.title,
         genre=body.genre,
+        sub_genre=body.sub_genre or resolved.sub_genre_str,
         target_word_count=body.target_word_count,
         target_chapters=body.target_chapters,
         audience=body.audience,
-        metadata={"premise": body.premise, "writing_preset": body.writing_preset},
+        metadata=metadata,
     )
     project = await svc_create(session=session, settings=settings, payload=project_create)
     return ProjectResponse.model_validate(project)

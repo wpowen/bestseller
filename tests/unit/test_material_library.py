@@ -43,28 +43,43 @@ pytestmark = pytest.mark.unit
 
 
 def test_genre_aliases_expand_composite_occult_detective_genre() -> None:
+    # The original hand-coded buckets must still be present (no regression);
+    # canonical taxonomy widening may add more.
     aliases = genre_aliases("惊悚灵异", "驱魔探案综合")
 
-    assert aliases == ("惊悚灵异", "灵异", "悬疑")
+    assert set(aliases) >= {"惊悚灵异", "灵异", "悬疑"}
 
 
 def test_genre_aliases_bridge_xuanhuan_to_xianxia() -> None:
     # A 玄幻 book should also retrieve the 仙侠 bucket, and vice versa —
     # they share one reader promise so their scene/plot pools cross-seed.
-    assert genre_aliases("玄幻") == ("玄幻", "仙侠")
-    assert genre_aliases("仙侠") == ("仙侠", "玄幻")
-    assert genre_aliases("修真") == ("修真", "玄幻", "仙侠")
-    assert genre_aliases("修仙") == ("修仙", "玄幻", "仙侠")
+    # (superset assertions: taxonomy widening only ADDS buckets, never drops.)
+    assert set(genre_aliases("玄幻")) >= {"玄幻", "仙侠"}
+    assert set(genre_aliases("仙侠")) >= {"仙侠", "玄幻"}
+    assert set(genre_aliases("修真")) >= {"修真", "玄幻", "仙侠"}
+    assert set(genre_aliases("修仙")) >= {"修仙", "玄幻", "仙侠"}
     # Sub-genre token is enough to trigger the bridge.
-    assert genre_aliases("升级流", "玄幻升级") == ("升级流", "玄幻", "仙侠")
+    assert set(genre_aliases("升级流", "玄幻升级")) >= {"升级流", "玄幻", "仙侠"}
 
 
 def test_genre_aliases_urban_cultivation_not_bridged_to_classical() -> None:
     # 都市修仙 keeps its own modern-setting bucket and must NOT pull
-    # classical 玄幻/仙侠 stock (宗门大比/渡劫 etc.).
+    # classical 玄幻/仙侠 stock (宗门大比/渡劫 etc.). The canonical widening
+    # explicitly honours this guard.
     assert genre_aliases("都市修仙") == ("都市修仙", "都市")
     assert "玄幻" not in genre_aliases("都市修仙")
     assert "仙侠" not in genre_aliases("都市修仙")
+
+
+def test_genre_aliases_canonical_widening_fixes_zero_hit() -> None:
+    # Fragmented buckets the legacy rules never bridged now cross-seed, fixing
+    # the cross-layer 0-hit (material_library is seeded under both 末日 & 末世).
+    assert {"末日", "末世"} <= set(genre_aliases("末日"))
+    assert {"末日", "末世"} <= set(genre_aliases("末世"))
+    # Female-romance family: 宫斗 / 女尊 / 古言 share one bucket group.
+    assert "女尊" in genre_aliases("宫斗")
+    # Gaming family: 网游 / 电竞 / 游戏 cross-seed.
+    assert any(t in genre_aliases("网游") for t in ("游戏", "电竞"))
 
 
 # ── Fake session + fake rows ───────────────────────────────────────────

@@ -29,6 +29,21 @@ challenge_evolution_pathway:
       pressure_zh: "{force_name}把压力落到职位、合同或口碑上，逼主角做取舍。"
       reversal_zh: "{protagonist}用专业动作打开一个小缺口。"
       climax_zh: "{protagonist}在公开场合证明选择的现实价值。"
+  - phase_key: skill_monetize
+    phase_name_zh: "能力变现"
+    phase_name_en: "Monetizing the Edge"
+    description_zh: "主角把一项被低估的本事(技术、眼光、人脉、信息差)第一次换成实打实的资源与立足点。"
+    description_en: "The protagonist turns an underrated edge — skill, insight, network, or information gap — into real resources and a foothold for the first time."
+    typical_force_types: ["character", "systemic"]
+    volume_goal_template_zh: "{protagonist}要把一项被轻视的能力变现成可追踪的资源或职位。"
+    volume_climax_template_zh: "一次交付或交易，让主角的能力第一次被市场认账。"
+    volume_obstacle_template_zh: "{force_name}用资历、规则或资本卡住主角的变现路径。"
+    volume_resolution_template_zh: "主角拿到第一笔资源，也暴露在更高玩家的视野里。"
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}发现一个被同行忽视的机会。"
+      pressure_zh: "{force_name}质疑主角凭什么吃这碗饭。"
+      reversal_zh: "{protagonist}用一次硬交付堵住所有质疑。"
+      climax_zh: "成果落地，改变主角的资源与议价地位。"
   - phase_key: organization_game
     phase_name_zh: "组织博弈"
     phase_name_en: "Organization Game"
@@ -48,6 +63,21 @@ challenge_evolution_pathway:
       pressure_zh: "{force_name}从指标、客户或舆论处制造阻力。"
       reversal_zh: "{protagonist}找到资源分配中的漏洞或交换点。"
       climax_zh: "项目结果改变组织内的利益排序。"
+  - phase_key: industry_disruption
+    phase_name_zh: "行业搅局"
+    phase_name_en: "Industry Disruption"
+    description_zh: "主角的打法开始威胁行业旧秩序，巨头、资本与监管不再把他当小角色，而是当对手。"
+    description_en: "The protagonist's playbook threatens the old order; incumbents, capital, and regulators treat them as a rival, not a rookie."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}要在{force_name}主导的行业格局中撕开一道属于自己的赛道。"
+    volume_climax_template_zh: "一次正面交锋，让行业被迫承认主角改写了规则。"
+    volume_obstacle_template_zh: "{force_name}用资本、渠道或监管联手围剿主角的新打法。"
+    volume_resolution_template_zh: "主角抢下一块版图，也把自己推到风口浪尖。"
+    chapter_conflict_templates:
+      setup_zh: "主角的打法开始抢走巨头的蛋糕。"
+      pressure_zh: "{force_name}用资本或渠道封杀主角。"
+      reversal_zh: "{protagonist}用一招行业没见过的玩法破局。"
+      climax_zh: "一役改写行业对主角的定位。"
   - phase_key: public_reputation
     phase_name_zh: "口碑回流"
     phase_name_en: "Reputation Feedback"
@@ -84,6 +114,21 @@ protagonist_archetypes:
     flaw_en: "Treats relationships as resources and neglects trust."
     strength_zh: "专业判断强，能看见现实规则中的交换点。"
     strength_en: "Strong professional judgment and sensitivity to exchange points."
+  - archetype_key: returnee_underdog
+    name_zh: "归来的失意者"
+    name_en: "Returnee Underdog"
+    core_wound_zh: "曾在巅峰被人用规则与背叛掀翻，背着旧账重新入局。"
+    core_wound_en: "Toppled at their peak by rules and betrayal, returning to the game with old scores."
+    external_goal_template_zh: "{name}要用一次干净的翻盘夺回被夺走的位置与公道。"
+    external_goal_template_en: "{name} seeks a clean comeback to reclaim the position and justice that were taken."
+    internal_need_template_zh: "{name}需要明白翻盘不是复刻旧路，而是建立别人拿不走的根基。"
+    internal_need_template_en: "{name} must learn the comeback is not retracing the old path but building a base no one can seize."
+    arc_trajectory_zh: "从被旧仇驱动到以实力与规则重写终局。"
+    arc_trajectory_en: "From driven by old grudges to rewriting the endgame through skill and rules."
+    flaw_zh: "急于证明自己，容易被旧仇带偏节奏。"
+    flaw_en: "Eager to prove themselves and easily thrown off by old grudges."
+    strength_zh: "深谙行业规则与人性，落子精准。"
+    strength_en: "Deeply versed in industry rules and human nature, precise in execution."
 
 world_rule_templates:
   - rule_template_key: reputation_feedback
@@ -109,6 +154,14 @@ quality_traps:
     description_zh: "舆论和口碑出现后不改变后续资源。"
     description_en: "Public opinion and reputation do not change later resources."
     severity: warning
+  - trap_key: cheat_without_domain
+    description_zh: "金手指(系统/重生/异能)替代专业，主角不需要懂行业也能赢。"
+    description_en: "A cheat (system/rebirth/power) replaces expertise; the MC wins without understanding the field."
+    severity: critical
+  - trap_key: villain_strawman
+    description_zh: "对手蠢化成纸老虎，打脸毫无难度，缺乏真实商业/职场博弈。"
+    description_en: "Rivals are dumbed into strawmen; face-slaps are effortless, lacking real business/workplace contest."
+    severity: warning
 
 disqualifiers:
   - rule_zh: "职业台阶、金钱合同和组织关系都没有可追踪变化。"
@@ -116,6 +169,9 @@ disqualifiers:
     severity: fatal
   - rule_zh: "现实题材主要依赖天降贵人或无成本打脸。"
     rule_en: "The urban-realistic story relies on free patron rescue or costless face-slapping."
+    severity: critical
+  - rule_zh: "主角的成功完全靠金手指，与行业认知、专业能力和人际博弈无关。"
+    rule_en: "The protagonist's success rests entirely on a cheat, unrelated to domain knowledge, skill, or human contest."
     severity: critical
 
 signal_keywords:

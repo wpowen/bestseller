@@ -17,6 +17,20 @@ from bestseller.services.novel_categories import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize(
+    "category_key",
+    ["wuxia-jianghu", "urban-contemporary", "science-fiction-progression"],
+)
+def test_thin_categories_deepened_to_full_depth(category_key: str) -> None:
+    # B1: these three previously-thin buckets are deepened to match the thick
+    # categories (5 challenge phases, >=2 archetypes, >=5 traps, >=3 DQ).
+    cat = load_novel_category_registry()[category_key]
+    assert len(cat.challenge_evolution_pathway) >= 5, category_key
+    assert len(cat.protagonist_archetypes) >= 2, category_key
+    assert len(cat.quality_traps) >= 5, category_key
+    assert len(cat.disqualifiers) >= 3, category_key
+
+
 # ---------------------------------------------------------------------------
 # Registry loading
 # ---------------------------------------------------------------------------

@@ -155,6 +155,25 @@ def genre_aliases(genre: str | None, sub_genre: str | None = None) -> tuple[str,
         _add("悬疑")
     if "都市" in haystack:
         _add("都市")
+
+    # ── Canonical taxonomy widening (additive) ──────────────────────────────
+    # Bridges fragmented material buckets the hand-coded rules above miss:
+    # 末日↔末世, 言情↔古言↔宫斗↔女尊, 游戏↔网游↔电竞, 科幻↔赛博↔机甲, etc.
+    # Only ever ADDS buckets (never drops), and respects the urban-cultivation
+    # guard above: a 都市* cultivation book must not pull classical 玄幻/仙侠.
+    try:
+        from bestseller.services.genre_taxonomy import (
+            canonicalize as _canonicalize,
+            retrieval_aliases as _retrieval_aliases,
+        )
+
+        canon = _canonicalize(genre, sub_genre)
+        if not ("都市" in haystack and canon in {"xuanhuan", "xianxia"}):
+            for alias in _retrieval_aliases(genre, sub_genre):
+                _add(alias)
+    except Exception:  # pragma: no cover - taxonomy is best-effort widening
+        logger.debug("genre_taxonomy widening skipped", exc_info=True)
+
     return tuple(values)
 
 

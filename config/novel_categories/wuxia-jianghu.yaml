@@ -28,6 +28,25 @@ challenge_evolution_pathway:
       pressure_zh: "{force_name}把名声、门派或旧债压到主角面前。"
       reversal_zh: "{protagonist}找到规矩中的缝隙。"
       climax_zh: "一次选择改变主角在江湖中的位置。"
+  - phase_key: rise_fame
+    phase_name_zh: "成名立万"
+    phase_name_en: "Rising Fame"
+    description_zh: "主角凭一两次以巧破力或仗义之举在江湖立名，名声开始反噬——招来挑战、投奔与算计。"
+    description_en: "The protagonist earns a name through a clever or chivalrous feat; reputation backfires into challenges, followers, and schemes."
+    typical_force_types: ["character", "faction"]
+    volume_goal_template_zh: "{protagonist}要把一次侥幸的胜名坐实成立身之本，而非昙花一现。"
+    volume_goal_template_en: "{protagonist} must turn a lucky victory into lasting standing, not a flash in the pan."
+    volume_climax_template_zh: "一场被全江湖围观的对决，让主角的名声配得上实力。"
+    volume_climax_template_en: "A widely-watched duel makes the protagonist's name match their skill."
+    volume_obstacle_template_zh: "{force_name}用更高的辈分、更狠的招式或舆论否定主角的名声。"
+    volume_obstacle_template_en: "{force_name} negates the name with higher seniority, harsher skill, or public opinion."
+    volume_resolution_template_zh: "名声坐实，却也成了更强敌人的靶子。"
+    volume_resolution_template_en: "The name holds, but becomes a target for stronger enemies."
+    chapter_conflict_templates:
+      setup_zh: "主角的名声被人当众质疑或挑衅。"
+      pressure_zh: "{force_name}以辈分或招式逼主角自证。"
+      reversal_zh: "{protagonist}以一招出人意料的破法回应。"
+      climax_zh: "胜负当场改写主角在江湖榜上的位置。"
   - phase_key: sect_grudge
     phase_name_zh: "门派恩怨"
     phase_name_en: "Sect Grudges"
@@ -47,6 +66,25 @@ challenge_evolution_pathway:
       pressure_zh: "{force_name}要求主角在侠义和门派利益间选边。"
       reversal_zh: "主角发现旧怨背后另有规矩。"
       climax_zh: "比武或公开选择改变门派声望。"
+  - phase_key: jianghu_order
+    phase_name_zh: "正邪格局"
+    phase_name_en: "Order of Jianghu"
+    description_zh: "个人恩怨升级为正邪、家国与江湖秩序之争，主角被迫在更大的棋盘上选立场。"
+    description_en: "Personal grudges escalate into struggles over righteous-vs-evil, state, and jianghu order; the protagonist must pick a side on a larger board."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}要在{force_name}牵动的江湖大势中守住自己的道，而非被裹挟。"
+    volume_goal_template_en: "{protagonist} must hold their way amid the great currents stirred by {force_name}, not be swept along."
+    volume_climax_template_zh: "一次牵动多方的抉择，重排江湖正邪的版图。"
+    volume_climax_template_en: "A multi-party choice redraws the map of righteous and evil."
+    volume_obstacle_template_zh: "正派的虚伪、魔教的诱惑与家国的大义同时拉扯主角。"
+    volume_obstacle_template_en: "Orthodox hypocrisy, demonic temptation, and national duty pull at once."
+    volume_resolution_template_zh: "格局重排，主角成为江湖绕不开的一方。"
+    volume_resolution_template_en: "The order reshuffles; the protagonist becomes a force jianghu cannot ignore."
+    chapter_conflict_templates:
+      setup_zh: "一桩大事把正邪两方推到主角面前。"
+      pressure_zh: "{force_name}逼主角在大义与私情间选边。"
+      reversal_zh: "主角发现正邪标签下另有真相。"
+      climax_zh: "一次公开立场改变江湖对主角阵营的认定。"
   - phase_key: moral_legacy
     phase_name_zh: "侠义传承"
     phase_name_en: "Chivalric Legacy"
@@ -83,6 +121,21 @@ protagonist_archetypes:
     flaw_en: "Too bound by loyalty and old debts."
     strength_zh: "守信、克制，能用行动赢得名声。"
     strength_en: "Trustworthy, restrained, and earns reputation through action."
+  - archetype_key: vengeful_prodigy
+    name_zh: "负仇天才"
+    name_en: "Vengeful Prodigy"
+    core_wound_zh: "满门或恩师惨死，复仇执念压过了对侠义代价的认知。"
+    core_wound_en: "Family or master slaughtered; the obsession with revenge outweighs awareness of chivalry's cost."
+    external_goal_template_zh: "{name}要查清灭门真相并向{force_name}讨回公道。"
+    external_goal_template_en: "{name} must uncover the massacre's truth and exact justice from {force_name}."
+    internal_need_template_zh: "{name}需要明白复仇若吞掉侠义，赢了也输了自己。"
+    internal_need_template_en: "{name} must learn that revenge devouring chivalry wins the feud but loses the self."
+    arc_trajectory_zh: "从被仇恨驱使到选择以侠义而非屠戮收场。"
+    arc_trajectory_en: "From driven by hatred to ending it by chivalry rather than slaughter."
+    flaw_zh: "为复仇可能不择手段，易被人利用。"
+    flaw_en: "May stop at nothing for revenge and be exploited."
+    strength_zh: "天赋绝伦、心志坚韧，关键处能压住杀心。"
+    strength_en: "Prodigious talent and iron will, able to restrain bloodlust at the crux."
 
 world_rule_templates:
   - rule_template_key: reputation_debt
@@ -108,6 +161,14 @@ quality_traps:
     description_zh: "侠义只靠口号，没有具体牺牲和责任。"
     description_en: "Chivalry is slogan only, without sacrifice or responsibility."
     severity: warning
+  - trap_key: numeric_realm_creep
+    description_zh: "武功被数值化成修真境界，胜负靠等级碾压而非招式克制与临场博弈。"
+    description_en: "Martial skill is numeric-realm creep; outcomes hinge on level-crush, not move-counter and in-the-moment tactics."
+    severity: critical
+  - trap_key: grudge_without_logic
+    description_zh: "恩怨随手起灭，反派没有立场与苦衷，江湖逻辑不成立。"
+    description_en: "Grudges appear and vanish arbitrarily; villains lack stance or cause, breaking jianghu logic."
+    severity: warning
 
 disqualifiers:
   - rule_zh: "所有打斗都不改变名声、伤势、债务或门派关系。"
@@ -115,6 +176,9 @@ disqualifiers:
     severity: fatal
   - rule_zh: "江湖规矩与人物选择完全无关。"
     rule_en: "Jianghu rules do not affect character choices."
+    severity: critical
+  - rule_zh: "胜负完全由数值/等级决定，招式、内力博弈与临场智斗毫无作用。"
+    rule_en: "Outcomes are decided purely by numbers/levels; moves, internal-energy interplay, and tactics play no role."
     severity: critical
 
 signal_keywords:

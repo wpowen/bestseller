@@ -130,6 +130,88 @@ platforms:
           deliverable: 第一次明确目标 + 阶段爆点
 
   # ===========================================================================
+  # 晋江 (JJWXC) · 付费 / 女性向 / 人设情感细腻 / 多维标签
+  # ===========================================================================
+  jinjiang:
+    display_name: 晋江文学城
+    audience_pattern: 付费 / 女性向为主 / 人设与情感细腻 / 多维标签筛选
+    reading_environment: 移动 / 桌面均有；读者重文笔、人设与情感逻辑，愿为细腻停留
+
+    voice_preference:
+      sentence_style: 细腻长短句；重心理与潜台词
+      paragraph_length: 中等（80-150 字）
+      dialogue_ratio: 0.30-0.50
+      emotional_expression: 内显 + 潜台词 + 情绪细节（少直白喊口号）
+      pacing_unit: 每 600-900 字一个情感 / 关系变化点
+
+    pacing_preference:
+      chapter_word_count: 2500-4000
+      payoff_density: 每 1-2 章一次情感反馈（糖 / 虐 / 反转）
+      hook_density: 每 800-1200 字 ≥ 1 个情感或悬念钩子
+      cliffhanger_position: 章末以情感悬置或关系反转收尾
+
+    opening_signing_gate:
+      sample_words: 20000
+      hard_position_gates:
+        - position: 500w
+          rule: 主角与核心关系 / CP 第一次交锋或张力建立
+        - position: 2000w
+          rule: 人设立住 + 情感张力可感
+        - position: 6000w
+          rule: 情感主线与核心矛盾清晰
+        - position: 20000w
+          rule: 关系推进与情感钩子可持续
+      first_three_chapters_must:
+        - chapter: 1
+          deliverable: 人设立起来 + 关系张力 + 一个情感钩子
+        - chapter: 2
+          deliverable: 关系升级 + 矛盾浮现
+        - chapter: 3
+          deliverable: 情感主线明确 + 第一次心动 / 反转
+
+  # ===========================================================================
+  # 纵横 (Zongheng) · 付费 / 男性向 / 设定派 + 热血爽感
+  # ===========================================================================
+  zongheng:
+    display_name: 纵横中文网
+    audience_pattern: 付费 / 男性向 / 设定派 + 热血爽感 / 起点式深度
+    reading_environment: 移动 / 桌面均有；读者偏好世界观厚度与热血战斗
+
+    voice_preference:
+      sentence_style: 长短句结合；热血动作感强
+      paragraph_length: 中等偏长（120-180 字）
+      dialogue_ratio: 0.20-0.40
+      emotional_expression: 外显热血 + 具象战斗 / 通感
+      pacing_unit: 每 400-700 字一个变化点（略快于起点）
+
+    pacing_preference:
+      chapter_word_count: 2800-4200
+      payoff_density: 每 1-2 章一次可感爽点
+      hook_density: 每 1200 字 ≥ 1 个钩子
+      cliffhanger_position: 章末 200-400 字内
+
+    opening_signing_gate:
+      sample_words: 30000
+      hard_position_gates:
+        - position: 300w
+          rule: 主角出场并进入冲突场景
+        - position: 1500w
+          rule: 出现可感冲突 + 第一次实力 / 设定亮相
+        - position: 3000w
+          rule: 核心矛盾与金手指 / 力量体系清晰
+        - position: 10000w
+          rule: 主线方向与第一阶段目标清晰
+        - position: 30000w
+          rule: 核心循环可持续
+      first_three_chapters_must:
+        - chapter: 1
+          deliverable: 角色立起来 + 世界观 / 力量体系亮相 + 一个钩子
+        - chapter: 2
+          deliverable: 冲突升级 + 主线浮现 + 第一次小爆点
+        - chapter: 3
+          deliverable: 明确目标 + 阶段爆点 + 核心循环建立
+
+  # ===========================================================================
   # 番茄 (Tomato) · 免费 / 高频爽点 / 视觉化强
   # ===========================================================================
   tomato:

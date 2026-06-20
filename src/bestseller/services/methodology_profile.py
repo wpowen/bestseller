@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,9 @@ from bestseller.services.methodology_cards import (
     load_methodology_cards,
 )
 from bestseller.services.writing_profile import is_english_language
+
+
+logger = logging.getLogger(__name__)
 
 
 class _MethodologyProfileModel(BaseModel):
@@ -247,6 +251,14 @@ def render_configured_methodology_profile_block(
             language=language,
         )
     except Exception:
+        logger.warning(
+            "methodology profile block render failed (stage=%s scope=%s profile=%s); "
+            "emitting empty block",
+            stage,
+            scope,
+            profile_id,
+            exc_info=True,
+        )
         return ""
 
 

@@ -1648,33 +1648,37 @@ async def _auto_sign_override_contracts(
     persisted = 0
     for p in proposals:
         try:
-            contract_row = OverrideContractModel(
-                project_id=project_id,
-                chapter_no=p.chapter_no,
-                violation_code=p.violation_code,
-                rationale_type=p.suggested_rationale_type,
-                rationale_text=(p.rationale_text or f"自动签署：{p.violation_code}")[:4000],
-                payback_plan=(p.suggested_payback_plan or "自动生成的偿还计划")[:4000],
-                due_chapter=p.suggested_due_chapter,
-                status="active",
-            )
-            session.add(contract_row)
-            await session.flush()
-            debt_row = ChaseDebtModel(
-                project_id=project_id,
-                override_contract_id=contract_row.id,
-                chapter_no=p.chapter_no,
-                violation_code=p.violation_code,
-                source="override_contract",
-                principal=1.0,
-                balance=1.0,
-                interest_rate=float(interest_rate),
-                accrued_through_chapter=p.chapter_no,
-                due_chapter=p.suggested_due_chapter,
-                status="active",
-            )
-            session.add(debt_row)
-            await session.flush()
+            # Savepoint so a contract and its debt commit atomically: if the
+            # debt construction/flush fails after the contract flush, the
+            # contract is rolled back too (no orphaned debt-less contract).
+            async with session.begin_nested():
+                contract_row = OverrideContractModel(
+                    project_id=project_id,
+                    chapter_no=p.chapter_no,
+                    violation_code=p.violation_code,
+                    rationale_type=p.suggested_rationale_type,
+                    rationale_text=(p.rationale_text or f"自动签署：{p.violation_code}")[:4000],
+                    payback_plan=(p.suggested_payback_plan or "自动生成的偿还计划")[:4000],
+                    due_chapter=p.suggested_due_chapter,
+                    status="active",
+                )
+                session.add(contract_row)
+                await session.flush()
+                debt_row = ChaseDebtModel(
+                    project_id=project_id,
+                    override_contract_id=contract_row.id,
+                    chapter_no=p.chapter_no,
+                    violation_code=p.violation_code,
+                    source="override_contract",
+                    principal=1.0,
+                    balance=1.0,
+                    interest_rate=float(interest_rate),
+                    accrued_through_chapter=p.chapter_no,
+                    due_chapter=p.suggested_due_chapter,
+                    status="active",
+                )
+                session.add(debt_row)
+                await session.flush()
             persisted += 1
         except Exception:  # pragma: no cover — one failure must not poison the batch
             logger.debug(

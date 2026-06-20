@@ -184,6 +184,21 @@ async def publish_now(
     from bestseller.services.publishing.registry import get_adapter  # noqa: PLC0415
     from bestseller.scheduler.jobs import publish_next_chapter  # noqa: PLC0415
 
+    # Authorize the schedule against the project in the path (prevents IDOR:
+    # publishing another project's schedule by passing an arbitrary UUID).
+    project = await _get_project_or_404(slug, session)
+    schedule_result = await session.execute(
+        select(PublishingScheduleModel).where(
+            PublishingScheduleModel.id == schedule_id,
+            PublishingScheduleModel.project_id == project.id,
+        )
+    )
+    if schedule_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Schedule not found for this project",
+        )
+
     result = await publish_next_chapter(
         session=session,
         settings=settings,

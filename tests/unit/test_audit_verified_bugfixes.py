@@ -151,3 +151,161 @@ async def test_p0_5_numerical_contradiction_builds_and_runs() -> None:
     )
     assert violations == []
     assert warnings == []
+
+
+# ---------------------------------------------------------------------------
+# P1-SC-1 — publish_now must verify the schedule belongs to the path project
+# ---------------------------------------------------------------------------
+class _ScalarResult:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object:
+        return self._value
+
+
+class _SeqSession:
+    """Returns queued scalar results, one per execute() call."""
+
+    def __init__(self, results: list[object]) -> None:
+        self._results = list(results)
+
+    async def execute(self, _stmt: object) -> _ScalarResult:
+        return _ScalarResult(self._results.pop(0))
+
+
+async def test_p1_sc1_publish_now_rejects_foreign_schedule() -> None:
+    from fastapi import HTTPException
+
+    from bestseller.api.routers import publishing
+
+    project = types.SimpleNamespace(id=uuid4(), slug="proj")
+    # 1st execute -> project found; 2nd execute -> schedule NOT owned (None)
+    session = _SeqSession([project, None])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await publishing.publish_now("proj", uuid4(), session, None, None)  # type: ignore[arg-type]
+    assert exc_info.value.status_code == 404
+
+
+async def test_p1_sc1_publish_now_allows_owned_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    import bestseller.scheduler.jobs as jobs
+    from bestseller.api.routers import publishing
+
+    project = types.SimpleNamespace(id=uuid4(), slug="proj")
+    schedule = types.SimpleNamespace(id=uuid4(), project_id=project.id)
+    session = _SeqSession([project, schedule])
+
+    published: dict[str, object] = {}
+
+    async def _fake_publish_next_chapter(**kwargs: object) -> dict:
+        published.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(jobs, "publish_next_chapter", _fake_publish_next_chapter)
+
+    out = await publishing.publish_now("proj", schedule.id, session, object(), None)  # type: ignore[arg-type]
+    assert out == {"published": {"ok": True}}
+    assert published.get("schedule_id") == schedule.id
+
+
+# ---------------------------------------------------------------------------
+# P0-11 — retention gate must surface a degraded signal when sub-checks crash
+# ---------------------------------------------------------------------------
+def test_p0_11_retention_degraded_sentinel(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bestseller.services import retention_safety_gate as rsg
+
+    # Lower the systemic threshold to 1 so a single forced crash trips it.
+    monkeypatch.setattr(rsg, "_RETENTION_DEGRADED_MIN_ERRORS", 1)
+
+    def _boom(*_a: object, **_k: object) -> object:
+        raise RuntimeError("forced check failure")
+
+    monkeypatch.setattr(rsg, "check_hook_echo", _boom)
+
+    report = rsg.evaluate_retention_safety(
+        chapter_position=5,
+        chapter_text="正文内容" * 80,
+        prev_chapter_text="上一章内容" * 80,
+        skip_signature=True,
+        skip_exposition=True,
+        skip_cast_compliance=True,
+        skip_timeline=True,
+        skip_scene_coherence=True,
+        skip_character_role=True,
+        skip_dialogue_voice=True,
+        skip_chapter_length=True,
+        skip_word_count_truth=True,
+        skip_duplicate_check=True,
+        skip_payoff_ledger=True,
+    )
+    codes = [f.code for f in report.findings]
+    assert rsg.RETENTION_GATE_DEGRADED_CODE in codes
+
+
+# ---------------------------------------------------------------------------
+# P1-EH-2 — override-contract signing must roll back the contract if its debt
+# fails (no orphaned debt-less contract).
+# ---------------------------------------------------------------------------
+async def test_p1_eh2_override_savepoint_rolls_back_on_debt_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import bestseller.services.regen_loop as regen_loop
+    from bestseller.services import drafts
+
+    proposal = types.SimpleNamespace(
+        chapter_no=3,
+        violation_code="ARC_TIMING_X",
+        suggested_rationale_type="ARC_TIMING",
+        rationale_text="rationale",
+        suggested_payback_plan="payback",
+        suggested_due_chapter=10,
+    )
+    monkeypatch.setattr(
+        regen_loop, "propose_overrides_from_report", lambda *_a, **_k: [proposal]
+    )
+
+    class _Nested:
+        def __init__(self, sess: "_OrphanSession") -> None:
+            self._sess = sess
+
+        async def __aenter__(self) -> "_Nested":
+            self._sess.nested_entered += 1
+            return self
+
+        async def __aexit__(self, exc_type: object, *_rest: object) -> bool:
+            if exc_type is not None:
+                self._sess.nested_rolled_back += 1
+            return False  # propagate
+
+    class _OrphanSession:
+        def __init__(self) -> None:
+            self.added: list[object] = []
+            self.flush_calls = 0
+            self.nested_entered = 0
+            self.nested_rolled_back = 0
+
+        def begin_nested(self) -> _Nested:
+            return _Nested(self)
+
+        def add(self, obj: object) -> None:
+            self.added.append(obj)
+
+        async def flush(self) -> None:
+            self.flush_calls += 1
+            if self.flush_calls == 2:  # the debt flush fails
+                raise RuntimeError("debt flush boom")
+
+    sess = _OrphanSession()
+    out = await drafts._auto_sign_override_contracts(
+        sess,  # type: ignore[arg-type]
+        project_id=uuid4(),
+        chapter_number=3,
+        blocking_violations=(),
+        soft_constraint_codes=frozenset(),
+        interest_rate=0.1,
+        payback_window=5,
+    )
+    assert out == 0  # debt failed -> proposal not counted as persisted
+    assert sess.nested_entered == 1  # contract+debt wrapped in one savepoint
+    assert sess.nested_rolled_back == 1  # savepoint rolled back on the failure

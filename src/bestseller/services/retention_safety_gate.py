@@ -134,6 +134,13 @@ RETENTION_AUDIT_SOFT_CODES: frozenset[str] = frozenset(
     }
 )
 
+# Emitted when enough independent sub-checks crash that a "clean pass" can no
+# longer be distinguished from "the gate ran blind". Surfaced as a visible,
+# logged finding (not a hard block: on an autonomous run a systematically
+# buggy check should alert loudly, not stall every chapter into repair).
+RETENTION_GATE_DEGRADED_CODE = "RETENTION_GATE_DEGRADED"
+_RETENTION_DEGRADED_MIN_ERRORS = 3
+
 
 @dataclass(frozen=True)
 class RetentionGateFinding:
@@ -208,6 +215,7 @@ def evaluate_retention_safety(
 
     findings: list[RetentionGateFinding] = []
     auto_repair: list[str] = []
+    checks_errored = 0
 
     # Hook Echo
     if not skip_hook_echo and prev_chapter_text and chapter_position >= 2:
@@ -254,6 +262,7 @@ def evaluate_retention_safety(
                     )
                 )
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "hook echo evaluation failed for ch%d: %s",
                 chapter_position,
@@ -296,6 +305,7 @@ def evaluate_retention_safety(
                         )
                         auto_repair.append(SIGNATURE_SCENE_BLOCK_CODE)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "signature compliance evaluation failed for ch%d: %s",
                 chapter_position,
@@ -329,6 +339,7 @@ def evaluate_retention_safety(
                     )
                 )
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "exposition density evaluation failed for ch%d: %s",
                 chapter_position,
@@ -354,6 +365,7 @@ def evaluate_retention_safety(
             if cast_report.violations:
                 auto_repair.append(CAST_VIOLATION_BLOCK_CODE)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "cast compliance evaluation failed for ch%d: %s",
                 chapter_position,
@@ -393,6 +405,7 @@ def evaluate_retention_safety(
                 )
                 auto_repair.append(TIMELINE_INCONSISTENT_BLOCK_CODE)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "timeline consistency check failed for ch%d: %s",
                 chapter_position,
@@ -430,6 +443,7 @@ def evaluate_retention_safety(
                 )
                 auto_repair.append(SCENE_JUMP_BLOCK_CODE)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "scene coherence check failed for ch%d: %s",
                 chapter_position,
@@ -468,6 +482,7 @@ def evaluate_retention_safety(
                 )
                 auto_repair.append(CHARACTER_ROLE_DRIFT_BLOCK_CODE)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "character role check failed for ch%d: %s",
                 chapter_position,
@@ -527,6 +542,7 @@ def evaluate_retention_safety(
                                 )
                             )
             except Exception as exc:
+                checks_errored += 1
                 logger.warning(
                     "dialogue voice check failed for ch%d: %s",
                     chapter_position,
@@ -583,6 +599,7 @@ def evaluate_retention_safety(
                 if block_below_target:
                     auto_repair.append(CHAPTER_BELOW_TARGET_BLOCK_CODE)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "chapter length check failed for ch%d: %s",
                 chapter_position,
@@ -611,6 +628,7 @@ def evaluate_retention_safety(
                 )
                 auto_repair.append(WORD_COUNT_METADATA_MISMATCH)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "word count truth check failed for ch%d: %s",
                 chapter_position,
@@ -638,6 +656,7 @@ def evaluate_retention_safety(
                 if item.severity == "critical":
                     auto_repair.append(item.code)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "duplicate check failed for ch%d: %s",
                 chapter_position,
@@ -671,11 +690,34 @@ def evaluate_retention_safety(
                 if payoff_block:
                     auto_repair.append(ledger.finding.code)
         except Exception as exc:
+            checks_errored += 1
             logger.warning(
                 "payoff ledger check failed for ch%d: %s",
                 chapter_position,
                 exc,
             )
+
+    if checks_errored >= _RETENTION_DEGRADED_MIN_ERRORS:
+        # Fail-open ambiguity guard: enough sub-checks crashed that an empty
+        # findings list no longer means "clean". Surface it explicitly so a
+        # caller / operator can tell a genuine pass from a blind one.
+        logger.error(
+            "retention_safety_gate degraded for ch%d: %d sub-check(s) errored; "
+            "result is not a reliable clean pass",
+            chapter_position,
+            checks_errored,
+        )
+        findings.append(
+            RetentionGateFinding(
+                code=RETENTION_GATE_DEGRADED_CODE,
+                severity="warning",
+                detail=(
+                    f"{checks_errored} retention sub-check(s) failed to run; "
+                    "gate result is degraded and must not be read as a clean pass"
+                ),
+                evidence={"checks_errored": checks_errored},
+            )
+        )
 
     _auto_repair_codes = tuple(dict.fromkeys(auto_repair))
     emit_gate_result(
@@ -754,6 +796,7 @@ __all__ = [
     "EXPOSITION_DUMP_BLOCK_CODE",
     "HOOK_ECHO_BLOCK_CODE",
     "SIGNATURE_SCENE_BLOCK_CODE",
+    "RETENTION_GATE_DEGRADED_CODE",
     "RetentionGateFinding",
     "RetentionGateReport",
     "evaluate_retention_safety",

@@ -3068,7 +3068,9 @@ def evaluate_scene_draft(
                     _identity_score -= 0.15
             _identity_score = max(0.0, _identity_score)
     except Exception:
-        pass  # Non-fatal — defaults to 1.0
+        # Non-fatal, but do not hide a crashing detector: a silent failure
+        # would leave the perfect 1.0 default and mask a systematic bug.
+        logger.warning("scene identity-consistency check failed; score stays 1.0", exc_info=True)
 
     # ── POV consistency check (zero LLM cost) ──
     _pov_score = 1.0
@@ -3104,7 +3106,7 @@ def evaluate_scene_draft(
                     _pov_score -= min(0.5, _omniscient_leaks * 0.15)
         _pov_score = max(0.0, _pov_score)
     except Exception:
-        pass  # Non-fatal
+        logger.warning("scene POV-consistency check failed; score stays 1.0", exc_info=True)
 
     # ── Scene transition quality check ──
     _transition_score = 0.5  # Default neutral
@@ -3127,7 +3129,7 @@ def evaluate_scene_draft(
                 _exit_ratio = _exit_hits / max(len(_exit_keywords), 1) * 0.8 + 0.2
                 _transition_score = _clamp_score((_transition_score + _exit_ratio) / 2)
     except Exception:
-        pass
+        logger.debug("scene transition-quality check failed; score stays neutral", exc_info=True)
 
     participants_present = sum(
         1 for participant in scene.participants if participant and participant in content

@@ -3137,7 +3137,9 @@ async def _generate_volume_outline_with_repair_loop(
                     )
                     if attempt >= max_repair_attempts:
                         # Soft-accept: a residual near-duplicate event must not
-                        # abort the book; flag it for downstream auditing.
+                        # abort the book. Surface it operationally via the WARN
+                        # log below and the repair_history entry; the _meta key
+                        # carries the structured findings for any consumer.
                         logger.warning(
                             "Volume %d outline batch '%s': accepting with %d "
                             "unresolved consumed-event duplicate(s) after %d "

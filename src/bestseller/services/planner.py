@@ -18852,29 +18852,30 @@ async def _run_hook_strength_gate(
             report = repaired_report
             rewrite_applied = True
     if report.verdict == "reject" or report.score.verdict == "reject":
-        if not provided_spec:
-            # The rejected hook came from auto-generated template candidates,
-            # not from the author. A mismatch here only proves the template
-            # library lacks coverage for this premise — it must never hard-block
-            # the whole plan. Skip the advisory hook engine and record the demote.
-            payload = hook_strength_report_to_dict(report)
-            payload["rewrite_attempted"] = rewrite_attempted
-            payload["rewrite_applied"] = rewrite_applied
-            payload["auto_demoted"] = True
-            payload["demote_reason"] = "auto_generated_hook_rejected"
-            logger.warning(
-                "hook_strength_gate auto-demoted for project=%s: "
-                "auto-generated candidate rejected (verdict=%s, h_norm=%.2f); "
-                "continuing without hook_spec",
-                project.slug,
-                report.verdict,
-                report.h_norm,
-            )
-            return None, payload
-        raise PlannerFallbackError(
-            f"Anti-commonsense hook rejected: verdict={report.verdict}, "
-            f"H_norm={report.h_norm:.2f}"
+        # A rejected hook — whether auto-generated from the template library or
+        # auto-stored on the project by the quickstart/conception pipeline — must
+        # never hard-fail the whole autonomous run. Dropping the hook and
+        # continuing yields a usable book; raising would abort a 500-chapter plan
+        # over an optional opening enhancement. Degrade to the advisory path and
+        # record the demote (the hook engine is soft by design).
+        payload = hook_strength_report_to_dict(report)
+        payload["rewrite_attempted"] = rewrite_attempted
+        payload["rewrite_applied"] = rewrite_applied
+        payload["auto_demoted"] = True
+        payload["demote_reason"] = (
+            "auto_generated_hook_rejected"
+            if not provided_spec
+            else "provided_hook_rejected"
         )
+        logger.warning(
+            "hook_strength_gate auto-demoted for project=%s: hook rejected "
+            "(verdict=%s, h_norm=%.2f, provided=%s); continuing without hook_spec",
+            project.slug,
+            report.verdict,
+            report.h_norm,
+            provided_spec,
+        )
+        return None, payload
     payload = hook_strength_report_to_dict(report)
     payload["rewrite_attempted"] = rewrite_attempted
     payload["rewrite_applied"] = rewrite_applied

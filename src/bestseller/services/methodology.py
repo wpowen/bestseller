@@ -436,7 +436,7 @@ def render_qimao_regeneration_contract(
                 f"{code}: {description}"
                 for code, description in contract.rejection_cause_map.items()
             )
-        lines.append("- 拒稿原因映射：" + mapped)
+            lines.append("- 拒稿原因映射：" + mapped)
     return "\n".join(lines)
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+import zlib
 from typing import Any
 from uuid import UUID
 
@@ -49,7 +50,12 @@ def build_hashed_embedding(text: str, dimensions: int) -> list[float]:
     if not tokens:
         return vector
     for token in tokens:
-        index = hash(token) % dimensions
+        # Must be deterministic across processes: the builtin hash() of str is
+        # salted per-process (PYTHONHASHSEED), so write-time and query-time
+        # embeddings would diverge after any restart. zlib.crc32 is stable.
+        # NOTE: changing this hash invalidates previously stored embeddings;
+        # existing retrieval indexes must be rebuilt to benefit.
+        index = zlib.crc32(token.encode("utf-8")) % dimensions
         vector[index] += 1.0
     norm = math.sqrt(sum(value * value for value in vector)) or 1.0
     return [value / norm for value in vector]

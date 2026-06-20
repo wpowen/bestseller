@@ -1423,20 +1423,25 @@ async def _check_numerical_contradiction(
     # snapshots and the timeline event ledger
     for category, value in claims:
         # Load previously recorded facts for this category from the DB
+        # TimelineEventModel has no chapter_number column; it links to a chapter
+        # via chapter_id, so join ChapterModel to filter/order by chapter number.
         prior_stmt = (
             select(TimelineEventModel)
+            .join(ChapterModel, TimelineEventModel.chapter_id == ChapterModel.id)
             .where(
                 TimelineEventModel.project_id == project_id,
-                TimelineEventModel.chapter_number < chapter_number,
+                ChapterModel.chapter_number < chapter_number,
                 TimelineEventModel.event_name.ilike(f"%{category}%"),
             )
-            .order_by(TimelineEventModel.chapter_number.desc())
+            .order_by(ChapterModel.chapter_number.desc())
             .limit(5)
         )
         prior_events = list((await session.execute(prior_stmt)).scalars().all())
 
         for event in prior_events:
-            event_text = (event.description or "") + " " + (event.event_name or "")
+            # TimelineEventModel has no `description`; numeric/time hints live in
+            # story_time_label (e.g. "32年前") and the event name.
+            event_text = (event.story_time_label or "") + " " + (event.event_name or "")
             prior_nums = re.findall(r"\d+", event_text)
             for pn_str in prior_nums:
                 pn = int(pn_str)

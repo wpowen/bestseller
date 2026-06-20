@@ -605,12 +605,53 @@ def validate_fact_monotonicity(
     return warnings
 
 
+_CN_DIGITS = {
+    "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
+_CN_UNITS = {"十": 10, "百": 100, "千": 1000}
+
+
+def _chinese_numeral_to_int(text: str) -> int | None:
+    """Convert a run of Chinese numeral chars (十/二十/三百/七 ...) to int.
+
+    Handles the small magnitudes used by story countdowns (七日之期, 还有三天,
+    二十天). Returns None if the run contains an unexpected character.
+    """
+
+    if not text:
+        return None
+    total = 0
+    last_digit = 0
+    seen = False
+    for ch in text:
+        if ch in _CN_DIGITS:
+            last_digit = _CN_DIGITS[ch]
+            seen = True
+        elif ch in _CN_UNITS:
+            total += (last_digit or 1) * _CN_UNITS[ch]
+            last_digit = 0
+            seen = True
+        else:
+            return None
+    return (total + last_digit) if seen else None
+
+
 def _extract_numeric(value: str) -> float | None:
-    """Try to extract a numeric value from a fact value string."""
+    """Try to extract a numeric value from a fact value string.
+
+    Supports both ASCII digits ("3天") and Chinese numerals ("三天",
+    "二十天", "七日之期") so zh-language countdowns are not silently skipped.
+    """
     import re as _re
     match = _re.search(r"[-+]?\d*\.?\d+", value)
     if match:
         return float(match.group())
+    cn_match = _re.search(r"[零〇一二两三四五六七八九十百千]+", value)
+    if cn_match:
+        parsed = _chinese_numeral_to_int(cn_match.group())
+        if parsed is not None:
+            return float(parsed)
     return None
 
 

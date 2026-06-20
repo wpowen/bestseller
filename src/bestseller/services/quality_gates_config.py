@@ -556,7 +556,7 @@ def _build_reader_quality_gate(raw: dict[str, Any]) -> ReaderQualityGateConfig:
         min_weighted_score=float(raw.get("min_weighted_score", 0.62)),
         max_abandon_rate=float(raw.get("max_abandon_rate", 0.35)),
         min_payoff_density=float(raw.get("min_payoff_density", 0.22)),
-        block_below_target_length=_safe_bool(raw.get("block_below_target_length"), True),
+        block_below_target_length=_safe_bool(raw.get("block_below_target_length"), False),
         block_word_count_metadata_mismatch=_safe_bool(
             raw.get("block_word_count_metadata_mismatch"), True
         ),

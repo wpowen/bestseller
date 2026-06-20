@@ -202,6 +202,30 @@ def _extract_nested_text(state: dict[str, Any], key: str) -> str | None:
     return None
 
 
+def _coerce_mapping(value: Any, fallback: Any = None) -> dict[str, Any]:
+    """Return a dict from possibly-None/garbage JSON payload values.
+
+    scene exit_state is LLM-populated, so an explicit ``"trust_map": null``
+    is reachable; ``dict(None)`` would raise TypeError. Fall back safely.
+    """
+
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(fallback, dict):
+        return dict(fallback)
+    return {}
+
+
+def _coerce_sequence(value: Any, fallback: Any = None) -> list[Any]:
+    """Return a list from possibly-None/garbage JSON payload values."""
+
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    if isinstance(fallback, (list, tuple)):
+        return list(fallback)
+    return []
+
+
 async def _upsert_character_state_snapshot(
     session: AsyncSession,
     *,
@@ -231,8 +255,8 @@ async def _upsert_character_state_snapshot(
             _extract_nested_text(state_payload, "physical_state") or existing.physical_state
         )
         existing.power_tier = _extract_nested_text(state_payload, "power_tier") or existing.power_tier
-        existing.trust_map = dict(state_payload.get("trust_map", existing.trust_map or {}))
-        existing.beliefs = list(state_payload.get("beliefs", existing.beliefs or []))
+        existing.trust_map = _coerce_mapping(state_payload.get("trust_map"), existing.trust_map)
+        existing.beliefs = _coerce_sequence(state_payload.get("beliefs"), existing.beliefs)
         existing.notes = summary_text
         return existing
 
@@ -248,8 +272,8 @@ async def _upsert_character_state_snapshot(
         or _extract_nested_text(state_payload, "emotional_state"),
         physical_state=_extract_nested_text(state_payload, "physical_state"),
         power_tier=_extract_nested_text(state_payload, "power_tier") or character.power_tier,
-        trust_map=state_payload.get("trust_map", {}),
-        beliefs=list(state_payload.get("beliefs", [])),
+        trust_map=_coerce_mapping(state_payload.get("trust_map")),
+        beliefs=_coerce_sequence(state_payload.get("beliefs")),
         notes=summary_text,
     )
     session.add(snapshot)

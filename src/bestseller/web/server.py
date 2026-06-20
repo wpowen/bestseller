@@ -9690,6 +9690,11 @@ def serve_web_app(
             body = payload.encode("utf-8")
             self.send_response(status.value)
             self.send_header("Content-Type", content_type)
+            # Single-file apps inline their JS, so a stale-cached HTML silently
+            # serves old JS after a rebuild ("rebuilt but nothing changed").
+            # Force the browser to revalidate the HTML shell on every load.
+            if "text/html" in content_type:
+                self.send_header("Cache-Control", "no-cache, must-revalidate")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

@@ -408,3 +408,53 @@ def test_p0_13_web_auth_logic() -> None:
     assert _provided_web_token(header_getter({"X-Web-Token": "abc"})) == "abc"
     assert _provided_web_token(header_getter({"Authorization": "Bearer xyz"})) == "xyz"
     assert _provided_web_token(header_getter({})) == ""
+
+
+# ---------------------------------------------------------------------------
+# P0-3 — greenfield alembic bootstrap (0001 renders live metadata)
+# ---------------------------------------------------------------------------
+class _ScalarRes:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar(self) -> object:
+        return self._value
+
+
+class _FakeMigrationConn:
+    def __init__(self, dialect: str, results: list[object]) -> None:
+        self.dialect = types.SimpleNamespace(name=dialect)
+        self._results = list(results)
+        self.executed: list[tuple[str, object]] = []
+
+    def execute(self, stmt: object, params: object = None) -> _ScalarRes:
+        self.executed.append((str(stmt), params))
+        return _ScalarRes(self._results.pop(0) if self._results else None)
+
+
+def test_p0_3_greenfield_detection() -> None:
+    from bestseller.infra.db.migration_bootstrap import database_is_greenfield
+
+    # fresh PG: no projects table, no stamped revision
+    assert database_is_greenfield(_FakeMigrationConn("postgresql", [None, None])) is True
+    # existing application schema -> use the migration chain
+    assert database_is_greenfield(_FakeMigrationConn("postgresql", [1])) is False
+    # already stamped (projects absent but a revision present) -> not greenfield
+    assert database_is_greenfield(_FakeMigrationConn("postgresql", [None, "0031_x"])) is False
+    # non-postgres backend never takes the greenfield path
+    assert database_is_greenfield(_FakeMigrationConn("sqlite", [])) is False
+
+
+def test_p0_3_baseline_creates_schema_and_stamps_head() -> None:
+    from bestseller.infra.db.migration_bootstrap import baseline_to_head
+
+    conn = _FakeMigrationConn("postgresql", [])
+    baseline_to_head(conn, head_revision="0031_fanqie_market_profiles")
+
+    sqls = [sql for sql, _params in conn.executed]
+    assert any("CREATE EXTENSION" in sql for sql in sqls)  # extensions emitted
+    assert any("CREATE TABLE" in sql and "projects" in sql for sql in sqls)  # tables emitted
+    # head stamped last with the revision bound as a param
+    last_sql, last_params = conn.executed[-1]
+    assert "alembic_version" in last_sql
+    assert last_params == {"rev": "0031_fanqie_market_profiles"}

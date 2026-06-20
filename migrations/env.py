@@ -7,6 +7,7 @@ from sqlalchemy import engine_from_config, pool, text
 
 from bestseller.infra.db import models as _models  # noqa: F401
 from bestseller.infra.db.base import Base
+from bestseller.infra.db.migration_bootstrap import baseline_to_head, database_is_greenfield
 from bestseller.settings import load_settings
 
 
@@ -68,6 +69,18 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         _ensure_alembic_version_capacity(connection)
+
+        # Greenfield databases cannot replay the chain: migration 0001 renders
+        # the entire current metadata, which collides with later create_table
+        # migrations. Build the schema directly and stamp head instead.
+        if database_is_greenfield(connection):
+            from alembic.script import ScriptDirectory
+
+            head_revision = ScriptDirectory.from_config(config).get_current_head()
+            baseline_to_head(connection, head_revision=head_revision)
+            connection.commit()
+            return
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

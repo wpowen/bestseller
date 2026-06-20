@@ -39,6 +39,38 @@ from bestseller.services.output_validator import QualityReport, Violation
 logger = logging.getLogger(__name__)
 
 
+_TRANSIENT_ERROR_MARKERS = (
+    "timeout",
+    "timed out",
+    "connection",
+    "temporarily unavailable",
+    "rate limit",
+    "ratelimit",
+    "overloaded",
+    "service unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "502",
+    "503",
+    "504",
+    "429",
+)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Heuristically classify a regenerator/validator failure as transient.
+
+    Transient (network/5xx/rate-limit) failures should not burn the whole
+    regen budget the way a structural failure does — the loop can retry.
+    """
+
+    type_name = type(exc).__name__.lower()
+    if "timeout" in type_name or "connection" in type_name:
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in _TRANSIENT_ERROR_MARKERS)
+
+
 DEFAULT_BUDGET_PER_CHAPTER = 3
 DEFAULT_GLOBAL_BUDGET = 12
 
@@ -249,6 +281,16 @@ async def regenerate_until_valid(
         try:
             new_output = await regenerator(feedback)
         except Exception as exc:
+            # Transient (network/5xx/rate-limit) errors should not abort the
+            # whole loop — retry within the remaining budget instead.
+            if _is_transient_error(exc) and retry_idx < budget - 1:
+                logger.warning(
+                    "%s: transient regenerator error on attempt %d (%s); retrying",
+                    context_label,
+                    retry_idx + 1,
+                    exc,
+                )
+                continue
             logger.warning(
                 "%s: regenerator raised on attempt %d: %s",
                 context_label,
@@ -264,6 +306,14 @@ async def regenerate_until_valid(
         try:
             new_report = await validator(new_output)
         except Exception as exc:
+            if _is_transient_error(exc) and retry_idx < budget - 1:
+                logger.warning(
+                    "%s: transient validator error on attempt %d (%s); retrying",
+                    context_label,
+                    retry_idx + 1,
+                    exc,
+                )
+                continue
             logger.warning(
                 "%s: validator raised on attempt %d: %s",
                 context_label,

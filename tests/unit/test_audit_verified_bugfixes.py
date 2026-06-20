@@ -458,3 +458,64 @@ def test_p0_3_baseline_creates_schema_and_stamps_head() -> None:
     last_sql, last_params = conn.executed[-1]
     assert "alembic_version" in last_sql
     assert last_params == {"rev": "0031_fanqie_market_profiles"}
+
+
+# ---------------------------------------------------------------------------
+# P1-EH-4 — regen loop must retry transient errors, not burn the whole budget
+# ---------------------------------------------------------------------------
+def _blocking_report():
+    from bestseller.services.output_validator import QualityReport, Violation
+
+    return QualityReport(
+        violations=(
+            Violation(code="X", severity="block", location="", detail="", prompt_feedback="fix"),
+        )
+    )
+
+
+async def test_p1_eh4_regen_retries_transient_error() -> None:
+    from bestseller.services.output_validator import QualityReport
+    from bestseller.services.regen_loop import regenerate_until_valid
+
+    attempts = {"n": 0}
+
+    async def regenerator(_feedback: str) -> str:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise TimeoutError("connection timed out")  # transient
+        return "fixed"
+
+    async def validator(_text: str) -> QualityReport:
+        return QualityReport(violations=())
+
+    result = await regenerate_until_valid(
+        initial_output="bad",
+        initial_report=_blocking_report(),
+        regenerator=regenerator,
+        validator=validator,
+        budget=3,
+        context_label="t",
+    )
+    assert result.final_output == "fixed"
+    assert attempts["n"] == 2  # retried after the transient error instead of aborting
+
+
+async def test_p1_eh4_regen_structural_error_aborts() -> None:
+    from bestseller.services.output_validator import QualityReport
+    from bestseller.services.regen_loop import RegenerationExhausted, regenerate_until_valid
+
+    async def regenerator(_feedback: str) -> str:
+        raise ValueError("structural bug")  # not transient -> abort
+
+    async def validator(_text: str) -> QualityReport:
+        return QualityReport(violations=())
+
+    with pytest.raises(RegenerationExhausted):
+        await regenerate_until_valid(
+            initial_output="bad",
+            initial_report=_blocking_report(),
+            regenerator=regenerator,
+            validator=validator,
+            budget=3,
+            context_label="t",
+        )

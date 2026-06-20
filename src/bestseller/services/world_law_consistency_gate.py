@@ -17,11 +17,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+import logging
 import re
 from typing import Any
 
 from bestseller.domain.world_model import WorldLaw
 from bestseller.services.world_model_injection import select_active_laws
+
+logger = logging.getLogger(__name__)
 
 # Markers that introduce a constrained trigger in an enforcement assertion.
 _TRIGGER_MARKERS = ("出现", "涉及", "使用", "持有", "出行", "采用", "选择")
@@ -236,6 +239,8 @@ def check_world_law_consistency_gate(
     try:
         laws = select_active_laws(world_model, context_text=text, max_laws=_MAX_ACTIVE_LAWS)
     except Exception:
+        # Advisory gate: never raises, but don't hide a real selection bug.
+        logger.warning("world-law gate: active-law selection failed; passing", exc_info=True)
         return WorldLawConsistencyReport(passed=True)
     if not laws:
         return WorldLawConsistencyReport(passed=True)
@@ -243,11 +248,12 @@ def check_world_law_consistency_gate(
         detector = judge or detect_world_law_violations
         violations = list(detector(text, laws))
     except Exception:
+        logger.warning("world-law gate: violation detector failed; treating as clean", exc_info=True)
         violations = []
     try:
         violations.extend(detect_tier_violations(text, laws))  # precise numeric check, always on
     except Exception:
-        pass
+        logger.debug("world-law gate: tier-violation check failed", exc_info=True)
     return WorldLawConsistencyReport(
         passed=not violations,
         violations=tuple(violations),
@@ -327,6 +333,7 @@ async def evaluate_world_law_consistency_llm(
     try:
         laws = select_active_laws(world_model, context_text=text, max_laws=_MAX_ACTIVE_LAWS)
     except Exception:
+        logger.warning("world-law gate: active-law selection failed; passing", exc_info=True)
         return WorldLawConsistencyReport(passed=True)
     if not laws:
         return WorldLawConsistencyReport(passed=True)
@@ -352,10 +359,11 @@ async def evaluate_world_law_consistency_llm(
         violations.extend(_parse_judge_violations(completion.content, laws))
     except Exception:
         # LLM unavailable → fall back to the deterministic enforcement detector.
+        logger.debug("world-law gate: LLM judge failed; using deterministic detector", exc_info=True)
         try:
             violations.extend(detect_world_law_violations(text, laws))
         except Exception:
-            pass
+            logger.warning("world-law gate: deterministic detector also failed", exc_info=True)
     try:
         violations.extend(detect_tier_violations(text, laws))
     except Exception:

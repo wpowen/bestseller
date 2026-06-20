@@ -436,6 +436,12 @@ async def _llm_call_json(
         try:
             return _sanitize_forbidden_default_motifs(_extract_json(fallback), is_en=is_en), llm_run_ids
         except Exception:
+            logger.error(
+                "Conception stage %s: both repair and fallback payloads were "
+                "unparseable; returning empty payload (downstream will degrade).",
+                stage,
+                exc_info=True,
+            )
             return {}, llm_run_ids
 
 

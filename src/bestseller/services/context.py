@@ -1399,8 +1399,10 @@ async def build_scene_writer_context_from_models(
         if (
             item.target_chapter_number == chapter.chapter_number
             and (
+                # Only this scene's payoff (or chapter-level, target None).
+                # A later scene's payoff (> current) would leak future plans.
                 item.target_scene_number is None
-                or item.target_scene_number >= scene.scene_number
+                or item.target_scene_number == scene.scene_number
             )
         )
     ]

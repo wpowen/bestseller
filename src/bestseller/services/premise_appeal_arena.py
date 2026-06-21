@@ -228,6 +228,27 @@ def summarize_appeal(results: list[AppealMatchResult], *, genre: str) -> AppealA
     )
 
 
+def _fair_length(text: str, max_chars: int) -> str:
+    """Truncate an over-long candidate to a fair comparison length.
+
+    Real bestseller reference blurbs are ~80-150 chars. A 400+ char synopsis
+    would win on sheer content volume, inflating the win-rate (this is exactly
+    how 《废代码库》's 460-char synopsis got 0.83). Cap the candidate at a
+    platform-blurb length, cutting at the last sentence boundary so it stays
+    coherent.
+    """
+
+    t = (text or "").strip()
+    if len(t) <= max_chars:
+        return t
+    head = t[:max_chars]
+    for sep in ("。", "！", "？", "\n", "；"):
+        idx = head.rfind(sep)
+        if idx >= max_chars * 0.5:
+            return head[: idx + 1]
+    return head
+
+
 async def run_appeal_arena(
     *,
     candidate_blurb: str,
@@ -236,15 +257,21 @@ async def run_appeal_arena(
     judge: JudgeFn,
     min_refs: int = 3,
     max_refs: int = 6,
+    candidate_max_chars: int = 220,
 ) -> AppealArenaSummary:
-    """Score a candidate blurb's click-appeal vs real bestsellers (win-rate)."""
+    """Score a candidate blurb's click-appeal vs real bestsellers (win-rate).
 
+    The candidate is truncated to ``candidate_max_chars`` so a long synopsis
+    cannot win on length alone against the (short) reference blurbs.
+    """
+
+    candidate = _fair_length(candidate_blurb, candidate_max_chars)
     refs = resolve_reference_set(genre, sub_genre, min_refs=min_refs)[:max_refs]
     canonical = genre or ""
     pairs = [
         AppealArenaPair(
             pair_id=f"appeal-{i}",
-            candidate_blurb=candidate_blurb,
+            candidate_blurb=candidate,
             reference_blurb=r["blurb"],
             genre=str(genre or ""),
             reference_title=r.get("title", ""),

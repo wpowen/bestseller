@@ -8,6 +8,7 @@ content-aware fake judge (candidate-always-wins → 1.0; position-biased → 0.5
 
 from __future__ import annotations
 
+# ruff: noqa: RUF003 — Chinese test fixtures.
 import pytest
 
 from bestseller.services.premise_appeal_arena import (
@@ -41,6 +42,18 @@ def test_parse_verdict_maps_token_to_candidate_outcome(winner, candidate_is_a, e
 @pytest.mark.unit
 def test_parse_verdict_unparseable_returns_none():
     assert parse_appeal_verdict("garbage no json", candidate_is_a=True) is None
+
+
+@pytest.mark.unit
+def test_fair_length_truncates_long_candidate_at_sentence_boundary():
+    from bestseller.services.premise_appeal_arena import _fair_length
+
+    short = "短简介。"
+    assert _fair_length(short, 220) == short  # 不动
+    long = "这是第那么一个小句子。" * 40  # 句界遍布、远超 220 字
+    out = _fair_length(long, 220)
+    assert len(out) <= 220
+    assert out.endswith("。")  # 在后半段句界截断，保持完整句
 
 
 @pytest.mark.unit

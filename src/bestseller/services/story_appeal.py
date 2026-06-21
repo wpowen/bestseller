@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-# ruff: noqa: ANN401, RUF001 — Chinese labels + Any session/settings.
+# ruff: noqa: ANN401, RUF001, RUF003 — Chinese labels + Any session/settings.
 import logging
 from pathlib import Path
 from typing import Any
@@ -176,7 +176,7 @@ def meets_bar(
     cfg = config if config is not None else load_story_appeal_config()
     bar = cfg.get("meets_bar", {}) if isinstance(cfg, dict) else {}
     premise_min = float(bar.get("premise_min", 0))
-    blurb_min = float(bar.get("blurb_min", 65))
+    blurb_min = float(bar.get("blurb_min", 80))  # 产品硬线：低于 80 不通过
     forbid_gated_pass = bool(bar.get("forbid_gated_to_pass", False))
 
     if blurb.total < blurb_min:

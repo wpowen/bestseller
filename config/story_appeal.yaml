@@ -10,11 +10,13 @@
 
 enabled: true
 
-# 低于 floor_grade 才触发 finalize 重生；有界、保优、fail-open。
+# 低于 blurb_min 即触发 finalize 重生；有界、保优、fail-open。
+# 产品决策(2026-06-21)：达标线提到 80 —— 70 分的稿（如《废代码库》）算"差"，不放行。
 regeneration:
   enabled: true
-  floor_grade: pass          # 仅当评级跌到 "pass"(最差档) 才重生
-  max_attempts: 2            # 重生上限（不含首次）
+  regen_below_bar: true      # 只要未达 meets_bar(blurb<80) 就重生（不再用 floor_grade 评级）
+  floor_grade: consider      # 兼容旧逻辑：评级≤consider(<80) 也触发重生
+  max_attempts: 3            # 重生上限（不含首次）；门槛抬高后多给一次机会
   keep_best: true            # 永远保留得分最高的变体，绝不变差
   feedback_token_budget: 600 # 注入 finalize 的改进反馈截断上限
 
@@ -31,10 +33,15 @@ grades:
 #     烂稿 blurb 最高 63.9，现代爆款 70-79 → blurb_min=65 可全拒烂稿、纳现代强简介。
 #   * LLM premise 绝对分不可信：一句 prompt 改动即从「给烂稿 88」荡到「给凡人 38」，
 #     与 [[benchmark-arena-closure-plan]] 的 LitStyle 结论一致 → 仅作 advisory，不当达标硬标尺。
-# 因此达标由【确定性 blurb gate(竞品锚定 65) + 确定性 premise gating(可复现)】把关；
-# premise 的 LLM 绝对分仅展示/给批评建议。严谨的 LLM 用法=对真实竞品 pairwise 盲评胜率(下一步)。
+# 因此达标由【确定性 blurb gate】把关；premise 的 LLM 绝对分仅展示/给批评建议。
+# ── 产品决策(2026-06-21)：达标线 65 → 80（"低于 80 分不通过"）──
+# 65 只过滤了垃圾；但 70 分的稿（简介过长/首句钩子弱/情绪不足，如《废代码库》）
+# 产品方判定"非常差"。故把门槛提到 80 = 只放行"执行优秀"的简介（首句炸、情绪前置、
+# 长度合规、卖点齐），低于 80 一律不达标并触发重生。代价：很多稿要重生才达标——
+# 这是刻意的高标准（宁可重生，不放行平庸）。真实老牌爆款的"朴实简介"也会被此门拦下，
+# 因为本系统生成的是现代点击型简介，其优秀样本可达 80+（玄幻样本 84、都市 79+）。
 meets_bar:
-  blurb_min: 65               # 竞品锚定：烂稿上限 63.9 之上、现代爆款之内
+  blurb_min: 80               # 产品硬线：低于 80 不通过（只放行执行优秀的简介）
   premise_min: 0              # advisory：LLM 绝对分不参与硬门（绝对值不可信）
   forbid_gated_to_pass: false # gating/premise 评级仅 advisory（gated_grade 含 LLM 总分，不入硬门以保可复现）
 

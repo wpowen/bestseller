@@ -2117,13 +2117,20 @@ async def run_conception_pipeline(
                 chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
             )
             regen = _appeal_cfg.get("regeneration", {}) if isinstance(_appeal_cfg, dict) else {}
-            floor = str(regen.get("floor_grade", "pass"))
-            max_attempts = int(regen.get("max_attempts", 2))
+            floor = str(regen.get("floor_grade", "consider"))
+            regen_below_bar = bool(regen.get("regen_below_bar", True))
+            max_attempts = int(regen.get("max_attempts", 3))
             best = (report, premise, synopsis, tags)
             attempts = 0
+            # Product hard line: regenerate while not meeting the bar (blurb<80);
+            # else fall back to the grade floor.
             while (
                 bool(regen.get("enabled", False))
-                and grade_rank(report.overall_grade) <= grade_rank(floor)
+                and (
+                    (not report.meets_bar)
+                    if regen_below_bar
+                    else grade_rank(report.overall_grade) <= grade_rank(floor)
+                )
                 and attempts < max_attempts
             ):
                 attempts += 1

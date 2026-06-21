@@ -26,7 +26,7 @@ from bestseller.services.story_appeal import (
     resolve_genre_lexicon,
 )
 
-# ruff: noqa: RUF001, N806 — Chinese test fixtures, local DIM constant.
+# ruff: noqa: RUF001, RUF003, N806 — Chinese test fixtures, local DIM constant.
 
 
 @pytest.mark.unit
@@ -93,22 +93,23 @@ def test_grade_from_total_ladder():
 @pytest.mark.unit
 def test_meets_bar_is_blurb_anchored_premise_advisory():
     # Competitor-anchored design: 达标 gates on the reproducible deterministic
-    # blurb gate (blurb_min); the LLM premise score is ADVISORY (premise_min=0),
-    # because its absolute value proved unreliable in calibration.
+    # blurb gate (blurb_min); the LLM premise score is ADVISORY (premise_min=0).
+    # 产品硬线 blurb_min=80：一个 78 分的"还行但不优秀"的简介不达标。
     cfg = load_story_appeal_config()
+    assert float(cfg["meets_bar"]["blurb_min"]) == 80  # 固化的产品硬线
 
-    strong_blurb = BlurbAppealVerdict(total=78, grade="consider")
-    weak_blurb = BlurbAppealVerdict(total=55, grade="pass")
+    excellent_blurb = BlurbAppealVerdict(total=84, grade="recommend")
+    mediocre_blurb = BlurbAppealVerdict(total=70, grade="consider")  # 如《废代码库》
 
-    # blurb clears bar → 达标, regardless of the (advisory) premise number
+    # 只有执行优秀(≥80)的简介达标，premise(advisory)不影响
     assert meets_bar(PremiseAppealVerdict(total=82, grade="recommend", gated_grade="recommend"),
-                     strong_blurb, cfg) is True
+                     excellent_blurb, cfg) is True
     assert meets_bar(PremiseAppealVerdict(total=40, grade="pass", gated_grade="pass"),
-                     strong_blurb, cfg) is True  # low LLM premise must NOT block (advisory)
+                     excellent_blurb, cfg) is True  # low LLM premise must NOT block (advisory)
 
-    # blurb below bar → not 达标, even with a high (advisory) premise number
+    # 70 分的平庸简介不达标，即使 premise 判官给高分
     assert meets_bar(PremiseAppealVerdict(total=90, grade="recommend", gated_grade="recommend"),
-                     weak_blurb, cfg) is False
+                     mediocre_blurb, cfg) is False
 
 
 @pytest.mark.unit

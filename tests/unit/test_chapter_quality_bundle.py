@@ -6,9 +6,49 @@ from bestseller.services.chapter_quality_bundle import (
     ChapterQualityBundleContext,
     run_chapter_quality_bundle,
 )
-from bestseller.services.chapter_length_gate import CHAPTER_LENGTH_BLOCK_HIGH_CODE
+from bestseller.services.chapter_length_gate import (
+    CHAPTER_LENGTH_BLOCK_HIGH_CODE,
+    count_zh_chars,
+)
 
 pytestmark = pytest.mark.unit
+
+
+def _varied_body(n: int) -> str:
+    # Distinct numbered sentences → predictable length, isolates the length gate.
+    return "# 第9章\n\n" + "".join(
+        f"井口第{i}次泛起水光，编号{i}的证物袋被压进泥里，灯影一层层晃开。\n\n"
+        for i in range(n)
+    )
+
+
+def test_bundle_length_block_aligns_with_product_ceiling() -> None:
+    # 2026-06-21: the bundle's hard ceiling was target-relative (1.2×) — only
+    # 3120 for a 2600-target book, STRICTER than the 3500 product ceiling — so
+    # product-compliant chapters in the 3120–3500 CJK band were false-blocked
+    # and churned. A chapter in that band must NOT get the length block...
+    in_band = _varied_body(120)
+    assert 3120 < count_zh_chars(in_band) <= 3500
+    codes = {
+        f.code
+        for f in run_chapter_quality_bundle(
+            in_band,
+            ChapterQualityBundleContext(chapter_number=9, target_chapter_words=2600),
+        ).blocking_findings
+    }
+    assert CHAPTER_LENGTH_BLOCK_HIGH_CODE not in codes
+
+    # ...while a chapter genuinely over the 3500 product ceiling still blocks.
+    over = _varied_body(220)
+    assert count_zh_chars(over) > 3500
+    codes_over = {
+        f.code
+        for f in run_chapter_quality_bundle(
+            over,
+            ChapterQualityBundleContext(chapter_number=9, target_chapter_words=2600),
+        ).blocking_findings
+    }
+    assert CHAPTER_LENGTH_BLOCK_HIGH_CODE in codes_over
 
 
 def test_chapter_quality_bundle_preserves_multiple_blocking_findings() -> None:

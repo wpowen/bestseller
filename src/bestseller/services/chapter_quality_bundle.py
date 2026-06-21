@@ -341,10 +341,20 @@ def run_chapter_quality_bundle(
                 2000,
                 int(context.target_chapter_words * 0.85),
             )
-            length_kwargs["chapter_length_hard_max"] = max(
-                3000,
-                int(context.target_chapter_words * 1.2),
+            # 2026-06-21: align the bundle's blocking ceiling with the
+            # product-wide zh chapter ceiling (3500 CJK) instead of a
+            # target-relative 1.2×. For a 2600-target book the old rule gave
+            # 3120 — STRICTER than the product ceiling — so chapters that land
+            # in the product-compliant 3120–3500 band were hard-blocked and
+            # churned (the writer can't "shrink" a chapter that is already
+            # within spec). The write-path length_stability_gate already caps
+            # at 3500; this makes the bundle agree instead of double-gating
+            # with a tighter, inconsistent threshold.
+            from bestseller.services.length_stability_gate import (
+                CHINESE_CHAPTER_HARD_MAX_WORDS,
             )
+
+            length_kwargs["chapter_length_hard_max"] = CHINESE_CHAPTER_HARD_MAX_WORDS
         report = evaluate_retention_safety(
             chapter_position=chapter_number,
             chapter_text=text,

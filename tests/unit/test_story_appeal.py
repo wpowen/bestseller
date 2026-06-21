@@ -73,6 +73,17 @@ def test_every_genre_resolves_to_a_lexicon(genre):
 
 
 @pytest.mark.unit
+def test_meets_story_bar_winrate_threshold():
+    from bestseller.services.story_appeal import meets_story_bar
+
+    cfg = load_story_appeal_config()
+    bar = float(cfg["arena"]["story_winrate_min"])
+    assert meets_story_bar(bar + 0.05, cfg) is True
+    assert meets_story_bar(bar, cfg) is True
+    assert meets_story_bar(bar - 0.05, cfg) is False
+
+
+@pytest.mark.unit
 def test_grade_from_total_ladder():
     assert grade_from_total(85) == "recommend"
     assert grade_from_total(70) == "consider"

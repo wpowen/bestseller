@@ -38,6 +38,16 @@ meets_bar:
   premise_min: 0              # advisory：LLM 绝对分不参与硬门（绝对值不可信）
   forbid_gated_to_pass: false # gating/premise 评级仅 advisory（gated_grade 含 LLM 总分，不入硬门以保可复现）
 
+# 故事质量硬门 = 对真实爆款简介做双盲位置交换 pairwise 胜率（services/premise_appeal_arena.py）。
+# 相对盲评稳定（绝对分不稳），跨家族判官(DeepSeek)去同源高估，位置交换去位置偏。
+# 因每本需 ~N×2 次判官调用，作【按需验收门】（scripts/verify_appeal_arena.py），不进每次构思。
+# 实测(DeepSeek)：烂稿 win-rate 0.00、真爆款凡人 vs 同行 0.38、生成新书 0.50-0.88。
+arena:
+  story_winrate_min: 0.45     # vs 真实爆款胜率≥此 ⇒ 与榜单同档（competitive）
+  min_refs: 4
+  max_refs: 6
+  judge_model_key: deepseek-v4-flash  # 跨家族；读 DEEPSEEK_API_KEY
+
 # ---------------------------------------------------------------------------
 # 故事吸引力 9 维 rubric（premise_appeal）
 #   weight_long / weight_short：长篇/短篇权重（和=100）

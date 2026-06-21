@@ -188,6 +188,19 @@ def meets_bar(
     return True
 
 
+def meets_story_bar(win_rate: float, config: dict[str, Any] | None = None) -> bool:
+    """Story-quality gate: pairwise win-rate vs REAL bestsellers ≥ threshold.
+
+    This is the trustworthy story-quality signal (relative blind comparison vs
+    real competitors, cross-family judge) — used by the acceptance-time arena
+    (``premise_appeal_arena``), not the absolute LLM premise score.
+    """
+
+    cfg = config if config is not None else load_story_appeal_config()
+    arena = cfg.get("arena", {}) if isinstance(cfg, dict) else {}
+    return float(win_rate) >= float(arena.get("story_winrate_min", 0.45))
+
+
 def build_improvement_feedback(
     report: StoryAppealReport, config: dict[str, Any] | None = None
 ) -> str:
@@ -313,5 +326,6 @@ __all__ = [
     "is_appeal_enabled",
     "load_story_appeal_config",
     "meets_bar",
+    "meets_story_bar",
     "resolve_genre_lexicon",
 ]

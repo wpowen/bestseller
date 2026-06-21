@@ -79,6 +79,10 @@ class ConceptionResult:
     # Surfaced so the web layer can persist these as inspectable book artifacts.
     concept_methodology: dict[str, Any] = field(default_factory=dict)
     hook_candidates: list[dict[str, Any]] = field(default_factory=list)
+    # Story/blurb appeal evaluation report (story_appeal.StoryAppealReport.to_dict()).
+    # Empty dict when the appeal system is disabled (config) — keeps historical
+    # output byte-identical (no-op contract).
+    story_appeal: dict[str, Any] = field(default_factory=dict)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -2085,6 +2089,97 @@ async def run_conception_pipeline(
     except Exception:
         logger.warning("Platform title workflow failed during conception", exc_info=True)
 
+    # ── Story/blurb appeal evaluation + bounded keep-best regeneration ──
+    # Additive: scores the finalized idea + blurb for click-power and
+    # bestseller-grade appeal. Disabled in config → skipped entirely so the
+    # ConceptionResult is byte-identical to history (no-op contract).
+    # Regeneration fires only when the idea is clearly weak (grade ≤ floor),
+    # is bounded, keeps the best-scoring variant, and is fail-open.
+    story_appeal_report: dict[str, Any] = {}
+    try:
+        from bestseller.domain.appeal import grade_rank  # noqa: PLC0415
+        from bestseller.services.story_appeal import (  # noqa: PLC0415
+            build_improvement_feedback,
+            evaluate_story_appeal,
+            is_appeal_enabled,
+            load_story_appeal_config,
+        )
+
+        _appeal_cfg = load_story_appeal_config()
+        if is_appeal_enabled(_appeal_cfg):
+            _ap_genre = str(ctx.get("genre") or genre or "")
+            _ap_sub = str(ctx.get("sub_genre") or sub_genre or "")
+            _ap_platform = str(target_platform or "")
+            report = await evaluate_story_appeal(
+                session, settings,
+                premise=premise, synopsis=synopsis, title=title, tags=tags,
+                writing_profile=writing_profile, genre=_ap_genre, sub_genre=_ap_sub,
+                chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
+            )
+            regen = _appeal_cfg.get("regeneration", {}) if isinstance(_appeal_cfg, dict) else {}
+            floor = str(regen.get("floor_grade", "pass"))
+            max_attempts = int(regen.get("max_attempts", 2))
+            best = (report, premise, synopsis, tags)
+            attempts = 0
+            while (
+                bool(regen.get("enabled", False))
+                and grade_rank(report.overall_grade) <= grade_rank(floor)
+                and attempts < max_attempts
+            ):
+                attempts += 1
+                try:
+                    feedback = build_improvement_feedback(report, _appeal_cfg)
+                    retry_result, retry_ids = await _llm_call_json(
+                        session, settings, role="editor",
+                        system_prompt=_FINALIZE_SYSTEM_EN if is_en else _FINALIZE_SYSTEM,
+                        user_prompt=f"{finalize_user_prompt}\n\n{feedback}",
+                        fallback=_build_fallback_final(ctx, market_proposal, character_proposal, world_proposal),
+                        template="conception_finalize",
+                        stage="conception.final.appeal_retry",
+                        language=str(ctx.get("language") or "zh-CN"),
+                    )
+                    llm_run_ids.extend(retry_ids)
+                    r_premise = str(_sanitize_forbidden_default_motifs(
+                        _safe_get(retry_result, "premise", "") or premise, is_en=is_en))
+                    r_syn = _safe_get(retry_result, "synopsis", "").strip()
+                    if len(r_syn) > 500:
+                        r_syn = r_syn[:497] + "..."
+                    r_syn = str(_sanitize_forbidden_default_motifs(r_syn or synopsis, is_en=is_en))
+                    r_raw = retry_result.get("tags", []) or raw_tags
+                    r_tags = [
+                        str(item).strip()
+                        for item in _sanitize_forbidden_default_motifs(
+                            [str(t).strip() for t in r_raw if isinstance(t, str) and t.strip()][:10],
+                            is_en=is_en,
+                        )
+                        if str(item).strip()
+                    ][:10]
+                    report = await evaluate_story_appeal(
+                        session, settings,
+                        premise=r_premise, synopsis=r_syn, title=title, tags=r_tags,
+                        writing_profile=writing_profile, genre=_ap_genre, sub_genre=_ap_sub,
+                        chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
+                    )
+                    cur_sum = report.premise.total + report.blurb.total
+                    best_sum = best[0].premise.total + best[0].blurb.total
+                    if (report.meets_bar and not best[0].meets_bar) or (
+                        report.meets_bar == best[0].meets_bar and cur_sum > best_sum
+                    ):
+                        best = (report, r_premise, r_syn, r_tags)
+                except Exception:
+                    logger.warning("appeal regeneration attempt %d failed", attempts, exc_info=True)
+                    break
+            report, premise, synopsis, tags = best
+            story_appeal_report = report.to_dict()
+            logger.info(
+                "Story appeal: premise=%.0f blurb=%.0f grade=%s meets_bar=%s regen=%d",
+                report.premise.total, report.blurb.total, report.overall_grade,
+                report.meets_bar, attempts,
+            )
+    except Exception:
+        logger.warning("Story appeal evaluation failed (non-fatal)", exc_info=True)
+        story_appeal_report = {}
+
     logger.info(
         "Conception pipeline completed for genre=%s: title=%s, premise_len=%d, synopsis_len=%d, tags=%s, profile_keys=%s",
         genre_key, title, len(premise), len(synopsis), tags, list(writing_profile.keys()),
@@ -2102,6 +2197,7 @@ async def run_conception_pipeline(
         hook_spec=selected_hook_spec.model_dump(mode="json") if selected_hook_spec else None,
         concept_methodology=dict(ctx.get("concept_methodology") or {}),
         hook_candidates=list(ctx.get("hook_candidates") or []),
+        story_appeal=story_appeal_report,
     )
 
 

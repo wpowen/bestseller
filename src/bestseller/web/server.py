@@ -3267,6 +3267,9 @@ class WebTaskManager:
                         conception_hook_candidates = getattr(
                             conception_result, "hook_candidates", None
                         )
+                        conception_story_appeal = getattr(
+                            conception_result, "story_appeal", None
+                        )
                         progress(
                             "conception_complete",
                             {
@@ -3334,6 +3337,8 @@ class WebTaskManager:
                     conception_artifacts["concept_methodology"] = conception_methodology
                 if conception_hook_candidates:
                     conception_artifacts["hook_candidates"] = conception_hook_candidates
+                if conception_story_appeal:
+                    conception_artifacts["story_appeal"] = conception_story_appeal
                 if conception_brief:
                     conception_artifacts["commercial_brief"] = conception_brief
                 if conception_artifacts:

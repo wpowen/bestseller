@@ -1,0 +1,243 @@
+# 故事/大纲/简介 吸引力评估体系 · 单一真源配置
+# ---------------------------------------------------------------------------
+# 由 services/story_appeal.py 加载，驱动：
+#   - services/premise_appeal_judge.py  (故事吸引力 9 维，LLM)
+#   - services/blurb_appeal_gate.py      (简介点击力 10 维，确定性)
+# 设计：soft/additive。enabled=false → 整体跳过，构思产物字节级不变。
+# 题材：维度级 genre_aware 的判据靠 services/judge_genre_context + 下方 lexicons
+#       解析（canonicalize → 专属词库或 generic 兜底），达标线对所有题材同一把尺。
+# ---------------------------------------------------------------------------
+
+enabled: true
+
+# 低于 floor_grade 才触发 finalize 重生；有界、保优、fail-open。
+regeneration:
+  enabled: true
+  floor_grade: pass          # 仅当评级跌到 "pass"(最差档) 才重生
+  max_attempts: 2            # 重生上限（不含首次）
+  keep_best: true            # 永远保留得分最高的变体，绝不变差
+  feedback_token_budget: 600 # 注入 finalize 的改进反馈截断上限
+
+# 评级档位（score_100 → grade）。对标 script coverage 三档。
+grades:
+  recommend: 80              # 强签
+  consider: 65               # 可签/需改
+  # < consider → pass（毙）
+
+# 达标（meets_bar）= 榜单级门槛；每题材同一把尺。
+# blurb_min=68：确定性简介 gate 是保守代理，跨题材的真·强简介聚在 ~70-84，
+# 弱稿/AI腔稿在 ~53，68 把两者干净分离（>15 分余量）；premise 由 LLM 判官认证。
+meets_bar:
+  premise_min: 75
+  blurb_min: 68
+  forbid_gated_to_pass: true # gating 封顶到 pass 即视为不达标
+
+# ---------------------------------------------------------------------------
+# 故事吸引力 9 维 rubric（premise_appeal）
+#   weight_long / weight_short：长篇/短篇权重（和=100）
+#   genre_aware：判据是否随题材切换（词库）
+#   gate_below / gate_cap：一票否决——该维 < gate_below 时把总评封顶到 gate_cap
+# ---------------------------------------------------------------------------
+premise_rubric:
+  concept_strength:
+    label: 概念强度/卖点
+    weight_long: 16
+    weight_short: 17
+    genre_aware: false
+    gate_below: 2
+    gate_cap: pass
+    high: 一句话可说清「主角+困境+目标+钩子」且这句本身钩人；含 What-if/反常识；自带紧迫冲突
+    low: 三句话才说清；只有设定没冲突；卖点是"文笔好/世界观宏大"
+  novelty:
+    label: 新颖度/差异化
+    weight_long: 13
+    weight_short: 13
+    genre_aware: true
+    high: 对该题材常见套路有反转或新组合；可指出"没人这么写"；跨题材嫁接
+    low: 与头部高度雷同；纯模仿；设定已写烂（命中该题材红海套路）
+  conflict_stakes:
+    label: 冲突强度/赌注
+    weight_long: 11
+    weight_short: 12
+    genre_aware: false
+    high: 有清晰对抗力量；失败代价严重(命/亲人/尊严)；冲突开篇即现
+    low: 无明确反派；代价模糊；冲突登场晚
+  emotional_value:
+    label: 情绪价值/爽感
+    weight_long: 12
+    weight_short: 13
+    genre_aware: true
+    high: 说得清"目标读者图什么"；爽点有蓄-放结构；情绪曲线清晰且匹配题材
+    low: 说不清爽在哪；只有"主角强"无铺垫；与读者期待错配
+  hook_suspense:
+    label: 钩子/悬念
+    weight_long: 12
+    weight_short: 15
+    genre_aware: false
+    gate_below: 2
+    gate_cap: consider
+    high: 第一章即强钩子；大纲可见周期性卡点序列；结尾留扣
+    low: 开篇大段铺垫钩子迟到；通篇无悬念
+  immersion:
+    label: 代入感/主角魅力
+    weight_long: 9
+    weight_short: 9
+    genre_aware: true
+    high: 有可共情的欲望/缺失；身份便于代入；性格鲜明主动
+    low: 动机模糊/被动；人设扁平；纯概念无人物
+  sustainability:
+    label: 可持续性/长线引擎
+    weight_long: 11
+    weight_short: 4
+    genre_aware: false
+    gate_below: 2
+    gate_cap: consider
+    gate_long_only: true       # 仅长篇触发（短篇此维近忽略）
+    high: 自带可重复触发的冲突机制(升级/任务循环/关系网)；有阶段钩子
+    low: 一锤子买卖，三章后没东西写；明显会卡文
+  audience_fit:
+    label: 目标读者匹配/商业适配
+    weight_long: 8
+    weight_short: 8
+    genre_aware: true
+    gate_below: 2
+    gate_cap: consider
+    high: 能说清"写给谁、放哪个分类、对标哪两本近年成功作"；男女频不串味
+    low: 四不像；标签互相打架；找不到对标作
+  structure_pace:
+    label: 结构与节奏
+    weight_long: 8
+    weight_short: 9
+    genre_aware: false
+    high: 有清晰转折点；密度高详略分明
+    low: 流水账无转折；开篇拖沓注水
+
+# ---------------------------------------------------------------------------
+# 简介点击力 10 维 rubric（blurb_appeal，确定性 0-5）
+#   weight：权重（和=100）。前 5 项为核心命门，权重最高。
+# ---------------------------------------------------------------------------
+blurb_rubric:
+  selling_triad:   { label: 卖点三要素,   weight: 16 }   # 身份+冲突+代价
+  hook_strength:   { label: 钩子强度,     weight: 15 }   # 首句短+三选二
+  differentiation: { label: 差异化独家,   weight: 12 }   # 非通用套话/低红海重叠
+  anti_template:   { label: 原创性反模板, weight: 11 }   # AI腔黑名单+标点克制
+  open_loop_end:   { label: 结尾留钩,     weight: 10 }   # 末句悬念非剧透
+  genre_signal:    { label: 题材信号一致, weight: 9 }    # 书名/标签/简介同源
+  concreteness:    { label: 代入具体化,   weight: 9 }    # 主角名/代号+具体细节
+  emotion_charge:  { label: 情绪强度,     weight: 8 }    # 高唤起情绪前置
+  adjective_thrift: { label: 形容词节制,  weight: 5 }    # 形容词比值
+  length_format:   { label: 长度排版合规, weight: 5 }    # 平台带+分段
+
+# 平台简介字数带（CJK 字符数）。未匹配平台用 default。
+platform_blurb:
+  default:        { min: 80,  max: 220 }
+  番茄小说:        { min: 80,  max: 130 }
+  fanqie:         { min: 80,  max: 130 }
+  起点中文网:      { min: 140, max: 220 }
+  qidian:         { min: 140, max: 220 }
+  七猫:           { min: 80,  max: 140 }
+  晋江文学城:      { min: 120, max: 220 }
+
+# ---------------------------------------------------------------------------
+# 词库（lexicons）。generic 为兜底；canonical 题材键覆盖则叠加/替换。
+# 题材键 = genre_taxonomy 的 canonical key（xuanhuan/urban/xianxia/scifi/...）。
+# ---------------------------------------------------------------------------
+lexicons:
+  generic:
+    # 高唤起情绪词（驱动点击；T3）
+    high_arousal_emotion:
+      [退婚, 背叛, 重生, 逆袭, 打脸, 复仇, 灭门, 被灭, 血债, 血海, 杀机, 死局,
+       死期, 仇人, 仇家, 觉醒, 穿越, 反杀, 绝境, 死亡, 崩溃, 暴怒, 震撼, 逆天,
+       碾压, 翻盘, 黑化, 决裂, 生死, 屈辱, 雪耻, 雪恨, 夺回, 跪, 封神, 苟, 报应]
+    # 身份/标签词（卖点要素①；T4 代入）
+    identity_markers:
+      [废物, 废柴, 废体, 天才, 神医, 战神, 强者, 大佬, 反派, boss, 女帝, 王者,
+       最强, 赘婿, 弃女, 弃子, 弃徒, 庶女, 真千金, 假千金, 首富, 影帝, 总裁,
+       兵王, 龙王, 帝师, 散修, 杂役, 凡人, 刑警, 侦探, 幸存者, 罪人, 囚徒, 主角]
+    # 冲突动词/事件（卖点要素②；T7 in medias res）
+    conflict_verbs:
+      [被赶, 被退, 被弃, 被害, 被困, 被夺, 被踩, 被骗, 被判, 背刺, 算计, 围杀,
+       追杀, 追命, 围猎, 挑衅, 决战, 对决, 反击, 揭穿, 夺回, 守护, 逃亡, 越狱,
+       灭门, 灭村, 觉醒, 签到, 系统觉醒, 羞辱, 当众, 逐出, 流放, 殉职]
+    # 反转/逆袭预告（T5 愿望预告）
+    reversal_markers:
+      [没想到, 殊不知, 然而, 直到, 却不知, 谁知, 系统, 觉醒, 重生, 隐藏, 真实身份,
+       一夜之间, 摇身一变, 扮猪吃虎, 真面目, 实际上, 真相, 而是, 竟是]
+    # 代价/损失张力（卖点要素③；T6）
+    cost_markers:
+      [否则, 三天后, 三日内, 不然, 代价, 反噬, 命换, 一旦, 若是, 倒计时, 必死,
+       只剩, 最后, 仅有, 押上, 赌上, 失去, 牺牲, 性命, 时限]
+    # 好奇缺口/悬念标志（T1/T10；结尾留钩）
+    curiosity_markers:
+      [为何, 为什么, 究竟, 到底, 谁, 何人, 何去何从, 会不会, 能否, 如何, 是否,
+       什么, 难道, 竟然, 居然, 神秘, 离奇, 诡异, 反常, "?", "？"]
+    # 结局泄露词（结尾不该出现；剧透扣分）
+    spoiler_markers:
+      [大结局, 终成眷属, 终于在一起, 走到最后, 圆满, 报仇成功, 终成霸主, 修成正果,
+       happy ending, 从此幸福, 终获新生, 大功告成]
+    # AI腔/模板句黑名单（反模板扣分）
+    template_blacklist:
+      [本以为, 却没想到, 何去何从, 因机缘巧合, 命运的齿轮, 殊不知这, 一段, 的故事,
+       谱写, 演绎, 一场, 之旅, 究竟会, 让我们拭目以待, 敬请期待, 各位读者, 读者朋友,
+       这一切的背后, 命运的安排, 缘分, 注定, 邂逅, 不平凡, 传奇的一生]
+    # 通用代入锚点（题材未覆盖时用）
+    reader_anchors: [普通人, 小人物, 不甘, 不公, 被看轻, 被低估, 渴望, 改变命运]
+
+  xuanhuan:   # 玄幻
+    red_ocean_tropes:
+      [废柴觉醒, 退婚流, 天才陨落, 上古血脉, 神秘老爷爷, 戒指空间, 万年灵药,
+       家族弃子, 三年之约, 神级功法, 系统签到, 吞噬进化]
+    emotion_palette: [升级爽, 碾压, 打脸, 征服, 热血, 逆袭]
+    reader_anchors: [被低估的少年, 家族弃子, 蝼蚁逆天]
+    golden_finger_forms: [体质, 系统, 逆天功法, 吞噬, 进化, 鸿蒙]
+
+  urban:      # 都市
+    red_ocean_tropes:
+      [赘婿逆袭, 神医下山, 龙王回归, 兵王回都市, 退婚打脸, 老婆是女总裁,
+       签到系统, 神豪系统, 岳父看不起, 扮猪吃虎首富]
+    emotion_palette: [打脸, 身份反转, 马甲, 装逼, 解气, 财富]
+    reader_anchors: [上门女婿, 落魄保安, 被轻视的人, 隐藏的大佬]
+    golden_finger_forms: [隐藏战力, 神豪系统, 透视, 医术, 学习系统, 鉴宝]
+
+  xianxia:    # 仙侠
+    red_ocean_tropes:
+      [废灵根逆袭, 散修崛起, 仙门弃徒, 拍卖会捡漏, 老祖转世, 上古传承,
+       炉鼎流, 万界第一, 一剑破万法]
+    emotion_palette: [求道, 长生, 侠义, 意境, 飞升, 仙缘]
+    reader_anchors: [凡人逆天而修, 蝼蚁求长生, 散修]
+    golden_finger_forms: [法器, 传承, 道种, 功法, 灵根, 仙缘]
+
+  scifi:      # 科幻
+    red_ocean_tropes:
+      [星际战争模板, 末日丧尸, 机甲驾驶, 系统流, 时间循环烂用, AI觉醒套路]
+    emotion_palette: [智性奇观, 降维, 设定解谜, 硬核, 文明跃迁]
+    reader_anchors: [普通人卷入宏大设定, 文明火种]
+    golden_finger_forms: [科技, 规则系统, 进化, 黑科技, 数据化]
+
+  apocalypse: # 末世
+    red_ocean_tropes:
+      [丧尸围城, 末日重生, 物资争夺, 异能觉醒, 避难所基地流, 进化吞噬]
+    emotion_palette: [生存, 绝境反杀, 囤货爽, 进化, 守护]
+    reader_anchors: [末世重生者, 手握先知, 普通幸存者]
+    golden_finger_forms: [异能觉醒, 空间, 进化, 末日系统, 先知]
+
+  pure-love:  # 纯爱/言情
+    red_ocean_tropes:
+      [霸总爱上我, 替身文学, 契约婚姻, 失忆梗, 豪门恩怨, 误会流, 重生复仇前任]
+    emotion_palette: [被爱, 被珍视, 双向奔赴, 安全感, 失而复得, 掌控感]
+    reader_anchors: [被背叛的弱势者, 错付真心, 重活一世]
+    golden_finger_forms: [重生记忆, 身份反转, 读心, 系统, 空间]
+
+  female-growth: # 女频成长/大女主
+    red_ocean_tropes:
+      [真假千金, 宅斗宫斗, 重生打脸渣男, 复仇虐渣, 团宠文, 马甲大佬]
+    emotion_palette: [独立, 掌控, 打脸渣, 团宠, 事业逆袭, 被珍视]
+    reader_anchors: [被欺压的庶女, 觉醒的大女主, 重生归来者]
+    golden_finger_forms: [重生记忆, 身份反转, 隐藏身份, 系统, 异能]
+
+  suspense:   # 悬疑
+    red_ocean_tropes:
+      [连环杀手套路, 密室杀人, 灵异探案, 失忆查案, 双重人格烂用]
+    emotion_palette: [悬念, 烧脑, 反转, 战栗, 解谜快感]
+    reader_anchors: [卷入命案的普通人, 背负秘密的侦探]
+    golden_finger_forms: [超常感知, 规则怪谈, 读心, 时间回溯, 侧写]

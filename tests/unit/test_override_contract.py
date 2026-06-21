@@ -321,8 +321,9 @@ class TestWriteGateIntegration:
         store = OverrideStore()
         store.create(_contract(id=None, chapter_no=15, due_chapter=20))
         lookup = store.as_lookup("p1")
-        # Chapter > warmup (10) so LINE_GAP_OVER base mode is block; with the
-        # active override covering ch15–20 it should downgrade to audit_only.
+        # 2026-06-21: LINE_GAP_OVER is now audit_only at the base layer, so
+        # this resolves to audit_only with or without the override. The active
+        # override covering ch15–20 is still exercised by the lookup path.
         mode = resolve_mode(
             "LINE_GAP_OVER",
             DEFAULT_GATE_CONFIG,

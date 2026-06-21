@@ -393,15 +393,72 @@ class SignatureDensityResult:
     hits: tuple[tuple[str, int], ...]
 
 
+# Quote glyphs that wrap a verbal tic inside a behavioral description:
+# straight ' " and CJK ‘ ’ “ ” 「」『』.
+_SIGNATURE_QUOTE_CHARS = "'\"‘’“”「」『』"
+_SIGNATURE_QUOTE_RE = re.compile(
+    f"[{_SIGNATURE_QUOTE_CHARS}]([^{_SIGNATURE_QUOTE_CHARS}]{{2,12}})[{_SIGNATURE_QUOTE_CHARS}]"
+)
+_SIGNATURE_DESC_SEPARATORS = "，,。、；;：:（）()"
+
+
+def signature_match_anchors(word: str) -> list[str]:
+    """Pull the literally-matchable tokens out of a signature descriptor.
+
+    Character-voice DNA is frequently a behavioral *description*
+    ("失明前会用指腹轻触左眼眶") rather than a literal verbal tic, so a raw
+    substring match scores zero and the density metric reports a misleading
+    failure. We extract the parts that CAN appear verbatim in prose:
+
+      * quoted segments are the actual tic — '编译失败' / '按规矩' / 「过期作废」
+      * a short bare phrase (≤6 chars, no clause separators) is itself the tic
+        ("攥钥匙链")
+      * a long unquoted description yields no anchor (genuinely unmatchable)
+    """
+
+    if not word:
+        return []
+    quoted = [q.strip() for q in _SIGNATURE_QUOTE_RE.findall(word) if q.strip()]
+    if quoted:
+        return quoted
+    stripped = word.strip()
+    if 0 < len(stripped) <= 6 and not any(
+        sep in stripped for sep in _SIGNATURE_DESC_SEPARATORS
+    ):
+        return [stripped]
+    return []
+
+
 def measure_signature_density(
     text: str,
     *,
     signature_words: tuple[str, ...],
     threshold: int = 10,
 ) -> SignatureDensityResult:
-    """Sum the occurrences of a character's signature vocabulary in ``text``."""
+    """Sum the occurrences of a character's signature vocabulary in ``text``.
 
-    hits = keyword_hits(text, signature_words)
+    Signature words may be literal tics or behavioral descriptions; we match
+    on the extracted :func:`signature_match_anchors` so a quoted tic embedded
+    in a description still counts. When the whole signature set yields no
+    matchable anchor (all pure descriptions) the metric is unmeasurable, so we
+    report ``passed=True`` rather than a false zero-hit failure.
+    """
+
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for word in signature_words:
+        for anchor in signature_match_anchors(word):
+            if anchor not in seen:
+                seen.add(anchor)
+                anchors.append(anchor)
+    if not anchors:
+        return SignatureDensityResult(
+            total_hits=0,
+            threshold=threshold,
+            passed=True,
+            hits=(),
+        )
+    hits = keyword_hits(text, tuple(anchors))
     total = sum(count for _, count in hits)
     return SignatureDensityResult(
         total_hits=total,

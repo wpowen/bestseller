@@ -441,11 +441,15 @@ class TestWriteGateLineGapWarmup:
         for ch in range(1, 11):
             assert resolve_mode("LINE_GAP_OVER", chapter_no=ch) == "audit_only"
 
-    def test_line_gap_over_blocks_after_warmup(self) -> None:
+    def test_line_gap_over_is_advisory_after_warmup(self) -> None:
+        # 2026-06-21: LINE_GAP_OVER demoted block → audit_only. Line-monotony
+        # is advisory (nudge + telemetry), never a hard block, so it can no
+        # longer brick a theme-heavy / under-covered-genre book. It stays
+        # audit_only at every chapter, warmup or not.
         from bestseller.services.write_gate import resolve_mode
 
-        assert resolve_mode("LINE_GAP_OVER", chapter_no=11) == "block"
-        assert resolve_mode("LINE_GAP_OVER", chapter_no=42) == "block"
+        assert resolve_mode("LINE_GAP_OVER", chapter_no=11) == "audit_only"
+        assert resolve_mode("LINE_GAP_OVER", chapter_no=42) == "audit_only"
 
     def test_line_gap_warn_never_blocks(self) -> None:
         from bestseller.services.write_gate import resolve_mode

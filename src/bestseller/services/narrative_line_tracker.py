@@ -151,6 +151,12 @@ _OVERT_MARKERS_ZH: tuple[str, ...] = (
     "擂台", "挑战", "赛事", "比试",
     "敌人", "对手", "仇人", "仇敌",
     "打脸", "反杀", "反击", "秒杀",
+    # Cross-genre surface-action markers (2026-06-21) — system-lit /
+    # urban / sci-fi / cyber-cultivation progression beats, so the tracker
+    # is no longer blind to non-xianxia books.
+    "系统", "面板", "副本", "通关", "升级", "突破", "晋升",
+    "出手", "动手", "交锋", "压制", "黑客", "入侵", "破解",
+    "编译", "代码",
 )
 
 _UNDERCURRENT_MARKERS_ZH: tuple[str, ...] = (
@@ -160,6 +166,11 @@ _UNDERCURRENT_MARKERS_ZH: tuple[str, ...] = (
     "阴谋", "密谋", "谋划", "布局",
     "情报", "眼线", "密探",
     "背后", "黑手", "内鬼",
+    # Cross-genre institutional / scheme markers (2026-06-21) — modern
+    # corporate / official power structures behind the plot.
+    "公司", "集团", "财阀", "组织", "高层", "官方",
+    "监管", "审计", "调查", "算计", "圈套", "交易",
+    "把柄", "权限",
 )
 
 _HIDDEN_MARKERS_ZH: tuple[str, ...] = (
@@ -169,6 +180,10 @@ _HIDDEN_MARKERS_ZH: tuple[str, ...] = (
     "禁忌", "禁术", "秘辛", "隐秘",
     "神域", "仙界", "洪荒",
     "梦境", "回忆", "幻象",
+    # Cross-genre lore / origin / buried-system markers (2026-06-21) —
+    # the deep structure a sci-fi / system-lit book hides under the surface.
+    "协议", "源码", "底层", "档案", "数据", "程序",
+    "隐藏", "伏笔", "身世", "旧事", "真身",
 )
 
 _CORE_AXIS_MARKERS_ZH: tuple[str, ...] = (
@@ -178,6 +193,9 @@ _CORE_AXIS_MARKERS_ZH: tuple[str, ...] = (
     "坚守", "坚持", "放下",
     "活着", "意义", "价值",
     "自我", "成为", "超越",
+    # Cross-genre values / stakes markers (2026-06-21) — the moral axis
+    # of modern / institutional-conflict stories (order vs. autonomy).
+    "规则", "秩序", "底线", "尊严", "退路", "守护", "自由", "人性",
 )
 
 _OVERT_MARKERS_EN: tuple[str, ...] = (
@@ -496,6 +514,25 @@ def report_gaps(
         if last_seen.get(dom, -1) < ch:
             last_seen[dom] = ch
 
+    # Global no-signal net (2026-06-21): when the classifier produced ZERO
+    # usable dominant lines across the whole window — e.g. a genre the marker
+    # lexicon doesn't cover, so every chapter classifies as None — every gap
+    # would read "dormant since chapter 0" and the tracker would emit four
+    # meaningless rotation hints per chapter forever. That carries no
+    # information, so we keep all gaps ``ok`` and skip the nudge. The net
+    # self-heals the moment any chapter classifies. (LINE_GAP_OVER is also
+    # advisory at the gate layer — see write_gate — so this never blocks; the
+    # net only suppresses noise.)
+    no_signal = not last_seen
+    if no_signal:
+        logger.info(
+            "narrative_line_tracker: project %s has no classified history "
+            "through chapter %d — LINE_GAP suppressed (marker lexicon likely "
+            "does not cover this genre)",
+            project_id,
+            current_chapter,
+        )
+
     gaps: list[LineGap] = []
     for line_id in CANONICAL_LINES:
         threshold = int(cfg.strand_max_gap.get(line_id, 0) or 0)
@@ -507,7 +544,9 @@ def report_gaps(
         else:
             gap = max(0, int(current_chapter) - int(last_ch))
 
-        if threshold <= 0:
+        if no_signal:
+            severity = "ok"
+        elif threshold <= 0:
             severity = "ok"
         elif gap > threshold:
             severity = "over"

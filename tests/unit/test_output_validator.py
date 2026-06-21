@@ -321,6 +321,35 @@ class TestNamingConsistencyCheck:
         violations = check.run(text, _ctx_with_allowed(inv))
         assert violations == []
 
+    def test_zh_common_word_surname_cluster_suppressed(self) -> None:
+        # 2026-06-21 cross-candidate guard: a leading char (here 水) that spawns
+        # ≥3 distinct "names" is a common word, not a surname. Cyber-cultivation
+        # ch11 produced 水波纹/水泥板/水往下/水洇湿 — all prose, none real names.
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("沈砺", "段爝"))
+        text = (
+            "水波纹在井口荡开，水波纹又散了。"
+            "水泥板压住井盖，水泥板边缘裂开。"
+            "水往下渗进缝隙，水往下流到脚边。"
+            "水洇湿了袖口，水洇湿了半张纸。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
+    def test_zh_role_suffix_with_unknown_surname_not_flagged(self) -> None:
+        # 2026-06-21: honorific address (surname + 师傅/科长/…) is exactly the
+        # "用职务/身份称谓" form the gate recommends — never a rogue name, even
+        # when the bare surname is not in the pool. ch1 produced 周师傅×7.
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("沈砺", "段爝"))
+        text = (
+            "周师傅把闸门合上，周师傅没有回头。"
+            "周师傅又交代了一句，周师傅转身离开。"
+            "赵科长在登记表上签字，赵科长把表推回来。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
     def test_zh_qiyouhun_prose_fragments_do_not_create_rogue_names(self) -> None:
         check = NamingConsistencyCheck()
         inv = _zh_invariants_with_pool(("苏砚", "沈青鸾"))

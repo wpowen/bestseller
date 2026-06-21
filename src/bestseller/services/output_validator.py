@@ -750,6 +750,12 @@ _ZH_ROLE_SUFFIXES: tuple[str, ...] = (
     "城主", "宗主", "门主", "教主", "仙子", "仙君", "上仙",
     # Honorifics
     "大人", "老爷", "奶奶", "爷爷",
+    # Modern / institutional titles (2026-06-21) — urban, sci-fi, system-lit
+    # and cyber-cultivation books address minor characters by office, e.g.
+    # "周科长" / "赵队长" / "李警官". These are职务称谓, never invented names.
+    "科长", "处长", "局长", "部长", "主任", "队长", "组长", "组员",
+    "经理", "总监", "科员", "警官", "探长", "院长", "厂长", "校长",
+    "所长", "站长", "班长", "委员", "书记", "总裁", "董事",
 )
 
 
@@ -1057,12 +1063,14 @@ class NamingConsistencyCheck:
             cleaned = _trim_zh_name_candidate(candidate)
             if cleaned is None:
                 continue
-            # Role-suffix aware lookup: "苏师姐" → allow if "苏" is in pool
-            # (single-character root is too ambiguous to trust for *new*
-            # rogue detection — we only use this path to *accept*, never
-            # to promote a single char into the counter).
+            # Role-suffix forms ("周师傅", "苏师姐", "钱管事", "李科长") are
+            # honorific ADDRESS, not invented full names — they are exactly the
+            # "用职务/身份称谓" form this gate recommends as the fix. Flagging
+            # them as rogue names and telling the author to delete them is
+            # self-contradictory, so we never count a role-suffix candidate,
+            # whether or not the bare surname is in the pool. (2026-06-21)
             role_stripped = _strip_role_suffix(cleaned)
-            if role_stripped and _is_allowed_name(role_stripped, allowed):
+            if role_stripped is not None:
                 continue
             # Leading-conjunction aware lookup: "和林鸢" → "林鸢" → allow
             # if "林鸢" is in pool. 和 as a conjunction is vastly more
@@ -1073,6 +1081,26 @@ class NamingConsistencyCheck:
             if _is_allowed_name(cleaned, allowed):
                 continue
             counts[cleaned] = counts.get(cleaned, 0) + 1
+
+        # Cross-candidate "common-word surname" guard (2026-06-21).
+        # The single-char surname regex mis-reads ordinary words that merely
+        # begin with a surname-homograph character (水/成/方/计/元 …) as names:
+        # 水往下 / 水洇湿 / 水波纹 / 水泥板 all "start with 水". A real
+        # out-of-pool cast name is stable; a common word spawns many different
+        # trailing fragments. When ONE leading character produces ≥ 3 distinct
+        # rogue candidates it is overwhelmingly a common word, not a surname —
+        # drop the whole group. Real same-surname cast are in the pool and
+        # filtered out above, so a chapter almost never yields 3+ unplanned
+        # same-surname names; the rare miss is cheap (this check is audit_only)
+        # and far better than telling the writer to delete real prose.
+        if counts:
+            by_lead: dict[str, list[str]] = {}
+            for name in counts:
+                by_lead.setdefault(name[0], []).append(name)
+            for names in by_lead.values():
+                if len(names) >= 3:
+                    for name in names:
+                        counts.pop(name, None)
         return counts
 
     @staticmethod

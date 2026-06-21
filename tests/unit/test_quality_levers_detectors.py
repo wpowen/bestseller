@@ -176,6 +176,32 @@ def test_measure_signature_density_fails_below_threshold() -> None:
     assert result.passed is False
 
 
+def test_measure_signature_density_extracts_quoted_anchor() -> None:
+    # The DNA is a behavioral description, but the verbal tic is quoted inside
+    # it; the detector must match the quoted token, not the whole phrase.
+    text = "他盯着报错，低声说了句编译失败，又敲了敲桌面。编译失败，他又想。"
+    result = measure_signature_density(
+        text,
+        signature_words=("用/* */句式自嘲,习惯以'编译失败'形容情绪崩溃",),
+        threshold=2,
+    )
+    assert result.total_hits == 2
+    assert result.passed is True
+
+
+def test_measure_signature_density_pure_description_is_unmeasurable() -> None:
+    # No quoted tic and too long to be a literal phrase → unmatchable. The
+    # metric must not report a false zero-hit failure.
+    text = "他走进房间，坐下，望着窗外。"
+    result = measure_signature_density(
+        text,
+        signature_words=("失明前会用指腹轻触左眼眶,像在调试一个还在报错的老脚本",),
+        threshold=2,
+    )
+    assert result.total_hits == 0
+    assert result.passed is True
+
+
 def test_scan_forbidden_voice_words_flags_voice_dna_banned_terms() -> None:
     result = scan_forbidden_voice_words(
         "我觉得这件事肯定没问题。",

@@ -149,8 +149,18 @@ DEFAULT_GATE_CONFIG: GateConfig = GateConfig(
         "BREATHING_RHYTHM_VIOLATION": "audit_only",
         "WIN_LOSS_MONOTONE": "audit_only",
         "CASE_TYPE_MONOTONE": "audit_only",
-        # Phase B1 — narrative-line rotation
-        "LINE_GAP_OVER": "block",
+        # Phase B1 — narrative-line rotation.
+        # 2026-06-21: demoted LINE_GAP_OVER block → audit_only. Line-monotony
+        # is a craft signal, not a correctness defect, and hard-blocking on it
+        # bricked whole books: a theme-heavy / low-action book (or any genre
+        # the classifier's marker lexicon under-covers) leaves a layer dormant
+        # past budget and every chapter from ch11 on fails the gate, with no
+        # way for the writer to "rotate back" to a layer the story doesn't use.
+        # The regen loop already treats LINE_GAP_OVER as soft; this makes the
+        # gate consistent. The rotation NUDGE + audit telemetry still fire, so
+        # the author is still guided toward variety — it just never freezes the
+        # pipeline. (The ch≤10 warmup demote below is now subsumed but kept.)
+        "LINE_GAP_OVER": "audit_only",
         "LINE_GAP_WARN": "audit_only",
     },
     default="audit_only",

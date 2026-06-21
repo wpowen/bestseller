@@ -187,21 +187,31 @@ def _build_system_prompt(rubric: dict[str, Any], genre_context: Any, language: s
         genre_block = ""
     if is_en:
         head = (
-            "You are a top web-novel acquisitions editor. Judge whether this "
-            "STORY IDEA is compelling enough that readers click and keep reading. "
-            "Score each dimension 0-5 (decimals ok). Output STRICT JSON only."
+            "You are an experienced, critical web-novel acquisitions editor. Judge "
+            "ONLY what is concretely on the page, never the potential. Be evidence-"
+            "based: cite the text. Reserve 4-5 for a genuine, specific strength; give "
+            "0-2 to vague / conflict-free / interchangeable text. Output STRICT JSON."
         )
     else:
         head = (
-            "你是顶级网文签约主编。判断这个【故事创意/设定】是否足够吸引人——"
-            "读者会不会忍不住点进来并追读。务必按榜单级标准、且按本题材的爽点逻辑评判，"
-            "不要因题材不同而误判冲突类型。每个维度打 0-5 分（可小数）。只输出严格 JSON。"
+            "你是经验丰富、眼光挑剔的网文签约主编。只评判文本里【实际写出来的东西】，"
+            "不脑补潜力，依据要引用原文。4-5 留给真正具体的强点；空泛/无冲突/换个题材"
+            "也能套用的描述给 0-2。不要因题材不同而误判冲突类型。每维 0-5。只输出严格 JSON。"
         )
+    anchors = (
+        "\n# 评分锚点（防止整体偏高或偏低，请据此标定）\n"
+        "- 0-1：空泛、纯设定罗列、无主角欲望/无冲突（如「少年踏上修炼之路最终成为强者」）。\n"
+        "- 2：有方向但平庸、卖点说不清、任何同题材都能套。\n"
+        "- 3：合格、能立住，但钩子/差异化普通。\n"
+        "- 4：有具体且较新的钩子 + 清晰冲突 + 代价，读者会想点。\n"
+        "- 5：一句话即抓人、强差异化、自带追读引擎（对标该题材头部）。\n"
+        "rationale 须引用原文具体词句；说不清『读者图什么/凭什么追』时该维≤2。"
+    )
     return (
-        f"{head}\n\n# 评分维度（rubric）\n{rubric_block}\n\n{genre_block}\n\n"
+        f"{head}\n\n# 评分维度（rubric）\n{rubric_block}\n{anchors}\n\n{genre_block}\n\n"
         "# 输出格式（严格 JSON）\n"
         '{"dimension_scores": {"concept_strength": 0-5, ...九个维度全给},'
-        ' "rationale": {"<dim>": "一句话依据"},'
+        ' "rationale": {"<dim>": "引用文本具体依据"},'
         ' "suggestions": ["针对最弱项的具体改进，3-5 条"],'
         ' "overall_comment": "一句话总评"}'
     )

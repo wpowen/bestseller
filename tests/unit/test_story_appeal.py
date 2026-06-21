@@ -80,19 +80,35 @@ def test_grade_from_total_ladder():
 
 
 @pytest.mark.unit
-def test_meets_bar_requires_both_premise_and_blurb_and_no_pass_gate():
+def test_meets_bar_is_blurb_anchored_premise_advisory():
+    # Competitor-anchored design: 达标 gates on the reproducible deterministic
+    # blurb gate (blurb_min); the LLM premise score is ADVISORY (premise_min=0),
+    # because its absolute value proved unreliable in calibration.
     cfg = load_story_appeal_config()
-    good_premise = PremiseAppealVerdict(total=82, grade="recommend", gated_grade="recommend")
+
+    strong_blurb = BlurbAppealVerdict(total=78, grade="consider")
+    weak_blurb = BlurbAppealVerdict(total=55, grade="pass")
+
+    # blurb clears bar → 达标, regardless of the (advisory) premise number
+    assert meets_bar(PremiseAppealVerdict(total=82, grade="recommend", gated_grade="recommend"),
+                     strong_blurb, cfg) is True
+    assert meets_bar(PremiseAppealVerdict(total=40, grade="pass", gated_grade="pass"),
+                     strong_blurb, cfg) is True  # low LLM premise must NOT block (advisory)
+
+    # blurb below bar → not 达标, even with a high (advisory) premise number
+    assert meets_bar(PremiseAppealVerdict(total=90, grade="recommend", gated_grade="recommend"),
+                     weak_blurb, cfg) is False
+
+
+@pytest.mark.unit
+def test_meets_bar_premise_min_enforced_when_configured():
+    # If an operator opts premise back into the hard gate, it is honoured.
+    cfg = {"meets_bar": {"blurb_min": 65, "premise_min": 75, "forbid_gated_to_pass": False}}
     good_blurb = BlurbAppealVerdict(total=78, grade="consider")
-    assert meets_bar(good_premise, good_blurb, cfg) is True
-
-    # premise below bar
-    low_premise = PremiseAppealVerdict(total=60, grade="pass", gated_grade="pass")
-    assert meets_bar(low_premise, good_blurb, cfg) is False
-
-    # gated to pass despite high total
-    gated = PremiseAppealVerdict(total=82, grade="recommend", gated_grade="pass")
-    assert meets_bar(gated, good_blurb, cfg) is False
+    assert meets_bar(PremiseAppealVerdict(total=80, grade="recommend", gated_grade="recommend"),
+                     good_blurb, cfg) is True
+    assert meets_bar(PremiseAppealVerdict(total=60, grade="pass", gated_grade="pass"),
+                     good_blurb, cfg) is False
 
 
 @pytest.mark.unit

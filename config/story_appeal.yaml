@@ -25,12 +25,18 @@ grades:
   # < consider → pass（毙）
 
 # 达标（meets_bar）= 榜单级门槛；每题材同一把尺。
-# blurb_min=68：确定性简介 gate 是保守代理，跨题材的真·强简介聚在 ~70-84，
-# 弱稿/AI腔稿在 ~53，68 把两者干净分离（>15 分余量）；premise 由 LLM 判官认证。
+# ── 竞品锚定校准（scripts/calibrate_appeal_against_bestsellers.py，跨家族 DeepSeek 判官）──
+# 对真实爆款(诡秘/凡人/斗破/赘婿/全职/大奉/亵渎/庆余年/诛仙/师兄)与烂稿/AI稿实测：
+#   * 确定性 blurb gate：真爆款 vs 烂稿 Δ=+12.2，可复现、零家族偏见 → 稳定信号。
+#     烂稿 blurb 最高 63.9，现代爆款 70-79 → blurb_min=65 可全拒烂稿、纳现代强简介。
+#   * LLM premise 绝对分不可信：一句 prompt 改动即从「给烂稿 88」荡到「给凡人 38」，
+#     与 [[benchmark-arena-closure-plan]] 的 LitStyle 结论一致 → 仅作 advisory，不当达标硬标尺。
+# 因此达标由【确定性 blurb gate(竞品锚定 65) + 确定性 premise gating(可复现)】把关；
+# premise 的 LLM 绝对分仅展示/给批评建议。严谨的 LLM 用法=对真实竞品 pairwise 盲评胜率(下一步)。
 meets_bar:
-  premise_min: 75
-  blurb_min: 68
-  forbid_gated_to_pass: true # gating 封顶到 pass 即视为不达标
+  blurb_min: 65               # 竞品锚定：烂稿上限 63.9 之上、现代爆款之内
+  premise_min: 0              # advisory：LLM 绝对分不参与硬门（绝对值不可信）
+  forbid_gated_to_pass: false # gating/premise 评级仅 advisory（gated_grade 含 LLM 总分，不入硬门以保可复现）
 
 # ---------------------------------------------------------------------------
 # 故事吸引力 9 维 rubric（premise_appeal）

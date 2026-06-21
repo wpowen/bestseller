@@ -158,15 +158,30 @@ def meets_bar(
     blurb: BlurbAppealVerdict,
     config: dict[str, Any] | None = None,
 ) -> bool:
-    """Bestseller-grade bar — the same yardstick for every genre."""
+    """Bestseller-grade bar — anchored to REAL competitors, the same for every genre.
+
+    Calibrated against real bestseller blurbs vs slush with a cross-family judge
+    (``scripts/calibrate_appeal_against_bestsellers.py``):
+
+    * The deterministic blurb gate is the reproducible, bias-free, competitor-
+      anchored signal (real-hit vs slush Δ≈+12; slush tops out ~64) → it is the
+      hard gate (``blurb_min``, default 65).
+    * The LLM premise score is ADVISORY only — its *absolute* value is unreliable
+      (one prompt tweak swings it from rating slush 88 to rating a classic hit 38),
+      so by default it does not gate (``premise_min: 0``, ``forbid_gated_to_pass:
+      false``). The rigorous story-quality gate is pairwise-vs-competitor win-rate
+      (future work), not an absolute LLM number.
+    """
 
     cfg = config if config is not None else load_story_appeal_config()
     bar = cfg.get("meets_bar", {}) if isinstance(cfg, dict) else {}
-    premise_min = float(bar.get("premise_min", 75))
-    blurb_min = float(bar.get("blurb_min", 70))
-    forbid_gated_pass = bool(bar.get("forbid_gated_to_pass", True))
+    premise_min = float(bar.get("premise_min", 0))
+    blurb_min = float(bar.get("blurb_min", 65))
+    forbid_gated_pass = bool(bar.get("forbid_gated_to_pass", False))
 
-    if premise.total < premise_min or blurb.total < blurb_min:
+    if blurb.total < blurb_min:
+        return False
+    if premise_min > 0 and premise.total < premise_min:
         return False
     if forbid_gated_pass and premise.gated_grade == "pass":
         return False

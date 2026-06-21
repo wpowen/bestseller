@@ -15,8 +15,7 @@ Run (needs live LLM creds + DB; inject the stack's env):
 
 from __future__ import annotations
 
-# ruff: noqa: ANN201, RUF001, RUF003, E501, T201 — demo script.
-
+# ruff: noqa: ANN001, ANN201, ANN202, RUF001 — demo script.
 import asyncio
 import sys
 
@@ -82,7 +81,7 @@ async def main():
             result = await design_one(settings, genre_key, genre, sub_genre)
             met = _print_report(genre, result)
             results.append((genre, met))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"❌ {genre} 设计失败: {exc!r}")
             results.append((genre, None))
 

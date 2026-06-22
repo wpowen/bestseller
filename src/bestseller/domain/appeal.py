@@ -80,6 +80,33 @@ class BlurbAppealVerdict:
 
 
 @dataclass(frozen=True)
+class TitleAppealVerdict:
+    """Deterministic click-power verdict over the *title* alone (zero-token).
+
+    The blurb gate scores the synopsis; this scores whether the *book name*
+    itself is logical and click-worthy (a reader scanning a ranking list sees
+    the title first). Separate min so a weak title fails the bar on its own.
+    """
+
+    total: float                       # 0–100
+    grade: str                         # pass | consider | recommend
+    dimensions: tuple[AppealDimension, ...] = ()
+    findings: tuple[str, ...] = ()     # human-readable weak points
+    suggestions: tuple[str, ...] = ()  # concrete fixes
+    language: str = "zh"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total": round(float(self.total), 1),
+            "grade": self.grade,
+            "dimensions": [d.to_dict() for d in self.dimensions],
+            "findings": list(self.findings),
+            "suggestions": list(self.suggestions),
+            "language": self.language,
+        }
+
+
+@dataclass(frozen=True)
 class PremiseAppealVerdict:
     """Story-idea attractiveness verdict (LLM judge + deterministic features)."""
 
@@ -122,9 +149,10 @@ class StoryAppealReport:
     meets_bar: bool
     overall_grade: str
     canonical_genre: str = ""
+    title: TitleAppealVerdict | None = None  # None when title gate disabled (no-op)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "genre": self.genre,
             "sub_genre": self.sub_genre,
             "canonical_genre": self.canonical_genre,
@@ -132,8 +160,11 @@ class StoryAppealReport:
             "overall_grade": self.overall_grade,
             "premise": self.premise.to_dict(),
             "blurb": self.blurb.to_dict(),
-            "schema_version": "story-appeal-report.v1",
+            "schema_version": "story-appeal-report.v2",
         }
+        if self.title is not None:
+            out["title"] = self.title.to_dict()
+        return out
 
 
 __all__ = [
@@ -142,6 +173,7 @@ __all__ = [
     "BlurbAppealVerdict",
     "PremiseAppealVerdict",
     "StoryAppealReport",
+    "TitleAppealVerdict",
     "grade_rank",
     "min_grade",
 ]

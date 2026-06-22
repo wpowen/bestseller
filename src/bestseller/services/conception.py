@@ -1710,6 +1710,93 @@ async def _polish_blurb_synopsis(
         return synopsis, None
 
 
+async def _polish_title(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    title: str,
+    premise: str,
+    synopsis: str,
+    feedback: str,
+    genre: str,
+    sub_genre: str,
+    is_en: bool,
+    language: str,
+    config: dict[str, Any] | None = None,
+) -> tuple[str, UUID | None]:
+    """Focused title rewrite: LLM proposes N candidates, the zero-token title gate
+    picks the best-scoring one (generate-then-select). Fail-open: returns the
+    original title on any error / if no candidate beats it. Returns (title, run_id).
+    """
+
+    from bestseller.services.title_appeal_gate import evaluate_title_appeal  # noqa: PLC0415
+
+    if is_en:
+        system_prompt = (
+            "You are a veteran web-novel platform editor. Propose 6 CLICK-optimized "
+            "book titles per the fix notes. Output ONLY the titles, one per line, no "
+            "numbering, no quotes, no explanation."
+        )
+        user_prompt = (
+            f"Genre: {genre} ({sub_genre})\n[Premise]\n{premise}\n[Blurb]\n{synopsis}\n\n"
+            f"[Fix notes]\n{feedback}\n\nRules: short & punchy; coherent claim; "
+            "protagonist agency or strong concept collision; avoid red-ocean cliches. "
+            "Output 6 titles, one per line."
+        )
+    else:
+        system_prompt = (
+            "你是网文平台资深编辑。按【整改要求】给出 6 个【点击型】书名候选。"
+            "只输出书名，每行一个，不要编号、不要引号、不要解释。"
+        )
+        user_prompt = (
+            f"题材：{genre}（{sub_genre}）\n【故事内核】\n{premise}\n【简介】\n{synopsis}\n\n"
+            f"【整改要求】\n{feedback}\n\n硬性：4-12字、一眼可读完；必须通顺成立（别让抽象概念去"
+            "保护/放过人）；主角能动性或强概念碰撞；避开都市之/最强系统/绝世神医等烂大街壳。"
+            "输出 6 个书名，每行一个。"
+        )
+    try:
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="editor",
+                model_tier="strong",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                fallback_response=title,
+                prompt_template="conception_title_polish",
+                prompt_version="v1",
+                metadata={"language": language},
+                max_tokens_override=300,
+            ),
+        )
+        raw = (completion.content or "").strip()
+        run_id = completion.llm_run_id
+    except Exception:
+        logger.warning("title polish failed; keeping prior title", exc_info=True)
+        return title, None
+
+    # Parse candidates, strip numbering/quotes/punctuation artifacts.
+    candidates: list[str] = []
+    for ln in raw.splitlines():
+        c = ln.strip().strip("\"'“”‘’`").lstrip("0123456789.、）)·-—　 ").strip()
+        c = str(_sanitize_forbidden_default_motifs(c, is_en=is_en)).strip()
+        if c and c not in candidates:
+            candidates.append(c)
+    candidates.append(title)  # always keep the incumbent in the running
+
+    # Zero-token gate selects the best-scoring candidate (no extra LLM cost).
+    best_title, best_score = title, -1.0
+    for c in candidates:
+        try:
+            v = evaluate_title_appeal(c, genre=genre, sub_genre=sub_genre, config=config)
+        except Exception:
+            continue
+        if v.total > best_score:
+            best_title, best_score = c, v.total
+    return best_title, run_id
+
+
 async def run_conception_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -2165,6 +2252,10 @@ async def run_conception_pipeline(
     # Regeneration fires only when the idea is clearly weak (grade ≤ floor),
     # is bounded, keeps the best-scoring variant, and is fail-open.
     story_appeal_report: dict[str, Any] = {}
+    # Enforcement decision is captured inside the try but ACTED ON after it, so the
+    # fail-open ``except`` below cannot swallow the block (product line "低于80不通过").
+    _appeal_block_below = False
+    _appeal_blocked_feedback = ""
     try:
         from bestseller.domain.appeal import grade_rank  # noqa: PLC0415
         from bestseller.services.story_appeal import (  # noqa: PLC0415
@@ -2189,7 +2280,8 @@ async def run_conception_pipeline(
             floor = str(regen.get("floor_grade", "consider"))
             regen_below_bar = bool(regen.get("regen_below_bar", True))
             max_attempts = int(regen.get("max_attempts", 3))
-            best = (report, premise, synopsis, tags)
+            _title_min = float((_appeal_cfg.get("meets_bar", {}) or {}).get("title_min", 0))
+            best = (report, premise, synopsis, tags, title)
             attempts = 0
             # Product hard line: regenerate while not meeting the bar (blurb<80);
             # else fall back to the grade floor.
@@ -2223,31 +2315,73 @@ async def run_conception_pipeline(
                     r_syn = str(_sanitize_forbidden_default_motifs(r_syn or best[2], is_en=is_en))
                     r_premise = best[1]
                     r_tags = best[3]
+                    # 书名也是达标门：当前最优书名不达标时，聚焦重起书名
+                    # （LLM 出候选 → 零 token 标题门选优）。达标的书名保持不动。
+                    r_title = best[4]
+                    cur_title = best[0].title
+                    if (
+                        _title_min > 0
+                        and cur_title is not None
+                        and cur_title.total < _title_min
+                    ):
+                        r_title, title_id = await _polish_title(
+                            session, settings,
+                            title=best[4], premise=r_premise, synopsis=r_syn,
+                            feedback=feedback, genre=_ap_genre, sub_genre=_ap_sub,
+                            is_en=is_en, language=str(ctx.get("language") or "zh-CN"),
+                            config=_appeal_cfg,
+                        )
+                        if title_id is not None:
+                            llm_run_ids.append(title_id)
                     report = await evaluate_story_appeal(
                         session, settings,
-                        premise=r_premise, synopsis=r_syn, title=title, tags=r_tags,
+                        premise=r_premise, synopsis=r_syn, title=r_title, tags=r_tags,
                         writing_profile=writing_profile, genre=_ap_genre, sub_genre=_ap_sub,
                         chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
                     )
-                    cur_sum = report.premise.total + report.blurb.total
-                    best_sum = best[0].premise.total + best[0].blurb.total
+                    cur_sum = report.premise.total + report.blurb.total + (
+                        report.title.total if report.title else 0.0
+                    )
+                    best_sum = best[0].premise.total + best[0].blurb.total + (
+                        best[0].title.total if best[0].title else 0.0
+                    )
                     if (report.meets_bar and not best[0].meets_bar) or (
                         report.meets_bar == best[0].meets_bar and cur_sum > best_sum
                     ):
-                        best = (report, r_premise, r_syn, r_tags)
+                        best = (report, r_premise, r_syn, r_tags, r_title)
                 except Exception:
                     logger.warning("appeal regeneration attempt %d failed", attempts, exc_info=True)
                     break
-            report, premise, synopsis, tags = best
+            report, premise, synopsis, tags, title = best
             story_appeal_report = report.to_dict()
+            _t_total = report.title.total if report.title else None
             logger.info(
-                "Story appeal: premise=%.0f blurb=%.0f grade=%s meets_bar=%s regen=%d",
-                report.premise.total, report.blurb.total, report.overall_grade,
-                report.meets_bar, attempts,
+                "Story appeal: premise=%.0f blurb=%.0f title=%s grade=%s meets_bar=%s regen=%d",
+                report.premise.total, report.blurb.total, _t_total,
+                report.overall_grade, report.meets_bar, attempts,
             )
+            # 真拦截：有界重生用尽仍不达标 + 开关开 → 记下决定，try 块外再抛
+            # （放块外，确保不被下面 fail-open 的 except 吞掉）。
+            if bool((_appeal_cfg.get("meets_bar", {}) or {}).get("block_below_bar", False)) \
+                    and not report.meets_bar:
+                _appeal_block_below = True
+                _appeal_blocked_feedback = build_improvement_feedback(report, _appeal_cfg)
     except Exception:
         logger.warning("Story appeal evaluation failed (non-fatal)", exc_info=True)
         story_appeal_report = {}
+
+    # 产品硬线"低于80不通过"的真拦截：简介/书名经有界重生仍 < 80 → 抛 AppealBarNotMetError。
+    # 调用方(web)捕获后把项目置为可见拦截态(带分数+整改建议)，不静默进规划、不留 running 僵尸。
+    if _appeal_block_below and story_appeal_report:
+        from bestseller.services.story_appeal import AppealBarNotMetError  # noqa: PLC0415
+
+        _b = (story_appeal_report.get("blurb") or {}).get("total")
+        _t = (story_appeal_report.get("title") or {}).get("total")
+        logger.warning(
+            "Conception BLOCKED: appeal bar not met (blurb=%s title=%s) — "
+            "not advancing to planning.", _b, _t,
+        )
+        raise AppealBarNotMetError(story_appeal_report, _appeal_blocked_feedback)
 
     logger.info(
         "Conception pipeline completed for genre=%s: title=%s, premise_len=%d, synopsis_len=%d, tags=%s, profile_keys=%s",

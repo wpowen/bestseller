@@ -42,8 +42,13 @@ grades:
 # 因为本系统生成的是现代点击型简介，其优秀样本可达 80+（玄幻样本 84、都市 79+）。
 meets_bar:
   blurb_min: 80               # 产品硬线：低于 80 不通过（只放行执行优秀的简介）
+  title_min: 80               # 产品硬线：书名点击力<80 也不通过（标题是榜单列表第一眼，此前完全没设门）
   premise_min: 0              # advisory：LLM 绝对分不参与硬门（绝对值不可信）
   forbid_gated_to_pass: false # gating/premise 评级仅 advisory（gated_grade 含 LLM 总分，不入硬门以保可复现）
+  # 真拦截开关（2026-06-22）：此前"低于80不通过"只接成重生触发线，run_conception_pipeline
+  # 跑完没有任何拦截——meets_bar=False 也照样 return、照样进规划（advisory）。开此开关后：
+  # 有界重生用尽仍 meets_bar=False → 抛 AppealBarNotMetError，web 层置可见拦截态，不进规划。
+  block_below_bar: true
   # 点击命门 floor（一票否决，2026-06-22 修）：钩子强度+情绪强度是真正驱动点击的两维。
   # 此前加权平均让一堆"表面达标"维(三要素/具体化/反模板/问号结尾)把这两维的低分稀释掉
   # ——烧脑不抓人的《规则漏洞不保护我》钩子3.0/情绪1.5 却堆到 85.2 通过。故设硬 floor：
@@ -62,6 +67,23 @@ arena:
   min_refs: 4
   max_refs: 6
   judge_model_key: deepseek-v4-flash  # 跨家族；读 DEEPSEEK_API_KEY
+
+# ---------------------------------------------------------------------------
+# 书名/标题点击力 5 维 rubric（services/title_appeal_gate.py，零 token 确定性）。
+# 权重/词库/长度甜区均有【内置默认】，此处仅为可调与文档化——config 缺这段也能正确评分。
+# 逻辑命门 floor：coherence < coherence_floor → 总分封顶 critical_floor_cap(<80)，
+# 不通顺/不成立的书名(如"规则漏洞不保护我"抽象概念充当施动者)绝不达标。
+# ---------------------------------------------------------------------------
+title_rubric:
+  length: { min: 4, max: 12 }   # 榜单列表头部强标题甜区（番茄/起点多为 4-9 字）
+  coherence_floor: 2.5          # 逻辑命门：低于此即封顶
+  length_fit:        { label: 长度适配,   weight: 16 }
+  hook_power:        { label: 钩子张力,   weight: 26 }   # 主角能动性/反转/强概念碰撞
+  graspable_subject: { label: 可抓主体,   weight: 16 }   # 能想象的具体实体，非抽象黑话
+  coherence:         { label: 逻辑通顺,   weight: 24 }   # 命门：无病句/功能词泄漏/半截句
+  anti_generic:      { label: 反套路独家, weight: 18 }   # 避都市之/最强系统/绝世神医壳
+  # lexicon: { hook_tokens: [...], identity_tokens: [...], abstract_jargon: [...],
+  #            template_stems: [...], cliche_stems: [...] }  # 留空用内置默认
 
 # ---------------------------------------------------------------------------
 # 故事吸引力 9 维 rubric（premise_appeal）

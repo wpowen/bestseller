@@ -61,6 +61,7 @@ from bestseller.services.inspection import (
 )
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.pipelines import ProjectRepairPauseError, run_autowrite_pipeline
+from bestseller.services.story_appeal import AppealBarNotMetError
 from bestseller.services.pipelines import run_chapter_pipeline
 from bestseller.services.chapter_revision import (
     apply_chapter_revision_task,
@@ -3426,6 +3427,33 @@ class WebTaskManager:
                 ),
             )
             logger.info("Autowrite task %s blocked by structural repair pause: %s", task_id, exc)
+        except AppealBarNotMetError as exc:
+            # 产品硬线"低于80不通过"：简介/书名经有界重生仍未达榜单达标线(80)。
+            # 这是【刻意拦截】不是崩溃——给可见的分数+整改建议，不静默进规划、不留僵尸。
+            report = exc.report or {}
+            blurb_total = (report.get("blurb") or {}).get("total")
+            title_total = (report.get("title") or {}).get("total")
+            try:
+                progress(
+                    "appeal_blocked",
+                    {
+                        "blurb_total": blurb_total,
+                        "title_total": title_total,
+                        "meets_bar": False,
+                        "feedback": exc.feedback,
+                    },
+                )
+            except Exception:
+                logger.debug("appeal_blocked progress emit failed", exc_info=True)
+            msg = (
+                "未达【榜单达标线 80 分】，已拦截，未进入规划。\n"
+                f"简介点击力：{blurb_total}　书名点击力：{title_total}\n\n"
+                "（已自动多轮重生仍未达标，需调整设定/方向后重建。整改建议：）\n"
+                f"{exc.feedback}"
+            )
+            logger.info("Autowrite task %s blocked: appeal bar not met (blurb=%s title=%s)",
+                        task_id, blurb_total, title_total)
+            self._mark_failed(task_id, msg)
         except Exception:
             tb = traceback.format_exc()
             logger.exception("Autowrite task %s crashed", task_id)

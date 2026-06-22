@@ -27,6 +27,7 @@ from bestseller.domain.appeal import (
     BlurbAppealVerdict,
     PremiseAppealVerdict,
     StoryAppealReport,
+    TitleAppealVerdict,
     grade_rank,
     min_grade,
 )
@@ -34,6 +35,24 @@ from bestseller.domain.appeal import (
 logger = logging.getLogger(__name__)
 
 _SHORT_FORM_MAX_CHAPTERS = 24
+
+
+class AppealBarNotMetError(Exception):
+    """Raised by conception when ``meets_bar.block_below_bar`` is on and the idea
+    still fails the bar after bounded regeneration — the product's "低于80不通过".
+
+    Carries the final report dict + human-readable feedback so the web layer can
+    surface a visible, inspectable blocked state (NOT a silent proceed-to-planning,
+    NOT a crash/zombie)."""
+
+    def __init__(self, report: dict[str, Any], feedback: str = "") -> None:
+        self.report = report or {}
+        self.feedback = feedback or ""
+        blurb = (self.report.get("blurb") or {}).get("total")
+        title = (self.report.get("title") or {}).get("total")
+        super().__init__(
+            f"appeal bar not met (blurb={blurb}, title={title})"
+        )
 
 
 def _config_path() -> Path:
@@ -157,6 +176,7 @@ def meets_bar(
     premise: PremiseAppealVerdict,
     blurb: BlurbAppealVerdict,
     config: dict[str, Any] | None = None,
+    title: TitleAppealVerdict | None = None,
 ) -> bool:
     """Bestseller-grade bar — anchored to REAL competitors, the same for every genre.
 
@@ -177,9 +197,13 @@ def meets_bar(
     bar = cfg.get("meets_bar", {}) if isinstance(cfg, dict) else {}
     premise_min = float(bar.get("premise_min", 0))
     blurb_min = float(bar.get("blurb_min", 80))  # 产品硬线：低于 80 不通过
+    title_min = float(bar.get("title_min", 0))   # 产品硬线：书名点击力<80 也不通过
     forbid_gated_pass = bool(bar.get("forbid_gated_to_pass", False))
 
     if blurb.total < blurb_min:
+        return False
+    # 书名也是达标门（AND）：榜单列表第一眼是标题，不通顺/不抓人的书名独立否决。
+    if title is not None and title_min > 0 and title.total < title_min:
         return False
     if premise_min > 0 and premise.total < premise_min:
         return False
@@ -237,6 +261,18 @@ def build_improvement_feedback(
     if not shown:
         for s in suggestions[:4]:
             lines.append(f"- 简介：{s}")
+    # 书名(title) 也是达标门——若不达标，明确要求重起一个通顺、抓人的书名。
+    title_min = float(bar.get("title_min", 0))
+    if report.title is not None and title_min > 0 and report.title.total < title_min:
+        t_gap = title_min - report.title.total
+        lines.append(
+            f"【书名也不达标】点击力 {report.title.total:.0f}/{title_min:.0f}（差 {t_gap:.0f}）"
+            f"，必须重起书名（4-12字、通顺成立、主角能动性或强概念碰撞、避烂大街壳）："
+        )
+        for d in sorted(report.title.dimensions, key=lambda d: d.score):
+            if d.score >= 4.0:
+                continue
+            lines.append(f"- 书名·{d.label}（{d.score:.1f}/5）：{d.rationale}")
     # 故事层(premise) 仅作 advisory 提示，不喧宾夺主。
     if report.premise.gating_caps:
         lines.append("故事层提醒（advisory）：" + "、".join(report.premise.gating_caps[:2]))
@@ -303,6 +339,20 @@ async def evaluate_story_appeal(
         genre_terms=terms,
     )
 
+    # Deterministic title click-power gate (zero-token). Independent hard min so a
+    # weak/illogical book name fails the bar on its own (it is the first thing a
+    # reader sees in a ranking list). Fail-open: never blocks the report.
+    title_verdict: TitleAppealVerdict | None = None
+    try:
+        from bestseller.services.title_appeal_gate import evaluate_title_appeal
+
+        title_verdict = evaluate_title_appeal(
+            title, genre=genre, sub_genre=sub_genre, config=cfg,
+        )
+    except Exception:
+        logger.warning("title appeal gate failed (non-fatal)", exc_info=True)
+        title_verdict = None
+
     try:
         from bestseller.services.premise_appeal_judge import (
             evaluate_premise_appeal,
@@ -328,8 +378,11 @@ async def evaluate_story_appeal(
         logger.warning("premise appeal judge failed; using fallback", exc_info=True)
         premise_verdict = _empty_premise_verdict()
 
-    bar = meets_bar(premise_verdict, blurb, cfg)
+    bar = meets_bar(premise_verdict, blurb, cfg, title=title_verdict)
+    # Overall grade also bounded by the title grade — a limp title drags the listing.
     overall = min_grade(premise_verdict.gated_grade, blurb.grade)
+    if title_verdict is not None:
+        overall = min_grade(overall, title_verdict.grade)
     return StoryAppealReport(
         genre=str(genre or ""),
         sub_genre=str(sub_genre or ""),
@@ -338,6 +391,7 @@ async def evaluate_story_appeal(
         blurb=blurb,
         meets_bar=bar,
         overall_grade=overall,
+        title=title_verdict,
     )
 
 
@@ -348,6 +402,7 @@ def _empty_premise_verdict() -> PremiseAppealVerdict:
 
 
 __all__ = [
+    "AppealBarNotMetError",
     "apply_premise_gating",
     "build_improvement_feedback",
     "evaluate_story_appeal",

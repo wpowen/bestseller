@@ -1324,6 +1324,10 @@ def _finalize_user_prompt(
     review: dict[str, Any],
     genre_profile: GenreReviewProfile | None = None,
 ) -> str:
+    # 题材感知的高唤起情绪范例——让玄幻用灭门/夺宝/绝境突破/碾压打脸，而非都市的退婚/重生。
+    from bestseller.services.story_appeal import genre_emotion_exemplars  # noqa: PLC0415
+
+    _emo = "、".join(genre_emotion_exemplars(ctx.get("genre"), ctx.get("sub_genre"))[:6])
     base = (
         f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
         f"目标章节数：{ctx['chapter_count']}章\n"
@@ -1344,7 +1348,7 @@ def _finalize_user_prompt(
         f'②首句 ≤30 字，必须是一句能瞬间抓人的强钩：用疑问、反差、或开局冲突事件开场，'
         f'严禁用"穿越到…的他/本以为…"这类平铺设定句开头；'
         f'③卖点三要素必须齐全：主角身份反差 + 开局冲突事件 + 失败代价（不做到会怎样）；'
-        f'④把退婚/背叛/重生/被夺/绝境/灭门/打脸等高唤起情绪事件放在最前面；'
+        f'④把【{_emo}】这类【本题材】高唤起情绪事件放在最前面（别用其他题材的情绪词）；'
         f'⑤结尾留一个悬念钩子，绝不剧透关键反转或结局；'
         f'⑥分 2-4 段、动词驱动、克制形容词。'
         f'严禁 AI 腔与套话：本以为/却没想到/命运的齿轮/何去何从/拭目以待/敬请期待/一段不平凡的旅程）",\n'
@@ -1679,6 +1683,9 @@ async def _polish_blurb_synopsis(
             "emotion; end on suspense without spoilers; no AI cliches. Output only the blurb."
         )
     else:
+        from bestseller.services.story_appeal import genre_emotion_exemplars  # noqa: PLC0415
+
+        _emo = "、".join(genre_emotion_exemplars(genre, sub_genre)[:6])
         system_prompt = (
             "你是网文平台资深编辑。把给定简介按【整改要求】重写成一段【点击型】作品简介"
             "（番茄/起点详情页文案）。只输出重写后的简介正文，不要解释、不要标题。"
@@ -1686,7 +1693,8 @@ async def _polish_blurb_synopsis(
         user_prompt = (
             f"题材：{genre}（{sub_genre}）\n\n【当前简介】\n{synopsis}\n\n【整改要求】\n{feedback}\n\n"
             "硬性：80-140字；首句≤30字的强钩（疑问/反差/开局冲突）；卖点三要素齐（身份+冲突+代价）；"
-            "高唤起情绪前置；结尾留悬念不剧透；禁AI腔（本以为/却没想到/何去何从/敬请期待）。只输出简介正文。"
+            f"高唤起情绪前置——用【本题材】的情绪事件（如：{_emo}），别套其他题材的情绪词；"
+            "结尾留悬念不剧透；禁AI腔（本以为/却没想到/何去何从/敬请期待）。只输出简介正文。"
         )
     try:
         completion = await complete_text(

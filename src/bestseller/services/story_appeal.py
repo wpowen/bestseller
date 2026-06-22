@@ -124,6 +124,37 @@ def genre_signal_terms(genre: str | None, sub_genre: str | None = None) -> tuple
         return ()
 
 
+# Cross-genre fallback when config lacks the map entirely (so genre-aware emotion
+# guidance never silently degrades to nothing).
+_DEFAULT_EMOTION_EXEMPLARS: dict[str, tuple[str, ...]] = {
+    "generic": ("背叛", "绝境", "复仇", "逆袭", "被夺一切", "生死危机", "当众羞辱", "痛失至亲"),
+    "xuanhuan": ("灭门血仇", "夺宝杀机", "绝境突破", "逆袭碾压", "打脸封神", "废材觉醒"),
+    "xianxia": ("道侣背叛", "灭宗血仇", "夺舍危机", "绝境悟道", "飞升无望", "同门相残"),
+}
+
+
+def genre_emotion_exemplars(
+    genre: str | None,
+    sub_genre: str | None = None,
+    config: dict[str, Any] | None = None,
+) -> tuple[str, ...]:
+    """High-arousal emotional beats *for this genre* — used to make the synopsis
+    generation / regeneration PROMPTS genre-aware (not deterministic matching).
+
+    Fixes the urban-biased guidance ("退婚/背叛/重生") that mis-fit 玄幻 and left its
+    blurbs emotionally flat (情绪 1.5-2.2 → blocked). Canonicalizes the genre, looks
+    up ``genre_emotion_exemplars`` in config, falls back to ``generic``.
+    """
+
+    cfg = config if config is not None else load_story_appeal_config()
+    table = cfg.get("genre_emotion_exemplars", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(table, dict) or not table:
+        table = {k: list(v) for k, v in _DEFAULT_EMOTION_EXEMPLARS.items()}
+    canonical = _canonical_genre(genre, sub_genre)
+    picked = table.get(canonical) or table.get("generic") or _DEFAULT_EMOTION_EXEMPLARS["generic"]
+    return tuple(str(x) for x in picked if str(x).strip())
+
+
 def grade_from_total(total: float, config: dict[str, Any] | None = None) -> str:
     cfg = config if config is not None else load_story_appeal_config()
     grades = cfg.get("grades", {}) if isinstance(cfg, dict) else {}
@@ -245,6 +276,8 @@ def build_improvement_feedback(
         f"达标硬线：简介点击力 ≥ {blurb_min:.0f} 分。当前仅 {report.blurb.total:.0f} 分，"
         f"还差 {gap:.0f} 分。下面是最该补的几项(分越低越拖分)，请逐条改到位：",
     ]
+    # 题材感知的情绪范例——玄幻别拿"退婚/重生"串台，用灭门/夺宝/绝境突破/碾压打脸。
+    _emo = "、".join(genre_emotion_exemplars(report.genre, report.sub_genre, cfg)[:5])
     # 简介(blurb)是达标信号——按最弱维度排序，给诊断+具体修法，引导改到 80。
     blurb_dims = sorted(report.blurb.dimensions, key=lambda d: d.score)
     suggestions = list(report.blurb.suggestions)
@@ -252,7 +285,10 @@ def build_improvement_feedback(
     for d in blurb_dims:
         if d.score >= 4.0 or shown >= 5:
             continue
-        fix = _DIMENSION_FIX_HINT.get(d.key, "")
+        if d.key == "emotion_charge" and _emo:
+            fix = f"把【{_emo}】这类本题材高唤起情绪事件提到最前（别用其他题材的情绪词）"
+        else:
+            fix = _DIMENSION_FIX_HINT.get(d.key, "")
         line = f"- 简介·{d.label}（{d.score:.1f}/5）：{d.rationale}"
         if fix:
             line += f" → {fix}"
@@ -278,7 +314,7 @@ def build_improvement_feedback(
         lines.append("故事层提醒（advisory）：" + "、".join(report.premise.gating_caps[:2]))
     lines.append(
         "重写要求：首句≤30字的强钩(疑问/反差/冲突)、卖点三要素齐(身份+冲突+代价)、"
-        "高唤起情绪前置、长度80-140字、结尾留悬念不剧透、禁AI腔套话。"
+        f"高唤起情绪前置（本题材如：{_emo}）、长度80-140字、结尾留悬念不剧透、禁AI腔套话。"
     )
     text = "\n".join(lines)
     # token budget ≈ chars/2 for CJK; cap conservatively.
@@ -290,7 +326,8 @@ def build_improvement_feedback(
 _DIMENSION_FIX_HINT: dict[str, str] = {
     "hook_strength": "把首句压到 30 字内，用一句疑问/反差/开局冲突瞬间抓人",
     "selling_triad": "补齐身份反差+开局冲突事件+失败代价三要素",
-    "emotion_charge": "把退婚/背叛/重生/绝境等高唤起情绪事件提到最前",
+    # 通常被 build_improvement_feedback 里的题材感知版覆盖；此为兜底，保持题材中性。
+    "emotion_charge": "把本题材的高唤起情绪事件(背叛/绝境/复仇/逆袭等)提到最前",
     "length_format": "压到 80-140 字、分 2-4 段",
     "concreteness": "给主角具名或第一人称，加入具体数字/地点/物件",
     "open_loop_end": "结尾换成开放式悬念，绝不剧透结局",
@@ -406,6 +443,7 @@ __all__ = [
     "apply_premise_gating",
     "build_improvement_feedback",
     "evaluate_story_appeal",
+    "genre_emotion_exemplars",
     "genre_signal_terms",
     "grade_from_total",
     "is_appeal_enabled",

@@ -12,13 +12,16 @@ import json
 import pytest
 
 from bestseller.domain.appeal import (
+    AppealDimension,
     BlurbAppealVerdict,
     PremiseAppealVerdict,
+    StoryAppealReport,
     grade_rank,
     min_grade,
 )
 from bestseller.services.story_appeal import (
     build_improvement_feedback,
+    genre_emotion_exemplars,
     grade_from_total,
     is_appeal_enabled,
     load_story_appeal_config,
@@ -215,3 +218,41 @@ async def test_evaluate_story_appeal_combines_both_evaluators(monkeypatch):
     assert report.canonical_genre  # canonicalized
     d = report.to_dict()
     assert "premise" in d and "blurb" in d and d["meets_bar"] in {True, False}
+
+
+# --- genre-aware emotional charge (玄幻 blurbs were blocked for urban-biased guidance) ---
+
+
+def test_genre_emotion_exemplars_routes_per_genre():
+    cfg = load_story_appeal_config()
+    xh = genre_emotion_exemplars("玄幻", None, cfg)
+    urban = genre_emotion_exemplars("都市", None, cfg)
+    assert any("灭门" in t or "夺宝" in t for t in xh), xh
+    assert "退婚" not in "".join(xh), "玄幻 must NOT get urban 退婚 guidance"
+    assert any("退婚" in t for t in urban), urban
+    assert xh != urban
+
+
+def test_genre_emotion_exemplars_generic_fallback():
+    cfg = load_story_appeal_config()
+    unknown = genre_emotion_exemplars("不存在的题材xyz", None, cfg)
+    assert unknown == genre_emotion_exemplars(None, None, cfg)
+    assert len(unknown) >= 4  # never empty → guidance never degrades to nothing
+
+
+def test_feedback_emotion_hint_is_genre_aware_for_xuanhuan():
+    """A weak-emotion 玄幻 blurb's repair feedback must use 玄幻 beats, not 退婚/重生."""
+    cfg = load_story_appeal_config()
+    dims = (
+        AppealDimension(key="emotion_charge", label="情绪强度", score=1.5, weight=8,
+                        rationale="高唤起情绪0处"),
+    )
+    blurb = BlurbAppealVerdict(total=73.6, grade="consider", dimensions=dims)
+    prem = PremiseAppealVerdict(total=0, grade="pass", gated_grade="pass")
+    rep = StoryAppealReport(
+        genre="玄幻", sub_genre="高武", premise=prem, blurb=blurb,
+        meets_bar=False, overall_grade="consider", canonical_genre="xuanhuan",
+    )
+    fb = build_improvement_feedback(rep, cfg)
+    assert "退婚" not in fb, "玄幻 feedback must not cross-pollinate urban 退婚"
+    assert ("灭门" in fb or "夺宝" in fb or "绝境突破" in fb), fb

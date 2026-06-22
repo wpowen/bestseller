@@ -1647,6 +1647,69 @@ async def _attach_concept_methodology(
         logger.debug("concept methodology agent failed; continuing without it", exc_info=True)
 
 
+async def _polish_blurb_synopsis(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    synopsis: str,
+    feedback: str,
+    genre: str,
+    sub_genre: str,
+    is_en: bool,
+    language: str,
+) -> tuple[str, UUID | None]:
+    """Focused click-blurb rewrite — rewrite ONLY the synopsis per gate feedback.
+
+    Far more effective than re-running the full finalize (which juggles premise/
+    profile and under-optimizes the blurb: a real-pipeline 现实 book plateaued at
+    74.7 via full-finalize regen, while focused rewrite reaches ~84). Fail-open:
+    returns the original synopsis on any error. Returns (synopsis, llm_run_id).
+    """
+
+    if is_en:
+        system_prompt = (
+            "You are a veteran web-novel platform editor. Rewrite the given blurb into "
+            "a CLICK-optimized book blurb following the fix notes. Output ONLY the "
+            "rewritten blurb text — no explanation, no title."
+        )
+        user_prompt = (
+            f"Genre: {genre} ({sub_genre})\n\n[Current blurb]\n{synopsis}\n\n"
+            f"[Fix notes]\n{feedback}\n\nHard rules: 60-120 words; first sentence is a "
+            "punchy hook; identity+conflict+stakes present; front-load high-arousal "
+            "emotion; end on suspense without spoilers; no AI cliches. Output only the blurb."
+        )
+    else:
+        system_prompt = (
+            "你是网文平台资深编辑。把给定简介按【整改要求】重写成一段【点击型】作品简介"
+            "（番茄/起点详情页文案）。只输出重写后的简介正文，不要解释、不要标题。"
+        )
+        user_prompt = (
+            f"题材：{genre}（{sub_genre}）\n\n【当前简介】\n{synopsis}\n\n【整改要求】\n{feedback}\n\n"
+            "硬性：80-140字；首句≤30字的强钩（疑问/反差/开局冲突）；卖点三要素齐（身份+冲突+代价）；"
+            "高唤起情绪前置；结尾留悬念不剧透；禁AI腔（本以为/却没想到/何去何从/敬请期待）。只输出简介正文。"
+        )
+    try:
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="editor",
+                model_tier="strong",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                fallback_response=synopsis,
+                prompt_template="conception_blurb_polish",
+                prompt_version="v1",
+                metadata={"language": language},
+                max_tokens_override=700,
+            ),
+        )
+        return (completion.content or synopsis).strip(), completion.llm_run_id
+    except Exception:
+        logger.warning("blurb polish failed; keeping prior synopsis", exc_info=True)
+        return synopsis, None
+
+
 async def run_conception_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -2142,31 +2205,24 @@ async def run_conception_pipeline(
                 attempts += 1
                 try:
                     feedback = build_improvement_feedback(report, _appeal_cfg)
-                    retry_result, retry_ids = await _llm_call_json(
-                        session, settings, role="editor",
-                        system_prompt=_FINALIZE_SYSTEM_EN if is_en else _FINALIZE_SYSTEM,
-                        user_prompt=f"{finalize_user_prompt}\n\n{feedback}",
-                        fallback=_build_fallback_final(ctx, market_proposal, character_proposal, world_proposal),
-                        template="conception_finalize",
-                        stage="conception.final.appeal_retry",
+                    # 聚焦【点击型简介】打磨：从当前最优 synopsis 出发，按反馈只重写简介，
+                    # 不重跑整段 finalize（整段 finalize 同时产 premise/profile，对简介不够
+                    # 聚焦——实测真机现实题材重跑 finalize 卡 74.7，而聚焦重写可达 84）。
+                    # premise/title/tags 保留（达标门是 blurb，premise 仅 advisory）。
+                    polish_syn, polish_id = await _polish_blurb_synopsis(
+                        session, settings,
+                        synopsis=best[2], feedback=feedback,
+                        genre=_ap_genre, sub_genre=_ap_sub, is_en=is_en,
                         language=str(ctx.get("language") or "zh-CN"),
                     )
-                    llm_run_ids.extend(retry_ids)
-                    r_premise = str(_sanitize_forbidden_default_motifs(
-                        _safe_get(retry_result, "premise", "") or premise, is_en=is_en))
-                    r_syn = _safe_get(retry_result, "synopsis", "").strip()
+                    if polish_id is not None:
+                        llm_run_ids.append(polish_id)
+                    r_syn = _safe_get({"synopsis": polish_syn}, "synopsis", "").strip()
                     if len(r_syn) > 500:
                         r_syn = r_syn[:497] + "..."
-                    r_syn = str(_sanitize_forbidden_default_motifs(r_syn or synopsis, is_en=is_en))
-                    r_raw = retry_result.get("tags", []) or raw_tags
-                    r_tags = [
-                        str(item).strip()
-                        for item in _sanitize_forbidden_default_motifs(
-                            [str(t).strip() for t in r_raw if isinstance(t, str) and t.strip()][:10],
-                            is_en=is_en,
-                        )
-                        if str(item).strip()
-                    ][:10]
+                    r_syn = str(_sanitize_forbidden_default_motifs(r_syn or best[2], is_en=is_en))
+                    r_premise = best[1]
+                    r_tags = best[3]
                     report = await evaluate_story_appeal(
                         session, settings,
                         premise=r_premise, synopsis=r_syn, title=title, tags=r_tags,

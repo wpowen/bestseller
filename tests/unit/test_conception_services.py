@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: RUF001, RUF002, RUF003, E501 — Chinese test fixtures.
 import json
 
 import pytest
@@ -7,7 +8,6 @@ import pytest
 from bestseller.services import conception as conception_services
 from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.writing_presets import get_platform_preset
-
 
 pytestmark = pytest.mark.unit
 
@@ -419,3 +419,36 @@ async def test_recent_cast_names_is_failure_safe() -> None:
             raise RuntimeError("db down")
 
     assert await conception_services._recent_cast_names(_BoomSession()) == []  # type: ignore[arg-type]
+
+
+async def test_polish_blurb_synopsis_rewrites_and_fails_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    """聚焦简介打磨：成功路径返回重写正文；LLM 异常时 fail-open 返回原简介。"""
+    from uuid import uuid4
+
+    from bestseller.services.llm import LLMCompletionResult
+
+    async def fake_ok(session, settings, request):
+        # 复刻 conception 重生：返回一段更强的点击简介
+        return LLMCompletionResult(
+            content="退婚那天他被裁了，房贷手术费同时砸下来——这一次他要拿回所有人欠他的体面。",
+            provider="fake", model_name="fake", llm_run_id=uuid4(),
+        )
+
+    monkeypatch.setattr(conception_services, "complete_text", fake_ok)
+    syn, rid = await conception_services._polish_blurb_synopsis(
+        None, None, synopsis="旧的长设定简介……", feedback="补首句钩+情绪前置",
+        genre="现实", sub_genre="现实百态", is_en=False, language="zh-CN",
+    )
+    assert "退婚" in syn and "旧的长设定" not in syn
+    assert rid is not None
+
+    async def fake_raise(session, settings, request):
+        raise RuntimeError("llm down")
+
+    monkeypatch.setattr(conception_services, "complete_text", fake_raise)
+    syn2, rid2 = await conception_services._polish_blurb_synopsis(
+        None, None, synopsis="原简介保留", feedback="x",
+        genre="现实", sub_genre="现实百态", is_en=False, language="zh-CN",
+    )
+    assert syn2 == "原简介保留"  # fail-open
+    assert rid2 is None

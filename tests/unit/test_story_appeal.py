@@ -154,7 +154,10 @@ def test_build_improvement_feedback_is_token_capped():
     fb = build_improvement_feedback(report, cfg)
     budget = cfg["regeneration"]["feedback_token_budget"]
     assert len(fb) <= budget * 2
-    assert "致命短板" in fb  # gating caps surfaced
+    # 反馈必须明示达标硬线 + 当前差距 + 具体重写要求(引导改到 80)
+    assert "达标硬线" in fb
+    assert "还差" in fb
+    assert "首句" in fb  # 重写要求里的关键修法
 
 
 @pytest.mark.unit

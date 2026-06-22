@@ -84,7 +84,9 @@ def _score_selling_triad(combined: str, lex: dict[str, Any]) -> tuple[float, str
     )
     has_cost = _count_hits(combined, _lex(lex, "cost_markers")) > 0
     present = sum((has_identity, has_conflict, has_cost))
-    score = {3: 5.0, 2: 3.5, 1: 2.0, 0: 0.5}[present]
+    # 2/3 要素(身份+冲突,代价常隐含)给 4.0——奇幻/现实强稿常缺显式"代价词"，
+    # 不应因此被压到 3.5；三要素全齐才满分。
+    score = {3: 5.0, 2: 4.0, 1: 2.0, 0: 0.5}[present]
     missing = [
         name
         for name, ok in (("身份", has_identity), ("冲突", has_conflict), ("代价", has_cost))

@@ -212,27 +212,57 @@ def build_improvement_feedback(
         if isinstance(cfg, dict)
         else 600
     )
-    lines: list[str] = ["【上一稿吸引力评估反馈 — 必须针对性改进】"]
-    lines.append(
-        f"故事吸引力 {report.premise.total:.0f}/100（{report.premise.gated_grade}），"
-        f"简介点击力 {report.blurb.total:.0f}/100（{report.blurb.grade}）。"
-    )
+    bar = cfg.get("meets_bar", {}) if isinstance(cfg, dict) else {}
+    blurb_min = float(bar.get("blurb_min", 80))
+    gap = blurb_min - report.blurb.total
+
+    lines: list[str] = [
+        "【上一稿不达标 — 必须按下面逐条重写简介(synopsis)，直到达标】",
+        f"达标硬线：简介点击力 ≥ {blurb_min:.0f} 分。当前仅 {report.blurb.total:.0f} 分，"
+        f"还差 {gap:.0f} 分。下面是最该补的几项(分越低越拖分)，请逐条改到位：",
+    ]
+    # 简介(blurb)是达标信号——按最弱维度排序，给诊断+具体修法，引导改到 80。
+    blurb_dims = sorted(report.blurb.dimensions, key=lambda d: d.score)
+    suggestions = list(report.blurb.suggestions)
+    shown = 0
+    for d in blurb_dims:
+        if d.score >= 4.0 or shown >= 5:
+            continue
+        fix = _DIMENSION_FIX_HINT.get(d.key, "")
+        line = f"- 简介·{d.label}（{d.score:.1f}/5）：{d.rationale}"
+        if fix:
+            line += f" → {fix}"
+        lines.append(line)
+        shown += 1
+    if not shown:
+        for s in suggestions[:4]:
+            lines.append(f"- 简介：{s}")
+    # 故事层(premise) 仅作 advisory 提示，不喧宾夺主。
     if report.premise.gating_caps:
-        lines.append("致命短板（一票否决）：" + "、".join(report.premise.gating_caps))
-    weak = sorted(
-        report.premise.dimensions, key=lambda d: d.score
-    )[:3]
-    for d in weak:
-        if d.score < 3.5:
-            lines.append(f"- 故事·{d.label}（{d.score:.1f}/5）：{d.rationale}")
-    for s in report.premise.suggestions[:3]:
-        lines.append(f"- 建议：{s}")
-    for s in report.blurb.suggestions[:4]:
-        lines.append(f"- 简介：{s}")
+        lines.append("故事层提醒（advisory）：" + "、".join(report.premise.gating_caps[:2]))
+    lines.append(
+        "重写要求：首句≤30字的强钩(疑问/反差/冲突)、卖点三要素齐(身份+冲突+代价)、"
+        "高唤起情绪前置、长度80-140字、结尾留悬念不剧透、禁AI腔套话。"
+    )
     text = "\n".join(lines)
     # token budget ≈ chars/2 for CJK; cap conservatively.
     cap_chars = budget * 2
     return text[:cap_chars]
+
+
+# 各 blurb 维度的【可执行】重写指引（喂给 finalize 重生，让模型知道怎么补到 80）。
+_DIMENSION_FIX_HINT: dict[str, str] = {
+    "hook_strength": "把首句压到 30 字内，用一句疑问/反差/开局冲突瞬间抓人",
+    "selling_triad": "补齐身份反差+开局冲突事件+失败代价三要素",
+    "emotion_charge": "把退婚/背叛/重生/绝境等高唤起情绪事件提到最前",
+    "length_format": "压到 80-140 字、分 2-4 段",
+    "concreteness": "给主角具名或第一人称，加入具体数字/地点/物件",
+    "open_loop_end": "结尾换成开放式悬念，绝不剧透结局",
+    "anti_template": "删除'本以为/却没想到/何去何从'等 AI 腔套话",
+    "differentiation": "点出一句别人没写过的独家设定",
+    "genre_signal": "让书名/标签/简介题材信号一致",
+    "adjective_thrift": "少用形容词，改强动词驱动",
+}
 
 
 async def evaluate_story_appeal(

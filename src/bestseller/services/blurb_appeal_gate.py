@@ -320,6 +320,32 @@ def evaluate_blurb_appeal(
             suggestions.append(_SUGGESTIONS.get(key, f"提升「{label}」"))
 
     total = (weighted / total_weight * 100.0) if total_weight else 0.0
+
+    # ── 点击命门 floor（一票否决）──────────────────────────────────────────
+    # 钩子强度 + 情绪强度是真正驱动点击的两维。加权平均会让一堆"表面达标"维
+    # (三要素齐/有具体/没AI腔/有问号结尾)把这两维的低分稀释掉 —— 于是一篇
+    # 烧脑、不抓人的简介也能堆到 85（真实案例《规则漏洞不保护我》:钩子3.0/情绪
+    # 1.5 却总分85.2）。故对命门维设硬 floor:任一未过线 → 总分封顶到 cap(<80)，
+    # 表面分再高也不达标。
+    bar_cfg = config.get("meets_bar", {}) if isinstance(config, dict) else {}
+    floors = bar_cfg.get("blurb_critical_floors") or {}
+    cap = float(bar_cfg.get("critical_floor_cap", 78))
+    by_key = {d.key: d for d in dims}
+    breached = [
+        (str((rubric.get(k, {}) or {}).get("label", k)), by_key[k].score, float(v))
+        for k, v in floors.items()
+        if k in by_key and by_key[k].score < float(v)
+    ]
+    # AND 语义：只有当【所有】命门维(钩子+情绪)都弱时才封顶——即"既无强钩、又无强情绪"
+    # 的真·不可点击稿(如《规则漏洞不保护我》钩子3.0+情绪1.5)。若其一够强(如现实题材
+    # 钩子平但情绪满分)，情绪/钩子可单独扛起点击力，不封顶。
+    if floors and len(breached) == len(floors) and total > cap:
+        total = cap
+        names = "、".join(f"{lab}({sc:.1f}<{fl:.1f})" for lab, sc, fl in breached)
+        findings.append(
+            f"[点击命门全失] {names} → 总分封顶 {cap:.0f}（既无强钩又无强情绪，不可点击）"
+        )
+
     grade = _grade_from_total(total, config)
     return BlurbAppealVerdict(
         total=total,

@@ -11,7 +11,7 @@ import pytest
 
 from bestseller.services.blurb_appeal_gate import evaluate_blurb_appeal
 
-# ruff: noqa: RUF001
+# ruff: noqa: RUF001, RUF003
 
 _STRONG_TITLE = "我老婆是首富"
 _STRONG_SYN = (
@@ -122,3 +122,34 @@ def test_grade_ladder_thresholds():
         assert v.grade == "consider"
     else:
         assert v.grade == "pass"
+
+
+@pytest.mark.unit
+def test_critical_floor_caps_when_both_hook_and_emotion_weak():
+    # 点击命门全失（既无强钩又无强情绪）→ 即使表面维齐全也不得达标。
+    # 真实案例《规则漏洞不保护我》：钩子3.0+情绪1.5 却被表面维堆到 85.2 通过。
+    cerebral = (
+        "合同签了，违约金二十万，他连饭都快吃不起。\n"
+        "纪燃蹲在出租屋地板上数最后几张钞票，前同事在朋友圈庆祝升职。\n"
+        "他闭上眼，看见那份合同的灰色字迹：第七条第三款，逻辑链断在实际损失举证四个字上。\n"
+        "这是他第一次看见规则背后的裂缝。代价是当晚右耳失聪三小时。下一次用，会剥走什么？"
+    )
+    v = evaluate_blurb_appeal(title="x", synopsis=cerebral, premise=cerebral[:40],
+                              tags=["都市异能", "规则怪谈"], genre="都市")
+    dims = {d.key: d.score for d in v.dimensions}
+    assert dims["hook_strength"] < 3.5 and dims["emotion_charge"] < 3.0  # 两命门皆弱
+    assert v.total < 80  # 不得达标（此前会到 85）
+
+
+@pytest.mark.unit
+def test_critical_floor_not_triggered_when_emotion_carries():
+    # 钩子信号平（声明式开篇）但情绪满 → 情绪扛起点击，不封顶。
+    emotional = (
+        "发薪日前一天他被裁了，房贷、孩子学费、父亲的手术费同时砸下来。\n"
+        "所有人都等着看这个老实人垮掉，可他攥着最后三千块，做了个谁也没想到的决定。\n"
+        "这一年，他要从最底层，亲手挣回所有人欠他的体面。"
+    )
+    v = evaluate_blurb_appeal(title="x", synopsis=emotional, premise=emotional[:40],
+                              tags=["职场", "逆袭", "现实"], genre="现实")
+    assert {d.key: d.score for d in v.dimensions}["emotion_charge"] >= 3.0
+    assert not any("命门" in f for f in v.findings)  # 未被命门封顶

@@ -44,6 +44,14 @@ meets_bar:
   blurb_min: 80               # 产品硬线：低于 80 不通过（只放行执行优秀的简介）
   premise_min: 0              # advisory：LLM 绝对分不参与硬门（绝对值不可信）
   forbid_gated_to_pass: false # gating/premise 评级仅 advisory（gated_grade 含 LLM 总分，不入硬门以保可复现）
+  # 点击命门 floor（一票否决，2026-06-22 修）：钩子强度+情绪强度是真正驱动点击的两维。
+  # 此前加权平均让一堆"表面达标"维(三要素/具体化/反模板/问号结尾)把这两维的低分稀释掉
+  # ——烧脑不抓人的《规则漏洞不保护我》钩子3.0/情绪1.5 却堆到 85.2 通过。故设硬 floor：
+  # 任一命门维未过线 → blurb 总分封顶 critical_floor_cap(<80)，表面分再高也不达标。
+  blurb_critical_floors:
+    hook_strength: 3.5        # 首句必须是真钩(短+疑问/反差/冲突信号)，强稿可达 3.7-4.4
+    emotion_charge: 3.0       # 必须有高唤起情绪且前置，强稿可达 3.9-5.0
+  critical_floor_cap: 78      # 任一命门未过线 → 总分封顶 78（<80，不达标）
 
 # 故事质量硬门 = 对真实爆款简介做双盲位置交换 pairwise 胜率（services/premise_appeal_arena.py）。
 # 相对盲评稳定（绝对分不稳），跨家族判官(DeepSeek)去同源高估，位置交换去位置偏。

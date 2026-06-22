@@ -538,3 +538,55 @@ async def test_commercial_planning_judge_without_slug_skips_cache(
 
     assert result.overall_score == 0.82
     assert fake_complete_text.calls == 1
+
+
+def test_repair_directives_target_failed_methodology_dimension() -> None:
+    # methodology_compliance 低于阈值必须产出【针对性】整改指令；此前只有 blocking_issues
+    # 驱动重修 → 方法论维失败被盲目重试。
+    result = quality_judge_result_from_mapping(
+        {
+            "pass": False,
+            "overall_score": 0.70,
+            "dimension_scores": {
+                "methodology_compliance": 0.50,
+                "commercial_pull": 0.85,
+                "opening_pull": 0.85,
+                "scene_execution": 0.85,
+                "logic_consistency": 0.85,
+                "front_ten_retention": 0.85,
+            },
+            "blocking_issues": [],
+        },
+        scope="outline",
+        min_overall=0.82,
+        min_dimensions={"methodology_compliance": 0.80},
+    )
+    directives = outline_llm_judge.build_outline_repair_directives(result)
+    joined = "\n".join(directives)
+    assert "methodology_compliance" in joined
+    assert "方法论" in joined  # 方法论专属整改方向
+    assert "commercial_pull" not in joined  # 达标维度不整改
+
+
+def test_repair_directives_noop_when_all_dimensions_pass() -> None:
+    result = quality_judge_result_from_mapping(
+        {
+            "pass": True,
+            "overall_score": 0.90,
+            "dimension_scores": {
+                k: 0.90
+                for k in (
+                    "methodology_compliance",
+                    "commercial_pull",
+                    "opening_pull",
+                    "scene_execution",
+                    "logic_consistency",
+                    "front_ten_retention",
+                )
+            },
+            "blocking_issues": [],
+        },
+        scope="outline",
+        min_overall=0.82,
+    )
+    assert outline_llm_judge.build_outline_repair_directives(result) == []

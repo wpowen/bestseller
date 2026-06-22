@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-# ruff: noqa: ANN401,RUF001
+# ruff: noqa: ANN401, RUF001, RUF003
 import hashlib
 import json
 import logging
@@ -63,13 +63,14 @@ def _verdict_is_cacheable(parsed: Mapping[str, Any] | None) -> bool:
 
 async def _load_project_for_judge_cache(session: AsyncSession, slug: str) -> Any:
     try:
-        from bestseller.infra.db.models import ProjectModel  # noqa: PLC0415
-        from sqlalchemy import select  # noqa: PLC0415
+        from sqlalchemy import select
+
+        from bestseller.infra.db.models import ProjectModel
 
         return await session.scalar(
             select(ProjectModel).where(ProjectModel.slug == slug)
         )
-    except Exception:  # noqa: BLE001 — cache is best-effort, never fatal
+    except Exception:
         logger.debug("judge cache: project lookup failed for %s", slug, exc_info=True)
         return None
 
@@ -123,7 +124,7 @@ async def store_judge_verdict(
         }
         metadata[_JUDGE_CACHE_METADATA_KEY] = cache
         project.metadata_json = metadata
-    except Exception:  # noqa: BLE001 — cache is best-effort, never fatal
+    except Exception:
         logger.debug(
             "judge cache: failed to store verdict for %s/%s",
             project_slug,
@@ -147,6 +148,34 @@ OUTLINE_JUDGE_DIMENSIONS: tuple[str, ...] = (
     "methodology_compliance",
     "hook_strength",
 )
+
+# 维度未达阈值时驱动【针对性】大纲重修的阈值表。此前 build_outline_repair_directives
+# 只看 blocking_issues(故事逻辑类),methodology_compliance 这类维度即便判官打回
+# (min_dimension fail)也不会产出任何整改指令 → 重修"瞎修"。下表让维度失败也能生成
+# 具体整改方向。全部喂给【已有界、保优、fail-open】的大纲重修闭环,不新增任何硬阻断。
+OUTLINE_REPAIR_DIMENSION_THRESHOLDS: dict[str, float] = {
+    "commercial_pull": 0.80,
+    "opening_pull": 0.80,
+    "front_ten_retention": 0.80,
+    "scene_execution": 0.80,
+    "logic_consistency": 0.82,
+    "methodology_compliance": 0.80,
+}
+
+# 每个维度失败时给写手的【可执行】整改方向（方法论维最关键：把抽象方法论落到契约字段）。
+_DIMENSION_REPAIR_HINTS: dict[str, str] = {
+    "methodology_compliance": (
+        "按本作写作方法论逐章兑现：开篇三章功能(钩子/人物/世界)、动作场 Goal-Conflict-"
+        "Disaster 结构、契诃夫伏笔回收、弹簧式情绪压抑-释放节奏。每章/每场景的 "
+        "methodology_contract 字段(stakes/hook_type/reveal_mode/cut_point/emotion_phase)"
+        "必须写成具体内容而非占位。"
+    ),
+    "opening_pull": "前三章开篇换成具体可视的冲突动作+明确代价，删抽象旁白与设定倾倒。",
+    "commercial_pull": "强化卖点与爽点兑现：说清目标读者图什么，每章给到具体情绪回报与钩子。",
+    "scene_execution": "场景卡补具体人/物/动作/信息释放/章末钩子，杜绝抽象目的占位。",
+    "logic_consistency": "修正前后设定、能力来源、时间线的矛盾。",
+    "front_ten_retention": "前十章每章末留一个未解钩子，避免节奏走平。",
+}
 
 
 def _render_judge_methodology_reference(pack: PromptPack | None) -> str:
@@ -850,6 +879,20 @@ def build_outline_repair_directives(
             f"【大纲商业评审整改·{code}】问题定位：{evidence[:220]}；"
             f"必须修正：{required_fix[:320] or '按评审维度补齐具体人/物/动作/代价/信息释放/章末钩子。'}"
         )
+    # 维度级整改：methodology_compliance 等维度即便没进 blocking_issues，只要低于阈值
+    # 就生成针对性整改方向，让重修真正修方法论而非盲目重试。
+    scores = result.dimension_scores or {}
+    for dim, threshold_value in OUTLINE_REPAIR_DIMENSION_THRESHOLDS.items():
+        raw = scores.get(dim)
+        try:
+            score_value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if score_value < threshold_value:
+            hint = _DIMENSION_REPAIR_HINTS.get(dim, f"提升 {dim} 维度表现。")
+            directives.append(
+                f"【维度整改·{dim} {score_value:.2f}<{threshold_value:.2f}】{hint}"
+            )
     plan = getattr(result, "rewrite_plan", None)
     instructions = ""
     if isinstance(plan, Mapping):

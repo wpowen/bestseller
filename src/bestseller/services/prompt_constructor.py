@@ -863,6 +863,40 @@ def build_prior_chapter_tail(
     return f"{header}\n{tail}"
 
 
+def render_solo_line_ceiling_rule(language: str) -> str:
+    """Syntactic-rhythm ceiling for the writer prompt — the anti-staccato rule.
+
+    Activates the previously-dormant ``config/rhythm_engineering.yaml::
+    solo_line_ceiling`` rule (authored but never injected into any writer
+    prompt — the prose-layer instance of "方法论写了但没跑"). Falls back to a
+    baked rule if config is missing. This is the *prevention* lever that pairs
+    with the staccato detector → deslop repair safety net.
+    """
+
+    if not language.lower().startswith("zh"):
+        return (
+            "- Rhythm: vary sentence AND paragraph length. A single-sentence "
+            "paragraph is a rare hammer, not the default — keep them under ~25% "
+            "of narration, never 3+ in a row. Fold beats (action+reaction+"
+            "setting) into flowing paragraphs."
+        )
+    fallback = (
+        "默认把动作+反应+环境揉进有起伏的叙述段；单句独段是稀缺重锤，只在真要顿挫时用。"
+        "硬上限：单句独段全章占叙述段≤25%、连续不超过2段、禁连续≥3句同主语开头。"
+        "一个戏剧拍点≠一个独立短段——把“他坐起来。”“数字跳了一格。”“他愣了一拍。”这类拍点并回上下文段落。"
+    )
+    try:
+        from bestseller.services.quality_levers.rhythm_engineering import (
+            load_rhythm_engineering,
+        )
+
+        rule = (getattr(load_rhythm_engineering(), "solo_line_ceiling_rule", "") or "").strip()
+        rule = rule.replace("\\n", " ").replace("\n", " ")
+    except Exception:
+        rule = ""
+    return "- 句法节奏（硬规则）：" + (rule or fallback)
+
+
 def build_anti_slop_footer(language: str) -> str:
     """Short, reusable anti-filler reminder at the bottom of the prompt."""
 
@@ -880,7 +914,7 @@ def build_anti_slop_footer(language: str) -> str:
             "- 避免工整 AI 句式：不是……而是……、与其……不如……、无论……都……、"
             "随着……越来越……、既……又……；把判断拆成动作、异常、确认、结果；\n"
             "- 信任读者，不要替读者总结意义；把意义压进动作、物证、对话和身体反应；\n"
-            "- 句子长短要错开，少用三段式列举，允许短句直接落地；\n"
+            + render_solo_line_ceiling_rule(language) + "\n"
             "- 每段必须推进情节、冲突、揭示或感官，无推进即删。"
         )
     return (

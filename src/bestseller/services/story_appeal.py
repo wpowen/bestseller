@@ -297,6 +297,10 @@ def build_improvement_feedback(
     if not shown:
         for s in suggestions[:4]:
             lines.append(f"- 简介：{s}")
+    # 命门/调性等【封顶】类硬伤是决定性的，必须明确告诉重生（否则被加权维信息淹没）。
+    for f in report.blurb.findings:
+        if "封顶" in f or "错配" in f or "命门" in f:
+            lines.append(f"- ⚠️ {f}")
     # 书名(title) 也是达标门——若不达标，明确要求重起一个通顺、抓人的书名。
     title_min = float(bar.get("title_min", 0))
     if report.title is not None and title_min > 0 and report.title.total < title_min:

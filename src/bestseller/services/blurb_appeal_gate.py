@@ -346,6 +346,28 @@ def evaluate_blurb_appeal(
             f"[点击命门全失] {names} → 总分封顶 {cap:.0f}（既无强钩又无强情绪，不可点击）"
         )
 
+    # ── 立意↔调性一致 cap ──────────────────────────────────────────────────
+    # 高级/严肃立意被简介稀释成爽文套路(打脸/跪地/碾压/逆袭/全村喊冤)= 调性背叛、显廉价。
+    # 只罚【立意里严肃信号≥阈值 且 简介爽文套词扎堆】的错配；纯爽文题材不罚。
+    tone_cfg = config.get("tone_consistency", {}) if isinstance(config, dict) else {}
+    cliche_beats = _lex(tone_cfg, "shuangwen_cliche_beats")
+    serious_signals = _lex(tone_cfg, "serious_concept_signals")
+    if cliche_beats and serious_signals:
+        serious_min = int(tone_cfg.get("serious_signal_min", 2))
+        sat_min = int(tone_cfg.get("cliche_saturation_min", 3))
+        tone_cap = float(tone_cfg.get("tone_cap", cap))
+        n_serious = _count_hits(premise or "", serious_signals)
+        n_cliche = _count_hits(synopsis, cliche_beats)
+        if n_serious >= serious_min and n_cliche >= sat_min and total > tone_cap:
+            total = tone_cap
+            findings.append(
+                f"[立意↔调性错配] 立意严肃/高概念(命中{n_serious})，简介却堆 {n_cliche} 个爽文套路"
+                f"(打脸/跪地/碾压/逆袭…) → 调性背叛、显廉价 → 封顶 {tone_cap:.0f}"
+            )
+            suggestions.append(
+                "简介改用与立意一致的张力(代价/异化/抉择/恐惧)，删打脸/跪地/碾压/逆袭等爽文套词"
+            )
+
     grade = _grade_from_total(total, config)
     return BlurbAppealVerdict(
         total=total,

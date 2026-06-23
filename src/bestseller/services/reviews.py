@@ -752,6 +752,32 @@ _FOLK_HORROR_TAIL_HOOK_TERMS = (
     "门缝",
     "三短一长",
 )
+# ── Universal show-don't-tell signal vocab (2026-06-23) ──────────────────────
+# Root-cause fix: emotion/hook scene scores were ratio-matches against
+# genre-blind/contract-literal checklists, so prose that carries emotion+tension
+# through BODY LANGUAGE and IMAGERY (the hallmark of GOOD show-don't-tell prose)
+# scored ~0.1 → infinite rewrite churn. These genre-NEUTRAL "embodied" lexicons
+# feed a DENSITY scorer (reward richness, not checklist-ratio) so strong prose in
+# ANY genre is recognised — ritual-xuanhuan, urban, romance alike. The sibling
+# show_dont_tell scorer already counts these (and rated the same prose 1.0); we
+# bring emotion/hook in line. Additive via max(): can only lift prose that truly
+# has the markers, so flat telling-prose still fails.
+_EMBODIED_EMOTION_TERMS: tuple[str, ...] = (
+    "汗", "汗毛", "冷汗", "心跳", "心口", "脉搏", "屏息", "屏住", "呼吸",
+    "喉咙", "喉结", "嗓子", "脊背", "后背", "后颈", "脖颈", "颈后",
+    "指节", "指尖", "手指", "拳头", "攥", "攥紧", "握紧", "掐", "捏",
+    "咬", "牙关", "咬牙", "颤", "发抖", "哆嗦", "僵住", "顿住", "绷紧",
+    "瞳孔", "眼底", "眼神", "目光", "血色", "苍白", "煞白", "踉跄",
+    "发紧", "收紧", "死死", "咽", "嘴唇", "胸口", "太阳穴", "青筋",
+    "鸡皮疙瘩", "头皮发麻", "浑身", "脊椎", "脊梁",
+)
+_TENSION_HOOK_TERMS: tuple[str, ...] = (
+    "忽然", "突然", "陡然", "骤然", "竟", "竟然", "居然", "不对劲", "反常",
+    "异样", "古怪", "自行", "无风", "无声", "莫名", "没由来", "睁开",
+    "转向", "渗出", "立起", "浮现", "掐住", "勾住", "钉住", "锁定",
+    "逼近", "推到", "半寸", "一寸", "刹那", "同一息", "下一刻", "下一瞬",
+    "来不及", "蓦地", "倏地", "顷刻", "霎时",
+)
 _INFO_SIGNAL_TERMS = (
     "发现",
     "翻开",
@@ -1039,6 +1065,28 @@ def _keyword_score(
 
 def _signal_score(content: str, *, keywords: list[str], max_terms: int = 10) -> float:
     return _keyword_score(content, keywords=keywords, max_terms=max_terms) or 0.0
+
+
+def _density_score(content: str, vocab: tuple[str, ...], *, target: int = 4) -> float:
+    """Reward DENSITY of distinct signal markers (not checklist-ratio).
+
+    ``_keyword_score`` measures matched/total against the first ~10 checklist
+    terms — it punishes prose that delivers emotion/tension through markers
+    OUTSIDE the checklist (i.e. good show-don't-tell prose). This counts how many
+    DISTINCT ``vocab`` markers appear and saturates at ``target`` — so prose rich
+    in embodied emotion / anomaly tension scores high regardless of which exact
+    markers it uses, while flat telling-prose (few markers) still scores low.
+    """
+
+    if not content:
+        return 0.0
+    hits = 0
+    for term in vocab:
+        if term and term in content:
+            hits += 1
+            if hits >= target:
+                return 1.0
+    return hits / float(target) if target > 0 else 0.0
 
 
 def _story_bible_frontier(packet: Any | None) -> dict[str, Any]:
@@ -3146,14 +3194,19 @@ def evaluate_scene_draft(
             *_genre_conflict_kw,
         ],
     )
-    emotion_signal = _signal_score(
-        content,
-        keywords=[
-            emotion_phrase,
-            getattr(scene_contract, "emotional_shift", None),
-            *_EMOTION_SIGNAL_TERMS,
-            *_genre_emotion_kw,
-        ],
+    emotion_signal = max(
+        _signal_score(
+            content,
+            keywords=[
+                emotion_phrase,
+                getattr(scene_contract, "emotional_shift", None),
+                *_EMOTION_SIGNAL_TERMS,
+                *_genre_emotion_kw,
+            ],
+        ),
+        # Density of embodied-emotion markers (body language carries emotion in
+        # good show-don't-tell prose; the ratio scorer above misses it).
+        _density_score(content, _EMBODIED_EMOTION_TERMS, target=4),
     )
     info_signal = _signal_score(
         content,
@@ -3163,14 +3216,19 @@ def evaluate_scene_draft(
             *_genre_info_kw,
         ],
     )
-    tail_tension_signal = _signal_score(
-        tail_excerpt,
-        keywords=[
-            getattr(scene_contract, "tail_hook", None),
-            getattr(chapter_contract, "closing_hook", None),
-            *_HOOK_SIGNAL_TERMS,
-            *_genre_hook_kw,
-        ],
+    tail_tension_signal = max(
+        _signal_score(
+            tail_excerpt,
+            keywords=[
+                getattr(scene_contract, "tail_hook", None),
+                getattr(chapter_contract, "closing_hook", None),
+                *_HOOK_SIGNAL_TERMS,
+                *_genre_hook_kw,
+            ],
+        ),
+        # Density of anomaly/imminence markers — imagery-driven hooks (a mirror
+        # turning, ink rewriting itself) are tension the ratio scorer can't see.
+        _density_score(tail_excerpt, _TENSION_HOOK_TERMS, target=3),
     )
 
     conflict = _clamp_score(

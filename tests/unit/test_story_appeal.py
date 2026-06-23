@@ -256,3 +256,21 @@ def test_feedback_emotion_hint_is_genre_aware_for_xuanhuan():
     fb = build_improvement_feedback(rep, cfg)
     assert "退婚" not in fb, "玄幻 feedback must not cross-pollinate urban 退婚"
     assert ("灭门" in fb or "夺宝" in fb or "绝境突破" in fb), fb
+
+
+def test_genre_emotion_primary_dominates_drifted_subgenre():
+    """A drifted/sub-flavor sub_genre must NOT flip the emotion palette.
+
+    Regression: story_architect injected 悬疑 into a 仙侠 book's facets →
+    _canonical_genre('仙侠升级','悬疑')='suspense' → 仙侠 blurb fed 命案/灭口追杀
+    emotion words → couldn't hit the 仙侠 emotion bar → blocked at conception (no
+    book). Primary genre must dominate.
+    """
+    cfg = load_story_appeal_config()
+    xianxia = genre_emotion_exemplars("仙侠升级", "宗门逆袭", cfg)
+    drifted = genre_emotion_exemplars("仙侠升级", "诡秘悬疑", cfg)
+    assert drifted == xianxia, "悬疑 sub must not flip 仙侠 onto the suspense list"
+    assert any("宗" in t or "道" in t or "仙" in t for t in drifted), drifted
+    # a GENUINE suspense primary still resolves to suspense
+    susp = genre_emotion_exemplars("悬疑推理", "灭口", cfg)
+    assert any("命案" in t or "灭口" in t or "追杀" in t for t in susp), susp

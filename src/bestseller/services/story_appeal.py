@@ -150,7 +150,15 @@ def genre_emotion_exemplars(
     table = cfg.get("genre_emotion_exemplars", {}) if isinstance(cfg, dict) else {}
     if not isinstance(table, dict) or not table:
         table = {k: list(v) for k, v in _DEFAULT_EMOTION_EXEMPLARS.items()}
-    canonical = _canonical_genre(genre, sub_genre)
+    # PRIMARY genre dominates the emotion palette. A drifted / sub-flavor
+    # sub_genre must NOT flip the palette: e.g. story_architect injects 悬疑 into
+    # a 仙侠 book's facets (conception overwrites ctx['sub_genre']), and
+    # _canonical_genre('仙侠升级','悬疑') → 'suspense' → the 仙侠 blurb got fed
+    # 命案/灭口追杀 emotion words → couldn't hit the 仙侠 emotion bar → blocked at
+    # conception (no book produced). Resolve from the primary genre first; only
+    # consult sub_genre when the primary is unknown/empty.
+    primary = _canonical_genre(genre, None)
+    canonical = primary if primary in table else _canonical_genre(genre, sub_genre)
     picked = table.get(canonical) or table.get("generic") or _DEFAULT_EMOTION_EXEMPLARS["generic"]
     return tuple(str(x) for x in picked if str(x).strip())
 

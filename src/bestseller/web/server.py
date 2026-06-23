@@ -117,6 +117,9 @@ _METHODOLOGY_COURSE_HTML_PATH = Path(__file__).with_name("novel_methodology_cour
 _METHODOLOGY_COURSE_MD_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "novel-writing-methodology-course.md"
 )
+_METHODOLOGY_BROADCAST_MD_PATH = (
+    Path(__file__).resolve().parents[3] / "docs" / "口播稿-写作方法论-20260623.md"
+)
 # Bounded LRU cache for markdown artifact metadata.  Previous unbounded dict
 # grew without limit over long server runs.  512 entries is enough for a few
 # large projects while capping memory usage.
@@ -4376,7 +4379,12 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
         existing_slugs = {p.slug for p in existing_projects}
 
         for slug_dir in sorted(output_base.iterdir()):
-            if not slug_dir.is_dir() or slug_dir.name.startswith("."):
+            # Skip hidden AND "_"-prefixed dirs: the latter are internal scratch
+            # dirs (e.g. ``_compare-ohstory`` holds chapter-001-freehand.md +
+            # chapter-001-ohstory.md — two files → same chapter_number → a
+            # uq_chapter_number crash that previously failed the WHOLE startup
+            # recovery and left new books stuck at ``auto_resume_pending``).
+            if not slug_dir.is_dir() or slug_dir.name.startswith((".", "_")):
                 continue
             slug = slug_dir.name
             if slug in existing_slugs:
@@ -4455,11 +4463,17 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
             # marked as COMPLETE, so ``run_autowrite_pipeline``'s resume
             # filter (which checks ``ChapterStatus.COMPLETE`` in DB, not disk)
             # correctly skips them and continues from the next chapter.
+            _seen_ch_nums: set[int] = set()
             for ch_file in chapter_files:
                 ch_num_match = _re.search(r"chapter-(\d+)", ch_file.name)
                 if not ch_num_match:
                     continue
                 ch_num = int(ch_num_match.group(1))
+                # Dedupe: variant files (chapter-001.md + chapter-001-ohstory.md)
+                # map to the same chapter_number → would violate uq_chapter_number.
+                if ch_num in _seen_ch_nums:
+                    continue
+                _seen_ch_nums.add(ch_num)
                 try:
                     body = ch_file.read_text(encoding="utf-8")
                 except OSError:
@@ -8069,6 +8083,71 @@ def _build_methodology_lesson_payload(lesson_number: int) -> dict[str, object] |
     return None
 
 
+def _build_methodology_broadcast_payload() -> dict[str, object]:
+    """Split the broadcast-script doc (`## NN · 标题`) into copyable segments."""
+    if _METHODOLOGY_BROADCAST_MD_PATH.exists():
+        content_md = _METHODOLOGY_BROADCAST_MD_PATH.read_text(encoding="utf-8")
+        status = "ready"
+        updated_at = datetime.fromtimestamp(
+            _METHODOLOGY_BROADCAST_MD_PATH.stat().st_mtime, tz=UTC
+        ).isoformat()
+    else:
+        content_md = (
+            "# 写作方法论 · 口播稿\n\n"
+            "口播稿文档尚未生成。请先创建 `docs/口播稿-写作方法论-20260623.md`。"
+        )
+        status = "missing"
+        updated_at = None
+
+    title = "写作方法论 · 口播稿"
+    for line in content_md.splitlines():
+        if line.startswith("# "):
+            title = line.removeprefix("# ").strip() or title
+            break
+
+    heading_re = re.compile(r"^##\s*([0-9０-９]{1,2})\s*·\s*(.+)$", re.MULTILINE)
+    matches = list(heading_re.finditer(content_md))
+    overview_md = content_md[: matches[0].start()].rstrip() if matches else content_md
+    segments: list[dict[str, object]] = []
+    for idx, match in enumerate(matches):
+        raw_number, seg_title = match.groups()
+        normalized_number = int(
+            raw_number.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+        )
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(content_md)
+        markdown = content_md[match.start() : end].strip()
+        excerpt = ""
+        for paragraph in markdown.split("\n\n"):
+            text = paragraph.strip()
+            if text and not text.startswith("#"):
+                excerpt = re.sub(r"\s+", " ", text)
+                break
+        segments.append(
+            {
+                "number": normalized_number,
+                "label": f"第 {normalized_number:02d} 集",
+                "title": seg_title.strip(),
+                "markdown": markdown,
+                "html": markdown_to_html(markdown, language="zh"),
+                "stats": build_markdown_reading_stats(markdown),
+                "excerpt": excerpt[:180],
+            }
+        )
+
+    return {
+        "status": status,
+        "title": title,
+        "updated_at": updated_at,
+        "segment_count": len(segments),
+        "segments": segments,
+        "overview_markdown": overview_md,
+        "overview_html": markdown_to_html(overview_md, language="zh"),
+        "markdown": content_md,
+        "stats": build_markdown_reading_stats(content_md),
+        "source_path": str(_METHODOLOGY_BROADCAST_MD_PATH),
+    }
+
+
 def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
     """Scan the output dir for story_package.json files and return metadata."""
     output_base = Path(settings.output.base_dir)
@@ -9905,6 +9984,9 @@ def serve_web_app(
                     return
                 if path == "/api/methodology-course":
                     self._send_json(_build_methodology_course_payload())
+                    return
+                if path == "/api/methodology-broadcast":
+                    self._send_json(_build_methodology_broadcast_payload())
                     return
                 if path.startswith("/api/methodology-course/lessons/"):
                     lesson_slug = path.removeprefix("/api/methodology-course/lessons/").strip("/")

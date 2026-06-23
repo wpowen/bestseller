@@ -434,6 +434,7 @@ def _detect_staccato(
         # but do NOT break a run — in webnovel markdown every paragraph is
         # blank-line separated, so "consecutive" means consecutive units).
         narration_total = 0
+        prose_total = 0  # non-dialogue narration paragraphs (ratio denominator)
         solo_lines: list[tuple[int, int]] = []  # (offset, end) of each solo line
         run = 0
         max_run = 0
@@ -458,6 +459,7 @@ def _detect_staccato(
                 prev_subject = ""
                 continue
             narration_total += 1
+            prose_total += 1
 
             # Single-sentence? (no internal terminator before a trailing one)
             core = stripped.rstrip("。！？…")
@@ -484,9 +486,12 @@ def _detect_staccato(
                 prev_subject = ""
 
         solo_count = len(solo_lines)
-        if narration_total == 0 or solo_count == 0:
+        if prose_total == 0 or solo_count == 0:
             continue
-        ratio = solo_count / narration_total
+        # Ratio over NON-dialogue narration only — heavy dialogue must not mask
+        # staccato narration (a chapter can be 40% single-sentence narration yet
+        # read <30% when dialogue paragraphs dilute the denominator).
+        ratio = solo_count / prose_total
 
         ratio_hit = solo_count >= min_solo and ratio >= ratio_threshold
         run_hit = max_run >= run_threshold
@@ -496,7 +501,7 @@ def _detect_staccato(
 
         reasons: list[str] = []
         if ratio_hit:
-            reasons.append(f"单句独段{solo_count}/{narration_total}段({ratio*100:.0f}%)")
+            reasons.append(f"单句独段{solo_count}/{prose_total}叙述段({ratio*100:.0f}%)")
         if run_hit:
             reasons.append(f"连续{max_run}段单句独行")
         if subject_hit:

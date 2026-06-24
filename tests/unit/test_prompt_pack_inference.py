@@ -204,3 +204,29 @@ def test_cross_resolver_genre_consistency() -> None:
     assert (
         resolve_genre_review_profile("规则怪谈", "").category_key == "suspense-mystery"
     )
+
+
+def test_contamination_guard_keeps_same_family_sibling_pack() -> None:
+    """A sibling cultivation pack (xianxia vs xuanhuan, both action-progression)
+    must NOT be flipped by the contamination guard — planning and writing stay on
+    the same methodology, no spurious warning. Only CROSS-family explicit packs
+    (detective/game on a cultivation book) are overridden to the genre route."""
+    from bestseller.services.genre_taxonomy import pack_category
+    from bestseller.services.writing_profile import resolve_writing_profile
+
+    # same family → explicit kept
+    assert pack_category("xianxia-upgrade-core") == pack_category("xuanhuan-power-fantasy")
+    profile = resolve_writing_profile(
+        {"market": {"prompt_pack_key": "xianxia-upgrade-core"}},
+        genre="玄幻 / 诡异修仙 / 规则怪谈 / 宗门经营",
+        sub_genre="玄幻",
+    )
+    assert profile.market.prompt_pack_key == "xianxia-upgrade-core"
+
+    # cross family (detective pack on a cultivation book) → genre route wins
+    profile2 = resolve_writing_profile(
+        {"market": {"prompt_pack_key": "suspense-mystery"}},
+        genre="诡异修仙 升级流",
+        sub_genre="修仙",
+    )
+    assert profile2.market.prompt_pack_key in _CULTIVATION_PACKS

@@ -264,6 +264,33 @@ def _spine_genre_in(haystack: str) -> str | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def _pack_category_index() -> dict[str, str]:
+    """Map each known prompt-pack key → its review category.
+
+    Built from genre/sub-genre ``pack`` ↔ ``category`` pairs in the taxonomy.
+    Used to tell whether two different packs belong to the SAME family (e.g.
+    xianxia-upgrade-core and xuanhuan-power-fantasy are both action-progression)
+    so the contamination guard does not "correct" one cultivation pack into a
+    sibling cultivation pack.
+    """
+    index: dict[str, str] = {}
+    for genre in load_genre_taxonomy().genres:
+        if genre.pack_default:
+            index.setdefault(genre.pack_default, genre.category_default)
+        for sub in genre.sub_genres:
+            if sub.pack and sub.category:
+                index.setdefault(sub.pack, sub.category)
+    return index
+
+
+def pack_category(pack_key: str | None) -> str | None:
+    """Return the review category a prompt-pack serves, or ``None`` if unknown."""
+    if not pack_key:
+        return None
+    return _pack_category_index().get(pack_key)
+
+
 def canonicalize(genre_str: str | None, sub_genre: str | None = None) -> str | None:
     """Return the canonical genre key for a free-form genre/sub-genre string.
 

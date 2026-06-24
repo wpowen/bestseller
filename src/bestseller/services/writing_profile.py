@@ -353,15 +353,29 @@ def resolve_writing_profile(
     # genre-consistent preset choices intact while refusing cross-genre leakage.
     effective_pack_key = pack_key or genre_route_key
     if genre_route_key and pack_key and pack_key != genre_route_key:
-        _logger.warning(
-            "prompt_pack contamination guard: explicit pack %r contradicts genre "
-            "route %r (genre=%r sub_genre=%r); using genre route.",
-            pack_key,
-            genre_route_key,
-            genre,
-            sub_genre,
-        )
-        effective_pack_key = genre_route_key
+        # Only a CROSS-FAMILY explicit pack is contamination. Two packs in the
+        # same review category (e.g. xianxia-upgrade-core vs xuanhuan-power-
+        # fantasy — both action-progression) are sibling cultivation packs: the
+        # explicit one (chosen at conception, baked into the planning artifacts)
+        # is kept so planning and writing stay on the SAME methodology. Without
+        # this, a 玄幻/诡异修仙 book whose sub_genre normalises to 玄幻 would warn
+        # and flip the writer from the xianxia pack the outline used to the
+        # xuanhuan sibling — a needless planning↔writing seam.
+        from bestseller.services.genre_taxonomy import pack_category
+
+        explicit_cat = pack_category(pack_key)
+        route_cat = pack_category(genre_route_key)
+        same_family = explicit_cat is not None and explicit_cat == route_cat
+        if not same_family:
+            _logger.warning(
+                "prompt_pack contamination guard: explicit pack %r contradicts genre "
+                "route %r (genre=%r sub_genre=%r); using genre route.",
+                pack_key,
+                genre_route_key,
+                genre,
+                sub_genre,
+            )
+            effective_pack_key = genre_route_key
     prompt_pack = resolve_prompt_pack(
         effective_pack_key,
         genre=genre,

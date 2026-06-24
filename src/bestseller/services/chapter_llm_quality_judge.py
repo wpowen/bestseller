@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 # ruff: noqa: ANN401,RUF001
+import asyncio
+import contextlib
 import json
 import os
 import re
@@ -652,17 +654,40 @@ async def judge_chapter_commercial_quality_stable(
     corpus_key = reference_corpus_key or genre_context.corpus_key or GENERIC_CORPUS_KEY
     n = samples if samples is not None else _judge_samples_count()
     n = max(1, int(n))
-    results: list[LLMQualityJudgeResult] = []
-    for _ in range(n):
-        results.append(
-            await judge_chapter_commercial_quality(
-                session, settings,
-                chapter_number=chapter_number, content_md=content_md,
-                reference_corpus_key=corpus_key, genre_context=genre_context, **kwargs,
-            )
+
+    async def _one_sample(sess: AsyncSession) -> LLMQualityJudgeResult:
+        return await judge_chapter_commercial_quality(
+            sess, settings,
+            chapter_number=chapter_number, content_md=content_md,
+            reference_corpus_key=corpus_key, genre_context=genre_context, **kwargs,
         )
+
     if n == 1:
-        return results[0]
+        return await _one_sample(session)
+
+    # Run the N samples CONCURRENTLY, each with its OWN pooled session.
+    # AsyncSession is not safe for concurrent use and complete_text() persists
+    # an llm_run row, so samples cannot share one session. Sequential sampling
+    # made N critic calls serialize under the reviewer's single 90s timeout →
+    # the judge timed out and the chapter fell back to a BLIND accept-on-stall
+    # with no real bestseller verdict. Concurrency collapses wall-clock from
+    # N×latency to ~1×latency, so the judge actually returns a verdict.
+    results: list[LLMQualityJudgeResult]
+    try:
+        from bestseller.infra.db.session import get_server_session
+
+        async with contextlib.AsyncExitStack() as stack:
+            sessions = [
+                await stack.enter_async_context(get_server_session())
+                for _ in range(n)
+            ]
+            results = list(
+                await asyncio.gather(*[_one_sample(s) for s in sessions])
+            )
+    except RuntimeError:
+        # DB pool not initialized (e.g. unit tests) — fall back to sequential
+        # sampling on the shared session (original behavior, concurrency-safe).
+        results = [await _one_sample(session) for _ in range(n)]
 
     med_overall = statistics.median(r.overall_score for r in results)
     dim_keys: set[str] = set()

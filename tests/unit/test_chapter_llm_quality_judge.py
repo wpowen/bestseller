@@ -97,6 +97,116 @@ async def test_chapter_llm_quality_judge_passes_front_ten(
     assert result.passed is True
 
 
+def _scored_completion(overall: float) -> LLMCompletionResult:
+    return LLMCompletionResult(
+        content=json.dumps(
+            {
+                "pass": True,
+                "overall_score": overall,
+                "dimension_scores": {"opening_pull": overall, "readability": overall},
+                "blocking_issues": [],
+                "rewrite_plan": {"scope": "chapter"},
+            },
+            ensure_ascii=False,
+        ),
+        provider="mock",
+        model_name="mock-critic",
+    )
+
+
+@pytest.mark.asyncio
+async def test_stable_judge_runs_samples_concurrently_with_own_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stable judge must run its N samples CONCURRENTLY, each with its own
+    pooled session (regression: 3 sequential calls blew past the reviewer's
+    timeout → blind accept-on-stall with no real verdict). When the DB pool is
+    available the samples fan out via get_server_session + asyncio.gather.
+    """
+
+    scores = [0.70, 0.80, 0.90]
+    calls = {"n": 0, "sessions": []}
+
+    async def fake_complete_text(session, settings, request):
+        idx = calls["n"]
+        calls["n"] += 1
+        calls["sessions"].append(id(session))
+        return _scored_completion(scores[idx % len(scores)])
+
+    import contextlib as _ctx
+
+    sessions_handed_out: list[object] = []
+
+    @_ctx.asynccontextmanager
+    async def fake_get_server_session():
+        s = FakeSession()
+        sessions_handed_out.append(s)
+        yield s
+
+    monkeypatch.setattr(chapter_llm_quality_judge, "complete_text", fake_complete_text)
+    import bestseller.infra.db.session as _sess_mod
+
+    monkeypatch.setattr(_sess_mod, "get_server_session", fake_get_server_session)
+
+    result = await chapter_llm_quality_judge.judge_chapter_commercial_quality_stable(
+        FakeSession(),
+        load_settings(env={}),
+        chapter_number=5,
+        content_md="天道面板弹出一行乱码。",
+        samples=3,
+    )
+
+    # All 3 samples ran, each on a DISTINCT own session (concurrency-safe).
+    assert calls["n"] == 3
+    assert len(set(calls["sessions"])) == 3
+    assert len(sessions_handed_out) == 3
+    # Median of [0.70, 0.80, 0.90] == 0.80.
+    assert result.overall_score == pytest.approx(0.80)
+
+
+@pytest.mark.asyncio
+async def test_stable_judge_falls_back_to_sequential_when_pool_uninitialized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the DB pool is not initialized (unit/test context) the stable judge
+    must fall back to sequential sampling on the shared session, not crash."""
+
+    scores = [0.60, 0.90, 0.90]
+    calls = {"n": 0}
+
+    async def fake_complete_text(session, settings, request):
+        idx = calls["n"]
+        calls["n"] += 1
+        return _scored_completion(scores[idx % len(scores)])
+
+    async def boom():
+        raise RuntimeError("Database not initialized. Call init_db() first.")
+
+    import contextlib as _ctx
+
+    @_ctx.asynccontextmanager
+    async def fake_get_server_session():
+        await boom()
+        yield  # unreachable
+
+    monkeypatch.setattr(chapter_llm_quality_judge, "complete_text", fake_complete_text)
+    import bestseller.infra.db.session as _sess_mod
+
+    monkeypatch.setattr(_sess_mod, "get_server_session", fake_get_server_session)
+
+    result = await chapter_llm_quality_judge.judge_chapter_commercial_quality_stable(
+        FakeSession(),
+        load_settings(env={}),
+        chapter_number=5,
+        content_md="天道面板弹出一行乱码。",
+        samples=3,
+    )
+
+    assert calls["n"] == 3
+    # Median of [0.60, 0.90, 0.90] == 0.90.
+    assert result.overall_score == pytest.approx(0.90)
+
+
 def test_llm_quality_judge_coerces_loose_issue_and_rewrite_plan_shapes() -> None:
     result = quality_judge_result_from_mapping(
         {

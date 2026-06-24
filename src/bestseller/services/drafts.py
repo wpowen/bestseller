@@ -8128,7 +8128,20 @@ def _front10_contract_violations_for_content(
                 ),
             )
         )
-    rule_lecture_hits = _front10_rule_lecture_terms(content)
+    # 去同质化 P0-1: rule-lecture density is now a PER-BOOK check — it fires only
+    # on this book's own rule jargon, supplied via chapter/project metadata
+    # ``rule_lecture_terms`` (the generic "don't info-dump rules" concern lives in
+    # the genre-aware exposition_density_gate). Thread those terms in so the gate
+    # is not a silent no-op for books that DO declare their rule vocabulary.
+    _chapter_meta = getattr(chapter, "metadata_json", None) or {}
+    _rule_lecture_terms = (
+        _chapter_meta.get("rule_lecture_terms")
+        if isinstance(_chapter_meta, Mapping)
+        else None
+    ) or ()
+    rule_lecture_hits = _front10_rule_lecture_terms(
+        content, [str(t) for t in _rule_lecture_terms if str(t).strip()]
+    )
     if rule_lecture_hits:
         violations.append(
             Violation(
@@ -8704,10 +8717,10 @@ def build_chapter_first_draft_prompts(
         "到最后一个场景的尾钩落成后必须停止，不得继续补新的循环段落。"
         "严格按场景卡的单场字数边界分配篇幅：每场只完成本场任务，不得把一个场景扩写成整章体量；"
         "每场达成离场状态后，用一句可见转场进入下一场。"
-        "场景卡的入场状态、离场状态和 forbidden_actions 是硬边界；不得把“失声/回声/半账未解”"
+        "场景卡的入场状态、离场状态和 forbidden_actions 是硬边界；不得把场景卡里的"
         # NOTE (2026-06-24 去同质化 P0-1): genericised — previously hardcoded one
-        # book's horror beats/objects/jargon (被吞掉/门合拢/铜钱/认账/镜债/镜中声音).
-        "升级成未写在场景卡里的高潮/死亡/关键转折动作；"
+        # book's horror beats/objects/jargon (失声/回声/半账未解/被吞掉/门合拢/铜钱/认账/镜债).
+        "轻量状态、悬念或未兑现伏笔，升级成未写在场景卡里的高潮/死亡/关键转折动作；"
         "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、关键不可逆事件、额外活人 NPC 等一律禁止；"
         "电话/短信只能作为同一视角内的现实沟通工具，不得用来切走 POV 或凭空送入线索。"
         f"如果模型准备写超过42段或超过{hard_max_words}字，必须优先删解释、删重复氛围、删二次推理，"

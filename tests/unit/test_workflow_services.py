@@ -602,8 +602,11 @@ def test_outline_word_targets_are_normalized_to_shared_budget() -> None:
     )
 
     assert repaired == 4
-    assert batch.chapters[0].target_word_count == 2000
-    assert [scene.target_word_count for scene in batch.chapters[0].scenes] == [667, 667, 667]
+    # The project average (2000) would materialize fragile chapters whose ~80%
+    # realized length grazes the 1800 floor; the production floor-safe minimum
+    # (ceil(1800/0.75)=2400) lifts the target so under-production still clears it.
+    assert batch.chapters[0].target_word_count == 2400
+    assert [scene.target_word_count for scene in batch.chapters[0].scenes] == [800, 800, 800]
 
 
 def build_planned_chapter(project: ProjectModel, number: int, *, status: str = ChapterStatus.PLANNED.value) -> ChapterModel:

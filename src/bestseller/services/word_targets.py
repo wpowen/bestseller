@@ -210,6 +210,26 @@ def word_target_policy(settings: AppSettings) -> WordTargetPolicy:
     )
 
 
+# The zh prose models empirically UNDER-produce vs the per-scene target. Observed
+# on qwen3.7-plus (custom-xuanhuan-1782291202): chapters land 77-90% of target,
+# scenes as low as 59%. The old normalize logic assumed a +10-20% OVERSHOOT, so it
+# accepted an LLM-proposed 2200 target whose ~80%-realized length (~1760) breaches
+# the 1800 hard floor → recurring CHAPTER_TOO_SHORT churn + repair exhaustion (and
+# the short drafts also drop hook anchors → HOOK_ECHO_MISSING). We floor the WRITING
+# target so even ~75% realization clears the hard floor with margin. This raises the
+# target the writer AIMS at; it does NOT touch the gate's hard floor
+# (CHINESE_CHAPTER_HARD_MIN_WORDS), so it adds margin instead of moving the bar.
+_PRODUCTION_FLOOR_REALIZATION = 0.75
+
+
+def _floor_safe_chapter_target(policy: WordTargetPolicy) -> int:
+    """Smallest chapter writing target whose ~75%-realized length still clears the
+    zh hard floor. Capped at ``chapter_max`` so it can never breach the ceiling."""
+
+    safe = ceil(CHINESE_CHAPTER_HARD_MIN_WORDS / _PRODUCTION_FLOOR_REALIZATION)
+    return min(safe, policy.chapter_max)
+
+
 def _positive_int(value: Any) -> int | None:
     try:
         parsed = int(value)
@@ -230,15 +250,17 @@ def effective_chapter_word_target(project: Any, settings: AppSettings) -> int:
     """Resolve the chapter target that planning, writing, and gates should share."""
 
     policy = word_target_policy(settings)
+    floor_safe = _floor_safe_chapter_target(policy)
     project_average = project_average_chapter_words(project)
     candidate = project_average if project_average is not None else policy.chapter_target
     if policy.chapter_min <= candidate <= policy.chapter_max:
-        return candidate
-    return max(policy.chapter_min, min(policy.chapter_target, policy.chapter_max))
+        return max(candidate, floor_safe)
+    return max(max(policy.chapter_min, min(policy.chapter_target, policy.chapter_max)), floor_safe)
 
 
 def normalize_chapter_word_target(raw_target: Any, project: Any, settings: AppSettings) -> int:
     policy = word_target_policy(settings)
+    floor_safe = _floor_safe_chapter_target(policy)
     parsed = _positive_int(raw_target)
     if parsed is not None and policy.chapter_min <= parsed <= policy.chapter_max:
         # The chapter WRITING goal must aim at ``chapter_target``, not at
@@ -249,8 +271,12 @@ def normalize_chapter_word_target(raw_target: Any, project: Any, settings: AppSe
         # +10–20% overshoot, so the chapter blows past the cap and needs 5–7
         # whole-chapter re-rolls to converge. Aiming at the target instead
         # keeps scenes small enough that a normal overshoot still lands inside
-        # the band. Shorter LLM proposals are honored as-is.
-        return min(parsed, policy.chapter_target)
+        # the band.
+        #
+        # BUT a too-LOW proposal is just as harmful: a 2-scene/2200 outline whose
+        # ~80%-realized length grazes the 1800 floor churns on CHAPTER_TOO_SHORT.
+        # Floor the target so realistic under-production still clears the floor.
+        return max(min(parsed, policy.chapter_target), floor_safe)
     return effective_chapter_word_target(project, settings)
 
 

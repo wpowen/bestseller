@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from bestseller.services.word_targets import (
+    _floor_safe_chapter_target,
     normalize_chapter_word_target,
     scene_word_target_for_chapter,
     word_target_policy,
@@ -33,12 +34,27 @@ class TestChapterTargetClampsToTarget:
         # out-of-range -> effective target (also the target band)
         assert out <= policy.chapter_target
 
-    def test_shorter_proposal_honored(self) -> None:
+    def test_proposal_above_floor_safe_honored(self) -> None:
+        # A shorter-than-target proposal that still clears the production
+        # floor-safe minimum is honored verbatim (writer may aim shorter).
         s = load_settings()
         policy = word_target_policy(s)
-        shorter = policy.chapter_min + 50
+        floor_safe = _floor_safe_chapter_target(policy)
+        shorter = floor_safe + 50
+        assert shorter < policy.chapter_target  # genuinely shorter than target
         out = normalize_chapter_word_target(shorter, None, s)
         assert out == shorter
+
+    def test_too_short_proposal_floored_to_production_safe(self) -> None:
+        # A proposal whose ~75%-realized length would breach the 1800 hard floor
+        # (e.g. the fragile 2-scene/2200 outline) must be floored up so realistic
+        # under-production still clears the floor — no CHAPTER_TOO_SHORT churn.
+        s = load_settings()
+        policy = word_target_policy(s)
+        floor_safe = _floor_safe_chapter_target(policy)
+        out = normalize_chapter_word_target(policy.chapter_min + 50, None, s)
+        assert out == floor_safe
+        assert out * 0.78 >= 1800  # realistic under-production still clears floor
 
     def test_worst_case_overshoot_stays_under_hard_max(self) -> None:
         """3 scenes, each overshooting 1.3x, must stay <= chapter_max."""

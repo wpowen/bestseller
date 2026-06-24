@@ -386,14 +386,16 @@ def test_chapter_first_auto_repair_instruction_treats_scene_forbidden_as_structu
 def test_chapter_first_auto_repair_instruction_includes_scene_hard_constraints() -> None:
     project_id = uuid4()
     chapter = build_chapter(project_id)
+    # 去同质化 P0-1: redaction now sources terms from PER-BOOK metadata
+    # (object_signal_contract / foreshadowing) + a genre-agnostic modern-tech
+    # candidate list — NOT one book's hardcoded horror nouns.
     chapter.metadata_json = {
         "object_signal_contract": {"forbidden_signals": ["铜钱吸力"]}
     }
     chapter.foreshadowing_actions = {"forbidden_early_leaks": ["归人"]}
     scene = build_scene(project_id, chapter.id)
     scene.forbidden_actions = [
-        "不得用电梯脚印、黑泥鞋印或钱孔形鞋印作为章末钩子。",
-        "不得写张建军被门吞掉或门合拢。",
+        "不得用快递、外卖、配送作为章末钩子。",
     ]
 
     instructions = pipeline_services._render_chapter_first_local_repair_instructions(
@@ -404,10 +406,12 @@ def test_chapter_first_auto_repair_instruction_includes_scene_hard_constraints()
     )
 
     assert "章节硬约束优先级" in instructions
+    # metadata-driven per-book forbidden signals are redacted to placeholders
     assert "铜钱吸力" not in instructions
     assert "归人" not in instructions
-    assert "电梯脚印" not in instructions
-    assert "门吞掉" not in instructions
+    # generic modern-tech immersion-breakers are redacted too
+    assert "快递" not in instructions
+    assert "【禁用通联转送桥段】" in instructions
     assert "【暂缓长线信息】" in instructions
 
 
@@ -1968,9 +1972,10 @@ def test_chapter_first_prompt_enforces_scene_opening_and_front10_forbidden_terms
     assert "【前十章禁写与物件信号硬约束】" in user_prompt
     assert "系统门禁已登记" in user_prompt
     assert "不要复述禁写清单" in user_prompt
-    assert "家族本名" in user_prompt
+    # 去同质化 P0-1: genre-neutral phrasing (was "家族本名" — one book's lineage motif)
+    assert "人物本名" in user_prompt
     assert "允许电话/短信作为同一 POV 内的现实沟通工具" in user_prompt
-    assert "不得引入快递员、配送员等额外活人 NPC" in user_prompt
+    assert "不得引入额外活人 NPC（快递员/配送员等）" in user_prompt
     assert "铜钱发烫" not in user_prompt
 
 
@@ -2029,7 +2034,9 @@ def test_chapter_first_prompt_adds_total_scene_budget_guardrail() -> None:
     # hard_max for the zh band is 3500 (target 2600 → band 1800-2600-3500).
     assert "超过3500字" in user_prompt
     assert "离场状态和 forbidden_actions 是硬边界" in user_prompt
-    assert "升级成“被拖进门、被吞掉、确认死亡、门合拢”" in user_prompt
+    # 去同质化 P0-1: the escalation guard is genre-neutral now (no one book's
+    # horror beats baked into the universal writer prompt).
+    assert "升级成未写在场景卡里的高潮/死亡/关键转折动作" in user_prompt
 
 
 def test_generated_chapter_cleanup_removes_forbidden_signal_negation_echoes() -> None:
@@ -2187,6 +2194,11 @@ def test_front10_contract_gate_does_not_count_mundane_account_book_as_rule_lectu
 def test_front10_contract_gate_blocks_scene_forbidden_terms_and_rule_lecture() -> None:
     chapter = build_chapter(uuid4())
     chapter.chapter_number = 2
+    # 去同质化 P0-1: rule-lecture density now fires on THIS book's own declared
+    # rule jargon (per-book metadata), not a hardcoded one-book vocabulary.
+    chapter.metadata_json = {
+        "rule_lecture_terms": ["认账", "入账", "镜债", "账线", "否认"],
+    }
     scene = build_scene(uuid4(), uuid4())
     scene.forbidden_actions = [
         "不得写电话、来电、手机通知、寄件、快递、外卖、配送、物流、跑腿。",
@@ -2215,7 +2227,11 @@ def test_front10_contract_gate_blocks_scene_forbidden_terms_and_rule_lecture() -
     scene_forbidden = [
         violation for violation in violations if violation.code == "FRONT10_SCENE_FORBIDDEN_ACTION"
     ][0]
-    assert "林正淳" in scene_forbidden.detail
+    # 去同质化 P0-1: scene-forbidden detection catches genre-agnostic immersion
+    # breakers (外卖/下楼) from the scene's own forbidden_actions; book-specific
+    # names/jargon are enforced via per-book metadata (forbidden_signals /
+    # rule_lecture_terms), not by hardcoding one book's character names.
+    assert "外卖" in scene_forbidden.detail
 
 
 def test_generated_chapter_cleanup_collapses_llm_text_loops() -> None:

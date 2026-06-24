@@ -149,6 +149,30 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
             "炼体", "灵根", "金丹", "元婴", "境界", "洪荒", "渡劫",
         )
     )
+    _horror_flavor = any(
+        token in label
+        for token in ("诡异", "规则怪谈", "规则生存", "克苏鲁", "scp", "怪谈", "诡秘")
+    )
+    # ── Framework convergence: cultivation-horror hybrid → canonical taxonomy ──
+    # A 诡异修仙 / 高武 + 规则怪谈 / 诡异 book is cultivation with horror FLAVOR. The
+    # cascade below has several secondary-tag routes (宗门经营→game-esport,
+    # 规则怪谈→suspense, 系统流/副本→game-esport) that hijack such hybrids onto the
+    # wrong methodology — the recurring "secondary tag beats the spine" class we
+    # kept patching one route at a time. Route these through the SINGLE canonical
+    # source of truth (genre_taxonomy, whose canonicalize() now applies spine
+    # precedence) so the writer pack AGREES with the review profile. Pure
+    # sub-modes (宗门经营 sim without a 修仙 spine, 复仇仙侠, normal books) are
+    # untouched — they don't trip both flags.
+    if _cultivation_spine and _horror_flavor:
+        try:
+            from bestseller.services.genre_taxonomy import canonicalize, get_genre
+
+            _node = get_genre(canonicalize(genre, sub_genre))
+            if _node is not None and _node.pack_default:
+                return _node.pack_default
+        except Exception:
+            pass
+        return "xianxia-upgrade-core"
     # ── 2026 trending subgenre routes (check FIRST so they win over generic tokens) ──
     # 都市修仙 / 修仙 2.0 — must beat generic 都市 and 仙 routes
     if any(token in label for token in ("都市修仙", "修仙2.0", "修仙二.0", "灵气复苏", "系统修仙", "urban-cultivation", "urban cultivation")):
@@ -288,6 +312,20 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
     # still lands here.
     if any(token in label for token in ("仙", "玄幻", "奇幻", "升级", "修真")):
         return "xianxia-upgrade-core"
+    # ── Canonical fallback (convergence) ──
+    # The keyword cascade above misses some valid taxonomy genres whose label
+    # uses none of its tokens (e.g. "高武世界" → no 仙/玄幻/升级 token → previously
+    # returned None → writer got a generic pack). Defer to the canonical
+    # taxonomy's pack_default before giving up, so any genre the taxonomy knows
+    # gets a genre-consistent pack and agrees with the review profile.
+    try:
+        from bestseller.services.genre_taxonomy import canonicalize, get_genre
+
+        _node = get_genre(canonicalize(genre, sub_genre))
+        if _node is not None and _node.pack_default:
+            return _node.pack_default
+    except Exception:
+        pass
     return None
 
 

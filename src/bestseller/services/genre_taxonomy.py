@@ -238,21 +238,56 @@ def _alias_index() -> dict[str, str]:
     return index
 
 
+# Cultivation/martial "spine" precedence. ``_CANON_PRIORITY`` ranks the
+# horror/suspense/game *flavor* genres ABOVE 修仙/玄幻, so a hybrid like
+# 诡异修仙+规则怪谈 (or 宗门经营 → game) canonicalised to suspense/game and every
+# downstream resolver inherited the wrong genre. The spine is the load-bearing
+# axis: when a clear cultivation/martial spine token is present, it wins over a
+# flavor genre. Centralising the rule here (the single canonical front door)
+# replaces the per-resolver keyword guards that previously had to be patched one
+# by one — every consumer that goes through ``canonicalize`` now agrees.
+_SPINE_TOKENS_BY_GENRE: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("xianxia", ("诡异修仙", "修仙", "修真", "仙侠", "炼气", "渡劫", "金丹", "元婴", "道种")),
+    ("xuanhuan", ("玄幻", "高武", "武道", "斗气", "灵气复苏", "极道")),
+)
+# Flavor genres that a cultivation/martial spine should override when both match.
+_SPINE_OVERRIDABLE_FLAVOR_GENRES: frozenset[str] = frozenset(
+    {"suspense", "occult", "game", "infinite-flow"}
+)
+
+
+def _spine_genre_in(haystack: str) -> str | None:
+    """Return the cultivation/martial spine genre present in *haystack*, if any."""
+    for genre_key, tokens in _SPINE_TOKENS_BY_GENRE:
+        if any(token in haystack for token in tokens):
+            return genre_key
+    return None
+
+
 def canonicalize(genre_str: str | None, sub_genre: str | None = None) -> str | None:
     """Return the canonical genre key for a free-form genre/sub-genre string.
 
     Strategy: exact-match the genre string, then the sub_genre string, then
-    longest-substring containment (priority-broken on ties).  Returns ``None``
-    when nothing matches (caller should fall back to legacy routing).
+    longest-substring containment (priority-broken on ties).  A cultivation/
+    martial spine overrides a matched flavor genre (see ``_SPINE_TOKENS_BY_GENRE``).
+    Returns ``None`` when nothing matches (caller should fall back to legacy
+    routing).
     """
     index = _alias_index()
 
+    haystack = f"{genre_str or ''} {sub_genre or ''}"
     for candidate in (genre_str, sub_genre):
         token = (candidate or "").strip()
         if token and token in index:
-            return index[token]
+            matched = index[token]
+            # Spine precedence still applies to exact matches: an exact
+            # "诡异修仙" must not fall to occult when the spine is unambiguous.
+            if matched in _SPINE_OVERRIDABLE_FLAVOR_GENRES:
+                spine = _spine_genre_in(haystack)
+                if spine is not None:
+                    return spine
+            return matched
 
-    haystack = f"{genre_str or ''} {sub_genre or ''}"
     best_key: str | None = None
     best_len = 0
     for alias, genre_key in index.items():
@@ -265,6 +300,10 @@ def canonicalize(genre_str: str | None, sub_genre: str | None = None) -> str | N
             ):
                 best_key = genre_key
                 best_len = alias_len
+    if best_key in _SPINE_OVERRIDABLE_FLAVOR_GENRES:
+        spine = _spine_genre_in(haystack)
+        if spine is not None:
+            return spine
     return best_key
 
 

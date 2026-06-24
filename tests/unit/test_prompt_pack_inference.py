@@ -123,19 +123,28 @@ def test_resolve_writing_profile_no_explicit_uses_genre_route() -> None:
     assert profile.market.prompt_pack_key == "urban-cultivation-2.0"
 
 
-def test_rule_horror_on_cultivation_spine_routes_to_xianxia_pack() -> None:
-    """诡异修仙/高武/升级流 + 规则怪谈 must route to the cultivation pack, NOT
-    suspense-mystery. The 规则怪谈 token is horror flavor on a 升级流 spine;
-    without the guard it short-circuits to suspense-mystery and the writer gets
-    detective prompts → every cultivation scene churns."""
+# Cultivation/power-fantasy packs that are all action-progression-family: a
+# 诡异修仙/高武 + 规则怪谈 hybrid must land on ONE of these (the canonical layer
+# picks xuanhuan-power-fantasy when 高武世界 is present, xianxia-upgrade-core for
+# plain 修仙), NEVER on game-esport / suspense-mystery.
+_CULTIVATION_PACKS = {"xianxia-upgrade-core", "xuanhuan-power-fantasy", "urban-cultivation-2.0"}
+
+
+def test_rule_horror_on_cultivation_spine_routes_to_cultivation_pack() -> None:
+    """诡异修仙/高武/升级流 + 规则怪谈 must route to a cultivation pack, NOT
+    suspense-mystery or game-esport. The 规则怪谈/宗门经营 tokens are flavor on a
+    cultivation spine; without the guard they hijack the writer's methodology."""
     from bestseller.services.prompt_packs import infer_default_prompt_pack_key
 
     assert (
         infer_default_prompt_pack_key("诡异修仙 / 高武极道 / 规则怪谈 / 升级流", "高武世界")
-        == "xianxia-upgrade-core"
+        in _CULTIVATION_PACKS
     )
+    assert infer_default_prompt_pack_key("修仙 规则怪谈 恐怖", None) in _CULTIVATION_PACKS
+    # The exact 宗门经营 hijack that triggered the framework fix:
     assert (
-        infer_default_prompt_pack_key("修仙 规则怪谈 恐怖", None) == "xianxia-upgrade-core"
+        infer_default_prompt_pack_key("诡异修仙 宗门经营 规则怪谈 幕后黑手 数据流", "")
+        in _CULTIVATION_PACKS
     )
 
 
@@ -160,4 +169,38 @@ def test_cultivation_spine_book_writer_pack_not_overridden() -> None:
         genre="诡异修仙 / 高武极道 / 规则怪谈 / 升级流",
         sub_genre="高武世界",
     )
-    assert profile.market.prompt_pack_key == "xianxia-upgrade-core"
+    # The writer must get a cultivation pack (not detective/game); the canonical
+    # genre route may refine xianxia→xuanhuan for a 高武世界 book — both are valid.
+    assert profile.market.prompt_pack_key in _CULTIVATION_PACKS
+
+
+def test_cross_resolver_genre_consistency() -> None:
+    """Recurrence guard for the genre-misroute CLASS: the writer pack and the
+    review profile must AGREE on a genre's family. A cultivation-spine book
+    (whatever flavor/management tags ride along) must get a cultivation pack AND
+    an action-progression review profile — they must not diverge (the bug where
+    宗门经营→game-esport pack but action-progression review, or 规则怪谈→suspense
+    pack but action-progression review). Pure flavor genres stay flavor on both.
+    If a future change re-introduces divergence on any of these, this fails.
+    """
+    from bestseller.services.genre_review_profiles import resolve_genre_review_profile
+    from bestseller.services.prompt_packs import infer_default_prompt_pack_key
+
+    cultivation_genres = [
+        "诡异修仙 宗门经营 规则怪谈 幕后黑手 数据流",
+        "诡异修仙 规则怪谈",
+        "诡异修仙",
+        "高武世界",
+        "修仙 规则怪谈 恐怖",
+    ]
+    for g in cultivation_genres:
+        pack = infer_default_prompt_pack_key(g, "")
+        review = resolve_genre_review_profile(g, "").category_key
+        assert pack in _CULTIVATION_PACKS, f"{g}: pack {pack} not cultivation"
+        assert review == "action-progression", f"{g}: review {review} not action-progression"
+
+    # Pure flavor genres (no cultivation spine) stay on the flavor family.
+    assert infer_default_prompt_pack_key("规则怪谈", "") == "suspense-mystery"
+    assert (
+        resolve_genre_review_profile("规则怪谈", "").category_key == "suspense-mystery"
+    )

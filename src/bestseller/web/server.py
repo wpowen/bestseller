@@ -117,6 +117,9 @@ _METHODOLOGY_COURSE_HTML_PATH = Path(__file__).with_name("novel_methodology_cour
 _METHODOLOGY_COURSE_MD_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "novel-writing-methodology-course.md"
 )
+_METHODOLOGY_COURSE_EN_MD_PATH = (
+    Path(__file__).resolve().parents[3] / "docs" / "novel-writing-methodology-course.en.md"
+)
 _METHODOLOGY_BROADCAST_MD_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "口播稿-写作方法论-20260623.md"
 )
@@ -2997,6 +3000,7 @@ class WebTaskManager:
                 and str(self._tasks[task_id].project_slug or "").strip()
             }
         active_workflow_slugs: set[str] = set()
+        existing_project_slugs: set[str] = set()
         if settings is not None and pending_slugs:
             try:
                 active_workflow_slugs = asyncio.run(
@@ -3009,11 +3013,26 @@ class WebTaskManager:
                 )
             except Exception:
                 logger.exception("Zombie auto-resume failed to inspect active DB workflows")
+            # Which pending slugs already have a project row? A conception-phase
+            # zombie has none — worker self-heal (keyed on an existing project)
+            # can never recover it, so it must be re-run in-process instead.
+            try:
+                existing_project_slugs = asyncio.run(
+                    _load_existing_project_slugs(settings, pending_slugs)
+                )
+            except RuntimeError:
+                logger.warning(
+                    "Zombie auto-resume could not inspect existing projects "
+                    "from an active event loop"
+                )
+            except Exception:
+                logger.exception("Zombie auto-resume failed to inspect existing projects")
 
         delegated: list[str] = []
         for task_id in pending:
             repair_payload: dict[str, object] | None = None
             enqueue_autowrite_slug: str | None = None
+            conception_resume_payload: dict[str, object] | None = None
             with self._lock:
                 task = self._tasks.get(task_id)
                 if task is None or not task.payload:
@@ -3040,6 +3059,35 @@ class WebTaskManager:
                     self._save_to_disk()
                     delegated.append(task_id)
                     logger.info("Resuming repair zombie task %s via web worker", task_id)
+                elif (
+                    task.task_type == "autowrite"
+                    and settings is not None
+                    and slug
+                    and slug not in existing_project_slugs
+                    and bool(task.payload.get("_run_conception"))
+                ):
+                    # Conception-phase zombie: no project row exists yet, so
+                    # worker self-heal (which resumes a stored project keyed on
+                    # slug) has nothing to recover. The conception inputs
+                    # (premise / hooks / concept bundle) live ONLY in this web
+                    # task payload, so re-run conception in-process — this is
+                    # what extends the closed loop to the pre-project phase.
+                    conception_resume_payload = dict(task.payload)
+                    conception_resume_payload["_run_conception"] = True
+                    task.status = "queued"
+                    task.current_stage = "queued"
+                    task.error = None
+                    task.cancel_requested = False
+                    task.record_event(
+                        "resume_requested",
+                        {"reason": "conception-phase auto-resume", "phase": "conception"},
+                    )
+                    self._save_to_disk()
+                    logger.info(
+                        "Resuming conception-phase zombie task %s (slug=%s) in-process",
+                        task_id,
+                        slug,
+                    )
                 elif heal_owned or db_workflow_active:
                     reason = (
                         "DB workflow already active"
@@ -3158,6 +3206,14 @@ class WebTaskManager:
                     daemon=True,
                 )
                 thread.start()
+            if conception_resume_payload is not None:
+                thread = threading.Thread(
+                    target=self._run_with_slot,
+                    args=(task_id, self._run_autowrite_worker, conception_resume_payload),
+                    daemon=True,
+                )
+                thread.start()
+                delegated.append(task_id)
 
         if delegated:
             logger.info(
@@ -4786,6 +4842,31 @@ async def _load_active_workflow_slugs_by_slug(
                 WorkflowRunModel.status.in_(("pending", "queued", "running")),
             )
             .distinct()
+        )
+        return {str(slug) for slug in result.scalars() if slug}
+
+
+async def _load_existing_project_slugs(
+    settings: AppSettings,
+    slugs: set[str],
+) -> set[str]:
+    """Return the subset of ``slugs`` that already have a ``ProjectModel`` row.
+
+    Used by zombie auto-resume to distinguish a *conception-phase* zombie
+    (no project row yet — its only state is the in-memory web payload) from a
+    *writing-phase* zombie (project exists, can be resumed by worker self-heal
+    keyed on slug). The two need different recovery paths.
+    """
+    if not slugs:
+        return set()
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ProjectModel
+
+    async with session_scope(settings) as session:
+        result = await session.execute(
+            select(ProjectModel.slug).where(ProjectModel.slug.in_(slugs)).distinct()
         )
         return {str(slug) for slug in result.scalars() if slug}
 
@@ -7971,18 +8052,42 @@ def _read_methodology_course_html() -> str:
     return "<!DOCTYPE html><html><body><h1>Methodology course page not found.</h1></body></html>"
 
 
-def _load_methodology_course_markdown() -> tuple[str, str, str | None]:
-    if _METHODOLOGY_COURSE_MD_PATH.exists():
-        content_md = _METHODOLOGY_COURSE_MD_PATH.read_text(encoding="utf-8")
-        status = "ready"
-        updated_at = datetime.fromtimestamp(
-            _METHODOLOGY_COURSE_MD_PATH.stat().st_mtime, tz=UTC
-        ).isoformat()
-    else:
-        content_md = (
+def _methodology_course_config(language: str = "zh") -> dict[str, str | Path]:
+    if language == "en":
+        return {
+            "language": "en",
+            "path": _METHODOLOGY_COURSE_EN_MD_PATH,
+            "fallback_title": "The Story Engine Method",
+            "missing_markdown": (
+                "# The Story Engine Method\n\n"
+                "The English methodology document has not been generated yet. "
+                "Create `docs/novel-writing-methodology-course.en.md` first."
+            ),
+            "base_path": "/methodology-course-en",
+        }
+    return {
+        "language": "zh",
+        "path": _METHODOLOGY_COURSE_MD_PATH,
+        "fallback_title": "写小说的方法论",
+        "missing_markdown": (
             "# 写小说的方法论\n\n"
             "教材文档尚未生成。请先创建 `docs/novel-writing-methodology-course.md`。"
-        )
+        ),
+        "base_path": "/methodology-course",
+    }
+
+
+def _load_methodology_course_markdown(language: str = "zh") -> tuple[str, str, str | None]:
+    config = _methodology_course_config(language)
+    doc_path = Path(config["path"])
+    if doc_path.exists():
+        content_md = doc_path.read_text(encoding="utf-8")
+        status = "ready"
+        updated_at = datetime.fromtimestamp(
+            doc_path.stat().st_mtime, tz=UTC
+        ).isoformat()
+    else:
+        content_md = str(config["missing_markdown"])
         status = "missing"
         updated_at = None
     return content_md, status, updated_at
@@ -7990,20 +8095,26 @@ def _load_methodology_course_markdown() -> tuple[str, str, str | None]:
 
 def _split_methodology_course_lessons(
     content_md: str,
+    language: str = "zh",
 ) -> tuple[str, str, list[dict[str, object]]]:
-    title = "写小说的方法论"
+    config = _methodology_course_config(language)
+    title = str(config["fallback_title"])
     for line in content_md.splitlines():
         if line.startswith("# "):
             title = line.removeprefix("# ").strip() or title
             break
 
-    heading_re = re.compile(
-        r"^## 第\s*([0-9０-９]{1,2})\s*[章节期講讲][：:](.+)$",
-        re.MULTILINE,
-    )
+    if language == "en":
+        heading_re = re.compile(r"^##\s*Lesson\s*([0-9]{1,2})\s*[：:](.+)$", re.MULTILINE)
+    else:
+        heading_re = re.compile(
+            r"^## 第\s*([0-9０-９]{1,2})\s*[章节期講讲][：:](.+)$",
+            re.MULTILINE,
+        )
     matches = list(heading_re.finditer(content_md))
     overview_md = content_md[: matches[0].start()].rstrip() if matches else content_md
     lessons: list[dict[str, object]] = []
+    base_path = str(config["base_path"])
     for idx, match in enumerate(matches):
         raw_number, lesson_title = match.groups()
         normalized_number = int(
@@ -8020,12 +8131,14 @@ def _split_methodology_course_lessons(
         lessons.append(
             {
                 "number": normalized_number,
-                "label": f"第 {normalized_number:02d} 章",
+                "label": f"Lesson {normalized_number:02d}"
+                if language == "en"
+                else f"第 {normalized_number:02d} 章",
                 "title": lesson_title.strip(),
                 "anchor": f"lesson-{normalized_number:02d}",
-                "path": f"/methodology-course/{normalized_number:02d}",
+                "path": f"{base_path}/{normalized_number:02d}",
                 "markdown": markdown,
-                "html": markdown_to_html(markdown, language="zh"),
+                "html": markdown_to_html(markdown, language=language),
                 "stats": build_markdown_reading_stats(markdown),
                 "excerpt": excerpt[:180],
             }
@@ -8034,26 +8147,31 @@ def _split_methodology_course_lessons(
     return title, overview_md, lessons
 
 
-def _build_methodology_course_payload() -> dict[str, object]:
-    content_md, status, updated_at = _load_methodology_course_markdown()
-    title, overview_md, lessons = _split_methodology_course_lessons(content_md)
+def _build_methodology_course_payload(language: str = "zh") -> dict[str, object]:
+    config = _methodology_course_config(language)
+    doc_path = Path(config["path"])
+    content_md, status, updated_at = _load_methodology_course_markdown(language)
+    title, overview_md, lessons = _split_methodology_course_lessons(content_md, language)
     return {
         "status": status,
+        "language": language,
         "title": title,
         "updated_at": updated_at,
         "lesson_count": len(lessons),
         "lessons": lessons,
         "overview_markdown": overview_md,
-        "overview_html": markdown_to_html(overview_md, language="zh"),
+        "overview_html": markdown_to_html(overview_md, language=language),
         "markdown": content_md,
-        "html": markdown_to_html(content_md, language="zh"),
+        "html": markdown_to_html(content_md, language=language),
         "stats": build_markdown_reading_stats(content_md),
-        "source_path": str(_METHODOLOGY_COURSE_MD_PATH),
+        "source_path": str(doc_path),
     }
 
 
-def _build_methodology_lesson_payload(lesson_number: int) -> dict[str, object] | None:
-    course = _build_methodology_course_payload()
+def _build_methodology_lesson_payload(
+    lesson_number: int, language: str = "zh"
+) -> dict[str, object] | None:
+    course = _build_methodology_course_payload(language)
     for lesson in course["lessons"]:
         if isinstance(lesson, dict) and lesson.get("number") == lesson_number:
             return {
@@ -9943,6 +10061,22 @@ def serve_web_app(
                         return
                     self._route_not_found()
                     return
+                if path == "/methodology-course-en":
+                    self._send_text(
+                        _read_methodology_course_html(),
+                        content_type="text/html; charset=utf-8",
+                    )
+                    return
+                if path.startswith("/methodology-course-en/"):
+                    lesson_slug = path.removeprefix("/methodology-course-en/").strip("/")
+                    if re.fullmatch(r"\d{1,2}", lesson_slug or ""):
+                        self._send_text(
+                            _read_methodology_course_html(),
+                            content_type="text/html; charset=utf-8",
+                        )
+                        return
+                    self._route_not_found()
+                    return
                 if path == "/bakeoff":
                     self._send_text(
                         Path(__file__).with_name("novel_bakeoff.html").read_text(encoding="utf-8"),
@@ -9985,6 +10119,9 @@ def serve_web_app(
                 if path == "/api/methodology-course":
                     self._send_json(_build_methodology_course_payload())
                     return
+                if path == "/api/methodology-course-en":
+                    self._send_json(_build_methodology_course_payload("en"))
+                    return
                 if path == "/api/methodology-broadcast":
                     self._send_json(_build_methodology_broadcast_payload())
                     return
@@ -9994,6 +10131,19 @@ def serve_web_app(
                         self._route_not_found()
                         return
                     payload = _build_methodology_lesson_payload(int(lesson_slug))
+                    if payload is None:
+                        self._route_not_found()
+                        return
+                    self._send_json(payload)
+                    return
+                if path.startswith("/api/methodology-course-en/lessons/"):
+                    lesson_slug = path.removeprefix(
+                        "/api/methodology-course-en/lessons/"
+                    ).strip("/")
+                    if not re.fullmatch(r"\d{1,2}", lesson_slug or ""):
+                        self._route_not_found()
+                        return
+                    payload = _build_methodology_lesson_payload(int(lesson_slug), "en")
                     if payload is None:
                         self._route_not_found()
                         return
@@ -11280,10 +11430,21 @@ def serve_web_app(
                             status=HTTPStatus.BAD_REQUEST,
                         )
                         return
-                    # Force-disable conception so resume doesn't recreate from scratch
                     saved_payload = dict(saved_payload)
-                    saved_payload["_run_conception"] = False
                     slug = str(saved_payload.get("slug") or old.get("project_slug") or "")
+                    # Only disable conception when a project already exists
+                    # (writing-phase resume must NOT recreate from scratch). For
+                    # a conception-phase zombie — no project row yet — keep
+                    # conception ON so resume re-runs it; forcing it off would
+                    # try to write chapters for a project that never got built.
+                    project_exists = bool(
+                        slug
+                        and asyncio.run(_load_existing_project_slugs(settings, {slug}))
+                    )
+                    if project_exists:
+                        saved_payload["_run_conception"] = False
+                    else:
+                        saved_payload["_run_conception"] = True
                     block_payload = asyncio.run(
                         _load_project_autowrite_block_payload(settings, slug),
                     )

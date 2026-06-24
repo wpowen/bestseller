@@ -34,8 +34,10 @@ from bestseller.services.concept_lab import (
 )
 from bestseller.services.hook_propagation import coerce_hook_spec, render_hook_spec_prompt_block
 from bestseller.services.platform_title_workflow import (
+    build_story_dna_fallback_title,
     build_title_revision_messages,
     finalize_revised_title,
+    is_bare_taxonomy_title,
     select_primary_platform_title,
     should_revise_primary_title,
 )
@@ -2163,13 +2165,11 @@ async def run_conception_pipeline(
                 title = m.group(0)
                 _is_valid_title = True
     if not _is_valid_title:
-        # Fallback: use genre name as basis (never the description/premise)
-        genre_name = ctx.get("genre", "")
-        sub_genre = ctx.get("sub_genre", "")
-        if is_en:
-            title = f"The {sub_genre or genre_name} Chronicles" if genre_name else "Untitled Novel"
-        else:
-            title = sub_genre[:8] if sub_genre else genre_name[:8] if genre_name else "未命名小说"
+        # 产品红线：题材名 ≠ 书名。绝不用 genre/sub_genre/description 当书名。
+        # 留空种子，交给下游 platform title workflow 的「故事DNA兜底 + LLM 口播重写」
+        # 路径产出一个真正的书名（select_primary_platform_title 对空标题会走
+        # _provisional_primary_candidate → build_story_dna_fallback_title）。
+        title = ""
 
     # Extract synopsis and tags from the finalized result
     synopsis = _safe_get(final_result, "synopsis", "").strip()
@@ -2252,6 +2252,17 @@ async def run_conception_pipeline(
                 title_workflow_primary["llm_revised"] = True
     except Exception:
         logger.warning("Platform title workflow failed during conception", exc_info=True)
+
+    # Final invariant: a book is never named after its genre, and never blank.
+    # If the workflow errored or returned nothing usable, derive a clean,
+    # genre-free name from the story DNA; only as an absolute last resort use a
+    # neutral placeholder (still not a taxonomy label).
+    if not title.strip() or is_bare_taxonomy_title(title):
+        dna_fallback = build_story_dna_fallback_title(title_profile)
+        # A taxonomy name must be replaced even when no DNA fallback exists, so
+        # fall through to the neutral placeholder rather than keeping it.
+        title = dna_fallback or ("Untitled Novel" if is_en else "未命名新书")
+        title_profile["primary_title"] = title
 
     # ── Story/blurb appeal evaluation + bounded keep-best regeneration ──
     # Additive: scores the finalized idea + blurb for click-power and

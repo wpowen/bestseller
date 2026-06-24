@@ -214,6 +214,99 @@
     font-size: 19px;
   }
 
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .copy-btn {
+    cursor: pointer;
+    border: 1px solid var(--border-strong);
+    background: var(--paper-2);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    padding: 8px 14px;
+    transition: border-color .12s ease, background .12s ease, color .12s ease;
+    white-space: nowrap;
+  }
+
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn:active { background: var(--accent-soft); }
+  .copy-btn.copied { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+  .copy-btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+  .tab-strip {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    background: var(--paper-2);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    padding: 10px 20px;
+    margin-bottom: -1px;
+  }
+
+  .tab:hover { color: var(--ink); }
+
+  .tab.active {
+    background: rgba(250, 246, 236, 0.94);
+    color: var(--accent);
+    border-bottom: 1px solid rgba(250, 246, 236, 0.94);
+  }
+
+  .bc-item {
+    border: 1px solid var(--border);
+    background: rgba(250, 246, 236, 0.94);
+    margin-bottom: 14px;
+  }
+
+  .bc-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--paper-2);
+  }
+
+  .bc-head .bc-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .bc-head .bc-num {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+
+  .bc-head h4 {
+    color: var(--ink);
+    font-size: 17px;
+    line-height: 1.3;
+  }
+
+  .bc-body { padding: 6px 22px 20px; }
+
   .lesson-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -373,8 +466,8 @@
 <header class="header">
   <div class="header-row">
     <div class="brand">
-      <h1>写小说的方法论<span class="dot">.</span></h1>
-      <span class="eyebrow">Author Methodology Textbook</span>
+      <h1 id="brandTitle">写小说的方法论<span class="dot">.</span></h1>
+      <span id="brandEyebrow" class="eyebrow">Author Methodology Textbook</span>
     </div>
     <div class="tools">
       <input id="courseSearch" class="search" type="search" placeholder="搜索 24 章方法论...">
@@ -385,39 +478,66 @@
     <a href="/quickstart">任务指挥台</a>
     <a href="/library">书稿库</a>
     <a href="/methodology-course" class="active">写作方法论</a>
+    <a href="/methodology-course-en">English Method</a>
+    <a href="/quickstart">上架资料</a>
+    <a href="/quickstart">工作室设置</a>
   </nav>
 </header>
 
 <main class="shell">
   <section id="overviewView">
-    <div class="hero">
-      <div class="hero-main">
-        <div class="kicker">Methodology Textbook</div>
-        <h2 id="courseTitle">写小说的方法论</h2>
-        <p id="courseSummary">教材目录加载中。</p>
-      </div>
-      <aside class="hero-side">
-        <div class="metrics">
-          <div class="metric"><b id="lessonCount">--</b><span>教材章节</span></div>
-          <div class="metric"><b id="wordCount">--</b><span>估算字数</span></div>
-          <div class="metric"><b id="readMinutes">--</b><span>完整阅读分钟</span></div>
-          <div class="metric"><b id="updatedAt">--</b><span>最近更新</span></div>
+    <div class="tab-strip">
+      <button id="tabCourse" class="tab active" type="button">教材目录</button>
+      <button id="tabBroadcast" class="tab" type="button">口播稿</button>
+    </div>
+
+    <div id="courseTab">
+      <div class="hero">
+        <div class="hero-main">
+          <div class="kicker">Methodology Textbook</div>
+          <h2 id="courseTitle">写小说的方法论</h2>
+          <p id="courseSummary">教材目录加载中。</p>
         </div>
-      </aside>
+        <aside class="hero-side">
+          <div class="metrics">
+            <div class="metric"><b id="lessonCount">--</b><span id="lessonMetricLabel">教材章节</span></div>
+            <div class="metric"><b id="wordCount">--</b><span id="wordMetricLabel">估算字数</span></div>
+            <div class="metric"><b id="readMinutes">--</b><span id="readMetricLabel">完整阅读分钟</span></div>
+            <div class="metric"><b id="updatedAt">--</b><span id="updatedMetricLabel">最近更新</span></div>
+          </div>
+        </aside>
+      </div>
+      <div class="toolbar">
+        <h3>教材目录</h3>
+        <div class="toolbar-actions">
+          <span id="filterStatus" class="badge">24 chapters</span>
+          <button id="copyAllBtn" class="copy-btn" type="button">一键复制全文</button>
+        </div>
+      </div>
+      <div id="lessonGrid" class="lesson-grid"></div>
     </div>
-    <div class="toolbar">
-      <h3>教材目录</h3>
-      <span id="filterStatus" class="badge">24 chapters</span>
+
+    <div id="broadcastTab" hidden>
+      <div class="toolbar">
+        <h3>口播稿全集</h3>
+        <div class="toolbar-actions">
+          <span id="broadcastStatus" class="badge">--</span>
+          <button id="copyAllBroadcastBtn" class="copy-btn" type="button">复制全部口播稿</button>
+        </div>
+      </div>
+      <div id="broadcastList">
+        <p class="empty">口播稿加载中…</p>
+      </div>
     </div>
-    <div id="lessonGrid" class="lesson-grid"></div>
   </section>
 
   <section id="detailView" hidden>
     <article class="content">
       <nav class="content-nav">
-        <a href="/methodology-course">← 返回目录</a>
+        <a id="backToCourse" href="/methodology-course">← 返回目录</a>
         <span id="lessonMeta" class="badge">loading</span>
-        <span>
+        <span class="toolbar-actions">
+          <button id="copyLessonBtn" class="copy-btn" type="button">一键复制本章</button>
           <a id="prevLesson" href="/methodology-course">上一章</a>
           <a id="nextLesson" href="/methodology-course">下一章</a>
         </span>
@@ -431,7 +551,145 @@
 
 <script>
   const $ = (sel, root = document) => root.querySelector(sel);
-  const state = { lessons: [], query: '' };
+  const isEnglishCourse = window.location.pathname.startsWith('/methodology-course-en');
+  const courseCopy = isEnglishCourse ? {
+    htmlLang: 'en',
+    basePath: '/methodology-course-en',
+    apiPath: '/api/methodology-course-en',
+    lessonApiBase: '/api/methodology-course-en/lessons/',
+    title: 'The Story Engine Method',
+    brand: 'Story Engine Method',
+    eyebrow: 'YouTube Creator Edition',
+    search: 'Search 24 story lessons...',
+    navActive: 'English Method',
+    tabCourse: 'Course Index',
+    hideBroadcast: true,
+    loadingSummary: 'Loading the course index.',
+    summary: 'A 24-part English adaptation of the BestSeller writing methodology for YouTube audiences: clear hooks, visible stakes, scene-level proof, and repeatable story systems.',
+    toolbarTitle: 'Course Index',
+    copyAll: 'Copy full course',
+    back: '← Back to index',
+    copyLesson: 'Copy lesson',
+    previous: 'Previous',
+    next: 'Next',
+    emptyGrid: 'No matching lessons.',
+    emptyDetail: 'This lesson is empty.',
+    readFail: 'Course load failed',
+    copied: 'Copied',
+    noText: 'Nothing to copy',
+    copyFailed: 'Copy failed; select manually',
+    lessonMetric: 'lessons',
+    wordMetric: 'estimated words',
+    readMetric: 'minutes to read',
+    updatedMetric: 'last updated',
+    dateLocale: 'en-US',
+  } : {
+    htmlLang: 'zh-CN',
+    basePath: '/methodology-course',
+    apiPath: '/api/methodology-course',
+    lessonApiBase: '/api/methodology-course/lessons/',
+    title: '写小说的方法论',
+    brand: '写小说的方法论',
+    eyebrow: 'Author Methodology Textbook',
+    search: '搜索 24 章方法论...',
+    navActive: '写作方法论',
+    tabCourse: '教材目录',
+    hideBroadcast: false,
+    loadingSummary: '教材目录加载中。',
+    summary: '24 章长篇小说创作方法论教材，每章独立详情页，包含问题定义、核心概念、原理模型、操作流程、案例拆解、诊断清单和 BestSeller 框架映射。',
+    toolbarTitle: '教材目录',
+    copyAll: '一键复制全文',
+    back: '← 返回目录',
+    copyLesson: '一键复制本章',
+    previous: '上一章',
+    next: '下一章',
+    emptyGrid: '没有匹配章节。',
+    emptyDetail: '方法论详情为空。',
+    readFail: '教材读取失败',
+    copied: '✓ 已复制',
+    noText: '暂无可复制内容',
+    copyFailed: '复制失败，请手动选择',
+    lessonMetric: '教材章节',
+    wordMetric: '估算字数',
+    readMetric: '完整阅读分钟',
+    updatedMetric: '最近更新',
+    dateLocale: 'zh-CN',
+  };
+  const state = {
+    lessons: [], query: '', courseMarkdown: '', lessonMarkdown: '',
+    broadcastSegments: [], broadcastMarkdown: '', broadcastLoaded: false,
+  };
+
+  function applyCourseCopy() {
+    document.documentElement.lang = courseCopy.htmlLang;
+    document.title = courseCopy.title;
+    $('#brandTitle').innerHTML = `${esc(courseCopy.brand)}<span class="dot">.</span>`;
+    $('#brandEyebrow').textContent = courseCopy.eyebrow;
+    $('#courseSearch').placeholder = courseCopy.search;
+    $('#tabCourse').textContent = courseCopy.tabCourse;
+    $('.tab-strip').hidden = courseCopy.hideBroadcast;
+    $('#courseTitle').textContent = courseCopy.title;
+    $('#courseSummary').textContent = courseCopy.loadingSummary;
+    $('.toolbar h3').textContent = courseCopy.toolbarTitle;
+    $('#copyAllBtn').textContent = courseCopy.copyAll;
+    $('#backToCourse').textContent = courseCopy.back;
+    $('#backToCourse').href = courseCopy.basePath;
+    $('#copyLessonBtn').textContent = courseCopy.copyLesson;
+    $('#prevLesson').textContent = courseCopy.previous;
+    $('#prevLesson').href = courseCopy.basePath;
+    $('#nextLesson').textContent = courseCopy.next;
+    $('#nextLesson').href = courseCopy.basePath;
+    $('#lessonMetricLabel').textContent = courseCopy.lessonMetric;
+    $('#wordMetricLabel').textContent = courseCopy.wordMetric;
+    $('#readMetricLabel').textContent = courseCopy.readMetric;
+    $('#updatedMetricLabel').textContent = courseCopy.updatedMetric;
+    document.querySelectorAll('.header-nav a').forEach(link => {
+      link.classList.toggle('active', link.getAttribute('href') === courseCopy.basePath);
+    });
+  }
+
+  async function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    // Fallback for non-secure contexts (http / older browsers).
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.left = '-9999px';
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    try {
+      if (!document.execCommand('copy')) throw new Error('execCommand 复制失败');
+    } finally {
+      document.body.removeChild(area);
+    }
+  }
+
+  async function handleCopy(btn, getText) {
+    const text = (getText() || '').trim();
+    const original = btn.dataset.label || btn.textContent;
+    btn.dataset.label = original;
+    if (!text) {
+      btn.textContent = courseCopy.noText;
+      setTimeout(() => { btn.textContent = original; }, 1600);
+      return;
+    }
+    try {
+      await copyToClipboard(text);
+      btn.classList.add('copied');
+      btn.textContent = courseCopy.copied;
+    } catch (err) {
+      btn.textContent = courseCopy.copyFailed;
+      console.error('copy failed', err);
+    }
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.textContent = original;
+    }, 1800);
+  }
 
   function esc(text) {
     return String(text || '').replace(/[&<>"']/g, ch => ({
@@ -444,14 +702,16 @@
   }
 
   function lessonNumberFromPath() {
-    const match = window.location.pathname.match(/\/methodology-course\/(\d{1,2})\/?$/);
+    const match = isEnglishCourse
+      ? window.location.pathname.match(/\/methodology-course-en\/(\d{1,2})\/?$/)
+      : window.location.pathname.match(/\/methodology-course\/(\d{1,2})\/?$/);
     return match ? Number(match[1]) : null;
   }
 
   function fmtDate(value) {
     if (!value) return '--';
     try {
-      return new Date(value).toLocaleString('zh-CN', {
+      return new Date(value).toLocaleString(courseCopy.dateLocale, {
         month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
       });
     } catch {
@@ -468,7 +728,7 @@
     });
     $('#filterStatus').textContent = `${visible.length} / ${state.lessons.length} chapters`;
     if (!visible.length) {
-      grid.innerHTML = '<p class="empty">没有匹配章节。</p>';
+      grid.innerHTML = `<p class="empty">${esc(courseCopy.emptyGrid)}</p>`;
       return;
     }
     grid.innerHTML = visible.map(item => `
@@ -487,12 +747,13 @@
   async function loadOverview() {
     $('#overviewView').hidden = false;
     $('#detailView').hidden = true;
-    const res = await fetch('/api/methodology-course');
+    const res = await fetch(courseCopy.apiPath);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     state.lessons = data.lessons || [];
-    $('#courseTitle').textContent = data.title || '写小说的方法论';
-    $('#courseSummary').textContent = '24 章长篇小说创作方法论教材，每章独立详情页，包含问题定义、核心概念、原理模型、操作流程、案例拆解、诊断清单和 BestSeller 框架映射。';
+    state.courseMarkdown = data.markdown || '';
+    $('#courseTitle').textContent = data.title || courseCopy.title;
+    $('#courseSummary').textContent = courseCopy.summary;
     $('#lessonCount').textContent = String(data.lesson_count || 0).padStart(2, '0');
     $('#wordCount').textContent = data.stats?.word_count ?? '--';
     $('#readMinutes').textContent = data.stats?.estimated_read_minutes ?? '--';
@@ -503,17 +764,68 @@
   async function loadDetail(number) {
     $('#overviewView').hidden = true;
     $('#detailView').hidden = false;
-    const res = await fetch(`/api/methodology-course/lessons/${String(number).padStart(2, '0')}`);
+    const res = await fetch(`${courseCopy.lessonApiBase}${String(number).padStart(2, '0')}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const lesson = data.lesson || {};
-    document.title = `${lesson.label || ''} ${lesson.title || ''} · 写小说的方法论`;
+    state.lessonMarkdown = lesson.markdown || '';
+    document.title = `${lesson.label || ''} ${lesson.title || ''} · ${courseCopy.title}`;
     $('#lessonMeta').textContent = `${lesson.label || ''} · ${lesson.stats?.estimated_read_minutes || '--'} min`;
-    $('#lessonContent').innerHTML = lesson.html || '<p class="empty">方法论详情为空。</p>';
+    $('#lessonContent').innerHTML = lesson.html || `<p class="empty">${esc(courseCopy.emptyDetail)}</p>`;
     $('#prevLesson').style.visibility = data.previous ? 'visible' : 'hidden';
     $('#nextLesson').style.visibility = data.next ? 'visible' : 'hidden';
     if (data.previous) $('#prevLesson').href = data.previous.path;
     if (data.next) $('#nextLesson').href = data.next.path;
+  }
+
+  function renderBroadcast() {
+    const list = $('#broadcastList');
+    const segments = state.broadcastSegments;
+    $('#broadcastStatus').textContent = `${segments.length} 集`;
+    if (!segments.length) {
+      list.innerHTML = '<p class="empty">暂无口播稿内容。</p>';
+      return;
+    }
+    list.innerHTML = segments.map(seg => {
+      // Drop the leading <h2> heading so it doesn't repeat the card header.
+      const body = String(seg.html || '').replace(/<h2[^>]*>[\s\S]*?<\/h2>/, '');
+      return `
+      <div class="bc-item">
+        <div class="bc-head">
+          <div class="bc-title">
+            <span class="bc-num">${esc(seg.label)}</span>
+            <h4>${esc(seg.title)}</h4>
+          </div>
+          <button class="copy-btn bc-copy" type="button" data-num="${esc(seg.number)}">复制本集</button>
+        </div>
+        <div class="bc-body markdown">${body}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function loadBroadcast() {
+    if (state.broadcastLoaded) return;
+    const res = await fetch('/api/methodology-broadcast');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.broadcastSegments = data.segments || [];
+    state.broadcastMarkdown = data.markdown || '';
+    state.broadcastLoaded = true;
+    renderBroadcast();
+  }
+
+  function switchTab(tab) {
+    const isBroadcast = tab === 'broadcast';
+    $('#courseTab').hidden = isBroadcast;
+    $('#broadcastTab').hidden = !isBroadcast;
+    $('#tabCourse').classList.toggle('active', !isBroadcast);
+    $('#tabBroadcast').classList.toggle('active', isBroadcast);
+    if (isBroadcast) {
+      loadBroadcast().catch(err => {
+        $('#broadcastList').innerHTML =
+          `<p class="empty">口播稿读取失败：${esc(err.message || err)}</p>`;
+      });
+    }
   }
 
   $('#courseSearch').addEventListener('input', event => {
@@ -521,14 +833,41 @@
     renderCards();
   });
 
+  $('#copyAllBtn').addEventListener('click', event => {
+    handleCopy(event.currentTarget, () => state.courseMarkdown);
+  });
+
+  $('#copyLessonBtn').addEventListener('click', event => {
+    handleCopy(event.currentTarget, () =>
+      state.lessonMarkdown || ($('#lessonContent')?.innerText || ''));
+  });
+
+  $('#tabCourse').addEventListener('click', () => switchTab('course'));
+  $('#tabBroadcast').addEventListener('click', () => switchTab('broadcast'));
+
+  $('#copyAllBroadcastBtn').addEventListener('click', event => {
+    handleCopy(event.currentTarget, () => state.broadcastMarkdown);
+  });
+
+  $('#broadcastList').addEventListener('click', event => {
+    const btn = event.target.closest('.bc-copy');
+    if (!btn) return;
+    const num = Number(btn.dataset.num);
+    const seg = state.broadcastSegments.find(item => Number(item.number) === num);
+    handleCopy(btn, () => (seg ? seg.markdown : ''));
+  });
+
   (async function boot() {
     try {
+      applyCourseCopy();
       const number = lessonNumberFromPath();
       if (number) await loadDetail(number);
       else await loadOverview();
     } catch (err) {
-      $('#lessonGrid').innerHTML = `<p class="empty">教材读取失败：${esc(err.message || err)}</p>`;
-      $('#lessonContent').innerHTML = `<p class="empty">教材读取失败：${esc(err.message || err)}</p>`;
+      $('#lessonGrid').innerHTML =
+        `<p class="empty">${esc(courseCopy.readFail)}：${esc(err.message || err)}</p>`;
+      $('#lessonContent').innerHTML =
+        `<p class="empty">${esc(courseCopy.readFail)}：${esc(err.message || err)}</p>`;
     }
   })();
 </script>

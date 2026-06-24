@@ -370,6 +370,7 @@ async def attempt_release_stale_production_block(
     *,
     latest_critical_audit_chapters: frozenset[int] = frozenset(),
     dry_run: bool = False,
+    require_clean_report: bool = False,
 ) -> BlockRecoveryReport:
     if str(getattr(chapter, "production_state", "") or "").lower() != "blocked":
         return BlockRecoveryReport(
@@ -424,6 +425,19 @@ async def attempt_release_stale_production_block(
             new_state=str(chapter.production_state),
             reason="block_metadata_without_clean_quality_report",
             issue_codes_now=residue_keys,
+        )
+    if latest is None and require_clean_report:
+        # Conservative mode (used by the in-run repair sweep): a chapter that is
+        # production_state=blocked but has NO quality report on record is NOT
+        # treated as stale — it may be a genuinely-blocked chapter awaiting
+        # repair. Only release when a CLEAN report proves it already re-passed.
+        return BlockRecoveryReport(
+            chapter_number=chapter_number,
+            block_kind="stale_production_block",
+            recoverable=False,
+            actions_taken=(),
+            new_state=str(chapter.production_state),
+            reason="no_quality_report_on_record",
         )
 
     reason = "latest_quality_clean" if latest is not None else "no_active_block_signal"
@@ -620,6 +634,7 @@ async def sweep_recoverable_blocks(
     *,
     package_dir: Path | None = None,
     dry_run: bool = False,
+    require_clean_report: bool = False,
 ) -> tuple[BlockRecoveryReport, ...]:
     writer = _audit_writer(package_dir)
     latest_critical_audit_chapters = await _latest_critical_audit_chapters(
@@ -649,6 +664,7 @@ async def sweep_recoverable_blocks(
             chapter,
             latest_critical_audit_chapters=latest_critical_audit_chapters,
             dry_run=dry_run,
+            require_clean_report=require_clean_report,
         )
         if stale_block_report.recoverable:
             reports.append(stale_block_report)

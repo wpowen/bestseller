@@ -193,6 +193,14 @@ def _score_coherence(title: str, lex: dict[str, Any] | None) -> tuple[float, str
 
 
 def _score_anti_generic(title: str, lex: dict[str, Any] | None) -> tuple[float, str, dict]:
+    # 产品红线：纯题材/分类名（都市高武 / 高武世界 / 末世）绝不是书名 → 直接 0 分，
+    # 让任何复用本 gate 的选择流（_polish_title 等）都不会把题材名选成书名。
+    from bestseller.services.platform_title_workflow import (  # noqa: PLC0415
+        is_bare_taxonomy_title,
+    )
+
+    if is_bare_taxonomy_title(title):
+        return 0.0, "纯题材/分类名，不是真正的书名", {"bare_taxonomy": True}
     stems = _lex(lex, "cliche_stems", _CLICHE_STEMS)
     hits = [s for s in stems if s in title]
     if not hits:
@@ -324,6 +332,21 @@ def evaluate_title_appeal(
         )
         if _SUGGESTIONS["coherence"] not in suggestions:
             suggestions.append(_SUGGESTIONS["coherence"])
+
+    # ── 题材名命门 floor（一票否决）────────────────────────────────────────
+    # 纯题材/分类名（都市高武 / 高武世界 / 末世）绝不是书名（产品红线：题材名 ≠ 书名），
+    # 必须明确不达标 → 总分压到 consider 线以下，任何择优流都不会把它选成书名。
+    from bestseller.services.platform_title_workflow import (  # noqa: PLC0415
+        is_bare_taxonomy_title,
+    )
+
+    taxonomy_cap = float(bar_cfg.get("taxonomy_floor_cap", 40))
+    if title and is_bare_taxonomy_title(title) and total > taxonomy_cap:
+        total = taxonomy_cap
+        findings.append(
+            f"[题材名命门] 书名只是题材/分类标签 → 总分封顶 {taxonomy_cap:.0f}（不达标）"
+        )
+        suggestions.append("换成一个有主角/动作/反转的真正书名，别用题材名")
 
     grade = _grade_from_total(total, config)
     return TitleAppealVerdict(

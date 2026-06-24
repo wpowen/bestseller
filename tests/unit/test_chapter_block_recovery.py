@@ -204,6 +204,97 @@ async def test_attempt_release_stale_production_block_keeps_active_quality_block
 
 
 @pytest.mark.asyncio
+async def test_require_clean_report_keeps_block_without_quality_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Conservative mode (in-run repair sweep): a blocked chapter with NO
+    quality report on record must NOT be released — it may be genuinely awaiting
+    repair. Without require_clean_report it would be treated as stale."""
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        project_id=uuid4(),
+        chapter_number=30,
+        production_state="blocked",
+        metadata_json={},
+    )
+
+    async def no_pending(_session, _chapter):
+        return ()
+
+    async def no_quality(_session, _chapter):
+        return None
+
+    monkeypatch.setattr(
+        "bestseller.services.chapter_block_recovery._pending_rewrite_tasks",
+        no_pending,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.chapter_block_recovery._latest_quality_report",
+        no_quality,
+    )
+
+    report = await attempt_release_stale_production_block(
+        SimpleNamespace(),
+        chapter,  # type: ignore[arg-type]
+        require_clean_report=True,
+    )
+
+    assert report.recoverable is False
+    assert report.reason == "no_quality_report_on_record"
+    assert chapter.production_state == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_require_clean_report_still_releases_with_clean_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Conservative mode still releases a chapter whose latest report is CLEAN
+    (the true stale case — re-passed but kept the blocked flag), e.g. ch2/6/7."""
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        project_id=uuid4(),
+        chapter_number=6,
+        production_state="blocked",
+        metadata_json={},
+    )
+
+    async def no_pending(_session, _chapter):
+        return ()
+
+    async def clean_quality(_session, _chapter):
+        return _quality_report(blocks_write=False, blocking_codes=[])
+
+    async def clear_scene(_session, _chapter):
+        return 0
+
+    async def flush():
+        return None
+
+    monkeypatch.setattr(
+        "bestseller.services.chapter_block_recovery._pending_rewrite_tasks",
+        no_pending,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.chapter_block_recovery._latest_quality_report",
+        clean_quality,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.chapter_block_recovery._clear_scene_auto_repair_residue",
+        clear_scene,
+    )
+
+    report = await attempt_release_stale_production_block(
+        SimpleNamespace(flush=flush),
+        chapter,  # type: ignore[arg-type]
+        require_clean_report=True,
+    )
+
+    assert report.recoverable is True
+    assert report.reason == "latest_quality_clean"
+    assert chapter.production_state == "ok"
+
+
+@pytest.mark.asyncio
 async def test_attempt_release_stale_production_block_supersedes_stale_pending_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

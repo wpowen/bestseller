@@ -127,6 +127,37 @@ def test_rule_survival_meta_resolves_to_suspense_mystery_before_progression() ->
     assert "升级流" not in profile.finding_messages.conflict_low_zh
 
 
+def test_rule_horror_on_cultivation_spine_routes_to_action_progression() -> None:
+    """诡异修仙/高武/升级流 + 规则怪谈 hybrid must NOT be scored as detective
+    suspense (which demands info-warfare every scene and churns cultivation
+    prose). It routes to action-progression, which classifies scene type and
+    handles both combat/leveling AND rule-horror scenes.
+    """
+    profile = resolve_genre_review_profile(
+        "诡异修仙 / 高武极道 / 规则怪谈 / 升级流",
+        None,
+    )
+    assert profile.category_key == "action-progression"
+
+
+def test_pure_rule_horror_without_cultivation_stays_suspense_mystery() -> None:
+    """Guard must be narrow: rule-horror WITHOUT a cultivation-leveling spine
+    keeps the suspense-mystery profile (no false reroute)."""
+    assert (
+        resolve_genre_review_profile("规则怪谈", None).category_key
+        == "suspense-mystery"
+    )
+    assert (
+        resolve_genre_review_profile("都市悬疑 规则怪谈", None).category_key
+        == "suspense-mystery"
+    )
+    # rule-horror + 无限流 (genuine infinite-flow mystery) also stays
+    assert (
+        resolve_genre_review_profile("规则怪谈 无限流", None).category_key
+        == "suspense-mystery"
+    )
+
+
 def test_apocalypse_rule_preset_uses_rule_profile_not_action_progression() -> None:
     profile = resolve_genre_review_profile(
         "",

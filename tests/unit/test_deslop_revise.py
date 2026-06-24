@@ -71,6 +71,57 @@ def test_empty_input_noop(monkeypatch) -> None:
     assert out == ""
 
 
+def test_self_check_covers_staccato_and_system_ladder() -> None:
+    """Regression: the deslop rewrite prompt must explicitly target the two
+    structural tells the span patcher cannot touch and that staccato/repetition
+    detectors route here for — single-sentence-paragraph saturation (碎句独段)
+    and templated escalating system spam (系统刷屏). Without these clauses the
+    rewrite fires but leaves the dominant defect untouched (real ch11 evidence).
+    """
+    chk = deslop._EXTRA_SELF_CHECK
+    assert "单句独段饱和" in chk, "staccato-merge self-check missing"
+    assert "系统刷屏" in chk and "数字递增" in chk, "system-ladder self-check missing"
+    # The closing instruction must re-count to the new total so the model
+    # actually re-scans the added items.
+    assert "上面 9 条" in chk
+
+
+def test_staccato_saturation_routes_to_deslop() -> None:
+    """A chapter whose dominant tell is single-sentence-paragraph saturation
+    must trip ``needs_deslop_revise`` (it is in the deslop trigger set) so the
+    now-staccato-aware rewrite actually runs. Proven separately on real ch11."""
+    from bestseller.services.ai_flavor_gate import (
+        AiFlavorGateConfig,
+        needs_deslop_revise,
+        run_ai_flavor_gate,
+    )
+
+    solo = [
+        "他坐起来。", "天还黑着。", "手机又响。", "他没去接。", "心里发紧。",
+        "门外有声。", "脚步停了。", "他屏住气。", "数字跳了。", "又跳一格。",
+        "他攥紧手。", "窗帘晃了。", "灯灭了一下。", "他站起来。",
+    ]
+    filler = "他走到窗边，把窗帘拨开一条缝，楼下的路灯在雨里晕成一团昏黄，街角那家便利店还亮着。"
+    paragraphs: list[str] = []
+    for i, line in enumerate(solo):
+        paragraphs.append(line)
+        if i % 5 == 4:
+            paragraphs.append(filler)
+    content = "\n\n".join(paragraphs)
+
+    cfg = AiFlavorGateConfig(llm_rewrite_enabled=False, write_audit_file=False)
+    out = run_ai_flavor_gate(
+        chapter_number=1, content_md=content, language="zh-CN", config=cfg,
+        llm_rewriter=None, project_output_dir=None,
+    )
+    issue_ids = {i.id for i in (out.report.issues if out.report else [])}
+    assert "AI_FLAVOR_STACCATO_SATURATION" in issue_ids, "staccato not detected"
+    assert needs_deslop_revise(out), "saturated staccato must route to deslop"
+    # Must NOT hard-block (that would stall an autonomous run); the cure is a
+    # rewrite, not a wall.
+    assert out.decision != "block"
+
+
 def test_production_discourse_flavor_triggers_deslop_then_clears(monkeypatch) -> None:
     """The production guarantee (exact compose pipelines.py runs): a chapter
     carrying discourse-level AI flavor (旁白解释来历 + 不是X而是Y) trips

@@ -181,6 +181,7 @@ from bestseller.services.platform_title_workflow import (
     build_platform_title_workflow,
     build_story_grounded_title_revision_messages,
     finalize_revised_title,
+    is_bare_taxonomy_title,
     title_readability_issue,
 )
 from bestseller.services.workflows import create_workflow_run, create_workflow_step_run
@@ -18407,9 +18408,15 @@ async def _generate_promotional_brief(
         },
     )
 
-    # Update project title if the LLM produced a better one
+    # Update project title if the LLM produced a better one — but never let a
+    # bare taxonomy/category name (题材名 ≠ 书名) overwrite a real title.
     new_title = brief_payload.get("title")
-    if isinstance(new_title, str) and new_title.strip() and new_title.strip() != project.title:
+    if (
+        isinstance(new_title, str)
+        and new_title.strip()
+        and new_title.strip() != project.title
+        and not is_bare_taxonomy_title(new_title.strip())
+    ):
         project.title = new_title.strip()
 
     # Store tags + blurb in project metadata for easy access

@@ -530,7 +530,86 @@ def _is_concise_ip_name(title: str) -> bool:
         3 <= cjk_len <= 8
         and not re.search(r"[，,。.!！？?；;：:·／、\s]", text)
         and not _title_uses_genre_label(text)
+        and not _is_bare_taxonomy_title(text)
     )
+
+
+# Dual-use words: legitimate as PART of a real title (重生1979 / 末世第一基地),
+# but a title built ONLY from these (+ structural suffixes) is a bare taxonomy
+# name — exactly the regression the user hit (「都市高武」「高武世界」「末世」). These
+# are checked by *residue* (see ``_is_bare_taxonomy_title``), NOT by substring, so
+# a title that merely contains a trope word is never over-rejected. The hard list
+# `_GENRE_LABEL_WORDS` is folded in so genre labels also strip away.
+_BARE_TAXONOMY_RESIDUE_WORDS: tuple[str, ...] = _GENRE_LABEL_WORDS + (
+    "高武",
+    "末世",
+    "末日",
+    "都市",
+    "脑洞",
+    "无限",
+    "综武",
+    "诸天",
+    "洪荒",
+    "种田",
+    "游戏",
+    "竞技",
+    "穿越",
+    "重生",
+    "系统",
+    "签到",
+    "快穿",
+    "无敌",
+    "直播",
+    "年代",
+    "星际",
+    "宫斗",
+    "宅斗",
+    "群像",
+    "升级",
+    # structural / channel suffixes that carry no story content on their own
+    "世界",
+    "大陆",
+    "流",
+    "文",
+    "向",
+    "频",
+    "类",
+)
+
+
+def _is_bare_taxonomy_title(title: str) -> bool:
+    """True when a title is nothing but stacked genre/category/trope labels.
+
+    Strips one sanctioned channel prefix, then removes every taxonomy/trope word
+    and structural suffix; if no real content (CJK ideograph or alphanumeric)
+    survives, the "title" is a bare shelf label such as 「都市高武」/「高武世界」/
+    「末世」 and must never ship as a book name (产品红线：题材名 ≠ 书名).
+
+    Conservative by construction: a single trope word plus any real noun/number
+    survives (重生1979 → "1979"; 末世第一基地 → "第一基地"; 都市之王 → "之王"), so
+    legitimate titles that merely *contain* a trope word are not rejected.
+    """
+
+    body = _clean_text(title)
+    if not body:
+        return False
+    prefix = re.match(r"^([一-鿿]{2,4})[：:]", body)
+    if prefix and prefix.group(1) in _GENRE_LABEL_WORDS:
+        body = body[prefix.end():]
+    residue = body
+    for word in sorted(_BARE_TAXONOMY_RESIDUE_WORDS, key=len, reverse=True):
+        residue = residue.replace(word, "")
+    return not re.search(r"[一-鿿A-Za-z0-9]", residue)
+
+
+def is_bare_taxonomy_title(title: str) -> bool:
+    """Public alias: True when a title is only stacked genre/category labels.
+
+    Lets callers (conception, planner-side title refresh) enforce the
+    「题材名 ≠ 书名」 red line without importing a private helper.
+    """
+
+    return _is_bare_taxonomy_title(title)
 
 
 def _title_uses_genre_label(title: str, signals: Mapping[str, str] | None = None) -> bool:
@@ -1699,6 +1778,7 @@ def finalize_revised_title(
             continue
         if (
             _title_uses_genre_label(revised)
+            or _is_bare_taxonomy_title(revised)
             or _is_bad_title_token(revised)
             or _unreadable_title_reason(revised)
         ):
@@ -1827,7 +1907,12 @@ def _strip_genre_words(text: str) -> str:
 
 def _is_valid_fallback_title(text: str, style: PlatformTitleStyle) -> bool:
     token = _clean_text(text)
-    if not token or _is_bad_title_token(token) or _title_uses_genre_label(token):
+    if (
+        not token
+        or _is_bad_title_token(token)
+        or _title_uses_genre_label(token)
+        or _is_bare_taxonomy_title(token)
+    ):
         return False
     if _unreadable_title_reason(token):  # reuse the shared readability gate
         return False
@@ -2364,6 +2449,11 @@ def _is_low_quality_title(title: str, signals: Mapping[str, str]) -> bool:
     # core. (The model's own title is built separately and is exempt.)
     if _title_uses_genre_label(title, signals):
         return True
+    # A title that is *only* stacked category/trope labels (都市高武 / 高武世界 /
+    # 末世) is a bare shelf name, never a story name — block it even when no single
+    # word is in the hard genre list.
+    if _is_bare_taxonomy_title(title):
+        return True
     if any(marker in title for marker in BAD_TITLE_PART_MARKERS):
         return True
     if any(marker in title for marker in BAD_TITLE_FRAGMENT_MARKERS):
@@ -2766,8 +2856,9 @@ def _evaluate_platform_fit(title: str, style: PlatformTitleStyle) -> dict[str, A
 
 
 def _evaluate_title_quality(title: str, signals: Mapping[str, str]) -> dict[str, Any]:
-    bad = _is_low_quality_title(title, signals)
-    return {
+    bare = _is_bare_taxonomy_title(title)
+    bad = bare or _is_low_quality_title(title, signals)
+    result: dict[str, Any] = {
         "passed": not bad,
         "score": 100 if not bad else 35,
         "reason": (
@@ -2776,6 +2867,12 @@ def _evaluate_title_quality(title: str, signals: Mapping[str, str]) -> dict[str,
             else "标题像题材评述、内部标签、半句碎片或关键词拼接。"
         ),
     }
+    if bare:
+        # Pure taxonomy names (题材名 = 书名) are a product red line → hard reject,
+        # so selection can never ship them and downstream LLM revision must fire.
+        result["hard_reject"] = True
+        result["reason"] = "标题只是题材/分类标签的堆叠（如「都市高武」「高武世界」），不是真正的书名。"
+    return result
 
 
 def _title_revision_prompt(

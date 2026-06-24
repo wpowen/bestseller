@@ -33,7 +33,7 @@ from bestseller.services.drafts import generate_scene_draft
 from bestseller.settings import load_settings
 
 
-async def _gen_one(session_factory, slug: str, chapter: int, scene: int) -> tuple[str, int]:
+async def _gen_one(session_factory, slug: str, chapter: int, scene: int, settings) -> tuple[str, int]:
     """Generate one scene with the real model; return (content_md, word_count).
 
     DB writes are rolled back — this never persists a draft.
@@ -45,6 +45,7 @@ async def _gen_one(session_factory, slug: str, chapter: int, scene: int) -> tupl
                 slug,
                 chapter,
                 scene,
+                settings=settings,
                 workflow_run_id=None,
                 step_run_id=None,
             )
@@ -71,7 +72,7 @@ async def _run(args: argparse.Namespace) -> int:
             scene = int(scene_str or "1")
             t0 = time.monotonic()
             try:
-                content, words = await _gen_one(session_factory, args.slug, chapter, scene)
+                content, words = await _gen_one(session_factory, args.slug, chapter, scene, settings)
             except Exception as exc:  # noqa: BLE001 — harness: report and continue
                 print(f"ch{chapter}-s{scene}: FAILED {type(exc).__name__}: {exc}")
                 continue

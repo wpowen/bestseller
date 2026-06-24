@@ -121,3 +121,43 @@ def test_resolve_writing_profile_no_explicit_uses_genre_route() -> None:
         None, genre="都市修真·职场升级流", sub_genre="修仙2.0"
     )
     assert profile.market.prompt_pack_key == "urban-cultivation-2.0"
+
+
+def test_rule_horror_on_cultivation_spine_routes_to_xianxia_pack() -> None:
+    """诡异修仙/高武/升级流 + 规则怪谈 must route to the cultivation pack, NOT
+    suspense-mystery. The 规则怪谈 token is horror flavor on a 升级流 spine;
+    without the guard it short-circuits to suspense-mystery and the writer gets
+    detective prompts → every cultivation scene churns."""
+    from bestseller.services.prompt_packs import infer_default_prompt_pack_key
+
+    assert (
+        infer_default_prompt_pack_key("诡异修仙 / 高武极道 / 规则怪谈 / 升级流", "高武世界")
+        == "xianxia-upgrade-core"
+    )
+    assert (
+        infer_default_prompt_pack_key("修仙 规则怪谈 恐怖", None) == "xianxia-upgrade-core"
+    )
+
+
+def test_pure_rule_horror_without_cultivation_still_suspense() -> None:
+    """Guard is narrow: rule-horror / folk-horror WITHOUT a cultivation spine
+    keeps routing to suspense-mystery."""
+    from bestseller.services.prompt_packs import infer_default_prompt_pack_key
+
+    assert infer_default_prompt_pack_key("规则怪谈", None) == "suspense-mystery"
+    assert infer_default_prompt_pack_key("规则生存 无限流", None) == "suspense-mystery"
+    assert infer_default_prompt_pack_key("都市怪谈 民俗", None) == "suspense-mystery"
+
+
+def test_cultivation_spine_book_writer_pack_not_overridden() -> None:
+    """End-to-end: the contamination guard must NOT override the correct
+    explicit xianxia pack for a 诡异修仙+规则怪谈 hybrid (regression for the
+    misroute that gave the writer detective prompts)."""
+    from bestseller.services.writing_profile import resolve_writing_profile
+
+    profile = resolve_writing_profile(
+        {"market": {"prompt_pack_key": "xianxia-upgrade-core"}},
+        genre="诡异修仙 / 高武极道 / 规则怪谈 / 升级流",
+        sub_genre="高武世界",
+    )
+    assert profile.market.prompt_pack_key == "xianxia-upgrade-core"

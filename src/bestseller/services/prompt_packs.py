@@ -134,6 +134,21 @@ def get_prompt_pack(key: str | None) -> PromptPack | None:
 
 def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> str | None:
     label = f"{genre} {sub_genre or ''}".lower()
+    # Cultivation-leveling spine: 诡异修仙 / 高武 / 极道 etc. When present, a
+    # 规则怪谈 / 怪谈 token is HORROR FLAVOR on a 升级流 cultivation book, not a
+    # rule-survival/detective engine. Without this guard those tokens short-
+    # circuit to ``suspense-mystery`` below (before the xianxia catch-all is ever
+    # reached), which then overrides the correct ``xianxia-upgrade-core`` pack
+    # via the contamination guard in writing_profile → the writer gets detective
+    # prompts and every cultivation scene churns. Strong cultivation tokens only
+    # (NOT bare 升级, which also appears in urban) so pure rule-survival stays put.
+    _cultivation_spine = any(
+        token in label
+        for token in (
+            "修仙", "修真", "仙侠", "玄幻", "高武", "武道", "极道",
+            "炼体", "灵根", "金丹", "元婴", "境界", "洪荒", "渡劫",
+        )
+    )
     # ── 2026 trending subgenre routes (check FIRST so they win over generic tokens) ──
     # 都市修仙 / 修仙 2.0 — must beat generic 都市 and 仙 routes
     if any(token in label for token in ("都市修仙", "修仙2.0", "修仙二.0", "灵气复苏", "系统修仙", "urban-cultivation", "urban cultivation")):
@@ -157,7 +172,9 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
     # ── Pre-existing routes ──
     # Rule-survival/meta games are suspense engines even when the label also
     # contains apocalypse/sci-fi terms; route them before generic apocalypse.
-    if any(
+    # Skipped when a cultivation spine is present (then it is horror flavor on a
+    # 升级流 book — see ``_cultivation_spine`` above).
+    if not _cultivation_spine and any(
         token in label
         for token in (
             "规则生存",
@@ -176,8 +193,11 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
     # Apocalypse / survival (check before sci-fi to catch "末日科幻" correctly)
     if any(token in label for token in ("末日", "囤货", "废土")):
         return "apocalypse-supply-chain"
-    # Suspense & mystery
-    if any(token in label for token in ("推理", "探案", "怪谈", "诡事", "民俗", "悬疑", "恐怖", "惊悚")):
+    # Suspense & mystery (cultivation-spine books treat 怪谈/恐怖 as flavor and
+    # fall through to the xianxia routes below).
+    if not _cultivation_spine and any(
+        token in label for token in ("推理", "探案", "怪谈", "诡事", "民俗", "悬疑", "恐怖", "惊悚")
+    ):
         return "suspense-mystery"
     # Female-lead palace drama (check before history to catch "宫斗权谋")
     if any(token in label for token in ("宫斗", "大女主", "后宫", "心理暗战", "女帝")):

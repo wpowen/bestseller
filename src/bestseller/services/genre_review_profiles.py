@@ -3598,6 +3598,26 @@ _PRIORITY_KEYWORD_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
 # (this misrouted 都市异能 → 都市职业现实 and homogenised every urban book toward realism).
 _SETTING_ONLY_PRIORITY_CATEGORIES: frozenset[str] = frozenset({"urban-contemporary"})
 
+# Rule-horror keywords (规则怪谈/规则生存/…) describe a SUB-MODE that can ride on
+# a cultivation-leveling spine (诡异修仙/高武/升级流). On such hybrids the
+# suspense-mystery profile rigidly demands detective info-warfare in every scene
+# and scores cultivation/combat prose far below threshold → endless rewrite
+# churn. ``action-progression`` instead classifies each scene's type (combat,
+# upgrade, mystery, emotion) and judges it in its own terms, so it handles the
+# rule-horror scenes AND the leveling scenes. Prefer it when a progression
+# driver co-occurs. Mirrors the setting-fallback guard above. Narrow on purpose:
+# only the 规则* horror tags are contested — 剧本杀/元叙事/无限流/meta stay mystery.
+_RULE_MODE_HORROR_KEYWORDS: frozenset[str] = frozenset(
+    {"规则生存", "规则怪谈", "规则类", "副本规则", "rule horror", "rule survival"}
+)
+_PROGRESSION_SPINE_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "修仙", "修真", "仙侠", "玄幻", "高武", "武道", "武侠",
+        "升级", "境界", "炼体", "凡人", "系统流", "灵气", "极道",
+        "litrpg", "cultivation", "progression", "leveling",
+    }
+)
+
 
 def _resolve_priority_keyword_category(
     genre: str,
@@ -3606,12 +3626,25 @@ def _resolve_priority_keyword_category(
     haystack = " ".join(part for part in [genre, sub_genre] if part).lower()
     setting_fallback: str | None = None
     for category_key, keywords in _PRIORITY_KEYWORD_MAP:
-        if any(keyword in haystack for keyword in keywords):
+        matched = [keyword for keyword in keywords if keyword in haystack]
+        if matched:
             if category_key in _SETTING_ONLY_PRIORITY_CATEGORIES:
                 # Remember it, but keep scanning — a real genre driver wins.
                 if setting_fallback is None:
                     setting_fallback = category_key
                 continue
+            # Rule-horror sub-mode on a cultivation-leveling spine → defer to
+            # action-progression (handles mixed scene types instead of forcing
+            # detective info-warfare every scene). Only when the matched
+            # suspense signals are ALL rule-* tags and a progression driver
+            # co-occurs.
+            if (
+                category_key == "suspense-mystery"
+                and all(m in _RULE_MODE_HORROR_KEYWORDS for m in matched)
+                and any(spine in haystack for spine in _PROGRESSION_SPINE_KEYWORDS)
+                and "action-progression" in load_genre_review_profiles()
+            ):
+                return "action-progression"
             return category_key
     if setting_fallback is not None:
         # A strong genre driver anywhere in the name map beats the bare setting word.

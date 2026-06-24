@@ -271,9 +271,11 @@ services:
       # If you raise this further, bump WEB_MEMORY_LIMIT and postgres max_connections
       # together — each task opens 2-4 async DB connections concurrently.
       WEB_MAX_CONCURRENT_TASKS: ${WEB_MAX_CONCURRENT_TASKS:-5}
-      # Keep web startup observable and avoid silently resuming old generation
-      # tasks after a validation restart. Operators can opt in explicitly.
-      BESTSELLER_AUTO_RESUME_ON_STARTUP: ${BESTSELLER_AUTO_RESUME_ON_STARTUP:-0}
+      # Auto-resume in-flight generation tasks (writing AND conception phase)
+      # after a restart so a deploy/crash never strands a book. Conception-phase
+      # zombies are re-run in-process; writing-phase zombies delegate to worker
+      # self-heal. Set to 0 to debug a hung task without it relaunching.
+      BESTSELLER_AUTO_RESUME_ON_STARTUP: ${BESTSELLER_AUTO_RESUME_ON_STARTUP:-1}
     env_file:
       - .env
     ports:

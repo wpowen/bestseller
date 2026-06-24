@@ -914,6 +914,11 @@ async def run_project_repair_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
     """Project repair pipeline for self-heal and queued repair jobs."""
+    from bestseller.services.chapter_block_recovery import (
+        summarize_block_recovery,
+        sweep_recoverable_blocks,
+    )
+    from bestseller.services.projects import get_project_by_slug
     from bestseller.services.repair import run_project_repair
 
     settings = get_settings()
@@ -932,6 +937,42 @@ async def run_project_repair_task(
 
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
         try:
+            # ── Release stale production blocks first (LLM-free) ───────────
+            # A chapter repaired in an earlier pass can re-pass its quality
+            # report yet keep a stale ``production_state == "blocked"`` flag.
+            # The only sweep that cleared it used to live solely in the
+            # end-of-book closure, so with sequential completion a single
+            # stale-blocked early chapter deadlocked every later chapter for
+            # the whole run. Sweep here (conservative: only release chapters
+            # with a CLEAN report on record) so re-passing chapters are
+            # released as soon as self-heal repairs the project.
+            try:
+                async with get_server_session() as sweep_session:
+                    project = await get_project_by_slug(sweep_session, project_slug)
+                    if project is not None:
+                        reports = await sweep_recoverable_blocks(
+                            sweep_session, project, require_clean_report=True
+                        )
+                        if reports:
+                            summary = summarize_block_recovery(reports)
+                            await sweep_session.commit()
+                            if summary.get("recovered"):
+                                await reporter.emit(
+                                    "project_repair_released_stale_blocks",
+                                    {
+                                        "project_slug": project_slug,
+                                        "recovered": summary.get("recovered", 0),
+                                        "recovered_chapters": summary.get(
+                                            "recovered_chapters", []
+                                        ),
+                                    },
+                                )
+            except Exception:
+                logger.exception(
+                    "stale-block sweep failed for %s; continuing to repair",
+                    project_slug,
+                )
+
             async with get_server_session() as session:
                 result = await run_project_repair(
                     session=session,

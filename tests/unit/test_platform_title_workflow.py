@@ -21,6 +21,7 @@ from bestseller.services.platform_title_workflow import (
     _evaluate_reader_attraction,
     _signal_tokens,
     _title_uses_genre_label,
+    is_bare_taxonomy_title,
     build_story_grounded_title_revision_messages,
     build_platform_title_workflow,
     build_story_dna_fallback_title,
@@ -98,6 +99,74 @@ def test_no_candidate_is_genre_dominated(platform: str) -> None:
         assert not _title_uses_genre_label(
             title, _signal_tokens(profile)
         ), f"genre-dominated candidate survived: {title!r}"
+
+
+# --- T-0b: bare taxonomy/category names must never become titles ------------
+# Regression for the 2026-06-23 报告：「都市高武」直接当书名。conception 的兜底曾
+# 用 sub_genre[:8]/genre[:8] 当书名，而 _GENRE_LABEL_WORDS 词表又漏掉了
+# 高武/末世/脑洞/无限流… 整类品类词，导致题材名一路 pass 到落库。
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "title",
+    [
+        "都市高武",
+        "高武世界",
+        "末世",
+        "都市脑洞",
+        "无限流",
+        "系统",
+        "都市末世",
+        "高武大陆",
+    ],
+)
+def test_bare_taxonomy_titles_detected(title: str) -> None:
+    assert is_bare_taxonomy_title(title), f"bare taxonomy {title!r} not detected"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "title",
+    [
+        "重生1979",
+        "末世第一基地",
+        "都市之王",
+        "蚀漏砚",
+        "福星甩不掉",
+        "烬骨登天录",
+        "青云志",
+        "我有一座末世农场",
+    ],
+)
+def test_real_titles_with_trope_words_not_flagged(title: str) -> None:
+    # A title that merely *contains* a trope word (重生/末世/都市…) is legitimate.
+    assert not is_bare_taxonomy_title(title), f"real title {title!r} wrongly flagged"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("title", ["都市高武", "高武世界", "末世", "无限流"])
+@pytest.mark.parametrize("platform", ["fanqie", "qimao", "qidian", "general"])
+def test_genre_name_seed_does_not_survive_as_title(title: str, platform: str) -> None:
+    """A genre-name seed title must be rejected and replaced, never shipped."""
+    profile = {
+        "language": "zh-CN",
+        "primary_title": title,  # the genre name leaked in as the seed
+        "primary_category": "东方仙侠+高武升级流",
+        "secondary_category": title,
+        "tags": ["复仇", "觉醒", "逆袭"],
+        "logline": "一个普通人觉醒祭词之力，向灭门旧案的幕后复仇。",
+        "reader_promise": "越被打压越爽的逆袭复仇",
+        "main_characters": [{"name": "陈砚", "role": "主角", "identity": "觉醒者"}],
+    }
+    assert evaluate_platform_title_candidate(
+        profile, title, target_platform=platform
+    )["decision"] == "reject"
+    result = select_primary_platform_title(profile, target_platform=platform)
+    final = str(result.get("title") or "")
+    assert final, "selection returned an empty title"
+    assert not is_bare_taxonomy_title(final), f"bare taxonomy survived: {final!r}"
+    assert final != title
 
 
 # --- T-A: model title preserved over mechanical templates -------------------

@@ -229,6 +229,55 @@ def test_complete_text_falls_back_when_litellm_is_unavailable(
     asyncio.run(_run())
 
 
+def test_complete_text_resolves_none_settings_to_real_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: a caller that omits ``settings`` (passes ``None``) must NOT
+    silently degrade to the mock provider.
+
+    The standalone scene-generation harness (ai_flavor_loop_gen) passed
+    ``settings=None`` into the writer path, which made ``complete_text`` emit
+    empty ``mock-writer`` output instead of calling the real model — silently
+    invalidating any real-model verification. ``complete_text`` now resolves
+    real settings when given ``None``. We force litellm unavailable so the call
+    lands on the *real* path's fallback (provider ``fallback``), proving it did
+    NOT take the mock branch (which would be provider ``mock``)."""
+
+    async def _run() -> None:
+        session = FakeSession()
+        result = await complete_text(
+            session,
+            None,  # ← the footgun: omitted settings
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="writer fallback",
+            ),
+        )
+        # Real path taken (then fell back because litellm is unavailable) —
+        # crucially NOT the mock provider.
+        assert result.provider == "fallback"
+        assert result.provider != "mock"
+        assert result.model_name != "mock-writer"
+
+    # Resolve to a real-mode settings (mock disabled) when complete_text
+    # loads settings for the None caller.
+    monkeypatch.setattr(
+        "bestseller.services.llm.load_settings",
+        lambda *a, **k: load_settings(env={}),
+    )
+
+    def fake_import_module(name: str):
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr("bestseller.services.llm.importlib.import_module", fake_import_module)
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
 def test_complete_text_uses_api_base_and_api_key_env_for_real_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -559,6 +608,147 @@ def test_complete_text_disables_minimax_m3_thinking_by_default(
         assert result.content == "m3 output"
         assert captured_kwargs["model"] == "openai/MiniMax-M3"
         assert captured_kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_complete_text_omits_n_when_thinking_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """qwen3.x-plus (and other thinking models) 400 with "n must be 1 when
+    enable_thinking is true". When thinking is on, the n>1 best-of-N param must
+    NOT be forwarded (the app layer loops instead) — otherwise every writer call
+    falls back to placeholder content.
+    """
+    captured_kwargs: dict[str, object] = {}
+    monkeypatch.setenv(
+        LLM_RUNTIME_PROFILE_ENV,
+        str(tmp_path / "missing-runtime-profile.json"),
+    )
+
+    class FakeUsage:
+        prompt_tokens = 12
+        completion_tokens = 34
+
+    class FakeMessage:
+        content = "qwen output"
+
+    class FakeChoice:
+        message = FakeMessage()
+        finish_reason = "stop"
+
+    class FakeResponse:
+        def __init__(self) -> None:
+            self.choices = [FakeChoice()]
+            self.usage = FakeUsage()
+
+    class FakeLiteLLMModule:
+        @staticmethod
+        async def acompletion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return FakeResponse()
+
+    async def _run() -> None:
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "openai/qwen3.7-plus",
+                "BESTSELLER__LLM__WRITER__MODEL_OVERRIDE": "openai/qwen3.7-plus",
+                "BESTSELLER__LLM__WRITER__API_BASE": "https://example.com/v1",
+                "BESTSELLER__LLM__WRITER__STREAM": "false",
+                "BESTSELLER__LLM__WRITER__THINKING_TYPE": "enabled",
+                "BESTSELLER__LLM__WRITER__N_CANDIDATES": "3",
+            }
+        )
+        await complete_text(
+            FakeSession(),
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+            ),
+        )
+        # thinking is enabled → n must NOT be forwarded (or be 1)
+        assert captured_kwargs.get("extra_body") == {"thinking": {"type": "enabled"}}
+        assert captured_kwargs.get("n", 1) == 1
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_complete_text_forwards_n_when_thinking_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Counterpart: with thinking disabled and a model that supports n (not
+    minimax/qwen), the best-of-N param is still forwarded (optimization kept)."""
+    captured_kwargs: dict[str, object] = {}
+    monkeypatch.setenv(
+        LLM_RUNTIME_PROFILE_ENV,
+        str(tmp_path / "missing-runtime-profile.json"),
+    )
+
+    class FakeUsage:
+        prompt_tokens = 12
+        completion_tokens = 34
+
+    class FakeMessage:
+        content = "qwen output"
+
+    class FakeChoice:
+        message = FakeMessage()
+        finish_reason = "stop"
+
+    class FakeResponse:
+        def __init__(self) -> None:
+            self.choices = [FakeChoice()]
+            self.usage = FakeUsage()
+
+    class FakeLiteLLMModule:
+        @staticmethod
+        async def acompletion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return FakeResponse()
+
+    async def _run() -> None:
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "openai/gpt-4o",
+                "BESTSELLER__LLM__WRITER__MODEL_OVERRIDE": "openai/gpt-4o",
+                "BESTSELLER__LLM__WRITER__API_BASE": "https://example.com/v1",
+                "BESTSELLER__LLM__WRITER__STREAM": "false",
+                "BESTSELLER__LLM__WRITER__THINKING_TYPE": "disabled",
+                "BESTSELLER__LLM__WRITER__N_CANDIDATES": "3",
+            }
+        )
+        await complete_text(
+            FakeSession(),
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+            ),
+        )
+        assert captured_kwargs.get("n") == 3
 
     monkeypatch.setattr(
         "bestseller.services.llm._get_litellm",

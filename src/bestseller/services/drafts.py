@@ -10599,7 +10599,10 @@ async def generate_scene_draft(
             )
             variant_completion = await complete_text(
                 session,
-                settings,
+                # Use the resolved settings (settings or load_settings()) so a
+                # standalone caller that omits ``settings`` still hits the real
+                # writer model instead of silently degrading to the mock provider.
+                effective_settings,
                 LLMCompletionRequest(
                     logical_role="writer",
                     model_tier=_model_tier,

@@ -24,6 +24,7 @@ from bestseller.settings import (
     RetrySettings,
     apply_runtime_llm_profile,
     get_runtime_env_value,
+    load_settings,
 )
 
 logger = logging.getLogger(__name__)
@@ -601,10 +602,17 @@ def _model_supports_n_param(model: str | None) -> bool:
     MiniMax raises ``model does not support n > 1`` (400) — forwarding ``n`` there
     breaks every writer call. Application-level best-of-N (drafts.py) loops the
     request instead, so the param must simply not be sent for such models.
+
+    qwen3.x-plus / -max default ``enable_thinking=true`` server-side and 400 with
+    "n parameter must be 1 when enable_thinking is true" — and the thinking flag
+    is not something we set via ``thinking_type`` here, so the only reliable
+    guard is to never forward ``n`` for them (the app layer loops anyway).
     """
 
     m = (model or "").lower()
     if "minimax" in m:
+        return False
+    if "qwen" in m:
         return False
     return True
 
@@ -1459,12 +1467,21 @@ async def _call_litellm(
         completion_kwargs["stream"] = False
 
     # Only pass n when >1 AND the model actually supports it. MiniMax 400s on
-    # n>1 (model does not support n > 1); Gemini ignores it. n_candidates>1 is
-    # still honoured at the application layer (drafts.py loops the call and keeps
-    # the best-scoring draft), so we simply must not forward the unsupported param.
+    # n>1 (model does not support n > 1); Gemini ignores it. Thinking-mode models
+    # (e.g. qwen3.x-plus with thinking enabled) 400 with "n must be 1 when
+    # enable_thinking is true" — forwarding n there makes EVERY writer call fall
+    # back to placeholder content. n_candidates>1 is still honoured at the
+    # application layer (drafts.py loops the call and keeps the best-scoring
+    # draft), so we simply must not forward the unsupported param.
+    _thinking_active = thinking_type is not None and thinking_type not in (
+        "disabled",
+        "off",
+        "none",
+    )
     if (
         role_settings.n_candidates > 1
         and not request.tools
+        and not _thinking_active
         and _model_supports_n_param(role_settings.model)
     ):
         # n>1 + tools is rarely meaningful and more likely to confuse
@@ -1688,6 +1705,12 @@ async def complete_text(
     settings: AppSettings,
     request: LLMCompletionRequest,
 ) -> LLMCompletionResult:
+    # Defensive: a caller that omits settings (passes ``None``) must NOT
+    # silently degrade to the mock provider — that turned real generation
+    # into empty mock output for standalone callers (e.g. ai_flavor_loop_gen).
+    # Resolve real settings instead; ``mock`` only when explicitly configured.
+    if settings is None:
+        settings = load_settings()
     settings = apply_runtime_llm_profile(settings)
     role_settings = _get_role_settings(settings, request.logical_role)
     _project_model_entry = await _resolve_project_model_override(session, request.project_id)

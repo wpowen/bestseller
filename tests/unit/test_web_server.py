@@ -157,12 +157,26 @@ def test_build_methodology_course_payload_extracts_lessons() -> None:
     payload = web_server._build_methodology_course_payload()
 
     assert payload["status"] == "ready"
+    assert payload["language"] == "zh"
     assert payload["title"] == "写小说的方法论：长篇小说创作体系教材"
     assert payload["lesson_count"] == 24
     assert payload["lessons"][0]["label"] == "第 01 章"
     assert payload["lessons"][0]["path"] == "/methodology-course/01"
     assert payload["lessons"][-1]["anchor"] == "lesson-24"
     assert "<h1>写小说的方法论" in str(payload["overview_html"])
+
+
+def test_build_english_methodology_course_payload_extracts_lessons() -> None:
+    payload = web_server._build_methodology_course_payload("en")
+
+    assert payload["status"] == "ready"
+    assert payload["language"] == "en"
+    assert payload["title"] == "The Story Engine Method: A YouTube-Friendly Writing Course"
+    assert payload["lesson_count"] == 24
+    assert payload["lessons"][0]["label"] == "Lesson 01"
+    assert payload["lessons"][0]["path"] == "/methodology-course-en/01"
+    assert "YouTube" in str(payload["overview_markdown"])
+    assert "Reader Promise Sheet" in str(payload["markdown"])
 
 
 def test_build_methodology_lesson_payload_returns_single_detail_page() -> None:
@@ -178,6 +192,21 @@ def test_build_methodology_lesson_payload_returns_single_detail_page() -> None:
     assert payload["previous"] is None
     assert payload["next"]["path"] == "/methodology-course/02"
     assert web_server._build_methodology_lesson_payload(99) is None
+
+
+def test_build_english_methodology_lesson_payload_returns_single_detail_page() -> None:
+    payload = web_server._build_methodology_lesson_payload(1, "en")
+
+    assert payload is not None
+    lesson = payload["lesson"]
+    assert lesson["number"] == 1
+    assert lesson["path"] == "/methodology-course-en/01"
+    assert "### The Problem" in str(lesson["markdown"])
+    assert "### Principle Model" in str(lesson["markdown"])
+    assert "### YouTube Episode Design" in str(lesson["markdown"])
+    assert payload["previous"] is None
+    assert payload["next"]["path"] == "/methodology-course-en/02"
+    assert web_server._build_methodology_lesson_payload(99, "en") is None
 
 
 def test_build_methodology_course_payload_handles_missing_doc(
@@ -200,8 +229,11 @@ def test_read_methodology_course_html() -> None:
 
     assert "写小说的方法论" in html
     assert "/api/methodology-course" in html
+    assert "/api/methodology-course-en" in html
+    assert "/methodology-course-en" in html
     assert "/api/methodology-course/lessons/" in html
     assert r"match(/\/methodology-course\/(\d{1,2})\/?$/)" in html
+    assert r"match(/\/methodology-course-en\/(\d{1,2})\/?$/)" in html
     assert r"match(/\\/methodology-course\\/" not in html
     assert "lessonGrid" in html
     assert "detailView" in html
@@ -2714,6 +2746,138 @@ def test_auto_resume_zombies_marks_unclaimed_without_redis(
     assert task["current_stage"] == "auto_resume_not_claimed"
     assert "Auto-resume was not claimed" in str(task["error"])
     assert manager.watchdog_sweep(stale_after_seconds=1) == 0
+
+
+def test_auto_resume_zombies_reruns_conception_phase_in_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A zombie that died DURING conception (no project row yet) cannot be
+    recovered by worker self-heal — its only state is the web payload. It must
+    be re-run in-process with conception ON. This closes the pre-project gap.
+    """
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z-conc",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "gaowu",
+                "title": "高武世界·构思中",
+                "current_stage": "conception_character",
+                "progress_events": [],
+                "payload": {"slug": "gaowu", "title": "高武世界", "_run_conception": True},
+            },
+        ],
+    )
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    async def _no_projects(_settings: object, _slugs: set[str]) -> set[str]:
+        return set()  # no project row → conception phase
+
+    async def _no_workflows(_settings: object, _slugs: set[str]) -> set[str]:
+        return set()
+
+    monkeypatch.setattr(web_server, "_load_existing_project_slugs", _no_projects)
+    monkeypatch.setattr(web_server, "_load_active_workflow_slugs_by_slug", _no_workflows)
+
+    captured: list[tuple[str, str, dict[str, object]]] = []
+
+    def fake_run_with_slot(
+        self: object,
+        task_id: str,
+        worker: object,
+        payload: dict[str, object],
+    ) -> None:
+        captured.append((task_id, getattr(worker, "__name__", ""), dict(payload)))
+
+    monkeypatch.setattr(web_server.WebTaskManager, "_run_with_slot", fake_run_with_slot)
+
+    delegated = manager.auto_resume_zombies(settings=SimpleNamespace())
+
+    import time as _time
+
+    _time.sleep(0.1)
+    assert delegated == ["z-conc"]
+    assert len(captured) == 1
+    task_id, worker_name, payload = captured[0]
+    assert task_id == "z-conc"
+    assert worker_name == "_run_autowrite_worker"
+    assert payload["_run_conception"] is True  # conception re-runs, not skipped
+
+    task = manager.get_task("z-conc")
+    assert task is not None
+    assert task["status"] == "queued"
+    stages = [e["stage"] for e in task["progress_events"]]
+    assert "resume_requested" in stages
+
+
+def test_auto_resume_zombies_writing_phase_not_treated_as_conception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If a project row already exists, the zombie is writing-phase even when
+    its payload still carries _run_conception=True (the original creation flag).
+    It must delegate to worker self-heal, NOT re-run conception in-process.
+    """
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z-write",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "built-book",
+                "title": "Built",
+                "current_stage": "chapter_pipeline_started",
+                "progress_events": [],
+                "payload": {"slug": "built-book", "title": "Built", "_run_conception": True},
+            },
+        ],
+    )
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    async def _has_project(_settings: object, _slugs: set[str]) -> set[str]:
+        return {"built-book"}  # project exists → writing phase
+
+    async def _no_workflows(_settings: object, _slugs: set[str]) -> set[str]:
+        return set()
+
+    monkeypatch.setattr(web_server, "_load_existing_project_slugs", _has_project)
+    monkeypatch.setattr(web_server, "_load_active_workflow_slugs_by_slug", _no_workflows)
+    monkeypatch.setattr(web_server, "_wait_for_self_heal_scan", lambda _url, **_kw: True)
+    monkeypatch.setattr(
+        web_server,
+        "_fetch_heal_owned_slugs_by_kind",
+        lambda _url, heal_kind: set(),
+    )
+    enqueued: list[str] = []
+    monkeypatch.setattr(
+        web_server,
+        "_enqueue_autowrite_heal_job",
+        lambda _url, slug: enqueued.append(slug) or f"autowrite:heal:{slug}",
+    )
+
+    in_process: list[str] = []
+
+    def fake_run_with_slot(self: object, task_id: str, worker: object, payload: dict) -> None:
+        in_process.append(task_id)
+
+    monkeypatch.setattr(web_server.WebTaskManager, "_run_with_slot", fake_run_with_slot)
+
+    delegated = manager.auto_resume_zombies(redis_url="redis://stub", settings=SimpleNamespace())
+
+    import time as _time
+
+    _time.sleep(0.1)
+    assert enqueued == ["built-book"]  # delegated to worker self-heal
+    assert in_process == []  # NOT re-run in-process
+    assert delegated == ["z-write"]
 
 
 def test_auto_resume_zombies_idempotent_when_nothing_pending(tmp_path: Path) -> None:

@@ -4368,7 +4368,18 @@ def evaluate_chapter_draft(
                 message="章节前后承接不足，缺少对上一阶段局势的衔接和对下一阶段威胁的延展。",
             )
         )
-    if main_plot_progression < threshold:
+    # Golden-three opening chapters (1-3) are graded on their OWN opening
+    # contract (chapter_1_small_turn / chapter_2_reveal / chapter_3_payoff, see
+    # _chapter_opening_contract_findings below) — their job is hook / immersion /
+    # setup, NOT advancing the main/sub plot. Applying the generic
+    # "main-plot-progression" advancement axis to an opening chapter makes it
+    # score below threshold by construction → a permanent "rewrite" verdict that
+    # accept_on_stall keeps re-triggering → ch1 oscillates drafting<->revision
+    # forever and the book never advances. Exempt openings from these two
+    # advancement findings (the ending-hook axis still applies — hooks matter for
+    # openings too).
+    _is_opening_chapter = int(getattr(chapter, "chapter_number", 0) or 0) <= 3
+    if main_plot_progression < threshold and not _is_opening_chapter:
         findings.append(
             ChapterReviewFinding(
                 category="main_plot_progression",
@@ -4376,7 +4387,7 @@ def evaluate_chapter_draft(
                 message="本章对主线的推进还不够明确，读者不容易感受到这一章真的把大问题往前推了一步。",
             )
         )
-    if subplot_terms and subplot_progression < threshold:
+    if subplot_terms and subplot_progression < threshold and not _is_opening_chapter:
         findings.append(
             ChapterReviewFinding(
                 category="subplot_progression",

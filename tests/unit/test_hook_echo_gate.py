@@ -208,6 +208,71 @@ def test_check_hook_echo_zero_coverage_critical_for_early_chapter() -> None:
     assert report.finding.missed_tokens
 
 
+_XIANXIA_PREV = (
+    "云无心立于焚天炉前，炉口吐出三道幽蓝火舌。\n"
+    "噬魂幡在他背后猎猎作响，幡上的残魂齐声悲鸣。\n"
+    "“逆脉诀第三重，今夜必须练成。”他低声道。\n"
+    "门外传来一阵急促的脚步声。\n"
+    "“师兄，长老让你即刻去后山。”一个清亮的女声在门外响起。\n"
+    "云无心没有回头，只是将一枚玄铁令牌按进焚天炉的凹槽。\n"
+    "炉中火光骤然暴涨——那道一直沉睡的噬魂幡，忽然自行卷动起来。"
+)
+# ch2 honors the book's core imagery (furnace/banner/meridian art) but does
+# NOT repeat the misc tokens (脚步声/令牌/the female voice). Token coverage
+# alone dips below the floor.
+_XIANXIA_CURR = (
+    "焚天炉的火舌舔过他的指尖，逆脉诀的真气在经脉里逆流而上。\n"
+    "噬魂幡上的残魂忽然安静下来，像是认得炉火的温度。"
+)
+_XIANXIA_ANCHORS = ("焚天炉", "噬魂幡", "逆脉诀")
+
+
+def test_genre_fair_anchor_rescue_for_non_detective_book() -> None:
+    """A xianxia ch1→ch2 that re-invokes its OWN imagery anchors must be
+    rescued just like a detective book sharing the static semantic groups.
+
+    Before the genre-fair fix only detective-flavored relations
+    (mirror_action/account_debt/…) could trigger the semantic-overlap rescue,
+    so other genres were disadvantaged into more forced echo-rewrites — a
+    homogenization pressure. With the book's anchors counted as semantic
+    groups, the same thematic echo rescues a xianxia chapter.
+    """
+
+    rescued = check_hook_echo(
+        prev_chapter_text=_XIANXIA_PREV,
+        current_chapter_text=_XIANXIA_CURR,
+        current_chapter_position=2,
+        prev_chapter_position=1,
+        extra_domain_tokens=_XIANXIA_ANCHORS,
+    )
+    assert rescued.finding.severity != "critical", (
+        "a xianxia chapter that re-invokes its own core imagery must not be "
+        f"flagged critical; got {rescued.finding.severity} "
+        f"detail={rescued.finding.detail}"
+    )
+
+
+def test_genre_fair_rescue_does_not_fire_without_shared_anchors() -> None:
+    """Control: when the current chapter abandons the book's imagery entirely,
+    the anchor rescue must NOT fire — the gate still protects retention."""
+
+    abandoned = (
+        "三日后，集市上人声鼎沸。\n"
+        "一个货郎挑着担子吆喝，孩童在巷口追逐打闹。"
+    )
+    report = check_hook_echo(
+        prev_chapter_text=_XIANXIA_PREV,
+        current_chapter_text=abandoned,
+        current_chapter_position=2,
+        prev_chapter_position=1,
+        extra_domain_tokens=_XIANXIA_ANCHORS,
+    )
+    assert report.finding.severity == "critical", (
+        "abandoning all of the book's hooks must still fail the gate; "
+        f"got {report.finding.severity} detail={report.finding.detail}"
+    )
+
+
 def test_check_hook_echo_late_chapter_only_warns() -> None:
     """Past early chapters, low echo is informational, not critical."""
 

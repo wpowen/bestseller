@@ -448,13 +448,30 @@ def check_hook_echo(
         current_chapter_text[:800] if current_chapter_text else ""
     )
     shared_groups = prev_groups & curr_groups
+    # Genre-fair rescue (2026-06-24): the static _SEMANTIC_HOOK_GROUPS encode
+    # a few detective-specific relations (mirror_action/account_debt/…). Only
+    # detective books could ever share those, so they got rescued from
+    # false-criticals while other genres did not — a homogenization pressure
+    # (non-detective books forced into more echo-rewrites). The book's OWN
+    # imagery anchors (already threaded via extra_domain_tokens, identical on
+    # production + validation side) are equally valid semantic echoes: when the
+    # same anchor recurs in both the prev tail and the current head, that IS a
+    # thematic hook echo. Count each shared anchor as one pseudo-group so every
+    # genre gets equivalent rescue density.
+    prev_tail = prev_chapter_text[-800:] if prev_chapter_text else ""
+    curr_head = current_chapter_text[:800] if current_chapter_text else ""
+    shared_anchors = {
+        str(t).strip()
+        for t in extra_domain_tokens
+        if str(t).strip() and str(t).strip() in prev_tail and str(t).strip() in curr_head
+    }
+    effective_shared = len(shared_groups) + len(shared_anchors)
     semantic_rescued = False
-    if coverage < target_coverage and len(shared_groups) >= 3:
-        # Re-score using semantic overlap density. Treat 3+ shared groups
-        # as full coverage; 4+ shared groups give strong coverage.
-        # This caps "coverage" reading at <= 1.0 and never goes below
-        # token-based coverage.
-        semantic_boost = min(1.0, max(coverage, 0.7 + 0.1 * (len(shared_groups) - 3)))
+    if coverage < target_coverage and effective_shared >= 3:
+        # Re-score using semantic overlap density. Treat 3+ shared groups/anchors
+        # as full coverage; 4+ give strong coverage. This caps "coverage" reading
+        # at <= 1.0 and never goes below token-based coverage.
+        semantic_boost = min(1.0, max(coverage, 0.7 + 0.1 * (effective_shared - 3)))
         if semantic_boost > coverage:
             coverage = semantic_boost
             semantic_rescued = True
@@ -466,6 +483,7 @@ def check_hook_echo(
             f"strong echo coverage ({coverage:.0%})"
             + (
                 f"; semantic-overlap rescue: shared groups {sorted(shared_groups)}"
+                + (f" + anchors {sorted(shared_anchors)}" if shared_anchors else "")
                 if semantic_rescued
                 else ""
             )

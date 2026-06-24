@@ -35,6 +35,11 @@ tags_additional:
   - { key: 虐恋, label_en: Angst Romance }
   - { key: 双强, label_en: Power Couple }
   # 流派/题材描述类标签(供子题材 default_tags 与 UI 多选,部分与 genre 同名是平台常见做法)
+  # 题材专属进阶/张力标签(替代被滥贴的「升级流」,各本格用自己的母题而非统一爽文模具)
+  - { key: 奇遇, label_en: Fortuitous Encounter }
+  - { key: 科技跃迁, label_en: Tech Leap }
+  - { key: 情劫, label_en: Love Tribulation }
+  - { key: 事业逆袭, label_en: Career Comeback }
   - { key: 穿越 }
   - { key: 争霸 }
   - { key: 权谋 }
@@ -144,7 +149,7 @@ genres:
       - { key: traditional-wuxia, label: 传统武侠, category: wuxia-jianghu, pack: wuxia-jianghu-honor, power_system: martial-arts, default_tags: [门派, 侠义] }
       - { key: new-wuxia, label: 新派武侠, category: wuxia-jianghu, pack: wuxia-jianghu-honor, default_tags: [快意恩仇] }
       - { key: martial-skill, label: 国术武技, category: wuxia-jianghu, pack: wuxia-jianghu-honor, default_tags: [武技, 热血] }
-      - { key: wuxia-fantasy, label: 武侠幻想, category: wuxia-jianghu, pack: wuxia-jianghu-honor, default_tags: [武侠, 升级流] }
+      - { key: wuxia-fantasy, label: 武侠幻想, category: wuxia-jianghu, pack: wuxia-jianghu-honor, default_tags: [武侠, 奇遇] }
 
   - key: urban
     label: 都市
@@ -196,11 +201,11 @@ genres:
     pack_default: scifi-starwar
     aliases: [星际, 机甲, 赛博朋克, 黑科技, 未来, sci-fi, scifi]
     sub_genres:
-      - { key: interstellar, label: 星际文明, category: science-fiction-progression, pack: scifi-starwar, default_tags: [星际, 升级流] }
+      - { key: interstellar, label: 星际文明, category: science-fiction-progression, pack: scifi-starwar, default_tags: [星际, 科技跃迁] }
       - { key: future-world, label: 未来世界, category: science-fiction-progression, pack: scifi-starwar, default_tags: [未来, 科技] }
       - { key: time-travel-sci, label: 时空穿梭, category: science-fiction-progression, pack: scifi-starwar, default_tags: [时空, 穿越] }
       - { key: blacktech, label: 超级科技·黑科技, category: science-fiction-progression, pack: scifi-starwar, power_system: tech-augmentation, default_tags: [黑科技, 系统, 创业] }
-      - { key: mecha-war, label: 机甲战争, category: science-fiction-progression, pack: scifi-starwar, default_tags: [机甲, 战争, 升级流], aliases: [机甲] }
+      - { key: mecha-war, label: 机甲战争, category: science-fiction-progression, pack: scifi-starwar, default_tags: [机甲, 战争], aliases: [机甲] }
       - { key: cyberpunk, label: 赛博朋克, category: science-fiction-progression, pack: scifi-starwar, default_tags: [赛博, 近未来], aliases: [赛博朋克] }
       - { key: cosmic-horror, label: 克苏鲁/SCP, category: suspense-mystery, pack: suspense-mystery, power_system: rule-based, default_tags: [规则怪谈, 诡异复苏] }
 
@@ -271,8 +276,8 @@ genres:
     pack_default: suspense-mystery
     aliases: [无限流, 诸天, 主神, infinite]
     sub_genres:
-      - { key: infinite-instance, label: 无限闯关, category: suspense-mystery, pack: suspense-mystery, power_system: rule-based, default_tags: [副本, 规则怪谈, 升级流] }
-      - { key: omniverse, label: 诸天万界, category: otherworld-cross-system, pack: xianxia-upgrade-core, default_tags: [诸天, 穿越, 升级流] }
+      - { key: infinite-instance, label: 无限闯关, category: suspense-mystery, pack: suspense-mystery, power_system: rule-based, default_tags: [副本, 规则怪谈] }
+      - { key: omniverse, label: 诸天万界, category: otherworld-cross-system, pack: xianxia-upgrade-core, default_tags: [诸天, 穿越] }
       - { key: god-realm, label: 主神空间, category: otherworld-cross-system, pack: suspense-mystery, default_tags: [系统, 副本] }
       - { key: anime-crossover, label: 综漫穿越, category: otherworld-cross-system, pack: xianxia-upgrade-core, default_tags: [穿越, 同人] }
 
@@ -326,7 +331,7 @@ genres:
     pack_default: romance-tension-growth
     aliases: [玄幻言情, 仙侠言情, 西幻, 西方奇幻]
     sub_genres:
-      - { key: xuanhuan-romance, label: 玄幻言情, category: relationship-driven, pack: romance-tension-growth, default_tags: [女强, 升级流] }
+      - { key: xuanhuan-romance, label: 玄幻言情, category: relationship-driven, pack: romance-tension-growth, default_tags: [女强, 情劫] }
       - { key: xianxia-romance, label: 仙侠情缘, category: relationship-driven, pack: romance-tension-growth, default_tags: [修仙, 虐恋] }
       - { key: interstellar-romance, label: 星际幻言, category: relationship-driven, pack: romance-tension-growth, default_tags: [星际, 甜宠] }
       - { key: western-fantasy-romance, label: 西幻罗曼, category: relationship-driven, pack: romance-tension-growth, default_tags: [西幻, 宿命], aliases: [西方奇幻, 西幻] }
@@ -340,7 +345,7 @@ genres:
     pack_default: romance-tension-growth
     aliases: [大女主, 女强, 无CP, 女性成长]
     sub_genres:
-      - { key: female-no-cp, label: 无CP大女主, category: female-growth-ncp, pack: romance-tension-growth, default_tags: [女强, 无CP, 升级流] }
+      - { key: female-no-cp, label: 无CP大女主, category: female-growth-ncp, pack: romance-tension-growth, default_tags: [女强, 无CP, 事业逆袭] }
       - { key: female-court, label: 女强权谋, category: strategy-worldbuilding, pack: history-strategy, default_tags: [权谋, 女帝] }
       - { key: female-revenge, label: 复仇逆袭, category: female-growth-ncp, pack: villainess-reincarnation, default_tags: [复仇, 重生, 打脸] }
       - { key: female-career, label: 职场大女主, category: urban-contemporary, pack: romance-tension-growth, default_tags: [职场, 女强] }

@@ -452,3 +452,22 @@ async def test_polish_blurb_synopsis_rewrites_and_fails_open(monkeypatch: pytest
     )
     assert syn2 == "原简介保留"  # fail-open
     assert rid2 is None
+
+
+def test_finalize_prompt_carries_golden_finger_diversity_principle():
+    """The conception finalize prompt must inject the golden-finger DESIGN
+    principle (form pool + 'never default to 系统/面板' + opt-out), so every book
+    does not homogenise into a 系统流. Methodology-driven, not a hardcoded form.
+    """
+    from bestseller.services import conception as C
+
+    ctx = {"genre": "玄幻", "sub_genre": "诡异修仙", "chapter_count": 500, "language": "zh-CN"}
+    zh = C._finalize_user_prompt(ctx, {}, {}, {}, {})
+    assert "形态绝不固定为系统" in zh  # explicit anti-system-default
+    assert "上古传承" in zh and "契约异兽" in zh  # diverse form pool
+    assert "无显性金手指" in zh  # opt-out for genres that don't need a cheat
+
+    # Both language constants exist and carry the anti-system-default rule so the
+    # EN finalize branch is covered too.
+    assert "NOT default to a stat/system panel" in C._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
+    assert "no explicit golden" in C._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN

@@ -203,6 +203,50 @@ _EN_DEFAULT_MOTIF_RE = re.compile(
 _ZH_DEFAULT_MOTIF_REPLACEMENT = "由本书题材核心机制触发的具体危机与选择代价"
 _EN_DEFAULT_MOTIF_REPLACEMENT = "a genre-specific initiating crisis with visible choice costs"
 
+# Methodology guidance (NOT a hardcoded form): the golden finger is a mandatory
+# *commercial* element for male-channel progression fiction, but its FORM must
+# NOT default to a 系统/属性面板. Pinning it to one form ("挂系统") is exactly
+# what makes every book read the same → cliché → nobody clicks. Give the model a
+# rich form pool + a fit-driven selection rule + an opt-out for genres that do
+# not need an external cheat, and let it choose the freshest form that grows out
+# of THIS book's world rules. This is injected into the conception prompts.
+_GOLDEN_FINGER_DESIGN_PRINCIPLE = (
+    "## 金手指设计原则（务必遵守，否则烂大街没人点）\n"
+    "金手指 = 主角的差异化优势，但【形态绝不固定为系统/属性面板】。系统/面板/签到/商城/抽奖"
+    "只是众多形态之一，且已极度烂大街——非本书设定的强需求，禁止默认选它。\n"
+    "从下列形态按【与本书核心冲突 / 主角 / 世界规律的贴合度】择优，优先新鲜、与本题材独特结合者："
+    "血脉或瞳术觉醒 · 上古传承 / 残魂之师 · 丹道炼器符阵的独门手艺 · 特殊体质 / 道身 · "
+    "契约异兽 / 器灵 · 重生 / 先知 / 记忆回溯 · 气运掠夺 · 武学功法的推演领悟 · "
+    "身份势力 / 信息差 · 逆练禁术 · 词条 / 规则具现 · 一件兵器或宝物 · 因果命格操作"
+    "（也可自创更贴合本书的形态）。\n"
+    "形态必须长在世界规律上（从设定差分出来，而非硬贴一个外挂）；金手指的【代价 / 限制】"
+    "必须与其形态匹配，不能无代价。\n"
+    "若本书题材本不依赖外挂（纯武侠 / 历史 / 权谋 / 文学向 / 群像），可不设显性金手指，"
+    "改以【谋略 / 武学境界 / 人脉信息 / 性格意志】为差异化优势，并明确写明“无显性金手指，优势在 X”。\n"
+    "反同质化：不要与平台上已扎堆的同形态金手指重复。"
+)
+_GOLDEN_FINGER_DESIGN_PRINCIPLE_EN = (
+    "## Golden-finger design rule (mandatory; a fixed form = cliché = no clicks)\n"
+    "The golden finger is the protagonist's differentiating edge, but its FORM must "
+    "NOT default to a stat/system panel. Panels/check-ins/shops are ONE option among "
+    "many and are heavily oversaturated — never pick one unless this book's premise "
+    "truly requires it.\n"
+    "Choose the form that best FITS this book's core conflict / protagonist / world "
+    "rules, favouring fresh forms unique to the genre: bloodline or eye awakening, "
+    "ancient inheritance / mentor-remnant, a signature alchemy/forging/array craft, "
+    "special physique, contracted beast / artifact spirit, rebirth/precognition/memory, "
+    "fortune-plunder, technique insight, identity/faction/information edge, forbidden "
+    "reverse-cultivation, rule/keyword manifestation, a single weapon or treasure, "
+    "karma/fate manipulation (or invent a better-fitting one).\n"
+    "The form must grow out of the world's laws (derived, not bolted on), and its "
+    "cost/limit must match the form.\n"
+    "If the genre does not need an external cheat (pure wuxia / history / intrigue / "
+    "literary / ensemble), the book may have NO explicit golden finger — use strategy / "
+    "martial attainment / network / will as the edge, and state 'no explicit golden "
+    "finger; the edge is X'.\n"
+    "Anti-homogenisation: do not reuse a golden-finger form already crowded on the platform."
+)
+
 
 def _default_motif_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool | None = None) -> str:
     """Prompt block that bans fixed family-trauma defaults for new-book conception."""
@@ -1337,6 +1381,7 @@ def _finalize_user_prompt(
         f"\n## 角色体系提案\n{json.dumps(character, ensure_ascii=False, indent=2)}\n"
         f"\n## 世界观提案\n{json.dumps(world, ensure_ascii=False, indent=2)}\n"
         f"\n## 审查意见\n{json.dumps(review, ensure_ascii=False, indent=2)}\n"
+        f"\n{_GOLDEN_FINGER_DESIGN_PRINCIPLE}\n"
         f"\n请根据以上讨论成果，生成最终方案 JSON：\n"
         f'{{\n'
         f'  "title": "书名种子。必须匹配 writing_profile.market.platform_target：'
@@ -1432,6 +1477,7 @@ def _finalize_user_prompt_en(
         f"\n## Character System Proposal\n{json.dumps(character, ensure_ascii=False, indent=2)}\n"
         f"\n## World-Building Proposal\n{json.dumps(world, ensure_ascii=False, indent=2)}\n"
         f"\n## Review Feedback\n{json.dumps(review, ensure_ascii=False, indent=2)}\n"
+        f"\n{_GOLDEN_FINGER_DESIGN_PRINCIPLE_EN}\n"
         f"\nBased on the above discussion, generate the final plan JSON:\n"
         f'{{\n'
         f'  "title": "Title seed matched to writing_profile.market.platform_target. '

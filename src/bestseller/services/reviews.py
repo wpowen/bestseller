@@ -795,18 +795,13 @@ _INFO_SIGNAL_TERMS = (
     "缺页",
     "药剂",
 )
+# NOTE (2026-06-24 去同质化 P0-1): removed one book's private rule jargon /
+# objects (认账/入账/镜债/困魂镜/铜钱/快递单/零点零三分/否认者) that froze that
+# project's folk-horror vocabulary into a universal info-signal gate. Kept only
+# genre-agnostic folk-horror time/omen signals; book-specific terms flow via
+# per-project metadata.
 _FOLK_HORROR_INFO_TERMS = (
-    "快递单",
-    "寄件时间",
-    "零点零三分",
     "子时",
-    "否认者",
-    "认账",
-    "入账",
-    "镜债",
-    "困魂镜",
-    "铜钱",
-    "缺口",
     "血",
     "三短一长",
 )

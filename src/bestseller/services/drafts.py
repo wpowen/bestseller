@@ -7777,15 +7777,18 @@ def _render_front_chapter_forbidden_terms_block(
         return ""
     unique_forbidden_terms = _front10_forbidden_signal_terms(chapter, project=project)
     lines = [
+        # NOTE (2026-06-24 去同质化 P0-1): genericised — previously named one
+        # book's private terms (镜局专名/认账/入账/镜债/账线/铜钱) inside this
+        # universal front-10 prompt, polluting EVERY book's writer prompt.
         "【前十章禁写与物件信号硬约束】",
-        "本章正文只能使用本章场景卡里的现场名词、人物和物件；任何卷级真相、家族本名、"
-        "幕后身份、名单编号、镜局专名、第几面镜都不要提前定义。",
+        "本章正文只能使用本章场景卡里的现场名词、人物和物件；任何卷级真相、人物本名、"
+        "幕后身份、名单编号、关键机制专名都不要提前定义。",
         "允许电话/短信作为同一 POV 内的现实沟通工具，但不得切镜头到电话另一头；"
-        "不得引入快递员、配送员等额外活人 NPC 推动第一章主线。",
-        "物件异常必须写成有稳定含义的可见变化，例如变冷、变重、裂缺、血点、影子错位、指针偏移；"
-        "允许短暂温热，但不得把铜钱长时间高温或发烫写成万能推进器。",
+        "不得引入额外活人 NPC（快递员/配送员等）突兀地推动第一章主线。",
+        "物件异常必须写成有稳定含义的可见变化（变冷、变重、裂缺、血点、影子错位、指针偏移等）；"
+        "不要把某一个物件信号写成反复出现的万能推进器。",
         "前十章不得上规则课：主角只能用问话顺序、物证变化和人物动作让读者推理；"
-        "普通邻居、客户、警察不得主动理解认账/入账/镜债/账线等专业词。",
+        "不要让普通配角主动说破或完整理解本书的核心机制/规则专名。",
     ]
     if unique_forbidden_terms:
         lines.append(
@@ -7823,35 +7826,28 @@ def _prompt_safe_forbidden_actions(actions: Sequence[Any]) -> list[str]:
             )
         ):
             replacement.append("不得用通讯、物流、配送、寄送、外卖或跑腿桥段引入人物、物证或转场。")
+        # NOTE (2026-06-24 去同质化 P0-1): matcher generalised from one book's
+        # private names/objects (林正淳/困魂镜/张家门契/铜钱/青囊) to genre-agnostic
+        # "long-line spoiler" category markers so this works for any book.
         if any(
             term in text
             for term in (
-                "林正淳",
-                "林远山",
-                "林家辉",
-                "困魂镜",
                 "祖父",
                 "爷爷",
-                "第七面",
-                "第八个",
-                "第三十七号",
-                "第三十八号",
-                "扣账人",
-                "母镜",
-                "源门",
-                "归人",
-                "入门",
-                "代父",
-                "张家门契",
-                "三代以内",
-                "血债血偿",
-                "七行名单",
-                "八个人影",
+                "外公",
+                "父辈",
+                "本名",
+                "真名",
+                "真身",
+                "幕后",
+                "身世",
+                "名单编号",
+                "卷级真相",
             )
         ):
-            replacement.append("不得提前写父辈姓名、祖辈姓名、林家旁支、镜局专名、名单编号或第几面镜等长线信息。")
-        if any(term in text for term in ("发烫", "滚烫", "炭火", "烫得", "账页烫", "铜钱烫")):
-            replacement.append("不得把铜钱、青囊纸面、罗盘等物件异常写成发热系反应。")
+            replacement.append("不得提前写人物本名/父辈祖辈姓名、幕后身份、名单编号或卷级真相等长线信息。")
+        if any(term in text for term in ("发烫", "滚烫", "炭火", "烫得")):
+            replacement.append("不得把核心物件的异常简单写成发热/发烫等单一万能反应。")
         if replacement:
             safe_actions.extend(replacement)
             continue
@@ -7958,15 +7954,12 @@ def _front10_forbidden_signal_terms(
 # 发烫 as the novel's signature image.  Semantic check moved to LLM judge.
 _FRONT10_GENERIC_HEAT_SIGNAL_TERMS: frozenset[str] = frozenset()
 
-_FRONT10_OBJECT_SIGNAL_SUBJECTS: tuple[str, ...] = (
-    "铜钱",
-    "青囊",
-    "账页",
-    "罗盘",
-    "掌心旧伤",
-    "掌心的旧伤",
-    "手心旧伤",
-)
+# NOTE (2026-06-24 去同质化 P0-1): previously hardcoded one book's signature
+# objects (铜钱/青囊/账页/罗盘/掌心旧伤). That froze a single project's content
+# into a universal front-10 gate and only "worked" for that book's vocabulary.
+# Emptied — book-specific forbidden object signals flow via per-project metadata
+# (object_signal.forbidden_signals, see _front10_forbidden_signal_terms).
+_FRONT10_OBJECT_SIGNAL_SUBJECTS: tuple[str, ...] = ()
 
 
 def _front10_forbidden_signal_hits(chapter: ChapterModel, content: str) -> list[str]:
@@ -7995,8 +7988,15 @@ def _front10_generic_heat_signal_hit(term: str, content: str) -> bool:
 def _front10_scene_forbidden_content_terms(
     scenes: Sequence[SceneCardModel],
 ) -> list[str]:
-    """Return front-chapter prose terms implied by scene-card prohibitions."""
+    """Return front-chapter prose terms implied by scene-card prohibitions.
 
+    NOTE (2026-06-24 去同质化 P0-1): the candidate vocabulary used to include one
+    book's character names (林正淳/林远山/张家门契), signature horror phrases
+    (门吞掉/被镜子吞掉/镜债/七号入账/八个人影/病号服) and delivery-job specifics —
+    universal source-level freezing of a single project. Trimmed to genre-agnostic
+    "modern-tech immersion breakers"; each is still gated by THIS scene's own
+    ``forbidden_actions``, and project-specific forbidden prose flows via metadata.
+    """
     candidates = (
         "电话",
         "来电",
@@ -8013,41 +8013,10 @@ def _front10_scene_forbidden_content_terms(
         "配送单",
         "物流",
         "跑腿",
-        "林正淳",
-        "林远山",
-        "林家辉",
         "票据",
         "单子",
-        "半夜等单",
-        "送夜宵",
-        "接配送单",
-        "送个单",
-        "帮忙寄件",
-        "门吞掉",
-        "被门吞掉",
-        "被镜子吞掉",
-        "拖进门",
-        "门合拢",
-        "确认死亡",
         "下楼",
         "坐电梯",
-        "离场",
-        "回店",
-        "电梯脚印",
-        "黑泥鞋印",
-        "水渍脚印",
-        "新脚",
-        "湿纸条按在",
-        "七号入账",
-        "代父",
-        "入门",
-        "归人",
-        "张家门契",
-        "三代以内",
-        "血债血偿",
-        "八个人影",
-        "七行名单",
-        "病号服",
     )
     terms: list[str] = []
     for scene in scenes:
@@ -8057,27 +8026,22 @@ def _front10_scene_forbidden_content_terms(
     return _ordered_unique_texts(terms)
 
 
-def _front10_rule_lecture_terms(content: str) -> list[str]:
+def _front10_rule_lecture_terms(content: str, rule_terms: Sequence[str] = ()) -> list[str]:
+    """Front-chapter rule-lecture density check.
+
+    NOTE (2026-06-24 去同质化 P0-1): the phrases/terms were hardcoded to ONE
+    book's rule vocabulary (认账/入账/替认/镜债/账线/账本找…), so the check only
+    fired for that project and froze its content into a universal gate. The
+    book-agnostic "don't info-dump the world's rules in the opening" concern is
+    now owned by the genre-aware ``exposition_density_gate``; this check only
+    fires when the project supplies its OWN ``rule_lecture_terms`` via metadata.
+    """
     window = content or ""
-    phrase_hits = [
-        term
-        for term in (
-            "认动作",
-            "认因果",
-            "只认动作",
-            "账本找的是最近的人",
-            "账本找",
-            "镜债递刀子",
-            "先认动作",
-            "再认因果",
-        )
-        if term in window
-    ]
-    hard_rule_terms = ("认账", "入账", "替认", "镜债", "账线")
-    density = sum(window.count(term) for term in hard_rule_terms)
-    if density >= 5:
-        phrase_hits.append(f"规则术语密度={density}")
-    return _ordered_unique_texts(phrase_hits)
+    rule_terms = tuple(t for t in (rule_terms or ()) if t)
+    if not rule_terms:
+        return []
+    density = sum(window.count(term) for term in rule_terms)
+    return [f"规则术语密度={density}"] if density >= 5 else []
 
 
 def _front10_contract_violations_for_content(
@@ -8177,7 +8141,7 @@ def _front10_contract_violations_for_content(
                 ),
                 prompt_feedback=(
                     "删除规则课式解释；主角只能通过问话顺序、物证反应和人物动作让读者推理，"
-                    "不得直接讲完整规则，不得让普通人主动理解认账/入账/镜债/账线。"
+                    "不得直接讲完整规则，不要让普通配角主动说破或完整理解本书的核心机制/规则专名。"
                 ),
             )
         )
@@ -8741,17 +8705,18 @@ def build_chapter_first_draft_prompts(
         "严格按场景卡的单场字数边界分配篇幅：每场只完成本场任务，不得把一个场景扩写成整章体量；"
         "每场达成离场状态后，用一句可见转场进入下一场。"
         "场景卡的入场状态、离场状态和 forbidden_actions 是硬边界；不得把“失声/回声/半账未解”"
-        "升级成“被拖进门、被吞掉、确认死亡、门合拢”等未写在场景卡的高潮动作；"
-        "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、吞人、门关闭、额外活人 NPC 等关键事件一律禁止；"
+        # NOTE (2026-06-24 去同质化 P0-1): genericised — previously hardcoded one
+        # book's horror beats/objects/jargon (被吞掉/门合拢/铜钱/认账/镜债/镜中声音).
+        "升级成未写在场景卡里的高潮/死亡/关键转折动作；"
+        "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、关键不可逆事件、额外活人 NPC 等一律禁止；"
         "电话/短信只能作为同一视角内的现实沟通工具，不得用来切走 POV 或凭空送入线索。"
         f"如果模型准备写超过42段或超过{hard_max_words}字，必须优先删解释、删重复氛围、删二次推理，"
         "不能继续扩写。"
-        "不得出现模板化重复句式，不得把同一恐惧/门禁/铜钱动作反复写成同一模式。"
+        "不得出现模板化重复句式，不得把同一恐惧/动作/关键物件反复写成同一模式。"
         "非专业角色只能描述自己亲眼看见的异常、听来的警告或身体反应；除非角色认知状态明确写明，"
-        "否则不得让普通客户、快递员、送餐员、邻居、警察主动说出或理解认账、入账、替认、镜债、账线等专业规则词。"
-        "叙述者也不要替普通角色贴规则标签：不要写“某角色继续否认/某角色被卷入”这类直接贴规则标签的句子，"
-        "应改写成普通语言，如“他咬死说没进过门”“她手腕多了半圈黑线”。"
-        "如果需要让非专业角色说出规则词，必须写成被附身、被镜中声音逼迫复述、或主角刚刚当场解释后的结果。"
+        "否则不得让普通配角主动说出或理解本书的核心机制/规则专名。"
+        "叙述者也不要替普通角色贴规则标签，应改写成普通语言（例如把“他被卷入”改成他具体的言行/身体反应）。"
+        "如果需要让非专业角色说出规则词，必须写成被异常逼迫复述、或主角刚刚当场解释后的结果。"
         "正文不得使用 ---、***、空行切场、场景标题或小节分隔符。"
         "每次更换地点或时间，必须先写一句可见转场动作，例如出门、下楼、电梯、电话挂断、"
         "门牌变化、时间跳动或物件反应；禁止从一个地点直接跳到另一个地点。"

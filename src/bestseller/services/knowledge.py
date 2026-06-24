@@ -318,9 +318,20 @@ async def _load_scene_knowledge_context(
         )
     )
     if draft is None:
-        raise ValueError(
-            f"Scene {scene_number} in chapter {chapter_number} does not have a current draft."
+        # Promote the latest draft rather than crashing (accept-best-on-stall);
+        # a scene that exhausted its rewrite budget may have no flagged current.
+        latest = await session.scalar(
+            select(SceneDraftVersionModel)
+            .where(SceneDraftVersionModel.scene_card_id == scene.id)
+            .order_by(SceneDraftVersionModel.version_no.desc())
         )
+        if latest is None:
+            raise ValueError(
+                f"Scene {scene_number} in chapter {chapter_number} does not have any draft."
+            )
+        latest.is_current = True
+        await session.flush()
+        draft = latest
 
     style_guide = await session.get(StyleGuideModel, project.id)
     return project, chapter, scene, draft, style_guide

@@ -4045,12 +4045,29 @@ async def _load_current_scene_draft(
     session: AsyncSession,
     scene_id: UUID,
 ) -> SceneDraftVersionModel | None:
-    return await session.scalar(
+    draft = await session.scalar(
         select(SceneDraftVersionModel).where(
             SceneDraftVersionModel.scene_card_id == scene_id,
             SceneDraftVersionModel.is_current.is_(True),
         )
     )
+    if draft is not None:
+        return draft
+    # No draft is flagged is_current — a scene whose rewrite loop exhausted its
+    # revision budget can end without a promoted draft. Self-heal on read by
+    # promoting the latest draft (accept-best-on-stall), so resume / assembly /
+    # knowledge paths never crash on a scene that DOES have content. Returns
+    # None only when the scene genuinely has zero drafts.
+    latest = await session.scalar(
+        select(SceneDraftVersionModel)
+        .where(SceneDraftVersionModel.scene_card_id == scene_id)
+        .order_by(SceneDraftVersionModel.version_no.desc())
+    )
+    if latest is None:
+        return None
+    latest.is_current = True
+    await session.flush()
+    return latest
 
 
 async def run_scene_pipeline(

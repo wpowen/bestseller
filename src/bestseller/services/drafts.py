@@ -10914,14 +10914,35 @@ async def assemble_chapter_draft(
             )
         )
         if draft is None:
-            missing_scenes.append(scene.scene_number)
-            continue
+            # No draft flagged is_current — a scene whose rewrite loop hit its
+            # revision limit can end without a promoted draft. Fall back to its
+            # latest draft and promote it (accept-best-on-stall) instead of
+            # failing the WHOLE chapter/book at assembly. Only a scene with ZERO
+            # drafts is genuinely un-assemblable.
+            latest = await session.scalar(
+                select(SceneDraftVersionModel)
+                .where(SceneDraftVersionModel.scene_card_id == scene.id)
+                .order_by(SceneDraftVersionModel.version_no.desc())
+            )
+            if latest is None:
+                missing_scenes.append(scene.scene_number)
+                continue
+            logger.warning(
+                "Chapter %d scene %d had no current draft during assembly; "
+                "promoting latest draft v%s (accept-best-on-stall).",
+                chapter_number,
+                scene.scene_number,
+                latest.version_no,
+            )
+            latest.is_current = True
+            await session.flush()
+            draft = latest
         scene_drafts.append(draft)
 
     if missing_scenes:
         missing = ", ".join(str(scene_number) for scene_number in missing_scenes)
         raise ValueError(
-            f"Chapter {chapter_number} cannot be assembled because current drafts are missing for scenes: {missing}."
+            f"Chapter {chapter_number} cannot be assembled because no draft exists at all for scenes: {missing}."
         )
 
     scene_number_by_id = {scene.id: int(scene.scene_number) for scene in scenes}

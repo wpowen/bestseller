@@ -4577,9 +4577,33 @@ async def _load_scene_context(
         )
     )
     if draft is None:
-        raise ValueError(
-            f"Scene {scene_number} in chapter {chapter_number} does not have a current draft."
+        # No draft is flagged ``is_current`` — this happens when a scene's
+        # rewrite loop hits its revision limit and breaks without promoting a
+        # best draft. Rather than hard-crash the WHOLE book at chapter assembly
+        # (a single un-promoted scene used to raise ValueError up through
+        # _run_autowrite_worker and fail the entire generation), fall back to
+        # the latest existing draft and promote it to current — the
+        # accept-best-on-stall philosophy. Only a scene with ZERO drafts is a
+        # genuine, unrecoverable error.
+        latest = await session.scalar(
+            select(SceneDraftVersionModel)
+            .where(SceneDraftVersionModel.scene_card_id == scene.id)
+            .order_by(SceneDraftVersionModel.version_no.desc())
         )
+        if latest is None:
+            raise ValueError(
+                f"Scene {scene_number} in chapter {chapter_number} does not have any draft."
+            )
+        logger.warning(
+            "Scene %d.%d had no current draft; promoting latest draft v%s "
+            "(accept-best-on-stall) instead of failing chapter assembly.",
+            chapter_number,
+            scene_number,
+            latest.version_no,
+        )
+        latest.is_current = True
+        await session.flush()
+        draft = latest
 
     style_guide = await session.get(StyleGuideModel, project.id)
     return project, chapter, scene, style_guide, draft

@@ -3325,3 +3325,76 @@ def test_evaluate_scene_draft_skips_duplication_finding_with_empty_message() -> 
     # Only the non-empty message is attached
     assert len(dup_finding_objs) == 1
     assert dup_finding_objs[0].message == "有效的重复提示。"
+
+
+def test_load_scene_context_promotes_latest_when_no_current_draft(monkeypatch):
+    """A scene whose rewrite loop hit its revision limit without promoting a
+    draft (no is_current) must NOT crash chapter assembly / the whole book.
+    _load_scene_context falls back to the latest draft and promotes it
+    (accept-best-on-stall). Only zero drafts is a genuine error.
+    """
+    from types import SimpleNamespace
+
+    scene = SimpleNamespace(id=uuid4(), scene_number=2)
+    chapter = SimpleNamespace(id=uuid4(), chapter_number=1)
+    project = SimpleNamespace(id=uuid4(), slug="demo")
+    latest_draft = SimpleNamespace(id=uuid4(), version_no=14, is_current=False)
+
+    # scalar() returns, in order: chapter, scene, current-draft(None), latest-draft
+    scalar_queue = [chapter, scene, None, latest_draft]
+    flushed = {"n": 0}
+
+    class FakeSession:
+        async def scalar(self, _stmt):
+            return scalar_queue.pop(0) if scalar_queue else None
+
+        async def get(self, _model, _key):
+            return None
+
+        async def flush(self):
+            flushed["n"] += 1
+
+    async def fake_get_project(_session, _slug):
+        return project
+
+    monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project)
+
+    proj, chap, sc, _sg, draft = asyncio.run(
+        review_services._load_scene_context(FakeSession(), "demo", 1, 2)
+    )
+
+    assert draft is latest_draft
+    assert latest_draft.is_current is True  # promoted
+    assert flushed["n"] >= 1
+
+
+def test_load_scene_context_raises_only_when_zero_drafts(monkeypatch):
+    """With genuinely zero drafts, it still raises (unrecoverable)."""
+    from types import SimpleNamespace
+
+    scene = SimpleNamespace(id=uuid4(), scene_number=2)
+    chapter = SimpleNamespace(id=uuid4(), chapter_number=1)
+    project = SimpleNamespace(id=uuid4(), slug="demo")
+    scalar_queue = [chapter, scene, None, None]  # current None, latest None
+
+    class FakeSession:
+        async def scalar(self, _stmt):
+            return scalar_queue.pop(0) if scalar_queue else None
+
+        async def get(self, _model, _key):
+            return None
+
+        async def flush(self):
+            pass
+
+    monkeypatch.setattr(review_services, "get_project_by_slug", lambda _s, _g: _async(project))
+
+    async def _async(v):
+        return v
+
+    monkeypatch.setattr(
+        review_services, "get_project_by_slug", lambda _s, _g: _async(project)
+    )
+
+    with pytest.raises(ValueError, match="does not have any draft"):
+        asyncio.run(review_services._load_scene_context(FakeSession(), "demo", 1, 2))

@@ -4403,7 +4403,7 @@ def evaluate_chapter_draft(
                 message="本章收尾钩子不够硬，章节结束后的追读牵引力仍然偏弱。",
             )
         )
-    if volume_mission_alignment < threshold:
+    if volume_mission_alignment < threshold and not _is_opening_chapter:
         findings.append(
             ChapterReviewFinding(
                 category="volume_mission_alignment",
@@ -4478,8 +4478,32 @@ def evaluate_chapter_draft(
     if _ch_dup_score < 1.0:
         overall = _clamp_score(overall - (1.0 - _ch_dup_score) * 0.3)
 
-    blocking_findings = [finding for finding in findings if finding.severity in {"high", "medium"}]
-    verdict = "pass" if overall >= threshold and not blocking_findings else "rewrite"
+    # Advancement axes (main/sub/volume progression) are excluded from blocking
+    # for opening chapters — see _is_opening_chapter rationale above.
+    _advancement_categories = {
+        "main_plot_progression",
+        "subplot_progression",
+        "volume_mission_alignment",
+    }
+    blocking_findings = [
+        finding
+        for finding in findings
+        if finding.severity in {"high", "medium"}
+        and not (_is_opening_chapter and finding.category in _advancement_categories)
+    ]
+    if _is_opening_chapter:
+        # Opening chapters (1-3) are graded by their OWN opening contract
+        # (hook / immersion / golden-three payoff — already surfaced as
+        # _chapter_opening_contract_findings / ending_hook / contract / hygiene /
+        # common-sense / duplication blocking findings above), NOT by the
+        # main/sub/volume advancement axes that an opening legitimately scores
+        # low on. The advancement-dragged ``overall`` must therefore NOT force a
+        # rewrite: accept when no genuine (non-advancement) blocking finding
+        # remains. This terminates the ch1 drafting<->revision oscillation where
+        # the advancement axes kept overall < threshold forever.
+        verdict = "pass" if not blocking_findings else "rewrite"
+    else:
+        verdict = "pass" if overall >= threshold and not blocking_findings else "rewrite"
     rewrite_instructions = None
     if verdict == "rewrite":
         contract_hint = ""

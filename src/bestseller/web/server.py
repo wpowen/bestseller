@@ -3255,6 +3255,12 @@ class WebTaskManager:
             conception_hook_spec: dict[str, object] | None = None
             conception_methodology: dict[str, object] | None = None
             conception_hook_candidates: list[dict[str, object]] | None = None
+            # Must be initialised here (not only inside ``if run_conception``):
+            # on RESUME the project already exists so ``_run_conception`` is
+            # False, the conception block is skipped, and the later
+            # ``if conception_story_appeal`` reference would raise
+            # UnboundLocalError and fail the whole resumed task.
+            conception_story_appeal: dict[str, object] | None = None
             story_facets_obj = None
 
             # Use a single session scope for both conception and autowrite

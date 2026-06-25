@@ -83,8 +83,8 @@ challenge_evolution_pathway:
       investigation_en: "{protagonist} begins studying the deep logic of the power system {force_name} represents."
       pressure_zh: "体系的反噬越来越强，{protagonist}的时间窗口在急剧缩小。"
       pressure_en: "Systemic backlash intensifies — {protagonist}'s window is shrinking fast."
-      reversal_zh: "{protagonist}从体系规则中发现了一个被所有人忽视的漏洞。"
-      reversal_en: "{protagonist} discovers a flaw in the system's rules that everyone overlooked."
+      reversal_zh: "{protagonist}找到了突破体系的关键——它可能是一处被忽视的规则缝隙，也可能是一种更高维度的力量、一个体系覆盖不到的变量、一位关键盟友，或一次直击本质的顿悟。按本书设定择其一，不必默认走'钻规则漏洞'。"
+      reversal_en: "{protagonist} finds the key to breaking the system — it may be an overlooked gap in the rules, but it may equally be a higher-dimensional power, a variable the system doesn't cover, a pivotal ally, or an insight that cuts to the essence. Pick the one that fits this book; do not default to 'exploit a loophole'."
       climax_zh: "{protagonist}赌上一切尝试质变，成功与毁灭仅一线之隔。"
       climax_en: "{protagonist} stakes everything on the qualitative leap — success and destruction are a hair apart."
 
@@ -173,6 +173,75 @@ protagonist_archetypes:
     strength_zh: "观察力和信息整合能力极强，善于利用环境和规则中的漏洞。"
     strength_en: "Exceptional observation and information synthesis — adept at exploiting loopholes in environments and rules."
 
+  # 2026-06-25 去同质化：原本只有 power_seeker + cunning_survivor 两个原型，
+  # 其中 cunning_survivor 把"钻规则漏洞"当主角招牌，叠加下方"体系考验"卷一律
+  # "找规则漏洞"的反转，使每本玄幻/修仙书都收敛成"主角卡体系/天道漏洞"。
+  # 补足多样原型，让不同书长出不同主角内核（守护/复仇/证道/背负…），
+  # 钻漏洞只是众多打法之一，而非默认。
+  - archetype_key: oath_protector
+    name_zh: "执誓守护者"
+    name_en: "Oath-Bound Protector"
+    core_wound_zh: "曾亲眼看着自己发誓要护住的人或地方在面前崩塌，从此把'守住'当成活着的唯一理由。"
+    core_wound_en: "Watched the person or place he swore to protect fall apart before his eyes — 'holding the line' became his only reason to live."
+    external_goal_template_zh: "{name}必须变强到足以守住身后的人和约定，哪怕与整个{force_name}为敌。"
+    external_goal_template_en: "{name} must grow strong enough to shield those behind him and the vow he made — even against all of {force_name}."
+    internal_need_template_zh: "{name}需要明白守护不是把所有事一个人扛，学会放手与托付。"
+    internal_need_template_en: "{name} must learn that protecting is not carrying everything alone — to let go and to entrust."
+    arc_trajectory_zh: "从守一人一地，到守一群人，再到守住一种值得传下去的东西。"
+    arc_trajectory_en: "From guarding one person or place, to a community, to something worth passing on."
+    flaw_zh: "把所有责任都揽在自己身上，宁可自损也不肯求援，反而拖垮全局。"
+    flaw_en: "Shoulders every burden alone, self-destructs rather than ask for help — and drags the whole down with him."
+    strength_zh: "越是有人需要守护，越能爆发出超常的韧性与战意，绝境中站得最稳。"
+    strength_en: "The more others depend on him, the more extraordinary his resilience and will — he stands firmest in the worst moment."
+
+  - archetype_key: relentless_avenger
+    name_zh: "执念复仇者"
+    name_en: "Relentless Avenger"
+    core_wound_zh: "一桩具体的背叛或屠戮夺走了他的根，他清楚记得每一个该负责的名字。"
+    core_wound_en: "A specific betrayal or massacre tore out his roots — he remembers every name that owes him."
+    external_goal_template_zh: "{name}必须一步步逼近{force_name}背后真正该负责的人，把账一笔笔讨回来。"
+    external_goal_template_en: "{name} must close in on those truly responsible behind {force_name} and collect every debt."
+    internal_need_template_zh: "{name}需要在复仇与新生之间找到平衡，不被仇恨吞噬成自己最恨的模样。"
+    internal_need_template_en: "{name} must balance vengeance and a new life — not be consumed into the very thing he hates."
+    arc_trajectory_zh: "从盲目雪恨，到看清结构性的恶，再到选择审判而非毁灭。"
+    arc_trajectory_en: "From blind revenge, to seeing the structural evil, to choosing judgment over destruction."
+    flaw_zh: "目标感过强，会为了终极复仇牺牲眼前的人和更大的善。"
+    flaw_en: "Over-focused on the goal — will sacrifice present people and a greater good for the ultimate revenge."
+    strength_zh: "意志极坚、痛觉极钝，认准目标后几乎无法被威慑或收买。"
+    strength_en: "Iron will and dulled pain — once locked on, almost impossible to deter or buy off."
+
+  - archetype_key: proof_seeker
+    name_zh: "证道者"
+    name_en: "Proof-Seeker"
+    core_wound_zh: "曾被权威盖棺定论为'不配'或'注定平庸'，那句判词成了他一生要推翻的东西。"
+    core_wound_en: "Was branded by authority as 'unworthy' or 'born mediocre' — overturning that verdict became his life's work."
+    external_goal_template_zh: "{name}必须用实打实的成就，证明自己选的那条路、那套道走得通。"
+    external_goal_template_en: "{name} must prove, through undeniable achievement, that his chosen path and philosophy work."
+    internal_need_template_zh: "{name}需要从'向别人证明'转向'对自己交代'，不再被外界评判牵着走。"
+    internal_need_template_en: "{name} must shift from 'proving to others' to 'answering to himself' — no longer led by others' judgment."
+    arc_trajectory_zh: "从被否定的不甘，到一步步立住自己的道，再到开宗立派影响后来人。"
+    arc_trajectory_en: "From the sting of denial, to establishing his own way, to founding something that shapes those who follow."
+    flaw_zh: "太在意外界承认，容易被激将、被质疑牵动，做出不必要的冒险。"
+    flaw_en: "Too hungry for recognition — easily provoked by doubt into unnecessary risks."
+    strength_zh: "对自己认定的道有近乎偏执的钻研与坚持，常人放弃处他还能再进一寸。"
+    strength_en: "Obsessive dedication to his chosen path — pushes one inch further where others quit."
+
+  - archetype_key: burden_heir
+    name_zh: "负重继承者"
+    name_en: "Burden-Bearing Heir"
+    core_wound_zh: "继承了一份不是自己造成的债、责任或宿命，一出场就背着别人留下的烂摊子。"
+    core_wound_en: "Inherited a debt, duty, or fate not of his making — burdened from the start by what others left behind."
+    external_goal_template_zh: "{name}必须扛起{force_name}加诸的重担，在偿清与挣脱之间为自己挣出活路。"
+    external_goal_template_en: "{name} must carry the burden {force_name} imposes, carving a way out between repaying it and breaking free."
+    internal_need_template_zh: "{name}需要从'被迫背负'转为'主动选择背什么'，把宿命变成自己的决定。"
+    internal_need_template_en: "{name} must move from 'forced to carry' to 'choosing what to carry' — turning fate into his own decision."
+    arc_trajectory_zh: "从怨恨这份重担，到理解它的来处，再到以自己的方式了结或重写它。"
+    arc_trajectory_en: "From resenting the burden, to understanding its origin, to settling or rewriting it on his own terms."
+    flaw_zh: "习惯隐忍承受，不善表达需求，常把自己逼到极限才肯松口求援。"
+    flaw_en: "Habitually endures in silence, poor at voicing needs — pushes to the brink before asking for help."
+    strength_zh: "耐受力与续航力惊人，能扛住别人扛不住的长期高压而不崩。"
+    strength_en: "Astonishing endurance — withstands sustained pressure that breaks others, without collapsing."
+
 world_rule_templates:
   - rule_template_key: power_hierarchy
     name_zh: "力量阶梯规则"
@@ -181,8 +250,8 @@ world_rule_templates:
     description_en: "Power divides into clear tiers — higher tiers crush lower ones as a fundamental law; cross-tier challenges are exceedingly rare."
     story_consequence_zh: "{protagonist}不能靠热血和友情碾压高阶敌人，必须找到跨阶的合理方式。"
     story_consequence_en: "{protagonist} cannot brute-force higher-tier enemies through willpower alone — a legitimate cross-tier method is required."
-    exploitation_potential_zh: "层级体系越严格，体系中的漏洞和例外就越有叙事价值。"
-    exploitation_potential_en: "The stricter the hierarchy, the more narratively valuable its loopholes and exceptions become."
+    exploitation_potential_zh: "层级体系越严格，跨阶的代价、例外与突破口就越有叙事价值——突破口可以是规则缝隙，也可以是体系不覆盖的维度、稀缺资源、人心向背或更高的道。规则漏洞只是其中一种，不应是每本书的默认解法。"
+    exploitation_potential_en: "The stricter the hierarchy, the more narratively valuable the cost of crossing tiers, its exceptions, and its openings become — an opening may be a gap in the rules, but equally a dimension the system ignores, a scarce resource, the turning of hearts, or a higher Dao. Rule loopholes are only one kind, not every book's default solution."
 
   - rule_template_key: resource_bottleneck
     name_zh: "资源瓶颈规则"

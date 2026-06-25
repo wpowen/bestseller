@@ -4270,10 +4270,13 @@ def build_qimao_opening_contract(
         book_protagonist.get("core_strength"),
         cast_protagonist.get("golden_finger"),
         cast_protagonist.get("core_strength"),
+        # 2026-06-25 去同质化：原默认一律是"抓住别人忽略的漏洞并制造反转"，
+        # 叠加品类模板的钻漏洞偏置→每本玄幻/修仙书主角都成"卡规则/天道漏洞"型。
+        # 改为不预设打法的中性优势（具体形态由本书 golden_finger/archetype 决定）。
         default=(
-            f"{protagonist_name} can spot an overlooked flaw under pressure and create the first reversal."
+            f"{protagonist_name} can make, under pressure, the one decisive move others can't — and turn the situation."
             if is_en
-            else f"{protagonist_name}能在高压下抓住别人忽略的漏洞并制造第一次反转。"
+            else f"{protagonist_name}能在高压下做出别人做不到的那一步关键判断或行动，扭转局面。"
         ),
     )
     edge_limit = _first_non_empty_text(

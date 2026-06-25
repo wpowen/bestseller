@@ -234,16 +234,57 @@ def test_generic_fallback_deck_shape() -> None:
     assert len(keys) == _FALLBACK_DECK_SIZE, "fallback keys must be unique"
 
     types = {entry["hype_type"] for entry in _GENERIC_FALLBACK_HYPE_DECK}
+    # 2026-06-25 去通用性污染(H6): 通用兜底改为题材/基调中立的「转折与兑现」套装,
+    # 不再默认男频打脸/装逼/碾压(face_slap/power_reveal/status_jump 已移入显式选用的
+    # _MALE_POWER_HYPE_DECK)。中立类型适配悬疑/言情/治愈/科幻/女频/史诗。
     required = {
-        HypeType.FACE_SLAP.value,
-        HypeType.POWER_REVEAL.value,
+        HypeType.REVERSAL.value,
         HypeType.COUNTERATTACK.value,
         HypeType.UNDERDOG_WIN.value,
-        HypeType.STATUS_JUMP.value,
+        HypeType.REVENGE_CLOSURE.value,
+        HypeType.CARESS_BY_FATE.value,
     }
     assert types == required, (
         f"fallback deck types drifted from plan: {types} vs {required}"
     )
+    # The generic fallback must NOT carry the male-power humiliation modes.
+    assert HypeType.FACE_SLAP.value not in types
+    assert HypeType.POWER_REVEAL.value not in types
+    assert HypeType.STATUS_JUMP.value not in types
+
+
+def test_male_power_deck_is_opt_in_not_generic_default() -> None:
+    """H6 regression: the 打脸/装逼 deck exists for 升级流/逆袭 genres but is NOT
+    the universal fallback — non-爽 genres (悬疑/言情/治愈/女频) must never embed it
+    by default."""
+
+    from bestseller.services.writing_presets import (
+        _GENERIC_FALLBACK_HYPE_DECK,
+        _MALE_POWER_HYPE_DECK,
+        _GENRE_PRESETS,
+    )
+
+    mp_types = {entry["hype_type"] for entry in _MALE_POWER_HYPE_DECK}
+    assert HypeType.FACE_SLAP.value in mp_types  # 打脸 lives here now
+    assert len(_MALE_POWER_HYPE_DECK) == _FALLBACK_DECK_SIZE
+
+    # Non-爽 genres that must not get the male-power deck.
+    neutral_keys = {
+        "suspense-detective", "rule-horror", "folk-mystery", "dark-romance",
+        "slow-burn-romance", "cozy-fantasy", "sweet-romance-ceo",
+        "psychological-thriller", "female-no-cp", "epic-fantasy",
+    }
+    by_key = {p["key"]: p for p in _GENRE_PRESETS}
+    generic_keys = {e["key"] for e in _GENERIC_FALLBACK_HYPE_DECK}
+    for k in neutral_keys:
+        if k not in by_key:
+            continue
+        deck = by_key[k]["writing_profile_overrides"]["hype"]["recipe_deck"]
+        deck_keys = {e["key"] for e in deck}
+        assert deck_keys == generic_keys, (
+            f"non-爽 preset {k} must use the neutral generic fallback, "
+            f"got {deck_keys}"
+        )
 
 
 def test_non_hot_preset_deck_size_matches_fallback() -> None:

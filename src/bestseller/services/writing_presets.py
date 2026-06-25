@@ -418,9 +418,11 @@ _PLATFORM_PRESETS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 
-_GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
+# 男频爽文打脸/装逼/碾压套装。仅供「升级流·逆袭·扮猪吃虎」类题材显式选用——
+# 不是通用兜底。把它当默认会让言情/悬疑/治愈/女频每章被强塞「当众打脸/亮底牌」。
+_MALE_POWER_HYPE_DECK: list[dict[str, Any]] = [
     {
-        "key": "通用-当众打脸",
+        "key": "爽文-当众打脸",
         "hype_type": "face_slap",
         "trigger_keywords": ["打脸", "僵住", "脸色铁青", "哑口", "噤声"],
         "narrative_beats": [
@@ -431,7 +433,7 @@ _GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
         "cadence_hint": "300-500 字；动作前留一段静",
     },
     {
-        "key": "通用-亮出底牌",
+        "key": "爽文-亮出底牌",
         "hype_type": "power_reveal",
         "trigger_keywords": ["亮出", "真身", "显露", "一掌压下", "气势"],
         "narrative_beats": [
@@ -442,7 +444,7 @@ _GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
         "cadence_hint": "400-700 字；亮牌之前必须铺垫压迫感",
     },
     {
-        "key": "通用-以彼之道反击",
+        "key": "爽文-以彼之道反击",
         "hype_type": "counterattack",
         "trigger_keywords": ["反击", "回敬", "以彼之道", "反手", "反制"],
         "narrative_beats": [
@@ -453,7 +455,7 @@ _GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
         "cadence_hint": "中段 400 字；突出'反手'冷静",
     },
     {
-        "key": "通用-低估掀桌",
+        "key": "爽文-低估掀桌",
         "hype_type": "underdog_win",
         "trigger_keywords": ["低估", "小看", "翻身", "掀桌", "扭转"],
         "narrative_beats": [
@@ -464,7 +466,7 @@ _GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
         "cadence_hint": "前半章铺垫低估，后半章一锤反转",
     },
     {
-        "key": "通用-身份跃升",
+        "key": "爽文-身份跃升",
         "hype_type": "status_jump",
         "trigger_keywords": ["登顶", "跃升", "名册", "跻身", "新晋"],
         "narrative_beats": [
@@ -473,6 +475,68 @@ _GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
         ],
         "intensity_floor": 7.5,
         "cadence_hint": "播报口吻穿插；数字要具体",
+    },
+]
+
+
+# 通用兜底配方：题材/基调中立的「转折与兑现」套装，适配任何题材(悬疑/言情/科幻/
+# 治愈/女频/史诗)——只保证戏剧张力的兑现节拍，不预设男频打脸/装逼/碾压的羞辱框。
+# 升级流/逆袭类题材若要打脸节拍，请显式选 _MALE_POWER_HYPE_DECK。
+_GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
+    {
+        "key": "通用-局势逆转",
+        "hype_type": "reversal",
+        "trigger_keywords": ["逆转", "反转", "陡变", "翻盘", "扭转"],
+        "narrative_beats": [
+            "局面看似已定", "一个被忽略的关键浮现",
+            "态势骤然反转", "各方重新评估处境",
+        ],
+        "intensity_floor": 7.0,
+        "cadence_hint": "400-600 字；反转点前留一段'以为尘埃落定'的静",
+    },
+    {
+        "key": "通用-识破反制",
+        "hype_type": "counterattack",
+        "trigger_keywords": ["识破", "反制", "将计就计", "反手", "扭转"],
+        "narrative_beats": [
+            "对手布局自以为得手", "主角看穿其中破绽",
+            "顺势反制", "局面被主角夺回主导",
+        ],
+        "intensity_floor": 7.0,
+        "cadence_hint": "中段 400 字；突出'看穿—反制'的冷静而非羞辱",
+    },
+    {
+        "key": "通用-逆境翻盘",
+        "hype_type": "underdog_win",
+        "trigger_keywords": ["绝境", "翻盘", "险胜", "扛住", "破局"],
+        "narrative_beats": [
+            "主角被逼到不利位置", "凭准备/判断/代价撑住",
+            "找到唯一缝隙", "扳回局面但留下损耗",
+        ],
+        "intensity_floor": 7.0,
+        "cadence_hint": "前半铺压迫，后半一手破局；胜利要带代价",
+    },
+    {
+        "key": "通用-代价兑现",
+        "hype_type": "revenge_closure",
+        "trigger_keywords": ["代价", "了结", "偿还", "闭合", "清算"],
+        "narrative_beats": [
+            "一条悬了多章的线推到结点", "主角做出取舍",
+            "代价当场兑现", "这条线就此闭合或转向",
+        ],
+        "intensity_floor": 7.5,
+        "cadence_hint": "必须本章给出结清；不得空许诺",
+    },
+    {
+        "key": "通用-转机降临",
+        "hype_type": "caress_by_fate",
+        "trigger_keywords": ["转机", "际遇", "意外", "契机", "缝隙"],
+        "narrative_beats": [
+            "处境陷入僵持", "一个意料外的契机出现",
+            "主角抓住并付出对应行动", "新的可能被打开",
+        ],
+        "intensity_floor": 7.0,
+        "cadence_hint": "契机要有铺垫伏笔，不能凭空掉落",
     },
 ]
 
@@ -1105,7 +1169,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["利落", "反差", "现实感", "爽感"],
                 "dialogue_ratio": 0.45,
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -1137,7 +1201,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "world": {
                 "setting_tags": ["公司成长", "产业竞争", "技术升级"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -1174,7 +1238,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "style": {
                 "tone_keywords": ["沉稳", "锋利", "谋略感"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -1274,7 +1338,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "protagonist_archetype": "高适应闯关者",
                 "protagonist_core_drive": "在副本与主线夹层中找到存活与通关路径",
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -1415,7 +1479,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "境界成长与宠兽进化树并行",
                 "setting_tags": ["御兽", "进化", "培育", "赛事"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -1452,7 +1516,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["热血", "反差", "爽感", "现场感"],
                 "dialogue_ratio": 0.44,
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -1531,7 +1595,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "world": {
                 "setting_tags": ["创业", "商业", "资本", "翻盘"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -1611,7 +1675,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "现代规则与修行体系并行升级",
                 "setting_tags": ["现代修仙", "规则变化", "都市", "升级"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -2001,7 +2065,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["理性", "硬核", "家国感", "科技浪漫"],
                 "dialogue_ratio": 0.38,
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -2046,7 +2110,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["热血", "怀旧", "遗憾感", "青春感"],
                 "dialogue_ratio": 0.46,
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -2518,7 +2582,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Stat-based with levels, skills, classes, and loot tables",
                 "setting_tags": ["dungeon", "system", "guild", "tower", "apocalypse"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -2909,7 +2973,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Game-like stats, skills, classes, quests, and loot with visible UI elements",
                 "setting_tags": ["fantasy world", "starter village", "dungeon", "guild hall", "boss arena"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -3127,7 +3191,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Native magic or cultivation system unfamiliar to the protagonist",
                 "setting_tags": ["alien landscape", "foreign city", "ancient ruins", "frontier settlement", "dimensional rift"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -3166,7 +3230,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Tiered cultivation with named ranks, techniques, and bottleneck breakthroughs",
                 "setting_tags": ["sect grounds", "spirit mountain", "cultivation cave", "tournament ring", "forbidden realm"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -3205,7 +3269,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Evolution trees with branching paths, ability unlocks, and tier thresholds",
                 "setting_tags": ["dungeon", "monster territory", "forest depths", "underground cavern", "adventurer guild"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -3244,7 +3308,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Classification tiers with defined power categories, rankings, and threat levels",
                 "setting_tags": ["modern city", "secret base", "villain territory", "government facility", "power testing lab"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -3335,7 +3399,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["爽", "反差", "现场感", "话题感"],
                 "dialogue_ratio": 0.46,
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {
@@ -3378,7 +3442,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "style": {
                 "tone_keywords": ["热血", "开阔", "爽感", "史诗"],
             },
-            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+            "hype": _hype_block(_MALE_POWER_HYPE_DECK),
         },
     },
     {

@@ -41,6 +41,37 @@ def test_resolve_mythic_workplace_profile_tracks_growth_and_safety() -> None:
     assert "final dismissal" in profile.growth_stages[0].forbidden_shortcuts
 
 
+def test_non_workplace_genre_gets_genre_neutral_ladder_no_hr_contamination() -> None:
+    """H1 regression (通用性污染): the 脑洞 effect is universal — a 玄幻 / 悬疑 book
+    that selects brainhole_engine must NOT be forced into an HR-recruiting frame
+    (面试→调岗→辞退→改制度). Only the mythic-workplace (招神/神仙 HR) concept keeps
+    the HR ladder; every other genre gets a neutral high-concept-mechanism ladder."""
+
+    for genre, sub in (("玄幻", "东方玄幻"), ("悬疑", "民俗怪谈"), ("科幻", "赛博朋克")):
+        profile = resolve_brainhole_profile(genre, sub)
+
+        assert profile.profile_key != "mythic-workplace-brainhole"
+        # Neutral families, not the HR ones.
+        assert "mythic_vs_workplace" not in profile.contrast_axes
+        assert "visible_comedy" not in profile.required_contract_fields
+        assert "high_concept_setpiece" in profile.required_contract_fields
+        stage_keys = {s.stage_key for s in profile.growth_stages}
+        assert "redefine" in stage_keys and "system" not in stage_keys
+        for stage in profile.growth_stages:
+            assert "interview" not in stage.allowed_hr_actions
+            assert "dismiss_with_cause" not in stage.allowed_hr_actions
+
+        block = render_brainhole_planner_prompt_block(
+            {BRAINHOLE_PROFILE_METADATA_KEY: profile.to_metadata()},
+            language="zh-CN",
+        )
+        # No HR-recruiting prose leaks into a non-workplace genre's contract.
+        assert "HR 动作" not in block
+        assert "调岗" not in block and "辞退" not in block and "改制度" not in block
+        assert "脑洞机制" in block  # neutral mechanism framing present
+        assert "`brainhole_contract`" in block  # contract still active
+
+
 def test_attach_profile_is_immutable_and_legacy_metadata_stays_empty() -> None:
     legacy_metadata = {"prompt_pack_key": "xianxia-upgrade-core"}
 

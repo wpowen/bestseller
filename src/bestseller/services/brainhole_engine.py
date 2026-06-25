@@ -13,7 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 BRAINHOLE_PROFILE_METADATA_KEY = "brainhole_profile"
-BRAINHOLE_PROFILE_VERSION = "2026-06-15.v1"
+BRAINHOLE_PROFILE_VERSION = "2026-06-25.v2"
 
 
 class BrainholeProfileActivation(BaseModel):
@@ -81,6 +81,170 @@ class BrainholeStageBindings(BaseModel):
     review: tuple[str, ...] = ("persona_invariant_gate", "growth_stage_fit")
 
 
+# ── Profile families ─────────────────────────────────────────────────────────
+# The brainhole engine is a UNIVERSAL high-concept / 反差 / 名场面 effect skill that
+# any genre can select.  Earlier the snapshot baked a single HR-recruiting-comedy
+# contract (interview → dismiss → redesign recruiting system) as the default for
+# every genre, so a 玄幻 / 悬疑 book that turned the 脑洞 effect on was told to write
+# "面试 / 调岗 / 辞退" set-pieces.  We now keep that HR ladder ONLY for the
+# mythic-workplace concept (招神 / 神仙 HR), and give every other genre a neutral
+# "high-concept mechanism authority" ladder that manifests the 脑洞 in the book's
+# own domain.
+
+_WORKPLACE_GROWTH_STAGES: tuple[BrainholeGrowthStage, ...] = (
+    BrainholeGrowthStage(
+        stage_key="observe",
+        chapter_range="opening",
+        protagonist_capability="Can notice contradiction and make one low-risk offer.",
+        decision_scope="observation, interview, recommendation",
+        allowed_hr_actions=("interview", "recommend", "temporary_trial"),
+        forbidden_shortcuts=("final dismissal", "system redesign", "god-level arbitration"),
+    ),
+    BrainholeGrowthStage(
+        stage_key="assign",
+        chapter_range="early-middle",
+        protagonist_capability="Can match role, resource, and pressure after reading persona risk.",
+        decision_scope="role assignment, probation, conflict mediation",
+        allowed_hr_actions=("assign_role", "probation", "mediate_conflict"),
+        forbidden_shortcuts=("erase character flaw", "solve by authority reveal"),
+    ),
+    BrainholeGrowthStage(
+        stage_key="reshape",
+        chapter_range="middle-late",
+        protagonist_capability="Can use institutional leverage and accept counter-cost.",
+        decision_scope="transfer, dismissal, new role creation, policy change",
+        allowed_hr_actions=("transfer", "dismiss_with_cause", "create_role", "change_policy"),
+        forbidden_shortcuts=("change mythic core for convenience", "free victory without backlash"),
+    ),
+    BrainholeGrowthStage(
+        stage_key="system",
+        chapter_range="late",
+        protagonist_capability="Can redesign the recruitment system under public consequence.",
+        decision_scope="system redesign, alliance restructuring, value judgment",
+        allowed_hr_actions=("redesign_system", "public_arbitration", "institutional_bargain"),
+        forbidden_shortcuts=("ignore accumulated costs", "reset relationships"),
+    ),
+)
+
+_GENERIC_GROWTH_STAGES: tuple[BrainholeGrowthStage, ...] = (
+    BrainholeGrowthStage(
+        stage_key="observe",
+        chapter_range="opening",
+        protagonist_capability="Can notice the core contradiction and make one low-risk move.",
+        decision_scope="observation, probing, a small reversible trial",
+        allowed_hr_actions=("observe", "probe", "small_trial"),
+        forbidden_shortcuts=("world-level arbitration", "irreversible escalation", "god-level shortcut"),
+    ),
+    BrainholeGrowthStage(
+        stage_key="apply",
+        chapter_range="early-middle",
+        protagonist_capability="Can deploy the high-concept mechanism deliberately after reading the situation.",
+        decision_scope="apply mechanism, leverage a constraint, mediate conflict",
+        allowed_hr_actions=("apply_mechanism", "leverage_constraint", "mediate_conflict"),
+        forbidden_shortcuts=("erase the core flaw", "solve by authority reveal"),
+    ),
+    BrainholeGrowthStage(
+        stage_key="reshape",
+        chapter_range="middle-late",
+        protagonist_capability="Can bend the mechanism or local order and accept counter-cost.",
+        decision_scope="escalate, reconfigure, create a new option, change a local rule",
+        allowed_hr_actions=("escalate", "reconfigure", "create_new_option", "change_local_rule"),
+        forbidden_shortcuts=("rewrite the core for convenience", "free victory without backlash"),
+    ),
+    BrainholeGrowthStage(
+        stage_key="redefine",
+        chapter_range="late",
+        protagonist_capability="Can redefine the mechanism's rules under public consequence.",
+        decision_scope="redefine rules, public reckoning, structural bargain",
+        allowed_hr_actions=("redefine_rules", "public_reckoning", "structural_bargain"),
+        forbidden_shortcuts=("ignore accumulated costs", "reset relationships"),
+    ),
+)
+
+_WORKPLACE_CONTRAST_AXES = (
+    "mythic_vs_workplace",
+    "sacred_duty_vs_private_desire",
+    "petty_process_vs_world_consequence",
+    "persona_core_under_pressure",
+    "growth_stage_unlock",
+)
+_GENERIC_CONTRAST_AXES = (
+    "high_concept_vs_grounded",
+    "duty_vs_private_desire",
+    "small_mechanism_vs_world_consequence",
+    "persona_core_under_pressure",
+    "growth_stage_unlock",
+)
+
+_WORKPLACE_CONTRACT_FIELDS = (
+    "one_sentence_sell",
+    "character_core_used",
+    "modern_system",
+    "contrast_mechanism",
+    "visible_comedy",
+    "serious_underbelly",
+    "plot_consequence",
+    "protagonist_decision",
+    "growth_stage_fit",
+    "risk_check",
+)
+_GENERIC_CONTRACT_FIELDS = (
+    "one_sentence_sell",
+    "character_core_used",
+    "novel_mechanism",
+    "contrast_mechanism",
+    "high_concept_setpiece",
+    "tonal_consistency",
+    "plot_consequence",
+    "protagonist_decision",
+    "growth_stage_fit",
+    "risk_check",
+)
+
+_WORKPLACE_GROWTH_AXIS = (
+    "Brainhole difficulty and HR authority must track protagonist growth: "
+    "observe -> diagnose -> assign -> transfer -> dismiss -> create role "
+    "-> redesign the recruiting system."
+)
+_GENERIC_GROWTH_AXIS = (
+    "Brainhole difficulty and the protagonist's authority over the high-concept "
+    "mechanism must track growth: observe -> apply -> leverage -> reshape -> "
+    "redefine the mechanism's rules."
+)
+
+_WORKPLACE_GROWTH_GATE_EN = (
+    "Growth gate: the protagonist's current capability decides which HR move is "
+    "legal. Early chapters can observe, recommend, or offer a trial; later "
+    "chapters may transfer, dismiss, create roles, or redesign policy only after "
+    "earned authority and visible cost."
+)
+_GENERIC_GROWTH_GATE_EN = (
+    "Growth gate: the protagonist's current capability decides how far the "
+    "high-concept mechanism can be pushed. Early chapters can observe, probe, or "
+    "run a small reversible trial; later chapters may escalate, reconfigure, "
+    "create new options, or redefine rules only after earned authority and "
+    "visible cost."
+)
+_WORKPLACE_GROWTH_GATE_ZH = (
+    "成长安全门：主角当前能力决定本章能做什么 HR 动作。前期只能观察、推荐、试用；"
+    "中后期必须在权威、代价、关系后果已经铺垫后，才能调岗、辞退、造岗或改制度。"
+)
+_GENERIC_GROWTH_GATE_ZH = (
+    "成长安全门：主角当前能力决定本章能动用多大的脑洞机制。前期只能观察、试探、小幅可逆尝试；"
+    "中后期必须在权威、代价、关系后果已经铺垫后，才能升级、重构、造出新解或改写规则。"
+)
+
+_WORKPLACE_RISK_TAIL_ZH = "笑点与主角当前成长阶段冲突"
+_GENERIC_RISK_TAIL_ZH = "反差或情绪落点与主角当前成长阶段冲突"
+_WORKPLACE_RISK_TAIL_EN = (
+    "or comedy that contradicts the protagonist's current growth stage"
+)
+_GENERIC_RISK_TAIL_EN = (
+    "or a contrast/emotional beat that contradicts the protagonist's current "
+    "growth stage"
+)
+
+
 class BrainholeProfileSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -99,64 +263,17 @@ class BrainholeProfileSnapshot(BaseModel):
         default_factory=BrainholeModernSystemSchema
     )
     stage_bindings: BrainholeStageBindings = Field(default_factory=BrainholeStageBindings)
-    contrast_axes: tuple[str, ...] = (
-        "mythic_vs_workplace",
-        "sacred_duty_vs_private_desire",
-        "petty_process_vs_world_consequence",
-        "persona_core_under_pressure",
-        "growth_stage_unlock",
-    )
-    required_contract_fields: tuple[str, ...] = (
-        "one_sentence_sell",
-        "character_core_used",
-        "modern_system",
-        "contrast_mechanism",
-        "visible_comedy",
-        "serious_underbelly",
-        "plot_consequence",
-        "protagonist_decision",
-        "growth_stage_fit",
-        "risk_check",
-    )
-    protagonist_growth_axis: str = (
-        "Brainhole difficulty and HR authority must track protagonist growth: "
-        "observe -> diagnose -> assign -> transfer -> dismiss -> create role "
-        "-> redesign the recruiting system."
-    )
-    growth_stages: tuple[BrainholeGrowthStage, ...] = (
-        BrainholeGrowthStage(
-            stage_key="observe",
-            chapter_range="opening",
-            protagonist_capability="Can notice contradiction and make one low-risk offer.",
-            decision_scope="observation, interview, recommendation",
-            allowed_hr_actions=("interview", "recommend", "temporary_trial"),
-            forbidden_shortcuts=("final dismissal", "system redesign", "god-level arbitration"),
-        ),
-        BrainholeGrowthStage(
-            stage_key="assign",
-            chapter_range="early-middle",
-            protagonist_capability="Can match role, resource, and pressure after reading persona risk.",
-            decision_scope="role assignment, probation, conflict mediation",
-            allowed_hr_actions=("assign_role", "probation", "mediate_conflict"),
-            forbidden_shortcuts=("erase character flaw", "solve by authority reveal"),
-        ),
-        BrainholeGrowthStage(
-            stage_key="reshape",
-            chapter_range="middle-late",
-            protagonist_capability="Can use institutional leverage and accept counter-cost.",
-            decision_scope="transfer, dismissal, new role creation, policy change",
-            allowed_hr_actions=("transfer", "dismiss_with_cause", "create_role", "change_policy"),
-            forbidden_shortcuts=("change mythic core for convenience", "free victory without backlash"),
-        ),
-        BrainholeGrowthStage(
-            stage_key="system",
-            chapter_range="late",
-            protagonist_capability="Can redesign the recruitment system under public consequence.",
-            decision_scope="system redesign, alliance restructuring, value judgment",
-            allowed_hr_actions=("redesign_system", "public_arbitration", "institutional_bargain"),
-            forbidden_shortcuts=("ignore accumulated costs", "reset relationships"),
-        ),
-    )
+    # Defaults are the GENRE-NEUTRAL family; resolve_brainhole_profile() swaps in
+    # the workplace/HR family only for the mythic-workplace (招神/神仙 HR) concept.
+    contrast_axes: tuple[str, ...] = _GENERIC_CONTRAST_AXES
+    required_contract_fields: tuple[str, ...] = _GENERIC_CONTRACT_FIELDS
+    protagonist_growth_axis: str = _GENERIC_GROWTH_AXIS
+    growth_stages: tuple[BrainholeGrowthStage, ...] = _GENERIC_GROWTH_STAGES
+    # Render-driving copy (so the prompt block carries no hardcoded HR prose).
+    growth_gate_zh: str = _GENERIC_GROWTH_GATE_ZH
+    growth_gate_en: str = _GENERIC_GROWTH_GATE_EN
+    risk_tail_zh: str = _GENERIC_RISK_TAIL_ZH
+    risk_tail_en: str = _GENERIC_RISK_TAIL_EN
 
     def to_metadata(self) -> dict[str, Any]:
         payload = self.model_dump(mode="json")
@@ -186,10 +303,33 @@ def resolve_brainhole_profile(
     *,
     prompt_pack_key: str | None = None,
 ) -> BrainholeProfileSnapshot:
-    """Resolve a deterministic novelty-generation profile snapshot."""
+    """Resolve a deterministic novelty-generation profile snapshot.
 
+    The workplace/HR ladder (面试→调岗→辞退→改制度) is reserved for the
+    mythic-workplace concept (招神 / 神仙 HR comedy), where it is the actual
+    premise.  Every other genre receives a genre-neutral high-concept-mechanism
+    ladder so the 脑洞 manifests in that book's own domain instead of being
+    forced into an HR-recruiting frame.
+    """
+
+    profile_key = _resolve_profile_key(genre, sub_genre, prompt_pack_key)
+    if profile_key == "mythic-workplace-brainhole":
+        return BrainholeProfileSnapshot(
+            profile_key=profile_key,
+            genre=genre,
+            sub_genre=sub_genre,
+            prompt_pack_key=prompt_pack_key,
+            contrast_axes=_WORKPLACE_CONTRAST_AXES,
+            required_contract_fields=_WORKPLACE_CONTRACT_FIELDS,
+            protagonist_growth_axis=_WORKPLACE_GROWTH_AXIS,
+            growth_stages=_WORKPLACE_GROWTH_STAGES,
+            growth_gate_zh=_WORKPLACE_GROWTH_GATE_ZH,
+            growth_gate_en=_WORKPLACE_GROWTH_GATE_EN,
+            risk_tail_zh=_WORKPLACE_RISK_TAIL_ZH,
+            risk_tail_en=_WORKPLACE_RISK_TAIL_EN,
+        )
     return BrainholeProfileSnapshot(
-        profile_key=_resolve_profile_key(genre, sub_genre, prompt_pack_key),
+        profile_key=profile_key,
         genre=genre,
         sub_genre=sub_genre,
         prompt_pack_key=prompt_pack_key,
@@ -237,7 +377,7 @@ def _render_stage_rows(profile: BrainholeProfileSnapshot, *, is_en: bool) -> str
                 "- "
                 f"{stage.stage_key} ({stage.chapter_range}): capability="
                 f"{stage.protagonist_capability}; decision_scope="
-                f"{stage.decision_scope}; allowed_hr_actions="
+                f"{stage.decision_scope}; allowed_moves="
                 f"{', '.join(stage.allowed_hr_actions)}; forbidden_shortcuts="
                 f"{', '.join(stage.forbidden_shortcuts)}."
             )
@@ -287,18 +427,14 @@ def render_brainhole_planner_prompt_block(
             "rewrite it. If a character appears to betray a core value, the "
             "outline must include the external cause, internal cost, and repair "
             "path.\n"
-            "Growth gate: the protagonist's current capability decides which HR "
-            "move is legal. Early chapters can observe, recommend, or offer a "
-            "trial; later chapters may transfer, dismiss, create roles, or "
-            "redesign policy only after earned authority and visible cost.\n"
+            f"{profile.growth_gate_en}\n"
             f"Growth ladder:\n{stages}\n"
             "Each chapter must include `brainhole_contract` when this contract "
             "is present. Required fields: "
             f"{fields}.\n"
             "Risk check must reject: hard personality break, cheap insult, "
             "unearned protagonist shortcut, trend reference without plot "
-            "consequence, or comedy that contradicts the protagonist's current "
-            "growth stage."
+            f"consequence, {profile.risk_tail_en}."
         )
 
     return (
@@ -310,13 +446,12 @@ def render_brainhole_planner_prompt_block(
         f"反差轴：{axes}。\n"
         "人设安全门：可以压迫角色核心，不能随手改写角色核心。若角色看似背叛核心价值，"
         "大纲必须写清外部诱因、内部代价、以及后续圆回路径。\n"
-        "成长安全门：主角当前能力决定本章能做什么 HR 动作。前期只能观察、推荐、试用；"
-        "中后期必须在权威、代价、关系后果已经铺垫后，才能调岗、辞退、造岗或改制度。\n"
+        f"{profile.growth_gate_zh}\n"
         f"成长阶梯：\n{stages}\n"
         "只要本合同存在，每章必须输出 `brainhole_contract`。必填字段："
         f"{fields}。\n"
         "risk_check 必须排除：硬改人设、低级冒犯、主角未成长就越权解决、热点只贴标签无剧情后果、"
-        "笑点与主角当前成长阶段冲突。"
+        f"{profile.risk_tail_zh}。"
     )
 
 

@@ -5,9 +5,13 @@ hook_strength_gate 拍死——项目未提供 hook_spec 时，闸门用题材�
 候选钩子，再用 premise 锚点校验该候选；模板候选必然不含新书 premise 的
 锚点词，hook_premise_mismatch 硬失败后直接抛 PlannerFallbackError 杀掉全流程。
 
-契约：
-- 自动生成的候选被 reject → 降级（返回 None + auto_demoted payload），不阻断。
-- 用户显式提供的 hook_spec 被 reject → 仍硬阻断（作者声明的钩子必须兑现）。
+契约（2026-06-11 起，见 commit e935e68「反常识钩子被拒不再硬毙整本书」）：
+- 钩子引擎 soft-by-design：任何被 reject 的钩子（无论自动生成还是用户提供）都
+  降级续跑（返回 None + auto_demoted payload），绝不抛 PlannerFallbackError——
+  为一个可选的开篇增强而拍死一本 500 章的书是不可接受的。
+- 自动生成候选被 reject → demote_reason="auto_generated_hook_rejected"。
+- 用户显式提供的 hook_spec 被 reject → demote_reason="provided_hook_rejected"
+  （仍降级，但记不同原因，便于审计区分作者声明 vs 框架兜底）。
 - 用户提供的合格 hook_spec → 正常通过并返回 payload。
 """
 
@@ -15,7 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bestseller.services.planner import PlannerFallbackError, _run_hook_strength_gate
+from bestseller.services.planner import _run_hook_strength_gate
 
 PREMISE = (
     "失业HR陈屿入职三垣人力资源有限公司，按奇葩JD招人，后发现公司是天庭驻人间办事处。"
@@ -122,11 +126,17 @@ async def test_auto_generated_reject_demotes_instead_of_raising():
 
 
 @pytest.mark.asyncio
-async def test_provided_junk_hook_still_hard_blocks():
-    """用户显式提供且与 premise 锚点零交集的钩子 → 仍然硬阻断。"""
+async def test_provided_junk_hook_demotes_with_provided_reason():
+    """用户显式提供且与 premise 锚点零交集的钩子 → 降级续跑（不抛异常），
+    并记 demote_reason="provided_hook_rejected" 以便审计区分作者声明 vs 兜底。"""
     project = _project({"hook_spec": _junk_hook_spec()})
-    with pytest.raises(PlannerFallbackError):
-        await _run_hook_strength_gate(_settings(), project=project, premise=PREMISE)
+    spec, payload = await _run_hook_strength_gate(
+        _settings(), project=project, premise=PREMISE
+    )
+    assert spec is None
+    assert payload is not None
+    assert payload.get("auto_demoted") is True
+    assert payload["demote_reason"] == "provided_hook_rejected"
 
 
 @pytest.mark.asyncio

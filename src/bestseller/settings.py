@@ -511,7 +511,17 @@ class PipelineSettings(BaseModel):
     # ``chapter.metadata_json["rounds_budget_exhausted"]`` and the chapter
     # is routed through the existing machine-repair path.  Ops can tighten
     # this for fail-fast runs without changing repair business logic.
-    max_total_scene_rounds_per_chapter: int = 0
+    #
+    # 2026-06-25: default raised 0 → 20 (was effectively a missing safety net).
+    # A single unsatisfiable finding (e.g. a SIGNATURE_IMAGE_MISSING whose
+    # signature_image is a full paraphraseable sentence the writer never
+    # reproduces verbatim) made the chapter auto-repair loop reset+redraft
+    # scenes indefinitely (observed: ch9 churned 30 min / 16+ scene rounds with
+    # no convergence). 20 still admits the full legitimate topology (≤3 scenes ×
+    # 2 rewrites × 3 repair passes ≈ 18) but guarantees the chapter accepts the
+    # best draft on stall instead of churning forever — the "minimum iterations"
+    # contract. Ops can raise it for quality-max runs.
+    max_total_scene_rounds_per_chapter: int = 20
     # Cross-run cap on ``autonomous_quality_retrofit`` rewrite tasks
     # generated per chapter. ``autonomous_book_repair`` schedules these from
     # the quality-levers audit; without a per-chapter cap a chapter that

@@ -72,9 +72,11 @@ class _FakeSession:
 # ---------------------------------------------------------------------------
 
 
-def test_settings_default_is_zero_unlimited() -> None:
-    assert get_settings().pipeline.max_total_scene_rounds_per_chapter == 0
-    assert drafts._resolve_chapter_scene_rounds_budget() == 0
+def test_settings_default_bounds_runaway_scene_rounds() -> None:
+    # 2026-06-25: default raised 0 → 20 so an unsatisfiable finding can't churn a
+    # chapter's scene auto-repair loop forever (the "minimum iterations" contract).
+    assert get_settings().pipeline.max_total_scene_rounds_per_chapter == 20
+    assert drafts._resolve_chapter_scene_rounds_budget() == 20
 
 
 def test_total_rounds_sums_scene_counters() -> None:
@@ -82,11 +84,19 @@ def test_total_rounds_sums_scene_counters() -> None:
     assert total_chapter_scene_repair_rounds(scenes) == 5
 
 
-def test_budget_zero_never_exhausts_status_quo() -> None:
+def test_budget_zero_explicit_never_exhausts() -> None:
+    # An explicit budget=0 is still the opt-out (unbounded) sentinel.
     scenes = [_scene_with_rounds(50)]
     assert is_chapter_scene_rounds_budget_exhausted(scenes, budget=0) is False
-    # default settings (0) → also never exhausted
-    assert is_chapter_scene_rounds_budget_exhausted(scenes) is False
+
+
+def test_default_budget_bounds_runaway() -> None:
+    # 2026-06-25: default is now 20, so a runaway chapter (50 rounds) DOES exhaust
+    # and gets routed to machine-repair instead of churning forever.
+    scenes = [_scene_with_rounds(50)]
+    assert is_chapter_scene_rounds_budget_exhausted(scenes) is True
+    # a normal chapter well under the budget is unaffected
+    assert is_chapter_scene_rounds_budget_exhausted([_scene_with_rounds(6)]) is False
 
 
 def test_budget_threshold_behavior() -> None:

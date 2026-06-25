@@ -43,7 +43,7 @@ def evaluate_common_sense_gate(
     findings.extend(_find_unexplained_bleeding(content, chapter_number=chapter_number))
     findings.extend(_find_ambiguous_or_conflicting_countdown(content))
     findings.extend(_find_remaining_time_arithmetic(content))
-    findings.extend(_find_coin_state_jump(content))
+    findings.extend(_find_object_state_jump(content))
     findings.extend(_find_impossible_body_action_sounds(content))
     findings.extend(_find_stitched_chapter_markers(content, chapter_number=chapter_number))
     findings.extend(_find_unintroduced_mentor_reference(content, chapter_number=chapter_number))
@@ -111,7 +111,7 @@ def _is_non_body_blood_marker(text: str, match: re.Match[str]) -> bool:
     if marker in {"渗血", "血滴"} and any(token in suffix for token in ("珠", "字", "线")):
         return True
     if marker in {"流血", "渗血", "出血", "血滴", "血顺着"} and any(
-        token in prefix for token in ("门缝", "门框", "镜面", "墙上", "地面", "铜钱")
+        token in prefix for token in ("门缝", "门框", "镜面", "墙上", "地面")
     ):
         return True
     if "门框" in prefix or "镜面" in prefix or "墙上" in prefix:
@@ -299,24 +299,33 @@ def _parse_chinese_number(value: str) -> int | None:
     return None
 
 
-def _find_coin_state_jump(text: str) -> list[CommonSenseFinding]:
-    patterns = (
-        r"(把|将|拿起)?(那枚)?康熙铜钱[^。！？\n]{0,18}(按|嵌|压|扣|贴)在[^。！？\n]{0,18}"
-        r"[。！？\n][^。！？\n]{0,80}(从口袋里?|又从口袋里?|摸出|掏出)(那枚)?康熙铜钱",
-        r"(把|将|拿起)?铜钱[^。！？\n]{0,18}(按|嵌|压|扣|贴)在[^。！？\n]{0,18}"
-        r"[。！？\n][^。！？\n]{0,80}(从口袋里?|又从口袋里?|摸出|掏出)(那枚)?铜钱",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, text, flags=re.S)
-        if match:
-            return [
-                CommonSenseFinding(
-                    code="object_state_jump",
-                    severity="medium",
-                    message="铜钱刚被放置/嵌入后，又在未取回的情况下从口袋摸出。",
-                    evidence={"window": match.group(0).strip()},
-                )
-            ]
+# Continuity contradiction over ANY small object (was hardcoded to one
+# detective book's 康熙铜钱): an object is pressed/stuck onto a surface, then
+# drawn from a pocket again within the same beat without being retrieved.
+# The backreference (?P=obj) requires the SAME token in both halves, so this
+# stays genre-neutral and has a very low false-positive rate.
+_OBJECT_STATE_JUMP_RE = re.compile(
+    r"(?:把|将|拿起)?(?P<obj>[一-龥]{2,4})[^。！？\n]{0,18}(?:按|嵌|压|扣|贴)在"
+    r"[^。！？\n]{0,18}[。！？\n][^。！？\n]{0,80}"
+    r"(?:从口袋里?|又从口袋里?|摸出|掏出)(?:那枚|那块|那张|那个)?(?P=obj)",
+    flags=re.S,
+)
+_OBJECT_STATE_JUMP_STOP = {"自己", "对方", "起来", "出来", "进去", "过来", "下来", "一下"}
+
+
+def _find_object_state_jump(text: str) -> list[CommonSenseFinding]:
+    for match in _OBJECT_STATE_JUMP_RE.finditer(text):
+        obj = match.group("obj")
+        if obj in _OBJECT_STATE_JUMP_STOP:
+            continue
+        return [
+            CommonSenseFinding(
+                code="object_state_jump",
+                severity="medium",
+                message=f"{obj}刚被放置/嵌入后，又在未取回的情况下从口袋摸出。",
+                evidence={"window": match.group(0).strip()},
+            )
+        ]
     return []
 
 

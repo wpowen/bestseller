@@ -92,40 +92,18 @@ _HOOK_TOKEN_SYNONYMS: Mapping[str, tuple[str, ...]] = {
     "真相": ("答案", "隐情", "谜底"),
 }
 
-_DOMAIN_HOOK_TOKENS: tuple[str, ...] = (
-    "第八张脸",
-    "回执镜片",
-    "回执",
-    "碎镜",
-    "镜片",
-    "镜债",
-    "认葬",
-    "认账",
-    "入账",
-    "账页",
-    "账主",
-    "旧账",
-    "尸体",
-    "死者",
-    "遗体",
-    "活到现在",
-    "保住命",
-    "续命",
-    "铜钱",
-    "罗盘",
-    "青囊",
-    "三短一长",
-)
+# 2026-06-25 去通用性污染：原硬编码一本悬疑书的私货钩子词(第八张脸/回执镜片/镜债/
+# 认账/账页/铜钱/罗盘/青囊/三短一长)，作为"legacy静态域token"对每本书的 extract_hook_tokens
+# 生效。本书自有钩子意象由调用方经 extra_domain_tokens 传入(生产/验收同源)，不应在
+# 通用门里焊死单本书词。清空。
+_DOMAIN_HOOK_TOKENS: tuple[str, ...] = ()
 
+# 2026-06-25 去通用性污染：删掉镜债/青囊那本悬疑书的私货语义组
+# (mirror_receipt/account_debt/burial_claim/mirror_action — 回执镜片/认账/镜债/镜中林渊)，
+# 它们只对那一本书的语义救援有利，对其它题材是死权重。保留跨题材通用的结构关系组。
+# 本书自有意象的语义救援由 extra_domain_tokens(锚点)提供，见 check_hook_echo。
 _SEMANTIC_HOOK_GROUPS: Mapping[str, tuple[str, ...]] = {
-    "mirror_receipt": (
-        "回执镜片", "回执", "碎镜", "镜片", "镜屑", "镜渣", "凭证", "物证",
-    ),
     "corpse": ("尸体", "死者", "遗体", "尸身", "死人", "那具尸"),
-    "account_debt": (
-        "认账", "入账", "镜债", "账页", "账簿", "账册", "账主", "旧账", "还账",
-    ),
-    "burial_claim": ("认葬", "收尸", "送葬", "棺", "坟", "葬"),
     "survival": (
         "活到现在", "活着", "活下来", "没死", "保住命", "续命", "留命",
     ),
@@ -134,16 +112,6 @@ _SEMANTIC_HOOK_GROUPS: Mapping[str, tuple[str, ...]] = {
         "门外", "门口", "门后", "脚步声", "脚步", "足音", "叩门", "敲门",
     ),
     "truth_reveal": ("真相", "秘密", "隐情", "谜底", "答案", "秘辛"),
-    # 2026-05-23: capture "mirror action" parallel-echo patterns where
-    # ch1 ends with one subject doing X to the mirror and ch2 opens
-    # with another doing the opposite — the OLD ch1→ch2 of 青囊:
-    #   "镜中那张快要长全的林渊，忽然睁开了眼。" (ch1 ending)
-    #   "镜中的'林渊'睁眼时，真正的林渊先把自己的眼睛闭上。" (ch2 opening)
-    # token-only matching missed this; semantic group captures it.
-    "mirror_action": (
-        "镜中", "镜里", "镜面", "镜子", "镜框", "镜片", "镜背", "铜镜",
-        "镜面里", "镜中那张", "镜中浮现",
-    ),
     "eye_action": (
         "睁眼", "闭眼", "睁开", "闭上", "对视", "对望", "盯着", "盯住",
         "凝视", "目光", "眼神", "眼睛", "眼底", "眼底闪",

@@ -1864,39 +1864,42 @@ def _build_qimao_opening_contract_from_outline(
         default=first_goal,
     )
     first_hook = _chapter_text(first.hook_description, first_conflict, default=first_conflict)
+    # 2026-06-25 去通用性污染：原合同把【侦探取证开局】(证据被抹/保住现场线索/逼出谁
+    # 在掩盖/抓证据漏洞反制/拿可验证证据) 焊死成每本书的签约质量合同 → 修仙/言情/科幻
+    # 书都被强塞侦探开局。改为题材中性的"开场即冲突+三章节奏+钩子"骨架，用本书自己的
+    # 目标/冲突/钩子填充，不预设证据/线索/反制的侦探词。
     contract: dict[str, Any] = {
         "platform_target": "qimao",
         "source": "outline_backfill_qimao_planning_gate",
         "protagonist_name": protagonist_name,
         "opening_incident": (
-            f"《{first_title}》开场：{protagonist_name}当场处理「{first_goal}」，"
-            "对手逼迫其放弃关键线索，否则第一轮证据会被抹掉。"
+            f"《{first_title}》开场：{protagonist_name}当场被「{first_goal}」逼到必须立刻行动的位置，"
+            "拖延或退让都会让局势立刻恶化。"
         ),
         "first_page_conflict": (
             f"{protagonist_name}在《{first_title}》当场面对「{first_conflict}」；"
-            "必须先保住现场线索并逼出谁在掩盖关键事实，否则对手会脱身。"
+            "必须立刻应对，否则会被对手当场夺走主动权、付出第一轮代价。"
         ),
         "protagonist_immediate_goal": (
-            f"先在《{first_title}》现场保住证据，确认第一处异常，并当场决定下一步追问对象。"
+            f"在被逼到墙角前，先在《{first_title}》现场稳住局面、看清第一处要害，并当场决定下一步怎么走。"
         ),
         "visible_loss_if_fail": (
-            f"失败会让《{first_title}》里的证据被当场抹掉，"
-            f"{protagonist_name}失去第一轮反制机会。"
+            f"失败会让{protagonist_name}在《{first_title}》当场被夺走主动权、付出第一轮代价。"
         ),
         "protagonist_edge": (
-            f"{protagonist_name}能在高压现场抓住别人忽略的证据漏洞，并制造第一次反制。"
+            f"{protagonist_name}能在高压现场做出别人做不到的那一步关键判断或行动，打开局面。"
         ),
         "edge_limit": "优势只能解决第一轮压力，不能直接跳过主线代价。",
         "chapter_1_small_turn": (
-            f"{protagonist_name}用自己的优势保住关键证据，反制误判，并把线索钩到「{first_hook}」。"
+            f"{protagonist_name}用自己的优势稳住局面、夺回主动、扭转误判，并把钩子引到「{first_hook}」。"
         ),
         "chapter_2_reveal": "第二章放出会改变局势判断的新信息、误会扩大或隐藏规则。",
         "chapter_3_payoff": (
-            f"{protagonist_name}在第三章拿到可验证证据，获得第一口回报并打开下一轮危险。"
+            f"{protagonist_name}在第三章拿到第一口实打实的回报，并打开下一轮危险。"
         ),
         "first_10000_loop": (
-            "触发冲突 -> 主角当场行动并反制误判 -> "
-            "拿到第一条线索同时承受反压 -> 章尾用新证据钩出更深谜题"
+            "触发冲突 -> 主角当场行动 -> "
+            "拿到第一份进展同时承受代价 -> 章尾把钩子引向更深的悬念"
         ),
         "forbidden_opening_modes": [
             "background_exposition",
@@ -1923,10 +1926,10 @@ def _build_qimao_opening_contract_from_outline(
             third.hook_description,
             third.main_conflict,
             third.chapter_goal,
-            default="主角拿到第一份可验证证据。",
+            default="主角拿到第一份实打实的回报。",
         )
         contract["chapter_3_payoff"] = (
-            f"{protagonist_name}在《{third_title}》拿到可验证证据：{third_payoff}"
+            f"{protagonist_name}在《{third_title}》拿到第一口实打实的回报：{third_payoff}"
         )
 
     return contract
@@ -1966,17 +1969,16 @@ def _repair_qimao_opening_contract_from_outline(
     )
     repaired["first_page_conflict"] = (
         f"{protagonist_name}在《{first_title}》当场面对「{first_conflict}」；"
-        "必须保住现场证据并逼出谁在掩盖关键事实，否则第一轮证据会被抹掉、对手脱身。"
+        "必须立刻应对，否则会被对手当场夺走主动权、付出第一轮代价。"
     )
     repaired["protagonist_immediate_goal"] = (
-        f"先在《{first_title}》现场保住证据，确认第一处异常，并当场决定下一步追问对象。"
+        f"在被逼到墙角前，先在《{first_title}》现场稳住局面、看清第一处要害，并当场决定下一步怎么走。"
     )
     repaired["visible_loss_if_fail"] = (
-        f"失败会让《{first_title}》里的证据被当场抹掉，"
-        f"{protagonist_name}失去第一轮反制机会。"
+        f"失败会让{protagonist_name}在《{first_title}》当场被夺走主动权、付出第一轮代价。"
     )
     repaired["chapter_1_small_turn"] = (
-        f"{protagonist_name}用自己的优势保住关键证据，反制误判，并把线索钩到「{first_hook}」。"
+        f"{protagonist_name}用自己的优势稳住局面、夺回主动、扭转误判，并把钩子引到「{first_hook}」。"
     )
 
     if second is not None:
@@ -1995,15 +1997,15 @@ def _repair_qimao_opening_contract_from_outline(
             third.hook_description,
             third.main_conflict,
             third.chapter_goal,
-            default="主角拿到第一份可验证证据。",
+            default="主角拿到第一份实打实的回报。",
         )
         repaired["chapter_3_payoff"] = (
-            f"{protagonist_name}在《{third_title}》拿到可验证证据：{third_payoff}"
+            f"{protagonist_name}在《{third_title}》拿到第一口实打实的回报：{third_payoff}"
         )
 
     repaired["first_10000_loop"] = (
-        "触发冲突 -> 主角当场行动并反制误判 -> "
-        "拿到第一条线索同时承受反压 -> 章尾用新证据钩出更深谜题"
+        "触发冲突 -> 主角当场行动 -> "
+        "拿到第一份进展同时承受代价 -> 章尾把钩子引向更深的悬念"
     )
     return repaired
 

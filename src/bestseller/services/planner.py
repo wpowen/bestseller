@@ -5558,7 +5558,7 @@ def _supplemental_world_rule(
                 "name": "门槛通行规则",
                 "description": "关键地点、关键人物与关键资源，都被权限、身份或中间人把守。",
                 "story_consequence": "主角必须跨过一个明确门槛，主线才可能真正推进。",
-                "exploitation_potential": "门槛会形成固定流程，而固定流程就是最容易被观察和撬开的地方。",
+                "exploitation_potential": "门槛会形成固定流程，是冲突与博弈最容易聚焦的地方。",
             },
             3: {
                 "name": "禁区隔绝规则",
@@ -5567,11 +5567,12 @@ def _supplemental_world_rule(
                 "exploitation_potential": "隔绝既困住主角，也削弱对手的直接控制。",
             },
         }
+        # 2026-06-25 去通用性污染：去掉"撬开/反向利用"作为默认约束打法的措辞。
         fallback = {
             "name": f"约束规则{rule_index}",
             "description": "一条明确约束持续改变进入、风险与后果。",
             "story_consequence": f"{protagonist_name}必须把约束转化为筹码，而不是绕开它。",
-            "exploitation_potential": "约束越稳定，越容易形成可反向利用的压力点。",
+            "exploitation_potential": "约束越稳定，越容易成为情节聚焦的支点。",
         }
     return {
         "rule_id": f"R{rule_index:03d}",
@@ -5668,21 +5669,25 @@ def _world_template(
             "forbidden_zones": "Any sealed archive, core facility, ancestral site, or hidden meeting place becomes a pressure point once the protagonist gets close.",
             "history_event": f"{protagonist_name} once paid the price for a key incident whose official version never matched the truth.",
         }
+    # 2026-06-25 去通用性污染：无品类模板时的兜底世界规则原来一律是"秩序-证据-漏洞-
+    # 反向利用-撬开"的智斗/规则-exploitation框架(钻漏洞偏置从主角层躲到了世界规则层)，
+    # 套给每个题材。改为题材中性的结构约束(秩序/门槛/隔绝)，exploitation_potential 只
+    # 描述"叙事支点"，不预设"找漏洞/反向利用/撬开"作为默认打法。
     return {
         "rules": [
             {
                 "rule_id": "R001",
                 "name": "核心秩序规则",
-                "description": "某套被广泛承认的秩序决定谁能拿到真相、资源与保护。",
-                "story_consequence": f"{protagonist_name}不能只靠情绪或直觉推进，必须拿到足以撬动秩序的证据、筹码或资格。",
-                "exploitation_potential": "秩序越明确，留下的痕迹和漏洞也越清晰，能够被反向利用。",
+                "description": "某套被广泛承认的秩序决定谁能拿到力量、资源与保护。",
+                "story_consequence": f"{protagonist_name}不能只靠情绪或直觉推进，必须拿到足以撬动局面的实力、筹码或资格。",
+                "exploitation_potential": "秩序越明确，它的边界、代价与例外就越清晰，越能成为推动情节的支点（具体怎么用由本书主角决定，不限于钻漏洞）。",
             },
             {
                 "rule_id": "R002",
                 "name": "门槛通行规则",
                 "description": "关键地点、关键人物与关键资源，都被权限、身份或中间人把守。",
                 "story_consequence": "主角必须跨过一个明确门槛，主线才可能真正推进。",
-                "exploitation_potential": "门槛会形成固定流程，而固定流程就是最容易被观察和撬开的地方。",
+                "exploitation_potential": "门槛会形成固定流程，是冲突与博弈最容易聚焦的地方。",
             },
             {
                 "rule_id": "R003",
@@ -5694,7 +5699,7 @@ def _world_template(
         ],
         "power_structure": "解释权、进入权和分配权握在少数人手里，其他人只能在缝隙里争取主动。",
         "forbidden_zones": "任何被封存、被隔绝、被严密看守的地点，一旦靠近就会立刻放大冲突。",
-        "history_event": f"{protagonist_name}曾在一场关键事件里承担过与真相并不匹配的代价。",
+        "history_event": f"{protagonist_name}曾在一场关键事件里承担过与代价并不匹配的损失。",
     }
 
 
@@ -14706,7 +14711,7 @@ def _outline_prompts(
             "`key_reveals` 必须遵守 WorldviewKernel reveal_ladder，禁止提前揭露未来真相。"
             "title 必须是 2-6 字的具体故事意象/事件名，优先使用器物、地点、人名、规则或异常现象；"
             "严禁把内部功能词当标题，禁止使用「初现、入局、投石、试探、铺火、露锋、破冰、起手、掀幕、落子、追索、摸底、拆解、寻隙、探针、回查、溯源、揭层、织网、破壁」这类模板尾词。"
-            "【标题格式硬禁止】title 禁止写成「功能词·具体事」两段式（例如『取证·义庄铜镜登记』『反证·林正淳取镜签名』），"
+            "【标题格式硬禁止】title 禁止写成「功能词·具体事」两段式（例如『取证·某地某物登记』『反证·某人某事签名』这类用办案功能词作前缀），"
             "禁止使用「·」「・」「•」等分隔符把办案/结构功能标签接到事件上；"
             "禁止用「取证、举证、质证、反证、勘验、验尸、立案、结案、破案、追凶、对峙、审讯、布局、收网、复盘、推演、开局、终局、楔子、引子、伏笔、转折、高潮、反转」这类节拍/办案功能词当标题或标题前缀。"
             "title 只写这一章发生的那件具体的事本身（器物/地点/人名/异象），不写它在办案流程里的职责。"
@@ -14727,7 +14732,7 @@ def _outline_prompts(
             "- chapter_concrete_actions: 主角在本章实际完成的 3-5 个可观察动作（摄像机能拍到的），"
             "每条用动词开头。禁止写「主角思考了一下」「他感受到了威胁」等不可观察的行为。\n"
             "- chapter_object_uses: 每个超自然/职业物件的使用方式，格式：「物件: 动作 → 结果或信号」。"
-            "必须包含结果（失败也算），不能只写「使用了铜钱」。\n"
+            "必须包含结果（失败也算），不能只写「使用了某件关键物」。\n"
             "- chapter_information_introduced: 读者在本章结束后知道的具体事实，每条可以写进侦探白板的线索。\n"
             "- chapter_information_held_back: 作者知道但本章故意不告诉读者的事实，每条是下一章节的悬念来源。\n"
             "每个场景也应包含 concrete_goal、protagonist_state、information_introduced、information_held_back、object_signal。\n"

@@ -558,17 +558,15 @@ def _find_object_signal_overuse(
     # "single repeated sensory shortcut" anti-pattern is caught across genres — not
     # only for 铜钱/罗盘/青囊 books. Sensory verbs broadened beyond 发烫 to the universal
     # single-sensory-tic set (发凉/刺痛/心头一跳/眩晕…).
-    from bestseller.services.genre_signal_terms import resolve_genre_signal_terms
-
-    default_objects = ["铜钱", "青囊", "罗盘", "镜片", "账页"]
-    genre_objects = list(
-        resolve_genre_signal_terms(genre=genre, sub_genre=sub_genre).all_terms()
-    )
-    objects = [o for o in dict.fromkeys(default_objects + genre_objects) if 1 <= len(o) <= 6]
-    obj_alt = "|".join(re.escape(o) for o in objects)
+    # 2026-06-25 去通用性污染：原 default_objects 硬编码一本悬疑书的私货物件
+    # (铜钱/青囊/罗盘/账页)，给每本书(含科幻/言情)按它的物件查"物件信号过度"——
+    # 单本书污染通用门。改为【通用】检测：不认具体物件，只数"任意物件(2-4字)紧跟
+    # 同类感官信号(发烫/发凉…)"的搭配在本章出现次数；≥3 次即过度依赖单一感官捷径
+    # (题材无关、零单本书/单题材词)。
     sensory_alt = "烫|发烫|烫得|炭火|发热|滚烫|发凉|冰凉|刺痛|一颤|一跳|眩晕|发麻"
-    signal_pattern = rf"({obj_alt})[^。！？\n]{{0,12}}({sensory_alt})"
-    matches = list(re.finditer(signal_pattern, text))
+    _obj_stop = {"他", "她", "它", "我", "你", "他们", "自己", "这里", "那里", "起来", "已经"}
+    candidate_re = re.compile(rf"([一-龥]{{2,4}})[^。！？\n]{{0,8}}(?:{sensory_alt})")
+    matches = [m for m in candidate_re.finditer(text) if m.group(1) not in _obj_stop]
     if len(matches) < 3:
         return []
     explanatory_markers = (

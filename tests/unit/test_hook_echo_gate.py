@@ -23,24 +23,25 @@ _PREV_CHAPTER = (
 
 
 def test_semantic_overlap_rescue_for_parallel_action_echo() -> None:
-    """Regression for a parallel-action mirror/eye/self echo (2026-05-23).
+    """Regression for a parallel-action echo carried by the BOOK'S OWN imagery
+    anchors (2026-06-25 update).
 
     Original parallel-action echo:
     - ch1 ends "镜中那张脸忽然睁开了眼"
     - ch2 opens "镜中的那张脸睁眼时，真正的他先把自己的眼睛闭上"
 
-    Token bag-of-words misses this (no shared nouns), but semantic
-    groups overlap on {mirror_action, eye_action, protagonist_self}.
-    The gate must NOT flag this as HOOK_ECHO_MISSING.
+    Token bag-of-words misses this (no shared nouns). Since the universal
+    detective-specific semantic groups (mirror_action/account_debt…) were
+    removed as single-book contamination, the rescue now comes from the book's
+    OWN imagery anchors threaded via ``extra_domain_tokens`` (镜中) PLUS the
+    generic eye_action/protagonist_self groups. The gate must NOT flag critical.
     """
 
     prev = (
         "镜面深处，那七张脸让开一道缝。\n"
-        "第八张脸正在长成他。\n"
         "门外的假面人用父亲的声音笑了一下。\n"
         "“喂，开门。”\n"
-        "他盯着镜子里的第八张脸，慢慢把铜钱按进镜框缺口。\n"
-        "“先查那个证人。”\n"
+        "他盯着镜子里那张脸，慢慢把令牌按进镜框缺口。\n"
         "镜中那张正长成他自己模样的脸，忽然睁开了眼。"
     )
     curr = (
@@ -52,6 +53,7 @@ def test_semantic_overlap_rescue_for_parallel_action_echo() -> None:
         current_chapter_text=curr,
         prev_chapter_position=1,
         current_chapter_position=2,
+        extra_domain_tokens=("镜中", "镜面", "镜框"),
     )
     assert report.finding.severity != "critical", (
         f"parallel-action semantic echo must not be flagged critical; "
@@ -134,10 +136,11 @@ def test_check_hook_echo_full_coverage_passes() -> None:
         ("倒计时已经开始。", "他知道时间在倒着走，最后期限逼到眼前。", "倒计时"),
         ("门外忽然传来脚步声。", "门口的足音越来越近。", "门外"),
         ("那份名单还在他怀里。", "他翻开账册，看见第一行名字已经变红。", "名单"),
-        ("有人开始敲门。", "叩门声三短一长，像催命符。", "敲门"),
-        ("真相就在镜后。", "他终于摸到谜底，却发现答案比谎言更冷。", "真相"),
-        ("王建业的尸体手里攥着回执镜片。", "死者指缝里的碎镜像一枚凭证。", "回执镜片"),
-        ("小雨为什么能活到现在？", "那个女孩被镜债保住命，不是因为好运。", "小雨为什么能活到现在"),
+        ("有人开始敲门。", "叩门声急促，像催命符。", "敲门"),
+        ("真相就在门后。", "他终于摸到谜底，却发现答案比谎言更冷。", "真相"),
+        # 2026-06-25：删了 回执镜片(mirror_receipt) 那条单本书私货语义组的用例；
+        # 改用通用 survival 组（活到现在/保住命）验证语义同义匹配。
+        ("那个女孩为什么能活到现在？", "她靠续命术保住命，不是因为好运。", "那个女孩为什么能活到现在"),
     ],
 )
 def test_check_hook_echo_matches_semantic_synonyms(
@@ -157,18 +160,20 @@ def test_check_hook_echo_matches_semantic_synonyms(
 
 
 def test_extract_hook_tokens_drops_low_signal_connectors_when_domain_hooks_exist() -> None:
+    # 2026-06-25：域钩子词不再硬编码单本书私货(青囊/铜钱/认账)，改由本书经
+    # extra_domain_tokens 传入自有意象。验证：传入的本书意象被抽为高信号token、
+    # 连接词被丢弃、问句尾钩仍被抽取。
     text = (
         "然而下一刻，门外突然响起脚步声。"
-        "林渊按住铜钱，青囊秘卷发烫，三短一长之后，"
+        "他按住那枚旧物，秘卷发烫，"
         "镜里有人问：你放的？有没有一面旧镜子？"
-        "王建业终于认账，账页开始入账。"
     )
 
-    tokens = extract_hook_tokens(text)
+    tokens = extract_hook_tokens(text, extra_domain_tokens=("秘卷", "旧镜子"))
 
     assert "然而" not in tokens
     assert "突然" not in tokens
-    assert "青囊" in tokens
+    assert "秘卷" in tokens
     assert "有没有一面旧镜子" in tokens
 
 

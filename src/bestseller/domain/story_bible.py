@@ -722,7 +722,7 @@ class CharacterIPAnchorInput(BaseModel):
     tag_memory: str | None = Field(
         default=None,
         max_length=4000,
-        description="每角色1个跨章节重复的标签动作/口头禅，如'拇指摩挲铜钱边缘''推眼镜'",
+        description="每角色1个跨章节重复的标签动作/口头禅，如'反复摩挲随身旧物''推眼镜'（具体物件由本书人物决定）",
     )
     independent_life: str | None = Field(
         default=None,

@@ -4023,33 +4023,40 @@ def evaluate_chapter_draft(
             *_HOOK_SIGNAL_TERMS,
         ],
     )
+    # 2026-06-25 去通用性污染：章节评分器原把 _FOLK_HORROR_*（含 铜钱/三短一长 等
+    # 一本民俗恐怖书的私货）无条件加进所有书的钩子/信息打分（场景评分器却是题材感知
+    # 的——不对称）。改为：① 用本书题材 profile 解析出的钩子/信息词（各题材各自的），
+    # ② 民俗恐怖词表只在 suspense-mystery 题材下补充，③ 删掉单本书签名标记
+    # (三短一长/第七个名字/下一个是谁/六道/七个)，只留题材通用的恐怖视觉标记。
+    _ch_lang_key = "en" if _is_en else "zh"
+    _ch_hook_kw = list(getattr(_ch_profile.signal_keywords, f"hook_terms_{_ch_lang_key}", []))
+    _ch_info_kw = list(getattr(_ch_profile.signal_keywords, f"info_terms_{_ch_lang_key}", []))
+    _folk_active = (_ch_profile.category_key or "") == "suspense-mystery"
     tail_visual_hook_signal = _signal_score(
         tail_excerpt,
-        keywords=[*_HOOK_SIGNAL_TERMS, *_FOLK_HORROR_TAIL_HOOK_TERMS],
+        keywords=[
+            *_HOOK_SIGNAL_TERMS,
+            *_ch_hook_kw,
+            *(_FOLK_HORROR_TAIL_HOOK_TERMS if _folk_active else ()),
+        ],
         max_terms=24,
     )
-    tail_visual_marker_count = sum(
-        1
-        for term in (
-            "电梯",
-            "七个",
-            "六道",
-            "人影",
-            "影子",
-            "镜面",
-            "倒影",
-            "一模一样",
-            "三短一长",
-            "第七个名字",
-            "下一个是谁",
+    tail_visual_marker_count = 0
+    if _folk_active:
+        tail_visual_marker_count = sum(
+            1
+            for term in ("人影", "影子", "镜面", "倒影", "一模一样", "门缝", "脚步")
+            if term in tail_excerpt
         )
-        if term in tail_excerpt
-    )
-    if tail_visual_marker_count >= 3:
-        tail_visual_hook_signal = max(tail_visual_hook_signal, 0.82)
+        if tail_visual_marker_count >= 3:
+            tail_visual_hook_signal = max(tail_visual_hook_signal, 0.82)
     chapter_info_signal = _signal_score(
         content,
-        keywords=[*_INFO_SIGNAL_TERMS, *_FOLK_HORROR_INFO_TERMS],
+        keywords=[
+            *_INFO_SIGNAL_TERMS,
+            *_ch_info_kw,
+            *(_FOLK_HORROR_INFO_TERMS if _folk_active else ()),
+        ],
         max_terms=24,
     )
 

@@ -122,8 +122,9 @@ _CONCRETE_PRESSURE_TERMS: tuple[str, ...] = (
     "陷阱",      # trap
     "假装",      # pretending
     "假意",      # false intent
-    "镜中",      # 镜局 / 镜中物 — supernatural mirror
-    "镜债",      # debt-via-mirror (genre canonical)
+    # 2026-06-25 去通用性污染：删 镜中/镜债（一本悬疑书的私货机制，被误标"genre
+    # canonical"塞进通用压力词表，给每本书的商业压力分加权）。题材压力词由
+    # _genre_pressure_terms 按题材注入，不在此硬编码单本书机制。
     "异象",      # supernatural sign
     "异动",      # anomalous motion
     "异常",      # abnormal
@@ -148,7 +149,7 @@ _CONCRETE_PRESSURE_TERMS: tuple[str, ...] = (
     "濒死",      # near death
     "入局",      # enter the deadly game
     "出局",      # eliminated from game
-    "镜局",      # mirror game (genre canonical threat device)
+    # 2026-06-25 去通用性污染：删 镜局（同上，单本书私货机制）
     "被杀",      # killed
     "遇害",      # murdered / harmed
     "夺命",      # life-taking

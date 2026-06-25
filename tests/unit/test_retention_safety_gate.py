@@ -75,10 +75,12 @@ def test_evaluate_retention_safety_critical_hook_echo() -> None:
 
 
 def test_evaluate_retention_safety_low_hook_echo_is_advisory() -> None:
+    # 2026-06-25：去单本书私货(回执/账)，改用通用钩子词产生 ~0.5 覆盖(名单被呼应、
+    # 门外脚步声漏掉)→ HOOK_ECHO_LOW 区间，验证低钩子回环是 advisory 不阻断。
     report = evaluate_retention_safety(
         chapter_position=2,
         chapter_text="名单还在桌上，他先按住第一页。",
-        prev_chapter_text="那份名单还在抽屉里，回执被他扣在掌心。",
+        prev_chapter_text="那份名单还在桌上。他还会回来吗？",
         prev_chapter_position=1,
         skip_signature=True,
         skip_chapter_length=True,

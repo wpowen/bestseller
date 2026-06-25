@@ -200,17 +200,18 @@ def test_abstract_main_conflict_passes_when_hook_has_concrete_terms(
 ) -> None:
     """Regression: planning LLM sometimes generates main_conflict == chapter_goal
     (boilerplate), but hook_description and scene purpose contain concrete tension
-    terms (e.g. 镜局/入局/死亡). The gate should NOT flag abstract_chapter_conflict
-    when the broader chapter context has concrete pressure signals."""
+    terms (e.g. 死局/入局/死亡). The gate should NOT flag abstract_chapter_conflict
+    when the broader chapter context has concrete pressure signals.
+    2026-06-25: fixture去单本书私货(林渊/青囊/十七栋/镜局)，改用通用具体压力词。"""
     _write_required_artifacts(tmp_path)
     chapters = [
         {
             "chapter_number": 1,
             "title": "第1章",
-            "chapter_goal": "建立林渊、青囊秘卷和十七栋委托入口。",
-            "opening_situation": "建立林渊、青囊秘卷和十七栋委托入口。",  # boilerplate == goal
-            "main_conflict": "建立林渊、青囊秘卷和十七栋委托入口。",     # boilerplate == goal
-            "hook_description": "镜局启动，七人入局。",  # concrete: 镜局, 入局
+            "chapter_goal": "建立主角、关键信物和委托现场入口。",
+            "opening_situation": "建立主角、关键信物和委托现场入口。",  # boilerplate == goal
+            "main_conflict": "建立主角、关键信物和委托现场入口。",     # boilerplate == goal
+            "hook_description": "死亡威胁逼近，七人入局。",  # concrete: 死亡, 入局
             "hype_type": "reversal",
             "hype_intensity": 8.0,
             "scenes": [
@@ -218,8 +219,8 @@ def test_abstract_main_conflict_passes_when_hook_has_concrete_terms(
                     "scene_number": 1,
                     "scene_type": "setup",
                     "title": "入局",
-                    "participants": ["林渊", "孙九斤", "小雨", "陈默", "钱婆婆"],
-                    "purpose": {"story": "围绕镜局推进，本场必须产生新代价或新选择。"},
+                    "participants": ["陆昭", "孙九斤", "小雨", "陈默", "钱婆婆"],
+                    "purpose": {"story": "围绕死亡威胁推进，本场必须产生新代价或新选择。"},
                     "entry_state": {},
                     "exit_state": {},
                     "hook_requirement": "本场结尾保留可追踪问题。",
@@ -251,10 +252,10 @@ def test_abstract_main_conflict_passes_when_hook_has_concrete_terms(
         {
             "chapter_number": 3,
             "title": "第3章",
-            "chapter_goal": "林渊用风水方法推断镜债规则。",
-            "opening_situation": "林渊用风水方法推断镜债规则。",
-            "main_conflict": "林渊用风水方法推断镜债规则。",  # contains 镜债 — concrete
-            "hook_description": "青囊显字，陈默与小雨线加压。",
+            "chapter_goal": "林渊推断这局规则，谁答错就先死。",
+            "opening_situation": "林渊推断这局规则，谁答错就先死。",
+            "main_conflict": "林渊推断这局规则，谁答错就先死。",  # concrete: 先死
+            "hook_description": "线索显字，逼出下一个入局者。",  # concrete: 入局
             "hype_type": "reversal",
             "hype_intensity": 8.0,
             "scenes": [

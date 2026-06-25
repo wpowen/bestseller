@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>开写前读者审稿台</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --ink: #e8eaed;
+    --muted: #9aa0aa; --line: #2a2f3a; --accent: #6ea8fe;
+    --good: #43c267; --warn: #f2b34a; --bad: #ef5a5a; --chip: #232836;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 18px 80px; }
+  header.top { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 8px; }
+  header.top h1 { font-size: 20px; margin: 0; }
+  .genre { color: var(--muted); font-size: 13px; }
+  .screen { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; margin: 18px 0; }
+  .screen > h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .screen > .ask { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .badge { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 999px;
+    background: var(--chip); color: var(--muted); border: 1px solid var(--line); }
+  .badge.good { color: #0c1a0f; background: var(--good); border-color: var(--good); }
+  .badge.bad { color: #fff; background: var(--bad); border-color: var(--bad); }
+  .badge.warn { color: #1a130a; background: var(--warn); border-color: var(--warn); }
+  .logline { font-size: 19px; line-height: 1.6; font-weight: 600; margin: 4px 0 10px; }
+  .synopsis { color: #cdd2da; white-space: pre-wrap; }
+  .refs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .ref { background: var(--panel2); border: 1px dashed var(--line); border-radius: 9px; padding: 10px 12px; }
+  .ref .t { font-size: 12px; color: var(--accent); margin-bottom: 4px; }
+  .ref .b { font-size: 13px; color: #c2c7d0; }
+  .flag { border-left: 3px solid var(--bad); background: #2a1b1d; border-radius: 6px;
+    padding: 8px 12px; margin: 8px 0; }
+  .flag.medium { border-left-color: var(--warn); background: #2a2415; }
+  .flag .code { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+  .kv { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .chap { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; background: var(--panel2); }
+  .chap h3 { margin: 0 0 2px; font-size: 15px; }
+  .chap .goal { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .beat { padding: 8px 0; border-top: 1px dashed var(--line); }
+  .beat:first-of-type { border-top: none; }
+  .beat .head { font-size: 12px; color: var(--accent); margin-bottom: 2px; }
+  .beat .body { font-size: 14.5px; }
+  .beat .hook { font-size: 13px; color: var(--warn); margin-top: 3px; }
+  .beat.hollow .body { color: var(--bad); }
+  .hollow-tag { color: var(--bad); font-size: 12px; }
+  .ask-q { margin-top: 10px; font-size: 13.5px; color: #d7b36a; font-style: italic; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; }
+  th { color: var(--muted); font-weight: 600; background: var(--panel2); }
+  td.dup { background: #3a2030; color: #ffb3c8; font-weight: 600; }
+  tr.current td { box-shadow: inset 0 0 0 9999px rgba(110,168,254,.06); }
+  tr.current td:first-child { border-left: 3px solid var(--accent); }
+  .rhythm { display: flex; align-items: flex-end; gap: 3px; height: 90px; margin-top: 12px;
+    border-bottom: 1px solid var(--line); padding-bottom: 2px; overflow-x: auto; }
+  .bar { width: 8px; min-width: 8px; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .85; }
+  .bar.empty { background: #333a47; height: 3px !important; }
+  .muted { color: var(--muted); }
+  .err { color: var(--bad); padding: 30px 0; }
+  .loading { color: var(--muted); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1 id="title">开写前读者审稿台</h1>
+    <span class="genre" id="genre"></span>
+    <span style="flex:1"></span>
+    <a id="design-link" href="#">← 设计档案</a>
+  </header>
+  <p class="muted" style="margin:4px 0 0;font-size:13px;">
+    正文之前，用读者的眼睛读一遍：抓不抓人、是不是套路、跟别本是不是一个壳。
+  </p>
+  <div id="root"><div class="loading">加载中…</div></div>
+</div>
+
+<script>
+const slug = decodeURIComponent(location.pathname.replace(/^\/review\//, "").replace(/\/$/, ""));
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const pct = (x) => x == null ? "—" : (Math.round(x * 1000) / 10) + "%";
+
+function screen1(d) {
+  const refs = (d.reference_blurbs || []).map(r =>
+    `<div class="ref"><div class="t">真爆款 · ${esc(r.title) || "对标"}</div><div class="b">${esc(r.blurb)}</div></div>`
+  ).join("");
+  let arena = "";
+  if (d.arena_win_rate != null) {
+    const cls = d.arena_verdict === "competitive" ? "good" : "bad";
+    arena = `<span class="badge ${cls}">盲评胜率 ${pct(d.arena_win_rate)}（vs 真爆款 ${d.arena_verdict === "competitive" ? "有竞争力" : "未过线"}）</span>`;
+  } else {
+    arena = `<span class="badge">盲评胜率：暂无（待跑对标）</span>`;
+  }
+  return `<section class="screen">
+    <h2>① 一句话能不能抓住你 ${arena}</h2>
+    <p class="ask">读者该问：把你这句和这几本真爆款放一起，像不像一本会火的书？</p>
+    <div class="logline">${esc(d.premise) || '<span class="muted">（未填写一句话核心 premise）</span>'}</div>
+    <div class="synopsis">${esc(d.synopsis)}</div>
+    <div class="refs">${refs || '<span class="muted">（无同题材对标简介）</span>'}</div>
+  </section>`;
+}
+
+function screen2(d) {
+  const flags = (d.flags || []).map(f =>
+    `<div class="flag ${f.severity === 'medium' ? 'medium' : ''}">
+       <div class="code">${esc(f.code)} · ${esc(f.severity)}</div>${esc(f.reason)}</div>`
+  ).join("");
+  const verdict = d.is_generic
+    ? `<span class="badge bad">疑似套路引擎</span>`
+    : `<span class="badge good">未命中套路红线</span>`;
+  const tiers = (d.power_tiers || []).map(esc).join(" · ");
+  return `<section class="screen">
+    <h2>② 引擎是不是又是个套路 ${verdict}</h2>
+    <p class="ask">读者该问：这本书的金手指/世界设定，是不是又是个系统/境界流水账？</p>
+    <div><span class="badge">金手指类型：${esc(d.golden_finger_type)}</span></div>
+    <div class="kv">${esc(d.golden_finger_text) || "（未填写金手指）"}</div>
+    ${tiers ? `<div class="kv">力量体系：${tiers}</div>` : ""}
+    ${flags || '<p class="muted" style="margin-top:10px">没有命中已知套路红线 —— 但仍请你亲自判断它有没有真正的新意。</p>'}
+  </section>`;
+}
+
+function screen3(chs) {
+  if (!chs || !chs.length) return `<section class="screen"><h2>③ 黄金三章分镜</h2>
+    <p class="muted">还没有物化的章节/场景卡 —— 待大纲落到 chapters/scene_cards 后可读。</p></section>`;
+  const body = chs.map(c => {
+    const beats = (c.beats || []).map(b =>
+      `<div class="beat ${b.is_hollow ? 'hollow' : ''}">
+         <div class="head">场 ${esc(b.scene_number)} · ${esc(b.title)} ${b.is_hollow ? '<span class="hollow-tag">⚠ 空壳场景卡</span>' : ''}</div>
+         <div class="body">${esc(b.readable)}</div>
+         ${b.hook ? `<div class="hook">↪ 钩子：${esc(b.hook)}</div>` : ''}
+       </div>`).join("");
+    const hollow = c.hollow_scene_count > 0
+      ? `<span class="badge bad">${c.hollow_scene_count}/${c.scene_count} 空壳</span>` : "";
+    return `<div class="chap">
+      <h3>第 ${esc(c.chapter_number)} 章 ${esc(c.title)} ${hollow}</h3>
+      <div class="goal">目标：${esc(c.goal) || "（空）"}</div>
+      ${beats || '<p class="muted">这一章没有任何场景卡。</p>'}
+      <div class="ask-q">${esc(c.reader_question)}${c.ending_hook ? ' —— 结尾钩子：「' + esc(c.ending_hook) + '」' : ''}</div>
+    </div>`;
+  }).join("");
+  return `<section class="screen">
+    <h2>③ 黄金三章逐场景分镜</h2>
+    <p class="ask">读者该问：顺着读下去，第三章结尾我想不想翻下一页？空壳的场景标红了。</p>
+    ${body}</section>`;
+}
+
+function screen4(d) {
+  const pts = d.points || [];
+  const max = Math.max(0.01, ...pts.map(p => p.hype_intensity || 0));
+  const bars = pts.map(p => {
+    const h = p.hype_intensity ? Math.round((p.hype_intensity / max) * 86) + 4 : 0;
+    const t = `第${p.chapter_number}章 ${p.hype_type || "无爽点"} ${p.hype_intensity != null ? '强度'+p.hype_intensity : ''} ${p.primary_emotion || ''}`;
+    return `<div class="bar ${h ? '' : 'empty'}" style="height:${h}px" title="${esc(t)}"></div>`;
+  }).join("");
+  const cov = d.hype_coverage;
+  const covCls = cov >= 0.6 ? "good" : (cov >= 0.3 ? "warn" : "bad");
+  return `<section class="screen">
+    <h2>④ 全书节奏曲线 <span class="badge ${covCls}">爽点覆盖 ${pct(cov)}</span></h2>
+    <p class="ask">读者该问：爽点分布均匀吗？有没有一长段干涸、节奏塌方？</p>
+    ${pts.length ? `<div class="rhythm">${bars}</div><p class="muted" style="font-size:12px;margin-top:6px">每根=一章爽点强度，灰条=该章无爽点。悬停看详情。共 ${d.chapter_count} 章。</p>`
+      : '<p class="muted">还没有物化章节。</p>'}
+  </section>`;
+}
+
+function screen5(d) {
+  const cols = d.columns || [];
+  const rows = d.rows || [];
+  if (!rows.length) return `<section class="screen"><h2>⑤ 跨书同质化体检</h2>
+    <p class="muted">库里没有其它书可对照。</p></section>`;
+  const head = `<tr><th>书</th>${cols.map(c => `<th>${esc(c.label)}</th>`).join("")}</tr>`;
+  const body = rows.map(r => {
+    const dup = new Set(r.repeated_cells || []);
+    const tds = cols.map(c => `<td class="${dup.has(c.key) ? 'dup' : ''}">${esc(r[c.key])}</td>`).join("");
+    return `<tr class="${r.is_current ? 'current' : ''}"><td>${esc(r.title) || esc(r.slug)}${r.is_current ? ' ★' : ''}</td>${tds}</tr>`;
+  }).join("");
+  const score = d.current_sameness_score;
+  const sCls = score >= 0.6 ? "bad" : (score >= 0.4 ? "warn" : "good");
+  return `<section class="screen">
+    <h2>⑤ 跨书同质化体检 <span class="badge ${sCls}">本书雷同度 ${pct(score)}</span></h2>
+    <p class="ask">读者该问：本书（★）跟最近这些书，是不是套着同一个壳？粉色格=与别本撞车。</p>
+    <table><thead>${head}</thead><tbody>${body}</tbody></table>
+  </section>`;
+}
+
+async function load() {
+  const root = document.getElementById("root");
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/reader-review`);
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || ("HTTP " + res.status)); }
+    const d = await res.json();
+    document.getElementById("title").textContent = (d.project && d.project.title) || slug;
+    document.getElementById("genre").textContent =
+      [d.project && d.project.genre, d.project && d.project.sub_genre].filter(Boolean).join(" / ");
+    document.getElementById("design-link").href = `/design/${encodeURIComponent(slug)}`;
+    root.innerHTML = screen1(d.screen1_logline || {}) + screen2(d.screen2_engine || {}) +
+      screen3(d.screen3_storyboard || []) + screen4(d.screen4_rhythm || {}) +
+      screen5(d.screen5_sameness || {});
+  } catch (err) {
+    root.innerHTML = `<div class="err">加载失败：${esc(err.message)}</div>`;
+  }
+}
+load();
+</script>
+</body>
+</html>

@@ -113,6 +113,7 @@ _LIBRARY_HTML_PATH = Path(__file__).with_name("novel_library.html")
 _DESIGN_DOSSIER_HTML_PATH = Path(__file__).with_name("novel_design_dossier.html")
 _PIPELINE_FLOW_HTML_PATH = Path(__file__).with_name("novel_pipeline_flow.html")
 _CHARACTER_NETWORK_HTML_PATH = Path(__file__).with_name("novel_character_network.html")
+_READER_REVIEW_HTML_PATH = Path(__file__).with_name("novel_reader_review.html")
 _METHODOLOGY_COURSE_HTML_PATH = Path(__file__).with_name("novel_methodology_course.html")
 _METHODOLOGY_COURSE_MD_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "novel-writing-methodology-course.md"
@@ -7296,6 +7297,20 @@ async def _load_project_design_dossier_payload(
         narrative=narrative_payload,
     )
     conception_artifacts = (project.metadata_json or {}).get("conception_artifacts") or {}
+    # Planning-stage quality signals (judge verdicts / gate reports) flattened
+    # for the 规划产物 tab so质量 can be assessed without digging through JSON.
+    from bestseller.services.design_quality import build_design_quality_reports
+
+    quality_reports = build_design_quality_reports(project.metadata_json)
+    # Curated views for conception-phase artifacts (story_appeal / hook_candidates
+    # / commercial_brief / concept_methodology) so they render readably like the
+    # planning artifacts instead of as a raw nested JSON dump.
+    from bestseller.services.artifact_view import build_artifact_view
+
+    conception_views = {
+        key: build_artifact_view(key, value)
+        for key, value in conception_artifacts.items()
+    }
     # 榜单对标回归（P4.2 产物，advisory）：最近一次 vs 真书 Arena win-rate。
     try:
         from bestseller.services.benchmark_regression import load_benchmark_report
@@ -7312,6 +7327,8 @@ async def _load_project_design_dossier_payload(
         # / commercial brief) persisted in project metadata. Surfaced inline so
         # the book document view can render them as a "构思产物" group.
         "conception_artifacts": conception_artifacts,
+        "conception_views": conception_views,
+        "quality_reports": quality_reports,
         "project": {
             "id": str(project.id),
             "slug": project.slug,
@@ -7416,6 +7433,8 @@ async def _load_project_design_artifact_payload(
             raise ValueError(
                 f"Planning artifact '{artifact_id}' was not found for '{project_slug}'."
             )
+        from bestseller.services.artifact_view import build_artifact_view
+
         return {
             "artifact_id": str(artifact.id),
             "artifact_type": artifact.artifact_type,
@@ -7430,7 +7449,263 @@ async def _load_project_design_artifact_payload(
             "created_at": artifact.created_at.isoformat(),
             "created_by": artifact.created_by,
             "content": artifact.content,
+            # Curated, methodology-grounded view-model rendered readably by the
+            # design dossier (raw ``content`` stays available behind a fold).
+            "view": build_artifact_view(artifact.artifact_type, artifact.content),
         }
+
+
+def _reader_review_golden_finger(cast_content: object) -> str:
+    """Pull the protagonist golden finger out of a cast_spec artifact, defensively."""
+
+    if not isinstance(cast_content, Mapping):
+        return ""
+    for path in (("golden_finger",), ("protagonist", "golden_finger")):
+        node: object = cast_content
+        for key in path:
+            node = node.get(key) if isinstance(node, Mapping) else None
+        if isinstance(node, str) and node.strip():
+            return node.strip()
+    return ""
+
+
+def _reader_review_protagonist_archetype(cast_content: object) -> str:
+    if not isinstance(cast_content, Mapping):
+        return ""
+    for path in (("protagonist_archetype",), ("protagonist", "archetype")):
+        node: object = cast_content
+        for key in path:
+            node = node.get(key) if isinstance(node, Mapping) else None
+        if isinstance(node, str) and node.strip():
+            return node.strip()
+    return ""
+
+
+def _reader_review_power_signature(world_content: object) -> str:
+    """First few power-system tiers as a one-line signature for the sameness table."""
+
+    if not isinstance(world_content, Mapping):
+        return ""
+    power = world_content.get("power_system")
+    tiers: list[str] = []
+    if isinstance(power, Mapping):
+        raw = power.get("tiers")
+        if isinstance(raw, list):
+            tiers = [str(t).strip() for t in raw if str(t).strip()]
+    return "·".join(tiers[:3])
+
+
+async def _reader_review_book_skeleton(
+    session: object,
+    project: object,
+) -> dict[str, object]:
+    """Per-book 套路骨架 for the cross-book sameness table (screen ⑤)."""
+
+    from sqlalchemy import select
+
+    from bestseller.domain.enums import ArtifactType
+    from bestseller.infra.db.models import ChapterModel
+    from bestseller.services.reader_review import classify_golden_finger_type
+    from bestseller.services.workflows import get_latest_planning_artifact
+
+    cast = await get_latest_planning_artifact(
+        session, project_id=project.id, artifact_type=ArtifactType.CAST_SPEC
+    )
+    world = await get_latest_planning_artifact(
+        session, project_id=project.id, artifact_type=ArtifactType.WORLD_SPEC
+    )
+    cast_content = cast.content if cast is not None else None
+    world_content = world.content if world is not None else None
+    meta = project.metadata_json or {}
+    chapter_one = await session.scalar(
+        select(ChapterModel).where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number == 1,
+        )
+    )
+    gf_text = _reader_review_golden_finger(cast_content)
+    if not gf_text:
+        meta_gf = meta.get("golden_finger")
+        gf_text = meta_gf.strip() if isinstance(meta_gf, str) else ""
+    if not gf_text:
+        gf_text = str(meta.get("premise") or meta.get("logline") or "").strip()
+    return {
+        "slug": project.slug,
+        "title": project.title,
+        "protagonist_archetype": _reader_review_protagonist_archetype(cast_content),
+        "golden_finger_type": classify_golden_finger_type(gf_text),
+        "opening_archetype": (chapter_one.opening_archetype if chapter_one else "") or "",
+        "power_system_signature": _reader_review_power_signature(world_content),
+        "ch1_hook_type": (chapter_one.hook_type if chapter_one else "") or "",
+    }
+
+
+def _reader_review_chapter_dict(chapter: object) -> dict[str, object]:
+    return {
+        "chapter_number": chapter.chapter_number,
+        "title": chapter.title,
+        "chapter_goal": chapter.chapter_goal,
+        "opening_situation": chapter.opening_situation,
+        "main_conflict": chapter.main_conflict,
+        "opening_archetype": chapter.opening_archetype,
+        "ending_cliff_type": chapter.ending_cliff_type,
+        "hook_description": chapter.hook_description,
+        "primary_emotion": chapter.primary_emotion,
+        "hype_type": chapter.hype_type,
+    }
+
+
+def _reader_review_scene_dict(scene: object) -> dict[str, object]:
+    return {
+        "scene_number": scene.scene_number,
+        "title": scene.title,
+        "scene_type": scene.scene_type,
+        "time_label": scene.time_label,
+        "participants": list(scene.participants or []),
+        "purpose": dict(scene.purpose or {}),
+        "entry_state": dict(scene.entry_state or {}),
+        "exit_state": dict(scene.exit_state or {}),
+        "key_dialogue_beats": list(scene.key_dialogue_beats or []),
+        "sensory_anchors": dict(scene.sensory_anchors or {}),
+        "hook_requirement": scene.hook_requirement,
+    }
+
+
+async def _load_reader_review_payload(
+    settings: AppSettings,
+    project_slug: str,
+    *,
+    recent_books: int = 8,
+) -> dict[str, object]:
+    """Assemble the 5-screen pre-write reader-review payload (DB → reader_review).
+
+    Pure read layer: loads existing artifacts and renders them as readable story.
+    Does not run the LLM (arena win-rate is read from the stored benchmark report
+    if present); generation logic is never touched.
+    """
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from bestseller.domain.enums import ArtifactType
+    from bestseller.infra.db.models import ChapterModel, ProjectModel
+    from bestseller.services.premise_appeal_arena import resolve_reference_set
+    from bestseller.services.reader_review import build_reader_review
+    from bestseller.services.workflows import get_latest_planning_artifact
+
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' was not found.")
+        meta = project.metadata_json or {}
+
+        cast = await get_latest_planning_artifact(
+            session, project_id=project.id, artifact_type=ArtifactType.CAST_SPEC
+        )
+        world = await get_latest_planning_artifact(
+            session, project_id=project.id, artifact_type=ArtifactType.WORLD_SPEC
+        )
+        # Golden finger: structured cast field first, then the project-metadata
+        # top-level field (real books often leave the cast field None and keep
+        # the engine described in metadata / the logline).
+        golden_finger = _reader_review_golden_finger(cast.content if cast else None)
+        if not golden_finger:
+            meta_gf = meta.get("golden_finger")
+            golden_finger = meta_gf.strip() if isinstance(meta_gf, str) else ""
+        concept_text = str(meta.get("premise") or meta.get("logline") or "").strip()
+        # Power system: metadata copy first (richer tier list), then world_spec.
+        power_system = meta.get("power_system")
+        if not isinstance(power_system, Mapping):
+            power_system = None
+        if power_system is None and world is not None and isinstance(world.content, Mapping):
+            power_system = world.content.get("power_system")
+
+        golden_chapters = (
+            await session.scalars(
+                select(ChapterModel)
+                .where(
+                    ChapterModel.project_id == project.id,
+                    ChapterModel.chapter_number <= 3,
+                )
+                .options(selectinload(ChapterModel.scenes))
+                .order_by(ChapterModel.chapter_number.asc())
+            )
+        ).all()
+        golden_three = [
+            (
+                _reader_review_chapter_dict(ch),
+                [
+                    _reader_review_scene_dict(s)
+                    for s in sorted(ch.scenes, key=lambda sc: sc.scene_number)
+                ],
+            )
+            for ch in golden_chapters
+        ]
+
+        rhythm_rows = await session.execute(
+            select(
+                ChapterModel.chapter_number,
+                ChapterModel.hype_type,
+                ChapterModel.hype_intensity,
+                ChapterModel.primary_emotion,
+            )
+            .where(ChapterModel.project_id == project.id)
+            .order_by(ChapterModel.chapter_number.asc())
+        )
+        rhythm_chapters = [
+            {
+                "chapter_number": row.chapter_number,
+                "hype_type": row.hype_type,
+                "hype_intensity": row.hype_intensity,
+                "primary_emotion": row.primary_emotion,
+            }
+            for row in rhythm_rows
+        ]
+
+        recent_projects = (
+            await session.scalars(
+                select(ProjectModel)
+                .order_by(ProjectModel.created_at.desc())
+                .limit(max(1, recent_books))
+            )
+        ).all()
+        if all(p.id != project.id for p in recent_projects):
+            recent_projects = [project, *recent_projects][: max(1, recent_books)]
+        skeletons = [
+            await _reader_review_book_skeleton(session, p) for p in recent_projects
+        ]
+
+    refs = resolve_reference_set(project.genre, project.sub_genre, min_refs=3)
+    arena_win_rate: float | None = None
+    try:
+        from bestseller.services.benchmark_regression import load_benchmark_report
+
+        report = load_benchmark_report(project.slug, output_base_dir=settings.output.base_dir)
+        if isinstance(report, Mapping):
+            raw_rate = report.get("win_rate")
+            if raw_rate is not None:
+                arena_win_rate = float(raw_rate)
+    except Exception:  # noqa: BLE001 — arena score is advisory; page renders without it
+        arena_win_rate = None
+
+    return build_reader_review(
+        project={
+            "slug": project.slug,
+            "title": project.title,
+            "genre": project.genre,
+            "sub_genre": project.sub_genre,
+            "premise": meta.get("premise") or meta.get("logline") or "",
+            "synopsis": meta.get("synopsis", ""),
+        },
+        golden_finger=golden_finger,
+        concept_text=concept_text,
+        power_system=power_system,
+        golden_three_chapters=golden_three,
+        rhythm_chapters=rhythm_chapters,
+        reference_blurbs=refs,
+        arena_win_rate=arena_win_rate,
+        cross_book_skeletons=skeletons,
+    )
 
 
 _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
@@ -8050,6 +8325,12 @@ def _read_character_network_html() -> str:
     if _CHARACTER_NETWORK_HTML_PATH.exists():
         return _CHARACTER_NETWORK_HTML_PATH.read_text(encoding="utf-8")
     return "<!DOCTYPE html><html><body><h1>Character network page not found.</h1></body></html>"
+
+
+def _read_reader_review_html() -> str:
+    if _READER_REVIEW_HTML_PATH.exists():
+        return _READER_REVIEW_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Reader review page not found.</h1></body></html>"
 
 
 def _read_methodology_course_html() -> str:
@@ -10119,6 +10400,16 @@ def serve_web_app(
                         content_type="text/html; charset=utf-8",
                     )
                     return
+                if path.startswith("/review/"):
+                    project_slug = path.removeprefix("/review/").strip("/")
+                    if not project_slug:
+                        self._route_not_found()
+                        return
+                    self._send_text(
+                        _read_reader_review_html(),
+                        content_type="text/html; charset=utf-8",
+                    )
+                    return
                 if path == "/api/library":
                     self._send_json(asyncio.run(_load_library_payload(settings)))
                     return
@@ -10401,6 +10692,15 @@ def serve_web_app(
                     self._send_json(
                         asyncio.run(_load_project_design_dossier_payload(settings, project_slug))
                     )
+                    return
+                project_slug = _match_project_route(path, "reader-review")
+                if project_slug is not None:
+                    try:
+                        self._send_json(
+                            asyncio.run(_load_reader_review_payload(settings, project_slug))
+                        )
+                    except ValueError as exc:
+                        self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
                     return
                 project_slug = _match_project_route(path, "prewrite-review")
                 if project_slug is not None:

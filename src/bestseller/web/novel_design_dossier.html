@@ -832,6 +832,115 @@
     min-height: 52px;
   }
 
+  /* ---- quality panel (规划产物 tab) ---- */
+  .q-panel { border: 1px solid var(--border); background: var(--paper); border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .q-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .q-score { font-size: 34px; font-weight: 700; line-height: 1; font-family: var(--mono); }
+  .q-score small { font-size: 14px; color: var(--faint); font-weight: 400; }
+  .q-badge { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); }
+  .q-badge.ok { background: var(--green); color: #fff; border-color: var(--green); }
+  .q-badge.fail { background: var(--red); color: #fff; border-color: var(--red); }
+  .q-badge.warn { background: var(--amber); color: #fff; border-color: var(--amber); }
+  .q-badge.info { background: var(--surface); color: var(--muted); }
+  .cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 14px; margin-top: 12px; }
+  .cap-item { font-size: 12.5px; display: flex; gap: 6px; align-items: center; }
+  .cap-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .cap-item.ok .dot { background: var(--green); }
+  .cap-item.no { color: var(--red); }
+  .cap-item.no .dot { background: var(--red); }
+  .q-reports { display: grid; gap: 8px; margin-top: 14px; }
+  .q-report { border: 1px solid var(--border); border-left: 4px solid var(--faint); border-radius: 8px; padding: 9px 12px; background: var(--surface); }
+  .q-report.ok { border-left-color: var(--green); }
+  .q-report.fail { border-left-color: var(--red); }
+  .q-report.warn { border-left-color: var(--amber); }
+  .q-report.info { border-left-color: var(--blue); }
+  .q-report .qr-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .q-report .qr-name { font-weight: 600; }
+  .q-report .qr-detail { margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+  .q-report .qr-detail li { margin: 2px 0; }
+
+  /* ---- readable artifact rendering ---- */
+  .readable { font-size: 13.5px; line-height: 1.6; }
+  .kv-row { display: grid; grid-template-columns: minmax(96px, 168px) 1fr; gap: 12px; padding: 5px 0; border-top: 1px dashed var(--border); }
+  .kv-row:first-child { border-top: none; }
+  .kv-k { color: var(--strong); font-weight: 600; word-break: break-word; }
+  .kv-v { white-space: pre-wrap; word-break: break-word; }
+  .kv-v .muted { color: var(--faint); }
+  .r-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; margin: 6px 0; background: var(--paper); }
+  .r-card-title { font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
+  .meta-fold, .raw-fold { margin-top: 10px; }
+  .meta-fold summary, .raw-fold summary { cursor: pointer; font-size: 12px; color: var(--faint); list-style: none; }
+  .meta-fold summary::-webkit-details-marker, .raw-fold summary::-webkit-details-marker { display: none; }
+  .artifact-readable { padding: 4px 12px 12px; }
+  .artifact-readable .loading-line { color: var(--faint); font-size: 12px; padding: 8px 0; }
+
+  /* ---- per-type curated view (artifact_view) ---- */
+  .av-hint { font-size: 12.5px; color: var(--amber); background: var(--surface); border-radius: var(--border-radius-md); padding: 7px 11px; margin-bottom: 14px; }
+  .av-hint i { font-style: normal; font-weight: 600; margin-right: 4px; }
+  .av-block { margin: 0 0 16px; }
+  .av-label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 7px; letter-spacing: .02em; }
+  .av-note { font-weight: 400; color: var(--faint); }
+  .av-prose { font-size: 14.5px; line-height: 1.65; white-space: pre-wrap; }
+  .av-callout { border-left: 3px solid var(--blue); background: var(--surface); border-radius: 0; padding: 8px 14px; }
+  .av-callout .av-label { color: var(--blue); }
+  .av-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
+  @media (max-width: 640px) { .av-fields { grid-template-columns: 1fr; } }
+  .av-kv .av-k { font-size: 11.5px; color: var(--faint); }
+  .av-kv .av-v { font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+  .av-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .av-chip { font-size: 12.5px; padding: 3px 11px; border-radius: 999px; background: var(--surface); border: 0.5px solid var(--border); color: var(--ink); }
+  .av-ladder { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
+  .av-step { flex: 1 1 90px; min-width: 84px; padding: 9px 12px; border-radius: var(--border-radius-md); background: var(--surface); border: 0.5px solid var(--border); font-size: 13.5px; font-weight: 500; display: flex; flex-direction: column; gap: 2px; }
+  .av-step.start { background: var(--paper); border-color: var(--blue); }
+  .av-step-tag { font-size: 10.5px; font-weight: 400; color: var(--blue); }
+  .av-arrow { align-self: center; color: var(--faint); }
+  .av-cards { display: grid; gap: 10px; }
+  .av-card { border: 0.5px solid var(--border); border-radius: var(--border-radius-md); padding: 11px 13px; background: var(--paper); }
+  .av-card-title { font-size: 14px; font-weight: 600; margin-bottom: 7px; }
+  .av-card-title .av-sub { font-size: 12.5px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .av-card-title .av-badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); margin-left: 6px; }
+  .av-card .av-line { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 3px; }
+  .scorecard { border: 0.5px solid var(--border); border-radius: var(--border-radius-md); overflow: hidden; }
+  .sc-head { display: flex; align-items: baseline; gap: 12px; padding: 9px 13px; background: var(--surface); border-bottom: 0.5px solid var(--border); }
+  .sc-grade { font-size: 13px; font-weight: 600; color: var(--green); }
+  .sc-total { font-size: 18px; font-weight: 600; font-family: var(--mono); }
+  .sc-total small { font-size: 11px; color: var(--faint); font-weight: 400; }
+  .sc-row { display: grid; grid-template-columns: minmax(90px, 130px) 56px 1fr; gap: 10px; padding: 7px 13px; border-top: 0.5px dashed var(--border); align-items: baseline; }
+  .sc-row:first-child { border-top: none; }
+  .sc-dim { font-size: 13px; font-weight: 500; }
+  .sc-score { font-size: 13px; font-family: var(--mono); color: var(--strong); }
+  .sc-wt { color: var(--faint); }
+  .sc-rat { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  @media (max-width: 640px) { .sc-row { grid-template-columns: 1fr 56px; } .sc-rat { grid-column: 1 / -1; } }
+
+  /* ---- design reading menu (规划产物 tab) ---- */
+  .reading-head { margin: 16px 0 4px; }
+  .reading-head h3 { margin: 0; font-size: 16px; }
+  .reading-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .rm-sec-label { font-size: 12px; color: var(--faint); font-weight: 600; letter-spacing: .03em; margin: 20px 0 8px; }
+  .rm-group { border: 0.5px solid var(--border); border-radius: var(--border-radius-lg); overflow: hidden; background: var(--paper); }
+  details.rm-row { border: none; background: transparent; }
+  details.rm-row + details.rm-row { border-top: 0.5px solid var(--border); }
+  .rm-row > summary { display: flex; align-items: center; gap: 10px; padding: 12px 15px; cursor: pointer; list-style: none; }
+  .rm-row > summary::-webkit-details-marker { display: none; }
+  .rm-row > summary:hover { background: var(--surface); }
+  .rm-row[open] > summary { background: var(--surface); }
+  .rm-chev { flex: 0 0 auto; width: 12px; color: var(--faint); }
+  .rm-chev::before { content: '\203A'; font-size: 16px; display: inline-block; transition: transform .15s ease; }
+  .rm-row[open] .rm-chev::before { transform: rotate(90deg); }
+  .rm-name { font-weight: 500; font-size: 14.5px; flex: 0 0 auto; }
+  .rm-hint { flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rm-ver { flex: 0 0 auto; font-size: 11px; color: var(--faint); }
+  .rm-row > .artifact-readable { padding: 4px 16px 18px 37px; }
+  .rm-advanced { margin-top: 26px; border-top: 0.5px solid var(--border); padding-top: 14px; }
+  .rm-advanced > summary { cursor: pointer; font-size: 12.5px; color: var(--muted); list-style: none; }
+  .rm-advanced > summary::-webkit-details-marker { display: none; }
+  .rm-advanced > summary::before { content: '\203A'; margin-right: 6px; display: inline-block; transition: transform .15s ease; }
+  .rm-advanced[open] > summary::before { transform: rotate(90deg); }
+  .rm-advanced > .grid { margin-top: 12px; }
+
   .pager {
     display: flex;
     align-items: center;
@@ -1171,6 +1280,134 @@
   }
   function asJson(value) { return esc(JSON.stringify(value, null, 2)); }
 
+  // ---- readable artifact rendering (JSON → 人话卡片) ----
+  const FIELD_LABELS = {
+    name: '名称', title: '标题', description: '说明', summary: '摘要', role: '角色',
+    rule_name: '规则名', story_consequence: '剧情后果', faction: '势力', movement: '动向',
+    power_system: '力量体系', tiers: '层级', tier: '层级', tier_progression: '晋升路线',
+    bottleneck: '瓶颈', breakthrough_cost: '突破代价', acquisition_method: '获取方式',
+    hard_limits: '硬性限制', protagonist_starting_tier: '主角起点',
+    world_name: '世界名', world_premise: '世界前提', power_structure: '权力结构',
+    forbidden_zones: '禁区', history_key_events: '关键历史', event: '事件', relevance: '意义',
+    locations: '地点', factions: '势力', rules: '世界规则', characters: '角色',
+    protagonist: '主角', antagonist: '反派', supporting_cast: '配角', conflict_map: '冲突图谱',
+    golden_finger: '金手指', core_wound: '核心创伤', external_goal: '外在目标',
+    internal_need: '内在需求', archetype: '人物原型', premise: '一句话/前提',
+    logline: '一句话', synopsis: '简介', selling_points: '卖点', reader_promise: '读者承诺',
+    chapter_number: '章号', chapter_goal: '本章目标', main_conflict: '主要冲突',
+    hook_description: '钩子', opening_situation: '开场情境', scenes: '场景',
+    volume_number: '卷号', volume_title: '卷名', chapters: '章节',
+  };
+  function fieldLabel(k) { return FIELD_LABELS[k] || k; }
+  const SCALAR_PREVIEW_KEYS = ['name', 'title', 'rule_name', 'event', 'tier', 'label'];
+
+  function isScalar(v) { return v === null || ['string', 'number', 'boolean'].includes(typeof v); }
+  function objTitle(o) {
+    for (const k of SCALAR_PREVIEW_KEYS) if (o && typeof o[k] === 'string' && o[k].trim()) return o[k];
+    return '';
+  }
+  function renderReadableValue(val, depth) {
+    if (val === null || val === undefined || val === '') return '<span class="muted">—</span>';
+    if (isScalar(val)) return esc(String(val));
+    if (Array.isArray(val)) {
+      if (!val.length) return '<span class="muted">（空）</span>';
+      if (val.every(isScalar)) return `<div class="chips">${val.slice(0, 40).map(v => `<span class="chip">${esc(String(v))}</span>`).join('')}</div>`;
+      const items = val.slice(0, 30).map(v => {
+        if (isScalar(v)) return `<div class="r-card">${esc(String(v))}</div>`;
+        const t = objTitle(v);
+        return `<div class="r-card">${t ? `<div class="r-card-title">${esc(t)}</div>` : ''}${renderReadableObject(v, depth + 1, t)}</div>`;
+      }).join('');
+      const more = val.length > 30 ? `<div class="muted" style="font-size:12px">…另有 ${val.length - 30} 项</div>` : '';
+      return items + more;
+    }
+    if (typeof val === 'object') return `<div class="r-card">${renderReadableObject(val, depth + 1)}</div>`;
+    return esc(String(val));
+  }
+  function renderReadableObject(o, depth, skipTitleKey) {
+    const entries = Object.entries(o).filter(([k]) => k !== '_meta' && !(skipTitleKey && SCALAR_PREVIEW_KEYS.includes(k) && o[k] === skipTitleKey));
+    if (!entries.length) return '<span class="muted">—</span>';
+    return entries.map(([k, v]) => `<div class="kv-row"><div class="kv-k">${esc(fieldLabel(k))}</div><div class="kv-v">${renderReadableValue(v, depth)}</div></div>`).join('');
+  }
+  function renderArtifactReadable(content) {
+    if (content === null || content === undefined) return empty('无内容');
+    if (isScalar(content)) return `<div class="readable">${esc(String(content))}</div>`;
+    if (Array.isArray(content)) return `<div class="readable">${renderReadableValue(content, 0)}</div>`;
+    const meta = content._meta;
+    const main = renderReadableObject(content, 0);
+    const metaFold = (meta && typeof meta === 'object')
+      ? `<details class="meta-fold"><summary>溯源信息 _meta（点击展开）</summary><div class="readable" style="margin-top:6px">${renderReadableObject(meta, 0)}</div></details>`
+      : '';
+    const rawFold = `<details class="raw-fold"><summary>查看原始 JSON</summary><pre class="json" style="margin-top:6px">${asJson(content)}</pre></details>`;
+    return `<div class="readable">${main}</div>${metaFold}${rawFold}`;
+  }
+
+  // ---- per-type curated view (from backend artifact_view) ----
+  function renderAvCard(c) {
+    const items = arr(c.items).map(i => `<div class="av-kv"><div class="av-k">${esc(i.label)}</div><div class="av-v">${esc(i.value)}</div></div>`).join('');
+    const lines = arr(c.lines).map(l => `<div class="av-line">${esc(l)}</div>`).join('');
+    const badge = c.badge ? `<span class="av-badge">${esc(c.badge)}</span>` : '';
+    const sub = c.subtitle ? `<span class="av-sub">${esc(c.subtitle)}</span>` : '';
+    return `<div class="av-card"><div class="av-card-title">${esc(c.title)}${badge}${sub}</div>${items ? `<div class="av-fields">${items}</div>` : ''}${lines}</div>`;
+  }
+  function renderAvBlock(b) {
+    const label = `<div class="av-label">${esc(b.label)}${b.note ? ` <span class="av-note">${esc(b.note)}</span>` : ''}</div>`;
+    if (b.kind === 'prose') return `<div class="av-block">${label}<div class="av-prose">${esc(b.text)}</div></div>`;
+    if (b.kind === 'callout') return `<div class="av-block av-callout">${label}<div class="av-prose">${esc(b.text)}</div></div>`;
+    if (b.kind === 'fields') return `<div class="av-block">${label}<div class="av-fields">${arr(b.items).map(i => `<div class="av-kv"><div class="av-k">${esc(i.label)}</div><div class="av-v">${esc(i.value)}</div></div>`).join('')}</div></div>`;
+    if (b.kind === 'chips') return `<div class="av-block">${label}<div class="av-chips">${arr(b.chips).map(c => `<span class="av-chip">${esc(c)}</span>`).join('')}</div></div>`;
+    if (b.kind === 'ladder') return `<div class="av-block">${label}<div class="av-ladder">${arr(b.steps).map((st, i) => `${i ? '<span class="av-arrow">→</span>' : ''}<div class="av-step${st.tag ? ' start' : ''}">${st.tag ? `<span class="av-step-tag">${esc(st.tag)}</span>` : ''}<span>${esc(st.name)}</span></div>`).join('')}</div></div>`;
+    if (b.kind === 'cards') return `<div class="av-block">${label}<div class="av-cards">${arr(b.cards).map(renderAvCard).join('')}</div></div>`;
+    if (b.kind === 'scorecard') {
+      const num = (v) => v == null ? '' : (Math.round(Number(v) * 10) / 10);
+      const head = (b.grade || b.total != null) ? `<div class="sc-head">${b.grade ? `<span class="sc-grade">${esc(b.grade)}</span>` : ''}${b.total != null ? `<span class="sc-total">${esc(num(b.total))}<small>/100</small></span>` : ''}</div>` : '';
+      const rows = arr(b.rows).map(r => `<div class="sc-row"><div class="sc-dim">${esc(r.label)}</div><div class="sc-score">${esc(num(r.score))}${r.weight != null ? `<span class="sc-wt">/${esc(Math.round(Number(r.weight)))}</span>` : ''}</div><div class="sc-rat">${esc(r.rationale || '')}</div></div>`).join('');
+      return `<div class="av-block">${label}<div class="scorecard">${head}<div class="sc-rows">${rows}</div></div></div>`;
+    }
+    return '';
+  }
+  function renderArtifactView(view, rawContent) {
+    const secs = arr(view && view.sections);
+    if (!secs.length) return renderArtifactReadable(rawContent);
+    const hint = (view && view.hint) ? `<div class="av-hint"><i>看点</i>${esc(view.hint)}</div>` : '';
+    const body = secs.map(renderAvBlock).join('');
+    const rawFold = `<details class="raw-fold"><summary>查看原始 JSON / 全部字段</summary><pre class="json" style="margin-top:6px">${asJson(rawContent)}</pre></details>`;
+    return `<div class="readable">${hint}${body}</div>${rawFold}`;
+  }
+
+  // ---- planning-stage quality panel ----
+  function renderQualityPanel(q) {
+    q = obj(q);
+    if (!q.report_count) return '';
+    const head = obj(q.headline);
+    const scoreHtml = head.score_pct != null
+      ? `<div class="q-score">${esc(head.score_pct)}<small>/100</small></div>` : '';
+    const passBadge = head.passed === true ? '<span class="q-badge ok">就绪可开写</span>'
+      : (head.passed === false ? '<span class="q-badge fail">未就绪</span>' : '');
+    const counts = head.score_pct != null || head.passed != null
+      ? `<div class="muted" style="font-size:12.5px">${head.warning_count || 0} 警告 · ${head.blocking_count || 0} 阻断</div>` : '';
+    const snap = obj(q.capability_snapshot);
+    const capKeys = Object.keys(snap);
+    const capHtml = capKeys.length ? `<div class="cap-grid">${capKeys.map(k => {
+      const okv = snap[k] === true;
+      return `<div class="cap-item ${okv ? 'ok' : 'no'}"><span class="dot"></span>${esc(fieldLabel(k))}${okv ? '' : ' ✗'}</div>`;
+    }).join('')}</div>` : '';
+    const reports = arr(q.reports).map(r => {
+      const vc = r.verdict_class || 'info';
+      const score = r.score_pct != null ? `<span class="q-badge ${vc}">${esc(r.score_pct)} 分</span>` : '';
+      const st = r.status ? `<span class="q-badge ${vc}">${esc(r.status)}</span>` : '';
+      const pass = r.passed === true ? '<span class="q-badge ok">通过</span>' : (r.passed === false ? '<span class="q-badge fail">未过</span>' : '');
+      const warns = arr(r.warnings).slice(0, 5).map(w => `<li>⚠ ${esc(w.message || w.code || (typeof w === 'string' ? w : JSON.stringify(w)))}</li>`).join('');
+      const blocks = arr(r.blocking_findings).slice(0, 5).map(b => `<li>⛔ ${esc(b.message || b.code || (typeof b === 'string' ? b : JSON.stringify(b)))}</li>`).join('');
+      const detail = (warns || blocks) ? `<ul class="qr-detail">${blocks}${warns}</ul>` : '';
+      return `<div class="q-report ${vc}"><div class="qr-head"><span class="qr-name">${esc(r.label)}</span>${score}${st}${pass}</div>${detail}</div>`;
+    }).join('');
+    return `<div class="q-panel">
+      <div class="q-head">${scoreHtml}<div><div style="font-weight:600">开写前质量体检</div>${counts}</div>${passBadge}</div>
+      ${capHtml}
+      <div class="q-reports">${reports}</div>
+    </div>`;
+  }
+
   function setTab(name) {
     $$('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
     $$('.section').forEach(section => section.classList.toggle('active', section.id === `tab-${name}`));
@@ -1276,7 +1513,7 @@
             <span><strong>${esc(conceptionLabels[k] || k)}</strong></span>
             <span class="panel-count">${esc(k)}</span>
           </summary>
-          <pre class="json">${asJson(conception[k])}</pre>
+          <div class="artifact-readable">${renderArtifactReadable(conception[k])}</div>
         </details>
       `).join('')}</div>`,
       12,
@@ -1343,16 +1580,7 @@
           <button class="artifact-action artifact-edit" type="button" data-artifact-id="${esc(doc.artifact_id || '')}">编辑 JSON</button>
           <button class="artifact-action artifact-issue" type="button" data-artifact-id="${esc(doc.artifact_id || '')}">提交问题修复</button>
         </div>
-        <pre class="json">${asJson({
-          artifact_id: doc.artifact_id,
-          artifact_type: doc.artifact_type,
-          label: doc.label,
-          phase: doc.phase,
-          version_no: doc.version_no,
-          status: doc.status,
-          scope_ref_id: doc.scope_ref_id,
-          note: '展开或点击按钮后显示原始规划产物内容',
-        })}</pre>
+        <div class="artifact-readable"><div class="loading-line">展开后以可读形式加载内容（原始 JSON 收在底部折叠里）。</div></div>
       </details>
     `).join('')}</div>` : empty('当前筛选没有匹配的规划产物');
     const body = `<div class="workbench">
@@ -1434,7 +1662,67 @@
       12,
       bench.evaluation && bench.evaluation.passed ? 'PASS' : 'FAIL'
     ) : '';
-    $('#tab-artifacts').innerHTML = `<div class="grid">${panel('物料工作台', body, 12, `${filtered.length}`)}${conceptionBody}${benchBody}${reviewsBody}</div>`;
+    const qualityPanel = renderQualityPanel(dossier.quality_reports);
+
+    // --- Reading menu (primary view): latest artifacts grouped by reading order ---
+    const latestDocs = Object.values(latestByKey);
+    const rmByType = {};
+    latestDocs.forEach(d => { (rmByType[d.artifact_type] = rmByType[d.artifact_type] || []).push(d); });
+    const RM_SECTIONS = [
+      { label: '立意与卖点', types: ['premise', 'book_spec', 'promotional_brief'] },
+      { label: '世界观', types: ['world_spec'] },
+      { label: '人物', types: ['cast_spec'] },
+      { label: '剧情结构 · 卷纲与章纲', types: ['volume_plan', 'chapter_outline_batch', 'volume_chapter_outline', 'volume_world_disclosure'] },
+      { label: '方法论内核', types: ['emotion_driven_kernel', 'public_emotion_kernel', 'entry_system_kernel', 'compliance_boundary_kernel', 'story_design_kernel'] },
+      { label: '开写前体检', types: ['prewrite_readiness', 'fanqie_long_ranking_readiness'] },
+    ];
+    const RM_HINTS = {
+      premise: '一句话能不能让人忍不住点开？', book_spec: '钩子/戏剧问题/爽点引擎是否成立？',
+      promotional_brief: '书名与简介能否一眼抓人？', world_spec: '世界规则是否独特、能否长出剧情？',
+      cast_spec: '金手指是不是又是系统？主角有没有软肋？', volume_plan: '每卷目标/高潮是否清晰、节奏有起伏？',
+      chapter_outline_batch: '每章有明确目标与结尾钩子吗？', volume_chapter_outline: '逐章目标与钩子',
+      volume_world_disclosure: '本卷新揭示的规则/地点/势力', emotion_driven_kernel: '读者在等什么、炸弹/共情契约落章了吗？',
+      public_emotion_kernel: '目标人群没说出口的话是否精准？', entry_system_kernel: '能力轴与代价是否清晰、拒绝死板面板？',
+      compliance_boundary_kernel: '风险等级与缓解规则是否到位？', prewrite_readiness: '是否达标、有无阻断项？',
+      fanqie_long_ranking_readiness: '钩子/爽点/代价/能力章数是否达标？',
+    };
+    const RM_NAME = { fanqie_long_ranking_readiness: '番茄上榜就绪', book_spec: '设计核 · 书目蓝图' };
+    const rmRow = (doc) => `
+      <details class="artifact rm-row" data-artifact-id="${esc(doc.artifact_id || '')}">
+        <summary>
+          <span class="rm-chev" aria-hidden="true"></span>
+          <span class="rm-name">${esc(RM_NAME[doc.artifact_type] || doc.label || doc.artifact_type)}</span>
+          <span class="rm-hint">${esc(RM_HINTS[doc.artifact_type] || '')}</span>
+          <span class="rm-ver">v${esc(doc.version_no)}</span>
+        </summary>
+        <div class="artifact-readable"><div class="loading-line">展开中，正在整理…</div></div>
+      </details>`;
+    const rmUsed = new Set();
+    let readingMenu = '';
+    if (conceptionKeys.length) {
+      const cviews = obj(dossier.conception_views);
+      readingMenu += `<div class="rm-sec-label">构思产物</div><div class="rm-group">${conceptionKeys.map(k => {
+        const cv = cviews[k];
+        const name = (cv && cv.title) || conceptionLabels[k] || k;
+        const hint = (cv && cv.hint) || '';
+        const inner = (cv && arr(cv.sections).length) ? renderArtifactView(cv, conception[k]) : renderArtifactReadable(conception[k]);
+        return `<details class="artifact rm-row"><summary><span class="rm-chev" aria-hidden="true"></span><span class="rm-name">${esc(name)}</span><span class="rm-hint">${esc(hint)}</span></summary>
+        <div class="artifact-readable">${inner}</div></details>`;
+      }).join('')}</div>`;
+    }
+    RM_SECTIONS.forEach(sec => {
+      const items = [];
+      sec.types.forEach(t => (rmByType[t] || []).forEach(d => { if (!rmUsed.has(d.artifact_id)) { rmUsed.add(d.artifact_id); items.push(d); } }));
+      if (items.length) readingMenu += `<div class="rm-sec-label">${esc(sec.label)}</div><div class="rm-group">${items.map(rmRow).join('')}</div>`;
+    });
+    const rmLeftover = latestDocs.filter(d => !rmUsed.has(d.artifact_id));
+    if (rmLeftover.length) readingMenu += `<div class="rm-sec-label">其他</div><div class="rm-group">${rmLeftover.map(rmRow).join('')}</div>`;
+
+    // Power-user workbench (full version history / search / facets / edit / 判官评审 / 榜单对标) tucked away.
+    const advanced = `<details class="rm-advanced"><summary>高级筛选 / 原始工作台 · 全部版本 · 编辑 · 判官评审 · 榜单对标</summary>
+      <div class="grid">${panel('物料工作台', body, 12, `${filtered.length}`)}${benchBody}${reviewsBody}</div></details>`;
+
+    $('#tab-artifacts').innerHTML = `${qualityPanel}<div class="reading-head"><h3>设计阅读</h3><div class="reading-sub">按阅读顺序浏览这本书的设计，点任意一项就地展开正文</div></div>${readingMenu}${advanced}`;
   }
 
   function renderOutline() {
@@ -1902,26 +2190,26 @@
   async function loadArtifactContent(target) {
     const artifact = target.closest('.artifact');
     const button = artifact?.querySelector('.artifact-load');
-    const artifactId = button?.dataset.artifactId;
-    const pre = artifact?.querySelector('.json');
-    if (!artifact || artifact.dataset.loaded === 'true' || !artifactId || !pre || !button) return;
-    button.disabled = true;
-    const originalLabel = button.textContent;
-    button.textContent = '加载中';
-    pre.textContent = '正在加载原始规划产物...';
+    // Reading-menu rows carry the id on the <details> itself (no load button);
+    // the legacy workbench cards carry it on the .artifact-load button.
+    const artifactId = button?.dataset.artifactId || artifact?.dataset.artifactId;
+    const container = artifact?.querySelector('.artifact-readable');
+    if (!artifact || artifact.dataset.loaded === 'true' || !artifactId || !container) return;
+    let originalLabel = '';
+    if (button) { button.disabled = true; originalLabel = button.textContent; button.textContent = '加载中'; }
+    container.innerHTML = '<div class="loading-line">正在加载并整理内容…</div>';
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(slug)}/design-artifact?artifact_id=${encodeURIComponent(artifactId)}`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || '加载失败');
       const content = data.content ?? data;
-      pre.textContent = JSON.stringify(content, null, 2);
+      container.innerHTML = data.view ? renderArtifactView(data.view, content) : renderArtifactReadable(content);
       artifact.dataset.contentJson = JSON.stringify(content);
       artifact.dataset.loaded = 'true';
-      button.textContent = '已加载原始内容';
+      if (button) button.textContent = '已加载';
     } catch (err) {
-      pre.textContent = `加载失败：${err.message}`;
-      button.disabled = false;
-      button.textContent = originalLabel;
+      container.innerHTML = `<div class="loading-line">加载失败：${esc(err.message)}</div>`;
+      if (button) { button.disabled = false; button.textContent = originalLabel; }
     }
   }
 

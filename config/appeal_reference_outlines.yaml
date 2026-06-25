@@ -1,0 +1,21 @@
+# 真实爆款「开篇梗概」参照库 —— 大纲层盲评对标语料
+#
+# 用途：outline_arena.run_outline_arena(kind="outline") 把本书的「premise + 前三章梗概」
+# 与同题材真实爆款的前三章梗概做双盲、位置交换、跨家族判官的成对盲评，产出 win-rate。
+# 这是把唯一可信的对标信号从「只评 200 字简介」扩到「评大纲」（质量根因 #1 的根治）。
+#
+# ⚠️ 必须是手工策展的【真实爆款】梗概（120–220 字），与 config/appeal_reference_blurbs.yaml
+#    同等标准。arena 之所以可信，正因为对标的是真实头部作品；切勿填入 AI 生成或杜撰内容，
+#    否则会污染信号。某题材未填 → 该题材盲评自动跳过（返回 pairs==0，前端显示「暂无对标」）。
+#
+# 结构（canonical genre key 见 services/genre_taxonomy.py）：
+# xuanhuan:
+#   - title: "<真实书名>"
+#     gist: "<这本书前三章发生了什么：身份/金手指亮相、第一个冲突与代价、第三章末钩子，120-220字>"
+#   - title: "<真实书名>"
+#     gist: "..."
+# urban:
+#   - title: "..."
+#     gist: "..."
+#
+# 填充后删除本说明上方留空即可；canonicalize 会把 sub_genre 归一到主键。

@@ -2370,7 +2370,10 @@ def test_design_dossier_html_contains_expected_mount_points() -> None:
     assert "/api/projects/${encodeURIComponent(slug)}/design-dossier" in html
     assert "/api/projects/${encodeURIComponent(slug)}/design-artifact" in html
     assert 'data-tab="relations"' in html
-    assert "展开后会自动加载这份规划产物的原始内容" in html
+    # Planning-artifacts tab renders readable cards + a quality panel (not raw JSON).
+    assert "renderArtifactReadable" in html
+    assert "renderQualityPanel" in html
+    assert "artifact-readable" in html
     assert "侦查式关系图谱" in html
     assert "relationship-map" in html
 

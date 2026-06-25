@@ -208,16 +208,30 @@ def build_methodology_system_prompt(*, language: str = "zh") -> str:
     if str(language or "").startswith("en"):
         return (
             "You are a web-fiction market analyst + story methodologist. "
-            "Given a genre and market-heat signals, choose the brainstorm *mindset* "
-            "and the *types* of 爽点 (reader-reward) mechanisms that best fit this genre "
-            "by market popularity. Output a methodology, NOT a concrete plot. "
+            "Given a genre and market-heat signals, choose a brainstorm *mindset* "
+            "and *types* of reader-reward mechanisms that are BOTH popular AND "
+            "differentiated for this genre. "
+            "CRITICAL anti-homogenization rule: do NOT default to the single most "
+            "oversaturated micro-trend the genre is currently flooded with — that only "
+            "makes your book collide with dozens of others. (E.g. if you find yourself "
+            "again writing 'exploit-the-Heavenly-Dao / system-loophole / rule-panel' for "
+            "xianxia/xuanhuan, switch to a still-hot but un-saturated angle — emotional, "
+            "relational, vocational, world-texture, thematic, anti-trope, etc.) Your pick "
+            "should look visibly different from recent new books in this genre. "
+            "Output a methodology, NOT a concrete plot. "
             "Never name a specific gimmick or borrow a source work's setting — only "
             "directions the writer must transform into an original, cost-bearing, "
             "escalating mechanism. Respond with a single valid JSON object, no prose."
         )
     return (
         "你是网文市场分析师 + 故事方法论专家。给定题材与市场热度信号，"
-        "你要判断该题材在当前市场最吃香的「脑洞思维」和「爽点机制类型」。"
+        "你要为该题材选出一个【既有市场热度、又有差异化空间】的「脑洞思维」和「爽点机制类型」。"
+        "⚠️同质化红线（最重要）：绝不要默认选该题材当前最泛滥、已被大量新书反复套用、"
+        "读者已审美疲劳的那一个『最热』微创新——那只会让你这本书和市面上一堆书撞车。"
+        "举例：一旦你发现自己又想给 玄幻/修仙 写『卡天道/天道bug/系统漏洞/规则面板/钻规则空子』"
+        "这类已被写烂的方向，必须主动换一个仍有热度但尚未同质化的角度（情感、关系、职业、"
+        "世界质感、母题、反类型…都可以）。判断标准：把你选的方向和该题材近期新书放一起，"
+        "应当有肉眼可见的差异，而不是又一本同款。"
         "你输出的是方法论（思维方向 + 机制类型 + 节奏轴），不是具体剧情，"
         "更不是某个固定金手指。绝不照搬任何源作品的设定或专属名词；"
         "你给的每一项都必须是写手可以在该题材里重新长出「可执行、可付代价、可升级」"
@@ -245,7 +259,7 @@ def build_methodology_user_prompt(
     signals_block = "\n".join(f"- {s}" for s in market_signals[:10]) or "（无联网信号，依据题材常识判断）"
     schema = {
         "audience_orientation": "male | female | neutral",
-        "mindset": "一句话：该题材当前最吃香的脑洞思维方向",
+        "mindset": "一句话：该题材当前【吃香且有差异化空间】的脑洞思维方向（避开已被写烂的最热微创新，别和市面同题材新书撞款）",
         "mechanism_types": ["爽点/脑洞机制类型（类型词，非具体实例）", "..."],
         "reader_promise_axis": "读者承诺主轴（方向）",
         "shuangdian_cadence": ["爽点节奏：每个节拍一句方法", "..."],

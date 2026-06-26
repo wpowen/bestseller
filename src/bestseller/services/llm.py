@@ -1506,7 +1506,17 @@ async def _call_litellm(
     # installed, httpx may ignore per-request timeouts and use the client
     # default instead — allowing calls to hang far beyond the configured
     # role timeout.  The asyncio deadline guarantees cancellation.
-    hard_timeout = float(role_settings.timeout_seconds) + 5.0  # small grace
+    # A conception-scoped cap (set via bind_conception_model) overrides the
+    # role timeout so a stalled provider during the project-less conception
+    # phase surfaces well before the no-progress watchdog. Outside conception
+    # the contextvar is unset and the role's own timeout applies unchanged.
+    _conception_timeout = _conception_call_timeout_var.get()
+    _base_timeout = (
+        float(_conception_timeout)
+        if _conception_timeout
+        else float(role_settings.timeout_seconds)
+    )
+    hard_timeout = _base_timeout + 5.0  # small grace
     response = await asyncio.wait_for(
         acompletion(**completion_kwargs),
         timeout=hard_timeout,
@@ -1669,18 +1679,43 @@ _conception_model_var: contextvars.ContextVar[str | None] = contextvars.ContextV
     "bestseller_conception_model_catalog_key", default=None
 )
 
+# Conception's LLM calls are small structured proposals (facets, market/character
+# /world briefs) yet ride the ``planner`` role whose ``timeout_seconds`` (900s) is
+# sized for large planning batches. With ``max_attempts=3`` a single *stalled*
+# provider connection (the shared httpx client has no read timeout) burns
+# 3×905s ≈ 2715s — tripping the 2700s no-progress watchdog before any progress
+# event is emitted, killing the book with a useless error. Capping the per-call
+# wall-clock during conception keeps the worst-case stall well under the
+# watchdog so it recovers via retry (or fails fast with a real error) instead.
+_conception_call_timeout_var: contextvars.ContextVar[float | None] = (
+    contextvars.ContextVar("bestseller_conception_call_timeout_seconds", default=None)
+)
+
 
 @contextmanager
-def bind_conception_model(model_catalog_key: str | None):
-    """Bind a fallback catalog model for project-less (conception) LLM calls.
+def bind_conception_model(
+    model_catalog_key: str | None,
+    *,
+    call_timeout_seconds: float | None = None,
+):
+    """Bind conception-scoped LLM overrides (fallback model + per-call timeout).
 
-    No-op when ``model_catalog_key`` is falsy. Safe to nest; always resets.
+    ``model_catalog_key`` gives project-less conception calls the chosen model;
+    ``call_timeout_seconds`` caps each call's wall-clock so a stalled provider
+    surfaces fast instead of hanging into the watchdog. Both are no-ops when
+    falsy. Safe to nest; always resets.
     """
-    token = _conception_model_var.set((model_catalog_key or "").strip() or None)
+    model_token = _conception_model_var.set(
+        (model_catalog_key or "").strip() or None
+    )
+    timeout_token = _conception_call_timeout_var.set(
+        float(call_timeout_seconds) if call_timeout_seconds else None
+    )
     try:
         yield
     finally:
-        _conception_model_var.reset(token)
+        _conception_model_var.reset(model_token)
+        _conception_call_timeout_var.reset(timeout_token)
 
 
 async def _resolve_project_model_override(

@@ -1789,6 +1789,13 @@ _ATTENTION_VERDICTS = frozenset(
         "skipped_requires_human_review",
     }
 )
+# Per-call wall-clock cap for conception LLM calls. Conception's calls are small
+# structured proposals that normally finish in well under a minute; the generous
+# ``planner`` role timeout (900s) only matters for large planning batches that
+# run later. Capping conception keeps the worst-case stall (3 retries) at
+# ~3×305s ≈ 915s — comfortably under the 2700s no-progress watchdog — so a
+# stalled provider recovers or fails fast instead of stranding the book for 45m.
+_CONCEPTION_CALL_TIMEOUT_SECONDS = 300.0
 _TERMINAL_ATTENTION_STAGES = frozenset(
     {
         "autowrite_completed",
@@ -3339,7 +3346,10 @@ class WebTaskManager:
                                 architect_story_facets,
                             )
 
-                            with bind_conception_model(_conception_model):
+                            with bind_conception_model(
+                                _conception_model,
+                                call_timeout_seconds=_CONCEPTION_CALL_TIMEOUT_SECONDS,
+                            ):
                                 story_facets_obj = await architect_story_facets(
                                     session,
                                     settings,
@@ -3363,7 +3373,10 @@ class WebTaskManager:
                                 "Story Architect failed; proceeding without facets", exc_info=True
                             )
 
-                        with bind_conception_model(_conception_model):
+                        with bind_conception_model(
+                            _conception_model,
+                            call_timeout_seconds=_CONCEPTION_CALL_TIMEOUT_SECONDS,
+                        ):
                             conception_result = await run_conception_pipeline(
                                 session,
                                 settings,

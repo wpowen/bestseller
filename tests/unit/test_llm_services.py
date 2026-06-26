@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from uuid import uuid4
 
@@ -85,14 +86,96 @@ class _FakeCatalogEntry:
 
 
 def test_bind_conception_model_sets_and_resets() -> None:
-    """The conception model contextvar is scoped and always restored."""
+    """The conception model + call-timeout contextvars are scoped and restored."""
     assert _llm_mod._conception_model_var.get() is None
-    with _llm_mod.bind_conception_model("minimax-m3"):
+    assert _llm_mod._conception_call_timeout_var.get() is None
+    with _llm_mod.bind_conception_model("minimax-m3", call_timeout_seconds=300):
         assert _llm_mod._conception_model_var.get() == "minimax-m3"
-        with _llm_mod.bind_conception_model("  "):  # blank → no-op (None)
+        assert _llm_mod._conception_call_timeout_var.get() == 300.0
+        with _llm_mod.bind_conception_model("  "):  # blank → no-op (None for both)
             assert _llm_mod._conception_model_var.get() is None
+            assert _llm_mod._conception_call_timeout_var.get() is None
         assert _llm_mod._conception_model_var.get() == "minimax-m3"
+        assert _llm_mod._conception_call_timeout_var.get() == 300.0
     assert _llm_mod._conception_model_var.get() is None
+    assert _llm_mod._conception_call_timeout_var.get() is None
+
+
+def test_conception_call_timeout_caps_wall_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A bound conception call-timeout must override the (large) role timeout
+    so a stalled provider is cancelled fast instead of burning the full
+    900s planner budget × retries into the no-progress watchdog."""
+    seen_timeouts: list[float] = []
+
+    async def _fake_wait_for(awaitable, timeout):  # noqa: ANN001
+        seen_timeouts.append(timeout)
+        # Close the un-awaited coroutine to avoid "never awaited" warnings,
+        # then short-circuit with a minimal valid completion.
+        if hasattr(awaitable, "close"):
+            awaitable.close()
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(_llm_mod.asyncio, "wait_for", _fake_wait_for)
+
+    async def _run() -> None:
+        # Real (non-mock) settings so _call_litellm runs; litellm is never
+        # actually reached because wait_for is faked.
+        settings = load_settings()
+        role_settings = settings.llm.planner  # role timeout = 900s
+        request = LLMCompletionRequest(
+            logical_role="planner",
+            system_prompt="s",
+            user_prompt="u",
+            fallback_response="fb",
+        )
+        with _llm_mod.bind_conception_model(None, call_timeout_seconds=300):
+            try:
+                await _llm_mod._call_litellm(request, role_settings)
+            except asyncio.TimeoutError:
+                pass
+
+    import asyncio as _asyncio
+
+    _asyncio.run(_run())
+    # The first wait_for is the acompletion call — capped at 300 (+5 grace),
+    # NOT the planner role's 900s.
+    assert seen_timeouts and seen_timeouts[0] == pytest.approx(305.0)
+
+
+def test_role_timeout_used_without_conception_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Outside conception (no binding) the role's own timeout applies."""
+    seen_timeouts: list[float] = []
+
+    async def _fake_wait_for(awaitable, timeout):  # noqa: ANN001
+        seen_timeouts.append(timeout)
+        if hasattr(awaitable, "close"):
+            awaitable.close()
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(_llm_mod.asyncio, "wait_for", _fake_wait_for)
+
+    async def _run() -> None:
+        settings = load_settings()
+        role_settings = settings.llm.planner  # 900s
+        request = LLMCompletionRequest(
+            logical_role="planner",
+            system_prompt="s",
+            user_prompt="u",
+            fallback_response="fb",
+        )
+        try:
+            await _llm_mod._call_litellm(request, role_settings)
+        except asyncio.TimeoutError:
+            pass
+
+    import asyncio as _asyncio
+
+    _asyncio.run(_run())
+    assert seen_timeouts and seen_timeouts[0] == pytest.approx(905.0)
 
 
 def test_conception_model_applied_when_no_project(

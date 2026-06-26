@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
+from contextlib import contextmanager
 import hashlib
 import importlib
 import logging
@@ -1655,6 +1657,31 @@ async def _call_litellm_with_retry(
 _PROJECT_MODEL_OVERRIDE_CACHE: dict[str, tuple[float, Any]] = {}
 _PROJECT_MODEL_OVERRIDE_TTL_SECONDS = 15.0
 
+# Conception runs *before* a DB project row exists, so its LLM calls carry
+# ``project_id=None`` and cannot resolve the per-book model from project
+# metadata. This contextvar lets a caller (the web conception runner) bind the
+# chosen catalog model for the duration of the conception pipeline so those
+# calls honour it too — keeping model selection consistent across the whole
+# flow (conception → planning → writing). It is consulted only as a last
+# resort (no per-call key, no project override), and is reset on scope exit so
+# it never leaks into the later planning/writing phases.
+_conception_model_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "bestseller_conception_model_catalog_key", default=None
+)
+
+
+@contextmanager
+def bind_conception_model(model_catalog_key: str | None):
+    """Bind a fallback catalog model for project-less (conception) LLM calls.
+
+    No-op when ``model_catalog_key`` is falsy. Safe to nest; always resets.
+    """
+    token = _conception_model_var.set((model_catalog_key or "").strip() or None)
+    try:
+        yield
+    finally:
+        _conception_model_var.reset(token)
+
 
 async def _resolve_project_model_override(
     session: AsyncSession, project_id: UUID | None
@@ -1719,10 +1746,16 @@ async def complete_text(
     # A per-call model-catalog override (e.g. a capable commercial-judge model) wins
     # over the book's per-project model so judging quality is independent of the
     # writer tier. Falls back silently when the entry is missing/unavailable.
-    if request.model_catalog_key:
+    # When neither a per-call key nor a project override applies (the
+    # conception phase, where no project row exists yet), fall back to the
+    # conception-bound model so the chosen model is used across the whole flow.
+    _effective_catalog_key = request.model_catalog_key
+    if _effective_catalog_key is None and request.project_id is None:
+        _effective_catalog_key = _conception_model_var.get()
+    if _effective_catalog_key:
         from bestseller.services.model_catalog import get_model_catalog_entry
 
-        _override_entry = get_model_catalog_entry(request.model_catalog_key)
+        _override_entry = get_model_catalog_entry(_effective_catalog_key)
         if _override_entry is not None and _override_entry.available:
             role_settings = _apply_model_override(role_settings, _override_entry)
     _warn_language_system_mismatch(request)

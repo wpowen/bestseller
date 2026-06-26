@@ -74,6 +74,141 @@ class FailingFlushSession(FakeSession):
         raise RuntimeError("connection closed during telemetry flush")
 
 
+class _FakeCatalogEntry:
+    def __init__(self, key: str) -> None:
+        self.id = key
+        self.model = key
+        self.api_base = "https://example.test/v1"
+        self.api_key_env = None
+        self.api_key_header = None
+        self.available = True
+
+
+def test_bind_conception_model_sets_and_resets() -> None:
+    """The conception model contextvar is scoped and always restored."""
+    assert _llm_mod._conception_model_var.get() is None
+    with _llm_mod.bind_conception_model("minimax-m3"):
+        assert _llm_mod._conception_model_var.get() == "minimax-m3"
+        with _llm_mod.bind_conception_model("  "):  # blank → no-op (None)
+            assert _llm_mod._conception_model_var.get() is None
+        assert _llm_mod._conception_model_var.get() == "minimax-m3"
+    assert _llm_mod._conception_model_var.get() is None
+
+
+def test_conception_model_applied_when_no_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Project-less (conception) calls honour the bound conception model."""
+    applied: list[object] = []
+    monkeypatch.setattr(
+        "bestseller.services.model_catalog.get_model_catalog_entry",
+        lambda key: _FakeCatalogEntry(key) if key == "minimax-m3" else None,
+    )
+    original = _llm_mod._apply_model_override
+    monkeypatch.setattr(
+        _llm_mod,
+        "_apply_model_override",
+        lambda rs, entry: (applied.append(entry) or original(rs, entry)),
+    )
+
+    async def _run() -> None:
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        with _llm_mod.bind_conception_model("minimax-m3"):
+            await complete_text(
+                FakeSession(),
+                settings,
+                LLMCompletionRequest(
+                    logical_role="writer",
+                    system_prompt="system",
+                    user_prompt="user",
+                    fallback_response="fb",
+                    project_id=None,
+                ),
+            )
+
+    import asyncio
+
+    asyncio.run(_run())
+    assert len(applied) == 1 and getattr(applied[0], "id", None) == "minimax-m3"
+
+
+def test_conception_model_ignored_when_project_id_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real project_id means the per-project path owns model choice — the
+    conception fallback must not leak in (it would override planning/writing)."""
+    applied: list[object] = []
+    monkeypatch.setattr(
+        "bestseller.services.model_catalog.get_model_catalog_entry",
+        lambda key: _FakeCatalogEntry(key) if key == "minimax-m3" else None,
+    )
+    original = _llm_mod._apply_model_override
+    monkeypatch.setattr(
+        _llm_mod,
+        "_apply_model_override",
+        lambda rs, entry: (applied.append(entry) or original(rs, entry)),
+    )
+
+    async def _run() -> None:
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        with _llm_mod.bind_conception_model("minimax-m3"):
+            await complete_text(
+                FakeSession(),
+                settings,
+                LLMCompletionRequest(
+                    logical_role="writer",
+                    system_prompt="system",
+                    user_prompt="user",
+                    fallback_response="fb",
+                    project_id=uuid4(),
+                ),
+            )
+
+    import asyncio
+
+    asyncio.run(_run())
+    assert applied == []  # conception var not consulted when a project_id is set
+
+
+def test_per_call_catalog_key_wins_over_conception_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit per-call model_catalog_key takes precedence over the bound
+    conception model."""
+    applied: list[object] = []
+    monkeypatch.setattr(
+        "bestseller.services.model_catalog.get_model_catalog_entry",
+        lambda key: _FakeCatalogEntry(key),
+    )
+    original = _llm_mod._apply_model_override
+    monkeypatch.setattr(
+        _llm_mod,
+        "_apply_model_override",
+        lambda rs, entry: (applied.append(entry) or original(rs, entry)),
+    )
+
+    async def _run() -> None:
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        with _llm_mod.bind_conception_model("conception-model"):
+            await complete_text(
+                FakeSession(),
+                settings,
+                LLMCompletionRequest(
+                    logical_role="writer",
+                    system_prompt="system",
+                    user_prompt="user",
+                    fallback_response="fb",
+                    project_id=None,
+                    model_catalog_key="explicit-model",
+                ),
+            )
+
+    import asyncio
+
+    asyncio.run(_run())
+    assert len(applied) == 1 and getattr(applied[0], "id", None) == "explicit-model"
+
+
 def test_complete_text_records_mock_run_when_mock_enabled() -> None:
     async def _run() -> None:
         session = FakeSession()

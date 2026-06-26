@@ -3323,7 +3323,13 @@ class WebTaskManager:
                     from bestseller.services.conception import (
                         run_conception_pipeline,
                     )
+                    from bestseller.services.llm import bind_conception_model
 
+                    # Per-book model chosen at creation/conception time. Bound
+                    # for the conception phase so its project-less LLM calls use
+                    # the selected model too (planning/writing already resolve it
+                    # from project metadata). Reset automatically on scope exit.
+                    _conception_model = self._pending_project_model(task_id)
                     genre_key = str(payload.get("_genre_key", ""))
                     if genre_key:
                         # ── Story Architect: generate StoryFacets before conception ──
@@ -3333,14 +3339,15 @@ class WebTaskManager:
                                 architect_story_facets,
                             )
 
-                            story_facets_obj = await architect_story_facets(
-                                session,
-                                settings,
-                                primary_genre=genre_key,
-                                language=str(payload.get("language", "zh-CN")),
-                                genre_key=genre_key,
-                                user_hints=user_hints,
-                            )
+                            with bind_conception_model(_conception_model):
+                                story_facets_obj = await architect_story_facets(
+                                    session,
+                                    settings,
+                                    primary_genre=genre_key,
+                                    language=str(payload.get("language", "zh-CN")),
+                                    genre_key=genre_key,
+                                    user_hints=user_hints,
+                                )
                             progress(
                                 "story_architect_complete",
                                 {
@@ -3356,17 +3363,18 @@ class WebTaskManager:
                                 "Story Architect failed; proceeding without facets", exc_info=True
                             )
 
-                        conception_result = await run_conception_pipeline(
-                            session,
-                            settings,
-                            genre_key=genre_key,
-                            genre=str(payload.get("genre") or ""),
-                            sub_genre=str(payload.get("sub_genre") or ""),
-                            chapter_count=int(payload["target_chapters"]),
-                            user_hints=user_hints,
-                            story_facets=story_facets_obj,
-                            progress=progress,
-                        )
+                        with bind_conception_model(_conception_model):
+                            conception_result = await run_conception_pipeline(
+                                session,
+                                settings,
+                                genre_key=genre_key,
+                                genre=str(payload.get("genre") or ""),
+                                sub_genre=str(payload.get("sub_genre") or ""),
+                                chapter_count=int(payload["target_chapters"]),
+                                user_hints=user_hints,
+                                story_facets=story_facets_obj,
+                                progress=progress,
+                            )
                         effective_premise = conception_result.premise
                         effective_title = conception_result.title
                         self._update_task_title(task_id, effective_title)

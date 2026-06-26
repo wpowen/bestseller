@@ -6495,7 +6495,7 @@
             ${slug ? `SLUG · ${esc(slug)}` : 'SLUG · —'}
             <span class="pipe">|</span>
             <span class="tc-model-wrap">模型 · ${slug
-              ? taskModelSelectHtml(slug, (projectBySlug.get(slug) || {}).llm_model_id, llmModel || meta.writer_model || meta.model)
+              ? taskModelSelectHtml(slug, (projectBySlug.get(slug) || {}).llm_model_id || (task.payload && task.payload.llm_model_id) || '', llmModel || meta.writer_model || meta.model)
               : esc(llmModel || meta.writer_model || meta.model || '—')}</span>
             <span class="pipe">|</span>
             创建 ${esc(timeStr)}

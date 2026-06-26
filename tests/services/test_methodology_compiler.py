@@ -67,13 +67,13 @@ def test_writing_methodology_bridge_can_be_dropped_keeping_proven_levers():
     writing_methodology·scene bridge removes the abstract说教 group while the
     budget-managed proven craft levers (物料具体化/场景锚定/金句/意象) survive —
     the freed budget refills with them rather than shrinking the block."""
-    common = dict(
-        stage=MethodologyStage.PROSE_SCENE,
-        prompt_pack_key="suspense-mystery",
-        language="zh-CN",
-        chapter_no=3,
-        token_budget=3200,
-    )
+    common = {
+        "stage": MethodologyStage.PROSE_SCENE,
+        "prompt_pack_key": "suspense-mystery",
+        "language": "zh-CN",
+        "chapter_no": 3,
+        "token_budget": 3200,
+    }
     on = compile_methodology(**common, include_writing_methodology_bridge=True)
     off = compile_methodology(**common, include_writing_methodology_bridge=False)
 
@@ -85,3 +85,21 @@ def test_writing_methodology_bridge_can_be_dropped_keeping_proven_levers():
     # default keeps the bridge (planner/review callers rely on it)
     default = compile_methodology(**common)
     assert "writing_methodology · scene" in default.text
+
+
+def test_prose_scene_includes_arena_fusion_actions_without_abstract_bridge():
+    result = compile_methodology(
+        stage=MethodologyStage.PROSE_SCENE,
+        prompt_pack_key="suspense-mystery",
+        language="zh-CN",
+        chapter_no=100,
+        chapter_position=ChapterPosition.MIDGAME,
+        token_budget=2200,
+        include_writing_methodology_bridge=False,
+    )
+
+    assert "横测胜出融合写法" in result.text
+    assert "不可逆代价或倒计时" in result.text
+    assert "每 300-500 字制造一个来自行动结果的具体问题" in result.text
+    assert "压迫 → 选择 → 执行 → 反馈" in result.text
+    assert "writing_methodology · scene" not in result.text

@@ -11,16 +11,19 @@ UI can show which models are actually usable on this deployment.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from functools import lru_cache
+import logging
 from pathlib import Path
 from typing import Any
 
-import yaml
 from pydantic import BaseModel, Field
+import yaml
+
+from bestseller.settings import get_runtime_env_value
 
 _CATALOG_PATH = Path(__file__).resolve().parents[3] / "config" / "model_catalog.yaml"
+logger = logging.getLogger(__name__)
 
 # Project metadata key holding the selected catalog entry id.
 PROJECT_MODEL_ID_KEY = "llm_model_id"
@@ -47,7 +50,7 @@ class ModelCatalogEntry(BaseModel):
 def _api_key_present(api_key_env: str | None) -> bool:
     if not api_key_env:
         return True  # no key required (e.g. local/mock)
-    return bool(os.environ.get(api_key_env))
+    return bool(get_runtime_env_value(api_key_env))
 
 
 @lru_cache(maxsize=1)
@@ -68,6 +71,7 @@ def load_model_catalog() -> list[ModelCatalogEntry]:
         try:
             entry = ModelCatalogEntry.model_validate(dict(raw))
         except Exception:
+            logger.debug("Skipping invalid model catalog entry.", exc_info=True)
             continue
         entries.append(
             entry.model_copy(update={"available": _api_key_present(entry.api_key_env)})

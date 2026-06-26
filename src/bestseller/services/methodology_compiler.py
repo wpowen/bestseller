@@ -8,6 +8,7 @@ their existing prompt without adopting a new prompt object model.
 
 from __future__ import annotations
 
+# ruff: noqa: RUF003
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -30,6 +31,9 @@ from bestseller.services.quality_levers.character_embodiment import (
     extract_embodiment,
     render_embodiment_block,
 )
+from bestseller.services.quality_levers.cinematic_pov import (
+    render_cinematic_pov_block,
+)
 from bestseller.services.quality_levers.emotion_choreography import (
     render_emotion_choreography_block,
 )
@@ -46,11 +50,11 @@ from bestseller.services.quality_levers.material_concreteness import (
 from bestseller.services.quality_levers.prose_craft_techniques import (
     render_prose_craft_block,
 )
+from bestseller.services.quality_levers.prose_prompt_fusion import (
+    render_prose_prompt_fusion_block,
+)
 from bestseller.services.quality_levers.prose_style_anchors import (
     render_style_anchor_block,
-)
-from bestseller.services.quality_levers.cinematic_pov import (
-    render_cinematic_pov_block,
 )
 from bestseller.services.quality_levers.rhythm_engineering import render_rhythm_block
 from bestseller.services.quality_levers.scene_grounding import (
@@ -132,8 +136,13 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         # real-time camera, effective reaction-shots. Top always-on block so the
         # budget never starves it (embodiment above is data-dependent / often empty).
         "cinematic_pov_current",
-        "writing_methodology_scene",
+        # 2026-06 prose prompt arena winner blend: stakes-clock + question-chain
+        # + embodiment + concrete materials + payoff feedback + signature image.
+        # It turns abstract methodology into page actions, so it belongs before
+        # optional craft/imagery flourish and before abstract bridge sections.
         "prompt_pack_scene_writer",
+        "prose_prompt_fusion_current",
+        "writing_methodology_scene",
         "book_methodology_current",
         "prose_style_anchors",
         "prose_lever_framing",
@@ -171,8 +180,9 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
 _PROSE_SCENE_SHUANGWEN_PRIORITY: tuple[str, ...] = (
     "character_embodiment_current",
     "cinematic_pov_current",
-    "writing_methodology_scene",
     "prompt_pack_scene_writer",
+    "prose_prompt_fusion_current",
+    "writing_methodology_scene",
     "book_methodology_current",
     "prose_style_anchors",
     "material_concretization_current",  # 具体化 = 爽点落地，留高位
@@ -244,6 +254,7 @@ def compile_methodology(
         prompt_pack_key=prompt_pack_key,
         chapter_number=chapter_number,
         chapter_position=position,
+        language=language,
         story_bible=story_bible,
         include_writing_methodology_bridge=include_writing_methodology_bridge,
     )
@@ -290,6 +301,7 @@ def _sections_for_stage(
     prompt_pack_key: str | None,
     chapter_number: int,
     chapter_position: ChapterPosition,
+    language: str,
     story_bible: Mapping[str, Any] | None = None,
     include_writing_methodology_bridge: bool = True,
 ) -> list[_Section]:
@@ -432,6 +444,15 @@ def _sections_for_stage(
             key="cinematic_pov_current",
             text=_safe(render_cinematic_pov_block, language="zh"),
             source="cinematic_pov.yaml",
+        )
+        # Arena-proven fusion block. Unlike the abstract methodology bridge, this
+        # is already operationalized as concrete page actions, so it remains on
+        # in lean writer mode.
+        _append_block(
+            sections,
+            key="prose_prompt_fusion_current",
+            text=_safe(render_prose_prompt_fusion_block, language=language),
+            source="prose_prompt_arena_fusion",
         )
         # Framing FIRST (anti-regression): the writer-levers A/B showed a budget
         # writer reads the stacked 留白/克制 guards as "write less" and cuts ~30%

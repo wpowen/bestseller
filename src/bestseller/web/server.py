@@ -1080,9 +1080,19 @@ def _model_catalog_payload(
 
 
 def _set_project_model_payload(
-    settings: AppSettings, slug: str, model_id: str | None
+    settings: AppSettings,
+    slug: str,
+    model_id: str | None,
+    task_manager: "WebTaskManager | None" = None,
 ) -> dict[str, object]:
-    """Set (or clear when falsy) the project's selected catalog model id."""
+    """Set (or clear when falsy) the project's selected catalog model id.
+
+    When the DB project row does not exist yet — the book is still in its
+    in-process conception phase, before materialization — the choice is stashed
+    on the active task so the conception runner can fold it into the project
+    metadata at creation time. This keeps the dashboard model picker usable from
+    the moment the book card appears, rather than erroring until conception ends.
+    """
     from bestseller.services.model_catalog import (
         PROJECT_MODEL_ID_KEY,
         get_model_catalog_entry,
@@ -1099,11 +1109,11 @@ def _set_project_model_payload(
                 f"({entry.api_key_env})."
             )
 
-    async def _apply() -> str | None:
+    async def _apply() -> bool:
         async with session_scope(settings) as session:
             project = await get_project_by_slug(session, slug)
             if project is None:
-                raise ValueError(f"Project '{slug}' was not found.")
+                return False
             metadata = dict(project.metadata_json or {})
             if normalized is None:
                 metadata.pop(PROJECT_MODEL_ID_KEY, None)
@@ -1111,10 +1121,17 @@ def _set_project_model_payload(
                 metadata[PROJECT_MODEL_ID_KEY] = normalized
             project.metadata_json = metadata
             await session.commit()
-            return normalized
+            return True
 
-    selected = asyncio.run(_apply())
-    return {"slug": slug, "selected": selected, "ok": True}
+    applied = asyncio.run(_apply())
+    if applied:
+        return {"slug": slug, "selected": normalized, "ok": True}
+    # No DB project row yet — defer to the in-flight conception task if any.
+    if task_manager is not None and task_manager.set_pending_project_model(
+        slug, normalized
+    ):
+        return {"slug": slug, "selected": normalized, "ok": True, "deferred": True}
+    raise ValueError(f"Project '{slug}' was not found.")
 
 
 def _delete_project_full(
@@ -2265,6 +2282,41 @@ class WebTaskManager:
         with self._lock:
             task = self._latest_task_for_slug(slug, _ACTIVE_TASK_STATUSES)
             return task.to_dict() if task is not None else None
+
+    def set_pending_project_model(self, slug: str, model_id: str | None) -> bool:
+        """Stash a per-book model choice on the active (conception) task.
+
+        Used when the dashboard model picker is changed before the DB project
+        row exists. The conception runner reads this via
+        ``_pending_project_model`` at materialization time and folds it into the
+        new project's metadata. Returns ``True`` when an active task was found
+        and updated, ``False`` otherwise.
+        """
+        slug = str(slug or "").strip()
+        if not slug:
+            return False
+        normalized = (model_id or "").strip() or None
+        with self._lock:
+            task = self._latest_task_for_slug(slug, _ACTIVE_TASK_STATUSES)
+            if task is None:
+                return False
+            payload = dict(task.payload or {})
+            if normalized is None:
+                payload.pop("llm_model_id", None)
+            else:
+                payload["llm_model_id"] = normalized
+            task.payload = payload
+            self._save_to_disk()
+            return True
+
+    def _pending_project_model(self, task_id: str) -> str | None:
+        """Read a per-book model choice stashed on the task payload (or None)."""
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or not isinstance(task.payload, dict):
+                return None
+            value = task.payload.get("llm_model_id")
+            return str(value).strip() or None if value else None
 
     def get_task(self, task_id: str) -> dict[str, object] | None:
         with self._lock:
@@ -3419,6 +3471,13 @@ class WebTaskManager:
                 extra_meta = payload.get("metadata")
                 if isinstance(extra_meta, dict):
                     project_metadata.update(extra_meta)
+                # A per-book model picked from the dashboard *during* conception
+                # (before this project row existed) was stashed on the task
+                # payload by _set_project_model_payload. Fold it in so the
+                # writing phase honours the choice. See set_pending_project_model.
+                pending_model = self._pending_project_model(task_id)
+                if pending_model:
+                    project_metadata["llm_model_id"] = pending_model
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
                 target_chapters = int(payload["target_chapters"])
@@ -3737,6 +3796,17 @@ class WebTaskManager:
             "_run_conception": is_new_project,
             "_genre_key": genre_key,
         }
+        # Per-book writing model chosen in the creation form (Step 3). Validated
+        # against the catalog — an unknown/unavailable pick silently falls back
+        # to the global default. Rides payload → task.payload → project metadata
+        # (llm_model_id) via _pending_project_model at materialization.
+        _model_id = str(payload.get("llm_model_id") or "").strip()
+        if _model_id:
+            from bestseller.services.model_catalog import get_model_catalog_entry
+
+            _entry = get_model_catalog_entry(_model_id)
+            if _entry is not None and _entry.available:
+                autowrite_payload["llm_model_id"] = _model_id
         # Optional reader-orientation override (男频/女频). Empty/None lets the
         # heat-search agent + genre preset decide; an explicit pick is threaded
         # through as the project audience and a conception hint.
@@ -7010,7 +7080,6 @@ async def _load_execution_progress_payload(
     from bestseller.infra.db.models import (
         ChapterModel,
         PlanningArtifactVersionModel,
-        ProjectModel,
     )
 
     async with session_scope(settings) as session:
@@ -11205,6 +11274,7 @@ def serve_web_app(
                             settings,
                             model_post_slug,
                             str(payload.get("model_id") or ""),
+                            task_manager=task_manager,
                         )
                     )
                     return

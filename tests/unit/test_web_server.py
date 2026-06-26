@@ -669,6 +669,47 @@ def test_create_autowrite_mints_new_card_for_fresh_slug(
     assert result["task_id"] in manager._tasks
 
 
+def test_set_pending_project_model_stashes_choice_on_active_task(
+    tmp_path: Path,
+) -> None:
+    """Picking a model while a book is still in conception (no DB row) must
+    durably stash the choice on the active task so materialization honours it."""
+    manager = web_server.WebTaskManager(persist_path=tmp_path / "tasks.json")
+    task = _stuck_autowrite_task("custom-xianxia-1782402246")
+    task.status = "running"
+    task.current_stage = "conception_character"
+    task.payload = {"slug": "custom-xianxia-1782402246", "_run_conception": True}
+    manager._tasks[task.task_id] = task
+
+    assert manager.set_pending_project_model(
+        "custom-xianxia-1782402246", "minimax-m3"
+    )
+    assert manager._pending_project_model(task.task_id) == "minimax-m3"
+    # Persisted to disk so a web restart mid-conception keeps the choice.
+    assert "minimax-m3" in (tmp_path / "tasks.json").read_text(encoding="utf-8")
+
+
+def test_set_pending_project_model_clears_choice_when_falsy(
+    tmp_path: Path,
+) -> None:
+    manager = web_server.WebTaskManager(persist_path=tmp_path / "tasks.json")
+    task = _stuck_autowrite_task("custom-xianxia-1782402246")
+    task.status = "running"
+    task.payload = {"slug": "custom-xianxia-1782402246", "llm_model_id": "minimax-m3"}
+    manager._tasks[task.task_id] = task
+
+    assert manager.set_pending_project_model("custom-xianxia-1782402246", None)
+    assert manager._pending_project_model(task.task_id) is None
+
+
+def test_set_pending_project_model_returns_false_without_active_task(
+    tmp_path: Path,
+) -> None:
+    """No conception task → the caller falls back to the 'not found' error."""
+    manager = web_server.WebTaskManager(persist_path=tmp_path / "tasks.json")
+    assert manager.set_pending_project_model("ghost-slug", "minimax-m3") is False
+
+
 def test_dashboard_task_filter_keeps_only_executing_tasks() -> None:
     tasks = [
         {"task_id": "queued", "status": "queued"},

@@ -33,6 +33,19 @@ def test_availability_follows_env_key(monkeypatch):
     assert by_id["claude-opus-4-5"].available is False
 
 
+def test_availability_uses_dotenv_merged_runtime_env(monkeypatch):
+    monkeypatch.delenv("QWEN_CODING_PLAN_API_KEY", raising=False)
+    monkeypatch.setattr(
+        mc,
+        "get_runtime_env_value",
+        lambda name: "dotenv-key" if name == "QWEN_CODING_PLAN_API_KEY" else None,
+    )
+
+    by_id = {e.id: e for e in mc.load_model_catalog()}
+
+    assert by_id["qwen3.7-plus-coding-plan"].available is True
+
+
 def test_get_entry_by_id():
     assert mc.get_model_catalog_entry("minimax-m3").id == "minimax-m3"
     assert mc.get_model_catalog_entry("nope") is None

@@ -4229,7 +4229,7 @@
         <div class="summary-row"><span class="lbl">反常识爽点</span><span class="val" id="sumHook">-</span></div>
         <div class="summary-row"><span class="lbl">脑洞组合</span><span class="val" id="sumConcept">-</span></div>
         <div class="summary-row"><span class="lbl" id="sumChLabel">章节数</span><span class="val" id="sumCh">-</span></div>
-        <div class="summary-row"><span class="lbl">写作模型</span><span class="val" id="sumModel">-</span></div>
+        <div class="summary-row"><span class="lbl">写作模型</span><span class="val"><select id="createModelSelect" class="tc-model-select" title="这本书构思完成后从这个模型开始写作"><option value="">全局默认</option></select></span></div>
         <div class="summary-row summary-option">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
             <input type="checkbox" id="draftModeToggle" style="width:18px;height:18px;">
@@ -8352,7 +8352,26 @@
       if (sumLbl) sumLbl.textContent = '章节数';
       $('#sumCh').textContent = `${chapterCount} 章`;
     }
-    $('#sumModel').textContent = llmModel || '-';
+    populateCreateModelSelect();
+  }
+
+  // Model picker for the creation form (Step 3). Lets the user choose which
+  // LLM writes this book up front; the choice rides the quickstart payload as
+  // `llm_model_id` → task payload → project metadata at materialization.
+  function populateCreateModelSelect() {
+    const sel = $('#createModelSelect');
+    if (!sel) return;
+    const prev = sel.value;  // preserve the user's pick across re-renders
+    const g = ((llmModel || '').replace('openai/', '') || '默认');
+    let html = `<option value="">全局默认 · ${esc(g)}</option>`;
+    html += (modelCatalog || []).map(m => {
+      const dis = m.available ? '' : 'disabled';
+      const label = (m.vendor ? m.vendor + ' · ' : '') + m.display_name
+        + (m.available ? '' : '（未配置）');
+      return `<option value="${esc(m.id)}" ${dis}>${esc(label)}</option>`;
+    }).join('');
+    sel.innerHTML = html;
+    if (prev) sel.value = prev;
   }
 
   // Story enhancers (let the story be good): book-level hard outline contracts.
@@ -8436,6 +8455,7 @@
           pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
           draft_mode: !!$('#draftModeToggle').checked,
           story_enhancers: collectStoryEnhancers(),
+          llm_model_id: ($('#createModelSelect')?.value || undefined),
         }),
       });
       const data = await res.json();

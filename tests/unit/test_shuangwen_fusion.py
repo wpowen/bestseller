@@ -59,17 +59,21 @@ def test_shuangwen_priority_keeps_concrete_grounding_levers_high() -> None:
 
 @pytest.mark.parametrize("pack", ["xianxia-upgrade-core", "apocalypse-supply-chain"])
 def test_compile_orders_payoff_before_craft_in_shuangwen_mode(pack: str) -> None:
+    # 预算需"装下所有杠杆"以测排序不变量(与生产默认1500无关,此为宽松测试值)。
+    # 2026-06-29 fusion block 增位置感知块(开篇炸点律/中段持续追读律,各~150token)后,
+    # 4200 不再装下最低优先级的金句文采杠杆 → 抬到 4800 恢复"装下所有"前提。
+    budget = 4800
     base = compile_methodology(
         stage=MethodologyStage.PROSE_SCENE,
         prompt_pack_key=pack,
         chapter_no=7,
-        token_budget=4200,  # production budget — fits all levers + cinematic_pov
+        token_budget=budget,
     )
     sw = compile_methodology(
         stage=MethodologyStage.PROSE_SCENE,
         prompt_pack_key=pack,
         chapter_no=7,
-        token_budget=4200,
+        token_budget=budget,
         shuangwen_mode=True,
     )
     base_srcs = list(base.used_sources)

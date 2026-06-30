@@ -153,3 +153,87 @@ def test_critical_floor_not_triggered_when_emotion_carries():
                               tags=["职场", "逆袭", "现实"], genre="现实")
     assert {d.key: d.score for d in v.dimensions}["emotion_charge"] >= 3.0
     assert not any("命门" in f for f in v.findings)  # 未被命门封顶
+
+
+@pytest.mark.unit
+def test_embodied_stakes_emotion_clears_floor_without_keywords():
+    # show-don't-tell 悬疑/怪谈：靠两难+切肤+迫近+骇异承载情绪，无爽文情绪词。
+    # 此前 emotion_charge≈1.5 被命门封顶 78；修复后具身通道应 ≥3.0。
+    # (同 prose 层 scene-emotion-hook-scorer-punishes-showdonttell 的器械错。)
+    embodied = (
+        "凌晨三点，殡仪馆第七具遗体睁开了眼。\n"
+        "他能补全死者没说完的那句话，让人回魂——代价是划走他自己等长的寿命。\n"
+        "他攒下三百二十个时辰，只为撬开妹妹的工单。可签收人那栏，写着他自己的名字。\n"
+        "他现在要决定：是让妹妹活，还是让自己有命去救她。"
+    )
+    v = evaluate_blurb_appeal(
+        title="我替死神签收加班", synopsis=embodied, premise=embodied[:40],
+        tags=["都市怪谈", "悬疑", "代价流"], genre="都市",
+    )
+    assert {d.key: d.score for d in v.dimensions}["emotion_charge"] >= 3.0
+
+
+@pytest.mark.unit
+def test_embodied_emotion_is_noop_safe_for_keyword_blurbs():
+    # 既有爽文强稿(关键词通道已满)：max() 取较高者，分数不被降低。
+    strong = evaluate_blurb_appeal(
+        title=_STRONG_TITLE, synopsis=_STRONG_SYN, premise=_STRONG_PREMISE,
+        tags=_STRONG_TAGS, genre="都市", sub_genre="赘婿",
+    )
+    assert {d.key: d.score for d in strong.dimensions}["emotion_charge"] >= 3.9
+
+
+@pytest.mark.unit
+def test_selling_triad_recognizes_nonshuang_identity_and_conflict():
+    # 题材中立：身份=「殡仪馆夜班工/唯一能…的人」(非爽文身份词)，冲突=两难/迫近/骇异结构。
+    # 此前 selling_triad=2.0(只认出代价)；修复后 ≥4.0(身份+冲突+代价≥2要素)。
+    syn = (
+        "凌晨三点，殡仪馆第七具遗体睁开了眼。\n"
+        "李拙是全市唯一能看见死人「没说完的话」的人，补全它，死者就能回魂七小时——"
+        "代价是从他自己寿命里划走等长的时辰。\n"
+        "他攒下三百二十个时辰，只为撬开妹妹的工单。可签收人那一栏，写着他自己的名字。\n"
+        "他只剩一个选择：让妹妹活，还是留着这条命去查清，那场火里到底是谁先松的手。"
+    )
+    v = evaluate_blurb_appeal(
+        title="我替死神签收加班", synopsis=syn, premise=syn[:40],
+        tags=["都市怪谈", "悬疑", "代价流"], genre="都市",
+    )
+    assert {d.key: d.score for d in v.dimensions}["selling_triad"] >= 4.0
+    assert v.total >= 80.0  # 顶尖 show-don't-tell 简介应达标(此前 75.9 卡在 selling_triad)
+
+
+@pytest.mark.unit
+def test_selling_triad_noop_safe_for_shuang_blurb():
+    # 爽文强稿三要素本就齐 → 仍 5.0，结构通道不降分。
+    strong = evaluate_blurb_appeal(
+        title=_STRONG_TITLE, synopsis=_STRONG_SYN, premise=_STRONG_PREMISE,
+        tags=_STRONG_TAGS, genre="都市", sub_genre="赘婿",
+    )
+    assert {d.key: d.score for d in strong.dimensions}["selling_triad"] >= 5.0
+
+
+@pytest.mark.unit
+def test_selling_triad_setting_only_blurb_stays_weak():
+    # 回归守卫：纯设定罗列(有题材氛围、无人物处境/冲突/代价)不应被结构通道误抬。
+    setting_only = (
+        "这是一个灵气复苏的世界，宗门林立，天材地宝遍地。\n"
+        "广袤的大陆上流传着上古的传说，无数修士追逐着长生的奥秘。"
+    )
+    v = evaluate_blurb_appeal(title="苍穹界", synopsis=setting_only,
+                              premise=setting_only[:40], tags=["玄幻"], genre="玄幻")
+    assert {d.key: d.score for d in v.dimensions}["selling_triad"] <= 2.0
+
+
+@pytest.mark.unit
+def test_cerebral_cold_blurb_still_below_emotion_floor():
+    # 回归守卫：烧脑但不抓人的稿(有代价词、无两难/切肤/迫近结构)仍须 < 3.0，
+    # 不被具身通道误抬(否则重新引入命门要堵的 bug)。
+    cerebral = (
+        "合同签了，违约金二十万，他连饭都快吃不起。\n"
+        "纪燃蹲在出租屋地板上数最后几张钞票，前同事在朋友圈庆祝升职。\n"
+        "他闭上眼，看见那份合同的灰色字迹：第七条第三款，逻辑链断在实际损失举证四个字上。\n"
+        "代价是当晚右耳失聪三小时。下一次用，会剥走什么？"
+    )
+    v = evaluate_blurb_appeal(title="x", synopsis=cerebral, premise=cerebral[:40],
+                              tags=["都市异能", "规则怪谈"], genre="都市")
+    assert {d.key: d.score for d in v.dimensions}["emotion_charge"] < 3.0

@@ -2435,6 +2435,45 @@ async def run_conception_pipeline(
                 report.premise.total, report.blurb.total, _t_total,
                 report.overall_grade, report.meets_bar, attempts,
             )
+            # ── 一句话卖点【前置·严格】闸门（logline_gate v2，读者视角语义判别）──
+            # 对最终卖点(logline/premise)跑 7 维/两档判官，verdict 附加进 appeal 报告(可见)。
+            # 默认 advisory（仅持久化+日志）；config logline_gate.block_expansion=true 时，
+            # REJECT 经展示后复用既有 AppealBarNotMetError 拦截链(不静默进规划)。fail-open。
+            try:
+                from bestseller.services.logline_gate import (  # noqa: PLC0415
+                    LoglineAction,
+                    evaluate_logline_gate,
+                    load_logline_gate_config,
+                )
+
+                _lg_cfg = load_logline_gate_config(_appeal_cfg)
+                if _lg_cfg.get("enabled", True):
+                    _logline_text = (
+                        (writing_profile.get("market", {}) or {}).get("logline")
+                        if isinstance(writing_profile, dict)
+                        else None
+                    ) or premise
+                    _lg = await evaluate_logline_gate(
+                        session, settings,
+                        logline=str(_logline_text or ""), premise=premise,
+                        genre=_ap_genre, sub_genre=_ap_sub, config=_appeal_cfg,
+                    )
+                    story_appeal_report["logline_gate"] = _lg.to_dict()
+                    logger.info(
+                        "Logline gate: action=%s overall=%.2f weakest=%s%s",
+                        _lg.action.value, _lg.overall, _lg.weakest_axis,
+                        (" | " + " ; ".join(_lg.reasons[:3])) if _lg.reasons else "",
+                    )
+                    if bool(_lg_cfg.get("block_expansion", False)) \
+                            and _lg.action is LoglineAction.REJECT:
+                        _appeal_block_below = True
+                        _appeal_blocked_feedback = (
+                            "一句话卖点未过前置闸门（不予扩充）：\n"
+                            + "\n".join(_lg.reasons)
+                            + "\n\n整改方向：\n" + "\n".join(_lg.fix_directives)
+                        )
+            except Exception:
+                logger.warning("Logline gate evaluation failed (non-fatal)", exc_info=True)
             # 真拦截：有界重生用尽仍不达标 + 开关开 → 记下决定，try 块外再抛
             # （放块外，确保不被下面 fail-open 的 except 吞掉）。
             if bool((_appeal_cfg.get("meets_bar", {}) or {}).get("block_below_bar", False)) \

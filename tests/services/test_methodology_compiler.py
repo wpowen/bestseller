@@ -103,3 +103,71 @@ def test_prose_scene_includes_arena_fusion_actions_without_abstract_bridge():
     assert "每 300-500 字制造一个来自行动结果的具体问题" in result.text
     assert "压迫 → 选择 → 执行 → 反馈" in result.text
     assert "writing_methodology · scene" not in result.text
+
+
+def test_prose_scene_enforces_process_first_anti_ai_structure():
+    """PROSE_SCENE must carry the anti-conclusion-first (去AI腔) structural rules.
+
+    Root cause of the reported AI flavour was 结论先行/总分总 discourse structure,
+    which the page-level action block alone did not address. These rules close it.
+    """
+
+    result = compile_methodology(
+        stage=MethodologyStage.PROSE_SCENE,
+        prompt_pack_key="suspense-mystery",
+        language="zh-CN",
+        chapter_no=100,
+        chapter_position=ChapterPosition.MIDGAME,
+        token_budget=2200,
+        include_writing_methodology_bridge=False,
+    )
+
+    assert "去AI腔铁律" in result.text
+    assert "不要结论先行/总分总" in result.text
+    assert "当叙事主句" in result.text  # 否定动作主句禁令
+    assert "硬造比喻" in result.text
+    assert "逐层透出" in result.text
+    # 铁律必须排在页面动作之前(最高优先,避免被预算或顺序淹没)
+    assert result.text.index("去AI腔铁律") < result.text.index("横测胜出融合写法")
+
+
+def _prose_text(position: ChapterPosition) -> str:
+    return compile_methodology(
+        stage=MethodologyStage.PROSE_SCENE,
+        prompt_pack_key="suspense-mystery",
+        language="zh-CN",
+        chapter_no=100,
+        chapter_position=position,
+        token_budget=2200,
+        include_writing_methodology_bridge=False,
+    ).text
+
+
+def test_prose_scene_opening_gets_blind_validated_hook_block():
+    """开篇章必须带'开篇炸点律'(前300字判官 O1/O3=100%)，且不带中段块。"""
+    text = _prose_text(ChapterPosition.OPENING)
+    assert "开篇炸点律" in text
+    assert "前150字内主角立刻登场" in text
+    assert "严禁用起床" in text  # 开场禁忌
+    assert "中段持续追读律" not in text
+    # 开篇炸点律最高优先,排在去AI腔铁律之前
+    assert text.index("开篇炸点律") < text.index("去AI腔铁律")
+
+
+def test_prose_scene_midchapter_gets_blind_validated_retention_block():
+    """中段章必须带'中段持续追读律'(第50章老读者判官 M2/M5=100%)+反巧合禁忌，不带开篇块。"""
+    for position in (ChapterPosition.EARLY, ChapterPosition.MIDGAME, ChapterPosition.CLIMAX):
+        text = _prose_text(position)
+        assert "中段持续追读律" in text, position
+        assert "单章必须不可逆推进" in text, position
+        assert "成长可见" in text, position
+        assert "强行开挂" in text, position  # 反巧合堆砌禁忌
+        assert "开篇炸点律" not in text, position
+
+
+def test_prose_scene_unknown_position_is_position_invariant_only():
+    """未知位置只给位置无关基底(去AI腔+页面动作)，不误加开篇/中段块。"""
+    text = _prose_text(ChapterPosition.UNKNOWN)
+    assert "去AI腔铁律" in text
+    assert "开篇炸点律" not in text
+    assert "中段持续追读律" not in text

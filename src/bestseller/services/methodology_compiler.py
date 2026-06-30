@@ -451,7 +451,11 @@ def _sections_for_stage(
         _append_block(
             sections,
             key="prose_prompt_fusion_current",
-            text=_safe(render_prose_prompt_fusion_block, language=language),
+            text=_safe(
+                render_prose_prompt_fusion_block,
+                language=language,
+                position=chapter_position.value,
+            ),
             source="prose_prompt_arena_fusion",
         )
         # Framing FIRST (anti-regression): the writer-levers A/B showed a budget

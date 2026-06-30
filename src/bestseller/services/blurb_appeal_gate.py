@@ -76,11 +76,27 @@ def _lex(lexicon: dict[str, Any], key: str) -> tuple[str, ...]:
 # ---------------------------------------------------------------------------
 
 
+# 身份的【结构】线索（题材中立）：职业/角色后缀 + 「是一名X / 的工作 / 唯一能…的人」。
+# 救爽文身份词表(废柴/赘婿/战神…)认不出的现实/悬疑/怪谈身份(殡仪馆夜班工/法医/守墓人)。
+_ROLE_IDENTITY_RE = re.compile(
+    r"殡仪馆|夜班|守墓|守夜|更夫|入殓|殓|法医|仵作|捕快|衙役|刑警|警探|协警|侦探|"
+    r"保安|司机|外卖|快递|程序员|码农|医生|护士|律师|教师|社畜|临时工|实习|主播|"
+    r"店长|会计|出纳|客服|话务|清洁工|环卫|矿工|渔民|猎人|镖师|账房|更夫|看守|"
+    r"(?:是|当|做)[一了]?(?:名|个|位|届)[^，。,.！!？?]{1,8}(?:工|员|师|警|医|生|官|匠|者|夫|长)|"
+    r"的工作(?:是|就是)|职业是|唯一(?:能|会|可以)[^，。,.]{0,16}的人"
+)
+
+
 def _score_selling_triad(combined: str, lex: dict[str, Any]) -> tuple[float, str, dict]:
-    has_identity = _count_hits(combined, _lex(lex, "identity_markers")) > 0
+    has_identity = (
+        _count_hits(combined, _lex(lex, "identity_markers")) > 0
+        or bool(_ROLE_IDENTITY_RE.search(combined))
+    )
     has_conflict = (
         _count_hits(combined, _lex(lex, "conflict_verbs")) > 0
         or _count_hits(combined, _lex(lex, "high_arousal_emotion")) > 0
+        # 结构性冲突/威胁：两难/切肤/迫近/骇异任一在场 = 有处境冲突（题材中立）。
+        or bool(_embodied_emotion_categories(combined))
     )
     has_cost = _count_hits(combined, _lex(lex, "cost_markers")) > 0
     present = sum((has_identity, has_conflict, has_cost))
@@ -204,14 +220,64 @@ def _score_concreteness(synopsis: str, lex: dict[str, Any]) -> tuple[float, str,
     return score, rationale, {"first_person": first_person, "has_digit": has_digit}
 
 
+# 具身情绪信号（题材中立）：情绪由【处境/结构】承载，而非堆砌爽文情绪词。
+# 这一通道救「show-don't-tell」型悬疑/怪谈/正剧/治愈简介——它们靠两难抉择、
+# 切肤关系利害、迫近威胁、骇异反常制造点击冲动，却命不中 high_arousal_emotion
+# 那张爽文词表，于是被关键词通道误判为「无情绪」并被命门(emotion<3.0)封顶 78，
+# 倒逼重生成更廉价的堆词稿——与正文层 scene-emotion-hook-scorer 同一种器械错。
+# 刻意设高门槛(要结构不要单词)：只有「代价词」而无两难/切肤的烧脑冷稿不应被抬起。
+_EMBODIED_EMOTION_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # 两难/不可逆抉择：在两种失去之间被迫选择（最强情绪驱动）
+    ("两难", (r"是.{0,12}还是", r"要么.{0,12}要么", r"二选一", r"押上", r"赌上",
+              r"拿.{0,6}换", r"保.{0,6}还是", r"只能眼睁睁", r"非.{0,6}不可")),
+    # 切肤关系利害：所爱之人的生死/唯一（代入最强）
+    ("切肤", (r"(妹妹|弟弟|母亲|父亲|爸|妈|孩子|女儿|儿子|爱人|妻子|丈夫|唯一)"
+              r".{0,18}(死|活|救|没了|失去|换|命)",
+              r"(救|保住|活下去).{0,8}(她|他|孩子|妹妹|母亲|家人)")),
+    # 迫近威胁/倒计时：时间压到眼前
+    ("迫近", (r"倒计时", r"凌晨", r"午夜", r"天亮前", r"来不及", r"期限",
+              r"最后.{0,3}(夜|天|小时|一笔)", r"[七三五].{0,2}(天|小时|日)内")),
+    # 骇异反常/失控：日常被异样撕开（悬疑/怪谈情绪源）
+    ("骇异", (r"睁开了?眼", r"镜子里", r"(自己|他|她)的名字", r"凭空", r"本不该",
+              r"回过头", r"消失")),
+)
+
+
+def _embodied_emotion_categories(text: str) -> list[str]:
+    """Distinct *kinds* of dramatic charge carried by situation (not keywords)."""
+
+    if not text:
+        return []
+    return [name for name, pats in _EMBODIED_EMOTION_SIGNALS
+            if any(re.search(p, text) for p in pats)]
+
+
 def _score_emotion_charge(synopsis: str, lex: dict[str, Any]) -> tuple[float, str, dict]:
-    terms = _lex(lex, "high_arousal_emotion")
-    hits = _count_hits(synopsis, terms)
     head = synopsis[:30]
-    front = _count_hits(head, terms) > 0
-    score = _clamp(1.5 + min(hits, 4) * 0.7 + (1.0 if front else 0))
-    rationale = f"高唤起情绪{hits}处" + ("，且前置" if front else "")
-    return score, rationale, {"emotion_hits": hits, "front_loaded": front}
+    # (1) 关键词通道（原行为）：高唤起情绪词 + 本题材情绪色板（题材感知，零成本）
+    terms = _lex(lex, "high_arousal_emotion") + _lex(lex, "emotion_palette")
+    hits = _count_hits(synopsis, terms)
+    kw_front = _count_hits(head, terms) > 0
+    kw_score = 1.5 + min(hits, 4) * 0.7 + (1.0 if kw_front else 0)
+    # (2) 具身通道（新增）：处境/两难/切肤/迫近/骇异承载的情绪
+    cats = _embodied_emotion_categories(synopsis)
+    emb_front = bool(_embodied_emotion_categories(head))
+    emb_score = 1.5 + min(len(cats), 4) * 0.85 + (0.6 if emb_front else 0)
+    # 只升不降：取两通道较高者，绝不弱化既有达标稿（no-op 安全 + 不可下调博弈）
+    use_emb = emb_score > kw_score
+    score = _clamp(max(kw_score, emb_score))
+    front = kw_front or emb_front
+    rationale = (
+        f"具身情绪{len(cats)}类({'/'.join(cats)})" + ("，且前置" if emb_front else "")
+        if use_emb
+        else f"高唤起情绪{hits}处" + ("，且前置" if kw_front else "")
+    )
+    return score, rationale, {
+        "emotion_hits": hits,
+        "embodied_categories": cats,
+        "front_loaded": front,
+        "channel": "embodied" if use_emb else "keyword",
+    }
 
 
 def _score_adjective_thrift(synopsis: str) -> tuple[float, str, dict]:

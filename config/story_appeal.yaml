@@ -79,6 +79,61 @@ tone_consistency:
   shuangwen_cliche_beats: [打脸, 跪地, 喊冤, 碾压, 逆袭, 震惊全场, 全村, 扇耳光, 狠狠,
     跪下, 求饶, 不敢相信, 悔不当初, 瑟瑟发抖, 啪啪打脸, 当场跪, 颤抖着, 嚣张, 装逼打脸]
 
+# ---------------------------------------------------------------------------
+# 一句话卖点【前置·严格】闸门（logline_gate v2）：在扩充世界观/角色/卷章大纲之前，先站在
+# 【读者视角】判「这个卖点是不是真卖点、值不值得点」。不过 → 不予扩充(REJECT)或回炉(REGEN)。
+# v2 依据 Save the Cat 官方 logline 法 + 番茄/起点爆款简介公式 + 方法论 ch3/ch4，把 3 轴升级为
+# 【7 维/两档】：4 核心命门(一票否决) + 3 增益维(加权)。确定性器测不了这些语义维，故由 LLM
+# 读者判官打分；LLM 不可用 fail-open 到 neutral lean-pass —— 绝不在无 LLM 时误毙卖点。
+logline_gate:
+  enabled: true
+  block_expansion: false       # 默认 advisory：跑分+持久化+日志，不硬阻断；真机校准后再置 true 硬卡
+  fallback_score: 3.7          # LLM 不可用时各维中性 lean-pass（≥overall_floor，真放行不误毙）
+  # —— 严格卡控 ——
+  reject_floor: 2.5            # 任一【核心命门】< 此 → REJECT：根本性硬伤，不予扩充
+  pass_floor: 3.5             # 任一【核心命门】< 此 → REGENERATE：回炉重写卖点
+  overall_floor: 3.6          # 加权总分 < 此 → REGENERATE：各维勉强但整体平庸，不放行
+  max_regen: 3                # 回炉上限，用尽仍不过 → 升级人工/标记可见拦截态
+  # 7 维 / 两档；权重和=100。代码按 CORE_AXES 常量区分核心命门(前4)与增益维(后3)。
+  axes:
+    # ① 核心命门（hard veto，任一不达标即拦）
+    contrast_irony:            # 反差张力：Save the Cat 的 irony=钩子之核；网文人设反差=爽点之核
+      label: 反差张力
+      weight: 22
+      high: 一句话即含强反差/反常识/期待违背（身份明×暗反差、处境悖论、恩人即加害者…）
+      low: 平铺直叙、无反差、四平八稳，读者没有「咦?」的一下
+    click_hook:                # 点击钩子：首句即未知/危机/悬念
+      label: 点击钩子
+      weight: 18
+      high: 首句即抛未知/危机/冲突，读者只看一句就忍不住想点开
+      low: 开头是设定/背景铺陈，钩子迟到或缺席
+    motivation_credibility:    # 动机可信：非得不偿失
+      label: 动机可信
+      weight: 16
+      high: 主角为何非做不可逻辑自洽——代价与收益匹配，或被逼到没有选择
+      low: 动机得不偿失/牵强/圣母，读者不信他会反复这么做(如折寿救陌生人却图不到对等回报)
+    unpredictability:          # 不可预测：非一眼望到头，且反转有铺垫可信
+      label: 不可预测
+      weight: 14
+      high: 埋了读者预判不到、却有铺垫可信(非天降)的反转/悖论，走向有想象空间
+      low: 套路可一眼望到头(如「能力查案→代价递增→揪凶手」)，意料之中、无惊喜
+    # ② 增益维（计入加权总分，强烈建议但非一票否决）
+    payoff_promise:            # 情绪承诺/爽感清晰：读者一眼知道图什么
+      label: 情绪承诺
+      weight: 12
+      high: 读者一眼知道能得到哪种情绪满足(爽/悬/虐/治愈/代入)且与题材匹配
+      low: 说不清「图什么」、卖点是「文笔好/世界观宏大」这类非情绪承诺
+    differentiation:           # 差异化：避红海套路
+      label: 差异化
+      weight: 10
+      high: 高概念/新组合，能指出「没人这么写」，避开该题材红海套路
+      low: 与头部高度雷同、命中红海套路(赘婿逆袭/废柴觉醒/系统签到…)
+    concrete_picture:          # 具体可视：Save the Cat 的 compelling mental picture
+      label: 具体可视
+      weight: 8
+      high: 卖点是具体可视的人/事/画面(殡仪馆第七具遗体睁眼…)，读者脑中能成像
+      low: 抽象设定罗列、形容词堆砌，读者脑中没有画面
+
 # 故事质量硬门 = 对真实爆款简介做双盲位置交换 pairwise 胜率（services/premise_appeal_arena.py）。
 # 相对盲评稳定（绝对分不稳），跨家族判官(DeepSeek)去同源高估，位置交换去位置偏。
 # 因每本需 ~N×2 次判官调用，作【按需验收门】（scripts/verify_appeal_arena.py），不进每次构思。

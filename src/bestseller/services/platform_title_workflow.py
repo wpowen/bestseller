@@ -843,7 +843,10 @@ def _resolve_object_token(
     for item in candidates:
         if item and len(item) >= 2 and item not in vague_tokens and not _is_bad_title_token(item):
             return item
-    return "命盘"
+    # Last-resort constant: a generic suspense noun, not any book's private
+    # device name (the old "命盘" fallback stamped one book's artifact onto
+    # unrelated titles).
+    return "迷局"
 
 
 def _extract_marker_phrase(text: str, marker: str) -> str:

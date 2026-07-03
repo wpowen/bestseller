@@ -10058,6 +10058,28 @@ async def rewrite_scene_from_task(
                         prev_words,
                     )
                     content_md = fallback_content
+                # Mirror guard — runaway INFLATION. The rewrite prompt promises
+                # "outputs outside the envelope will be rejected" but nothing
+                # enforced it: successive editor rounds each "add one beat" and
+                # a 900-word scene quietly grows past 2200, tripping the
+                # chapter-level LENGTH_OVER block and burning a whole assembly
+                # round. If the candidate blows past the ceiling while the
+                # prior draft was still inside it, keep the prior draft.
+                _target_wc_guard = int(getattr(scene, "target_word_count", 0) or 0)
+                if _target_wc_guard > 0:
+                    _ceiling = max(int(_target_wc_guard * 1.3), _target_wc_guard + 300)
+                    if candidate_words > _ceiling and prev_words <= _ceiling:
+                        logger.warning(
+                            "Scene %s %d.%d rewrite inflated past envelope "
+                            "(%d words > ceiling %d, prior draft %d) — keeping prior draft.",
+                            project.slug,
+                            chapter.chapter_number,
+                            scene.scene_number,
+                            candidate_words,
+                            _ceiling,
+                            prev_words,
+                        )
+                        content_md = fallback_content
             except Exception:
                 logger.debug("scene rewrite degenerate-output guard failed", exc_info=True)
         content_md = strip_scaffolding_echoes(content_md)

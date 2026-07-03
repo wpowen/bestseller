@@ -45,7 +45,10 @@ _JARGON_CODE_RE = re.compile(
 # 生造机制/系统/赛博/经济杠杆词根(跨域堆砌的标志,非单个常见题材名词)
 _JARGON_STEMS: tuple[str, ...] = (
     "灵码", "词条", "编辑器", "编译", "算法", "数据化", "数据流", "代码",
-    "杠杆", "越级", "掉档", "档位", "词缀", "录入", "名册", "禁忌线",
+    # 名册/录入 removed 2026-07-03: ordinary nouns in 现实/都市 blurbs
+    # (人事名册/录入系统) — penalising them as invented jargon punished
+    # the genres whose core vocabulary they are.
+    "杠杆", "越级", "掉档", "档位", "词缀", "禁忌线",
     "目击即", "存在杠杆", "口碑越级", "面板", "数值", "解锁", "刷新",
     "副本", "属性栏", "灵警", "可视化", "编号",
 )

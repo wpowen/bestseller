@@ -709,6 +709,13 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         "negative_action_filler",
         "face_emotion_label",
         "empty_reaction_shot",
+        # Density-gated translationese-adjacent tells (anti-vibe-writing fusion,
+        # 2026-07-03): legitimate in moderation, so they stay advisory-capped.
+        # Distinctive shapes (category "translationese") are NOT capped.
+        "lifted_copula",
+        "dash_density",
+        "then_now_contrast",
+        "adjective_colon_verdict",
     }
     _STRUCTURAL_CAP = 24.0
 

@@ -1220,6 +1220,7 @@ bestseller/
 | [大纲/简介吸引力评估体系 记录与验证](docs/故事大纲与简介吸引力评估体系-记录与验证-20260621.md) | 故事 9 维 + 简介 10 维吸引力评估，接进构思（弱稿有界保优重生），8 题材达标 |
 | [开写前读者审稿台 记录与验证](docs/开写前读者审稿台-记录与验证-20260624.md) | 正文前把中间物料翻成读者能读的故事（`/review/{slug}` 五屏）+ 盲评扩到大纲/章节；L3 真机抓出金手指识别失明并修复 |
 | [规划产物可读化重设计 记录与验证](docs/规划产物可读化重设计-记录与验证-20260625.md) | `/design/{slug}` 的「规划产物」tab 从 JSON 墙重写为人话卡片 + 开写前质量体检面板（挂判官分/门禁结果） |
+| [anti-vibe-writing 融合（翻译腔层） 记录与验证](docs/去AI味-anti-vibe-writing融合-翻译腔层-记录与验证-20260703.md) | 融合开源去AI味框架的翻译腔/欧化句式层：9 条新检测规则 + deslop 第 10 条自查 + 触发路由；真机 40 章 A/B 零误伤 |
 | [架构设计](docs/architecture.md) | 系统架构详解（真值源、分层、事务边界） |
 | [Story Design 集成计划](docs/plans/2026-05-12-story-design-core-capability-integration.md) | 剧情设计内核与规划链集成 |
 | [方法论框架优化方案](docs/methodology-framework-optimization-development-plan.md) | Plova 方法论资产化、profile、gate 与 health 设计 |

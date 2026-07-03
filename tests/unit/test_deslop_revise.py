@@ -83,7 +83,7 @@ def test_self_check_covers_staccato_and_system_ladder() -> None:
     assert "系统刷屏" in chk and "数字递增" in chk, "system-ladder self-check missing"
     # The closing instruction must re-count to the new total so the model
     # actually re-scans the added items.
-    assert "上面 9 条" in chk
+    assert "上面 10 条" in chk
 
 
 def test_staccato_saturation_routes_to_deslop() -> None:

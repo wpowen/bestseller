@@ -1267,6 +1267,21 @@
           ""
         ]
       }
+    },
+    {
+      "id": "cn.cluster.lifted_copula",
+      "category": "lifted_copula",
+      "threshold": 2,
+      "severity": "warn",
+      "family_flag": true,
+      "advisory_only": true,
+      "why": "回避系动词「是」抬调子（堪称/可谓/称得上/不啻为）——AI写中文绕开最朴素的「是」拗造型，旁白连用即装腔。能用「是」就用「是」，保留最有力的一处，其余还原成直陈",
+      "members": {
+        "堪称": [],
+        "可谓": [],
+        "称得上": [],
+        "不啻为": []
+      }
     }
   ],
   "rhythm_rules": [
@@ -1337,6 +1352,70 @@
       "threshold": 1,
       "pattern": "([一-鿿]{1,2})的是[^，。！？\\n]{1,8}[，,]\\1的是",
       "why": "对仗式排比下定义（验的是X，验的是Y）——旁白装腔，改成具体动作或直接陈述"
+    },
+    {
+      "id": "cn.translationese.dui_jinxing",
+      "category": "translationese",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "对[^。！？，,\\n]{1,12}进行了?[一-鿿]",
+      "why": "「对X进行Y」把动词名词化再用空动词激活——机翻腔。还原成直接动词（对阵法进行了修复→把阵法修好了）"
+    },
+    {
+      "id": "cn.translationese.shi_dedao",
+      "category": "translationese",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "(?<![即假纵倘])使[^。！？，,\\n]{1,10}得到了?",
+      "why": "「使X得到Y」欧化空转句式——还原成主动直陈（使他的剑意得到淬炼→他的剑意磨得更利了）"
+    },
+    {
+      "id": "cn.translationese.bei_adverbial",
+      "category": "translationese",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "被[^。！？，,\\n]{0,8}(?:很好地|成功地|有效地|完美地|彻底地|充分地|妥善地|巧妙地)",
+      "why": "评价式被字句（被…很好地/成功地…）——翻译腔。中文多用主动：这个问题我们修好了。动作被字句（被一掌拍飞）是地道中文，不在此列"
+    },
+    {
+      "id": "cn.translationese.bei_suo",
+      "category": "translationese",
+      "severity": "warn",
+      "threshold": 2,
+      "pattern": "被[^。！？，,\\n]{1,6}所[一-鿿]{1,3}",
+      "why": "「被X所Y」文白混搭被动式过密（被恐惧所支配/被剑光所摄）——AI仙侠高发腔。改主动或去「所」，一章最多留一处"
+    },
+    {
+      "id": "cn.translationese.zuowei_yige",
+      "category": "translationese",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "作为一[个名位][^。！？\\n]{1,14}[，,]",
+      "why": "「作为一个X，…」是英文 As a... 的直译开头——改成中文语序（作为一个散修，他…→他是散修，…／散修出身的他…）"
+    },
+    {
+      "id": "cn.discourse.dash_density",
+      "category": "dash_density",
+      "severity": "warn",
+      "threshold": 2,
+      "pattern": "——[^\\n]{0,120}——",
+      "why": "破折号过密（一段两对以上）——AI最扎眼的标点痕迹。按其职能替换：停顿改句号/逗号、补充改括号、引出改冒号；全章留一两处真正需要的转折即可"
+    },
+    {
+      "id": "cn.discourse.then_now",
+      "category": "then_now_contrast",
+      "severity": "warn",
+      "threshold": 3,
+      "pattern": "(?:以前|从前|过去|曾经)[^。！？\\n]{1,24}(?:现在|如今|而今)",
+      "why": "「以前…现在…」时间对比骨架反复用——AI爱用的对比推进节奏。直接写现在怎样，把「以前」压成半句或删掉"
+    },
+    {
+      "id": "cn.discourse.adj_colon",
+      "category": "adjective_colon_verdict",
+      "severity": "warn",
+      "threshold": 2,
+      "pattern": "(?:很|极其|相当|太)[一-鿿]{1,4}[：:](?![「『“‘\"'])",
+      "why": "「形容词+冒号」替读者下判断（答案很简单：/问题很直接：）——删掉定性词让事实自己说话；引入对白的「声音很冷：『滚』」是合法用法，不在此列"
     }
   ],
   "terse_tag_rules": [

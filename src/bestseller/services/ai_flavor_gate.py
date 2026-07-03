@@ -130,6 +130,10 @@ DESLOP_DISCOURSE_CATEGORIES = frozenset(
         # 是 patcher 删不掉的句式/节奏腔，必须整段重写。
         "negative_action_filler",
         "staccato_saturation",
+        # 翻译腔独特句式（对…进行/使…得到/评价式被字句/作为一个）：patcher 改不了
+        # 句法，只有整段重写能还原成中文语序。真机 40 章 0 命中（2026-07-03 A/B），
+        # 罕见即触发便宜；密度型（dash_density 等）故意不进触发集，防成本与误伤。
+        "translationese",
     }
 )
 

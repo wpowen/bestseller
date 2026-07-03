@@ -7636,13 +7636,16 @@ def _render_chapter_first_scene_cards(scenes: Sequence[SceneCardModel]) -> str:
                 }
             ),
         }
+        # Reader-facing core fields FIRST: the JSON block below is truncated at
+        # a hard character cap, and methodology_contract is by far the largest
+        # member — when it led the dict, visible_progress / reader_payoff /
+        # ending_hook_payload (the fields that actually drive 追读) were the
+        # ones cut off. Order = render priority under truncation.
         rich_scene_controls = {
-            "methodology_contract": methodology_contract,
-            "gate_function": current_controls.get("gate_function"),
             "visible_progress": current_controls.get("visible_progress"),
             "reader_payoff": current_controls.get("reader_payoff"),
             "ending_hook_payload": current_controls.get("ending_hook_payload"),
-            "transition_contract": transition_contract,
+            "gate_function": current_controls.get("gate_function"),
             "signature_image": current_controls.get("signature_image"),
             "cut_point": current_controls.get("cut_point"),
             "action_sequence": current_controls.get("action_sequence"),
@@ -7651,14 +7654,22 @@ def _render_chapter_first_scene_cards(scenes: Sequence[SceneCardModel]) -> str:
             "key_dialogue_beats": getattr(scene, "key_dialogue_beats", None) or [],
             "sensory_anchors": getattr(scene, "sensory_anchors", None) or {},
             "forbidden_actions": forbidden_actions,
+            "transition_contract": transition_contract,
+            "methodology_contract": methodology_contract,
         }
+        # Scene word target fallback: outline occasionally leaves
+        # target_word_count unset (0) — the old rendering then emitted a
+        # nonsense "字数边界：1-2字" hard bound. Derive a sane default instead.
+        scene_word_target = int(scene.target_word_count or 0)
+        if scene_word_target <= 0:
+            scene_word_target = max(600, 2400 // max(1, len(scenes)))
         scene_lines = [
             f"{scene.scene_number}. {scene.title or '未命名场景'}"
-            f"（{scene.scene_type}，目标约{scene.target_word_count or 0}字）",
+            f"（{scene.scene_type}，目标约{scene_word_target}字）",
             (
                 "   字数边界："
-                f"{max(1, int((scene.target_word_count or 0) * 0.9))}-"
-                f"{max(2, int((scene.target_word_count or 0) * 1.1))}字；"
+                f"{max(1, int(scene_word_target * 0.9))}-"
+                f"{max(2, int(scene_word_target * 1.1))}字；"
                 "本场只写本场任务，达成离场状态后立刻转入下一场。"
             ),
             f"   时间/地点锚点：{scene.time_label or '未指定'}",
@@ -7675,7 +7686,7 @@ def _render_chapter_first_scene_cards(scenes: Sequence[SceneCardModel]) -> str:
             )
         scene_lines.extend(
             [
-                f"   场景执行合同：{_compact_json_block(rich_scene_controls, max_chars=1800)}",
+                f"   场景执行合同：{_compact_json_block(rich_scene_controls, max_chars=2600)}",
                 f"   改写提示：{getattr(scene, 'rewrite_hint', '') or ''}",
             ]
         )

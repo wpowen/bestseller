@@ -2306,3 +2306,153 @@ async def check_premature_death_in_prose(
             len(violations), project_id, chapter_number,
         )
     return violations, warnings
+
+
+# ---------------------------------------------------------------------------
+# Cross-chapter countdown consistency
+# ---------------------------------------------------------------------------
+#
+# common_sense_gate already catches countdown conflicts INSIDE one chapter.
+# Nothing verified the countdown across chapters: "还剩三天" in chapter N
+# followed by "还剩五天" in chapter N+1 reads as the world clock running
+# backwards — one of the most reader-visible continuity breaks. The check is
+# deterministic and unit-scoped: it only compares mentions that use the same
+# time unit, and only when both chapters state an explicit remaining amount.
+
+_COUNTDOWN_RE = re.compile(
+    r"(?:还剩|仅剩|只剩|剩下)\s*([零一二两三四五六七八九十百0-9]{1,4})\s*"
+    r"(天|日|个时辰|时辰|个小时|小时|分钟)"
+)
+
+_ZH_DIGITS = {
+    "零": 0, "一": 1, "两": 2, "二": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
+
+
+def _countdown_amount(raw: str) -> int | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    if "百" in text:
+        return None  # 大数不做倒计时比较
+    if "十" in text:
+        head, _, tail = text.partition("十")
+        tens = _ZH_DIGITS.get(head, 1) if head else 1
+        ones = _ZH_DIGITS.get(tail, 0) if tail else 0
+        return tens * 10 + ones
+    if len(text) == 1 and text in _ZH_DIGITS:
+        return _ZH_DIGITS[text]
+    return None
+
+
+def _countdown_unit_class(unit: str) -> str:
+    if unit in ("天", "日"):
+        return "day"
+    if unit in ("个时辰", "时辰"):
+        return "shichen"
+    if unit in ("个小时", "小时"):
+        return "hour"
+    return "minute"
+
+
+def extract_countdown_mentions(text: str) -> list[tuple[str, int]]:
+    """Return ordered ``(unit_class, amount)`` countdown mentions in ``text``."""
+
+    mentions: list[tuple[str, int]] = []
+    for match in _COUNTDOWN_RE.finditer(text or ""):
+        amount = _countdown_amount(match.group(1))
+        if amount is None or amount > 100:
+            continue
+        mentions.append((_countdown_unit_class(match.group(2)), amount))
+    return mentions
+
+
+async def check_countdown_regression_in_prose(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    content_md: str,
+    language: str | None = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Warn when a countdown grows back relative to the previous chapter.
+
+    Compares the LAST stated remaining amount per unit in chapter N-1
+    against the FIRST stated amount for the same unit in chapter N.
+    Same-or-smaller is fine (time passed or held); larger is a continuity
+    break unless the prose resets the clock — resets are rare enough that
+    a warning (audit, non-blocking) is the right severity.
+    """
+
+    warnings: list[ContradictionWarning] = []
+    if chapter_number <= 1 or not (content_md or "").strip():
+        return [], warnings
+
+    current_mentions = extract_countdown_mentions(content_md)
+    if not current_mentions:
+        return [], warnings
+
+    from bestseller.infra.db.models import ChapterDraftVersionModel
+
+    previous_text = await session.scalar(
+        select(ChapterDraftVersionModel.content_md)
+        .join(ChapterModel, ChapterDraftVersionModel.chapter_id == ChapterModel.id)
+        .where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.chapter_number == chapter_number - 1,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(ChapterDraftVersionModel.created_at.desc())
+        .limit(1)
+    )
+    if not previous_text:
+        return [], warnings
+
+    previous_mentions = extract_countdown_mentions(str(previous_text))
+    if not previous_mentions:
+        return [], warnings
+
+    last_prev: dict[str, int] = {}
+    for unit, amount in previous_mentions:
+        last_prev[unit] = amount
+    first_curr: dict[str, int] = {}
+    for unit, amount in current_mentions:
+        first_curr.setdefault(unit, amount)
+
+    _is_en = is_english_language(language)
+    unit_zh = {"day": "天", "shichen": "个时辰", "hour": "小时", "minute": "分钟"}
+    for unit, prev_amount in last_prev.items():
+        curr_amount = first_curr.get(unit)
+        if curr_amount is None or curr_amount <= prev_amount:
+            continue
+        if _is_en:
+            msg = (
+                f"Countdown runs backwards: chapter {chapter_number - 1} ended with "
+                f"{prev_amount} {unit} remaining, but chapter {chapter_number} opens "
+                f"with {curr_amount} {unit} remaining."
+            )
+            rec = (
+                "Keep the remaining time monotonically non-increasing, or state an "
+                "explicit in-story reset of the deadline."
+            )
+        else:
+            label = unit_zh.get(unit, unit)
+            msg = (
+                f"倒计时倒流：上一章（第{chapter_number - 1}章）最后声明"
+                f"「还剩{prev_amount}{label}」，本章却出现「还剩{curr_amount}{label}」。"
+            )
+            rec = (
+                "剩余时间只能不变或减少；若剧情确实重置了期限，"
+                "必须在正文中显式写出重置原因。"
+            )
+        warnings.append(
+            ContradictionWarning(
+                check_type="countdown_regression",
+                message=msg,
+                recommendation=rec,
+            )
+        )
+
+    return [], warnings

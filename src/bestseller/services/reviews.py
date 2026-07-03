@@ -718,7 +718,6 @@ _HOOK_SIGNAL_TERMS = (
     "电梯",
     "镜面",
     "一模一样",
-    "三短一长",
     "倒计时",
     "警报",
     "电话",
@@ -755,7 +754,6 @@ _FOLK_HORROR_TAIL_HOOK_TERMS = (
     "六个",
     "半透明",
     "门缝",
-    "三短一长",
 )
 # ── Universal show-don't-tell signal vocab (2026-06-23) ──────────────────────
 # Root-cause fix: emotion/hook scene scores were ratio-matches against
@@ -808,7 +806,7 @@ _INFO_SIGNAL_TERMS = (
 _FOLK_HORROR_INFO_TERMS = (
     "子时",
     "血",
-    "三短一长",
+    "凶兆",
 )
 _CONTINUITY_SIGNAL_TERMS = (
     "上一",
@@ -5812,6 +5810,53 @@ async def _compute_premature_death_signal(
     return findings, evidence_summary
 
 
+async def _compute_countdown_regression_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel | None,
+) -> list["ChapterReviewFinding"]:
+    """Cross-chapter countdown continuity: the remaining time stated in this
+    chapter must not be larger than the last amount stated in the previous
+    chapter (same unit). Audit-level — a legitimate in-story deadline reset
+    is possible, so this warns rather than blocks."""
+
+    if not (draft and draft.content_md):
+        return []
+    chapter_status = (getattr(chapter, "status", "") or "").lower()
+    if chapter_status in ("complete", "revision"):
+        return []
+    try:
+        from bestseller.services.contradiction import (
+            check_countdown_regression_in_prose,
+        )
+        _violations, warnings = await check_countdown_regression_in_prose(
+            session,
+            project.id,
+            chapter.chapter_number,
+            draft.content_md,
+            language=getattr(project, "language", None),
+        )
+    except Exception:
+        logger.debug(
+            "countdown regression scan failed for ch=%s — non-fatal",
+            getattr(chapter, "chapter_number", "?"),
+            exc_info=True,
+        )
+        return []
+    return [
+        ChapterReviewFinding(
+            severity="major",
+            category="continuity",
+            code="countdown_regression",
+            message=w.message,
+            evidence=w.recommendation,
+        )
+        for w in warnings
+    ]
+
+
 def _merge_premature_death_into_review(
     review_result: "ChapterReviewResult",
     findings: list["ChapterReviewFinding"],
@@ -7480,6 +7525,18 @@ async def review_chapter_draft(
             pdeath_findings,
             pdeath_evidence,
             language=getattr(project, "language", None),
+        )
+
+    # Cross-chapter countdown continuity ("还剩三天" must not grow back to
+    # "还剩五天" in the next chapter). Audit-level findings appended directly.
+    countdown_findings = await _compute_countdown_regression_signal(
+        session=session, project=project, chapter=chapter, draft=draft,
+    )
+    if countdown_findings:
+        review_result = review_result.model_copy(
+            update={
+                "findings": [*review_result.findings, *countdown_findings],
+            }
         )
 
     # Continuity gates -- chapter seam (vs prior chapter tail), intra-chapter

@@ -57,6 +57,7 @@ def evaluate_common_sense_gate(
         )
     )
     findings.extend(_find_lay_character_rule_knowledge_leak(content, chapter_number=chapter_number))
+    findings.extend(_find_era_anachronism(content, genre=genre, sub_genre=sub_genre))
 
     blocking = [finding for finding in findings if finding.severity in {"high", "medium"}]
     return CommonSenseGateReport(
@@ -64,6 +65,76 @@ def evaluate_common_sense_gate(
         genre_mode=genre_mode,
         findings=findings,
     )
+
+
+# ── Era / anachronism detection ──────────────────────────────────────────────
+# A book whose setting is archaic (古代/仙侠/武侠/历史…) must not casually use
+# modern-technology nouns; a 民国 book must not use post-digital nouns. The
+# check is label-driven and deliberately conservative: any modern-setting or
+# time-travel marker in the genre label exempts the book entirely (穿越/重生
+# protagonists legitimately reference modern objects).
+
+_ANCIENT_SETTING_MARKERS = (
+    "古代", "古典", "古言", "历史", "王朝", "宫斗", "宅斗",
+    "武侠", "江湖", "仙侠", "修仙", "修真", "玄幻",
+)
+_REPUBLICAN_SETTING_MARKERS = ("民国", "民初", "北洋", "租界")
+_ERA_EXEMPTION_MARKERS = (
+    "都市", "现代", "当代", "末世", "科幻", "未来", "星际", "赛博",
+    "灵气复苏", "高武", "穿越", "重生", "系统", "无限", "游戏",
+    "直播", "网游", "二次元", "校园", "职场",
+)
+_MODERN_TOKENS_FOR_ANCIENT = (
+    "手机", "电脑", "网络", "上网", "微信", "短信", "视频", "直播间",
+    "汽车", "火车", "高铁", "地铁", "飞机", "电梯", "摄像头", "空调",
+    "电视", "充电", "电池", "银行卡", "身份证", "派出所", "公交",
+    "出租车", "打车", "朋友圈", "红绿灯", "超市", "塑料",
+)
+_MODERN_TOKENS_FOR_REPUBLICAN = (
+    "手机", "电脑", "网络", "上网", "微信", "短信", "视频", "直播间",
+    "高铁", "地铁", "空调", "电视", "充电", "电池", "银行卡",
+    "身份证", "朋友圈", "红绿灯", "超市", "摄像头",
+)
+
+
+def _era_forbidden_tokens(genre: str | None, sub_genre: str | None) -> tuple[str, ...]:
+    label = f"{genre or ''} {sub_genre or ''}"
+    if any(marker in label for marker in _ERA_EXEMPTION_MARKERS):
+        return ()
+    if any(marker in label for marker in _REPUBLICAN_SETTING_MARKERS):
+        return _MODERN_TOKENS_FOR_REPUBLICAN
+    if any(marker in label for marker in _ANCIENT_SETTING_MARKERS):
+        return _MODERN_TOKENS_FOR_ANCIENT
+    return ()
+
+
+def _find_era_anachronism(
+    text: str,
+    *,
+    genre: str | None,
+    sub_genre: str | None,
+) -> list[CommonSenseFinding]:
+    forbidden = _era_forbidden_tokens(genre, sub_genre)
+    if not forbidden:
+        return []
+    present = [token for token in forbidden if token in text]
+    if not present:
+        return []
+    total_hits = sum(text.count(token) for token in present)
+    # One stray token is advisory (could be a simile or reviewer note);
+    # two distinct tokens or three total hits mean the setting is drifting.
+    severity = "medium" if len(present) >= 2 or total_hits >= 3 else "low"
+    return [
+        CommonSenseFinding(
+            code="era_anachronism",
+            severity=severity,
+            message=(
+                "正文出现与本书时代设定不符的现代名词——古代/民国背景不得"
+                "出现这些物件，除非题材本身是穿越/现代向。"
+            ),
+            evidence={"tokens": present, "total_hits": total_hits},
+        )
+    ]
 
 
 def _genre_mode(genre: str | None, sub_genre: str | None) -> str:

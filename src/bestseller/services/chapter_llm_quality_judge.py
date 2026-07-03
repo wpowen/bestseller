@@ -606,6 +606,11 @@ async def judge_chapter_commercial_quality(
                 "judge_scope": "chapter",
                 "chapter_number": chapter_number,
                 "threshold": min_overall,
+                # Acceptance floor is bound to the writer tier — record which
+                # tier set the line so a silent floor drop after a writer swap
+                # is visible in llm_runs instead of only in behaviour.
+                "writer_model": writer_model,
+                "writer_tier": "premium" if is_premium_writer_model(writer_model) else "budget",
                 "reference_corpus_key": reference_corpus_key,
                 "rubric": rubric.name,
             },

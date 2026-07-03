@@ -1153,7 +1153,7 @@ class LineGapCheck:
 
 
 _ZH_EVENT_OBJECT_GROUPS: dict[str, tuple[str, ...]] = {
-    "mirror": ("困魂镜", "穿衣镜", "镜面", "镜子", "镜框", "铜镜"),
+    "mirror": ("穿衣镜", "镜面", "镜子", "镜框", "铜镜"),
     "screen": ("手机屏幕", "屏幕", "手机", "直播间", "短视频"),
 }
 
@@ -1201,7 +1201,6 @@ _ZH_NAME_STOPWORDS = frozenset(
         "手机",
         "屏幕",
         "穿衣镜",
-        "困魂镜",
         "走廊",
         "房间",
         "声音",

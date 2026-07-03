@@ -356,8 +356,8 @@ sample_profiles:
     profession: 某神秘组织"执令人"
 
     want_vs_need:
-      want: 完成"归" 字封印的最后一道——把十五年前未死的"还债者" 全部带回井底
-      need: （suppressed 层）他自己也是十五年前井底"还债者" 之一，他在用别人偿还自己的债
+      want: 完成"归" 字封印的最后一道——把十五年前未死的"未归人" 全部带回井底
+      need: （suppressed 层）他自己也是十五年前井底"未归人" 之一，他在拿别人顶替自己的名字
       tension: 他越完成任务，越离"自己也该被带回井底" 近一步
 
     three_layer_motivation:
@@ -397,7 +397,7 @@ sample_profiles:
       sentence_length_preference: short（残句）
       vocabulary_register: 古旧 / 借他人声音
       forbidden_words: 自指词（"我 / 自己 / 在下"）—— 他永远不用"我"
-      signature_words: 副捕头 / 沈家 / 还债 / 到期
+      signature_words: 副捕头 / 沈家 / 归位 / 到期
       response_pattern_to_question: 不答，反问 / 用借来的声音再说一遍问题
       anger_expression: 帽檐再压低一寸
       lie_pattern: 不说谎，只说半句

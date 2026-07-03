@@ -2802,11 +2802,11 @@ def _outline_repair_directives_from_error(
                 )
             else:
                 directives.append(
-                    f"第{chapter_number}章的 chapter_goal 与已消耗事件台账中"
+                    f"第{chapter_number}章的 chapter_goal 与已消耗事件清单中"
                     f"第{ledger_chapter}章的事件高度重复（相似度 {similarity:.2f}）："
                     f"「{ledger_goal}」。该事件已经发生并消耗完毕。"
                     f"只需重写第{chapter_number}章——必须是推进主线的全新具体事件，"
-                    "行动、阻力、状态变化都要与台账事件不同，禁止生成其变体。"
+                    "行动、阻力、状态变化都要与清单中的事件不同，禁止生成其变体。"
                 )
         if is_en:
             directives.append(
@@ -6653,7 +6653,7 @@ def _antagonist_motive_profiles(*, is_en: bool) -> list[dict[str, str]]:
             "secret": "保存着证据：最初的惨祸并非恶意造成，而是仁慈失控。",
         },
         {
-            "axis": "私债救赎",
+            "axis": "以命换命的执念",
             "goal": "不惜献祭自身名声和资源，也要换回一个早该死去的人。",
             "background": "如今的地位建立在一场不能承认的死亡之上。",
             "secret": "所谓复生会抹掉一名无辜见证者的存在。",
@@ -6714,7 +6714,7 @@ def _extra_antagonist_motive_profile(
     return {
         "axis": f"专属压力轴{ordinal}",
         "goal": f"沿{name}独有的第{ordinal}号压力通道推进局势，而不是复用复仇、复活或夺权模板。",
-        "background": f"{name}背负一桩只属于自己的第{ordinal}号旧债，这笔债决定其行动边界。",
+        "background": f"{name}背负一桩只属于自己的第{ordinal}号旧怨，这桩宿怨决定其行动边界。",
         "secret": f"{name}真正隐瞒的是第{ordinal}号把柄；一旦曝光，ta会失去当前阵营的庇护。",
     }
 
@@ -6993,7 +6993,7 @@ def _synthesize_character_bible_fields(
                     "parenting_style": "以要求和沉默表达爱的家庭模式",
                     "family_socioeconomic": "体面但随时可能坠落的不稳定阶层",
                     "sibling_dynamics": "过早学会承担那个必须负责的人",
-                    "inherited_values": ["先保护，再解释", "欠下的债必须偿还"],
+                    "inherited_values": ["先保护，再解释", "答应的事必须做到"],
                 }
             )
         repaired["family_imprint"] = family
@@ -11381,7 +11381,7 @@ def _fallback_unique_chapter_beat(
         "熟悉地点出现不该存在的第二层空间",
         "敌方故意留下的假线索反向暴露弱点",
         "主角保护他人的选择制造新的软肋",
-        "一件小债在最坏时刻被迫偿还",
+        "一个被拖延的旧隐患在最坏时刻爆发",
         "已经解决的旧案突然牵出新受害者",
         "被忽视的器物规则发生异常偏移",
         "一次短暂胜利附带看不见的代价",
@@ -14316,7 +14316,7 @@ def _volume_plan_prompts(
             "3. 每卷的 climax 形态要轮换：独斗、大混战、心理对决、"
             "揭示反转、牺牲抉择、谈判博弈、制造陷阱、反败为胜等，同一种 climax 形态不得连续两卷使用。\n"
             "4. 每卷的 core payoff（读者预期兑现点）必须属于不同的爽点类别："
-            "实力跃迁 / 身份翻身 / 信息解谜 / 情感兑现 / 资源爆发 / 权力获取 / 旧怨清算 / 世界观扩张。\n"
+            "实力跃迁 / 身份翻身 / 信息解谜 / 情感兑现 / 资源爆发 / 权力获取 / 旧怨了结 / 世界观扩张。\n"
             "5. 每卷的节奏弧要不同：有的卷是『稳扎稳打—骤变—慢热收束』，"
             "有的是『开局炸场—困局僵持—爆点收尾』，有的是『伪胜利—反转—真胜利』，不得全书用同一条节奏弧。\n"
             "6. 每卷 volume_goal 必须是具体的、可视化的目标物或目标事件——"
@@ -15275,10 +15275,11 @@ def _volume_outline_prompts(
             +
             "Each chapter must include causal_contract with flexible reader-visible axes: chapter_function, pressure, protagonist_desire, protagonist_choice, visible_action_or_reaction, resistance, cost_or_tradeoff, gain_or_reveal, state_change, next_reader_desire. "
             "Each chapter must include a non-empty `opening_situation`: the concrete in-scene pressure the protagonist is already facing as the chapter opens — no recap, no scenery warm-up. "
+            "[CHAPTER 1 OPENING — HARD RULE] opening_situation must land on ONE specific person in ONE instantly-legible visceral jeopardy or burning want (bodily danger / public humiliation / a loved one in peril / a want that hurts). Do NOT make the chapter-1 opening pressure an abstract institutional/accounting/property/rule/transaction dispute (account deadlines, seals, disputed ownership, bylaws may be background only, never the chapter-1 hook). Defer the cheat/mechanic, world rules, and private jargon until the reader already cares about the person; at most 3 named characters on the first screen. "
             "Each scene's `participants` must name every on-page character from the cast list. A chapter must not consist solely of protagonist-only scenes: whenever the cast allows, give at least one scene a second named participant (opponent, ally, or pressure source). "
-            "Each chapter must include chapter-level `methodology_contract`: conflict_stakes, conflict_buffs, hooks_to_resolve, hooks_to_plant, relationship_debts, pacing_mode, emotion_phase, is_climax, loop_position. "
+            "Each chapter must include chapter-level `methodology_contract`: conflict_stakes, conflict_buffs, hooks_to_resolve, hooks_to_plant, relationship_debts (unresolved interpersonal promises/tensions to advance — NOT financial or ledger debt), pacing_mode, emotion_phase, is_climax, loop_position. "
             "Do not put scene camera/reveal/cut fields in chapter methodology_contract, and do not put story-level ability_origin_contract or recognition_anchors in chapters. "
-            "Each scene must include scene-level `methodology_contract`: conflict_stakes, conflict_buffs, hook_type, spotlight_character, information_control_mode, camera_distance, reveal_mode, signature_image, cut_point, action_sequence, relationship_debts. "
+            "Each scene must include scene-level `methodology_contract`: conflict_stakes, conflict_buffs, hook_type, spotlight_character, information_control_mode, camera_distance, reveal_mode, signature_image, cut_point, action_sequence, relationship_debts (interpersonal promises/tensions, never ledger framing). "
             "Do not put chapter-level pacing/climax/loop fields or story-level ability/recognition fields in scene methodology_contract. "
             "Each chapter should also include `event_cycle_contract`, `chapter_event_role`, and `information_gap_mode`; the role is this chapter's contribution to a larger event unit, not a full six-step template repeated in every chapter. "
             "Across the volume, distribute roles such as trigger, desire_lock, obstacle_escalation, method_search, execution_turn, payoff_feedback, reaction_reset, and bridge_hook to prevent homogeneous chapters. "
@@ -15364,10 +15365,14 @@ def _volume_outline_prompts(
             +
             "每章必须包含 causal_contract：chapter_function、pressure、protagonist_desire、protagonist_choice、visible_action_or_reaction、resistance、cost_or_tradeoff、gain_or_reveal、state_change、next_reader_desire。"
             "每章必须写明非空的 opening_situation：开章即事中，写清主角此刻正面对的现场压力，不得用回顾或氛围铺垫开场。"
+            "【第一章开篇·硬要求】opening_situation 必须落在一个具体的人 + 一个一眼看懂的切肤危机或强烈渴望上"
+            "（身体危险 / 被当众羞辱 / 亲近之人有难 / 一个烧心的想要）；严禁把第一章开篇压力写成抽象的"
+            "制度·账目·产权·规则·交易纠纷（账期、封条、产权存疑、条例这类官僚设定只能作后景，不得当第一章钩子）。"
+            "金手指机制、世界规则、私设术语一律延后，等读者已经在乎这个人之后再交代；第一章首屏具名出场人物≤3。"
             "每个 scene 的 participants 必须列出全部在场具名人物（从 CastSpec 名单中选取）；整章不得全是主角单人场景——只要卡司允许，至少一个场景要有第二个具名在场者（对手、盟友或施压方）。"
-            "每章必须包含章节级 `methodology_contract`：conflict_stakes、conflict_buffs、hooks_to_resolve、hooks_to_plant、relationship_debts、pacing_mode、emotion_phase、is_climax、loop_position。"
+            "每章必须包含章节级 `methodology_contract`：conflict_stakes、conflict_buffs、hooks_to_resolve、hooks_to_plant、relationship_debts（本章要推进的未了人际承诺或张力，不是金钱账务，剧情内容里禁止因此出现欠账/记账设定）、pacing_mode、emotion_phase、is_climax、loop_position。"
             "章节级 methodology_contract 不得放镜头、揭示、断点等场景字段，也不得放 ability_origin_contract、recognition_anchors 等故事级字段。"
-            "每个 scene 必须包含场景级 `methodology_contract`：conflict_stakes、conflict_buffs、hook_type、spotlight_character、information_control_mode、camera_distance、reveal_mode、signature_image、cut_point、action_sequence、relationship_debts。"
+            "每个 scene 必须包含场景级 `methodology_contract`：conflict_stakes、conflict_buffs、hook_type、spotlight_character、information_control_mode、camera_distance、reveal_mode、signature_image、cut_point、action_sequence、relationship_debts（人际承诺/张力，不得写成账务）。"
             "场景级 methodology_contract 不得放 pacing/climax/loop 等章节字段，也不得放能力来源/人物识别等故事级字段。"
             "每章还建议包含 `event_cycle_contract`、`chapter_event_role`、`information_gap_mode`；角色表示本章在更大事件单元中的职责，不是把完整六步模板重复塞进每一章。"
             "请在整卷中分配 trigger、desire_lock、obstacle_escalation、method_search、execution_turn、payoff_feedback、reaction_reset、bridge_hook 等角色，以避免章节同质化。"
@@ -16931,7 +16936,7 @@ def _fallback_story_design_kernel(
                     "violation_cost": _first_non_empty_text(
                         first_rule.get("story_consequence"),
                         first_rule.get("visible_cost"),
-                        default="绕过世界规则会产生可追踪的反噬、债务或暴露。",
+                        default="绕过世界规则会产生可追踪的反噬、灵机损耗或身份暴露。",
                     ),
                     "narrative_use": "把世界观从背景说明转化为每章的障碍、工具和后果。",
                 }
@@ -17012,7 +17017,7 @@ def _fallback_story_design_kernel(
                 "chapter_rule": "每章至少让一个世界规则通过选择、证据、资源或代价落地。",
                 "volume_rule": "每卷关闭一个局部世界规则冲突，并打开更高层级的秩序压力。",
                 "reveal_rule": "未到揭示点的世界真相只能通过异常、物件、传闻或后果暗示。",
-                "continuity_rule": "新增规则、地点、势力和代价必须回写到世界观账本并被后续章节继承。",
+                "continuity_rule": "新增规则、地点、势力和代价必须回写到世界观设定档并被后续章节继承。",
             },
             "distilled_mechanism_bindings": _distilled_worldview_binding_list(
                 distilled_world_bindings,
@@ -17049,7 +17054,7 @@ def _fallback_story_design_kernel(
             ),
             "pacing_rule": _first_non_empty_text(
                 series_engine.get("payoff_rhythm"),
-                default="短兑现与长线债务交替。",
+                default="短兑现与长线伏笔交替。",
             ),
             "freshness_rule": "连续章节不得重复同一压力源、同一选择轴或同一回报类型。",
         },
@@ -17713,9 +17718,9 @@ def _fallback_emotion_driven_kernel(
                     else "做出有边界、有风险的选择，而不是全知式解法"
                 ),
                 "consequence": (
-                    "the action wins one step while creating the next debt."
+                    "the action wins one step while opening the next unresolved threat."
                     if is_en
-                    else "行动赢下一步，同时制造下一笔债。"
+                    else "行动赢下一步，同时制造下一个未解的隐患。"
                 ),
             }
         ],
@@ -17745,9 +17750,9 @@ def _fallback_emotion_driven_kernel(
                 ),
                 "consequence": rule_cost,
                 "payoff_window": (
-                    "the opening hook must explode or visibly transform into a larger long-arc debt"
+                    "the opening hook must explode or visibly transform into a larger long-arc threat"
                     if is_en
-                    else "开篇钩子必须爆开，或明确转化为更大的长线债"
+                    else "开篇钩子必须爆开，或明确转化为更大的长线威胁/代价"
                 ),
                 "rational_ignorance": (
                     f"{protagonist_name}'s blindspot is credible because the clue is hidden inside a trusted rule or urgent pressure."
@@ -17757,7 +17762,7 @@ def _fallback_emotion_driven_kernel(
                 "escalation_steps": [
                     "danger approaches" if is_en else "危险逼近",
                     "near discovery fails" if is_en else "差点发现但错过",
-                    "payoff creates a new debt" if is_en else "兑现后留下新债",
+                    "payoff creates a new open loop" if is_en else "兑现后留下新的悬念缺口",
                 ],
             }
         ],
@@ -17831,9 +17836,9 @@ def _fallback_emotion_driven_kernel(
                 "payoff_or_aftereffect": _first_non_empty_text(
                     first_beat.get("payoff"),
                     first_beat.get("hook_or_aftereffect"),
-                    default="first payoff leaves a larger debt"
+                    default="first payoff opens a larger unresolved stake"
                     if is_en
-                    else "第一次兑现留下更大的债",
+                    else "第一次兑现牵出更大的未解之局",
                 ),
                 "callback": callback_motif,
             }

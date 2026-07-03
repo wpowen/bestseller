@@ -3945,7 +3945,7 @@ def _chapter_opening_contract_findings(
     anchors = [
         token
         for token in anchor_candidates
-        if any(marker in token for marker in ("十七栋", "电梯", "雨棚", "303", "门缝", "镜"))
+        if any(marker in token for marker in ("电梯", "雨棚", "楼道", "门缝", "镜"))
     ][:4]
     if anchors and not any(anchor in first_window for anchor in anchors):
         findings.append(

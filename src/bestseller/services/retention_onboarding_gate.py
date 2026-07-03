@@ -320,7 +320,7 @@ def scan_hook_specificity(
             "named_person": has_named_person,
             "concrete_object": bool(object_terms.intersection(_terms_in_text(object_terms, tail))),
             "place": bool(place_terms.intersection(_terms_in_text(place_terms, tail)))
-            or bool(re.search(r"\d{2,3}室|十七栋|楼道|镜门", tail)),
+            or bool(re.search(r"\d{2,3}室|楼道|门口", tail)),
             "countdown": bool(_COUNTDOWN_RE.search(tail)),
         }
         if sum(1 for value in specificity.values() if value) >= 2:
@@ -510,11 +510,11 @@ def _opening_pattern(text: str) -> str:
             return "time_anchor"
         if opening[0] in {"“", "\"", "'"}:
             return "dialogue"
-        if any(term in opening[:80] for term in ("镜", "罗盘", "铜钱", "青囊", "手机", "回执")):
+        if any(term in opening[:80] for term in ("镜", "罗盘", "铜钱", "手机", "钥匙", "照片")):
             return "object_signal"
         if _CJK_NAME_RE.search(opening[:16]):
             return "character_action"
-        if any(term in opening[:50] for term in ("楼道", "十七栋", "门口", "房间", "旧事馆")):
+        if any(term in opening[:50] for term in ("楼道", "门口", "房间", "街口", "院子")):
             return "place_anchor"
         return "exposition"
     return "empty"

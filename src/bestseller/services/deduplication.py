@@ -1753,7 +1753,7 @@ def build_cliffhanger_diversity_block(
             )
         if result["suggested"]:
             lines.append(
-                "• 建议优先使用的钩子类型（按欠账排序）："
+                "• 建议优先使用的钩子类型（按未兑现程度排序）："
                 + "、".join(
                     f"{k}（{CLIFFHANGER_TYPES.get(k, k)}）"
                     for k in result["suggested"]
@@ -1853,7 +1853,7 @@ def build_location_ledger_block(
     visits_so_far = location_visit_count(current_location, recent_scene_locations)
 
     if is_zh:
-        lines = ["【地点复访约束（Stage B+ · 地点账本）】"]
+        lines = ["【地点复访约束（Stage B+ · 地点复访记录）】"]
         if current_location:
             lines.append(f"• 本场地点：{current_location}（历史已访问 {visits_so_far} 次）")
             if visits_so_far >= visit_cap:
@@ -2095,7 +2095,7 @@ _NAME_STOPWORDS = frozenset({
     "封面", "封印", "封禁", "符文", "阴阳", "按律", "照出", "宗门", "禁地",
     # 民俗/悬疑常用物件或语法片段；这些不是人物名。若进入参与者池，
     # 章节内重复使用同一法器会被误判成“双稿拼接”。
-    "符纸", "黄符", "铜钱", "罗盘", "账线", "红线", "暗红", "黑水",
+    "符纸", "黄符", "铜钱", "罗盘", "红线", "暗红", "黑水",
     "那道", "那道暗", "那条", "那枚", "那张", "那只", "那面", "那扇",
 })
 

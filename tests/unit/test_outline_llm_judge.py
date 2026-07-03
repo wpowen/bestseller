@@ -343,6 +343,15 @@ async def test_outline_judge_prompt_includes_methodology_reference(
 
     assert "评估时必须参照的方法论标准" in captured["system"]
     assert "【opening_rules】" in captured["system"]
+    # 弹簧法(压抑-打脸)是爽文向方法，悬疑判官不再被兜底注入，防题材固化。
+    assert "【spring_model】" not in captured["system"]
+
+    await outline_llm_judge.judge_outline_commercial_readiness(
+        FakeSession(),
+        load_settings(env={}),
+        outline_payload={"chapters": [{"chapter_number": 1}]},
+        pack=get_prompt_pack("xianxia-upgrade-core"),
+    )
     assert "【spring_model】" in captured["system"]
 
 

@@ -205,9 +205,12 @@ def test_common_sense_gate_flags_early_character_crowding() -> None:
 
 
 def test_common_sense_gate_flags_rule_term_onboarding_failure() -> None:
+    # Rule jargon is derived from the book's own quoted terms — this fixture
+    # invents its own vocabulary instead of reusing one detective book's nouns.
     report = evaluate_common_sense_gate(
-        "认葬之后就是入账。否认者先入账，代认会变成替认。"
-        "账主拿到回执，镜债转成血亲债，债主不能走。",
+        "「认葬」完了就是「入账」。认葬的人挂了名，入账的人留了印。"
+        "「代认」等同「替认」，代认过的人替认过，替认过的人还得代认。"
+        "认葬、入账、代认、替认，一个都躲不掉。认葬找上门，入账跟着来。",
         genre="灵异",
         chapter_number=2,
     )
@@ -221,8 +224,9 @@ def test_common_sense_gate_flags_rule_term_onboarding_failure() -> None:
 
 def test_common_sense_gate_allows_rule_term_with_onboarding() -> None:
     report = evaluate_common_sense_gate(
-        "林渊说，认账不是承认自己有罪，而是承认这笔债跟自己有关。"
-        "如果一个人否认，镜子就会先把他记入账页，这就是入账的代价。",
+        "林渊说，「认契」不是承认自己有罪，而是承认这件事跟自己有关。"
+        "如果一个人否认，墙上就会先记下他的名字，这就是「录名」的代价。"
+        "认契有认契的规矩，录名有录名的例子，认契和录名都讲清楚了。",
         genre="灵异",
         chapter_number=2,
     )
@@ -260,7 +264,9 @@ def test_common_sense_gate_flags_object_signal_overuse() -> None:
 
 def test_common_sense_gate_flags_non_expert_rule_knowledge_leak() -> None:
     report = evaluate_common_sense_gate(
-        "张建军堵在门口，脸色发白：“下一笔是不是我？我是不是已经入账了？”",
+        "墙上贴着三条：「录名」者不得出门。录名之后，名字归局里。"
+        "谁碰了名册谁录名。\n"
+        "张建军堵在门口，脸色发白：“我是不是已经录名了？”",
         genre="灵异",
         sub_genre="民俗悬疑",
         chapter_number=1,
@@ -275,10 +281,10 @@ def test_common_sense_gate_flags_non_expert_rule_knowledge_leak() -> None:
 
 def test_common_sense_gate_does_not_cross_paragraphs_for_rule_leak() -> None:
     report = evaluate_common_sense_gate(
+        "「回执」要收好。回执丢了人就没了。桌上摆着三张回执。\n\n"
         "林渊伸手挡在张建军身前，“别动。”\n\n"
         "张建军往后退了一步。\n\n"
-        "林渊的心沉了一下。\n\n"
-        "否认——不是死不认账那种否认。那是林渊自己的判断。",
+        "回执——那是林渊自己的判断。",
         genre="灵异",
         sub_genre="民俗悬疑",
         chapter_number=2,

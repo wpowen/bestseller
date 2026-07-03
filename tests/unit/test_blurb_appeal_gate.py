@@ -48,6 +48,34 @@ def test_strong_blurb_beats_weak_by_wide_margin():
 
 
 @pytest.mark.unit
+def test_jargon_overload_blurb_is_capped_for_new_reader_unreadability():
+    """生造黑话堆砌的简介(新读者看不懂)应被'可懂度'维拦下并封顶。
+
+    真实案例 custom-xuanhuan-1782808679:灵码编辑器/怪谈词条/「低危怪谈」/S级/废灵根
+    堆砌 → 旧闸门把黑话当 concreteness 奖励、78 照样近线;新维必须看穿并封顶。
+    """
+    jargon = (
+        "三百万人看着庄衍脑中代码喷涌成灾，灵警却只把他塞进「低危怪谈」名册混吃等死。"
+        "他有灵码编辑器——每敲一行，怪谈词条便在城中疯长。可月底清零，他这废灵根将永世沉沦。"
+        "只剩三天，他要强行编出一条S级怪谈，把当年弃他如敝屣的宗门全部碾碎在代码之下。"
+    )
+    clean = (
+        "全城三百万人亲眼看着：那个被判废物、本该当场处决的少年，脑子里竟能召唤鬼怪。"
+        "越多人谈论他，他就越强；可一旦没人再提起，他就永远跌回废物。"
+        "还剩三天，他要造出一只惊动全城的厉鬼，把当年踩着他上位的天才一个个拖下神坛。"
+    )
+    v_bad = evaluate_blurb_appeal(title="逆袭从怪谈开始", synopsis=jargon, genre="高武世界")
+    v_good = evaluate_blurb_appeal(title="逆袭从怪谈开始", synopsis=clean, genre="高武世界")
+    comp_bad = {d.key: d for d in v_bad.dimensions}["comprehensibility"]
+    comp_good = {d.key: d for d in v_good.dimensions}["comprehensibility"]
+    assert comp_bad.score <= 2.0, comp_bad.rationale          # 黑话过载 → 低可懂度
+    assert comp_good.score >= 3.5, comp_good.rationale         # 去黑话 → 高可懂度
+    assert v_bad.total <= 60.0                                 # 黑话简介被封顶
+    assert v_good.total > v_bad.total + 10                     # 去黑话显著更高
+    assert any("看不懂" in f for f in v_bad.findings)
+
+
+@pytest.mark.unit
 def test_ai_template_phrases_are_penalized():
     v = evaluate_blurb_appeal(
         title="x", synopsis=_WEAK_SYN, premise="", tags=[], genre="玄幻",
@@ -99,7 +127,7 @@ def test_genre_lexicon_resolution_does_not_crash_unknown_genre():
         genre="完全不存在的题材xyz", sub_genre=None,
     )
     assert 0.0 <= v.total <= 100.0
-    assert len(v.dimensions) == 10
+    assert len(v.dimensions) == 11  # 10 原维 + 新增"新读者可懂度"
 
 
 @pytest.mark.unit

@@ -31,7 +31,10 @@ def test_signal_terms_no_bible_returns_profile_only():
 def test_lay_rule_leak_detects_non_hardcoded_cast():
     # A detective book whose speaker is NOT one of the old hardcoded names still trips
     # the lay-character rule-knowledge-leak check (previously only fired for that book).
-    txt = "李明压低声音：“认账的规矩你不懂，镜债要替认，账线断了就该轮到我。”"
+    txt = (
+        "行里管这个叫「压契」。压契要按手印，压契过的人躲不掉，谁沾了谁压契。\n"
+        "李明压低声音：“压契的规矩你不懂，下一个就该轮到我。”"
+    )
     report = evaluate_common_sense_gate(txt, genre="悬疑探案", chapter_number=1)
     assert "lay_character_rule_knowledge_leak" in {f.code for f in report.findings}
 

@@ -20,17 +20,33 @@ def test_bridge_returns_pack_fragment_when_present() -> None:
 
 
 def test_bridge_falls_back_to_master_when_pack_missing() -> None:
-    pack = get_prompt_pack("suspense-mystery")
+    # 弹簧法兜底只给爽文向 pack；悬疑等非爽文 pack 不再被硬套压抑-打脸循环。
+    pack = get_prompt_pack("xianxia-upgrade-core")
     text = get_fragment(pack, phase="prewrite", fragment_key="spring_model")
     assert text
     assert "compression" in text or "压缩" in text or "release" in text
 
 
+def test_bridge_gates_shuangwen_emotion_fallback_for_non_shuangwen_packs() -> None:
+    suspense = get_prompt_pack("suspense-mystery")
+    assert get_fragment(suspense, phase="prewrite", fragment_key="spring_model") == ""
+    assert get_fragment(None, phase="prewrite", fragment_key="spring_model") == ""
+    comedy = get_prompt_pack("shezhu-bailan-comedy")
+    # 沙雕喜剧没有自带 emotion_engineering，也绝不能兜底继承爽文压抑-羞辱循环。
+    assert get_fragment(comedy, phase="scene", fragment_key="emotion_engineering") == ""
+
+
 def test_master_fallback_works_for_all_registered_paths() -> None:
-    """Every registered fallback must resolve to real master methodology text."""
+    """Every registered fallback must resolve to real master methodology text.
+
+    爽文情绪键(emotion_engineering/spring_model)按 pack 门控，用爽文 pack 验证；
+    其余键用 pack=None 验证兜底本身没有断链。
+    """
+    shuangwen_pack = get_prompt_pack("xianxia-upgrade-core")
     failures = []
     for (phase, key), yaml_path in _MASTER_FALLBACK_BUILDERS.items():
-        text = get_fragment(None, phase=phase, fragment_key=key)
+        gated = key in {"emotion_engineering", "spring_model"}
+        text = get_fragment(shuangwen_pack if gated else None, phase=phase, fragment_key=key)
         if not text:
             failures.append(f"{phase}::{key} -> {yaml_path}")
     assert not failures, f"Broken master fallbacks: {failures}"

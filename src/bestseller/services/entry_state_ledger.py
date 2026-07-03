@@ -232,7 +232,7 @@ def render_entry_state_ledger_block(
         snapshot = EntryStateSnapshot.model_validate(snapshot)
     if not snapshot.entry_states and not stale_findings:
         return ""
-    lines = ["【词条状态账本】"]
+    lines = ["【词条状态跟踪】"]
     for entry_id, state in list(snapshot.entry_states.items())[:max_entries]:
         parts = [
             entry_id,

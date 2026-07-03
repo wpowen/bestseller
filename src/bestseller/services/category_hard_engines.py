@@ -243,7 +243,7 @@ _CONTRACTS: dict[str, CategoryHardEngineContract] = {
             "identity_debt_delta",
             "exposure_cost_delta",
         ),
-        benchmark_focus=("旧知识有边界", "身份债持续推进", "套利必然留下暴露代价"),
+        benchmark_focus=("旧知识有边界", "身份暴露风险持续推进", "套利必然留下暴露代价"),
         keyword_signals=("异界", "异世", "穿越", "系统", "otherworld", "isekai"),
     ),
     "female-growth-ncp": CategoryHardEngineContract(
@@ -359,7 +359,7 @@ _CONTRACTS: dict[str, CategoryHardEngineContract] = {
             "chivalry_debt_delta",
             "rival_school_delta",
         ),
-        benchmark_focus=("江湖规矩会反噬", "武学提升有代价", "侠义债与门派声望持续变化"),
+        benchmark_focus=("江湖规矩会反噬", "武学提升有代价", "侠义恩义与门派声望持续变化"),
         keyword_signals=("武侠", "江湖", "门派", "侠义", "剑客", "wuxia", "jianghu"),
     ),
 }

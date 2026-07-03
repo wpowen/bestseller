@@ -6,9 +6,26 @@ rigid genre presets with flexible, AI-driven story dimension combinations.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+_CJK_OR_WORD = re.compile(r"[一-鿿]|[A-Za-z0-9]+")
+
+
+def _char_bigrams(text: str) -> set[str]:
+    """Char-bigram set of a (Chinese) string for fuzzy overlap comparison.
+
+    Chinese has no word boundaries, so token-level Jaccard is meaningless;
+    char-bigrams capture "how much concrete premise text is shared" robustly.
+    Latin runs are kept whole as single tokens. Returns an empty set for blank
+    input so callers can treat "no setting" as "no evidence".
+    """
+    tokens = _CJK_OR_WORD.findall(text or "")
+    if len(tokens) < 2:
+        return set(tokens)
+    return {tokens[i] + tokens[i + 1] for i in range(len(tokens) - 1)}
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -85,29 +102,42 @@ class StoryFacets(BaseModel):
         return v
 
     def similarity_score(self, other: StoryFacets) -> float:
-        """Compute similarity between two StoryFacets (0.0 = different, 1.0 = identical).
+        """Surface-level duplication score (0.0 = distinct premise, 1.0 = same book).
 
-        Used by the anti-repetition mechanism in Story Architect Agent.
+        Used by the anti-repetition mechanism in the Story Architect Agent.
+
+        CRITICAL — this measures whether two books are the SAME BOOK (same premise
+        skin), NOT whether they share a genre. Same-genre books are EXPECTED to
+        share the SPINE (tone family, narrative_drive, power-system kind, core
+        power-fantasy tropes) — that spine *is* the genre. Weighting spine matches
+        heavily (the old design) meant every new same-genre book scored "too
+        similar" to prior ones, and the anti-repetition retry then forced it to
+        abandon the spine to look different — the cross-book contamination that
+        drifted 仙侠升级 into 克系/无金手指. So spine dimensions carry near-zero
+        weight; the SURFACE (the concrete `setting` + the specific sub_genre /
+        trope combination) carries the weight. Two same-genre books with distinct
+        settings score LOW (correctly "not duplicates"); only a genuinely copied
+        premise scores high.
         """
         score = 0.0
         total_weight = 0.0
 
-        # Exact matches on key dimensions (weight = 1.0 each)
+        # Spine dimensions — shared within a genre BY DESIGN → near-zero weight.
         for field_name, weight in [
-            ("tone", 1.0),
-            ("narrative_drive", 1.0),
-            ("relationship_mode", 0.8),
-            ("emotional_register", 0.6),
-            ("power_system", 0.5),
+            ("tone", 0.1),
+            ("narrative_drive", 0.1),
+            ("relationship_mode", 0.1),
+            ("emotional_register", 0.1),
+            ("power_system", 0.1),
         ]:
             total_weight += weight
             if getattr(self, field_name) == getattr(other, field_name):
                 score += weight
 
-        # Jaccard similarity for set-like fields (weight = 1.5 each)
+        # Set-like fields — the specific premise combination (surface-ish).
         for field_name, weight in [
-            ("sub_genres", 1.5),
-            ("trope_tags", 1.5),
+            ("sub_genres", 0.5),
+            ("trope_tags", 1.0),
         ]:
             total_weight += weight
             self_set = set(getattr(self, field_name))
@@ -115,9 +145,24 @@ class StoryFacets(BaseModel):
             if self_set or other_set:
                 jaccard = len(self_set & other_set) / len(self_set | other_set)
             else:
-                # Both empty → identical on this dimension
+                # Both empty → identical on this dimension (preserves 1.0 for
+                # identical facets; real AI facets are never empty here).
                 jaccard = 1.0
             score += weight * jaccard
+
+        # Setting — the single strongest "same premise?" signal. Char-bigram
+        # Jaccard so different concrete worlds read as distinct even when the
+        # genre spine is identical. Only counts when BOTH settings are present
+        # (an empty setting is no evidence of duplication, so it is skipped).
+        self_bigrams = _char_bigrams(self.setting)
+        other_bigrams = _char_bigrams(other.setting)
+        if self_bigrams and other_bigrams:
+            setting_weight = 3.0
+            total_weight += setting_weight
+            overlap = len(self_bigrams & other_bigrams) / len(
+                self_bigrams | other_bigrams
+            )
+            score += setting_weight * overlap
 
         return score / total_weight if total_weight > 0 else 0.0
 

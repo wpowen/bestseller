@@ -477,7 +477,7 @@ def evaluate_methodology_application_contract(
             MethodologyApplicationFinding(
                 code="METHODOLOGY_APPLICATION_CONTRACT_MISSING",
                 severity="critical",
-                message="前十章缺少方法论应用账本，无法确认哪些方法论真正进入细纲与正文输入。",
+                message="前十章缺少方法论应用记录，无法确认哪些方法论真正进入细纲与正文输入。",
                 repair_hint=(
                     "生成正文前写入 methodology_application_contract：列出卡片、节点、"
                     "证据字段和衡量 gate。"
@@ -524,7 +524,7 @@ def _append_contract_payload_findings(
                 code="METHODOLOGY_REQUIRED_CARD_NOT_APPLIED",
                 severity="critical",
                 message="章节缺少必需方法论卡片应用：" + "、".join(missing),
-                repair_hint="补齐方法论应用账本，前十章必须覆盖开篇、主线、主角能动性、人物债、信息差和爽点兑现。",
+                repair_hint="补齐方法论应用记录，前十章必须覆盖开篇、主线、主角能动性、人物关系张力、信息差和爽点兑现。",
                 path="methodology_application_contract.applications",
             )
         )
@@ -570,7 +570,7 @@ def _append_contract_payload_findings(
                 code="METHODOLOGY_PROTAGONIST_DECISION_PROTOCOL_MISSING",
                 severity="critical",
                 message=(
-                    "前十章主角选择缺少 why-this-not-that 决策账本："
+                    "前十章主角选择缺少 why-this-not-that 决策记录："
                     + "、".join(missing_decision_fields)
                 ),
                 repair_hint=(
@@ -635,7 +635,7 @@ def _append_scene_repetition_findings(
             MethodologyApplicationFinding(
                 code="METHODOLOGY_SCENE_EMOTION_TEMPLATE_REPEATED",
                 severity="major",
-                message="场景情绪任务模板化，无法驱动人物欲望碰撞或人物债变化。",
+                message="场景情绪任务模板化，无法驱动人物欲望碰撞或人物关系变化。",
                 repair_hint="把每场 emotion 改成人物当场的具体恐惧、隐瞒、让步、错判或信任变化。",
                 path="scene_cards[*].purpose.emotion",
             )
@@ -656,13 +656,15 @@ def _append_scene_repetition_findings(
                 code="METHODOLOGY_RELATIONSHIP_DEBT_STRUCTURED_MISSING",
                 severity="critical",
                 message=(
-                    "场景人物债缺少结构化账本：第"
+                    "场景人际张力缺少结构化记录：第"
                     + "、".join(str(item) for item in missing_structured_debts[:8])
                     + "场"
                 ),
                 repair_hint=(
                     "每场 relationship_debts 至少一条包含 debtor、creditor、"
                     "evidence_or_handle、due_condition、breach_consequence、repayment_modes。"
+                    "这些字段记录的是人际亏欠/承诺/把柄（谁对谁负有什么、何时必须兑现、失约后果），"
+                    "不是金钱债务；严禁因此在剧情里加入记账、欠条、账本、债契类设定。"
                 ),
                 path="scene_cards[*].metadata.methodology_contract.relationship_debts",
             )
@@ -682,10 +684,10 @@ def _append_scene_repetition_findings(
             MethodologyApplicationFinding(
                 code="METHODOLOGY_RELATIONSHIP_DEBT_PLACEHOLDER",
                 severity="critical",
-                message="场景人物债仍是占位模板，方法论没有落到具体关系变化。",
+                message="场景人际张力仍是占位模板，方法论没有落到具体关系变化。",
                 repair_hint=(
-                    "把 relationship_debts 改成具体债务：谁欠谁、因为什么、"
-                    "下一场如何回响。"
+                    "把 relationship_debts 改成具体的人际亏欠或承诺：谁对谁负有什么、"
+                    "因为什么、下一场如何回响；不得写成金钱债务或记账设定。"
                 ),
                 path="scene_cards[*].metadata.methodology_contract.relationship_debts",
             )

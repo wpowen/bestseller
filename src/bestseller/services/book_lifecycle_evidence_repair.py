@@ -490,7 +490,7 @@ def build_lifecycle_volume_plan(
     ledgers = list(contract.state_ledger_keys if contract else ())
     gates = list(contract.hard_gate_keys if contract else ())
     vectors = ledgers or ["主线状态", "关系状态", "压力状态", "资源状态"]
-    rewards = focus or ["状态变化可见", "短回报明确", "长线债务持续"]
+    rewards = focus or ["状态变化可见", "短回报明确", "长线伏笔持续"]
     phases = [
         "opening_contract",
         "rule_validation",
@@ -499,7 +499,7 @@ def build_lifecycle_volume_plan(
         "world_expansion",
         "countermove",
         "public_consequence",
-        "deepening_debt",
+        "deepening_stakes",
         "climax_lock",
         "payoff_and_next_hook",
     ]
@@ -537,7 +537,7 @@ def build_lifecycle_volume_plan(
                 ),
                 "reader_hook_to_next": _first_text(
                     existing_item.get("reader_hook_to_next"),
-                    default=f"{vector}留下下一卷必须偿还的新债务。",
+                    default=f"{vector}留下下一卷必须回应的新悬念。",
                 ),
             }
         )
@@ -565,7 +565,7 @@ def build_lifecycle_book_spec(
         metadata.get("unique_hook"),
         metadata.get("creative_hook"),
         metadata.get("premise_variation"),
-        default=f"{title}以{category_key or getattr(project, 'genre', '')}的状态账本驱动长篇追读。",
+        default=f"{title}以{category_key or getattr(project, 'genre', '')}的状态演进驱动长篇追读。",
     )
     return {
         **_as_mapping(metadata.get("book_spec")),
@@ -586,8 +586,8 @@ def build_lifecycle_book_spec(
             "core_engine": f"{category_key or 'story'}状态变量逐章变化。",
             "reader_promise": reader_promise,
             "first_three_chapter_hook": "前三章必须建立目标、规则和第一次可见代价。",
-            "chapter_hook_strategy": "每章结尾留下状态债、线索债、关系债或资源债。",
-            "payoff_rhythm": "短兑现与长债务交替，阶段高潮必须回收前文账本。",
+            "chapter_hook_strategy": "每章结尾留下未解压力、悬念线索、关系张力或资源缺口。",
+            "payoff_rhythm": "短兑现与长线伏笔交替，阶段高潮必须回收前文伏笔。",
         },
     }
 
@@ -688,7 +688,7 @@ def build_lifecycle_cast_spec(
             ),
             "internal_need": "在连续代价中形成可持续的主动选择。",
             "choice_axis": "短期安全还是长期兑现。",
-            "decision_policy": {"default": "优先选择能改变状态账本的行动。"},
+            "decision_policy": {"default": "优先选择能改变关键状态的行动。"},
         },
         "supporting_cast": [
             {
@@ -764,7 +764,7 @@ def build_lifecycle_story_design_kernel(
             "key": "core_story_asset",
             "asset_type": "narrative_leverage",
             "value": "推动主线目标的关键资格、线索、资源或关系。",
-            "cost": "每次使用都会留下公开代价或后续债务。",
+            "cost": "每次使用都会留下公开代价或后续隐患。",
             "exposure_risk": "过度使用会引发对手注意、关系裂痕或规则反噬。",
             "attention_sources": ["主压力源", "关系网络", "规则系统"],
         }
@@ -783,7 +783,7 @@ def build_lifecycle_story_design_kernel(
         {
             "key": "state_change_scene",
             "template_name": "状态变化场",
-            "use_case": "通过选择、证据、资源或关系交换推动账本变化。",
+            "use_case": "通过选择、证据、资源或关系交换推动关键状态变化。",
             "required_change": vectors[:3],
         }
     ]
@@ -855,7 +855,7 @@ def build_lifecycle_story_design_kernel(
                     ),
                     "violation_cost": _first_text(
                         first_rule.get("story_consequence"),
-                        default="绕过规则会产生可追踪的反噬、债务或暴露。",
+                        default="绕过规则会产生可追踪的反噬、隐患或暴露。",
                     ),
                     "narrative_use": "把世界观从背景说明转化为每章的障碍、工具和后果。",
                 }
@@ -904,7 +904,7 @@ def build_lifecycle_story_design_kernel(
                 "chapter_rule": "每章至少让一个世界规则通过选择、证据、资源或代价落地。",
                 "volume_rule": "每卷关闭一个局部规则冲突，并打开更高层级的秩序压力。",
                 "reveal_rule": "未到揭示点的世界真相只能通过异常、物件、传闻或后果暗示。",
-                "continuity_rule": "新增规则、地点、势力和代价必须回写到账本并被后续章节继承。",
+                "continuity_rule": "新增规则、地点、势力和代价必须回写到状态记录并被后续章节继承。",
             },
             "state_variables": state_variables,
             "asset_ledger": asset_ledger,
@@ -914,8 +914,8 @@ def build_lifecycle_story_design_kernel(
         },
         "structure_strategy": {
             "macro_strategy": "主线目标、角色选择和世界规则交替推进。",
-            "chapter_engine": "每章推进至少两个状态维度并回写账本。",
-            "pacing_rule": "短兑现与长线债务交替。",
+            "chapter_engine": "每章推进至少两个状态维度并回写状态记录。",
+            "pacing_rule": "短兑现与长线伏笔交替。",
             "freshness_rule": "连续章节不得重复同一压力源、同一选择轴或同一回报类型。",
         },
         "plot_tree": [
@@ -945,7 +945,7 @@ def build_lifecycle_story_design_kernel(
                 "duty": _first_text(item.get("conflict_phase"), default="推进阶段目标。"),
                 "state_change": _first_text(item.get("volume_climax"), default="状态从隐性压力转为公开代价。"),
                 "payoff": _first_text(item.get("core_payoff"), default="完成一次可验证兑现。"),
-                "hook_or_aftereffect": _first_text(item.get("reader_hook_to_next"), default="留下下一阶段债务。"),
+                "hook_or_aftereffect": _first_text(item.get("reader_hook_to_next"), default="留下下一阶段悬念。"),
             }
             for item in volume_plan[:12]
         ],
@@ -986,7 +986,7 @@ def build_reverse_outline_payload(
             conflict = f"{conflict}；冲突结果必须改变{vector}的成本。"
         hook = _first_text(
             getattr(chapter, "hook_description", None),
-            default=f"{vector}留下新的债务、风险或下一章压力。",
+            default=f"{vector}留下新的隐患、风险或下一章压力。",
         )
         hook = _neutralize_forbidden_defaults(hook)
         payload_chapters.append(

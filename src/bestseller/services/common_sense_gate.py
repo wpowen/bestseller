@@ -462,6 +462,30 @@ def _find_early_chapter_character_crowding(
     ]
 
 
+_QUOTED_RULE_TERM_RE = re.compile(r"[「『“]([一-鿿]{2,6})[」』”]")
+
+# Common quoted words that are ordinary speech emphasis, not invented rule jargon.
+_QUOTED_TERM_STOPWORDS = frozenset(
+    {"不是", "没有", "可以", "不能", "知道", "真的", "现在", "自己", "我们", "他们"}
+)
+
+
+def _derive_rule_terms(text: str) -> list[str]:
+    """Derive this book's own rule-system jargon from the chapter itself.
+
+    A rule term is a short Han compound the text quote-marks at least once
+    (「认账」/“回响”) and then keeps reusing — whatever the genre or the
+    book's private vocabulary is. No single book's noun list is baked in.
+    """
+    counts: dict[str, int] = {}
+    for match in _QUOTED_RULE_TERM_RE.finditer(text):
+        term = match.group(1)
+        if term in _QUOTED_TERM_STOPWORDS:
+            continue
+        counts[term] = counts.get(term, 0) + 1
+    return [term for term in counts if text.count(term) >= 3]
+
+
 def _find_rule_term_onboarding_failure(
     text: str,
     *,
@@ -469,19 +493,7 @@ def _find_rule_term_onboarding_failure(
 ) -> list[CommonSenseFinding]:
     if chapter_number is None or chapter_number > 3:
         return []
-    rule_terms = (
-        "认账",
-        "认葬",
-        "入账",
-        "否认者",
-        "代认",
-        "替认",
-        "账主",
-        "债主",
-        "回执",
-        "镜债",
-        "血亲债",
-    )
+    rule_terms = _derive_rule_terms(text)
     present = [term for term in rule_terms if term in text]
     total_hits = sum(text.count(term) for term in rule_terms)
     if len(present) < 4 and total_hits < 10:
@@ -614,13 +626,17 @@ def _find_lay_character_rule_knowledge_leak(
     # ever fired for that one book. The rule-term requirement below gates false
     # positives, so a loose speaker match is acceptable and now works for any book.
     speaker_pattern = r"([一-鿿]{2,4})[^。！？\n]{0,12}[：:“”\"']"
-    rule_terms = r"(认账|入账|替认|代认|否认者|镜债|账线|下一笔|该轮到我)"
+    # Rule terms are derived from the book's own quoted jargon — not a
+    # hardcoded noun list from any single book's rule system.
+    derived_terms = _derive_rule_terms(text)
+    if not derived_terms:
+        return []
     for match in re.finditer(speaker_pattern, text):
         paragraph_end = text.find("\n\n", match.start())
         if paragraph_end < 0:
             paragraph_end = len(text)
         window = text[match.start() : min(match.end() + 80, paragraph_end)]
-        if not re.search(rule_terms, window):
+        if not any(term in window for term in derived_terms):
             continue
         lead_window = text[max(0, match.start() - 160) : match.start()]
         if any(marker in lead_window for marker in ("附身", "替它说", "不是他的声音", "学着他说", "刚解释过")):

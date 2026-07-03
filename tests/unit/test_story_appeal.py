@@ -39,7 +39,7 @@ def test_config_loads_and_weights_sum_to_100():
     pr = cfg["premise_rubric"]
     br = cfg["blurb_rubric"]
     assert len(pr) == 9
-    assert len(br) == 10
+    assert len(br) == 11  # 10 原维 + 新增"新读者可懂度"(comprehensibility)
     assert sum(d["weight_long"] for d in pr.values()) == 100
     assert sum(d["weight_short"] for d in pr.values()) == 100
     assert sum(d["weight"] for d in br.values()) == 100
@@ -97,20 +97,20 @@ def test_grade_from_total_ladder():
 def test_meets_bar_is_blurb_anchored_premise_advisory():
     # Competitor-anchored design: 达标 gates on the reproducible deterministic
     # blurb gate (blurb_min); the LLM premise score is ADVISORY (premise_min=0).
-    # 产品硬线 blurb_min=80：一个 78 分的"还行但不优秀"的简介不达标。
+    # 达标线 blurb_min=68：贴合真实榜单爆款简介分布(对标 floor=68)；黑话垃圾被可懂度封顶60仍不达标。
     cfg = load_story_appeal_config()
-    assert float(cfg["meets_bar"]["blurb_min"]) == 80  # 固化的产品硬线
+    assert float(cfg["meets_bar"]["blurb_min"]) == 68  # 数据校准的达标线(原80脱离现实已修)
 
     excellent_blurb = BlurbAppealVerdict(total=84, grade="recommend")
-    mediocre_blurb = BlurbAppealVerdict(total=70, grade="consider")  # 如《废代码库》
+    mediocre_blurb = BlurbAppealVerdict(total=60, grade="pass")  # 黑话/弱稿被可懂度封顶到60级,不达标
 
-    # 只有执行优秀(≥80)的简介达标，premise(advisory)不影响
+    # 榜单级(≥68)简介达标，premise(advisory)不影响
     assert meets_bar(PremiseAppealVerdict(total=82, grade="recommend", gated_grade="recommend"),
                      excellent_blurb, cfg) is True
     assert meets_bar(PremiseAppealVerdict(total=40, grade="pass", gated_grade="pass"),
                      excellent_blurb, cfg) is True  # low LLM premise must NOT block (advisory)
 
-    # 70 分的平庸简介不达标，即使 premise 判官给高分
+    # 60 分的弱稿/黑话简介不达标，即使 premise 判官给高分
     assert meets_bar(PremiseAppealVerdict(total=90, grade="recommend", gated_grade="recommend"),
                      mediocre_blurb, cfg) is False
 

@@ -52,13 +52,13 @@ themes:
   - {id: zhongsheng_jieku_08, motif: zhongsheng_jieku, tone: 壮烈, proposition: "渡人者最先沉没，因为他停下来回头看了。"}
 
   # --- 因果 (宇宙秩序层) ---
-  - {id: yinguo_01, motif: yinguo, tone: 冷峻, proposition: "你今天省下的那一刀，会在最坏的时候连本带利讨回来。"}
-  - {id: yinguo_02, motif: yinguo, tone: 沉郁, proposition: "没有凭空的好运，只有还没到期的账单。"}
+  - {id: yinguo_01, motif: yinguo, tone: 冷峻, proposition: "你今天省下的那一刀，会在最坏的时候加倍落回来。"}
+  - {id: yinguo_02, motif: yinguo, tone: 沉郁, proposition: "没有凭空的好运，只有还没认出你的报应。"}
   - {id: yinguo_03, motif: yinguo, tone: 冷峻, proposition: "善因未必结善果，但恶因一定结果。"}
   - {id: yinguo_04, motif: yinguo, tone: 惊悚, proposition: "每一个被你跳过的人，都会变成回来找你的人。"}
   - {id: yinguo_05, motif: yinguo, tone: 苍凉, proposition: "因果不是报应，是你忘了的事记得你。"}
   - {id: yinguo_06, motif: yinguo, tone: 压抑, proposition: "救错一个人，比放过一个人后果更重。"}
-  - {id: yinguo_07, motif: yinguo, tone: 惊悚, proposition: "旧账从不消失，它只是换了张脸等你。"}
+  - {id: yinguo_07, motif: yinguo, tone: 惊悚, proposition: "旧因从不消失，它只是换了张脸等你。"}
   - {id: yinguo_08, motif: yinguo, tone: 沉郁, proposition: "你种下的不是结果，是迟早要面对的自己。"}
 
   # --- 命运 (主体抉择层) ---
@@ -83,7 +83,7 @@ themes:
 
   # --- 人定胜天 (主体抉择层) ---
   - {id: rending_shengtian_01, motif: rending_shengtian, tone: 昂扬, proposition: "打赢一场灾不算赢，让下一场灾死不了人才算。"}
-  - {id: rending_shengtian_02, motif: rending_shengtian, tone: 冷峻, proposition: "真正的敌人不是天，是没人修的渠和没人管的账。"}
+  - {id: rending_shengtian_02, motif: rending_shengtian, tone: 冷峻, proposition: "真正的敌人不是天，是没人修的渠和没人问的冤。"}
   - {id: rending_shengtian_03, motif: rending_shengtian, tone: 昂扬, proposition: "英雄能救一次，制度能救很多次。"}
   - {id: rending_shengtian_04, motif: rending_shengtian, tone: 沉郁, proposition: "胜利如果不能被复制，就只是侥幸。"}
   - {id: rending_shengtian_05, motif: rending_shengtian, tone: 壮烈, proposition: "改天换地之后，最难的是有人愿意守下去。"}
@@ -92,14 +92,14 @@ themes:
   - {id: rending_shengtian_08, motif: rending_shengtian, tone: 苍凉, proposition: "打赢之后才发现，建设比战斗更要命。"}
 
   # --- 代价 (主体抉择层) ---
-  - {id: daijia_01, motif: daijia, tone: 苍凉, proposition: "天赋是借来的，迟早连本带利还回去。"}
-  - {id: daijia_02, motif: daijia, tone: 冷峻, proposition: "你拿到力量的那天，就抵押了某个还不知道的东西。"}
+  - {id: daijia_01, motif: daijia, tone: 苍凉, proposition: "天赋不是白得的，它记着你，总有一天连着骨血找上门。"}
+  - {id: daijia_02, motif: daijia, tone: 冷峻, proposition: "你拿到力量的那天，就有个东西悄悄跟你走了，只是还没现身。"}
   - {id: daijia_03, motif: daijia, tone: 沉郁, proposition: "变强的人越来越空，因为强是用别的东西换的。"}
-  - {id: daijia_04, motif: daijia, tone: 压抑, proposition: "救赎不打折，它只接受你最不舍得的那一样。"}
-  - {id: daijia_05, motif: daijia, tone: 惊悚, proposition: "代价从不当场结算，它专挑你最幸福的时候来收。"}
+  - {id: daijia_04, motif: daijia, tone: 压抑, proposition: "救赎认死理，只认你最不舍得的那一样。"}
+  - {id: daijia_05, motif: daijia, tone: 惊悚, proposition: "代价从不当场显形，它专挑你最幸福的时候来收。"}
   - {id: daijia_06, motif: daijia, tone: 苍凉, proposition: "忘了母亲的脸，才换来记住所有敌人的本事。"}
-  - {id: daijia_07, motif: daijia, tone: 冷峻, proposition: "没有白来的奇迹，只有迟到的账单。"}
-  - {id: daijia_08, motif: daijia, tone: 反讽, proposition: "你以为占了便宜，其实是签了一张看不懂的契约。"}
+  - {id: daijia_07, motif: daijia, tone: 冷峻, proposition: "没有白来的奇迹，只有迟到的疤。"}
+  - {id: daijia_08, motif: daijia, tone: 反讽, proposition: "你以为占了便宜，其实是被什么东西悄悄记住了。"}
 
   # --- 真相 (认知危机层) ---
   - {id: zhenxiang_01, motif: zhenxiang, tone: 冷峻, proposition: "每揭开一层真相，之前所有的对错都要重新算。"}

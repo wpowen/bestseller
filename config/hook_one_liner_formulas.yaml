@@ -52,7 +52,7 @@ formulas:
     genre_affinity: [都市, 言情, romance, urban]
 
   - id: heart_beat_clock
-    template: "倒计时已经在响：{role}不{desire}会死，可一旦{reversal}，{cost}就开始计费；每章都要重新结算。"
+    template: "倒计时已经在响：{role}不{desire}会死，可一旦{reversal}，{cost}就开始累积；每章都要重新兑现。"
     requires: [role, desire, reversal, cost]
     genre_affinity: [末日, 系统, 悬疑]
 

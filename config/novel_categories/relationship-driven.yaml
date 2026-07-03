@@ -194,13 +194,13 @@ world_rule_templates:
     exploitation_potential_en: "The timing of information reveal determines the intensity of emotional impact."
 
   - rule_template_key: emotional_debt
-    name_zh: "情感债务规则"
+    name_zh: "情感亏欠规则"
     name_en: "Emotional Debt Rule"
     description_zh: "过去的伤害和亏欠不会自动消失，必须被正视和清算。"
     description_en: "Past hurts and debts do not vanish on their own — they must be confronted and settled."
     story_consequence_zh: "{protagonist}不能靠一次深情表白抵消过去的伤害，修复需要时间和行动。"
     story_consequence_en: "{protagonist} cannot erase past damage with a single heartfelt confession — healing requires time and action."
-    exploitation_potential_zh: "旧债的清算时机往往与新危机叠加，制造最强烈的情感高潮。"
+    exploitation_potential_zh: "旧亏欠被翻出的时机往往与新危机叠加，制造最强烈的情感高潮。"
     exploitation_potential_en: "The settlement of old debts often coincides with new crises, creating the most intense emotional climaxes."
 
 quality_traps:

@@ -47,10 +47,17 @@ def test_non_workplace_genre_gets_genre_neutral_ladder_no_hr_contamination() -> 
     (面试→调岗→辞退→改制度). Only the mythic-workplace (招神/神仙 HR) concept keeps
     the HR ladder; every other genre gets a neutral high-concept-mechanism ladder."""
 
-    for genre, sub in (("玄幻", "东方玄幻"), ("悬疑", "民俗怪谈"), ("科幻", "赛博朋克")):
+    # 仙侠/修仙(升级流)必须在内：token「仙」曾把所有 cultivation 书误路由进 HR 工位梯，
+    # 导致修仙书反复长出「债契/宗债/记账/账册」金手指（跨书同质化）。见真机 xianxia-upgrade。
+    for genre, sub in (
+        ("玄幻", "东方玄幻"), ("悬疑", "民俗怪谈"), ("科幻", "赛博朋克"),
+        ("仙侠", "升级流"), ("修仙", "宗门经营"), ("仙侠升级", "宗门逆袭"),
+    ):
         profile = resolve_brainhole_profile(genre, sub)
 
-        assert profile.profile_key != "mythic-workplace-brainhole"
+        assert profile.profile_key != "mythic-workplace-brainhole", (
+            f"{genre}/{sub} 被误路由进 mythic-workplace(HR 工位梯)→ 债/记账同质化"
+        )
         # Neutral families, not the HR ones.
         assert "mythic_vs_workplace" not in profile.contrast_axes
         assert "visible_comedy" not in profile.required_contract_fields

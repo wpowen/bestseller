@@ -929,7 +929,7 @@ def build_progression_context_block(
                 for entry in ledger.entries
             ]
             if balances:
-                lines.append(f"资源账本/{owner}: " + ", ".join(sorted(set(balances))))
+                lines.append(f"资源存量/{owner}: " + ", ".join(sorted(set(balances))))
         if context.techniques:
             lines.append(
                 "可用功法: "

@@ -288,7 +288,16 @@ def _resolve_profile_key(
     prompt_pack_key: str | None = None,
 ) -> str:
     label = f"{genre} {sub_genre or ''} {prompt_pack_key or ''}".lower()
-    if any(token in label for token in ("神仙", "西游", "封神", "仙", "myth")):
+    # mythic-WORKPLACE (招神/神仙 HR) is a workplace comedy in a divine frame, so it needs an
+    # explicit HR/招聘/职场 signal. Bare 仙/修仙/仙侠 (cultivation-progression) must NOT match —
+    # else every 修仙 book is force-framed into an HR/契约/制度 ladder and the model keeps growing
+    # 债契/宗债/记账/账册 金手指 (cross-book homogenization; see xianxia-upgrade 真机 books).
+    workplace = any(
+        t in label
+        for t in ("招神", "hr", "人事", "职场", "入职", "面试", "招聘", "打工", "上班", "员工", "上岗")
+    )
+    mythic = any(t in label for t in ("神仙", "西游", "封神", "天庭", "神庭", "myth"))
+    if "招神" in label or (mythic and workplace):
         return "mythic-workplace-brainhole"
     if any(token in label for token in ("都市", "职场", "现实", "urban")):
         return "urban-system-brainhole"

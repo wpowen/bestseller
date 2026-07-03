@@ -257,3 +257,19 @@ def test_catalog_round_trip_from_new_project_metadata() -> None:
     assert catalog is not None
     assert catalog.catalog_key == "mythic-workplace-effect-skills"
     assert any(skill.skill_key == "brainhole_engine" for skill in catalog.skills)
+
+
+@pytest.mark.unit
+def test_cultivation_not_routed_to_mythic_workplace_effect_skills() -> None:
+    """Twin of brainhole "仙" bug: bare 仙/修仙/仙侠 must NOT get the mythic-workplace
+    (HR/comedy) effect-skills catalog, else cultivation books homogenize toward 债契/记账/HR."""
+    for genre, sub in (("仙侠", "升级流"), ("修仙", "宗门经营"), ("仙侠升级", "宗门逆袭")):
+        catalog = resolve_story_effect_skill_catalog(genre, sub)
+        assert catalog.catalog_key != "mythic-workplace-effect-skills", (
+            f"{genre}/{sub} 被误路由进 workplace/HR effect-skills"
+        )
+        assert catalog.catalog_key == "general-serial-effect-skills"
+    # legit 招神/神仙HR still routes correctly
+    assert resolve_story_effect_skill_catalog("都市神仙", "神仙招聘").catalog_key == (
+        "mythic-workplace-effect-skills"
+    )

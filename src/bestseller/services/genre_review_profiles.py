@@ -855,7 +855,7 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
             ),
             "book_spec_instruction_zh": (
                 "书籍规格必须定义: 1. 旧世界知识/系统能力与本地规则的映射边界; "
-                "2. 主角借用身份带来的关系债、阵营债或历史债; 3. 每次套利后的暴露成本; "
+                "2. 主角借用身份带来的关系亏欠、阵营把柄或历史包袱; 3. 每次套利后的暴露成本; "
                 "4. 至少两组会追查异常的本地力量。"
             ),
             "book_spec_instruction_en": (

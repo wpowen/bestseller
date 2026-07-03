@@ -416,6 +416,16 @@ async def test_chapter_judge_prompt_includes_methodology_for_golden_three(
 
     assert "评估时必须参照的方法论标准" in captured["user"]
     assert "【opening_rules】" in captured["user"]
+    # 弹簧法(压抑-打脸)是爽文向方法，悬疑判官不再被兜底注入，防题材固化。
+    assert "【spring_model】" not in captured["user"]
+
+    await chapter_llm_quality_judge.judge_chapter_commercial_quality(
+        FakeSession(),
+        load_settings(env={}),
+        chapter_number=1,
+        content_md="林渊走进楼道。",
+        pack=get_prompt_pack("xianxia-upgrade-core"),
+    )
     assert "【spring_model】" in captured["user"]
 
 
@@ -454,4 +464,4 @@ async def test_chapter_judge_prompt_excludes_opening_rules_for_chapter_11(
     )
 
     assert "【opening_rules】" not in captured["user"]
-    assert "【spring_model】" in captured["user"]
+    assert "【spring_model】" not in captured["user"]

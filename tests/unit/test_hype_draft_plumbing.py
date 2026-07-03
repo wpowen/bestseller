@@ -475,7 +475,7 @@ class TestSceneDraftPromptsHypeBlocks:
         )
         entry_system_block = "【词条体系约束】ENTRY_SYSTEM_MARKER: 法宝升级必须支付代价。"
         entry_registry_block = "【词条注册表】ENTRY_REGISTRY_MARKER: artifact-core 仍可用。"
-        entry_state_block = "【词条状态账本】ENTRY_STATE_MARKER: artifact-core state=owned。"
+        entry_state_block = "【词条状态跟踪】ENTRY_STATE_MARKER: artifact-core state=owned。"
         _, user_prompt = build_scene_draft_prompts(
             _sample_project(),
             _sample_chapter(),
@@ -505,7 +505,7 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "关系戏必须改变信任/权力/误会/承诺" in user_prompt
         assert "【词条体系约束】" in user_prompt
         assert "【词条注册表】" in user_prompt
-        assert "【词条状态账本】" in user_prompt
+        assert "【词条状态跟踪】" in user_prompt
         assert user_prompt.index("RANKING_MARKER") < user_prompt.index("PROGRESSION_MARKER")
         assert user_prompt.index("PROGRESSION_MARKER") < user_prompt.index("DECISION_MARKER")
         assert user_prompt.index("DECISION_MARKER") < user_prompt.index("RULE_MARKER")

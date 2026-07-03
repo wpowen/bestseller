@@ -285,7 +285,9 @@ def _sample_constraints(
         "public_eye": "代价或收益必须在公开场合被看见",
         "oath": "誓言、契约或承诺会反向约束行动",
         "inheritance": "传承、师徒或血脉会绑定不可卸下的责任",
-        "ledger": "因果账本必须实时结算，不可预支或抹除",
+        # "ledger" kept as a legacy alias of "equivalence" for stored specs.
+        "ledger": "每次能力兑现必须当场付出等价代价，不可预支或事后抵消",
+        "equivalence": "每次能力兑现必须当场付出等价代价，不可预支或事后抵消",
         "disguise": "身份伪装必须有可被验证的失效条件",
         "script": "剧本、规则文本或设定本身会反向约束角色",
     }

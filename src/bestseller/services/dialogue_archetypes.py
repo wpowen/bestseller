@@ -504,7 +504,6 @@ def infer_dialogue_archetype(
             "行家",
             "阴阳眼",
             "罗盘",
-            "青囊",
             "protagonist",
             "lead",
             "professional",

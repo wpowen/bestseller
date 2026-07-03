@@ -74,7 +74,12 @@ def _count_contains(text: str, words: tuple[str, ...]) -> int:
 
 
 def _object_echo(text: str) -> str:
-    objects = ("铜钱", "罗盘", "青囊", "钥匙", "镜片", "账页", "名片", "回执")
+    # Genre-generic signature objects only — no single book's private props
+    # (青囊/账页/回执 previously biased detail_echo credit toward one book).
+    objects = (
+        "铜钱", "罗盘", "钥匙", "镜片", "名片", "照片", "怀表",
+        "戒指", "信封", "徽章", "令牌", "玉佩", "手机",
+    )
     midpoint = max(len(text) // 2, 1)
     first = text[:midpoint]
     second = text[midpoint:]

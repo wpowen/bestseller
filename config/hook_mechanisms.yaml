@@ -40,7 +40,7 @@ mechanisms:
     base_desire_pool: ["快速升级", "甩开对手", "独占资源", "破阶突破"]
     reversal_template: "每次能力跃迁都要立即上缴一段身份或记忆，越升越裸"
     reward_pool: ["段位跃迁", "专属权限", "稀有技能", "对手情报"]
-    constraint_dimensions: ["method", "ban", "ledger", "must_explain"]
+    constraint_dimensions: ["method", "ban", "equivalence", "must_explain"]
     anti_cheat_rules: ["不能用假记忆充抵", "抽税必须当场发生", "补缴代价不可被预支"]
     cost_templates: ["一段关键记忆被抽走", "公众身份被公开", "近期人脉被剥离"]
     misunderstanding_patterns: ["外界以为主角自愿献祭", "队友误判主角在获取私利"]
@@ -54,13 +54,13 @@ mechanisms:
     formula_affinity: [cost_first, villain_taunt, identity_collapse]
     genres: ["都市", "玄幻", "urban", "fantasy"]
     base_desire_pool: ["转运翻盘", "被命运眷顾", "一夜暴富", "逢凶化吉"]
-    reversal_template: "命运越眷顾，越要替别人接下灾厄；好运不是免费，是借贷"
+    reversal_template: "命运越眷顾，越要替别人接下灾厄；好运不是免费，是要替人扛下等量的祸"
     reward_pool: ["临时神运", "危机预警", "贵人相助", "破局灵感"]
-    constraint_dimensions: ["target", "ban", "ledger", "must_explain"]
+    constraint_dimensions: ["target", "ban", "equivalence", "must_explain"]
     anti_cheat_rules: ["不能挑选灾厄对象", "借来的好运必须真兑现", "代价不能转嫁给同一对象"]
     cost_templates: ["替人接下重病或灾祸", "承担本不属于主角的骂名", "被反噬者反向纠缠"]
     misunderstanding_patterns: ["外人以为主角是天生福星", "被替者不知主角的牺牲"]
-    arc_escalation_axes: ["替灾规模", "公开度", "反噬者数量", "借债账本"]
+    arc_escalation_axes: ["替灾规模", "公开度", "反噬者数量", "反噬累积"]
     saturation_score: 0.38
     forbidden_overlaps: ["无代价锦鲤", "纯爽转运"]
 
@@ -122,7 +122,7 @@ mechanisms:
     reward_pool: ["弟子反哺", "因果豁免", "新身份解锁", "师门新主"]
     constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
     anti_cheat_rules: ["不能提前剥夺弟子成长", "反杀必须有可验证前提", "师尊不得用信息差永久压弟子"]
-    cost_templates: ["师门话语权旁落", "弟子反目后被公开清算", "绝学被歪曲解读"]
+    cost_templates: ["师门话语权旁落", "弟子反目后被公开声讨", "绝学被歪曲解读"]
     misunderstanding_patterns: ["师门以为师尊在栽培", "外人把退让当软弱"]
     arc_escalation_axes: ["弟子实力", "公开反目节点", "师尊新身份", "新誓言约束"]
     saturation_score: 0.36
@@ -215,13 +215,13 @@ mechanisms:
     formula_affinity: [cost_first, identity_collapse, villain_taunt]
     genres: ["都市", "古言", "romance", "urban"]
     base_desire_pool: ["把她追回来", "修复关系", "公开认错", "证明改变"]
-    reversal_template: "越主动追，越被旧账反向定罪；只有彻底放手才能让对方主动回头"
+    reversal_template: "越主动追，越被旧日过错反向定罪；只有彻底放手才能让对方主动回头"
     reward_pool: ["关系重启窗口", "公开道歉位", "对方主动示好", "新平衡建立"]
     constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
-    anti_cheat_rules: ["不能用金手指强迫", "追的每一步必须有旧账回响", "不能跳过代价直接复合"]
-    cost_templates: ["公开被打脸", "旧账被反复清算", "对方主动示好被围观"]
+    anti_cheat_rules: ["不能用金手指强迫", "追的每一步必须撞上一件旧日亏欠", "不能跳过代价直接复合"]
+    cost_templates: ["公开被打脸", "旧日过错被反复翻出", "对方主动示好被围观"]
     misunderstanding_patterns: ["旁人以为他在表演", "对方把追手当新压力"]
-    arc_escalation_axes: ["追的姿势", "旧账规模", "围观度", "对方主动节点"]
+    arc_escalation_axes: ["追的姿势", "旧怨规模", "围观度", "对方主动节点"]
     saturation_score: 0.34
     forbidden_overlaps: ["无代价追妻", "纯爽复合"]
 
@@ -246,14 +246,14 @@ mechanisms:
     category: urban_work
     formula_affinity: [identity_collapse, villain_taunt, public_reveal]
     genres: ["都市", "romance", "urban"]
-    base_desire_pool: ["专一", "断掉旧账", "重新开始", "被一个人真正看见"]
+    base_desire_pool: ["专一", "了断过去", "重新开始", "被一个人真正看见"]
     reversal_template: "越想专一，越被旧情人组成的前任联盟反向追责"
-    reward_pool: ["旧账清单", "新关系公开位", "前任撤退", "真感情确认"]
+    reward_pool: ["旧怨逐件了结", "新关系公开位", "前任撤退", "真感情确认"]
     constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
     anti_cheat_rules: ["不能靠删除记忆翻篇", "前任联盟必须真存在", "新关系不能踩前任"]
-    cost_templates: ["前任联盟公开清算", "新关系被旧账反噬", "公开被打脸"]
+    cost_templates: ["前任联盟公开发难", "新关系被旧事反噬", "公开被打脸"]
     misunderstanding_patterns: ["前任以为他在演深情", "新人把翻篇当套路"]
-    arc_escalation_axes: ["前任规模", "清算公开度", "新关系考验", "代价亲密度"]
+    arc_escalation_axes: ["前任规模", "对峙公开度", "新关系考验", "代价亲密度"]
     saturation_score: 0.33
     forbidden_overlaps: ["无代价海王翻篇", "纯爽回头"]
 
@@ -344,10 +344,10 @@ mechanisms:
     formula_affinity: [public_reveal, villain_taunt, identity_collapse]
     genres: ["古言", "都市", "romance", "urban"]
     base_desire_pool: ["避桃花", "专心主线", "退出围城", "低调"]
-    reversal_template: "越想避桃花，越被新角色按上必须负责的剧情债"
+    reversal_template: "越想避桃花，越被新角色缠上必须收尾的烂摊子"
     reward_pool: ["真感情浮现", "桃花退去", "公开站位", "新身份"]
     constraint_dimensions: ["relationship", "public_eye", "ban", "must_explain"]
-    anti_cheat_rules: ["桃花债必须真发生", "不能靠暴力拒绝", "退出必须有可验证节点"]
+    anti_cheat_rules: ["桃花纠缠必须真发生", "不能靠暴力拒绝", "退出必须有可验证节点"]
     cost_templates: ["被围观围攻", "被误会为滥情", "原关系网被反噬"]
     misunderstanding_patterns: ["外人把避桃花当高冷", "追求者把拒绝当考验"]
     arc_escalation_axes: ["桃花规模", "公开度", "退场节点", "代价亲密度"]
@@ -375,7 +375,7 @@ mechanisms:
     category: emotion_villain
     formula_affinity: [identity_collapse, reader_question, villain_taunt]
     genres: ["古言", "都市", "romance", "urban"]
-    base_desire_pool: ["复仇成功", "把仇人踩到底", "了结旧账", "公开清算"]
+    base_desire_pool: ["复仇成功", "把仇人踩到底", "了结旧怨", "公开复仇"]
     reversal_template: "复仇一旦成功，主角的人设就崩塌；必须在仇敌彻底输掉前留一条对方的退路"
     reward_pool: ["真正翻篇", "新关系网", "自我重建", "对手反向投诚"]
     constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]
@@ -396,10 +396,10 @@ mechanisms:
     reversal_template: "越想苟住，越会被规则推上必须出手的位置"
     reward_pool: ["避劫权限", "隐藏传承", "因果豁免", "关键盟友"]
     constraint_dimensions: ["location", "witness", "ban", "must_explain"]
-    anti_cheat_rules: ["不能装弱害死无辜者", "不能靠沉默逃避核心选择", "每次隐藏都会产生新债"]
-    cost_templates: ["身份暴露风险", "欠下人情债", "错失安全退路"]
+    anti_cheat_rules: ["不能装弱害死无辜者", "不能靠沉默逃避核心选择", "每次藏拙都会埋下一道迟早反噬的伏笔"]
+    cost_templates: ["身份暴露风险", "欠下一份必须亲身偿付的情面", "错失安全退路"]
     misunderstanding_patterns: ["众人把低调误认为绝世高人", "敌人把避战误认为设局"]
-    arc_escalation_axes: ["目击者层级", "因果债", "出手公开度", "退路损耗"]
+    arc_escalation_axes: ["目击者层级", "因果反噬层级", "出手公开度", "退路损耗"]
     saturation_score: 0.48
     forbidden_overlaps: ["纯装弱", "无责任苟命"]
 
@@ -424,7 +424,7 @@ mechanisms:
     category: xianxia_cross
     formula_affinity: [identity_collapse, opening_deadlock, cost_first]
     genres: ["古言", "都市", "romance", "urban"]
-    base_desire_pool: ["替嫁成功", "替家还债", "守住秘密", "退场"]
+    base_desire_pool: ["替嫁成功", "替家人扛住难关", "守住秘密", "退场"]
     reversal_template: "替嫁越成功，越被婆家当成正主；想退场必须把真正的新娘逼回来"
     reward_pool: ["新身份解锁", "婆家站位", "真正翻篇", "新关系网"]
     constraint_dimensions: ["relationship", "disguise", "ban", "must_explain"]
@@ -488,7 +488,7 @@ mechanisms:
     category: xianxia_cross
     formula_affinity: [public_reveal, identity_collapse, bawang_clause]
     genres: ["古言", "romance"]
-    base_desire_pool: ["退婚成功", "了结旧账", "重获自由", "翻身"]
+    base_desire_pool: ["退婚成功", "了结旧怨", "重获自由", "翻身"]
     reversal_template: "退婚每兑现一次，原生家族就少一份保护；退婚越多越裸奔"
     reward_pool: ["新阵营归附", "公开翻盘位", "新身份", "新资源"]
     constraint_dimensions: ["relationship", "oath", "ban", "must_explain"]

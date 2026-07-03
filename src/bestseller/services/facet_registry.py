@@ -279,18 +279,26 @@ async def list_existing_facets(
 ) -> list[StoryFacets]:
     """Query existing projects' StoryFacets from the database.
 
-    Filters by primary_genre if provided, returns most recent N.
-    Used by Story Architect Agent to avoid generating duplicate combinations.
+    Filters by primary_genre if provided, returns most recent N *same-genre*
+    peers. Used by the Story Architect Agent to differentiate the SURFACE of a
+    new book from its genre peers — NOT to push it off-genre (see
+    ``StoryFacets.similarity_score`` for why anti-repetition is surface-scoped).
+
+    The genre filter is applied in Python, so we over-fetch the recent history
+    when a genre is requested; otherwise same-genre peers get pushed out of a
+    tight recent-N window and the anti-repetition sees no peers at all.
     """
-    # Query projects that have story_facets in their metadata
+    # Over-fetch when filtering by genre so same-genre peers aren't crowded out
+    # of the window by unrelated recent books.
+    fetch_limit = max(limit * 6, limit) if primary_genre else limit
     query = text(
         "SELECT metadata->>'story_facets' as facets_json "
         "FROM projects "
         "WHERE metadata->>'story_facets' IS NOT NULL "
         "ORDER BY created_at DESC "
-        "LIMIT :limit"
+        "LIMIT :fetch_limit"
     )
-    params: dict[str, Any] = {"limit": limit}
+    params: dict[str, Any] = {"fetch_limit": fetch_limit}
 
     try:
         result = await session.execute(query, params)
@@ -308,6 +316,8 @@ async def list_existing_facets(
             if primary_genre and facets.primary_genre != primary_genre:
                 continue
             facets_list.append(facets)
+            if len(facets_list) >= limit:
+                break
         except Exception:
             continue
 

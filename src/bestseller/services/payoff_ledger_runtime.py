@@ -359,8 +359,8 @@ def render_payoff_ledger_planner_contract(*, language: str | None = None) -> str
         "需让有心的读者能找到对应回扣。\n"
         "- 如果 payoff 超期，转化或明确退场，不要让它悬空。\n"
         "- 不要悄悄引入新 payoff；每个新 payoff 必须有可追踪的 code "
-        "加入滚动账本。\n"
-        "- 兑现账本与钩子账本是兄弟：payoff 兑现早前 hook 承诺的事，"
+        "加入滚动台账。\n"
+        "- 兑现台账与钩子台账是兄弟：payoff 兑现早前 hook 承诺的事，"
         "不要兑现从未铺垫的内容。"
     )
 

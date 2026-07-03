@@ -20,7 +20,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -223,7 +223,13 @@ _GOLDEN_FINGER_DESIGN_PRINCIPLE = (
     "必须与其形态匹配，不能无代价。\n"
     "若本书题材本不依赖外挂（纯武侠 / 历史 / 权谋 / 文学向 / 群像），可不设显性金手指，"
     "改以【谋略 / 武学境界 / 人脉信息 / 性格意志】为差异化优势，并明确写明“无显性金手指，优势在 X”。\n"
-    "反同质化：不要与平台上已扎堆的同形态金手指重复。"
+    "反同质化：不要与平台上已扎堆的同形态金手指重复。\n"
+    "【代价形态硬约束 · 反债务化】除非用户明确要求写债务/借贷/记账题材，金手指与其代价、"
+    "以及违反世界规则的代价，【禁止】表达为债、账本、欠条、记账、债务、因果债、灵石债、"
+    "宗债、道债等任何金融记账形态（“欠债/还债/连本带利/结算/赎买/记一笔/入账”皆禁）。"
+    "代价必须是非金融的具身形态：反噬、污染、损耗（灵机/寿元/心神）、因果烙印、规则代价、"
+    "境界隐患、感官剥夺、记忆消解、关系后果。“债”只可作个别角色的背景动机，"
+    "不得成为金手指机制或全书代价的默认表达。"
 )
 _GOLDEN_FINGER_DESIGN_PRINCIPLE_EN = (
     "## Golden-finger design rule (mandatory; a fixed form = cliché = no clicks)\n"
@@ -244,7 +250,16 @@ _GOLDEN_FINGER_DESIGN_PRINCIPLE_EN = (
     "literary / ensemble), the book may have NO explicit golden finger — use strategy / "
     "martial attainment / network / will as the edge, and state 'no explicit golden "
     "finger; the edge is X'.\n"
-    "Anti-homogenisation: do not reuse a golden-finger form already crowded on the platform."
+    "Anti-homogenisation: do not reuse a golden-finger form already crowded on the platform.\n"
+    "[Cost-form hard rule — no debt framing] Unless the user explicitly asked for a "
+    "debt/lending/bookkeeping premise, the golden finger's cost — and any world-rule "
+    "violation cost — MUST NOT be expressed as debt / ledger / IOU / bookkeeping / "
+    "karmic-debt / spirit-stone-debt or any financial-accounting form (no owe/repay/"
+    "settle/redeem/'record an entry'). Costs must be non-financial embodied forms: "
+    "backlash, corruption, depletion (qi/lifespan/spirit), causal branding, rule-price, "
+    "cultivation instability, sensory deprivation, memory erosion, relationship fallout. "
+    "'Debt' may appear only as an individual character's backstory motive, never as the "
+    "default framing of the mechanism or of the book's costs."
 )
 
 
@@ -267,6 +282,78 @@ def _default_motif_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool |
         "不要把亲属失踪/死亡、身世旧案、神秘信物、退婚羞辱、通用复仇当作默认驱动。"
         "主角目标必须从题材类型、平台读者承诺、职业/制度/世界规则、当前开局事件中动态生成。"
         "除非用户明确提供，不得写成寻找亲属、调查家族旧案或继承家族秘密。"
+    )
+
+
+# Financial/ledger vocabulary that keeps colonising cultivation golden fingers.
+# ``账`` alone is too broad (账号/结账) so only ledger-specific compounds are
+# listed; ``债`` is debt-specific enough to stand alone.
+_DEBT_LEDGER_TOKENS: tuple[str, ...] = (
+    "债", "账本", "账簿", "欠条", "欠账", "记账", "债务", "连本带利",
+    "抹账", "还债", "债币", "赊", "赎身", "抵押", "借贷", "欠债",
+    "讨债", "债主", "入账", "记一笔", "利息",
+)
+
+
+def _mentions_debt_theme(*texts: Any) -> bool:
+    """True when any text already frames the book around debt/lending.
+
+    Used to *respect user intent*: a book the user deliberately wants about
+    debt collection must not be gagged by the anti-debt guardrail.
+    """
+
+    blob = " ".join(str(t) for t in texts if t)
+    return any(token in blob for token in _DEBT_LEDGER_TOKENS)
+
+
+def _is_debt_dominated_mechanism(text: Any) -> bool:
+    """True when a golden finger / mechanism leans on ledger framing.
+
+    Dominated = at least two ledger-token occurrences, so a single incidental
+    mention (``一笔旧债`` in passing) does not trip it but ``债币/欠账/入账``
+    stacked into one mechanism does.
+    """
+
+    blob = str(text or "")
+    if not blob:
+        return False
+    hits = 0
+    for token in _DEBT_LEDGER_TOKENS:
+        hits += blob.count(token)
+        if hits >= 2:
+            return True
+    return False
+
+
+def _anti_debt_metaphor_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool) -> str:
+    """Ban ledger framing of the golden finger / cost — the debt twin of the
+    family-trauma ``_default_motif_guardrail``.
+
+    Empty when the user explicitly asked for a debt-themed book (intent in the
+    description or hints), so a deliberate 讨债/记账 premise is never gagged.
+    """
+
+    ctx = ctx or {}
+    if _mentions_debt_theme(ctx.get("description"), ctx.get("user_hints"), ctx.get("premise_seed")):
+        return ""
+    if is_en:
+        return (
+            "\n\n[Anti-debt-metaphor guardrail — hard default]\n"
+            "Unless the user explicitly asked for a debt/lending/bookkeeping premise, the "
+            "golden finger and its cost must NOT be a financial ledger. Ban debt/IOU/ledger/"
+            "account/repayment/'owe-and-repay' framing as the FORM of the power or its price. "
+            "Express the cost through non-financial, embodied forms instead: backlash, "
+            "dao-heart fractures, lifespan drain, sensory deprivation, memory erosion, "
+            "bloodline burn, rule/karma branding, personality overwrite — matched to the "
+            "golden finger's form."
+        )
+    return (
+        "\n\n【金手指与代价 · 反债务化(硬性默认)】\n"
+        "除非用户明确要求写“债务/借贷/记账”题材,金手指的形态与其代价【绝不表达为金融记账形态】:"
+        "禁止债、账本、欠条、欠账、记账、债务、连本带利、抹账、还债、债币、赎身、抵押、"
+        "“欠了要还”这类债务隐喻当作金手指或其代价的主体。"
+        "代价改用非金融的具身形态:反噬、道心裂痕、寿元损耗、感官剥夺、记忆消解、血脉灼烧、"
+        "规则/因果烙印、情绪叠加、人格替换等,与金手指形态匹配。"
     )
 
 
@@ -899,6 +986,8 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
             prompt += f"\n\n【品类市场策略要求】\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=False)
     prompt += _concept_methodology_prompt_block(ctx)
+    prompt += _mechanism_dedup_prompt_block(ctx, is_en=False)
+    prompt += _anti_debt_metaphor_guardrail(ctx, is_en=False)
     return prompt
 
 
@@ -994,6 +1083,443 @@ async def _recent_cast_names(session: AsyncSession, *, limit: int = 60) -> list[
     return seen
 
 
+# Cross-book *mechanism* de-dup caps: how many recent same-genre books are
+# surfaced in the avoid-list and how much of each field survives (the prompt
+# needs the mechanism's identity, not the whole premise).
+_MECHANISM_DEDUP_MAX_BOOKS = 6
+_MECHANISM_DEDUP_FIELD_CHARS = 80
+_MECHANISM_DEDUP_MAX_TROPES = 6
+
+
+async def _recent_core_mechanisms(
+    session: AsyncSession,
+    *,
+    genre: str | None,
+    sub_genre: str | None = None,
+    limit: int = _MECHANISM_DEDUP_MAX_BOOKS,
+) -> list[dict[str, Any]]:
+    """Core-mechanism summaries of recent same-genre projects, newest first.
+
+    The concept-level twin of ``_recent_cast_names``: names had cross-book
+    de-dup, but nothing stopped book N+1 from re-minting book N's golden
+    finger — xianxia-upgrade books kept converging on the same debt/ledger
+    mechanism. "Same genre" is resolved through ``genre_taxonomy.canonicalize``
+    so free-form genre strings ("仙侠升级流" vs "仙侠升级") group together while
+    other genres never leak into the avoid-list.
+
+    Best-effort: any failure returns an empty list so conception never blocks.
+    """
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from bestseller.infra.db.models import ProjectModel  # noqa: PLC0415
+    from bestseller.services.genre_taxonomy import canonicalize  # noqa: PLC0415
+
+    try:
+        target_key = canonicalize(genre, sub_genre)
+    except Exception:
+        target_key = None
+    target_raw = str(genre or "").strip()
+
+    try:
+        rows = (
+            await session.execute(
+                select(
+                    ProjectModel.title,
+                    ProjectModel.genre,
+                    ProjectModel.sub_genre,
+                    ProjectModel.metadata_json,
+                )
+                .order_by(ProjectModel.created_at.desc())
+                .limit(limit * 8)
+            )
+        ).all()
+    except Exception:
+        logger.debug("recent core-mechanism fetch failed", exc_info=True)
+        return []
+
+    entries: list[dict[str, Any]] = []
+    for title, row_genre, row_sub_genre, metadata in rows:
+        try:
+            row_key = canonicalize(row_genre, row_sub_genre)
+        except Exception:
+            row_key = None
+        if target_key is not None:
+            if row_key != target_key:
+                continue
+        elif not target_raw or str(row_genre or "").strip() != target_raw:
+            # Unresolvable target genre: only exact raw-genre matches qualify —
+            # never let a resolvable-but-different genre bleed in.
+            continue
+
+        meta = metadata if isinstance(metadata, dict) else {}
+        profile_raw = meta.get("writing_profile")
+        profile = profile_raw if isinstance(profile_raw, dict) else {}
+        character_raw = profile.get("character")
+        character = character_raw if isinstance(character_raw, dict) else {}
+        market_raw = profile.get("market")
+        market = market_raw if isinstance(market_raw, dict) else {}
+
+        golden_finger = str(character.get("golden_finger") or "").strip()[
+            :_MECHANISM_DEDUP_FIELD_CHARS
+        ]
+        premise = str(meta.get("premise") or "").strip()[:_MECHANISM_DEDUP_FIELD_CHARS]
+        tropes = _normalize_string_list(market.get("trope_keywords"))[
+            :_MECHANISM_DEDUP_MAX_TROPES
+        ]
+        if not golden_finger and not premise:
+            continue
+        entries.append(
+            {
+                "title": str(title or "").strip(),
+                "golden_finger": golden_finger,
+                "premise": premise,
+                "trope_keywords": tropes,
+            }
+        )
+        if len(entries) >= limit:
+            break
+    return entries
+
+
+def _mechanism_dedup_prompt_block(ctx: dict[str, Any], *, is_en: bool) -> str:
+    """Render ``ctx['avoid_mechanisms']`` as a hard differentiate-from list.
+
+    Empty string when there is nothing to avoid, so prompts are untouched for
+    the first book of a genre. Deliberately names no concrete mechanism family
+    itself — the avoid-list is data-driven, never baked content.
+    """
+
+    items = [
+        item for item in (ctx.get("avoid_mechanisms") or []) if isinstance(item, dict)
+    ]
+    if not items:
+        return ""
+
+    lines: list[str] = []
+    for item in items[:_MECHANISM_DEDUP_MAX_BOOKS]:
+        title = str(item.get("title") or "").strip()
+        golden_finger = str(item.get("golden_finger") or "").strip()[
+            :_MECHANISM_DEDUP_FIELD_CHARS
+        ]
+        premise = str(item.get("premise") or "").strip()[:_MECHANISM_DEDUP_FIELD_CHARS]
+        tropes = _normalize_string_list(item.get("trope_keywords"))[
+            :_MECHANISM_DEDUP_MAX_TROPES
+        ]
+        parts: list[str] = []
+        if is_en:
+            if golden_finger:
+                parts.append(f"golden finger: {golden_finger}")
+            if premise:
+                parts.append(f"premise: {premise}")
+            if tropes:
+                parts.append("tropes: " + ", ".join(tropes))
+            lines.append(f'- "{title}" — ' + "; ".join(parts))
+        else:
+            if golden_finger:
+                parts.append(f"金手指：{golden_finger}")
+            if premise:
+                parts.append(f"前提：{premise}")
+            if tropes:
+                parts.append("标签：" + "、".join(tropes))
+            lines.append(f"- 《{title}》{'；'.join(parts)}")
+    if not lines:
+        return ""
+
+    if is_en:
+        return (
+            "\n\n[Mechanism de-duplication — cross-book differentiation, hard constraint]\n"
+            "Core mechanisms already used by recent same-genre books in this system:\n"
+            + "\n".join(lines)
+            + "\nThe new book's core mechanism MUST visibly diverge from every entry above: "
+            "how the golden finger works, the cost it exacts, and the premise conflict must "
+            "not be isomorphic to any of them. Renaming or reskinning the same mechanism "
+            "family does not count as differentiation; if your concept mirrors any entry, "
+            "discard it and rebuild from a different mechanism family."
+            "\nBeyond the mechanism, the imagery must change too: any image or word that "
+            "recurs across two or more entries above (in their titles, golden fingers, or "
+            "tropes) must NOT anchor the new book's title, golden-finger name, or selling "
+            "points — a new mechanism wearing the same thematic skin still reads as the "
+            "same book."
+        )
+    return (
+        "\n\n【机制去重 · 跨书差异化（硬约束）】\n"
+        "以下核心机制已被本系统近期同题材作品使用（金手指/前提/卖点标签摘要）：\n"
+        + "\n".join(lines)
+        + "\n新书的核心机制必须与上述每一条做出肉眼可见的分化：金手指的作用原理、"
+        "代价形态、前提冲突都不得与任何一条同构。只换名词、换皮不换骨"
+        "（同一机制家族的变体）不算分化；若当前构思与其中任何一条同构，"
+        "必须推翻重来，从另一个机制家族另起炉灶。"
+        "\n换骨之外还要换皮：凡在上述两条以上条目的书名/金手指/标签里反复出现的"
+        "意象或字眼，禁止再充当新书的书名、金手指命名或核心卖点的主导意象——"
+        "机制原理不同但主题外衣相同，读者仍会当成同一本书。"
+    )
+
+
+async def _attach_mechanism_dedup(
+    session: AsyncSession,
+    settings: AppSettings,
+    ctx: dict[str, Any],
+) -> None:
+    """Attach ``ctx['avoid_mechanisms']`` for prompt injection. Fail-open.
+
+    Gated by ``pipeline.enable_conception_mechanism_dedup`` (kill-switch);
+    any failure leaves the ctx usable so conception never blocks on de-dup.
+    """
+
+    pipeline = getattr(settings, "pipeline", None)
+    if not bool(getattr(pipeline, "enable_conception_mechanism_dedup", True)):
+        return
+    try:
+        ctx["avoid_mechanisms"] = await _recent_core_mechanisms(
+            session,
+            genre=str(ctx.get("genre") or "") or None,
+            sub_genre=str(ctx.get("sub_genre") or "") or None,
+        )
+    except Exception:
+        logger.debug("mechanism de-dup attach failed", exc_info=True)
+
+
+# ── Mechanism echo screen ───────────────────────────────────────────────────
+# The avoid-list alone is not enough: live verification showed the finalize
+# LLM absorbing the forbidden vocabulary as material (a premise opening copied
+# verbatim from an old book, a golden finger named after an old ledger
+# mechanism). This deterministic screen detects surface-level reuse so the
+# pipeline can retry finalize once with the specific collisions named.
+
+# A shared CJK run at least this long is treated as a verbatim echo.
+_ECHO_SPAN_MIN_CHARS = 5
+# Distinct non-background bigrams shared with a single old book to flag it.
+_ECHO_BIGRAM_MIN_HITS = 2
+# A bigram present in at least this many avoid entries is genre background
+# (宗门/升级/修仙…) rather than one book's identity, and never counts.
+_ECHO_BACKGROUND_ENTRY_COUNT = 3
+
+
+def _is_cjk_char(ch: str) -> bool:
+    return "一" <= ch <= "鿿"
+
+
+def _content_bigrams(text: str) -> set[str]:
+    """All CJK-only character bigrams in ``text``."""
+
+    grams: set[str] = set()
+    for i in range(len(text) - 1):
+        pair = text[i : i + 2]
+        if _is_cjk_char(pair[0]) and _is_cjk_char(pair[1]):
+            grams.add(pair)
+    return grams
+
+
+def _longest_common_cjk_span(a: str, b: str) -> str:
+    """Longest common substring of ``a``/``b`` made of CJK characters only."""
+
+    a_cjk = "".join(ch if _is_cjk_char(ch) else " " for ch in a)
+    b_cjk = "".join(ch if _is_cjk_char(ch) else " " for ch in b)
+    best_len, best_end = 0, 0
+    prev = [0] * (len(b_cjk) + 1)
+    for i in range(1, len(a_cjk) + 1):
+        cur = [0] * (len(b_cjk) + 1)
+        ch = a_cjk[i - 1]
+        if ch != " ":
+            for j in range(1, len(b_cjk) + 1):
+                if ch == b_cjk[j - 1]:
+                    cur[j] = prev[j - 1] + 1
+                    if cur[j] > best_len:
+                        best_len, best_end = cur[j], i
+        prev = cur
+    return a_cjk[best_end - best_len : best_end]
+
+
+def _entry_echo_text(entry: dict[str, Any]) -> str:
+    tropes = " ".join(_normalize_string_list(entry.get("trope_keywords")))
+    return " ".join(
+        str(entry.get(key) or "") for key in ("title", "golden_finger", "premise")
+    ) + f" {tropes}"
+
+
+def _candidate_echo_text(final_result: dict[str, Any]) -> str:
+    profile = final_result.get("writing_profile")
+    profile = profile if isinstance(profile, dict) else {}
+    character = profile.get("character")
+    character = character if isinstance(character, dict) else {}
+    market = profile.get("market")
+    market = market if isinstance(market, dict) else {}
+    tropes = " ".join(_normalize_string_list(market.get("trope_keywords")))
+    return " ".join(
+        [
+            str(final_result.get("title") or ""),
+            str(final_result.get("premise") or ""),
+            str(character.get("golden_finger") or ""),
+            tropes,
+        ]
+    )
+
+
+def _mechanism_echo_report(
+    final_result: dict[str, Any],
+    entries: list[Any],
+    *,
+    genre: str | None = None,
+    sub_genre: str | None = None,
+) -> list[dict[str, Any]]:
+    """Per-old-book surface-echo findings for a finalized concept.
+
+    A finding means the candidate visibly reuses one specific old book's
+    material: a verbatim CJK span of ≥ ``_ECHO_SPAN_MIN_CHARS`` chars, or
+    ≥ ``_ECHO_BIGRAM_MIN_HITS`` distinctive bigrams. Bigrams recurring across
+    ``_ECHO_BACKGROUND_ENTRY_COUNT``+ entries or present in the genre labels
+    are background vocabulary and never count. Empty list = no collision.
+    """
+
+    if not isinstance(final_result, dict) or not final_result:
+        return []
+    clean_entries = [e for e in entries if isinstance(e, dict)]
+    if not clean_entries:
+        return []
+
+    candidate_text = _candidate_echo_text(final_result)
+    candidate_grams = _content_bigrams(candidate_text)
+    if not candidate_text.strip():
+        return []
+
+    entry_grams = [_content_bigrams(_entry_echo_text(e)) for e in clean_entries]
+    gram_entry_count: dict[str, int] = {}
+    for grams in entry_grams:
+        for g in grams:
+            gram_entry_count[g] = gram_entry_count.get(g, 0) + 1
+    background = {
+        g for g, n in gram_entry_count.items() if n >= _ECHO_BACKGROUND_ENTRY_COUNT
+    }
+    background |= _content_bigrams(f"{genre or ''} {sub_genre or ''}")
+
+    report: list[dict[str, Any]] = []
+    for entry, grams in zip(clean_entries, entry_grams):
+        shared = sorted((candidate_grams & grams) - background)
+        span = _longest_common_cjk_span(candidate_text, _entry_echo_text(entry))
+        if len(span) < _ECHO_SPAN_MIN_CHARS:
+            span = ""
+        if span or len(shared) >= _ECHO_BIGRAM_MIN_HITS:
+            report.append(
+                {
+                    "title": str(entry.get("title") or "").strip(),
+                    "shared_span": span,
+                    "shared_bigrams": shared,
+                }
+            )
+    return report
+
+
+def _echo_severity(report: list[dict[str, Any]]) -> int:
+    """Comparable badness score: verbatim spans dominate, bigrams add up."""
+
+    score = 0
+    for item in report:
+        score += 3 * len(str(item.get("shared_span") or ""))
+        score += len(item.get("shared_bigrams") or [])
+    return score
+
+
+def _render_mechanism_echo_feedback(
+    report: list[dict[str, Any]], *, is_en: bool
+) -> str:
+    """Hard retry feedback naming each collision, empty when report is clean."""
+
+    if not report:
+        return ""
+    lines: list[str] = []
+    for item in report:
+        title = str(item.get("title") or "").strip()
+        span = str(item.get("shared_span") or "")
+        grams = [str(g) for g in (item.get("shared_bigrams") or [])][:8]
+        if is_en:
+            detail: list[str] = []
+            if span:
+                detail.append(f'verbatim span "{span}"')
+            if grams:
+                detail.append("shared imagery: " + ", ".join(grams))
+            lines.append(f'- Collides with "{title}" — ' + "; ".join(detail))
+        else:
+            detail = []
+            if span:
+                detail.append(f"逐字雷同片段「{span}」")
+            if grams:
+                detail.append("复用意象：" + "、".join(grams))
+            lines.append(f"- 与《{title}》撞车：" + "；".join(detail))
+    if is_en:
+        return (
+            "\n\n[Rewrite required — your final plan echoes existing books]\n"
+            + "\n".join(lines)
+            + "\nRegenerate the final plan JSON now. The premise opening, golden-finger "
+            "name and principle, and dominant imagery must all be rebuilt so none of "
+            "the collisions above remain. Do not reuse any quoted span or imagery."
+        )
+    return (
+        "\n\n【重写要求 · 终稿与已有作品撞车】\n"
+        + "\n".join(lines)
+        + "\n请立即重新生成最终方案 JSON：主角开局处境、金手指命名与作用原理、"
+        "书名与核心意象必须全部另起，上面引用的雷同片段与复用意象一个都不得保留。"
+    )
+
+
+def _render_debt_rewrite_feedback(*, is_en: bool) -> str:
+    """Retry feedback for a debt-dominated golden finger the user didn't ask for."""
+
+    if is_en:
+        return (
+            "\n\n[Rewrite required — the golden finger is a financial ledger]\n"
+            "The premise/golden finger leans on debt/ledger/IOU/bookkeeping framing, "
+            "which the user did NOT request. Rebuild the mechanism so its power and its "
+            "cost are non-financial embodied forms (backlash, corruption, qi/lifespan "
+            "depletion, causal branding, rule-price, memory erosion) — remove every "
+            "debt/账/欠条/记账/结算 word from the golden finger and premise."
+        )
+    return (
+        "\n\n【重写要求 · 金手指沦为账本】\n"
+        "当前前提/金手指依赖债、账本、欠条、记账、结算这类金融记账形态，而用户并未要求债务题材。"
+        "请重构机制：金手指与其代价一律改为非金融的具身形态（反噬、污染、灵机/寿元损耗、"
+        "因果烙印、规则代价、记忆消解），金手指与前提里的债/账/欠条/记账/结算字样一个都不得保留。"
+    )
+
+
+def _hook_candidate_seed(genre_key: str) -> int:
+    """Per-run rotation seed for anti-commonsense hook candidates.
+
+    Was ``sha256(genre_key)`` — deterministic per genre, so every book of a
+    genre preset drew the *same* candidate rotation and the same top hook;
+    that single hook (mind-reading cost / "旁人以为他会算命") then leaked into
+    every xianxia book's premise and golden finger. Mixing per-run entropy
+    keeps mechanism-bucket rotation coverage while restoring cross-book
+    diversity (the planner path already seeds per book via slug+premise).
+    """
+
+    return int(
+        hashlib.sha256(f"{genre_key}:{uuid4().hex}".encode("utf-8")).hexdigest()[:8],
+        16,
+    )
+
+
+def _hook_duplicate_corpus(
+    ctx: dict[str, Any], user_hints: dict[str, Any] | None
+) -> list[str]:
+    """Texts hook candidates are penalised for duplicating.
+
+    This book's own inputs plus recent same-genre books' mechanism summaries
+    (``ctx['avoid_mechanisms']``), so candidate ranking applies cross-book
+    novelty pressure instead of only self-consistency.
+    """
+
+    corpus = [
+        str(ctx.get("description") or ""),
+        str(ctx.get("premise_seed") or ""),
+        str(user_hints or "") if user_hints else "",
+    ]
+    for entry in ctx.get("avoid_mechanisms") or []:
+        if isinstance(entry, dict):
+            corpus.append(_entry_echo_text(entry))
+    return [text for text in corpus if text.strip()]
+
+
 def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | None = None) -> str:
     prompt = (
         f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
@@ -1048,6 +1574,8 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
             prompt += f"\n\n【品类角色设计要求】\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=False)
     prompt += _concept_methodology_prompt_block(ctx)
+    prompt += _mechanism_dedup_prompt_block(ctx, is_en=False)
+    prompt += _anti_debt_metaphor_guardrail(ctx, is_en=False)
     prompt += _naming_constraint_block(ctx, is_en=False)
     return prompt
 
@@ -1133,6 +1661,8 @@ def _market_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfil
             prompt += f"\n\n[Genre market strategy requirements]\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=True)
     prompt += _concept_methodology_prompt_block(ctx)
+    prompt += _mechanism_dedup_prompt_block(ctx, is_en=True)
+    prompt += _anti_debt_metaphor_guardrail(ctx, is_en=True)
     return prompt
 
 
@@ -1191,6 +1721,8 @@ def _character_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewPro
             prompt += f"\n\n[Genre character design requirements]\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=True)
     prompt += _concept_methodology_prompt_block(ctx)
+    prompt += _mechanism_dedup_prompt_block(ctx, is_en=True)
+    prompt += _anti_debt_metaphor_guardrail(ctx, is_en=True)
     prompt += _naming_constraint_block(ctx, is_en=True)
     return prompt
 
@@ -1380,9 +1912,21 @@ def _finalize_user_prompt(
     genre_profile: GenreReviewProfile | None = None,
 ) -> str:
     # 题材感知的高唤起情绪范例——让玄幻用灭门/夺宝/绝境突破/碾压打脸，而非都市的退婚/重生。
+    from bestseller.services.genre_persona import resolve_persona  # noqa: PLC0415
     from bestseller.services.story_appeal import genre_emotion_exemplars  # noqa: PLC0415
 
     _emo = "、".join(genre_emotion_exemplars(ctx.get("genre"), ctx.get("sub_genre"))[:6])
+    _persona = resolve_persona(
+        ctx.get("genre"), ctx.get("sub_genre"),
+        tuple(str(t) for t in (ctx.get("tags") or [])),
+    )
+    _persona_anchor = (
+        f"【目标读者画像·先想清写给谁】{_persona.channel}：{_persona.who}。"
+        f"他的知识面：{_persona.knowledge}。他要的爽点：{_persona.fantasy}。"
+        f"他的雷点(必须避开)：{('、'.join(_persona.turnoffs))}。"
+        f"一句话钩子公式：{_persona.hook_formula}。"
+        f"——简介与首句钩子必须为这个具体读者量身定做，让他一眼就想点。"
+    )
     base = (
         f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
         f"目标章节数：{ctx['chapter_count']}章\n"
@@ -1400,6 +1944,7 @@ def _finalize_user_prompt(
         f'  "premise": "小说前提/核心设定（100-200字，包含主角、核心冲突、主角差异化优势'
         f'（金手指或谋略/境界/人脉等，不必是系统）和悬念）",\n'
         f'  "synopsis": "面向读者的【点击型】作品简介（番茄/起点详情页文案，目标：读者只看这段就忍不住点进去）。'
+        f'{_persona_anchor}'
         f'硬性要求，逐条照做：'
         f'①长度 80-140 字（中文字符），不是长设定介绍——要短、要狠；'
         f'②首句 ≤30 字，必须是一句能瞬间抓人的强钩：用疑问、反差、或开局冲突事件开场，'
@@ -1408,6 +1953,11 @@ def _finalize_user_prompt(
         f'④把【{_emo}】这类【本题材】高唤起情绪事件放在最前面（别用其他题材的情绪词）；'
         f'⑤结尾留一个悬念钩子，绝不剧透关键反转或结局；'
         f'⑥分 2-4 段、动词驱动、克制形容词。'
+        f'⑦【新读者可懂铁律】当成写给一个完全没读过本书、不懂任何设定的陌生人看：'
+        f'禁止堆砌生造黑话/自定义机制名/系统术语/等级编号（如「灵码编辑器」「怪谈词条」'
+        f'「S级/#0371」「数据化修炼」之类）——每个独特概念要么不出现、要么紧跟一句大白话点破'
+        f'它是什么、有什么用、不做会怎样；一整段最多保留 1 个需要脑补的专有名词。'
+        f'读者看完必须能一句话说出：主角是谁、要干什么、爽点/钩子在哪。'
         f'严禁 AI 腔与套话：本以为/却没想到/命运的齿轮/何去何从/拭目以待/敬请期待/一段不平凡的旅程）",\n'
         f'  "tags": ["标签1", "标签2", "...（5-10个作品标签，包括题材、风格、元素、受众标签）"],\n'
         f'  "writing_profile": {{\n'
@@ -1461,6 +2011,8 @@ def _finalize_user_prompt(
     if anti:
         base += f"\n\n{anti}"
     base += _default_motif_guardrail(ctx, is_en=False)
+    base += _mechanism_dedup_prompt_block(ctx, is_en=False)
+    base += _anti_debt_metaphor_guardrail(ctx, is_en=False)
     return base
 
 
@@ -1553,6 +2105,8 @@ def _finalize_user_prompt_en(
     if anti:
         base += f"\n\n{anti}"
     base += _default_motif_guardrail(ctx, is_en=True)
+    base += _mechanism_dedup_prompt_block(ctx, is_en=True)
+    base += _anti_debt_metaphor_guardrail(ctx, is_en=True)
     return base
 
 
@@ -1601,7 +2155,9 @@ async def _creative_exploration(
             f"World: {json.dumps(world, ensure_ascii=False)[:500]}\n"
             f"Review feedback: {json.dumps(review, ensure_ascii=False)[:500]}\n\n"
             f"{promise}\n\n{anti}\n\n"
-            f"{_default_motif_guardrail(ctx, is_en=True)}\n\n"
+            f"{_default_motif_guardrail(ctx, is_en=True)}"
+            f"{_mechanism_dedup_prompt_block(ctx, is_en=True)}"
+            f"{_anti_debt_metaphor_guardrail(ctx, is_en=True)}\n\n"
             "Generate 3 creative directions JSON:\n"
             '{"directions": [\n'
             '  {"premise_variation": "...", "unique_hook": "...", "avoids_traps": ["trap_key_1"]},\n'
@@ -1619,7 +2175,9 @@ async def _creative_exploration(
             f"世界观：{json.dumps(world, ensure_ascii=False)[:500]}\n"
             f"审查意见：{json.dumps(review, ensure_ascii=False)[:500]}\n\n"
             f"{promise}\n\n{anti}\n\n"
-            f"{_default_motif_guardrail(ctx, is_en=False)}\n\n"
+            f"{_default_motif_guardrail(ctx, is_en=False)}"
+            f"{_mechanism_dedup_prompt_block(ctx, is_en=False)}"
+            f"{_anti_debt_metaphor_guardrail(ctx, is_en=False)}\n\n"
             "请生成3个差异化创意方向 JSON：\n"
             '{"directions": [\n'
             '  {"premise_variation": "前提变体描述", "unique_hook": "独特卖点", "avoids_traps": ["trap_key"]},\n'
@@ -1738,21 +2296,31 @@ async def _polish_blurb_synopsis(
             f"Genre: {genre} ({sub_genre})\n\n[Current blurb]\n{synopsis}\n\n"
             f"[Fix notes]\n{feedback}\n\nHard rules: 60-120 words; first sentence is a "
             "punchy hook; identity+conflict+stakes present; front-load high-arousal "
-            "emotion; end on suspense without spoilers; no AI cliches. Output only the blurb."
+            "emotion; end on suspense without spoilers; no AI cliches. Write for a brand-new "
+            "reader who knows none of the world's invented terms: drop or immediately gloss every "
+            "coined mechanic/system/grade-code term; at most one proper noun per paragraph. "
+            "Output only the blurb."
         )
     else:
+        from bestseller.services.genre_persona import resolve_persona  # noqa: PLC0415
         from bestseller.services.story_appeal import genre_emotion_exemplars  # noqa: PLC0415
 
         _emo = "、".join(genre_emotion_exemplars(genre, sub_genre)[:6])
+        _p = resolve_persona(genre, sub_genre)
         system_prompt = (
             "你是网文平台资深编辑。把给定简介按【整改要求】重写成一段【点击型】作品简介"
             "（番茄/起点详情页文案）。只输出重写后的简介正文，不要解释、不要标题。"
         )
         user_prompt = (
-            f"题材：{genre}（{sub_genre}）\n\n【当前简介】\n{synopsis}\n\n【整改要求】\n{feedback}\n\n"
+            f"题材：{genre}（{sub_genre}）\n"
+            f"【目标读者】{_p.channel}：{_p.who}；他要的爽点：{_p.fantasy}；雷点(避开)：{('、'.join(_p.turnoffs))}；"
+            f"钩子公式：{_p.hook_formula}\n\n【当前简介】\n{synopsis}\n\n【整改要求】\n{feedback}\n\n"
             "硬性：80-140字；首句≤30字的强钩（疑问/反差/开局冲突）；卖点三要素齐（身份+冲突+代价）；"
             f"高唤起情绪前置——用【本题材】的情绪事件（如：{_emo}），别套其他题材的情绪词；"
-            "结尾留悬念不剧透；禁AI腔（本以为/却没想到/何去何从/敬请期待）。只输出简介正文。"
+            "结尾留悬念不剧透；禁AI腔（本以为/却没想到/何去何从/敬请期待）；"
+            "【新读者可懂铁律】当成写给完全不懂本书设定的陌生人:删掉生造黑话/自定义机制名/系统术语/"
+            "等级编号(如灵码编辑器/怪谈词条/S级/#0371/数据化修炼),独特概念要么不出现要么紧跟一句大白话"
+            "点破,一段最多留1个专名;读完能一句话说出主角是谁、要干嘛、爽点在哪。只输出简介正文。"
         )
     try:
         completion = await complete_text(
@@ -1913,6 +2481,11 @@ async def run_conception_pipeline(
     # already used so the LLM stops re-minting 陆沉/宁尘/etc. Best-effort.
     ctx["avoid_names"] = await _recent_cast_names(session)
 
+    # Cross-book *mechanism* de-dup: feed conception the core mechanisms
+    # recent same-genre books already used so book N+1 stops re-minting book
+    # N's golden finger (the recurring debt-ledger problem). Best-effort.
+    await _attach_mechanism_dedup(session, settings, ctx)
+
     selected_hook_spec = coerce_hook_spec(
         user_hints.get("hook_spec") if isinstance(user_hints, dict) else None
     )
@@ -1942,14 +2515,10 @@ async def run_conception_pipeline(
                     else None
                 ),
                 count=candidate_count,
-                seed=int(hashlib.sha256(genre_key.encode("utf-8")).hexdigest()[:8], 16),
+                seed=_hook_candidate_seed(genre_key),
                 min_h_norm=float(getattr(settings.hook_engine, "min_h_norm", 30.0)),
                 duplicate_risk_fn=build_hook_duplicate_risk_fn(
-                    [
-                        str(ctx.get("description") or ""),
-                        str(ctx.get("premise_seed") or ""),
-                        str(user_hints or ""),
-                    ]
+                    _hook_duplicate_corpus(ctx, user_hints)
                 ),
                 rank_weights=rank_weights,
             )
@@ -2154,6 +2723,96 @@ async def run_conception_pipeline(
     )
     llm_run_ids.extend(stage_llm_ids)
     conception_log.append({"round": 3, "agent": "project_director", "final": final_result})
+
+    # Mechanism echo screen + anti-debt gate: the avoid-list and prompt guardrail
+    # are not enough — the model still (a) absorbs the forbidden vocabulary as
+    # material (verbatim premise openings, ledger-named golden fingers) and
+    # (b) defaults cultivation costs to debt/ledger framing. One focused finalize
+    # retry with the specific problems named; keep whichever result is cleaner.
+    # Fail-open.
+    try:
+        _avoid_entries = list(ctx.get("avoid_mechanisms") or [])
+        echo_report = _mechanism_echo_report(
+            final_result,
+            _avoid_entries,
+            genre=str(ctx.get("genre") or "") or None,
+            sub_genre=str(ctx.get("sub_genre") or "") or None,
+        )
+        # Debt gate: fire only when the user did NOT ask for a debt theme and the
+        # finalized golden finger / premise leans on ledger framing.
+        _debt_ok = _mentions_debt_theme(
+            ctx.get("description"), ctx.get("user_hints"), ctx.get("premise_seed")
+        )
+        _gf_text = ""
+        _profile = final_result.get("writing_profile")
+        if isinstance(_profile, dict):
+            _char = _profile.get("character")
+            if isinstance(_char, dict):
+                _gf_text = str(_char.get("golden_finger") or "")
+        debt_hit = (not _debt_ok) and (
+            _is_debt_dominated_mechanism(_gf_text)
+            or _is_debt_dominated_mechanism(str(final_result.get("premise") or ""))
+        )
+        if echo_report or debt_hit:
+            _emit(
+                "conception_mechanism_echo_retry",
+                {
+                    "collisions": [str(r.get("title") or "") for r in echo_report],
+                    "debt_dominated": debt_hit,
+                },
+            )
+            retry_feedback = _render_mechanism_echo_feedback(echo_report, is_en=is_en)
+            if debt_hit:
+                retry_feedback += _render_debt_rewrite_feedback(is_en=is_en)
+            retry_result, retry_llm_ids = await _llm_call_json(
+                session, settings,
+                role="editor",
+                system_prompt=_FINALIZE_SYSTEM_EN if is_en else _FINALIZE_SYSTEM,
+                user_prompt=finalize_user_prompt + retry_feedback,
+                fallback=json.dumps(final_result, ensure_ascii=False),
+                template="conception_finalize_echo_retry",
+                stage="conception.final_echo_retry",
+                language=str(ctx.get("language") or "zh-CN"),
+            )
+            llm_run_ids.extend(retry_llm_ids)
+            retry_report = _mechanism_echo_report(
+                retry_result,
+                _avoid_entries,
+                genre=str(ctx.get("genre") or "") or None,
+                sub_genre=str(ctx.get("sub_genre") or "") or None,
+            )
+            retry_gf = ""
+            retry_profile = retry_result.get("writing_profile") if isinstance(retry_result, dict) else None
+            if isinstance(retry_profile, dict) and isinstance(retry_profile.get("character"), dict):
+                retry_gf = str(retry_profile["character"].get("golden_finger") or "")
+            retry_debt = (not _debt_ok) and (
+                _is_debt_dominated_mechanism(retry_gf)
+                or _is_debt_dominated_mechanism(str(retry_result.get("premise") or ""))
+                if isinstance(retry_result, dict) else False
+            )
+            # Adopt the retry when it is a valid payload that is no worse on echo
+            # and strictly resolves the debt hit (or there was no debt hit).
+            adopted = (
+                isinstance(retry_result, dict)
+                and bool(retry_result)
+                and _echo_severity(retry_report) <= _echo_severity(echo_report)
+                and (not debt_hit or not retry_debt)
+            )
+            if adopted:
+                final_result = retry_result
+            conception_log.append(
+                {
+                    "round": 3,
+                    "agent": "mechanism_echo_gate",
+                    "collisions": echo_report,
+                    "retry_collisions": retry_report,
+                    "debt_dominated": debt_hit,
+                    "retry_debt_dominated": retry_debt,
+                    "adopted_retry": adopted,
+                }
+            )
+    except Exception:
+        logger.warning("mechanism echo/debt retry failed; keeping original finalize", exc_info=True)
 
     # Extract final outputs with fallbacks
     writing_profile = final_result.get("writing_profile", {})

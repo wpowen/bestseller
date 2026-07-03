@@ -621,6 +621,12 @@ class PipelineSettings(BaseModel):
     enable_worldview_progression_gate: bool = True
     worldview_progression_gate_block_on_failure: bool = False
     story_design_require_kernel_for_new_projects: bool = False
+    # Concept/mechanism-level cross-book de-dup at conception time — the
+    # concept twin of the cast-name de-dup. Feeds recent same-genre books'
+    # core mechanisms (golden finger / premise / trope keywords) into the
+    # conception prompts as a hard differentiate-from constraint so book N+1
+    # stops re-minting book N's mechanism. Best-effort/fail-open.
+    enable_conception_mechanism_dedup: bool = True
     # Curator scheduling — overridable via env for admin triage.
     curator_weekly_cron_hour: int = 4  # 04:00 UTC Monday
     curator_weekly_cron_day_of_week: str = "mon"

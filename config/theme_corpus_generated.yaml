@@ -73,7 +73,7 @@ themes:
   - {id: nitian_gen_09, motif: nitian, tone: "", proposition: "被打碎的不是骨头，是'这辈子只能这样'的念头。"}
   - {id: nitian_gen_10, motif: nitian, tone: "", proposition: "逆天第一步：承认天也有错。"}
   - {id: nitian_gen_11, motif: nitian, tone: "", proposition: "把天规踩在脚下那天，你就是下一个天。"}
-  - {id: rending_shengtian_gen_00, motif: rending_shengtian, tone: "", proposition: "赢了这一仗，账还没算完"}
+  - {id: rending_shengtian_gen_00, motif: rending_shengtian, tone: "", proposition: "赢了这一仗，冤还没了结"}
   - {id: rending_shengtian_gen_01, motif: rending_shengtian, tone: "", proposition: "以为天塌了，其实是地基烂了"}
   - {id: rending_shengtian_gen_02, motif: rending_shengtian, tone: "", proposition: "最难的仗是打赢之后没人接"}
   - {id: rending_shengtian_gen_03, motif: rending_shengtian, tone: "", proposition: "扛过去不算赢，让后来人不必扛才算"}
@@ -86,24 +86,24 @@ themes:
   - {id: rending_shengtian_gen_10, motif: rending_shengtian, tone: "", proposition: "最深的坑不是自然挖的，是没人填的"}
   - {id: rending_shengtian_gen_11, motif: rending_shengtian, tone: "", proposition: "赢了一时，输了万年，那叫什么赢"}
   - {id: daijia_gen_00, motif: daijia, tone: "", proposition: "每一分得到，都从你尚未察觉的地方取走等量的东西。"}
-  - {id: daijia_gen_01, motif: daijia, tone: "", proposition: "你以为在选择，其实是在签一张无法毁约的欠条。"}
+  - {id: daijia_gen_01, motif: daijia, tone: "", proposition: "你以为在选择，其实是在立一个收不回的誓。"}
   - {id: daijia_gen_02, motif: daijia, tone: "", proposition: "强大的代价，是把你的软肋卖给了每一个敌人。"}
-  - {id: daijia_gen_03, motif: daijia, tone: "", proposition: "代价从不说谎，它只在你撒谎时来清账。"}
+  - {id: daijia_gen_03, motif: daijia, tone: "", proposition: "代价从不说谎，它只在你撒谎时上门。"}
   - {id: daijia_gen_04, motif: daijia, tone: "", proposition: "你用什么换力量，力量就注定无法弥补那个空缺。"}
   - {id: daijia_gen_05, motif: daijia, tone: "", proposition: "真正的代价不是失去，而是失去后才知道它曾属于你。"}
   - {id: daijia_gen_06, motif: daijia, tone: "", proposition: "每场胜利都在暗处标好了你将偿还的时间与分量。"}
-  - {id: daijia_gen_07, motif: daijia, tone: "", proposition: "所有捷径都有利息，你走的时候有多快，还的时候就有多疼。"}
+  - {id: daijia_gen_07, motif: daijia, tone: "", proposition: "所有捷径都留印子，你走的时候有多快，回头时就有多疼。"}
   - {id: daijia_gen_08, motif: daijia, tone: "", proposition: "你省下的每一样东西，最后都变成必须偿还的亏空。"}
   - {id: daijia_gen_09, motif: daijia, tone: "", proposition: "代价不是惩罚，是宇宙从不打折的收支平衡。"}
   - {id: daijia_gen_10, motif: daijia, tone: "", proposition: "拥有越多选择，失去时就越无处可逃、无从抵赖。"}
   - {id: daijia_gen_11, motif: daijia, tone: "", proposition: "你透支的不是未来，是某个已经存在的当下。"}
-  - {id: zhenxiang_gen_00, motif: zhenxiang, tone: "", proposition: "查清一件事，就欠下一笔永远还不清的债。"}
+  - {id: zhenxiang_gen_00, motif: zhenxiang, tone: "", proposition: "查清一件事，就背上一个再也放不下的重量。"}
   - {id: zhenxiang_gen_01, motif: zhenxiang, tone: "", proposition: "以为是自己查案，其实是案子在挑人来查。"}
   - {id: zhenxiang_gen_02, motif: zhenxiang, tone: "", proposition: "真相让人自由，也让人成为唯一知情者。"}
   - {id: zhenxiang_gen_03, motif: zhenxiang, tone: "", proposition: "说出来的真相会伤人，说不出的会杀人。"}
   - {id: zhenxiang_gen_04, motif: zhenxiang, tone: "", proposition: "真相永远有两层，第二层是'为何没人说'。"}
   - {id: zhenxiang_gen_05, motif: zhenxiang, tone: "", proposition: "查清那一刻，你就不再是原来的身份了。"}
-  - {id: zhenxiang_gen_06, motif: zhenxiang, tone: "", proposition: "历史只记结果，过程欠的债要谁来还。"}
+  - {id: zhenxiang_gen_06, motif: zhenxiang, tone: "", proposition: "历史只记结果，过程里折进去的人谁来记。"}
   - {id: zhenxiang_gen_07, motif: zhenxiang, tone: "", proposition: "真相不是终点，是你必须重新开始的起点。"}
   - {id: zhenxiang_gen_08, motif: zhenxiang, tone: "", proposition: "说出口的真相像投出去的刀，收不回来。"}
   - {id: zhenxiang_gen_09, motif: zhenxiang, tone: "", proposition: "找到真相的人，往往成了下一个该被掩盖的真相。"}

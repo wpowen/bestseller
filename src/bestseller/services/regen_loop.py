@@ -500,7 +500,7 @@ def propose_overrides_from_report(
                 suggested_due_chapter=chapter_no + payback_window_default,
                 suggested_payback_plan=(
                     v.prompt_feedback
-                    or f"本章软约束 {v.code} 暂记为欠账，"
+                    or f"本章软约束 {v.code} 暂缓兑现，"
                     f"应在 {chapter_no + payback_window_default} 章前完成兑现。"
                 ),
             )

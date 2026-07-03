@@ -414,7 +414,7 @@ def render_overlay_prompt_block(
         _append_line(lines, "emotion phase" if is_en else "情绪阶段", chapter.get("emotion_phase"))
         _append_list(lines, "hooks to resolve" if is_en else "待消解钩子", chapter.get("hooks_to_resolve"))
         _append_list(lines, "hooks to plant" if is_en else "新植入钩子", chapter.get("hooks_to_plant"))
-        _append_list(lines, "relationship debts" if is_en else "关系债务", chapter.get("relationship_debts"))
+        _append_list(lines, "unresolved relationship threads" if is_en else "未了关系张力", chapter.get("relationship_debts"))
     if scene:
         lines.append("Scene:" if is_en else "场景：")
         _append_line(lines, "stakes" if is_en else "筹码", scene.get("conflict_stakes"))
@@ -438,7 +438,7 @@ def render_overlay_prompt_block(
         _append_line(lines, "turning point" if is_en else "转折点", scene.get("turning_point"))
         _append_line(lines, "exit state delta" if is_en else "退出状态变化", scene.get("exit_state_delta"))
         _append_line(lines, "aftereffect" if is_en else "后效", scene.get("next_aftereffect"))
-        _append_list(lines, "relationship debts" if is_en else "关系债务", scene.get("relationship_debts"))
+        _append_list(lines, "unresolved relationship threads" if is_en else "未了关系张力", scene.get("relationship_debts"))
     return "\n".join(lines)
 
 
@@ -746,7 +746,7 @@ def validate_scene_methodology_contract(
             OverlayFinding(
                 code="SCENE_METHODOLOGY_RELATIONSHIP_DEBT_MISSING",
                 path=f"{path}.relationship_debts",
-                message="多角色场景需要说明本场推进、偿还或加码的关系债。",
+                message="多角色场景需要说明本场推进、兑现或加压的人际承诺/张力。",
             )
         )
 

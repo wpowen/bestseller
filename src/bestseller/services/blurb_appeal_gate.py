@@ -2,7 +2,7 @@
 
 Answers the core product question: *would a reader click on this book from the
 blurb alone?*  Scores the listing package (title + synopsis + premise + tags) on
-a 10-dimension rubric (``config/story_appeal.yaml`` → ``blurb_rubric``) using
+an 11-dimension rubric (``config/story_appeal.yaml`` → ``blurb_rubric``) using
 regex + genre lexicons only — no LLM.  Mirrors the heuristic style of
 ``opening_hook_density_gate.py``.
 
@@ -33,6 +33,43 @@ _INTENSIFIER_RE = re.compile(
     r"非常|极其|无比|十分|格外|异常|绝美|惊艳|震撼人心|举世无双|绝世|惊天|无尽"
 )
 _FIRST_PERSON_RE = re.compile(r"我(?!们)|吾")  # exclude 我们 (narrator filler)
+
+# ── 新读者可懂度（黑话过载）检测 ─────────────────────────────────────────────
+# 简介的职责是让"零基础新读者一眼看懂+想点"。生造的机制黑话/系统词/编号会让人
+# 看不懂、不知道爽点在哪。注意只打【生造/跨域堆砌】词,不打宗门/厉鬼/灵根这类
+# 单个常见题材词(题材读者本就认识)。与 concreteness 互补:具体≠可懂。
+_JARGON_BRACKET_RE = re.compile(r"[「『][^」』]{1,12}[」』]")  # 「低危怪谈」式生造标签
+_JARGON_CODE_RE = re.compile(
+    r"[A-Za-z]{2,}[0-9]*|[#＃]\s*[0-9]{2,}|[SABCDEＳ]\s*级|[0-9]+\s*号档?"
+)  # AR / #0371 / S级 / 0371号 等编号档位
+# 生造机制/系统/赛博/经济杠杆词根(跨域堆砌的标志,非单个常见题材名词)
+_JARGON_STEMS: tuple[str, ...] = (
+    "灵码", "词条", "编辑器", "编译", "算法", "数据化", "数据流", "代码",
+    "杠杆", "越级", "掉档", "档位", "词缀", "录入", "名册", "禁忌线",
+    "目击即", "存在杠杆", "口碑越级", "面板", "数值", "解锁", "刷新",
+    "副本", "属性栏", "灵警", "可视化", "编号",
+)
+
+
+def _score_comprehensibility(synopsis: str, lex: dict[str, Any]) -> tuple[float, str, dict]:
+    """新读者可懂度:生造黑话/编号/系统词密度越高 → 越看不懂 → 分越低。"""
+
+    text = synopsis or ""
+    n = max(_cjk_len(text), 1)
+    stem_hits = _count_hits(text, _JARGON_STEMS)
+    bracket_hits = len(_JARGON_BRACKET_RE.findall(text))
+    code_hits = len(_JARGON_CODE_RE.findall(text))
+    coined = stem_hits + bracket_hits + code_hits
+    per_100 = coined / (n / 100.0)
+    score = _clamp(5.0 - 0.9 * per_100, 0.0, 5.0)
+    # 绝对量兜底:≥4 个生造词,新读者必劝退,封到 ≤2.0
+    if coined >= 4:
+        score = min(score, 2.0)
+    rationale = (
+        f"生造黑话 {coined} 处(词根{stem_hits}/标签{bracket_hits}/编号{code_hits})"
+        f"，每百字 {per_100:.1f}"
+    )
+    return score, rationale, {"coined": coined, "per_100": round(per_100, 2)}
 
 
 def _cjk_len(text: str) -> int:
@@ -362,6 +399,7 @@ def evaluate_blurb_appeal(
         "emotion_charge": _score_emotion_charge(synopsis, lexicon),
         "adjective_thrift": _score_adjective_thrift(synopsis),
         "length_format": _score_length_format(synopsis, envelope),
+        "comprehensibility": _score_comprehensibility(synopsis, lexicon),
     }
 
     dims: list[AppealDimension] = []
@@ -434,6 +472,22 @@ def evaluate_blurb_appeal(
                 "简介改用与立意一致的张力(代价/异化/抉择/恐惧)，删打脸/跪地/碾压/逆袭等爽文套词"
             )
 
+    # ── 新读者可懂度 cap（独立一票否决）────────────────────────────────────
+    # 黑话过载(生造机制/系统/编号堆砌)让新读者看不懂、不知爽点 → 列表页必劝退。
+    # 独立 cap(不与钩子/情绪 AND):再有钩子有情绪,看不懂也卖不动。
+    comp_dim = by_key.get("comprehensibility")
+    comp_floor = float(bar_cfg.get("comprehensibility_floor", 2.5))
+    comp_cap = float(bar_cfg.get("comprehensibility_cap", 60))
+    if comp_dim is not None and comp_dim.score < comp_floor and total > comp_cap:
+        total = comp_cap
+        findings.append(
+            f"[新读者看不懂] 可懂度{comp_dim.score:.1f}<{comp_floor:.1f}（{comp_dim.rationale}）"
+            f" → 生造黑话过载、新读者一眼劝退 → 封顶 {comp_cap:.0f}"
+        )
+        suggestions.append(
+            "把生造黑话/编号/系统词全部去掉或就地换成大白话,让没读过设定的人也秒懂主角要干嘛、爽在哪"
+        )
+
     grade = _grade_from_total(total, config)
     return BlurbAppealVerdict(
         total=total,
@@ -476,6 +530,7 @@ _SUGGESTIONS: dict[str, str] = {
     "emotion_charge": "把退婚/背叛/重生等高唤起情绪事件提到开头",
     "adjective_thrift": "减少形容词堆砌，改用强动词驱动",
     "length_format": "把简介长度调进平台字数带并分段",
+    "comprehensibility": "删掉生造黑话/编号/系统词,换成新读者一眼能懂的大白话",
 }
 
 __all__ = ["evaluate_blurb_appeal"]

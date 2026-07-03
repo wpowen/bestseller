@@ -270,7 +270,10 @@ def _records_from_canon_guardrails(project_dir: Path) -> list[EntityRecord]:
         if not subject:
             continue
         is_deprecated_guardrail = "旧版" in reason or "当前正典未保留" in reason
-        is_planned_retirement = subject == "裴镜渊" and "抢走十七栋主线" in reason
+        # Generic marker (was hardcoded to one book's character + arc name):
+        # a guardrail entry whose reason says the character would hijack the
+        # mainline is a planned retirement, whatever the book.
+        is_planned_retirement = "抢走" in reason and "主线" in reason
         if is_deprecated_guardrail or is_planned_retirement:
             records.append(
                 EntityRecord(

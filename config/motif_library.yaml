@@ -111,7 +111,7 @@ motifs:
       reconstruction: 学会精算规则、借规则反制规则而存活
     common_traps: 把冷酷写成无聊的说明书
     trap_guard: 用规则触发具体损失; 副线写同门竞逐、宗门财政、资源黑市。
-    concrete_symbol_hints: [寿元兑换的沙漏, 法宝竞拍的号牌, 门规石碑, 灵石账册]
+    concrete_symbol_hints: [寿元兑换的沙漏, 法宝竞拍的号牌, 门规石碑, 见底的灵米袋]
     commercial: {appeal: high, serializability: very_high, adaptation: very_high}
     reader_segment: 凡人流 / 升级流 / 策略型读者
     pairs_well_with: [yinguo, mingyun, zhenxiang, daijia, changsheng_zhouzhou, zhenshi_xuhuan]
@@ -159,7 +159,7 @@ motifs:
       reconstruction: 主动追溯并偿还旧因, 接受承担的代价
     common_traps: 说教味重, 因果靠旁白宣布
     trap_guard: 让因果通过戏剧事件实现; 副线写前世线、旁支人物的报应链。
-    concrete_symbol_hints: [反复出现的旧账本, 同一道伤疤, 误伤者的遗物, 回到原点的渡口]
+    concrete_symbol_hints: [反复回到主角手里的同一件旧物, 同一道伤疤, 误伤者的遗物, 回到原点的渡口]
     commercial: {appeal: high, serializability: very_high, adaptation: high}
     reader_segment: 传统文化读者 / 悬疑读者
     pairs_well_with: [dadao_wuqing, mingyun, zhenxiang, daijia, zhenshi_xuhuan, shane_diandao]
@@ -242,20 +242,20 @@ motifs:
     one_line: 任何力量、知识、救赎、复仇都不是免费得来; 代价可以是肉身、关系、伦理、记忆、寿命与身份。
     philosophical_origin: 《老子》第九章"持而盈之, 不如其已"; 佛教因果"种因—遇缘—结果"的支付逻辑。
     representative_work: 《十日终焉》把"生命代价"制度化; 《凡人修仙传》把谨慎求生写成日常代价。
-    thesis_template: 没有白来的力量, 只有迟到的账单。
+    thesis_template: 没有白来的力量, 只有迟早显形的代价。
     core_question_template: 你愿意用什么换力量？
     conflict_type: 欲望与支付能力冲突
-    character_arc: 贪求者 → 会计算损失的人
+    character_arc: 贪求者 → 掂得清轻重的人
     worldview_setting: 力量系统必须绑定价格; 每次获得都有可见或延迟的支付。
     plot_template: 先得 → 后失 → 想补救 → 发现代价不可逆
     suspense_technique: 让"代价"延迟出现, 比即时损失更痛
     belief_arc:
       initial: 相信这次的力量是占了便宜、没有附带条件
       shatter: 一夜暴涨修为, 却忘了母亲的脸 / 失去不可逆的东西
-      reconstruction: 学会预先标价、为每一次获得保留偿付能力
+      reconstruction: 学会预判代价、为每一次获得留出能承受的余地
     common_traps: 代价没有持续性, 一次性损失后即遗忘
-    trap_guard: 让代价反复侵入日常; 副线写价格市场、禁术事件、被代价压垮的前人。
-    concrete_symbol_hints: [缺页的记忆, 换血后的白发, 抵押出去的名字, 越用越短的寿线]
+    trap_guard: 让代价反复侵入日常; 副线写代价显形、禁术事件、被代价压垮的前人。
+    concrete_symbol_hints: [缺页的记忆, 换血后的白发, 叫不出口的旧名, 越用越短的寿线]
     commercial: {appeal: very_high, serializability: very_high, adaptation: high}
     reader_segment: 全类型通吃
     pairs_well_with: [tiandi_buren, dadao_wuqing, nitian, zhenxiang, zhongsheng_jieku, changsheng_zhouzhou]

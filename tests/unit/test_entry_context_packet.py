@@ -14,12 +14,12 @@ def test_scene_context_packet_accepts_entry_system_blocks() -> None:
         query_text="写第一场",
         entry_system_context_block="【词条体系约束】",
         entry_registry_context_block="【词条注册表】",
-        entry_state_ledger_block="【词条状态账本】",
+        entry_state_ledger_block="【词条状态跟踪】",
     )
 
     assert packet.entry_system_context_block == "【词条体系约束】"
     assert packet.entry_registry_context_block == "【词条注册表】"
-    assert packet.entry_state_ledger_block == "【词条状态账本】"
+    assert packet.entry_state_ledger_block == "【词条状态跟踪】"
 
 
 def test_chapter_context_packet_accepts_entry_system_blocks() -> None:
@@ -32,9 +32,9 @@ def test_chapter_context_packet_accepts_entry_system_blocks() -> None:
         chapter_goal="建立词条体系",
         entry_system_context_block="【词条体系约束】",
         entry_registry_context_block="【词条注册表】",
-        entry_state_ledger_block="【词条状态账本】",
+        entry_state_ledger_block="【词条状态跟踪】",
     )
 
     assert packet.entry_system_context_block == "【词条体系约束】"
     assert packet.entry_registry_context_block == "【词条注册表】"
-    assert packet.entry_state_ledger_block == "【词条状态账本】"
+    assert packet.entry_state_ledger_block == "【词条状态跟踪】"

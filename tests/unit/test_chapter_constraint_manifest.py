@@ -453,8 +453,17 @@ def test_prewrite_prompt_includes_methodology_for_early_chapters() -> None:
 
     assert "写作方法论参考" in prompt
     assert "信息密度" in prompt
-    assert "弹簧法" in prompt
+    # 弹簧法(压抑-打脸)是爽文向方法，悬疑 pack 不再被兜底注入。
+    assert "弹簧法" not in prompt
     assert "冲突筹码" in prompt
+
+    shuangwen_prompt = render_prewrite_plan_prompt(
+        manifest,
+        language="zh-CN",
+        pack=get_prompt_pack("xianxia-upgrade-core"),
+        chapter_number=1,
+    )
+    assert "弹簧法" in shuangwen_prompt
 
 
 def test_prewrite_prompt_omits_density_rule_for_late_chapters() -> None:
@@ -473,7 +482,7 @@ def test_prewrite_prompt_omits_density_rule_for_late_chapters() -> None:
 
     assert "写作方法论参考" in prompt
     assert "信息密度规则" not in prompt
-    assert "弹簧法" in prompt
+    assert "冲突筹码" in prompt
 
 
 def test_empty_elapsed_whitelist_does_not_auto_reject_travel() -> None:

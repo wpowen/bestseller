@@ -177,10 +177,10 @@ def _good_rule_mystery_metadata() -> dict[str, object]:
         "world_rules": [
             {
                 "rule_code": "R-001",
-                "name": "否认者先入账",
-                "visible_effect": "镜面出现债名",
+                "name": "说谎者留痕",
+                "visible_effect": "说谎者手背浮现灰纹",
                 "exploitation_potential": "逼当事人承认隐瞒事实",
-                "cost": "每次逼供都会让主角被镜局记名",
+                "cost": "每次逼问都会让主角折损一日记忆",
             }
         ],
         "cast_spec": {
@@ -193,9 +193,9 @@ def _good_rule_mystery_metadata() -> dict[str, object]:
         "premium_state_snapshot": _state_snapshot(
             rule_state={
                 "R-001": {
-                    "name": "否认者先入账",
-                    "last_visible_effect": "镜面出现债名",
-                    "last_cost": "被镜局记名",
+                    "name": "说谎者留痕",
+                    "last_visible_effect": "说谎者手背浮现灰纹",
+                    "last_cost": "折损一日记忆",
                 }
             }
         ),

@@ -34,24 +34,23 @@ SCENE_JUMP_BLOCK_CODE = "SCENE_JUMP_UNRESOLVED"
 
 
 # Location groups: tokens within the same group are considered nested
-# or same-scene (e.g. 十七栋 + 二十三层 + 303 = one scene cluster).
+# or same-scene (e.g. 医院 + 病房 + ICU = one scene cluster).
 # Transitions WITHIN a group don't count as jumps.
+#
+# Genre-generic clusters ONLY. Earlier this default baked one detective
+# book's private map (十七栋/303/城南旧事馆/清水桥义庄) into every project —
+# other books' locations were invisible to the gate while that book's map
+# leaked into a "universal" default. Callers should pass ``location_groups``
+# derived from the book's own location_refs for full coverage.
 _DEFAULT_LOCATION_GROUPS: tuple[tuple[str, ...], ...] = (
-    # Group A: 十七栋 + 内部
-    (
-        "十七栋", "二十三层", "二十三楼", "23 层", "二十三层走廊",
-        "303", "305", "306",
-    ),
-    # Group B: 旧货市场区域
-    ("城南旧事馆", "城北旧货市场", "旧事馆", "旧货市场"),
-    # Group C: 医院 / 太平间
-    ("太平间", "ICU", "病房", "医院", "停尸柜"),
-    # Group D: 警局
-    ("派出所", "刑警支队", "警局"),
-    # Group E: 清水桥义庄（外部历史地，本书第 1 章背景之一）
-    # 注意：故意不收录 "茅山"，因为它在本书里多作流派/技法名词使用
-    # （茅山术/茅山请神术），不是物理地点。
-    ("清水桥", "义庄"),
+    # 医院 / 太平间
+    ("太平间", "ICU", "病房", "医院", "停尸柜", "急诊"),
+    # 警局
+    ("派出所", "刑警支队", "警局", "审讯室"),
+    # 学校
+    ("教学楼", "教室", "校门", "操场", "宿舍楼"),
+    # 居所内部
+    ("客厅", "卧室", "厨房", "阳台", "楼道"),
 )
 
 
@@ -334,7 +333,7 @@ def render_scene_coherence_block(
         return "\n".join(
             [
                 "【场景连贯门 — 必须遵守】",
-                "- 任意两段之间如果场景位置改变（如 17号楼 → 旧事馆 → 17号楼），"
+                "- 任意两段之间如果场景位置改变（如 A 地 → B 地 → A 地），"
                 "必须在过渡处明确写出时间标记 + 移动动作。",
                 "- 强过渡词举例：半小时后 / 二十分钟后 / 零点已过 / 抵达 / 冲下楼梯 / 推开门。",
                 "- 禁止：前一段还在 A 地，下一段突然在 B 地，没有任何时间/移动说明。",

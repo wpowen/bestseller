@@ -517,4 +517,4 @@ def test_entry_system_metadata_feeds_writer_blocks() -> None:
 
     assert "【词条体系约束】" in blocks.entry_system_context_block
     assert "【词条注册表】" in blocks.entry_registry_context_block
-    assert "【词条状态账本】" in blocks.entry_state_ledger_block
+    assert "【词条状态跟踪】" in blocks.entry_state_ledger_block

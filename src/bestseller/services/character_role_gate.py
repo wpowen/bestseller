@@ -85,10 +85,9 @@ class CharacterRoleReport:
 
 # Generic tone vocabulary maps — used when cast file doesn't enumerate them.
 _FENG_SHUI_TONE_MARKERS: tuple[str, ...] = (
-    "阴阳眼", "罗盘", "青囊", "符", "符纸", "黄符", "符法", "符箓",
-    "茅山", "镇魂", "三短一长",
-    "铜钱", "桃木", "朱砂", "镜眼",
-    "认账", "账法", "账页",
+    "阴阳眼", "罗盘", "符", "符纸", "黄符", "符法", "符箓",
+    "茅山", "镇魂",
+    "铜钱", "桃木", "朱砂",
     "方位", "坤位", "兑位", "震位",
     "气", "煞", "煞气", "阴气",
 )
@@ -200,7 +199,7 @@ def _infer_tone_markers(
     conflicting: list[str] = []
 
     feng_shui_signals = (
-        "阴阳眼", "罗盘", "青囊", "符", "茅山", "镜眼", "账页", "推理",
+        "阴阳眼", "罗盘", "符", "茅山", "风水", "推理",
     )
     if any(sig in ability_text for sig in feng_shui_signals):
         expected.extend(_FENG_SHUI_TONE_MARKERS)
@@ -386,8 +385,8 @@ def render_character_role_violations_block(
             sev = "✗" if f.severity == "critical" else "⚠"
             lines.append(f"  · {sev} [{f.drift_type}] {f.detail}")
         lines.append(
-            "- 重写时必须让在场角色使用其声明的能力（如阴阳眼/罗盘/青囊/符），"
-            "避免侦探腔（如查案/破案/审讯）替代术法腔。"
+            "- 重写时必须让在场角色使用其在 cast 里声明的能力（按本书设定，"
+            "不要沿用其他书的法器名），避免侦探腔（如查案/破案/审讯）替代术法腔。"
         )
         return "\n".join(lines)
     return f"[Character role drift: {len(report.findings)} findings]"

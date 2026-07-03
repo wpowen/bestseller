@@ -503,7 +503,16 @@ def _catalog_key(
     prompt_pack_key: str | None = None,
 ) -> str:
     label = f"{genre} {sub_genre or ''} {prompt_pack_key or ''}".lower()
-    if any(token in label for token in ("神仙", "西游", "封神", "仙", "myth")):
+    # mythic-WORKPLACE (招神/神仙 HR) effect-skills need an explicit HR/招聘/职场 signal.
+    # Bare 仙/修仙/仙侠 (cultivation) must NOT match — else cultivation books get the
+    # workplace/comedy engine stack (brainhole/comedy/HR-contract) and homogenize toward
+    # 债契/记账/HR gimmicks. Twin of the brainhole_engine._resolve_profile_key "仙" bug.
+    workplace = any(
+        t in label
+        for t in ("招神", "hr", "人事", "职场", "入职", "面试", "招聘", "打工", "上班", "员工", "上岗")
+    )
+    mythic = any(t in label for t in ("神仙", "西游", "封神", "天庭", "神庭", "myth"))
+    if "招神" in label or (mythic and workplace):
         return "mythic-workplace-effect-skills"
     if any(token in label for token in ("悬疑", "民俗", "怪谈", "suspense", "mystery")):
         return "mystery-effect-skills"

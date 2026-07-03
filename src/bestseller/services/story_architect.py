@@ -234,10 +234,12 @@ def _build_system_prompt(language: str) -> str:
             "为小说项目设计独特的「故事基因组合」（StoryFacets），确保每部作品有差异化卖点。\n"
             "\n"
             "# CONSTRAINTS · 五大核心原则\n"
-            "1. **反套路**——至少在一个核心维度上做非主流选择\n"
-            "2. **跨类型融合**——trope_tags 必须含 ≥ 1 个来自其他类型的标签\n"
+            "1. **反套路（仅限表皮）**——在**表皮维度**（设定外壳/支线机制/反派）上做非主流选择；"
+            "绝不在题材的爽点脊柱上反套路（见下方 SPINE LOCK）\n"
+            "2. **跨类型融合（当调味，非换骨）**——trope_tags 可含 ≥ 1 个其他类型标签作点缀，"
+            "但不得让外类型盖过本题材的核心爽点\n"
             "3. **市场感知**——优先选择热度上升期的元素\n"
-            "4. **差异化**——不得与已有项目在关键维度上完全重复\n"
+            "4. **差异化（差表皮，锁脊柱）**——与已有项目在表皮上区分开，但保留本题材读者要的承重配方\n"
             "5. **具象化**——setting 必须具体可视化，不要抽象泛泛\n"
             "\n"
             "# THINKING（产 JSON 前在脑内 4 步）\n"
@@ -263,10 +265,14 @@ def _build_system_prompt(language: str) -> str:
         "Design a unique 'story genome' (StoryFacets) for the novel project, ensuring differentiated appeal.\n"
         "\n"
         "# CONSTRAINTS · Core Principles\n"
-        "1. **Against Convention** — Make at least one unconventional choice on a core dimension\n"
-        "2. **Cross-Genre Fusion** — trope_tags must include ≥1 tag from a different genre\n"
+        "1. **Against Convention (SURFACE only)** — Make an unconventional choice on a *surface* "
+        "dimension (setting shell / side mechanics / villains); never subvert the genre's payoff "
+        "spine (see SPINE LOCK below)\n"
+        "2. **Cross-Genre Fusion (as seasoning, not a skeleton swap)** — trope_tags may include ≥1 "
+        "tag from another genre as a topping, but it must not eclipse this genre's core payoff\n"
         "3. **Market Awareness** — Prefer elements with rising popularity\n"
-        "4. **Differentiation** — Must not duplicate key dimensions from existing projects\n"
+        "4. **Differentiation (differ on surface, lock the spine)** — Differ from existing projects "
+        "on the surface, but keep the load-bearing formula this genre's readers come for\n"
         "5. **Specificity** — Setting must be vivid and visual, never vague\n"
         "\n"
         "# THINKING (before JSON, in your head)\n"
@@ -278,6 +284,69 @@ def _build_system_prompt(language: str) -> str:
         "# OUTPUT FORMAT\n"
         "Output ONLY valid JSON. No markdown fences, no commentary.\n"
         "String fields should be in English."
+    )
+
+
+def _render_persona_spine_lock(
+    primary_genre: str,
+    user_hints: dict[str, Any] | None,
+    language: str,
+) -> str:
+    """Render a reader-persona SPINE LOCK so differentiation cannot subvert the
+    genre's load-bearing 爽点 spine.
+
+    Root cause this guards: the Story Architect's 反套路 / 跨类型融合 / 差异化
+    constraints, with no persona guardrail, push a 仙侠升级 (male-channel power
+    fantasy) request away from its load-bearing spine (金手指/升级线/打脸兑现)
+    toward novelty (无金手指 / morally-grey / 克系规则怪谈) — beautifully written
+    but off-persona, so the target reader bounces in 3 seconds. The persona's
+    turnoffs literally include 节奏慢/铺垫长/文绉绉 — exactly the drift signature.
+    Differentiation must stay on the SURFACE (setting skin / specific hook /
+    side mechanics), never the spine.
+    """
+    try:
+        from bestseller.services.genre_persona import resolve_persona
+    except Exception:  # noqa: BLE001 — guardrail is best-effort, never fatal
+        return ""
+
+    orientation = ""
+    if isinstance(user_hints, dict):
+        raw = str(user_hints.get("audience_orientation") or "").strip()
+        orientation = {
+            "男频": "男频", "女频": "女频", "male": "男频", "female": "女频",
+        }.get(raw, "")
+
+    persona = resolve_persona(primary_genre, None, (), orientation or None)
+    triggers = "、".join(persona.click_triggers[:5])
+    turnoffs = "、".join(persona.turnoffs[:5])
+
+    if language.startswith("zh"):
+        return (
+            "\n## 题材脊柱锁定（SPINE LOCK · 不可妥协，优先级高于下方差异化要求）\n"
+            f"本书面向【{persona.channel}】读者。差异化只能改表皮，绝不可动以下承重脊柱：\n"
+            f"- 必须保留·爽点内核（按本题材落地，不可删除/反转）：{persona.fantasy}\n"
+            f"- 必须命中·点击钩（≥2 项要落进 narrative_drive / trope_tags）：{triggers}\n"
+            f"- 绝对避免·读者雷点（命中即三秒划走）：{turnoffs}\n"
+            "差异化边界：上方 CONSTRAINTS 的「反套路 / 跨类型融合 / 差异化」"
+            "只允许作用于【表皮】——具体设定外壳、独特场景、支线机制、反派与配角设计；"
+            "严禁把「核心维度反套路」理解为删除爽点脊柱，严禁把 tone 选成 "
+            "dark/gritty/melancholic 等压抑/文艺/道德灰色，严禁 power_system=null（无金手指/无成长线）。\n"
+            "记住：目标读者要的是「熟悉配方 + 新鲜外壳」，不是「反配方」。"
+            "动了脊柱 = 红海之外的自杀式差异化，本书天花板归零。\n"
+        )
+    return (
+        "\n## GENRE SPINE LOCK (non-negotiable, OUTRANKS the differentiation asks below)\n"
+        f"This book targets [{persona.channel}] readers. Differentiate the SURFACE only; "
+        "never touch the load-bearing spine:\n"
+        f"- MUST KEEP — core payoff (adapt to this genre, never remove/invert): {persona.fantasy}\n"
+        f"- MUST HIT — click triggers (≥2 into narrative_drive / trope_tags): {triggers}\n"
+        f"- MUST AVOID — reader turnoffs (instant bounce): {turnoffs}\n"
+        "Differentiation boundary: the 'against-convention / cross-genre fusion / differentiation' "
+        "constraints above may only act on the SURFACE (setting skin, specific hook, side mechanics, "
+        "villains). Do NOT read 'unconventional choice on a core dimension' as deleting the payoff spine, "
+        "do NOT pick dark/gritty/melancholic tone for a power-fantasy channel, do NOT set power_system=null.\n"
+        "Readers want a familiar formula in a fresh shell, not an anti-formula. "
+        "Breaking the spine = suicidal differentiation; the book's ceiling drops to zero.\n"
     )
 
 
@@ -307,17 +376,42 @@ def _build_user_prompt(
         if hints_str:
             parts.append(f"- User preferences:\n{hints_str}")
 
-    # Section 2: Existing projects (for anti-repetition)
+    # Section 1.5: Reader-persona SPINE LOCK — differentiation must not subvert
+    # the genre's load-bearing 爽点 spine. Placed BEFORE the anti-repetition
+    # pressure so the spine is read first.
+    spine_lock = _render_persona_spine_lock(primary_genre, user_hints, language)
+    if spine_lock:
+        parts.append(spine_lock)
+
+    # Section 2: Same-genre peers — differentiate the SURFACE, keep the spine.
+    # Framing matters: telling the model to differ on tone/drive (the genre
+    # spine) is what pulled prior same-genre books OFF-genre. These peers share
+    # the spine with the new book BY DESIGN; the new book must differ on the
+    # concrete premise SKIN (setting / specific mechanic / specific hook), NOT by
+    # swapping tone, dropping the golden finger, or grafting on another genre.
     if existing_facets:
-        parts.append("\n## Existing Projects (MUST differentiate from these)")
+        parts.append(
+            "\n## Same-Genre Peers (differentiate the SURFACE from these — "
+            "NOT the spine)"
+        )
+        parts.append(
+            "These books share your genre. It is EXPECTED and CORRECT that you "
+            "share their spine (tone family / narrative_drive / core payoff "
+            "tropes). Do NOT differ by changing tone, dropping the payoff, or "
+            "fusing in another genre. Differ ONLY by a distinct concrete "
+            "`setting` and a distinct specific mechanic/hook."
+        )
         for i, ef in enumerate(existing_facets[:8], 1):
             parts.append(
-                f"  {i}. tone={ef.tone}, drive={ef.narrative_drive}, "
-                f"sub_genres={list(ef.sub_genres)}, "
-                f"trope_tags={list(ef.trope_tags)[:5]}"
+                f"  {i}. setting=《{(ef.setting or '—')[:40]}》, "
+                f"trope_combo={list(ef.trope_tags)[:5]}"
             )
+        parts.append(
+            "→ Your `setting` and specific mechanic must be clearly distinct "
+            "from every one above; your tone/drive/core tropes may match."
+        )
     else:
-        parts.append("\n## Existing Projects\nNone yet — you have full creative freedom.")
+        parts.append("\n## Same-Genre Peers\nNone yet — you have full creative freedom.")
 
     # Section 3: Market trends
     parts.append("\n## Market Trends")

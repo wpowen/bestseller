@@ -62,6 +62,39 @@ _register_fallback("judge", "stakes_design", ("conflict_system", "stakes_design"
 _register_fallback("judge", "hook_design", ("hook_system",))
 
 
+# Master emotion fragments encode the 男频爽文 pressure-release loop
+# (铺垫憋屈 → 叠加羞辱 → 极限蓄能 → 打脸引爆) and the 爽感公式. That loop is a
+# genre METHOD, not universal craft: comedy / cozy / suspense / romance books
+# whose pack does not define its own emotion_engineering used to inherit it
+# via the master fallback, forcing every genre into the same humiliation-
+# payback shape (the tone-blind fixation that cratered comedy retention).
+# The master fallback for these keys now applies ONLY to packs that actually
+# run on that loop; packs off the list (and books with no pack) simply get no
+# emotion fragment unless their own pack defines one.
+_SHUANGWEN_EMOTION_FRAGMENT_KEYS = frozenset({"emotion_engineering", "spring_model"})
+
+_SHUANGWEN_LOOP_PACK_KEYS = frozenset(
+    {
+        "xianxia-upgrade-core",
+        "xuanhuan-power-fantasy",
+        "urban-power-reversal",
+        "urban-cultivation-2.0",
+        "wuxia-jianghu-honor",
+        "apocalypse-supply-chain",
+        "system-apocalypse-healer",
+        "game-esport",
+        "history-strategy",
+        "litrpg-progression",
+    }
+)
+
+
+def _master_fallback_allowed(pack: PromptPack | None, fragment_key: str) -> bool:
+    if fragment_key not in _SHUANGWEN_EMOTION_FRAGMENT_KEYS:
+        return True
+    return pack is not None and pack.key in _SHUANGWEN_LOOP_PACK_KEYS
+
+
 def get_fragment(
     pack: PromptPack | None,
     *,
@@ -74,6 +107,8 @@ def get_fragment(
         if isinstance(value, str) and value.strip():
             return value.strip()
 
+    if not _master_fallback_allowed(pack, fragment_key):
+        return ""
     builder_path = _MASTER_FALLBACK_BUILDERS.get((phase, fragment_key))
     if not builder_path:
         return ""

@@ -98,7 +98,7 @@ _REPAIR_ACTIONS = {
         "补齐派系生态：派系目标、资源利益、对主角的差异化反应和下一步压力。"
     ),
     "relationship_agency_missing": (
-        "补齐关系代理：关系轴变化、主动选择、承诺/债务、边界和下一次兑现窗口。"
+        "补齐关系代理：关系轴变化、主动选择、承诺/亏欠、边界和下一次兑现窗口。"
     ),
     "decision_policy_missing": (
         "补齐主角决策策略，明确会做什么、不会做什么、如何权衡风险和收益。"
@@ -110,10 +110,10 @@ _REPAIR_ACTIONS = {
         "让章节后更新生成 premium_state_ledger 并折叠为 premium_state_snapshot。"
     ),
     "long_arc_payoff_overdue": "处理逾期伏笔/线索，补偿兑现、升级或显式延期。",
-    "setup_payoff_debt": "处理 setup/payoff 债务，避免长线承诺只种不收。",
+    "setup_payoff_debt": "处理 setup/payoff 未兑现清单，避免长线承诺只种不收。",
     "repetitive_loop_risk": "调整重复钩子、重复话术或重复章节结构，打散循环感。",
     "scorecard_below_premium_bar": "先修复总分卡低分项，再进入精品书准入。",
-    "category_state_ledger_missing": "补齐该类别的权威状态账本，再允许长篇继续扩展。",
+    "category_state_ledger_missing": "补齐该类别的权威状态记录，再允许长篇继续扩展。",
     "category_hard_gate_missing": "补齐该类别的写前/章后硬门禁，并用好/坏 fixture 验证。",
     "category_chapter_update_missing": "补齐章节后状态更新通道，让每章变化可折叠进权威快照。",
 }

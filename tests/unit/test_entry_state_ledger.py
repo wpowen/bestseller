@@ -123,6 +123,6 @@ def test_render_entry_state_ledger_block_lists_current_state() -> None:
 
     block = render_entry_state_ledger_block(snapshot)
 
-    assert "【词条状态账本】" in block
+    assert "【词条状态跟踪】" in block
     assert "artifact-core" in block
     assert "失去安全身份" in block

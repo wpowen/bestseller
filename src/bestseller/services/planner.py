@@ -1813,7 +1813,18 @@ def _repair_generated_volume_outline_contract_inputs(
                 repaired += 1
 
             if not _non_empty_string(purpose.get("emotion"), ""):
-                purpose["emotion"] = "保持本章压力递进，并把选择、代价或线索推到下一拍。"
+                # Derive a scene-specific emotion task from the story purpose
+                # instead of a fixed placeholder — the old constant sentence
+                # produced identical low-signal emotion tasks on every thin
+                # card, and the writer got zero guidance on WHOSE fear/want
+                # this scene turns on.
+                _story_hint = _non_empty_string(purpose.get("story"), "")[:40]
+                purpose["emotion"] = (
+                    f"围绕「{_story_hint}」写出当事人一个具体的怕、要或误判，"
+                    "让读者看见情绪来源，并把选择或代价推到下一拍。"
+                    if _story_hint
+                    else "写出当事人此刻一个具体的怕、要或误判，让读者看见情绪来源。"
+                )
                 repaired += 1
             if purpose != getattr(scene, "purpose", None):
                 scene.purpose = purpose
@@ -15275,7 +15286,8 @@ def _volume_outline_prompts(
             +
             "Each chapter must include causal_contract with flexible reader-visible axes: chapter_function, pressure, protagonist_desire, protagonist_choice, visible_action_or_reaction, resistance, cost_or_tradeoff, gain_or_reveal, state_change, next_reader_desire. "
             "Each chapter must include a non-empty `opening_situation`: the concrete in-scene pressure the protagonist is already facing as the chapter opens — no recap, no scenery warm-up. "
-            "[CHAPTER 1 OPENING — HARD RULE] opening_situation must land on ONE specific person in ONE instantly-legible visceral jeopardy or burning want (bodily danger / public humiliation / a loved one in peril / a want that hurts). Do NOT make the chapter-1 opening pressure an abstract institutional/accounting/property/rule/transaction dispute (account deadlines, seals, disputed ownership, bylaws may be background only, never the chapter-1 hook). Defer the cheat/mechanic, world rules, and private jargon until the reader already cares about the person; at most 3 named characters on the first screen. "
+            "[CHAPTER 1 OPENING — HARD RULE] opening_situation must land on ONE specific person in ONE instantly-legible visceral jeopardy or burning want (bodily danger / public humiliation / a loved one in peril / a want that hurts). Do NOT make the chapter-1 opening pressure an abstract institutional/accounting/property/rule/transaction dispute (account deadlines, seals, disputed ownership, bylaws may be background only, never the chapter-1 hook). "
+            "[COLD-READER ANCHORS — HARD RULE] Assume the reader has NOT seen the blurb. Within the first 800 characters of chapter 1 the reader must learn, through action/dialogue: (1) who the protagonist is and their situation; (2) what this place/predicament is; (3) the FULL content of whatever rule governs this chapter's life-or-death stakes — that rule must be completely visible to the reader BEFORE it first fires (never name-drop a rule without stating it); (4) when the cheat/golden-finger first activates, the reader must be able to state in one sentence what it is and does; (5) by chapter end the reader can tally what the protagonist won and what it cost. Weave anchors into action and dialogue, never narrator lecture. Everything beyond these required anchors — worldbuilding and secondary private jargon — is deferred; any private term's first appearance carries a plain-language gloss in the same sentence; at most 3 named characters on the first screen. "
             "Each scene's `participants` must name every on-page character from the cast list. A chapter must not consist solely of protagonist-only scenes: whenever the cast allows, give at least one scene a second named participant (opponent, ally, or pressure source). "
             "Each chapter must include chapter-level `methodology_contract`: conflict_stakes, conflict_buffs, hooks_to_resolve, hooks_to_plant, relationship_debts (unresolved interpersonal promises/tensions to advance — NOT financial or ledger debt), pacing_mode, emotion_phase, is_climax, loop_position. "
             "Do not put scene camera/reveal/cut fields in chapter methodology_contract, and do not put story-level ability_origin_contract or recognition_anchors in chapters. "
@@ -15368,7 +15380,13 @@ def _volume_outline_prompts(
             "【第一章开篇·硬要求】opening_situation 必须落在一个具体的人 + 一个一眼看懂的切肤危机或强烈渴望上"
             "（身体危险 / 被当众羞辱 / 亲近之人有难 / 一个烧心的想要）；严禁把第一章开篇压力写成抽象的"
             "制度·账目·产权·规则·交易纠纷（账期、封条、产权存疑、条例这类官僚设定只能作后景，不得当第一章钩子）。"
-            "金手指机制、世界规则、私设术语一律延后，等读者已经在乎这个人之后再交代；第一章首屏具名出场人物≤3。"
+            "【新读者锚点·硬要求】默认读者没看过简介。第一章前 800 字内，读者必须从动作/对话中自然得知："
+            "①主角是谁、什么身份处境；②这个地方/这局是什么；③主宰本章生死的核心规则的【完整内容】——"
+            "该规则必须在第一次生效之前对读者完整可见，禁止只提规则名不给内容、禁止让读者猜；"
+            "④金手指第一次生效时，读者要能用一句话说出它是什么、有什么用；"
+            "⑤章末读者能明确盘点：主角这一章赢了什么、付出了什么。"
+            "锚点必须织进动作与对白，不许旁白说明书。除上述必需锚点外的世界观与次要私设一律延后；"
+            "任何私设术语首次出现必须当句给一个人话级解释；第一章首屏具名出场人物≤3。"
             "每个 scene 的 participants 必须列出全部在场具名人物（从 CastSpec 名单中选取）；整章不得全是主角单人场景——只要卡司允许，至少一个场景要有第二个具名在场者（对手、盟友或施压方）。"
             "每章必须包含章节级 `methodology_contract`：conflict_stakes、conflict_buffs、hooks_to_resolve、hooks_to_plant、relationship_debts（本章要推进的未了人际承诺或张力，不是金钱账务，剧情内容里禁止因此出现欠账/记账设定）、pacing_mode、emotion_phase、is_climax、loop_position。"
             "章节级 methodology_contract 不得放镜头、揭示、断点等场景字段，也不得放 ability_origin_contract、recognition_anchors 等故事级字段。"

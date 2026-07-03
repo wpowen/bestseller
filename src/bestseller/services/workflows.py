@@ -1585,7 +1585,13 @@ def _repair_chapter_outline_contract_inputs(
                 repaired += 1
             purpose = dict(scene.purpose or {})
             if not _text_value(purpose.get("emotion")):
-                purpose["emotion"] = "保持本章压力递进，并把选择、代价或线索推到下一拍。"
+                _story_hint = (_text_value(purpose.get("story")) or "")[:40]
+                purpose["emotion"] = (
+                    f"围绕「{_story_hint}」写出当事人一个具体的怕、要或误判，"
+                    "让读者看见情绪来源，并把选择或代价推到下一拍。"
+                    if _story_hint
+                    else "写出当事人此刻一个具体的怕、要或误判，让读者看见情绪来源。"
+                )
                 repaired += 1
             if purpose != scene.purpose:
                 scene.purpose = purpose

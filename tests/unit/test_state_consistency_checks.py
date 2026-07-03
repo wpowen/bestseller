@@ -113,3 +113,51 @@ def test_extract_countdown_mentions_units_and_order() -> None:
 def test_extract_countdown_ignores_huge_numbers() -> None:
     assert extract_countdown_mentions("这一族还剩99天寿数。") == [("day", 99)]
     assert extract_countdown_mentions("矿脉还剩五百天产量。") == []
+
+
+# ── 《子时客》事故回归：量词误报 + 冷读者门 + 情绪占位 ──────────────────────
+
+
+def test_naming_gate_does_not_flag_measure_word_phrases() -> None:
+    from bestseller.services.output_validator import NamingConsistencyCheck
+
+    check = NamingConsistencyCheck()
+
+    class _Inv:
+        language = "zh-CN"
+        naming_scheme = None
+
+    class _Ctx:
+        scope = "chapter"
+        chapter_no = 1
+        invariants = _Inv()
+        allowed_names = frozenset({"殷霁"})
+
+    # "那张铁律" ×2 = 纸上的铁律，不是人名"张铁律"；旧代码会报 rogue name。
+    text = "殷霁揭下那张铁律。那张铁律上渗着血。殷霁把它压回柜台。"
+    violations = list(check.run(text, _Ctx()))
+    flagged = " ".join(v.detail for v in violations)
+    assert "张铁律" not in flagged
+
+
+def test_cold_reader_checklist_injected_for_chapter_one_only() -> None:
+    from bestseller.services.chapter_llm_quality_judge import (
+        _render_binary_checklist,
+    )
+
+    corpus = {"binary_checklist": [{"id": "x", "label": "L", "description": "d"}]}
+    ch1 = _render_binary_checklist(corpus, chapter_number=1)
+    ch2 = _render_binary_checklist(corpus, chapter_number=2)
+    assert "cold_reader_onboarding" in ch1
+    assert "冷读者五锚点" in ch1
+    assert "cold_reader_onboarding" not in ch2
+
+
+def test_emotion_placeholder_marked_low_signal() -> None:
+    from bestseller.services.methodology_application_gate import (
+        _LOW_SIGNAL_EMOTION_MARKERS,
+    )
+
+    assert any(
+        "保持本章压力递进" in marker for marker in _LOW_SIGNAL_EMOTION_MARKERS
+    )

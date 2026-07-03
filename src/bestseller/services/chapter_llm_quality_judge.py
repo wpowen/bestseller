@@ -223,11 +223,46 @@ def _render_reference_block(corpus: dict[str, Any] | None, *, max_chars: int = 4
     return "".join(parts)
 
 
-def _render_binary_checklist(corpus: dict[str, Any] | None) -> str:
+# Built-in chapter-1 checklist item — every genre corpus inherits it. A cold
+# reader (never saw the blurb) must be onboarded inside chapter 1; the 《子时客》
+# incident shipped a ch1 where the governing rules were never stated and no
+# gate objected. Kept in code (not per-corpus yaml) so no genre can lose it.
+_COLD_READER_CH1_CHECKLIST_ITEM: dict[str, Any] = {
+    "id": "cold_reader_onboarding",
+    "label": "冷读者五锚点（仅第1章）",
+    "description": (
+        "假设读者没看过简介。仅凭本章正文，读者必须能回答全部五问：\n"
+        "①主角是谁、什么身份处境？②这个地方/这局是什么？\n"
+        "③主宰本章生死的核心规则的完整内容是什么（必须在规则第一次生效之前"
+        "就对读者完整可见，只提规则名不给内容=FAIL）？\n"
+        "④主角的金手指/差异化优势是什么、有什么用（一句话能说清）？\n"
+        "⑤章末主角赢了什么、付出了什么？\n"
+        "五问中任何一问无法从正文引出证据句，本项即 FAIL。"
+    ),
+    "failing_examples": [
+        "全章反复渲染规则可怕，但规则内容从头到尾没亮出来，读者只能猜",
+        "金手指生效了三次，读者仍说不出它是什么、怎么用",
+    ],
+    "passing_examples": [
+        "核心规则在第一次生效前被完整织进动作/对白，读者先懂规则再看它杀人",
+        "章末读者能一句话盘点：签成首单+攒到好评，代价是赔掉一只耳朵的听觉",
+    ],
+}
+
+
+def _render_binary_checklist(
+    corpus: dict[str, Any] | None,
+    *,
+    chapter_number: int | None = None,
+) -> str:
     """Render the binary checklist items for the judge."""
     if not corpus:
         return ""
-    items = corpus.get("binary_checklist") or []
+    items = list(corpus.get("binary_checklist") or [])
+    if chapter_number == 1 and not any(
+        item.get("id") == "cold_reader_onboarding" for item in items
+    ):
+        items.insert(0, _COLD_READER_CH1_CHECKLIST_ITEM)
     if not items:
         return ""
 
@@ -527,12 +562,16 @@ async def judge_chapter_commercial_quality(
 
     # Build reference corpus blocks
     reference_block = _render_reference_block(corpus)
-    checklist_block = _render_binary_checklist(corpus)
+    checklist_block = _render_binary_checklist(corpus, chapter_number=chapter_number)
     calibration_block = _render_calibration_anchors(corpus)
     rubric = get_judge_rubric("chapter_commercial")
 
     # Build the binary_checklist response schema description
-    checklist_items = (corpus or {}).get("binary_checklist") or []
+    checklist_items = list((corpus or {}).get("binary_checklist") or [])
+    if chapter_number == 1 and not any(
+        item.get("id") == "cold_reader_onboarding" for item in checklist_items
+    ):
+        checklist_items.insert(0, _COLD_READER_CH1_CHECKLIST_ITEM)
     checklist_ids = [item.get("id", "") for item in checklist_items if item.get("id")]
     binary_checklist_schema = (
         "binary_checklist: {"

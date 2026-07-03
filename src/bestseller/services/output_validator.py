@@ -495,6 +495,14 @@ _ZH_NAME_RE: re.Pattern[str] = re.compile(
     _ZH_SURNAME_CLASS + r"[\u4e00-\u9fff]{1,2}"
 )
 
+# Surname characters that double as measure words (\u91cf\u8bcd). After a
+# demonstrative or numeral they are grammar, not names: "\u90a3\u5f20\u94c1\u5f8b" is a
+# sheet of iron rules, not a Mr. \u5f20\u94c1\u5f8b.
+_ZH_MEASURE_WORD_SURNAMES: frozenset[str] = frozenset("\u5f20\u4f4d\u540d\u9053\u7247\u6839\u9762\u628a\u6bb5\u65b9")
+_ZH_DEMONSTRATIVE_OR_NUMERAL: frozenset[str] = frozenset(
+    "\u90a3\u8fd9\u4e00\u6bcf\u51e0\u6574\u534a\u4e24\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u6570\u5404\u540c\u4e0a\u4e0b\u524d\u540e\u5934\u9996\u672b"
+)
+
 
 _ZH_ERA_NAME_PREFIXES: frozenset[str] = frozenset(
     {
@@ -1055,6 +1063,16 @@ class NamingConsistencyCheck:
             if start > 0 and text[start - 1 : start + 1] in _ZH_COMPOUND_SURNAMES:
                 continue
             candidate = match.group(0)
+            # Measure-word guard (2026-07-03): 张/位/名/道/片… double as
+            # measure words. After a demonstrative or numeral ("那张铁律" /
+            # "一位老者" / "这道符") the char is grammar, not a surname — the
+            # old code flagged rogue name "张铁律" for a sheet of paper.
+            if (
+                candidate[0] in _ZH_MEASURE_WORD_SURNAMES
+                and start > 0
+                and text[start - 1] in _ZH_DEMONSTRATIVE_OR_NUMERAL
+            ):
+                continue
             # Skip if the candidate itself is a compound-prefixed form
             # (e.g. the compound pass already processed "司马师" as a
             # superset capture of our single-surname hit).

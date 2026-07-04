@@ -298,6 +298,8 @@ def render_prose_craft_block(
         "【文采技法 · 金句/签名段怎么写（可选 soft，不硬性、不是每句都要）】",
         "本场若要落一个「值得读者截图摘抄」的金句/签名段，可任选下列骨架之一；"
         "正文主体仍走 show-don't-tell，不要全篇都这样写：",
+        "【用量硬上限】全场技法句合计≤2处，通感/陌生化≤1处，且必须贴当下事件；"
+        "严禁感官动词错配的怪喻（香味撞上来/蒸汽舀进脑仁）——写不出贴切的就写平实白话。",
     ]
     for technique in techniques:
         example = technique.example_for(terms)

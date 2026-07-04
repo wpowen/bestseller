@@ -161,3 +161,35 @@ def test_emotion_placeholder_marked_low_signal() -> None:
     assert any(
         "保持本章压力递进" in marker for marker in _LOW_SIGNAL_EMOTION_MARKERS
     )
+
+
+# ── 《黄泉客栈》AI味 tic 回归：具身动词复读检测 ─────────────────────────────
+
+
+def test_verb_tic_spam_flags_saturated_chapter() -> None:
+    from bestseller.services.ai_flavor.detector import detect
+
+    # 模拟真机病灶密度：~1500字里 烫×12 爬×10（>6次且>6/万字）。
+    base = (
+        "他把手贴上炉壁，烫。指尖烫得发麻，烫意顺着腕骨爬，爬过肘弯，又爬上肩头。"
+        "灯芯烫，碗沿烫，连门环都烫。黑纹在皮下爬，爬一寸，停半息，再爬。"
+        "他缩手，烫痕在掌心爬成一条线，烫出一个字。夜风爬过窗缝，烫意不退。"
+        "他低头，烫红的指腹压住纸角，纸也烫，墨迹爬向边缘。"
+    )
+    text = base * 8  # ~1900字，密度与真机病灶同级
+    report = detect(text, language="zh-CN", chapter_number=2)
+    tic_spans = [s for s in report.spans if s.category == "verb_tic_spam"]
+    assert tic_spans, "高密度具身动词复读必须被检出"
+    assert "烫" in tic_spans[0].why and "爬" in tic_spans[0].why
+
+
+def test_verb_tic_spam_ignores_normal_prose() -> None:
+    from bestseller.services.ai_flavor.detector import detect
+
+    text = (
+        "他推门进屋，把伞收好靠在墙边。桌上的饭菜已经凉了，母亲坐在灯下补衣服。"
+        "他说今天加了班，母亲点点头，把碗推过去。窗外落着小雨，巷子里有人骑车经过，"
+        "铃铛响了两声。他吃完饭，帮着把桌子擦干净，才说出白天发生的事。"
+    ) * 6
+    report = detect(text, language="zh-CN", chapter_number=3)
+    assert not [s for s in report.spans if s.category == "verb_tic_spam"]

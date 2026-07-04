@@ -930,6 +930,9 @@ def detect(
             )
         )
 
+    # ── Embodied-verb tic saturation (撞/烫/爬 复读) ─────────────────────
+    spans.extend(_detect_verb_tic_spam(content_md, lang=lang))
+
     # ── Chapter-level repetition (车轱辘内心戏 / 感觉词堆叠) ─────────────
     spans.extend(_detect_repetition(content_md, lang=lang))
 
@@ -956,6 +959,66 @@ _GRAM_FUNCTION_CHARS = frozenset("的了在是这那他她你我们个一不没�
 _NEARCOPY_N = 8
 _NEARCOPY_WINDOW = 600
 _NEARCOPY_PUNCT = frozenset("，。、！？；：")
+
+
+_VERB_TIC_LEXICON_ZH: tuple[str, ...] = (
+    # High-impact embodied verbs the writer models over-reuse chapter-wide.
+    # Any one of them is fine; the tic is FREQUENCY (真机: 爬×124 / 烫×101 /
+    # 钻×83 across 10 chapters — an order of magnitude above human prose).
+    "撞", "烫", "钻", "咬", "爬", "砸", "碾", "蹿", "拧", "洇", "攥", "掐",
+)
+
+_MEASURE_TIC_RE = re.compile(r"半寸|一寸|三寸|半尺|三分|半息|半分")
+
+
+def _detect_verb_tic_spam(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """Chapter-level embodied-verb tic saturation — the "撞/烫/爬" AI accent.
+
+    Flags verbs whose per-10k-char frequency AND absolute count both exceed
+    human-prose ceilings, plus measurement-phrase (半寸/三分) saturation. One
+    advisory span per chapter; the writer-prompt lexical discipline block is
+    the real ceiling, this pass surfaces regressions in score + audit.
+    """
+
+    if lang != "zh" or not content_md:
+        return []
+    total = len(content_md)
+    if total < 800:
+        return []
+    offenders: list[tuple[str, int]] = []
+    for verb in _VERB_TIC_LEXICON_ZH:
+        count = content_md.count(verb)
+        if count >= 6 and count * 10000 // total >= 6:
+            offenders.append((verb, count))
+    measure_hits = len(_MEASURE_TIC_RE.findall(content_md))
+    if measure_hits >= 5 and measure_hits * 10000 // total >= 5:
+        offenders.append(("半寸/一寸/三分类度量腔", measure_hits))
+    if not offenders:
+        return []
+    offenders.sort(key=lambda kv: -kv[1])
+    worst = offenders[0][0].split("/")[0]
+    pos = content_md.find(worst)
+    if pos < 0:
+        pos = 0
+    detail = "、".join(f"{v}×{c}" for v, c in offenders[:6])
+    return [
+        AiFlavorSpan(
+            start=pos,
+            end=min(pos + len(worst), total),
+            matched_text=worst,
+            rule_id="zh.tic.embodied_verb_spam",
+            category="verb_tic_spam",
+            severity="warn",
+            suggestions=(),
+            sentence_span=_sentence_bounds(content_md, pos, lang),
+            why=(
+                f"高冲击具身动词复读（{detail}）——同一动词全章应≤4次；"
+                "改用平实动词（闻到/听见/看见/摸到）或换具体动作，"
+                "这是读者最容易识别的AI腔之一。"
+            ),
+            remove_sentence_on_block=False,
+        )
+    ]
 
 
 def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:

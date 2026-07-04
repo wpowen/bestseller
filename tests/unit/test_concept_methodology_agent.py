@@ -55,6 +55,27 @@ def test_static_market_signals_resolve_for_known_genre() -> None:
     assert any("规则" in s or "长生" in s or "修行" in s for s in signals)
 
 
+def test_static_market_signals_exclude_oversaturated_banned_directions() -> None:
+    # 2026-07-04: 系统 prompt 禁"规则面板/系统漏洞/卡天道"方向，但静态市场信号
+    # 曾把"规则面板"当热度信号回灌进 user prompt，且 fallback 会把 signals[0]
+    # 固化为 reader_promise_axis——被禁方向必须在信号源头被过滤。
+    signals = agent._static_market_signals(genre="玄幻", sub_genre="修真", genre_key="x")
+    for marker in ("规则面板", "系统漏洞", "天道bug"):
+        assert not any(marker in s for s in signals)
+
+
+def test_fallback_never_bakes_oversaturated_signal_into_axes() -> None:
+    m = fallback_concept_methodology(
+        genre="玄幻",
+        sub_genre="修真",
+        genre_key="xuanhuan",
+        audience_orientation="male",
+        market_signals=["规则面板", "长生机制"],
+    )
+    assert "规则面板" not in m.reader_promise_axis
+    assert all("规则面板" not in axis for axis in m.design_axes)
+
+
 def test_render_block_is_soft_not_hard_contract() -> None:
     m = fallback_concept_methodology(
         genre="都市",

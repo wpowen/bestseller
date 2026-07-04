@@ -326,7 +326,8 @@ def build_improvement_feedback(
         lines.append("故事层提醒（advisory）：" + "、".join(report.premise.gating_caps[:2]))
     lines.append(
         "重写要求：首句≤30字的强钩(疑问/反差/冲突)、卖点三要素齐(身份+冲突+代价)、"
-        f"高唤起情绪前置（本题材如：{_emo}）、长度80-140字、结尾留悬念不剧透、禁AI腔套话。"
+        f"高唤起情绪前置（本题材如：{_emo}）、长度按目标平台带"
+        "（番茄80-130/起点140-220/七猫80-140，未知平台80-220）、结尾留悬念不剧透、禁AI腔套话。"
     )
     text = "\n".join(lines)
     # token budget ≈ chars/2 for CJK; cap conservatively.
@@ -340,7 +341,7 @@ _DIMENSION_FIX_HINT: dict[str, str] = {
     "selling_triad": "补齐身份反差+开局冲突事件+失败代价三要素",
     # 通常被 build_improvement_feedback 里的题材感知版覆盖；此为兜底，保持题材中性。
     "emotion_charge": "把本题材的高唤起情绪事件(背叛/绝境/复仇/逆袭等)提到最前",
-    "length_format": "压到 80-140 字、分 2-4 段",
+    "length_format": "长度对齐目标平台带（番茄80-130/起点140-220/七猫80-140，未知80-220）、分 2-4 段",
     "concreteness": "给主角具名或第一人称，加入具体数字/地点/物件",
     "open_loop_end": "结尾换成开放式悬念，绝不剧透结局",
     "anti_template": "删除'本以为/却没想到/何去何从'等 AI 腔套话",
@@ -366,6 +367,7 @@ async def evaluate_story_appeal(
     judge_model_key: str | None = None,
     platform: str | None = None,
     config: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> StoryAppealReport:
     """Run both evaluators and combine. Never raises — fail-open to det. scores."""
 
@@ -386,6 +388,10 @@ async def evaluate_story_appeal(
         lexicon=lexicon,
         platform=platform,
         genre_terms=terms,
+        # 2026-07-04: EN books previously hit the CJK-only rubric
+        # (comprehensibility≈0 → cap 60 < blurb_min) and burned all regen
+        # attempts on a guaranteed fail.
+        language=language,
     )
 
     # Deterministic title click-power gate (zero-token). Independent hard min so a
@@ -422,6 +428,7 @@ async def evaluate_story_appeal(
             judge_model_key=judge_model_key,
             config=cfg,
             lexicon=lexicon,
+            language=language,
         )
     except Exception:
         logger.warning("premise appeal judge failed; using fallback", exc_info=True)

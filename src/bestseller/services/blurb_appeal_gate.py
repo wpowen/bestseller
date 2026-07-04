@@ -384,6 +384,22 @@ def evaluate_blurb_appeal(
         config = config or load_story_appeal_config()
         lexicon = lexicon if lexicon is not None else resolve_genre_lexicon(genre, sub_genre)
 
+    # Non-Chinese blurbs: every scorer below is CJK-tuned (_cjk_len counts 0
+    # for English → comprehensibility≈0 → capped at 60 < blurb_min 68), so an
+    # EN book burned all its regen attempts and still "failed". The rubric is
+    # not measurable — return a neutral pass instead of a false fail.
+    if language and not str(language).lower().startswith("zh"):
+        grades = config.get("grades", {}) if isinstance(config, dict) else {}
+        neutral_total = float(grades.get("recommend", 80))
+        return BlurbAppealVerdict(
+            total=neutral_total,
+            grade=_grade_from_total(neutral_total, config),
+            dimensions=(),
+            findings=("[非中文简介] 确定性中文标尺不适用，跳过打分（advisory pass）",),
+            suggestions=(),
+            language=language,
+        )
+
     tags = list(tags or [])
     synopsis = str(synopsis or "")
     combined = f"{title or ''} {synopsis} {premise or ''}"
@@ -505,10 +521,44 @@ def evaluate_blurb_appeal(
 def _resolve_platform_envelope(config: dict[str, Any], platform: str | None) -> dict[str, Any]:
     table = config.get("platform_blurb", {}) if isinstance(config, dict) else {}
     if isinstance(table, dict):
-        if platform and platform in table:
-            return table[platform]
+        if platform:
+            if platform in table:
+                return table[platform]
+            # Fuzzy match: platform_target strings are free-form
+            # ("七猫小说"/"起点"/"番茄小说·免费"), while the table keys are
+            # canonical ("七猫"/"起点中文网"). Exact-match-only silently fell
+            # back to the default band for most books.
+            normalized = platform.strip().lower()
+            for key, value in table.items():
+                if key == "default" or not isinstance(key, str):
+                    continue
+                key_norm = key.strip().lower()
+                if key_norm and (key_norm in normalized or normalized in key_norm):
+                    return value
         return table.get("default", {"min": 80, "max": 220})
     return {"min": 80, "max": 220}
+
+
+def platform_blurb_band(
+    platform: str | None, config: dict[str, Any] | None = None
+) -> tuple[int, int]:
+    """Public accessor: the (min, max) CJK-length band for a platform's blurb.
+
+    Used by the generation side (conception finalize/polish prompts) so the
+    prompt's length requirement matches what this gate will grade — the two
+    were previously hardcoded out of sync (prompt said 80-140, 起点 grades
+    140-220).
+    """
+
+    if config is None:
+        from bestseller.services.story_appeal import load_story_appeal_config  # noqa: PLC0415
+
+        config = load_story_appeal_config()
+    envelope = _resolve_platform_envelope(config, platform)
+    try:
+        return int(envelope.get("min", 80)), int(envelope.get("max", 220))
+    except (TypeError, ValueError):
+        return 80, 220
 
 
 def _grade_from_total(total: float, config: dict[str, Any]) -> str:

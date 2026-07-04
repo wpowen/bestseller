@@ -24,7 +24,6 @@ _FRONT_TEN_REQUIRED_CARDS = {
     "plova.mainline.stage_goal_obstacle_result",
     "platform.anchor_character_gene",
     "platform.character_desire_collision",
-    "platform.character_debt_ledger",
     "platform.information_gap",
     "platform.hype_four_beat",
 }
@@ -310,7 +309,10 @@ def build_methodology_application_contract(
                 "chapter.hook_description",
             ),
             gate="character_debt",
-            mode="block",
+            # 2026-07-04: block→warn. 强制每章产出 debtor/creditor 六字段台账是
+            # 债务同质化的结构性根因（55a3d4c 只改了话术没动结构）——人际张力
+            # 保留为建议，不再作为硬合约逼出记账型设定。
+            mode="warn",
             measurement=(
                 "chapter_predraft_quality_gate",
                 "chapter_llm_commercial_judge",
@@ -655,7 +657,9 @@ def _append_scene_repetition_findings(
         findings.append(
             MethodologyApplicationFinding(
                 code="METHODOLOGY_RELATIONSHIP_DEBT_STRUCTURED_MISSING",
-                severity="critical",
+                # 2026-07-04: critical→minor。每场强制六字段 debtor/creditor 结构
+                # 是债务同质化根因，降为建议不再阻断。
+                severity="minor",
                 message=(
                     "场景人际张力缺少结构化记录：第"
                     + "、".join(str(item) for item in missing_structured_debts[:8])
@@ -684,7 +688,8 @@ def _append_scene_repetition_findings(
         findings.append(
             MethodologyApplicationFinding(
                 code="METHODOLOGY_RELATIONSHIP_DEBT_PLACEHOLDER",
-                severity="critical",
+                # 2026-07-04: 与 STRUCTURED_MISSING 同步降级——字段本身已是建议级。
+                severity="minor",
                 message="场景人际张力仍是占位模板，方法论没有落到具体关系变化。",
                 repair_hint=(
                     "把 relationship_debts 改成具体的人际亏欠或承诺：谁对谁负有什么、"

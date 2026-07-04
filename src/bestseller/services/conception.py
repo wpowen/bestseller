@@ -1912,10 +1912,19 @@ def _finalize_user_prompt(
     genre_profile: GenreReviewProfile | None = None,
 ) -> str:
     # 题材感知的高唤起情绪范例——让玄幻用灭门/夺宝/绝境突破/碾压打脸，而非都市的退婚/重生。
+    from bestseller.services.blurb_appeal_gate import platform_blurb_band  # noqa: PLC0415
     from bestseller.services.genre_persona import resolve_persona  # noqa: PLC0415
     from bestseller.services.story_appeal import genre_emotion_exemplars  # noqa: PLC0415
 
     _emo = "、".join(genre_emotion_exemplars(ctx.get("genre"), ctx.get("sub_genre"))[:6])
+    # 简介字数带与验收闸门同源（按目标平台解析；旧版硬编码 80-140 与起点 140-220 打架）。
+    _blurb_platform = str(
+        market.get("platform_target")
+        or ctx.get("platform_target")
+        or ctx.get("default_platform")
+        or ""
+    )
+    _band_min, _band_max = platform_blurb_band(_blurb_platform)
     _persona = resolve_persona(
         ctx.get("genre"), ctx.get("sub_genre"),
         tuple(str(t) for t in (ctx.get("tags") or [])),
@@ -1946,7 +1955,7 @@ def _finalize_user_prompt(
         f'  "synopsis": "面向读者的【点击型】作品简介（番茄/起点详情页文案，目标：读者只看这段就忍不住点进去）。'
         f'{_persona_anchor}'
         f'硬性要求，逐条照做：'
-        f'①长度 80-140 字（中文字符），不是长设定介绍——要短、要狠；'
+        f'①长度 {_band_min}-{_band_max} 字（中文字符，目标平台带），不是长设定介绍——要短、要狠；'
         f'②首句 ≤30 字，必须是一句能瞬间抓人的强钩：用疑问、反差、或开局冲突事件开场，'
         f'严禁用"穿越到…的他/本以为…"这类平铺设定句开头；'
         f'③卖点三要素必须齐全：主角身份反差 + 开局冲突事件 + 失败代价（不做到会怎样）；'
@@ -2277,6 +2286,7 @@ async def _polish_blurb_synopsis(
     sub_genre: str,
     is_en: bool,
     language: str,
+    platform: str | None = None,
 ) -> tuple[str, UUID | None]:
     """Focused click-blurb rewrite — rewrite ONLY the synopsis per gate feedback.
 
@@ -2302,11 +2312,14 @@ async def _polish_blurb_synopsis(
             "Output only the blurb."
         )
     else:
+        from bestseller.services.blurb_appeal_gate import platform_blurb_band  # noqa: PLC0415
         from bestseller.services.genre_persona import resolve_persona  # noqa: PLC0415
         from bestseller.services.story_appeal import genre_emotion_exemplars  # noqa: PLC0415
 
         _emo = "、".join(genre_emotion_exemplars(genre, sub_genre)[:6])
         _p = resolve_persona(genre, sub_genre)
+        # 与验收闸门同源的平台字数带（旧版硬编码 80-140 与起点 140-220 打架）。
+        _band_min, _band_max = platform_blurb_band(platform)
         system_prompt = (
             "你是网文平台资深编辑。把给定简介按【整改要求】重写成一段【点击型】作品简介"
             "（番茄/起点详情页文案）。只输出重写后的简介正文，不要解释、不要标题。"
@@ -2315,7 +2328,7 @@ async def _polish_blurb_synopsis(
             f"题材：{genre}（{sub_genre}）\n"
             f"【目标读者】{_p.channel}：{_p.who}；他要的爽点：{_p.fantasy}；雷点(避开)：{('、'.join(_p.turnoffs))}；"
             f"钩子公式：{_p.hook_formula}\n\n【当前简介】\n{synopsis}\n\n【整改要求】\n{feedback}\n\n"
-            "硬性：80-140字；首句≤30字的强钩（疑问/反差/开局冲突）；卖点三要素齐（身份+冲突+代价）；"
+            f"硬性：{_band_min}-{_band_max}字（按目标平台带）；首句≤30字的强钩（疑问/反差/开局冲突）；卖点三要素齐（身份+冲突+代价）；"
             f"高唤起情绪前置——用【本题材】的情绪事件（如：{_emo}），别套其他题材的情绪词；"
             "结尾留悬念不剧透；禁AI腔（本以为/却没想到/何去何从/敬请期待）；"
             "【新读者可懂铁律】当成写给完全不懂本书设定的陌生人:删掉生造黑话/自定义机制名/系统术语/"
@@ -3004,11 +3017,13 @@ async def run_conception_pipeline(
             _ap_genre = str(ctx.get("genre") or genre or "")
             _ap_sub = str(ctx.get("sub_genre") or sub_genre or "")
             _ap_platform = str(target_platform or "")
+            _ap_language = str(ctx.get("language") or "zh-CN")
             report = await evaluate_story_appeal(
                 session, settings,
                 premise=premise, synopsis=synopsis, title=title, tags=tags,
                 writing_profile=writing_profile, genre=_ap_genre, sub_genre=_ap_sub,
                 chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
+                language=_ap_language,
             )
             regen = _appeal_cfg.get("regeneration", {}) if isinstance(_appeal_cfg, dict) else {}
             floor = str(regen.get("floor_grade", "consider"))
@@ -3040,6 +3055,7 @@ async def run_conception_pipeline(
                         synopsis=best[2], feedback=feedback,
                         genre=_ap_genre, sub_genre=_ap_sub, is_en=is_en,
                         language=str(ctx.get("language") or "zh-CN"),
+                        platform=_ap_platform,
                     )
                     if polish_id is not None:
                         llm_run_ids.append(polish_id)
@@ -3072,6 +3088,7 @@ async def run_conception_pipeline(
                         premise=r_premise, synopsis=r_syn, title=r_title, tags=r_tags,
                         writing_profile=writing_profile, genre=_ap_genre, sub_genre=_ap_sub,
                         chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
+                        language=_ap_language,
                     )
                     cur_sum = report.premise.total + report.blurb.total + (
                         report.title.total if report.title else 0.0

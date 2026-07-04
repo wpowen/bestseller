@@ -2885,7 +2885,10 @@ def build_chapter_rewrite_prompts(
             f"Chapter context:\n{_render_chapter_context_section(chapter_context, language=language)}\n"
             f"{_rewrite_p1_block}"
             f"Current draft:\n{current_draft.content_md}\n"
-            "Rewrite the chapter in English only while preserving the core event order. Improve transitions, chapter propulsion, and the ending hook first."
+            "Apply ONLY the targeted fixes listed in the rewrite_task above: rework the "
+            "paragraphs those findings point at, and keep every untouched paragraph verbatim "
+            "(wording and sentence structure included). Preserve the core event order; do not "
+            "touch the opening or the ending hook unless a finding names them. English only."
         )
         if is_en
         else (
@@ -2909,8 +2912,13 @@ def build_chapter_rewrite_prompts(
             f"章节上下文：\n{_render_chapter_context_section(chapter_context, language=language)}\n"
             f"{_rewrite_p1_block}"
             f"当前草稿：\n{current_draft.content_md}\n"
-            "请在保留本章核心事件顺序的前提下，重写本章，使场景衔接更顺、章节推进更完整、收尾钩子更明确。"
-            "优先强化读者追更欲、爽点兑现、人设辨识和节奏推进。"
+            # 2026-07-04: 末句从"全面重写邀请"改回定点修复合同——旧句
+            # （"重写本章…优先强化追更欲/爽点/人设/节奏"）与 system 合同
+            # "只修 rewrite_task 所列问题、不要过度编辑"正面互斥，是好段落
+            # 被无差别推倒的主要诱因。
+            "只按上方 rewrite_task 问题清单做定点修复：涉及的段落改到位，"
+            "未涉及的段落保持原文原样（含用词与句式）。保留本章核心事件顺序，"
+            "修复处自然衔接前后文；除非问题清单点名，否则不要动开头与收尾钩子。"
         )
     )
     _lang_key = "en" if is_en else "zh"

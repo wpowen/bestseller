@@ -722,6 +722,10 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # — there are real Chinese names like 赵无极 that we'd erroneously
     # suppress. The "无" false positives stay audit-only.
     "管"
+    # 黄泉客栈 ch3 audit (2026-07-04) — 黄历扉页 (almanac flyleaf) sliced
+    # into rogue name "黄历扉". 历 as the 2nd char of a given name is
+    # virtually unattested; 黄历/日历/农历 are all common nouns.
+    "历"
 )
 
 # Third-character stoplist — for 3-char candidates the regex greedily

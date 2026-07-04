@@ -77,6 +77,28 @@ def _match_market_profile_key(genre: str, sub_genre: str, genre_key: str) -> str
     return None
 
 
+# Signals matching these markers are the very micro-trends the system prompt
+# bans as oversaturated ("卡天道/系统漏洞/规则面板/钻规则空子"). Injecting them
+# as market-heat signals — or worse, baking them into the deterministic
+# fallback's reader_promise_axis/design_axes — contradicts the
+# anti-homogenization red line, so they are filtered at the source.
+_OVERSATURATED_SIGNAL_MARKERS: tuple[str, ...] = (
+    "规则面板",
+    "系统面板",
+    "系统漏洞",
+    "规则漏洞",
+    "天道漏洞",
+    "天道bug",
+    "卡bug",
+    "钻规则",
+    "规则空子",
+)
+
+
+def _filter_oversaturated_signals(signals: list[str]) -> list[str]:
+    return [s for s in signals if not any(m in s for m in _OVERSATURATED_SIGNAL_MARKERS)]
+
+
 def _static_market_signals(*, genre: str, sub_genre: str, genre_key: str) -> list[str]:
     """Offline market-heat signals from the seed market profile (best-effort)."""
 
@@ -96,7 +118,7 @@ def _static_market_signals(*, genre: str, sub_genre: str, genre_key: str) -> lis
             text = str(item).strip()
             if text and text not in signals:
                 signals.append(text)
-    return signals[:10]
+    return _filter_oversaturated_signals(signals)[:10]
 
 
 async def _gather_market_heat(
@@ -178,9 +200,9 @@ def fallback_concept_methodology(
     orientation = (audience_orientation or "").strip().lower()
     if orientation not in {"male", "female", "neutral"}:
         orientation = _orientation_from_audiences(recommended_audiences or [])
-    signals = list(market_signals or []) or _static_market_signals(
-        genre=genre, sub_genre=sub_genre, genre_key=genre_key
-    )
+    signals = _filter_oversaturated_signals(
+        list(market_signals or [])
+    ) or _static_market_signals(genre=genre, sub_genre=sub_genre, genre_key=genre_key)
     keywords = [k for k in (trend_keywords or []) if k][:6]
     mechanism_types = keywords[:4] or ["反差/反转", "信息差", "代价绑定回报", "递进升级"]
     return ConceptMethodology(
@@ -369,12 +391,14 @@ async def select_concept_methodology(
         "heat_search_started",
         {"genre": genre, "sub_genre": sub_genre},
     )
-    heat_signals = await _gather_market_heat(
-        settings=settings,
-        genre=genre,
-        sub_genre=sub_genre,
-        trend_keywords=trend_keywords or [],
-        search_client=search_client,
+    heat_signals = _filter_oversaturated_signals(
+        await _gather_market_heat(
+            settings=settings,
+            genre=genre,
+            sub_genre=sub_genre,
+            trend_keywords=trend_keywords or [],
+            search_client=search_client,
+        )
     )
     heat_source = "search"
     if not heat_signals:

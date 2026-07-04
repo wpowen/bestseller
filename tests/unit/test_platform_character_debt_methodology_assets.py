@@ -63,7 +63,8 @@ def test_platform_character_debt_profile_loads_and_renders_short_blocks() -> Non
     assert len(profile.cards) == 8
     assert gate_mode_for_card(profile, "platform.anchor_character_gene") == "block"
     assert gate_mode_for_card(profile, "platform.character_desire_collision") == "block"
-    assert gate_mode_for_card(profile, "platform.character_debt_ledger") == "block"
+    # 2026-07-04: block→warn（债务同质化结构性根因，台账降为建议级）
+    assert gate_mode_for_card(profile, "platform.character_debt_ledger") == "warn"
     assert gate_mode_for_card(profile, "platform.triangle_conflict") == "warn"
 
     chapter_cards = enabled_cards(profile, deck, stage="planning", scope="chapter")

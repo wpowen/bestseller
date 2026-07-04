@@ -46,6 +46,9 @@ _EXTRA_SELF_CHECK = (
     "（'他坐起来。'/'明天要更冷。'/'数字跳了一格。'/'他愣了一拍。'），整章读起来像分镜脚本而非小说。"
     "→ 单句独段是稀缺重锤，不能当默认节奏。把连续的单句独段并回有起伏的叙述段：动作+反应+环境揉进同一段，"
     "让长短段交替；连续的单行短句不超过 1-2 段，确有顿挫感才单独成段。合并时只动分段与连接，不改情节与对白。\n"
+    "   ↳ 节奏锚点白名单（不要碰，避免与节奏修复打架）：全章可以保留 1 处刻意的三连短段加速"
+    "（每段 1-8 字、连续出现）和少量 ≤12 字的独立硬停顿段——这些是有意设计的节奏重锤，"
+    "只要不是满章泛滥就保留原样，不算单句独段饱和。\n"
     "9) 模板化系统刷屏/数字递增车轱辘（系统流通病）：同一条系统提示/弹窗/计数（如"
     "'【累计：¥0.80】''【¥1.20】''【¥2.80】'…一路往上跳十几行，或同一格式状态栏反复刷）"
     "→ 只保留有信息增量或情节转折的 2-3 次（首次出现、跨过关键档位、最后摊牌），中间纯递增的全删；"
@@ -94,8 +97,17 @@ async def revise_prose_deslop(
     if not rubric:  # English / no directive — nothing to enforce
         return content
 
+    # Keep-better bookkeeping: the last round's rewrite was historically never
+    # re-detected (accepted on length alone), so a final rewrite that *added*
+    # AI-flavor shipped silently. Track the cleanest content seen and fall
+    # back to it if the final rewrite measures worse.
+    best_content = content
+    best_spans: int | None = None
+
     for _ in range(max(0, rounds)):
         findings, _score, n_spans = _findings_text(content, language)
+        if best_spans is None or n_spans < best_spans:
+            best_content, best_spans = content, n_spans
         if n_spans == 0:
             break
         system_prompt = (
@@ -131,12 +143,31 @@ async def revise_prose_deslop(
             logger.warning("deslop_revise: rewrite call failed; keeping draft", exc_info=True)
             break
         revised = (result.content or "").strip()
-        # Guard: never accept an empty or drastically-truncated rewrite.
-        if revised and len(revised) >= len(content) * 0.6:
+        # Guard: never accept an empty or drastically-truncated rewrite, and
+        # never let a rewrite drag an on-target draft below ~70% of the
+        # chapter target (which would trip the downstream LENGTH gate and
+        # start a rewrite loop).
+        length_floor = max(
+            len(content) * 0.6,
+            min(len(content), int(target_chars * 0.7)),
+        )
+        if revised and len(revised) >= length_floor:
             content = revised
         else:
             logger.debug("deslop_revise: rewrite too short, keeping previous draft")
             break
+
+    # Final acceptance: the last rewrite has not been measured yet — re-detect
+    # and fall back to the cleanest earlier draft if it got worse.
+    if content is not best_content:
+        _findings, _score, n_final = _findings_text(content, language)
+        if best_spans is not None and n_final > best_spans:
+            logger.info(
+                "deslop_revise: final rewrite regressed (%d→%d spans); keeping best draft",
+                best_spans,
+                n_final,
+            )
+            content = best_content
     return content
 
 

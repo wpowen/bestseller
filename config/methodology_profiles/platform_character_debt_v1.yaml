@@ -20,7 +20,8 @@ cards:
     priority: 20
   platform.character_debt_ledger:
     enabled: true
-    gate_mode: block
+    # 2026-07-04: block→warn，人际张力台账降为建议（债务同质化结构性根因）
+    gate_mode: warn
     priority: 10
   platform.triangle_conflict:
     enabled: true

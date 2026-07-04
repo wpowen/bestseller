@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: RUF001
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -26,12 +27,19 @@ from bestseller.services.drafts import (
 from bestseller.services.exports import build_markdown_reading_stats
 from bestseller.services.litstyle_polish import build_litstyle_polish_prompt
 from bestseller.services.litstyle_prose import load_litstyle_config
+from bestseller.services.litstyle_prose_judge import judge_chapter_litstyle
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.settings import AppSettings
 
+logger = logging.getLogger(__name__)
+
 ChapterRevisionOperation = Literal["polish", "humanize", "issue"]
+
+# Candidate drafts shorter than this fraction of the source are treated as a
+# failed generation (truncated/refused output), not a legitimate revision.
+_MIN_CANDIDATE_LENGTH_RATIO = 0.6
 
 
 def _now_iso() -> str:
@@ -114,13 +122,23 @@ async def create_chapter_revision_task(
     return task
 
 
-def _fallback_polish_result() -> LitStyleJudgeResult:
+def _neutral_polish_result() -> LitStyleJudgeResult:
+    """Judge-unavailable fallback: full marks → generic light polish only.
+
+    2026-07-04: the old fallback fabricated an all-zero judge reading, which
+    made the polish prompt claim "FinalScore=0/100" and fire the 4 weakest-
+    dimension directives + the AI-tone directive on every draft regardless of
+    actual quality — good prose got blind-edited. A neutral (full-score)
+    result yields zero low dimensions, so the prompt builder falls back to its
+    own "light generic pass" directive instead of fabricated fixes.
+    """
+
     config = load_litstyle_config()
     return LitStyleJudgeResult(
-        dimension_scores={dim.key: 0 for dim in config.dimensions},
-        ai_tone_penalty=max(0, int(config.ai_tone_mature_ceiling) + 1),
-        final_score=0,
-        level="需润色",
+        dimension_scores={dim.key: dim.max for dim in config.dimensions},
+        ai_tone_penalty=0,
+        final_score=100,
+        level="轻润色",
         revision_priority=("按原剧情做定点语言润色，不增删情节。",),
     )
 
@@ -137,6 +155,7 @@ async def _build_revision_candidate(
 ) -> tuple[str, dict[str, Any], UUID | None]:
     source = current.content_md or ""
     llm_run_id: UUID | None = None
+    source_judge: LitStyleJudgeResult | None = None
     metadata: dict[str, Any] = {
         "operation_started_at": _now_iso(),
         "operation": operation,
@@ -160,9 +179,24 @@ async def _build_revision_candidate(
         return outcome.patched_text or source, metadata, None
 
     if operation == "polish":
+        # Run the real advisory judge so the polish directives target this
+        # draft's actual weak dimensions (module contract of litstyle_polish:
+        # the loop is only safe with a real reading + caller keep-better).
+        try:
+            source_judge = await judge_chapter_litstyle(
+                session,
+                settings,
+                chapter_number=int(chapter.chapter_number),
+                content_md=source,
+                language=getattr(project, "language", None) or "zh",
+            )
+        except Exception:  # pragma: no cover - judge outage must not kill polish
+            logger.warning("litstyle judge failed for polish; using neutral pass", exc_info=True)
+        result = source_judge or _neutral_polish_result()
+        metadata["source_litstyle_score"] = int(result.final_score)
         system_prompt, user_prompt = build_litstyle_polish_prompt(
             draft=source,
-            result=_fallback_polish_result(),
+            result=result,
         )
         prompt_template = "reader_chapter_polish"
         fallback = source
@@ -216,6 +250,34 @@ async def _build_revision_candidate(
         }
     )
     llm_run_id = completion.llm_run_id
+
+    # Keep-better (polish only): the litstyle polish loop is only safe when the
+    # caller keeps the higher-scoring of {original, polished}. A candidate that
+    # scores below the source is discarded — returning the source lets the
+    # upstream no-change guard skip version creation.
+    if (
+        operation == "polish"
+        and source_judge is not None
+        and candidate.strip()
+        and candidate.strip() != source.strip()
+    ):
+        try:
+            candidate_judge = await judge_chapter_litstyle(
+                session,
+                settings,
+                chapter_number=int(chapter.chapter_number),
+                content_md=candidate,
+                language=getattr(project, "language", None) or "zh",
+            )
+            metadata["candidate_litstyle_score"] = int(candidate_judge.final_score)
+            if candidate_judge.final_score < source_judge.final_score:
+                metadata["polish_rejected_lower_score"] = True
+                return source, metadata, llm_run_id
+        except Exception:  # pragma: no cover - judge outage: accept the candidate
+            logger.warning(
+                "litstyle judge failed on polish candidate; accepting without keep-better",
+                exc_info=True,
+            )
     return candidate, metadata, llm_run_id
 
 
@@ -245,6 +307,55 @@ async def apply_chapter_revision_task(
         task=task,
         operation=operation,
     )
+    source_md = current.content_md or ""
+
+    # No-change guard: when the candidate equals the source (LLM fallback,
+    # humanize with zero edits, judge-rejected polish) do not mint a new
+    # version and do not touch production_state.
+    if content_md.strip() == source_md.strip():
+        task.status = "completed"
+        task.attempts = int(task.attempts or 0) + 1
+        task.metadata_json = {
+            **(task.metadata_json or {}),
+            **op_metadata,
+            "no_change": True,
+            "completed_at": _now_iso(),
+        }
+        return {
+            "ok": True,
+            "rewrite_task_id": str(task.id),
+            "chapter_number": int(chapter.chapter_number),
+            "operation": operation,
+            "source_version_no": int(current.version_no),
+            "result_version_no": int(current.version_no),
+            "no_change": True,
+            "word_count": int(current.word_count or 0),
+        }
+
+    # Truncation guard: a candidate that lost >40% of the source is a broken
+    # generation — keep the original instead of publishing it.
+    if len(content_md.strip()) < len(source_md.strip()) * _MIN_CANDIDATE_LENGTH_RATIO:
+        task.status = "failed"
+        task.attempts = int(task.attempts or 0) + 1
+        task.metadata_json = {
+            **(task.metadata_json or {}),
+            **op_metadata,
+            "rejected_reason": "candidate_too_short",
+            "candidate_length": len(content_md.strip()),
+            "source_length": len(source_md.strip()),
+            "completed_at": _now_iso(),
+        }
+        return {
+            "ok": False,
+            "rewrite_task_id": str(task.id),
+            "chapter_number": int(chapter.chapter_number),
+            "operation": operation,
+            "source_version_no": int(current.version_no),
+            "result_version_no": int(current.version_no),
+            "rejected_reason": "candidate_too_short",
+            "word_count": int(current.word_count or 0),
+        }
+
     word_count = int(build_markdown_reading_stats(content_md)["word_count"])
     max_existing_version = int(
         (
@@ -288,7 +399,10 @@ async def apply_chapter_revision_task(
         "completed_at": _now_iso(),
     }
     chapter.current_word_count = word_count
-    chapter.production_state = "ok"
+    # 2026-07-04: do NOT force production_state="ok" — the revision path runs
+    # no quality gates, so promoting a candidate must not whitewash a chapter
+    # the pipeline marked blocked/revision. The repair sweep re-evaluates and
+    # clears the state once the report is clean.
     return {
         "ok": True,
         "rewrite_task_id": str(task.id),

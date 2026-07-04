@@ -251,6 +251,7 @@ async def evaluate_premise_appeal(
     config: dict[str, Any] | None = None,
     lexicon: dict[str, Any] | None = None,
     workflow_run_id: Any | None = None,
+    language: str = "zh-CN",
 ) -> PremiseAppealVerdict:
     """Score story-idea attractiveness. Never raises (fail-open to det. scores)."""
 
@@ -297,6 +298,7 @@ async def evaluate_premise_appeal(
             judge_model_key=judge_model_key,
             workflow_run_id=workflow_run_id,
             cfg=cfg,
+            language=language,
         )
         llm_used = bool(llm_run_id) and parsed.get("overall_comment") != "deterministic-fallback"
     except Exception:
@@ -333,6 +335,7 @@ async def _run_llm_judge(
     judge_model_key: str | None,
     workflow_run_id: Any | None,
     cfg: dict[str, Any],
+    language: str = "zh-CN",
 ) -> tuple[dict[str, Any], str | None]:
     from bestseller.services.judge_genre_context import (
         resolve_judge_genre_context,
@@ -342,12 +345,13 @@ async def _run_llm_judge(
         complete_text,
     )
 
+    # 2026-07-04: language 改由调用方传入（旧代码两个分支都写死 zh-CN，下游
+    # is_en 分支是死代码——英文书吃中文 rubric + 中文锚例）。
+    language = str(language or "zh-CN")
     try:
         genre_context = resolve_judge_genre_context(genre=genre, sub_genre=sub_genre)
-        language = "zh-CN"
     except Exception:
         genre_context = None
-        language = "zh-CN"
 
     # Verdict cache — reuse the outline judge's hashing/store helpers.
     input_hash = None

@@ -291,6 +291,19 @@ class TestNamingConsistencyCheck:
         violations = check.run(text, _ctx_with_allowed(inv))
         assert violations == []
 
+    def test_zh_almanac_flyleaf_does_not_create_rogue_name(self) -> None:
+        # 黄泉客栈 ch3 (2026-07-04)：黄历扉页 was sliced into rogue name 黄历扉×3
+        # and blocked the chapter.
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("庄岁寒", "温七娘"))
+        text = (
+            "庄岁寒的目光绕过他，钻进黄历扉页。空白纸页忽然显出字迹。"
+            "温七娘指着黄历扉页，指根那截香已经烧了大半。"
+            "他没应。他盯着黄历扉页上那行字，盯着那个名字不放。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
     def test_zh_materials_and_readiness_words_do_not_create_rogue_names(self) -> None:
         check = NamingConsistencyCheck()
         inv = _zh_invariants_with_pool(("林渊", "苏婉宁"))

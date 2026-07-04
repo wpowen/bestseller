@@ -71,6 +71,44 @@ def test_empty_input_noop(monkeypatch) -> None:
     assert out == ""
 
 
+def test_final_round_regression_reverts_to_best(monkeypatch) -> None:
+    """2026-07-04: the last round's rewrite was historically accepted on
+    length alone (never re-detected). A final rewrite that ADDS AI-flavor
+    must be dropped in favor of the cleanest draft seen."""
+    # One-round loop: dirty input → rewrite comes back with MORE tells.
+    _WORSE = (
+        "他翻开旧册。没人看见他三年来每夜的功课。这不是寻常的册子，是命册。"
+        "这不是结束，是开始。他心头一紧，眼瞳一缩。没人知道他为什么这样做。"
+    )
+
+    async def fake_complete(_s, _set, req):
+        return _fake_result(_WORSE)
+
+    monkeypatch.setattr(deslop, "complete_text", fake_complete)
+    out = _run(_DIRTY, rounds=1)
+    assert out == _DIRTY  # regressed rewrite discarded
+
+
+def test_rewrite_below_target_floor_is_rejected(monkeypatch) -> None:
+    """A rewrite may not drag an on-target draft below ~70% of target_chars
+    even when it clears the 60%-of-source ratio (LENGTH-gate loop guard)."""
+    long_dirty = _DIRTY * 6  # well above target
+
+    async def fake_complete(_s, _set, req):
+        # 65% of source length → passes the old ratio guard, but far below
+        # 70% of the (implied) target when target ≈ source length.
+        return _fake_result(long_dirty[: int(len(long_dirty) * 0.65)])
+
+    monkeypatch.setattr(deslop, "complete_text", fake_complete)
+    out = asyncio.run(
+        revise_prose_deslop(
+            None, object(), content=long_dirty,
+            target_chars=len(long_dirty), rounds=1,
+        )
+    )
+    assert out == long_dirty
+
+
 def test_self_check_covers_staccato_and_system_ladder() -> None:
     """Regression: the deslop rewrite prompt must explicitly target the two
     structural tells the span patcher cannot touch and that staccato/repetition

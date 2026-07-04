@@ -2926,6 +2926,106 @@ async def _polish_blurb_synopsis(
         return synopsis, None
 
 
+async def _persona_click_advisory(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    title: str,
+    synopsis: str,
+    genre: str,
+    sub_genre: str | None,
+    tags: list[str] | None,
+    config: dict[str, Any] | None = None,
+    judge: Any = None,
+) -> tuple[dict[str, Any] | None, str]:
+    """画像点击判官 advisory（审计 P1-6 接活）：模拟目标读者 3 秒点不点。
+
+    返回 ``(report_dict | None, 重生反馈行)``。达 advisory 线（或判官不可用，
+    fail-open）→ 反馈为空串；「不点」→ 反馈带划走原因，供重生循环回灌简介重写。
+    永不 raise。
+    """
+
+    try:
+        from bestseller.services.persona_click_judge import (  # noqa: PLC0415
+            load_persona_judge_config,
+            run_persona_click_judge,
+        )
+
+        pj_cfg = load_persona_judge_config(config)
+        if not pj_cfg["enabled"]:
+            return None, ""
+        report = await run_persona_click_judge(
+            session, settings,
+            title=title, synopsis=synopsis, genre=genre, sub_genre=sub_genre,
+            tags=tuple(tags or ()), config=config, judge=judge,
+        )
+        report_dict = report.to_dict()
+        report_dict["click_rate_min"] = pj_cfg["click_rate_min"]
+        report_dict["advisory_pass"] = report.advisory_pass(pj_cfg["click_rate_min"])
+        if report_dict["advisory_pass"]:
+            return report_dict, ""
+        reasons = "；".join(report.reasons[:3])
+        feedback = (
+            f"【模拟读者不点（{report.channel}画像，{report.clicks}/{report.samples} 会点，"
+            f"均分 {report.avg_score:.1f}/10）】划走原因：{reasons}。"
+            "必须按这些原因改简介：大白话、该人群的爽点直给、零生造黑话。"
+        )
+        return report_dict, feedback
+    except Exception:
+        logger.warning("persona click advisory failed (non-fatal)", exc_info=True)
+        return None, ""
+
+
+async def _run_finalize_arena(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    synopsis: str,
+    genre: str,
+    sub_genre: str | None,
+    config: dict[str, Any] | None = None,
+    judge: Any = None,
+) -> dict[str, Any] | None:
+    """arena 相对盲评作构思终验（审计 P1-7；config ``arena.run_at_finalize`` 门控）。
+
+    默认 off：每次评估 = 参照数×2 次判官调用（min_refs=4~max_refs=6 → 8-12 次），
+    作按需终验而非每次构思例行。开启时终稿简介 vs 真实爆款双盲位置交换胜率写进
+    ``story_appeal_report["arena"]``（advisory，不硬拦）。永不 raise。
+    """
+
+    try:
+        from bestseller.services.story_appeal import (  # noqa: PLC0415
+            load_story_appeal_config,
+            meets_story_bar,
+        )
+
+        cfg = config if config is not None else load_story_appeal_config()
+        arena_cfg = cfg.get("arena", {}) if isinstance(cfg, dict) else {}
+        if not bool(arena_cfg.get("run_at_finalize", False)):
+            return None
+        from bestseller.services.premise_appeal_arena import (  # noqa: PLC0415
+            make_deepseek_judge,
+            run_appeal_arena,
+        )
+
+        judge_fn = judge if judge is not None else make_deepseek_judge(
+            session, settings,
+            model_key=str(arena_cfg.get("judge_model_key", "deepseek-v4-flash")),
+        )
+        summary = await run_appeal_arena(
+            candidate_blurb=synopsis, genre=genre, sub_genre=sub_genre,
+            judge=judge_fn,
+            min_refs=int(arena_cfg.get("min_refs", 4)),
+            max_refs=int(arena_cfg.get("max_refs", 6)),
+        )
+        out = summary.to_dict()
+        out["meets_story_bar"] = meets_story_bar(summary.win_rate, cfg)
+        return out
+    except Exception:
+        logger.warning("finalize arena failed (non-fatal)", exc_info=True)
+        return None
+
+
 async def _polish_title(
     session: AsyncSession,
     settings: AppSettings,
@@ -3718,6 +3818,14 @@ async def run_conception_pipeline(
             _title_min = float((_appeal_cfg.get("meets_bar", {}) or {}).get("title_min", 0))
             best = (report, premise, synopsis, tags, title)
             attempts = 0
+            # ── 画像点击判官（模拟目标读者3秒点不点，advisory 并联信号）──
+            # 初评一次：「不点」的划走原因并入每轮重生反馈（绝对分门看不见的
+            # 人群视角信号——黑话劝退/爽点错频）。fail-open，不改变循环触发条件。
+            _persona_report, _persona_fb = await _persona_click_advisory(
+                session, settings,
+                title=title, synopsis=synopsis, genre=_ap_genre, sub_genre=_ap_sub,
+                tags=tags, config=_appeal_cfg,
+            )
             # Product hard line: regenerate while not meeting the bar (blurb<80);
             # else fall back to the grade floor.
             while (
@@ -3732,6 +3840,8 @@ async def run_conception_pipeline(
                 attempts += 1
                 try:
                     feedback = build_improvement_feedback(report, _appeal_cfg)
+                    if _persona_fb:
+                        feedback = f"{feedback}\n{_persona_fb}"
                     # 聚焦【点击型简介】打磨：从当前最优 synopsis 出发，按反馈只重写简介，
                     # 不重跑整段 finalize（整段 finalize 同时产 premise/profile，对简介不够
                     # 聚焦——实测真机现实题材重跑 finalize 卡 74.7，而聚焦重写可达 84）。
@@ -3797,6 +3907,45 @@ async def run_conception_pipeline(
                 report.premise.total, report.blurb.total, _t_total,
                 report.overall_grade, report.meets_bar, attempts,
             )
+            # ── 画像判官终评：重生改过稿则对终稿再评一次，否则复用初评 ──
+            # 结果持久化进 appeal 报告（web 可见）。persona_judge.block_below=true
+            # 时与绝对分门并联硬拦（同一 AppealBarNotMetError 拦截链）。
+            if attempts > 0:
+                _persona_report, _persona_fb = await _persona_click_advisory(
+                    session, settings,
+                    title=title, synopsis=synopsis, genre=_ap_genre, sub_genre=_ap_sub,
+                    tags=tags, config=_appeal_cfg,
+                )
+            if _persona_report is not None:
+                story_appeal_report["persona_judge"] = _persona_report
+                logger.info(
+                    "Persona click judge: channel=%s clicks=%s/%s rate=%s pass=%s",
+                    _persona_report.get("channel"), _persona_report.get("clicks"),
+                    _persona_report.get("samples"), _persona_report.get("click_rate"),
+                    _persona_report.get("advisory_pass"),
+                )
+                _pj_cfg = (_appeal_cfg.get("persona_judge", {}) or {}) \
+                    if isinstance(_appeal_cfg, dict) else {}
+                if bool(_pj_cfg.get("block_below", False)) \
+                        and not _persona_report.get("advisory_pass", True):
+                    _appeal_block_below = True
+                    _appeal_blocked_feedback = (
+                        (_appeal_blocked_feedback + "\n" if _appeal_blocked_feedback else "")
+                        + _persona_fb
+                    )
+            # ── arena 相对盲评终验（config arena.run_at_finalize 门控，默认 off）──
+            # 绝对分不可信的补充：终稿简介 vs 真实爆款的双盲胜率（advisory）。
+            _arena_report = await _run_finalize_arena(
+                session, settings,
+                synopsis=synopsis, genre=_ap_genre, sub_genre=_ap_sub, config=_appeal_cfg,
+            )
+            if _arena_report is not None:
+                story_appeal_report["arena"] = _arena_report
+                logger.info(
+                    "Finalize appeal arena: pairs=%s win_rate=%s meets_story_bar=%s",
+                    _arena_report.get("pairs"), _arena_report.get("win_rate"),
+                    _arena_report.get("meets_story_bar"),
+                )
             # ── 一句话卖点【前置·严格】闸门（logline_gate v2，读者视角语义判别）──
             # 对最终卖点(logline/premise)跑 7 维/两档判官，verdict 附加进 appeal 报告(可见)。
             # 默认 advisory（仅持久化+日志）；config logline_gate.block_expansion=true 时，

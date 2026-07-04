@@ -73,6 +73,95 @@ def test_reference_set_known_genre_and_generic_fallback():
     assert len(fallback) >= 3
 
 
+# ── 频道感知补池 + 题材错标修复（审计 P1-7）────────────────────────────────
+# 此前补池写死男频/中性题材键：女频候选参照不足时被混入斗破苍穹级男频简介，
+# 且判官 prompt 把跨题材参照错标成候选题材。
+
+
+@pytest.mark.unit
+def test_reference_set_each_ref_carries_source_genre():
+    refs = resolve_reference_set("玄幻", None, min_refs=3)
+    assert refs
+    assert all(r.get("genre") for r in refs)
+    # own-genre refs resolve to the candidate's canonical key
+    assert refs[0]["genre"] == "xuanhuan"
+
+
+@pytest.mark.unit
+def test_config_now_has_female_reference_pool():
+    refs = load_reference_blurbs()
+    female_keys = [
+        k for k in ("gu-yan", "xian-yan", "fantasy-romance", "female-growth", "pure-love")
+        if refs.get(k)
+    ]
+    assert len(female_keys) >= 3, "女频参照集缺失：arena 无法给女频候选同频道参照"
+    total = sum(len(refs[k]) for k in female_keys)
+    assert total >= 4, "女频参照总数须 ≥ arena min_refs(4)"
+
+
+@pytest.mark.unit
+def test_female_candidate_topup_never_mixes_male_channel():
+    from bestseller.services.genre_taxonomy import get_genre
+
+    # min_refs 拉高强制深度补池——补进来的每一条都必须非男频。
+    got = resolve_reference_set("现代言情", None, min_refs=12)
+    assert len(got) >= 4
+    for r in got:
+        g = get_genre(r["genre"])
+        assert g is None or "male" not in g.channel, f"女频候选混入男频参照: {r['genre']}"
+
+
+@pytest.mark.unit
+def test_male_candidate_topup_never_mixes_female_channel():
+    from bestseller.services.genre_taxonomy import get_genre
+
+    got = resolve_reference_set("玄幻", None, min_refs=12)
+    assert len(got) >= 4
+    for r in got:
+        g = get_genre(r["genre"])
+        assert g is None or "female" not in g.channel, f"男频候选混入女频参照: {r['genre']}"
+
+
+@pytest.mark.unit
+def test_cross_genre_prompt_does_not_assert_candidate_genre():
+    from bestseller.services.premise_appeal_arena import build_appeal_user_prompt
+
+    same = build_appeal_user_prompt("a", "b", genre="玄幻")
+    assert "玄幻" in same
+    cross = build_appeal_user_prompt("a", "b", genre="玄幻", cross_genre=True)
+    assert "玄幻" not in cross  # 跨题材参照不得被错标成候选题材
+    assert "不限" in cross
+
+
+@pytest.mark.unit
+async def test_arena_cross_genre_pairs_use_unlabeled_prompt():
+    prompts: list[str] = []
+
+    async def _judge(system, user):
+        prompts.append(user)
+        return '{"winner": "持平"}'
+
+    # 纯爱自有参照少 → 必然发生同频道补池；补池对局的 prompt 不得写「题材：纯爱」。
+    s = await run_appeal_arena(
+        candidate_blurb="她在旧书店捡到一封没寄出的信。", genre="纯爱",
+        judge=_judge, min_refs=6, max_refs=6,
+    )
+    assert s.pairs >= 3
+    cross_prompts = [p for p in prompts if "不限" in p]
+    assert cross_prompts, "补池跨题材对局必须用『题材：不限』的判官 prompt"
+
+
+@pytest.mark.unit
+async def test_arena_details_carry_reference_genre():
+    async def _judge(system, user):
+        return '{"winner": "持平"}'
+
+    s = await run_appeal_arena(
+        candidate_blurb="x", genre="玄幻", judge=_judge, min_refs=3, max_refs=4,
+    )
+    assert all("ref_genre" in d for d in s.details)
+
+
 @pytest.mark.unit
 def test_summarize_winrate_math():
     from bestseller.services.premise_appeal_arena import AppealArenaPair, AppealMatchResult

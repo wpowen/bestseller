@@ -471,3 +471,94 @@ def test_finalize_prompt_carries_golden_finger_diversity_principle():
     # EN finalize branch is covered too.
     assert "NOT default to a stat/system panel" in C._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
     assert "no explicit golden" in C._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
+
+
+# ── 画像点击判官 advisory 接线（审计 P1-6 接活）──────────────────────────────
+
+
+async def test_persona_click_advisory_pass_returns_report_without_feedback() -> None:
+    async def _judge(system, user):
+        return '{"click": true, "score": 8, "reason": "爽点直给"}'
+
+    report, fb = await conception_services._persona_click_advisory(
+        None, None, title="蚀骨神藏", synopsis="废柴少年觉醒神藏。",
+        genre="玄幻", sub_genre="东方玄幻", tags=["升级"],
+        config={"persona_judge": {"samples": 2, "click_rate_min": 0.34}},
+        judge=_judge,
+    )
+    assert report is not None and report["llm_used"] is True
+    assert report["click_rate"] == pytest.approx(1.0)
+    assert fb == ""  # 达 advisory 线 → 不注入重生反馈
+
+
+async def test_persona_click_advisory_fail_feeds_reasons_into_feedback() -> None:
+    async def _judge(system, user):
+        return '{"click": false, "score": 2, "reason": "全是看不懂的黑话"}'
+
+    report, fb = await conception_services._persona_click_advisory(
+        None, None, title="熵减协议", synopsis="基于编译原理的量子修真体系。",
+        genre="玄幻", sub_genre=None, tags=[],
+        config={"persona_judge": {"samples": 2, "click_rate_min": 0.34}},
+        judge=_judge,
+    )
+    assert report is not None and report["clicks"] == 0
+    assert "模拟读者不点" in fb and "黑话" in fb  # 划走理由回灌重生反馈
+
+
+async def test_persona_click_advisory_disabled_or_broken_is_silent() -> None:
+    report, fb = await conception_services._persona_click_advisory(
+        None, None, title="t", synopsis="s", genre="玄幻", sub_genre=None, tags=[],
+        config={"persona_judge": {"enabled": False}}, judge=None,
+    )
+    assert report is None and fb == ""
+
+    async def _boom(system, user):
+        raise RuntimeError("llm down")
+
+    report2, fb2 = await conception_services._persona_click_advisory(
+        None, None, title="t", synopsis="s", genre="玄幻", sub_genre=None, tags=[],
+        config={"persona_judge": {"samples": 2}}, judge=_boom,
+    )
+    # 判官全废 → llm_used=False → advisory 放行，不给反馈也不拦（fail-open）
+    assert fb2 == ""
+    assert report2 is not None and report2["llm_used"] is False
+
+
+# ── arena 相对盲评作为构思终验（config 门控，默认 off，审计 P1-7）──────────────
+
+
+async def test_finalize_arena_disabled_by_default_returns_none() -> None:
+    out = await conception_services._run_finalize_arena(
+        None, None, synopsis="一段简介", genre="玄幻", sub_genre=None,
+        config={"arena": {}},  # 无 run_at_finalize → off
+    )
+    assert out is None
+
+
+async def test_finalize_arena_enabled_runs_and_reports_story_bar() -> None:
+    async def _judge(system, user):
+        return '{"winner": "持平"}'
+
+    out = await conception_services._run_finalize_arena(
+        None, None, synopsis="她在旧书店捡到一封没寄出的信。", genre="玄幻", sub_genre=None,
+        config={"arena": {"run_at_finalize": True, "min_refs": 3, "max_refs": 4,
+                          "story_winrate_min": 0.45}},
+        judge=_judge,
+    )
+    assert out is not None
+    assert out["pairs"] >= 3
+    assert out["win_rate"] == pytest.approx(0.5)  # 全持平 → 0.5
+    assert out["meets_story_bar"] is True  # 0.5 >= 0.45
+
+
+async def test_finalize_arena_fails_open_on_error() -> None:
+    async def _boom(system, user):
+        raise RuntimeError("judge down")
+
+    out = await conception_services._run_finalize_arena(
+        None, None, synopsis="x", genre="玄幻", sub_genre=None,
+        config={"arena": {"run_at_finalize": True, "min_refs": 3}},
+        judge=_boom,
+    )
+    # 判官逐对失败按持平计 → 仍返回报告，不抛错、不拦构思
+    assert out is not None and out["win_rate"] == pytest.approx(0.5)

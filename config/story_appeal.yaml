@@ -143,6 +143,19 @@ logline_gate:
       high: 卖点是具体可视的人/事/画面(殡仪馆第七具遗体睁眼…)，读者脑中能成像
       low: 抽象设定罗列、形容词堆砌，读者脑中没有画面
 
+# ---------------------------------------------------------------------------
+# 画像点击判官（services/persona_click_judge.py，审计 P1-6 接活）：按题材路由
+# 目标读者画像（genre_persona），LLM 角色扮演该读者只看书名+简介 3 秒决定点不点。
+# advisory 并联信号：初评「不点」→ 划走原因并入重生反馈；终评结果持久化进
+# story_appeal_report["persona_judge"]。fail-open（LLM 不可用绝不误毙）。
+# 真机校准(2026-06)：黑话版 2.3 分 0/3 点、去黑话 8.7、画像定向 8.3。
+# ---------------------------------------------------------------------------
+persona_judge:
+  enabled: true
+  samples: 3                  # N 采样去单次噪声（成本 = N 次小调用，~300 tokens/次）
+  click_rate_min: 0.34        # advisory 线：至少 1/3 模拟读者会点
+  block_below: false          # 默认 advisory；真机校准后可置 true 与绝对分门并联硬拦
+
 # 故事质量硬门 = 对真实爆款简介做双盲位置交换 pairwise 胜率（services/premise_appeal_arena.py）。
 # 相对盲评稳定（绝对分不稳），跨家族判官(DeepSeek)去同源高估，位置交换去位置偏。
 # 因每本需 ~N×2 次判官调用，作【按需验收门】（scripts/verify_appeal_arena.py），不进每次构思。
@@ -152,6 +165,11 @@ arena:
   min_refs: 4
   max_refs: 6
   judge_model_key: deepseek-v4-flash  # 跨家族；读 DEEPSEEK_API_KEY
+  # 构思终验开关（审计 P1-7）：true 时 conception finalize 终稿简介自动跑 arena，
+  # 结果写 story_appeal_report["arena"]（advisory 不硬拦）。成本 = min~max_refs×2
+  # 次判官调用（8-12 次，逐对串行 ~1-2 分钟/书），故默认 off 作按需终验；
+  # 且当前 judge_model_key 的 DEEPSEEK_API_KEY 已 402——开启前先换可用跨家族判官。
+  run_at_finalize: false
 
 # ---------------------------------------------------------------------------
 # 书名/标题点击力 5 维 rubric（services/title_appeal_gate.py，零 token 确定性）。

@@ -23,7 +23,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-# ruff: noqa: ANN401, RUF001 — Chinese labels + Any session/settings.
+# ruff: noqa: ANN401, RUF001, RUF002, RUF003 — Chinese labels + Any session/settings.
 import json
 import logging
 from pathlib import Path
@@ -65,10 +65,42 @@ def load_reference_blurbs() -> dict[str, list[dict[str, str]]]:
     return out
 
 
+# Channel-aware top-up pools (审计 P1-7): a 女频 candidate must NEVER be topped
+# up with 男频 references (斗破苍穹 vs 言情候选 is not a meaningful click contest),
+# and vice versa. Unknown/general candidates may draw from the whole corpus.
+_MALE_TOPUP_KEYS = ("xuanhuan", "urban", "xianxia", "history", "suspense", "scifi")
+_FEMALE_TOPUP_KEYS = (
+    "xian-yan", "gu-yan", "fantasy-romance", "female-growth",
+    "female-derivative", "pure-love",
+)
+_GENERAL_TOPUP_KEYS = ("light-novel", "realistic")
+
+
+def _genre_channel(canonical: str) -> str:
+    """'male' | 'female' | 'general' for a canonical genre key (fail-open general)."""
+
+    try:
+        from bestseller.services.genre_taxonomy import get_genre
+
+        g = get_genre(canonical)
+        channels = tuple(g.channel) if g is not None else ()
+    except Exception:
+        channels = ()
+    if "female" in channels and "male" not in channels:
+        return "female"
+    if "male" in channels and "female" not in channels:
+        return "male"
+    return "general"
+
+
 def resolve_reference_set(
     genre: str | None, sub_genre: str | None = None, *, min_refs: int = 3
 ) -> list[dict[str, str]]:
-    """Same-genre real bestseller blurbs, topped up from a generic pool if scarce."""
+    """Same-genre real bestseller blurbs, topped up channel-aware if scarce.
+
+    Every returned ref carries its TRUE source genre under ``"genre"`` so the
+    arena can avoid mislabeling cross-genre pairs in the judge prompt.
+    """
 
     refs = load_reference_blurbs()
     canonical = ""
@@ -79,17 +111,26 @@ def resolve_reference_set(
     except Exception:
         canonical = ""
 
-    own = list(refs.get(canonical, []))
+    own = [{**r, "genre": canonical} for r in refs.get(canonical, [])]
     if len(own) >= min_refs:
         return own
-    # Fallback: top up with cross-genre hits (de-identified, so genre leakage is
-    # limited; the question "which would you click" is largely genre-agnostic).
+    # Top up from the SAME channel only (female↛male, male↛female); the general
+    # pool is a shared tail. De-identified, so genre leakage stays limited.
+    channel = _genre_channel(canonical)
+    if channel == "female":
+        topup_keys = _FEMALE_TOPUP_KEYS + _GENERAL_TOPUP_KEYS
+    elif channel == "male":
+        topup_keys = _MALE_TOPUP_KEYS + _GENERAL_TOPUP_KEYS
+    else:
+        topup_keys = _MALE_TOPUP_KEYS + _FEMALE_TOPUP_KEYS + _GENERAL_TOPUP_KEYS
     seen = {r["blurb"] for r in own}
     pool: list[dict[str, str]] = []
-    for g in ("xuanhuan", "urban", "xianxia", "history", "suspense", "scifi"):
+    for g in topup_keys:
+        if g == canonical:
+            continue
         for r in refs.get(g, []):
             if r["blurb"] not in seen:
-                pool.append(r)
+                pool.append({**r, "genre": g})
                 seen.add(r["blurb"])
     return own + pool[: max(0, min_refs - len(own))]
 
@@ -106,6 +147,11 @@ class AppealArenaPair:
     reference_blurb: str
     genre: str
     reference_title: str = ""
+    # TRUE source genre of the reference (canonical key) + whether this pair is a
+    # cross-genre top-up — the judge prompt must not assert the candidate's genre
+    # over a reference that isn't of that genre (审计 P1-7 错标题材).
+    reference_genre: str = ""
+    cross_genre: bool = False
 
 
 @dataclass(frozen=True)
@@ -126,9 +172,18 @@ def build_appeal_system_prompt() -> str:
     )
 
 
-def build_appeal_user_prompt(blurb_a: str, blurb_b: str, *, genre: str) -> str:
+def build_appeal_user_prompt(
+    blurb_a: str, blurb_b: str, *, genre: str, cross_genre: bool = False
+) -> str:
+    # 跨题材补池对局：参照并非候选题材，断言「题材：候选题材」= 给判官喂错标签
+    # （如把男频玄幻简介当言情评）。此时不标题材，只比点击欲。
+    genre_line = (
+        "题材：不限（两篇可能属于不同题材，只凭哪个更想点开判断）"
+        if cross_genre or not genre
+        else f"题材：{genre}"
+    )
     return (
-        f"题材：{genre}\n\n【简介·甲】\n{blurb_a[:900]}\n\n【简介·乙】\n{blurb_b[:900]}\n\n"
+        f"{genre_line}\n\n【简介·甲】\n{blurb_a[:900]}\n\n【简介·乙】\n{blurb_b[:900]}\n\n"
         "哪个更让你想点开读？输出严格 JSON。"
     )
 
@@ -174,11 +229,17 @@ async def run_appeal_match(pair: AppealArenaPair, judge: JudgeFn) -> AppealMatch
     system = build_appeal_system_prompt()
     forward_raw = await judge(
         system,
-        build_appeal_user_prompt(pair.candidate_blurb, pair.reference_blurb, genre=pair.genre),
+        build_appeal_user_prompt(
+            pair.candidate_blurb, pair.reference_blurb,
+            genre=pair.genre, cross_genre=pair.cross_genre,
+        ),
     )
     backward_raw = await judge(
         system,
-        build_appeal_user_prompt(pair.reference_blurb, pair.candidate_blurb, genre=pair.genre),
+        build_appeal_user_prompt(
+            pair.reference_blurb, pair.candidate_blurb,
+            genre=pair.genre, cross_genre=pair.cross_genre,
+        ),
     )
     forward = parse_appeal_verdict(forward_raw, candidate_is_a=True)
     backward = parse_appeal_verdict(backward_raw, candidate_is_a=False)
@@ -220,7 +281,8 @@ def summarize_appeal(results: list[AppealMatchResult], *, genre: str) -> AppealA
     losses = sum(1 for r in results if r.outcome == "loss")
     ties = pairs - wins - losses
     details = tuple(
-        {"ref": r.pair.reference_title, "outcome": r.outcome} for r in results
+        {"ref": r.pair.reference_title, "ref_genre": r.pair.reference_genre, "outcome": r.outcome}
+        for r in results
     )
     return AppealArenaSummary(
         genre=genre, pairs=pairs, wins=wins, losses=losses, ties=ties,
@@ -268,6 +330,12 @@ async def run_appeal_arena(
     candidate = _fair_length(candidate_blurb, candidate_max_chars)
     refs = resolve_reference_set(genre, sub_genre, min_refs=min_refs)[:max_refs]
     canonical = genre or ""
+    try:
+        from bestseller.services.genre_taxonomy import canonicalize
+
+        candidate_canonical = canonicalize(genre, sub_genre) or ""
+    except Exception:
+        candidate_canonical = ""
     pairs = [
         AppealArenaPair(
             pair_id=f"appeal-{i}",
@@ -275,6 +343,12 @@ async def run_appeal_arena(
             reference_blurb=r["blurb"],
             genre=str(genre or ""),
             reference_title=r.get("title", ""),
+            reference_genre=str(r.get("genre", "")),
+            # 补池参照非候选题材（或候选题材未知）→ 判官 prompt 不得错标题材
+            cross_genre=(
+                not candidate_canonical
+                or str(r.get("genre", "")) != candidate_canonical
+            ),
         )
         for i, r in enumerate(refs)
     ]

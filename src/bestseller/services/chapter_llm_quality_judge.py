@@ -392,8 +392,11 @@ _RANKING_DIMENSION_DIRECTIVES: dict[str, tuple[str, str]] = {
         "Commercial pull: this chapter must deliver one payoff / reversal / strong hook.",
     ),
     "readability": (
-        "可读性：句子干净、节奏有呼吸（长短交错）、零 AI 套话；两人对话不看标签可分辨。",
-        "Readability: clean sentences, varied rhythm, zero AI cliché; speakers distinguishable without tags.",
+        "可读性：句子干净、节奏有呼吸（长短交错）、零 AI 套话；两人对话不看标签可分辨；"
+        "读者随时知道主角此刻想要什么/怕什么/赌什么（有可感的内心声音，不是全程生理症状）。",
+        "Readability: clean sentences, varied rhythm, zero AI cliché; speakers distinguishable "
+        "without tags; the reader always knows what the POV character wants/fears/wagers "
+        "(a felt inner voice, not physiology-only).",
     ),
     "knowledge_boundary": (
         "认知边界：每个角色只知道他此刻该知道的，禁止越界知道未发生 / 未被告知的信息。",

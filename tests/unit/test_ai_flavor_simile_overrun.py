@@ -47,6 +47,21 @@ def test_simile_overrun_ignores_moderate_prose() -> None:
     assert not [s for s in report.spans if s.category == "simile_overrun"]
 
 
+def test_simile_count_excludes_noun_compounds() -> None:
+    # 画像/头像/偶像/像样/想像 这类名词性「像」不是明喻，堆再多也不该触发。
+    base = (
+        "祠堂正墙挂着祖宗画像，画像下摆着一排遗像。他掏出手机换了个头像，"
+        "屏幕上的图像有些发虚，录像还在转。柜顶那尊佛像落了灰，"
+        "神龛里的塑像缺了只手。这屋子收拾得不像样，他想像不出从前的模样。"
+        "偶像剧在电视里放着，影像忽明忽暗。"
+    )
+    text = base * 10  # 名词性「像」密度远超阈值，真明喻为 0
+    report = detect(text, language="zh-CN", chapter_number=5)
+    assert not [s for s in report.spans if s.category == "simile_overrun"], (
+        "名词复合词里的「像」被计入明喻数 —— 误伤词剔除失效"
+    )
+
+
 def test_synaesthesia_mismatch_flags_wet_sound() -> None:
     # 把听觉（响/声）说成有水分（湿/潮/黏）再接明喻 —— 物理不通的通感病句。
     text = (

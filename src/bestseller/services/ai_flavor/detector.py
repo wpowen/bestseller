@@ -721,6 +721,9 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         # alone. The cross-modal 通感病句 (synaesthesia_mismatch) is a real
         # error and is deliberately NOT listed here so it can raise the score.
         "simile_overrun",
+        # Inner-voice ABSENCE is a chapter-level readability nudge, not a
+        # per-sentence defect — advisory forever, never a block driver.
+        "inner_voice_absence",
     }
     _STRUCTURAL_CAP = 24.0
 
@@ -944,6 +947,9 @@ def detect(
     # ── 明喻过密 / 跨模态通感病句 (什么都像什么 / 响湿得像) ──────────────
     spans.extend(_detect_simile_overrun(content_md, lang=lang))
 
+    # ── 第一人称内心声音缺失 (全章零盘算/自问 → 冷读者跟不上动机) ────────
+    spans.extend(_detect_inner_voice_absence(content_md, lang=lang))
+
     spans.sort(key=lambda s: (s.start, s.end))
     return AiFlavorReport(
         language=lang,
@@ -1140,6 +1146,19 @@ def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
 _SIMILE_MARKER_RE = re.compile(
     r"仿佛|仿若|宛如|宛若|犹如|恰似|好似|如同|好像|就像|像"
 )
+# Bare 像 inside noun compounds (画像/头像/偶像/像样/想像…) is not a simile.
+# Only the single-char match needs the check — the multi-char connectors are
+# unambiguous, and 好像 is consumed as a whole before bare 像 can match.
+_SIMILE_FALSE_PRE = "画图影偶头雕塑录人遗佛镜成造想"
+_SIMILE_FALSE_POST = "样话素"
+
+
+def _is_noun_compound_simile(content_md: str, m: re.Match[str]) -> bool:
+    if m.group() != "像":
+        return False
+    pre = content_md[m.start() - 1] if m.start() > 0 else ""
+    post = content_md[m.end()] if m.end() < len(content_md) else ""
+    return pre in _SIMILE_FALSE_PRE or post in _SIMILE_FALSE_POST
 # Moisture/texture attributes that a *sound* physically cannot have. Temperature
 # (冷/热) and taste (甜/苦) onto voice are conventional Chinese synaesthesia and
 # are deliberately excluded to avoid false positives ("声音冷得像冰").
@@ -1177,11 +1196,15 @@ def _detect_simile_overrun(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
 
     # 1. Simile density (chapter-level, one advisory span).
     if total >= 800:
-        markers = _SIMILE_MARKER_RE.findall(content_md)
-        count = len(markers)
+        matches = [
+            m
+            for m in _SIMILE_MARKER_RE.finditer(content_md)
+            if not _is_noun_compound_simile(content_md, m)
+        ]
+        count = len(matches)
         if count >= 8 and count * 10000 // total >= 32:
-            m = _SIMILE_MARKER_RE.search(content_md)
-            pos = m.start() if m else 0
+            m = matches[0]
+            pos = m.start()
             out.append(
                 AiFlavorSpan(
                     start=pos,
@@ -1225,6 +1248,67 @@ def _detect_simile_overrun(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
         )
 
     return out
+
+
+# ── First-person inner-voice absence (advisory) ─────────────────────────────
+# 口径 = E3 真机盲评量尺 (scratchpad metrics.py, 记忆 pov-inner-voice-…):
+# 第一人称叙述层没有「心道」标记，内心声音只能从盘算/自问句式和叙述层问号
+# 里读出来。E1 病灶三章 命中全 0（对标《诡秘》6 处 + 15 个问号）——冷读者
+# 跟不上主角动机，可读性盲评全败。cinematic_pov 第 8 条靠 prompt 授权，
+# M3 服从性差，这里给确定性兜底：advisory only，deslop 跑其他问题时把
+# 「补 2-3 处内心声音」的指令捎给写手。
+_FP_INNER_VOICE_RE = re.compile(
+    r"我得|我不能|我怕|我赌|我猜|我算了算|我告诉自己|怎么办|难道|万一|"
+    r"不会是|要不要|还是说|凭什么|说不定"
+)
+_INNER_MARKER_RE = re.compile(r"心里默念|心道|心想|心说|暗道|暗想|自问|腹诽")
+_DIALOGUE_QUOTE_RE = re.compile(r"“[^”\n]*”|「[^」\n]*」")
+_INNER_VOICE_MIN_CHARS = 1500  # 全章口径，短卡/片段不评
+_FIRST_PERSON_MIN_WO = 8  # 叙述层「我」达此数才认定第一人称叙述
+
+
+def _detect_inner_voice_absence(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """第一人称章内心声音缺失 —— 全章级 advisory，CJK only。
+
+    对白内文字用等长占位符掩掉（位置不漂移），只在叙述层上：
+    1. 「我」≥ 阈值 → 第一人称叙述（对白里的"我"不算）；
+    2. 盘算/自问句式 + 心理标记 + 叙述层问号 合计 <2 → 一个 info span。
+    第三人称章不适用（有「心道」标记体系，另行评判），直接跳过。
+    """
+
+    if lang != "zh" or len(content_md) < _INNER_VOICE_MIN_CHARS:
+        return []
+    masked = _DIALOGUE_QUOTE_RE.sub(lambda m: "�" * len(m.group()), content_md)
+    if masked.count("我") < _FIRST_PERSON_MIN_WO:
+        return []
+    hits = (
+        len(_FP_INNER_VOICE_RE.findall(masked))
+        + len(_INNER_MARKER_RE.findall(masked))
+        + masked.count("？")
+        + masked.count("?")
+    )
+    if hits >= 2:
+        return []
+    pos = masked.find("我")
+    return [
+        AiFlavorSpan(
+            start=pos,
+            end=pos + 1,
+            matched_text=content_md[pos : pos + 12],
+            rule_id="zh.inner_voice.absence",
+            category="inner_voice_absence",
+            severity="info",
+            suggestions=(),
+            sentence_span=_sentence_bounds(content_md, pos, lang),
+            why=(
+                f"第一人称全章内心声音缺失（盘算/自问句式仅 {hits} 处，达标≥2）"
+                "——读者听不见主角的念头就跟不上动机。在做决定/遇险/起疑的节点"
+                "补 2-3 句第一人称盘算或自问（'我得…'/'万一…'/'难道…？'），"
+                "直接写念头本身，不要加'我心想'标记，也不要转成生理症状。"
+            ),
+            remove_sentence_on_block=False,
+        )
+    ]
 
 
 def _coerce_severity(raw: Any, *, default: Severity) -> Severity:

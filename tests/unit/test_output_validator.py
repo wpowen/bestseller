@@ -23,6 +23,7 @@ from bestseller.services.output_validator import (
     LengthEnvelopeCheck,
     NamingConsistencyCheck,
     OutputValidator,
+    QualityReport,
     ValidationContext,
     build_phase1_validator,
 )
@@ -251,6 +252,25 @@ class TestNamingConsistencyCheck:
         assert violations[0].code == "NAMING_OUT_OF_POOL"
         assert "赵无极" in violations[0].detail
 
+    def test_zh_rogue_name_is_non_blocking(self) -> None:
+        # 根治(2026-07-06)：中文姓氏正则名字检测器误报率高(真机 rule-horror 书
+        # 顾客联/成铁锈/唐店长/宋姨 全误报却硬毙 ch10/ch16)。QualityReport.blocks_write
+        # 直接读 raw severity，绕过 l6_write_gate 的 audit_only 映射 → 一个疑似生造名
+        # 就能拖停整本书。改为 warn：仍检出、仍进 prompt 反馈、仍列 auto-repair，
+        # 但绝不 blocks_write。真实生造名由 CAST/canon 一致性检查兜底。
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("林奚",))
+        text = (
+            "林奚抬眼望去。赵无极站在远处。"
+            "林奚叹了口气。赵无极没有说话。"
+            "她终于开口：赵无极，你为什么回来？"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations and violations[0].code == "NAMING_OUT_OF_POOL"
+        assert violations[0].severity != "block"
+        # 一份只含 NAMING 的报告绝不能 blocks_write（否则误报硬毙整章/整书）。
+        assert QualityReport(violations=tuple(violations)).blocks_write is False
+
     def test_zh_single_occurrence_below_floor(self) -> None:
         check = NamingConsistencyCheck()
         inv = _zh_invariants_with_pool(("林奚",))
@@ -303,6 +323,19 @@ class TestNamingConsistencyCheck:
             "招牌上写着岁安号，安号两个字被雨水泡得发胀。"
             "巷口有人戴孝，戴孝的人不肯抬头。"
             "他记起时封那一晚，时封之后再没人提起。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
+    def test_zh_receipt_copy_nouns_do_not_create_rogue_names(self) -> None:
+        # 《夜班第十一次，我把代价谈进了合同》ch7 (2026-07-06)：三联单的「顾客联」
+        # （顾=常见姓氏，顾客=customer）被切成池外人名 顾客联×4，severity=block
+        # 卡书。收据/单据领域名词不是人名，闸门把它当人名 flag 会永久卡住该章。
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("唐缄", "江晦", "何裁"))
+        text = (
+            "唐缄把顾客联撕下来递过去，顾客联上盖了章。"
+            "第三张顾客联要客户签字，最后一张顾客联归档。"
         )
         violations = check.run(text, _ctx_with_allowed(inv))
         assert violations == []

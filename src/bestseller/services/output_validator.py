@@ -732,6 +732,10 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # 却全是职业/店号/动词碎片高频尾字。闸门本就把「用职务/身份称谓」当修法，
     # 把职业称谓当人名 flag 自相矛盾。
     "驻货孝封号"
+    # 夜班书 ch7 audit (2026-07-06) — 三联单的「顾客联」(顾=常见姓氏,
+    # 顾客=customer) 被切成池外人名 顾客联×4 并 block 卡书。客 作真实给定名
+    # 第二字几乎不存在（顾客/剑客/常客/说客/刺客 全是常见词，非人名）。
+    "客"
 )
 
 # Third-character stoplist — for 3-char candidates the regex greedily
@@ -1015,10 +1019,20 @@ class NamingConsistencyCheck:
             "若是你新发明的路人，删除名字、改用职务/身份/外貌称谓"
             "（如「值班科员」「那名中年男人」）。不要临时杜撰新名字。"
         )
+        # severity="warn", NOT "block" (根治 2026-07-06): this heuristic is a
+        # top-100-Chinese-surname regex over prose; its false-positive rate is
+        # inherently high (真机 rule-horror 书 顾客联/成铁锈/唐店长/宋姨 全误报).
+        # ``QualityReport.blocks_write`` reads raw severity and bypasses the
+        # l6_write_gate ``NAMING_OUT_OF_POOL: audit_only`` mapping, so emitting
+        # "block" lets a single suspected-invented name hard-stall a whole book.
+        # As a warn it is still surfaced, still fed back to the writer via
+        # ``prompt_feedback``, and still listed as auto-repairable — but never
+        # blocks the write. Genuinely invented cast are caught by the CAST /
+        # canon consistency checks, which carry real signal.
         return [
             Violation(
                 code=self.code,
-                severity="block",
+                severity="warn",
                 location=f"rogue_names:{len(rogue)}",
                 detail=detail,
                 prompt_feedback=prompt_feedback,

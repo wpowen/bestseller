@@ -726,6 +726,12 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # into rogue name "黄历扉". 历 as the 2nd char of a given name is
     # virtually unattested; 黄历/日历/农历 are all common nouns.
     "历"
+    # 命馆书 ch4/ch5 audit (2026-07-05) — 职业称谓/店号/散文碎片被切成人名并
+    # block 卡书：常驻员(常+驻员)、皮货商(皮+货商)、安号/岁安号(安/岁安+号)、
+    # 戴孝(戴+孝)、时封(时+封)。驻/货/孝/封/号 作真实给定名第二字几乎不存在，
+    # 却全是职业/店号/动词碎片高频尾字。闸门本就把「用职务/身份称谓」当修法，
+    # 把职业称谓当人名 flag 自相矛盾。
+    "驻货孝封号"
 )
 
 # Third-character stoplist — for 3-char candidates the regex greedily

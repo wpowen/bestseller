@@ -120,10 +120,14 @@ def test_conception_call_timeout_caps_wall_clock(
     monkeypatch.setattr(_llm_mod.asyncio, "wait_for", _fake_wait_for)
 
     async def _run() -> None:
-        # Real (non-mock) settings so _call_litellm runs; litellm is never
-        # actually reached because wait_for is faked.
-        settings = load_settings()
-        role_settings = settings.llm.planner  # role timeout = 900s
+        # Explicit role settings (hermetic — no .env dependence); litellm is
+        # never actually reached because wait_for is faked.
+        role_settings = LLMRoleSettings(
+            model="openai/MiniMax-M3",
+            temperature=0.8,
+            max_tokens=1024,
+            timeout_seconds=900,
+        )
         request = LLMCompletionRequest(
             logical_role="planner",
             system_prompt="s",
@@ -159,8 +163,15 @@ def test_role_timeout_used_without_conception_binding(
     monkeypatch.setattr(_llm_mod.asyncio, "wait_for", _fake_wait_for)
 
     async def _run() -> None:
-        settings = load_settings()
-        role_settings = settings.llm.planner  # 900s
+        # Explicit role settings: load_settings() would pick up whatever
+        # BESTSELLER__LLM__PLANNER__TIMEOUT_SECONDS happens to be in the
+        # developer's .env, making the expected value machine-dependent.
+        role_settings = LLMRoleSettings(
+            model="openai/MiniMax-M3",
+            temperature=0.8,
+            max_tokens=1024,
+            timeout_seconds=900,
+        )
         request = LLMCompletionRequest(
             logical_role="planner",
             system_prompt="s",
@@ -175,6 +186,7 @@ def test_role_timeout_used_without_conception_binding(
     import asyncio as _asyncio
 
     _asyncio.run(_run())
+    # Role timeout (900s) + 5s grace, unchanged by any conception binding.
     assert seen_timeouts and seen_timeouts[0] == pytest.approx(905.0)
 
 

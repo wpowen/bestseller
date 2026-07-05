@@ -2591,6 +2591,59 @@ async def _enforce_qimao_opening_gate_after_chapter(
         )
         return
 
+    # ── 就地有界重写闭环（正向流消费者）──────────────────────────────────────
+    # 软失败时下方会 queue 一个 RewriteTaskModel，但自主正向写作流里没有消费者，
+    # 于是被判失败的开篇会原样带跑全书（真机 ch1）。这里仿 deslop 闭环，先做一轮
+    # 有界就地重写 + 复检：若重写让门禁通过，直接落库、当作通过返回，不再 queue 死
+    # 任务、不阻断。重写永不抛/永不返回更短稿；失败则照旧走下方 queue 兜底。
+    if getattr(settings.pipeline, "qimao_opening_inline_revise_enabled", True):
+        try:
+            from bestseller.services.opening_revise import revise_opening_qimao
+            from bestseller.services.reviews import (
+                build_qimao_opening_rewrite_instructions,
+            )
+
+            _instructions = build_qimao_opening_rewrite_instructions(
+                report.findings,
+                chapter_number=chapter.chapter_number,
+                opening_contract=opening_contract,
+                rejection_reasons=None,
+            )
+            _revised = await revise_opening_qimao(
+                session,
+                settings,
+                content=chapter_draft.content_md or "",
+                instructions=_instructions,
+                project_id=project.id,
+            )
+            if _revised and _revised != (chapter_draft.content_md or ""):
+                _recheck_texts = dict(gate_texts)
+                _recheck_texts[chapter.chapter_number] = _revised
+                _recheck = evaluate_qimao_opening_gate(
+                    _recheck_texts,
+                    opening_contract=opening_contract,
+                    protagonist_name=str(protagonist_name) if protagonist_name else None,
+                )
+                if _recheck.passed:
+                    chapter_draft.content_md = _revised
+                    opening_texts[chapter.chapter_number] = _revised
+                    await session.flush()
+                    _emit_progress(
+                        progress,
+                        "qimao_opening_gate_inline_revise_passed",
+                        {
+                            "project_slug": project.slug,
+                            "chapter_number": chapter.chapter_number,
+                        },
+                    )
+                    return
+        except Exception:  # noqa: BLE001 — never let the closure break generation
+            logger.warning(
+                "qimao_opening_gate ch%d: inline revise failed; falling back to queue",
+                chapter.chapter_number,
+                exc_info=True,
+            )
+
     max_attempts = max(
         1,
         int(getattr(settings.pipeline, "qimao_opening_max_attempts", 3) or 3),

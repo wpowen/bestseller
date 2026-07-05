@@ -291,6 +291,22 @@ class TestNamingConsistencyCheck:
         violations = check.run(text, _ctx_with_allowed(inv))
         assert violations == []
 
+    def test_zh_occupation_and_shopname_words_do_not_create_rogue_names(self) -> None:
+        # 《我在命馆收诡当租客》ch4/ch5 (2026-07-05)：职业称谓（常驻员/皮货商）、
+        # 店号（安号）、散文碎片（戴孝/时封）被误判为池外人名，block 卡书 5 章。
+        # 闸门本身就把「用职务/身份称谓」当作修法，把职业称谓当人名 block 是自相矛盾。
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("沈岁安", "陆小婉", "白泊安"))
+        text = (
+            "分署要派常驻员进来。常驻员对接样本数据。"
+            "门口那皮货商又来了，皮货商压低声音说话。"
+            "招牌上写着岁安号，安号两个字被雨水泡得发胀。"
+            "巷口有人戴孝，戴孝的人不肯抬头。"
+            "他记起时封那一晚，时封之后再没人提起。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
     def test_zh_almanac_flyleaf_does_not_create_rogue_name(self) -> None:
         # 黄泉客栈 ch3 (2026-07-04)：黄历扉页 was sliced into rogue name 黄历扉×3
         # and blocked the chapter.

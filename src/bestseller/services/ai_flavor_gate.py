@@ -134,6 +134,10 @@ DESLOP_DISCOURSE_CATEGORIES = frozenset(
         # 句法，只有整段重写能还原成中文语序。真机 40 章 0 命中（2026-07-03 A/B），
         # 罕见即触发便宜；密度型（dash_density 等）故意不进触发集，防成本与误伤。
         "translationese",
+        # 跨模态通感病句（响/声「湿得像」）：patcher 无静态替换、改不了语病，分数低
+        # (advisory) 却是冷读者第一眼就卡住的硬伤，罕见即触发便宜。真机 ch1 首句。
+        # 明喻密度型（simile_overrun）故意不进触发集，与 dash_density 同理防成本误伤。
+        "synaesthesia_mismatch",
     }
 )
 

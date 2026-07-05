@@ -716,6 +716,11 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         "dash_density",
         "then_now_contrast",
         "adjective_colon_verdict",
+        # Simile DENSITY is noisy (a genuinely image-rich chapter can be high)
+        # so it stays advisory-capped: visible + drives deslop, never blocks
+        # alone. The cross-modal 通感病句 (synaesthesia_mismatch) is a real
+        # error and is deliberately NOT listed here so it can raise the score.
+        "simile_overrun",
     }
     _STRUCTURAL_CAP = 24.0
 
@@ -936,6 +941,9 @@ def detect(
     # ── Chapter-level repetition (车轱辘内心戏 / 感觉词堆叠) ─────────────
     spans.extend(_detect_repetition(content_md, lang=lang))
 
+    # ── 明喻过密 / 跨模态通感病句 (什么都像什么 / 响湿得像) ──────────────
+    spans.extend(_detect_simile_overrun(content_md, lang=lang))
+
     spans.sort(key=lambda s: (s.start, s.end))
     return AiFlavorReport(
         language=lang,
@@ -1123,6 +1131,99 @@ def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
                 remove_sentence_on_block=False,
             )
         )
+    return out
+
+
+# Explicit simile connectors (longest-first so the alternation prefers the
+# multi-char forms; bare 像 is last). 好像/就像 already contain 像 but the
+# regex is non-overlapping so each simile counts once.
+_SIMILE_MARKER_RE = re.compile(
+    r"仿佛|仿若|宛如|宛若|犹如|恰似|好似|如同|好像|就像|像"
+)
+# Moisture/texture attributes that a *sound* physically cannot have. Temperature
+# (冷/热) and taste (甜/苦) onto voice are conventional Chinese synaesthesia and
+# are deliberately excluded to avoid false positives ("声音冷得像冰").
+_SOUND_NOUN_CHARS = "响声音"
+_WET_TEXTURE_CHARS = "湿潮黏腻滑"
+# sound-noun, then within a few chars a moisture adjective + a simile connector:
+# 「闷响，湿得像…」「一声，潮得如同…」. The 得+simile tail is what makes this a
+# 病句 rather than a bare (still-odd but rarer) collocation.
+_SYNAESTHESIA_WET_SOUND_RE = re.compile(
+    r"[" + _SOUND_NOUN_CHARS + r"][，,、。\s]{0,3}"
+    r"[" + _WET_TEXTURE_CHARS + r"]得(?:像|如同?|似|跟)"
+)
+
+
+def _detect_simile_overrun(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """明喻过密 + 跨模态通感病句 —— CJK only.
+
+    Two tells the phrase/rhythm rules can't see:
+
+    1. **simile_overrun** (advisory, capped): narration-wide simile density.
+       cinematic_pov 第 9 条限额靠 prompt，M3 服从性差；真机 ch1 达 81/万字
+       （正常散文 ~0-10/万字）。计数超阈值时发一个 advisory span，经
+       deslop_revise 闭环喂回写手把"什么都像什么"压回去。
+
+    2. **synaesthesia_mismatch** (warn, NOT capped): 把听觉（响/声/音）说成有
+       水分/黏腻（湿/潮/黏/腻/滑）再接明喻 —— 物理不通的通感病句
+       （真机首句「门板上三下闷响，湿得像有人拿额头在撞」）。这是真实语病，
+       每处单独标记，不进结构性 advisory 上限。
+    """
+
+    if lang != "zh" or not content_md:
+        return []
+    out: list[AiFlavorSpan] = []
+    total = len(content_md)
+
+    # 1. Simile density (chapter-level, one advisory span).
+    if total >= 800:
+        markers = _SIMILE_MARKER_RE.findall(content_md)
+        count = len(markers)
+        if count >= 8 and count * 10000 // total >= 32:
+            m = _SIMILE_MARKER_RE.search(content_md)
+            pos = m.start() if m else 0
+            out.append(
+                AiFlavorSpan(
+                    start=pos,
+                    end=pos + (len(m.group()) if m else 1),
+                    matched_text=content_md[pos : pos + 12],
+                    rule_id="zh.simile.overrun",
+                    category="simile_overrun",
+                    severity="warn",
+                    suggestions=(),
+                    sentence_span=_sentence_bounds(content_md, pos, lang),
+                    why=(
+                        f"明喻过密（全章 {count} 处「像/仿佛/如同…」，"
+                        f"{count * 10000 // total}/万字，正常散文约≤30/万字）"
+                        "——什么都'像什么'会稀释画面，只留最有力的 2-3 个明喻，"
+                        "其余改成直接的动作/细节。"
+                    ),
+                    remove_sentence_on_block=False,
+                )
+            )
+
+    # 2. Cross-modal synaesthesia病句 (per-occurrence).
+    for m in _SYNAESTHESIA_WET_SOUND_RE.finditer(content_md):
+        start = m.start()
+        out.append(
+            AiFlavorSpan(
+                start=start,
+                end=m.end(),
+                matched_text=content_md[start : m.end()],
+                rule_id="zh.synaesthesia.wet_sound",
+                category="synaesthesia_mismatch",
+                severity="warn",
+                suggestions=(),
+                sentence_span=_sentence_bounds(content_md, start, lang),
+                why=(
+                    "跨模态病句：声音（响/声/音）没有'湿/潮/黏'这类水分属性，"
+                    "却直接接明喻——冷读者会卡住。先落地一个真实的听觉细节"
+                    "（闷、钝、发颤、隔着门板），再决定要不要比喻。"
+                ),
+                remove_sentence_on_block=False,
+            )
+        )
+
     return out
 
 

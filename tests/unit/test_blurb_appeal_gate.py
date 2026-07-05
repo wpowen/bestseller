@@ -212,6 +212,53 @@ def test_embodied_emotion_is_noop_safe_for_keyword_blurbs():
 
 
 @pytest.mark.unit
+def test_trajectoryless_mood_blurb_is_capped_for_no_progression():
+    """纯气氛、零上升轨迹的简介（只有开局氛围、看不到主角要往哪走/爽点怎样升级）
+    应被'主线上升感'floor 封顶到 68 线下，触发重生补上升感。
+
+    真机《我在命馆收诡当租客》主线模糊(街边摊→街区→城市阶梯没进简介)是同一失败模式。
+    这份稿情绪词/具体化/可懂度都不弱（本可近 68），但只有停滞氛围、既无上升阶梯又无
+    戏剧两难 → 只该被上升感 cap 单独拦下。
+    """
+    mood = (
+        "绝望像铁锈，爬满了我的肺。\n"
+        "我输光了一切，妻离子散，众叛亲离。\n"
+        "没有人愿意再看我一眼，连影子都嫌我脏。\n"
+        "我瘫在这座城的角落，数着头顶那盏灯明明灭灭。"
+    )
+    v = evaluate_blurb_appeal(
+        title="灯下", synopsis=mood, premise=mood[:40],
+        tags=["现实"], genre="现实",
+    )
+    assert v.total < 68, f"零上升轨迹简介应封顶到 68 线下，实得 {v.total}"
+    assert any("上升" in f or "主线" in f for f in v.findings)
+
+
+@pytest.mark.unit
+def test_ascent_trajectory_blurb_not_capped_by_progression_floor():
+    """有明确上升轨迹/复仇统治目标的强简介不该被上升感 floor 误伤。"""
+    strong = evaluate_blurb_appeal(
+        title=_STRONG_TITLE, synopsis=_STRONG_SYN, premise=_STRONG_PREMISE,
+        tags=_STRONG_TAGS, genre="都市", sub_genre="赘婿",
+    )
+    # 赘婿强稿有"跪着求他签字/买下整座城/步步打脸翻盘"上升轨迹，不该被上升感封顶。
+    assert not any("上升" in f or "主线" in f for f in strong.findings)
+    ladder = evaluate_blurb_appeal(
+        title="收租人",
+        synopsis=(
+            "开业头一夜，丑时三刻，叩门必开，违者交命。\n"
+            "我把规则里的杀招收进那张黄纸，反手当自家护身符。\n"
+            "从街边一间破命馆，一路做到镇住整座城的规则收容站，"
+            "直到对上黄纸真正的主人。\n"
+            "命馆今天，照常营业。谁敢进来？"
+        ),
+        premise="他把诡异规则一条条收进黄纸，从街区做到城市级收容站，越做越大。",
+        tags=["规则怪谈", "都市修仙", "扮猪吃虎"], genre="玄幻", sub_genre="规则怪谈",
+    )
+    assert not any("上升" in f or "主线" in f for f in ladder.findings)
+
+
+@pytest.mark.unit
 def test_selling_triad_recognizes_nonshuang_identity_and_conflict():
     # 题材中立：身份=「殡仪馆夜班工/唯一能…的人」(非爽文身份词)，冲突=两难/迫近/骇异结构。
     # 此前 selling_triad=2.0(只认出代价)；修复后 ≥4.0(身份+冲突+代价≥2要素)。

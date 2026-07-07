@@ -6,6 +6,10 @@
 #   docker compose -f docker-compose.yml -f docker-compose.ssd.yml up -d
 #
 # The docker-start.sh script auto-detects SSD and applies this override.
+#
+# 2026-07-06: migrated pgdata/artifacts from /Volumes/SSD to /Volumes/MACSSD
+# after /Volumes/SSD had a transient I/O drop (write errors mid-run corrupted
+# the WAL). MACSSD has 458G free and has been the reliable disk.
 # ─────────────────────────────────────────────────────────────────────────────
 
 volumes:
@@ -14,11 +18,11 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /Volumes/SSD/Docker/bestseller/pgdata
+      device: /Volumes/MACSSD/Docker/bestseller/pgdata
   # output: now uses bind mount (./output:/app/output) in main compose
   artifacts:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /Volumes/SSD/Docker/bestseller/artifacts
+      device: /Volumes/MACSSD/Docker/bestseller/artifacts

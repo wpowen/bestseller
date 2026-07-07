@@ -893,7 +893,7 @@ cp .env.example .env
 - `docker compose build --no-cache`（`--build` 下）
 - `docker compose --profile migrate run --rm migrate`（执行 `alembic upgrade head`）
 - 启动 `api / worker / scheduler / mcp / web / db / redis`
-- 自动检测 SSD 卷 `/Volumes/SSD/Docker/bestseller`
+- 自动检测外置数据目录 `/Volumes/MACSSD/Docker/bestseller`
 - 解决端口冲突
 
 ### 模型配置

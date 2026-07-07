@@ -21,9 +21,9 @@ PURGE_VOLUMES=false
 REMOVE_IMAGES=false
 COMPOSE_FILES=("-f" "docker-compose.yml")
 
-# Auto-detect SSD override
+# Auto-detect external data override
 SSD_COMPOSE="docker-compose.ssd.yml"
-SSD_DATA_DIR="/Volumes/SSD/Docker/bestseller"
+SSD_DATA_DIR="/Volumes/MACSSD/Docker/bestseller"
 if [[ -f "$ROOT_DIR/$SSD_COMPOSE" && -d "$SSD_DATA_DIR" ]]; then
   COMPOSE_FILES+=("-f" "$SSD_COMPOSE")
 fi

@@ -24,9 +24,10 @@ DETACH=true
 RUN_MIGRATE=true
 COMPOSE_FILES=("-f" "docker-compose.yml")
 
-# Auto-detect SSD override
+# Auto-detect external-SSD override (2026-07-06: moved to MACSSD after the
+# /Volumes/SSD disk had a transient I/O drop that corrupted the WAL).
 SSD_COMPOSE="docker-compose.ssd.yml"
-SSD_DATA_DIR="/Volumes/SSD/Docker/bestseller"
+SSD_DATA_DIR="/Volumes/MACSSD/Docker/bestseller"
 if [[ -f "$ROOT_DIR/$SSD_COMPOSE" && -d "$SSD_DATA_DIR" ]]; then
   COMPOSE_FILES+=("-f" "$SSD_COMPOSE")
 fi

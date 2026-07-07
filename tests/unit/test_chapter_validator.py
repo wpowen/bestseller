@@ -568,7 +568,11 @@ class TestCliffhangerRotationCheck:
         # No cliffhanger keywords → detected=None → no violation.
         assert check.run(text, ctx) == []
 
-    def test_matching_cliffhanger_blocks(self) -> None:
+    def test_matching_cliffhanger_flags_non_blocking(self) -> None:
+        # 根治(2026-07-07)：CLIFFHANGER_REPEAT 降 warn(config 本就映射 audit_only,
+        # blocks_write 读 raw severity 曾绕过它硬毙 churn)。仍检出+喂写手,但不硬毙。
+        from bestseller.services.output_validator import QualityReport
+
         check = CliffhangerRotationCheck()
         inv_ctx = _ctx()
         ctx = ValidationContext(
@@ -582,9 +586,11 @@ class TestCliffhangerRotationCheck:
         assert len(result) == 1
         v = result[0]
         assert v.code == "CLIFFHANGER_REPEAT"
-        assert v.severity == "block"
+        assert v.severity != "block"
         assert "revelation" in v.detail.lower()
         assert "revelation" in v.prompt_feedback.lower()
+        # 只含 CLIFFHANGER_REPEAT 的报告绝不能 blocks_write。
+        assert QualityReport(violations=tuple(result)).blocks_write is False
 
     def test_non_matching_type_passes(self) -> None:
         check = CliffhangerRotationCheck()

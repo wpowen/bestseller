@@ -427,6 +427,24 @@ class TestGoldenThreeChapterCheck:
         assert "selling_point" in v.detail or "hook_keyword" in v.detail
         assert "hype trigger" in v.detail
 
+    def test_golden_three_weak_is_non_blocking(self) -> None:
+        # 根治(2026-07-07)：Rule A 字面匹配设计文档式 selling_points/hook_keywords,
+        # 正文里几乎不会一字不差出现→真机 ch1-3 反复误毙 churn(和 NAMING 同类)。
+        # 降 warn:仍检出+喂写手反馈,但 blocks_write 不计它、绝不硬毙。
+        from bestseller.services.output_validator import QualityReport
+
+        ctx = _ctx(
+            scheme=_scheme(),
+            chapter_no=1,
+            assigned_hype_type=HypeType.FACE_SLAP,
+            assigned_hype_recipe=_recipe(),
+        )
+        text = "清晨街道上空无一人他走了很久天色渐渐亮起来" * 40
+        violations = list(GoldenThreeChapterCheck().run(text, ctx))
+        assert violations and violations[0].severity != "block"
+        # 一份只含 GOLDEN_THREE_WEAK 的报告绝不能 blocks_write(否则误报硬毙 churn)。
+        assert QualityReport(violations=tuple(violations)).blocks_write is False
+
     def test_selling_point_in_head_and_triggers_present_passes(self) -> None:
         ctx = _ctx(
             scheme=_scheme(),

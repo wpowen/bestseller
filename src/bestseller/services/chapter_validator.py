@@ -336,7 +336,11 @@ class POVLockCheck:
         return [
             Violation(
                 code=self.code,
-                severity="block",
+                # severity="warn" (根治 2026-07-07): POV_DRIFT is config audit_only;
+                # raw-severity blocks_write bypass hard-blocked. Sampled-sentence POV
+                # heuristics false-fire (quoted speech / mixed POV scenes); warn
+                # surfaces + feeds the writer without churning.
+                severity="warn",
                 location=f"sample:{len(sample)}:mismatches:{len(mismatches)}",
                 detail=(
                     f"POV declared as '{pov}' but {len(mismatches)}/"
@@ -609,7 +613,15 @@ class CliffhangerRotationCheck:
         return [
             Violation(
                 code=self.code,
-                severity="block",
+                # severity="warn", NOT "block" (根治 2026-07-07): config maps
+                # CLIFFHANGER_REPEAT → audit_only, but QualityReport.blocks_write
+                # reads raw severity and bypasses that map (same bug class as
+                # NAMING_OUT_OF_POOL / GOLDEN_THREE_WEAK), so this hard-blocked and
+                # churned real books 4× per chapter — the writer keeps producing its
+                # natural body_reaction ending and the gate keeps blocking. As a warn
+                # it still surfaces + feeds the writer the alternative cliffhanger
+                # types via prompt_feedback, but never hard-blocks.
+                severity="warn",
                 location="chapter:ending",
                 detail=(
                     f"Detected cliffhanger type '{detected.value}' was used "
@@ -684,7 +696,12 @@ class HypeOccurrenceCheck:
         return [
             Violation(
                 code=self.code,
-                severity="block",
+                # severity="warn", NOT "block" (根治 2026-07-07): config maps
+                # HYPE_MISSING → audit_only but blocks_write reads raw severity and
+                # bypasses it (same bug as NAMING/GOLDEN_THREE_WEAK/CLIFFHANGER).
+                # Trigger-keyword literal matching is brittle; hard-blocking churns.
+                # Warn still surfaces + feeds the writer via prompt_feedback.
+                severity="warn",
                 location=f"chapter:hype:{recipe.hype_type.value}",
                 detail=(
                     f"Assigned hype type '{recipe.hype_type.value}' (recipe "
@@ -745,7 +762,10 @@ class HypeDiversityCheck:
             return [
                 Violation(
                     code=self.code,
-                    severity="block",
+                    # severity="warn" (根治 2026-07-07): HYPE_REPEAT is config
+                    # audit_only; raw-severity blocks_write bypass hard-blocked +
+                    # churned. Warn surfaces + feeds the writer (vary hype type).
+                    severity="warn",
                     location=f"chapter:hype:{assigned.value}",
                     detail=(
                         f"HypeType '{assigned.value}' has been used in the "
@@ -1031,7 +1051,20 @@ class GoldenThreeChapterCheck:
         return [
             Violation(
                 code=self.code,
-                severity="block",
+                # severity="warn", NOT "block" (根治 2026-07-07): Rule A does a
+                # literal substring match of the preset's ``selling_points`` /
+                # ``hook_keywords`` against the opener. Conception emits those as
+                # verbose design-doc sentences (e.g. "共情代价可视化：主角的鼻子
+                # 每一次灵敏…") that never appear verbatim in natural prose, so the
+                # check false-fires even when the opening genuinely surfaces the
+                # golden finger — hard-blocking churned real books 4× per chapter.
+                # ``QualityReport.blocks_write`` reads raw severity and bypasses the
+                # ``GOLDEN_THREE_WEAK: audit_only`` map in config/quality_gates.yaml
+                # (same bug class as NAMING_OUT_OF_POOL). As a warn it still surfaces
+                # + feeds the writer via prompt_feedback (which genuinely helps
+                # surface the hook earlier) but never hard-blocks. Real golden-three
+                # quality is judged by the LLM arena / click judges.
+                severity="warn",
                 location=f"chapter:{chapter_no}:golden_window",
                 detail=(
                     f"Golden-3 requirements unmet in chapter {chapter_no}: "
@@ -1108,7 +1141,12 @@ class LineGapCheck:
             violations.append(
                 Violation(
                     code=self.code_over,
-                    severity="block",
+                    # severity="warn" (根治 2026-07-07): LINE_GAP_OVER is config
+                    # audit_only; raw-severity blocks_write bypass hard-blocked. The
+                    # narrative-layer gap metric is genre-blind (dominant_line=None
+                    # on cross-genre books) and false-fires; warn surfaces + feeds
+                    # the writer without churning the whole book.
+                    severity="warn",
                     location=f"chapter:{chapter_no}:line:{gap.line_id}",
                     detail=(
                         f"narrative layer '{gap.line_id}' dormant for "

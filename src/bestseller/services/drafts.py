@@ -4625,10 +4625,15 @@ def _render_recent_scene_section(recent_scene_summaries: list[dict[str, Any]] | 
         extended_tail = item.get("extended_tail")
         if extended_tail:
             line += (
-                f"\n  [前一场结尾原文 — 以下内容已写入，新场景严禁逐字重复]\n"
+                f"\n  [前一场结尾原文 — 以下事件已经发生完毕并已写入正文]\n"
                 f"  ---\n"
                 f"  {extended_tail.replace(chr(10), chr(10) + '  ')}\n"
-                f"  ---"
+                f"  ---\n"
+                f"  [续写铁律] ①严禁逐字重复以上内容；②严禁把以上已发生的事件换一套措辞、换一个人物再重演一遍"
+                f"（重演=同一个动作/揭示/代价再次发生，哪怕字面完全不同也算）；"
+                f"③以上出现过的人物（包括无名配角，如家属/路人）身份、性别、位置就此锁定，"
+                f"新场景不得让同一角色以另一副身份重新登场；"
+                f"④你的第一句从这段结尾的下一秒写起，向前推进，不回放。"
             )
         else:
             # Fallback to shorter closing_lines for cross-chapter preceding scenes
@@ -7687,6 +7692,11 @@ def _render_chapter_first_scene_cards(scenes: Sequence[SceneCardModel]) -> str:
             f"   故事任务：{purpose.get('story') or ''}",
             f"   情绪任务：{purpose.get('emotion') or ''}",
             f"   入场状态：{_compact_json_block(entry_state, max_chars=500)}",
+            (
+                "   ↳ 入场状态=开场前一瞬已经完成的既成事实（上一场的结果），"
+                "严禁把它当剧情在本场重演一遍（换措辞、换人物重演也算违规）；"
+                "本场第一句从入场状态之后的下一拍写起。"
+            ),
             f"   离场状态：{_compact_json_block(exit_state, max_chars=500)}",
             f"   钩子要求：{scene.hook_requirement or ''}",
         ]
@@ -7786,6 +7796,16 @@ def _render_chapter_first_opening_contract(
         f"第一场入场状态：{_compact_json_block(getattr(first_scene, 'entry_state', None) or {}, max_chars=360)}",
         f"第一场钩子：{getattr(first_scene, 'hook_requirement', '') or ''}",
         "前200字应当出现第一场的地点/人物/异常，避免先写无关回忆或资料整理。",
+        # 冷读者定位授权（2026-07-07 真机可读性根治）：纯特写流开篇让第一次翻开的
+        # 读者无法重建"谁在哪干什么"，是弃书主因之一。定位句是地图，不是解说。
+        "【冷读者定位·硬要求】前150字内必须用一两句平实的叙述句让第一次翻开本书的读者"
+        "直接知道：视角人物是谁（名字+身份，如『我叫纪蘅，急诊科医生』可以化进动作里但必须可提取）、"
+        "此刻在什么地方、正在做什么。这两句定位句不受『禁解说』『展示不讲述』约束——没有地图的特写等于噪音。",
+        "【连接组织授权】整场允许2-3句直白的叙述句用于定位、转场和因果衔接"
+        "（例如交代人物走到了哪、时间过了多久、他为什么要做下一件事）。"
+        "不是每一句都必须是感官特写；读者需要喘息句来组装画面。",
+        "【专有名词预算】开篇前500字最多引入1个需要读者记住的专有概念/术语；"
+        "其余设定延后。首次出现的超自然现象，必须让视角人物用一句话给出他自己的理解（哪怕是错的）。",
     ]
     return "\n".join(line for line in lines if line.strip())
 

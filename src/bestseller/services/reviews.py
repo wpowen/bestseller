@@ -1660,8 +1660,19 @@ def build_scene_review_prompts(
     scene: SceneCardModel,
     draft: SceneDraftVersionModel,
     review_result: SceneReviewResult,
+    scene_context: Any | None = None,
 ) -> tuple[str, str]:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
+
+    # Previous-scene tail (same chapter) — required for the continuity axis:
+    # a reviewer that only sees the current draft cannot detect that the scene
+    # re-dramatizes the previous scene's ending or swaps a character's identity
+    # (真机 ch1: 场景2把场景1结尾的『墨字入掌』整段换人重演,家属男变女).
+    _prev_tail = ""
+    for _item in (getattr(scene_context, "previous_scene_summaries", None) or []):
+        _tail = (_item or {}).get("extended_tail") if isinstance(_item, dict) else None
+        if _tail:
+            _prev_tail = str(_tail)[-1000:]
 
     language = _project_language(project)
     is_en = is_english_language(language)
@@ -1684,17 +1695,21 @@ def build_scene_review_prompts(
             "# TASK\n"
             "Evaluate the scene prose against five methodology axes; emit a fixed-format verdict.\n"
             "\n"
-            "# CONSTRAINTS · The five methodology axes\n"
+            "# CONSTRAINTS · The six methodology axes\n"
             "1. **Show-don't-tell**: emotions via action / physicality, NOT named directly\n"
             "2. **Sensory richness**: at least 2 sensory channels (sight / sound / touch / smell / taste)\n"
             "3. **Dialogue subtext**: characters don't state intentions; tension = gap between words and meaning\n"
             "4. **Tail hook**: scene ends on an unresolved question / threat / revelation\n"
             "5. **Reaction amplification**: after key moments, other characters' reactions amplify impact\n"
+            "6. **Continuity (HARD)**: when a previous-scene tail is provided, the scene must CONTINUE from it — "
+            "it must NOT re-dramatize an event that already happened (same action/revelation/cost occurring again, "
+            "even with different wording), and every character who appeared before (including unnamed extras) must "
+            "keep the same identity/gender/position\n"
             "\n"
             "# THINKING (in your head before output)\n"
             "1. Read scene end-to-end; mark each axis as PASS or FAIL\n"
             "2. For each FAIL, locate the specific paragraph / sentence that triggered it\n"
-            "3. If ≥2 axes FAIL, verdict = rewrite; otherwise verdict = pass\n"
+            "3. If axis 6 FAILS, verdict = rewrite regardless of other axes; otherwise if ≥2 axes FAIL, verdict = rewrite; else pass\n"
             "4. REWRITE_DIRECTION must be concrete (not 'improve dialogue' — 'cut the protagonist's line 3, replace with a single action: 拇指碾过随身物件的缺口')\n"
             "\n"
             "# OUTPUT FORMAT (exact lines, no extras)\n"
@@ -1716,17 +1731,20 @@ def build_scene_review_prompts(
             "# TASK\n"
             "按下方五项方法论评估本场，按固定格式输出 verdict。\n"
             "\n"
-            "# CONSTRAINTS · 五项方法论轴\n"
+            "# CONSTRAINTS · 六项方法论轴\n"
             "1. **展示不讲述**：情绪通过动作 / 身体反应传达，不能直接写情绪词（愤怒 / 伤心 / 高兴 / 紧张）\n"
             "2. **感官丰富度**：至少使用 2 个感官通道（视 / 听 / 触 / 嗅 / 味）\n"
             "3. **对话潜台词**：角色不能直白表达意图，张力来自话语和真实意图的反差\n"
             "4. **尾钩强度**：场景必须以未解答的问题 / 威胁 / 揭示结尾，不能抽象感叹\n"
             "5. **反应放大**：关键时刻后必须有其他角色的反应放大冲击力\n"
+            "6. **接续性（硬轴）**：若提供了[上一场结尾原文]，本场必须从它之后继续——"
+            "严禁把已经发生过的事件重演一遍（同一个动作/揭示/代价再次发生，哪怕措辞完全不同也算重演）；"
+            "上一场出现过的人物（含无名配角，如家属/路人）身份、性别、位置必须一致，不得换一副面孔重新登场\n"
             "\n"
             "# THINKING（输出前在脑内 4 步）\n"
-            "1. 通读场景，对五项逐条心里打 PASS / FAIL\n"
+            "1. 通读场景，对六项逐条心里打 PASS / FAIL\n"
             "2. 对每条 FAIL，定位到具体段落 / 句子\n"
-            "3. ≥ 2 项 FAIL → verdict = rewrite；否则 verdict = pass\n"
+            "3. 第 6 项 FAIL → 无论其他轴一律 verdict = rewrite；否则 ≥ 2 项 FAIL → rewrite；否则 pass\n"
             "4. REWRITE_DIRECTION 必须具体（不要写「优化对话」—— 要写「删主角第 3 句，换成单一动作：拇指碾过随身物件的缺口」）\n"
             "\n"
             "# OUTPUT FORMAT（必须 4 行，每行一项，无前缀无后缀）\n"
@@ -1796,7 +1814,13 @@ def build_scene_review_prompts(
             f"{_methodology_line}"
             f"Scores: {review_result.scores.model_dump(mode='json')}\n"
             f"Findings: {[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
-            f"Current draft:\n{draft.content_md}\n"
+            + (
+                f"[Previous-scene ending — these events ALREADY happened; axis 6 judges against this]\n"
+                f"---\n{_prev_tail}\n---\n"
+                if _prev_tail
+                else ""
+            )
+            + f"Current draft:\n{draft.content_md}\n"
             "Write a concise English review note and explain clearly whether the scene needs rewriting. "
             "The verdict must state whether the scene lands the platform promise, reader promise, protagonist edge, and tail hook."
         )
@@ -1813,7 +1837,13 @@ def build_scene_review_prompts(
             f"{_methodology_line}"
             f"当前评分：{review_result.scores.model_dump(mode='json')}\n"
             f"当前发现：{[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
-            f"当前草稿：\n{draft.content_md}\n"
+            + (
+                f"[上一场结尾原文 — 以下事件已经发生完毕，第6轴据此评判]\n"
+                f"---\n{_prev_tail}\n---\n"
+                if _prev_tail
+                else ""
+            )
+            + f"当前草稿：\n{draft.content_md}\n"
             "请用中文输出一段简洁的审校结论，并给出是否需要重写的理由。"
             "结论要明确指出这段文字是否兑现了平台目标、读者承诺、主角卖点和章节尾钩。"
         )
@@ -5263,6 +5293,7 @@ async def review_scene_draft(
             scene,
             draft,
             review_result,
+            scene_context=scene_context,
         )
         completion = await complete_text(
             session,

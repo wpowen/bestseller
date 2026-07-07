@@ -185,12 +185,17 @@ def test_audit_aggregates_three_signals() -> None:
 
 
 def test_prose_scene_includes_scene_grounding_block() -> None:
+    # token_budget=4200 = 生产写手路径的真实预算（drafts.py PROSE_SCENE 调用）。
+    # 旧值 3000 偏离生产形状，随着 always-on 块自然增长，贪心装箱在 3000 下把
+    # scene_grounding 饿死（长期红）。2026-07-07 同时修正了优先级：锚定层
+    # (material/scene_grounding) 升到文采修饰(prose_lever_framing/craft)之前
+    # ——消融证明锚定是正向真杠杆、craft 净负；本测试守护"生产形状下锚定必达写手"。
     out = compile_methodology(
         stage=MethodologyStage.PROSE_SCENE,
         prompt_pack_key="urban-power-reversal",
         language="zh-CN",
         chapter_no=5,
-        token_budget=3000,
+        token_budget=4200,
     )
     assert "scene_grounding.yaml" in out.used_sources
     assert "场景锚定" in out.text

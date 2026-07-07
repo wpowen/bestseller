@@ -145,9 +145,14 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         "writing_methodology_scene",
         "book_methodology_current",
         "prose_style_anchors",
-        "prose_lever_framing",
+        # 2026-07-07 排序修正：消融阶梯证明 物料具体化/镜头锚定 是正向真杠杆、
+        # craft 文采修饰跨题材净负——但旧序把 prose_lever_framing(留白/文采框架)
+        # 排在锚定层之前，生产预算(3000)下 scene_grounding 恒被饿死根本没送到
+        # 写手面前(test_prose_scene_includes_scene_grounding_block 长期红)。
+        # 与已验证的爽文模式排序对齐：锚定层升到文采修饰之前。
         "material_concretization_current",
         "scene_grounding_current",
+        "prose_lever_framing",
         "prose_craft_techniques",
         "imagery_system_current",
         "public_emotion_role_tags",

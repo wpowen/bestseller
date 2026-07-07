@@ -166,3 +166,50 @@ def test_scene_review_prompt_without_context_still_has_axis() -> None:
     )
     assert "接续性（硬轴）" in system_prompt
     assert "上一场结尾原文" not in user_prompt
+
+
+# ── 确定性人称漂移硬检查（真机：第三人称书场景2整段第一人称）──────────────
+
+
+def _drift_fixtures(content: str) -> dict:
+    from bestseller.settings import load_settings
+
+    return dict(
+        scene=SimpleNamespace(
+            target_word_count=300,
+            scene_type="pressure",
+            participants=["宓青棠", "保安(男)"],
+            purpose={"story": "接替第一晚", "emotion": "不安"},
+            scene_number=2,
+            entry_state=None,
+            exit_state=None,
+        ),
+        chapter=SimpleNamespace(chapter_number=1, chapter_goal="接替上任"),
+        draft=SimpleNamespace(content_md=content, word_count=len(content)),
+        settings=load_settings(env={}),
+        scene_context=SimpleNamespace(pov_type="third-limited"),
+    )
+
+
+def test_first_person_scene_in_third_person_book_is_critical() -> None:
+    bad = (
+        "我把钥匙往里拧了半圈，再拧回来。我的借调令还贴在胸口，凉意顺着肋骨往里渗。"
+        "我推门进去，一股放置太久的纸味压过来。我没开灯。我拿起日志，"
+        "纸页翻动的声音在房间里格外大。我把这两条读了三遍，舌头开始发苦。"
+    ) * 2
+    result = review_services.evaluate_scene_draft(**_drift_fixtures(bad))
+    pov = [f for f in result.findings if f.category == "pov"]
+    assert pov and pov[0].severity == "critical"
+    assert "人称漂移" in pov[0].message
+    assert result.verdict == "rewrite"
+
+
+def test_third_person_scene_with_quoted_first_person_dialogue_passes() -> None:
+    good = (
+        "宓青棠把钥匙往里拧了半圈，再拧回来。借调令还贴在她胸口，凉意顺着肋骨往里渗。"
+        "她推门进去，一股放置太久的纸味压过来。她没开灯。"
+        "“我先看看日志。”她对着空屋子低声说了一句，“我不信这一条。”"
+        "纸页翻动的声音在房间里格外大。她把那两条读了三遍，舌头开始发苦。"
+    ) * 2
+    result = review_services.evaluate_scene_draft(**_drift_fixtures(good))
+    assert not [f for f in result.findings if f.category == "pov"]

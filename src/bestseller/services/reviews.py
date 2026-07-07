@@ -3168,12 +3168,41 @@ def evaluate_scene_draft(
 
     # ── POV consistency check (zero LLM cost) ──
     _pov_score = 1.0
+    _pov_person_drift_msg: str | None = None
     try:
         _pov_type = getattr(scene_context, "pov_type", None) if scene_context else None
         if not _pov_type:
             # Fallback: check style_guide or default
             _pov_type = "third-limited"
         _pov_type_lower = _pov_type.lower()
+        # ── Person-drift hard check (2026-07-07) ──
+        # 真机: 生产 ch1 场景1第三人称、场景2整段第一人称(叙述层几十个"我"),
+        # 拼进同一章冷读者直接断片。第三人称书的叙述层(对白外)出现主语"我"
+        # 是铁证级漂移;旧检查只查偷窥他人内心,不查叙述人称本身。
+        if "third" in _pov_type_lower:
+            if _is_en:
+                _narration = re.sub(r'"[^"]*"|“[^”]*”', "", content)
+                _fp_hits = len(re.findall(r"\bI\b|\bmy\b|\bme\b", _narration))
+            else:
+                _narration = re.sub(
+                    r"“[^”]*”|「[^」]*」|『[^』]*』", "", content
+                )
+                _fp_hits = len(re.findall(r"我(?!们)", _narration))
+            if _fp_hits >= 5:
+                _pov_score = 0.0
+                _pov_person_drift_msg = (
+                    f"POV person drift: the book is third-person, but this scene's "
+                    f"narration (outside dialogue) contains {_fp_hits} first-person "
+                    f"markers — the scene was written in first person. Rewrite the "
+                    f"whole scene in the book's third-person POV."
+                    if _is_en
+                    else (
+                        f"人称漂移：全书为第三人称，但本场叙述层（对白外）出现 "
+                        f"{_fp_hits} 处第一人称「我」——场景被写成了第一人称，"
+                        "拼进章节后冷读者无法辨认叙述者。整场必须按全书的第三人称视角重写，"
+                        "内心念头用自由间接思维或引号内心声呈现。"
+                    )
+                )
         if "first" in _pov_type_lower:
             # First person: should have "I", "my", "me"; should NOT have omniscient thoughts of other chars
             _i_count = len(re.findall(r'\bI\b', content)) if _is_en else content.count("我")
@@ -3580,6 +3609,16 @@ def evaluate_scene_draft(
 
     _fm = profile.finding_messages
     findings: list[SceneReviewFinding] = []
+    # 人称漂移 = critical:advisory-axes 模式下 critical 仍然强制 rewrite,
+    # 保证第三人称书里混进第一人称场景绝不 ship。
+    if _pov_person_drift_msg:
+        findings.append(
+            SceneReviewFinding(
+                category="pov",
+                severity="critical",
+                message=_pov_person_drift_msg,
+            )
+        )
     if goal < threshold:
         findings.append(
             SceneReviewFinding(

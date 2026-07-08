@@ -333,24 +333,38 @@ class POVLockCheck:
         example_lines = [
             f"  - {_truncate(s, 60)}" for _, s in mismatches[:3]
         ]
+        # Tiered severity (2026-07-08): the blanket demote-to-warn (07-07 防churn)
+        # let a真机 book ship a chapter whose ENTIRE second scene was written in
+        # the wrong person (close_third book, tail scene fully first-person →
+        # 6/40 sampled mismatches, warn, blocks_write=False, 带病 complete).
+        # Weak evidence (3-5 close_third mismatches) keeps warn — free-indirect
+        # noise is real; strong evidence (≥6 = a contiguous wrong-person scene,
+        # not stray sentences) is a book-killing structural defect → block.
+        # First-person books keep warn always (the third-person heuristic can't
+        # tell 他=主角 from 他=配角, so its evidence is never "strong").
+        _strong = pov == "close_third" and len(mismatches) >= 6
         return [
             Violation(
                 code=self.code,
-                # severity="warn" (根治 2026-07-07): POV_DRIFT is config audit_only;
-                # raw-severity blocks_write bypass hard-blocked. Sampled-sentence POV
-                # heuristics false-fire (quoted speech / mixed POV scenes); warn
-                # surfaces + feeds the writer without churning.
-                severity="warn",
+                severity="block" if _strong else "warn",
                 location=f"sample:{len(sample)}:mismatches:{len(mismatches)}",
                 detail=(
                     f"POV declared as '{pov}' but {len(mismatches)}/"
                     f"{len(sample)} sampled narrative sentences use the wrong person"
+                    + (" — contiguous wrong-person scene suspected" if _strong else "")
                 ),
                 prompt_feedback=(
                     f"本章 POV 应为 {pov}，但在 {len(sample)} 条抽样叙述句中有"
                     f" {len(mismatches)} 条违反该 POV 的代词规则。"
                     f"示例：\n" + "\n".join(example_lines) + "\n"
-                    f"请全文检查叙述部分（不包括引号内的对话），"
+                    + (
+                        "叙述层大面积使用第一人称——疑似整场以错误人称写成。"
+                        "请把该场景整体重写为全书统一的第三人称视角，"
+                        "内心念头用自由间接思维或引号内心声呈现，不改剧情。\n"
+                        if _strong
+                        else ""
+                    )
+                    + f"请全文检查叙述部分（不包括引号内的对话），"
                     f"将人称统一到 {pov}。"
                 ),
             )

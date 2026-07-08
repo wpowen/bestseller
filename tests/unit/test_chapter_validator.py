@@ -187,6 +187,33 @@ class TestPOVLockCheck:
         assert violations[0].code == "POV_DRIFT"
         assert "close_third" in violations[0].detail
 
+    def test_close_third_weak_evidence_is_warn(self) -> None:
+        # 3-5 处叙述层第一人称 = 自由间接思维噪声区间,保持 warn 不硬毙。
+        text = (
+            "他走进庭院。我不能死。她在石阶前等他。"
+            "他们相视无言。我得撑住。他转身离去。"
+            "她低头。我认得这股味。他的背影消失在夜色中。"
+            "她在原地站了很久。他已经走远。她终于迈步。"
+        )
+        violations = list(POVLockCheck().run(text, _ctx(pov="close_third")))
+        assert len(violations) == 1
+        assert violations[0].severity == "warn"
+
+    def test_close_third_whole_scene_first_person_is_block(self) -> None:
+        # 真机灾难复刻:第三人称书,整个后半场以第一人称写成(≥6句)——
+        # 灭书级结构硬伤,必须 block(2026-07-07 一刀切降warn后带病ship的回归守卫)。
+        third = "宓青棠走进走廊。她把借调令折好。她看了一眼值班台。"
+        first = (
+            "我把钥匙往里拧了半圈。我推门进去。我没开灯。"
+            "我拿起日志。我把这两条读了三遍。我的指尖碰上纸面。"
+            "我把手收回来。我盯着最后一行。"
+        )
+        violations = list(POVLockCheck().run(third + first, _ctx(pov="close_third")))
+        assert len(violations) == 1
+        assert violations[0].severity == "block"
+        assert "contiguous wrong-person scene" in violations[0].detail
+        assert "整体重写" in violations[0].prompt_feedback
+
     def test_close_third_dialogue_with_first_person_passes(self) -> None:
         # 我 occurs only inside dialogue — narrative prose is clean.
         text = (

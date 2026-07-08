@@ -150,6 +150,12 @@ _PLAYBOOKS: dict[str, QualityRepairPlaybook] = {
         instruction="移除角色池外姓名。重要角色改用项目角色池/本章参与者中的既有人名；功能性人物改为身份称谓，不再临时创造专名。",
         acceptance="正文中的专名均来自允许名单、正典实体或明确的案卷/记录引用。",
     ),
+    "POV_DRIFT": QualityRepairPlaybook(
+        code="POV_DRIFT",
+        scope="scene",
+        instruction="叙述人称与全书视角不一致（如第三人称书中整场以'我'叙述）。按全书统一视角整体重写人称错误的场景：叙述层不得出现第一人称，内心念头改用自由间接思维或引号内心声呈现，剧情与对白内容不变。",
+        acceptance="全章叙述层（引号对白除外）人称与全书视角一致，无第一人称叙述残留。",
+    ),
     "CLIFFHANGER_REPEAT": QualityRepairPlaybook(
         code="CLIFFHANGER_REPEAT",
         scope="ending",

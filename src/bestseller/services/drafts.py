@@ -6226,6 +6226,13 @@ def build_scene_draft_prompts(
                 f"{_compact_json_block(_current_scene_contract, max_chars=1400)}\n\n"
             )
         )
+    from bestseller.services.story_spine import render_story_spine_block as _rssb_scene
+    _spine_src = getattr(project, "metadata_json", None) or {}
+    _story_spine_line = (
+        _rssb_scene(_spine_src.get("story_spine"))
+        if isinstance(_spine_src, dict)
+        else ""
+    )
     story_principle_line = _render_story_principle_execution_section(
         chapter,
         scene,
@@ -7123,6 +7130,7 @@ def build_scene_draft_prompts(
             f"{_obligations_line}"
             f"{_foreshadow_line}"
             f"{story_principle_line}"
+            f"{_story_spine_line}"
             f"项目：《{project.title}》\n"
             f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
             f"章节目标（仅供你理解意图，严禁出现在正文中）：{chapter.chapter_goal}\n"
@@ -7806,6 +7814,10 @@ def _render_chapter_first_opening_contract(
         "不是每一句都必须是感官特写；读者需要喘息句来组装画面。",
         "【专有名词预算】开篇前500字最多引入1个需要读者记住的专有概念/术语；"
         "其余设定延后。首次出现的超自然现象，必须让视角人物用一句话给出他自己的理解（哪怕是错的）。",
+        # 故事问题落地(2026-07-08 框架层):"抢救了一圈不知道要干什么"=事件≠故事。
+        "【故事问题落地·硬要求】读者读完本章必须能用一句话答出：主角想要什么"
+        "（具体目标，不是氛围）、做不到会失去什么——用剧情让读者知道，不许指望简介。"
+        "本章每个事件都要么把主角推向目标、要么把代价顶到他眼前；两头不沾的事件删掉。",
     ]
     return "\n".join(line for line in lines if line.strip())
 

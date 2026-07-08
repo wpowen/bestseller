@@ -13486,6 +13486,13 @@ def _book_spec_prompts(
     _concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
     _story_enhancer_line = _story_enhancer_contract_line(project, language)
     _concept_methodology_line = _concept_methodology_block(project, language=language)
+    from bestseller.services.story_spine import render_story_spine_block as _rssb
+    _spine_meta = getattr(project, "metadata_json", None) or {}
+    _story_spine_block = (
+        _rssb(_spine_meta.get("story_spine"), is_en=is_en)
+        if isinstance(_spine_meta, dict)
+        else ""
+    )
     if is_en:
         user_prompt = (
             f"Project title: {project.title}\n"
@@ -13494,6 +13501,7 @@ def _book_spec_prompts(
             f"Target chapters: {project.target_chapters}\n"
             f"Audience: {project.audience or 'web-serial'}\n"
             f"Premise: {premise}\n"
+            f"{_story_spine_block}"
             "Write all planning artifacts in English.\n"
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
@@ -13520,6 +13528,7 @@ def _book_spec_prompts(
             f"目标章节：{project.target_chapters}\n"
             f"受众：{project.audience or 'web-serial'}\n"
             f"Premise：{premise}\n"
+            f"{_story_spine_block}"
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"

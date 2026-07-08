@@ -94,6 +94,7 @@ def test_opening_contract_authorizes_cold_reader_orientation() -> None:
     assert "视角人物是谁" in text
     assert "连接组织授权" in text
     assert "专有名词预算" in text
+    assert "故事问题落地" in text  # ch1 读者必须知道主角要什么/输了失去什么
 
 
 def test_opening_contract_skips_late_chapters() -> None:
@@ -159,6 +160,7 @@ def test_scene_review_prompt_has_continuity_axis_and_prev_tail() -> None:
     assert "第 7 项 FAIL" in system_prompt
     assert "上一场结尾原文" in user_prompt
     assert "墨迹最末那个字" in user_prompt
+    assert "第1章特查" in user_prompt  # chapter_number=1 的故事问题特查
 
 
 def test_scene_review_prompt_without_context_still_has_axis() -> None:

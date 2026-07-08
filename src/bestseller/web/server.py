@@ -3457,6 +3457,10 @@ class WebTaskManager:
                 if run_conception:
                     project_metadata["synopsis"] = effective_synopsis
                     project_metadata["tags"] = effective_tags
+                    # 故事脊柱(2026-07-08 框架层):全管线传导的故事核。
+                    _spine = getattr(conception_result, "story_spine", None)
+                    if isinstance(_spine, dict) and _spine:
+                        project_metadata["story_spine"] = _spine
                 # Store StoryFacets in metadata for future reference and anti-repetition
                 if story_facets_obj is not None:
                     project_metadata["story_facets"] = story_facets_obj.model_dump(mode="json")

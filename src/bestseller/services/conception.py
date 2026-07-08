@@ -85,6 +85,9 @@ class ConceptionResult:
     # Empty dict when the appeal system is disabled (config) — keeps historical
     # output byte-identical (no-op contract).
     story_appeal: dict[str, Any] = field(default_factory=dict)
+    # 故事脊柱(2026-07-08 框架层):谁+要什么+为什么现在+谁挡着+代价+读者追问。
+    # 全管线传导的故事核;确定性验收见 story_spine.validate_story_spine。
+    story_spine: dict[str, Any] = field(default_factory=dict)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -1994,6 +1997,15 @@ def _finalize_user_prompt(
         f'读者看完必须能一句话说出：主角是谁、要干什么、爽点/钩子在哪。'
         f'严禁 AI 腔与套话：本以为/却没想到/命运的齿轮/何去何从/拭目以待/敬请期待/一段不平凡的旅程）",\n'
         f'  "tags": ["标签1", "标签2", "...（5-10个作品标签，包括题材、风格、元素、受众标签）"],\n'
+        f'  "story_spine": {{\n'
+        f'    "who": "主角一句话身份（名字+处境）",\n'
+        f'    "wants": "他要的具体目标——可验收（拿到X/救出X/在X之前做到X）。'
+        f'严禁\'活下去/变强/复仇\'这类没有宾语的模糊词",\n'
+        f'    "why_now": "触发事件：为什么是现在非动不可",\n'
+        f'    "against": "挡路的人/势力/规则（有名字或有形态）",\n'
+        f'    "stakes": "做不到就失去什么（具体：谁的命/什么身份/哪个家）",\n'
+        f'    "question": "读者一路追的问题，一句疑问句（他能不能……？）"\n'
+        f'  }},\n'
         f'  "writing_profile": {{\n'
         f'    "market": {{\n'
         f'      "platform_target": "...", "reader_promise": "...",\n'
@@ -2030,6 +2042,13 @@ def _finalize_user_prompt(
         f'    }}\n'
         f'  }}\n'
         f"}}"
+        f"\n\n【故事脊柱硬测试——脊柱不合格整份方案作废】\n"
+        f"story_spine 六字段连读必须是一段60字左右、能讲给朋友听的人话："
+        f"「(who)想要(wants)，因为(why_now)；但(against)挡着；做不到，(stakes)。(question)」"
+        f"朋友听完能复述出「这书讲什么」=合格；复述不出=重写脊柱。\n"
+        f"wants 必须具体可验收（拿到X/救出X/在X之前做到X），「活下去/变强/复仇」"
+        f"这类没有宾语的词不构成故事目标。\n"
+        f"全书所有设定/规则/金手指/简介卖点都必须服务这根脊柱——服务不上的设定，删。"
     )
     if genre_profile:
         instruction = genre_profile.planner_prompts.book_spec_instruction_zh
@@ -2354,6 +2373,44 @@ async def _audit_cast_reality(
         # 结构损坏 → fail-open 用原提案
         return character_proposal, ids
     return audited, ids
+
+
+async def _polish_story_spine(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    spine: dict[str, Any],
+    violations: list[str],
+    premise: str,
+    synopsis: str,
+    ctx: dict[str, Any],
+) -> tuple[dict[str, Any], list[UUID]]:
+    """故事脊柱聚焦重写——确定性验收不过时的一次有界修复(fail-open)。"""
+
+    from bestseller.services.story_spine import SPINE_FIELDS
+
+    user_prompt = (
+        f"题材：{ctx.get('genre')}（{ctx.get('sub_genre')}）\n"
+        f"前提：{premise}\n简介：{synopsis}\n"
+        f"当前故事脊柱：{json.dumps(spine or {}, ensure_ascii=False)}\n"
+        f"验收不通过的原因：\n" + "\n".join(f"- {v}" for v in violations) + "\n\n"
+        "请重写 story_spine 六字段(who/wants/why_now/against/stakes/question)，"
+        "使六字段连读成一段60字左右、讲给朋友能复述的人话；wants 必须具体可验收；"
+        "question 是一句疑问句。只输出 JSON 对象(六个键)，不要解释。"
+    )
+    fixed, ids = await _llm_call_json(
+        session, settings,
+        role="planner",
+        system_prompt="你是故事策划,专治'不知道这书在讲啥'。",
+        user_prompt=user_prompt,
+        fallback=json.dumps(spine or {}, ensure_ascii=False),
+        template="conception_story_spine_polish",
+        stage="conception.story_spine_polish",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    if isinstance(fixed, dict) and all(k in fixed for k in SPINE_FIELDS):
+        return fixed, ids
+    return spine or {}, ids
 
 
 async def _polish_blurb_synopsis(
@@ -2997,6 +3054,34 @@ async def run_conception_pipeline(
         synopsis = synopsis[:497] + "..."
     raw_tags = final_result.get("tags", [])
     tags = [str(t).strip() for t in raw_tags if isinstance(t, str) and t.strip()][:10]
+
+    # ── 故事脊柱:提取→确定性验收→一次聚焦重写(fail-open) ────────────────
+    from bestseller.services.story_spine import validate_story_spine
+
+    story_spine = (
+        final_result.get("story_spine")
+        if isinstance(final_result.get("story_spine"), dict)
+        else {}
+    )
+    _spine_violations = validate_story_spine(story_spine)
+    if _spine_violations:
+        story_spine, _spine_ids = await _polish_story_spine(
+            session, settings,
+            spine=story_spine, violations=_spine_violations,
+            premise=premise, synopsis=synopsis, ctx=ctx,
+        )
+        llm_run_ids.extend(_spine_ids)
+        _spine_violations = validate_story_spine(story_spine)
+    conception_log.append({
+        "round": 3,
+        "agent": "story_spine_gate",
+        "spine": story_spine,
+        "violations": _spine_violations,
+    })
+    if _spine_violations:
+        logger.warning(
+            "story spine failed deterministic gate after polish: %s", _spine_violations
+        )
     writing_profile = _sanitize_forbidden_default_motifs(writing_profile, is_en=is_en)
     premise = str(_sanitize_forbidden_default_motifs(premise, is_en=is_en))
     synopsis = str(_sanitize_forbidden_default_motifs(synopsis, is_en=is_en))
@@ -3283,6 +3368,7 @@ async def run_conception_pipeline(
         concept_methodology=dict(ctx.get("concept_methodology") or {}),
         hook_candidates=list(ctx.get("hook_candidates") or []),
         story_appeal=story_appeal_report,
+        story_spine=story_spine if isinstance(story_spine, dict) else {},
     )
 
 

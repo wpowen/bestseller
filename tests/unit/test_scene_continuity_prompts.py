@@ -154,7 +154,9 @@ def test_scene_review_prompt_has_continuity_axis_and_prev_tail() -> None:
         project, chapter, scene, draft, _review_result(), scene_context=scene_context
     )
     assert "接续性（硬轴）" in system_prompt
+    assert "逻辑自洽（硬轴）" in system_prompt
     assert "第 6 项 FAIL" in system_prompt
+    assert "第 7 项 FAIL" in system_prompt
     assert "上一场结尾原文" in user_prompt
     assert "墨迹最末那个字" in user_prompt
 

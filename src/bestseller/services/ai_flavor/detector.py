@@ -1007,6 +1007,14 @@ def _detect_verb_tic_spam(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
     measure_hits = len(_MEASURE_TIC_RE.findall(content_md))
     if measure_hits >= 5 and measure_hits * 10000 // total >= 5:
         offenders.append(("半寸/一寸/三分类度量腔", measure_hits))
+    # 词族聚合口径(2026-07-08): 单词各只出现3-4次躲过上面的单词阈值,但
+    # 全章"撞烫钻攥爬"家族合计6-9次、跨章复读——读者连读时词族感极强
+    # (真机用户终审:"老是出现撞烫,百分百是人不会写的")。家族合计≥6且
+    # ≥15/万字即计一名 offender,经 deslop 触发集清理。
+    if not offenders:
+        family_total = sum(content_md.count(v) for v in _VERB_TIC_LEXICON_ZH)
+        if family_total >= 6 and family_total * 10000 // total >= 15:
+            offenders.append(("撞/烫/钻/攥/爬类具身动词词族(合计)", family_total))
     if not offenders:
         return []
     offenders.sort(key=lambda kv: -kv[1])

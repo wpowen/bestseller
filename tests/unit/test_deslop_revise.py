@@ -120,8 +120,9 @@ def test_self_check_covers_staccato_and_system_ladder() -> None:
     assert "单句独段饱和" in chk, "staccato-merge self-check missing"
     assert "系统刷屏" in chk and "数字递增" in chk, "system-ladder self-check missing"
     # The closing instruction must re-count to the new total so the model
-    # actually re-scans the added items.
-    assert "上面 10 条" in chk
+    # actually re-scans the added items (11 = +具身动词词族纪律, 2026-07-08).
+    assert "上面 11 条" in chk
+    assert "具身动词词族" in chk, "verb-tic family discipline missing"
 
 
 def test_staccato_saturation_routes_to_deslop() -> None:

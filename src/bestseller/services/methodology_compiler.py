@@ -152,9 +152,11 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
         # 与已验证的爽文模式排序对齐：锚定层升到文采修饰之前。
         "material_concretization_current",
         "scene_grounding_current",
-        "prose_lever_framing",
-        "prose_craft_techniques",
-        "imagery_system_current",
+        # 2026-07-08 文采修饰三块(prose_lever_framing 留白/文采框架、
+        # prose_craft_techniques 金句、imagery_system 意象)整体撤出 PROSE_SCENE:
+        # 消融阶梯(2026-06-10, 仙侠ch1 n=4+探案ch87 n=3)证 craft 跨题材净负;
+        # 真机用户终审"词藻堆砌/故弄玄虚/读不下去"正是它们教出来的。
+        # 数据面(theme/imagery物料)不动,只撤 prompt 说教;REVIEW 阶段不受影响。
         "public_emotion_role_tags",
         "emotion_choreography_current",
         "rhythm_engineering_current",
@@ -197,9 +199,7 @@ _PROSE_SCENE_SHUANGWEN_PRIORITY: tuple[str, ...] = (
     "rhythm_engineering_current",
     "information_choreography_current",
     "chapter_position_current",
-    "prose_lever_framing",  # 留白/文采框架 → 降到爽点之后
-    "prose_craft_techniques",  # 金句 → 降后
-    "imagery_system_current",  # 意象 → 降后
+    # 文采修饰三块已撤出(2026-07-08,同 default 列表注释:消融净负+用户终审词藻堆砌)。
 )
 
 

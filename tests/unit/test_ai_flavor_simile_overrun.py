@@ -132,3 +132,49 @@ def test_synaesthesia_triggers_deslop_at_low_score(tmp_path) -> None:
     )
     assert outcome.decision != "block"  # 分数低 / advisory
     assert needs_deslop_revise(outcome) is True
+
+
+def test_verb_tic_family_aggregate_detected() -> None:
+    """词族聚合口径(2026-07-08):单词各3-4次躲过单词阈值,但家族合计≥6且
+    ≥15/万字仍是读者一眼识别的AI腔(真机用户:"老是出现撞烫")。"""
+    from bestseller.services.ai_flavor.detector import detect
+
+    base = (
+        "他撞开门,掌心烫了一下。钻进走廊时,他攥紧了钥匙。"
+        "风从窗缝里爬进来。他又撞上桌角,水杯烫手,他把手指攥得发白。"
+        "一条影子钻过灯光,顺着墙根爬。"
+    )  # 撞×2 烫×2 钻×2 攥×2 爬×2 = 家族10次
+    text = base * 12  # ~1300字 → 家族120次? no: base*12 → 每词24次,家族120,密度高
+    # 用低密度版本更贴真机: 家族7次落在正常长度里
+    filler = "他把报告放回桌上,顺手关了台灯。走廊尽头的电梯还亮着。" * 40
+    text = base + filler  # 家族10次 / ~1300字 ≈ 77/万字? filler 40*26=1040+108 → 密度 87/万字
+    report = detect(text, language="zh-CN", chapter_number=2)
+    fam = [s for s in report.spans if s.category == "verb_tic_spam"]
+    assert fam, "词族聚合复读必须被检出"
+    assert "词族" in fam[0].why or "×" in fam[0].why
+
+
+def test_verb_tic_triggers_deslop(tmp_path) -> None:
+    """闭环:verb_tic_spam 检出后必须路由 deslop 整段重写(此前不在触发集,检出也不清)。"""
+    from bestseller.services.ai_flavor_gate import (
+        AiFlavorGateConfig,
+        DESLOP_DISCOURSE_CATEGORIES,
+        needs_deslop_revise,
+        run_ai_flavor_gate,
+    )
+
+    assert "verb_tic_spam" in DESLOP_DISCOURSE_CATEGORIES
+    base = (
+        "他撞开门,掌心烫了一下。钻进走廊时,他攥紧了钥匙。"
+        "风从窗缝里爬进来。他又撞上桌角,水杯烫手,他把手指攥得发白。"
+        "一条影子钻过灯光,顺着墙根爬。"
+    )
+    filler = "他把报告放回桌上,顺手关了台灯。走廊尽头的电梯还亮着。" * 40
+    outcome = run_ai_flavor_gate(
+        chapter_number=2,
+        content_md=base + filler,
+        language="zh-CN",
+        config=AiFlavorGateConfig(),
+        project_output_dir=tmp_path,
+    )
+    assert needs_deslop_revise(outcome) is True

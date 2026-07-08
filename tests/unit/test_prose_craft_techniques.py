@@ -155,16 +155,19 @@ def test_render_block_empty_terms_falls_back_to_default() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_prose_scene_includes_craft_block() -> None:
+def test_prose_scene_excludes_craft_block() -> None:
+    # 2026-07-08 策略翻转:文采修饰三块(金句/意象/留白框架)整体撤出 PROSE_SCENE——
+    # 消融证 craft 跨题材净负,真机用户终审"词藻堆砌/故弄玄虚"正是它们教出来的。
+    # 渲染函数保留(蒸馏/别处可用),只是不再注入正文写手。
     out = compile_methodology(
         stage=MethodologyStage.PROSE_SCENE,
         prompt_pack_key="suspense-mystery",
         language="zh-CN",
         chapter_no=3,
-        token_budget=4200,  # production budget — fits cinematic_pov + craft together
+        token_budget=4200,
     )
-    assert "prose_craft_techniques.yaml" in out.used_sources
-    assert "文采技法" in out.text
+    assert "prose_craft_techniques.yaml" not in out.used_sources
+    assert "litstyle_prose.py" not in out.used_sources
 
 
 def test_review_stage_excludes_craft_block() -> None:

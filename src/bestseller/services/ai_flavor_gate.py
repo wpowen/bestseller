@@ -138,6 +138,10 @@ DESLOP_DISCOURSE_CATEGORIES = frozenset(
         # (advisory) 却是冷读者第一眼就卡住的硬伤，罕见即触发便宜。真机 ch1 首句。
         # 明喻密度型（simile_overrun）故意不进触发集，与 dash_density 同理防成本误伤。
         "synaesthesia_mismatch",
+        # 具身动词词族复读(撞烫钻攥爬,2026-07-08 用户终审"百分百是人不会写的"):
+        # patcher 无静态替换(动词是句子骨架),只有整段重写能换用平实动词;
+        # 此前不在触发集→检出了也从不清理,词族复读带病 ship。
+        "verb_tic_spam",
     }
 )
 

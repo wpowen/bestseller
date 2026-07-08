@@ -1529,6 +1529,15 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         f'{{"protagonist_archetype": "主角原型（如：重生复仇者、天才少年、隐忍谋略家）",\n'
         f'  "protagonist_name": "为主角取一个自然、好记、符合题材背景的中文名（2-3字）",\n'
         f'  "protagonist_name_reasoning": "命名理由",\n'
+        f'  "protagonist_age": 主角年龄数字,\n'
+        f'  "protagonist_profession": "主角职业+职级/身份（如：急诊科主治医师/刑警队实习警员/外卖骑手）",\n'
+        f'  "career_reality_ledger": "职业现实自洽账（硬要求）：列式核算 年龄=入行年龄+培养年限+执业年限，'
+        f'且职级与年限匹配。例：临床医生=5年本科毕业23岁+3年规培26岁才能独立值班，'
+        f'主治医师≥29岁、十年资历的夜班医生≥36岁；律师=法考+1年实习≥25岁；'
+        f'刑警=警校+基层年限。账算不平就改年龄或改资历，绝不硬凑'
+        f'（反例：32岁干了十年夜班急诊=账不平，直接毙）。拿不准的职业写模糊年限不写具体数字",\n'
+        f'  "profession_boundary": "该职业的职权与场地边界一句话（如：急诊科医生不接管住院科室的抢救，'
+        f'跨科出现需要会诊单/支援调令这类制度性理由）——全书写作不得越界，越界必须先给制度性理由",\n'
         f'  "protagonist_core_drive": "主角核心驱动力",\n'
         f'  "golden_finger": "主角的差异化优势——形态按【与本书冲突/世界规律的贴合度】择优'
         f'（系统/血脉觉醒/上古传承/特殊体质/独门手艺/重生先知/气运/信息差/契约异兽等，可自创），'
@@ -1549,10 +1558,18 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         f'  "key_characters": [\n'
         f'    {{"name": "角色名", "role": "protagonist/antagonist/ally/mentor",\n'
         f'     "name_reasoning": "命名理由",\n'
+        f'     "age_profession": "年龄+职业（有职业设定的角色必填，年龄资历同样要账算得平）",\n'
         f'     "personality_keywords": ["关键词1", "关键词2"],\n'
         f'     "relationship_to_protagonist": "与主角的关系"}}\n'
         f'  ]\n'
         f"}}\n"
+        f"\n【职业现实硬要求——违者整份提案作废】\n"
+        f"读者里永远有干这行的人。任何职业角色必须过三道账：\n"
+        f"① 年龄账：年龄=入行年龄+培养年限+执业年限，列式核算，算不平就改；\n"
+        f"② 职级账：职级/头衔与年限匹配（规培医生≠主治≠主任；实习律师≠合伙人）；\n"
+        f"③ 边界账：角色只能在其职权与场地内行事（急诊医生不接管住院病区抢救、"
+        f"片区民警不主办刑事大案、实习生不签手术单）——剧情需要跨界时，必须先在设定里"
+        f"写明制度性理由（会诊、借调、支援、代班），否则改剧情。\n"
         f"\n【冲突力量设计要求】\n"
         f"故事的精彩在于主角在不同阶段面临不同类型的挑战：\n"
         f"- 每个阶段（卷）应该有不同的主要冲突力量\n"
@@ -2284,6 +2301,61 @@ async def _attach_concept_methodology(
         logger.debug("concept methodology agent failed; continuing without it", exc_info=True)
 
 
+async def _audit_cast_reality(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    character_proposal: dict[str, Any],
+    ctx: dict[str, Any],
+    is_en: bool,
+) -> tuple[dict[str, Any], list[UUID]]:
+    """职业现实审计——设定层 enforcement（2026-07-08）。
+
+    真机终审:"32岁干了十年夜班急诊"账不平、急诊医生无理由接管住院病区抢救
+    ——这类职业设定硬伤在构思层落地后污染全书,prompt 硬要求只是"劝",
+    此处用一次 LLM 审计调用做"验":三道账(年龄/职级/边界)不平直接修正字段。
+    Fail-open:审计调用失败或返回不可解析时原样放行,绝不阻断构思。
+    """
+
+    if not isinstance(character_proposal, dict) or not character_proposal:
+        return character_proposal, []
+    audit_system = (
+        "You are a professional-realism auditor for fiction character sheets."
+        if is_en
+        else (
+            "你是小说人设的职业现实审计员。读者里永远有干这行的人——"
+            "职业设定的年龄/资历/职级/职权边界必须像真的一样。"
+        )
+    )
+    audit_user = (
+        f"题材：{ctx.get('genre')}（{ctx.get('sub_genre')}）\n"
+        f"角色体系提案 JSON：\n{json.dumps(character_proposal, ensure_ascii=False)}\n\n"
+        "对提案里每个有职业设定的角色核三道账：\n"
+        "① 年龄账：年龄=入行年龄+培养年限+执业年限（临床医生=5年本科23岁毕业+3年规培,"
+        "26-27岁才能独立值班,主治≥29,'32岁十年夜班'即账不平）；\n"
+        "② 职级账：头衔与年限匹配；\n"
+        "③ 边界账：profession_boundary 是否写清该职业的职权/场地边界,"
+        "金手指与剧情前提是否要求角色越界行事而没给制度性理由。\n"
+        "输出完整 JSON（与输入同结构）：全部自洽→原样返回；发现账不平→直接修正相关字段"
+        "（改年龄或改资历年限,保持故事意图不变),并新增字段 reality_audit_notes 数组,"
+        "每条一句话写明改了什么、为什么。只输出 JSON,不要解释。"
+    )
+    audited, ids = await _llm_call_json(
+        session, settings,
+        role="critic",
+        system_prompt=audit_system,
+        user_prompt=audit_user,
+        fallback=json.dumps(character_proposal, ensure_ascii=False),
+        template="conception_cast_reality_audit",
+        stage="conception.cast_reality_audit",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    if not isinstance(audited, dict) or not audited.get("protagonist_archetype"):
+        # 结构损坏 → fail-open 用原提案
+        return character_proposal, ids
+    return audited, ids
+
+
 async def _polish_blurb_synopsis(
     session: AsyncSession,
     settings: AppSettings,
@@ -2644,7 +2716,19 @@ async def run_conception_pipeline(
     )
     llm_run_ids.extend(stage_llm_ids)
     character_proposal = character_proposal or ctx.get("existing_overrides", {}).get("character", {})
+    # 职业现实审计闭环:三道账(年龄/职级/边界)不平就地修正字段,fail-open。
+    character_proposal, _cra_ids = await _audit_cast_reality(
+        session, settings,
+        character_proposal=character_proposal,
+        ctx=ctx, is_en=is_en,
+    )
+    llm_run_ids.extend(_cra_ids)
     conception_log.append({"round": 1, "agent": "character_architect", "proposal": character_proposal})
+    if character_proposal.get("reality_audit_notes"):
+        conception_log.append({
+            "round": 1, "agent": "cast_reality_auditor",
+            "notes": character_proposal.get("reality_audit_notes"),
+        })
 
     _emit("conception_world", {"round": 1, "agent": "world_builder"})
     world_user_prompt = _attach_conception_methodology(

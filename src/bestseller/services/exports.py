@@ -422,6 +422,9 @@ def _write_commercial_package_sidecars(
         "genre": getattr(project, "genre", "") or "",
         "sub_genre": getattr(project, "sub_genre", "") or "",
         "logline": logline,
+        # synopsis 是唯一简介真源(T7, 2026-07-09)：已过 blurb_pathology 病理检测器 +
+        # blurb_copywriter 淘汰赛；promotional_brief.blurb 现在直接消费它(见
+        # planner._resolve_promotional_brief_blurb)，三者同源，此处取值序不必再改。
         "short_intro": _metadata_first_text(metadata, "synopsis", "premise", "promotional_brief"),
         "reader_promise": [reader_promise] if reader_promise else [],
         "selling_points": selling_points,

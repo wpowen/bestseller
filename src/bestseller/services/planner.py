@@ -18689,7 +18689,13 @@ async def _generate_promotional_brief(
     )
 
     # Update project title if the LLM produced a better one — but never let a
-    # bare taxonomy/category name (题材名 ≠ 书名) overwrite a real title.
+    # bare taxonomy/category name (题材名 ≠ 书名) overwrite a real title. Beyond
+    # that (T7, 2026-07-09): a candidate must actually be BETTER by the same
+    # click-power ruler the conception title already passed, or it must be
+    # replacing a bare-taxonomy name — otherwise this second, ungated title
+    # producer silently overwrites a title that already cleared the appeal
+    # gate. On any evaluation failure we conservatively keep the existing
+    # title (an unverified overwrite is exactly the bug this closes).
     new_title = brief_payload.get("title")
     if (
         isinstance(new_title, str)
@@ -18697,19 +18703,100 @@ async def _generate_promotional_brief(
         and new_title.strip() != project.title
         and not is_bare_taxonomy_title(new_title.strip())
     ):
-        project.title = new_title.strip()
+        _candidate_title = new_title.strip()
+        try:
+            from bestseller.services.story_appeal import load_story_appeal_config
+            from bestseller.services.title_appeal_gate import evaluate_title_appeal
+
+            _appeal_cfg = load_story_appeal_config()
+            _title_min = float((_appeal_cfg.get("meets_bar", {}) or {}).get("title_min", 0))
+            _new_verdict = evaluate_title_appeal(
+                _candidate_title, genre=project.genre, sub_genre=project.sub_genre,
+                config=_appeal_cfg,
+            )
+            _old_is_bare = is_bare_taxonomy_title(project.title)
+            _old_verdict = None if _old_is_bare else evaluate_title_appeal(
+                project.title, genre=project.genre, sub_genre=project.sub_genre,
+                config=_appeal_cfg,
+            )
+            _old_total = _old_verdict.total if _old_verdict is not None else None
+            if _should_overwrite_promotional_title(
+                candidate_total=_new_verdict.total, title_min=_title_min,
+                old_title_is_bare=_old_is_bare, old_total=_old_total,
+            ):
+                project.title = _candidate_title
+            else:
+                logger.info(
+                    "promotional_brief: keeping existing title %r over candidate %r "
+                    "(candidate_gate=%.1f title_min=%.1f old_bare=%s)",
+                    project.title, _candidate_title, _new_verdict.total, _title_min, _old_is_bare,
+                )
+        except Exception:
+            logger.warning(
+                "promotional_brief title comparison failed; keeping existing title",
+                exc_info=True,
+            )
+
+    # 简介单一真源(T7, 2026-07-09)：promotional_brief 曾独立再生一份 blurb，
+    # 与构思终稿 synopsis(已过病理检测器+文案工序淘汰赛，见 blurb_pathology.py/
+    # blurb_copywriter.py) 互不校验、各写各的。此处消费终版 synopsis，只做平台
+    # 字数裁剪，不再另起 LLM 产线——两份"故事身份"的分裂到此收敛为一份。
+    _metadata = project.metadata_json or {}
+    blurb = _resolve_promotional_brief_blurb(
+        converged_synopsis=str(_metadata.get("synopsis") or ""),
+        llm_blurb=str(brief_payload.get("blurb") or ""),
+        premise_fallback=str(
+            _metadata.get("premise") or _mapping(book_spec).get("logline") or ""
+        ),
+    )
 
     # Store tags + blurb in project metadata for easy access
     project.metadata_json = {
-        **(project.metadata_json or {}),
+        **_metadata,
         "promotional_brief": {
             "tags": brief_payload.get("tags", []),
             "protagonist": brief_payload.get("protagonist", {}),
-            "blurb": brief_payload.get("blurb", ""),
+            "blurb": blurb,
         },
     }
 
     return brief_payload
+
+
+def _should_overwrite_promotional_title(
+    *,
+    candidate_total: float,
+    title_min: float,
+    old_title_is_bare: bool,
+    old_total: float | None,
+) -> bool:
+    """T7 书名覆盖收紧：候选必须达标 AND (旧名是题材裸名 OR 候选分数更高)。
+
+    两条件同时成立才允许覆盖——不再是"非空且不是裸题材名"就无条件覆盖。
+    """
+
+    candidate_clears_bar = title_min <= 0 or candidate_total >= title_min
+    old_beaten = old_title_is_bare or (old_total is not None and old_total < candidate_total)
+    return candidate_clears_bar and old_beaten
+
+
+def _resolve_promotional_brief_blurb(
+    *, converged_synopsis: str, llm_blurb: str, premise_fallback: str
+) -> str:
+    """T7 简介单一真源：converged_synopsis 非空时直接消费(只裁剪不重生)；
+    否则用 LLM 产的 blurb，命中致命病理才退到 premise 兜底。"""
+
+    from bestseller.services.blurb_pathology import detect_blurb_pathology, truncate_at_sentence
+
+    converged_synopsis = converged_synopsis.strip()
+    if converged_synopsis:
+        return truncate_at_sentence(converged_synopsis, 500)
+
+    llm_blurb = llm_blurb.strip()
+    fatal = [f for f in detect_blurb_pathology(llm_blurb) if f.severity == "fatal"]
+    if fatal:
+        return premise_fallback.strip()
+    return llm_blurb
 
 
 async def _run_prewrite_readiness_gate(

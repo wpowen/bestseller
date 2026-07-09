@@ -197,6 +197,12 @@ class TestValidateGeneratedVolumeOutlineDegeneracy:
         assert any(
             "degenerate outline field" in rec.message for rec in caplog.records
         )
+        # P2-4(检测报告)：软接受不能只打日志——日志不可查询，分段验收需要能
+        # 从落库产物里核验退化字段，必须落到 degenerate_fields 标记里。
+        assert result["chapters"][0]["degenerate_fields"], (
+            "soft-accepted degenerate chapter must be tagged, not just logged"
+        )
+        assert "chapter_goal≈main_conflict" in result["chapters"][0]["degenerate_fields"]
 
     def test_non_degenerate_batch_passes_through_unaffected(self):
         project = build_project()

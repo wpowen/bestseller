@@ -4001,7 +4001,14 @@ async def run_conception_pipeline(
                 config=_appeal_cfg_for_cw,
             )
             _copywriting_ran = True
-            synopsis = _copywriting_result.champion
+            # 冠军简介同样要过跨书污染消毒 + 句界截断——它是新产线的输出，不能
+            # 绕开原有 synopsis 早就享有的这两道防线（消毒发生在本函数更早处，
+            # 冠军产出在那之后才落地，必须在这里补跑一次；两者都是幂等操作）。
+            synopsis = str(
+                _sanitize_forbidden_default_motifs(_copywriting_result.champion, is_en=is_en)
+            )
+            if len(synopsis) > 500:
+                synopsis = truncate_at_sentence(synopsis, 500)
             llm_run_ids.extend(_copywriting_result.llm_run_ids)
             logger.info(
                 "Blurb copywriting: champion_strategy=%s fell_back_to_v0=%s polish_rounds=%d",
@@ -4256,8 +4263,12 @@ async def run_conception_pipeline(
         story_appeal_report = {}
 
     # 淘汰赛报告独立持久化（不依赖 story appeal 系统是否启用/是否失败），
-    # 分段验收需要它核验冠军策略/候选分/是否回退 v0（story_appeal_report 是
-    # 已有的、web 可见的构思产物落库位置，见 web/server.py 的 story_appeal_report）。
+    # 分段验收需要它核验冠军策略/候选分/是否回退 v0。这份 dict 就是
+    # ConceptionResult.story_appeal，web/server.py 把它落到
+    # project.metadata_json["conception_artifacts"]["story_appeal"]（见
+    # server.py 的 conception_story_appeal/conception_artifacts 赋值链，
+    # 仅当非空时才写入——旧书/走 concept_lab 快速通道等未跑 run_conception_
+    # pipeline 的入口不会有这个键，查不到时先确认走的是这条入口）。
     if _copywriting_result is not None:
         story_appeal_report = dict(story_appeal_report or {})
         story_appeal_report["copywriting_tournament"] = _copywriting_result.to_dict()

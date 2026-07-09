@@ -90,6 +90,42 @@ class TestTournamentSelection:
         assert result.fell_back_to_v0 is False
         assert result.persona_used is True
 
+    async def test_persona_verdict_not_overridden_by_lower_gate_score_than_v0(
+        self, monkeypatch
+    ):
+        """回归钉子(检测报告 P1-3)：淘汰赛内部以 persona 分为主尺选出干净的
+        冠军后，不该再拿确定性 gate 分去跟从没跑过 persona 评估的 v0 比——
+        真机验证过 gate 分会把具体好稿排到套话稿之下(66.0 vs 67.2)，这条
+        规则字面上会让 persona 选出来的冠军系统性打不过 v0。这里直接控制两边
+        gate_score(champion 故意打低分、v0 故意打高分)，证明只要 persona 判
+        官选中了它，就该照样出场，不用 gate 分再否决一次。"""
+
+        champion_text = _GOOD_SYNOPSIS
+        v0 = "v0简介，从未参加淘汰赛，也从未被persona评估。"
+
+        def fake_evaluate(*, synopsis, **kwargs):
+            class _V:
+                total = 40.0 if synopsis == champion_text else 90.0
+
+            return _V()
+
+        monkeypatch.setattr(
+            "bestseller.services.blurb_appeal_gate.evaluate_blurb_appeal", fake_evaluate
+        )
+        generator = _make_generator([champion_text])
+        persona_judge = _make_persona_judge({champion_text[:20]: (True, 9.0)})
+        result = await run_blurb_copywriting(
+            None, None,
+            spine=_SPINE, premise="x", golden_finger_line="x",
+            title="闻雀试睡", tags=[], genre="悬疑推理", sub_genre="规则怪谈",
+            platform=None, language="zh-CN", v0_synopsis=v0,
+            config={"copywriting": {"n_candidates": 1, "persona_samples": 1, "max_polish_rounds": 0}},
+            generator=generator, persona_judge=persona_judge,
+        )
+        assert result.persona_used is True
+        assert result.fell_back_to_v0 is False
+        assert result.champion == champion_text
+
     async def test_fatal_pathology_candidate_is_excluded(self):
         # _JARGON_SYNOPSIS 命中本书派生黑话词表(削薄/反写/压制) → fatal病理出局，
         # 即使 persona 判官给它打高分也不该赢——它已经在筛选阶段被淘汰。
@@ -254,6 +290,50 @@ class TestChampionPolish:
         assert polish_called["n"] == 1
         assert result.polish_rounds == 1
         assert result.champion == _GOOD_SYNOPSIS
+
+
+class TestSetupFailOpen:
+    """回归钉子(检测报告 P2-6)：docstring 声称 'Never raises'，但画像解析/
+    字数带解析/策略桶解析/默认生成器构造此前都在 try/except 之外——任一步
+    炸了整个函数就会真的抛，跟 docstring 和其余部分的 fail-open 设计矛盾。"""
+
+    async def test_resolve_persona_failure_falls_back_to_v0_without_raising(
+        self, monkeypatch
+    ):
+        def _boom(*args, **kwargs):
+            raise RuntimeError("persona resolution broke")
+
+        monkeypatch.setattr(
+            "bestseller.services.genre_persona.resolve_persona", _boom
+        )
+        result = await run_blurb_copywriting(
+            None, None,
+            spine=_SPINE, premise="x", golden_finger_line="x",
+            title="t", tags=[], genre="悬疑推理", sub_genre="规则怪谈",
+            platform=None, language="zh-CN", v0_synopsis=_V0_SYNOPSIS,
+            config={"copywriting": {"n_candidates": 1}},
+        )
+        assert result.fell_back_to_v0 is True
+        assert result.champion == _V0_SYNOPSIS
+
+    async def test_strategy_bucket_resolution_failure_falls_back_to_v0(
+        self, monkeypatch
+    ):
+        import bestseller.services.blurb_copywriter as mod
+
+        def _boom(genre, sub_genre):
+            raise RuntimeError("canonicalize broke")
+
+        monkeypatch.setattr(mod, "_resolve_strategy_bucket", _boom)
+        result = await run_blurb_copywriting(
+            None, None,
+            spine=_SPINE, premise="x", golden_finger_line="x",
+            title="t", tags=[], genre="悬疑推理", sub_genre="规则怪谈",
+            platform=None, language="zh-CN", v0_synopsis=_V0_SYNOPSIS,
+            config={"copywriting": {"n_candidates": 1}},
+        )
+        assert result.fell_back_to_v0 is True
+        assert result.champion == _V0_SYNOPSIS
 
 
 class TestConfigDefaults:

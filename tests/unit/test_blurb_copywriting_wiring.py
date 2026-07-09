@@ -26,7 +26,7 @@ def _source() -> str:
 def test_copywriting_call_precedes_champion_assignment_and_appeal_block():
     source = _source()
     cw_call_pos = source.index("_copywriting_result = await run_blurb_copywriting(")
-    champion_assign_pos = source.index("synopsis = _copywriting_result.champion")
+    champion_assign_pos = source.index("_copywriting_result.champion", cw_call_pos + 1)
     appeal_block_pos = source.index("Story/blurb appeal evaluation")
     title_invariant_pos = source.index("title_profile[\"primary_title\"] = title")
 
@@ -37,6 +37,19 @@ def test_copywriting_call_precedes_champion_assignment_and_appeal_block():
         "champion must be assigned to synopsis before the appeal evaluation block runs, "
         "so the appeal system evaluates/regenerates from the copywriting champion, not v0"
     )
+
+
+def test_copywriting_champion_is_sanitized_and_truncated():
+    """回归钉子(检测报告 P1-1/P1-2)：冠军简介绕开了跨书污染消毒
+    (``_sanitize_forbidden_default_motifs``，本函数更早处对 synopsis 的原始
+    finalize 版本已经跑过一次，但赋值发生在那之后，必须补跑) 和 500 字句界
+    截断兜底(旧路径全都有，唯独冠军赋值没有)——两者都必须在冠军赋值处补上。"""
+
+    source = _source()
+    cw_call_pos = source.index("_copywriting_result = await run_blurb_copywriting(")
+    surrounding = source[cw_call_pos : cw_call_pos + 1200]
+    assert "_sanitize_forbidden_default_motifs(_copywriting_result.champion" in surrounding
+    assert "truncate_at_sentence(synopsis, 500)" in surrounding
 
 
 def test_copywriting_call_receives_v0_synopsis_and_book_jargon_terms():

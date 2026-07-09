@@ -1947,6 +1947,30 @@ def _tag_enriched_outline_field(chapter: Any, field_name: str) -> None:
     chapter.enriched_fields = tags
 
 
+def _tag_degenerate_outline_fields(batch: Any, findings: list[dict[str, Any]]) -> None:
+    """T5 末轮软接受：在退化仍未修复时给受影响章节打 ``degenerate_fields`` 标，
+    不只是打日志——日志不可查询，标记随 ``model_dump()`` 落库供审计/分段验收核验。
+    """
+
+    by_chapter: dict[Any, list[str]] = {}
+    for finding in findings:
+        by_chapter.setdefault(finding.get("chapter_number"), []).append(
+            f"{finding.get('field_a')}≈{finding.get('field_b')}"
+        )
+    if not by_chapter:
+        return
+    for chapter in getattr(batch, "chapters", None) or []:
+        pairs = by_chapter.get(getattr(chapter, "chapter_number", None))
+        if not pairs:
+            continue
+        existing = getattr(chapter, "degenerate_fields", None)
+        tags = list(existing) if isinstance(existing, list) else []
+        for pair in pairs:
+            if pair not in tags:
+                tags.append(pair)
+        chapter.degenerate_fields = tags
+
+
 def _enrich_generated_volume_outline_systemic_fields(
     batch: Any,
     *,
@@ -2834,6 +2858,7 @@ def _validate_generated_volume_outline_or_raise(
             len(_degeneracy_findings),
             _degeneracy_summary,
         )
+        _tag_degenerate_outline_fields(batch, _degeneracy_findings)
 
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
     _cast_protagonist = _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}

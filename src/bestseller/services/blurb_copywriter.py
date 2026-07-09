@@ -17,8 +17,10 @@ premise/writing_profile/简介，输入是全部设计 JSON，机制黑话天然
   4. 画像判官淘汰赛——``persona_click_judge`` 模拟目标读者 3 秒点不点，冠军
      取平均分最高者；判官不可用时降级为 gate 分排序（不阻塞整个工序）。
   5. 定向打磨——冠军仍不达标时按反馈聚焦重写一次（有界，不无限循环）。
-  6. 永不劣于现状——全部候选都比 v0（finalize 直出版）差或全部命中致命病理时，
-     直接回退 v0，``fell_back_to_v0=True``。
+  6. 永不劣于现状——冠军为空、或全部候选都命中致命病理时直接回退 v0；干净的
+     冠军若是靠画像判官选出来的，不再用确定性 gate 分去否决它（v0 从未跑过
+     persona 评估，两者不是同一把尺）；只有判官不可用、排序降级为 gate 分时，
+     才需要 gate 分真的赢过 v0 才放行，否则回退 v0，``fell_back_to_v0=True``。
 
 零依赖 conception.py（避免循环导入——conception.py 反过来调用本模块）。
 """
@@ -322,15 +324,24 @@ async def run_blurb_copywriting(
     from bestseller.services.genre_persona import resolve_persona
 
     llm_run_ids: list[Any] = []
-    persona = resolve_persona(genre, sub_genre, tuple(tags or ()))
-    band = platform_blurb_band(platform, config)
-    bucket = _resolve_strategy_bucket(genre, sub_genre)
-    strategies = cfg["strategies"].get(bucket) or cfg["strategies"]["default"]
-    strategies = tuple(strategies)[: max(1, cfg["n_candidates"])]
-
-    gen_fn = generator
-    if gen_fn is None:
-        gen_fn = await _default_generator(session, settings)
+    try:
+        # 设置阶段本身也要 fail-open：画像/字数带/策略桶解析任何一步炸了都不该
+        # 让"Never raises"的docstring落空——调用方(conception.py)虽然有外层
+        # try/except兜底，但那样整个文案工序连"回退v0"的报告都拿不到，直接
+        # 静默跳过；这里失败仍应产出一份可持久化的 v0 回退结果。
+        persona = resolve_persona(genre, sub_genre, tuple(tags or ()))
+        band = platform_blurb_band(platform, config)
+        bucket = _resolve_strategy_bucket(genre, sub_genre)
+        strategies = cfg["strategies"].get(bucket) or cfg["strategies"]["default"]
+        strategies = tuple(strategies)[: max(1, cfg["n_candidates"])]
+        gen_fn = generator
+        if gen_fn is None:
+            gen_fn = await _default_generator(session, settings)
+    except Exception:
+        logger.warning("blurb copywriting setup failed (non-fatal)", exc_info=True)
+        return BlurbCopywritingResult(
+            champion=v0_synopsis, champion_strategy="v0_setup_failed", fell_back_to_v0=True,
+        )
 
     candidates: list[BlurbCandidate] = []
     for strategy in strategies:
@@ -473,16 +484,31 @@ async def run_blurb_copywriting(
     except Exception:
         logger.warning("v0 synopsis scoring failed (non-fatal)", exc_info=True)
 
-    # 回退条件（OR，不是 AND）：champion 为空，或 champion 是"全员致命病理"兜底
-    # 出来的候选（此时 has_fatal_pathology 恒真——只要 survivors 里有一个干净
-    # 候选，champion 就不可能带 fatal 病理，绝不会走到这条件），或 champion
-    # 干净但点击力就是不如 v0。三者任一成立都必须回退，不能只在"病理+分低"
-    # 同时成立时才回退——带确认病理的候选，哪怕分数因故偏高也不能出场。
-    if (
-        champion is None
-        or champion.has_fatal_pathology
-        or (champion.gate_score or 0.0) < v0_verdict_total
-    ):
+    # 结构性废单：champion 为空，或 champion 是"全员致命病理"兜底出来的候选
+    # （此时 has_fatal_pathology 恒真——只要 survivors 里有一个干净候选，champion
+    # 就不可能带 fatal 病理）。这两种情况必须回退 v0，不看任何分数。
+    if champion is None or champion.has_fatal_pathology:
+        return BlurbCopywritingResult(
+            champion=v0_synopsis, champion_strategy="v0_fallback",
+            candidates=candidates, polish_rounds=polish_rounds,
+            fell_back_to_v0=True, persona_used=persona_used, llm_run_ids=llm_run_ids,
+        )
+
+    # 干净的冠军若是画像判官淘汰赛选出来的（persona_used），不再用确定性 gate
+    # 分去否决它——gate 分和 persona 判断的读者视角不是同一把尺，v0 从未跑过
+    # persona 评估，拿 gate 分单方面比会出现真实发生过的错序（真机验证：同一
+    # 题材下，具体写实的候选 gate=66.0 分反而低于泛泛套话稿 gate=67.2 分）。
+    # persona 淘汰赛已经是比 gate 分更贴近"读者会不会点"的信号，不该被它推翻。
+    if persona_used and champion.persona_avg_score is not None:
+        return BlurbCopywritingResult(
+            champion=champion.synopsis, champion_strategy=champion.strategy,
+            candidates=candidates, polish_rounds=polish_rounds,
+            fell_back_to_v0=False, persona_used=persona_used, llm_run_ids=llm_run_ids,
+        )
+
+    # persona 不可用（判官全废/未启用），排序降级为确定性 gate 分——这时才用
+    # 和 v0 同一把尺比较，比不过就回退。
+    if (champion.gate_score or 0.0) < v0_verdict_total:
         return BlurbCopywritingResult(
             champion=v0_synopsis, champion_strategy="v0_fallback",
             candidates=candidates, polish_rounds=polish_rounds,

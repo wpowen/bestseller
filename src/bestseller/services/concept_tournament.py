@@ -153,7 +153,9 @@ def _cliche_hits(candidate: ConceptCandidate, banned: tuple[str, ...]) -> list[s
     """概念/机制文本命中的俗套关键词（按禁用短语的 2+ 字连续子串宽松匹配）。
 
     禁用短语是"废脉其实是宝脉"这类概括语，候选不会逐字复述——按短语切出的
-    关键词（≥2 字的连续词元）命中 2 个以上才算撞车，压误伤。
+    词元计数撞车。阈值分档（2026-07-09 真机校准）：长短语(>4词元)要求≥3 命中
+    ——首轮真机里"修真账房做假功德账"这个不错的对照组候选被"老祖飞升前留下
+    传承"以【老祖+飞升】两个散词误毙；短短语("退婚打脸"类)保持≥2。
     """
 
     text = f"{candidate.concept} {candidate.mechanism} {candidate.hook_question}"
@@ -163,7 +165,8 @@ def _cliche_hits(candidate: ConceptCandidate, banned: tuple[str, ...]) -> list[s
         if not tokens:
             continue
         matched = sum(1 for t in tokens if t in text)
-        if matched >= 2 or (len(tokens) == 1 and matched == 1):
+        required = 3 if len(tokens) > 4 else 2 if len(tokens) > 1 else 1
+        if matched >= required:
             hits.append(phrase)
     return hits
 

@@ -3913,13 +3913,20 @@ async def run_conception_pipeline(
         if str(item).strip()
     ][:10]
 
+    # 书名工序的 logline 优先吃概念淘汰赛冠军的一句话高概念——真机《我靠签契
+    # 改地脉》教训：书名从 premise(细节铺开)取材,丢掉了概念最独特的"同传/翻译官"
+    # 维度;冠军 concept 本来就是≤60字的强概念句,正是书名候选想要的原料。
+    _hc_concept = (
+        str((ctx.get("high_concept") or {}).get("concept") or "")
+        if isinstance(ctx.get("high_concept"), dict) else ""
+    )
     title_profile = {
         "language": str(ctx.get("language") or "zh-CN"),
         "primary_title": title,
         "primary_category": str(ctx.get("genre") or ""),
         "secondary_category": str(ctx.get("sub_genre") or ""),
         "tags": tags,
-        "logline": premise,
+        "logline": _hc_concept or premise,
         "short_intro": synopsis,
         "reader_promise": (
             writing_profile.get("market", {}).get("reader_promise")
@@ -4012,6 +4019,9 @@ async def run_conception_pipeline(
             if isinstance(_jargon_world, dict) else "",
             "world_model": _jargon_world if isinstance(_jargon_world, dict) else {},
             "hook_spec": ctx.get("hook_spec") if isinstance(ctx, dict) else None,
+            # 概念淘汰赛冠军的学术/机构词汇(拓扑/语义…)会经 spine/premise 渗入
+            # 简介——纳入派生源,文案淘汰赛把它们当禁用词,逼翻译成大白话。
+            "high_concept": ctx.get("high_concept") if isinstance(ctx, dict) else None,
         }
         _protagonist_name = (
             str(character_proposal.get("protagonist_name") or "")

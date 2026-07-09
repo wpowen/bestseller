@@ -306,3 +306,84 @@ class TestConceptionWiring:
         idx = source.index('"agent": "concept_tournament"')
         region = source[max(0, idx - 300) : idx + 200]
         assert "conception_log.append(" in region
+
+
+class TestClicheCalibration:
+    """2026-07-09 真机校准回归：长短语散词误伤。"""
+
+    def test_long_phrase_two_scattered_tokens_do_not_kill(self):
+        # 首轮真机对照组"修真账房做假功德账"被"老祖飞升前留下传承"(8词元)以
+        # 【老祖+飞升】两个散词误毙——长短语(>4词元)现在要求≥3命中。
+        from bestseller.services.concept_tournament import _cliche_hits
+
+        candidate = ConceptCandidate(
+            dimension="纯题材对照",
+            concept="主角修真做账房，专为濒死大能伪造功德假账，结果飞升的不是客户是他自己。",
+            mechanism="修仙界所有死而复生的气运老祖都是他客户；金手指是真·账道。",
+            hook_question="谁能在飞升审核眼皮底下开账房做到上市？",
+        )
+        hits = _cliche_hits(candidate, ("老祖飞升前留下传承",))
+        assert hits == []
+
+    def test_long_phrase_three_tokens_still_kill(self):
+        from bestseller.services.concept_tournament import _cliche_hits
+
+        candidate = ConceptCandidate(
+            dimension="纯题材对照",
+            concept="老祖飞升前给主角留下一份传承。",
+            mechanism="靠传承变强。",
+            hook_question="传承里有什么？",
+        )
+        hits = _cliche_hits(candidate, ("老祖飞升前留下传承",))
+        assert hits == ["老祖飞升前留下传承"]
+
+    def test_short_phrase_keeps_two_token_threshold(self):
+        from bestseller.services.concept_tournament import _cliche_hits
+
+        candidate = ConceptCandidate(
+            dimension="纯题材对照",
+            concept="他被退婚后当众打脸前未婚妻全家。",
+            mechanism="打脸变强。",
+            hook_question="下一个打谁的脸？",
+        )
+        hits = _cliche_hits(candidate, ("退婚打脸",))
+        assert hits == ["退婚打脸"]
+
+
+class TestHighConceptDownstreamConsumers:
+    """三小修(2026-07-09 第二轮)：冠军概念要被书名工序和文案工序真正吃到。"""
+
+    def test_title_profile_logline_prefers_high_concept(self):
+        # 真机《我靠签契改地脉》教训：书名从 premise 取材,丢掉概念最独特的
+        # "同传/翻译官"维度——title_profile.logline 必须优先吃冠军 concept。
+        import inspect
+
+        from bestseller.services import conception as conception_services
+
+        source = inspect.getsource(conception_services.run_conception_pipeline)
+        assert '"logline": _hc_concept or premise,' in source
+        idx = source.index('"logline": _hc_concept or premise,')
+        region = source[max(0, idx - 800) : idx]
+        assert '(ctx.get("high_concept") or {}).get("concept")' in region
+
+    def test_copywriter_prompt_demands_plain_speech_translation(self):
+        # persona 划走理由"拓扑/界枢署名词脑瓜子疼"——候选生成 prompt 必须
+        # 硬性要求把学术词/机构名翻译成大白话。
+        from bestseller.services.blurb_copywriter import _build_candidate_messages
+
+        _, user = _build_candidate_messages(
+            "scene_hook",
+            spine={"who": "x"}, premise="p", golden_finger_line="g",
+            title="t", tags=[], genre="古典仙侠", sub_genre="古典仙侠",
+            platform=None, persona=None, emotion_exemplars=(),
+            book_jargon_terms=(), band=(80, 220),
+        )
+        assert "翻译成" in user and "大白话" in user
+
+    def test_jargon_source_includes_high_concept_in_conception(self):
+        import inspect
+
+        from bestseller.services import conception as conception_services
+
+        source = inspect.getsource(conception_services.run_conception_pipeline)
+        assert '"high_concept": ctx.get("high_concept")' in source

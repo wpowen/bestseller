@@ -34,6 +34,9 @@ _DEFAULT_SYNONYM_GROUPS: tuple[tuple[str, ...], ...] = (
 _DEFAULT_MECHANISM_STEMS: tuple[str, ...] = (
     "削薄", "反写", "判定", "权限", "阈值", "溢价", "回写", "锚点", "观测",
     "协议", "结算", "压制", "重写权",
+    # 学术/技术词类(2026-07-09《我靠签契改地脉》persona划走理由"拓扑名词脑瓜子疼")：
+    # 高概念杂交常带入的现代学科词汇,出现在设定文本里合法,出现在读者简介里劝退。
+    "拓扑", "语义", "边界条件", "坐标系", "参数", "变量", "函数", "熵值", "算力",
 )
 _DEFAULT_REDUPLICATION_WHITELIST: tuple[str, ...] = (
     "一步一步", "越来越", "越战越", "日复一日", "年复一年", "一天一天",
@@ -281,6 +284,11 @@ _DESIGN_FIELD_KEYS: tuple[str, ...] = (
     "public_emotion_kernel", "compliance_boundary_kernel", "emotion_driven_kernel",
     "entry_system_kernel", "story_design_kernel", "ideology_kernel",
     "identity_manifest",
+    # 概念淘汰赛冠军(2026-07-09 真机《我靠签契改地脉》教训)：高概念自带的
+    # 学术/机构词汇(拓扑/界枢署/语义)会经 spine/premise 渗入简介，persona 判官
+    # 划走理由"名词堆得脑瓜子疼"。把冠军概念文本纳入派生源 → 文案淘汰赛把这些
+    # 词当禁用词 → 逼它翻译成大白话。
+    "high_concept",
 )
 
 

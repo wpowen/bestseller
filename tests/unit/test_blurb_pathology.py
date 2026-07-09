@@ -214,3 +214,24 @@ class TestTruncateAtSentence:
         result = truncate_at_sentence(text, 500)
         assert len(result) <= 500
         assert result.endswith("。") or result.endswith("...")
+
+
+@pytest.mark.unit
+class TestHighConceptJargonSource:
+    """2026-07-09《我靠签契改地脉》真机回归：概念淘汰赛冠军的学术词汇(拓扑/语义)
+    经 spine/premise 渗入简介,persona 划走理由"名词堆得脑瓜子疼"——冠军概念文本
+    必须纳入黑话派生源,让文案淘汰赛把这些词当禁用词逼翻译成大白话。"""
+
+    def test_high_concept_academic_stems_derived(self):
+        metadata = {
+            "high_concept": {
+                "concept": "替两界仙尊做同传，每次翻译都是一次边界战争。",
+                "mechanism": "每译出一份契约，等价于改写两界边界条件，地脉拓扑随之重算。",
+            },
+        }
+        terms = derive_book_jargon_terms(metadata)
+        assert "拓扑" in terms
+        assert "边界条件" in terms
+
+    def test_high_concept_absent_derives_nothing_new(self):
+        assert "拓扑" not in derive_book_jargon_terms({"golden_finger": "普通金手指"})

@@ -32,7 +32,11 @@ from bestseller.services.concept_lab import (
     coerce_concept_lab_bundle,
     render_concept_lab_prompt_block,
 )
-from bestseller.services.blurb_pathology import derive_book_jargon_terms, truncate_at_sentence
+from bestseller.services.blurb_pathology import (
+    derive_book_jargon_terms,
+    detect_blurb_pathology,
+    truncate_at_sentence,
+)
 from bestseller.services.hook_propagation import coerce_hook_spec, render_hook_spec_prompt_block
 from bestseller.services.platform_title_workflow import (
     build_story_dna_fallback_title,
@@ -2650,6 +2654,62 @@ async def _polish_golden_finger_mechanism(
     return golden_finger, growth_curve, ids
 
 
+async def _adapt_hook_one_liner(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    one_liner: str,
+    title: str,
+    protagonist: str,
+    premise: str,
+    genre: str,
+    is_en: bool,
+) -> tuple[str, list[UUID]]:
+    """把钩子候选池的模板句改写成含本书实体、读者三秒可懂的大白话承诺。
+
+    一次有界改写(fail-open)：候选池选优产物是通用规则骨架，未经本书语境适配直挂
+    读者承诺会产出模板插值病句(真机案例：锦鲤钩子挂到规则怪谈书上)。
+    """
+
+    lang = "英文" if is_en else "中文"
+    user_prompt = (
+        f"题材：{genre}\n主角：{protagonist or '（未命名）'}\n书名：{title}\n"
+        f"故事核：{premise}\n\n"
+        f"原钩子规则（通用模板句，可能含生造机制词、无本书实体）：{one_liner}\n\n"
+        f"请把这条钩子规则改写成一句给读者看的{lang}追读承诺：必须用【本书的人物/世界"
+        "名词】把规则具体化，禁止生造机制/系统黑话，≤60字，读者三秒能懂主角要面对"
+        '什么。只输出 JSON：{"reader_promise": "..."}，不要解释。'
+    )
+    fixed, ids = await _llm_call_json(
+        session, settings,
+        role="editor",
+        system_prompt="你是网文简介文案师，专治'钩子讲的是抽象机制,不是读者能懂的承诺'。",
+        user_prompt=user_prompt,
+        fallback=json.dumps({"reader_promise": one_liner}, ensure_ascii=False),
+        template="conception_hook_one_liner_adapt",
+        stage="conception.hook_one_liner_adapt",
+        language="en" if is_en else "zh-CN",
+    )
+    adapted = str(fixed.get("reader_promise") or "").strip() if isinstance(fixed, dict) else ""
+    return (adapted or one_liner), ids
+
+
+def _hook_one_liner_is_adapted(text: str, *, protagonist: str, title: str) -> bool:
+    """一句读者承诺是否"贴合本书语境"：无 fatal 病理 且 含至少一个本书实体。
+
+    实体锚点只用主角名/书名(conception.py 此时无 world_name 变量)；两者都太短
+    或缺失时不做实体检查(fail-open，不因数据缺失而误判)。
+    """
+
+    if not text.strip():
+        return False
+    fatal = [f for f in detect_blurb_pathology(text) if f.severity == "fatal"]
+    if fatal:
+        return False
+    entities = [e for e in (protagonist, title) if e and len(e) >= 2]
+    return not entities or any(e in text for e in entities)
+
+
 # ── 跨产物事实台账(Phase 4) ───────────────────────────────────────────
 
 _CN_DIGIT_VALUES: dict[str, int] = {
@@ -3525,8 +3585,9 @@ async def run_conception_pipeline(
     if selected_hook_spec is not None:
         market_profile = writing_profile.setdefault("market", {})
         if isinstance(market_profile, dict):
-            market_profile["logline"] = selected_hook_spec.one_liner
-            market_profile["reader_promise"] = selected_hook_spec.one_liner
+            # logline/reader_promise 不在此处直写：selected_hook_spec.one_liner 是候选池
+            # 机械选优产物，未必贴合本书语境（真机案例：模板钩子直接覆盖成病句）。
+            # 三段适配决策见故事脊柱计算之后的止血块（需要 story_spine 兜底）。
             market_profile["anti_commonsense_hook"] = selected_hook_spec.model_dump(mode="json")
     concept_bundle = coerce_concept_lab_bundle(ctx.get("concept_lab"))
     if concept_bundle is not None:
@@ -3692,6 +3753,59 @@ async def run_conception_pipeline(
         logger.warning(
             "story spine failed deterministic gate after polish: %s", _spine_violations
         )
+
+    # ── 钩子模板句止血(T4, 2026-07-09)──────────────────────────────────────
+    # selected_hook_spec.one_liner 是候选池机械选优产物，未必贴合本书语境（真机
+    # 案例：锦鲤代价钩子模板直接覆盖规则怪谈书的 reader_promise，产出模板插值
+    # 病句）。三段决策：(1) 适配检查(病理+本书实体)通过→照旧写入；(2) 不过→一次
+    # LLM 用本书实体改写，改写结果再查一遍；(3) 仍不过→spine 兜底(reader_promise=
+    # story_spine.question，已由脊柱闸门保证是合格疑问句)，market.logline 保持
+    # finalize 产出的原值不动。concept_bundle 存在时维持其原有优先级(不在此处覆盖)。
+    if selected_hook_spec is not None and concept_bundle is None:
+        try:
+            _hook_one_liner = selected_hook_spec.one_liner
+            _protagonist_name = (
+                str(character_proposal.get("protagonist_name") or "")
+                if isinstance(character_proposal, dict) else ""
+            )
+
+            _adapted_one_liner = _hook_one_liner
+            _one_liner_adapted = _hook_one_liner_is_adapted(
+                _hook_one_liner, protagonist=_protagonist_name, title=title,
+            )
+            if not _one_liner_adapted:
+                _adapted_one_liner, _adapt_ids = await _adapt_hook_one_liner(
+                    session, settings,
+                    one_liner=_hook_one_liner, title=title,
+                    protagonist=_protagonist_name, premise=premise,
+                    genre=str(ctx.get("genre") or genre or ""), is_en=is_en,
+                )
+                llm_run_ids.extend(_adapt_ids)
+                _one_liner_adapted = _hook_one_liner_is_adapted(
+                    _adapted_one_liner, protagonist=_protagonist_name, title=title,
+                )
+
+            market_profile = writing_profile.setdefault("market", {})
+            if isinstance(market_profile, dict):
+                if _one_liner_adapted:
+                    market_profile["logline"] = _adapted_one_liner
+                    market_profile["reader_promise"] = _adapted_one_liner
+                else:
+                    market_profile["reader_promise"] = story_spine.get("question") or premise
+                    logger.warning(
+                        "hook one_liner failed adaptation twice; falling back to "
+                        "story_spine.question for reader_promise"
+                    )
+            _hook_spec_payload = ctx.get("hook_spec")
+            if isinstance(_hook_spec_payload, dict):
+                _hook_spec_payload["one_liner_adapted"] = _one_liner_adapted
+            conception_log.append({
+                "round": 3, "agent": "hook_one_liner_adaptation_gate",
+                "adapted": _one_liner_adapted,
+            })
+        except Exception:
+            logger.warning("hook one_liner adaptation failed (non-fatal)", exc_info=True)
+
     writing_profile = _sanitize_forbidden_default_motifs(writing_profile, is_en=is_en)
     premise = str(_sanitize_forbidden_default_motifs(premise, is_en=is_en))
     synopsis = str(_sanitize_forbidden_default_motifs(synopsis, is_en=is_en))

@@ -3461,6 +3461,13 @@ class WebTaskManager:
                     _spine = getattr(conception_result, "story_spine", None)
                     if isinstance(_spine, dict) and _spine:
                         project_metadata["story_spine"] = _spine
+                    # 世界模型(2026-07-08 设定/逻辑框架层):构思终稿已用它做机制因果
+                    # 审计,持久化在顶层供 planner 直接复用(见 world_model_injection.
+                    # extract_world_model),避免 planner 用已终稿的 premise 二次派生
+                    # 出一份不同的世界模型造成漂移。
+                    _world_model = getattr(conception_result, "world_model", None)
+                    if isinstance(_world_model, dict) and _world_model.get("world_laws"):
+                        project_metadata["world_model"] = _world_model
                 # Store StoryFacets in metadata for future reference and anti-repetition
                 if story_facets_obj is not None:
                     project_metadata["story_facets"] = story_facets_obj.model_dump(mode="json")

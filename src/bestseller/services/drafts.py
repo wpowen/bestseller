@@ -4962,6 +4962,36 @@ def _score_writer_candidate(content: str, *, target_word_count: int | None, lang
     return score
 
 
+def render_anti_debt_prose_guardrail(premise: str | None, *, is_en: bool) -> str:
+    """正文层反债务化护栏(2026-07-08 用户终审)。
+
+    真机原文：构思层金手指干干净净（"污染值/协议区共生绑定"，不含一个"账"
+    字），写手描述"签字接受代价"这类动作时却自己长出"认下这笔账……第一条
+    欠条"。反债务化闸门此前只在 conception.py 生效（治金手指/前提文本），
+    没接到正文层——写手不知道"描述代价/后果不许用财务记账比喻"这条规矩。
+    复用同一份用户意图判定（``_mentions_debt_theme``），除非用户明确要写
+    债务题材，否则每场都提醒。
+    """
+
+    from bestseller.services.conception import _mentions_debt_theme
+
+    if _mentions_debt_theme(premise):
+        return ""
+    if is_en:
+        return (
+            "[Anti-debt-metaphor guardrail] When narrating a cost/consequence being "
+            "accepted, do NOT reach for debt/IOU/ledger/account/repayment vocabulary "
+            "(owe, IOU, settle the account) as the figurative frame — use embodied, "
+            "non-financial imagery instead (backlash, corrosion, a mark left on the "
+            "body, a price paid in sensation).\n\n"
+        )
+    return (
+        "【反债务化护栏】描写代价/后果被接受时,禁止用财务记账类比喻"
+        "(认账、欠条、还债、结算、入账这类措辞)当作修辞框架——"
+        "改用具身的非金融意象(反噬、灼烧、印记、感官代价)。\n\n"
+    )
+
+
 def _render_story_principle_execution_section(
     chapter: Any,
     scene: Any,
@@ -6233,6 +6263,10 @@ def build_scene_draft_prompts(
         if isinstance(_spine_src, dict)
         else ""
     )
+    _anti_debt_prose_line = render_anti_debt_prose_guardrail(
+        _spine_src.get("premise") if isinstance(_spine_src, dict) else None,
+        is_en=is_en,
+    )
     story_principle_line = _render_story_principle_execution_section(
         chapter,
         scene,
@@ -7131,6 +7165,7 @@ def build_scene_draft_prompts(
             f"{_foreshadow_line}"
             f"{story_principle_line}"
             f"{_story_spine_line}"
+            f"{_anti_debt_prose_line}"
             f"项目：《{project.title}》\n"
             f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
             f"章节目标（仅供你理解意图，严禁出现在正文中）：{chapter.chapter_goal}\n"

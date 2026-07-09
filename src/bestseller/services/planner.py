@@ -166,6 +166,7 @@ from bestseller.services.ideology_coherence_gate import (
 from bestseller.services.ideology_kernel import derive_ideology_kernel
 from bestseller.domain.world_model import (
     render_world_model_prompt_block,
+    world_model_from_dict,
     world_model_to_dict,
 )
 from bestseller.services.world_model_deriver import derive_world_model
@@ -17325,16 +17326,30 @@ async def _generate_story_design_kernel(
     world_model_payload: dict[str, Any] | None = None
     world_model_block = ""
     try:
-        world_model = await derive_world_model(
-            session,
-            settings,
-            premise=premise,
-            genre=getattr(project, "genre", None),
-            language=_planner_language(project),
-            project_id=getattr(project, "id", None),
-            workflow_run_id=workflow_run_id,
+        # 复用构思阶段已派生的世界模型(2026-07-08 设定/逻辑框架层)——构思终稿的
+        # 机制因果账审计已经用它约束了金手指/代价,这里若重新派生会用"已终稿的
+        # premise"生成一份不同的世界模型,造成两阶段各信各的漂移。只有构思阶段
+        # 未产出(旧书/失败降级)时才在这里补派生。
+        _conception_wm = getattr(project, "metadata_json", None)
+        _conception_wm = (
+            _conception_wm.get("world_model")
+            if isinstance(_conception_wm, dict)
+            else None
         )
-        world_model_payload = world_model_to_dict(world_model)
+        if isinstance(_conception_wm, dict) and _conception_wm.get("world_laws"):
+            world_model = world_model_from_dict(_conception_wm)
+            world_model_payload = _conception_wm
+        else:
+            world_model = await derive_world_model(
+                session,
+                settings,
+                premise=premise,
+                genre=getattr(project, "genre", None),
+                language=_planner_language(project),
+                project_id=getattr(project, "id", None),
+                workflow_run_id=workflow_run_id,
+            )
+            world_model_payload = world_model_to_dict(world_model)
         world_model_block = render_world_model_prompt_block(world_model)
     except Exception:  # noqa: BLE001 - world model is additive; never block planning
         logger.debug("World model derivation failed; planning without it", exc_info=True)

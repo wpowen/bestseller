@@ -947,6 +947,9 @@ def detect(
     # ── 明喻过密 / 跨模态通感病句 (什么都像什么 / 响湿得像) ──────────────
     spans.extend(_detect_simile_overrun(content_md, lang=lang))
 
+    # ── 正文债务化比喻回流 (概念层干净但写手自己长出"欠条/认账") ─────────
+    spans.extend(_detect_debt_metaphor_leak(content_md, lang=lang))
+
     # ── 第一人称内心声音缺失 (全章零盘算/自问 → 冷读者跟不上动机) ────────
     spans.extend(_detect_inner_voice_absence(content_md, lang=lang))
 
@@ -1254,6 +1257,52 @@ def _detect_simile_overrun(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
                 remove_sentence_on_block=False,
             )
         )
+
+    return out
+
+
+def _detect_debt_metaphor_leak(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """正文债务化比喻回流(warn,不设密度上限,逐处标记)。
+
+    真机终审(2026-07-08):构思层反债务化闸门只治金手指/前提文本——某书
+    金手指干干净净写"污染值/协议区共生绑定"，一个"账"字没有，写手描写
+    "签字接受代价"这个动作时却自己长出"但写了他就是认下这笔账……白板上
+    的字就是给协议区的欠条，第一条欠条"。概念层干净不等于正文干净，写手
+    自己的语言习惯一遇到"接受代价/后果"的场景就会本能地套财务记账比喻。
+    复用 conception._DEBT_LEDGER_TOKENS 同一份判定词表，每处单独标记
+    （不是"什么都像什么"的密度问题，一处也不该有）。
+    """
+
+    if lang != "zh" or not content_md:
+        return []
+    from bestseller.services.conception import _DEBT_LEDGER_TOKENS
+
+    out: list[AiFlavorSpan] = []
+    for token in _DEBT_LEDGER_TOKENS:
+        start = 0
+        while True:
+            idx = content_md.find(token, start)
+            if idx == -1:
+                break
+            out.append(
+                AiFlavorSpan(
+                    start=idx,
+                    end=idx + len(token),
+                    matched_text=content_md[idx : idx + len(token)],
+                    rule_id="zh.debt_metaphor.leak",
+                    category="debt_metaphor_leak",
+                    severity="warn",
+                    suggestions=(),
+                    sentence_span=_sentence_bounds(content_md, idx, lang),
+                    why=(
+                        f"财务记账类比喻回流（'{token}'）——除非本书明确是债务/借贷题材，"
+                        "描写代价/后果被接受时不许用欠条/认账/结算这类记账措辞当修辞框架，"
+                        "改用具身的非金融意象（反噬、灼烧、印记、感官代价）。"
+                    ),
+                    remove_sentence_on_block=False,
+                )
+            )
+            start = idx + len(token)
 
     return out
 

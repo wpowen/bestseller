@@ -88,6 +88,10 @@ class ConceptionResult:
     # 故事脊柱(2026-07-08 框架层):谁+要什么+为什么现在+谁挡着+代价+读者追问。
     # 全管线传导的故事核;确定性验收见 story_spine.validate_story_spine。
     story_spine: dict[str, Any] = field(default_factory=dict)
+    # 世界模型(2026-07-08 设定/逻辑框架层):终稿草稿前提差分出的世界规律,
+    # 供 planner/prose 复用同一份世界宪法(避免二次派生产生的漂移)。
+    # 见 world_model_deriver.derive_world_model / domain.world_model.WorldModel。
+    world_model: dict[str, Any] = field(default_factory=dict)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -222,6 +226,8 @@ _GOLDEN_FINGER_DESIGN_PRINCIPLE = (
     "契约异兽 / 器灵 · 重生 / 先知 / 记忆回溯 · 气运掠夺 · 武学功法的推演领悟 · "
     "身份势力 / 信息差 · 逆练禁术 · 词条 / 规则具现 · 一件兵器或宝物 · 因果命格操作"
     "（也可自创更贴合本书的形态）。\n"
+    "以上只是形态清单，禁止原样照抄某一项的字面塞进本书——必须结合本书前提与"
+    "世界规律给出这本书专属的具体形态与命名，照搬清单原词=同质化。\n"
     "形态必须长在世界规律上（从设定差分出来，而非硬贴一个外挂）；金手指的【代价 / 限制】"
     "必须与其形态匹配，不能无代价。\n"
     "若本书题材本不依赖外挂（纯武侠 / 历史 / 权谋 / 文学向 / 群像），可不设显性金手指，"
@@ -247,6 +253,9 @@ _GOLDEN_FINGER_DESIGN_PRINCIPLE_EN = (
     "fortune-plunder, technique insight, identity/faction/information edge, forbidden "
     "reverse-cultivation, rule/keyword manifestation, a single weapon or treasure, "
     "karma/fate manipulation (or invent a better-fitting one).\n"
+    "The list above is examples only — never copy one verbatim into this book; give a "
+    "form and naming that grow specifically from THIS book's premise and world laws. "
+    "Lifting a list entry word-for-word is homogenisation, not differentiation.\n"
     "The form must grow out of the world's laws (derived, not bolted on), and its "
     "cost/limit must match the form.\n"
     "If the genre does not need an external cheat (pure wuxia / history / intrigue / "
@@ -1093,6 +1102,45 @@ _MECHANISM_DEDUP_MAX_BOOKS = 6
 _MECHANISM_DEDUP_FIELD_CHARS = 80
 _MECHANISM_DEDUP_MAX_TROPES = 6
 
+# ── 平台俗套底牌库(Phase 5, 2026-07-08 设定/逻辑框架层) ──────────────────
+# 跨书回声闸门(_recent_core_mechanisms)只拦"和自己旧书重复"——数据库一清空
+# (冷启动)avoid_mechanisms 就是空的，模型可以自由撞上全平台已经写烂的老梗
+# （规则怪谈的"你就是规则书写者/你就是鬼"、无限流的"世界是场实验"）。这份
+# 静态底牌库按 novel_categories 的题材族给几条已知高频俗套反转，冷启动时
+# 补进 avoid_mechanisms，与真实旧书条目同格式（title/golden_finger/premise/
+# trope_keywords），既进 echo 检测语料，也进 prompt 可见的差异化清单。
+# 不是详尽俗套词典，只覆盖已确认真机命中的高频俗套，按后续真机反馈追加。
+_GENRE_CLICHE_BASELINE: dict[str, list[dict[str, Any]]] = {
+    "suspense-mystery": [
+        {
+            "title": "（平台俗套·规则怪谈反转）",
+            "golden_finger": "主角发现自己就是规则的原始书写者/编写者",
+            "premise": "记录或研究诡异规则的人，到头来发现规则其实是他自己写的，"
+            "或者他本人就是大家都在躲避的那个'鬼'/怪谈本体",
+            "trope_keywords": ["你就是鬼", "你就是书写者"],
+        },
+        {
+            "title": "（平台俗套·世界是实验）",
+            "golden_finger": "主角发现所在世界是上位者/组织设计的实验或游戏",
+            "premise": "所有诡异现象、规则副本，最终揭示是某个组织或文明用来"
+            "测试、豢养或收割参与者的实验场/游戏关卡",
+            "trope_keywords": ["世界是实验", "游戏管理员", "楚门的世界"],
+        },
+    ],
+}
+
+
+def _genre_cliche_baseline(genre: str | None, sub_genre: str | None) -> list[dict[str, Any]]:
+    """按题材族查静态俗套底牌(冷启动兜底,fail-open)。"""
+
+    try:
+        category = resolve_novel_category(genre or "", sub_genre)
+    except Exception:
+        return []
+    if category is None:
+        return []
+    return list(_GENRE_CLICHE_BASELINE.get(category.key, []))
+
 
 async def _recent_core_mechanisms(
     session: AsyncSession,
@@ -1274,13 +1322,24 @@ async def _attach_mechanism_dedup(
     if not bool(getattr(pipeline, "enable_conception_mechanism_dedup", True)):
         return
     try:
-        ctx["avoid_mechanisms"] = await _recent_core_mechanisms(
+        entries = await _recent_core_mechanisms(
             session,
             genre=str(ctx.get("genre") or "") or None,
             sub_genre=str(ctx.get("sub_genre") or "") or None,
         )
     except Exception:
         logger.debug("mechanism de-dup attach failed", exc_info=True)
+        entries = []
+    # 冷启动兜底(Phase 5):DB 无同题材旧书时(清库/新题材)avoid_mechanisms 为
+    # 空，回声闸门与 prompt 差异化清单形同虚设——补进静态平台俗套底牌，
+    # 补到 _MECHANISM_DEDUP_MAX_BOOKS 上限，真实旧书条目优先。
+    if len(entries) < _MECHANISM_DEDUP_MAX_BOOKS:
+        try:
+            baseline = _genre_cliche_baseline(ctx.get("genre"), ctx.get("sub_genre"))
+        except Exception:
+            baseline = []
+        entries = entries + baseline[: _MECHANISM_DEDUP_MAX_BOOKS - len(entries)]
+    ctx["avoid_mechanisms"] = entries
 
 
 # ── Mechanism echo screen ───────────────────────────────────────────────────
@@ -2375,6 +2434,379 @@ async def _audit_cast_reality(
     return audited, ids
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# 设定/逻辑框架层(2026-07-08)——"不知道在讲啥/没逻辑/没爽感"用户终审的框架修复。
+#
+# 根因诊断：构思是纯 LLM 自由发挥 + 一堆合规闸门(反债务/反模糊/三道账)，机制、
+# 代价、数字全是为过闸门"凑"的，不是从世界规律"推"出来的——模型在做约束满足
+# 求解，不是在讲故事。四把刀：
+#   ① 造世前置：finalize 草稿产出后，从草稿前提差分出世界模型(公理→规律)；
+#   ② 机制因果账：金手指/代价/关键数字必须能溯源到某条世界规律，溯不出的删改；
+#   ③ 机制极性闸门：爽文类金手指不能只有代价没有获得(戏剧张力型豁免)；
+#   ④ 跨产物事实台账：market/character/world 三个 agent 各写各的，年龄等硬事实
+#     确定性核对，冲突了才用一次 LLM 精修(而非正则盲替换，防误伤无关数字)。
+# 全部 fail-open：任一环节失败，原样放行，绝不阻断构思。
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def _derive_conception_world_model(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    premise: str,
+    ctx: dict[str, Any],
+) -> tuple[dict[str, Any], Any, list[UUID]]:
+    """造世前置——从终稿草稿前提差分出本书世界模型(fail-open)。
+
+    真机终审："记忆消解"代价/"21天"期限/"记忆备份"道具全部无来源——因为
+    这本书的世界模型此前只在 planner 阶段才派生(premise 早已定稿，只能事后
+    描补而非事前约束)。此处把同一个 derive_world_model 引擎前移到构思终稿
+    之后，供 _audit_mechanism_causality 用它做"验"。
+    """
+
+    from bestseller.services.world_model_deriver import derive_world_model
+    from bestseller.domain.world_model import world_model_to_dict
+
+    try:
+        model = await derive_world_model(
+            session,
+            settings,
+            premise=premise,
+            genre=str(ctx.get("genre") or "") or None,
+            language=str(ctx.get("language") or "zh-CN"),
+        )
+    except Exception:
+        logger.warning("conception world model derivation failed; skipping grounding", exc_info=True)
+        return {}, None, []
+    return world_model_to_dict(model), model, []
+
+
+async def _audit_mechanism_causality(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    premise: str,
+    writing_profile: dict[str, Any],
+    world_model: Any,
+    ctx: dict[str, Any],
+    is_en: bool,
+) -> tuple[str, dict[str, Any], list[UUID], list[str]]:
+    """机制因果账审计——金手指/代价/数字必须溯源到世界规律(fail-open)。
+
+    真机终审："抢救了一圈不知道要干什么"——机制没有因果来源，读者理所当然
+    看不懂。审五问：①代价从哪条规律来 ②数字怎么推导 ③关键道具谁提供/为什么
+    存在 ④暗示的社会架构是否自洽 ⑤主角凭什么知道他知道的事。
+    """
+
+    from bestseller.domain.world_model import render_world_model_prompt_block
+
+    character = writing_profile.get("character") if isinstance(writing_profile, dict) else None
+    golden_finger = str(character.get("golden_finger") or "") if isinstance(character, dict) else ""
+    if world_model is None or not (premise or golden_finger):
+        return premise, writing_profile, [], []
+
+    law_block = render_world_model_prompt_block(world_model, max_laws=6)
+    audit_system = (
+        "You are a mechanism-causality auditor for commercial fiction."
+        if is_en
+        else "你是小说机制因果审计员。专治'设定读起来精致但推不出来龙去脉'。"
+    )
+    audit_user = (
+        f"{law_block}\n\n"
+        f"题材：{ctx.get('genre')}（{ctx.get('sub_genre')}）\n"
+        f"当前前提：{premise}\n"
+        f"当前金手指：{golden_finger}\n\n"
+        "对上面的前提/金手指核五问：\n"
+        "① 代价能否指向上面某条世界规律？指不出来 → 改成能指出的代价，或删除该代价细节；\n"
+        "② 前提/金手指里出现的具体数字（天数/次数/年限/段数等）是否有推导依据？"
+        "无依据的数字 → 删除具体数字改为定性描述，或换成能从世界规律算出的数字；\n"
+        "③ 机制里出现的关键道具/信息（如某种备份、某件信物）是谁提供的、为什么存在？"
+        "答不出 → 删除该道具，或补一句其世界规律来源；\n"
+        "④ 若机制暗示某种社会/组织架构（发证、备案、公开知晓等），这个社会反应是否自洽？"
+        "不自洽 → 收窄机制的公开范围，或补一句社会反应说明；\n"
+        "⑤ 主角凭什么知道他所知道的关键信息？没有来源 → 补一条获知渠道。\n"
+        "输出 JSON，只含以下字段：{\"premise\": \"...\", \"golden_finger\": \"...\", "
+        "\"mechanism_causality_notes\": [\"...\"]}。全部自洽 → premise/golden_finger 原样返回、"
+        "notes 为空数组；发现问题 → 直接修正 premise/golden_finger（保持故事意图不变），"
+        "notes 每条一句话写明改了什么、为什么、对应哪条世界规律。只输出 JSON，不要解释。"
+    )
+    audited, ids = await _llm_call_json(
+        session, settings,
+        role="critic",
+        system_prompt=audit_system,
+        user_prompt=audit_user,
+        fallback=json.dumps({"premise": premise, "golden_finger": golden_finger}, ensure_ascii=False),
+        template="conception_mechanism_causality_audit",
+        stage="conception.mechanism_causality_audit",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    if not isinstance(audited, dict) or not str(audited.get("premise") or "").strip():
+        return premise, writing_profile, ids, []
+    new_premise = str(audited.get("premise") or premise)
+    new_golden_finger = str(audited.get("golden_finger") or golden_finger)
+    notes = [str(n) for n in (audited.get("mechanism_causality_notes") or []) if str(n).strip()]
+    new_profile = dict(writing_profile)
+    if isinstance(character, dict):
+        new_character = dict(character)
+        new_character["golden_finger"] = new_golden_finger
+        new_profile["character"] = new_character
+    return new_premise, new_profile, ids, notes
+
+
+# ── 机制极性闸门(Phase 3) ─────────────────────────────────────────────
+
+_GOLDEN_FINGER_OPTOUT_ALLOWED_KEYWORDS: tuple[str, ...] = ("武侠", "历史", "权谋", "文学", "群像")
+_GOLDEN_FINGER_OPTOUT_PHRASES: tuple[str, ...] = ("无显性金手指", "无金手指", "不设金手指", "没有金手指")
+_MECHANISM_COST_WORDS: tuple[str, ...] = (
+    "代价", "损耗", "丢失", "失去", "反噬", "透支", "消耗", "付出", "燃烧", "侵蚀", "吞噬",
+)
+
+
+def _detect_golden_finger_optout_violation(*, golden_finger: str, ctx: dict[str, Any]) -> str | None:
+    """金手指豁免资格校验(确定性)。
+
+    豁免"无显性金手指"仅对纯武侠/历史/权谋/文学向/群像题材开放
+    （见 _GOLDEN_FINGER_DESIGN_PRINCIPLE）——提示词有"劝"没有"验"，此处补上。
+    """
+
+    if not any(p in golden_finger for p in _GOLDEN_FINGER_OPTOUT_PHRASES):
+        return None
+    genre_text = f"{ctx.get('genre') or ''}{ctx.get('sub_genre') or ''}"
+    if any(k in genre_text for k in _GOLDEN_FINGER_OPTOUT_ALLOWED_KEYWORDS):
+        return None
+    return (
+        "[金手指豁免资格不符] 本题材不在'纯武侠/历史/权谋/文学向/群像'白名单内，"
+        "却写了'无显性金手指'——必须给出真实差异化优势"
+    )
+
+
+def _detect_golden_finger_polarity_violation(
+    *, golden_finger: str, growth_curve: str, synopsis: str, premise: str,
+) -> str | None:
+    """机制极性检测(确定性)——爽文类金手指不能只有代价没有获得。
+
+    真机终审"要爽感没爽感"：负和代价机制(只失去不获得)混进爽文/进度流通道，
+    全管线没有一处度量。复用 blurb_appeal_gate 已校准的戏剧张力豁免边界
+    (悬疑/怪谈/代价流本就不靠上升阶梯)：豁免边界命中就跳过，不与其冲突。
+    """
+
+    from bestseller.services.blurb_appeal_gate import (
+        _embodied_emotion_categories,
+        _has_progression_signal,
+    )
+
+    combined_for_exemption = f"{synopsis}\n{premise}"
+    if _embodied_emotion_categories(combined_for_exemption):
+        return None  # 戏剧两难型：负和代价是合理设计，非缺陷
+    gf_text = f"{golden_finger}\n{growth_curve}".strip()
+    if not gf_text:
+        return None
+    if _has_progression_signal(gf_text):
+        return None
+    if not any(w in gf_text for w in _MECHANISM_COST_WORDS):
+        return None  # 没写代价也就没有"只有代价"的问题，不在本检查范围
+    return (
+        "[机制极性缺失] 金手指/成长曲线只写了代价和损耗，没有任何获得/变强/掌控信号，"
+        "读者看不到上升感——爽文类需要机制整体正和（有得有失，但净值向上）"
+    )
+
+
+async def _polish_golden_finger_mechanism(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    golden_finger: str,
+    growth_curve: str,
+    violations: list[str],
+    ctx: dict[str, Any],
+    is_en: bool,
+) -> tuple[str, str, list[UUID]]:
+    """金手指机制聚焦重写——极性/豁免违规的一次有界修复(fail-open)。"""
+
+    user_prompt = (
+        f"题材：{ctx.get('genre')}（{ctx.get('sub_genre')}）\n"
+        f"当前金手指：{golden_finger}\n当前成长曲线：{growth_curve}\n"
+        f"问题：\n" + "\n".join(f"- {v}" for v in violations) + "\n\n"
+        "请重写金手指与成长曲线：保留原有代价/限制设定，但必须补上明确的获得/变强/掌控"
+        "信号，让读者看到机制整体是正和的（有得有失，但净值向上）；若原本套用了豁免条款"
+        "却不满足豁免资格，改为给出真实差异化优势。只输出 JSON："
+        '{"golden_finger": "...", "growth_curve": "..."}，不要解释。'
+    )
+    fixed, ids = await _llm_call_json(
+        session, settings,
+        role="planner",
+        system_prompt="你是小说机制设计师,专治'读起来只有代价没有爽感'。",
+        user_prompt=user_prompt,
+        fallback=json.dumps(
+            {"golden_finger": golden_finger, "growth_curve": growth_curve}, ensure_ascii=False
+        ),
+        template="conception_golden_finger_polish",
+        stage="conception.golden_finger_polish",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    if isinstance(fixed, dict) and str(fixed.get("golden_finger") or "").strip():
+        return str(fixed["golden_finger"]), str(fixed.get("growth_curve") or growth_curve), ids
+    return golden_finger, growth_curve, ids
+
+
+# ── 跨产物事实台账(Phase 4) ───────────────────────────────────────────
+
+_CN_DIGIT_VALUES: dict[str, int] = {
+    "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
+_AGE_MENTION_RE = re.compile(r"([〇零一二两三四五六七八九十百]{1,4}|\d{1,3})\s*岁")
+
+
+def _cn_age_to_int(text: str) -> int | None:
+    """把「三十二」「二十七」「十」这类中文数字(0-99)转 int；解析失败返回 None。"""
+
+    text = text.strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    if any(ch not in _CN_DIGIT_VALUES and ch != "十" for ch in text):
+        return None
+    if text == "十":
+        return 10
+    if text.startswith("十"):
+        ones = _CN_DIGIT_VALUES.get(text[1:])
+        return 10 + ones if ones is not None else None
+    if "十" in text:
+        left, _, right = text.partition("十")
+        tens = _CN_DIGIT_VALUES.get(left)
+        if tens is None:
+            return None
+        if not right:
+            return tens * 10
+        ones = _CN_DIGIT_VALUES.get(right)
+        return tens * 10 + ones if ones is not None else None
+    if len(text) == 1:
+        return _CN_DIGIT_VALUES.get(text)
+    return None
+
+
+def _extract_role_tags(profession_text: str) -> list[str]:
+    """profession 文本取职业词的前2字(词根)+后2字(词尾)当角色标签——粗粒度启发式。
+
+    中文职业名词常见"词根+词尾"结构（外卖+骑手/外卖+员，急诊科+医师），
+    前后各取一段以覆盖"外卖骑手"↔"外卖员"这类同根异尾变体。取首个逗号分句
+    （职业名词通常打头，"27岁外卖骑手，无学历要求"的职业词在第一段），并去掉
+    打头的年龄前缀。仅供跨产物年龄核对的粗筛，误配风险由下游 LLM 精修兜底
+    （读上下文判断，不盲改）。
+    """
+
+    text = re.sub(r"[（(].*?[）)]", "", profession_text).strip()
+    if not text:
+        return []
+    head = re.split(r"[，,、/]", text)[0].strip()
+    head = _AGE_MENTION_RE.sub("", head, count=1).strip()
+    tags: set[str] = set()
+    if len(head) >= 2:
+        tags.add(head[:2])
+        tags.add(head[-2:])
+    return [t for t in tags if t]
+
+
+def _extract_cast_age_roster(character_proposal: dict[str, Any]) -> list[tuple[str, int, str]]:
+    """从人设提案(经三道账审计)取 (姓名, 年龄, 职业文本) 名册。"""
+
+    roster: list[tuple[str, int, str]] = []
+    if not isinstance(character_proposal, dict):
+        return roster
+    p_name = str(character_proposal.get("protagonist_name") or "").strip()
+    p_age = character_proposal.get("protagonist_age")
+    p_profession = str(character_proposal.get("protagonist_profession") or "")
+    if p_name and isinstance(p_age, (int, float)) and not isinstance(p_age, bool):
+        roster.append((p_name, int(p_age), p_profession))
+    for item in character_proposal.get("key_characters") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        age_profession = str(item.get("age_profession") or "")
+        match = _AGE_MENTION_RE.search(age_profession)
+        if not name or not match:
+            continue
+        raw = match.group(1)
+        age = int(raw) if raw.isdigit() else _cn_age_to_int(raw)
+        if age is not None:
+            roster.append((name, age, age_profession))
+    return roster
+
+
+def _detect_cross_artifact_age_mismatches(
+    text: str, roster: list[tuple[str, int, str]],
+) -> list[str]:
+    """跨产物年龄一致性核对(确定性)。
+
+    真机终审：简介"三十二岁的外卖员" vs 人设同一角色 27 岁——market/character/
+    world 三个 agent 各写各的，editor 合并没做事实核对。只核年龄(硬事实、
+    正则可判)，不做语义比对(会误报)。
+    """
+
+    if not text or not roster:
+        return []
+    mismatches: list[str] = []
+    seen: set[tuple[int, str]] = set()
+    for match in _AGE_MENTION_RE.finditer(text):
+        raw = match.group(1)
+        mentioned_age = int(raw) if raw.isdigit() else _cn_age_to_int(raw)
+        if mentioned_age is None:
+            continue
+        window = text[max(0, match.start() - 6) : match.end() + 14]
+        for name, canon_age, profession_text in roster:
+            if mentioned_age == canon_age:
+                continue
+            tags = _extract_role_tags(profession_text)
+            if not tags or not any(tag in window for tag in tags):
+                continue
+            key = (match.start(), name)
+            if key in seen:
+                continue
+            seen.add(key)
+            mismatches.append(
+                f"文中「…{window.strip()}…」写{mentioned_age}岁，"
+                f"但人设「{name}」（{profession_text[:20]}）年龄为{canon_age}岁，两处冲突"
+            )
+    return mismatches
+
+
+async def _reconcile_cross_artifact_facts(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    premise: str,
+    synopsis: str,
+    mismatches: list[str],
+    ctx: dict[str, Any],
+) -> tuple[str, str, list[UUID]]:
+    """跨产物事实台账修复——检测确定性，修复交给 LLM(读上下文精改,防正则误伤)。fail-open。"""
+
+    if not mismatches:
+        return premise, synopsis, []
+    user_prompt = (
+        f"前提：{premise}\n简介：{synopsis}\n\n"
+        "以下是与人设年龄冲突的具体位置：\n" + "\n".join(f"- {m}" for m in mismatches) + "\n\n"
+        "只修正前提/简介里与人设冲突的年龄或身份数字，使其与人设一致；"
+        "不改动其他任何内容、不改风格。输出 JSON："
+        '{"premise": "...", "synopsis": "..."}，未冲突的字段原样返回，只输出 JSON，不要解释。'
+    )
+    fixed, ids = await _llm_call_json(
+        session, settings,
+        role="editor",
+        system_prompt="你是小说编辑,只做事实一致性勘误,不做创作性改写。",
+        user_prompt=user_prompt,
+        fallback=json.dumps({"premise": premise, "synopsis": synopsis}, ensure_ascii=False),
+        template="conception_fact_reconcile",
+        stage="conception.fact_reconcile",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    if isinstance(fixed, dict) and str(fixed.get("premise") or "").strip() and str(fixed.get("synopsis") or "").strip():
+        return str(fixed["premise"]), str(fixed["synopsis"]), ids
+    return premise, synopsis, ids
+
+
 async def _polish_story_spine(
     session: AsyncSession,
     settings: AppSettings,
@@ -3055,6 +3487,83 @@ async def run_conception_pipeline(
     raw_tags = final_result.get("tags", [])
     tags = [str(t).strip() for t in raw_tags if isinstance(t, str) and t.strip()][:10]
 
+    # ── 设定/逻辑框架层(2026-07-08):造世前置→机制因果账→机制极性→跨产物事实台账 ──
+    # 用户终审"不知道在讲啥/没逻辑/没爽感"的框架修复，全部 fail-open。
+    world_model_payload: dict[str, Any] = {}
+    try:
+        world_model_payload, _wm_obj, _wm_ids = await _derive_conception_world_model(
+            session, settings, premise=premise, ctx=ctx,
+        )
+        llm_run_ids.extend(_wm_ids)
+        if _wm_obj is not None:
+            conception_log.append({
+                "round": 3,
+                "agent": "world_model_deriver",
+                "law_count": len(_wm_obj.world_laws),
+                "axioms": list(_wm_obj.axioms),
+            })
+            premise, writing_profile, _cause_ids, _cause_notes = await _audit_mechanism_causality(
+                session, settings,
+                premise=premise, writing_profile=writing_profile,
+                world_model=_wm_obj, ctx=ctx, is_en=is_en,
+            )
+            llm_run_ids.extend(_cause_ids)
+            if _cause_notes:
+                conception_log.append({
+                    "round": 3, "agent": "mechanism_causality_auditor", "notes": _cause_notes,
+                })
+    except Exception:
+        logger.warning("mechanism causality grounding failed; skipping", exc_info=True)
+
+    try:
+        _character = writing_profile.get("character") if isinstance(writing_profile, dict) else None
+        _golden_finger = str(_character.get("golden_finger") or "") if isinstance(_character, dict) else ""
+        _growth_curve = str(_character.get("growth_curve") or "") if isinstance(_character, dict) else ""
+        _gf_violations = [
+            v for v in (
+                _detect_golden_finger_optout_violation(golden_finger=_golden_finger, ctx=ctx),
+                _detect_golden_finger_polarity_violation(
+                    golden_finger=_golden_finger, growth_curve=_growth_curve,
+                    synopsis=synopsis, premise=premise,
+                ),
+            ) if v
+        ]
+        if _gf_violations and isinstance(_character, dict):
+            _new_gf, _new_gc, _gf_ids = await _polish_golden_finger_mechanism(
+                session, settings,
+                golden_finger=_golden_finger, growth_curve=_growth_curve,
+                violations=_gf_violations, ctx=ctx, is_en=is_en,
+            )
+            llm_run_ids.extend(_gf_ids)
+            _new_character = dict(_character)
+            _new_character["golden_finger"] = _new_gf
+            _new_character["growth_curve"] = _new_gc
+            writing_profile = dict(writing_profile)
+            writing_profile["character"] = _new_character
+            conception_log.append({
+                "round": 3, "agent": "golden_finger_polarity_gate", "violations": _gf_violations,
+            })
+    except Exception:
+        logger.warning("golden finger polarity gate failed; skipping", exc_info=True)
+
+    try:
+        _roster = _extract_cast_age_roster(character_proposal)
+        _mismatches = [
+            *_detect_cross_artifact_age_mismatches(synopsis, _roster),
+            *_detect_cross_artifact_age_mismatches(premise, _roster),
+        ]
+        if _mismatches:
+            premise, synopsis, _fact_ids = await _reconcile_cross_artifact_facts(
+                session, settings,
+                premise=premise, synopsis=synopsis, mismatches=_mismatches, ctx=ctx,
+            )
+            llm_run_ids.extend(_fact_ids)
+            conception_log.append({
+                "round": 3, "agent": "cross_artifact_fact_gate", "mismatches": _mismatches,
+            })
+    except Exception:
+        logger.warning("cross-artifact fact reconciliation failed; skipping", exc_info=True)
+
     # ── 故事脊柱:提取→确定性验收→一次聚焦重写(fail-open) ────────────────
     from bestseller.services.story_spine import validate_story_spine
 
@@ -3369,6 +3878,7 @@ async def run_conception_pipeline(
         hook_candidates=list(ctx.get("hook_candidates") or []),
         story_appeal=story_appeal_report,
         story_spine=story_spine if isinstance(story_spine, dict) else {},
+        world_model=world_model_payload if isinstance(world_model_payload, dict) else {},
     )
 
 

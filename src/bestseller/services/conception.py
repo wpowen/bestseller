@@ -3786,7 +3786,7 @@ async def run_conception_pipeline(
     # is bounded, keeps the best-scoring variant, and is fail-open.
     story_appeal_report: dict[str, Any] = {}
     # Enforcement decision is captured inside the try but ACTED ON after it, so the
-    # fail-open ``except`` below cannot swallow the block (product line "低于80不通过").
+    # fail-open ``except`` below cannot swallow the block (product line "低于blurb_min不通过"，见 config/story_appeal.yaml)。
     _appeal_block_below = False
     _appeal_blocked_feedback = ""
     try:
@@ -3826,8 +3826,8 @@ async def run_conception_pipeline(
                 title=title, synopsis=synopsis, genre=_ap_genre, sub_genre=_ap_sub,
                 tags=tags, config=_appeal_cfg,
             )
-            # Product hard line: regenerate while not meeting the bar (blurb<80);
-            # else fall back to the grade floor.
+            # Product hard line: regenerate while not meeting the bar (blurb<blurb_min,
+            # calibrated to 68 in config/story_appeal.yaml); else fall back to the grade floor.
             while (
                 bool(regen.get("enabled", False))
                 and (
@@ -3995,7 +3995,8 @@ async def run_conception_pipeline(
         logger.warning("Story appeal evaluation failed (non-fatal)", exc_info=True)
         story_appeal_report = {}
 
-    # 产品硬线"低于80不通过"的真拦截：简介/书名经有界重生仍 < 80 → 抛 AppealBarNotMetError。
+    # 产品硬线"低于blurb_min不通过"(config/story_appeal.yaml 校准为68)的真拦截：
+    # 简介/书名经有界重生仍不达标 → 抛 AppealBarNotMetError。
     # 调用方(web)捕获后把项目置为可见拦截态(带分数+整改建议)，不静默进规划、不留 running 僵尸。
     if _appeal_block_below and story_appeal_report:
         from bestseller.services.story_appeal import AppealBarNotMetError  # noqa: PLC0415

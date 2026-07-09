@@ -224,7 +224,8 @@ def meets_bar(
 
     * The deterministic blurb gate is the reproducible, bias-free, competitor-
       anchored signal (real-hit vs slush Δ≈+12; slush tops out ~64) → it is the
-      hard gate (``blurb_min``, default 65).
+      hard gate (``blurb_min``, default 68 — calibrated to real bestseller
+      blurbs 68-78, see config/story_appeal.yaml).
     * The LLM premise score is ADVISORY only — its *absolute* value is unreliable
       (one prompt tweak swings it from rating slush 88 to rating a classic hit 38),
       so by default it does not gate (``premise_min: 0``, ``forbid_gated_to_pass:
@@ -235,7 +236,7 @@ def meets_bar(
     cfg = config if config is not None else load_story_appeal_config()
     bar = cfg.get("meets_bar", {}) if isinstance(cfg, dict) else {}
     premise_min = float(bar.get("premise_min", 0))
-    blurb_min = float(bar.get("blurb_min", 80))  # 产品硬线：低于 80 不通过
+    blurb_min = float(bar.get("blurb_min", 68))  # 对标榜单爆款68-78校准,见 config/story_appeal.yaml
     title_min = float(bar.get("title_min", 0))   # 产品硬线：书名点击力<80 也不通过
     forbid_gated_pass = bool(bar.get("forbid_gated_to_pass", False))
 
@@ -276,7 +277,7 @@ def build_improvement_feedback(
         else 600
     )
     bar = cfg.get("meets_bar", {}) if isinstance(cfg, dict) else {}
-    blurb_min = float(bar.get("blurb_min", 80))
+    blurb_min = float(bar.get("blurb_min", 68))  # 对标榜单爆款68-78校准,见 config/story_appeal.yaml
     gap = blurb_min - report.blurb.total
 
     lines: list[str] = [
@@ -286,7 +287,7 @@ def build_improvement_feedback(
     ]
     # 题材感知的情绪范例——玄幻别拿"退婚/重生"串台，用灭门/夺宝/绝境突破/碾压打脸。
     _emo = "、".join(genre_emotion_exemplars(report.genre, report.sub_genre, cfg)[:5])
-    # 简介(blurb)是达标信号——按最弱维度排序，给诊断+具体修法，引导改到 80。
+    # 简介(blurb)是达标信号——按最弱维度排序，给诊断+具体修法，引导改到 blurb_min。
     blurb_dims = sorted(report.blurb.dimensions, key=lambda d: d.score)
     suggestions = list(report.blurb.suggestions)
     shown = 0

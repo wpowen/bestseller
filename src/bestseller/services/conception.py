@@ -32,6 +32,7 @@ from bestseller.services.concept_lab import (
     coerce_concept_lab_bundle,
     render_concept_lab_prompt_block,
 )
+from bestseller.services.blurb_pathology import derive_book_jargon_terms, truncate_at_sentence
 from bestseller.services.hook_propagation import coerce_hook_spec, render_hook_spec_prompt_block
 from bestseller.services.platform_title_workflow import (
     build_story_dna_fallback_title,
@@ -3583,7 +3584,7 @@ async def run_conception_pipeline(
     # Extract synopsis and tags from the finalized result
     synopsis = _safe_get(final_result, "synopsis", "").strip()
     if len(synopsis) > 500:
-        synopsis = synopsis[:497] + "..."
+        synopsis = truncate_at_sentence(synopsis, 500)
     raw_tags = final_result.get("tags", [])
     tags = [str(t).strip() for t in raw_tags if isinstance(t, str) and t.strip()][:10]
 
@@ -3804,12 +3805,41 @@ async def run_conception_pipeline(
             _ap_sub = str(ctx.get("sub_genre") or sub_genre or "")
             _ap_platform = str(target_platform or "")
             _ap_language = str(ctx.get("language") or "zh-CN")
+            # 按书派生黑话词表（不是全局词表）：从本书设计字段（金手指/世界观/hook_spec
+            # 核心规则）里提取，双重条件避免误伤正常叙事用词。主角名/书名进白名单，
+            # 不会被自己名字误伤。golden_finger/character/hook_spec 此时不再变化
+            # （只有 synopsis/premise/title/tags 会在下面的重生循环里被改写），派生一次
+            # 全程复用即可。
+            try:
+                _jargon_char = (
+                    writing_profile.get("character") if isinstance(writing_profile, dict) else {}
+                )
+                _jargon_world = (
+                    writing_profile.get("world") if isinstance(writing_profile, dict) else {}
+                )
+                _jargon_source: dict[str, Any] = {
+                    "golden_finger": (_jargon_char or {}).get("golden_finger", ""),
+                    "power_system": (_jargon_world or {}).get("power_system", "")
+                    if isinstance(_jargon_world, dict) else "",
+                    "world_model": _jargon_world if isinstance(_jargon_world, dict) else {},
+                    "hook_spec": ctx.get("hook_spec") if isinstance(ctx, dict) else None,
+                }
+                _protagonist_name = (
+                    str(character_proposal.get("protagonist_name") or "")
+                    if isinstance(character_proposal, dict) else ""
+                )
+                _book_jargon_terms = derive_book_jargon_terms(
+                    _jargon_source, entity_whitelist=(_protagonist_name, title),
+                )
+            except Exception:
+                logger.warning("book jargon term derivation failed (non-fatal)", exc_info=True)
+                _book_jargon_terms = ()
             report = await evaluate_story_appeal(
                 session, settings,
                 premise=premise, synopsis=synopsis, title=title, tags=tags,
                 writing_profile=writing_profile, genre=_ap_genre, sub_genre=_ap_sub,
                 chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
-                language=_ap_language,
+                language=_ap_language, book_jargon_terms=_book_jargon_terms,
             )
             regen = _appeal_cfg.get("regeneration", {}) if isinstance(_appeal_cfg, dict) else {}
             floor = str(regen.get("floor_grade", "consider"))
@@ -3857,7 +3887,7 @@ async def run_conception_pipeline(
                         llm_run_ids.append(polish_id)
                     r_syn = _safe_get({"synopsis": polish_syn}, "synopsis", "").strip()
                     if len(r_syn) > 500:
-                        r_syn = r_syn[:497] + "..."
+                        r_syn = truncate_at_sentence(r_syn, 500)
                     r_syn = str(_sanitize_forbidden_default_motifs(r_syn or best[2], is_en=is_en))
                     r_premise = best[1]
                     r_tags = best[3]
@@ -3884,7 +3914,7 @@ async def run_conception_pipeline(
                         premise=r_premise, synopsis=r_syn, title=r_title, tags=r_tags,
                         writing_profile=writing_profile, genre=_ap_genre, sub_genre=_ap_sub,
                         chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
-                        language=_ap_language,
+                        language=_ap_language, book_jargon_terms=_book_jargon_terms,
                     )
                     cur_sum = report.premise.total + report.blurb.total + (
                         report.title.total if report.title else 0.0

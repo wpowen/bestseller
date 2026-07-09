@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from bestseller.services.blurb_appeal_gate import evaluate_blurb_appeal
+from bestseller.services.story_appeal import load_story_appeal_config
 
 # ruff: noqa: RUF001, RUF003
 
@@ -312,3 +313,68 @@ def test_cerebral_cold_blurb_still_below_emotion_floor():
     v = evaluate_blurb_appeal(title="x", synopsis=cerebral, premise=cerebral[:40],
                               tags=["都市异能", "规则怪谈"], genre="都市")
     assert {d.key: d.score for d in v.dimensions}["emotion_charge"] < 3.0
+
+
+# ── 简介确定性病理 cap（T3, 2026-07-09）──────────────────────────────────────
+# 真机 tracked-rulehorror-v1：病句"保饭碗还是丢工作？"照样拿到 ≥68 分一次通过，
+# 词表加权打分对同义反复/黑话泄漏/模板残留天然免疫。这里钉住 gate 层的 cap 集成。
+
+_REAL_BAD_SYNOPSIS = (
+    "保饭碗还是丢工作？凶宅试睡员闻雀只剩这一单。\n\n"
+    "按下七楼那晚是七点五十九，电梯按键下贴着手写规则：八点后不可停。\n\n"
+    "十年夜班让他对异常没反应——别人毛骨悚然，他能照常躺着记报告。这是本事，"
+    "也是代价：他连室友去世都没哭过，共情被削薄到几乎为零。\n\n"
+    "他必须熬过七天，写出一条新规则压制升级——代价是他再也分不清真实与伪造。"
+)
+
+
+@pytest.mark.unit
+def test_tautology_choice_pathology_caps_total_below_blurb_min():
+    v = evaluate_blurb_appeal(
+        title="闻雀试睡", synopsis=_REAL_BAD_SYNOPSIS, premise=_REAL_BAD_SYNOPSIS[:40],
+        tags=["悬疑", "规则怪谈"], genre="悬疑推理",
+    )
+    assert v.total <= 55
+    assert any("简介病理" in f for f in v.findings)
+    assert v.grade == "pass"
+
+
+@pytest.mark.unit
+def test_jargon_leak_pathology_caps_when_book_terms_hit():
+    clean = "空调外机铜管藏着1987年的黄纸，穷房东能听懂鬼话，代价是每听懂一句就丢一种活人的感觉。"
+    v_clean = evaluate_blurb_appeal(title="听鬼一句", synopsis=clean, genre="悬疑推理")
+    v_jargon = evaluate_blurb_appeal(
+        title="听鬼一句", synopsis=clean + "他的共情被削薄，规则会反写他，代价压制升级。",
+        genre="悬疑推理",
+        book_jargon_terms=("削薄", "反写", "压制升级"),
+    )
+    assert v_jargon.total <= 55
+    assert v_jargon.total < v_clean.total
+
+
+@pytest.mark.unit
+def test_pathology_disabled_is_noop_and_matches_prior_behavior():
+    v_enabled = evaluate_blurb_appeal(
+        title="闻雀试睡", synopsis=_REAL_BAD_SYNOPSIS, genre="悬疑推理",
+    )
+    cfg_disabled = {**load_story_appeal_config(), "blurb_pathology": {"enabled": False}}
+    v_disabled = evaluate_blurb_appeal(
+        title="闻雀试睡", synopsis=_REAL_BAD_SYNOPSIS, genre="悬疑推理",
+        config=cfg_disabled,
+    )
+    assert v_enabled.total < v_disabled.total
+    assert not any("简介病理" in f for f in v_disabled.findings)
+
+
+@pytest.mark.unit
+def test_warn_only_pathology_does_not_cap_total():
+    # run_on_sentence 是 warn 级：只提示不封顶。用一段干净但很长的流水句验证
+    # 总分不受影响(仍可能因其他维度分低，但不应出现"总分封顶"的病理 finding)。
+    run_on = (
+        "先付出代价才换得到好运，主角越想被命运眷顾，越会被迫接下别人的灾祸，"
+        "越要替别人扛下等量的祸，代价一次比一次沉重，并让被替者始终不知道"
+        "这份牺牲正在持续发酵、越滚越大、终将反噬回主角自己身上。"
+    )
+    v = evaluate_blurb_appeal(title="x", synopsis=run_on, genre="悬疑推理")
+    assert not any("总分封顶" in f and "简介病理" in f for f in v.findings)
+    assert any("简介病理·提示" in f for f in v.findings)

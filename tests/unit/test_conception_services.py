@@ -562,3 +562,75 @@ async def test_finalize_arena_fails_open_on_error() -> None:
     )
     # 判官逐对失败按持平计 → 仍返回报告，不抛错、不拦构思
     assert out is not None and out["win_rate"] == pytest.approx(0.5)
+
+
+# ── T3 句界截断：finalize/polish 两处 synopsis 长度裁剪不得硬截半句 ─────────────
+
+
+def test_finalize_and_polish_synopsis_truncation_uses_sentence_boundary() -> None:
+    """回归钉子：[:497] + "..." 会硬截半句；两处都必须换成 truncate_at_sentence，
+    且不得再出现裸的 497 硬截切片。"""
+
+    import inspect
+
+    source = inspect.getsource(conception_services.run_conception_pipeline)
+    assert "[:497]" not in source
+    assert source.count("truncate_at_sentence(") >= 2
+
+
+# ── T3 按书黑话词表：conception.py 从 writing_profile 派生 + 接线到两处评估调用 ──
+
+
+def test_finalize_derives_and_threads_book_jargon_terms_into_both_eval_calls() -> None:
+    """结构断言：两处 evaluate_story_appeal 调用都必须带 book_jargon_terms=
+    _book_jargon_terms（同一次派生结果，全程复用，不重复派生）。"""
+
+    import inspect
+
+    source = inspect.getsource(conception_services.run_conception_pipeline)
+    assert source.count("book_jargon_terms=_book_jargon_terms") == 2
+    assert "derive_book_jargon_terms(" in source
+    assert '"protagonist_name"' in source or "protagonist_name" in source  # 主角名进白名单
+
+
+def test_jargon_source_adapter_shape_matches_writing_profile_and_gates_synopsis() -> None:
+    """回归钉子：conception.py 用 writing_profile["character"]["golden_finger"] /
+    writing_profile["world"] / ctx["hook_spec"] 拼出 derive_book_jargon_terms 的
+    输入——这里用同样的 adapter 形状验证派生结果确实能让 evaluate_blurb_appeal
+    对含黑话的简介封顶(端到端跑 4000 行的 run_conception_pipeline 需要 mock 十几次
+    LLM 调用，与本仓既有测试惯例不符——见 test_web_server.py 对该函数整体打桩)。"""
+
+    from bestseller.services.blurb_appeal_gate import evaluate_blurb_appeal
+    from bestseller.services.blurb_pathology import derive_book_jargon_terms
+
+    writing_profile = {
+        "character": {"golden_finger": "职业钝化——这种削薄不可逆，规则会反写他。"},
+        "world": {"power_system": "普通设定，无特殊词根"},
+    }
+    ctx = {"hook_spec": {"core_rule": "压制升级机制"}}
+    character_proposal = {"protagonist_name": "闻雀"}
+    title = "闻雀试睡"
+
+    jargon_source = {
+        "golden_finger": writing_profile["character"].get("golden_finger", ""),
+        "power_system": writing_profile["world"].get("power_system", ""),
+        "world_model": writing_profile["world"],
+        "hook_spec": ctx.get("hook_spec"),
+    }
+    terms = derive_book_jargon_terms(
+        jargon_source,
+        entity_whitelist=(character_proposal["protagonist_name"], title),
+    )
+    assert "削薄" in terms and "反写" in terms and "压制" in terms
+    assert "闻雀" not in terms
+
+    clean = "空调外机铜管藏着1987年的黄纸，穷房东能听懂鬼话。"
+    v_clean = evaluate_blurb_appeal(title=title, synopsis=clean, genre="悬疑推理")
+    v_jargon = evaluate_blurb_appeal(
+        title=title,
+        synopsis=clean + "他的共情被削薄，规则反写了他，代价压制升级。",
+        genre="悬疑推理",
+        book_jargon_terms=terms,
+    )
+    assert v_jargon.total <= 55
+    assert v_jargon.total < v_clean.total

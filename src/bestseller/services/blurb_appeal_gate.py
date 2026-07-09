@@ -18,6 +18,7 @@ import re
 from typing import Any
 
 from bestseller.domain.appeal import AppealDimension, BlurbAppealVerdict
+from bestseller.services.blurb_pathology import detect_blurb_pathology
 
 _CJK_RE = re.compile(r"[㐀-䶿一-鿿]")
 _SENTENCE_SPLIT_RE = re.compile(r"[。？！!?\n]")
@@ -398,6 +399,7 @@ def evaluate_blurb_appeal(
     lexicon: dict[str, Any] | None = None,
     platform: str | None = None,
     genre_terms: tuple[str, ...] = (),
+    book_jargon_terms: tuple[str, ...] = (),
 ) -> BlurbAppealVerdict:
     """Score the listing package for click-power. Pure / deterministic.
 
@@ -562,6 +564,27 @@ def evaluate_blurb_appeal(
             "加一句让读者看到这书的上升阶梯或终极目标（从X做到Y／越做越大／最终要对上谁），"
             "让人知道爽点会持续升级、值得一路追"
         )
+
+    # ── 简介确定性病理 cap（独立一票否决，2026-07-09）──────────────────────
+    # 词表加权打分对病句/黑话泄漏/模板插值残留天然免疫（真机案例：同义反复选择句
+    # "保饭碗还是丢工作？"照样拿到 ≥68 分一次通过）。任一 fatal 病理命中 →
+    # 总分封顶到 pathology_cap（< blurb_min，必触发重生）。
+    pathology_cfg = config.get("blurb_pathology", {}) if isinstance(config, dict) else {}
+    if bool(pathology_cfg.get("enabled", True)):
+        pathology_findings = detect_blurb_pathology(
+            synopsis, book_jargon_terms=book_jargon_terms, config=pathology_cfg,
+        )
+        fatal = [f for f in pathology_findings if f.severity == "fatal"]
+        pathology_cap = float(pathology_cfg.get("pathology_cap", 55))
+        if fatal and total > pathology_cap:
+            total = pathology_cap
+            names = "；".join(f"[{f.code}] {f.detail}" for f in fatal)
+            findings.append(f"[简介病理] {names} → 总分封顶 {pathology_cap:.0f}")
+            suggestions.append("按病理提示逐条改写：去病句/去黑话/去模板残留，换成大白话")
+        elif pathology_findings:
+            # warn 级不封顶，仅可见提示（如流水长句）。
+            for f in pathology_findings:
+                findings.append(f"[简介病理·提示] [{f.code}] {f.detail}")
 
     grade = _grade_from_total(total, config)
     return BlurbAppealVerdict(

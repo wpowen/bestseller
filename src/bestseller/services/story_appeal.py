@@ -369,6 +369,7 @@ async def evaluate_story_appeal(
     platform: str | None = None,
     config: dict[str, Any] | None = None,
     language: str = "zh",
+    book_jargon_terms: tuple[str, ...] = (),
 ) -> StoryAppealReport:
     """Run both evaluators and combine. Never raises — fail-open to det. scores."""
 
@@ -393,6 +394,7 @@ async def evaluate_story_appeal(
         # (comprehensibility≈0 → cap 60 < blurb_min) and burned all regen
         # attempts on a guaranteed fail.
         language=language,
+        book_jargon_terms=book_jargon_terms,
     )
 
     # Deterministic title click-power gate (zero-token). Independent hard min so a

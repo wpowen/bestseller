@@ -88,6 +88,29 @@ tone_consistency:
   shuangwen_cliche_beats: [打脸, 跪地, 喊冤, 碾压, 逆袭, 震惊全场, 全村, 扇耳光, 狠狠,
     跪下, 求饶, 不敢相信, 悔不当初, 瑟瑟发抖, 啪啪打脸, 当场跪, 颤抖着, 嚣张, 装逼打脸]
 
+# 简介确定性病理检测（services/blurb_pathology.py，2026-07-09，审计发现）：词表加权
+# 打分对病句/黑话泄漏/模板插值残留天然免疫——真机案例"保饭碗还是丢工作？"这类同义
+# 反复选择句照样拿到 ≥68 分一次通过、零重生。任一 fatal 病理命中 → 总分封顶到
+# pathology_cap(<blurb_min)，必触发去病句重生。warn 级(流水长句)只提示不封顶。
+blurb_pathology:
+  enabled: true
+  pathology_cap: 55
+  jargon_fatal_hits: 3            # 命中≥3个本书派生黑话词根才 fatal；1-2个仅 warn
+  min_ngram_len: 4                # 模板残留检测的最短重复片段长度
+  max_ngram_len: 16
+  run_on_sentence_min_len: 80     # 单句超过此字数且逗号密集 → 流水长句 warn
+  run_on_sentence_min_commas: 4
+  antonym_verb_pairs: [[保, 丢], [留, 失], [活, 死], [守, 弃]]
+  synonym_groups:
+    - [饭碗, 工作, 岗位, 职位]
+    - [性命, 命, 活路]
+  # 机制形态词根：只有真实出现在本书 golden_finger/kernel 等设计字段里的词根才会
+  # 被 derive_book_jargon_terms 判定为"本书黑话"（双重条件，避免全局误伤）。
+  mechanism_stems: [削薄, 反写, 判定, 权限, 阈值, 溢价, 回写, 锚点, 观测, 协议,
+    结算, 压制, 重写权]
+  reduplication_whitelist: [一步一步, 越来越, 越战越, 日复一日, 年复一年, 一天一天,
+    一点一点, 层层, 步步, 一级一级]
+
 # ---------------------------------------------------------------------------
 # 一句话卖点【前置·严格】闸门（logline_gate v2）：在扩充世界观/角色/卷章大纲之前，先站在
 # 【读者视角】判「这个卖点是不是真卖点、值不值得点」。不过 → 不予扩充(REJECT)或回炉(REGEN)。

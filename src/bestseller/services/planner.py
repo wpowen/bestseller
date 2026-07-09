@@ -2767,6 +2767,7 @@ def _validate_generated_volume_outline_or_raise(
     cast_spec: dict[str, Any],
     existing_titles: list[tuple[int | None, str]] | None = None,
     strict_story_effects: bool = True,
+    strict_field_degeneracy: bool | None = None,
 ) -> dict[str, Any]:
     """Normalize and validate a generated volume outline before persistence.
 
@@ -2774,6 +2775,15 @@ def _validate_generated_volume_outline_or_raise(
     :func:`_normalize_generated_outline_titles_or_fail` so cross-volume
     title duplicates become a hard validation error and the repair loop
     can re-prompt the planner with a targeted directive.
+
+    ``strict_field_degeneracy``：三字段退化查重的严格档独立开关。``None``（默认）
+    跟随 ``strict_story_effects``——修复循环内按轮次收紧/放宽。合并终验
+    (:func:`_generate_volume_outline_batched` 的 combine 调用) 必须显式传
+    ``False``：L3 真机验收(2026-07-09, female-growth 书)证实管线自己的确定性
+    修复会在批内校验【之后】制造退化——``_repair_generated_volume_outline_
+    contract_inputs`` 把元话术 goal 用 main_conflict 首句重写、enrichment 再
+    把 goal 复制进 opening_situation——合并终验没有回炉循环兜着，strict 一抛
+    整本书直接死（与上方 title 撞名同款的老坑）。合并终验对退化只软接受+打标。
     """
 
     from bestseller.domain.workflow import ChapterOutlineBatchInput
@@ -2839,12 +2849,15 @@ def _validate_generated_volume_outline_or_raise(
     # 全通过。在 enrichment 之前检测——enrichment 只填空字段，不该让它把已经
     # 退化的模型输出洗白成"看起来正常"；退化必须回炉重写，而不是被复制掩盖。
     _degeneracy_findings = _detect_degenerate_outline_fields(batch)
+    _strict_degeneracy = (
+        strict_story_effects if strict_field_degeneracy is None else strict_field_degeneracy
+    )
     if _degeneracy_findings:
         _degeneracy_summary = "; ".join(
             f"ch{f['chapter_number']} {f['field_a']}≈{f['field_b']}(sim={f['similarity']})"
             for f in _degeneracy_findings[:20]
         )
-        if strict_story_effects:
+        if _strict_degeneracy:
             raise OutlineFieldDegeneracyError(
                 f"Planner artifact '{logical_name}' has degenerate outline fields "
                 "(chapter_goal/opening_situation/main_conflict collapsed into "
@@ -4296,6 +4309,11 @@ async def _generate_volume_outline_batched(
         chapter_number_offset=chapter_number_offset,
         cast_spec=cast_spec,
         existing_titles=existing_titles,
+        # 合并终验没有回炉循环兜着，且管线自身的确定性修复(元话术goal重写/
+        # enrichment复制)会在批内校验之后制造三字段退化——此处 strict 一抛整本书
+        # 直接死(L3真机验收 female-growth 书即此死法，与上方title撞名同款老坑)。
+        # 退化在这里只软接受+打 degenerate_fields 标，把关留给批内修复循环。
+        strict_field_degeneracy=False,
     )
     validated["_meta"] = combined["_meta"]
     return validated, llm_run_ids, repair_history

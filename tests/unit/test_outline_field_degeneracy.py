@@ -388,3 +388,65 @@ class TestPlannerEnrichmentTagging:
         assert "闻雀要在天亮前保住饭碗" in chapter.opening_situation
         tags = chapter.enriched_fields
         assert "opening_situation_copied_from_goal_no_alt_material" in tags
+
+
+# ── L3 真机验收回归(2026-07-09)：合并终验的退化查重必须软接受 ────────────────
+
+
+class TestCombineTimeDegeneracyIsSoft:
+    """真机死法(female-growth-romance-1783580950)：批内校验之后，管线自身的
+    确定性修复制造了三字段退化(_repair_generated_volume_outline_contract_inputs
+    把元话术 goal 用 main_conflict 首句重写、enrichment 再把 goal 复制进
+    opening_situation)，而 _generate_volume_outline_batched 的合并终验以默认
+    strict 复检、外面没有任何回炉循环——OutlineFieldDegeneracyError 直接逃逸
+    毙掉整本书，违反 fail-open 红线(与 title 撞名同款老坑)。"""
+
+    def _cast_spec(self) -> dict:
+        return {
+            "protagonist": {"name": "闻雀", "role": "protagonist"},
+            "antagonist": {"name": "余彤", "role": "antagonist"},
+        }
+
+    def test_strict_field_degeneracy_false_soft_accepts_despite_strict_story_effects(self):
+        project = build_project()
+        result = planner_services._validate_generated_volume_outline_or_raise(
+            _degenerate_payload(),
+            project=project,
+            logical_name="volume_1_chapter_outline",
+            volume_number=1,
+            expected_count=1,
+            chapter_number_offset=1,
+            cast_spec=self._cast_spec(),
+            strict_story_effects=True,          # 合并终验对 story-effect 仍是 strict
+            strict_field_degeneracy=False,      # 但退化必须软接受
+        )
+        assert result["chapters"][0]["chapter_number"] == 1
+        assert result["chapters"][0]["degenerate_fields"], (
+            "combine-time soft-accept must still tag degenerate_fields for audit"
+        )
+
+    def test_default_none_follows_strict_story_effects(self):
+        # 修复循环的既有调用不传新参数 → 行为不变(strict 时照抛)。
+        project = build_project()
+        with pytest.raises(OutlineFieldDegeneracyError):
+            planner_services._validate_generated_volume_outline_or_raise(
+                _degenerate_payload(),
+                project=project,
+                logical_name="volume_1_chapter_outline",
+                volume_number=1,
+                expected_count=1,
+                chapter_number_offset=1,
+                cast_spec=self._cast_spec(),
+                strict_story_effects=True,
+            )
+
+    def test_combine_call_site_passes_soft_degeneracy(self):
+        """结构钉：_generate_volume_outline_batched 的合并终验调用必须显式传
+        strict_field_degeneracy=False——这是本次真机死亡的直接修复点。"""
+
+        import inspect
+
+        source = inspect.getsource(planner_services._generate_volume_outline_batched)
+        combine_pos = source.index("validated = _validate_generated_volume_outline_or_raise(")
+        call_region = source[combine_pos : combine_pos + 900]
+        assert "strict_field_degeneracy=False," in call_region

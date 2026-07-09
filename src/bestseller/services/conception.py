@@ -3346,6 +3346,57 @@ async def run_conception_pipeline(
         if progress is not None:
             progress(stage, data)
 
+    # ── Round -1: 概念淘汰赛(2026-07-09)——高概念先行,反题材均值回归 ──────
+    # 真机书《谁敢动我山头》证实:概念层单次生成必然回归题材众数(废脉藏宝/
+    # 破宗门重建),读者可自动补全全书。此处在多agent展开【之前】跑"反俗套禁用
+    # +杂交N候选+引擎审计+判官对撞榜单"淘汰赛,冠军注入 ctx["description"]
+    # ——它是商业定位/市场/角色/世界观全部 prompt 的共同源头,零侵入全覆盖。
+    # 用户显式给了 concept_lab(自选概念)时跳过,不覆盖人的创意。fail-open。
+    if not ctx.get("concept_lab"):
+        try:
+            from bestseller.services.concept_tournament import (  # noqa: PLC0415
+                render_high_concept_block,
+                run_concept_tournament,
+            )
+
+            _emit("concept_tournament_started", {"round": -1})
+            _ct_result = await run_concept_tournament(
+                session, settings,
+                genre=str(ctx.get("genre") or genre_key),
+                sub_genre=str(ctx.get("sub_genre") or ""),
+                chapter_count=chapter_count,
+                avoid_mechanisms=list(ctx.get("avoid_mechanisms") or []),
+            )
+            llm_run_ids.extend(_ct_result.llm_run_ids)
+            conception_log.append({
+                "round": -1,
+                "agent": "concept_tournament",
+                **_ct_result.to_dict(),
+            })
+            if _ct_result.winner is not None:
+                # ctx 在更早处已整体过一遍跨书污染消毒,追加的注入块同样要过
+                # (P1-1 同款教训:新增文本通道不得成为默认母题的豁免通道)。
+                _hc_block = str(
+                    _sanitize_forbidden_default_motifs(
+                        render_high_concept_block(_ct_result), is_en=is_en
+                    )
+                )
+                ctx["description"] = f"{ctx.get('description') or ''}\n{_hc_block}"
+                ctx["high_concept"] = _ct_result.winner.to_dict()
+                _emit("concept_tournament_winner", {
+                    "dimension": _ct_result.winner.dimension,
+                    "concept": _ct_result.winner.concept[:120],
+                })
+                logger.info(
+                    "Concept tournament winner (dim=%s, composite=%s): %s",
+                    _ct_result.winner.dimension, _ct_result.winner.composite,
+                    _ct_result.winner.concept[:120],
+                )
+            else:
+                logger.info("Concept tournament produced no winner; using preset description")
+        except Exception:
+            logger.warning("Concept tournament failed (non-fatal); no injection", exc_info=True)
+
     # ── Round 0: Autonomous Commercial Positioning ───────────────────
     _emit("conception_commercial_positioning", {"round": 0, "agent": "commercial_commissioner"})
     commercial_brief, stage_llm_ids = await _llm_call_json(

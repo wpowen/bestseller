@@ -25,6 +25,21 @@ def test_resolve_persona_routes_male_and_female_channels():
 
 
 @pytest.mark.unit
+def test_female_growth_presets_route_to_female_channel():
+    """L3 真机验收回归钉子(2026-07-09)：题材 preset "女性成长/情感拉扯" 此前
+    一个 token 都命不中女频词表 → 女频书被男频判官评审("打脸吃绝户带劲")，
+    文案淘汰赛被男频口味带偏、简介承诺漂向复仇爽文。三个女频 preset 的
+    genre/sub_genre 组合都必须路由到女频画像。"""
+
+    # female-growth-romance preset
+    assert resolve_persona("女性成长", "情感拉扯").channel == "女频"
+    # palace-revenge preset(宫斗本就在词表,女性成长加强命中)
+    assert resolve_persona("女性成长", "宫斗复仇").channel == "女频"
+    # female-no-cp preset(大女主本就在词表)
+    assert resolve_persona("女性成长", "无CP大女主").channel == "女频"
+
+
+@pytest.mark.unit
 def test_hook_messages_anchor_persona_and_forbid_jargon():
     _, user = build_persona_hook_messages(
         genre="高武世界", sub_genre="都市怪谈", premise="废物觉醒诡异能力逆袭复仇。"

@@ -68,6 +68,10 @@ class MarketPositioningConfig(BaseModel):
     content_mode: str = Field(default="中文网文长篇连载", min_length=1, max_length=4000)
     prompt_pack_key: str | None = Field(default=None, max_length=4000)
     reader_promise: str | None = Field(default=None, max_length=4000)
+    # 2026-07-09 L3真机验收发现:conception 把冠军简介同源提炼的 logline 写进
+    # market.logline,但本 schema 没有该字段 → 项目创建时被 Pydantic 静默丢弃,
+    # 提炼调用整个被浪费(昨晚 tracked 书 market.logline 为空同因)。补字段留住它。
+    logline: str | None = Field(default=None, max_length=4000)
     selling_points: list[str] = Field(default_factory=list)
     trope_keywords: list[str] = Field(default_factory=list)
     hook_keywords: list[str] = Field(default_factory=list)
@@ -92,6 +96,7 @@ class MarketPositioningConfig(BaseModel):
         "content_mode",
         "prompt_pack_key",
         "reader_promise",
+        "logline",
         "opening_contract",
         "opening_strategy",
         "chapter_hook_strategy",

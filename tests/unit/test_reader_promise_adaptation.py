@@ -161,3 +161,23 @@ def test_hook_adaptation_block_is_wrapped_in_fail_open_try_except() -> None:
     surrounding = source[max(0, block_start - 20) : block_start + 2500]
     assert "try:" in surrounding
     assert 'logger.warning("hook one_liner adaptation failed (non-fatal)"' in surrounding
+
+
+@pytest.mark.unit
+def test_adaptation_flag_rides_the_returned_hook_spec_dump() -> None:
+    """L3 真机验收回归钉子(2026-07-09)：one_liner_adapted 标记此前只写进
+    ctx["hook_spec"]，而 metadata["hook_spec"] 持久化的是 ConceptionResult.
+    hook_spec —— selected_hook_spec 的一份全新 model_dump，标记因此丢失
+    （真机 female-growth 书 hook_spec.one_liner_adapted 为 NULL 即此因）。
+    钉住：返回前必须把适配结论并入返回的 dump。"""
+
+    source = inspect.getsource(conception_services.run_conception_pipeline)
+    # 标记先落到函数级变量……
+    assert "_hook_one_liner_adapted_result = _one_liner_adapted" in source
+    # ……并在构造返回值的 dump 上并入（不再是裸 model_dump 直接进 ConceptionResult）。
+    assert (
+        '_result_hook_spec["one_liner_adapted"] = _hook_one_liner_adapted_result'
+        in source
+    )
+    assert "hook_spec=_result_hook_spec," in source
+    assert "hook_spec=selected_hook_spec.model_dump" not in source

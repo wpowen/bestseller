@@ -3803,6 +3803,9 @@ async def run_conception_pipeline(
     # LLM 用本书实体改写，改写结果再查一遍；(3) 仍不过→spine 兜底(reader_promise=
     # story_spine.question，已由脊柱闸门保证是合格疑问句)，market.logline 保持
     # finalize 产出的原值不动。concept_bundle 存在时维持其原有优先级(不在此处覆盖)。
+    # 适配结论要跟随 ConceptionResult.hook_spec 落库(L3验收发现:此前只写进
+    # ctx["hook_spec"]，而返回值是 selected_hook_spec 的新 model_dump，flag 丢失)。
+    _hook_one_liner_adapted_result: bool | None = None
     if selected_hook_spec is not None and concept_bundle is None:
         try:
             _hook_one_liner = selected_hook_spec.one_liner
@@ -3841,6 +3844,7 @@ async def run_conception_pipeline(
             _hook_spec_payload = ctx.get("hook_spec")
             if isinstance(_hook_spec_payload, dict):
                 _hook_spec_payload["one_liner_adapted"] = _one_liner_adapted
+            _hook_one_liner_adapted_result = _one_liner_adapted
             conception_log.append({
                 "round": 3, "agent": "hook_one_liner_adaptation_gate",
                 "adapted": _one_liner_adapted,
@@ -4292,6 +4296,14 @@ async def run_conception_pipeline(
         genre_key, title, len(premise), len(synopsis), tags, list(writing_profile.keys()),
     )
 
+    # 适配结论并入返回的 hook_spec dump——metadata["hook_spec"] 持久化的是这份
+    # 返回值，不是 ctx["hook_spec"]（L3 验收发现 flag 曾只写后者而丢失）。
+    _result_hook_spec = (
+        selected_hook_spec.model_dump(mode="json") if selected_hook_spec else None
+    )
+    if _result_hook_spec is not None and _hook_one_liner_adapted_result is not None:
+        _result_hook_spec["one_liner_adapted"] = _hook_one_liner_adapted_result
+
     return ConceptionResult(
         writing_profile=writing_profile,
         premise=premise,
@@ -4301,7 +4313,7 @@ async def run_conception_pipeline(
         llm_run_ids=llm_run_ids,
         synopsis=synopsis,
         tags=tags,
-        hook_spec=selected_hook_spec.model_dump(mode="json") if selected_hook_spec else None,
+        hook_spec=_result_hook_spec,
         concept_methodology=dict(ctx.get("concept_methodology") or {}),
         hook_candidates=list(ctx.get("hook_candidates") or []),
         story_appeal=story_appeal_report,

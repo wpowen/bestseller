@@ -77,6 +77,21 @@ def test_writing_profile_coerces_llm_structured_text_fields() -> None:
     ]
 
 
+def test_writing_profile_market_preserves_logline() -> None:
+    """L3 真机验收回归钉子(2026-07-09)：conception 把冠军简介同源提炼的
+    logline 写进 market.logline，但 MarketPositioningConfig 此前没有该字段
+    → 项目创建走 model_validate 时被 Pydantic 静默丢弃，提炼调用整个被浪费
+    （tracked-rulehorror-v1 与 female-growth 两本真机书 market.logline 均为
+    空即此因）。schema 必须能存住它。"""
+
+    profile = WritingProfile.model_validate(
+        {"market": {"logline": "签完恋爱协议她反咬一口，吞掉整个项目。"}}
+    )
+    assert profile.market.logline == "签完恋爱协议她反咬一口，吞掉整个项目。"
+    # 缺省仍为 None，不影响旧数据反序列化
+    assert WritingProfile.model_validate({"market": {}}).market.logline is None
+
+
 def test_planning_artifact_create_keeps_content() -> None:
     artifact = PlanningArtifactCreate(
         artifact_type=ArtifactType.BOOK_SPEC,

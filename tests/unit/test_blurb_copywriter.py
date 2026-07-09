@@ -370,3 +370,29 @@ class TestResultToDict:
         assert d["schema_version"] == "blurb-copywriting.v1"
         assert isinstance(d["candidates"], list) and d["candidates"]
         assert "champion_strategy" in d
+
+    async def test_report_candidates_carry_persona_scores(self):
+        """L3 真机验收回归钉子(2026-07-09)：落库的淘汰赛报告里 persona 分全是
+        null——survivors 拿到打分后的新实例，但 result.candidates 持久化的是
+        打分前的原始快照，看报告的人无法复盘冠军凭什么赢。打完分必须回写。"""
+
+        generator = _make_generator([_GOOD_SYNOPSIS, _WEAK_SYNOPSIS])
+        persona_judge = _make_persona_judge(
+            {_GOOD_SYNOPSIS[:20]: (True, 9.0), _WEAK_SYNOPSIS[:20]: (True, 3.0)}
+        )
+        result = await run_blurb_copywriting(
+            None, None,
+            spine=_SPINE, premise="x", golden_finger_line="x",
+            title="闻雀试睡", tags=[], genre="悬疑推理", sub_genre="规则怪谈",
+            platform=None, language="zh-CN", v0_synopsis=_V0_SYNOPSIS,
+            config={"copywriting": {"n_candidates": 2, "persona_samples": 1, "max_polish_rounds": 0}},
+            generator=generator, persona_judge=persona_judge,
+        )
+        assert result.persona_used is True
+        by_strategy = {c.strategy: c for c in result.candidates}
+        scores = {s: c.persona_avg_score for s, c in by_strategy.items()}
+        assert all(v is not None for v in scores.values()), (
+            f"candidates in the report must carry persona scores, got {scores}"
+        )
+        d = result.to_dict()
+        assert all(c["persona_avg_score"] is not None for c in d["candidates"])

@@ -402,6 +402,12 @@ async def run_blurb_copywriting(
             logger.warning("persona tournament failed; ranking by gate score", exc_info=True)
             persona_used = False
 
+    # 把打完 persona 分的 survivors 回写进 candidates 快照——否则落库的淘汰赛
+    # 报告里 persona 分全是 null(L3 真机验收发现)，看报告的人无法复盘冠军凭什么赢。
+    if survivors:
+        _scored_by_synopsis = {c.synopsis: c for c in survivors}
+        candidates = [_scored_by_synopsis.get(c.synopsis, c) for c in candidates]
+
     def _rank_key(c: BlurbCandidate) -> tuple[float, float]:
         return (
             c.persona_avg_score if c.persona_avg_score is not None else -1.0,

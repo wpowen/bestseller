@@ -162,7 +162,10 @@ def _make_default_judge(session: Any, settings: Any) -> JudgeFn:
                 model_tier="standard",
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                fallback_response="",  # 不可用 → 空文本 → 该采样丢弃（fail-open）
+                # LLMCompletionRequest.fallback_response 要求非空（min_length=1），
+                # 用不含 "click" 键的占位串——parse_persona_click_verdict 解析失败
+                # → 该采样丢弃（fail-open），效果等价于原意图的"空文本"。
+                fallback_response="{}",
                 prompt_template="persona_click_judge",
                 prompt_version="v1",
                 metadata={"judge_scope": "persona_click"},

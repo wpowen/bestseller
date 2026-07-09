@@ -125,6 +125,73 @@ def test_never_overwrites_planner_values():
     assert out["scenes"][0]["participants"] == ["陈屿", "白简"]
 
 
+# ── T5 (2026-07-09): enrichment 打标 + opening_situation 防退化 ──────────────
+
+
+def test_enriched_fields_tagged_for_backfilled_families():
+    content = {"chapters": [_diseased_chapter()]}
+    content, _stats = enrich_outline_batch_fields(content, NAMES, protagonist="陈屿")
+    tags = set(content["chapters"][0]["enriched_fields"])
+    assert "opening_situation" in tags
+    assert "causal_contract" in tags
+    assert "participants" in tags
+    # story 字段("巷口对峙，老金递来情报")可用,不该走 goal 兜底路径。
+    assert "opening_situation_copied_from_goal_no_alt_material" not in tags
+
+
+def test_never_overwrites_does_not_tag_anything():
+    ch = _diseased_chapter()
+    ch["opening_situation"] = "planner写的开场"
+    ch["causal_contract"] = {"pressure": "planner写的压力"}
+    ch["scenes"][0]["participants"] = ["陈屿", "白简"]
+    ch["scenes"][1]["participants"] = ["陈屿", "赵小磊"]  # 两个场景都已齐全,不留可回填的缝
+    content, _stats = enrich_outline_batch_fields({"chapters": [ch]}, NAMES)
+    assert content["chapters"][0].get("enriched_fields", []) == []
+
+
+def test_opening_situation_uses_time_label_before_copying_goal():
+    # story 缺失，但场景有和 goal 不同的 time_label → 用 time_label 差异化，
+    # 不退化成 goal 的复制，也不打"_no_alt_material"标。
+    chapter = {
+        "chapter_number": 3,
+        "goal": "陈屿必须在天亮前锁定候选人",
+        "main_conflict": "白简抢先出价",
+        "scenes": [
+            {
+                "scene_number": 1,
+                "time_label": "凌晨四点的巷口",
+                "participants": ["陈屿"],
+                "purpose": {},
+            }
+        ],
+    }
+    content, _stats = enrich_outline_batch_fields({"chapters": [chapter]}, NAMES, protagonist="陈屿")
+    out = content["chapters"][0]
+    assert "凌晨四点的巷口" in out["opening_situation"]
+    tags = set(out.get("enriched_fields", []))
+    assert "opening_situation" in tags
+    assert "opening_situation_copied_from_goal_no_alt_material" not in tags
+
+
+def test_opening_situation_copies_goal_only_when_no_alt_material_and_tags_it():
+    # story 缺失、场景也没有 time_label/entry_state 差异化素材 → 允许退回复制
+    # goal，但必须打"_no_alt_material"标供审计（不是悄悄发生）。
+    chapter = {
+        "chapter_number": 4,
+        "goal": "陈屿必须在天亮前锁定候选人",
+        "main_conflict": "白简抢先出价",
+        "scenes": [
+            {"scene_number": 1, "participants": ["陈屿"], "purpose": {}},
+        ],
+    }
+    content, _stats = enrich_outline_batch_fields({"chapters": [chapter]}, NAMES, protagonist="陈屿")
+    out = content["chapters"][0]
+    assert "陈屿必须在天亮前锁定候选人" in out["opening_situation"]
+    tags = set(out.get("enriched_fields", []))
+    assert "opening_situation" in tags
+    assert "opening_situation_copied_from_goal_no_alt_material" in tags
+
+
 def test_contract_skipped_when_too_thin():
     ch = {
         "chapter_number": 9,

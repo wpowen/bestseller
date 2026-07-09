@@ -254,6 +254,22 @@ class StoryEnhancerCoverageError(PlannerFallbackError):
         self.directives = directives
 
 
+class OutlineFieldDegeneracyError(PlannerFallbackError):
+    """Raised when a chapter's goal/opening_situation/main_conflict have
+    collapsed into near-duplicates of each other (真机 tracked-rulehorror-v1:
+    ch1 的三字段字面相同，existence-only 闸门照样全部通过——闸门查"非空"，
+    模型把三个不同语义的字段填成同一句话就骗过了检查). ``findings`` carries
+    one entry per degenerate field pair so the repair loop can issue directives
+    that explain each field's distinct semantics instead of asking for a blind
+    full rewrite. Treated as soft on the final attempt: a quality gap must
+    never abort the book.
+    """
+
+    def __init__(self, message: str, *, findings: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.findings = findings
+
+
 # Default acceptance threshold for the R5 consumed-event dedup check
 # (character 2-gram Jaccard between a new chapter goal and ledger goals).
 # Defined here because it is a default argument of the outline repair loop.
@@ -1915,6 +1931,22 @@ def _outline_identity_match_candidates(
     return candidates
 
 
+def _tag_enriched_outline_field(chapter: Any, field_name: str) -> None:
+    """Append ``field_name`` to a chapter's ``enriched_fields`` side-channel.
+
+    Deterministic backfill (T5, 2026-07-09) must leave a trace of what it
+    filled in, so quality audits can tell "字段非空" apart from "字段是模型
+    真写的" — ``ChapterOutlineInput`` has ``extra="allow"`` precisely so this
+    round-trips through ``model_dump()`` without a dedicated schema field.
+    """
+
+    existing = getattr(chapter, "enriched_fields", None)
+    tags = list(existing) if isinstance(existing, list) else []
+    if field_name not in tags:
+        tags.append(field_name)
+    chapter.enriched_fields = tags
+
+
 def _enrich_generated_volume_outline_systemic_fields(
     batch: Any,
     *,
@@ -1959,6 +1991,7 @@ def _enrich_generated_volume_outline_systemic_fields(
         hook_description = getattr(chapter, "hook_description", None)
 
         # ── 1) participants: text-match cast names into under-populated scenes ──
+        participants_backfilled = False
         for scene in scenes:
             participants = [
                 item
@@ -1981,6 +2014,9 @@ def _enrich_generated_volume_outline_systemic_fields(
             if participants != list(getattr(scene, "participants", []) or []):
                 scene.participants = participants
                 repaired += 1
+                participants_backfilled = True
+        if participants_backfilled:
+            _tag_enriched_outline_field(chapter, "participants")
 
         # ── 2) opening_situation: synthesize in-medias-res opening pressure ──
         if not _non_empty_string(getattr(chapter, "opening_situation", None), ""):
@@ -1992,7 +2028,33 @@ def _enrich_generated_volume_outline_systemic_fields(
                 else ""
             )
             conflict_clause = _outline_first_clauses(main_conflict, 1)
-            seed = _first_non_empty_text(story, chapter_goal, conflict_clause, default="")
+            goal_text = _non_empty_string(chapter_goal, "")
+            # 防止退化(T5)：opening_situation="开场时空处境"，chapter_goal="本章
+            # 意图"——语义不同，不该是同一句话。story 缺失时先试首场景的差异化
+            # 素材(time_label/entry_state)，只有真的没有差异化素材才退回复制
+            # chapter_goal，且必须打标供审计。
+            seed = story
+            used_goal_as_seed = False
+            if not seed:
+                time_label = (
+                    _non_empty_string(getattr(first_scene, "time_label", None), "")
+                    if first_scene is not None else ""
+                )
+                entry_state_text = (
+                    _outline_state_dict_text(getattr(first_scene, "entry_state", None))
+                    if first_scene is not None else ""
+                )
+                alt_seed = _first_non_empty_text(time_label, entry_state_text, default="")
+                if alt_seed and (
+                    _normalize_outline_field_text(alt_seed)
+                    != _normalize_outline_field_text(goal_text)
+                ):
+                    seed = alt_seed
+                elif goal_text:
+                    seed = goal_text
+                    used_goal_as_seed = True
+                else:
+                    seed = conflict_clause
             pressure = _first_non_empty_text(conflict_clause, hook_description, default="")
             if seed:
                 if is_en:
@@ -2005,6 +2067,11 @@ def _enrich_generated_volume_outline_systemic_fields(
                         opening += f"；当场压力——{pressure}"
                 chapter.opening_situation = opening
                 repaired += 1
+                _tag_enriched_outline_field(chapter, "opening_situation")
+                if used_goal_as_seed:
+                    _tag_enriched_outline_field(
+                        chapter, "opening_situation_copied_from_goal_no_alt_material"
+                    )
 
         # ── 3) causal_contract: map missing axes from chapter fields ──
         existing = getattr(chapter, "causal_contract", None)
@@ -2064,6 +2131,7 @@ def _enrich_generated_volume_outline_systemic_fields(
         if added:
             chapter.causal_contract = filled
             repaired += 1
+            _tag_enriched_outline_field(chapter, "causal_contract")
 
         # ── 4) hook_type: derive a canonical taxonomy label when the planner
         # left it blank (observed empty on whole batches, e.g. ch1-5 / ch21-30).
@@ -2079,6 +2147,7 @@ def _enrich_generated_volume_outline_systemic_fields(
                 derived_hook = _HOOK_KEYS[0]
             chapter.hook_type = derived_hook
             repaired += 1
+            _tag_enriched_outline_field(chapter, "hook_type")
 
     return repaired
 
@@ -2591,6 +2660,78 @@ def _require_selected_story_effect_contracts_or_raise(
         )
 
 
+_OUTLINE_FIELD_DEGENERACY_PAIRS: tuple[tuple[str, str], ...] = (
+    ("chapter_goal", "opening_situation"),
+    ("chapter_goal", "main_conflict"),
+    ("opening_situation", "main_conflict"),
+)
+_OUTLINE_DEGENERACY_CONTAINMENT_RATIO = 0.8
+_OUTLINE_DEGENERACY_JACCARD_THRESHOLD = 0.85
+_OUTLINE_FIELD_PUNCT_RE = re.compile(
+    r"[\s，,。.！!？?；;：:、\"'“”‘’「」『』（）()\-—…]+"
+)
+
+
+def _normalize_outline_field_text(text: str) -> str:
+    return _OUTLINE_FIELD_PUNCT_RE.sub("", text or "")
+
+
+def _detect_degenerate_outline_fields(batch: Any) -> list[dict[str, Any]]:
+    """Detect chapters where goal/opening_situation/main_conflict have
+    collapsed into near-duplicates of each other.
+
+    Production 500-chapter runs showed the model can satisfy every
+    existence-only gate downstream (``missing_opening_situation``,
+    ``chapter_causality_contract``) by writing the SAME sentence into all
+    three fields — they carry distinct semantics (goal=intent,
+    opening_situation=scene+pressure, main_conflict=obstacle+stakes) but
+    nothing checks that they actually differ. Real case (tracked-
+    rulehorror-v1 ch1): all three fields were byte-identical.
+    """
+
+    findings: list[dict[str, Any]] = []
+    for chapter in getattr(batch, "chapters", None) or []:
+        chapter_number = getattr(chapter, "chapter_number", None)
+        for field_a, field_b in _OUTLINE_FIELD_DEGENERACY_PAIRS:
+            text_a = _non_empty_string(getattr(chapter, field_a, None), "")
+            text_b = _non_empty_string(getattr(chapter, field_b, None), "")
+            if not text_a or not text_b:
+                continue
+            norm_a = _normalize_outline_field_text(text_a)
+            norm_b = _normalize_outline_field_text(text_b)
+            if not norm_a or not norm_b:
+                continue
+            similarity = 0.0
+            degenerate = False
+            if norm_a == norm_b:
+                similarity, degenerate = 1.0, True
+            else:
+                shorter, longer = (
+                    (norm_a, norm_b) if len(norm_a) <= len(norm_b) else (norm_b, norm_a)
+                )
+                if (
+                    shorter in longer
+                    and len(shorter) / len(longer) > _OUTLINE_DEGENERACY_CONTAINMENT_RATIO
+                ):
+                    similarity, degenerate = round(len(shorter) / len(longer), 2), True
+                else:
+                    jac = jaccard_similarity(norm_a, norm_b)
+                    if jac >= _OUTLINE_DEGENERACY_JACCARD_THRESHOLD:
+                        similarity, degenerate = round(jac, 2), True
+            if degenerate:
+                findings.append(
+                    {
+                        "chapter_number": chapter_number,
+                        "field_a": field_a,
+                        "field_b": field_b,
+                        "text_a": text_a[:120],
+                        "text_b": text_b[:120],
+                        "similarity": similarity,
+                    }
+                )
+    return findings
+
+
 def _validate_generated_volume_outline_or_raise(
     payload: Any,
     *,
@@ -2667,6 +2808,33 @@ def _validate_generated_volume_outline_or_raise(
                 logical_name,
                 str(exc)[:600],
             )
+
+    # ── 章纲字段退化查重(T5, 2026-07-09) ────────────────────────────────
+    # 真机案例(tracked-rulehorror-v1 ch1)：chapter_goal/opening_situation/
+    # main_conflict 三字段字面相同，下游 existence-only 闸门("非空即过")照样
+    # 全通过。在 enrichment 之前检测——enrichment 只填空字段，不该让它把已经
+    # 退化的模型输出洗白成"看起来正常"；退化必须回炉重写，而不是被复制掩盖。
+    _degeneracy_findings = _detect_degenerate_outline_fields(batch)
+    if _degeneracy_findings:
+        _degeneracy_summary = "; ".join(
+            f"ch{f['chapter_number']} {f['field_a']}≈{f['field_b']}(sim={f['similarity']})"
+            for f in _degeneracy_findings[:20]
+        )
+        if strict_story_effects:
+            raise OutlineFieldDegeneracyError(
+                f"Planner artifact '{logical_name}' has degenerate outline fields "
+                "(chapter_goal/opening_situation/main_conflict collapsed into "
+                f"near-duplicates): {_degeneracy_summary}",
+                findings=_degeneracy_findings,
+            )
+        logger.warning(
+            "Soft-accepting %s with %d degenerate outline field pair(s) after "
+            "final attempt: %s",
+            logical_name,
+            len(_degeneracy_findings),
+            _degeneracy_summary,
+        )
+
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
     _cast_protagonist = _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
     # Systemic enrichment runs BEFORE the identity-lock repair: a scene whose
@@ -2827,6 +2995,57 @@ def _outline_repair_directives_from_error(
             )
         else:
             directives.append("其他章节保持不变。仅按上述指令重写指定章节，不要重写整批。")
+        directives.append(preserve_directive)
+        return directives
+
+    # ── Outline field degeneracy branch (T5, 2026-07-09) ─────────────
+    # Surfaced when chapter_goal/opening_situation/main_conflict collapsed
+    # into near-duplicates of each other. Each field has a distinct job;
+    # the directive spells that out per chapter instead of asking for a
+    # blind full rewrite (which tends to just re-collapse the same way).
+    if isinstance(error, OutlineFieldDegeneracyError) and error.findings:
+        directives = []
+        field_semantics_en = {
+            "chapter_goal": "the protagonist's INTENT this chapter (what they're "
+            "trying to accomplish) — not a scene description",
+            "opening_situation": "the OPENING scene/time/place and the immediate "
+            "pressure the protagonist walks into — not a restatement of intent",
+            "main_conflict": "WHO or WHAT is blocking the protagonist and WHY — "
+            "the obstacle, not the goal or the opening scene",
+        }
+        field_semantics_zh = {
+            "chapter_goal": "主角本章想达成什么（意图），不是处境描述",
+            "opening_situation": "开场时空处境+当场压力，不是意图的重复",
+            "main_conflict": "谁/什么在挡路、为什么挡，不是目标或开场处境的重复",
+        }
+        for finding in error.findings[:20]:
+            chapter_number = finding.get("chapter_number")
+            field_a = str(finding.get("field_a") or "")
+            field_b = str(finding.get("field_b") or "")
+            similarity = float(finding.get("similarity") or 0.0)
+            if is_en:
+                directives.append(
+                    f"Chapter {chapter_number}: '{field_a}' and '{field_b}' are "
+                    f"near-identical (similarity {similarity:.2f}) — they collapsed "
+                    "into the same sentence. Rewrite BOTH so each carries its own "
+                    f"distinct meaning: {field_a} = {field_semantics_en.get(field_a, field_a)}; "
+                    f"{field_b} = {field_semantics_en.get(field_b, field_b)}."
+                )
+            else:
+                directives.append(
+                    f"第{chapter_number}章：「{field_a}」与「{field_b}」几乎相同"
+                    f"（相似度 {similarity:.2f}），退化成了同一句话。请分别重写，"
+                    f"让两个字段各自承担不同语义：{field_a} = "
+                    f"{field_semantics_zh.get(field_a, field_a)}；{field_b} = "
+                    f"{field_semantics_zh.get(field_b, field_b)}。"
+                )
+        if is_en:
+            directives.append(
+                "Keep all other chapters and fields unchanged. Only rewrite the "
+                "named fields on the named chapters."
+            )
+        else:
+            directives.append("其他章节和字段保持不变。仅重写上述指定章节的指定字段。")
         directives.append(preserve_directive)
         return directives
 

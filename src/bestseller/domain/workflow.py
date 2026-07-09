@@ -507,7 +507,12 @@ class SceneOutlineInput(BaseModel):
 
 
 class ChapterOutlineInput(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    # extra="allow": lets deterministic post-processing (e.g. systemic-field
+    # enrichment backfill tracking) attach an ``enriched_fields`` side-channel
+    # list at runtime without a dedicated schema field — it round-trips
+    # through model_dump() and downstream consumers that don't know about it
+    # simply ignore it (additive, non-breaking).
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     chapter_number: int = Field(gt=0)
     title: str | None = Field(

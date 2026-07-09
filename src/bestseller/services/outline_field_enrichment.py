@@ -21,6 +21,15 @@ import re
 from typing import Any, Mapping
 
 _CLAUSE_SPLIT = re.compile(r"[；;。]")
+_FIELD_PUNCT_RE = re.compile(r"[\s，,。.！!？?；;：:、\"'“”‘’「」『』（）()\-—…]+")
+
+
+def _normalize_outline_field_text_local(text: str) -> str:
+    """Whitespace/punctuation-insensitive compare — mirrors planner.py's
+    ``_normalize_outline_field_text`` (kept local to avoid a heavy cross-import
+    into the 4000-line planner module from this small, self-contained one)."""
+
+    return _FIELD_PUNCT_RE.sub("", text or "")
 
 # Minimum derivable fields before we commit a synthesized causal contract.
 _MIN_CONTRACT_FIELDS = 8
@@ -76,6 +85,15 @@ def _chapter_text(chapter: Mapping[str, Any]) -> str:
     )
 
 
+def _tag_enriched(chapter: dict[str, Any], field_name: str) -> None:
+    """Leave a trace of which field this pass backfilled (T5, 2026-07-09) —
+    lets quality audits tell "字段非空" apart from "字段是模型真写的"."""
+
+    tags = chapter.setdefault("enriched_fields", [])
+    if field_name not in tags:
+        tags.append(field_name)
+
+
 def _fill_participants(
     chapter: dict[str, Any],
     names: list[str],
@@ -97,6 +115,7 @@ def _fill_participants(
             if found:
                 participants.extend(found[:2])
                 stats["participants"] += 1
+                _tag_enriched(chapter, "participants")
         scene["participants"] = participants[:_MAX_PARTICIPANTS]
 
 
@@ -195,7 +214,26 @@ def _fill_opening_situation(chapter: dict[str, Any], stats: dict[str, int]) -> N
     purpose = first.get("purpose")
     story = purpose.get("story") if isinstance(purpose, Mapping) else None
     conflict_head = _clauses(chapter.get("main_conflict"), 1)
-    seed = story or chapter.get("goal") or conflict_head
+    goal = chapter.get("goal")
+    # 防止退化(T5)：opening_situation="开场时空处境"，goal="本章意图"——语义不同，
+    # 不该是同一句话。story 缺失时先试场景的差异化素材(time_label/entry_state)，
+    # 只有真的没有差异化素材才退回复制 goal，且必须打标供审计。
+    seed = story
+    used_goal_as_seed = False
+    if not seed:
+        entry_state = first.get("entry_state")
+        entry_state_text = (
+            entry_state.get("summary") if isinstance(entry_state, Mapping) else entry_state
+        )
+        alt_seed = first.get("time_label") or entry_state_text
+        goal_norm = _normalize_outline_field_text_local(str(goal or ""))
+        if alt_seed and _normalize_outline_field_text_local(str(alt_seed)) != goal_norm:
+            seed = alt_seed
+        elif goal:
+            seed = goal
+            used_goal_as_seed = True
+        else:
+            seed = conflict_head
     if not seed:
         return
     pressure = conflict_head or chapter.get("hook_description") or ""
@@ -203,6 +241,9 @@ def _fill_opening_situation(chapter: dict[str, Any], stats: dict[str, int]) -> N
         f"开章即事中：{seed}；当场压力——{pressure}".strip("；— ")
     )
     stats["opening_situation"] += 1
+    _tag_enriched(chapter, "opening_situation")
+    if used_goal_as_seed:
+        _tag_enriched(chapter, "opening_situation_copied_from_goal_no_alt_material")
 
 
 def _fill_causal_contract(chapter: dict[str, Any], stats: dict[str, int]) -> None:
@@ -235,6 +276,7 @@ def _fill_causal_contract(chapter: dict[str, Any], stats: dict[str, int]) -> Non
     if len(contract) >= _MIN_CONTRACT_FIELDS:
         chapter["causal_contract"] = contract
         stats["causal_contract"] += 1
+        _tag_enriched(chapter, "causal_contract")
 
 
 def _fill_target_emotion(chapter: dict[str, Any], stats: dict[str, int]) -> None:

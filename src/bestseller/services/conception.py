@@ -2710,6 +2710,48 @@ def _hook_one_liner_is_adapted(text: str, *, protagonist: str, title: str) -> bo
     return not entities or any(e in text for e in entities)
 
 
+async def _derive_logline_from_champion(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    synopsis: str,
+    spine_question: str,
+    title: str,
+    genre: str,
+    is_en: bool,
+) -> tuple[str, list[UUID]]:
+    """从简介文案工序冠军定稿提炼一句 25-40 字的 logline（T6，一次有界调用）。
+
+    保证 logline 与最终见光的简介同源，而不是各写各的。改写产物过一遍病理
+    检查，不过或调用失败 → 保留调用方已有的 logline（fail-open）。
+    """
+
+    lang = "英文" if is_en else "中文"
+    user_prompt = (
+        f"题材：{genre}\n书名：{title}\n\n【定稿简介】\n{synopsis}\n\n"
+        f"【故事追问】{spine_question}\n\n"
+        f"请从这段定稿简介提炼一条{lang}一句话卖点(logline)：25-40字，"
+        "读者一眼抓住这本书讲什么、主角要面对什么，禁止生造机制黑话，不剧透结局。"
+        '只输出 JSON：{"logline": "..."}，不要解释。'
+    )
+    fixed, ids = await _llm_call_json(
+        session, settings,
+        role="editor",
+        system_prompt="你是网文平台标语文案师，专精把一段简介压缩成一句抓人的卖点。",
+        user_prompt=user_prompt,
+        fallback=json.dumps({"logline": spine_question}, ensure_ascii=False),
+        template="conception_logline_from_champion",
+        stage="conception.logline_from_champion",
+        language="en" if is_en else "zh-CN",
+    )
+    candidate = str(fixed.get("logline") or "").strip() if isinstance(fixed, dict) else ""
+    if candidate and not any(
+        f.severity == "fatal" for f in detect_blurb_pathology(candidate)
+    ):
+        return candidate, ids
+    return "", ids
+
+
 # ── 跨产物事实台账(Phase 4) ───────────────────────────────────────────
 
 _CN_DIGIT_VALUES: dict[str, int] = {
@@ -3893,6 +3935,103 @@ async def run_conception_pipeline(
         title = dna_fallback or ("Untitled Novel" if is_en else "未命名新书")
         title_profile["primary_title"] = title
 
+    # ── 共享上下文（供简介文案工序 + appeal 评估复用，避免重复计算）──────────
+    _ap_genre = str(ctx.get("genre") or genre or "")
+    _ap_sub = str(ctx.get("sub_genre") or sub_genre or "")
+    _ap_platform = str(target_platform or "")
+    _ap_language = str(ctx.get("language") or "zh-CN")
+    # 按书派生黑话词表（不是全局词表）：从本书设计字段（金手指/世界观/hook_spec
+    # 核心规则）里提取，双重条件避免误伤正常叙事用词。主角名/书名进白名单，
+    # 不会被自己名字误伤。golden_finger/character/hook_spec 此时不再变化
+    # （只有 synopsis/premise/title/tags 会在下面被改写），派生一次全程复用。
+    try:
+        _jargon_char = (
+            writing_profile.get("character") if isinstance(writing_profile, dict) else {}
+        )
+        _jargon_world = (
+            writing_profile.get("world") if isinstance(writing_profile, dict) else {}
+        )
+        _jargon_source: dict[str, Any] = {
+            "golden_finger": (_jargon_char or {}).get("golden_finger", ""),
+            "power_system": (_jargon_world or {}).get("power_system", "")
+            if isinstance(_jargon_world, dict) else "",
+            "world_model": _jargon_world if isinstance(_jargon_world, dict) else {},
+            "hook_spec": ctx.get("hook_spec") if isinstance(ctx, dict) else None,
+        }
+        _protagonist_name = (
+            str(character_proposal.get("protagonist_name") or "")
+            if isinstance(character_proposal, dict) else ""
+        )
+        _book_jargon_terms = derive_book_jargon_terms(
+            _jargon_source, entity_whitelist=(_protagonist_name, title),
+        )
+    except Exception:
+        logger.warning("book jargon term derivation failed (non-fatal)", exc_info=True)
+        _book_jargon_terms = ()
+
+    # ── 简介独立文案工序（T6, 2026-07-09）──────────────────────────────────
+    # 简介是产品不是元数据：finalize 顺手产出的 synopsis(v0) 只作兜底，真正
+    # 见光的简介由独立文案工序产出——输入收窄到 spine+premise+金手指+画像锚
+    # (不给设计 JSON)，N 路候选→病理筛→画像判官淘汰赛→定向打磨，永不劣于 v0。
+    _copywriting_result: Any = None
+    _copywriting_ran = False
+    try:
+        from bestseller.services.blurb_copywriter import (  # noqa: PLC0415
+            load_copywriting_config,
+            run_blurb_copywriting,
+        )
+        from bestseller.services.story_appeal import load_story_appeal_config  # noqa: PLC0415
+
+        _appeal_cfg_for_cw = load_story_appeal_config()
+        _cw_cfg = load_copywriting_config(_appeal_cfg_for_cw)
+        if _cw_cfg.get("enabled", True):
+            _gf_text = (
+                str((writing_profile.get("character", {}) or {}).get("golden_finger", ""))
+                if isinstance(writing_profile, dict) else ""
+            )
+            # 首句大白话——金手指描述常是多句设计文本，只取第一句给文案工序当引子。
+            _golden_finger_line = re.split(r"[。！？；\n]", _gf_text.strip())[0].strip() if _gf_text else ""
+            _copywriting_result = await run_blurb_copywriting(
+                session, settings,
+                spine=story_spine if isinstance(story_spine, dict) else {},
+                premise=premise, golden_finger_line=_golden_finger_line,
+                title=title, tags=tags, genre=_ap_genre, sub_genre=_ap_sub,
+                platform=_ap_platform, language=_ap_language,
+                v0_synopsis=synopsis, book_jargon_terms=_book_jargon_terms,
+                config=_appeal_cfg_for_cw,
+            )
+            _copywriting_ran = True
+            synopsis = _copywriting_result.champion
+            llm_run_ids.extend(_copywriting_result.llm_run_ids)
+            logger.info(
+                "Blurb copywriting: champion_strategy=%s fell_back_to_v0=%s polish_rounds=%d",
+                _copywriting_result.champion_strategy, _copywriting_result.fell_back_to_v0,
+                _copywriting_result.polish_rounds,
+            )
+            # logline 同源：只在冠军是真新内容(非回退v0)时才重新提炼，
+            # 否则 finalize 产出的原 logline 已经和 v0 简介同源，无需重跑。
+            if not _copywriting_result.fell_back_to_v0:
+                try:
+                    _new_logline, _logline_ids = await _derive_logline_from_champion(
+                        session, settings,
+                        synopsis=synopsis,
+                        spine_question=str(
+                            (story_spine or {}).get("question", "") if isinstance(story_spine, dict) else ""
+                        ),
+                        title=title, genre=_ap_genre, is_en=is_en,
+                    )
+                    llm_run_ids.extend(_logline_ids)
+                    if _new_logline:
+                        _market_profile = writing_profile.setdefault("market", {})
+                        if isinstance(_market_profile, dict):
+                            _market_profile["logline"] = _new_logline
+                except Exception:
+                    logger.warning("logline re-derivation from champion failed (non-fatal)", exc_info=True)
+    except Exception:
+        logger.warning("Blurb copywriting tournament failed (non-fatal)", exc_info=True)
+        _copywriting_result = None
+        _copywriting_ran = False
+
     # ── Story/blurb appeal evaluation + bounded keep-best regeneration ──
     # Additive: scores the finalized idea + blurb for click-power and
     # bestseller-grade appeal. Disabled in config → skipped entirely so the
@@ -3915,39 +4054,8 @@ async def run_conception_pipeline(
 
         _appeal_cfg = load_story_appeal_config()
         if is_appeal_enabled(_appeal_cfg):
-            _ap_genre = str(ctx.get("genre") or genre or "")
-            _ap_sub = str(ctx.get("sub_genre") or sub_genre or "")
-            _ap_platform = str(target_platform or "")
-            _ap_language = str(ctx.get("language") or "zh-CN")
-            # 按书派生黑话词表（不是全局词表）：从本书设计字段（金手指/世界观/hook_spec
-            # 核心规则）里提取，双重条件避免误伤正常叙事用词。主角名/书名进白名单，
-            # 不会被自己名字误伤。golden_finger/character/hook_spec 此时不再变化
-            # （只有 synopsis/premise/title/tags 会在下面的重生循环里被改写），派生一次
-            # 全程复用即可。
-            try:
-                _jargon_char = (
-                    writing_profile.get("character") if isinstance(writing_profile, dict) else {}
-                )
-                _jargon_world = (
-                    writing_profile.get("world") if isinstance(writing_profile, dict) else {}
-                )
-                _jargon_source: dict[str, Any] = {
-                    "golden_finger": (_jargon_char or {}).get("golden_finger", ""),
-                    "power_system": (_jargon_world or {}).get("power_system", "")
-                    if isinstance(_jargon_world, dict) else "",
-                    "world_model": _jargon_world if isinstance(_jargon_world, dict) else {},
-                    "hook_spec": ctx.get("hook_spec") if isinstance(ctx, dict) else None,
-                }
-                _protagonist_name = (
-                    str(character_proposal.get("protagonist_name") or "")
-                    if isinstance(character_proposal, dict) else ""
-                )
-                _book_jargon_terms = derive_book_jargon_terms(
-                    _jargon_source, entity_whitelist=(_protagonist_name, title),
-                )
-            except Exception:
-                logger.warning("book jargon term derivation failed (non-fatal)", exc_info=True)
-                _book_jargon_terms = ()
+            # _ap_genre/_ap_sub/_ap_platform/_ap_language/_book_jargon_terms 已在
+            # 简介文案工序之前统一派生（避免重复计算），此处直接复用。
             report = await evaluate_story_appeal(
                 session, settings,
                 premise=premise, synopsis=synopsis, title=title, tags=tags,
@@ -3958,7 +4066,15 @@ async def run_conception_pipeline(
             regen = _appeal_cfg.get("regeneration", {}) if isinstance(_appeal_cfg, dict) else {}
             floor = str(regen.get("floor_grade", "consider"))
             regen_below_bar = bool(regen.get("regen_below_bar", True))
-            max_attempts = int(regen.get("max_attempts", 3))
+            # 简介已经过独立文案工序(N候选+病理筛+画像淘汰赛+定向打磨)才到这里，
+            # 再跑满 3 轮盲重生是重复劳动——压到 max_attempts_after_copywriting(默认1)，
+            # 只作最后的安全网（例如冠军仍差一点分）。未跑文案工序(fail-open关闭)时
+            # 保持原有 max_attempts 不变。
+            max_attempts = int(
+                regen.get("max_attempts_after_copywriting", 1)
+                if _copywriting_ran
+                else regen.get("max_attempts", 3)
+            )
             _title_min = float((_appeal_cfg.get("meets_bar", {}) or {}).get("title_min", 0))
             best = (report, premise, synopsis, tags, title)
             attempts = 0
@@ -4138,6 +4254,13 @@ async def run_conception_pipeline(
     except Exception:
         logger.warning("Story appeal evaluation failed (non-fatal)", exc_info=True)
         story_appeal_report = {}
+
+    # 淘汰赛报告独立持久化（不依赖 story appeal 系统是否启用/是否失败），
+    # 分段验收需要它核验冠军策略/候选分/是否回退 v0（story_appeal_report 是
+    # 已有的、web 可见的构思产物落库位置，见 web/server.py 的 story_appeal_report）。
+    if _copywriting_result is not None:
+        story_appeal_report = dict(story_appeal_report or {})
+        story_appeal_report["copywriting_tournament"] = _copywriting_result.to_dict()
 
     # 产品硬线"低于blurb_min不通过"(config/story_appeal.yaml 校准为68)的真拦截：
     # 简介/书名经有界重生仍不达标 → 抛 AppealBarNotMetError。

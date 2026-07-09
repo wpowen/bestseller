@@ -582,15 +582,18 @@ def test_finalize_and_polish_synopsis_truncation_uses_sentence_boundary() -> Non
 
 
 def test_finalize_derives_and_threads_book_jargon_terms_into_both_eval_calls() -> None:
-    """结构断言：两处 evaluate_story_appeal 调用都必须带 book_jargon_terms=
-    _book_jargon_terms（同一次派生结果，全程复用，不重复派生）。"""
+    """结构断言：两处 evaluate_story_appeal 调用 + T6 简介文案工序调用都必须带
+    book_jargon_terms=_book_jargon_terms（同一次派生结果，全程复用，不重复派生）。"""
 
     import inspect
 
     source = inspect.getsource(conception_services.run_conception_pipeline)
-    assert source.count("book_jargon_terms=_book_jargon_terms") == 2
+    # 2处 evaluate_story_appeal(初评+重生终评) + 1处 run_blurb_copywriting(T6)。
+    assert source.count("book_jargon_terms=_book_jargon_terms") == 3
     assert "derive_book_jargon_terms(" in source
     assert '"protagonist_name"' in source or "protagonist_name" in source  # 主角名进白名单
+    # 派生只应发生一次(不是每处调用点各派生一次)：只有一处 derive_book_jargon_terms( 调用。
+    assert source.count("derive_book_jargon_terms(") == 1
 
 
 def test_jargon_source_adapter_shape_matches_writing_profile_and_gates_synopsis() -> None:

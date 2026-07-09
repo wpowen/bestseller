@@ -17,6 +17,10 @@ regeneration:
   regen_below_bar: true      # 只要未达 meets_bar(blurb<80) 就重生（不再用 floor_grade 评级）
   floor_grade: consider      # 兼容旧逻辑：评级≤consider(<80) 也触发重生
   max_attempts: 3            # 重生上限（不含首次）；门槛抬高后多给一次机会
+  # 简介已经过独立文案工序(T6: N候选+病理筛+画像淘汰赛+定向打磨)才进这里时，
+  # 压到这个更低的上限——再跑满 max_attempts 轮盲重生是重复劳动，此处只作
+  # "冠军仍差一点分"的最后安全网。未跑文案工序(该功能被关闭)时用 max_attempts。
+  max_attempts_after_copywriting: 1
   keep_best: true            # 永远保留得分最高的变体，绝不变差
   feedback_token_budget: 600 # 注入 finalize 的改进反馈截断上限
 
@@ -178,6 +182,23 @@ persona_judge:
   samples: 3                  # N 采样去单次噪声（成本 = N 次小调用，~300 tokens/次）
   click_rate_min: 0.34        # advisory 线：至少 1/3 模拟读者会点
   block_below: false          # 默认 advisory；真机校准后可置 true 与绝对分门并联硬拦
+
+# ---------------------------------------------------------------------------
+# 简介独立文案工序（services/blurb_copywriter.py，T6，2026-07-09）：把简介从
+# "finalize 顺手直出"改成独立文案工序——输入收窄到 spine+premise+金手指+画像锚
+# (不给设计 JSON，防止黑话泄漏)，N 路策略候选→确定性病理筛→画像判官淘汰赛→
+# 定向打磨，永不劣于 v0（finalize 直出版）。enabled=false → conception 行为与
+# 现状逐字节一致（no-op 契约）。预算 ≈ n_candidates 次生成 + n_candidates×
+# persona_samples 次判官 + ≤1 次打磨，量级与画像判官相当，对全书成千次调用可忽略。
+# ---------------------------------------------------------------------------
+copywriting:
+  enabled: true
+  n_candidates: 3
+  persona_samples: 2
+  max_polish_rounds: 1
+  strategies:
+    default: [scene_hook, identity_contrast, golden_finger_flex]
+    suspense: [scene_hook, identity_contrast, rule_suspense]
 
 # 故事质量硬门 = 对真实爆款简介做双盲位置交换 pairwise 胜率（services/premise_appeal_arena.py）。
 # 相对盲评稳定（绝对分不稳），跨家族判官(DeepSeek)去同源高估，位置交换去位置偏。

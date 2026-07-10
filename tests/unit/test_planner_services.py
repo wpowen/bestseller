@@ -1336,12 +1336,30 @@ def test_generated_outline_uses_title_alias_without_fallback_synthesis() -> None
     assert chapters[0]["title"] == "镜泣"
 
 
-def test_generated_outline_missing_title_fails_without_fallback_synthesis() -> None:
+def test_generated_outline_missing_title_soft_fills_from_goal_seed() -> None:
+    """A missing title with a usable goal/conflict seed is soft-filled, not raised.
+
+    2026-07-09 remediation intentionally reversed the old "no fallback
+    synthesis" contract for this specific case: a pure-empty title used to
+    kill the whole book even when the model left a perfectly usable goal
+    sentence right next to it. See test_outline_title_soft_fill.py for the
+    genuine hard-fail case (no seed of any kind available).
+    """
+    chapters = [{"chapter_number": 7, "goal": "苏砚追到镜铺后门。"}]
+    planner_services._normalize_generated_outline_titles_or_fail(
+        chapters,
+        logical_name="volume_1_chapter_outline",
+    )
+    assert chapters[0]["title"]
+    assert chapters[0]["_meta"]["title_soft_filled"] is True
+
+
+def test_generated_outline_missing_title_fails_without_any_seed() -> None:
     with pytest.raises(
         planner_services.PlannerFallbackError, match="omitted concrete chapter titles"
     ):
         planner_services._normalize_generated_outline_titles_or_fail(
-            [{"chapter_number": 7, "goal": "苏砚追到镜铺后门。"}],
+            [{"chapter_number": 7}],
             logical_name="volume_1_chapter_outline",
         )
 

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from bestseller.services.distilled_strategy_compiler import (
+    assess_distilled_strategy_injection,
     render_distilled_strategy_card_block,
 )
 from bestseller.services.emotion_driven_kernel import (
@@ -197,7 +198,9 @@ def build_writer_quality_levers_block(context: WriterLeverContext) -> str:
         blocks.append(
             render_repair_actions_block(cause_ids=context.rejection_cause_ids)
         )
-    if context.distilled_strategy_card:
+    if context.distilled_strategy_card and assess_distilled_strategy_injection(
+        context.distilled_strategy_card
+    ).allowed:
         strategy_block = render_distilled_strategy_card_block(
             context.distilled_strategy_card,
             phase="craft",
@@ -246,7 +249,9 @@ def build_critic_quality_levers_block(context: CriticLeverContext) -> str:
                 chapter_number=context.chapter_number,
             )
         )
-    if context.distilled_strategy_card:
+    if context.distilled_strategy_card and assess_distilled_strategy_injection(
+        context.distilled_strategy_card
+    ).allowed:
         strategy_block = render_distilled_strategy_card_block(
             context.distilled_strategy_card,
             phase="chapter_outline",

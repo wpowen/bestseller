@@ -16,11 +16,10 @@
 
 from __future__ import annotations
 
-import json
-import logging
-import statistics
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +71,33 @@ class ArenaMatchResult:
     forward: ArenaVerdict | None
     backward: ArenaVerdict | None
     dimension_outcomes: dict[str, str] = field(default_factory=dict)
+
+
+def adapt_independent_judge_result(
+    pair: ArenaPair, result: Any
+) -> ArenaMatchResult:
+    """Adapt advisory blind-judge evidence to the legacy arena result shape."""
+
+    winner = getattr(result, "winner", None)
+    outcome = "win" if winner == "draft_a" else "loss" if winner == "draft_b" else "tie"
+    raw_dimensions = getattr(result, "dimension_outcomes", {})
+    dimension_outcomes = {
+        str(key): (
+            "win"
+            if value == "draft_a"
+            else "loss"
+            if value == "draft_b"
+            else "tie"
+        )
+        for key, value in raw_dimensions.items()
+    }
+    return ArenaMatchResult(
+        pair=pair,
+        outcome=outcome,
+        forward=None,
+        backward=None,
+        dimension_outcomes=dimension_outcomes,
+    )
 
 
 def build_arena_system_prompt() -> str:

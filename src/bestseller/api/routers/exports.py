@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from bestseller.api.deps import ApiKeyDep, SessionDep, SettingsDep
@@ -19,6 +19,8 @@ class ExportResponse(BaseModel):
     format: str
     file_path: str
     word_count: int | None = None
+    warnings: list[str] = Field(default_factory=list)
+    skipped_chapters: list[int] = Field(default_factory=list)
 
 
 @router.post("/projects/{slug}/export/{fmt}", response_model=ExportResponse)
@@ -56,11 +58,15 @@ async def export_novel(
             session=session, settings=settings, project_slug=slug
         )
 
+    artifact, output_path = export_result
+    artifact_metadata = dict(getattr(artifact, "metadata_json", None) or {})
     return ExportResponse(
         project_slug=slug,
         format=fmt,
-        file_path=str(export_result.file_path),
-        word_count=getattr(export_result, "word_count", None),
+        file_path=str(output_path),
+        word_count=artifact_metadata.get("word_count"),
+        warnings=list(artifact_metadata.get("warnings") or []),
+        skipped_chapters=list(artifact_metadata.get("skipped_chapters") or []),
     )
 
 

@@ -1340,6 +1340,45 @@ def _is_outline_count_contract_error(error: Exception) -> bool:
     return "returned " in message and "/" in message and "chapters for volume" in message
 
 
+def _derive_chapter_title_seed(chapter: dict[str, Any]) -> str:
+    """Build a concrete short title from goal/conflict when the model omitted one.
+
+    Prefer image-like fragments over abstract narrative functions. Returns
+    empty string when no usable seed exists (caller still hard-fails).
+    """
+
+    seed = _first_non_empty_text(
+        chapter.get("title"),
+        chapter.get("chapter_title"),
+        chapter.get("subtitle"),
+        chapter.get("chapter_name"),
+        chapter.get("name"),
+        chapter.get("goal"),
+        chapter.get("chapter_goal"),
+        chapter.get("main_conflict"),
+        chapter.get("hook_description"),
+        default="",
+    )
+    if not seed:
+        return ""
+    # Cut at first clause break; keep a short concrete image title.
+    for sep in ("——", "—", "；", ";", "。", "，", ",", "：", ":"):
+        if sep in seed:
+            seed = seed.split(sep, 1)[0]
+            break
+    seed = re.sub(r"\s+", "", seed.strip())
+    # Drop leading meta verbs common in goals.
+    for prefix in ("本章", "主角", "让", "使", "要", "必须"):
+        if seed.startswith(prefix) and len(seed) > len(prefix) + 2:
+            seed = seed[len(prefix) :]
+    # Keep 4–12 CJK chars / 3–8 words worth of latin.
+    cjk = re.findall(r"[\u4e00-\u9fff]", seed)
+    if len(cjk) >= 4:
+        return "".join(cjk[:10])
+    cleaned = seed[:16].strip("《》「」\"' ")
+    return cleaned if len(cleaned) >= 2 else ""
+
+
 def _normalize_generated_outline_titles_or_fail(
     chapters: list[dict[str, Any]],
     *,
@@ -1351,18 +1390,16 @@ def _normalize_generated_outline_titles_or_fail(
 
     Two passes:
 
-    1. **Existence pass** (legacy behavior): map ``chapter_title`` /
-       ``subtitle`` aliases onto the canonical ``title`` field. If any
-       chapter ends up without a non-empty title, raise
-       ``PlannerFallbackError`` listing the affected chapter numbers so
-       the repair loop can re-prompt the LLM.
+    1. **Existence pass**: map aliases onto ``title``; if still empty, soft-fill
+       from goal/conflict seed (concrete image fragment). Only hard-fail when
+       no usable seed exists — pure empty titles used to kill whole books.
 
     2. **Uniqueness pass** (new): check every accepted title for exact
        duplicates and near-duplicates (Jaccard similarity over character
        2-grams ``>= near_dup_threshold``) against:
-         * other chapters in the same batch,
-         * titles in ``existing_titles`` (i.e. earlier volumes already
-           persisted for this project).
+          * other chapters in the same batch,
+          * titles in ``existing_titles`` (i.e. earlier volumes already
+            persisted for this project).
 
        Any collision raises ``TitleCollisionError`` with the conflicting
        chapter pairs attached. The repair loop in
@@ -1378,7 +1415,7 @@ def _normalize_generated_outline_titles_or_fail(
         the failing pipeline step.
     existing_titles:
         Optional sequence of ``(chapter_number_or_None, title)`` pairs
-        for chapters already persisted in this project. When provided,
+        for chapters already persisted for this project. When provided,
         cross-volume collisions become hard errors instead of silent
         duplicates.
     near_dup_threshold:
@@ -1390,22 +1427,41 @@ def _normalize_generated_outline_titles_or_fail(
 
     # ── Pass 1: existence ────────────────────────────────────────────
     missing: list[Any] = []
+    soft_filled = 0
     for chapter in chapters:
         alias_title = _first_non_empty_text(
             chapter.get("chapter_title"),
             chapter.get("subtitle"),
+            chapter.get("chapter_name"),
+            chapter.get("name"),
         )
         if alias_title and not _non_empty_string(chapter.get("title"), ""):
             chapter["title"] = alias_title
         if not _non_empty_string(chapter.get("title"), ""):
-            missing.append(chapter.get("chapter_number") or "?")
+            derived = _derive_chapter_title_seed(chapter)
+            if derived:
+                chapter["title"] = derived
+                chapter.setdefault("_meta", {})
+                if isinstance(chapter["_meta"], dict):
+                    chapter["_meta"]["title_soft_filled"] = True
+                    chapter["_meta"]["title_soft_fill_source"] = "goal_or_conflict"
+                soft_filled += 1
+            else:
+                missing.append(chapter.get("chapter_number") or "?")
+    if soft_filled:
+        logger.info(
+            "Soft-filled %d missing chapter title(s) from goal/conflict for %s",
+            soft_filled,
+            logical_name,
+        )
     if missing:
         sample = ", ".join(str(item) for item in missing[:10])
         if len(missing) > 10:
             sample += ", ..."
         raise PlannerFallbackError(
             f"Planner artifact '{logical_name}' omitted concrete chapter titles "
-            f"for chapters [{sample}]. Refusing fallback title synthesis."
+            f"for chapters [{sample}] and no goal/conflict seed was available "
+            f"to soft-fill. Refusing empty titles."
         )
 
     # ── Pass 2: uniqueness ──────────────────────────────────────────
@@ -1456,7 +1512,7 @@ def _chapter_outline_identity_manifest(cast_spec: dict[str, Any]) -> list[dict[s
 
         return build_identity_manifest(cast_spec)
     except Exception:
-        logger.debug(
+        logger.warning(
             "Unable to build identity manifest for chapter-outline validation", exc_info=True
         )
         return []
@@ -1656,7 +1712,7 @@ def _outline_purpose_character_names(
 
         return _extract_purpose_character_names(story_purpose, identity_index)
     except Exception:
-        logger.debug(
+        logger.warning(
             "Unable to extract purpose character names during outline repair", exc_info=True
         )
         return ()
@@ -2294,7 +2350,7 @@ def _require_outline_systemic_fields_or_raise(batch: Any, *, logical_name: str) 
                 if _chapter_is_solo_chain(probe):
                     golden_solo.append(number)
             except Exception:
-                logger.debug(
+                logger.warning(
                     "Golden-three solo-chain probe failed during outline validation",
                     exc_info=True,
                 )
@@ -2953,8 +3009,196 @@ def _validate_generated_volume_outline_or_raise(
             logical_name,
             project.slug,
         )
+    golden_fill = _soft_fill_golden_three_outline_fields(batch, project=project)
+    if golden_fill:
+        logger.info(
+            "Soft-filled %d golden-three outline field(s) for %s project '%s'.",
+            golden_fill,
+            logical_name,
+            project.slug,
+        )
+    try:
+        from bestseller.settings import get_settings as _get_settings_word
+        from bestseller.services.workflows import _normalize_outline_word_targets
+
+        _normalize_outline_word_targets(
+            batch, project=project, settings=_get_settings_word()
+        )
+    except Exception:
+        logger.warning(
+            "Outline word-target normalization skipped for %s", logical_name, exc_info=True
+        )
     _require_outline_systemic_fields_or_raise(batch, logical_name=logical_name)
     return batch.model_dump(mode="json", by_alias=True)
+
+
+def _derive_information_held_back_seed(
+    chapter: Any,
+    all_chapters: list[Any],
+    dramatic_question: str | None,
+) -> list[str]:
+    """Real per-book candidates for what an early chapter deliberately withholds.
+
+    Never a generic template — only concrete facts drawn from this book's own
+    ``dramatic_question`` or a later chapter's stated conflict/hook that the
+    current chapter hasn't already introduced. Returns ``[]`` when nothing
+    concrete is available so the caller leaves the field empty and the
+    existence gate still catches it (soft-filling with placeholder prose here
+    previously fed the "空壳填满骗闸门" failure mode this project already
+    diagnosed once — see chapter_object_uses below for the twin case).
+    """
+
+    seeds: list[str] = []
+    dq = str(dramatic_question or "").strip()
+    if dq:
+        seeds.append(dq)
+    ch_no = int(getattr(chapter, "chapter_number", 0) or 0)
+    already_introduced = {
+        str(item).strip()
+        for item in (getattr(chapter, "chapter_information_introduced", None) or [])
+        if str(item).strip()
+    }
+    for other in all_chapters:
+        if len(seeds) >= 2:
+            break
+        other_no = int(getattr(other, "chapter_number", 0) or 0)
+        if other_no <= ch_no:
+            continue
+        for candidate in (
+            getattr(other, "main_conflict", None),
+            getattr(other, "hook_description", None),
+        ):
+            text = str(candidate or "").strip()
+            if text and text not in already_introduced and text not in seeds:
+                seeds.append(text)
+                break
+    return seeds[:2]
+
+
+def _soft_fill_golden_three_outline_fields(
+    batch: Any, *, project: ProjectModel | None = None
+) -> int:
+    """Backfill empty golden-three consumer fields from sibling contract text.
+
+    Downstream predraft / commercial judges read top-level
+    ``chapter_object_uses`` / ``tail_hook`` / information lists. Models often
+    leave them empty while stuffing the same content into methodology_contract
+    or hook_description — existence-only gates then pass, but writers get no
+    concrete obligations. Soft-fill only when empty and only from real
+    per-book fields; never a generic placeholder sentence, and never
+    overwrite an existing value.
+    """
+
+    filled = 0
+    chapters = list(getattr(batch, "chapters", None) or [])
+    dramatic_question = getattr(project, "dramatic_question", None) if project else None
+    for chapter in chapters:
+        ch_no = int(getattr(chapter, "chapter_number", 0) or 0)
+        # Tail hook from hook_description / last scene hook_requirement
+        if not _non_empty_string(getattr(chapter, "tail_hook", None), ""):
+            hook = _first_non_empty_text(
+                getattr(chapter, "hook_description", None),
+                getattr(chapter, "required_payoff", None),
+            )
+            if not hook:
+                scenes = list(getattr(chapter, "scenes", None) or [])
+                if scenes:
+                    last = scenes[-1]
+                    hook = _first_non_empty_text(
+                        getattr(last, "hook_requirement", None),
+                        (getattr(last, "methodology_contract", None) or {}).get("cut_point")
+                        if isinstance(getattr(last, "methodology_contract", None), dict)
+                        else None,
+                        (getattr(last, "exit_state", None) or {}).get("summary")
+                        if isinstance(getattr(last, "exit_state", None), dict)
+                        else None,
+                    )
+            if hook:
+                try:
+                    chapter.tail_hook = hook
+                    filled += 1
+                except Exception:
+                    pass
+
+        uses = getattr(chapter, "chapter_object_uses", None)
+        if not uses and ch_no <= 10:
+            refs = list(getattr(chapter, "world_asset_refs", None) or []) or list(
+                getattr(chapter, "world_rule_refs", None) or []
+            )
+            landing = _non_empty_string(getattr(chapter, "world_rule_landing", None), "")
+            # Only derive when there's a concrete landing effect to name — an
+            # empty landing previously fell back to a hollow "→ 产生状态变化"
+            # placeholder that satisfied the existence gate without giving the
+            # writer a real obligation. Skip instead; the gate then still
+            # forces a real repair pass for these chapters.
+            if refs and landing:
+                derived = [
+                    f"{ref}: 本章可见使用 → {landing}"
+                    for ref in refs[:4]
+                    if str(ref).strip()
+                ]
+                if derived:
+                    try:
+                        chapter.chapter_object_uses = derived
+                        filled += 1
+                    except Exception:
+                        pass
+
+        intro = getattr(chapter, "chapter_information_introduced", None)
+        if not intro:
+            reveals = list(getattr(chapter, "key_reveals", None) or [])
+            if reveals:
+                try:
+                    chapter.chapter_information_introduced = [
+                        str(item).strip() for item in reveals if str(item).strip()
+                    ][:6]
+                    filled += 1
+                except Exception:
+                    pass
+
+        held = getattr(chapter, "chapter_information_held_back", None)
+        if not held and ch_no <= 3:
+            derived_held_back = _derive_information_held_back_seed(
+                chapter, chapters, dramatic_question
+            )
+            if derived_held_back:
+                try:
+                    chapter.chapter_information_held_back = derived_held_back
+                    filled += 1
+                except Exception:
+                    pass
+
+        # Scene-level concrete_goal / object_signal soft-fill
+        for scene in list(getattr(chapter, "scenes", None) or []):
+            if not _non_empty_string(getattr(scene, "concrete_goal", None), ""):
+                purpose = getattr(scene, "purpose", None)
+                story = ""
+                if isinstance(purpose, dict):
+                    story = str(purpose.get("story") or "").strip()
+                elif purpose is not None:
+                    story = str(getattr(purpose, "story", "") or "").strip()
+                if story:
+                    try:
+                        scene.concrete_goal = story
+                        filled += 1
+                    except Exception:
+                        pass
+            if not _non_empty_string(getattr(scene, "object_signal", None), ""):
+                sig = None
+                anchors = getattr(scene, "sensory_anchors", None)
+                if isinstance(anchors, dict):
+                    sig = anchors.get("signature_image")
+                if not sig:
+                    mc = getattr(scene, "methodology_contract", None)
+                    if isinstance(mc, dict):
+                        sig = mc.get("signature_image")
+                if sig:
+                    try:
+                        scene.object_signal = str(sig)
+                        filled += 1
+                    except Exception:
+                        pass
+    return filled
 
 
 def _outline_repair_directives_from_error(
@@ -4464,12 +4708,29 @@ def _derive_volume_chapter_count(entry: dict[str, Any]) -> dict[str, Any]:
     return {**entry, "chapter_count_target": derived}
 
 
-def _normalize_volume_plan_payload(value: Any) -> list[dict[str, Any]]:
+def _normalize_volume_plan_payload(
+    value: Any,
+    *,
+    target_chapters: int | None = None,
+) -> list[dict[str, Any]]:
     if isinstance(value, dict):
         volumes = _mapping_list(value.get("volumes"))
     else:
         volumes = _mapping_list(value)
-    return [_derive_volume_chapter_count(volume) for volume in volumes]
+    normalized = [_derive_volume_chapter_count(volume) for volume in volumes]
+    if target_chapters is None:
+        # Infer from volume chapter_count_target when project is unavailable.
+        total = 0
+        for volume in normalized:
+            try:
+                total += int(volume.get("chapter_count_target") or 0)
+            except (TypeError, ValueError):
+                continue
+        target_chapters = total or 0
+    return _normalize_volume_plan_conflict_phases(
+        normalized,
+        target_chapters=int(target_chapters or 0),
+    )
 
 
 def build_qimao_opening_contract(
@@ -6018,7 +6279,7 @@ async def _build_revealed_ledger_block(
         block = ledger.to_prompt_block(language=language)
         return block or None
     except Exception:
-        logger.debug(
+        logger.warning(
             "Revealed-ledger build failed for project %s (non-fatal)",
             project_id,
             exc_info=True,
@@ -6055,7 +6316,7 @@ async def _repair_volume_plan_convergence_if_needed(
 
         report = scan_volume_plan_for_convergence(volume_plan_payload)
     except Exception:
-        logger.debug("Volume convergence scan failed (non-fatal)", exc_info=True)
+        logger.warning("Volume convergence scan failed (non-fatal)", exc_info=True)
         return volume_plan_payload, None
 
     # Attach findings to workflow metadata for observability.
@@ -6082,7 +6343,7 @@ async def _repair_volume_plan_convergence_if_needed(
                 "volume_force_name_counts": dict(report.force_name_counts),
             }
     except Exception:
-        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+        logger.warning("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
 
     if not report.has_critical:
         if report.findings:
@@ -6183,7 +6444,7 @@ async def _repair_cast_foundation_if_needed(
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("Foundation-richness scan failed (non-fatal)", exc_info=True)
+        logger.warning("Foundation-richness scan failed (non-fatal)", exc_info=True)
         return cast_spec_payload, None
 
     # Attach findings to workflow metadata for observability.
@@ -6208,7 +6469,7 @@ async def _repair_cast_foundation_if_needed(
                 "foundation_richness_coverage_ratio": round(report.coverage_ratio, 3),
             }
     except Exception:
-        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+        logger.warning("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
 
     if not report.is_critical:
         if report.findings:
@@ -7438,7 +7699,7 @@ async def _repair_cast_personhood_if_needed(
         )
         report = validate_bible_completeness(draft, invariants)
     except Exception:
-        logger.debug("Cast personhood bible scan failed (non-fatal)", exc_info=True)
+        logger.warning("Cast personhood bible scan failed (non-fatal)", exc_info=True)
         return cast_spec_payload, None
 
     actionable = tuple(d for d in report.deficiencies if d.code in _CAST_PERSONHOOD_REPAIR_CODES)
@@ -7475,7 +7736,7 @@ async def _repair_cast_personhood_if_needed(
             )
             return synthesized_payload, None
     except Exception:
-        logger.debug(
+        logger.warning(
             "Cast personhood deterministic repair failed; falling back to LLM repair.",
             exc_info=True,
         )
@@ -7544,7 +7805,7 @@ async def _repair_cast_personhood_if_needed(
                 )
                 return cast_spec_payload, None
         except Exception:
-            logger.debug("Cast personhood repaired payload validation failed", exc_info=True)
+            logger.warning("Cast personhood repaired payload validation failed", exc_info=True)
             return cast_spec_payload, None
 
         return repaired_payload, repair_llm_run_id
@@ -7591,7 +7852,7 @@ async def _repair_world_spec_richness_if_needed(
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("World-richness scan failed (non-fatal)", exc_info=True)
+        logger.warning("World-richness scan failed (non-fatal)", exc_info=True)
         return world_spec_payload, None
 
     # Attach findings to workflow metadata for observability.
@@ -7618,7 +7879,7 @@ async def _repair_world_spec_richness_if_needed(
                 "world_richness_faction_count": report.faction_count,
             }
     except Exception:
-        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+        logger.warning("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
 
     if not report.is_critical:
         if report.findings:
@@ -7771,7 +8032,7 @@ async def _repair_volume_plan_foreshadowing_if_needed(
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("Foreshadowing-scaling scan failed (non-fatal)", exc_info=True)
+        logger.warning("Foreshadowing-scaling scan failed (non-fatal)", exc_info=True)
         return volume_plan_payload, None
 
     # Attach findings to workflow metadata for observability.
@@ -7797,7 +8058,7 @@ async def _repair_volume_plan_foreshadowing_if_needed(
                 "foreshadowing_paid_off_floor": report.paid_off_bounds.floor,
             }
     except Exception:
-        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+        logger.warning("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
 
     if not report.is_critical:
         if report.findings:
@@ -8005,7 +8266,7 @@ async def _repair_book_spec_narrative_lines_if_needed(
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("Narrative-lines scan failed (non-fatal)", exc_info=True)
+        logger.warning("Narrative-lines scan failed (non-fatal)", exc_info=True)
         return book_spec_payload, None
 
     # Attach findings to workflow metadata for observability.
@@ -8031,7 +8292,7 @@ async def _repair_book_spec_narrative_lines_if_needed(
                 "narrative_lines_has_core_axis": report.has_core_axis,
             }
     except Exception:
-        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+        logger.warning("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
 
     if not report.is_critical:
         if report.findings:
@@ -8074,7 +8335,7 @@ async def _repair_book_spec_narrative_lines_if_needed(
                 )
                 return deterministic_payload, None
         except Exception:
-            logger.debug("Deterministic narrative-lines repair scan failed", exc_info=True)
+            logger.warning("Deterministic narrative-lines repair scan failed", exc_info=True)
 
     logger.warning(
         "Narrative lines critical (%d critical, %d warning); attempting single repair.",
@@ -8203,7 +8464,7 @@ async def _repair_cast_spec_antagonist_lifecycle_if_needed(
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("Antagonist-lifecycle scan failed (non-fatal)", exc_info=True)
+        logger.warning("Antagonist-lifecycle scan failed (non-fatal)", exc_info=True)
         return cast_spec_payload, None
 
     # Attach findings to workflow metadata for observability.
@@ -8229,7 +8490,7 @@ async def _repair_cast_spec_antagonist_lifecycle_if_needed(
                 ),
             }
     except Exception:
-        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+        logger.warning("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
 
     if not report.is_critical:
         if report.findings:
@@ -8367,7 +8628,7 @@ async def _repair_cast_spec_relationship_scaling_if_needed(
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("Relationship-scaling scan failed (non-fatal)", exc_info=True)
+        logger.warning("Relationship-scaling scan failed (non-fatal)", exc_info=True)
         return cast_spec_payload, None
 
     # Attach findings to workflow metadata for observability.
@@ -8394,7 +8655,7 @@ async def _repair_cast_spec_relationship_scaling_if_needed(
                 "relationship_scaling_role_distribution": dict(report.role_distribution),
             }
     except Exception:
-        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+        logger.warning("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
 
     if not report.is_critical:
         if report.findings:
@@ -8994,6 +9255,157 @@ def _ensure_book_spec_bible_fields(
             reserved_names=merged_pool,
         )
     normalized["naming_pool"] = [name for name in merged_pool if name][:required_pool_size]
+    return _sanitize_book_spec_against_project_scale(project, normalized)
+
+
+_CHAPTER_MILESTONE_RE = re.compile(
+    r"(第\s*(\d+)\s*章)|(\bch(?:apter)?\s*(\d+)\b)",
+    re.IGNORECASE,
+)
+# Tags that imply rapid power fantasy; stripped when power is hard-locked low.
+_INVINCIBLE_TAG_HINTS: tuple[str, ...] = (
+    "无敌流",
+    "无敌",
+    "系统面板",
+    "签到流",
+    "属性加点",
+    "invincible",
+    "overpowered",
+    "op-mc",
+)
+
+
+def _sanitize_book_spec_against_project_scale(
+    project: ProjectModel,
+    book_spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Clamp BookSpec marketing copy to the project's real chapter budget.
+
+    Models routinely emit "第50章中期炸点" for a 20-chapter book, or tag
+    ``无敌流`` while the golden finger locks the protagonist at 炼气初期.
+    Both poison outline + writer prompts.
+    """
+
+    normalized = copy.deepcopy(_mapping(book_spec))
+    target_chapters = max(int(getattr(project, "target_chapters", 0) or 0), 1)
+
+    def _scrub_text(value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        text = value
+        for match in list(_CHAPTER_MILESTONE_RE.finditer(text)):
+            num_raw = match.group(2) or match.group(4)
+            try:
+                chapter_no = int(num_raw)
+            except (TypeError, ValueError):
+                continue
+            if chapter_no > target_chapters:
+                # Rewrite oversize milestones to a late-book band, preserving
+                # the matched language instead of always forcing Chinese —
+                # an English "Chapter 50" replaced with "第14章" left mixed
+                # zh/en garbage in English-language BookSpec copy.
+                late = max(1, int(round(target_chapters * 0.7)))
+                replacement = f"第{late}章" if match.group(1) is not None else f"Chapter {late}"
+                text = text.replace(match.group(0), replacement)
+        return text
+
+    def _walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            return {key: _walk(val) for key, val in node.items()}
+        if isinstance(node, list):
+            return [_walk(item) for item in node]
+        return _scrub_text(node)
+
+    normalized = _walk(normalized)
+
+    # Drop invincible-power tags when protagonist power is explicitly locked low
+    # or the golden finger description forbids panels / tiers.
+    protag = _mapping(normalized.get("protagonist"))
+    gf = " ".join(
+        str(protag.get(key) or "")
+        for key in ("golden_finger", "power_system", "strength", "power_tier")
+    )
+    locked_low = any(
+        token in gf
+        for token in ("锁死", "不可涨", "炼气初期", "无面板", "没有面板", "无属性")
+    )
+    series = _mapping(normalized.get("series_engine"))
+    tropes = series.get("trope_keywords")
+    def _is_invincible_tag(tag: str) -> bool:
+        low = tag.lower()
+        for hint in _INVINCIBLE_TAG_HINTS:
+            if hint.isascii():
+                if hint in low:
+                    return True
+            elif hint in tag:
+                return True
+        return False
+
+    if isinstance(tropes, list) and locked_low:
+        series["trope_keywords"] = [
+            str(tag) for tag in tropes if str(tag).strip() and not _is_invincible_tag(str(tag))
+        ]
+        normalized["series_engine"] = series
+
+    # Cap selling_points that mention out-of-range chapters (already scrubbed)
+    # and trim truncated theme fragments.
+    themes = normalized.get("themes")
+    if isinstance(themes, list):
+        cleaned_themes: list[str] = []
+        for theme in themes:
+            text = str(theme).strip()
+            if not text:
+                continue
+            # Drop clearly truncated template tails (no closing punctuation, ends mid-phrase)
+            if len(text) < 8:
+                continue
+            if text.endswith(("的", "了", "间", "被", "与", "和", "或")):
+                continue
+            cleaned_themes.append(text)
+        if cleaned_themes:
+            normalized["themes"] = cleaned_themes[:8]
+
+    normalized["_meta"] = _mapping(normalized.get("_meta"))
+    normalized["_meta"]["scale_sanitized"] = True
+    normalized["_meta"]["target_chapters"] = target_chapters
+    return normalized
+
+
+def _normalize_volume_plan_conflict_phases(
+    volume_plan: list[dict[str, Any]],
+    *,
+    target_chapters: int,
+) -> list[dict[str, Any]]:
+    """Ensure volume-1 never opens as endgame ``internal_reckoning``.
+
+    Single-volume short books often dump the whole six-phase ladder into one
+    entry and set conflict_phase=internal_reckoning, which poisons early
+    outlines. Force early-book phases for volume 1; keep later volumes free.
+    """
+
+    if not volume_plan:
+        return volume_plan
+    normalized = [dict(item) if isinstance(item, dict) else item for item in volume_plan]
+    volume_count = len(normalized)
+    assigned = _assign_conflict_phases(volume_count)
+    _ENDGAME_PHASES = {"internal_reckoning", "existential_threat"}
+    for index, entry in enumerate(normalized):
+        if not isinstance(entry, dict):
+            continue
+        phase = str(entry.get("conflict_phase") or "").strip().lower()
+        vol_no = int(entry.get("volume_number") or (index + 1))
+        is_single_short = volume_count == 1 and target_chapters <= 60
+        # Volume 1 of any book (and the sole volume of a short single-volume
+        # book) should not open on endgame reckoning. Only clamp when the
+        # phase is actually an endgame phase — a short book legitimately
+        # planned as e.g. "betrayal" or "survival" must not be stomped to
+        # assigned[0] just because it's the only volume.
+        if (vol_no == 1 or is_single_short) and phase in _ENDGAME_PHASES:
+            entry["conflict_phase"] = assigned[0] if assigned else "survival"
+            entry.setdefault("_meta", {})
+            if isinstance(entry["_meta"], dict):
+                entry["_meta"]["conflict_phase_clamped"] = True
+                entry["_meta"]["conflict_phase_was"] = phase
     return normalized
 
 
@@ -12641,17 +13053,27 @@ def _fallback_chapter_outline_batch(
     # chapter's title is produced.
     fallback_used_titles: set[str] = set()
     _gen = get_settings().generation
+    # Clamp to SSOT band (1800–3500 default); never plan above hard max.
     chapter_target_words = max(
-        _gen.words_per_chapter.min,
+        int(_gen.words_per_chapter.min),
         min(
-            _gen.words_per_chapter.target,
+            int(_gen.words_per_chapter.max),
+            int(_gen.words_per_chapter.target),
             int(project.target_word_count / max(project.target_chapters, 1)),
         ),
     )
-    _scene_count_target = _gen.scenes_per_chapter.target or 5
+    _scene_count_target = int(_gen.scenes_per_chapter.target or 3)
+    _scene_count_target = max(
+        int(_gen.scenes_per_chapter.min or 2),
+        min(int(_gen.scenes_per_chapter.max or 3), _scene_count_target),
+    )
     scene_target_words = max(
-        _gen.words_per_scene.min,
-        min(_gen.words_per_scene.target, int(chapter_target_words / max(_scene_count_target, 1))),
+        int(_gen.words_per_scene.min),
+        min(
+            int(_gen.words_per_scene.max),
+            int(_gen.words_per_scene.target),
+            int(chapter_target_words / max(_scene_count_target, 1)),
+        ),
     )
     prev_phase: str | None = None
     for raw_volume_index, volume in enumerate(normalized_volume_plan, start=1):
@@ -13778,9 +14200,12 @@ def _book_spec_prompts(
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "Generate a BookSpec JSON with title, logline, genre, target_audience, tone, themes, "
-            "theme_statement, dramatic_question, expected_character_count, naming_pool, protagonist, stakes, and series_engine. "
+            "theme_statement, dramatic_question, expected_character_count, naming_pool, protagonist, stakes, series_engine, "
+            "unique_hook, and benchmark_works. "
             "theme_statement must be a single falsifiable sentence. dramatic_question must be a yes/no question answered only in the finale. "
             "naming_pool must contain at least 2x expected_character_count style-consistent names. "
+            "unique_hook: a one-sentence anti-cliche selling point that differentiates this book from others in the same genre. "
+            "benchmark_works: 3-5 comparable published works with reasons for comparison. "
             "Inside series_engine, explicitly define the core serial engine, reader promise, first-three-chapter hook, chapter-ending hook strategy, and the rhythm of short and long payoffs."
         )
     else:
@@ -13860,7 +14285,7 @@ def _book_spec_prompts(
                 "后续所有卷规划和章纲都会引用这四条线。"
             )
     except Exception:
-        logger.debug(
+        logger.warning(
             "Narrative-lines constraints block injection failed (non-fatal)",
             exc_info=True,
         )
@@ -14041,7 +14466,7 @@ def _world_spec_prompts(
             language=language,
         )
     except Exception:
-        logger.debug(
+        logger.warning(
             "World-richness constraints block injection failed (non-fatal)",
             exc_info=True,
         )
@@ -14337,7 +14762,7 @@ def _cast_spec_prompts(
                 language=language,
             )
     except Exception:
-        logger.debug(
+        logger.warning(
             "Foundation-richness constraints block injection failed (non-fatal)", exc_info=True
         )
 
@@ -14381,7 +14806,7 @@ def _cast_spec_prompts(
                     "盟友/中立/消失，不要把所有敌人都设为『被主角击杀』。"
                 )
     except Exception:
-        logger.debug(
+        logger.warning(
             "Antagonist-lifecycle constraints block injection failed (non-fatal)",
             exc_info=True,
         )
@@ -14433,7 +14858,7 @@ def _cast_spec_prompts(
                     "每一卷至少要有 1 名活跃的非敌人类 supporting_cast 成员。"
                 )
     except Exception:
-        logger.debug(
+        logger.warning(
             "Relationship-scaling constraints block injection failed (non-fatal)",
             exc_info=True,
         )
@@ -14648,7 +15073,7 @@ def _volume_plan_prompts(
             language=language,
         )
     except Exception:
-        logger.debug(
+        logger.warning(
             "Foreshadowing-scaling constraints block injection failed (non-fatal)",
             exc_info=True,
         )
@@ -14689,7 +15114,7 @@ def _volume_plan_prompts(
                         "否则全书会塌陷为一条单线剧情在各卷间轮换。"
                     )
     except Exception:
-        logger.debug(
+        logger.warning(
             "Narrative-lines core_axis threading injection failed (non-fatal)",
             exc_info=True,
         )
@@ -14736,6 +15161,30 @@ def _outline_prompts(
         phase="planner",
     )
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
+    # Chapter word band SSOT (config/default.yaml) — never plan 5000+/6400 ghosts.
+    try:
+        from bestseller.settings import get_settings as _get_settings_outline
+
+        _wpc = _get_settings_outline().generation.words_per_chapter
+        _wps = _get_settings_outline().generation.words_per_scene
+        _spc = _get_settings_outline().generation.scenes_per_chapter
+        _word_band_line = (
+            f"[CHAPTER WORD BAND — HARD] estimated_chapter_words / target_word_count "
+            f"MUST be in [{int(_wpc.min)}, {int(_wpc.max)}] (target {int(_wpc.target)}); "
+            f"scenes_per_chapter in [{int(_spc.min)}, {int(_spc.max)}] "
+            f"(target {int(_spc.target)}); words_per_scene in "
+            f"[{int(_wps.min)}, {int(_wps.max)}]. Never output 5000/6400/9000.\n"
+            if is_en
+            else (
+                f"【章节字数硬带】每章 estimated_chapter_words / target_word_count 必须落在 "
+                f"{int(_wpc.min)}–{int(_wpc.max)}（目标 {int(_wpc.target)}）；"
+                f"每章场景数 {int(_spc.min)}–{int(_spc.max)}（目标 {int(_spc.target)}）；"
+                f"每场景字数 {int(_wps.min)}–{int(_wps.max)}。"
+                f"禁止规划 5000/6400/9000 等过时字数。\n"
+            )
+        )
+    except Exception:
+        _word_band_line = ""
     _story_design_block = _story_design_kernel_prompt_block(project)
     _emotion_driven_block = _emotion_driven_kernel_prompt_block(project)
     _entry_system_block = _entry_system_kernel_prompt_block(project)
@@ -14830,7 +15279,7 @@ def _outline_prompts(
             )
             _golden_opening_line = f"\n{_golden_block}\n" if _golden_block else ""
     except Exception:
-        logger.debug(
+        logger.warning(
             "Webnovel method-cards block injection failed (non-fatal)",
             exc_info=True,
         )
@@ -14838,6 +15287,7 @@ def _outline_prompts(
         (
             f"Project title: {project.title}\n"
             f"Target chapters: {project.target_chapters}\n"
+            f"{_word_band_line}"
             "Write all planning artifacts in English.\n"
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
@@ -14860,7 +15310,8 @@ def _outline_prompts(
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
-            "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. Each chapter needs at least 3 scenes. "
+            "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. "
+            "Each chapter needs 2-3 scenes (default 3; use 2 for breathe/post-climax chapters). "
             "The first 3 chapters must rapidly establish the protagonist edge, the core anomaly, the first gain/loss cycle, and a strong read-on hook. "
             + (
                 "[GOLDEN OPENING — chapters 1-3 hard rules, low-pressure comedy/healing] Open on a warm, concrete present-day moment (an ordinary day disrupted / an enviable small joy / dropped into a homey unfamiliar setting); NEVER open on a crisis, countdown, or threat. "
@@ -14943,6 +15394,7 @@ def _outline_prompts(
         else (
             f"项目标题：{project.title}\n"
             f"目标章节：{project.target_chapters}\n"
+            f"{_word_band_line}"
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
@@ -14964,7 +15416,8 @@ def _outline_prompts(
             f"{_payoff_ledger_v2_line}"
             f"{_method_cards_hook_line}"
             f"{_golden_opening_line}"
-            "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
+            "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。"
+            "每章 2–3 个 scenes（默认 3；喘息/高潮后章可用 2）。"
             "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子，"
             "并严格执行上方【黄金三章硬约束】：主角300字内登场、1000字内出现第一个爽点或期待点、"
             "禁止序章/插叙/大段世界观解说、新专有名词不超上限、第1章点明主角目标与本书卖点；"
@@ -15240,8 +15693,25 @@ def _volume_outline_prompts(
             "- 禁止用总览段落替代逐章对象。\n"
         )
     else:
-        scene_count_contract_en = "Each chapter needs at least 3 scenes. "
-        scene_count_contract_zh = "每章至少 3 个 scenes。"
+        # Align with config/default.yaml scenes_per_chapter (min/target/max),
+        # never demand more scenes than the product hard max.
+        try:
+            from bestseller.settings import get_settings as _gs_scenes
+
+            _spc = _gs_scenes().generation.scenes_per_chapter
+            _smin = int(getattr(_spc, "min", 2) or 2)
+            _stgt = int(getattr(_spc, "target", 3) or 3)
+            _smax = int(getattr(_spc, "max", 3) or 3)
+        except Exception:
+            _smin, _stgt, _smax = 2, 3, 3
+        scene_count_contract_en = (
+            f"Each chapter needs {_stgt} scenes by default "
+            f"(allowed range {_smin}-{_smax}; use {_smax} only for climax/reversal). "
+        )
+        scene_count_contract_zh = (
+            f"每章默认 {_stgt} 个 scenes（允许 {_smin}-{_smax}；"
+            f"仅高潮/反转章可用 {_smax} 个）。"
+        )
         count_safety_en = ""
         count_safety_zh = ""
     chapter_bounds = _derive_volume_chapter_bounds(_mapping(volume_entry))
@@ -15328,7 +15798,7 @@ def _volume_outline_prompts(
                 )
                 _golden_opening_line = f"\n{_golden_block}\n" if _golden_block else ""
     except Exception:
-        logger.debug(
+        logger.warning(
             "Webnovel method-cards block injection failed (non-fatal)",
             exc_info=True,
         )
@@ -16632,7 +17102,7 @@ async def _latest_reusable_planning_artifact(
         content=artifact.content,
     )
     if policy_report is not None and not getattr(policy_report, "passed", False):
-        logger.debug(
+        logger.warning(
             "Skipping reusable %s artifact %s for project '%s': policy validation failed: %s",
             artifact_type.value,
             artifact.id,
@@ -16650,7 +17120,7 @@ async def _latest_reusable_planning_artifact(
         try:
             validator(_without_planning_meta(artifact.content))
         except Exception:
-            logger.debug(
+            logger.warning(
                 "Skipping reusable %s artifact %s for project '%s': validation failed",
                 artifact_type.value,
                 artifact.id,
@@ -16669,7 +17139,7 @@ def _story_design_kernel_prompt_block(project: ProjectModel) -> str:
     try:
         return "\n\n" + render_story_design_kernel_prompt_block(raw)
     except Exception:
-        logger.debug("Failed to render StoryDesignKernel prompt block", exc_info=True)
+        logger.warning("Failed to render StoryDesignKernel prompt block", exc_info=True)
         return ""
 
 
@@ -16684,7 +17154,7 @@ def _emotion_driven_kernel_prompt_block(project: ProjectModel) -> str:
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("Failed to render EmotionDrivenKernel prompt block", exc_info=True)
+        logger.warning("Failed to render EmotionDrivenKernel prompt block", exc_info=True)
         return ""
 
 
@@ -16751,7 +17221,7 @@ def _public_emotion_kernel_prompt_block(project: ProjectModel) -> str:
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("Failed to render PublicEmotionKernel prompt block", exc_info=True)
+        logger.warning("Failed to render PublicEmotionKernel prompt block", exc_info=True)
         return ""
 
 
@@ -16766,7 +17236,7 @@ def _compliance_boundary_prompt_block(project: ProjectModel) -> str:
             language=_planner_language(project),
         )
     except Exception:
-        logger.debug("Failed to render ComplianceBoundaryKernel prompt block", exc_info=True)
+        logger.warning("Failed to render ComplianceBoundaryKernel prompt block", exc_info=True)
         return ""
 
 
@@ -16778,7 +17248,7 @@ def _entry_system_kernel_prompt_block(project: ProjectModel) -> str:
     try:
         return "\n\n" + render_entry_system_kernel_prompt_block(raw)
     except Exception:
-        logger.debug("Failed to render EntrySystemKernel prompt block", exc_info=True)
+        logger.warning("Failed to render EntrySystemKernel prompt block", exc_info=True)
         return ""
 
 
@@ -16790,7 +17260,7 @@ def _entry_registry_prompt_block(project: ProjectModel) -> str:
     try:
         return "\n\n" + render_entry_registry_prompt_block(raw)
     except Exception:
-        logger.debug("Failed to render EntryRegistry prompt block", exc_info=True)
+        logger.warning("Failed to render EntryRegistry prompt block", exc_info=True)
         return ""
 
 
@@ -16809,7 +17279,7 @@ def _distilled_worldview_bindings_for_project(project: ProjectModel) -> dict[str
 
         return _mapping(sanitize_distilled_leak(build_distilled_worldview_bindings(distilled_card)))
     except Exception:
-        logger.debug("Failed to rebuild distilled worldview bindings", exc_info=True)
+        logger.warning("Failed to rebuild distilled worldview bindings", exc_info=True)
         return {}
 
 
@@ -16916,13 +17386,13 @@ def _character_drama_prompt_block(
         try:
             return "\n\n" + render_character_drama_prompt_block(raw)
         except Exception:
-            logger.debug("Failed to render CharacterDramaMap prompt block", exc_info=True)
+            logger.warning("Failed to render CharacterDramaMap prompt block", exc_info=True)
     if cast_spec:
         try:
             drama_map = build_character_drama_map(cast_spec, language=_planner_language(project))
             return "\n\n" + render_character_drama_prompt_block(drama_map)
         except Exception:
-            logger.debug("Failed to build CharacterDramaMap prompt block", exc_info=True)
+            logger.warning("Failed to build CharacterDramaMap prompt block", exc_info=True)
     return ""
 
 
@@ -16932,7 +17402,7 @@ def _persist_character_drama_map(project: ProjectModel, cast_spec: dict[str, Any
             build_character_drama_map(cast_spec, language=_planner_language(project))
         )
     except Exception:
-        logger.debug("Failed to persist CharacterDramaMap metadata", exc_info=True)
+        logger.warning("Failed to persist CharacterDramaMap metadata", exc_info=True)
         return
     project.metadata_json = {
         **(project.metadata_json or {}),
@@ -17419,7 +17889,7 @@ def _story_design_kernel_prompts(
             build_character_drama_map(cast_spec, language=language)
         )
     except Exception:
-        logger.debug("Failed to build CharacterDramaMap for story-design prompt", exc_info=True)
+        logger.warning("Failed to build CharacterDramaMap for story-design prompt", exc_info=True)
         character_drama_block = ""
     distilled_story_design_block = _distilled_design_reference_block(project, "story_design")
     public_emotion_block = _public_emotion_kernel_prompt_block(project)
@@ -17580,7 +18050,7 @@ async def _generate_story_design_kernel(
         ideology_payload = ideology_kernel_to_dict(ideology_kernel)
         ideology_block = render_ideology_kernel_prompt_block(ideology_kernel)
     except Exception:  # noqa: BLE001 - ideology is additive; never block planning
-        logger.debug("Ideology kernel derivation failed; planning without it", exc_info=True)
+        logger.warning("Ideology kernel derivation failed; planning without it", exc_info=True)
     # Derive the WorldModel (世界宪法) by differential mapping so the worldview_kernel
     # GROWS FROM the world's derived laws (currency/class/transport/...) instead of
     # being bolted on. Genre is context-only; laws are anchored to THIS book's
@@ -17614,7 +18084,7 @@ async def _generate_story_design_kernel(
             world_model_payload = world_model_to_dict(world_model)
         world_model_block = render_world_model_prompt_block(world_model)
     except Exception:  # noqa: BLE001 - world model is additive; never block planning
-        logger.debug("World model derivation failed; planning without it", exc_info=True)
+        logger.warning("World model derivation failed; planning without it", exc_info=True)
     system_prompt, user_prompt = _story_design_kernel_prompts(
         project,
         premise,
@@ -17676,7 +18146,7 @@ async def _generate_story_design_kernel(
                 ideology_gate.coverage,
             )
         except Exception:  # noqa: BLE001 - advisory gate must never break planning
-            logger.debug("Ideology coherence gate failed", exc_info=True)
+            logger.warning("Ideology coherence gate failed", exc_info=True)
 
     story_design_kernel_from_dict(payload)
     quality_report = evaluate_story_design_kernel_quality(
@@ -17702,7 +18172,7 @@ async def _generate_story_design_kernel(
             build_character_drama_map(cast_spec_payload, language=_planner_language(project))
         )
     except Exception:
-        logger.debug("Failed to build CharacterDramaMap metadata", exc_info=True)
+        logger.warning("Failed to build CharacterDramaMap metadata", exc_info=True)
         character_drama_payload = {}
     artifact = await import_planning_artifact(
         session,
@@ -18257,7 +18727,7 @@ def _emotion_driven_kernel_prompts(
                 story_design_kernel
             )
         except Exception:
-            logger.debug(
+            logger.warning(
                 "Failed to render StoryDesignKernel for emotion-driven prompt",
                 exc_info=True,
             )
@@ -19549,6 +20019,25 @@ async def generate_novel_plan(
     progress: PlanningProgressCallback | None = None,
 ) -> NovelPlanningResult:
     project = await _assert_plan_writer_not_locked(session, project_slug)
+
+    # Sweep/refuse BEFORE creating our own workflow_run row: a genuinely live
+    # sibling planning run must abort this request outright, not get its row
+    # marked FAILED after the fact while it keeps running underneath us.
+    from bestseller.services.planning_concurrency import (
+        PlanningConflictError,
+        cancel_stale_planning_workflows,
+    )
+
+    try:
+        await cancel_stale_planning_workflows(
+            session,
+            project.id,
+            reason="superseded by generate_novel_plan",
+        )
+    except PlanningConflictError:
+        raise
+    except Exception:
+        logger.warning("stale planning cancel skipped", exc_info=True)
 
     workflow_run = await create_workflow_run(
         session,
@@ -21528,7 +22017,10 @@ async def _assert_plan_writer_not_locked(session: AsyncSession, project_slug: st
 
     Refuses to re-run top-level planning on a project that has committed
     drafted chapters. Prevents the drifted-VOLUME_PLAN root cause that
-    triggered the 200-chapter gap on xianxia-upgrade-1776137730.
+    triggered the 200-chapter gap on xianxia-upgrade-1776137730. Also refuses
+    while a writing pipeline is actively mid-flight for this project, even
+    with zero committed chapters yet — top-level re-plan would rewrite
+    BookSpec/WorldSpec/CastSpec out from under an in-progress writer.
     """
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -21539,6 +22031,15 @@ async def _assert_plan_writer_not_locked(session: AsyncSession, project_slug: st
             f"Project '{project_slug}' already has {existing_max_written} written "
             "chapters — top-level planning is locked. Resume via "
             "generate_volume_plan per remaining volume instead."
+        )
+    from bestseller.services.planning_concurrency import assert_no_active_writing_pipeline
+
+    active_writing = await assert_no_active_writing_pipeline(session, project.id)
+    if active_writing is not None:
+        raise RuntimeError(
+            f"Project '{project_slug}' has an active writing pipeline "
+            f"(workflow_run={active_writing.id}, type={active_writing.workflow_type}) — "
+            "top-level planning is locked until it finishes or is cancelled."
         )
     return project
 
@@ -21558,6 +22059,24 @@ async def generate_foundation_plan(
     Outlines are generated per-volume via ``generate_volume_plan()``.
     """
     project = await _assert_plan_writer_not_locked(session, project_slug)
+
+    # Sweep/refuse BEFORE creating our own workflow_run row — see
+    # generate_novel_plan for why order matters here.
+    from bestseller.services.planning_concurrency import (
+        PlanningConflictError,
+        cancel_stale_planning_workflows,
+    )
+
+    try:
+        await cancel_stale_planning_workflows(
+            session,
+            project.id,
+            reason="superseded by generate_foundation_plan",
+        )
+    except PlanningConflictError:
+        raise
+    except Exception:
+        logger.warning("stale planning cancel skipped", exc_info=True)
 
     workflow_run = await create_workflow_run(
         session,
@@ -22335,6 +22854,28 @@ async def generate_volume_plan(
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
 
+    # Sweep/refuse BEFORE creating our own workflow_run row — a genuinely live
+    # sibling volume-plan run (e.g. double-click) must abort this request
+    # outright rather than getting its row marked FAILED while it keeps
+    # running. Deliberately does NOT check active *writing* pipelines: volume
+    # N+1 planning is meant to overlap volume N being written — that's the
+    # progressive-planning happy path, not a conflict.
+    from bestseller.services.planning_concurrency import (
+        PlanningConflictError,
+        cancel_stale_planning_workflows,
+    )
+
+    try:
+        await cancel_stale_planning_workflows(
+            session,
+            project.id,
+            reason=f"superseded by generate_volume_plan v{volume_number}",
+        )
+    except PlanningConflictError:
+        raise
+    except Exception:
+        logger.warning("stale planning cancel skipped", exc_info=True)
+
     # Resolve category once for downstream fallback functions
     _category = resolve_novel_category(project.genre, project.sub_genre)
     _category_key: str | None = _category.key if _category else None
@@ -22377,6 +22918,11 @@ async def generate_volume_plan(
         requested_by=requested_by,
         current_step="volume_cast_expansion",
         metadata={"project_slug": project.slug, "volume_number": volume_number},
+    )
+    # Clamp volume-plan conflict phases so vol1 never opens as endgame.
+    volume_plan = _normalize_volume_plan_conflict_phases(
+        volume_plan,
+        target_chapters=int(getattr(project, "target_chapters", 0) or 0),
     )
     step_order = 1
     current_step_name = "volume_cast_expansion" if volume_number > 1 else "volume_world_disclosure"

@@ -1034,6 +1034,35 @@ def test_quickstart_listing_profile_content_is_copyable() -> None:
     assert "copyButton('复制', registerListingCopyText(item.title))" in html
     assert "await navigator.clipboard.writeText(text);" in html
     assert "area.focus();" in html
+    assert 'textarea class="ls-copy-textarea" readonly onclick="this.select()"' not in html
+    assert "Project progress changes on every poll" in html
+    assert "模型返回内容未实际替换原内容" in html
+
+
+def test_listing_regenerate_prompt_uses_story_spine_and_premise() -> None:
+    project = SimpleNamespace(
+        title="我在修仙界当老赖",
+        genre="仙侠",
+        sub_genre="古典仙侠",
+        metadata_json={
+            "premise": "纪昀靠假死避雷劫，却因此欠下命债。",
+            "story_spine": {
+                "who": "散修纪昀",
+                "why_now": "三十年大劫将至",
+                "stakes": "每避一劫就多一个债主",
+            },
+        },
+    )
+
+    prompt = web_server._build_listing_regenerate_user_prompt(
+        module="shelf_intro",
+        project=project,
+        listing={"primary_title": project.title, "tags": ["修仙", "命债"]},
+    )
+
+    assert "纪昀靠假死避雷劫" in prompt
+    assert "三十年大劫将至" in prompt
+    assert "每避一劫就多一个债主" in prompt
 
 
 def test_quickstart_progress_panels_skip_unchanged_dom_rebuilds() -> None:

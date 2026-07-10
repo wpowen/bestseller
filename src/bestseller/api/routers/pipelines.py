@@ -79,10 +79,15 @@ async def _release_pipeline_start(redis: Any, project_id: Any, token: str | None
     except Exception:
         logger.debug("pipeline start reservation release failed", exc_info=True)
 
-# Workflow types that count as "pipeline in progress" for concurrency guard
+# Workflow types that count as "pipeline in progress" for concurrency guard.
+# Planning types included so double-click / heal-job cannot spawn zombie
+# generate_volume_plan runs that thrash outline artifacts (2026-07-09).
 _PIPELINE_WORKFLOW_TYPES = frozenset({
     "autowrite_pipeline",
     "project_pipeline",
+    "generate_novel_plan",
+    "generate_volume_plan",
+    "generate_foundation_plan",
 })
 _ACTIVE_STATUSES = frozenset({
     WorkflowStatus.PENDING.value,
@@ -124,6 +129,26 @@ async def _assert_no_active_pipeline(
     project: ProjectModel,
 ) -> None:
     """Raise 409 Conflict if a pipeline is already running for this project."""
+    # Planning rows (generate_novel_plan / generate_volume_plan /
+    # generate_foundation_plan) only get swept when a *new* planning run
+    # starts. If a book never re-plans again, a dead planning row from a
+    # crashed worker would otherwise dangle in `_ACTIVE_STATUSES` forever and
+    # permanently 409 "start writing" below. Sweep stale ones first
+    # (best-effort — a genuinely fresh planning row is left alone and still
+    # correctly 409s via the active_run check).
+    try:
+        from bestseller.services.planning_concurrency import cancel_stale_planning_workflows
+
+        await cancel_stale_planning_workflows(
+            session,
+            project.id,
+            reason="stale planning row swept before writing start",
+        )
+    except Exception:
+        logger.debug(
+            "stale planning sweep before writing-start skipped", exc_info=True
+        )
+
     active_run = await session.scalar(
         select(WorkflowRunModel)
         .where(

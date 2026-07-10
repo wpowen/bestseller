@@ -1609,6 +1609,11 @@ def project_autowrite(
     sub_genre: str | None = None,
     audience: str | None = None,
     language: str = "zh-CN",
+    channel: str | None = typer.Option(
+        None,
+        "--channel",
+        help="Audience channel (male/female/general). If omitted, genre_taxonomy infers it.",
+    ),
     profile_file: Path | None = typer.Option(
         None,
         "--profile-file",
@@ -1638,6 +1643,11 @@ def project_autowrite(
         "--progress/--no-progress",
         help="Print stage updates and artifact paths to stderr while the pipeline is running.",
     ),
+    conception: bool = typer.Option(
+        True,
+        "--conception/--no-conception",
+        help="Run multi-agent conception pipeline before planning (matches Web UI quality).",
+    ),
 ) -> None:
     """Create a project if needed, generate the full plan, and run the whole novel pipeline."""
 
@@ -1648,6 +1658,18 @@ def project_autowrite(
         prompt_pack,
     )
 
+    # Resolve genre taxonomy so CLI-created projects carry the same
+    # genre_canonical / genre_category / genre_pack metadata as the API path.
+    from bestseller.services.genre_taxonomy import resolve_selection
+
+    resolved = resolve_selection(channel, genre, sub_genre)
+    project_metadata: dict[str, Any] = {
+        "premise": premise,
+        "genre_canonical": resolved.genre_key,
+        "genre_category": resolved.category,
+        "genre_pack": resolved.pack,
+    }
+
     async def _run() -> None:
         settings = load_settings()
         async with session_scope(settings) as session:
@@ -1657,13 +1679,13 @@ def project_autowrite(
                 project_payload=ProjectCreate(
                     slug=slug,
                     title=title,
-                    genre=genre,
-                    sub_genre=sub_genre,
+                    genre=resolved.genre_str or genre,
+                    sub_genre=sub_genre or resolved.sub_genre_str,
                     audience=audience,
                     language=language,
                     target_word_count=target_words,
                     target_chapters=target_chapters,
-                    metadata={"premise": premise},
+                    metadata=project_metadata,
                     writing_profile=writing_profile_payload,
                 ),
                 premise=premise,
@@ -1671,6 +1693,7 @@ def project_autowrite(
                 export_markdown=export_markdown,
                 auto_repair_on_attention=auto_repair,
                 progress=_autowrite_progress_printer if show_progress else None,
+                use_conception=conception,
             )
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 

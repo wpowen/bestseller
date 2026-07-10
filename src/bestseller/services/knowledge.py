@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import delete, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bestseller.domain.enums import DraftPromotionState
 from bestseller.domain.knowledge import SceneKnowledgeRefreshResult
 from bestseller.infra.db.models import (
     CanonFactModel,
@@ -286,6 +287,8 @@ async def _load_scene_knowledge_context(
     project_slug: str,
     chapter_number: int,
     scene_number: int,
+    *,
+    draft_version_id: UUID | None = None,
 ) -> tuple[ProjectModel, ChapterModel, SceneCardModel, SceneDraftVersionModel, StyleGuideModel | None]:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -311,27 +314,20 @@ async def _load_scene_knowledge_context(
             f"Scene {scene_number} was not found in chapter {chapter_number} for '{project_slug}'."
         )
 
-    draft = await session.scalar(
-        select(SceneDraftVersionModel).where(
-            SceneDraftVersionModel.scene_card_id == scene.id,
-            SceneDraftVersionModel.is_current.is_(True),
-        )
-    )
+    draft_conditions = [
+        SceneDraftVersionModel.scene_card_id == scene.id,
+        SceneDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
+    ]
+    if draft_version_id is not None:
+        draft_conditions.append(SceneDraftVersionModel.id == draft_version_id)
+
+    draft = await session.scalar(select(SceneDraftVersionModel).where(*draft_conditions))
     if draft is None:
-        # Promote the latest draft rather than crashing (accept-best-on-stall);
-        # a scene that exhausted its rewrite budget may have no flagged current.
-        latest = await session.scalar(
-            select(SceneDraftVersionModel)
-            .where(SceneDraftVersionModel.scene_card_id == scene.id)
-            .order_by(SceneDraftVersionModel.version_no.desc())
+        requested = f" draft {draft_version_id}" if draft_version_id is not None else ""
+        raise ValueError(
+            f"Scene {scene_number} in chapter {chapter_number} does not have a promoted{requested}. "
+            "Canon and retrieval refresh require an explicitly promoted scene draft."
         )
-        if latest is None:
-            raise ValueError(
-                f"Scene {scene_number} in chapter {chapter_number} does not have any draft."
-            )
-        latest.is_current = True
-        await session.flush()
-        draft = latest
 
     style_guide = await session.get(StyleGuideModel, project.id)
     return project, chapter, scene, draft, style_guide
@@ -466,6 +462,7 @@ async def refresh_scene_knowledge(
     chapter_number: int,
     scene_number: int,
     *,
+    draft_version_id: UUID | None = None,
     workflow_run_id: UUID | None = None,
     step_run_id: UUID | None = None,
 ) -> SceneKnowledgeRefreshResult:
@@ -474,6 +471,7 @@ async def refresh_scene_knowledge(
         project_slug,
         chapter_number,
         scene_number,
+        draft_version_id=draft_version_id,
     )
 
     fallback_summary = render_scene_summary_fallback(project, chapter, scene)
@@ -526,6 +524,7 @@ async def refresh_scene_knowledge(
             "summary": summary_text,
             "story_purpose": scene.purpose.get("story"),
             "emotion_purpose": scene.purpose.get("emotion"),
+            "source_draft_version_id": str(draft.id),
         },
         source_scene_id=scene.id,
         source_chapter_id=chapter.id,
@@ -550,6 +549,7 @@ async def refresh_scene_knowledge(
             "summary": summary_text,
             "word_count": draft.word_count,
             "draft_version_no": draft.version_no,
+            "source_draft_version_id": str(draft.id),
             "story_purpose": scene.purpose.get("story"),
             "emotion_purpose": scene.purpose.get("emotion"),
         },
@@ -584,6 +584,7 @@ async def refresh_scene_knowledge(
                 "scene_title": scene.title,
                 "time_label": scene.time_label,
                 "scene_type": scene.scene_type,
+                "source_draft_version_id": str(draft.id),
             },
             source_scene_id=scene.id,
             source_chapter_id=chapter.id,
@@ -607,6 +608,7 @@ async def refresh_scene_knowledge(
                 "scene_number": scene.scene_number,
                 "state": participant_state,
                 "summary": summary_text,
+                "source_draft_version_id": str(draft.id),
             },
             source_scene_id=scene.id,
             source_chapter_id=chapter.id,
@@ -633,6 +635,7 @@ async def refresh_scene_knowledge(
             "last_seen_chapter_number": chapter.chapter_number,
             "last_seen_scene_number": scene.scene_number,
             "last_summary": summary_text,
+            "last_summary_draft_version_id": str(draft.id),
         }
         # Flush immediately so the next loop iteration's SELECT queries do not
         # trigger an autoflush of these dirty character fields, which can hit
@@ -657,6 +660,7 @@ async def refresh_scene_knowledge(
             "summary": summary_text,
             "scene_title": scene.title,
             "draft_version_no": draft.version_no,
+            "source_draft_version_id": str(draft.id),
             "participant_labels": scene.participants,
             "chapter_number": chapter.chapter_number,
             "scene_number": scene.scene_number,

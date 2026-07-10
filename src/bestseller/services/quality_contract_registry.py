@@ -81,6 +81,14 @@ _CONTRACTS: dict[str, QualityContract] = {
         required_evidence=("zh_char_count", "hard_max"),
         pass_condition="chapter body is at or below the configured hard max",
     ),
+    "POV_DRIFT": _contract(
+        "POV_DRIFT",
+        "pov",
+        severity="high",
+        repair_scope="scene",
+        required_evidence=("expected_pov", "observed_pov"),
+        pass_condition="narrative perspective matches the project POV contract",
+    ),
     # Output completeness / truncation (source-artifact audit, branch feat/quality-gate-repair).
     "UNFINISHED_ARTIFACT": _contract(
         "UNFINISHED_ARTIFACT",

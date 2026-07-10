@@ -360,16 +360,21 @@ async def load_previous_chapter_snapshot(
     project_id: UUID,
     current_chapter_number: int,
 ) -> ChapterStateSnapshotContext | None:
-    """Return the most recent ``ChapterStateSnapshotContext`` strictly before ``current_chapter_number``."""
+    """Return the exact, promoted snapshot for the immediately prior chapter.
+
+    A snapshot from chapter N-2 is historical context, not the hard-fact state
+    for chapter N.  Likewise an extraction made from a draft/legacy version is
+    never allowed to become a silent continuity authority.
+    """
     if current_chapter_number <= 1:
         return None
     row = await session.scalar(
         select(ChapterStateSnapshotModel)
         .where(
             ChapterStateSnapshotModel.project_id == project_id,
-            ChapterStateSnapshotModel.chapter_number < current_chapter_number,
+            ChapterStateSnapshotModel.chapter_number == current_chapter_number - 1,
+            ChapterStateSnapshotModel.extraction_status == "ok_promoted",
         )
-        .order_by(ChapterStateSnapshotModel.chapter_number.desc())
         .limit(1)
     )
     if row is None:
@@ -390,6 +395,8 @@ async def extract_chapter_state_snapshot(
     project_id: UUID,
     chapter: ChapterModel,
     chapter_md: str,
+    source_chapter_draft_version_id: UUID | None = None,
+    source_is_promoted: bool = False,
     workflow_run_id: UUID | None = None,
     step_run_id: UUID | None = None,
 ) -> ChapterStateSnapshotModel:
@@ -513,8 +520,13 @@ async def extract_chapter_state_snapshot(
     # never trips ``StringDataRightTruncationError`` even if the migration
     # hasn't been applied yet. 120 is comfortably under any reasonable
     # downgrade path while still preserving enough context to triage.
-    if error is None:
-        extraction_status = "ok"
+    if error is None and source_is_promoted and source_chapter_draft_version_id is not None:
+        extraction_status = "ok_promoted"
+    elif error is None:
+        # Keep the audit row, but explicitly quarantine it from future writer
+        # context until its source draft is promoted and a fresh snapshot is
+        # materialised.
+        extraction_status = "legacy_unverified"
     else:
         extraction_status = f"failed:{error}"[:120]
 
@@ -533,7 +545,18 @@ async def extract_chapter_state_snapshot(
         )
     )
 
-    stored_facts = _facts_to_storage(facts)
+    stored_facts = {
+        **_facts_to_storage(facts),
+        "snapshot_contract": {
+            "source_chapter_draft_version_id": (
+                str(source_chapter_draft_version_id)
+                if source_chapter_draft_version_id is not None
+                else None
+            ),
+            "source_promotion_state": "promoted" if source_is_promoted else "legacy_unverified",
+            "is_usable": extraction_status == "ok_promoted",
+        },
+    }
 
     if existing is None:
         snapshot = ChapterStateSnapshotModel(

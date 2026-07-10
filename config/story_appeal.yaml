@@ -199,6 +199,8 @@ copywriting:
   n_candidates: 3
   persona_samples: 2
   max_polish_rounds: 1
+  # 68 是不阻塞全书的最低线；80 以下仍必须走一次定向文案打磨，避免“勉强合格”直接上架。
+  target_gate_score: 80
   strategies:
     default: [scene_hook, identity_contrast, golden_finger_flex]
     suspense: [scene_hook, identity_contrast, rule_suspense]

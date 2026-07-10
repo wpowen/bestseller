@@ -16,7 +16,9 @@ from bestseller.services.prose_prompt_experiment import (
     ExperimentReport,
     JudgeResult,
     PromptTraceCase,
+    PromptVariant,
     aggregate_strategy_rankings,
+    build_public_blind_packet,
     build_blind_label_by_draft_ids,
     build_experiment_diagnosis,
     build_default_strategies,
@@ -40,11 +42,52 @@ from bestseller.services.prose_prompt_experiment import (
 pytestmark = pytest.mark.unit
 
 
-def test_default_strategies_are_twenty_unique_methodology_probes() -> None:
+def _build_selected_variants(
+    case: PromptTraceCase, *strategy_ids: str
+) -> list[PromptVariant]:
+    strategy_by_id = {
+        strategy.strategy_id: strategy for strategy in build_default_strategies()
+    }
+    return build_prompt_variants(
+        case,
+        strategies=[strategy_by_id[strategy_id] for strategy_id in strategy_ids],
+    )
+
+
+def _build_control_and_golden_variants(case: PromptTraceCase) -> list[PromptVariant]:
+    return _build_selected_variants(
+        case, "production_control", "golden_three_opening"
+    )
+
+
+def test_public_blind_packet_excludes_draft_and_strategy_provenance() -> None:
+    packet, private_mapping = build_public_blind_packet(
+        packet_seed="case-1",
+        candidates={
+            "production_control__writer-a__s1": "正文甲",
+            "new_strategy__writer-b__s1": "正文乙",
+        },
+    )
+
+    public_text = json.dumps(packet, ensure_ascii=False)
+    assert "正文甲" in public_text and "正文乙" in public_text
+    assert "production_control" not in public_text
+    assert "new_strategy" not in public_text
+    assert "writer-a" not in public_text
+    assert "writer-b" not in public_text
+    assert "draft_id" not in public_text
+    assert private_mapping["warning"].startswith("private")
+
+
+def test_default_strategies_are_twenty_six_unique_methodology_probes() -> None:
     strategies = build_default_strategies()
 
-    assert len(strategies) == 20
-    assert len({item.strategy_id for item in strategies}) == 20
+    assert len(strategies) == 26
+    assert len({item.strategy_id for item in strategies}) == 26
+    assert [item.strategy_id for item in strategies[:2]] == [
+        "production_control",
+        "human_process_first",
+    ]
     assert {"golden_three_opening", "shuangwen_payoff_first", "ending_hook_lock"} <= {
         item.strategy_id for item in strategies
     }
@@ -115,7 +158,7 @@ def test_methodology_application_audit_separates_mentions_from_hard_constraints(
 
 def test_write_package_outputs_manifest_html_prompts_and_drafts(tmp_path: Path) -> None:
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__dry-run__s1",
@@ -165,6 +208,7 @@ def test_write_package_outputs_manifest_html_prompts_and_drafts(tmp_path: Path) 
         "character_embodiment",
         "prose_texture",
         "anti_ai_flavor",
+        "reader_onboarding",
         "ending_hook",
         "overall",
     }
@@ -240,6 +284,7 @@ def test_judge_schema_names_all_dimensions_and_optional_blind_echo() -> None:
         "character_embodiment",
         "prose_texture",
         "anti_ai_flavor",
+        "reader_onboarding",
         "ending_hook",
         "overall",
     }
@@ -261,7 +306,12 @@ def test_scene_resource_brief_extracts_current_scene_contract(tmp_path: Path) ->
 
 def test_render_html_contains_all_drafts(tmp_path: Path) -> None:
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=3)
+    variants = _build_selected_variants(
+        case,
+        "production_control",
+        "human_process_first",
+        "golden_three_opening",
+    )
     drafts = [
         DraftResult(
             draft_id=f"draft-{idx}",
@@ -297,7 +347,7 @@ def test_render_html_contains_all_drafts(tmp_path: Path) -> None:
 
 def test_strategy_aggregation_and_no_judgement_diagnosis(tmp_path: Path) -> None:
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"draft-{idx}",
@@ -405,7 +455,7 @@ def test_script_preflight_reports_planned_calls(
     sys.modules["prose_prompt_strategy_arena_preflight"] = module
     spec.loader.exec_module(module)
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     args = module._parse_args(
         [
             "--trace",
@@ -487,7 +537,7 @@ def test_script_incremental_outputs_can_be_loaded_for_resume(tmp_path: Path) -> 
 def test_script_imports_external_drafts_by_strategy_id(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_import")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts_dir = tmp_path / "external-drafts"
     drafts_dir.mkdir()
     (drafts_dir / "production_control.md").write_text("控制组正文", encoding="utf-8")
@@ -522,7 +572,7 @@ def test_script_imports_external_drafts_by_strategy_id(tmp_path: Path) -> None:
 def test_script_import_requires_all_strategy_drafts_by_default(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_import_complete")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts_dir = tmp_path / "external-drafts"
     drafts_dir.mkdir()
     (drafts_dir / "production_control.md").write_text("控制组正文", encoding="utf-8")
@@ -546,7 +596,7 @@ def test_script_import_requires_all_strategy_drafts_by_default(tmp_path: Path) -
 def test_script_import_requires_expected_writer_coverage_by_default(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_import_writer_coverage")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts_dir = tmp_path / "external-drafts"
     drafts_dir.mkdir()
     for variant in variants:
@@ -576,7 +626,7 @@ def test_script_import_requires_expected_writer_coverage_by_default(tmp_path: Pa
 def test_script_audit_accepts_multi_writer_external_import(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_multi_writer_audit")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts_dir = tmp_path / "external-drafts"
     drafts_dir.mkdir()
     for variant in variants:
@@ -622,7 +672,9 @@ def test_script_audit_accepts_multi_writer_external_import(tmp_path: Path) -> No
 
 def test_script_writes_external_prompt_handoff(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_handoff")
-    variants = build_prompt_variants(load_prompt_trace(_write_trace(tmp_path)), limit=2)
+    variants = _build_control_and_golden_variants(
+        load_prompt_trace(_write_trace(tmp_path))
+    )
 
     module._write_prompt_variants(tmp_path, variants)
     writer_prompt_paths = module._write_external_writer_prompt_files(tmp_path, variants)
@@ -654,7 +706,7 @@ def test_script_writes_external_prompt_handoff(tmp_path: Path) -> None:
 def test_script_writes_prompt_only_manifest(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_prompt_manifest")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     module._write_prompt_variants(tmp_path, variants)
 
     manifest_path = module._write_prompt_only_manifest(tmp_path, case, variants)
@@ -690,7 +742,7 @@ def test_script_writes_prompt_only_manifest(tmp_path: Path) -> None:
 def test_script_writes_blind_external_judge_handoff(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_judge_handoff")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__manual__s1",
@@ -712,6 +764,8 @@ def test_script_writes_blind_external_judge_handoff(tmp_path: Path) -> None:
     handoff = handoff_path.read_text(encoding="utf-8")
     private_map = json.loads((tmp_path / "judge-blind-map.private.json").read_text())
     judge_manifest = json.loads((tmp_path / "judge-prompt-manifest.json").read_text())
+    public_packet = json.loads((tmp_path / "public-review-packet.json").read_text())
+    public_packet_text = json.dumps(public_packet, ensure_ascii=False)
     production_label = next(
         item["blind_label"]
         for item in private_map["labels"]
@@ -729,6 +783,10 @@ def test_script_writes_blind_external_judge_handoff(tmp_path: Path) -> None:
     assert "--trace" not in handoff
     assert "--import-drafts" not in handoff
     assert "blind_label" in handoff
+    assert "production_control" not in public_packet_text
+    assert "manual" not in public_packet_text
+    assert "draft_id" not in public_packet_text
+    assert {item["text"] for item in public_packet["candidates"]} == {"正文 1", "正文 2"}
     assert prompt_payload["blind_label"] == production_label
     assert prompt_payload["result_schema"]["blind_label"] == production_label
     assert prompt_payload["result_schema"]["judge_label"] == "deepseek-v4-flash"
@@ -755,7 +813,7 @@ def test_script_writes_blind_external_judge_handoff(tmp_path: Path) -> None:
 def test_script_exports_judge_prompts_from_existing_manifest(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_judge_from_manifest")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__writer-x__s1",
@@ -811,7 +869,7 @@ def test_script_exports_judge_prompts_from_existing_manifest(tmp_path: Path) -> 
 def test_script_imports_external_judgements_by_blind_label(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_import_judgements")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__manual__s1",
@@ -850,7 +908,7 @@ def test_script_imports_external_judgements_by_blind_label(tmp_path: Path) -> No
 def test_script_imports_external_judgements_by_payload_blind_label(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_import_judgements_payload")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__manual__s1",
@@ -890,7 +948,7 @@ def test_script_imports_external_judgements_by_payload_blind_label(tmp_path: Pat
 def test_script_import_requires_expected_judge_coverage_by_default(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_import_judge_coverage")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__writer-x__s1",
@@ -931,7 +989,7 @@ def test_script_import_requires_expected_judge_coverage_by_default(tmp_path: Pat
 def test_script_merges_external_judgements_into_existing_manifest(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_merge_judgements")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__writer-x__s1",
@@ -986,7 +1044,7 @@ def test_script_merges_external_judgements_into_existing_manifest(tmp_path: Path
 def test_script_audits_complete_experiment_manifest(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_audit_complete")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__writer-x__s1",
@@ -1046,7 +1104,7 @@ def test_script_audits_complete_experiment_manifest(tmp_path: Path) -> None:
 def test_script_audit_rejects_stale_manual_analysis(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_audit_stale_manual")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__writer-x__s1",
@@ -1132,7 +1190,7 @@ def test_script_audit_rejects_stale_manual_analysis(tmp_path: Path) -> None:
 def test_script_audit_marks_external_or_human_gaps_pending(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_audit_pending")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__writer-x__s1",
@@ -1173,7 +1231,7 @@ def test_script_audit_marks_external_or_human_gaps_pending(tmp_path: Path) -> No
 def test_script_audit_accepts_all_rejected_no_winner_analysis(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_audit_no_winner")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__writer-x__s1",
@@ -1233,7 +1291,7 @@ def test_script_audit_accepts_all_rejected_no_winner_analysis(tmp_path: Path) ->
 def test_script_audit_keeps_partial_no_best_selection_pending(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_audit_partial_no_best")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__writer-x__s1",
@@ -1353,7 +1411,7 @@ def test_script_audit_marks_incomplete_judge_dimensions_pending(tmp_path: Path) 
 def test_script_analyzes_manual_selection_back_to_strategy(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_manual")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__dry-run__s1",
@@ -1496,7 +1554,7 @@ def test_script_analyzes_manual_selection_back_to_strategy(tmp_path: Path) -> No
 def test_script_no_winner_generates_outline_repair_round2_package(tmp_path: Path) -> None:
     module = _load_arena_script("prose_prompt_strategy_arena_no_winner")
     case = load_prompt_trace(_write_trace(tmp_path))
-    variants = build_prompt_variants(case, limit=2)
+    variants = _build_control_and_golden_variants(case)
     drafts = [
         DraftResult(
             draft_id=f"{variant.strategy.strategy_id}__dry-run__s1",

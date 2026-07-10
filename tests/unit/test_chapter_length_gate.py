@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from bestseller.services.chapter_length_gate import (
@@ -77,10 +75,10 @@ def test_over_hard_max_triggers_critical() -> None:
     assert report.finding.hard_max == DEFAULT_HARD_MAX_ZH_CHARS
 
 
-def test_real_qingnang_ch1_count_reads_full_chapter() -> None:
-    text = Path("output/exorcist-detective-1778051012/chapter-001.md").read_text(
-        encoding="utf-8"
-    )
+def test_full_chapter_sized_text_reaches_soft_target() -> None:
+    # Keep this unit test hermetic. Historical project output belongs to a
+    # runtime regression fixture, not the repository test contract.
+    text = "# 第1章\n\n" + _make_text(2500)
     assert count_zh_chars(text) >= 2500
 
 

@@ -37,6 +37,7 @@ from bestseller.services.prompt_constructor import (
     choose_opening_archetype,
     rebuild_with_feedback,
 )
+from bestseller.services.golden_rules import render_golden_three_rules
 
 pytestmark = pytest.mark.unit
 
@@ -330,7 +331,9 @@ class TestBuildChapterPrompt:
         assert plan.assigned_cliffhanger is not None
         rendered = plan.render()
         # Golden-three opening directive is promoted ahead of the role charter.
-        assert rendered.startswith("【黄金三章·开篇硬契约")
+        assert rendered.startswith(
+            render_golden_three_rules(2, "zh-CN", path_mode="chapter_first")
+        )
         assert "你是畅销小说作家" in rendered
         assert "禁止项" in rendered
         # All supplied sections present.
@@ -856,15 +859,30 @@ def test_golden_three_opening_directive_is_system_prefix() -> None:
     plan = build_chapter_prompt(inv, budget, chapter_no=1, system="ROLE")
     system = plan.render_system()
     user = plan.render_user()
-    assert system.startswith("【黄金三章·开篇硬契约")
-    assert "第 200 字" not in system
-    assert "前 200 字必须出现至少 1 个不可解释的怪事" in system
-    assert "黄金三章·开篇硬契约" not in user
+    expected = render_golden_three_rules(1, "zh-CN", path_mode="chapter_first")
+    assert system.startswith(expected)
+    assert expected not in user
 
 
-def test_opening_directive_skips_non_golden_chapters() -> None:
+def test_opening_directive_uses_front_ten_rules_for_chapter_four() -> None:
     budget = DiversityBudget(project_id=uuid4())
     inv = _invariants("zh-CN")
     plan = build_chapter_prompt(inv, budget, chapter_no=4, system="ROLE")
-    assert plan.render_system().startswith("ROLE")
-    assert "黄金三章·开篇硬契约" not in plan.render_system()
+    assert plan.render_system().startswith(
+        render_golden_three_rules(4, "zh-CN", path_mode="chapter_first")
+    )
+
+
+def test_opening_directive_supports_english_and_skips_chapter_eleven() -> None:
+    budget = DiversityBudget(project_id=uuid4())
+    english_plan = build_chapter_prompt(
+        _invariants("en"), budget, chapter_no=1, system="ROLE"
+    )
+    assert english_plan.render_system().startswith(
+        render_golden_three_rules(1, "en", path_mode="chapter_first")
+    )
+
+    late_plan = build_chapter_prompt(
+        _invariants("zh-CN"), budget, chapter_no=11, system="ROLE"
+    )
+    assert late_plan.render_system().startswith("ROLE")

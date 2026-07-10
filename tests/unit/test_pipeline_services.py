@@ -256,9 +256,10 @@ def test_chapter_review_full_regeneration_for_very_low_score() -> None:
     chapter = build_chapter(project.id)
     draft = SimpleNamespace(word_count=2200, content_md="")
     report = SimpleNamespace(report_json={"blocking_codes": []})
+    # Mid-band low scores (e.g. 0.57) stay on targeted rewrite; only
+    # catastrophic scores force whole-chapter regeneration.
     quality = SimpleNamespace(score_overall=0.57)
-
-    reason = pipeline_services._chapter_review_full_regeneration_reason(
+    reason_mid = pipeline_services._chapter_review_full_regeneration_reason(
         project,
         chapter,
         draft,
@@ -266,8 +267,18 @@ def test_chapter_review_full_regeneration_for_very_low_score() -> None:
         quality,
         rewrite_iterations=0,
     )
+    assert reason_mid is None
 
-    assert reason == "very_low_review_score:0.57"
+    quality_catastrophic = SimpleNamespace(score_overall=0.45)
+    reason = pipeline_services._chapter_review_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        report,
+        quality_catastrophic,
+        rewrite_iterations=0,
+    )
+    assert reason == "very_low_review_score:0.45"
 
 
 def test_length_repair_codes_follow_current_draft_direction() -> None:
@@ -3267,6 +3278,12 @@ async def test_export_project_markdown_writes_artifact(
     assert artifact.id is not None
     assert output_path.exists() is True
     assert output_path.read_text(encoding="utf-8").startswith("# My Story")
+    expected_stats = export_services.build_markdown_reading_stats(
+        output_path.read_text(encoding="utf-8")
+    )
+    assert artifact.metadata_json["word_count"] == expected_stats["word_count"]
+    assert artifact.metadata_json["skipped_chapters"] == []
+    assert artifact.metadata_json["warnings"] == []
     package_root = tmp_path / "output" / project.slug
     assert (package_root / "chapter-001.md").exists() is True
     assert (package_root / "story-bible" / "series-brief.md").exists() is True
@@ -5502,7 +5519,7 @@ async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_sta
 
 
 @pytest.mark.asyncio
-async def test_run_chapter_pipeline_accepts_safe_draft_after_review_stall(
+async def test_run_chapter_pipeline_records_quality_debt_after_review_stall(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _disable_chapter_length_gate(monkeypatch)
@@ -5607,9 +5624,13 @@ async def test_run_chapter_pipeline_accepts_safe_draft_after_review_stall(
     assert result.final_verdict == "rewrite"
     assert result.requires_human_review is False
     assert result.chapter_draft_id == chapter_draft.id
-    assert chapter.status == "complete"
-    assert chapter.production_state == "ok"
+    assert chapter.status == "revision"
+    assert chapter.production_state == "quality_debt"
     assert workflow_runs[0].status == "completed"
+    assert workflow_runs[0].metadata_json["chapter_quality_debt"] is True
+    assert workflow_runs[0].metadata_json["chapter_quality_debt_reason"] == (
+        "chapter_rewrite_revision_limit"
+    )
 
 
 @pytest.mark.asyncio

@@ -3321,6 +3321,7 @@ class WebTaskManager:
             # ``if conception_story_appeal`` reference would raise
             # UnboundLocalError and fail the whole resumed task.
             conception_story_appeal: dict[str, object] | None = None
+            conception_degradation: list[dict[str, object]] = []
             story_facets_obj = None
 
             # Use a single session scope for both conception and autowrite
@@ -3410,6 +3411,21 @@ class WebTaskManager:
                         conception_story_appeal = getattr(
                             conception_result, "story_appeal", None
                         )
+                        conception_degradation = [
+                            {
+                                "stage": event.stage,
+                                "component": event.component,
+                                "reason": event.reason,
+                                "severity": event.severity,
+                                "fallback": event.fallback,
+                                "model": event.model,
+                                "metadata": event.metadata,
+                            }
+                            for event in (
+                                getattr(conception_result, "degradation_events", None)
+                                or ()
+                            )
+                        ]
                         progress(
                             "conception_complete",
                             {
@@ -3423,6 +3439,14 @@ class WebTaskManager:
                                 "commercial_brief_keys": list(
                                     conception_result.commercial_brief.keys()
                                 ),
+                                "degraded": bool(
+                                    getattr(
+                                        conception_result,
+                                        "degraded",
+                                        bool(conception_degradation),
+                                    )
+                                ),
+                                "degradation_count": len(conception_degradation),
                                 "hook_h_norm": (
                                     conception_hook_spec.get("score", {}).get("h_norm")
                                     if isinstance(conception_hook_spec, dict)
@@ -3481,6 +3505,11 @@ class WebTaskManager:
                     )
                 if conception_log:
                     project_metadata["conception_log"] = conception_log
+                if conception_degradation:
+                    project_metadata["conception_degraded"] = True
+                    project_metadata["conception_degradation_events"] = (
+                        conception_degradation
+                    )
                 # Persist conception artifacts so they are inspectable in the
                 # book document view (/design/{slug}) alongside planning output.
                 conception_artifacts: dict[str, object] = {}
@@ -7823,18 +7852,23 @@ _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
         "label": "短简介",
         "kind": "text",
         "max_chars": 220,
+        "min_chars": 80,
         "system": (
-            "你是网文上架编辑。请用 150-200 字写一段短简介，覆盖：主角身份、"
-            "金手指、初始冲突、读者钩子。只输出简介正文，不要标题或解释。"
+            "你是资深网文上架编辑。请用 100-200 字写一段短简介：先落到主角当下的"
+            "具体困境，再用一句白话讲清能力与代价，最后留下必须做出的选择。因果必须"
+            "连贯，不罗列设定，不使用策划术语、空泛宣传语或低俗称呼。只输出正文。"
         ),
     },
     "shelf_intro": {
         "label": "上架简介（500 字）",
         "kind": "text",
-        "max_chars": 520,
+        "max_chars": 500,
+        "min_chars": 120,
         "system": (
-            "你是网文上架编辑。请用 380-480 字写一段上架简介。要求：开头给冲突、"
-            "中段铺设定、结尾给追读钩子。语言克制不堆砌形容词。只输出简介正文。"
+            "你是资深网文上架编辑。请写 160-300 字的中文上架简介。第一段直接呈现"
+            "主角遭遇的具体冲突；第二段只用白话解释一次核心能力、限制和代价；结尾落到"
+            "一个迫在眉睫且不可回避的选择。每句都要推动因果，不罗列世界观，不复述策划"
+            "说明，不堆专有名词，不用低俗称呼、猎奇生理化表达或泛泛反问。只输出正文。"
         ),
     },
     "promo_copy": {
@@ -7891,6 +7925,25 @@ def _build_listing_regenerate_user_prompt(
     short_intro = listing.get("short_intro") or ""
     tags = listing.get("tags") or []
     characters = listing.get("main_characters") or []
+    metadata = getattr(project, "metadata_json", None)
+    if not isinstance(metadata, dict):
+        metadata = {}
+    premise = str(metadata.get("premise") or "").strip()
+    spine = metadata.get("story_spine")
+    if not isinstance(spine, dict):
+        spine = {}
+    spine_summary = "\n".join(
+        f"- {label}：{str(spine.get(key) or '').strip()}"
+        for key, label in (
+            ("who", "主角"),
+            ("wants", "目标"),
+            ("why_now", "为什么是现在"),
+            ("against", "阻力"),
+            ("stakes", "失败代价"),
+            ("question", "核心悬念"),
+        )
+        if str(spine.get(key) or "").strip()
+    )
     char_summary = (
         "、".join(
             f"{c.get('name', '')}（{c.get('role') or '主要角色'}）"
@@ -7904,6 +7957,8 @@ def _build_listing_regenerate_user_prompt(
         f"题材：{genre}{(' / ' + sub_genre) if sub_genre else ''}\n"
         f"现有钩子：{logline}\n"
         f"现有简介摘要：{(short_intro or '—')[:240]}\n"
+        f"故事前提：{(premise or '—')[:500]}\n"
+        f"故事脊柱：\n{spine_summary or '- 暂无'}\n"
         f"主要标签：{('、'.join(tags[:8])) if tags else '—'}\n"
         f"主要角色：{char_summary}\n\n"
         f"请基于以上信息，重新生成「{_LISTING_REGENERATE_MODULES[module]['label']}」。"
@@ -8012,6 +8067,11 @@ async def _regenerate_listing_module(
             max_chars = int(spec.get("max_chars") or 0)
             if max_chars and len(text) > max_chars:
                 text = text[: max_chars - 1] + "…"
+            min_chars = int(spec.get("min_chars") or 1)
+            if len(text) < min_chars:
+                raise ValueError(
+                    f"listing.{module} is too short: {len(text)} < {min_chars}"
+                )
             return text
         if kind == "json_list":
             return _parse_json_list_response(raw_value)
@@ -8097,6 +8157,12 @@ async def _regenerate_listing_module(
         story_bible=story_bible,
         output_base_dir=settings.output.base_dir,
     )
+    reflected_value = listing_after.get(module)
+    changed = reflected_value != listing_before.get(module)
+    if module == "shelf_intro" and reflected_value != parsed_value:
+        raise RuntimeError("regenerated shelf intro was saved but not reflected by listing profile")
+    if not changed:
+        raise RuntimeError(f"regenerated listing module '{module}' did not change")
     return {
         "module": module,
         "label": spec["label"],
@@ -8104,6 +8170,7 @@ async def _regenerate_listing_module(
         "model": result.model_name,
         "input_tokens": result.input_tokens,
         "output_tokens": result.output_tokens,
+        "changed": changed,
         "listing_profile": listing_after,
     }
 

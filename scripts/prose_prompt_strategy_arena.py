@@ -91,6 +91,7 @@ from bestseller.services.prose_prompt_experiment import (
     build_judge_user_prompt,
     build_methodology_application_audit,
     build_prompt_variants,
+    build_public_blind_packet,
     draft_from_dict,
     draft_to_dict,
     judgement_from_dict,
@@ -2721,6 +2722,14 @@ def _write_external_judge_handoff(
     blind_labels = _blind_labels_for_drafts(drafts)
     system_prompt = build_judge_system_prompt()
     normalized_judges = [_model_slug(label) for label in judge_labels] or ["external-judge"]
+    public_packet, private_review_map = build_public_blind_packet(
+        packet_seed=case.case_id,
+        candidates={draft.draft_id: draft.text for draft in drafts},
+    )
+    _write_json_file(output_dir / "public-review-packet.json", public_packet)
+    _write_json_file(
+        output_dir / "public-review-map.private.json", private_review_map
+    )
     packets: list[dict[str, str]] = []
     for draft in drafts:
         blind_label = blind_labels[draft.draft_id]

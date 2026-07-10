@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -21,14 +22,15 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bestseller.infra.db.base import Base, CreatedAtMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
-
 JSON_DICT = dict[str, Any]
 JSON_LIST = list[Any]
+PORTABLE_JSON = JSON().with_variant(JSONB, "postgresql")
 
 
 class ProjectModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1170,7 +1172,23 @@ class SceneDraftVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __tablename__ = "scene_draft_versions"
     __table_args__ = (
         UniqueConstraint("scene_card_id", "version_no", name="uq_scene_draft_version"),
+        CheckConstraint(
+            "promotion_state IN ('legacy_unverified','candidate','under_review',"
+            "'eligible','promoted','superseded','rejected','quarantined')",
+            name="ck_scene_draft_promotion_state",
+        ),
+        CheckConstraint(
+            "promotion_score IS NULL OR (promotion_score >= 0 AND promotion_score <= 1)",
+            name="ck_scene_draft_promotion_score_range",
+        ),
         Index("uq_scene_draft_current", "scene_card_id", unique=True, postgresql_where=text("is_current")),
+        Index(
+            "uq_scene_draft_promoted",
+            "scene_card_id",
+            unique=True,
+            postgresql_where=text("promotion_state = 'promoted'"),
+            sqlite_where=text("promotion_state = 'promoted'"),
+        ),
     )
 
     project_id: Mapped[UUID] = mapped_column(
@@ -1187,6 +1205,18 @@ class SceneDraftVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     content_md: Mapped[str] = mapped_column(Text, nullable=False)
     word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
+    promotion_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'candidate'")
+    )
+    promotion_reason_codes: Mapped[JSON_LIST] = mapped_column(
+        PORTABLE_JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    promotion_score: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    promotion_metadata: Mapped[JSON_DICT] = mapped_column(
+        PORTABLE_JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
     model_name: Mapped[str | None] = mapped_column(Text())
     prompt_template: Mapped[str | None] = mapped_column(Text())
     prompt_version: Mapped[str | None] = mapped_column(String(32))
@@ -1199,7 +1229,23 @@ class ChapterDraftVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __tablename__ = "chapter_draft_versions"
     __table_args__ = (
         UniqueConstraint("chapter_id", "version_no", name="uq_chapter_draft_version"),
+        CheckConstraint(
+            "promotion_state IN ('legacy_unverified','candidate','under_review',"
+            "'eligible','promoted','superseded','rejected','quarantined')",
+            name="ck_chapter_draft_promotion_state",
+        ),
+        CheckConstraint(
+            "promotion_score IS NULL OR (promotion_score >= 0 AND promotion_score <= 1)",
+            name="ck_chapter_draft_promotion_score_range",
+        ),
         Index("uq_chapter_draft_current", "chapter_id", unique=True, postgresql_where=text("is_current")),
+        Index(
+            "uq_chapter_draft_promoted",
+            "chapter_id",
+            unique=True,
+            postgresql_where=text("promotion_state = 'promoted'"),
+            sqlite_where=text("promotion_state = 'promoted'"),
+        ),
     )
 
     project_id: Mapped[UUID] = mapped_column(
@@ -1217,6 +1263,18 @@ class ChapterDraftVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     assembled_from_scene_draft_ids: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
+    promotion_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'candidate'")
+    )
+    promotion_reason_codes: Mapped[JSON_LIST] = mapped_column(
+        PORTABLE_JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    promotion_score: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    promotion_metadata: Mapped[JSON_DICT] = mapped_column(
+        PORTABLE_JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
     llm_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
 
 
@@ -1308,6 +1366,23 @@ class QualityScoreModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             unique=True,
             postgresql_where=text("is_current"),
         ),
+        CheckConstraint(
+            "scene_draft_version_id IS NULL OR chapter_draft_version_id IS NULL",
+            name="ck_quality_score_at_most_one_draft",
+        ),
+        Index(
+            "idx_quality_scores_scene_draft_judge_round",
+            "scene_draft_version_id",
+            "judge_key",
+            "evaluation_round",
+        ),
+        Index(
+            "idx_quality_scores_chapter_draft_judge_round",
+            "chapter_draft_version_id",
+            "judge_key",
+            "evaluation_round",
+        ),
+        Index("idx_quality_scores_pairwise_group", "pairwise_group_id"),
     )
 
     project_id: Mapped[UUID] = mapped_column(
@@ -1317,6 +1392,19 @@ class QualityScoreModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     target_type: Mapped[str] = mapped_column(String(32), nullable=False)
     target_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    scene_draft_version_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("scene_draft_versions.id", ondelete="CASCADE"),
+    )
+    chapter_draft_version_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("chapter_draft_versions.id", ondelete="CASCADE"),
+    )
+    evaluation_round: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    judge_key: Mapped[str | None] = mapped_column(String(128))
+    pairwise_group_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     review_report_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("review_reports.id"))
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
     score_overall: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False)
@@ -1327,6 +1415,75 @@ class QualityScoreModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     score_style: Mapped[float | None] = mapped_column(Numeric(4, 2))
     score_hook: Mapped[float | None] = mapped_column(Numeric(4, 2))
     evidence_summary: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class DraftPromotionDecisionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "draft_promotion_decisions"
+    __table_args__ = (
+        CheckConstraint(
+            "((scene_draft_version_id IS NOT NULL AND chapter_draft_version_id IS NULL) "
+            "OR (scene_draft_version_id IS NULL AND chapter_draft_version_id IS NOT NULL))",
+            name="ck_draft_promotion_decision_exactly_one_draft",
+        ),
+        CheckConstraint(
+            "from_state IN ('legacy_unverified','candidate','under_review','eligible',"
+            "'promoted','superseded','rejected','quarantined')",
+            name="ck_draft_promotion_decision_from_state",
+        ),
+        CheckConstraint(
+            "to_state IN ('legacy_unverified','candidate','under_review','eligible',"
+            "'promoted','superseded','rejected','quarantined')",
+            name="ck_draft_promotion_decision_to_state",
+        ),
+        CheckConstraint(
+            "promotion_score IS NULL OR (promotion_score >= 0 AND promotion_score <= 1)",
+            name="ck_draft_promotion_decision_score_range",
+        ),
+        Index("idx_draft_promotion_decisions_scene", "scene_draft_version_id", "created_at"),
+        Index(
+            "idx_draft_promotion_decisions_chapter",
+            "chapter_draft_version_id",
+            "created_at",
+        ),
+        Index("idx_draft_promotion_decisions_project", "project_id", "created_at"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    scene_draft_version_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("scene_draft_versions.id", ondelete="CASCADE"),
+    )
+    chapter_draft_version_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("chapter_draft_versions.id", ondelete="CASCADE"),
+    )
+    quality_score_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("quality_scores.id", ondelete="SET NULL"),
+    )
+    workflow_run_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workflow_runs.id", ondelete="SET NULL"),
+    )
+    from_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    decision_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_codes: Mapped[JSON_LIST] = mapped_column(
+        PORTABLE_JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    promotion_score: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    actor: Mapped[str | None] = mapped_column(String(128))
+    reason: Mapped[str | None] = mapped_column(Text)
+    evidence_json: Mapped[JSON_DICT] = mapped_column(
+        PORTABLE_JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", PORTABLE_JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
 
 
 class RewriteTaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1453,6 +1610,9 @@ class ExportArtifactModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     created_by_run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("workflow_runs.id", ondelete="SET NULL"),
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
     )
 
 
@@ -1769,6 +1929,10 @@ class PublishingHistoryModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "publishing_history"
     __table_args__ = (
+        UniqueConstraint(
+            "idempotency_key",
+            name="uq_publishing_history_idempotency_key",
+        ),
         Index("idx_publishing_history_schedule", "schedule_id", "chapter_number"),
         Index("idx_publishing_history_project", "project_id", "published_at"),
     )
@@ -1789,6 +1953,7 @@ class PublishingHistoryModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         nullable=False,
     )
     chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(
         String(16),

@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bestseller.domain.enums import DraftPromotionState
 from bestseller.domain.retrieval import RetrievedChunk, RetrievalSearchResult
 from bestseller.infra.db.models import (
     CanonFactModel,
@@ -375,7 +376,7 @@ async def refresh_project_retrieval_index(
         await session.scalars(
             select(SceneDraftVersionModel).where(
                 SceneDraftVersionModel.project_id == project.id,
-                SceneDraftVersionModel.is_current.is_(True),
+                SceneDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
             )
         )
     )
@@ -402,7 +403,7 @@ async def refresh_project_retrieval_index(
         await session.scalars(
             select(ChapterDraftVersionModel).where(
                 ChapterDraftVersionModel.project_id == project.id,
-                ChapterDraftVersionModel.is_current.is_(True),
+                ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
             )
         )
     )

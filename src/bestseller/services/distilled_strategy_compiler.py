@@ -11,6 +11,7 @@ planning or drafting.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -63,6 +64,13 @@ class DistilledStrategyCard(BaseModel, frozen=True):
     maturity_score: float = Field(ge=0.0, le=1.0)
     maturity_status: str = "unsafe"
     source_count: int = 0
+    # These are aggregate-level claims, never source-book identities.  They
+    # make it possible for production prompt consumers to reject an old or
+    # unverified card instead of treating the presence of a JSON blob as proof
+    # that its provenance/privacy gates passed.
+    provenance_status: str = "missing"
+    privacy_status: str = "missing"
+    genre_profile_key: str = ""
     selected_mechanisms: list[SelectedMechanism] = Field(default_factory=list)
     required_state_variables: list[str] = Field(default_factory=list)
     required_change_vectors: list[str] = Field(default_factory=list)
@@ -77,6 +85,14 @@ class DistilledStrategyCard(BaseModel, frozen=True):
     worldview_bindings: dict[str, Any] = Field(default_factory=dict)
     transformation_requirements: list[str] = Field(default_factory=list)
     plan_consumption_checks: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class DistilledStrategyInjectionDecision:
+    """Whether a strategy card is safe to inject into a production prompt."""
+
+    allowed: bool
+    reason_codes: tuple[str, ...] = ()
 
 
 def _as_mapping(value: object) -> dict[str, Any]:
@@ -285,6 +301,37 @@ def _fallback_volume_rows(value: object) -> list[dict[str, Any]]:
     ]
 
 
+def assess_distilled_strategy_injection(
+    card: DistilledStrategyCard | Mapping[str, Any] | None,
+) -> DistilledStrategyInjectionDecision:
+    """Fail closed before a distilled card reaches writer/critic prompts.
+
+    Planning may retain an immature card for diagnosis, but production prose
+    cannot consume a reference with no sources, insufficient maturity, or an
+    unverified anonymous provenance/privacy contract.
+    """
+
+    if card is None:
+        return DistilledStrategyInjectionDecision(False, ("missing_card",))
+    try:
+        parsed = card if isinstance(card, DistilledStrategyCard) else distilled_strategy_card_from_dict(card)
+    except Exception:
+        return DistilledStrategyInjectionDecision(False, ("invalid_card",))
+
+    reasons: list[str] = []
+    if parsed.source_count <= 0:
+        reasons.append("source_count_zero")
+    if parsed.maturity_score < 0.7 or parsed.maturity_status not in {"review", "production"}:
+        reasons.append("maturity_gate_failed")
+    if parsed.provenance_status not in {"anonymous_aggregate", "approved"}:
+        reasons.append("provenance_gate_failed")
+    if parsed.privacy_status not in {"redacted", "approved"}:
+        reasons.append("privacy_gate_failed")
+    if not parsed.genre_profile_key or parsed.genre_profile_key == "distillation-generic":
+        reasons.append("genre_profile_mismatch")
+    return DistilledStrategyInjectionDecision(not reasons, tuple(reasons))
+
+
 def _material_summaries(rows: Sequence[object], dimensions: set[str], *, limit: int) -> list[str]:
     summaries: list[str] = []
     for row in (_as_mapping(item) for item in rows):
@@ -444,6 +491,16 @@ def compile_distilled_strategy_card(
         maturity_score=score,
         maturity_status=status,
         source_count=int(manifest.get("source_count") or 0),
+        provenance_status=_text(manifest.get("provenance_status")) or (
+            "anonymous_aggregate"
+            if int(manifest.get("source_count") or 0) > 0
+            and _as_list(manifest.get("source_ids"))
+            else "missing"
+        ),
+        privacy_status=_text(manifest.get("privacy_status")) or (
+            "redacted" if int(manifest.get("source_count") or 0) > 0 else "missing"
+        ),
+        genre_profile_key=_text(manifest.get("genre_profile_key")) or aggregate_key,
         selected_mechanisms=selected,
         required_state_variables=required_state_variables,
         required_change_vectors=required_change_vectors,
@@ -592,8 +649,10 @@ def render_all_distilled_strategy_blocks(
 
 __all__ = [
     "DesignRole",
+    "DistilledStrategyInjectionDecision",
     "DistilledStrategyCard",
     "SelectedMechanism",
+    "assess_distilled_strategy_injection",
     "compile_distilled_strategy_card",
     "distilled_strategy_card_from_dict",
     "distilled_strategy_card_to_dict",

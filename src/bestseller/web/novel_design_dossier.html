@@ -1474,7 +1474,7 @@
     )).join('')}</div>` : empty('暂无审查项');
     const prewriteClass = prewrite.is_approved ? 'ok' : (arr(prewrite.stale_artifact_types).length ? 'warn' : 'miss');
     const prewriteHtml = `<div class="review-banner ${prewriteClass}">
-      <div class="item-title"><span>${prewrite.is_approved ? '当前最新物料已人工审核' : '当前物料等待人工审核'}</span></div>
+      <div class="item-title"><span>${prewrite.is_approved ? '当前最新物料已通过质量审核' : '当前物料等待质量审核'}</span></div>
       <div class="item-meta">状态 ${esc(prewrite.status || 'needs_review')} · 已审 ${esc(prewrite.approved_at || '—')} · 审核人 ${esc(prewrite.approved_by || '—')}</div>
       <div class="item-text">${arr(prewrite.stale_artifact_types).length ? `审批后又变更：${arr(prewrite.stale_artifact_types).join('、')}` : (arr(prewrite.missing_required_artifacts).length ? `缺少关键物料：${arr(prewrite.missing_required_artifacts).join('、')}` : '可在规划产物页编辑物料或提交问题修复；审核通过后才能从本页进入正文阶段。')}</div>
       <div class="tags">

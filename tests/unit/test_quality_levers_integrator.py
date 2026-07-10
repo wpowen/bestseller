@@ -23,9 +23,12 @@ pytestmark = pytest.mark.unit
 def _strategy_card() -> dict[str, object]:
     return {
         "aggregate_key": "otherworld-cross-system",
-        "maturity_score": 0.62,
+        "maturity_score": 0.80,
         "maturity_status": "review",
         "source_count": 2,
+        "provenance_status": "anonymous_aggregate",
+        "privacy_status": "redacted",
+        "genre_profile_key": "otherworld-cross-system",
         "selected_mechanisms": [
             {
                 "mechanism_id": "cross-system-rule-arbitrage",

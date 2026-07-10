@@ -29,7 +29,9 @@ from bestseller.infra.db.models import (
     SceneDraftVersionModel,
     StyleGuideModel,
 )
+from bestseller.services.ai_slop_blacklist import render_slop_blacklist_block
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
+from bestseller.services.golden_rules import render_golden_three_rules
 from bestseller.services.chapter_constraint_manifest import (
     PrewritePlan,
     build_safe_prewrite_plan,
@@ -95,8 +97,16 @@ from bestseller.services.output_validator import (
     Violation,
 )
 from bestseller.services.projects import get_project_by_slug
+from bestseller.services.prompt_assembly import (
+    build_prompt_assembly_report,
+    render_instruction_priority_block,
+)
+from bestseller.services.prompt_compiler import (
+    CompiledPrompt,
+    PromptBlock,
+    compile_prompt,
+)
 from bestseller.services.prompt_constructor import (
-    build_opening_hook_directive,
     render_fanqie_market_craft_profile_block,
 )
 from bestseller.services.prompt_packs import (
@@ -2619,6 +2629,9 @@ def _estimate_tokens(text: str) -> int:
     return han + int(latin * 1.3) + int(punct * 0.5)
 
 
+# Last scene-writer assembly report (diagnostics / tests). Soft: never required.
+_LAST_PROMPT_ASSEMBLY_REPORT: dict[str, Any] | None = None
+
 # Priority tiers for context budget enforcement.
 # Tier 1: structural contracts & safety — always included.
 # Tier 2: recent narrative state — included when budget allows.
@@ -2652,6 +2665,11 @@ _CONTEXT_TIER_1 = frozenset({
     "entry_registry_line",
     "entry_state_ledger_line",
     "plan_richness_line",
+    # Compact project-level contracts. The full story bible / prompt-pack
+    # remain budgeted, but their identity and current volume objective must
+    # never disappear under a large Tier-1 payload.
+    "volume_contract_line",
+    "pp_line",
     # Story-integrity guardrails (2026-06-02): these were previously NOT in any
     # tier, which meant _budget_context_sections silently kept them full AND
     # uncounted. They are genuine coherence guardrails ("inviolable" per the
@@ -2711,7 +2729,6 @@ _CONTEXT_TIER_3 = frozenset({
     "obligations_line",
     "foreshadow_line",
     "tree_section",
-    "pp_line",
     "pp_writer_line",
 })
 
@@ -3395,20 +3412,10 @@ _NOVEL_OUTPUT_PROHIBITION = """\
 - 不得把\u201c章节目标\u201d\u201c场景标题\u201d\u201c卷目标\u201d原文搬入正文——这些信息仅供理解意图
 - 不得输出\u201c字数：598\u201d\u201c（字数：598）\u201d等字数统计或自检标记
 - 所有策划信息（场景目的、情绪目标、contract 约束）仅供你理解意图，严禁直接输出到正文
-- 严禁使用AI味套话：\u201c显而易见\u201d\u201c毫无疑问\u201d\u201c不言而喻\u201d\u201c心中五味杂陈\u201d\u201c空气仿佛凝固了\u201d等
 - 严禁堆砌虚弱修饰副词（缓缓、轻轻、微微、淡淡），同类副词每千字不超过2次
 - 严禁模板式微表情描写（眼眶微红、嘴角上扬、瞳孔骤缩），用具体动作替代
 - 每个角色说话必须有自己的风格——参考角色语言指纹，不同角色的对话必须可区分
 - 输出中只允许出现：叙事散文、对话、动作描写、环境描写、内心活动
-
-【AI套话黑名单——以下表达绝对禁止】：
-- "血液仿佛凝固了" / "血液冰封" / "浑身的血液都冷了"
-- "空气仿佛凝固了" / "时间仿佛静止了" / "周围的一切仿佛都消失了"
-- "心中五味杂陈" / "心中百感交集" / "眼眶不由得湿润了"
-- "一股莫名的情绪" / "一种说不清的感觉" / "一阵莫名的恐惧"
-- "电流般的感觉" / "触电般的感觉" / "沉甸甸的"
-- "仿佛有一只无形的手" / "像是被什么东西攫住了"
-用具体、原创、从故事世界中生长出来的意象替代这些套话。
 
 【系统面板/游戏界面规则】（如适用 LitRPG/GameLit 类型）：
 - 系统面板/代码块每场最多出现 2-3 次，不是每段一个
@@ -3432,19 +3439,6 @@ FORBIDDEN OUTPUT — the following must NEVER appear in the prose:
 - Avoid template micro-expressions (eyes reddened, lips curled, pupils constricted) — use specific actions instead
 - Every character must speak with their own distinct voice — reference the character voice fingerprint; different characters' dialogue must be distinguishable
 - Output ONLY: narrative prose, dialogue, action, environmental description, internal thought
-
-BANNED AI CLICHÉS — these phrases instantly mark text as machine-generated. NEVER use them:
-- "blood crystallized" / "blood ran cold" / "blood turned to ice"
-- "words landed like a stone in still water" / "words hung in the air"
-- "cold as vacuum" / "frozen fire" / "liquid fire"
-- "something almost like [emotion]" / "something that might have been [emotion]"
-- "the world narrowed to" / "time seemed to slow" / "the air itself seemed to"
-- "a laugh that held no humor" / "a smile that didn't reach their eyes"
-- "electricity crackled between them" / "tension thick enough to cut"
-- "It goes without saying" / "Without a doubt" / "Needless to say"
-- "every fiber of their being" / "a weight settled in their chest"
-- "the silence was deafening" / "pregnant pause" / "comfortable silence"
-Replace these with concrete, specific, original imagery drawn from the story's world.
 
 SYSTEM UI / GAME INTERFACE RULE (for LitRPG/GameLit genres):
 - System panels, stat blocks, and notifications may appear at most 2-3 times per scene (NOT per paragraph).
@@ -4930,17 +4924,224 @@ def _first_contract_value(*values: object) -> object | None:
 def _writer_prompt_mode_for_chapter(settings: AppSettings, chapter_number: int) -> str:
     generation = getattr(settings, "generation", None)
     mode = str(getattr(generation, "writer_prompt_mode", "") or "").strip().lower()
-    if mode not in {"full", "lean", "ab"}:
+    if mode not in {"full", "lean", "ab", "compiled"}:
         mode = "lean" if bool(getattr(generation, "lean_writer_prompt", True)) else "full"
     if mode == "ab":
         until = int(getattr(generation, "writer_prompt_ab_until_chapter", 3) or 0)
         if chapter_number > max(until, 0):
             winner = str(getattr(generation, "writer_prompt_ab_winner", "") or "").strip().lower()
-            return winner if winner in {"full", "lean"} else "full"
+            # Default lean (not full): full was the historical silent trap that
+            # re-inflated prompts to ~28k tokens after the A/B window.
+            return winner if winner in {"full", "lean"} else "lean"
     return mode
 
 
+def _compile_rendered_writer_prompt(
+    *,
+    path: str,
+    system_prompt: str,
+    user_prompt: str,
+    section_texts: Mapping[str, str] | None,
+    system_section_texts: Mapping[str, str] | None = None,
+    total_input_budget_tokens: int,
+    prompt_safety_margin: float,
+    additional_blocks: Sequence[PromptBlock] = (),
+) -> CompiledPrompt:
+    """Convert a fully rendered writer prompt into typed blocks and compile it.
+
+    The legacy builders remain byte-compatible.  The compiled path removes each
+    rendered section from the residual primary task, then adds that section back
+    as an independently budgeted block.  Therefore nothing is appended after
+    :func:`compile_prompt` and the report exactly describes the LLM input.
+    """
+
+    residual_system = system_prompt
+    residual_user = user_prompt
+    blocks: list[PromptBlock] = []
+    hard_section_names = {
+        "contract_section",
+        "current_scene_contract_line",
+        "hard_fact_line",
+        "timeline_canon_line",
+        "scene_coherence_line",
+        "character_role_line",
+        "chapter_length_line",
+        "scene_word_budget_line",
+        "acceptance_contract",
+        "character_safety",
+        "word_count_rules",
+        "prewrite_contract",
+        "prewrite_plan",
+    }
+    required_section_names = {
+        "scene_word_budget_line",
+        "word_count_rules",
+        "slop_blacklist",
+        "opening_retention",
+        "closing_hook",
+        "acceptance_contract",
+        "character_safety",
+    }
+    craft_markers = (
+        "methodology",
+        "voice",
+        "signature",
+        "style",
+        "craft",
+        "quality_uplift",
+    )
+    optional_markers = (
+        "retrieval",
+        "recent",
+        "story_bible",
+        "arc_summary",
+        "world_snapshot",
+        "timeline_context",
+    )
+    def add_typed_block(name: str, raw_text: str, *, channel: str) -> None:
+        text = str(raw_text or "").strip()
+        if not text:
+            return
+        if name == "slop_blacklist":
+            layer, authority, family = "output", 100, "writer.output.blacklist"
+        elif name == "opening_retention":
+            layer, authority, family = "output", 99, "writer.output.opening_retention"
+        elif name in {"word_count_rules", "scene_word_budget_line"}:
+            layer, authority, family = "output", 100, "writer.output.word_count"
+        elif name == "closing_hook":
+            layer, authority, family = "output", 98, "writer.output.closing_hook"
+        elif name == "methodology_evidence":
+            layer, authority, family = "craft", 70, "writer.craft.methodology_evidence"
+        elif name in hard_section_names:
+            layer = "hard_canon"
+            authority = 95
+            family = f"writer.hard_canon.{name}"
+        elif any(marker in name for marker in craft_markers):
+            layer = "craft"
+            authority = 55
+            family = (
+                "craft.effect.primary.signature"
+                if "signature" in name
+                else f"writer.craft.{name}"
+            )
+        elif any(marker in name for marker in optional_markers):
+            layer = "optional"
+            authority = 20
+            family = f"writer.context.{name}"
+        else:
+            layer = "scene_spec"
+            authority = 65
+            family = f"writer.scene_spec.{name}"
+        blocks.append(
+            PromptBlock(
+                key=f"{path}.section.{name}",
+                channel=channel,
+                layer=layer,
+                authority=authority,
+                instruction_family=family,
+                # A section classified as hard canon is a correctness contract,
+                # not a preference.  It must either survive the final combined
+                # budget or make compilation fail closed; silently dropping a
+                # canon/timeline/prewrite fact would corrupt later drafts.
+                required=name in required_section_names or name in hard_section_names,
+                min_tokens=8,
+                max_tokens=1_200 if layer in {"craft", "optional"} else None,
+                trim_policy=(
+                    "truncate_tail" if layer in {"craft", "optional"} else "drop"
+                ),
+                source=f"drafts.{path}.{name}",
+                text=text,
+            )
+        )
+
+    for name, raw_text in (system_section_texts or {}).items():
+        if str(raw_text or "").strip():
+            # The legacy prompt builders can inject the same rendered section
+            # through more than one route.  Remove every exact occurrence
+            # before reintroducing its one typed block, otherwise a duplicate
+            # survives inside ``system_contract`` and bypasses family dedupe.
+            residual_system = residual_system.replace(str(raw_text), "")
+            add_typed_block(name, raw_text, channel="system")
+
+    system_parts = [
+        part.strip()
+        for part in re.split(r"(?m)(?=^# [A-Z][^\n]*$)", residual_system)
+        if part.strip()
+    ]
+    for index, text in enumerate(system_parts):
+        heading = text.splitlines()[0].casefold()
+        if index == 0 or "# role" in heading:
+            name, layer, authority, required = "system_contract", "output", 100, True
+            family = "writer.system.role"
+        elif "# task" in heading:
+            name, layer, authority, required = f"system_task_{index:02d}", "scene_spec", 100, True
+            family = f"writer.system.task.{index:02d}"
+        elif "# constraints" in heading:
+            name, layer, authority, required = (
+                f"system_constraints_{index:02d}",
+                "hard_canon",
+                100,
+                True,
+            )
+            family = f"writer.system.constraints.{index:02d}"
+        elif "# output" in heading:
+            name, layer, authority, required = f"system_output_{index:02d}", "output", 100, True
+            family = f"writer.system.output.{index:02d}"
+        else:
+            name, layer, authority, required = f"system_craft_{index:02d}", "craft", 40, False
+            family = f"writer.system.craft.{index:02d}"
+        blocks.append(
+            PromptBlock(
+                key=f"{path}.{name}",
+                channel="system",
+                layer=layer,
+                authority=authority,
+                instruction_family=family,
+                required=required,
+                min_tokens=8,
+                max_tokens=None if required else 900,
+                trim_policy="preserve" if required else "truncate_tail",
+                source=f"drafts.{path}.{name}",
+                text=text,
+            )
+        )
+
+    for name, raw_text in (section_texts or {}).items():
+        text = str(raw_text or "").strip()
+        if not text:
+            continue
+        # See the matching system-path comment above.  A recognised section
+        # gets exactly one typed representation in the compiled prompt.
+        residual_user = residual_user.replace(str(raw_text), "")
+        add_typed_block(name, raw_text, channel="user")
+    residual_user = re.sub(r"\n{3,}", "\n\n", residual_user).strip()
+    blocks.append(
+        PromptBlock(
+            key=f"{path}.primary_task",
+            channel="user",
+            layer="scene_spec",
+            authority=100,
+            instruction_family=f"{path}.primary_task",
+            required=True,
+            trim_policy="preserve",
+            source=f"drafts.{path}.primary_task",
+            text=residual_user,
+        )
+    )
+    blocks.extend(additional_blocks)
+    return compile_prompt(
+        blocks,
+        total_budget_tokens=total_input_budget_tokens,
+        safety_margin=prompt_safety_margin,
+    )
+
+
 def _score_writer_candidate(content: str, *, target_word_count: int | None, language: str) -> float:
+    """Lightweight best-of-N scorer for MiniMax-M3 (no second LLM call).
+
+    Prefers drafts that land near the chapter/scene word band, avoid meta
+    leaks / latin ``ta`` pollution, and are not n-gram-collapsed sludge.
+    """
     text = content or ""
     score = 0.0
     if text.strip():
@@ -4954,11 +5155,28 @@ def _score_writer_candidate(content: str, *, target_word_count: int | None, lang
     word_count = authoritative_word_count_for_language(text, language=language)
     target = max(int(target_word_count or 0), 1)
     if word_count:
-        score += min(word_count / target, 1.15) * 10.0
+        ratio = word_count / target
+        # Peak score at ~1.0× target; mild penalty above 1.2× (hard-cap risk).
+        if ratio <= 1.0:
+            score += min(ratio, 1.0) * 10.0
+        else:
+            score += max(0.0, 10.0 - (ratio - 1.0) * 12.0)
         if word_count < target * 0.45:
             score -= 8.0
+        if word_count > target * 1.35:
+            score -= 6.0
     if has_meta_leak(text):
         score -= 15.0
+    # Collapse detector: identical 4-char windows repeated heavily.
+    if language.lower().startswith("zh") and len(text) >= 80:
+        windows = [text[i : i + 4] for i in range(0, min(len(text) - 3, 400))]
+        if windows:
+            uniq = len(set(windows))
+            diversity = uniq / max(len(windows), 1)
+            if diversity < 0.35:
+                score -= 8.0
+            elif diversity > 0.7:
+                score += 2.0
     return score
 
 
@@ -6003,7 +6221,13 @@ def build_scene_draft_prompts(
     prewrite_plan_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
-) -> tuple[str, str]:
+    prompt_mode: str = "legacy",
+    total_input_budget_tokens: int = 8_000,
+    prompt_safety_margin: float = 0.10,
+    compiler_additional_blocks: Sequence[PromptBlock] = (),
+) -> tuple[str, str] | CompiledPrompt:
+    if prompt_mode not in {"legacy", "compiled"}:
+        raise ValueError("prompt_mode must be 'legacy' or 'compiled'")
     language = _project_language(project)
     is_en = is_english_language(language)
     writing_profile = _resolve_project_writing_profile(project, style_guide)
@@ -6040,6 +6264,15 @@ def build_scene_draft_prompts(
         )
     except Exception:  # pragma: no cover - never let self-check break generation
         ranking_self_check_block = ""
+    _scene_opening_rules = (
+        render_golden_three_rules(
+            chapter.chapter_number,
+            language,
+            path_mode="scene",
+        )
+        if int(getattr(scene, "scene_number", 0) or 0) == 1
+        else ""
+    )
     if is_en:
         system_prompt = (
             "# ROLE\n"
@@ -6078,6 +6311,10 @@ def build_scene_draft_prompts(
             "- No Markdown headings (# or ##). No code fences. No `entry_state` / `exit_state` / `contract` tags.\n"
             + _NOVEL_OUTPUT_PROHIBITION_EN
             + "\n"
+            + render_slop_blacklist_block(language)
+            + "\n"
+            + render_instruction_priority_block(is_en=True)
+            + "\n"
             "# THINKING (plan in your head BEFORE writing — do NOT print this)\n"
             "1. **Scene goal** — what emotional + informational deliverable does the reader get?\n"
             "2. **Opening shot** — what concrete image is the first sentence? Not 'It was raining' — give a specific physical detail.\n"
@@ -6085,16 +6322,8 @@ def build_scene_draft_prompts(
             "4. **Signature moment** — what 'screenshot-worthy' beat will you give the reader (golden line / surgical description / micro detail / reaction amplification)?\n"
             "5. **Closing hook** — what specific unanswered question lands at the end? (Not abstract — concrete.)\n"
             "\n"
-            "# OUTPUT FORMAT\n"
-            "- First sentence ≤ 80 characters (sharp).\n"
-            "- First paragraph ≤ 150 characters.\n"
-            "- First 250 characters MUST contain a visible anomaly (object, action, sensory).\n"
-            "\n"
-            "# EXAMPLES · Negative (never output these)\n"
-            "- 'a feeling washed over him' / 'the air seemed to freeze' / 'time stood still'\n"
-            "- 'mixed feelings' / 'inexplicable dread' / 'electric sensation'\n"
-            "- Closing lines like 'this was only the beginning' or 'the real answer waited to be revealed'\n"
-            "\n"
+            + _scene_opening_rules
+            + "\n"
             + (ranking_self_check_block + "\n" if ranking_self_check_block else "")
             + "# PROJECT-SPECIFIC PROFILE (varies per project)\n"
             f"Writing profile:\n{writing_profile_section}\n"
@@ -6141,7 +6370,6 @@ def build_scene_draft_prompts(
             "不要输出解释 / 列表 / 策划说明 / 元评论 / 章节标题。\n"
             "\n"
             "# CONSTRAINTS · 硬约束（违反即重写，不可绕过）\n"
-            "- 字数：CJK 汉字数须在目标的 90%-120% 之间。不足或超出均会被退回。\n"
             "- 角色名：与「参与者」列表完全一致，一字不差，禁止改名 / 别名 / 缩写。\n"
             "- 路人不取名：参与者列表之外不得出现任何新人名；无名路人/群众一律用职务、"
             "身份或外貌称谓（如「值班科员」「那名中年男人」「门口的保安」）。\n"
@@ -6151,6 +6379,10 @@ def build_scene_draft_prompts(
             "- 标签禁止：不写 entry_state / exit_state / contract / scene_type 等英文结构化标签。\n"
             + _NOVEL_OUTPUT_PROHIBITION
             + "\n"
+            + render_slop_blacklist_block(language)
+            + "\n"
+            + render_instruction_priority_block(is_en=False)
+            + "\n"
             "# THINKING（写正文前在脑内 plan 一遍，不要把 plan 印出来）\n"
             "1. **场景目标**：本场要给读者什么「情感 + 信息」双产出？\n"
             "2. **开场镜头**：第一句给什么具象画面？不要写「那是一个下雨天」，要写「雨棚下灯管闪了两下」这种具体物理细节。\n"
@@ -6158,21 +6390,8 @@ def build_scene_draft_prompts(
             "4. **签名段**：本场我打算给读者一个什么「截图段」？金句 / 神描写 / 神细节 / 反应放大瞬间 任选其一，必须有一个。\n"
             "5. **章末钩子**：本场结尾留一个什么具体悬念？不能是抽象感叹（如「一切才刚刚开始」），必须是具体未解物。\n"
             "\n"
-            "# OUTPUT FORMAT · 开篇硬指标\n"
-            "- 第一句 ≤ 25 个汉字（要狠）。\n"
-            "- 第一段 ≤ 50 个汉字（要快）。\n"
-            "- 前 200 字必须出现至少 1 个可视化异常物 / 异常动作（不能只有人物对话或回忆）。\n"
-            "- 前 500 字内主角必须因这个异常被迫做出决定（不能只是观察、对话、回忆）。\n"
-            "\n"
-            "# EXAMPLES · AI 套话黑名单（绝对禁止输出）\n"
-            "- 「血液仿佛凝固了」/「时间仿佛静止了」/「空气仿佛凝固了」\n"
-            "- 「心中五味杂陈」/「心中百感交集」/「眼眶不由得湿润了」\n"
-            "- 「一股莫名的情绪」/「一阵莫名的恐惧」\n"
-            "- 「电流般的感觉」/「触电般的感觉」\n"
-            "- 「仿佛有一只无形的手」/「像是被什么东西攫住了」\n"
-            "- 任何以「显而易见」/「毫无疑问」/「不言而喻」开头的句子\n"
-            "- 章末「这一切才刚刚开始」/「真正的答案还在等待揭开」/「欲知后事如何」\n"
-            "\n"
+            + _scene_opening_rules
+            + "\n"
             + (ranking_self_check_block + "\n" if ranking_self_check_block else "")
             + "# PROJECT PROFILE（项目级变量内容）\n"
             f"## 写作画像\n{writing_profile_section}\n\n"
@@ -6194,6 +6413,27 @@ def build_scene_draft_prompts(
         tone = "克制、紧张"
     participants = _scene_participant_text(scene.participants, language=language)
     story_bible_section = _render_story_bible_section(story_bible_context, language=language)
+    _volume_contract_line = ""
+    if isinstance(story_bible_context, Mapping):
+        _volume = story_bible_context.get("volume")
+        if isinstance(_volume, Mapping):
+            _volume_goal = str(_volume.get("goal") or "").strip()
+            _volume_obstacle = str(_volume.get("obstacle") or "").strip()
+            _volume_lines: list[str] = []
+            if _volume_goal:
+                _volume_lines.append(
+                    f"Volume goal: {_volume_goal}"
+                    if is_en
+                    else f"本卷目标：{_volume_goal}"
+                )
+            if _volume_obstacle:
+                _volume_lines.append(
+                    f"Volume obstacle: {_volume_obstacle}"
+                    if is_en
+                    else f"本卷障碍：{_volume_obstacle}"
+                )
+            if _volume_lines:
+                _volume_contract_line = "\n".join(_volume_lines) + "\n"
     # World-model active-law injection: append only the laws relevant to this
     # chapter/scene (selector caps the count to avoid prompt overload). Fully
     # fail-safe — a missing/invalid world model leaves the section unchanged.
@@ -6280,11 +6520,10 @@ def build_scene_draft_prompts(
     prompt_pack_scene_writer = render_prompt_pack_fragment(
         prompt_pack, "scene_writer"
     ) or render_prompt_pack_fragment(prompt_pack, "segment_writer")
-    _pp_line = (
-        f"Prompt Pack:\n{prompt_pack_section}\n"
-        if prompt_pack_section and is_en
-        else (f"Prompt Pack：\n{prompt_pack_section}\n" if prompt_pack_section else "")
-    )
+    _pp_line = f"{prompt_pack_section}\n" if prompt_pack_section else ""
+    # Preserve a compact pack contract under budget pressure instead of
+    # either dropping the selected genre pack or injecting it unbounded.
+    _pp_line = _truncate_section_to_tokens(_pp_line, 260)
     _pp_writer_line = (
         f"Extra Prompt Pack guidance:\n{prompt_pack_scene_writer}\n"
         if prompt_pack_scene_writer and is_en
@@ -6352,7 +6591,7 @@ def build_scene_draft_prompts(
     _compiled_has_methodology = "writing_methodology · scene" in _compiled_methodology
     _methodology_rules = render_methodology_scene_rules(
         chapter_number=chapter.chapter_number,
-        is_opening=(chapter.chapter_number <= 3),
+        is_opening=(int(getattr(scene, "scene_number", 0) or 0) == 1),
         is_climax=_is_climax,
         pacing_mode=_pacing_mode_val,
         platform_target=getattr(writing_profile.market, "platform_target", ""),
@@ -6360,7 +6599,7 @@ def build_scene_draft_prompts(
         rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
         # Drop the always-on 画面感规则 / 对话规则 restatements when the compiled
         # methodology already renders visual_writing / dialogue_rules in full;
-        # the context-specific bridge rules (开篇/高潮/节奏期/七猫签约·重生) stay.
+        # the context-specific bridge rules (高潮/节奏期/七猫签约·重生) stay.
         include_baseline_craft_rules=not _compiled_has_methodology,
     )
     # The compiled methodology is the budget-managed single source for the
@@ -6386,6 +6625,27 @@ def build_scene_draft_prompts(
     # writer prompt always degrades gracefully when meta.yaml is empty.
     try:
         _levers_meta = extract_quality_levers_meta(_project_meta)
+        _distilled_strategy_card = (
+            _project_meta.get("distilled_strategy_card")
+            if isinstance(_project_meta.get("distilled_strategy_card"), dict)
+            else None
+        )
+        if _distilled_strategy_card:
+            from bestseller.services.distilled_strategy_compiler import (
+                assess_distilled_strategy_injection,
+            )
+
+            _strategy_decision = assess_distilled_strategy_injection(_distilled_strategy_card)
+            if not _strategy_decision.allowed:
+                # Persist one structured degradation marker.  This makes an
+                # unsafe fallback observable instead of silently presenting it
+                # as normal writer reference material.
+                _project_meta["distilled_strategy_injection_degradation"] = {
+                    "event": "distilled_strategy_injection_skipped",
+                    "reason_codes": list(_strategy_decision.reason_codes),
+                }
+                project.metadata_json = _project_meta
+                _distilled_strategy_card = None
         _quality_levers_block = build_writer_quality_levers_block(
             WriterLeverContext(
                 chapter_number=chapter.chapter_number,
@@ -6404,11 +6664,7 @@ def build_scene_draft_prompts(
                 rejection_cause_ids=tuple(
                     str(item) for item in (_rejection_reasons or ()) if str(item).strip()
                 ),
-                distilled_strategy_card=(
-                    _project_meta.get("distilled_strategy_card")
-                    if isinstance(_project_meta.get("distilled_strategy_card"), dict)
-                    else None
-                ),
+                distilled_strategy_card=_distilled_strategy_card,
                 emotion_driven_kernel=_levers_meta.emotion_driven_kernel,
                 public_emotion_kernel=_levers_meta.public_emotion_kernel,
             )
@@ -6791,91 +7047,105 @@ def build_scene_draft_prompts(
     # Pack all rendered sections into a dict, run through the budget filter,
     # then unpack back into local variables.  This keeps Tier 1 sections
     # intact while trimming Tier 2/3 when the combined context is too large.
+    _sections_before_budget = {
+        "contract_section": contract_section,
+        "volume_contract_line": _volume_contract_line,
+        "story_principle_line": story_principle_line,
+        "methodology_line": _methodology_line,
+        "participant_fact_section": participant_fact_section,
+        "contradiction_line": _contradiction_line,
+        "query_brief_line": _query_brief_line,
+        "identity_line": _identity_line,
+        "phrase_avoidance_line": _phrase_avoidance_line,
+        "opening_diversity_line": _opening_diversity_line,
+        "genre_constraint_line": _genre_constraint_line,
+        "ranking_profile_line": _ranking_profile_line,
+        "progression_context_line": _progression_context_line,
+        "decision_policy_line": _decision_policy_line,
+        "rule_system_line": _rule_system_line,
+        "faction_ecology_line": _faction_ecology_line,
+        "relationship_agency_line": _relationship_agency_line,
+        "entry_system_line": _entry_system_line,
+        "entry_registry_line": _entry_registry_line,
+        "entry_state_ledger_line": _entry_state_ledger_line,
+        "conflict_diversity_line": _conflict_diversity_line,
+        "scene_purpose_line": _scene_purpose_line,
+        "env_diversity_line": _env_diversity_line,
+        "arc_beat_line": _arc_beat_line,
+        "five_layer_line": _five_layer_line,
+        "cliffhanger_line": _cliffhanger_line,
+        "tension_target_line": _tension_target_line,
+        "location_ledger_line": _location_ledger_line,
+        "budget_diversity_line": _budget_diversity_line,
+        "scene_scope_isolation_line": _scene_scope_isolation_line,
+        "plan_richness_line": _plan_richness_line,
+        "reader_contract_line": _reader_contract_line,
+        "concept_lab_contract_line": _concept_lab_contract_line,
+        "hype_constraints_line": _hype_constraints_line,
+        "current_scene_contract_line": current_scene_contract_line,
+        "qimao_opening_contract_line": _qimao_opening_contract_line,
+        "l3_prompt_line": _l3_prompt_line,
+        "voice_dna_line": _voice_dna_line,
+        "dialogue_voice_line": _dialogue_voice_line,
+        "chapter_market_constraints_line": _chapter_market_constraints_line,
+        "signature_scene_line": _signature_scene_line,
+        "prior_persona_feedback_line": _prior_persona_feedback_line,
+        "hook_echo_line": _hook_echo_line,
+        "acceptance_duty_line": _acceptance_duty_line,
+        "exposition_density_line": _exposition_density_line,
+        "scene_beat_line": _scene_beat_line,
+        "canon_guardrails_line": _canon_guardrails_line,
+        "timeline_canon_line": _timeline_canon_line,
+        "scene_coherence_line": _scene_coherence_line,
+        "character_role_line": _character_role_line,
+        "chapter_length_line": _chapter_length_line,
+        "scene_word_budget_line": _scene_word_budget_line,
+        "project_material_reference_line": _project_material_reference_line,
+        "project_material_obligation_line": _project_material_obligation_line,
+        "library_reference_line": _library_reference_line,
+        "hard_fact_line": _hard_fact_line,
+        "knowledge_line": _knowledge_line,
+        "recent_scene_section": recent_scene_section,
+        "emotion_track_section": emotion_track_section,
+        "antagonist_plan_section": antagonist_plan_section,
+        "clue_section": clue_section,
+        "scene_sequel_line": _scene_sequel_line,
+        "structure_beat_line": _structure_beat_line,
+        "pacing_line": _pacing_line,
+        "story_bible_section": story_bible_section,
+        "arc_section": arc_section,
+        "arc_summary_line": _arc_summary_line,
+        "world_snapshot_line": _world_snapshot_line,
+        "retrieval_section": retrieval_section,
+        "recent_timeline_section": recent_timeline_section,
+        "reader_knowledge_line": _reader_knowledge_line,
+        "relationship_line": _relationship_line,
+        "subplot_line": _subplot_line,
+        "ending_line": _ending_line,
+        "obligations_line": _obligations_line,
+        "foreshadow_line": _foreshadow_line,
+        "tree_section": tree_section,
+        "pp_line": _pp_line,
+        "pp_writer_line": _pp_writer_line,
+    }
     _ctx = _budget_context_sections(
-        {
-            "contract_section": contract_section,
-            "story_principle_line": story_principle_line,
-            "methodology_line": _methodology_line,
-            "participant_fact_section": participant_fact_section,
-            "contradiction_line": _contradiction_line,
-            "query_brief_line": _query_brief_line,
-            "identity_line": _identity_line,
-            "phrase_avoidance_line": _phrase_avoidance_line,
-            "opening_diversity_line": _opening_diversity_line,
-            "genre_constraint_line": _genre_constraint_line,
-            "ranking_profile_line": _ranking_profile_line,
-            "progression_context_line": _progression_context_line,
-            "decision_policy_line": _decision_policy_line,
-            "rule_system_line": _rule_system_line,
-            "faction_ecology_line": _faction_ecology_line,
-            "relationship_agency_line": _relationship_agency_line,
-            "entry_system_line": _entry_system_line,
-            "entry_registry_line": _entry_registry_line,
-            "entry_state_ledger_line": _entry_state_ledger_line,
-            "conflict_diversity_line": _conflict_diversity_line,
-            "scene_purpose_line": _scene_purpose_line,
-            "env_diversity_line": _env_diversity_line,
-            "arc_beat_line": _arc_beat_line,
-            "five_layer_line": _five_layer_line,
-            "cliffhanger_line": _cliffhanger_line,
-            "tension_target_line": _tension_target_line,
-            "location_ledger_line": _location_ledger_line,
-            "budget_diversity_line": _budget_diversity_line,
-            "scene_scope_isolation_line": _scene_scope_isolation_line,
-            "plan_richness_line": _plan_richness_line,
-            "reader_contract_line": _reader_contract_line,
-            "concept_lab_contract_line": _concept_lab_contract_line,
-            "hype_constraints_line": _hype_constraints_line,
-            "current_scene_contract_line": current_scene_contract_line,
-            "qimao_opening_contract_line": _qimao_opening_contract_line,
-            "l3_prompt_line": _l3_prompt_line,
-            "voice_dna_line": _voice_dna_line,
-            "dialogue_voice_line": _dialogue_voice_line,
-            "chapter_market_constraints_line": _chapter_market_constraints_line,
-            "signature_scene_line": _signature_scene_line,
-            "prior_persona_feedback_line": _prior_persona_feedback_line,
-            "hook_echo_line": _hook_echo_line,
-            "acceptance_duty_line": _acceptance_duty_line,
-            "exposition_density_line": _exposition_density_line,
-            "scene_beat_line": _scene_beat_line,
-            "canon_guardrails_line": _canon_guardrails_line,
-            "timeline_canon_line": _timeline_canon_line,
-            "scene_coherence_line": _scene_coherence_line,
-            "character_role_line": _character_role_line,
-            "chapter_length_line": _chapter_length_line,
-            "scene_word_budget_line": _scene_word_budget_line,
-            "project_material_reference_line": _project_material_reference_line,
-            "project_material_obligation_line": _project_material_obligation_line,
-            "library_reference_line": _library_reference_line,
-            "hard_fact_line": _hard_fact_line,
-            "knowledge_line": _knowledge_line,
-            "recent_scene_section": recent_scene_section,
-            "emotion_track_section": emotion_track_section,
-            "antagonist_plan_section": antagonist_plan_section,
-            "clue_section": clue_section,
-            "scene_sequel_line": _scene_sequel_line,
-            "structure_beat_line": _structure_beat_line,
-            "pacing_line": _pacing_line,
-            "story_bible_section": story_bible_section,
-            "arc_section": arc_section,
-            "arc_summary_line": _arc_summary_line,
-            "world_snapshot_line": _world_snapshot_line,
-            "retrieval_section": retrieval_section,
-            "recent_timeline_section": recent_timeline_section,
-            "reader_knowledge_line": _reader_knowledge_line,
-            "relationship_line": _relationship_line,
-            "subplot_line": _subplot_line,
-            "ending_line": _ending_line,
-            "obligations_line": _obligations_line,
-            "foreshadow_line": _foreshadow_line,
-            "tree_section": tree_section,
-            "pp_line": _pp_line,
-            "pp_writer_line": _pp_writer_line,
-        },
+        _sections_before_budget,
         context_budget_tokens,
     )
+    try:
+        global _LAST_PROMPT_ASSEMBLY_REPORT
+        _assembly = build_prompt_assembly_report(
+            _sections_before_budget,
+            _ctx,
+            budget_tokens=context_budget_tokens,
+            mode="budgeted",
+        )
+        _LAST_PROMPT_ASSEMBLY_REPORT = _assembly.to_dict()
+    except Exception:
+        _LAST_PROMPT_ASSEMBLY_REPORT = None
     # Unpack budgeted sections back into local variables
     contract_section = _ctx["contract_section"]
+    _volume_contract_line = _ctx["volume_contract_line"]
     story_principle_line = _ctx["story_principle_line"]
     _methodology_line = _ctx["methodology_line"]
     participant_fact_section = _ctx["participant_fact_section"]
@@ -6939,6 +7209,10 @@ def build_scene_draft_prompts(
     _structure_beat_line = _ctx["structure_beat_line"]
     _pacing_line = _ctx["pacing_line"]
     story_bible_section = _ctx["story_bible_section"]
+    if story_bible_section:
+        # The full story-bible block already contains the volume goal and
+        # obstacle. The compact contract is a fallback only, not a duplicate.
+        _volume_contract_line = ""
     arc_section = _ctx["arc_section"]
     _arc_summary_line = _ctx["arc_summary_line"]
     _world_snapshot_line = _ctx["world_snapshot_line"]
@@ -6987,6 +7261,7 @@ def build_scene_draft_prompts(
             f"{_scene_coherence_line}"
             f"{_character_role_line}"
             f"{_chapter_length_line}"
+            f"{_volume_contract_line}"
             f"{_prewrite_contract_line}"
             f"{_prewrite_plan_line}"
             f"{_hard_fact_line}"
@@ -7102,6 +7377,7 @@ def build_scene_draft_prompts(
             f"{_scene_coherence_line}"
             f"{_character_role_line}"
             f"{_chapter_length_line}"
+            f"{_volume_contract_line}"
             f"{_prewrite_contract_line}"
             f"{_prewrite_plan_line}"
             f"{_hard_fact_line}"
@@ -7204,19 +7480,30 @@ def build_scene_draft_prompts(
             "【连续性】如果角色在前一场明确说了不做某事，不要无理由翻转。"
             "每个角色登场必须有动机——通过动作或暗示说明他/她为何出现在这里。"
         )
-    # 黄金三章·开篇硬契约 (ch1-3, zh). Previously this hard contract only lived in
-    # the chapter-first generation path (build_chapter_first_draft_prompts), which is
-    # gated OFF by default (enable_chapter_first_generation=False) — so the default
-    # scene-first writer never received the golden-three opening rules. Wire the
-    # (formerly orphaned) directive into the system prompt for ch1-3 so the strongest
-    # opening contract reaches the writer regardless of generation mode. The helper
-    # self-guards (returns "" for ch>3 / non-zh), and the system prompt is not
-    # budget-trimmed, so it always reaches the model.
-    _opening_hook_directive = build_opening_hook_directive(
-        chapter.chapter_number, language=language
-    )
-    if _opening_hook_directive:
-        system_prompt = f"{system_prompt}\n\n{_opening_hook_directive}"
+    if prompt_mode == "compiled":
+        compiled_sections = {
+            **_ctx,
+            "prewrite_contract": _prewrite_contract_line,
+            "prewrite_plan": _prewrite_plan_line,
+            "story_enhancer_writer": _story_enhancer_writer_line,
+            "story_spine": _story_spine_line,
+            "anti_debt_prose": _anti_debt_prose_line,
+        }
+        return _compile_rendered_writer_prompt(
+            path="scene",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            section_texts=compiled_sections,
+            system_section_texts={
+                "slop_blacklist": render_slop_blacklist_block(language),
+                "opening_retention": _scene_opening_rules,
+                "writing_profile": writing_profile_section,
+                "serial_guardrails": serial_guardrails,
+            },
+            total_input_budget_tokens=total_input_budget_tokens,
+            prompt_safety_margin=prompt_safety_margin,
+            additional_blocks=compiler_additional_blocks,
+        )
     return system_prompt, user_prompt
 
 
@@ -8508,6 +8795,27 @@ async def _render_chapter_first_character_safety_block(
     return "\n".join(lines)
 
 
+def _chapter_first_compiler_section_name(text: str, index: int) -> str:
+    marker_map = (
+        (("AI套话黑名单", "BANNED AI CLICH"), "slop_blacklist"),
+        (("黄金三章", "GOLDEN THREE", "前十章留存", "FRONT-TEN"), "opening_retention"),
+        (("【字数与结构】", "[WORD COUNT", "word count"), "word_count_rules"),
+        (("【章末收尾钩子】", "[chapter closing hook]"), "closing_hook"),
+        (("【方法论证据】", "[methodology evidence]"), "methodology_evidence"),
+        (("【角色生死与登场安全】",), "character_safety"),
+        (("【写前验收契约】",), "acceptance_contract"),
+        (("【近期章节/场景摘要】",), "recent_context"),
+        (("【检索补充】",), "retrieval_context"),
+        (("【故事圣经上下文】",), "story_bible_context"),
+        (("【时间线与硬事实快照】",), "timeline_context"),
+        (("【场景卡节拍】",), "scene_cards"),
+    )
+    for markers, name in marker_map:
+        if any(marker.casefold() in text.casefold() for marker in markers):
+            return name
+    return f"section_{index:03d}"
+
+
 def build_chapter_first_draft_prompts(
     project: ProjectModel,
     chapter: ChapterModel,
@@ -8518,7 +8826,13 @@ def build_chapter_first_draft_prompts(
     target_word_count: int,
     character_safety_block: str | None = None,
     context_budget_tokens: int = 6000,
-) -> tuple[str, str]:
+    prompt_mode: str = "legacy",
+    total_input_budget_tokens: int = 8_000,
+    prompt_safety_margin: float = 0.10,
+    compiler_additional_blocks: Sequence[PromptBlock] = (),
+) -> tuple[str, str] | CompiledPrompt:
+    if prompt_mode not in {"legacy", "compiled"}:
+        raise ValueError("prompt_mode must be 'legacy' or 'compiled'")
     language = _project_language(project)
     is_en = is_english_language(language)
     writing_profile = _resolve_project_writing_profile(project, style_guide)
@@ -8556,9 +8870,7 @@ def build_chapter_first_draft_prompts(
             "- No internal scaffolding leaks (entry_state / exit_state / contract / scene_type tags).\n"
             "- Use EXACT character names from the participants list.\n"
             "\n"
-            "# OUTPUT · Chapter-opening hard indicators\n"
-            "- First 100 chars MUST deliver a felt pressure / anomaly to the reader.\n"
-            "- First 300 chars MUST show one human flaw in the protagonist (NOT cold rule-following).\n"
+            "# OUTPUT · Chapter delivery hard indicators\n"
             "- Terminology release: only what THIS chapter must reveal; don't pile lore.\n"
             "- Ending: converge to ONE concrete, visualisable hook (not abstract emotion).\n"
             "\n"
@@ -8568,7 +8880,7 @@ def build_chapter_first_draft_prompts(
         )
         instruction = (
             "Write the full chapter in ONE continuous Markdown prose draft.\n"
-            "Honour all CONSTRAINTS in the system prompt and meet the chapter-opening hard indicators.\n"
+            "Honour all system CONSTRAINTS and the chapter-range rules supplied in task context.\n"
             "Scene cards are beat constraints, not visible structure."
         )
     else:
@@ -8592,23 +8904,14 @@ def build_chapter_first_draft_prompts(
             "**只输出正文**：不要提纲、不要评语、不要场景标签、不要策划说明。\n"
             "\n"
             "# CONSTRAINTS · 硬约束（违反即重写）\n"
-            "- 字数：严格贴近目标字数，不许为了解释设定扩写。\n"
             "- 场景标签：正文不能出现「第一场 / 第二场 / 场景 X / 转场」字样。\n"
             "- 策划泄漏：不许出现 entry_state / exit_state / contract / scene_type 等英文结构标签。\n"
             "- 角色名：与「参与者」列表完全一致，不许改名 / 别名 / 缩写。\n"
             "- 输出格式：纯 Markdown 正文，不带 # 标题、不带 ``` 代码块。\n"
             "\n"
-            "# OUTPUT · 章节开篇硬指标\n"
-            "- **前 100 字**：必须给读者可感知的压力或异常（视觉 / 听觉 / 物件异常）。\n"
-            "- **前 300 字**：必须让主角表现出**一个可代入的人性破绽**——不能只是冷静执行规则。\n"
+            "# OUTPUT · 章节交付硬指标\n"
             "- **术语释放**：本章必须信息按场景卡释放即可，不要堆设定。\n"
             "- **章末钩子**：只收束到**一个**具体、可视化、能促使读者翻下一章的钩子（不是抽象感叹）。\n"
-            "\n"
-            "# EXAMPLES · AI 套话黑名单（绝对禁止）\n"
-            "- 「血液仿佛凝固了」/「时间仿佛静止了」/「空气仿佛凝固了」\n"
-            "- 「心中五味杂陈」/「眼眶不由得湿润了」\n"
-            "- 「一股莫名的情绪」/「一阵莫名的恐惧」\n"
-            "- 章末「这一切才刚刚开始」/「真正的答案还在等待揭开」\n"
             "\n"
             "# PROJECT PROFILE（项目级变量）\n"
             f"## 写作风格\n{writing_profile_section}\n\n"
@@ -8617,7 +8920,7 @@ def build_chapter_first_draft_prompts(
         instruction = (
             "请一次性写完整章节。\n"
             "场景卡是内部节拍约束，正文不能出现「第一场 / 第二场 / 场景」等标签。\n"
-            "严格执行 system 中的章节开篇硬指标和硬约束。"
+            "严格执行 system 硬约束及 task 中按章节范围提供的开篇 / 留存规则。"
         )
 
     raw_chapter_contract = getattr(context_packet, "chapter_contract", None)
@@ -8695,38 +8998,9 @@ def build_chapter_first_draft_prompts(
         )
         if block
     ]
-    opening_retention_rules = ""
-    if chapter.chapter_number <= 3:
-        opening_retention_rules = (
-            "【黄金三章硬规则】\n"
-            "0.【新读者锚点·最高优先】默认读者没看过简介。前800字内读者必须从动作/对白中自然得知："
-            "主角是谁什么身份、**他此刻最想要什么/最怕失去什么（为什么不能一走了之）**、"
-            "这个地方/这局是什么、主宰本章生死的核心规则的完整内容"
-            "（该规则必须在第一次生效之前对读者完整可见——禁止只提规则名不给内容）、"
-            "金手指首次生效时读者能一句话说出它是什么；章末读者能盘点主角赢了什么、付出了什么。"
-            "锚点织进动作与对白，不许旁白说明书；做不到锚点的密度和留白都不及格。\n"
-            "1. 第一句话必须直接给出异常、威胁、倒计时、死亡证据或不可解释事件，禁止从整理物品、回忆、解释职业开始。\n"
-            "2. 前300字只允许释放1-2个核心设定名词，必须按“异常 -> 主角选择 -> 代价/危险升级”推进；"
-            "但主宰本章生死的核心规则不受名词限流约束——它必须在生效前完整亮出；"
-            "私设名词首次出现必须当句给一个人话级解释。\n"
-            "3. 主角必须出现一个可代入的人性破绽：怕、穷、迟疑、误判、心软、愧疚或被父辈阴影击中，不能全程像规则机器。\n"
-            "4. 每章至少交付一个具体爽点：识破、反杀、救人、夺回主动权、规则反用或证据翻转。"
-            "爽点落地必须带【可见确认】——对手变脸/围观者哗然/强者侧目/账面数字跳动，"
-            "至少一种当场反应让读者确认'主角赢了'；没有确认反应的胜利等于没写。\n"
-            "5. 章末钩子必须是新的可视化危险或证据，不能只用抽象设定句收尾；"
-            "最后一句必须落在完成画面帧、人物动作、物件变化或明确选择点。\n"
-            "6. 句法节奏：禁止“一拍一段”的分镜腔——单句独段只在真要顿挫时用，连续≤2段、"
-            "全章占叙述段<1/4；多数动作/心理拍点要并进“动作+反应+环境”的叙述段。"
-            "反例：把“他坐起来。”“数字跳了一格。”“他愣了一拍。”并回上下文段落，长短句交错。"
-        )
-    elif chapter.chapter_number <= 10:
-        opening_retention_rules = (
-            "【前十章留存硬规则】\n"
-            "1. 开头200字必须承接上一章钩子并立刻升级，不得重新铺垫。\n"
-            "2. 本章必须有一个新证据、一次主动选择、一个具体代价或一次规则反用。\n"
-            "3. 对话必须区分人物腔调，禁止所有人都用冷短句。\n"
-            "4. 章末必须留下具体物件、动作、声音、画面或选择压力，且最后一句必须仍在现场内。"
-        )
+    opening_retention_rules = render_golden_three_rules(
+        chapter.chapter_number, language, path_mode="chapter_first"
+    )
     contract_must_hit_block = ""
     if isinstance(chapter_contract, Mapping):
         must_hit_items = [
@@ -8760,6 +9034,15 @@ def build_chapter_first_draft_prompts(
         chapter_contract,
         language=language,
     )
+    hard_writer_tail_blocks = [
+        block
+        for block in (
+            opening_retention_rules,
+            render_slop_blacklist_block(language),
+            *must_keep_tail_blocks,
+        )
+        if block
+    ]
     volume_seed_block = ""
     if chapter.chapter_number <= 3 and not (
         isinstance(getattr(chapter, "metadata_json", None), Mapping)
@@ -8799,8 +9082,11 @@ def build_chapter_first_draft_prompts(
     ]
     per_scene_min = max(1, min(int(target * 0.8) for target in scene_targets))
     per_scene_max = max(2, max(int(target * 1.15) for target in scene_targets))
-    output_rules = (
-        "只输出小说正文 Markdown。可以保留一个章节标题；不要输出“分析/计划/说明/门禁/改写策略”。"
+    # --- Output rules split into focused blocks (was one ~20-rule blob) ---
+    output_word_count_rules = (
+        "【字数与结构】\n"
+        "只输出小说正文 Markdown。可以保留一个章节标题；不要输出「分析/计划/说明/门禁/改写策略」。"
+        f"发布硬范围 {hard_min_words}-{hard_max_words} 字；"
         f"正文必须连贯，篇幅硬范围是 {hard_min_words}-{hard_max_words} 个汉字，"
         f"目标约{hard_target_words}字；写到章末钩子落地后立刻停止，禁止超过上限；"
         f"字数是硬交付，不是建议：正文少于 {hard_min_words} 个汉字就是失败，"
@@ -8809,6 +9095,9 @@ def build_chapter_first_draft_prompts(
         f"不是每个场景各写一章；单场通常控制在 {per_scene_min}-{per_scene_max} 字内，"
         "全文建议22-32段，最多36段；每场5-8段为主，至少4段正在发生的戏，最多9段；"
         "单段通常45-95字。"
+    )
+    output_scene_rules = (
+        "【场景执行规则】\n"
         "不得把场景卡压缩成一句概述；每个场景必须写出现场空间、角色动作、可见物证变化、"
         "人物反应和至少一轮有辨识度的对话/追问。"
         "任何一场到第8段还没完成离场状态，必须用1段收束并进入下一场。"
@@ -8818,30 +9107,49 @@ def build_chapter_first_draft_prompts(
         "场景卡的入场状态、离场状态和 forbidden_actions 是硬边界；不得把场景卡里的"
         # NOTE (2026-06-24 去同质化 P0-1): genericised — previously hardcoded one
         # book's horror beats/objects/jargon (失声/回声/半账未解/被吞掉/门合拢/铜钱/认账/镜债).
-        "轻量状态、悬念或未兑现伏笔，升级成未写在场景卡里的高潮/死亡/关键转折动作；"
-        "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、关键不可逆事件、额外活人 NPC 等一律禁止；"
-        "电话/短信只能作为同一视角内的现实沟通工具，不得用来切走 POV 或凭空送入线索。"
-        f"如果模型准备写超过42段或超过{hard_max_words}字，必须优先删解释、删重复氛围、删二次推理，"
-        "不能继续扩写。"
-        "不得出现模板化重复句式，不得把同一恐惧/动作/关键物件反复写成同一模式。"
-        "非专业角色只能描述自己亲眼看见的异常、听来的警告或身体反应；除非角色认知状态明确写明，"
-        "否则不得让普通配角主动说出或理解本书的核心机制/规则专名。"
-        "叙述者也不要替普通角色贴规则标签，应改写成普通语言（例如把“他被卷入”改成他具体的言行/身体反应）。"
-        "如果需要让非专业角色说出规则词，必须写成被异常逼迫复述、或主角刚刚当场解释后的结果。"
+        "轻量状态、悬念或未兑现伏笔，升级成未写在场景卡里的高潮/死亡/关键转折动作。"
         "正文不得使用 ---、***、空行切场、场景标题或小节分隔符。"
         "每次更换地点或时间，必须先写一句可见转场动作，例如出门、下楼、电梯、电话挂断、"
         "门牌变化、时间跳动或物件反应；禁止从一个地点直接跳到另一个地点。"
-        "章末最后120字必须满足“钩子+落地帧”：可以抛出新危险或新信息，但最后一句必须是"
+    )
+    output_safety_rules = (
+        "【内容安全规则】\n"
+        "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、关键不可逆事件、额外活人 NPC 等一律禁止。"
+        "不得临时发明未在场景卡、角色池、章节契约或故事圣经中出现的人名；功能性人物只用"
+        "司机、邻居、保安、摊主、送货员等身份称谓。"
+        "如果角色安全块要求某角色本章不能确认死亡，连疑问句、传闻句和旁人推测式「已经死了，对吧？」"
+        "也不能写，只能写成失踪、被困、生死未明或还不能确认。"
+    )
+    output_character_rules = (
+        "【角色认知规则】\n"
+        "非专业角色只能描述自己亲眼看见的异常、听来的警告或身体反应；除非角色认知状态明确写明，"
+        "否则不得让普通配角主动说出或理解本书的核心机制/规则专名。"
+        "叙述者也不要替普通角色贴规则标签，应改写成普通语言（例如把「他被卷入」改成他具体的言行/身体反应）。"
+        "如果需要让非专业角色说出规则词，必须写成被异常逼迫复述、或主角刚刚当场解释后的结果。"
+        "电话/短信只能作为同一视角内的现实沟通工具，不得用来切走 POV 或凭空送入线索。"
+        "不得出现模板化重复句式，不得把同一恐惧/动作/关键物件反复写成同一模式。"
+    )
+    output_chapter_end_rules = (
+        "【章末规则】\n"
+        "章末最后120字必须满足「钩子+落地帧」：可以抛出新危险或新信息，但最后一句必须是"
         "现场内可看见的完成画面、人物动作、物件变化或选择点；如果钩子是对白，必须在对白后"
         "再加一句动作/画面作为最后帧，禁止让最后一句只是一句台词或正在进行的动作。"
         "章末只能保留一个主钩子，最多一个辅助信息，不得连续堆叠电梯、短信、门、水、电话、"
         "新人物等多个未解悬念；选择一个最服务下一章的钩子并让其落成完成画面。"
-        "不得临时发明未在场景卡、角色池、章节契约或故事圣经中出现的人名；功能性人物只用"
-        "司机、邻居、保安、摊主、送货员等身份称谓。"
-        "如果角色安全块要求某角色本章不能确认死亡，连疑问句、传闻句和旁人推测式“已经死了，对吧？”"
-        "也不能写，只能写成失踪、被困、生死未明或还不能确认。"
+    )
+    output_trim_rules = (
+        "【删减策略】\n"
+        f"如果模型准备写超过42段或超过{hard_max_words}字，必须优先删解释、删重复氛围、删二次推理，"
+        "不能继续扩写。"
         "如果信息量装不下，优先删解释和术语，保留动作、冲突、人物选择和章末钩子。"
     )
+    output_rules_sections = [
+        output_scene_rules,
+        output_safety_rules,
+        output_character_rules,
+        output_chapter_end_rules,
+        output_trim_rules,
+    ]
     opening_scene_contract = _render_chapter_first_opening_contract(chapter, scenes)
     prior_chapter_bridge = _render_chapter_first_prior_chapter_bridge(context_packet)
     front_forbidden_terms_block = _render_front_chapter_forbidden_terms_block(
@@ -8900,16 +9208,13 @@ def build_chapter_first_draft_prompts(
         chapter,
         scenes,
     )
-    user_prompt = "\n\n".join(
-        section
-        for section in [
+    user_sections = [
             "【任务】\n" + instruction,
             prior_chapter_bridge,
             (
                 "【章节目标】\n"
                 f"作品：{project.title}\n"
                 f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
-                f"目标字数：约{hard_target_words}字，必须完整成章；发布硬范围 {hard_min_words}-{hard_max_words} 字\n"
                 f"章节目标：{chapter.chapter_goal or ''}"
             ),
             quality_uplift_blocks.get("pre_scene", ""),
@@ -8937,7 +9242,6 @@ def build_chapter_first_draft_prompts(
             else "",
             opening_scene_contract,
             front_forbidden_terms_block,
-            opening_retention_rules,
             concept_lab_contract_block,
             contract_must_hit_block,
             volume_seed_block,
@@ -8953,13 +9257,37 @@ def build_chapter_first_draft_prompts(
             "【活动主线/伏笔/回收】\n" + activity_context_block,
             "【时间线与硬事实快照】\n" + timeline_context_block,
             "【检索补充】\n" + retrieval_context_block,
-            "【输出要求】\n" + output_rules,
-            *must_keep_tail_blocks,
+            *output_rules_sections,
+            output_word_count_rules,
+            *hard_writer_tail_blocks,
         ]
-        if section
-    )
     system_prompt = _redact_front10_prompt_leaks(system_prompt, chapter, scenes)
-    user_prompt = _redact_front10_prompt_leaks(user_prompt, chapter, scenes)
+    user_sections = [
+        _redact_front10_prompt_leaks(section, chapter, scenes)
+        for section in user_sections
+        if section
+    ]
+    user_prompt = "\n\n".join(user_sections)
+    if prompt_mode == "compiled":
+        section_texts: dict[str, str] = {}
+        for index, section in enumerate(user_sections[1:], start=1):
+            name = _chapter_first_compiler_section_name(section, index)
+            if name in section_texts:
+                name = f"{name}_{index:03d}"
+            section_texts[name] = section
+        return _compile_rendered_writer_prompt(
+            path="chapter_first",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            section_texts=section_texts,
+            system_section_texts={
+                "writing_profile": writing_profile_section,
+                "serial_guardrails": serial_guardrails,
+            },
+            total_input_budget_tokens=total_input_budget_tokens,
+            prompt_safety_margin=prompt_safety_margin,
+            additional_blocks=compiler_additional_blocks,
+        )
     # Token-aware soft trim — chapter-first mode builds a single large
     # user_prompt without per-section budget tracking.  When the assembled
     # prompt exceeds the configured budget (rough CJK: 3.5 chars/token, EN
@@ -8982,11 +9310,19 @@ def build_chapter_first_draft_prompts(
 # tier-aware trim must protect them by anchoring the cut to the last
 # boundary *before* the first must-keep section.
 _MUST_KEEP_TAIL_MARKERS_ZH: tuple[str, ...] = (
+    "【字数与结构】",
+    "【黄金三章·开篇硬契约】",
+    "【前十章留存硬规则】",
+    "AI套话黑名单",
     "【方法论证据】",
     "【章末收尾钩子】",
     "【收尾钩子】",
 )
 _MUST_KEEP_TAIL_MARKERS_EN: tuple[str, ...] = (
+    "[word count and structure]",
+    "[GOLDEN THREE CHAPTERS — OPENING HARD CONTRACT]",
+    "[FRONT-TEN RETENTION RULES]",
+    "BANNED AI CLICH",
     "[methodology evidence]",
     "[chapter closing hook]",
     "[closing hook]",
@@ -9334,7 +9670,11 @@ async def generate_chapter_draft_once(
         chapter=chapter,
         scenes=scenes,
     )
-    system_prompt, user_prompt = build_chapter_first_draft_prompts(
+    writer_prompt_mode = _writer_prompt_mode_for_chapter(
+        effective_settings,
+        int(chapter.chapter_number or 0),
+    )
+    prompt_result = build_chapter_first_draft_prompts(
         project,
         chapter,
         scenes,
@@ -9349,18 +9689,31 @@ async def generate_chapter_draft_once(
                 6000,
             )
         ),
+        prompt_mode="compiled" if writer_prompt_mode == "compiled" else "legacy",
+        total_input_budget_tokens=int(
+            effective_settings.llm.writer_total_input_budget_tokens
+        ),
+        prompt_safety_margin=float(effective_settings.llm.writer_prompt_safety_margin),
     )
-    try:
-        from bestseller.services.prompt_compactor import compact_user_prompt
-
-        user_prompt, compaction_report = compact_user_prompt(
-            user_prompt,
-            chapter_no=int(chapter.chapter_number or 0),
-            forbidden_terms_full=_front10_forbidden_signal_terms(chapter, project=project),
-        )
-    except Exception:
+    compiler_report = None
+    if isinstance(prompt_result, CompiledPrompt):
+        system_prompt = prompt_result.system
+        user_prompt = prompt_result.user
+        compiler_report = prompt_result.report
         compaction_report = None
-        logger.debug("chapter-first prompt compaction failed", exc_info=True)
+    else:
+        system_prompt, user_prompt = prompt_result
+        try:
+            from bestseller.services.prompt_compactor import compact_user_prompt
+
+            user_prompt, compaction_report = compact_user_prompt(
+                user_prompt,
+                chapter_no=int(chapter.chapter_number or 0),
+                forbidden_terms_full=_front10_forbidden_signal_terms(chapter, project=project),
+            )
+        except Exception:
+            compaction_report = None
+            logger.debug("chapter-first prompt compaction failed", exc_info=True)
     fallback_content = "\n\n".join(
         [
             format_chapter_heading(
@@ -9401,6 +9754,12 @@ async def generate_chapter_draft_once(
                 "chapter_number": chapter.chapter_number,
                 "scene_numbers": [scene.scene_number for scene in scenes],
                 "generation_mode": "chapter_first",
+                "prompt_mode": writer_prompt_mode,
+                "prompt_compiler_report": (
+                    compiler_report.model_dump(mode="json")
+                    if compiler_report is not None
+                    else None
+                ),
                 "length_control_method": "prompt_contract_and_quality_gate",
                 "prompt_compaction": (
                     None
@@ -10368,7 +10727,50 @@ async def generate_scene_draft(
                     "scene beat sheet direct-draft injection failed (non-fatal)",
                     exc_info=True,
                 )
-        system_prompt, user_prompt = build_scene_draft_prompts(
+        prompt_mode = _writer_prompt_mode_for_chapter(
+            effective_settings,
+            int(chapter.chapter_number or 0),
+        )
+        proj_metadata = getattr(project, "metadata_json", None) or {}
+        voice_corrections = (
+            proj_metadata.get("voice_corrections", {})
+            if isinstance(proj_metadata, dict)
+            else {}
+        )
+        voice_corrections_block = ""
+        if voice_corrections and scene.participants:
+            _vc_is_en = is_english_language(_project_language(project))
+            correction_lines: list[str] = []
+            for participant in scene.participants:
+                correction = voice_corrections.get(participant)
+                if correction:
+                    _vc_label = (
+                        f"[{participant} Voice Correction]"
+                        if _vc_is_en
+                        else f"【{participant}语音修正】"
+                    )
+                    correction_lines.append(f"{_vc_label}{correction}")
+            if correction_lines:
+                header = "## Voice Corrections" if _vc_is_en else "【角色语音修正】"
+                voice_corrections_block = f"{header}\n" + "\n".join(correction_lines)
+        compiler_additional_blocks: tuple[PromptBlock, ...] = ()
+        if voice_corrections_block:
+            compiler_additional_blocks = (
+                PromptBlock(
+                    key="scene.section.voice_corrections",
+                    channel="user",
+                    layer="craft",
+                    authority=80,
+                    instruction_family="writer.craft.voice_corrections",
+                    required=False,
+                    min_tokens=8,
+                    max_tokens=500,
+                    trim_policy="truncate_tail",
+                    source="drafts.scene.voice_corrections",
+                    text=voice_corrections_block,
+                ),
+            )
+        prompt_result = build_scene_draft_prompts(
             project,
             chapter,
             scene,
@@ -10595,35 +10997,35 @@ async def generate_scene_draft(
             prewrite_contract_block=prewrite_contract_block,
             prewrite_plan_block=prewrite_plan_block,
             context_budget_tokens=(
-                settings.generation.context_budget_tokens if settings else 6000
+                int(
+                    getattr(settings.generation, "writer_prompt_budget_tokens", 0)
+                    or getattr(settings.generation, "context_budget_tokens", 0)
+                    or 8000
+                )
+                if settings
+                else 8000
             ),
+            prompt_mode="compiled" if prompt_mode == "compiled" else "legacy",
+            total_input_budget_tokens=int(
+                effective_settings.llm.writer_total_input_budget_tokens
+            ),
+            prompt_safety_margin=float(effective_settings.llm.writer_prompt_safety_margin),
+            compiler_additional_blocks=compiler_additional_blocks,
         )
-        # Inject voice drift correction prompts for scene participants
-        proj_metadata = getattr(project, "metadata_json", None) or {}
-        voice_corrections = proj_metadata.get("voice_corrections", {}) if isinstance(proj_metadata, dict) else {}
-        voice_corrections_block = ""
-        if voice_corrections and scene.participants:
-            _vc_is_en = is_english_language(_project_language(project))
-            correction_lines: list[str] = []
-            for participant in scene.participants:
-                correction = voice_corrections.get(participant)
-                if correction:
-                    _vc_label = f"[{participant} Voice Correction]" if _vc_is_en else f"【{participant}语音修正】"
-                    correction_lines.append(f"{_vc_label}{correction}")
-            if correction_lines:
-                header = "## Voice Corrections" if _vc_is_en else "【角色语音修正】"
-                voice_corrections_block = f"{header}\n" + "\n".join(correction_lines)
-        if voice_corrections_block:
-            user_prompt = f"{user_prompt}\n\n{voice_corrections_block}"
+        compiler_report = None
+        if isinstance(prompt_result, CompiledPrompt):
+            system_prompt = prompt_result.system
+            user_prompt = prompt_result.user
+            compiler_report = prompt_result.report
+        else:
+            system_prompt, user_prompt = prompt_result
+            if voice_corrections_block:
+                user_prompt = f"{user_prompt}\n\n{voice_corrections_block}"
         raw_user_prompt = user_prompt
         _model_tier = _determine_model_tier(
             chapter,
             scene,
             _packet_chapter_contract(context_packet),
-        )
-        prompt_mode = _writer_prompt_mode_for_chapter(
-            effective_settings,
-            int(chapter.chapter_number or 0),
         )
         prompt_variants = ("full", "lean") if prompt_mode == "ab" else (prompt_mode,)
         # App-level best-of-N for golden-three (strong tier) chapters: the 0.92
@@ -10643,19 +11045,26 @@ async def generate_scene_draft(
         prompt_trace_path = None
         user_prompt = raw_user_prompt
         for variant, _candidate_attempt in variant_plan:
-            try:
-                from bestseller.services.prompt_compactor import compact_user_prompt
-
-                variant_user_prompt, variant_compaction_report = compact_user_prompt(
-                    raw_user_prompt,
-                    chapter_no=int(chapter.chapter_number or 0),
-                    forbidden_terms_full=_front10_forbidden_signal_terms(chapter, project=project),
-                    lean=variant == "lean",
-                )
-            except Exception:
+            if variant == "compiled":
                 variant_user_prompt = raw_user_prompt
                 variant_compaction_report = None
-                logger.debug("scene prompt compaction failed", exc_info=True)
+            else:
+                try:
+                    from bestseller.services.prompt_compactor import compact_user_prompt
+
+                    variant_user_prompt, variant_compaction_report = compact_user_prompt(
+                        raw_user_prompt,
+                        chapter_no=int(chapter.chapter_number or 0),
+                        forbidden_terms_full=_front10_forbidden_signal_terms(
+                            chapter,
+                            project=project,
+                        ),
+                        lean=variant == "lean",
+                    )
+                except Exception:
+                    variant_user_prompt = raw_user_prompt
+                    variant_compaction_report = None
+                    logger.debug("scene prompt compaction failed", exc_info=True)
             variant_trace_path = _maybe_write_scene_prompt_trace(
                 settings,
                 project,
@@ -10704,6 +11113,11 @@ async def generate_scene_draft(
                         "context_query": context_packet.query_text,
                         "prompt_mode": variant,
                         "prompt_mode_ab": prompt_mode == "ab",
+                        "prompt_compiler_report": (
+                            compiler_report.model_dump(mode="json")
+                            if compiler_report is not None
+                            else None
+                        ),
                         "candidate_attempt": _candidate_attempt,
                         "best_of_n": _best_of_n,
                         "prompt_compaction": (
@@ -11639,6 +12053,25 @@ async def maybe_prepare_chapter_auto_repair(
     # sit alongside the quality-report row.
     chapter_meta = dict(chapter.metadata_json or {})
 
+    # A repair pass needs the scene cards in every successful branch below.
+    # Keep one authoritative load for this invocation.  In particular, the
+    # total-rounds guard must not consume a separate query result and then
+    # make the eventual reset operate on an empty second result (which left
+    # the chapter marked pending while every scene stayed approved).
+    _repair_scenes_cache: list[SceneCardModel] | None = None
+
+    async def _load_repair_scenes() -> list[SceneCardModel]:
+        nonlocal _repair_scenes_cache
+        if _repair_scenes_cache is None:
+            _repair_scenes_cache = list(
+                await session.scalars(
+                    select(SceneCardModel)
+                    .where(SceneCardModel.chapter_id == chapter.id)
+                    .order_by(SceneCardModel.scene_number.asc())
+                )
+            )
+        return _repair_scenes_cache
+
     # R20 — chapter-level total scene-rounds budget (fail-fast mode).  When
     # configured (>0) and the chapter's scenes have collectively spent the
     # budget, refuse to trigger another repair pass: stamp the known block
@@ -11647,13 +12080,7 @@ async def maybe_prepare_chapter_auto_repair(
     # follows the existing machine-repair route.
     _rounds_budget = _resolve_chapter_scene_rounds_budget()
     if _rounds_budget > 0:
-        _budget_scenes = list(
-            await session.scalars(
-                select(SceneCardModel).where(
-                    SceneCardModel.chapter_id == chapter.id
-                )
-            )
-        )
+        _budget_scenes = await _load_repair_scenes()
         _total_rounds = total_chapter_scene_repair_rounds(_budget_scenes)
         if _total_rounds >= _rounds_budget:
             _latest_payload = dict(getattr(latest_report, "report_json", None) or {})
@@ -11946,13 +12373,7 @@ async def maybe_prepare_chapter_auto_repair(
                 f"{hint_text}\n{_chapter_auto_repair_length_contract(project, chapter)}"
             )
             # Persist the hint into scene metadata so the writer sees it
-            scenes = list(
-                await session.scalars(
-                    select(SceneCardModel)
-                    .where(SceneCardModel.chapter_id == chapter.id)
-                    .order_by(SceneCardModel.scene_number.asc())
-                )
-            )
+            scenes = await _load_repair_scenes()
             dead_names = (
                 await _load_dead_character_names_before_chapter(
                     session,
@@ -12116,13 +12537,7 @@ async def maybe_prepare_chapter_auto_repair(
             hint_text = (
                 f"{hint_text}\n{_chapter_auto_repair_length_contract(project, chapter)}"
             )
-            scenes = list(
-                await session.scalars(
-                    select(SceneCardModel)
-                    .where(SceneCardModel.chapter_id == chapter.id)
-                    .order_by(SceneCardModel.scene_number.asc())
-                )
-            )
+            scenes = await _load_repair_scenes()
             scenes_to_reset = select_scenes_for_auto_repair(scenes, repairable_hit)
             if len(scenes_to_reset) < len(scenes):
                 logger.info(
@@ -12447,13 +12862,7 @@ async def maybe_prepare_chapter_auto_repair(
 
     # Load scenes first (before any state mutation) so that if the query fails
     # we abort without having touched chapter.production_state.
-    scenes = list(
-        await session.scalars(
-            select(SceneCardModel)
-            .where(SceneCardModel.chapter_id == chapter.id)
-            .order_by(SceneCardModel.scene_number.asc())
-        )
-    )
+    scenes = await _load_repair_scenes()
 
     # Length repair must mutate concrete per-scene budgets, not just append
     # prose hints.  Otherwise the writer keeps using the stale targets and

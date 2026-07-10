@@ -14,30 +14,45 @@ and ``chapter_count``, eliminating the gap between quickstart and studio paths.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
 import hashlib
 import json
 import logging
 import re
-from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
-from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
-from bestseller.services.methodology import render_qimao_regeneration_contract
-from bestseller.services.methodology_compiler import MethodologyStage, compile_methodology
-from bestseller.services.concept_lab import (
-    coerce_concept_lab_bundle,
-    render_concept_lab_prompt_block,
-)
 from bestseller.services.blurb_pathology import (
     derive_book_jargon_terms,
     detect_blurb_pathology,
     truncate_at_sentence,
 )
+from bestseller.services.concept_lab import (
+    coerce_concept_lab_bundle,
+    render_concept_lab_prompt_block,
+)
+from bestseller.services.degradation_tracker import DegradationEvent, DegradationTracker
+
+# Import GenreReviewProfile type for type hints; actual resolution is guarded.
+from bestseller.services.genre_review_profiles import (
+    GenreReviewProfile,
+    resolve_genre_review_profile,
+)
 from bestseller.services.hook_propagation import coerce_hook_spec, render_hook_spec_prompt_block
+from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
+from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
+from bestseller.services.methodology import render_qimao_regeneration_contract
+from bestseller.services.methodology_compiler import MethodologyStage, compile_methodology
+from bestseller.services.novel_categories import (
+    render_category_anti_patterns,
+    render_category_reader_promise,
+    resolve_novel_category,
+)
+from bestseller.services.planning_concurrency import run_in_isolated_session
 from bestseller.services.platform_title_workflow import (
     build_story_dna_fallback_title,
     build_title_revision_messages,
@@ -46,24 +61,13 @@ from bestseller.services.platform_title_workflow import (
     select_primary_platform_title,
     should_revise_primary_title,
 )
+from bestseller.services.progress_context import emit_activity, emit_milestone
+from bestseller.services.writing_presets import list_genre_presets
 from bestseller.services.writing_profile import (
     resolve_writing_profile,
     sanitize_genre_story_overrides,
 )
-from bestseller.services.writing_presets import list_genre_presets
 from bestseller.settings import AppSettings
-
-# Import GenreReviewProfile type for type hints; actual resolution is guarded.
-from bestseller.services.genre_review_profiles import (
-    GenreReviewProfile,
-    resolve_genre_review_profile,
-)
-from bestseller.services.novel_categories import (
-    render_category_anti_patterns,
-    render_category_reader_promise,
-    resolve_novel_category,
-)
-from bestseller.services.progress_context import emit_activity, emit_milestone
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +101,31 @@ class ConceptionResult:
     # 供 planner/prose 复用同一份世界宪法(避免二次派生产生的漂移)。
     # 见 world_model_deriver.derive_world_model / domain.world_model.WorldModel。
     world_model: dict[str, Any] = field(default_factory=dict)
+    # 降级追踪(2026-07-10):记录哪些轮次/门触发了 fallback 或异常。
+    # 如 ("market_strategist:fallback", "concept_tournament:error")。
+    # 下游可据此感知 conception 质量降级。
+    degraded_rounds: tuple[DegradationEvent, ...] = ()
+    degraded: bool = False
+    degradation_events: tuple[DegradationEvent, ...] = ()
+
+
+class ConceptionRequiredLaneError(RuntimeError):
+    """Strict-quality conception was blocked by a required lane degradation."""
+
+    code = "conception_required_lane_blocked"
+
+    def __init__(
+        self,
+        event: DegradationEvent,
+        *,
+        blocking_events: tuple[DegradationEvent, ...] | None = None,
+    ) -> None:
+        self.event = event
+        self.blocking_events = blocking_events or (event,)
+        super().__init__(
+            f"Conception required lane blocked: component={event.component} "
+            f"stage={event.stage} reason={event.reason}"
+        )
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -457,6 +486,9 @@ async def _llm_call(
     template: str,
     project_id: UUID | None = None,
     workflow_run_id: UUID | None = None,
+    degradation_tracker: DegradationTracker | None = None,
+    degradation_stage: str | None = None,
+    degradation_component: str | None = None,
 ) -> tuple[str, UUID | None]:
     result = await complete_text(
         session,
@@ -471,6 +503,52 @@ async def _llm_call(
             workflow_run_id=workflow_run_id,
         ),
     )
+    if degradation_tracker is not None:
+        result_metadata = getattr(result, "metadata", None)
+        if not isinstance(result_metadata, dict):
+            result_metadata = {}
+        role_settings = getattr(getattr(settings, "llm", None), role, None)
+        primary_model = getattr(result, "effective_primary_model", None) or getattr(
+            role_settings, "model", None
+        )
+        configured_fallback_model = getattr(
+            role_settings, "rate_limit_fallback_model", None
+        )
+        result_model = getattr(result, "model_name", None)
+        provider_fallback = (
+            bool(getattr(result, "fallback_used", False))
+            or
+            getattr(result, "provider", None) == "fallback"
+            or getattr(result, "finish_reason", None) == "fallback"
+        )
+        configured_model_fallback = bool(
+            configured_fallback_model
+            and result_model == configured_fallback_model
+            and result_model != primary_model
+        )
+        metadata_fallback = bool(
+            result_metadata.get("rate_limit_fallback_active")
+            or result_metadata.get("rate_limit_fallback_primary_model")
+            or result_metadata.get("fallback_model")
+        )
+        if provider_fallback or configured_model_fallback or metadata_fallback:
+            degradation_tracker.record(
+                stage=degradation_stage or template,
+                component=degradation_component or template,
+                reason=(
+                    str(getattr(result, "fallback_source", None) or "provider_fallback")
+                    if provider_fallback
+                    else "model_fallback"
+                ),
+                severity="error",
+                fallback=True,
+                model=result_model,
+                metadata={
+                    "primary_model": primary_model,
+                    "configured_fallback_model": configured_fallback_model,
+                    **result_metadata,
+                },
+            )
     return result.content, result.llm_run_id
 
 
@@ -533,6 +611,8 @@ async def _llm_call_json(
     language: str | None = None,
     project_id: UUID | None = None,
     workflow_run_id: UUID | None = None,
+    degradation_tracker: DegradationTracker | None = None,
+    degradation_component: str | None = None,
 ) -> tuple[dict[str, Any], list[UUID]]:
     """Call a conception LLM stage and repair invalid JSON with diagnostics."""
 
@@ -548,6 +628,9 @@ async def _llm_call_json(
         template=template,
         project_id=project_id,
         workflow_run_id=workflow_run_id,
+        degradation_tracker=degradation_tracker,
+        degradation_stage=stage,
+        degradation_component=degradation_component or stage,
     )
     if llm_id is not None:
         llm_run_ids.append(llm_id)
@@ -576,11 +659,23 @@ async def _llm_call_json(
         template=f"{template}_repair",
         project_id=project_id,
         workflow_run_id=workflow_run_id,
+        degradation_tracker=degradation_tracker,
+        degradation_stage=stage,
+        degradation_component=degradation_component or stage,
     )
     if repair_llm_id is not None:
         llm_run_ids.append(repair_llm_id)
     try:
-        return _sanitize_forbidden_default_motifs(_extract_json(repair_text), is_en=is_en), llm_run_ids
+        payload = _sanitize_forbidden_default_motifs(_extract_json(repair_text), is_en=is_en)
+        if degradation_tracker is not None:
+            degradation_tracker.record(
+                stage=stage,
+                component=degradation_component or stage,
+                reason="json_repair",
+                severity="warning",
+                fallback=False,
+            )
+        return payload, llm_run_ids
     except Exception:
         logger.warning(
             "Conception stage %s repair still produced invalid JSON; using fallback payload.",
@@ -588,7 +683,16 @@ async def _llm_call_json(
             exc_info=True,
         )
         try:
-            return _sanitize_forbidden_default_motifs(_extract_json(fallback), is_en=is_en), llm_run_ids
+            payload = _sanitize_forbidden_default_motifs(_extract_json(fallback), is_en=is_en)
+            if degradation_tracker is not None:
+                degradation_tracker.record(
+                    stage=stage,
+                    component=degradation_component or stage,
+                    reason="static_fallback",
+                    severity="error",
+                    fallback=True,
+                )
+            return payload, llm_run_ids
         except Exception:
             logger.error(
                 "Conception stage %s: both repair and fallback payloads were "
@@ -596,6 +700,14 @@ async def _llm_call_json(
                 stage,
                 exc_info=True,
             )
+            if degradation_tracker is not None:
+                degradation_tracker.record(
+                    stage=stage,
+                    component=degradation_component or stage,
+                    reason="fallback_unparseable",
+                    severity="critical",
+                    fallback=True,
+                )
             return {}, llm_run_ids
 
 
@@ -2391,6 +2503,7 @@ async def _audit_cast_reality(
     character_proposal: dict[str, Any],
     ctx: dict[str, Any],
     is_en: bool,
+    degradation_tracker: DegradationTracker | None = None,
 ) -> tuple[dict[str, Any], list[UUID]]:
     """职业现实审计——设定层 enforcement（2026-07-08）。
 
@@ -2432,11 +2545,113 @@ async def _audit_cast_reality(
         template="conception_cast_reality_audit",
         stage="conception.cast_reality_audit",
         language=str(ctx.get("language") or "zh-CN"),
+        degradation_tracker=degradation_tracker,
+        degradation_component="cast_reality_auditor",
     )
     if not isinstance(audited, dict) or not audited.get("protagonist_archetype"):
         # 结构损坏 → fail-open 用原提案
+        if degradation_tracker is not None:
+            degradation_tracker.record(
+                stage="conception.cast_reality_audit",
+                component="cast_reality_auditor",
+                reason="structure_invalid",
+                severity="error",
+                fallback=True,
+                metadata={"returned_keys": sorted(audited) if isinstance(audited, dict) else []},
+            )
         return character_proposal, ids
     return audited, ids
+
+
+_REQUIRED_CONCEPTION_LANES = frozenset(
+    {
+        "market_strategist",
+        "character_architect",
+        "cast_reality_auditor",
+        "world_builder",
+    }
+)
+
+
+async def _run_required_conception_lanes(
+    *,
+    market_lane: Callable[[], Awaitable[Any]],
+    character_lane: Callable[[], Awaitable[Any]],
+    world_lane: Callable[[], Awaitable[Any]],
+    fallbacks: dict[str, Any],
+    tracker: DegradationTracker,
+    quality_mode: str,
+) -> dict[str, Any]:
+    """Run required Round-1 lanes with structured fail-open/fail-closed semantics.
+
+    ``TaskGroup`` owns sibling cancellation and waits for all child cleanup when
+    the caller is cancelled. Lane exceptions are converted to fallback outcomes
+    only in closure mode; strict mode blocks after all evidence is collected.
+    """
+
+    async def _capture(component: str, operation: Callable[[], Awaitable[Any]]) -> Any:
+        try:
+            outcome = await operation()
+            payload = outcome[0] if isinstance(outcome, tuple) and outcome else outcome
+            if not isinstance(payload, Mapping) or not payload:
+                tracker.record(
+                    stage=f"conception.{component}",
+                    component=component,
+                    reason="empty_result",
+                    severity="critical" if quality_mode == "strict" else "error",
+                    fallback=True,
+                    metadata={"result_type": type(payload).__name__},
+                )
+                return fallbacks.get(component, outcome)
+            return outcome
+        except Exception as exc:
+            tracker.record(
+                stage=f"conception.{component}",
+                component=component,
+                reason="lane_error",
+                severity="critical" if quality_mode == "strict" else "error",
+                fallback=True,
+                metadata={"error_type": type(exc).__name__, "error": str(exc)},
+            )
+            return fallbacks.get(component)
+
+    tasks: dict[str, asyncio.Task[Any]] = {}
+    async with asyncio.TaskGroup() as task_group:
+        tasks["market_strategist"] = task_group.create_task(
+            _capture("market_strategist", market_lane)
+        )
+        tasks["character_architect"] = task_group.create_task(
+            _capture("character_architect", character_lane)
+        )
+        tasks["world_builder"] = task_group.create_task(
+            _capture("world_builder", world_lane)
+        )
+
+    outcomes = {component: task.result() for component, task in tasks.items()}
+    if quality_mode == "strict":
+        blocking = tracker.blocking_events(set(_REQUIRED_CONCEPTION_LANES))
+        if blocking:
+            component_order = {
+                "market_strategist": 0,
+                "character_architect": 1,
+                "cast_reality_auditor": 2,
+                "world_builder": 3,
+            }
+            ordered = tuple(
+                sorted(
+                    blocking,
+                    key=lambda event: (
+                        component_order.get(event.component, 99),
+                        event.stage,
+                        event.reason,
+                    ),
+                )
+            )
+            raise ConceptionRequiredLaneError(
+                ordered[0],
+                blocking_events=ordered,
+            )
+    return outcomes
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2469,8 +2684,8 @@ async def _derive_conception_world_model(
     之后，供 _audit_mechanism_causality 用它做"验"。
     """
 
-    from bestseller.services.world_model_deriver import derive_world_model
     from bestseller.domain.world_model import world_model_to_dict
+    from bestseller.services.world_model_deriver import derive_world_model
 
     try:
         model = await derive_world_model(
@@ -3341,6 +3556,7 @@ async def run_conception_pipeline(
 
     llm_run_ids: list[UUID] = []
     conception_log: list[dict[str, Any]] = []
+    degradation_tracker = DegradationTracker()
 
     def _emit(stage: str, data: dict[str, Any] | None = None) -> None:
         if progress is not None:
@@ -3418,80 +3634,130 @@ async def run_conception_pipeline(
     ctx["commercial_brief"] = commercial_brief
     conception_log.append({"round": 0, "agent": "commercial_commissioner", "brief": commercial_brief})
 
-    # ── Round 1: Independent Proposals ──────────────────────────────
-    _emit("conception_market", {"round": 1, "agent": "market_strategist"})
-    market_user_prompt = _attach_conception_methodology(
-        (_market_user_prompt_en if is_en else _market_user_prompt)(ctx, _genre_profile),
-        ctx=ctx,
-        is_en=is_en,
-        token_budget=600,
-    )
-    market_proposal, stage_llm_ids = await _llm_call_json(
-        session, settings,
-        role="planner",
-        system_prompt=_MARKET_SYSTEM_EN if is_en else _MARKET_SYSTEM,
-        user_prompt=market_user_prompt,
-        fallback=json.dumps(ctx.get("existing_overrides", {}).get("market", {}), ensure_ascii=False),
-        template="conception_market",
-        stage="conception.market",
-        language=str(ctx.get("language") or "zh-CN"),
-    )
-    llm_run_ids.extend(stage_llm_ids)
-    market_proposal = market_proposal or ctx.get("existing_overrides", {}).get("market", {})
-    conception_log.append({"round": 1, "agent": "market_strategist", "proposal": market_proposal})
+    # ── Round 1: Independent Proposals (parallelised) ──────────────
+    # market ∥ (character → cast_reality_audit) ∥ world
+    # cast_reality_audit depends on character_proposal, so it stays
+    # serial within the character lane; the three lanes run in parallel.
+    _market_fallback = json.dumps(ctx.get("existing_overrides", {}).get("market", {}), ensure_ascii=False)
+    _character_fallback = json.dumps(ctx.get("existing_overrides", {}).get("character", {}), ensure_ascii=False)
+    _world_fallback = json.dumps(ctx.get("existing_overrides", {}).get("world", {}), ensure_ascii=False)
 
-    _emit("conception_character", {"round": 1, "agent": "character_architect"})
-    character_user_prompt = _attach_conception_methodology(
-        (_character_user_prompt_en if is_en else _character_user_prompt)(ctx, _genre_profile),
-        ctx=ctx,
-        is_en=is_en,
-        token_budget=800,
+    async def _market_lane() -> tuple[dict[str, Any], list[UUID]]:
+        _emit("conception_market", {"round": 1, "agent": "market_strategist"})
+        market_user_prompt = _attach_conception_methodology(
+            (_market_user_prompt_en if is_en else _market_user_prompt)(ctx, _genre_profile),
+            ctx=ctx,
+            is_en=is_en,
+            token_budget=600,
+        )
+        async def _run(lane_session: AsyncSession) -> tuple[dict[str, Any], list[UUID]]:
+            return await _llm_call_json(
+                lane_session, settings,
+                role="planner",
+                system_prompt=_MARKET_SYSTEM_EN if is_en else _MARKET_SYSTEM,
+                user_prompt=market_user_prompt,
+                fallback=_market_fallback,
+                template="conception_market",
+                stage="conception.market",
+                language=str(ctx.get("language") or "zh-CN"),
+                degradation_tracker=degradation_tracker,
+                degradation_component="market_strategist",
+            )
+
+        return await run_in_isolated_session(session, _run)
+
+    async def _character_lane() -> tuple[dict[str, Any], list[UUID], list[UUID]]:
+        """character_architect → cast_reality_audit (serial within lane)."""
+        _emit("conception_character", {"round": 1, "agent": "character_architect"})
+        character_user_prompt = _attach_conception_methodology(
+            (_character_user_prompt_en if is_en else _character_user_prompt)(ctx, _genre_profile),
+            ctx=ctx,
+            is_en=is_en,
+            token_budget=800,
+        )
+        async def _run(
+            lane_session: AsyncSession,
+        ) -> tuple[dict[str, Any], list[UUID], list[UUID]]:
+            proposal, ids = await _llm_call_json(
+                lane_session, settings,
+                role="planner",
+                system_prompt=_CHARACTER_SYSTEM_EN if is_en else _CHARACTER_SYSTEM,
+                user_prompt=character_user_prompt,
+                fallback=_character_fallback,
+                template="conception_character",
+                stage="conception.character",
+                language=str(ctx.get("language") or "zh-CN"),
+                degradation_tracker=degradation_tracker,
+                degradation_component="character_architect",
+            )
+            # 职业现实审计闭环:三道账(年龄/职级/边界)不平就地修正字段,fail-open。
+            proposal, cra_ids = await _audit_cast_reality(
+                lane_session, settings,
+                character_proposal=proposal,
+                ctx=ctx, is_en=is_en,
+                degradation_tracker=degradation_tracker,
+            )
+            return proposal, ids, cra_ids
+
+        return await run_in_isolated_session(session, _run)
+
+    async def _world_lane() -> tuple[dict[str, Any], list[UUID]]:
+        _emit("conception_world", {"round": 1, "agent": "world_builder"})
+        world_user_prompt = _attach_conception_methodology(
+            (_world_user_prompt_en if is_en else _world_user_prompt)(ctx, _genre_profile),
+            ctx=ctx,
+            is_en=is_en,
+            token_budget=800,
+        )
+        async def _run(lane_session: AsyncSession) -> tuple[dict[str, Any], list[UUID]]:
+            return await _llm_call_json(
+                lane_session, settings,
+                role="planner",
+                system_prompt=_WORLD_SYSTEM_EN if is_en else _WORLD_SYSTEM,
+                user_prompt=world_user_prompt,
+                fallback=_world_fallback,
+                template="conception_world",
+                stage="conception.world",
+                language=str(ctx.get("language") or "zh-CN"),
+                degradation_tracker=degradation_tracker,
+                degradation_component="world_builder",
+            )
+
+        return await run_in_isolated_session(session, _run)
+
+    _existing = ctx.get("existing_overrides", {})
+    _round_one = await _run_required_conception_lanes(
+        market_lane=_market_lane,
+        character_lane=_character_lane,
+        world_lane=_world_lane,
+        fallbacks={
+            "market_strategist": (_existing.get("market", {}), []),
+            "character_architect": (_existing.get("character", {}), [], []),
+            "world_builder": (_existing.get("world", {}), []),
+        },
+        tracker=degradation_tracker,
+        quality_mode=getattr(settings.pipeline, "quality_mode", "closure"),
     )
-    character_proposal, stage_llm_ids = await _llm_call_json(
-        session, settings,
-        role="planner",
-        system_prompt=_CHARACTER_SYSTEM_EN if is_en else _CHARACTER_SYSTEM,
-        user_prompt=character_user_prompt,
-        fallback=json.dumps(ctx.get("existing_overrides", {}).get("character", {}), ensure_ascii=False),
-        template="conception_character",
-        stage="conception.character",
-        language=str(ctx.get("language") or "zh-CN"),
-    )
-    llm_run_ids.extend(stage_llm_ids)
-    character_proposal = character_proposal or ctx.get("existing_overrides", {}).get("character", {})
-    # 职业现实审计闭环:三道账(年龄/职级/边界)不平就地修正字段,fail-open。
-    character_proposal, _cra_ids = await _audit_cast_reality(
-        session, settings,
-        character_proposal=character_proposal,
-        ctx=ctx, is_en=is_en,
-    )
+    market_proposal, _market_ids = _round_one["market_strategist"]
+    character_proposal, _character_ids, _cra_ids = _round_one["character_architect"]
+    world_proposal, _world_ids = _round_one["world_builder"]
+
+    llm_run_ids.extend(_market_ids)
+    llm_run_ids.extend(_character_ids)
     llm_run_ids.extend(_cra_ids)
+    llm_run_ids.extend(_world_ids)
+
+    market_proposal = market_proposal or ctx.get("existing_overrides", {}).get("market", {})
+    character_proposal = character_proposal or ctx.get("existing_overrides", {}).get("character", {})
+    world_proposal = world_proposal or ctx.get("existing_overrides", {}).get("world", {})
+
+    conception_log.append({"round": 1, "agent": "market_strategist", "proposal": market_proposal})
     conception_log.append({"round": 1, "agent": "character_architect", "proposal": character_proposal})
     if character_proposal.get("reality_audit_notes"):
         conception_log.append({
             "round": 1, "agent": "cast_reality_auditor",
             "notes": character_proposal.get("reality_audit_notes"),
         })
-
-    _emit("conception_world", {"round": 1, "agent": "world_builder"})
-    world_user_prompt = _attach_conception_methodology(
-        (_world_user_prompt_en if is_en else _world_user_prompt)(ctx, _genre_profile),
-        ctx=ctx,
-        is_en=is_en,
-        token_budget=800,
-    )
-    world_proposal, stage_llm_ids = await _llm_call_json(
-        session, settings,
-        role="planner",
-        system_prompt=_WORLD_SYSTEM_EN if is_en else _WORLD_SYSTEM,
-        user_prompt=world_user_prompt,
-        fallback=json.dumps(ctx.get("existing_overrides", {}).get("world", {}), ensure_ascii=False),
-        template="conception_world",
-        stage="conception.world",
-        language=str(ctx.get("language") or "zh-CN"),
-    )
-    llm_run_ids.extend(stage_llm_ids)
-    world_proposal = world_proposal or ctx.get("existing_overrides", {}).get("world", {})
     conception_log.append({"round": 1, "agent": "world_builder", "proposal": world_proposal})
 
     # ── Round 2: Cross-Review ───────────────────────────────────────
@@ -4365,6 +4631,17 @@ async def run_conception_pipeline(
     if _result_hook_spec is not None and _hook_one_liner_adapted_result is not None:
         _result_hook_spec["one_liner_adapted"] = _hook_one_liner_adapted_result
 
+    if degradation_tracker.events:
+        _emit(
+            "conception_degraded",
+            {
+                "count": len(degradation_tracker.events),
+                "components": sorted(
+                    {event.component for event in degradation_tracker.events}
+                ),
+            },
+        )
+
     return ConceptionResult(
         writing_profile=writing_profile,
         premise=premise,
@@ -4380,6 +4657,9 @@ async def run_conception_pipeline(
         story_appeal=story_appeal_report,
         story_spine=story_spine if isinstance(story_spine, dict) else {},
         world_model=world_model_payload if isinstance(world_model_payload, dict) else {},
+        degraded_rounds=degradation_tracker.events,
+        degraded=bool(degradation_tracker.events),
+        degradation_events=degradation_tracker.events,
     )
 
 

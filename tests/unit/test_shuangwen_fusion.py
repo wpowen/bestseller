@@ -19,27 +19,24 @@ from bestseller.services.methodology_compiler import (
 from bestseller.settings import PipelineSettings
 
 _PAYOFF = "emotion_choreography_current"  # 弹簧法 — 爽点核心
-_FLOURISH = ("prose_craft_techniques", "imagery_system_current", "prose_lever_framing")
 
 
 def test_pipeline_enables_shuangwen_fusion_by_default() -> None:
     assert PipelineSettings().enable_shuangwen_fusion is True
 
 
-def test_default_priority_puts_literary_levers_before_payoff_engines() -> None:
+def test_default_priority_keeps_payoff_after_concrete_grounding() -> None:
     order = SECTION_PRIORITY[MethodologyStage.PROSE_SCENE]
-    # The regression we are fixing: today the 爽点 engine sits *after* the
-    # literary flourish levers, so it is first to be starved by the budget.
-    for lever in _FLOURISH:
-        assert order.index(lever) < order.index(_PAYOFF)
+    assert order.index("material_concretization_current") < order.index(_PAYOFF)
+    assert order.index("scene_grounding_current") < order.index(_PAYOFF)
 
 
-def test_shuangwen_priority_lifts_payoff_engines_above_flourish() -> None:
-    order = _PROSE_SCENE_SHUANGWEN_PRIORITY
-    for lever in _FLOURISH:
-        assert order.index(_PAYOFF) < order.index(lever), (
-            f"爽文模式下 {_PAYOFF} 必须排在 {lever} 之前"
-        )
+def test_shuangwen_priority_reuses_canonical_prose_order() -> None:
+    # 词藻型三杠杆已从正文写手注入移除，爽文开关保留兼容性但不再维护一份
+    # 容易漂移的等价排序。
+    assert _PROSE_SCENE_SHUANGWEN_PRIORITY == SECTION_PRIORITY[
+        MethodologyStage.PROSE_SCENE
+    ]
 
 
 def test_shuangwen_priority_keeps_every_section_no_drop() -> None:
@@ -58,7 +55,7 @@ def test_shuangwen_priority_keeps_concrete_grounding_levers_high() -> None:
 
 
 @pytest.mark.parametrize("pack", ["xianxia-upgrade-core", "apocalypse-supply-chain"])
-def test_compile_orders_payoff_before_craft_in_shuangwen_mode(pack: str) -> None:
+def test_compile_omits_negative_craft_levers_in_both_modes(pack: str) -> None:
     # 预算需"装下所有杠杆"以测排序不变量(与生产默认1500无关,此为宽松测试值)。
     # 2026-06-29 fusion block 增位置感知块(开篇炸点律/中段持续追读律,各~150token)后,
     # 4200 不再装下最低优先级的金句文采杠杆 → 抬到 4800 恢复"装下所有"前提。
@@ -79,14 +76,10 @@ def test_compile_orders_payoff_before_craft_in_shuangwen_mode(pack: str) -> None
     base_srcs = list(base.used_sources)
     sw_srcs = list(sw.used_sources)
 
-    # Same levers reach the writer either way (fusion preserves 文采).
+    # The writer keeps the proven commercial controls in both modes.
     assert set(sw_srcs) == set(base_srcs)
-
-    # Default: 金句 lever lands before the 弹簧法 engine (the regression).
-    assert base_srcs.index("prose_craft_techniques.yaml") < base_srcs.index(
-        "emotion_choreography.yaml"
-    )
-    # 爽文模式: 弹簧法 engine lands before the 金句 lever.
-    assert sw_srcs.index("emotion_choreography.yaml") < sw_srcs.index(
-        "prose_craft_techniques.yaml"
-    )
+    assert "emotion_choreography.yaml" in base_srcs
+    assert "material_concreteness.yaml" in base_srcs
+    assert "scene_grounding.yaml" in base_srcs
+    assert "prose_craft_techniques.yaml" not in base_srcs
+    assert "litstyle_prose.py" not in base_srcs

@@ -1,24 +1,29 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-
 # ruff: noqa: ANN401,RUF001
 import asyncio
+from collections.abc import Mapping, Sequence
 import contextlib
+from functools import lru_cache
 import json
 import os
+from pathlib import Path
 import re
 import statistics
-from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
-import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
+import yaml
 
 from bestseller.domain.llm_quality_judge import (
     LLMQualityJudgeResult,
     quality_judge_result_from_mapping,
+)
+from bestseller.services.golden_rules import render_golden_three_rules
+from bestseller.services.independent_quality_judge import (
+    BlindJudgeInput,
+    IndependentJudgeResult,
+    run_independent_quality_judge,
 )
 from bestseller.services.judge_genre_context import (
     GENERIC_CORPUS_KEY,
@@ -59,6 +64,36 @@ def resolve_commercial_judge_model_key(settings: AppSettings) -> str | None:
     if not key:
         key = os.getenv("BESTSELLER__LLM__COMMERCIAL_JUDGE_MODEL_KEY") or None
     return str(key) if key else None
+
+
+async def judge_chapter_pair_advisory(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    genre: str,
+    chapter_number: int,
+    compact_contract: str,
+    draft_a: str,
+    draft_b: str,
+    writer_model: str | None = None,
+    editor_model: str | None = None,
+) -> IndependentJudgeResult:
+    """Explicit shadow adapter; never changes chapter promotion state."""
+
+    return await run_independent_quality_judge(
+        session,
+        settings,
+        BlindJudgeInput(
+            genre=genre,
+            chapter_number=chapter_number,
+            compact_contract=compact_contract,
+            draft_a=draft_a,
+            draft_b=draft_b,
+        ),
+        writer_model=writer_model or settings.llm.writer.model,
+        editor_model=editor_model or settings.llm.editor.model,
+        strict=settings.llm.independent_judge_strict_model_family,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +220,12 @@ def _load_reference_corpus(genre_key: str) -> dict[str, Any] | None:
     return None
 
 
-def _render_reference_block(corpus: dict[str, Any] | None, *, max_chars: int = 4000) -> str:
+def _render_reference_block(
+    corpus: dict[str, Any] | None,
+    *,
+    max_chars: int = 4000,
+    genre_context: JudgeGenreContext | None = None,
+) -> str:
     """Render the reference corpus samples into a concise judge-readable block.
 
     Limits output to ``max_chars`` so it doesn't crowd out the main chapter
@@ -197,9 +237,11 @@ def _render_reference_block(corpus: dict[str, Any] | None, *, max_chars: int = 4
     if not samples:
         return ""
 
+    display_genre = (genre_context.display_genre if genre_context else None) or "本类型"
+
     parts: list[str] = ["## 榜单级参考样本（校准用）\n"]
     parts.append(
-        "以下是同类型（悬疑/驱魔）榜单级章节的代表性开篇片段。"
+        f"以下是同类型（{display_genre}）榜单级章节的代表性开篇片段。"
         "评分时请将被评章节与这些样本对比，而不是凭感觉打分。\n"
     )
 
@@ -542,6 +584,13 @@ async def judge_chapter_commercial_quality(
 
     # Build methodology injection block
     methodology_refs: list[str] = []
+    golden_rule_contract = render_golden_three_rules(
+        chapter_number,
+        "en" if str(language).lower().startswith("en") else "zh-CN",
+        path_mode="judge",
+    )
+    if golden_rule_contract:
+        methodology_refs.append(golden_rule_contract)
     if chapter_number <= 3:
         for key in ("opening_rules", "character_design"):
             text = get_fragment(pack, phase="judge", fragment_key=key)
@@ -564,7 +613,7 @@ async def judge_chapter_commercial_quality(
     )
 
     # Build reference corpus blocks
-    reference_block = _render_reference_block(corpus)
+    reference_block = _render_reference_block(corpus, genre_context=genre_context)
     checklist_block = _render_binary_checklist(corpus, chapter_number=chapter_number)
     calibration_block = _render_calibration_anchors(corpus)
     rubric = get_judge_rubric("chapter_commercial")

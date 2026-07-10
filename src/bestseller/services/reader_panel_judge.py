@@ -13,12 +13,47 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.reader_panel import DEFAULT_PANEL, ReaderRole
+from bestseller.services.independent_quality_judge import (
+    BlindJudgeInput,
+    IndependentJudgeResult,
+    run_independent_quality_judge,
+)
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 
 ReaderFeedbackSeverity = Literal["blocker", "high", "medium", "low"]
+
+
+async def judge_reader_pair_advisory(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    genre: str,
+    chapter_number: int,
+    compact_contract: str,
+    draft_a: str,
+    draft_b: str,
+    writer_model: str | None = None,
+    editor_model: str | None = None,
+) -> IndependentJudgeResult:
+    """Explicit reader-panel adapter for advisory pairwise evidence only."""
+
+    return await run_independent_quality_judge(
+        session,
+        settings,
+        BlindJudgeInput(
+            genre=genre,
+            chapter_number=chapter_number,
+            compact_contract=compact_contract,
+            draft_a=draft_a,
+            draft_b=draft_b,
+        ),
+        writer_model=writer_model or settings.llm.writer.model,
+        editor_model=editor_model or settings.llm.editor.model,
+        strict=settings.llm.independent_judge_strict_model_family,
+    )
 
 
 class ReaderFeedback(TypedDict):

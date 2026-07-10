@@ -1681,6 +1681,32 @@ def build_scene_review_prompts(
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_review_system = getattr(_genre_profile.judge_prompts, f"scene_review_system_{_lang_key}", "")
+    try:
+        from bestseller.services.prompt_assembly import genre_wants_reaction_amplification
+
+        _want_reaction = genre_wants_reaction_amplification(
+            getattr(project, "genre", None),
+            getattr(project, "sub_genre", None),
+            getattr(prompt_pack, "key", None),
+        )
+    except Exception:
+        _want_reaction = True
+    _reaction_axis_en = (
+        "5. **Reaction amplification**: after peak beats, other characters' reactions amplify impact\n"
+        if _want_reaction
+        else (
+            "5. **Reaction amplification (OFF for this genre)**: do NOT require crowd face-slap / "
+            "围观震惊 scripts; subtext or environmental aftershock is enough\n"
+        )
+    )
+    _reaction_axis_zh = (
+        "5. **反应放大**：关键时刻后必须有其他角色的反应放大冲击力\n"
+        if _want_reaction
+        else (
+            "5. **反应放大（本题材关闭硬要求）**：不强制围观打脸/震惊群像；"
+            "潜台词或环境余波即可，不得因缺少打脸反应判 rewrite\n"
+        )
+    )
     system_prompt = (
         (
             "# ROLE\n"
@@ -1705,8 +1731,8 @@ def build_scene_review_prompts(
             "drown the narration (consecutive close-ups with no telling sentence = FAIL)\n"
             "3. **Dialogue subtext**: characters don't state intentions; tension = gap between words and meaning\n"
             "4. **Tail hook**: scene ends on an unresolved question / threat / revelation\n"
-            "5. **Reaction amplification**: after key moments, other characters' reactions amplify impact\n"
-            "6. **Continuity (HARD)**: when a previous-scene tail is provided, the scene must CONTINUE from it — "
+            + _reaction_axis_en
+            + "6. **Continuity (HARD)**: when a previous-scene tail is provided, the scene must CONTINUE from it — "
             "it must NOT re-dramatize an event that already happened (same action/revelation/cost occurring again, "
             "even with different wording), and every character who appeared before (including unnamed extras) must "
             "keep the same identity/gender/position\n"
@@ -1752,8 +1778,8 @@ def build_scene_review_prompts(
             "（连续特写不接讲述句、读者拼不出画面=FAIL）\n"
             "3. **对话潜台词**：角色不能直白表达意图，张力来自话语和真实意图的反差\n"
             "4. **尾钩强度**：场景必须以未解答的问题 / 威胁 / 揭示结尾，不能抽象感叹\n"
-            "5. **反应放大**：关键时刻后必须有其他角色的反应放大冲击力\n"
-            "6. **接续性（硬轴）**：若提供了[上一场结尾原文]，本场必须从它之后继续——"
+            + _reaction_axis_zh
+            + "6. **接续性（硬轴）**：若提供了[上一场结尾原文]，本场必须从它之后继续——"
             "严禁把已经发生过的事件重演一遍（同一个动作/揭示/代价再次发生，哪怕措辞完全不同也算重演）；"
             "上一场出现过的人物（含无名配角，如家属/路人）身份、性别、位置必须一致，不得换一副面孔重新登场\n"
             "7. **逻辑自洽（硬轴）**：用挑刺读者的眼光核五件事——"
@@ -5272,6 +5298,36 @@ async def _compute_chapter_methodology_reports(
     return tuple(reports)
 
 
+def _promotion_evidence_from_review(review_result: Any) -> dict[str, Any]:
+    """Add the exact hard-gate contract consumed by version promotion.
+
+    Legacy review summaries were useful prose diagnostics but did not state
+    whether an exact draft had cleared the non-negotiable gates.  Promotion
+    must not infer that from a score alone.
+    """
+
+    evidence = dict(getattr(review_result, "evidence_summary", None) or {})
+    findings = list(getattr(review_result, "findings", None) or [])
+    blocking_codes = [
+        str(getattr(finding, "code", "review_blocker"))
+        for finding in findings
+        if str(getattr(finding, "severity", "")).lower()
+        in {"blocker", "critical", "fatal"}
+    ]
+    evidence["blocking_codes"] = blocking_codes
+    evidence["hard_gates_passed"] = (
+        str(getattr(review_result, "verdict", "")).lower() == "pass"
+        and not blocking_codes
+    )
+    return evidence
+
+
+def _promotion_evidence_from_scene_review(review_result: Any) -> dict[str, Any]:
+    """Typed readability wrapper for the scene score persistence path."""
+
+    return _promotion_evidence_from_review(review_result)
+
+
 async def review_scene_draft(
     session: AsyncSession,
     settings: AppSettings,
@@ -5469,10 +5525,18 @@ async def review_scene_draft(
         .values(is_current=False)
     )
 
+    promotion_evidence = _promotion_evidence_from_scene_review(review_result)
     quality = QualityScoreModel(
         project_id=project.id,
         target_type="scene_card",
         target_id=scene.id,
+        scene_draft_version_id=draft.id,
+        evaluation_round=1,
+        # A stable judgement identity is required for exact-version promotion.
+        # ``reviewer_type`` is the observed model/provider label and remains in
+        # the report; the policy key is deliberately independent of provider
+        # aliases so one review route is comparable across a project run.
+        judge_key="scene_quality_v1",
         review_report_id=report.id,
         is_current=True,
         score_overall=review_result.scores.overall,
@@ -5482,7 +5546,7 @@ async def review_scene_draft(
         score_dialogue=review_result.scores.dialogue,
         score_style=review_result.scores.style,
         score_hook=review_result.scores.hook,
-        evidence_summary=review_result.evidence_summary,
+        evidence_summary=promotion_evidence,
     )
     session.add(quality)
 
@@ -5528,7 +5592,10 @@ async def review_scene_draft(
         scene.status = SceneStatus.NEEDS_REWRITE.value
         chapter.status = ChapterStatus.REVISION.value
     else:
-        scene.status = SceneStatus.APPROVED.value
+        # Review pass is evidence, not promotion.  The pipeline moves this
+        # exact version through under_review -> eligible -> promoted under the
+        # parent lock before it can become an approved scene or write Canon.
+        scene.status = SceneStatus.REVIEWED.value
         chapter.status = ChapterStatus.REVIEW.value
 
     await session.flush()
@@ -8183,10 +8250,14 @@ async def review_chapter_draft(
         .values(is_current=False)
     )
 
+    promotion_evidence = _promotion_evidence_from_review(review_result)
     quality = QualityScoreModel(
         project_id=project.id,
         target_type="chapter",
         target_id=chapter.id,
+        chapter_draft_version_id=draft.id,
+        evaluation_round=1,
+        judge_key="chapter_quality_v1",
         review_report_id=report.id,
         is_current=True,
         score_overall=review_result.scores.overall,
@@ -8196,7 +8267,7 @@ async def review_chapter_draft(
         score_dialogue=review_result.scores.continuity,
         score_style=review_result.scores.style,
         score_hook=review_result.scores.hook,
-        evidence_summary=review_result.evidence_summary,
+        evidence_summary=promotion_evidence,
     )
     session.add(quality)
 
@@ -8318,8 +8389,11 @@ async def review_chapter_draft(
                 },
             )
         )
-        chapter.status = ChapterStatus.COMPLETE.value
-        chapter.production_state = "ok"
+        # A review pass only creates eligibility evidence.  The chapter
+        # pipeline promotes this exact version atomically before it becomes a
+        # completed, exportable chapter.
+        chapter.status = ChapterStatus.REVIEW.value
+        chapter.production_state = "quality_reviewed"
         # Wipe the active-cycle counter so a future regression on this
         # chapter starts the chapter_review budget fresh.
         chapter_meta_after_pass = dict(chapter.metadata_json or {})

@@ -324,10 +324,14 @@ def _classify(
 ) -> tuple[str, str, str]:
     """Return (severity, code, detail) based on chapter position thresholds."""
 
+    # Opening chapters often *must* establish world rules (xianxia/scifi).
+    # Pre-2026-07 ceilings (25%/18%) forced critical blocks + churn on good
+    # openings. Soften early chapters: high stays advisory-ish, critical only
+    # for true dumps.
     if chapter_position <= 5:
-        critical_ratio, high_ratio = 0.25, 0.18
+        critical_ratio, high_ratio = 0.40, 0.28
     elif chapter_position <= 10:
-        critical_ratio, high_ratio = 0.35, 0.25
+        critical_ratio, high_ratio = 0.45, 0.32
     else:
         critical_ratio, high_ratio = 0.55, 0.40
 

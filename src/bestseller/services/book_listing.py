@@ -19,7 +19,7 @@ from bestseller.services.ranking_readiness import (
     build_listing_marketing_asset_pack,
 )
 
-LISTING_SCHEMA_VERSION = "1.2"
+LISTING_SCHEMA_VERSION = "1.3"
 REQUIRED_TITLE_CANDIDATE_COUNT = DEFAULT_TITLE_CANDIDATE_COUNT
 
 
@@ -57,6 +57,21 @@ def _limit_chars(value: Any, max_chars: int = 500) -> str:
     if max_chars <= 3:
         return text[:max_chars]
     return text[: max_chars - 3].rstrip() + "..."
+
+
+def _first_sentence(value: Any, *, max_chars: int) -> str:
+    """Keep reader-facing listing fields concise without cutting a sentence mid-way."""
+    text = _compact_text(value)
+    if not text:
+        return ""
+    match = re.search(r"^(.+?[。！？.!?])(?:\s|$)", text)
+    first = match.group(1).strip() if match else text
+    return _limit_chars(first, max_chars)
+
+
+def _listing_logline(value: Any, *, max_chars: int = 80) -> str:
+    """Normalise a one-line hook; a full premise must never occupy this field."""
+    return _first_sentence(value, max_chars=max_chars).rstrip("。.!?！？")
 
 
 def _dedupe_strings(values: list[Any]) -> list[str]:
@@ -237,14 +252,17 @@ def _character_dict(item: Any) -> dict[str, Any]:
     return {
         "name": _clean_text(_get_value(item, "name")),
         "role": _clean_text(_get_value(item, "role")),
-        "identity": _clean_text(_get_value(item, "identity") or _get_value(item, "background")),
-        "appeal": _clean_text(
+        "identity": _first_sentence(
+            _get_value(item, "identity") or _get_value(item, "background"), max_chars=80
+        ),
+        "appeal": _first_sentence(
             _get_value(item, "appeal")
             or _get_value(item, "arc_trajectory")
-            or _get_value(item, "goal")
+            or _get_value(item, "goal"),
+            max_chars=140,
         ),
-        "goal": _clean_text(_get_value(item, "goal")),
-        "arc_state": _clean_text(_get_value(item, "arc_state")),
+        "goal": _first_sentence(_get_value(item, "goal"), max_chars=100),
+        "arc_state": _first_sentence(_get_value(item, "arc_state"), max_chars=100),
         "is_pov_character": bool(_get_value(item, "is_pov_character", False)),
     }
 
@@ -759,14 +777,15 @@ def _derive_characters(
     golden_finger = _clean_text(_get_nested(writing_profile, "character", "golden_finger"))
     if not (protagonist or drive or golden_finger):
         return []
-    sep = "; " if is_en else "；"
+    # This fallback is reader-facing when no structured character cards exist.
+    # Prefer one concrete ability over concatenating the planning dossier.
     return [
         {
             "name": "Protagonist Profile / 主角设定" if is_en else "主角设定",
             "role": "Protagonist / 主角" if is_en else "主角",
             "identity": protagonist,
-            "appeal": sep.join(_dedupe_strings([drive, golden_finger])),
-            "goal": drive,
+            "appeal": _first_sentence(golden_finger or drive, max_chars=140),
+            "goal": _first_sentence(drive, max_chars=100),
             "arc_state": "",
             "is_pov_character": True,
         }
@@ -927,7 +946,9 @@ def build_book_listing_profile(
         if isinstance(metadata.get("listing_profile"), dict)
         else {}
     )
-    overrides = {**concept_overrides, **file_overrides, **metadata_overrides}
+    # Explicit file overrides are written by the listing editor/regeneration UI
+    # and therefore must win over older conception/database snapshots.
+    overrides = {**concept_overrides, **metadata_overrides, **file_overrides}
     concept_title_candidates = _normalize_legacy_title_candidates(
         concept_overrides.get("title_candidates")
     )
@@ -962,8 +983,12 @@ def build_book_listing_profile(
     )
     tags = _dedupe_strings([primary_category, secondary_category] + tags)
     premise_text = _clean_text(metadata.get("premise"))
+    # Preserve an intentional concept/editor one-liner verbatim. Only inferred
+    # fallbacks need sentence extraction so a full premise cannot leak here.
     override_logline = _clean_text(overrides.get("logline"))
     metadata_logline = _clean_text(metadata.get("logline"))
+    market_logline = _listing_logline(_get_nested(writing_profile, "market", "logline"))
+    hook_logline = _listing_logline(_get_nested(metadata, "hook_spec", "one_liner"))
     if (
         override_logline
         and premise_text
@@ -993,8 +1018,10 @@ def build_book_listing_profile(
     logline = (
         override_logline
         or metadata_logline
-        or premise_text
-        or _clean_text(_get_nested(writing_profile, "market", "reader_promise"))
+        or market_logline
+        or hook_logline
+        or _listing_logline(_get_nested(writing_profile, "market", "reader_promise"))
+        or _listing_logline(premise_text)
     )
     tags = _supplement_listing_tags(
         tags,
@@ -1029,31 +1056,30 @@ def build_book_listing_profile(
         )
     promo_copy = _string_list(overrides.get("promo_copy"))
     if not promo_copy:
-        core_hook = tags[0] if tags else primary_category
+        spine = metadata.get("story_spine") if isinstance(metadata.get("story_spine"), dict) else {}
+        why_now = _first_sentence(spine.get("why_now"), max_chars=140)
+        question = _first_sentence(spine.get("question"), max_chars=140)
         if is_en:
             promo_copy = _dedupe_strings(
                 [
                     logline,
-                    (
-                        f"Not every {primary_category} novel wins on worldbuilding alone — "
-                        f"this one hooks you through protagonist choices and relentless pressure.\n"
-                        f"不是所有{primary_category}都靠设定取胜，这本书靠主角选择和危机反压追着读者往下看。"
-                    ),
-                    (
-                        f"Conflict from the first page, cliffhangers at every chapter end, "
-                        f"core appeal escalating around {core_hook}.\n"
-                        f"开局就给冲突，章节尾持续留钩，核心爽点围绕{core_hook}不断升级。"
-                    ),
+                    why_now,
+                    question,
                 ]
             )
         else:
             promo_copy = _dedupe_strings(
                 [
                     logline,
-                    f"不是所有{primary_category}都靠设定取胜，这本书靠主角选择和危机反压追着读者往下看。",
-                    f"开局就给冲突，章节尾持续留钩，核心爽点围绕{core_hook}不断升级。",
+                    why_now,
+                    question,
                 ]
             )
+    promo_copy = [
+        _first_sentence(item, max_chars=140)
+        for item in promo_copy
+        if _first_sentence(item, max_chars=140)
+    ]
 
     reader_promise = _string_list(overrides.get("reader_promise"))
     if not reader_promise:
@@ -1220,7 +1246,10 @@ def build_book_listing_profile(
         "candidate_count": len(profile["title_candidates"]),
     }
 
-    profile["shelf_intro"] = _build_shelf_intro(profile, max_chars=500)
+    profile["shelf_intro"] = (
+        _limit_chars(overrides.get("shelf_intro"), max_chars=500)
+        or _build_shelf_intro(profile, max_chars=500)
+    )
     character_names = _dedupe_strings(
         [
             item.get("name")

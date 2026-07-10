@@ -54,3 +54,20 @@ scripts/_ab*_run.log
 scripts/_*_drafts.json
 scripts/_ab2_*.json
 docker-compose.override.yml
+
+# Local agent/session state and disposable tool environments.
+# Keep project skills and source-controlled configuration outside these paths.
+.workbuddy/
+.omx/
+.uv-cache/
+.venv-check/
+.venv-selftest/
+.claude/settings.local.json
+.claude/worktrees/
+.claude/checkpoints/
+.claude/mailbox/
+.claude/agent-registry.json
+.claude/agent-memory-local/
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
+.claude/routines/.state/

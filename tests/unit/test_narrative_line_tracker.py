@@ -392,7 +392,7 @@ class TestLineGapCheckValidator:
         ctx = self._make_ctx(None)
         assert list(LineGapCheck().run("any text", ctx)) == []
 
-    def test_over_gap_emits_block(self) -> None:
+    def test_over_gap_emits_advisory_warning(self) -> None:
         from bestseller.services.chapter_validator import LineGapCheck
 
         rep = report_gaps(
@@ -403,7 +403,7 @@ class TestLineGapCheckValidator:
         )
         ctx = self._make_ctx(rep)
         vios = list(LineGapCheck().run("本章内容", ctx))
-        assert any(v.code == "LINE_GAP_OVER" and v.severity == "block" for v in vios)
+        assert any(v.code == "LINE_GAP_OVER" and v.severity == "warn" for v in vios)
 
     def test_warn_gap_emits_warn(self) -> None:
         from bestseller.services.chapter_validator import LineGapCheck

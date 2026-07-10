@@ -23,6 +23,7 @@ class FakeSession:
         self.scalars_results = list(scalars_results or [])
         self.added: list[object] = []
         self.executed: list[object] = []
+        self.scalar_statements: list[object] = []
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -34,6 +35,7 @@ class FakeSession:
                 setattr(obj, "id", uuid4())
 
     async def scalars(self, stmt: object) -> list[object]:
+        self.scalar_statements.append(stmt)
         if not self.scalars_results:
             return []
         return self.scalars_results.pop(0)
@@ -98,6 +100,42 @@ async def test_refresh_story_bible_retrieval_index_creates_chunks() -> None:
 
     assert chunk_count >= 2
     assert any(isinstance(item, RetrievalChunkModel) for item in session.added)
+
+
+@pytest.mark.asyncio
+async def test_project_retrieval_rebuild_indexes_only_promoted_drafts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_refresh_story_bible(*args, **kwargs) -> int:
+        return 0
+
+    monkeypatch.setattr(retrieval_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        retrieval_services,
+        "refresh_story_bible_retrieval_index",
+        fake_refresh_story_bible,
+    )
+    session = FakeSession(scalars_results=[[], [], [], [], []])
+
+    await retrieval_services.refresh_project_retrieval_index(
+        session,
+        build_settings(),
+        project.slug,
+    )
+
+    draft_queries = [
+        str(stmt).split("WHERE", maxsplit=1)[1]
+        for stmt in session.scalar_statements
+        if "draft_versions" in str(stmt)
+    ]
+    assert len(draft_queries) == 2
+    assert all("promotion_state" in query for query in draft_queries)
+    assert all("is_current" not in query for query in draft_queries)
 
 
 @pytest.mark.asyncio

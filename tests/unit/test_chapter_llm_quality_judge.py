@@ -8,6 +8,7 @@ from bestseller.domain.llm_quality_judge import quality_judge_result_from_mappin
 from bestseller.services import chapter_llm_quality_judge, chapter_window_quality_judge
 from bestseller.services.llm import LLMCompletionResult
 from bestseller.services.prompt_packs import get_prompt_pack
+from bestseller.services.golden_rules import render_golden_three_rules
 from bestseller.settings import load_settings
 
 
@@ -416,6 +417,7 @@ async def test_chapter_judge_prompt_includes_methodology_for_golden_three(
 
     assert "评估时必须参照的方法论标准" in captured["user"]
     assert "【opening_rules】" in captured["user"]
+    assert render_golden_three_rules(1, "zh-CN", path_mode="judge") in captured["user"]
     # 弹簧法(压抑-打脸)是爽文向方法，悬疑判官不再被兜底注入，防题材固化。
     assert "【spring_model】" not in captured["user"]
 

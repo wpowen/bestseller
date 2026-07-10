@@ -416,6 +416,10 @@ class LLMCompletionResult(BaseModel):
     output_tokens: int | None = None
     latency_ms: int | None = None
     finish_reason: str | None = None
+    fallback_used: bool = False
+    fallback_source: str | None = None
+    effective_primary_model: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     # ── Tool-use extensions ────────────────────────────────────────────────
     # ``tool_calls`` is a list of structured tool-call records parsed from
@@ -1799,6 +1803,7 @@ async def complete_text(
         role_settings = role_settings.model_copy(
             update={"model": role_settings.model_override}
         )
+    effective_primary_model = role_settings.model
     rate_limit_fallback_settings = (
         _build_rate_limit_fallback_settings(role_settings)
         if settings.llm.retry.rate_limit_fallback_enabled
@@ -1821,6 +1826,8 @@ async def complete_text(
     input_tokens = _estimate_tokens(request.system_prompt) + _estimate_tokens(request.user_prompt)
     output_tokens = _estimate_tokens(content)
     finish_reason = "mock"
+    fallback_used = False
+    fallback_source: str | None = None
 
     tool_calls: list[dict[str, Any]] | None = None
     raw_message: dict[str, Any] | None = None
@@ -1834,6 +1841,8 @@ async def complete_text(
                 rate_limit_fallback_key
             ):
                 call_settings = rate_limit_fallback_settings
+                fallback_used = True
+                fallback_source = "rate_limit_cooldown"
                 metadata["rate_limit_fallback_active"] = True
                 metadata["rate_limit_fallback_primary_model"] = role_settings.model
             elif rate_limit_fallback_settings:
@@ -1867,6 +1876,8 @@ async def complete_text(
                 )
                 metadata["rate_limit_fallback_primary_model"] = role_settings.model
                 metadata["rate_limit_fallback_reason"] = f"{type(exc).__name__}: {exc}"
+                fallback_used = True
+                fallback_source = "rate_limit_retry"
                 try:
                     provider = _provider_from_model(rate_limit_fallback_settings.model)
                     model_name = rate_limit_fallback_settings.model
@@ -1905,6 +1916,8 @@ async def complete_text(
                     )
             else:
                 provider = "fallback"
+                fallback_used = True
+                fallback_source = "static_response"
                 model_name = f"fallback-{request.logical_role}"
                 metadata["configured_model"] = role_settings.model
                 metadata["fallback_reason"] = f"{type(exc).__name__}: {exc}"
@@ -1948,6 +1961,10 @@ async def complete_text(
         output_tokens=output_tokens,
         latency_ms=latency_ms,
         finish_reason=finish_reason,
+        fallback_used=fallback_used or provider == "fallback" or finish_reason == "fallback",
+        fallback_source=fallback_source,
+        effective_primary_model=effective_primary_model,
+        metadata=metadata,
         tool_calls=tool_calls,
         raw_message=raw_message,
     )

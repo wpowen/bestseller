@@ -90,10 +90,10 @@ def test_unknown_genre_falls_back_to_generic_not_detective():
     assert resolve_reference_corpus_key("nonexistent-genre") == GENERIC_CORPUS_KEY
 
 
-def test_corpus_loader_returns_generic_for_missing_genre():
-    corpus = J._load_reference_corpus("relationship-driven")  # no file on disk
+def test_corpus_loader_returns_dedicated_corpus_when_available():
+    corpus = J._load_reference_corpus("relationship-driven")
     assert corpus is not None
-    assert corpus.get("genre") == "generic"
+    assert corpus.get("genre") == "relationship-driven"
 
 
 # ---------------------------------------------------------------------------

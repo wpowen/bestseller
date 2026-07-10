@@ -1,10 +1,7 @@
 """黄金三章 opening hard-contract must reach the DEFAULT (scene-first) writer for ch1-3.
 
-Regression guard: the golden-three rules previously only lived in the chapter-first
-generation path (``enable_chapter_first_generation``, OFF by default), so the default
-scene-first writer never received the strongest opening contract — a major cause of
-weak openings. They are now wired into the writer's SYSTEM prompt for ch1-3 (zh) via
-``build_opening_hook_directive`` (which self-guards ch>3 / non-zh).
+Regression guard: the golden-three rules must reach the default scene-first
+writer through the unified renderer, and only on the chapter's first scene.
 """
 
 from __future__ import annotations
@@ -14,8 +11,9 @@ from types import SimpleNamespace
 import pytest
 
 from bestseller.services.drafts import build_scene_draft_prompts
+from bestseller.services.golden_rules import render_golden_three_rules
 
-_GOLDEN_MARKER = "【黄金三章·开篇硬契约"
+_GOLDEN_MARKER = "# OUTPUT FORMAT · 开篇硬指标"
 
 
 def _fixtures(chapter_number: int):
@@ -44,7 +42,9 @@ def test_golden_three_contract_reaches_front_chapter_writer(chapter_number: int)
     system_prompt, _ = build_scene_draft_prompts(project, chapter, scene, style_guide)
     assert _GOLDEN_MARKER in system_prompt
     # a concrete, enforceable rule actually reaches the model
-    assert "第一句长度 ≤ 25 个汉字" in system_prompt
+    assert render_golden_three_rules(
+        chapter_number, "zh-CN", path_mode="scene"
+    ) in system_prompt
 
 
 @pytest.mark.parametrize("chapter_number", [4, 10, 50])

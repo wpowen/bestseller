@@ -319,7 +319,7 @@ def build_methodology_application_audit(case: PromptTraceCase) -> dict[str, Any]
 
 
 def build_default_strategies() -> list[PromptStrategy]:
-    """Return 20 intentionally different prose-prompt strategies."""
+    """Return the ordered prose-prompt strategy catalogue."""
 
     return [
         _strategy(
@@ -1501,6 +1501,59 @@ def build_blind_label_by_draft_ids(draft_ids: Iterable[str]) -> dict[str, str]:
         draft_id: _blind_label(index)
         for index, draft_id in enumerate(ordered, start=1)
     }
+
+
+def build_public_blind_packet(
+    *,
+    packet_seed: str,
+    candidates: Mapping[str, str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Separate a provenance-free review packet from its private label map."""
+
+    labels = build_blind_label_by_draft_ids(
+        f"{packet_seed}:{draft_id}" for draft_id in candidates
+    )
+    label_by_draft = {
+        draft_id: labels[f"{packet_seed}:{draft_id}"] for draft_id in candidates
+    }
+    packet_identity = {
+        "seed": packet_seed,
+        "candidate_hashes": sorted(
+            hashlib.sha256(text.encode("utf-8")).hexdigest()
+            for text in candidates.values()
+        ),
+    }
+    packet_id = hashlib.sha256(
+        json.dumps(packet_identity, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:20]
+    public_packet = {
+        "schema_version": "blind-review-packet/v1",
+        "packet_id": packet_id,
+        "candidates": [
+            {"label": label_by_draft[draft_id], "text": text}
+            for draft_id, text in sorted(
+                candidates.items(), key=lambda item: label_by_draft[item[0]]
+            )
+        ],
+        "questions": [
+            "overall",
+            "hook",
+            "character",
+            "prose",
+            "ai_flavor",
+            "continue_reading",
+            "confidence",
+            "evidence",
+        ],
+    }
+    private_mapping = {
+        "warning": "private provenance map; never include in a review packet",
+        "packet_id": packet_id,
+        "labels": {
+            label_by_draft[draft_id]: draft_id for draft_id in sorted(candidates)
+        },
+    }
+    return public_packet, private_mapping
 
 
 def utc_now_iso() -> str:

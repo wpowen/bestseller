@@ -144,10 +144,61 @@ def summarize_book_spec(book_spec: dict[str, Any], *, language: str = "zh-CN") -
             else:
                 lines.append(f"  - {fname}（{ftype}）：{threat}")
 
+    # ── narrative_lines (core_axis + phrasing_tokens) ──
+    # Previously dropped — downstream volume_plan / outline need phrasing_tokens
+    # to thread the core narrative axis through every volume theme.
+    raw_nl = bs.get("narrative_lines")
+    if isinstance(raw_nl, dict):
+        core_axis = _mapping(raw_nl.get("core_axis"))
+        statement = _s(core_axis.get("statement"))
+        tokens = _list_s(core_axis.get("phrasing_tokens"))
+        if statement or tokens:
+            if is_en:
+                lines.append(f"Core narrative axis: {statement}")
+                if tokens:
+                    lines.append(f"Axis phrasing tokens: {', '.join(tokens)}")
+            else:
+                lines.append(f"核心叙事轴：{statement}")
+                if tokens:
+                    lines.append(f"轴线措辞令牌：{'、'.join(tokens)}")
+
+    # ── protagonist.psych_profile ──
+    # Previously dropped — cast_spec and outline need psych_profile to
+    # maintain character psychological consistency.
+    psych = protag.get("psych_profile")
+    if isinstance(psych, dict) and psych:
+        mbti = _s(psych.get("mbti"))
+        big5 = _list_s(psych.get("big_five"))
+        if mbti or big5:
+            if is_en:
+                lines.append(f"Protagonist psych: MBTI={mbti}, Big Five={', '.join(big5)}")
+            else:
+                lines.append(f"主角心理画像：MBTI={mbti}，大五人格={'、'.join(big5)}")
+
+    # ── power_system.tiers (from book_spec protagonist or top-level) ──
+    # Previously dropped — world_spec and outline need tiers to plan
+    # progression milestones.
+    raw_ps = bs.get("power_system")
+    if isinstance(raw_ps, dict):
+        ps = _mapping(raw_ps)
+        tiers = ps.get("tiers")
+        if isinstance(tiers, list) and tiers:
+            tier_names = [_s(t) if isinstance(t, str) else _s(_mapping(t).get("name")) for t in tiers]
+            tier_names = [t for t in tier_names if t]
+            if tier_names:
+                if is_en:
+                    lines.append(f"Power tiers: {' > '.join(tier_names)}")
+                else:
+                    lines.append(f"力量境界：{' → '.join(tier_names)}")
+
     return "\n".join(lines)
 
 
-def summarize_world_spec(world_spec: dict[str, Any], *, language: str = "zh-CN") -> str:
+def summarize_world_spec(
+    world_spec: dict[str, Any],
+    *,
+    language: str = "zh-CN",
+) -> str:
     """~400 tokens: world name, key rules, power system, key locations, factions."""
     ws = _mapping(world_spec)
     is_en = language.startswith("en")

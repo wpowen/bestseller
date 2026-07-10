@@ -132,6 +132,10 @@ def load_copywriting_config(config: dict[str, Any] | None) -> dict[str, Any]:
         "n_candidates": int(cfg.get("n_candidates", 3)),
         "persona_samples": int(cfg.get("persona_samples", 2)),
         "max_polish_rounds": int(cfg.get("max_polish_rounds", 1)),
+        # The production acceptance bar is deliberately lower to avoid blocking a
+        # whole book. A reader-facing candidate below this target still gets its
+        # one bounded editorial pass before it can be surfaced as the champion.
+        "target_gate_score": float(cfg.get("target_gate_score", 80)),
         "strategies": {
             "default": tuple(strategies.get("default") or _DEFAULT_STRATEGIES["default"]),
             "suspense": tuple(strategies.get("suspense") or _DEFAULT_STRATEGIES["suspense"]),
@@ -266,7 +270,9 @@ async def _polish_champion(
     user = (
         f"题材：{genre}（{sub_genre}）\n当前简介：\n{synopsis}\n\n"
         f"诊断意见：\n{feedback}\n\n"
-        "请按诊断意见逐条改写这段简介，其余不需要改的地方保持原样。"
+        "请按诊断意见逐条改写这段简介：先给具体冲突，再讲规则代价，最后留下一个"
+        "必须继续看的选择。删掉口语凑句、设定清单、泛泛反问和任何解释给策划看的话。"
+        "读者只该看到人物正在被什么逼到墙角。"
         '只输出 JSON：{"synopsis": "..."}，不要解释。'
     )
     completion = await complete_text(
@@ -434,7 +440,9 @@ async def run_blurb_copywriting(
             ((config or {}).get("meets_bar", {}) or {}).get("blurb_min", 68)
         )
         max_polish = cfg["max_polish_rounds"]
-        needs_polish = (champion.gate_score or 0.0) < blurb_min or any(
+        needs_polish = (champion.gate_score or 0.0) < max(
+            blurb_min, float(cfg["target_gate_score"])
+        ) or any(
             f.severity == "warn" for f in champion.pathology
         )
         if needs_polish and max_polish > 0 and build_improvement_feedback:

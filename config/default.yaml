@@ -9,6 +9,15 @@
 
 llm:
   mock: false
+  # Final Prompt Compiler budget covers the complete system + user input.
+  writer_total_input_budget_tokens: 8000
+  writer_prompt_safety_margin: 0.10
+  # Cross-model blind judge remains shadow/advisory until G4 human calibration.
+  independent_judge_mode: shadow
+  independent_judge_primary_model_key: deepseek-v4-flash
+  independent_judge_secondary_model_key: nim-mistral-large-3
+  independent_judge_strict_model_family: true
+  independent_judge_low_margin: 0.12
 
   planner:
     model: "anthropic/claude-opus-4-5"
@@ -116,8 +125,15 @@ generation:
   # ~28K tokens and crushing prose quality). Set false to restore the old
   # full-context writer prompt.
   lean_writer_prompt: true
-  writer_prompt_mode: ab
+  # Production default is lean. Set ``compiled`` only for explicit prompt-compiler
+  # shadow/pilot runs. Use ``ab`` only for experiments (early chapters
+  # compare full vs lean); after the A/B window, fall back to
+  # writer_prompt_ab_winner (lean). Never silently return to full.
+  writer_prompt_mode: lean
   writer_prompt_ab_until_chapter: 3
+  writer_prompt_ab_winner: lean
+  # Tiered user-context budget for scene writer (see drafts._budget_context_sections).
+  writer_prompt_budget_tokens: 8000
   # Send only weak platform titles (keyword-soup / rejected) for a single LLM
   # platform-口播 revision pass during conception. Clean concise IP names and
   # already-passing titles are never revised. (2026-06-03 book-title fix.)
@@ -126,6 +142,8 @@ generation:
   # Long-form chapter contract (zh): chapters MUST land in 1800-3500 zh chars
   # and NEVER exceed the 3500 hard cap. Target sits well below the cap so
   # natural variance does not breach it.
+  # SSOT: also chapter_length_gate DEFAULT_* and length_stability_gate CHINESE_*.
+  # See docs/chapter-word-ssot.md. Do NOT use the obsolete 5000/6400/9000 band.
   words_per_chapter:
     min: 1800
     target: 2600
@@ -250,6 +268,9 @@ hook_engine:
 # Pipeline
 # -----------------------------------------------------------------------------
 pipeline:
+  # closure records required-lane degradation and continues; strict blocks.
+  # Neither mode may export or promote a failed/stalled scene or chapter.
+  quality_mode: closure
   enable_truth_version_guard: true
   enable_story_query_brief: false
   story_query_brief_max_rounds: 4

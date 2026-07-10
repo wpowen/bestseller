@@ -634,17 +634,6 @@ def render_methodology_scene_rules(
             "- 动作卡位：对话间穿插微动作细节反映真实内心"
         )
 
-    # Opening-specific rules
-    if is_opening or chapter_number <= 3:
-        rules.append(
-            "【开篇规则（黄金三章）】\n"
-            "- 主角第一时间出场，聚光灯法则\n"
-            "- 第一章必须制造冲突，不允许纯设定铺陈\n"
-            "- 前500字必须包含：人物+困境+行动\n"
-            "- 金手指/核心卖点在前3章清晰展示\n"
-            "- 不允许大段环境描写和背景介绍"
-        )
-
     _qimao_rules = render_qimao_signing_rules(
         chapter_number=chapter_number,
         platform_target=platform_target,
@@ -660,6 +649,17 @@ def render_methodology_scene_rules(
     )
     if _qimao_regeneration_rules:
         rules.append(_qimao_regeneration_rules)
+
+    # Keep the opening-only commercial promise when the baseline craft blocks
+    # are suppressed by the prompt compiler.  This is not a prose-style
+    # duplicate: it assigns a concrete chapter function across the first three
+    # chapters, which the writer needs even on non-Qimao routes.
+    if is_opening and chapter_number <= 3:
+        rules.append(
+            "【黄金三章职责】\n"
+            "- 第1章用现场压力和一次主动选择强切入；第2章兑现主角的差异化优势；"
+            "第3章给出小回报，并把更大的问题留到下一章。"
+        )
 
     # Climax-specific rules
     if is_climax:

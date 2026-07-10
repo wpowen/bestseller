@@ -43,6 +43,19 @@ def _reset_litellm_module_cache() -> None:
     _llm_mod._litellm_module = None
 
 
+def test_independent_judge_request_uses_critic_catalog_override_contract() -> None:
+    request = LLMCompletionRequest(
+        logical_role="critic",
+        model_catalog_key="deepseek-v4-flash",
+        system_prompt="blind judge",
+        user_prompt="A/B",
+        fallback_response='{"status":"inconclusive"}',
+    )
+
+    assert request.logical_role == "critic"
+    assert request.model_catalog_key == "deepseek-v4-flash"
+
+
 class FakeSession:
     def __init__(self) -> None:
         self.added: list[object] = []
@@ -1322,6 +1335,10 @@ def test_complete_text_fails_over_to_rate_limit_fallback_model(
 
         assert result.content == "glm output"
         assert result.model_name == "openai/z-ai/glm-5.1"
+        assert result.fallback_used is True
+        assert result.fallback_source == "rate_limit_retry"
+        assert result.effective_primary_model == "openai/MiniMax-M2.7-highspeed"
+        assert "MiniMax quota exhausted" in result.metadata["rate_limit_fallback_reason"]
         llm_run = next(obj for obj in session.added if isinstance(obj, LlmRunModel))
         assert llm_run.metadata_json["rate_limit_fallback_primary_model"] == (
             "openai/MiniMax-M2.7-highspeed"
@@ -1383,10 +1400,13 @@ def test_complete_text_uses_active_rate_limit_fallback_then_reprobes_primary(
         _rate_limit_fallback_until[key] = 10**12
         fallback_result = await complete_text(FakeSession(), settings, request)
         assert fallback_result.model_name == "openai/z-ai/glm-5.1"
+        assert fallback_result.fallback_used is True
+        assert fallback_result.fallback_source == "rate_limit_cooldown"
 
         _rate_limit_fallback_until.clear()
         primary_result = await complete_text(FakeSession(), settings, request)
         assert primary_result.model_name == "openai/MiniMax-M2.7-highspeed"
+        assert primary_result.fallback_used is False
 
     monkeypatch.setattr(
         "bestseller.services.llm._call_litellm_with_retry",

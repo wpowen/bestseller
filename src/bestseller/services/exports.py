@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from html import escape
+from html import escape, unescape
 import io
 import json
 import logging
@@ -16,6 +16,7 @@ import markdown as markdown_lib
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bestseller.domain.enums import DraftPromotionState
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
@@ -71,6 +72,23 @@ def _ensure_chapter_heading(
         return content_md
     heading = format_chapter_heading(chapter.chapter_number, chapter.title, language=language)
     return f"{heading}\n\n{content_md}"
+
+
+def _prepare_chapter_content(
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+    *,
+    language: str | None = None,
+) -> str:
+    """Sanitise and ensure heading for a single chapter's draft content.
+
+    Mirrors what ``build_project_markdown`` does per chapter so that
+    single-chapter binary exports (DOCX/EPUB/PDF) get the same treatment
+    as project-level exports.  Single-chapter Markdown export already
+    does this inline (see ``export_chapter_markdown``).
+    """
+    clean = sanitize_novel_markdown_content(draft.content_md, language=language)
+    return _ensure_chapter_heading(chapter, clean, language=language)
 
 
 def build_project_markdown(
@@ -515,6 +533,8 @@ def _sync_project_chapter_markdown_files(
 
 def _parse_markdown_line(line: str) -> tuple[str, str]:
     stripped = line.strip()
+    if stripped.startswith("### "):
+        return "h3", stripped[4:].strip()
     if stripped.startswith("# "):
         return "h1", stripped[2:].strip()
     if stripped.startswith("## "):
@@ -524,6 +544,37 @@ def _parse_markdown_line(line: str) -> tuple[str, str]:
     if stripped.startswith("- "):
         return "li", stripped[2:].strip()
     return "p", stripped
+
+
+# Inline markdown pattern for **bold** and *italic*
+_INLINE_MARK = re.compile(r"(\*\*.+?\*\*|\*.+?\*)")
+
+
+def _render_inline_runs(text: str) -> str:
+    """Split a line into OOXML runs, handling **bold** and *italic*.
+
+    Every segment (including plain text) is wrapped in <w:r><w:t> so the
+    output is valid OOXML. Escapes HTML entities in each segment.
+    """
+    runs: list[str] = []
+    for seg in _INLINE_MARK.split(text):
+        if not seg:
+            continue
+        if seg.startswith("**") and seg.endswith("**") and len(seg) > 4:
+            runs.append(
+                f"<w:r><w:rPr><w:b/></w:rPr>"
+                f"<w:t xml:space=\"preserve\">{escape(seg[2:-2])}</w:t></w:r>"
+            )
+        elif seg.startswith("*") and seg.endswith("*") and len(seg) > 2:
+            runs.append(
+                f"<w:r><w:rPr><w:i/></w:rPr>"
+                f"<w:t xml:space=\"preserve\">{escape(seg[1:-1])}</w:t></w:r>"
+            )
+        else:
+            runs.append(
+                f"<w:r><w:t xml:space=\"preserve\">{escape(seg)}</w:t></w:r>"
+            )
+    return "".join(runs)
 
 
 def markdown_to_plain_text(content_md: str) -> str:
@@ -584,14 +635,22 @@ def build_docx_bytes(title: str, content_md: str, *, author: str | None = None) 
         style = {
             "h1": "Heading1",
             "h2": "Heading2",
+            "h3": "Heading2",  # h3 maps to Heading2 since we only define 2 levels
             "quote": "Quote",
             "li": "ListParagraph",
         }.get(block_type)
         style_xml = (
             f"<w:pPr><w:pStyle w:val=\"{style}\"/></w:pPr>" if style is not None else ""
         )
+        # Insert page break before h1 (chapter heading), except the first
+        if block_type == "h1" and paragraph_xml:
+            paragraph_xml.append(
+                "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>"
+            )
+        # Use inline run renderer for bold/italic support
+        runs_xml = _render_inline_runs(text)
         paragraph_xml.append(
-            f"<w:p>{style_xml}<w:r><w:t xml:space=\"preserve\">{escape(text)}</w:t></w:r></w:p>"
+            f"<w:p>{style_xml}{runs_xml}</w:p>"
         )
 
     document_xml = (
@@ -673,25 +732,78 @@ def build_epub_bytes(
     *,
     language: str = "zh-CN",
     author: str | None = None,
-    identifier: str = "bestseller-export",
+    identifier: str | None = None,
 ) -> bytes:
-    html_body = markdown_to_html(content_md, language=language)
+    """Build an EPUB3 from markdown content.
+
+    Splits content into per-chapter XHTML files when ``# `` headings are
+    detected, so readers can navigate by chapter. Falls back to a single
+    file when no chapter headings are found.
+    """
+    from uuid import uuid4
+
+    if identifier is None:
+        identifier = f"bestseller-{uuid4().hex[:12]}"
+
     nav_title = "Table of Contents" if language.lower().startswith("en") else "目录"
     escaped_author = escape(author) if author else None
-    content_xhtml = (
-        "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-        f"<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"{escape(language)}\">"
-        f"<head><title>{escape(title)}</title><meta charset=\"utf-8\"/></head>"
-        f"<body>{html_body}</body></html>"
+
+    # Split content into chapters by h1 headings
+    chapter_splits: list[tuple[str, str]] = []
+    current_heading = title
+    current_lines: list[str] = []
+    for raw_line in content_md.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("# "):
+            if current_lines:
+                chapter_splits.append((current_heading, "\n".join(current_lines)))
+            current_heading = stripped[2:].strip()
+            current_lines = [raw_line]
+        else:
+            current_lines.append(raw_line)
+    if current_lines:
+        chapter_splits.append((current_heading, "\n".join(current_lines)))
+
+    # If only one chunk and it has no h1, use the title as heading
+    if len(chapter_splits) == 1 and chapter_splits[0][0] == title:
+        chapter_splits = [(title, content_md)]
+
+    # Build per-chapter XHTML
+    chapter_files: list[tuple[str, str, str]] = []  # (filename, heading, xhtml)
+    nav_items: list[tuple[str, str]] = []
+    manifest_items: list[str] = []
+    spine_items: list[str] = []
+
+    for idx, (heading, md_content) in enumerate(chapter_splits):
+        filename = f"chapter-{idx + 1:04d}.xhtml"
+        html_body = markdown_to_html(md_content, language=language)
+        xhtml = (
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+            f"<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"{escape(language)}\">"
+            f"<head><title>{escape(heading)}</title><meta charset=\"utf-8\"/></head>"
+            f"<body>{html_body}</body></html>"
+        )
+        chapter_files.append((filename, heading, xhtml))
+        nav_items.append((filename, heading))
+        item_id = f"ch{idx + 1:04d}"
+        manifest_items.append(
+            f"<item id=\"{item_id}\" href=\"{filename}\" media-type=\"application/xhtml+xml\"/>"
+        )
+        spine_items.append(f"<itemref idref=\"{item_id}\"/>")
+
+    # Build nav
+    nav_entries = "\n".join(
+        f"<li><a href=\"{fn}\">{escape(h)}</a></li>" for fn, h in nav_items
     )
     nav_xhtml = (
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
         f"<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"{escape(language)}\">"
         f"<head><title>{escape(title)} {escape(nav_title)}</title></head>"
         "<body><nav epub:type=\"toc\" id=\"toc\">"
-        f"<ol><li><a href=\"content.xhtml\">{escape(title)}</a></li></ol>"
+        f"<h1>{escape(nav_title)}</h1><ol>{nav_entries}</ol>"
         "</nav></body></html>"
     )
+
     content_opf = (
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
         "<package xmlns=\"http://www.idpf.org/2007/opf\" unique-identifier=\"bookid\" version=\"3.0\">"
@@ -703,9 +815,9 @@ def build_epub_bytes(
         "</metadata>"
         "<manifest>"
         "<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>"
-        "<item id=\"content\" href=\"content.xhtml\" media-type=\"application/xhtml+xml\"/>"
-        "</manifest>"
-        "<spine><itemref idref=\"content\"/></spine>"
+        + "".join(manifest_items)
+        + "</manifest>"
+        "<spine>" + "".join(spine_items) + "</spine>"
         "</package>"
     )
     container_xml = (
@@ -719,45 +831,53 @@ def build_epub_bytes(
     with ZipFile(buffer, "w") as archive:
         archive.writestr("mimetype", "application/epub+zip", compress_type=ZIP_STORED)
         archive.writestr("META-INF/container.xml", container_xml, compress_type=ZIP_DEFLATED)
-        archive.writestr("OEBPS/content.xhtml", content_xhtml, compress_type=ZIP_DEFLATED)
+        for filename, _heading, xhtml in chapter_files:
+            archive.writestr(f"OEBPS/{filename}", xhtml, compress_type=ZIP_DEFLATED)
         archive.writestr("OEBPS/nav.xhtml", nav_xhtml, compress_type=ZIP_DEFLATED)
         archive.writestr("OEBPS/content.opf", content_opf, compress_type=ZIP_DEFLATED)
     return buffer.getvalue()
 
 
-def build_pdf_bytes(title: str, content_md: str) -> bytes:
+def build_pdf_bytes(title: str, content_md: str, *, language: str = "zh-CN") -> bytes:
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont
         from reportlab.pdfbase.pdfmetrics import registerFont
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+        from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise RuntimeError(
             "PDF export requires reportlab. Install optional dependencies with bestseller[export]."
         ) from exc
 
-    registerFont(UnicodeCIDFont("STSong-Light"))
+    is_en = language.lower().startswith("en")
+    # Helvetica is a reportlab built-in Type1 font; STSong-Light is a CID font.
+    if is_en:
+        base_font = "Helvetica"
+    else:
+        registerFont(UnicodeCIDFont("STSong-Light"))
+        base_font = "STSong-Light"
+
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         "BestsellerTitle",
         parent=styles["Title"],
-        fontName="STSong-Light",
+        fontName=base_font,
         fontSize=18,
         leading=24,
     )
     heading_style = ParagraphStyle(
         "BestsellerHeading",
         parent=styles["Heading2"],
-        fontName="STSong-Light",
+        fontName=base_font,
         fontSize=14,
         leading=18,
     )
     body_style = ParagraphStyle(
         "BestsellerBody",
         parent=styles["BodyText"],
-        fontName="STSong-Light",
+        fontName=base_font,
         fontSize=11,
         leading=16,
     )
@@ -779,20 +899,34 @@ def build_pdf_bytes(title: str, content_md: str) -> bytes:
         title=title,
     )
 
-    story = [Paragraph(escape(title), title_style), Spacer(1, 8)]
-    for raw_line in content_md.splitlines():
-        if not raw_line.strip():
+    # Convert markdown to HTML so reportlab Paragraph can parse inline tags
+    # (<b>, <i>, <strong>, <em>) instead of rendering **bold** literally.
+    html_body = markdown_lib.markdown(
+        content_md,
+        extensions=["extra", "sane_lists", "nl2br"],
+        output_format="html5",
+    )
+
+    story: list = [Paragraph(title, title_style), Spacer(1, 8)]
+    for raw_line in html_body.split("\n"):
+        stripped = raw_line.strip()
+        if not stripped:
             story.append(Spacer(1, 6))
             continue
-        block_type, text = _parse_markdown_line(raw_line)
-        style = body_style
-        if block_type == "h1":
-            style = title_style
-        elif block_type == "h2":
-            style = heading_style
-        elif block_type == "quote":
-            style = quote_style
-        story.append(Paragraph(escape(text), style))
+        if stripped.startswith("<h1>"):
+            heading_text = unescape(re.sub(r"<[^>]+>", "", stripped)).strip()
+            if heading_text == title.strip():
+                continue
+            story.append(PageBreak())
+            story.append(Paragraph(stripped, title_style))
+        elif stripped.startswith("<h2>") or stripped.startswith("<h3>"):
+            story.append(Paragraph(stripped, heading_style))
+        elif stripped.startswith("<blockquote>"):
+            story.append(Paragraph(stripped, quote_style))
+        elif stripped.startswith("<p>") or stripped.startswith("<li>"):
+            story.append(Paragraph(stripped, body_style))
+        else:
+            story.append(Paragraph(stripped, body_style))
         story.append(Spacer(1, 4))
 
     document.build(story)
@@ -820,7 +954,7 @@ async def _load_chapter_export_payload(
     draft = await session.scalar(
         select(ChapterDraftVersionModel).where(
             ChapterDraftVersionModel.chapter_id == chapter.id,
-            ChapterDraftVersionModel.is_current.is_(True),
+            ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
         )
     )
     if draft is None:
@@ -833,7 +967,13 @@ async def _load_chapter_export_payload(
 async def _load_project_export_payload(
     session: AsyncSession,
     project_slug: str,
-) -> tuple[ProjectModel, list[tuple[ChapterModel, ChapterDraftVersionModel]]]:
+) -> tuple[ProjectModel, list[tuple[ChapterModel, ChapterDraftVersionModel]], list[int]]:
+    """Load project + promoted chapter drafts.
+
+    Returns ``(project, chapter_payloads, skipped_chapter_numbers)`` where
+    *skipped_chapter_numbers* lists chapters that have no promoted draft —
+    callers can surface these as warnings instead of silently omitting them.
+    """
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
@@ -849,14 +989,16 @@ async def _load_project_export_payload(
         raise ValueError(f"Project '{project_slug}' does not have any chapters to export.")
 
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] = []
+    skipped: list[int] = []
     for chapter in chapters:
         draft = await session.scalar(
             select(ChapterDraftVersionModel).where(
                 ChapterDraftVersionModel.chapter_id == chapter.id,
-                ChapterDraftVersionModel.is_current.is_(True),
+                ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
             )
         )
         if draft is None:
+            skipped.append(chapter.chapter_number)
             continue
         chapter_payloads.append((chapter, draft))
 
@@ -864,15 +1006,62 @@ async def _load_project_export_payload(
         raise ValueError(
             f"Project '{project_slug}' does not have any current chapter drafts to export."
         )
-    return project, chapter_payloads
+    if skipped:
+        logger.warning(
+            "Export for '%s' skipped %d chapter(s) without promoted draft: %s",
+            project_slug,
+            len(skipped),
+            skipped,
+        )
+    return project, chapter_payloads, skipped
 
 
 async def load_project_export_content(
     session: AsyncSession,
     project_slug: str,
 ) -> tuple[ProjectModel, str]:
-    project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    project, chapter_payloads, _skipped = await _load_project_export_payload(session, project_slug)
     return project, build_project_markdown(project, chapter_payloads)
+
+
+def _build_project_export_warnings(
+    *,
+    skipped_chapters: list[int],
+    preflight_warnings: list[str],
+    language: str | None,
+) -> list[str]:
+    warnings: list[str] = []
+    if skipped_chapters:
+        numbers = ", ".join(str(number) for number in skipped_chapters)
+        if normalize_language(language).lower().startswith("en"):
+            warnings.append(f"Chapters {numbers} have no current draft and were skipped")
+        else:
+            warnings.append(f"第 {numbers.replace(', ', '、')} 章无当前稿件，已跳过")
+    warnings.extend(str(item) for item in preflight_warnings if str(item).strip())
+    return warnings
+
+
+def _attach_project_export_warnings(
+    artifact: ExportArtifactModel,
+    *,
+    skipped_chapters: list[int],
+    preflight_warnings: list[str],
+    language: str | None,
+    word_count: int,
+) -> None:
+    metadata = dict(getattr(artifact, "metadata_json", None) or {})
+    metadata.update(
+        {
+            "warnings": _build_project_export_warnings(
+                skipped_chapters=skipped_chapters,
+                preflight_warnings=preflight_warnings,
+                language=language,
+            ),
+            "skipped_chapters": list(skipped_chapters),
+            "word_count": word_count,
+        }
+    )
+    artifact.metadata_json = metadata
 
 
 def create_export_artifact(
@@ -885,6 +1074,7 @@ def create_export_artifact(
     checksum: str,
     version_label: str,
     created_by_run_id: UUID | None,
+    metadata_json: dict | None = None,
 ) -> ExportArtifactModel:
     return ExportArtifactModel(
         project_id=project_id,
@@ -895,6 +1085,7 @@ def create_export_artifact(
         checksum=checksum,
         version_label=version_label,
         created_by_run_id=created_by_run_id,
+        metadata_json=metadata_json or {},
     )
 
 
@@ -904,7 +1095,7 @@ async def load_publication_comparison_payloads(
     *,
     through_chapter_number: int | None = None,
 ) -> list[tuple[ChapterModel, ChapterDraftVersionModel]]:
-    """Load current chapter drafts used by publication/export safety gates."""
+    """Load promoted chapter drafts used by publication/export safety gates."""
     stmt = (
         select(ChapterModel, ChapterDraftVersionModel)
         .join(
@@ -913,7 +1104,7 @@ async def load_publication_comparison_payloads(
         )
         .where(
             ChapterModel.project_id == project_id,
-            ChapterDraftVersionModel.is_current.is_(True),
+            ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
         )
         .order_by(ChapterModel.chapter_number.asc())
     )
@@ -1107,8 +1298,8 @@ def collect_publication_blockers(
                     _length_report.target_words,
                     _length_report.max_words,
                 )
-        except Exception:
-            pass  # Never let a config read error crash an export.
+        except Exception as e:
+            logger.warning("Length stability check failed for chapter %s (non-fatal): %s", chapter.chapter_number, e)
         hygiene_issues = collect_unfinished_artifact_issues(draft.content_md, language=language)
         for issue in hygiene_issues:
             blockers.append(
@@ -1148,8 +1339,8 @@ def collect_publication_blockers(
                         else f"第{chapter_number}章：常识因果门禁 {finding.code}：{finding.message}"
                     )
                 )
-        except Exception:
-            logger.debug("Publication gate: common-sense check failed", exc_info=True)
+        except Exception as e:
+            logger.warning("Publication gate: common-sense check failed for chapter %s (non-fatal): %s", chapter_number, e)
         try:
             from bestseller.services.deduplication import (
                 detect_chapter_text_loop,
@@ -1177,8 +1368,8 @@ def collect_publication_blockers(
                         if is_en else f"第{chapter_number}章：另有{len(local_findings) - 5}条重复问题"
                     )
                 )
-        except Exception:
-            logger.debug("Publication gate: local duplicate check failed", exc_info=True)
+        except Exception as e:
+            logger.warning("Publication gate: local duplicate check failed for chapter %s (non-fatal): %s", chapter_number, e)
 
     try:
         from bestseller.services.chapter_batch_quality_gate import (
@@ -1220,8 +1411,8 @@ def collect_publication_blockers(
                     if is_en else f"另有{remaining}条跨章重复问题"
                 )
             )
-    except Exception:
-        logger.debug("Publication gate: cross-chapter duplicate check failed", exc_info=True)
+    except Exception as e:
+        logger.warning("Publication gate: cross-chapter duplicate check failed (non-fatal): %s", e)
 
     return blockers
 
@@ -1253,7 +1444,7 @@ async def preflight_export_check(
     warnings: list[str] = []
 
     try:
-        # 1. Check for incomplete chapters (missing current drafts)
+        # 1. Check for incomplete chapters (missing promoted drafts)
         chapters = (await session.scalars(
             select(ChapterModel).where(ChapterModel.project_id == project_id)
         )).all()
@@ -1261,13 +1452,13 @@ async def preflight_export_check(
             draft = await session.scalar(
                 select(ChapterDraftVersionModel).where(
                     ChapterDraftVersionModel.chapter_id == ch.id,
-                    ChapterDraftVersionModel.is_current.is_(True),
+                    ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
                 )
             )
             if draft is None:
                 warnings.append(
-                    f"Chapter {ch.chapter_number} is missing a current draft" if _is_en
-                    else f"第{ch.chapter_number}章缺少当前草稿"
+                    f"Chapter {ch.chapter_number} is missing a promoted draft" if _is_en
+                    else f"第{ch.chapter_number}章缺少已晋升草稿"
                 )
     except Exception:
         logger.debug("Preflight check: chapter completeness check failed", exc_info=True)
@@ -1405,7 +1596,7 @@ async def export_project_markdown(
     *,
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
-    project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
     _raise_if_export_blocked(project, chapter_payloads)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
@@ -1425,6 +1616,13 @@ async def export_project_markdown(
         checksum=checksum,
         version_label="project-current",
         created_by_run_id=created_by_run_id,
+    )
+    _attach_project_export_warnings(
+        artifact,
+        skipped_chapters=skipped,
+        preflight_warnings=preflight_warnings,
+        language=project.language,
+        word_count=build_markdown_reading_stats(content_md)["word_count"],
     )
     session.add(artifact)
     await session.flush()
@@ -1452,7 +1650,8 @@ async def export_chapter_docx(
     )
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.docx"
-    storage_uri, checksum = write_binary_output(output_path, build_docx_bytes(title, draft.content_md))
+    clean_content = _prepare_chapter_content(chapter, draft, language=project.language)
+    storage_uri, checksum = write_binary_output(output_path, build_docx_bytes(title, clean_content))
     artifact = create_export_artifact(
         project_id=project.id,
         export_type="docx",
@@ -1475,7 +1674,7 @@ async def export_project_docx(
     *,
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
-    project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
     _raise_if_export_blocked(project, chapter_payloads)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
@@ -1492,6 +1691,13 @@ async def export_project_docx(
         checksum=checksum,
         version_label="project-current",
         created_by_run_id=created_by_run_id,
+    )
+    _attach_project_export_warnings(
+        artifact,
+        skipped_chapters=skipped,
+        preflight_warnings=preflight_warnings,
+        language=project.language,
+        word_count=build_markdown_reading_stats(content_md)["word_count"],
     )
     session.add(artifact)
     await session.flush()
@@ -1519,9 +1725,10 @@ async def export_chapter_epub(
     )
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.epub"
+    clean_content = _prepare_chapter_content(chapter, draft, language=project.language)
     storage_uri, checksum = write_binary_output(
         output_path,
-        build_epub_bytes(title, draft.content_md, language=project.language),
+        build_epub_bytes(title, clean_content, language=project.language),
     )
     artifact = create_export_artifact(
         project_id=project.id,
@@ -1545,7 +1752,7 @@ async def export_project_epub(
     *,
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
-    project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
     _raise_if_export_blocked(project, chapter_payloads)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
@@ -1565,6 +1772,13 @@ async def export_project_epub(
         checksum=checksum,
         version_label="project-current",
         created_by_run_id=created_by_run_id,
+    )
+    _attach_project_export_warnings(
+        artifact,
+        skipped_chapters=skipped,
+        preflight_warnings=preflight_warnings,
+        language=project.language,
+        word_count=build_markdown_reading_stats(content_md)["word_count"],
     )
     session.add(artifact)
     await session.flush()
@@ -1592,7 +1806,8 @@ async def export_chapter_pdf(
     )
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.pdf"
-    storage_uri, checksum = write_binary_output(output_path, build_pdf_bytes(title, draft.content_md))
+    clean_content = _prepare_chapter_content(chapter, draft, language=project.language)
+    storage_uri, checksum = write_binary_output(output_path, build_pdf_bytes(title, clean_content, language=project.language or "zh-CN"))
     artifact = create_export_artifact(
         project_id=project.id,
         export_type="pdf",
@@ -1615,14 +1830,14 @@ async def export_project_pdf(
     *,
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
-    project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
     _raise_if_export_blocked(project, chapter_payloads)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
     output_path = Path(settings.output.base_dir) / project.slug / "project.pdf"
-    storage_uri, checksum = write_binary_output(output_path, build_pdf_bytes(project.title, content_md))
+    storage_uri, checksum = write_binary_output(output_path, build_pdf_bytes(project.title, content_md, language=project.language or "zh-CN"))
     artifact = create_export_artifact(
         project_id=project.id,
         export_type="pdf",
@@ -1632,6 +1847,13 @@ async def export_project_pdf(
         checksum=checksum,
         version_label="project-current",
         created_by_run_id=created_by_run_id,
+    )
+    _attach_project_export_warnings(
+        artifact,
+        skipped_chapters=skipped,
+        preflight_warnings=preflight_warnings,
+        language=project.language,
+        word_count=build_markdown_reading_stats(content_md)["word_count"],
     )
     session.add(artifact)
     await session.flush()

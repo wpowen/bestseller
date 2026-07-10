@@ -263,6 +263,36 @@ class TestDisabledIsNoop:
 
 
 class TestChampionPolish:
+    async def test_acceptable_but_sub_target_candidate_still_gets_polished(self, monkeypatch):
+        import bestseller.services.blurb_copywriter as mod
+
+        calls = {"count": 0}
+
+        def _score(*, synopsis, **kwargs):
+            from bestseller.domain.appeal import BlurbAppealVerdict
+
+            return BlurbAppealVerdict(total=78.0, grade="consider")
+
+        async def _fake_polish(session, settings, *, synopsis, feedback, genre, sub_genre, language):
+            calls["count"] += 1
+            return synopsis, "polish-run-id"
+
+        monkeypatch.setattr(mod, "_polish_champion", _fake_polish)
+        monkeypatch.setattr(
+            "bestseller.services.blurb_appeal_gate.evaluate_blurb_appeal", _score
+        )
+        result = await run_blurb_copywriting(
+            None, None,
+            spine=_SPINE, premise="x", golden_finger_line="x",
+            title="闻雀试睡", tags=[], genre="悬疑推理", sub_genre="规则怪谈",
+            platform=None, language="zh-CN", v0_synopsis="差",
+            config={"copywriting": {"n_candidates": 1, "persona_samples": 1, "max_polish_rounds": 1, "target_gate_score": 80}},
+            generator=_make_generator([_GOOD_SYNOPSIS]),
+            persona_judge=_make_persona_judge({_GOOD_SYNOPSIS[:20]: (True, 9.0)}),
+        )
+        assert result.fell_back_to_v0 is False
+        assert calls["count"] == 1
+
     async def test_weak_champion_triggers_one_polish_round(self, monkeypatch):
         generator = _make_generator([_WEAK_SYNOPSIS])
 

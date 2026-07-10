@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from bestseller.services.benchmark_arena import (
     ARENA_DIMENSIONS,
     ArenaPair,
     BenchmarkTargets,
+    adapt_independent_judge_result,
     build_arena_system_prompt,
     build_arena_user_prompt,
     evaluate_targets,
@@ -65,9 +67,7 @@ def test_run_arena_match_requires_swap_consistency() -> None:
         # call (framework is 乙) — i.e. the judge consistently picks framework.
         is_forward = user.index("框架正文") < user.index("真书正文")
         winner = "甲" if is_forward else "乙"
-        return json.dumps(
-            {"winner": winner, "dimensions": {"hook": winner}}, ensure_ascii=False
-        )
+        return json.dumps({"winner": winner, "dimensions": {"hook": winner}}, ensure_ascii=False)
 
     result = asyncio.run(run_arena_match(_pair(), judge_framework_both_directions))
     assert result.outcome == "win"
@@ -111,7 +111,9 @@ def test_summarize_and_evaluate_targets() -> None:
     assert summary.wins == 4 and summary.losses == 4
     assert summary.win_rate == 0.5
 
-    targets = BenchmarkTargets(vs_t2_win_rate_min=0.5, vs_t1_win_rate_min=0.35, min_pairs_per_tier=8)
+    targets = BenchmarkTargets(
+        vs_t2_win_rate_min=0.5, vs_t1_win_rate_min=0.35, min_pairs_per_tier=8
+    )
     evaluation = evaluate_targets({"t2": summary}, targets)
     # t2 passes its floor; t1 has no pairs → inconclusive but does not gate.
     assert evaluation.passed is True
@@ -129,3 +131,17 @@ def test_load_benchmark_targets_from_repo_config_and_fallback(tmp_path: Path) ->
     assert targets.vs_t1_win_rate_min == 0.35
     fallback = load_benchmark_targets(tmp_path / "absent.yaml")
     assert fallback.vs_t2_win_rate_min == 0.50
+
+
+def test_independent_judge_adapter_stays_advisory_and_maps_blind_winner() -> None:
+    result = SimpleNamespace(
+        status="decisive",
+        winner="draft_a",
+        advisory_only=True,
+        dimension_outcomes={"reader_pull": "draft_a"},
+    )
+
+    adapted = adapt_independent_judge_result(_pair(), result)
+
+    assert adapted.outcome == "win"
+    assert adapted.forward is None and adapted.backward is None

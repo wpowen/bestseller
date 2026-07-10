@@ -25,6 +25,7 @@ class FakeSession:
         self.executed: list[object] = []
         self.execute_params: list[object | None] = []
         self.calls: list[str] = []
+        self.scalar_statements: list[object] = []
         self.flush_count = 0
 
     def add(self, obj: object) -> None:
@@ -43,6 +44,7 @@ class FakeSession:
 
     async def scalar(self, stmt: object) -> object | None:
         self.calls.append("scalar")
+        self.scalar_statements.append(stmt)
         if not self.scalar_results:
             return None
         return self.scalar_results.pop(0)
@@ -140,6 +142,7 @@ def build_draft(project_id, scene_id) -> SceneDraftVersionModel:
         content_md="## 场景 1：封港命令\n\n沈砚与港务官正面对峙。",
         word_count=520,
         is_current=True,
+        promotion_state="promoted",
         generation_params={},
     )
     draft.id = uuid4()
@@ -242,6 +245,35 @@ async def test_refresh_scene_knowledge_creates_canon_and_timeline(
     assert result.summary_text
     assert len(canon_facts) == 6
     assert len(timeline_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_knowledge_refresh_rejects_unpromoted_or_missing_scene_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    monkeypatch.setattr(knowledge_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[chapter, scene, None])
+
+    with pytest.raises(ValueError, match="promoted scene draft"):
+        await knowledge_services.refresh_scene_knowledge(
+            session,
+            build_settings(),
+            "my-story",
+            1,
+            1,
+        )
+
+    draft_query = str(session.scalar_statements[-1])
+    draft_where = draft_query.split("WHERE", maxsplit=1)[1]
+    assert "promotion_state" in draft_where
+    assert "is_current" not in draft_where
 
 
 @pytest.mark.asyncio

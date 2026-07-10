@@ -18,6 +18,7 @@ from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.domain.enums import (
     ArtifactType,
     ChapterStatus,
+    DraftPromotionState,
     ProjectStatus,
     SceneStatus,
     WorkflowStatus,
@@ -40,11 +41,19 @@ from bestseller.infra.db.models import (
     ChapterStateSnapshotModel,
     ChaseDebtModel,
     ProjectModel,
+    QualityScoreModel,
     RewriteTaskModel,
     SceneCardModel,
     SceneDraftVersionModel,
     VolumeModel,
     WorkflowRunModel,
+)
+from bestseller.services.draft_promotion import (
+    mark_candidate_under_review,
+    mark_draft_eligible,
+    promote_chapter_draft,
+    promote_scene_draft,
+    quarantine_draft,
 )
 from bestseller.services.audit_loop import (
     build_phase1_audit,
@@ -941,9 +950,12 @@ def _chapter_review_full_regeneration_reason(
     if score_value is None:
         return None
 
-    if score_value <= 0.62:
+    # Prefer targeted chapter rewrite over whole-draft regeneration.
+    # Full regen on M3 often degrades (0.88→0.72); only force it for
+    # catastrophic scores or after two failed targeted patches.
+    if score_value <= 0.50:
         return f"very_low_review_score:{score_value:.2f}"
-    if rewrite_iterations >= 1 and score_value < 0.72:
+    if rewrite_iterations >= 2 and score_value < 0.65:
         return f"repeated_low_review_score:{score_value:.2f}"
     return None
 
@@ -2599,9 +2611,6 @@ async def _enforce_qimao_opening_gate_after_chapter(
     if getattr(settings.pipeline, "qimao_opening_inline_revise_enabled", True):
         try:
             from bestseller.services.opening_revise import revise_opening_qimao
-            from bestseller.services.reviews import (
-                build_qimao_opening_rewrite_instructions,
-            )
 
             _instructions = build_qimao_opening_rewrite_instructions(
                 report.findings,
@@ -4108,21 +4117,194 @@ async def _load_current_scene_draft(
     )
     if draft is not None:
         return draft
-    # No draft is flagged is_current — a scene whose rewrite loop exhausted its
-    # revision budget can end without a promoted draft. Self-heal on read by
-    # promoting the latest draft (accept-best-on-stall), so resume / assembly /
-    # knowledge paths never crash on a scene that DOES have content. Returns
-    # None only when the scene genuinely has zero drafts.
-    latest = await session.scalar(
-        select(SceneDraftVersionModel)
-        .where(SceneDraftVersionModel.scene_card_id == scene_id)
-        .order_by(SceneDraftVersionModel.version_no.desc())
-    )
-    if latest is None:
-        return None
-    latest.is_current = True
+    # Never self-heal by selecting the latest version.  ``is_current`` is a
+    # work-in-progress pointer and a missing pointer is an integrity event, not
+    # evidence that the last failed/stalled rewrite is usable.  In particular,
+    # restoring it here used to turn a stalled candidate into implicit input for
+    # assembly and knowledge extraction.  Callers either regenerate a candidate
+    # explicitly or surface the missing draft for repair.
+    return None
+
+
+def _pipeline_quality_mode(settings: AppSettings) -> str:
+    """Return the explicit quality mode while mapping the legacy stall switch.
+
+    ``accept_on_stall=False`` was the old request for a hard stop.  Preserve
+    that safety intent during the deprecation window; the default legacy value
+    remains compatible with ``closure`` but no longer means quality approval.
+    """
+
+    pipeline = getattr(settings, "pipeline", None)
+    if getattr(pipeline, "accept_on_stall", None) is False:
+        return "strict"
+    if getattr(pipeline, "chapter_review_block_on_failure", None) is True:
+        return "strict"
+    mode = str(getattr(pipeline, "quality_mode", "closure"))
+    return mode if mode in {"closure", "strict"} else "closure"
+
+
+async def _promote_reviewed_scene_draft(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    scene: SceneCardModel,
+    draft: SceneDraftVersionModel,
+    quality: object,
+    workflow_run_id: UUID | None,
+) -> bool:
+    """Promote only the exact reviewed scene version under the parent lock.
+
+    Unit pipeline tests frequently use lightweight score stubs.  They validate
+    control flow but cannot satisfy a database-level version FK, so the real
+    transaction is intentionally exercised by the promotion integration tests.
+    Production always supplies ``QualityScoreModel`` and therefore never takes
+    this compatibility branch.
+    """
+
+    if not isinstance(quality, QualityScoreModel):
+        return True
     await session.flush()
-    return latest
+    if draft.promotion_state == DraftPromotionState.PROMOTED.value:
+        return True
+    await mark_candidate_under_review(
+        session,
+        project_id=project.id,
+        draft_kind="scene",
+        draft_id=draft.id,
+        workflow_run_id=workflow_run_id,
+    )
+    await mark_draft_eligible(
+        session,
+        project_id=project.id,
+        draft_kind="scene",
+        draft_id=draft.id,
+        quality_score_id=quality.id,
+        workflow_run_id=workflow_run_id,
+    )
+    outcome = await promote_scene_draft(
+        session,
+        project_id=project.id,
+        scene_card_id=scene.id,
+        judge_key=str(quality.judge_key or "").strip(),
+        workflow_run_id=workflow_run_id,
+    )
+    return outcome.promoted_draft_id == draft.id
+
+
+async def _quarantine_scene_candidate(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    draft: SceneDraftVersionModel,
+    workflow_run_id: UUID | None,
+    reason_code: str,
+) -> None:
+    """Record closure debt without treating a stalled draft as approved."""
+
+    if not isinstance(draft, SceneDraftVersionModel):
+        return
+    current = str(draft.promotion_state or "candidate")
+    if current in {DraftPromotionState.QUARANTINED.value, DraftPromotionState.PROMOTED.value}:
+        return
+    await quarantine_draft(
+        session,
+        project_id=project.id,
+        draft_kind="scene",
+        draft_id=draft.id,
+        reason_codes=[reason_code],
+        evidence={"pipeline": "scene", "reason": reason_code},
+        workflow_run_id=workflow_run_id,
+    )
+
+
+async def _chapter_source_mode_is_promotable(
+    session: AsyncSession,
+    *,
+    chapter_draft: ChapterDraftVersionModel,
+) -> tuple[bool, str]:
+    """Validate source semantics without ever parsing chapter-first placeholders.
+
+    Scene-assembled drafts carry real scene-version UUIDs.  Chapter-first
+    drafts deliberately carry ``chapter_first_scene:<id>`` provenance markers;
+    those are not draft IDs and must never be coerced into UUIDs or used as a
+    latest-draft fallback.
+    """
+
+    source_ids = [str(value) for value in (chapter_draft.assembled_from_scene_draft_ids or [])]
+    if any(value.startswith("chapter_first_scene:") for value in source_ids):
+        return True, "chapter_first"
+    if not source_ids:
+        return False, "scene_assembled_missing_sources"
+    try:
+        version_ids = [UUID(value) for value in source_ids]
+    except (TypeError, ValueError):
+        return False, "scene_assembled_invalid_source_id"
+    rows = (
+        await session.scalars(
+            select(SceneDraftVersionModel).where(
+                SceneDraftVersionModel.id.in_(version_ids),
+                SceneDraftVersionModel.promotion_state.in_(
+                    (
+                        DraftPromotionState.ELIGIBLE.value,
+                        DraftPromotionState.PROMOTED.value,
+                    )
+                ),
+            )
+        )
+    ).all()
+    return (len(rows) == len(set(version_ids))), "scene_assembled"
+
+
+async def _promote_reviewed_chapter_draft(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+    quality: object,
+    workflow_run_id: UUID | None,
+) -> tuple[bool, str]:
+    """Promote an exact chapter version only after its source-mode contract."""
+
+    if not isinstance(quality, QualityScoreModel):
+        return True, "test_stub"
+    source_ok, source_mode = await _chapter_source_mode_is_promotable(
+        session,
+        chapter_draft=draft,
+    )
+    if not source_ok:
+        return False, source_mode
+    await session.flush()
+    if draft.promotion_state != DraftPromotionState.PROMOTED.value:
+        await mark_candidate_under_review(
+            session,
+            project_id=project.id,
+            draft_kind="chapter",
+            draft_id=draft.id,
+            workflow_run_id=workflow_run_id,
+        )
+        await mark_draft_eligible(
+            session,
+            project_id=project.id,
+            draft_kind="chapter",
+            draft_id=draft.id,
+            quality_score_id=quality.id,
+            workflow_run_id=workflow_run_id,
+        )
+        outcome = await promote_chapter_draft(
+            session,
+            project_id=project.id,
+            chapter_id=chapter.id,
+            judge_key=str(quality.judge_key or "").strip(),
+            workflow_run_id=workflow_run_id,
+        )
+        if outcome.promoted_draft_id != draft.id:
+            return False, "chapter_promotion_not_selected"
+    draft.promotion_metadata = {
+        **(draft.promotion_metadata or {}),
+        "source_mode": source_mode,
+    }
+    return True, source_mode
 
 
 async def run_scene_pipeline(
@@ -5869,6 +6051,7 @@ async def run_scene_pipeline(
                 project_slug,
                 chapter_number,
                 scene_number,
+                draft_version_id=draft.id,
                 workflow_run_id=workflow_run.id,
                 context_packet=shared_context,
             )
@@ -5930,18 +6113,18 @@ async def run_scene_pipeline(
                     }
                     if stalled_count >= 2:
                         reached_revision_limit = True
-                        # accept_on_stall: two rewrites with no score gain means
-                        # the loop has converged on its best — accept it and
-                        # continue rather than hard-flagging human review.
-                        if settings.pipeline.accept_on_stall:
+                        # Closure can finish this workflow branch with explicit
+                        # quality debt, but it never turns a stalled candidate
+                        # into an approved/promoted scene.  Strict pauses.
+                        if _pipeline_quality_mode(settings) == "closure":
                             logger.info(
-                                "Scene %d.%d rewrite stalled twice (delta=%.4f) — accepting best draft (accept_on_stall)",
+                                "Scene %d.%d rewrite stalled twice (delta=%.4f) — recording quality debt",
                                 chapter_number, scene_number, score_delta,
                             )
                             workflow_run.metadata_json = {
                                 **(workflow_run.metadata_json or {}),
-                                "scene_accepted_on_stall": True,
-                                "scene_accept_reason": "scene_rewrite_stalled_after_two_attempts",
+                                "scene_quality_debt": True,
+                                "scene_quality_debt_reason": "scene_rewrite_stalled_after_two_attempts",
                             }
                         else:
                             requires_human_review = True
@@ -5961,23 +6144,18 @@ async def run_scene_pipeline(
 
             if rewrite_iterations >= settings.quality.max_scene_revisions:
                 reached_revision_limit = True
-                # accept_on_stall: when the bounded rewrite budget is exhausted,
-                # accept the best draft and CONTINUE (the scene draft exists and
-                # downstream chapter/book gates + repair still evaluate quality).
-                # NOTE: the old guard `accept_on_stall and rewrite_iterations < 2`
-                # was dead code — this block only runs when
-                # rewrite_iterations >= max_scene_revisions (=2), so `< 2` was
-                # always False and EVERY stalled scene was force-flagged for human
-                # review, defeating accept_on_stall entirely (closure bug fix).
-                if settings.pipeline.accept_on_stall:
+                # A bounded rewrite limit is operational closure, never quality
+                # approval.  In closure mode the candidate is quarantined and
+                # the run carries debt; strict blocks for human intervention.
+                if _pipeline_quality_mode(settings) == "closure":
                     logger.info(
-                        "Scene %d.%d reached max revisions (%d) — accepting best draft (accept_on_stall)",
+                        "Scene %d.%d reached max revisions (%d) — recording quality debt",
                         chapter_number, scene_number, rewrite_iterations,
                     )
                     workflow_run.metadata_json = {
                         **(workflow_run.metadata_json or {}),
-                        "scene_accepted_on_stall": True,
-                        "scene_accept_reason": "scene_rewrite_revision_limit",
+                        "scene_quality_debt": True,
+                        "scene_quality_debt_reason": "scene_rewrite_revision_limit",
                     }
                 else:
                     requires_human_review = True
@@ -6083,12 +6261,58 @@ async def run_scene_pipeline(
         if draft is None or review_result is None or report is None or quality is None:
             raise RuntimeError("Scene pipeline did not produce a current draft and review result.")
 
-        # When stall was accepted, promote scene/chapter status so downstream
-        # logic (chapter assembly, resume) treats the scene as done.
-        if reached_revision_limit and not requires_human_review:
-            scene.status = SceneStatus.APPROVED.value
+        scene_promoted = False
+        if review_result.verdict == "pass" and not requires_human_review:
+            try:
+                scene_promoted = await _promote_reviewed_scene_draft(
+                    session,
+                    project=project,
+                    scene=scene,
+                    draft=draft,
+                    quality=quality,
+                    workflow_run_id=workflow_run.id,
+                )
+            except (ValueError, RuntimeError) as exc:
+                logger.warning(
+                    "Scene %d.%d promotion evidence was not eligible: %s",
+                    chapter_number,
+                    scene_number,
+                    exc,
+                )
+                if _pipeline_quality_mode(settings) == "strict":
+                    requires_human_review = True
+                    workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                    workflow_run.current_step = "scene_promotion_blocked"
+                else:
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "scene_quality_debt": True,
+                        "scene_quality_debt_reason": "scene_promotion_ineligible",
+                    }
+            if scene_promoted:
+                scene.status = SceneStatus.APPROVED.value
 
-        if not requires_human_review:
+        if reached_revision_limit and not requires_human_review:
+            # See the corresponding compatibility note in
+            # ``_promote_reviewed_scene_draft``: control-flow unit doubles do
+            # not carry a persisted exact-version score.
+            if isinstance(quality, QualityScoreModel):
+                await _quarantine_scene_candidate(
+                    session,
+                    project=project,
+                    draft=draft,
+                    workflow_run_id=workflow_run.id,
+                    reason_code=str(
+                        (workflow_run.metadata_json or {}).get("scene_quality_debt_reason")
+                        or "scene_rewrite_stalled"
+                    ),
+                )
+            scene.status = SceneStatus.NEEDS_REWRITE.value
+
+        # Canon/timeline/discovery materialisation is a promoted-only consumer.
+        # A closure run may finish with a quarantined candidate, but it must not
+        # enrich future writer context with that candidate's assertions.
+        if scene_promoted:
             current_step_name = "refresh_scene_knowledge"
             workflow_run.current_step = current_step_name
             knowledge_result = await refresh_scene_knowledge(
@@ -6245,6 +6469,8 @@ async def run_scene_pipeline(
             "rewrite_iterations": rewrite_iterations,
             "reached_revision_limit": reached_revision_limit,
             "requires_human_review": requires_human_review,
+            "scene_promoted": scene_promoted,
+            "promotion_state": getattr(draft, "promotion_state", None),
             "final_verdict": review_result.verdict,
             "canon_fact_count": canon_fact_count,
             "timeline_event_count": timeline_event_count,
@@ -8533,6 +8759,8 @@ async def run_chapter_pipeline(
                         project_id=project.id,
                         chapter=chapter,
                         chapter_md=chapter_draft.content_md,
+                        source_chapter_draft_version_id=chapter_draft.id,
+                        source_is_promoted=False,
                         workflow_run_id=workflow_run.id,
                     )
                     # Phase B — classify + persist dominance history.
@@ -8829,7 +9057,7 @@ async def run_chapter_pipeline(
             chapter_review_warn_only = not _chapter_review_blocks_for_project(
                 project, settings
             )
-            accept_chapter_on_stall = (
+            legacy_stall_completion_requested = (
                 at_chapter_rewrite_limit
                 and settings.pipeline.accept_on_stall
                 and chapter_review_warn_only
@@ -8842,13 +9070,22 @@ async def run_chapter_pipeline(
             # otherwise drops straight to REVISION). Generation + review still
             # ran via the framework's own models; only the terminal hard-block
             # is relaxed for this project.
-            finalize_on_warn_only = (
+            legacy_warn_only_completion_requested = (
                 chapter_review_warn_only
                 and settings.pipeline.accept_on_stall
                 and chapter_draft is not None
                 and (at_chapter_rewrite_limit or chapter_rewrite_task is None)
             )
-            accept_chapter_on_stall = accept_chapter_on_stall or finalize_on_warn_only
+            if legacy_stall_completion_requested or legacy_warn_only_completion_requested:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "chapter_quality_debt": True,
+                    "chapter_quality_debt_reason": "legacy_accept_on_stall_deprecated",
+                }
+            # A finished retry budget is not a quality verdict.  Keep the
+            # deprecated switch as a closure/debt signal only; it must never
+            # select the last chapter draft for completion, export or Canon.
+            accept_chapter_on_stall = False
             if (
                 chapter_number % int(settings.pipeline.consistency_check_interval or 20) == 0
                 and chapter_review_result.verdict == "pass"
@@ -8907,7 +9144,35 @@ async def run_chapter_pipeline(
                         exc_info=True,
                     )
 
-            if chapter_review_result.verdict == "pass" or accept_chapter_on_stall:
+            chapter_promoted = False
+            chapter_source_mode: str | None = None
+            if chapter_review_result.verdict == "pass" and chapter_draft is not None:
+                try:
+                    chapter_promoted, chapter_source_mode = await _promote_reviewed_chapter_draft(
+                        session,
+                        project=project,
+                        chapter=chapter,
+                        draft=chapter_draft,
+                        quality=chapter_quality,
+                        workflow_run_id=workflow_run_id,
+                    )
+                except (ValueError, RuntimeError) as exc:
+                    logger.warning(
+                        "Chapter %d promotion evidence was not eligible: %s",
+                        chapter_number,
+                        exc,
+                    )
+                    chapter_source_mode = "chapter_promotion_ineligible"
+                    if _pipeline_quality_mode(settings) == "strict":
+                        requires_human_review = True
+                    else:
+                        workflow_run.metadata_json = {
+                            **(workflow_run.metadata_json or {}),
+                            "chapter_quality_debt": True,
+                            "chapter_quality_debt_reason": chapter_source_mode,
+                        }
+
+            if (chapter_review_result.verdict == "pass" and chapter_promoted) or accept_chapter_on_stall:
                 if accept_chapter_on_stall:
                     reached_chapter_revision_limit = True
                     logger.info(
@@ -8919,6 +9184,13 @@ async def run_chapter_pipeline(
                         getattr(chapter, "production_state", None),
                     )
                 chapter.status = ChapterStatus.COMPLETE.value
+                if chapter_promoted:
+                    chapter.production_state = "ok"
+                    chapter.metadata_json = {
+                        **(chapter.metadata_json or {}),
+                        "promotion_state": getattr(chapter_draft, "promotion_state", None),
+                        "promotion_source_mode": chapter_source_mode,
+                    }
                 if accept_chapter_on_stall:
                     # Warn-only acceptance: clear any stall production_state
                     # ("repair_exhausted"/"blocked") so downstream export and
@@ -8938,6 +9210,8 @@ async def run_chapter_pipeline(
                             project_id=project_id,
                             chapter=chapter,
                             chapter_md=chapter_draft.content_md,
+                            source_chapter_draft_version_id=chapter_draft.id,
+                            source_is_promoted=chapter_promoted,
                             workflow_run_id=workflow_run_id,
                         )
                         # Phase B — classify + persist dominance history.
@@ -9131,6 +9405,17 @@ async def run_chapter_pipeline(
                 break
 
             if chapter_rewrite_task is None:
+                if _pipeline_quality_mode(settings) == "closure":
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "quality_debt"
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "chapter_quality_debt": True,
+                        "chapter_quality_debt_reason": (
+                            chapter_source_mode or "chapter_review_without_promotion"
+                        ),
+                    }
+                    break
                 requires_human_review = True
                 chapter.status = ChapterStatus.REVISION.value
                 chapter.production_state = "blocked"
@@ -9153,6 +9438,17 @@ async def run_chapter_pipeline(
                 # configured as a hard quality gate. Do not mark a rejected
                 # chapter complete after exhausting rewrites.
                 reached_chapter_revision_limit = True
+                if _pipeline_quality_mode(settings) == "closure":
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "quality_debt"
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "chapter_quality_debt": True,
+                        "chapter_quality_debt_reason": "chapter_rewrite_revision_limit",
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "chapter_draft_version_no": chapter_draft.version_no,
+                    }
+                    break
                 requires_human_review = True
                 chapter.status = ChapterStatus.REVISION.value
                 chapter.production_state = "blocked"
@@ -9352,6 +9648,52 @@ async def run_chapter_pipeline(
                 requires_human_review=True,
             )
 
+        # Closure can retain a quarantined candidate for diagnostics and later
+        # repair, but it must return before any export path.  This is the
+        # chapter-level counterpart to scene quality debt.
+        if (
+            isinstance(chapter_quality, QualityScoreModel)
+            and getattr(chapter_draft, "promotion_state", None)
+            != DraftPromotionState.PROMOTED.value
+        ):
+            chapter.status = ChapterStatus.REVISION.value
+            chapter.production_state = "quality_debt"
+            workflow_run.status = WorkflowStatus.COMPLETED.value
+            workflow_run.current_step = "completed_with_quality_debt"
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "requires_human_review": False,
+                "chapter_quality_debt": True,
+                "chapter_quality_debt_reason": (
+                    (workflow_run.metadata_json or {}).get("chapter_quality_debt_reason")
+                    or "chapter_not_promoted"
+                ),
+                "chapter_draft_id": str(chapter_draft.id),
+                "chapter_draft_version_no": chapter_draft.version_no,
+                "promotion_state": getattr(chapter_draft, "promotion_state", None),
+            }
+            await session.flush()
+            return ChapterPipelineResult(
+                workflow_run_id=workflow_run.id,
+                project_id=project.id,
+                chapter_id=chapter.id,
+                chapter_number=chapter.chapter_number,
+                scene_results=scene_results,
+                chapter_draft_id=chapter_draft.id,
+                chapter_draft_version_no=chapter_draft.version_no,
+                final_verdict=(
+                    chapter_review_result.verdict if chapter_review_result is not None else None
+                ),
+                review_report_id=chapter_report.id if chapter_report is not None else None,
+                quality_score_id=chapter_quality.id,
+                rewrite_task_id=(
+                    chapter_rewrite_task.id if chapter_rewrite_task is not None else None
+                ),
+                chapter_review_iterations=chapter_review_iterations,
+                chapter_rewrite_iterations=chapter_rewrite_iterations,
+                requires_human_review=False,
+            )
+
         export_artifact_id: UUID | None = None
         output_path: str | None = None
         if export_markdown:
@@ -9392,7 +9734,7 @@ async def run_chapter_pipeline(
                     output_path=output_path,
                     requires_human_review=True,
                 )
-        if getattr(chapter, "production_state", None) != "blocked":
+        if getattr(chapter, "production_state", None) not in {"blocked", "quality_debt"}:
             chapter.production_state = "ok"
             chapter_meta = dict(chapter.metadata_json or {})
             if (
@@ -11245,8 +11587,71 @@ async def run_autowrite_pipeline(
     export_markdown: bool = True,
     auto_repair_on_attention: bool = True,
     progress: ProgressCallback | None = None,
+    use_conception: bool = False,
 ) -> AutowriteResult:
+    """Run the full novel pipeline.
+
+    When *use_conception* is ``True``, a multi-agent conception pipeline
+    runs **before** project creation (mirroring the Web UI's flow).
+    The conception result is merged into *project_payload* and *premise*
+    so downstream planning benefits from the richer premise / writing profile.
+    """
     from bestseller.domain.enums import ProjectType
+
+    # ── Optional conception pre-pass (mirrors Web UI flow) ──
+    if use_conception:
+        from bestseller.services.conception import run_conception_pipeline
+
+        genre_key = (project_payload.metadata or {}).get("genre_canonical") or project_payload.genre or ""
+        conception_result = await run_conception_pipeline(
+            session,
+            settings,
+            genre_key=genre_key,
+            chapter_count=project_payload.target_chapters,
+            user_hints={"premise": premise} if premise else None,
+            genre=project_payload.genre,
+            sub_genre=project_payload.sub_genre,
+            progress=progress,
+        )
+        # Merge conception results into payload (same pattern as web/server.py)
+        if conception_result.premise:
+            premise = conception_result.premise
+        if conception_result.title:
+            project_payload = project_payload.model_copy(
+                update={"title": conception_result.title}
+            )
+        if conception_result.writing_profile:
+            project_payload = project_payload.model_copy(
+                update={"writing_profile": conception_result.writing_profile}
+            )
+        # Enrich metadata with conception artifacts
+        _meta = dict(project_payload.metadata or {})
+        _meta.update({
+            "premise": premise,
+            "conception_brief": conception_result.commercial_brief,
+            "conception_log": conception_result.conception_log,
+            "synopsis": conception_result.synopsis,
+            "tags": conception_result.tags,
+            "story_spine": conception_result.story_spine,
+            "world_model": conception_result.world_model,
+            "concept_methodology": conception_result.concept_methodology,
+            "conception_degraded": conception_result.degraded,
+            "conception_degradation_events": [
+                {
+                    "stage": event.stage,
+                    "component": event.component,
+                    "reason": event.reason,
+                    "severity": event.severity,
+                    "fallback": event.fallback,
+                    "model": event.model,
+                    "metadata": event.metadata,
+                }
+                for event in conception_result.degradation_events
+            ],
+        })
+        if conception_result.hook_spec:
+            _meta["hook_spec"] = conception_result.hook_spec
+        project_payload = project_payload.model_copy(update={"metadata": _meta})
 
     if project_payload.project_type == ProjectType.FANQIE_SHORT:
         from bestseller.services.fanqie_short_pipeline import run_fanqie_short_pipeline

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """APScheduler-based publishing scheduler service.
 
 Loads all active PublishingSchedule records on startup and registers
@@ -7,21 +5,28 @@ each as a cron job. Listens to Redis pubsub for schedule changes
 (create / pause / activate) to hot-reload without restart.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import os
 from uuid import UUID
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from sqlalchemy import select, text
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy import or_, select, text
+from sqlalchemy.sql import Select
 
-from bestseller.infra.db.session import init_db, shutdown_db, get_server_session
-from bestseller.infra.redis import init_redis, shutdown_redis, get_redis_client
-from bestseller.infra.db.models import BookGenerationScheduleModel, PublishingScheduleModel
+from bestseller.infra.db.models import (
+    BookGenerationScheduleModel,
+    PublishingHistoryModel,
+    PublishingScheduleModel,
+)
+from bestseller.infra.db.session import get_server_session, init_db, shutdown_db
+from bestseller.infra.redis import get_redis_client, init_redis, shutdown_redis
 from bestseller.scheduler.book_generation_jobs import fire_book_generation_schedule
-from bestseller.scheduler.jobs import publish_next_chapter
+from bestseller.scheduler.jobs import check_publish_review_status, publish_next_chapter
 from bestseller.services.book_generation_schedules import claim_pending_schedules
 from bestseller.settings import get_settings
 
@@ -29,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 _SCHEDULE_CHANNEL = "bestseller:schedule:events"
 _BOOK_SCHEDULE_CHANNEL = "bestseller:book_schedule:events"
+_REVIEW_POLL_BATCH_SIZE = 20
 
 
 def _build_scheduler(db_url: str) -> AsyncIOScheduler:
@@ -57,6 +63,57 @@ async def _publish_schedule_job(schedule_id: UUID) -> None:
             settings=get_settings(),
             schedule_id=schedule_id,
         )
+
+
+def _build_review_poll_query(
+    *, limit: int = _REVIEW_POLL_BATCH_SIZE
+) -> Select[tuple[PublishingHistoryModel]]:
+    review_checked_at = PublishingHistoryModel.platform_response_json["review_checked_at"].astext
+    review_status = PublishingHistoryModel.platform_response_json["review_status"].astext
+    return (
+        select(PublishingHistoryModel)
+        .where(
+            PublishingHistoryModel.status == "success",
+            PublishingHistoryModel.platform_chapter_id.is_not(None),
+            or_(
+                review_status.is_(None),
+                review_status.not_in(("published", "rejected", "failed")),
+            ),
+        )
+        .order_by(
+            review_checked_at.asc().nulls_first(),
+            PublishingHistoryModel.created_at.asc(),
+        )
+        .limit(limit)
+    )
+
+
+async def _poll_publish_review_statuses_job() -> None:
+    """Poll recent non-terminal platform review results."""
+    async with get_server_session() as session:
+        result = await session.execute(_build_review_poll_query())
+        histories = result.scalars().all()
+        for history in histories:
+            review_status = (history.platform_response_json or {}).get("review_status")
+            if review_status in {"published", "rejected"}:
+                continue
+            await check_publish_review_status(
+                session=session,
+                settings=get_settings(),
+                history_id=history.id,
+            )
+
+
+def _register_review_polling_job(scheduler: AsyncIOScheduler) -> None:
+    scheduler.add_job(
+        _poll_publish_review_statuses_job,
+        trigger="interval",
+        id="publishing_review_status_poll",
+        replace_existing=True,
+        minutes=10,
+        max_instances=1,
+        coalesce=True,
+    )
 
 
 async def _register_schedule(scheduler: AsyncIOScheduler, schedule: PublishingScheduleModel) -> None:
@@ -334,6 +391,8 @@ async def main() -> None:
 
     for schedule in schedules:
         await _register_schedule(scheduler, schedule)
+
+    _register_review_polling_job(scheduler)
 
     # Load all pending book-generation schedules and register them as
     # one-shot date jobs.  APScheduler keeps these in memory until they

@@ -8622,7 +8622,17 @@
 
   function listingPayloadSignature(listing, project) {
     try {
-      return JSON.stringify({ listing, project });
+      // Project progress changes on every poll. It is not listing content and
+      // must not rebuild this panel, otherwise a manual text selection is lost.
+      return JSON.stringify({
+        listing,
+        project: {
+          slug: project?.slug || '',
+          title: project?.title || '',
+          author_display_name: project?.author_display_name || '',
+          tags: project?.tags || [],
+        },
+      });
     } catch {
       return `${project?.slug || listing?.book_id || ''}:${listing?.primary_title || ''}`;
     }
@@ -8680,6 +8690,9 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
         throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      if (data.changed === false) {
+        throw new Error('模型返回内容未实际替换原内容，请重试');
       }
       // Re-render the listing panel with the fresh profile.
       const project = (window.__lastListingProject) || { slug };
@@ -8945,7 +8958,7 @@
           ${copyableSpan(characterNameText, '暂无角色名')}
         </div>
       </div>
-      <textarea class="ls-copy-textarea" readonly onclick="this.select()">${esc(packText)}</textarea>
+      <textarea class="ls-copy-textarea" readonly aria-label="可局部选择的上架资料整包">${esc(packText)}</textarea>
     `;
 
     // Compliance score

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import copy
 from datetime import UTC, datetime
 from functools import lru_cache
 import json
 import os
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal
 
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field
@@ -56,6 +57,13 @@ class RetrySettings(BaseModel):
 
 class LLMSettings(BaseModel):
     mock: bool = False
+    writer_total_input_budget_tokens: int = Field(default=8000, ge=256)
+    writer_prompt_safety_margin: float = Field(default=0.10, ge=0, lt=1)
+    independent_judge_mode: Literal["off", "shadow", "advisory"] = "shadow"
+    independent_judge_primary_model_key: str | None = "deepseek-v4-flash"
+    independent_judge_secondary_model_key: str | None = "nim-mistral-large-3"
+    independent_judge_strict_model_family: bool = True
+    independent_judge_low_margin: float = Field(default=0.12, ge=0, le=1)
     planner: LLMRoleSettings
     writer: LLMRoleSettings
     critic: LLMRoleSettings
@@ -138,8 +146,15 @@ class GenerationSettings(BaseModel):
     # prose instead of drowning in ~28K tokens of instructions. See
     # services/prompt_compactor.py.
     lean_writer_prompt: bool = True
-    writer_prompt_mode: str = "ab"
+    # full | lean | ab | compiled. ``compiled`` is explicit opt-in; production
+    # remains lean until the trace-backed rollout is accepted.
+    writer_prompt_mode: str = "lean"
     writer_prompt_ab_until_chapter: int = 3
+    # Winner after A/B window. Default lean so production never silently
+    # reverts to the bloated full prompt (was the pre-2026-07 trap).
+    writer_prompt_ab_winner: str = "lean"
+    # Total token budget for scene-writer user context sections (tiered).
+    writer_prompt_budget_tokens: int = 8000
     # When true, a weak platform title (keyword-soup / rejected) is sent for a
     # single LLM revision pass during conception. Clean concise IP names and
     # already-passing titles are never revised. See platform_title_workflow.py
@@ -248,15 +263,22 @@ class RedisSettings(BaseModel):
 
 
 class PipelineSettings(BaseModel):
+    # closure keeps autonomous runs moving while preserving structured
+    # degradation evidence; strict blocks when a required conception lane
+    # errors or falls back.
+    quality_mode: Literal["closure", "strict"] = "closure"
     # Block drafting when bible / graph / outline lag behind truth version.
     enable_truth_version_guard: bool = True
     consistency_check_interval: int = 20  # Run consistency check every N chapters
     rolling_summary_interval: int = 25  # Compress knowledge window every N chapters
     resume_enabled: bool = True  # Skip already-completed chapters on resume
-    accept_on_stall: bool = True  # Accept best draft when rewrite is stalled (no score improvement)
-    whole_book_pause_on_scene_review: bool = False  # If True, a chapter whose scenes only "require human review" PAUSES the whole book (legacy hard-halt). Default soft: accept the stalled draft, flag the chapter, and continue to the next chapter so the book reaches autonomous closure (consistent with accept_on_stall). Whole-book *consistency* failures still pause regardless (see project_consistency_block_on_failure).
+    # Deprecated compatibility switch. It no longer grants quality approval:
+    # False maps to strict; True maps to closure with explicit quality debt.
+    # New callers must use quality_mode and promotion evidence instead.
+    accept_on_stall: bool = True
+    whole_book_pause_on_scene_review: bool = False  # If True, a chapter whose scenes require human review PAUSES the whole book. Closure mode may continue only with explicit quality debt; it never promotes the stalled candidate. Whole-book consistency failures still pause regardless (see project_consistency_block_on_failure).
     project_consistency_block_on_failure: bool = True  # Whole-book consistency failures must pause, not accept_on_stall
-    chapter_review_block_on_failure: bool = False  # Soft by default: after max_chapter_revisions the best draft is accepted-on-stall (warn-only) and the book ADVANCES. True left a chapter whose review never reached "pass" oscillating drafting<->revision forever — the project loop re-processed ch1 every self-heal cycle and never advanced (autonomous-completion self-harm). Whole-book consistency still pauses separately (project_consistency_block_on_failure).
+    chapter_review_block_on_failure: bool = False  # Deprecated compatibility switch. True maps to strict; false does not permit exporting or promoting a failed chapter review.
     retention_safety_gate_block_on_failure: bool = False  # Soft by default: when the reader-retention / persona auto-repair budget is exhausted (e.g. PERSONA_WEIGHTED_SCORE_LOW that the writer model structurally cannot clear — the gate's 0.62 bar sits above the model's ~0.51 ceiling per reader_persona_calibration), accept the best draft on-stall, flag it (retention_accepted_on_stall / low_retention_quality) and ADVANCE instead of pausing the whole book to machine-repair. True left every persona-failing chapter looping rewrites then hard-blocking, so the book never reached autonomous closure. Mirrors chapter_review_block_on_failure; opt on for strict retention enforcement. Per-project override via metadata `retention_safety_gate_warn_only: true`.
     gate_llm_adjudication_enabled: bool = True  # Context-dependent gate findings (common-sense) get an LLM CONFIRM/DISMISS pass before they may block
     chapter_outline_repair_attempts: int = 3  # Regenerate invalid chapter outlines before surfacing failure

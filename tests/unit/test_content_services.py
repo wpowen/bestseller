@@ -8,8 +8,11 @@ from uuid import uuid4
 from zipfile import ZipFile
 
 import pytest
+import reportlab.platypus
 
 from bestseller.infra.db.models import CharacterModel
+from bestseller.services import exports as export_services
+from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.drafts import (
     _character_voice_audit_payload,
     _load_active_character_engine_profiles,
@@ -24,9 +27,8 @@ from bestseller.services.drafts import (
     sanitize_novel_markdown_content,
     strip_scaffolding_echoes,
 )
-from bestseller.services.concept_lab import build_concept_lab_catalog
-from bestseller.services.exports import _ensure_chapter_heading
 from bestseller.services.exports import (
+    _ensure_chapter_heading,
     build_docx_bytes,
     build_epub_bytes,
     build_markdown_reading_stats,
@@ -228,6 +230,8 @@ def test_render_scene_draft_markdown_context_flows_via_llm_prompt() -> None:
     # Rich context still reaches the LLM prompt
     assert "故事圣经约束" in user_prompt
     assert "本卷目标：找到第一份铁证" in user_prompt
+    assert user_prompt.count("本卷目标：找到第一份铁证") == 1
+    assert user_prompt.count("本卷障碍：封港追捕") == 1
 
 
 def test_dedupe_methodology_sections_drops_exact_duplicates_only() -> None:
@@ -548,6 +552,7 @@ def test_scene_draft_prompt_includes_writing_profile_and_serial_rules() -> None:
     assert "平台与读者承诺" in combined
     assert "番茄小说" in combined
     assert "Prompt Pack" in user_prompt
+    assert "Prompt Pack：\nPrompt Pack：" not in user_prompt
     assert "末日囤货升级流" in user_prompt
     assert "重生回档" in combined
     assert "未来拼单商城" in combined
@@ -1201,6 +1206,104 @@ def test_build_pdf_bytes_requires_optional_dependency(monkeypatch: pytest.Monkey
         build_pdf_bytes("我的书", "# 标题\n\n正文")
 
 
+def test_build_pdf_bytes_places_page_break_before_next_chapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built_story: list[tuple[str, str] | tuple[str]] = []
+
+    class _Document:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def build(self, story: list[tuple[str, str] | tuple[str]]) -> None:
+            built_story.extend(story)
+
+    monkeypatch.setattr(
+        export_services.markdown_lib,
+        "markdown",
+        lambda *args, **kwargs: (
+            "<h1>Book</h1>\n<blockquote>Genre: fantasy</blockquote>\n"
+            "<h1>Chapter One</h1>\n<p>First body</p>\n"
+            "<h1>Chapter Two</h1>\n<p>Second body</p>"
+        ),
+    )
+    monkeypatch.setattr(reportlab.platypus, "SimpleDocTemplate", _Document)
+    monkeypatch.setattr(
+        reportlab.platypus,
+        "Paragraph",
+        lambda text, style: ("paragraph", text),
+    )
+    monkeypatch.setattr(
+        reportlab.platypus,
+        "Spacer",
+        lambda *args: ("spacer",),
+    )
+    monkeypatch.setattr(
+        reportlab.platypus,
+        "PageBreak",
+        lambda: ("pagebreak",),
+    )
+
+    build_pdf_bytes("Book", "ignored", language="en-US")
+
+    assert built_story.count(("paragraph", "Book")) == 1
+    assert ("paragraph", "<h1>Book</h1>") not in built_story
+    first_heading = built_story.index(("paragraph", "<h1>Chapter One</h1>"))
+    first_body = built_story.index(("paragraph", "<p>First body</p>"))
+    second_heading = built_story.index(("paragraph", "<h1>Chapter Two</h1>"))
+    page_breaks = [i for i, item in enumerate(built_story) if item == ("pagebreak",)]
+    assert len(page_breaks) == 2
+    assert page_breaks[0] < first_heading < first_body < page_breaks[1] < second_heading
+
+
+def test_build_pdf_bytes_deduplicates_single_chapter_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built_story: list[tuple[str, str] | tuple[str]] = []
+
+    class _Document:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def build(self, story: list[tuple[str, str] | tuple[str]]) -> None:
+            built_story.extend(story)
+
+    monkeypatch.setattr(reportlab.platypus, "SimpleDocTemplate", _Document)
+    monkeypatch.setattr(
+        reportlab.platypus,
+        "Paragraph",
+        lambda text, style: ("paragraph", text),
+    )
+    monkeypatch.setattr(reportlab.platypus, "Spacer", lambda *args: ("spacer",))
+    monkeypatch.setattr(reportlab.platypus, "PageBreak", lambda: ("pagebreak",))
+
+    build_pdf_bytes(
+        "Chapter 1: Arrival",
+        "# Chapter 1: Arrival\n\nThe door opened.",
+        language="en-US",
+    )
+
+    titles = [
+        item
+        for item in built_story
+        if any("Chapter 1: Arrival" in part for part in item)
+    ]
+    assert len(titles) == 1
+    assert ("pagebreak",) not in built_story
+
+
+def test_project_export_warnings_include_skipped_and_preflight_items() -> None:
+    assert hasattr(export_services, "_build_project_export_warnings")
+
+    warnings = export_services._build_project_export_warnings(  # type: ignore[attr-defined]
+        skipped_chapters=[2, 5],
+        preflight_warnings=["章节标题重复"],
+        language="zh-CN",
+    )
+
+    assert warnings == ["第 2、5 章无当前稿件，已跳过", "章节标题重复"]
+
+
 # ── Fix 1: Chapter heading ensured in exports ──────────────────────────────
 
 
@@ -1494,6 +1597,7 @@ def test_render_story_bible_uses_canonical_personhood_and_ip_anchor_keys() -> No
 
 def test_scene_pipeline_result_accepts_draft_mode_fields() -> None:
     from uuid import uuid4
+
     from bestseller.domain.pipeline import ScenePipelineResult
 
     result = ScenePipelineResult(

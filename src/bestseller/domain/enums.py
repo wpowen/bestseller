@@ -95,6 +95,17 @@ class SceneStatus(StrEnum):
     NEEDS_REWRITE = "needs_rewrite"
 
 
+class DraftPromotionState(StrEnum):
+    LEGACY_UNVERIFIED = "legacy_unverified"
+    CANDIDATE = "candidate"
+    UNDER_REVIEW = "under_review"
+    ELIGIBLE = "eligible"
+    PROMOTED = "promoted"
+    SUPERSEDED = "superseded"
+    REJECTED = "rejected"
+    QUARANTINED = "quarantined"
+
+
 class WorkflowStatus(StrEnum):
     PENDING = "pending"
     QUEUED = "queued"

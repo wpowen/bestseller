@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from bestseller.services.litstyle_prose import render_prose_lever_framing
 from bestseller.services.methodology_book_selector import render_book_methodology_block
 from bestseller.services.methodology_bridge import render_phase_block
 from bestseller.services.prompt_packs import (
@@ -37,18 +36,11 @@ from bestseller.services.quality_levers.cinematic_pov import (
 from bestseller.services.quality_levers.emotion_choreography import (
     render_emotion_choreography_block,
 )
-from bestseller.services.quality_levers.imagery_system import (
-    extract_imagery_system,
-    render_imagery_system_block,
-)
 from bestseller.services.quality_levers.information_choreography import (
     render_information_choreography_block,
 )
 from bestseller.services.quality_levers.material_concreteness import (
     render_concretization_directive,
-)
-from bestseller.services.quality_levers.prose_craft_techniques import (
-    render_prose_craft_block,
 )
 from bestseller.services.quality_levers.prose_prompt_fusion import (
     render_prose_prompt_fusion_block,
@@ -172,35 +164,13 @@ SECTION_PRIORITY: dict[MethodologyStage, tuple[str, ...]] = {
 }
 
 
-# 爽文融合 (enable_shuangwen_fusion) PROSE_SCENE ordering.
-#
-# Same sections as the default PROSE_SCENE priority — nothing is removed, so
-# 文采 fully coexists — but the 爽点 engines (弹簧法情绪压缩/释放、节奏、信息
-# 节奏、章节爽点) are lifted ABOVE the literary-flourish levers (留白框架 / 金句 /
-# 意象). Reason: sections are filled greedily in rank order until the token
-# budget is exhausted, so whatever sits last is the first to be starved. In the
-# default order the 爽点 engines sit last (ranks 11–14) and get dropped under
-# runtime budget pressure, which is why output reads literary instead of 爽.
-#
-# The anti-作文 grounding levers (物料具体化 / 镜头锚定) stay high — concrete,
-# camera-grounded action is what makes a 爽点 land, so they precede the spring.
-_PROSE_SCENE_SHUANGWEN_PRIORITY: tuple[str, ...] = (
-    "character_embodiment_current",
-    "cinematic_pov_current",
-    "prompt_pack_scene_writer",
-    "prose_prompt_fusion_current",
-    "writing_methodology_scene",
-    "book_methodology_current",
-    "prose_style_anchors",
-    "material_concretization_current",  # 具体化 = 爽点落地，留高位
-    "scene_grounding_current",  # 镜头锚定 = 爽点可视，留高位
-    "public_emotion_role_tags",
-    "emotion_choreography_current",  # 弹簧法 · 爽点核心 → 顶到文采润色之前
-    "rhythm_engineering_current",
-    "information_choreography_current",
-    "chapter_position_current",
-    # 文采修饰三块已撤出(2026-07-08,同 default 列表注释:消融净负+用户终审词藻堆砌)。
-)
+# The former shuangwen branch only reprioritised three literary-flourish
+# sections. They are deliberately no longer injected into PROSE_SCENE, so a
+# separate ordering would now be a no-op that can silently drift. Keep the
+# public switch backward-compatible while using the one canonical writer order.
+_PROSE_SCENE_SHUANGWEN_PRIORITY: tuple[str, ...] = SECTION_PRIORITY[
+    MethodologyStage.PROSE_SCENE
+]
 
 
 _EMPTY = CompiledMethodology(text="", used_sources=(), estimated_tokens=0)
@@ -463,16 +433,6 @@ def _sections_for_stage(
             ),
             source="prose_prompt_arena_fusion",
         )
-        # Framing FIRST (anti-regression): the writer-levers A/B showed a budget
-        # writer reads the stacked 留白/克制 guards as "write less" and cuts ~30%
-        # length → lower文采. This总则 reframes: 文采=更具体不更短; pick 1-2 techniques;
-        # 留白 deletes author-narration, not plot. Cheap + high-priority.
-        _append_block(
-            sections,
-            key="prose_lever_framing",
-            text=_safe(render_prose_lever_framing, language="zh"),
-            source="litstyle_prose.py",
-        )
         # Layer 3 — material concretization. A/B proved abstract §default material
         # is the dominant cause of essay-like prose; this directive tells the
         # writer to instantiate abstract mechanism material into the book's
@@ -500,36 +460,6 @@ def _sections_for_stage(
             ),
             source="scene_grounding.yaml",
         )
-        # Genre-aware 文采 (golden-line) craft. Soft only: this is *how to write*
-        # an optional signature line, never a gate. Genre terms route modern
-        # genres away from 古风 imagery (see prose_craft_techniques.yaml).
-        _append_block(
-            sections,
-            key="prose_craft_techniques",
-            text=_safe(
-                render_prose_craft_block,
-                genre_terms=_pack_genre_terms(pack),
-                chapter_number=chapter_number,
-            ),
-            source="prose_craft_techniques.yaml",
-        )
-        # Book-level imagery system (LitStyle imagery_system dimension). Soft recall
-        # of THIS book's 2-3 designed core images, telling the writer to advance an
-        # image's meaning a step when it recurs. No-ops when the bible has no
-        # designed imagery_system (graceful degrade). Genre-routed anti-purple.
-        imagery_artifact = extract_imagery_system(story_bible)
-        if imagery_artifact:
-            _append_block(
-                sections,
-                key="imagery_system_current",
-                text=_safe(
-                    render_imagery_system_block,
-                    artifact=imagery_artifact,
-                    genre_terms=_pack_genre_terms(pack),
-                    chapter_number=chapter_number,
-                ),
-                source="imagery_system.yaml",
-            )
     if stage in {
         MethodologyStage.OUTLINE_VOLUME,
         MethodologyStage.OUTLINE_CHAPTER,

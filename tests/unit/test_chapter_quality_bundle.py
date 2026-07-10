@@ -164,7 +164,9 @@ def test_chapter_quality_bundle_blocks_common_sense_front_chapter_failures() -> 
         "# 第1章\n\n"
         "张建军把配送单递过来，寄件时间写着23:58。"
         "铜钱发烫。青囊账页发烫。罗盘也发烫。"
-        "他堵在门口问：“下一笔是不是我？我是不是已经入账了？”"
+        "张建军堵在门口问：“认账是不是要拿命填？我是不是已经认账了？”"
+        "他盯着“认账”两个字，像早就懂得这条规矩。"
+        "他又念了一遍认账，像早就懂得这条规矩。"
     )
 
     report = run_chapter_quality_bundle(

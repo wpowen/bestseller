@@ -33,6 +33,10 @@ def test_build_book_listing_profile_uses_listing_files(tmp_path) -> None:
                     "卷入否认者先入账的血字公寓。他必须逼活人认账，"
                     "才能把失踪父亲的线索从镜中夺回来。"
                 ),
+                "shelf_intro": (
+                    "这是编辑刚刚重新生成、必须优先回显的上架简介。"
+                    "它包含具体冲突、能力代价与下一步选择，不能再被数据库里的旧内容覆盖。"
+                ),
                 "promo_copy": [
                     "子时之后，别照镜子。",
                     "谁不认账，谁先入账。",
@@ -61,7 +65,7 @@ def test_build_book_listing_profile_uses_listing_files(tmp_path) -> None:
         audience="男频",
         status="planning",
         language="zh-CN",
-        metadata_json={},
+        metadata_json={"listing_profile": {"shelf_intro": "数据库中的旧上架简介。"}},
     )
 
     profile = build_book_listing_profile(
@@ -73,6 +77,8 @@ def test_build_book_listing_profile_uses_listing_files(tmp_path) -> None:
 
     assert profile["primary_title"] == "青囊不语问阴阳"
     assert profile["primary_category"] == "悬疑灵异"
+    assert profile["shelf_intro"].startswith("这是编辑刚刚重新生成、必须优先回显")
+    assert "数据库里的旧内容覆盖" in profile["shelf_intro"]
     assert len(profile["title_candidates"]) == DEFAULT_TITLE_CANDIDATE_COUNT
     assert profile["title_workflow"]["candidate_source"] == "platform_title_workflow"
     assert profile["legacy_title_candidates"][0]["title"] == "标题1"
@@ -174,6 +180,44 @@ def test_build_book_listing_profile_falls_back_from_mismatched_logline() -> None
     assert len(profile["selling_points"]) >= 2
     assert len(profile["target_audiences"]) >= 1
     assert len(profile["tags"]) >= 5
+
+
+def test_listing_prefers_market_logline_and_keeps_reader_copy_compact() -> None:
+    project = SimpleNamespace(
+        slug="listing-copy-contract",
+        title="我在修仙界当老赖",
+        genre="仙侠",
+        sub_genre="古典仙侠",
+        audience="男频",
+        status="planning",
+        language="zh-CN",
+        metadata_json={
+            "premise": "这是一段很长的设定说明，不应该被冒充成一句话钩子。" * 8,
+            "story_spine": {
+                "why_now": "三十天后雷劫落下，纪昀必须决定再借谁的命。",
+                "question": "他能不能在替天道死之前，先让天道替他死一次？",
+            },
+        },
+    )
+    writing_profile = {
+        "market": {"logline": "散修靠替死道果避雷劫，却欠下会回来索命的命债。"},
+        "character": {
+            "protagonist_archetype": "凡尘算债人",
+            "protagonist_core_drive": "苟活——先活过下一次雷劫。后面的规划说明不应泄漏到角色卡。",
+            "golden_finger": "替死道果能骗过雷劫；每次借命都会多一个债主。后面的规则细节不应整段展示。",
+        },
+    }
+
+    profile = build_book_listing_profile(
+        project=project, writing_profile=writing_profile, story_bible=None
+    )
+
+    assert profile["logline"] == writing_profile["market"]["logline"].rstrip("。")
+    assert len(profile["logline"]) <= 80
+    assert all("不是所有" not in item for item in profile["promo_copy"])
+    assert all("开局就给冲突" not in item for item in profile["promo_copy"])
+    assert len(profile["main_characters"][0]["appeal"]) <= 140
+    assert len(profile["main_characters"][0]["goal"]) <= 100
 
 
 def test_build_book_listing_profile_uses_concept_lab_listing_seed() -> None:

@@ -59,7 +59,7 @@ async def create_project(
     project_create = ProjectCreate(
         slug=body.slug,
         title=body.title,
-        genre=body.genre,
+        genre=resolved.genre_str or body.genre,
         sub_genre=body.sub_genre or resolved.sub_genre_str,
         target_word_count=body.target_word_count,
         target_chapters=body.target_chapters,

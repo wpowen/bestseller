@@ -40,6 +40,7 @@ from typing import Any
 from bestseller.services.audit_input_sanitizer import sanitize_audit_block, sanitize_audit_input
 from bestseller.services.diversity_budget import DiversityBudget
 from bestseller.services.fanqie_market_integration import render_fanqie_craft_profile_block
+from bestseller.services.golden_rules import render_golden_three_rules
 from bestseller.services.hype_engine import (
     GoldenFingerLadder,
     GoldenFingerRung,
@@ -393,22 +394,14 @@ def build_opening_hook_directive(
     *,
     language: str = "zh-CN",
 ) -> str:
-    """Render the golden-three opening contract as a system-priority block."""
+    """Render chapter-range opening rules from the canonical rule source."""
 
-    if chapter_no is None or chapter_no > 3:
+    if chapter_no is None:
         return ""
-    if not language.lower().startswith("zh"):
-        return ""
-    return (
-        "【黄金三章·开篇硬契约 — 最高优先级，违反即重写】\n"
-        "1. 第一句长度 ≤ 25 个汉字。\n"
-        "2. 第一段长度 ≤ 50 个汉字。\n"
-        "3. 前 100 字必须聚焦主角 + 1 个可视化异常物（不能只有人物对话）。\n"
-        "4. 前 200 字必须出现至少 1 个不可解释的怪事（视觉/听觉/物件异常）。\n"
-        "5. 前 500 字主角必须因这个怪事被迫做出决定（不能只是观察、回忆、对话）。\n"
-        "6. 严禁前 500 字内插入超过 2 句的回忆/倒叙（如“X 年前”“那时候他才 N 岁”“他想起”“当年”）。\n"
-        "7. 严禁前 300 字介绍 ≥ 3 个新角色（开篇主角 + 委托人即上限）。\n"
-        "8. 章末必须留下一个能让读者立刻点开下一章的具体悬念（不能是抽象感叹）。"
+    return render_golden_three_rules(
+        chapter_no,
+        language,
+        path_mode="chapter_first",
     )
 
 

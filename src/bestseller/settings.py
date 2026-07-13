@@ -285,7 +285,13 @@ class PipelineSettings(BaseModel):
     planning_artifact_reuse_enabled: bool = True
     planning_artifact_reuse_allow_legacy: bool = True
     chapter_outline_batch_size: int = 10
-    commercial_strict_prewrite_chapter_outline_batch_size: int = 5
+    # 5 chapters × the heavy strict-mode per-chapter/per-scene outline contract
+    # (~60+ fields/chapter) produced ~34k-byte batches that exceeded the planner
+    # max_tokens (32768) → finish_reason=length → shrink-retry churn (~29% of
+    # batches truncated on the real 50-chapter run). 3 chapters (~20k bytes)
+    # stays comfortably under the limit; cross-batch continuity is preserved via
+    # consumed_event_ledger + previous_exit_state, so smaller batches are safe.
+    commercial_strict_prewrite_chapter_outline_batch_size: int = 3
     commercial_strict_prewrite_outline_batch_shrink_size: int = 3
     commercial_strict_prewrite_planning_judge_threshold: float = 0.82
     enable_chapter_feedback: bool = True  # Post-chapter feedback extraction

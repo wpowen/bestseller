@@ -6420,6 +6420,22 @@ async def run_scene_pipeline(
                         or "scene_rewrite_stalled"
                     ),
                 )
+                # Retire the orphan rewrite task. The final review_scene_draft of a
+                # stalled loop creates a fresh pending RewriteTaskModel that the loop
+                # breaks BEFORE consuming — leaving a pending task for a scene that has
+                # already shipped its best attempt with accepted debt. Left pending, a
+                # later run_project_repair sweep would redundantly re-run this quarantined
+                # scene (wasted tokens, and a late rewrite that no longer matches the
+                # assembled chapter). Superseding it keeps the queue honest.
+                if rewrite_task is not None and getattr(rewrite_task, "status", None) in (
+                    "pending",
+                    "queued",
+                ):
+                    rewrite_task.status = "superseded"
+                    rewrite_task.metadata_json = {
+                        **(getattr(rewrite_task, "metadata_json", None) or {}),
+                        "superseded_reason": "scene_rewrite_budget_exhausted",
+                    }
             scene.status = SceneStatus.NEEDS_REWRITE.value
 
         # Canon/timeline/discovery materialisation is a promoted-only consumer.
@@ -9833,6 +9849,20 @@ async def run_chapter_pipeline(
         ):
             chapter.status = ChapterStatus.REVISION.value
             chapter.production_state = "quality_debt"
+            # Persist a DURABLE chapter-level debt marker. production_state can be
+            # flipped back to "blocked" by a later quality-gate re-run (e.g. a
+            # retroactive reassembly), which would erase the only signal that this
+            # chapter already shipped its accepted best attempt — causing the
+            # repair sweep to re-select it every self-heal cycle and starve
+            # forward writing. A metadata flag on the chapter survives re-blocking.
+            chapter.metadata_json = {
+                **(getattr(chapter, "metadata_json", None) or {}),
+                "chapter_quality_debt": True,
+                "chapter_quality_debt_reason": (
+                    (workflow_run.metadata_json or {}).get("chapter_quality_debt_reason")
+                    or "chapter_not_promoted"
+                ),
+            }
             workflow_run.status = WorkflowStatus.COMPLETED.value
             workflow_run.current_step = "completed_with_quality_debt"
             workflow_run.metadata_json = {

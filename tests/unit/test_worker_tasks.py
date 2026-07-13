@@ -552,3 +552,79 @@ async def test_run_project_repair_task_auto_continues_generation_gate_failures(
     assert events[-2][2] == "repairable_auto_continue_pending"
     assert events[-1][0] == "repairable_auto_continue_pending"
     assert events[-1][2] == "repairable_auto_continue_pending"
+
+
+class _FakeDeadlockOrig(Exception):
+    """Mimics asyncpg's DeadlockDetectedError (carries a .sqlstate)."""
+
+    sqlstate = "40P01"
+
+
+def _make_deadlock_error() -> Exception:
+    from sqlalchemy.exc import DBAPIError
+
+    return DBAPIError("stmt", {}, _FakeDeadlockOrig("deadlock detected"))
+
+
+def _make_other_dbapi_error() -> Exception:
+    from sqlalchemy.exc import DBAPIError
+
+    class _OtherOrig(Exception):
+        sqlstate = "23505"  # unique_violation, NOT a deadlock
+
+    return DBAPIError("stmt", {}, _OtherOrig("dup key"))
+
+
+def test_is_postgres_deadlock_detects_40p01() -> None:
+    assert worker_tasks._is_postgres_deadlock(_make_deadlock_error()) is True
+    assert worker_tasks._is_postgres_deadlock(_make_other_dbapi_error()) is False
+    assert worker_tasks._is_postgres_deadlock(ValueError("nope")) is False
+
+
+@pytest.mark.asyncio
+async def test_deadlock_retry_recovers_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _no_sleep(*_a, **_k) -> None:
+        return None
+
+    monkeypatch.setattr(worker_tasks.asyncio, "sleep", _no_sleep)
+    calls = {"n": 0}
+
+    async def _op() -> str:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise _make_deadlock_error()
+        return "ok"
+
+    result = await worker_tasks._run_with_deadlock_retry(_op, description="test op")
+    assert result == "ok"
+    assert calls["n"] == 3
+
+
+@pytest.mark.asyncio
+async def test_deadlock_retry_gives_up_after_max_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _no_sleep(*_a, **_k) -> None:
+        return None
+
+    monkeypatch.setattr(worker_tasks.asyncio, "sleep", _no_sleep)
+    calls = {"n": 0}
+
+    async def _op() -> str:
+        calls["n"] += 1
+        raise _make_deadlock_error()
+
+    with pytest.raises(Exception):  # noqa: B017 — DBAPIError re-raised after exhaustion
+        await worker_tasks._run_with_deadlock_retry(_op, description="test op", max_attempts=3)
+    assert calls["n"] == 3
+
+
+@pytest.mark.asyncio
+async def test_deadlock_retry_does_not_retry_non_deadlock_error() -> None:
+    calls = {"n": 0}
+
+    async def _op() -> str:
+        calls["n"] += 1
+        raise _make_other_dbapi_error()
+
+    with pytest.raises(Exception):  # noqa: B017
+        await worker_tasks._run_with_deadlock_retry(_op, description="test op")
+    assert calls["n"] == 1  # non-deadlock errors surface immediately, no retry

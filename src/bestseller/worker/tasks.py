@@ -5,13 +5,16 @@ import datetime as _dt
 import importlib.util
 import logging
 import os
+import random
 from argparse import Namespace
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, AsyncIterator
 from uuid import UUID
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import DBAPIError
 
 from bestseller.domain.enums import ProjectStatus, WorkflowStatus
 from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
@@ -858,6 +861,46 @@ async def run_project_pipeline_task(
     return result_payload
 
 
+def _is_postgres_deadlock(exc: BaseException) -> bool:
+    """True if ``exc`` wraps a Postgres deadlock (SQLSTATE 40P01)."""
+    orig = getattr(exc, "orig", None)
+    sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    return str(sqlstate) == "40P01"
+
+
+async def _run_with_deadlock_retry(
+    operation: Callable[[], Awaitable[Any]],
+    *,
+    description: str,
+    max_attempts: int = 3,
+) -> Any:
+    """Retry a self-session operation on Postgres deadlock (40P01).
+
+    Concurrent chapter_pipeline + project_repair on the same project both UPDATE
+    workflow_runs rows and insert workflow_step_runs child rows (taking a FK lock
+    on the parent), and can acquire those locks in opposite order → Postgres
+    kills one transaction with DeadlockDetectedError. A deadlock rolls the whole
+    transaction back, so re-running ``operation`` from a fresh session is safe.
+    The retry MUST wrap the session-opening call (not live inside it): the aborted
+    session cannot be reused, so ``operation`` reopens its own session each try.
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await operation()
+        except DBAPIError as exc:
+            if not _is_postgres_deadlock(exc) or attempt >= max_attempts:
+                raise
+            delay = min(0.25 * (2 ** (attempt - 1)), 2.0) + random.uniform(0, 0.25)
+            logger.warning(
+                "%s hit a Postgres deadlock (attempt %d/%d); retrying in %.2fs",
+                description,
+                attempt,
+                max_attempts,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+
 async def run_chapter_pipeline_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -887,15 +930,21 @@ async def run_chapter_pipeline_task(
         workflow_run_id,
         project_slug=project_slug,
     ):
-        try:
+        async def _chapter_op() -> Any:
             async with get_server_session() as session:
-                result = await run_chapter_pipeline(
+                return await run_chapter_pipeline(
                     session=session,
                     settings=settings,
                     project_slug=project_slug,
                     chapter_number=payload["chapter_number"],
                     progress=make_sync_callback(reporter),
                 )
+
+        try:
+            result = await _run_with_deadlock_retry(
+                _chapter_op,
+                description=f"chapter pipeline (ch{payload['chapter_number']} of {project_slug})",
+            )
         except Exception as exc:
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
@@ -973,27 +1022,33 @@ async def run_project_repair_task(
                     project_slug,
                 )
 
-            async with get_server_session() as session:
-                result = await run_project_repair(
-                    session=session,
-                    settings=settings,
-                    project_slug=project_slug,
-                    requested_by=str(payload.get("requested_by") or "worker_self_heal"),
-                    refresh_impacts=bool(payload.get("refresh_impacts", True)),
-                    export_markdown=bool(payload.get("export_markdown", True)),
-                    include_pending_rewrite_tasks=bool(
-                        payload.get("include_pending_rewrite_tasks", True)
-                    ),
-                    pending_rewrite_task_limit=int(
-                        payload.get("pending_rewrite_task_limit")
-                        or payload.get("round_size")
-                        or 10
-                    ),
-                    scan_publication_gate_candidates=bool(
-                        payload.get("scan_publication_gate_candidates", False)
-                    ),
-                    progress=make_sync_callback(reporter),
-                )
+            async def _repair_op() -> Any:
+                async with get_server_session() as session:
+                    return await run_project_repair(
+                        session=session,
+                        settings=settings,
+                        project_slug=project_slug,
+                        requested_by=str(payload.get("requested_by") or "worker_self_heal"),
+                        refresh_impacts=bool(payload.get("refresh_impacts", True)),
+                        export_markdown=bool(payload.get("export_markdown", True)),
+                        include_pending_rewrite_tasks=bool(
+                            payload.get("include_pending_rewrite_tasks", True)
+                        ),
+                        pending_rewrite_task_limit=int(
+                            payload.get("pending_rewrite_task_limit")
+                            or payload.get("round_size")
+                            or 10
+                        ),
+                        scan_publication_gate_candidates=bool(
+                            payload.get("scan_publication_gate_candidates", False)
+                        ),
+                        progress=make_sync_callback(reporter),
+                    )
+
+            result = await _run_with_deadlock_retry(
+                _repair_op,
+                description=f"project repair ({project_slug})",
+            )
         except Exception as exc:
             gate_block = _generation_gate_block(exc)
             if gate_block is not None:

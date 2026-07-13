@@ -1252,6 +1252,93 @@ async def test_run_project_repair_targets_quality_bundle_blocked_ok_chapter(
 
 
 @pytest.mark.asyncio
+async def test_run_project_repair_skips_accepted_quality_debt_chapters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Accepted quality debt = "best attempt already shipped". Such chapters must
+    # NOT be re-selected for repair even if a stale quality_bundle still lists
+    # blocking codes or production_state got flipped back to "blocked" — otherwise
+    # self-heal churns them every cycle and starves forward writing. Two ways a
+    # debt chapter can appear: (a) still production_state="quality_debt", or (b)
+    # reblocked to "blocked" but carrying the durable chapter_quality_debt marker.
+    project = build_project()
+    debt_soft = build_chapter(project.id, 4)
+    debt_soft.status = "revision"
+    debt_soft.production_state = "quality_debt"
+    debt_soft.metadata_json = {
+        "chapter_quality_debt": True,
+        "quality_bundle": {"passed": False, "blocking_codes": ["CHAPTER_LENGTH_BLOCK_HIGH"]},
+    }
+    debt_reblocked = build_chapter(project.id, 5)
+    debt_reblocked.status = "revision"
+    debt_reblocked.production_state = "blocked"  # reassembly flipped it back
+    debt_reblocked.metadata_json = {
+        "chapter_quality_debt": True,
+        "quality_bundle": {"passed": False, "blocking_codes": ["OBJECT_SIGNAL_OVERUSE"]},
+    }
+    real_blocked = build_chapter(project.id, 6)
+    real_blocked.status = "revision"
+    real_blocked.production_state = "blocked"
+    real_blocked.metadata_json = {"production_block_code": "HOOK_ECHO_MISSING"}
+    drafts = [
+        build_chapter_draft(project.id, debt_soft.id, content="# 第4章\n\n已接受债务。"),
+        build_chapter_draft(project.id, debt_reblocked.id, content="# 第5章\n\n债务被回填翻回blocked。"),
+        build_chapter_draft(project.id, real_blocked.id, content="# 第6章\n\n真需要修复。"),
+    ]
+    processed: list[int] = []
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_run_chapter_pipeline(session, settings, project_slug: str, chapter_number: int, **kwargs):
+        processed.append(chapter_number)
+        chapter = {4: debt_soft, 5: debt_reblocked, 6: real_blocked}[chapter_number]
+        return ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=1,
+            final_verdict="pass",
+            requires_human_review=False,
+        )
+
+    async def fake_review_project_consistency(session, settings, project_slug: str, **kwargs):
+        return (
+            type("ReviewResultStub", (), {"verdict": "pass"})(),
+            type("ReportStub", (), {"id": uuid4()})(),
+            type("QualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(repair_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        repair_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+
+    session = FakeSession(
+        scalar_results=[0],
+        scalars_results=[[], []],
+        execute_results=[[(debt_soft, drafts[0]), (debt_reblocked, drafts[1]), (real_blocked, drafts[2])]],
+    )
+    result = await repair_services.run_project_repair(
+        session,
+        build_settings(),
+        "my-story",
+        export_markdown=False,
+        include_pending_rewrite_tasks=False,
+    )
+
+    # Only the genuinely-blocked non-debt chapter is repaired; both debt chapters skipped.
+    assert processed == [6]
+    assert [item.chapter_number for item in result.processed_chapters] == [6]
+
+
+@pytest.mark.asyncio
 async def test_run_project_repair_targets_retention_failed_ok_chapters_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -661,11 +661,15 @@ def _find_object_signal_overuse(
     matches = [m for m in candidate_re.finditer(text) if m.group(1) not in _obj_stop]
     if len(matches) < 3:
         return []
+    # NOTE: 单字「是」曾被加入此表(07-11 批次),但它太泛滥——发烫匹配窗口的
+    # ±80 字里只要有任意「…是…」句(如「认账是不是要拿命填」)就会被误判为
+    # 「物件信号已给出稳定含义」,使 3 处发烫过度依赖整体哑火(explained>=2)。
+    # 表内其余词(代表/说明/边界/代价/不能/只有/而是)才真正表示给出了含义或边界,
+    # 保留;「是」移除,避免误消解本检测器。
     explanatory_markers = (
         "这次",
         "代表",
         "说明",
-        "是",
         "只有",
         "而是",
         "边界",

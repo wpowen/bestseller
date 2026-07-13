@@ -43,6 +43,8 @@ from typing import Any, Protocol
 
 import yaml
 
+from bestseller.services.progress_context import emit_activity
+
 logger = logging.getLogger(__name__)
 
 # ruff: noqa: RUF001, RUF002 — Chinese prompts/fixtures are intentional.
@@ -2313,7 +2315,11 @@ async def run_concept_tournament(
             and work_items
         ):
             cards: list[tuple[str, str, dict[str, Any]]] = []
-            for dimension, premise_seed in work_items:
+            for _gen_idx, (dimension, premise_seed) in enumerate(work_items):
+                emit_activity(
+                    "concept_tournament_progress",
+                    {"stage": "engine_kernel", "index": _gen_idx, "total": len(work_items)},
+                )
                 try:
                     engine_system, engine_user = _build_engine_kernel_messages(
                         genre=genre,
@@ -2485,7 +2491,11 @@ async def run_concept_tournament(
                             approved.append((dimension, premise_seed))
                     work_items = approved
                     batch_review_complete = True
-        for dimension, premise_seed in work_items:
+        for _card_idx, (dimension, premise_seed) in enumerate(work_items):
+            emit_activity(
+                "concept_tournament_progress",
+                {"stage": "premise_card", "index": _card_idx, "total": len(work_items)},
+            )
             try:
                 kernel: dict[str, Any] | None = prebuilt_kernels.get(
                     (dimension, premise_seed)
@@ -2699,7 +2709,15 @@ async def run_concept_tournament(
         w_motion = float(weights.get("story_motion", 0.0))
 
         judged: list[ConceptCandidate] = []
-        for candidate in screened:
+        for _judge_idx, candidate in enumerate(screened):
+            # Heartbeat: each judge round is a sequential M3 call (50-249s). Without
+            # touching progress the whole tournament attempt is one silent window and
+            # can trip the 2700s no-progress watchdog. emit_activity is a no-op when
+            # unbound (non-conception callers), so this is safe everywhere.
+            emit_activity(
+                "concept_tournament_progress",
+                {"stage": "judge", "index": _judge_idx, "total": len(screened)},
+            )
             try:
                 system, user = _build_judge_messages(
                     candidate=candidate,

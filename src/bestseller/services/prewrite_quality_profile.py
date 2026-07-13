@@ -244,11 +244,14 @@ def strict_outline_batch_size(project: Any, settings: Any) -> int | None:
     if not is_strict_prewrite_project(project):
         return None
     pipeline = getattr(settings, "pipeline", settings)
+    # Default 3 (matches settings.py): 5-chapter strict batches exceeded the
+    # planner token limit and churned on truncation. Clamp keeps overrides in
+    # a safe [3, 5] band.
     return max(
         3,
         min(
             5,
-            int(getattr(pipeline, "commercial_strict_prewrite_chapter_outline_batch_size", 5) or 5),
+            int(getattr(pipeline, "commercial_strict_prewrite_chapter_outline_batch_size", 3) or 3),
         ),
     )
 

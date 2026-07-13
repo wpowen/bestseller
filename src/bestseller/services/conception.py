@@ -4785,6 +4785,15 @@ async def run_conception_pipeline(
                 and attempts < max_attempts
             ):
                 attempts += 1
+                # Heartbeat: the finalize→blurb stretch (conception_finalize at
+                # ~4121 to the next _emit at ~5053) is the single longest silent
+                # window in conception — ~15-20 sequential M3 awaits, this
+                # regeneration loop being the heaviest. Touch progress each round
+                # so a slow blurb pass cannot trip the 2700s no-progress watchdog.
+                emit_activity(
+                    "conception_blurb_regen_progress",
+                    {"attempt": attempts, "max_attempts": max_attempts},
+                )
                 try:
                     feedback = build_improvement_feedback(report, _appeal_cfg)
                     if _persona_fb:

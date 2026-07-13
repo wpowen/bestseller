@@ -39,7 +39,9 @@ def test_strict_profile_runs_thoroughly_but_does_not_force_hard_block() -> None:
     )
     assert strict_blocks(project, warn_settings, "prewrite_readiness_block_on_failure") is False
     # Run-mode stays strict-aware (thorough evaluation + repair batch sizing).
-    assert strict_outline_batch_size(project, warn_settings) == 5
+    # Default batch is 3 chapters — 5 overflowed the planner token budget and
+    # churned on truncation on the real 50-chapter run.
+    assert strict_outline_batch_size(project, warn_settings) == 3
     # A gate explicitly configured to block still hard-blocks.
     hard_settings = SimpleNamespace(
         pipeline=SimpleNamespace(commercial_planning_readiness_block_on_failure=True)

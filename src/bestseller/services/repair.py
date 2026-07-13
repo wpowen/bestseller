@@ -767,6 +767,18 @@ async def _load_publication_blocked_chapter_numbers(
             else ()
         )
 
+        # Accepted quality debt is a TERMINAL "best attempt already shipped"
+        # state, not a gate failure to repair. A debt chapter's stale
+        # quality_report can still report blocking codes, and a retroactive
+        # reassembly can even flip its production_state back to "blocked" — either
+        # way it would be re-selected on every self-heal cycle, churning scene
+        # rewrites (94 scene_review/hr vs 14 scene_writer/hr) and stalling forward
+        # writing for hours. Skip it entirely: the durable chapter-level
+        # ``chapter_quality_debt`` marker survives re-blocking, and
+        # ``production_state == "quality_debt"`` covers chapters not yet reblocked.
+        if metadata.get("chapter_quality_debt") or production_state == "quality_debt":
+            continue
+
         # Project repair is for chapters that have failed production gates. A
         # long-running book can legitimately have hundreds of current drafts in
         # revision/pending states; those belong to the normal writing pipeline,

@@ -97,6 +97,10 @@ from bestseller.services.public_emotion_kernel import (
     public_emotion_kernel_to_dict,
     render_public_emotion_prompt_block,
 )
+from bestseller.services.protagonist_decision_agent import (
+    render_outline_decision_agent_prompt,
+    render_planner_decision_protocol_contract,
+)
 from bestseller.services.projects import get_project_by_slug, import_planning_artifact
 from bestseller.services.prewrite_quality_profile import (
     evaluate_book_spec_quality,
@@ -152,6 +156,7 @@ from bestseller.services.story_effect_skills import (
 from bestseller.services.story_enhancers import (
     audit_story_enhancer_coverage,
     render_story_enhancer_contract_block,
+    resolve_cost_style,
     resolve_story_enhancers,
     story_enhancer_repair_directives,
 )
@@ -10043,6 +10048,87 @@ def _fallback_cast_spec(
                     "willing_to_sacrifice": "个人安全和社会地位",
                 }
             ),
+            "decision_policy": (
+                {
+                    "character_name": protagonist_name,
+                    "archetype": "evidence_driven_survivor",
+                    "risk_tolerance": "medium",
+                    "pressure_responses": [
+                        "observe",
+                        "investigate",
+                        "prepare",
+                        "bargain",
+                        "retreat",
+                    ],
+                    "preferred_tactics": [
+                        {
+                            "key": "verify_before_commitment",
+                            "description": "Verify rules and costs before irreversible action.",
+                        },
+                        {
+                            "key": "preserve_exit",
+                            "description": "Keep a retreat, delegation, or contingency path.",
+                        },
+                    ],
+                    "moral_boundaries": [
+                        {
+                            "key": "do_not_sacrifice_innocents_for_convenience",
+                            "description": "Do not sacrifice unrelated people for plot convenience.",
+                            "absolute": True,
+                        }
+                    ],
+                    "forbidden_behaviors": [
+                        {
+                            "key": "plot_serving_self_destruction",
+                            "description": "Do not choose avoidable ruin merely to create conflict.",
+                        }
+                    ],
+                    "high_risk_allowances": [
+                        "life_threat",
+                        "rare_resource_upside",
+                        "credible_escape_route",
+                        "protect_innocent",
+                        "strategic_necessity",
+                    ],
+                }
+                if is_en
+                else {
+                    "character_name": protagonist_name,
+                    "archetype": "证据驱动的生存型行动者",
+                    "risk_tolerance": "medium",
+                    "pressure_responses": [
+                        "observe",
+                        "investigate",
+                        "prepare",
+                        "bargain",
+                        "retreat",
+                    ],
+                    "preferred_tactics": [
+                        {"key": "verify_before_commitment", "description": "不可逆行动前先验证规则与代价。"},
+                        {"key": "preserve_exit", "description": "保留撤退、委托或备用方案。"},
+                    ],
+                    "moral_boundaries": [
+                        {
+                            "key": "do_not_sacrifice_innocents_for_convenience",
+                            "description": "不为方便牺牲无关者。",
+                            "absolute": True,
+                        }
+                    ],
+                    "forbidden_behaviors": [
+                        {
+                            "key": "plot_serving_self_destruction",
+                            "description": "不得仅为制造冲突选择可避免的自毁。",
+                        }
+                    ],
+                    "high_risk_allowances": [
+                        "life_threat",
+                        "rare_resource_upside",
+                        "credible_escape_route",
+                        "protect_innocent",
+                        "strategic_necessity",
+                    ],
+                }
+            ),
             "relationships": [
                 {
                     "character": ally_name,
@@ -14599,6 +14685,12 @@ def _cast_spec_prompts(
             "Generate a CastSpec JSON with protagonist, antagonist, antagonist_forces, supporting_cast, and conflict_map. "
             "The protagonist needs a vivid desire, a real weakness, visible growth space, and a memorable edge; the antagonist must actively counter the protagonist and keep escalating. "
             "Every major character must include a voice_profile object and a moral_framework object so their speech patterns stay distinct.\n\n"
+            "PROTAGONIST DECISION POLICY — protagonist.decision_policy is REQUIRED. "
+            "Emit a DecisionPolicy-compatible object with character_name, archetype, risk_tolerance, "
+            "pressure_responses, preferred_tactics, moral_boundaries, forbidden_behaviors, and "
+            "high_risk_allowances. Derive it from the protagonist's personality, lived history, goal, "
+            "fear, flaw, intelligence, and moral limits. It must say how this person verifies, bargains, "
+            "delegates, retreats, preserves exits, and accepts irreversible risk; do not use generic heroic slogans.\n\n"
             "IDENTITY LOCK — every protagonist, antagonist, and supporting_cast character must include "
             "gender (male/female/nonbinary/unknown), pronoun_set_en, and pronoun_set_zh. "
             "Do not omit these fields. For named person characters, gender must be male/female/nonbinary; "
@@ -14678,6 +14770,11 @@ def _cast_spec_prompts(
             "  - family_imprint：{parenting_style（教养方式）、family_socioeconomic（出身阶层）、"
             "sibling_dynamics（兄弟姐妹角色）、inherited_values、family_secrets、breaking_points}\n"
             "MBTI/九型/Big Five/依恋类型 互相一致的角色，在每一章决策时会更稳定。\n\n"
+            "【主角决策策略 — 硬性必填】protagonist.decision_policy 必须输出，并兼容 "
+            "DecisionPolicy 结构：character_name、archetype、risk_tolerance、pressure_responses、"
+            "preferred_tactics、moral_boundaries、forbidden_behaviors、high_risk_allowances。"
+            "必须从主角的人格、经历、目标、恐惧、缺陷、智慧和道德边界推导，明确他如何验证、谈判、"
+            "委托、撤退、保留后手，以及在什么条件下才接受不可逆风险；禁止写成空泛英雄口号。\n\n"
             "【反派必须有魅力 — 不要纯坏】\n"
             "primary 反派必须填写 villain_charisma 至少 4 项："
             "noble_motivation（高尚出发点）、pain_origin（黑化伤痛）、redeeming_qualities（让读者心软的瞬间）、"
@@ -15305,6 +15402,7 @@ def _outline_prompts(
             f"{_selected_story_effect_contract_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{render_planner_decision_protocol_contract(language='en')}\n"
             f"{_concept_lab_contract_line}"
             f"{_story_enhancer_line}"
             f"{_anti_commonsense_hook_line}"
@@ -15411,6 +15509,7 @@ def _outline_prompts(
             f"{_selected_story_effect_contract_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{render_planner_decision_protocol_contract(language=language)}\n"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
             f"{_payoff_ledger_v2_line}"
@@ -15988,6 +16087,7 @@ def _volume_outline_prompts(
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{render_planner_decision_protocol_contract(language='en')}\n"
             f"{_concept_lab_contract_line}"
             f"{_story_enhancer_line}"
             f"{_anti_commonsense_hook_line}"
@@ -16089,6 +16189,7 @@ def _volume_outline_prompts(
             f"{_existing_titles_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
+            f"{render_planner_decision_protocol_contract(language=language)}\n"
             f"{_concept_lab_contract_line}"
             f"{_story_enhancer_line}"
             f"{_anti_commonsense_hook_line}"
@@ -17892,6 +17993,16 @@ def _story_design_kernel_prompts(
         logger.warning("Failed to build CharacterDramaMap for story-design prompt", exc_info=True)
         character_drama_block = ""
     distilled_story_design_block = _distilled_design_reference_block(project, "story_design")
+    protagonist_payload = _mapping(_mapping(cast_spec).get("protagonist"))
+    decision_policy_payload = _mapping(protagonist_payload.get("decision_policy"))
+    decision_agent_block = render_outline_decision_agent_prompt(
+        language="en" if is_en else "zh"
+    )
+    decision_policy_block = (
+        "\n\n[PROTAGONIST DECISION POLICY — binding]\n"
+        if is_en
+        else "\n\n【主角决策策略 — 强制约束】\n"
+    ) + _json_dumps(decision_policy_payload)
     public_emotion_block = _public_emotion_kernel_prompt_block(project)
     compliance_boundary_block = _compliance_boundary_prompt_block(project)
     concept_lab_contract_line = _concept_lab_contract_block(project, language=language)
@@ -17921,6 +18032,7 @@ def _story_design_kernel_prompts(
             f"WorldSpec summary:\n{summarize_world_spec(world_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n\n"
             f"{distilled_story_design_block}"
+            f"{decision_policy_block}\n{decision_agent_block}\n"
             f"{public_emotion_block}"
             f"{compliance_boundary_block}"
             f"{character_drama_block}\n\n"
@@ -17953,6 +18065,7 @@ def _story_design_kernel_prompts(
             f"WorldSpec 摘要：\n{summarize_world_spec(world_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n\n"
             f"{distilled_story_design_block}"
+            f"{decision_policy_block}\n{decision_agent_block}\n"
             f"{public_emotion_block}"
             f"{compliance_boundary_block}"
             f"{character_drama_block}\n\n"
@@ -18044,6 +18157,7 @@ async def _generate_story_design_kernel(
             volumes=est_volumes,
             title=str(getattr(project, "title", "") or ""),
             language=_planner_language(project),
+            cost_style=resolve_cost_style(getattr(project, "metadata_json", None) or {}),
             project_id=getattr(project, "id", None),
             workflow_run_id=workflow_run_id,
         )

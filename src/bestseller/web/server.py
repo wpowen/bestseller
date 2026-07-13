@@ -41,6 +41,7 @@ from bestseller.services.book_listing import (
     build_book_listing_profile,
     validate_book_listing_profile,
 )
+from bestseller.services.book_listing import _limit_chars as _listing_limit_chars
 from bestseller.services.concept_lab import (
     build_concept_lab_catalog,
     concept_lab_to_user_hints,
@@ -3469,7 +3470,7 @@ class WebTaskManager:
                     if isinstance(payload.get("story_enhancers"), dict)
                     else {}
                 )
-                if not _enhancers.is_empty():
+                if not _enhancers.is_default():
                     project_metadata[STORY_ENHANCERS_METADATA_KEY] = _enhancers.model_dump(
                         mode="json"
                     )
@@ -8065,8 +8066,10 @@ async def _regenerate_listing_module(
         if kind == "text":
             text = raw_value.strip().strip("\"'")
             max_chars = int(spec.get("max_chars") or 0)
-            if max_chars and len(text) > max_chars:
-                text = text[: max_chars - 1] + "…"
+            # Normalise whitespace/truncation the same way build_book_listing_profile
+            # does downstream (via _limit_chars), so the post-save equality check
+            # below compares like-for-like instead of raw-vs-normalised text.
+            text = _listing_limit_chars(text, max_chars=max_chars or 1_000_000)
             min_chars = int(spec.get("min_chars") or 1)
             if len(text) < min_chars:
                 raise ValueError(

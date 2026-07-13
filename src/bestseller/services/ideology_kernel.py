@@ -261,6 +261,36 @@ def _book_spec_digest(book_spec: dict[str, Any] | None, *, limit: int = 1200) ->
     return json.dumps(keep, ensure_ascii=False, default=str)[:limit]
 
 
+def _cost_style_directive(cost_style: str, *, is_en: bool) -> str:
+    """纯正爽文代价风格指令（standard → 空串，保持 prompt 逐字节不变）。"""
+
+    cs = str(cost_style or "standard").strip().lower()
+    if cs == "external":
+        if is_en:
+            return (
+                "\nCOST STYLE = EXTERNAL: design cost_system so every `costs` is BORNE BY THE "
+                "WORLD/ENEMIES/RESOURCES (making enemies, exposure, resource drain, opportunity "
+                "cost) — NEVER the protagonist's own memory/body/relationships/lifespan/status. "
+                "The hero never self-harms.\n"
+            )
+        return (
+            "\n代价风格=外置：设计 cost_system 时，每条 costs 必须由【世界/对手/资源】承担"
+            "（树敌、暴露、资源消耗、机会成本、招来强敌），绝不能削减主角自己的记忆/身体/关系/"
+            "寿命/地位。主角一路爽，不自损。\n"
+        )
+    if cs == "minimal":
+        if is_en:
+            return (
+                "\nCOST STYLE = MINIMAL: keep cost_system light (opportunity cost / time / making "
+                "enemies), never weakening the hero; costs must not interrupt payoff.\n"
+            )
+        return (
+            "\n代价风格=极简：cost_system 从简（机会成本/时间/树敌为主），不削弱主角，代价不得"
+            "打断爽点兑现。\n"
+        )
+    return ""
+
+
 def build_ideology_user_prompt(
     *,
     premise: str,
@@ -270,6 +300,7 @@ def build_ideology_user_prompt(
     fallback_payload: dict[str, Any] | None = None,
     seed: str | None = None,
     language: str = "zh",
+    cost_style: str = "standard",
 ) -> str:
     is_en = str(language or "").lower().startswith("en")
     seed = seed or _seed_for(premise, book_spec)
@@ -294,6 +325,7 @@ def build_ideology_user_prompt(
             "belief_arc, cost_system (>=2 laws), motif_to_world_bindings, per_volume_thesis_pressure, "
             "forbidden_resolutions. Cover all four layers.\n"
             f"Schema-valid MINIMUM (make it premise-specific, do not copy verbatim):\n{schema_hint}"
+            + _cost_style_directive(cost_style, is_en=is_en)
         )
     return (
         f"前提：\n{premise}\n\n"
@@ -307,6 +339,7 @@ def build_ideology_user_prompt(
         "belief_arc、cost_system(≥2 条)、motif_to_world_bindings、per_volume_thesis_pressure、"
         "forbidden_resolutions。必须覆盖四层。\n"
         f"以下为 schema 最低结构(请据前提做出本书独有的具体化, 不要照抄)：\n{schema_hint}"
+        + _cost_style_directive(cost_style, is_en=is_en)
     )
 
 
@@ -448,10 +481,16 @@ async def derive_ideology_kernel(
     volumes: int = 1,
     title: str = "",
     language: str = "zh",
+    cost_style: str = "standard",
     project_id: Any | None = None,
     workflow_run_id: Any | None = None,
 ) -> IdeologyKernel:
-    """Derive the book's IdeologyKernel via the planner LLM (fallback-safe)."""
+    """Derive the book's IdeologyKernel via the planner LLM (fallback-safe).
+
+    ``cost_style`` (纯正爽文三档 standard|external|minimal) shapes the cost-system
+    derivation prompt and is stamped onto the returned kernel so downstream render
+    picks the matching 代价系统 variant. Default standard → prompt/render byte-identical.
+    """
 
     seed = _seed_for(premise, book_spec, title)
     fallback = fallback_ideology_kernel(
@@ -466,6 +505,7 @@ async def derive_ideology_kernel(
             user_prompt=build_ideology_user_prompt(
                 premise=premise, genre=genre, book_spec=book_spec,
                 volumes=volumes, fallback_payload=fallback, seed=seed, language=language,
+                cost_style=cost_style,
             ),
             fallback_response=json.dumps(fallback, ensure_ascii=False),
             prompt_template="ideology_kernel",
@@ -476,9 +516,13 @@ async def derive_ideology_kernel(
             max_tokens_override=4200,
         ),
     )
-    return parse_ideology_kernel(
+    kernel = parse_ideology_kernel(
         completion.content, premise=premise, book_spec=book_spec, volumes=volumes, seed=seed
     )
+    cs = str(cost_style or "standard").strip().lower()
+    if cs != "standard" and cs != kernel.cost_style:
+        kernel = kernel.model_copy(update={"cost_style": cs})
+    return kernel
 
 
 def ideology_kernel_health_summary(kernel: IdeologyKernel) -> dict[str, Any]:

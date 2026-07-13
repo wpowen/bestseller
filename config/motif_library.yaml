@@ -143,20 +143,20 @@ motifs:
   - key: yinguo
     layer: cosmic_order
     display_name: 因果
-    one_line: 行为与结果并非随机断裂, 而是在时间、条件、业力上持续结算。
+    one_line: 行为与结果并非随机断裂, 而是在时间、条件、业力上持续应验。
     philosophical_origin: 佛教核心教义之一, 入华后与传统报应观结合, 深入六朝志怪与明清劝世小说。
     representative_work: 从六朝志怪到明清劝世小说, 大量依靠因果回环组织故事。
     thesis_template: 今天的每一刀, 迟早会回来; 你要能承担自己种下的果。
     core_question_template: 你能不能承担自己种下的果？
-    conflict_type: 当下选择与滞后结算冲突
+    conflict_type: 当下选择与滞后报应冲突
     character_arc: 任性者 → 知其后果的承担者
-    worldview_setting: 有明确的因果 / 业报机制; 伏笔必有结算感。
-    plot_template: 埋恶因 / 善因 → 中段看似无事 → 终局回收 → 主动偿还
+    worldview_setting: 有明确的因果 / 业报机制; 伏笔必有应验感。
+    plot_template: 埋恶因 / 善因 → 中段看似无事 → 终局回收 → 主动了结
     suspense_technique: 让回收结果"意料之外、因果之中"
     belief_arc:
       initial: 相信小恶可以无声无息地翻篇
       shatter: 为脱困做的一个"小恶"在中段开始反噬至亲
-      reconstruction: 主动追溯并偿还旧因, 接受承担的代价
+      reconstruction: 主动追溯并了结旧因, 接受承担的代价
     common_traps: 说教味重, 因果靠旁白宣布
     trap_guard: 让因果通过戏剧事件实现; 副线写前世线、旁支人物的报应链。
     concrete_symbol_hints: [反复回到主角手里的同一件旧物, 同一道伤疤, 误伤者的遗物, 回到原点的渡口]
@@ -407,7 +407,7 @@ motif_templates:
     extensible_subplots: [医者, 难民营, 孤儿群像]
   - motif: yinguo
     opening_hook: 主角为脱困做了一个"小恶"。
-    three_act: 种因 → 逃避 → 果报回收 → 主动偿还。
+    three_act: 种因 → 逃避 → 果报回收 → 主动了结。
     character_paradigm: 精明但心软的决策者
     key_scenes: [回收旧案, 反噬, 误伤至亲, 补偿之旅]
     extensible_subplots: [前世线, 旁支人物的报应链]
@@ -481,7 +481,7 @@ combinations:
     primary: dadao_wuqing
     secondary: [yinguo, zhenxiang]
     hidden: mingyun
-    logic: 规则稳定、结算清楚、揭秘不断。
+    logic: 规则稳定、因果分明、揭秘不断。
     emotion: 冷静、烧脑、稳推进
     selling_point: 越升级越发现世界解释错了。
     fits_genres: [仙侠, 玄幻, 悬疑]
@@ -505,7 +505,7 @@ combinations:
     primary: zhenshi_xuhuan
     secondary: [yinguo, zhenxiang]
     hidden: shane_diandao
-    logic: 认知不可靠, 但结算仍可靠; 终局发现善恶早已颠倒。
+    logic: 认知不可靠, 但因果仍可靠; 终局发现善恶早已颠倒。
     emotion: 迷惘、惊悚、强反转
     selling_point: 你不知道什么是真, 但你知道什么会痛。
     fits_genres: [悬疑, 志怪, 恐怖]

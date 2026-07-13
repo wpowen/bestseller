@@ -407,12 +407,12 @@ cards:
     maturity: verified
   - id: plova.longform.after_100k_chaos
     source_ids: ["plova.30"]
-    title: "十万字后混乱：主线、人物、设定和伏笔债务开始叠加"
+    title: "十万字后混乱：主线、人物、设定和伏笔逾期开始叠加"
     category: longform_control
     scope: ["book", "project_health"]
     stage: ["health", "review", "repair"]
-    core_claim: "十万字后混乱通常是多条债务叠加，必须用健康报告识别主线漂移、角色失焦、设定膨胀和伏笔逾期。"
-    anti_patterns: ["只凭体感判断崩没崩", "用新爽点掩盖旧债", "逾期伏笔没有清单"]
+    core_claim: "十万字后混乱通常是多条线索逾期叠加，必须用健康报告识别主线漂移、角色失焦、设定膨胀和伏笔逾期。"
+    anti_patterns: ["只凭体感判断崩没崩", "用新爽点掩盖旧坑", "逾期伏笔没有清单"]
     required_contract_fields: ["word_count", "mainline_drift", "character_focus", "setting_load", "foreshadowing_debt"]
     framework_bindings: ["project_health.longform_chaos", "scorecard.top_issue_codes", "repair_tasks.priority"]
     gate_bindings:

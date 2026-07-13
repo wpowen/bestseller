@@ -48,6 +48,7 @@ from bestseller.services.fanqie_short_ranking_gate import (
 )
 from bestseller.services.ideology_kernel import derive_ideology_kernel
 from bestseller.services.judge_genre_context import resolve_judge_genre_context
+from bestseller.services.story_enhancers import resolve_cost_style
 from bestseller.services.litstyle_prose_judge import judge_chapter_litstyle_stable
 from bestseller.services.pipelines import (
     ProgressCallback,
@@ -548,6 +549,7 @@ async def run_fanqie_short_pipeline(
             volumes=1,
             title=project.title or "",
             language="zh",
+            cost_style=resolve_cost_style(getattr(project, "metadata_json", None) or {}),
             project_id=project.id,
             workflow_run_id=planning_result.workflow_run_id,
         )

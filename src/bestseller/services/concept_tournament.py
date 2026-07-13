@@ -127,6 +127,31 @@ def load_concept_tournament_config() -> dict[str, Any]:
         return {}
 
 
+def resolve_tournament_config(
+    *, wild: bool = False, base: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """基线 config +（wild=True 时）深合并 ``wild_mode`` 覆盖块。
+
+    非 wild → 原样返回基线（与现状逐字节等价）。深合并只对 dict 值（judge_weights）
+    生效，标量直接覆盖。永不修改被 lru_cache 缓存的基线对象。
+    """
+
+    cfg = base if base is not None else load_concept_tournament_config()
+    if not wild or not isinstance(cfg, dict):
+        return cfg
+    overrides = cfg.get("wild_mode")
+    if not isinstance(overrides, dict):
+        return cfg
+    merged: dict[str, Any] = dict(cfg)
+    for key, value in overrides.items():
+        current = merged.get(key)
+        if isinstance(value, dict) and isinstance(current, dict):
+            merged[key] = {**current, **value}
+        else:
+            merged[key] = value
+    return merged
+
+
 def resolve_banned_cliches(
     genre: str | None, sub_genre: str | None, config: dict[str, Any] | None = None
 ) -> tuple[str, ...]:
@@ -419,21 +444,38 @@ async def run_concept_tournament(
                 )
 
         # ── 2) 确定性筛：俗套命中 + 引擎审计 ───────────────────────────
+        # 基线 eliminate（命中即出局）；wild_mode 覆盖为 penalize（改罚分不淘汰，
+        # 避免 2 词元假命中误杀好候选——罚分在 composite 阶段扣）。
         from dataclasses import replace as _dc_replace
+
+        cliche_mode = str(cfg.get("cliche_mode", "eliminate")).strip().lower()
+        audit_mode = str(cfg.get("audit_mode", "eliminate")).strip().lower()
+        cliche_penalty = float(cfg.get("cliche_penalty", 1.5))
+        audit_penalty = float(cfg.get("audit_penalty", 1.0))
 
         screened: list[ConceptCandidate] = []
         annotated: list[ConceptCandidate] = []
+        penalty_by_concept: dict[str, float] = {}
         for candidate in candidates:
+            penalty = 0.0
             hits = _cliche_hits(candidate, banned)
             if hits:
-                annotated.append(
-                    _dc_replace(candidate, rejected_reason=f"俗套命中: {'/'.join(hits[:3])}")
-                )
-                continue
+                if cliche_mode == "penalize":
+                    penalty += cliche_penalty
+                else:
+                    annotated.append(
+                        _dc_replace(candidate, rejected_reason=f"俗套命中: {'/'.join(hits[:3])}")
+                    )
+                    continue
             audit = _engine_audit(candidate)
             if audit:
-                annotated.append(_dc_replace(candidate, rejected_reason=f"引擎审计: {audit}"))
-                continue
+                if audit_mode == "penalize":
+                    penalty += audit_penalty
+                else:
+                    annotated.append(_dc_replace(candidate, rejected_reason=f"引擎审计: {audit}"))
+                    continue
+            if penalty > 0:
+                penalty_by_concept[candidate.concept] = penalty
             annotated.append(candidate)
             screened.append(candidate)
         result.candidates = annotated
@@ -474,6 +516,10 @@ async def run_concept_tournament(
                 predictable = max(0.0, min(10.0, float(verdict.get("predictable", 10))))
                 composite = (
                     fresh * w_fresh + click * w_click + (10.0 - predictable) * w_unpred
+                )
+                # penalize 模式的确定性罚分（基线无罚分 → dict 空 → 值不变）。
+                composite = max(
+                    0.0, composite - penalty_by_concept.get(candidate.concept, 0.0)
                 )
                 judged.append(
                     _dc_replace(
@@ -542,5 +588,6 @@ __all__ = [
     "load_concept_tournament_config",
     "render_high_concept_block",
     "resolve_banned_cliches",
+    "resolve_tournament_config",
     "run_concept_tournament",
 ]

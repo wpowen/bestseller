@@ -1244,6 +1244,16 @@ def project_create(
     brainhole: bool = typer.Option(
         False, "--brainhole", help="Enforce a high-concept 脑洞 set-piece every 1-2 chapters."
     ),
+    wild_concept: bool = typer.Option(
+        False,
+        "--wild-concept",
+        help="脑洞全开：松开概念淘汰赛收敛闸门（俗套/审计改罚分、降 winner_min、偏新颖）。",
+    ),
+    cost_style: str = typer.Option(
+        "standard",
+        "--cost-style",
+        help="代价强度：standard(默认)|external(外置,主角不自损)|minimal(极简,服务爽感)。",
+    ),
     concept_lab: bool = typer.Option(
         False, "--concept-lab", help="Enforce the concept-lab story-loop in every chapter."
     ),
@@ -1274,6 +1284,8 @@ def project_create(
     _skill_list = [s.strip() for s in (enhancer_skills or "").split(",") if s.strip()]
     _enhancer_payload = {
         "brainhole": brainhole,
+        "wild_concept": wild_concept,
+        "cost_style": cost_style,
         "concept_lab": concept_lab,
         "creativity_direction": creativity_direction,
         "effect_skills": _skill_list,
@@ -1282,7 +1294,7 @@ def project_create(
         {STORY_ENHANCERS_METADATA_KEY: _enhancer_payload}
     )
     _project_metadata: dict[str, object] = {}
-    if not _resolved_enhancers.is_empty():
+    if not _resolved_enhancers.is_default():
         _project_metadata[STORY_ENHANCERS_METADATA_KEY] = _resolved_enhancers.model_dump(
             mode="json"
         )
@@ -1319,7 +1331,7 @@ def project_create(
                         ),
                         "story_enhancers": (
                             _resolved_enhancers.model_dump(mode="json")
-                            if not _resolved_enhancers.is_empty()
+                            if not _resolved_enhancers.is_default()
                             else None
                         ),
                     },

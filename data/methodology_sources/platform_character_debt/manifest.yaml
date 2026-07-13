@@ -41,7 +41,7 @@ items:
   - source_id: pcd.04
     aweme_id: local-platform-methodology
     title: character debt formula
-    anchor: "人物债务公式"
+    anchor: "人物亏欠公式"
     image_count: 1
     ocr_image_count: 1
     ocr_status: ok

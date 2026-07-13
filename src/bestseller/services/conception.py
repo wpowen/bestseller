@@ -3467,6 +3467,7 @@ async def run_conception_pipeline(
         concept_bundle = coerce_concept_lab_bundle(user_hints.get("concept_lab"))
         if concept_bundle is not None:
             ctx["concept_lab"] = concept_bundle.model_dump(mode="json")
+        ctx["wild_concept"] = bool(user_hints.get("wild_concept"))
         _apply_qimao_hints_to_context(ctx)
 
     # Agent ①: heat-search → 脑洞/爽点 *methodology* selection. Replaces the old
@@ -3572,16 +3573,27 @@ async def run_conception_pipeline(
         try:
             from bestseller.services.concept_tournament import (  # noqa: PLC0415
                 render_high_concept_block,
+                resolve_tournament_config,
                 run_concept_tournament,
             )
 
-            _emit("concept_tournament_started", {"round": -1})
+            # 脑洞全开:合并 wild_mode 覆盖(降门/罚分/多候选/偏新颖);否则 None
+            # → tournament 读基线,构思行为与现状逐字节一致。
+            _ct_config = (
+                resolve_tournament_config(wild=True)
+                if ctx.get("wild_concept")
+                else None
+            )
+            _emit("concept_tournament_started", {
+                "round": -1, "wild_concept": bool(ctx.get("wild_concept")),
+            })
             _ct_result = await run_concept_tournament(
                 session, settings,
                 genre=str(ctx.get("genre") or genre_key),
                 sub_genre=str(ctx.get("sub_genre") or ""),
                 chapter_count=chapter_count,
                 avoid_mechanisms=list(ctx.get("avoid_mechanisms") or []),
+                config=_ct_config,
             )
             llm_run_ids.extend(_ct_result.llm_run_ids)
             conception_log.append({

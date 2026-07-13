@@ -10539,6 +10539,14 @@ async def run_project_pipeline(
                             "opening_situation": getattr(ch, "opening_situation", None) or "",
                             "main_conflict": getattr(ch, "main_conflict", None) or "",
                             "hook_description": getattr(ch, "hook_description", None) or "",
+                            "methodology_contract": (
+                                (getattr(ch, "metadata_json", None) or {}).get(
+                                    "methodology_contract",
+                                    {},
+                                )
+                                if isinstance(getattr(ch, "metadata_json", None), Mapping)
+                                else {}
+                            ),
                             "hype_type": getattr(ch, "hype_type", None) or "",
                             "hype_intensity": getattr(ch, "hype_intensity", None),
                             "scenes": [
@@ -10557,6 +10565,17 @@ async def run_project_pipeline(
                                     "hook_requirement": getattr(
                                         sc, "hook_requirement", None
                                     ) or "",
+                                    "methodology_contract": (
+                                        (getattr(sc, "metadata_json", None) or {}).get(
+                                            "methodology_contract",
+                                            {},
+                                        )
+                                        if isinstance(
+                                            getattr(sc, "metadata_json", None),
+                                            Mapping,
+                                        )
+                                        else {}
+                                    ),
                                 }
                                 for sc in (getattr(ch, "scenes", []) or [])
                             ],
@@ -11601,14 +11620,22 @@ async def run_autowrite_pipeline(
     # ── Optional conception pre-pass (mirrors Web UI flow) ──
     if use_conception:
         from bestseller.services.conception import run_conception_pipeline
+        from bestseller.services.story_enhancers import wants_wild_concept
 
         genre_key = (project_payload.metadata or {}).get("genre_canonical") or project_payload.genre or ""
+        # 脑洞全开开关从建书 metadata 线程化进构思(单一真源);未勾选则 hints 不含
+        # 该键,user_hints 与现状逐字节一致。
+        _conception_hints: dict[str, Any] = {}
+        if premise:
+            _conception_hints["premise"] = premise
+        if wants_wild_concept(project_payload.metadata or {}):
+            _conception_hints["wild_concept"] = True
         conception_result = await run_conception_pipeline(
             session,
             settings,
             genre_key=genre_key,
             chapter_count=project_payload.target_chapters,
-            user_hints={"premise": premise} if premise else None,
+            user_hints=_conception_hints or None,
             genre=project_payload.genre,
             sub_genre=project_payload.sub_genre,
             progress=progress,

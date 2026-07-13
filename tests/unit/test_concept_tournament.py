@@ -387,3 +387,151 @@ class TestHighConceptDownstreamConsumers:
 
         source = inspect.getsource(conception_services.run_conception_pipeline)
         assert '"high_concept": ctx.get("high_concept")' in source
+
+
+# ── P1b 脑洞全开(wild_concept):三道收敛闸门 eliminate→penalize + 降 winner_min ──
+
+
+_WILD = {
+    **_CFG,
+    "cliche_mode": "penalize",
+    "audit_mode": "penalize",
+    "winner_min": 4.0,
+    "cliche_penalty": 1.5,
+    "audit_penalty": 1.0,
+}
+
+
+class TestResolveTournamentConfig:
+    def test_non_wild_returns_base_unchanged(self):
+        from bestseller.services.concept_tournament import resolve_tournament_config
+
+        base = {**_CFG, "wild_mode": {"winner_min": 4.0, "cliche_mode": "penalize"}}
+        assert resolve_tournament_config(wild=False, base=base) is base
+
+    def test_wild_merges_overrides_and_deep_merges_weights(self):
+        from bestseller.services.concept_tournament import resolve_tournament_config
+
+        base = {
+            **_CFG,
+            "wild_mode": {
+                "winner_min": 4.0,
+                "cliche_mode": "penalize",
+                "audit_mode": "penalize",
+                "judge_weights": {"freshness": 0.5},
+            },
+        }
+        merged = resolve_tournament_config(wild=True, base=base)
+        assert merged["winner_min"] == 4.0
+        assert merged["cliche_mode"] == "penalize"
+        assert merged["audit_mode"] == "penalize"
+        # judge_weights 深合并：freshness 覆盖，click/unpredictability 保留。
+        assert merged["judge_weights"]["freshness"] == 0.5
+        assert merged["judge_weights"]["click"] == 0.4
+        # 基线对象绝不被污染（lru_cache 安全）。
+        assert base["winner_min"] == 5.5
+        assert base["judge_weights"]["freshness"] == 0.4
+
+    def test_real_config_wild_mode_lowers_gates(self):
+        from bestseller.services.concept_tournament import (
+            load_concept_tournament_config,
+            resolve_tournament_config,
+        )
+
+        load_concept_tournament_config.cache_clear()
+        merged = resolve_tournament_config(wild=True)
+        assert float(merged["winner_min"]) < 5.5
+        assert merged["cliche_mode"] == "penalize"
+        # 真实基线未被污染。
+        assert float(load_concept_tournament_config()["winner_min"]) == 5.5
+
+
+class TestWildConceptMode:
+    """penalize 模式：俗套/审计命中不淘汰，改 composite 罚分；降 winner_min 收留大胆概念。"""
+
+    @pytest.mark.asyncio
+    async def test_penalize_keeps_cliche_candidate_alive(self):
+        # eliminate 下 CLICHE 被毙(见 TestDeterministicScreens);penalize 下存活并打分。
+        result = await run_concept_tournament(
+            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
+            config=_WILD, generator=_gen_from([CLICHE_PAYLOAD]),
+            judge=_judge_scoring({CLICHE_PAYLOAD["concept"][:8]: (9, 9, 1)}),
+            rng=random.Random(7),
+        )
+        assert not any("俗套命中" in (c.rejected_reason or "") for c in result.candidates)
+        assert result.winner is not None
+        assert result.winner.concept == CLICHE_PAYLOAD["concept"]
+        # raw = 9*0.4+9*0.4+(10-1)*0.2 = 9.0; 减俗套罚分 1.5 = 7.5。
+        assert abs((result.winner.composite or 0.0) - 7.5) < 1e-6
+
+    @pytest.mark.asyncio
+    async def test_penalty_flips_ranking_vs_clean_candidate(self):
+        # 俗套候选原始分更高(8.2),罚分后(6.7)输给干净候选(7.2)——证明罚分真扣。
+        result = await run_concept_tournament(
+            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
+            config=_WILD, generator=_gen_from([CLICHE_PAYLOAD, GOOD_PAYLOAD]),
+            judge=_judge_scoring({
+                CLICHE_PAYLOAD["concept"][:8]: (8, 8, 1),
+                GOOD_PAYLOAD["concept"][:12]: (7, 7, 2),
+            }),
+            rng=random.Random(7),
+        )
+        assert result.winner is not None
+        assert result.winner.concept == GOOD_PAYLOAD["concept"]
+
+    @pytest.mark.asyncio
+    async def test_lower_winner_min_admits_bold_concept_that_base_rejects(self):
+        # composite 4.4：基线 winner_min 5.5 → 回落均值(无冠军);wild 4.0 → 注入。
+        bold = {**GOOD_PAYLOAD, "concept": "概念Gamma：殡葬入殓师给渡劫失败者办身后事的暗黑仙侠。"}
+        wild_res = await run_concept_tournament(
+            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
+            config=_WILD, generator=_gen_from([bold]),
+            judge=_judge_scoring({"概念Gamma": (4, 5, 6)}),
+            rng=random.Random(7),
+        )
+        base_res = await run_concept_tournament(
+            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
+            config=_CFG, generator=_gen_from([bold]),
+            judge=_judge_scoring({"概念Gamma": (4, 5, 6)}),
+            rng=random.Random(7),
+        )
+        assert wild_res.winner is not None  # 4.4 ≥ 4.0
+        assert base_res.winner is None  # 4.4 < 5.5 → 回落现状
+
+    @pytest.mark.asyncio
+    async def test_default_mode_still_eliminates_cliche(self):
+        # no-op 守卫：不给 penalize 键 → 与现状一致，CLICHE 仍被毙。
+        result = await run_concept_tournament(
+            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
+            config=_CFG, generator=_gen_from([CLICHE_PAYLOAD, GOOD_PAYLOAD]),
+            judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
+            rng=random.Random(7),
+        )
+        assert any("俗套命中" in (c.rejected_reason or "") for c in result.candidates)
+
+
+class TestWildConceptWiring:
+    def _source(self) -> str:
+        import inspect
+
+        from bestseller.services import conception as conception_services
+
+        return inspect.getsource(conception_services.run_conception_pipeline)
+
+    def test_wild_flag_read_and_config_passed(self):
+        source = self._source()
+        assert 'ctx["wild_concept"] = bool(user_hints.get("wild_concept"))' in source
+        idx = source.index("run_concept_tournament(")
+        region = source[max(0, idx - 800) : idx + 400]
+        assert "resolve_tournament_config(wild=True)" in region
+        assert 'ctx.get("wild_concept")' in region
+        assert "config=_ct_config," in region
+
+    def test_pipeline_threads_wild_into_user_hints(self):
+        import inspect
+
+        from bestseller.services import pipelines
+
+        source = inspect.getsource(pipelines.run_autowrite_pipeline)
+        assert "wants_wild_concept(project_payload.metadata or {})" in source
+        assert '_conception_hints["wild_concept"] = True' in source

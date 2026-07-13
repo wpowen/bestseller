@@ -26,11 +26,13 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "bestseller"
 CONFIG_ROOT = REPO_ROOT / "config"
+DATA_ROOT = REPO_ROOT / "data"
 
 # ── 已知单书私货 token（高精度，出现即视为泄漏） ────────────────────────────
 SINGLE_BOOK_TOKENS: tuple[str, ...] = (
     "镜债",
     "账线",
+    "账清",
     "镜局",
     "困魂镜",
     "青囊",
@@ -82,6 +84,13 @@ DEBT_TOKENS_GENERIC_LEXICON: tuple[str, ...] = (
     "欠债", "讨债", "逼债", "还债", "房贷", "账本", "欠条", "记账",
 )
 DEBT_TOKENS_BROAD: tuple[str, ...] = ("债", "账本", "欠账", "记账", "账簿")
+
+# ── 题材中性生成/规划面的债务框架回流网（守卫盲区补网） ──────────────────────
+# 高信号中文债务字符；刻意不含裸"账"以放过 账号/账户/账目 等合法技术词。
+NEUTRAL_DEBT_TOKENS: tuple[str, ...] = (
+    "债", "账本", "账单", "欠账", "旧账", "算账", "记账", "账簿",
+    "账清", "收账", "讨债", "逼债", "还债", "欠条", "催收", "结算",
+)
 
 
 def _iter_src_files() -> Iterator[Path]:
@@ -239,4 +248,47 @@ def test_planning_fallback_strings_stay_debt_free() -> None:
                 violations.append(f"{rel}: {hits} in {literal.strip()[:60]!r}")
     assert not violations, (
         "债务话术回流到规划/修复兜底字符串：\n" + "\n".join(violations)
+    )
+
+
+@pytest.mark.unit
+def test_generation_neutral_surfaces_stay_debt_free() -> None:
+    """题材中性的生成/规划面保持零债务框架（守卫盲区补网）。
+
+    历史盲区：data/methodology_sources 完全不在扫描内；reference_corpora/generic、
+    motif_library、narrative_tree 也无债务网。这些面对所有题材/所有书生效，必须
+    保持零债务框架。题材隔离项（wuxia 侠义债 / relationship 情感债 / urban 人情债与
+    应收账款）经 resolve_*(genre) 只在本题材渲染，故意不纳入本网。
+    """
+
+    violations: list[str] = []
+
+    yaml_targets = [
+        *sorted((DATA_ROOT / "methodology_sources").rglob("*.yaml")),
+        CONFIG_ROOT / "reference_corpora" / "generic.yaml",
+        CONFIG_ROOT / "motif_library.yaml",
+    ]
+    for path in yaml_targets:
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError:  # pragma: no cover - 解析问题在别处暴露
+            continue
+        for text in _iter_yaml_strings(data):
+            hits = [token for token in NEUTRAL_DEBT_TOKENS if token in text]
+            if hits:
+                rel = path.relative_to(REPO_ROOT).as_posix()
+                violations.append(f"{rel}: {hits} in {text.strip()[:60]!r}")
+
+    narrative_tree = SRC_ROOT / "services" / "narrative_tree.py"
+    tree = ast.parse(narrative_tree.read_text(encoding="utf-8"))
+    for literal in _iter_string_literals(tree):
+        hits = [token for token in NEUTRAL_DEBT_TOKENS if token in literal]
+        if hits:
+            rel = narrative_tree.relative_to(REPO_ROOT).as_posix()
+            violations.append(f"{rel}: {hits} in {literal.strip()[:60]!r}")
+
+    assert not violations, (
+        "债务/账本框架回流到题材中性的生成/规划面（方法论卡 / generic 语料 / "
+        "母题库 / 规划节点树），会随 prompt 泄漏给所有题材的书。移进按题材隔离的"
+        "块或换非金融隐喻：\n" + "\n".join(violations)
     )

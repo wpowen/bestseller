@@ -318,6 +318,9 @@ class IdeologyKernel(BaseModel, frozen=True):
     hidden_endgame_motif: MotifBinding | None = None
     belief_arc: BeliefArc
     cost_system: list[CostLaw] = Field(min_length=1)
+    # 纯正爽文·代价强度档：standard(现状)|external(代价外置,主角不自损)|
+    # minimal(极简代价,服务爽感)。render 据此选代价系统块变体。默认 standard。
+    cost_style: str = "standard"
     layer_coverage: dict[str, str] = Field(default_factory=dict)
     motif_to_world_bindings: list[str] = Field(default_factory=list)
     per_volume_thesis_pressure: list[str] = Field(default_factory=list)
@@ -476,10 +479,62 @@ def render_ideology_compact_block(
         parts.append("子题：" + "；".join(t.proposition for t in kernel.sub_themes[:max_subs]))
     if kernel.cost_system:
         law = kernel.cost_system[0]
-        parts.append(f"代价：获得「{law.acquires}」必付「{law.costs}」")
+        _cs = getattr(kernel, "cost_style", "standard") or "standard"
+        if _cs == "external":
+            parts.append(
+                f"代价：获得「{law.acquires}」→ 外部代价（树敌/暴露/消耗，主角不自损）"
+            )
+        elif _cs == "minimal":
+            parts.append(f"代价：获得「{law.acquires}」→ 从简（服务爽感，不阻碍）")
+        else:
+            parts.append(f"代价：获得「{law.acquires}」必付「{law.costs}」")
     if kernel.forbidden_resolutions:
         parts.append(f"禁用解法：{kernel.forbidden_resolutions[0]}")
     return "\n".join(parts)
+
+
+def _render_cost_system_block(kernel: IdeologyKernel) -> list[str]:
+    """代价系统块——纯正爽文三档变体。standard 与旧渲染逐字节一致。"""
+
+    cost_style = getattr(kernel, "cost_style", "standard") or "standard"
+
+    if cost_style == "external":
+        lines = [
+            "### 代价系统（外置代价——主角一路爽，代价由世界承担，不自损）",
+            "- 硬规则：一切代价外置——树敌、暴露行踪、招来强敌、消耗外部资源、"
+            "错失机会、连累局势；由对手/环境/时局付账。",
+            "- 禁止：削减主角的记忆/身体/关系/寿命/地位；金手指不得给主角制造"
+            "自损后果或永久残缺。",
+        ]
+        lines.extend(
+            f"- 获得「{law.acquires}」→ 外部代价（世界找主角麻烦，主角不掉血）"
+            for law in kernel.cost_system[:6]
+        )
+        return lines
+
+    if cost_style == "minimal":
+        lines = [
+            "### 代价系统（极简代价——服务爽感与节奏，点到为止，不阻碍主角）",
+            "- 以机会成本/时间/树敌为主，轻描淡写；不写削弱主角的代价账，不让代价"
+            "打断爽点兑现。",
+        ]
+        lines.extend(
+            f"- 获得「{law.acquires}」→ 顺势推进（代价从简，不喧宾夺主）"
+            for law in kernel.cost_system[:6]
+        )
+        return lines
+
+    # standard —— 与旧渲染逐字节一致
+    lines = ["### 代价系统（力量/真相/救赎都必须付费, 不可白给）"]
+    for law in kernel.cost_system[:6]:
+        flags = []
+        if law.delayed:
+            flags.append("延迟支付")
+        if law.irreversible:
+            flags.append("不可逆")
+        flag_text = f"（{', '.join(flags)}）" if flags else ""
+        lines.append(f"- 获得「{law.acquires}」→ 代价「{law.costs}」{flag_text}")
+    return lines
 
 
 def render_ideology_kernel_prompt_block(
@@ -542,17 +597,9 @@ def render_ideology_kernel_prompt_block(
             f"- 最初相信：{kernel.belief_arc.initial_belief}",
             f"- 中段打碎：{kernel.belief_arc.midpoint_shatter}",
             f"- 结尾重建：{kernel.belief_arc.final_reconstruction}",
-            "### 代价系统（力量/真相/救赎都必须付费, 不可白给）",
         ]
     )
-    for law in kernel.cost_system[:6]:
-        flags = []
-        if law.delayed:
-            flags.append("延迟支付")
-        if law.irreversible:
-            flags.append("不可逆")
-        flag_text = f"（{', '.join(flags)}）" if flags else ""
-        lines.append(f"- 获得「{law.acquires}」→ 代价「{law.costs}」{flag_text}")
+    lines.extend(_render_cost_system_block(kernel))
 
     if kernel.motif_to_world_bindings:
         lines.append("### 母题→世界观约束（用母题长出 invariant, 不要先画地图）")

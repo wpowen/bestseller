@@ -417,3 +417,72 @@ def test_binding_requires_action_and_suspense_roles_only_on_secondary() -> None:
         }
     )
     assert binding.role == "action"
+
+
+# --- 纯正爽文·代价强度三档 (P1a) --------------------------------------------
+
+
+class TestCostStyleTiers:
+    """standard 逐字节兼容旧渲染 + external/minimal 变体 + schema/accessor。"""
+
+    def _kernel(self, cost_style: str = "standard") -> IdeologyKernel:
+        from bestseller.services.ideology_kernel import fallback_ideology_kernel
+
+        fb = fallback_ideology_kernel(
+            premise="少年得神秘传承闯仙界", volumes=3, seed="cs-seed"
+        )
+        k = ideology_kernel_from_dict(fb)
+        return k if cost_style == "standard" else k.model_copy(
+            update={"cost_style": cost_style}
+        )
+
+    def test_standard_preserves_legacy_cost_block(self) -> None:
+        block = render_ideology_kernel_prompt_block(self._kernel("standard"))
+        assert "### 代价系统（力量/真相/救赎都必须付费, 不可白给）" in block
+        assert "→ 代价「" in block
+        assert "外置代价" not in block and "极简代价" not in block
+
+    def test_external_externalizes_and_forbids_self_harm(self) -> None:
+        block = render_ideology_kernel_prompt_block(self._kernel("external"))
+        assert "外置代价" in block
+        assert "禁止：削减主角的记忆/身体/关系/寿命/地位" in block
+        assert "力量/真相/救赎都必须付费" not in block
+
+    def test_minimal_softens_cost(self) -> None:
+        block = render_ideology_kernel_prompt_block(self._kernel("minimal"))
+        assert "极简代价" in block
+        assert "不写削弱主角的代价账" in block
+
+    def test_cost_style_field_defaults_standard_and_round_trips(self) -> None:
+        k = self._kernel("standard")
+        assert k.cost_style == "standard"
+        assert k.model_copy(update={"cost_style": "external"}).cost_style == "external"
+
+    def test_derive_prompt_standard_is_byte_identical(self) -> None:
+        from bestseller.services.ideology_kernel import build_ideology_user_prompt
+
+        base = build_ideology_user_prompt(premise="x", volumes=1)
+        assert build_ideology_user_prompt(
+            premise="x", volumes=1, cost_style="standard"
+        ) == base
+        ext = build_ideology_user_prompt(premise="x", volumes=1, cost_style="external")
+        assert "代价风格=外置" in ext and ext != base
+
+    def test_selection_schema_and_accessor(self) -> None:
+        from bestseller.services.story_enhancers import (
+            STORY_ENHANCERS_METADATA_KEY,
+            StoryEnhancerSelection,
+            resolve_cost_style,
+        )
+
+        assert StoryEnhancerSelection(cost_style="external").cost_style == "external"
+        assert StoryEnhancerSelection(cost_style="nope").cost_style == "standard"
+        assert StoryEnhancerSelection(cost_style="EXTERNAL").cost_style == "external"
+        # 不计入合同(is_empty)，但需持久化(非 default)。
+        assert StoryEnhancerSelection(cost_style="external").is_empty() is True
+        assert StoryEnhancerSelection(cost_style="external").is_default() is False
+        assert StoryEnhancerSelection().is_default() is True
+        assert resolve_cost_style(
+            {STORY_ENHANCERS_METADATA_KEY: {"cost_style": "minimal"}}
+        ) == "minimal"
+        assert resolve_cost_style({}) == "standard"

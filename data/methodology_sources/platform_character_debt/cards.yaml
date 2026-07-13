@@ -29,7 +29,7 @@ cards:
     maturity: verified
   - id: platform.relationship_hook_matrix
     source_ids: ["pcd.03"]
-    title: "关系钩子：关系必须有状态、边界和情绪债"
+    title: "关系钩子：关系必须有状态、边界和情绪绑定"
     category: relationship
     scope: ["book", "chapter", "scene"]
     stage: ["planning", "drafting", "review", "health"]
@@ -45,12 +45,12 @@ cards:
     maturity: verified
   - id: platform.character_debt_ledger
     source_ids: ["pcd.04"]
-    title: "人物债务：债必须有凭据、催收、违约后果和偿还方式"
+    title: "人物亏欠：每段亏欠必须有凭据、兑现契机、违约后果和了结方式"
     category: debt
     scope: ["book", "chapter", "asset"]
     stage: ["planning", "drafting", "review", "health"]
-    core_claim: "人物债务是关系与剧情的发动机，必须可被催收、可违约、可偿还，并能改变后续选择。"
-    anti_patterns: ["欠情只停留在口头", "债务没有凭据或催收方式", "偿还后不改变关系和主线"]
+    core_claim: "人物之间的亏欠与承诺是关系与剧情的发动机，必须可被兑现、可违约、可了结，并能改变后续选择。"
+    anti_patterns: ["亏欠只停留在口头", "亏欠没有凭据或兑现契机", "了结后不改变关系和主线"]
     required_contract_fields: ["debtor", "creditor", "evidence_or_handle", "due_condition", "breach_consequence", "repayment_modes"]
     framework_bindings: ["interpersonal_promises.metadata", "premium_state_ledger.promise_debt_ledger", "relationship-driven.promise_debt_ledger"]
     gate_bindings:
@@ -105,8 +105,8 @@ cards:
     category: outline
     scope: ["book", "volume"]
     stage: ["planning", "review", "health"]
-    core_claim: "卷结构应从终局名场面反推硬条件、软条件、情绪条件、债务清算和下一卷钩子，并保持进入、压迫、转折、结算的比例。"
-    anti_patterns: ["高潮临时拼接", "前文没有为名场面准备条件", "高潮后债务和下一卷钩子缺失"]
+    core_claim: "卷结构应从终局名场面反推硬条件、软条件、情绪条件、恩怨了结和下一卷钩子，并保持进入、压迫、转折、收束的比例。"
+    anti_patterns: ["高潮临时拼接", "前文没有为名场面准备条件", "高潮后恩怨了结和下一卷钩子缺失"]
     required_contract_fields: ["ultimate_signature_scene", "hardware_conditions", "software_conditions", "emotional_conditions", "phase_ratio_plan", "debt_clearance", "next_volume_hook"]
     framework_bindings: ["signature_scene_planner", "story_design_kernel.structure_strategy", "volume_plan.climax"]
     gate_bindings:

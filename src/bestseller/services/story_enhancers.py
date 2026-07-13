@@ -23,6 +23,12 @@ from bestseller.services.story_effect_skills import (
 
 STORY_ENHANCERS_METADATA_KEY = "story_enhancers"
 
+# 代价强度三档（纯正爽文）：standard=现状；external=代价外置(主角不自损,
+# 由对手/世界/资源承担);minimal=极简代价(服务爽感,点到为止)。默认 standard
+# → 全链字节级不变。
+COST_STYLES: tuple[str, ...] = ("standard", "external", "minimal")
+COST_STYLE_DEFAULT = "standard"
+
 # The four genre_creativity directions (反常识/反套路 axes).
 CREATIVITY_DIRECTIONS: tuple[str, ...] = (
     "genre-synthesis",
@@ -47,6 +53,19 @@ class StoryEnhancerSelection(BaseModel):
     concept_lab: bool = False
     creativity_direction: str | None = None
     effect_skills: tuple[str, ...] = ()
+    # 脑洞全开：松开概念淘汰赛三道收敛闸门（俗套/审计改罚分、降 winner_min、
+    # 判官偏新颖）。无每章合同 → 故意不计入 is_empty()（不渲染空的合同头），
+    # 只在构思淘汰赛调用点消费。
+    wild_concept: bool = False
+    # 纯正爽文·代价强度三档（见 COST_STYLES）。非合同类，不计入 is_empty()；
+    # 由意识形态内核派生/渲染消费，控制"金手指是否强制自损代价"。
+    cost_style: str = COST_STYLE_DEFAULT
+
+    @field_validator("cost_style", mode="before")
+    @classmethod
+    def _valid_cost_style(cls, v: Any) -> str:
+        s = str(v or "").strip().lower()
+        return s if s in COST_STYLES else COST_STYLE_DEFAULT
 
     @field_validator("creativity_direction")
     @classmethod
@@ -70,11 +89,23 @@ class StoryEnhancerSelection(BaseModel):
         return tuple(seen)
 
     def is_empty(self) -> bool:
+        """无每章合同类选择（决定是否渲染故事增强合同块）。
+
+        故意不含 wild_concept / cost_style——它们无每章合同，不该触发空合同头。
+        """
         return not (
             self.brainhole
             or self.concept_lab
             or self.creativity_direction
             or self.effect_skills
+        )
+
+    def is_default(self) -> bool:
+        """全部字段皆默认 → 无需持久化、全链字节级不变。持久化门用此判定。"""
+        return (
+            self.is_empty()
+            and not self.wild_concept
+            and self.cost_style == COST_STYLE_DEFAULT
         )
 
 
@@ -90,6 +121,18 @@ def resolve_story_enhancers(
         return StoryEnhancerSelection.model_validate(dict(raw))
     except ValueError:
         return StoryEnhancerSelection()
+
+
+def wants_wild_concept(metadata: Mapping[str, Any] | None) -> bool:
+    """脑洞全开开关（单一真源读取口）。构思淘汰赛据此决定是否合并 wild_mode。"""
+
+    return resolve_story_enhancers(metadata).wild_concept
+
+
+def resolve_cost_style(metadata: Mapping[str, Any] | None) -> str:
+    """代价强度三档（单一真源读取口）。意识形态内核派生/渲染据此选变体。"""
+
+    return resolve_story_enhancers(metadata).cost_style
 
 
 def render_story_enhancer_contract_block(

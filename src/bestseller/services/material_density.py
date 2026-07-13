@@ -1676,7 +1676,7 @@ def _category_pack_spec(blueprint: CategoryPackBlueprint, *, pack_id: str) -> Ma
             {
                 "world_settings": [
                     _s(f"{base}-promise-world", f"{name} Promise World", f"{world} locks the reader promise into repeatable pressure, payoff, and consequence.", category=base, promise=name),
-                    _s(f"{base}-state-ledger-world", "State Ledger World", "Plot, power, relationships, factions, and resources persist after each chapter instead of resetting.", category=base, rule="persistent state"),
+                    _s(f"{base}-persistent-state-world", "Persistent State World", "Plot, power, relationships, factions, and resources persist after each chapter instead of resetting.", category=base, rule="persistent state"),
                     _s(f"{base}-escalation-clock-world", "Escalation Clock World", "The first volume needs a visible clock that turns local wins into larger category pressure.", category=base, clock="volume-level escalation"),
                     _s(f"{base}-reader-contract-boundary", "Reader Contract Boundary", f"The story must not abandon {name} mechanics when pressure rises.", category=base, boundary="genre promise"),
                 ],
@@ -1730,7 +1730,7 @@ def _category_pack_spec(blueprint: CategoryPackBlueprint, *, pack_id: str) -> Ma
                     _s(f"{base}-state-hook-ending", "State Hook Ending", "End after a concrete state update and a newly exposed problem.", beats=["delta", "reveal", "next pressure"]),
                 ],
                 "device_templates": [
-                    _s(f"{base}-state-ledger-device", "State Ledger Device", "A file, board, contract, ranking, ledger, or map that externalizes progress.", function="progress tracking"),
+                    _s(f"{base}-progress-track-device", "Progress-Tracking Device", "A file, board, roster, ranking, or map that externalizes progress.", function="progress tracking"),
                     _s(f"{base}-threshold-token", "Threshold Token", "A key object that grants access while changing obligation.", function="access with price"),
                     _s(f"{base}-evidence-prop", "Evidence Prop", "A visible clue, clip, receipt, scar, or record that makes the genre rule concrete.", function="proof"),
                     _s(f"{base}-resource-key", "Resource Key", "A scarce item or capability that forces tradeoffs.", function="scarcity"),
@@ -1770,7 +1770,7 @@ def _category_pack_spec(blueprint: CategoryPackBlueprint, *, pack_id: str) -> Ma
         {
             "world_settings": [
                 _s(f"{base}-promise-world", f"{name}读者承诺世界", f"{world}把品类承诺锁成可重复的压力、回报和后果。", category=base, promise=name),
-                _s(f"{base}-state-ledger-world", "状态账持续世界", "剧情、能力、关系、阵营和资源在每章后持续存在，不允许重置。", category=base, rule="状态持续"),
+                _s(f"{base}-persistent-state-world", "持续状态世界", "剧情、能力、关系、阵营和资源在每章后持续存在，不允许重置。", category=base, rule="状态持续"),
                 _s(f"{base}-escalation-clock-world", "卷级升级时钟世界", "第一卷必须有可见时钟，把局部胜利推向更大品类压力。", category=base, clock="卷级升级"),
                 _s(f"{base}-reader-contract-boundary", "读者契约边界", f"压力上升时不得抛弃{name}的核心机制。", category=base, boundary="品类承诺"),
             ],
@@ -1824,7 +1824,7 @@ def _category_pack_spec(blueprint: CategoryPackBlueprint, *, pack_id: str) -> Ma
                 _s(f"{base}-state-hook-ending", "状态钩子结尾", "以明确状态更新和新暴露问题收束。", beats=["变化", "揭示", "新压力"]),
             ],
             "device_templates": [
-                _s(f"{base}-state-ledger-device", "状态账装置", "文件、白板、契约、排名、日志或地图，把进展外化。", function="进度追踪"),
+                _s(f"{base}-progress-track-device", "进度外化装置", "文件、白板、名册、排名、日志或地图，把进展外化。", function="进度追踪"),
                 _s(f"{base}-threshold-token", "门槛信物", "给出进入资格，同时改变义务。", function="带代价的入口"),
                 _s(f"{base}-evidence-prop", "证据化道具", "线索、影像、收据、伤痕或记录，让品类规则具体化。", function="证明"),
                 _s(f"{base}-resource-key", "稀缺资源钥匙", "强迫主角做交换和取舍的稀缺物或能力。", function="稀缺"),
@@ -2212,7 +2212,7 @@ def _xianxia_upgrade_pack_spec() -> MaterialPackSpec:
             "world_settings": [
                 _s("late-dharma-sect-world", "末法宗门世界", "灵气稀薄、资源稀缺让每次突破和机缘都有高烈度争夺。", rule="稀缺驱动"),
                 _s("dao-seed-causality-world", "道种因果世界", "道种提供感知、推演和局部转化，不能替主角直接解决所有问题。", rule="金手指有限"),
-                _s("sect-resource-ledger-world", "宗门资源账世界", "灵米、丹药、名额、残页、配给和身份都必须入账。", rule="资源可追踪"),
+                _s("sect-resource-tracking-world", "宗门资源追踪世界", "灵米、丹药、名额、残页、配给和身份都必须可追踪、可核对。", rule="资源可追踪"),
                 _s("exam-secret-realm-clock", "大考秘境时钟", "三个月大考和秘境试炼驱动准备、资源争夺和旧事揭示。", rule="阶段主时钟"),
             ],
             "factions": [
@@ -2266,7 +2266,7 @@ def _xianxia_upgrade_pack_spec() -> MaterialPackSpec:
             ],
             "device_templates": [
                 _s("black-iron-fragment", "黑铁残片", "禁忌功法和道种异动的载体。", function="金手指入口"),
-                _s("resource-ledger-slip", "资源账条", "记录灵米、丹药、名额和克扣。", function="资源证据"),
+                _s("resource-tracking-slip", "资源凭条", "记录灵米、丹药、名额的发放与扣减。", function="资源证据"),
                 _s("secret-realm-token", "秘境名额令", "争夺、交换、伪装和身份升级的关键物。", function="阶段目标"),
                 _s("dao-seed-mark", "道种痕迹", "每次使用可能留下被高阶修士察觉的痕迹。", function="暴露风险"),
                 _s("old-root-record", "废灵根旧档", "二十年前旧事的证据碎片。", function="长线谜题"),

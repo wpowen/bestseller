@@ -18,6 +18,7 @@ residual the prompt could not.
 from __future__ import annotations
 
 import logging
+import re
 
 from bestseller.services.ai_flavor.detector import detect
 from bestseller.services.llm import LLMCompletionRequest, complete_text
@@ -41,6 +42,9 @@ _EXTRA_SELF_CHECK = (
     "同一个动作（喉结滚一下、指尖抖一下）、或同一句潜台词解读（'她那一下等于告诉他…'），"
     "在一段里反复换皮写了好几遍 → 只留最有力的一次，其余全删；一个静止场景别拉成长篇内心独白"
     "反复体会同一种感觉。感觉词（酸凉痒麻胀痛）排比堆叠成串的，压成一个具体身体反应。\n"
+    "   ↳ 同一个气味/意象/道具整章复读（如'焦苦气''油灯''某道疤'一章里点名十来次，每个拍点都提一次）"
+    "→ 签名意象是重锤不是背景板：全章同一意象最多出现 2-3 次（首次、关键转折、收尾各一），"
+    "中间反复提及的删掉或换成别的具体细节，靠情节推进而不是靠反复闻同一股味道维持氛围。\n"
     "7) 「他没X」否定式克制扎堆（他没回头、他没跪、他没刀、他没犹豫——尤其紧张场景里连着甩）"
     "→ 这是最招人厌的 AI 腔。一段里最多留一个真正有戏剧反差的「他没…」，其余改成正向、带含义的"
     "具体动作（'他没刀'→'他空着手'/直接写他手里抓的是什么；'他没犹豫'→直接写他下刀那一下）。\n"
@@ -82,6 +86,30 @@ def _findings_text(content: str, language: str) -> tuple[str, float, int]:
     return lines, report.overall_score, len(report.spans)
 
 
+def _staccato_ratio(content: str) -> float:
+    """Fraction of paragraphs that are a single short sentence (碎句独段).
+
+    Computed directly here rather than via the detector because staccato lives in
+    the detector's ``_ADVISORY_STRUCTURAL`` family (score-capped at 24), so it
+    cannot move ``overall_score``/span-count enough to drive keep-better
+    bookkeeping. A deterministic ratio lets the deslop loop actually reward a
+    rewrite that merges single-sentence dramatic paragraphs — the real fix
+    target — instead of accepting a rewrite that only trimmed lexical tells while
+    the 分镜脚本 paragraph structure survived (observed 31%→34% on a live run).
+    """
+
+    body = "\n".join(ln for ln in content.split("\n") if not ln.lstrip().startswith("#"))
+    paras = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
+    if not paras:
+        return 0.0
+    solo = sum(
+        1
+        for p in paras
+        if len(re.sub(r"\s", "", p)) <= 25 and len(re.findall(r"[。！？…]", p)) <= 1
+    )
+    return solo / len(paras)
+
+
 async def revise_prose_deslop(
     session,
     settings,
@@ -112,20 +140,34 @@ async def revise_prose_deslop(
     # AI-flavor shipped silently. Track the cleanest content seen and fall
     # back to it if the final rewrite measures worse.
     best_content = content
-    best_spans: int | None = None
+    best_badness: float | None = None
+
+    def _badness(text: str) -> float:
+        # Lexical span count PLUS a penalty for staccato above the 25% budget.
+        # Staccato is score-capped in the detector, so span-count alone never
+        # rewards a rewrite that merged 分镜脚本 paragraphs; the penalty makes the
+        # keep-better bookkeeping actually prefer the de-staccato'd draft.
+        _f, _s, spans = _findings_text(text, language)
+        return spans + 8.0 * max(0.0, _staccato_ratio(text) - 0.25)
 
     for _ in range(max(0, rounds)):
         findings, _score, n_spans = _findings_text(content, language)
-        if best_spans is None or n_spans < best_spans:
-            best_content, best_spans = content, n_spans
-        if n_spans == 0:
+        cur_badness = n_spans + 8.0 * max(0.0, _staccato_ratio(content) - 0.25)
+        if best_badness is None or cur_badness < best_badness:
+            best_content, best_badness = content, cur_badness
+        # Keep revising while either lexical tells OR heavy staccato remain.
+        if n_spans == 0 and _staccato_ratio(content) <= 0.25:
             break
         system_prompt = (
             "你是最严苛的中文网文编辑，专做去 AI 味改写。下面是写作铁律；逐条核对正文，"
-            "把违反的句子改干净，严格保持剧情/人物不变，只动有问题的句子，其余照搬。"
-            "字数原则上不减；但若正文有车轱辘重复（同一身体感觉/动作/潜台词解读反复写好几遍、"
-            "感觉词排比堆叠），删去这些重复表达使字数下降是正确的，不算砍情节"
-            "——情节是'发生了什么'，重复是'同一件事写了几遍'，删后者天经地义。"
+            "把违反的句子改干净，严格保持剧情/人物不变。默认只动有问题的句子、其余照搬；"
+            "但有两类问题必须做结构级改写，不受'只动问题句/其余照搬'限制："
+            "（甲）单句独段饱和——把每个动作/心理拍点切成一句各占一段，整章像分镜脚本。"
+            "遇到它必须合并相邻的单句独段：把动作+反应+环境揉进同一段、让长短段交替，"
+            "这属于必要的分段重排，允许段落数下降；合并只动分段与连接，不改情节与对白。"
+            "（乙）车轱辘重复（同一身体感觉/动作/潜台词解读反复写好几遍、感觉词排比堆叠）——删重复表达。"
+            "字数原则上不减；但（甲）合并分段、（乙）删重复导致字数下降都是正确的，不算砍情节"
+            "——情节是'发生了什么'，重复/碎段是'同一件事写了几遍/切了几段'，改后者天经地义。"
             "直接输出改写后的完整正文，不要任何解释或标注。\n\n" + rubric
         )
         user_prompt = (
@@ -167,15 +209,18 @@ async def revise_prose_deslop(
             logger.debug("deslop_revise: rewrite too short, keeping previous draft")
             break
 
-    # Final acceptance: the last rewrite has not been measured yet — re-detect
-    # and fall back to the cleanest earlier draft if it got worse.
+    # Final acceptance: the last rewrite has not been measured yet — re-measure
+    # (lexical spans + staccato penalty) and fall back to the cleanest earlier
+    # draft if it got worse. Using badness (not raw span count) means a final
+    # rewrite that re-introduced 分镜脚本 paragraphs is rejected even if its
+    # lexical span count happened to tie.
     if content is not best_content:
-        _findings, _score, n_final = _findings_text(content, language)
-        if best_spans is not None and n_final > best_spans:
+        final_badness = _badness(content)
+        if best_badness is not None and final_badness > best_badness:
             logger.info(
-                "deslop_revise: final rewrite regressed (%d→%d spans); keeping best draft",
-                best_spans,
-                n_final,
+                "deslop_revise: final rewrite regressed (badness %.2f→%.2f); keeping best draft",
+                best_badness,
+                final_badness,
             )
             content = best_content
     return content

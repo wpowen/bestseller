@@ -32,6 +32,9 @@ from bestseller.services.judge_genre_context import (
 )
 from bestseller.services.judge_rubrics import get_judge_rubric
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.protagonist_decision_agent import (
+    render_outline_decision_agent_prompt,
+)
 from bestseller.services.methodology_bridge import get_fragment
 from bestseller.services.prompt_packs import PromptPack
 from bestseller.services.word_targets import (
@@ -139,7 +142,7 @@ def _render_chapter_judge_system_prompt(
         + genre_context.render_own_terms_block(language)
         + "\n"
         "# TASK\n"
-        "对本章打 16 个维度分（见 OUTPUT），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
+        "对本章打 17 个维度分（见 OUTPUT），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
         "对二元检查项逐项判定 PASS / FAIL（见 checklist 段）。\n"
         "\n"
         "# CONSTRAINTS · 评分纪律（必须严格执行）\n"
@@ -149,19 +152,23 @@ def _render_chapter_judge_system_prompt(
         "- 每个 issue 必须含 evidence 字段，引用正文原句（≥ 1 句，禁止用「全章」/「整体」占位）。\n"
         "- 上述 6 项故事合理性任一明显缺失 → 必判 blocking_issues（不能降为 audit）。\n"
         "- 出现现实常识硬伤 / 角色认知越界 / 物件规则无边界 / 与生成输入前提冲突 → 必判 blocking。\n"
+        "- 主角关键选择若同时劣于正常人基线与该角色基线，且正文没有改变信息、压力或选项成本，"
+        "只靠作者需要冲突发生 → 必判 blocking。\n"
+        + render_outline_decision_agent_prompt(language=language)
+        + "\n"
         "\n"
         "# THINKING（产出 JSON 前在脑内 5 步）\n"
         "1. 先读正文，标记你直觉上的「亮点段」和「卡顿段」。\n"
-        "2. 对照 16 个维度逐项内心打分。\n"
+        "2. 对照 17 个维度逐项内心打分。\n"
         "3. 检查 6 项故事合理性 + checklist 二元项，任一缺失立即升级 blocking。\n"
         "4. 检查 evidence：你的每个 issue 能引用原文 ≤ 30 字吗？不能引用 → 弃用。\n"
         "5. Reconcile：overall_score 是否与 blocking_issues 数量一致？（≥1 blocking → overall ≤ 0.75）\n"
         "\n"
-        "# OUTPUT FORMAT · 16 维度评分\n"
+        "# OUTPUT FORMAT · 17 维度评分\n"
         "返回严格 JSON，必含字段：\n"
         "- `pass`: bool\n"
         "- `overall_score`: 0.0-1.0\n"
-        "- `dimension_scores`: 含 16 项 0.0-1.0 评分（见 user 段维度列表）\n"
+        "- `dimension_scores`: 含 17 项 0.0-1.0 评分（见 user 段维度列表）\n"
         "- `binary_checklist`: 见 checklist 段 schema\n"
         "- `blocking_issues`: list[{code, severity, evidence(原文≤30字), required_fix}]\n"
         "- `audit_issues`: list[同 schema]\n"
@@ -398,6 +405,7 @@ def chapter_commercial_thresholds(
             "opening_pull": gd,
             "commercial_pull": gd,
             "readability": gd,
+            "decision_intelligence": max(gd, 0.84),
             "knowledge_boundary": gd,
             "real_world_plausibility": gd,
             "object_signal_logic": gd,
@@ -412,13 +420,16 @@ def chapter_commercial_thresholds(
         return overall_floor, {
             "hook_strength": 0.82 + bump,
             "continuity": 0.84 + bump,
+            "decision_intelligence": 0.84 + bump,
             "knowledge_boundary": 0.82 + bump,
             "real_world_plausibility": 0.80 + bump,
         }
     overall_floor = (
         _PREMIUM_GENERAL_FLOOR if premium else float(cal.get("general_floor", 0.80))
     )
-    return overall_floor, {}
+    return overall_floor, {
+        "decision_intelligence": 0.88 if premium else 0.84,
+    }
 
 
 # Writer-facing directives for each scored hard dimension. Single-sourced here so
@@ -432,6 +443,10 @@ _RANKING_DIMENSION_DIRECTIVES: dict[str, tuple[str, str]] = {
     "commercial_pull": (
         "商业拉力：本章必须兑现一个爽点 / 反转 / 强钩子，给读者明确的追更理由。",
         "Commercial pull: this chapter must deliver one payoff / reversal / strong hook.",
+    ),
+    "decision_intelligence": (
+        "决策智性：按第一人称比较正常人基线、角色基线和明摆着的安全方案；高风险选择必须有有限认知、强制压力、价值取舍、稀缺收益或可执行后手支撑。",
+        "Decision intelligence: compare the normal-person baseline, character baseline, and obvious safer options; high-risk choices require bounded knowledge, coercive pressure, values, rare upside, or a concrete contingency.",
     ),
     "readability": (
         "可读性：句子干净、节奏有呼吸（长短交错）、零 AI 套话；两人对话不看标签可分辨；"
@@ -654,7 +669,7 @@ async def judge_chapter_commercial_quality(
                 f"章节：第{chapter_number}章\n"
                 f"通过阈值：overall >= {min_overall:.2f}；关键维度："
                 f"{json.dumps(min_dimensions, ensure_ascii=False)}\n"
-                "评测维度：opening_pull, readability, commercial_pull, character_agency, "
+                "评测维度：opening_pull, readability, commercial_pull, character_agency, decision_intelligence, "
                 "character_voice_distinction, scene_execution, continuity, "
                 "methodology_compliance, hook_strength, knowledge_boundary, "
                 "real_world_plausibility, object_signal_logic, "

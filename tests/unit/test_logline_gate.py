@@ -1,10 +1,9 @@
-"""L1 unit tests for the strict front-of-cascade 一句话卖点 reader-perspective gate (v2).
+"""L1 unit tests for the strict front-of-cascade 一句话故事大纲 gate (v3).
 
-Guards: the 7-axis / two-tier decision logic (4 hard 命门 + 3 weighted 增益维), that the
-research-validated failure modes (无反差 irony / 得不偿失 motivation / 一眼望到头
-predictability) map to the right action + actionable fix, the weighted overall_floor catches
-"all-mediocre" loglines, config loads from the single source, disabled = no-op pass-through,
-and LLM failure is fail-open (lean-pass).
+Guards: story intelligence is a hard prerequisite for planning.  Besides click appeal, the
+gate must veto irrational protagonist behaviour, arbitrary/avoidable costs, broken causality,
+genre drift, and concepts that cannot sustain a serial.  Judge failure is fail-closed because
+"no supporting one-sentence outline" must never silently materialise a project.
 """
 
 from __future__ import annotations
@@ -35,13 +34,22 @@ def _scores(**overrides):
 
 
 @pytest.mark.unit
-def test_config_loads_seven_axes_and_strict_floors():
+def test_config_loads_story_intelligence_axes_and_hard_blocking():
     cfg = load_logline_gate_config()
     assert set(AXIS_KEYS) <= set(cfg["axes"].keys())
-    assert len(CORE_AXES) == 4 and len(SUPPORT_AXES) == 3
+    assert {
+        "protagonist_rationality",
+        "causal_coherence",
+        "cost_integrity",
+        "genre_fidelity",
+        "serial_sustainability",
+    } <= set(CORE_AXES)
+    assert len(SUPPORT_AXES) == 3
     # 严格：reject < pass，且 overall_floor 已设。
     assert cfg["reject_floor"] < cfg["pass_floor"]
     assert cfg["overall_floor"] >= 3.5
+    assert cfg["block_expansion"] is True
+    assert cfg["require_llm"] is True
 
 
 @pytest.mark.unit
@@ -72,6 +80,25 @@ def test_fatal_motivation_rejects_no_expand():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("axis", "expected_text"),
+    [
+        ("protagonist_rationality", "正常人"),
+        ("causal_coherence", "因果"),
+        ("cost_integrity", "代价"),
+        ("genre_fidelity", "题材"),
+        ("serial_sustainability", "长篇"),
+    ],
+)
+def test_story_intelligence_hard_failures_reject(axis: str, expected_text: str):
+    verdict = decide_logline_action(_scores(**{axis: 1.5}))
+
+    assert verdict.action is LoglineAction.REJECT
+    assert verdict.weakest_axis == axis
+    assert any(expected_text in text for text in (*verdict.reasons, *verdict.fix_directives))
+
+
+@pytest.mark.unit
 def test_predictable_arc_regenerates():
     v = decide_logline_action(_scores(unpredictability=3.0))
     assert v.action is LoglineAction.REGENERATE
@@ -91,7 +118,10 @@ def test_all_mediocre_caught_by_overall_floor():
     v = decide_logline_action(
         _scores(payoff_promise=2.8, differentiation=2.8, concrete_picture=2.8,
                 contrast_irony=3.5, click_hook=3.5,
-                motivation_credibility=3.5, unpredictability=3.5)
+                motivation_credibility=3.5, unpredictability=3.5,
+                protagonist_rationality=3.5, causal_coherence=3.5,
+                cost_integrity=3.5, genre_fidelity=3.5,
+                serial_sustainability=3.5)
     )
     assert v.action is LoglineAction.REGENERATE
     assert any("加权总分" in r for r in v.reasons)
@@ -104,11 +134,11 @@ def test_reject_precedence_over_regenerate():
 
 
 @pytest.mark.unit
-def test_missing_axis_is_lenient_not_fatal():
-    v = decide_logline_action({"contrast_irony": 4.0})  # rest missing → pass_floor
-    # 缺失补 pass_floor(3.5) → 核心不触发，但 overall == pass_floor < overall_floor(3.6) → 回炉
-    assert v.action in (LoglineAction.EXPAND, LoglineAction.REGENERATE)
-    assert v.action is not LoglineAction.REJECT
+def test_missing_hard_axis_fails_closed():
+    v = decide_logline_action({"contrast_irony": 4.0})
+
+    assert v.action is LoglineAction.REJECT
+    assert v.weakest_axis in set(CORE_AXES) - {"contrast_irony"}
 
 
 @pytest.mark.unit
@@ -119,14 +149,56 @@ def test_disabled_gate_is_noop_passthrough():
 
 
 @pytest.mark.unit
-def test_llm_failure_is_fail_open_lean_pass(monkeypatch):
+def test_llm_failure_is_fail_closed_before_planning(monkeypatch):
     async def _boom(*a, **k):
         raise RuntimeError("no LLM creds")
 
     monkeypatch.setattr(lg, "_run_reader_judge", _boom)
     v = asyncio.run(evaluate_logline_gate(None, None, logline="殡仪馆夜班工…", genre="都市"))
-    # fallback_score(3.4) → 核心不破，但 overall=3.4 < overall_floor(3.6) → REGENERATE（非误毙）。
-    assert v.action is not LoglineAction.REJECT and not v.llm_used
+    assert v.action is LoglineAction.REJECT
+    assert not v.llm_used
+    assert any("判官不可用" in reason for reason in v.reasons)
+
+
+@pytest.mark.unit
+def test_transient_judge_failure_retries_then_succeeds(monkeypatch):
+    # A rate-limited / transient judge failure is infrastructure, not a bad
+    # story. It must be retried, not fail-closed on the first hiccup (which
+    # killed viable books whenever a concurrent run saturated the model API).
+    calls = {"n": 0}
+
+    async def _flaky(*_a, **_k):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("rate limited")
+        return {key: 8.5 for key in AXIS_KEYS}
+
+    async def _no_sleep(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(lg, "_run_reader_judge", _flaky)
+    monkeypatch.setattr(lg.asyncio, "sleep", _no_sleep)
+    v = asyncio.run(
+        evaluate_logline_gate(None, None, logline="少年靠一门只能借别人死气的秘术在宗门里换命向上", genre="仙侠")
+    )
+    assert calls["n"] == 3
+    assert v.llm_used is True
+    assert v.action is LoglineAction.EXPAND
+
+
+@pytest.mark.unit
+def test_zero_fallback_response_is_not_misreported_as_real_judge(monkeypatch):
+    async def _fallback_payload(*_args, **_kwargs):
+        return {key: 0.0 for key in AXIS_KEYS}
+
+    monkeypatch.setattr(lg, "_run_reader_judge", _fallback_payload)
+    verdict = asyncio.run(
+        evaluate_logline_gate(None, None, logline="一个尚未被真实判官审查的故事核")
+    )
+
+    assert verdict.action is LoglineAction.REJECT
+    assert verdict.llm_used is False
+    assert verdict.weakest_axis == "judge_availability"
 
 
 @pytest.mark.unit
@@ -143,9 +215,9 @@ def test_verdict_dict_is_json_serializable_for_persistence():
 
 
 @pytest.mark.unit
-def test_block_expansion_flag_loads_default_false():
+def test_block_expansion_flag_loads_default_true():
     cfg = load_logline_gate_config()
-    assert cfg["block_expansion"] is False  # 默认 advisory，不硬阻断
+    assert cfg["block_expansion"] is True
 
 
 @pytest.mark.unit
@@ -163,6 +235,9 @@ def test_real_llm_request_is_valid_and_content_parsed(monkeypatch):
         return types.SimpleNamespace(
             content='{"scores":{"contrast_irony":4.2,"click_hook":4.0,'
             '"motivation_credibility":4.1,"unpredictability":4.0,'
+            '"protagonist_rationality":4.2,"causal_coherence":4.1,'
+            '"cost_integrity":4.0,"genre_fidelity":4.3,'
+            '"serial_sustainability":4.0,'
             '"payoff_promise":4.0,"differentiation":4.0,"concrete_picture":4.0}}',
             llm_run_id=None,
         )

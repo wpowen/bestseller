@@ -2681,17 +2681,45 @@ async def _enforce_qimao_opening_gate_after_chapter(
 
     if attempt_count >= max_attempts:
         error_message = _qimao_opening_gate_error_message(report_payload)
-        project.status = ProjectStatus.PAUSED.value
+        _qimao_hard_block = bool(
+            getattr(settings.pipeline, "qimao_opening_gate_block_on_failure", False)
+        )
+        # Exhaustion is a chapter-level human-review flag in the default soft
+        # mode, not a project-wide structural pause.  The old code stamped
+        # ``production_paused`` unconditionally and then claimed it would
+        # continue; worker startup interpreted that stale flag as a repair
+        # gate and repeatedly re-queued the same self-heal job for hours.
+        project.status = (
+            ProjectStatus.PAUSED.value
+            if _qimao_hard_block
+            else ProjectStatus.WRITING.value
+        )
         chapter.status = ChapterStatus.REVISION.value
         chapter.production_state = "needs_human_review"
-        project.metadata_json = {
+        _qimao_metadata = {
             **(project.metadata_json or {}),
             "qimao_opening_gate_exhausted": True,
-            "production_paused": True,
-            "production_pause_reason": "qimao_opening_gate_exhausted",
-            "last_generation_gate_reason": "qimao_opening_gate_exhausted",
-            "last_generation_gate_error": error_message,
+            "last_qimao_opening_gate_error": error_message,
         }
+        if _qimao_hard_block:
+            _qimao_metadata.update(
+                {
+                    "production_paused": True,
+                    "production_pause_reason": "qimao_opening_gate_exhausted",
+                    "last_generation_gate_reason": "qimao_opening_gate_exhausted",
+                    "last_generation_gate_error": error_message,
+                }
+            )
+        else:
+            for _key in (
+                "production_paused",
+                "production_pause_reason",
+                "last_generation_gate_reason",
+                "last_generation_gate_error",
+                "generation_resume_blocked_until_repair_audit",
+            ):
+                _qimao_metadata.pop(_key, None)
+        project.metadata_json = _qimao_metadata
         workflow_run.metadata_json = {
             **(workflow_run.metadata_json or {}),
             "requires_human_review": True,
@@ -2714,7 +2742,7 @@ async def _enforce_qimao_opening_gate_after_chapter(
         # chapter marked needs_human_review, but the autonomous run continues to
         # the next chapter instead of dying. Only the legacy worker-retry mode
         # (qimao_opening_gate_block_on_failure=True) hard-aborts here.
-        if getattr(settings.pipeline, "qimao_opening_gate_block_on_failure", False):
+        if _qimao_hard_block:
             raise ValueError(error_message)
         return
 
@@ -4215,6 +4243,85 @@ async def _quarantine_scene_candidate(
         evidence={"pipeline": "scene", "reason": reason_code},
         workflow_run_id=workflow_run_id,
     )
+
+
+async def _promote_best_scoring_scene_draft_on_stall(
+    session: AsyncSession,
+    *,
+    scene: SceneCardModel,
+    current_draft: SceneDraftVersionModel,
+    current_quality: QualityScoreModel,
+) -> tuple[SceneDraftVersionModel, QualityScoreModel]:
+    """Ship the best-scoring attempt, not just the most recent one.
+
+    ``rewrite_scene_from_task`` always flips ``is_current`` to the newest
+    attempt with no comparison against prior attempts (see its ``UPDATE ...
+    is_current=False`` immediately before inserting the new draft). A rewrite
+    is not guaranteed to improve the score — that is precisely what the
+    stalled-rewrite detector above is watching for. When the bounded retry
+    loop exhausts its budget without a passing verdict, the draft that
+    happens to be ``is_current`` is whichever one was generated *last*, which
+    can be strictly worse (by score, or by introducing a fresh defect such as
+    a duplicated beat) than an earlier attempt in the same loop. Compare every
+    attempt's own quality score and promote whichever scored highest before
+    quarantining the rest, instead of silently shipping "most recent" as
+    "best". Returns the (draft, quality) pair that is now ``is_current`` so
+    callers can keep both in sync for downstream reporting.
+    """
+
+    # NOTE: ``QualityScoreModel.is_current`` is scoped to the *scene* (its
+    # unique index is on (target_type, target_id) where target_id is the
+    # scene, not the draft) — it marks the latest scene-level assessment, not
+    # "is this score still valid for the draft it was computed against". Do
+    # NOT filter on it here: every earlier attempt's score row still
+    # correctly records what that specific draft scored and remains valid
+    # historical evidence for this best-of-N comparison, even though it is
+    # no longer the scene's "current" evaluation.
+    rows = (
+        await session.execute(
+            select(SceneDraftVersionModel, QualityScoreModel)
+            .join(
+                QualityScoreModel,
+                QualityScoreModel.scene_draft_version_id == SceneDraftVersionModel.id,
+            )
+            .where(SceneDraftVersionModel.scene_card_id == scene.id)
+            .order_by(
+                QualityScoreModel.score_overall.desc(),
+                SceneDraftVersionModel.version_no.desc(),
+            )
+        )
+    ).all()
+    if not rows:
+        return current_draft, current_quality
+    best_draft, best_quality = rows[0]
+    if best_draft.id == current_draft.id:
+        return current_draft, current_quality
+
+    stale_current = await session.scalar(
+        select(SceneDraftVersionModel).where(
+            SceneDraftVersionModel.scene_card_id == scene.id,
+            SceneDraftVersionModel.is_current.is_(True),
+        )
+    )
+    if stale_current is not None:
+        stale_current.is_current = False
+        # ``uq_scene_draft_current`` is a partial unique index on
+        # (scene_card_id) WHERE is_current. Flushing the False update on its
+        # own row first, before flipping the winner to True, guarantees the
+        # two UPDATEs never race inside the same statement batch and collide
+        # on that constraint.
+        await session.flush()
+    best_draft.is_current = True
+    await session.flush()
+    logger.info(
+        "Scene %s stalled rewrite loop: promoting draft v%d (score=%.2f) over "
+        "most-recent attempt v%d — best-scoring attempt ships, not most-recent.",
+        scene.id,
+        best_draft.version_no,
+        float(best_quality.score_overall or 0.0),
+        current_draft.version_no,
+    )
+    return best_draft, best_quality
 
 
 async def _chapter_source_mode_is_promotable(
@@ -6051,7 +6158,6 @@ async def run_scene_pipeline(
                 project_slug,
                 chapter_number,
                 scene_number,
-                draft_version_id=draft.id,
                 workflow_run_id=workflow_run.id,
                 context_packet=shared_context,
             )
@@ -6297,10 +6403,17 @@ async def run_scene_pipeline(
             # ``_promote_reviewed_scene_draft``: control-flow unit doubles do
             # not carry a persisted exact-version score.
             if isinstance(quality, QualityScoreModel):
+                stalled_draft = draft
+                draft, quality = await _promote_best_scoring_scene_draft_on_stall(
+                    session,
+                    scene=scene,
+                    current_draft=draft,
+                    current_quality=quality,
+                )
                 await _quarantine_scene_candidate(
                     session,
                     project=project,
-                    draft=draft,
+                    draft=stalled_draft,
                     workflow_run_id=workflow_run.id,
                     reason_code=str(
                         (workflow_run.metadata_json or {}).get("scene_quality_debt_reason")
@@ -7555,6 +7668,39 @@ async def run_chapter_pipeline(
                 or _scene_loop_blocked
             )
         )
+
+        # Retention/persona findings are advisory for the default pipeline.
+        # A chapter can already have a clean chapter-quality report while the
+        # retention scorer leaves codes such as ENDING_HOOK_MISSING or
+        # PERSONA_WEIGHTED_SCORE_LOW on the chapter. Treating those codes as a
+        # hard _scene_loop_blocked signal re-runs every scene and can spend
+        # the entire book repeatedly rewriting the same chapter. Preserve the
+        # diagnostics and accept the best assembled draft on this pass; strict
+        # retention mode still keeps the old blocking behavior.
+        _retention_only_codes = _block_codes_are_retention_only(
+            _current_auto_repair_block_codes(chapter)
+        )
+        if (
+            _retention_only_codes
+            and getattr(chapter, "production_state", None) == "blocked"
+            and not _retention_gate_blocks_for_project(project, settings)
+        ):
+            chapter.production_state = "ok"
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "retention_accepted_on_stall": True,
+                "retention_acceptance_reason": "retention_only_findings",
+                "requires_machine_repair": False,
+                "auto_accepted": True,
+            }
+            _scene_loop_blocked = False
+            await session.flush()
+            logger.info(
+                "Chapter %d: accepted assembled draft with retention-only findings "
+                "without chapter-wide auto-repair",
+                chapter_number,
+            )
+
         if cross_run_budget_exhausted:
             logger.warning(
                 "Chapter %d: cross-run auto_repair budget exhausted "
@@ -7905,6 +8051,35 @@ async def run_chapter_pipeline(
                     chapter_number,
                     exc_info=True,
                 )
+
+            # The repair pass re-runs the retention scorer and may stamp the
+            # same advisory codes back onto the chapter. Release that
+            # retention-only block immediately; otherwise the while-loop
+            # starts another full scene rewrite even though the assembled
+            # chapter is usable and strict retention mode is disabled.
+            if (
+                _block_codes_are_retention_only(
+                    _current_auto_repair_block_codes(chapter)
+                )
+                and not _retention_gate_blocks_for_project(project, settings)
+            ):
+                chapter.production_state = "ok"
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "retention_accepted_on_stall": True,
+                    "retention_acceptance_reason": "retention_only_findings",
+                    "requires_machine_repair": False,
+                    "auto_accepted": True,
+                }
+                _scene_loop_blocked = False
+                await session.flush()
+                logger.info(
+                    "Chapter %d: stopping retention-only repair loop after one "
+                    "bounded pass",
+                    chapter_number,
+                )
+                break
+
             _emit_progress(
                 progress,
                 "chapter_auto_repair_completed",
@@ -11617,9 +11792,14 @@ async def run_autowrite_pipeline(
     """
     from bestseller.domain.enums import ProjectType
 
-    # ── Optional conception pre-pass (mirrors Web UI flow) ──
+    # Long-form creation may not bypass the ConceptContract/SerialityProof
+    # gate.  Short projects retain the historical optional conception path.
+    use_conception = bool(use_conception or project_payload.target_chapters >= 200)
+
+    # ── Conception pre-pass (mandatory for new long-form books) ──
     if use_conception:
         from bestseller.services.conception import run_conception_pipeline
+        from bestseller.services.genre_intent_contract import contract_from_payload
         from bestseller.services.story_enhancers import wants_wild_concept
 
         genre_key = (project_payload.metadata or {}).get("genre_canonical") or project_payload.genre or ""
@@ -11638,6 +11818,7 @@ async def run_autowrite_pipeline(
             user_hints=_conception_hints or None,
             genre=project_payload.genre,
             sub_genre=project_payload.sub_genre,
+            genre_intent_contract=contract_from_payload(project_payload.metadata or {}),
             progress=progress,
         )
         # Merge conception results into payload (same pattern as web/server.py)
@@ -11676,6 +11857,18 @@ async def run_autowrite_pipeline(
                 for event in conception_result.degradation_events
             ],
         })
+        _concept_contract = getattr(conception_result, "concept_contract", None)
+        if isinstance(_concept_contract, dict) and _concept_contract:
+            _meta["concept_contract_version"] = "2"
+            _meta["concept_contract"] = _concept_contract
+            _meta["hook_card"] = getattr(conception_result, "hook_card", {})
+            _meta["seriality_proof"] = getattr(
+                conception_result, "seriality_proof", {}
+            )
+            _meta["story_spine"] = _concept_contract.get(
+                "story_spine", conception_result.story_spine
+            )
+            _meta.pop("hook_spec", None)
         if conception_result.hook_spec:
             _meta["hook_spec"] = conception_result.hook_spec
         project_payload = project_payload.model_copy(update={"metadata": _meta})

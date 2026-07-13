@@ -65,10 +65,11 @@ def test_lean_keeps_core_execution_blocks_and_strips_reference_meta() -> None:
     # Reference-only meta-blocks removed
     assert "方法论 lineage" not in lean
     assert "scene_templates" not in lean
-    # Core writer execution blocks kept
+    # Planner-only framework blocks are stripped; the writer receives the
+    # scene contract rather than the generic theory layer.
     assert "蒸馏策略卡" in lean
-    assert "emotion_driven_core" in lean
-    assert "public_emotion_methodology" in lean
+    assert "emotion_driven_core" not in lean
+    assert "public_emotion_methodology" not in lean
     assert "写作原理执行约束：事件单元合同" in lean
     # Scene-critical content kept
     assert "本场镜头脚本" in lean
@@ -87,3 +88,21 @@ def test_lean_dedupes_verbatim_duplicate_sections() -> None:
     lean, _ = compact_user_prompt(raw, chapter_no=1, forbidden_terms_full=[], lean=True)
     assert lean.count("题材方法论·正文场景") == 1
     assert "场景目标" in lean
+
+
+def test_lean_caps_prompt_after_framework_stripping() -> None:
+    raw = (
+        "【写前约束清单】主角必须做出可见选择。\n"
+        + ("【章节位置档案】旧规划层信息，不进入正文。\n" + "旧档案。" * 500 + "\n")
+        # Large enough that the remainder still exceeds the 10k cap even
+        # after framework-noise stripping removes 【章节位置档案】 above —
+        # otherwise this test silently stops exercising capping at all.
+        + ("【场景目标】当前场景要拿到证据。\n" + "当前目标。" * 2500 + "\n")
+        + "【输出格式】只输出正文。\n"
+    )
+    compacted, report = compact_user_prompt(raw, chapter_no=1, forbidden_terms_full=[])
+    assert report.compacted_chars <= 10_000
+    assert "章节位置档案" not in compacted
+    assert "写作提示已压缩" in compacted
+    assert "写前约束清单" in compacted
+    assert "输出格式" in compacted

@@ -26,6 +26,25 @@ def _complete_chapter() -> dict[str, object]:
             "next_reader_desire": "读者想知道第七格为什么是林渊。",
             "tail_hook": "门外响起三短一长的敲门声。",
         },
+        "methodology_contract": {
+            "decision_protocol": {
+                "viewpoint_character": "林渊",
+                "decision_point": "十五分钟倒计时启动，王建业要求立刻开门。",
+                "known_facts": ["开门可能触发替认", "铜钱只能短暂压住门缝"],
+                "unknowns": ["门外敲门者身份", "镜中第七格为何空着"],
+                "immediate_goal": "先确认王建业是否已经认账，再决定是否开门。",
+                "options_considered": ["直接开门", "撤出楼道", "先用铜钱验门缝"],
+                "obvious_safe_option": "撤出楼道并报警封楼。",
+                "chosen_action": "先用铜钱验门缝，不让王建业继续说出认账词。",
+                "why_not_safer_option": "撤离无法终止已启动的十五分钟替认，且会把风险留给楼内住户。",
+                "personality_basis": "林渊谨慎、重证据，也不肯让无辜住户替自己承担风险。",
+                "risk_control": "铜钱只压三息；异常扩大就斩断门绳退到楼梯间。",
+                "expected_gain": "验证门缝血线是否代表替认已经开始。",
+                "failure_cost": "铜钱损毁，林渊可能被镜面记名。",
+                "new_information_or_pressure": "电梯血线倒流，倒计时只剩十五分钟。",
+                "first_person_reasoning": "我先验最小的一步；证据不对就退，不能为了快把整栋楼押上。",
+            }
+        },
         "scenes": [
             {
                 "scene_number": 1,
@@ -96,6 +115,24 @@ def test_complete_outline_passes() -> None:
 
     assert report.passed is True
     assert report.blocking_findings == ()
+
+
+def test_front_ten_outline_without_decision_context_is_advisory() -> None:
+    # Decision-protocol completeness is surfaced as ADVISORY, never a hard block:
+    # requiring the full first-person protocol on every front chapter killed
+    # legitimate short-form paths (fanqie fallback segments) and reproduced the
+    # "new gate kills good books" pattern. Decision intelligence is still enforced
+    # at the LLM outline/chapter judge layer (decision_intelligence >= 0.84).
+    chapter = _complete_chapter()
+    chapter["methodology_contract"] = {}
+
+    report = evaluate_planning_readiness(chapter_outlines=[chapter])
+
+    assert report.passed is True
+    assert "PROTAGONIST_DECISION_CONTEXT_INCOMPLETE" not in report.blocking_issue_codes
+    audit_codes = {finding.code for finding in report.audit_findings}
+    assert "PROTAGONIST_DECISION_CONTEXT_INCOMPLETE" in audit_codes
+    assert any("known_facts" in key for key in report.missing_context_keys)
 
 
 def test_planning_readiness_blocks_weak_phone_opening() -> None:
@@ -191,6 +228,7 @@ def test_evaluate_chapter_outline_batch_planning_readiness_accepts_dict_payload(
                     "required_payoff": "拿到第一笔可靠线索。",
                     "payoff": "拿到第一笔可靠线索。",
                 },
+                "methodology_contract": _complete_chapter()["methodology_contract"],
                 "scenes": [
                     {
                         "scene_number": 1,

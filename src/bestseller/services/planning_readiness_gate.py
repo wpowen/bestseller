@@ -10,6 +10,9 @@ from bestseller.domain.planning_readiness import (
     PlanningReadinessReport,
 )
 from bestseller.services.genre_neutral_signals import object_sensory_shortcut_hits
+from bestseller.services.protagonist_decision_agent import (
+    evaluate_protagonist_decision_protocol,
+)
 
 _VOLUME_REQUIRED_FIELDS = {
     "goal": ("goal", "volume_goal", "core_goal", "mission"),
@@ -112,6 +115,40 @@ def evaluate_planning_readiness(
                     )
                 )
 
+        methodology_contract = _mapping_or_empty(_get(chapter, "methodology_contract"))
+        decision_protocol = _mapping_or_empty(
+            methodology_contract.get("decision_protocol")
+            or _get(chapter, "decision_protocol")
+        )
+        # Decision-protocol completeness is surfaced as ADVISORY here, never as a
+        # deterministic hard block. Requiring the full first-person decision
+        # protocol on every front chapter falsely killed legitimate short-form
+        # paths (e.g. fanqie fallback segment outlines that carry no protocol) and
+        # reproduced the "new gate kills good books" pattern. Decision intelligence
+        # is still enforced at the LLM outline/chapter judge layer.
+        decision_report = evaluate_protagonist_decision_protocol(
+            decision_protocol,
+            chapter_number=chapter_no,
+            blocking=False,
+        )
+        for issue in (*decision_report.blocking_findings, *decision_report.audit_findings):
+            finding = PlanningReadinessFinding(
+                code=issue.code,
+                severity=issue.severity,
+                message=issue.message,
+                path=f"chapters[{chapter_index}].{issue.path}",
+                repair_hint=issue.repair_hint,
+                blocking=issue.blocking,
+            )
+            if issue.blocking:
+                blocking.append(finding)
+            else:
+                audit.append(finding)
+        for field_name in decision_report.missing_fields:
+            missing_keys.append(
+                f"chapters[{chapter_no}].methodology_contract.decision_protocol.{field_name}"
+            )
+
         if chapter_no <= front_chapter_limit:
             for canonical, aliases in _FRONT_REQUIRED_FIELDS.items():
                 if _first_present(chapter_source, aliases) is None:
@@ -125,7 +162,12 @@ def evaluate_planning_readiness(
                             repair_hint="前十章必须明确开篇压力、主角破绽、阶段爽点/兑现和章尾钩子。",
                         )
                     )
-            chapter_text = _stringify(chapter)
+            # Decision audit fields intentionally contain rejected options,
+            # unknowns and contingency language.  They are evidence for the
+            # decision judge, not planned story events; including them in
+            # plausibility keyword scans creates self-hits (for example an
+            # ``异常就撤退`` backup falsely legitimising an impossible delivery).
+            chapter_text = _stringify(_without_decision_protocol(chapter))
             opening_text = _stringify(
                 _first_present(chapter_source, ("opening_pressure", "opening_situation", "pressure"))
             )
@@ -317,6 +359,20 @@ def _get(source: Any, *names: str) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _without_decision_protocol(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json", by_alias=True)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _without_decision_protocol(item)
+            for key, item in value.items()
+            if str(key) != "decision_protocol"
+        }
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_without_decision_protocol(item) for item in value]
+    return value
 
 
 def _first_scene(chapter: Any) -> Any:

@@ -37,6 +37,11 @@ from bestseller.services.story_design_kernel import story_design_kernel_from_dic
 _KERNEL_VERSION = 1
 _BLOCKING_SEVERITIES = {"critical", "high"}
 _MIN_PASS_SCORE = 75
+_ALWAYS_BLOCK_CODES = {
+    "concept_contract_missing",
+    "concept_contract_invalid",
+    "seriality_volume_mapping_invalid",
+}
 
 _PROGRESSION_MARKERS = (
     "xianxia",
@@ -90,6 +95,7 @@ _REPAIR_ACTIONS = {
     "progression_engine_missing": "补齐可计量的升级体系、资源账、能力边界和代价。",
     "rule_engine_missing": "补齐规则系统：可见效果、破局路径、违反代价和反噬升级。",
     "relationship_engine_missing": "补齐关系代理：信任、亏欠、边界、选择和兑现窗口。",
+    "decision_policy_missing": "补齐主角决策策略：风险偏好、验证习惯、退路、禁行行为和高风险例外。",
     "story_design_kernel_missing": "补齐 StoryDesignKernel：故事形态、读者承诺、剧情树、变化向量和节拍表。",
     "story_design_contract_invalid": "修复 StoryDesignKernel 校验错误，确保主线、支线依赖、变化向量和节拍表完整。",
     "story_design_contract_thin": "扩展 StoryDesignKernel 的剧情树、变化向量和节拍表，避免只剩概念口号。",
@@ -108,6 +114,12 @@ _REPAIR_ACTIONS = {
     "bomb_contract_not_consumed": "补齐桌下炸弹：读者已知、角色盲区、触发条件、倒计时、严重后果和兑现窗口。",
     "antagonist_moral_contract_thin": "补齐反派的真实善行、隐秘欲望、裂缝、自我辩护和崩塌伤口。",
     "ending_texture_missing": "补齐 HE/BE 结局纹理：核心兑现、不可逆代价、主题回答、未来打开或美感回收。",
+    # concept_contract_missing / concept_contract_invalid are TERMINAL blocks:
+    # they cannot be auto-repaired inside planning (they require returning to the
+    # conception stage), so they carry a block reason (see _BLOCK_REASONS) but no
+    # planning-layer repair action. Their user guidance lives in the block-reason
+    # dictionaries below.
+    "seriality_volume_mapping_invalid": "重做卷规划：每卷映射阶段质变、故事单元变体和不可逆积累，覆盖全部长篇合同。",
 }
 
 _DIRECTIVE_TEMPLATES_ZH = {
@@ -120,6 +132,7 @@ _DIRECTIVE_TEMPLATES_ZH = {
     "progression_engine_missing": "升级/成长类章节必须写清资源账、能力边界、代价和阶段性增益，禁止无因升级或只靠口号推进。",
     "rule_engine_missing": "规则/悬疑类章节必须写清可见规则、线索路径、违规代价和破局验证，禁止只用氛围替代可解谜题。",
     "relationship_engine_missing": "关系驱动章节必须写清信任、亏欠、边界、选择和兑现窗口，禁止关系只当情绪装饰。",
+    "decision_policy_missing": "当前主角没有可执行决策策略；必须先明确风险偏好、验证/谈判/撤退习惯、禁行行为和高风险例外，再设计关键选择。",
     "story_design_contract_invalid": "当前剧情设计内核不可用，必须先修复主线、支线依赖、变化向量和节拍表，再进入章节规划。",
     "story_design_contract_thin": "当前剧情设计内核过薄，必须增加至少两条相互依赖的剧情线和明确章节状态变化。",
     "distilled_strategy_missing": "当前项目缺少蒸馏策略卡；规划只能使用泛化参考，必须先编译项目专属 DistilledStrategyCard。",
@@ -149,6 +162,7 @@ _DIRECTIVE_TEMPLATES_EN = {
     "progression_engine_missing": "Progression chapters must show resource accounting, ability limits, cost, and measurable stage gain.",
     "rule_engine_missing": "Rule/mystery chapters must show visible rules, clue path, violation cost, and verifiable solution logic.",
     "relationship_engine_missing": "Relationship-driven chapters must show trust, debt, boundary, choice, and payoff windows.",
+    "decision_policy_missing": "Define the protagonist's risk tolerance, verification/bargaining/retreat habits, forbidden behaviors, and high-risk exceptions before plotting major choices.",
     "story_design_contract_invalid": "Repair the StoryDesignKernel before planning chapters: mainline, dependencies, change vectors, and beat schedule must validate.",
     "story_design_contract_thin": "Expand the StoryDesignKernel with dependent plot lines and concrete chapter state changes.",
     "distilled_strategy_missing": "Compile a project-specific DistilledStrategyCard before final planning.",
@@ -166,6 +180,9 @@ _DIRECTIVE_TEMPLATES_EN = {
     "bomb_contract_not_consumed": "Add an executable bomb: reader knowledge, character blindspot, trigger, countdown, consequence, and payoff window.",
     "antagonist_moral_contract_thin": "Give the antagonist real good, hidden desire, cracks, rationalization, and collapse wound.",
     "ending_texture_missing": "Lock the ending texture: fulfillment/tragedy mode, irreversible cost, theme answer, and callback/future image.",
+    "concept_contract_missing": "Return to conception and approve one shared-lineage hook, seriality proof, and story spine.",
+    "concept_contract_invalid": "Repair ConceptContract lineage, target length, and child-contract integrity.",
+    "seriality_volume_mapping_invalid": "Rebuild volumes so every phase, renewable-unit variant, and accumulation track is mapped.",
 }
 
 
@@ -277,7 +294,13 @@ def decide_prewrite_readiness_gate(
     if block_on_failure:
         normalized_mode = "block"
 
-    if passed:
+    invariant_failures = tuple(
+        code for code in blocking_codes if code in _ALWAYS_BLOCK_CODES
+    )
+    if invariant_failures:
+        should_block = True
+        reason = "concept_contract_invariant_failed"
+    elif passed:
         should_block = False
         reason = "passed"
     elif normalized_mode in {"off", "warn"}:
@@ -762,6 +785,46 @@ def build_project_planning_kernel(
     commercial_brief = _as_mapping(metadata.get("commercial_brief"))
     writing_profile = _as_mapping(metadata.get("writing_profile"))
 
+    raw_contract = metadata.get("concept_contract")
+    contract_declared = bool(
+        _text(metadata.get("concept_contract_version")) == "2"
+        or metadata.get("concept_contract_required")
+        or isinstance(raw_contract, Mapping)
+    )
+    concept_contract: dict[str, object] = {
+        "declared": contract_declared,
+        "present": isinstance(raw_contract, Mapping),
+        "valid": not contract_declared,
+        "violations": [],
+        "capacity_report": {},
+        "volume_mapping_report": {},
+    }
+    if contract_declared:
+        from bestseller.services.concept_contract import validate_concept_contract
+        from bestseller.services.seriality_volume_gate import (
+            evaluate_seriality_volume_mapping,
+        )
+
+        target_for_contract = int(
+            _project_attr(project, "target_chapters", metadata.get("target_chapters") or 0)
+            or 0
+        )
+        contract_payload = _as_mapping(raw_contract)
+        violations = validate_concept_contract(
+            contract_payload or None,
+            target_chapters=target_for_contract,
+        )
+        volume_report = evaluate_seriality_volume_mapping(volumes, contract_payload or None)
+        proof = _as_mapping(contract_payload.get("seriality_proof"))
+        concept_contract = {
+            "declared": True,
+            "present": bool(contract_payload),
+            "valid": not violations,
+            "violations": violations,
+            "capacity_report": _as_mapping(proof.get("capacity_report")),
+            "volume_mapping_report": volume_report.to_dict(),
+        }
+
     project_slug = _text(_project_attr(project, "slug", metadata.get("project_slug")))
     ranking_profile_text = load_ranking_capability_profile_text(
         project_slug=project_slug,
@@ -877,6 +940,7 @@ def build_project_planning_kernel(
         "public_emotion": public_emotion,
         "compliance_boundary": compliance_boundary,
         "distilled_strategy": distilled_strategy,
+        "concept_contract": concept_contract,
     }
 
 
@@ -958,7 +1022,40 @@ def evaluate_prewrite_readiness(
     public_emotion = _as_mapping(kernel.get("public_emotion"))
     compliance_boundary = _as_mapping(kernel.get("compliance_boundary"))
     distilled_strategy = _as_mapping(kernel.get("distilled_strategy"))
+    concept_contract = _as_mapping(kernel.get("concept_contract"))
     target = int(target_chapters or kernel.get("target_chapters") or 0)
+
+    if concept_contract.get("declared"):
+        if not concept_contract.get("present"):
+            findings.append(
+                _finding(
+                    "concept_contract_missing",
+                    "critical",
+                    "A v2 project reached prewrite without its approved ConceptContract.",
+                    "concept_contract",
+                )
+            )
+        elif not concept_contract.get("valid"):
+            findings.append(
+                _finding(
+                    "concept_contract_invalid",
+                    "critical",
+                    "The approved hook, seriality proof, and story spine no longer share a valid lineage.",
+                    "concept_contract",
+                    evidence={"violations": _string_list(concept_contract.get("violations"))},
+                )
+            )
+        volume_mapping = _as_mapping(concept_contract.get("volume_mapping_report"))
+        if concept_contract.get("present") and not volume_mapping.get("passed"):
+            findings.append(
+                _finding(
+                    "seriality_volume_mapping_invalid",
+                    "critical",
+                    "The volume plan does not implement the approved long-form engine.",
+                    "concept_contract.volume_mapping_report",
+                    evidence={"blocking_codes": _string_list(volume_mapping.get("blocking_codes"))},
+                )
+            )
 
     if not (
         _string_list(benchmark.get("benchmark_works"))
@@ -1071,6 +1168,21 @@ def evaluate_prewrite_readiness(
                 "high",
                 "Relationship-driven genre lacks relationship agency scaffolding.",
                 "foundation.relationship_engine",
+            )
+        )
+
+    if not foundation.get("has_decision_policy"):
+        # Advisory, not a hard block: a missing decision policy is repaired by
+        # regenerating the cast, not by aborting the whole plan. Making it block
+        # killed legitimate plans (e.g. story-design-kernel-absent projects) and
+        # repeated the "new gate kills good books" pattern. Decision intelligence
+        # is still enforced by the LLM outline/chapter judges.
+        findings.append(
+            _finding(
+                "decision_policy_missing",
+                "warning",
+                "Protagonist lacks an explicit decision policy, so major choices cannot be audited against personality, knowledge, risk tolerance, or available exits.",
+                "foundation.protagonist.decision_policy",
             )
         )
 
@@ -1402,6 +1514,13 @@ def evaluate_prewrite_readiness(
         "long_arc_capacity": not any(
             finding.code == "long_arc_capacity_missing" for finding in findings
         ),
+        "concept_contract": bool(
+            not concept_contract.get("declared")
+            or (
+                concept_contract.get("valid")
+                and _as_mapping(concept_contract.get("volume_mapping_report")).get("passed")
+            )
+        ),
         "volume_differentiation": not any(
             finding.code
             in {"volume_differentiation_missing", "volume_primary_force_repeats"}
@@ -1410,6 +1529,7 @@ def evaluate_prewrite_readiness(
         "has_book_spec": bool(foundation.get("has_book_spec")),
         "has_world_spec": bool(foundation.get("has_world_spec")),
         "has_cast_spec": bool(foundation.get("has_cast_spec")),
+        "decision_policy": bool(foundation.get("has_decision_policy")),
         "story_design_kernel": bool(story_design.get("valid")),
         "story_state_driven_planning": bool(
             story_design.get("valid")

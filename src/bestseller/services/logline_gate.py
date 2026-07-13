@@ -1,13 +1,12 @@
-"""一句话卖点【前置·严格】闸门 —— 扩充世界观/角色/大纲之前的读者视角硬判别（v2）。
+"""一句话故事大纲【前置·严格】闸门（v3）。
 
 为什么需要它（用户原话精炼）：读者只看简介就决定点不点；卖点劝退，后续设定/正文再
 好也留不住人。所以必须**先**判「卖点是不是真卖点」，不过则不扩充。
 
-v2 把判官从 3 轴升级为【研究验证的 7 维 / 两档】，更严格地卡控（依据 Save the Cat
-官方 logline 法 + 番茄/起点爆款简介公式 + 框架方法论 ch3/ch4）：
-  * 4 条【核心命门】(hard veto，任一不达标即拦)：
-      反差张力(irony，Save the Cat 称其为钩子之核) / 点击钩子 / 动机可信(非得不偿失) /
-      不可预测(非一眼望到头)。
+v3 把「故事是否聪明」放在「文案是否想点」之前。核心命门除了反差、钩子、
+动机和不可预测，还包括：正常人/角色决策合理性、机制因果闭环、代价内生且不可轻易
+规避、忠于用户选择的题材，以及能否真正支撑长篇。没有设置代价不是缺点；为了「显得
+有深度」而强行扣命、失忆、掉寿命，才是应被拦下的缺点。
   * 3 条【增益维】(计入加权总分)：情绪承诺(读者一眼知道图什么爽) / 差异化(避红海套路) /
     具体可视(compelling mental picture)。
   * 裁决：任一核心命门 < reject_floor → REJECT(不予扩充)；任一核心命门 < pass_floor，
@@ -17,13 +16,13 @@ v2 把判官从 3 轴升级为【研究验证的 7 维 / 两档】，更严格�
 是【终检·编辑视角 9 维】——互补不冗余。``blurb_appeal_gate`` 只测词形/结构，测不出
 「得不偿失」「一眼望到头」「无反差」这些语义硬伤，故必须由本 LLM 读者判官补上。
 
-LLM 不可用时 **fail-open** 到中性 lean-pass（``fallback_score``），绝不在无判官时误毙
-（延续 [[scene-richness-gate-self-harm]] 的「严苛确定性地板是反模式」）。纯函数
+LLM 判官不可用时默认 **fail-closed**：不能证明一句话大纲成立，就不得建项和规划。纯函数
 :func:`decide_logline_action` 是可单测的核心。
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -32,14 +31,19 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-LOGLINE_GATE_JUDGE_TYPE = "logline_gate.v2"
+LOGLINE_GATE_JUDGE_TYPE = "logline_gate.v3"
 
-# 4 条核心命门（hard veto）—— 一个真卖点的非协商项。
+# 9 条核心命门（hard veto）—— 一个能支撑规划的故事核的非协商项。
 CORE_AXES: tuple[str, ...] = (
     "contrast_irony",          # 反差张力（Save the Cat: irony 是钩子之核；网文人设反差）
     "click_hook",              # 点击钩子（首句即未知/危机/悬念）
     "motivation_credibility",  # 动机可信（非得不偿失）
     "unpredictability",        # 不可预测（非一眼望到头）
+    "protagonist_rationality", # 正常人基线 + 角色基线，不为剧情降智
+    "causal_coherence",        # 身份/能力/行动/后果是同一条因果链
+    "cost_integrity",          # 代价内生、必要、不可被委托/记录/停用规避
+    "genre_fidelity",          # 不把用户选的题材偷换成热门套路
+    "serial_sustainability",   # 有可升级的问题链/对手反应，非机械重复扣代价
 )
 # 3 条增益维（计入加权总分，强烈建议但非一票否决）。
 SUPPORT_AXES: tuple[str, ...] = (
@@ -51,13 +55,18 @@ AXIS_KEYS: tuple[str, ...] = CORE_AXES + SUPPORT_AXES
 
 # 加权（和=100）。核心命门权重更高。
 _DEFAULT_WEIGHTS: dict[str, float] = {
-    "contrast_irony": 22.0,
-    "click_hook": 18.0,
-    "motivation_credibility": 16.0,
-    "unpredictability": 14.0,
-    "payoff_promise": 12.0,
-    "differentiation": 10.0,
-    "concrete_picture": 8.0,
+    "contrast_irony": 8.0,
+    "click_hook": 7.0,
+    "motivation_credibility": 10.0,
+    "unpredictability": 7.0,
+    "protagonist_rationality": 12.0,
+    "causal_coherence": 12.0,
+    "cost_integrity": 12.0,
+    "genre_fidelity": 10.0,
+    "serial_sustainability": 10.0,
+    "payoff_promise": 5.0,
+    "differentiation": 4.0,
+    "concrete_picture": 3.0,
 }
 
 
@@ -114,16 +123,90 @@ def load_logline_gate_config(cfg: dict[str, Any] | None = None) -> dict[str, Any
         axes = _builtin_axes()
     return {
         "enabled": bool(block.get("enabled", True)),
-        # 默认 advisory：闸门照常跑分+持久化+日志，但不硬阻断扩充（沿用 meets_bar
-        # block_below_bar=false 的反误毙立场）。真机校准 7 维 floor 后再置 true 硬卡。
-        "block_expansion": bool(block.get("block_expansion", False)),
-        "fallback_score": float(block.get("fallback_score", 3.7)),
+        "block_expansion": bool(block.get("block_expansion", True)),
+        "require_llm": bool(block.get("require_llm", True)),
+        "fallback_score": float(block.get("fallback_score", 0.0)),
         "reject_floor": float(block.get("reject_floor", 2.5)),
         "pass_floor": float(block.get("pass_floor", 3.5)),
         "overall_floor": float(block.get("overall_floor", 3.6)),
         "max_regen": int(block.get("max_regen", 3)),
         "axes": axes,
     }
+
+
+def verdict_from_approved_concept_contract(
+    contract: dict[str, Any] | None,
+    *,
+    target_chapters: int,
+) -> LoglineGateVerdict | None:
+    """Reuse the stricter tournament verdict instead of judging the same hook twice.
+
+    This is intentionally not a fallback score.  It only returns EXPAND when the
+    unified contract is structurally valid and contains complete hook and
+    seriality judge evidence that still clears the current tournament floors.
+    Missing, stale, or sub-floor evidence returns ``None`` so the independent
+    logline judge remains fail-closed.
+    """
+
+    if not isinstance(contract, dict) or not contract:
+        return None
+    try:
+        from bestseller.services.concept_contract import validate_concept_contract
+        from bestseller.services.concept_tournament import load_concept_tournament_config
+
+        if validate_concept_contract(contract, target_chapters=target_chapters):
+            return None
+        evidence = contract.get("quality_evidence")
+        if not isinstance(evidence, dict) or not evidence.get("approved"):
+            return None
+        hook = evidence.get("hook_judge")
+        serial = evidence.get("seriality_judge")
+        if not isinstance(hook, dict):
+            return None
+        cfg = load_concept_tournament_config()
+        hook_floors = cfg.get("judge_hard_floors") or {}
+        required_hook = {
+            "freshness": (">=", float(hook_floors.get("freshness", 6.0))),
+            "click": (">=", float(hook_floors.get("click", 7.0))),
+            "predictable": ("<=", float(hook_floors.get("predictable_max", 6.0))),
+            "character_logic": (">=", float(hook_floors.get("character_logic", 6.0))),
+            "mechanism_causality": (
+                ">=", float(hook_floors.get("mechanism_causality", 6.0))
+            ),
+            "genre_fidelity": (">=", float(hook_floors.get("genre_fidelity", 7.0))),
+            "plain_language": (">=", float(hook_floors.get("plain_language", 7.0))),
+            "story_motion": (">=", float(hook_floors.get("story_motion", 7.0))),
+        }
+        for axis, (operator, floor) in required_hook.items():
+            value = float(hook.get(axis))
+            if (operator == ">=" and value < floor) or (operator == "<=" and value > floor):
+                return None
+        if target_chapters >= 200:
+            if not isinstance(serial, dict):
+                return None
+            serial_floors = cfg.get("seriality_hard_floors") or {}
+            for axis in (
+                "renewability",
+                "escalation",
+                "anti_reset",
+                "coherence",
+                "promise_survival",
+                "unit_density",
+            ):
+                if float(serial.get(axis)) < float(serial_floors.get(axis, 7.0)):
+                    return None
+    except (TypeError, ValueError, KeyError):
+        return None
+
+    scores = {key: 4.0 for key in AXIS_KEYS}
+    return LoglineGateVerdict(
+        action=LoglineAction.EXPAND,
+        scores=scores,
+        overall=4.0,
+        reasons=("已复用同一冠军的钩子八轴与长篇六轴真实裁判证据。",),
+        llm_used=True,
+        weakest_axis="concept_contract_evidence",
+    )
 
 
 def _builtin_axes() -> dict[str, dict[str, Any]]:
@@ -134,6 +217,11 @@ def _builtin_axes() -> dict[str, dict[str, Any]]:
         "motivation_credibility": "动机可信", "unpredictability": "不可预测",
         "payoff_promise": "情绪承诺", "differentiation": "差异化",
         "concrete_picture": "具体可视",
+        "protagonist_rationality": "主角决策智力",
+        "causal_coherence": "因果闭环",
+        "cost_integrity": "代价完整性",
+        "genre_fidelity": "题材忠实度",
+        "serial_sustainability": "长篇支撑力",
     }
     return {k: {"label": labels[k], "weight": _DEFAULT_WEIGHTS[k]} for k in AXIS_KEYS}
 
@@ -163,7 +251,7 @@ def _weighted_overall(scores: dict[str, float], cfg: dict[str, Any]) -> float:
 def decide_logline_action(
     scores: dict[str, float], cfg: dict[str, Any] | None = None
 ) -> LoglineGateVerdict:
-    """纯函数：给定 7 维分数 → 裁决 EXPAND / REGENERATE / REJECT（严格）。
+    """纯函数：给定 12 维分数 → 裁决 EXPAND / REGENERATE / REJECT（严格）。
 
     规则（取最严）：
       * 某【核心命门】< reject_floor → REJECT（根本性硬伤，不予扩充）
@@ -181,7 +269,8 @@ def decide_logline_action(
     action = LoglineAction.EXPAND
     weakest_key: str | None = None
     weakest_val = 5.1
-    full = {k: float(scores.get(k, pass_floor)) for k in AXIS_KEYS}  # 缺失=中性放行
+    # 判官漏掉任何维度都不能被当成“默认合格”，尤其不能漏审人物理性和因果。
+    full = {k: float(scores.get(k, 0.0)) for k in AXIS_KEYS}
 
     # 核心命门：逐维硬卡（reject / regen）。
     for key in CORE_AXES:
@@ -248,6 +337,26 @@ _FIX_DIRECTIVES: dict[str, str] = {
         "把抽象设定换成具体可视的人/事/画面(如「殡仪馆第七具遗体睁眼」)，让读者脑中能成像；"
         "删形容词堆砌。"
     ),
+    "protagonist_rationality": (
+        "用第一人称重做决策：先列正常人会尝试的核验、求助、停止、撤退、"
+        "委托、记录和后手；若主角不选，必须在设定中证明这些选项为何更贵或无效。"
+    ),
+    "causal_coherence": (
+        "删掉拼贴的职业名词和随机奇观，让主角身份必然导致他能发现问题，"
+        "他的行动必然引发对手反制，后果从行动本身长出来。"
+    ),
+    "cost_integrity": (
+        "代价不是必选槽位；若不能从能力/行动的因果中必然推导，直接删掉。"
+        "禁止随机失忆、扣命、掉寿命、资源债这类可被停用/代劳/记录轻易规避的系统收税。"
+    ),
+    "genre_fidelity": (
+        "回到用户选定的题材与子题材；职业、冲突、对手和解决方式都必须属于该题材，"
+        "不得因为点击套路把民俗偷换成都市异能、把现实偷换成系统爽文。"
+    ),
+    "serial_sustainability": (
+        "说清长篇中什么在升级：问题链、证据链、对手反应或主角能力边界必须产生"
+        "新决策；禁止只靠「再失忆一个人/再扣一点命」的机械重复。"
+    ),
 }
 
 
@@ -263,6 +372,11 @@ _AXIS_HINT: dict[str, str] = {
     "payoff_promise": "说不清读者图什么情绪满足，卖点是「文笔好/世界观宏大」这类非承诺",
     "differentiation": "命中该题材红海套路、与头部高度雷同",
     "concrete_picture": "抽象设定罗列、形容词堆砌，读者脑中没有画面",
+    "protagonist_rationality": "正常人有更低成本的核验/求助/停止/委托/撤退选项，主角却只为让剧情发生而冒险",
+    "causal_coherence": "主角身份、核心机制、行动和后果是概念拼贴，没有同一条因果链",
+    "cost_integrity": "代价是随机系统收税，与行动无因果，或能被停用/代劳/记录轻易规避",
+    "genre_fidelity": "一句话的主冲突已偏离用户选定题材，被热门异能/打脸/系统套路偷换",
+    "serial_sustainability": "除了重复触发能力和扣代价外没有新决策、新对手反应或递进问题，撑不起长篇",
 }
 
 
@@ -285,8 +399,17 @@ def _build_reader_judge_system_prompt(cfg: dict[str, Any]) -> str:
             )
     rubric = "\n".join(lines)
     return (
-        "你不是和善的编辑，你是【在书城刷简介、3 秒就划走的挑剔读者】与签约主编的合体。"
-        "只凭这一句话卖点，毒辣判断它是不是【真卖点】——能不能让你【必点】。\n"
+        "你是【故事总编+敌对性理性审计员+目标读者】。你的第一任务不是给文案找优点，"
+        "而是阻止一句包装漂亮、底层愚蠢的设定进入书籍规划。\n"
+        "审查时先做三件事：\n"
+        "1. 用第一人称站进主角：正常人会不会先核验、求助、停止、委托、记录、撤退或留后手？"
+        "若这些低成本方案能破局，主角仍冒险就是为剧情降智。\n"
+        "2. 做因果审计：身份为何让他发现问题，行动为何会引发该后果？代价不是必须有。"
+        "随机失忆、扣命、掉寿命、资源债等若不是行动的必然后果，或可以靠不用/代劳/记录规避，"
+        "cost_integrity 最高 1 分。\n"
+        "3. 做题材与长篇审计：不得把民俗偷换成都市异能、把现实偷换成系统爽文；"
+        "长篇必须靠问题、对手、证据和选择升级，不是重复扣代价。\n"
+        "只有所有核心命门都成立，才能再评点击力。\n"
         "真卖点的硬指标（Save the Cat 官方 logline 法 + 番茄/起点爆款简介公式）：\n"
         "① 反差/反讽(irony)是钩子之核——必须有强反差/反常识/期待违背；四平八稳=废。\n"
         "② 首句即抛未知/危机，不是背景设定铺陈。\n"
@@ -299,10 +422,13 @@ def _build_reader_judge_system_prompt(cfg: dict[str, Any]) -> str:
         "# 评分锚点（毒辣，防虚高）\n"
         "- 5：对标该题材头部，一句话就让人【必点】。4：被钩住、想点。3：合格但平庸，会划走。\n"
         "- 2：犹豫且大概率划走。0-1：直接划走(平淡/套路/动机假/无画面)。\n"
-        "特别严打两个致命伤：① 动机得不偿失到你不信主角会做；② 你一句话就能预判结局。\n"
+        "禁止因为句子通顺、有惨痛代价、有反转词就给高分。没有代价完全可以得 5 分；"
+        "乱塞一个代价则必须低分。\n"
         '只输出严格 JSON：{"scores":{"contrast_irony":n,"click_hook":n,'
-        '"motivation_credibility":n,"unpredictability":n,"payoff_promise":n,'
-        '"differentiation":n,"concrete_picture":n},"why":{...}}'
+        '"motivation_credibility":n,"unpredictability":n,"protagonist_rationality":n,'
+        '"causal_coherence":n,"cost_integrity":n,"genre_fidelity":n,'
+        '"serial_sustainability":n,"payoff_promise":n,"differentiation":n,'
+        '"concrete_picture":n},"why":{...}}'
     )
 
 
@@ -317,7 +443,7 @@ async def evaluate_logline_gate(
     judge_model_key: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> LoglineGateVerdict:
-    """读者视角评卖点 → 裁决是否放行扩充。永不抛错（LLM 失败 → fail-open lean-pass）。"""
+    """审查一句话故事大纲；判官失败时默认拒绝进入规划。"""
 
     gate = load_logline_gate_config(config)
     if not gate.get("enabled", True):
@@ -332,16 +458,42 @@ async def evaluate_logline_gate(
     llm_used = False
     text = (logline or premise or "").strip()
     if text:
-        try:
-            scores = await _run_reader_judge(
-                session, settings, text=text, genre=genre, sub_genre=sub_genre,
-                gate=gate, judge_model_key=judge_model_key, fallback=fallback,
-            )
-            llm_used = True
-        except Exception:
-            logger.warning("logline reader judge failed; fail-open lean-pass", exc_info=True)
-            scores = {k: fallback for k in AXIS_KEYS}
-            llm_used = False
+        # Judge UNAVAILABILITY (rate limit, timeout, transient API failure) is an
+        # infrastructure fault, not evidence that the story is bad.  Fail-closing
+        # a book on the first hiccup killed viable concepts whenever a concurrent
+        # run saturated the shared model API.  Retry the judge with backoff and
+        # only fail-closed once it is *persistently* unavailable.
+        max_judge_attempts = max(1, int(gate.get("judge_retry_attempts", 3)))
+        for attempt in range(1, max_judge_attempts + 1):
+            try:
+                scores = await _run_reader_judge(
+                    session, settings, text=text, premise=premise, genre=genre, sub_genre=sub_genre,
+                    gate=gate, judge_model_key=judge_model_key, fallback=fallback,
+                )
+                if not any(float(scores.get(key, 0.0)) > 0.0 for key in AXIS_KEYS):
+                    raise RuntimeError("logline judge returned only the configured zero fallback")
+                llm_used = True
+                break
+            except Exception:
+                logger.warning(
+                    "logline reader judge attempt %d/%d failed",
+                    attempt, max_judge_attempts, exc_info=True,
+                )
+                scores = {k: fallback for k in AXIS_KEYS}
+                llm_used = False
+                if attempt < max_judge_attempts:
+                    await asyncio.sleep(min(2.0 * attempt, 8.0))
+
+    if bool(gate.get("require_llm", True)) and not llm_used:
+        return LoglineGateVerdict(
+            action=LoglineAction.REJECT,
+            scores={k: 0.0 for k in AXIS_KEYS},
+            overall=0.0,
+            reasons=("一句话大纲判官不可用，无法证明该故事值得进入规划。",),
+            fix_directives=("恢复判官后重新生成和审查，不得以默认分放行。",),
+            llm_used=False,
+            weakest_axis="judge_availability",
+        )
 
     verdict = decide_logline_action(scores, gate)
     return LoglineGateVerdict(
@@ -360,6 +512,7 @@ async def _run_reader_judge(
     settings: Any,
     *,
     text: str,
+    premise: str,
     genre: str | None,
     sub_genre: str | None,
     gate: dict[str, Any],
@@ -368,8 +521,8 @@ async def _run_reader_judge(
 ) -> dict[str, float]:
     from bestseller.services.llm import LLMCompletionRequest, complete_text
 
-    # 中性 fallback JSON：LLM 截断/失败时 complete_text 回此值 → _parse_scores 得 lean-pass，
-    # 绝不无判官误毙（fallback_response 是 LLMCompletionRequest 的必填项）。
+    # complete_text 要求 fallback_response；这里使用全零并显式识别，避免把 fallback
+    # 伪装成真实判官结果和 llm_used=true。
     fallback_json = json.dumps(
         {"scores": {k: fallback for k in AXIS_KEYS}}, ensure_ascii=False
     )
@@ -382,17 +535,21 @@ async def _run_reader_judge(
             system_prompt=_build_reader_judge_system_prompt(gate),
             user_prompt=(
                 f"题材：{genre or '未注明'}{('/' + sub_genre) if sub_genre else ''}\n"
-                f"一句话卖点：\n{text[:800]}\n\n立即输出严格 JSON（7 个维度都要给分）。"
+                f"一句话故事大纲：\n{text[:800]}\n"
+                f"补充故事核（仅用于核对因果，不得用它替一句话圆谎）：\n{premise[:1200]}\n\n"
+                "立即输出严格 JSON，所有维度都要给分。"
             ),
             fallback_response=fallback_json,
             prompt_template="logline_gate",
-            prompt_version="v2",
+            prompt_version="v3",
             model_catalog_key=judge_model_key,
             metadata={"judge_scope": "logline_gate", "genre": str(genre or "")},
-            max_tokens_override=512,
+            max_tokens_override=900,
         ),
     )
     raw = getattr(completion, "content", None) or getattr(completion, "text", None) or ""
+    if raw.strip() == fallback_json:
+        raise RuntimeError("logline judge used fallback_response")
     return _parse_scores(raw, fallback)
 
 

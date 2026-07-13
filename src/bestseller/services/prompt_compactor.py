@@ -44,6 +44,25 @@ _LEAN_STRIP_MARKERS: tuple[str, ...] = (
     "### real_world_references",
     "## 风格参照 [reference_corpora",
     "# Reference corpus",
+    # These are planning / scoring layers. They are intentionally not writer
+    # instructions: in production they were injected repeatedly and carried
+    # stale names, genre-specific examples, and contradictory "rewrite"
+    # directives into the scene prompt.
+    "【emotion_choreography",
+    "【rhythm_engineering",
+    "【information_choreography",
+    "【章节位置档案",
+    "【平台档案",
+    "【chapter_signature_audit",
+    "【场景锚定",
+    "【emotion_driven_core",
+    "【public_emotion_core",
+    "【public_emotion_methodology",
+    "【品类重写方向",
+    "【五层思考契约",
+    "【本章张力目标",
+    "【地点复访约束",
+    "【多样性预算",
 )
 
 # A new top-level section begins at a line starting with 【, a markdown header
@@ -53,6 +72,13 @@ _SECTION_BOUNDARY = re.compile(r"(?=\n【)|(?=\n#{1,3} )|(?=\n=== )")
 # Only dedupe / strip substantial sections so short repeated tags (【语言】…) are
 # never touched.
 _MIN_SECTION_CHARS = 200
+
+# The writer context budget is deliberately much smaller than the planner's
+# context. A prompt that survives compaction at 25–30k chars is not compacted
+# in any useful sense and lets stale framework text compete with the scene
+# contract. Keep a bounded execution prompt while retaining the leading scene
+# contract and the trailing output/repair requirements.
+_DEFAULT_MAX_CHARS = 10_000
 
 
 def _split_sections(text: str) -> list[str]:
@@ -110,12 +136,98 @@ def compact_user_prompt(
     compacted = _wrap_retention_findings(compacted)
     compacted = _prune_placeholder_lines(compacted)
     compacted = _collapse_blank_lines(compacted)
+    compacted = _cap_prompt(compacted, max_chars=_DEFAULT_MAX_CHARS)
     report = CompactionReport(
         original_chars=len(original),
         compacted_chars=len(compacted),
         saved_tokens_estimate=max(0, _estimate_tokens(original) - _estimate_tokens(compacted)),
     )
     return compacted, report
+
+
+# High-value sections that must survive capping regardless of position. A blind
+# positional head/tail slice used to cut these out of the deep middle of a bloated
+# prompt — most damagingly the POV inner-voice authorization, which an A/B run had
+# proven closes the readability gap. Keep them whole even when over budget.
+_PROTECTED_SECTION_MARKERS: tuple[str, ...] = (
+    "故事脊柱",
+    "分层故事脊柱",
+    "黄金三章",
+    "POV 人物弧",
+    "POV人物弧",
+    "内在结构",
+    "内心",
+    "内在嗓音",
+    "写前验收契约",
+    "故事问题落地",
+    "章末收尾钩子",
+    "收尾钩子",
+    "冷读者定位",
+    "决策协议",
+    "主角决策",
+)
+
+_CAP_MARKER = "【写作提示已压缩】规划层冗余内容已移除；只服从本场正典、场景目标和输出契约。"
+
+
+def _section_is_protected(section: str) -> bool:
+    head = section.lstrip()[:80]
+    return any(marker in head for marker in _PROTECTED_SECTION_MARKERS)
+
+
+def _cap_prompt(text: str, *, max_chars: int) -> str:
+    """Cap the writer prompt without deleting high-value middle sections.
+
+    This is a safety boundary, not a quality rewrite. Rather than slicing an
+    arbitrary head/tail (which silently dropped POV inner-voice, story spine and
+    golden-three blocks that live in the middle), keep whole sections: the first
+    section (scene contract), the last section (output/acceptance contract), every
+    protected high-value section, then fill the remaining budget with the earliest
+    normal sections. Protected sections may push the result modestly over budget —
+    they are bounded and matter more than the char ceiling.
+    """
+
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+
+    sections = _split_sections(text)
+    if len(sections) <= 2:
+        # Unsectioned prompt: fall back to a head/tail slice that at least keeps
+        # the scene contract and the output contract.
+        available = max(0, max_chars - len(_CAP_MARKER) - 4)
+        head_chars = available * 7 // 10
+        tail_chars = available - head_chars
+        head = text[:head_chars].rstrip()
+        tail = text[-tail_chars:].lstrip()
+        return f"{head}\n\n{_CAP_MARKER}\n\n{tail}"
+
+    first, last = sections[0], sections[-1]
+    middle = sections[1:-1]
+    keep_ids = {id(first), id(last)}
+    used = len(first) + len(last) + len(_CAP_MARKER)
+    # Protected sections are mandatory.
+    for section in middle:
+        if _section_is_protected(section):
+            keep_ids.add(id(section))
+            used += len(section)
+    # Fill remaining budget with the earliest normal sections.
+    for section in middle:
+        if id(section) in keep_ids:
+            continue
+        if used + len(section) > max_chars:
+            continue
+        keep_ids.add(id(section))
+        used += len(section)
+
+    out: list[str] = []
+    elided = False
+    for section in sections:
+        if id(section) in keep_ids:
+            out.append(section)
+        elif not elided:
+            out.append(f"\n\n{_CAP_MARKER}\n\n")
+            elided = True
+    return "".join(out)
 
 
 def _dedupe_chapter_contract_digest_blocks(text: str) -> str:

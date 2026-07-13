@@ -188,6 +188,10 @@ _REPAIR_TARGETS = {
     "outline_batch_truncated": "chapter_outline_batch_shrink_and_retry",
     "outline_llm_commercial_judge_failed": "chapter_outline_commercial_repair",
     "volume_plan_thin": "volume_plan_repair",
+    # Decision policy lives in the cast; regenerate cast rather than aborting.
+    "decision_policy_missing": "cast_spec_function_repair",
+    # Long-form seriality mapping is repaired by regenerating the volume plan.
+    "seriality_volume_mapping_invalid": "volume_plan_repair",
 }
 
 

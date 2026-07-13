@@ -7,20 +7,105 @@
 # 本工序把同一套"N 候选→确定性筛→判官淘汰赛"上移到概念层，跑在构思多agent
 # 展开【之前】，冠军高概念注入 ctx.description 成为全部下游 prompt 的源头。
 # enabled=false → 完全跳过，构思行为与现状逐字节一致（no-op 契约）。
-# 预算 ≈ n_candidates 次生成 + 存活数×1 次判官 ≈ 7-8 次调用/书。
+# 预算 ≈ N次轻量种子 + N次钩子判官 + 前2名的承载扩展/判官 ≈ 12次调用/书。
 # ---------------------------------------------------------------------------
 
 enabled: true
-n_candidates: 4          # 3 路杂交 + 1 路纯题材对照组(防"强行猎奇总是赢")
+# 生产默认只走题材原生的故事发动机。旧的 current 模式会把全局异质维度池
+# （法医/殡葬/器官移植等）强制注入每一本书，造成跨题材污染；它只保留在
+# 测试配置中，不得作为新书生产默认值。
+candidate_prompt_mode: engine_first
+# engine_first 模式先设计题材原生的可持续故事发动机，再从冻结发动机压缩钩子。
+# 外部领域只有在用户明确选择允许跨题材的创意方向时才能作为实验输入。
+raw_idea_prompt_arm: author_pitch
+# 2026-07-13：全栈统一 MiniMax M3。真机验证仅 M3 能稳定完成结构化长输出；M2.7
+# 多次把 4500-8000 token 消耗在隐藏推理并返回空正文（决赛判官因此偶发全候选空判
+# → 误伤淘汰）。其他 catalog 条目分别遇到余额/权限/认证错误。生成、初筛、项目卡初审
+# 与最终决赛统一固定 M3；跨家族独立裁判待有可用的异家族强模型再恢复。
+generation_model_key: minimax-m3
+judge_model_key: minimax-m3
+raw_idea_judge_model_key: minimax-m3
+premise_judge_model_key: minimax-m3
+finalist_judge_model_key: minimax-m3
+# 某些独立裁判模型会先消耗隐藏推理 token；450 会 finish_reason=length 且正文为空。
+judge_max_tokens: 1800
+seriality_judge_max_tokens: 1800
+finalist_judge_max_tokens: 5000
+finalist_seriality_judge_max_tokens: 7000
+engine_judge_floor: 7.0   # 钩子文案生成前先审长篇机器，任一结构轴低于此线即淘汰
+finalist_pool_size: 4     # M3 初筛后只送少量候选给独立模型复核
+seriality_finalist_count: 3
+raw_idea_pool_multiplier: 2
+raw_idea_generation_batch_size: 1  # 真机盲比：先展开完整pitch再提炼，6条有1条硬通过；直接一句话为0/6
+raw_idea_batch_focuses:
+  - 人物关系、身份错位与私人欲望
+  - 题材原生职业、资源争夺与势力夹缝
+  - 成长道路、移动世界与建设目标
+premise_card_count: 4
+engine_kernel_max_tokens: 3500  # M3项目卡较长；给完整JSON与一次结构修复留出正文预算
+raw_idea_floor: 7.0
+raw_idea_progression_floor: 5.0  # 仅获 premise card 展开资格；不代表通过最终生产门禁
+raw_idea_rank_batch_size: 4  # M2.7 每批6项实测仍会打满4500 token截断
+raw_idea_rank_max_tokens: 8000  # M2.7实测4500仍可能全部耗在隐藏推理并返回空正文
+premise_judge_max_tokens: 8000  # 四张项目卡结构较长，必须为隐藏推理和JSON正文同时留预算
+n_candidates: 6          # 六路题材原生故事发动机候选
+control_candidates: 2    # 兼容旧配置；engine_first 不再从全局异质池抽样
 winner_min: 5.5          # 冠军综合分低于此线 → 不注入(宁可回落现状,不硬塞烂概念)
+judge_hard_floors:       # 任何单轴不达标直接出局，禁止用其他高分平均掉硬伤
+  freshness: 7.0
+  click: 7.5
+  predictable_max: 5.5
+  character_logic: 7.0
+  mechanism_causality: 7.0
+  genre_fidelity: 7.0
+  plain_language: 7.0
+  story_motion: 7.5
+seriality_hard_floors:
+  renewability: 7.5
+  escalation: 7.5
+  anti_reset: 7.0
+  coherence: 7.5
+  promise_survival: 7.5
+  unit_density: 7.5
 judge_weights:
-  freshness: 0.4         # 新颖度:与榜单参照集对撞,"没见过"程度
-  click: 0.4             # 想点欲:目标读者3秒想不想点进去
-  unpredictability: 0.2  # 不可预测性:能否自动补全后续(可补全=平庸)
+  freshness: 0.175       # 新颖度:与榜单参照集对撞,"没见过"程度
+  click: 0.2             # 想点欲:目标读者3秒想不想点进去
+  unpredictability: 0.1  # 不可预测性:能否自动补全后续(可补全=平庸)
+  character_logic: 0.125 # 第一人称决策可信度:靠降智/强塞代价推进则硬淘汰
+  mechanism_causality: 0.125 # 代价必须由行为后果内生,禁止随机折寿/失忆类外置惩罚
+  genre_fidelity: 0.075  # 杂交只能改造玩法,不能替换所选题材
+  plain_language: 0.075  # 一遍就懂,禁止术语堆砌和抽象解释
+  story_motion: 0.125    # 一句话自身必须出现持续行动与可反制阻力,不能靠后文圆
 
-# 杂交维度池：与题材"异质"的成熟领域。候选生成时随机抽取强制杂交——
-# "题材 × 异质维度"的交点上才有没人写过的位置(诡秘=克苏鲁×蒸汽朋克,
-# 道诡异仙=修仙×精神病学,十日终焉=规则怪谈×无限流)。
+# 确定性筛模式(基线=eliminate 命中即出局;wild_mode 覆盖为 penalize 罚分不淘汰)。
+# 基线不设这些键 → tournament 读默认 "eliminate" → 与现状逐字节一致。
+cliche_mode: eliminate   # eliminate|penalize:俗套命中→出局 / 罚分
+audit_mode: eliminate    # eliminate|penalize:最小故事种子审计失败→出局 / 罚分
+cliche_penalty: 1.5      # penalize 模式下俗套命中从 composite 扣的分
+audit_penalty: 1.0       # penalize 模式下审计失败从 composite 扣的分
+
+# 脑洞全开模式:story_enhancers.wild_concept=true 时由 conception 深合并覆盖基线。
+# 扩大搜索空间并允许非常规机制参加评审，但不降低最终质量门槛。生成可以更野，
+# 冠军验收不能更松，否则“脑洞全开”会成为低质量旁路。
+wild_mode:
+  n_candidates: 8        # 8路题材原生发动机，扩大搜索面但不放松质量门槛
+  winner_min: 5.5
+  cliche_mode: penalize
+  audit_mode: penalize
+  cliche_penalty: 1.5
+  audit_penalty: 1.0
+  judge_weights:
+    freshness: 0.25      # 更奖新颖
+    click: 0.2
+    unpredictability: 0.1
+    character_logic: 0.125
+    mechanism_causality: 0.1
+    genre_fidelity: 0.05
+    plain_language: 0.05
+    story_motion: 0.125
+
+# 历史杂交维度池：仅供隔离 A/B 实验和旧数据复盘。生产的 engine_first
+# 路由不读取它，避免法医/殡葬/器官移植等异质维度跨题材渗入新书。
 dimension_pool:
   - 供应链与物流调度
   - 保险与精算定价
@@ -57,6 +142,9 @@ cliche_seeds:
     - 开局获得神级天赋
     - 重生复仇虐渣
     - 隐藏身份扮猪吃虎
+    - 继承死人的债
+    - 替死人还债
+    - 把人情债变现成关系网
   xianxia:
     - 废脉其实是宝脉
     - 破宗门重建崛起

@@ -13,6 +13,9 @@ llm:
   writer_total_input_budget_tokens: 8000
   writer_prompt_safety_margin: 0.10
   # Cross-model blind judge remains shadow/advisory until G4 human calibration.
+  # Kept cross-family by design (it never gates production); when its configured
+  # models are unavailable the shadow calls fail harmlessly. The generating and
+  # gating models are standardized on MiniMax-M3 elsewhere.
   independent_judge_mode: shadow
   independent_judge_primary_model_key: deepseek-v4-flash
   independent_judge_secondary_model_key: nim-mistral-large-3

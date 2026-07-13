@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from bestseller.services.compliance_boundary_kernel import build_compliance_boundary_kernel_seed
 from bestseller.services.planning_kernel import (
     build_prewrite_repair_directives,
     build_project_planning_kernel,
@@ -12,7 +13,6 @@ from bestseller.services.planning_kernel import (
     evaluate_prewrite_readiness,
     persist_project_planning_kernel,
 )
-from bestseller.services.compliance_boundary_kernel import build_compliance_boundary_kernel_seed
 
 pytestmark = pytest.mark.unit
 
@@ -357,6 +357,142 @@ def test_prewrite_readiness_blocks_thin_generic_planning() -> None:
     assert "series_engine_missing" in codes
 
 
+def test_prewrite_readiness_warns_missing_protagonist_decision_policy() -> None:
+    # A missing decision policy is repaired by regenerating the cast, not by
+    # aborting the whole plan. It is surfaced as a warning (with a registered
+    # cast repair target) rather than a hard block, so it no longer kills
+    # otherwise-shippable plans.
+    project = _project(
+        story_facets={
+            "setting": "外门杂役峰与三月秘境",
+            "narrative_drive": "低位反制",
+            "trope_tags": ["凡人流", "资源账", "宗门生存"],
+        },
+        benchmark_works=["凡人修仙传结构对标"],
+    )
+    book_spec = _book_spec()
+    cast_spec = _cast_spec()
+    book_spec["protagonist"].pop("decision_policy")
+    cast_spec["protagonist"].pop("decision_policy")
+    kernel = build_project_planning_kernel(
+        project,
+        book_spec=book_spec,
+        world_spec=_world_spec(),
+        cast_spec=cast_spec,
+        volume_plan=_volume_plan(),
+    )
+
+    report = evaluate_prewrite_readiness(kernel)
+    blocking_codes = {finding.code for finding in report.blocking_findings}
+    warning_codes = {finding.code for finding in report.warnings}
+
+    assert "decision_policy_missing" not in blocking_codes
+    assert "decision_policy_missing" in warning_codes
+    assert report.capability_snapshot["decision_policy"] is False
+
+
+def test_prewrite_blocks_declared_v2_project_without_concept_contract() -> None:
+    project = _project(
+        concept_contract_version="2",
+        story_facets={"setting": "外门杂役峰", "narrative_drive": "低位反制"},
+        benchmark_works=["凡人修仙传结构对标"],
+    )
+    project.target_chapters = 500
+    kernel = build_project_planning_kernel(
+        project,
+        book_spec=_book_spec(),
+        world_spec=_world_spec(),
+        cast_spec=_cast_spec(),
+        volume_plan=_volume_plan(),
+    )
+
+    report = evaluate_prewrite_readiness(kernel)
+    codes = {finding.code for finding in report.blocking_findings}
+
+    assert "concept_contract_missing" in codes
+    assert report.capability_snapshot["concept_contract"] is False
+
+
+def test_prewrite_accepts_valid_contract_and_volume_mapping() -> None:
+    from bestseller.services.concept_contract import build_concept_contract
+
+    winner = {
+        "concept": "收殓师能继承枉死者未发生的未来；第一份未来要求他三天后阻止一场婚礼。",
+        "mechanism": "每卷处理一桩被盗余生案件，并改变未来资源的归属",
+            "hook_question": "死者为什么把未发生的未来留给他？",
+            "protagonist_identity": "能看见死者未来的收殓师林默",
+            "protagonist_private_desire": "查清母亲被偷走的余生",
+            "protagonist_flaw": "不愿把风险交给别人",
+            "core_abnormality": "入殓枉死者后会继承其未发生的未来",
+            "opening_crisis": "三天后的婚礼将发生一场本不该存在的谋杀",
+            "opponent_system": "会销毁异常死亡证据的明日会",
+            "decision_proof": "报警只得到结案记录，逃避会让死亡转移；进入婚礼才能验证并阻止",
+            "emotional_promise": "替死者讨回明天并逼活人面对选择",
+            "unit_frequency": "每周至少一桩异常死亡委托",
+        "unit_count_estimate": 180,
+        "unit_families": ["异常遗体案", "黑市交易案", "跨城设施争夺", "制度冲突案"],
+        "question_ladder": ["个案为何偏离", "谁在回收余生", "谁控制所有人的明天"],
+        "renewal_sources": ["异常死亡持续进入殡仪馆", "余生黑市持续制造交易"],
+        "accumulation_tracks": ["主角的余生权限", "黑市暴露层级"],
+            "phase_transitions": [
+                "第1-100章处理单案",
+                "第101-220章介入城市黑市",
+                "第221-360章跨城争夺",
+                "第361-500章未来制度战争",
+            ],
+        "opposing_ecology": ["余生掮客", "明日会", "命运监管者"],
+        "endgame_direction": "决定未来能否成为交易资源",
+    }
+    contract = build_concept_contract(
+        winner=winner,
+        story_spine={
+            "who": "收殓师林默", "wants": "查清余生被盗真相", "why_now": "婚礼三天后举行",
+            "against": "明日会", "question": "谁偷走了死者的余生？",
+        },
+        target_chapters=500,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+    project = _project(
+        concept_contract_version="2",
+        concept_contract=contract,
+        story_facets={"setting": "异常殡仪馆", "narrative_drive": "余生追查"},
+        benchmark_works=["长篇悬疑结构对标"],
+    )
+    project.target_chapters = 500
+    volumes = _volume_plan()
+    for index, (volume, phase) in enumerate(
+        zip(volumes, winner["phase_transitions"], strict=True), start=1
+    ):
+        volume["seriality_phase_id"] = f"phase-{index:02d}"
+        volume["seriality_phase_ref"] = phase
+        volume["unit_family_ref"] = winner["unit_families"][index - 1]
+        volume["renewable_unit_variant"] = f"第{index}阶段余生案件"
+        volume["accumulation_track_deltas"] = [
+            {
+                "track_ref": winner["accumulation_tracks"][0],
+                "delta": f"{winner['accumulation_tracks'][0]}：解锁阶段{index}的具体权限",
+            },
+            {
+                "track_ref": winner["accumulation_tracks"][1],
+                "delta": f"{winner['accumulation_tracks'][1]}：公开阶段{index}的具体组织节点",
+            },
+        ]
+
+    kernel = build_project_planning_kernel(
+        project,
+        book_spec=_book_spec(),
+        world_spec=_world_spec(),
+        cast_spec=_cast_spec(),
+        volume_plan=volumes,
+    )
+    report = evaluate_prewrite_readiness(kernel)
+
+    assert kernel["concept_contract"]["valid"] is True
+    assert kernel["concept_contract"]["volume_mapping_report"]["passed"] is True
+    assert report.capability_snapshot["concept_contract"] is True
+
+
 def test_prewrite_readiness_gate_warn_mode_records_without_blocking() -> None:
     kernel = build_project_planning_kernel(
         _project(),
@@ -373,6 +509,23 @@ def test_prewrite_readiness_gate_warn_mode_records_without_blocking() -> None:
     assert decision.reason == "warn_only"
     assert "series_engine_missing" in decision.critical_codes
     assert decision.to_dict()["mode"] == "warn"
+
+
+def test_concept_contract_invariant_blocks_even_in_warn_mode() -> None:
+    decision = decide_prewrite_readiness_gate(
+        {
+            "passed": False,
+            "score": 80,
+            "blocking_findings": [
+                {"code": "concept_contract_invalid", "severity": "critical"}
+            ],
+            "warnings": [],
+        },
+        mode="warn",
+    )
+
+    assert decision.should_block is True
+    assert decision.reason == "concept_contract_invariant_failed"
 
 
 def test_prewrite_readiness_gate_blocks_only_critical_in_staged_mode() -> None:

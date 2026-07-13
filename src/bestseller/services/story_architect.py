@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.facets import StoryFacets
+from bestseller.services.concept_lab import render_concept_lab_prompt_block
 from bestseller.services.facet_registry import (
     expand_legacy_preset_with_variation,
     get_dimensions_summary_for_ai,
@@ -24,6 +25,7 @@ from bestseller.services.facet_registry import (
     list_existing_facets,
     validate_story_facets,
 )
+from bestseller.services.genre_intent_contract import GenreIntentContract
 from bestseller.services.llm import (
     LLMCompletionRequest,
     LLMCompletionResult,
@@ -34,7 +36,6 @@ from bestseller.services.llm_closed_loop import (
     build_repair_user_prompt,
     findings_from_exception,
 )
-from bestseller.services.concept_lab import render_concept_lab_prompt_block
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ async def architect_story_facets(
     language: str = "zh-CN",
     genre_key: str | None = None,
     user_hints: dict[str, Any] | None = None,
+    genre_intent: GenreIntentContract | None = None,
 ) -> StoryFacets:
     """Generate a complete StoryFacets from minimal user input using AI.
 
@@ -94,7 +96,19 @@ async def architect_story_facets(
                 trend_data=trend_data,
                 dimensions_summary=dimensions_summary,
                 repair_findings=repair_findings,
+                genre_intent=genre_intent,
             )
+
+            # The architect may enrich surface facets, but it never owns the
+            # selected genre. Re-assert the immutable contract at the agent
+            # boundary so a model cannot turn xianxia into urban-cultivation.
+            if genre_intent is not None:
+                facets = facets.model_copy(
+                    update={
+                        "primary_genre": genre_intent.genre_key,
+                        "language": language,
+                    }
+                )
 
             # 3. Anti-repetition check
             if existing_facets:
@@ -159,7 +173,13 @@ async def architect_story_facets(
 
     # 5. Fallback to legacy expansion
     logger.warning("All Story Architect attempts failed, using legacy fallback")
-    return _fallback_facets(genre_key or primary_genre, language)
+    fallback = _fallback_facets(
+        genre_intent.genre_key if genre_intent is not None else (genre_key or primary_genre),
+        language,
+    )
+    if genre_intent is not None:
+        fallback = fallback.model_copy(update={"primary_genre": genre_intent.genre_key})
+    return fallback
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -178,6 +198,7 @@ async def _call_architect_llm(
     trend_data: dict[str, Any],
     dimensions_summary: str,
     repair_findings: list[LLMGateFinding] | None = None,
+    genre_intent: GenreIntentContract | None = None,
 ) -> StoryFacets:
     """Build prompt and call LLM to generate StoryFacets."""
 
@@ -189,6 +210,7 @@ async def _call_architect_llm(
         existing_facets=existing_facets,
         trend_data=trend_data,
         dimensions_summary=dimensions_summary,
+        genre_intent=genre_intent,
     )
     if repair_findings:
         user_prompt = build_repair_user_prompt(
@@ -208,6 +230,9 @@ async def _call_architect_llm(
         metadata={
             "agent": "story_architect",
             "genre": primary_genre,
+            "genre_intent_contract_hash": (
+                genre_intent.contract_hash() if genre_intent is not None else None
+            ),
             "semantic_repair_findings": [
                 finding.to_dict() for finding in (repair_findings or [])
             ],
@@ -358,12 +383,28 @@ def _build_user_prompt(
     existing_facets: list[StoryFacets],
     trend_data: dict[str, Any],
     dimensions_summary: str,
+    genre_intent: GenreIntentContract | None = None,
 ) -> str:
     """Build the user prompt with all context for the AI agent."""
     parts: list[str] = []
 
     # Section 1: User input
     parts.append(f"## User Input\n- primary_genre: {primary_genre}\n- language: {language}")
+    if genre_intent is not None:
+        tags = "、".join(genre_intent.tags) or "无"
+        parts.append(
+            "\n## Genre Intent Contract (AUTHORITATIVE — do not infer or replace)\n"
+            f"- genre_key: {genre_intent.genre_key}\n"
+            f"- genre: {genre_intent.genre_label}\n"
+            f"- selected_sub_genre: {genre_intent.sub_genre_label or '未指定'}\n"
+            f"- selected_tags: {tags}\n"
+            f"- prompt_pack: {genre_intent.prompt_pack_key}\n"
+            f"- allowed_modernity: {genre_intent.allowed_modernity}\n"
+            "Hard rule: you may only propose surface setting/trope variations. "
+            "Never change genre, selected sub-genre, prompt pack, or ontology. "
+            "Any sub_genres you output are advisory suggestions, not a replacement "
+            "for the selected taxonomy."
+        )
     if user_hints:
         concept_block = render_concept_lab_prompt_block(user_hints, language=language)
         if concept_block:

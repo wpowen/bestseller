@@ -497,6 +497,12 @@ _PROSE_LENGTH_RETRY_KEEP_CAP_TEMPLATES = frozenset(
         "chapter_rewrite",
         "chapter_rewrite_repair",
         "chapter_rewrite_quality_retrofit_repair",
+        # Reasoning-heavy structured critics can consume the whole cap before
+        # emitting JSON. Lowering the retry cap guarantees another empty body.
+        "concept_tournament_raw_idea_rank",
+        "concept_tournament_premise_judge",
+        "concept_tournament_finalist_judge",
+        "concept_tournament_finalist_seriality_judge",
     }
 )
 # Prefixes catch A/B / variant suffixes (e.g. scene_writer_lean, scene_writer_c0,

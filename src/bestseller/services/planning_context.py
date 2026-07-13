@@ -79,6 +79,11 @@ def summarize_book_spec(book_spec: dict[str, Any], *, language: str = "zh-CN") -
             f"Series engine: {_s(engine.get('core_loop'))}",
             f"Hook style: {_s(engine.get('hook_style'))} | Payoff rhythm: {_s(engine.get('payoff_rhythm'))}",
             f"Reader promise: {_s(engine.get('reader_promise'))}",
+            f"Renewable unit: {_s(engine.get('repeatable_story_unit'))}",
+            f"Permanent accumulation: {'; '.join(_list_s(engine.get('accumulation_tracks')))}",
+            f"Phase transformations: {' -> '.join(_list_s(engine.get('phase_transitions')))}",
+            f"Opposing ecology: {'; '.join(_list_s(engine.get('opposing_ecology')))}",
+            f"Endgame direction: {_s(engine.get('endgame_direction'))}",
         ]
     else:
         lines = [
@@ -94,6 +99,11 @@ def summarize_book_spec(book_spec: dict[str, Any], *, language: str = "zh-CN") -
             f"连载引擎：{_s(engine.get('core_loop'))}",
             f"钩子策略：{_s(engine.get('hook_style'))} | 爽点节奏：{_s(engine.get('payoff_rhythm'))}",
             f"读者承诺：{_s(engine.get('reader_promise'))}",
+            f"可再生故事单元：{_s(engine.get('repeatable_story_unit'))}",
+            f"永久积累：{'；'.join(_list_s(engine.get('accumulation_tracks')))}",
+            f"阶段质变：{'→'.join(_list_s(engine.get('phase_transitions')))}",
+            f"自主势力生态：{'；'.join(_list_s(engine.get('opposing_ecology')))}",
+            f"终局方向：{_s(engine.get('endgame_direction'))}",
         ]
 
     # ── key_characters: pass book_spec characters to downstream planning ──

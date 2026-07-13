@@ -116,6 +116,26 @@ def test_chapter_judge_prompt_has_no_detective_leak_for_other_genre():
     assert "真元" in sp  # this book's own term IS present
 
 
+def test_chapter_judge_runs_first_person_decision_intelligence_audit():
+    ctx = resolve_judge_genre_context(genre="仙侠", sub_genre="职业流")
+    sp = J._render_chapter_judge_system_prompt(
+        rubric=get_judge_rubric("chapter_commercial"),
+        reference_block="",
+        checklist_block="",
+        calibration_block="",
+        genre_context=ctx,
+    )
+
+    assert "decision_intelligence" in sp
+    assert "正常人基线" in sp
+    assert "角色基线" in sp
+    assert "PROTAGONIST_PLOT_SERVING_STUPIDITY" in sp
+    _, hard_dimensions = J.chapter_commercial_thresholds(1, None, None)
+    assert hard_dimensions["decision_intelligence"] == 0.84
+    _, later_dimensions = J.chapter_commercial_thresholds(80, None, None)
+    assert later_dimensions["decision_intelligence"] == 0.84
+
+
 # ---------------------------------------------------------------------------
 # F6 — outline + planning judges neutralize the commission structure
 # ---------------------------------------------------------------------------

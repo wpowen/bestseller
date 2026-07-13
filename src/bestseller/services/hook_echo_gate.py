@@ -69,7 +69,10 @@ _LOW_SIGNAL_HOOK_TOKENS = {
 # Cliffhanger end-of-chapter markers — when present in prev chapter's
 # tail, they should be ECHOED in current chapter's head.
 _CLIFFHANGER_TAIL_PHRASES = (
-    "门外", "身后", "脚步声", "钟声", "鼓声", "号角",
+    # A bare "门外/身后" is ordinary spatial narration, not a promise.  Keep
+    # only event-shaped tail markers here; domain-specific motifs are supplied
+    # through extra_domain_tokens by the caller.
+    "脚步声", "钟声", "鼓声", "号角",
     "破门而入", "推门", "敲门",
     "—未完—", "未完",
 )
@@ -133,6 +136,16 @@ _QUESTION_TAIL_RE = re.compile(r"[^\n。！？!?]{3,30}[？?]")
 _DIALOGUE_NAME_RE = re.compile(r"([一-鿿]{2,4})(?:[说道喊笑问答嗤哼])")
 _DIALOGUE_NAME_STOP_CHARS = frozenset(
     "的了一是在有和与也都就又还很更被把将着过出进来去上下一不我你他她它这那"
+)
+
+# Generic roles and sentence fragments frequently match the loose Chinese
+# dialogue-attribution regex (e.g. "妇人笑", "孩子说", "像要喊"). They are
+# not named hooks and must never become a chapter-to-chapter hard dependency.
+_DIALOGUE_NAME_STOPWORDS = frozenset(
+    {
+        "妇人", "孩子", "奶娘", "老人", "路人", "男人", "女人", "少年", "少女",
+        "声音", "脚步", "身后", "门外", "像要", "今天没", "这时", "那人", "有人",
+    }
 )
 
 # Direct quote name attribution (e.g. “……” X 说)
@@ -265,14 +278,16 @@ def extract_hook_tokens(
 
     # Named entities via dialogue attribution (high recall on Chinese names)
     for name_match in _DIALOGUE_NAME_RE.findall(text):
-        if _looks_like_dialogue_name(name_match):
+        if name_match not in _DIALOGUE_NAME_STOPWORDS and _looks_like_dialogue_name(name_match):
             _add(name_match)
 
     high_signal_tokens = [
         token for token in tokens if token not in _LOW_SIGNAL_HOOK_TOKENS
     ]
-    if high_signal_tokens:
-        tokens = high_signal_tokens
+    # If a chapter contains only generic suspense connectives, it has no
+    # extractable hook.  Retaining the original list when this is empty made
+    # low-signal words such as "却/忽然" become hard cross-chapter promises.
+    tokens = high_signal_tokens
 
     return tokens[:max_tokens]
 

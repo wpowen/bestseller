@@ -164,7 +164,7 @@ def render_story_enhancer_contract_block(
         parts.append(
             "・【基调锚点·硬底线】本书是爽文喜剧，喜剧/脑洞是贯穿全书的基础基调，"
             "不是某些章节才有的可选效果：每一章——哪怕该章主线极沉重、主推爽点/两难/"
-            "悬念——都必须保留至少一个'神仙在现代规则中报错'的喜剧或脑洞落点，让读者"
+            "悬念——都必须保留至少一个符合本题材世界规则的喜剧或脑洞落点，让读者"
             "全程保持愉悦。严禁整章只有沉重剧情而无喜剧落点；越往后主线越重，越要靠这条"
             "基调锚点把'虐'压成'爽中带笑'。"
             if not is_en
@@ -172,7 +172,7 @@ def render_story_enhancer_contract_block(
             "novel. Comedy/brainhole is the book's baseline tone running through "
             "EVERY chapter — not an optional per-chapter effect. Even chapters whose "
             "primary engine is hype/dilemma/suspense MUST still carry at least one "
-            "visible 'deity mis-firing in modern rules' comic or brainhole beat so "
+            "visible genre-native comic or brainhole beat so "
             "the reader stays delighted. Never let a whole chapter be heavy drama "
             "with no comedic landing."
         )
@@ -355,7 +355,7 @@ def story_enhancer_repair_directives(
 _BRAINHOLE_FIELD_LABEL_ZH: dict[str, str] = {
     "one_sentence_sell": "一句话卖点",
     "character_core_used": "调用的人设内核",
-    "modern_system": "现代规则/系统",
+    "modern_system": "题材原生规则/系统",
     "contrast_mechanism": "反差机制",
     "visible_comedy": "可见喜剧落点",
     "serious_underbelly": "严肃内核",

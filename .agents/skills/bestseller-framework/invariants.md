@@ -4,7 +4,7 @@
 
 ## Mode B（写作）红线
 
-- ❌ **每章字数不得低于本作品的 `platform_profile.pacing_preference.chapter_word_count` 下限**——七猫=2500，起点=3000，番茄=2000，未指定平台时默认 5000。低于即 `status: rework`；从场景 / 内心 / 对白扩写，不得以形容词灌水。
+- ❌ **每章字数不得低于本作品的 `platform_profile.pacing_preference.chapter_word_count` 下限**——七猫=2500，起点=3000，番茄=2000，未指定平台时默认 1800–2600–3500。低于即 `status: rework`；从场景 / 内心 / 对白扩写，不得以形容词灌水。
 - ❌ 小说正文**不得写入 `output/ai-generated/{slug}/` 以外的任何路径**。
 - ❌ 已有的 canon facts **不可修改**；只能用更高 `valid_from_chapter` 的 `supersedes` 条目覆盖。
 - ❌ 任何角色**不得知道**在后续章节才揭示的事（知识单调性）。

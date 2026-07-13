@@ -60,6 +60,25 @@ def test_fields_constant_complete() -> None:
     assert set(SPINE_FIELDS) == set(_GOOD)
 
 
+def test_layered_spine_uses_units_accumulation_and_phase_change() -> None:
+    layered = {
+        **_GOOD,
+        "schema_version": "story-spine.v2",
+        "core_reader_promise": "看一个不能说话的医生用诊断能力反制改写规则的人",
+        "long_term_desire": "夺回人对自身病历和命运的解释权",
+        "terminal_question": "规则究竟应该由谁解释？",
+        "unit_engine_ref": "每个医疗事件暴露一条被篡改的规则",
+        "phase_desire_ladder": ["救母", "清理医院", "追查规则制定者"],
+    }
+
+    block = render_story_spine_block(layered)
+
+    assert "每个故事单元" in block
+    assert "永久变化" in block
+    assert "阶段质变" in block
+    assert "全书唯一主线" not in block
+
+
 def test_finalize_prompt_requires_spine() -> None:
     from bestseller.services import conception
 

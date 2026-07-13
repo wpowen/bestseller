@@ -989,6 +989,9 @@ def build_book_listing_profile(
     metadata_logline = _clean_text(metadata.get("logline"))
     market_logline = _listing_logline(_get_nested(writing_profile, "market", "logline"))
     hook_logline = _listing_logline(_get_nested(metadata, "hook_spec", "one_liner"))
+    concept_hook_logline = _listing_logline(
+        _get_nested(metadata, "concept_contract", "hook_card", "one_liner")
+    ) or _listing_logline(_get_nested(metadata, "hook_card", "one_liner"))
     if (
         override_logline
         and premise_text
@@ -1015,13 +1018,21 @@ def build_book_listing_profile(
         )
     ):
         metadata_logline = ""
-    logline = (
-        override_logline
-        or metadata_logline
-        or market_logline
-        or hook_logline
-        or _listing_logline(_get_nested(writing_profile, "market", "reader_promise"))
-        or _listing_logline(premise_text)
+    logline_candidates = (
+        ("listing_override", override_logline),
+        ("metadata_logline", metadata_logline),
+        ("hook_card", concept_hook_logline),
+        ("market_logline", market_logline),
+        ("legacy_hook_spec", hook_logline),
+        (
+            "reader_promise",
+            _listing_logline(_get_nested(writing_profile, "market", "reader_promise")),
+        ),
+        ("premise", _listing_logline(premise_text)),
+    )
+    logline_source, logline = next(
+        ((source, value) for source, value in logline_candidates if value),
+        ("empty", ""),
     )
     tags = _supplement_listing_tags(
         tags,
@@ -1135,6 +1146,7 @@ def build_book_listing_profile(
         "primary_title": _clean_text(overrides.get("primary_title")) or project_title,
         "recommended_subtitle": _clean_text(overrides.get("recommended_subtitle")),
         "logline": logline,
+        "logline_source": logline_source,
         "channel": (
             _clean_text(overrides.get("channel")) or _clean_text(_get_value(project, "audience"))
         ),

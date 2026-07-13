@@ -86,10 +86,10 @@ def _base_story_effect_skills() -> tuple[StoryEffectSkillEntry, ...]:
             effect_type="novelty_contrast",
             description=(
                 "Generate high-concept persona-safe contrast by crossing a familiar "
-                "character card with a modern system and protagonist growth stage."
+                "character card with a genre-native mechanism/system and protagonist growth stage."
             ),
             source_modules=("brainhole_engine", "concept_lab", "anti_commonsense_hook"),
-            use_when=("opening hook", "persona contrast", "modern-system collision"),
+            use_when=("opening hook", "persona contrast", "mechanism collision"),
             avoid_when=(
                 "quiet aftermath",
                 "pure grief payoff",

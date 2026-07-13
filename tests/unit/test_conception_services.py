@@ -7,6 +7,8 @@ import pytest
 
 from bestseller.services import conception as conception_services
 from bestseller.services.concept_lab import build_concept_lab_catalog
+from bestseller.services.genre_intent_contract import contract_from_selection
+from bestseller.services.story_enhancers import StoryEnhancerSelection
 from bestseller.services.writing_presets import get_platform_preset
 
 pytestmark = pytest.mark.unit
@@ -80,6 +82,78 @@ def test_build_genre_context_synthesizes_custom_picker_key() -> None:
     # Even without threaded genre/sub_genre it derives from the canonical key.
     ctx2 = conception_services._build_genre_context("custom-xuanhuan", 120)
     assert ctx2["genre"] == "玄幻"
+
+
+def test_build_genre_context_preserves_user_subgenre_when_facets_suggest_another() -> None:
+    ctx = conception_services._build_genre_context(
+        "custom-xianxia",
+        120,
+        genre="仙侠",
+        sub_genre="仙侠",
+        story_facets={
+            "primary_genre": "custom-xianxia",
+            "language": "zh-CN",
+            "sub_genres": ["灵气复苏", "都市修仙"],
+            "setting": "现代都市",
+        },
+    )
+
+    assert ctx["sub_genre"] == "仙侠"
+    assert ctx["prompt_pack_key"] == "xianxia-upgrade-core"
+    assert ctx["story_facets"]["sub_genres"] == ["灵气复苏", "都市修仙"]
+
+
+def test_build_genre_context_exposes_contract_as_hard_authority() -> None:
+    contract = contract_from_selection(
+        {"channel": "male", "genre": "xianxia", "sub_genre": "xianxia"}
+    )
+    ctx = conception_services._build_genre_context(
+        "custom-xianxia",
+        120,
+        genre="仙侠",
+        sub_genre="仙侠",
+        genre_intent_contract=contract,
+        story_facets={
+            "primary_genre": "xianxia",
+            "language": "zh-CN",
+            "setting": "现代都市高楼",
+        },
+    )
+
+    assert ctx["genre"] == contract.genre_label
+    assert ctx["sub_genre"] == contract.sub_genre_label
+    assert ctx["prompt_pack_key"] == contract.prompt_pack_key
+    assert "禁止改写题材" in ctx["genre_intent_lock"]
+    assert "advisory surface suggestions only" in ctx["facet_description"]
+
+
+def test_creation_page_choices_are_scoped_and_only_explicit_enhancers_render() -> None:
+    contract = contract_from_selection(
+        {
+            "channel": "male",
+            "genre": "xianxia",
+            "sub_genre": "xianxia",
+            "tags": ["升级", "宗门"],
+        },
+        narrative_scale="epic",
+        tone_preference="hot",
+        enhancers=StoryEnhancerSelection(
+            brainhole=True,
+            effect_skills=("twist_reversal_engine",),
+        ),
+    )
+    ctx = conception_services._build_genre_context(
+        "custom-xianxia",
+        500,
+        genre="仙侠",
+        sub_genre="古典仙侠",
+        genre_intent_contract=contract,
+    )
+    block = conception_services._commercial_brief_prompt_block(ctx)
+    assert "建书页明确选择" in block
+    assert '"brainhole": true' in block
+    assert "twist_reversal_engine" in block
+    assert "不得把可选增强器变成新的题材" in block
 
 
 def test_synthesize_genre_preset_and_get_preset_fallback() -> None:
@@ -576,6 +650,39 @@ def test_finalize_and_polish_synopsis_truncation_uses_sentence_boundary() -> Non
     source = inspect.getsource(conception_services.run_conception_pipeline)
     assert "[:497]" not in source
     assert source.count("truncate_at_sentence(") >= 2
+
+
+def test_one_sentence_outline_gate_blocks_every_non_expand_verdict() -> None:
+    """REGENERATE is not permission to plan; only an explicit EXPAND may pass."""
+
+    import inspect
+
+    source = inspect.getsource(conception_services.run_conception_pipeline)
+    gate_pos = source.index("evaluate_logline_gate(")
+    return_pos = source.index("return ConceptionResult(")
+
+    assert gate_pos < return_pos
+    assert "_lg.action is not LoglineAction.EXPAND" in source
+    assert "verdict_from_approved_concept_contract" in source
+    assert "block_expansion" in source
+    assert "未进入书籍规划" in source
+    assert "Logline gate evaluation failed (non-fatal)" not in source
+    assert "一句话故事大纲硬门执行失败" in source
+
+
+def test_long_conception_initializes_optional_bundle_and_fails_closed_on_tournament_error() -> None:
+    """No manual concept bundle must not bypass or silently degrade the long-form gate."""
+
+    import inspect
+
+    source = inspect.getsource(conception_services.run_conception_pipeline)
+    init_pos = source.index("concept_bundle = None")
+    hints_pos = source.index("if user_hints:")
+
+    assert init_pos < hints_pos
+    assert "if chapter_count >= 200:" in source
+    assert "长篇概念淘汰赛执行失败" in source
+    assert '"concept_tournament_attempt_completed"' in source
 
 
 # ── T3 按书黑话词表：conception.py 从 writing_profile 派生 + 接线到两处评估调用 ──

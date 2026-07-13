@@ -137,6 +137,9 @@ async def test_provided_junk_hook_demotes_with_provided_reason():
     assert payload is not None
     assert payload.get("auto_demoted") is True
     assert payload["demote_reason"] == "provided_hook_rejected"
+    assert "hook_spec" not in project.metadata_json
+    assert project.metadata_json["rejected_hook_spec"]["mechanism_key"] == "generic_template"
+    assert project.metadata_json["hook_strength_gate"]["auto_demoted"] is True
 
 
 @pytest.mark.asyncio
@@ -156,3 +159,28 @@ async def test_gate_disabled_returns_none():
         _settings(enabled=False), project=_project(), premise=PREMISE
     )
     assert spec is None and payload is None
+
+
+@pytest.mark.asyncio
+async def test_v2_contract_skips_legacy_hook_gate_and_removes_stale_spec():
+    project = _project(
+        {
+            "concept_contract_version": "2",
+            "concept_contract": {"schema_version": "concept-contract.v2"},
+            "hook_spec": _good_hook_spec(),
+            "hook_candidates": [{"legacy": True}],
+        }
+    )
+
+    spec, payload = await _run_hook_strength_gate(
+        _settings(), project=project, premise=PREMISE
+    )
+
+    assert spec is None
+    assert payload == {
+        "skipped": True,
+        "reason": "approved_concept_contract_is_authoritative",
+        "stale_hook_removed": True,
+    }
+    assert "hook_spec" not in project.metadata_json
+    assert "hook_candidates" not in project.metadata_json

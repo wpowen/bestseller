@@ -665,6 +665,7 @@ def _find_object_signal_overuse(
         "这次",
         "代表",
         "说明",
+        "是",
         "只有",
         "而是",
         "边界",
@@ -696,7 +697,12 @@ def _find_lay_character_rule_knowledge_leak(
     # NOT one detective book's hardcoded cast (王建业/张建军/小雨/陈默/周雪) — that only
     # ever fired for that one book. The rule-term requirement below gates false
     # positives, so a loose speaker match is acceptable and now works for any book.
-    speaker_pattern = r"([一-鿿]{2,4})[^。！？\n]{0,12}[：:“”\"']"
+    # Only inspect an actual speech opener / speaker label.  Including closing
+    # quotes here made ordinary prose such as ``落在“灵印”二字后面`` look like
+    # a character named ``灵印`` speaking a rule term, which blocked otherwise
+    # valid xianxia openings.  A closing quote by itself is never evidence that
+    # a lay character uttered the term.
+    speaker_pattern = r"([一-鿿]{2,4})[^。！？\n]{0,12}(?:：|:|“|「|『|\"|')"
     # Rule terms are derived from the book's own quoted jargon — not a
     # hardcoded noun list from any single book's rule system.
     derived_terms = _derive_rule_terms(text)

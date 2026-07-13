@@ -49,19 +49,23 @@ judge_rubrics:
     rubric:
       opening_pull:
         threshold: 0.82
-        weight: 0.20
+        weight: 0.16
       commercial_pull:
         threshold: 0.82
-        weight: 0.25
+        weight: 0.20
       scene_execution:
         threshold: 0.80
-        weight: 0.20
+        weight: 0.16
       methodology_compliance:
         threshold: 0.80
-        weight: 0.20
+        weight: 0.15
       hook_strength:
         threshold: 0.80
-        weight: 0.15
+        weight: 0.13
+      decision_intelligence:
+        threshold: 0.84
+        weight: 0.20
+        description: 主角关键选择必须符合有限认知、人格、目标和趋利避害；若放弃显而易见的安全方案，正文必须给出足够的压力、收益、价值取舍或后手。
     output_schema:
       type: object
       required: [pass, overall_score, dimension_scores, blocking_issues]
@@ -72,19 +76,23 @@ judge_rubrics:
     rubric:
       opening_pull:
         threshold: 0.80
-        weight: 0.20
+        weight: 0.17
       front_ten_retention:
         threshold: 0.80
-        weight: 0.20
+        weight: 0.16
       scene_executability:
         threshold: 0.80
-        weight: 0.20
+        weight: 0.17
       methodology_compliance:
         threshold: 0.80
-        weight: 0.20
+        weight: 0.15
       logic_consistency:
         threshold: 0.82
+        weight: 0.15
+      decision_intelligence:
+        threshold: 0.84
         weight: 0.20
+        description: 主角关键选择必须符合有限认知、人格、目标和趋利避害，并解释为何不采用显而易见的低成本安全方案。
     output_schema:
       type: object
       required: [pass, overall_score, dimension_scores, blocking_issues]
@@ -95,16 +103,20 @@ judge_rubrics:
     rubric:
       concrete_conflict:
         threshold: 0.70
-        weight: 0.30
+        weight: 0.25
       hook_quality:
         threshold: 0.65
-        weight: 0.25
+        weight: 0.20
       scene_executability:
         threshold: 0.70
-        weight: 0.25
+        weight: 0.20
       protagonist_entry_logic:
         threshold: 0.70
+        weight: 0.15
+      decision_intelligence:
+        threshold: 0.80
         weight: 0.20
+        description: 对照正常人基线和角色基线，排除只为让冲突发生而制造的降智选择。
     output_schema:
       type: object
       required: [pass, overall_score, dimension_scores, blocking_issues]

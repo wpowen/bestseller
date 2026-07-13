@@ -57,6 +57,9 @@ from bestseller.services.prompt_packs import infer_default_prompt_pack_key
         ("升级流", None, "xianxia-upgrade-core"),
         ("仙侠", None, "xianxia-upgrade-core"),
         ("玄幻", None, "xianxia-upgrade-core"),
+        # Composite UI labels must honor the first (primary) genre segment;
+        # secondary 权谋/复仇 descriptors must not hijack the prompt ontology.
+        ("仙侠·潜伏复仇·炉房权谋", "仙侠", "xianxia-upgrade-core"),
         # Urban
         ("都市异能", None, "urban-power-reversal"),
         ("都市异能", "身份反转", "urban-power-reversal"),
@@ -230,3 +233,73 @@ def test_contamination_guard_keeps_same_family_sibling_pack() -> None:
         sub_genre="修仙",
     )
     assert profile2.market.prompt_pack_key in _CULTIVATION_PACKS
+
+
+def test_plain_xianxia_rejects_explicit_urban_cultivation_pack() -> None:
+    """A broad review category is not enough to prove prompt compatibility.
+
+    ``urban-cultivation-2.0`` deliberately injects APP/职场/现代生活 into the
+    story.  Letting it ride on a plain 仙侠 project changes the world's ontology,
+    even though both packs happen to use the action-progression review category.
+    """
+    from bestseller.services.writing_profile import resolve_writing_profile
+
+    profile = resolve_writing_profile(
+        {"market": {"prompt_pack_key": "urban-cultivation-2.0"}},
+        genre="仙侠",
+        sub_genre="仙侠",
+    )
+
+    assert profile.market.prompt_pack_key == "xianxia-upgrade-core"
+
+
+def test_project_contract_forces_pack_after_conception_profile_merge() -> None:
+    """The final ProjectCreate resolver must honor the frozen taxonomy pack even
+    when the conception LLM returned a foreign prompt-pack field."""
+    from bestseller.domain.project import ProjectCreate
+    from bestseller.services.writing_profile import resolve_project_create_writing_profile
+
+    payload = ProjectCreate(
+        slug="contract-pack-test",
+        title="契约包测试",
+        genre="仙侠",
+        sub_genre="仙侠",
+        target_word_count=200_000,
+        target_chapters=120,
+        metadata={
+            "genre_intent_contract": {
+                "schema_version": "genre-intent.v1",
+                "source": "user",
+                "genre_key": "xianxia",
+                "genre_label": "仙侠",
+                "sub_genre_key": "xianxia",
+                "sub_genre_label": "仙侠",
+                "tags": [],
+                "category_key": "xianxia",
+                "prompt_pack_key": "xianxia-upgrade-core",
+                "allowed_modernity": "genre_native",
+                "explicit_enhancers": {},
+            }
+        },
+        writing_profile={"market": {"prompt_pack_key": "suspense-mystery"}},
+    )
+
+    profile = resolve_project_create_writing_profile(payload)
+    assert profile.market.prompt_pack_key == "xianxia-upgrade-core"
+
+
+def test_planner_methodology_prefers_contract_pack_over_stale_profile() -> None:
+    from types import SimpleNamespace
+
+    from bestseller.services.planner_prompt_helpers import _prompt_pack_key
+
+    project = SimpleNamespace(
+        language="zh-CN",
+        genre="仙侠",
+        sub_genre="仙侠",
+        metadata_json={
+            "prompt_pack_key": "suspense-mystery",
+            "genre_intent_contract": {"prompt_pack_key": "xianxia-upgrade-core"},
+        },
+    )
+    assert _prompt_pack_key(project) == "xianxia-upgrade-core"

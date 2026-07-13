@@ -6303,7 +6303,7 @@ def build_scene_draft_prompts(
             "\n"
             "# CONSTRAINTS · Hard (violation → rewrite)\n"
             "- Word count: 90%-120% of target. Below or above = rejected.\n"
-            "- Character names: EXACT match to the Participants list. No renaming / abbreviation.\n"
+            "- Character names: use only the canonical name or an alias explicitly declared in the Participants list. Composite labels such as 'Name（化名：Alias）' are metadata, not a literal name that must be repeated in every sentence.\n"
             "- No named extras: never invent new personal names outside the Participants list; "
             "refer to unnamed walk-ons by role or appearance ('the duty clerk', 'the man at the gate').\n"
             "- Language: English only. Do not switch to Chinese.\n"
@@ -6370,7 +6370,7 @@ def build_scene_draft_prompts(
             "不要输出解释 / 列表 / 策划说明 / 元评论 / 章节标题。\n"
             "\n"
             "# CONSTRAINTS · 硬约束（违反即重写，不可绕过）\n"
-            "- 角色名：与「参与者」列表完全一致，一字不差，禁止改名 / 别名 / 缩写。\n"
+            "- 角色名：只能使用「参与者」列表中声明的规范名或化名。像「姓名（化名：别名）」这样的组合标签是元数据，不要求每句话原样重复；禁止引入未声明的新姓名。\n"
             "- 路人不取名：参与者列表之外不得出现任何新人名；无名路人/群众一律用职务、"
             "身份或外貌称谓（如「值班科员」「那名中年男人」「门口的保安」）。\n"
             "- 语言：仅输出中文，禁止切到英文。\n"
@@ -6397,6 +6397,21 @@ def build_scene_draft_prompts(
             f"## 写作画像\n{writing_profile_section}\n\n"
             f"## 商业网文硬约束\n{serial_guardrails}\n"
         )
+    # The scene pipeline is the normal production path.  Its generic craft
+    # rules used to mention “opening pressure” but did not carry the concrete
+    # cold-reader contract that the chapter-first path already had.  That made
+    # scene 1 start with attractive sensory close-ups while withholding who
+    # the protagonist is, what she wants, and what failure costs.  Inject the
+    # small, project-derived contract only for early scene 1; do not add a
+    # new genre or framework layer to later scenes.
+    if not is_en and int(getattr(chapter, "chapter_number", 0) or 0) <= 10 and int(
+        getattr(scene, "scene_number", 0) or 0
+    ) == 1:
+        _scene_opening_contract = _render_chapter_first_opening_contract(
+            chapter, [scene]
+        )
+        if _scene_opening_contract:
+            system_prompt += f"\n\n{_scene_opening_contract}\n"
     tone = (
         ", ".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
         if style_guide and style_guide.tone_keywords and is_en
@@ -8906,7 +8921,7 @@ def build_chapter_first_draft_prompts(
             "# CONSTRAINTS · 硬约束（违反即重写）\n"
             "- 场景标签：正文不能出现「第一场 / 第二场 / 场景 X / 转场」字样。\n"
             "- 策划泄漏：不许出现 entry_state / exit_state / contract / scene_type 等英文结构标签。\n"
-            "- 角色名：与「参与者」列表完全一致，不许改名 / 别名 / 缩写。\n"
+            "- 角色名：只能使用「参与者」列表中声明的规范名或化名；组合标签中的括号说明是元数据，不要求原样重复。禁止引入未声明的新姓名。\n"
             "- 输出格式：纯 Markdown 正文，不带 # 标题、不带 ``` 代码块。\n"
             "\n"
             "# OUTPUT · 章节交付硬指标\n"
@@ -8943,6 +8958,7 @@ def build_chapter_first_draft_prompts(
         hard_snapshot = {"value": str(raw_hard_snapshot)}
     generation_input_block = ""
     acceptance_contract_block = ""
+    protagonist_decision_block = ""
     try:
         from bestseller.services.chapter_generation_input_builder import (
             build_chapter_generation_input_bundle,
@@ -8962,6 +8978,25 @@ def build_chapter_first_draft_prompts(
         acceptance_contract_block = _compact_json_block(
             generation_input_bundle.acceptance_contract,
             max_chars=2500,
+        )
+        from bestseller.services.protagonist_decision_agent import (
+            render_writer_decision_protocol,
+        )
+
+        _methodology_application = generation_input_bundle.acceptance_contract.get(
+            "methodology_application_contract",
+            {},
+        )
+        _chapter_contract_digest = (
+            _methodology_application.get("chapter_contract_digest", {})
+            if isinstance(_methodology_application, Mapping)
+            else {}
+        )
+        protagonist_decision_block = render_writer_decision_protocol(
+            _chapter_contract_digest.get("decision_protocol")
+            if isinstance(_chapter_contract_digest, Mapping)
+            else {},
+            language=language,
         )
     except Exception:
         logger.debug("chapter generation input bundle render failed", exc_info=True)
@@ -9231,6 +9266,7 @@ def build_chapter_first_draft_prompts(
             )
             if acceptance_contract_block
             else "",
+            protagonist_decision_block,
             "【角色认知边界】\n" + knowledge_boundary_block
             if knowledge_boundary_block
             else "",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import copy
 from dataclasses import dataclass
 import hashlib
 import json
@@ -528,6 +529,107 @@ def _sanitize_world_spec_content(content: dict[str, Any]) -> dict[str, Any]:
 
 def parse_world_spec_input(content: dict[str, Any]) -> WorldSpecInput:
     return WorldSpecInput.model_validate(_sanitize_world_spec_content(content))
+
+
+_FEMININE_PROTAGONIST_MARKERS = (
+    "哑女",
+    "女人",
+    "女子",
+    "少女",
+    "姑娘",
+    "母亲",
+    "女性",
+    "她",
+)
+
+
+def _project_protagonist_identity(project: ProjectModel) -> tuple[str, str, str, str]:
+    """Read the project-level identity lock used by every cast materialization.
+
+    Planning artifacts are regenerated several times. Without a persistence
+    boundary, an LLM can silently replace the protagonist name or pronouns in a
+    later CastSpec and that drift becomes the identity manifest for all scenes.
+    """
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    candidates: list[dict[str, Any]] = []
+    for source in (
+        metadata.get("protagonist"),
+        (metadata.get("book_spec") or {}).get("protagonist")
+        if isinstance(metadata.get("book_spec"), dict)
+        else None,
+    ):
+        if isinstance(source, dict):
+            candidates.append(source)
+    name = ""
+    gender = ""
+    zh = ""
+    en = ""
+    for source in candidates:
+        name = name or str(source.get("name") or "").strip()
+        gender = gender or str(source.get("gender") or "").strip().lower()
+        zh = zh or str(source.get("pronoun_set_zh") or "").strip()
+        en = en or str(source.get("pronoun_set_en") or "").strip()
+    name = name or str(metadata.get("protagonist_name") or "").strip()
+    if not gender:
+        identity_text = " ".join(
+            str(source.get(key) or "")
+            for source in candidates
+            for key in ("archetype", "background", "goal", "description", "differentiator")
+        )
+        if any(marker in identity_text for marker in _FEMININE_PROTAGONIST_MARKERS):
+            gender = "female"
+    if gender == "female":
+        zh = zh or "她"
+        en = en or "she/her"
+    elif gender == "male":
+        zh = zh or "他"
+        en = en or "he/him"
+    return name, gender, zh, en
+
+
+def _normalize_cast_spec_to_project_identity(
+    project: ProjectModel,
+    content: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind CastSpec's protagonist to the already accepted project identity."""
+
+    if not isinstance(content, dict):
+        return content
+    locked_name, locked_gender, locked_zh, locked_en = _project_protagonist_identity(project)
+    protagonist = content.get("protagonist")
+    if not locked_name or not isinstance(protagonist, dict):
+        return content
+    patched = copy.deepcopy(content)
+    protagonist = patched.setdefault("protagonist", {})
+    changed: list[str] = []
+    if protagonist.get("name") != locked_name:
+        protagonist["name"] = locked_name
+        changed.append("name")
+    if locked_gender and protagonist.get("gender") != locked_gender:
+        protagonist["gender"] = locked_gender
+        changed.append("gender")
+    if locked_zh and protagonist.get("pronoun_set_zh") != locked_zh:
+        protagonist["pronoun_set_zh"] = locked_zh
+        changed.append("pronoun_set_zh")
+    if locked_en and protagonist.get("pronoun_set_en") != locked_en:
+        protagonist["pronoun_set_en"] = locked_en
+        changed.append("pronoun_set_en")
+    if changed:
+        meta = patched.get("_meta") if isinstance(patched.get("_meta"), dict) else {}
+        patched["_meta"] = {
+            **meta,
+            "project_identity_lock": {
+                "fields_repaired": changed,
+                "canonical_name": locked_name,
+            },
+        }
+        logger.warning(
+            "CastSpec protagonist identity rebound to project lock for project=%s fields=%s",
+            project.slug,
+            ",".join(changed),
+        )
+    return patched
 
 
 def parse_cast_spec_input(content: dict[str, Any]) -> CastSpecInput:
@@ -1082,6 +1184,7 @@ async def upsert_cast_spec(
     project: ProjectModel,
     content: dict[str, Any],
 ) -> dict[str, int]:
+    content = _normalize_cast_spec_to_project_identity(project, content)
     cast_spec = parse_cast_spec_input(content)
     project.metadata_json = _merge_metadata(project.metadata_json, {"cast_spec": content})
     character_strategy = character_strategy_from_project_metadata(project.metadata_json)

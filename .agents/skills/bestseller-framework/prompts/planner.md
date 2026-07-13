@@ -161,7 +161,7 @@ chapters:
         exit_state: ...
         estimated_words: 1600
         conflict_stakes: ...
-    estimated_chapter_words: 6400  # ≥ 5000
+    estimated_chapter_words: 2600  # ∈ [1800, 3500]
     pacing_mode: build
     emotion_phase: compress
     is_climax: false
@@ -244,7 +244,7 @@ existing_spec:
 
 <constraints>
 chapters_per_volume ≈ 50（短篇例外）
-words_per_chapter.min = 5000
+words_per_chapter.min = 1800  # target 2600 max 3500
 conflict_phases 按 {chapter_count} 套方案：{survival-only / 3-phase / 4-phase / 6-phase}
 volume_win_loss_rhythm: 开局 win → 中部多败 → 倒数第二 major loss → 终胜
 target_platform: {qimao | qidian | tomato | ...}

@@ -119,57 +119,80 @@ blurb_pathology:
     一点一点, 层层, 步步, 一级一级]
 
 # ---------------------------------------------------------------------------
-# 一句话卖点【前置·严格】闸门（logline_gate v2）：在扩充世界观/角色/卷章大纲之前，先站在
-# 【读者视角】判「这个卖点是不是真卖点、值不值得点」。不过 → 不予扩充(REJECT)或回炉(REGEN)。
-# v2 依据 Save the Cat 官方 logline 法 + 番茄/起点爆款简介公式 + 方法论 ch3/ch4，把 3 轴升级为
-# 【7 维/两档】：4 核心命门(一票否决) + 3 增益维(加权)。确定性器测不了这些语义维，故由 LLM
-# 读者判官打分；LLM 不可用 fail-open 到 neutral lean-pass —— 绝不在无 LLM 时误毙卖点。
+# 一句话故事大纲【前置硬门】（logline_gate v3）：只有故事智力和长篇支撑力都成立，
+# 才允许建项和进入书籍规划。REGENERATE/REJECT 均不放行；判官不可用也不放行。
 logline_gate:
   enabled: true
-  block_expansion: false       # 默认 advisory：跑分+持久化+日志，不硬阻断；真机校准后再置 true 硬卡
-  fallback_score: 3.7          # LLM 不可用时各维中性 lean-pass（≥overall_floor，真放行不误毙）
+  block_expansion: true
+  require_llm: true
+  fallback_score: 0.0          # 仅用于完成请求的 fallback JSON；require_llm 会阻止默认分放行
   # —— 严格卡控 ——
   reject_floor: 2.5            # 任一【核心命门】< 此 → REJECT：根本性硬伤，不予扩充
   pass_floor: 3.5             # 任一【核心命门】< 此 → REGENERATE：回炉重写卖点
   overall_floor: 3.6          # 加权总分 < 此 → REGENERATE：各维勉强但整体平庸，不放行
   max_regen: 3                # 回炉上限，用尽仍不过 → 升级人工/标记可见拦截态
-  # 7 维 / 两档；权重和=100。代码按 CORE_AXES 常量区分核心命门(前4)与增益维(后3)。
+  # 12 维 / 两档；权重和=100。前 9 项是核心命门，后 3 项是增益维。
   axes:
     # ① 核心命门（hard veto，任一不达标即拦）
     contrast_irony:            # 反差张力：Save the Cat 的 irony=钩子之核；网文人设反差=爽点之核
       label: 反差张力
-      weight: 22
+      weight: 8
       high: 一句话即含强反差/反常识/期待违背（身份明×暗反差、处境悖论、恩人即加害者…）
       low: 平铺直叙、无反差、四平八稳，读者没有「咦?」的一下
     click_hook:                # 点击钩子：首句即未知/危机/悬念
       label: 点击钩子
-      weight: 18
+      weight: 7
       high: 首句即抛未知/危机/冲突，读者只看一句就忍不住想点开
       low: 开头是设定/背景铺陈，钩子迟到或缺席
     motivation_credibility:    # 动机可信：非得不偿失
       label: 动机可信
-      weight: 16
+      weight: 10
       high: 主角为何非做不可逻辑自洽——代价与收益匹配，或被逼到没有选择
       low: 动机得不偿失/牵强/圣母，读者不信他会反复这么做(如折寿救陌生人却图不到对等回报)
     unpredictability:          # 不可预测：非一眼望到头，且反转有铺垫可信
       label: 不可预测
-      weight: 14
+      weight: 7
       high: 埋了读者预判不到、却有铺垫可信(非天降)的反转/悖论，走向有想象空间
       low: 套路可一眼望到头(如「能力查案→代价递增→揪凶手」)，意料之中、无惊喜
+    protagonist_rationality:
+      label: 主角决策智力
+      weight: 12
+      high: 正常人基线和角色基线都会做出该选择；已处理核验、求助、停止、委托、记录、撤退和后手
+      low: 存在明显更低成本选项，主角仅为让冲突发生而不选
+    causal_coherence:
+      label: 因果闭环
+      weight: 12
+      high: 主角身份必然导致发现，行动必然触发对手反应和后果
+      low: 职业、能力、奇观、反转只是概念拼贴，拆掉任意一块也不影响故事
+    cost_integrity:
+      label: 代价完整性
+      weight: 12
+      high: 无强制代价，或代价是行动的内生后果且无法被低成本规避
+      low: 随机失忆/扣命/掉寿命/资源债，与行动无因果，或可靠不用、代劳、记录规避
+    genre_fidelity:
+      label: 题材忠实度
+      weight: 10
+      high: 主冲突、职业、对手与解决方式均属于用户选定的题材/子题材
+      low: 被热门异能、打脸、系统或直播套路偷换成另一种书
+    serial_sustainability:
+      label: 长篇支撑力
+      weight: 10
+      high: 问题链、证据链、对手反应和主角决策能自然升级，每轮产生新局面
+      low: 只能重复触发能力+再扣一次代价，五章后即可预测全书
     # ② 增益维（计入加权总分，强烈建议但非一票否决）
     payoff_promise:            # 情绪承诺/爽感清晰：读者一眼知道图什么
       label: 情绪承诺
-      weight: 12
+      weight: 5
       high: 读者一眼知道能得到哪种情绪满足(爽/悬/虐/治愈/代入)且与题材匹配
       low: 说不清「图什么」、卖点是「文笔好/世界观宏大」这类非情绪承诺
     differentiation:           # 差异化：避红海套路
       label: 差异化
-      weight: 10
+      weight: 4
       high: 高概念/新组合，能指出「没人这么写」，避开该题材红海套路
       low: 与头部高度雷同、命中红海套路(赘婿逆袭/废柴觉醒/系统签到…)
     concrete_picture:          # 具体可视：Save the Cat 的 compelling mental picture
       label: 具体可视
-      weight: 8
+      weight: 3
       high: 卖点是具体可视的人/事/画面(殡仪馆第七具遗体睁眼…)，读者脑中能成像
       low: 抽象设定罗列、形容词堆砌，读者脑中没有画面
 

@@ -54,9 +54,9 @@ genre: 玄幻
 target_chapters: 30
 target_total_words: 180000
 words_per_chapter:
-  min: 5000
-  target: 6400
-  max: 9000
+  min: 1800
+  target: 2600
+  max: 3500
 volumes: 1
 acts: 1
 current_chapter: 1
@@ -86,7 +86,7 @@ tense: past
 
 ## 4. 章节文件 frontmatter
 
-见 [templates/chapter-frontmatter.md](templates/chapter-frontmatter.md)。`word_count` 必须 **≥ 5000** 且写真实值；`scores` 写真实自评。
+见 [templates/chapter-frontmatter.md](templates/chapter-frontmatter.md)。`word_count` 必须 **∈ [1800, 3500]** 且写真实值；`scores` 写真实自评。
 
 ## 5. Volume README 必含
 

@@ -1,0 +1,63 @@
+schema_version: hook-eval-cases.v1
+cases:
+  - id: urban_blacktech_weak_seed
+    group: weak_seed
+    genre: 都市异能
+    sub_genre: 都市黑科技创业流
+    chapters: 500
+    seed: 被封杀的芯片工程师能从报废机器里复原被放弃的技术路线；他每把一条失败路线做成产品，就会逼垄断未来的基金现身封杀。
+  - id: occupational_afterlife
+    group: viable
+    genre: 悬疑奇幻
+    sub_genre: 现代职业与亡者余生
+    chapters: 500
+    seed: 遗体收殓师能看见枉死者本应拥有的未来，完成死者真正遗愿后会继承其中一段未发生的人生。
+  - id: xianxia_long_serial
+    group: viable
+    genre: 仙侠
+    sub_genre: 古典仙侠
+    chapters: 500
+    seed: ""
+  - id: urban_relationship
+    group: viable
+    genre: 都市
+    sub_genre: 成年人关系与职业选择
+    chapters: 300
+    seed: ""
+  - id: historical_strategy
+    group: viable
+    genre: 历史
+    sub_genre: 架空历史与势力经营
+    chapters: 500
+    seed: ""
+  - id: apocalypse_management
+    group: viable
+    genre: 科幻
+    sub_genre: 末世经营与制度重建
+    chapters: 500
+    seed: ""
+  - id: female_growth
+    group: viable
+    genre: 女频成长
+    sub_genre: 职业成长与家族博弈
+    chapters: 300
+    seed: ""
+  - id: mystery_city
+    group: viable
+    genre: 悬疑
+    sub_genre: 城市谜案与组织对抗
+    chapters: 300
+    seed: ""
+anti_fixtures:
+  - id: repeated_case
+    hook: 主角每接一个新案件就破解一次秘密，然后遇到更强的新案件。
+    expected_rejection: parallel_repetition
+  - id: random_cost
+    hook: 主角每使用一次能力就随机折寿十年，为了活命只能继续使用能力。
+    expected_rejection: external_cost
+  - id: abstract_capital
+    hook: 他每复活一条死路，就逼未来的资本真身现身封杀。
+    expected_rejection: abstract_formula
+  - id: irrational_choice
+    hook: 主角明知报警即可安全解决，却为了故事开始主动独自赴死。
+    expected_rejection: irrational_protagonist

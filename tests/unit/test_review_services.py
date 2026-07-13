@@ -498,6 +498,35 @@ def test_evaluate_scene_draft_marks_short_template_for_rewrite() -> None:
     assert any(finding.category == "goal" for finding in result.findings)
 
 
+def test_evaluate_scene_draft_accepts_canonical_name_when_participant_has_alias() -> None:
+    scene = SimpleNamespace(
+        target_word_count=300,
+        scene_type="development",
+        participants=["霍云岫（化名：阿跛）", "周婆"],
+        purpose={"story": "在眼线面前抱稳孩子", "emotion": "克制"},
+        scene_number=1,
+    )
+    chapter = SimpleNamespace(chapter_number=4, chapter_goal="推进潜伏")
+    draft = SimpleNamespace(
+        content_md=(
+            "霍云岫把孩子抱稳，周婆的笔尖停在簿边。"
+            "她跪进炭灰，听见门外脚步逼近，决定先把孩子护住。"
+        ),
+        word_count=300,
+    )
+
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        genre="仙侠",
+        sub_genre="仙侠",
+    )
+
+    assert not any(finding.category == "character_consistency" for finding in result.findings)
+
+
 def test_scene_rewrite_prompt_includes_qimao_opening_contract() -> None:
     scene = SimpleNamespace(
         scene_number=1,
@@ -601,6 +630,41 @@ def test_rule_survival_scene_review_prompt_uses_suspense_not_action_progression(
     assert "信息" in combined
     assert "升级流" not in combined
     assert "战斗场景" not in combined
+
+
+def test_action_genre_development_scene_does_not_require_combat() -> None:
+    project = SimpleNamespace(
+        title="炉房验证",
+        genre="仙侠·潜伏复仇·炉房权谋",
+        sub_genre="仙侠",
+        language="zh-CN",
+        metadata_json={"writing_profile": {"market": {"platform_target": "番茄小说"}}},
+    )
+    chapter = SimpleNamespace(chapter_number=1)
+    scene = SimpleNamespace(
+        scene_number=1,
+        scene_type="development",
+        title="炉房试抱",
+        purpose={"story": "在眼线面前抱稳孩子并少记一笔", "emotion": "压迫中的克制"},
+    )
+    draft = SimpleNamespace(content_md="她跪进炭灰，护住孩子，簿上的笔尖停了一瞬。")
+    review_result = _scene_review_result_for_rewrite(
+        findings=[
+            SceneReviewFinding(
+                category="conflict",
+                severity="high",
+                message="冲突需要继续推进。",
+            )
+        ]
+    )
+
+    system_prompt, user_prompt = review_services.build_scene_review_prompts(
+        project, chapter, scene, draft, review_result
+    )
+    combined = system_prompt + "\n" + user_prompt
+
+    assert "scene_type=development" in combined
+    assert "不得仅因没有打斗" in combined
 
 
 def test_chapter_rewrite_prompt_includes_qimao_opening_contract() -> None:

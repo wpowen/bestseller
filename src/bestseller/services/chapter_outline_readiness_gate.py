@@ -47,6 +47,9 @@ _IMPOSSIBLE_DELIVERY_MARKER = re.compile(r"(不可能|异常|伪造|自助柜|�
 _STORY_GUARDRAIL_KEYS = frozenset(
     {
         "alternatives_rejected",
+        "options_considered",
+        "obvious_safe_option",
+        "why_not_safer_option",
         "bad_examples",
         "blocked_terms",
         "forbidden_actions",

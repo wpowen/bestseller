@@ -17,6 +17,9 @@ from bestseller.services.methodology_book_selector import (
     BookMethodologySelectionContext,
     select_book_methodology_cards,
 )
+from bestseller.services.protagonist_decision_agent import (
+    evaluate_protagonist_decision_protocol,
+)
 
 _BLOCKING_SEVERITIES = {"critical", "major"}
 
@@ -50,14 +53,6 @@ _LOW_SIGNAL_RELATIONSHIP_MARKERS = (
     "下一场必须改变信任或行动",
     "深化关系",
     "关系变化",
-)
-
-_DECISION_PROTOCOL_REQUIRED_FIELDS = (
-    "chosen_action",
-    "alternatives_rejected",
-    "why_this_not_that",
-    "constraint",
-    "wrong_choice_loss",
 )
 
 _RELATIONSHIP_DEBT_REQUIRED_FIELDS = (
@@ -564,23 +559,24 @@ def _append_contract_payload_findings(
 
     digest = _mapping(contract.get("chapter_contract_digest"))
     decision_protocol = _mapping(digest.get("decision_protocol"))
-    missing_decision_fields = [
-        field for field in _DECISION_PROTOCOL_REQUIRED_FIELDS if not decision_protocol.get(field)
-    ]
-    if missing_decision_fields:
+    decision_report = evaluate_protagonist_decision_protocol(
+        decision_protocol,
+        chapter_number=chapter_number,
+    )
+    for decision_issue in decision_report.blocking_findings:
+        decision_path = decision_issue.path.removeprefix(
+            "methodology_contract.decision_protocol"
+        )
         findings.append(
             MethodologyApplicationFinding(
-                code="METHODOLOGY_PROTAGONIST_DECISION_PROTOCOL_MISSING",
-                severity="critical",
-                message=(
-                    "前十章主角选择缺少 why-this-not-that 决策记录："
-                    + "、".join(missing_decision_fields)
+                code=decision_issue.code,
+                severity=decision_issue.severity,
+                message=decision_issue.message,
+                repair_hint=decision_issue.repair_hint,
+                path=(
+                    "methodology_application_contract.chapter_contract_digest."
+                    f"decision_protocol{decision_path}"
                 ),
-                repair_hint=(
-                    "为章节补齐 chosen_action、alternatives_rejected、why_this_not_that、"
-                    "constraint、wrong_choice_loss，避免主角像按算法执行规则。"
-                ),
-                path="methodology_application_contract.chapter_contract_digest.decision_protocol",
             )
         )
 

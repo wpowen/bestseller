@@ -513,6 +513,9 @@ def test_distilled_design_reference_blocks_enter_planner_prompts() -> None:
     assert "VOLUME_STRATEGY_CARD" in volume_prompt
     assert "OUTLINE_DISTILLED_REFERENCE" in outline_prompt
     assert "OUTLINE_STRATEGY_CARD" in outline_prompt
+    assert "【主角决策协议·每章必填】" in outline_prompt
+    assert "obvious_safe_option" in outline_prompt
+    assert "first_person_reasoning" in outline_prompt
 
 
 def test_concept_lab_contract_enters_core_planner_prompts() -> None:
@@ -3439,3 +3442,37 @@ def test_fuzzy_resolve_handles_empty_inputs() -> None:
     assert planner_services._outline_fuzzy_resolve_participant("", {}) is None
     index = _fixture_identity_index()
     assert planner_services._outline_fuzzy_resolve_participant("", index) is None
+
+
+def test_character_decision_intelligence_enters_cast_and_story_design_prompts() -> None:
+    project = build_project()
+    premise = "一名送葬人每完成一次高危入殓，就会缩短自己的寿命。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+
+    _, cast_prompt = planner_services._cast_spec_prompts(project, book_spec, world_spec)
+    _, kernel_prompt = planner_services._story_design_kernel_prompts(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast_spec,
+        planner_services._fallback_story_design_kernel(
+            project,
+            premise,
+            book_spec,
+            world_spec,
+            cast_spec,
+        ),
+    )
+
+    policy = cast_spec["protagonist"]["decision_policy"]
+    normalized_cast = planner_services.parse_cast_spec_input(cast_spec).model_dump(mode="json")
+    assert policy["character_name"] == cast_spec["protagonist"]["name"]
+    assert normalized_cast["protagonist"]["decision_policy"] == policy
+    assert "decision_policy" in cast_prompt
+    assert "正常人基线" in kernel_prompt
+    assert "角色基线" in kernel_prompt
+    assert "PROTAGONIST_PLOT_SERVING_STUPIDITY" in kernel_prompt
+    assert policy["archetype"] in kernel_prompt

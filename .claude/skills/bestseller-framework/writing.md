@@ -183,7 +183,7 @@ chapter: <N>
 title: "..."
 slug: "..."
 scenes: <N>
-word_count: <>= 5000>
+word_count: <1800–3500, target 2600>
 status: approved | draft | rework
 revision: 1
 chapter_phase: hook|setup|escalation|twist|climax|resolution_hook
@@ -197,7 +197,7 @@ generated_at: ISO-8601
 
 ## 11. 写完后四步（高敏感位置加一步）
 
-1. **自查字数** ≥ 5000。不足立即扩写。
+1. **自查字数** ∈ [1800, 3500]（目标 2600）。不足立即扩写。
 2. **自我 critic 打分**（参照 [quality.md](quality.md) 的 5+4 维）。任一维 < 0.70 触发 editor 重写。
 3. **如本章有 positions 标签** → 跑对应 profile 的 hard_gates 全检（参照 quality.md § Opening Signing Gate）。任一 gate 失败强制 rewrite，且按 [config/chapter_position_profiles.yaml](../../../config/chapter_position_profiles.yaml) 的 `rewrite_priority_order` 顺序整改。
 4. **追加 canon facts / timeline**（参照 [knowledge.md](knowledge.md)）。

@@ -35,32 +35,6 @@ _OPPOSITION_HINTS = (
     "misread",
     "cost",
 )
-# Chinese web novel 爆款 emotion vocabulary. The expansion scorer rewards hooks
-# that name a concrete emotional beat readers can latch onto.
-_EMOTION_HINTS = (
-    "打脸",
-    "翻盘",
-    "塌房",
-    "炸场",
-    "围观",
-    "心动",
-    "炸裂",
-    "崩盘",
-    "封神",
-    "破防",
-    "硬刚",
-    "硬撑",
-    "破局",
-    "立威",
-    "甩开",
-    "断舍",
-    "高甜",
-    "撒糖",
-    "嘴硬",
-    "上头",
-    "破碎",
-    "封口",
-)
 # Antagonist-visibility vocabulary. Misunderstanding scoring rewards hooks
 # that put a concrete opposition (person, group, institution) on the page.
 _VILLAIN_HINTS = (
@@ -562,16 +536,24 @@ def _score_misunderstanding(spec: HookSpec) -> int:
 
 
 def _score_expansion(spec: HookSpec) -> int:
-    """Reward arcs that name a concrete emotional beat readers can latch onto.
+    """Score opening narrative traction, never claimed serial capacity.
 
-    Keeps the ``expansion`` field name for backwards compatibility, but the
-    formula now mixes arc-engine length with Chinese web novel emotion-vocabulary
-    hits in the one_liner + core_rule.
+    The public field name remains for stored-report compatibility.  Actual
+    200/500/1000-chapter capacity is evaluated by ``SerialityProof``.  Emotion
+    slogans and the number of claimed arc axes deliberately earn no points.
     """
-    arc_boost = len(spec.arc_engine) * 1.0
-    emotion_text = f"{spec.one_liner} {spec.core_rule}"
-    emotion_hits = sum(1 for token in _EMOTION_HINTS if token in emotion_text)
-    return _clamp_int(3 + arc_boost + emotion_hits * 1.4, 1, 10)
+    score = 3.0
+    if spec.protagonist_role:
+        score += 2.0
+    if spec.opening_frame:
+        score += 2.0
+    if spec.hook_type:
+        score += 1.0
+    if 20 <= len(spec.one_liner.strip()) <= 120:
+        score += 1.0
+    if any(token in spec.core_rule for token in ("每", "必须", "只能", "cannot", "must")):
+        score += 1.0
+    return _clamp_int(score, 1, 10)
 
 
 def _score_learning_cost(spec: HookSpec) -> int:
@@ -758,22 +740,6 @@ def evaluate_hook_strength_gate(
             )
         )
         suggestions.append("重写 hook，使其明确贴合主角身份、核心机制或开局压力。")
-    # CN-market 爆款 emotion vocabulary check. Hooks without at least one
-    # emotion marker read like AI template copy.
-    emotion_text = f"{hook_spec.one_liner} {hook_spec.core_rule}"
-    if not any(token in emotion_text for token in _EMOTION_HINTS):
-        findings.append(
-            HookStrengthFinding(
-                code="weak_emotion_keywords",
-                severity="low",
-                message="Hook lacks Chinese-web-novel emotion vocabulary markers.",
-                path="one_liner",
-                repair_action=(
-                    "Inject at least one of: 打脸 / 翻盘 / 塌房 / 炸场 / 围观 / 破防 / 上头 / 高甜 / 撒糖."
-                ),
-            )
-        )
-        suggestions.append("在 one_liner 或 core_rule 注入至少一个网文爆款情绪词。")
     hard_failed = any(
         finding.code == "hook_premise_mismatch" and finding.severity == "high"
         for finding in findings
@@ -823,14 +789,6 @@ def repair_hook_spec_once(
     if "below_h_norm_threshold" in codes:
         rewards.extend(["权限提升", "真相碎片"])
         arc_engine.extend(["代价升级", "误解升级", "规则边界升级"])
-    if "weak_emotion_keywords" in codes:
-        # Bake a 爆款 emotion marker into the core_rule so the next round of
-        # expansion scoring has something to lock onto. The one_liner is
-        # rebuilt below via the formula pool, so we don't mutate it here.
-        emotion_marker = "，在围观与打脸的反复推拉中持续兑现"
-        if emotion_marker not in (spec.core_rule or ""):
-            arc_engine.append("打脸升级")
-            arc_engine.append("围观发酵")
 
     deduped_constraints = {key: value for key, value in constraints.items() if value}
     deduped_anti_cheat = tuple(dict.fromkeys(item for item in anti_cheat if item))

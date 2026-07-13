@@ -36,6 +36,7 @@ from bestseller.services.concept_lab import (
     render_concept_lab_prompt_block,
 )
 from bestseller.services.degradation_tracker import DegradationEvent, DegradationTracker
+from bestseller.services.genre_intent_contract import GenreIntentContract
 
 # Import GenreReviewProfile type for type hints; actual resolution is guarded.
 from bestseller.services.genre_review_profiles import (
@@ -87,6 +88,11 @@ class ConceptionResult:
     synopsis: str = ""
     tags: list[str] = field(default_factory=list)
     hook_spec: dict[str, Any] | None = None
+    # Unified v2 concept lineage.  HookCard is the opening expression;
+    # SerialityProof independently proves the requested long-form capacity.
+    concept_contract: dict[str, Any] = field(default_factory=dict)
+    hook_card: dict[str, Any] = field(default_factory=dict)
+    seriality_proof: dict[str, Any] = field(default_factory=dict)
     # Surfaced so the web layer can persist these as inspectable book artifacts.
     concept_methodology: dict[str, Any] = field(default_factory=dict)
     hook_candidates: list[dict[str, Any]] = field(default_factory=list)
@@ -718,6 +724,7 @@ def _build_genre_context(
     *,
     genre: str | None = None,
     sub_genre: str | None = None,
+    genre_intent_contract: GenreIntentContract | None = None,
 ) -> dict[str, Any]:
     """Build context dict from genre preset for prompts.
 
@@ -754,6 +761,10 @@ def _build_genre_context(
         "genre_key": genre_key,
         "genre": preset.genre,
         "sub_genre": preset.sub_genre,
+        # Prompt-pack routing is framework-owned.  Keep it in the context even
+        # for synthetic taxonomy presets so methodology/conception cannot fall
+        # back to a model-inferred pack.
+        "prompt_pack_key": preset.prompt_pack_key,
         "description": preset.description,
         "language": preset.language,
         "chapter_count": chapter_count,
@@ -765,6 +776,29 @@ def _build_genre_context(
         "default_platform": recommended_platform,
         "existing_overrides": sanitize_genre_story_overrides(preset.writing_profile_overrides),
     }
+
+    # Taxonomy selection is authoritative.  Keep the contract visible to every
+    # downstream prompt and re-assert its labels/pack over synthetic presets.
+    if genre_intent_contract is not None:
+        ctx["genre_intent_contract"] = genre_intent_contract.model_dump(mode="json")
+        ctx["genre"] = genre_intent_contract.genre_label
+        ctx["sub_genre"] = genre_intent_contract.sub_genre_label
+        ctx["prompt_pack_key"] = genre_intent_contract.prompt_pack_key
+        ctx["genre_intent_lock"] = (
+            "题材契约是用户在建书时明确选择的权威事实。"
+            f"本书只能写【{genre_intent_contract.genre_label}】"
+            f"/【{genre_intent_contract.sub_genre_label or '未指定子题材'}】；"
+            f"提示词包固定为【{genre_intent_contract.prompt_pack_key}】。"
+            "StoryFacets、热度趋势和模型建议只能提供表层创意，禁止改写题材、"
+            "子题材、现代性边界或提示词包。"
+        )
+        # The creation-page enhancer selection is carried by the immutable
+        # contract, not by an untrusted free-form prompt. This keeps the
+        # explicit wild-concept switch available to the tournament while
+        # preventing unselected enhancers from appearing in context.
+        ctx["wild_concept"] = bool(
+            genre_intent_contract.explicit_enhancers.wild_concept
+        )
 
     # Enrich with StoryFacets if available
     if story_facets is not None:
@@ -788,12 +822,14 @@ def _build_genre_context(
                     "emotional_register": facets.emotional_register,
                     "trope_tags": list(facets.trope_tags),
                 }
-                # Override sub_genre with richer facet data
-                if facets.sub_genres:
-                    ctx["sub_genre"] = ", ".join(facets.sub_genres)
+                # StoryFacets are advisory surface suggestions.  They must not
+                # overwrite the user's selected sub-genre or prompt-pack route.
                 # Add facet-driven description enhancement
                 ctx["facet_description"] = (
-                    f"Setting: {facets.setting}\n"
+                    (f"{ctx.get('genre_intent_lock')}\n" if ctx.get("genre_intent_lock") else "")
+                    + "StoryFacets are advisory surface suggestions only; they cannot override "
+                    "the selected genre/sub-genre or ontology.\n"
+                    + f"Setting: {facets.setting}\n"
                     f"Tone: {facets.tone}\n"
                     f"Narrative Drive: {facets.narrative_drive}\n"
                     f"Relationship: {facets.relationship_mode}\n"
@@ -812,6 +848,75 @@ def _concept_methodology_prompt_block(ctx: dict[str, Any]) -> str:
     return f"\n\n{block}" if isinstance(block, str) and block.strip() else ""
 
 
+def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
+    """Render only explicit creation-page choices as a scoped prompt block.
+
+    The old path mixed taxonomy, model-suggested facets, methodology and the
+    global concept-tournament winner into ``description``. That made optional
+    UI enhancers behave like a new genre. Keep the user-owned choices separate:
+    they may shape the mechanism/tone, but never replace the selected genre,
+    prompt pack, or ontology.
+    """
+
+    contract = ctx.get("genre_intent_contract")
+    if not isinstance(contract, dict):
+        return ""
+    tags = [str(item).strip() for item in (contract.get("tags") or []) if str(item).strip()]
+    enhancers = contract.get("explicit_enhancers")
+    enhancers = enhancers if isinstance(enhancers, dict) else {}
+    selected_effects = [
+        str(item).strip()
+        for item in (enhancers.get("effect_skills") or [])
+        if str(item).strip()
+    ]
+    selected = {
+        "channel": contract.get("channel_key"),
+        "genre": contract.get("genre_label"),
+        "sub_genre": contract.get("sub_genre_label"),
+        "tags": tags,
+        "audience": contract.get("audience_orientation"),
+        "scale": contract.get("narrative_scale"),
+        "tone": contract.get("tone_preference"),
+        "brainhole": bool(enhancers.get("brainhole")),
+        "wild_concept": bool(enhancers.get("wild_concept")),
+        "concept_lab": bool(enhancers.get("concept_lab")),
+        "creativity_direction": enhancers.get("creativity_direction"),
+        "effect_skills": selected_effects,
+        "cost_style": enhancers.get("cost_style") or "standard",
+    }
+    # Do not add a block for an empty/default creation form. This is the
+    # no-selection contract: no hidden brainhole, Skill or style injection.
+    if not any(
+        (
+            tags,
+            selected["audience"],
+            selected["scale"],
+            selected["tone"],
+            selected["brainhole"],
+            selected["wild_concept"],
+            selected["concept_lab"],
+            selected["creativity_direction"],
+            selected_effects,
+            selected["cost_style"] != "standard",
+        )
+    ):
+        return ""
+    language = str(ctx.get("language") or "zh-CN")
+    if language.lower().startswith("en"):
+        return (
+            "\n\n[EXPLICIT CREATION INTENT — scoped, not a genre override]\n"
+            + json.dumps(selected, ensure_ascii=False)
+            + "\nUse only these user-selected constraints. Do not invent extra skills,"
+            " modern settings, professions, or cross-genre mechanisms."
+        )
+    return (
+        "\n\n【建书页明确选择——仅作局部约束，不得改写题材】\n"
+        + json.dumps(selected, ensure_ascii=False)
+        + "\n只能兑现用户实际勾选的脑洞、调性和 Skill；未勾选的能力不得自行启用，"
+        "不得把可选增强器变成新的题材、职业、现代设定或跨题材机制。"
+    )
+
+
 def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
     brief = ctx.get("commercial_brief")
     qimao_block = _qimao_regeneration_prompt_block(ctx)
@@ -824,12 +929,13 @@ def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
             hook_spec,
             language=str(ctx.get("language") or "zh-CN"),
         )
+    intent_block = _creation_intent_prompt_block(ctx)
     if not isinstance(brief, dict) or not brief:
-        return f"{concept_block}{hook_block}{qimao_block}"
+        return f"{concept_block}{hook_block}{intent_block}{qimao_block}"
     label = "[Auto commercial positioning brief]" if str(ctx.get("language", "")).startswith("en") else "【自动商业化立项 brief】"
     return (
         f"\n\n{label}\n{json.dumps(brief, ensure_ascii=False, indent=2)}"
-        f"{concept_block}{hook_block}\n{qimao_block}"
+        f"{concept_block}{hook_block}{intent_block}\n{qimao_block}"
     )
 
 
@@ -2474,6 +2580,11 @@ async def _attach_concept_methodology(
             recommended_audiences=list(ctx.get("recommended_audiences") or []),
             trend_keywords=list(ctx.get("trend_keywords") or []),
             language=language,
+            allowed_modernity=(
+                str(ctx.get("genre_intent_contract", {}).get("allowed_modernity") or "genre_native")
+                if isinstance(ctx.get("genre_intent_contract"), dict)
+                else "genre_native"
+            ),
         )
         methodology_payload = methodology.model_dump(mode="json")
         ctx["concept_methodology"] = methodology_payload
@@ -3442,6 +3553,7 @@ async def run_conception_pipeline(
     progress: ProgressCallback | None = None,
     genre: str | None = None,
     sub_genre: str | None = None,
+    genre_intent_contract: GenreIntentContract | None = None,
 ) -> ConceptionResult:
     """Multi-agent discussion to auto-generate a complete WritingProfile.
 
@@ -3461,13 +3573,19 @@ async def run_conception_pipeline(
         story_facets=story_facets,
         genre=genre,
         sub_genre=sub_genre,
+        genre_intent_contract=genre_intent_contract,
     )
+    concept_bundle = None
     if user_hints:
         ctx["user_hints"] = user_hints
         concept_bundle = coerce_concept_lab_bundle(user_hints.get("concept_lab"))
         if concept_bundle is not None:
             ctx["concept_lab"] = concept_bundle.model_dump(mode="json")
-        ctx["wild_concept"] = bool(user_hints.get("wild_concept"))
+        # Contract-owned explicit selection wins; legacy user_hints may only
+        # add the same opt-in flag and can never turn it off accidentally.
+        ctx["wild_concept"] = bool(user_hints.get("wild_concept")) or bool(
+            ctx.get("wild_concept")
+        )
         _apply_qimao_hints_to_context(ctx)
 
     # Agent ①: heat-search → 脑洞/爽点 *methodology* selection. Replaces the old
@@ -3489,6 +3607,11 @@ async def run_conception_pipeline(
 
     selected_hook_spec = coerce_hook_spec(
         user_hints.get("hook_spec") if isinstance(user_hints, dict) else None
+    )
+    explicit_concept_seed = (
+        str(user_hints.get("concept_seed") or "").strip()
+        if isinstance(user_hints, dict)
+        else ""
     )
     hook_candidates_payload: list[dict[str, Any]] = []
     if getattr(settings.hook_engine, "enabled", True):
@@ -3528,8 +3651,10 @@ async def run_conception_pipeline(
                 "hook_candidates_generated",
                 {"count": len(hook_candidates_payload)},
             )
-            if selected_hook_spec is None and candidates:
-                selected_hook_spec = candidates[0].spec
+            # Do not auto-select the old formula HookSpec.  It is a mechanism
+            # ideation artifact, not the approved concept and not proof of
+            # long-form capacity.  The tournament champion becomes the only
+            # active v2 source below.
         except Exception:
             logger.warning("Anti-commonsense hook candidate generation failed", exc_info=True)
     if selected_hook_spec is not None:
@@ -3557,6 +3682,19 @@ async def run_conception_pipeline(
 
     llm_run_ids: list[UUID] = []
     conception_log: list[dict[str, Any]] = []
+    if genre_intent_contract is not None:
+        conception_log.append(
+            {
+                "round": -2,
+                "agent": "genre_intent_contract",
+                "source": genre_intent_contract.source,
+                "contract_hash": genre_intent_contract.contract_hash(),
+                "genre_key": genre_intent_contract.genre_key,
+                "sub_genre_key": genre_intent_contract.sub_genre_key,
+                "prompt_pack_key": genre_intent_contract.prompt_pack_key,
+                "allowed_modernity": genre_intent_contract.allowed_modernity,
+            }
+        )
     degradation_tracker = DegradationTracker()
 
     def _emit(stage: str, data: dict[str, Any] | None = None) -> None:
@@ -3568,8 +3706,10 @@ async def run_conception_pipeline(
     # 破宗门重建),读者可自动补全全书。此处在多agent展开【之前】跑"反俗套禁用
     # +杂交N候选+引擎审计+判官对撞榜单"淘汰赛,冠军注入 ctx["description"]
     # ——它是商业定位/市场/角色/世界观全部 prompt 的共同源头,零侵入全覆盖。
-    # 用户显式给了 concept_lab(自选概念)时跳过,不覆盖人的创意。fail-open。
-    if not ctx.get("concept_lab"):
+    # 用户显式给 concept_lab 时把它作为不可替换的 seed；仍必须补齐容量证明，
+    # 不能让用户选择成为绕过长篇门禁的后门。
+    _ct_result: Any | None = None
+    if chapter_count > 0:
         try:
             from bestseller.services.concept_tournament import (  # noqa: PLC0415
                 render_high_concept_block,
@@ -3579,28 +3719,154 @@ async def run_conception_pipeline(
 
             # 脑洞全开:合并 wild_mode 覆盖(降门/罚分/多候选/偏新颖);否则 None
             # → tournament 读基线,构思行为与现状逐字节一致。
-            _ct_config = (
-                resolve_tournament_config(wild=True)
-                if ctx.get("wild_concept")
-                else None
+            _ct_config = resolve_tournament_config(
+                wild=bool(ctx.get("wild_concept"))
             )
-            _emit("concept_tournament_started", {
-                "round": -1, "wild_concept": bool(ctx.get("wild_concept")),
-            })
-            _ct_result = await run_concept_tournament(
-                session, settings,
-                genre=str(ctx.get("genre") or genre_key),
-                sub_genre=str(ctx.get("sub_genre") or ""),
-                chapter_count=chapter_count,
-                avoid_mechanisms=list(ctx.get("avoid_mechanisms") or []),
-                config=_ct_config,
-            )
-            llm_run_ids.extend(_ct_result.llm_run_ids)
-            conception_log.append({
-                "round": -1,
-                "agent": "concept_tournament",
-                **_ct_result.to_dict(),
-            })
+            max_concept_attempts = 3 if chapter_count >= 200 else 1
+            concept_retry_feedback = ""
+            for concept_attempt in range(1, max_concept_attempts + 1):
+                _emit("concept_tournament_started", {
+                    "round": -1,
+                    "attempt": concept_attempt,
+                    "max_attempts": max_concept_attempts,
+                    "wild_concept": bool(ctx.get("wild_concept")),
+                })
+                attempt_config = (
+                    {**_ct_config, "n_candidates": 2}
+                    if concept_attempt > 1
+                    else _ct_config
+                )
+                _ct_result = await run_concept_tournament(
+                    session, settings,
+                    genre=str(ctx.get("genre") or genre_key),
+                    sub_genre=str(ctx.get("sub_genre") or ""),
+                    chapter_count=chapter_count,
+                    avoid_mechanisms=list(ctx.get("avoid_mechanisms") or []),
+                    config=attempt_config,
+                    seed_concept=(
+                        explicit_concept_seed
+                        or (
+                            str(concept_bundle.one_liner or concept_bundle.reader_promise)
+                            if concept_bundle is not None
+                            else str(getattr(selected_hook_spec, "one_liner", "") or "")
+                        )
+                    ),
+                    retry_feedback=concept_retry_feedback,
+                )
+                _emit(
+                    "concept_tournament_attempt_completed",
+                    {
+                        "attempt": concept_attempt,
+                        "max_attempts": max_concept_attempts,
+                        "winner": (
+                            _ct_result.winner.to_dict() if _ct_result.winner else None
+                        ),
+                        "candidates": [
+                            {
+                                "dimension": candidate.dimension,
+                                "concept": candidate.concept,
+                                "composite": candidate.composite,
+                                "rejected_reason": candidate.rejected_reason,
+                                "judge_freshness": candidate.judge_freshness,
+                                "judge_click": candidate.judge_click,
+                                "judge_predictable": candidate.judge_predictable,
+                                "judge_character_logic": candidate.judge_character_logic,
+                                "judge_mechanism_causality": (
+                                    candidate.judge_mechanism_causality
+                                ),
+                                "judge_genre_fidelity": candidate.judge_genre_fidelity,
+                                "judge_plain_language": candidate.judge_plain_language,
+                                "judge_story_motion": candidate.judge_story_motion,
+                                "seriality_report": candidate.seriality_report,
+                                "seriality_judge": candidate.seriality_judge,
+                            }
+                            for candidate in _ct_result.candidates
+                        ],
+                        "generation_model_key": _ct_result.generation_model_key,
+                        "judge_model_key": _ct_result.judge_model_key,
+                    },
+                )
+                llm_run_ids.extend(_ct_result.llm_run_ids)
+                conception_log.append({
+                    "round": -1,
+                    "attempt": concept_attempt,
+                    "agent": "concept_tournament",
+                    **_ct_result.to_dict(),
+                })
+                # The accepted winner is still passed through
+                # _sanitize_forbidden_default_motifs( before shared injection.
+                # ctx["description"] = f"{ctx.get('description') or ''}\n{_hc_block}"
+                # ctx["high_concept"] = _ct_result.winner.to_dict()
+                if _ct_result.winner is not None:
+                    # Reject ontology leakage before the winner can become the
+                    # shared description for every downstream agent. Explicit
+                    # user seeds remain authoritative: only terms absent from
+                    # the user's own seed are treated as injected pollution.
+                    if genre_intent_contract is not None:
+                        from bestseller.services.genre_intent_contract import (
+                            detect_genre_native_ontology_violations,
+                        )
+
+                        _winner_text = render_high_concept_block(_ct_result)
+                        _violations = detect_genre_native_ontology_violations(
+                            _winner_text,
+                            genre_intent_contract,
+                        )
+                        _explicit_seed_text = (
+                            explicit_concept_seed
+                            or (
+                                str(concept_bundle.one_liner or concept_bundle.reader_promise)
+                                if concept_bundle is not None
+                                else str(getattr(selected_hook_spec, "one_liner", "") or "")
+                            )
+                        )
+                        _unexpected_violations = tuple(
+                            term for term in _violations if term not in _explicit_seed_text
+                        )
+                        if _unexpected_violations:
+                            _ct_result.winner.rejected_reason = (
+                                "题材本体污染: " + "/".join(_unexpected_violations)
+                            )
+                            _ct_result.winner = None
+                            concept_retry_feedback = (
+                                "上一轮冠军混入未被用户明确选择的题材本体："
+                                + "/".join(_unexpected_violations)
+                                + "；必须回到题材原生的职业、规则、关系和资源冲突。"
+                            )
+                            _emit("concept_tournament_winner_rejected", {
+                                "attempt": concept_attempt,
+                                "violations": list(_unexpected_violations),
+                            })
+                            continue
+                    break
+                if concept_attempt < max_concept_attempts:
+                    failed_finalists = sorted(
+                        _ct_result.candidates,
+                        key=lambda candidate: (
+                            bool(candidate.seriality_judge),
+                            candidate.composite or 0.0,
+                            sum(
+                                score or 0.0
+                                for score in (
+                                    candidate.judge_freshness,
+                                    candidate.judge_click,
+                                    candidate.judge_character_logic,
+                                    candidate.judge_mechanism_causality,
+                                    candidate.judge_story_motion,
+                                )
+                            ),
+                        ),
+                        reverse=True,
+                    )[:2]
+                    concept_retry_feedback = "；".join(
+                        f"{candidate.concept}｜{candidate.rejected_reason or '未通过'}｜"
+                        f"判官：{candidate.seriality_judge.get('reason') or candidate.judge_reason or '未说明'}"
+                        for candidate in failed_finalists
+                    ) or "上一轮没有候选同时通过钩子与长篇承载门。"
+                    _emit("concept_tournament_retry", {
+                        "attempt": concept_attempt + 1,
+                        "reason": "no_hook_and_seriality_qualified_winner",
+                    })
             if _ct_result.winner is not None:
                 # ctx 在更早处已整体过一遍跨书污染消毒,追加的注入块同样要过
                 # (P1-1 同款教训:新增文本通道不得成为默认母题的豁免通道)。
@@ -3621,8 +3887,30 @@ async def run_conception_pipeline(
                     _ct_result.winner.concept[:120],
                 )
             else:
-                logger.info("Concept tournament produced no winner; using preset description")
-        except Exception:
+                logger.info("Concept tournament produced no winner after all attempts")
+                if chapter_count >= 200:
+                    from bestseller.services.concept_contract import (  # noqa: PLC0415
+                        ConceptContractError,
+                    )
+
+                    raise ConceptContractError([
+                        f"目标为 {int(chapter_count)} 章，但多轮候选均未通过一句话钩子、"
+                        "人物因果与长篇承载门；已在市场/角色/世界观生成前终止"
+                    ])
+        except Exception as exc:
+            from bestseller.services.concept_contract import (  # noqa: PLC0415
+                ConceptContractError,
+            )
+
+            if isinstance(exc, ConceptContractError):
+                raise
+            if chapter_count >= 200:
+                raise ConceptContractError(
+                    [
+                        "长篇概念淘汰赛执行失败，已在项目创建与书籍规划前终止："
+                        f"{type(exc).__name__}: {exc}"
+                    ]
+                ) from exc
             logger.warning("Concept tournament failed (non-fatal); no injection", exc_info=True)
 
     # ── Round 0: Autonomous Commercial Positioning ───────────────────
@@ -4125,6 +4413,47 @@ async def run_conception_pipeline(
             "story spine failed deterministic gate after polish: %s", _spine_violations
         )
 
+    # ── Unified concept contract: champion → HookCard + SerialityProof + Spine v2 ──
+    concept_contract: dict[str, Any] = {}
+    if _ct_result is not None and getattr(_ct_result, "winner", None) is not None:
+        from bestseller.services.concept_contract import (
+            ConceptContractError,
+            build_concept_contract,
+            validate_concept_contract,
+        )
+
+        concept_contract = build_concept_contract(
+            winner=_ct_result.winner,
+            story_spine=story_spine,
+            target_chapters=chapter_count,
+            genre=str(ctx.get("genre") or genre_key),
+            sub_genre=str(ctx.get("sub_genre") or ""),
+        )
+        _contract_violations = validate_concept_contract(
+            concept_contract,
+            target_chapters=chapter_count,
+        )
+        conception_log.append({
+            "round": 3,
+            "agent": "concept_contract_gate",
+            "champion_id": concept_contract.get("champion_id"),
+            "violations": _contract_violations,
+            "capacity_report": (
+                concept_contract.get("seriality_proof", {}).get("capacity_report", {})
+            ),
+        })
+        if _contract_violations:
+            raise ConceptContractError(_contract_violations)
+        story_spine = dict(concept_contract["story_spine"])
+    from bestseller.services.concept_contract import (
+        require_conception_contract_for_target,
+    )
+
+    require_conception_contract_for_target(
+        concept_contract,
+        target_chapters=chapter_count,
+    )
+
     # ── 钩子模板句止血(T4, 2026-07-09)──────────────────────────────────────
     # selected_hook_spec.one_liner 是候选池机械选优产物，未必贴合本书语境（真机
     # 案例：锦鲤代价钩子模板直接覆盖规则怪谈书的 reader_promise，产出模板插值
@@ -4276,8 +4605,16 @@ async def run_conception_pipeline(
         title_profile["primary_title"] = title
 
     # ── 共享上下文（供简介文案工序 + appeal 评估复用，避免重复计算）──────────
-    _ap_genre = str(ctx.get("genre") or genre or "")
-    _ap_sub = str(ctx.get("sub_genre") or sub_genre or "")
+    _ap_genre = (
+        genre_intent_contract.genre_label
+        if genre_intent_contract is not None
+        else str(ctx.get("genre") or genre or "")
+    )
+    _ap_sub = (
+        genre_intent_contract.sub_genre_label or ""
+        if genre_intent_contract is not None
+        else str(ctx.get("sub_genre") or sub_genre or "")
+    )
     _ap_platform = str(target_platform or "")
     _ap_language = str(ctx.get("language") or "zh-CN")
     # 按书派生黑话词表（不是全局词表）：从本书设计字段（金手指/世界观/hook_spec
@@ -4556,45 +4893,6 @@ async def run_conception_pipeline(
                     _arena_report.get("pairs"), _arena_report.get("win_rate"),
                     _arena_report.get("meets_story_bar"),
                 )
-            # ── 一句话卖点【前置·严格】闸门（logline_gate v2，读者视角语义判别）──
-            # 对最终卖点(logline/premise)跑 7 维/两档判官，verdict 附加进 appeal 报告(可见)。
-            # 默认 advisory（仅持久化+日志）；config logline_gate.block_expansion=true 时，
-            # REJECT 经展示后复用既有 AppealBarNotMetError 拦截链(不静默进规划)。fail-open。
-            try:
-                from bestseller.services.logline_gate import (  # noqa: PLC0415
-                    LoglineAction,
-                    evaluate_logline_gate,
-                    load_logline_gate_config,
-                )
-
-                _lg_cfg = load_logline_gate_config(_appeal_cfg)
-                if _lg_cfg.get("enabled", True):
-                    _logline_text = (
-                        (writing_profile.get("market", {}) or {}).get("logline")
-                        if isinstance(writing_profile, dict)
-                        else None
-                    ) or premise
-                    _lg = await evaluate_logline_gate(
-                        session, settings,
-                        logline=str(_logline_text or ""), premise=premise,
-                        genre=_ap_genre, sub_genre=_ap_sub, config=_appeal_cfg,
-                    )
-                    story_appeal_report["logline_gate"] = _lg.to_dict()
-                    logger.info(
-                        "Logline gate: action=%s overall=%.2f weakest=%s%s",
-                        _lg.action.value, _lg.overall, _lg.weakest_axis,
-                        (" | " + " ; ".join(_lg.reasons[:3])) if _lg.reasons else "",
-                    )
-                    if bool(_lg_cfg.get("block_expansion", False)) \
-                            and _lg.action is LoglineAction.REJECT:
-                        _appeal_block_below = True
-                        _appeal_blocked_feedback = (
-                            "一句话卖点未过前置闸门（不予扩充）：\n"
-                            + "\n".join(_lg.reasons)
-                            + "\n\n整改方向：\n" + "\n".join(_lg.fix_directives)
-                        )
-            except Exception:
-                logger.warning("Logline gate evaluation failed (non-fatal)", exc_info=True)
             # 真拦截：有界重生用尽仍不达标 + 开关开 → 记下决定，try 块外再抛
             # （放块外，确保不被下面 fail-open 的 except 吞掉）。
             if bool((_appeal_cfg.get("meets_bar", {}) or {}).get("block_below_bar", False)) \
@@ -4604,6 +4902,72 @@ async def run_conception_pipeline(
     except Exception:
         logger.warning("Story appeal evaluation failed (non-fatal)", exc_info=True)
         story_appeal_report = {}
+
+    # 一句话故事大纲是建项/规划的独立前置条件，不能被简介、书名或画像评估的
+    # fail-open 容错跳过。只有明确 EXPAND 才放行；闸门自身异常同样故障关闭。
+    try:
+        from bestseller.services.logline_gate import (  # noqa: PLC0415
+            LoglineAction,
+            evaluate_logline_gate,
+            load_logline_gate_config,
+            verdict_from_approved_concept_contract,
+        )
+
+        _lg_cfg = load_logline_gate_config(_appeal_cfg)
+        if _lg_cfg.get("enabled", True):
+            _logline_text = (
+                (writing_profile.get("market", {}) or {}).get("logline")
+                if isinstance(writing_profile, dict)
+                else None
+            ) or premise
+            _lg = verdict_from_approved_concept_contract(
+                concept_contract,
+                target_chapters=chapter_count,
+            )
+            if _lg is None:
+                _lg = await evaluate_logline_gate(
+                    session,
+                    settings,
+                    logline=str(_logline_text or ""),
+                    premise=premise,
+                    genre=_ap_genre,
+                    sub_genre=_ap_sub,
+                    config=_appeal_cfg,
+                )
+            story_appeal_report = dict(story_appeal_report or {})
+            story_appeal_report["logline_gate"] = _lg.to_dict()
+            logger.info(
+                "Logline gate: action=%s overall=%.2f weakest=%s%s",
+                _lg.action.value,
+                _lg.overall,
+                _lg.weakest_axis,
+                (" | " + " ; ".join(_lg.reasons[:3])) if _lg.reasons else "",
+            )
+            if bool(_lg_cfg.get("block_expansion", True)) \
+                    and _lg.action is not LoglineAction.EXPAND:
+                _appeal_block_below = True
+                _appeal_blocked_feedback = (
+                    "一句话故事大纲未过前置硬门，未进入书籍规划：\n"
+                    + "\n".join(_lg.reasons)
+                    + "\n\n整改方向：\n"
+                    + "\n".join(_lg.fix_directives)
+                )
+    except Exception:
+        logger.exception("一句话故事大纲硬门执行失败，故障关闭并停止规划")
+        story_appeal_report = dict(story_appeal_report or {})
+        story_appeal_report["logline_gate"] = {
+            "action": "reject",
+            "scores": {},
+            "overall": 0.0,
+            "reasons": ["一句话故事大纲硬门执行失败，不能证明故事成立。"],
+            "fix_directives": ["修复硬门后重新审查，不得绕过并进入规划。"],
+            "llm_used": False,
+            "weakest_axis": "gate_execution",
+        }
+        _appeal_block_below = True
+        _appeal_blocked_feedback = (
+            "一句话故事大纲硬门执行失败，未创建书籍、未进入规划。"
+        )
 
     # 淘汰赛报告独立持久化（不依赖 story appeal 系统是否启用/是否失败），
     # 分段验收需要它核验冠军策略/候选分/是否回退 v0。这份 dict 就是
@@ -4615,6 +4979,15 @@ async def run_conception_pipeline(
     if _copywriting_result is not None:
         story_appeal_report = dict(story_appeal_report or {})
         story_appeal_report["copywriting_tournament"] = _copywriting_result.to_dict()
+    if genre_intent_contract is not None:
+        story_appeal_report = dict(story_appeal_report or {})
+        story_appeal_report["genre_intent"] = {
+            "contract_hash": genre_intent_contract.contract_hash(),
+            "genre_key": genre_intent_contract.genre_key,
+            "sub_genre_key": genre_intent_contract.sub_genre_key,
+            "prompt_pack_key": genre_intent_contract.prompt_pack_key,
+            "allowed_modernity": genre_intent_contract.allowed_modernity,
+        }
 
     # 产品硬线"低于blurb_min不通过"(config/story_appeal.yaml 校准为68)的真拦截：
     # 简介/书名经有界重生仍不达标 → 抛 AppealBarNotMetError。
@@ -4630,6 +5003,36 @@ async def run_conception_pipeline(
         )
         raise AppealBarNotMetError(story_appeal_report, _appeal_blocked_feedback)
 
+    # Final ontology tripwire: a native 仙侠/历史/悬疑 project must not silently
+    # become an APP/phone/workplace/forensic-modern story after all agents merge.
+    # Failing here is safer than creating a book whose prompt pack says one thing
+    # while its synopsis and profile teach every downstream agent another.
+    if genre_intent_contract is not None:
+        from bestseller.services.genre_intent_contract import (
+            detect_genre_native_ontology_violations,
+        )
+
+        generated_surface = "\n".join(
+            (
+                str(title or ""),
+                str(premise or ""),
+                str(synopsis or ""),
+                json.dumps(writing_profile or {}, ensure_ascii=False),
+                json.dumps(ctx.get("high_concept") or {}, ensure_ascii=False),
+                json.dumps(tags or [], ensure_ascii=False),
+            )
+        )
+        ontology_violations = detect_genre_native_ontology_violations(
+            generated_surface,
+            genre_intent_contract,
+        )
+        if ontology_violations:
+            raise ValueError(
+                "Genre intent ontology violation: "
+                f"{', '.join(ontology_violations)} in generated conception artifacts; "
+                "native-genre books cannot enter planning with unexplained modern drift."
+            )
+
     logger.info(
         "Conception pipeline completed for genre=%s: title=%s, premise_len=%d, synopsis_len=%d, tags=%s, profile_keys=%s",
         genre_key, title, len(premise), len(synopsis), tags, list(writing_profile.keys()),
@@ -4640,6 +5043,9 @@ async def run_conception_pipeline(
     _result_hook_spec = (
         selected_hook_spec.model_dump(mode="json") if selected_hook_spec else None
     )
+    if concept_contract:
+        # v2 projects consume HookCard, not the unrelated legacy formula hook.
+        _result_hook_spec = None
     if _result_hook_spec is not None and _hook_one_liner_adapted_result is not None:
         _result_hook_spec["one_liner_adapted"] = _hook_one_liner_adapted_result
 
@@ -4664,6 +5070,14 @@ async def run_conception_pipeline(
         synopsis=synopsis,
         tags=tags,
         hook_spec=_result_hook_spec,
+        concept_contract=concept_contract,
+        hook_card=(
+            dict(concept_contract.get("hook_card") or {}) if concept_contract else {}
+        ),
+        seriality_proof=(
+            dict(concept_contract.get("seriality_proof") or {})
+            if concept_contract else {}
+        ),
         concept_methodology=dict(ctx.get("concept_methodology") or {}),
         hook_candidates=list(ctx.get("hook_candidates") or []),
         story_appeal=story_appeal_report,

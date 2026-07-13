@@ -9,7 +9,7 @@ chapter: 3
 title: "初入宗门"
 slug: "chu-ru-zong-men"
 scenes: 4
-word_count: 6400                    # 实际字数，MUST be ≥ 5000
+word_count: 2600                    # 实际字数，MUST be ∈ [1800, 3500]
 status: approved                    # draft | rework | approved
 revision: 1
 chapter_phase: setup                # hook | setup | escalation | twist | climax | resolution_hook
@@ -76,7 +76,7 @@ facts:
 
 | 字段 | 约束 |
 |------|------|
-| `word_count` | **真实**字数，绝不虚报。未达 5000 → 不得 `status: approved` |
+| `word_count` | **真实**字数，绝不虚报。未达 1800 或超 3500 → 不得 `status: approved` |
 | `scores` | **真实**自评，低于阈值标 `status: rework` |
 | `canon_facts_added` | 与 `knowledge/canon-facts.md` 对应章节条目一致 |
 | `clues_planted` / `clues_paid_off` | 与 `story-bible/plot-arcs.md` 的偿付表对齐 |

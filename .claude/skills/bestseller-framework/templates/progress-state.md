@@ -113,7 +113,7 @@ failures: []
   # 示例：
   # - state: WRITE_CHAPTER
   #   chapter: 12
-  #   reason: "字数连续 2 次扩写仍 < 5000"
+  #   reason: "字数连续 2 次扩写仍 < 1800 或 > 3500"
   #   attempt_count: 3
   #   escalated_at: 2026-04-16T14:10:00Z
 

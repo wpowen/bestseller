@@ -96,6 +96,24 @@ def test_render_block_empty_for_none() -> None:
     assert render_concept_methodology_block(None) == ""
 
 
+def test_methodology_prompt_locks_native_ontology() -> None:
+    prompt = agent.build_methodology_user_prompt(
+        genre="仙侠",
+        sub_genre="仙侠",
+        description="古典修行世界",
+        premise="主角从宗门底层起步",
+        audience_orientation="male",
+        market_signals=[],
+        trend_keywords=[],
+        fallback=fallback_concept_methodology(
+            genre="仙侠", sub_genre="仙侠", genre_key="xianxia", audience_orientation="male"
+        ),
+        allowed_modernity="genre_native",
+    )
+    assert "题材原生机制" in prompt or "genre-native" in prompt
+    assert "不要导入手机" in prompt or "do not import phones" in prompt
+
+
 def test_parse_methodology_from_llm_json() -> None:
     fb = fallback_concept_methodology(
         genre="玄幻", sub_genre="", genre_key="x", audience_orientation="neutral"

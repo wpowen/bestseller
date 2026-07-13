@@ -681,6 +681,7 @@ class ChapterOutlineInput(BaseModel):
     )
     selected_effect_skills: dict[str, Any] = Field(default_factory=dict)
     brainhole_contract: dict[str, Any] = Field(default_factory=dict)
+    seriality_contract: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -780,6 +781,7 @@ class ChapterOutlineInput(BaseModel):
                 "reader_desire_chain",
             ),
             ("brainhole_contract",),
+            ("seriality_contract",),
             ("methodology_contract", "chapter_methodology_contract"),
         ):
             for _alias in _contract_aliases:

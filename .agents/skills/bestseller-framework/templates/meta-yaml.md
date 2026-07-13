@@ -15,9 +15,9 @@ language: zh-CN                      # zh-CN | en-US
 target_chapters: 30
 target_total_words: 180000
 words_per_chapter:
-  min: 5000         # HARD LOWER BOUND — invariant
-  target: 6400
-  max: 9000
+  min: 1800         # HARD LOWER BOUND — invariant (SSOT)
+  target: 2600
+  max: 3500
 scenes_per_chapter:
   target: 4         # 2 post-climax, 3 default, 4 climax, 5 max
 volumes: 1
@@ -83,5 +83,5 @@ override_flags:
 - `target_chapters` ≤ 50 → `acts` 必须为 1，`volumes` 必须为 1
 - `target_chapters` > 50 → `acts ≥ 3`，必须有 `story-bible/act-plan.md`
 - `volumes` > 3 → 必须有 `story-bible/world-expansion.md`
-- `words_per_chapter.min` **永远** = 5000，不得调低
+- `words_per_chapter` 默认 band 为 1800–2600–3500（与 config/default.yaml 一致）；平台 profile 可覆盖下限
 - `current_chapter` ≤ `target_chapters`；完成后置 `status: completed`

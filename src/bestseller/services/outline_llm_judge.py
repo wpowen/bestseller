@@ -26,6 +26,9 @@ from bestseller.services.judge_rubrics import get_judge_rubric
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology_bridge import get_fragment
 from bestseller.services.prompt_packs import PromptPack
+from bestseller.services.protagonist_decision_agent import (
+    render_outline_decision_agent_prompt,
+)
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -139,6 +142,7 @@ OUTLINE_JUDGE_DIMENSIONS: tuple[str, ...] = (
     "readability",
     "commercial_pull",
     "character_agency",
+    "decision_intelligence",
     "scene_execution",
     "continuity",
     "logic_consistency",
@@ -159,6 +163,7 @@ OUTLINE_REPAIR_DIMENSION_THRESHOLDS: dict[str, float] = {
     "front_ten_retention": 0.80,
     "scene_execution": 0.80,
     "logic_consistency": 0.82,
+    "decision_intelligence": 0.84,
     "methodology_compliance": 0.80,
 }
 
@@ -174,6 +179,10 @@ _DIMENSION_REPAIR_HINTS: dict[str, str] = {
     "commercial_pull": "强化卖点与爽点兑现：说清目标读者图什么，每章给到具体情绪回报与钩子。",
     "scene_execution": "场景卡补具体人/物/动作/信息释放/章末钩子，杜绝抽象目的占位。",
     "logic_consistency": "修正前后设定、能力来源、时间线的矛盾。",
+    "decision_intelligence": (
+        "逐章按主角有限认知重做选择：列出正常人基线、角色基线、显而易见的低成本安全方案，"
+        "若仍选择高风险行动，必须改变信息/压力/选项成本并给出试探、退路或后手；禁止只补心理描写。"
+    ),
     "front_ten_retention": "前十章每章末留一个未解钩子，避免节奏走平。",
 }
 
@@ -246,7 +255,7 @@ def _render_outline_commercial_system_prompt(
         + story_logic_section
         + "\n"
         "# TASK\n"
-        "对大纲打 13 个维度分（见 user 段维度列表），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
+        "对大纲打 14 个维度分（见 user 段维度列表），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
         "\n"
         "# CONSTRAINTS · 硬性卡控（违反即 blocking，不可降为 audit）\n"
         "1. 黄金三章若只靠电话 / 短信 / 语音开局，且没有更强现场画面压力 → blocking。\n"
@@ -258,6 +267,10 @@ def _render_outline_commercial_system_prompt(
         "触发条件与限制，主角能据此合理推断；不能反复用单一感官捷径（如「发烫」「心头一跳」）替代推理或推进。"
         "（以本书设定中的道具为准，不要预设为某一特定题材的器物。）\n"
         "5. 场景卡必须含具体人 / 物 / 动作 / 代价 / 信息释放 / 章末钩子；只写抽象目的 → blocking。\n"
+        "6. 主角决策必须经得起第一人称反事实：若同时劣于正常人基线与该角色基线，"
+        "且大纲没有改变信息、压力或选项成本，只靠作者需要冲突发生 → blocking。\n"
+        + render_outline_decision_agent_prompt(language=language)
+        + "\n"
         "\n"
         "# CONSTRAINTS · 评分纪律\n"
         "- overall_score 与 dimension_scores 使用 0.0-1.0 小数。\n"
@@ -265,17 +278,18 @@ def _render_outline_commercial_system_prompt(
         "- evidence 必须引用大纲中具体字段或描述，不可用「整体」/「全章」占位。\n"
         "- 6 项故事合理性任一明显缺失 → blocking（不能降为 audit）。\n"
         "\n"
-        "# THINKING（产出 JSON 前在脑内 4 步）\n"
+        "# THINKING（产出 JSON 前在脑内 5 步）\n"
         "1. 通读大纲结构，按「开篇 / 中段 / 卷末」标记节奏曲线。\n"
         "2. 对照 6 项故事合理性逐项判定。\n"
-        "3. 对照 5 项硬性卡控逐项检查。\n"
-        "4. Reconcile：若有 blocking → overall_score 不应 ≥ 0.75。\n"
+        "3. 对照 6 项硬性卡控逐项检查。\n"
+        "4. 执行主角决策代理的正常人/角色双基线比较。\n"
+        "5. Reconcile：若有 blocking → overall_score 不应 ≥ 0.75。\n"
         "\n"
         "# OUTPUT FORMAT（严格 JSON）\n"
         "{\n"
         '  "pass": bool,\n'
         '  "overall_score": <0.0-1.0>,\n'
-        '  "dimension_scores": { ... 13 项 ... },\n'
+        '  "dimension_scores": { ... 14 项 ... },\n'
         '  "blocking_issues": [{"code", "severity", "evidence", "required_fix"}],\n'
         '  "audit_issues": [...],\n'
         '  "rewrite_plan": {"scope", "preserve", "change", "instructions"}\n'
@@ -341,6 +355,8 @@ def _render_planning_readiness_system_prompt(
         "\n"
         + story_logic_section
         + "\n"
+        + render_outline_decision_agent_prompt(language=language)
+        + "\n"
         "# TASK\n"
         "对黄金三章规划打 N 项维度分（见 user 段维度列表），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
         "\n"
@@ -348,6 +364,7 @@ def _render_planning_readiness_system_prompt(
         "1. 三章主线冲突全部只有抽象目标（无具体对手 / 代价 / 压力），规划无法指导写作\n"
         "2. 章节规划完全缺失（scenes 为空或无任何字段）\n"
         "3. 三章中无一章有明确的章末钩子\n"
+        "4. 主角关键行动明显劣于可见的低成本安全选项，且规划只靠作者便利解释该选择\n"
         "\n"
         "# CONSTRAINTS · 判 blocking 时务必避免误伤\n"
         "- 只要冲突落在本书自身题材的具体压力上即算**合格的具体冲突**，不应判 blocking。"
@@ -358,11 +375,12 @@ def _render_planning_readiness_system_prompt(
         "- 即使确定性门禁报告 abstract_chapter_conflict，只要场景或钩子中存在具体的压力 / 代价 / 对手描述，"
         "应当通过。\n"
         "\n"
-        "# THINKING（产出 JSON 前在脑内 4 步）\n"
+        "# THINKING（产出 JSON 前在脑内 5 步）\n"
         "1. 通读三章规划，画出每章的「冲突 → 代价 → 钩子」三角。\n"
         "2. 对照 6 项故事合理性逐项判定（A-F）。\n"
-        "3. 对照 3 项硬性卡控逐项检查。\n"
-        "4. Reconcile：若有 blocking → overall_score 不应 ≥ 0.75。\n"
+        "3. 对照 4 项硬性卡控逐项检查。\n"
+        "4. 执行主角决策代理的正常人/角色双基线比较。\n"
+        "5. Reconcile：若有 blocking → overall_score 不应 ≥ 0.75。\n"
         "\n"
         "# OUTPUT FORMAT（严格 JSON）\n"
         "{\n"
@@ -482,6 +500,7 @@ async def judge_outline_commercial_readiness(
             "commercial_pull": threshold - 0.02,
             "opening_pull": threshold - 0.02,
             "logic_consistency": 0.82,
+            "decision_intelligence": 0.84,
             "knowledge_boundary": 0.82,
             "real_world_plausibility": 0.80,
             "methodology_compliance": 0.80,
@@ -660,6 +679,7 @@ COMMERCIAL_PLANNING_JUDGE_DIMENSIONS: tuple[str, ...] = (
     "opening_pull",          # 开篇有没有让读者继续的动力
     "concrete_conflict",     # 冲突是否具体、有代价、有对手
     "protagonist_agency",    # 主角是否需要做出选择/行动
+    "decision_intelligence", # 选择是否符合有限认知、人格与趋利避害
     "hook_quality",          # 章末钩子是否有悬念
     "scene_executability",   # 场景是否可执行（不只是抽象目标）
     "commercial_retention",  # 整体是否符合榜单留存标准
@@ -731,6 +751,7 @@ async def judge_commercial_planning_readiness(
                 "concrete_conflict": threshold - 0.05,
                 "hook_quality": threshold - 0.10,
                 "scene_executability": threshold - 0.05,
+                "decision_intelligence": max(0.80, threshold),
             },
             llm_run_id=llm_run_id,
             raw_excerpt=raw_excerpt,
@@ -834,7 +855,7 @@ async def judge_commercial_planning_readiness(
                 f"```json\n{chapters_text}\n```\n"
                 f"{det_section}\n"
                 "\n## 立即开始\n"
-                "按 system 中的 6 项故事合理性 + 3 项硬性卡控 + THINKING 步骤思考，"
+                "按 system 中的 6 项故事合理性 + 4 项硬性卡控 + THINKING 步骤思考，"
                 "输出严格 JSON（schema 见 system OUTPUT FORMAT 段）。"
             ),
             fallback_response=fallback,

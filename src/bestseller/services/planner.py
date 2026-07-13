@@ -2826,6 +2826,7 @@ def _validate_generated_volume_outline_or_raise(
     expected_count: int,
     chapter_number_offset: int,
     cast_spec: dict[str, Any],
+    volume_entry: dict[str, Any] | None = None,
     existing_titles: list[tuple[int | None, str]] | None = None,
     strict_story_effects: bool = True,
     strict_field_degeneracy: bool | None = None,
@@ -2881,6 +2882,26 @@ def _validate_generated_volume_outline_or_raise(
             "chapters": vol_chapters,
         }
     )
+    _meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    _concept_contract = _mapping(_meta.get("concept_contract"))
+    if _concept_contract:
+        from bestseller.services.seriality_outline_gate import (
+            evaluate_seriality_outline_batch,
+        )
+
+        _seriality_report = evaluate_seriality_outline_batch(
+            [chapter.model_dump(mode="json") for chapter in batch.chapters],
+            _concept_contract,
+            volume_entry,
+        )
+        if not _seriality_report.passed:
+            raise PlannerFallbackError(
+                "SERIALITY_OUTLINE_CONTRACT_FAILED: "
+                + "; ".join(
+                    f"{item.code}: {item.message}"
+                    for item in _seriality_report.findings[:12]
+                )
+            )
     if strict_story_effects:
         _require_selected_story_effect_contracts_or_raise(
             batch,
@@ -3493,7 +3514,8 @@ def _outline_repair_directives_from_error(
                 "Repair selected story-effect contracts: every chapter in this batch "
                 "must include selected_effect_skills containing the project-selected "
                 "brainhole_engine, and a complete brainhole_contract with one_sentence_sell, "
-                "character_core_used, modern_system, contrast_mechanism, visible_comedy, "
+                "character_core_used, modern_system (genre-native mechanism/system), "
+                "contrast_mechanism, visible_comedy, "
                 "serious_underbelly, plot_consequence, protagonist_decision, "
                 "growth_stage_fit, and risk_check."
             )
@@ -3501,9 +3523,26 @@ def _outline_repair_directives_from_error(
             directives.append(
                 "修复故事效果合同：本批每章必须输出 selected_effect_skills，且必须包含项目选定的 "
                 "brainhole_engine；每章还必须输出完整 brainhole_contract，字段包含 "
-                "one_sentence_sell、character_core_used、modern_system、contrast_mechanism、"
+                "one_sentence_sell、character_core_used、modern_system（题材原生机制/系统，不等于现代化）、"
+                "contrast_mechanism、"
                 "visible_comedy、serious_underbelly、plot_consequence、protagonist_decision、"
                 "growth_stage_fit、risk_check。"
+            )
+    if "SERIALITY_OUTLINE_CONTRACT_FAILED" in message:
+        if is_en:
+            directives.append(
+                "Repair seriality_contract in every chapter: copy the current volume's exact "
+                "phase_id and unit_family_ref; provide unit_instance_id, distinct "
+                "unit_variant_contribution, phase_progress, prior_state_refs, "
+                "irreversible_state_after, no_reset_evidence, and accumulation_track_deltas "
+                "[{track_ref, delta}]. The batch must realize every assigned track."
+            )
+        else:
+            directives.append(
+                "修复每章 seriality_contract：逐字引用本卷 phase_id 和 unit_family_ref，并写清"
+                "unit_instance_id、各章不同的 unit_variant_contribution、phase_progress、"
+                "prior_state_refs、irreversible_state_after、no_reset_evidence，以及"
+                "accumulation_track_deltas [{track_ref, delta}]；本批必须兑现本卷分配的全部积累轴。"
             )
     for chunk in chunks[:10]:
         if is_en:
@@ -3634,6 +3673,7 @@ async def _generate_volume_outline_with_repair_loop(
                 expected_count=expected_count,
                 chapter_number_offset=chapter_number_offset,
                 cast_spec=cast_spec,
+                volume_entry=volume_entry,
                 existing_titles=existing_titles,
                 strict_story_effects=attempt < max_repair_attempts,
             )
@@ -4557,6 +4597,7 @@ async def _generate_volume_outline_batched(
         expected_count=expected_count,
         chapter_number_offset=chapter_number_offset,
         cast_spec=cast_spec,
+        volume_entry=volume_entry,
         existing_titles=existing_titles,
         # 合并终验没有回炉循环兜着，且管线自身的确定性修复(元话术goal重写/
         # enrichment复制)会在批内校验之后制造三字段退化——此处 strict 一抛整本书
@@ -6413,6 +6454,80 @@ async def _repair_volume_plan_convergence_if_needed(
         return volume_plan_payload, None
 
 
+async def _repair_seriality_volume_mapping_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    act_plan_payload: Any,
+    volume_plan_payload: Any,
+    workflow_run_id: UUID,
+) -> tuple[Any, UUID | None]:
+    """Run one focused repair before the v2 seriality mapping hard gate."""
+
+    from bestseller.services.concept_contract import require_valid_concept_contract
+    from bestseller.services.seriality_volume_gate import (
+        evaluate_seriality_volume_mapping,
+    )
+
+    contract = require_valid_concept_contract(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        target_chapters=int(project.target_chapters or 0),
+    )
+    if contract is None:
+        return volume_plan_payload, None
+    report = evaluate_seriality_volume_mapping(volume_plan_payload, contract)
+    if report.passed:
+        return volume_plan_payload, None
+    language = _planner_language(project)
+    is_en = is_english_language(language)
+    repair_system, repair_user = _volume_plan_prompts(
+        project,
+        book_spec_payload,
+        world_spec_payload,
+        cast_spec_payload,
+        act_plan=act_plan_payload,
+    )
+    findings = "\n".join(
+        f"- {item.code}: {item.message}" for item in report.findings
+    )
+    repair_user += (
+        "\n\n[SerialityProof mapping repair — regenerate the full VolumePlan]\n"
+        if is_en
+        else "\n\n【长篇容量证明映射修复——请重新生成完整卷计划】\n"
+    )
+    repair_user += findings + "\n"
+    repair_user += (
+        "Use one exact phase id/ref pair and one exact unit_family_ref per volume. "
+        "Map irreversible changes as accumulation_track_deltas [{track_ref, delta}]; "
+        "cover every approved phase, family, and track without stuffing multiple phases into one field."
+        if is_en
+        else "每卷只能使用一个准确的阶段 id/ref 对和一个批准的 unit_family_ref；"
+        "不可逆变化必须写成 accumulation_track_deltas [{track_ref, delta}]；"
+        "覆盖全部阶段、单元家族和积累轴，禁止把多个阶段塞进同一字段。"
+    )
+    try:
+        repaired, run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="volume_plan_seriality_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=volume_plan_payload,
+            workflow_run_id=workflow_run_id,
+            validator=_volume_plan_validator_for(project),
+        )
+    except Exception:
+        logger.warning("Seriality volume mapping repair failed", exc_info=True)
+        return volume_plan_payload, None
+    repaired_report = evaluate_seriality_volume_mapping(repaired, contract)
+    return (repaired, run_id) if repaired_report.passed else (volume_plan_payload, run_id)
+
+
 async def _repair_cast_foundation_if_needed(
     *,
     session: AsyncSession,
@@ -6630,6 +6745,27 @@ def _planner_forbidden_protagonist_names(
     raw_forbidden = metadata.get("protagonist_forbidden_names")
     if isinstance(raw_forbidden, (list, tuple, set)):
         forbidden.update(str(item).strip() for item in raw_forbidden if str(item).strip())
+    # A previous planning artifact may have recorded the old name only inside
+    # a free-text field (for example ``沈渡渊需要...``), so it never reached
+    # protagonist_forbidden_names. Recover those short subject names from the
+    # project identity text and make the repair deterministic on the next
+    # artifact pass.
+    identity_sources: list[Any] = [metadata.get("protagonist")]
+    book_spec = metadata.get("book_spec")
+    if isinstance(book_spec, dict):
+        identity_sources.append(book_spec.get("protagonist"))
+        book_meta = book_spec.get("_meta")
+        if isinstance(book_meta, dict):
+            identity_sources.extend(
+                item.get("protagonist_name")
+                for item in (book_meta.get("name_drift_repair") or [])
+                if isinstance(item, dict)
+            )
+    identity_text = json.dumps(identity_sources, ensure_ascii=False)
+    for match in re.finditer(r"(?<![\u4e00-\u9fff])([\u4e00-\u9fff]{2,4})(?=(?:需要|必须|曾因|利用|会|把))", identity_text):
+        candidate = match.group(1).strip()
+        if candidate and candidate != protagonist_name:
+            forbidden.add(candidate)
     forbidden.discard("")
     forbidden.discard(protagonist_name)
     # Allowlisted public-domain mythological names must never be drift-repaired.
@@ -8768,8 +8904,11 @@ async def _repair_cast_spec_relationship_scaling_if_needed(
 
 def _planner_prompt_pack(project: ProjectModel):
     writing_profile = _planner_writing_profile(project)
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    contract = metadata.get("genre_intent_contract")
+    contract_pack = contract.get("prompt_pack_key") if isinstance(contract, dict) else None
     return resolve_prompt_pack(
-        writing_profile.market.prompt_pack_key,
+        str(contract_pack or writing_profile.market.prompt_pack_key or ""),
         genre=project.genre,
         sub_genre=project.sub_genre,
     )
@@ -14244,6 +14383,22 @@ def _book_spec_prompts(
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
     _distilled_architecture_block = _distilled_design_reference_block(project, "architecture")
+    from bestseller.services.concept_contract import (
+        render_concept_contract_block,
+        require_valid_concept_contract,
+    )
+
+    _concept_contract = require_valid_concept_contract(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        target_chapters=int(project.target_chapters or 0),
+    )
+    _concept_contract_block = render_concept_contract_block(
+        _concept_contract,
+        language=language,
+    )
+    _concept_contract_line = (
+        f"{_concept_contract_block}\n" if _concept_contract_block else ""
+    )
     from bestseller.services.hook_propagation import (
         hook_spec_from_metadata,
         render_hook_spec_prompt_block,
@@ -14279,6 +14434,7 @@ def _book_spec_prompts(
             f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_story_package_block}\n"
             f"{_distilled_architecture_block}"
+            f"{_concept_contract_line}"
             f"{_hook_contract_line}"
             f"{_concept_lab_contract_line}"
             f"{_story_enhancer_line}"
@@ -14308,6 +14464,7 @@ def _book_spec_prompts(
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_story_package_block}\n"
             f"{_distilled_architecture_block}"
+            f"{_concept_contract_line}"
             f"{_hook_contract_line}"
             f"{_concept_lab_contract_line}"
             f"{_story_enhancer_line}"
@@ -15061,6 +15218,7 @@ def _volume_plan_prompts(
             f"{_pp_volume_plan}"
             f"{_coverage_contract_line}"
             "Generate a VolumePlan JSON array. Each entry must include volume_number, volume_title, volume_theme, chapter_count_target, volume_goal, volume_obstacle, volume_climax, volume_resolution, conflict_phase, and primary_force_name. "
+            "Each entry MUST include exactly one `seriality_phase_id` (`phase-01`, `phase-02`, ... in approved order), the matching exact `seriality_phase_ref`, one exact approved `unit_family_ref`, a volume-specific `renewable_unit_variant`, and `accumulation_track_deltas` shaped as [{track_ref, delta}]. A delta must describe a concrete irreversible before/after state, not merely say progress/change/upgrade. Every approved phase, story-unit family, and accumulation track must be covered across the full plan; never stuff multiple phases into one field. "
             "Each entry must also include worldview progression fields: `world_state_targets`, `active_authority_claims`, `map_function`, `world_asset_refs`, `asset_risk_escalation`, and `reveal_budget`. "
             "`world_state_targets` must name WorldviewKernel state variables and their intended movement; `map_function` must explain resource anomaly, faction/authority pressure, or rule demonstration; `asset_risk_escalation` must increase cost/exposure/attention when an asset repeats. "
             "`volume_resolution` MUST be an object shaped like {protagonist_power_tier, goal_achieved, cost_paid, new_threat_introduced}; never emit it as a plain string. "
@@ -15105,6 +15263,11 @@ def _volume_plan_prompts(
             "chapter_count_target、volume_goal、volume_obstacle、volume_climax、volume_resolution、"
             "conflict_phase（冲突类型：survival/political_intrigue/betrayal/faction_war/existential_threat/internal_reckoning）、"
             "primary_force_name（本卷主要冲突力量名称）。"
+            "每卷还必须输出且只能引用一个阶段：`seriality_phase_id`（按批准顺序使用 phase-01、phase-02……）和与之逐字匹配的 `seriality_phase_ref`；"
+            "输出一个逐字匹配批准列表的 `unit_family_ref`、本卷独有的 `renewable_unit_variant`，以及"
+            "`accumulation_track_deltas` 数组，每项结构为 {track_ref, delta}。track_ref 必须逐字引用批准积累轴，"
+            "delta 必须写清不可逆的前后状态，禁止只写『推进/变化/升级/增加』。整份卷计划必须覆盖全部阶段、"
+            "故事单元家族和永久积累轴，禁止把多个阶段塞进一个字段，也禁止只换卷名。"
             "每个元素还必须包含世界观推进字段：`world_state_targets`、`active_authority_claims`、"
             "`map_function`、`world_asset_refs`、`asset_risk_escalation`、`reveal_budget`。"
             "`world_state_targets` 必须写明 WorldviewKernel 状态变量及目标变化；`map_function` 必须说明资源异常、"
@@ -15764,6 +15927,18 @@ def _volume_outline_prompts(
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
     volume_number = int(volume_entry.get("volume_number", 1))
     chapter_count = int(volume_entry.get("chapter_count_target", 10))
+    from bestseller.services.concept_contract import (
+        render_volume_seriality_execution_block,
+    )
+
+    _seriality_execution_block = render_volume_seriality_execution_block(
+        _mapping(_proj_meta.get("concept_contract")),
+        volume_entry,
+        language=language,
+    )
+    _seriality_execution_line = (
+        f"\n{_seriality_execution_block}\n" if _seriality_execution_block else ""
+    )
     compact_outline_mode = project.target_chapters <= 12 or chapter_count <= 12
     short_complete_outline_mode = compact_outline_mode or (
         project.target_chapters <= 60 and chapter_count >= 12
@@ -16083,6 +16258,7 @@ def _volume_outline_prompts(
             f"{_story_effect_catalog_line}"
             f"{_selected_story_effect_contract_line}"
             f"{_prior_vols_line}"
+            f"{_seriality_execution_line}"
             f"{_ledger_line}"
             f"{_existing_titles_line}"
             f"{_pp_outline}"
@@ -16185,6 +16361,7 @@ def _volume_outline_prompts(
             f"{_story_effect_catalog_line}"
             f"{_selected_story_effect_contract_line}"
             f"{_prior_vols_line}"
+            f"{_seriality_execution_line}"
             f"{_ledger_line}"
             f"{_existing_titles_line}"
             f"{_pp_outline}"
@@ -16274,7 +16451,17 @@ def _volume_outline_prompts(
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     if not compact_outline_mode:
         user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
-    hook_constraints = hook_outline_extra_constraints(_hook_spec, language=language)
+    _batch_range = volume_entry.get("outline_batch_range")
+    _batch_start = (
+        int(_batch_range[0])
+        if isinstance(_batch_range, list) and _batch_range
+        else 1 if volume_number == 1 else 4
+    )
+    hook_constraints = hook_outline_extra_constraints(
+        _hook_spec,
+        language=language,
+        chapter_number=_batch_start,
+    )
     merged_extra_constraints = [*(extra_constraints or []), *hook_constraints]
     if merged_extra_constraints:
         header = (
@@ -19756,6 +19943,23 @@ async def _run_hook_strength_gate(
 ) -> tuple[Any | None, dict[str, Any] | None]:
     if not getattr(settings.hook_engine, "enabled", True):
         return None, None
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    concept_contract = metadata.get("concept_contract")
+    if (
+        isinstance(concept_contract, dict)
+        and str(concept_contract.get("schema_version") or "") == "concept-contract.v2"
+    ) or str(metadata.get("concept_contract_version") or "") == "2":
+        metadata = dict(metadata)
+        stale_hook = metadata.pop("hook_spec", None)
+        metadata.pop("hook_candidates", None)
+        payload = {
+            "skipped": True,
+            "reason": "approved_concept_contract_is_authoritative",
+            "stale_hook_removed": stale_hook is not None,
+        }
+        metadata["hook_strength_gate"] = payload
+        project.metadata_json = metadata
+        return None, payload
     from bestseller.services.anti_commonsense_hook import (
         build_hook_duplicate_risk_fn,
         generate_hook_candidates,
@@ -19770,7 +19974,6 @@ async def _run_hook_strength_gate(
         repair_hook_spec_once,
     )
 
-    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
     hook_spec = coerce_hook_spec(metadata.get("hook_spec"))
     provided_spec = hook_spec is not None
     min_h_norm = float(getattr(settings.hook_engine, "min_h_norm", 30.0))
@@ -19876,12 +20079,52 @@ async def _run_hook_strength_gate(
             report.h_norm,
             provided_spec,
         )
+        # A demoted hook must be removed from the project's active metadata.
+        # Prompt builders independently read metadata, so returning ``None``
+        # alone leaves the rejected contract alive downstream.
+        demoted_metadata = dict(project.metadata_json or {})
+        demoted_metadata.pop("hook_spec", None)
+        demoted_metadata["rejected_hook_spec"] = hook_spec.model_dump(mode="json")
+        demoted_metadata["hook_strength_gate"] = payload
+        project.metadata_json = demoted_metadata
         return None, payload
     payload = hook_strength_report_to_dict(report)
     payload["rewrite_attempted"] = rewrite_attempted
     payload["rewrite_applied"] = rewrite_applied
     stash_hook_spec_on_project(project, hook_spec, score_payload=payload)
     return hook_spec, payload
+
+
+def _enforce_seriality_volume_mapping(
+    project: ProjectModel,
+    volume_plan_payload: Any,
+) -> dict[str, Any] | None:
+    """Fail closed when a v2 VolumePlan does not implement its capacity proof."""
+
+    from bestseller.services.concept_contract import (
+        ConceptContractError,
+        require_valid_concept_contract,
+    )
+    from bestseller.services.seriality_volume_gate import (
+        evaluate_seriality_volume_mapping,
+    )
+
+    contract = require_valid_concept_contract(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        target_chapters=int(project.target_chapters or 0),
+    )
+    if contract is None:
+        return None
+    report = evaluate_seriality_volume_mapping(volume_plan_payload, contract)
+    report_payload = report.to_dict()
+    metadata = dict(project.metadata_json or {})
+    metadata["seriality_volume_mapping_gate"] = report_payload
+    project.metadata_json = metadata
+    if not report.passed:
+        raise ConceptContractError(
+            ["VolumePlan 未实现长篇容量证明: " + "/".join(report.blocking_codes)]
+        )
+    return report_payload
 
 
 async def _run_reverse_outline_gate(
@@ -20133,6 +20376,15 @@ async def generate_novel_plan(
     progress: PlanningProgressCallback | None = None,
 ) -> NovelPlanningResult:
     project = await _assert_plan_writer_not_locked(session, project_slug)
+    from bestseller.services.concept_contract import require_valid_concept_contract
+
+    # New v2 projects fail before any optional HookSpec generation or planning
+    # LLM call. Legacy projects remain compatible through the validator's
+    # explicit no-contract return path.
+    require_valid_concept_contract(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        target_chapters=int(project.target_chapters or 0),
+    )
 
     # Sweep/refuse BEFORE creating our own workflow_run row: a genuinely live
     # sibling planning run must abort this request outright, not get its row
@@ -20491,6 +20743,18 @@ async def generate_novel_plan(
 
         current_step_name = "generate_book_spec"
         workflow_run.current_step = current_step_name
+        from bestseller.services.concept_contract import (
+            apply_concept_contract_to_book_spec,
+            require_valid_concept_contract,
+        )
+
+        book_spec_payload = apply_concept_contract_to_book_spec(
+            book_spec_payload,
+            require_valid_concept_contract(
+                project.metadata_json if isinstance(project.metadata_json, dict) else {},
+                target_chapters=int(project.target_chapters or 0),
+            ),
+        )
         book_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -21329,6 +21593,24 @@ async def generate_novel_plan(
             from bestseller.services.hook_propagation import apply_hook_to_volume_plan
 
             volume_plan_payload = apply_hook_to_volume_plan(volume_plan_payload, hook_spec)
+
+        (
+            volume_plan_payload,
+            seriality_repair_llm_run_id,
+        ) = await _repair_seriality_volume_mapping_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            act_plan_payload=act_plan_payload,
+            volume_plan_payload=volume_plan_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if seriality_repair_llm_run_id is not None:
+            llm_run_ids.append(seriality_repair_llm_run_id)
+        _enforce_seriality_volume_mapping(project, volume_plan_payload)
 
         current_step_name = "volume_plan_gate"
         workflow_run.current_step = current_step_name
@@ -22173,6 +22455,12 @@ async def generate_foundation_plan(
     Outlines are generated per-volume via ``generate_volume_plan()``.
     """
     project = await _assert_plan_writer_not_locked(session, project_slug)
+    from bestseller.services.concept_contract import require_valid_concept_contract
+
+    require_valid_concept_contract(
+        project.metadata_json if isinstance(project.metadata_json, dict) else {},
+        target_chapters=int(project.target_chapters or 0),
+    )
 
     # Sweep/refuse BEFORE creating our own workflow_run row — see
     # generate_novel_plan for why order matters here.
@@ -22386,6 +22674,18 @@ async def generate_foundation_plan(
                 },
             )
 
+        from bestseller.services.concept_contract import (
+            apply_concept_contract_to_book_spec,
+            require_valid_concept_contract,
+        )
+
+        book_spec_payload = apply_concept_contract_to_book_spec(
+            book_spec_payload,
+            require_valid_concept_contract(
+                project.metadata_json if isinstance(project.metadata_json, dict) else {},
+                target_chapters=int(project.target_chapters or 0),
+            ),
+        )
         book_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -22809,6 +23109,24 @@ async def generate_foundation_plan(
             from bestseller.services.hook_propagation import apply_hook_to_volume_plan
 
             volume_plan_payload = apply_hook_to_volume_plan(volume_plan_payload, hook_spec)
+
+        (
+            volume_plan_payload,
+            seriality_repair_llm_run_id,
+        ) = await _repair_seriality_volume_mapping_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            act_plan_payload=None,
+            volume_plan_payload=volume_plan_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if seriality_repair_llm_run_id is not None:
+            llm_run_ids.append(seriality_repair_llm_run_id)
+        _enforce_seriality_volume_mapping(project, volume_plan_payload)
 
         volume_artifact = await import_planning_artifact(
             session,

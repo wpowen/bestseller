@@ -47,6 +47,7 @@ from bestseller.services.concept_lab import (
     concept_lab_to_user_hints,
     select_concept_lab_bundle,
 )
+from bestseller.services.concept_contract import ConceptContractError
 from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
 from bestseller.services.genre_creativity import (
     creative_direction_to_user_hints,
@@ -2357,6 +2358,13 @@ class WebTaskManager:
                 task.current_stage = "queued"
                 task.error = None
                 task.result = None
+                # A reusable card may contain an old machine-repair / gate
+                # event. Keeping that history makes the self-heal scanner
+                # classify the fresh run as incomplete immediately, so the
+                # user can never actually restart writing. A new run gets a
+                # fresh event stream; the prior task state remains in the DB
+                # workflow/audit tables for diagnosis.
+                task.progress_events = []
                 task.cancel_requested = False
                 task.updated_at = now
                 if title:
@@ -3314,6 +3322,7 @@ class WebTaskManager:
             conception_brief: dict[str, object] | None = None
             conception_log: list[dict[str, object]] | None = None
             conception_hook_spec: dict[str, object] | None = None
+            conception_contract: dict[str, object] | None = None
             conception_methodology: dict[str, object] | None = None
             conception_hook_candidates: list[dict[str, object]] | None = None
             # Must be initialised here (not only inside ``if run_conception``):
@@ -3324,6 +3333,9 @@ class WebTaskManager:
             conception_story_appeal: dict[str, object] | None = None
             conception_degradation: list[dict[str, object]] = []
             story_facets_obj = None
+            from bestseller.services.genre_intent_contract import contract_from_payload
+
+            genre_intent_contract = contract_from_payload(payload)
 
             # Use a single session scope for both conception and autowrite
             # to ensure transactional consistency.
@@ -3359,10 +3371,31 @@ class WebTaskManager:
                                     language=str(payload.get("language", "zh-CN")),
                                     genre_key=genre_key,
                                     user_hints=user_hints,
+                                    genre_intent=genre_intent_contract,
                                 )
                             progress(
                                 "story_architect_complete",
                                 {
+                                    "genre_intent_contract_hash": (
+                                        genre_intent_contract.contract_hash()
+                                        if genre_intent_contract is not None
+                                        else None
+                                    ),
+                                    "genre_key": (
+                                        genre_intent_contract.genre_key
+                                        if genre_intent_contract is not None
+                                        else genre_key
+                                    ),
+                                    "sub_genre": (
+                                        genre_intent_contract.sub_genre_label
+                                        if genre_intent_contract is not None
+                                        else str(payload.get("sub_genre") or "")
+                                    ),
+                                    "prompt_pack_key": (
+                                        genre_intent_contract.prompt_pack_key
+                                        if genre_intent_contract is not None
+                                        else None
+                                    ),
                                     "tone": story_facets_obj.tone,
                                     "narrative_drive": story_facets_obj.narrative_drive,
                                     "trope_tags": list(story_facets_obj.trope_tags),
@@ -3388,6 +3421,7 @@ class WebTaskManager:
                                 chapter_count=int(payload["target_chapters"]),
                                 user_hints=user_hints,
                                 story_facets=story_facets_obj,
+                                genre_intent_contract=genre_intent_contract,
                                 progress=progress,
                             )
                         effective_premise = conception_result.premise
@@ -3399,6 +3433,14 @@ class WebTaskManager:
                         conception_hook_spec = (
                             conception_result.hook_spec
                             if isinstance(conception_result.hook_spec, dict)
+                            else None
+                        )
+                        conception_contract = (
+                            getattr(conception_result, "concept_contract", None)
+                            if isinstance(
+                                getattr(conception_result, "concept_contract", None),
+                                dict,
+                            )
                             else None
                         )
                         effective_synopsis = conception_result.synopsis
@@ -3457,6 +3499,10 @@ class WebTaskManager:
                         )
 
                 project_metadata: dict[str, object] = {"premise": effective_premise}
+                if isinstance(payload.get("genre_intent_contract"), dict):
+                    project_metadata["genre_intent_contract"] = json.loads(
+                        json.dumps(payload["genre_intent_contract"])
+                    )
                 # Story-enhancer checkboxes (脑洞/反常识/18 故事 skill) from the
                 # create form → hard outline contracts. Validated so unknown
                 # skill keys are dropped; empty selection adds nothing.
@@ -3479,6 +3525,13 @@ class WebTaskManager:
                     project_metadata["hook_spec"] = payload_hook_spec.model_dump(mode="json")
                 if conception_hook_spec:
                     project_metadata["hook_spec"] = conception_hook_spec
+                if conception_contract:
+                    project_metadata["concept_contract_version"] = "2"
+                    project_metadata["concept_contract"] = conception_contract
+                    project_metadata["hook_card"] = conception_contract.get("hook_card", {})
+                    project_metadata["seriality_proof"] = conception_contract.get(
+                        "seriality_proof", {}
+                    )
                 if run_conception:
                     project_metadata["synopsis"] = effective_synopsis
                     project_metadata["tags"] = effective_tags
@@ -3533,6 +3586,27 @@ class WebTaskManager:
                 extra_meta = payload.get("metadata")
                 if isinstance(extra_meta, dict):
                     project_metadata.update(extra_meta)
+                # Request metadata may contain stale preview values. Re-assert
+                # the validated creation-time genre contract after the merge.
+                if genre_intent_contract is not None:
+                    project_metadata["genre_intent_contract"] = genre_intent_contract.model_dump(
+                        mode="json"
+                    )
+                # Request metadata is user-controlled and may contain stale
+                # preview values.  Re-assert the verified concept contract
+                # after the merge so it cannot be replaced by an unvalidated
+                # HookCard/Spine/SerialityProof.
+                if conception_contract:
+                    project_metadata["concept_contract_version"] = "2"
+                    project_metadata["concept_contract"] = conception_contract
+                    project_metadata["hook_card"] = conception_contract.get("hook_card", {})
+                    project_metadata["seriality_proof"] = conception_contract.get(
+                        "seriality_proof", {}
+                    )
+                    project_metadata["story_spine"] = conception_contract.get(
+                        "story_spine", {}
+                    )
+                    project_metadata.pop("hook_spec", None)
                 # A per-book model picked from the dashboard *during* conception
                 # (before this project row existed) was stashed on the task
                 # payload by _set_project_model_payload. Fold it in so the
@@ -3542,6 +3616,14 @@ class WebTaskManager:
                     project_metadata["llm_model_id"] = pending_model
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
+                stop_after_conception = bool(payload.get("stop_after_conception", False))
+                if stop_after_conception and run_conception:
+                    if not conception_contract:
+                        raise ValueError(
+                            "构思未形成通过门禁的创意合同，未创建书籍、未进入规划。"
+                        )
+                    project_metadata["planning_status"] = "awaiting_concept_approval"
+                    project_metadata["conception_only"] = True
                 target_chapters = int(payload["target_chapters"])
                 from bestseller.domain.enums import ProjectType as DomainProjectType
 
@@ -3565,6 +3647,31 @@ class WebTaskManager:
                     metadata=project_metadata,
                     writing_profile=effective_writing_profile,
                 )
+                if stop_after_conception and run_conception:
+                    from bestseller.services.projects import create_project
+
+                    project = await create_project(session, project_create, settings)
+                    hook_card = conception_contract.get("hook_card", {})
+                    progress(
+                        "conception_only_complete",
+                        {
+                            "project_slug": project.slug,
+                            "planning_started": False,
+                            "concept_contract_version": "2",
+                            "hook": (
+                                str(hook_card.get("one_liner") or "")
+                                if isinstance(hook_card, dict)
+                                else ""
+                            ),
+                        },
+                    )
+                    return {
+                        "project_slug": project.slug,
+                        "project_id": str(project.id),
+                        "mode": "conception_only",
+                        "planning_started": False,
+                        "concept_contract": conception_contract,
+                    }
                 common_kwargs: dict[str, object] = {
                     "session": session,
                     "settings": settings,
@@ -3614,12 +3721,66 @@ class WebTaskManager:
                 ),
             )
             logger.info("Autowrite task %s blocked by structural repair pause: %s", task_id, exc)
+        except ConceptContractError as exc:
+            reasons = list(exc.violations)
+            try:
+                progress(
+                    "one_sentence_outline_blocked",
+                    {
+                        "action": "reject",
+                        "reasons": reasons,
+                        "planning_started": False,
+                        "project_created": False,
+                    },
+                )
+            except Exception:
+                logger.debug("one_sentence_outline_blocked progress emit failed", exc_info=True)
+            logger.info(
+                "Autowrite task %s blocked by concept contract before planning: %s",
+                task_id,
+                "; ".join(reasons),
+            )
+            self._mark_failed(
+                task_id,
+                "一句话创意未通过长篇门禁，已停止；未创建书籍、未进入规划。\n\n"
+                + "\n".join(f"- {reason}" for reason in reasons),
+            )
         except AppealBarNotMetError as exc:
-            # 产品硬线"低于80不通过"：简介/书名经有界重生仍未达榜单达标线(80)。
-            # 这是【刻意拦截】不是崩溃——给可见的分数+整改建议，不静默进规划、不留僵尸。
+            # 这是【刻意拦截】不是崩溃：一句话故事大纲或上架文案未过硬门，
+            # 必须在 create_project/run_autowrite_pipeline 之前终止，不留僵尸项目。
             report = exc.report or {}
+            logline_gate = report.get("logline_gate") or {}
             blurb_total = (report.get("blurb") or {}).get("total")
             title_total = (report.get("title") or {}).get("total")
+            if logline_gate and str(logline_gate.get("action") or "") != "expand":
+                try:
+                    progress(
+                        "one_sentence_outline_blocked",
+                        {
+                            "action": logline_gate.get("action"),
+                            "overall": logline_gate.get("overall"),
+                            "weakest_axis": logline_gate.get("weakest_axis"),
+                            "reasons": logline_gate.get("reasons") or [],
+                            "fix_directives": logline_gate.get("fix_directives") or [],
+                            "planning_started": False,
+                        },
+                    )
+                except Exception:
+                    logger.debug("one_sentence_outline_blocked progress emit failed", exc_info=True)
+                msg = (
+                    "一句话故事大纲不成立，已停止，未创建书籍、未进入规划。\n"
+                    f"裁决：{logline_gate.get('action')}　"
+                    f"总分：{logline_gate.get('overall')}　"
+                    f"最弱维度：{logline_gate.get('weakest_axis')}\n\n"
+                    f"{exc.feedback}"
+                )
+                logger.info(
+                    "Autowrite task %s blocked before planning: one-sentence outline %s",
+                    task_id,
+                    logline_gate.get("action"),
+                )
+                self._mark_failed(task_id, msg)
+                return
             try:
                 progress(
                     "appeal_blocked",
@@ -3697,6 +3858,40 @@ class WebTaskManager:
                 genre_key,
                 suitable=genre_preset.suitable_for_short_story,
             )
+
+        # Freeze the user's taxonomy choice before any AI agent runs.  The
+        # contract is the authority for genre/sub-genre/prompt-pack routing;
+        # Story Architect may only add surface suggestions later.
+        from bestseller.services.genre_intent_contract import (
+            build_genre_intent_contract,
+            contract_from_selection,
+        )
+        from bestseller.services.genre_taxonomy import resolve_selection
+        from bestseller.services.story_enhancers import resolve_story_enhancers
+
+        raw_enhancers = payload.get("story_enhancers")
+        selected_enhancers = resolve_story_enhancers(
+            {"story_enhancers": raw_enhancers} if isinstance(raw_enhancers, dict) else {}
+        )
+        audience_orientation = str(payload.get("audience_orientation") or "").strip().lower() or None
+        contract = (
+            contract_from_selection(
+                selection,
+                audience_orientation=audience_orientation,
+                narrative_scale=str(payload.get("narrative_scale") or "").strip() or None,
+                tone_preference=str(payload.get("tone_preference") or "").strip() or None,
+                enhancers=selected_enhancers,
+            )
+            if selection is not None
+            else build_genre_intent_contract(
+                resolve_selection(None, genre_preset.genre, genre_preset.sub_genre, []),
+                source="legacy_inferred",
+                audience_orientation=audience_orientation,
+                narrative_scale=str(payload.get("narrative_scale") or "").strip() or None,
+                tone_preference=str(payload.get("tone_preference") or "").strip() or None,
+                enhancers=selected_enhancers,
+            )
+        )
 
         # Resolve chapter count
         chapter_count = int(payload.get("chapter_count") or 0)
@@ -3776,6 +3971,9 @@ class WebTaskManager:
             else None
         )
         creative_hints = creative_direction_to_user_hints(creative_direction)
+        explicit_concept_seed = str(payload.get("concept_seed") or "").strip()[:500]
+        if explicit_concept_seed:
+            creative_hints["concept_seed"] = explicit_concept_seed
         selected_hook_spec = coerce_hook_spec(payload.get("hook_spec"))
         if selected_hook_spec is not None:
             creative_hints["hook_spec"] = selected_hook_spec.model_dump(mode="json")
@@ -3838,6 +4036,7 @@ class WebTaskManager:
             "export_markdown": True,
             "auto_repair": True,
             "draft_mode": bool(payload.get("draft_mode", False)),
+            "stop_after_conception": bool(payload.get("stop_after_conception", False)),
             "story_enhancers": (
                 payload.get("story_enhancers")
                 if isinstance(payload.get("story_enhancers"), dict)
@@ -3854,6 +4053,7 @@ class WebTaskManager:
                 concept_bundle.model_dump(mode="json") if concept_bundle is not None else {}
             ),
             "user_hints": creative_hints,
+            "genre_intent_contract": contract.model_dump(mode="json"),
             # Enable AI conception for new projects (not resume)
             "_run_conception": is_new_project,
             "_genre_key": genre_key,
@@ -3889,12 +4089,15 @@ class WebTaskManager:
         task["quickstart_meta"] = {
             "creation_mode": creation_mode,
             "genre_key": genre_key,
+            "genre_intent_contract": contract.model_dump(mode="json"),
             "genre_name": genre_preset.name,
             "heat_domains": genre_preset.heat_domains,
             "reader_rewards": genre_preset.reader_rewards,
             "narrative_drives": genre_preset.narrative_drives,
             "creative_key": creative_direction.key if creative_direction else "",
             "creative_title": creative_direction.title if creative_direction else "",
+            "stop_after_conception": bool(payload.get("stop_after_conception", False)),
+            "concept_seed": explicit_concept_seed,
             "hook_spec": selected_hook_spec.model_dump(mode="json") if selected_hook_spec else {},
             "concept_lab_bundle": (
                 concept_bundle.model_dump(mode="json") if concept_bundle is not None else {}

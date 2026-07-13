@@ -137,3 +137,37 @@ def test_compiled_chapter_first_matrix_stays_complete_unique_and_within_budget(
     assert "chapter_first.primary_task" in compiled.report.required_blocks_kept
     blacklist = "AI套话黑名单" if language.startswith("zh") else "BANNED AI CLICH"
     assert blacklist in compiled.user
+
+
+def test_chapter_writer_receives_explicit_protagonist_decision_block() -> None:
+    project, chapter, scene, packet = _inputs("zh-CN", 1)
+    chapter.metadata_json = {
+        "methodology_contract": {
+            "decision_protocol": {
+                "viewpoint_character": "林砚",
+                "known_facts": ["门锁倒计时已经启动", "周禾还在封锁线内"],
+                "unknowns": ["门后是谁"],
+                "immediate_goal": "先让周禾撤离，再验证门锁。",
+                "options_considered": ["直接撞门", "撤离", "先断电试锁"],
+                "obvious_safe_option": "立刻撤离并等待支援。",
+                "chosen_action": "先让周禾撤到楼梯口，林砚断电试锁。",
+                "why_not_safer_option": "门锁会在支援抵达前完成反锁，楼内还有被困者。",
+                "personality_basis": "林砚谨慎且重视同伴安全。",
+                "risk_control": "周禾在楼梯口拉保险绳，试锁失败立刻撤。",
+                "first_person_reasoning": "我先把人送出去，再用能撤回的一步验证门锁。",
+            }
+        }
+    }
+
+    _, user = build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        packet,
+        target_word_count=2_600,
+    )
+
+    assert "【主角决策落地·不得把本清单写进正文】" in user
+    assert "显然更安全的选项：立刻撤离并等待支援" in user
+    assert "止损/退路/后手：周禾在楼梯口拉保险绳" in user

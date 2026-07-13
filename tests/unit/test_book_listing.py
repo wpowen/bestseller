@@ -246,6 +246,34 @@ def test_build_book_listing_profile_uses_concept_lab_listing_seed() -> None:
     assert profile["title_workflow"]["candidate_source"] == "concept_lab+platform_title_workflow"
 
 
+def test_listing_uses_concept_contract_hook_card_as_single_source() -> None:
+    project = SimpleNamespace(
+        slug="hook-card-listing",
+        title="宗门夜渡",
+        genre="仙侠",
+        sub_genre="仙侠",
+        audience="男频",
+        status="planning",
+        language="zh-CN",
+        metadata_json={
+            "premise": "很长的构思说明，不应直接冒充钩子。",
+            "concept_contract": {
+                "hook_card": {
+                    "one_liner": "他每救一名将死之人，自己的道途就少一盏灯。"
+                }
+            },
+        },
+    )
+    profile = build_book_listing_profile(
+        project=project,
+        writing_profile={"market": {"logline": "旧的模型简介不应抢走契约钩子。"}},
+        story_bible=None,
+    )
+
+    assert profile["logline"] == "他每救一名将死之人，自己的道途就少一盏灯"
+    assert profile["logline_source"] == "hook_card"
+
+
 def test_fallback_title_candidates_follow_fanqie_workflow() -> None:
     project = SimpleNamespace(
         slug="book-c",

@@ -49,6 +49,11 @@ def _prompt_pack_key(ctx: Any) -> str | None:
         return str(explicit)
     metadata = getattr(ctx, "metadata_json", None) or {}
     if isinstance(metadata, dict):
+        contract = metadata.get("genre_intent_contract")
+        if isinstance(contract, dict):
+            contract_pack = contract.get("prompt_pack_key")
+            if contract_pack:
+                return str(contract_pack)
         explicit = (
             metadata.get("prompt_pack_key")
             or (metadata.get("market") or {}).get("prompt_pack_key")

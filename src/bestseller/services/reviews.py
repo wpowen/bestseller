@@ -1101,9 +1101,10 @@ def _scene_contract_expectations(
     *,
     chapter_contract: Any | None = None,
     scene_contract: Any | None = None,
+    scene_type: str | None = None,
 ) -> list[tuple[str, str | None]]:
     if scene_contract is not None:
-        return [
+        expectations = [
             ("scene_summary", getattr(scene_contract, "contract_summary", None)),
             ("core_conflict", getattr(scene_contract, "core_conflict", None)),
             ("emotional_shift", getattr(scene_contract, "emotional_shift", None)),
@@ -1121,6 +1122,24 @@ def _scene_contract_expectations(
             ("action_sequence", "；".join(getattr(scene_contract, "action_sequence", []) or [])),
             ("relationship_debts", "；".join(getattr(scene_contract, "relationship_debts", []) or [])),
         ]
+        # These are planning metadata, not prose obligations.  In particular,
+        # action_sequence is empty by design for a reveal/negotiation/care
+        # scene; counting it (and camera/reveal bookkeeping) as missing prose
+        # made otherwise valid scenes fail contract alignment forever.
+        scene_kind = str(scene_type or "").strip().lower()
+        if scene_kind in {"development", "sequel", "emotion", "reveal", "transition"}:
+            ignored = {
+                "hook_type",
+                "spotlight_character",
+                "information_control_mode",
+                "camera_distance",
+                "reveal_mode",
+                "signature_image",
+                "cut_point",
+                "action_sequence",
+            }
+            expectations = [item for item in expectations if item[0] not in ignored]
+        return expectations
     if chapter_contract is not None:
         expectations = [
             ("chapter_summary", getattr(chapter_contract, "contract_summary", None)),
@@ -1857,6 +1876,7 @@ def build_scene_review_prompts(
             f"Project: {project.title}\n"
             f"Chapter {chapter.chapter_number}\n"
             f"Scene {scene.scene_number}: {scene.title or ''}\n"
+            f"Participants (canonical names / declared aliases): {', '.join(str(item) for item in (getattr(scene, 'participants', None) or []))}\n"
             f"Story goal: {scene.purpose.get('story', 'advance the chapter spine')}\n"
             f"Emotional goal: {scene.purpose.get('emotion', 'raise tension')}\n"
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
@@ -1880,6 +1900,7 @@ def build_scene_review_prompts(
             f"项目：《{project.title}》\n"
             f"章节：第{chapter.chapter_number}章\n"
             f"场景：第{scene.scene_number}场 {scene.title or ''}\n"
+            f"参与者（规范名 / 已声明化名）：{', '.join(str(item) for item in (getattr(scene, 'participants', None) or []))}\n"
             f"场景目标：{scene.purpose.get('story', '推进本章主线')}\n"
             f"情绪目标：{scene.purpose.get('emotion', '拉高当前张力')}\n"
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
@@ -1906,6 +1927,26 @@ def build_scene_review_prompts(
         )
     )
     _genre_review_instruction = getattr(_genre_profile.judge_prompts, f"scene_review_instruction_{_lang_key}", "")
+    # Genre profiles describe the book's macro spine, not the required action
+    # in every individual scene. A xianxia development/sequel scene may be a
+    # social test, concealment, negotiation, or reveal; demanding a fight in
+    # that scene produces a rewrite loop and teaches the writer to inject
+    # irrelevant combat. Grade the scene's declared duty while retaining the
+    # genre's long-range promise.
+    _scene_kind = str(getattr(scene, "scene_type", "") or "").strip().lower()
+    if _scene_kind in {"development", "sequel", "emotion", "reveal", "transition"}:
+        _scene_kind_note = (
+            f"本场 scene_type={_scene_kind}，属于非战斗推进场。请按本场目标、人物阻力、"
+            "选择/代价、信息变化和尾钩评审；不得仅因没有打斗、境界突破或对轰就判定冲突失败，"
+            "社会压迫、身份暴露风险、谈判和操作性阻力同样是有效冲突。"
+        )
+        _genre_review_instruction = "\n".join(
+            item for item in (_genre_review_instruction, _scene_kind_note) if item
+        )
+        system_prompt += (
+            "\n\n【场景类型覆盖】本场是非战斗推进场。不要把‘没有战斗’当作第2轴失败，"
+            "也不要因为缺少力量差、招式或升级而强制 verdict=rewrite；只判断本场声明的目标、阻力、选择、信息、代价和尾钩。"
+        )
     if _genre_review_instruction:
         user_prompt += f"\n\n{'[Genre review focus]' if is_en else '【品类评审重点】'}\n{_genre_review_instruction}"
     return system_prompt, user_prompt
@@ -2199,6 +2240,19 @@ def build_scene_rewrite_prompts(
     _lang_key = "en" if is_en else "zh"
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_rewrite = getattr(_genre_profile.judge_prompts, f"scene_rewrite_instruction_{_lang_key}", "")
+    _scene_kind = str(getattr(scene, "scene_type", "") or "").strip().lower()
+    if _scene_kind in {"development", "sequel", "emotion", "reveal", "transition"}:
+        # A non-combat scene must not inherit the action-progression profile's
+        # imperative to add combat, breakthroughs, or loot.  Its repair target
+        # is the declared scene duty: pressure, choice, information, payoff,
+        # and a forward-facing hook.
+        _genre_rewrite = (
+            "本场属于非战斗推进场。不得为了满足品类模板添加打斗、境界突破、招式、战利品或新的敌人。"
+            "只修复本场目标、有效阻力、人物选择/代价、信息变化、情绪位移和尾钩；"
+            "社会压迫、身份暴露风险、谈判、照料、操作性困难都可以承担冲突。"
+            if not is_en
+            else "This is a non-combat progression scene. Do not add a fight, realm breakthrough, moves, loot, or a new enemy to satisfy the genre template. Repair only the declared goal, concrete resistance, character choice/cost, information change, emotional movement, and forward hook; social pressure, exposure risk, negotiation, care, and operational difficulty are valid conflict."
+        )
     if _genre_rewrite:
         user_prompt += f"\n\n{'[Genre rewrite focus]' if is_en else '【品类重写方向】'}\n{_genre_rewrite}"
     return system_prompt, user_prompt
@@ -3171,6 +3225,13 @@ def evaluate_scene_draft(
     profile = resolve_genre_review_profile(genre or "", sub_genre)
     _is_en = is_english_language(language)
     _lang_key = "en" if _is_en else "zh"
+    # Genre is a long-range promise, not a requirement that every scene fight.
+    # Keep non-combat development/reveal beats out of combat-specific review
+    # messaging and weighting; otherwise they enter an impossible rewrite loop.
+    _scene_kind = str(getattr(scene, "scene_type", "") or "").strip().lower()
+    _is_non_combat_scene = _scene_kind in {
+        "development", "sequel", "emotion", "reveal", "transition",
+    }
     _genre_conflict_kw = getattr(profile.signal_keywords, f"conflict_terms_{_lang_key}", [])
     _genre_emotion_kw = getattr(profile.signal_keywords, f"emotion_terms_{_lang_key}", [])
     _genre_hook_kw = getattr(profile.signal_keywords, f"hook_terms_{_lang_key}", [])
@@ -3316,6 +3377,22 @@ def evaluate_scene_draft(
             *_genre_conflict_kw,
         ],
     )
+    if _is_non_combat_scene:
+        # Non-combat pressure is often expressed through surveillance, a
+        # ledger entry, a demanded task, or a constrained caretaking choice.
+        # Those are real opposition signals even when no genre combat keyword
+        # appears in the prose.
+        conflict_signal = max(
+            conflict_signal,
+            _density_score(
+                content,
+                (
+                    "逼", "考验", "盯", "记一笔", "簿", "不敢", "不能", "必须",
+                    "代价", "风险", "选择", "停住", "压住", "逼问", "查",
+                ),
+                target=4,
+            ),
+        )
     emotion_signal = max(
         _signal_score(
             content,
@@ -3352,6 +3429,15 @@ def evaluate_scene_draft(
         # turning, ink rewriting itself) are tension the ratio scorer can't see.
         _density_score(tail_excerpt, _TENSION_HOOK_TERMS, target=3),
     )
+    if _is_non_combat_scene:
+        tail_tension_signal = max(
+            tail_tension_signal,
+            _density_score(
+                tail_excerpt,
+                ("门外", "脚步", "视线", "墨迹", "新的一笔", "簿", "移到", "笑收住", "声音"),
+                target=3,
+            ),
+        )
 
     conflict = _clamp_score(
         0.22
@@ -3441,6 +3527,15 @@ def evaluate_scene_draft(
             *_INFO_SIGNAL_TERMS,
         ],
     )
+    if _is_non_combat_scene:
+        payoff_density_signal = max(
+            payoff_density_signal or 0.0,
+            _density_score(
+                content,
+                ("落笔", "记下", "记上", "看出", "发现", "留下", "承受", "咽下", "换来"),
+                target=3,
+            ),
+        )
     voice_signal = _keyword_score(
         content,
         keywords=[
@@ -3573,6 +3668,7 @@ def evaluate_scene_draft(
         expectations=_scene_contract_expectations(
             chapter_contract=chapter_contract,
             scene_contract=scene_contract,
+            scene_type=_scene_kind,
         ),
         label_weights={
             "scene_summary": 0.65,
@@ -3608,18 +3704,32 @@ def evaluate_scene_draft(
         chapter_contract,
     )
     _sw = profile.scene_weights
+    _weight_overrides = {
+        "conflict": 1.0,
+        "conflict_clarity": 1.05,
+        "emotion": 1.0,
+        "emotional_movement": 1.0,
+        "dialogue": 1.05,
+        "hook": 1.0,
+        "hook_strength": 1.1,
+        "payoff_density": 1.05,
+    } if _is_non_combat_scene else {}
+
+    def _scene_weight(name: str) -> float:
+        return _weight_overrides.get(name, getattr(_sw, name))
+
     weighted_parts = [
-        (goal, _sw.goal),
-        (conflict, _sw.conflict),
-        (conflict_clarity, _sw.conflict_clarity),
-        (emotion, _sw.emotion),
-        (emotional_movement, _sw.emotional_movement),
-        (dialogue, _sw.dialogue),
-        (style, _sw.style),
-        (voice_consistency, _sw.voice_consistency),
-        (hook, _sw.hook),
-        (hook_strength, _sw.hook_strength),
-        (payoff_density, _sw.payoff_density),
+        (goal, _scene_weight("goal")),
+        (conflict, _scene_weight("conflict")),
+        (conflict_clarity, _scene_weight("conflict_clarity")),
+        (emotion, _scene_weight("emotion")),
+        (emotional_movement, _scene_weight("emotional_movement")),
+        (dialogue, _scene_weight("dialogue")),
+        (style, _scene_weight("style")),
+        (voice_consistency, _scene_weight("voice_consistency")),
+        (hook, _scene_weight("hook")),
+        (hook_strength, _scene_weight("hook_strength")),
+        (payoff_density, _scene_weight("payoff_density")),
     ]
     if int(contract_evidence["contract_expectation_count"]) > 0:
         # contract_alignment scores ~1.0 only when the contract's literal
@@ -3633,14 +3743,14 @@ def evaluate_scene_draft(
         _contract_axis = contract_alignment
         if getattr(settings.quality, "scene_verdict_advisory_axes", False):
             _contract_axis = max(contract_alignment, 0.5)
-        weighted_parts.append((_contract_axis, _sw.contract_alignment))
+        weighted_parts.append((_contract_axis, _scene_weight("contract_alignment")))
     if pacing_target is not None:
-        weighted_parts.append((pacing_alignment_score, _sw.pacing_alignment))
+        weighted_parts.append((pacing_alignment_score, _scene_weight("pacing_alignment")))
     if _primary_arcs:
-        weighted_parts.append((subplot_presence_score, _sw.subplot_presence))
+        weighted_parts.append((subplot_presence_score, _scene_weight("subplot_presence")))
     if swain_pattern is not None:
-        weighted_parts.append((scene_sequel_alignment_score, _sw.scene_sequel_alignment))
-    weighted_parts.append((methodology_compliance_score, _sw.methodology_compliance))
+        weighted_parts.append((scene_sequel_alignment_score, _scene_weight("scene_sequel_alignment")))
+    weighted_parts.append((methodology_compliance_score, _scene_weight("methodology_compliance")))
     _total_weight = sum(w for _, w in weighted_parts)
     overall = _clamp_score(sum(s * w for s, w in weighted_parts) / max(_total_weight, 0.01))
     _base_threshold = profile.scene_threshold_override or settings.quality.thresholds.scene_min_score
@@ -3652,9 +3762,45 @@ def evaluate_scene_draft(
     _is_opening_chapter = chapter.chapter_number <= 3
     _verdict_threshold = _base_threshold
     if _is_opening_chapter:
-        _verdict_threshold = max(_base_threshold, min(_base_threshold + 0.08, 0.85))
+        # Opening chapters deserve extra scrutiny, but the amplification must
+        # remain scene-aware.  A development/reveal scene should not need the
+        # same 0.78 combat-intensity bar as an action scene; otherwise a good
+        # non-combat beat is rewritten until it becomes artificial.
+        _opening_bonus = 0.02 if _is_non_combat_scene else 0.08
+        _verdict_threshold = max(_base_threshold, min(_base_threshold + _opening_bonus, 0.85))
 
     _fm = profile.finding_messages
+    def _scene_finding_message(key: str) -> str:
+        if _is_non_combat_scene and not _is_en:
+            neutral = {
+                "conflict_low_zh": "本场外部阻力、信息压力或关系阻力没有形成清晰递进。",
+                "conflict_clarity_low_zh": "本场目标、阻力与失败代价不够明确，读者无法判断选择边界。",
+                "emotion_low_zh": "人物情绪与处境变化不够可感知，缺少具体动作或反应承载。",
+                "emotional_movement_low_zh": "人物在选择前后的心态或立场位移不够清晰。",
+                "dialogue_low_zh": "对话没有推动选择、信息交换或关系变化。",
+                "hook_low_zh": "场景尾部没有把当前选择推向更大的风险、问题或诱因。",
+                "payoff_low_zh": "本场目标没有形成可感知的推进、信息回报或代价。",
+                "voice_low_zh": "叙述中说明和复述偏多，削弱了本场的即时推进。",
+                "contract_low_zh": "场景合同中的目标、阻力、变化或尾钩没有充分落到正文。",
+            }
+            if key in neutral:
+                return neutral[key]
+        if _is_non_combat_scene and _is_en:
+            neutral_en = {
+                "conflict_low_en": "External, informational, or relational pressure does not build in clear steps.",
+                "conflict_clarity_low_en": "The scene's goal, resistance, and failure cost are not clear enough to judge the choice boundary.",
+                "emotion_low_en": "The character's emotional and situational change is not palpable through concrete action or reaction.",
+                "emotional_movement_low_en": "The character's mindset or position does not clearly shift before and after the choice.",
+                "dialogue_low_en": "Dialogue does not advance a choice, information exchange, or relationship change.",
+                "hook_low_en": "The scene ending does not push the current choice toward a larger risk, question, or lure.",
+                "payoff_low_en": "The scene does not deliver a perceptible advance, information payoff, or cost.",
+                "voice_low_en": "Too much explanation or recap weakens the scene's immediate movement.",
+                "contract_low_en": "The scene contract's goal, resistance, change, or hook is not sufficiently dramatized in the prose.",
+            }
+            if key in neutral_en:
+                return neutral_en[key]
+        return getattr(_fm, key)
+
     findings: list[SceneReviewFinding] = []
     # 人称漂移 = critical:advisory-axes 模式下 critical 仍然强制 rewrite,
     # 保证第三人称书里混进第一人称场景绝不 ship。
@@ -3706,7 +3852,7 @@ def evaluate_scene_draft(
             SceneReviewFinding(
                 category="conflict",
                 severity=_severity_from_score(conflict),
-                message=getattr(_fm, f"conflict_low_{_lang_key}"),
+                message=_scene_finding_message(f"conflict_low_{_lang_key}"),
             )
         )
     if conflict_clarity < threshold:
@@ -3714,7 +3860,7 @@ def evaluate_scene_draft(
             SceneReviewFinding(
                 category="conflict_clarity",
                 severity=_severity_from_score(conflict_clarity),
-                message=getattr(_fm, f"conflict_clarity_low_{_lang_key}"),
+                message=_scene_finding_message(f"conflict_clarity_low_{_lang_key}"),
             )
         )
     if emotion < threshold:
@@ -3722,7 +3868,7 @@ def evaluate_scene_draft(
             SceneReviewFinding(
                 category="emotion",
                 severity=_severity_from_score(emotion),
-                message=getattr(_fm, f"emotion_low_{_lang_key}"),
+                message=_scene_finding_message(f"emotion_low_{_lang_key}"),
             )
         )
     if emotional_movement < threshold:
@@ -3730,7 +3876,7 @@ def evaluate_scene_draft(
             SceneReviewFinding(
                 category="emotional_movement",
                 severity=_severity_from_score(emotional_movement),
-                message=getattr(_fm, f"emotional_movement_low_{_lang_key}"),
+                message=_scene_finding_message(f"emotional_movement_low_{_lang_key}"),
             )
         )
     if dialogue < threshold:
@@ -3738,7 +3884,7 @@ def evaluate_scene_draft(
             SceneReviewFinding(
                 category="dialogue",
                 severity=_severity_from_score(dialogue),
-                message=getattr(_fm, f"dialogue_low_{_lang_key}"),
+                message=_scene_finding_message(f"dialogue_low_{_lang_key}"),
             )
         )
     if hook_strength < threshold:
@@ -3746,7 +3892,7 @@ def evaluate_scene_draft(
             SceneReviewFinding(
                 category="hook_strength",
                 severity=_severity_from_score(hook_strength),
-                message=getattr(_fm, f"hook_low_{_lang_key}"),
+                message=_scene_finding_message(f"hook_low_{_lang_key}"),
             )
         )
     if payoff_density < threshold:
@@ -3754,7 +3900,7 @@ def evaluate_scene_draft(
             SceneReviewFinding(
                 category="payoff_density",
                 severity=_severity_from_score(payoff_density),
-                message=getattr(_fm, f"payoff_low_{_lang_key}"),
+                message=_scene_finding_message(f"payoff_low_{_lang_key}"),
             )
         )
     if voice_consistency < threshold:
@@ -3762,12 +3908,12 @@ def evaluate_scene_draft(
             SceneReviewFinding(
                 category="voice_consistency",
                 severity=_severity_from_score(voice_consistency),
-                message=getattr(_fm, f"voice_low_{_lang_key}"),
+                message=_scene_finding_message(f"voice_low_{_lang_key}"),
             )
         )
     if int(contract_evidence["contract_expectation_count"]) > 0 and contract_alignment < threshold:
         missing_labels = list(contract_evidence["contract_missing_labels"])
-        _contract_base = getattr(_fm, f"contract_low_{_lang_key}")
+        _contract_base = _scene_finding_message(f"contract_low_{_lang_key}")
         findings.append(
             SceneReviewFinding(
                 category="contract_alignment",
@@ -3796,10 +3942,43 @@ def evaluate_scene_draft(
     if _expected_participants and content:
         import re as _re_names  # noqa: PLC0415
 
+        def _participant_name_variants(value: str) -> set[str]:
+            """Return canonical and alias forms for a participant label.
+
+            UI scene cards intentionally store labels such as
+            ``霍云岫（化名：阿跛）``.  The prose is expected to use either the
+            canonical name or the active alias; treating the shorter form as
+            a rogue character created a structural rewrite blocker on every
+            scene of the canary book.
+            """
+
+            raw = str(value or "").strip()
+            variants = {raw}
+            if "（" in raw:
+                variants.add(raw.split("（", 1)[0].strip())
+            if "(" in raw:
+                variants.add(raw.split("(", 1)[0].strip())
+            for marker in ("化名：", "化名:", "alias:", "aka:"):
+                if marker in raw:
+                    tail = raw.split(marker, 1)[1]
+                    tail = tail.split("）", 1)[0].split(")", 1)[0]
+                    variants.add(tail.strip())
+            return {item for item in variants if item}
+
+        _participant_variants = {
+            variant
+            for participant in _expected_participants
+            for variant in _participant_name_variants(participant)
+        }
+
         # Extract all 2-3 char Chinese name-like tokens from the text
         _cn_name_candidates = set(_re_names.findall(r"(?<=[\u4e00-\u9fff])[\u4e00-\u9fff]{1,2}(?=[\u4e00-\u9fff])", content))
-        _expected_surnames = {p[0] for p in _expected_participants if p}
-        _expected_names_set = set(_expected_participants)
+        _expected_surnames = {
+            variant[0]
+            for variant in _participant_variants
+            if variant
+        }
+        _expected_names_set = _participant_variants
         _flagged_already: set[str] = set()
         for _candidate_full in _re_names.findall(r"[\u4e00-\u9fff]{2,3}", content):
             # Normalize: if a 3-char token ends with a particle, strip it to
@@ -5406,6 +5585,31 @@ async def review_scene_draft(
             language=getattr(project, "language", None),
         )
 
+    # Methodology/critic layers may re-mark a non-combat scene after the
+    # deterministic scorer has already cleared it, even when the remaining
+    # findings are advisory craft axes only.  Normalize that disagreement
+    # before invoking the LLM so an opening development beat cannot churn on a
+    # non-blocking contract warning.
+    _scene_kind_before_critic = str(getattr(scene, "scene_type", "") or "").strip().lower()
+    if (
+        _scene_kind_before_critic in {"development", "sequel", "emotion", "reveal", "transition"}
+        and review_result.verdict == "rewrite"
+        and review_result.scores.overall >= settings.quality.thresholds.scene_min_score + 0.02
+        and all(
+            finding.category in _SCENE_ADVISORY_FINDING_CATEGORIES
+            and finding.severity not in {"critical", "blocker", "fatal"}
+            for finding in review_result.findings
+        )
+    ):
+        review_result = SceneReviewResult(
+            verdict="pass",
+            scores=review_result.scores,
+            findings=review_result.findings,
+            severity_max=review_result.severity_max,
+            evidence_summary=review_result.evidence_summary,
+            rewrite_instructions=None,
+        )
+
     critic_response = render_scene_review_summary(
         review_result,
         language=getattr(project, "language", None),
@@ -5466,16 +5670,31 @@ async def review_scene_draft(
         # upgrade the verdict so the quality gate has real teeth.
         llm_verdict = _parse_llm_verdict(critic_response)
         if llm_verdict == "rewrite" and review_result.verdict == "pass":
-            review_result = SceneReviewResult(
-                verdict="rewrite",
-                scores=review_result.scores,
-                findings=review_result.findings,
-                severity_max=review_result.severity_max,
-                evidence_summary=review_result.evidence_summary,
-                rewrite_instructions=_parse_llm_rewrite_direction(critic_response)
-                or review_result.rewrite_instructions
-                or "LLM 评审判定需要重写，请补强场景质量。",
+            _scene_kind_for_override = str(getattr(scene, "scene_type", "") or "").strip().lower()
+            _non_combat_advisory_only = (
+                _scene_kind_for_override in {"development", "sequel", "emotion", "reveal", "transition"}
+                and all(
+                    finding.category in _SCENE_ADVISORY_FINDING_CATEGORIES
+                    and finding.severity not in {"critical", "blocker", "fatal"}
+                    for finding in review_result.findings
+                )
             )
+            # The critic prompt is intentionally stricter than the deterministic
+            # gate and older versions could still answer "rewrite" on a valid
+            # non-combat opening because axis-2 instructions mentioned combat.
+            # Do not let that advisory disagreement reopen a rewrite loop; the
+            # rule-based structural gate remains authoritative here.
+            if not _non_combat_advisory_only:
+                review_result = SceneReviewResult(
+                    verdict="rewrite",
+                    scores=review_result.scores,
+                    findings=review_result.findings,
+                    severity_max=review_result.severity_max,
+                    evidence_summary=review_result.evidence_summary,
+                    rewrite_instructions=_parse_llm_rewrite_direction(critic_response)
+                    or review_result.rewrite_instructions
+                    or "LLM 评审判定需要重写，请补强场景质量。",
+                )
         elif (
             llm_verdict == "pass"
             and getattr(settings.quality, "enable_scene_llm_pass_override", False)

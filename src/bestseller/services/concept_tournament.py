@@ -18,24 +18,25 @@
      同时作确定性出局筛（命中即废）。
   2. 杂交算子出 N 路候选——"题材 × 异质维度（随机抽取）"强制杂交 + 1 路
      纯题材对照组（防强行猎奇总是赢）。
-  3. 引擎审计（确定性）——候选必须答出进度条/问题梯前三级/第50章在打什么，
-     答不出 = 撑不住长篇，出局。
-  4. 判官淘汰赛——三轴（新颖度对撞榜单参照集/想点欲/不可预测性），冠军须过
-     winner_min 线，否则不注入（宁可回落现状，不硬塞烂概念）。
-  5. 冠军注入 ctx["description"]——它是全部下游 prompt（商业定位/市场/角色/
+  3. 轻量种子淘汰——候选阶段只交付 CoreStorySeed，避免 500 章说明反向污染一句话。
+  4. 判官淘汰赛——四轴（新颖度/想点欲/不可预测性/人物决策可信度）分别设硬门，
+     任何单轴失败都不能被平均分掩盖。
+  5. 长篇决赛——仅对通过钩子门的前两名扩展 SerialityProof，再做容量与质量门禁。
+  6. 冠军注入 ctx["description"]——它是全部下游 prompt（商业定位/市场/角色/
      世界观）的共同源头，零侵入全覆盖。
 
-零依赖 conception.py（它反过来调用本模块）。fail-open：任何一步失败都回落
-到现状（无注入），绝不阻断构思。
+零依赖 conception.py（它反过来调用本模块）。本模块自身以无冠军显式返回失败；
+新建长篇由 conception 的 ConceptContract 门禁 fail-closed，短篇与旧项目保留兼容路径。
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
 import json
 import logging
+import math
 from pathlib import Path
 import random
 from typing import Any, Protocol
@@ -47,6 +48,47 @@ logger = logging.getLogger(__name__)
 # ruff: noqa: RUF001, RUF002 — Chinese prompts/fixtures are intentional.
 
 _CONTROL_DIMENSION = "纯题材对照"
+_CHARACTER_CONTROL_DIMENSION = "纯题材人物困局对照"
+_SEED_REFINEMENT_DIMENSIONS = (
+    "原句克制重写",
+    "标志性反常事件",
+    "主角决策因果",
+    "碎片汇聚成单一答案",
+    "成果永久改写下一轮规则",
+    "经营盘面与势力扩张",
+    "读者点击与大白话",
+    "可再生行动循环",
+    "对手生态升级",
+    "阶段跃迁",
+    "题材兑现",
+    "长期谜团与终局",
+)
+_TARGETED_REPAIR_DIMENSIONS = (
+    "定向修复最佳近失",
+    "定向反转最佳近失",
+)
+_NATIVE_STORY_LANES = (
+    "人际困局",
+    "世界规则",
+    "成长道路",
+    "世界扩张",
+    "势力选择",
+    "身份变化",
+    "职业处境",
+    "资源分配",
+    "纯题材直觉",
+)
+_NATIVE_STORY_LANE_BRIEFS = {
+    "人际困局": "从一段无法轻易割舍的人际关系和两难选择起步；不要写契约、债务或仲裁。",
+    "世界规则": "从一个能被场景直接证明的自然或超凡现象起步；不要写账本、债形或制度设计。",
+    "成长道路": "从一门具体本事如何学、练、用、犯错和改变处境起步；不要用升官代替成长。",
+    "世界扩张": "从探索、迁徙、建设、经营或夺取生存空间起步；不要默认成为规则制定者。",
+    "势力选择": "从多个聪明势力都需要主角、但目标互斥的选择起步；避免万能幕后组织。",
+    "身份变化": "从身份秘密、角色冲突或被迫承担的新位置起步；不要靠失忆或人格消失。",
+    "职业处境": "从题材内一项具体工作、客户、工具和现场事故起步；不能只是接委托换皮。",
+    "资源分配": "从一种稀缺资源被谁生产、分配和争夺起步；用具体物件与行动，不写金融术语。",
+    "纯题材直觉": "忘掉框架术语，先写一个该题材读者会立刻想看的具体人、事和反转。",
+}
 
 
 class GeneratorFn(Protocol):
@@ -63,12 +105,39 @@ class ConceptCandidate:
     concept: str = ""
     mechanism: str = ""
     hook_question: str = ""
+    protagonist_identity: str = ""
+    protagonist_private_desire: str = ""
+    protagonist_flaw: str = ""
+    core_abnormality: str = ""
+    opening_crisis: str = ""
+    opponent_system: str = ""
+    decision_proof: str = ""
+    emotional_promise: str = ""
+    core_promise_invariant: str = ""
+    role_ladder: tuple[str, ...] = ()
+    world_ladder: tuple[str, ...] = ()
+    repeatable_story_unit: str = ""
+    unit_families: tuple[str, ...] = ()
     progress_bar: str = ""
+    unit_frequency: str = ""
+    unit_count_estimate: int = 0
     question_ladder: tuple[str, ...] = ()
     ch50: str = ""
+    renewal_sources: tuple[str, ...] = ()
+    accumulation_tracks: tuple[str, ...] = ()
+    phase_transitions: tuple[str, ...] = ()
+    opposing_ecology: tuple[str, ...] = ()
+    endgame_direction: str = ""
+    seriality_report: dict[str, Any] = field(default_factory=dict)
+    seriality_judge: dict[str, Any] = field(default_factory=dict)
     judge_freshness: float | None = None
     judge_click: float | None = None
     judge_predictable: float | None = None
+    judge_character_logic: float | None = None
+    judge_mechanism_causality: float | None = None
+    judge_genre_fidelity: float | None = None
+    judge_plain_language: float | None = None
+    judge_story_motion: float | None = None
     judge_reason: str = ""
     composite: float | None = None
     rejected_reason: str | None = None
@@ -79,12 +148,39 @@ class ConceptCandidate:
             "concept": self.concept,
             "mechanism": self.mechanism,
             "hook_question": self.hook_question,
+            "protagonist_identity": self.protagonist_identity,
+            "protagonist_private_desire": self.protagonist_private_desire,
+            "protagonist_flaw": self.protagonist_flaw,
+            "core_abnormality": self.core_abnormality,
+            "opening_crisis": self.opening_crisis,
+            "opponent_system": self.opponent_system,
+            "decision_proof": self.decision_proof,
+            "emotional_promise": self.emotional_promise,
+            "core_promise_invariant": self.core_promise_invariant,
+            "role_ladder": list(self.role_ladder),
+            "world_ladder": list(self.world_ladder),
+            "repeatable_story_unit": self.repeatable_story_unit,
+            "unit_families": list(self.unit_families),
             "progress_bar": self.progress_bar,
+            "unit_frequency": self.unit_frequency,
+            "unit_count_estimate": self.unit_count_estimate,
             "question_ladder": list(self.question_ladder),
             "ch50": self.ch50,
+            "renewal_sources": list(self.renewal_sources),
+            "accumulation_tracks": list(self.accumulation_tracks),
+            "phase_transitions": list(self.phase_transitions),
+            "opposing_ecology": list(self.opposing_ecology),
+            "endgame_direction": self.endgame_direction,
+            "seriality_report": dict(self.seriality_report),
+            "seriality_judge": dict(self.seriality_judge),
             "judge_freshness": self.judge_freshness,
             "judge_click": self.judge_click,
             "judge_predictable": self.judge_predictable,
+            "judge_character_logic": self.judge_character_logic,
+            "judge_mechanism_causality": self.judge_mechanism_causality,
+            "judge_genre_fidelity": self.judge_genre_fidelity,
+            "judge_plain_language": self.judge_plain_language,
+            "judge_story_motion": self.judge_story_motion,
             "judge_reason": self.judge_reason[:200],
             "composite": self.composite,
             "rejected_reason": self.rejected_reason,
@@ -97,14 +193,44 @@ class ConceptTournamentResult:
     candidates: list[ConceptCandidate] = field(default_factory=list)
     banned_cliches: tuple[str, ...] = ()
     llm_run_ids: list[Any] = field(default_factory=list)
+    generation_model_key: str | None = None
+    judge_model_key: str | None = None
+    finalist_judge_model_key: str | None = None
+    raw_idea_judge_model_key: str | None = None
+    premise_judge_model_key: str | None = None
+    candidate_prompt_mode: str = "current"
+    raw_idea_prompt_arm: str | None = None
+    candidate_prompt_chars: int = 0
+    candidate_generation_calls: int = 0
+    engine_rejections: list[dict[str, Any]] = field(default_factory=list)
+    raw_idea_ranking: list[dict[str, Any]] = field(default_factory=list)
+    raw_idea_rank_coverage: dict[str, Any] = field(default_factory=dict)
+    raw_ideas: list[dict[str, str]] = field(default_factory=list)
+    premise_cards: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "winner_dimension": self.winner.dimension if self.winner else None,
             "winner_concept": self.winner.concept if self.winner else None,
+            "winner": self.winner.to_dict() if self.winner else None,
             "candidates": [c.to_dict() for c in self.candidates],
             "banned_cliches": list(self.banned_cliches),
-            "schema_version": "concept-tournament.v1",
+            "llm_run_ids": [str(run_id) for run_id in self.llm_run_ids],
+            "generation_model_key": self.generation_model_key,
+            "judge_model_key": self.judge_model_key,
+            "finalist_judge_model_key": self.finalist_judge_model_key,
+            "raw_idea_judge_model_key": self.raw_idea_judge_model_key,
+            "premise_judge_model_key": self.premise_judge_model_key,
+            "candidate_prompt_mode": self.candidate_prompt_mode,
+            "raw_idea_prompt_arm": self.raw_idea_prompt_arm,
+            "candidate_prompt_chars": self.candidate_prompt_chars,
+            "candidate_generation_calls": self.candidate_generation_calls,
+            "engine_rejections": list(self.engine_rejections),
+            "raw_idea_ranking": list(self.raw_idea_ranking),
+            "raw_idea_rank_coverage": dict(self.raw_idea_rank_coverage),
+            "raw_ideas": list(self.raw_ideas),
+            "premise_cards": list(self.premise_cards),
+            "schema_version": "concept-tournament.v2",
         }
 
 
@@ -132,11 +258,22 @@ def resolve_tournament_config(
 ) -> dict[str, Any]:
     """基线 config +（wild=True 时）深合并 ``wild_mode`` 覆盖块。
 
-    非 wild → 原样返回基线（与现状逐字节等价）。深合并只对 dict 值（judge_weights）
+    非 wild → 返回题材原生安全基线。旧 ``current`` 只有显式设置
+    ``allow_legacy_cross_domain`` 才会保留。深合并只对 dict 值（judge_weights）
     生效，标量直接覆盖。永不修改被 lru_cache 缓存的基线对象。
     """
 
     cfg = base if base is not None else load_concept_tournament_config()
+    # ``current`` is the historical cross-domain experiment.  It is unsafe as
+    # a production default because it samples the global dimension pool before
+    # the selected genre has established its ontology.  Keep it available for
+    # isolated A/B tests only; runtime configuration must opt in explicitly.
+    if (
+        isinstance(cfg, dict)
+        and str(cfg.get("candidate_prompt_mode") or "").strip().lower() == "current"
+    ):
+        if not bool(cfg.get("allow_legacy_cross_domain", False)):
+            cfg = {**cfg, "candidate_prompt_mode": "engine_first"}
     if not wild or not isinstance(cfg, dict):
         return cfg
     overrides = cfg.get("wild_mode")
@@ -206,11 +343,145 @@ def _phrase_tokens(phrase: str) -> list[str]:
     return [phrase[i : i + 2] for i in range(0, len(phrase) - 1)]
 
 
-def _engine_audit(candidate: ConceptCandidate) -> str | None:
-    """几百章引擎审计：答不出进度条/问题梯(≥3且互异)/第50章 = 撑不住长篇。"""
+def _seed_audit(candidate: ConceptCandidate) -> str | None:
+    """候选阶段只审最小完整故事，不让长篇规划字段干扰一句话竞争。"""
 
     if not candidate.concept.strip() or not candidate.mechanism.strip():
         return "concept/mechanism 为空"
+    one_liner = candidate.concept.strip()
+    if "\n" in one_liner or not 18 <= len(one_liner) <= 120:
+        return "一句话钩子必须是18-120字的单句，不能靠标题或解释段补足"
+    missing_seed_fields = [
+        label
+        for label, value in (
+            ("主角身份", candidate.protagonist_identity),
+            ("私人欲望", candidate.protagonist_private_desire),
+            ("核心异常", candidate.core_abnormality),
+            ("第一危机", candidate.opening_crisis),
+            ("对手系统", candidate.opponent_system),
+            ("决策证明", candidate.decision_proof),
+            ("情绪承诺", candidate.emotional_promise),
+        )
+        if not value.strip()
+    ]
+    if missing_seed_fields:
+        return "CoreStorySeed 不完整: " + "/".join(missing_seed_fields)
+    return None
+
+
+def _deterministic_anti_pattern(candidate: ConceptCandidate) -> str | None:
+    """Reject a few high-confidence failure shapes before an LLM can rationalize them."""
+
+    text = "；".join(
+        part.strip()
+        for part in (candidate.concept, candidate.mechanism, candidate.decision_proof)
+        if part.strip()
+    )
+    if any(term in text for term in ("资本真身", "复活死路", "未来庄家")):
+        return "abstract_formula"
+    if (
+        ("随机" in text or "每使用一次" in text or "每发动一次" in text)
+        and any(term in text for term in ("折寿", "失忆", "寿命扣", "器官衰竭"))
+    ):
+        return "external_cost"
+    if (
+        any(
+            term in text
+            for term in ("每用一次", "每递一", "每送一", "每渡一", "每完成一")
+        )
+        and any(
+            term in text
+            for term in (
+                "离死越近",
+                "离死亡越近",
+                "寿元越短",
+                "寿命越短",
+                "记忆越少",
+                "自我越少",
+            )
+        )
+    ):
+        return "external_cost"
+    if (
+        any(term in text for term in ("每继承一次", "每完成一次", "每使用一次"))
+        and any(
+            term in text
+            for term in ("存在就被抹去", "没人记得", "失去自我", "记忆被扣除")
+        )
+    ):
+        return "external_cost"
+    if (
+        any(
+            term in text
+            for term in (
+                "每渡一",
+                "每送一",
+                "每救一",
+                "每点一",
+                "每多一",
+                "灯愈明",
+            )
+        )
+        and any(
+            term in text
+            for term in (
+                "记忆便愈",
+                "记忆稀薄",
+                "记忆剥落",
+                "自我剥落",
+                "失去当下",
+                "忘记自己",
+                "人格消失",
+            )
+        )
+    ):
+        return "external_cost"
+    if (
+        any(
+            term in text
+            for term in (
+                "每揭穿一条",
+                "每揭开一条",
+                "每改写一次",
+                "每窥见一次",
+                "每动用一次",
+            )
+        )
+        and any(
+            term in text
+            for term in (
+                "讨走一块肉",
+                "肉身残缺",
+                "寿命",
+                "气运",
+                "人格磨损",
+                "记忆被吞噬",
+            )
+        )
+    ):
+        return "external_cost"
+    if (
+        any(term in text for term in ("报警即可", "求助即可", "可以安全解决"))
+        and any(term in text for term in ("独自赴死", "主动送死", "为了故事"))
+    ):
+        return "irrational_protagonist"
+    if (
+        any(term in text for term in ("每接一个", "每换一个", "每找到一个"))
+        and any(term in text for term in ("然后遇到更强", "再来一次", "再被封杀", "破解一次"))
+    ):
+        return "parallel_repetition"
+    return None
+
+
+def _seriality_audit(candidate: ConceptCandidate, *, target_chapters: int) -> str | None:
+    """决赛阶段审可续写性；这里失败不会回头修改一句话，只会淘汰候选。"""
+
+    if not candidate.repeatable_story_unit.strip():
+        return "缺可再生故事单元"
+    if target_chapters >= 200 and not candidate.core_promise_invariant.strip():
+        return "缺跨阶段不变的核心读者承诺"
+    if target_chapters >= 200 and len(candidate.unit_families) < 4:
+        return "冲突家族不足4类，仍可能靠同案换皮"
     if not candidate.progress_bar.strip():
         return "缺进度条(读者看什么在涨)"
     ladder = [q.strip() for q in candidate.question_ladder if q.strip()]
@@ -218,9 +489,32 @@ def _engine_audit(candidate: ConceptCandidate) -> str | None:
         return "问题梯不足3级互异问题"
     if not candidate.ch50.strip():
         return "答不出第50章在打什么"
-    normalized_ch50 = candidate.ch50.strip()
-    if normalized_ch50 == candidate.progress_bar.strip():
+    if candidate.ch50.strip() == candidate.progress_bar.strip():
         return "第50章与进度条同文(敷衍)"
+    if target_chapters >= 200:
+        from bestseller.services.seriality_capacity import evaluate_seriality_capacity
+
+        report = evaluate_seriality_capacity(
+            {
+                "repeatable_story_unit": candidate.repeatable_story_unit,
+                "unit_families": candidate.unit_families,
+                "unit_frequency": candidate.unit_frequency,
+                "unit_count_estimate": candidate.unit_count_estimate,
+                "renewal_sources": candidate.renewal_sources,
+                "accumulation_tracks": candidate.accumulation_tracks,
+                "phase_transitions": candidate.phase_transitions,
+                "opposing_ecology": candidate.opposing_ecology,
+                "mystery_ladder": candidate.question_ladder,
+                "endgame_direction": candidate.endgame_direction,
+            },
+            target_chapters=target_chapters,
+            require_phase_coverage=True,
+        )
+        if not report.passed:
+            return (
+                f"容量证明不足({report.estimated_chapter_ceiling}章上限): "
+                + "/".join(report.blocking_codes[:3])
+            )
     return None
 
 
@@ -232,49 +526,1095 @@ def _build_candidate_messages(
     chapter_count: int,
     banned: tuple[str, ...],
     avoid_mechanisms_block: str,
+    seed_concept: str = "",
+    retry_feedback: str = "",
 ) -> tuple[str, str]:
     system = (
         "你是顶级网文制作人，专出'榜单编辑看到会立刻加价买断'的高概念。"
         "你深知平庸的本质是可预测：读者一句话能自动补全全书的概念一文不值。"
         "你的每个概念必须让人产生'等等，这怎么成立？'的认知缺口。"
     )
-    if dimension == _CONTROL_DIMENSION:
+    if seed_concept.strip():
+        hybrid_directive = (
+            "本路是已有核心创意的同源补强，不是另起炉灶。必须保留原种子的主角职业、"
+            "核心能力/发现、主要对手和产业冲突，不得嫁接考古、殡葬、法医、戏班等无关"
+            "外部领域。允许彻底重建持续行动：原句若是‘每换一个对象再重复一次’，必须"
+            f"丢掉这层弱机制。本路只聚焦【{dimension}】：可以压缩表达、补足因果或长篇机制，"
+            "但改完后必须仍明显是同一本书。"
+        )
+    elif dimension == _CONTROL_DIMENSION:
         hybrid_directive = (
             "本路为纯题材对照组：不引入外部领域，但必须在题材内部找到一个"
             "反共识的切入角（反的是读者共识，不是主角处境）。"
+        )
+    elif dimension == _CHARACTER_CONTROL_DIMENSION:
+        hybrid_directive = (
+            "本路为纯题材人物对照组：不引入外部领域，不先造能力和代价。先站在一个"
+            "具体主角的第一人称，设计一场正常聪明人也会被迫认真权衡的困局；高概念"
+            "必须从他的职业、欲望、关系和理性选择中长出来。"
         )
     else:
         hybrid_directive = (
             f"本路强制杂交：把【{genre}】与【{dimension}】这个异质领域硬性融合，"
             "在两者交点上找没人写过的位置。杂交必须是概念级的（世界规则/主角"
             "职业/冲突形态由该领域重塑），不是把该领域词汇当皮肤贴上去。"
+            "只对本路使用一条压缩脑洞原则：第一眼意外，解释后必然；新奇点必须压在"
+            "人物核心与现实行动上，并真实改变关系、资源、暴露风险、制度压力或未来选择；"
+            "若去掉这个脑洞主线仍能成立，就说明只是装饰，必须重做。"
         )
     ban_block = "\n".join(f"- {b}" for b in banned) if banned else "（无）"
+    seed_block = (
+        f"【用户已选核心创意——必须保留其故事身份，只能补强长篇机制】\n{seed_concept}\n\n"
+        if seed_concept.strip()
+        else ""
+    )
+    scale_directive = ""
+    if chapter_count >= 500:
+        scale_directive = (
+            "目标是500章以上：底层机制必须含三层因果，但不要把三层说明硬塞进钩子——"
+            "高频选择会留下状态，中层争夺由这些状态结算，阶段跃迁再改变下一轮题型。"
+            "只有单案、单剑、单次揭谜、一年一次仪式、不断换地图，或‘换一个对象再做"
+            "同一件事’的机制直接废稿；这里只说机制，不展开卷纲。\n"
+        )
+    elif chapter_count >= 200:
+        scale_directive = (
+            "目标是200章以上：核心机制必须同时有可反复发生的小循环和会改变规则、"
+            "关系或势力格局的中层积累，不能只靠同类案件换皮。\n"
+        )
+    retry_block = (
+        "【上一轮真实失败——本轮必须修复根因，不得只换措辞】\n"
+        f"{retry_feedback.strip()}\n"
+        "若反馈指出平行重复或外部投喂，必须更换故事发动方式；不得继续写成‘换一个X，"
+        "再完成一次Y/再被阻止一次’。\n\n"
+        if retry_feedback.strip()
+        else ""
+    )
     user = (
         f"【题材】{genre}（{sub_genre}）｜目标体量：{chapter_count}章起步、可扩展到几百章\n\n"
+        f"{seed_block}"
+        f"{retry_block}"
         f"{hybrid_directive}\n\n"
         f"【本题材烂大街俗套——出现任何一条的变体即为废稿】\n{ban_block}\n"
         f"{avoid_mechanisms_block}\n"
+        f"{scale_directive}"
         "【硬性要求】\n"
-        "①概念一句话≤60字，必须含认知缺口（读者无法自动补全后续）；\n"
-        "②核心机制必须是可反复运转的引擎（每章都能产出新冲突），不是一次性信息"
+        "①概念一句话建议40-90字、硬上限120字，最多两个分句，只写标志性发现/行动和"
+        "立即后果，必须含认知缺口（读者无法自动补全后续）。不要把第一危机、决策证明、"
+        "三层长篇结构和完整人物小传重复塞进概念，它们各有独立字段；\n"
+        "一句话优先尝试两种干净结构之一：独特规则+一个具体到令人不安的反常实例，或"
+        "标志性行动+立刻改变处境的后果。不要为了证明故事会动而硬塞集团、资本或幕后组织；\n"
+        "②核心机制必须能自然反复运转（每次运转都会遇到新的人、新利益和新选择），不是一次性信息"
         "（'主角知道哪里有宝'这类先知型金手指=废稿）；\n"
-        "③必须自带长篇引擎：读者追更时看什么数字/阶梯在涨（进度条）、"
-        "前三级悬念问题各是什么（问题梯，一级比一级大）、第50章大概在打什么仗；\n"
-        "④主角的优势必须反共识（把某个被轻视的东西做成最强，或把某个共识证伪）。\n\n"
+        "③主角的优势必须反共识（把某个被轻视的东西做成最强，或把某个共识证伪）。\n\n"
+        "核心机制必须写成因果飞轮：主角本轮主动选择→改变资源/关系/证据/规则状态→"
+        "对手、客户或团队基于新状态聪明反应→制造下一轮不同问题。‘每找到一条路线就"
+        "被封杀一次’这种只有对象变化、局面不变化的平行重复直接废稿。若种子包含多个"
+        "对象，优先让碎片汇成同一个增长中的答案，或让上一轮成果永久改写下一轮规则，"
+        "而不是把对象当成可无限替换的任务清单。\n\n"
+        "④把一句话背后的最小完整故事同时交付：主角的具体身份/私人欲望/缺陷、"
+        "核心异常、第一场迫使行动的危机、会聪明反制的对手系统、为什么冒险是当时局部最优、"
+        "读者持续获得的核心情绪。不得留给后续 Agent 临时拼接。\n"
+        "决策证明必须明确比较至少一个更安全、更便宜或更直接的方案，并说明它为何不可行；"
+        "禁止用任意倒计时、强塞代价或‘别无选择’四字代替因果。\n\n"
+        "机制不得用‘每发动一次就随机折寿/失忆/器官衰竭/寿命扣除’等外置惩罚制造戏剧性；"
+        "风险必须是主角行为改变名额、资源、关系、证据或制度之后自然产生的后果。"
+        "如果没有额外代价故事也成立，就不要硬塞代价。\n\n"
+        "一句话必须是普通目标读者一遍就懂的大白话：专业领域可以决定冲突，但禁止把"
+        "精算残差、算法名、机构缩写等需要搜索解释的术语塞进钩子。杂交维度只能改造"
+        "原题材的玩法，不能把原题材替换掉；读者必须仍能一眼认出这是所选题材。"
+        "少用‘复活死路、资本真身、未来庄家’等抽象隐喻，改写成主角具体做出什么产品、"
+        "对手如何反制；题材受众熟悉的职业常识词可以保留。\n\n"
+        "此轮禁止写卷纲、阶段表、第50章和终局说明；先把一句话和人物因果做对，"
+        "长篇承载力只会在入围后单独验证。\n\n"
         "只输出 JSON：\n"
         "{\"concept\": \"一句话高概念\", \"mechanism\": \"核心机制一句话\", "
-        "\"hook_question\": \"读者的认知缺口疑问\", \"progress_bar\": \"进度条\", "
-        "\"question_ladder\": [\"一级悬念\", \"二级悬念\", \"三级悬念\"], "
-        "\"ch50\": \"第50章大概在打什么\"}"
+        "\"hook_question\": \"读者的认知缺口疑问\", "
+        "\"protagonist_identity\": \"具体身份与处境\", "
+        "\"protagonist_private_desire\": \"不等于拯救世界的私人欲望\", "
+        "\"protagonist_flaw\": \"会影响选择的缺陷\", "
+        "\"core_abnormality\": \"异常/能力的可执行规则\", "
+        "\"opening_crisis\": \"第一场迫使行动的具体危机\", "
+        "\"opponent_system\": \"会学习和反制的具体对手或系统\", "
+        "\"decision_proof\": \"安全替代方案为何失败以及冒险为何局部最优\", "
+        "\"emotional_promise\": \"读者持续追读获得的核心情绪\"}"
     )
     return system, user
+
+
+def _build_lean_candidate_messages(
+    *,
+    genre: str,
+    sub_genre: str,
+    dimension: str,
+    chapter_count: int,
+    banned: tuple[str, ...],
+    avoid_mechanisms_block: str,
+    seed_concept: str = "",
+    retry_feedback: str = "",
+) -> tuple[str, str]:
+    """Build the experimental compact StoryPackage arm.
+
+    This round deliberately solves only the attractive, coherent story seed.
+    SerialityProof remains a separate finalist operation, so chapter-count
+    scaffolding cannot leak into the one-line hook.
+    """
+
+    system = (
+        "你是有判断力的商业小说主编。先像作者一样找到一个具体、可信、会自己运动的故事，"
+        "再把它压成一句话；不要用字段堆砌、随机代价或术语制造高概念。只输出JSON。"
+    )
+    seed_block = (
+        f"原始种子（保留职业、核心发现和题材身份；弱机制可重建）：{seed_concept.strip()}\n"
+        if seed_concept.strip()
+        else ""
+    )
+    retry_block = (
+        f"上一轮失败（修根因，不换措辞）：{retry_feedback.strip()}\n"
+        if retry_feedback.strip()
+        else ""
+    )
+    ban_items = [item.strip() for item in banned if item.strip()][:8]
+    ban_block = "、".join(ban_items) if ban_items else "无"
+    dimension_instruction = (
+        "在题材内部寻找反共识的人物困局"
+        if dimension in {_CONTROL_DIMENSION, _CHARACTER_CONTROL_DIMENSION}
+        else f"只把【{dimension}】作为破题视角，若它只是换皮就舍弃"
+    )
+    user = (
+        "【精简故事包】\n"
+        f"题材：{genre}（{sub_genre}）；目标体量：{chapter_count}章，但本轮禁止规划章节。\n"
+        f"{seed_block}{retry_block}"
+        f"探索方向：{dimension_instruction}。\n"
+        f"禁用题材众数：{ban_block}。\n"
+        f"{avoid_mechanisms_block}"
+        "\n先在内部完成三项检查，不输出分析过程：\n"
+        "1. 人物：站在主角第一人称，正常聪明人会这样选吗？至少比较一个更安全、"
+        "更便宜或更直接的方案；"
+        "冒险必须是当时的局部最优，不能靠‘别无选择’或降智。\n"
+        "2. 对手：对手有自己的目标，会学习主角的方法并作出聪明反制；下一轮问题来自本轮造成的"
+        "资源、关系、证据、规则或暴露变化，而非再换一个对象重复任务。\n"
+        "3. 脑洞：只保留一条原则——第一眼意外，解释后必然。新奇点必须改变人物行动；"
+        "随机折寿、失忆、寿命扣除等外置代价一律删除，除非它是行为的必然后果。\n\n"
+        "一句话职责：40-90字为佳，硬上限120字，最多两个分句；只写主角最有辨识度的发现/行动"
+        "及立即后果，让普通目标读者一遍看懂并想追问后续。不要写世界观说明、阶段表、卷纲或终局。\n\n"
+        "优先使用‘独特规则+一个具体悖论’或‘标志性行动+立即后果’，不要硬塞幕后集团。\n\n"
+        "只输出JSON："
+        "{\"concept\":\"一句话钩子\",\"mechanism\":\"主角行动如何改变局面并引发下一轮不同问题\","
+        "\"hook_question\":\"读者自然产生的问题\","
+        "\"protagonist_identity\":\"具体身份与处境\","
+        "\"protagonist_private_desire\":\"私人欲望\","
+        "\"protagonist_flaw\":\"影响选择的缺陷\","
+        "\"core_abnormality\":\"可执行的异常或优势\","
+        "\"opening_crisis\":\"第一场具体危机\","
+        "\"opponent_system\":\"会学习和反制的对手\","
+        "\"decision_proof\":\"安全方案为何不成立、冒险为何局部最优\","
+        "\"emotional_promise\":\"持续追读情绪\"}"
+    )
+    return system, user
+
+
+def _build_native_candidate_messages(
+    *,
+    genre: str,
+    sub_genre: str,
+    dimension: str,
+    chapter_count: int,
+    banned: tuple[str, ...],
+    avoid_mechanisms_block: str,
+    seed_concept: str = "",
+    retry_feedback: str = "",
+) -> tuple[str, str]:
+    """Minimal control arm that preserves the model's native story judgment."""
+
+    del banned, avoid_mechanisms_block
+    story_lane = dimension if dimension in _NATIVE_STORY_LANES else "纯题材直觉"
+    system = (
+        "你是一位真正会讲故事的商业小说作者。先从正常人的欲望和选择出发，"
+        "想清楚一本书为什么值得追，再压成一句话。只输出JSON。"
+    )
+    seed = (
+        f"用户已有创意：{seed_concept.strip()}\n"
+        "保留它的故事身份；如果其中的循环很弱，可以重建玩法。\n"
+        if seed_concept.strip()
+        else ""
+    )
+    retry = (
+        f"上次失败：{retry_feedback.strip()}。这次修故事，不要只换说法。\n"
+        if retry_feedback.strip()
+        else ""
+    )
+    user = (
+        "【原生故事基线】\n"
+        f"请为{genre}（{sub_genre}）想一个有吸引力、适合约{chapter_count}章的原创故事。\n"
+        f"{seed}{retry}"
+        f"本次从“{story_lane}”起步，但不要套公式。先想正常人的欲望和选择、具体困境"
+        "和会不断变化的局面。\n"
+        "不要为了显得新奇硬加代价、系统、幕后集团或行业术语；一句话可以用一个具体"
+        "反常事件让人想追问。不要写卷纲和阶段表。\n"
+        "只输出JSON："
+        "{\"concept\":\"一句话钩子\",\"mechanism\":\"故事为何会继续变化\","
+        "\"hook_question\":\"读者自然想问什么\","
+        "\"protagonist_identity\":\"主角身份与处境\","
+        "\"protagonist_private_desire\":\"私人欲望\","
+        "\"protagonist_flaw\":\"影响选择的缺陷\","
+        "\"core_abnormality\":\"核心异常或优势\","
+        "\"opening_crisis\":\"开局具体危机\","
+        "\"opponent_system\":\"会主动应对的对手\","
+        "\"decision_proof\":\"为何这样做比安全方案更合理\","
+        "\"emotional_promise\":\"持续追读情绪\"}"
+    )
+    return system, user
+
+
+def _build_engine_kernel_messages(
+    *,
+    genre: str,
+    sub_genre: str,
+    lane: str,
+    chapter_count: int,
+    seed_concept: str = "",
+    seed_support: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    """Build a minimal premise card before any marketing sentence."""
+
+    system = (
+        "你是小说选题编辑。先判断一个人物是否能自然产生许多不同场景，不写宣传文案、"
+        "卷纲、体系说明或500章阶段表。禁止把提示词里的禁用词和示例当故事素材。"
+        "禁止用每使用一次能力就折寿、失忆、残缺、失去人格或抵押命数来假装张力。"
+        "只输出JSON。"
+    )
+    seed = (
+        f"原始创意（事实锚点）：{seed_concept.strip()}\n"
+        "其中的主角身份、核心异常和关键关系不可替换；只能补足目标、阻力、选择后果"
+        "和可变形循环。即使你想到另一个更好故事，也不得偷换。\n"
+        if seed_concept.strip()
+        else ""
+    )
+    support = ""
+    if seed_support:
+        support_payload = {
+            key: seed_support.get(key)
+            for key in ("opening", "why_it_keeps_moving", "future_situations")
+            if seed_support.get(key)
+        }
+        if support_payload:
+            support = (
+                "作者在提炼一句话前已做过的故事探索（只用于保持原构思的因果与场面，"
+                "不得借机替换一句话中的主角、异常或关系）："
+                f"{json.dumps(support_payload, ensure_ascii=False)}\n"
+            )
+    lane_brief = _NATIVE_STORY_LANE_BRIEFS.get(
+        lane.split("#", 1)[0], _NATIVE_STORY_LANE_BRIEFS["纯题材直觉"]
+    )
+    user = (
+        "【PREMISE_CARD】本轮不写一句话钩子，也不规划卷章。\n"
+        f"题材：{genre}（{sub_genre}）；目标形态：约{chapter_count}章长篇；"
+        f"破题路线：{lane.split('#', 1)[0]}。\n"
+        f"路线边界：{lane_brief}\n"
+        f"{seed}"
+        f"{support}"
+        "只做最小项目判断：谁的正常生活已无法维持；他眼下要完成什么可观察行动；谁有"
+        "能力让他失败；失败会失去什么；成功又会伤害、暴露或放弃什么；选择后什么不能"
+        "复原。failure_cost和success_cost只解释开局这一次决定，不得变成每使用一次能力"
+        "就扣除寿命、身份、记忆、家底或亲情的收费表，也不得写进长期读者承诺。\n"
+        "scene_seeds 必须给出5个彼此不同的具体场面，每个都写主角动作、当场阻力和选择，"
+        "且至少覆盖关系、技能/行动、公开冲突、探索/发现、建设/改变中的4类。若只能把"
+        "同一案件换人换地，项目不成立。至少3个场面必须使用目标题材原生的行动、资源和"
+        "冲突；若删掉题材名词后换成都市、科幻或悬疑仍完全成立，项目不成立。"
+        "post_reveal_scene_seeds 另写3个发生在开局异常已经被解释或第一次目标已经完成"
+        "之后的场面，必须仍兑现同一读者承诺，并使用三类不同主角行动；如果只能继续"
+        "查同一个真相、找同类证据或等新事件上门，项目不成立。"
+        "deformable_loop 只写一个会因前轮后果而变形的"
+        "循环；expansion_axes 只写未来可向哪三种方向深化，不做章数承诺。\n"
+        "只输出JSON：{"
+        "\"protagonist_identity\":\"身份与失衡处境\","
+        "\"protagonist_private_desire\":\"真正想保住或得到什么\","
+        "\"protagonist_flaw\":\"影响选择的缺陷\","
+        "\"core_abnormality\":\"异常、优势或独特入口\","
+        "\"current_goal\":\"眼下可观察行动\",\"effective_resistance\":\"有效阻力\","
+        "\"failure_cost\":\"失败或不行动的自然后果\","
+        "\"success_cost\":\"成功带来的伤害、暴露或放弃\","
+        "\"irreversible_change\":\"不能复原的变化\","
+        "\"reader_promise\":\"主要体验与持续追读问题\","
+        "\"difference_point\":\"相对同类只改变了什么\","
+        "\"scene_seeds\":[\"动作/阻力/选择1\",\"动作/阻力/选择2\","
+        "\"动作/阻力/选择3\",\"动作/阻力/选择4\",\"动作/阻力/选择5\"],"
+        "\"post_reveal_scene_seeds\":[\"揭晓后场面1\",\"揭晓后场面2\",\"揭晓后场面3\"],"
+        "\"deformable_loop\":\"前轮后果会改变下一轮的核心循环\","
+        "\"expansion_axes\":[\"深化方向1\",\"深化方向2\",\"深化方向3\"],"
+        "\"opposing_ecology\":[\"自主阻力1\",\"自主阻力2\"],"
+        "\"opening_crisis\":\"开局具体危机\",\"emotional_promise\":\"持续情绪\"}"
+    )
+    return system, user
+
+
+def _build_raw_idea_pool_messages(
+    *,
+    genre: str,
+    sub_genre: str,
+    count: int,
+    seed_concept: str = "",
+    prompt_arm: str = "enhanced",
+    focus_hint: str = "",
+) -> tuple[str, str]:
+    """Minimal baseline: concrete person plus abnormal situation, nothing else."""
+
+    system = "你是小说作者。只负责想故事，不解释方法。只输出JSON。"
+    seed = (
+        f"围绕这个原始想法做不同方向的强化，但保留其职业或核心发现：{seed_concept.strip()}\n"
+        if seed_concept.strip()
+        else ""
+    )
+    focus = f"本批优先从{focus_hint.strip()}寻找，不必覆盖其他方向。" if focus_hint.strip() else ""
+    output_contract = (
+        "只输出JSON："
+        '{"ideas":[{"lane":"人际困局|世界规则|成长道路|世界扩张|势力选择|身份变化|职业处境|资源分配|纯题材直觉",'
+        '"seed":"一句原始创意"}]}'
+    )
+    if prompt_arm == "author_pitch":
+        return system, (
+            f"为{genre}（{sub_genre}）认真构思{count}个不同的长篇小说创意。{seed}"
+            f"{focus}"
+            "像真正准备写书的作者一样，先把人物、开篇和故事为什么会继续想通，再提炼"
+            "一句话；不要从流行设定词或反转模板开始拼装。每个创意都写：一句话故事、"
+            "开篇发生什么、开篇后主角为什么仍会持续行动，以及三个彼此不同的未来场面。"
+            "这些辅助字段只用于帮助你把故事想通，不写卷纲、体系表或章数计划。"
+            "只输出JSON："
+            '{"ideas":[{"lane":"人际困局|世界规则|成长道路|世界扩张|势力选择|身份变化|职业处境|资源分配|纯题材直觉",'
+            '"seed":"一句话故事","opening":"具体开篇",'
+            '"why_it_keeps_moving":"开篇后仍持续行动的自然原因",'
+            '"future_situations":["未来场面1","未来场面2","未来场面3"]}]}'
+        )
+    if prompt_arm == "minimal":
+        return system, (
+            f"为{genre}（{sub_genre}）想{count}个不同的小说创意。{seed}"
+            f"{focus}"
+            "每个只写一句：一个具体的人，遇到一个让人立刻想追问的异常处境。"
+            f"{output_contract}"
+        )
+    if prompt_arm == "methodology":
+        return system, (
+            f"为{genre}（{sub_genre}）想{count}个不同的小说选题。{seed}"
+            f"{focus}"
+            "每个只写一句具体人物加异常处境。异常被公开或第一次使用之后，主角仍会因它"
+            "持续做出不同选择。"
+            f"{output_contract}"
+        )
+    if prompt_arm == "consequence":
+        return system, (
+            f"为{genre}（{sub_genre}）想{count}个不同的小说选题。{seed}"
+            f"{focus}"
+            "每个只写一句具体人物加异常处境。异常被公开或第一次使用之后，主角仍会因它"
+            "持续做出不同选择。设定应当第一眼意外，明白人物处境与世界因果后又觉得必然；"
+            "它会自然改变角色、关系、资源、暴露风险或未来选择中的至少两项。"
+            f"{output_contract}"
+        )
+    if prompt_arm == "guarded":
+        return system, (
+            f"为{genre}（{sub_genre}）想{count}个不同的小说选题。{seed}"
+            f"{focus}"
+            "每个只写一句具体人物加异常处境。异常被公开或第一次使用之后，主角仍会因它"
+            "持续做出不同选择；一句里必须看见主角会做什么。不要用随机折寿、失忆、伤身"
+            "或强制死亡倒计时推进。"
+            f"{output_contract}"
+        )
+    if prompt_arm != "enhanced":
+        raise ValueError(f"unsupported raw idea prompt arm: {prompt_arm}")
+    user = (
+        f"为{genre}（{sub_genre}）想{count}个不同的小说原始创意。\n"
+        f"{seed}"
+        f"{focus}"
+        "每个创意只写一句‘一个具体的人，遇到一个让人立刻想追问的异常处境’。"
+        "对长篇而言，异常不能只是等一个谜底揭晓的开局事故；第一次解释或使用之后，"
+        "它仍应长期改变主角的身份、关系或生存方式，让主角自然需要做许多不同的事。"
+        "至少一半创意必须是稳定的故事场：即使第20章公开所有开局秘密，主角仍因新的"
+        "职业位置、移动世界、建设目标、多势力夹缝、成长技艺或关系网络而持续行动。"
+        "这些创意的一句里必须出现主角将长期做的可见动词。不要用按次折寿、失忆、残缺"
+        "或离死亡更近来制造张力。"
+        "题材必须长在故事骨头里：至少三分之二的创意要由该题材特有的身份道路、社会关系、"
+        "资源争夺或行动方式发动；只把地名和名词换成仙门、灵气、法器不算。"
+        "先追求故事本身有意思，不写大纲、世界观说明、系统字段、长篇规划或能力收费表。"
+        f"主角和异常都必须具体，不能只写主题。{output_contract}"
+    )
+    return system, user
+
+
+def _parse_raw_idea_records(raw: str, *, limit: int) -> list[dict[str, Any]]:
+    payload = _parse_json_object(raw)
+    ideas = (payload or {}).get("ideas")
+    if not isinstance(ideas, list):
+        return []
+    parsed: list[dict[str, Any]] = []
+    for item in ideas:
+        if not isinstance(item, dict):
+            continue
+        seed = str(item.get("seed") or "").strip()
+        if not seed:
+            continue
+        lane = str(item.get("lane") or "纯题材直觉").strip()
+        if lane not in _NATIVE_STORY_LANES:
+            lane = "纯题材直觉"
+        future_situations = item.get("future_situations")
+        parsed.append(
+            {
+                "lane": lane,
+                "seed": seed,
+                "opening": str(item.get("opening") or "").strip(),
+                "why_it_keeps_moving": str(
+                    item.get("why_it_keeps_moving") or ""
+                ).strip(),
+                "future_situations": [
+                    str(value).strip()
+                    for value in future_situations
+                    if isinstance(value, str) and value.strip()
+                ]
+                if isinstance(future_situations, list)
+                else [],
+            }
+        )
+        if len(parsed) >= limit:
+            break
+    return parsed
+
+
+def _parse_raw_idea_pool(raw: str, *, limit: int) -> list[tuple[str, str]]:
+    return [
+        (str(item["lane"]), str(item["seed"]))
+        for item in _parse_raw_idea_records(raw, limit=limit)
+    ]
+
+
+def _build_raw_idea_rank_messages(
+    *, genre: str, sub_genre: str, ideas: list[tuple[str, str]]
+) -> tuple[str, str]:
+    """Rank raw ideas in one independent call before expensive card expansion."""
+
+    system = (
+        "你是严苛的商业长篇选题编辑。只审原始故事胚子，不替它补设定。"
+        "表达长短不加分，只输出JSON。"
+    )
+    rows = [
+        {"index": index, "lane": lane, "seed": seed}
+        for index, (lane, seed) in enumerate(ideas)
+    ]
+    user = (
+        f"题材={genre}（{sub_genre}）\n候选={json.dumps(rows, ensure_ascii=False)}\n\n"
+        "逐项评分0-10：freshness 核心组合是否区别于常见同类；click_seed 是否让目标读者"
+        "立刻想追问；character_logic 正常聪明人是否会作出原句暗示的选择；action_seed "
+        "是否已经看得见主角要做什么；promise_survival 开局异常"
+        "被揭晓或第一次使用后，是否仍能持续产生同类但不同的选择与场景。若点子依赖"
+        "会归零的次数、一次性谜底、不断来新委托或同一能力重复使用，promise_survival"
+        "不得超过4分；genre_fidelity 是否由该题材原生的身份、行动、资源和冲突成立，"
+        "若删掉题材名词后换成别的题材仍完全成立，genre_fidelity 不得超过5分。"
+        "另给 ai_assembly 0-10，越高越像用职业、残魂、天道、器官、制度名词和收费代价"
+        "强行拼成新奇；dumb_cost=true 表示依赖按次折寿、失忆、伤身、扣身份/人格/命数"
+        "或无因果死亡倒计时。若主角只是被作者逼着做明显不合理的事，character_logic"
+        "不得超过4；dumb_cost 必须淘汰，不能用其他高分抵消。"
+        "对每项必须给三条直接证据，不能替原始创意补设定：after_opening_promise 用一个"
+        "陈述句写第一次"
+        "异常被解释或使用后仍存在的故事承诺；action_families 写由原句直接推出的至少3类"
+        "不同主角行动；growth_surface 写会因这些行动持续积累或扩大的关系、能力、事业、"
+        "地盘、势力或世界变化。after_opening_promise 禁止写问号、为何、能否、谁是；"
+        "growth_surface 禁止写可能、也许、或将。任一证据只能靠新增设定才能成立，则留空且"
+        "promise_survival不得超过4分。不要因缺少大纲扣分。只返回综合最强的8项，"
+        "按强到弱排序。只输出JSON：{\"ranked\":["
+        "{\"index\":0,\"freshness\":0-10,\"click_seed\":0-10,"
+        "\"character_logic\":0-10,\"action_seed\":0-10,\"promise_survival\":0-10,"
+        "\"genre_fidelity\":0-10,\"ai_assembly\":0-10,\"dumb_cost\":false,"
+        "\"after_opening_promise\":\"持续承诺或空字符串\","
+        "\"action_families\":[\"行动1\",\"行动2\",\"行动3\"],"
+        "\"growth_surface\":\"持续积累面或空字符串\"}]}"
+    )
+    return system, user
+
+
+def _parse_raw_idea_ranking(raw: str) -> list[dict[str, Any]]:
+    payload = _parse_json_object(raw)
+    ranked = (payload or {}).get("ranked")
+    if not isinstance(ranked, list):
+        return []
+    parsed: list[dict[str, Any]] = []
+    for item in ranked:
+        if not isinstance(item, dict):
+            continue
+        try:
+            index = int(item.get("index"))
+            scores = {
+                key: max(0.0, min(10.0, float(item.get(key, 0))))
+                for key in (
+                    "freshness",
+                    "click_seed",
+                    "character_logic",
+                    "action_seed",
+                    "promise_survival",
+                    "genre_fidelity",
+                    "ai_assembly",
+                )
+            }
+        except (TypeError, ValueError):
+            continue
+        parsed.append(
+            {
+                "index": index,
+                **scores,
+                "dumb_cost": bool(item.get("dumb_cost")),
+                "after_opening_promise": str(
+                    item.get("after_opening_promise") or ""
+                ).strip(),
+                "action_families": [
+                    str(action).strip()
+                    for action in (item.get("action_families") or [])
+                    if str(action).strip()
+                ]
+                if isinstance(item.get("action_families"), list)
+                else [],
+                "growth_surface": str(item.get("growth_surface") or "").strip(),
+                "reason": str(item.get("reason") or ""),
+            }
+        )
+    return parsed
+
+
+def _select_raw_ideas_for_expansion(
+    ranking: list[dict[str, Any]],
+    *,
+    raw_floor: float,
+    progression_floor: float,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Select premises worth expanding without pretending they already passed.
+
+    The raw rank is a cheap triage stage. Requiring every raw one-liner to meet
+    the production floor creates a false-negative trap: the premise card is the
+    stage that makes a stable story field explicit. We therefore prefer strict
+    passes, then fill remaining slots with evidence-complete near passes. Final
+    hook and seriality judges remain unchanged and decide production approval.
+    """
+
+    # A judge can repeat an index inside a batch. Do not let one seed consume
+    # several expensive premise-card slots.
+    deduped: dict[int, dict[str, Any]] = {}
+    score_axes = (
+        "freshness",
+        "click_seed",
+        "character_logic",
+        "action_seed",
+        "promise_survival",
+        "genre_fidelity",
+    )
+    for item in ranking:
+        try:
+            index = int(item.get("index"))
+        except (TypeError, ValueError):
+            continue
+        previous = deduped.get(index)
+        item_total = sum(float(item.get(axis, 0)) for axis in score_axes)
+        previous_total = (
+            sum(float(previous.get(axis, 0)) for axis in score_axes)
+            if previous is not None
+            else -1.0
+        )
+        if previous is None or item_total > previous_total:
+            deduped[index] = item
+
+    evidence_complete = [
+        item
+        for item in deduped.values()
+        if not bool(item.get("dumb_cost"))
+        and float(item.get("ai_assembly", 10)) <= 4.0
+        and float(item.get("character_logic", 0)) >= progression_floor
+        and bool(item.get("after_opening_promise"))
+        and not any(
+            token in str(item.get("after_opening_promise") or "")
+            for token in ("?", "？", "为何", "能否", "谁是")
+        )
+        and len(item.get("action_families") or []) >= 3
+        and bool(item.get("growth_surface"))
+        and not any(
+            token in str(item.get("growth_surface") or "")
+            for token in ("可能", "也许", "或将")
+        )
+    ]
+
+    axes = (
+        "freshness",
+        "click_seed",
+        "character_logic",
+        "promise_survival",
+        "genre_fidelity",
+    )
+
+    def score(item: dict[str, Any]) -> tuple[float, float, float]:
+        values = [float(item.get(axis, 0)) for axis in axes]
+        # Long-form survival and click are the two claims the raw seed must make.
+        return (min(values), values[1] + values[2], sum(values))
+
+    strict = [
+        item
+        for item in evidence_complete
+        if all(float(item.get(axis, 0)) >= raw_floor for axis in axes)
+    ]
+    near = [
+        item
+        for item in evidence_complete
+        if item not in strict
+        and all(float(item.get(axis, 0)) >= progression_floor for axis in axes)
+        and float(item.get("click_seed", 0)) >= progression_floor + 1
+        and float(item.get("action_seed", 0)) >= progression_floor + 1
+        and float(item.get("promise_survival", 0)) >= progression_floor
+    ]
+    strict.sort(key=score, reverse=True)
+    near.sort(key=score, reverse=True)
+    return (strict + near)[: max(0, limit)]
+
+
+def _build_hook_from_engine_messages(
+    *,
+    genre: str,
+    sub_genre: str,
+    kernel: dict[str, Any],
+    seed_concept: str = "",
+) -> tuple[str, str]:
+    """Distill a human-facing story seed from an already designed engine."""
+
+    system = (
+        "你是商业小说主编。候选项目卡已经冻结，你只负责找到其中最有人味、最想点的"
+        "开局表达；不得添加随机代价、折寿失忆残缺、幕后集团或新主线。只输出JSON。"
+    )
+    user = (
+        "【HOOK_DISTILL】\n"
+        f"题材：{genre}（{sub_genre}）\n"
+        f"原始种子：{seed_concept.strip() or '无'}\n"
+        f"冻结项目卡：{json.dumps(kernel, ensure_ascii=False)}\n\n"
+        "不要套promise/paradox/scene模板。像真正的小说作者一样独立写3条最想让人点开的"
+        "一句话故事，每条都必须让人看见：一个具体主角、只有本书才有的异常事实、主角"
+        "接下来会做的事或马上形成的困局。三条可以分别偏身份反转、独特行动或核心矛盾，"
+        "但都必须是完整故事，不能只有气氛或一个片段。每条30-75字、单句、一遍就懂。"
+        "删除债、账、规则、体系、权限、概率、循环等抽象词，除非是场景中摸得到的物件。"
+        "删除‘一步步、从此、真正的、命运齿轮、随着真相浮现’等AI概括词。不要解释500章、"
+        "不要写‘他只能/他必须/否则’，不要照抄字段名。\n"
+        "项目卡中的人物、异常、目标、阻力、选择理由和持续机制都已冻结，不要在输出中"
+        "改变事实或另加设定；允许选择并压缩其中事实。只输出JSON："
+        "{\"hooks\":[{\"angle\":\"identity\",\"concept\":\"一句话1\"},"
+        "{\"angle\":\"action\",\"concept\":\"一句话2\"},"
+        "{\"angle\":\"conflict\",\"concept\":\"一句话3\"}]}"
+    )
+    return system, user
+
+
+def _attach_engine_kernel(
+    candidate: ConceptCandidate,
+    kernel: dict[str, Any],
+) -> ConceptCandidate:
+    from dataclasses import replace
+
+    def _tuple(key: str) -> tuple[str, ...]:
+        value = kernel.get(key)
+        return (
+            tuple(str(item).strip() for item in value if str(item).strip())
+            if isinstance(value, list)
+            else ()
+        )
+
+    try:
+        unit_count = max(0, int(kernel.get("unit_count_estimate") or 0))
+    except (TypeError, ValueError):
+        unit_count = 0
+
+    def _text(key: str) -> str:
+        return str(kernel.get(key) or "").strip()
+
+    resistance = _text("effective_resistance")
+    failure_cost = _text("failure_cost")
+    success_cost = _text("success_cost")
+    decision_proof = "；".join(
+        part
+        for part in (
+            f"眼下必须完成：{_text('current_goal')}" if _text("current_goal") else "",
+            f"安全退让仍会失败：{resistance}" if resistance else "",
+            f"不行动会失去：{failure_cost}" if failure_cost else "",
+            f"即使成功也要承受：{success_cost}" if success_cost else "",
+        )
+        if part
+    )
+    return replace(
+        candidate,
+        mechanism=candidate.mechanism or _text("deformable_loop"),
+        hook_question=candidate.hook_question or _text("reader_promise"),
+        protagonist_identity=candidate.protagonist_identity
+        or _text("protagonist_identity"),
+        protagonist_private_desire=candidate.protagonist_private_desire
+        or _text("protagonist_private_desire"),
+        protagonist_flaw=candidate.protagonist_flaw or _text("protagonist_flaw"),
+        core_abnormality=candidate.core_abnormality or _text("core_abnormality"),
+        opening_crisis=candidate.opening_crisis or _text("opening_crisis"),
+        opponent_system=candidate.opponent_system
+        or "；".join(_tuple("opposing_ecology")),
+        decision_proof=candidate.decision_proof or decision_proof,
+        emotional_promise=candidate.emotional_promise
+        or _text("emotional_promise"),
+        core_promise_invariant=_text("reader_promise"),
+        role_ladder=_tuple("role_ladder"),
+        world_ladder=_tuple("world_ladder"),
+        repeatable_story_unit=str(kernel.get("deformable_loop") or "").strip(),
+        unit_families=_tuple("unit_families"),
+        unit_frequency=str(kernel.get("unit_frequency") or "").strip(),
+        unit_count_estimate=unit_count,
+        progress_bar=str(kernel.get("progress_bar") or "").strip(),
+        question_ladder=_tuple("mystery_ladder"),
+        ch50=str(kernel.get("ch50") or "").strip(),
+        renewal_sources=_tuple("expansion_axes"),
+        accumulation_tracks=_tuple("accumulation_tracks"),
+        phase_transitions=_tuple("phase_transitions"),
+        opposing_ecology=_tuple("opposing_ecology"),
+        endgame_direction=str(kernel.get("endgame_direction") or "").strip(),
+    )
+
+
+def _candidate_message_builder(
+    config: dict[str, Any],
+) -> Callable[..., tuple[str, str]]:
+    mode = str(config.get("candidate_prompt_mode") or "current").strip().lower()
+    if mode == "current":
+        return _build_candidate_messages
+    if mode == "lean_story_package":
+        return _build_lean_candidate_messages
+    if mode == "native_baseline":
+        return _build_native_candidate_messages
+    if mode == "engine_first":
+        return _build_native_candidate_messages
+    raise ValueError(f"unsupported candidate_prompt_mode: {mode}")
+
+
+def _build_seriality_messages(
+    *, candidate: ConceptCandidate, genre: str, chapter_count: int
+) -> tuple[str, str]:
+    """Expand a frozen seed; seriality may prove it, but may not rewrite it."""
+
+    from bestseller.services.seriality_capacity import required_seriality_unit_count
+
+    phase_min = (
+        9
+        if chapter_count >= 1500
+        else 5
+        if chapter_count >= 1000
+        else 4
+        if chapter_count >= 500
+        else 3
+    )
+    family_min = 6 if chapter_count >= 1500 else 4
+    renewal_min = 5 if chapter_count >= 1500 else 3
+    ecology_min = 5 if chapter_count >= 1500 else 2
+    mystery_min = 9 if chapter_count >= 1500 else 5 if chapter_count >= 1000 else 3
+    required_units = required_seriality_unit_count(chapter_count)
+    system = (
+        "你是长篇网文结构总编。你不能修改已经通过的故事种子，只负责判断它是否能"
+        "自然续写，并给出可检验的长篇承载证明。禁止靠重复副本、无限地图、强塞倒计时"
+        "或每卷换皮来伪造长度。只输出JSON。"
+    )
+    user = (
+        f"【冻结故事种子】题材={genre}，目标={chapter_count}章\n"
+        f"一句话：{candidate.concept}\n机制：{candidate.mechanism}\n"
+        f"主角：{candidate.protagonist_identity}\n私人欲望：{candidate.protagonist_private_desire}\n"
+        f"核心异常：{candidate.core_abnormality}\n开局危机：{candidate.opening_crisis}\n"
+        f"对手系统：{candidate.opponent_system}\n人物决策证明：{candidate.decision_proof}\n\n"
+        "证明要求（每个字符串不超过80个汉字，禁止解释性散文）：\n"
+        "0. core_promise_invariant 写出从开篇到终局都不变的读者承诺；阶段升级只能改变"
+        "范围、角色和题型，不能换掉这件事。\n"
+        "1. repeatable_story_unit 必须写成三级发动机：2-4章内生微单元（主角主动发现/"
+        "选择/试错/交易/反制）→8-20章中期成果弧→跨卷产业或阵营阶段；不是能力说明，"
+        "也不能只写每隔十章捡到一个新素材；\n"
+        "1.1 unit_frequency 写清2-4章内主角会作出的选择、试错或遭遇的反制。"
+        f"unit_count_estimate 填不少于{required_units}的节奏预算；少于该数说明2-4章一次"
+        "与目标篇幅自相矛盾。裁判不会因数字高而加分，容量仍由行动家族、阶段变化和"
+        "后果链证明。禁止用新尸体/新案件/新产品换名凑数；\n"
+        f"1.2 unit_families 至少{family_min}类不同冲突语法，例如发现、交易、关系选择、公开博弈、"
+        "建设、反制、内部裂变；每类都必须由核心机制触发，不是外部随机投喂。\n"
+        "1.3 role_ladder 与 world_ladder 各至少4级。前者写每阶段主角的新职责和新动作，"
+        "后者写资源、关系网络、规则与利益相关者如何变化；不得只升官、换地图或成神。\n"
+        f"2. renewal_sources 至少含{renewal_min}种相互独立的来源，并至少两种来自主角既有行动的"
+        "后果、团队新发现、对手反制、客户/关系变化或制度反馈；不得只依赖外部不断送来"
+        "新尸体、新委托、新遗迹、新失败项目；\n"
+        "3. accumulation_tracks 每轮都必须留下不可逆变化，禁止打完复位；\n"
+        f"4. phase_transitions 至少{phase_min}阶段，每项必须写明确连续章号范围，"
+        f"从第1章连续覆盖到第{chapter_count}章；最后一项未到第{chapter_count}章即失败，"
+        "且每个阶段至少一种新的主角动作、冲突家族和不可逆产物；不能只是从个人案升级"
+        "为城市案、全国案却仍做同一件事；\n"
+        f"5. opposing_ecology 至少{ecology_min}个会学习、结盟、背叛的自主势力；\n"
+        f"6. mystery_ladder 至少{mystery_min}级，答案会扩大而不是终止故事；\n"
+        "7. ch50 必须仍在兑现同一个故事承诺，不能已经解决总问题；\n"
+        "8. endgame_direction 由前述积累自然汇聚，不能另起炉灶。\n\n"
+        "只输出JSON：{\"core_promise_invariant\":\"全书不变承诺\","
+        "\"role_ladder\":[\"角色/动作1\",\"角色/动作2\",\"角色/动作3\",\"角色/动作4\"],"
+        "\"world_ladder\":[\"盘面1\",\"盘面2\",\"盘面3\",\"盘面4\"],"
+        "\"repeatable_story_unit\":\"每轮动作循环\","
+        "\"unit_families\":[\"发现\",\"交易\",\"关系选择\",\"公开博弈\"],"
+        "\"progress_bar\":\"读者可感知的增长\","
+        "\"unit_frequency\":\"单元自然发生频率\","
+        f"\"unit_count_estimate\":{required_units},"
+        "\"renewal_sources\":[\"来源1\",\"来源2\",\"来源3\"],"
+        "\"accumulation_tracks\":[\"积累1\",\"积累2\",\"积累3\"],"
+        f"\"phase_transitions\":[\"第1-X章阶段1\",\"第X+1-Y章阶段2\","
+        f"\"第Y+1-Z章阶段3\",\"第Z+1-{chapter_count}章阶段4\"],"
+        "\"opposing_ecology\":[\"势力1\",\"势力2\"],"
+        "\"mystery_ladder\":[\"问题1\",\"问题2\",\"问题3\"],"
+        "\"ch50\":\"第50章冲突\",\"endgame_direction\":\"终局汇聚方向\"}"
+    )
+    return system, user
+
+
+def _build_seriality_judge_messages(
+    *, candidate: ConceptCandidate, chapter_count: int
+) -> tuple[str, str]:
+    system = (
+        "你是极其苛刻的长篇连载总编。只审承载力，不替作者补设定。字段写满不等于能写长。"
+        "只输出JSON。"
+    )
+    user = (
+        f"目标={chapter_count}章\n一句话={candidate.concept}\n"
+        f"核心承诺={candidate.core_promise_invariant}\n"
+        f"循环单元={candidate.repeatable_story_unit}\n冲突家族={list(candidate.unit_families)}\n"
+        f"角色行动梯={list(candidate.role_ladder)}\n盘面变化梯={list(candidate.world_ladder)}\n"
+        f"发生频率={candidate.unit_frequency}\n"
+        f"预计单元数={candidate.unit_count_estimate}\n更新来源={list(candidate.renewal_sources)}\n"
+        f"不可逆积累={list(candidate.accumulation_tracks)}\n阶段变化={list(candidate.phase_transitions)}\n"
+        f"势力生态={list(candidate.opposing_ecology)}\n悬念梯={list(candidate.question_ladder)}\n"
+        f"第50章={candidate.ch50}\n终局={candidate.endgame_direction}\n\n"
+        "六轴0-10：renewability 新单元是否真正可再生；escalation 阶段是否换玩法而非涨数值；"
+        "anti_reset 每轮是否留下不可逆变化；coherence 长篇是否始终兑现同一句话；"
+        "promise_survival 一句话里的核心发现/矛盾在开篇兑现后是否仍持续产出同类故事，"
+        "若揭晓后只能换主线不得超过4分；unit_density 不采信自报总数，只看冲突家族能否"
+        "组合、角色新动作与盘面变化能否在章节级持续制造选择和反制；若一年一次事件被"
+        "硬拉数百章不得超过4分。"
+        "任一项低于6都应判失败。只输出JSON："
+        '{"renewability":0-10,"escalation":0-10,"anti_reset":0-10,'
+        '"coherence":0-10,"promise_survival":0-10,"unit_density":0-10,'
+        '"reason":"30字内"}'
+    )
+    return system, user
+
+
+def _build_engine_judge_messages(
+    *,
+    kernel: dict[str, Any],
+    genre: str,
+    sub_genre: str,
+    chapter_count: int,
+    seed_concept: str,
+) -> tuple[str, str]:
+    """Judge a premise card before hook copy can hide a weak project."""
+
+    system = (
+        "你是极其苛刻的小说选题编辑。此时还没有宣传钩子，只审项目卡。字段写满、"
+        "解释很长或声称能写500章都不能加分。只输出JSON。"
+    )
+    user = (
+        f"题材={genre}（{sub_genre}）；目标={chapter_count}章\n"
+        f"原始创意={seed_concept}\n"
+        f"项目卡={json.dumps(kernel, ensure_ascii=False)}\n\n"
+        "十一轴0-10：seed_fidelity 项目卡是否保留原始创意中的主角身份、核心异常与关键"
+        "关系；只要替换了其中任一核心事实，seed_fidelity不得超过4分。freshness 人物与"
+        "异常处境的核心组合是否明显区别于常见同类；"
+        "click_seed 不看文案技巧，只看这个故事胚子是否让目标读者立刻想追问；"
+        "action_conflict 眼前目标、有效阻力与双向代价是否咬合；"
+        "reader_promise 主要体验与持续追读问题是否具体；character_choice 主角是否会"
+        "不断面对正常聪明人也难解的选择；scene_generation 五个场面是否具体、彼此不同"
+        "且由同一项目自然生出；promise_survival 开局异常首次兑现后是否仍持续产出核心"
+        "承诺，若次数会耗尽或谜底揭开后只能换主线不得超过4分；deformable_loop 前轮后果"
+        "是否会改变下一轮，而非接一单"
+        "再用同一能力；post_reveal_engine 三个揭晓后场面是否仍兑现同一承诺、使用不同"
+        "行动并产生积累，若只是继续查同一谜底或项目卡临时新增另一条主线不得超过4分；"
+        "genre_fidelity 是否兑现题材。声称能写500章不加分。若五个场面"
+        "只是换人换地，scene_generation和deformable_loop不得超过4分。只输出JSON："
+        '{"seed_fidelity":0-10,"freshness":0-10,"click_seed":0-10,'
+        '"action_conflict":0-10,'
+        '"reader_promise":0-10,"character_choice":0-10,'
+        '"scene_generation":0-10,"promise_survival":0-10,'
+        '"deformable_loop":0-10,"post_reveal_engine":0-10,"genre_fidelity":0-10,'
+        '"reason":"40字内"}'
+    )
+    return system, user
+
+
+def _build_engine_batch_judge_messages(
+    *,
+    cards: list[tuple[str, str, dict[str, Any]]],
+    genre: str,
+    sub_genre: str,
+    chapter_count: int,
+) -> tuple[str, str]:
+    """Judge several premise cards in one independent call to avoid serial latency."""
+
+    system = (
+        "你是极其苛刻的长篇小说选题编辑。批量独立审项目卡，不替它们补设定。"
+        "字段写满、解释很长或声称能写500章不能加分。只输出JSON。"
+    )
+    rows = [
+        {"index": index, "lane": lane, "seed": seed, "card": card}
+        for index, (lane, seed, card) in enumerate(cards)
+    ]
+    user = (
+        f"题材={genre}（{sub_genre}）；目标={chapter_count}章\n"
+        f"候选={json.dumps(rows, ensure_ascii=False)}\n\n"
+        "逐项评分0-10：seed_fidelity保留原始主角/异常/关系；freshness核心组合新鲜；"
+        "click_seed故事胚子想点；action_conflict目标阻力与自然后果咬合；reader_promise"
+        "持续体验具体；character_choice能持续产生聪明人的两难；scene_generation五个"
+        "场面不同且由同一项目生出；promise_survival开局兑现后承诺仍在；"
+        "deformable_loop前轮后果改变下一轮；post_reveal_engine三个揭晓后场面仍兑现"
+        "同一承诺、使用不同动作并留下积累；genre_fidelity由目标题材原生行动与资源"
+        "成立。替换原始事实、一次性谜底、接单换皮、继续查同一真相、临时换新主线，"
+        "对应轴不得超过4分。只输出JSON：{\"verdicts\":[{\"index\":0,"
+        "\"seed_fidelity\":0-10,\"freshness\":0-10,\"click_seed\":0-10,"
+        "\"action_conflict\":0-10,\"reader_promise\":0-10,"
+        "\"character_choice\":0-10,\"scene_generation\":0-10,"
+        "\"promise_survival\":0-10,\"deformable_loop\":0-10,"
+        "\"post_reveal_engine\":0-10,\"genre_fidelity\":0-10,"
+        "\"reason\":\"40字内\"}]}"
+    )
+    return system, user
+
+
+def _premise_card_audit(card: dict[str, Any]) -> list[str]:
+    """Deterministic completeness check before a model can rationalize a blank card."""
+
+    missing: list[str] = []
+    for key in (
+        "protagonist_identity",
+        "protagonist_private_desire",
+        "protagonist_flaw",
+        "core_abnormality",
+        "current_goal",
+        "effective_resistance",
+        "failure_cost",
+        "success_cost",
+        "irreversible_change",
+        "reader_promise",
+        "difference_point",
+        "deformable_loop",
+        "opening_crisis",
+        "emotional_promise",
+    ):
+        if not str(card.get(key) or "").strip():
+            missing.append(key)
+    for key, minimum in (
+        ("scene_seeds", 5),
+        ("post_reveal_scene_seeds", 3),
+        ("expansion_axes", 3),
+        ("opposing_ecology", 2),
+    ):
+        value = card.get(key)
+        valid_items = (
+            [item for item in value if isinstance(item, str) and item.strip()]
+            if isinstance(value, list)
+            else []
+        )
+        if (
+            not isinstance(value, list)
+            or len(valid_items) < minimum
+            or len(valid_items) != len(value)
+        ):
+            missing.append(key)
+    return missing
+
+
+def _build_engine_kernel_repair_messages(
+    *,
+    genre: str,
+    sub_genre: str,
+    lane: str,
+    chapter_count: int,
+    seed_concept: str,
+    card: dict[str, Any],
+    missing_fields: list[str],
+    seed_support: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    """Repair malformed structure once without changing the premise itself."""
+
+    system, base = _build_engine_kernel_messages(
+        genre=genre,
+        sub_genre=sub_genre,
+        lane=lane,
+        chapter_count=chapter_count,
+        seed_concept=seed_concept,
+        seed_support=seed_support,
+    )
+    repair = (
+        "\n\n【PREMISE_CARD_REPAIR】上次项目卡的JSON结构不完整。"
+        "这不是重想故事的机会；人物、异常、关系、目标、阻力和后果全部冻结。\n"
+        f"缺失或类型错误字段：{'/'.join(missing_fields)}\n"
+        f"上次项目卡：{json.dumps(card, ensure_ascii=False)}\n"
+        "返回一份完整的新JSON对象，必须含模板中的全部字段。所有数组只能直接包含"
+        "非空字符串，禁止把后续字段嵌进scene_seeds或其他数组；不要输出说明文字。"
+    )
+    return system, base + repair
+
+
+def _build_hook_copy_repair_messages(
+    *, candidate: ConceptCandidate, feedback: str
+) -> tuple[str, str]:
+    """Repair only the one-line copy; every story fact remains frozen."""
+
+    system = (
+        "你是小说文案编辑。只修一句话的清晰度和点击欲，不能新增人物、能力、代价、"
+        "对手或主线。只输出JSON。"
+    )
+    user = (
+        f"原句：{candidate.concept}\n"
+        f"主角：{candidate.protagonist_identity}\n异常：{candidate.core_abnormality}\n"
+        f"开局：{candidate.opening_crisis}\n机制：{candidate.mechanism}\n"
+        f"裁判反馈：{feedback}\n"
+        "保留原故事事实，改成35-80字单句。优先使用普通动词和具体名词，删除抽象解释、"
+        "多层修饰和读者必须回读的指代。只输出JSON：{\"concept\":\"修复后一句话\"}"
+    )
+    return system, user
+
+
+def _build_seriality_repair_messages(
+    *,
+    candidate: ConceptCandidate,
+    genre: str,
+    chapter_count: int,
+    feedback: str,
+) -> tuple[str, str]:
+    system, base = _build_seriality_messages(
+        candidate=candidate,
+        genre=genre,
+        chapter_count=chapter_count,
+    )
+    current = {
+        "core_promise_invariant": candidate.core_promise_invariant,
+        "role_ladder": list(candidate.role_ladder),
+        "world_ladder": list(candidate.world_ladder),
+        "repeatable_story_unit": candidate.repeatable_story_unit,
+        "unit_families": list(candidate.unit_families),
+        "progress_bar": candidate.progress_bar,
+        "unit_frequency": candidate.unit_frequency,
+        "unit_count_estimate": candidate.unit_count_estimate,
+        "renewal_sources": list(candidate.renewal_sources),
+        "accumulation_tracks": list(candidate.accumulation_tracks),
+        "phase_transitions": list(candidate.phase_transitions),
+        "opposing_ecology": list(candidate.opposing_ecology),
+        "mystery_ladder": list(candidate.question_ladder),
+        "ch50": candidate.ch50,
+        "endgame_direction": candidate.endgame_direction,
+    }
+    repair = (
+        "\n\n【上次承载证明未通过，只修证明，严禁修改冻结故事种子】\n"
+        f"失败反馈：{feedback}\n"
+        f"上次证明：{json.dumps(current, ensure_ascii=False)}\n"
+        "针对反馈重写完整JSON。优先重建三级发动机：让主角当前行动内生地产生下一轮"
+        "微单元，让对手学习后改变题型，再由多个微单元汇成产品/案件/关系成果弧。"
+        "不得只补一句，也不得通过虚报单元数量、拉长年份、依赖外部无限投喂，或把"
+        "后半部换成另一种故事来过门。"
+    )
+    return system, base + repair
 
 
 def _build_judge_messages(
     *,
     candidate: ConceptCandidate,
     genre: str,
+    sub_genre: str = "",
     references: list[dict[str, str]],
 ) -> tuple[str, str]:
     ref_lines = "\n".join(
@@ -285,18 +1625,60 @@ def _build_judge_messages(
         "你是挑剔的网文榜单主编，每天毙掉几十个平庸选题。你只回答 JSON，"
         "评分严格：见过类似的就是不新鲜，能猜到后续就是可预测，不想点就是不想点。"
     )
+    genre_label = f"{genre}（{sub_genre}）" if sub_genre.strip() else genre
     user = (
-        f"【待评概念】（{genre}）\n"
+        f"【待评概念】（{genre_label}）\n"
         f"概念：{candidate.concept}\n机制：{candidate.mechanism}\n"
         f"认知缺口：{candidate.hook_question}\n\n"
+        f"主角：{candidate.protagonist_identity}；私人欲望：{candidate.protagonist_private_desire}\n"
+        f"第一危机：{candidate.opening_crisis}\n对手：{candidate.opponent_system}\n"
+        f"决策证明：{candidate.decision_proof}\n情绪承诺：{candidate.emotional_promise}\n\n"
         f"【榜单在售参照（对撞用）】\n{ref_lines}\n\n"
-        "三轴打分（0-10，整数或一位小数）：\n"
+        "八轴打分（0-10，整数或一位小数）：\n"
         "1. freshness 新颖度：与参照集和你见过的全部网文对撞，这个概念的核心组合"
-        "有没有人写过？换皮不算新。\n"
+        "有没有人写过？换皮不算新。这里只评‘概念：’这一行的标志性规则或发现，"
+        "后附机制写得再完整也不能救分。若可压缩成‘做一个产品，资本再封杀一次’、"
+        "‘接一个任务，再解决一次’等平行重复，新颖度不得超过6分。\n"
         "2. click 想点欲：只看这个概念一句话，目标读者3秒内想不想点进去？\n"
-        "3. predictable 可预测性：你能不能自动补全这本书接下来的主线走向？"
-        "（能补全=高分=坏事）\n"
+        "3. predictable 可预测性：你能不能从这一句直接猜完主要对手、阶段升级、关键"
+        "反转和终局答案？能猜完=高分=坏事。注意：读者能看懂主角会反复做什么是清晰"
+        "的连载承诺，不是可预测缺陷；只有后续变量、升级方式和结局也能被自动补全才扣分。\n"
+        "能力类型见过不等于后续可预测，那属于freshness；本轴禁止因题材相似或前作影子"
+        "重复扣分。校准：一个主角能听见尚未完成的剑招，读者虽能看懂能力，却无法直接"
+        "猜出谁在利用这件事、为何必须由他行动、如何破局和终局，predictable应为2-4分；"
+        "只有‘每接一案解决一案，最后打败幕后组织’才应为7-10分。\n"
+        "4. character_logic 人物决策可信度：站在主角第一人称，他是否有充分理由进入"
+        "这场故事并持续行动？如果必须靠降智、忘记常识、强塞倒计时或无因果代价才能推进，"
+        "本项不得超过4分。\n"
+        "5. mechanism_causality 机制因果：能力/异常发现、主角持续行动、收益与对手反制"
+        "是否因果咬合？不要求每个好故事都必须有自损代价；没有显式代价不得扣分。只有"
+        "候选主动声明代价时，才检查它是否由行动自然改变名额、资源、关系、证据或制度而"
+        "产生。随机折寿、失忆、器官衰竭等外置惩罚不得超过3分。\n"
+        f"6. genre_fidelity 题材保真：目标题材是【{genre_label}】。必须同时按大类和子类型"
+        "判断；硬核科技、创业、职业操作等若属于子类型核心承诺，应当加分，不能因为像"
+        "职业文而扣分。只有候选实质换成了别的类型才低分。尤其警惕把现代职业流程搬进"
+        "超凡世界后只替换名词：必须说明该流程在本世界为何必要、原生常识为什么不能替代、"
+        "主角为何拥有不可替代的行动入口。若依赖任何外部职业流程，必须先证明它为何在"
+        "本题材世界不可替代、为何不是贴皮；缺少这些因果而直接套用现代报告/数据库/评级/"
+        "客户流程，genre_fidelity不得超过3分。\n"
+        "7. plain_language 大白话：只评上面‘概念：’这一行，必须忽略后附机制、认知"
+        "缺口、人物和决策证明。普通目标读者能否一遍形成清楚画面？若概念一句话含必须"
+        "搜索解释的术语、算法名、机构缩写或多层抽象因果，本项不得超过4分。"
+        "题材目标读者本来就懂的常识词不算术语，例如仙侠里的灵材/天庭/渡劫、"
+        "民俗里的祠堂/禁忌、都市黑科技里的芯片/报废晶圆/设计/产品/供应商/基金。"
+        "校准示例：‘芯片工程师从报废晶圆里复原被放弃的设计，再把它做成产品’对"
+        "都市黑科技目标读者应为8-10分；‘修仙界快递员发现自己送的不是货，是活人’"
+        "应为8-10分；‘用COTRS精算残差重校再保险时间序列’应为0-3分。"
+        "此轴只评一遍能否看懂，不评你个人是否喜欢这个创意。\n"
+        "8. story_motion 故事运动：一句话是否给出会持续产出故事的核心承诺。可以是"
+        "主角反复执行的标志性行动，也可以是‘独特规则+一个具体到令人不安的反常实例’，"
+        "只要读者自然追问下一次会发生什么；不强制把对手塞进一句话，对手理性改看"
+        "opponent_system。若只是俏皮反差、静态世界设定、身份+秘密，必须依赖后文才知道"
+        "故事怎么动，本项不得超过4分。若只是换对象平行重复、局面不积累，不得超过7分。\n"
         '只输出 JSON：{"freshness": 0-10, "click": 0-10, "predictable": 0-10, '
+        '"character_logic": 0-10, '
+        '"mechanism_causality": 0-10, '
+        '"genre_fidelity": 0-10, "plain_language": 0-10, "story_motion": 0-10, '
         '"reason": "20字内评语"}'
     )
     return system, user
@@ -314,7 +1696,41 @@ def _parse_json_object(raw: str) -> dict[str, Any] | None:
                 payload = json.loads(text[start : end + 1])
             except json.JSONDecodeError:
                 payload = None
+    if not isinstance(payload, dict) and text:
+        try:
+            from json_repair import repair_json
+
+            repaired = repair_json(text, return_objects=True)
+            payload = repaired if isinstance(repaired, dict) else None
+        except Exception:
+            payload = None
     return payload if isinstance(payload, dict) else None
+
+
+def _parse_complete_axis_scores(
+    verdict: dict[str, Any] | None,
+    axes: tuple[str, ...],
+) -> tuple[dict[str, float] | None, list[str]]:
+    """Parse a judge verdict without turning omitted axes into fake zero scores."""
+
+    if not isinstance(verdict, dict):
+        return None, list(axes)
+    scores: dict[str, float] = {}
+    missing: list[str] = []
+    for axis in axes:
+        value = verdict.get(axis)
+        try:
+            score = float(value)
+        except (TypeError, ValueError):
+            missing.append(axis)
+            continue
+        if not math.isfinite(score):
+            missing.append(axis)
+            continue
+        scores[axis] = max(0.0, min(10.0, score))
+    if missing:
+        return None, missing
+    return scores, []
 
 
 def _parse_candidate(raw: str, dimension: str) -> ConceptCandidate | None:
@@ -327,19 +1743,143 @@ def _parse_candidate(raw: str, dimension: str) -> ConceptCandidate | None:
         if isinstance(ladder_raw, list)
         else ()
     )
+    def _tuple_field(key: str) -> tuple[str, ...]:
+        value = payload.get(key)
+        return (
+            tuple(str(x).strip() for x in value if str(x).strip())
+            if isinstance(value, list)
+            else ()
+        )
+
+    def _int_field(key: str) -> int:
+        try:
+            return max(0, int(payload.get(key) or 0))
+        except (TypeError, ValueError):
+            return 0
+
     candidate = ConceptCandidate(
         dimension=dimension,
         concept=str(payload.get("concept") or "").strip(),
         mechanism=str(payload.get("mechanism") or "").strip(),
         hook_question=str(payload.get("hook_question") or "").strip(),
+        protagonist_identity=str(payload.get("protagonist_identity") or "").strip(),
+        protagonist_private_desire=str(payload.get("protagonist_private_desire") or "").strip(),
+        protagonist_flaw=str(payload.get("protagonist_flaw") or "").strip(),
+        core_abnormality=str(payload.get("core_abnormality") or "").strip(),
+        opening_crisis=str(payload.get("opening_crisis") or "").strip(),
+        opponent_system=str(payload.get("opponent_system") or "").strip(),
+        decision_proof=str(payload.get("decision_proof") or "").strip(),
+        emotional_promise=str(payload.get("emotional_promise") or "").strip(),
+        core_promise_invariant=str(payload.get("core_promise_invariant") or "").strip(),
+        unit_families=_tuple_field("unit_families"),
+        repeatable_story_unit=str(
+            payload.get("repeatable_story_unit")
+            or (
+                payload.get("mechanism")
+                if payload.get("unit_frequency") or payload.get("phase_transitions")
+                else ""
+            )
+            or ""
+        ).strip(),
         progress_bar=str(payload.get("progress_bar") or "").strip(),
+        unit_frequency=str(payload.get("unit_frequency") or "").strip(),
+        unit_count_estimate=_int_field("unit_count_estimate"),
         question_ladder=ladder,
         ch50=str(payload.get("ch50") or "").strip(),
+        renewal_sources=_tuple_field("renewal_sources"),
+        accumulation_tracks=_tuple_field("accumulation_tracks"),
+        phase_transitions=_tuple_field("phase_transitions"),
+        opposing_ecology=_tuple_field("opposing_ecology"),
+        endgame_direction=str(payload.get("endgame_direction") or "").strip(),
     )
     return candidate if candidate.concept else None
 
 
-async def _default_generator(session: Any, settings: Any, *, template: str) -> GeneratorFn:
+def _parse_hook_variants(raw: str, dimension: str) -> list[ConceptCandidate]:
+    """Parse three hook angles sharing one frozen premise card."""
+
+    payload = _parse_json_object(raw)
+    if payload is None:
+        return []
+    hooks = payload.get("hooks")
+    if not isinstance(hooks, list):
+        candidate = _parse_candidate(raw, dimension)
+        return [candidate] if candidate is not None else []
+    variants: list[ConceptCandidate] = []
+    for index, hook in enumerate(hooks[:3]):
+        if not isinstance(hook, dict):
+            continue
+        concept = str(hook.get("concept") or "").strip()
+        if not concept:
+            continue
+        angle = str(hook.get("angle") or f"v{index + 1}").strip()
+        variant_payload = dict(payload)
+        variant_payload.pop("hooks", None)
+        variant_payload["concept"] = concept
+        candidate = _parse_candidate(
+            json.dumps(variant_payload, ensure_ascii=False),
+            f"{dimension}:{angle}",
+        )
+        if candidate is not None:
+            variants.append(candidate)
+    return variants
+
+
+def _apply_seriality_payload(
+    candidate: ConceptCandidate, raw: str
+) -> ConceptCandidate | None:
+    """Attach proof fields while keeping every frozen story-seed field unchanged."""
+
+    from dataclasses import replace
+
+    payload = _parse_json_object(raw)
+    if payload is None:
+        return None
+
+    def _tuple_field(key: str) -> tuple[str, ...]:
+        value = payload.get(key)
+        return (
+            tuple(str(item).strip() for item in value if str(item).strip())
+            if isinstance(value, list)
+            else ()
+        )
+
+    def _int_field(key: str) -> int:
+        try:
+            return max(0, int(payload.get(key) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    repeatable_unit = str(payload.get("repeatable_story_unit") or "").strip()
+    return replace(
+        candidate,
+        repeatable_story_unit=repeatable_unit,
+        core_promise_invariant=str(payload.get("core_promise_invariant") or "").strip(),
+        role_ladder=_tuple_field("role_ladder"),
+        world_ladder=_tuple_field("world_ladder"),
+        unit_families=_tuple_field("unit_families"),
+        progress_bar=str(payload.get("progress_bar") or "").strip(),
+        unit_frequency=str(payload.get("unit_frequency") or "").strip(),
+        unit_count_estimate=_int_field("unit_count_estimate"),
+        question_ladder=_tuple_field("mystery_ladder"),
+        ch50=str(payload.get("ch50") or "").strip(),
+        renewal_sources=_tuple_field("renewal_sources"),
+        accumulation_tracks=_tuple_field("accumulation_tracks"),
+        phase_transitions=_tuple_field("phase_transitions"),
+        opposing_ecology=_tuple_field("opposing_ecology"),
+        endgame_direction=str(payload.get("endgame_direction") or "").strip(),
+    )
+
+
+async def _default_generator(
+    session: Any,
+    settings: Any,
+    *,
+    template: str,
+    max_tokens: int = 900,
+    logical_role: str = "planner",
+    model_catalog_key: str | None = None,
+) -> GeneratorFn:
     async def _call(system_prompt: str, user_prompt: str) -> tuple[str, Any]:
         from bestseller.services.llm import LLMCompletionRequest, complete_text
 
@@ -347,14 +1887,19 @@ async def _default_generator(session: Any, settings: Any, *, template: str) -> G
             session,
             settings,
             LLMCompletionRequest(
-                logical_role="planner",
+                logical_role=logical_role,
                 model_tier="strong",
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 fallback_response="{}",
                 prompt_template=template,
-                prompt_version="v1",
-                max_tokens_override=800,
+                prompt_version="v2",
+                max_tokens_override=max_tokens,
+                model_catalog_key=model_catalog_key,
+                metadata={
+                    "concept_tournament_stage": template,
+                    "model_route": model_catalog_key or "role-default",
+                },
             ),
         )
         return completion.content or "", completion.llm_run_id
@@ -386,11 +1931,16 @@ async def run_concept_tournament(
     config: dict[str, Any] | None = None,
     generator: GeneratorFn | None = None,
     judge: GeneratorFn | None = None,
+    expander: GeneratorFn | None = None,
+    seriality_judge: GeneratorFn | None = None,
+    premise_judge: GeneratorFn | None = None,
     rng: random.Random | None = None,
+    seed_concept: str = "",
+    retry_feedback: str = "",
 ) -> ConceptTournamentResult:
-    """跑一轮概念淘汰赛。永不 raise（fail-open：失败→winner=None→无注入）。
+    """跑一轮概念淘汰赛。异常转成 winner=None，由调用方按目标篇幅决定是否阻断。
 
-    ``generator``/``judge`` 可注入（测试）；``rng`` 可注入固定维度抽样。
+    四个模型工序均可注入（测试）；``rng`` 可注入固定维度抽样。
     """
 
     cfg = config if config is not None else load_concept_tournament_config()
@@ -402,40 +1952,674 @@ async def run_concept_tournament(
         banned = resolve_banned_cliches(genre, sub_genre, cfg)
         result.banned_cliches = banned
         n_candidates = max(2, int(cfg.get("n_candidates", 4)))
+        candidate_prompt_mode = str(
+            cfg.get("candidate_prompt_mode") or "current"
+        ).strip().lower()
         pool = [str(d) for d in (cfg.get("dimension_pool") or []) if str(d).strip()]
         rand = rng if rng is not None else random.Random()
-        hybrid_count = min(max(1, n_candidates - 1), len(pool)) if pool else 0
-        dimensions = (
-            rand.sample(pool, hybrid_count) if hybrid_count else []
-        ) + [_CONTROL_DIMENSION]
+        if candidate_prompt_mode in {"native_baseline", "engine_first"}:
+            dimensions = [
+                _NATIVE_STORY_LANES[index % len(_NATIVE_STORY_LANES)]
+                for index in range(n_candidates)
+            ]
+        elif seed_concept.strip():
+            source_dimensions = (
+                _TARGETED_REPAIR_DIMENSIONS
+                if retry_feedback.strip()
+                else _SEED_REFINEMENT_DIMENSIONS
+            )
+            dimensions = list(source_dimensions[:n_candidates])
+        else:
+            control_count = min(
+                2, max(1, int(cfg.get("control_candidates", 2))), n_candidates - 1
+            )
+            hybrid_count = (
+                min(max(1, n_candidates - control_count), len(pool)) if pool else 0
+            )
+            controls = [_CONTROL_DIMENSION, _CHARACTER_CONTROL_DIMENSION][:control_count]
+            dimensions = (
+                rand.sample(pool, hybrid_count) if hybrid_count else []
+            ) + controls
 
+        using_default_generator = generator is None
+        using_default_judge = judge is None
+        generation_model_key = str(cfg.get("generation_model_key") or "").strip() or None
+        judge_model_key = str(cfg.get("judge_model_key") or "").strip() or None
+        finalist_judge_model_key = (
+            str(cfg.get("finalist_judge_model_key") or "").strip() or None
+        )
+        raw_idea_judge_model_key = (
+            str(cfg.get("raw_idea_judge_model_key") or "").strip()
+            or finalist_judge_model_key
+        )
+        premise_judge_model_key = (
+            str(cfg.get("premise_judge_model_key") or "").strip()
+            or finalist_judge_model_key
+        )
+        result.generation_model_key = generation_model_key
+        result.judge_model_key = judge_model_key
+        result.finalist_judge_model_key = finalist_judge_model_key
+        result.raw_idea_judge_model_key = raw_idea_judge_model_key
+        result.premise_judge_model_key = premise_judge_model_key
         gen_fn = generator
-        if gen_fn is None:
+        if using_default_generator:
             gen_fn = await _default_generator(
-                session, settings, template="concept_tournament_candidate"
+                session,
+                settings,
+                template="concept_tournament_candidate",
+                max_tokens=900,
+                logical_role="planner",
+                model_catalog_key=generation_model_key,
+            )
+        engine_fn = generator
+        if candidate_prompt_mode == "engine_first" and using_default_generator:
+            engine_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_engine_kernel",
+                max_tokens=max(
+                    2200,
+                    int(cfg.get("engine_kernel_max_tokens", 3500)),
+                ),
+                logical_role="planner",
+                model_catalog_key=generation_model_key,
             )
         judge_fn = judge
-        if judge_fn is None:
+        if using_default_judge:
             judge_fn = await _default_generator(
-                session, settings, template="concept_tournament_judge"
+                session,
+                settings,
+                template="concept_tournament_judge",
+                max_tokens=max(450, int(cfg.get("judge_max_tokens", 900))),
+                logical_role="critic",
+                model_catalog_key=judge_model_key,
+            )
+        expand_fn = expander
+        if expand_fn is None and using_default_generator:
+            expand_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_seriality",
+                max_tokens=2200,
+                logical_role="planner",
+                model_catalog_key=generation_model_key,
+            )
+        seriality_judge_fn = seriality_judge
+        if seriality_judge_fn is None and using_default_judge:
+            seriality_judge_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_seriality_judge",
+                max_tokens=max(
+                    450,
+                    int(cfg.get("seriality_judge_max_tokens", 900)),
+                ),
+                logical_role="critic",
+                model_catalog_key=judge_model_key,
+            )
+        finalist_judge_fn: GeneratorFn | None = None
+        finalist_seriality_judge_fn: GeneratorFn | None = None
+        raw_idea_rank_fn: GeneratorFn | None = None
+        premise_judge_fn: GeneratorFn | None = premise_judge
+        if using_default_judge and finalist_judge_model_key:
+            finalist_judge_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_finalist_judge",
+                max_tokens=max(
+                    1800,
+                    int(cfg.get("finalist_judge_max_tokens", 3000)),
+                ),
+                logical_role="critic",
+                model_catalog_key=finalist_judge_model_key,
+            )
+            finalist_seriality_judge_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_finalist_seriality_judge",
+                max_tokens=max(
+                    1800,
+                    int(cfg.get("finalist_seriality_judge_max_tokens", 3000)),
+                ),
+                logical_role="critic",
+                model_catalog_key=finalist_judge_model_key,
+            )
+        if using_default_judge and raw_idea_judge_model_key:
+            raw_idea_rank_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_raw_idea_rank",
+                max_tokens=max(3000, int(cfg.get("raw_idea_rank_max_tokens", 4500))),
+                logical_role="critic",
+                model_catalog_key=raw_idea_judge_model_key,
+            )
+        if premise_judge_fn is None and using_default_judge and premise_judge_model_key:
+            premise_judge_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_premise_judge",
+                max_tokens=max(3000, int(cfg.get("premise_judge_max_tokens", 4500))),
+                logical_role="critic",
+                model_catalog_key=premise_judge_model_key,
             )
 
         avoid_block = _render_avoid_mechanisms_block(avoid_mechanisms or [])
 
         # ── 1) 候选生成 ────────────────────────────────────────────────
+        build_candidate_messages = _candidate_message_builder(cfg)
+        result.candidate_prompt_mode = candidate_prompt_mode
         candidates: list[ConceptCandidate] = []
-        for dimension in dimensions:
-            try:
-                system, user = _build_candidate_messages(
-                    genre=genre, sub_genre=sub_genre, dimension=dimension,
-                    chapter_count=chapter_count, banned=banned,
-                    avoid_mechanisms_block=avoid_block,
+        raw_pitch_by_seed: dict[str, dict[str, Any]] = {}
+        work_items = [(dimension, seed_concept) for dimension in dimensions]
+        if candidate_prompt_mode == "engine_first":
+            raw_idea_prompt_arm = str(
+                cfg.get("raw_idea_prompt_arm") or "enhanced"
+            ).strip().lower()
+            if raw_idea_prompt_arm not in {
+                "minimal",
+                "methodology",
+                "consequence",
+                "author_pitch",
+                "guarded",
+                "enhanced",
+            }:
+                raise ValueError(
+                    f"unsupported raw_idea_prompt_arm: {raw_idea_prompt_arm}"
                 )
+            result.raw_idea_prompt_arm = raw_idea_prompt_arm
+            pool_count = max(
+                n_candidates,
+                n_candidates * max(1, int(cfg.get("raw_idea_pool_multiplier", 2))),
+            )
+            generation_batch_size = max(
+                1,
+                int(cfg.get("raw_idea_generation_batch_size", pool_count)),
+            )
+            focus_values = cfg.get("raw_idea_batch_focuses") or []
+            batch_focuses = [
+                str(value).strip()
+                for value in focus_values
+                if str(value).strip()
+            ] if isinstance(focus_values, list) else []
+            parsed_pool: list[tuple[str, str]] = []
+            seen_seeds: set[str] = set()
+            for batch_index, batch_start in enumerate(
+                range(0, pool_count, generation_batch_size)
+            ):
+                batch_count = min(generation_batch_size, pool_count - batch_start)
+                focus_hint = (
+                    batch_focuses[batch_index % len(batch_focuses)]
+                    if batch_focuses
+                    else ""
+                )
+                pool_system, pool_user = _build_raw_idea_pool_messages(
+                    genre=genre,
+                    sub_genre=sub_genre,
+                    count=batch_count,
+                    seed_concept=seed_concept,
+                    prompt_arm=raw_idea_prompt_arm,
+                    focus_hint=focus_hint,
+                )
+                result.candidate_prompt_chars += len(pool_system) + len(pool_user)
+                result.candidate_generation_calls += 1
+                pool_raw, pool_run_id = await engine_fn(pool_system, pool_user)
+                if pool_run_id is not None:
+                    result.llm_run_ids.append(pool_run_id)
+                for record in _parse_raw_idea_records(pool_raw, limit=batch_count):
+                    lane = str(record["lane"])
+                    seed = str(record["seed"])
+                    normalized_seed = "".join(seed.split())
+                    if normalized_seed in seen_seeds:
+                        continue
+                    seen_seeds.add(normalized_seed)
+                    parsed_pool.append((lane, seed))
+                    raw_pitch_by_seed[seed] = record
+            parsed_pool = parsed_pool[:pool_count]
+            if parsed_pool:
+                result.raw_ideas = [
+                    raw_pitch_by_seed.get(seed, {"lane": lane, "seed": seed})
+                    for lane, seed in parsed_pool
+                ]
+                work_items = [
+                    (f"{lane}#{index}", seed)
+                    for index, (lane, seed) in enumerate(parsed_pool)
+                ]
+                if raw_idea_rank_fn is not None:
+                    ranking: list[dict[str, Any]] = []
+                    rank_retry_calls = 0
+                    rank_batch_size = max(
+                        2, int(cfg.get("raw_idea_rank_batch_size", 6))
+                    )
+                    for batch_start in range(0, len(parsed_pool), rank_batch_size):
+                        batch = parsed_pool[
+                            batch_start : batch_start + rank_batch_size
+                        ]
+                        rank_system, rank_user = _build_raw_idea_rank_messages(
+                            genre=genre,
+                            sub_genre=sub_genre,
+                            ideas=batch,
+                        )
+                        rank_raw, rank_run_id = await raw_idea_rank_fn(
+                            rank_system, rank_user
+                        )
+                        if rank_run_id is not None:
+                            result.llm_run_ids.append(rank_run_id)
+                        parsed_batch = [
+                            item
+                            for item in _parse_raw_idea_ranking(rank_raw)
+                            if 0 <= int(item.get("index", -1)) < len(batch)
+                        ]
+                        seen_local = {int(item["index"]) for item in parsed_batch}
+                        for item in parsed_batch:
+                            item["index"] = int(item["index"]) + batch_start
+                            ranking.append(item)
+                        missing_local = [
+                            index for index in range(len(batch)) if index not in seen_local
+                        ]
+                        # A truncated/invalid judge response must not silently remove half
+                        # the search space. Retry only missing ideas in pairs so the same
+                        # output-token ceiling cannot repeat the six-item truncation.
+                        for retry_start in range(0, len(missing_local), 2):
+                            source_indexes = missing_local[retry_start : retry_start + 2]
+                            retry_batch = [batch[index] for index in source_indexes]
+                            retry_system, retry_user = _build_raw_idea_rank_messages(
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                ideas=retry_batch,
+                            )
+                            retry_raw, retry_run_id = await raw_idea_rank_fn(
+                                retry_system, retry_user
+                            )
+                            rank_retry_calls += 1
+                            if retry_run_id is not None:
+                                result.llm_run_ids.append(retry_run_id)
+                            for item in _parse_raw_idea_ranking(retry_raw):
+                                retry_index = int(item.get("index", -1))
+                                if not 0 <= retry_index < len(source_indexes):
+                                    continue
+                                item["index"] = (
+                                    batch_start + source_indexes[retry_index]
+                                )
+                                ranking.append(item)
+                    result.raw_idea_ranking = ranking
+                    ranked_indexes = {
+                        int(item.get("index", -1))
+                        for item in ranking
+                        if 0 <= int(item.get("index", -1)) < len(parsed_pool)
+                    }
+                    result.raw_idea_rank_coverage = {
+                        "expected": len(parsed_pool),
+                        "ranked": len(ranked_indexes),
+                        "missing_indexes": sorted(
+                            set(range(len(parsed_pool))) - ranked_indexes
+                        ),
+                        "retry_calls": rank_retry_calls,
+                        "complete": len(ranked_indexes) == len(parsed_pool),
+                    }
+                    raw_floor = float(cfg.get("raw_idea_floor", 7.0))
+                    card_count = max(1, int(cfg.get("premise_card_count", 4)))
+                    qualified = _select_raw_ideas_for_expansion(
+                        [
+                            item
+                            for item in ranking
+                            if 0 <= int(item["index"]) < len(parsed_pool)
+                        ],
+                        raw_floor=raw_floor,
+                        progression_floor=float(
+                            cfg.get("raw_idea_progression_floor", 5.0)
+                        ),
+                        limit=card_count,
+                    )
+                    if not result.raw_idea_rank_coverage["complete"]:
+                        result.engine_rejections.append(
+                            {
+                                "dimension": "raw_idea_pool",
+                                "scores": {},
+                                "reason": "原始创意独立裁判覆盖不完整，禁止从残缺样本中选冠军",
+                                "failed_axes": ["raw_idea_rank_coverage"],
+                                "missing_indexes": result.raw_idea_rank_coverage[
+                                    "missing_indexes"
+                                ],
+                            }
+                        )
+                        qualified = []
+                    work_items = [
+                        (
+                            f"{parsed_pool[int(item['index'])][0]}#{int(item['index'])}",
+                            parsed_pool[int(item["index"])][1],
+                        )
+                        for item in qualified[:card_count]
+                    ]
+
+        engine_axes = (
+            "seed_fidelity",
+            "freshness",
+            "click_seed",
+            "action_conflict",
+            "reader_promise",
+            "character_choice",
+            "scene_generation",
+            "promise_survival",
+            "deformable_loop",
+            "post_reveal_engine",
+            "genre_fidelity",
+        )
+        engine_floor = float(cfg.get("engine_judge_floor", 7.0))
+        prebuilt_kernels: dict[tuple[str, str], dict[str, Any]] = {}
+        batch_review_complete = False
+        if (
+            candidate_prompt_mode == "engine_first"
+            and premise_judge_fn is not None
+            and work_items
+        ):
+            cards: list[tuple[str, str, dict[str, Any]]] = []
+            for dimension, premise_seed in work_items:
+                try:
+                    engine_system, engine_user = _build_engine_kernel_messages(
+                        genre=genre,
+                        sub_genre=sub_genre,
+                        lane=dimension,
+                        chapter_count=chapter_count,
+                        seed_concept=premise_seed,
+                        seed_support=raw_pitch_by_seed.get(premise_seed),
+                    )
+                    result.candidate_prompt_chars += len(engine_system) + len(engine_user)
+                    result.candidate_generation_calls += 1
+                    engine_raw, engine_run_id = await engine_fn(
+                        engine_system, engine_user
+                    )
+                    if engine_run_id is not None:
+                        result.llm_run_ids.append(engine_run_id)
+                    kernel = _parse_json_object(engine_raw)
+                    if kernel is None:
+                        raise ValueError("engine kernel is not valid JSON")
+                    card_record = {
+                        "dimension": dimension,
+                        "seed": premise_seed,
+                        "card": kernel,
+                    }
+                    result.premise_cards.append(card_record)
+                    missing_card_fields = _premise_card_audit(kernel)
+                    if missing_card_fields:
+                        repair_system, repair_user = (
+                            _build_engine_kernel_repair_messages(
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                lane=dimension,
+                                chapter_count=chapter_count,
+                                seed_concept=premise_seed,
+                                card=kernel,
+                                missing_fields=missing_card_fields,
+                                seed_support=raw_pitch_by_seed.get(premise_seed),
+                            )
+                        )
+                        result.candidate_prompt_chars += len(repair_system) + len(
+                            repair_user
+                        )
+                        result.candidate_generation_calls += 1
+                        repair_raw, repair_run_id = await engine_fn(
+                            repair_system, repair_user
+                        )
+                        if repair_run_id is not None:
+                            result.llm_run_ids.append(repair_run_id)
+                        repaired_kernel = _parse_json_object(repair_raw)
+                        repaired_missing = _premise_card_audit(repaired_kernel or {})
+                        card_record["repair"] = {
+                            "initial_missing_fields": missing_card_fields,
+                            "remaining_missing_fields": repaired_missing,
+                            "run_id": (
+                                str(repair_run_id)
+                                if repair_run_id is not None
+                                else None
+                            ),
+                        }
+                        if repaired_kernel is not None:
+                            card_record["initial_card"] = kernel
+                            card_record["card"] = repaired_kernel
+                            kernel = repaired_kernel
+                        missing_card_fields = repaired_missing
+                    if missing_card_fields:
+                        result.engine_rejections.append(
+                            {
+                                "dimension": dimension,
+                                "scores": {},
+                                "reason": "项目卡结构缺失: "
+                                + "/".join(missing_card_fields),
+                                "failed_axes": ["card_completeness"],
+                            }
+                        )
+                        continue
+                    prebuilt_kernels[(dimension, premise_seed)] = kernel
+                    cards.append((dimension, premise_seed, kernel))
+                except Exception:
+                    logger.warning(
+                        "concept premise generation failed (dimension=%s)",
+                        dimension,
+                        exc_info=True,
+                    )
+            if cards:
+                batch_system, batch_user = _build_engine_batch_judge_messages(
+                    cards=cards,
+                    genre=genre,
+                    sub_genre=sub_genre,
+                    chapter_count=chapter_count,
+                )
+                batch_raw, batch_run_id = await premise_judge_fn(
+                    batch_system, batch_user
+                )
+                if batch_run_id is not None:
+                    result.llm_run_ids.append(batch_run_id)
+                verdict_payload = _parse_json_object(batch_raw) or {}
+                verdicts = verdict_payload.get("verdicts")
+                if isinstance(verdicts, list):
+                    approved: list[tuple[str, str]] = []
+                    verdict_by_index: dict[int, dict[str, Any]] = {}
+                    for verdict in verdicts:
+                        if not isinstance(verdict, dict):
+                            continue
+                        try:
+                            card_index = int(verdict.get("index"))
+                        except (TypeError, ValueError):
+                            continue
+                        if (
+                            not 0 <= card_index < len(cards)
+                            or card_index in verdict_by_index
+                        ):
+                            continue
+                        verdict_by_index[card_index] = verdict
+
+                    for card_index, (dimension, premise_seed, kernel) in enumerate(
+                        cards
+                    ):
+                        verdict = verdict_by_index.get(card_index)
+                        engine_scores, missing_axes = _parse_complete_axis_scores(
+                            verdict, engine_axes
+                        )
+                        # Batch responses may be truncated or omit one field. Rejudge
+                        # only that card; never convert an absent field into a zero.
+                        if missing_axes:
+                            retry_system, retry_user = _build_engine_judge_messages(
+                                kernel=kernel,
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                chapter_count=chapter_count,
+                                seed_concept=premise_seed,
+                            )
+                            retry_raw, retry_run_id = await premise_judge_fn(
+                                retry_system, retry_user
+                            )
+                            if retry_run_id is not None:
+                                result.llm_run_ids.append(retry_run_id)
+                            retry_verdict = _parse_json_object(retry_raw)
+                            engine_scores, missing_axes = _parse_complete_axis_scores(
+                                retry_verdict, engine_axes
+                            )
+                            verdict = retry_verdict
+                        if engine_scores is None:
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": dimension,
+                                    "scores": {},
+                                    "reason": "独立项目卡裁判返回字段不完整: "
+                                    + "/".join(missing_axes),
+                                    "failed_axes": ["missing_verdict_fields"],
+                                    "missing_verdict_fields": missing_axes,
+                                }
+                            )
+                            continue
+                        failed_engine_axes = [
+                            axis
+                            for axis in engine_axes
+                            if engine_scores[axis] < engine_floor
+                        ]
+                        if failed_engine_axes:
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": dimension,
+                                    "scores": engine_scores,
+                                    "reason": str(verdict.get("reason") or ""),
+                                    "failed_axes": failed_engine_axes,
+                                }
+                            )
+                        else:
+                            approved.append((dimension, premise_seed))
+                    work_items = approved
+                    batch_review_complete = True
+        for dimension, premise_seed in work_items:
+            try:
+                kernel: dict[str, Any] | None = prebuilt_kernels.get(
+                    (dimension, premise_seed)
+                )
+                if candidate_prompt_mode == "engine_first":
+                    if kernel is None:
+                        engine_system, engine_user = _build_engine_kernel_messages(
+                            genre=genre,
+                            sub_genre=sub_genre,
+                            lane=dimension,
+                            chapter_count=chapter_count,
+                            seed_concept=premise_seed,
+                            seed_support=raw_pitch_by_seed.get(premise_seed),
+                        )
+                        result.candidate_prompt_chars += len(engine_system) + len(engine_user)
+                        result.candidate_generation_calls += 1
+                        engine_raw, engine_run_id = await engine_fn(
+                            engine_system, engine_user
+                        )
+                        if engine_run_id is not None:
+                            result.llm_run_ids.append(engine_run_id)
+                        kernel = _parse_json_object(engine_raw)
+                        if kernel is None:
+                            raise ValueError("engine kernel is not valid JSON")
+                        result.premise_cards.append(
+                            {
+                                "dimension": dimension,
+                                "seed": premise_seed,
+                                "card": kernel,
+                            }
+                        )
+                        missing_card_fields = _premise_card_audit(kernel)
+                        if missing_card_fields:
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": dimension,
+                                    "scores": {},
+                                    "reason": "项目卡结构缺失: "
+                                    + "/".join(missing_card_fields),
+                                    "failed_axes": ["card_completeness"],
+                                }
+                            )
+                            continue
+                    if not batch_review_complete and (
+                        premise_judge_fn is not None or seriality_judge_fn is not None
+                    ):
+                        engine_judge_system, engine_judge_user = (
+                            _build_engine_judge_messages(
+                                kernel=kernel,
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                chapter_count=chapter_count,
+                                seed_concept=premise_seed,
+                            )
+                        )
+                        engine_judge = premise_judge_fn or seriality_judge_fn
+                        assert engine_judge is not None
+                        engine_judge_raw, engine_judge_run_id = await engine_judge(
+                            engine_judge_system, engine_judge_user
+                        )
+                        if engine_judge_run_id is not None:
+                            result.llm_run_ids.append(engine_judge_run_id)
+                        engine_verdict = _parse_json_object(engine_judge_raw)
+                        engine_scores, missing_axes = _parse_complete_axis_scores(
+                            engine_verdict, engine_axes
+                        )
+                        if engine_scores is None:
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": dimension,
+                                    "scores": {},
+                                    "reason": "独立项目卡裁判返回字段不完整: "
+                                    + "/".join(missing_axes),
+                                    "failed_axes": ["missing_verdict_fields"],
+                                    "missing_verdict_fields": missing_axes,
+                                }
+                            )
+                            continue
+                        failed_engine_axes = [
+                            axis
+                            for axis in engine_axes
+                            if engine_scores[axis] < engine_floor
+                        ]
+                        if failed_engine_axes:
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": dimension,
+                                    "scores": engine_scores,
+                                    "reason": str(
+                                        (engine_verdict or {}).get("reason") or ""
+                                    ),
+                                    "failed_axes": failed_engine_axes,
+                                }
+                            )
+                            continue
+                    system, user = _build_hook_from_engine_messages(
+                        genre=genre,
+                        sub_genre=sub_genre,
+                        kernel=kernel,
+                        seed_concept=premise_seed,
+                    )
+                else:
+                    system, user = build_candidate_messages(
+                        genre=genre,
+                        sub_genre=sub_genre,
+                        dimension=dimension,
+                        chapter_count=chapter_count,
+                        banned=banned,
+                        avoid_mechanisms_block=avoid_block,
+                        seed_concept=seed_concept,
+                        retry_feedback=retry_feedback,
+                    )
+                result.candidate_prompt_chars += len(system) + len(user)
+                result.candidate_generation_calls += 1
                 raw, run_id = await gen_fn(system, user)
                 if run_id is not None:
                     result.llm_run_ids.append(run_id)
-                candidate = _parse_candidate(raw, dimension)
-                if candidate is not None:
+                generated = (
+                    _parse_hook_variants(raw, dimension)
+                    if candidate_prompt_mode == "engine_first"
+                    else [candidate]
+                    if (candidate := _parse_candidate(raw, dimension)) is not None
+                    else []
+                )
+                if candidate_prompt_mode == "engine_first" and premise_seed.strip():
+                    generated.append(
+                        ConceptCandidate(
+                            dimension=f"{dimension}:raw",
+                            concept=premise_seed.strip(),
+                        )
+                    )
+                for candidate in generated:
+                    if kernel is not None:
+                        candidate = _attach_engine_kernel(candidate, kernel)
                     candidates.append(candidate)
             except Exception:
                 logger.warning(
@@ -443,7 +2627,7 @@ async def run_concept_tournament(
                     dimension, exc_info=True,
                 )
 
-        # ── 2) 确定性筛：俗套命中 + 引擎审计 ───────────────────────────
+        # ── 2) 确定性筛：俗套命中 + 最小故事种子审计 ───────────────────
         # 基线 eliminate（命中即出局）；wild_mode 覆盖为 penalize（改罚分不淘汰，
         # 避免 2 词元假命中误杀好候选——罚分在 composite 阶段扣）。
         from dataclasses import replace as _dc_replace
@@ -458,6 +2642,15 @@ async def run_concept_tournament(
         penalty_by_concept: dict[str, float] = {}
         for candidate in candidates:
             penalty = 0.0
+            anti_pattern = _deterministic_anti_pattern(candidate)
+            if anti_pattern:
+                annotated.append(
+                    _dc_replace(
+                        candidate,
+                        rejected_reason=f"确定性反模式: {anti_pattern}",
+                    )
+                )
+                continue
             hits = _cliche_hits(candidate, banned)
             if hits:
                 if cliche_mode == "penalize":
@@ -467,12 +2660,14 @@ async def run_concept_tournament(
                         _dc_replace(candidate, rejected_reason=f"俗套命中: {'/'.join(hits[:3])}")
                     )
                     continue
-            audit = _engine_audit(candidate)
+            audit = _seed_audit(candidate)
             if audit:
                 if audit_mode == "penalize":
                     penalty += audit_penalty
                 else:
-                    annotated.append(_dc_replace(candidate, rejected_reason=f"引擎审计: {audit}"))
+                    annotated.append(
+                        _dc_replace(candidate, rejected_reason=f"故事种子审计: {audit}")
+                    )
                     continue
             if penalty > 0:
                 penalty_by_concept[candidate.concept] = penalty
@@ -497,12 +2692,20 @@ async def run_concept_tournament(
         w_fresh = float(weights.get("freshness", 0.4))
         w_click = float(weights.get("click", 0.4))
         w_unpred = float(weights.get("unpredictability", 0.2))
+        w_character = float(weights.get("character_logic", 0.0))
+        w_causality = float(weights.get("mechanism_causality", 0.0))
+        w_genre = float(weights.get("genre_fidelity", 0.0))
+        w_plain = float(weights.get("plain_language", 0.0))
+        w_motion = float(weights.get("story_motion", 0.0))
 
         judged: list[ConceptCandidate] = []
         for candidate in screened:
             try:
                 system, user = _build_judge_messages(
-                    candidate=candidate, genre=genre, references=references,
+                    candidate=candidate,
+                    genre=genre,
+                    sub_genre=sub_genre,
+                    references=references,
                 )
                 raw, run_id = await judge_fn(system, user)
                 if run_id is not None:
@@ -514,21 +2717,82 @@ async def run_concept_tournament(
                 fresh = max(0.0, min(10.0, float(verdict.get("freshness", 0))))
                 click = max(0.0, min(10.0, float(verdict.get("click", 0))))
                 predictable = max(0.0, min(10.0, float(verdict.get("predictable", 10))))
+                character_logic = max(
+                    0.0,
+                    min(10.0, float(verdict.get("character_logic", 5))),
+                )
+                mechanism_causality = max(
+                    0.0,
+                    min(10.0, float(verdict.get("mechanism_causality", 5))),
+                )
+                genre_fidelity = max(
+                    0.0,
+                    min(10.0, float(verdict.get("genre_fidelity", 5))),
+                )
+                plain_language = max(
+                    0.0,
+                    min(10.0, float(verdict.get("plain_language", 5))),
+                )
+                story_motion = max(
+                    0.0,
+                    min(10.0, float(verdict.get("story_motion", 0))),
+                )
                 composite = (
-                    fresh * w_fresh + click * w_click + (10.0 - predictable) * w_unpred
+                    fresh * w_fresh
+                    + click * w_click
+                    + (10.0 - predictable) * w_unpred
+                    + character_logic * w_character
+                    + mechanism_causality * w_causality
+                    + genre_fidelity * w_genre
+                    + plain_language * w_plain
+                    + story_motion * w_motion
                 )
                 # penalize 模式的确定性罚分（基线无罚分 → dict 空 → 值不变）。
                 composite = max(
                     0.0, composite - penalty_by_concept.get(candidate.concept, 0.0)
                 )
+                hard_floors = (
+                    cfg.get("judge_hard_floors")
+                    if isinstance(cfg.get("judge_hard_floors"), dict)
+                    else {}
+                )
+                failed_axes: list[str] = []
+                if fresh < float(hard_floors.get("freshness", 7.0)):
+                    failed_axes.append("新颖度")
+                if click < float(hard_floors.get("click", 7.5)):
+                    failed_axes.append("想点欲")
+                if predictable > float(hard_floors.get("predictable_max", 5.5)):
+                    failed_axes.append("可预测性")
+                if character_logic < float(hard_floors.get("character_logic", 7.0)):
+                    failed_axes.append("人物决策")
+                if mechanism_causality < float(
+                    hard_floors.get("mechanism_causality", 7.0)
+                ):
+                    failed_axes.append("机制因果")
+                if genre_fidelity < float(hard_floors.get("genre_fidelity", 7.0)):
+                    failed_axes.append("题材保真")
+                if plain_language < float(hard_floors.get("plain_language", 7.0)):
+                    failed_axes.append("大白话")
+                if story_motion < float(hard_floors.get("story_motion", 7.5)):
+                    failed_axes.append("故事运动")
                 judged.append(
                     _dc_replace(
                         candidate,
                         judge_freshness=fresh,
                         judge_click=click,
                         judge_predictable=predictable,
+                        judge_character_logic=character_logic,
+                        judge_mechanism_causality=mechanism_causality,
+                        judge_genre_fidelity=genre_fidelity,
+                        judge_plain_language=plain_language,
+                        judge_story_motion=story_motion,
                         judge_reason=str(verdict.get("reason") or ""),
-                        composite=round(composite, 2),
+                        composite=round(composite, 2) if not failed_axes else 0.0,
+                        rejected_reason=(
+                            None
+                            if not failed_axes
+                            else "钩子硬门失败: " + "/".join(failed_axes)
+                        ),
                     )
                 )
             except Exception:
@@ -541,19 +2805,364 @@ async def run_concept_tournament(
             scored_by_concept.get(c.concept, c) for c in result.candidates
         ]
 
-        contenders = [c for c in judged if c.composite is not None]
-        if not contenders:
-            logger.warning("concept tournament: no judged contenders; no injection")
-            return result
-        winner = max(contenders, key=lambda c: c.composite or 0.0)
         winner_min = float(cfg.get("winner_min", 5.5))
-        if (winner.composite or 0.0) < winner_min:
-            logger.warning(
-                "concept tournament: best composite %.2f < winner_min %.2f; no injection",
-                winner.composite or 0.0, winner_min,
-            )
+        contenders = [
+            c
+            for c in judged
+            if c.rejected_reason is None
+            and c.composite is not None
+            and (c.composite or 0.0) >= winner_min
+        ]
+        if not contenders:
+            logger.warning("concept tournament: no hook-qualified contenders; no injection")
             return result
-        result.winner = winner
+
+        # ── 4) 独立终审少量钩子，防止生成模型家族自评放水 ──────────────
+        if finalist_judge_fn is not None:
+            hard_floors = (
+                cfg.get("judge_hard_floors")
+                if isinstance(cfg.get("judge_hard_floors"), dict)
+                else {}
+            )
+
+            async def _independent_hook_review(
+                current: ConceptCandidate,
+            ) -> tuple[ConceptCandidate, list[str]]:
+                system, user = _build_judge_messages(
+                    candidate=current,
+                    genre=genre,
+                    sub_genre=sub_genre,
+                    references=references,
+                )
+                raw, run_id = await finalist_judge_fn(system, user)
+                if run_id is not None:
+                    result.llm_run_ids.append(run_id)
+                verdict = _parse_json_object(raw) or {}
+                scores = {
+                    "freshness": max(0.0, min(10.0, float(verdict.get("freshness", 0)))),
+                    "click": max(0.0, min(10.0, float(verdict.get("click", 0)))),
+                    "predictable": max(
+                        0.0, min(10.0, float(verdict.get("predictable", 10)))
+                    ),
+                    "character_logic": max(
+                        0.0, min(10.0, float(verdict.get("character_logic", 0)))
+                    ),
+                    "mechanism_causality": max(
+                        0.0, min(10.0, float(verdict.get("mechanism_causality", 0)))
+                    ),
+                    "genre_fidelity": max(
+                        0.0, min(10.0, float(verdict.get("genre_fidelity", 0)))
+                    ),
+                    "plain_language": max(
+                        0.0, min(10.0, float(verdict.get("plain_language", 0)))
+                    ),
+                    "story_motion": max(
+                        0.0, min(10.0, float(verdict.get("story_motion", 0)))
+                    ),
+                }
+                checks = (
+                    ("新颖度", scores["freshness"] < float(hard_floors.get("freshness", 7.0))),
+                    ("想点欲", scores["click"] < float(hard_floors.get("click", 7.5))),
+                    (
+                        "可预测性",
+                        scores["predictable"]
+                        > float(hard_floors.get("predictable_max", 5.5)),
+                    ),
+                    (
+                        "人物决策",
+                        scores["character_logic"]
+                        < float(hard_floors.get("character_logic", 7.0)),
+                    ),
+                    (
+                        "机制因果",
+                        scores["mechanism_causality"]
+                        < float(hard_floors.get("mechanism_causality", 7.0)),
+                    ),
+                    (
+                        "题材保真",
+                        scores["genre_fidelity"]
+                        < float(hard_floors.get("genre_fidelity", 7.0)),
+                    ),
+                    (
+                        "大白话",
+                        scores["plain_language"]
+                        < float(hard_floors.get("plain_language", 7.0)),
+                    ),
+                    (
+                        "故事运动",
+                        scores["story_motion"]
+                        < float(hard_floors.get("story_motion", 7.5)),
+                    ),
+                )
+                failed = [label for label, is_failed in checks if is_failed]
+                composite = (
+                    scores["freshness"] * w_fresh
+                    + scores["click"] * w_click
+                    + (10.0 - scores["predictable"]) * w_unpred
+                    + scores["character_logic"] * w_character
+                    + scores["mechanism_causality"] * w_causality
+                    + scores["genre_fidelity"] * w_genre
+                    + scores["plain_language"] * w_plain
+                    + scores["story_motion"] * w_motion
+                )
+                reviewed = _dc_replace(
+                    current,
+                    judge_freshness=scores["freshness"],
+                    judge_click=scores["click"],
+                    judge_predictable=scores["predictable"],
+                    judge_character_logic=scores["character_logic"],
+                    judge_mechanism_causality=scores["mechanism_causality"],
+                    judge_genre_fidelity=scores["genre_fidelity"],
+                    judge_plain_language=scores["plain_language"],
+                    judge_story_motion=scores["story_motion"],
+                    judge_reason="独立终审: " + str(verdict.get("reason") or ""),
+                    composite=round(composite, 2) if not failed else 0.0,
+                    rejected_reason=(
+                        None if not failed else "独立钩子终审失败: " + "/".join(failed)
+                    ),
+                )
+                return reviewed, failed
+
+            finalist_pool_size = max(1, int(cfg.get("finalist_pool_size", 4)))
+            reviewed_contenders: list[ConceptCandidate] = []
+            for contender in sorted(
+                contenders, key=lambda c: c.composite or 0.0, reverse=True
+            )[:finalist_pool_size]:
+                reviewed, failed = await _independent_hook_review(contender)
+                if failed and set(failed).issubset({"大白话", "想点欲"}):
+                    repair_system, repair_user = _build_hook_copy_repair_messages(
+                        candidate=contender,
+                        feedback=reviewed.judge_reason,
+                    )
+                    result.candidate_prompt_chars += len(repair_system) + len(repair_user)
+                    result.candidate_generation_calls += 1
+                    repair_raw, repair_run_id = await gen_fn(
+                        repair_system, repair_user
+                    )
+                    if repair_run_id is not None:
+                        result.llm_run_ids.append(repair_run_id)
+                    repair_payload = _parse_json_object(repair_raw) or {}
+                    repaired_concept = str(repair_payload.get("concept") or "").strip()
+                    if repaired_concept:
+                        repaired = _dc_replace(
+                            contender,
+                            concept=repaired_concept,
+                            rejected_reason=None,
+                        )
+                        if _seed_audit(repaired) is None and not _deterministic_anti_pattern(
+                            repaired
+                        ):
+                            reviewed, failed = await _independent_hook_review(repaired)
+                reviewed_contenders.append(reviewed)
+            reviewed_by_dimension = {
+                candidate.dimension: candidate for candidate in reviewed_contenders
+            }
+            result.candidates = [
+                reviewed_by_dimension.get(candidate.dimension, candidate)
+                for candidate in result.candidates
+            ]
+            contenders = [
+                candidate
+                for candidate in reviewed_contenders
+                if candidate.rejected_reason is None
+                and candidate.composite is not None
+                and (candidate.composite or 0.0) >= winner_min
+            ]
+            if not contenders:
+                logger.warning(
+                    "concept tournament: no independently qualified hooks; no injection"
+                )
+                return result
+
+        # ── 5) 长篇决赛：只扩展独立终审前列，禁止反向修改故事种子 ─────────
+        finalist_count = max(1, int(cfg.get("seriality_finalist_count", 2)))
+        # 承载力属于冻结项目卡，不属于 promise/paradox/scene 三种广告切口。
+        # 同一项目只保留钩子分最高的一条进入承载证明，避免随机扩写互相矛盾。
+        finalists: list[ConceptCandidate] = []
+        seen_premises: set[str] = set()
+        for contender in sorted(
+            contenders, key=lambda c: c.composite or 0.0, reverse=True
+        ):
+            premise_key = contender.dimension.split(":", 1)[0]
+            if premise_key in seen_premises:
+                continue
+            seen_premises.add(premise_key)
+            finalists.append(contender)
+            if len(finalists) >= finalist_count:
+                break
+        seriality_finalists: list[ConceptCandidate] = []
+        active_seriality_judge_fn = (
+            finalist_seriality_judge_fn or seriality_judge_fn
+        )
+
+        async def _request_seriality_proof(
+            current: ConceptCandidate, *, feedback: str = ""
+        ) -> ConceptCandidate:
+            if expand_fn is None:
+                return _dc_replace(
+                    current, rejected_reason="长篇承载失败: 缺SerialityProof"
+                )
+            try:
+                if feedback:
+                    system, user = _build_seriality_repair_messages(
+                        candidate=current,
+                        genre=genre,
+                        chapter_count=chapter_count,
+                        feedback=feedback,
+                    )
+                else:
+                    system, user = _build_seriality_messages(
+                        candidate=current,
+                        genre=genre,
+                        chapter_count=chapter_count,
+                    )
+                raw, run_id = await expand_fn(system, user)
+                if run_id is not None:
+                    result.llm_run_ids.append(run_id)
+                clean = _dc_replace(
+                    current,
+                    rejected_reason=None,
+                    seriality_report={},
+                    seriality_judge={},
+                )
+                parsed = _apply_seriality_payload(clean, raw)
+                return parsed or _dc_replace(
+                    clean,
+                    rejected_reason="长篇承载失败: SerialityProof无法解析",
+                )
+            except Exception:
+                logger.warning(
+                    "seriality expansion failed for one finalist", exc_info=True
+                )
+                return _dc_replace(
+                    current,
+                    rejected_reason="长篇承载失败: SerialityProof生成异常",
+                )
+
+        def _audit_seriality_proof(current: ConceptCandidate) -> ConceptCandidate:
+            audit = _seriality_audit(current, target_chapters=chapter_count)
+            if audit:
+                return _dc_replace(
+                    current, rejected_reason=f"长篇承载失败: {audit}"
+                )
+            from bestseller.services.seriality_capacity import (
+                evaluate_seriality_capacity,
+            )
+
+            report = evaluate_seriality_capacity(
+                {
+                    "repeatable_story_unit": current.repeatable_story_unit,
+                    "unit_families": current.unit_families,
+                    "unit_frequency": current.unit_frequency,
+                    "unit_count_estimate": current.unit_count_estimate,
+                    "renewal_sources": current.renewal_sources,
+                    "accumulation_tracks": current.accumulation_tracks,
+                    "phase_transitions": current.phase_transitions,
+                    "opposing_ecology": current.opposing_ecology,
+                    "mystery_ladder": current.question_ladder,
+                    "endgame_direction": current.endgame_direction,
+                },
+                target_chapters=chapter_count,
+                require_phase_coverage=True,
+            ).to_dict()
+            return _dc_replace(current, seriality_report=report, rejected_reason=None)
+
+        async def _judge_seriality_proof(
+            current: ConceptCandidate,
+        ) -> ConceptCandidate:
+            if active_seriality_judge_fn is None:
+                return current
+            try:
+                system, user = _build_seriality_judge_messages(
+                    candidate=current, chapter_count=chapter_count
+                )
+                raw, run_id = await active_seriality_judge_fn(system, user)
+                if run_id is not None:
+                    result.llm_run_ids.append(run_id)
+                verdict = _parse_json_object(raw)
+                axes = (
+                    "renewability",
+                    "escalation",
+                    "anti_reset",
+                    "coherence",
+                    "promise_survival",
+                    "unit_density",
+                )
+                scores: dict[str, Any] = {
+                    axis: max(0.0, min(10.0, float((verdict or {}).get(axis, 0))))
+                    for axis in axes
+                }
+                scores["reason"] = str((verdict or {}).get("reason") or "")
+                seriality_floors = (
+                    cfg.get("seriality_hard_floors")
+                    if isinstance(cfg.get("seriality_hard_floors"), dict)
+                    else {}
+                )
+                failed = [
+                    axis
+                    for axis in axes
+                    if float(scores[axis])
+                    < float(seriality_floors.get(axis, 7.0))
+                ]
+                return _dc_replace(
+                    current,
+                    seriality_judge=scores,
+                    rejected_reason=(
+                        None
+                        if not failed
+                        else "长篇质量门失败: " + "/".join(failed)
+                    ),
+                )
+            except Exception:
+                logger.warning("seriality judge failed for one finalist", exc_info=True)
+                return _dc_replace(
+                    current, rejected_reason="长篇质量门失败: 判官异常"
+                )
+
+        for candidate in finalists:
+            expanded = candidate
+            if chapter_count >= 200:
+                for proof_attempt in range(2):
+                    has_proof = bool(
+                        expanded.core_promise_invariant.strip()
+                        and expanded.repeatable_story_unit.strip()
+                        and len(expanded.unit_families) >= 4
+                        and expanded.unit_frequency.strip()
+                        and expanded.renewal_sources
+                        and expanded.accumulation_tracks
+                        and expanded.phase_transitions
+                        and expanded.opposing_ecology
+                        and expanded.question_ladder
+                        and expanded.endgame_direction.strip()
+                    )
+                    if not has_proof or proof_attempt > 0:
+                        feedback = ""
+                        if proof_attempt > 0:
+                            feedback = expanded.rejected_reason or "承载证明未通过"
+                            judge_reason = str(expanded.seriality_judge.get("reason") or "")
+                            if judge_reason:
+                                feedback = f"{feedback}；判官：{judge_reason}"
+                        expanded = await _request_seriality_proof(
+                            expanded, feedback=feedback
+                        )
+                    if expanded.rejected_reason is None:
+                        expanded = _audit_seriality_proof(expanded)
+                    if expanded.rejected_reason is None:
+                        expanded = await _judge_seriality_proof(expanded)
+                    if expanded.rejected_reason is None or expand_fn is None:
+                        break
+
+            seriality_finalists.append(expanded)
+
+        finalist_by_concept = {c.concept: c for c in seriality_finalists}
+        result.candidates = [
+            finalist_by_concept.get(c.concept, c) for c in result.candidates
+        ]
+        passed = [c for c in seriality_finalists if c.rejected_reason is None]
+        if not passed:
+            logger.warning("concept tournament: no seriality-qualified finalists")
+            return result
+        result.winner = max(passed, key=lambda c: c.composite or 0.0)
         return result
     except Exception:
         logger.warning("concept tournament failed (non-fatal); no injection", exc_info=True)

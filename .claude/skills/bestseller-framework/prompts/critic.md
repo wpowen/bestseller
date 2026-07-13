@@ -325,11 +325,13 @@ reread_rewardability
 </repair_routing>
 
 <word_count_gate>
-threshold = platform_profiles[meta.target_platform].pacing_preference.chapter_word_count
-（qimao: 2500-4000 / qidian: 3000-4500 / tomato: 2000-3000 / 默认: 5000-9999）
+threshold = platform_profiles[meta.target_platform].pacing_preference.chapter_word_count，
+但 threshold.max 永远 clamp 到 SSOT 硬上限 3500（`chapter_length_gate.DEFAULT_HARD_MAX_ZH_CHARS`，
+见 docs/chapter-word-ssot.md）——平台可抬高 min，不能抬高 max。
+（qimao: 2500-3500 / qidian: 3000-3500 / tomato: 2000-3000 / 默认: 1800-3500）
 
 - word_count < threshold.min → must_rewrite=true，rewrite_strategy = 扩写至 ≥ min；优先方向 = [scene N 内心段落、scene M 对白延展、新增 0.5 个场景衔接 X-Y]；禁止以景物形容词灌水。
-- word_count > threshold.max → must_rewrite=true，rewrite_strategy = 压缩至 ≤ max；优先删 [冗余感官 / 重复对白 / 过渡场景]；禁止删 entry_state / exit_state / hook。
+- word_count > threshold.max（即 > 3500） → must_rewrite=true，rewrite_strategy = 压缩至 ≤ max；优先删 [冗余感官 / 重复对白 / 过渡场景]；禁止删 entry_state / exit_state / hook。
 </word_count_gate>
 
 <project_consistency_audit cadence="every_20_chapters">

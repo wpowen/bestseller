@@ -47,7 +47,7 @@
 | 角色 | 何时 | 模拟的参数 |
 |------|------|-----------|
 | planner | 规划阶段（hierarchy、story-bible、章节大纲） | temp≈0.82，多候选推理 |
-| writer | 场景正文（≥1200 字每场） | temp≈0.85，流式 |
+| writer | 场景正文（约 600–1150 字每场） | temp≈0.85，流式 |
 | critic | 每章完成后打分（5+4 维度） | temp≈0.25，确定性 |
 | editor | 评分不合格时的定向重写 | temp≈0.40，保留 voice |
 | summarizer | 每章完成后抽取 canon-facts / snapshot | temp≈0.20 |
@@ -73,7 +73,7 @@ loop per chapter:
     bridge runs run_chapter_pipeline (gates + scoring + repair) →
     exit 0 → COMMIT_CHAPTER；exit 2 → REWRITE_CHAPTER；exit 3 → 物化缺失，先 materialize →
     (legacy 纯对话写作仅在无 DB 环境降级使用) →
-    verify chapter word count ≥ 5000 →
+    verify chapter word count ∈ [1800, 3500] →
     critic score (5 scene dims + 4 chapter dims) →
     if any dim < 0.70 → editor rewrite (max 2×) →
     summarizer append canon-facts / timeline →

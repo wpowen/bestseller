@@ -302,6 +302,7 @@ def resolve_writing_profile(
     sub_genre: str | None = None,
     audience: str | None = None,
     language: str | None = None,
+    forced_prompt_pack_key: str | None = None,
 ) -> WritingProfile:
     inferred_genre_preset = infer_genre_preset(genre, sub_genre)
     resolved_language = (
@@ -351,8 +352,14 @@ def resolve_writing_profile(
     # genre route, the genre is authoritative — the explicit pack only acts as a
     # fallback for genres with no recognised route. This keeps deliberate,
     # genre-consistent preset choices intact while refusing cross-genre leakage.
-    effective_pack_key = pack_key or genre_route_key
-    if genre_route_key and pack_key and pack_key != genre_route_key:
+    # A persisted GenreIntentContract is stronger than model-produced profile
+    # fields and heuristic token inference.  This is the final profile boundary:
+    # once the user selected a taxonomy pack, no later LLM output may reroute it.
+    effective_pack_key = forced_prompt_pack_key or pack_key or genre_route_key
+    if forced_prompt_pack_key:
+        genre_route_key = forced_prompt_pack_key
+        pack_key = forced_prompt_pack_key
+    if not forced_prompt_pack_key and genre_route_key and pack_key and pack_key != genre_route_key:
         # Only a CROSS-FAMILY explicit pack is contamination. Two packs in the
         # same review category (e.g. xianxia-upgrade-core vs xuanhuan-power-
         # fantasy — both action-progression) are sibling cultivation packs: the
@@ -366,6 +373,18 @@ def resolve_writing_profile(
         explicit_cat = pack_category(pack_key)
         route_cat = pack_category(genre_route_key)
         same_family = explicit_cat is not None and explicit_cat == route_cat
+        # Review categories describe story motion, not world ontology.  The
+        # urban-cultivation pack intentionally injects APP/职场/现代生活, while
+        # xianxia/xuanhuan packs assume a genre-native cultivation world.  They
+        # are therefore incompatible even though all three are reviewed as
+        # ``action-progression``.  Treat crossing that boundary as contamination
+        # so an LLM-supplied pack cannot silently modernise plain 仙侠.
+        ontology_sensitive_packs = {"urban-cultivation-2.0"}
+        if (
+            pack_key in ontology_sensitive_packs
+            or genre_route_key in ontology_sensitive_packs
+        ) and pack_key != genre_route_key:
+            same_family = False
         if not same_family:
             _logger.warning(
                 "prompt_pack contamination guard: explicit pack %r contradicts genre "
@@ -400,12 +419,20 @@ def resolve_writing_profile(
 
 
 def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingProfile:
+    forced_pack: str | None = None
+    metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
+    contract = metadata.get("genre_intent_contract")
+    if isinstance(contract, dict):
+        raw_pack = contract.get("prompt_pack_key")
+        if isinstance(raw_pack, str) and raw_pack.strip():
+            forced_pack = raw_pack.strip()
     return resolve_writing_profile(
         payload.writing_profile,
         genre=payload.genre,
         sub_genre=payload.sub_genre,
         audience=payload.audience,
         language=payload.language,
+        forced_prompt_pack_key=forced_pack,
     )
 
 
@@ -427,6 +454,11 @@ def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfi
     )
 
     metadata = apply_default_prewrite_quality_profile(initialize_truth_metadata(payload.metadata))
+    # Every newly created long-form project must pass conception before planning.
+    # Existing persisted projects are untouched; explicit legacy imports retain
+    # their compatibility path.
+    if payload.target_chapters >= 200 and not metadata.get("legacy_import"):
+        metadata["concept_contract_required"] = True
     metadata["writing_profile"] = writing_profile.model_dump(mode="json")
     metadata.setdefault("platform_target", writing_profile.market.platform_target)
     metadata.setdefault("reader_promise", writing_profile.market.reader_promise)

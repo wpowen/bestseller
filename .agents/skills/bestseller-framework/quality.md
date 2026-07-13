@@ -119,7 +119,7 @@ threshold = platform_profiles[meta.target_platform].pacing_preference.chapter_wo
 # 七猫: 2500-4000
 # 起点: 3000-4500
 # 番茄: 2000-3000
-# 未指定 platform: 5000-9999（框架默认）
+# 未指定 platform: 1800-3500（框架默认）
 
 if word_count < threshold.min:
     force rewrite (editor, expand)
@@ -229,7 +229,7 @@ rolling-summary/
 
 每章收笔后跑一遍：
 
-- [ ] 字数 ∈ `platform_profile.pacing_preference.chapter_word_count` 区间（七猫 2500-4000 / 起点 3000-4500 / 番茄 2000-3000 / 无平台默认 ≥ 5000）
+- [ ] 字数 ∈ `platform_profile.pacing_preference.chapter_word_count` 区间（七猫 2500-4000 / 起点 3000-4500 / 番茄 2000-3000 / 无平台默认 1800–3500）
 - [ ] POV 未无故切换
 - [ ] 每次突破带代价账
 - [ ] 开场 / 结尾 hook 类型明确

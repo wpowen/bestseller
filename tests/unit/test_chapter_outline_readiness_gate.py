@@ -35,11 +35,21 @@ def _relationship_debt() -> dict[str, object]:
 
 def _decision_protocol() -> dict[str, object]:
     return {
+        "viewpoint_character": "林渊",
+        "decision_point": "倒计时收紧，镜债边界即将闭合。",
+        "known_facts": ["铜钱只能短暂压住边界", "拖延会让无辜者被拖入账线"],
+        "unknowns": ["镜债边界的完整触发规则"],
+        "immediate_goal": "先确认边界并保住救援窗口。",
+        "options_considered": ["直接报警", "等待天亮", "用现场证据试探边界"],
+        "obvious_safe_option": "报警并撤离现场。",
         "chosen_action": "林渊用现场证据判断镜债边界。",
-        "alternatives_rejected": ["直接报警", "等待天亮", "继续追问受害者"],
-        "why_this_not_that": "倒计时正在收紧，只有现场证据能立刻改变下一步行动。",
-        "constraint": "铜钱只能短暂压住边界，不能替主角解释规则。",
-        "wrong_choice_loss": "无辜者被拖入账线，林渊失去救援窗口。",
+        "why_not_safer_option": "报警无法在倒计时内阻止边界闭合。",
+        "personality_basis": "林渊谨慎、重证据，不把无辜者当试错成本。",
+        "risk_control": "先用铜钱做最小试探，异常扩大就退到门外。",
+        "expected_gain": "确认边界并争取救援时间。",
+        "failure_cost": "无辜者被拖入账线，林渊失去救援窗口。",
+        "new_information_or_pressure": "倒计时只剩三分钟。",
+        "first_person_reasoning": "我先试最小的一步，证据不对就退，不能干等到边界闭合。",
     }
 
 

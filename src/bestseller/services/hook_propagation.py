@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import re
 from typing import Any
 
 from bestseller.domain.anti_commonsense_hook import HookSpec
@@ -21,6 +20,13 @@ def coerce_hook_spec(value: object) -> HookSpec | None:
 
 def hook_spec_from_metadata(metadata: Mapping[str, Any] | None) -> HookSpec | None:
     if not isinstance(metadata, Mapping):
+        return None
+    contract = metadata.get("concept_contract")
+    if isinstance(contract, Mapping) and str(contract.get("schema_version") or "") == (
+        "concept-contract.v2"
+    ):
+        return None
+    if str(metadata.get("concept_contract_version") or "") == "2":
         return None
     return coerce_hook_spec(metadata.get("hook_spec"))
 
@@ -111,29 +117,14 @@ def apply_hook_to_book_spec(
     if not isinstance(series_engine, dict):
         series_engine = {}
     series_engine = dict(series_engine)
-    series_engine.setdefault("core_serial_engine", spec.core_rule)
     if not series_engine.get("reader_promise") and aligned:
         series_engine["reader_promise"] = spec.one_liner
+    if aligned:
+        series_engine["opening_hook"] = spec.one_liner
     series_engine["first_three_chapter_hook"] = spec.core_rule
-    spec_text = " ".join(
-        [
-            spec.one_liner,
-            spec.core_rule,
-            spec.genre,
-            spec.protagonist_role,
-            *(str(item) for item in spec.costs),
-            *(str(item) for item in spec.anti_cheat),
-        ]
-    )
-    if re.search(r"[\u4e00-\u9fff]", spec_text):
-        series_engine["chapter_ending_hook_strategy"] = (
-            "每次成功使用核心规则，都必须制造可见代价、误解升级或反作弊压力。"
-        )
-    else:
-        series_engine["chapter_ending_hook_strategy"] = (
-            "Every successful use of the core rule creates a visible cost, "
-            "misunderstanding, or anti-cheat pressure."
-        )
+    # HookSpec is an opening-promise lineage, not proof of a renewable serial
+    # engine.  In particular, do not synthesize ``core_serial_engine`` or an
+    # every-chapter ending strategy from its cost/reversal fields.
     series_engine["anti_commonsense_constraints"] = dict(spec.constraints)
     series_engine["anti_cheat_rules"] = list(spec.anti_cheat)
     series_engine["cost_engine"] = list(spec.costs)
@@ -187,39 +178,38 @@ def apply_hook_to_volume_plan(
             return updated
         return volume_plan
     updated_plan: list[dict[str, Any]] = []
-    axes = list(spec.arc_engine)
-    costs = "；".join(spec.costs)
     for idx, raw in enumerate(volume_plan):
         if not isinstance(raw, dict):
             updated_plan.append(raw)
             continue
         item = dict(raw)
-        item["hook_arc_engine"] = axes
-        if axes:
-            item.setdefault("anti_commonsense_escalation_axis", axes[idx % len(axes)])
-        resolution = item.get("volume_resolution")
-        if isinstance(resolution, dict):
-            resolution = dict(resolution)
-            existing_cost = str(resolution.get("cost_paid") or "").strip()
-            resolution["cost_paid"] = (
-                f"{existing_cost}；{costs}".strip("；") if costs else existing_cost
-            )
-            item["volume_resolution"] = resolution
+        if idx == 0:
+            item["opening_hook_lineage"] = {
+                "one_liner": spec.one_liner,
+                "core_rule": spec.core_rule,
+                "opening_axes": list(spec.arc_engine),
+            }
         updated_plan.append(item)
     return updated_plan
 
 
-def hook_outline_extra_constraints(spec: HookSpec | None, *, language: str = "zh-CN") -> list[str]:
+def hook_outline_extra_constraints(
+    spec: HookSpec | None,
+    *,
+    language: str = "zh-CN",
+    chapter_number: int | None = None,
+) -> list[str]:
     if spec is None:
+        return []
+    if chapter_number is not None and chapter_number > 3:
         return []
     if language.startswith("en"):
         constraints = [
-            f"Core anti-commonsense one-liner: {spec.one_liner}",
-            "Every chapter methodology_contract.conflict_stakes must echo one cost: "
-            f"{'; '.join(spec.costs)}",
-            "Every chapter methodology_contract.conflict_buffs must include one hook "
-            "constraint or anti-cheat pressure: "
-            f"{'; '.join([*spec.constraints.values(), *spec.anti_cheat])}",
+            f"Opening anti-commonsense one-liner: {spec.one_liner}",
+            "Only the opening three chapters must clearly demonstrate the hook's "
+            f"reward, constraint, or cost: {'; '.join([*spec.constraints.values(), *spec.costs])}",
+            "After the opening promise is proven, conflicts may evolve through the "
+            "book's seriality engine; do not repeat this cost mechanically in every chapter.",
         ]
         if spec.misunderstanding:
             constraints.append(
@@ -230,10 +220,10 @@ def hook_outline_extra_constraints(spec: HookSpec | None, *, language: str = "zh
     else:
         constraints = [
             f"反常识一句话钩子：{spec.one_liner}",
-            "每章 methodology_contract.conflict_stakes 必须呼应一个代价："
-            f"{'；'.join(spec.costs)}",
-            "每章 methodology_contract.conflict_buffs 必须包含一个限制或反作弊压力："
-            f"{'；'.join([*spec.constraints.values(), *spec.anti_cheat])}",
+            "仅黄金三章必须清楚兑现钩子的回报、限制或代价："
+            f"{'；'.join([*spec.constraints.values(), *spec.costs])}",
+            "黄金三章兑现开篇承诺后，冲突应交给长篇连载引擎演化；"
+            "禁止把同一种代价、误解或反作弊压力机械复制到每一章。",
         ]
         if spec.misunderstanding:
             constraints.append(

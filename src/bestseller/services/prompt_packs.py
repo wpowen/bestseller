@@ -134,6 +134,23 @@ def get_prompt_pack(key: str | None) -> PromptPack | None:
 
 def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> str | None:
     label = f"{genre} {sub_genre or ''}".lower()
+    # The UI may persist a composite label whose first segment is the user's
+    # actual taxonomy choice and whose later segments are modifiers/selling
+    # points (for example ``仙侠·潜伏复仇·炉房权谋``).  Resolve that primary
+    # segment in isolation before scanning the full label; otherwise a
+    # secondary token such as 权谋 reroutes a plain xianxia book to the
+    # history-strategy prompt pack and injects the wrong ontology into prose.
+    _composite_separators = ("·", "•", "|", "/", "／", ">")
+    _raw_genre = str(genre or "").strip()
+    _primary_genre = _raw_genre
+    for _separator in _composite_separators:
+        if _separator in _raw_genre:
+            _primary_genre = _raw_genre.split(_separator, 1)[0].strip()
+            break
+    if _primary_genre and _primary_genre != _raw_genre:
+        _primary_pack = infer_default_prompt_pack_key(_primary_genre, sub_genre)
+        if _primary_pack:
+            return _primary_pack
     # Cultivation-leveling spine: 诡异修仙 / 高武 / 极道 etc. When present, a
     # 规则怪谈 / 怪谈 token is HORROR FLAVOR on a 升级流 cultivation book, not a
     # rule-survival/detective engine. Without this guard those tokens short-

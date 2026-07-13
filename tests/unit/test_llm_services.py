@@ -1290,6 +1290,49 @@ def test_empty_length_response_keeps_prose_output_cap(
     assert seen_caps == [12288, 12288]
 
 
+def test_empty_length_response_keeps_reasoning_judge_output_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_caps: list[int | None] = []
+
+    async def fake_call(request, role_settings):  # type: ignore[no-untyped-def]
+        seen_caps.append(request.max_tokens_override)
+        if len(seen_caps) == 1:
+            raise ValueError(
+                "LLM response content is empty (finish_reason='length', "
+                "output_tokens=8000)."
+            )
+        return ('{"ranked": []}', 10, 20, "stop", None, None)
+
+    async def _run() -> None:
+        result = await _call_litellm_with_retry(
+            LLMCompletionRequest(
+                logical_role="critic",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="{}",
+                prompt_template="concept_tournament_raw_idea_rank",
+                max_tokens_override=8000,
+            ),
+            LLMRoleSettings(
+                model="openai/MiniMax-M2.7-highspeed",
+                temperature=0.2,
+                max_tokens=32768,
+                timeout_seconds=30,
+            ),
+            RetrySettings(max_attempts=2),
+        )
+        assert result[0] == '{"ranked": []}'
+
+    monkeypatch.setattr("bestseller.services.llm._call_litellm", fake_call)
+
+    import asyncio
+
+    asyncio.run(_run())
+
+    assert seen_caps == [8000, 8000]
+
+
 def test_complete_text_fails_over_to_rate_limit_fallback_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

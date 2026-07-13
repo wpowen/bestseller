@@ -272,6 +272,7 @@ def build_methodology_user_prompt(
     trend_keywords: list[str],
     fallback: ConceptMethodology,
     language: str = "zh",
+    allowed_modernity: str = "genre_native",
 ) -> str:
     orientation_label = {
         "male": "男频（男性向）",
@@ -289,12 +290,21 @@ def build_methodology_user_prompt(
         "anti_patterns": ["该题材要避免的套路", "..."],
         "rationale": "为什么这套方法论吻合题材+市场热度",
     }
+    ontology_rule = (
+        "Ontology boundary: this project is genre-native. Use only mechanisms, institutions, "
+        "objects, and social systems natural to the selected genre; do not import phones, apps, "
+        "workplace, or contemporary-city framing unless the user-selected taxonomy explicitly "
+        "allows modernity.\n"
+        if allowed_modernity == "genre_native"
+        else "Ontology boundary: modernity is allowed only within the selected genre contract; do not let it replace the genre spine.\n"
+    )
     if str(language or "").startswith("en"):
         return (
             f"Genre: {genre} ({sub_genre})\n"
             f"Description: {description}\n"
             f"Premise: {premise}\n"
             f"Reader orientation: {orientation_label}\n\n"
+            f"{ontology_rule}"
             f"Market-heat signals:\n{signals_block}\n\n"
             "Return JSON with exactly these keys (values illustrate intent):\n"
             f"{json.dumps(schema, ensure_ascii=False, indent=2)}"
@@ -304,6 +314,7 @@ def build_methodology_user_prompt(
         f"简介：{description}\n"
         f"前提：{premise}\n"
         f"读者取向：{orientation_label}\n\n"
+        f"{ontology_rule}"
         f"市场热度信号：\n{signals_block}\n\n"
         "请输出 JSON，键固定如下（值仅示意，请替换为贴合本题材的内容）：\n"
         f"{json.dumps(schema, ensure_ascii=False, indent=2)}"
@@ -384,6 +395,7 @@ async def select_concept_methodology(
     search_client: Any | None = None,
     project_id: Any | None = None,
     workflow_run_id: Any | None = None,
+    allowed_modernity: str = "genre_native",
 ) -> ConceptMethodology:
     """Choose a 脑洞/爽点 methodology for this genre (fallback-safe)."""
 
@@ -436,6 +448,7 @@ async def select_concept_methodology(
                     trend_keywords=trend_keywords or [],
                     fallback=fallback,
                     language=language,
+                    allowed_modernity=allowed_modernity,
                 ),
                 fallback_response=json.dumps(
                     fallback.model_dump(mode="json"), ensure_ascii=False

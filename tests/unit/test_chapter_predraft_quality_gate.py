@@ -22,11 +22,21 @@ def _relationship_debt() -> dict[str, object]:
 
 def _decision_protocol() -> dict[str, object]:
     return {
+        "viewpoint_character": "林渊",
+        "decision_point": "倒计时内镜面即将完成替认。",
+        "known_facts": ["压门缝能短暂阻断替认", "铜钱只能压住三息"],
+        "unknowns": ["镜外敲门者是谁"],
+        "immediate_goal": "阻止王建业被替认并留下物证。",
+        "options_considered": ["直接报警", "等待天亮", "压住门缝"],
+        "obvious_safe_option": "撤离并报警封楼。",
         "chosen_action": "林渊在倒计时内压住门缝。",
-        "alternatives_rejected": ["直接报警", "等待天亮", "让王建业继续解释"],
-        "why_this_not_that": "倒计时内只有压住门缝能阻止镜中替认，等待会错过救援窗口。",
-        "constraint": "铜钱只能短暂压镜脚，不能替主角说明规则。",
-        "wrong_choice_loss": "王建业被收账，林渊被镜面记名。",
+        "why_not_safer_option": "撤离无法终止已经启动的替认，等待会错过救援窗口。",
+        "personality_basis": "林渊谨慎、重证据，但不会放弃眼前能救的人。",
+        "risk_control": "只压三息，留下退路；镜面记名就立刻断开铜钱。",
+        "expected_gain": "救下王建业并取得镜面血点物证。",
+        "failure_cost": "王建业被收账，林渊被镜面记名。",
+        "new_information_or_pressure": "替认倒计时只剩三息。",
+        "first_person_reasoning": "我只压三息，救不下来就断开，不能站着等他被收走。",
     }
 
 

@@ -8,12 +8,13 @@ import pytest
 
 from bestseller.domain.facets import StoryFacets
 from bestseller.services.concept_lab import build_concept_lab_catalog
+from bestseller.services.genre_intent_contract import contract_from_selection
 from bestseller.services.story_architect import (
     _build_system_prompt,
     _build_user_prompt,
-    _render_persona_spine_lock,
     _fallback_facets,
     _parse_architect_output,
+    _render_persona_spine_lock,
 )
 
 
@@ -159,6 +160,23 @@ class TestBuildPrompts:
         )
         assert "xianxia" in prompt
         assert "zh-CN" in prompt
+
+    def test_user_prompt_locks_authoritative_genre_intent(self) -> None:
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xianxia", "sub_genre": "xianxia"}
+        )
+        prompt = _build_user_prompt(
+            primary_genre="xianxia",
+            language="zh-CN",
+            user_hints=None,
+            existing_facets=[],
+            trend_data={},
+            dimensions_summary="test",
+            genre_intent=contract,
+        )
+        assert "Genre Intent Contract" in prompt
+        assert contract.prompt_pack_key in prompt
+        assert "Never change genre" in prompt
 
     def test_user_prompt_includes_existing_facets(self) -> None:
         existing = StoryFacets(

@@ -127,3 +127,8 @@ def test_volume_plan_prompt_states_count_and_coverage() -> None:
 
     assert "10" in user_prompt and "500" in user_prompt
     assert "reader_hook_to_next" in user_prompt
+    assert "seriality_phase_ref" in user_prompt
+    assert "seriality_phase_id" in user_prompt
+    assert "unit_family_ref" in user_prompt
+    assert "renewable_unit_variant" in user_prompt
+    assert "accumulation_track_deltas" in user_prompt

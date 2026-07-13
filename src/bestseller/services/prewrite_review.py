@@ -21,19 +21,47 @@ from bestseller.settings import AppSettings
 PREWRITE_REVIEW_METADATA_KEY = "prewrite_review"
 PREWRITE_REVIEW_SCHEMA_VERSION = "prewrite-review.v1"
 
+# The planner only materializes an act-level plan for genuinely long serials
+# (see ``settings.pipeline.act_plan_threshold``).  Keeping ``act_plan`` in the
+# unconditional prewrite contract made every short book impossible to start:
+# a 20-chapter project could never satisfy a material that the planner was
+# explicitly designed not to emit.  The review surface therefore derives its
+# required artifacts from the project's target size instead of treating the
+# optional macro layer as universal.
+PREWRITE_ACT_PLAN_MIN_CHAPTERS = 50
+
 PREWRITE_REQUIRED_ARTIFACT_TYPES: tuple[str, ...] = (
     "premise",
     "book_spec",
     "world_spec",
     "cast_spec",
     "story_design_kernel",
-    "act_plan",
     "volume_plan",
     "volume_chapter_outline",
     "chapter_outline_batch",
     "plan_validation",
     "prewrite_readiness",
 )
+
+
+def required_prewrite_artifact_types(*, target_chapters: int | None) -> tuple[str, ...]:
+    """Return the write-start contract for a project of the given size.
+
+    ``act_plan`` is a long-serial planning layer.  Short books still have
+    volume/chapter outlines and all foundation artifacts, but must not be
+    blocked waiting for an artifact the planner intentionally skipped.
+    """
+
+    required = list(PREWRITE_REQUIRED_ARTIFACT_TYPES)
+    try:
+        chapters = int(target_chapters or 0)
+    except (TypeError, ValueError):
+        chapters = 0
+    if chapters >= PREWRITE_ACT_PLAN_MIN_CHAPTERS:
+        # Keep the macro artifact adjacent to the foundation/macro-plan
+        # surfaces when it is applicable; ordering is part of the UI contract.
+        required.insert(5, "act_plan")
+    return tuple(required)
 
 
 def _now_iso() -> str:
@@ -94,7 +122,9 @@ async def load_prewrite_review_payload(
 
     missing_required = [
         artifact_type
-        for artifact_type in PREWRITE_REQUIRED_ARTIFACT_TYPES
+        for artifact_type in required_prewrite_artifact_types(
+            target_chapters=getattr(project, "target_chapters", None),
+        )
         if artifact_type not in latest_by_type
     ]
     issue_rows = list(

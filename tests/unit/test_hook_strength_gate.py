@@ -76,8 +76,8 @@ def test_repair_hook_spec_once_improves_failed_structured_hook() -> None:
     assert repaired.costs
 
 
-def test_emotion_keyword_dimension_raises_expansion() -> None:
-    """A hook that names a 爆款 emotion word scores higher on expansion than one without."""
+def test_emotion_keywords_do_not_fake_expansion_capacity() -> None:
+    """Adding 打脸/围观 copy must not masquerade as long-form capacity."""
 
     strong = _strong_spec()
     flat = _strong_spec()
@@ -94,7 +94,7 @@ def test_emotion_keyword_dimension_raises_expansion() -> None:
             "core_rule": "每次获得商业回报都必须真实亏损并绑定公开误解与反作弊压力。",
         }
     )
-    assert score_hook(strong_spec).expansion > score_hook(flat_spec).expansion
+    assert score_hook(strong_spec).expansion == score_hook(flat_spec).expansion
 
 
 def test_villain_visibility_keywords_raise_misunderstanding() -> None:
@@ -106,7 +106,7 @@ def test_villain_visibility_keywords_raise_misunderstanding() -> None:
     assert score_hook(visible).misunderstanding >= score_hook(invisible).misunderstanding
 
 
-def test_weak_emotion_keywords_finding_is_emitted_for_flat_spec() -> None:
+def test_flat_spec_is_not_forced_to_add_emotion_slogans() -> None:
     flat = _strong_spec().model_copy(
         update={
             "one_liner": "主角想赚钱翻身，必须越亏越强。",
@@ -114,11 +114,11 @@ def test_weak_emotion_keywords_finding_is_emitted_for_flat_spec() -> None:
         }
     )
     report = evaluate_hook_strength_gate(flat, min_h_norm=30)
-    assert any(item.code == "weak_emotion_keywords" for item in report.findings)
+    assert not any(item.code == "weak_emotion_keywords" for item in report.findings)
 
 
-def test_repair_hook_spec_once_adds_emotion_arc_axes() -> None:
-    """weak_emotion_keywords finding triggers arc_engine bumps with emotion markers."""
+def test_repair_does_not_add_emotion_arc_axes() -> None:
+    """Legacy findings must not inject 打脸/围观 into the story engine."""
 
     weak = HookSpec(
         mechanism_key="weak",
@@ -155,7 +155,7 @@ def test_repair_hook_spec_once_adds_emotion_arc_axes() -> None:
     )
     repaired = repair_hook_spec_once(weak, fake_report)
     arc_blob = " ".join(repaired.arc_engine)
-    assert "打脸" in arc_blob or "围观" in arc_blob
+    assert "打脸" not in arc_blob and "围观" not in arc_blob
 
 
 def test_hook_strength_gate_rejects_premise_mismatched_hook() -> None:

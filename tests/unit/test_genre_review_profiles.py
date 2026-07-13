@@ -98,6 +98,12 @@ def test_resolve_by_genre_string_fuzzy() -> None:
     )
 
 
+def test_composite_xianxia_genre_keeps_primary_review_profile() -> None:
+    """Secondary 复仇/权谋 descriptors must not turn xianxia into romance."""
+    profile = resolve_genre_review_profile("仙侠·潜伏复仇·炉房权谋", "仙侠")
+    assert profile.category_key == "action-progression"
+
+
 def test_resolve_otherworld_cross_system_by_keyword() -> None:
     """Chinese genre strings with otherworld/system signals resolve to a dedicated profile."""
     profile = resolve_genre_review_profile("异界穿越", "系统规则")

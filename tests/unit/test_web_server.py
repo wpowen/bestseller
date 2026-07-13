@@ -1113,7 +1113,7 @@ def test_quickstart_exposes_batch_concept_lab_picker() -> None:
     html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
 
     assert 'id="conceptLab"' in html
-    assert "脑洞组合 · 批量候选" in html
+    assert "手动指定概念（可选）" in html
     assert "const CONCEPT_LAB_BATCH_COUNT = 12;" in html
     assert "count: CONCEPT_LAB_BATCH_COUNT" in html
     assert "脑洞候选 ${bundles.length} 组" in html
@@ -1145,8 +1145,24 @@ def test_quickstart_creative_hook_concept_are_optional_not_auto_selected() -> No
     assert "selectedHookIndexByGenre[g.key] || 0" not in html
     assert "conceptLabCatalog.default_bundle_id || bundles[0]?.bundle_id" not in html
     # Optional hints are shown so the user knows skipping is intentional.
-    assert "可选 · 不选则由AI按题材+市场热度自动决定" in html
+    assert "可选 · 不选则由AI按方法论生成" in html
     assert "AI自动决定（未选）" in html
+
+
+def test_quickstart_story_enhancers_are_not_implicitly_enabled() -> None:
+    """Genre selection alone must not inject hard story-effect contracts."""
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert 'id="seBrainhole" checked' not in html
+    assert "const SE_DEFAULT = new Set([])" in html
+
+
+def test_quickstart_defaults_to_full_book_writing_after_conception() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert 'id="stopAfterConceptionToggle" checked' not in html
+    assert "stop_after_conception: !!$('#stopAfterConceptionToggle').checked" in html
+    assert "不进入整本书规划与写作" in html
 
 
 def test_public_writing_preset_catalog_payload_sanitizes_story_specific_overrides() -> None:
@@ -1280,6 +1296,60 @@ def test_quickstart_task_passes_selected_hook_spec(
     assert task["quickstart_meta"]["hook_spec"] == hook_spec
 
 
+def test_quickstart_task_propagates_stop_after_conception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "concept-only-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    task = manager.create_quickstart_task(
+        {
+            "genre_key": "urban-blacktech",
+            "chapter_count": 500,
+            "stop_after_conception": True,
+        }
+    )
+
+    assert captured["payload"]["stop_after_conception"] is True
+    assert task["quickstart_meta"]["stop_after_conception"] is True
+
+
+def test_quickstart_propagates_frozen_concept_seed_without_concept_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+    seed = "芯片工程师从报废机器里复原被放弃的设计，并把它们做成产品。"
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "concept-seed-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    task = manager.create_quickstart_task(
+        {
+            "genre_key": "urban-blacktech",
+            "chapter_count": 500,
+            "concept_seed": seed,
+        }
+    )
+
+    assert captured["payload"]["user_hints"]["concept_seed"] == seed
+    assert captured["payload"]["concept_lab_bundle"] == {}
+    assert task["quickstart_meta"]["concept_seed"] == seed
+
+
 def test_quickstart_task_title_uses_local_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1358,6 +1428,37 @@ def test_quickstart_task_without_explicit_selection_skips_autobake(
     assert payload["hook_spec"] == {}
     assert "hook_spec" not in payload["user_hints"]
     assert "audience" not in payload
+
+
+def test_quickstart_task_carries_explicit_genre_intent_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "intent-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    manager.create_quickstart_task(
+        {
+            "selection": {"channel": "male", "genre": "xianxia", "sub_genre": None, "tags": []},
+            "chapter_count": 12,
+            "narrative_scale": "epic",
+            "tone_preference": "hot",
+        }
+    )
+
+    contract = captured["payload"]["genre_intent_contract"]
+    assert contract["genre_key"] == "xianxia"
+    assert contract["prompt_pack_key"] == "xianxia-upgrade-core"
+    assert contract["allowed_modernity"] == "genre_native"
+    assert contract["narrative_scale"] == "epic"
+    assert contract["tone_preference"] == "hot"
 
 
 def test_quickstart_task_threads_explicit_audience_orientation(
@@ -2334,6 +2435,286 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
     assert project_payload.metadata["concept_lab"]["bundle_id"] == bundle.bundle_id
     assert project_payload.metadata["hook_spec"]["one_liner"] == bundle.hook_spec["one_liner"]
     assert project_payload.writing_profile.market.reader_promise == bundle.reader_promise
+
+
+def test_one_sentence_outline_gate_stops_before_project_planning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Any non-EXPAND verdict must end the task before project/planning starts."""
+
+    manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
+    task_id = "one-sentence-outline-blocked"
+    autowrite_called = False
+
+    with manager._lock:
+        manager._tasks[task_id] = web_server.WebTaskState(
+            task_id=task_id,
+            task_type="autowrite",
+            status="queued",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            project_slug="must-not-exist",
+            title="待裁决",
+            current_stage="queued",
+        )
+
+    class _SessionScope:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    async def _blocked_conception(*_args: object, **_kwargs: object) -> object:
+        from bestseller.services.story_appeal import AppealBarNotMetError
+
+        raise AppealBarNotMetError(
+            {
+                "logline_gate": {
+                    "action": "regenerate",
+                    "overall": 2.2,
+                    "weakest_axis": "protagonist_rationality",
+                    "reasons": ["正常人有更低成本、更直接的选择。"],
+                    "fix_directives": ["重做主角的决策链，而不是润色句子。"],
+                }
+            },
+            "主角不会这样做，故事因而没有成立。",
+        )
+
+    async def _must_not_enter_planning(**_kwargs: object) -> object:
+        nonlocal autowrite_called
+        autowrite_called = True
+        raise AssertionError("one-sentence outline failure entered planning")
+
+    from bestseller.services import conception as conception_services
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(
+        web_server,
+        "load_settings",
+        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
+    )
+    monkeypatch.setattr(
+        conception_services,
+        "run_conception_pipeline",
+        _blocked_conception,
+    )
+    monkeypatch.setattr(web_server, "run_autowrite_pipeline", _must_not_enter_planning)
+
+    manager._run_autowrite_worker(
+        task_id,
+        {
+            "_run_conception": True,
+            "_genre_key": "folk-mystery",
+            "slug": "must-not-exist",
+            "title": "待裁决",
+            "genre": "悬疑",
+            "sub_genre": "民俗诡事",
+            "language": "zh-CN",
+            "target_words": 200_000,
+            "target_chapters": 100,
+            "premise": "待构思。",
+        },
+    )
+
+    task = manager.get_task(task_id)
+    assert task is not None
+    assert task["status"] == "failed"
+    assert "未创建书籍、未进入规划" in str(task["error"])
+    assert autowrite_called is False
+    blocked_events = [
+        event
+        for event in task["progress_events"]
+        if event["stage"] == "one_sentence_outline_blocked"
+    ]
+    assert len(blocked_events) == 1
+    assert blocked_events[0]["payload"]["planning_started"] is False
+
+
+def test_stop_after_conception_persists_contract_without_entering_planning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A validated long-form concept can be saved for review before planning."""
+
+    manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
+    task_id = "conception-only"
+    captured: dict[str, object] = {}
+    with manager._lock:
+        manager._tasks[task_id] = web_server.WebTaskState(
+            task_id=task_id,
+            task_type="autowrite",
+            status="queued",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            project_slug="concept-review-book",
+            title="待裁决",
+            current_stage="queued",
+        )
+
+    class _SessionScope:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    contract = {
+        "hook_card": {"one_liner": "殡仪馆接线员能接到死者明天才会拨出的电话。"},
+        "seriality_proof": {"target_chapters": 500, "unit_count_estimate": 60},
+        "story_spine": {"reader_promise": "每通电话都迫使他改变一场将发生的死亡。"},
+    }
+
+    async def _fake_conception(*_args: object, **_kwargs: object) -> object:
+        return SimpleNamespace(
+            premise="死者来电迫使接线员介入尚未发生的死亡。",
+            title="明日来电",
+            writing_profile={},
+            commercial_brief={},
+            conception_log=[],
+            hook_spec={},
+            concept_contract=contract,
+            synopsis="接线员追查明日来电背后的死亡网络。",
+            tags=["都市异能", "悬疑"],
+            story_spine=contract["story_spine"],
+            world_model={},
+            concept_methodology=None,
+            hook_candidates=[],
+            story_appeal={},
+            degradation_events=[],
+            degraded=False,
+        )
+
+    async def _fake_create_project(session, payload, settings):
+        captured["project_payload"] = payload
+        return SimpleNamespace(slug=payload.slug, id="project-id")
+
+    async def _must_not_enter_planning(**_kwargs: object) -> object:
+        raise AssertionError("stop_after_conception entered planning")
+
+    from bestseller.services import conception as conception_services
+    from bestseller.services import projects as project_services
+    from bestseller.services import story_architect as story_architect_services
+
+    async def _fake_story_architect(*_args: object, **_kwargs: object) -> object:
+        return SimpleNamespace(
+            tone="高压悬疑",
+            narrative_drive="调查与阻止",
+            trope_tags=("都市异能",),
+            setting="现代城市",
+            generation_source="unit-test",
+            model_dump=lambda mode="json": {"tone": "高压悬疑"},
+        )
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(
+        web_server,
+        "load_settings",
+        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
+    )
+    monkeypatch.setattr(conception_services, "run_conception_pipeline", _fake_conception)
+    monkeypatch.setattr(project_services, "create_project", _fake_create_project)
+    monkeypatch.setattr(
+        story_architect_services,
+        "architect_story_facets",
+        _fake_story_architect,
+    )
+    monkeypatch.setattr(web_server, "run_autowrite_pipeline", _must_not_enter_planning)
+
+    manager._run_autowrite_worker(
+        task_id,
+        {
+            "_run_conception": True,
+            "_genre_key": "urban-blacktech",
+            "stop_after_conception": True,
+            "slug": "concept-review-book",
+            "title": "待裁决",
+            "genre": "都市异能",
+            "sub_genre": "黑科技创业",
+            "language": "zh-CN",
+            "target_words": 1_300_000,
+            "target_chapters": 500,
+            "project_type": "linear",
+            "premise": "待构思。",
+        },
+    )
+
+    task = manager.get_task(task_id)
+    assert task is not None
+    assert task["status"] == "completed"
+    assert task["result"]["mode"] == "conception_only"
+    project_payload = captured["project_payload"]
+    assert project_payload.metadata["concept_contract"] == contract
+    assert project_payload.metadata["planning_status"] == "awaiting_concept_approval"
+    assert any(
+        event["stage"] == "conception_only_complete"
+        for event in task["progress_events"]
+    )
+
+
+def test_concept_contract_failure_is_user_facing_and_stops_before_planning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
+    task_id = "concept-contract-blocked"
+    with manager._lock:
+        manager._tasks[task_id] = web_server.WebTaskState(
+            task_id=task_id,
+            task_type="autowrite",
+            status="queued",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            project_slug="must-not-exist",
+            title="待裁决",
+            current_stage="queued",
+        )
+
+    class _SessionScope:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    async def _blocked_conception(*_args: object, **_kwargs: object) -> object:
+        raise web_server.ConceptContractError(["500章容量证明不足"])
+
+    from bestseller.services import conception as conception_services
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(
+        web_server,
+        "load_settings",
+        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
+    )
+    monkeypatch.setattr(conception_services, "run_conception_pipeline", _blocked_conception)
+
+    manager._run_autowrite_worker(
+        task_id,
+        {
+            "_run_conception": True,
+            "_genre_key": "urban-blacktech",
+            "slug": "must-not-exist",
+            "title": "待裁决",
+            "genre": "都市异能",
+            "target_words": 1_300_000,
+            "target_chapters": 500,
+            "project_type": "linear",
+            "premise": "待构思。",
+        },
+    )
+
+    task = manager.get_task(task_id)
+    assert task is not None
+    assert task["status"] == "failed"
+    assert "未创建书籍、未进入规划" in task["error"]
+    assert "Traceback" not in task["error"]
+    assert any(
+        event["stage"] == "one_sentence_outline_blocked"
+        for event in task["progress_events"]
+    )
 
 
 def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -> None:

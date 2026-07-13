@@ -245,7 +245,7 @@
 2. ...
 
 ## Per-Chapter Compliance Checklist
-- [ ] 字数 ≥ 5000
+- [ ] 字数 ∈ [1800, 3500]
 - [ ] ...
 ```
 

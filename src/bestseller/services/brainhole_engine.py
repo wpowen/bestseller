@@ -54,9 +54,10 @@ class BrainholeModernSystemSchema(BaseModel):
         "risk_notes",
     )
     selection_policy: str = (
-        "Use current life systems only when they create a concrete process, "
-        "metric, rule, queue, complaint, KPI, platform, contract, or workflow "
-        "that can collide with the persona card."
+        "Use a concrete mechanism or system native to the selected genre. "
+        "A current-life system (queue, complaint, KPI, platform, contract, or "
+        "workflow) is allowed only when the genre intent explicitly permits a "
+        "modern ontology; never import it merely for novelty."
     )
 
 
@@ -428,8 +429,8 @@ def render_brainhole_planner_prompt_block(
             "[BRAINHOLE PLANNER CONTRACT]\n"
             f"Profile: {profile.profile_key} / {profile.version}. This is an "
             "audit-only novelty-generation contract for chapter outlines.\n"
-            "Generate novelty by crossing: familiar persona card x modern "
-            "system card x persona-safe contrast x protagonist growth stage x "
+            "Generate novelty by crossing: familiar persona card x genre-native "
+            "mechanism/system card x persona-safe contrast x protagonist growth stage x "
             "plot consequence.\n"
             f"Contrast axes: {axes}.\n"
             "Persona invariant gate: pressure the known core, do not casually "
@@ -450,7 +451,7 @@ def render_brainhole_planner_prompt_block(
         "【脑洞生成合同】\n"
         f"快照：{profile.profile_key} / {profile.version}。这是章节大纲阶段的"
         "审计型脑洞生成能力。\n"
-        "脑洞公式：大众熟悉的人物常识卡 × 现代系统卡 × 不伤核心人设的反差 × "
+        "脑洞公式：大众熟悉的人物常识卡 × 题材原生机制/系统卡 × 不伤核心人设的反差 × "
         "主角成长阶段 × 剧情后果。\n"
         f"反差轴：{axes}。\n"
         "人设安全门：可以压迫角色核心，不能随手改写角色核心。若角色看似背叛核心价值，"

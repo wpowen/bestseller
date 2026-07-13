@@ -59,12 +59,17 @@ async def test_outline_llm_judge_enforces_threshold(monkeypatch: pytest.MonkeyPa
     assert result.overall_score == 0.79
     assert result.rewrite_plan.instructions == "重做第一章开场压力。"
     assert "knowledge_boundary" in captured_prompts["user"]
+    assert "decision_intelligence" in captured_prompts["user"]
     # Genre-neutral constraints live in the system prompt (no longer hardcode the
     # 青囊 detective props/jargon).
     _judge_prompt = captured_prompts["system"] + captured_prompts["user"]
     assert "认知边界" in _judge_prompt
     assert "不要套用其它题材" in _judge_prompt
     assert "关键道具 / 能力 / 信号逻辑" in _judge_prompt
+    assert "正常人基线" in _judge_prompt
+    assert "角色基线" in _judge_prompt
+    assert "暂时忘掉作者想让剧情去哪里" in _judge_prompt
+    assert "PROTAGONIST_PLOT_SERVING_STUPIDITY" in _judge_prompt
     # The old detective-specific props must be gone.
     assert "铜钱 / 罗盘 / 青囊等物件信号必须有稳定含义" not in _judge_prompt
 

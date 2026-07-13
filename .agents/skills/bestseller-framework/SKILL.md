@@ -93,7 +93,7 @@ INIT → PLAN_{PREMISE|WORLD|CHARACTERS|VOLUME_PLAN|[ACT]|[WORLD_EXPANSION]|WRIT
 
 完整列表在 [invariants.md](invariants.md)。**最关键三条**：
 
-1. **每章 ≥ 5000 字**。低于即强制 rewrite，禁止灌水；从场景/内心/对白方向扩写。
+1. **每章落在 1800–3500 字（目标 2600）**。低于即强制 rewrite，禁止灌水；从场景/内心/对白方向扩写。
 2. **Mode B 的全部输出必须写入 `output/ai-generated/{slug}/`**，绝不污染仓库源码目录。
 3. **Canon Facts 只可追加**。改动既有条目视为破坏连续性。
 
@@ -106,7 +106,7 @@ INIT → PLAN_{PREMISE|WORLD|CHARACTERS|VOLUME_PLAN|[ACT]|[WORLD_EXPANSION]|WRIT
 - 章节数 ≤ 50？→ 1 卷 1 幕；不写 act-plan.md / world-expansion.md。
 - 章节数 > 50？→ **必须**写 act-plan.md。
 - 卷数 > 3？→ **必须**写 world-expansion.md（含 DeferredReveal 追踪）。
-- 一章草稿 < 5000 字？→ **立刻返工**，不进入 review 环节。
+- 一章草稿 < 1800 字（或超 3500 字硬上限）？→ **立刻返工**，不进入 review 环节。
 - 主角每卷都在赢？→ **停下**，检查 [planning.md § Win/Loss Rhythm](planning.md)。
 - 角色预知了后续章节才揭示的事？→ **违反知识单调性**，返工。
 - 工具调用 / 上下文快满？→ 保存 progress.yaml，告诉用户"已完成 N/T 章，说'继续'恢复"。

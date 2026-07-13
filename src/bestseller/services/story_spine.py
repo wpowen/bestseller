@@ -74,6 +74,31 @@ def render_story_spine_block(spine: Any, *, is_en: bool = False) -> str:
 
     if not isinstance(spine, dict) or validate_story_spine(spine):
         return ""
+    if str(spine.get("schema_version") or "") == "story-spine.v2":
+        phases = spine.get("phase_desire_ladder")
+        phase_text = "→".join(str(item) for item in phases if str(item).strip()) if isinstance(phases, list) else ""
+        if is_en:
+            return (
+                "[Layered story spine — preserve promise while phases evolve]\n"
+                f"OPENING GOAL: {spine['wants']} | WHY NOW: {spine['why_now']}\n"
+                f"CORE READER PROMISE: {spine.get('core_reader_promise', '')}\n"
+                f"RENEWABLE UNIT: {spine.get('unit_engine_ref', '')}\n"
+                f"PHASE LADDER: {phase_text}\n"
+                f"TERMINAL QUESTION: {spine.get('terminal_question', spine['question'])}\n"
+                "Each story unit must deliver the promise, leave permanent change, "
+                "and advance a phase transformation; do not prolong one finite opening goal.\n"
+            )
+        return (
+            "【分层故事脊柱——承诺不变，阶段目标必须演化】\n"
+            f"开篇目标：{spine['who']}要{spine['wants']}，因为{spine['why_now']}；"
+            f"{spine['against']}挡着；失败则{spine['stakes']}。\n"
+            f"核心读者承诺：{spine.get('core_reader_promise', '')}\n"
+            f"可再生故事单元：{spine.get('unit_engine_ref', '')}\n"
+            f"阶段欲望阶梯：{phase_text}\n"
+            f"终局问题：{spine.get('terminal_question', spine['question'])}\n"
+            "每个故事单元必须兑现一次核心承诺、留下永久变化并推动阶段质变；"
+            "不得把开篇有限目标拖成全书唯一任务。\n"
+        )
     if is_en:
         return (
             "[Story spine — every volume/chapter/scene must serve it]\n"

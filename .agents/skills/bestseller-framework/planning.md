@@ -19,13 +19,13 @@
 
 | 字段 | Min | Target | Max |
 |------|-----|--------|-----|
-| **Words / chapter** | **5 000** | 6 400 | 9 000 |
-| Words / scene | 1 200 | 1 600 | 2 200 |
-| Scenes / chapter | 2 | 3–4 | 5 |
+| **Words / chapter** | **1 800** | 2600 | 3500 |
+| Words / scene | 600 | 870 | 1150 |
+| Scenes / chapter | 2 | 3 | 3 |
 
-**草稿 < 5000 字 → 强制 rewrite；从场景 / 内心 / 对白方向扩写，不灌水。**
+**草稿 < 1800 字（或超 3500 字硬上限） → 强制 rewrite；从场景 / 内心 / 对白方向扩写，不灌水。**
 
-Scene count 规则：climax / reversal 章 = 4；post-climax 章 = 2；默认 = 3。
+Scene count 规则：climax / reversal 章 = 3；post-climax 章 = 2；默认 = 3（硬上限 3）。
 
 ## 3. Six-Phase Conflict Evolution
 
@@ -117,7 +117,7 @@ Scene count 规则：climax / reversal 章 = 4；post-climax 章 = 2；默认 = 
               hook_type ∈ information_gap/deadline/mystery/desire/threat,
               spotlight_character, summary, entry_state, exit_state,
               estimated_words, conflict_stakes}
-   - estimated_chapter_words ≥ 5000
+   - estimated_chapter_words ∈ [1800, 3500]（目标 2600）
    - pacing_mode ∈ build/accelerate/climax/breathe
    - emotion_phase ∈ compress/release
    - is_climax
@@ -140,4 +140,4 @@ Scene count 规则：climax / reversal 章 = 4；post-climax 章 = 2；默认 = 
 
 - `compute_linear_hierarchy(total_chapters)` → `services/planner.py`
 - `generate_foundation_plan()` / `generate_novel_plan()` / `generate_volume_plan()` → 同上
-- `config/default.yaml` 中 `words_per_chapter.min=5000`，`act_plan_threshold=50`
+- `config/default.yaml` 中 `words_per_chapter.min=1800（target=2600 max=3500）`，`act_plan_threshold=50`

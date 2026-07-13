@@ -3655,6 +3655,56 @@ def _resolve_priority_keyword_category(
     return None
 
 
+_GENRE_COMPOSITE_SEPARATORS: tuple[str, ...] = ("·", "•", "|", "/", "／", ">")
+
+
+def _resolve_primary_composite_genre_category(
+    genre: str,
+) -> str | None:
+    """Resolve the user-selected primary genre before secondary descriptors.
+
+    The UI persists combined labels such as ``仙侠·潜伏复仇·炉房权谋``.  The
+    later segments are selling-point/modifier text, not an instruction to swap
+    the review rubric to a different genre.  Without this boundary,
+    ``复仇`` wins ``infer_genre_preset`` and routes an xianxia book to the
+    relationship-driven profile.
+    """
+    raw = str(genre or "").strip()
+    if not raw:
+        return None
+    primary = raw
+    for separator in _GENRE_COMPOSITE_SEPARATORS:
+        if separator in raw:
+            primary = raw.split(separator, 1)[0].strip()
+            break
+    if not primary or primary == raw:
+        return None
+
+    profiles = load_genre_review_profiles()
+    # Prefer explicit canonical signals in the primary segment.  Match longer
+    # terms first so a specific marker cannot be shadowed by a short one.
+    primary_haystack = primary.lower()
+    for keyword, category in sorted(
+        _GENRE_NAME_KEYWORD_MAP.items(), key=lambda item: len(item[0]), reverse=True
+    ):
+        if keyword.lower() in primary_haystack and category in profiles:
+            return category
+
+    # Preset inference is safe only against the primary segment; applying it to
+    # the full composite is precisely what caused ``复仇`` to hijack xianxia.
+    try:
+        from bestseller.services.writing_presets import infer_genre_preset
+
+        inferred = infer_genre_preset(primary, None)
+        if inferred is not None:
+            category = _GENRE_TO_CATEGORY_MAP.get(inferred.key)
+            if category and category in profiles:
+                return category
+    except Exception:
+        logger.debug("Could not infer primary composite genre; falling through.")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Profile loader (cached)
 # ---------------------------------------------------------------------------
@@ -3740,6 +3790,13 @@ def resolve_genre_review_profile(
         category = _GENRE_TO_CATEGORY_MAP.get(genre_preset_key)
         if category and category in profiles:
             return profiles[category]
+
+    # The first segment of a composite UI label is the selected genre.  Lock
+    # that decision before inspecting secondary modifiers such as 复仇/权谋,
+    # which may belong to an entirely different preset family.
+    primary_category = _resolve_primary_composite_genre_category(genre)
+    if primary_category and primary_category in profiles:
+        return profiles[primary_category]
 
     # --- strategy 1.5: high-confidence canonical keyword override ---
     # ``infer_genre_preset`` can map "异界穿越/系统" to generic progression.

@@ -6,6 +6,7 @@ from bestseller.services.hook_propagation import (
     apply_hook_to_book_spec,
     apply_hook_to_volume_plan,
     apply_hook_to_world_spec,
+    hook_spec_from_metadata,
     hook_outline_extra_constraints,
     render_hook_spec_prompt_block,
 )
@@ -30,6 +31,16 @@ def _spec() -> HookSpec:
     )
 
 
+def test_v2_contract_metadata_cannot_resurrect_legacy_hook_spec() -> None:
+    metadata = {
+        "concept_contract_version": "2",
+        "concept_contract": {"schema_version": "concept-contract.v2"},
+        "hook_spec": _spec().model_dump(mode="json"),
+    }
+
+    assert hook_spec_from_metadata(metadata) is None
+
+
 def test_apply_hook_to_book_and_world_spec() -> None:
     spec = _spec()
 
@@ -38,9 +49,8 @@ def test_apply_hook_to_book_and_world_spec() -> None:
 
     assert book["unique_hook"] == spec.one_liner
     assert book["series_engine"]["anti_cheat_rules"] == list(spec.anti_cheat)
-    assert book["series_engine"]["chapter_ending_hook_strategy"] == (
-        "每次成功使用核心规则，都必须制造可见代价、误解升级或反作弊压力。"
-    )
+    assert book["series_engine"]["opening_hook"] == spec.one_liner
+    assert "chapter_ending_hook_strategy" not in book["series_engine"]
     assert world["rules"][0]["story_consequence"] == "；".join(spec.constraints.values())
     assert "虚假表演不结算" in world["power_system"]["hard_limits"]
 
@@ -101,7 +111,22 @@ def test_apply_hook_to_volume_plan_and_prompt_constraints() -> None:
     )
 
     assert isinstance(plan, list)
-    assert plan[0]["hook_arc_engine"] == list(spec.arc_engine)
-    assert "温暖记忆被扣除" in plan[0]["volume_resolution"]["cost_paid"]
+    assert plan[0]["opening_hook_lineage"]["one_liner"] == spec.one_liner
+    assert plan[0]["volume_resolution"]["cost_paid"] == "失去工作"
     assert "HookSpec" in render_hook_spec_prompt_block(spec)
-    assert any("conflict_stakes" in item for item in hook_outline_extra_constraints(spec))
+    assert any("黄金三章" in item for item in hook_outline_extra_constraints(spec, chapter_number=1))
+    assert hook_outline_extra_constraints(spec, chapter_number=20) == []
+
+
+def test_hook_does_not_overwrite_real_serial_engine() -> None:
+    spec = _spec()
+    existing = {
+        "core_serial_engine": "每卷处理一个新案件，并让城市权力格局发生不可逆变化",
+        "reader_promise": "看主角从个案进入制度战争",
+    }
+
+    book = apply_hook_to_book_spec({"series_engine": existing}, spec)
+
+    assert book["series_engine"]["core_serial_engine"] == existing["core_serial_engine"]
+    assert book["series_engine"]["reader_promise"] == existing["reader_promise"]
+    assert book["series_engine"]["opening_hook"] == spec.one_liner

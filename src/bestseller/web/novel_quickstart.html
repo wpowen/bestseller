@@ -4093,6 +4093,25 @@
         </div>
         <div class="creative-evidence" style="margin-left:10px;">默认按题材+市场热度自动判定；可手动锁定男频/女频</div>
       </div>
+      <div class="genre-dimension-row" id="narrativeScaleRow" style="margin-top:4px;display:flex;align-items:center;">
+        <div class="genre-dimension-label">叙事规模</div>
+        <div class="genre-dimension-options">
+          <button type="button" class="genre-filter-chip active" data-scale="serial">常规连载</button>
+          <button type="button" class="genre-filter-chip" data-scale="epic">宏大长篇</button>
+        </div>
+        <div class="creative-evidence" style="margin-left:10px;">只约束容量与阶段跨度，不改写题材</div>
+      </div>
+      <div class="genre-dimension-row" id="tonePreferenceRow" style="margin-top:4px;display:flex;align-items:center;">
+        <div class="genre-dimension-label">调性</div>
+        <div class="genre-dimension-options">
+          <button type="button" class="genre-filter-chip active" data-tone="">智能判定</button>
+          <button type="button" class="genre-filter-chip" data-tone="epic">宏大</button>
+          <button type="button" class="genre-filter-chip" data-tone="light">轻松</button>
+          <button type="button" class="genre-filter-chip" data-tone="dark">暗黑</button>
+          <button type="button" class="genre-filter-chip" data-tone="hot">热血</button>
+        </div>
+        <div class="creative-evidence" style="margin-left:10px;">调性只能在所选题材边界内生效</div>
+      </div>
       <div class="creative-lab active" id="storyEnhancerLab" aria-label="故事增强">
         <div class="creative-lab-head">
           <div>
@@ -4102,13 +4121,23 @@
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 12px;">
           <label class="se-toggle" style="display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:9px 11px;">
-            <input type="checkbox" id="seBrainhole" checked style="width:16px;height:16px;">
+            <input type="checkbox" id="seBrainhole" style="width:16px;height:16px;">
             <span style="font-size:13px;">脑洞引擎<span class="hint" style="display:block;font-size:11px;">高概念反差名场面</span></span>
+          </label>
+          <label class="se-toggle" style="display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:9px 11px;">
+            <input type="checkbox" id="seWildConcept" style="width:16px;height:16px;">
+            <span style="font-size:13px;">脑洞全开<span class="hint" style="display:block;font-size:11px;">松开俗套/审计闸门·更激进概念</span></span>
           </label>
           <label class="se-toggle" style="display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:9px 11px;">
             <input type="checkbox" id="seConceptLab" style="width:16px;height:16px;">
             <span style="font-size:13px;">脑洞组合 story-loop<span class="hint" style="display:block;font-size:11px;">每章推进主回路</span></span>
           </label>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">代价强度 <span class="hint">纯正爽文 · 单选 · 金手指是否强制自损代价</span></div>
+        <div id="seCostRow" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+          <span class="se-dir on" data-v="standard">标准</span>
+          <span class="se-dir" data-v="external">代价外置（主角不自损）</span>
+          <span class="se-dir" data-v="minimal">极简代价（服务爽感）</span>
         </div>
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">反常识方向 <span class="hint">单选 · 决定全书冲突轴</span></div>
         <div id="seDirRow" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
@@ -4119,33 +4148,13 @@
         </div>
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">18 个故事 skill <span class="hint">多选 · 每章兑现勾选项</span></div>
         <div id="seSkillGrid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
-        <div class="hint" style="font-size:12px;margin-top:10px;">已选 <b id="seCount" style="color:var(--text);">5</b> 项 → 写入 story_enhancers</div>
+        <div class="hint" style="font-size:12px;margin-top:10px;">已选 <b id="seCount" style="color:var(--text);">0</b> 项 → 写入 story_enhancers</div>
       </div>
-      <div class="creative-lab" id="creativeLab" aria-label="题材脑洞发散" style="display:none;">
+      <div class="creative-lab" id="conceptLab" aria-label="手动指定概念">
         <div class="creative-lab-head">
           <div>
-            <div class="creative-lab-title">题材脑洞发散</div>
-            <div class="creative-evidence" id="creativeEvidence"></div>
-          </div>
-        </div>
-        <div class="creative-options" id="creativeOptions"></div>
-        <div class="creative-preview" id="creativePreview"></div>
-      </div>
-      <div class="creative-lab" id="hookLab" aria-label="反常识爽点候选" style="display:none;">
-        <div class="creative-lab-head">
-          <div>
-            <div class="creative-lab-title">反常识爽点</div>
-            <div class="creative-evidence" id="hookEvidence"></div>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" id="shuffleHookBtn">换一批爽点</button>
-        </div>
-        <div class="creative-options" id="hookOptions"></div>
-        <div class="creative-preview" id="hookPreview"></div>
-      </div>
-      <div class="creative-lab" id="conceptLab" aria-label="脑洞组合候选" style="display:none;">
-        <div class="creative-lab-head">
-          <div>
-            <div class="creative-lab-title">脑洞组合 · 批量候选</div>
+            <div class="creative-lab-title">手动指定概念（可选）</div>
+            <div class="hint" style="font-size:12px;margin-top:2px;">不选则由概念淘汰赛自动选高概念；选了则用你 pin 的概念、跳过淘汰赛</div>
             <div class="creative-evidence" id="conceptEvidence"></div>
           </div>
           <button type="button" class="btn btn-secondary btn-sm" id="refreshConceptLabBtn">换一批脑洞</button>
@@ -4225,9 +4234,8 @@
         <div class="summary-row"><span class="lbl">题材</span><span class="val" id="sumGenre">-</span></div>
         <div class="summary-row"><span class="lbl">子类型</span><span class="val" id="sumSub">-</span></div>
         <div class="summary-row"><span class="lbl">脑洞维度</span><span class="val" id="sumDims">-</span></div>
-        <div class="summary-row"><span class="lbl">题材脑洞</span><span class="val" id="sumCreative">-</span></div>
-        <div class="summary-row"><span class="lbl">反常识爽点</span><span class="val" id="sumHook">-</span></div>
         <div class="summary-row"><span class="lbl">脑洞组合</span><span class="val" id="sumConcept">-</span></div>
+        <div class="summary-row"><span class="lbl">规模 / 调性</span><span class="val" id="sumScale">常规连载 · 智能判定</span></div>
         <div class="summary-row"><span class="lbl" id="sumChLabel">章节数</span><span class="val" id="sumCh">-</span></div>
         <div class="summary-row"><span class="lbl">写作模型</span><span class="val"><select id="createModelSelect" class="tc-model-select" title="这本书构思完成后从这个模型开始写作"><option value="">全局默认</option></select></span></div>
         <div class="summary-row summary-option">
@@ -4235,6 +4243,13 @@
             <input type="checkbox" id="draftModeToggle" style="width:18px;height:18px;">
             <span>快速草稿模式</span>
             <span class="hint" style="font-size:12px;">（跳过审核循环，速度提升 3x）</span>
+          </label>
+        </div>
+        <div class="summary-row summary-option">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="stopAfterConceptionToggle" style="width:18px;height:18px;">
+            <span>先审核一句话创意</span>
+            <span class="hint" style="font-size:12px;">（可选；勾选后只保存构思，不进入整本书规划与写作）</span>
           </label>
         </div>
       </div>
@@ -4492,8 +4507,8 @@
   let customSelection = null;
   let txSel = { channel: '', genreKey: '', subKey: '', tags: [] };
   let selectedAudience = '';  // '' = 智能判定(交给热度Agent); 'male' = 男频; 'female' = 女频
-  let selectedCreativeKey = null;
-  let selectedHookIndexByGenre = {};
+  let selectedNarrativeScale = 'serial';
+  let selectedTonePreference = '';
   let conceptLabCatalog = null;
   let selectedConceptBundleId = null;
   let conceptLabLoading = false;
@@ -4826,7 +4841,6 @@
       audRow.querySelectorAll('.genre-filter-chip').forEach((c) =>
         c.classList.toggle('active', (c.getAttribute('data-audience') || '') === ''));
     }
-    selectedCreativeKey = null;
     selectedConceptBundleId = null;
     conceptLabCatalog = null;
     conceptLabLoading = false;
@@ -4837,6 +4851,9 @@
     $$('.lang-tab').forEach(t => t.classList.toggle('active', t.dataset.lang === DEFAULT_LANG));
     $('#toStep2').disabled = true;
     $('#draftModeToggle').checked = false;
+    // Full-book writing is the default. Conception-only is an explicit
+    // inspection mode, never an implicit stop that leaves a book unplanned.
+    $('#stopAfterConceptionToggle').checked = false;
     $('#customChapters').value = DEFAULT_CHAPTER_COUNT;
     fanqieLengthKey = DEFAULT_FANQIE_LENGTH_KEY;
     syncFanqieLengthSelectionUi();
@@ -4847,8 +4864,6 @@
     syncGenreLangUi();
     renderGenreFilters();
     renderGenres(genres.filter(matchSearch));
-    renderCreativeLab();
-    renderHookLab();
     renderConceptLab();
     updateSummary();
     wizGo(1);
@@ -7470,8 +7485,6 @@
     renderTaxonomyPicker();
     renderGenreFilters();
     renderGenres(genres.filter(matchSearch));
-    renderCreativeLab();
-    renderHookLab();
     renderConceptLab();
   }
 
@@ -7657,7 +7670,6 @@
     };
     selectedGenreKey = '';
     selectedAudience = txAudienceFromChannel(customSelection.channel);
-    selectedCreativeKey = null;
     selectedConceptBundleId = null;
     conceptLabCatalog = null;
     renderGenres(genres.filter(matchSearch));
@@ -7689,183 +7701,6 @@
     return genres.find(x => x.key === selectedGenreKey) || null;
   }
 
-  function creativePackFor(g) {
-    return g ? genreCreativity[g.key] || null : null;
-  }
-
-  function selectedCreativeDirection() {
-    const pack = creativePackFor(selectedGenre());
-    if (!pack || !Array.isArray(pack.directions) || !pack.directions.length) return null;
-    // Optional — only the explicitly-picked direction counts (no default), so the
-    // preview/summary stay empty until the user actively chooses one.
-    if (!selectedCreativeKey) return null;
-    return pack.directions.find(item => item.key === selectedCreativeKey) || null;
-  }
-
-  function hookPackFor(g) {
-    return g && Array.isArray(hookCandidates[g.key]) ? hookCandidates[g.key] : [];
-  }
-
-  function selectedHookCandidate() {
-    const g = selectedGenre();
-    const pack = hookPackFor(g);
-    if (!g || !pack.length) return null;
-    // Optional — only return a hook when the user explicitly picked one for this
-    // genre. No implicit default (otherwise an unselected hook leaks into the
-    // submission and pins the framework to a preset).
-    if (!Object.prototype.hasOwnProperty.call(selectedHookIndexByGenre, g.key)) return null;
-    const idx = selectedHookIndexByGenre[g.key];
-    if (idx === null || idx === undefined || idx < 0) return null;
-    return pack[idx % pack.length] || null;
-  }
-
-  function ensureCreativeSelection(g) {
-    const pack = creativePackFor(g);
-    if (!pack || !Array.isArray(pack.directions) || !pack.directions.length) {
-      selectedCreativeKey = null;
-      return;
-    }
-    // Optional — do NOT auto-select a default direction. Only keep an existing
-    // selection if it is still valid for this genre; otherwise leave it unset so
-    // the framework grows the 脑洞 itself from genre + market heat.
-    if (selectedCreativeKey && !pack.directions.some(item => item.key === selectedCreativeKey)) {
-      selectedCreativeKey = null;
-    }
-  }
-
-  function renderCreativeLab() {
-    const root = $('#creativeLab');
-    if (!root) return;
-    const g = selectedGenre();
-    ensureCreativeSelection(g);
-    const pack = creativePackFor(g);
-    if (!g || !pack || !Array.isArray(pack.directions) || !pack.directions.length) {
-      root.classList.remove('active');
-      $('#creativeOptions').innerHTML = '';
-      $('#creativePreview').innerHTML = '';
-      $('#creativeEvidence').textContent = '';
-      return;
-    }
-
-    root.classList.add('active');
-    $('#creativeEvidence').textContent = ['可选 · 不选则由AI按题材+市场热度自动决定', ...(pack.evidence_summary || [])].join(' · ');
-    $('#creativeOptions').innerHTML = pack.directions.map(direction => {
-      const sources = (direction.source_mix || []).slice(0, 4)
-        .map(item => `<span class="creative-source-chip">${esc(item)}</span>`)
-        .join('');
-      return `
-        <button type="button" class="creative-card${direction.key === selectedCreativeKey ? ' active' : ''}" data-creative-key="${esc(direction.key)}">
-          <div class="title">${esc(direction.title || '')}</div>
-          <div class="stance">${esc(direction.stance || '')}</div>
-          ${sources ? `<div class="sources">${sources}</div>` : ''}
-        </button>
-      `;
-    }).join('');
-    $$('#creativeOptions .creative-card').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const key = btn.dataset.creativeKey || '';
-        // Toggle: clicking the active direction deselects it (optional field).
-        selectedCreativeKey = (selectedCreativeKey === key) ? null : key;
-        selectedConceptBundleId = null;
-        renderCreativeLab();
-        updateSummary();
-        void loadConceptLab();
-      });
-    });
-
-    const direction = selectedCreativeDirection();
-    const mechanisms = (direction?.distilled_mechanisms || []).slice(0, 4);
-    const guardrails = (direction?.anti_cliche_guardrails || []).slice(0, 4);
-    const listItems = [...mechanisms, ...guardrails].slice(0, 5);
-    $('#creativePreview').innerHTML = direction ? `
-      <div class="creative-preview-main">
-        <strong>${esc(direction.logline || '')}</strong><br>
-        ${esc(direction.conflict_engine || '')}<br>
-        ${esc(direction.opening_hook || '')}
-      </div>
-      <div class="creative-preview-side">
-        <div class="creative-preview-label">脑洞机制 / 反套路护栏</div>
-        ${listItems.length ? `<ul class="creative-preview-list">${listItems.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '<div class="creative-evidence">题材库 + 调研库生成</div>'}
-      </div>
-    ` : '';
-  }
-
-  function renderHookLab() {
-    const root = $('#hookLab');
-    if (!root) return;
-    const g = selectedGenre();
-    const pack = hookPackFor(g);
-    if (!g || !pack.length) {
-      root.classList.remove('active');
-      $('#hookOptions').innerHTML = '';
-      $('#hookPreview').innerHTML = '';
-      $('#hookEvidence').textContent = '';
-      return;
-    }
-    root.classList.add('active');
-    const hasHookPick = Object.prototype.hasOwnProperty.call(selectedHookIndexByGenre, g.key)
-      && selectedHookIndexByGenre[g.key] !== null && selectedHookIndexByGenre[g.key] >= 0;
-    const selectedIdx = hasHookPick ? selectedHookIndexByGenre[g.key] : -1;
-    $('#hookEvidence').textContent = '可选 · 不选则由AI按题材自然生成 · 爽点强度 · 设定新颖度 · 代价/限制约束';
-    $('#hookOptions').innerHTML = pack.map((candidate, idx) => {
-      const spec = candidate.spec || {};
-      const score = candidate.score || {};
-      const noveltyPct = Math.round((candidate.novelty_score || 0) * 100);
-      const scorePill = `爽点 ${Math.round(Number(score.h_norm || 0))}`;
-      const chips = [
-        `新颖 ${noveltyPct}`,
-      ].filter(Boolean).map(item => `<span class="creative-source-chip">${esc(String(item))}</span>`).join('');
-      const key = spec.mechanism_key || '';
-      const mechanismLabel =
-        MECHANISM_LABEL_BY_KEY[key]
-        || spec.mechanism_label
-        || key
-        || '爽点';
-      return `
-        <button type="button" class="creative-card${idx === selectedIdx ? ' active' : ''}" data-hook-idx="${idx}">
-          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
-            <div class="title">${esc(mechanismLabel)}</div>
-            <span class="hook-score">${esc(scorePill)}</span>
-          </div>
-          <div class="hook-one-liner">${esc(spec.one_liner || '')}</div>
-          ${chips ? `<div class="hook-meta">${chips}</div>` : ''}
-        </button>
-      `;
-    }).join('');
-    $$('#hookOptions .creative-card').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.dataset.hookIdx || 0);
-        // Toggle: clicking the active hook clears the selection (optional field).
-        if (selectedHookIndexByGenre[g.key] === idx) {
-          delete selectedHookIndexByGenre[g.key];
-        } else {
-          selectedHookIndexByGenre[g.key] = idx;
-        }
-        selectedConceptBundleId = null;
-        renderHookLab();
-        updateSummary();
-        void loadConceptLab();
-      });
-    });
-    const chosen = selectedHookCandidate();
-    const spec = chosen?.spec || {};
-    const constraintItems = [
-      ...Object.values(spec.constraints || {}),
-      ...(spec.anti_cheat || []),
-    ].slice(0, 7);
-    $('#hookPreview').innerHTML = chosen ? `
-      <div class="creative-preview-main">
-        <strong>${esc(spec.core_rule || '')}</strong><br>
-        ${esc((spec.costs || []).join('；'))}<br>
-        ${esc(spec.misunderstanding || '')}
-      </div>
-      <div class="creative-preview-side">
-        <div class="creative-preview-label">限制 / 反作弊</div>
-        ${constraintItems.length ? `<ul class="creative-preview-list">${constraintItems.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '<div class="creative-evidence">机制库生成</div>'}
-      </div>
-    ` : '';
-  }
-
   function selectedConceptBundle() {
     const bundles = conceptLabCatalog?.bundles || [];
     // Optional — only the explicitly-picked bundle counts. No default fallback,
@@ -7888,17 +7723,14 @@
     conceptLabLoading = true;
     renderConceptLab();
     try {
-      const selectedHook = selectedHookCandidate();
-      // Reuse the cached bundle if both the genre and the picked hook are
-      // unchanged, unless the user explicitly asked for a fresh batch.
+      // Fetch a fresh batch of concept bundles for this genre; the user may pin
+      // one to override the concept tournament.
       const seed = Date.now() ^ Math.floor(Math.random() * 1_000_000);
       const res = await fetch('/api/concept-lab/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           genre_key: g.key,
-          creative_key: selectedCreativeKey || selectedCreativeDirection()?.key || '',
-          hook_spec: selectedHook?.spec || undefined,
           count: CONCEPT_LAB_BATCH_COUNT,
           seed,
         }),
@@ -8038,14 +7870,11 @@
       allBtn.onclick = () => {
         selectedGenreFilters[field] = '';
         selectedGenreKey = null;
-        selectedCreativeKey = null;
         selectedConceptBundleId = null;
         conceptLabCatalog = null;
         $('#toStep2').disabled = true;
         renderGenreFilters();
         renderGenres(genres.filter(matchSearch));
-        renderCreativeLab();
-        renderHookLab();
         renderConceptLab();
       };
       options.appendChild(allBtn);
@@ -8058,14 +7887,11 @@
         btn.onclick = () => {
           selectedGenreFilters[field] = selectedGenreFilters[field] === value ? '' : value;
           selectedGenreKey = null;
-          selectedCreativeKey = null;
           selectedConceptBundleId = null;
           conceptLabCatalog = null;
           $('#toStep2').disabled = true;
           renderGenreFilters();
           renderGenres(genres.filter(matchSearch));
-          renderCreativeLab();
-          renderHookLab();
           renderConceptLab();
         };
         options.appendChild(btn);
@@ -8107,10 +7933,7 @@
         selectedGenreKey = g.key;
         selectedConceptBundleId = null;
         conceptLabCatalog = null;
-        ensureCreativeSelection(g);
         renderGenres(genres.filter(matchSearch));
-        renderCreativeLab();
-        renderHookLab();
         updateSummary();
         void loadConceptLab();
         const audRow = $('#audienceOrientationRow');
@@ -8161,11 +7984,27 @@
     });
   });
 
+  document.querySelectorAll('#narrativeScaleRow .genre-filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      selectedNarrativeScale = chip.getAttribute('data-scale') || 'serial';
+      document.querySelectorAll('#narrativeScaleRow .genre-filter-chip')
+        .forEach((c) => c.classList.toggle('active', c === chip));
+      updateSummary();
+    });
+  });
+  document.querySelectorAll('#tonePreferenceRow .genre-filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      selectedTonePreference = chip.getAttribute('data-tone') || '';
+      document.querySelectorAll('#tonePreferenceRow .genre-filter-chip')
+        .forEach((c) => c.classList.toggle('active', c === chip));
+      updateSummary();
+    });
+  });
+
   // Language tab switching
   function switchLangTab(lang) {
     selectedLang = lang;
     selectedGenreKey = null;
-    selectedCreativeKey = null;
     selectedConceptBundleId = null;
     conceptLabCatalog = null;
     selectedGenreFilters = {};
@@ -8175,8 +8014,6 @@
     syncGenreLangUi();
     renderGenreFilters();
     renderGenres(genres.filter(matchSearch));
-    renderCreativeLab();
-    renderHookLab();
     renderConceptLab();
   }
   $('#langTabZh').addEventListener('click', () => switchLangTab('zh'));
@@ -8207,14 +8044,11 @@
     const g = selectedGenre();
     if (isFanqie && g && !g.suitable_for_short_story) {
       selectedGenreKey = null;
-      selectedCreativeKey = null;
       selectedConceptBundleId = null;
       conceptLabCatalog = null;
       $('#toStep2').disabled = true;
     }
     renderGenres(genres.filter(matchSearch));
-    renderCreativeLab();
-    renderHookLab();
     renderConceptLab();
   }
 
@@ -8324,8 +8158,6 @@
       const label = cg ? cg.label : (customSelection.genre || '-');
       g = { name: label, genre: label, sub_genre: cs ? cs.label : '不限' };
     }
-    const creative = selectedCreativeDirection();
-    const hook = selectedHookCandidate();
     const concept = selectedConceptBundle();
     $('#sumGenre').textContent = g ? g.name : '-';
     $('#sumSub').textContent = g ? `${g.genre}${g.sub_genre ? ' / ' + g.sub_genre : ''}` : '-';
@@ -8337,12 +8169,13 @@
           ...dimensionValues(g, 'commercial_signals').slice(0, 1),
         ])].join(' · ')
       : '-';
-    $('#sumCreative').textContent = creative ? creative.title : (g ? 'AI自动决定（未选）' : '-');
-    $('#sumHook').textContent = hook?.spec?.one_liner || (g ? 'AI自动决定（未选）' : '-');
     $('#sumConcept').textContent = concept?.title_seeds?.[0]?.text || concept?.one_liner || (g ? 'AI自动决定（未选）' : '-');
     if (customSelection) {
       $('#sumDims').textContent = (customSelection.tags || []).join(' · ') || '-';
     }
+    const scaleLabel = selectedNarrativeScale === 'epic' ? '宏大长篇' : '常规连载';
+    const toneLabel = { epic: '宏大', light: '轻松', dark: '暗黑', hot: '热血' }[selectedTonePreference] || '智能判定';
+    const scaleSummary = $('#sumScale'); if (scaleSummary) scaleSummary.textContent = `${scaleLabel} · ${toneLabel}`;
     const sumLbl = $('#sumChLabel');
     if (creationMode === 'fanqie_short') {
       const opt = fanqieLengthOption(fanqieLengthKey);
@@ -8383,11 +8216,17 @@
     ['callback_motif_engine','回调母题'],['world_texture_engine','世界质感'],['wonder_awe_engine','惊奇敬畏'],
     ['rhythm_pacing_engine','节奏'],['healing_grief_engine','治愈悲伤'],['romance_tenderness_engine','浪漫温柔'],
   ];
-  const SE_DEFAULT = new Set(['brainhole_engine','comedy_engine','hype_satisfaction_engine','twist_reversal_engine']);
+  // Genre selection alone must not activate hard story contracts.  Every
+  // enhancer is an explicit user choice; an empty set keeps the base prompt
+  // genre-native and avoids silently forcing comedy/modern-rule beats.
+  const SE_DEFAULT = new Set([]);
   let seDirection = null;
+  let seCostStyle = 'standard';
   function seUpdateCount() {
-    const cnt = (($('#seBrainhole')||{}).checked?1:0) + (($('#seConceptLab')||{}).checked?1:0)
-      + (seDirection?1:0) + document.querySelectorAll('#seSkillGrid .se-skill.on').length;
+    const cnt = (($('#seBrainhole')||{}).checked?1:0) + (($('#seWildConcept')||{}).checked?1:0)
+      + (($('#seConceptLab')||{}).checked?1:0)
+      + (seDirection?1:0) + (seCostStyle !== 'standard' ? 1 : 0)
+      + document.querySelectorAll('#seSkillGrid .se-skill.on').length;
     const el = $('#seCount'); if (el) el.textContent = cnt;
   }
   function initStoryEnhancers() {
@@ -8409,13 +8248,24 @@
         seUpdateCount();
       };
     });
-    ['#seBrainhole','#seConceptLab'].forEach(id => { const c = $(id); if (c) c.addEventListener('change', seUpdateCount); });
+    // 代价强度：单选，始终有一项激活（默认 standard），不可全不选。
+    document.querySelectorAll('#seCostRow .se-dir').forEach(chip => {
+      chip.onclick = () => {
+        document.querySelectorAll('#seCostRow .se-dir').forEach(c => c.classList.remove('on'));
+        chip.classList.add('on');
+        seCostStyle = chip.dataset.v || 'standard';
+        seUpdateCount();
+      };
+    });
+    ['#seBrainhole','#seWildConcept','#seConceptLab'].forEach(id => { const c = $(id); if (c) c.addEventListener('change', seUpdateCount); });
     seUpdateCount();
   }
   function collectStoryEnhancers() {
     const skills = Array.from(document.querySelectorAll('#seSkillGrid .se-skill.on')).map(e => e.dataset.k);
     return {
       brainhole: !!($('#seBrainhole')||{}).checked,
+      wild_concept: !!($('#seWildConcept')||{}).checked,
+      cost_style: seCostStyle,
       concept_lab: !!($('#seConceptLab')||{}).checked,
       creativity_direction: seDirection,
       effect_skills: skills,
@@ -8436,7 +8286,6 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> 提交中...';
     try {
-      const selectedHook = selectedHookCandidate();
       const selectedConcept = selectedConceptBundle();
       const res = await fetch('/api/tasks/quickstart', {
         method: 'POST',
@@ -8446,14 +8295,15 @@
           genre_key: selectedGenreKey,
           selection: customSelection || undefined,
           audience_orientation: selectedAudience || undefined,
-          creative_key: selectedCreativeKey,
-          hook_spec: selectedHook?.spec || undefined,
+          narrative_scale: selectedNarrativeScale,
+          tone_preference: selectedTonePreference || undefined,
           concept_lab_bundle_id: selectedConcept?.bundle_id || undefined,
           concept_lab_bundle: selectedConcept || undefined,
           chapter_count: creationMode === 'fanqie_short' ? chapterCount : chapterCount,
           length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
           pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
           draft_mode: !!$('#draftModeToggle').checked,
+          stop_after_conception: !!$('#stopAfterConceptionToggle').checked,
           story_enhancers: collectStoryEnhancers(),
           llm_model_id: ($('#createModelSelect')?.value || undefined),
         }),
@@ -8503,14 +8353,16 @@
         creation_mode: creationMode,
         genre_key: selectedGenreKey,
         selection: customSelection || undefined,
-        creative_key: selectedCreativeKey,
-        hook_spec: selectedHookCandidate()?.spec || undefined,
+        audience_orientation: selectedAudience || undefined,
+        narrative_scale: selectedNarrativeScale,
+        tone_preference: selectedTonePreference || undefined,
         concept_lab_bundle_id: selectedConceptBundle()?.bundle_id || undefined,
         concept_lab_bundle: selectedConceptBundle() || undefined,
         chapter_count: chapterCount,
         length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
         pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
         draft_mode: !!$('#draftModeToggle').checked,
+        stop_after_conception: !!$('#stopAfterConceptionToggle').checked,
         story_enhancers: collectStoryEnhancers(),
         scheduled_at: isoWithTz,
       };
@@ -8560,29 +8412,6 @@
   $('#startBtn').addEventListener('click', startCreation);
   $('#scheduleBtn')?.addEventListener('click', scheduleQuickstart);
   initStoryEnhancers();
-  $('#shuffleHookBtn')?.addEventListener('click', async () => {
-    const g = selectedGenre();
-    if (!g) return;
-    const seed = Date.now() ^ Math.floor(Math.random() * 1_000_000);
-    try {
-      const res = await fetch('/api/hook-candidates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ genre_key: g.key, seed, count: 6 }),
-      });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || '反常识爽点换一批失败');
-      hookCandidates[g.key] = payload.candidates || [];
-    } catch (err) {
-      // Soft-fail: keep the existing pack if the server is down.
-      console.warn('shuffleHookBtn fallback:', err);
-    }
-    selectedHookIndexByGenre[g.key] = 0;
-    selectedConceptBundleId = null;
-    renderHookLab();
-    updateSummary();
-    void loadConceptLab();
-  });
   $('#refreshConceptLabBtn')?.addEventListener('click', () => {
     selectedConceptBundleId = null;
     conceptLabCatalog = null;

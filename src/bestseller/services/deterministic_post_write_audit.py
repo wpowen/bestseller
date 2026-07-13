@@ -216,7 +216,18 @@ def _scan_opening(text: str) -> list[DeterministicAuditFinding]:
 
 def _scan_ending(text: str) -> list[DeterministicAuditFinding]:
     ending = re.sub(r"\s+", "", text)[-120:]
-    if not ending or any(term in ending for term in _HOOK_TERMS):
+    # A concrete approaching threat is a valid hook even when it is not
+    # phrased as a question or one of the small legacy anchor words.  The
+    # xianxia canary ended with “甬道那头脚步声更近了。不是一个人。”;
+    # rejecting that forced a full-chapter repair despite a clear next-step
+    # threat.  Keep this narrow: require an approach/arrival pattern rather
+    # than accepting any generic mention of a door or sound.
+    _approaching_threat = re.search(
+        r"(?:脚步|人影|声音|门外|甬道|追兵|身影).{0,10}"
+        r"(?:更近|逼近|靠近|越来越近|到了|来了|不止一个|不是一个|忽然响)",
+        ending,
+    )
+    if not ending or any(term in ending for term in _HOOK_TERMS) or _approaching_threat:
         return []
     return [
         DeterministicAuditFinding(
@@ -311,6 +322,22 @@ def _phrase_present_fuzzy(text: str, phrase: str) -> bool:
         return True
     if clean_phrase in clean_text:
         return True
+    # Signature images are short semantic anchors, not quotes.  A writer may
+    # naturally turn “炭灰里跪稳的跛足” into “膝盖落进炭灰，跛足的节奏稳住”
+    # while preserving the same image.  For Chinese anchors, accept a
+    # majority of their meaningful bigrams when the phrase contains at least
+    # two such units.  This is deliberately stricter than a single-token hit
+    # and still rejects unrelated prose.
+    if re.search(r"[\u4e00-\u9fff]", clean_phrase):
+        phrase_bigrams = {
+            clean_phrase[index : index + 2]
+            for index in range(len(clean_phrase) - 1)
+            if re.search(r"[\u4e00-\u9fff]{2}", clean_phrase[index : index + 2])
+        }
+        if len(phrase_bigrams) >= 2:
+            matched = sum(1 for bigram in phrase_bigrams if bigram in clean_text)
+            if matched >= 2 and matched / len(phrase_bigrams) >= 0.25:
+                return True
     window = max(len(clean_phrase), 4)
     for index in range(0, max(1, len(clean_text) - window + 1)):
         if SequenceMatcher(None, clean_text[index : index + window], clean_phrase).ratio() >= 0.7:

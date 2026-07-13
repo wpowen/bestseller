@@ -262,6 +262,17 @@ def test_common_sense_gate_flags_object_signal_overuse() -> None:
     assert any(finding.code == "object_signal_overuse" for finding in report.findings)
 
 
+def test_common_sense_gate_allows_explained_domain_signal() -> None:
+    report = evaluate_common_sense_gate(
+        "那不是炉火的烫，是灵印初震的烫。过了片刻，残渣还烫，但她已经知道这代表反噬。",
+        genre="仙侠",
+        sub_genre="仙侠",
+        chapter_number=1,
+    )
+
+    assert not any(finding.code == "object_signal_overuse" for finding in report.findings)
+
+
 def test_common_sense_gate_flags_non_expert_rule_knowledge_leak() -> None:
     report = evaluate_common_sense_gate(
         "墙上贴着三条：「录名」者不得出门。录名之后，名字归局里。"
@@ -288,6 +299,23 @@ def test_common_sense_gate_does_not_cross_paragraphs_for_rule_leak() -> None:
         genre="灵异",
         sub_genre="民俗悬疑",
         chapter_number=2,
+    )
+
+    assert not any(
+        finding.code == "lay_character_rule_knowledge_leak"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_ignores_rule_term_in_closing_quote_prose() -> None:
+    # A closing quote after a quoted setting term is narration, not a speaker
+    # label.  This was previously misread as a character named 灵印 speaking,
+    # which blocked a valid xianxia opening.
+    report = evaluate_common_sense_gate(
+        "墨迹落在簿页上，最后勾在“灵印”二字后面，圈了一个小圈。簿合上一半。",
+        genre="仙侠",
+        sub_genre="仙侠升级",
+        chapter_number=1,
     )
 
     assert not any(

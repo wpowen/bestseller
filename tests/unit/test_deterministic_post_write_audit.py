@@ -116,6 +116,33 @@ def test_ending_120_chars_with_question_mark_passes(tmp_path):
     assert not any(item.code == "ENDING_HOOK_MISSING" for item in report.findings)
 
 
+def test_ending_approaching_threat_without_question_mark_passes(tmp_path):
+    report = audit_chapter_prose(
+        chapter_text="他把簿子压回袖中。甬道那头脚步声更近了。不是一个人。",
+        chapter_number=1,
+        project_dir=_project_dir(tmp_path),
+    )
+
+    assert not any(item.code == "ENDING_HOOK_MISSING" for item in report.findings)
+
+
+def test_signature_image_accepts_natural_paraphrase(tmp_path):
+    class XianxiaScene:
+        scene_number = 1
+        metadata_json: ClassVar[dict] = {
+            "methodology_contract": {"signature_image": "炭灰里跪稳的跛足"}
+        }
+
+    report = audit_chapter_prose(
+        chapter_text="她的膝盖落进炭灰，跛足的节奏稳住，手才没有发抖。最后门外有人停下。",
+        chapter_number=1,
+        project_dir=_project_dir(tmp_path),
+        scenes=[XianxiaScene()],
+    )
+
+    assert not any(item.code == "SIGNATURE_IMAGE_MISSING" for item in report.findings)
+
+
 def test_paragraph_duplicate_paraphrase_high_similarity_caught(tmp_path):
     paragraph = "他按住铜钱，冷光一闪，门后传来响声。"
     report = audit_chapter_prose(

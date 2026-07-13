@@ -82,6 +82,14 @@ def test_render_book_contract_demands_every_chapter() -> None:
     assert "twist_reversal_engine" in block
 
 
+def test_comedy_anchor_is_genre_native_not_urban_locked() -> None:
+    block = render_story_enhancer_contract_block(
+        StoryEnhancerSelection(effect_skills=("comedy_engine",)), language="zh-CN"
+    )
+    assert "现代规则中报错" not in block
+    assert "符合本题材世界规则" in block
+
+
 def test_render_empty_selection_is_empty() -> None:
     assert render_story_enhancer_contract_block(StoryEnhancerSelection(), language="zh-CN") == ""
 

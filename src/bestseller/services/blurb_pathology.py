@@ -199,6 +199,27 @@ def _detect_run_on_sentence(
     return findings
 
 
+# 全知吊胃口模板(2026-07-17 用户终审"钩子/简介AI味很足"):叙述者跳出故事替读者
+# 吊胃口的收尾腔——三道病理筛与persona判官(3/3)全放行,但冷读者一眼识别。
+# 悬念必须落在具体的、即将发生的威胁/选择/期限上,不许用全知旁白空转。
+_TEASE_TEMPLATE_RE = re.compile(
+    r"殊不知|却不知道|还不知道|自己都不知道|到底还[^。！？]{0,8}什么"
+    r"|命运的齿轮|一切才刚刚开始|敬请期待|等待着[他她它][的们]将是"
+)
+
+
+def _detect_template_tease(text: str) -> list[PathologyFinding]:
+    return [
+        PathologyFinding(
+            code="template_tease",
+            severity="fatal",
+            excerpt=m.group(0),
+            detail="全知旁白式吊胃口模板——把悬念改写成具体的、即将发生的威胁/选择/期限",
+        )
+        for m in _TEASE_TEMPLATE_RE.finditer(text)
+    ]
+
+
 def detect_blurb_pathology(
     text: str,
     *,
@@ -227,6 +248,7 @@ def detect_blurb_pathology(
     run_on_min_commas = int(_cfg(config, "run_on_sentence_min_commas", 4))
 
     findings: list[PathologyFinding] = []
+    findings.extend(_detect_template_tease(text))
     findings.extend(
         _detect_tautology_choice(
             text, antonym_verb_pairs=antonym_pairs, synonym_groups=synonym_groups

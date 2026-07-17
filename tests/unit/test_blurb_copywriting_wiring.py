@@ -105,3 +105,16 @@ def test_derive_logline_from_champion_fails_open_on_pathology():
     source = inspect.getsource(conception_services._derive_logline_from_champion)
     assert 'return "", ids' in source
     assert "detect_blurb_pathology(candidate)" in source
+
+
+def test_final_prompt_bans_omniscient_tease_ending() -> None:
+    """结尾留悬念 with no shape guidance defaulted to '可她自己都不知道…' — the
+    suspense must land on a concrete imminent threat/choice/deadline."""
+
+    import inspect
+
+    from bestseller.services import blurb_copywriter as bc
+
+    source = inspect.getsource(bc)
+    assert "全知旁白式吊胃口" in source
+    assert "具体的、即将发生的" in source

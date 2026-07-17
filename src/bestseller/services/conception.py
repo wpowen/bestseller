@@ -3165,6 +3165,21 @@ def _hook_one_liner_is_adapted(text: str, *, protagonist: str, title: str) -> bo
     return not entities or any(e in text for e in entities)
 
 
+# 一句话卖点的声口铁律(2026-07-17 用户终审:"钩子AI味很足,没有可读性")。
+# 旧指令原文是"压缩成25-40字"——电报腔是被明确要求出来的(真机产物
+# "凭闻鞋识脏,七天内将宗门把柄换筹码,从妖树口中夺命":四字生造+抽象记账+
+# 三连逗号摘要,冷读者三处卡壳)。卖点是说给人听的一句话,不是压缩包。
+_LOGLINE_VOICE_RULES = (
+    "铁律：\n"
+    "①像跟朋友安利这本书时脱口而出的那句话——自然口语句式，主谓宾完整，"
+    "读出来不打磕巴；25-45字。\n"
+    "②必须有一个具体的画面或反常事实（人+事+压力），让人听完想追问'然后呢？'。\n"
+    "③禁止四字生造压缩词（如'闻鞋识脏'式自造短语——要说就说'闻一下鞋底就知道"
+    "谁干了脏事'）；禁止把柄/筹码/代价/博弈这类抽象记账词；禁止逗号串三段摘要。\n"
+    "④禁止生造机制黑话，不剧透结局。\n"
+)
+
+
 async def _derive_logline_from_champion(
     session: AsyncSession,
     settings: AppSettings,
@@ -3185,8 +3200,8 @@ async def _derive_logline_from_champion(
     user_prompt = (
         f"题材：{genre}\n书名：{title}\n\n【定稿简介】\n{synopsis}\n\n"
         f"【故事追问】{spine_question}\n\n"
-        f"请从这段定稿简介提炼一条{lang}一句话卖点(logline)：25-40字，"
-        "读者一眼抓住这本书讲什么、主角要面对什么，禁止生造机制黑话，不剧透结局。"
+        f"请从这段定稿简介写一条{lang}一句话卖点(logline)。"
+        f"{_LOGLINE_VOICE_RULES}"
         '只输出 JSON：{"logline": "..."}，不要解释。'
     )
     fixed, ids = await _llm_call_json(

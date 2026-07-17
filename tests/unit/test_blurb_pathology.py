@@ -235,3 +235,41 @@ class TestHighConceptJargonSource:
 
     def test_high_concept_absent_derives_nothing_new(self):
         assert "拓扑" not in derive_book_jargon_terms({"golden_finger": "普通金手指"})
+
+
+# ---------------------------------------------------------------------------
+# 全知吊胃口模板收尾(2026-07-17 用户终审:钩子/简介"AI味很足")。真机《仙树索命
+# 七日》简介收尾"可她自己都不知道…到底还在瞒着她什么"——三道病理筛全部放行,
+# persona 判官 3/3 也放行,但这是冷读者一眼识别的 AI 收尾腔。
+# ---------------------------------------------------------------------------
+
+
+def test_omniscient_tease_ending_is_fatal() -> None:
+    text = (
+        "闻鞋底泥巴的废物丫头，宗门里连狗都嫌她脏。妹妹只剩六天命。"
+        "七天，她要把师兄师姐全攥在手心里——可她自己都不知道，"
+        "这棵贪吃的怪树，到底还在瞒着她什么。"
+    )
+    findings = detect_blurb_pathology(text)
+    assert any(
+        f.code == "template_tease" and f.severity == "fatal" for f in findings
+    ), [f.code for f in findings]
+
+
+def test_concrete_threat_ending_is_clean_of_tease() -> None:
+    text = (
+        "闻鞋底泥巴的废物丫头，妹妹只剩六天命。"
+        "第七天日落前，怪树的根会碰到妹妹心口——而她刚发现，"
+        "掌门的鞋底沾着后山禁地的黑泥。"
+    )
+    findings = detect_blurb_pathology(text)
+    assert not any(f.code == "template_tease" for f in findings)
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["殊不知，危险正在逼近", "她却不知道，一切才刚刚开始", "命运的齿轮开始转动"],
+)
+def test_tease_variants_are_caught(phrase: str) -> None:
+    findings = detect_blurb_pathology(f"她赢下了第一局。{phrase}。")
+    assert any(f.code == "template_tease" for f in findings)

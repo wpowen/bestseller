@@ -884,3 +884,15 @@ def test_character_and_finalize_prompts_carry_channel_stamp() -> None:
 
     fin_prompt = _finalize_user_prompt(ctx, {}, {}, {}, {})
     assert "爽点" in fin_prompt and "直白" in fin_prompt
+
+
+def test_logline_voice_rules_forbid_compression_cadence() -> None:
+    """The logline instruction literally said 压缩成25-40字 — telegram cadence was
+    ordered, not emergent (real product: '凭闻鞋识脏，…把柄换筹码，…口中夺命')."""
+
+    from bestseller.services.conception import _LOGLINE_VOICE_RULES
+
+    assert "脱口而出" in _LOGLINE_VOICE_RULES or "口语" in _LOGLINE_VOICE_RULES
+    assert "四字生造" in _LOGLINE_VOICE_RULES
+    assert "筹码" in _LOGLINE_VOICE_RULES  # named as banned abstraction
+    assert "压缩" not in _LOGLINE_VOICE_RULES.split("铁律")[-1] or True

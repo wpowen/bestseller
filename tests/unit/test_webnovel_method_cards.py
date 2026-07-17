@@ -119,3 +119,17 @@ def test_golden_opening_low_pressure_survives_broken_config(monkeypatch) -> None
     assert "严禁从危机" in mc.render_golden_opening_rules_block(low_pressure=True)
     assert mc.render_golden_opening_rules_block(low_pressure=False) == ""
     mc.load_webnovel_method_cards.cache_clear()
+
+
+def test_golden_rules_carry_readiness_judge_semantic_axes():
+    """The commercial planning readiness judge kills books on protagonist
+    agency / decision intelligence / closed motive chains — but the golden-3
+    planner rules only spoke of structure (crisis-first, noun caps), so 2/2
+    real books planned golden-3s that failed the gate (2026-07-16). Generation
+    must aim at what acceptance measures, in BOTH pressure modes."""
+
+    for low_pressure in (False, True):
+        block = mc.render_golden_opening_rules_block(low_pressure=low_pressure)
+        assert "主动" in block and "能动" in block, low_pressure
+        assert "信息/压力/成本" in block, low_pressure
+        assert "动机链" in block, low_pressure

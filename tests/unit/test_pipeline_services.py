@@ -6670,9 +6670,13 @@ def test_commercial_planning_error_message_includes_llm_blocking_codes() -> None
         },
     )
 
-    assert message == (
+    assert message.startswith(
         "Commercial planning readiness gate failed: llm:CONFLICT_TOO_ABSTRACT"
     )
+    # Evidence must ride the exception text: the metadata write holding the
+    # judge payload is rolled back by the raise, so this message is the only
+    # surviving forensic trail (2026-07-16).
+    assert "conflict has no opponent or stakes" in message
 
 
 def test_commercial_planning_llm_judge_does_not_block_without_actionable_issues() -> None:

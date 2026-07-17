@@ -604,3 +604,95 @@ def test_repair_directives_noop_when_all_dimensions_pass() -> None:
         min_overall=0.82,
     )
     assert outline_llm_judge.build_outline_repair_directives(result) == []
+
+
+# ---------------------------------------------------------------------------
+# Stable (majority-vote) wrapper for the commercial planning readiness judge
+# (2026-07-16). A single temperature-sampled verdict had terminal authority
+# over a whole book: real run killed 《脊骨封神》 with 4 heavy codes while the
+# deterministic gate passed and the golden-3 outline was demonstrably solid.
+# Same noise-into-terminal-gate pathology as the scene verdict override.
+# ---------------------------------------------------------------------------
+import asyncio as _asyncio
+
+from bestseller.domain.llm_quality_judge import LLMQualityJudgeResult
+
+
+def _judge_result(*, passed: bool, codes: tuple[str, ...] = ()) -> LLMQualityJudgeResult:
+    # NOTE: the blocking_issues before-validator only accepts str/Mapping items
+    # (model instances are silently dropped), so build from dicts as the real
+    # JSON-parsing path does.
+    return LLMQualityJudgeResult(
+        passed=passed,
+        overall_score=0.9 if passed else 0.4,
+        blocking_issues=tuple(
+            {"code": c, "severity": "critical", "evidence": "e", "required_fix": "f"}
+            for c in codes
+        ),
+    )
+
+
+def _run_stable(results, samples=3):
+    from bestseller.services.outline_llm_judge import (
+        judge_commercial_planning_readiness_stable,
+    )
+
+    calls = {"n": 0}
+
+    async def fake_judge(**kwargs):
+        calls["n"] += 1
+        r = results[calls["n"] - 1]
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    result = _asyncio.run(
+        judge_commercial_planning_readiness_stable(
+            None, None,
+            chapters_payload=[],
+            samples=samples,
+            judge_fn=fake_judge,
+        )
+    )
+    return result, calls["n"]
+
+
+def test_stable_judge_single_dissent_cannot_kill_a_book() -> None:
+    results = [
+        _judge_result(passed=False, codes=("HOOK_QUALITY_NEAR_TERMINAL_STAGNATION",)),
+        _judge_result(passed=True),
+        _judge_result(passed=True),
+    ]
+    result, n = _run_stable(results)
+    assert n == 3
+    assert result.passed is True
+
+
+def test_stable_judge_majority_block_still_blocks_with_evidence() -> None:
+    results = [
+        _judge_result(passed=False, codes=("SCENE_EXECUTABILITY_GAP",)),
+        _judge_result(passed=False, codes=("SCENE_EXECUTABILITY_GAP", "DECISION_INTELLIGENCE_INVERSION")),
+        _judge_result(passed=True),
+    ]
+    result, _ = _run_stable(results)
+    assert result.passed is False
+    # the representative result must carry real evidence for the error message
+    assert result.blocking_issues
+
+
+def test_stable_judge_sample_errors_abstain_rather_than_block() -> None:
+    results = [
+        _judge_result(passed=False, codes=("X",)),
+        RuntimeError("judge down"),
+        _judge_result(passed=True),
+    ]
+    result, _ = _run_stable(results)
+    # 1 block vs 1 pass with 1 abstention — no majority to block
+    assert result.passed is True
+
+
+def test_stable_judge_samples_one_degenerates_to_single_call() -> None:
+    results = [_judge_result(passed=False, codes=("X",))]
+    result, n = _run_stable(results, samples=1)
+    assert n == 1
+    assert result.passed is False

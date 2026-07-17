@@ -52,14 +52,21 @@ n_candidates: 6          # 六路题材原生故事发动机候选
 control_candidates: 2    # 兼容旧配置；engine_first 不再从全局异质池抽样
 winner_min: 5.5          # 冠军综合分低于此线 → 不注入(宁可回落现状,不硬塞烂概念)
 judge_hard_floors:       # 任何单轴不达标直接出局，禁止用其他高分平均掉硬伤
-  freshness: 7.0
-  click: 7.5
+  # 2026-07-17 校准(五轮真机E2E取证):freshness 7.0/click 7.5 在脑洞关闭的默认
+  # 建书下=淘汰赛干涸常态(16+候选零通过;click 8.0/motion 8.0 的候选因 fresh 6.0
+  # 被整个丢弃)。而干涸的下场是注入【保底概念】——比任何被拒候选都弱,2/3 直接死
+  # 在 logline 门。硬地板的职责是拦灾难(纯俗套),不是完美主义:俗套灾难另有
+  # cliche_seeds 一票否决兜底,新颖度的精调交给 composite 加权与下游 logline 门。
+  freshness: 6.0
+  click: 7.0
   predictable_max: 5.5
   character_logic: 7.0
   mechanism_causality: 7.0
   genre_fidelity: 7.0
   plain_language: 7.0
-  story_motion: 7.5
+  # 2026-07-17 第7轮取证:判官打分聚在7.0,7.5地板造成"8轴过7轴、motion差0.5单轴死"
+  # (矿工骨片候选 plain 9.0/mech 8.0/genre 8.0 仍出局)。与 freshness/click 同理由校准。
+  story_motion: 7.0
 seriality_hard_floors:
   renewability: 7.5
   escalation: 7.5
@@ -145,6 +152,19 @@ cliche_seeds:
     - 继承死人的债
     - 替死人还债
     - 把人情债变现成关系网
+    # 死亡/复活模板——全平台最烂大街,放 generic 让所有题材继承(证据书连撞两本)
+    - 死者借尸还魂归来讨旧账
+    - 亡夫亡妻诈尸复活回来认亲
+    - 借尸还魂登基当帝王
+    - 灭门遗孤血脉觉醒复仇
+    - 亲手埋葬的亲人十七年后归来
+  xuanhuan:
+    - 废脉觉醒是隐藏宝脉
+    - 灭门遗孤靠血脉/剑骨复仇
+    - 亡亲借尸还魂回来讨账认亲
+    - 上古大能残魂认主传功
+    - 钻天道/规则漏洞白嫖变强
+    - 扮猪吃虎打脸各路天骄
   xianxia:
     - 废脉其实是宝脉
     - 破宗门重建崛起

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
 import re
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,7 @@ from bestseller.services.prompt_packs import (
     render_prompt_pack_prompt_block,
     resolve_prompt_pack,
 )
+from bestseller.services.anti_ai_voice_discipline import render_anti_ai_voice_discipline
 from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
 from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.quality_levers import (
@@ -1571,6 +1573,106 @@ def render_scene_review_summary(
     return "\n".join(summary_lines)
 
 
+def _rewrite_votes_carry(votes: Sequence[str | None]) -> bool:
+    """Whether a set of critic verdicts carries a *majority* for "rewrite".
+
+    The critic runs at temperature 0.25 with a single sample, and its verdict can
+    override the deterministic rule-based gate. One stochastic "rewrite" was
+    therefore enough to reopen a rewrite loop on a scene the rules had passed —
+    pure noise entering an otherwise deterministic gate. Requiring a majority
+    keeps the LLM's teeth (a real defect is found by every sample) while dropping
+    one-off flukes. Unparseable votes abstain rather than count as "pass", so a
+    malformed response can neither force nor block a rewrite.
+    """
+
+    cast = [vote for vote in votes if vote in {"pass", "rewrite"}]
+    if not cast:
+        return False
+    rewrites = sum(1 for vote in cast if vote == "rewrite")
+    return rewrites * 2 > len(cast)
+
+
+def _scene_verdict_confirm_samples(settings: AppSettings) -> int:
+    """Total critic votes (incl. the first) before an override may flip a pass.
+
+    Extra samples are drawn ONLY when the LLM disagrees with a rule-based pass —
+    roughly 5% of reviews on a measured book — so confirmation costs ~5% more
+    critic calls rather than the 3x a blanket multi-sample would.
+    """
+
+    raw = getattr(settings.quality, "scene_llm_verdict_confirm_samples", 3)
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return 3
+
+
+async def _resample_scene_verdict_votes(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    fallback_response: str,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+    workflow_run_id: UUID | None,
+    step_run_id: UUID | None,
+    samples: int,
+) -> list[str | None]:
+    """Draw ``samples`` extra critic verdicts for a contested scene.
+
+    Runs concurrently, each on its own pooled session: ``AsyncSession`` is not
+    safe for concurrent use and ``complete_text`` persists an llm_run row, so the
+    samples cannot share one. Mirrors ``judge_chapter_commercial_quality_stable``.
+    Any sampling failure abstains (``None``) rather than raising — a confirmation
+    vote must never be able to fail a review that the rules already passed.
+    """
+
+    async def _one_vote(sess: AsyncSession) -> str | None:
+        try:
+            completion = await complete_text(
+                sess,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="critic",
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    fallback_response=fallback_response,
+                    prompt_template="scene_review",
+                    prompt_version="verdict_confirm",
+                    project_id=project.id,
+                    workflow_run_id=workflow_run_id,
+                    step_run_id=step_run_id,
+                    metadata={
+                        "project_slug": project.slug,
+                        "chapter_number": chapter.chapter_number,
+                        "scene_number": scene.scene_number,
+                        "purpose": "llm_verdict_confirmation",
+                    },
+                ),
+            )
+        except Exception:
+            logger.debug("scene verdict confirmation sample failed", exc_info=True)
+            return None
+        return _parse_llm_verdict((completion.content or "").strip())
+
+    try:
+        from bestseller.infra.db.session import get_server_session
+
+        async with contextlib.AsyncExitStack() as stack:
+            sessions = [
+                await stack.enter_async_context(get_server_session())
+                for _ in range(samples)
+            ]
+            return list(await asyncio.gather(*[_one_vote(s) for s in sessions]))
+    except RuntimeError:
+        # DB pool not initialized (e.g. unit tests) — sample sequentially on the
+        # shared session, which is concurrency-safe.
+        return [await _one_vote(session) for _ in range(samples)]
+
+
 def _parse_llm_verdict(critic_response: str) -> str | None:
     """Extract structured verdict from LLM critic response.
 
@@ -2030,6 +2132,7 @@ def build_scene_rewrite_prompts(
             "- 字数维持在场景目标的 90%-120%\n"
             + _NOVEL_OUTPUT_PROHIBITION
             + _REWRITE_STRATEGY_CONTRACT
+            + render_anti_ai_voice_discipline(language=language, scope="scene")
         )
     )
     tone = (
@@ -2837,6 +2940,7 @@ def build_chapter_rewrite_prompts(
             "- 角色名与「参与者」列表完全一致\n"
             + _NOVEL_OUTPUT_PROHIBITION
             + _REWRITE_STRATEGY_CONTRACT
+            + render_anti_ai_voice_discipline(language=language, scope="chapter")
         )
     )
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
@@ -3200,6 +3304,25 @@ _SCENE_ADVISORY_FINDING_CATEGORIES = frozenset(
         "contract_alignment",
     }
 )
+
+
+# Neutral baseline for advisory axes whose signal is a *verbatim echo* of planning
+# language (an arc_label, a 冲突/对抗 signal term). Well-dramatized prose shows the
+# arc or the fight without ever quoting the planner's label, so these axes collapse
+# to their 0.3 base regardless of craft and permanently drag `overall` under the
+# verdict threshold — i.e. they punish show-don't-tell. Measured on a real 24-chapter
+# book (2026-07-15): subplot_presence was 0.300 in 276/276 reviews and
+# scene_sequel_alignment 0.300 in 271/276, while the axes that measure actual craft
+# scored 0.8-0.99. This is the same pathology contract_alignment is already floored
+# for below; the floor is a floor, not a flattening — genuine verbatim coverage still
+# scores above it.
+_ADVISORY_KEYWORD_ECHO_FLOOR = 0.5
+
+
+def _advisory_keyword_echo_floor(score: float, *, settings: AppSettings) -> float:
+    if not getattr(settings.quality, "scene_verdict_advisory_axes", False):
+        return score
+    return max(score, _ADVISORY_KEYWORD_ECHO_FLOOR)
 
 
 def evaluate_scene_draft(
@@ -3593,7 +3716,10 @@ def evaluate_scene_draft(
             for arc in _primary_arcs
             if getattr(arc, "arc_label", None) and getattr(arc, "arc_label", "") in content
         )
-        subplot_presence_score = _clamp_score(0.3 + _arc_hits / max(len(_primary_arcs), 1) * 0.7)
+        subplot_presence_score = _advisory_keyword_echo_floor(
+            _clamp_score(0.3 + _arc_hits / max(len(_primary_arcs), 1) * 0.7),
+            settings=settings,
+        )
     else:
         subplot_presence_score = 0.5
 
@@ -3602,10 +3728,14 @@ def evaluate_scene_draft(
     _SEQUEL_SIGNAL_TERMS = ["犹豫", "回想", "抉择", "沉思", "hesitat", "reflect", "dilemma"]
     if swain_pattern == "action":
         _swain_signal = _signal_score(content, keywords=_ACTION_SIGNAL_TERMS)
-        scene_sequel_alignment_score = _clamp_score(0.3 + _swain_signal * 0.7)
+        scene_sequel_alignment_score = _advisory_keyword_echo_floor(
+            _clamp_score(0.3 + _swain_signal * 0.7), settings=settings
+        )
     elif swain_pattern == "sequel":
         _swain_signal = _signal_score(content, keywords=_SEQUEL_SIGNAL_TERMS)
-        scene_sequel_alignment_score = _clamp_score(0.3 + _swain_signal * 0.7)
+        scene_sequel_alignment_score = _advisory_keyword_echo_floor(
+            _clamp_score(0.3 + _swain_signal * 0.7), settings=settings
+        )
     else:
         scene_sequel_alignment_score = 0.5
 
@@ -5684,7 +5814,43 @@ async def review_scene_draft(
             # non-combat opening because axis-2 instructions mentioned combat.
             # Do not let that advisory disagreement reopen a rewrite loop; the
             # rule-based structural gate remains authoritative here.
+            #
+            # The LLM disagrees with a deterministic pass — the only place a
+            # temperature-0.25 draw can reopen a rewrite loop. Confirm with extra
+            # votes before trusting it; a lone dissenting sample is noise, not a
+            # defect. Sampling here (rather than on every review) keeps the cost
+            # proportional to how rare the disagreement is.
+            _override_confirmed = True
             if not _non_combat_advisory_only:
+                _votes: list[str | None] = [llm_verdict]
+                _extra = _scene_verdict_confirm_samples(settings) - 1
+                if _extra > 0:
+                    _votes.extend(
+                        await _resample_scene_verdict_votes(
+                            session,
+                            settings,
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            fallback_response=critic_response,
+                            project=project,
+                            chapter=chapter,
+                            scene=scene,
+                            workflow_run_id=workflow_run_id,
+                            step_run_id=step_run_id,
+                            samples=_extra,
+                        )
+                    )
+                _override_confirmed = _rewrite_votes_carry(_votes)
+                if not _override_confirmed:
+                    logger.info(
+                        "scene %d.%d: LLM rewrite override not confirmed by %d votes "
+                        "(%s); keeping rule-based pass",
+                        getattr(chapter, "chapter_number", 0),
+                        getattr(scene, "scene_number", 0),
+                        len(_votes),
+                        _votes,
+                    )
+            if not _non_combat_advisory_only and _override_confirmed:
                 review_result = SceneReviewResult(
                     verdict="rewrite",
                     scores=review_result.scores,
@@ -7614,29 +7780,11 @@ def _forbidden_rewrite_terms_from_scene_action(action_text: str) -> list[str]:
         "单子",
         "帮忙寄件",
         "跑腿",
-        "铜钱按",
-        "铜钱接触",
-        "黑水",
-        "门吞掉",
-        "被门吞掉",
-        "被镜子吞掉",
-        "拖进门",
-        "门合拢",
+        # 题材中性的"送件/联络/确认"类道具——保留;单书(青囊/困魂镜侦探)私货
+        # token(铜钱按/门吞掉/张家门契/病号服…)已移除,本书自己的禁写信号应由
+        # 该书 metadata 的 forbidden-signals 提供,不写死在通用函数里。
         "确认死亡",
-        "电梯脚印",
-        "黑泥鞋印",
-        "水渍脚印",
-        "新脚",
-        "七号入账",
-        "代父",
-        "入门",
-        "归人",
-        "张家门契",
-        "三代以内",
         "血债血偿",
-        "八个人影",
-        "七行名单",
-        "病号服",
     )
     return [term for term in candidates if term in action_text]
 

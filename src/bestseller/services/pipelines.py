@@ -2379,7 +2379,21 @@ def _commercial_planning_readiness_error_message(
     )
     codes.extend(f"llm:{code}" for code in llm_codes)
     suffix = ", ".join(codes) if codes else "unknown"
-    return f"Commercial planning readiness gate failed: {suffix}"
+    # Carry evidence/required_fix inside the exception text: the metadata write
+    # that also holds this payload is rolled back by this very raise, so the
+    # task error message is the only forensic trail that survives (learned
+    # 2026-07-16 when a killed book left zero auditable evidence).
+    detail_lines: list[str] = []
+    for issue in (llm_judge_payload or {}).get("blocking_issues", ())[:4]:
+        if not isinstance(issue, Mapping):
+            continue
+        _ev = str(issue.get("evidence") or "").strip()[:160]
+        _fx = str(issue.get("required_fix") or "").strip()[:160]
+        detail_lines.append(
+            f"- {issue.get('code')}: {_ev}" + (f" → 整改: {_fx}" if _fx else "")
+        )
+    detail = ("\n" + "\n".join(detail_lines)) if detail_lines else ""
+    return f"Commercial planning readiness gate failed: {suffix}{detail}"
 
 
 async def _load_chapter_draft_for_pipeline_result(
@@ -10723,7 +10737,7 @@ async def run_project_pipeline(
 
                 if use_llm_judge:
                     from bestseller.services.outline_llm_judge import (
-                        judge_commercial_planning_readiness,
+                        judge_commercial_planning_readiness_stable,
                     )
                     from bestseller.services.prompt_packs import resolve_prompt_pack
 
@@ -10735,8 +10749,11 @@ async def run_project_pipeline(
                         )
                         or 0.75
                     )
-                    # Build chapters payload from the current chapter models
-                    _golden_payload = [
+                    # Build chapters payload from the current chapter models.
+                    # A named builder (not a one-shot comprehension) because the
+                    # readiness repair path re-reads the models after mutation.
+                    def _build_golden_payload() -> list[dict[str, Any]]:
+                        return [
                         {
                             "chapter_number": int(getattr(ch, "chapter_number", 0) or 0),
                             "title": getattr(ch, "title", None) or "",
@@ -10787,7 +10804,9 @@ async def run_project_pipeline(
                         }
                         for ch in chapters
                         if int(getattr(ch, "chapter_number", 0) or 0) in (1, 2, 3)
-                    ]
+                        ]
+
+                    _golden_payload = _build_golden_payload()
                     _project_brief = {
                         "title": getattr(project, "title", None),
                         "genre": getattr(project, "genre", None),
@@ -10809,10 +10828,22 @@ async def run_project_pipeline(
                         sub_genre=getattr(project, "sub_genre", None),
                     )
                     try:
-                        llm_judge_result = await judge_commercial_planning_readiness(
+                        # 多采样表决：这个判官的裁决对整本书是终审(单样本毙过
+                        # 确定性门全过、黄金三章扎实的真书 2026-07-16)。阻断须
+                        # 过半样本独立判阻,样本失败弃权——判官抖动既不能单票
+                        # 杀书,也不能单票放行。
+                        llm_judge_result = await judge_commercial_planning_readiness_stable(
                             session,
                             settings,
                             chapters_payload=_golden_payload,
+                            samples=int(
+                                getattr(
+                                    settings.pipeline,
+                                    "commercial_planning_llm_judge_samples",
+                                    3,
+                                )
+                                or 3
+                            ),
                             deterministic_findings=commercial_gate_report,
                             project_brief=_project_brief,
                             threshold=llm_threshold,
@@ -10870,6 +10901,88 @@ async def run_project_pipeline(
                         commercial_gate_report.get("passed", True)
                         and not deterministic_actionable_block
                     )
+
+                # ── Bounded readiness repair (one attempt) ──────────────────
+                # The judge's blocking_issues carry executable required_fix
+                # directives; until 2026-07-16 nothing consumed them and every
+                # block was instant task death. One focused golden-3 revision +
+                # one re-judge; deterministic blockers and a still-failing
+                # re-judge fall through to the original fail-closed raise.
+                if (
+                    not commercial_gate_passed
+                    and use_llm_judge
+                    and llm_judge_payload
+                    and not deterministic_actionable_block
+                    and getattr(
+                        settings.pipeline,
+                        "commercial_planning_repair_enabled",
+                        True,
+                    )
+                ):
+                    from bestseller.services.golden_three_repair import (
+                        repair_golden_three_outline,
+                    )
+
+                    _emit_progress(
+                        progress,
+                        "commercial_planning_readiness_repair_started",
+                        {"project_slug": project_slug},
+                    )
+                    _repaired = await repair_golden_three_outline(
+                        session,
+                        settings,
+                        chapters=chapters,
+                        llm_judge_payload=llm_judge_payload,
+                        project=project,
+                    )
+                    if _repaired:
+                        await session.flush()
+                        try:
+                            llm_judge_result = await judge_commercial_planning_readiness_stable(
+                                session,
+                                settings,
+                                chapters_payload=_build_golden_payload(),
+                                samples=int(
+                                    getattr(
+                                        settings.pipeline,
+                                        "commercial_planning_llm_judge_samples",
+                                        3,
+                                    )
+                                    or 3
+                                ),
+                                deterministic_findings=commercial_gate_report,
+                                project_brief=_project_brief,
+                                threshold=llm_threshold,
+                                workflow_run_id=str(workflow_run.id)
+                                if workflow_run.id
+                                else None,
+                                pack=_pack,
+                            )
+                            llm_judge_payload = llm_judge_result.model_dump(
+                                mode="json", by_alias=True
+                            )
+                            commercial_gate_passed = (
+                                not _commercial_planning_llm_judge_should_block(
+                                    llm_judge_result
+                                )
+                            )
+                            project.metadata_json = {
+                                **(getattr(project, "metadata_json", None) or {}),
+                                "commercial_planning_llm_judge": llm_judge_payload,
+                                "commercial_planning_readiness_repair": {
+                                    "applied": True,
+                                    "passed_after_repair": commercial_gate_passed,
+                                },
+                            }
+                            logger.warning(
+                                "commercial planning readiness repair: re-judge %s",
+                                "PASSED" if commercial_gate_passed else "still blocked",
+                            )
+                        except Exception:
+                            logger.warning(
+                                "readiness re-judge after repair failed; keeping block",
+                                exc_info=True,
+                            )
 
                 if not commercial_gate_passed:
                     _emit_progress(

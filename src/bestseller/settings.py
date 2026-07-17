@@ -201,6 +201,12 @@ class QualitySettings(BaseModel):
     # keyword-echo `overall` ceiling so genuinely good prose can reach "approved"
     # instead of churning the rewrite/stall loop. Requires enable_llm_scene_commentary.
     enable_scene_llm_pass_override: bool = True
+    # Total critic votes (including the first) required before an LLM "rewrite"
+    # may override a rule-based "pass". The critic samples at temperature 0.25,
+    # so a single draw could flip a deterministic gate on noise alone. Extra
+    # votes are drawn ONLY on disagreement (~5% of reviews), so this is cheap.
+    # Set to 1 to restore the legacy single-sample override.
+    scene_llm_verdict_confirm_samples: int = 3
     thresholds: QualityThresholds
     max_scene_revisions: int = 2
     max_chapter_revisions: int = 1

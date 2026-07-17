@@ -4113,7 +4113,14 @@ def synthesize_genre_preset(
         node = gt.get_genre(canon) or gt.get_genre(gt.canonicalize(canon) or "")
         g = (node.label if node else (canon or "通用")).strip() or "通用"
     resolved = gt.resolve_selection(None, g, sg or None, [])
-    genre_str = (resolved.genre_str or g).strip() or g
+    # ``resolved.genre_str`` is the most-specific label (the SUB-genre when one
+    # resolves), which is right for display/routing but wrong for preset.genre:
+    # a preset's genre must stay the parent (末世), with the sub-genre in its own
+    # field (天灾囤货). Read the parent off genre_key instead. This only surfaced
+    # once get_sub_genre started honouring labels — before that these sub-genres
+    # never resolved, so the bug was masked.
+    parent = gt.get_genre(resolved.genre_key) if resolved.genre_key else None
+    genre_str = ((parent.label if parent else None) or resolved.genre_str or g).strip() or g
     sub_str = (sg or resolved.sub_genre_str or genre_str).strip() or genre_str
     description = (
         f"{genre_str}题材"

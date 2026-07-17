@@ -4499,3 +4499,32 @@ def test_push_progress_routes_tier_payload_hint() -> None:
     # An ordinary activity event stays off the milestone axis.
     manager._push_progress("task", "scene_draft_review_evaluated", {"score": 7})
     assert all(e["stage"] != "scene_draft_review_evaluated" for e in task.milestone_events)
+
+
+def test_quickstart_survives_unresolvable_genre_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The contract resolver's fail-open path sets contract=None (documented:
+    "a free-form genre typed through the API must not 500 the whole creation")
+    — but the payload assembly then dereferenced it unconditionally, so every
+    unresolvable selection 500'd anyway (found live 2026-07-16). The task must
+    be created contract-less instead."""
+
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "demo-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    task = manager.create_quickstart_task(
+        {
+            "selection": {"channel_key": "male", "genre_key": "no-such-genre-xyz", "tags": []},
+            "chapter_count": 12,
+        }
+    )
+
+    assert task["task_id"] == "demo-task"
+    assert captured["payload"]["genre_intent_contract"] == {}

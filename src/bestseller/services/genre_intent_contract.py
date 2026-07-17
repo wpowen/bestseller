@@ -72,6 +72,10 @@ class GenreIntentContract(BaseModel, frozen=True):
     sub_genre_key: str | None = None
     sub_genre_label: str | None = None
     tags: tuple[str, ...] = ()
+    # The sub-genre's own default_tags vs what the user actually ticked. Kept
+    # apart so prompts stop presenting genre defaults as explicit user choices.
+    default_tags: tuple[str, ...] = ()
+    user_tags: tuple[str, ...] = ()
     category_key: str | None = None
     prompt_pack_key: str = Field(min_length=1, max_length=128)
     audience_orientation: str | None = None
@@ -87,6 +91,20 @@ class GenreIntentContract(BaseModel, frozen=True):
 
 
 def _allowed_modernity(resolved: ResolvedSelection) -> Literal["genre_native", "modern", "hybrid"]:
+    """Which ontology this book may natively use — declared by the taxonomy.
+
+    Was a 2-line hardcode covering only 都市 / urban-cultivation, which left the
+    other 19 genres on ``genre_native``. Consequences (all verified live):
+    a 悬疑推理 book was forbidden its own core vocabulary (法医/尸检/停尸房), and
+    现代言情 / 现实(行业职场) / 游戏竞技 / 末世 books could not mention
+    手机/微信/写字楼/职场 without the final conception tripwire raising and
+    killing the book. Now each genre/sub-genre declares it in the YAML.
+    """
+
+    declared = str(getattr(resolved, "allowed_modernity", "") or "").strip()
+    if declared in ("genre_native", "modern", "hybrid"):
+        return declared  # type: ignore[return-value]
+    # Safety net for selections resolved outside the taxonomy (no declaration).
     if resolved.sub_genre_key == "urban-cultivation" or resolved.genre_key == "urban":
         return "modern"
     return "genre_native"
@@ -113,6 +131,8 @@ def build_genre_intent_contract(
         sub_genre_key=resolved.sub_genre_key,
         sub_genre_label=resolved.sub_genre_str,
         tags=resolved.tags,
+        default_tags=resolved.default_tags,
+        user_tags=resolved.user_tags,
         category_key=resolved.category,
         prompt_pack_key=resolved.pack,
         audience_orientation=audience_orientation,

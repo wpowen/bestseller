@@ -325,6 +325,43 @@ async def delete_project_completely(
     return result
 
 
+# 建书页「调性」→ 文风关键词。UI 的取值是 epic/light/dark/hot(标签:宏大/轻松/
+# 暗黑/热血)。此前 tone_preference 全库只到达一个地方 —— 构思 prompt 里那坨 JSON
+# blob —— 而写手真正用的是 style_guide.tone_keywords(来自 preset/模型),两者毫无
+# 关系,所以用户选「轻松」或「暗黑」对正文零影响。
+_TONE_PREFERENCE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "epic": ("宏大", "厚重", "史诗感"),
+    "light": ("轻松", "幽默", "明快"),
+    "dark": ("暗黑", "冷峻", "压抑"),
+    "hot": ("热血", "燃", "爽快"),
+}
+
+
+def _tone_keywords_for(payload: ProjectCreate, writing_profile: WritingProfile) -> list[str]:
+    """Lead the style guide with the user's 调性 pick, then the profile's own tone.
+
+    The pick leads rather than replaces — the UI promises 「调性只能在所选题材边界
+    内生效」, so the genre profile's own keywords stay behind it.
+    """
+
+    base = [str(k).strip() for k in (writing_profile.style.tone_keywords or []) if str(k).strip()]
+    if not base:
+        base = [payload.genre]
+    meta = payload.metadata if isinstance(payload.metadata, dict) else {}
+    contract = meta.get("genre_intent_contract")
+    preference = ""
+    if isinstance(contract, dict):
+        preference = str(contract.get("tone_preference") or "").strip().lower()
+    lead = _TONE_PREFERENCE_KEYWORDS.get(preference, ())
+    if not lead:
+        return base
+    ordered: list[str] = []
+    for keyword in [*lead, *base]:
+        if keyword and keyword not in ordered:
+            ordered.append(keyword)
+    return ordered
+
+
 async def create_project(
     session: AsyncSession,
     payload: ProjectCreate,
@@ -366,7 +403,7 @@ async def create_project(
         project_id=project.id,
         pov_type=writing_profile.style.pov_type or settings.generation.pov,
         tense=writing_profile.style.tense,
-        tone_keywords=writing_profile.style.tone_keywords or [payload.genre],
+        tone_keywords=_tone_keywords_for(payload, writing_profile),
         prose_style=writing_profile.style.prose_style,
         sentence_style=writing_profile.style.sentence_style,
         info_density=writing_profile.style.info_density,

@@ -835,10 +835,23 @@ async def apply_book_spec(
         project.dramatic_question = dramatic_question.strip()
 
     project.title = str(content.get("title") or project.title)
-    project.genre = str(content.get("genre") or project.genre)
-    project.audience = (
-        str(content.get("target_audience") or project.audience or "") or project.audience
-    )
+    # The frozen genre-intent contract is the authority for genre/audience — it
+    # is the user's own 建书页 taxonomy pick. Letting the book_spec LLM overwrite
+    # these columns turned a clean pick into generated prose (observed live:
+    # genre="东方玄幻·吞噬流·废材逆袭", sub_genre left as "玄幻", audience=
+    # "男频，番茄平台，年龄16-30…"), and 20+ downstream consumers read the COLUMNS,
+    # not the contract — so the user's pick silently stopped driving the book.
+    # The model's suggestions are still preserved in metadata["book_spec"] below,
+    # so nothing is lost; they just stop overwriting the authority.
+    _existing_meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    _contract = _existing_meta.get("genre_intent_contract")
+    _contract_owns_taxonomy = isinstance(_contract, dict) and bool(_contract.get("genre_key"))
+    if not _contract_owns_taxonomy:
+        # Contract-less legacy/English books keep the previous behaviour.
+        project.genre = str(content.get("genre") or project.genre)
+        project.audience = (
+            str(content.get("target_audience") or project.audience or "") or project.audience
+        )
     project.metadata_json = _merge_metadata(
         project.metadata_json,
         {

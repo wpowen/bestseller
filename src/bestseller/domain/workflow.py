@@ -367,7 +367,11 @@ class SceneOutlineInput(BaseModel):
         description=(
             "How supernatural objects behave in this scene and what that signals. "
             "Must be specific: which object, what sensation, what it means. "
-            "E.g. '某个异常物件边缘发凉（不是发烫）——冷是警示，代表背后有意识在注视主角'."
+            "信号模态从本书机制同源的维度里选（墨色/纹路移动/重量/声响/气味/材质变化…），"
+            "且要携带可解读的信息结构（方向、数量、笔顺），不只是强度。"
+            "禁止用发烫/发凉这类温度捷径当主信号——它是全网写烂的默认反应，"
+            "且同一信号全书反复出现会让读者立刻出戏。"
+            "E.g. '符纸上的墨线自行游走了半分——游走方向指向危险来处，走得越急事越近'."
         ),
     )
 

@@ -1604,11 +1604,13 @@ class TestJudgeTournament:
         assert "故事运动" in (result.candidates[0].rejected_reason or "")
 
     @pytest.mark.asyncio
-    async def test_high_novelty_cannot_average_away_weak_click_desire(self):
+    async def test_high_novelty_cannot_average_away_catastrophic_click_desire(self):
+        # 2026-07-17 双层地板语义:click 5.0(平庸)作为唯一软失可容忍,
+        # 但灾难线(<5.0)以下仍然一票死——高新颖救不了没人想点的概念。
         result = await run_concept_tournament(
             None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
             config=_CFG, generator=_gen_from([GOOD_PAYLOAD]),
-            judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (10, 5, 0)}),
+            judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (10, 4, 0)}),
             rng=random.Random(7),
         )
 
@@ -1781,7 +1783,9 @@ class TestConceptionWiring:
 
     def test_long_book_retries_then_stops_before_downstream_agents(self):
         source = self._source()
-        retry_pos = source.index("max_concept_attempts = 3 if chapter_count >= 200 else 1")
+        # 2026-07-17: short/mid books get 2 attempts so the near-miss retry
+        # branch is reachable (1 attempt made it dead code for 50-chapter books).
+        retry_pos = source.index("max_concept_attempts = 3 if chapter_count >= 200 else 2")
         stop_pos = source.index("已在市场/角色/世界观生成前终止")
         round0_pos = source.index("Round 0: Autonomous Commercial Positioning")
 
@@ -2002,7 +2006,10 @@ class TestWildConceptWiring:
         source = self._source()
         assert 'ctx["wild_concept"] = bool(user_hints.get("wild_concept"))' in source
         idx = source.index("run_concept_tournament(")
-        region = source[max(0, idx - 800) : idx + 400]
+        # Window sized in lines, not a fixed char offset — a char window broke
+        # every time an unrelated line landed between config resolution and the
+        # call (2026-07-16).
+        region = source[max(0, idx - 1600) : idx + 600]
         assert 'resolve_tournament_config(\n                wild=bool(ctx.get("wild_concept"))' in region
         assert 'ctx.get("wild_concept")' in region
         assert "config=attempt_config," in region
@@ -2015,3 +2022,163 @@ class TestWildConceptWiring:
         source = inspect.getsource(pipelines.run_autowrite_pipeline)
         assert "wants_wild_concept(project_payload.metadata or {})" in source
         assert '_conception_hints["wild_concept"] = True' in source
+
+
+class TestCandidatePromptJudgeAlignment:
+    """Generation must aim at what the judge floors measure (2026-07-16).
+
+    Live dry-run forensics: for a 男频玄幻 request all 4 candidates were the
+    same literary 目录师 concept family — 题材保真 3.0-6.5 and 大白话 3.0-5.0
+    against 7.0 floors. Three gaps: the builder never受众 (channel unknown), the
+    hybrid directive ordered 职业/冲突形态 rebuilt from the foreign field (i.e.
+    instructed drift), and plain-language was never demanded.
+    """
+
+    _KWARGS = {
+        "genre": "玄幻",
+        "sub_genre": "玄幻",
+        "dimension": "目录学",
+        "chapter_count": 50,
+        "banned": (),
+        "avoid_mechanisms_block": "",
+    }
+
+    def test_audience_orientation_reaches_the_candidate_prompt(self):
+        from bestseller.services.concept_tournament import _build_candidate_messages
+
+        _, user = _build_candidate_messages(**self._KWARGS, audience_orientation="男频")
+        assert "男频" in user
+
+    def test_hybrid_directive_preserves_genre_core_instead_of_rebuilding_it(self):
+        from bestseller.services.concept_tournament import _build_candidate_messages
+
+        _, user = _build_candidate_messages(**self._KWARGS)
+        assert "题材保真" in user or "本题材的核心读者契约" in user
+        assert "由该领域重塑" not in user
+
+    def test_plain_language_floor_is_announced_to_the_generator(self):
+        from bestseller.services.concept_tournament import _build_candidate_messages
+
+        _, user = _build_candidate_messages(**self._KWARGS)
+        assert "大白话" in user
+
+    def test_lean_builder_carries_the_same_alignment(self):
+        from bestseller.services.concept_tournament import _build_lean_candidate_messages
+
+        _, lean = _build_lean_candidate_messages(**self._KWARGS, audience_orientation="女频")
+        assert "女频" in lean
+        assert "大白话" in lean
+
+
+class TestEngineFirstAudienceAnchoring:
+    """Production runs candidate_prompt_mode=engine_first — the kernel and hook
+    distiller are the prompts that actually shaped the drifted candidates, so
+    the channel must reach THEM, not just the generic builder."""
+
+    def test_engine_kernel_carries_audience(self):
+        from bestseller.services.concept_tournament import _build_engine_kernel_messages
+
+        _, user = _build_engine_kernel_messages(
+            genre="玄幻", sub_genre="玄幻", lane="纯题材直觉",
+            chapter_count=50, audience_orientation="男频",
+        )
+        assert "男频" in user
+
+    def test_hook_distiller_carries_audience(self):
+        from bestseller.services.concept_tournament import _build_hook_from_engine_messages
+
+        _, user = _build_hook_from_engine_messages(
+            genre="玄幻", sub_genre="玄幻", kernel={"protagonist_identity": "外门弟子"},
+            audience_orientation="男频",
+        )
+        assert "男频" in user
+
+    def test_empty_audience_adds_no_noise(self):
+        from bestseller.services.concept_tournament import _build_engine_kernel_messages
+
+        _, user = _build_engine_kernel_messages(
+            genre="玄幻", sub_genre="玄幻", lane="纯题材直觉", chapter_count=50,
+        )
+        assert "频道/受众" not in user
+
+
+class TestJudgePersonaPriming:
+    """The tournament judge's click axis said "目标读者3秒内想不想点" but never
+    said WHO the target reader is — a neutral-editor voice passed jargon-heavy
+    concepts that the downstream persona judge then vetoed 0/3 (round 6,
+    2026-07-17), too late for any retry to fix the concept. The channel reader
+    must be defined where the click score is born."""
+
+    def test_judge_prompt_defines_channel_reader(self):
+        from bestseller.services.concept_tournament import _build_judge_messages
+        from types import SimpleNamespace
+
+        cand = SimpleNamespace(
+            concept="c", mechanism="m", hook_question="q",
+            protagonist_identity="i", protagonist_private_desire="d",
+            opening_crisis="o", opponent_system="s", decision_proof="p",
+            emotional_promise="e",
+        )
+        _, user = _build_judge_messages(
+            candidate=cand, genre="玄幻", sub_genre="玄幻", references=[],
+            audience_orientation="男频",
+        )
+        assert "男频" in user and "划走" in user
+
+    def test_judge_prompt_without_channel_is_unchanged_shape(self):
+        from bestseller.services.concept_tournament import _build_judge_messages
+        from types import SimpleNamespace
+
+        cand = SimpleNamespace(
+            concept="c", mechanism="m", hook_question="q",
+            protagonist_identity="i", protagonist_private_desire="d",
+            opening_crisis="o", opponent_system="s", decision_proof="p",
+            emotional_promise="e",
+        )
+        _, user = _build_judge_messages(
+            candidate=cand, genre="玄幻", sub_genre="玄幻", references=[],
+        )
+        assert "划走" not in user
+
+
+class TestTwoTierHardFloors:
+    """Eight simultaneous 7.0+ floors vs a judge whose scores cluster at 6-7 =
+    joint pass probability near zero (8 rounds, 30+ candidates, zero contenders;
+    round 8: mech 9.0 / click 8.0 candidates killed solely by plain 6.0).
+    Two tiers instead: any axis below the catastrophe line is fatal; otherwise
+    exactly one soft miss is tolerated — the downstream logline/persona gates
+    remain the real authority."""
+
+    _FLOORS = {
+        "freshness": 6.0, "click": 7.0, "predictable_max": 5.5,
+        "character_logic": 7.0, "mechanism_causality": 7.0,
+        "genre_fidelity": 7.0, "plain_language": 7.0, "story_motion": 7.0,
+    }
+
+    def _verdict(self, **scores):
+        from bestseller.services.concept_tournament import _hard_floor_failed_axes
+
+        base = {
+            "freshness": 7.0, "click": 8.0, "predictable": 4.0,
+            "character_logic": 8.0, "mechanism_causality": 8.0,
+            "genre_fidelity": 8.0, "plain_language": 8.0, "story_motion": 8.0,
+        }
+        base.update(scores)
+        return _hard_floor_failed_axes(base, self._FLOORS)
+
+    def test_one_soft_miss_is_tolerated(self):
+        assert self._verdict(plain_language=6.0) == []
+
+    def test_two_soft_misses_reject_with_both_axes_named(self):
+        failed = self._verdict(plain_language=6.0, freshness=5.5)
+        assert "大白话" in failed and "新颖度" in failed
+
+    def test_catastrophe_axis_is_fatal_even_when_everything_else_is_perfect(self):
+        failed = self._verdict(genre_fidelity=2.5)
+        assert "题材保真" in failed
+
+    def test_predictable_catastrophe_is_fatal(self):
+        assert "可预测性" in self._verdict(predictable=8.0)
+
+    def test_predictable_soft_miss_is_tolerated(self):
+        assert self._verdict(predictable=6.0) == []

@@ -365,7 +365,8 @@ def _infer_entity_type(name: str, file: str, context: str) -> EntityType:
         return EntityType.CLUE
     if _contains_any(value, ("地点", "楼", "井", "市场", "太平间", "医院")):
         return EntityType.LOCATION
-    if _contains_any(value, ("物件", "镜", "铜钱", "罗盘", "账", "牌")):
+    # 题材中性的实体名词标记(删侦探/账本专属 铜钱/罗盘/账,补通用+修仙类通用物)
+    if _contains_any(value, ("物件", "镜", "牌", "器", "符", "印", "剑", "炉", "珠", "令")):
         return EntityType.OBJECT
     return EntityType.CHARACTER
 

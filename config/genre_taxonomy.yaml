@@ -106,6 +106,30 @@ tags_additional:
   - { key: 现实 }
   - { key: 家庭 }
 
+  # 英文市场 trope 标签(池内已有的一律复用:chosen-one/fated-mates/forced-proximity 等)
+  - { key: enemies-to-lovers, label_en: Enemies to Lovers }
+  - { key: reverse-harem, label_en: Reverse Harem }
+  - { key: why-choose, label_en: Why Choose }
+  - { key: mafia, label_en: Mafia }
+  - { key: paranormal, label_en: Paranormal }
+  - { key: slow-burn, label_en: Slow Burn }
+  - { key: fae, label_en: Fae }
+  - { key: litrpg, label_en: LitRPG }
+  - { key: cozy, label_en: Cozy }
+  - { key: multi-pov, label_en: Multi-POV }
+  - { key: young-adult, label_en: Young Adult }
+  - { key: cultivation, label_en: Cultivation }
+  - { key: hidden-world, label_en: Hidden World }
+  - { key: space-opera, label_en: Space Opera }
+  - { key: military-scifi, label_en: Military Sci-Fi }
+  - { key: post-apocalyptic, label_en: Post-Apocalyptic }
+  - { key: superhero, label_en: Superhero }
+  - { key: cozy-mystery, label_en: Cozy Mystery }
+  - { key: amateur-sleuth, label_en: Amateur Sleuth }
+  - { key: police-procedural, label_en: Police Procedural }
+  - { key: domestic-suspense, label_en: Domestic Suspense }
+  - { key: conspiracy, label_en: Conspiracy }
+
 genres:
   # ── 男频 ─────────────────────────────────────────────────────────────────
   - key: xuanhuan
@@ -121,7 +145,7 @@ genres:
       - { key: high-martial, label: 高武世界, category: action-progression, pack: xuanhuan-power-fantasy, power_system: martial-arts, default_tags: [灵气复苏, 无敌] }
       - { key: dynasty-hegemony, label: 王朝争霸, category: strategy-worldbuilding, pack: history-strategy, default_tags: [争霸, 权谋] }
       - { key: primordial-myth, label: 洪荒封神, category: action-progression, pack: xuanhuan-power-fantasy, default_tags: [洪荒, 老祖], aliases: [洪荒] }
-      - { key: beast-taming, label: 御兽流, category: action-progression, pack: xuanhuan-power-fantasy, default_tags: [御兽, 升级流], aliases: [御兽] }
+      - { key: beast-taming, label: 御兽流, category: action-progression, pack: xuanhuan-power-fantasy, default_tags: [御兽, 升级流], aliases: [御兽, 御兽养成] }
 
   - key: xianxia
     label: 仙侠
@@ -153,6 +177,7 @@ genres:
 
   - key: urban
     label: 都市
+    allowed_modernity: modern
     channel: [male]
     heat: 82
     category_default: urban-contemporary
@@ -160,9 +185,9 @@ genres:
     aliases: [都市异能, 都市成长, 现代, 美食, 娱乐圈, 神医兵王, urban]
     sub_genres:
       - { key: urban-life, label: 都市生活, category: urban-contemporary, pack: urban-power-reversal, default_tags: [打脸, 马甲] }
-      - { key: urban-psionic, label: 都市异能, category: action-progression, pack: urban-power-reversal, power_system: psionic, default_tags: [异能, 升级流, 无敌] }
+      - { key: urban-psionic, label: 都市异能, category: action-progression, pack: urban-power-reversal, power_system: psionic, default_tags: [异能, 升级流, 无敌], aliases: [身份反转] }
       - { key: business-workplace, label: 商战职场, category: urban-contemporary, pack: urban-power-reversal, default_tags: [商战, 职场, 重生] }
-      - { key: entertainment-star, label: 娱乐明星, category: urban-contemporary, pack: entertainment-sweet, default_tags: [娱乐圈, 马甲, 直播], aliases: [娱乐圈] }
+      - { key: entertainment-star, label: 娱乐明星, category: urban-contemporary, pack: entertainment-sweet, default_tags: [娱乐圈, 马甲, 直播], aliases: [娱乐圈, 娱乐圈逆袭] }
       - { key: divine-doctor-soldier, label: 神医兵王, category: action-progression, pack: urban-power-reversal, default_tags: [扮猪吃虎, 打脸, 无敌] }
       - { key: urban-slacker, label: 市井奶爸·摆烂日常, category: urban-contemporary, pack: shezhu-bailan-comedy, default_tags: [奶爸, 摆烂, 沙雕, 种田], aliases: [美食] }
       - { key: campus-youth, label: 校园青春, category: relationship-driven, pack: romance-tension-growth, default_tags: [校园, 青春] }
@@ -182,6 +207,7 @@ genres:
 
   - key: military
     label: 军事
+    allowed_modernity: modern
     channel: [male]
     heat: 58
     category_default: strategy-worldbuilding
@@ -195,22 +221,24 @@ genres:
 
   - key: scifi
     label: 科幻
+    allowed_modernity: modern
     channel: [male]
     heat: 70
     category_default: science-fiction-progression
     pack_default: scifi-starwar
     aliases: [星际, 机甲, 赛博朋克, 黑科技, 未来, sci-fi, scifi]
     sub_genres:
-      - { key: interstellar, label: 星际文明, category: science-fiction-progression, pack: scifi-starwar, default_tags: [星际, 科技跃迁] }
+      - { key: interstellar, label: 星际文明, category: science-fiction-progression, pack: scifi-starwar, default_tags: [星际, 科技跃迁], aliases: [星际舰队] }
       - { key: future-world, label: 未来世界, category: science-fiction-progression, pack: scifi-starwar, default_tags: [未来, 科技] }
       - { key: time-travel-sci, label: 时空穿梭, category: science-fiction-progression, pack: scifi-starwar, default_tags: [时空, 穿越] }
-      - { key: blacktech, label: 超级科技·黑科技, category: science-fiction-progression, pack: scifi-starwar, power_system: tech-augmentation, default_tags: [黑科技, 系统, 创业] }
+      - { key: blacktech, label: 超级科技·黑科技, category: science-fiction-progression, pack: scifi-starwar, power_system: tech-augmentation, default_tags: [黑科技, 系统, 创业], aliases: [黑科技爬科技树] }
       - { key: mecha-war, label: 机甲战争, category: science-fiction-progression, pack: scifi-starwar, default_tags: [机甲, 战争], aliases: [机甲] }
-      - { key: cyberpunk, label: 赛博朋克, category: science-fiction-progression, pack: scifi-starwar, default_tags: [赛博, 近未来], aliases: [赛博朋克] }
+      - { key: cyberpunk, label: 赛博朋克, category: science-fiction-progression, pack: scifi-starwar, default_tags: [赛博, 近未来], aliases: [赛博朋克, 赛博近未来] }
       - { key: cosmic-horror, label: 克苏鲁/SCP, category: suspense-mystery, pack: suspense-mystery, power_system: rule-based, default_tags: [规则怪谈, 诡异复苏] }
 
   - key: apocalypse
     label: 末世
+    allowed_modernity: modern
     channel: [male]
     heat: 78
     category_default: action-progression
@@ -218,7 +246,7 @@ genres:
     aliases: [末日, 天灾, 丧尸, 囤货, 废土, apocalypse]
     sub_genres:
       - { key: apocalypse-survival, label: 末日求生, category: action-progression, pack: apocalypse-supply-chain, default_tags: [末日求生, 升级流] }
-      - { key: disaster-hoarding, label: 天灾囤货, category: action-progression, pack: apocalypse-supply-chain, default_tags: [囤货, 空间, 升级流, 无敌] }
+      - { key: disaster-hoarding, label: 天灾囤货, category: action-progression, pack: apocalypse-supply-chain, default_tags: [囤货, 空间, 升级流, 无敌], aliases: [重生囤货] }
       - { key: zombie-crisis, label: 丧尸危机, category: action-progression, pack: apocalypse-supply-chain, default_tags: [丧尸, 末日求生] }
       - { key: apocalypse-basebuilding, label: 基地经营, category: base-building, pack: apocalypse-supply-chain, default_tags: [基建, 种田, 经营] }
       - { key: rule-apocalypse, label: 规则末世, category: suspense-mystery, pack: suspense-mystery, power_system: rule-based, default_tags: [规则怪谈, 副本] }
@@ -227,13 +255,14 @@ genres:
 
   - key: game
     label: 游戏竞技
+    allowed_modernity: modern
     channel: [male]
     heat: 72
     category_default: esports-competition
     pack_default: game-esport
     aliases: [游戏, 网游, 电竞, 直播, 体育, 都市竞技, game, esports]
     sub_genres:
-      - { key: esports, label: 电子竞技, category: esports-competition, pack: game-esport, default_tags: [电竞, 直播], aliases: [电竞] }
+      - { key: esports, label: 电子竞技, category: esports-competition, pack: game-esport, default_tags: [电竞, 直播], aliases: [电竞, 电竞直播] }
       - { key: vrmmo, label: 虚拟网游, category: esports-competition, pack: game-esport, power_system: litrpg-stats, default_tags: [副本, 系统, 升级流], aliases: [网游] }
       - { key: game-otherworld, label: 游戏异界, category: otherworld-cross-system, pack: game-esport, default_tags: [穿越, 副本] }
       - { key: streamer, label: 主播直播, category: urban-contemporary, pack: game-esport, default_tags: [直播, 马甲] }
@@ -241,21 +270,23 @@ genres:
 
   - key: suspense
     label: 悬疑推理
+    allowed_modernity: modern
     channel: [male]
     heat: 75
     category_default: suspense-mystery
     pack_default: suspense-mystery
     aliases: [悬疑, 推理, 探案, 刑侦, 盗墓, 心理惊悚, suspense]
     sub_genres:
-      - { key: detective, label: 侦探推理, category: suspense-mystery, pack: suspense-mystery, default_tags: [推理, 智斗] }
+      - { key: detective, label: 侦探推理, category: suspense-mystery, pack: suspense-mystery, default_tags: [推理, 智斗], aliases: [连环追凶] }
       - { key: crime-procedural, label: 刑侦犯罪, category: suspense-mystery, pack: suspense-mystery, default_tags: [刑侦, 反转] }
-      - { key: psych-thriller, label: 心理惊悚, category: suspense-mystery, pack: suspense-mystery, default_tags: [心理博弈, 反转], aliases: [心理惊悚] }
+      - { key: psych-thriller, label: 心理惊悚, category: suspense-mystery, pack: suspense-mystery, default_tags: [心理博弈, 反转], aliases: [心理惊悚, 人性博弈] }
       - { key: rule-horror, label: 规则怪谈, category: suspense-mystery, pack: suspense-mystery, power_system: rule-based, default_tags: [规则怪谈, 副本] }
       - { key: folk-mystery, label: 民俗诡事, category: suspense-mystery, pack: suspense-mystery, default_tags: [民俗, 灵异] }
       - { key: tomb-raiding, label: 盗墓探险, category: suspense-mystery, pack: suspense-mystery, default_tags: [探险, 秘境] }
 
   - key: occult
     label: 灵异
+    allowed_modernity: modern
     channel: [male]
     heat: 68
     category_default: suspense-mystery
@@ -265,11 +296,12 @@ genres:
       - { key: ghost-supernatural, label: 灵异神怪, category: suspense-mystery, pack: suspense-mystery, default_tags: [灵异, 诡异复苏] }
       - { key: horror-adventure, label: 惊悚冒险, category: suspense-mystery, pack: suspense-mystery, default_tags: [惊悚, 探险] }
       - { key: horror-revival, label: 诡异复苏, category: action-progression, pack: suspense-mystery, default_tags: [诡异复苏, 升级流] }
-      - { key: exorcist-trade, label: 民俗驱魔, category: suspense-mystery, pack: suspense-mystery, default_tags: [驱魔, 民俗] }
-      - { key: occult-tycoon, label: 神豪诡异, category: action-progression, pack: suspense-mystery, default_tags: [神豪, 诡异复苏] }
+      - { key: exorcist-trade, label: 民俗驱魔, category: suspense-mystery, pack: suspense-mystery, default_tags: [驱魔, 民俗], aliases: [驱魔探案综合] }
+      - { key: occult-tycoon, label: 神豪诡异, category: action-progression, pack: suspense-mystery, default_tags: [神豪, 诡异复苏], aliases: [诡豪神豪] }
 
   - key: infinite-flow
     label: 无限流·诸天
+    allowed_modernity: hybrid
     channel: [male]
     heat: 76
     category_default: otherworld-cross-system
@@ -283,6 +315,7 @@ genres:
 
   - key: light-novel
     label: 轻小说·二次元
+    allowed_modernity: hybrid
     channel: [general]
     heat: 55
     category_default: relationship-driven
@@ -290,7 +323,7 @@ genres:
     aliases: [二次元, 同人, 沙雕, 校园, 萌宠, 轻小说]
     sub_genres:
       - { key: doujin, label: 同人衍生, category: relationship-driven, pack: shezhu-bailan-comedy, default_tags: [同人, 沙雕] }
-      - { key: campus-daily, label: 校园日常, category: relationship-driven, pack: romance-tension-growth, default_tags: [校园, 日常], aliases: [校园] }
+      - { key: campus-daily, label: 校园日常, category: relationship-driven, pack: romance-tension-growth, default_tags: [校园, 日常], aliases: [校园, 校园群像] }
       - { key: comedy-absurd, label: 搞笑沙雕, category: urban-contemporary, pack: shezhu-bailan-comedy, default_tags: [沙雕, 摆烂, 反套路] }
       - { key: pet-raising, label: 萌宠养成, category: relationship-driven, pack: shezhu-bailan-comedy, default_tags: [萌宠, 团宠], aliases: [萌宠] }
 
@@ -311,6 +344,7 @@ genres:
 
   - key: xian-yan
     label: 现代言情
+    allowed_modernity: modern
     channel: [female]
     heat: 86
     category_default: relationship-driven
@@ -334,11 +368,12 @@ genres:
       - { key: xuanhuan-romance, label: 玄幻言情, category: relationship-driven, pack: romance-tension-growth, default_tags: [女强, 情劫] }
       - { key: xianxia-romance, label: 仙侠情缘, category: relationship-driven, pack: romance-tension-growth, default_tags: [修仙, 虐恋] }
       - { key: interstellar-romance, label: 星际幻言, category: relationship-driven, pack: romance-tension-growth, default_tags: [星际, 甜宠] }
-      - { key: western-fantasy-romance, label: 西幻罗曼, category: relationship-driven, pack: romance-tension-growth, default_tags: [西幻, 宿命], aliases: [西方奇幻, 西幻] }
+      - { key: western-fantasy-romance, label: 西幻罗曼, category: relationship-driven, pack: romance-tension-growth, default_tags: [西幻, 宿命], aliases: [西方奇幻, 西幻, 王庭宿命] }
       - { key: eastern-romance, label: 东方志怪言情, category: eastern-aesthetic, pack: eastern-aesthetic, default_tags: [国风, 志怪] }
 
   - key: female-growth
     label: 女性成长·大女主
+    allowed_modernity: modern
     channel: [female]
     heat: 78
     category_default: female-growth-ncp
@@ -347,11 +382,12 @@ genres:
     sub_genres:
       - { key: female-no-cp, label: 无CP大女主, category: female-growth-ncp, pack: romance-tension-growth, default_tags: [女强, 无CP, 事业逆袭] }
       - { key: female-court, label: 女强权谋, category: strategy-worldbuilding, pack: history-strategy, default_tags: [权谋, 女帝] }
-      - { key: female-revenge, label: 复仇逆袭, category: female-growth-ncp, pack: villainess-reincarnation, default_tags: [复仇, 重生, 打脸] }
+      - { key: female-revenge, label: 复仇逆袭, category: female-growth-ncp, pack: villainess-reincarnation, default_tags: [复仇, 重生, 打脸], aliases: [宫斗复仇] }
       - { key: female-career, label: 职场大女主, category: urban-contemporary, pack: romance-tension-growth, default_tags: [职场, 女强] }
 
   - key: pure-love
     label: 纯爱·百合
+    allowed_modernity: modern
     channel: [female]
     heat: 70
     category_default: relationship-driven
@@ -365,6 +401,7 @@ genres:
 
   - key: female-derivative
     label: 女频衍生·穿书快穿
+    allowed_modernity: hybrid
     channel: [female]
     heat: 80
     category_default: otherworld-cross-system
@@ -378,6 +415,7 @@ genres:
   # ── 通用 / 现实 ───────────────────────────────────────────────────────────
   - key: realistic
     label: 现实
+    allowed_modernity: modern
     channel: [general]
     heat: 60
     category_default: urban-contemporary
@@ -388,3 +426,103 @@ genres:
       - { key: industry-workplace, label: 行业职场, category: urban-contemporary, pack: urban-power-reversal, default_tags: [职场, 商战] }
       - { key: family-saga, label: 家庭伦理, category: relationship-driven, pack: romance-tension-growth, default_tags: [家庭, 年代文] }
       - { key: startup-business, label: 创业商战, category: base-building, pack: urban-power-reversal, default_tags: [创业, 重生, 商战] }
+
+  # ── English-market genres ────────────────────────────────────────────────
+  # 24 of the 62 preset cards are `language: en` and the UI renders them
+  # (novel_quickstart.html branches on isEnglishGenre), but the taxonomy was
+  # zh-only, so every English card failed to resolve → build_genre_intent_contract
+  # raised → the book was created with NO genre intent contract at all. That cost
+  # them the whole contract layer: the model was free to overwrite project.genre
+  # (apply_book_spec only defers to a contract that exists), and tone_preference —
+  # which reaches the writer through the contract — was dropped on the floor.
+  #
+  # Declared straight from the cards themselves (genre / sub_genre / prompt_pack_key
+  # are the cards' own fields), so the catalog and the taxonomy cannot drift apart.
+  # `channel` is intentionally empty: 男频/女频 is a zh-market split and these
+  # genres must not appear in that picker. Card authors shipped some genre labels
+  # twice (Sci-Fi vs Science Fiction, Mystery vs Mystery/Thriller); those collapse
+  # into one entry each with the variant kept as an alias.
+  - key: en-romance
+    label: Romance
+    allowed_modernity: modern
+    heat: 82
+    category_default: relationship-driven
+    pack_default: enemies-to-lovers
+    aliases: [romance, contemporary romance]
+    sub_genres:
+      - { key: en-dark-romance, label: Dark Romance, category: relationship-driven, pack: dark-romance, default_tags: [morally-grey, power-imbalance] }
+      - { key: en-forced-proximity, label: Forced Proximity, category: relationship-driven, pack: enemies-to-lovers, default_tags: [enemies-to-lovers, forced-proximity] }
+      - { key: en-reverse-harem, label: Multiple Love Interests, category: relationship-driven, pack: reverse-harem, default_tags: [reverse-harem, why-choose] }
+      - { key: en-mafia-romance, label: Dark & Dangerous, category: relationship-driven, pack: mafia-romance, default_tags: [mafia, touch-her-and-die] }
+      - { key: en-paranormal-romance, label: Paranormal, category: relationship-driven, pack: paranormal-romance, default_tags: [paranormal, fated-mates] }
+      - { key: en-slow-burn, label: Slow Burn, category: relationship-driven, pack: enemies-to-lovers, default_tags: [slow-burn, unrequited-love] }
+  - key: en-fantasy-romance
+    label: Fantasy Romance
+    heat: 84
+    category_default: relationship-driven
+    pack_default: romantasy
+    aliases: [romantasy]
+    sub_genres:
+      - { key: en-fae-chosen-one, label: Fae & Chosen One, category: relationship-driven, pack: romantasy, default_tags: [fae, chosen-one] }
+  - key: en-fantasy
+    label: Fantasy
+    heat: 80
+    category_default: action-progression
+    pack_default: litrpg-progression
+    aliases: [high fantasy]
+    sub_genres:
+      - { key: en-litrpg, label: GameLit / Progression, category: action-progression, pack: litrpg-progression, default_tags: [litrpg, weak-to-strong] }
+      - { key: en-cozy-fantasy, label: Low-Stakes Comfort, category: relationship-driven, pack: cozy-fantasy, default_tags: [cozy, slice-of-life] }
+      - { key: en-epic-fantasy, label: Multi-POV Epic, category: strategy-worldbuilding, pack: epic-fantasy, default_tags: [multi-pov, political-intrigue] }
+      - { key: en-ya-fantasy, label: YA Fantasy, category: action-progression, pack: romantasy, default_tags: [young-adult, academy] }
+      - { key: en-portal-fantasy, label: Portal/Isekai, category: otherworld-cross-system, pack: litrpg-progression, default_tags: [portal-fantasy, isekai] }
+      - { key: en-cultivation-western, label: Cultivation/Progression, category: action-progression, pack: xianxia-upgrade-core, default_tags: [cultivation, weak-to-strong] }
+      - { key: en-monster-evolution, label: Non-Human MC, category: action-progression, pack: litrpg-progression, default_tags: [monster-evolution, antihero] }
+  - key: en-gamelit
+    label: GameLit
+    allowed_modernity: hybrid
+    heat: 76
+    category_default: otherworld-cross-system
+    pack_default: litrpg-progression
+    aliases: [litrpg]
+    sub_genres:
+      - { key: en-gamelit-isekai, label: Isekai Portal Fantasy, category: otherworld-cross-system, pack: litrpg-progression, default_tags: [isekai, litrpg] }
+  - key: en-urban-fantasy
+    label: Urban Fantasy
+    allowed_modernity: modern
+    heat: 74
+    category_default: urban-contemporary
+    pack_default: urban-power-reversal
+    sub_genres:
+      - { key: en-hidden-world, label: Hidden World, category: urban-contemporary, pack: urban-power-reversal, default_tags: [hidden-world, secret-identity] }
+  - key: en-scifi
+    label: Science Fiction
+    allowed_modernity: modern
+    heat: 72
+    category_default: science-fiction-progression
+    pack_default: space-opera
+    aliases: [Sci-Fi, sci fi, scifi]
+    sub_genres:
+      - { key: en-space-opera, label: Interstellar Adventure, category: science-fiction-progression, pack: space-opera, default_tags: [space-opera, found-family] }
+      - { key: en-military-scifi, label: Military Sci-Fi, category: science-fiction-progression, pack: scifi-starwar, default_tags: [military-scifi, political-intrigue] }
+      - { key: en-post-apocalyptic, label: Post-Apocalyptic, category: science-fiction-progression, pack: apocalypse-supply-chain, default_tags: [post-apocalyptic, survival-game] }
+      - { key: en-superhero, label: Superhero, category: action-progression, pack: urban-power-reversal, default_tags: [superhero, secret-identity] }
+  - key: en-mystery
+    label: Mystery
+    allowed_modernity: modern
+    heat: 70
+    category_default: suspense-mystery
+    pack_default: cozy-mystery
+    aliases: [Mystery/Thriller]
+    sub_genres:
+      - { key: en-cozy-mystery, label: Amateur Sleuth, category: suspense-mystery, pack: cozy-mystery, default_tags: [cozy-mystery, amateur-sleuth] }
+      - { key: en-police-procedural, label: Police Procedural, category: suspense-mystery, pack: suspense-mystery, default_tags: [police-procedural, unreliable-narrator] }
+  - key: en-thriller
+    label: Thriller
+    allowed_modernity: modern
+    heat: 70
+    category_default: suspense-mystery
+    pack_default: psychological-thriller
+    sub_genres:
+      - { key: en-domestic-suspense, label: Domestic Suspense, category: suspense-mystery, pack: psychological-thriller, default_tags: [domestic-suspense, unreliable-narrator] }
+      - { key: en-political-conspiracy, label: Political Conspiracy, category: suspense-mystery, pack: suspense-mystery, default_tags: [conspiracy, political-intrigue] }

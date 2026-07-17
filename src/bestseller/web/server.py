@@ -988,6 +988,26 @@ def _genre_taxonomy_payload() -> dict[str, object]:
     }
 
 
+def _channel_of_genre(genre: str | None) -> str | None:
+    """Derive the reader channel from the taxonomy for a free-form genre string.
+
+    Every taxonomy genre carries exactly one channel, so the channel is a pure
+    function of the genre. The legacy preset path used to hardcode ``None``
+    here, which left ``contract.channel_key`` empty for every preset-created
+    book. Best-effort: returns None when the genre does not resolve.
+    """
+
+    try:
+        from bestseller.services.genre_taxonomy import _resolve_genre  # noqa: PLC0415
+
+        resolved = _resolve_genre(genre)
+        if resolved is not None and resolved.channel:
+            return str(resolved.channel[0])
+    except Exception:  # pragma: no cover - never block creation on this
+        logger.debug("channel derivation failed for genre=%r", genre, exc_info=True)
+    return None
+
+
 def _genre_preset_from_selection(selection: dict) -> object:
     """Build an ephemeral GenrePreset from a canonical taxonomy selection.
 
@@ -3874,24 +3894,51 @@ class WebTaskManager:
             {"story_enhancers": raw_enhancers} if isinstance(raw_enhancers, dict) else {}
         )
         audience_orientation = str(payload.get("audience_orientation") or "").strip().lower() or None
-        contract = (
-            contract_from_selection(
-                selection,
-                audience_orientation=audience_orientation,
-                narrative_scale=str(payload.get("narrative_scale") or "").strip() or None,
-                tone_preference=str(payload.get("tone_preference") or "").strip() or None,
-                enhancers=selected_enhancers,
+        _narrative_scale = str(payload.get("narrative_scale") or "").strip() or None
+        _tone_preference = str(payload.get("tone_preference") or "").strip() or None
+        try:
+            contract = (
+                contract_from_selection(
+                    selection,
+                    audience_orientation=audience_orientation,
+                    narrative_scale=_narrative_scale,
+                    tone_preference=_tone_preference,
+                    enhancers=selected_enhancers,
+                )
+                if selection is not None
+                else build_genre_intent_contract(
+                    resolve_selection(
+                        _channel_of_genre(genre_preset.genre),
+                        genre_preset.genre,
+                        genre_preset.sub_genre,
+                        [],
+                    ),
+                    source="legacy_inferred",
+                    audience_orientation=audience_orientation,
+                    narrative_scale=_narrative_scale,
+                    tone_preference=_tone_preference,
+                    enhancers=selected_enhancers,
+                )
             )
-            if selection is not None
-            else build_genre_intent_contract(
-                resolve_selection(None, genre_preset.genre, genre_preset.sub_genre, []),
-                source="legacy_inferred",
-                audience_orientation=audience_orientation,
-                narrative_scale=str(payload.get("narrative_scale") or "").strip() or None,
-                tone_preference=str(payload.get("tone_preference") or "").strip() or None,
-                enhancers=selected_enhancers,
+        except ValueError:
+            # Safety net only: every shipped preset now resolves (the taxonomy
+            # covers both markets, and test_every_preset_card_resolves_into_a_genre_contract
+            # keeps it that way). It stays because a free-form genre typed through
+            # the API must not 500 the whole creation.
+            #
+            # Landing here is a real loss, not a graceful degrade: with no contract
+            # the model is free to overwrite project.genre (apply_book_spec only
+            # defers to a contract that exists) and tone_preference never reaches
+            # the writer, since it travels via the contract. So: fix the taxonomy,
+            # do not let cards fall in here.
+            logger.warning(
+                "genre intent contract unavailable (genre=%r sub=%r); "
+                "falling back to contract-less legacy routing",
+                getattr(genre_preset, "genre", None),
+                getattr(genre_preset, "sub_genre", None),
+                exc_info=True,
             )
-        )
+            contract = None
 
         # Resolve chapter count
         chapter_count = int(payload.get("chapter_count") or 0)
@@ -3965,6 +4012,19 @@ class WebTaskManager:
         # otherwise the heat-search/methodology agents let the model grow
         # genre-fitting concepts naturally. See memory: shuangwen-fusion-switch.
         explicit_creative_key = str(payload.get("creative_key") or "").strip()
+        if not explicit_creative_key:
+            # The quickstart UI never sends `creative_key` — it sends the very same
+            # value under `story_enhancers.creativity_direction` (identical key
+            # space: genre-synthesis / cross-genre-friction /
+            # distilled-mechanism-remix / anti-cliche-opening). Without this bridge
+            # `creative_direction` was always None, so the real GenreCreativeDirection
+            # engine — stance / conflict_engine / opening_hook / novelty_pressure /
+            # anti_cliche_guardrails, all derived from the genre's OWN pack — was
+            # unreachable, and the user's 创意方向 pick degraded into a bare label
+            # string echoed in six prompts with nothing behind it.
+            explicit_creative_key = str(
+                getattr(selected_enhancers, "creativity_direction", "") or ""
+            ).strip()
         creative_direction = (
             get_genre_creative_direction(genre_key, explicit_creative_key)
             if (is_new_project and explicit_creative_key)
@@ -4053,7 +4113,11 @@ class WebTaskManager:
                 concept_bundle.model_dump(mode="json") if concept_bundle is not None else {}
             ),
             "user_hints": creative_hints,
-            "genre_intent_contract": contract.model_dump(mode="json"),
+            # contract=None is the documented fail-open for unresolvable
+            # selections; contract_from_payload treats {} as contract-less.
+            "genre_intent_contract": (
+                contract.model_dump(mode="json") if contract is not None else {}
+            ),
             # Enable AI conception for new projects (not resume)
             "_run_conception": is_new_project,
             "_genre_key": genre_key,
@@ -4089,7 +4153,9 @@ class WebTaskManager:
         task["quickstart_meta"] = {
             "creation_mode": creation_mode,
             "genre_key": genre_key,
-            "genre_intent_contract": contract.model_dump(mode="json"),
+            "genre_intent_contract": (
+                contract.model_dump(mode="json") if contract is not None else {}
+            ),
             "genre_name": genre_preset.name,
             "heat_domains": genre_preset.heat_domains,
             "reader_rewards": genre_preset.reader_rewards,

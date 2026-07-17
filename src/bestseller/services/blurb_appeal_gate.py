@@ -659,7 +659,7 @@ _SUGGESTIONS: dict[str, str] = {
     "open_loop_end": "结尾换成开放式悬念问句，绝不剧透结局",
     "genre_signal": "让书名/标签/简介的题材信号一致，避免互相打架",
     "concreteness": "给主角具名或第一人称，加入具体数字/地点/物件",
-    "emotion_charge": "把退婚/背叛/重生等高唤起情绪事件提到开头",
+    "emotion_charge": "把本题材的高唤起情绪事件（冲突/危机/逆转/情感爆点）提到开头",
     "adjective_thrift": "减少形容词堆砌，改用强动词驱动",
     "length_format": "把简介长度调进平台字数带并分段",
     "comprehensibility": "删掉生造黑话/编号/系统词,换成新读者一眼能懂的大白话",

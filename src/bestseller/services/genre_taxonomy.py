@@ -54,6 +54,8 @@ class SubGenre(BaseModel, frozen=True):
     power_system: str | None = None
     default_tags: tuple[str, ...] = ()
     aliases: tuple[str, ...] = ()
+    # "genre_native" | "modern" | "hybrid"; None = inherit from the parent genre.
+    allowed_modernity: str | None = None
 
 
 class Genre(BaseModel, frozen=True):
@@ -65,6 +67,10 @@ class Genre(BaseModel, frozen=True):
     pack_default: str | None = None
     aliases: tuple[str, ...] = ()
     sub_genres: tuple[SubGenre, ...] = ()
+    # Which ontology this genre may natively use. Declared here (data) instead of
+    # hardcoded in genre_intent_contract, where a 2-line check covered only 都市
+    # and left 悬疑推理 forbidden from 法医/尸检 — its own core vocabulary.
+    allowed_modernity: str | None = None
 
 
 class GenreTaxonomy(BaseModel, frozen=True):
@@ -86,6 +92,13 @@ class ResolvedSelection(BaseModel, frozen=True):
     pack: str | None = None
     power_system: str | None = None
     tags: tuple[str, ...] = ()
+    # The sub-genre's own default_tags, kept separate from the user's picks so
+    # downstream prompts can stop presenting them as "the user explicitly chose
+    # this". ``tags`` stays the merged list for routing/back-compat.
+    default_tags: tuple[str, ...] = ()
+    user_tags: tuple[str, ...] = ()
+    # Resolved from sub-genre → genre declaration; None = caller's default.
+    allowed_modernity: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -146,12 +159,35 @@ def get_genre(key: str | None) -> Genre | None:
 
 
 def get_sub_genre(genre_key: str | None, sub_key: str | None) -> SubGenre | None:
+    """Resolve a sub-genre by canonical key, display label, or alias.
+
+    ``resolve_selection``'s docstring and the REST schema both promise that
+    genre/sub_genre accept "canonical keys **or free-form labels**". Matching
+    only ``sub.key`` silently dropped every label-based caller — the 62 preset
+    cards (``server.py`` legacy path), the CLI, and the REST API all pass the
+    Chinese label — and took the sub-genre's ``pack`` / ``power_system`` /
+    ``default_tags`` down with it (37/62 presets resolved sub_genre=None).
+    Key wins over label wins over alias, so canonical keys stay authoritative.
+    """
+
     genre = get_genre(genre_key)
     if genre is None or not sub_key:
         return None
+    probe = str(sub_key).strip()
+    if not probe:
+        return None
+    lowered = probe.lower()
     for sub in genre.sub_genres:
-        if sub.key == sub_key:
+        if sub.key == probe or sub.key.lower() == lowered:
             return sub
+    for sub in genre.sub_genres:
+        if sub.label.strip() == probe or sub.label.strip().lower() == lowered:
+            return sub
+    for sub in genre.sub_genres:
+        for alias in sub.aliases:
+            cleaned = str(alias).strip()
+            if cleaned and (cleaned == probe or cleaned.lower() == lowered):
+                return sub
     return None
 
 
@@ -400,12 +436,44 @@ def is_known_tag(value: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_genre(genre: str | None) -> Genre | None:
-    """Resolve a genre identifier that may be a key OR a free-form string."""
-    direct = get_genre(genre)
-    if direct is not None:
-        return direct
-    return get_genre(canonicalize(genre))
+def _resolve_genre(genre: str | None, sub_genre: str | None = None) -> Genre | None:
+    """Resolve a genre identifier that may be a key OR a free-form string.
+
+    ``sub_genre`` participates in canonicalisation — ``canonicalize`` is built to
+    take the pair, and some presets only resolve through the combination
+    (青春成长 alone → None; 青春成长 + 校园群像 → light-novel).
+
+    But handing both to ``canonicalize`` at once lets any stray token inside a
+    free-form sub-label outvote the genre the user actually picked: 惊悚灵异 +
+    驱魔探案综合 → suspense (「探案」 wins), 历史宫廷 + 宫廷悬疑 → suspense. The
+    taxonomy pick silently not taking effect is the very complaint this pass is
+    about. Yet the sub sometimes *should* win: 奇幻冒险 + 无限闯关 → infinite-flow
+    is right, because 无限闯关 is a real sub-genre that xuanhuan does not own.
+
+    The line between those two is whether the sub is a taxonomy citizen:
+
+    * genre alone resolves, and owns the sub  → genre (nothing to refine)
+    * genre alone resolves, sub is a real sub-genre of another genre → that
+      genre (the sub is more specific, and it is a declared citizen)
+    * genre alone resolves, sub is just a free-form label → genre (a label must
+      never outvote the pick)
+    * genre alone resolves to nothing → let the pair rescue it
+      (青春成长 → None; 青春成长 + 校园群像 → light-novel)
+    """
+
+    base = get_genre(genre) or get_genre(canonicalize(genre, None))
+    if base is None:
+        return get_genre(canonicalize(genre, sub_genre))
+    if not sub_genre or get_sub_genre(base.key, sub_genre) is not None:
+        return base
+    paired = get_genre(canonicalize(genre, sub_genre))
+    if (
+        paired is not None
+        and paired.key != base.key
+        and get_sub_genre(paired.key, sub_genre) is not None
+    ):
+        return paired
+    return base
 
 
 def resolve_selection(
@@ -421,9 +489,13 @@ def resolve_selection(
     ``prompt_pack``, the merged tag list, and the power system — everything the
     project record and downstream routers need.
     """
-    g = _resolve_genre(genre)
+    g = _resolve_genre(genre, sub_genre)
     sub = get_sub_genre(g.key, sub_genre) if g is not None else None
 
+    # ``genre_str`` is deliberately the MOST SPECIFIC label (sub-genre when one
+    # resolved) — it is the composed display/routing string and is asserted as
+    # such by the taxonomy tests. Consumers that need the parent must read
+    # ``genre_key`` and look the genre up (see writing_presets.synthesize_genre_preset).
     genre_str = (sub.label if sub else (g.label if g else (genre or ""))).strip()
     sub_str = sub.label if sub else None
     category = (sub.category if sub and sub.category else None) or (
@@ -432,11 +504,16 @@ def resolve_selection(
     pack = (sub.pack if sub and sub.pack else None) or (g.pack_default if g else None)
     power_system = sub.power_system if sub else None
 
+    sub_defaults = [t.strip() for t in (sub.default_tags if sub else ()) if (t or "").strip()]
+    picked = [t.strip() for t in (tags or []) if (t or "").strip()]
     merged: list[str] = []
-    for tag in [*(list(sub.default_tags) if sub else []), *(list(tags or []))]:
-        cleaned = (tag or "").strip()
-        if cleaned and cleaned not in merged:
-            merged.append(cleaned)
+    for tag in [*sub_defaults, *picked]:
+        if tag not in merged:
+            merged.append(tag)
+
+    modernity = (sub.allowed_modernity if sub else None) or (
+        g.allowed_modernity if g else None
+    )
 
     return ResolvedSelection(
         channel=channel,
@@ -448,4 +525,7 @@ def resolve_selection(
         pack=pack,
         power_system=power_system,
         tags=tuple(merged),
+        default_tags=tuple(dict.fromkeys(sub_defaults)),
+        user_tags=tuple(dict.fromkeys(picked)),
+        allowed_modernity=modernity,
     )

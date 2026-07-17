@@ -266,3 +266,117 @@ def test_low_llm_scores_block_expansion(monkeypatch):
     v = asyncio.run(evaluate_logline_gate(None, None, logline="折寿查案找凶手", genre="都市"))
     assert v.action is LoglineAction.REJECT  # 动机 1.8 < reject_floor
     assert v.llm_used
+
+
+# ---------------------------------------------------------------------------
+# REGENERATE verdict consumption (2026-07-16). The gate's own semantics say
+# regenerate = "偏弱但可修 → 回炉重写卖点（有界）", and its fix_directives are
+# written as rewrite instructions — yet conception treated ANY non-EXPAND as
+# instant task death, so the directives were never consumed and creation kept
+# failing on salvageable concepts (real run: overall 4.38, regenerate → dead).
+# ---------------------------------------------------------------------------
+import asyncio as _asyncio
+
+from bestseller.services.logline_gate import LoglineAction, LoglineGateVerdict
+
+
+def _verdict(action: LoglineAction, overall: float = 4.0) -> LoglineGateVerdict:
+    return LoglineGateVerdict(
+        action=action,
+        scores={},
+        overall=overall,
+        reasons=("[不可预测|硬伤 3.0] 套路可一眼望到头",),
+        fix_directives=("埋一个读者预判不到的反转",),
+    )
+
+
+def _run_rescue(first, *, rewrites, rejudges, max_attempts=2):
+    from bestseller.services.conception import _logline_regen_rescue
+
+    calls = {"rewrite": 0, "judge": 0}
+
+    async def rewrite_fn(logline, verdict):
+        calls["rewrite"] += 1
+        if isinstance(rewrites, Exception):
+            raise rewrites
+        return rewrites[calls["rewrite"] - 1]
+
+    async def judge_fn(logline):
+        calls["judge"] += 1
+        return rejudges[calls["judge"] - 1]
+
+    verdict, logline, attempts = _asyncio.run(
+        _logline_regen_rescue(
+            verdict=first,
+            logline="旧的一句话",
+            max_attempts=max_attempts,
+            rewrite_fn=rewrite_fn,
+            judge_fn=judge_fn,
+        )
+    )
+    return verdict, logline, attempts, calls
+
+
+def test_reject_verdict_is_fatal_and_never_rewritten() -> None:
+    first = _verdict(LoglineAction.REJECT, overall=2.0)
+    verdict, logline, attempts, calls = _run_rescue(first, rewrites=[], rejudges=[])
+    assert verdict is first
+    assert logline == "旧的一句话"
+    assert attempts == 0
+    assert calls == {"rewrite": 0, "judge": 0}
+
+
+def test_regenerate_verdict_gets_rescued_to_expand() -> None:
+    first = _verdict(LoglineAction.REGENERATE, overall=4.4)
+    verdict, logline, attempts, _ = _run_rescue(
+        first,
+        rewrites=["新的一句话：不可逆行动+反制"],
+        rejudges=[_verdict(LoglineAction.EXPAND, overall=4.9)],
+    )
+    assert verdict.action is LoglineAction.EXPAND
+    assert logline == "新的一句话：不可逆行动+反制"
+    assert attempts == 1
+
+
+def test_rescue_exhausts_budget_then_blocks_with_best_verdict() -> None:
+    first = _verdict(LoglineAction.REGENERATE, overall=4.0)
+    verdict, logline, attempts, calls = _run_rescue(
+        first,
+        rewrites=["改一", "改二"],
+        rejudges=[
+            _verdict(LoglineAction.REGENERATE, overall=4.5),
+            _verdict(LoglineAction.REGENERATE, overall=4.2),
+        ],
+        max_attempts=2,
+    )
+    assert verdict.action is LoglineAction.REGENERATE
+    assert attempts == 2 and calls["rewrite"] == 2
+    # keep-best: the 4.5 verdict (and its logline) wins over both 4.0 and 4.2
+    assert verdict.overall == 4.5
+    assert logline == "改一"
+
+
+def test_rescue_fails_closed_when_rewrite_llm_errors() -> None:
+    first = _verdict(LoglineAction.REGENERATE, overall=4.0)
+    verdict, logline, attempts, _ = _run_rescue(
+        first, rewrites=RuntimeError("llm down"), rejudges=[]
+    )
+    assert verdict is first
+    assert logline == "旧的一句话"
+
+
+def test_rescue_escalation_to_reject_mid_loop_stops_immediately() -> None:
+    """A rewrite that makes things WORSE (re-judged reject) must not burn the
+    remaining budget — reject is fatal by definition."""
+
+    first = _verdict(LoglineAction.REGENERATE, overall=4.0)
+    verdict, logline, attempts, calls = _run_rescue(
+        first,
+        rewrites=["改一", "改二"],
+        rejudges=[_verdict(LoglineAction.REJECT, overall=1.0)],
+        max_attempts=2,
+    )
+    assert calls["rewrite"] == 1
+    # keep-best still returns the least-bad verdict (the original regenerate)
+    assert verdict.action is LoglineAction.REGENERATE
+    assert verdict.overall == 4.0

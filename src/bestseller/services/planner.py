@@ -7304,9 +7304,9 @@ def _antagonist_motive_profiles(*, is_en: bool) -> list[dict[str, str]]:
             },
             {
                 "axis": "private atonement",
-                "goal": "Recover one lost life even if the ritual bankrupts everyone else's future.",
-                "background": "Built their authority on a death they still cannot confess.",
-                "secret": "The promised resurrection will erase an innocent witness.",
+                "goal": "Undo one irreversible failure even if the attempt bankrupts everyone else's future.",
+                "background": "Built their authority on a mistake they still cannot confess.",
+                "secret": "The promised undoing will erase an innocent witness.",
             },
             {
                 "axis": "institutional dominion",
@@ -7329,10 +7329,10 @@ def _antagonist_motive_profiles(*, is_en: bool) -> list[dict[str, str]]:
             "secret": "保存着证据：最初的惨祸并非恶意造成，而是仁慈失控。",
         },
         {
-            "axis": "以命换命的执念",
-            "goal": "不惜献祭自身名声和资源，也要换回一个早该死去的人。",
-            "background": "如今的地位建立在一场不能承认的死亡之上。",
-            "secret": "所谓复生会抹掉一名无辜见证者的存在。",
+            "axis": "挽回不可逆的执念",
+            "goal": "不惜献祭自身名声和资源，也要抹平一桩自己造成的、不可挽回的重大过失。",
+            "background": "如今的地位建立在一桩不能承认的过错之上。",
+            "secret": "所谓的挽回会抹掉一名无辜见证者的存在。",
         },
         {
             "axis": "权柄吞并",
@@ -7353,10 +7353,10 @@ def _antagonist_motive_profiles(*, is_en: bool) -> list[dict[str, str]]:
             "secret": "自己的继承资格同样来自一桩被掩盖的禁忌联姻。",
         },
         {
-            "axis": "证据垄断",
-            "goal": "控制卷宗、证词和验尸结论，让真相只能按既定叙述流通。",
-            "background": "曾因一份公开证据失去全部盟友，学会先夺记录再夺人心。",
-            "secret": "最关键的原始证据一直藏在自己亲手封存的假案里。",
+            "axis": "话语垄断",
+            "goal": "控制记录、口径和结论，让真相只能按自己认可的版本流通。",
+            "background": "曾因一次公开真相失去全部盟友，学会先控叙述再控人心。",
+            "secret": "最关键的原始凭证一直藏在自己亲手抹去的一段过往里。",
         },
         {
             "axis": "名望献祭",
@@ -14133,6 +14133,29 @@ def _outline_chapter_positions(
         return ()
 
 
+def _project_locked_concept_text(project: ProjectModel) -> str:
+    """Concatenate THIS book's locked concept fields for intent/dominance checks.
+
+    Used to decide whether an anti-default-motif guard should be suppressed: if
+    the locked concept is *already* dominated by debt/death, the concept is
+    intentional (e.g. wuxia 灭门) and the guard must not fight it — it only
+    prevents drift on concepts that are NOT that theme.
+    """
+
+    meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    parts: list[Any] = [
+        project.title,
+        project.theme_statement,
+        project.dramatic_question,
+        meta.get("premise"),
+        meta.get("synopsis"),
+    ]
+    spine = meta.get("story_spine")
+    if isinstance(spine, dict):
+        parts += [spine.get("who"), spine.get("wants"), spine.get("question")]
+    return " ".join(str(p) for p in parts if p)
+
+
 def _append_category_context(
     user_prompt: str,
     project: ProjectModel,
@@ -14140,12 +14163,39 @@ def _append_category_context(
     category_key: str | None = None,
     is_en: bool = False,
 ) -> str:
-    """Append category reader promise, evolution summary, and anti-patterns to a prompt."""
+    """Append category reader promise, evolution summary, and anti-patterns to a prompt.
+
+    Also appends the anti-default-motif guardrails (debt-ledger + death-revival):
+    the planning layer previously had NO such guard, so world_spec / cast / outline
+    elaboration drifted the golden finger's cost into 账/债 and backstories into
+    借尸还魂/灭门 (evidence book「龙椅上坐着我亡夫」). This is the single hook every
+    non-kernel planner builder passes through.
+    """
+    from bestseller.services.anti_default_motif import (
+        anti_death_default_block,
+        anti_debt_block,
+        is_death_revival_dominated,
+        is_debt_dominated,
+    )
     from bestseller.services.novel_categories import (
         render_category_anti_patterns,
         render_category_challenge_evolution_summary,
         render_category_reader_promise,
     )
+
+    # Suppress a guard only when the LOCKED concept is already dominated by that
+    # theme (intentional / genre-appropriate) — otherwise apply, to prevent drift.
+    _concept_text = _project_locked_concept_text(project)
+    _guards = [
+        block
+        for suppress, block in (
+            (is_debt_dominated(_concept_text), anti_debt_block(is_en=is_en)),
+            (is_death_revival_dominated(_concept_text), anti_death_default_block(is_en=is_en)),
+        )
+        if not suppress
+    ]
+    if _guards:
+        user_prompt += "".join(_guards)
 
     cat = get_novel_category(category_key) if category_key else None
     if cat is None:
@@ -14542,11 +14592,11 @@ _WORLD_SPEC_COUNTER_EXAMPLES_ZH: str = (
     '  "forbidden_zones": [{"name": "...", "rules": "..."}]        ← 错误：必须是字符串\n'
     '  "history_key_events": [{"name": "...", "relevance": "..."}] ← 错误：字段名必须是 event 不是 name\n'
     '  "rules": [{"rule_name": "...", "description": {"summary": "..."}}] ← 错误：description 必须是字符串\n'
-    "\n【正确写法示例】\n"
-    '  "power_structure": "青萝镇以王李两家世代联盟为权力核心，外加祖庭监督。王家负责血契，李家负责器灵契约，祖庭仲裁。"\n'
-    '  "forbidden_zones": "封印禁地（镇东古井之下）、器宫核心（百年未启）、魂池（仅三年一开）。"\n'
-    '  "history_key_events": [{"event": "器灵初现", "relevance": "奠定血契传统"}, {"event": "妖族之战", "relevance": "建立祖庭秩序"}]\n'
-    '  "rules": [{"rule_name": "血契", "description": "人与器灵须以血立约，违约代价为血脉永封"}]\n'
+    "\n【正确写法示例（占位符按本书题材/设定替换，勿照抄）】\n"
+    '  "power_structure": "全城权力三方制衡：一方掌合法性、一方掌资源门路、一方掌武力与风险，彼此牵制。"\n'
+    '  "forbidden_zones": "封存旧址（多年前一场变故后封锁）、核心禁区（常年不开）、季节性禁地（一年只开一次）。"\n'
+    '  "history_key_events": [{"event": "〈一场改变格局的旧变故〉", "relevance": "奠定了当下的秩序与禁忌"}]\n'
+    '  "rules": [{"rule_name": "〈本书核心规则名〉", "description": "规则的具体内容与违反的具体代价（写实，不空泛）"}]\n'
 )
 
 _WORLD_SPEC_COUNTER_EXAMPLES_EN: str = (
@@ -14555,33 +14605,33 @@ _WORLD_SPEC_COUNTER_EXAMPLES_EN: str = (
     '  "forbidden_zones": [{"name": "...", "rules": "..."}]        WRONG — must be a string\n'
     '  "history_key_events": [{"name": "...", "relevance": "..."}] WRONG — key must be \'event\', not \'name\'\n'
     '  "rules": [{"rule_name": "...", "description": {"summary": "..."}}] WRONG — description must be string\n'
-    "\n[Correct shapes]\n"
-    '  "power_structure": "The Crown holds legitimacy, the Guild holds access, the Spire holds risk — each balanced against the others."\n'
-    '  "forbidden_zones": "The Deep Archive (sealed since the Second Fracture), the Old Well below East Gate, the Blooming Grove after solstice."\n'
-    '  "history_key_events": [{"event": "The Second Fracture", "relevance": "Triggered the current oath bindings"}]\n'
-    '  "rules": [{"rule_name": "Blood Covenant", "description": "Every bonded pair shares wounds across the bond — breaking the bond kills both"}]\n'
+    "\n[Correct shapes — replace the ⟨placeholders⟩ with THIS book's own content]\n"
+    '  "power_structure": "Three powers check each other: one holds legitimacy, one holds access to resources, one holds force and risk."\n'
+    '  "forbidden_zones": "A sealed old site (locked after a past disaster), a core off-limits area (never opened), a seasonal forbidden ground (opens once a year)."\n'
+    '  "history_key_events": [{"event": "⟨a past upheaval that reshaped the order⟩", "relevance": "Set the present order and taboos"}]\n'
+    '  "rules": [{"rule_name": "⟨this book\'s core rule name⟩", "description": "The concrete rule and the concrete cost of breaking it (specific, not vague)"}]\n'
 )
 
 _CAST_SPEC_COUNTER_EXAMPLES_ZH: str = (
     "【严禁输出以下错误结构】\n"
-    '  "protagonist": {"王青峰": {"role": "protagonist", "age": 20}} ← 错误：不要以角色名做外层 key 包住角色对象\n'
-    '  "supporting_cast": {"师父": {...}, "青儿": {...}}              ← 错误：必须是数组，不是 dict\n'
-    '  "conflict_map": {"王青峰 vs 李墨白": {"conflict_type": "..."}} ← 错误：必须是数组\n'
-    "\n【正确写法示例】\n"
-    '  "protagonist": {"name": "王青峰", "role": "protagonist", "age": 20, ...}\n'
-    '  "supporting_cast": [{"name": "师父", "role": "mentor", ...}, {"name": "青儿", "role": "sister", ...}]\n'
-    '  "conflict_map": [{"character_a": "王青峰", "character_b": "李墨白", "conflict_type": "血脉之争", "trigger_condition": "初遇之际"}]\n'
+    '  "protagonist": {"〈主角名〉": {"role": "protagonist", "age": 20}} ← 错误：不要以角色名做外层 key 包住角色对象\n'
+    '  "supporting_cast": {"〈配角一〉": {...}, "〈配角二〉": {...}}      ← 错误：必须是数组，不是 dict\n'
+    '  "conflict_map": {"〈主角〉 vs 〈对手〉": {"conflict_type": "..."}} ← 错误：必须是数组\n'
+    "\n【正确写法示例（〈占位符〉按本书自取角色名，勿照抄）】\n"
+    '  "protagonist": {"name": "〈主角名〉", "role": "protagonist", "age": 20, ...}\n'
+    '  "supporting_cast": [{"name": "〈导师名〉", "role": "mentor", ...}, {"name": "〈至亲名〉", "role": "sister", ...}]\n'
+    '  "conflict_map": [{"character_a": "〈主角名〉", "character_b": "〈对手名〉", "conflict_type": "〈本书核心冲突类型〉", "trigger_condition": "〈触发情境〉"}]\n'
 )
 
 _CAST_SPEC_COUNTER_EXAMPLES_EN: str = (
     "[Forbidden output shapes]\n"
-    '  "protagonist": {"Elena": {"role": "protagonist", ...}}  WRONG — do not wrap the object with the character name as outer key\n'
-    '  "supporting_cast": {"Mentor": {...}, "Rival": {...}}    WRONG — must be an array, not a dict\n'
-    '  "conflict_map": {"Elena vs Kell": {"conflict_type": "..."}} WRONG — must be an array\n'
-    "\n[Correct shapes]\n"
-    '  "protagonist": {"name": "Elena", "role": "protagonist", ...}\n'
-    '  "supporting_cast": [{"name": "Marin", "role": "mentor", ...}, {"name": "Kell", "role": "rival", ...}]\n'
-    '  "conflict_map": [{"character_a": "Elena", "character_b": "Kell", "conflict_type": "bloodline rivalry", "trigger_condition": "first meeting"}]\n'
+    '  "protagonist": {"⟨hero name⟩": {"role": "protagonist", ...}}  WRONG — do not wrap the object with the character name as outer key\n'
+    '  "supporting_cast": {"⟨ally 1⟩": {...}, "⟨ally 2⟩": {...}}    WRONG — must be an array, not a dict\n'
+    '  "conflict_map": {"⟨hero⟩ vs ⟨rival⟩": {"conflict_type": "..."}} WRONG — must be an array\n'
+    "\n[Correct shapes — replace ⟨placeholders⟩ with THIS book's own names]\n"
+    '  "protagonist": {"name": "⟨hero name⟩", "role": "protagonist", ...}\n'
+    '  "supporting_cast": [{"name": "⟨mentor name⟩", "role": "mentor", ...}, {"name": "⟨rival name⟩", "role": "rival", ...}]\n'
+    '  "conflict_map": [{"character_a": "⟨hero name⟩", "character_b": "⟨rival name⟩", "conflict_type": "⟨this book\'s core conflict type⟩", "trigger_condition": "⟨triggering situation⟩"}]\n'
 )
 
 
@@ -18273,6 +18323,16 @@ def _story_design_kernel_prompts(
             f"以下 fallback 是最低结构要求，请在此基础上做出本书独有设计：\n{_json_dumps(fallback_payload)}"
         )
     )
+    # Anti-debt guardrail (this builder already bans the death/family-trauma
+    # default above, but had no ledger ban) — suppressed only when the locked
+    # concept is genuinely debt-dominated.
+    from bestseller.services.anti_default_motif import (
+        anti_debt_block as _anti_debt_block,
+        is_debt_dominated as _is_debt_dominated,
+    )
+
+    if not _is_debt_dominated(_project_locked_concept_text(project)):
+        user_prompt += _anti_debt_block(is_en=is_en)
     # Inject the ideology (母题) kernel right after the premise so the worldview /
     # plot_tree / beat_schedule are read as serving the book's thematic spine,
     # not just its genre. Insert once, after the first occurrence of the premise.

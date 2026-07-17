@@ -47,6 +47,7 @@ SINGLE_BOOK_TOKENS: tuple[str, ...] = (
     "清水桥义庄",
     "蚀漏砚",
     "三短一长",
+    "沈清雅",
 )
 
 # ── src 豁免：这些文件里的私货 token 是"只匹配本书自身物料"的条件分支
@@ -291,4 +292,242 @@ def test_generation_neutral_surfaces_stay_debt_free() -> None:
         "债务/账本框架回流到题材中性的生成/规划面（方法论卡 / generic 语料 / "
         "母题库 / 规划节点树），会随 prompt 泄漏给所有题材的书。移进按题材隔离的"
         "块或换非金融隐喻：\n" + "\n".join(violations)
+    )
+
+
+# ── 注入根治回归网 (2026-07-14) —— 债务词银行同步 + 冷启动覆盖 + 死亡模板 ──────
+# 证据书「龙椅上坐着我亡夫」「替亡人落最后一笔」连撞两本死亡+讨账,根因是十几个
+# 注入面叠加。下面的网锁死修复点,防止回归。
+
+
+@pytest.mark.unit
+def test_debt_ledger_token_bank_stays_in_sync_and_covers_known_leaks() -> None:
+    """conception 复用 anti_default_motif 的债务词银行(单一事实源,防漂移)；
+    认账/讨账 必须在内——证据书 premise/world_model 用的正是这两个,旧词表漏了。"""
+
+    from bestseller.services import anti_default_motif, conception
+
+    assert conception._DEBT_LEDGER_TOKENS is anti_default_motif.DEBT_LEDGER_TOKENS
+    for tok in ("认账", "讨账", "欠账", "账本", "还债"):
+        assert tok in anti_default_motif.DEBT_LEDGER_TOKENS, f"缺债务词 {tok}"
+
+
+@pytest.mark.unit
+def test_cold_start_cliche_baseline_covers_action_progression() -> None:
+    """玄幻/仙侠/修仙/末日 全解析到 action-progression;冷启动(清库/首本)反俗套
+    avoid 清单不得为空,且必须含"死者归来/借尸还魂"这条(否则模型均值回归死亡模板)。"""
+
+    from bestseller.services.conception import _genre_cliche_baseline
+
+    for genre in ("玄幻", "东方玄幻", "仙侠", "修仙"):
+        base = _genre_cliche_baseline(genre, None)
+        assert base, f"{genre} 冷启动反俗套清单为空"
+        assert any(
+            ("借尸还魂" in str(e)) or ("死者归来" in str(e)) for e in base
+        ), f"{genre} 冷启动清单未覆盖死者归来/借尸还魂"
+
+
+@pytest.mark.unit
+def test_story_appeal_generic_lexicon_stays_free_of_death_words() -> None:
+    """死亡/灭门/绝症类词只许在题材专属词库;回流 generic 会奖励所有题材(含喜剧/
+    甜宠/治愈)的简介写死亡,造成跨题材同质化——债务词的死亡孪生。"""
+
+    data = yaml.safe_load((CONFIG_ROOT / "story_appeal.yaml").read_text(encoding="utf-8"))
+    generic = (data.get("lexicons", {}) or {}).get("generic", {}) if isinstance(data, dict) else {}
+    death_words = ("灭门", "被灭", "血海", "死局", "死亡", "绝症", "病危", "跳楼", "屠戮", "屠仙")
+    violations: list[str] = []
+    for key, value in (generic or {}).items():
+        for text in _iter_yaml_strings(value):
+            hits = [w for w in death_words if w in text]
+            if hits:
+                violations.append(f"lexicons.generic.{key}: {hits} in {text!r}")
+    assert not violations, "死亡/灭门词回流 generic 评分词库：\n" + "\n".join(violations)
+
+
+@pytest.mark.unit
+def test_genre_emotion_exemplars_do_not_lead_with_death() -> None:
+    """finalize 会把首个示例提到 synopsis 最前;xuanhuan/xianxia/generic 的首项
+    不得是灭门/血海/屠戮类死亡词,否则每本书都从死亡爆点起手(死者归来模板温床)。"""
+
+    data = yaml.safe_load((CONFIG_ROOT / "story_appeal.yaml").read_text(encoding="utf-8"))
+    ex = data.get("genre_emotion_exemplars", {}) if isinstance(data, dict) else {}
+    death_lead = ("灭门", "血海", "屠", "血仇", "灭宗", "屠仙")
+    for key in ("xuanhuan", "xianxia", "generic"):
+        items = ex.get(key) or [""]
+        first = str(items[0])
+        assert not any(
+            w in first for w in death_lead
+        ), f"{key} 情绪示例以死亡词领跑：{first}"
+
+
+@pytest.mark.unit
+def test_material_density_genre_packs_stay_free_of_ledger_framing() -> None:
+    """题材物料包(修仙升级 / 女频无CP,均由通用词触发写进整题材)不得用账本/账目/
+    记账/资源账/后账/欠条 框架——这是"修仙债务同质化"的物料源。qingnang 单书块
+    (SRC_ALLOWLIST 内、青囊+困魂镜+三族 三token门后)不在此网。"""
+
+    import json as _json
+
+    from bestseller.services import material_density
+
+    ledger = (
+        "账本", "账目", "账簿", "记账", "资源账", "境界账", "后账",
+        "欠条", "债务系统", "代价账本", "代价账卡", "记一笔",
+    )
+    specs = {
+        "xianxia_upgrade": material_density._xianxia_upgrade_pack_spec(),
+        "female_no_cp": material_density._female_no_cp_pack_spec(),
+    }
+    violations: list[str] = []
+    for name, spec in specs.items():
+        blob = _json.dumps(spec, default=str, ensure_ascii=False)
+        hits = [t for t in ledger if t in blob]
+        if hits:
+            violations.append(f"{name}: {hits}")
+    assert not violations, "题材物料包回流账本/债务框架：\n" + "\n".join(violations)
+
+
+@pytest.mark.unit
+def test_planner_shape_counter_examples_stay_genre_neutral() -> None:
+    """planner 的 world/cast "正确/错误结构示范"只教 JSON 形状,不得写死某题材内容
+    或具名角色(王青峰/李墨白/血契/器灵契约/妖族/祖庭/魂池/血脉之争/青萝镇)——否则
+    每本书的 world/cast prompt 都被这套修仙示范往修仙腔带。用 〈占位符〉 代替。"""
+
+    from bestseller.services import planner
+
+    forbidden = (
+        "王青峰", "李墨白", "血契", "器灵契约", "妖族", "祖庭", "魂池",
+        "血脉之争", "青萝镇", "Elena", "Kell", "bloodline rivalry", "Blood Covenant",
+    )
+    consts = (
+        planner._WORLD_SPEC_COUNTER_EXAMPLES_ZH,
+        planner._WORLD_SPEC_COUNTER_EXAMPLES_EN,
+        planner._CAST_SPEC_COUNTER_EXAMPLES_ZH,
+        planner._CAST_SPEC_COUNTER_EXAMPLES_EN,
+    )
+    violations = [tok for c in consts for tok in forbidden if tok in c]
+    assert not violations, (
+        "planner 形状示范里出现题材/单书具体内容（会把所有书往该题材带）：" + str(violations)
+    )
+
+
+# 单书参考包：其 spec 内容是那一本 demo 书的私有世界，只许被【本书专属标识】唤醒。
+_SINGLE_BOOK_PACK_IDS: frozenset[str] = frozenset(
+    {
+        "qingnang",
+        "english_romantasy",
+        "english_superhero_breaking_point",
+        "english_superhero_witness_protocol",
+        "female_no_cp_apocalypse",
+        "xianxia_upgrade",
+    }
+)
+
+# 裸题材词 / 体系通用术语 / 常见人名：任何一个都不足以证明"这就是那本书"。
+_NON_IDENTIFYING_TRIGGERS: frozenset[str] = frozenset(
+    {
+        # 修仙体系通用术语——几乎每本修仙书的设定里都有
+        "炼气", "筑基", "金丹", "元婴", "结丹", "灵根", "宗门", "杂役",
+        # 裸题材词
+        "仙侠升级", "宗门逆袭", "修仙", "仙侠", "玄幻", "末世", "末世异能",
+        "无cp", "无CP", "大女主", "romantasy", "fae", "chosen one",
+        "urban fantasy", "cultivation", "xianxia", "apocalypse",
+        # 常见人名
+        "maya", "cole", "kade", "elena", "sophie", "marcus",
+    }
+)
+
+
+def _single_book_pack_triggers() -> dict[str, list[str]]:
+    """从 `_select_material_pack` 的 AST 里提取 {pack_id: [触发词...]}。
+
+    只认 `if _has_any(hay, (...)): return "<pack_id>", ...` 这一种形状——它正是
+    全部单书路由的写法。用 AST 而非正则，改了写法会在这里显性失败而不是静默漏检。
+    """
+
+    source = (SRC_ROOT / "services" / "material_density.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    func = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_select_material_pack"
+    )
+    triggers: dict[str, list[str]] = {}
+    for node in ast.walk(func):
+        if not isinstance(node, ast.If) or not isinstance(node.test, ast.Call):
+            continue
+        call = node.test
+        if not (isinstance(call.func, ast.Name) and call.func.id == "_has_any"):
+            continue
+        if len(call.args) < 2 or not isinstance(call.args[1], ast.Tuple):
+            continue
+        returns = [n for n in node.body if isinstance(n, ast.Return)]
+        if not returns or not isinstance(returns[0].value, ast.Tuple):
+            continue
+        first = returns[0].value.elts[0]
+        if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+            continue
+        needles = [
+            e.value
+            for e in call.args[1].elts
+            if isinstance(e, ast.Constant) and isinstance(e.value, str)
+        ]
+        triggers.setdefault(first.value, []).extend(needles)
+    return triggers
+
+
+@pytest.mark.unit
+def test_single_book_pack_triggers_are_all_book_identifying() -> None:
+    """单书参考包的触发词必须条条都是【本书专属标识】。
+
+    修前 xianxia_upgrade 挂着 `炼气`(修仙一阶通用术语)+ 裸题材词 `仙侠升级`/`宗门逆袭`,
+    于是【每一本】修仙书都被灌进这一本参考书的私有世界(杂役峰/废灵根旧事/二十年前
+    旧事/三个月大考)——即"修仙题材跨书同质化"的物料源。english_romantasy 同理挂过
+    裸 `romantasy`/`fae`。样例输入的测试只能证伪已知输入,这条从源头锁住触发词本身。
+    """
+
+    triggers = _single_book_pack_triggers()
+    assert triggers, "未能从 _select_material_pack 提出任何触发词——路由写法变了，请更新本守卫"
+
+    violations: list[str] = []
+    for pack_id, needles in sorted(triggers.items()):
+        if pack_id not in _SINGLE_BOOK_PACK_IDS:
+            continue  # 题材级通用包(如 english_superhero_progression)本就该用题材词唤醒
+        for needle in needles:
+            if needle.strip().lower() in {t.lower() for t in _NON_IDENTIFYING_TRIGGERS}:
+                violations.append(f"{pack_id} ← {needle!r}")
+    assert not violations, (
+        "单书参考包被裸题材词/体系通用术语/常见人名唤醒 —— 任意同题材书都会被灌进"
+        "那一本 demo 书的私有世界。改用本书专属标识(书名/金手指专名/独有地名)：\n"
+        + "\n".join(violations)
+    )
+
+
+@pytest.mark.unit
+def test_single_book_material_packs_not_triggered_by_generic_names() -> None:
+    """单书参考包(青囊/Breaking Point/Witness Protocol/代价之鸢)绝不能被裸通用词或
+    常见人名(maya/cole/kade/末世异能/无CP/superhero)路由命中——否则任意带这些词的
+    书都会被灌进那一本 demo 书的世界(单书私货注入)。"""
+
+    from bestseller.services.material_density import _select_material_pack
+
+    generic_inputs = [
+        "一个叫 Maya 的女孩在末世异能无CP设定里挣扎求生",  # maya + 末世异能 + 无CP
+        "Cole is a superhero in an urban power fantasy",  # cole + superhero
+        "Kade must survive; a normal urban story",  # kade
+    ]
+    single_book_packs = {
+        "qingnang",
+        "english_superhero_breaking_point",
+        "english_superhero_witness_protocol",
+        "female_no_cp_apocalypse",
+    }
+    violations: list[str] = []
+    for text in generic_inputs:
+        pack_id, _ = _select_material_pack("proj-test", text)
+        if pack_id in single_book_packs:
+            violations.append(f"{text!r} → {pack_id}")
+    assert not violations, (
+        "通用词/常见人名路由命中了单书专属包（单书世界被注入无关书）：\n"
+        + "\n".join(violations)
     )

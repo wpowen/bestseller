@@ -3469,3 +3469,120 @@ def test_load_scene_context_raises_only_when_zero_drafts(monkeypatch):
 
     with pytest.raises(ValueError, match="does not have any draft"):
         asyncio.run(review_services._load_scene_context(FakeSession(), "demo", 1, 2))
+
+
+# ---------------------------------------------------------------------------
+# Dead keyword-echo axes (2026-07-15): subplot_presence / scene_sequel_alignment
+# collapse to their 0.3 base because they require the arc_label / signal term to
+# appear VERBATIM in prose. Well-dramatized prose never quotes planning labels,
+# so both axes measure nothing and permanently drag `overall` under the verdict
+# threshold — the same pathology contract_alignment already has a floor for.
+# ---------------------------------------------------------------------------
+
+
+def _dead_axis_scene() -> tuple[Any, Any, Any]:
+    scene = SimpleNamespace(
+        target_word_count=300,
+        scene_type="development",
+        participants=["裴铸"],
+        purpose={"story": "夺刀", "emotion": "压迫"},
+        scene_number=1,
+    )
+    chapter = SimpleNamespace(chapter_number=8, chapter_goal="夺刀")
+    draft = SimpleNamespace(
+        content_md=(
+            "裴铸把木刀横在身侧，刃朝外，左脚后撤半步。陈七第一刀劈下来，他没挡，"
+            "刃锋走空。陈七自己先踉跄了半步。裴铸贴上去，刀背点在他手背上，"
+            "不用力，只一点。陈七手一抖，木刀脱手落在沙地上。"
+        ),
+        word_count=300,
+    )
+    return scene, chapter, draft
+
+
+def test_subplot_presence_is_floored_when_arc_label_is_not_quoted_verbatim() -> None:
+    """A primary arc that the prose dramatizes but never literally names must not
+    pin subplot_presence at its 0.3 base."""
+
+    scene, chapter, draft = _dead_axis_scene()
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        subplot_schedule=[SimpleNamespace(prominence="primary", arc_label="噬法圣体觉醒线")],
+    )
+
+    assert result.scores.subplot_presence >= 0.5, (
+        "subplot_presence collapsed to its keyword-echo base; prose that dramatizes "
+        "an arc without quoting its label must earn the neutral floor"
+    )
+
+
+def test_scene_sequel_alignment_is_floored_when_signal_terms_absent() -> None:
+    """Prose that *shows* a fight without writing the word 冲突/对抗 must not pin
+    scene_sequel_alignment at its 0.3 base."""
+
+    scene, chapter, draft = _dead_axis_scene()
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        swain_pattern="action",
+    )
+
+    assert result.scores.scene_sequel_alignment >= 0.5, (
+        "scene_sequel_alignment collapsed to its keyword-echo base; show-don't-tell "
+        "action prose must earn the neutral floor"
+    )
+
+
+def test_dead_axis_floor_still_rewards_genuine_verbatim_coverage() -> None:
+    """The floor is a floor, not a flattening: real verbatim coverage still scores
+    above it, so the axis keeps its signal where it genuinely fires."""
+
+    scene, chapter, draft = _dead_axis_scene()
+    draft_hit = SimpleNamespace(
+        content_md=draft.content_md + "噬法圣体觉醒线在他识海里滚过一遍。",
+        word_count=320,
+    )
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft_hit,
+        settings=build_settings(),
+        subplot_schedule=[SimpleNamespace(prominence="primary", arc_label="噬法圣体觉醒线")],
+    )
+
+    assert result.scores.subplot_presence == pytest.approx(1.0), (
+        "verbatim arc coverage must still score above the floor"
+    )
+
+
+# ---------------------------------------------------------------------------
+# LLM verdict override noise (2026-07-15). The critic runs at temperature 0.25,
+# single sample; one stochastic "VERDICT: rewrite" could flip a deterministic
+# rule-based pass and reopen the rewrite loop. Votes must carry a majority.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("votes", "expected"),
+    [
+        (["rewrite"], True),                        # unanimous single vote
+        (["rewrite", "rewrite", "rewrite"], True),  # unanimous
+        (["rewrite", "rewrite", "pass"], True),     # 2/3 majority
+        (["rewrite", "pass", "pass"], False),       # 1/3 — the noise case
+        (["rewrite", "pass"], False),               # tie is not a majority
+        ([], False),                                # no usable votes
+        ([None, None], False),                      # unparseable responses
+        (["rewrite", None, "rewrite"], True),       # None ignored, 2/2 carry
+    ],
+)
+def test_rewrite_votes_carry_requires_majority(votes, expected) -> None:
+    assert review_services._rewrite_votes_carry(votes) is expected
+
+
+def test_verdict_confirm_samples_default_is_three() -> None:
+    assert review_services._scene_verdict_confirm_samples(build_settings()) == 3

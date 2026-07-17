@@ -278,7 +278,12 @@ async def test_attach_mechanism_dedup_populates_ctx_when_enabled() -> None:
         _settings(enabled=True),  # type: ignore[arg-type]
         ctx,
     )
-    assert [entry["title"] for entry in ctx["avoid_mechanisms"]] == ["宗债簿之书"]
+    titles = [entry["title"] for entry in ctx["avoid_mechanisms"]]
+    # Real recent book comes first; the action-progression cold-start cliché
+    # baseline (死者归来/灭门/废材/天道漏洞) is appended to fill the avoid-list so a
+    # near-empty DB still exerts anti-cliché pressure on this genre family.
+    assert titles[0] == "宗债簿之书"
+    assert any("死者归来" in t for t in titles)
 
 
 @pytest.mark.asyncio
@@ -300,7 +305,12 @@ async def test_attach_mechanism_dedup_fetch_failure_is_fail_open() -> None:
         _settings(enabled=True),  # type: ignore[arg-type]
         ctx,
     )
-    assert ctx.get("avoid_mechanisms", []) == []
+    # Fail-open = no crash. With the recent-book fetch failed, avoid_mechanisms
+    # degrades to the cold-start cliché baseline (never empty for a covered genre
+    # family), containing only static platform-cliché entries, no real book.
+    titles = [entry["title"] for entry in ctx.get("avoid_mechanisms", [])]
+    assert titles
+    assert all(t.startswith("（平台俗套") for t in titles)
 
 
 def test_pipeline_settings_default_enables_mechanism_dedup() -> None:

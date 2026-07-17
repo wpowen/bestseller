@@ -35,7 +35,10 @@ _MALE_SHUANG = ReaderPersona(
     demographics="18-35岁男性为主,三四五线/县城/乡镇;学生、蓝领、工厂、外卖快递网约车司机、服务业",
     knowledge="初中/高中/中专为主,非高知。不懂编程/赛博/'编译·算法·数据化·杠杆'等专业名词,出现即天书",
     fantasy="代入底层/被看不起的主角,获得逆天金手指,把踩过他、瞧不起他的人一个个打脸碾压、扮猪吃虎",
-    click_triggers=("废物/赘婿/被退婚/被瞧不起的开局", "觉醒金手指/外挂", "打脸碾压装逼", "越级杀人/逆袭", "复仇灭门旧仇"),
+    # 2026-07-14: 去掉常驻"复仇灭门旧仇"——它经 story_architect 脊柱锁被"≥2 必中"
+    # 硬塞进每一本男频书(含科幻/历史),是全平台死亡/灭门模板的头号注入面。换成
+    # 非死亡的爽点触发(扮猪吃虎/身份反差),复仇仍可由本书前提自然长出、不再强制。
+    click_triggers=("废物/赘婿/被退婚/被瞧不起的开局", "觉醒金手指/外挂", "打脸碾压装逼", "越级杀人/逆袭", "扮猪吃虎/身份反差碾压"),
     turnoffs=("专业名词/黑话堆砌看不懂", "主角窝囊太久不爽", "节奏慢/铺垫长", "文绉绉/烧脑", "需要背景知识"),
     benchmarks=("斗破苍穹", "诡秘之主", "大奉打更人", "十日终焉", "我在精神病院学斩神"),
     hook_formula="可代入的底层主角 + 憋屈到想骂街的处境(被踩/被弃/被羞辱) + 立刻能爽的承诺(金手指/逆袭/打脸,全大白话,零专名)",
@@ -180,9 +183,36 @@ def build_persona_blurb_messages(
     return system, user
 
 
+def render_channel_style_stamp(audience_orientation: str | None) -> str:
+    """Channel style stamp for PACKAGING producers (title / reader_promise / tone).
+
+    Real pilot book (2026-07-17): every option wired through and the golden
+    finger was a proper five-stage progression, yet the title and promise came
+    out literary-suspense — the channel reached the concept layer but never the
+    packaging layer. This stamp goes into the prompts that WRITE the packaging.
+    Returns "" for unknown/empty channels so callers concatenate blindly.
+    """
+
+    channel = str(audience_orientation or "").strip()
+    if channel in {"男频", "male"}:
+        return (
+            "【频道包装钢印 · 男频】书名与读者承诺必须直白有力：一眼看出金手指、逆袭点或"
+            "力量感，爽点前置到第一个短句；禁止含蓄留白、双重否定、文艺隐喻式书名"
+            "（如「不肯落笔」这类气质），承诺里要有可兑现的变强/翻盘/掌控预期。\n"
+        )
+    if channel in {"女频", "female"}:
+        return (
+            "【频道包装钢印 · 女频】书名与读者承诺以情绪张力和关系拉扯前置：一眼看出"
+            "情感钩子（禁忌/误解/追妻/双强），承诺里要有明确的情绪兑现预期；"
+            "避免纯力量升级式包装。\n"
+        )
+    return ""
+
+
 __all__ = [
     "ReaderPersona",
     "resolve_persona",
     "build_persona_hook_messages",
     "build_persona_blurb_messages",
+    "render_channel_style_stamp",
 ]

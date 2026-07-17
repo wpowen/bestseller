@@ -477,6 +477,23 @@ _LOW_PRESSURE_GOLDEN_OPENING_BLOCK = "\n".join(
 )
 
 
+# Semantic axes the commercial planning readiness judge (outline_llm_judge /
+# protagonist_decision_agent) kills books on. The structural rules below say
+# nothing about them, and 2/2 real books (2026-07-16) planned golden-3s that
+# died at the gate for exactly these: protagonist burning his only evidence,
+# three chapters of pure passivity, an unclosed motive chain. Generation must
+# aim at what acceptance measures — in both pressure modes.
+_READINESS_JUDGE_SEMANTIC_RULES = (
+    "\n【黄金三章语义硬门（就绪判官一票否决轴，规划时必须自查）】\n"
+    "- 主角能动性：三章内至少两次由主角【主动】谋划并执行、且改变局面的行动；"
+    "全程被外来事件推着走（'如果不X就Y'的被动囚徒结构）直接判废。\n"
+    "- 决策智力：主角每个关键选择必须有当场成立的信息/压力/成本逻辑；"
+    "禁止为推剧情让他销毁自己的证据、放弃明显更安全的核验/求助/退避选项。\n"
+    "- 动机链闭合：每个冲突里对手行为的内在逻辑必须能被读者一句话复述"
+    "（他图什么、为什么走这一步）；'为冲突而冲突'的断裂动机链直接判废。\n"
+)
+
+
 def render_golden_opening_rules_block(low_pressure: bool = False) -> str:
     """Golden-opening (ch1-3) constraint fragment for planner prompts.
 
@@ -488,7 +505,7 @@ def render_golden_opening_rules_block(low_pressure: bool = False) -> str:
     """
 
     if low_pressure:
-        return _LOW_PRESSURE_GOLDEN_OPENING_BLOCK
+        return _LOW_PRESSURE_GOLDEN_OPENING_BLOCK + _READINESS_JUDGE_SEMANTIC_RULES
 
     rules = load_webnovel_method_cards().golden_chapter_rules
     if not rules.must and not rules.forbidden:
@@ -513,4 +530,4 @@ def render_golden_opening_rules_block(low_pressure: bool = False) -> str:
         lines.append(f"新专有名词上限：{caps_text}")
     if rules.new_proper_noun_note:
         lines.append(f"- {rules.new_proper_noun_note}")
-    return "\n".join(lines)
+    return "\n".join(lines) + _READINESS_JUDGE_SEMANTIC_RULES

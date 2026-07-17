@@ -231,7 +231,11 @@ _ZH_DEFAULT_MOTIF_RE = re.compile(
     r"|"
     r"(失踪|消失|死亡|死去|被害|遇害|惨死|离奇|旧案|真相|身世|血脉|秘密)"
     r"[^。！？；;，,\n]{0,12}"
-    r"(父母|父亲|母亲|双亲|家人|亲人|亲属))"
+    r"(父母|父亲|母亲|双亲|家人|亲人|亲属)"
+    r"|"
+    # 死亡/复活模板(旧正则盲区,证据书「龙椅上坐着我亡夫」正走这条):
+    r"(亡夫|亡妻|亡妇|亡儿|亡女|遗孀|未亡人|借尸还魂|借尸|还魂|还阳|诈尸|死而复生"
+    r"|起死回生|死者归来|死人复活|开棺|掘坟|灭门遗孤|灭门血仇))"
 )
 
 _EN_DEFAULT_MOTIF_RE = re.compile(
@@ -276,8 +280,10 @@ _GOLDEN_FINGER_DESIGN_PRINCIPLE = (
     "【代价形态硬约束 · 反债务化】除非用户明确要求写债务/借贷/记账题材，金手指与其代价、"
     "以及违反世界规则的代价，【禁止】表达为债、账本、欠条、记账、债务、因果债、灵石债、"
     "宗债、道债等任何金融记账形态（“欠债/还债/连本带利/结算/赎买/记一笔/入账”皆禁）。"
-    "代价必须是非金融的具身形态：反噬、污染、损耗（灵机/寿元/心神）、因果烙印、规则代价、"
-    "境界隐患、感官剥夺、记忆消解、关系后果。“债”只可作个别角色的背景动机，"
+    "代价也不是必选槽位：只有能从金手指的机制因果里必然推导出来时才写"
+    "（用了什么，就在什么上留下痕迹），推导不出来就不写代价；"
+    "【禁止】随机失忆、扣命、掉寿命、按次折寿、资源债这类与行动无因果、"
+    "可被停用/代劳/记录轻易规避的系统收税。“债”只可作个别角色的背景动机，"
     "不得成为金手指机制或全书代价的默认表达。"
 )
 _GOLDEN_FINGER_DESIGN_PRINCIPLE_EN = (
@@ -338,12 +344,14 @@ def _default_motif_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool |
 
 
 # Financial/ledger vocabulary that keeps colonising cultivation golden fingers.
-# ``账`` alone is too broad (账号/结账) so only ledger-specific compounds are
-# listed; ``债`` is debt-specific enough to stand alone.
-_DEBT_LEDGER_TOKENS: tuple[str, ...] = (
-    "债", "账本", "账簿", "欠条", "欠账", "记账", "债务", "连本带利",
-    "抹账", "还债", "债币", "赊", "赎身", "抵押", "借贷", "欠债",
-    "讨债", "债主", "入账", "记一笔", "利息",
+# Canonical bank lives in ``anti_default_motif`` so the conception / planning /
+# prose layers can never drift apart (the cross-book leakage test enforces sync).
+from bestseller.services.anti_default_motif import (  # noqa: E402
+    DEBT_LEDGER_TOKENS as _DEBT_LEDGER_TOKENS,
+    is_death_revival_dominated as _is_death_revival_dominated,
+    snapshot_user_intent as _snapshot_user_intent,
+    user_requested_death_revival as _user_requested_death_revival,
+    user_requested_debt as _user_requested_debt,
 )
 
 
@@ -386,7 +394,10 @@ def _anti_debt_metaphor_guardrail(ctx: dict[str, Any] | None = None, *, is_en: b
     """
 
     ctx = ctx or {}
-    if _mentions_debt_theme(ctx.get("description"), ctx.get("user_hints"), ctx.get("premise_seed")):
+    # Key off the frozen ORIGINAL user intent (snapshot), never the live
+    # ctx["description"] — the tournament champion is merged into description and
+    # a generated 债/账 token there must not disable the guard (C3 self-poisoning).
+    if _user_requested_debt(ctx):
         return ""
     if is_en:
         return (
@@ -404,8 +415,10 @@ def _anti_debt_metaphor_guardrail(ctx: dict[str, Any] | None = None, *, is_en: b
         "除非用户明确要求写“债务/借贷/记账”题材,金手指的形态与其代价【绝不表达为金融记账形态】:"
         "禁止债、账本、欠条、欠账、记账、债务、连本带利、抹账、还债、债币、赎身、抵押、"
         "“欠了要还”这类债务隐喻当作金手指或其代价的主体。"
-        "代价改用非金融的具身形态:反噬、道心裂痕、寿元损耗、感官剥夺、记忆消解、血脉灼烧、"
-        "规则/因果烙印、情绪叠加、人格替换等,与金手指形态匹配。"
+        "代价不是必选槽位:只有能从金手指的机制因果里必然推导出来时才写"
+        "(用了什么,就在什么上留下痕迹),推导不出来就不写代价;"
+        "禁止随机失忆、扣命、掉寿命、按次折寿、资源债这类与行动无因果、"
+        "可被停用/代劳/记录轻易规避的系统收税。"
     )
 
 
@@ -861,7 +874,17 @@ def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
     contract = ctx.get("genre_intent_contract")
     if not isinstance(contract, dict):
         return ""
-    tags = [str(item).strip() for item in (contract.get("tags") or []) if str(item).strip()]
+    # Only what the user actually ticked may be presented as an explicit choice.
+    # The merged ``tags`` also carries the sub-genre's default_tags (picking
+    # 东方玄幻 silently adds 废柴逆袭/升级流/血脉觉醒), and labelling those under
+    # 【建书页明确选择】 told the model the user demanded tropes they never picked
+    # — a cross-book homogeniser wearing the user's name.
+    user_tags = [str(i).strip() for i in (contract.get("user_tags") or []) if str(i).strip()]
+    default_tags = [str(i).strip() for i in (contract.get("default_tags") or []) if str(i).strip()]
+    if not user_tags and not default_tags:
+        # Contracts built before the split carry only the merged list.
+        user_tags = [str(i).strip() for i in (contract.get("tags") or []) if str(i).strip()]
+    tags = user_tags
     enhancers = contract.get("explicit_enhancers")
     enhancers = enhancers if isinstance(enhancers, dict) else {}
     selected_effects = [
@@ -874,6 +897,8 @@ def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
         "genre": contract.get("genre_label"),
         "sub_genre": contract.get("sub_genre_label"),
         "tags": tags,
+        # Labelled honestly: these came with the sub-genre, the user did not tick them.
+        "genre_default_tags": default_tags,
         "audience": contract.get("audience_orientation"),
         "scale": contract.get("narrative_scale"),
         "tone": contract.get("tone_preference"),
@@ -886,11 +911,18 @@ def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
     }
     # Do not add a block for an empty/default creation form. This is the
     # no-selection contract: no hidden brainhole, Skill or style injection.
+    #
+    # ``narrative_scale`` must NOT count as a user choice while it equals the UI's
+    # own default: the form initialises it to "serial" and submits it on every
+    # create, so counting it made this guard always-true and the block ALWAYS
+    # render — leaking the sub-genre's default_tags into every book under the
+    # 【建书页明确选择】 header. Only a non-default scale is a real choice.
+    _scale_chosen = str(selected["scale"] or "").strip().lower() not in ("", "serial")
     if not any(
         (
             tags,
             selected["audience"],
-            selected["scale"],
+            _scale_chosen,
             selected["tone"],
             selected["brainhole"],
             selected["wild_concept"],
@@ -1193,7 +1225,13 @@ _WORLD_SYSTEM = (
 
 
 def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | None = None) -> str:
+    from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
+
+    _channel_stamp = render_channel_style_stamp(
+        (ctx.get("user_hints") or {}).get("audience_orientation")
+    )
     prompt = (
+        f"{_channel_stamp}"
         f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
         f"简介：{ctx['description']}\n"
         f"目标章节数：{ctx['chapter_count']}章\n"
@@ -1348,6 +1386,37 @@ _GENRE_CLICHE_BASELINE: dict[str, list[dict[str, Any]]] = {
             "premise": "所有诡异现象、规则副本，最终揭示是某个组织或文明用来"
             "测试、豢养或收割参与者的实验场/游戏关卡",
             "trope_keywords": ["世界是实验", "游戏管理员", "楚门的世界"],
+        },
+    ],
+    # 玄幻/仙侠/修仙/末日/异能/升级 全部解析到 action-progression。冷启动(清库/
+    # 首本)这里若为空，模型会均值回归到平台最烂大街的玄幻套路——尤其"死者归来讨
+    # 旧账/借尸还魂"这条(证据书「龙椅上坐着我亡夫」「替亡人落最后一笔」连撞两本)。
+    "action-progression": [
+        {
+            "title": "（平台俗套·死者归来讨旧账）",
+            "golden_finger": "亲人（亡夫/亡妻/亡母）借尸还魂或死而复生归来，主角被迫认账/对质",
+            "premise": "主角亲手埋葬/钉棺的亲人十七年后借尸还魂、诈尸或登基归来，"
+            "回来讨一笔旧债、索一条命或掀翻主角赖以自欺的十七年谎言",
+            "trope_keywords": ["借尸还魂", "亡夫归来", "亡妻讨账", "死者归来", "诈尸复活", "开棺认尸"],
+        },
+        {
+            "title": "（平台俗套·灭门遗孤复仇）",
+            "golden_finger": "灭门夜唯一活口，血脉/剑骨觉醒后复仇",
+            "premise": "全家/全宗被屠，主角是唯一幸存的遗孤/遗脉，靠觉醒的血脉或"
+            "上古传承一路复仇雪恨、血债血偿",
+            "trope_keywords": ["灭门遗孤", "灭门血仇", "血脉觉醒复仇", "屠宗灭门"],
+        },
+        {
+            "title": "（平台俗套·废材觉醒逆袭）",
+            "golden_finger": "被诊断为废脉/废体，其实是隐藏的绝世天赋",
+            "premise": "开局废材被退婚/被瞧不起，觉醒后发现废脉是伪装的宝脉/特殊体质，一路打脸逆袭",
+            "trope_keywords": ["废材觉醒", "废脉是宝脉", "退婚打脸", "扮猪吃虎"],
+        },
+        {
+            "title": "（平台俗套·钻天道规则漏洞）",
+            "golden_finger": "发现并钻天道/系统/世界规则的漏洞白嫖",
+            "premise": "主角找到天道或修炼体系的 bug/漏洞，靠规则套利、卡 bug 无限刷取变强",
+            "trope_keywords": ["天道漏洞", "钻规则漏洞", "卡bug变强", "系统套利"],
         },
     ],
 }
@@ -1754,16 +1823,65 @@ def _render_debt_rewrite_feedback(*, is_en: bool) -> str:
         return (
             "\n\n[Rewrite required — the golden finger is a financial ledger]\n"
             "The premise/golden finger leans on debt/ledger/IOU/bookkeeping framing, "
-            "which the user did NOT request. Rebuild the mechanism so its power and its "
-            "cost are non-financial embodied forms (backlash, corruption, qi/lifespan "
-            "depletion, causal branding, rule-price, memory erosion) — remove every "
+            "which the user did NOT request. Rebuild the mechanism: a cost is only "
+            "written when it derives inevitably from the mechanism's own causality "
+            "(what you use is what bears the mark); if it cannot be derived, write no "
+            "cost at all. Never bolt on random amnesia / lifespan-tax / resource-debt "
+            "style system taxes — remove every "
             "debt/账/欠条/记账/结算 word from the golden finger and premise."
         )
     return (
         "\n\n【重写要求 · 金手指沦为账本】\n"
         "当前前提/金手指依赖债、账本、欠条、记账、结算这类金融记账形态，而用户并未要求债务题材。"
-        "请重构机制：金手指与其代价一律改为非金融的具身形态（反噬、污染、灵机/寿元损耗、"
-        "因果烙印、规则代价、记忆消解），金手指与前提里的债/账/欠条/记账/结算字样一个都不得保留。"
+        "请重构机制：删掉一切账本形态；若代价能从金手指的机制因果里必然推导，就改写为那个"
+        "因果后果（用了什么，就在什么上留下痕迹），推导不出来就不写代价——禁止随机失忆、"
+        "扣命、掉寿命、资源债这类系统收税。金手指与前提里的债/账/欠条/记账/结算字样一个都不得保留。"
+    )
+
+
+def _render_death_revival_rewrite_feedback(*, is_en: bool) -> str:
+    """Retry feedback for a death-revival-template concept the user didn't ask for."""
+
+    if is_en:
+        return (
+            "\n\n[Rewrite required — worn death-revival template]\n"
+            "The concept leans on the platform's most-worn trope: a dead spouse/kin "
+            "returning (soul-transfer/resurrection/'the dead come back to settle a score') "
+            "or a massacre orphan's revenge. The user did NOT request it. Rebuild the "
+            "opening around a fresh initiating crisis that grows from the genre / world "
+            "rules / protagonist — NOT a grave, a coffin, a resurrected relative, or a "
+            "wiped-out clan. Remove 亡夫/亡妻/借尸还魂/诈尸/死者归来/灭门 framing."
+        )
+    return (
+        "\n\n【重写要求 · 死者归来烂梗】\n"
+        "当前概念撞上全平台最烂大街的套路：亲人（亡夫/亡妻）借尸还魂/诈尸/死而复生归来讨旧账，"
+        "或灭门遗孤复仇，而用户并未要求这种设定。请把开局重构为一个从题材/世界规律/主角长出来的"
+        "全新起始危机——不要从一座坟、一具棺、一个复活的亲人、一场灭门案开始。"
+        "删掉亡夫/亡妻/借尸还魂/诈尸/死者归来/灭门遗孤这类框架。"
+    )
+
+
+def _render_ontology_drift_rewrite_feedback(hits: tuple[str, ...], *, is_en: bool) -> str:
+    """Retry feedback when a native-genre concept drifted to modern/workplace/forensic.
+
+    Given ONE regeneration chance before the fail-closed ontology tripwire kills
+    the book, so a recoverable drift self-corrects instead of failing the run.
+    """
+
+    joined = (", " if is_en else "、").join(hits)
+    if is_en:
+        return (
+            "\n\n[Rewrite required — genre drift into modern/workplace/forensic]\n"
+            f"The concept leaked modern/workplace/forensic terms ({joined}) into what must be a "
+            "genre-native story (xianxia/xuanhuan/historical). Remove them and rebuild the setting, "
+            "roles and institutions in native-genre terms — do NOT turn this into a modern office / "
+            "morgue / forensic story."
+        )
+    return (
+        "\n\n【重写要求 · 题材漂移到现代/职场/法医】\n"
+        f"概念里混进了现代/职场/法医词（{joined}），而这是一本【原生题材】书（玄幻/仙侠/历史）。"
+        "请删掉这些现代设定，把场景、身份、机构都改用本题材原生的说法重写——"
+        "不要把它写成现代职场/停尸房/法医故事。"
     )
 
 
@@ -1806,8 +1924,13 @@ def _hook_duplicate_corpus(
 
 
 def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | None = None) -> str:
+    from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
+
+    # 主角在这里出生:第10轮真机,淘汰赛干涸后保底路径给男频请求生成了虐女主
+    # 圣母概念——频道钢印必须盖在主角诞生处,不只盖在包装工序。
     prompt = (
-        f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
+        render_channel_style_stamp((ctx.get("user_hints") or {}).get("audience_orientation"))
+        + f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
         f"简介：{ctx['description']}\n"
         f"目标章节数：{ctx['chapter_count']}章\n"
         f"\n请设计角色体系 JSON，包含：\n"
@@ -2238,7 +2361,13 @@ def _finalize_user_prompt(
         f"一句话钩子公式：{_persona.hook_formula}。"
         f"——简介与首句钩子必须为这个具体读者量身定做，让他一眼就想点。"
     )
+    from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
+
+    _channel_stamp = render_channel_style_stamp(
+        (ctx.get("user_hints") or {}).get("audience_orientation")
+    )
     base = (
+        f"{_channel_stamp}"
         f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
         f"目标章节数：{ctx['chapter_count']}章\n"
         f"\n## 市场定位提案\n{json.dumps(market, ensure_ascii=False, indent=2)}\n"
@@ -3274,6 +3403,168 @@ async def _polish_story_spine(
     return spine or {}, ids
 
 
+def _best_dry_tournament_seed(candidates: list[Any]) -> str:
+    """Pick the best near-miss from a dry tournament to seed the retry attempt.
+
+    Three consecutive real dry runs (2026-07-16) exposed the starvation paradox:
+    a candidate one axis short of the 8-floor gauntlet loses to NOTHING —
+    conception falls back to its vanilla concept, weaker than any judged
+    near-miss, and dies at the logline gate. The tournament already has the
+    designed machinery for refinement (``seed_concept`` → 同源补强 directives);
+    this selector feeds it. Only floor-rejected candidates qualify — a
+    deterministic KO (俗套/种子审计) is dead by policy, and a candidate that
+    failed 4+ axes is not a near-miss worth refining.
+    """
+
+    _FLOOR_PREFIX = "钩子硬门失败"
+    best: tuple[int, float, str] | None = None
+    for candidate in candidates or []:
+        rejected = str(getattr(candidate, "rejected_reason", "") or "")
+        if not rejected.startswith(_FLOOR_PREFIX):
+            continue
+        failed_axes = [a for a in rejected.split(":", 1)[-1].split("/") if a.strip()]
+        if len(failed_axes) > 3:
+            continue
+        concept = str(getattr(candidate, "concept", "") or "").strip()
+        if not concept:
+            continue
+        score_sum = sum(
+            float(getattr(candidate, f"judge_{axis}", 0.0) or 0.0)
+            for axis in (
+                "freshness", "click", "character_logic", "mechanism_causality",
+                "genre_fidelity", "plain_language", "story_motion",
+            )
+        )
+        key = (-len(failed_axes), score_sum, concept)
+        if best is None or key[:2] > (best[0], best[1]):
+            best = (key[0], key[1], concept)
+    return best[2] if best else ""
+
+
+async def _logline_regen_rescue(
+    *,
+    verdict: Any,
+    logline: str,
+    max_attempts: int = 2,
+    rewrite_fn: Any,
+    judge_fn: Any,
+) -> tuple[Any, str, int]:
+    """Consume a REGENERATE logline verdict with bounded focused rewrites.
+
+    The gate defines regenerate as "偏弱但可修 → 回炉重写卖点（有界）" and writes
+    ``fix_directives`` as rewrite instructions — but until 2026-07-16 conception
+    treated every non-EXPAND verdict as instant task death, so the directives
+    were never consumed (real run: overall 4.38, verdict regenerate → the user
+    saw "cannot create projects"). This loop is that missing consumer.
+
+    Semantics:
+    - ``reject`` is fatal by definition — returned untouched, zero attempts,
+      including a reject produced mid-loop by a rewrite that made things worse.
+    - keep-best: the best-overall (verdict, logline) pair seen wins, so a
+      failed rescue can never ship a worse pitch than the one it started with.
+    - fail-closed: any rewrite/judge error returns the best verdict so far —
+      a broken rescue must block exactly like no rescue at all.
+    """
+
+    from bestseller.services.logline_gate import LoglineAction  # noqa: PLC0415
+
+    best_verdict, best_logline = verdict, logline
+    attempts = 0
+    if getattr(verdict, "action", None) is not LoglineAction.REGENERATE:
+        return best_verdict, best_logline, attempts
+
+    current_verdict, current_logline = verdict, logline
+    for _ in range(max(0, int(max_attempts))):
+        if getattr(current_verdict, "action", None) is not LoglineAction.REGENERATE:
+            break
+        attempts += 1
+        try:
+            rewritten = str(await rewrite_fn(current_logline, current_verdict) or "").strip()
+            if not rewritten:
+                break
+            current_verdict = await judge_fn(rewritten)
+            current_logline = rewritten
+        except Exception:
+            logger.warning(
+                "logline regen rescue attempt %d failed; keeping best verdict",
+                attempts,
+                exc_info=True,
+            )
+            break
+        if float(getattr(current_verdict, "overall", 0.0) or 0.0) > float(
+            getattr(best_verdict, "overall", 0.0) or 0.0
+        ):
+            best_verdict, best_logline = current_verdict, current_logline
+        if getattr(current_verdict, "action", None) is LoglineAction.EXPAND:
+            return current_verdict, current_logline, attempts
+    return best_verdict, best_logline, attempts
+
+
+async def _rewrite_logline_for_gate(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    logline: str,
+    verdict: Any,
+    premise: str,
+    synopsis: str,
+    genre: str,
+    sub_genre: str | None,
+    is_en: bool,
+) -> str:
+    """Focused logline rewrite per the gate's own fix directives.
+
+    Grounded in premise/synopsis so the rewrite surfaces the story's REAL
+    irreversibility and escalation instead of inventing facts the book does not
+    contain — a flat story must still fail the re-judge honestly.
+    """
+
+    reasons = "\n".join(getattr(verdict, "reasons", ()) or ())
+    directives = "\n".join(getattr(verdict, "fix_directives", ()) or ())
+    if is_en:
+        system_prompt = (
+            "You are a veteran web-novel acquisitions editor. Rewrite the given "
+            "one-sentence logline per the fix notes. Stay strictly faithful to the "
+            "premise/synopsis facts — do NOT invent new plot. Output ONLY the "
+            "rewritten one-sentence logline."
+        )
+        user_prompt = (
+            f"Genre: {genre} ({sub_genre or ''})\n\n[Current logline]\n{logline}\n\n"
+            f"[Why it failed]\n{reasons}\n\n[Fix notes]\n{directives}\n\n"
+            f"[Premise — ground truth]\n{premise}\n\n[Synopsis — ground truth]\n{synopsis}\n\n"
+            "Make the protagonist's irreversible action, the escalating problem "
+            "chain and the opposition's counter-move visible inside the single "
+            "sentence. Output only the sentence."
+        )
+    else:
+        system_prompt = (
+            "你是网文平台资深主编。下面这条一句话故事大纲没过审。请按【整改方向】重写这一句话。"
+            "铁律：以【前提/简介】为事实准绳，只许把书里已有的不可逆行动、递进问题链、对手反制"
+            "在这一句里写显，【不得】发明书里没有的新设定新剧情。只输出重写后的一句话，不要解释。"
+        )
+        user_prompt = (
+            f"题材：{genre}（{sub_genre or ''}）\n\n【当前一句话大纲】\n{logline}\n\n"
+            f"【没过审的原因】\n{reasons}\n\n【整改方向】\n{directives}\n\n"
+            f"【前提 · 事实准绳】\n{premise}\n\n【简介 · 事实准绳】\n{synopsis}\n\n"
+            "只输出重写后的一句话大纲。"
+        )
+    completion = await complete_text(
+        session,
+        settings,
+        LLMCompletionRequest(
+            logical_role="editor",
+            model_tier="strong",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_response=logline,
+            prompt_template="conception_logline_regen",
+            prompt_version="v1",
+            max_tokens_override=400,
+        ),
+    )
+    return (completion.content or logline).strip()
+
+
 async def _polish_blurb_synopsis(
     session: AsyncSession,
     settings: AppSettings,
@@ -3468,6 +3759,7 @@ async def _polish_title(
     is_en: bool,
     language: str,
     config: dict[str, Any] | None = None,
+    audience_orientation: str = "",
 ) -> tuple[str, UUID | None]:
     """Focused title rewrite: LLM proposes N candidates, the zero-token title gate
     picks the best-scoring one (generate-then-select). Fail-open: returns the
@@ -3493,7 +3785,10 @@ async def _polish_title(
             "你是网文平台资深编辑。按【整改要求】给出 6 个【点击型】书名候选。"
             "只输出书名，每行一个，不要编号、不要引号、不要解释。"
         )
+        from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
+
         user_prompt = (
+            f"{render_channel_style_stamp(audience_orientation)}"
             f"题材：{genre}（{sub_genre}）\n【故事内核】\n{premise}\n【简介】\n{synopsis}\n\n"
             f"【整改要求】\n{feedback}\n\n硬性：4-12字、一眼可读完；必须通顺成立（别让抽象概念去"
             "保护/放过人）；主角能动性或强概念碰撞；避开都市之/最强系统/绝世神医等烂大街壳。"
@@ -3595,6 +3890,12 @@ async def run_conception_pipeline(
 
     is_en = ctx.get("language", "zh-CN").startswith("en")
     ctx = _sanitize_forbidden_default_motifs(ctx, is_en=is_en)
+
+    # Freeze the ORIGINAL user intent before the tournament champion is merged
+    # into ctx["description"] (~line 3911). The debt/death intent-exemptions read
+    # this snapshot, so a generated champion carrying a stray 债/亡 token can never
+    # disable the pipeline's own anti-debt / anti-death guard downstream (C3).
+    _snapshot_user_intent(ctx)
 
     # Cross-book name de-dup: feed the cast prompt the names other projects
     # already used so the LLM stops re-minting 陆沉/宁尘/etc. Best-effort.
@@ -3722,8 +4023,12 @@ async def run_conception_pipeline(
             _ct_config = resolve_tournament_config(
                 wild=bool(ctx.get("wild_concept"))
             )
-            max_concept_attempts = 3 if chapter_count >= 200 else 1
+            # 短中篇也要至少 2 次尝试：只给 1 次时,重试分支(近失种子/定向补强)
+            # 对 50 章建书是死代码——真机 3 轮全部单次干涸后拿保底概念掷硬币,
+            # 2/3 死在 logline 门(2026-07-17 五轮 E2E 取证)。
+            max_concept_attempts = 3 if chapter_count >= 200 else 2
             concept_retry_feedback = ""
+            _dry_retry_seed = ""
             for concept_attempt in range(1, max_concept_attempts + 1):
                 _emit("concept_tournament_started", {
                     "round": -1,
@@ -3743,6 +4048,11 @@ async def run_conception_pipeline(
                     chapter_count=chapter_count,
                     avoid_mechanisms=list(ctx.get("avoid_mechanisms") or []),
                     config=attempt_config,
+                    # 频道锚：男频请求产出文艺女主向项目卡=题材保真必挂(真机4候选
+                    # 全灭的直接根因之一),受众必须传到内核/蒸钩/候选三层 prompt。
+                    audience_orientation=str(
+                        (ctx.get("user_hints") or {}).get("audience_orientation") or ""
+                    ),
                     seed_concept=(
                         explicit_concept_seed
                         or (
@@ -3750,6 +4060,10 @@ async def run_conception_pipeline(
                             if concept_bundle is not None
                             else str(getattr(selected_hook_spec, "one_liner", "") or "")
                         )
+                        # 干涸重试改定向补强：上一轮最优近失候选(≤3轴差距)升为种子,
+                        # 让重试轮改良 6.5 分的具体概念而不是从零重掷(近失候选输给
+                        # 空手=淘汰赛饥饿悖论,2026-07-16 三连干涸实录)。
+                        or _dry_retry_seed
                     ),
                     retry_feedback=concept_retry_feedback,
                 )
@@ -3863,6 +4177,14 @@ async def run_conception_pipeline(
                         f"判官：{candidate.seriality_judge.get('reason') or candidate.judge_reason or '未说明'}"
                         for candidate in failed_finalists
                     ) or "上一轮没有候选同时通过钩子与长篇承载门。"
+                    _dry_retry_seed = _best_dry_tournament_seed(
+                        list(_ct_result.candidates)
+                    )
+                    if _dry_retry_seed:
+                        concept_retry_feedback += (
+                            "\n【定向补强】上面第一条是上一轮离达标最近的候选,本轮以它为种子"
+                            "做同源补强:保留其故事身份,只修被判不达标的轴,不要另起炉灶。"
+                        )
                     _emit("concept_tournament_retry", {
                         "attempt": concept_attempt + 1,
                         "reason": "no_hook_and_seriality_qualified_winner",
@@ -4152,32 +4474,76 @@ async def run_conception_pipeline(
             genre=str(ctx.get("genre") or "") or None,
             sub_genre=str(ctx.get("sub_genre") or "") or None,
         )
-        # Debt gate: fire only when the user did NOT ask for a debt theme and the
-        # finalized golden finger / premise leans on ledger framing.
-        _debt_ok = _mentions_debt_theme(
-            ctx.get("description"), ctx.get("user_hints"), ctx.get("premise_seed")
-        )
-        _gf_text = ""
-        _profile = final_result.get("writing_profile")
-        if isinstance(_profile, dict):
-            _char = _profile.get("character")
-            if isinstance(_char, dict):
-                _gf_text = str(_char.get("golden_finger") or "")
-        debt_hit = (not _debt_ok) and (
-            _is_debt_dominated_mechanism(_gf_text)
-            or _is_debt_dominated_mechanism(str(final_result.get("premise") or ""))
-        )
-        if echo_report or debt_hit:
+        # Debt + death-revival gates: fire only when the user did NOT ask for the
+        # theme and the finalized concept leans on ledger framing or the worn
+        # death-revival template. Intent is read from the frozen user snapshot (C3),
+        # and the scan covers golden_finger + premise + synopsis + champion hook
+        # fields — not just golden_finger+premise — so residue that saturated the
+        # synopsis/hook (as in「龙椅上坐着我亡夫」: 认账/讨账 + 借尸还魂) is caught.
+        _debt_ok = _user_requested_debt(ctx)
+        _death_ok = _user_requested_death_revival(ctx)
+
+        def _concept_scan_blob(result: Any) -> str:
+            if not isinstance(result, dict):
+                return ""
+            gf = ""
+            prof = result.get("writing_profile")
+            if isinstance(prof, dict) and isinstance(prof.get("character"), dict):
+                gf = str(prof["character"].get("golden_finger") or "")
+            hc = ctx.get("high_concept") if isinstance(ctx.get("high_concept"), dict) else {}
+            return " ".join(
+                str(x or "")
+                for x in (
+                    gf,
+                    result.get("premise"),
+                    result.get("synopsis"),
+                    result.get("blurb"),
+                    hc.get("one_liner"),
+                    hc.get("story_motion"),
+                    hc.get("abnormality"),
+                    hc.get("premise"),
+                )
+            )
+
+        _final_blob = _concept_scan_blob(final_result)
+        debt_hit = (not _debt_ok) and _is_debt_dominated_mechanism(_final_blob)
+        death_hit = (not _death_ok) and _is_death_revival_dominated(_final_blob)
+
+        def _ontology_hits(result: Any) -> tuple[str, ...]:
+            # Native-genre modern-drift (职场/停尸房/尸检/法医/APP). The final
+            # ontology tripwire is fail-CLOSED and kills the book; catch drift here
+            # so the concept gets ONE regeneration chance to self-correct first.
+            if genre_intent_contract is None:
+                return ()
+            try:
+                from bestseller.services.genre_intent_contract import (  # noqa: PLC0415
+                    detect_genre_native_ontology_violations,
+                )
+
+                return detect_genre_native_ontology_violations(
+                    _concept_scan_blob(result), genre_intent_contract
+                )
+            except Exception:
+                return ()
+
+        ontology_hit = _ontology_hits(final_result)
+        if echo_report or debt_hit or death_hit or ontology_hit:
             _emit(
                 "conception_mechanism_echo_retry",
                 {
                     "collisions": [str(r.get("title") or "") for r in echo_report],
                     "debt_dominated": debt_hit,
+                    "death_revival": death_hit,
+                    "ontology_drift": list(ontology_hit),
                 },
             )
             retry_feedback = _render_mechanism_echo_feedback(echo_report, is_en=is_en)
             if debt_hit:
                 retry_feedback += _render_debt_rewrite_feedback(is_en=is_en)
+            if death_hit:
+                retry_feedback += _render_death_revival_rewrite_feedback(is_en=is_en)
+            if ontology_hit:
+                retry_feedback += _render_ontology_drift_rewrite_feedback(ontology_hit, is_en=is_en)
             retry_result, retry_llm_ids = await _llm_call_json(
                 session, settings,
                 role="editor",
@@ -4195,22 +4561,19 @@ async def run_conception_pipeline(
                 genre=str(ctx.get("genre") or "") or None,
                 sub_genre=str(ctx.get("sub_genre") or "") or None,
             )
-            retry_gf = ""
-            retry_profile = retry_result.get("writing_profile") if isinstance(retry_result, dict) else None
-            if isinstance(retry_profile, dict) and isinstance(retry_profile.get("character"), dict):
-                retry_gf = str(retry_profile["character"].get("golden_finger") or "")
-            retry_debt = (not _debt_ok) and (
-                _is_debt_dominated_mechanism(retry_gf)
-                or _is_debt_dominated_mechanism(str(retry_result.get("premise") or ""))
-                if isinstance(retry_result, dict) else False
-            )
+            _retry_blob = _concept_scan_blob(retry_result)
+            retry_debt = (not _debt_ok) and _is_debt_dominated_mechanism(_retry_blob)
+            retry_death = (not _death_ok) and _is_death_revival_dominated(_retry_blob)
+            retry_ontology = _ontology_hits(retry_result)
             # Adopt the retry when it is a valid payload that is no worse on echo
-            # and strictly resolves the debt hit (or there was no debt hit).
+            # and strictly resolves the debt/death/ontology hits (or there were none).
             adopted = (
                 isinstance(retry_result, dict)
                 and bool(retry_result)
                 and _echo_severity(retry_report) <= _echo_severity(echo_report)
                 and (not debt_hit or not retry_debt)
+                and (not death_hit or not retry_death)
+                and (not ontology_hit or not retry_ontology)
             )
             if adopted:
                 final_result = retry_result
@@ -4832,6 +5195,9 @@ async def run_conception_pipeline(
                             feedback=feedback, genre=_ap_genre, sub_genre=_ap_sub,
                             is_en=is_en, language=str(ctx.get("language") or "zh-CN"),
                             config=_appeal_cfg,
+                            audience_orientation=str(
+                                (ctx.get("user_hints") or {}).get("audience_orientation") or ""
+                            ),
                         )
                         if title_id is not None:
                             llm_run_ids.append(title_id)
@@ -4943,8 +5309,6 @@ async def run_conception_pipeline(
                     sub_genre=_ap_sub,
                     config=_appeal_cfg,
                 )
-            story_appeal_report = dict(story_appeal_report or {})
-            story_appeal_report["logline_gate"] = _lg.to_dict()
             logger.info(
                 "Logline gate: action=%s overall=%.2f weakest=%s%s",
                 _lg.action.value,
@@ -4952,6 +5316,46 @@ async def run_conception_pipeline(
                 _lg.weakest_axis,
                 (" | " + " ; ".join(_lg.reasons[:3])) if _lg.reasons else "",
             )
+            # regenerate 裁决按门自己的语义消费：有界聚焦重写卖点再复审
+            # （keep-best + fail-closed）。reject 仍然立即死。此前任何非 EXPAND
+            # 都直接毙任务，整改指令从未被消费（真机 4.38 regenerate 也照死）。
+            _lg_regen_used = 0
+            if _lg.action is LoglineAction.REGENERATE:
+                async def _lg_rewrite(cur_logline: str, cur_verdict: Any) -> str:
+                    return await _rewrite_logline_for_gate(
+                        session, settings,
+                        logline=cur_logline, verdict=cur_verdict,
+                        premise=premise, synopsis=synopsis,
+                        genre=_ap_genre, sub_genre=_ap_sub, is_en=is_en,
+                    )
+
+                async def _lg_rejudge(cur_logline: str) -> Any:
+                    return await evaluate_logline_gate(
+                        session, settings,
+                        logline=cur_logline, premise=premise,
+                        genre=_ap_genre, sub_genre=_ap_sub, config=_appeal_cfg,
+                    )
+
+                _lg, _rescued_logline, _lg_regen_used = await _logline_regen_rescue(
+                    verdict=_lg,
+                    logline=str(_logline_text or ""),
+                    max_attempts=int(_lg_cfg.get("regenerate_attempts", 2)),
+                    rewrite_fn=_lg_rewrite,
+                    judge_fn=_lg_rejudge,
+                )
+                if _lg_regen_used:
+                    logger.info(
+                        "Logline gate rescue: attempts=%d final=%s overall=%.2f",
+                        _lg_regen_used, _lg.action.value, _lg.overall,
+                    )
+                if _lg.action is LoglineAction.EXPAND and _rescued_logline:
+                    # 采纳获救卖点：写回 market.logline（不回写 premise —— 卖点是
+                    # 营销工件，premise 是下游各阶段已消费的故事事实）。
+                    if isinstance(writing_profile, dict):
+                        writing_profile.setdefault("market", {})["logline"] = _rescued_logline
+            story_appeal_report = dict(story_appeal_report or {})
+            story_appeal_report["logline_gate"] = _lg.to_dict()
+            story_appeal_report["logline_gate"]["regen_attempts"] = _lg_regen_used
             if bool(_lg_cfg.get("block_expansion", True)) \
                     and _lg.action is not LoglineAction.EXPAND:
                 _appeal_block_below = True

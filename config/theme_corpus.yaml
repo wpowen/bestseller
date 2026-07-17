@@ -150,3 +150,23 @@ themes:
   - {id: shane_diandao_06, motif: shane_diandao, tone: 压抑, proposition: "当正义需要你闭眼，邪恶反而睁着眼。"}
   - {id: shane_diandao_07, motif: shane_diandao, tone: 冷峻, proposition: "给反派一个站得住的理由，戏才真正开始。"}
   - {id: shane_diandao_08, motif: shane_diandao, tone: 沉郁, proposition: "善恶不是阵营，是每一次具体选择的总和。"}
+
+  # --- 暖色/热血/昂扬 平衡补充批 (2026-07-14) ---
+  # 原池情绪基调重度偏暗(冷峻/沉郁/苍凉/压抑≈73%)。选择按前提 seed 题材解耦,故
+  # 喜剧/甜宠/治愈/热血向的书也会抽到苍凉命题——补一批暖色/热血/昂扬/诙谐命题,
+  # 让轻题材有合基调的可选项(不加 genre 绑定,只是把池子的情绪光谱补齐)。
+  - {id: rending_st_warm_01, motif: rending_shengtian, tone: 热血, proposition: "天定的死路,也能被一双手一寸寸拆开。"}
+  - {id: rending_st_warm_02, motif: rending_shengtian, tone: 昂扬, proposition: "没有人能替你认命——除非你自己先跪下。"}
+  - {id: rending_st_warm_03, motif: rending_shengtian, tone: 热血, proposition: "别人说不可能的地方,正是你要插旗的地方。"}
+  - {id: rending_st_warm_04, motif: rending_shengtian, tone: 温柔, proposition: "一个人扛不动的,一群人就一起抬起来了。"}
+  - {id: nitian_warm_01, motif: nitian, tone: 热血, proposition: "既然天要压我,那就把天顶穿了给它看。"}
+  - {id: nitian_warm_02, motif: nitian, tone: 昂扬, proposition: "命运发的烂牌,照样能打成满堂彩。"}
+  - {id: daijia_warm_01, motif: daijia, tone: 温柔, proposition: "有些代价甘之如饴——因为换回来的人值得。"}
+  - {id: daijia_warm_02, motif: daijia, tone: 昂扬, proposition: "付得起代价的人,才有资格谈梦想。"}
+  - {id: yinguo_warm_01, motif: yinguo, tone: 温柔, proposition: "你随手撒的善意,会在你看不见的地方替你挡一刀。"}
+  - {id: yinguo_warm_02, motif: yinguo, tone: 悲悯, proposition: "种下的好未必回到你身上,却一定回到这世上。"}
+  - {id: rending_st_hero_01, motif: rending_shengtian, tone: 悲悯, proposition: "英雄不是不会怕,是怕着也把人背出了火场。"}
+  - {id: changsheng_warm_01, motif: changsheng_zhouzhou, tone: 温柔, proposition: "长命不是奖赏,肯陪你走完的人才是。"}
+  - {id: zhenxiang_wry_01, motif: zhenxiang, tone: 荒诞, proposition: "真相常常滑稽得没人敢信,于是它安安稳稳地躺着。"}
+  - {id: dadao_wq_warm_01, motif: dadao_wuqing, tone: 昂扬, proposition: "规则无情,但把规则吃透的人可以有情。"}
+  - {id: shane_warm_01, motif: shane_diandao, tone: 昂扬, proposition: "换了位的正与邪,最后靠一个人的良心重新称过。"}

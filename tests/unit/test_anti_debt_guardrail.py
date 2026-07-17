@@ -34,8 +34,11 @@ def test_guardrail_zh_bans_debt_ledger_vocabulary() -> None:
     assert block  # non-empty
     for banned in ("债", "账本", "欠条", "记账", "还债"):
         assert banned in block, banned
-    # …and it offers non-financial cost forms so the model has somewhere to go
-    assert "反噬" in block or "损耗" in block
+    # …and it gives the model the causal rule instead of a replacement-cost menu.
+    # (2026-07-16: the old menu — 寿元损耗/记忆消解 — was exactly what the logline
+    # gate's cost_integrity axis vetoes; teaching it killed project creation.)
+    assert "因果" in block and "推导" in block
+    assert "代价不是必选" in block
 
 
 def test_guardrail_en_bans_ledger_and_has_no_zh() -> None:
@@ -71,7 +74,8 @@ def test_guardrail_active_for_incidental_non_debt_book() -> None:
 def test_finalize_prompt_embeds_anti_debt_guardrail() -> None:
     prompt = C._finalize_user_prompt(_ctx(chapter_count=300), {}, {}, {}, {})
     assert "反债务" in prompt or "债" in prompt
-    assert "反噬" in prompt or "损耗" in prompt
+    # The guardrail now carries the causal-cost rule, not a replacement menu.
+    assert "推导" in prompt and "代价不是必选" in prompt
 
 
 def test_character_prompt_embeds_anti_debt_guardrail() -> None:

@@ -923,3 +923,81 @@ def build_outline_repair_directives(
     if instructions:
         directives.append(f"【大纲整改总纲】{instructions[:400]}")
     return directives
+
+
+async def judge_commercial_planning_readiness_stable(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    chapters_payload: list[Mapping[str, Any]],
+    samples: int = 3,
+    judge_fn: Any = None,
+    **kwargs: Any,
+) -> LLMQualityJudgeResult:
+    """Majority-vote wrapper for the commercial planning readiness judge.
+
+    This judge's verdict is TERMINAL for a whole book creation — and a single
+    temperature-sampled draw was exercising that authority alone (real run
+    2026-07-16: one sample killed a book whose deterministic gate passed and
+    whose golden-3 outline was demonstrably solid). Blocking now requires a
+    strict majority of samples to independently block; sample errors abstain,
+    so a flaky judge can neither kill nor wave through on its own. The
+    representative result returned is a blocking sample (so the gate's error
+    message carries real evidence/required_fix) when the majority blocks,
+    else a passing sample.
+    """
+
+    import asyncio  # noqa: PLC0415
+
+    if judge_fn is None:
+        async def judge_fn(**call_kwargs: Any) -> LLMQualityJudgeResult:  # type: ignore[misc]
+            return await judge_commercial_planning_readiness(
+                session, settings, **call_kwargs
+            )
+
+    n = max(1, int(samples))
+    call_kwargs = {"chapters_payload": chapters_payload, **kwargs}
+    if n == 1:
+        return await judge_fn(**call_kwargs)
+
+    async def _one() -> LLMQualityJudgeResult | None:
+        try:
+            return await judge_fn(**call_kwargs)
+        except Exception:
+            logger.warning(
+                "commercial planning readiness judge sample failed; abstaining",
+                exc_info=True,
+            )
+            return None
+
+    # Samples share the caller's session sequentially-unsafe? judge_fn defaults
+    # to complete_text on one AsyncSession — run sequentially to stay
+    # session-safe; the judge is called once per book so latency is bounded.
+    results: list[LLMQualityJudgeResult | None] = []
+    for _ in range(n):
+        results.append(await _one())
+
+    cast = [r for r in results if r is not None]
+    if not cast:
+        raise RuntimeError("all readiness judge samples failed")
+
+    def _blocks(r: LLMQualityJudgeResult) -> bool:
+        return (not r.passed) and bool(r.blocking_issues)
+
+    blockers = [r for r in cast if _blocks(r)]
+    if len(blockers) * 2 > len(cast):
+        blockers.sort(key=lambda r: len(r.blocking_issues), reverse=True)
+        logger.info(
+            "readiness judge stable: %d/%d samples block — blocking",
+            len(blockers), len(cast),
+        )
+        return blockers[0]
+    passing = [r for r in cast if not _blocks(r)]
+    if blockers:
+        logger.info(
+            "readiness judge stable: %d/%d samples block — no majority, passing "
+            "(dissent codes: %s)",
+            len(blockers), len(cast),
+            [i.code for r in blockers for i in r.blocking_issues][:6],
+        )
+    return passing[0]

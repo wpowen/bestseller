@@ -744,3 +744,143 @@ def test_jargon_source_adapter_shape_matches_writing_profile_and_gates_synopsis(
     )
     assert v_jargon.total <= 55
     assert v_jargon.total < v_clean.total
+
+
+# ---------------------------------------------------------------------------
+# Dry-tournament near-miss seeding (2026-07-16). Three real dry runs showed the
+# paradox: floor-rejected candidates (click 8.0 / motion 8.0, one axis short)
+# lose to NOTHING — conception falls back to its vanilla concept, which is
+# weaker than any judged near-miss and dies at the logline gate. Retry attempts
+# regenerated from scratch instead of refining the best near-miss.
+# ---------------------------------------------------------------------------
+from types import SimpleNamespace as _NS
+
+
+def _cand(concept, rejected, **scores):
+    base = {
+        "judge_freshness": 5.0, "judge_click": 5.0, "judge_character_logic": 5.0,
+        "judge_mechanism_causality": 5.0, "judge_genre_fidelity": 5.0,
+        "judge_plain_language": 5.0, "judge_story_motion": 5.0,
+    }
+    base.update(scores)
+    return _NS(concept=concept, rejected_reason=rejected, **base)
+
+
+def test_best_dry_seed_picks_fewest_failed_axes_then_highest_scores() -> None:
+    from bestseller.services.conception import _best_dry_tournament_seed
+
+    near_miss = _cand("近失王者", "钩子硬门失败: 新颖度/题材保真",
+                      judge_click=8.0, judge_story_motion=8.0)
+    weak = _cand("全灭候选", "钩子硬门失败: 新颖度/想点欲/可预测性/人物决策/机制因果/题材保真")
+    assert _best_dry_tournament_seed([weak, near_miss]) == "近失王者"
+
+
+def test_best_dry_seed_never_resurrects_deterministic_kos() -> None:
+    from bestseller.services.conception import _best_dry_tournament_seed
+
+    cliche = _cand("废脉其实是宝脉", "俗套KO: 废脉觉醒是隐藏宝脉")
+    assert _best_dry_tournament_seed([cliche]) == ""
+
+
+def test_best_dry_seed_requires_a_true_near_miss() -> None:
+    from bestseller.services.conception import _best_dry_tournament_seed
+
+    # 4+ failed axes = not a near-miss; refining it is throwing good money after bad
+    weak = _cand("弱", "钩子硬门失败: 新颖度/想点欲/可预测性/人物决策")
+    assert _best_dry_tournament_seed([weak]) == ""
+
+
+def test_object_signal_field_does_not_anchor_temperature_modality() -> None:
+    """The object_signal example taught temperature as THE signal modality
+    ("边缘发凉（不是发烫）") — models copy the example's modality and flip the
+    polarity, so every book's key object converged on 发烫/发凉 (real book
+    2026-07-17: wrist-mark 发烫 ×76 across 50 chapters, 1.5/章 slips under every
+    per-chapter detector). Temperature may appear only as a prohibition, and a
+    non-temperature example modality must be offered instead."""
+
+    from bestseller.domain.workflow import SceneOutlineInput
+
+    desc = SceneOutlineInput.model_fields["object_signal"].description or ""
+    assert "发烫" in desc and "禁止" in desc, "temperature must be named only to ban it"
+    assert "发凉（不是发烫）" not in desc, "the old temperature-anchored example is back"
+    assert any(w in desc for w in ("墨", "重量", "声", "纹", "气味")), (
+        "must offer at least one non-temperature signal modality"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Channel packaging stamp (2026-07-17). Real pilot book: options all wired
+# (male/xuanhuan contract, five-stage progression golden finger) yet the
+# PACKAGING — title 《漏巷符匠不肯落笔》, reader_promise, overall tone — came out
+# literary-suspense. The channel must stamp its style onto the packaging
+# producers (market promise + title polish), not just the concept layer.
+# ---------------------------------------------------------------------------
+
+
+def test_channel_style_stamp_renders_for_male_and_female_channels() -> None:
+    from bestseller.services.genre_persona import render_channel_style_stamp
+
+    male = render_channel_style_stamp("男频")
+    assert "爽点" in male and "直白" in male
+    female = render_channel_style_stamp("女频")
+    assert "情绪" in female or "关系" in female
+    assert render_channel_style_stamp("") == ""
+    assert render_channel_style_stamp(None) == ""
+
+
+def test_market_prompt_carries_channel_stamp() -> None:
+    from bestseller.services.conception import _market_user_prompt
+
+    ctx = {
+        "genre": "玄幻", "sub_genre": "玄幻", "description": "d", "chapter_count": 50,
+        "recommended_platforms": ["起点"], "recommended_audiences": ["男频"],
+        "trend_keywords": [], "trend_score": 60,
+        "user_hints": {"audience_orientation": "男频"},
+    }
+    prompt = _market_user_prompt(ctx)
+    assert "爽点" in prompt and "直白" in prompt
+
+
+def test_title_polish_prompt_carries_channel_stamp(monkeypatch) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from bestseller.services import conception as C
+
+    captured = {}
+
+    async def fake_complete_text(session, settings, request):
+        captured["user"] = request.user_prompt
+        return SimpleNamespace(content="", llm_run_id=None)
+
+    monkeypatch.setattr(C, "complete_text", fake_complete_text)
+    asyncio.run(
+        C._polish_title(
+            None, None, title="旧名", premise="p", synopsis="s", feedback="f",
+            genre="玄幻", sub_genre="玄幻", is_en=False, language="zh-CN",
+            audience_orientation="男频",
+        )
+    )
+    assert "爽点" in captured["user"] and "直白" in captured["user"]
+
+
+def test_character_and_finalize_prompts_carry_channel_stamp() -> None:
+    """Round 10 (2026-07-17): with the tournament dry, the vanilla path produced
+    a 虐女主 sacrificial-heroine concept for a MALE-channel request — the stamp
+    covered market/title but not where the protagonist is BORN (character agent)
+    nor where the story is finalized."""
+
+    from bestseller.services.conception import _character_user_prompt, _finalize_user_prompt
+
+    ctx = {
+        "genre": "玄幻", "sub_genre": "玄幻", "description": "d", "chapter_count": 50,
+        "recommended_platforms": ["起点"], "recommended_audiences": ["男频"],
+        "trend_keywords": [], "trend_score": 60, "language": "zh-CN",
+        "user_hints": {"audience_orientation": "男频"},
+        "tags": [],
+    }
+    char_prompt = _character_user_prompt(ctx)
+    assert "爽点" in char_prompt and "直白" in char_prompt
+
+    fin_prompt = _finalize_user_prompt(ctx, {}, {}, {}, {})
+    assert "爽点" in fin_prompt and "直白" in fin_prompt

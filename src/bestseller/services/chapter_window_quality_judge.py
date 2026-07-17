@@ -28,8 +28,9 @@ _INTERNAL_TELEMETRY_MARKERS = (
     "repair_flags",
     "repair_attempts",
 )
+# 题材中性的"发烫"AI腔热词——单书(青囊)专属短语(铜钱发烫/掌心旧伤/铜钱烫)已删,
+# 通用"发烫"本就覆盖;禁写信号应由本书自己的 signature/forbidden 元数据提供。
 _WINDOW_FORBIDDEN_SIGNAL_TERMS = (
-    "铜钱发烫",
     "发烫",
     "发热",
     "烫意",
@@ -42,8 +43,6 @@ _WINDOW_FORBIDDEN_SIGNAL_TERMS = (
     "高温",
     "灼热",
     "炭火",
-    "掌心的旧伤开始发烫",
-    "铜钱烫",
 )
 
 

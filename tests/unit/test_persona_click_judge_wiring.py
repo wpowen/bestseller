@@ -143,4 +143,6 @@ def test_persona_judge_config_present_in_story_appeal_yaml() -> None:
     assert pj.get("enabled") is True
     assert pj.get("samples", 0) >= 1
     assert 0 < pj.get("click_rate_min", 0) <= 1
-    assert pj.get("block_below") is False  # 本批仍 advisory，真机校准后再议
+    # 2026-07-17 真机校准完成后置 true：试点书证实选项全接线的情况下频道包装仍会
+    # 跑偏(男频出文青书名/悬疑承诺),包装层需要画像判官真实否决权(用户拍板)。
+    assert pj.get("block_below") is True

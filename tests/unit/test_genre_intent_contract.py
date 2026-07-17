@@ -66,3 +66,48 @@ def test_explicit_enhancers_are_preserved_but_not_inferred() -> None:
 
     assert contract.explicit_enhancers.brainhole is True
     assert contract.explicit_enhancers.effect_skills == ("twist_reversal_engine",)
+
+
+# ── allowed_modernity 数据驱动回归网 (2026-07-15) ───────────────────────────
+# 曾是 2 行硬编码,只覆盖 都市/urban-cultivation ⇒ 其余 19 个题材全 genre_native:
+# 悬疑推理书被禁用自己的核心词汇(法医/尸检),现代言情/现实(行业职场)/游戏竞技/末世
+# 书一写 手机/写字楼/职场 就被构思期最终绊线 raise 打死。
+
+
+@pytest.mark.unit
+def test_contemporary_genres_may_use_contemporary_vocabulary() -> None:
+    """当代题材必须能写当代词——否则用户选了就必死。"""
+
+    modern_premise = "林岚在写字楼的职场里被上司打压，她用一部手机录下证据。"
+    for genre in ("行业职场", "职场情感", "都市", "游戏竞技"):
+        contract = contract_from_selection(
+            {"channel": "general", "genre": genre, "sub_genre": None, "tags": []}
+        )
+        assert contract.allowed_modernity in ("modern", "hybrid"), genre
+        assert detect_genre_native_ontology_violations(modern_premise, contract) == (), genre
+
+
+@pytest.mark.unit
+def test_detective_genre_may_use_its_own_forensic_vocabulary() -> None:
+    """悬疑推理的 法医/尸检/停尸房 是题材核心词,不是"现代漂移"。"""
+
+    contract = contract_from_selection(
+        {"channel": "male", "genre": "悬疑推理", "sub_genre": None, "tags": []}
+    )
+    forensic = "法医在停尸房完成尸检，确认死者身份。"
+    assert detect_genre_native_ontology_violations(forensic, contract) == ()
+
+
+@pytest.mark.unit
+def test_native_genre_still_blocks_genuine_modern_drift() -> None:
+    """放宽当代题材的同时,原生题材(玄幻/仙侠/古言)的漂移必须照样拦住。"""
+
+    for genre in ("玄幻", "仙侠", "古代言情"):
+        contract = contract_from_selection(
+            {"channel": None, "genre": genre, "sub_genre": None, "tags": []}
+        )
+        assert contract.allowed_modernity == "genre_native", genre
+        hits = detect_genre_native_ontology_violations(
+            "他掏出手机，在写字楼的职场会议上发微信。", contract
+        )
+        assert hits, f"{genre} 应拦住现代漂移"

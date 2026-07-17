@@ -530,6 +530,7 @@ def _build_candidate_messages(
     avoid_mechanisms_block: str,
     seed_concept: str = "",
     retry_feedback: str = "",
+    audience_orientation: str = "",
 ) -> tuple[str, str]:
     system = (
         "你是顶级网文制作人，专出'榜单编辑看到会立刻加价买断'的高概念。"
@@ -558,8 +559,10 @@ def _build_candidate_messages(
     else:
         hybrid_directive = (
             f"本路强制杂交：把【{genre}】与【{dimension}】这个异质领域硬性融合，"
-            "在两者交点上找没人写过的位置。杂交必须是概念级的（世界规则/主角"
-            "职业/冲突形态由该领域重塑），不是把该领域词汇当皮肤贴上去。"
+            "在两者交点上找没人写过的位置。杂交必须是概念级的（用该领域重塑机制与"
+            "冲突的运转方式），不是把该领域词汇当皮肤贴上去；但故事的主冲突与核心"
+            f"读者契约必须仍然明显属于【{genre}】——题材保真是钩子硬门（不达标即废稿），"
+            "异质领域是手段，绝不许让它变成题材本身。"
             "只对本路使用一条压缩脑洞原则：第一眼意外，解释后必然；新奇点必须压在"
             "人物核心与现实行动上，并真实改变关系、资源、暴露风险、制度压力或未来选择；"
             "若去掉这个脑洞主线仍能成立，就说明只是装饰，必须重做。"
@@ -591,8 +594,15 @@ def _build_candidate_messages(
         if retry_feedback.strip()
         else ""
     )
+    audience_line = (
+        f"【频道/受众】{audience_orientation} —— 主角设定、爽点形态与情绪承诺必须写给"
+        "该频道的目标读者，频道错位（如男频写文艺女主向）即废稿。\n"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
     user = (
-        f"【题材】{genre}（{sub_genre}）｜目标体量：{chapter_count}章起步、可扩展到几百章\n\n"
+        f"【题材】{genre}（{sub_genre}）｜目标体量：{chapter_count}章起步、可扩展到几百章\n"
+        f"{audience_line}\n"
         f"{seed_block}"
         f"{retry_block}"
         f"{hybrid_directive}\n\n"
@@ -653,6 +663,7 @@ def _build_lean_candidate_messages(
     avoid_mechanisms_block: str,
     seed_concept: str = "",
     retry_feedback: str = "",
+    audience_orientation: str = "",
 ) -> tuple[str, str]:
     """Build the experimental compact StoryPackage arm.
 
@@ -682,11 +693,18 @@ def _build_lean_candidate_messages(
         if dimension in {_CONTROL_DIMENSION, _CHARACTER_CONTROL_DIMENSION}
         else f"只把【{dimension}】作为破题视角，若它只是换皮就舍弃"
     )
+    audience_line = (
+        f"频道/受众：{audience_orientation}（主角与爽点必须写给该频道读者，频道错位即废稿）。\n"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
     user = (
         "【精简故事包】\n"
         f"题材：{genre}（{sub_genre}）；目标体量：{chapter_count}章，但本轮禁止规划章节。\n"
+        f"{audience_line}"
         f"{seed_block}{retry_block}"
         f"探索方向：{dimension_instruction}。\n"
+        "一句话必须是目标读者一遍就懂的大白话，生造术语/需要解释的机构名不得进钩子。\n"
         f"禁用题材众数：{ban_block}。\n"
         f"{avoid_mechanisms_block}"
         "\n先在内部完成三项检查，不输出分析过程：\n"
@@ -725,6 +743,7 @@ def _build_native_candidate_messages(
     avoid_mechanisms_block: str,
     seed_concept: str = "",
     retry_feedback: str = "",
+    audience_orientation: str = "",
 ) -> tuple[str, str]:
     """Minimal control arm that preserves the model's native story judgment."""
 
@@ -745,9 +764,15 @@ def _build_native_candidate_messages(
         if retry_feedback.strip()
         else ""
     )
+    audience_line = (
+        f"频道/受众：{audience_orientation}（主角与爽点必须写给该频道读者，频道错位即废稿）。\n"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
     user = (
         "【原生故事基线】\n"
         f"请为{genre}（{sub_genre}）想一个有吸引力、适合约{chapter_count}章的原创故事。\n"
+        f"{audience_line}"
         f"{seed}{retry}"
         f"本次从“{story_lane}”起步，但不要套公式。先想正常人的欲望和选择、具体困境"
         "和会不断变化的局面。\n"
@@ -776,6 +801,7 @@ def _build_engine_kernel_messages(
     chapter_count: int,
     seed_concept: str = "",
     seed_support: dict[str, Any] | None = None,
+    audience_orientation: str = "",
 ) -> tuple[str, str]:
     """Build a minimal premise card before any marketing sentence."""
 
@@ -808,10 +834,17 @@ def _build_engine_kernel_messages(
     lane_brief = _NATIVE_STORY_LANE_BRIEFS.get(
         lane.split("#", 1)[0], _NATIVE_STORY_LANE_BRIEFS["纯题材直觉"]
     )
+    audience_line = (
+        f"频道/受众：{audience_orientation}。主角设定、reader_promise 和 emotional_promise "
+        "必须写给该频道的目标读者；频道错位（如男频给出文艺女主向项目卡）即项目不成立。\n"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
     user = (
         "【PREMISE_CARD】本轮不写一句话钩子，也不规划卷章。\n"
         f"题材：{genre}（{sub_genre}）；目标形态：约{chapter_count}章长篇；"
         f"破题路线：{lane.split('#', 1)[0]}。\n"
+        f"{audience_line}"
         f"路线边界：{lane_brief}\n"
         f"{seed}"
         f"{support}"
@@ -1176,6 +1209,7 @@ def _build_hook_from_engine_messages(
     sub_genre: str,
     kernel: dict[str, Any],
     seed_concept: str = "",
+    audience_orientation: str = "",
 ) -> tuple[str, str]:
     """Distill a human-facing story seed from an already designed engine."""
 
@@ -1183,9 +1217,15 @@ def _build_hook_from_engine_messages(
         "你是商业小说主编。候选项目卡已经冻结，你只负责找到其中最有人味、最想点的"
         "开局表达；不得添加随机代价、折寿失忆残缺、幕后集团或新主线。只输出JSON。"
     )
+    audience_line = (
+        f"频道/受众：{audience_orientation}（三条钩子都写给该频道读者，用他们要的爽点角度切入）\n"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
     user = (
         "【HOOK_DISTILL】\n"
         f"题材：{genre}（{sub_genre}）\n"
+        f"{audience_line}"
         f"原始种子：{seed_concept.strip() or '无'}\n"
         f"冻结项目卡：{json.dumps(kernel, ensure_ascii=False)}\n\n"
         "不要套promise/paradox/scene模板。像真正的小说作者一样独立写3条最想让人点开的"
@@ -1612,23 +1652,83 @@ def _build_seriality_repair_messages(
     return system, base + repair
 
 
+# 双层地板(2026-07-17,八轮真机取证):判官打分天然聚在6-7,八轴同时≥7.0的联合
+# 通过率趋近于零(30+候选零晋级;mech 9.0/click 8.0 的候选死于 plain 单轴差1分),
+# 逐轴下调是打地鼠。灾难线以下任何一轴=一票死(拦 genre 2.0/plain 3.0 真灾难);
+# 灾难线以上容忍恰好 1 根软轴未达标——下游 logline/persona 门仍是终审。
+_FLOOR_CATASTROPHE = 5.0
+_PREDICTABLE_CATASTROPHE = 7.5
+_SOFT_MISS_ALLOWANCE = 1
+
+_FLOOR_AXIS_LABELS: tuple[tuple[str, str, float], ...] = (
+    ("freshness", "新颖度", 7.0),
+    ("click", "想点欲", 7.5),
+    ("character_logic", "人物决策", 7.0),
+    ("mechanism_causality", "机制因果", 7.0),
+    ("genre_fidelity", "题材保真", 7.0),
+    ("plain_language", "大白话", 7.0),
+    ("story_motion", "故事运动", 7.5),
+)
+
+
+def _hard_floor_failed_axes(
+    scores: dict[str, float],
+    hard_floors: dict[str, Any],
+) -> list[str]:
+    """Two-tier floor verdict. Returns the axes that make the candidate fail
+    (empty list = qualified). Catastrophes always fail; soft misses fail only
+    when there is more than one, in which case every miss is named so the
+    retry feedback / near-miss selector see the full picture."""
+
+    catastrophes: list[str] = []
+    soft: list[str] = []
+    for key, label, default in _FLOOR_AXIS_LABELS:
+        value = float(scores.get(key, 0.0))
+        if value < _FLOOR_CATASTROPHE:
+            catastrophes.append(label)
+        elif value < float(hard_floors.get(key, default)):
+            soft.append(label)
+    predictable = float(scores.get("predictable", 10.0))
+    if predictable > _PREDICTABLE_CATASTROPHE:
+        catastrophes.append("可预测性")
+    elif predictable > float(hard_floors.get("predictable_max", 5.5)):
+        soft.append("可预测性")
+    if catastrophes:
+        return catastrophes + soft
+    if len(soft) > _SOFT_MISS_ALLOWANCE:
+        return soft
+    return []
+
+
 def _build_judge_messages(
     *,
     candidate: ConceptCandidate,
     genre: str,
     sub_genre: str = "",
     references: list[dict[str, str]],
+    audience_orientation: str = "",
 ) -> tuple[str, str]:
     ref_lines = "\n".join(
         f"- 《{r.get('title', '')}》：{str(r.get('blurb', '')).strip()[:80]}"
         for r in references[:4]
     ) or "（无参照）"
+    # 频道读者定义在 click 分诞生处：中性编辑口味放过的黑话概念,下游 persona
+    # 判官 0/3 否决时已无重试可救(真机第6轮)。click/plain_language 必须按频道
+    # 主流读者判。
+    audience_line = (
+        f"【目标读者】{audience_orientation}主流读者：三秒看不懂主角是谁、要干嘛、"
+        "爽在哪就划走；生造名词堆叠、设定绕、'又是X又是Y'式复杂开局＝直接不点。"
+        "click 与 plain_language 两轴按这个读者判，不按编辑口味判。\n"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
     system = (
         "你是挑剔的网文榜单主编，每天毙掉几十个平庸选题。你只回答 JSON，"
         "评分严格：见过类似的就是不新鲜，能猜到后续就是可预测，不想点就是不想点。"
     )
     genre_label = f"{genre}（{sub_genre}）" if sub_genre.strip() else genre
     user = (
+        f"{audience_line}"
         f"【待评概念】（{genre_label}）\n"
         f"概念：{candidate.concept}\n机制：{candidate.mechanism}\n"
         f"认知缺口：{candidate.hook_question}\n\n"
@@ -1939,6 +2039,7 @@ async def run_concept_tournament(
     rng: random.Random | None = None,
     seed_concept: str = "",
     retry_feedback: str = "",
+    audience_orientation: str = "",
 ) -> ConceptTournamentResult:
     """跑一轮概念淘汰赛。异常转成 winner=None，由调用方按目标篇幅决定是否阻断。
 
@@ -2328,6 +2429,7 @@ async def run_concept_tournament(
                         chapter_count=chapter_count,
                         seed_concept=premise_seed,
                         seed_support=raw_pitch_by_seed.get(premise_seed),
+                        audience_orientation=audience_orientation,
                     )
                     result.candidate_prompt_chars += len(engine_system) + len(engine_user)
                     result.candidate_generation_calls += 1
@@ -2509,6 +2611,7 @@ async def run_concept_tournament(
                             chapter_count=chapter_count,
                             seed_concept=premise_seed,
                             seed_support=raw_pitch_by_seed.get(premise_seed),
+                            audience_orientation=audience_orientation,
                         )
                         result.candidate_prompt_chars += len(engine_system) + len(engine_user)
                         result.candidate_generation_calls += 1
@@ -2596,6 +2699,7 @@ async def run_concept_tournament(
                         sub_genre=sub_genre,
                         kernel=kernel,
                         seed_concept=premise_seed,
+                        audience_orientation=audience_orientation,
                     )
                 else:
                     system, user = build_candidate_messages(
@@ -2607,6 +2711,7 @@ async def run_concept_tournament(
                         avoid_mechanisms_block=avoid_block,
                         seed_concept=seed_concept,
                         retry_feedback=retry_feedback,
+                        audience_orientation=audience_orientation,
                     )
                 result.candidate_prompt_chars += len(system) + len(user)
                 result.candidate_generation_calls += 1
@@ -2686,6 +2791,14 @@ async def run_concept_tournament(
         result.candidates = annotated
 
         if not screened:
+            # 与判官干涸取证对称:这条是确定性筛(俗套KO/反模式/种子审计)在判官之前
+            # 全灭的路径,第10轮 wild 模式整批死在这里且零证据。
+            for c in annotated:
+                logger.warning(
+                    "concept tournament screen-dry — candidate %r: rejected=%s",
+                    (c.concept or "")[:60],
+                    c.rejected_reason or "(unknown)",
+                )
             logger.warning("concept tournament: all candidates rejected; no injection")
             return result
 
@@ -2724,6 +2837,7 @@ async def run_concept_tournament(
                     genre=genre,
                     sub_genre=sub_genre,
                     references=references,
+                    audience_orientation=audience_orientation,
                 )
                 raw, run_id = await judge_fn(system, user)
                 if run_id is not None:
@@ -2775,24 +2889,19 @@ async def run_concept_tournament(
                     else {}
                 )
                 failed_axes: list[str] = []
-                if fresh < float(hard_floors.get("freshness", 7.0)):
-                    failed_axes.append("新颖度")
-                if click < float(hard_floors.get("click", 7.5)):
-                    failed_axes.append("想点欲")
-                if predictable > float(hard_floors.get("predictable_max", 5.5)):
-                    failed_axes.append("可预测性")
-                if character_logic < float(hard_floors.get("character_logic", 7.0)):
-                    failed_axes.append("人物决策")
-                if mechanism_causality < float(
-                    hard_floors.get("mechanism_causality", 7.0)
-                ):
-                    failed_axes.append("机制因果")
-                if genre_fidelity < float(hard_floors.get("genre_fidelity", 7.0)):
-                    failed_axes.append("题材保真")
-                if plain_language < float(hard_floors.get("plain_language", 7.0)):
-                    failed_axes.append("大白话")
-                if story_motion < float(hard_floors.get("story_motion", 7.5)):
-                    failed_axes.append("故事运动")
+                failed_axes = _hard_floor_failed_axes(
+                    {
+                        "freshness": fresh,
+                        "click": click,
+                        "predictable": predictable,
+                        "character_logic": character_logic,
+                        "mechanism_causality": mechanism_causality,
+                        "genre_fidelity": genre_fidelity,
+                        "plain_language": plain_language,
+                        "story_motion": story_motion,
+                    },
+                    hard_floors,
+                )
                 judged.append(
                     _dc_replace(
                         candidate,
@@ -2832,6 +2941,28 @@ async def run_concept_tournament(
             and (c.composite or 0.0) >= winner_min
         ]
         if not contenders:
+            # Forensics: a dry tournament forces conception onto its vanilla
+            # concept, which then (justifiably) fails the logline gate on
+            # unpredictability — but with no per-candidate trail there is no way
+            # to tell miscalibrated floors from genuinely bad candidates. Four
+            # consecutive real runs went dry with zero evidence (2026-07-16).
+            for c in judged:
+                logger.warning(
+                    "concept tournament dry — candidate %r: composite=%s rejected=%s "
+                    "fresh=%.1f click=%.1f predictable=%.1f char=%.1f mech=%.1f "
+                    "genre=%.1f plain=%.1f motion=%.1f",
+                    (c.concept or "")[:60],
+                    c.composite,
+                    c.rejected_reason or "低于 winner_min",
+                    float(c.judge_freshness or 0.0),
+                    float(c.judge_click or 0.0),
+                    float(c.judge_predictable or 0.0),
+                    float(c.judge_character_logic or 0.0),
+                    float(c.judge_mechanism_causality or 0.0),
+                    float(c.judge_genre_fidelity or 0.0),
+                    float(c.judge_plain_language or 0.0),
+                    float(c.judge_story_motion or 0.0),
+                )
             logger.warning("concept tournament: no hook-qualified contenders; no injection")
             return result
 
@@ -2851,6 +2982,7 @@ async def run_concept_tournament(
                     genre=genre,
                     sub_genre=sub_genre,
                     references=references,
+                    audience_orientation=audience_orientation,
                 )
                 raw, run_id = await finalist_judge_fn(system, user)
                 if run_id is not None:
@@ -2878,41 +3010,7 @@ async def run_concept_tournament(
                         0.0, min(10.0, float(verdict.get("story_motion", 0)))
                     ),
                 }
-                checks = (
-                    ("新颖度", scores["freshness"] < float(hard_floors.get("freshness", 7.0))),
-                    ("想点欲", scores["click"] < float(hard_floors.get("click", 7.5))),
-                    (
-                        "可预测性",
-                        scores["predictable"]
-                        > float(hard_floors.get("predictable_max", 5.5)),
-                    ),
-                    (
-                        "人物决策",
-                        scores["character_logic"]
-                        < float(hard_floors.get("character_logic", 7.0)),
-                    ),
-                    (
-                        "机制因果",
-                        scores["mechanism_causality"]
-                        < float(hard_floors.get("mechanism_causality", 7.0)),
-                    ),
-                    (
-                        "题材保真",
-                        scores["genre_fidelity"]
-                        < float(hard_floors.get("genre_fidelity", 7.0)),
-                    ),
-                    (
-                        "大白话",
-                        scores["plain_language"]
-                        < float(hard_floors.get("plain_language", 7.0)),
-                    ),
-                    (
-                        "故事运动",
-                        scores["story_motion"]
-                        < float(hard_floors.get("story_motion", 7.5)),
-                    ),
-                )
-                failed = [label for label, is_failed in checks if is_failed]
+                failed = _hard_floor_failed_axes(scores, hard_floors)
                 composite = (
                     scores["freshness"] * w_fresh
                     + scores["click"] * w_click

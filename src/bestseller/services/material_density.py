@@ -1196,17 +1196,21 @@ def _select_material_pack(
     lower = haystack.lower()
     if _looks_like_qingnang(haystack):
         return "qingnang", _build_qingnang_pack(project_id)
-    if _has_any(lower, ("shadowbound", "fantasy romance", "romantasy", "fae", "chosen one")):
+    # 只按本书专属标识(shadowbound)命中——不用裸题材词 romantasy/fae/chosen one,
+    # 否则任意 romantasy 书都会被灌进这一本 demo 书的世界(Summer/Winter Court 等)。
+    if _has_any(lower, ("shadowbound",)):
         return "english_romantasy", _build_spec_pack(
             project_id,
             _english_romantasy_pack_spec(),
         )
-    if _has_any(lower, ("breaking point", "cole", "reservoir kinetics", "sophie deadline")):
+    # 单书参考包只按【本书专属标识】命中,不用裸常见名(cole/kade/maya)路由——
+    # 否则任意带 Maya/Cole 角色的书都会被灌进这一本 demo 书的世界(单书注入)。
+    if _has_any(lower, ("breaking point", "reservoir kinetics", "sophie deadline")):
         return "english_superhero_breaking_point", _build_spec_pack(
             project_id,
             _breaking_point_pack_spec(),
         )
-    if _has_any(lower, ("witness protocol", "kade", "sixty-second", "maya", "marcus mercer")):
+    if _has_any(lower, ("witness protocol", "sixty-second", "marcus mercer")):
         return "english_superhero_witness_protocol", _build_spec_pack(
             project_id,
             _witness_protocol_pack_spec(),
@@ -1216,12 +1220,18 @@ def _select_material_pack(
             project_id,
             _generic_superhero_pack_spec(),
         )
-    if _has_any(haystack, ("代价之鸢", "末世异能", "无CP", "源初", "方舟城")):
+    # 只按本书专属标识(代价之鸢/源初/方舟城)命中——不用裸"末世异能/无CP"路由,
+    # 否则任意末世无CP书都会被灌进这一本的专属世界(方舟城/源初=单书私货)。
+    if _has_any(haystack, ("代价之鸢", "源初观测者", "方舟城")):
         return "female_no_cp_apocalypse", _build_spec_pack(
             project_id,
             _female_no_cp_pack_spec(),
         )
-    if _has_any(haystack, ("道种破虚", "仙侠升级", "宗门逆袭", "道种", "炼气")):
+    # 只按本书专属标识(道种破虚/其金手指"道种")命中。此前还挂着 "炼气" ——修仙
+    # 一阶的通用术语,几乎每本修仙书的设定里都有——以及裸题材词 仙侠升级/宗门逆袭,
+    # 于是【每一本】修仙书都被灌进这一本参考书的私有世界(杂役峰/废灵根旧事/
+    # 二十年前旧事/三个月大考)。通用同题材书应改走下面题材级的 category blueprint。
+    if _has_any(haystack, ("道种破虚", "道种")):
         return "xianxia_upgrade", _build_spec_pack(
             project_id,
             _xianxia_upgrade_pack_spec(),
@@ -1369,7 +1379,7 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         protagonist_en="The Protagonist",
         archetype_key="evidence-led-misdirection-investigator",
         risk_tolerance="low",
-        system_zh="线索链与误导账",
+        system_zh="线索链与误导迷局",
         system_en="Clue Chain and Misdirection Ledger",
         world_zh="证据污染世界",
         world_en="Evidence-Contamination World",
@@ -1401,7 +1411,7 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         protagonist_en="The Protagonist",
         archetype_key="systems-strategy-worldbuilder",
         risk_tolerance="medium",
-        system_zh="势力账与资源博弈",
+        system_zh="势力格局与资源博弈",
         system_en="Faction Ledger and Resource Strategy",
         world_zh="多势力战略世界",
         world_en="Multi-Faction Strategic World",
@@ -1465,7 +1475,7 @@ _CATEGORY_BLUEPRINTS: dict[str, CategoryPackBlueprint] = {
         protagonist_en="The Protagonist",
         archetype_key="agency-first-nonromantic-growth-lead",
         risk_tolerance="medium",
-        system_zh="选择权与非恋爱同盟账",
+        system_zh="选择权与非恋爱同盟网",
         system_en="Agency and Nonromantic Alliance Ledger",
         world_zh="选择权重建世界",
         world_en="Agency-Rebuilding World",
@@ -1832,7 +1842,7 @@ def _category_pack_spec(blueprint: CategoryPackBlueprint, *, pack_id: str) -> Ma
             ],
             "thematic_motifs": [
                 _s(f"{base}-choice-and-price", "选择与代价", "只有代价可见，主动性才有意义。", symbols=["选择", "价格"]),
-                _s(f"{base}-state-and-memory", "状态与记忆", "世界会记住胜利、谎言、失败和承诺。", symbols=["账", "疤"]),
+                _s(f"{base}-state-and-memory", "状态与记忆", "世界会记住胜利、谎言、失败和承诺。", symbols=["印记", "疤"]),
                 _s(f"{base}-threshold-and-return", "门槛与不可回头", "跨过门、等级、契约或地图线后，有些事不能归零。", symbols=["门", "线"]),
                 _s(f"{base}-mask-and-proof", "面具与证明", "身份宣称必须通过行动和证据验证。", symbols=["面具", "证据"]),
             ],
@@ -2114,16 +2124,16 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
         "female_no_cp_apocalypse",
         {
             "world_settings": [
-                _s("ark-city-debt-system", "方舟城债务系统", "方舟城不是安全区背景，而是资源配给、异能登记、旧案遮掩和人情债组成的压迫机器。", rule="资源和旧债绑定"),
-                _s("cost-transfer-apocalypse", "代价转化末世", "救人必须决定谁受益、谁承担、承担什么，以及后遗症如何进入关系账本。", rule="无免费救援"),
+                _s("ark-city-debt-system", "方舟城权责系统", "方舟城不是安全区背景，而是资源配给、异能登记、旧案遮掩和人情牵扯组成的压迫机器。", rule="资源和旧怨绑定"),
+                _s("cost-transfer-apocalypse", "代价转化末世", "救人必须决定谁受益、谁承担、承担什么，以及后遗症如何改变关系格局。", rule="无免费救援"),
                 _s("source-origin-hunt-world", "源初追猎世界", "源初通过观测、标记、诱饵、舆论和样本回收学习主角能力。", rule="敌人学习"),
-                _s("no-cp-growth-world", "无CP成长世界", "关系推进来自信任、债务、利用、清算和共同风险，不能靠恋爱线驱动。", rule="非恋爱关系网"),
+                _s("no-cp-growth-world", "无CP成长世界", "关系推进来自信任、亏欠、利用、了结和共同风险，不能靠恋爱线驱动。", rule="非恋爱关系网"),
             ],
             "factions": [
                 _s("ark-city-management", "方舟城管理部", "管理部以登记、配给、封锁、旧案档案控制异能者。", tools=["登记", "配给", "封锁"]),
                 _s("source-origin", "源初", "源初把主角的救人记录当作能力样本持续更新捕捉策略。", tools=["标记", "样本", "舆论"]),
                 _s("scavenger-network", "清道夫网络", "清道夫在兽潮边缘交易药品、情报、身份和背叛。", tools=["黑市", "路线", "药剂"]),
-                _s("old-exile-signers", "三年前签字者", "三年前放逐事件的签字者、受益者、沉默者构成旧债网络。", tools=["签名", "沉默", "旧证词"]),
+                _s("old-exile-signers", "三年前签字者", "三年前放逐事件的签字者、受益者、沉默者构成旧怨网络。", tools=["签名", "沉默", "旧证词"]),
             ],
             "locale_templates": [
                 _s("ark-distribution-hall", "方舟城配给大厅", "资源、公平幻觉和权力羞辱集中爆发的公共空间。", use="资源冲突"),
@@ -2134,7 +2144,7 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
                 _s("source-sample-site", "源初样本点", "源初留下诱饵或回收样本的地点。", use="追猎升级"),
             ],
             "power_systems": [
-                _s("cost-transfer-ledger", "代价转化账本", "每次使用前必须写清请求方、受益方、承担方、代价类型和比例。", fields=["请求", "受益", "承担", "比例"]),
+                _s("cost-transfer-ledger", "代价转化清单", "每次使用前必须写清请求方、受益方、承担方、代价类型和比例。", fields=["请求", "受益", "承担", "比例"]),
                 _s("aftereffect-rule", "后遗症规则", "代价必须留下身体、精神、记忆、稳定性或社会身份后果。", fields=["身体", "精神", "身份"]),
                 _s("nontransferable-boundary", "不可转移边界", "某些代价不能转移，错误估价会反噬主角。", use="边界反噬"),
                 _s("source-data-learning", "源初数据学习", "主角每救一次人，源初获得或误判一条能力数据。", use="敌人升级"),
@@ -2142,48 +2152,48 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
             ],
             "character_archetypes": [
                 _s("pricing-heroine", "主动定价女主", "女主的成长落在选择权扩大，不是被认可、拯救或原谅。", function="主角方法论"),
-                _s("nonromantic-debt-ally", "非恋爱债务盟友", "盟友关系靠风险共担和债务重估推进。", function="无CP关系"),
+                _s("nonromantic-debt-ally", "非恋爱权责盟友", "盟友关系靠风险共担和权责重估推进。", function="无CP关系"),
                 _s("resource-bureaucrat", "资源官僚", "对手用配给和登记压迫，而不是单纯战斗。", function="现实压力"),
                 _s("sample-hunter", "样本猎手", "敌人通过样本和诱饵学习主角能力。", function="源初压力"),
             ],
             "character_templates": [
-                _s("pricing-protagonist", "主动定价女主原型", "代价转化者，核心爽点是主动定价、拒绝无偿牺牲和清算旧债。人名由本书按设定自取，勿套用模板名。", role="protagonist"),
-                _s("old-debt-ally", "旧背叛债务盟友原型", "旧背叛线人物，必须通过行动补偿和风险共担推进，不能滑向CP。", role="old debt ally"),
+                _s("pricing-protagonist", "主动定价女主原型", "代价转化者，核心爽点是主动定价、拒绝无偿牺牲和了结旧怨。人名由本书按设定自取，勿套用模板名。", role="protagonist"),
+                _s("old-debt-ally", "旧背叛亏欠盟友原型", "旧背叛线人物，必须通过行动补偿和风险共担推进，不能滑向CP。", role="old debt ally"),
                 _s("institutional-ally", "体制信息盟友原型", "方舟城信息/权力接口，帮助总带操控风险。", role="institutional ally"),
                 _s("ark-officer", "管理部登记官", "以程序和配给制造压力。", role="bureaucratic pressure"),
                 _s("source-observer", "源初观测者", "追踪能力样本并更新捕捉策略。", role="hunter"),
-                _s("saved-debtor", "被救亏欠者", "被救后必须改变立场、投靠、怀疑或背刺。", role="relationship ledger"),
+                _s("saved-debtor", "被救亏欠者", "被救后必须改变立场、投靠、怀疑或背刺。", role="relationship stake"),
             ],
             "plot_patterns": [
-                _s("rescue-to-debt-loop", "救援转债务循环", "救人后必须改变关系账本和资源局面。", rule="救援不归零"),
+                _s("rescue-to-debt-loop", "救援转亏欠循环", "救人后必须改变关系格局和资源局面。", rule="救援不归零"),
                 _s("price-refusal-payoff", "开价/拒绝爽点", "主角通过拒绝或抬价拿回选择权。", rule="主动权"),
                 _s("source-hunt-feedback", "源初追猎反馈", "每次能力使用都让源初调整策略。", rule="敌人适应"),
-                _s("old-exile-fragment", "三年前旧债碎片", "旧案每次只揭一层签字者、受益者或沉默者。", rule="长线揭示"),
+                _s("old-exile-fragment", "三年前旧怨碎片", "旧案每次只揭一层签字者、受益者或沉默者。", rule="长线揭示"),
             ],
             "scene_templates": [
                 _s("pricing-negotiation", "代价定价场景", "请求方求救，主角问清受益和承担，再开出条件。", beats=["求救", "拆动机", "定价"]),
                 _s("beast-tide-rescue-cost", "兽潮救援代价场景", "救援和撤离路线必须带身体或资源成本。", beats=["兽潮", "取舍", "反噬"]),
                 _s("registration-pressure", "登记压迫场景", "管理部用流程逼主角暴露能力参数。", beats=["登记", "诱导", "反问"]),
                 _s("source-bait", "源初诱饵场景", "看似求救的信息其实在测能力边界。", beats=["诱饵", "使用", "数据泄露"]),
-                _s("old-debt-testimony", "旧债证词场景", "证人只说对自己有利的一半，推动旧案一层。", beats=["证词", "隐瞒", "新债"]),
+                _s("old-debt-testimony", "旧怨证词场景", "证人只说对自己有利的一半，推动旧案一层。", beats=["证词", "隐瞒", "新怨"]),
                 _s("noncp-trust-action", "无CP信任行动场景", "信任通过行动、风险共担或利益让渡建立。", beats=["怀疑", "行动", "重估"]),
             ],
             "device_templates": [
-                _s("cost-ledger-card", "代价账卡", "记录谁欠谁、欠什么、何时清算。", function="债务追踪"),
+                _s("cost-ledger-card", "代价凭记", "记下谁对谁有亏欠、亏欠什么、何时了结。", function="亏欠追踪"),
                 _s("ability-registration-file", "异能登记档案", "能力参数和身份风险的正式记录。", function="制度压力"),
                 _s("source-marker", "源初标记", "源初观测或定位主角的痕迹。", function="追猎线索"),
                 _s("exile-signature-page", "放逐签字页", "三年前旧案签字者与沉默者的证物。", function="旧案证据"),
-                _s("ration-token", "配给令牌", "资源争夺和人情债的实体化道具。", function="资源账"),
+                _s("ration-token", "配给令牌", "资源争夺和人情牵扯的实体化道具。", function="资源筹码"),
             ],
             "thematic_motifs": [
-                _s("price-and-choice", "代价与选择", "成长不是被救，而是能决定代价如何分配。", symbols=["账", "价"]),
-                _s("debt-without-romance", "非恋爱债务关系", "亲密关系之外的信任、利用和清算同样强烈。", symbols=["欠条", "并肩"]),
+                _s("price-and-choice", "代价与选择", "成长不是被救，而是能决定代价如何分配。", symbols=["筹码", "价"]),
+                _s("debt-without-romance", "非恋爱亏欠关系", "亲密关系之外的信任、利用和了结同样强烈。", symbols=["亏欠", "并肩"]),
                 _s("body-as-cost", "身体作为代价", "伤、失忆、异能不稳让能力成本可见。", symbols=["伤口", "颤抖"]),
                 _s("shelter-as-cage", "安全区即牢笼", "方舟城保护与控制是一体两面。", symbols=["城门", "登记"]),
             ],
             "emotion_arcs": [
                 _s("pity-to-price", "怜悯到定价", "主角可以同情，但最终必须转化为有条件选择。", beats=["触动", "问价", "定价"]),
-                _s("betrayal-to-accounting", "背叛到记账", "旧背叛不靠原谅解决，靠补偿和新风险重估。", beats=["刺痛", "证据", "清算"]),
+                _s("betrayal-to-accounting", "背叛到了结", "旧背叛不靠原谅解决，靠补偿和新风险重估。", beats=["刺痛", "证据", "了结"]),
                 _s("exhaustion-to-agency", "疲惫到主动权", "代价反噬后仍由主角重新设定规则。", beats=["疲惫", "拒绝", "重订规则"]),
             ],
             "dialogue_styles": [
@@ -2192,9 +2202,9 @@ def _female_no_cp_pack_spec() -> MaterialPackSpec:
                 _s("noncp-trust-speech", "无CP信任话术", "盟友少说保护，多说交换、路线、证据和风险。", style="行动导向"),
             ],
             "anti_cliche_patterns": [
-                _s("no-hidden-romance-drive", "禁止隐性恋爱主驱动", "旧债盟友线必须围绕补偿、风险和旧债，不能写成男主保护。", avoid="CP滑坡"),
+                _s("no-hidden-romance-drive", "禁止隐性恋爱主驱动", "旧怨盟友线必须围绕补偿、风险和旧怨，不能写成男主保护。", avoid="CP滑坡"),
                 _s("no-free-healing", "禁止无损治疗", "代价转化不能变成万能治疗或复活。", avoid="无成本能力"),
-                _s("no-monster-only-chapters", "禁止纯打怪章节", "兽潮必须推进代价规则、源初数据或方舟城旧债。", avoid="副本化"),
+                _s("no-monster-only-chapters", "禁止纯打怪章节", "兽潮必须推进代价规则、源初数据或方舟城旧怨。", avoid="副本化"),
             ],
             "real_world_references": [
                 _s("disaster-logistics", "灾难物流参考", "配给、撤离、收容、医疗排队可制造现实压力。", methods=["配给", "撤离"]),
@@ -2212,7 +2222,7 @@ def _xianxia_upgrade_pack_spec() -> MaterialPackSpec:
             "world_settings": [
                 _s("late-dharma-sect-world", "末法宗门世界", "灵气稀薄、资源稀缺让每次突破和机缘都有高烈度争夺。", rule="稀缺驱动"),
                 _s("dao-seed-causality-world", "道种因果世界", "道种提供感知、推演和局部转化，不能替主角直接解决所有问题。", rule="金手指有限"),
-                _s("sect-resource-tracking-world", "宗门资源追踪世界", "灵米、丹药、名额、残页、配给和身份都必须可追踪、可核对。", rule="资源可追踪"),
+                _s("sect-resource-tracking-world", "宗门资源争夺世界", "灵米、丹药、名额、残页、配给和身份都是稀缺筹码，明争暗夺。", rule="资源稀缺"),
                 _s("exam-secret-realm-clock", "大考秘境时钟", "三个月大考和秘境试炼驱动准备、资源争夺和旧事揭示。", rule="阶段主时钟"),
             ],
             "factions": [
@@ -2224,8 +2234,8 @@ def _xianxia_upgrade_pack_spec() -> MaterialPackSpec:
             "locale_templates": [
                 _s("servant-peak-yard", "杂役峰院落", "羞辱、资源克扣和第一次反制发生地。", use="低位爽点"),
                 _s("abandoned-scripture-corner", "废弃藏经角", "残页、旧功法和道种异动的发现点。", use="机缘"),
-                _s("alchemy-storehouse", "丹房库房", "丹药账目和灵草失踪牵出执事利益。", use="资源账"),
-                _s("sect-exam-platform", "宗门考核台", "公开低位反制和身份误判利用。", use="打脸但带后账"),
+                _s("alchemy-storehouse", "丹房库房", "丹药短缺和灵草失踪牵出执事利益。", use="资源争夺"),
+                _s("sect-exam-platform", "宗门考核台", "公开低位反制和身份误判利用。", use="打脸但带后患"),
                 _s("secret-realm-gate", "秘境入口", "倒计时、名额争夺和试炼需求汇聚。", use="阶段门槛"),
                 _s("old-spirit-root-cave", "废灵根旧洞", "二十年前旧事和道种来历的一层真相。", use="长线揭示"),
             ],
@@ -2234,66 +2244,66 @@ def _xianxia_upgrade_pack_spec() -> MaterialPackSpec:
                 _s("realm-resource-rule", "炼气-筑基-金丹境界资源规则", "炼气、筑基、金丹等境界台阶必须绑定资源、时间、瓶颈、风险或势力关注，突破不是免费数值上涨。", fields=["境界", "资源", "时间", "瓶颈", "风险"]),
                 _s("surface-hidden-cultivation", "明暗双修规则", "表面功法掩护真实进度，禁忌功法提供越阶基础但会留下痕迹。", use="身份伪装"),
                 _s("causality-sense-limit", "因果感应限制", "感应只能给路径、风险或局部推演，不能给完整答案。", use="有限提示"),
-                _s("misjudged-breakthrough-cost", "误判突破代价", "突破误判会带来身体反噬、痕迹暴露或资源亏空。", use="反噬"),
+                _s("misjudged-breakthrough-cost", "误判突破代价", "突破误判会带来身体反噬、痕迹暴露或灵资透支。", use="反噬"),
             ],
             "character_archetypes": [
                 _s("calculating-low-status-hero", "低位计算型主角", "主角以隐忍、试探、借势和低风险破局推进。", function="方法论"),
-                _s("resource-gatekeeper", "资源把门人", "执事/丹房人物通过配给和账目施压。", function="资源压力"),
-                _s("misjudging-genius-rival", "误判型天才对手", "对手轻视主角，但失败后必须改变策略或引来后台。", function="后账"),
+                _s("resource-gatekeeper", "资源把门人", "执事/丹房人物通过配给和克扣施压。", function="资源压力"),
+                _s("misjudging-genius-rival", "误判型天才对手", "对手轻视主角，但失败后必须改变策略或引来后台。", function="后患"),
                 _s("ambiguous-inner-ally", "内门暧昧盟友", "盟友有利益位置，不能只送资源。", function="势力博弈"),
             ],
             "character_templates": [
-                _s("low-status-protagonist", "低位计算型主角原型", "废灵根低位主角，以道种、资源账和计算反制高位。人名由本书按设定自取，勿套用模板名。", role="protagonist"),
+                _s("low-status-protagonist", "低位计算型主角原型", "废灵根低位主角，以道种、资源调度和计算反制高位。人名由本书按设定自取，勿套用模板名。", role="protagonist"),
                 _s("ambiguous-inner-ally", "内门暧昧盟友原型", "内门线人物，帮忙和试探并存。", role="ambiguous ally"),
                 _s("misjudging-rival", "误判型对手原型", "竞争者或派系压力，失败后推动更高层试探。", role="rival pressure"),
                 _s("ally-with-agenda", "带私利盟友原型", "不能只做送资源工具人，必须有自身利益和选择。", role="ally with agenda"),
-                _s("sect-steward", "执事", "通过配给、考核、账目压制主角。", role="bureaucratic antagonist"),
+                _s("sect-steward", "执事", "通过配给、考核、克扣压制主角。", role="bureaucratic antagonist"),
                 _s("old-servant", "老杂役", "提供底层秘辛和代价感。", role="early guide"),
             ],
             "plot_patterns": [
                 _s("small-resource-big-leverage", "小资源撬大机会", "低级资源通过道种或情报变成高阶机会。", rule="低位反制"),
-                _s("breakthrough-with-back-debt", "突破带后账", "每次突破必须引来关注、亏空或新敌意。", rule="无免费升级"),
+                _s("breakthrough-with-back-debt", "突破带后患", "每次突破必须引来关注、损耗或新敌意。", rule="无免费升级"),
                 _s("sect-feedback-loop", "宗门反馈循环", "主角行动改变配给、监视、拉拢或打压。", rule="势力适应"),
                 _s("secret-realm-prep-payoff", "秘境准备兑现", "准备阶段每个技能/资源都要在秘境中兑现需求。", rule="准备-兑现"),
             ],
             "scene_templates": [
-                _s("resource-accounting-scene", "资源记账场景", "获得、消耗、交换或争夺一项资源，并改变下一步选择。", beats=["资源", "账目", "选择"]),
+                _s("resource-accounting-scene", "资源消长场景", "获得、消耗、交换或争夺一项资源，并改变下一步选择。", beats=["资源", "消长", "选择"]),
                 _s("dao-seed-test-scene", "道种试探场景", "主角用低风险方式验证一条道种规则。", beats=["试探", "异动", "代价"]),
-                _s("public-low-status-reversal", "公开低位反制场景", "反制高位但留下后台压力。", beats=["轻视", "反制", "后账"]),
-                _s("sect-ledger-interrogation", "宗门账目逼问场景", "用账目、配给、证据逼出执事漏洞。", beats=["账目", "漏洞", "反将"]),
+                _s("public-low-status-reversal", "公开低位反制场景", "反制高位但留下后台压力。", beats=["轻视", "反制", "后患"]),
+                _s("sect-ledger-interrogation", "宗门库房逼问场景", "用库房明细、配给、证据逼出执事漏洞。", beats=["明细", "漏洞", "反将"]),
                 _s("secret-realm-need-setup", "秘境需求铺垫场景", "当前准备对应秘境中的战力、识药、阵法、隐匿或保命需求。", beats=["需求", "准备", "倒计时"]),
                 _s("old-root-reveal", "废灵根旧事揭示场景", "旧事只揭一层，连到道种来历或宗门遮掩。", beats=["遗痕", "误读", "新疑问"]),
             ],
             "device_templates": [
                 _s("black-iron-fragment", "黑铁残片", "禁忌功法和道种异动的载体。", function="金手指入口"),
-                _s("resource-tracking-slip", "资源凭条", "记录灵米、丹药、名额的发放与扣减。", function="资源证据"),
+                _s("resource-tracking-slip", "灵资令牌", "标记灵米、丹药、名额的发放与领用。", function="资源证据"),
                 _s("secret-realm-token", "秘境名额令", "争夺、交换、伪装和身份升级的关键物。", function="阶段目标"),
                 _s("dao-seed-mark", "道种痕迹", "每次使用可能留下被高阶修士察觉的痕迹。", function="暴露风险"),
                 _s("old-root-record", "废灵根旧档", "二十年前旧事的证据碎片。", function="长线谜题"),
             ],
             "thematic_motifs": [
-                _s("resource-as-fate", "资源即命运", "低位者的命运首先体现为资源账。", symbols=["灵米", "丹药"]),
+                _s("resource-as-fate", "资源即命运", "低位者的命运首先体现为灵资得失。", symbols=["灵米", "丹药"]),
                 _s("hidden-seed-visible-trace", "暗种与明痕", "真正力量藏在暗处，但每次使用都会留下痕迹。", symbols=["种", "痕"]),
                 _s("low-position-high-leverage", "低位高杠杆", "弱势身份既是压迫也是掩护。", symbols=["杂役牌", "旧衣"]),
-                _s("cause-and-payback", "因果与后账", "每次胜利都引出更高层因果。", symbols=["因果线", "账"]),
+                _s("cause-and-payback", "因果与反噬", "每次胜利都引出更高层因果。", symbols=["因果线", "痕"]),
             ],
             "emotion_arcs": [
                 _s("humiliation-to-calculation", "羞辱到计算", "被辱后不是莽撞，而是转成风险计算。", beats=["受辱", "观察", "布局"]),
                 _s("scarcity-to-breakthrough", "匮乏到突破", "资源缺口逼出非常规路径。", beats=["缺口", "试探", "突破"]),
-                _s("hidden-power-to-risk", "暗力到风险", "爽点后立刻意识到暴露或反噬。", beats=["成功", "快感", "后账"]),
+                _s("hidden-power-to-risk", "暗力到风险", "爽点后立刻意识到暴露或反噬。", beats=["成功", "快感", "后患"]),
             ],
             "dialogue_styles": [
                 _s("sect-rank-pressure", "宗门等级话术", "高位者用身份、配给、规矩压人。", style="等级压迫"),
-                _s("calculating-hero-speech", "计算型主角台词", "主角少放狠话，多问账、问规矩、问后果。", style="克制试探"),
+                _s("calculating-hero-speech", "计算型主角台词", "主角少放狠话，多问明细、问规矩、问后果。", style="克制试探"),
                 _s("elder-half-truth", "长老半真话术", "高层只给局部真相，借机观察主角反应。", style="留白压迫"),
             ],
             "anti_cliche_patterns": [
                 _s("no-free-breakthrough", "禁止无成本突破", "升级必须有资源、风险、师承、仇恨或痕迹。", avoid="空升级"),
                 _s("no-almighty-dao-seed", "禁止万能道种", "道种只能提供路径/感知/推演/局部转化。", avoid="万能系统"),
-                _s("no-face-slap-only", "禁止纯打脸", "打脸必须推进资源账、境界账或宗门反馈。", avoid="爽点空转"),
+                _s("no-face-slap-only", "禁止纯打脸", "打脸必须推进资源得失、境界进展或宗门反馈。", avoid="爽点空转"),
             ],
             "real_world_references": [
-                _s("resource-economy-design", "资源经济设计", "把货币、配给、名额、库存、账目当作剧情压力。", methods=["库存", "配给"]),
+                _s("resource-economy-design", "资源经济设计", "把货币、配给、名额、库存、损耗当作剧情压力。", methods=["库存", "配给"]),
                 _s("training-load-design", "训练负荷设计", "修炼写时间、恢复、风险、瓶颈和边际收益。", methods=["负荷", "恢复"]),
                 _s("institutional-hierarchy", "宗门层级制度", "外门、内门、执事、长老、宗主候选构成行动边界。", methods=["层级", "考核"]),
             ],

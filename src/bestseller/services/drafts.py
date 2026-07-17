@@ -30,6 +30,7 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
 )
 from bestseller.services.ai_slop_blacklist import render_slop_blacklist_block
+from bestseller.services.anti_ai_voice_discipline import render_anti_ai_voice_discipline
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
 from bestseller.services.golden_rules import render_golden_three_rules
 from bestseller.services.chapter_constraint_manifest import (
@@ -6348,16 +6349,8 @@ def build_scene_draft_prompts(
             "- 段落节奏要变化：长段铺氛围，短段打冲击。不要全文一个节奏。\n"
             "- 沉默、等待、留白比爆炸更有张力。善用空气感。\n"
             "\n"
-            "# CONTEXT · 语体与用词纪律（反AI腔，违反会被判重写）\n"
-            "- 语体=现代白话网文：先把话说清楚，再谈修辞。禁止文白夹杂的压缩腔"
-            "（连续出现省略主语、省略量词的短句会让读者出戏）。\n"
-            "- 具身动词禁止复读：撞、烫、钻、咬、爬、砸、碾、蹿、拧、洇 这类高冲击动词，"
-            "同一个词全场最多 2 次；写感官时用平实动词（闻到/听见/看见/摸到）不丢人，"
-            "复读高冲击动词才是最重的 AI 腔。\n"
-            "- 通感与陌生化比喻是味精：全场≤1处，且必须贴合当下事件；"
-            "严禁感官动词错配的怪喻（如“香味撞上来”“蒸汽舀进脑仁”——读者只会出戏）。\n"
-            "- 度量腔限用：“半寸/一寸/三分/半息”这类精确度量全场≤2次，不要每个动作都带尺子。\n"
-            "\n"
+            + render_anti_ai_voice_discipline(language="zh-CN", scope="scene")
+            + "\n"
             "# CONTEXT · 角色区分度\n"
             "- 每个角色有独属的句式长度、用词层次、说话习惯。\n"
             "- 不要只用「收紧下巴」「抱臂」这种通用动作；给每个角色一个只属于他的肢体语言。\n"

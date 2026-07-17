@@ -544,7 +544,10 @@ async def _run_reader_judge(
             prompt_version="v3",
             model_catalog_key=judge_model_key,
             metadata={"judge_scope": "logline_gate", "genre": str(genre or "")},
-            max_tokens_override=900,
+            # MiniMax-M3 emits a <think> block that consumes output budget before the
+            # multi-axis JSON verdict; 900 truncated it (finish_reason=length →
+            # unparseable → false judge_availability failure). Give think + JSON room.
+            max_tokens_override=8000,
         ),
     )
     raw = getattr(completion, "content", None) or getattr(completion, "text", None) or ""

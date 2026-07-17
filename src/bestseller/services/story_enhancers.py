@@ -161,20 +161,26 @@ def render_story_enhancer_contract_block(
             "故事效果；只推进事务流程、不兑现这些效果的章视为未完成，会被打回重修】"
         )
     if "comedy_engine" in selection.effect_skills:
+        # 只声明"用户勾了喜剧效果",绝不断言"本书是喜剧题材"。旧文案写死
+        # 「本书是爽文喜剧」——在一本悬疑/仙侠书上勾这个 Skill,六个大纲 prompt 加
+        # 写手就会一口咬定这本书是喜剧,一个复选框改写了整本书的题材身份。
         parts.append(
-            "・【基调锚点·硬底线】本书是爽文喜剧，喜剧/脑洞是贯穿全书的基础基调，"
-            "不是某些章节才有的可选效果：每一章——哪怕该章主线极沉重、主推爽点/两难/"
-            "悬念——都必须保留至少一个符合本题材世界规则的喜剧或脑洞落点，让读者"
-            "全程保持愉悦。严禁整章只有沉重剧情而无喜剧落点；越往后主线越重，越要靠这条"
-            "基调锚点把'虐'压成'爽中带笑'。"
+            "・【基调锚点·硬底线】建书时已勾选【喜剧效果】：喜剧/脑洞落点要贯穿全书，"
+            "不是某些章节才有的可选效果——每一章，哪怕该章主线极沉重、主推爽点/两难/"
+            "悬念，都必须保留至少一个符合本题材世界规则的喜剧或脑洞落点，"
+            "让读者全程保持愉悦；严禁整章只有沉重剧情而无喜剧落点。"
+            "【边界】这是在本书【已选定的题材】内追加喜剧调性，"
+            "不得据此把本书改写成喜剧题材，也不得覆盖已选的题材/子题材/世界规则。"
             if not is_en
-            else "・[TONE ANCHOR · HARD FLOOR] This is a comedic feel-good web "
-            "novel. Comedy/brainhole is the book's baseline tone running through "
-            "EVERY chapter — not an optional per-chapter effect. Even chapters whose "
-            "primary engine is hype/dilemma/suspense MUST still carry at least one "
-            "visible genre-native comic or brainhole beat so "
-            "the reader stays delighted. Never let a whole chapter be heavy drama "
-            "with no comedic landing."
+            else "・[TONE ANCHOR · HARD FLOOR] The creator ticked the COMEDY effect: "
+            "comic/brainhole beats must run through EVERY chapter — not an optional "
+            "per-chapter effect. Even chapters whose primary engine is hype/dilemma/"
+            "suspense MUST still carry at least one visible comic or brainhole beat "
+            "that obeys THIS book's established genre rules, so the reader stays "
+            "delighted; never let a whole chapter be heavy drama with no comedic "
+            "landing. [Boundary] This adds a comedic tone INSIDE the book's chosen "
+            "genre — it does NOT redefine the book as a comedy, and must not override "
+            "the selected genre/sub-genre/world rules."
         )
     if selection.brainhole:
         parts.append(

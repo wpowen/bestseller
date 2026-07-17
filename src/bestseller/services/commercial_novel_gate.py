@@ -475,19 +475,24 @@ def _infer_commercial_anchors(
         ]
     )
     anchors: list[CommercialAnchor] = []
-    if "青囊" in contract or "秘卷" in contract:
-        anchors.append(CommercialAnchor("core_artifact", ("青囊", "秘卷"), 6, 80, 3))
-    if any(term in contract for term in ("否认", "认账", "入账")):
-        terms = ["否认", "认账", "入账"]
-        if "镜债" in contract or "困魂镜" in contract:
-            terms.extend(["镜债", "承认", "替认", "偿"])
-        anchors.append(CommercialAnchor("core_rule", tuple(terms), 5, 80, 4))
-    if "困魂镜" in contract:
-        anchors.append(CommercialAnchor("core_threat", ("困魂镜", "回执", "镜影"), 6, 80, 4))
-    if "三族" in contract:
-        anchors.append(
-            CommercialAnchor("long_mystery", ("三族", "张家", "钱家", "林正淳"), 8, 80, 4)
-        )
+    # 《青囊不语问阴阳》专属锚点：必须先命中本书独有身份 token（青囊/镜债/困魂镜）
+    # 才启用。此前 秘卷/否认/三族 这类碰撞词裸命中，会让无关的玄幻/科幻书被 reader
+    # contract gate 以 high 严重度要求回声本书的规则词与人名（林正淳/张家/钱家）。
+    _is_qingnang_book = any(t in contract for t in ("青囊", "镜债", "困魂镜"))
+    if _is_qingnang_book:
+        if "青囊" in contract or "秘卷" in contract:
+            anchors.append(CommercialAnchor("core_artifact", ("青囊", "秘卷"), 6, 80, 3))
+        if any(term in contract for term in ("否认", "认账", "入账")):
+            terms = ["否认", "认账", "入账"]
+            if "镜债" in contract or "困魂镜" in contract:
+                terms.extend(["镜债", "承认", "替认", "偿"])
+            anchors.append(CommercialAnchor("core_rule", tuple(terms), 5, 80, 4))
+        if "困魂镜" in contract:
+            anchors.append(CommercialAnchor("core_threat", ("困魂镜", "回执", "镜影"), 6, 80, 4))
+        if "三族" in contract:
+            anchors.append(
+                CommercialAnchor("long_mystery", ("三族", "张家", "钱家", "林正淳"), 8, 80, 4)
+            )
     if any(term in contract for term in ("风水", "罗盘", "阴阳眼", "重瞳", "验尸", "符纸")):
         anchors.append(
             CommercialAnchor(

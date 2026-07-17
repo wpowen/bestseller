@@ -44,6 +44,7 @@ from bestseller.services.ideology_library import (
     suggest_motif_formula,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.story_enhancers import COST_STYLE_DEFAULT
 from bestseller.settings import AppSettings
 
 # ---------------------------------------------------------------------------
@@ -97,17 +98,79 @@ def _binding_from_motif(
     }
 
 
-def _cost_laws_from_formula(formula: MotifFormula) -> list[dict[str, Any]]:
+# 代价维度池 —— 按本书 seed 轮换,并按 cost_style 分档。
+# 旧实现是 `return [<两条写死的常量>]`,签名收了 ``formula`` 却一次都没读:全系统
+# 每一本书、每个题材、每个 seed 都共用同样两条代价律("costs": "关系、寿元、记忆
+# 或身份之一"),而它周围的母题/主题全部是 seed 多样化的 —— 这是跨书"代价/债务"
+# 同质化的上游总根。它同时无视 cost_style,导致选了"外置/极简代价"的书,其 prompt
+# 里的 schema 范例反而演示了一遍自损代价,和随后的指令自相矛盾。
+_SELF_COST_DIMENSIONS: tuple[str, ...] = (
+    "灵机反噬，经脉与旧伤一起发作",
+    "寿元折损，肉眼可见地老下去",
+    "记忆被吃掉一段，连带认得的人一起模糊",
+    "感官逐项失灵（先味觉，再听觉）",
+    "道心裂痕扩大，越用越难自控",
+    "血脉灼烧，痕迹爬上皮肤藏不住",
+    "与至亲之人的关系被一次次磨薄",
+    "身份暴露的风险层层累积",
+    "因果烙印显形，被更高位者察觉",
+    "情绪失控的阈值一次次降低",
+)
+_EXTERNAL_COST_DIMENSIONS: tuple[str, ...] = (
+    "代价转嫁给出手的对手，他先垮",
+    "由世界／规则本身承担，秩序裂开一道缝",
+    "烧掉一份稀缺资源，下一次没得用",
+    "由受益者按约定分担，而非主角自损",
+    "招来更高位者的注意，压力落到整个阵营头上",
+)
+_MINIMAL_COST_DIMENSIONS: tuple[str, ...] = (
+    "短暂脱力，睡一觉能缓过来",
+    "一次性的资源消耗，点到为止",
+    "轻微且可控的暴露风险",
+)
+
+
+def _cost_dimension_pool(cost_style: str) -> tuple[str, ...]:
+    style = str(cost_style or COST_STYLE_DEFAULT).strip().lower()
+    if style == "external":
+        return _EXTERNAL_COST_DIMENSIONS
+    if style == "minimal":
+        return _MINIMAL_COST_DIMENSIONS
+    return _SELF_COST_DIMENSIONS
+
+
+def _cost_laws_from_formula(
+    formula: MotifFormula,
+    *,
+    seed: str = "",
+    cost_style: str = COST_STYLE_DEFAULT,
+) -> list[dict[str, Any]]:
+    """Derive this book's cost laws from its OWN motif spine + diversity seed.
+
+    ``acquires`` names what the book's own action/suspense motifs actually grant,
+    and ``costs`` is drawn from a seed-rotated pool matching the user's cost
+    style — so two same-genre books no longer ship identical cost laws, and a
+    纯爽 book's example stops contradicting its own directive.
+    """
+
+    pool = _cost_dimension_pool(cost_style)
+    action = formula.secondary_action
+    suspense = formula.secondary_suspense
+    idx_a = stable_seed_int(seed, "cost-law", action.key) % len(pool)
+    cost_a = pool[idx_a]
+    cost_b = pool[(stable_seed_int(seed, "cost-law-reveal", suspense.key) + 1) % len(pool)]
+    if len(pool) > 1 and cost_b == cost_a:
+        cost_b = pool[(idx_a + 1) % len(pool)]
     return [
         {
-            "acquires": "力量 / 境界 / 资源",
-            "costs": "关系、寿元、记忆或身份之一",
+            "acquires": f"{action.display_name}推进带来的力量／境界／资源",
+            "costs": cost_a,
             "delayed": True,
             "irreversible": False,
         },
         {
-            "acquires": "真相 / 揭秘",
-            "costs": "既有信念崩塌、与亲近者的关系受伤",
+            "acquires": f"{suspense.display_name}揭开的一层真相",
+            "costs": cost_b,
             "delayed": False,
             "irreversible": True,
         },
@@ -148,7 +211,7 @@ def _per_volume_pressure(formula: MotifFormula, thesis: str, *, volumes: int) ->
 def _world_bindings(formula: MotifFormula) -> list[str]:
     return [
         f"用主母题「{formula.primary.display_name}」长出世界 invariant：{formula.primary.worldview_setting}",
-        f"用代价系统绑定力量体系：每一次{formula.secondary_action.display_name}都要有可见账单。",
+        f"用代价系统绑定力量体系：每一次{formula.secondary_action.display_name}都要有可见的、非金融的具身代价（反噬/损耗/树敌/暴露/关系后果）。",
         f"用副母题「{formula.secondary_suspense.display_name}」组织揭秘阶梯：每解一层, 前一层改义。",
     ]
 
@@ -161,11 +224,16 @@ def fallback_ideology_kernel(
     seed: str | None = None,
     title: str = "",
     genre: str | None = None,  # accepted for back-compat; NOT used for selection
+    cost_style: str = COST_STYLE_DEFAULT,
 ) -> dict[str, Any]:
     """Build a deterministic, schema-valid, SEED-DIVERSE IdeologyKernel payload.
 
     Never raises. Genre is ignored for selection — the per-book seed (premise +
     title) drives the motif spine and the 主主题/子题 so same-genre books differ.
+
+    ``cost_style`` matters because this payload doubles as the ``schema_hint``
+    worked example inside the ideology prompt: a 纯爽 (external/minimal) book
+    used to be shown a self-harm cost example that its own directive then forbade.
     """
 
     library = load_motif_library()
@@ -211,7 +279,7 @@ def fallback_ideology_kernel(
             "midpoint_shatter": p.belief_shatter,
             "final_reconstruction": p.belief_reconstruction,
         },
-        "cost_system": _cost_laws_from_formula(formula),
+        "cost_system": _cost_laws_from_formula(formula, seed=seed, cost_style=cost_style),
         "layer_coverage": {m.layer: m.display_name for m in formula.all_motifs()},
         "motif_to_world_bindings": _world_bindings(formula),
         "per_volume_thesis_pressure": _per_volume_pressure(formula, thesis, volumes=volumes),
@@ -305,10 +373,21 @@ def build_ideology_user_prompt(
     is_en = str(language or "").lower().startswith("en")
     seed = seed or _seed_for(premise, book_spec)
     library_block = render_motif_library_prompt_block(seed=seed)
+    # The fallback doubles as the worked example (``schema_hint``) below, so it
+    # MUST honour cost_style — otherwise an external/minimal book is shown a
+    # self-harm cost example and only afterwards told not to inflict one.
     fallback = fallback_payload or fallback_ideology_kernel(
-        premise=premise, book_spec=book_spec, volumes=volumes, seed=seed
+        premise=premise,
+        book_spec=book_spec,
+        volumes=volumes,
+        seed=seed,
+        cost_style=cost_style,
     )
     schema_hint = json.dumps(fallback, ensure_ascii=False, indent=2)
+    # The rule must PRECEDE the example: a few-shot example outranks a trailing
+    # instruction, so appending the directive after schema_hint taught the model
+    # exactly what the directive forbade.
+    cost_directive = _cost_style_directive(cost_style, is_en=is_en)
     genre_ctx = (
         f"题材(仅作背景, 不得据此套用默认主题)：{genre}\n" if genre else ""
     )
@@ -324,8 +403,9 @@ def build_ideology_user_prompt(
             "role=action, one role=suspense), hidden_endgame_motif (with reveal_after_volume), "
             "belief_arc, cost_system (>=2 laws), motif_to_world_bindings, per_volume_thesis_pressure, "
             "forbidden_resolutions. Cover all four layers.\n"
-            f"Schema-valid MINIMUM (make it premise-specific, do not copy verbatim):\n{schema_hint}"
-            + _cost_style_directive(cost_style, is_en=is_en)
+            f"{cost_directive}\n"
+            f"Schema-valid MINIMUM (make it premise-specific, do not copy verbatim; "
+            f"its cost_system already follows the cost rule above):\n{schema_hint}"
         )
     return (
         f"前提：\n{premise}\n\n"
@@ -338,8 +418,9 @@ def build_ideology_user_prompt(
         "role=action 管行动, 一个 role=suspense 管悬念)、hidden_endgame_motif(含 reveal_after_volume)、"
         "belief_arc、cost_system(≥2 条)、motif_to_world_bindings、per_volume_thesis_pressure、"
         "forbidden_resolutions。必须覆盖四层。\n"
-        f"以下为 schema 最低结构(请据前提做出本书独有的具体化, 不要照抄)：\n{schema_hint}"
-        + _cost_style_directive(cost_style, is_en=is_en)
+        f"{cost_directive}\n"
+        f"以下为 schema 最低结构(请据前提做出本书独有的具体化, 不要照抄；"
+        f"其 cost_system 已按上面的代价规则给出)：\n{schema_hint}"
     )
 
 

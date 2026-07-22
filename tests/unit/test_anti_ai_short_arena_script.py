@@ -20,5 +20,17 @@ def test_arena_rejects_fallback_results() -> None:
         _MODULE._require_real_result({"fallback_used": True}, label="writer")
 
 
+@pytest.mark.parametrize(
+    "result",
+    (
+        {"fallback_used": False, "provider": "mock"},
+        {"fallback_used": False, "provider": "litellm", "finish_reason": "mock"},
+    ),
+)
+def test_arena_rejects_mock_results(result: dict[str, object]) -> None:
+    with pytest.raises(RuntimeError, match="mock LLM result"):
+        _MODULE._require_real_result(result, label="judge")
+
+
 def test_arena_uses_distinct_judge_families() -> None:
     assert _MODULE.PRIMARY_JUDGE_MODEL_KEY != _MODULE.SECONDARY_JUDGE_MODEL_KEY

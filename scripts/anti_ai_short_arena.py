@@ -111,6 +111,10 @@ def _require_real_result(result: Mapping[str, Any], *, label: str) -> None:
 
     if bool(result.get("fallback_used")):
         raise RuntimeError(f"{label} used an LLM fallback; arena result is inconclusive")
+    provider = str(result.get("provider") or "").strip().lower()
+    finish_reason = str(result.get("finish_reason") or "").strip().lower()
+    if provider == "mock" or finish_reason == "mock":
+        raise RuntimeError(f"{label} used a mock LLM result; arena result is inconclusive")
 
 
 async def _generate_one(

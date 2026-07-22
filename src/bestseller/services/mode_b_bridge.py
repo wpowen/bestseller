@@ -378,6 +378,7 @@ class ModeBChapterOutcome:
     output_path: str | None
     next_state: str  # COMMIT_CHAPTER | REWRITE_CHAPTER
     workflow_run_id: str | None = None
+    repair_items: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -390,6 +391,7 @@ class ModeBChapterOutcome:
             "output_path": self.output_path,
             "next_state": self.next_state,
             "workflow_run_id": self.workflow_run_id,
+            "repair_items": [dict(item) for item in self.repair_items],
         }
 
 
@@ -452,7 +454,46 @@ def sync_progress_yaml(
         entry["committed_at"] = _now_iso()
     chapters[key] = entry
 
-    data["state"] = outcome.next_state
+    if outcome.repair_items:
+        queue = data.get("repair_queue")
+        if not isinstance(queue, list):
+            queue = []
+        existing_keys = {
+            (
+                str(item.get("runtime_workflow_run_id") or ""),
+                int(item.get("affected_chapter") or 0),
+                str(item.get("issue_type") or ""),
+            )
+            for item in queue
+            if isinstance(item, dict)
+        }
+        for repair_item in outcome.repair_items:
+            dedupe_key = (
+                str(outcome.workflow_run_id or ""),
+                int(repair_item.get("affected_chapter") or outcome.chapter_number),
+                str(repair_item.get("issue_type") or "consistency_audit"),
+            )
+            if dedupe_key in existing_keys:
+                continue
+            queue.append(
+                {
+                    "id": f"R-{len(queue) + 1:03d}",
+                    "created_at": _now_iso(),
+                    "runtime_workflow_run_id": outcome.workflow_run_id,
+                    "source_audit": repair_item.get("source_audit")
+                    or f"milestone-ch-{outcome.chapter_number:03d}",
+                    "issue_type": dedupe_key[2],
+                    "affected_chapter": dedupe_key[1],
+                    "description": str(repair_item.get("description") or ""),
+                    "attempts": 0,
+                    "status": "pending",
+                }
+            )
+            existing_keys.add(dedupe_key)
+        data["repair_queue"] = queue
+        data["state"] = "DRAIN_REPAIR_QUEUE"
+    else:
+        data["state"] = outcome.next_state
     data["current_chapter"] = outcome.chapter_number
     data["last_updated"] = _now_iso()
     data["runtime_projection"] = {
@@ -474,6 +515,7 @@ def sync_progress_yaml(
 def enqueue_repair_item(
     slug: str,
     *,
+    workflow_run_id: str,
     affected_chapter: int,
     issue_type: str,
     description: str,
@@ -503,10 +545,12 @@ def enqueue_repair_item(
     if not isinstance(queue, list):
         queue = []
     next_id = f"R-{len(queue) + 1:03d}"
+    now = _now_iso()
     queue.append(
         {
             "id": next_id,
-            "created_at": _now_iso(),
+            "created_at": now,
+            "runtime_workflow_run_id": workflow_run_id,
             "source_audit": source_audit or f"milestone-ch-{affected_chapter:03d}",
             "issue_type": issue_type,
             "affected_chapter": affected_chapter,
@@ -518,7 +562,13 @@ def enqueue_repair_item(
     data["repair_queue"] = queue
     # A pending repair item must stop forward progress.
     data["state"] = "DRAIN_REPAIR_QUEUE"
-    data["last_updated"] = _now_iso()
+    data["last_updated"] = now
+    data["runtime_projection"] = {
+        "schema_version": 1,
+        "source": "postgresql",
+        "workflow_run_id": workflow_run_id,
+        "projected_at": now,
+    }
 
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
@@ -640,6 +690,16 @@ async def drive_mode_b_chapter(
         output_path=result.output_path,
         next_state=next_state,
         workflow_run_id=str(result.workflow_run_id),
+        repair_items=tuple(
+            dict(item)
+            for item in (
+                (getattr(chapter_after, "metadata_json", None) or {}).get(
+                    "milestone_repair_items"
+                )
+                or []
+            )
+            if isinstance(item, Mapping)
+        ),
     )
 
 

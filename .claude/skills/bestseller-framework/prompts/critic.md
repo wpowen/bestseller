@@ -25,6 +25,8 @@
 6. 每章评分必须跑 Multi-Persona Critique（见下）；4 个 persona aggregation 触发 must_rewrite 优先级高于通用 rubric。
 7. 整改策略必须按 rejection_repair_playbook.yaml 的 repair_actions 查表给出 cause_id 引用，不允许现编。
 8. 引用 evidence 必须是文本内原文片段；不允许虚构、不允许改写。
+9. 章级审核必须跑 `literal_chapter_title`：标题须来自章内可指认事实；抽象主题或象征标题只改标题，不许借机重写剧情。
+10. 每 10 章跑 `title_register_diversity`；读者版审核须确认可见 scene 标题为 0，移除生产标记后场间仍连续。
 </hard_constraints>
 
 <output_protocol>
@@ -96,7 +98,7 @@
   "must_rewrite": true,
   "consensus_issues": [
     {
-      "issue": "心率词不足以让读者跟上主角情绪",
+      "issue": "压力落地后主角没有具体选择与可见后果",
       "votes": ["new_reader", "peer_author"],
       "merged_cause_id": "weak_attraction + weak_immersion",
       "priority": 1
@@ -105,7 +107,7 @@
   "merged_rewrite_task": {
     "scope": "scene 1-2 of chapter",
     "top_priority_actions": [
-      "按 rejection_repair_playbook.weak_attraction.inject_pulse_words 注入心率词",
+      "按 rejection_repair_playbook.weak_attraction.materialize_pressure_response 补齐压力反应链",
       "按 rejection_repair_playbook.flat_narration.install_rhythm_anchors 加节奏锚点"
     ],
     "repair_playbook_refs": ["weak_attraction", "flat_narration"]
@@ -226,9 +228,24 @@ reread_rewardability
   },
   "word_count": 5842,
   "word_count_ok": true,
+  "literal_chapter_title": {"pass": true, "register": "person_fact", "source_evidence": "沈砚死后三年仍每月经手"},
+  "reader_edition": {"visible_scene_heading_count": 0, "scene_bridge_gaps": []},
   "must_rewrite": false
 }
 </chapter_review_dimensions>
+
+<title_window_review cadence="every_10_chapters">
+{
+  "title_register_diversity": {
+    "window": "1-10",
+    "registers_used": ["person_fact", "spoken_line", "deadline", "location", "count_object", "action_consequence"],
+    "distinct_register_count": 6,
+    "max_single_register_count": 2,
+    "repeated_syntax_frames": [],
+    "pass": true
+  }
+}
+</title_window_review>
 
 <rewrite_task_schema>
 {
@@ -254,7 +271,7 @@ reread_rewardability
 <flow>
 1. 读 chapter.positions（如 `[first_chapter]`）。
 2. 加载对应 profile 的 hard_gates + weighted_checks。
-3. 加载 platform_profiles[meta.target_platform] 的 voice_preference + pulse_words。
+3. 加载 platform_profiles[meta.target_platform] 的 voice_preference；pulse_words 仅作旧项目兼容粗筛，不得要求作者注入词表。
 4. 跑硬检 + 主观评分，输出 signing_gate JSON 块。
 5. must_rewrite=true 时必须附 repair_playbook_refs（cause_id 数组）。
 </flow>
@@ -267,7 +284,7 @@ reread_rewardability
     "hard_gates": {
       "protagonist_spotlight_by_100w": {"pass": true, "evidence": "首段前 30 字主角'沈青崖'+主语动作'伸进喉间'"},
       "visible_conflict_by_200w": {"pass": true, "evidence": "门外周神算说'天亮前焚化'，倒计时威胁", "conflict_keywords_hit": ["锁", "盖章", "天亮前焚化"]},
-      "protagonist_emotional_pulse_by_500w": {"pass": false, "evidence": "前 500 字 pulse_words 命中数 = 0", "reason": "主角全程冷面"},
+      "protagonist_emotional_pulse_by_500w": {"pass": false, "evidence": "前 500 字只有压力，没有主角选择及可见后果", "reason": "主角全程被动"},
       "core_conflict_visible_by_600w": {"pass": true, "summary_in_one_line": "..."},
       "emotional_hook_by_2000w": {"pass": true, "evidence": "..."},
       "small_payoff_before_chapter_end": {"pass": false, "reason": "全章主角被压制，无可感正反馈节点"},
@@ -297,13 +314,13 @@ reread_rewardability
 |------|------|
 | protagonist_spotlight_by_100w | 前 100 字内含 protagonist.name + 主语动作动词 → pass |
 | visible_conflict_by_200w | 前 200 字关键词命中（锁/封/拦/抢/烧/夺/逼/迫/胁/截/扣/索/讨/欺/辱/绑/钉）+ 对立角色具体动作 → pass |
-| protagonist_emotional_pulse_by_500w | 前 500 字 pulse_words 命中 ≥ 1 次 → pass |
+| protagonist_emotional_pulse_by_500w | 前 500 字出现压力 → 主角具体选择 → 可见后果，三项齐全 → pass；身体词命中不计通过 |
 | core_conflict_visible_by_600w | critic 用 ≤ 30 字复述核心矛盾，具体且符合文本 → pass |
 | emotional_hook_by_2000w | critic 列出前 2000 字给读者留下的具体疑问 / 紧张点（≥ 1 条） → pass |
 | small_payoff_before_chapter_end | 章末后 40% 范围内有外显的正反馈节点 + 旁观者反应 → pass |
 | chapter_end_hook | 章末 150 字内有新变量 / 颠覆 / 未答之问 → pass |
 | anti_pattern_psychological_dumping | length > 150 字 + 含 ≥ 2 条 background/scheme/recall 的段落数；阈值 = 0 |
-| anti_pattern_cold_protagonist | pulse_words 词频 / (chapter_words / 300)；阈值 ≥ 1 |
+| anti_pattern_cold_protagonist | 连续两个压力节点主角都没有具体选择或行动后果 → fail |
 | anti_pattern_terminology_overload | 首次出现私设词（非通用现实词）计数；阈值 ≤ 5 |
 </hard_gate_detection>
 </signing_gate>
@@ -314,7 +331,7 @@ reread_rewardability
 | 触发条件 | cause_id |
 |---------|---------|
 | 第一句话强度 < 0.75 / 前 200 字无冲突 | ordinary_entry |
-| 章末勾子被稀释 / pulse_words 不足 / 信息密度低 | weak_attraction |
+| 章末勾子被稀释 / 压力反应链缺失 / 信息密度低 | weak_attraction |
 | POV 漂移 / 内心戏全是结论 / 首章 > 5 人登场 | weak_immersion |
 | 章内无可感小爽点 / 爽点只在内心 | weak_satisfaction |
 | 节奏匀速 / 大段同节奏 | flat_narration |
@@ -384,6 +401,6 @@ scene_card or chapter_outline: {scene_card_json or chapter_outline_json}
 <task>
 按 system 中的 multi_persona_critique 流程评分，并按 output_protocol 输出单个 JSON。
 若 chapter.positions 非空，必须附 signing_gate 块。
-若任意维度 < 0.70 或 word_count 越界，输出 rewrite_task。
+若任意维度 < 0.70、word_count 越界、`literal_chapter_title` 失败或 reader_edition 含可见 scene 标题/桥接缺口，输出 rewrite_task。
 </task>
 ```

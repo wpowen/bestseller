@@ -246,6 +246,43 @@ def test_chapter_first_infers_low_side_from_generic_length_band_code() -> None:
     assert reason.startswith("severe_under_length:")
 
 
+def test_chapter_first_fallback_count_ignores_latin_padding_for_chinese() -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2600
+    draft = SimpleNamespace(word_count=0, content_md=("汉" * 2600) + (" latin" * 5000))
+
+    reason = pipeline_services._chapter_first_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        ("LENGTH_OUT_OF_BAND",),
+        attempt_number=1,
+    )
+
+    assert reason is None
+
+
+def test_resume_length_recheck_ignores_latin_padding_and_stale_counts() -> None:
+    draft = SimpleNamespace(
+        content_md=("汉" * 2600) + (" latin" * 5000),
+        word_count=7600,
+    )
+
+    needs_recheck, actual = (
+        pipeline_services._existing_chapter_draft_needs_length_recheck(
+            draft,
+            language="zh-CN",
+            hard_min=1800,
+            hard_max=3500,
+        )
+    )
+
+    assert needs_recheck is False
+    assert actual == 2600
+
+
 def test_chapter_first_full_regeneration_stops_at_project_limit() -> None:
     project = build_project()
     project.metadata_json = {
@@ -1458,7 +1495,7 @@ async def test_deterministic_length_trim_before_export_clears_sole_overlength_bl
         chapter_id=chapter.id,
         version_no=1,
         content_md=chapter_text,
-        word_count=pipeline_services.count_words(chapter_text),
+        word_count=draft_services.count_words(chapter_text),
         is_current=True,
     )
     draft.id = uuid4()
@@ -1475,7 +1512,14 @@ async def test_deterministic_length_trim_before_export_clears_sole_overlength_bl
 
     assert applied is True
     assert count_zh_chars(draft.content_md) <= 3000
-    assert draft.word_count == pipeline_services.count_words(draft.content_md)
+    from bestseller.services.chapter_word_count_truth import (
+        authoritative_zh_word_count,
+    )
+
+    assert draft.word_count == authoritative_zh_word_count(
+        draft.content_md,
+        language=project.language,
+    )
     assert chapter.current_word_count == draft.word_count
     assert chapter.production_state == "ok"
     assert chapter.status == "revision"
@@ -1536,6 +1580,7 @@ async def test_deterministic_hook_echo_bridge_before_review_clears_hook_block(
     )
 
     project = build_project()
+    project.language = "zh-CN"
     chapter = build_chapter(project.id)
     chapter.chapter_number = 5
     chapter.production_state = "blocked"
@@ -1547,7 +1592,7 @@ async def test_deterministic_hook_echo_bridge_before_review_clears_hook_block(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# 第5章 加密频\n\n陆沉推开门。",
+        content_md="# 第5章 加密频\n\n陆沉推开门。" + (" latin" * 5000),
         word_count=12,
         is_current=True,
     )
@@ -1571,6 +1616,11 @@ async def test_deterministic_hook_echo_bridge_before_review_clears_hook_block(
     }
     assert "quality_bundle_blocking_codes" not in chapter.metadata_json
     assert "chapter_review_attempts_active" not in chapter.metadata_json
+    assert draft.word_count == pipeline_services.authoritative_word_count_for_language(
+        draft.content_md,
+        language=project.language,
+    )
+    assert draft.word_count < draft_services.count_words(draft.content_md)
 
 
 def build_scene(project_id, chapter_id) -> SceneCardModel:

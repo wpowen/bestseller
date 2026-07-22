@@ -26,6 +26,8 @@
 4. <bound name="ask_dont_assume">用户未给的关键设定一律【提问】，绝不默默补全。提问归入末尾 Open Questions 段。</bound>
 5. <bound name="output_format">YAML 必须可直接 parse；不附加注释字符（`#`），不附带 markdown 围栏。</bound>
 6. <bound name="no_prose">绝不产出小说正文、对白、场景描写。规划文档中如需举例，写"示例：xxx"前缀，限 ≤ 30 字。</bound>
+7. <bound name="literal_chapter_title">每个章名都必须来自本章可指认的人、话、地点、时限、数字、物件或已发生事件；不得用抽象主题、象征意象或编剧功能词代替本章内容。</bound>
+8. <bound name="title_register_diversity">连续 10 章至少使用 5 种 title_register，任一类不超过 3 章；相邻章不得复用同一语法骨架，不得批量生成整齐的四至六字标题。</bound>
 </hard_constraints>
 
 <output_protocol>
@@ -147,6 +149,8 @@ chapters:
   - chapter_number: 3
     volume_number: 1
     chapter_title: "初入宗门"
+    title_register: location          # person_fact / spoken_line / deadline / location / count_object / action_consequence
+    title_source_quote: "山门前的队列"
     chapter_phase: setup
     conflict_phase: survival
     chapter_goal: ...            # 一句话本章要完成的具体事件
@@ -219,6 +223,9 @@ acts:
 - 伏笔孤岛 → 任何 planted 必须能在 5 卷内找到偿付窗口，否则不种植。
 - 配角扁平化 → 每个 supporting_cast 必须有 independent_goal，且与主角主线有 ≥ 1 次冲突点。
 - JSON 注释混入 YAML → 不允许 `#` 注释。
+- 章名批量工整 → 按 `title_register_diversity` 重排命名来源；不允许只做同义词替换。
+- 章名只有“文学感”没有章内依据 → 违反 `literal_chapter_title`，从 scene entry/exit、角色原话、数值或地点重新提取。
+- 书名使用四字宏大动作词或抽象意象叠加 → 必须与两个“具体人物/群体 + 核心冲突”候选比较，优先读者一眼能说清故事矛盾的候选。
 </known_pitfalls>
 ```
 

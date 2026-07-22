@@ -31,6 +31,22 @@ def _outcome(passed: bool) -> ModeBChapterOutcome:
     )
 
 
+def _outcome_with_repair() -> ModeBChapterOutcome:
+    return ModeBChapterOutcome(
+        **{
+            **_outcome(False).__dict__,
+            "repair_items": (
+                {
+                    "source_audit": "milestone-ch-020",
+                    "issue_type": "consistency_audit",
+                    "affected_chapter": 20,
+                    "description": "canon conflict at ch20",
+                },
+            ),
+        }
+    )
+
+
 def test_resolve_mode_b_root() -> None:
     root = resolve_mode_b_root("fen-xin-jue", output_base_dir="output")
     assert root == Path("output/ai-generated/fen-xin-jue")
@@ -76,6 +92,25 @@ def test_sync_progress_routes_to_rewrite_on_fail(tmp_path: Path) -> None:
     assert "WORD_COUNT_METADATA_MISMATCH" in data["chapters"]["007"]["block_codes"]
 
 
+def test_sync_progress_projects_committed_repair_intent_once(tmp_path: Path) -> None:
+    root = tmp_path / "ai-generated" / "fen-xin-jue"
+    root.mkdir(parents=True)
+    (root / "progress.yaml").write_text(
+        yaml.safe_dump({"chapters": {}, "repair_queue": []}, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    outcome = _outcome_with_repair()
+    sync_progress_yaml("fen-xin-jue", outcome, output_base_dir=str(tmp_path))
+    sync_progress_yaml("fen-xin-jue", outcome, output_base_dir=str(tmp_path))
+
+    data = yaml.safe_load((root / "progress.yaml").read_text(encoding="utf-8"))
+    assert data["state"] == "DRAIN_REPAIR_QUEUE"
+    assert len(data["repair_queue"]) == 1
+    assert data["repair_queue"][0]["runtime_workflow_run_id"] == "workflow-007"
+    assert data["runtime_projection"]["workflow_run_id"] == "workflow-007"
+
+
 def test_sync_progress_noop_when_missing(tmp_path: Path) -> None:
     assert (
         sync_progress_yaml(
@@ -94,6 +129,7 @@ def test_enqueue_repair_item_blocks_and_appends(tmp_path: Path) -> None:
     )
     path = enqueue_repair_item(
         "fen-xin-jue",
+        workflow_run_id="workflow-020",
         affected_chapter=20,
         issue_type="consistency_audit",
         description="canon conflict at ch20",
@@ -105,6 +141,9 @@ def test_enqueue_repair_item_blocks_and_appends(tmp_path: Path) -> None:
     assert len(data["repair_queue"]) == 1
     assert data["repair_queue"][0]["affected_chapter"] == 20
     assert data["repair_queue"][0]["status"] == "pending"
+    assert data["repair_queue"][0]["runtime_workflow_run_id"] == "workflow-020"
+    assert data["runtime_projection"]["source"] == "postgresql"
+    assert data["runtime_projection"]["workflow_run_id"] == "workflow-020"
 
 
 def test_load_mode_b_framework_package_converts_contracts_to_hidden_nodes(

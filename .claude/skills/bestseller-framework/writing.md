@@ -29,6 +29,8 @@
 └─ 出口状态（为下一 scene 留勾）
 ```
 
+Scene 是生产单元，不是读者版小节。每个 scene 的第一段必须在没有“场景一/二/三”标题时仍能承接上一段：用已发生后果、明确时间变化、明确地点移动或持续中的动作起笔。不得依赖小标题解释当前在哪里、什么时候或为什么换场。
+
 ## 4. Chapter Hook Rules
 
 **开场 hook** 四选一：
@@ -201,3 +203,4 @@ generated_at: ISO-8601
 2. **自我 critic 打分**（参照 [quality.md](quality.md) 的 5+4 维）。任一维 < 0.70 触发 editor 重写。
 3. **如本章有 positions 标签** → 跑对应 profile 的 hard_gates 全检（参照 quality.md § Opening Signing Gate）。任一 gate 失败强制 rewrite，且按 [config/chapter_position_profiles.yaml](../../../config/chapter_position_profiles.yaml) 的 `rewrite_priority_order` 顺序整改。
 4. **追加 canon facts / timeline**（参照 [knowledge.md](knowledge.md)）。
+5. **做 reader_edition 预检**：临时移除所有生产 scene 标记后通读场间接口；若出现地点瞬移、时间跳跃无说明或悬空代词，先补 1–2 句正文桥接，不把小标题加回去。

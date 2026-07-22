@@ -46,8 +46,6 @@ version: 2026.07.22
 
 ### Mode A — 开发协助
 
-> ⚠️ **任何开发 / 修复 / 加特性前必读**：《[开发与验证标准](../../../docs/开发与验证标准-feature-lifecycle-20260618.md)》——五阶段流程 + 强制三层验证（单测 / 回归 / **真机端到端**）+ 文档记录规范，本仓强约束。范本见《[故事增强→正文 记录与验证](../../../docs/story-enhancer-prose-wiring-记录与验证-20260618.md)》。
-
 | 子任务 | 必读 | 选读 |
 |-------|------|------|
 | 架构 / 模块关系 | [architecture.md](architecture.md) | — |
@@ -99,7 +97,7 @@ INIT → PLAN_{PREMISE|WORLD|CHARACTERS|VOLUME_PLAN|[ACT]|[WORLD_EXPANSION]|WRIT
 
 完整列表在 [invariants.md](invariants.md)。**最关键三条**：
 
-1. **每章落在平台字数段内**（中文长篇默认 1800–2600–3500 字：下限/目标/上限，与 `config/default.yaml::words_per_chapter` 及 `chapter_length_gate` 常量一致；平台下限：七猫 2500 / 起点 3000 / 番茄 2000）。低于下限或高于上限即强制 rewrite，禁止灌水；从场景/内心/对白方向扩写。⚠️ 不要再用旧的"≥5000 字"——它与运行时契约冲突，是 2026-06 质量回归的成因之一。
+1. **每章落在 1800–3500 字（目标 2600）**。低于即强制 rewrite，禁止灌水；从场景/内心/对白方向扩写。
 2. **Mode B 的全部输出必须写入 `output/ai-generated/{slug}/`**，绝不污染仓库源码目录。
 3. **Canon Facts 只可追加**。改动既有条目视为破坏连续性。
 
@@ -112,7 +110,7 @@ INIT → PLAN_{PREMISE|WORLD|CHARACTERS|VOLUME_PLAN|[ACT]|[WORLD_EXPANSION]|WRIT
 - 章节数 ≤ 50？→ 1 卷 1 幕；不写 act-plan.md / world-expansion.md。
 - 章节数 > 50？→ **必须**写 act-plan.md。
 - 卷数 > 3？→ **必须**写 world-expansion.md（含 DeferredReveal 追踪）。
-- 一章草稿低于平台下限（默认 1800 字 / 见上）或高于上限（默认 3500 字）？→ **立刻返工**，不进入 review 环节。
+- 一章草稿 < 1800 字（或超 3500 字硬上限）？→ **立刻返工**，不进入 review 环节。
 - 主角每卷都在赢？→ **停下**，检查 [planning.md § Win/Loss Rhythm](planning.md)。
 - 角色预知了后续章节才揭示的事？→ **违反知识单调性**，返工。
 - 工具调用 / 上下文快满？→ 保存 progress.yaml，告诉用户"已完成 N/T 章，说'继续'恢复"。
@@ -121,13 +119,13 @@ INIT → PLAN_{PREMISE|WORLD|CHARACTERS|VOLUME_PLAN|[ACT]|[WORLD_EXPANSION]|WRIT
 
 ## 4. 同步资源（跨平台部署）
 
-此 skill 同时适配 Claude Code / Cursor / ChatGPT Custom GPT / Gemini Gem / 通用 LLM。各平台装载方式详见 [docs/SKILL-INSTALLATION.md](../../../docs/SKILL-INSTALLATION.md)。
+此 skill 同时适配 Codex / Cursor / ChatGPT Custom GPT / Gemini Gem / 通用 LLM。各平台装载方式详见 [docs/SKILL-INSTALLATION.md](../../../docs/SKILL-INSTALLATION.md)。
 
 | 资源 | 位置 | 目标平台 |
 |------|------|---------|
-| 渐进披露 skill（本文件 + 子文件）| `.claude/skills/bestseller-framework/` | Claude Code |
+| 平台本地 skill（本文件 + 子文件）| `.agents/skills/bestseller-framework/` 或 `.claude/skills/bestseller-framework/` | Codex / Claude Code |
 | 按 glob 加载的 Cursor 规则 | `.cursor/rules/bestseller-*.mdc` (×5) | Cursor ≥ 0.45 |
-| 单文件完整参考 | [docs/ai-context.md](../../../docs/ai-context.md) | ChatGPT / Gemini / Claude.ai Projects knowledge 文件 |
+| 单文件完整参考 | [docs/ai-context.md](../../../docs/ai-context.md) | ChatGPT / Gemini / Codex.ai Projects knowledge 文件 |
 | 精简 system prompt（< 8000 字符）| [docs/ai-context-system-prompt.md](../../../docs/ai-context-system-prompt.md) | ChatGPT Custom GPT Instructions / Gemini Gem / API system message |
 | 代码入口（Mode A） | [src/bestseller/services/pipelines.py](../../../src/bestseller/services/pipelines.py) | — |
 

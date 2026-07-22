@@ -10,6 +10,35 @@ pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
 
+FRAMEWORK_PARITY_FILES = (
+    "SKILL.md",
+    "architecture.md",
+    "invariants.md",
+    "knowledge.md",
+    "modes.md",
+    "orchestration.md",
+    "output.md",
+    "planning.md",
+    "prompts/critic.md",
+    "prompts/editor.md",
+    "prompts/planner.md",
+    "prompts/summarizer.md",
+    "prompts/writer.md",
+    "quality.md",
+    "recipes/30-chapters.md",
+    "recipes/100-chapters.md",
+    "recipes/500-chapters.md",
+    "recipes/1000-chapters.md",
+    "recipes/2000-chapters.md",
+    "templates/canon-facts.md",
+    "templates/chapter-frontmatter.md",
+    "templates/character-aliases.md",
+    "templates/meta-yaml.md",
+    "templates/progress-state.md",
+    "templates/story-bible.md",
+    "writing.md",
+)
+
 
 def _runtime_contract_marker() -> str:
     config = yaml.safe_load((ROOT / "config/default.yaml").read_text(encoding="utf-8"))
@@ -22,6 +51,15 @@ def _runtime_contract_marker() -> str:
         f"scene={scene['min']}:{scene['target']}:{scene['max']} "
         "runtime_truth=postgresql"
     )
+
+
+@pytest.mark.parametrize("relative_path", FRAMEWORK_PARITY_FILES)
+def test_agents_and_claude_framework_surfaces_are_byte_identical(
+    relative_path: str,
+) -> None:
+    agents = ROOT / ".agents/skills/bestseller-framework" / relative_path
+    claude = ROOT / ".claude/skills/bestseller-framework" / relative_path
+    assert agents.read_bytes() == claude.read_bytes()
 
 
 @pytest.mark.parametrize(

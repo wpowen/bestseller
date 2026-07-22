@@ -171,6 +171,18 @@ class TestLengthEnvelopeCheck:
         violations = list(check.run(text, _chapter_ctx(_zh_invariants())))
         assert violations == []
 
+    def test_latin_padding_cannot_overfill_a_chinese_chapter(self) -> None:
+        check = LengthEnvelopeCheck()
+        text = ("汉" * 1800) + (" latin" * 5000)
+        violations = list(check.run(text, _chapter_ctx(_zh_invariants())))
+        assert violations == []
+
+    def test_latin_padding_cannot_make_a_short_chinese_chapter_pass(self) -> None:
+        check = LengthEnvelopeCheck()
+        text = ("汉" * 1700) + (" latin" * 5000)
+        violations = list(check.run(text, _chapter_ctx(_zh_invariants())))
+        assert [violation.code for violation in violations] == ["LENGTH_UNDER"]
+
     def test_scene_scope_is_exempt(self) -> None:
         # Scene drafts shouldn't be judged by the chapter envelope.
         check = LengthEnvelopeCheck()

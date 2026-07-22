@@ -27,6 +27,7 @@ from bestseller.services.checker_schema import (
 from bestseller.services.checker_schema import (
     Severity as CheckerSeverity,
 )
+from bestseller.services.chapter_word_count_truth import authoritative_zh_word_count
 from bestseller.services.invariants import CliffhangerType, ProjectInvariants
 
 Severity = Literal["block", "warn", "info"]
@@ -368,18 +369,17 @@ class LanguageSignatureCheck:
 
 
 def _count_effective_chars(text: str, language: str) -> int:
-    """Count length units using the same semantics as stored draft word_count.
+    """Count reader-visible length using the authoritative language metric.
 
-    The generation budget is named ``words_per_chapter`` and the chapter row
-    stores :func:`drafts.count_words` style units: CJK glyphs plus Latin word
-    tokens, after Markdown markers are stripped.  L4 must use that same unit;
-    counting punctuation and Markdown characters creates false ``LENGTH_OVER``
-    blocks for Chinese chapters that are otherwise inside the persisted
-    word-count envelope.
+    Chinese chapters count only reader-visible CJK glyphs, so Latin padding,
+    Markdown, punctuation and metadata cannot satisfy or overflow the chapter
+    envelope. English keeps its existing word-token behavior.
     """
 
     if not text:
         return 0
+    if str(language or "").lower().startswith("zh"):
+        return authoritative_zh_word_count(text, language=language)
     plain_lines: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()

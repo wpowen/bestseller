@@ -107,10 +107,10 @@
 | 字段 | 内容 |
 |------|------|
 | 角色 | planner |
-| 读入 | `meta.yaml` + 用户首条指令 + [hook-engine.md](hook-engine.md) |
-| 调用 prompt | [prompts/planner.md](prompts/planner.md) § premise；先生成/选择 HookSpec 并评分 |
-| 产出 | `story-bible/premise.md`（BookSpec：logline / pitch / stakes / themes / protagonist / external_goal / anti_commonsense_hook） |
-| 验证 | 文件存在 + 所有必填字段非空 + HookSpec H_norm ≥ 15 |
+| 读入 | `meta.yaml` + 用户首条指令 |
+| 调用 prompt | [prompts/planner.md](prompts/planner.md) § premise |
+| 产出 | `story-bible/premise.md`（BookSpec：logline / pitch / stakes / themes / protagonist / external_goal） |
+| 验证 | 文件存在 + 所有必填字段非空 |
 | 下一态 | `PLAN_WORLD` |
 
 ### 2.3 `PLAN_WORLD`
@@ -176,12 +176,12 @@
 |------|------|
 | 角色 | writer（经 bridge 调用生产流水线，不再由对话直接写正文） |
 | 读入 | `writing-profile.md` + outline + 前章尾 + `canon-facts.md`（均已物化到 DB） |
-| 执行 | `python3 scripts/mode_b_chapter_bridge.py --slug {slug} --chapter {c}`——内部调 `run_chapter_pipeline`（drafts → 门禁 → 评分 → 自动返工），导出到 `volumes/vol-NN/ch-NNN.md`，并把真实字数/scores 回写 `progress.yaml` |
+| 执行 | `python3 scripts/mode_b_chapter_bridge.py --slug {slug} --chapter {c}`——内部调 `run_chapter_pipeline`（drafts → 门禁 → 评分 → 自动返工），导出到 `volumes/vol-NN/ch-NNN.md`，并把真实字数/scores/`workflow_run_id` 投影回 `progress.yaml` |
 | 前置 | 首次需 `bestseller project create` + `bestseller workflow materialize-story-bible/outline`（bridge exit 3 表示物化缺失） |
-| 验证 | bridge **exit 0** = 过所有门禁（真实 CJK 字数达标、无模板复制、兑现达标）；**exit 2** → `REWRITE_CHAPTER`；**exit 3** → 先物化再重试 |
+| 验证 | bridge **exit 0** = 过所有门禁（真实 CJK 字数 1800–3500、无模板复制、兑现达标）；**exit 2** → `REWRITE_CHAPTER`；**exit 3** → 先物化再重试 |
 | 失败处理 | exit 2/3 由 orchestrator 路由；不再靠对话自评自扩 |
 | 下一态 | exit 0 → `REVIEW_CHAPTER(c)`（流水线内已评分）；exit 2 → `REWRITE_CHAPTER(c)` |
-| 降级 | 仅当无 DB / 无法物化时回退 [prompts/writer.md](prompts/writer.md) 纯对话写作（旧行为，质量无保障） |
+| 降级 | 仅当无 DB / 无法物化时回退 [prompts/writer.md](prompts/writer.md) 纯对话写作（旧行为，质量无保障且不得宣称生产闭环） |
 
 ### 2.11 `REVIEW_CHAPTER(c)`
 
@@ -257,7 +257,7 @@
 |------|------|
 | 读入 | 所有 ch-NNN-*.md |
 | 产出 | `exports/full-novel.md`（拼装全文 + 卷/章分级标题 + 目录）；若用户要求 → `full-novel.epub` |
-| 验证 | 总字数 ≈ `target_total_words`（± 10 %）；章节数 = target_chapters |
+| 验证 | 总字数 ≈ `target_total_words`（± 10 %）；章节数 = target_chapters；`visible_scene_heading_count = 0`；无 frontmatter / snapshot / scene summary；去标记后场间正文仍连续 |
 | 下一态 | `DONE` |
 
 ### 2.19 `DONE`

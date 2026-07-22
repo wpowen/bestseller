@@ -123,7 +123,7 @@ INIT → PLAN_{PREMISE|WORLD|CHARACTERS|VOLUME_PLAN|[ACT]|[WORLD_EXPANSION]|WRIT
 
 | 资源 | 位置 | 目标平台 |
 |------|------|---------|
-| 渐进披露 skill（本文件 + 子文件）| `.Codex/skills/bestseller-framework/` | Codex |
+| 平台本地 skill（本文件 + 子文件）| `.agents/skills/bestseller-framework/` 或 `.claude/skills/bestseller-framework/` | Codex / Claude Code |
 | 按 glob 加载的 Cursor 规则 | `.cursor/rules/bestseller-*.mdc` (×5) | Cursor ≥ 0.45 |
 | 单文件完整参考 | [docs/ai-context.md](../../../docs/ai-context.md) | ChatGPT / Gemini / Codex.ai Projects knowledge 文件 |
 | 精简 system prompt（< 8000 字符）| [docs/ai-context-system-prompt.md](../../../docs/ai-context-system-prompt.md) | ChatGPT Custom GPT Instructions / Gemini Gem / API system message |

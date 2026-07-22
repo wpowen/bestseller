@@ -20,11 +20,24 @@ from bestseller.services.word_targets import (
     scene_word_target_for_chapter,
     word_target_policy,
 )
+from bestseller.services.pipelines import _retention_chapter_length_kwargs
 from bestseller.settings import load_settings
 
 
 @pytest.mark.unit
 class TestChapterTargetClampsToTarget:
+    def test_retention_gate_never_expands_chinese_hard_max(self) -> None:
+        project = SimpleNamespace(
+            language="zh-CN",
+            default_target_chapter_words=5000,
+            target_chapter_words=5000,
+        )
+
+        thresholds = _retention_chapter_length_kwargs(project)
+
+        assert thresholds["chapter_length_hard_max"] == 3500
+        assert thresholds["chapter_length_hard_floor"] <= 2600
+        assert thresholds["chapter_length_soft_warning"] <= 3500
     def test_project_declared_chapter_band_overrides_global_policy(self) -> None:
         s = load_settings()
         project = SimpleNamespace(

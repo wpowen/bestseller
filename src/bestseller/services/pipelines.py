@@ -63,6 +63,11 @@ from bestseller.services.chase_debt_ledger import accrue_debt_rows
 from bestseller.services.chapter_generation_input_builder import (
     build_chapter_generation_input_bundle,
 )
+from bestseller.services.chapter_length_gate import (
+    DEFAULT_HARD_FLOOR_ZH_CHARS,
+    DEFAULT_HARD_MAX_ZH_CHARS,
+    DEFAULT_SOFT_WARNING_ZH_CHARS,
+)
 from bestseller.services.chapter_outline_readiness_gate import (
     chapter_scene_budget_sum_thresholds,
     evaluate_chapter_outline_readiness,
@@ -102,7 +107,7 @@ from bestseller.services.drafts import (
     _prompt_safe_forbidden_actions,
     _redact_front10_prompt_leaks,
     assemble_chapter_draft,
-    count_words,
+    authoritative_word_count_for_language,
     generate_chapter_draft_once,
     generate_scene_draft,
     _front10_forbidden_signal_terms,
@@ -215,6 +220,56 @@ from bestseller.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 
+def _retention_chapter_length_kwargs(project: ProjectModel) -> dict[str, int]:
+    """Return retention-gate thresholds without bypassing the zh hard wall."""
+
+    target = int(
+        getattr(project, "default_target_chapter_words", 0)
+        or getattr(project, "target_chapter_words", 0)
+        or 0
+    )
+    if target <= 0:
+        return {}
+    if is_english_language(getattr(project, "language", None)):
+        return {
+            "chapter_length_hard_floor": max(1500, int(target * 0.7)),
+            "chapter_length_soft_warning": max(2000, int(target * 0.85)),
+            "chapter_length_hard_max": max(3000, int(target * 1.2)),
+        }
+
+    hard_floor = min(
+        DEFAULT_SOFT_WARNING_ZH_CHARS,
+        max(DEFAULT_HARD_FLOOR_ZH_CHARS, int(target * 0.7)),
+    )
+    soft_warning = min(
+        DEFAULT_HARD_MAX_ZH_CHARS,
+        max(hard_floor, DEFAULT_SOFT_WARNING_ZH_CHARS, int(target * 0.85)),
+    )
+    return {
+        "chapter_length_hard_floor": hard_floor,
+        "chapter_length_soft_warning": soft_warning,
+        "chapter_length_hard_max": DEFAULT_HARD_MAX_ZH_CHARS,
+    }
+
+
+def _existing_chapter_draft_needs_length_recheck(
+    chapter_draft: ChapterDraftVersionModel | None,
+    *,
+    language: str,
+    hard_min: int,
+    hard_max: int,
+) -> tuple[bool, int]:
+    """Check resume eligibility from body truth, never stale stored counts."""
+
+    if chapter_draft is None:
+        return False, 0
+    actual = authoritative_word_count_for_language(
+        chapter_draft.content_md or "",
+        language=language,
+    )
+    return actual < hard_min or actual > hard_max, actual
+
+
 def _bundle_hook_domain_tokens(project) -> tuple[str, ...]:
     """Book-derived hook vocabulary for the quality bundle's hook-echo check.
 
@@ -319,24 +374,7 @@ async def _evaluate_retention_safety_after_assembly(
 
     # Derive chapter-length thresholds. Use project's target_chapter_words
     # if defined; else fall back to the gate defaults.
-    _proj_target_words = int(
-        getattr(project, "default_target_chapter_words", 0)
-        or getattr(project, "target_chapter_words", 0)
-        or 0
-    )
-    _length_kwargs: dict = {}
-    if _proj_target_words > 0:
-        # When the project specifies a target (e.g. 2800 zh chars), make
-        # the floor 70% of that and warning 85%.
-        _length_kwargs["chapter_length_hard_floor"] = max(
-            1500, int(_proj_target_words * 0.7)
-        )
-        _length_kwargs["chapter_length_soft_warning"] = max(
-            2000, int(_proj_target_words * 0.85)
-        )
-        _length_kwargs["chapter_length_hard_max"] = max(
-            3000, int(_proj_target_words * 1.2)
-        )
+    _length_kwargs: dict[str, int | bool] = _retention_chapter_length_kwargs(project)
     # Honor the per-gate disable flag (default True; tests can opt out).
     try:
         from bestseller.services.quality_gates_config import (
@@ -557,6 +595,8 @@ async def _maybe_apply_deterministic_length_trim_before_export(
 
     fallback_hard_max = max(3000, int(target_words * 1.2)) if target_words else 3000
     hard_max = int(report.blocking_findings[0].evidence.get("hard_max") or fallback_hard_max)
+    if not is_english_language(getattr(project, "language", None)):
+        hard_max = min(hard_max, DEFAULT_HARD_MAX_ZH_CHARS)
     trimmed_text, trimmed = trim_chapter_to_hard_max(text, hard_max)
     if not trimmed:
         return False
@@ -565,7 +605,14 @@ async def _maybe_apply_deterministic_length_trim_before_export(
         return False
 
     original_word_count = int(getattr(chapter_draft, "word_count", 0) or 0)
-    trimmed_word_count = count_words(trimmed_text)
+    from bestseller.services.chapter_word_count_truth import (
+        authoritative_zh_word_count,
+    )
+
+    trimmed_word_count = authoritative_zh_word_count(
+        trimmed_text,
+        language=str(getattr(project, "language", None) or "zh-CN"),
+    )
     chapter_draft.content_md = trimmed_text
     chapter_draft.word_count = trimmed_word_count
     chapter.current_word_count = trimmed_word_count
@@ -689,7 +736,10 @@ async def _maybe_apply_deterministic_hook_echo_bridge_before_review(
     if "HOOK_ECHO_MISSING" in post_codes or not post_codes <= {"CHAPTER_LENGTH_BLOCK_HIGH"}:
         return False
 
-    bridged_word_count = count_words(bridged_text)
+    bridged_word_count = authoritative_word_count_for_language(
+        bridged_text,
+        language=str(getattr(project, "language", None) or "zh-CN"),
+    )
     chapter_draft.content_md = bridged_text
     chapter_draft.word_count = bridged_word_count
     chapter.current_word_count = bridged_word_count
@@ -859,7 +909,10 @@ def _chapter_first_full_regeneration_reason(
         except (TypeError, ValueError):
             word_count = 0
         if word_count <= 0:
-            word_count = count_words(getattr(chapter_draft, "content_md", "") or "")
+            word_count = authoritative_word_count_for_language(
+                getattr(chapter_draft, "content_md", "") or "",
+                language=str(getattr(project, "language", None) or "zh-CN"),
+            )
     if word_count <= 0:
         try:
             word_count = int(getattr(chapter, "current_word_count", None) or 0)
@@ -7632,10 +7685,14 @@ async def run_chapter_pipeline(
             )
             try:
                 _budget = settings.generation.words_per_chapter
-                _actual_wc = (
-                    count_words(_existing_chapter_draft.content_md or "")
-                    if _existing_chapter_draft is not None
-                    else 0
+                (
+                    _chapter_length_recheck_needed,
+                    _actual_wc,
+                ) = _existing_chapter_draft_needs_length_recheck(
+                    _existing_chapter_draft,
+                    language=str(getattr(project, "language", None) or "zh-CN"),
+                    hard_min=int(_budget.min),
+                    hard_max=int(_budget.max),
                 )
                 _stored_wc = int(getattr(chapter, "current_word_count", None) or 0)
                 _draft_wc = (
@@ -7643,11 +7700,8 @@ async def run_chapter_pipeline(
                     if _existing_chapter_draft is not None
                     else 0
                 )
-                _wc_candidates = [wc for wc in (_actual_wc, _stored_wc, _draft_wc) if wc > 0]
-                _chapter_length_recheck_needed = any(
-                    wc < int(_budget.min) or wc > int(_budget.max)
-                    for wc in _wc_candidates
-                )
+                # Stored values remain in the log for diagnosis, but body
+                # truth alone decides whether resume needs regeneration.
             except Exception:
                 _chapter_length_recheck_needed = False
             if _existing_chapter_draft is not None and not _chapter_length_recheck_needed:
@@ -9763,37 +9817,31 @@ async def run_chapter_pipeline(
                         interval=int(settings.pipeline.consistency_check_interval or 20),
                     )
                     if _ms.blocking and _ms.findings:
+                        milestone_repair_item = {
+                            "source_audit": f"milestone-ch-{chapter_number:03d}",
+                            "issue_type": "consistency_audit",
+                            "affected_chapter": chapter_number,
+                            "description": "; ".join(
+                                finding.detail for finding in _ms.findings
+                            ),
+                        }
                         chapter.metadata_json = {
                             **(chapter.metadata_json or {}),
                             "milestone_consistency_blocked": True,
                             "milestone_consistency_codes": [f.code for f in _ms.findings],
+                            "milestone_repair_items": [milestone_repair_item],
                         }
                         chapter.production_state = "blocked"
                         requires_human_review = True
-                        # Mode B projects track unresolved milestone failures
-                        # in progress.yaml's repair_queue so the orchestrator
-                        # drains them before advancing.
+                        # PostgreSQL is canonical. Mode B projects project this
+                        # committed intent into progress.yaml only after the DB
+                        # transaction succeeds (see mode_b_chapter_bridge.py).
                         if bool((getattr(project, "metadata_json", None) or {}).get("mode_b")):
-                            try:
-                                from bestseller.services.mode_b_bridge import (
-                                    enqueue_repair_item,
-                                )
-
-                                enqueue_repair_item(
-                                    project_slug,
-                                    affected_chapter=chapter_number,
-                                    issue_type="consistency_audit",
-                                    description="; ".join(
-                                        f.detail for f in _ms.findings
-                                    ),
-                                    output_base_dir=str(settings.output.base_dir),
-                                )
-                            except Exception:
-                                logger.debug(
-                                    "milestone repair_queue enqueue failed ch%d",
-                                    chapter_number,
-                                    exc_info=True,
-                                )
+                            workflow_run.metadata_json = {
+                                **(workflow_run.metadata_json or {}),
+                                "mode_b_repair_projection_pending": True,
+                                "mode_b_repair_projection_chapter": chapter_number,
+                            }
                 except Exception:
                     logger.debug(
                         "milestone consistency gate failed ch%d",

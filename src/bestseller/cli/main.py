@@ -1509,6 +1509,16 @@ def project_pipeline(
         "--export-markdown/--no-export-markdown",
         help="Whether to export chapter and project markdown artifacts.",
     ),
+    chapter_first: bool = typer.Option(
+        False,
+        "--chapter-first/--scene-first",
+        help="Generate every chapter in one writer call from hidden plot beats.",
+    ),
+    stop_on_chapter_failure: bool = typer.Option(
+        True,
+        "--stop-on-chapter-failure/--continue-on-chapter-failure",
+        help="Do not advance the book when a chapter is not approved.",
+    ),
 ) -> None:
     """Run the project-level pipeline across all current chapters."""
 
@@ -1524,6 +1534,8 @@ def project_pipeline(
                 materialize_outline=materialize_outline,
                 outline_file=file,
                 export_markdown=export_markdown,
+                chapter_first=chapter_first,
+                stop_on_chapter_failure=stop_on_chapter_failure,
             )
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 

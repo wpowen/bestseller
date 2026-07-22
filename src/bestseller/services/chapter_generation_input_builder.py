@@ -336,6 +336,11 @@ def _merge_chapter_metadata_contract(
             merged[key] = nested
         else:
             merged[key] = value
+    whole_chapter_logic_contract = _mapping_or_empty(
+        metadata.get("whole_chapter_logic_contract")
+    )
+    if whole_chapter_logic_contract:
+        merged["whole_chapter_logic_contract"] = whole_chapter_logic_contract
     return merged
 
 

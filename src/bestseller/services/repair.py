@@ -28,6 +28,7 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.exports import export_project_markdown
+from bestseller.services.generation_policy import generation_unit_preference_from_metadata
 from bestseller.services.pipelines import run_chapter_pipeline
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.quality_failure_events import (
@@ -43,8 +44,8 @@ from bestseller.services.source_artifact_audit import (
 )
 from bestseller.services.word_targets import (
     normalize_chapter_word_target,
+    project_word_target_policy,
     scene_word_target_for_chapter,
-    word_target_policy,
 )
 from bestseller.services.workflows import create_workflow_run, create_workflow_step_run
 from bestseller.services.world_expansion import sync_world_expansion_progress
@@ -1276,7 +1277,7 @@ async def _normalize_project_word_targets(
     for scene in scenes:
         scenes_by_chapter[scene.chapter_id].append(scene)
 
-    policy = word_target_policy(settings)
+    policy = project_word_target_policy(project, settings)
     chapter_updates = 0
     scene_updates = 0
     changed_chapters: list[int] = []
@@ -1832,8 +1833,76 @@ async def run_project_repair(
             )
             await _checkpoint_repair_progress(session)
 
+        if not chapter_task_ids:
+            # A project can still look blocked because historical review rows
+            # or reassembled chapter state lag behind a durable
+            # ``chapter_quality_debt`` decision.  Once the target oracle has no
+            # actionable chapter, running export + project review only turns
+            # the same stale attention verdict into ``machine_blocked`` every
+            # scheduler tick.  Converge here and preserve the user's project
+            # lifecycle state (including an explicit focus pause).
+            current_step_name = "completed_no_actionable_repair"
+            workflow_run.status = WorkflowStatus.COMPLETED.value
+            workflow_run.current_step = current_step_name
+            workflow_run.metadata_json = {
+                **workflow_run.metadata_json,
+                "superseded_task_count": superseded_task_count,
+                "processed_chapter_count": 0,
+                "target_chapter_numbers": [],
+                "repair_gate_chapter_numbers": [],
+                "remaining_pending_rewrite_count": 0,
+                "requires_human_review": False,
+                "no_actionable_repair": True,
+                "final_verdict": "no_actionable_repair",
+            }
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref={
+                    "project_slug": project_slug,
+                    "no_actionable_repair": True,
+                    "project_status_preserved": str(project.status),
+                },
+            )
+            await session.flush()
+            await _checkpoint_repair_progress(session)
+            _emit_progress(
+                progress,
+                "project_repair_completed_no_actionable_repair",
+                {
+                    "project_slug": project_slug,
+                    "workflow_run_id": str(workflow_run.id),
+                    "project_status": str(project.status),
+                },
+            )
+            return ProjectRepairResult(
+                workflow_run_id=workflow_run.id,
+                project_id=project.id,
+                project_slug=project.slug,
+                pending_rewrite_task_count=task_count,
+                superseded_task_count=superseded_task_count,
+                processed_chapters=[],
+                review_report_id=None,
+                quality_score_id=None,
+                final_verdict="no_actionable_repair",
+                export_artifact_id=None,
+                output_path=None,
+                remaining_pending_rewrite_count=0,
+                requires_human_review=False,
+            )
+
         processed_chapters: list[ProjectRepairChapterSummary] = []
         requires_human_review = False
+        project_metadata = (
+            project.metadata_json if isinstance(project.metadata_json, dict) else {}
+        )
+        # ``None`` deliberately lets the pipeline apply its global/chapter
+        # threshold fallback. Explicit per-book chapter/scene metadata must be
+        # preserved so repair never switches generation units behind the book.
+        use_chapter_first = generation_unit_preference_from_metadata(project_metadata)
         for chapter_number in _dedupe_sorted(chapter_task_ids.keys()):
             _emit_progress(
                 progress,
@@ -1853,6 +1922,7 @@ async def run_project_repair(
                 requested_by=requested_by,
                 export_markdown=export_markdown,
                 allow_structural_repair=True,
+                chapter_first=use_chapter_first,
             )
             repaired_chapter = await session.get(ChapterModel, chapter_result.chapter_id)
             repaired_chapter_status = (

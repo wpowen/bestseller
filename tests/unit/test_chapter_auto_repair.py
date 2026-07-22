@@ -327,7 +327,7 @@ async def test_stored_duplicate_block_triggers_repair_even_with_latest_report() 
     assert scene.status == SceneStatus.NEEDS_REWRITE.value
     assert "第30章复用了第29章段落" in scene.metadata_json["auto_repair_hint"]
     assert "post_assembly_duplicate_gate" not in chapter.metadata_json
-    assert len(session.execute_calls) == 1
+    assert session.execute_calls == []  # old current draft stays live until replacement succeeds
 
 
 @pytest.mark.asyncio
@@ -398,7 +398,7 @@ async def test_stored_pronoun_mismatch_block_triggers_rewrite_repair() -> None:
     assert scene.status == SceneStatus.NEEDS_REWRITE.value
     assert "叶长青: expected 他, found 她的" in scene.metadata_json["auto_repair_hint"]
     assert scene.metadata_json["auto_repair_block_codes"] == ["pronoun_mismatch"]
-    assert len(session.execute_calls) == 1
+    assert session.execute_calls == []  # transactional replacement preserves fallback draft
 
 
 @pytest.mark.asyncio
@@ -568,7 +568,7 @@ async def test_dead_alive_block_uses_offstage_character_repair() -> None:
     assert scenes[0].metadata_json["auto_repair_removed_participants"] == ["母亲"]
     assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == ["母亲"]
     assert "当下不可登场角色：母亲" in scenes[0].metadata_json["auto_repair_hint"]
-    assert len(session.execute_calls) == 1
+    assert session.execute_calls == []  # repair preparation never demotes current content
 
 
 @pytest.mark.asyncio
@@ -1298,9 +1298,8 @@ def test_auto_repair_hint_merge_deduplicates_repeated_lines() -> None:
 
 
 @pytest.mark.asyncio
-async def test_auto_repair_clears_current_scene_drafts_for_regeneration() -> None:
-    """Resetting scene status is not enough; the next scene pipeline only
-    regenerates when there is no current draft."""
+async def test_auto_repair_preserves_current_scene_drafts_until_regeneration_succeeds() -> None:
+    """Preparation marks forced regeneration without creating a draftless gap."""
     chapter = FakeChapter()
     scenes = [
         FakeScene(chapter_id=chapter.id, scene_number=1),
@@ -1326,7 +1325,9 @@ async def test_auto_repair_clears_current_scene_drafts_for_regeneration() -> Non
         SceneStatus.NEEDS_REWRITE.value,
         SceneStatus.NEEDS_REWRITE.value,
     ]
-    assert len(session.execute_calls) == len(scenes)
+    assert session.execute_calls == []
+    assert all(scene.metadata_json["auto_repair_hint"] for scene in scenes)
+    assert all(scene.metadata_json["auto_repair_block_codes"] == ["BLOCK_LOW"] for scene in scenes)
 
 
 @pytest.mark.asyncio

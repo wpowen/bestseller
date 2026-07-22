@@ -232,7 +232,11 @@ async def start_project_pipeline(
         return await _enqueue(
             settings,
             "run_project_pipeline_task",
-            {"project_slug": slug},
+            {
+                "project_slug": slug,
+                "chapter_first": body.chapter_first,
+                "stop_on_chapter_failure": body.stop_on_chapter_failure,
+            },
         )
     except Exception:
         await _release_pipeline_start(redis, project.id, token)
@@ -258,5 +262,9 @@ async def start_chapter_pipeline(
     return await _enqueue(
         settings,
         "run_chapter_pipeline_task",
-        {"project_slug": slug, "chapter_number": chapter_number},
+        {
+            "project_slug": slug,
+            "chapter_number": chapter_number,
+            "chapter_first": body.chapter_first if body is not None else None,
+        },
     )

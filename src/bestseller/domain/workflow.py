@@ -605,6 +605,19 @@ class ChapterOutlineInput(BaseModel):
             "chapter_methodology_contract",
         ),
     )
+    whole_chapter_logic_contract: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices(
+            "whole_chapter_logic_contract",
+            "chapter_logic_contract",
+            "logic_contract",
+        ),
+        description=(
+            "Chapter-first execution contract: entry/exit state, ordered events, "
+            "causal chain, numeric provenance, knowledge boundaries, and excluded "
+            "cheap solutions. It is planning metadata and must never appear in prose."
+        ),
+    )
     world_rule_refs: list[str] = Field(default_factory=list)
     world_rule_landing: str | None = None
     world_state_deltas: list[dict[str, str]] = Field(default_factory=list)
@@ -787,6 +800,11 @@ class ChapterOutlineInput(BaseModel):
             ("brainhole_contract",),
             ("seriality_contract",),
             ("methodology_contract", "chapter_methodology_contract"),
+            (
+                "whole_chapter_logic_contract",
+                "chapter_logic_contract",
+                "logic_contract",
+            ),
         ):
             for _alias in _contract_aliases:
                 if _alias in data and not isinstance(data.get(_alias), dict):

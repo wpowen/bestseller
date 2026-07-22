@@ -1889,6 +1889,15 @@ def _sync_chapter_causality_metadata(
         metadata["methodology_contract"] = methodology_contract
     else:
         metadata.pop("methodology_contract", None)
+    whole_chapter_logic_contract = getattr(
+        chapter_outline,
+        "whole_chapter_logic_contract",
+        None,
+    )
+    if isinstance(whole_chapter_logic_contract, dict) and whole_chapter_logic_contract:
+        metadata["whole_chapter_logic_contract"] = whole_chapter_logic_contract
+    else:
+        metadata.pop("whole_chapter_logic_contract", None)
     # Book-level story-enhancer cashing: the chapter LLM lands the selected
     # 脑洞/喜剧/爽点 effects into these structured fields. Persist them so the
     # prose writer (drafts.build_scene_draft_prompts → render_story_enhancer_

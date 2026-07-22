@@ -41,11 +41,28 @@ from bestseller.services.gate_registry import chapter_block_is_structural
 __all__ = [
     "BlockedChapter",
     "ContinuationReadiness",
+    "chapter_has_terminal_quality_debt",
     "decide_continuation_readiness",
     "load_blocked_chapters",
     "compute_continuation_readiness",
     "project_has_structural_block",
 ]
+
+
+def chapter_has_terminal_quality_debt(chapter: Any) -> bool:
+    """Return whether a blocked-looking chapter is a terminal best attempt.
+
+    ``chapter_quality_debt`` is the durable marker.  ``production_state`` is
+    also accepted for older rows, because a later reassembly can transiently
+    flip the state back to ``blocked`` while leaving the durable marker intact.
+    Terminal debt must never be selected as actionable repair work again.
+    """
+
+    metadata = getattr(chapter, "metadata_json", None)
+    if not isinstance(metadata, dict):
+        metadata = {}
+    production_state = str(getattr(chapter, "production_state", "") or "").lower()
+    return bool(metadata.get("chapter_quality_debt")) or production_state == "quality_debt"
 
 
 @dataclass(frozen=True)
@@ -131,6 +148,8 @@ async def load_blocked_chapters(
     )
     blocked: list[BlockedChapter] = []
     for chapter in rows:
+        if chapter_has_terminal_quality_debt(chapter):
+            continue
         blocked.append(
             BlockedChapter(
                 chapter_number=int(getattr(chapter, "chapter_number", 0) or 0),

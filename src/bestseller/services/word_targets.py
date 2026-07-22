@@ -138,6 +138,7 @@ def chapter_rewrite_length_band(
     language: str | None = None,
     direction: str = "normal",
     role: str = "writer",
+    project: Any | None = None,
 ) -> RewriteLengthBand:
     """Compute a model-aware safe rewrite length band for a chapter.
 
@@ -147,7 +148,7 @@ def chapter_rewrite_length_band(
     - ``normal``: balanced in-band tuning
     """
 
-    policy = word_target_policy(settings)
+    policy = project_word_target_policy(project, settings)
     hard_min = int(policy.chapter_min)
     hard_max = int(policy.chapter_max)
     if not is_english_language(language):
@@ -210,6 +211,34 @@ def word_target_policy(settings: AppSettings) -> WordTargetPolicy:
     )
 
 
+def project_word_target_policy(project: Any, settings: AppSettings) -> WordTargetPolicy:
+    """Apply an explicit per-project chapter band when the project declares one."""
+
+    base = word_target_policy(settings)
+    metadata = getattr(project, "metadata_json", None)
+    override = metadata.get("words_per_chapter") if isinstance(metadata, dict) else None
+    if not isinstance(override, dict):
+        return base
+    chapter_min = _positive_int(override.get("min"))
+    chapter_target = _positive_int(override.get("target"))
+    chapter_max = _positive_int(override.get("max"))
+    if (
+        chapter_min is None
+        or chapter_target is None
+        or chapter_max is None
+        or not chapter_min <= chapter_target <= chapter_max
+    ):
+        return base
+    return WordTargetPolicy(
+        chapter_min=chapter_min,
+        chapter_target=chapter_target,
+        chapter_max=chapter_max,
+        scene_min=base.scene_min,
+        scene_target=base.scene_target,
+        scene_max=base.scene_max,
+    )
+
+
 # The zh prose models empirically UNDER-produce vs the per-scene target. Observed
 # on qwen3.7-plus (custom-xuanhuan-1782291202): chapters land 77-90% of target,
 # scenes as low as 59%. The old normalize logic assumed a +10-20% OVERSHOOT, so it
@@ -249,7 +278,7 @@ def project_average_chapter_words(project: Any) -> int | None:
 def effective_chapter_word_target(project: Any, settings: AppSettings) -> int:
     """Resolve the chapter target that planning, writing, and gates should share."""
 
-    policy = word_target_policy(settings)
+    policy = project_word_target_policy(project, settings)
     floor_safe = _floor_safe_chapter_target(policy)
     project_average = project_average_chapter_words(project)
     candidate = project_average if project_average is not None else policy.chapter_target
@@ -259,7 +288,7 @@ def effective_chapter_word_target(project: Any, settings: AppSettings) -> int:
 
 
 def normalize_chapter_word_target(raw_target: Any, project: Any, settings: AppSettings) -> int:
-    policy = word_target_policy(settings)
+    policy = project_word_target_policy(project, settings)
     floor_safe = _floor_safe_chapter_target(policy)
     parsed = _positive_int(raw_target)
     if parsed is not None and policy.chapter_min <= parsed <= policy.chapter_max:

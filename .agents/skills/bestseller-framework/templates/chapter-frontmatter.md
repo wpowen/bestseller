@@ -46,19 +46,19 @@ generated_at: "2026-04-16T12:00:00Z"
 
 # 第三章 初入宗门
 
-## 场景一 · 山门前的队列
+<!-- production-scene: 1 | 山门前的队列 -->
 
 [1600 字正文]
 
-## 场景二 · 气感测试
+<!-- production-scene: 2 | 气感测试 -->
 
 [1800 字正文]
 
-## 场景三 · 宿舍初见
+<!-- production-scene: 3 | 宿舍初见 -->
 
 [1500 字正文]
 
-## 场景四 · 师兄的目光
+<!-- production-scene: 4 | 师兄的目光 -->
 
 [1500 字正文]
 
@@ -82,12 +82,12 @@ facts:
 | `clues_planted` / `clues_paid_off` | 与 `story-bible/plot-arcs.md` 的偿付表对齐 |
 | `pov_character` | 默认主角；若本章特批切换，必须声明 |
 
-## 场景标题约定
+## 生产 Scene 标记约定
 
-- 四场：场景一～场景四
-- 三场：场景一、场景二、场景三
-- 两场：上半 / 下半（breathe 章可用）
-- 标题后接 `·` 简述（如"山门前的队列"）
+- 生产稿使用不可见 HTML 注释：`<!-- production-scene: N | 内部场景名 -->`。
+- 正文不得出现 `## 场景一/二/三` 或 `## Scene 1/2/3` 可见标题。
+- 每场首段必须脱离生产标记仍能承接上一场；标记只用于状态机定位，不能替代叙事过渡。
+- `reader_edition` 导出时删除全部 production-scene 注释。
 
 ## 末尾 snapshot 注释块
 

@@ -706,6 +706,26 @@ async def run_autowrite_task(
 
                 # Build ProjectCreate from the existing project record
                 meta = project.metadata_json or {}
+                if (
+                    str(workflow_run_id).startswith("autowrite:heal:")
+                    and isinstance(meta, dict)
+                    and meta.get("self_heal_suppressed")
+                ):
+                    await reporter.emit(
+                        "framework_owned_self_heal_skipped",
+                        {
+                            "project_slug": project_slug,
+                            "workflow_run_id": workflow_run_id,
+                            "reason": meta.get("self_heal_suppressed_reason")
+                            or "self_heal_suppressed",
+                        },
+                        event_type="completed",
+                    )
+                    return {
+                        "status": "skipped_framework_owned",
+                        "project_slug": project_slug,
+                        "workflow_run_id": workflow_run_id,
+                    }
                 project_payload = ProjectCreate(
                     slug=project.slug,
                     title=project.title,
@@ -804,10 +824,38 @@ async def run_project_pipeline_task(
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
         try:
             async with get_server_session() as session:
+                if str(workflow_run_id).startswith("project-pipeline:heal:"):
+                    project = await get_project_by_slug(session, project_slug)
+                    project_meta = (
+                        getattr(project, "metadata_json", None)
+                        if project is not None
+                        and isinstance(getattr(project, "metadata_json", None), dict)
+                        else {}
+                    )
+                    if project_meta.get("self_heal_suppressed"):
+                        await reporter.emit(
+                            "framework_owned_self_heal_skipped",
+                            {
+                                "project_slug": project_slug,
+                                "workflow_run_id": workflow_run_id,
+                                "reason": project_meta.get(
+                                    "self_heal_suppressed_reason"
+                                )
+                                or "self_heal_suppressed",
+                            },
+                            event_type="completed",
+                        )
+                        return {
+                            "status": "skipped_framework_owned",
+                            "project_slug": project_slug,
+                            "workflow_run_id": workflow_run_id,
+                        }
                 result = await pipeline_services.run_project_pipeline(
                     session=session,
                     settings=settings,
                     project_slug=project_slug,
+                    chapter_first=payload.get("chapter_first"),
+                    stop_on_chapter_failure=bool(payload.get("stop_on_chapter_failure", False)),
                     progress=make_sync_callback(reporter),
                 )
         except TruthVersionStaleError:
@@ -826,6 +874,8 @@ async def run_project_pipeline_task(
                     session=session,
                     settings=settings,
                     project_slug=project_slug,
+                    chapter_first=payload.get("chapter_first"),
+                    stop_on_chapter_failure=bool(payload.get("stop_on_chapter_failure", False)),
                     progress=make_sync_callback(reporter),
                 )
         except Exception as exc:
@@ -937,6 +987,7 @@ async def run_chapter_pipeline_task(
                     settings=settings,
                     project_slug=project_slug,
                     chapter_number=payload["chapter_number"],
+                    chapter_first=payload.get("chapter_first"),
                     progress=make_sync_callback(reporter),
                 )
 

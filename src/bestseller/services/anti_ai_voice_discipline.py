@@ -31,19 +31,6 @@ from bestseller.services.writing_profile import is_english_language
 
 Scope = Literal["scene", "chapter"]
 
-def _embodied_verbs() -> str:
-    """The verb list, derived from the detector that judges it.
-
-    Hardcoding it here let the two drift: the prompt banned 10 verbs while
-    ``_detect_verb_tic_spam`` flagged 12, so prose was rewritten for over-using
-    攥 / 掐 — the two most frequent tics in a measured book (攥×30) — having never
-    been told not to. Deriving removes that failure mode by construction.
-    """
-
-    from bestseller.services.ai_flavor.detector import _VERB_TIC_LEXICON_ZH
-
-    return "、".join(_VERB_TIC_LEXICON_ZH)
-
 _SCOPE_LABEL: dict[str, str] = {"scene": "全场", "chapter": "全章"}
 # A chapter holds 2-3 scenes; keep the per-scene budget intact rather than
 # letting it multiply by the scene count.
@@ -77,10 +64,19 @@ def render_anti_ai_voice_discipline(
         "- 不要结论先行/总分总：禁止先抛出判断、情绪标签或场面总结、再用描写去补证。"
         "先写正在发生的具体动作与感知，结论让读者自己得出，能不说就不说。"
         "删掉一切替读者算账、下定论的句子（如“他算了一笔账”“这一刻他明白了”）。\n"
+        "- 对举式定义（“不是……而是……”“看似……实则……”“与其说……不如说……”）是最容易被"
+        "一眼认出的AI腔：它替读者先否定一个错误理解，再颁布正确答案。改写成只写成立的那一面的"
+        "实物细节，让错误理解由读者自己排除；真要对比就拆成两个独立短句，中间不要用转折词粘住。\n"
+        "- 不要用“没做什么”当叙事主句（“他没动”“他没抬头”“她没出声”“他没接话”）："
+        "这是用否定去暗示克制，读者读到的只是空白。改写成他此刻**实际在做**的那个动作，"
+        "克制由这个动作本身透出来。\n"
+        "- 身体反应不是情绪的默认替身，也不是每段必备的节拍。只有当身体变化会限制下一步动作、"
+        "是前文已建立的线索、或立刻造成可见后果时才写；否则改写为人物对本场物件作出的选择，"
+        "并写出该选择改变了什么。不得从固定身体反应词表挑词填空。\n"
         "- 语体=现代白话网文：先把话说清楚，再谈修辞。禁止文白夹杂的压缩腔"
         "（连续出现省略主语、省略量词的短句会让读者出戏）。\n"
-        f"- 具身动词禁止复读：{_embodied_verbs()} 这类高冲击动词，"
-        f"同一个词{where}最多 {verb_cap} 次；写感官时用平实动词（闻到/听见/看见/摸到）不丢人，"
+        "- 不在生成提示里列举高冲击具身动词，避免黑名单反向激活；同一个高冲击具身动词"
+        f"{where}最多 {verb_cap} 次；写感官时用平实动词（闻到/听见/看见/摸到）不丢人，"
         "复读高冲击动词才是最重的 AI 腔。\n"
         f"- 通感与陌生化比喻是味精：{where}≤{simile_cap}处，且必须贴合当下事件；"
         "严禁感官动词错配的怪喻（如“香味撞上来”“蒸汽舀进脑仁”——读者只会出戏）。\n"

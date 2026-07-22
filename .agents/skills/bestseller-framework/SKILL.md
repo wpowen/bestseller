@@ -16,10 +16,14 @@ trigger_keywords:
   - mode b
   - story bible
   - volume plan
-version: 2026.05.21
+version: 2026.07.22
 ---
 
 # BestSeller Framework Skill
+
+<!-- BESTSELLER_RUNTIME_CONTRACT chapter=1800:2600:3500 scene=600:870:1150 runtime_truth=postgresql -->
+
+> 关键契约以运行时代码、`config/default.yaml` 和数据库迁移为准；本 Skill、Cursor 规则与 `docs/ai-context*` 是必须通过回归测试保持同步的投影，不再互相宣称自己是独立单一事实源。
 
 > 本 skill 以**渐进披露**（progressive disclosure）组织：入口文件只做路由，按任务需要把对应子文件读入上下文。请严格按下方路由表加载，避免一次性加载全部文件。
 
@@ -55,7 +59,7 @@ version: 2026.05.21
 
 ### Mode B — 直接写小说（自主执行）
 
-**首读**：[orchestration.md](orchestration.md) —— **Orchestrator 状态机**。你不再是"一次写一步后等用户说继续"，而是按状态机**自主循环**，用 `progress.yaml` 做断点续跑，直到 `DONE`。
+**首读**：[orchestration.md](orchestration.md) —— **Orchestrator 状态机**。你不再是"一次写一步后等用户说继续"，而是按状态机**自主循环**。PostgreSQL 是运行时事实源；`progress.yaml` 是带 `workflow_run_id` 的文件编排检查点/投影，用于断点续跑，直到 `DONE`。
 
 状态机总览（详见 orchestration.md）：
 
@@ -125,7 +129,7 @@ INIT → PLAN_{PREMISE|WORLD|CHARACTERS|VOLUME_PLAN|[ACT]|[WORLD_EXPANSION]|WRIT
 | 精简 system prompt（< 8000 字符）| [docs/ai-context-system-prompt.md](../../../docs/ai-context-system-prompt.md) | ChatGPT Custom GPT Instructions / Gemini Gem / API system message |
 | 代码入口（Mode A） | [src/bestseller/services/pipelines.py](../../../src/bestseller/services/pipelines.py) | — |
 
-**单一事实源**：`docs/ai-context.md`。其他平台的 prompt/rule 文件均应定期从这里重新生成——在 [docs/SKILL-INSTALLATION.md § 9](../../../docs/SKILL-INSTALLATION.md) 里有生成原则。
+**同步规则**：运行时代码、`config/default.yaml` 与迁移定义事实；`docs/ai-context.md` 是跨平台说明的聚合投影。其他 prompt/rule 文件必须随运行时契约一起更新，并通过契约一致性测试。
 
 ---
 

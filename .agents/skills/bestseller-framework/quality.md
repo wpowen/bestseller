@@ -58,13 +58,13 @@ critic 输出 JSON 子结构：
 |------|---------|
 | `protagonist_spotlight_by_100w` | 正则：前 100 字内是否出现 `protagonist.name` + 主语动作动词 |
 | `visible_conflict_by_200w` | 关键词匹配：前 200 字是否含冲突词集（锁/封/拦/抢/烧/夺/逼/迫/胁/截...）+ 对立角色动作 |
-| `protagonist_emotional_pulse_by_500w` | pulse_words 词表匹配（见 platform_profiles.pulse_words），前 500 字 ≥ 1 次 |
+| `protagonist_emotional_pulse_by_500w` | 前 500 字出现压力 → 主角具体选择 → 可见后果；固定身体词命中不计通过 |
 | `core_conflict_visible_by_600w` | 主观打分：用 1 句话复述本章核心矛盾，长度 ≤ 30 字、内容具体 → pass |
 | `emotional_hook_by_2000w` | 主观打分：是否有读者可述的具体疑问 / 紧张 / 期待 |
 | `small_payoff_before_chapter_end` | 章节后 40% 范围内是否有正反馈节点（打脸 / 救成功 / 拿证据 / 反将 / 揭穿 / 关系建立） |
 | `chapter_end_hook` | 章末 150 字内是否有新变量 / 颠覆 / 未答之问 |
 | `anti_pattern_psychological_dumping` | 单段 > 150 字 + 含 ≥ 2 条背景设定 / 阴谋分析 / 旧案回忆 → 计 1 次；阈值 = 0 |
-| `anti_pattern_cold_protagonist` | pulse_words 词频 < 1/300 字 → fail |
+| `anti_pattern_cold_protagonist` | 连续两个压力节点主角都没有具体选择或行动后果 → fail |
 | `anti_pattern_terminology_overload` | 私设词首次出现计数（不含通用现实词），阈值 ≤ 5 |
 | `anti_pattern_no_payoff_in_ch1` | small_payoff_before_chapter_end 的反向检查 |
 
@@ -194,6 +194,25 @@ violations = [f for f in findings if f.severity == "violation"]
 
 扫所有 `knowledge/character-snapshots/after-ch-NNN.md`，对比相邻 snapshot 的 trust_map / stance_toward_X。敌↔友翻转必须在过渡区间的 `timeline.md` 找到 reconciliation / betrayal / coercion / rescue / debt_event 事件，否则 `severity=violation`。
 
+## 4.6 Title + Reader Edition Gate（每章 / 每 10 章必跑）
+
+### `literal_chapter_title`
+
+- 章名必须能在章内找到直接事实依据：人物事实、原话、地点、时限、数字、物件或已发生事件之一。
+- 主题总结、抽象象征、编剧功能词、仅为“好听”而造的意象标题 → `must_rewrite=true`，只重拟标题，不改正文。
+
+### `title_register_diversity`
+
+- 每 10 章窗口至少覆盖 5 种 register：`person_fact / spoken_line / deadline / location / count_object / action_consequence`。
+- 任一 register > 3、相邻两章同语法骨架、或 ≥ 4 章形成同一种“物件 + 抽象动作 / X 里发生 Y / 四字意象短语”模板 → 窗口审计失败。
+- 修复必须更换命名来源，不能仅替换同义词。
+
+### Reader edition
+
+- 将生产 scene 标记全部隐藏后，检查每个场间接口。时间、地点、参与者或因果任一发生变化，正文必须自己说明。
+- `full-novel.md` 中可见 `场景一/二/三`、`Scene 1/2/3`、scene summary 或 production marker 任一命中 → 导出失败。
+- 生产稿可保留不可见 HTML 注释供状态机定位；读者版可见场景标题必须为 0。
+
 ## 5. Project Consistency Audit（每 20 章）
 
 | 审查项 | 规则 |
@@ -239,6 +258,8 @@ rolling-summary/
 - [ ] `scores` 五维 ≥ 0.70（如自评低于阈值，标 `status: rework`）
 - [ ] canon facts 追加条目
 - [ ] volume README 表格状态更新
+- [ ] `literal_chapter_title` 与 `title_register_diversity` 通过
+- [ ] 去掉生产 scene 标记后，场间仍连续；读者版可见 scene 标题为 0
 - [ ] **本章 positions 是否非空？非空则跑 § 1.1 Opening Signing Gate 全检（hard gates 任一失败 = 强制 rework）**
 
 ## 8. Multi-Persona Critique（每章必跑）

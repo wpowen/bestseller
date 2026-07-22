@@ -90,6 +90,7 @@ from bestseller.services.context import build_chapter_writer_context, build_scen
 from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
     _NOVEL_OUTPUT_PROHIBITION_EN,
+    _chapter_first_writer_aim,
     _clean_generated_chapter_text,
     _collect_post_assembly_duplicate_findings,
     _collect_previous_current_chapter_texts,
@@ -106,6 +107,7 @@ from bestseller.services.drafts import (
     strip_scaffolding_echoes,
     validate_and_clean_novel_content,
 )
+from bestseller.services.chapter_word_count_truth import authoritative_zh_word_count
 from bestseller.services.hook_ledger_runtime import (
     compute_hook_ledger_audit_for_review,
     merge_hook_ledger_audit_into_chapter_review,
@@ -314,6 +316,7 @@ def _render_recent_length_failure_directive(
     *,
     chapter: ChapterModel,
     language: str | None,
+    project: ProjectModel | None = None,
 ) -> str:
     if not failures:
         return ""
@@ -323,6 +326,7 @@ def _render_recent_length_failure_directive(
         language=language,
         direction="normal",
         role="editor",
+        project=project,
     )
     samples: list[int] = []
     directions: list[str] = []
@@ -360,6 +364,7 @@ def _render_recent_length_failure_directive(
             language=language,
             direction="over",
             role="editor",
+            project=project,
         )
     else:
         mode = "expansion"
@@ -369,6 +374,7 @@ def _render_recent_length_failure_directive(
             language=language,
             direction="under",
             role="editor",
+            project=project,
         )
 
     sample_text = ", ".join(str(item) for item in samples[:5]) or "unknown"
@@ -410,11 +416,13 @@ def _append_recent_length_failure_directive(
     *,
     chapter: ChapterModel,
     language: str | None,
+    project: ProjectModel | None = None,
 ) -> str:
     directive = _render_recent_length_failure_directive(
         failures,
         chapter=chapter,
         language=language,
+        project=project,
     )
     if not directive:
         return instructions
@@ -431,6 +439,7 @@ async def _select_rewrite_working_draft(
     settings: AppSettings,
     chapter: ChapterModel,
     language: str | None,
+    project: ProjectModel | None = None,
 ) -> ChapterDraftVersionModel:
     """Continue from a better rejected candidate when the current draft is worse.
 
@@ -446,6 +455,7 @@ async def _select_rewrite_working_draft(
         language=language,
         direction="normal",
         role="editor",
+        project=project,
     )
     current_words = int(getattr(current_draft, "word_count", 0) or 0)
     current_in_band = band.hard_min <= current_words <= band.hard_max
@@ -2991,11 +3001,17 @@ def build_chapter_rewrite_prompts(
         language=language,
         direction="normal",
         role="editor",
+        project=project,
     )
-    _target_wc = int(_length_band.hard_target)
+    _declared_target_wc = int(_length_band.hard_target)
     _wc_lo = int(_length_band.hard_min)
     _wc_hi = int(_length_band.hard_max)
     _current_wc = int(getattr(current_draft, "word_count", 0) or 0)
+    _target_wc = (
+        _chapter_first_writer_aim(project, _declared_target_wc)
+        if _current_wc < _wc_lo
+        else _declared_target_wc
+    )
     if is_en:
         if _current_wc > _wc_hi:
             _wc_directive = (
@@ -3026,6 +3042,7 @@ def build_chapter_rewrite_prompts(
                 language=language,
                 direction="over",
                 role="editor",
+                project=project,
             )
             _safe_lo = _safe_band.safe_min
             _safe_hi = _safe_band.safe_max
@@ -3045,6 +3062,7 @@ def build_chapter_rewrite_prompts(
                 language=language,
                 direction="under",
                 role="editor",
+                project=project,
             )
             _safe_lo = _safe_band.safe_min
             _safe_hi = _safe_band.safe_max
@@ -3064,6 +3082,7 @@ def build_chapter_rewrite_prompts(
                 language=language,
                 direction="normal",
                 role="editor",
+                project=project,
             )
             _safe_lo = _safe_band.safe_min
             _safe_hi = _safe_band.safe_max
@@ -8903,6 +8922,29 @@ def _rewrite_output_max_tokens_override(
         settings=settings,
         role="editor",
     )
+    if force_compression and "minimax" in editor_model_lc:
+        # MiniMax-M3 can ignore a prose length instruction and consume nearly
+        # the entire generic 3.2x token allowance.  In a compression pass that
+        # turned a 7.5k-character chapter into another 4k-8k candidate, so the
+        # pass was not actually bounded.  Keep the ordinary rewrite runway for
+        # non-compression work, but make an explicit over-length repair use a
+        # completion cap calibrated from live Chinese output (roughly one
+        # visible character per token).  The floor leaves enough room for a
+        # complete 2500-3500-character chapter without permitting another
+        # 7000-character runaway.
+        band = chapter_rewrite_length_band(
+            settings,
+            getattr(chapter, "target_word_count", None),
+            language=project_language,
+            direction="normal",
+            role="editor",
+            project=project,
+        )
+        tight_cap = max(3072, int(band.hard_target) + 256)
+        configured = resolve_llm_role_max_tokens(settings, role="editor")
+        if configured and configured > 0:
+            tight_cap = min(tight_cap, int(configured))
+        return min(base, tight_cap) if base is not None else tight_cap
     if force_expansion:
         if target > 0 and not is_english_language(project_language):
             expansion_cap = prose_output_max_tokens_for_target(
@@ -9363,6 +9405,378 @@ def _quality_retrofit_near_miss_acceptance(
     }
 
 
+def _audit_chapter_rewrite_candidate(
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scenes: Sequence[SceneCardModel],
+    content_md: str,
+    settings: AppSettings | None,
+) -> tuple[Any, Any]:
+    """Run the publication-band audit for every rewrite candidate.
+
+    The semantic repair pass used to replace the first candidate after the
+    deterministic audit had run, allowing the replacement to bypass the
+    project-specific length contract.  Keeping the audit in one helper makes
+    both candidates pass through the same gate.
+    """
+
+    from bestseller.services.deterministic_post_write_audit import audit_chapter_prose
+
+    effective_settings = settings or get_settings()
+    band = chapter_rewrite_length_band(
+        effective_settings,
+        getattr(chapter, "target_word_count", None),
+        language=project.language,
+        direction="normal",
+        role="editor",
+        project=project,
+    )
+    report = audit_chapter_prose(
+        chapter_text=content_md,
+        chapter_number=chapter.chapter_number,
+        project_dir=Path(effective_settings.output.base_dir) / project.slug,
+        scenes=scenes,
+        chapter_metadata={
+            **(chapter.metadata_json or {}),
+            "hard_min_word_count": int(band.hard_min),
+            "hard_max_word_count": int(band.hard_max),
+        },
+    )
+    return report, band
+
+
+def _deterministic_rewrite_violations(
+    report: Any,
+    *,
+    word_count: int,
+    band: Any,
+) -> list[dict[str, Any]]:
+    """Translate deterministic findings into semantic-repair instructions."""
+
+    violations: list[dict[str, Any]] = []
+    for finding in getattr(report, "findings", ()) or ():
+        code = str(getattr(finding, "code", "") or "DETERMINISTIC_AUDIT_BLOCK")
+        if code == "LENGTH_OUT_OF_BAND":
+            if word_count < int(band.hard_min):
+                code = "LENGTH_UNDER"
+            elif word_count > int(band.hard_max):
+                code = "LENGTH_OVER"
+        violations.append(
+            {
+                "code": code,
+                "severity": str(getattr(finding, "severity", "critical") or "critical"),
+                "detail": str(
+                    getattr(finding, "suggested_action", None)
+                    or getattr(finding, "matched_text", None)
+                    or "The deterministic chapter audit failed."
+                ),
+                "actual": f"candidate_word_count={word_count}",
+            }
+        )
+    return violations
+
+
+_LOCAL_ENDING_REPAIR_CODES = frozenset(
+    {
+        "ENDING_HOOK_MISSING",
+        "ENDING_SENTENCE_WEAK",
+        "ANTI_META_ENDING_OUT_OF_SCENE",
+        "ENDING_HOOK_INEFFECTIVE",
+    }
+)
+
+_LOCAL_ENDING_LENGTH_REPAIR_CODES = _LOCAL_ENDING_REPAIR_CODES | frozenset(
+    {
+        "CHAPTER_TOO_SHORT",
+        "LENGTH_UNDER",
+        "CHAPTER_LENGTH_BLOCK_LOW",
+        "LENGTH_OUT_OF_BAND",
+    }
+)
+
+_LOCAL_OPENING_REPAIR_CODES = frozenset(
+    {
+        "CHAPTER_TOO_SHORT",
+        "SIGNATURE_IMAGE_MISSING",
+        "OPENING_PRESSURE_THIN",
+        "ENDING_HOOK_MISSING",
+        "LENGTH_UNDER",
+        "CHAPTER_LENGTH_BLOCK_LOW",
+        "LENGTH_OUT_OF_BAND",
+    }
+)
+
+
+def _localized_opening_excerpt(
+    content_md: str,
+    *, min_words: int = 520,
+) -> tuple[str, str, str]:
+    """Split heading/opening/suffix at paragraph boundaries."""
+
+    paragraphs = [part for part in re.split(r"\n\s*\n", content_md.strip()) if part.strip()]
+    if len(paragraphs) < 3:
+        return "", content_md.strip(), ""
+    heading = ""
+    if paragraphs and paragraphs[0].lstrip().startswith("#"):
+        heading = paragraphs.pop(0).strip()
+    opening: list[str] = []
+    while paragraphs and (not opening or count_words("\n\n".join(opening)) < min_words):
+        opening.append(paragraphs.pop(0))
+    if not opening or not paragraphs:
+        return heading, "\n\n".join(opening).strip(), ""
+    return heading, "\n\n".join(opening).strip(), "\n\n".join(paragraphs).strip()
+
+
+def _localized_expansion_target(
+    segment_words: int,
+    gap_to_floor: int,
+    *,
+    max_growth: int = 900,
+) -> int:
+    """Compensate for editor models that routinely under-deliver patch length."""
+
+    gap = max(0, int(gap_to_floor))
+    # Asking only for the exact missing count produced patches that stayed
+    # 100-300 Chinese characters below the publish floor.  Give the local
+    # editor enough realization headroom while keeping the replacement scope
+    # bounded; the full candidate still passes the project hard-max audit.
+    growth = min(max_growth, max(gap + 350, gap * 2 + 200))
+    return max(1, int(segment_words)) + growth
+
+
+async def _try_localized_chapter_first_opening_repair(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    current_draft: ChapterDraftVersionModel,
+    rewrite_task: RewriteTaskModel,
+    settings: AppSettings | None,
+    workflow_run_id: UUID | None,
+    step_run_id: UUID | None,
+) -> tuple[str, Any] | None:
+    """Expand/repair only the opening when a near-floor chapter starts weakly."""
+
+    metadata = rewrite_task.metadata_json if isinstance(rewrite_task.metadata_json, dict) else {}
+    block_codes = {
+        str(code).strip()
+        for code in metadata.get("block_codes", [])
+        if str(code).strip()
+    }
+    opening_defects = {"SIGNATURE_IMAGE_MISSING", "OPENING_PRESSURE_THIN"}
+    if (
+        not metadata.get("patch_first")
+        or not block_codes.intersection(opening_defects)
+        or not block_codes.issubset(_LOCAL_OPENING_REPAIR_CODES)
+        or settings is None
+    ):
+        return None
+    band = chapter_rewrite_length_band(
+        settings,
+        getattr(chapter, "target_word_count", None),
+        language=_project_language(project),
+        direction="normal",
+        role="editor",
+        project=project,
+    )
+    language = _project_language(project)
+    current_words = authoritative_zh_word_count(
+        current_draft.content_md or "", language=language
+    )
+    gap = int(band.hard_min) - current_words
+    if gap <= 0 or gap > 600:
+        return None
+
+    heading, opening, suffix = _localized_opening_excerpt(current_draft.content_md or "")
+    if not opening or not suffix:
+        return None
+    opening_words = authoritative_zh_word_count(opening, language=language)
+    replacement_target = _localized_expansion_target(opening_words, gap)
+    system_prompt = (
+        "你是长篇小说的局部修订编辑。只重写给出的开篇片段，不得改动后文。"
+        "输出只能是替换后的开篇正文，不要标题、说明、修改清单或代码块。"
+        "保留原有 POV、人物、地点、物品归属和事件顺序；不得新增姓名、设定或支线。"
+        "情绪用动作、对白、选择和后果呈现，禁止结论先行及手腕发烫、指尖发冷、呼吸一滞等模板。"
+    )
+    user_prompt = (
+        f"【阻断码】{', '.join(sorted(block_codes))}\n"
+        f"【全章当前字数】{current_words}；发布硬范围 {int(band.hard_min)}-{int(band.hard_max)} 字。\n"
+        f"【替换片段目标】约 {replacement_target} 字。\n"
+        "【待替换开篇】\n"
+        f"{opening}\n\n"
+        "【后文衔接，只读不可改】\n"
+        f"{suffix[:520]}\n\n"
+        "重写待替换开篇：前120字内让本章视角人物面对可见的即时压力并作出动作；"
+        "优先复用待替换开篇和后文衔接中已经出现的人物、物件和线索，"
+        "不得新增未出现的人名、物件或设定。"
+        "结尾必须自然接回给出的后文，不得复述后文事件。"
+        "只输出替换后的开篇片段。"
+    )
+    completion = await complete_text(
+        session,
+        settings,
+        LLMCompletionRequest(
+            logical_role="editor",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_response=opening,
+            prompt_template="chapter_localized_opening_repair",
+            prompt_version="1.0",
+            project_id=project.id,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+            max_tokens_override=2048,
+            metadata={
+                "project_slug": project.slug,
+                "chapter_number": chapter.chapter_number,
+                "rewrite_task_id": str(rewrite_task.id),
+                "localized_patch_scope": "opening",
+                "replacement_target": replacement_target,
+            },
+        ),
+    )
+    replacement = sanitize_novel_markdown_content(completion.content).strip() or opening
+    replacement_words = authoritative_zh_word_count(replacement, language=language)
+    if replacement_words < int(opening_words * 0.85) or replacement_words > opening_words + 900:
+        replacement = opening
+    parts = [part for part in (heading, replacement, suffix) if part]
+    return "\n\n".join(parts).strip(), completion
+
+
+def _localized_ending_excerpt(content_md: str, *, min_words: int = 420) -> tuple[str, str]:
+    """Split a chapter at a paragraph boundary, retaining a bounded tail."""
+
+    paragraphs = [part for part in re.split(r"\n\s*\n", content_md.strip()) if part.strip()]
+    if len(paragraphs) < 2:
+        return "", content_md.strip()
+    tail: list[str] = []
+    while paragraphs and (not tail or count_words("\n\n".join(tail)) < min_words):
+        tail.insert(0, paragraphs.pop())
+    return "\n\n".join(paragraphs).rstrip(), "\n\n".join(tail).strip()
+
+
+async def _try_localized_chapter_first_ending_repair(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    current_draft: ChapterDraftVersionModel,
+    rewrite_task: RewriteTaskModel,
+    settings: AppSettings | None,
+    workflow_run_id: UUID | None,
+    step_run_id: UUID | None,
+) -> tuple[str, Any] | None:
+    """Repair only the ending segment when the current chapter is otherwise sound."""
+
+    metadata = rewrite_task.metadata_json if isinstance(rewrite_task.metadata_json, dict) else {}
+    block_codes = {
+        str(code).strip()
+        for code in metadata.get("block_codes", [])
+        if str(code).strip()
+    }
+    if (
+        not metadata.get("patch_first")
+        or not block_codes
+        or not block_codes.intersection(_LOCAL_ENDING_REPAIR_CODES)
+        or not block_codes.issubset(_LOCAL_ENDING_LENGTH_REPAIR_CODES)
+        or settings is None
+    ):
+        return None
+    band = chapter_rewrite_length_band(
+        settings,
+        getattr(chapter, "target_word_count", None),
+        language=_project_language(project),
+        direction="normal",
+        role="editor",
+        project=project,
+    )
+    current_words = count_words(current_draft.content_md or "")
+    gap = max(0, int(band.hard_min) - current_words)
+    if current_words > int(band.hard_max) or gap > 900:
+        return None
+
+    prefix, ending = _localized_ending_excerpt(current_draft.content_md or "")
+    if not prefix or not ending:
+        return None
+    logic_contract = (
+        (chapter.metadata_json or {}).get("whole_chapter_logic_contract", {})
+        if isinstance(chapter.metadata_json, dict)
+        else {}
+    )
+    exit_change = str(
+        (logic_contract or {}).get("chapter_end_change")
+        or getattr(chapter, "hook_description", None)
+        or "让本章结束于一个具体的新威胁、证据变化或人物选择"
+    ).strip()
+    prefix_context = prefix[-500:]
+    ending_words = count_words(ending)
+    replacement_target = (
+        ending_words
+        if gap <= 0
+        else _localized_expansion_target(ending_words, gap)
+    )
+    system_prompt = (
+        "你是长篇小说的局部修订编辑。只重写给出的章末片段，不得重写整章。"
+        "输出只能是替换后的章末正文，不要标题、说明、修改清单或代码块。"
+        "保留原有 POV、人物、地点、物品归属和事件顺序；不得新增姓名、场景、设定或支线。"
+        "情绪用动作、对白、选择和后果呈现，禁止结论先行及手腕发烫、指尖发冷、呼吸一滞等模板。"
+    )
+    user_prompt = (
+        f"【阻断码】{', '.join(sorted(block_codes))}\n"
+        f"【全章当前字数】{current_words}；发布硬范围 {int(band.hard_min)}-{int(band.hard_max)} 字。\n"
+        f"【替换片段目标】约 {replacement_target} 字。\n"
+        f"【必须落地的章末变化】{exit_change}\n"
+        f"【衔接上下文，只读不可改】\n{prefix_context}\n\n"
+        f"【待替换章末】\n{ending}\n\n"
+        + (
+            "扩写待替换章末，但只增加与当前冲突、人物选择和代价直接相关的现场动作。"
+            if gap > 0
+            else "把待替换章末改成同等篇幅的连续正文。"
+        )
+        + "最后120字必须出现可见的新信息、"
+        "具体威胁、物件变化或人物选择；最后一句必须是完成的现场画面。"
+        "不得复述前文，不得把篇幅缩成摘要。只输出替换后的章末片段。"
+    )
+    completion = await complete_text(
+        session,
+        settings,
+        LLMCompletionRequest(
+            logical_role="editor",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_response=ending,
+            prompt_template="chapter_localized_ending_repair",
+            prompt_version="1.0",
+            project_id=project.id,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+            max_tokens_override=3072,
+            metadata={
+                "project_slug": project.slug,
+                "chapter_number": chapter.chapter_number,
+                "rewrite_task_id": str(rewrite_task.id),
+                "repair_scope": "ending",
+                "block_codes": sorted(block_codes),
+                "source_ending_word_count": count_words(ending),
+            },
+        ),
+    )
+    replacement = strip_scaffolding_echoes(
+        sanitize_novel_markdown_content(completion.content)
+    ).strip()
+    replacement_words = count_words(replacement)
+    source_words = max(count_words(ending), 1)
+    if (
+        not replacement
+        or replacement_words < max(160, int(source_words * 0.55))
+        or replacement_words > max(900, int(source_words * 1.65))
+        or re.search(r"(?m)^#{1,3}\s*(?:第\s*)?\d+", replacement) is not None
+    ):
+        return None
+    return f"{prefix}\n\n{replacement}".strip(), completion
+
+
 async def rewrite_chapter_from_task(
     session: AsyncSession,
     project_slug: str,
@@ -9413,12 +9827,14 @@ async def rewrite_chapter_from_task(
         settings=effective_settings,
         chapter=chapter,
         language=_project_language(project),
+        project=project,
     )
     rewrite_task.instructions = _append_recent_length_failure_directive(
         rewrite_task.instructions or "",
         recent_failed_rewrites,
         chapter=chapter,
         language=_project_language(project),
+        project=project,
     )
 
     chapter_context = None
@@ -9452,7 +9868,42 @@ async def rewrite_chapter_from_task(
     llm_run_id: UUID | None = None
     generation_mode = "chapter-rewrite-fallback"
     content_md = fallback_content
-    if settings is not None and chapter_context is not None:
+    system_prompt = ""
+    user_prompt = ""
+    localized_patch_applied = False
+    localized_patch_scope: str | None = None
+    localized_result = await _try_localized_chapter_first_opening_repair(
+        session,
+        project=project,
+        chapter=chapter,
+        current_draft=current_draft,
+        rewrite_task=rewrite_task,
+        settings=settings,
+        workflow_run_id=workflow_run_id,
+        step_run_id=step_run_id,
+    )
+    if localized_result is not None:
+        localized_patch_scope = "opening"
+    else:
+        localized_result = await _try_localized_chapter_first_ending_repair(
+            session,
+            project=project,
+            chapter=chapter,
+            current_draft=current_draft,
+            rewrite_task=rewrite_task,
+            settings=settings,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+        )
+        if localized_result is not None:
+            localized_patch_scope = "ending"
+    if localized_result is not None:
+        content_md, localized_completion = localized_result
+        model_name = localized_completion.model_name
+        llm_run_id = localized_completion.llm_run_id
+        generation_mode = localized_completion.provider
+        localized_patch_applied = True
+    elif settings is not None and chapter_context is not None:
         system_prompt, user_prompt = build_chapter_rewrite_prompts(
             project,
             chapter,
@@ -9477,6 +9928,19 @@ async def rewrite_chapter_from_task(
                     chapter,
                     project,
                     rewrite_task,
+                    force_compression=(
+                        count_words(working_draft.content_md or "")
+                        > int(
+                            chapter_rewrite_length_band(
+                                settings,
+                                getattr(chapter, "target_word_count", None),
+                                language=_project_language(project),
+                                direction="normal",
+                                role="editor",
+                                project=project,
+                            ).hard_max
+                        )
+                    ),
                 ),
                 metadata={
                     "project_slug": project.slug,
@@ -9500,6 +9964,7 @@ async def rewrite_chapter_from_task(
                     language=_project_language(project),
                     direction="normal",
                     role="editor",
+                    project=project,
                 )
                 prev_words = count_words(fallback_content)
                 candidate_words = count_words(candidate_md)
@@ -9547,6 +10012,7 @@ async def rewrite_chapter_from_task(
             language=_project_language(project),
             direction="normal",
             role="editor",
+            project=project,
         ).hard_min,
     )
     deterministic_postprocess_metadata: dict[str, Any] | None = None
@@ -9585,26 +10051,16 @@ async def rewrite_chapter_from_task(
         logger.debug("chapter rewrite deterministic post-process failed", exc_info=True)
 
     deterministic_audit_report = None
+    deterministic_audit_band = None
     try:
-        from bestseller.services.deterministic_post_write_audit import audit_chapter_prose
-
-        band = chapter_rewrite_length_band(
-            get_settings(),
-            getattr(chapter, "target_word_count", None),
-            language=project.language,
-            direction="normal",
-            role="editor",
-        )
-        deterministic_audit_report = audit_chapter_prose(
-            chapter_text=content_md,
-            chapter_number=chapter_number,
-            project_dir=Path((settings or get_settings()).output.base_dir) / project.slug,
-            scenes=_scenes,
-            chapter_metadata={
-                **(chapter.metadata_json or {}),
-                "hard_min_word_count": int(band.hard_min),
-                "hard_max_word_count": int(band.hard_max),
-            },
+        deterministic_audit_report, deterministic_audit_band = (
+            _audit_chapter_rewrite_candidate(
+                project=project,
+                chapter=chapter,
+                scenes=_scenes,
+                content_md=content_md,
+                settings=settings,
+            )
         )
         if not deterministic_audit_report.passed:
             chapter.metadata_json = {
@@ -9657,10 +10113,31 @@ async def rewrite_chapter_from_task(
             for item in report_json.get("violations", [])
             if isinstance(item, dict)
         ]
+        if (
+            deterministic_audit_report is not None
+            and deterministic_audit_band is not None
+            and not deterministic_audit_report.passed
+        ):
+            deterministic_violations = _deterministic_rewrite_violations(
+                deterministic_audit_report,
+                word_count=word_count,
+                band=deterministic_audit_band,
+            )
+            existing_codes = {
+                str(item.get("code") or "")
+                for item in quality_gate_violations
+                if isinstance(item, dict)
+            }
+            quality_gate_violations.extend(
+                item
+                for item in deterministic_violations
+                if str(item.get("code") or "") not in existing_codes
+            )
     if (
         quality_gate_outcome == "blocked"
         and settings is not None
         and chapter_context is not None
+        and not localized_patch_applied
     ):
         try:
             from bestseller.services.llm_closed_loop import (
@@ -9688,6 +10165,7 @@ async def rewrite_chapter_from_task(
                 language=project.language,
                 direction="over",
                 role="editor",
+                project=project,
             )
             _chapter_band_under = chapter_rewrite_length_band(
                 get_settings(),
@@ -9695,6 +10173,7 @@ async def rewrite_chapter_from_task(
                 language=project.language,
                 direction="under",
                 role="editor",
+                project=project,
             )
             for index, violation in enumerate(quality_gate_violations[:8], start=1):
                 code = str(violation.get("code") or "CHAPTER_GATE_VIOLATION")
@@ -9838,6 +10317,7 @@ async def rewrite_chapter_from_task(
                     language=_project_language(project),
                     direction="normal",
                     role="editor",
+                    project=project,
                 ).hard_min,
             )
             repaired_duplicate_findings = await _collect_post_assembly_duplicate_findings(
@@ -9854,6 +10334,37 @@ async def rewrite_chapter_from_task(
             )
             if repaired_duplicate_findings:
                 repaired_quality_outcome = "blocked"
+            repaired_deterministic_violations: list[dict[str, Any]] = []
+            try:
+                repaired_audit_report, repaired_audit_band = (
+                    _audit_chapter_rewrite_candidate(
+                        project=project,
+                        chapter=chapter,
+                        scenes=_scenes,
+                        content_md=repaired_content,
+                        settings=settings,
+                    )
+                )
+                deterministic_audit_report = repaired_audit_report
+                deterministic_audit_band = repaired_audit_band
+                if not repaired_audit_report.passed:
+                    repaired_quality_outcome = "blocked"
+                    repaired_deterministic_violations = (
+                        _deterministic_rewrite_violations(
+                            repaired_audit_report,
+                            word_count=count_words(repaired_content),
+                            band=repaired_audit_band,
+                        )
+                    )
+                    chapter.metadata_json = {
+                        **(chapter.metadata_json or {}),
+                        "deterministic_audit_latest": repaired_audit_report.to_dict(),
+                    }
+            except Exception:
+                logger.debug(
+                    "chapter rewrite repaired candidate deterministic audit failed",
+                    exc_info=True,
+                )
             if repaired_quality_outcome != "blocked":
                 content_md = repaired_content
                 model_name = repair_completion.model_name
@@ -9888,6 +10399,17 @@ async def rewrite_chapter_from_task(
                 ]
                 if repaired_violations:
                     quality_gate_violations = repaired_violations
+                if repaired_deterministic_violations:
+                    existing_codes = {
+                        str(item.get("code") or "")
+                        for item in quality_gate_violations
+                        if isinstance(item, dict)
+                    }
+                    quality_gate_violations.extend(
+                        item
+                        for item in repaired_deterministic_violations
+                        if str(item.get("code") or "") not in existing_codes
+                    )
                 duplicate_gate_findings = repaired_duplicate_findings or duplicate_gate_findings
         except Exception:
             logger.warning(
@@ -9984,6 +10506,7 @@ async def rewrite_chapter_from_task(
                         language=_project_language(project),
                         direction="normal",
                         role="editor",
+                        project=project,
                     ).hard_min,
                 )
                 repaired_duplicate_findings = await _collect_post_assembly_duplicate_findings(
@@ -10353,7 +10876,10 @@ async def rewrite_chapter_from_task(
         "candidate_chapter_draft_version_no": next_version,
         "candidate_word_count": word_count,
         "candidate_quality_gate_outcome": quality_gate_outcome,
+        "localized_patch_applied": localized_patch_applied,
     }
+    if localized_patch_applied:
+        metadata["localized_patch_scope"] = localized_patch_scope
     if working_draft.id != current_draft.id:
         metadata["working_chapter_draft_id"] = str(working_draft.id)
         metadata["working_chapter_draft_version_no"] = working_draft.version_no

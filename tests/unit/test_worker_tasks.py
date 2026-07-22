@@ -483,6 +483,55 @@ async def test_run_autowrite_task_marks_attention_as_auto_continue_pending(
 
 
 @pytest.mark.asyncio
+async def test_run_autowrite_self_heal_skips_framework_owned_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict, str | None]] = []
+
+    class _FakeReporter:
+        async def emit(
+            self,
+            message: str,
+            data: dict,
+            event_type: str | None = None,
+        ) -> None:
+            events.append((message, data, event_type))
+
+    @asynccontextmanager
+    async def fake_session_scope():
+        yield object()
+
+    async def fake_get_project_by_slug(*_args, **_kwargs):
+        return types.SimpleNamespace(
+            metadata_json={
+                "self_heal_suppressed": True,
+                "self_heal_suppressed_reason": "chapter_first_framework_owned",
+            }
+        )
+
+    import bestseller.services.projects as project_services
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "RedisProgressReporter",
+        lambda *_args, **_kwargs: _FakeReporter(),
+    )
+    monkeypatch.setattr(worker_tasks, "make_sync_callback", lambda _reporter: None)
+    monkeypatch.setattr(worker_tasks, "get_server_session", fake_session_scope)
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+
+    result = await worker_tasks.run_autowrite_task(
+        {"redis": object()},
+        "autowrite:heal:owned-book",
+        {"project_slug": "owned-book"},
+    )
+
+    assert result["status"] == "skipped_framework_owned"
+    assert events[-1][0] == "framework_owned_self_heal_skipped"
+    assert events[-1][2] == "completed"
+
+
+@pytest.mark.asyncio
 async def test_run_project_repair_task_auto_continues_generation_gate_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

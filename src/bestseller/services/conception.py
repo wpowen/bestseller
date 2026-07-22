@@ -2350,9 +2350,14 @@ def _finalize_user_prompt(
         or ""
     )
     _band_min, _band_max = platform_blurb_band(_blurb_platform)
+    # Pass the user-selected channel so an explicit 通用/女频 pick is honoured
+    # here too. The outline layer already passes it (planner._planner_channel_key);
+    # conception was silently dropping it and re-inferring 男频 from the genre,
+    # so a 通用 selection on a 玄幻 book still got the 打脸/扮猪吃虎 persona.
     _persona = resolve_persona(
         ctx.get("genre"), ctx.get("sub_genre"),
         tuple(str(t) for t in (ctx.get("tags") or [])),
+        channel=(ctx.get("user_hints") or {}).get("audience_orientation"),
     )
     _persona_anchor = (
         f"【目标读者画像·先想清写给谁】{_persona.channel}：{_persona.who}。"

@@ -3634,6 +3634,18 @@ class WebTaskManager:
                 pending_model = self._pending_project_model(task_id)
                 if pending_model:
                     project_metadata["llm_model_id"] = pending_model
+                # Stamp the shared new-project policy before row creation. The
+                # central project service applies the same contract for CLI/API
+                # callers, so entrypoints cannot silently select different modes.
+                from bestseller.services.generation_policy import (
+                    apply_new_project_generation_policy,
+                )
+
+                project_metadata = apply_new_project_generation_policy(
+                    project_metadata,
+                    generation_unit_mode=payload.get("generation_unit_mode"),
+                    prose_prompt_profile=payload.get("prose_prompt_profile"),
+                )
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
                 stop_after_conception = bool(payload.get("stop_after_conception", False))

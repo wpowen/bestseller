@@ -33,6 +33,10 @@ from bestseller.services.ai_slop_blacklist import render_slop_blacklist_block
 from bestseller.services.anti_ai_voice_discipline import render_anti_ai_voice_discipline
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
 from bestseller.services.golden_rules import render_golden_three_rules
+from bestseller.services.pov_experience_discipline import render_pov_experience_block
+from bestseller.services.quality_levers.prose_prompt_fusion import (
+    render_chapter_position_prose_block,
+)
 from bestseller.services.chapter_constraint_manifest import (
     PrewritePlan,
     build_safe_prewrite_plan,
@@ -143,11 +147,11 @@ from bestseller.services.story_bible import load_scene_story_bible_context
 from bestseller.services.word_targets import (
     model_output_token_ceiling,
     model_reasoning_token_reserve,
+    project_word_target_policy,
     resolve_llm_role_max_tokens,
     resolve_llm_role_model,
-    word_target_policy,
 )
-from bestseller.services.write_gate import filter_blocking
+from bestseller.services.write_gate import GateConfig, filter_blocking
 from bestseller.services.write_safety_gate import WriteSafetyFinding
 from bestseller.services.writing_profile import (
     is_english_language,
@@ -166,6 +170,39 @@ _REPAIR_CODE_ALIASES: dict[str, str] = {
     "CHAPTER_LENGTH_BLOCK_HIGH": "BLOCK_HIGH",
     "LENGTH_OVER": "BLOCK_HIGH",
 }
+
+_RETENTION_PERSONA_GATE_CODES = frozenset(
+    {
+        "PERSONA_ABANDON_RATE_HIGH",
+        "PERSONA_WEIGHTED_SCORE_LOW",
+        "PERSONA_PAYOFF_DENSITY_LOW",
+        "PAYOFF_LEDGER_LOW",
+        "PAYOFF_HOOK_ONLY",
+    }
+)
+
+
+def _effective_l6_gate_config(
+    project: ProjectModel,
+    base_config: GateConfig,
+    *,
+    retention_block_on_failure: bool,
+) -> GateConfig:
+    """Apply the runtime retention policy to the generic L6 registry.
+
+    The registry historically hard-coded persona findings to ``block`` while
+    the pipeline default explicitly made retention warn-only. Resolve that
+    contradiction at the layer where L6 is actually evaluated.
+    """
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    warn_only = bool(metadata.get("retention_safety_gate_warn_only"))
+    if retention_block_on_failure and not warn_only:
+        return base_config
+    modes = dict(base_config.mode_by_violation)
+    for code in _RETENTION_PERSONA_GATE_CODES:
+        modes[code] = "audit_only"
+    return GateConfig(mode_by_violation=modes, default=base_config.default)
 
 
 def _resolve_prompt_pack_key(project: ProjectModel) -> str | None:
@@ -2025,9 +2062,16 @@ async def _evaluate_chapter_quality_gate(
             exc_info=True,
         )
 
-    blocking = filter_blocking(
-        report, gates_cfg.l6_gate, chapter_no=chapter_number
+    from bestseller.settings import get_settings
+
+    effective_l6_gate = _effective_l6_gate_config(
+        project,
+        gates_cfg.l6_gate,
+        retention_block_on_failure=bool(
+            get_settings().pipeline.retention_safety_gate_block_on_failure
+        ),
     )
+    blocking = filter_blocking(report, effective_l6_gate, chapter_no=chapter_number)
 
     # ── Phase C1 — auto-sign override contracts for soft blockers ──
     # When Phase C is enabled and every blocking violation's code lives in
@@ -4973,6 +5017,7 @@ def _compile_rendered_writer_prompt(
         "word_count_rules",
         "prewrite_contract",
         "prewrite_plan",
+        "whole_chapter_logic_contract",
     }
     required_section_names = {
         "scene_word_budget_line",
@@ -4998,6 +5043,7 @@ def _compile_rendered_writer_prompt(
         "arc_summary",
         "world_snapshot",
         "timeline_context",
+        "scene_cards",
     )
     def add_typed_block(name: str, raw_text: str, *, channel: str) -> None:
         text = str(raw_text or "").strip()
@@ -5025,6 +5071,13 @@ def _compile_rendered_writer_prompt(
                 if "signature" in name
                 else f"writer.craft.{name}"
             )
+        elif name == "scene_cards":
+            # Scene cards are weak realization hints in chapter-first mode.
+            # They must be the first creative block sacrificed when context is
+            # tight; chapter logic, continuity and output contracts outrank them.
+            layer = "optional"
+            authority = 10
+            family = "writer.context.weak_scene_map"
         elif any(marker in name for marker in optional_markers):
             layer = "optional"
             authority = 20
@@ -5046,7 +5099,11 @@ def _compile_rendered_writer_prompt(
                 # canon/timeline/prewrite fact would corrupt later drafts.
                 required=name in required_section_names or name in hard_section_names,
                 min_tokens=8,
-                max_tokens=1_200 if layer in {"craft", "optional"} else None,
+                max_tokens=(
+                    450
+                    if name == "scene_cards"
+                    else 1_200 if layer in {"craft", "optional"} else None
+                ),
                 trim_policy=(
                     "truncate_tail" if layer in {"craft", "optional"} else "drop"
                 ),
@@ -7953,104 +8010,193 @@ def _render_chapter_first_prior_chapter_bridge(
     return "\n".join(lines)
 
 
+_CHAPTER_FIRST_SCENE_MAP_MAX_CHARS = 1400
+
+
+def _chapter_first_state_delta(
+    entry_state: Mapping[str, Any],
+    exit_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return only state changes; repeated full snapshots drown chapter context."""
+
+    delta: dict[str, Any] = {}
+    for key in sorted(set(entry_state) | set(exit_state)):
+        before = entry_state.get(key)
+        after = exit_state.get(key)
+        if before == after:
+            continue
+        delta[str(key)] = {"from": before, "to": after}
+    return delta
+
+
+def _chapter_first_scene_fact(value: Any, *, max_chars: int) -> str:
+    """Flatten a planning fact without turning it into prose material."""
+
+    if isinstance(value, Mapping) or (
+        isinstance(value, Sequence) and not isinstance(value, (str, bytes))
+    ):
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+    else:
+        text = str(value or "")
+    text = re.sub(r"[\r\n\t]+", " ", text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max(1, max_chars - 1)].rstrip("，,；;。 ") + "…"
+
+
 def _render_chapter_first_scene_cards(scenes: Sequence[SceneCardModel]) -> str:
-    lines: list[str] = []
-    previous_exit_state: dict[str, Any] | None = None
-    for scene in scenes:
-        purpose = scene.purpose or {}
-        entry_state = scene.entry_state or {}
-        exit_state = scene.exit_state or {}
-        _metadata, methodology_contract, current_controls = _scene_current_contract_controls(
-            scene
-        )
+    """Render scene cards as a weak logic map, never as a prose source.
+
+    The old renderer repeated full entry/exit snapshots, dialogue, sensory prose,
+    action sequences and methodology contracts.  The writer then received the
+    same material again through the generation bundle, so scene scaffolding
+    displaced chapter context and was frequently copied into the draft.  Keep
+    only ordered anchors and state deltas here.  All prose-bearing fields stay
+    out of the writer prompt.
+    """
+
+    if not scenes:
+        return ""
+    header = (
+        "这是低优先级的弱场景逻辑地图，只回答事件顺序与状态变化，不提供正文句子、对白、描写或段落结构。\n"
+        "优先级：整章逻辑合同/状态台账/上一章结尾 > 章节契约 > 本地图；冲突时忽略本地图。\n"
+        "不得复述、扩写或换词改写节点措辞。场景感必须由连续现场中的全新动作、对话、失误与后果产生。"
+    )
+    per_scene_budget = max(
+        110,
+        min(
+            500,
+            (
+                _CHAPTER_FIRST_SCENE_MAP_MAX_CHARS
+                - len(header)
+                - len(scenes)
+            )
+            // len(scenes),
+        ),
+    )
+    node_lines: list[str] = []
+    for index, scene in enumerate(scenes):
+        raw_purpose = getattr(scene, "purpose", None)
+        raw_entry_state = getattr(scene, "entry_state", None)
+        raw_exit_state = getattr(scene, "exit_state", None)
+        purpose = raw_purpose if isinstance(raw_purpose, Mapping) else {}
+        entry_state = raw_entry_state if isinstance(raw_entry_state, Mapping) else {}
+        exit_state = raw_exit_state if isinstance(raw_exit_state, Mapping) else {}
         forbidden_actions = _prompt_safe_forbidden_actions(
             getattr(scene, "forbidden_actions", None) or []
         )
-        transition_contract = {
-            "time_label": getattr(scene, "time_label", None),
-            "entry_state": entry_state,
-            "exit_state": exit_state,
-            "bridge_from_previous": (
-                {
-                    "previous_exit_state": previous_exit_state,
-                    "requirement": (
-                        "Use one visible transition sentence before this scene: "
-                        "physical movement, call handoff, door/elevator action, "
-                        "time tick, or object reaction. Do not jump locations with "
-                        "a horizontal rule or blank cut."
-                    ),
-                }
-                if previous_exit_state
-                else {
-                    "requirement": (
-                        "Start from this scene's entry state. Do not invent an "
-                        "extra pre-scene location unless it is the current entry location."
-                    )
-                }
-            ),
-        }
-        # Reader-facing core fields FIRST: the JSON block below is truncated at
-        # a hard character cap, and methodology_contract is by far the largest
-        # member — when it led the dict, visible_progress / reader_payoff /
-        # ending_hook_payload (the fields that actually drive 追读) were the
-        # ones cut off. Order = render priority under truncation.
-        rich_scene_controls = {
-            "visible_progress": current_controls.get("visible_progress"),
-            "reader_payoff": current_controls.get("reader_payoff"),
-            "ending_hook_payload": current_controls.get("ending_hook_payload"),
-            "gate_function": current_controls.get("gate_function"),
-            "signature_image": current_controls.get("signature_image"),
-            "cut_point": current_controls.get("cut_point"),
-            "action_sequence": current_controls.get("action_sequence"),
-            "relationship_debts": current_controls.get("relationship_debts"),
-            "information_control_mode": current_controls.get("information_control_mode"),
-            "key_dialogue_beats": getattr(scene, "key_dialogue_beats", None) or [],
-            "sensory_anchors": getattr(scene, "sensory_anchors", None) or {},
-            "forbidden_actions": forbidden_actions,
-            "transition_contract": transition_contract,
-            "methodology_contract": methodology_contract,
-        }
-        # Scene word target fallback: outline occasionally leaves
-        # target_word_count unset (0) — the old rendering then emitted a
-        # nonsense "字数边界：1-2字" hard bound. Derive a sane default instead.
-        scene_word_target = int(scene.target_word_count or 0)
-        if scene_word_target <= 0:
-            scene_word_target = max(600, 2400 // max(1, len(scenes)))
-        scene_lines = [
-            f"{scene.scene_number}. {scene.title or '未命名场景'}"
-            f"（{scene.scene_type}，目标约{scene_word_target}字）",
-            (
-                "   字数边界："
-                f"{max(1, int(scene_word_target * 0.9))}-"
-                f"{max(2, int(scene_word_target * 1.1))}字；"
-                "本场只写本场任务，达成离场状态后立刻转入下一场。"
-            ),
-            f"   时间/地点锚点：{scene.time_label or '未指定'}",
-            f"   参与者：{', '.join(scene.participants or []) or '未指定'}",
-            f"   故事任务：{purpose.get('story') or ''}",
-            f"   情绪任务：{purpose.get('emotion') or ''}",
-            f"   入场状态：{_compact_json_block(entry_state, max_chars=500)}",
-            (
-                "   ↳ 入场状态=开场前一瞬已经完成的既成事实（上一场的结果），"
-                "严禁把它当剧情在本场重演一遍（换措辞、换人物重演也算违规）；"
-                "本场第一句从入场状态之后的下一拍写起。"
-            ),
-            f"   离场状态：{_compact_json_block(exit_state, max_chars=500)}",
-            f"   钩子要求：{scene.hook_requirement or ''}",
-        ]
-        if forbidden_actions:
-            scene_lines.append(
-                f"   硬禁令：{_compact_json_block(forbidden_actions, max_chars=900)}"
-            )
-        scene_lines.extend(
-            [
-                f"   场景执行合同：{_compact_json_block(rich_scene_controls, max_chars=2600)}",
-                f"   改写提示：{getattr(scene, 'rewrite_hint', '') or ''}",
-            ]
+        _metadata, _methodology_contract, current_controls = (
+            _scene_current_contract_controls(scene)
         )
-        lines.append("\n".join(scene_lines))
-        previous_exit_state = dict(exit_state)
-    return "\n\n".join(lines).strip()
+        visible_progress = current_controls.get("visible_progress")
+        visual_anchor = current_controls.get("signature_image") or current_controls.get(
+            "reader_payoff"
+        )
+        node_result = current_controls.get("cut_point")
+        fields = [
+            f"节点{scene.scene_number}",
+            f"锚点={_chapter_first_scene_fact(scene.time_label or '承接上文', max_chars=32)}",
+            f"人物={_chapter_first_scene_fact(scene.participants or [], max_chars=72)}",
+            f"触发={_chapter_first_scene_fact(purpose.get('story'), max_chars=90)}",
+        ]
+        if visible_progress and visible_progress != purpose.get("story"):
+            fields.append(
+                f"可见进展={_chapter_first_scene_fact(visible_progress, max_chars=72)}"
+            )
+        if visual_anchor:
+            fields.append(
+                f"现场锚点={_chapter_first_scene_fact(visual_anchor, max_chars=64)}"
+            )
+        if index == 0 and entry_state:
+            fields.append(
+                f"既成入场={_chapter_first_scene_fact(entry_state, max_chars=90)}"
+            )
+        state_delta = _chapter_first_state_delta(entry_state, exit_state)
+        if state_delta:
+            fields.append(
+                f"必须变化={_chapter_first_scene_fact(state_delta, max_chars=110)}"
+            )
+        if forbidden_actions:
+            fields.append(
+                f"硬禁令={_chapter_first_scene_fact(forbidden_actions, max_chars=72)}"
+            )
+        if node_result:
+            fields.append(
+                f"节点结果={_chapter_first_scene_fact(node_result, max_chars=72)}"
+            )
+        hook_requirement = getattr(scene, "hook_requirement", None)
+        if index == len(scenes) - 1 and hook_requirement:
+            fields.append(
+                f"章末结果={_chapter_first_scene_fact(hook_requirement, max_chars=72)}"
+            )
+        node_lines.append(
+            _chapter_first_scene_fact("｜".join(filter(None, fields)), max_chars=per_scene_budget)
+        )
+    return _chapter_first_scene_fact(
+        header + "\n" + "\n".join(node_lines),
+        max_chars=_CHAPTER_FIRST_SCENE_MAP_MAX_CHARS,
+    )
+
+
+def _chapter_first_acceptance_contract_payload(
+    acceptance_contract: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Keep chapter-level gates while removing the second copy of scene cards."""
+
+    if not isinstance(acceptance_contract, Mapping):
+        return {}
+    allowed = (
+        "schema_version",
+        "chapter_number",
+        "target_word_count",
+        "rule_gate_thresholds",
+        "llm_gate_thresholds",
+        "front_position_rules",
+        "ending_frame_contract",
+        "must_deliver",
+        "knowledge_boundary_contract",
+        "object_signal_contract",
+        "pass_condition",
+    )
+    return {
+        key: acceptance_contract[key]
+        for key in allowed
+        if key in acceptance_contract
+    }
+
+
+def _render_whole_chapter_logic_contract(
+    chapter_contract: Mapping[str, Any] | None,
+    *,
+    language: str,
+) -> str:
+    """Render the chapter-first state/causality contract as hidden hard canon."""
+
+    if not isinstance(chapter_contract, Mapping):
+        return ""
+    contract = chapter_contract.get("whole_chapter_logic_contract")
+    if not isinstance(contract, Mapping) or not contract:
+        return ""
+    compact = _compact_json_block(dict(contract), max_chars=6000)
+    if not compact or compact == "{}":
+        return ""
+    if is_english_language(language):
+        return (
+            "[WHOLE-CHAPTER LOGIC CONTRACT · HIDDEN HARD CANON]\n"
+            "The ordered events are beats inside one continuous chapter, not separate scenes. "
+            "Preserve entry state, causal chain, numeric provenance, knowledge boundaries, "
+            "object ownership, excluded cheap solutions, and exit state. Do not expose this "
+            "contract or explain it to readers.\n"
+            + compact
+        )
+    return (
+        "【整章逻辑合同·隐藏硬事实】\n"
+        "事件顺序只是整章内部节点，不是多个可见场景，也不得平均分段或分别扩写后拼接。"
+        "进入状态、因果主链、数字依据、知识边界、物品归属、廉价解法排除和退出状态均为硬事实；"
+        "逻辑只能通过事件发生方式体现，不得向读者解释台账、合同或方法论。\n"
+        + compact
+    )
 
 
 def _render_chapter_v2_outline_block(chapter: Any) -> str:
@@ -8563,7 +8709,7 @@ def _chapter_length_contract_band(
     """Return the prose-visible chapter word contract shared by write/repair."""
 
     settings = load_settings()
-    policy = word_target_policy(settings)
+    policy = project_word_target_policy(project, settings)
     hard_min = int(policy.chapter_min)
     hard_max = int(policy.chapter_max)
     if not is_english_language(getattr(project, "language", None)):
@@ -8577,6 +8723,26 @@ def _chapter_length_contract_band(
         target = int(policy.chapter_target)
     target = max(hard_min, min(target, hard_max))
     return hard_min, target, hard_max
+
+
+def _chapter_first_writer_aim(
+    project: ProjectModel,
+    declared_target_word_count: int,
+) -> int:
+    """Return an optional realization-compensated aim inside the publish band."""
+
+    hard_min, declared_target, hard_max = _chapter_length_contract_band(
+        project,
+        declared_target_word_count,
+    )
+    metadata = project.metadata_json if isinstance(project.metadata_json, Mapping) else {}
+    try:
+        configured_aim = int(metadata.get("chapter_first_writer_aim") or 0)
+    except (TypeError, ValueError):
+        configured_aim = 0
+    if configured_aim <= 0:
+        return declared_target
+    return max(hard_min, min(configured_aim, hard_max))
 
 
 def _chapter_auto_repair_length_contract(
@@ -8816,7 +8982,11 @@ def _chapter_first_compiler_section_name(text: str, index: int) -> str:
         (("【检索补充】",), "retrieval_context"),
         (("【故事圣经上下文】",), "story_bible_context"),
         (("【时间线与硬事实快照】",), "timeline_context"),
-        (("【场景卡节拍】",), "scene_cards"),
+        (
+            ("【弱场景逻辑地图】", "【隐藏情节节点】", "【场景卡节拍】"),
+            "scene_cards",
+        ),
+        (("【整章逻辑合同·隐藏硬事实】", "[WHOLE-CHAPTER LOGIC CONTRACT"), "whole_chapter_logic_contract"),
     )
     for markers, name in marker_map:
         if any(marker.casefold() in text.casefold() for marker in markers):
@@ -8838,20 +9008,44 @@ def build_chapter_first_draft_prompts(
     total_input_budget_tokens: int = 8_000,
     prompt_safety_margin: float = 0.10,
     compiler_additional_blocks: Sequence[PromptBlock] = (),
+    prose_prompt_profile: str | None = None,
 ) -> tuple[str, str] | CompiledPrompt:
     if prompt_mode not in {"legacy", "compiled"}:
         raise ValueError("prompt_mode must be 'legacy' or 'compiled'")
+    from bestseller.services.prose_prompt_profile import resolve_prose_prompt_profile
+
+    prose_prompt_profile = resolve_prose_prompt_profile(
+        explicit=prose_prompt_profile,
+        project_metadata=getattr(project, "metadata_json", None),
+        settings_default=getattr(
+            getattr(load_settings(), "pipeline", None), "prose_prompt_profile", None
+        ),
+    )
     language = _project_language(project)
     is_en = is_english_language(language)
     writing_profile = _resolve_project_writing_profile(project, style_guide)
     writing_profile_section = render_writing_profile_prompt_block(
         writing_profile,
         language=language,
-        mode="scene",
+        mode="chapter",
         chapter_number=int(getattr(chapter, "chapter_number", 0) or 0),
     )
-    serial_guardrails = render_serial_fiction_guardrails(writing_profile, language=language)
+    serial_guardrails = render_serial_fiction_guardrails(
+        writing_profile,
+        language=language,
+        scope="chapter",
+    )
     _genre_label = getattr(writing_profile.market, "platform_target", None) or "商业长篇连载"
+    # Prose discipline reaches this path by import, never by re-inlined literal:
+    # the hand-rolled copy that used to live in the zh system prompt below drifted
+    # from the single source and shipped a body-signal enumeration that primed the
+    # exact diction it banned (2026-07-18, 50-round arena).
+    _anti_ai_discipline = render_anti_ai_voice_discipline(language=language, scope="chapter")
+    _pov_experience_discipline = render_pov_experience_block(language=language, scope="chapter")
+    _chapter_position_block = render_chapter_position_prose_block(
+        language=language,
+        position=str(_infer_chapter_position(project, chapter)),
+    )
     if is_en:
         system_prompt = (
             "# ROLE\n"
@@ -8859,13 +9053,14 @@ def build_chapter_first_draft_prompts(
             f"You write for {_genre_label} and your chapters are judged on whether readers click 'next'.\n"
             "\n"
             "# CONTEXT · The chapter-first contract\n"
-            "Scene cards are INTERNAL beat constraints, not visible headings.\n"
+            "The weak scene map is a low-priority ordering constraint, never prose material.\n"
+            "Do not quote, expand, or paraphrase its wording; the whole-chapter logic contract and continuity context outrank it.\n"
             "You must thread all scenes into ONE continuous narrative — no '第一场 / 第二场' labels,\n"
             "no scene dividers, no internal scaffolding leaks.\n"
             "\n"
             "# CONTEXT · Craft anchors\n"
             "- Action over adjectives; consequence over description; subtext over statement.\n"
-            "- Each paragraph ends on an unresolved question.\n"
+            "- Paragraph rhythm follows the event; do not manufacture a hook at every paragraph end.\n"
             "- Continuity, causal logic, character voice, hook strength — all four must hold.\n"
             "\n"
             "# TASK\n"
@@ -8889,7 +9084,7 @@ def build_chapter_first_draft_prompts(
         instruction = (
             "Write the full chapter in ONE continuous Markdown prose draft.\n"
             "Honour all system CONSTRAINTS and the chapter-range rules supplied in task context.\n"
-            "Scene cards are beat constraints, not visible structure."
+            "The weak scene map is optional ordering guidance, not prose material."
         )
     else:
         system_prompt = (
@@ -8898,17 +9093,24 @@ def build_chapter_first_draft_prompts(
             f"你写的章节服务 {_genre_label} 的留存场景，判定标准是读者会不会下意识点开「下一章」。\n"
             "\n"
             "# CONTEXT · 整章合同（chapter-first 模式）\n"
-            "场景卡只是**内部节拍约束**，不是可见结构。\n"
+            "弱场景逻辑地图只是**低优先级顺序约束**，不是正文素材，也不是可见结构。\n"
+            "不得照抄、扩写或换词改写地图措辞；整章逻辑合同、状态台账和上章承接的优先级更高。\n"
             "你必须把所有场景揉进一段连续叙事，正文中不许出现「第一场 / 第二场 / 场景 X」等标签。\n"
             "也不许写「内部说明 / 写法注释 / 场景目的」——这些是策划信息，不进正文。\n"
             "\n"
             "# CONTEXT · 创作锚点（已内化）\n"
             "- 用动作代替形容词；用后果代替描述；用潜台词代替直白\n"
-            "- 每段结尾留一个未解问题——读者必须翻下一页\n"
+            "- 段落节奏服从事件，不要在每段末尾机械制造悬念\n"
             "- 连贯性 / 因果逻辑 / 人物腔调 / 钩子强度——四项必须同时达标\n"
             "\n"
+            f"{_anti_ai_discipline}"
+            "\n"
+            f"{_pov_experience_discipline}"
+            "\n"
+            f"{_chapter_position_block}"
+            "\n"
             "# TASK\n"
-            "基于章节计划和场景卡，一次性写完完整一章（Markdown 正文）。\n"
+            "以整章逻辑合同和连续上下文为主，一次性写完完整一章（Markdown 正文）。\n"
             "**只输出正文**：不要提纲、不要评语、不要场景标签、不要策划说明。\n"
             "\n"
             "# CONSTRAINTS · 硬约束（违反即重写）\n"
@@ -8918,7 +9120,7 @@ def build_chapter_first_draft_prompts(
             "- 输出格式：纯 Markdown 正文，不带 # 标题、不带 ``` 代码块。\n"
             "\n"
             "# OUTPUT · 章节交付硬指标\n"
-            "- **术语释放**：本章必须信息按场景卡释放即可，不要堆设定。\n"
+            "- **术语释放**：只释放章节契约要求的信息，不要按场景卡逐项报账或堆设定。\n"
             "- **章末钩子**：只收束到**一个**具体、可视化、能促使读者翻下一章的钩子（不是抽象感叹）。\n"
             "\n"
             "# PROJECT PROFILE（项目级变量）\n"
@@ -8927,7 +9129,8 @@ def build_chapter_first_draft_prompts(
         )
         instruction = (
             "请一次性写完整章节。\n"
-            "场景卡是内部节拍约束，正文不能出现「第一场 / 第二场 / 场景」等标签。\n"
+            "情节节点是内部顺序约束，不是可见场景或分节；"
+            "正文不能出现「第一场 / 第二场 / 场景」等标签。\n"
             "严格执行 system 硬约束及 task 中按章节范围提供的开篇 / 留存规则。"
         )
 
@@ -8949,7 +9152,6 @@ def build_chapter_first_draft_prompts(
         hard_snapshot = dict(raw_hard_snapshot)
     else:
         hard_snapshot = {"value": str(raw_hard_snapshot)}
-    generation_input_block = ""
     acceptance_contract_block = ""
     protagonist_decision_block = ""
     try:
@@ -8964,12 +9166,11 @@ def build_chapter_first_draft_prompts(
             context_packet=context_packet,
             target_word_count=target_word_count,
         )
-        generation_input_block = _compact_json_block(
-            generation_input_bundle.model_dump(mode="json"),
-            max_chars=4500,
+        acceptance_payload = _chapter_first_acceptance_contract_payload(
+            generation_input_bundle.acceptance_contract
         )
         acceptance_contract_block = _compact_json_block(
-            generation_input_bundle.acceptance_contract,
+            acceptance_payload,
             max_chars=2500,
         )
         from bestseller.services.protagonist_decision_agent import (
@@ -8993,11 +9194,6 @@ def build_chapter_first_draft_prompts(
         )
     except Exception:
         logger.debug("chapter generation input bundle render failed", exc_info=True)
-    generation_input_block = _redact_front10_prompt_leaks(
-        generation_input_block,
-        chapter,
-        scenes,
-    )
     acceptance_contract_block = _redact_front10_prompt_leaks(acceptance_contract_block, chapter, scenes)
     project_meta = getattr(project, "metadata_json", None)
     project_meta = project_meta if isinstance(project_meta, Mapping) else {}
@@ -9006,23 +9202,33 @@ def build_chapter_first_draft_prompts(
         getattr(context_packet, "participant_knowledge_states", None),
         is_en=is_en,
     )
+    # Under ``lean`` the seven gate/market-feedback fields drop out; the seven
+    # canon fields (timeline, character role, dialogue voice, canon guardrails,
+    # reader contract, hype, signature scene) stay — they are story facts the
+    # writer cannot invent, and dropping them would trade AI-flavour for
+    # continuity errors.
+    def _constraint(field: str, value: str | None) -> str:
+        from bestseller.services.prose_prompt_profile import constraint_field_enabled
+
+        return value if constraint_field_enabled(field, prose_prompt_profile) else ""
+
     constraint_blocks = [
         block
         for block in (
-            context_packet.chapter_length_block,
+            _constraint("chapter_length_block", context_packet.chapter_length_block),
             context_packet.timeline_canon_block,
             context_packet.character_role_block,
             context_packet.dialogue_voice_block,
-            context_packet.scene_coherence_block,
+            _constraint("scene_coherence_block", context_packet.scene_coherence_block),
             context_packet.canon_guardrails_block,
             context_packet.reader_contract_block,
             context_packet.hype_constraints_block,
-            context_packet.hook_echo_block,
-            context_packet.exposition_density_block,
-            context_packet.voice_dna_block,
-            context_packet.chapter_market_constraints_block,
+            _constraint("hook_echo_block", context_packet.hook_echo_block),
+            _constraint("exposition_density_block", context_packet.exposition_density_block),
+            _constraint("voice_dna_block", context_packet.voice_dna_block),
+            _constraint("chapter_market_constraints_block", context_packet.chapter_market_constraints_block),
             context_packet.signature_scene_block,
-            context_packet.prior_persona_feedback_block,
+            _constraint("prior_persona_feedback_block", context_packet.prior_persona_feedback_block),
         )
         if block
     ]
@@ -9062,12 +9268,29 @@ def build_chapter_first_draft_prompts(
         chapter_contract,
         language=language,
     )
+    whole_chapter_logic_block = _render_whole_chapter_logic_contract(
+        chapter_contract,
+        language=language,
+    )
+    # ``whole_chapter_logic_block`` is canon (hidden hard facts) and stays in
+    # every profile; the other three are compressed into the core discipline
+    # under ``lean``. Renderers are still called by scene/judge paths — only
+    # this injection site is skipped.
     hard_writer_tail_blocks = [
         block
         for block in (
-            opening_retention_rules,
-            render_slop_blacklist_block(language),
-            *must_keep_tail_blocks,
+            whole_chapter_logic_block,
+            opening_retention_rules
+            if _prose_section_enabled("opening_retention", prose_prompt_profile)
+            else "",
+            render_slop_blacklist_block(language)
+            if _prose_section_enabled("slop_blacklist", prose_prompt_profile)
+            else "",
+            *(
+                must_keep_tail_blocks
+                if _prose_section_enabled("closing_hook", prose_prompt_profile)
+                else ()
+            ),
         )
         if block
     ]
@@ -9104,12 +9327,6 @@ def build_chapter_first_draft_prompts(
         target_word_count,
     )
     scene_count = len(scenes)
-    total_scene_target = sum(int(scene.target_word_count or 0) for scene in scenes)
-    scene_targets = [int(scene.target_word_count or hard_target_words) for scene in scenes] or [
-        hard_target_words
-    ]
-    per_scene_min = max(1, min(int(target * 0.8) for target in scene_targets))
-    per_scene_max = max(2, max(int(target * 1.15) for target in scene_targets))
     # --- Output rules split into focused blocks (was one ~20-rule blob) ---
     output_word_count_rules = (
         "【字数与结构】\n"
@@ -9119,26 +9336,25 @@ def build_chapter_first_draft_prompts(
         f"目标约{hard_target_words}字；写到章末钩子落地后立刻停止，禁止超过上限；"
         f"字数是硬交付，不是建议：正文少于 {hard_min_words} 个汉字就是失败，"
         "没有写满下限前不得提前收束、不得只写剧情摘要。"
-        f"本章一共只有 {scene_count} 个场景，场景目标合计约 {total_scene_target or hard_target_words} 字，"
-        f"不是每个场景各写一章；单场通常控制在 {per_scene_min}-{per_scene_max} 字内，"
-        "全文建议22-32段，最多36段；每场5-8段为主，至少4段正在发生的戏，最多9段；"
-        "单段通常45-95字。"
+        f"本章包含 {scene_count} 个隐藏情节节点；它们只有顺序和状态约束，没有各自的字数配额。"
+        "节点不是可见场景，也不要求平均篇幅。段落数量、长短和转折位置服从事件本身，"
+        "禁止为了满足固定段落模板而制造连续短句、机械排比或单句成段。"
     )
     output_scene_rules = (
-        "【场景执行规则】\n"
-        "不得把场景卡压缩成一句概述；每个场景必须写出现场空间、角色动作、可见物证变化、"
-        "人物反应和至少一轮有辨识度的对话/追问。"
-        "任何一场到第8段还没完成离场状态，必须用1段收束并进入下一场。"
-        "到最后一个场景的尾钩落成后必须停止，不得继续补新的循环段落。"
-        "严格按场景卡的单场字数边界分配篇幅：每场只完成本场任务，不得把一个场景扩写成整章体量；"
-        "每场达成离场状态后，用一句可见转场进入下一场。"
-        "场景卡的入场状态、离场状态和 forbidden_actions 是硬边界；不得把场景卡里的"
+        "【隐藏节点执行规则】\n"
+        "弱场景地图只约束顺序与状态变化，不是待扩写的微型正文；"
+        "禁止照抄、逐句扩写或换词改写地图中的触发、状态和结果措辞。"
+        "不得把情节节点压缩成提纲式概述；关键节点必须落成现场动作、可见物证变化、人物选择、"
+        "对话或直接后果。节点之间只保留真实发生的时间、移动和动作承接，"
+        "不得为了节点边界另起小节、固定转场句或平均分配段落。"
+        "最后一个节点的状态变化落地后停止，不得继续补新的循环段落。"
+        "地图给出的既成入场、必须变化和禁用项是边界；不得把节点里的"
         # NOTE (2026-06-24 去同质化 P0-1): genericised — previously hardcoded one
         # book's horror beats/objects/jargon (失声/回声/半账未解/被吞掉/门合拢/铜钱/认账/镜债).
         "轻量状态、悬念或未兑现伏笔，升级成未写在场景卡里的高潮/死亡/关键转折动作。"
         "正文不得使用 ---、***、空行切场、场景标题或小节分隔符。"
-        "每次更换地点或时间，必须先写一句可见转场动作，例如出门、下楼、电梯、电话挂断、"
-        "门牌变化、时间跳动或物件反应；禁止从一个地点直接跳到另一个地点。"
+        "地点或时间确实变化时，要让移动、经过时长或物品携带在正文中可追踪；"
+        "同一地点内连续发生的节点无需人为制造转场。"
     )
     output_safety_rules = (
         "【内容安全规则】\n"
@@ -9236,6 +9452,11 @@ def build_chapter_first_draft_prompts(
         chapter,
         scenes,
     )
+    # ``lean`` omits acceptance/planning blocks that already run as
+    # post-generation gates; see prose_prompt_profile for the dose-response
+    # evidence and for why canon context is deliberately NOT dropped.
+    def _keep(section: str) -> bool:
+        return _prose_section_enabled(section, prose_prompt_profile)
     user_sections = [
             "【任务】\n" + instruction,
             prior_chapter_bridge,
@@ -9245,19 +9466,18 @@ def build_chapter_first_draft_prompts(
                 f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
                 f"章节目标：{chapter.chapter_goal or ''}"
             ),
-            quality_uplift_blocks.get("pre_scene", ""),
-            "【场景卡节拍】\n" + _render_chapter_first_scene_cards(scenes),
-            quality_uplift_blocks.get("post_scene", ""),
-            "【统一生成输入包】\n" + generation_input_block
-            if generation_input_block
-            else "",
+            # NOTE: _prepare_quality_uplift_prompt_blocks still RAN above — it
+            # also stamps chapter.metadata["callback_obligations"], which
+            # reviews.py consumes. Only the prompt injection is skipped here.
+            quality_uplift_blocks.get("pre_scene", "") if _keep("quality_uplift") else "",
+            quality_uplift_blocks.get("post_scene", "") if _keep("quality_uplift") else "",
             (
                 "【写前验收契约】\n"
                 + acceptance_contract_block
                 + "\n写作前必须在内部逐项核对本契约；正文必须能被这些条款验收通过。"
                 "不要输出核对过程，只输出小说正文。"
             )
-            if acceptance_contract_block
+            if acceptance_contract_block and _keep("acceptance_contract")
             else "",
             protagonist_decision_block,
             "【角色认知边界】\n" + knowledge_boundary_block
@@ -9269,10 +9489,10 @@ def build_chapter_first_draft_prompts(
             "【角色生死与登场安全】\n" + character_safety_block
             if character_safety_block
             else "",
-            opening_scene_contract,
-            front_forbidden_terms_block,
+            opening_scene_contract if _keep("opening_scene_contract") else "",
+            front_forbidden_terms_block if _keep("front_forbidden_terms") else "",
             concept_lab_contract_block,
-            contract_must_hit_block,
+            contract_must_hit_block if _keep("contract_must_hit") else "",
             volume_seed_block,
             "【章节契约】\n" + _compact_json_block(chapter_contract, max_chars=3500)
             if chapter_contract
@@ -9285,9 +9505,10 @@ def build_chapter_first_draft_prompts(
             ),
             "【活动主线/伏笔/回收】\n" + activity_context_block,
             "【时间线与硬事实快照】\n" + timeline_context_block,
+            "【弱场景逻辑地图】\n" + _render_chapter_first_scene_cards(scenes),
             "【检索补充】\n" + retrieval_context_block,
             *output_rules_sections,
-            output_word_count_rules,
+            output_word_count_rules if _keep("word_count_rules") else "",
             *hard_writer_tail_blocks,
         ]
     system_prompt = _redact_front10_prompt_leaks(system_prompt, chapter, scenes)
@@ -9340,21 +9561,35 @@ def build_chapter_first_draft_prompts(
 # boundary *before* the first must-keep section.
 _MUST_KEEP_TAIL_MARKERS_ZH: tuple[str, ...] = (
     "【字数与结构】",
+    "【整章逻辑合同·隐藏硬事实】",
     "【黄金三章·开篇硬契约】",
     "【前十章留存硬规则】",
     "AI套话黑名单",
     "【方法论证据】",
     "【章末收尾钩子】",
     "【收尾钩子】",
+    # Lean-profile anchors. Six of the eight markers above belong to blocks the
+    # lean profile drops, and 【整章逻辑合同·隐藏硬事实】 renders conditionally —
+    # so a lean prompt could match nothing, fall into the `first_protected_idx
+    # < 0` branch below, and degrade to head-only truncation that silently
+    # discards the tail. These sections exist in every profile.
+    "【弱场景逻辑地图】",
+    "【时间线与硬事实快照】",
+    "【硬约束与门禁】",
 )
 _MUST_KEEP_TAIL_MARKERS_EN: tuple[str, ...] = (
     "[word count and structure]",
+    "[WHOLE-CHAPTER LOGIC CONTRACT",
     "[GOLDEN THREE CHAPTERS — OPENING HARD CONTRACT]",
     "[FRONT-TEN RETENTION RULES]",
     "BANNED AI CLICH",
     "[methodology evidence]",
     "[chapter closing hook]",
     "[closing hook]",
+    # Lean-profile anchors — see the zh tuple above.
+    "【弱场景逻辑地图】",
+    "【时间线与硬事实快照】",
+    "【硬约束与门禁】",
 )
 
 
@@ -9639,6 +9874,30 @@ def _chapter_first_participant_names(scenes: Sequence[SceneCardModel]) -> list[s
     return names
 
 
+def _prose_section_enabled(section: str, profile: str) -> bool:
+    """Thin indirection so the profile rules live in one auditable module."""
+
+    from bestseller.services.prose_prompt_profile import section_enabled
+
+    return section_enabled(section, profile)  # type: ignore[arg-type]
+
+
+def _chapter_participant_names(scenes: Sequence[SceneCardModel]) -> tuple[str, ...]:
+    """Collect the chapter's declared participant names, order preserved.
+
+    Given to the continuity critic so a name it flags as inconsistent can be
+    checked against the roster the chapter was actually contracted to use.
+    """
+
+    seen: list[str] = []
+    for scene in scenes or ():
+        for raw in getattr(scene, "participants", None) or ():
+            name = str(raw or "").strip()
+            if name and name not in seen:
+                seen.append(name)
+    return tuple(seen)
+
+
 async def generate_chapter_draft_once(
     session: AsyncSession,
     project_slug: str,
@@ -9693,6 +9952,7 @@ async def generate_chapter_draft_once(
         or effective_settings.generation.words_per_chapter.target
         or 2500
     )
+    writer_target_word_count = _chapter_first_writer_aim(project, target_word_count)
     await _prepare_quality_uplift_prompt_blocks(
         session,
         project=project,
@@ -9709,7 +9969,7 @@ async def generate_chapter_draft_once(
         scenes,
         style_guide,
         context_packet,
-        target_word_count=target_word_count,
+        target_word_count=writer_target_word_count,
         character_safety_block=character_safety_block,
         context_budget_tokens=int(
             getattr(
@@ -9723,6 +9983,9 @@ async def generate_chapter_draft_once(
             effective_settings.llm.writer_total_input_budget_tokens
         ),
         prompt_safety_margin=float(effective_settings.llm.writer_prompt_safety_margin),
+        prose_prompt_profile=getattr(
+            effective_settings.pipeline, "prose_prompt_profile", None
+        ),
     )
     compiler_report = None
     if isinstance(prompt_result, CompiledPrompt):
@@ -9753,6 +10016,10 @@ async def generate_chapter_draft_once(
             (chapter.chapter_goal or "").strip(),
         ]
     ).strip()
+    hard_min_words, hard_target_words, hard_max_words = _chapter_length_contract_band(
+        project,
+        writer_target_word_count,
+    )
     completion = await complete_text(
         session,
         effective_settings,
@@ -9771,12 +10038,9 @@ async def generate_chapter_draft_once(
             # Length is controlled by the prompt contract and post-write gates.
             max_tokens_override=chapter_first_runaway_max_tokens(
                 effective_settings,
-                target_word_count=target_word_count,
+                target_word_count=writer_target_word_count,
                 language=_project_language(project),
-                hard_max_word_count=_chapter_length_contract_band(
-                    project,
-                    target_word_count,
-                )[2],
+                hard_max_word_count=hard_max_words,
             ),
             metadata={
                 "project_slug": project.slug,
@@ -9790,6 +10054,21 @@ async def generate_chapter_draft_once(
                     else None
                 ),
                 "length_control_method": "prompt_contract_and_quality_gate",
+                "chapter_length_contract": {
+                    "hard_min": hard_min_words,
+                    "target": hard_target_words,
+                    "hard_max": hard_max_words,
+                },
+                "declared_chapter_target": target_word_count,
+                "writer_realization_aim": writer_target_word_count,
+                "protected_contract_markers": {
+                    "word_count": "字数与结构" in user_prompt
+                    or "word count and structure" in user_prompt.casefold(),
+                    "whole_chapter_logic": "整章逻辑合同" in user_prompt
+                    or "whole-chapter logic contract" in user_prompt.casefold(),
+                    "anti_ai": "AI套话黑名单" in user_prompt
+                    or "banned ai clich" in user_prompt.casefold(),
+                },
                 "prompt_compaction": (
                     None
                     if compaction_report is None
@@ -9855,13 +10134,42 @@ async def generate_chapter_draft_once(
                 "hard_max_word_count": hard_max_words,
             },
         )
-        if not deterministic_audit_report.passed:
-            chapter.metadata_json = {
-                **(chapter.metadata_json or {}),
-                "deterministic_audit_latest": deterministic_audit_report.to_dict(),
-            }
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "deterministic_audit_latest": deterministic_audit_report.to_dict(),
+        }
     except Exception:
         logger.debug("chapter_first deterministic audit failed", exc_info=True)
+
+    # Intra-chapter continuity is the one failure mode chapter-first loses on
+    # (2026-07-20 A/B: the arm that weighed 低筋面粉 then kneaded 高筋面粉 lost
+    # 4-0). Advisory only — findings steer the repair patch, never block a write.
+    if bool(getattr(effective_settings.pipeline, "chapter_continuity_critic_enabled", True)):
+        try:
+            from bestseller.services.chapter_continuity_critic import (
+                audit_chapter_continuity,
+            )
+
+            continuity_report = await audit_chapter_continuity(
+                session,
+                effective_settings,
+                chapter_text=content_md,
+                chapter_number=chapter_number,
+                project_id=project.id,
+                participants=_chapter_participant_names(scenes),
+            )
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "chapter_continuity_latest": continuity_report.as_payload(),
+            }
+            if continuity_report.findings:
+                logger.info(
+                    "chapter %d: continuity critic flagged %d intra-chapter contradiction(s)",
+                    chapter_number,
+                    len(continuity_report.findings),
+                )
+        except Exception:
+            logger.debug("chapter_first continuity critic failed", exc_info=True)
 
     duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
         session,
@@ -11655,11 +11963,10 @@ async def assemble_chapter_draft(
                 "hard_max_word_count": hard_max_words,
             },
         )
-        if not deterministic_audit_report.passed:
-            chapter.metadata_json = {
-                **(chapter.metadata_json or {}),
-                "deterministic_audit_latest": deterministic_audit_report.to_dict(),
-            }
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "deterministic_audit_latest": deterministic_audit_report.to_dict(),
+        }
     except Exception:
         logger.debug("post-assembly deterministic audit failed (non-fatal)", exc_info=True)
 
@@ -12428,23 +12735,11 @@ async def maybe_prepare_chapter_auto_repair(
                     continue
                 claim_scene_auto_repair_attempt(sc, pass_id=attempt_number)
                 sc.status = SceneStatus.NEEDS_REWRITE.value
-                result = await session.execute(
-                    update(SceneDraftVersionModel)
-                    .where(
-                        SceneDraftVersionModel.scene_card_id == sc.id,
-                        SceneDraftVersionModel.is_current.is_(True),
-                    )
-                    .values(is_current=False)
-                )
-                try:
-                    reset_draft_count += int(result.rowcount or 0)
-                except Exception:
-                    logger.debug(
-                        "chapter %d scene %d: current draft reset count unavailable",
-                        chapter.chapter_number,
-                        sc.scene_number,
-                        exc_info=True,
-                    )
+                # Keep the last known-good draft current until generation has
+                # produced its replacement. ``generate_scene_draft`` performs
+                # the current-version switch in one flush after successful LLM
+                # completion, so a timeout or exception cannot leave the scene
+                # draftless.
                 removed = _filter_dead_scene_participants(sc, dead_names)
                 scene_hint = str(hint_text)
                 if removed:
@@ -12591,23 +12886,8 @@ async def maybe_prepare_chapter_auto_repair(
                     continue
                 claim_scene_auto_repair_attempt(sc, pass_id=attempt_number)
                 sc.status = SceneStatus.NEEDS_REWRITE.value
-                result = await session.execute(
-                    update(SceneDraftVersionModel)
-                    .where(
-                        SceneDraftVersionModel.scene_card_id == sc.id,
-                        SceneDraftVersionModel.is_current.is_(True),
-                    )
-                    .values(is_current=False)
-                )
-                try:
-                    reset_draft_count += int(result.rowcount or 0)
-                except Exception:
-                    logger.debug(
-                        "chapter %d scene %d: current draft reset count unavailable",
-                        chapter.chapter_number,
-                        sc.scene_number,
-                        exc_info=True,
-                    )
+                # Transactional replacement: retain the current draft until a
+                # new version has been generated successfully.
                 _reset_scene_auto_repair_residue_for_attempt(sc)
                 sc_meta = dict(sc.metadata_json or {})
                 sc_meta["auto_repair_hint"] = _merge_auto_repair_hint(
@@ -13005,23 +13285,8 @@ async def maybe_prepare_chapter_auto_repair(
             continue
         claim_scene_auto_repair_attempt(sc, pass_id=attempt_number)
         sc.status = SceneStatus.NEEDS_REWRITE.value
-        result = await session.execute(
-            update(SceneDraftVersionModel)
-            .where(
-                SceneDraftVersionModel.scene_card_id == sc.id,
-                SceneDraftVersionModel.is_current.is_(True),
-            )
-            .values(is_current=False)
-        )
-        try:
-            reset_draft_count += int(result.rowcount or 0)
-        except Exception:
-            logger.debug(
-                "chapter %d scene %d: current draft reset count unavailable",
-                chapter.chapter_number,
-                sc.scene_number,
-                exc_info=True,
-            )
+        # Do not demote the previous current version here. The writer swaps it
+        # only after the replacement draft exists.
         removed = _filter_dead_scene_participants(sc, dead_names)
         scene_hint = repair_hint
         if removed:

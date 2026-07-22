@@ -126,10 +126,19 @@ def genre_signal_terms(genre: str | None, sub_genre: str | None = None) -> tuple
 
 # Cross-genre fallback when config lacks the map entirely (so genre-aware emotion
 # guidance never silently degrades to nothing).
+#
+# These are injected into the conception prompt as "put this kind of high-arousal
+# emotion FIRST". They must NOT lead with a dead relative / wiped sect, because
+# the SAME conception prompt carries 【默认动机禁用】 which forbids 亲属死亡 /
+# 灭门 as the driving motive — the old pool (灭门血仇 / 灭宗血仇 / 痛失至亲) put
+# the framework's headline exemplar in direct conflict with its own guardrail and
+# was a real source of the death/wiped-clan opening the user kept seeing
+# (2026-07-22). Replaced with equally high-arousal but living-stakes emotions:
+# public humiliation, betrayal, being robbed of one's chance, being cornered.
 _DEFAULT_EMOTION_EXEMPLARS: dict[str, tuple[str, ...]] = {
-    "generic": ("背叛", "绝境", "复仇", "逆袭", "被夺一切", "生死危机", "当众羞辱", "痛失至亲"),
-    "xuanhuan": ("灭门血仇", "夺宝杀机", "绝境突破", "逆袭碾压", "打脸封神", "废材觉醒"),
-    "xianxia": ("道侣背叛", "灭宗血仇", "夺舍危机", "绝境悟道", "飞升无望", "同门相残"),
+    "generic": ("背叛", "绝境", "翻盘", "逆袭", "被夺一切", "当众羞辱", "被逼到墙角", "身份逆转"),
+    "xuanhuan": ("当众羞辱", "夺宝杀机", "绝境突破", "逆袭碾压", "打脸封神", "废材觉醒"),
+    "xianxia": ("道途被断", "同门排挤", "夺舍危机", "绝境悟道", "飞升无望", "被夺机缘"),
 }
 
 

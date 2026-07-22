@@ -38,6 +38,13 @@ output/ai-generated/{novel-slug}/
     └── full-novel.epub             如用户请求
 ```
 
+## 1.1 Production Draft vs `reader_edition`
+
+- 章节 frontmatter、scene card、scene number 与 `production-scene` 注释属于生产层。
+- `exports/full-novel.md` 是读者层 `reader_edition`：保留书名、卷名、章名与正文；移除 YAML frontmatter、chapter-state snapshot、scene summary、`production-scene` 注释以及所有可见 `## 场景...` / `## Scene ...` 标题。
+- 导出不得依靠场景小标题维持连贯。移除标记后，每个场间接口必须由正文中的时间、地点、动作或因果句承接。
+- 导出硬门槛：`visible_scene_heading_count = 0`。
+
 ## 2. 命名规范
 
 - `novel-slug`：中文标题 → 全拼小写连字符；英文标题 → kebab-case
@@ -112,3 +119,4 @@ tense: past
 - ❌ 创建 `output/ai-generated/*.md` 的扁平平层文件（必须在 novel-slug 子目录内）
 - ❌ 覆盖已有的 novel-slug 目录（若用户要求"重写"，要求明确并先备份）
 - ❌ 用户说"继续"时凭空造目录——若已有同名项目，**读取 meta.yaml 的 current_chapter** 以续写
+- ❌ 把生产 scene 标题、scene summary、状态标签或 YAML frontmatter 交付给读者

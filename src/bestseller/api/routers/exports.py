@@ -41,22 +41,27 @@ async def export_novel(
 
     from bestseller.services import exports as export_svc  # noqa: PLC0415
 
-    if fmt == "markdown":
-        export_result = await export_svc.export_project_markdown(
-            session=session, settings=settings, project_slug=slug
-        )
-    elif fmt == "docx":
-        export_result = await export_svc.export_project_docx(
-            session=session, settings=settings, project_slug=slug
-        )
-    elif fmt == "epub":
-        export_result = await export_svc.export_project_epub(
-            session=session, settings=settings, project_slug=slug
-        )
-    else:
-        export_result = await export_svc.export_project_pdf(
-            session=session, settings=settings, project_slug=slug
-        )
+    try:
+        if fmt == "markdown":
+            export_result = await export_svc.export_project_markdown(
+                session=session, settings=settings, project_slug=slug
+            )
+        elif fmt == "docx":
+            export_result = await export_svc.export_project_docx(
+                session=session, settings=settings, project_slug=slug
+            )
+        elif fmt == "epub":
+            export_result = await export_svc.export_project_epub(
+                session=session, settings=settings, project_slug=slug
+            )
+        else:
+            export_result = await export_svc.export_project_pdf(
+                session=session, settings=settings, project_slug=slug
+            )
+    except export_svc.ProjectExportIncompleteError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
 
     artifact, output_path = export_result
     artifact_metadata = dict(getattr(artifact, "metadata_json", None) or {})
@@ -105,7 +110,7 @@ async def download_export(
     # Path traversal protection: ensure file is under the configured output directory
     allowed_root = Path(settings.output.base_dir).resolve()
     resolved = file_path.resolve()
-    if not str(resolved).startswith(str(allowed_root)):
+    if not resolved.is_relative_to(allowed_root):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     if not resolved.exists():

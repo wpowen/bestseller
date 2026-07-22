@@ -38,6 +38,8 @@ _BASE_FUSION_BLOCK = """【叙述结构 · 去AI腔铁律】（最高优先：�
   具体动作与感知，结论尽量让读者自己得出，能不说就不说。删掉一切替读者算账、下定论的句子
   （如“他算了一笔账”“命不能拿来垫房租”“脑子里过的是房东、单量、余额”）。
 - 不要用“没做什么”当叙事主句（“他没抬头”“他没回头”“他没吭声”）；直接写他此刻实际在做的那个动作。
+- 身体反应不是情绪的默认替身。只有它会限制下一步动作、兑现既有线索或立刻造成后果时才写；
+  否则让人物碰到本场物件，作出一个会改变局面的选择，并把后果留在页面上。不要从身体反应词表挑词填空。
 - 不要为文学感硬造比喻（“像骨头响”“跟心电图似的”“像指甲刮过搪瓷盆底”）；要么不用比喻，
   要么只用这个人物此刻真会联想到、贴他生活经验的东西。
 - 逐层透出、不要开场announce：先落进一个正在进行的具体动作，让读者跟着人物做事，
@@ -48,7 +50,7 @@ _BASE_FUSION_BLOCK = """【叙述结构 · 去AI腔铁律】（最高优先：�
 在满足上面叙述结构铁律的前提下，本场再执行这些页面动作，不要写出“黄金三章/爽点/去AI味”等方法论名词：
 - 开场即放出不可逆代价或倒计时：读者必须在第一屏知道主角为什么不能等。
 - 每 300-500 字制造一个来自行动结果的具体问题；解掉一个小问题后，立刻抛出更强问题。
-- 主角判断先落到手、眼、呼吸、步伐、停顿、触感，再给一句以内判断；少写“他意识到/他明白了”。
+- 主角判断先落到本场物件、具体选择和动作后果，再给一句以内判断；少写“他意识到/他明白了”。
 - 每个关键动作必须碰到具体地点、道具、规则或人物反应；禁止用泛词替代已给定物料。
 - 爽点必须写完整四拍：压迫 → 选择 → 执行 → 反馈；
   反馈要来自环境、对手、旁观者或规则系统，不要只写“震惊”。
@@ -78,4 +80,34 @@ def render_prose_prompt_fusion_block(
     return _BASE_FUSION_BLOCK
 
 
-__all__ = ["render_prose_prompt_fusion_block"]
+def render_chapter_position_prose_block(
+    *, language: str = "zh-CN", position: str | None = None
+) -> str:
+    """Render only the position-specific half of the fusion rules.
+
+    The chapter-first writer needs the blind-judge-validated 开篇炸点律 /
+    中段持续追读律, but must NOT receive ``_BASE_FUSION_BLOCK``: that half
+    restates conclusion-first, body-reaction, simile and staccato rules that
+    ``anti_ai_voice_discipline`` already owns for every prose path. Injecting
+    both would spend tokens teaching the same rule twice and turn the system
+    prompt into the checklist that 2026-06-29 greedy selection showed goes
+    negative past the fourth block.
+
+    Returns ``""`` for English and for unknown positions, so callers can
+    concatenate unconditionally.
+    """
+
+    if str(language or "").lower().startswith("en"):
+        return ""
+    pos = str(position or "").lower()
+    if pos == "opening":
+        return _OPENING_HOOK_BLOCK
+    if pos in _MID_POSITIONS:
+        return _MID_CHAPTER_BLOCK
+    return ""
+
+
+__all__ = [
+    "render_chapter_position_prose_block",
+    "render_prose_prompt_fusion_block",
+]

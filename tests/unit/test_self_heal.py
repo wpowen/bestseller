@@ -774,6 +774,32 @@ async def test_find_stuck_projects_detects_blocked_chapters(
 
 
 @pytest.mark.asyncio
+async def test_find_stuck_projects_ignores_terminal_quality_debt(
+    now: _dt.datetime,
+) -> None:
+    """Accepted best attempts are closure state, not endlessly repairable work."""
+    p = _FakeProject(id=uuid4(), slug="book-terminal-debt")
+    chapter = _FakeChapter(
+        id=uuid4(),
+        project_id=p.id,
+        production_state="blocked",
+        chapter_number=1,
+        metadata_json={
+            "chapter_quality_debt": True,
+            "blocked_by_material_referential_integrity_gate": True,
+        },
+    )
+    session = _FakeSession(
+        projects=[p],
+        runs=[],
+        chapters=[chapter],
+        drafts=[_FakeDraft(id=uuid4(), chapter_id=chapter.id, is_current=True)],
+    )
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
 async def test_local_block_does_not_starve_continuation(
     now: _dt.datetime,
 ) -> None:
@@ -1267,6 +1293,30 @@ async def test_find_stuck_projects_skips_focus_paused_projects(
         drafts=drafts,
         rewrite_tasks=rewrite_tasks,
     )
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_skips_framework_owned_chapter_first_project(
+    now: _dt.datetime,
+) -> None:
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-chapter-first-owned",
+        status="revising",
+        target_chapters=10,
+        metadata_json={
+            "chapter_first_generation": True,
+            "self_heal_suppressed": True,
+            "self_heal_suppressed_reason": "chapter_first_framework_owned",
+        },
+    )
+    chapters = [
+        _FakeChapter(id=uuid4(), project_id=p.id, production_state="blocked"),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
 
     assert await find_stuck_projects(session) == []
 

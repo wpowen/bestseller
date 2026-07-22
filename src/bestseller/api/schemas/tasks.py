@@ -32,3 +32,5 @@ class AutowriteRequest(BaseModel):
 
 class PipelineRequest(BaseModel):
     force: bool = False  # rerun even if already completed
+    chapter_first: bool | None = None
+    stop_on_chapter_failure: bool = False

@@ -161,7 +161,7 @@ scene_type_requirements:
     required_min: 3
     must_include: [tactile, temporal]
     nice_to_have: [visual, thermal]
-    rationale: 内心戏要靠身体感承载（手指紧 / 喉结动 / 呼吸停）
+    rationale: 内心戏优先由本场物件、人物选择与动作后果承载；身体感只有改变行动时才计有效
 
   worldbuilding_scene:
     required_min: 4
@@ -233,7 +233,7 @@ audit_sample:
       hits: 低（只有"焦甜"——纸钱+人皮油脂—— 1 次）
       score: 0.55
     tactile:
-      hits: 中（指腹拂过灰浆 / 喉结动 / 太阳穴跳）
+      hits: 中（指腹拂过灰浆 / 湿灰粘住证物袋 / 砂粒磨破标签）
       score: 0.75
     thermal:
       hits: 低（只有"阴冷的气息"——但太抽象）

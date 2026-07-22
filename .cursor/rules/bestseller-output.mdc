@@ -109,11 +109,11 @@ title: 焚心诀
 genre: 玄幻
 prompt_pack: xianxia
 target_chapters: 30
-target_total_words: 180000
+target_total_words: 78000
 words_per_chapter:
-  min: 5000
-  target: 6400
-  max: 9000
+  min: 1800
+  target: 2600
+  max: 3500
 volumes: 1
 acts: 1
 current_chapter: 1

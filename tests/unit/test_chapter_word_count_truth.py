@@ -16,6 +16,17 @@ def test_measure_ignores_frontmatter() -> None:
     assert measure_chapter_body_zh_chars(text) == 4
 
 
+def test_measure_ignores_production_html_comments() -> None:
+    text = (
+        "---\nword_count: 9999\n---\n"
+        "# 第一章 小满的炭票\n"
+        "<!-- production-scene: 1 | 扣票 -->\n"
+        "林渊抬头。\n"
+        "<!-- chapter-state-snapshot\nfacts:\n  - 这不是读者正文\n-->"
+    )
+    assert measure_chapter_body_zh_chars(text) == 12
+
+
 def test_metadata_mismatch_critical() -> None:
     body = "林" * 500
     report = check_word_count_metadata_truth(

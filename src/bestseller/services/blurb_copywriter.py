@@ -387,37 +387,35 @@ async def run_blurb_copywriting(
         except Exception:
             logger.warning("blurb copywriting candidate '%s' failed", strategy, exc_info=True)
 
-    survivors = [c for c in candidates if not c.has_fatal_pathology] or list(candidates)
-
     persona_used = False
-    if survivors:
+    if candidates:
         try:
             from bestseller.services.persona_click_judge import run_persona_click_judge
 
             persona_used = True
-            for idx, cand in enumerate(survivors):
+            persona_candidates = list(candidates)
+            for idx, cand in enumerate(persona_candidates):
                 report = await run_persona_click_judge(
                     session, settings,
                     title=title, synopsis=cand.synopsis, genre=genre, sub_genre=sub_genre,
                     tags=tuple(tags or ()), samples=cfg["persona_samples"], judge=persona_judge,
                 )
-                survivors[idx] = BlurbCandidate(
+                persona_candidates[idx] = BlurbCandidate(
                     strategy=cand.strategy, synopsis=cand.synopsis,
                     gate_score=cand.gate_score, pathology=cand.pathology,
                     persona_click_rate=report.click_rate if report.llm_used else None,
                     persona_avg_score=report.avg_score if report.llm_used else None,
                 )
-            if not any(c.persona_avg_score is not None for c in survivors):
+            candidates = persona_candidates
+            if not any(c.persona_avg_score is not None for c in candidates):
                 persona_used = False
         except Exception:
             logger.warning("persona tournament failed; ranking by gate score", exc_info=True)
             persona_used = False
 
-    # 把打完 persona 分的 survivors 回写进 candidates 快照——否则落库的淘汰赛
-    # 报告里 persona 分全是 null(L3 真机验收发现)，看报告的人无法复盘冠军凭什么赢。
-    if survivors:
-        _scored_by_synopsis = {c.synopsis: c for c in survivors}
-        candidates = [_scored_by_synopsis.get(c.synopsis, c) for c in candidates]
+    # Score every generated candidate for a complete audit trail, but keep
+    # fatal-pathology candidates ineligible for selection.
+    survivors = [c for c in candidates if not c.has_fatal_pathology] or list(candidates)
 
     def _rank_key(c: BlurbCandidate) -> tuple[float, float]:
         return (

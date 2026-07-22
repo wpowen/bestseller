@@ -21,6 +21,7 @@ DEFAULT_METADATA_MISMATCH_RATIO: Final[float] = 0.15
 DEFAULT_METADATA_MISMATCH_ABS_CHARS: Final[int] = 200
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL | re.MULTILINE)
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -52,9 +53,10 @@ def strip_markdown_frontmatter(text: str) -> str:
 
 
 def measure_chapter_body_zh_chars(text: str) -> int:
-    """Count CJK characters in chapter body (excludes frontmatter)."""
+    """Count reader-visible CJK characters (excludes production metadata)."""
 
-    return count_zh_chars(strip_markdown_frontmatter(text))
+    body = strip_markdown_frontmatter(text)
+    return count_zh_chars(_HTML_COMMENT_RE.sub("", body))
 
 
 def authoritative_zh_word_count(

@@ -22,7 +22,7 @@
 每 scene 遵循"entry_state → 冲突升级 → 转折 → exit_state"：
 
 ```
-1 200–2 200 字
+600–1 150 字（目标约 870）
 ├─ 入口状态（上一 scene 的 exit_state，或章节 opening_hook）
 ├─ 冲突升级（信息 / 威胁 / 情绪三选一叠加）
 ├─ 转折（可以是外部 reveal 或内在抉择）

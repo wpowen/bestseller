@@ -95,7 +95,7 @@ WHILE true:
   genre: "玄幻" | "都市" | "科幻" | ...    [必须]
   title: "焚心诀"                          [必须，缺则提 3 个候选问用户]
   target_chapters: 30                      [必须]
-  target_total_words: 180000               [可选，缺则 6000 × target_chapters]
+  target_total_words: 78000                [可选，缺则 2600 × target_chapters]
   prompt_pack: xianxia                     [可选，从 genre 推]
   constraints: {...}                       [可选]
 }
@@ -105,13 +105,13 @@ WHILE true:
 
 ---
 
-## 5. `progress.yaml` 作为状态源
+## 5. `progress.yaml` 作为文件编排检查点
 
 所有调度状态持久化在 `output/ai-generated/{slug}/progress.yaml`。
 
 - 模板：[`.claude/skills/bestseller-framework/templates/progress-state.md`](../../.claude/skills/bestseller-framework/templates/progress-state.md)
-- **单一事实源**：不要相信内存里的状态，每次循环开头都重读一次
-- 恢复顺序：`progress.yaml` → `meta.yaml` → 磁盘实际文件；以磁盘为准修补 progress
+- **运行时事实源是 PostgreSQL**；每次循环从数据库读取章节/门禁/工作流状态，并把 `workflow_run_id` 投影回 `progress.yaml`
+- 恢复顺序：PostgreSQL 运行态 → `progress.yaml` 编排态 → `meta.yaml` / 磁盘交付物；发现差异时以数据库门禁和真实正文为准修补投影
 
 ---
 
@@ -174,7 +174,7 @@ Snapshot written: after-ch-NNN.md
 | 触发 | 处理 |
 |-----|------|
 | INIT 缺必须字段 | 立即问用户；等答复再继续 |
-| 某章字数 2 次扩写仍 < 5000 | editor 介入加场景；仍失败 → `human_decision_pending` |
+| 某章修复 2 次后仍 < 1800 或 > 3500 | editor 定点修复；仍失败 → `human_decision_pending` |
 | 某章 2 次 rewrite 仍未过 | `accept_on_stall`，不阻塞后续章 |
 | consistency audit 失败且修复 3 次未果 | `human_decision_pending` |
 | 磁盘写失败 | 回滚；若连续 3 次 → `human_decision_pending` |

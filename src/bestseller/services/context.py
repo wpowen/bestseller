@@ -568,6 +568,19 @@ def _chapter_contract_read(
         chapter_metadata,
         "event_cycle_contract",
     )
+    whole_chapter_logic_contract = _contract_metadata_dict(
+        metadata,
+        chapter_metadata,
+        "whole_chapter_logic_contract",
+    )
+    # Chapter-first execution contracts are framework inputs, not an optional
+    # methodology-v2 overlay.  A project can deliberately run the whole-chapter
+    # pipeline while the legacy methodology flag is off; in that case the
+    # contract still has to reach the writer prompt.
+    if not whole_chapter_logic_contract:
+        chapter_logic_contract = chapter_metadata.get("whole_chapter_logic_contract")
+        if isinstance(chapter_logic_contract, dict) and chapter_logic_contract:
+            whole_chapter_logic_contract = dict(chapter_logic_contract)
     character_delta = _causal_contract_text(
         causal_contract,
         "character_delta",
@@ -641,6 +654,7 @@ def _chapter_contract_read(
         loop_position=methodology_contract.get("loop_position"),
         causal_contract=causal_contract,
         event_cycle_contract=event_cycle_contract,
+        whole_chapter_logic_contract=whole_chapter_logic_contract,
         character_delta=character_delta,
         protagonist_choice=protagonist_choice,
         methodology_lineage=(

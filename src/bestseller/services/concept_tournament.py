@@ -802,6 +802,7 @@ def _build_engine_kernel_messages(
     seed_concept: str = "",
     seed_support: dict[str, Any] | None = None,
     audience_orientation: str = "",
+    banned: tuple[str, ...] = (),
 ) -> tuple[str, str]:
     """Build a minimal premise card before any marketing sentence."""
 
@@ -879,8 +880,26 @@ def _build_engine_kernel_messages(
         "\"expansion_axes\":[\"深化方向1\",\"深化方向2\",\"深化方向3\"],"
         "\"opposing_ecology\":[\"自主阻力1\",\"自主阻力2\"],"
         "\"opening_crisis\":\"开局具体危机\",\"emotional_promise\":\"持续情绪\"}"
+        # opening_crisis + core_abnormality are where the death/relic default
+        # gets baked; steer them here, upstream of the hook sentence.
+        + "\n" + render_cliche_avoidance_block(banned)
+        # The pre-planning logline gate hard-kills on story-logic axes
+        # (protagonist_rationality / cost_integrity / causal_coherence) that are
+        # decided HERE, in current_goal / opening_crisis / failure_cost — and
+        # cannot be repaired later: the logline rescue rewriter is forbidden
+        # from inventing story facts. Three consecutive real books died on
+        # these axes (2026-07-21/22) because the kernel never saw the contract.
+        + "\n" + _render_story_logic_gate_rules()
     )
     return system, user
+
+
+def _render_story_logic_gate_rules() -> str:
+    """Late import: logline_gate imports settings/llm; keep module load light."""
+
+    from bestseller.services.logline_gate import render_story_logic_writer_rules
+
+    return render_story_logic_writer_rules()
 
 
 def _build_raw_idea_pool_messages(
@@ -1203,6 +1222,97 @@ def _select_raw_ideas_for_expansion(
     return (strict + near)[: max(0, limit)]
 
 
+# ── plain_language: one contract, rendered to BOTH the writer and the judge ──
+#
+# Root cause this exists to fix (2026-07-21, real book creation blocked):
+# the judge scored every candidate 4.0 on plain_language and the hard floor
+# killed the whole tournament — yet the production hook prompt
+# (``_build_hook_from_engine_messages``) never contained the rule the judge
+# was enforcing. It said only "一遍就懂" while simultaneously demanding
+# "只有本书才有的异常事实" and "删除抽象词，除非是场景中摸得到的物件" —
+# a combination whose only compliant solution is an invented concrete proper
+# noun (缉牒队 / 引魂针), which is exactly what the judge caps at 4.
+#
+# The detailed rule did exist, but in ``_build_lean_candidate_messages`` —
+# dead code under the production ``engine_first`` route. Same failure shape as
+# the anti-AI discipline before it got a single source: the generator is judged
+# against a contract it was never shown.
+# NOTE: keep this text channel-neutral. "划走" is the marker that channel
+# priming (男频/女频) has been injected, and a paired test asserts a
+# channel-less judge prompt never contains it — a shared block that smuggles
+# persona framing in unconditionally would bias neutral judging.
+_PLAIN_LANGUAGE_CORE = (
+    "普通目标读者要能一遍形成清楚画面。需要搜索解释的术语、算法名、机构缩写，"
+    "以及多层抽象因果，都会让读者读不下去。"
+    "题材目标读者本来就懂的常识词不算术语，例如仙侠里的灵材/天庭/渡劫、"
+    "民俗里的祠堂/禁忌、都市黑科技里的芯片/报废晶圆/设计/产品/供应商/基金。"
+    "校准示例：“芯片工程师从报废晶圆里复原被放弃的设计，再把它做成产品”"
+    "对都市黑科技目标读者是好懂的；“修仙界快递员发现自己送的不是货，是活人”"
+    "也是好懂的；“用COTRS精算残差重校再保险时间序列”是看不懂的。"
+)
+
+
+def render_plain_language_writer_rule() -> str:
+    """Generation-side phrasing: paired with what to write instead.
+
+    Bare prohibitions prime what they forbid (2026-07-18 arena), so this states
+    the substitution rather than only the ban.
+    """
+
+    return (
+        "【一句话必须是大白话】"
+        + _PLAIN_LANGUAGE_CORE
+        + "所以：**不要为了独特而生造机构名、门派名、法器名、组织缩写**。"
+        "独特性要落在“这个人此刻要做的那件事”上，不要落在名词上——"
+        "把生造专名换成题材读者本来就懂的通用说法（“缉牒队”→“官府的缉捕队”、"
+        "“引魂针”→“三根银针”），故事照样成立，读者却不用停下来猜。"
+    )
+
+
+def render_plain_language_judge_rule() -> str:
+    """Judge-side phrasing: same contract plus the scoring instruction."""
+
+    return (
+        "7. plain_language 大白话：只评上面‘概念：’这一行，必须忽略后附机制、认知"
+        "缺口、人物和决策证明。"
+        + _PLAIN_LANGUAGE_CORE
+        + "若概念一句话含必须搜索解释的术语、算法名、机构缩写或多层抽象因果，"
+        "本项不得超过4分。校准分数：好懂的应为8-10分，看不懂的应为0-3分。"
+        "此轴只评一遍能否看懂，不评你个人是否喜欢这个创意。\n"
+    )
+
+
+def render_cliche_avoidance_block(banned: tuple[str, ...]) -> str:
+    """Show the generator the SAME cliché list the judge will KO it with.
+
+    Root cause this fixes (2026-07-22, book creation blocked): the judge
+    eliminates any candidate matching ``cliche_seeds`` *before* scoring, but the
+    production ``engine_first`` generators (``_build_native_candidate_messages``
+    ``del``s the ban list, and the raw-idea / kernel / hook builders never
+    received it). On a cold start with no premise the model regresses to the
+    genre's most worn openings — 师父坟前 / 遗物 / 借尸还魂 / 替死人还债 — which
+    is exactly what the seed list bans, so every candidate is KO'd and the
+    tournament dries up. Same 生成端↔判官端不同源 shape as the plain_language and
+    anti-AI disciplines before they got a single source.
+
+    Kept compact and framed as "avoid, and go concrete instead" rather than a
+    bare enumeration: bare prohibitions prime what they forbid (2026-07-18
+    arena), and dumping 20+ phrases would itself become a death-motif menu.
+    """
+
+    items = [b.strip() for b in banned if b.strip()]
+    if not items:
+        return ""
+    listed = "、".join(items[:12])
+    return (
+        "【这些开局已经被写烂，别往上撞】\n"
+        f"避开：{listed}。\n"
+        "尤其不要默认从“死人/坟墓/遗物/遗书/灭门/借尸还魂/替死人还债”起手——"
+        "这是冷启动时最容易滑进去的套路。把独特性放在“这个活人此刻要争取什么、"
+        "手上有什么别人没有的筹码”上，而不是放在一桩旧死亡上。\n"
+    )
+
+
 def _build_hook_from_engine_messages(
     *,
     genre: str,
@@ -1210,6 +1320,8 @@ def _build_hook_from_engine_messages(
     kernel: dict[str, Any],
     seed_concept: str = "",
     audience_orientation: str = "",
+    retry_feedback: str = "",
+    banned: tuple[str, ...] = (),
 ) -> tuple[str, str]:
     """Distill a human-facing story seed from an already designed engine."""
 
@@ -1231,11 +1343,25 @@ def _build_hook_from_engine_messages(
         "不要套promise/paradox/scene模板。像真正的小说作者一样独立写3条最想让人点开的"
         "一句话故事，每条都必须让人看见：一个具体主角、只有本书才有的异常事实、主角"
         "接下来会做的事或马上形成的困局。三条可以分别偏身份反转、独特行动或核心矛盾，"
-        "但都必须是完整故事，不能只有气氛或一个片段。每条30-75字、单句、一遍就懂。"
+        "但都必须是完整故事，不能只有气氛或一个片段。每条30-75字、单句。\n"
+        + render_plain_language_writer_rule()
+        + "\n"
         "删除债、账、规则、体系、权限、概率、循环等抽象词，除非是场景中摸得到的物件。"
         "删除‘一步步、从此、真正的、命运齿轮、随着真相浮现’等AI概括词。不要解释500章、"
         "不要写‘他只能/他必须/否则’，不要照抄字段名。\n"
-        "项目卡中的人物、异常、目标、阻力、选择理由和持续机制都已冻结，不要在输出中"
+        # The judge KOs these before scoring; show them here so the generator
+        # does not keep proposing the openings it is about to be eliminated for.
+        + render_cliche_avoidance_block(banned)
+        # Without this the retry loop is decorative under engine_first: the
+        # caller threads retry_feedback only into the non-production branch, so
+        # a tournament could fail the same axis three rounds running and the
+        # generator would never learn why.
+        + (
+            f"【上一轮为什么被拒，这一轮必须改掉】\n{retry_feedback.strip()}\n"
+            if retry_feedback.strip()
+            else ""
+        )
+        + "项目卡中的人物、异常、目标、阻力、选择理由和持续机制都已冻结，不要在输出中"
         "改变事实或另加设定；允许选择并压缩其中事实。只输出JSON："
         "{\"hooks\":[{\"angle\":\"identity\",\"concept\":\"一句话1\"},"
         "{\"angle\":\"action\",\"concept\":\"一句话2\"},"
@@ -1763,16 +1889,8 @@ def _build_judge_messages(
         "主角为何拥有不可替代的行动入口。若依赖任何外部职业流程，必须先证明它为何在"
         "本题材世界不可替代、为何不是贴皮；缺少这些因果而直接套用现代报告/数据库/评级/"
         "客户流程，genre_fidelity不得超过3分。\n"
-        "7. plain_language 大白话：只评上面‘概念：’这一行，必须忽略后附机制、认知"
-        "缺口、人物和决策证明。普通目标读者能否一遍形成清楚画面？若概念一句话含必须"
-        "搜索解释的术语、算法名、机构缩写或多层抽象因果，本项不得超过4分。"
-        "题材目标读者本来就懂的常识词不算术语，例如仙侠里的灵材/天庭/渡劫、"
-        "民俗里的祠堂/禁忌、都市黑科技里的芯片/报废晶圆/设计/产品/供应商/基金。"
-        "校准示例：‘芯片工程师从报废晶圆里复原被放弃的设计，再把它做成产品’对"
-        "都市黑科技目标读者应为8-10分；‘修仙界快递员发现自己送的不是货，是活人’"
-        "应为8-10分；‘用COTRS精算残差重校再保险时间序列’应为0-3分。"
-        "此轴只评一遍能否看懂，不评你个人是否喜欢这个创意。\n"
-        "8. story_motion 故事运动：一句话是否给出会持续产出故事的核心承诺。可以是"
+        + render_plain_language_judge_rule()
+        + "8. story_motion 故事运动：一句话是否给出会持续产出故事的核心承诺。可以是"
         "主角反复执行的标志性行动，也可以是‘独特规则+一个具体到令人不安的反常实例’，"
         "只要读者自然追问下一次会发生什么；不强制把对手塞进一句话，对手理性改看"
         "opponent_system。若只是俏皮反差、静态世界设定、身份+秘密，必须依赖后文才知道"
@@ -2430,6 +2548,7 @@ async def run_concept_tournament(
                         seed_concept=premise_seed,
                         seed_support=raw_pitch_by_seed.get(premise_seed),
                         audience_orientation=audience_orientation,
+                        banned=banned,
                     )
                     result.candidate_prompt_chars += len(engine_system) + len(engine_user)
                     result.candidate_generation_calls += 1
@@ -2612,6 +2731,7 @@ async def run_concept_tournament(
                             seed_concept=premise_seed,
                             seed_support=raw_pitch_by_seed.get(premise_seed),
                             audience_orientation=audience_orientation,
+                            banned=banned,
                         )
                         result.candidate_prompt_chars += len(engine_system) + len(engine_user)
                         result.candidate_generation_calls += 1
@@ -2700,6 +2820,8 @@ async def run_concept_tournament(
                         kernel=kernel,
                         seed_concept=premise_seed,
                         audience_orientation=audience_orientation,
+                        banned=banned,
+                        retry_feedback=retry_feedback,
                     )
                 else:
                     system, user = build_candidate_messages(

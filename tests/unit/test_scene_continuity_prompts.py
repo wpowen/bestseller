@@ -77,9 +77,10 @@ def _scene_card(number: int = 2) -> SimpleNamespace:
 
 def test_scene_cards_mark_entry_state_as_already_done() -> None:
     text = _render_chapter_first_scene_cards([_scene_card()])
-    assert "既成事实" in text
-    assert "严禁把它当剧情在本场重演一遍" in text
-    assert "下一拍写起" in text
+    assert "既成入场" in text
+    assert "不得复述、扩写或换词改写节点措辞" in text
+    assert "墨字钻进纪蘅掌心的瞬间" in text
+    assert "必须变化" in text
 
 
 # ── 写手侧：冷读者定位授权 ────────────────────────────────────────────────

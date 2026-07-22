@@ -364,6 +364,44 @@ def _fix_for(key: str) -> str:
     return _FIX_DIRECTIVES.get(key, f"加强维度：{key}")
 
 
+# Axes that killed three consecutive real book creations (2026-07-21/22, all
+# three tasks failed with these as weakest): they judge STORY-level properties
+# that are baked at concept-kernel time and cannot be repaired by rewriting the
+# logline sentence afterwards — the rescue rewriter is (correctly) forbidden
+# from inventing story facts, so a kernel that bakes an irrational opening is
+# unrescuable downstream. The only working fix point is generation time.
+_STORY_LOGIC_AXES: tuple[str, ...] = (
+    "protagonist_rationality",
+    "cost_integrity",
+    "causal_coherence",
+)
+
+
+def render_story_logic_writer_rules() -> str:
+    """Render this gate's story-logic contract for the CONCEPT GENERATOR.
+
+    Same single-source pattern as plain_language and the cliché list: the
+    generator must see the exact rubric the gate later enforces, phrased from
+    the judge's own ``_FIX_DIRECTIVES`` so the two sides cannot drift. Without
+    this, the tournament's own judge passes 人物决策 at its 7.0 floor while
+    this gate hard-kills 主角决策智力 at 3.0 — a contract the kernel never saw.
+    """
+
+    labels = {
+        "protagonist_rationality": "主角决策智力",
+        "cost_integrity": "代价完整性",
+        "causal_coherence": "因果闭环",
+    }
+    lines = [
+        "【故事逻辑硬门（规划前终审会按这三条一票否决，现在就写对）】",
+    ]
+    for axis in _STORY_LOGIC_AXES:
+        directive = _FIX_DIRECTIVES.get(axis, "").strip()
+        if directive:
+            lines.append(f"- {labels.get(axis, axis)}：{directive}")
+    return "\n".join(lines) + "\n"
+
+
 _AXIS_HINT: dict[str, str] = {
     "contrast_irony": "卖点四平八稳、无反差/反讽，读者没有「咦?」的一下",
     "click_hook": "开头是设定/背景铺陈，钩子迟到或缺席",

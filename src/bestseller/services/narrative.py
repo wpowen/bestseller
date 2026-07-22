@@ -97,6 +97,7 @@ def _chapter_contract_metadata_from_chapter(chapter: ChapterModel) -> dict[str, 
             "causal_contract",
             "event_cycle_contract",
             "chapter_causality_axes",
+            "whole_chapter_logic_contract",
         ):
             value = chapter_metadata.get(key)
             if isinstance(value, dict) and value:

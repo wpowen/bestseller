@@ -80,19 +80,18 @@ causes:
       - 信息密度过低（一段话只推进半步）
       - 章末勾子被前面内容稀释
     diagnosis_checklist:
-      - q: 主角在前 500 字内出现 pulse_words 词表的词 ≥ 3 次？
-        pass_if: 是
+      - q: 主角在前 500 字内是否经历压力、作出具体选择，并让选择产生可见后果？
+        pass_if: 三项齐全；固定身体反应词命中不计通过
       - q: 每 500 字内是否有信息 / 冲突 / 情绪变化点？
         pass_if: 是
       - q: 章末 150 字内是否有明确钩子？
         pass_if: 是
     repair_actions:
-      - id: inject_pulse_words
+      - id: materialize_pressure_response
         priority: 1
         action: |
-          在主角任何关键决策段前，插入一次可感心率词（platform_profiles.pulse_words）。
-          频率：每 300-500 字至少一次。
-          严禁用"他感到 X / 他心想 X"的总结式表达。
+          找到一个已经存在的压力节点，让主角碰到本场物件后作出具体选择，
+          并让对手、环境、规则或物件立刻产生可见变化。不得注入固定身体反应词。
       - id: tighten_information_density
         priority: 2
         action: |
@@ -106,11 +105,11 @@ causes:
     replacement_strategy:
       - 删除：心理独白 > 150 字的段落
       - 删除：章末"主角看着 X，沉默不语" 类松弛尾
-      - 添加：主角心率词点缀（每 300-500 字一次）
+      - 添加：主角面对压力后的具体选择及可见后果
       - 添加：章末"立刻新威胁 / 新变量进场"
     validation_check:
       - 章末 150 字内有具象钩子 (yes/no)
-      - pulse_words 频率 ≥ 1 / 300 字 (count)
+      - 前 500 字至少有 1 条"压力 → 选择 → 可见后果"完整链 (yes/no)
       - 信息密度评分 ≥ 0.75 (0-1)
 
   # ---------------------------------------------------------------------------

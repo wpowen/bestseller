@@ -127,6 +127,14 @@ _CONTRACTS: dict[str, QualityContract] = {
         "retention",
         required_evidence=("signature_mandate",),
     ),
+    "SCENE_CARD_PROSE_COPIED": _contract(
+        "SCENE_CARD_PROSE_COPIED",
+        "prose",
+        severity="high",
+        repair_scope="paragraph",
+        required_evidence=("matched_text",),
+        pass_condition="published prose does not closely copy scene-card instructions",
+    ),
     "EXPOSITION_DUMP": _contract("EXPOSITION_DUMP", "prose", repair_scope="chapter"),
     "TIMELINE_INCONSISTENT": _contract(
         "TIMELINE_INCONSISTENT",

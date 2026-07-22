@@ -169,7 +169,7 @@ sample_profiles:
         step_2: 数一遍屋里的东西 / 在场的人
         step_3: 用对方的关键词反将（"按程序" → "按程序，我的章在……"）
       betrayal_by_close_one:
-        step_1: 喉结动一下，不立刻看对方
+        step_1: 继续处理手里的本场物件，但改变原定做法并留下可见痕迹
         step_2: 把刚才双方的话在心里复盘一遍
         step_3: 不揭穿，但悄悄把证据藏到对方看不见的地方
       moral_dilemma:
@@ -253,11 +253,11 @@ sample_profiles:
         - 章 / 印
         - 证物
         - 一拍
-        - 喉结
+        - 改变证物处置顺序
         - 旧疤
       response_pattern_to_question: 先停一拍 → 再用对方的关键词反问
       humor_type: 冷面（几乎不出现，但偶有一句反讽）
-      anger_expression: 喉结动 + 牙关咬死，从不大声
+      anger_expression: 改变原定证物处置方案，迫使对方先回应，从不靠固定身体词表现愤怒
       lie_pattern: 不说谎，但会说半句（"在能让上头看见的人手里了" 而不说具体是谁）
 
   zhou_shensuan:

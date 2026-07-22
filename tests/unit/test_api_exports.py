@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 
 from bestseller.api.routers.exports import export_novel
 from bestseller.infra.db.models import ExportArtifactModel
@@ -70,3 +71,26 @@ async def test_export_novel_unpacks_service_tuple_and_surfaces_warnings(
     assert response.word_count == 321
     assert response.warnings == ["chapter 2 skipped because it has no current draft"]
     assert response.skipped_chapters == [2]
+
+
+@pytest.mark.asyncio
+async def test_export_novel_maps_incomplete_publication_to_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = SimpleNamespace(id=uuid4(), slug="incomplete-export")
+
+    async def fake_export(**kwargs: object) -> tuple[object, Path]:
+        raise export_services.ProjectExportIncompleteError(project.slug, [2])
+
+    monkeypatch.setattr(export_services, "export_project_markdown", fake_export)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await export_novel(
+            slug=project.slug,
+            fmt="markdown",
+            session=_Session(project),  # type: ignore[arg-type]
+            settings=load_settings(env={}),
+            _key=None,  # type: ignore[arg-type]
+        )
+
+    assert exc_info.value.status_code == 409

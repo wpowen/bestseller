@@ -23,12 +23,12 @@ emotion_taxonomy:
 
   expression_layers:
     physiological:
-      description: 生理反应（不需角色意识）
+      description: 非自主变化（仅在会限制下一步动作或造成后果时使用，不作为情绪默认替身）
       examples:
-        anger: 喉结动 / 太阳穴跳 / 牙关咬 / 拳头紧
-        fear: 后背一凉 / 手指发冷 / 心跳乱 / 呼吸停
-        grief: 喉头一紧 / 眼角发酸 / 胸腔发空
-        shame: 耳根发热 / 脸侧发烫 / 抬不起头
+        anger: 正在做的精细动作失准，迫使角色改用另一种做法
+        fear: 熟练流程漏掉关键一步，危险随即扩大
+        grief: 继续执行一个已经失去对象的日常动作，直到物件产生后果
+        shame: 当场撤回一句话或一项决定，并承担关系后果
 
     behavioral:
       description: 自动化行为

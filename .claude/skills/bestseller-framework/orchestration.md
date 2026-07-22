@@ -284,7 +284,7 @@
 
 ## 3. `progress.yaml` Schema
 
-这是 orchestrator 的**单一事实源**。每步执行完必须回写一次（即使在循环中段被中断，下次也能恢复）。
+这是 orchestrator 的**文件编排检查点/投影**；PostgreSQL 才是章节、门禁与工作流运行态的事实源。每步执行完必须把来源 `workflow_run_id` 回写一次（即使在循环中段被中断，下次也能恢复并核对）。
 
 ```yaml
 # output/ai-generated/{slug}/progress.yaml

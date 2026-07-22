@@ -37,15 +37,21 @@ def test_count_latin_words_basic() -> None:
 
 def test_compute_pulse_density_passes_with_dense_pulse_words() -> None:
     text = (
-        "他喉结动了一下。指节绷紧。"
-        "心一沉。"
-        "牙关咬紧。"
-        "立刻摸进右袖。"
+        "退路被人堵住。"
+        "他抢在对方关门前扣住门闩。"
+        "来不及解释，他赶在火烧到契书前抓住纸角。"
     )
     result = compute_pulse_density(text)
     assert result.pulse_count >= 3
     assert result.density_per_300_chars > 1.0
     assert result.passed is True
+
+
+def test_compute_pulse_density_does_not_reward_canned_body_reactions() -> None:
+    text = "他喉结动了一下。指节发白。呼吸一滞。后背一凉。" * 20
+    result = compute_pulse_density(text)
+    assert result.pulse_count == 0
+    assert result.passed is False
 
 
 def test_compute_pulse_density_counts_suspense_pressure_actions() -> None:
@@ -317,8 +323,8 @@ def test_audit_chapter_bundles_results() -> None:
     text = (
         "两个时辰。"
         "门外周神算说话。"
-        "沈青崖喉结动了一下。"
-        "他没有立刻抬头。"
+        "沈青崖来不及解释，先扣住门闩。"
+        "门外那只手停住了。"
     )
     audit = audit_chapter(text, platform="qimao")
     assert audit.word_count is not None

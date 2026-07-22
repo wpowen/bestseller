@@ -275,6 +275,7 @@ class StuckProject:
     chapters_total: int
     chapters_with_draft: int
     heal_kind: str = "autowrite"
+    progress_fingerprint: str | None = None
 
 
 async def reap_orphan_workflow_runs(
@@ -637,6 +638,7 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                 )
             )
         ) or 0
+        local_repair_chapters: tuple[int, ...] = ()
         # A blocked chapter only forces repair-FIRST (starving continuation)
         # when its defect is *structural* — i.e. it corrupts the canon /
         # continuity snapshot that later chapters inherit. A purely *local*
@@ -674,11 +676,22 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                         chapters_total=int(chapters_total),
                         chapters_with_draft=int(chapters_with_draft),
                         heal_kind="repair",
+                        progress_fingerprint=(
+                            "repair:structural:"
+                            + ",".join(str(number) for number in readiness.blocking_chapters)
+                        ),
                     )
+                )
+                continue
+            if not readiness.local_blocked_chapters:
+                logger.info(
+                    "self-heal: slug=%s has only terminal quality-debt chapters; no actionable repair",
+                    project.slug,
                 )
                 continue
             # Only local-quality blocks remain — do not starve continuation.
             local_repair_pending = True
+            local_repair_chapters = readiness.local_blocked_chapters
             logger.info(
                 "self-heal: slug=%s has %d local-quality block(s) — writing "
                 "continues in parallel (%s)",
@@ -812,6 +825,11 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                     chapters_total=int(chapters_total),
                     chapters_with_draft=int(chapters_with_draft),
                     heal_kind="repair",
+                    progress_fingerprint=(
+                        "repair:local:"
+                        + ",".join(str(number) for number in local_repair_chapters)
+                        + f":pending_tasks={pending_rewrite_tasks}"
+                    ),
                 )
             )
             continue
@@ -831,6 +849,8 @@ def _project_is_focus_paused(project: ProjectModel) -> bool:
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
         return False
+    if metadata.get("self_heal_suppressed"):
+        return True
     focus_pause = metadata.get("focus_pause")
     reason = str(metadata.get("production_pause_reason") or "").strip()
     if isinstance(focus_pause, dict):
@@ -1044,30 +1064,36 @@ def _metadata_int(metadata: dict[str, Any], key: str, default: int = 0) -> int:
 def _project_self_heal_abandoned(project: ProjectModel) -> bool:
     """Compatibility shim for old ``self_heal_abandoned`` metadata.
 
-    Older deployments wrote this flag and then excluded the project from every
-    future stuck scan. Autonomous production now treats that historical marker
-    as diagnostic metadata only; no book should require a human click to resume.
+    A terminal no-progress marker only applies to the exact blocker fingerprint
+    that produced it.  A changed fingerprint is new machine work and resumes
+    automatically; legacy markers without a fingerprint remain diagnostic only.
     """
-    return False
+    metadata = getattr(project, "metadata_json", None)
+    if not isinstance(metadata, dict):
+        return False
+    return bool(
+        metadata.get("self_heal_abandoned")
+        and metadata.get("self_heal_abandoned_progress_fingerprint")
+    )
 
 
 def _compute_heal_progress_state(
     metadata: dict[str, Any],
     chapters_total: int,
     *,
+    progress_fingerprint: str | None = None,
     max_attempts: int = MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS,
 ) -> tuple[dict[str, Any], bool]:
     """Pure helper: update the no-progress attempt counter and decide escalation.
 
-    Returns ``(new_metadata, abandoned)``. ``abandoned`` is retained for caller
-    compatibility but is always ``False`` in autonomous runtime. The chapter count is compared
-    against the count recorded on the previous heal cycle:
+    Returns ``(new_metadata, abandoned)``. Progress compares the chapter count
+    and, when supplied, the actionable blocker fingerprint:
 
     * progressed (count increased, or first ever) → counter resets to 0
     * no progress → counter increments
 
-    When the counter reaches ``max_attempts`` the project is marked for a
-    stronger machine-repair pass; it is not excluded from future self-heal scans.
+    When the same fingerprint reaches ``max_attempts`` the current repair is
+    stopped. A later fingerprint change resets the counter automatically.
     """
     updated = dict(metadata) if isinstance(metadata, dict) else {}
     last = updated.get("self_heal_last_chapters_total")
@@ -1076,7 +1102,13 @@ def _compute_heal_progress_state(
     except (TypeError, ValueError):
         last_int = None
 
-    progressed = last_int is None or chapters_total > last_int
+    previous_fingerprint = updated.get("self_heal_last_progress_fingerprint")
+    fingerprint_changed = (
+        progress_fingerprint is not None
+        and previous_fingerprint is not None
+        and progress_fingerprint != previous_fingerprint
+    )
+    progressed = last_int is None or chapters_total > last_int or fingerprint_changed
     if progressed:
         attempts = 0
     else:
@@ -1084,16 +1116,28 @@ def _compute_heal_progress_state(
 
     updated["self_heal_last_chapters_total"] = int(chapters_total)
     updated["self_heal_no_progress_attempts"] = attempts
+    if progress_fingerprint is not None:
+        updated["self_heal_last_progress_fingerprint"] = progress_fingerprint
 
-    if attempts >= max_attempts:
+    if progressed:
         updated.pop("self_heal_abandoned", None)
         updated.pop("self_heal_abandoned_at", None)
+        updated.pop("self_heal_abandoned_progress_fingerprint", None)
+
+    if attempts >= max_attempts:
+        now = _dt.datetime.now(_dt.UTC).isoformat()
         updated["self_heal_no_progress_escalated"] = True
-        updated["self_heal_no_progress_escalated_at"] = _dt.datetime.now(_dt.UTC).isoformat()
+        updated["self_heal_no_progress_escalated_at"] = now
         updated["self_heal_repair_strategy"] = "deep_machine_repair"
-        updated["production_pause_reason"] = "self_heal_no_progress_machine_repair"
+        updated["production_pause_reason"] = "self_heal_no_actionable_progress"
         updated["requires_machine_repair"] = True
-        updated["requires_human_review"] = False
+        updated["requires_human_review"] = True
+        updated["self_heal_abandoned"] = True
+        updated["self_heal_abandoned_at"] = now
+        updated["self_heal_abandoned_progress_fingerprint"] = (
+            progress_fingerprint or f"chapters_total:{int(chapters_total)}"
+        )
+        return updated, True
     return updated, False
 
 
@@ -1777,6 +1821,18 @@ async def heal_stuck_projects(
                         new_meta, abandoned = _compute_heal_progress_state(
                             project.metadata_json or {},
                             stuck.chapters_total,
+                            progress_fingerprint=(
+                                stuck.progress_fingerprint
+                                or "|".join(
+                                    [
+                                        stuck.heal_kind,
+                                        stuck.reason,
+                                        str(stuck.stuck_at_chapter or ""),
+                                        str(stuck.chapters_total),
+                                        str(stuck.chapters_with_draft),
+                                    ]
+                                )
+                            ),
                         )
                         project.metadata_json = new_meta
                         await session.commit()

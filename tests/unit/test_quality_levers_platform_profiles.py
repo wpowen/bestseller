@@ -33,8 +33,8 @@ def test_load_platform_profiles_returns_qimao() -> None:
 def test_load_platform_profiles_loads_pulse_words() -> None:
     config = load_platform_profiles()
 
-    assert "心一沉" in config.pulse_words.body_signal
-    assert "立刻" in config.pulse_words.internal_pulse
+    assert config.pulse_words.body_signal == ()
+    assert "来不及" in config.pulse_words.internal_pulse
     assert config.pulse_words.all_words  # non-empty union
 
 

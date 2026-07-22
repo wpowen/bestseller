@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import pytest
 
+from bestseller.services.drafts import _effective_l6_gate_config
 from bestseller.services.pipelines import _retention_gate_blocks_for_project
+from bestseller.services.write_gate import GateConfig
 from bestseller.settings import load_settings
 
 
@@ -49,3 +51,29 @@ def test_retention_gate_per_project_warn_only_overrides_hard_default() -> None:
 def test_retention_gate_missing_or_irrelevant_metadata_uses_default(metadata) -> None:
     assert _retention_gate_blocks_for_project(_StubProject(metadata), _settings(False)) is False
     assert _retention_gate_blocks_for_project(_StubProject(metadata), _settings(True)) is True
+
+
+def test_l6_persona_codes_follow_soft_retention_policy() -> None:
+    base = GateConfig(
+        mode_by_violation={
+            "PERSONA_WEIGHTED_SCORE_LOW": "block",
+            "CANON_STATE_REGRESSION": "block",
+        }
+    )
+
+    effective = _effective_l6_gate_config(
+        _StubProject(), base, retention_block_on_failure=False
+    )
+
+    assert effective.mode_by_violation["PERSONA_WEIGHTED_SCORE_LOW"] == "audit_only"
+    assert effective.mode_by_violation["CANON_STATE_REGRESSION"] == "block"
+
+
+def test_l6_persona_codes_remain_blocking_in_explicit_strict_mode() -> None:
+    base = GateConfig(mode_by_violation={"PERSONA_WEIGHTED_SCORE_LOW": "block"})
+
+    effective = _effective_l6_gate_config(
+        _StubProject(), base, retention_block_on_failure=True
+    )
+
+    assert effective.mode_by_violation["PERSONA_WEIGHTED_SCORE_LOW"] == "block"

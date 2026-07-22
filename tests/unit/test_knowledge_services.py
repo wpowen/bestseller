@@ -277,6 +277,53 @@ async def test_knowledge_refresh_rejects_unpromoted_or_missing_scene_draft(
 
 
 @pytest.mark.asyncio
+async def test_knowledge_refresh_can_explicitly_backfill_from_current_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    draft = build_draft(project.id, scene.id)
+    draft.promotion_state = "candidate"
+    draft.is_current = True
+    style = build_style(project.id)
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    monkeypatch.setattr(knowledge_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(
+        scalar_results=[
+            chapter,
+            scene,
+            draft,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ],
+        get_map={(StyleGuideModel, project.id): style},
+    )
+
+    result = await knowledge_services.refresh_scene_knowledge(
+        session,
+        build_settings(),
+        "my-story",
+        1,
+        1,
+        draft_version_id=draft.id,
+        allow_current_candidate=True,
+    )
+
+    assert result.scene_id == scene.id
+    draft_where = str(session.scalar_statements[2]).split("WHERE", maxsplit=1)[1]
+    assert "is_current" in draft_where
+    assert "promotion_state" not in draft_where
+
+
+@pytest.mark.asyncio
 async def test_upsert_canon_fact_flushes_superseded_current_fact_before_insert() -> None:
     project_id = uuid4()
     subject_id = uuid4()

@@ -113,6 +113,7 @@ class ChapterContractRead(BaseModel):
     loop_position: str | None = Field(default=None, max_length=256)  # trigger/action/reward/invest
     causal_contract: dict[str, object] = Field(default_factory=dict)
     event_cycle_contract: dict[str, object] = Field(default_factory=dict)
+    whole_chapter_logic_contract: dict[str, object] = Field(default_factory=dict)
     character_delta: str | None = None
     protagonist_choice: str | None = None
     methodology_lineage: dict[str, object] | None = None

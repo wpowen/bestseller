@@ -60,6 +60,30 @@ def test_clean_assembly_clears_scene_auto_repair_residue() -> None:
     assert scene.metadata_json == {"methodology_contract": {"stakes": "keep"}}
 
 
+def test_scene_auto_repair_forces_transactional_replacement_with_current_draft() -> None:
+    scene = SimpleNamespace(
+        status="needs_rewrite",
+        metadata_json={
+            "auto_repair_hint": "补强转折",
+            "auto_repair_block_codes": ["BLOCK_LOW"],
+        },
+    )
+
+    assert pipeline_services._scene_requires_auto_repair_generation(
+        scene,
+        SimpleNamespace(id=uuid4(), is_current=True),
+    ) is True
+
+
+def test_scene_review_without_auto_repair_does_not_replace_current_draft() -> None:
+    scene = SimpleNamespace(status="reviewed", metadata_json={})
+
+    assert pipeline_services._scene_requires_auto_repair_generation(
+        scene,
+        SimpleNamespace(id=uuid4(), is_current=True),
+    ) is False
+
+
 def test_outline_readiness_retry_clears_only_stale_auto_repair_residue() -> None:
     scenes = [
         SimpleNamespace(
@@ -198,6 +222,50 @@ def test_chapter_first_full_regeneration_for_severe_under_length() -> None:
 
     assert reason is not None
     assert reason.startswith("severe_under_length:")
+
+
+def test_chapter_first_infers_low_side_from_generic_length_band_code() -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "words_per_chapter": {"min": 2500, "target": 2800, "max": 3500},
+    }
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2800
+    draft = SimpleNamespace(word_count=2087, content_md="")
+
+    reason = pipeline_services._chapter_first_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        ("OPENING_PRESSURE_THIN", "LENGTH_OUT_OF_BAND"),
+        attempt_number=1,
+    )
+
+    assert reason is not None
+    assert reason.startswith("severe_under_length:")
+
+
+def test_chapter_first_full_regeneration_stops_at_project_limit() -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "chapter_first_full_regeneration_max_attempts": 1,
+    }
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2800
+    chapter.metadata_json = {"chapter_first_full_regeneration_count": 1}
+    draft = SimpleNamespace(word_count=1400, content_md="")
+
+    reason = pipeline_services._chapter_first_full_regeneration_reason(
+        project,
+        chapter,
+        draft,
+        ("LENGTH_UNDER", "CHAPTER_LENGTH_BLOCK_LOW"),
+        attempt_number=2,
+    )
+
+    assert reason is None
 
 
 def test_chapter_first_allows_local_repair_for_minor_under_length() -> None:
@@ -1816,7 +1884,8 @@ def test_chapter_first_prompt_keeps_scene_forbidden_actions_outside_truncated_co
 
     assert "硬禁令" in user_prompt
     assert "不得写“点头的声音”" in user_prompt
-    assert user_prompt.index("硬禁令") < user_prompt.index("场景执行合同")
+    assert "场景执行合同" not in user_prompt
+    assert "【弱场景逻辑地图】" in user_prompt
 
 
 def test_chapter_first_prompt_includes_character_safety_block() -> None:
@@ -1990,7 +2059,7 @@ def test_chapter_first_prompt_enforces_scene_opening_and_front10_forbidden_terms
     assert "铜钱发烫" not in user_prompt
 
 
-def test_chapter_first_prompt_adds_total_scene_budget_guardrail() -> None:
+def test_chapter_first_prompt_treats_scene_cards_as_hidden_nodes() -> None:
     project = build_project()
     project.language = "zh-CN"
     chapter = build_chapter(project.id)
@@ -2037,14 +2106,15 @@ def test_chapter_first_prompt_adds_total_scene_budget_guardrail() -> None:
         target_word_count=chapter.target_word_count,
     )
 
-    assert "本章一共只有 4 个场景" in user_prompt
-    assert "场景目标合计约 2600 字" in user_prompt
-    assert "不是每个场景各写一章" in user_prompt
-    assert "全文建议22-32段" in user_prompt
-    assert "每场5-8段" in user_prompt
+    assert "本章包含 4 个隐藏情节节点" in user_prompt
+    assert "没有各自的字数配额" in user_prompt
+    assert "节点目标合计" not in user_prompt
+    assert "节点不是可见场景，也不要求平均篇幅" in user_prompt
+    assert "全文建议22-32段" not in user_prompt
+    assert "每场5-8段" not in user_prompt
     # hard_max for the zh band is 3500 (target 2600 → band 1800-2600-3500).
     assert "超过3500字" in user_prompt
-    assert "离场状态和 forbidden_actions 是硬边界" in user_prompt
+    assert "地图给出的既成入场、必须变化和禁用项是边界" in user_prompt
     # 去同质化 P0-1: the escalation guard is genre-neutral now (no one book's
     # horror beats baked into the universal writer prompt).
     assert "升级成未写在场景卡里的高潮/死亡/关键转折动作" in user_prompt
@@ -2571,6 +2641,40 @@ async def test_autowrite_clears_temporary_planning_throttle_pause() -> None:
         project_slug="my-story",
         operation="autowrite pipeline",
     )
+
+
+def test_focus_pause_blocks_direct_autowrite_entry() -> None:
+    project = build_project()
+    project.status = "paused"
+    project.metadata_json = {
+        "production_paused": True,
+        "production_pause_reason": "focus_user_requested_code_repair_20260718",
+        "focus_pause": {"reason": "focus_user_requested_code_repair_20260718"},
+    }
+
+    with pytest.raises(pipeline_services.ProjectRepairPauseError):
+        pipeline_services._assert_project_not_blocked_for_structural_repair(
+            project,
+            project_slug="my-story",
+            operation="autowrite pipeline",
+        )
+
+
+def test_autowrite_start_clears_conception_lifecycle_but_preserves_other_metadata() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "conception_only": True,
+        "planning_status": "awaiting_concept_approval",
+        "concept_lab_bundle": {"version": 1},
+    }
+
+    changed = pipeline_services._mark_project_autowrite_started(project)
+
+    assert changed is True
+    assert "conception_only" not in project.metadata_json
+    assert project.metadata_json["planning_status"] == "writing"
+    assert project.metadata_json["conception_approved"] is True
+    assert project.metadata_json["concept_lab_bundle"] == {"version": 1}
 
 
 @pytest.mark.asyncio
@@ -3292,6 +3396,82 @@ async def test_export_project_markdown_writes_artifact(
     assert (package_root / "story-bible" / "continuity-ledger.md").exists() is True
     assert (package_root / "story-bible" / "batch-queue.csv").exists() is True
     assert (package_root / "story-bible" / "volume-plan.csv").exists() is True
+
+
+@pytest.mark.asyncio
+async def test_publication_export_rejects_missing_promoted_chapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter_one = build_chapter(project.id)
+    chapter_two = build_chapter(project.id)
+    chapter_two.chapter_number = 2
+    promoted = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter_one.id,
+        version_no=1,
+        content_md="# 第1章\n\n正文",
+        word_count=2,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+        promotion_state="promoted",
+    )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(
+        scalar_results=[promoted, None],
+        scalars_results=[[chapter_one, chapter_two]],
+    )
+
+    with pytest.raises(export_services.ProjectExportIncompleteError) as exc_info:
+        await export_services._load_project_export_payload(session, project.slug)
+
+    assert exc_info.value.missing_chapters == (2,)
+
+
+@pytest.mark.asyncio
+async def test_export_project_closure_draft_uses_current_quality_debt_without_weakening_strict_export(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    project.language = "zh-CN"
+    chapter = build_chapter(project.id)
+    chapter.status = "revision"
+    chapter.production_state = "quality_debt"
+    chapter.metadata_json = {"chapter_quality_debt": True}
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=3,
+        content_md="# 第1章 债务稿\n\n" + ("沈砚扣住星盘，逼问守门人交出账册。" * 180),
+        word_count=2800,
+        assembled_from_scene_draft_ids=[str(uuid4())],
+        is_current=True,
+        promotion_state="candidate",
+    )
+    draft.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    settings = build_settings()
+    settings.output.base_dir = str(tmp_path / "output")
+    session = FakeSession(scalar_results=[draft], scalars_results=[[chapter]])
+
+    artifact, output_path = await export_services.export_project_closure_draft_markdown(
+        session, settings, "my-story"
+    )
+
+    assert output_path.name == "project-draft-with-quality-debt.md"
+    assert "未通过严格出版门禁" in output_path.read_text(encoding="utf-8")
+    assert artifact.export_type == "markdown_draft"
+    assert artifact.metadata_json["publication_ready"] is False
+    assert artifact.metadata_json["quality_debt_chapters"] == [1]
 
 
 @pytest.mark.asyncio
@@ -6151,6 +6331,116 @@ async def test_run_project_pipeline_materializes_and_exports(
 
 
 @pytest.mark.asyncio
+async def test_run_project_pipeline_completes_ten_chapters_in_chapter_first_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The book orchestrator must drive ten whole chapters, never scene prose."""
+
+    project = build_project()
+    project.target_chapters = 10
+    chapters = [build_chapter(project.id) for _ in range(10)]
+    for number, chapter in enumerate(chapters, start=1):
+        chapter.chapter_number = number
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "whole_chapter_logic_contract": {"chapter": number},
+        }
+    calls: list[tuple[int, bool | None]] = []
+    export_artifact = ExportArtifactModel(
+        project_id=project.id,
+        export_type="markdown",
+        source_scope="project",
+        source_id=project.id,
+        storage_uri=str(tmp_path / "output" / "project.md"),
+        checksum="b" * 64,
+        version_label="project-current",
+    )
+    export_artifact.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return chapters
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        calls.append((chapter_number, kwargs.get("chapter_first")))
+        chapter = chapters[chapter_number - 1]
+        chapter.status = "complete"
+        chapter.production_state = "ok"
+        chapter.current_word_count = 2800
+        return pipeline_services.ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=1,
+            export_artifact_id=uuid4(),
+            output_path=str(
+                tmp_path / "output" / f"chapter-{chapter_number:03d}.md"
+            ),
+            requires_human_review=False,
+        )
+
+    async def fake_export_project_markdown(session, settings, project_slug, **kwargs):
+        output_path = tmp_path / "output" / "project.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("# 十章整书\n", encoding="utf-8")
+        return export_artifact, output_path
+
+    async def fake_review_project_consistency(*args, **kwargs):
+        return (
+            SimpleNamespace(verdict="pass"),
+            SimpleNamespace(id=uuid4()),
+            SimpleNamespace(id=uuid4()),
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        pipeline_services,
+        "export_project_markdown",
+        fake_export_project_markdown,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+
+    result = await pipeline_services.run_project_pipeline(
+        FakeSession(),
+        build_settings(),
+        "my-story",
+        requested_by="mode-b-book-framework-test",
+        materialize_narrative_graph=False,
+        materialize_narrative_tree=False,
+        export_markdown=True,
+        chapter_first=True,
+        stop_on_chapter_failure=True,
+    )
+
+    assert calls == [(number, True) for number in range(1, 11)]
+    assert [item.chapter_number for item in result.chapter_results] == list(
+        range(1, 11)
+    )
+    assert all(item.approved_scene_count == 0 for item in result.chapter_results)
+    assert result.final_verdict == "pass"
+    assert result.requires_human_review is False
+    assert result.output_path is not None
+
+
+@pytest.mark.asyncio
 async def test_run_project_pipeline_blocks_project_consistency_failure_despite_accept_on_stall(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -6898,6 +7188,7 @@ async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_gen
     rewrite_tasks = [obj for obj in session.added if isinstance(obj, RewriteTaskModel)]
     assert len(rewrite_tasks) == 1
     assert rewrite_tasks[0].trigger_type == "qimao_opening_gate"
+    assert project.metadata_json.get("qimao_opening_gate_blocked") is True
     assert rewrite_tasks[0].rewrite_strategy == "qimao_opening_incident_rewrite"
     assert "这不是润色任务" in rewrite_tasks[0].instructions
     assert project.metadata_json["opening_quality_gate_blocked"] is True
@@ -7198,6 +7489,91 @@ async def test_whole_book_quality_gate_soft_continue_does_not_raise() -> None:
     assert rewrite_tasks[0].trigger_type == "whole_book_quality_gate"
 
 
+def test_clear_gate_state_removes_stale_terminal_flags_only() -> None:
+    cleaned = pipeline_services._clear_gate_state(
+        {
+            "whole_book_quality_gate_blocked": True,
+            "whole_book_quality_gate_block_codes": ["chapter_function_missing"],
+            "whole_book_quality_report": {"passed": True},
+        },
+        "whole_book_quality_gate_blocked",
+        "whole_book_quality_gate_block_codes",
+    )
+
+    assert "whole_book_quality_gate_blocked" not in cleaned
+    assert "whole_book_quality_gate_block_codes" not in cleaned
+    assert cleaned["whole_book_quality_report"] == {"passed": True}
+
+
+@pytest.mark.asyncio
+async def test_whole_book_quality_pass_clears_stale_failure_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "whole_book_quality_gate_blocked": True,
+        "whole_book_quality_gate_block_codes": ["chapter_function_missing"],
+        "whole_book_quality_gate_codes": ["chapter_function_missing"],
+    }
+    chapter = build_chapter(project.id)
+    draft_id = uuid4()
+    draft = ChapterDraftVersionModel(
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="沈姝夺回账页，却也暴露了藏身处。门外随即响起第二拨脚步声。",
+        word_count=30,
+        is_current=True,
+    )
+    draft.id = draft_id
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=chapter.chapter_number,
+        scene_results=[],
+        chapter_draft_id=draft_id,
+        chapter_draft_version_no=1,
+        export_artifact_id=None,
+        output_path=None,
+        requires_human_review=False,
+    )
+    workflow_run = WorkflowRunModel(
+        project_id=project.id,
+        workflow_type="project",
+        status="running",
+        metadata_json={"whole_book_quality_gate_blocked": True},
+    )
+    workflow_run.id = uuid4()
+    session = FakeSession(get_map={(ChapterDraftVersionModel, draft_id): draft})
+    monkeypatch.setattr(
+        pipeline_services,
+        "evaluate_whole_book_quality",
+        lambda *args, **kwargs: SimpleNamespace(passed=True),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "whole_book_quality_report_to_dict",
+        lambda report: {"passed": True, "findings": [], "ledger": []},
+    )
+
+    await pipeline_services._enforce_whole_book_quality_gate_after_chapter(
+        session,
+        project=project,
+        chapter=chapter,
+        chapter_result=chapter_result,
+        chapter_texts={},
+        workflow_run=workflow_run,
+        progress=None,
+        settings=build_settings(),
+    )
+
+    assert "whole_book_quality_gate_blocked" not in project.metadata_json
+    assert "whole_book_quality_gate_block_codes" not in project.metadata_json
+    assert "whole_book_quality_gate_blocked" not in workflow_run.metadata_json
+    assert len(session.executed) == 1
+
+
 @pytest.mark.asyncio
 async def test_qimao_opening_gate_soft_continue_does_not_raise() -> None:
     """Default soft-continue: a failed Qimao opening gate queues a rewrite task
@@ -7265,7 +7641,54 @@ async def test_qimao_opening_gate_soft_continue_does_not_raise() -> None:
     rewrite_tasks = [obj for obj in session.added if isinstance(obj, RewriteTaskModel)]
     assert len(rewrite_tasks) == 1
     assert rewrite_tasks[0].trigger_type == "qimao_opening_gate"
-    assert project.metadata_json.get("qimao_opening_gate_blocked") is True
+
+
+@pytest.mark.asyncio
+async def test_disabled_opening_gate_clears_stale_failure_state() -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "opening_quality_gate_disabled": True,
+        "opening_quality_gate_blocked": True,
+        "qimao_opening_gate_blocked": True,
+        "qimao_opening_gate_exhausted": True,
+    }
+    chapter = build_chapter(project.id)
+    workflow_run = WorkflowRunModel(
+        project_id=project.id,
+        workflow_type="project",
+        status="running",
+        metadata_json={"qimao_opening_gate_blocked": True},
+    )
+    workflow_run.id = uuid4()
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=workflow_run.id,
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=chapter.chapter_number,
+        scene_results=[],
+        chapter_draft_id=None,
+        chapter_draft_version_no=None,
+        export_artifact_id=None,
+        output_path=None,
+        requires_human_review=False,
+    )
+
+    await pipeline_services._enforce_qimao_opening_gate_after_chapter(
+        FakeSession(),
+        project=project,
+        chapter=chapter,
+        chapter_result=chapter_result,
+        opening_texts={},
+        workflow_run=workflow_run,
+        settings=build_settings(),
+        progress=None,
+    )
+
+    assert "opening_quality_gate_blocked" not in project.metadata_json
+    assert "qimao_opening_gate_blocked" not in project.metadata_json
+    assert "qimao_opening_gate_exhausted" not in project.metadata_json
+    assert "qimao_opening_gate_blocked" not in workflow_run.metadata_json
 
 
 @pytest.mark.asyncio

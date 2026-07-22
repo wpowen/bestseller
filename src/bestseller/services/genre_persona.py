@@ -104,9 +104,16 @@ def resolve_persona(
     """按题材/标签/频道解析读者画像。命中关键词最多者胜;无任何信号时用中性通用画像
     (不再硬套男频爽文,避免非爽文题材被固化成打脸逆袭模板)。"""
     blob = " ".join(str(x or "") for x in (genre, sub_genre, *tags))
-    if channel:
+    channel_norm = str(channel or "").strip()
+    # An EXPLICIT 通用/general pick means "give me the neutral reader, do NOT
+    # infer 男频 from the genre". Without this, choosing 通用 on a 玄幻 book still
+    # fell through to genre inference and got the 打脸/扮猪吃虎 persona — the very
+    # framework the user picked 通用 to avoid.
+    if channel_norm in {"通用", "general", "通用频道"}:
+        return _GENERAL
+    if channel_norm:
         for p in _PERSONAS:
-            if p.channel == channel:
+            if p.channel == channel_norm:
                 return p
     best, best_hits = _GENERAL, 0
     for p in _PERSONAS:

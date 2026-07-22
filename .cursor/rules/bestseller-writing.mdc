@@ -35,10 +35,10 @@ globs:
 
 | 检查点 | 规则 |
 |--------|------|
-| 单章字数 | ≥ 5000（中文字符；不含 frontmatter / 空白）|
+| 单章字数 | 1800–3500（目标 2600；中文字符；不含 frontmatter / 空白）|
 | 不达线 | 立刻扩写，不得提交 |
 | 扩写方式 | 补场景 / 加冲突细节 / 强化内心-动作间隙；**禁**副词灌水 / **禁**形容词堆叠 / **禁**同义复述 |
-| 单场字数 | 1 200–2 200（不得 < 800 或 > 3 000）|
+| 单场字数 | 600–1150（目标约 870）|
 
 ---
 
@@ -51,7 +51,7 @@ chapter: <N>
 title: "..."
 slug: "..."
 scenes: <N>
-word_count: <真实字数, ≥ 5000>
+word_count: <真实字数, 1800–3500>
 status: draft | approved | rework
 revision: 1
 chapter_phase: hook | setup | escalation | twist | climax | resolution_hook
@@ -189,7 +189,7 @@ entry_state（上一场 exit_state 或开场 hook）
 
 ## 13. 写完后自查三步
 
-1. **数字数**：< 5000 → 扩写；绝不提交
+1. **数字数**：< 1800 → 扩写；> 3500 → 压缩；越界绝不提交
 2. **自我 critic 打分**：5 维 (hook_strength / conflict_clarity / emotional_movement / payoff_density / voice_consistency)
    - 任一维 < 0.70 → `status: rework` + 启动 editor 角色重写（最多 2 次）
    - 第 3 次仍未达标 → `accept_on_stall` 保留最高分版本并标 `status: approved_with_debt`

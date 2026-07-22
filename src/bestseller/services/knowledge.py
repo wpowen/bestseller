@@ -289,6 +289,7 @@ async def _load_scene_knowledge_context(
     scene_number: int,
     *,
     draft_version_id: UUID | None = None,
+    allow_current_candidate: bool = False,
 ) -> tuple[ProjectModel, ChapterModel, SceneCardModel, SceneDraftVersionModel, StyleGuideModel | None]:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -314,19 +315,23 @@ async def _load_scene_knowledge_context(
             f"Scene {scene_number} was not found in chapter {chapter_number} for '{project_slug}'."
         )
 
-    draft_conditions = [
-        SceneDraftVersionModel.scene_card_id == scene.id,
-        SceneDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
-    ]
+    draft_conditions = [SceneDraftVersionModel.scene_card_id == scene.id]
+    if allow_current_candidate:
+        draft_conditions.append(SceneDraftVersionModel.is_current.is_(True))
+    else:
+        draft_conditions.append(
+            SceneDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value
+        )
     if draft_version_id is not None:
         draft_conditions.append(SceneDraftVersionModel.id == draft_version_id)
 
     draft = await session.scalar(select(SceneDraftVersionModel).where(*draft_conditions))
     if draft is None:
         requested = f" draft {draft_version_id}" if draft_version_id is not None else ""
+        required_state = "current" if allow_current_candidate else "promoted"
         raise ValueError(
-            f"Scene {scene_number} in chapter {chapter_number} does not have a promoted{requested}. "
-            "Canon and retrieval refresh require an explicitly promoted scene draft."
+            f"Scene {scene_number} in chapter {chapter_number} does not have a {required_state}{requested}. "
+            f"Canon and retrieval refresh require an explicitly {required_state} scene draft."
         )
 
     style_guide = await session.get(StyleGuideModel, project.id)
@@ -463,6 +468,7 @@ async def refresh_scene_knowledge(
     scene_number: int,
     *,
     draft_version_id: UUID | None = None,
+    allow_current_candidate: bool = False,
     workflow_run_id: UUID | None = None,
     step_run_id: UUID | None = None,
 ) -> SceneKnowledgeRefreshResult:
@@ -472,6 +478,7 @@ async def refresh_scene_knowledge(
         chapter_number,
         scene_number,
         draft_version_id=draft_version_id,
+        allow_current_candidate=allow_current_candidate,
     )
 
     fallback_summary = render_scene_summary_fallback(project, chapter, scene)

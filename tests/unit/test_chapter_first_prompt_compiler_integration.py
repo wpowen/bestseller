@@ -171,3 +171,32 @@ def test_chapter_writer_receives_explicit_protagonist_decision_block() -> None:
     assert "【主角决策落地·不得把本清单写进正文】" in user
     assert "显然更安全的选项：立刻撤离并等待支援" in user
     assert "止损/退路/后手：周禾在楼梯口拉保险绳" in user
+
+
+def test_chapter_writer_gets_one_weak_scene_map_without_scene_prose_duplication() -> None:
+    project, chapter, scene, packet = _inputs("zh-CN", 5)
+    scene.key_dialogue_beats = [
+        "周禾盯着门锁说，这扇门今天谁先碰，谁就会被留在里面。"
+    ]
+    scene.sensory_anchors = {"sound": "锁芯摩擦声像细针一样扎进耳朵"}
+    scene.metadata_json = {
+        "methodology_contract": {
+            "action_sequence": "林砚断电，周禾后退，门锁从里面转动。"
+        }
+    }
+
+    _, user = build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        packet,
+        target_word_count=2_600,
+    )
+
+    assert user.count("【弱场景逻辑地图】") == 1
+    assert "【统一生成输入包】" not in user
+    assert "谁就会被留在里面" not in user
+    assert "锁芯摩擦声像细针" not in user
+    assert "林砚断电，周禾后退" not in user
+    assert "弱场景地图只约束顺序与状态变化" in user

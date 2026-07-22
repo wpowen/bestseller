@@ -603,7 +603,13 @@ def render_writing_profile_prompt_block(
     apply (chapter ≤ 5), and skips the Prompt Pack tail.
     """
 
-    scene_mode = mode == "scene"
+    # "chapter" is the scene diet minus the per-scene beat rule: a chapter-first
+    # prompt that carries both "揉进一段连续叙事" and a "每场…尾钩" obligation is
+    # asking for the stitched three-mini-arcs shape the unit exists to remove.
+    # The obligation is not dropped — render_serial_fiction_guardrails(scope=
+    # "chapter") restates it against the whole chapter.
+    chapter_mode = mode == "chapter"
+    scene_mode = mode == "scene" or chapter_mode
     opening_phase = chapter_number is None or chapter_number <= 5
     # Pack notes default: full mode keeps them (planner/review need the pack
     # design); scene mode drops them because the scene user prompt injects the
@@ -696,8 +702,9 @@ def render_writing_profile_prompt_block(
                 f"- {profile.serialization.opening_mandate}",
                 f"- {profile.serialization.first_three_chapter_goal}",
             ]
+        if not chapter_mode:
+            lines.append(f"- {profile.serialization.scene_drive_rule}")
         lines += [
-            f"- {profile.serialization.scene_drive_rule}",
             f"- {profile.serialization.exposition_rule}",
             f"- {profile.serialization.chapter_ending_rule}",
         ]
@@ -789,8 +796,9 @@ def render_writing_profile_prompt_block(
             f"- {profile.serialization.opening_mandate}",
             f"- {profile.serialization.first_three_chapter_goal}",
         ]
+    if not chapter_mode:
+        lines.append(f"- {profile.serialization.scene_drive_rule}")
     lines += [
-        f"- {profile.serialization.scene_drive_rule}",
         f"- {profile.serialization.exposition_rule}",
         f"- {profile.serialization.chapter_ending_rule}",
     ]
@@ -806,12 +814,33 @@ def render_writing_profile_prompt_block(
     return "\n".join(lines)
 
 
-def render_serial_fiction_guardrails(profile: WritingProfile, *, language: str | None = None) -> str:
+def render_serial_fiction_guardrails(
+    profile: WritingProfile,
+    *,
+    language: str | None = None,
+    scope: str = "scene",
+) -> str:
+    """Render the serial-fiction guardrails.
+
+    ``scope="chapter"`` restates rule 3 against the whole chapter. A
+    chapter-first prompt that simultaneously demands "揉进一段连续叙事" and
+    "每场…尾钩" is asking for three mini-arcs with three mini-hooks — which is
+    precisely the stitched-together artifact the chapter-first unit exists to
+    remove. Beat obligations still apply; they just land once per chapter
+    instead of once per scene.
+    """
+
+    chapter_scope = scope == "chapter"
     if is_english_language(language):
+        beat_rule = (
+            "3. The chapter needs a goal, resistance, escalation, an information change, and a trailing hook; carry them through one continuous narrative rather than restarting the pattern per scene.\n"
+            if chapter_scope
+            else "3. Every scene needs a goal, resistance, escalation, an information change, and a trailing hook.\n"
+        )
         guardrails = (
             "1. Reveal the protagonist's differentiating edge, the core disturbance, a short-term gain, and immediate danger as early as possible.\n"
             f"2. Deliver a concrete hook within the first {profile.market.hook_deadline_words} words; do not open with encyclopedia-style background.\n"
-            "3. Every scene needs a goal, resistance, escalation, an information change, and a trailing hook.\n"
+            f"{beat_rule}"
             "4. Release setting information through action, trade-offs, conflict, failure, and consequence instead of long exposition blocks.\n"
             "5. Let the protagonist quickly display an advantage, wound, hunger, blind spot, or sharp contrast readers can remember.\n"
             "6. End every chapter with a question, threat, reveal, or incentive that compels the next click.\n"
@@ -826,10 +855,16 @@ def render_serial_fiction_guardrails(profile: WritingProfile, *, language: str |
         if pack_rules:
             guardrails = f"{guardrails}\n8. Extra Prompt Pack rules: {pack_rules}"
         return guardrails
+    zh_beat_rule = (
+        "3. 整章必须有明确目标、阻碍、升级和信息变化，并收束到章末钩子；"
+        "这些拍点在一段连续叙事里推进，不要每换一个场面就重起一遍并各留一个小尾钩。\n"
+        if chapter_scope
+        else "3. 每场必须包含明确目标、阻碍、升级、信息变化和尾钩，不要写成策划说明。\n"
+    )
     guardrails = (
         "1. 开篇要尽快亮出主角差异化优势、核心异变、短期利益与即时危险。\n"
         f"2. 在前 {profile.market.hook_deadline_words} 字内给出明确钩子，不要先铺背景百科。\n"
-        "3. 每场必须包含明确目标、阻碍、升级、信息变化和尾钩，不要写成策划说明。\n"
+        f"{zh_beat_rule}"
         "4. 设定信息只在角色行动、交易、冲突、失败和代价里释放，禁止长段解释世界观。\n"
         "5. 主角必须尽快展现能让读者记住的优势、判断力、野心、伤口或反差。\n"
         "6. 章节尾部必须留下强迫读者继续阅读的问题、威胁或利益诱因。\n"

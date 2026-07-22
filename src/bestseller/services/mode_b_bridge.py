@@ -11,8 +11,9 @@ Responsibilities:
   * Resolve the Mode B package root ``output/ai-generated/{slug}/``.
   * Verify the project + chapter + scene cards exist in the database.
   * Run a single chapter through ``run_chapter_pipeline`` (gates + scoring).
-  * Read back the authoritative word count / scores / verdict and write them
-    into ``progress.yaml`` (truth source), never trusting dialogue self-fill.
+  * Read back the authoritative word count / scores / verdict and project them
+    into ``progress.yaml`` for filesystem orchestration, never trusting dialogue
+    self-fill. PostgreSQL remains the canonical runtime source.
   * Map a blocked / requires-human-review outcome to ``REWRITE_CHAPTER``.
 
 This module is intentionally thin: it composes existing services. It does
@@ -26,13 +27,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import ChapterModel, SceneCardModel
+from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.services.chapter_word_count_truth import (
     authoritative_zh_word_count,
 )
@@ -41,10 +43,326 @@ from bestseller.services.projects import get_project_by_slug
 from bestseller.settings import AppSettings
 
 MODE_B_SUBDIR = "ai-generated"
+MODE_B_FRAMEWORK_PACKAGE = "framework-package.yaml"
 
 
 class ModeBBridgeError(RuntimeError):
     """Raised when the Mode B package cannot be driven through the pipeline."""
+
+
+@dataclass(frozen=True)
+class ModeBFrameworkPackage:
+    """Validated planning payload consumed by the production framework."""
+
+    slug: str
+    meta: dict[str, Any]
+    story_bible: dict[str, Any]
+    outline_batch: ChapterOutlineBatchInput
+    root: Path
+
+
+def _load_yaml_mapping(path: Path, *, label: str) -> dict[str, Any]:
+    if not path.is_file():
+        raise ModeBBridgeError(f"Missing {label}: {path}")
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ModeBBridgeError(f"Invalid YAML in {label} '{path}': {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ModeBBridgeError(f"{label} '{path}' must contain a YAML mapping")
+    return payload
+
+
+def _as_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _ordered_event_groups(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    group_count: int,
+) -> list[list[dict[str, Any]]]:
+    """Split mandatory events into contiguous hidden-node groups."""
+
+    ordered = sorted(
+        (dict(event) for event in events),
+        key=lambda event: int(event.get("order") or 0),
+    )
+    if not ordered:
+        return []
+    count = max(1, min(int(group_count), len(ordered)))
+    groups: list[list[dict[str, Any]]] = []
+    start = 0
+    for index in range(count):
+        remaining = len(ordered) - start
+        slots = count - index
+        take = (remaining + slots - 1) // slots
+        groups.append(ordered[start : start + take])
+        start += take
+    return groups
+
+
+def _logic_contract_payload(contract: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "entry_state": dict(contract.get("input_state") or {}),
+        "causal_chain": list(contract.get("causal_chain") or []),
+        "mandatory_events": list(contract.get("mandatory_events") or []),
+        "numeric_facts": list(contract.get("numeric_facts") or []),
+        "state_transitions": list(contract.get("state_transitions") or []),
+        "knowledge_boundaries": dict(contract.get("knowledge_boundaries") or {}),
+        "cheap_solutions": dict(contract.get("cheap_solutions") or {}),
+        "exit_state": dict(contract.get("exit_state") or {}),
+        "seam_requirement": _as_text(contract.get("seam_requirement")),
+        "chapter_end_change": _as_text(contract.get("chapter_end_change")),
+        "anti_ai_focus": _as_text(contract.get("anti_ai_focus")),
+    }
+
+
+def _chapter_from_contract(
+    contract: Mapping[str, Any],
+    *,
+    target_word_count: int,
+    hidden_node_count: int,
+    locked_identity_names: set[str] | None = None,
+) -> dict[str, Any]:
+    number = int(contract.get("chapter") or 0)
+    if number <= 0:
+        raise ModeBBridgeError("Every contract must declare a positive 'chapter' number")
+    events = [
+        event
+        for event in (contract.get("mandatory_events") or [])
+        if isinstance(event, Mapping)
+    ]
+    groups = _ordered_event_groups(events, group_count=hidden_node_count)
+    if not groups:
+        raise ModeBBridgeError(f"Chapter {number} has no mandatory_events")
+
+    input_state = dict(contract.get("input_state") or {})
+    exit_state = dict(contract.get("exit_state") or {})
+    declared_participants = [
+        str(item) for item in (input_state.get("participants") or []) if item
+    ]
+    participants = [
+        item
+        for item in declared_participants
+        if locked_identity_names is None or item in locked_identity_names
+    ]
+    causal_chain = [str(item) for item in (contract.get("causal_chain") or []) if item]
+    cheap_solutions = dict(contract.get("cheap_solutions") or {})
+    knowledge_boundaries = dict(contract.get("knowledge_boundaries") or {})
+    per_node_words = max(1, target_word_count // len(groups))
+    scenes: list[dict[str, Any]] = []
+    previous_outcome = ""
+    for index, group in enumerate(groups, start=1):
+        ids = [_as_text(event.get("id")) for event in group]
+        outcomes = [_as_text(event.get("outcome")) for event in group]
+        action_sequence = [
+            f"{event_id}：{outcome}" if outcome else event_id
+            for event_id, outcome in zip(ids, outcomes, strict=False)
+            if event_id or outcome
+        ]
+        node_entry = (
+            input_state
+            if index == 1
+            else {"carry_from_previous_node": previous_outcome}
+        )
+        node_exit = (
+            exit_state
+            if index == len(groups)
+            else {"completed_outcomes": outcomes}
+        )
+        previous_outcome = outcomes[-1] if outcomes else previous_outcome
+        scenes.append(
+            {
+                "scene_number": index,
+                "scene_type": "development",
+                "title": " / ".join(item for item in ids if item),
+                "time_label": "·".join(
+                    item
+                    for item in (
+                        _as_text(input_state.get("story_time")),
+                        _as_text(input_state.get("location")),
+                    )
+                    if item
+                ),
+                "participants": participants,
+                "purpose": {
+                    "story": "；".join(action_sequence),
+                    "emotion": _as_text(contract.get("anti_ai_focus")),
+                },
+                "entry_state": node_entry,
+                "exit_state": node_exit,
+                "action_sequence": action_sequence,
+                "information_introduced": outcomes,
+                "information_held_back": [
+                    str(item)
+                    for key, value in knowledge_boundaries.items()
+                    if "must_not" in str(key)
+                    for item in (value if isinstance(value, list) else [value])
+                    if item
+                ][:8],
+                "forbidden_actions": [
+                    f"{key}：{value}" for key, value in cheap_solutions.items()
+                ],
+                "hook_requirement": (
+                    _as_text(contract.get("chapter_end_change"))
+                    if index == len(groups)
+                    else previous_outcome
+                ),
+                "target_word_count": (
+                    target_word_count - per_node_words * (len(groups) - 1)
+                    if index == len(groups)
+                    else per_node_words
+                ),
+            }
+        )
+
+    first_cause = causal_chain[0] if causal_chain else _as_text(events[0].get("outcome"))
+    last_result = causal_chain[-1] if causal_chain else _as_text(events[-1].get("outcome"))
+    selected_effects = dict(contract.get("selected_effect_skills") or {})
+    return {
+        "chapter_number": number,
+        "title": _as_text(contract.get("title")) or f"第{number}章",
+        "chapter_goal": last_result or "完成本章状态变化",
+        "opening_pressure": first_cause,
+        "required_payoff": last_result,
+        "tail_hook": _as_text(contract.get("chapter_end_change")),
+        "opening_situation": "；".join(
+            item
+            for item in (
+                _as_text(input_state.get("story_time")),
+                _as_text(input_state.get("location")),
+                first_cause,
+            )
+            if item
+        ),
+        "main_conflict": f"{first_cause}；人物必须付出可追踪代价才能得到：{last_result}",
+        "hook_type": "concrete_state_change",
+        "hook_description": _as_text(contract.get("chapter_end_change")),
+        "target_emotion": "紧张" if "tension" in str(selected_effects) else "压力",
+        "causal_contract": {
+            "chapter_function": "chapter_first_state_transition",
+            "pressure": first_cause,
+            "protagonist_choice": "；".join(causal_chain[1:3]) or first_cause,
+            "resistance": "；".join(
+                [*causal_chain[3:-1], *[str(value) for value in cheap_solutions.values()]]
+            ),
+            "cost_or_tradeoff": "；".join(
+                str(item) for item in (contract.get("state_transitions") or [])
+            ),
+            "gain_or_reveal": "；".join(
+                _as_text(event.get("outcome")) for event in events
+            ),
+            "state_change": last_result,
+            "next_reader_desire": _as_text(contract.get("chapter_end_change"))
+            or last_result,
+        },
+        "event_cycle_contract": {
+            "ordered_event_ids": [_as_text(event.get("id")) for event in events],
+            "ordered_outcomes": [_as_text(event.get("outcome")) for event in events],
+        },
+        "chapter_event_role": "chapter_first_state_transition",
+        "information_gap_mode": "reader_tracks_pov",
+        "methodology_contract": {
+            "selected_effect_skills": selected_effects,
+            "single_primary_effect": selected_effects.get("primary"),
+            "single_secondary_effect": selected_effects.get("secondary"),
+            "anti_ai_focus": _as_text(contract.get("anti_ai_focus")),
+        },
+        "whole_chapter_logic_contract": _logic_contract_payload(contract),
+        "selected_effect_skills": selected_effects,
+        "location_refs": [_as_text(input_state.get("location"))],
+        "key_reveals": [
+            _as_text(event.get("outcome")) for event in events if event.get("outcome")
+        ],
+        "chapter_concrete_actions": [
+            _as_text(event.get("id")) for event in events if event.get("id")
+        ],
+        "chapter_information_introduced": [
+            _as_text(event.get("outcome")) for event in events if event.get("outcome")
+        ],
+        "chapter_information_held_back": [
+            str(item)
+            for key, value in knowledge_boundaries.items()
+            if "must_not" in str(key)
+            for item in (value if isinstance(value, list) else [value])
+            if item
+        ],
+        "volume_number": 1,
+        "target_word_count": target_word_count,
+        "scenes": scenes,
+    }
+
+
+def load_mode_b_framework_package(
+    slug: str,
+    *,
+    output_base_dir: str | Path = "output",
+) -> ModeBFrameworkPackage:
+    """Load story-bible inputs and convert all contracts into framework rows."""
+
+    root = resolve_mode_b_root(slug, output_base_dir=output_base_dir)
+    meta = _load_yaml_mapping(root / "meta.yaml", label="Mode B meta")
+    if _as_text(meta.get("slug")) != slug:
+        raise ModeBBridgeError(
+            f"meta.yaml slug '{meta.get('slug')}' does not match requested slug '{slug}'"
+        )
+    package = _load_yaml_mapping(
+        root / MODE_B_FRAMEWORK_PACKAGE,
+        label="Mode B framework package",
+    )
+    story_bible = package.get("story_bible")
+    if not isinstance(story_bible, dict):
+        raise ModeBBridgeError(
+            f"{MODE_B_FRAMEWORK_PACKAGE} must define a story_bible mapping"
+        )
+    contract_paths = sorted((root / "contracts").glob("ch-*.yaml"))
+    target_chapters = int(meta.get("target_chapters") or 0)
+    if len(contract_paths) != target_chapters:
+        raise ModeBBridgeError(
+            f"Expected {target_chapters} contracts for '{slug}', found {len(contract_paths)}"
+        )
+    target_words = int(((meta.get("words_per_chapter") or {}).get("target")) or 2800)
+    hidden_nodes = int(meta.get("internal_beats_per_chapter") or 3)
+    cast_spec = story_bible.get("cast_spec")
+    locked_identity_names: set[str] = set()
+    if isinstance(cast_spec, dict):
+        for key in ("protagonist", "antagonist"):
+            character = cast_spec.get(key)
+            if isinstance(character, dict) and character.get("name"):
+                locked_identity_names.add(str(character["name"]))
+        for character in cast_spec.get("supporting_cast") or []:
+            if isinstance(character, dict) and character.get("name"):
+                locked_identity_names.add(str(character["name"]))
+    chapters = [
+        _chapter_from_contract(
+            _load_yaml_mapping(path, label=f"chapter contract {path.name}"),
+            target_word_count=target_words,
+            hidden_node_count=hidden_nodes,
+            locked_identity_names=locked_identity_names or None,
+        )
+        for path in contract_paths
+    ]
+    actual_numbers = [int(chapter["chapter_number"]) for chapter in chapters]
+    expected_numbers = list(range(1, target_chapters + 1))
+    if actual_numbers != expected_numbers:
+        raise ModeBBridgeError(
+            f"Chapter contracts must be contiguous {expected_numbers}; got {actual_numbers}"
+        )
+    batch = ChapterOutlineBatchInput.model_validate(
+        {"batch_name": f"{slug}-chapter-first", "chapters": chapters}
+    )
+    return ModeBFrameworkPackage(
+        slug=slug,
+        meta=meta,
+        story_bible=dict(story_bible),
+        outline_batch=batch,
+        root=root,
+    )
 
 
 @dataclass(frozen=True)
@@ -59,6 +377,7 @@ class ModeBChapterOutcome:
     block_codes: tuple[str, ...]
     output_path: str | None
     next_state: str  # COMMIT_CHAPTER | REWRITE_CHAPTER
+    workflow_run_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -70,6 +389,7 @@ class ModeBChapterOutcome:
             "block_codes": list(self.block_codes),
             "output_path": self.output_path,
             "next_state": self.next_state,
+            "workflow_run_id": self.workflow_run_id,
         }
 
 
@@ -94,7 +414,7 @@ def sync_progress_yaml(
     output_base_dir: str | Path = "output",
     final_scores: dict[str, float] | None = None,
 ) -> Path | None:
-    """Write pipeline truth back into ``progress.yaml`` (single source).
+    """Project PostgreSQL pipeline truth into the Mode B checkpoint YAML.
 
     Updates the chapter entry with the authoritative word count, scores,
     state and the next orchestrator state. Returns the path written, or
@@ -125,6 +445,7 @@ def sync_progress_yaml(
     entry["verdict"] = outcome.verdict
     entry["block_codes"] = list(outcome.block_codes)
     entry["requires_human_review"] = outcome.requires_human_review
+    entry["runtime_workflow_run_id"] = outcome.workflow_run_id
     if final_scores:
         entry["final_scores"] = final_scores
     if outcome.passed:
@@ -134,6 +455,12 @@ def sync_progress_yaml(
     data["state"] = outcome.next_state
     data["current_chapter"] = outcome.chapter_number
     data["last_updated"] = _now_iso()
+    data["runtime_projection"] = {
+        "schema_version": 1,
+        "source": "postgresql",
+        "workflow_run_id": outcome.workflow_run_id,
+        "projected_at": data["last_updated"],
+    }
 
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
@@ -312,15 +639,19 @@ async def drive_mode_b_chapter(
         block_codes=block_codes,
         output_path=result.output_path,
         next_state=next_state,
+        workflow_run_id=str(result.workflow_run_id),
     )
 
 
 __all__ = [
     "MODE_B_SUBDIR",
+    "MODE_B_FRAMEWORK_PACKAGE",
     "ModeBBridgeError",
     "ModeBChapterOutcome",
+    "ModeBFrameworkPackage",
     "drive_mode_b_chapter",
     "enqueue_repair_item",
     "resolve_mode_b_root",
+    "load_mode_b_framework_package",
     "sync_progress_yaml",
 ]

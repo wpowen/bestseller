@@ -22,11 +22,12 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
     VolumeModel,
 )
+from bestseller.services.generation_policy import apply_new_project_generation_policy
+from bestseller.services.truth_version import maybe_bump_project_truth_version
 from bestseller.services.writing_profile import (
     build_project_metadata,
     resolve_project_create_writing_profile,
 )
-from bestseller.services.truth_version import maybe_bump_project_truth_version
 from bestseller.settings import AppSettings
 
 
@@ -394,7 +395,9 @@ async def create_project(
         target_chapters=payload.target_chapters,
         audience=payload.audience,
         project_type=payload.project_type.value,
-        metadata_json=build_project_metadata(payload, writing_profile),
+        metadata_json=apply_new_project_generation_policy(
+            build_project_metadata(payload, writing_profile)
+        ),
     )
     session.add(project)
     await session.flush()

@@ -40,6 +40,20 @@ from bestseller.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 
+class ProjectExportIncompleteError(ValueError):
+    """Raised when a publication export would silently omit chapters."""
+
+    def __init__(self, project_slug: str, missing_chapters: list[int]) -> None:
+        self.project_slug = project_slug
+        self.missing_chapters = tuple(missing_chapters)
+        joined = ", ".join(str(number) for number in missing_chapters)
+        super().__init__(
+            f"Project '{project_slug}' cannot be exported: chapters without a "
+            f"promoted draft: {joined}. Use the explicit closure-draft export "
+            "path for non-publication diagnostics."
+        )
+
+
 def _bundle_hook_domain_tokens(project) -> tuple[str, ...]:
     """Book-derived hook vocabulary for the quality bundle's hook-echo check.
 
@@ -970,9 +984,9 @@ async def _load_project_export_payload(
 ) -> tuple[ProjectModel, list[tuple[ChapterModel, ChapterDraftVersionModel]], list[int]]:
     """Load project + promoted chapter drafts.
 
-    Returns ``(project, chapter_payloads, skipped_chapter_numbers)`` where
-    *skipped_chapter_numbers* lists chapters that have no promoted draft —
-    callers can surface these as warnings instead of silently omitting them.
+    Publication exports are all-or-nothing. A chapter without a promoted draft
+    raises :class:`ProjectExportIncompleteError`; partial diagnostic material is
+    available only through the explicit closure-draft loader below.
     """
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -1002,18 +1016,72 @@ async def _load_project_export_payload(
             continue
         chapter_payloads.append((chapter, draft))
 
+    if skipped:
+        raise ProjectExportIncompleteError(project_slug, skipped)
     if not chapter_payloads:
         raise ValueError(
             f"Project '{project_slug}' does not have any current chapter drafts to export."
         )
-    if skipped:
-        logger.warning(
-            "Export for '%s' skipped %d chapter(s) without promoted draft: %s",
-            project_slug,
-            len(skipped),
-            skipped,
-        )
     return project, chapter_payloads, skipped
+
+
+async def _load_project_closure_draft_payload(
+    session: AsyncSession,
+    project_slug: str,
+) -> tuple[ProjectModel, list[tuple[ChapterModel, ChapterDraftVersionModel]]]:
+    """Load every chapter's current draft for an explicitly non-publication artifact."""
+
+    project = await get_project_by_slug(session, project_slug)
+    if project is None:
+        raise ValueError(f"Project '{project_slug}' was not found.")
+    chapters = list(
+        await session.scalars(
+            select(ChapterModel)
+            .where(ChapterModel.project_id == project.id)
+            .order_by(ChapterModel.chapter_number.asc())
+        )
+    )
+    if not chapters:
+        raise ValueError(f"Project '{project_slug}' does not have any chapters to export.")
+
+    payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] = []
+    missing: list[int] = []
+    for chapter in chapters:
+        draft = await session.scalar(
+            select(ChapterDraftVersionModel).where(
+                ChapterDraftVersionModel.chapter_id == chapter.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+        )
+        if draft is None:
+            missing.append(int(chapter.chapter_number))
+        else:
+            payloads.append((chapter, draft))
+    if missing:
+        raise ValueError(
+            f"Project '{project_slug}' is not draft-complete; missing current drafts for "
+            f"chapters {missing}."
+        )
+    return project, payloads
+
+
+def _closure_draft_blockers(
+    chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+    *,
+    language: str | None,
+) -> list[str]:
+    """Block only corrupt/incomplete artifacts; quality debt remains a warning."""
+
+    blockers: list[str] = []
+    for chapter, draft in chapter_payloads:
+        number = int(chapter.chapter_number)
+        if not list(getattr(draft, "assembled_from_scene_draft_ids", None) or []):
+            blockers.append(f"第{number}章当前稿缺少场景来源记录")
+        for issue in collect_unfinished_artifact_issues(
+            draft.content_md or "", language=language
+        ):
+            blockers.append(f"第{number}章：{issue}")
+    return blockers
 
 
 async def load_project_export_content(
@@ -1623,6 +1691,69 @@ async def export_project_markdown(
         preflight_warnings=preflight_warnings,
         language=project.language,
         word_count=build_markdown_reading_stats(content_md)["word_count"],
+    )
+    session.add(artifact)
+    await session.flush()
+    return artifact, output_path
+
+
+async def export_project_closure_draft_markdown(
+    session: AsyncSession,
+    settings: AppSettings,
+    project_slug: str,
+    *,
+    created_by_run_id: UUID | None = None,
+) -> tuple[ExportArtifactModel, Path]:
+    """Export a complete readable manuscript without claiming publication readiness.
+
+    Strict ``export_project_markdown`` remains promoted-only. This separate
+    artifact is the honest closure path for a full manuscript whose bounded
+    rewrites ended with accepted quality debt.
+    """
+
+    project, chapter_payloads = await _load_project_closure_draft_payload(
+        session, project_slug
+    )
+    blockers = _closure_draft_blockers(chapter_payloads, language=project.language)
+    if blockers:
+        raise ValueError("; ".join(blockers))
+
+    quality_debt_chapters = [
+        int(chapter.chapter_number)
+        for chapter, _draft in chapter_payloads
+        if (
+            bool((chapter.metadata_json or {}).get("chapter_quality_debt"))
+            or str(chapter.production_state or "").lower() != "ok"
+        )
+    ]
+    manuscript = build_project_markdown(project, chapter_payloads)
+    disclaimer = (
+        "> **状态：整书草稿已闭环，但未通过严格出版门禁。** 该文件包含已接受的质量债，"
+        "仅用于通读、编辑和后续定稿，不代表可直接发布。\n\n"
+    )
+    content_md = disclaimer + manuscript
+    package_root = Path(settings.output.base_dir) / project.slug
+    output_path = package_root / "project-draft-with-quality-debt.md"
+    storage_uri, checksum = write_markdown_output(output_path, content_md)
+    artifact = create_export_artifact(
+        project_id=project.id,
+        export_type="markdown_draft",
+        source_scope="project",
+        source_id=project.id,
+        storage_uri=storage_uri,
+        checksum=checksum,
+        version_label="project-draft-quality-debt",
+        created_by_run_id=created_by_run_id,
+        metadata_json={
+            "closure_state": "draft_complete_with_quality_debt",
+            "publication_ready": False,
+            "chapter_count": len(chapter_payloads),
+            "quality_debt_chapters": quality_debt_chapters,
+            "warnings": [
+                "整书草稿已闭环，但未通过严格出版门禁",
+                f"含质量债章节：{quality_debt_chapters}",
+            ],
+        },
     )
     session.add(artifact)
     await session.flush()

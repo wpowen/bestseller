@@ -1,7 +1,7 @@
 # Template · `progress.yaml`
 
 > 位置：`output/ai-generated/{novel-slug}/progress.yaml`
-> 用途：orchestrator 的**单一事实源**。每完成一步必须回写。支持断点续跑。
+> 用途：orchestrator 的文件编排检查点/投影。PostgreSQL 是运行时事实源；每完成一步必须把 `workflow_run_id` 和门禁结果回写，支持断点续跑。
 > 语义：详见 [../orchestration.md § 3](../orchestration.md)。
 
 ---

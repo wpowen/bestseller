@@ -483,6 +483,15 @@
       "why": "结论先行·「不是X。是Y」句号/跨句变体(不是发芽。是皮壳先裂开)：先否定再下定义。直接写Y那个现象，别由叙述者纠正"
     },
     {
+      "id": "cn.conclusion.not_but.005",
+      "pattern": "(?:其实)?没什么[^。！？，,\\n]{1,16}[，,]是[^。！？\\n]",
+      "severity": "warn",
+      "category": "negated_definition",
+      "suggestions": [],
+      "remove_sentence_on_block": false,
+      "why": "结论先行·「其实没什么X，是Y」先否定再翻面，替读者命名情绪。删掉自我解释，让处理物件的选择与后果承担情绪"
+    },
+    {
       "id": "cn.info.backstory.001",
       "pattern": "那是[^。！？\\n]{0,16}(?:后遗症|的手段|惯用)",
       "severity": "warn",

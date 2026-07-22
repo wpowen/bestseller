@@ -27,6 +27,11 @@ def test_not_x_period_shi_y_variant_fires() -> None:
     assert "negated_definition" in _cats("那点光浮上来。不是墨。是光阴。")
 
 
+def test_mei_shenme_shi_y_self_explanation_fires() -> None:
+    text = "她摸了摸玉佩。其实没什么舍不得，是已经舍不得了。"
+    assert "negated_definition" in _cats(text)
+
+
 def test_yu_qi_shuo_fires() -> None:
     text = "与其说她在劝他，不如说她在替自己开脱。"
     assert "negated_definition" in _cats(text)

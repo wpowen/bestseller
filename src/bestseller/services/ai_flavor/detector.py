@@ -983,6 +983,13 @@ _VERB_TIC_LEXICON_ZH: tuple[str, ...] = (
     # Any one of them is fine; the tic is FREQUENCY (真机: 爬×124 / 烫×101 /
     # 钻×83 across 10 chapters — an order of magnitude above human prose).
     "撞", "烫", "钻", "咬", "爬", "砸", "碾", "蹿", "拧", "洇", "攥", "掐",
+    # Added 2026-07-21 from a live chapter-first run: 压 and 抽 were the two
+    # most-abused verbs in shipped prose (压×50 / 抽×39 over 8 chapters, one
+    # chapter carrying 压×11) yet both were absent here, so the gate scored
+    # those chapters 4-16 and passed them. A lexicon that misses the top
+    # offenders makes the whole tic detector look clean while the prose reads
+    # mechanical.
+    "压", "抽",
 )
 
 _MEASURE_TIC_RE = re.compile(r"半寸|一寸|三寸|半尺|三分|半息|半分")

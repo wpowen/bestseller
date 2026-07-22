@@ -108,6 +108,16 @@ _PLAYBOOKS: dict[str, QualityRepairPlaybook] = {
         instruction="补足方法论场景契约里的招牌意象。每个 scene 的 signature_image 必须被写成可见物件、动作、声响、光影或身体反应，不得只复述抽象主题。",
         acceptance="所有关键场景都有可被读者看见的标志性画面，且画面推动冲突或揭示新信息。",
     ),
+    "SCENE_CARD_PROSE_COPIED": QualityRepairPlaybook(
+        code="SCENE_CARD_PROSE_COPIED",
+        scope="paragraph",
+        instruction=(
+            "正文照抄或轻度改写了场景卡中的对白、感官描写、动作脚本或改写提示。"
+            "保留节点事实、人物选择与状态结果，整段换成新的现场动作、对白和后果；"
+            "禁止沿用原句结构。"
+        ),
+        acceptance="正文不再与场景卡写作素材形成长句级近似，但节点事实、顺序和状态变化保持不变。",
+    ),
     "OPENING_PRESSURE_THIN": QualityRepairPlaybook(
         code="OPENING_PRESSURE_THIN",
         scope="paragraph",

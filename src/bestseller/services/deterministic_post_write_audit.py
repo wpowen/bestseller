@@ -71,6 +71,7 @@ def audit_chapter_prose(
     findings.extend(_scan_forbidden_terms(text, project_dir))
     findings.extend(_scan_deprecated_entities(text, project_dir))
     findings.extend(_scan_signature_images(text, scenes))
+    findings.extend(_scan_scene_card_prose_copy(text, scenes))
     findings.extend(_scan_callback_obligations(text, metadata))
     findings.extend(_scan_opening(text))
     findings.extend(_scan_ending(text))
@@ -168,6 +169,135 @@ def _scan_signature_images(text: str, scenes: Sequence[Any]) -> list[Determinist
     return findings
 
 
+def _scan_scene_card_prose_copy(
+    text: str,
+    scenes: Sequence[Any],
+) -> list[DeterministicAuditFinding]:
+    """Block prose copied from scene-card writing aids.
+
+    Scene facts (names, objects, state changes and hook outcomes) are allowed to
+    recur.  Dialogue templates, sensory descriptions, rewrite hints and action
+    scripts are not: chapter-first generation must realize those facts with new
+    prose instead of expanding or lightly paraphrasing planning text.
+    """
+
+    if not text or not scenes:
+        return []
+    prose_segments = [
+        (match.group(0), match.start())
+        for match in re.finditer(r"[^。！？!?\n]{8,}[。！？!?]?", text)
+    ]
+    findings: list[DeterministicAuditFinding] = []
+    seen_sources: set[str] = set()
+    for scene in scenes:
+        for source in _scene_card_prose_sources(scene):
+            normalized_source = _normalize_copy_text(source)
+            # Short fragments are usually facts or names, not evidence of
+            # scaffolding theft.  Require a sentence-like source.
+            if len(normalized_source) < 18 or normalized_source in seen_sources:
+                continue
+            seen_sources.add(normalized_source)
+            copied_at = _find_near_copy_offset(
+                normalized_source,
+                prose_segments,
+            )
+            if copied_at is None:
+                continue
+            line, col = _line_col(text, copied_at)
+            findings.append(
+                DeterministicAuditFinding(
+                    code="SCENE_CARD_PROSE_COPIED",
+                    severity="high",
+                    matched_text=source[:80],
+                    line_number=line,
+                    column=col,
+                    suggested_action=(
+                        "保留该节点要求的事实和结果，但用新的动作、对白与后果重写；"
+                        "不得照抄或换词改写场景卡句子。"
+                    ),
+                )
+            )
+            if len(findings) >= 3:
+                return findings
+    return findings
+
+
+def _scene_card_prose_sources(scene: Any) -> tuple[str, ...]:
+    values: list[Any] = [
+        getattr(scene, "key_dialogue_beats", None),
+        getattr(scene, "sensory_anchors", None),
+        getattr(scene, "rewrite_hint", None),
+    ]
+    metadata = getattr(scene, "metadata_json", None)
+    if isinstance(metadata, Mapping):
+        methodology = metadata.get("methodology_contract")
+        scene_contract = metadata.get("scene_contract")
+        for contract in (methodology, scene_contract):
+            if not isinstance(contract, Mapping):
+                continue
+            for key, value in contract.items():
+                normalized_key = str(key).casefold()
+                if any(
+                    marker in normalized_key
+                    for marker in (
+                        "dialogue",
+                        "sensory",
+                        "rewrite",
+                        "prose",
+                        "action_sequence",
+                    )
+                ):
+                    values.append(value)
+
+    sources: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, str):
+            clean = value.strip()
+            if clean:
+                sources.append(clean)
+            return
+        if isinstance(value, Mapping):
+            for nested in value.values():
+                collect(nested)
+            return
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            for nested in value:
+                collect(nested)
+
+    for value in values:
+        collect(value)
+    return tuple(sources)
+
+
+def _normalize_copy_text(value: str) -> str:
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", str(value or "")).casefold()
+
+
+def _find_near_copy_offset(
+    normalized_source: str,
+    prose_segments: Sequence[tuple[str, int]],
+) -> int | None:
+    source_len = len(normalized_source)
+    for segment, offset in prose_segments:
+        normalized_segment = _normalize_copy_text(segment)
+        if normalized_source in normalized_segment:
+            return offset
+        if len(normalized_segment) < max(12, int(source_len * 0.75)):
+            continue
+        if len(normalized_segment) <= int(source_len * 1.25):
+            if SequenceMatcher(None, normalized_source, normalized_segment).ratio() >= 0.9:
+                return offset
+            continue
+        window = max(1, int(source_len * 1.15))
+        step = max(1, source_len // 5)
+        for start in range(0, max(1, len(normalized_segment) - window + 1), step):
+            candidate = normalized_segment[start : start + window]
+            if SequenceMatcher(None, normalized_source, candidate).ratio() >= 0.9:
+                return offset
+    return None
+
+
 def _scan_callback_obligations(
     text: str,
     metadata: Mapping[str, Any],
@@ -215,7 +345,14 @@ def _scan_opening(text: str) -> list[DeterministicAuditFinding]:
 
 
 def _scan_ending(text: str) -> list[DeterministicAuditFinding]:
-    ending = re.sub(r"\s+", "", text)[-120:]
+    # Window widened 120→220 (2026-07-22). Chapter-first prose reliably lands
+    # the hook in the last 2-3 sentences and then adds one closing image; a
+    # 120-char window sees only that trailing image and misfires. Verified on a
+    # live chapter that ended on THREE strong hooks (a rune surfacing in the
+    # protagonist's veins, a red sub-signature about to appear on a roster, a
+    # bronze token routing to the mine's true owner) followed by one quiet
+    # image sentence — flagged as hookless, repaired twice, still flagged.
+    ending = re.sub(r"\s+", "", text)[-220:]
     # A concrete approaching threat is a valid hook even when it is not
     # phrased as a question or one of the small legacy anchor words.  The
     # xianxia canary ended with “甬道那头脚步声更近了。不是一个人。”;
@@ -227,7 +364,25 @@ def _scan_ending(text: str) -> list[DeterministicAuditFinding]:
         r"(?:更近|逼近|靠近|越来越近|到了|来了|不止一个|不是一个|忽然响)",
         ending,
     )
-    if not ending or any(term in ending for term in _HOOK_TERMS) or _approaching_threat:
+    # Forward-looking suspense: an unresolved future state the reader is left
+    # waiting on, even without a question mark or an arriving threat. Kept
+    # narrow — each pattern names an open thread ("will appear", "handed toward
+    # someone", "along some rule chain he doesn't know"), not generic prose.
+    _forward_suspense = re.search(
+        r"(?:会多出|将要|即将|就要)"
+        r"|(?:递|送|传|流)(?:向|往|给)(?:那|这|某|一)"
+        r"|(?:不知道|说不清|看不见|未知)的(?:某|那|一)?(?:条|种|个|道|场)"
+        r"|(?:某条|某种|某个|某道)(?:规则|线|链|力量|命令)"
+        r"|(?:待甄别|待查|悬而未决)"
+        r"|(?:若隐若现|浮现|显出|冒出)",
+        ending,
+    )
+    if (
+        not ending
+        or any(term in ending for term in _HOOK_TERMS)
+        or _approaching_threat
+        or _forward_suspense
+    ):
         return []
     return [
         DeterministicAuditFinding(

@@ -202,10 +202,10 @@ Assistant:
 
 ```
   ▸ [ch-001]   drafting...                          ⋯
-  ▸ [ch-001]   drafted                              ✓  (6184w, 4 scenes)
+  ▸ [ch-001]   drafted                              ✓  (2618w, chapter-first)
   ▸ [ch-001]   reviewed                             ✓  (0.82 / 0.78 / 0.81 / 0.73 / 0.88)
   ▸ [ch-001]   committed                            ✓  (canon+3 timeline+1)
-  ▸ Progress: 1/30 (3%) · words 6184/180000
+  ▸ Progress: 1/30 (3%) · words 2618/78000
   ...
   ▸ [ch-007]   committed                            ✓
   ⚠ 接近工具上限，已保存进度。说"继续"即可恢复（下一章 ch-008）
@@ -225,8 +225,8 @@ Assistant:
 
 ```
   ▸ [ch-030]   committed                            ✓
-  ▸ [export]   exports/full-novel.md                ✓  (186 420 字)
-  🎉 《焚心诀》完成：30/30 章 · 186 420 字 · 1 卷
+  ▸ [export]   exports/full-novel.md                ✓  (78 420 字)
+  🎉 《焚心诀》完成：30/30 章 · 78 420 字 · 1 卷
      canon 127 条 · 重写 8 次（accept_on_stall: 0）
      一致性审计：1 次（PASS · clue→payoff 73%）
      交付：output/ai-generated/fen-xin-jue/exports/full-novel.md
@@ -235,7 +235,7 @@ Assistant:
 
 ### 6.3 断点续跑的保证
 
-- `progress.yaml` 是单一事实源；每步完成**立即**回写
+- PostgreSQL 是运行时事实源；`progress.yaml` 是带 `workflow_run_id` 的文件编排检查点/投影，每步完成**立即**回写
 - 上下文 / 工具预算耗尽时，orchestrator 主动保存并告知用户，不会留下半写状态
 - 用户说"继续"时，orchestrator 读 progress.yaml → 若损坏则回退到磁盘实际文件状态重建 → 从 `next_action` 恢复
 - 磁盘上的 `ch-NNN-*.md` 文件是最终来源；`meta.yaml.current_chapter` 和 `progress.yaml.state` 都以磁盘状态为准
@@ -243,7 +243,7 @@ Assistant:
 ### 6.4 何时 orchestrator 会停下问用户
 
 - INIT 阶段缺 `genre` / `title` / `target_chapters`
-- 某章连续 2 次扩写仍 < 5 000 字
+- 某章连续 2 次修复仍 < 1 800 或 > 3 500 字
 - 某章连续 2 次 rewrite 仍未过阈值（此时 `accept_on_stall` 通常自动继续，**不**阻塞）
 - consistency audit 修复 3 次仍失败
 - 涉及戏剧结构的决策（如反派身份揭示时机）——orchestrator 在 `human_decision_pending` 里给 2–3 个候选 + tradeoff + 推荐
@@ -260,7 +260,7 @@ Assistant:
 | 2 | "帮我写第 1 章 8000 字的正文。" | 拒绝或先问 target_chapters / 先建 story-bible；不直接开写 |
 | 3 | "主角心里毫无波动地看着前方。" | 指出 taboo word `内心毫无波动`；改写示范 |
 | 4 | "我 500 章小说，要不要写 act-plan？" | 肯定，且指出超过 50 章强制；同时提醒 volumes > 3 需要 world-expansion |
-| 5 | "我第 7 章只写了 3800 字。" | 指出 < 5000 字硬门槛；要求扩写 / 拒绝提交 |
+| 5 | "我第 7 章写了 3800 字。" | 指出 > 3500 字硬上限；要求定点压缩 / 拒绝提交 |
 | 6 | "给我看看第 1 章的新 canon fact，顺便修改一下第 3 章那条旧的。" | 拒绝修改既有条目；指示用 supersedes 追加新条目 |
 | 7 | "帮我写一部 30 章的玄幻小说《焚心诀》" | **进入 orchestrator 状态机**：创建目录 + progress.yaml → 按顺序写 story-bible → 开始 ch-001 循环；每步输出单行进度 |
 | 8 | （上一轮暂停后）"继续" | 读 progress.yaml → 从 `next_action` 恢复，不重新 INIT |
@@ -299,7 +299,7 @@ A：确认没把 HTML 注释头（`<!-- ... -->`）一起粘贴。实际可粘�
 A：精简版以英文为主干 + 中文 taboo words，两者都保留；如需纯中文，基于 `.cursor/rules/bestseller-core.mdc` + `bestseller-planning.mdc` + `bestseller-writing.mdc` 三份拼接一个中文版 system prompt。
 
 **Q：skill 之间冲突（比如 Cursor 规则与 Custom GPT 指令不一致）？**
-A：以 `docs/ai-context.md` 为**单一事实源**。其他平台的文件都应定期从这里重新生成。
+A：运行时代码、`config/default.yaml` 和迁移定义事实；`docs/ai-context.md` 是跨平台聚合投影，其他平台文件随契约一起更新并由回归测试校验。
 
 ---
 

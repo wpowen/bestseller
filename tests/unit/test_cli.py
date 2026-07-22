@@ -378,7 +378,13 @@ def test_ui_serve_command(monkeypatch: pytest.MonkeyPatch) -> None:
     }
 
 
-def test_config_show_reads_custom_file(tmp_path: Path) -> None:
+def test_config_show_reads_custom_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # config-show must read the URL from the --config-path file. The conftest
+    # guardrail exempts BESTSELLER__DATABASE__URL from stripping so the suite
+    # can target a test DB; clear it here so the config file is what loads.
+    monkeypatch.delenv("BESTSELLER__DATABASE__URL", raising=False)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         """

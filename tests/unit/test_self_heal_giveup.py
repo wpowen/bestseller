@@ -1,10 +1,4 @@
-"""Tests for the self-heal no-progress escalation threshold.
-
-Covers the pure helper ``_compute_heal_progress_state`` and the
-``_project_self_heal_abandoned`` compatibility predicate. Reaching the
-threshold must no longer create a human-review stop; it should only mark
-the project for a stronger machine repair pass.
-"""
+"""Tests for bounded, fingerprint-aware self-heal convergence."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -39,20 +33,20 @@ class TestComputeHealProgressState:
         assert meta["self_heal_no_progress_attempts"] == 0
         assert meta["self_heal_last_chapters_total"] == 5
 
-    def test_reaches_threshold_marks_machine_escalation_not_abandoned(self) -> None:
+    def test_reaches_threshold_stops_identical_machine_repair(self) -> None:
         meta: dict = {}
         abandoned = False
         # First scan is a baseline (attempts=0); each subsequent no-progress
         # scan increments. So it takes MAX+1 scans to reach the threshold.
         for _ in range(MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS + 1):
             meta, abandoned = _compute_heal_progress_state(meta, chapters_total=0)
-        assert abandoned is False
-        assert "self_heal_abandoned" not in meta
+        assert abandoned is True
+        assert meta["self_heal_abandoned"] is True
         assert meta["self_heal_no_progress_escalated"] is True
         assert meta["self_heal_repair_strategy"] == "deep_machine_repair"
-        assert meta["production_pause_reason"] == "self_heal_no_progress_machine_repair"
+        assert meta["production_pause_reason"] == "self_heal_no_actionable_progress"
         assert meta["requires_machine_repair"] is True
-        assert meta["requires_human_review"] is False
+        assert meta["requires_human_review"] is True
         assert "self_heal_no_progress_escalated_at" in meta
 
     def test_below_threshold_not_abandoned(self) -> None:
@@ -81,9 +75,26 @@ class TestComputeHealProgressState:
         # first call progresses (last is None) → attempts 0, not abandoned
         assert abandoned is False
         meta, abandoned = _compute_heal_progress_state(meta, chapters_total=0, max_attempts=1)
-        assert abandoned is False
+        assert abandoned is True
         assert meta["self_heal_no_progress_escalated"] is True
-        assert meta["requires_human_review"] is False
+        assert meta["requires_human_review"] is True
+
+    def test_changed_blocker_fingerprint_resets_stall_counter(self) -> None:
+        meta, _ = _compute_heal_progress_state(
+            {}, chapters_total=50, progress_fingerprint="repair:22,28"
+        )
+        meta, _ = _compute_heal_progress_state(
+            meta, chapters_total=50, progress_fingerprint="repair:22,28"
+        )
+        assert meta["self_heal_no_progress_attempts"] == 1
+
+        meta, abandoned = _compute_heal_progress_state(
+            meta, chapters_total=50, progress_fingerprint="repair:40"
+        )
+
+        assert abandoned is False
+        assert meta["self_heal_no_progress_attempts"] == 0
+        assert meta["self_heal_last_progress_fingerprint"] == "repair:40"
 
     def test_does_not_mutate_input_metadata(self) -> None:
         original = {"self_heal_last_chapters_total": 0, "other_key": "keep"}
@@ -113,9 +124,18 @@ class TestComputeHealProgressState:
 
 @pytest.mark.unit
 class TestProjectSelfHealAbandoned:
-    def test_legacy_abandoned_is_not_a_runtime_stop(self) -> None:
+    def test_legacy_abandoned_without_fingerprint_is_not_a_runtime_stop(self) -> None:
         p = SimpleNamespace(metadata_json={"self_heal_abandoned": True})
         assert _project_self_heal_abandoned(p) is False
+
+    def test_current_fingerprinted_abandonment_is_a_runtime_stop(self) -> None:
+        p = SimpleNamespace(
+            metadata_json={
+                "self_heal_abandoned": True,
+                "self_heal_abandoned_progress_fingerprint": "repair:22,28",
+            }
+        )
+        assert _project_self_heal_abandoned(p) is True
 
     def test_abandoned_false_when_absent(self) -> None:
         p = SimpleNamespace(metadata_json={})

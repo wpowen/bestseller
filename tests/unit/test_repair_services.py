@@ -240,6 +240,10 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
     tmp_path: Path,
 ) -> None:
     project = build_project()
+    project.metadata_json = {
+        "chapter_first_generation": True,
+        "generation_mode": "chapter_first_single_pass",
+    }
     chapter1 = build_chapter(project.id, 1)
     chapter2 = build_chapter(project.id, 2)
     chapter3 = build_chapter(project.id, 3)
@@ -294,6 +298,8 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
             },
         )()
 
+    chapter_first_flags: list[bool] = []
+
     async def fake_run_chapter_pipeline(
         session,
         settings,
@@ -301,6 +307,7 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
         chapter_number: int,
         **kwargs,
     ):
+        chapter_first_flags.append(bool(kwargs.get("chapter_first")))
         chapter_id = {1: chapter1.id, 2: chapter2.id, 3: chapter3.id}[chapter_number]
         return ChapterPipelineResult(
             workflow_run_id=uuid4(),
@@ -366,6 +373,7 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
     assert result.requires_human_review is False
     assert task_scene.status == "cancelled"
     assert task_chapter.status == "cancelled"
+    assert chapter_first_flags == [True, True, True]
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) == 8
@@ -888,22 +896,19 @@ async def test_run_project_repair_handles_no_pending_rewrites(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
+    project.status = "paused"
 
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_review_project_consistency(session, settings, project_slug: str, **kwargs):
-        return (
-            type("ReviewResultStub", (), {"verdict": "pass"})(),
-            type("ReportStub", (), {"id": uuid4()})(),
-            type("QualityStub", (), {"id": uuid4()})(),
-        )
+    async def fail_review_project_consistency(*args, **kwargs):
+        raise AssertionError("no-actionable repair must not run a project review")
 
     monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
         repair_services,
         "review_project_consistency",
-        fake_review_project_consistency,
+        fail_review_project_consistency,
     )
 
     session = FakeSession(
@@ -922,8 +927,13 @@ async def test_run_project_repair_handles_no_pending_rewrites(
     assert result.superseded_task_count == 0
     assert result.processed_chapters == []
     assert result.export_artifact_id is None
-    assert result.final_verdict == "pass"
+    assert result.final_verdict == "no_actionable_repair"
     assert result.requires_human_review is False
+    workflow_run = next(obj for obj in session.added if isinstance(obj, WorkflowRunModel))
+    assert workflow_run.status == "completed"
+    assert workflow_run.current_step == "completed_no_actionable_repair"
+    assert workflow_run.metadata_json["no_actionable_repair"] is True
+    assert project.status == "paused"
 
 
 @pytest.mark.asyncio

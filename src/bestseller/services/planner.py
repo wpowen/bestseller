@@ -8914,6 +8914,52 @@ def _planner_prompt_pack(project: ProjectModel):
     )
 
 
+def _planner_channel_key(project: ProjectModel) -> str | None:
+    """The male/female/general channel the user picked, read the way the pack
+    is read (from the frozen genre-intent contract).
+
+    Conception already differentiates by channel; the outline did not read it at
+    all (a real book, 2026-07-22, came out channel-neutral in planning despite a
+    male-channel selection). Mirrors ``_planner_prompt_pack``'s contract access.
+    """
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    contract = metadata.get("genre_intent_contract")
+    if isinstance(contract, dict):
+        channel = contract.get("channel_key") or contract.get("audience_orientation")
+        if channel:
+            return str(channel)
+    return str(getattr(project, "audience", "") or "") or None
+
+
+def _planner_reader_persona_block(project: ProjectModel) -> str:
+    """Structural reader-persona anchor for outline prompts.
+
+    Uses the same ``resolve_persona`` the concept layer uses, so the outline is
+    written for the same reader the concept was. Returns "" when no channel
+    signal resolves to a channel-specific persona (general reader), so callers
+    concatenate blindly.
+    """
+
+    from bestseller.services.genre_persona import resolve_persona
+
+    channel = _planner_channel_key(project)
+    persona = resolve_persona(
+        project.genre,
+        project.sub_genre,
+        channel=channel if channel in {"male", "female", "男频", "女频"} else None,
+    )
+    if persona.channel not in {"男频", "女频"}:
+        return ""
+    return (
+        f"【目标读者画像·大纲写给谁】{persona.channel}：{persona.who}。"
+        f"他的知识面：{persona.knowledge}。他要的爽点：{persona.fantasy}。"
+        f"他的雷点(大纲必须避开)：{'、'.join(persona.turnoffs)}。"
+        f"钩子公式：{persona.hook_formula}。"
+        "——每卷走向、每章目标和爽点节拍都要为这个读者服务，不要写成中性通用大纲。\n"
+    )
+
+
 def _planner_fragment_or_ref(
     prompt_pack: Any,
     project: ProjectModel,
@@ -14286,15 +14332,61 @@ def _concept_lab_contract_block(project: ProjectModel, *, language: str) -> str:
 
 
 def _story_enhancer_contract_line(project: ProjectModel, language: str) -> str:
-    """Book-level story-enhancer hard contract (empty unless the user checked
-    capabilities at creation). Injected into every volume/chapter outline prompt
-    alongside the concept-lab contract."""
+    """Per-book outline-prompt injection carried by every volume/chapter prompt.
+
+    Two book-level signals ride here because all six outline prompts already
+    inject this one line:
+    1. The story-enhancer hard contract (empty unless the user checked
+       capabilities at creation).
+    2. The reader-channel persona (男频/女频). The outline used to ignore the
+       channel entirely — a real 2026-07-22 book selected 男频 yet planned a
+       channel-neutral outline. The persona is zh-only, so English books get
+       just the enhancer block.
+    """
 
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
     block = render_story_enhancer_contract_block(
         resolve_story_enhancers(metadata), language=language
     )
-    return f"\n{block}\n" if block else ""
+    persona = (
+        ""
+        if str(language or "").lower().startswith("en")
+        else _planner_reader_persona_block(project)
+    )
+    scale = _planner_narrative_scale_block(project, language)
+    parts = [p for p in (block, persona.strip(), scale.strip()) if p]
+    return ("\n" + "\n".join(parts) + "\n") if parts else ""
+
+
+def _planner_narrative_scale_block(project: ProjectModel, language: str) -> str:
+    """Make 宏大长篇 actually change the outline.
+
+    ``narrative_scale`` was collected, frozen into the contract, and read into a
+    single conception JSON field with no instruction — planner never read it, so
+    "宏大长篇" vs "常规连载" changed nothing (not even chapter count). Only the
+    non-default (epic) needs an instruction; serial is the baseline.
+    """
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    contract = metadata.get("genre_intent_contract")
+    scale = (
+        str(contract.get("narrative_scale") or "").strip().lower()
+        if isinstance(contract, dict)
+        else ""
+    )
+    if scale != "epic":
+        return ""
+    if str(language or "").lower().startswith("en"):
+        return (
+            "[Narrative scale: EPIC] Plan for breadth — multiple escalating "
+            "arenas/factions, a widening world and rising stakes across volumes; "
+            "do not resolve the whole world inside one locale.\n"
+        )
+    return (
+        "【叙事规模·宏大长篇】按大格局规划：世界与势力要一层层打开（多个逐级升级的舞台/"
+        "阵营/地图），主线目标和对手体量跨卷持续放大，不要把整个世界收束在一城一隅里。"
+        "但每一卷内部仍要有可独立兑现的小目标，不能只铺不爽。\n"
+    )
 
 
 def _concept_methodology_block(project: ProjectModel, *, language: str) -> str:

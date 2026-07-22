@@ -598,6 +598,7 @@ class PipelineSettings(BaseModel):
             "HOOK_ECHO_LOW",
             "SIGNATURE_SCENE_MISSING",
             "SIGNATURE_IMAGE_MISSING",
+            "SCENE_CARD_PROSE_COPIED",
             "OPENING_PRESSURE_THIN",
             "ENDING_HOOK_MISSING",
             "PARAGRAPH_DUPLICATE_PARAPHRASE",
@@ -620,7 +621,20 @@ class PipelineSettings(BaseModel):
     # scene cards. It is intended for high-retention openings and debugging the
     # real framework output without manual prose intervention.
     enable_chapter_first_generation: bool = False
+    # Per-book override: ProjectModel.metadata["generation_unit_mode"] =
+    # "chapter" | "scene" outranks this flag, so one book can run chapter-first
+    # without flipping the default for every in-flight book.
     chapter_first_max_chapter_number: int = 3
+    # How much instruction the prose writer receives. "full" = the historical
+    # 31-block prompt; "lean" = story material + core discipline only, with the
+    # acceptance/planning blocks left to the post-generation gates that already
+    # own them. Per-book override: metadata["prose_prompt_profile"].
+    # Evidence + rationale: services/prose_prompt_profile.py.
+    prose_prompt_profile: str = "full"
+    # Advisory intra-chapter contradiction critic for the chapter-first path.
+    # One extra critic call per chapter; chapter-first already spends ~1/3 the
+    # generation calls of scene mode, so the unit stays cheaper overall.
+    chapter_continuity_critic_enabled: bool = True
     chapter_first_short_chapter_threshold: int = 3500
     chapter_first_supersede_pending_rewrites: bool = False
     # Project-level premium-readiness gate. It is enabled as telemetry by

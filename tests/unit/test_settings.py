@@ -313,6 +313,11 @@ logging:
     )
 
     monkeypatch.chdir(tmp_path)
+    # This test asserts the dotenv LAYERS win when env=None. The conftest
+    # production-DB guardrail exempts BESTSELLER__DATABASE__URL from stripping
+    # (so the suite can point at a test DB), which would otherwise shadow the
+    # dotenv value under test — clear it here so the dotenv layer is what loads.
+    monkeypatch.delenv("BESTSELLER__DATABASE__URL", raising=False)
 
     settings = load_settings(
         config_path=config_path,

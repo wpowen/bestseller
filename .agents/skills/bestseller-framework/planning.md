@@ -130,13 +130,35 @@ Scene count 规则：climax / reversal 章 = 3；post-climax 章 = 2；默认 = 
 
 8. **只有完成以上 1–7，才可开始写第一章正文。**
 
-## 9. Long-Novel Augmentations
+## 9. Title Contract（书名与章名）
+
+### `literal_chapter_title`
+
+- 章名必须来自本章正文中可指认的人、话、地点、时限、数字、物件或已发生事件；不能用主题总结、抽象象征或编剧功能词替正文命名。
+- 每个 ChapterOutline 增加 `title_register` 与 `title_source_quote`。`title_source_quote` 必须能在本章正文或场景卡中逐字/近义找到，不能事后编理由。
+- 章名允许长短不一、口语不齐整。禁止为了“像标题”而把所有章名压成同样的四至六字结构。
+- 书名优先使用“具体人物/群体 + 核心冲突”或世界内自然称呼。四字宏大动作词、抽象意象叠加词必须与至少两个更具体候选比较后才能采用。
+
+### `title_register_diversity`
+
+连续 10 章至少覆盖下列 6 类中的 5 类，且任一类不得超过 3 章：
+
+1. 人物或人物事实（例：“沈砚死了三年”）
+2. 角色原话或口语句（例：“这次我自己来”）
+3. 时间 / 时限（例：“子时以前”）
+4. 地点（例：“南桥下面”）
+5. 数字 / 具体物件（例：“一百零九户”）
+6. 动作 / 已发生后果（例：“今天敲炉审钟”）
+
+审核的是命名来源与句法轮换，不是机械凑六类。相邻两章不得复用同一语法骨架；全卷不得批量使用“物件 + 抽象动词”“X 里/中 + 某种变化”“四字意象短语”。
+
+## 10. Long-Novel Augmentations
 
 - **> 300 章**：character snapshot 每 5 章；rolling summary 每 25 章；consistency audit 每 20 章
 - **> 1500 章**：卷间可代际跳跃；旧 canon 依然成立，不得覆盖
 - **> 50 章** 强制 ActPlan；**> 3 卷** 强制 DeferredReveal 追踪
 
-## 10. 与代码对齐
+## 11. 与代码对齐
 
 - `compute_linear_hierarchy(total_chapters)` → `services/planner.py`
 - `generate_foundation_plan()` / `generate_novel_plan()` / `generate_volume_plan()` → 同上

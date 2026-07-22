@@ -5,6 +5,8 @@ alwaysApply: true
 
 # BestSeller · Core
 
+<!-- BESTSELLER_RUNTIME_CONTRACT chapter=1800:2600:3500 scene=600:870:1150 runtime_truth=postgresql -->
+
 本仓库是 **BestSeller AI 长篇小说生成框架**：一个分布式、多阶段的 AI 流水线，用于产出 10 万至 100 万+ 字的长篇小说。
 
 ---
@@ -33,7 +35,7 @@ alwaysApply: true
 
 ### Mode B
 
-- **每章 ≥ 5000 字**，低于即强制返工；**禁止**用形容词灌水
+- **每章 1800–3500 字（目标 2600）**，越界即强制返工；**禁止**用形容词灌水
 - **所有产出写入 `output/ai-generated/{slug}/`**，不得污染仓库源码目录
 - Canon Facts **只追加**，绝不修改既有条目
 - 任何角色**不得预知**后续章节才揭示的事
@@ -95,7 +97,7 @@ docker-compose.yml           7 个服务
 
 用户说"帮我写 N 章 xx 小说"时，进入 Mode B 的**自主调度层**：
 planner → writer → critic → editor → summarizer 由 **orchestrator** 按状态机驱动，
-`progress.yaml` 做断点续跑，工具/上下文上限时自然停并提示"继续"。
+PostgreSQL 保存运行时事实，`progress.yaml` 作为带运行 ID 的文件编排检查点/投影做断点续跑。
 
 - 总规则（始终加载）：[`.cursor/rules/bestseller-orchestrator.mdc`](bestseller-orchestrator.mdc)
 - 完整状态机：[`.claude/skills/bestseller-framework/orchestration.md`](../../.claude/skills/bestseller-framework/orchestration.md)

@@ -54,8 +54,8 @@
 
 ### 硬约束
 
-1. **绝不调用仓库后端**（FastAPI / ARQ / DB / Redis）。Mode B 是"装作 pipeline"——你用纯文本输出模拟每一步。
-2. **所有输出写进** `output/ai-generated/{novel-slug}/`。`novel-slug` 是小说名的拼音小写连字符（中文书名）或 kebab-case（英文）。不得污染其他目录。
+1. **正文生成必须经生产流水线**。WRITE/REVIEW/REWRITE 通过 `scripts/mode_b_chapter_bridge.py` 调用 `run_chapter_pipeline`，规划资产必须先物化到 PostgreSQL；仅在明确无数据库环境时才允许标记为降级的纯文本流程。
+2. **所有输出写进** `output/ai-generated/{novel-slug}/`。`novel-slug` 是小说名的拼音小写连字符（中文书名）或 kebab-case（英文）。不得污染其他目录。PostgreSQL 是运行时事实源，`progress.yaml` 仅是文件编排检查点/投影。
 3. **先计划、再落笔**：
    - target_chapters ≤ 50 → 至少写 story-bible/premise / world / characters / plot-arcs / volume-plan / writing-profile 共 6 份；volume-plan 内附 30 章大纲
    - target_chapters > 50 → 多写一份 `story-bible/act-plan.md`
@@ -67,8 +67,10 @@
 ```
 ask target → compute hierarchy → write story-bible →
 write volume READMEs (with per-chapter outline) →
+materialize story-bible + outline into PostgreSQL →
 loop per chapter:
-    write 4 scenes (each 1200–2200 words) →
+    drive scripts/mode_b_chapter_bridge.py (real gates + scoring + repair) →
+    plan scenes at 600–1150 words when scene units are used →
     verify chapter word count ∈ [1800, 3500] →
     critic score (5 scene dims + 4 chapter dims) →
     if any dim < 0.70 → editor rewrite (max 2×) →

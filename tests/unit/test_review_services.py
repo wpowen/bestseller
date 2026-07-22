@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -434,6 +435,13 @@ async def _empty_async_tuple(*args: object, **kwargs: object) -> tuple:
     return ()
 
 
+def _passing_deterministic_chapter_audit(**kwargs: object) -> tuple[SimpleNamespace, SimpleNamespace]:
+    return (
+        SimpleNamespace(passed=True, findings=(), to_dict=lambda: {"passed": True}),
+        SimpleNamespace(hard_min=1800, hard_target=2400, hard_max=3500),
+    )
+
+
 def _micro_trim_fixture() -> str:
     return (
         "# 第1章 旧案\n\n"
@@ -689,6 +697,294 @@ def test_chapter_rewrite_prompt_includes_qimao_opening_contract() -> None:
     assert "最后300字连续叠加多个未解悬念" in user_prompt
 
 
+def test_chapter_rewrite_prompt_uses_project_declared_word_band() -> None:
+    project = _qimao_project()
+    project.metadata_json["words_per_chapter"] = {
+        "min": 2500,
+        "target": 2800,
+        "max": 3500,
+    }
+    chapter = _qimao_chapter()
+    chapter.target_word_count = 2800
+
+    _, user_prompt = build_chapter_rewrite_prompts(
+        project,
+        chapter,
+        SimpleNamespace(content_md="短稿。" * 300, word_count=900),
+        _qimao_rewrite_task(),
+        chapter_context=None,
+    )
+
+    assert "发布硬范围 2500-3500 字" in user_prompt
+    assert "目标约 2800 字" in user_prompt
+
+
+def test_localized_expansion_target_compensates_for_editor_under_delivery() -> None:
+    assert review_services._localized_expansion_target(520, 200) == 1120
+    assert review_services._localized_expansion_target(520, 600) == 1420
+
+
+def test_short_chapter_rewrite_uses_configured_realization_aim() -> None:
+    project = _qimao_project()
+    project.metadata_json.update(
+        {
+            "words_per_chapter": {"min": 2500, "target": 2800, "max": 3500},
+            "chapter_first_writer_aim": 3400,
+        }
+    )
+    chapter = _qimao_chapter()
+    chapter.target_word_count = 2800
+
+    _, user_prompt = build_chapter_rewrite_prompts(
+        project,
+        chapter,
+        SimpleNamespace(content_md="短稿。" * 300, word_count=900),
+        _qimao_rewrite_task(),
+        chapter_context=None,
+    )
+
+    assert "发布硬范围 2500-3500 字" in user_prompt
+    assert "目标约 3400 字" in user_prompt
+
+
+def test_repaired_chapter_candidate_audit_uses_project_declared_word_band() -> None:
+    project = _qimao_project()
+    project.slug = "rewrite-audit-project-band"
+    project.metadata_json["words_per_chapter"] = {
+        "min": 2500,
+        "target": 2800,
+        "max": 3500,
+    }
+    chapter = _qimao_chapter()
+    chapter.metadata_json = {}
+    chapter.target_word_count = 2800
+
+    report, band = review_services._audit_chapter_rewrite_candidate(
+        project=project,
+        chapter=chapter,
+        scenes=[],
+        content_md="许照川把炭票压回木匣。" * 120,
+        settings=build_settings(),
+    )
+
+    assert (band.hard_min, band.hard_target, band.hard_max) == (2500, 2800, 3500)
+    assert report.passed is False
+    violations = review_services._deterministic_rewrite_violations(
+        report,
+        word_count=review_services.count_words("许照川把炭票压回木匣。" * 120),
+        band=band,
+    )
+    assert any(item["code"] == "LENGTH_UNDER" for item in violations)
+
+
+@pytest.mark.asyncio
+async def test_chapter_first_opening_repair_preserves_suffix_and_adds_local_pressure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="opening-local-patch",
+        title="小满不借寿",
+        genre="玄幻",
+        language="zh-CN",
+        target_word_count=28_000,
+        target_chapters=10,
+        metadata_json={
+            "words_per_chapter": {"min": 2500, "target": 2800, "max": 3500}
+        },
+    )
+    project.id = uuid4()
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=1,
+        title="小满的炭票",
+        target_word_count=2800,
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+    )
+    chapter.id = uuid4()
+    paragraphs = ["许照川按规程复称灰样并记下秤梁变化。" * 17 for _ in range(7)]
+    original = "# 第1章 小满的炭票\n\n" + "\n\n".join(paragraphs)
+    assert 1900 <= review_services.count_words(original) < 2500
+    current_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md=original,
+        word_count=review_services.count_words(original),
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    current_draft.id = uuid4()
+    task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_auto_repair",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="localized_patch_first_chapter_repair",
+        status="pending",
+        instructions="只修开篇压力和标志物",
+        context_required=[],
+        metadata_json={
+            "patch_first": True,
+            "block_codes": [
+                "CHAPTER_TOO_SHORT",
+                "SIGNATURE_IMAGE_MISSING",
+                "OPENING_PRESSURE_THIN",
+                "ENDING_HOOK_MISSING",
+                "LENGTH_UNDER",
+                "CHAPTER_LENGTH_BLOCK_LOW",
+                "LENGTH_OUT_OF_BAND",
+            ],
+        },
+    )
+    task.id = uuid4()
+    heading, opening, suffix = review_services._localized_opening_excerpt(original)
+    captured: dict[str, object] = {}
+
+    async def fake_complete_text(session, settings, request):
+        captured["request"] = request
+        return SimpleNamespace(
+            content=(
+                opening
+                + "\n\n"
+                + "杂役把炭票推向扣票匣，许照川先压住匣盖，再把灰秤拨回零位。" * 12
+            ),
+            model_name="mock-editor",
+            llm_run_id=uuid4(),
+            provider="mock",
+        )
+
+    monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+
+    result = await review_services._try_localized_chapter_first_opening_repair(
+        object(),
+        project=project,
+        chapter=chapter,
+        current_draft=current_draft,
+        rewrite_task=task,
+        settings=build_settings(),
+        workflow_run_id=None,
+        step_run_id=None,
+    )
+
+    assert result is not None
+    repaired, _completion = result
+    assert repaired.startswith(heading + "\n\n")
+    assert repaired.endswith(suffix)
+    assert repaired != original
+    request = captured["request"]
+    assert request.prompt_template == "chapter_localized_opening_repair"
+    assert "后文衔接，只读不可改" in request.user_prompt
+    repair_instruction = request.user_prompt.split("重写待替换开篇：", 1)[1]
+    assert "许照川" not in repair_instruction
+    assert "炭票、灰秤或暗印" not in repair_instruction
+    assert "本章视角人物" in repair_instruction
+
+
+@pytest.mark.asyncio
+async def test_chapter_first_ending_repair_replaces_only_tail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="ending-local-patch",
+        title="小满不借寿",
+        genre="玄幻",
+        language="zh-CN",
+        target_word_count=28_000,
+        target_chapters=10,
+        metadata_json={
+            "words_per_chapter": {"min": 2500, "target": 2800, "max": 3500}
+        },
+    )
+    project.id = uuid4()
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=1,
+        title="小满的炭票",
+        chapter_goal="保住炭票",
+        target_word_count=2800,
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={
+            "whole_chapter_logic_contract": {
+                "chapter_end_change": "门外有人更换守灰房铅封"
+            }
+        },
+    )
+    chapter.id = uuid4()
+    paragraphs = ["许照川按规程复称灰样并记下秤梁变化。" * 17 for _ in range(7)]
+    original = "# 第1章 小满的炭票\n\n" + "\n\n".join(paragraphs)
+    assert 1900 <= review_services.count_words(original) < 2500
+    current_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md=original,
+        word_count=review_services.count_words(original),
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    current_draft.id = uuid4()
+    task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_auto_repair",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="localized_patch_first_chapter_repair",
+        status="pending",
+        instructions="只修章末钩子",
+        context_required=[],
+        metadata_json={
+            "patch_first": True,
+            "block_codes": [
+                "ENDING_HOOK_MISSING",
+                "LENGTH_UNDER",
+                "CHAPTER_LENGTH_BLOCK_LOW",
+                "LENGTH_OUT_OF_BAND",
+            ],
+        },
+    )
+    task.id = uuid4()
+    captured: dict[str, object] = {}
+
+    async def fake_complete_text(session, settings, request):
+        captured["request"] = request
+        return SimpleNamespace(
+            content=(
+                "门外的铅封钳合拢又松开，旧铅封落进铁盘。"
+                "许照川把拓纸压进砝码底座，没有去碰门闩。" * 18
+            ),
+            model_name="mock-editor",
+            llm_run_id=uuid4(),
+            provider="mock",
+        )
+
+    monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+
+    result = await review_services._try_localized_chapter_first_ending_repair(
+        object(),
+        project=project,
+        chapter=chapter,
+        current_draft=current_draft,
+        rewrite_task=task,
+        settings=build_settings(),
+        workflow_run_id=None,
+        step_run_id=None,
+    )
+
+    assert result is not None
+    repaired, _completion = result
+    prefix, old_ending = review_services._localized_ending_excerpt(original)
+    assert repaired.startswith(prefix + "\n\n")
+    assert not repaired.endswith(old_ending)
+    assert repaired.endswith("许照川把拓纸压进砝码底座，没有去碰门闩。")
+    request = captured["request"]
+    assert request.prompt_template == "chapter_localized_ending_repair"
+    assert "门外有人更换守灰房铅封" in request.user_prompt
+    assert "扩写待替换章末" in request.user_prompt
+
+
 def test_quality_retrofit_rewrite_uses_tighter_output_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -791,6 +1087,59 @@ def test_chinese_compression_repair_keeps_enough_output_budget(
     assert cap == floor_cap
     assert cap is not None
     assert cap > 2768
+
+
+def test_minimax_m3_compression_repair_uses_project_bounded_output_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings(
+        env={
+            "BESTSELLER__LLM__EDITOR__MODEL": "openai/MiniMax-M3",
+            "BESTSELLER__LLM__EDITOR__MAX_TOKENS": "16384",
+        }
+    )
+    monkeypatch.setattr(review_services, "get_settings", lambda: settings)
+    project = ProjectModel(
+        slug="xiao-man-bu-jie-shou-chapter-first-v2",
+        title="小满不借寿",
+        genre="historical-fantasy",
+        target_word_count=28_000,
+        target_chapters=10,
+        language="zh-CN",
+        metadata_json={
+            "words_per_chapter": {"min": 2500, "target": 2800, "max": 3500}
+        },
+    )
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=2,
+        title="沈砚已经死了",
+        target_word_count=2800,
+    )
+    task = RewriteTaskModel(
+        project_id=uuid4(),
+        trigger_type="chapter_review",
+        trigger_source_id=uuid4(),
+        rewrite_strategy="chapter_review",
+        instructions="当前章节偏长，压缩型修复。",
+        metadata_json={},
+    )
+
+    ordinary_cap = review_services._rewrite_output_max_tokens_override(
+        chapter,
+        project,
+        task,
+    )
+    compression_cap = review_services._rewrite_output_max_tokens_override(
+        chapter,
+        project,
+        task,
+        force_compression=True,
+    )
+
+    assert ordinary_cap is not None
+    assert ordinary_cap > 7000
+    assert compression_cap == 3072
 
 
 def test_quality_retrofit_rewrite_uses_safe_model_runway_for_minimax_highspeed(
@@ -2587,6 +2936,11 @@ async def test_rewrite_chapter_from_task_creates_new_version(
     monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", _ok_quality_gate)
     monkeypatch.setattr(
         review_services,
+        "_audit_chapter_rewrite_candidate",
+        _passing_deterministic_chapter_audit,
+    )
+    monkeypatch.setattr(
+        review_services,
         "_collect_post_assembly_duplicate_findings",
         lambda *args, **kwargs: _empty_async_tuple(),
     )
@@ -2710,6 +3064,11 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
     )
     monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
     monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", fake_quality_gate)
+    monkeypatch.setattr(
+        review_services,
+        "_audit_chapter_rewrite_candidate",
+        _passing_deterministic_chapter_audit,
+    )
     monkeypatch.setattr(
         review_services,
         "_collect_post_assembly_duplicate_findings",
@@ -2991,6 +3350,11 @@ async def test_rewrite_chapter_from_task_rejects_unfixed_quality_retrofit_candid
     )
     monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
     monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", fake_quality_gate)
+    monkeypatch.setattr(
+        review_services,
+        "_audit_chapter_rewrite_candidate",
+        _passing_deterministic_chapter_audit,
+    )
     monkeypatch.setattr(
         review_services,
         "_collect_post_assembly_duplicate_findings",

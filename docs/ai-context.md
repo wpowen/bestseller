@@ -1,5 +1,7 @@
 # BestSeller Framework — AI Context Reference
 
+<!-- BESTSELLER_RUNTIME_CONTRACT chapter=1800:2600:3500 scene=600:870:1150 runtime_truth=postgresql -->
+
 > This document is the complete design reference for the BestSeller AI novel generation system.
 > Paste it into ChatGPT Custom GPT instructions, Cursor `.cursorrules`, or any AI assistant
 > to enable context-aware development assistance without re-explaining the system.
@@ -19,8 +21,8 @@
 ```
 Project
   └─ Volume  (major story arc, typically 30–60 chapters)
-       └─ Chapter  (group of scenes, ~5000–7500 words)
-            └─ Scene  (atomic prose unit, ~1200–2200 words)
+       └─ Chapter  (group of scenes, 1800–3500 Chinese characters; target 2600)
+            └─ Scene  (atomic planning/prose unit, 600–1150; target 870)
 ```
 
 ---
@@ -402,7 +404,7 @@ docker-compose.yml                 7 services: DB, Redis, API, Worker, Scheduler
 |----------|-----|---------|-------|
 | Output | `target_total_words` | 150 000 | Target novel length |
 | Output | `target_chapters` | 30 | Number of chapters |
-| Output | `words_per_chapter.target` | 6 400 | Words per chapter |
+| Output | `words_per_chapter.target` | 2 600 | Chinese characters per chapter |
 | Output | `scenes_per_chapter.target` | 4 | Scenes per chapter |
 | Quality | `scene_min_score` | 0.70 | Scene acceptance threshold |
 | Quality | `chapter_coherence_min_score` | 0.75 | Chapter acceptance threshold |
@@ -438,7 +440,7 @@ Include this file as a system prompt or context attachment. The document is self
 User asks about code, architecture, debugging, features — use sections 1–12 as reference. Call `complete_text()` not LiteLLM, commit checkpoints per scene, emit `ReviewReportModel` + `QualityScoreModel`.
 
 ### Mode B — Direct Novel Authoring
-User asks you to **generate actual novel content** (e.g. "write me a xianxia novel with 100 chapters"). Act as the pipeline yourself: apply role separation (planner → writer → critic → editor), the planning hierarchy (section 15), quality gates, and write everything to `output/ai-generated/{novel-slug}/`. **Do not** call the running FastAPI backend or touch the database.
+User asks you to **generate actual novel content** (e.g. "write me a xianxia novel with 100 chapters"). Apply role separation (planner → writer → critic → editor), the planning hierarchy (section 15), and write deliverables to `output/ai-generated/{novel-slug}/`. Materialize planning assets and drive prose through the production pipeline; PostgreSQL is the runtime source, while filesystem state is a checkpoint/projection.
 
 ---
 
@@ -461,11 +463,11 @@ Volumes target ~50 chapters. `arc_batch_size = 12`. ActPlan required when `targe
 
 | Field | Min | Target | Max |
 |-------|-----|--------|-----|
-| **Words / chapter** | **5 000** | 6 400 | 9 000 |
-| Words / scene | 1 200 | 1 600 | 2 200 |
+| **Words / chapter** | **1 800** | 2 600 | 3 500 |
+| Words / scene | 600 | 870 | 1 150 |
 | Scenes / chapter | 2 | 3–4 | 5 |
 
-Draft < 5 000 words → **force rewrite**, expand via scenes/interiority/dialogue (no filler).
+Draft outside 1 800–3 500 → **force rewrite**, expand or compress locally without filler.
 
 Scene count rules: post-climax aftermath = 2, climax/reversal = 4, default = 3.
 
@@ -509,7 +511,7 @@ Volume 1 → **win** (hook victory). Middle 40–70 % → mostly losses (crisis 
 
 5. **ActPlan** (if > 50 chapters): `{act_number, title, chapter_range, purpose, protagonist_arc_stage, world_state_at_start, world_state_at_end, key_scenes[]}`.
 
-6. **ChapterOutline** (per volume, just-in-time): `{chapter_number, volume_number, chapter_goal, chapter_title, chapter_phase, conflict_phase, conflict_summary, scene_count, scenes[]{scene_type∈action|investigation|relationship|worldbuilding|comic_relief, hook_type∈information_gap|deadline|mystery|desire|threat, spotlight_character, summary, entry_state, exit_state, estimated_words, conflict_stakes}, estimated_chapter_words≥5000, pacing_mode∈build|accelerate|climax|breathe, emotion_phase∈compress|release, is_climax}`.
+6. **ChapterOutline** (per volume, just-in-time): `{chapter_number, volume_number, chapter_goal, chapter_title, chapter_phase, conflict_phase, conflict_summary, scene_count, scenes[]{scene_type∈action|investigation|relationship|worldbuilding|comic_relief, hook_type∈information_gap|deadline|mystery|desire|threat, spotlight_character, summary, entry_state, exit_state, estimated_words, conflict_stakes}, estimated_chapter_words∈[1800,3500] (target 2600), pacing_mode∈build|accelerate|climax|breathe, emotion_phase∈compress|release, is_climax}`.
 
 7. **World Expansion** (if > 3 volumes): `VolumeFrontier` per volume, `DeferredReveal[]` (plant 2+ volumes before payoff), `ExpansionGate[]`. Progressive visibility: volume V reveals `min(100%, V/total_volumes)` of the world.
 
@@ -583,7 +585,7 @@ chapter: 3
 title: "初入宗门"
 slug: "chu-ru-zong-men"
 scenes: 4
-word_count: 6400                # MUST be ≥ 5000
+word_count: 2600                # MUST be within 1800–3500
 status: approved
 revision: 1
 chapter_phase: setup            # hook|setup|escalation|twist|climax|resolution_hook
@@ -606,10 +608,10 @@ generated_at: "2026-04-16T12:00:00Z"
 # 第三章 初入宗门
 
 ## 场景一 · 山门前的队列
-[1600 字正文]
+[850 字正文]
 
 ## 场景二 · 气感测试
-[1800 字正文]
+[900 字正文]
 
 ## 场景三 · 宿舍初见
 [1500 字正文]
@@ -693,7 +695,7 @@ loop:
 | PLAN_WORLD_EXPANSION | planner | volume-plan | world-expansion.md | only if >3 vols; ≥1 DeferredReveal |
 | PLAN_WRITING_PROFILE | planner | all above | writing-profile.md | POV/tense/taboo complete |
 | PLAN_VOL_README(v) | planner | volume-plan + prev vol exit | volumes/vol-NN/README.md | outlines count == vol chapters |
-| WRITE_CHAPTER(c) | writer | profile + chars + outline + prev tail + recent 50 canon | ch-NNN.md | **≥ 5000 words**; frontmatter complete |
+| WRITE_CHAPTER(c) | writer | profile + chars + outline + prev tail + recent 50 canon | ch-NNN.md | **1800–3500 Chinese chars**; frontmatter complete |
 | REVIEW_CHAPTER(c) | critic | draft | scores filled + reviews/chapter-reviews.md | scene 5-dim ≥ 0.70; chapter 4-dim ≥ 0.75 |
 | REWRITE_CHAPTER(c) | editor | RewriteTask (fenced `=== reference only ===`) | scope-only rewrite | didn't touch non-scope elements |
 | EXTRACT_KNOWLEDGE(c) | summarizer | final draft + canon-facts | appended canon + timeline | no silent canon overwrite; use `supersedes` |
@@ -705,9 +707,9 @@ loop:
 | EXPORT | — | all ch files | exports/full-novel.md | chapters == target; words ≈ target ±10% |
 | DONE | — | — | completion report | — |
 
-### 19.4 `progress.yaml` — Single Source of Truth
+### 19.4 `progress.yaml` — Filesystem Orchestration Projection
 
-Persisted at `output/ai-generated/{slug}/progress.yaml`. Rewritten to disk **after every state transition**. Key fields:
+PostgreSQL is canonical for runtime chapters, gates, and workflow runs. `progress.yaml` is persisted at `output/ai-generated/{slug}/progress.yaml`, rewritten **after every state transition**, and carries projection provenance (`runtime_projection.source=postgresql`, `workflow_run_id`). Key fields:
 
 ```yaml
 state: WRITE_CHAPTER              # current node in the state machine
@@ -747,7 +749,7 @@ resource_usage: {tool_calls_this_session: 14, ...}
 
 | trigger | handling |
 |---------|----------|
-| chapter word_count < 5000 after 2 expansions | editor adds scene; if still short → `human_decision_pending` |
+| chapter word_count still < 1800 or > 3500 after 2 bounded repairs | editor local repair; if still out of band → `human_decision_pending` |
 | chapter scores < threshold after 2 rewrites | `accept_on_stall`, mark `approved_with_debt`, continue |
 | consistency audit failure + 3 repair attempts | `human_decision_pending` |
 | disk write failure | rollback chapter; escalate if 3× |
@@ -791,7 +793,7 @@ Every 10 chapters emit milestone summary; every 20 chapters emit consistency aud
 
 ## 20. Invariants (NEVER break)
 
-- ❌ **Never produce a chapter under 5 000 words.** Expand via scenes/interiority/dialogue — never pad with filler.
+- ❌ **Never publish a default-profile Chinese chapter outside 1 800–3 500 characters.** Expand or compress locally — never pad with filler.
 - ❌ Never write novel content outside `output/ai-generated/{slug}/`.
 - ❌ Never modify existing Canon Facts — only append new entries with higher `valid_from_ch`.
 - ❌ Never let a character know something revealed in a later chapter.

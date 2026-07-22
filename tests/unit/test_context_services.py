@@ -77,7 +77,9 @@ def build_chapter(project_id, chapter_number: int, title: str) -> ChapterModel:
     return chapter
 
 
-def test_chapter_contract_read_overlays_current_chapter_plan() -> None:
+def test_chapter_contract_read_overlays_current_chapter_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     project = build_project()
     chapter = build_chapter(project.id, 1, "空电梯")
     chapter.chapter_goal = "新目标：确认王建业召唤链路"
@@ -86,6 +88,10 @@ def test_chapter_contract_read_overlays_current_chapter_plan() -> None:
     chapter.chapter_emotion_arc = "警觉到主动介入"
     chapter.information_revealed = ["旧住户转交号码", {"summary": "十七栋地址和父亲旧案重合"}]
     chapter.hook_description = "旧铜钥匙敲出三短一长。"
+    chapter.metadata_json["whole_chapter_logic_contract"] = {
+        "causal_chain": ["压力", "选择", "代价"]
+    }
+    monkeypatch.setattr(context_services, "is_methodology_v2_enabled", lambda: False)
     contract = ChapterContractModel(
         project_id=project.id,
         chapter_id=chapter.id,
@@ -114,6 +120,9 @@ def test_chapter_contract_read_overlays_current_chapter_plan() -> None:
     assert "父亲旧案重合" in (read.information_release or "")
     assert read.closing_hook == "旧铜钥匙敲出三短一长。"
     assert read.pacing_mode == "accelerate"
+    assert read.whole_chapter_logic_contract == {
+        "causal_chain": ["压力", "选择", "代价"]
+    }
 
 
 def build_scene(project_id, chapter_id, scene_number: int, title: str) -> SceneCardModel:

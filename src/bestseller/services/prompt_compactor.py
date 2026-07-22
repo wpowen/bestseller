@@ -150,6 +150,23 @@ def compact_user_prompt(
 # prompt — most damagingly the POV inner-voice authorization, which an A/B run had
 # proven closes the readability gap. Keep them whole even when over budget.
 _PROTECTED_SECTION_MARKERS: tuple[str, ...] = (
+    "字数与结构",
+    "word count and structure",
+    "整章逻辑合同",
+    "whole-chapter logic contract",
+    "隐藏节点执行规则",
+    "hidden beat execution",
+    "AI套话黑名单",
+    "banned ai clich",
+    # 反AI腔铁律 / 视角体验 / 位置感知块：这些是正文质量的承重墙，且都由
+    # anti_ai_voice_discipline、pov_experience_discipline、prose_prompt_fusion
+    # 三个单一真源渲染。它们此前不在保护名单里，靠 "内心" 偶然命中——把承重规则
+    # 的存活寄托在别的 marker 的子串巧合上，是压缩器最容易复发的静默失效。
+    "反AI腔",
+    "语体与用词",
+    "视角与体验",
+    "开篇炸点律",
+    "中段持续追读律",
     "故事脊柱",
     "分层故事脊柱",
     "黄金三章",

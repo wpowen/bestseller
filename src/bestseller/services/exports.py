@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import hashlib
 from html import escape, unescape
 import io
@@ -1501,6 +1502,38 @@ def _raise_if_export_blocked(
     raise ValueError("; ".join(blockers))
 
 
+def _run_terminal_export_gate(
+    project: ProjectModel,
+    chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+    *,
+    settings: AppSettings | None = None,
+) -> None:
+    """Re-check exact export bytes for direct (non-pipeline) exports."""
+    # Imported lazily because pipelines imports this module for its exporter.
+    from bestseller.services.pipelines import run_final_quality_gates
+
+    for chapter, draft in chapter_payloads:
+        result = run_final_quality_gates(
+            chapter_number=int(chapter.chapter_number),
+            content_md=draft.content_md or "",
+            project=project,
+            settings=settings,
+        )
+        if result.patched_text is not None:
+            draft.content_md = result.patched_text
+        if not result.passed:
+            details = "; ".join([*result.errors, *result.issues])
+            raise ValueError(
+                f"final_quality_gate_blocked chapter {chapter.chapter_number}: {details}"
+            )
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "terminal_quality_gate_content_hash": hashlib.sha256(
+                (draft.content_md or "").encode("utf-8")
+            ).hexdigest(),
+        }
+
+
 async def preflight_export_check(
     session: AsyncSession,
     project_id: UUID,
@@ -1633,6 +1666,7 @@ async def export_chapter_markdown(
         [(chapter, draft)],
         comparison_payloads=comparison_payloads,
     )
+    _run_terminal_export_gate(project, [(chapter, draft)], settings=settings)
     output_path = await _resolve_chapter_export_path(
         session, settings, project, chapter
     )
@@ -1663,9 +1697,36 @@ async def export_project_markdown(
     project_slug: str,
     *,
     created_by_run_id: UUID | None = None,
+    final_quality_gate: Callable[..., object] | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
     _raise_if_export_blocked(project, chapter_payloads)
+    if final_quality_gate is not None:
+        gate_failures: list[str] = []
+        for chapter, draft in chapter_payloads:
+            result = final_quality_gate(
+                chapter_number=int(chapter.chapter_number),
+                content_md=draft.content_md or "",
+                project=project,
+                settings=settings,
+            )
+            if getattr(result, "patched_text", None) is not None:
+                # The callback may perform a localized patch. Persisting that
+                # exact text here keeps the export bytes and gate bytes equal.
+                draft.content_md = result.patched_text
+            if not bool(getattr(result, "passed", False)):
+                details = [
+                    *list(getattr(result, "errors", ()) or ()),
+                    *list(getattr(result, "issues", ()) or ()),
+                ]
+                gate_failures.append(
+                    f"Chapter {chapter.chapter_number}: "
+                    + ("; ".join(details) or "final quality gate failed")
+                )
+        if gate_failures:
+            raise ValueError("Final quality gate blocked export: " + " | ".join(gate_failures))
+    else:
+        _run_terminal_export_gate(project, chapter_payloads, settings=settings)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
@@ -1779,6 +1840,7 @@ async def export_chapter_docx(
         [(chapter, draft)],
         comparison_payloads=comparison_payloads,
     )
+    _run_terminal_export_gate(project, [(chapter, draft)], settings=settings)
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.docx"
     clean_content = _prepare_chapter_content(chapter, draft, language=project.language)
@@ -1807,6 +1869,7 @@ async def export_project_docx(
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
     _raise_if_export_blocked(project, chapter_payloads)
+    _run_terminal_export_gate(project, chapter_payloads, settings=settings)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
@@ -1854,6 +1917,7 @@ async def export_chapter_epub(
         [(chapter, draft)],
         comparison_payloads=comparison_payloads,
     )
+    _run_terminal_export_gate(project, [(chapter, draft)], settings=settings)
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.epub"
     clean_content = _prepare_chapter_content(chapter, draft, language=project.language)
@@ -1885,6 +1949,7 @@ async def export_project_epub(
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
     _raise_if_export_blocked(project, chapter_payloads)
+    _run_terminal_export_gate(project, chapter_payloads, settings=settings)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
@@ -1935,6 +2000,7 @@ async def export_chapter_pdf(
         [(chapter, draft)],
         comparison_payloads=comparison_payloads,
     )
+    _run_terminal_export_gate(project, [(chapter, draft)], settings=settings)
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.pdf"
     clean_content = _prepare_chapter_content(chapter, draft, language=project.language)
@@ -1963,6 +2029,7 @@ async def export_project_pdf(
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
     _raise_if_export_blocked(project, chapter_payloads)
+    _run_terminal_export_gate(project, chapter_payloads, settings=settings)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))

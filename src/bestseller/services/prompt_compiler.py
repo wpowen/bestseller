@@ -46,11 +46,40 @@ class PromptBlock(BaseModel):
     trim_policy: TrimPolicy = "drop"
     source: str = Field(min_length=1, max_length=400)
     text: str = Field(min_length=1)
+    # Optional on the legacy surface; required when callers opt into the
+    # canonical provenance gate below.
+    provenance: PromptProvenance | None = None
+    enhancer_key: str | None = Field(default=None, max_length=160)
 
     @model_validator(mode="after")
     def validate_token_window(self) -> PromptBlock:
         if self.max_tokens is not None and self.min_tokens > self.max_tokens:
             raise ValueError("min_tokens cannot exceed max_tokens")
+        return self
+
+
+class PromptProvenance(BaseModel, frozen=True):
+    """Where a prompt block was sourced from, for audit and snapshot gating."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[
+        "canonical_snapshot",
+        "creation_intent",
+        "scene_spec",
+        "genre_pack",
+        "user_input",
+        "derived",
+        "legacy",
+    ]
+    source_id: str | None = Field(default=None, max_length=240)
+    source_hash: str | None = Field(default=None, max_length=128)
+    field_paths: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_canonical_hash(self) -> PromptProvenance:
+        if self.kind == "canonical_snapshot" and not self.source_hash:
+            raise ValueError("canonical_snapshot provenance requires source_hash")
         return self
 
 
@@ -74,6 +103,8 @@ class PromptCompilerReport(BaseModel):
     required_blocks_kept: tuple[str, ...] = ()
     required_complete: bool
     final_hash: str = Field(min_length=64, max_length=64)
+    provenance_sources: tuple[str, ...] = ()
+    canonical_snapshot_hash: str | None = None
 
 
 class CompiledPrompt(BaseModel):
@@ -120,6 +151,9 @@ def compile_prompt(
     *,
     total_budget_tokens: int,
     safety_margin: float,
+    canonical_snapshot_hash: str | None = None,
+    require_provenance: bool = False,
+    selected_enhancer_keys: Iterable[str] | None = None,
 ) -> CompiledPrompt:
     """Compile typed blocks without fallback or process-global report state."""
 
@@ -128,7 +162,43 @@ def compile_prompt(
     if not 0 <= safety_margin < 1:
         raise ValueError("safety_margin must be in [0, 1)")
 
-    ordered = sorted(blocks, key=_block_sort_key)
+    block_list = list(blocks)
+    selected_effects = {
+        str(key).strip() for key in (selected_enhancer_keys or ()) if str(key).strip()
+    }
+    enhancer_dropped = tuple(
+        item.key
+        for item in block_list
+        if item.enhancer_key is not None and item.enhancer_key not in selected_effects
+    )
+    ordered = sorted(
+        (
+            item
+            for item in block_list
+            if item.enhancer_key is None or item.enhancer_key in selected_effects
+        ),
+        key=_block_sort_key,
+    )
+    if require_provenance:
+        missing = tuple(item.key for item in ordered if item.provenance is None)
+        if missing:
+            raise PromptConflictError(
+                "prompt provenance is required for canonical compilation",
+                conflicts=missing,
+            )
+    if canonical_snapshot_hash:
+        stale = tuple(
+            item.key
+            for item in ordered
+            if item.provenance is not None
+            and item.provenance.kind == "canonical_snapshot"
+            and item.provenance.source_hash != canonical_snapshot_hash
+        )
+        if stale:
+            raise PromptConflictError(
+                "prompt block references a stale canonical snapshot",
+                conflicts=stale,
+            )
     if len({item.key for item in ordered}) != len(ordered):
         duplicate_keys = _duplicate_keys(ordered)
         raise PromptConflictError(
@@ -159,7 +229,7 @@ def compile_prompt(
         )
 
     kept: list[PromptBlock] = list(required)
-    dropped: list[str] = [*structurally_dropped, *capped_dropped]
+    dropped: list[str] = [*enhancer_dropped, *structurally_dropped, *capped_dropped]
     truncated: list[str] = list(capped_truncated)
     for candidate in sorted((item for item in selected if not item.required), key=_block_sort_key):
         trial = sorted([*kept, candidate], key=_block_sort_key)
@@ -206,6 +276,16 @@ def compile_prompt(
         required_blocks_kept=required_kept,
         required_complete=required_kept == required_keys,
         final_hash=final_hash,
+        provenance_sources=tuple(
+            sorted(
+                {
+                    item.provenance.source_id or item.provenance.kind
+                    for item in kept
+                    if item.provenance is not None
+                }
+            )
+        ),
+        canonical_snapshot_hash=canonical_snapshot_hash,
     )
     return CompiledPrompt(system=system, user=user, report=report)
 
@@ -444,6 +524,7 @@ __all__ = [
     "PromptCompilerError",
     "PromptCompilerReport",
     "PromptConflictError",
+    "PromptProvenance",
     "compile_prompt",
     "estimate_prompt_tokens",
 ]

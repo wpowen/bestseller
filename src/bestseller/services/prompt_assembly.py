@@ -131,6 +131,26 @@ def estimate_tokens(text: str) -> int:
     return estimate_prompt_tokens(text)
 
 
+def resolve_selected_enhancer_keys(selection: object) -> tuple[str, ...]:
+    """Return only creator-selected effect keys for prompt compilation.
+
+    The adapter accepts the persisted metadata shape as well as the typed
+    ``StoryEnhancerSelection`` without importing that service here.  Unknown
+    or absent selections resolve to an empty tuple, so optional enhancer blocks
+    cannot leak into an unrelated book.
+    """
+
+    if isinstance(selection, Mapping):
+        raw = selection.get("effect_skills", ())
+    else:
+        raw = getattr(selection, "effect_skills", ())
+    if isinstance(raw, str):
+        raw = (raw,)
+    if not isinstance(raw, (list, tuple, set, frozenset)):
+        return ()
+    return tuple(dict.fromkeys(str(item).strip() for item in raw if str(item).strip()))
+
+
 @dataclass(frozen=True)
 class LayerBudgetReport:
     layer: str
@@ -323,5 +343,6 @@ __all__ = [
     "estimate_tokens",
     "genre_wants_reaction_amplification",
     "render_instruction_priority_block",
+    "resolve_selected_enhancer_keys",
     "section_layer",
 ]

@@ -11,15 +11,17 @@ Strategy ladder per span (cheapest first):
    replaces the matched text. Used for cluster excesses ("缓缓" → ""
    for de-duplication) and for explicit synonym swaps ("delve into" →
    "explore"). Zero LLM cost.
-2. **Sentence drop** — only when severity = ``block``,
-   ``remove_sentence_on_block`` is true, AND no static suggestion is
-   available. We delete the entire sentence containing the span so
-   surrounding prose stays unchanged. Used for tier-1 clichés where
-   "fixing the phrase" still leaves slop scaffolding.
-3. **LLM micro-rewrite** *(optional)* — when a ``MicroRewriter`` is
+2. **LLM micro-rewrite** *(optional)* — when a ``MicroRewriter`` is
    passed in, it receives only the sentence-sized window plus the span
-   highlight and returns a one-sentence rewrite. Falls back to step 2
-   on any failure. Capped via ``llm_budget`` to bound spend per chapter.
+   highlight and returns a one-sentence rewrite. Capped via ``llm_budget``
+   to bound spend per chapter.
+3. **Preserve and block** — if an attempted optional rewrite fails, the
+   original sentence is retained and returned as skipped.
+   The residual detector span remains visible, so the quality gate blocks
+   or routes the chapter for repair instead of deleting story text.
+
+When no rewriter is configured, blocking spans remain untouched and are
+reported for the terminal gate; story text is never silently deleted.
 
 Edits are applied in **reverse** span order so character offsets stay
 valid for the entire pass — a classic mistake-avoider.
@@ -28,8 +30,9 @@ valid for the entire pass — a classic mistake-avoider.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable, Protocol
+from typing import Protocol
 
 from bestseller.services.ai_flavor.types import AiFlavorSpan
 
@@ -42,8 +45,8 @@ class MicroRewriter(Protocol):
 
     Implementations must return a string that *replaces the entire
     sentence* — not just the span — so the patcher can drop in the
-    rewrite as a single splice. Raise to signal "give up, fall back to
-    sentence drop"; never return ``None`` or empty string.
+    rewrite as a single splice. Raise to signal "give up, preserve and
+    block"; never return ``None`` or empty string.
     """
 
     def rewrite_sentence(
@@ -129,10 +132,11 @@ def apply_patches(
         Optional. When supplied, used at most ``llm_budget`` times per
         chapter to handle severity=block spans that have no static
         suggestion. Without a rewriter (or once the budget is spent)
-        those spans fall back to sentence drop.
+        those spans remain in the draft and are reported as skipped so the
+        terminal gate can route them to repair or human review.
     llm_budget
         Hard ceiling on micro-rewrite calls per chapter. Once exhausted,
-        every remaining "needs LLM" span falls back to sentence drop.
+        every remaining "needs LLM" span is preserved and reported as skipped.
     audit_hook
         Optional callback invoked once per edit. Used by
         ``ai_flavor_gate`` to write a per-chapter audit markdown file
@@ -151,14 +155,13 @@ def apply_patches(
     llm_calls_used = 0
     working = content_md
 
-    # Track sentence ranges already dropped so two spans inside the same
-    # sentence don't trigger two drops (the second one would point at
-    # text that no longer exists).
-    dropped_sentences: set[tuple[int, int]] = set()
+    # Track sentence ranges already rewritten so sibling spans do not trigger
+    # repeated rewrites against stale offsets.
+    rewritten_sentences: set[tuple[int, int]] = set()
 
     for span in span_list_rev:
-        if span.sentence_span in dropped_sentences:
-            # Sentence already removed by a sibling span; nothing to do.
+        if span.sentence_span in rewritten_sentences:
+            # Sentence already rewritten by a sibling span; nothing to do.
             continue
 
         static = _first_static_suggestion(span)
@@ -172,7 +175,9 @@ def apply_patches(
             continue
 
         if span.severity == "block" and span.remove_sentence_on_block:
-            # LLM rewrite first (preserves the sentence), drop as fallback.
+            # LLM rewrite first. If it fails or the budget is exhausted, keep
+            # the original sentence so a quality block cannot silently delete
+            # story content; the residual span routes to repair/human review.
             rewritten: str | None = None
             if llm_rewriter is not None and llm_calls_used < llm_budget:
                 sent_start, sent_end = span.sentence_span
@@ -187,25 +192,26 @@ def apply_patches(
                     llm_calls_used += 1
                 except Exception:
                     logger.warning(
-                        "ai_flavor_gate: micro-rewrite failed for %s, falling back to sentence drop",
+                        (
+                            "ai_flavor_gate: micro-rewrite failed for %s, "
+                            "preserving sentence for gate block"
+                        ),
                         span.rule_id,
                         exc_info=True,
                     )
                     rewritten = None
 
-            sent_start, sent_end = span.sentence_span
-            before = working[sent_start:sent_end]
             if rewritten and rewritten.strip():
+                sent_start, sent_end = span.sentence_span
+                before = working[sent_start:sent_end]
                 working = working[:sent_start] + rewritten + working[sent_end:]
                 edit = PatchEdit(
                     span=span, strategy="llm_rewrite", before=before, after=rewritten
                 )
             else:
-                working = working[:sent_start] + working[sent_end:]
-                edit = PatchEdit(
-                    span=span, strategy="sentence_drop", before=before, after=""
-                )
-            dropped_sentences.add(span.sentence_span)
+                skipped.append(span)
+                continue
+            rewritten_sentences.add(span.sentence_span)
             edits.append(edit)
             if audit_hook is not None:
                 audit_hook(edit)

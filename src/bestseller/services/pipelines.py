@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+import hashlib
 import json
 import logging
 import os
@@ -218,6 +220,106 @@ from bestseller.services.writing_profile import is_english_language
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class FinalQualityGateResult:
+    """Fail-closed result for the exact bytes that are about to be exported."""
+
+    passed: bool
+    issues: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    patched_text: str | None = None
+
+
+def run_final_quality_gates(
+    *,
+    chapter_number: int,
+    content_md: str,
+    project,
+    settings=None,
+) -> FinalQualityGateResult:
+    """Run the single publication gate after the last text mutation.
+
+    This helper intentionally treats evaluator failures as hard failures.  The
+    caller may still retain the chapter as a draft, but formal publication must
+    never proceed on an unverified result.
+    """
+
+    issues: list[str] = []
+    errors: list[str] = []
+    patched_text: str | None = None
+    if not content_md:
+        return FinalQualityGateResult(False, issues=["empty_content"])
+    try:
+        cfg = get_quality_gates_config()
+        if cfg.ai_flavor.enabled:
+            from bestseller.services.ai_flavor_gate import run_ai_flavor_gate
+
+            output_dir = None
+            if settings is not None:
+                output_dir = (Path(settings.output.base_dir) / project.slug).resolve()
+            outcome = run_ai_flavor_gate(
+                chapter_number=chapter_number,
+                content_md=content_md,
+                language=getattr(project, "language", None) or "zh-CN",
+                config=cfg.ai_flavor,
+                project_output_dir=output_dir,
+            )
+            if outcome.patched_text is not None:
+                patched_text = outcome.patched_text
+            if outcome.decision == "block":
+                issues.append(
+                    f"ai_flavor:{getattr(outcome, 'after_score', 0):.2f}"
+                )
+
+        prose_cfg = cfg.prose_quality
+        text = patched_text or content_md
+        if prose_cfg.anti_meta_enabled:
+            from bestseller.services.anti_meta_gate import check_anti_meta_gate
+
+            report = check_anti_meta_gate(text, chapter_position=chapter_number)
+            if not report.passed and (
+                prose_cfg.anti_meta_severity == "block"
+                or (
+                    not report.ending_passed
+                    and prose_cfg.in_scene_ending_severity == "block"
+                )
+            ):
+                issues.extend(
+                    f"anti_meta:{finding.code}" for finding in report.findings[:6]
+                )
+        if prose_cfg.show_dont_tell_enabled:
+            from bestseller.services.show_dont_tell_gate import check_show_dont_tell_gate
+
+            report = check_show_dont_tell_gate(text, chapter_position=chapter_number)
+            if not report.passed and getattr(prose_cfg, "show_dont_tell_severity", "warn") == "block":
+                issues.extend(
+                    f"show_dont_tell:{finding.code}" for finding in report.findings[:6]
+                )
+        if chapter_number <= 3:
+            from bestseller.services.opening_golden_chapter_gate import check_opening_golden_chapter_gate
+
+            report = check_opening_golden_chapter_gate(
+                text,
+                chapter_position=chapter_number,
+                protagonist_name=_fanqie_gate_protagonist_name(project),
+            )
+            # Golden-chapter findings remain advisory; retain them for callers
+            # that want diagnostics without weakening the formal gate.
+            golden_issues = report.to_checker_report().issues
+            if golden_issues:
+                issues.extend(f"golden:{finding.id}" for finding in golden_issues[:3])
+    except Exception as exc:
+        errors.append(f"evaluator_error:{type(exc).__name__}:{exc}")
+
+    hard_issues = [item for item in issues if not item.startswith("golden:")]
+    return FinalQualityGateResult(
+        passed=not errors and not hard_issues,
+        issues=issues,
+        errors=errors,
+        patched_text=patched_text,
+    )
 
 
 def _retention_chapter_length_kwargs(project: ProjectModel) -> dict[str, int]:
@@ -9316,27 +9418,83 @@ async def run_chapter_pipeline(
             nonlocal export_blocked_reason
             if not export_markdown:
                 return None, None
+
+            # Normalize the final word target before running terminal gates so
+            # the gated bytes are the same bytes handed to the exporter.
             try:
-                if await _maybe_apply_deterministic_length_trim_before_export(
+                _trimmed = await _maybe_apply_deterministic_length_trim_before_export(
                     session,
                     settings=settings,
                     project=project,
                     chapter=chapter,
                     chapter_draft=chapter_draft,
                     chapter_number=chapter_number,
-                ):
+                )
+                if _trimmed:
                     workflow_run.metadata_json = {
                         **workflow_run.metadata_json,
                         "deterministic_length_trim_before_export": True,
                         "chapter_draft_id": str(chapter_draft.id),
                         "chapter_draft_version_no": chapter_draft.version_no,
                     }
-            except Exception:
-                logger.debug(
-                    "deterministic length trim before export failed for ch%d",
-                    chapter_number,
-                    exc_info=True,
+            except Exception as exc:
+                export_blocked_reason = f"terminal_length_normalization_error: {exc}"
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "export_blocked_reason": export_blocked_reason,
+                    "terminal_quality_gate_blocked": True,
+                    "export_blocked_by_run_id": str(workflow_run.id),
+                }
+                return None, None
+
+            # Re-run the one publication gate against the exact bytes handed to
+            # the exporter. Evaluator errors are deliberately fail-closed.
+            terminal_result = run_final_quality_gates(
+                chapter_number=chapter_number,
+                content_md=chapter_draft.content_md if chapter_draft is not None else "",
+                project=project,
+                settings=settings,
+            )
+            if terminal_result.patched_text is not None and chapter_draft is not None:
+                chapter_draft.content_md = terminal_result.patched_text
+            terminal_gate_error = None
+            if not terminal_result.passed:
+                terminal_gate_error = "terminal_quality_gate_blocked: " + ";".join(
+                    [*terminal_result.errors, *terminal_result.issues]
                 )
+
+            if terminal_gate_error is not None:
+                export_blocked_reason = terminal_gate_error
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "export_blocked_reason": terminal_gate_error,
+                    "terminal_quality_gate_blocked": True,
+                    "export_blocked_by_run_id": str(workflow_run.id),
+                }
+                workflow_run.current_step = "terminal_quality_gate_blocked"
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name="terminal_quality_gate",
+                    step_order=step_order,
+                    status=WorkflowStatus.MACHINE_BLOCKED,
+                    output_ref={"export_blocked": terminal_gate_error, "blocks_write": True},
+                )
+                step_order += 1
+                return None, None
+            # Persist the exact post-gate bytes before the exporter reloads the
+            # promoted draft in a separate query.
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "terminal_quality_gate_content_hash": hashlib.sha256(
+                    (chapter_draft.content_md or "").encode("utf-8")
+                ).hexdigest(),
+            }
+            await session.flush()
             current_step_name = "export_chapter_markdown"
             workflow_run.current_step = current_step_name
             _emit_progress(
@@ -13543,7 +13701,12 @@ async def run_progressive_autowrite_pipeline(
     exported_output_path: str | None = None
     if export_markdown:
         try:
-            exported_artifact, exported_path = await export_project_markdown(session, settings, project.slug)
+            exported_artifact, exported_path = await export_project_markdown(
+                session,
+                settings,
+                project.slug,
+                final_quality_gate=run_final_quality_gates,
+            )
             exported_output_path = str(exported_path)
         except ValueError as export_err:
             _emit_progress(progress, "project_export_skipped", {

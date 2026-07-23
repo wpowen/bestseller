@@ -4660,6 +4660,11 @@ async def test_run_chapter_pipeline_assembles_and_exports(
         "_evaluate_retention_safety_after_assembly",
         fake_retention_noop,
     )
+    monkeypatch.setattr(
+        pipeline_services,
+        "run_final_quality_gates",
+        lambda **_: pipeline_services.FinalQualityGateResult(passed=True),
+    )
 
     session = FakeSession(
         scalar_results=[chapter],

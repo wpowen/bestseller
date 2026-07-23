@@ -46,7 +46,7 @@ def test_humanizer_regex_rule_catches_inflated_significance_cn() -> None:
     assert spans[0].severity == "block"
 
 
-def test_humanizer_chat_artifact_is_removed_cn() -> None:
+def test_humanizer_chat_artifact_is_blocked_without_sentence_deletion_cn() -> None:
     text = "林烬推开门。希望这对您有帮助！如果您想让我扩展任何部分，请告诉我。门后传来脚步声。"
     out = run_ai_flavor_gate(
         chapter_number=101,
@@ -55,12 +55,10 @@ def test_humanizer_chat_artifact_is_removed_cn() -> None:
         config=_cfg(),
     )
 
-    assert out.decision == "patched"
-    assert out.patched_text is not None
-    assert "希望这对您有帮助" not in out.patched_text
-    assert "请告诉我" not in out.patched_text
-    assert "林烬推开门" in out.patched_text
-    assert "门后传来脚步声" in out.patched_text
+    assert out.decision == "block"
+    assert out.patched_text is None
+    assert "希望这对您有帮助" in text
+    assert "请告诉我" in text
 
 
 def test_humanizer_static_replacement_removes_essay_signpost_cn() -> None:
@@ -175,8 +173,8 @@ def test_patch_reverse_order_keeps_offsets_valid_cn() -> None:
     # advisory rhythm warn — counted separately, not auto-patched).
     assert len(report.block_spans) == 3
     patched = apply_patches(text, report.spans, language="zh").patched_text
-    # All three narrative tier-1 sentences gone, nothing else corrupted.
-    assert "毫无疑问" not in patched
+    # Blocking sentences remain intact for repair/human review.
+    assert patched.count("毫无疑问") == 3
 
 
 def test_patch_is_idempotent_cn() -> None:
@@ -243,12 +241,12 @@ def test_gate_patches_and_clears_cn() -> None:
         language="zh-CN",
         config=_cfg(),
     )
-    assert out.decision == "patched"
+    assert out.decision == "block"
     assert out.patched_text is not None
-    assert "毫无疑问" not in out.patched_text
+    assert "毫无疑问" in out.patched_text
     # First 不禁 retained.
     assert out.patched_text.count("不禁") == 1
-    assert out.report is not None and out.report.passed
+    assert out.report is not None and not out.report.passed
 
 
 def test_gate_blocks_when_residual_still_high_cn() -> None:
@@ -301,10 +299,10 @@ def test_gate_routes_by_language_en() -> None:
         config=_cfg(),
     )
     assert out.language == "en"
-    assert out.decision == "patched"
-    assert out.patched_text is not None
-    assert "Needless to say" not in out.patched_text
-    assert "It is worth noting" not in out.patched_text
+    assert out.decision == "block"
+    assert out.patched_text is None
+    assert "Needless to say" in text
+    assert "It is worth noting" in text
 
 
 def test_checker_report_severity_mapping() -> None:
@@ -379,8 +377,7 @@ def test_patch_edit_records_strategy_and_diff() -> None:
     result = apply_patches(text, spans, language="zh")
     assert all(isinstance(e, PatchEdit) for e in result.edits)
     assert all(e.before for e in result.edits)
-    # sentence_drop edits have empty 'after'; static edits have non-None.
-    assert any(e.strategy in ("sentence_drop", "static") for e in result.edits)
+    assert all(e.strategy == "static" for e in result.edits)
 
 
 class _FakeRewriter:
@@ -419,7 +416,7 @@ def test_llm_rewriter_happy_path_replaces_sentence_cn() -> None:
     assert "毫无疑问" not in out.patched_text
 
 
-def test_llm_rewriter_failure_falls_back_to_sentence_drop_cn() -> None:
+def test_llm_rewriter_failure_preserves_sentence_for_gate_block_cn() -> None:
     text = "前文。毫无疑问，这是陷阱。后文。"
     rewriter = _FakeRewriter(raises=True)
     out = run_ai_flavor_gate(
@@ -430,12 +427,13 @@ def test_llm_rewriter_failure_falls_back_to_sentence_drop_cn() -> None:
         llm_rewriter=rewriter,
     )
     assert rewriter.calls, "rewriter should have been attempted"
-    assert out.patched_text is not None
-    assert "毫无疑问" not in out.patched_text
+    assert out.patched_text is None
+    assert out.metrics["skipped"] >= 1
+    assert out.decision == "block"
 
 
-def test_llm_rewriter_budget_is_enforced_cn() -> None:
-    """Once the per-chapter budget is exhausted, remaining spans drop."""
+def test_llm_rewriter_budget_is_enforced_without_dropping_content_cn() -> None:
+    """Once the per-chapter budget is exhausted, remaining spans remain."""
 
     text = "\n".join(
         f"段落{i}。毫无疑问，A{i}。" for i in range(5)
@@ -450,7 +448,8 @@ def test_llm_rewriter_budget_is_enforced_cn() -> None:
     )
     assert len(rewriter.calls) == 2, f"budget=2 should cap calls, got {len(rewriter.calls)}"
     assert out.patched_text is not None
-    assert "毫无疑问" not in out.patched_text
+    assert out.patched_text.count("毫无疑问") == 3
+    assert out.decision == "block"
 
 
 def test_audit_file_is_written(tmp_path) -> None:

@@ -106,6 +106,21 @@ class PlanningArtifactVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "version_no",
             name="uq_planning_artifact_version",
         ),
+        Index(
+            "uq_planning_snapshot_idempotency",
+            "project_id",
+            "artifact_type",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text(
+                "artifact_type IN ('creation_intent','conception_snapshot') "
+                "AND scope_ref_id IS NULL AND idempotency_key IS NOT NULL"
+            ),
+            sqlite_where=text(
+                "artifact_type IN ('creation_intent','conception_snapshot') "
+                "AND scope_ref_id IS NULL AND idempotency_key IS NOT NULL"
+            ),
+        ),
     )
 
     project_id: Mapped[UUID] = mapped_column(
@@ -120,6 +135,7 @@ class PlanningArtifactVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
     source_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    idempotency_key: Mapped[str | None] = mapped_column(Text())
     notes: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'system'"))
 
@@ -1539,6 +1555,20 @@ class WorkflowRunModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workflow_runs"
     __table_args__ = (
         Index("idx_workflow_runs_pending", "status", "created_at", postgresql_where=text("status IN ('pending','queued')")),
+        Index(
+            "uq_conception_workflow_idempotency",
+            "workflow_type",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text(
+                "workflow_type IN ('conception_initial','conception_revision') "
+                "AND idempotency_key IS NOT NULL"
+            ),
+            sqlite_where=text(
+                "workflow_type IN ('conception_initial','conception_revision') "
+                "AND idempotency_key IS NOT NULL"
+            ),
+        ),
     )
 
     project_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"))
@@ -1550,6 +1580,7 @@ class WorkflowRunModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     current_step: Mapped[str | None] = mapped_column(Text())
     error_message: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    idempotency_key: Mapped[str | None] = mapped_column(Text())
 
 
 class WorkflowStepRunModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

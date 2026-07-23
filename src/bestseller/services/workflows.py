@@ -2120,7 +2120,17 @@ async def create_workflow_run(
     requested_by: str,
     current_step: str | None = None,
     metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
 ) -> WorkflowRunModel:
+    if idempotency_key:
+        existing = await session.scalar(
+            select(WorkflowRunModel).where(
+                WorkflowRunModel.workflow_type == workflow_type,
+                WorkflowRunModel.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            return existing
     workflow_run = WorkflowRunModel(
         project_id=project_id,
         workflow_type=workflow_type,
@@ -2130,6 +2140,7 @@ async def create_workflow_run(
         requested_by=requested_by,
         current_step=current_step,
         metadata_json=metadata or {},
+        idempotency_key=idempotency_key,
     )
     session.add(workflow_run)
     await session.flush()

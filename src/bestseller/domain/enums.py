@@ -4,6 +4,8 @@ from enum import StrEnum
 
 
 class ArtifactType(StrEnum):
+    CREATION_INTENT = "creation_intent"
+    CONCEPTION_SNAPSHOT = "conception_snapshot"
     PREMISE = "premise"
     BOOK_SPEC = "book_spec"
     WORLD_SPEC = "world_spec"
@@ -114,3 +116,57 @@ class WorkflowStatus(StrEnum):
     FAILED = "failed"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+
+
+class IntentFieldSource(StrEnum):
+    """Provenance for a creation option.
+
+    The values intentionally describe where a value came from, rather than
+    whether it happened to be present in a particular prompt payload.
+    """
+
+    EXPLICIT = "explicit"
+    DEFAULT = "default"
+    DERIVED = "derived"
+    LEGACY = "legacy"
+
+    @classmethod
+    def _missing_(cls, value: object) -> IntentFieldSource | None:
+        # Accept the longer wire labels used by early design notes while
+        # serialising one compact, stable vocabulary.
+        aliases = {
+            "user_explicit": cls.EXPLICIT,
+            "system_default": cls.DEFAULT,
+            "taxonomy_derived": cls.DERIVED,
+            "legacy_inferred": cls.LEGACY,
+        }
+        return aliases.get(str(value).strip().lower())
+
+
+class ConceptionMode(StrEnum):
+    INITIAL = "initial"
+    REVISION = "revision"
+
+
+class ConceptionSnapshotStatus(StrEnum):
+    DRAFT = "draft"
+    VALIDATED = "validated"
+    PENDING_USER_APPROVAL = "pending_user_approval"
+    CANDIDATE_V2 = "candidate_v2"
+    RECONCILING = "reconciling"
+    BLOCKED_HARD_CONFLICT = "blocked_hard_conflict"
+    CANONICAL = "canonical"
+    SUPERSEDED = "superseded"
+    FAILED = "failed"
+
+
+class IntentDiffSeverity(StrEnum):
+    HARD = "hard"
+    SOFT = "soft"
+
+
+class IntentDiffDecision(StrEnum):
+    UNRESOLVED = "unresolved"
+    ACCEPT_V1 = "accept_v1"
+    ACCEPT_V2 = "accept_v2"
+    AUTO_MERGE = "auto_merge"

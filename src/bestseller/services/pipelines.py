@@ -12480,9 +12480,11 @@ async def run_autowrite_pipeline(
     """
     from bestseller.domain.enums import ProjectType
 
-    # Long-form creation may not bypass the ConceptContract/SerialityProof
-    # gate.  Short projects retain the historical optional conception path.
-    use_conception = bool(use_conception or project_payload.target_chapters >= 200)
+    # Conception is an explicit creation-boundary phase.  Do not infer it from
+    # chapter count: the web flow already runs the initial conception before
+    # materialisation, and silently running a second conception here overwrites
+    # the user's V1 handoff and creates identity drift.
+    use_conception = bool(use_conception)
 
     # ── Conception pre-pass (mandatory for new long-form books) ──
     if use_conception:

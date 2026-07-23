@@ -3345,6 +3345,9 @@ class WebTaskManager:
             conception_contract: dict[str, object] | None = None
             conception_methodology: dict[str, object] | None = None
             conception_hook_candidates: list[dict[str, object]] | None = None
+            effective_synopsis = ""
+            effective_tags: list[str] = []
+            conception_result = None
             # Must be initialised here (not only inside ``if run_conception``):
             # on RESUME the project already exists so ``_run_conception`` is
             # False, the conception block is skipped, and the later
@@ -3356,11 +3359,56 @@ class WebTaskManager:
             from bestseller.services.genre_intent_contract import contract_from_payload
 
             genre_intent_contract = contract_from_payload(payload)
+            creation_intent_contract = None
+            conception_attempt = None
+            if run_conception and isinstance(payload.get("creation_intent_contract"), dict):
+                from bestseller.services.creation_intent_contract import (
+                    ConceptionAttemptInput,
+                    contract_from_payload as load_creation_intent,
+                )
+
+                creation_intent_contract = load_creation_intent(payload)
+                attempt_id = str(payload.get("_conception_attempt_id") or f"{task_id}:initial")
+                conception_attempt = ConceptionAttemptInput(
+                    contract=creation_intent_contract,
+                    input_payload={
+                        "premise": payload.get("premise"),
+                        "user_hints": payload.get("user_hints") or {},
+                        "genre": payload.get("genre"),
+                        "sub_genre": payload.get("sub_genre"),
+                        "target_chapters": payload.get("target_chapters"),
+                    },
+                    attempt_id=attempt_id,
+                    idempotency_key=attempt_id,
+                )
 
             # Use a single session scope for both conception and autowrite
             # to ensure transactional consistency.
             async with session_scope(settings) as session:
+                conception_workflow_run = None
                 if run_conception:
+                    from bestseller.domain.enums import WorkflowStatus
+                    if creation_intent_contract is not None and hasattr(session, "scalar"):
+                        from bestseller.services.workflows import create_workflow_run
+
+                        attempt_id = conception_attempt.attempt_id
+                        conception_workflow_run = await create_workflow_run(
+                            session,
+                            project_id=None,
+                            workflow_type="conception_initial",
+                            status=WorkflowStatus.RUNNING,
+                            scope_type="creation",
+                            scope_id=None,
+                            requested_by="web-ui",
+                            current_step="conception",
+                            idempotency_key=attempt_id,
+                            metadata={
+                                "attempt_id": attempt_id,
+                                "creation_intent_hash": creation_intent_contract.contract_hash(),
+                                "creation_intent_schema": creation_intent_contract.schema_version,
+                                "input_hash": conception_attempt.input_hash(),
+                            },
+                        )
                     from bestseller.services.conception import (
                         run_conception_pipeline,
                     )
@@ -3517,6 +3565,25 @@ class WebTaskManager:
                                 ),
                             },
                         )
+                        if conception_workflow_run is not None:
+                            conception_workflow_run.status = WorkflowStatus.COMPLETED.value
+                            conception_workflow_run.current_step = "completed"
+                            conception_workflow_run.metadata_json = {
+                                **(conception_workflow_run.metadata_json or {}),
+                                "result_title": effective_title,
+                                "result_hash": hashlib.sha256(
+                                    json.dumps(
+                                        {
+                                            "title": effective_title,
+                                            "premise": effective_premise,
+                                            "synopsis": effective_synopsis,
+                                        },
+                                        ensure_ascii=False,
+                                        sort_keys=True,
+                                        separators=(",", ":"),
+                                    ).encode("utf-8")
+                                ).hexdigest(),
+                            }
 
                 project_metadata: dict[str, object] = {"premise": effective_premise}
                 if isinstance(payload.get("genre_intent_contract"), dict):
@@ -3649,6 +3716,88 @@ class WebTaskManager:
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
                 stop_after_conception = bool(payload.get("stop_after_conception", False))
+
+                async def persist_creation_snapshots(project: object) -> None:
+                    """Persist the immutable creation/conception handoff after row creation."""
+                    if not run_conception or creation_intent_contract is None:
+                        return
+                    from bestseller.services.conception_snapshots import (
+                        create_conception_snapshot_artifact,
+                        snapshot_hash,
+                    )
+
+                    project_id = project.id
+                    attempt_id = str(
+                        payload.get("_conception_attempt_id") or f"{task_id}:initial"
+                    )
+                    source_run_id = (
+                        conception_workflow_run.id if conception_workflow_run is not None else None
+                    )
+                    intent_content = creation_intent_contract.model_dump(mode="json")
+                    intent_artifact = await create_conception_snapshot_artifact(
+                        session,
+                        project_id=project_id,
+                        artifact_type="creation_intent",
+                        content=intent_content,
+                        status="validated",
+                        idempotency_key=f"{attempt_id}:intent",
+                        schema_version=creation_intent_contract.schema_version,
+                        source_run_id=source_run_id,
+                        created_by="web-ui",
+                    )
+                    conception_content = {
+                        "schema_version": "conception-snapshot.v1",
+                        "attempt_id": attempt_id,
+                        "input_hash": conception_attempt.input_hash() if conception_attempt else None,
+                        "conception_mode": "initial",
+                        "creation_intent_hash": creation_intent_contract.contract_hash(),
+                        "title": effective_title,
+                        "premise": effective_premise,
+                        "synopsis": effective_synopsis,
+                        "tags": effective_tags,
+                        "writing_profile": effective_writing_profile or {},
+                        "hook_spec": conception_hook_spec or payload_hook_spec.model_dump(mode="json")
+                        if payload_hook_spec is not None
+                        else {},
+                        "concept_contract": conception_contract or {},
+                        "story_spine": getattr(conception_result, "story_spine", {}) or {},
+                        "world_model": getattr(conception_result, "world_model", {}) or {},
+                        "commercial_brief": conception_brief or {},
+                        "conception_artifacts": conception_artifacts,
+                    }
+                    snapshot_artifact = await create_conception_snapshot_artifact(
+                        session,
+                        project_id=project_id,
+                        artifact_type="conception_snapshot",
+                        content=conception_content,
+                        status=("pending_user_approval" if stop_after_conception else "validated"),
+                        idempotency_key=f"{attempt_id}:snapshot",
+                        schema_version="conception-snapshot.v1",
+                        source_run_id=source_run_id,
+                        created_by="web-ui",
+                    )
+                    metadata = dict(project.metadata_json or {})
+                    metadata.update(
+                        {
+                            "creation_intent_snapshot_id": str(intent_artifact.id),
+                            "creation_intent_contract_hash": creation_intent_contract.contract_hash(),
+                            "conception_snapshot_id": str(snapshot_artifact.id),
+                            "conception_snapshot_status": snapshot_artifact.status,
+                            "conception_workflow_run_id": str(source_run_id) if source_run_id else None,
+                        }
+                    )
+                    project.metadata_json = metadata
+                    if conception_workflow_run is not None:
+                        conception_workflow_run.project_id = project_id
+                        conception_workflow_run.metadata_json = {
+                            **(conception_workflow_run.metadata_json or {}),
+                            "project_id": str(project_id),
+                            "creation_intent_snapshot_id": str(intent_artifact.id),
+                            "conception_snapshot_id": str(snapshot_artifact.id),
+                            "snapshot_hash": snapshot_hash(snapshot_artifact.content),
+                        }
+                    await session.flush()
+
                 if stop_after_conception and run_conception:
                     if not conception_contract:
                         raise ValueError(
@@ -3683,6 +3832,7 @@ class WebTaskManager:
                     from bestseller.services.projects import create_project
 
                     project = await create_project(session, project_create, settings)
+                    await persist_creation_snapshots(project)
                     hook_card = conception_contract.get("hook_card", {})
                     progress(
                         "conception_only_complete",
@@ -3720,6 +3870,11 @@ class WebTaskManager:
                 # for the same target_chapters. See PROGRESSIVE_CHAPTER_THRESHOLD
                 # in services.pipelines.
                 result = await run_autowrite_pipeline(**common_kwargs)
+                if creation_intent_contract is not None and hasattr(session, "scalar"):
+                    project = await get_project_by_slug(session, str(payload["slug"]))
+                    if project is None:
+                        raise RuntimeError("autowrite completed without a project row")
+                    await persist_creation_snapshots(project)
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
 
         # Overall pipeline cap: 24h. Long enough for 100+ chapters.
@@ -3850,7 +4005,11 @@ class WebTaskManager:
             list_length_presets,
         )
 
-        creation_mode = str(payload.get("creation_mode") or "long_serial")
+        creation_mode = str(payload.get("creation_mode") or "long_serial").strip()
+        if creation_mode not in {"long_serial", "fanqie_short"}:
+            raise ValueError(
+                f"Unsupported creation_mode {creation_mode!r}; expected long_serial or fanqie_short"
+            )
         is_fanqie_short = creation_mode == "fanqie_short"
 
         genre_key = str(payload.get("genre_key") or "")
@@ -3908,6 +4067,15 @@ class WebTaskManager:
         audience_orientation = str(payload.get("audience_orientation") or "").strip().lower() or None
         _narrative_scale = str(payload.get("narrative_scale") or "").strip() or None
         _tone_preference = str(payload.get("tone_preference") or "").strip() or None
+        if audience_orientation not in {None, "male", "female"}:
+            raise ValueError("audience_orientation must be male, female, or omitted")
+        if _narrative_scale not in {None, "serial", "epic"}:
+            raise ValueError("narrative_scale must be serial, epic, or omitted")
+        if _tone_preference not in {None, "epic", "light", "dark", "hot"}:
+            raise ValueError("tone_preference must be epic, light, dark, hot, or omitted")
+        for flag in ("draft_mode", "stop_after_conception"):
+            if flag in payload and not isinstance(payload[flag], bool):
+                raise ValueError(f"{flag} must be a boolean when provided")
         try:
             contract = (
                 contract_from_selection(
@@ -3932,28 +4100,23 @@ class WebTaskManager:
                     enhancers=selected_enhancers,
                 )
             )
-        except ValueError:
-            # Safety net only: every shipped preset now resolves (the taxonomy
-            # covers both markets, and test_every_preset_card_resolves_into_a_genre_contract
-            # keeps it that way). It stays because a free-form genre typed through
-            # the API must not 500 the whole creation.
-            #
-            # Landing here is a real loss, not a graceful degrade: with no contract
-            # the model is free to overwrite project.genre (apply_book_spec only
-            # defers to a contract that exists) and tone_preference never reaches
-            # the writer, since it travels via the contract. So: fix the taxonomy,
-            # do not let cards fall in here.
-            logger.warning(
-                "genre intent contract unavailable (genre=%r sub=%r); "
-                "falling back to contract-less legacy routing",
-                getattr(genre_preset, "genre", None),
-                getattr(genre_preset, "sub_genre", None),
-                exc_info=True,
-            )
-            contract = None
+        except ValueError as exc:
+            raise ValueError(
+                "Unable to resolve the selected genre intent contract; "
+                "creation was rejected to avoid silently dropping user constraints"
+            ) from exc
 
         # Resolve chapter count
-        chapter_count = int(payload.get("chapter_count") or 0)
+        raw_chapter_count = payload.get("chapter_count")
+        if raw_chapter_count not in (None, ""):
+            try:
+                chapter_count = int(raw_chapter_count)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("chapter_count must be an integer") from exc
+            if not is_fanqie_short and not 1 <= chapter_count <= 2000:
+                raise ValueError("chapter_count must be between 1 and 2000 for long serials")
+        else:
+            chapter_count = 0
         length_key = str(payload.get("length_key") or "")
         if chapter_count <= 0 and length_key:
             length_presets = {p.key: p for p in list_length_presets()}
@@ -3987,6 +4150,8 @@ class WebTaskManager:
             chapter_count = int(spec["segment_count"])
             target_words = int(spec["target_words"])
             fanqie_pov = str(payload.get("pov") or "first_person")
+            if fanqie_pov not in {"first_person", "third_limited"}:
+                raise ValueError("pov must be first_person or third_limited for fanqie_short")
             fanqie_meta = build_fanqie_short_metadata(
                 length_key=fanqie_length_key,
                 pov=fanqie_pov,
@@ -4125,8 +4290,8 @@ class WebTaskManager:
                 concept_bundle.model_dump(mode="json") if concept_bundle is not None else {}
             ),
             "user_hints": creative_hints,
-            # contract=None is the documented fail-open for unresolvable
-            # selections; contract_from_payload treats {} as contract-less.
+            # The contract is resolved and validated at the creation boundary;
+            # an unresolved selection is rejected before this payload is built.
             "genre_intent_contract": (
                 contract.model_dump(mode="json") if contract is not None else {}
             ),
@@ -4135,16 +4300,69 @@ class WebTaskManager:
             "_genre_key": genre_key,
         }
         # Per-book writing model chosen in the creation form (Step 3). Validated
-        # against the catalog — an unknown/unavailable pick silently falls back
-        # to the global default. Rides payload → task.payload → project metadata
+        # against the catalog. An explicit unknown/unavailable pick is rejected;
+        # omission alone means the global default. Rides payload → task.payload → project metadata
         # (llm_model_id) via _pending_project_model at materialization.
         _model_id = str(payload.get("llm_model_id") or "").strip()
         if _model_id:
             from bestseller.services.model_catalog import get_model_catalog_entry
 
             _entry = get_model_catalog_entry(_model_id)
-            if _entry is not None and _entry.available:
-                autowrite_payload["llm_model_id"] = _model_id
+            if _entry is None or not _entry.available:
+                raise ValueError(f"Unknown or unavailable llm_model_id: {_model_id}")
+            autowrite_payload["llm_model_id"] = _model_id
+
+        # Freeze the complete creation request once, at the UI boundary.  The
+        # downstream conception/planning/writing stages consume this envelope;
+        # they must not reconstruct a partial intent from ad-hoc prompt hints.
+        from bestseller.services.creation_intent_contract import (
+            build_creation_intent_contract,
+        )
+
+        creation_intent = build_creation_intent_contract(
+            contract,
+            field_sources={
+                "audience_orientation": "explicit" if audience_orientation else "default",
+                "narrative_scale": "explicit" if _narrative_scale else "default",
+                "tone_preference": "explicit" if _tone_preference else "default",
+                "chapter_count": "explicit" if payload.get("chapter_count") not in (None, "") else "default",
+                "length_key": "explicit" if length_key else "default",
+                "pov": "explicit" if payload.get("pov") else "default",
+                "draft_mode": "explicit" if "draft_mode" in payload else "default",
+                "stop_after_conception": "explicit"
+                if "stop_after_conception" in payload
+                else "default",
+                "llm_model_id": "explicit" if _model_id else "default",
+                "story_enhancers": "explicit" if raw_enhancers else "default",
+                "creative_direction": "explicit" if creative_direction else "default",
+                "concept_seed": "explicit" if explicit_concept_seed else "default",
+                "hook_spec": "explicit" if selected_hook_spec else "default",
+                "concept_lab": "explicit" if concept_bundle is not None else "default",
+            },
+            audience_orientation=audience_orientation,
+            narrative_scale=_narrative_scale,
+            tone_preference=_tone_preference,
+            chapter_count=chapter_count,
+            length_key=length_key or (fanqie_length_key or "long"),
+            pov=str(payload.get("pov") or fanqie_pov or "third-limited"),
+            draft_mode=bool(payload.get("draft_mode", False)),
+            stop_after_conception=bool(payload.get("stop_after_conception", False)),
+            llm_model_id=_model_id or None,
+            story_enhancers=selected_enhancers,
+            concept_lab=(
+                concept_bundle.model_dump(mode="json")
+                if concept_bundle is not None
+                else None
+            ),
+            creative_direction=(creative_direction.key if creative_direction else None),
+            concept_seed=explicit_concept_seed or None,
+            hook_spec=selected_hook_spec.model_dump(mode="json") if selected_hook_spec else {},
+            language=genre_preset.language,
+            project_type=project_type_value,
+            creation_mode=creation_mode,
+        )
+        autowrite_payload["creation_intent_contract"] = creation_intent.model_dump(mode="json")
+        autowrite_payload["_conception_attempt_id"] = f"{slug}:initial"
         # Optional reader-orientation override (男频/女频). Empty/None lets the
         # heat-search agent + genre preset decide; an explicit pick is threaded
         # through as the project audience and a conception hint.

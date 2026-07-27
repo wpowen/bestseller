@@ -164,6 +164,7 @@ OUTLINE_REPAIR_DIMENSION_THRESHOLDS: dict[str, float] = {
     "scene_execution": 0.80,
     "logic_consistency": 0.82,
     "decision_intelligence": 0.84,
+    "knowledge_boundary": 0.82,
     "methodology_compliance": 0.80,
 }
 
@@ -182,6 +183,10 @@ _DIMENSION_REPAIR_HINTS: dict[str, str] = {
     "decision_intelligence": (
         "逐章按主角有限认知重做选择：列出正常人基线、角色基线、显而易见的低成本安全方案，"
         "若仍选择高风险行动，必须改变信息/压力/选项成本并给出试探、退路或后手；禁止只补心理描写。"
+    ),
+    "knowledge_boundary": (
+        "逐场列清信息来源与持有人：角色只能依据亲见、亲闻、已传递或前世明确记忆作判断；"
+        "删除作者全知结论。若消息需要跨人传递，补出传递动作、时间、误差和接收后的可见反应。"
     ),
     "front_ten_retention": "前十章每章末留一个未解钩子，避免节奏走平。",
 }
@@ -276,6 +281,18 @@ def _render_outline_commercial_system_prompt(
         "- overall_score 与 dimension_scores 使用 0.0-1.0 小数。\n"
         "- 每个 issue 必须含 code / severity / evidence / required_fix 四字段。\n"
         "- evidence 必须引用大纲中具体字段或描述，不可用「整体」/「全章」占位。\n"
+        "- ‘具体’指可执行的人/物/动作/后果，不等于数字化伪精确；除非本书设定本来依赖计量，"
+        "不得凭空要求第几秒、第几寸、第几块砖、某年某月某日等无叙事收益的微观刻度。\n"
+        "- 只评当前提供的滚动章纲窗口，不得把尚未规划的后续章节缺失当作当前窗口缺陷；"
+        "也不得要求每章同时兑现全部效果技能。\n"
+        "- entry_state / exit_state 使用 {\"summary\": \"...\"} 是本系统的正式场景状态 schema；"
+        "必须按 summary 文本是否已有具体人物/物件/动作/可见结果来判断，不得仅因没有拆成额外子字段"
+        "就判 SCENE_CARD_MISSING_CONCRETE_DELTA，也不得要求 schema 中不存在的五个结构化子字段。\n"
+        "- 角色认知边界必须结合项目摘要与人物身份判断；魂穿/重生角色可使用其明确拥有的前世知识。"
+        "项目已明确其保留前世记忆时，前世经历本身就是合法知识来源，不得额外发明并强制要求"
+        "记忆触发仪式、三息精度上限、调用次数或失控代价；只有当信息连其前世身份也不可能知道、"
+        "当前场景没有可观察线索，或婴幼儿躯体的视距/动作能力无法完成时，才判认知边界违规。"
+        "“可追溯”指能回到既定前世身份/经历或当前可观察动作，不等于每次使用都要重复补一段回忆机制。\n"
         "- 6 项故事合理性任一明显缺失 → blocking（不能降为 audit）。\n"
         "\n"
         "# THINKING（产出 JSON 前在脑内 5 步）\n"
@@ -283,7 +300,12 @@ def _render_outline_commercial_system_prompt(
         "2. 对照 6 项故事合理性逐项判定。\n"
         "3. 对照 6 项硬性卡控逐项检查。\n"
         "4. 执行主角决策代理的正常人/角色双基线比较。\n"
-        "5. Reconcile：若有 blocking → overall_score 不应 ≥ 0.75。\n"
+        "5. Reconcile：逐项检查 blocking_issues 的 required_fix 是否彼此兼容、是否符合项目摘要；"
+        "若两条整改互斥（例如既要求第1章展示、又要求推迟到第3章），必须合并成一个可同时满足"
+        "角色理性与黄金三章目标的方案，禁止输出互相冲突的整改。required_fix 同样必须服从人物年龄、"
+        "身体位置、视距、触达范围和物理常识；禁止建议婴儿用哭声气流吹落纸张、隔空移动砚台、"
+        "把襁褓物件踢到远处桌案等比原问题更不可信的修法。若无法给出更合理且可执行的修法，"
+        "不得把该意见列为 blocking。若有 blocking → overall_score 不应 ≥ 0.75。\n"
         "\n"
         "# OUTPUT FORMAT（严格 JSON）\n"
         "{\n"
@@ -479,6 +501,9 @@ async def judge_outline_commercial_readiness(
                 f"```json\n{payload_for_prompt}\n```\n"
                 "\n## 立即开始\n"
                 "按 system 中的 THINKING 步骤思考后，输出严格 JSON。"
+                "若项目摘要含 deterministic_semantic_candidates，必须逐项结合实际"
+                "章纲确认或否决；探测器命中本身不是违规证据。确认的问题写入"
+                "blocking_issues，误报不要写入 blocking_issues。"
                 "每个 issue 必须包含 code / severity / evidence / required_fix；"
                 "overall_score 与 dimension_scores 使用 0.0-1.0 小数。"
             ),
@@ -488,10 +513,19 @@ async def judge_outline_commercial_readiness(
             model_catalog_key=resolve_commercial_judge_model_key(settings),
             workflow_run_id=workflow_run_id,
             metadata={"judge_scope": "outline", "threshold": threshold, "rubric": rubric.name},
-            max_tokens_override=4096,
+            max_tokens_override=8192,
         ),
     )
     parsed = _parse_json_object(completion.content)
+    parsed = await _adjudicate_outline_verdict_consistency(
+        session,
+        settings,
+        initial_verdict=parsed,
+        outline_text=payload_for_prompt,
+        project_brief_text=brief_text[:6000],
+        threshold=threshold,
+        workflow_run_id=workflow_run_id,
+    )
     return quality_judge_result_from_mapping(
         parsed,
         scope="outline",
@@ -509,6 +543,199 @@ async def judge_outline_commercial_readiness(
         llm_run_id=str(completion.llm_run_id) if completion.llm_run_id else None,
         raw_excerpt=completion.content[:6000],
     )
+
+
+async def _adjudicate_outline_verdict_consistency(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    initial_verdict: Mapping[str, Any],
+    outline_text: str,
+    project_brief_text: str,
+    threshold: float,
+    workflow_run_id: Any | None,
+) -> dict[str, Any]:
+    """Have a second LLM pass confirm that proposed blockers are coherent.
+
+    The first critic may correctly spot one defect while prescribing a repair
+    that contradicts another blocker (for example: “a three-month-old cannot
+    execute precise three-stage grasping” and “show the power by requiring that
+    exact three-stage grasp”).  A blocking verdict controls an autonomous
+    rewrite loop, so its evidence and repair set need an independent semantic
+    consistency review.  Unavailable or malformed adjudication keeps the first
+    verdict unchanged (fail closed).
+    """
+
+    blocking = initial_verdict.get("blocking_issues")
+    if not isinstance(blocking, list) or not blocking:
+        return dict(initial_verdict)
+
+    numbered = [
+        {"index": index, **dict(issue)}
+        for index, issue in enumerate(blocking, start=1)
+        if isinstance(issue, Mapping)
+    ]
+    if not numbered:
+        return dict(initial_verdict)
+
+    fallback = json.dumps(dict(initial_verdict), ensure_ascii=False, default=str)
+    try:
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="critic",
+                model_tier="strong",
+                system_prompt=(
+                    "你是大纲门禁的二审主编。初审已经给出 blocking issues；你的任务不是新增问题，"
+                    "而是逐条 CONFIRM 或 DISMISS，并修正彼此矛盾、超出人物身体能力、依赖虚构 schema、"
+                    "或要求无意义微观精度的意见。只有实际章纲证据能支持、整改物理可执行、且与其余整改"
+                    "相容的问题才能保留为 blocking。项目明确的魂穿/重生前世知识属于合法来源；婴儿"
+                    "可以有成人意识，但动作仍受婴儿身体限制。不得用一个 issue 禁止精细婴儿动作，"
+                    "同时在另一个 issue 又要求同一精细动作。不得把‘第几页第几行第几画’等编辑并不"
+                    "需要的伪精确当作可写性门槛。若证据真实但 required_fix 不合理，必须把修法改成"
+                    "符合年龄、位置、触达和因果链的方案。输出严格 JSON。"
+                ),
+                user_prompt=(
+                    f"阈值：{threshold:.2f}\n\n"
+                    "项目摘要：\n"
+                    f"{project_brief_text}\n\n"
+                    "实际章纲：\n"
+                    f"{outline_text[:70000]}\n\n"
+                    "初审问题（index 必须逐项裁决）：\n"
+                    f"{json.dumps(numbered, ensure_ascii=False, default=str)}\n\n"
+                    "只返回紧凑裁决 JSON，不要复述完整大纲、评分或初审 verdict："
+                    '{"adjudication_complete":true,"decisions":['
+                    '{"index":1,"decision":"CONFIRM|DISMISS",'
+                    '"reason":"一句话","required_fix":"确认时给出可执行修法；驳回时为空"}]}'
+                    "。decisions 必须恰好覆盖每个 index 一次，不得遗漏、重复或新增。"
+                ),
+                fallback_response=fallback,
+                prompt_template="outline_commercial_judge_consistency_adjudication",
+                prompt_version="v1",
+                model_catalog_key=resolve_commercial_judge_model_key(settings),
+                workflow_run_id=workflow_run_id,
+                metadata={
+                    "judge_scope": "outline_consistency_adjudication",
+                    "threshold": threshold,
+                    "initial_blocker_count": len(numbered),
+                },
+                max_tokens_override=4096,
+            ),
+        )
+    except Exception:
+        logger.warning("outline judge consistency adjudication failed closed", exc_info=True)
+        return dict(initial_verdict)
+
+    revised = _parse_json_object(completion.content)
+    decisions = revised.get("decisions")
+    decision_map: dict[int, Mapping[str, Any]] = {}
+    duplicate_indexes: set[int] = set()
+    if isinstance(decisions, list):
+        for raw in decisions:
+            if not isinstance(raw, Mapping):
+                continue
+            index_match = re.search(r"\d+", str(raw.get("index") or ""))
+            if index_match is None:
+                continue
+            index = int(index_match.group(0))
+            # Extra decisions do not correspond to any first-pass blocker and
+            # cannot dismiss a real one. Ignore them while still requiring
+            # complete coverage of every expected index below.
+            if index < 1 or index > len(numbered):
+                continue
+            decision_text = str(
+                raw.get("decision") or raw.get("verdict") or raw.get("action") or ""
+            ).strip().upper()
+            if decision_text in {
+                "CONFIRM",
+                "PARTIAL_CONFIRM",
+                "PARTIALLY_CONFIRM",
+                "PARTIAL",
+                "保留",
+                "确认",
+                "部分确认",
+                "部分保留",
+                "通过",
+            }:
+                decision = "CONFIRM"
+            elif decision_text in {"DISMISS", "驳回", "删除", "误报", "不保留"}:
+                decision = "DISMISS"
+            else:
+                continue
+            if index in decision_map:
+                duplicate_indexes.add(index)
+            else:
+                normalized = dict(raw)
+                normalized["decision"] = decision
+                normalized["index"] = index
+                raw = normalized
+                decision_map[index] = raw
+    expected_indexes = set(range(1, len(numbered) + 1))
+    complete_value = revised.get("adjudication_complete")
+    adjudication_complete = complete_value is True or str(complete_value).strip().lower() in {
+        "true",
+        "yes",
+        "complete",
+        "completed",
+        "完成",
+    }
+    if (
+        not adjudication_complete
+        or set(decision_map) != expected_indexes
+        or duplicate_indexes
+    ):
+        logger.warning(
+            "outline judge consistency adjudication was incomplete; keeping first verdict "
+            "(complete=%s expected=%s received=%s duplicates=%s raw=%r)",
+            adjudication_complete,
+            sorted(expected_indexes),
+            sorted(decision_map),
+            sorted(duplicate_indexes),
+            completion.content[:2000],
+        )
+        return dict(initial_verdict)
+    retained: list[dict[str, Any]] = []
+    dismissed_indexes: list[int] = []
+    for index, issue in enumerate(numbered, start=1):
+        decision = decision_map[index]
+        if str(decision.get("decision") or "").strip().upper() == "DISMISS":
+            dismissed_indexes.append(index)
+            continue
+        retained_issue = {key: value for key, value in issue.items() if key != "index"}
+        required_fix = str(decision.get("required_fix") or "").strip()
+        if required_fix:
+            retained_issue["required_fix"] = required_fix
+        retained.append(retained_issue)
+
+    merged = dict(initial_verdict)
+    merged["blocking_issues"] = retained
+    # The consistency pass may dismiss bad blockers but cannot award a pass or
+    # inflate scores; the primary rubric still owns those judgments.
+    merged["pass"] = bool(initial_verdict.get("pass")) and not retained
+    audit_issues = list(initial_verdict.get("audit_issues") or [])
+    audit_issues.append(
+        {
+            "code": "OUTLINE_JUDGE_CONSISTENCY_ADJUDICATED",
+            "severity": "info",
+            "evidence": (
+                "二审已逐条复核初审 blocker；dismissed indexes="
+                + ",".join(str(item) for item in dismissed_indexes)
+            ),
+            "required_fix": "",
+        }
+    )
+    merged["audit_issues"] = audit_issues
+    rewrite_plan = dict(initial_verdict.get("rewrite_plan") or {})
+    retained_fixes = [
+        str(issue.get("required_fix") or "").strip()
+        for issue in retained
+        if str(issue.get("required_fix") or "").strip()
+    ]
+    if retained_fixes:
+        rewrite_plan["instructions"] = "\n".join(retained_fixes)
+    merged["rewrite_plan"] = rewrite_plan
+    return merged
 
 
 def _compact_outline_payload(outline_payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -697,6 +924,7 @@ async def judge_commercial_planning_readiness(
     workflow_run_id: Any | None = None,
     pack: PromptPack | None = None,
     genre_context: JudgeGenreContext | None = None,
+    sample_slot: int | None = None,
 ) -> LLMQualityJudgeResult:
     """LLM judge for the commercial planning readiness gate.
 
@@ -747,12 +975,13 @@ async def judge_commercial_planning_readiness(
             parsed_verdict,
             scope="commercial_planning",
             min_overall=threshold,
-            min_dimensions={
-                "concrete_conflict": threshold - 0.05,
-                "hook_quality": threshold - 0.10,
-                "scene_executability": threshold - 0.05,
-                "decision_intelligence": max(0.80, threshold),
-            },
+            # The critic is explicitly asked for a holistic verdict plus
+            # concrete blocking issues. A hidden per-dimension floor used to
+            # flip pass=true/no-blocker opinions into synthetic failures (for
+            # example decision_intelligence 0.78 vs 0.80), leaving the repair
+            # model only a generic numeric delta to chase. Overall threshold
+            # and explicit semantic blockers remain enforced.
+            min_dimensions={},
             llm_run_id=llm_run_id,
             raw_excerpt=raw_excerpt,
         )
@@ -760,20 +989,26 @@ async def judge_commercial_planning_readiness(
     # R17: same project + same input → reuse the recorded verdict instead of
     # re-rolling a non-deterministic judge.
     project_slug = str((project_brief or {}).get("slug") or "").strip()
-    input_hash = compute_judge_input_hash(
-        {
-            "judge_type": COMMERCIAL_PLANNING_JUDGE_TYPE,
-            "chapters": chapters_text,
-            "deterministic_findings": det_text,
-            "project_brief": brief_text,
-            "threshold": round(float(threshold), 4),
-        }
+    hash_payload: dict[str, Any] = {
+        "judge_type": COMMERCIAL_PLANNING_JUDGE_TYPE,
+        "chapters": chapters_text,
+        "deterministic_findings": det_text,
+        "project_brief": brief_text,
+        "threshold": round(float(threshold), 4),
+    }
+    if sample_slot is not None:
+        hash_payload["sample_slot"] = int(sample_slot)
+    input_hash = compute_judge_input_hash(hash_payload)
+    cache_judge_type = (
+        f"{COMMERCIAL_PLANNING_JUDGE_TYPE}:sample:{int(sample_slot)}"
+        if sample_slot is not None
+        else COMMERCIAL_PLANNING_JUDGE_TYPE
     )
     if project_slug:
         cached_verdict = await load_cached_judge_verdict(
             session,
             project_slug=project_slug,
-            judge_type=COMMERCIAL_PLANNING_JUDGE_TYPE,
+            judge_type=cache_judge_type,
             input_hash=input_hash,
         )
         if cached_verdict is not None:
@@ -863,7 +1098,12 @@ async def judge_commercial_planning_readiness(
             prompt_version="v1",
             model_catalog_key=resolve_commercial_judge_model_key(settings),
             workflow_run_id=workflow_run_id,
-            metadata={"judge_scope": "commercial_planning", "threshold": threshold, "rubric": rubric.name},
+            metadata={
+                "judge_scope": "commercial_planning",
+                "threshold": threshold,
+                "rubric": rubric.name,
+                "sample_slot": sample_slot,
+            },
             max_tokens_override=3000,
         ),
     )
@@ -872,7 +1112,7 @@ async def judge_commercial_planning_readiness(
         await store_judge_verdict(
             session,
             project_slug=project_slug,
-            judge_type=COMMERCIAL_PLANNING_JUDGE_TYPE,
+            judge_type=cache_judge_type,
             input_hash=input_hash,
             verdict=parsed,
         )
@@ -947,8 +1187,7 @@ async def judge_commercial_planning_readiness_stable(
     else a passing sample.
     """
 
-    import asyncio  # noqa: PLC0415
-
+    using_default_judge = judge_fn is None
     if judge_fn is None:
         async def judge_fn(**call_kwargs: Any) -> LLMQualityJudgeResult:  # type: ignore[misc]
             return await judge_commercial_planning_readiness(
@@ -960,9 +1199,15 @@ async def judge_commercial_planning_readiness_stable(
     if n == 1:
         return await judge_fn(**call_kwargs)
 
-    async def _one() -> LLMQualityJudgeResult | None:
+    async def _one(sample_index: int) -> LLMQualityJudgeResult | None:
         try:
-            return await judge_fn(**call_kwargs)
+            per_sample_kwargs = dict(call_kwargs)
+            # Without a stable slot in the cache key, samples 2 and 3 simply
+            # replayed sample 1 from cache. The advertised three-vote LLM gate
+            # was one opinion counted three times.
+            if using_default_judge:
+                per_sample_kwargs["sample_slot"] = sample_index
+            return await judge_fn(**per_sample_kwargs)
         except Exception:
             logger.warning(
                 "commercial planning readiness judge sample failed; abstaining",
@@ -974,8 +1219,8 @@ async def judge_commercial_planning_readiness_stable(
     # to complete_text on one AsyncSession — run sequentially to stay
     # session-safe; the judge is called once per book so latency is bounded.
     results: list[LLMQualityJudgeResult | None] = []
-    for _ in range(n):
-        results.append(await _one())
+    for sample_index in range(1, n + 1):
+        results.append(await _one(sample_index))
 
     cast = [r for r in results if r is not None]
     if not cast:

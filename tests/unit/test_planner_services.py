@@ -62,11 +62,13 @@ class FakeSession:
 
 
 def build_settings():
-    return load_settings(
+    settings = load_settings(
         config_path=Path("config/default.yaml"),
         local_config_path=Path("config/does-not-exist.yaml"),
         env={},
     )
+    settings.pipeline.enable_rolling_outline = False
+    return settings
 
 
 def build_project() -> ProjectModel:
@@ -77,7 +79,9 @@ def build_project() -> ProjectModel:
         target_word_count=80000,
         target_chapters=12,
         audience="web-serial",
-        metadata_json={},
+        metadata_json={
+            "premise": "沈砚，一名追查失踪星图的巡航员，被迫穿越封锁航道。"
+        },
     )
     project.id = uuid4()
     return project
@@ -86,6 +90,31 @@ def build_project() -> ProjectModel:
 def test_extract_json_payload_handles_wrapped_json() -> None:
     payload = planner_services._extract_json_payload('```json\n{"title":"长夜巡航"}\n```')
     assert payload["title"] == "长夜巡航"
+
+
+def test_real_outline_prompt_compiler_records_snapshot_and_budget() -> None:
+    project = build_project()
+    settings = build_settings()
+    system, user = planner_services._compile_volume_outline_prompt(
+        project,
+        settings,
+        system_prompt="Return JSON only.",
+        user_prompt=(
+            "BookSpec summary:\n主角必须是林岑。\n" * 900
+            + "请仅生成第1卷的 ChapterOutlineBatch JSON。"
+            + "每章必须包含具体行动、阻力、代价和状态变化。"
+        ),
+    )
+
+    report = project.metadata_json["planner_prompt_compiler_latest"]
+    assert system == "Return JSON only."
+    assert "请仅生成第1卷" in user
+    assert report["required_complete"] is True
+    assert report["source_snapshot_hash"] == project.metadata_json[
+        "book_design_snapshot_hash"
+    ]
+    assert report["total_tokens"] <= report["usable_budget_tokens"]
+    assert "rolling_outline.canonical_context" in report["truncated"]
 
 
 def test_extract_json_payload_handles_prose_prefix_and_suffix() -> None:
@@ -2249,7 +2278,9 @@ def test_planner_prompts_switch_to_english_for_english_projects() -> None:
 
 def test_next_volume_outline_prompt_builds_character_drama_from_current_cast() -> None:
     project = build_project()
-    project.metadata_json = {}
+    project.metadata_json = {
+        "premise": "沈砚，一名追查失踪星图的巡航员，被迫穿越封锁航道。"
+    }
     book_spec = {"title": "长夜巡航", "reader_promise": "每卷都有选择代价。"}
     cast_spec = {
         "protagonist": {
@@ -2626,11 +2657,24 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
         **kwargs: object,
     ):
         prompts_by_logical_name[logical_name] = user_prompt
-        if logical_name.endswith("_chapter_outline") and isinstance(fallback_payload, dict):
+        if "chapter_outline" in logical_name and isinstance(fallback_payload, dict):
             payload = json.loads(json.dumps(fallback_payload, ensure_ascii=False))
             for chapter in payload.get("chapters", []):
+                chapter_number = int(chapter.get("chapter_number") or 0)
+                chapter["chapter_goal"] = (
+                    f"沈砚在第{chapter_number}座航标熄灭前取回对应的航线记录。"
+                )
+                chapter["opening_situation"] = (
+                    f"第{chapter_number}座航标突然熄灭，巡逻船正驶向沈砚的藏身处。"
+                )
                 chapter["main_conflict"] = (
-                    "沈砚必须在封港命令生效前拿到航线记录，并避开港务官的封锁。"
+                    f"港务官封锁第{chapter_number}号栈桥，沈砚必须改变取证路线。"
+                )
+                chapter["event_signature"] = (
+                    f"航标-{chapter_number}-封锁-{chapter_number + 1}"
+                )
+                chapter["hook_description"] = (
+                    f"记录背面出现只通往第{chapter_number + 1}座航标的新坐标。"
                 )
             return payload, uuid4()
         return fallback_payload, uuid4()
@@ -2664,9 +2708,11 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     )
 
     session = FakeSession()
+    settings = build_settings()
+    settings.llm.mock = True
     result = await planner_services.generate_novel_plan(
         session,
-        build_settings(),
+        settings,
         "my-story",
         "一名被放逐的导航员发现帝国正在篡改边境航线记录。",
         requested_by="tester",

@@ -150,6 +150,15 @@ check: lint format-check type-check secrets-scan
 test:
 	$(UV) run pytest -m "not slow and not e2e" $(ARGS)
 
+# Logical backup of the book library. The DB has been wiped three times
+# (2026-07-14, 07-21, 07-23) — scripts/backup-db.sh existed after the second
+# wipe but was never scheduled, so the third was still a surprise.
+# Install the daily job yourself (it edits your crontab):
+#   (crontab -l 2>/dev/null; echo "0 4 * * * cd $(PWD) && scripts/backup-db.sh >> output/backups/backup.log 2>&1") | crontab -
+.PHONY: backup
+backup:
+	scripts/backup-db.sh
+
 .PHONY: test-unit
 test-unit:
 	$(UV) run pytest -m unit $(ARGS)

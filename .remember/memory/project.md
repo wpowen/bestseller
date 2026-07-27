@@ -30,7 +30,21 @@
   - **payoff_ledger 与 below-target 改为 advisory 默认**（避免关键词启发式误杀 hook-heavy 章）：`block_payoff_ledger=False`、`block_below_target_length=False`；真正硬闸门是 3000 CJK 硬下限 + persona/reader-judge。
 - **后续优先**：reader-judge 校准后再开 enforce；Prompt Contract Gate + 快照工具；Summarizer 补 hook/情绪摘要约束。
 
+## AI-flavor / Prose Quality Root Causes (2026-07-23)
+- **门禁奖励模板化**：`reviews.evaluate_scene_draft` 用 `_EMBODIED_EMOTION_TERMS`/`_TENSION_HOOK_TERMS` 密度加分；中文 AI 套话几乎不罚（`_AI_CLICHE_TERMS` 基本是英文）；`voice_consistency` 基线 0.74。
+- **Prompt 过载致程序腔**：消融 `output/_prompt-ablation-final/` 生产框架 3.5 分 vs 精简基线 8.0；framework_user ≈38KB；禁用名单含角色名逼迂回。
+- **读感裁判默认关**：`reader_quality_gate.enable_llm_reader_judge=false`；persona `prose_quality` 中性 0.7；LLM critic 轴无 AI 味。
+- **ai_flavor block=50 过松**：score 32 仍 pass；deslop 主要在 block/特定 discourse；auto-repair 偏字数/钩子/重复，`DIALOGUE_AI_FLAVOR` 无 playbook。
+- **文采/蒸馏未进硬路径**：`prose_craft` 已撤出 PROSE_SCENE；`enable_library_soft_reference=false`；pack `structure_guidance` 0/31、`opening_rules` 2/31。
+
 ## Working Conventions
+- **交接文档（2026-07-24）**：完整进展/未完成项见 `docs/plans/2026-07-24-quality-remediation-handoff.md`（给下一任模型）。结项卡在真书验收（≥10章）与 B1/B2 校准，不是 A1–A5 代码。
+- **Phase A 正文止血已落地（2026-07-24）**：`prose_prompt_profile` 默认/配置均为 `lean`；chapter-first lean 用 `render_compact_writer_discipline`；`reviews` 保留 density 抬分并加同词复读+中文套话罚分；`ai_flavor` block_cn=38 且 warn 带强制 deslop；短章 playbook 去感官灌水并补 `DIALOGUE_AI_FLAVOR`。单测 `tests/unit/test_quality_remediation_phase_a.py`。Docker 经 override 热挂载 `src/config`。
+- **Phase B/C 剩余项已落地（2026-07-24）**：B1 `reader_judge` 六轴（含 `ai_taste`/`human_voice`）+ 真正 `audit_only` 接线（默认 enable=false、audit_only=true、enforce_voice=false，不影响在跑书）；C2 终稿/导出可读已存 dimensions；C3 voice 返工高原记 `voice_debt` 软过；C1 lean 场景合同去掉 `action_sequence`；B3 `/api/projects/{slug}/chapters/{n}/prompt-manifest` + quickstart「生效片段」；B4 `enable_voice_few_shot`（默认 off）+ `config/voice_few_shots.yaml`；B2 `scripts/lean_vs_full_pairwise_arena.py`。单测 `tests/unit/test_quality_remediation_phase_b.py`。
+- **外部对标+可执行方案（2026-07-23）**：GitHub（autonovel / AI-Novel-Writing-Assistant 等）与 V2EX/36氪共识：plan→write→后置审；短纪律+物料；过检测≠人味。可执行冲刺见 canvas `research-backed-executable-plan.canvas.tsx`。
+- **全书质量全链路评审（2026-07-23）**：根因不是缺去 AI 味工具，而是评分/门禁奖励模板化（身体词密度抬 emotion/hook）、writer prompt 过载（消融框架 3.5 vs 精简 8.0）、读感 judge 默认关、AI-flavor block=50 过松、auto-repair 修 KPI 不修文笔。`prose_prompt_profile` 默认仍 `full` 与 `writer_prompt_mode=lean` 冲突。完整报告见 Cursor canvas `book-quality-full-lifecycle-review.canvas.tsx`。
+- **Writer prompt 装配双旋钮（2026-07-23）**：`generation.writer_prompt_mode=lean` 只驱动 scene 路径 `compact_user_prompt(lean=…)`；chapter-first 块裁剪看 `pipeline.prose_prompt_profile`（默认 `full`）。消融最优指令带 175–633 字；`render_anti_ai_voice_discipline(scope=chapter)` 单块已 ~832 字。ideal：system≤700、user=物料/短 beats/短 bans；验收/市场块留给门禁。
+- **架构设计展厅**：`src/bestseller/web/novel_architecture_course.html`（路由 `/architecture-course`，支持 `?embed=1`）。已整合进 quickstart 顶部 Tab「架构设计」（`#architecture` 深链）；iframe 嵌入全屏展厅。本地 override 挂载 `./src/bestseller/web` 到 web 容器以便热更 HTML。
 - For this repository, prefer adding runnable planning artifacts under `examples/planning/` when building story content through the framework.
 - When user requests novel writing via specific skill, deliver both planning artifacts and full chapter prose in project files (not only outlines).
 - For full-length novel generation requests, place final readable deliverables under `output/ai-generated/<novel-slug>/` with volume/chapter structure.

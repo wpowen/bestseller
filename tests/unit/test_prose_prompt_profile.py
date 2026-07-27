@@ -3,7 +3,7 @@
 Evidence behind the profile lives in ``services/prose_prompt_profile``. These
 tests guard the two things that can silently break when blocks are dropped:
 
-1. ``full`` must stay byte-identical to the historical prompt (no-op default).
+1. ``full`` must stay byte-identical to the historical prompt (explicit opt-in).
 2. ``lean`` must drop only acceptance/planning blocks and must NOT drop canon
    context — losing canon trades AI-flavour for continuity errors.
 """
@@ -146,11 +146,12 @@ class TestResolution:
 
 
 class TestFullIsUnchanged:
-    """The historical prompt is the default; a regression here changes every
-    in-flight book."""
+    """``full`` remains an explicit opt-in. Production default is lean
+    (dose-response winner); unspecified must not silently revive full."""
 
-    def test_unspecified_equals_full(self) -> None:
-        assert _prompts(None) == _prompts("full")
+    def test_unspecified_equals_lean_not_full(self) -> None:
+        assert _prompts(None) == _prompts("lean")
+        assert _prompts(None) != _prompts("full")
 
     @pytest.mark.parametrize(
         "marker",

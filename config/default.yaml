@@ -12,6 +12,8 @@ llm:
   # Final Prompt Compiler budget covers the complete system + user input.
   writer_total_input_budget_tokens: 8000
   writer_prompt_safety_margin: 0.10
+  planner_prompt_budget_tokens: 16000
+  planner_prompt_safety_margin: 0.10
   # Cross-model blind judge remains shadow/advisory until G4 human calibration.
   # Kept cross-family by design (it never gates production); when its configured
   # models are unavailable the shadow calls fail harmlessly. The generating and
@@ -271,6 +273,12 @@ hook_engine:
 # Pipeline
 # -----------------------------------------------------------------------------
 pipeline:
+  # Writer prompt dose profile. lean = story material + short discipline
+  # (dose-response winner); full = historical 31-block over-constrained path.
+  # Per-book override: ProjectModel.metadata["prose_prompt_profile"].
+  prose_prompt_profile: lean
+  # B4 optional voice few-shot (≤400 chars). Default off for in-flight books.
+  enable_voice_few_shot: false
   # closure records required-lane degradation and continues; strict blocks.
   # Neither mode may export or promote a failed/stalled scene or chapter.
   quality_mode: closure
@@ -294,6 +302,15 @@ pipeline:
   planning_artifact_reuse_enabled: true
   planning_artifact_reuse_allow_legacy: true
   chapter_outline_batch_size: 10
+  # Detailed prose planning is bounded to one integrity-checked rolling window.
+  # Missing, stale, or tampered plans pause the book for replan instead of
+  # silently feeding every future chapter to the writer.
+  enable_rolling_outline: true
+  rolling_outline_block_when_missing: true
+  rolling_outline_window_size: 8
+  rolling_outline_batch_size: 4
+  enable_outline_semantic_gate: true
+  outline_semantic_gate_block_on_failure: true
   # Upstream narrative contracts fail closed before model generation.
   require_foundation_identity_lock: true
   require_chapter_plan_contract: true
@@ -350,6 +367,7 @@ pipeline:
   methodology_planning_readiness_block_on_failure: false
   enable_outline_llm_commercial_judge: true
   outline_llm_commercial_judge_block_on_failure: false
+  outline_commercial_judge_repair_rounds: 2
   outline_llm_commercial_judge_threshold: 0.82
   enable_outline_reader_experience_judge: true
   outline_reader_experience_judge_block_on_failure: false

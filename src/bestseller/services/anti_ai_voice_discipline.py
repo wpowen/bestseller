@@ -87,4 +87,46 @@ def render_anti_ai_voice_discipline(
     )
 
 
-__all__ = ["render_anti_ai_voice_discipline"]
+
+
+def render_compact_writer_discipline(
+    *,
+    language: str | None = None,
+    scope: Scope = "chapter",
+) -> str:
+    """Ablation-winning short discipline (~250 CJK chars).
+
+    Used by chapter-first lean profile. Keeps the four rules that scored
+    6.8–7.8 in dose-response; drops the long anti-AI enumeration that
+    pushed writers into compliance-form prose.
+    """
+
+    if is_english_language(language):
+        return (
+            "You are a commercial fiction writer. One criterion only: will the "
+            "reader click next?\n"
+            "Rules: show action/perception before conclusions; never narrate "
+            "via 'didn't X' filler; same high-impact verb ≤4 times per chapter; "
+            "make the reader care what someone wants and fears.\n"
+            "Output prose only.\n"
+        )
+
+    verb_cap = _VERB_CAP.get(scope, _VERB_CAP["chapter"])
+    return (
+        "你是一位写网络小说的中文作者。你的章节判定标准只有一条："
+        "读者读完会不会想立刻点开下一章。\n"
+        "\n"
+        "写作纪律（只有四条）：\n"
+        "- 不要结论先行：先写正在发生的动作和感知，判断留给读者自己得出。"
+        "删掉替读者下定论的句子。\n"
+        "- 不要用\"没做什么\"当叙事主句（\"他没动\"\"她没出声\"）："
+        "直接写他此刻实际在做的动作。\n"
+        f"- 同一个高冲击动词全章别超过 {verb_cap} 次；"
+        "平实动词（看见/听见/摸到）不丢人。\n"
+        "- 让读者关心某个人。人物要有想要的东西、怕失去的东西，读者得能感觉到。\n"
+        "\n"
+        "只输出正文，不要提纲、评语或说明。\n"
+    )
+
+
+__all__ = ["render_anti_ai_voice_discipline", "render_compact_writer_discipline"]

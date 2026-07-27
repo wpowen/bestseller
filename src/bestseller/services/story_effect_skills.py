@@ -821,9 +821,11 @@ def _skill_entry_by_key(skill_key: str) -> StoryEffectSkillEntry | None:
 def _render_generic_story_effect_contract(
     entry: StoryEffectSkillEntry, *, language: str
 ) -> str:
-    """Hard per-chapter contract for a selected skill that lacks a bespoke
-    renderer — derived from its catalog entry so all 18 skills are usable, not
-    just the four with hand-written contracts.
+    """Hard contract for a skill routed into one chapter.
+
+    Book-level enhancer selection is a palette, not an instruction to stack
+    every checked effect into every chapter. The caller chooses the routed
+    effect(s); once routed, this contract makes the beat concrete and auditable.
 
     The contract NAMES the skill's ``output_contract`` field and demands the
     chapter cash the effect (not merely list it), mirroring the bespoke
@@ -835,19 +837,20 @@ def _render_generic_story_effect_contract(
     if language.lower().startswith("en"):
         rails = "; ".join(entry.misuse_guardrails[:2])
         return (
-            f"[{entry.skill_key.upper()} CONTRACT — selected at book level, every "
-            "chapter must cash it]\n"
+            f"[{entry.skill_key.upper()} CONTRACT — required when routed into "
+            "this chapter]\n"
             f"Effect: {entry.description}\n"
-            f"Each chapter must output `{entry.output_contract}`: a concrete, "
+            f"A chapter that selects this skill must output `{entry.output_contract}`: "
+            "a concrete, "
             "on-page beat that delivers this effect through action/choice/reveal "
             "(not a label, not narration). Best used for: "
             f"{', '.join(entry.use_when[:3])}.\n"
             + (f"Guardrails: {rails}." if rails else "")
         )
     return (
-        f"【{entry.skill_key} 合同 — 建书时已勾选，每章必须兑现】\n"
+        f"【{entry.skill_key} 合同 — 路由到本章时必须兑现】\n"
         f"效果：{entry.description}\n"
-        f"每章必须输出 `{entry.output_contract}`：一个落在页面上的具体 beat，"
+        f"选择本 skill 的章节必须输出 `{entry.output_contract}`：一个落在页面上的具体 beat，"
         "通过行动/选择/揭示真正兑现这个效果（不是贴标签、不是旁白概述）。"
         f"适合用在：{use_when}。\n"
         + (f"禁忌：{guardrails}。" if guardrails else "")

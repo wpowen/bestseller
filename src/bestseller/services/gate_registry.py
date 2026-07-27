@@ -18,6 +18,13 @@ GateTier = Literal["core", "advanced"]
 #: continuation readiness — see 青囊不语问阴阳 (book stuck looping ch1 opening
 #: repair while never advancing) for the motivating regression.
 ContinuationImpact = Literal["local", "structural"]
+_PLANNING_INVALID_PAUSE_REASONS = frozenset(
+    {
+        "outline_semantic_gate_failed",
+        "outline_replan_in_progress",
+        "planning_repair_required",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -512,3 +519,23 @@ def pause_reason_is_structural(reason: str | None) -> bool:
     """True when a pause reason corresponds to a structural (downstream) gate."""
 
     return pause_reason_continuation_impact(reason) == "structural"
+
+
+def project_blocks_all_prose_generation(project: object) -> bool:
+    """Whether rejected architecture forbids every prose generation entry point."""
+
+    status = str(getattr(project, "status", None) or "").strip().lower()
+    if status == "needs_replan":
+        return True
+    raw_metadata = getattr(project, "metadata_json", None)
+    metadata = raw_metadata if isinstance(raw_metadata, Mapping) else {}
+    if metadata.get("outline_replan_in_progress"):
+        return True
+    if str(metadata.get("outline_semantic_gate_status") or "").strip().lower() == (
+        "needs_replan"
+    ):
+        return True
+    if str(metadata.get("planning_status") or "").strip().lower() == "needs_replan":
+        return True
+    pause_reason = str(metadata.get("production_pause_reason") or "").strip().lower()
+    return pause_reason.split(":", 1)[0] in _PLANNING_INVALID_PAUSE_REASONS

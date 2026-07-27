@@ -67,3 +67,23 @@ def test_full_batch_shape_that_previously_failed_validation():
     assert len(s.action_sequence) == 4
     assert s.relationship_debts == ["中年男人欠苏澄一个「身世故事」的答案"]
     assert s.participants == ["苏澄", "中年男人"]
+
+
+@pytest.mark.unit
+def test_scalar_scene_states_are_losslessly_wrapped_as_summaries():
+    s = SceneOutlineInput(
+        scene_number=1,
+        entry_state="沈拓尚未记录异常",
+        exit_state="沈拓落下第一档记录",
+    )
+
+    assert s.entry_state == {"summary": "沈拓尚未记录异常"}
+    assert s.exit_state == {"summary": "沈拓落下第一档记录"}
+
+
+@pytest.mark.unit
+def test_null_scene_states_become_empty_mappings():
+    s = SceneOutlineInput(scene_number=1, entry_state=None, exit_state=None)
+
+    assert s.entry_state == {}
+    assert s.exit_state == {}

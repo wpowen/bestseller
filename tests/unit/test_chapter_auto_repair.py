@@ -15,6 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import Select
 
 from bestseller.domain.enums import SceneStatus
 from bestseller.services import drafts
@@ -113,6 +114,24 @@ class FakeSession:
 
     async def flush(self) -> None:
         self.flush_calls += 1
+
+
+def mutating_statements(session: FakeSession) -> list[Any]:
+    """The UPDATE/DELETE/INSERT statements a call issued.
+
+    Several tests below guard that repair *preparation* never writes — in
+    particular that it never demotes a scene's current draft before a
+    replacement exists (a past bug that killed whole books). They used to spell
+    that as ``execute_calls == []``, which also forbade reads and so broke the
+    moment repair started reading its own history. Filtering to mutations keeps
+    the guarantee they actually care about.
+    """
+
+    return [
+        stmt
+        for stmt in session.execute_calls
+        if not isinstance(stmt, Select)
+    ]
 
 
 # ── Tests ──────────────────────────────────────────────────────────────
@@ -327,7 +346,7 @@ async def test_stored_duplicate_block_triggers_repair_even_with_latest_report() 
     assert scene.status == SceneStatus.NEEDS_REWRITE.value
     assert "第30章复用了第29章段落" in scene.metadata_json["auto_repair_hint"]
     assert "post_assembly_duplicate_gate" not in chapter.metadata_json
-    assert session.execute_calls == []  # old current draft stays live until replacement succeeds
+    assert mutating_statements(session) == []  # old current draft stays live until replacement succeeds
 
 
 @pytest.mark.asyncio
@@ -398,7 +417,7 @@ async def test_stored_pronoun_mismatch_block_triggers_rewrite_repair() -> None:
     assert scene.status == SceneStatus.NEEDS_REWRITE.value
     assert "叶长青: expected 他, found 她的" in scene.metadata_json["auto_repair_hint"]
     assert scene.metadata_json["auto_repair_block_codes"] == ["pronoun_mismatch"]
-    assert session.execute_calls == []  # transactional replacement preserves fallback draft
+    assert mutating_statements(session) == []  # transactional replacement preserves fallback draft
 
 
 @pytest.mark.asyncio
@@ -568,7 +587,7 @@ async def test_dead_alive_block_uses_offstage_character_repair() -> None:
     assert scenes[0].metadata_json["auto_repair_removed_participants"] == ["母亲"]
     assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == ["母亲"]
     assert "当下不可登场角色：母亲" in scenes[0].metadata_json["auto_repair_hint"]
-    assert session.execute_calls == []  # repair preparation never demotes current content
+    assert mutating_statements(session) == []  # repair preparation never demotes current content
 
 
 @pytest.mark.asyncio
@@ -1325,7 +1344,7 @@ async def test_auto_repair_preserves_current_scene_drafts_until_regeneration_suc
         SceneStatus.NEEDS_REWRITE.value,
         SceneStatus.NEEDS_REWRITE.value,
     ]
-    assert session.execute_calls == []
+    assert mutating_statements(session) == []
     assert all(scene.metadata_json["auto_repair_hint"] for scene in scenes)
     assert all(scene.metadata_json["auto_repair_block_codes"] == ["BLOCK_LOW"] for scene in scenes)
 

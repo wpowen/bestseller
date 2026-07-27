@@ -1,0 +1,31 @@
+# Optional lean-path voice exemplars (B4). Injected only when
+# pipeline.enable_voice_few_shot is true. Keep each body ≤400 chars.
+# Positive exemplars only — do not list banned phrases.
+
+aliases:
+  xianxia: xianxia-upgrade-core
+  xianxia-upgrade: xianxia-upgrade-core
+  xuanhuan: xuanhuan-power-fantasy
+  apocalypse: apocalypse-supply-chain
+  apocalypse-supply: apocalypse-supply-chain
+
+examples:
+  default: |
+    他把欠条按在桌上，指节发白。对面那人笑了一下，笑意没到眼睛。
+    「签字。」「凭什么。」「凭你昨天夜里进过那间库房。」空气里只剩笔尖刮纸的声音。
+
+  xianxia-upgrade-core: |
+    丹火窜高半寸，他袖口已焦。旁人催「快收」，他只盯着鼎里那点绿芒，像盯着仇人。
+    「成了？」「还差一口气。」他伸手按鼎盖，掌心烫得发抖，没松。
+
+  xuanhuan-power-fantasy: |
+    剑光擦过耳廓，他没退，反而踩碎身下青砖迎上去。血味先到，痛后到。
+    「你越级了。」「那就打死我。」他笑得很难看，刀仍往前送。
+
+  apocalypse-supply-chain: |
+    仓库铁门锁着，门外脚步乱。他把最后一箱罐头拆了，数数，再把清单折进内衣口袋。
+    「外面有人。」「让他们敲。敲够了才知道谁急。」
+
+  urban-power-reversal: |
+    会议室空调太冷。他推回合同，指尖在「对赌条款」上停了两秒。
+    「签字吧。」「先把你昨晚删掉的附件打出来。」对面喉结动了一下。

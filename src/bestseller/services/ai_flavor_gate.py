@@ -62,8 +62,8 @@ class AiFlavorGateConfig:
     """
 
     enabled: bool = True
-    block_score_cn: int = 50
-    block_score_en: int = 55
+    block_score_cn: int = 38
+    block_score_en: int = 45
     warn_score_cn: int = 25
     warn_score_en: int = 30
     cluster_threshold: int = 3
@@ -81,6 +81,8 @@ class AiFlavorGateConfig:
     # delete/swap words; this clears discourse-level flavor (info-narration,
     # 结论先行, 解释规则) the patcher can't touch.
     deslop_revise_enabled: bool = True
+    # Force whole-passage deslop when residual score ≥ warn band.
+    deslop_on_warn: bool = True
 
 
 @dataclass(frozen=True)
@@ -154,13 +156,17 @@ DESLOP_DISCOURSE_CATEGORIES = frozenset(
 def needs_deslop_revise(outcome: "AiFlavorGateOutcome") -> bool:
     """Whether the chapter should run the deslop rewrite.
 
-    True when the score blocked OR the (post-patch) report still carries a
-    discourse tell the patcher cannot touch. The latter is the fix for the
-    POV blind spot: rule-exposition scores low (advisory) yet is exactly what
-    deslop exists to rewrite.
+    True when:
+    - decision is block, OR
+    - residual score is in/above the warn band (deslop_on_warn posture), OR
+    - report still carries a discourse tell the patcher cannot touch.
     """
 
     if outcome.decision == "block":
+        return True
+    metrics = outcome.metrics or {}
+    warn_threshold = float(metrics.get("warn_threshold") or 25)
+    if float(outcome.after_score or 0.0) >= warn_threshold:
         return True
     report = outcome.report
     if report is None:

@@ -98,6 +98,12 @@ _GENRE_FRAMEWORK_OVERRIDE_FIELDS: dict[str, set[str]] = {
         "reaction_amplification",
     },
 }
+_CREATION_TONE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "epic": ("宏大", "厚重", "史诗感"),
+    "light": ("轻松", "幽默", "明快"),
+    "dark": ("暗黑", "冷峻", "压抑"),
+    "hot": ("热血", "燃", "爽快"),
+}
 
 
 def is_english_language(language: str | None) -> bool:
@@ -426,7 +432,7 @@ def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingPro
         raw_pack = contract.get("prompt_pack_key")
         if isinstance(raw_pack, str) and raw_pack.strip():
             forced_pack = raw_pack.strip()
-    return resolve_writing_profile(
+    profile = resolve_writing_profile(
         payload.writing_profile,
         genre=payload.genre,
         sub_genre=payload.sub_genre,
@@ -434,6 +440,27 @@ def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingPro
         language=payload.language,
         forced_prompt_pack_key=forced_pack,
     )
+    creation_contract = metadata.get("creation_intent_contract")
+    if isinstance(creation_contract, dict):
+        pov = str(creation_contract.get("pov") or "").strip()
+        if pov:
+            profile.style.pov_type = pov
+        preference = str(
+            creation_contract.get("tone_preference")
+            or (
+                contract.get("tone_preference")
+                if isinstance(contract, dict)
+                else ""
+            )
+            or ""
+        ).strip().lower()
+        lead = _CREATION_TONE_KEYWORDS.get(preference, ())
+        if lead:
+            profile.style.tone_keywords = _merge_lists(
+                list(lead),
+                list(profile.style.tone_keywords or ()),
+            )
+    return profile
 
 
 def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfile) -> dict[str, Any]:

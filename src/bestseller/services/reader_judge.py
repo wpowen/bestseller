@@ -7,8 +7,8 @@ reflects whether a chapter is *readable*, not just keyword-complete.
 
 Design:
   * Single ``complete_text(logical_role="critic")`` call, deterministic temp.
-  * Strict JSON rubric: opening pull / payoff density / emotional impact /
-    abandon urge. Aggregated into one 0..1 ``prose_quality_score``.
+  * Strict JSON rubric: opening / payoff / emotion / anti-abandon / ai_taste /
+    human_voice. Aggregated into one 0..1 ``prose_quality_score``.
   * Always returns a result (fallback to neutral 0.7 on any failure) — never
     blocks the pipeline on judge errors.
   * Respects the LLM gateway contract (project_id + workflow_run_id +
@@ -33,12 +33,18 @@ logger = logging.getLogger(__name__)
 
 _NEUTRAL_SCORE = 0.7
 
+# Weights sum to 1.0. Voice axes are modest so persona calibration on the
+# legacy four axes is not overturned when judge is first enabled.
 _RUBRIC_WEIGHTS: dict[str, float] = {
-    "opening_pull": 0.25,
-    "payoff_density": 0.30,
-    "emotional_impact": 0.25,
-    "anti_abandon": 0.20,
+    "opening_pull": 0.18,
+    "payoff_density": 0.22,
+    "emotional_impact": 0.18,
+    "anti_abandon": 0.14,
+    "ai_taste": 0.14,
+    "human_voice": 0.14,
 }
+
+_VOICE_AXES: tuple[str, ...] = ("ai_taste", "human_voice")
 
 _FALLBACK_JSON = json.dumps(
     {
@@ -46,6 +52,8 @@ _FALLBACK_JSON = json.dumps(
         "payoff_density": 0.7,
         "emotional_impact": 0.7,
         "anti_abandon": 0.7,
+        "ai_taste": 0.7,
+        "human_voice": 0.7,
         "comment": "fallback",
     },
     ensure_ascii=False,
@@ -54,14 +62,20 @@ _FALLBACK_JSON = json.dumps(
 _SYSTEM_PROMPT = (
     "你是中文商业连载小说的资深读者评审，只输出严格 JSON。\n"
     "你要像真实读者一样判断这一章读起来是否抓人、是否值得继续追读，"
-    "不要被结构完整或关键词齐全迷惑——重点看现场感、兑现、情绪冲击和弃读冲动。\n"
+    "不要被结构完整或关键词齐全迷惑——重点看现场感、兑现、情绪冲击、"
+    "人味和弃读冲动。\n"
     "评分维度（均为 0..1，越高越好）：\n"
     "1. opening_pull：开篇是否迅速制造钩子/张力，有没有拖沓与信息倾倒。\n"
     "2. payoff_density：本章是否有真实兑现（揭示/对抗结果/代价），而非只抛钩子。\n"
     "3. emotional_impact：情绪是否通过现场动作传递并击中读者，而非形容词堆叠。\n"
     "4. anti_abandon：综合读感下读者不弃读的概率（越高越不想弃）。\n"
+    "5. ai_taste：不像机器作文的程度（高=人味足；低=总结腔/对举定义/否定叙事/"
+    "万能比喻/分镜短句癖）。\n"
+    "6. human_voice：人物声口与叙述节奏是否有具体个性（高=能听出是谁在说话；"
+    "低=万能网文腔）。\n"
     "输出 JSON：{\"opening_pull\":0.0,\"payoff_density\":0.0,"
-    "\"emotional_impact\":0.0,\"anti_abandon\":0.0,\"comment\":\"≤30字\"}"
+    "\"emotional_impact\":0.0,\"anti_abandon\":0.0,\"ai_taste\":0.0,"
+    "\"human_voice\":0.0,\"comment\":\"≤30字\"}"
 )
 
 
@@ -117,6 +131,43 @@ def aggregate_prose_quality(dimensions: dict[str, float]) -> float:
     return max(0.0, min(1.0, acc / total_weight))
 
 
+def voice_axis_failures(
+    dimensions: dict[str, float] | None,
+    *,
+    min_ai_taste: float = 0.55,
+    min_human_voice: float = 0.55,
+    enforce: bool = False,
+) -> list[str]:
+    """Return hard-gate issue strings for voice axes when ``enforce`` is on."""
+
+    if not enforce:
+        return []
+    dims = dimensions if isinstance(dimensions, dict) else {}
+    issues: list[str] = []
+    for axis, floor in (("ai_taste", min_ai_taste), ("human_voice", min_human_voice)):
+        if axis not in dims:
+            issues.append(f"reader_judge:{axis}:missing")
+            continue
+        score = _clamp01(dims.get(axis))
+        if score < float(floor):
+            issues.append(f"reader_judge:{axis}:{score:.2f}")
+    return issues
+
+
+def extract_reader_judge_dimensions(chapter_metadata: object | None) -> dict[str, float]:
+    """Pull dimensions from chapter.metadata_json['reader_judge']."""
+
+    if not isinstance(chapter_metadata, dict):
+        return {}
+    blob = chapter_metadata.get("reader_judge")
+    if not isinstance(blob, dict):
+        return {}
+    dims = blob.get("dimensions")
+    if not isinstance(dims, dict):
+        return {}
+    return {str(k): _clamp01(v) for k, v in dims.items()}
+
+
 async def judge_chapter_readability(
     session: AsyncSession,
     settings: AppSettings,
@@ -147,7 +198,7 @@ async def judge_chapter_readability(
                 user_prompt=user_prompt,
                 fallback_response=_FALLBACK_JSON,
                 prompt_template="reader_judge",
-                prompt_version="1.0",
+                prompt_version="1.1",
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
@@ -175,6 +226,9 @@ async def judge_chapter_readability(
 
 __all__ = [
     "ReaderJudgeResult",
+    "_VOICE_AXES",
     "aggregate_prose_quality",
+    "extract_reader_judge_dimensions",
     "judge_chapter_readability",
+    "voice_axis_failures",
 ]

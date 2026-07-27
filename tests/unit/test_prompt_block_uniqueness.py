@@ -119,7 +119,25 @@ def _context_packet() -> SimpleNamespace:
     )
 
 
-def _assembled_prompt(path_mode: str, language: str, chapter_number: int = 1) -> str:
+def _assembled_prompt(
+    path_mode: str,
+    language: str,
+    chapter_number: int = 1,
+    *,
+    prose_prompt_profile: str = "full",
+) -> str:
+    """Assemble a writer prompt for singularity/uniqueness inspection.
+
+    Pinned to ``full`` by default and on purpose. These tests answer "when this
+    block renders, does it render exactly once, in the right language, for the
+    right chapter range" — a question that only exists while the block is part
+    of the prompt at all. The ``lean`` profile (the 2026-07-24 default) drops
+    several of them by design, moving the concern to post-generation gates; that
+    contract has its own coverage in ``TestLeanProfileDropsAndDelegates`` below.
+    Leaving these implicit made a deliberate profile switch look like 26 broken
+    tests instead of one intentional change.
+    """
+
     project = _project(language)
     chapter = _chapter(project.id, chapter_number)
     scene = _scene(project.id, chapter.id)
@@ -133,6 +151,7 @@ def _assembled_prompt(path_mode: str, language: str, chapter_number: int = 1) ->
             None,
             _context_packet(),
             target_word_count=2_600,
+            prose_prompt_profile=prose_prompt_profile,
         )
     return f"{system}\n{user}"
 
@@ -336,11 +355,118 @@ class TestGoldenRulesConsistency:
             packet,
             target_word_count=2_600,
             context_budget_tokens=1_000,
+            # Budget-survival is a full-profile guarantee: under lean these
+            # blocks are absent by design, so "does the trimmer keep them"
+            # has no meaning there.
+            prose_prompt_profile="full",
         )
         prompt = f"{system}\n{user}"
 
         assert prompt.count(golden_marker) == 1
         assert prompt.count(blacklist_marker) == 1
+
+
+class TestLeanProfileDropsAndDelegates:
+    """The other half of the profile contract (plan A1 + §4.3).
+
+    ``lean`` — the production default since 2026-07-24 — deliberately removes
+    the acceptance/market/blacklist blocks from the writer prompt. The evidence
+    is the dose-response ablation in ``prose_prompt_profile.py``: 20,988 chars
+    of instruction blind-scored 3.50 against 6.8-7.8 for the 175-633 band, with
+    the writer degrading into compliance-form filling.
+
+    A drop is only legitimate when something downstream still enforces the
+    concern. These tests pin both halves, so a future reader can tell "removed
+    on purpose, covered elsewhere" from "silently lost".
+    """
+
+    @pytest.mark.parametrize(
+        ("language", "blacklist_marker"),
+        [("zh-CN", "AI套话黑名单"), ("en", "BANNED AI CLICH")],
+    )
+    def test_lean_drops_the_slop_blacklist_priming(
+        self, language: str, blacklist_marker: str
+    ) -> None:
+        """§4.3: "AI 套话黑名单 priming | DELETE → deslop 后置".
+
+        Blacklist priming was independently falsified — the 50-round arena
+        (2026-07-18) showed listing banned diction primes that same diction.
+        """
+
+        lean = _assembled_prompt("chapter_first", language, prose_prompt_profile="lean")
+        full = _assembled_prompt("chapter_first", language, prose_prompt_profile="full")
+
+        assert blacklist_marker in full, "full profile must still carry it"
+        assert blacklist_marker not in lean
+
+    def test_slop_concern_is_still_enforced_after_generation(self) -> None:
+        """Dropping the priming is safe only because deslop still runs."""
+
+        from bestseller.services.ai_flavor_gate import (
+            AiFlavorGateConfig,
+            needs_deslop_revise,
+        )
+
+        cfg = AiFlavorGateConfig()
+        assert cfg.enabled is True
+        assert cfg.deslop_on_warn is True, (
+            "warn-band chapters must still be cleaned; the writer prompt no "
+            "longer carries the blacklist"
+        )
+
+    @pytest.mark.parametrize(
+        ("language", "golden_marker"),
+        [
+            ("zh-CN", "【黄金三章·开篇硬契约】"),
+            ("en", "[GOLDEN THREE CHAPTERS — OPENING HARD CONTRACT]"),
+        ],
+    )
+    def test_lean_drops_the_opening_retention_contract(
+        self, language: str, golden_marker: str
+    ) -> None:
+        lean = _assembled_prompt("chapter_first", language, prose_prompt_profile="lean")
+        full = _assembled_prompt("chapter_first", language, prose_prompt_profile="full")
+
+        assert golden_marker in full
+        assert golden_marker not in lean
+
+    def test_opening_retention_is_still_enforced_by_repair_codes(self) -> None:
+        """Plan §6: "瘦 prompt 后钩子由 gate 兜底，不系统性丢失".
+
+        The opening/hook contract moves from instruction to acceptance: these
+        codes are detected after assembly and drive auto-repair.
+        """
+
+        from bestseller.settings import PipelineSettings
+
+        repairable = set(PipelineSettings().chapter_auto_repair_repairable_codes)
+        for code in (
+            "GOLDEN_THREE_WEAK",
+            "OPENING_PRESSURE_THIN",
+            "ENDING_HOOK_MISSING",
+        ):
+            assert code in repairable, (
+                f"{code} must stay auto-repairable: the lean writer prompt no "
+                "longer states the opening/hook contract"
+            )
+
+    def test_lean_keeps_canon_story_facts(self) -> None:
+        """The red line from ``prose_prompt_profile.py``: dropping canon blocks
+        trades AI-flavor for continuity errors. Diet must not reach them."""
+
+        from bestseller.services.prose_prompt_profile import (
+            LEAN_DROPPED_CONSTRAINT_FIELDS,
+        )
+
+        for canon_field in (
+            "timeline_canon_block",
+            "character_role_block",
+            "dialogue_voice_block",
+            "canon_guardrails_block",
+        ):
+            assert canon_field not in LEAN_DROPPED_CONSTRAINT_FIELDS, (
+                f"{canon_field} is canon story fact, not a style instruction"
+            )
 
 
 class TestNoNovelOutputProhibitionDuplicates:

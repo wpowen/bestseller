@@ -103,11 +103,22 @@ def _inputs(language: str, chapter_number: int):
     return project, chapter, scene, packet
 
 
+@pytest.mark.parametrize("prose_prompt_profile", ["full", "lean"])
 @pytest.mark.parametrize(("language", "chapter_number"), _CASES)
 def test_compiled_chapter_first_matrix_stays_complete_unique_and_within_budget(
     language: str,
     chapter_number: int,
+    prose_prompt_profile: str,
 ) -> None:
+    """Compiler integrity must hold for BOTH shipping profiles.
+
+    ``lean`` became the default on 2026-07-24 and ``full`` remains reachable
+    per-book via ``metadata["prose_prompt_profile"]``, so budget/uniqueness/
+    required-block guarantees have to be proven on each. Leaving the profile
+    implicit meant this matrix silently only ever covered whichever one was
+    currently the default.
+    """
+
     project, chapter, scene, packet = _inputs(language, chapter_number)
 
     compiled = build_chapter_first_draft_prompts(
@@ -120,6 +131,7 @@ def test_compiled_chapter_first_matrix_stays_complete_unique_and_within_budget(
         prompt_mode="compiled",
         total_input_budget_tokens=8_000,
         prompt_safety_margin=0.10,
+        prose_prompt_profile=prose_prompt_profile,
     )
 
     assert isinstance(compiled, CompiledPrompt)
@@ -135,8 +147,15 @@ def test_compiled_chapter_first_matrix_stays_complete_unique_and_within_budget(
     )
     assert "chapter_first.system_contract" in compiled.report.required_blocks_kept
     assert "chapter_first.primary_task" in compiled.report.required_blocks_kept
+
+    # The blacklist is a full-profile block: lean routes the concern to the
+    # post-generation deslop pass instead (plan §4.3), because listing banned
+    # diction primes it (50-round arena, 2026-07-18).
     blacklist = "AI套话黑名单" if language.startswith("zh") else "BANNED AI CLICH"
-    assert blacklist in compiled.user
+    if prose_prompt_profile == "full":
+        assert blacklist in compiled.user
+    else:
+        assert blacklist not in compiled.user
 
 
 def test_chapter_writer_receives_explicit_protagonist_decision_block() -> None:

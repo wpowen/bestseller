@@ -43,9 +43,9 @@ from bestseller.services.source_artifact_audit import (
     discover_source_artifacts,
 )
 from bestseller.services.word_targets import (
+    allocate_scene_word_targets,
     normalize_chapter_word_target,
     project_word_target_policy,
-    scene_word_target_for_chapter,
 )
 from bestseller.services.workflows import create_workflow_run, create_workflow_step_run
 from bestseller.services.world_expansion import sync_world_expansion_progress
@@ -1306,12 +1306,10 @@ async def _normalize_project_word_targets(
         )
         if not needs_scene_normalization:
             continue
-        scene_target = scene_word_target_for_chapter(
-            chapter.target_word_count,
-            len(chapter_scenes),
-            settings,
+        scene_targets = allocate_scene_word_targets(
+            chapter.target_word_count, len(chapter_scenes), settings
         )
-        for scene in chapter_scenes:
+        for scene, scene_target in zip(chapter_scenes, scene_targets, strict=True):
             if int(scene.target_word_count or 0) == scene_target:
                 continue
             scene.target_word_count = scene_target

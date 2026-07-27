@@ -21,6 +21,7 @@ from bestseller.infra.db.models import (
     ExportArtifactModel,
     LlmRunModel,
     ProjectModel,
+    QualityScoreModel,
     RewriteTaskModel,
     SceneCardModel,
     SceneDraftVersionModel,
@@ -40,6 +41,25 @@ from bestseller.services.write_safety_gate import WriteSafetyBlockError, WriteSa
 from bestseller.settings import load_settings
 
 pytestmark = pytest.mark.unit
+
+
+def test_non_progressive_outline_replan_does_not_reuse_rejected_plan_artifact() -> None:
+    """A dedicated replan must bypass the normal resume shortcut.
+
+    Short/non-progressive books used to see an existing chapter-outline
+    artifact and skip ``generate_novel_plan`` even when
+    ``allow_outline_replan=True``.  The dedicated repair task then returned
+    without a new artifact version and exhausted its bounded retries without
+    ever changing the plan.
+    """
+
+    import inspect
+
+    source = inspect.getsource(pipeline_services.run_autowrite_pipeline)
+    resume_guard = source[source.index("if (\n        existing_plan_artifact is not None") :]
+    resume_guard = resume_guard[:500]
+
+    assert "and not allow_outline_replan" in resume_guard
 
 
 def test_clean_assembly_clears_scene_auto_repair_residue() -> None:
@@ -423,13 +443,47 @@ def test_volume_outline_auto_repair_constraints_are_exact_count_directives() -> 
     assert any("不得" in item for item in constraints)
 
 
-def test_volume_outline_auto_repairable_requires_count_contract_failure() -> None:
+def test_volume_outline_auto_repairable_accepts_bounded_structural_failures() -> None:
     assert pipeline_services._is_volume_outline_auto_repairable(
         RuntimeError("failed chapter-outline repair loop: returned 40/50 chapters")
+    )
+    assert pipeline_services._is_volume_outline_auto_repairable(
+        RuntimeError(
+            "Planner artifact 'volume_1_chapter_outline' has degenerate outline "
+            "fields: ch2 chapter_goal≈main_conflict(sim=1.0)"
+        )
+    )
+    assert pipeline_services._is_volume_outline_auto_repairable(
+        RuntimeError(
+            "Planner artifact failed semantic promotion: "
+            "OUTLINE_INFORMATION_CONTRACT_GAP@ch4"
+        )
     )
     assert not pipeline_services._is_volume_outline_auto_repairable(
         RuntimeError("Prewrite readiness gate failed")
     )
+    assert pipeline_services._volume_outline_auto_repair_reason(
+        RuntimeError("failed chapter-outline repair loop: returned 40/50 chapters")
+    ) == "chapter_outline_count_contract"
+    assert pipeline_services._volume_outline_auto_repair_reason(
+        RuntimeError("Planner artifact failed semantic promotion")
+    ) == "aggregate_semantic_contract"
+
+
+def test_volume_outline_aggregate_repair_constraints_preserve_budget() -> None:
+    constraints = pipeline_services._volume_outline_auto_repair_constraints(
+        language="zh-CN",
+        volume_number=1,
+        expected_count=9,
+        error_message=(
+            "has degenerate outline fields: "
+            "ch2 chapter_goal≈main_conflict(sim=1.0)"
+        ),
+    )
+
+    assert any("汇总硬合同自动修复" in item for item in constraints)
+    assert any("恰好 9 章" in item for item in constraints)
+    assert any("ch2" in item for item in constraints)
 
 
 def test_chapter_first_auto_repair_instruction_is_patch_first() -> None:
@@ -1142,7 +1196,14 @@ class FakeScalarOneOrNone:
 
 
 def build_settings():
-    return load_settings(env={})
+    settings = load_settings(env={})
+    # Most tests in this module exercise downstream chapter-pipeline behavior
+    # with deliberately skeletal outline fixtures. Keep the new whole-book
+    # promotion gate out of those unrelated fixtures; dedicated semantic-gate
+    # tests below cover the hard-block contract explicitly.
+    settings.pipeline.enable_outline_semantic_gate = False
+    settings.pipeline.enable_rolling_outline = False
+    return settings
 
 
 def test_progressive_volume_block_continue_defaults_to_sequential() -> None:
@@ -1686,6 +1747,9 @@ def test_chapter_first_prompt_uses_publish_band_not_tight_target_delta() -> None
         None,
         context_packet,
         target_word_count=chapter.target_word_count,
+        # Explicit full profile: these blocks are lean-dropped by design
+        # (plan §4.3); this test covers what the block itself states.
+        prose_prompt_profile="full",
     )
 
     # zh publish band is the wide 1800-3500 (target 2200), not a tight target±delta.
@@ -2094,6 +2158,9 @@ def test_chapter_first_prompt_enforces_scene_opening_and_front10_forbidden_terms
         None,
         context_packet,
         target_word_count=chapter.target_word_count,
+        # Explicit full profile: these blocks are lean-dropped by design
+        # (plan §4.3); this test covers what the block itself states.
+        prose_prompt_profile="full",
     )
 
     assert "【开场场景指导】" in user_prompt
@@ -2154,6 +2221,9 @@ def test_chapter_first_prompt_treats_scene_cards_as_hidden_nodes() -> None:
         None,
         context_packet,
         target_word_count=chapter.target_word_count,
+        # Explicit full profile: these blocks are lean-dropped by design
+        # (plan §4.3); this test covers what the block itself states.
+        prose_prompt_profile="full",
     )
 
     assert "本章包含 4 个隐藏情节节点" in user_prompt
@@ -5772,7 +5842,14 @@ async def test_run_chapter_pipeline_records_quality_debt_after_review_stall(
     )
     chapter_draft.id = uuid4()
     report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
-    quality = type("ChapterQualityStub", (), {"id": uuid4()})()
+    quality = QualityScoreModel(
+        project_id=project.id,
+        target_type="chapter",
+        target_id=chapter.id,
+        score_overall=0.55,
+        evidence_summary={},
+    )
+    quality.id = uuid4()
     rewrite_task = type("ChapterRewriteTaskStub", (), {"id": uuid4(), "status": "pending"})()
 
     async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
@@ -5857,15 +5934,72 @@ async def test_run_chapter_pipeline_records_quality_debt_after_review_stall(
     workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
 
     assert result.final_verdict == "rewrite"
-    assert result.requires_human_review is False
+    assert result.requires_human_review is True
     assert result.chapter_draft_id == chapter_draft.id
     assert chapter.status == "revision"
     assert chapter.production_state == "quality_debt"
     assert workflow_runs[0].status == "completed"
+    assert workflow_runs[0].metadata_json["requires_human_review"] is True
     assert workflow_runs[0].metadata_json["chapter_quality_debt"] is True
     assert workflow_runs[0].metadata_json["chapter_quality_debt_reason"] == (
         "chapter_rewrite_revision_limit"
     )
+
+
+@pytest.mark.asyncio
+async def test_best_chapter_draft_tie_prefers_target_and_syncs_chapter_word_count() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 2_600
+    chapter.current_word_count = 2_477
+    near_target = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="接近目标的版本",
+        word_count=2_598,
+        assembled_from_scene_draft_ids=[],
+        is_current=False,
+    )
+    near_target.id = uuid4()
+    latest = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=2,
+        content_md="更短但同分的版本",
+        word_count=2_477,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    latest.id = uuid4()
+    equal_score_a = SimpleNamespace(score_overall=0.55)
+    equal_score_b = SimpleNamespace(score_overall=0.55)
+
+    class Rows:
+        def all(self):
+            return [(near_target, equal_score_a), (latest, equal_score_b)]
+
+    class Session:
+        async def execute(self, _statement):
+            return Rows()
+
+        async def scalar(self, _statement):
+            return latest
+
+        async def flush(self):
+            return None
+
+    selected = await pipeline_services._promote_best_scoring_chapter_draft_on_stall(
+        Session(),  # type: ignore[arg-type]
+        chapter=chapter,
+        current_draft=latest,
+        project=None,
+    )
+
+    assert selected.id == near_target.id
+    assert near_target.is_current is True
+    assert latest.is_current is False
+    assert chapter.current_word_count == 2_598
 
 
 @pytest.mark.asyncio
@@ -6232,7 +6366,9 @@ async def test_run_project_pipeline_review_flagged_chapter_pause_vs_continue(
         env={
             "BESTSELLER__PIPELINE__WHOLE_BOOK_PAUSE_ON_SCENE_REVIEW": (
                 "true" if pause_mode else "false"
-            )
+            ),
+            "BESTSELLER__PIPELINE__ENABLE_OUTLINE_SEMANTIC_GATE": "false",
+            "BESTSELLER__PIPELINE__ENABLE_ROLLING_OUTLINE": "false",
         }
     )
     result = await pipeline_services.run_project_pipeline(
@@ -6992,9 +7128,9 @@ def test_record_commercial_planning_readiness_gate_blocks_thin_long_serial(
     codes = {finding["code"] for finding in report["findings"]}
     assert "long_serial_artifacts_missing" not in codes
     assert "golden_three_solo_scene_chain" in codes
-    assert "golden_three_hype_underpowered" not in codes
-    assert project.metadata_json["commercial_planning_hype_repair_count"] == 3
-    assert all(chapter.hype_intensity == 8.0 for chapter in chapters)
+    assert "golden_three_hype_underpowered" in codes
+    assert project.metadata_json["commercial_planning_hype_repair_count"] == 0
+    assert all(chapter.hype_intensity == 0.1 for chapter in chapters)
     assert (tmp_path / "story-bible" / "series-brief.md").exists()
     assert (tmp_path / "story-bible" / "volume-plan.csv").exists()
     assert project.metadata_json["commercial_planning_readiness_status"] == "planned_gate_failed"
@@ -7073,7 +7209,300 @@ def test_commercial_planning_non_actionable_codes_remain_soft() -> None:
     assert pipeline_services._commercial_planning_has_actionable_blockers(report) is False
 
 
-def test_record_commercial_planning_readiness_repairs_only_weak_hype_assignment(
+def test_whole_book_semantic_gate_forwards_identity_and_tone_drift_to_llm() -> None:
+    project = build_project()
+    project.target_chapters = 2
+    project.target_word_count = 5_200
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "genre_intent_contract": {
+            "genre_key": "xuanhuan",
+            "genre_label": "玄幻",
+            "channel_key": "male",
+            "tone_preference": "light",
+        },
+        "story_spine": {"who": "陆沉，边村少年"},
+        "identity_manifest": [{"name": "裴野", "role": "protagonist"}],
+        "writing_profile": {"style": {"tone_keywords": ["高压", "冷硬"]}},
+    }
+    chapters: list[ChapterModel] = []
+    for number in (1, 2):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapter.title = f"门外第{number}声"
+        chapter.chapter_goal = f"陆沉确认第{number}个闯入者的身份"
+        chapter.opening_situation = f"门闩在第{number}声敲击后松动"
+        chapter.main_conflict = f"巡查者要求陆沉在第{number}次钟响前开门"
+        chapter.hook_description = f"门外留下第{number}枚带血铜钱"
+        chapter.target_word_count = 2_600
+        chapters.append(chapter)
+
+    report = pipeline_services._record_outline_semantic_gate(project, chapters)
+    codes = {item["code"] for item in report["findings"]}
+    candidate_codes = {
+        item["code"] for item in report["llm_adjudication_candidates"]
+    }
+
+    # Identity/tone matching is contextual. Deterministic detectors preserve
+    # evidence but cannot veto the outline before the commercial LLM judge sees
+    # the real story context.
+    assert report["raw_promotion_allowed"] is False
+    assert report["promotion_allowed"] is True
+    assert "OUTLINE_IDENTITY_MISMATCH" in codes
+    assert "OUTLINE_TONE_MISMATCH" in codes
+    assert "OUTLINE_IDENTITY_MISMATCH" in candidate_codes
+    assert "OUTLINE_TONE_MISMATCH" in candidate_codes
+    assert project.status != "needs_replan"
+    assert "generation_resume_blocked_until_repair_audit" not in project.metadata_json
+
+
+def test_rolling_semantic_gate_persists_replan_for_noncontiguous_prefix() -> None:
+    project = build_project()
+    project.target_chapters = 8
+    project.target_word_count = 20_800
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "rolling_outline_plan": {"window_start": 1, "window_end": 8},
+    }
+    chapters: list[ChapterModel] = []
+    for number in (1, 3):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapter.target_word_count = 2_600
+        chapters.append(chapter)
+
+    report = pipeline_services._record_outline_semantic_gate(
+        project, chapters, build_settings()
+    )
+
+    assert report["promotion_allowed"] is False
+    assert report["findings"][0]["code"] == "OUTLINE_SEMANTIC_INPUT_INVALID"
+    assert project.status == "needs_replan"
+    assert project.metadata_json["outline_semantic_gate_status"] == "needs_replan"
+
+
+def test_explicit_replan_invalidates_stale_rolling_snapshot_authority() -> None:
+    metadata = {
+        "macro_outline_plan": {"macro_plan_hash": "old-macro"},
+        "rolling_outline_plan": {
+            "plan_hash": "old-plan",
+            "source_snapshot_hash": "old-snapshot",
+            "window_start": 1,
+            "window_end": 9,
+        },
+        "rolling_outline_windows": [{"window_start": 1, "window_end": 9}],
+        "rolling_outline_windows_hash": "old-schedule",
+        "planning_status": "replanning",
+    }
+
+    repaired = pipeline_services._reset_stale_rolling_outline_for_explicit_replan(
+        metadata,
+        reason="rolling outline source snapshot hash mismatch",
+    )
+
+    assert "macro_outline_plan" not in repaired
+    assert "rolling_outline_plan" not in repaired
+    assert repaired["planning_status"] == "replanning"
+    assert repaired["rolling_outline_replan_reset_reason"] == (
+        "rolling outline source snapshot hash mismatch"
+    )
+    assert repaired["rolling_outline_replan_superseded"] == {
+        "plan_hash": "old-plan",
+        "source_snapshot_hash": "old-snapshot",
+        "window_start": 1,
+        "window_end": 9,
+    }
+
+
+@pytest.mark.asyncio
+async def test_rolling_outline_missing_fails_closed_and_persists_replan() -> None:
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.enable_rolling_outline = True
+    settings.pipeline.rolling_outline_block_when_missing = True
+
+    with pytest.raises(pipeline_services.ProjectRepairPauseError, match="plans are missing"):
+        await pipeline_services._select_rolling_outline_window(
+            FakeSession(), settings, project, [build_chapter(project.id)]
+        )
+
+    assert project.status == "needs_replan"
+    assert project.metadata_json["rolling_outline_status"] == "needs_replan"
+    assert project.metadata_json["production_pause_reason"] == "rolling_outline_missing"
+
+
+@pytest.mark.asyncio
+async def test_rolling_outline_tamper_fails_closed_and_persists_replan() -> None:
+    from bestseller.services.book_design import ensure_project_book_design_snapshot
+    from bestseller.services.rolling_outline import (
+        build_macro_plan,
+        build_rolling_outline_plan,
+        promote_rolling_outline,
+    )
+
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.enable_rolling_outline = True
+    snapshot = ensure_project_book_design_snapshot(project)
+    macro = build_macro_plan(
+        {"chapter_number": number, "anchor": f"anchor-{number}"}
+        for number in range(1, 9)
+    )
+    plan = promote_rolling_outline(
+        build_rolling_outline_plan(
+            macro,
+            current_state_snapshot={"current_chapter": 0, "facts": []},
+            next_macro_anchor="book_complete",
+            source_snapshot_hash=snapshot.source_hash,
+            window_size=8,
+        ),
+        "approved",
+    )
+    raw_plan = plan.to_dict()
+    raw_plan["detail_slots"][0]["anchor"] = "tampered"
+    project.metadata_json = {
+        **project.metadata_json,
+        "macro_outline_plan": macro.to_dict(),
+        "rolling_outline_plan": raw_plan,
+    }
+
+    with pytest.raises(pipeline_services.ProjectRepairPauseError, match="integrity check"):
+        await pipeline_services._select_rolling_outline_window(
+            FakeSession(), settings, project, [build_chapter(project.id)]
+        )
+
+    assert project.status == "needs_replan"
+    assert project.metadata_json["production_pause_reason"] == "rolling_outline_invalid"
+
+
+@pytest.mark.asyncio
+async def test_rolling_outline_advances_to_only_the_next_bounded_window() -> None:
+    from bestseller.services.book_design import ensure_project_book_design_snapshot
+    from bestseller.services.rolling_outline import (
+        build_macro_plan,
+        build_rolling_outline_plan,
+        load_rolling_outline_plan,
+        promote_rolling_outline,
+        rolling_window_schedule_hash,
+    )
+
+    project = build_project()
+    project.target_chapters = 16
+    project.target_word_count = 41_600
+    project.current_chapter_number = 8
+    settings = build_settings()
+    settings.pipeline.enable_rolling_outline = True
+    snapshot = ensure_project_book_design_snapshot(project)
+    macro = build_macro_plan(
+        {"chapter_number": number, "anchor": f"anchor-{number}"}
+        for number in range(1, 17)
+    )
+    initial = promote_rolling_outline(
+        build_rolling_outline_plan(
+            macro,
+            current_state_snapshot={"current_chapter": 0, "facts": []},
+            next_macro_anchor=macro.slots[8].to_dict(),
+            source_snapshot_hash=snapshot.source_hash,
+            window_size=8,
+        ),
+        "approved",
+    )
+    schedule = [
+        {"window_start": 1, "window_end": 8},
+        {"window_start": 9, "window_end": 16},
+    ]
+    project.metadata_json = {
+        **project.metadata_json,
+        "macro_outline_plan": macro.to_dict(),
+        "rolling_outline_plan": initial.to_dict(),
+        "rolling_outline_windows": schedule,
+        "rolling_outline_windows_hash": rolling_window_schedule_hash(schedule),
+    }
+    chapters: list[ChapterModel] = []
+    for number in range(1, 17):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapters.append(chapter)
+
+    selected = await pipeline_services._select_rolling_outline_window(
+        FakeSession(), settings, project, chapters
+    )
+
+    assert [chapter.chapter_number for chapter in selected] == list(range(9, 17))
+    _, persisted = load_rolling_outline_plan(
+        project.metadata_json["macro_outline_plan"],
+        project.metadata_json["rolling_outline_plan"],
+        source_snapshot_hash=snapshot.source_hash,
+    )
+    assert (persisted.window_start, persisted.window_end) == (9, 16)
+
+
+@pytest.mark.asyncio
+async def test_rolling_outline_refuses_partial_active_window() -> None:
+    from bestseller.services.book_design import ensure_project_book_design_snapshot
+    from bestseller.services.rolling_outline import (
+        build_macro_plan,
+        build_rolling_outline_plan,
+        promote_rolling_outline,
+    )
+
+    project = build_project()
+    project.target_chapters = 8
+    project.target_word_count = 20_800
+    settings = build_settings()
+    settings.pipeline.enable_rolling_outline = True
+    snapshot = ensure_project_book_design_snapshot(project)
+    macro = build_macro_plan(
+        {"chapter_number": number, "anchor": f"anchor-{number}"}
+        for number in range(1, 9)
+    )
+    active = promote_rolling_outline(
+        build_rolling_outline_plan(
+            macro,
+            current_state_snapshot={"current_chapter": 0, "facts": []},
+            next_macro_anchor="book_complete",
+            source_snapshot_hash=snapshot.source_hash,
+            window_size=8,
+        ),
+        "approved",
+    )
+    project.metadata_json = {
+        **project.metadata_json,
+        "macro_outline_plan": macro.to_dict(),
+        "rolling_outline_plan": active.to_dict(),
+    }
+    chapters: list[ChapterModel] = []
+    for number in range(1, 8):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapters.append(chapter)
+
+    with pytest.raises(pipeline_services.ProjectRepairPauseError, match="not fully materialized"):
+        await pipeline_services._select_rolling_outline_window(
+            FakeSession(), settings, project, chapters
+        )
+
+    assert project.status == "needs_replan"
+    assert project.metadata_json["rolling_window_missing_chapters"] == [8]
+
+
+@pytest.mark.asyncio
+async def test_invalid_book_design_snapshot_persists_replan_before_pause() -> None:
+    project = build_project()
+    project.metadata_json = {
+        **project.metadata_json,
+        "book_design_snapshot": {"snapshot_id": "broken"},
+    }
+
+    with pytest.raises(pipeline_services.ProjectRepairPauseError, match="snapshot"):
+        await pipeline_services._enforce_book_design_consistency(FakeSession(), project)
+
+    assert project.status == "needs_replan"
+    assert project.metadata_json["book_design_consistency_status"] == "needs_replan"
+    assert project.metadata_json["production_pause_reason"] == "book_design_snapshot_invalid"
+
+
+def test_record_commercial_planning_readiness_reports_weak_hype_without_mutation(
     tmp_path: Path,
 ) -> None:
     project = build_project()
@@ -7108,18 +7537,16 @@ def test_record_commercial_planning_readiness_repairs_only_weak_hype_assignment(
     )
 
     assert report is not None
-    assert report["passed"] is True
-    assert project.metadata_json["commercial_planning_hype_repair_count"] == 2
-    assert [chapter.hype_intensity for chapter in chapters] == [8.0, 8.0, 8.0]
-    assert chapters[1].metadata_json["commercial_planning_hype_repair"]["source"] == (
-        "commercial_planning_readiness_gate"
-    )
+    assert report["passed"] is False
+    assert project.metadata_json["commercial_planning_hype_repair_count"] == 0
+    assert [chapter.hype_intensity for chapter in chapters] == [8.0, 0.1, 0.1]
+    assert "commercial_planning_hype_repair" not in chapters[1].metadata_json
     assert project.metadata_json["commercial_planning_readiness_status"] == (
-        "planned_gate_passed"
+        "planned_gate_failed"
     )
 
 
-def test_record_commercial_planning_readiness_repairs_missing_visible_loss(
+def test_record_commercial_planning_readiness_reports_missing_visible_loss_without_mutation(
     tmp_path: Path,
 ) -> None:
     project = build_project()
@@ -7153,12 +7580,10 @@ def test_record_commercial_planning_readiness_repairs_missing_visible_loss(
     )
 
     assert report is not None
-    assert report["passed"] is True
-    assert project.metadata_json["commercial_planning_visible_loss_repair_count"] == 3
-    assert all("否则主角会失去" in str(chapter.main_conflict) for chapter in chapters)
-    assert chapters[0].metadata_json["commercial_planning_visible_loss_repair"][
-        "source"
-    ] == "commercial_planning_readiness_gate"
+    assert report["passed"] is False
+    assert project.metadata_json["commercial_planning_visible_loss_repair_count"] == 0
+    assert all(chapter.main_conflict == "周捕头逼沈青崖交出证据。" for chapter in chapters)
+    assert "commercial_planning_visible_loss_repair" not in chapters[0].metadata_json
 
 
 @pytest.mark.asyncio
@@ -8175,7 +8600,7 @@ def test_should_use_progressive_pipeline_routes_large_target_chapters() -> None:
         target_word_count=30000,
         target_chapters=pipeline_services.PROGRESSIVE_CHAPTER_THRESHOLD,
     )
-    assert pipeline_services._should_use_progressive_pipeline(settings, at_threshold) is False
+    assert pipeline_services._should_use_progressive_pipeline(settings, at_threshold) is True
 
     large = pipeline_services.ProjectCreate(
         slug="large", title="large", genre="fantasy",
@@ -8195,6 +8620,118 @@ def test_should_use_progressive_pipeline_respects_explicit_setting() -> None:
         target_word_count=10000, target_chapters=10,
     )
     assert pipeline_services._should_use_progressive_pipeline(settings, small) is True
+
+
+def test_rolling_outline_routes_books_larger_than_one_window_to_progressive() -> None:
+    settings = build_settings()
+    settings.pipeline.progressive_planning = False
+    settings.pipeline.enable_rolling_outline = True
+    settings.pipeline.rolling_outline_window_size = 8
+    payload = pipeline_services.ProjectCreate(
+        slug="rolling",
+        title="rolling",
+        genre="fantasy",
+        target_word_count=30_000,
+        target_chapters=12,
+    )
+
+    assert pipeline_services._should_use_progressive_pipeline(settings, payload) is True
+
+
+def test_volume_plan_expands_into_bounded_jit_windows_without_changing_volume_identity() -> None:
+    windows = pipeline_services._expand_volume_plan_into_rolling_windows(
+        [
+            {
+                "volume_number": 1,
+                "volume_title": "禁区初响",
+                "chapter_count_target": 18,
+                "volume_goal": "裴野确认禁区呼唤的来源",
+            },
+            {
+                "volume_number": 2,
+                "volume_title": "旧名回潮",
+                "chapter_count_target": 7,
+                "volume_goal": "裴野追查祖父旧名",
+            },
+        ],
+        window_size=8,
+    )
+
+    assert [item["chapter_count_target"] for item in windows] == [9, 9, 7]
+    assert [item["chapter_range"] for item in windows] == [
+        [1, 9],
+        [10, 18],
+        [19, 25],
+    ]
+    assert [item["volume_number"] for item in windows] == [1, 1, 2]
+    assert windows[1]["narrative_volume_chapter_count"] == 18
+
+    macro_slots = pipeline_services._build_progressive_macro_slots(
+        [
+            {"volume_number": 1, "chapter_count_target": 18, "volume_goal": "查明禁区"},
+            {"volume_number": 2, "chapter_count_target": 7, "volume_goal": "追查旧名"},
+        ]
+    )
+    assert len(macro_slots) == 25
+    assert macro_slots[18]["chapter_number"] == 19
+    assert "追查旧名" in macro_slots[18]["anchor"]
+
+
+@pytest.mark.asyncio
+async def test_cross_volume_schedule_advances_without_skipping_boundary_chapters() -> None:
+    from bestseller.services.book_design import ensure_project_book_design_snapshot
+    from bestseller.services.rolling_outline import (
+        build_macro_plan,
+        build_rolling_outline_plan,
+        promote_rolling_outline,
+        rolling_window_schedule_hash,
+    )
+
+    project = build_project()
+    project.target_chapters = 20
+    project.target_word_count = 52_000
+    project.current_chapter_number = 10
+    settings = build_settings()
+    settings.pipeline.enable_rolling_outline = True
+    snapshot = ensure_project_book_design_snapshot(project)
+    macro = build_macro_plan(
+        {"chapter_number": number, "anchor": f"anchor-{number}"}
+        for number in range(1, 21)
+    )
+    initial = promote_rolling_outline(
+        build_rolling_outline_plan(
+            macro,
+            current_state_snapshot={"current_chapter": 0, "facts": []},
+            next_macro_anchor=macro.slots[10].to_dict(),
+            source_snapshot_hash=snapshot.source_hash,
+            window_size=10,
+        ),
+        "approved",
+    )
+    schedule = [
+        {"window_start": 1, "window_end": 10, "volume_number": 1},
+        {"window_start": 11, "window_end": 20, "volume_number": 2},
+    ]
+    project.metadata_json = {
+        **project.metadata_json,
+        "macro_outline_plan": macro.to_dict(),
+        "rolling_outline_plan": initial.to_dict(),
+        "rolling_outline_windows": schedule,
+        "rolling_outline_windows_hash": rolling_window_schedule_hash(schedule),
+    }
+    chapters: list[ChapterModel] = []
+    for number in range(1, 21):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapters.append(chapter)
+
+    selected = await pipeline_services._select_rolling_outline_window(
+        FakeSession(), settings, project, chapters
+    )
+
+    assert [chapter.chapter_number for chapter in selected] == list(range(11, 21))
+    assert project.metadata_json["rolling_outline_plan"]["window_start"] == 11
+    assert project.metadata_json["rolling_outline_plan"]["window_end"] == 20
 
 
 def test_should_use_progressive_pipeline_handles_missing_target() -> None:
@@ -9422,7 +9959,7 @@ async def test_progressive_autowrite_can_continue_after_volume_blocks(
 # ("失去关键证据，对手扩大优势") onto every book's first three chapters, which
 # is retention-killing nonsense in a 治愈喜剧 with no "对手" or "证据".
 # ---------------------------------------------------------------------------
-def test_visible_loss_backfill_is_tone_aware() -> None:
+def test_visible_loss_backfill_is_a_content_safe_noop() -> None:
     from bestseller.services.pipelines import _backfill_golden_three_visible_losses
 
     def _ch(n: int) -> ChapterModel:
@@ -9438,11 +9975,71 @@ def test_visible_loss_backfill_is_tone_aware() -> None:
         )
 
     low = [_ch(1)]
-    _backfill_golden_three_visible_losses(low, low_pressure=True)
+    repaired = _backfill_golden_three_visible_losses(low, low_pressure=True)
+    assert repaired == 0
     assert "关键证据" not in low[0].main_conflict
     assert "对手" not in low[0].main_conflict
-    assert "尴尬" in low[0].main_conflict  # warm/comedic escalation stake
+    assert low[0].main_conflict == "主角只想躺平摆烂"
 
     default = [_ch(1)]
-    _backfill_golden_three_visible_losses(default, low_pressure=False)
-    assert "关键证据" in default[0].main_conflict  # legacy wording preserved
+    repaired = _backfill_golden_three_visible_losses(default, low_pressure=False)
+    assert repaired == 0
+    assert default[0].main_conflict == "主角只想躺平摆烂"
+
+
+def test_approved_outline_replan_releases_prose_gate_at_version_boundary() -> None:
+    project = SimpleNamespace(
+        status="planning",
+        metadata_json={
+            "outline_replan_in_progress": True,
+            "outline_replan_prior_outline_version": 19,
+            "outline_semantic_gate_report": {"promotion_allowed": True},
+            "planning_status": "replanning",
+            "production_paused": True,
+            "production_pause_reason": "outline_replan_in_progress",
+            "generation_resume_blocked_until_repair_audit": True,
+        },
+    )
+
+    released = pipeline_services._release_approved_outline_replan_gate(
+        project,
+        SimpleNamespace(version_no=20),
+    )
+
+    assert released is True
+    assert project.status == "writing"
+    assert project.metadata_json["planning_status"] == "writing"
+    assert project.metadata_json["outline_semantic_gate_status"] == "approved"
+    assert "outline_replan_in_progress" not in project.metadata_json
+    assert "production_paused" not in project.metadata_json
+
+
+@pytest.mark.parametrize(
+    ("promotion_allowed", "version_no"),
+    [(False, 20), (True, 19)],
+)
+def test_outline_replan_gate_stays_closed_without_both_proofs(
+    promotion_allowed: bool,
+    version_no: int,
+) -> None:
+    project = SimpleNamespace(
+        status="planning",
+        metadata_json={
+            "outline_replan_in_progress": True,
+            "outline_replan_prior_outline_version": 19,
+            "outline_semantic_gate_report": {
+                "promotion_allowed": promotion_allowed
+            },
+            "production_paused": True,
+        },
+    )
+
+    released = pipeline_services._release_approved_outline_replan_gate(
+        project,
+        SimpleNamespace(version_no=version_no),
+    )
+
+    assert released is False
+    assert project.status == "planning"
+    assert project.metadata_json["outline_replan_in_progress"] is True
+    assert project.metadata_json["production_paused"] is True

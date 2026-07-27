@@ -628,9 +628,25 @@ def ideology_kernel_health_summary(kernel: IdeologyKernel) -> dict[str, Any]:
     }
 
 
+def cost_style_directive(cost_style: str, *, is_en: bool = False) -> str:
+    """Public alias: translate a cost_style enum into prompt instructions.
+
+    Exported for CONCEPTION-time use. This module runs at planning time, which
+    is too late for the create-form 纯爽 switch: a book that dies at the
+    conception gates never reaches planning, so the switch must already be a
+    readable directive inside conception and concept-tournament prompts
+    (2026-07-24: a minimal-cost book was hard-killed by the logline gate over
+    a 随机系统收税 that conception invented while seeing only the bare token
+    ``"cost_style": "minimal"``).
+    """
+
+    return _cost_style_directive(cost_style, is_en=is_en)
+
+
 __all__ = [
     "build_ideology_system_prompt",
     "build_ideology_user_prompt",
+    "cost_style_directive",
     "derive_ideology_kernel",
     "fallback_ideology_kernel",
     "ideology_kernel_health_summary",

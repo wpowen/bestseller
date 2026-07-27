@@ -254,12 +254,20 @@ class ReaderQualityGateConfig:
     body_similarity_threshold: float = 0.88
     require_critic_body_evidence: bool = True
     # P2 LLM reader-judge. Default OFF: enable per-project after calibration.
-    # When on, feeds prose_quality_score into the persona simulator. When
-    # ``reader_judge_audit_only`` is True, the score is recorded but the
-    # persona hard gate keeps its existing thresholds (no behavior change).
+    # When on, scores are always written to chapter.metadata_json["reader_judge"].
+    # When ``reader_judge_audit_only`` is True, the score is NOT fed into the
+    # persona prose_quality channel (true audit / no behavior change).
+    # ``enforce_reader_judge_voice_axes`` optionally hard-blocks on ai_taste /
+    # human_voice floors (chapter terminal gate + export); default OFF.
     enable_llm_reader_judge: bool = False
     reader_judge_audit_only: bool = True
     reader_judge_text_cap_chars: int = 8000
+    enforce_reader_judge_voice_axes: bool = False
+    min_ai_taste: float = 0.55
+    min_human_voice: float = 0.55
+    # After this many voice-axis rewrite attempts, closure mode records debt
+    # instead of looping (Phase C plateau stop). Strict mode still blocks.
+    reader_judge_voice_rewrite_stall_after: int = 2
 
 
 @dataclass(frozen=True)
@@ -574,6 +582,14 @@ def _build_reader_quality_gate(raw: dict[str, Any]) -> ReaderQualityGateConfig:
         reader_judge_text_cap_chars=max(
             500, _safe_int(raw.get("reader_judge_text_cap_chars"), 8000)
         ),
+        enforce_reader_judge_voice_axes=_safe_bool(
+            raw.get("enforce_reader_judge_voice_axes"), False
+        ),
+        min_ai_taste=float(raw.get("min_ai_taste", 0.55)),
+        min_human_voice=float(raw.get("min_human_voice", 0.55)),
+        reader_judge_voice_rewrite_stall_after=max(
+            1, _safe_int(raw.get("reader_judge_voice_rewrite_stall_after"), 2)
+        ),
     )
 
 
@@ -748,8 +764,8 @@ def _build_ai_flavor(raw: dict[str, Any]) -> AiFlavorGateConfig:
     audit = _as_dict(raw.get("audit"))
     return AiFlavorGateConfig(
         enabled=bool(raw.get("enabled", True)),
-        block_score_cn=_safe_int(block.get("cn"), 50),
-        block_score_en=_safe_int(block.get("en"), 55),
+        block_score_cn=_safe_int(block.get("cn"), 38),
+        block_score_en=_safe_int(block.get("en"), 45),
         warn_score_cn=_safe_int(warn.get("cn"), 25),
         warn_score_en=_safe_int(warn.get("en"), 30),
         cluster_threshold=_safe_int(raw.get("cluster_threshold"), 3),
@@ -759,6 +775,7 @@ def _build_ai_flavor(raw: dict[str, Any]) -> AiFlavorGateConfig:
         audit_dir_relative=str(audit.get("dir_relative") or "audits"),
         data_dir=str(raw.get("data_dir") or "data/ai_flavor"),
         block_on_residual=bool(raw.get("block_on_residual", True)),
+        deslop_on_warn=bool(raw.get("deslop_on_warn", True)),
     )
 
 

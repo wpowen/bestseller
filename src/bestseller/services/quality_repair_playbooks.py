@@ -23,14 +23,25 @@ _PLAYBOOKS: dict[str, QualityRepairPlaybook] = {
     "CHAPTER_TOO_SHORT": QualityRepairPlaybook(
         code="CHAPTER_TOO_SHORT",
         scope="chapter",
-        instruction="本章篇幅低于商业连载硬下限。重写时必须保留现有因果节拍，扩写当下行动、阻力、证据细节、对话交锋和感官画面，不得用解释性总结凑字数。",
-        acceptance="正文达到章节目标硬下限，且新增内容全部推进当前冲突或揭示新事实。",
+        instruction="本章篇幅低于商业连载硬下限。重写时必须保留现有因果节拍，扩写主角的选择、阻力、信息差变化、对话交锋与可见代价；禁止用身体反应词堆砌或感官枚举凑字数，也不得用解释性总结灌水。",
+        acceptance="正文达到章节目标硬下限，且新增内容全部推进当前冲突、选择代价或揭示新事实。",
     ),
     "CHAPTER_BELOW_TARGET": QualityRepairPlaybook(
         code="CHAPTER_BELOW_TARGET",
         scope="chapter",
         instruction="本章接近但未达到目标篇幅。补强最薄的场景，使关键选择、代价、反应和章末悬念都落在可见动作里。",
         acceptance="正文达到目标区间下沿，章末仍保留明确下一章阅读动力。",
+    ),
+
+    "DIALOGUE_AI_FLAVOR": QualityRepairPlaybook(
+        code="DIALOGUE_AI_FLAVOR",
+        scope="chapter",
+        instruction=(
+            "对白存在总结腔、万能比喻、机械排比或说明式台词。"
+            "只改对白与紧贴对白的反应句：换成人物此刻会说的短句，用打断、回避、反问或物件动作承载信息；"
+            "禁止新增身体反应词表填空，禁止替读者下结论。"
+        ),
+        acceptance="对白可读且像该角色会说的话；不再出现总结腔/套话排比；情节信息不丢。",
     ),
     "CHAPTER_LENGTH_BLOCK_HIGH": QualityRepairPlaybook(
         code="CHAPTER_LENGTH_BLOCK_HIGH",
@@ -235,7 +246,7 @@ _PLAYBOOKS: dict[str, QualityRepairPlaybook] = {
     "PERSONA_WEIGHTED_SCORE_LOW": QualityRepairPlaybook(
         code="PERSONA_WEIGHTED_SCORE_LOW",
         scope="chapter",
-        instruction="模拟读者综合读感分偏低。同时提升节奏、冲突清晰度、情绪冲击与新鲜感：强化主角主动选择、增加具体感官画面、避免套路化桥段与模板化措辞。",
+        instruction="模拟读者综合读感分偏低。同时提升节奏、冲突清晰度、情绪冲击与新鲜感：强化主角的主动选择、加大阻力、让信息差发生变化并写出可见代价；避免套路化桥段与模板化措辞。禁止靠身体反应词与感官枚举堆密度充数。",
         acceptance="综合读感分回到合格线以上，章节在节奏/冲突/情绪/新鲜感各维均无明显短板。",
     ),
     "PERSONA_PAYOFF_DENSITY_LOW": QualityRepairPlaybook(

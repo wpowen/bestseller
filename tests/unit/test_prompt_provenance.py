@@ -18,6 +18,7 @@ def _block(
     *,
     provenance: PromptProvenance | None = None,
     enhancer_key: str | None = None,
+    required: bool = True,
 ) -> PromptBlock:
     return PromptBlock(
         key=key,
@@ -25,7 +26,7 @@ def _block(
         layer="hard_canon",
         authority=100,
         instruction_family=key,
-        required=True,
+        required=required,
         source="test",
         text=key,
         provenance=provenance,
@@ -65,7 +66,7 @@ def test_stale_canonical_snapshot_is_rejected() -> None:
 
 def test_only_selected_enhancer_blocks_enter_the_prompt() -> None:
     selected = _block("twist", enhancer_key="twist_reversal_engine")
-    unselected = _block("comedy", enhancer_key="comedy_engine")
+    unselected = _block("comedy", enhancer_key="comedy_engine", required=False)
     result = compile_prompt(
         [selected, unselected],
         total_budget_tokens=100,

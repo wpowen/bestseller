@@ -7,6 +7,7 @@ import json
 from types import SimpleNamespace
 
 from bestseller.services.golden_three_repair import repair_golden_three_outline
+from bestseller.services import golden_three_repair as repair_services
 
 
 def _chapter(number: int) -> SimpleNamespace:
@@ -17,14 +18,19 @@ def _chapter(number: int) -> SimpleNamespace:
         opening_situation="旧开场",
         main_conflict="旧冲突",
         hook_description="旧钩子",
+        metadata_json={
+            "methodology_contract": {"loop_position": "旧循环"},
+            "causal_contract": {"cause": "旧因果"},
+        },
         scenes=[
             SimpleNamespace(
                 scene_number=1,
                 scene_type="development",
-                purpose="旧目的",
-                entry_state="旧入场",
-                exit_state="旧退场",
+                purpose={"summary": "旧目的"},
+                entry_state={"summary": "旧入场"},
+                exit_state={"summary": "旧退场"},
                 hook_requirement="",
+                metadata_json={"methodology_contract": {"step": "旧方法"}},
             )
         ],
     )
@@ -70,7 +76,16 @@ def test_repair_applies_revised_fields_to_golden_chapters() -> None:
             "chapter_number": 1,
             "chapter_goal": "新目标：沈约主动布局",
             "main_conflict": "新冲突",
-            "scenes": [{"scene_number": 1, "purpose": "新目的：主动试探"}],
+            "methodology_contract": {"loop_position": "新循环"},
+            "causal_contract": {"cause": "主角先判断，再由成年人行动"},
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "purpose": {"summary": "新目的：主动试探"},
+                    "entry_state": {"summary": "新入场"},
+                    "methodology_contract": {"step": "新方法"},
+                }
+            ],
         },
         # chapter 4 in the response must be ignored — repair scope is golden-3
         {"chapter_number": 4, "chapter_goal": "越权改写"},
@@ -81,7 +96,17 @@ def test_repair_applies_revised_fields_to_golden_chapters() -> None:
     assert chapters[0].chapter_goal == "新目标：沈约主动布局"
     assert chapters[0].main_conflict == "新冲突"
     assert chapters[0].hook_description == "旧钩子"          # untouched field kept
-    assert chapters[0].scenes[0].purpose == "新目的：主动试探"
+    assert chapters[0].metadata_json["methodology_contract"] == {
+        "loop_position": "新循环"
+    }
+    assert chapters[0].metadata_json["causal_contract"] == {
+        "cause": "主角先判断，再由成年人行动"
+    }
+    assert chapters[0].scenes[0].purpose == {"summary": "新目的：主动试探"}
+    assert chapters[0].scenes[0].entry_state == {"summary": "新入场"}
+    assert chapters[0].scenes[0].metadata_json["methodology_contract"] == {
+        "step": "新方法"
+    }
     assert chapters[1].chapter_goal == "旧目标"               # ch4 untouched
 
 
@@ -110,3 +135,35 @@ def test_repair_strips_markdown_fences() -> None:
     changed, _ = _run(chapters, response=f"```json\n{body}\n```")
     assert changed is True
     assert chapters[0].chapter_goal == "新目标"
+
+
+def test_repair_normalizes_structurally_damaged_json() -> None:
+    chapters = [_chapter(1)]
+    damaged = '[{"chapter_number": 1 "chapter_goal": "新目标：忍住反应"}]'
+
+    changed, _ = _run(chapters, response=damaged)
+
+    assert changed is True
+    assert chapters[0].chapter_goal == "新目标：忍住反应"
+
+
+def test_default_llm_request_has_non_empty_fallback(monkeypatch) -> None:
+    captured = {}
+
+    async def fake_complete_text(_session, _settings, request):
+        captured["request"] = request
+        return SimpleNamespace(content="[]")
+
+    monkeypatch.setattr(repair_services, "complete_text", fake_complete_text)
+    changed = asyncio.run(
+        repair_golden_three_outline(
+            None,
+            None,
+            chapters=[_chapter(1)],
+            llm_judge_payload=_JUDGE_PAYLOAD,
+            project=SimpleNamespace(id=None),
+        )
+    )
+
+    assert changed is False
+    assert captured["request"].fallback_response == "[]"

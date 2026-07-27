@@ -269,6 +269,7 @@ def strict_outline_shrink_size(project: Any, settings: Any) -> int:
 
 def planning_artifact_meta(project: Any, *, gate_reports: Mapping[str, Any] | None = None) -> dict[str, Any]:
     from bestseller.services.genre_skill_profiles import genre_skill_profile_from_metadata
+    from bestseller.services.book_design import planning_snapshot_lineage
 
     metadata = getattr(project, "metadata_json", None)
     metadata = metadata if isinstance(metadata, Mapping) else {}
@@ -290,6 +291,7 @@ def planning_artifact_meta(project: Any, *, gate_reports: Mapping[str, Any] | No
         "quality_profile": quality_profile,
         "methodology_lineage": lineage,
         "repair_attempts": [],
+        **planning_snapshot_lineage(project),
     }
     if gate_reports:
         meta["gate_reports"] = dict(gate_reports)

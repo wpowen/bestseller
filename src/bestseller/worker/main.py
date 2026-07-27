@@ -16,6 +16,7 @@ from bestseller.worker.tasks import (
     run_book_quality_closure_task,
     run_autowrite_task,
     run_chapter_pipeline_task,
+    run_outline_replan_task,
     run_project_repair_task,
     run_project_pipeline_task,
     run_self_heal_task,
@@ -152,6 +153,7 @@ class WorkerSettings:
     functions = [
         run_self_heal_task,
         run_autowrite_task,
+        run_outline_replan_task,
         run_book_quality_closure_task,
         run_project_pipeline_task,
         run_chapter_pipeline_task,

@@ -1,12 +1,13 @@
-"""Book-level story-enhancer selection → hard outline contracts.
+"""Book-level story-enhancer selection → routed outline contracts.
 
 These are the opt-in "make the story good" capabilities a user checks when
 creating a book (frontend checkboxes / CLI flags), stored under
-``ProjectCreate.metadata[STORY_ENHANCERS_METADATA_KEY]``. Unlike the per-chapter
-story-effect router (which picks one primary skill per chapter), a book-level
-selection applies to EVERY chapter: each checked capability becomes a hard
-per-chapter outline contract, closing the gap that made zhaoshen-hr-v13 come out
-logically rigorous but bland (脑洞/反差/喜剧 never reached the chapters).
+``ProjectCreate.metadata[STORY_ENHANCERS_METADATA_KEY]``. The selection is a
+book-level palette. The chapter router chooses at most one primary and one
+secondary effect, and the volume-level LLM judge verifies that the palette is
+distributed and actually cashed without flattening every chapter into the same
+beat. This closes both historical failure modes: selected effects disappearing
+entirely, and all selected effects being mechanically forced into every chapter.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from bestseller.services.story_effect_skills import (
     ALL_STORY_EFFECT_SKILL_KEYS,
@@ -140,9 +141,12 @@ def render_story_enhancer_contract_block(
     *,
     language: str = "zh-CN",
 ) -> str:
-    """Render the book-level hard contract: every checked capability must be
-    cashed in every chapter (or, for brainhole/concept-lab, on the cadence the
-    bespoke blocks define). Empty selection → empty block."""
+    """Render the book-level routing contract for selected capabilities.
+
+    Empty selection → empty block. Selection means the effect must recur at
+    an appropriate cadence across the book; it does *not* mean every selected
+    effect must be stacked into every chapter.
+    """
 
     if selection.is_empty():
         return ""
@@ -150,15 +154,17 @@ def render_story_enhancer_contract_block(
     parts: list[str] = []
     if is_en:
         parts.append(
-            "[BOOK STORY-ENHANCER CONTRACT — chosen at creation, HARD: every "
-            "chapter must visibly cash the selected effects; a chapter that only "
-            "advances logistics without cashing them is incomplete and will be "
-            "sent back for repair]"
+            "[BOOK STORY-ENHANCER ROUTING CONTRACT — chosen at creation, HARD: "
+            "treat the checked effects as a recurring palette. Each chapter must "
+            "route at most one primary and one secondary effect and visibly cash "
+            "only those routed effects. Distribute every checked effect across the "
+            "volume; never stack all effects into every chapter.]"
         )
     else:
         parts.append(
-            "【本书故事增强合同 — 建书时勾选，硬约束：每一章都必须可见地兑现下列被勾选的"
-            "故事效果；只推进事务流程、不兑现这些效果的章视为未完成，会被打回重修】"
+            "【本书故事增强路由合同 — 建书时勾选，硬约束：下列效果是全书反复"
+            "使用的效果调色盘。每章最多路由 1 个 primary + 1 个 secondary，并只兑现"
+            "本章选中的效果；每个勾选效果都要在卷内有合理分布，严禁把全部效果硬塞进每一章】"
         )
     if "comedy_engine" in selection.effect_skills:
         # 只声明"用户勾了喜剧效果",绝不断言"本书是喜剧题材"。旧文案写死
@@ -166,19 +172,18 @@ def render_story_enhancer_contract_block(
         # 写手就会一口咬定这本书是喜剧,一个复选框改写了整本书的题材身份。
         parts.append(
             "・【基调锚点·硬底线】建书时已勾选【喜剧效果】：喜剧/脑洞落点要贯穿全书，"
-            "不是某些章节才有的可选效果——每一章，哪怕该章主线极沉重、主推爽点/两难/"
-            "悬念，都必须保留至少一个符合本题材世界规则的喜剧或脑洞落点，"
-            "让读者全程保持愉悦；严禁整章只有沉重剧情而无喜剧落点。"
+            "应按情境和节奏间隔落地（通常每 2–3 章至少一次），不是每章硬加一个笑话。"
+            "沉重章可以不路由喜剧；一旦本章选了 comedy_engine，必须有符合本题材"
+            "世界规则的可见落点，不得只贴‘喜剧’标签。"
             "【边界】这是在本书【已选定的题材】内追加喜剧调性，"
             "不得据此把本书改写成喜剧题材，也不得覆盖已选的题材/子题材/世界规则。"
             if not is_en
             else "・[TONE ANCHOR · HARD FLOOR] The creator ticked the COMEDY effect: "
-            "comic/brainhole beats must run through EVERY chapter — not an optional "
-            "per-chapter effect. Even chapters whose primary engine is hype/dilemma/"
-            "suspense MUST still carry at least one visible comic or brainhole beat "
-            "that obeys THIS book's established genre rules, so the reader stays "
-            "delighted; never let a whole chapter be heavy drama with no comedic "
-            "landing. [Boundary] This adds a comedic tone INSIDE the book's chosen "
+            "comic/brainhole beats must recur at a story-appropriate cadence "
+            "(normally at least once every 2–3 chapters), not as a joke forced into "
+            "every chapter. A heavy chapter may skip comedy; when comedy_engine is "
+            "routed into a chapter it MUST land a visible genre-native beat rather "
+            "than merely naming the effect. [Boundary] This adds a comedic tone INSIDE the book's chosen "
             "genre — it does NOT redefine the book as a comedy, and must not override "
             "the selected genre/sub-genre/world rules."
         )
@@ -244,8 +249,11 @@ _EFFECT_SIGNALS: dict[str, tuple[str, ...]] = {
     "romance_tenderness_engine": ("温柔", "心动", "浪漫", "脸红", "心跳", "靠近"),
 }
 
-# A selected effect should surface in at least this share of chapters.
-_COVERAGE_FLOOR = 0.34
+# A selected effect should be routed into at least this share of chapters. The
+# volume-level LLM remains the semantic arbiter; this only generates evidence.
+# 0.25 lets a 3–4 chapter batch distribute two selected effects without forcing
+# both into every chapter.
+_COVERAGE_FLOOR = 0.25
 
 
 def _flatten_text(value: Any) -> str:
@@ -293,14 +301,30 @@ def _chapter_blob(chapter: Mapping[str, Any]) -> str:
     return " ".join(p for p in parts if p)
 
 
+def _routed_effect_key(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        for field_name in ("skill_key", "key", "name", "id", "engine"):
+            key = str(value.get(field_name) or "").strip()
+            if key:
+                return key
+    return ""
+
+
 def audit_story_enhancer_coverage(
     chapters: list[Mapping[str, Any]],
     selection: StoryEnhancerSelection,
     *,
     floor: float = _COVERAGE_FLOOR,
 ) -> list[dict[str, Any]]:
-    """Return one gap dict per selected effect that is under-delivered across the
-    chapter batch. Empty list = every selected effect is sufficiently cashed."""
+    """Return distribution candidates for selected book-level effects.
+
+    Structured ``selected_effect_skills`` is authoritative evidence that the
+    planner intentionally routed an effect into a chapter. Keyword hits are kept
+    only as contextual evidence for the downstream LLM judge; they never prove
+    that a beat is semantically cashed and never hard-block by themselves.
+    """
 
     chapters = [c for c in chapters if isinstance(c, Mapping)]
     if not chapters or not selection.effect_skills:
@@ -310,17 +334,34 @@ def audit_story_enhancer_coverage(
     gaps: list[dict[str, Any]] = []
     for skill_key in selection.effect_skills:
         signals = _EFFECT_SIGNALS.get(skill_key)
-        if not signals:
-            continue
-        hit_numbers = [num for blob, num in blobs if any(s in blob for s in signals)]
-        coverage = len(hit_numbers) / total if total else 0.0
+        structured_hits: list[Any] = []
+        heuristic_hits: list[Any] = []
+        for chapter, (blob, chapter_number) in zip(chapters, blobs, strict=True):
+            selected = chapter.get("selected_effect_skills")
+            selected = selected if isinstance(selected, Mapping) else {}
+            routed = {
+                _routed_effect_key(selected.get(field_name))
+                for field_name in ("primary", "secondary")
+            }
+            if skill_key in routed:
+                structured_hits.append(chapter_number)
+            if signals and any(signal in blob for signal in signals):
+                heuristic_hits.append(chapter_number)
+        coverage = len(structured_hits) / total if total else 0.0
         if coverage < floor:
-            missing = [num for blob, num in blobs if not any(s in blob for s in signals)]
+            missing = [
+                chapter.get("chapter_number")
+                for chapter in chapters
+                if chapter.get("chapter_number") not in structured_hits
+            ]
             gaps.append(
                 {
                     "effect": skill_key,
                     "coverage": round(coverage, 2),
+                    "structured_hit_chapters": structured_hits,
+                    "heuristic_signal_chapters": heuristic_hits,
                     "missing_chapters": missing,
+                    "evidence_policy": "structured_route_plus_llm_contextual",
                 }
             )
     return gaps
@@ -337,10 +378,15 @@ def story_enhancer_repair_directives(
     for gap in audit_story_enhancer_coverage(chapters, selection):
         effect = gap["effect"]
         miss = gap["missing_chapters"][:12]
+        total = max(len(chapters), 1)
+        required_hits = max(1, int(total * _COVERAGE_FLOOR + 0.999))
+        current_hits = len(gap.get("structured_hit_chapters") or [])
+        needed = max(1, required_hits - current_hits)
         directives.append(
             f"勾选的故事效果 `{effect}` 在本批章纲覆盖率仅 {int(gap['coverage'] * 100)}%，"
-            f"严重不足（这些章完全没兑现：{miss}）。请重写这些章，让每章都落地一个 `{effect}` "
-            "的具体 beat（行动/选择/揭示兑现，不是贴标签），不要再退回到同质化的程序/合规微冲突。"
+            f"请只从候选章 {miss} 中选最适合的 {needed} 章路由该效果，并落地一个"
+            f" `{effect}` 的具体 beat（行动/选择/揭示兑现，不是贴标签）。"
+            "不得把该效果或全部建书效果硬塞进每一章，不得覆盖主角能动性、认知边界和剧情因果。"
         )
     return directives
 

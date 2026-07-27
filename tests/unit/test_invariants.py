@@ -241,6 +241,14 @@ class TestLowPressureTone:
     def test_classifier(self, pack, genre, sub, expected) -> None:
         assert is_low_pressure_tone(pack, genre, sub) is expected
 
+    def test_classifier_honors_creation_intent_tone(self) -> None:
+        assert is_low_pressure_tone(
+            "xuanhuan-strict",
+            "玄幻",
+            "禁区悬疑",
+            "light",
+        )
+
     def test_comedy_seed_uses_warm_opening_pool(self) -> None:
         inv = seed_invariants(
             project_id=uuid4(),

@@ -22,6 +22,16 @@ from bestseller.services import workflows as workflow_services
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _keep_workflow_unit_tests_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit materialization tests must never spend tokens on live LLM judges."""
+
+    settings = workflow_services.load_settings(env={})
+    settings.pipeline.enable_outline_llm_commercial_judge = False
+    settings.pipeline.enable_outline_reader_experience_judge = False
+    monkeypatch.setattr(workflow_services, "load_settings", lambda *args, **kwargs: settings)
+
+
 class FakeSession:
     def __init__(
         self,
@@ -165,6 +175,38 @@ def test_materialization_synthesizes_character_personhood_before_bible_gate() ->
         "VILLAIN_CHARISMA_MISSING",
     }
     assert not ({finding.code for finding in report.deficiencies} & personhood_codes)
+
+
+def test_materialization_backfills_legacy_power_hero_ability_contract() -> None:
+    project = build_project()
+    project.genre = "玄幻·宫廷权谋·养成系"
+
+    cast_spec = workflow_services._synthesize_materialization_cast_bible_fields(
+        project,
+        {
+            "protagonist": {
+                "name": "姬衡",
+                "role": "protagonist",
+                "golden_finger": "帝王心术与啼音境",
+                "power_tier": "啼音境",
+            },
+            "antagonist": {"name": "萧崇", "role": "antagonist"},
+            "supporting_cast": [],
+        },
+    )
+
+    contract = cast_spec["protagonist"]["metadata"]["methodology_overlay"][
+        "ability_origin_contract"
+    ]
+    assert set(contract) >= {
+        "source",
+        "visible_signature",
+        "limit",
+        "cost",
+        "growth_trigger",
+        "plot_use",
+    }
+    assert all(str(value).strip() for value in contract.values())
 
 
 def build_batch() -> ChapterOutlineBatchInput:
@@ -602,11 +644,12 @@ def test_outline_word_targets_are_normalized_to_shared_budget() -> None:
     )
 
     assert repaired == 4
-    # The project average (2000) would materialize fragile chapters whose ~80%
-    # realized length grazes the 1800 floor; the production floor-safe minimum
-    # (ceil(1800/0.75)=2400) lifts the target so under-production still clears it.
-    assert batch.chapters[0].target_word_count == 2400
-    assert [scene.target_word_count for scene in batch.chapters[0].scenes] == [800, 800, 800]
+    # Creation-time book total is authoritative: 80k / 40 chapters is exactly
+    # 2000 words here, and the scene split must preserve that exact chapter sum.
+    assert batch.chapters[0].target_word_count == 2000
+    scene_targets = [scene.target_word_count for scene in batch.chapters[0].scenes]
+    assert scene_targets == [667, 667, 666]
+    assert sum(scene_targets) == batch.chapters[0].target_word_count
 
 
 def build_planned_chapter(project: ProjectModel, number: int, *, status: str = ChapterStatus.PLANNED.value) -> ChapterModel:
@@ -700,7 +743,9 @@ async def test_materialize_chapter_outline_batch_creates_workflow_records(
     assert workflow_runs[0].status == "completed"
     assert workflow_runs[0].metadata_json["chapters_created"] == 1
     assert workflow_runs[0].metadata_json["scenes_created"] == 1
-    assert len(workflow_steps) == 5
+    # The file-wide offline fixture disables the two LLM-judge steps; the
+    # deterministic validate/materialize/finalize workflow records remain.
+    assert len(workflow_steps) == 3
 
 
 @pytest.mark.asyncio

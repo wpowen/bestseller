@@ -211,6 +211,10 @@ def test_chapter_first_prompt_produces_and_preserves_real_must_keep_markers():
         context_packet,
         target_word_count=chapter.target_word_count,
         context_budget_tokens=360,
+        # Explicitly full: this test is about the TRIMMER keeping must-keep
+        # markers under a tight budget, which presupposes the blocks are
+        # emitted. lean does not emit them (see the lean test below).
+        prose_prompt_profile="full",
     )
 
     assert "【章末收尾钩子】" in user_prompt
@@ -218,3 +222,46 @@ def test_chapter_first_prompt_produces_and_preserves_real_must_keep_markers():
     assert "【方法论证据】" in user_prompt
     assert "payoff_rule_signature" in user_prompt
     assert "LOW_PRIORITY_BLOAT" not in user_prompt
+
+
+def test_lean_profile_currently_omits_the_closing_hook_entirely():
+    """Documents a gap between plan §4.3 and the lean implementation.
+
+    §4.3 prescribes "章末钩子 verbatim 长文 | 缩成 Beats 一行" — compress the
+    hook to a single line, NOT drop it. Today lean removes the block and its
+    content outright, so the writer never learns which hook the chapter is
+    contracted to land on and invents its own.
+
+    That is not automatically wrong: ENDING_HOOK_MISSING / HOOK_ECHO_MISSING /
+    HOOK_ECHO_LOW are auto-repairable, so a mismatch is caught after assembly.
+    But it converts a free instruction into a paid repair round, and no blind
+    test has yet measured which is better. This test pins CURRENT behavior so
+    the choice is explicit and shows up the moment someone changes it —
+    changing it should be driven by the A6 blind comparison, not by assumption.
+    """
+
+    project = _project()
+    chapter = _chapter(project.id)
+    scene = _scene(project.id, chapter.id)
+    context_packet = _context_packet(
+        {"closing_hook": "病历背面浮出第二行字：下一位签名人是沈砚。"}
+    )
+
+    _, user_prompt = draft_services.build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        context_packet,
+        target_word_count=chapter.target_word_count,
+        context_budget_tokens=360,
+        prose_prompt_profile="lean",
+    )
+
+    assert "【章末收尾钩子】" not in user_prompt
+    assert "下一位签名人是沈砚" not in user_prompt
+
+    from bestseller.settings import PipelineSettings
+
+    repairable = set(PipelineSettings().chapter_auto_repair_repairable_codes)
+    assert {"ENDING_HOOK_MISSING", "HOOK_ECHO_MISSING", "HOOK_ECHO_LOW"} <= repairable

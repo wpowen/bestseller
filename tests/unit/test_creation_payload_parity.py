@@ -19,11 +19,16 @@ def test_start_and_schedule_share_the_same_creation_payload_builder() -> None:
         "audience_orientation",
         "narrative_scale",
         "tone_preference",
+        "concept_lab_bundle_id",
+        "concept_lab_bundle",
         "chapter_count",
+        "length_key",
+        "pov",
         "draft_mode",
         "stop_after_conception",
         "story_enhancers",
         "llm_model_id",
+        "concept_seed",
     ):
         assert f"{field}:" in builder
 

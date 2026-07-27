@@ -57,6 +57,36 @@ def test_tone_preference_reaches_the_writers_style_guide() -> None:
 
 
 @pytest.mark.unit
+def test_full_creation_contract_controls_persisted_writer_profile() -> None:
+    from bestseller.domain.project import ProjectCreate
+    from bestseller.services.writing_profile import resolve_project_create_writing_profile
+
+    genre_intent = contract_from_selection(
+        {"channel": "male", "genre": "玄幻", "sub_genre": None, "tags": []},
+        tone_preference="light",
+    ).model_dump(mode="json")
+    payload = ProjectCreate(
+        slug="creation-profile-probe",
+        title="T",
+        genre="玄幻",
+        target_word_count=130_000,
+        target_chapters=50,
+        metadata={
+            "genre_intent_contract": genre_intent,
+            "creation_intent_contract": {
+                "pov": "first_person",
+                "tone_preference": "light",
+            },
+        },
+    )
+
+    profile = resolve_project_create_writing_profile(payload)
+
+    assert profile.style.pov_type == "first_person"
+    assert profile.style.tone_keywords[:3] == ["轻松", "幽默", "明快"]
+
+
+@pytest.mark.unit
 def test_creativity_direction_reaches_the_real_engine() -> None:
     """修前:真引擎 GenreCreativeDirection 由 payload['creative_key'] 驱动,而
     快速建书 UI 从来不发这个字段(它发的是 story_enhancers.creativity_direction),
@@ -285,3 +315,37 @@ def test_cost_laws_are_seed_diverse_and_honour_cost_style() -> None:
     blob = " ".join(law["costs"] for law in external["cost_system"])
     for self_harm in ("寿元折损", "记忆被吃掉", "道心裂痕", "血脉灼烧"):
         assert self_harm not in blob, f"external 档不该出现自损代价：{self_harm}"
+
+
+def test_concept_seed_input_exists_and_is_sent_by_the_form() -> None:
+    """concept_seed 断链修复(2026-07-24)。
+
+    后端链路一直就绪:server.py 读 payload["concept_seed"] → user_hints →
+    conception 的 explicit_concept_seed → 概念淘汰赛 seed_concept。但快速建书
+    表单从未提供输入口,用户只能空题材掷硬币——当日 4 本书全部死在构思门禁,
+    空样板 premise 是共同根因之一。钉住:输入框存在 + payload 真的发送该字段。
+    """
+
+    from pathlib import Path
+
+    html = Path("src/bestseller/web/novel_quickstart.html").read_text(encoding="utf-8")
+
+    assert 'id="conceptSeedInput"' in html, "创意输入框必须存在于建书表单"
+
+    build_idx = html.index("function buildQuickstartPayload()")
+    payload_region = html[build_idx : build_idx + 2500]
+    assert "concept_seed" in payload_region, (
+        "buildQuickstartPayload 必须发送 concept_seed——输入框存在但不发送,"
+        "就是又一个『看得见选不上』的假选项"
+    )
+
+
+def test_concept_seed_server_read_matches_the_form_key() -> None:
+    """表单键与服务端读取键必须一致(防止两侧各自改名后静默断链)。"""
+
+    import inspect
+
+    from bestseller.web import server as web_server
+
+    source = inspect.getsource(web_server.WebTaskManager.create_quickstart_task)
+    assert 'payload.get("concept_seed")' in source

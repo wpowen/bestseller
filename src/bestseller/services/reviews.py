@@ -1077,6 +1077,83 @@ def _signal_score(content: str, *, keywords: list[str], max_terms: int = 10) -> 
     return _keyword_score(content, keywords=keywords, max_terms=max_terms) or 0.0
 
 
+
+def _count_term_occurrences(content: str, term: str) -> int:
+    if not content or not term:
+        return 0
+    count = 0
+    start = 0
+    while True:
+        idx = content.find(term, start)
+        if idx < 0:
+            break
+        count += 1
+        start = idx + max(len(term), 1)
+    return count
+
+
+def _embodied_verb_repeat_penalty(content: str, *, max_per_term: int = 4) -> float:
+    """Penalize same high-impact embodied marker repeating beyond cap.
+
+    Complements ``_density_score`` (distinct-term lift, churn-safe) without
+    removing it. Aligns with ai_flavor embodied_verb_spam / compact discipline.
+    """
+
+    if not content:
+        return 0.0
+    excess = 0
+    for term in _EMBODIED_EMOTION_TERMS:
+        hits = _count_term_occurrences(content, term)
+        if hits > max_per_term:
+            excess += hits - max_per_term
+    # Also penalize measure-tic spam (半寸/一寸) which density may reward.
+    for term in ("半寸", "一寸", "三分", "半息", "蓦地", "倏地"):
+        hits = _count_term_occurrences(content, term)
+        if hits > max_per_term:
+            excess += hits - max_per_term
+    return min(0.28, excess * 0.04)
+
+
+_ZH_AI_FLAVOR_TERMS: tuple[str, ...] = (
+    "命运的齿轮",
+    "本以为",
+    "却没想到",
+    "何去何从",
+    "拭目以待",
+    "敬请期待",
+    "一段不平凡的旅程",
+    "空气仿佛凝固",
+    "时间仿佛静止",
+    "嘴角勾起一抹",
+    "心中暗道",
+    "不由自主",
+    "下意识地",
+)
+
+
+def _zh_ai_flavor_penalty(content: str) -> float:
+    """Chinese AI-flavor tells missing from the English-only cliché list."""
+
+    if not content:
+        return 0.0
+    penalty = 0.0
+    for phrase in _ZH_AI_FLAVOR_TERMS:
+        if phrase in content:
+            penalty += 0.04
+    # Em-dash density: AI-glaring punctuation (ablation 3.5 sample had ×38).
+    emdash = content.count("——")
+    if emdash >= 8:
+        penalty += min(0.16, (emdash - 7) * 0.02)
+    # Negated-action filler openings.
+    neg_hits = sum(
+        content.count(p)
+        for p in ("他没", "她没", "没动", "没出声", "没接话", "没有说话")
+    )
+    if neg_hits >= 5:
+        penalty += min(0.12, (neg_hits - 4) * 0.02)
+    return min(0.32, penalty)
+
+
 def _density_score(content: str, vocab: tuple[str, ...], *, target: int = 4) -> float:
     """Reward DENSITY of distinct signal markers (not checklist-ratio).
 
@@ -1188,17 +1265,20 @@ def _chapter_contract_expectations(
         ("information_release", getattr(chapter_contract, "information_release", None)),
         ("closing_hook", getattr(chapter_contract, "closing_hook", None)),
         ("conflict_stakes", getattr(chapter_contract, "conflict_stakes", None)),
-        ("conflict_buffs", "；".join(getattr(chapter_contract, "conflict_buffs", []) or [])),
-        ("pacing_mode", getattr(chapter_contract, "pacing_mode", None)),
-        ("emotion_phase", getattr(chapter_contract, "emotion_phase", None)),
         ("hooks_to_resolve", "；".join(getattr(chapter_contract, "hooks_to_resolve", []) or [])),
         ("hooks_to_plant", "；".join(getattr(chapter_contract, "hooks_to_plant", []) or [])),
         ("relationship_debts", "；".join(getattr(chapter_contract, "relationship_debts", []) or [])),
         ("character_delta", getattr(chapter_contract, "character_delta", None)),
         ("protagonist_choice", getattr(chapter_contract, "protagonist_choice", None)),
     ]
-    expectations.extend(_causal_contract_expectations(chapter_contract))
-    expectations.extend(methodology_lineage_review_expectations(chapter_contract))
+    # Do not turn internal planning controls into prose passwords.  Fields such
+    # as pacing_mode, emotion_phase, conflict_buffs, causal_contract.* and
+    # methodology lineage describe *how* a chapter should work; demanding
+    # their literal vocabulary in the manuscript rewards prompt leakage and
+    # punishes show-don't-tell prose.  Their schema completeness is validated
+    # before drafting, while semantic delivery is handled by the LLM judge and
+    # the dedicated causality / hook gates.  This lexical lane is intentionally
+    # restricted to reader-visible story facts and outcomes.
     return expectations
 
 
@@ -1239,7 +1319,27 @@ def _methodology_lineage_evidence_summary(
         scores: list[float] = []
         for field_path in item.evidence_fields:
             expected = _resolve_contract_evidence_path(contract_payload, field_path)
-            field_score = _contract_field_score(content, expected)
+            is_internal_control = field_path.startswith(
+                (
+                    "causal_contract",
+                    "methodology_contract",
+                    "chapter_contract",
+                    "chapter_outline",
+                    "scene_contract",
+                    "scene.",
+                )
+            )
+            # Lineage paths are primarily provenance assertions: the selected
+            # method must have produced the required planning field.  Treating
+            # the field value as a phrase the novelist must echo leaked planner
+            # language into prose and created permanent rewrite loops.  Verify
+            # internal controls structurally; reserve lexical evidence for
+            # explicitly reader-visible fields.
+            field_score = (
+                1.0 if expected and is_internal_control else
+                None if is_internal_control else
+                _contract_field_score(content, expected)
+            )
             if field_score is not None:
                 scores.append(field_score)
             field_results.append(
@@ -1248,6 +1348,9 @@ def _methodology_lineage_evidence_summary(
                     "expected": expected,
                     "score": field_score,
                     "matched": field_score is not None and field_score >= 0.5,
+                    "matching_mode": (
+                        "contract_presence" if is_internal_control else "prose_evidence"
+                    ),
                 }
             )
         rule_score = _clamp_score(sum(scores) / len(scores)) if scores else None
@@ -3609,9 +3712,11 @@ def evaluate_scene_draft(
     # System UI panel overuse penalty (LitRPG code blocks)
     _code_block_count = content.count("```") // 2  # pairs of triple backticks
     _system_panel_penalty = max(0.0, (_code_block_count - 3) * 0.06) if _code_block_count > 3 else 0.0
-    # AI cliché penalty
+    # AI cliché penalty (EN list) + ZH flavor + embodied-verb repeat (churn-safe)
     _ai_cliche_count = sum(1 for phrase in _AI_CLICHE_TERMS if phrase in content_lower)
     _ai_cliche_penalty = min(0.2, _ai_cliche_count * 0.04)
+    _zh_flavor_penalty = _zh_ai_flavor_penalty(content)
+    _verb_repeat_penalty = _embodied_verb_repeat_penalty(content, max_per_term=4)
     style = _clamp_score(
         0.74
         + (0.08 if not meta_leak else -0.22)
@@ -3619,6 +3724,8 @@ def evaluate_scene_draft(
         - style_penalty
         - _system_panel_penalty
         - _ai_cliche_penalty
+        - _zh_flavor_penalty
+        - _verb_repeat_penalty
     )
 
     hook = _clamp_score(

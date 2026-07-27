@@ -80,13 +80,27 @@ def _ensure_chapter_heading(
     *,
     language: str | None = None,
 ) -> str:
-    """Prepend a canonical chapter heading if the content lacks one."""
-    if content_md.startswith(f"# 第{chapter.chapter_number}章") or content_md.startswith(
-        f"# Chapter {chapter.chapter_number}"
-    ):
-        return content_md
-    heading = format_chapter_heading(chapter.chapter_number, chapter.title, language=language)
-    return f"{heading}\n\n{content_md}"
+    """Return exactly one canonical heading, normalising model variants."""
+    normalized = str(content_md or "").lstrip()
+    leading_heading = re.match(
+        r"^#{1,4}\s*(?:"
+        r"第\s*(?:\d+|[零〇一二三四五六七八九十百千万两]+)\s*章"
+        r"|chapter\s+\d+"
+        r")[^\n]*",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    raw_title = getattr(chapter, "title", None)
+    if leading_heading is not None and not str(raw_title or "").strip():
+        return normalized
+    heading = format_chapter_heading(
+        chapter.chapter_number,
+        raw_title,
+        language=language,
+    )
+    if leading_heading is not None:
+        normalized = normalized[leading_heading.end():].lstrip("\r\n")
+    return f"{heading}\n\n{normalized}" if normalized else heading
 
 
 def _prepare_chapter_content(
@@ -1518,6 +1532,9 @@ def _run_terminal_export_gate(
             content_md=draft.content_md or "",
             project=project,
             settings=settings,
+            chapter_metadata=chapter.metadata_json
+            if isinstance(getattr(chapter, "metadata_json", None), dict)
+            else None,
         )
         if result.patched_text is not None:
             draft.content_md = result.patched_text

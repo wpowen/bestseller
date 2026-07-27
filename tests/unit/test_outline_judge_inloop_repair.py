@@ -11,7 +11,10 @@ WITHIN the run, bounded by a round counter.
 
 from __future__ import annotations
 
-from bestseller.services.planner import _outline_judge_repair_directives
+from bestseller.services.planner import (
+    _outline_judge_repair_directives,
+    _select_active_commercial_repair_directives,
+)
 
 
 def test_no_directives_when_judge_passed() -> None:
@@ -42,3 +45,28 @@ def test_no_directives_when_none_available() -> None:
 
 def test_none_payload_is_safe() -> None:
     assert _outline_judge_repair_directives(None, round_idx=0, max_rounds=1) == []
+
+
+def test_directives_are_bounded_to_preserve_writer_prompt_budget() -> None:
+    payload = {
+        "passed": False,
+        "repair_directives": [f"directive-{index}" for index in range(20)],
+    }
+
+    assert _outline_judge_repair_directives(
+        payload, round_idx=0, max_rounds=1
+    ) == [f"directive-{index}" for index in range(8)]
+
+
+def test_current_round_directives_replace_outer_heal_directives() -> None:
+    assert _select_active_commercial_repair_directives(
+        stored=["old-a", "old-b"],
+        current=["new-a"],
+    ) == ["new-a"]
+
+
+def test_outer_heal_directives_seed_first_round_only() -> None:
+    assert _select_active_commercial_repair_directives(
+        stored=["old-a", "old-b"],
+        current=[],
+    ) == ["old-a", "old-b"]

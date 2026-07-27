@@ -329,3 +329,135 @@ def scene_word_target_for_chapter(
     if per_scene > policy.scene_max and policy.scene_max * count >= target:
         return policy.scene_max
     return per_scene
+
+
+def allocate_scene_word_targets(
+    chapter_target: Any,
+    scene_count: int,
+    settings: AppSettings,
+) -> tuple[int, ...]:
+    """Allocate an exact chapter budget across its scenes.
+
+    The chapter target is the authoritative contract. Legacy scene bounds are
+    widened only when the exact chapter total cannot otherwise fit, mirroring
+    :func:`authoritative_book_word_targets` at the book level.
+    """
+
+    count = max(1, int(scene_count or 1))
+    total = max(1, int(chapter_target or effective_chapter_word_target(None, settings)))
+    policy = word_target_policy(settings)
+    average_floor = total // count
+    average_ceiling = ceil(total / count)
+    return allocate_book_word_targets(
+        total,
+        count,
+        chapter_min=min(policy.scene_min, average_floor),
+        chapter_max=max(policy.scene_max, average_ceiling),
+    )
+
+
+def allocate_book_word_targets(
+    total_word_count: int,
+    chapter_count: int,
+    *,
+    policy: WordTargetPolicy | None = None,
+    weights: list[float] | tuple[float, ...] | None = None,
+    chapter_min: int | None = None,
+    chapter_max: int | None = None,
+) -> tuple[int, ...]:
+    """Allocate an exact whole-book target across bounded chapters.
+
+    The minimum is assigned first, then the remaining words are apportioned by
+    weights. Largest-remainder ordering (fraction descending, chapter index
+    ascending) makes remainder placement stable across runs and processes.
+    """
+
+    count = int(chapter_count)
+    total = int(total_word_count)
+    if count <= 0 or total < 0:
+        raise ValueError("chapter_count and total_word_count must be positive")
+    if policy is not None:
+        minimum = int(policy.chapter_min)
+        maximum = int(policy.chapter_max)
+    else:
+        minimum = int(chapter_min if chapter_min is not None else 1)
+        maximum = int(chapter_max if chapter_max is not None else 2**31 - 1)
+    if minimum < 0 or maximum < minimum:
+        raise ValueError("invalid chapter word bounds")
+    if total < minimum * count or total > maximum * count:
+        raise ValueError("book word target cannot fit chapter bounds")
+    if weights is None:
+        normalized = [1.0] * count
+    else:
+        if len(weights) != count or any(float(weight) < 0 for weight in weights):
+            raise ValueError("weights must match chapter_count and be non-negative")
+        normalized = [float(weight) for weight in weights]
+        if not any(normalized):
+            normalized = [1.0] * count
+
+    allocations = [minimum] * count
+    remaining = total - minimum * count
+    capacities = [maximum - minimum] * count
+    while remaining:
+        active = [i for i, capacity in enumerate(capacities) if capacity > 0]
+        if not active:
+            raise ValueError("book word target cannot fit chapter bounds")
+        weight_sum = sum(normalized[i] for i in active)
+        if weight_sum <= 0:
+            for i in active:
+                normalized[i] = 1.0
+            weight_sum = float(len(active))
+        shares = {i: remaining * normalized[i] / weight_sum for i in active}
+        increments = {i: min(capacities[i], int(shares[i])) for i in active}
+        used = sum(increments.values())
+        if used:
+            for i, increment in increments.items():
+                allocations[i] += increment
+                capacities[i] -= increment
+            remaining -= used
+        if not remaining:
+            continue
+        # Place at most one residual word per active bucket in this round. The
+        # previous implementation repeatedly selected chapter 1 after each
+        # recomputation, concentrating all equal-share remainders there.
+        remainder_order = sorted(
+            active,
+            key=lambda i: (shares[i] - int(shares[i]), -i),
+            reverse=True,
+        )
+        for chosen in remainder_order:
+            if not remaining:
+                break
+            if capacities[chosen] <= 0:
+                continue
+            allocations[chosen] += 1
+            capacities[chosen] -= 1
+            remaining -= 1
+    return tuple(allocations)
+
+
+def authoritative_book_word_targets(project: Any, settings: AppSettings) -> tuple[int, ...]:
+    """Allocate the project's exact total, widening legacy chapter bounds if needed.
+
+    Creation-time totals are authoritative.  Some legacy books intentionally
+    target chapters longer or shorter than the current global defaults; those
+    projects must not lose words merely because a later configuration changed.
+    """
+
+    total = _positive_int(getattr(project, "target_word_count", None))
+    count = _positive_int(getattr(project, "target_chapters", None))
+    if total is None or count is None:
+        return ()
+    policy = project_word_target_policy(project, settings)
+    average_floor = total // count
+    average_ceiling = ceil(total / count)
+    return allocate_book_word_targets(
+        total,
+        count,
+        chapter_min=min(policy.chapter_min, average_floor),
+        chapter_max=max(policy.chapter_max, average_ceiling),
+    )
+
+
+allocate_whole_book_word_targets = allocate_book_word_targets
+allocate_chapter_word_targets = allocate_book_word_targets

@@ -373,8 +373,8 @@ ai_flavor_gate:
   # records soft findings; at-or-above block it auto-patches, then if the
   # post-patch score still >= block, routes the chapter to human review.
   block_score:
-    cn: 50
-    en: 55
+    cn: 38
+    en: 45
   warn_score:
     cn: 25
     en: 30
@@ -399,6 +399,9 @@ ai_flavor_gate:
   # block threshold is routed to human review. Flip to false only when
   # you want the gate to be advisory-only.
   block_on_residual: true
+  # When residual score is in the warn band (or higher), force one
+  # whole-passage deslop pass even if decision stayed "pass".
+  deslop_on_warn: true
 
 # ---------------------------------------------------------------------------
 # Anti-slop prose system — prompt sanitization + scene beats + structure gates.
@@ -419,10 +422,28 @@ reader_quality_gate:
   opening_similarity_threshold: 0.82
   body_similarity_threshold: 0.88
   require_critic_body_evidence: true
-  # P2 LLM reader-judge: default off; enable per-project after calibration.
-  enable_llm_reader_judge: false
+  # P2 LLM reader-judge.
+  # audit_only=true → write metadata only; do not feed persona prose_quality.
+  # enforce_reader_judge_voice_axes=true → hard-block ai_taste/human_voice floors.
+  #
+  # 2026-07-24 (plan B1, §11.5 P0-P step 5): judging is ON but strictly in
+  # SHADOW — audit_only + enforce=false means it can neither block a chapter
+  # nor move a score; it only records ai_taste/human_voice into chapter
+  # metadata. That recording is the prerequisite for calibration: with the
+  # judge off there is no distribution, and picking the 0.55 floor without one
+  # is how the retention gate ended up with a 0.62 bar above the writer's ~0.51
+  # ceiling, turning every chapter into a rewrite loop.
+  #
+  # Read the projection before flipping enforce:
+  #   python scripts/reader_judge_shadow_calibration.py
+  # Cost: one extra critic call per chapter.
+  enable_llm_reader_judge: true
   reader_judge_audit_only: true
   reader_judge_text_cap_chars: 8000
+  enforce_reader_judge_voice_axes: false
+  min_ai_taste: 0.55
+  min_human_voice: 0.55
+  reader_judge_voice_rewrite_stall_after: 2
 
 prose_quality:
   sanitize_prompt: true

@@ -90,8 +90,9 @@ from bestseller.services.story_bible import (
 )
 from bestseller.services.truth_version import truth_metadata_for_workflow
 from bestseller.services.word_targets import (
+    allocate_scene_word_targets,
+    authoritative_book_word_targets,
     normalize_chapter_word_target,
-    scene_word_target_for_chapter,
 )
 from bestseller.services.world_expansion import refresh_world_expansion_boundaries
 from bestseller.settings import load_settings
@@ -573,6 +574,7 @@ def _synthesize_materialization_character_bible_fields(
     character: dict[str, Any],
     *,
     is_en: bool,
+    project: ProjectModel | None = None,
 ) -> dict[str, Any]:
     repaired = copy.deepcopy(character)
     name = _non_empty_text(repaired.get("name"), "the character" if is_en else "角色")
@@ -667,6 +669,20 @@ def _synthesize_materialization_character_bible_fields(
             )
 
     if "protagonist" in role_lower:
+        # The final materialization gate also has to accept approved legacy
+        # CastSpec artifacts created before the ability-origin contract was
+        # introduced.  Reuse the planner's canonical synthesis so the repair
+        # semantics cannot drift between initial planning and resume.
+        from bestseller.services.planner import (  # noqa: PLC0415
+            _ensure_character_ability_origin_contract,
+        )
+
+        _ensure_character_ability_origin_contract(
+            repaired,
+            project=project,
+            is_en=is_en,
+        )
+
         psych = copy.deepcopy(_as_mapping(repaired.get("psych_profile")))
         if not _has_truthy_payload(psych):
             psych = (
@@ -802,14 +818,20 @@ def _synthesize_materialization_cast_bible_fields(
         repaired["protagonist"] = _synthesize_materialization_character_bible_fields(
             normalized["protagonist"],
             is_en=is_en,
+            project=project,
         )
     if isinstance(normalized.get("antagonist"), dict):
         repaired["antagonist"] = _synthesize_materialization_character_bible_fields(
             normalized["antagonist"],
             is_en=is_en,
+            project=project,
         )
     repaired["supporting_cast"] = [
-        _synthesize_materialization_character_bible_fields(character, is_en=is_en)
+        _synthesize_materialization_character_bible_fields(
+            character,
+            is_en=is_en,
+            project=project,
+        )
         for character in normalized.get("supporting_cast") or []
         if isinstance(character, dict)
     ]
@@ -1944,6 +1966,17 @@ def _sync_chapter_causality_metadata(
         else:
             metadata.pop(field_name, None)
 
+    for field_name in (
+        "rolling_outline_status",
+        "source_snapshot_hash",
+        "macro_plan_hash",
+    ):
+        value = getattr(chapter_outline, field_name, None)
+        if value:
+            metadata[field_name] = value
+        else:
+            metadata.pop(field_name, None)
+
     setattr(chapter, "metadata_json", metadata)
 
 
@@ -2086,23 +2119,31 @@ def _normalize_outline_word_targets(
     """Normalize outline word targets before they enter persisted chapter rows."""
 
     repaired = 0
+    total_words = int(getattr(project, "target_word_count", 0) or 0)
+    total_chapters = int(getattr(project, "target_chapters", 0) or 0)
+    authoritative_targets: tuple[int, ...] = ()
+    if total_words > 0 and total_chapters > 0:
+        authoritative_targets = authoritative_book_word_targets(project, settings)
     for chapter in batch.chapters:
-        normalized_chapter_target = normalize_chapter_word_target(
-            chapter.target_word_count,
-            project,
-            settings,
+        chapter_index = int(chapter.chapter_number or 0) - 1
+        normalized_chapter_target = (
+            authoritative_targets[chapter_index]
+            if authoritative_targets and 0 <= chapter_index < len(authoritative_targets)
+            else normalize_chapter_word_target(
+                chapter.target_word_count,
+                project,
+                settings,
+            )
         )
         if chapter.target_word_count != normalized_chapter_target:
             chapter.target_word_count = normalized_chapter_target
             repaired += 1
         if not chapter.scenes:
             continue
-        scene_target = scene_word_target_for_chapter(
-            chapter.target_word_count,
-            len(chapter.scenes),
-            settings,
+        scene_targets = allocate_scene_word_targets(
+            chapter.target_word_count, len(chapter.scenes), settings
         )
-        for scene in chapter.scenes:
+        for scene, scene_target in zip(chapter.scenes, scene_targets, strict=True):
             if scene.target_word_count != scene_target:
                 scene.target_word_count = scene_target
                 repaired += 1
@@ -3065,14 +3106,14 @@ async def materialize_chapter_outline_batch(
                     project,
                     settings,
                 )
-                _per_scene = scene_word_target_for_chapter(
-                    chapter.target_word_count,
-                    _num_scenes,
-                    settings,
+                _scene_targets = allocate_scene_word_targets(
+                    chapter.target_word_count, _num_scenes, settings
                 )
 
-                for _sc in materialized_scenes_for_chapter:
-                    _sc.target_word_count = _per_scene
+                for _sc, _scene_target in zip(
+                    materialized_scenes_for_chapter, _scene_targets, strict=True
+                ):
+                    _sc.target_word_count = _scene_target
 
             if prune_missing_planned:
                 for existing_scene in existing_scenes:

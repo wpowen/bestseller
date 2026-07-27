@@ -30,7 +30,10 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
 )
 from bestseller.services.ai_slop_blacklist import render_slop_blacklist_block
-from bestseller.services.anti_ai_voice_discipline import render_anti_ai_voice_discipline
+from bestseller.services.anti_ai_voice_discipline import (
+    render_anti_ai_voice_discipline,
+    render_compact_writer_discipline,
+)
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
 from bestseller.services.golden_rules import render_golden_three_rules
 from bestseller.services.pov_experience_discipline import render_pov_experience_block
@@ -136,6 +139,11 @@ from bestseller.services.quality_levers.character_engine import (
     render_character_engine_profile_block,
 )
 from bestseller.services.quality_levers.detectors import audit_chapter
+from bestseller.services.quality_plateau import (
+    BLOCKING_CODE_MIN_DELTA,
+    blocking_code_scores,
+    evaluate_rework_plateau,
+)
 from bestseller.services.quality_repair_playbooks import render_quality_repair_playbooks
 from bestseller.services.regen_loop import (
     DEFAULT_BUDGET_PER_CHAPTER,
@@ -543,6 +551,60 @@ def scene_should_skip_auto_repair_reset(
 # the historical (unbounded-by-total) behavior.
 
 CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY = "rounds_budget_exhausted"
+
+
+def _pipeline_settings_for_plateau() -> Any:
+    """Pipeline settings for the C3 plateau stop; fail-open to a null object.
+
+    A settings failure must never make the repair loop stop early — reading the
+    knob as absent disables plateau detection and leaves the historical
+    count-capped behavior in place.
+    """
+
+    try:
+        from bestseller.settings import get_settings  # noqa: PLC0415
+
+        return get_settings().pipeline
+    except Exception:  # noqa: BLE001 - never let a config read break repair
+        return object()
+
+
+async def _load_chapter_repair_history(
+    session: Any,
+    chapter: ChapterModel,
+    *,
+    limit: int = 12,
+) -> list[dict[str, Any]]:
+    """Return this chapter's persisted quality-report payloads, OLDEST FIRST.
+
+    One row exists per repair attempt, so this is the progress curve the
+    plateau detector reads. Returns ``[]`` on any failure — no history means no
+    plateau claim.
+    """
+
+    try:
+        # ``execute(...).scalars()`` rather than ``session.scalars(...)``: the
+        # latter shares its call sequence with the scene-card load in this same
+        # function, and adding a second consumer there silently reshuffles what
+        # the repair pass believes the chapter's scenes are.
+        result = await session.execute(
+            select(ChapterQualityReportModel)
+            .where(ChapterQualityReportModel.chapter_id == chapter.id)
+            .order_by(ChapterQualityReportModel.created_at.desc())
+            .limit(int(limit))
+        )
+        rows = list(result.scalars().all())
+    except Exception:
+        logger.debug(
+            "chapter %s: repair history lookup failed (non-fatal)",
+            getattr(chapter, "chapter_number", "?"),
+            exc_info=True,
+        )
+        return []
+    payloads = [
+        dict(getattr(row, "report_json", None) or {}) for row in reversed(rows)
+    ]
+    return payloads
 
 
 def total_chapter_scene_repair_rounds(
@@ -6538,6 +6600,23 @@ def build_scene_draft_prompts(
         "action_sequence": _scene_controls.get("action_sequence"),
         "information_control_mode": _scene_controls.get("information_control_mode"),
     }
+    # C1: lean path keeps hard landing fields but drops action_sequence scripts
+    # that push writers into shot-list prose. DB SceneCard retains the field.
+    try:
+        from bestseller.services.prose_prompt_profile import resolve_prose_prompt_profile
+
+        _scene_prose_profile = resolve_prose_prompt_profile(
+            project_metadata=getattr(project, "metadata_json", None),
+            settings_default=getattr(
+                getattr(load_settings(), "pipeline", None),
+                "prose_prompt_profile",
+                None,
+            ),
+        )
+        if _scene_prose_profile == "lean":
+            _current_scene_contract.pop("action_sequence", None)
+    except Exception:
+        logger.debug("lean scene-contract trim skipped", exc_info=True)
     _current_scene_contract = {
         key: value
         for key, value in _current_scene_contract.items()
@@ -9040,12 +9119,53 @@ def build_chapter_first_draft_prompts(
     # the hand-rolled copy that used to live in the zh system prompt below drifted
     # from the single source and shipped a body-signal enumeration that primed the
     # exact diction it banned (2026-07-18, 50-round arena).
-    _anti_ai_discipline = render_anti_ai_voice_discipline(language=language, scope="chapter")
-    _pov_experience_discipline = render_pov_experience_block(language=language, scope="chapter")
-    _chapter_position_block = render_chapter_position_prose_block(
-        language=language,
-        position=str(_infer_chapter_position(project, chapter)),
-    )
+    if prose_prompt_profile == "lean":
+        # Dose-response winner: ~250-char discipline; keep canon elsewhere.
+        _anti_ai_discipline = render_compact_writer_discipline(
+            language=language, scope="chapter"
+        )
+        _pov_experience_discipline = ""
+        _chapter_position_block = ""
+        # B4: optional short positive voice exemplar (default off).
+        try:
+            from bestseller.services.voice_few_shot import render_voice_few_shot
+
+            _few_shot_enabled = bool(
+                getattr(
+                    getattr(load_settings(), "pipeline", None),
+                    "enable_voice_few_shot",
+                    False,
+                )
+            )
+            _meta = getattr(project, "metadata_json", None) or {}
+            if isinstance(_meta, dict) and "enable_voice_few_shot" in _meta:
+                _few_shot_enabled = bool(_meta.get("enable_voice_few_shot"))
+            _genre_key = None
+            if isinstance(_meta, dict):
+                _genre_key = _meta.get("prompt_pack") or _meta.get("genre_key")
+            _genre_key = _genre_key or getattr(project, "genre", None)
+            _voice_few_shot = render_voice_few_shot(
+                genre_key=str(_genre_key or ""),
+                language=language,
+                enabled=_few_shot_enabled,
+            )
+            if _voice_few_shot:
+                _anti_ai_discipline = (
+                    f"{_anti_ai_discipline.rstrip()}\n\n{_voice_few_shot}"
+                )
+        except Exception:
+            logger.debug("voice few-shot inject skipped", exc_info=True)
+    else:
+        _anti_ai_discipline = render_anti_ai_voice_discipline(
+            language=language, scope="chapter"
+        )
+        _pov_experience_discipline = render_pov_experience_block(
+            language=language, scope="chapter"
+        )
+        _chapter_position_block = render_chapter_position_prose_block(
+            language=language,
+            position=str(_infer_chapter_position(project, chapter)),
+        )
     if is_en:
         system_prompt = (
             "# ROLE\n"
@@ -12453,6 +12573,60 @@ async def maybe_prepare_chapter_auto_repair(
             )
             await session.flush()
             return False, _known_codes
+
+    # C3 — plateau stop. The budget above answers "may I spend another round";
+    # this answers "will another round buy anything". Repair passes are
+    # persisted one row per attempt, so the blocking-code count over time IS
+    # the progress curve: if the last ``patience`` passes each removed zero
+    # blockers, further passes are churn (observed: one chapter burned 30 min
+    # over 16+ rounds without converging). Stopping here routes the chapter
+    # down the SAME machine-repair path as budget exhaustion — it only gets
+    # there sooner and with fewer wasted LLM calls.
+    _plateau_patience = int(
+        getattr(_pipeline_settings_for_plateau(), "rework_plateau_patience", 0) or 0
+    )
+    if _plateau_patience > 0:
+        _history = await _load_chapter_repair_history(session, chapter)
+        if len(_history) >= _plateau_patience + 1:
+            _plateau = evaluate_rework_plateau(
+                blocking_code_scores(_history),
+                patience=_plateau_patience,
+                min_delta=BLOCKING_CODE_MIN_DELTA,
+            )
+            if _plateau.should_stop and _plateau.reason == "plateau":
+                _latest_payload = dict(getattr(latest_report, "report_json", None) or {})
+                _known_codes = tuple(
+                    dict.fromkeys(
+                        str(c) for c in (_latest_payload.get("blocking_codes") or ()) if c
+                    )
+                )
+                logger.warning(
+                    "chapter %d: repair plateau after %d gain-less pass(es) "
+                    "(history=%d passes, best had %d blocking codes); stopping "
+                    "auto-repair early and routing to machine repair "
+                    "(block codes: %s)",
+                    chapter.chapter_number,
+                    _plateau.rounds_without_gain,
+                    len(_history),
+                    int(-_plateau.best_score) if _plateau.best_score > -1e308 else -1,
+                    list(_known_codes),
+                )
+                mark_chapter_rounds_budget_exhausted(
+                    chapter,
+                    block_codes=_known_codes,
+                    total_scene_rounds=len(_history),
+                    budget=_rounds_budget,
+                )
+                _plateau_meta = dict(getattr(chapter, "metadata_json", None) or {})
+                _plateau_meta["repair_plateau"] = {
+                    "reason": _plateau.reason,
+                    "passes": len(_history),
+                    "rounds_without_gain": _plateau.rounds_without_gain,
+                    "best_pass_index": _plateau.best_index,
+                }
+                chapter.metadata_json = _plateau_meta
+                await session.flush()
+                return False, _known_codes
 
     retention_findings = [
         item

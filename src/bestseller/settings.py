@@ -59,6 +59,8 @@ class LLMSettings(BaseModel):
     mock: bool = False
     writer_total_input_budget_tokens: int = Field(default=8000, ge=256)
     writer_prompt_safety_margin: float = Field(default=0.10, ge=0, lt=1)
+    planner_prompt_budget_tokens: int = Field(default=16000, ge=2048)
+    planner_prompt_safety_margin: float = Field(default=0.10, ge=0, lt=1)
     independent_judge_mode: Literal["off", "shadow", "advisory"] = "shadow"
     independent_judge_primary_model_key: str | None = "deepseek-v4-flash"
     independent_judge_secondary_model_key: str | None = "nim-mistral-large-3"
@@ -282,7 +284,7 @@ class PipelineSettings(BaseModel):
     # False maps to strict; True maps to closure with explicit quality debt.
     # New callers must use quality_mode and promotion evidence instead.
     accept_on_stall: bool = True
-    whole_book_pause_on_scene_review: bool = False  # If True, a chapter whose scenes require human review PAUSES the whole book. Closure mode may continue only with explicit quality debt; it never promotes the stalled candidate. Whole-book consistency failures still pause regardless (see project_consistency_block_on_failure).
+    whole_book_pause_on_scene_review: bool = False  # If True, a chapter whose scenes require human review PAUSES the whole book. Closure mode may continue with explicit quality debt and a human-review flag; it never promotes the stalled candidate. Whole-book consistency failures still pause regardless (see project_consistency_block_on_failure).
     project_consistency_block_on_failure: bool = True  # Whole-book consistency failures must pause, not accept_on_stall
     chapter_review_block_on_failure: bool = False  # Deprecated compatibility switch. True maps to strict; false does not permit exporting or promoting a failed chapter review.
     retention_safety_gate_block_on_failure: bool = False  # Soft by default: when the reader-retention / persona auto-repair budget is exhausted (e.g. PERSONA_WEIGHTED_SCORE_LOW that the writer model structurally cannot clear — the gate's 0.62 bar sits above the model's ~0.51 ceiling per reader_persona_calibration), accept the best draft on-stall, flag it (retention_accepted_on_stall / low_retention_quality) and ADVANCE instead of pausing the whole book to machine-repair. True left every persona-failing chapter looping rewrites then hard-blocking, so the book never reached autonomous closure. Mirrors chapter_review_block_on_failure; opt on for strict retention enforcement. Per-project override via metadata `retention_safety_gate_warn_only: true`.
@@ -299,6 +301,12 @@ class PipelineSettings(BaseModel):
     # consumed_event_ledger + previous_exit_state, so smaller batches are safe.
     commercial_strict_prewrite_chapter_outline_batch_size: int = 3
     commercial_strict_prewrite_outline_batch_shrink_size: int = 3
+    rolling_outline_window_size: int = 8
+    rolling_outline_batch_size: int = 4
+    enable_rolling_outline: bool = True
+    rolling_outline_block_when_missing: bool = True
+    enable_outline_semantic_gate: bool = True
+    outline_semantic_gate_block_on_failure: bool = True
     commercial_strict_prewrite_planning_judge_threshold: float = 0.82
     enable_chapter_feedback: bool = True  # Post-chapter feedback extraction
     enable_contradiction_checks: bool = True  # Pre-scene contradiction checks
@@ -337,6 +345,11 @@ class PipelineSettings(BaseModel):
     methodology_planning_readiness_block_on_failure: bool = False
     enable_outline_llm_commercial_judge: bool = True
     outline_llm_commercial_judge_block_on_failure: bool = False
+    # Progressive outline self-heal gets two bounded feedback regenerations
+    # (three judge passes total). One round improved the live target from 0.42
+    # to 0.52 but could not close confirmed agency/knowledge/payoff defects.
+    outline_commercial_judge_repair_rounds: int = 2
+    outline_replan_auto_retry_max_attempts: int = 3
     # Heuristic platform-fit gate (七猫 golden-three). Warn-only by default so
     # a flagged opening becomes a rewrite directive rather than aborting the
     # whole book at planning (2026-05-29).
@@ -556,6 +569,15 @@ class PipelineSettings(BaseModel):
     # best draft on stall instead of churning forever — the "minimum iterations"
     # contract. Ops can raise it for quality-max runs.
     max_total_scene_rounds_per_chapter: int = 20
+    # C3 plateau stop (services/quality_plateau.py). The counter above answers
+    # "how many rounds may I spend"; these answer "is another round worth it".
+    # A chapter the model cannot improve otherwise pays the full cap every run.
+    # Shipped enabled because the behavior is strictly safer than the count-only
+    # loop: it can only stop EARLIER, and it promotes the best-scoring attempt
+    # instead of whichever one happened to come last.
+    # patience=0 disables detection and restores the historical behavior.
+    rework_plateau_patience: int = 2
+    rework_plateau_min_delta: float = 0.02
     # Cross-run cap on ``autonomous_quality_retrofit`` rewrite tasks
     # generated per chapter. ``autonomous_book_repair`` schedules these from
     # the quality-levers audit; without a per-chapter cap a chapter that
@@ -630,7 +652,10 @@ class PipelineSettings(BaseModel):
     # acceptance/planning blocks left to the post-generation gates that already
     # own them. Per-book override: metadata["prose_prompt_profile"].
     # Evidence + rationale: services/prose_prompt_profile.py.
-    prose_prompt_profile: str = "full"
+    prose_prompt_profile: str = "lean"
+    # B4: inject ≤400-char positive genre voice exemplar into lean writer.
+    # Default OFF — opt in per book via metadata enable_voice_few_shot.
+    enable_voice_few_shot: bool = False
     # Advisory intra-chapter contradiction critic for the chapter-first path.
     # One extra critic call per chapter; chapter-first already spends ~1/3 the
     # generation calls of scene mode, so the unit stays cheaper overall.

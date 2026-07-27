@@ -408,6 +408,21 @@ class SceneOutlineInput(BaseModel):
                     _parts = re.split(r"[→、,，;；/\n|]+", _s)
                     data[_list_field] = [p.strip() for p in _parts if p.strip()]
 
+        # MiniMax occasionally returns a perfectly usable scene state as a
+        # scalar summary even though the canonical schema is a mapping. This is
+        # a lossless shape repair, not a semantic invention: retain the exact
+        # text under ``summary`` so validation can continue and downstream
+        # richness gates still judge whether the state is concrete enough.
+        for _state_field in ("entry_state", "exit_state"):
+            if _state_field not in data:
+                continue
+            _state = data[_state_field]
+            if _state is None:
+                data[_state_field] = {}
+            elif isinstance(_state, str):
+                _summary = _state.strip()
+                data[_state_field] = {"summary": _summary} if _summary else {}
+
         # ── scene_number: MiniMax uses float like 1.1, 1.2, 2.1 (chapter.scene)
         # Extract the fractional part as the scene-within-chapter ordinal.
         sn = data.get("scene_number")

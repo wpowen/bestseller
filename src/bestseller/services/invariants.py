@@ -167,6 +167,7 @@ def is_low_pressure_tone(
     prompt_pack_key: str | None = None,
     genre: str | None = None,
     sub_genre: str | None = None,
+    tone_preference: str | None = None,
 ) -> bool:
     """Whether a book's tone is low-pressure comedic/healing.
 
@@ -177,7 +178,10 @@ def is_low_pressure_tone(
 
     if prompt_pack_key and str(prompt_pack_key).strip().lower() in _LOW_PRESSURE_PROMPT_PACKS:
         return True
-    label = f"{genre or ''} {sub_genre or ''}".lower()
+    preference = str(tone_preference or "").strip().lower()
+    if preference in {"light", "cozy", "comedy", "healing"}:
+        return True
+    label = f"{genre or ''} {sub_genre or ''} {preference}".lower()
     return any(token in label for token in _LOW_PRESSURE_TONE_TOKENS)
 
 

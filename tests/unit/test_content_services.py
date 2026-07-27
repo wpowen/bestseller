@@ -1323,6 +1323,16 @@ def test_ensure_chapter_heading_preserves_existing() -> None:
     assert result.count("# 第1章") == 1
 
 
+def test_ensure_chapter_heading_normalizes_chinese_numeral_variant() -> None:
+    chapter = SimpleNamespace(chapter_number=1, title="答名")
+    content = "# 第一章 答名\n\n我是裴野。"
+
+    result = _ensure_chapter_heading(chapter, content)
+
+    assert result == "# 第1章：答名\n\n我是裴野。"
+    assert result.count("章") == 1
+
+
 # ── Fix 2: Prohibition covers markdown headings ────────────────────────────
 
 

@@ -16,12 +16,22 @@ def test_aggregate_weighted() -> None:
         "payoff_density": 0.6,
         "emotional_impact": 0.7,
         "anti_abandon": 0.5,
+        "ai_taste": 0.4,
+        "human_voice": 0.9,
     }
     score = aggregate_prose_quality(dims)
     assert 0.0 <= score <= 1.0
-    # payoff_density carries the highest weight (0.30)
+    # Six-axis rubric (payoff_density still the heaviest single weight).
     assert score == pytest.approx(
-        (0.8 * 0.25 + 0.6 * 0.30 + 0.7 * 0.25 + 0.5 * 0.20), abs=1e-6
+        (
+            0.8 * 0.18
+            + 0.6 * 0.22
+            + 0.7 * 0.18
+            + 0.5 * 0.14
+            + 0.4 * 0.14
+            + 0.9 * 0.14
+        ),
+        abs=1e-6,
     )
 
 

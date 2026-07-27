@@ -226,15 +226,18 @@ def test_enrich_maps_causal_contract_from_chapter_fields() -> None:
     )
     contract = batch.chapters[0].causal_contract
     assert contract["pressure"] == "玄烈逼纪渊三日内交出名册"
-    assert contract["protagonist_choice"] == "纪渊要在封停前保住名册。"
-    assert contract["state_change"] == "名册被贴上封条，期限开始倒数。"
-    assert contract["gain_or_reveal"] == "名册可以自己增删名字"
+    assert contract["protagonist_choice"].startswith("主角选择采取可见行动：")
+    assert "纪渊在招神点当面拒绝交名册" in contract["protagonist_choice"]
+    assert "名册被贴上封条，期限开始倒数" in contract["state_change"]
+    assert "名册可以自己增删名字" in contract["gain_or_reveal"]
     assert contract["next_reader_desire"] == "名册最后一页出现了纪渊自己的名字。"
     assert contract["resistance"]
     assert contract["cost_or_tradeoff"]
     assert contract["chapter_function"]
     # 因果闸门要求 ≥5 条轴成立；确定性映射必须把全部缺轴补上。
     assert len([v for v in contract.values() if v]) >= 8
+    # 各轴必须表达不同职责，不能再把同一句事件复制成选择、代价和变化。
+    assert len(set(contract.values())) == len(contract)
 
 
 def test_enrich_only_fills_missing_causal_axes() -> None:
@@ -399,3 +402,30 @@ def test_enrich_preserves_existing_hook_type() -> None:
     )
     # A non-empty planner value is normalized but never blanked.
     assert (batch.chapters[0].hook_type or "").strip()
+
+
+def test_enrich_restores_information_contract_from_existing_causal_reveal() -> None:
+    ch = _chapter(
+        7,
+        causal_contract={
+            "gain_or_reveal": "萧崇确认温绰摘下银扣时不是紧张，而是松了一口气。"
+        },
+    )
+    ch["key_reveals"] = []
+    ch["chapter_information_introduced"] = []
+    ch["chapter_information_held_back"] = []
+    ch["methodology_contract"] = {
+        "hooks_to_plant": "温绰究竟是失去筹码还是开始被姬衡触动。"
+    }
+    batch = _batch([ch])
+
+    planner._enrich_generated_volume_outline_systemic_fields(
+        batch, identity_manifest=_MANIFEST, language="zh-CN"
+    )
+
+    assert batch.chapters[0].chapter_information_introduced == [
+        "萧崇确认温绰摘下银扣时不是紧张，而是松了一口气。"
+    ]
+    assert batch.chapters[0].chapter_information_held_back == [
+        "温绰究竟是失去筹码还是开始被姬衡触动。"
+    ]

@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -234,8 +233,66 @@ class TestValidateGeneratedVolumeOutlineDegeneracy:
             expected_count=1,
             chapter_number_offset=1,
             cast_spec=cast_spec,
+            # This test isolates field preservation; semantic word-budget
+            # promotion is covered by the semantic-gate suite.
+            strict_field_degeneracy=False,
         )
         assert result["chapters"][0]["main_conflict"].startswith("调度员余彤")
+
+    def test_post_enrichment_degeneracy_reenters_llm_repair_loop(self, monkeypatch):
+        """System backfill must not create a collapse after the early check."""
+
+        project = build_project()
+        cast_spec = {
+            "protagonist": {"name": "闻雀", "role": "protagonist"},
+            "antagonist": {"name": "余彤", "role": "antagonist"},
+        }
+        payload = {
+            "batch_name": "volume-1-outline",
+            "chapters": [
+                {
+                    "title": "按键下那张纸",
+                    "goal": "闻雀要保住试睡员的饭碗",
+                    "main_conflict": "调度员余彤当面威胁不过就离职",
+                    "opening_situation": "槐安公寓大堂，余彤把协议拍在桌上",
+                    "hook_description": "电梯按键下贴着一张手写规则。",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "participants": ["闻雀", "余彤"],
+                            "purpose": {"story": "闻雀和余彤签下试睡协议。"},
+                        }
+                    ],
+                }
+            ],
+        }
+        original = planner_services._enrich_generated_volume_outline_systemic_fields
+
+        def collapse_after_early_check(batch, **kwargs):
+            repaired = original(batch, **kwargs)
+            batch.chapters[0].main_conflict = batch.chapters[0].chapter_goal
+            return repaired + 1
+
+        monkeypatch.setattr(
+            planner_services,
+            "_enrich_generated_volume_outline_systemic_fields",
+            collapse_after_early_check,
+        )
+
+        with pytest.raises(OutlineFieldDegeneracyError) as exc_info:
+            planner_services._validate_generated_volume_outline_or_raise(
+                payload,
+                project=project,
+                logical_name="volume_1_chapter_outline",
+                volume_number=1,
+                expected_count=1,
+                chapter_number_offset=1,
+                cast_spec=cast_spec,
+                strict_field_degeneracy=True,
+            )
+
+        assert "system enrichment and contract repair" in str(exc_info.value)
+        assert exc_info.value.findings[0]["field_b"] == "main_conflict"
 
 
 # ── _outline_repair_directives_from_error ───────────────────────────────────
@@ -390,6 +447,52 @@ class TestPlannerEnrichmentTagging:
         assert "opening_situation_copied_from_goal_no_alt_material" in tags
 
 
+class TestDeterministicChapterFieldRepair:
+    def test_conflict_repair_does_not_copy_goal(self):
+        batch = _batch(
+            [
+                {
+                    "chapter_number": 1,
+                    "chapter_goal": "姬衡要在宴席前护住小皇子",
+                    "opening_situation": "宫门已闭，仇家的车驾堵在阶前",
+                    "main_conflict": "本章需要强化冲突",
+                }
+            ]
+        )
+        chapter = batch.chapters[0]
+
+        chapter.main_conflict = planner_services._outline_chapter_conflict_repair(
+            chapter,
+            protagonist_name="姬衡",
+        )
+
+        assert chapter.main_conflict != chapter.chapter_goal
+        assert "反制" in chapter.main_conflict
+        assert planner_services._detect_degenerate_outline_fields(batch) == []
+
+    def test_goal_repair_does_not_copy_conflict(self):
+        batch = _batch(
+            [
+                {
+                    "chapter_number": 1,
+                    "chapter_goal": "本章需要推进剧情",
+                    "opening_situation": "宫门已闭，仇家的车驾堵在阶前",
+                    "main_conflict": "裴家死士要在宴席前抢走小皇子",
+                }
+            ]
+        )
+        chapter = batch.chapters[0]
+
+        chapter.chapter_goal = planner_services._outline_chapter_goal_repair(
+            chapter,
+            protagonist_name="姬衡",
+        )
+
+        assert chapter.chapter_goal != chapter.main_conflict
+        assert "主动行动" in chapter.chapter_goal
+        assert planner_services._detect_degenerate_outline_fields(batch) == []
+
+
 # ── L3 真机验收回归(2026-07-09)：合并终验的退化查重必须软接受 ────────────────
 
 
@@ -440,13 +543,12 @@ class TestCombineTimeDegeneracyIsSoft:
                 strict_story_effects=True,
             )
 
-    def test_combine_call_site_passes_soft_degeneracy(self):
-        """结构钉：_generate_volume_outline_batched 的合并终验调用必须显式传
-        strict_field_degeneracy=False——这是本次真机死亡的直接修复点。"""
+    def test_combine_call_site_requires_strict_degeneracy(self):
+        """The final combined volume may not promote collapsed outline fields."""
 
         import inspect
 
         source = inspect.getsource(planner_services._generate_volume_outline_batched)
         combine_pos = source.index("validated = _validate_generated_volume_outline_or_raise(")
         call_region = source[combine_pos : combine_pos + 900]
-        assert "strict_field_degeneracy=False," in call_region
+        assert "strict_field_degeneracy=True," in call_region

@@ -66,6 +66,7 @@ class IFGenerationPhase(StrEnum):
 
 class ProjectStatus(StrEnum):
     PLANNING = "planning"
+    NEEDS_REPLAN = "needs_replan"
     WRITING = "writing"
     REVISING = "revising"
     PAUSED = "paused"

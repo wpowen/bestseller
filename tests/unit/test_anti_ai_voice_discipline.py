@@ -94,9 +94,23 @@ class TestAllProsePathsCarryTheDiscipline:
             build_chapter_rewrite_system_prompt()
         )
 
+    # ── chapter-first WRITER path: compact discipline (plan A2) ─────────────
+    # The rewrite paths above keep the full discipline: they receive an existing
+    # draft and are asked to repair named defects, so enumerated rules act as a
+    # checklist against concrete text. The chapter-first WRITER path composes
+    # from scratch, and there the same enumeration measurably backfired — the
+    # dose-response ablation (prose_prompt_profile.py) scored 20,988 chars of
+    # instruction at 3.50 blind vs 6.8-7.8 for the 175-633 char band, with the
+    # writer switching from storytelling to compliance-form filling.
+    #
+    # So A2 swapped this path to render_compact_writer_discipline. The rules
+    # dropped here did not disappear; they moved behind generation:
+    #   身体反应/度量腔/明喻过密 → ai_flavor_gate (embodied_verb_spam,
+    #     zh.simile.overrun, measure-tic) + reviews.py A3 repeat penalties
+    # See test_compact_discipline_delegates_dropped_rules_to_post_gates below.
     @pytest.mark.parametrize(
         "rule",
-        ["不要结论先行/总分总", "身体反应不是情绪的默认替身"],
+        ["不要结论先行", "没做什么", "只输出正文"],
     )
     def test_chapter_first_system_prompt_carries_rule(self, rule: str) -> None:
         """The generation path this guard originally missed.
@@ -104,7 +118,8 @@ class TestAllProsePathsCarryTheDiscipline:
         ``build_chapter_first_draft_prompts`` shipped a *hand-rolled* paraphrase
         of these rules instead of importing the source, so every fix landed here
         only if someone remembered to edit a second string literal. Under
-        chapter_hybrid this path writes the whole book.
+        chapter_hybrid this path writes the whole book. The import-not-inline
+        contract still holds — only the rendered variant changed.
         """
 
         from _prose_prompt_fixtures import build_chapter_first_system_prompt
@@ -112,11 +127,52 @@ class TestAllProsePathsCarryTheDiscipline:
         assert rule in build_chapter_first_system_prompt()
 
     def test_chapter_first_uses_chapter_scoped_verb_budget(self) -> None:
+        """Scope still matters: a per-scene cap stated to a whole-chapter writer
+        is the bug that let per-scene compliance multiply into chapter tics."""
+
         from _prose_prompt_fixtures import build_chapter_first_system_prompt
 
         prompt = build_chapter_first_system_prompt()
-        assert "同一个高冲击具身动词全章最多 4 次" in prompt
+        assert "同一个高冲击动词全章别超过 4 次" in prompt
         assert "全场" not in prompt
+
+    def test_chapter_first_discipline_stays_within_the_ablation_band(self) -> None:
+        """A2's whole point: the discipline block must stay short.
+
+        Guards against the historical failure mode where each AI-flavor incident
+        appended one more rule until the block was back to compliance-form size.
+        """
+
+        from bestseller.services.anti_ai_voice_discipline import (
+            render_compact_writer_discipline,
+        )
+
+        block = render_compact_writer_discipline(language="zh-CN", scope="chapter")
+        assert len(block) <= 400, (
+            f"compact discipline grew to {len(block)} chars; the dose-response "
+            "optimum is the 175-633 char instruction band"
+        )
+        assert block.count("- ") == 4, "compact discipline is exactly four rules"
+
+    def test_compact_discipline_delegates_dropped_rules_to_post_gates(self) -> None:
+        """The rules compact drops must still be enforced somewhere.
+
+        Dropping them from the prompt is only safe because deterministic
+        detectors catch them after generation. If those detectors were removed,
+        the prompt diet would silently become a quality regression.
+        """
+
+        import inspect
+
+        from bestseller.services.ai_flavor import detector as ai_flavor_detector
+
+        source = inspect.getsource(ai_flavor_detector)
+        for rule_id in ("zh.tic.embodied_verb_spam", "zh.simile.overrun"):
+            assert rule_id in source, (
+                f"{rule_id} must stay in the ai_flavor detector: the "
+                "chapter-first prompt no longer states this rule, so removing "
+                "the detector would drop the concern entirely"
+            )
 
     def test_chapter_first_does_not_enumerate_body_signals(self) -> None:
         """The regression that made this refactor necessary.

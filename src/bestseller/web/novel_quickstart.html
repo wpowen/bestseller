@@ -1752,6 +1752,60 @@
     color: var(--warning);
   }
 
+  /* ── B3「生效片段」: what the writer prompt actually contained ───────── */
+  .pm-body { font-size: 13px; line-height: 1.55; color: var(--text); }
+
+  .pm-head {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  .pm-hash { margin-left: 8px; opacity: .75; }
+
+  .pm-group { margin-bottom: 10px; }
+
+  .pm-label {
+    font-size: 11px;
+    font-weight: 720;
+    letter-spacing: .04em;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  /* A user option that never reached the writer surfaces here, so the dropped
+     group must read as an alert rather than as a second neutral list. */
+  .pm-label-drop { color: var(--danger); }
+
+  .pm-list { list-style: none; margin: 0; padding: 0; }
+
+  .pm-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: var(--radius-sm);
+  }
+
+  .pm-list code { font-family: var(--mono); font-size: 11px; }
+
+  .pm-kept code { color: var(--text); }
+
+  .pm-dropped {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .pm-dropped code { color: var(--danger); font-weight: 720; }
+
+  .pm-size, .pm-why { font-size: 11px; color: var(--text-dim); }
+
+  .pm-why { color: var(--danger); opacity: .85; }
+
+  .pm-empty { font-size: 11px; color: var(--text-faint); }
+
   .tc-progress { margin-bottom: 10px; }
 
   .tc-prog-header {
@@ -3867,6 +3921,35 @@
       transition-duration: .01ms !important;
     }
   }
+
+  /* ── Architecture design tab (embedded showroom) ── */
+  #viewArchitecture.view.active {
+    display: block;
+    position: fixed;
+    top: var(--app-header-offset, 108px);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 35;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #f7fafb;
+  }
+  #viewArchitecture .arch-frame-wrap {
+    width: 100%;
+    height: 100%;
+  }
+  #viewArchitecture iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #f7fafb;
+  }
+  body.arch-tab-open .hotkey-footer { display: none; }
 </style>
 </head>
 <body>
@@ -3898,8 +3981,9 @@
   </div>
   <div class="header-nav">
     <button id="navNew" onclick="startNewCreationFlow()">新建创作</button>
-    <button id="navDash" class="active" onclick="switchView('dashboard')">任务指挥台 <span class="nav-count" id="navTaskCount">00</span></button>
+    <button id="navDash" class="active" onclick="switchView('dashboard')">任务指挥台 <span class="nav-count" id="navTaskCount">--</span></button>
     <a href="/library">书稿库 <span class="nav-count" id="navLibraryCount">00</span></a>
+    <button id="navArchitecture" type="button" onclick="switchView('architecture')">架构设计</button>
     <a href="/methodology-course">写作方法论</a>
     <a href="/quickstart">上架资料</a>
     <a href="/quickstart">工作室设置</a>
@@ -3926,7 +4010,7 @@
     <section class="dash-command">
       <div class="dash-command-main">
         <div>
-          <h2>共 <span id="dashHeroTotal">0</span> 项在任务台.</h2>
+          <h2>共 <span id="dashHeroTotal">--</span> 项在任务台.</h2>
           <p>任务台显示正在运行的任务和未归档的已闭环作品；点击归档后，作品会移入书稿库归档区。</p>
         </div>
         <div class="dash-command-bottomline">
@@ -3942,28 +4026,28 @@
           <div class="dash-metric-kicker">RUNNING</div>
           <div class="dash-metric-label">运行中</div>
         </div>
-        <div class="dash-metric-value" id="dashMetricActive">00</div>
+        <div class="dash-metric-value" id="dashMetricActive">--</div>
       </div>
       <div class="dash-metric tone-finalizing">
         <div>
           <div class="dash-metric-kicker">FINALIZING</div>
           <div class="dash-metric-label">收尾中</div>
         </div>
-        <div class="dash-metric-value" id="dashMetricFinalizing">00</div>
+        <div class="dash-metric-value" id="dashMetricFinalizing">--</div>
       </div>
       <div class="dash-metric tone-done">
         <div>
           <div class="dash-metric-kicker">LIBRARY</div>
           <div class="dash-metric-label">闭环作品</div>
         </div>
-        <div class="dash-metric-value" id="dashMetricCompleted">00</div>
+        <div class="dash-metric-value" id="dashMetricCompleted">--</div>
       </div>
       <div class="dash-metric tone-attention">
         <div>
           <div class="dash-metric-kicker">BOOKS</div>
           <div class="dash-metric-label">书稿总数</div>
         </div>
-        <div class="dash-metric-value" id="dashMetricAttention">00</div>
+        <div class="dash-metric-value" id="dashMetricAttention">--</div>
       </div>
     </section>
 
@@ -3980,7 +4064,7 @@
     </div>
     <div id="dashStatusBanner"></div>
     <div id="dashContent">
-      <div class="dash-empty" id="dashEmpty">
+      <div class="dash-empty" id="dashEmpty" style="display:none;">
         <h2>当前没有执行中的任务</h2>
         <p>已完成作品在书稿库查看；需要新书时从「新建创作」开始。</p>
         <button class="btn btn-primary" onclick="startNewCreationFlow()">新建创作</button>
@@ -3989,11 +4073,11 @@
     </div>
     <div class="dash-viewbar">
       <div class="dash-filter-tabs" aria-label="任务筛选">
-        <button class="dash-filter active" data-filter="all" onclick="setDashboardFilter('all')">全部 <span id="filterAllCount">00</span></button>
-        <button class="dash-filter" data-filter="active" onclick="setDashboardFilter('active')">运行中 <span id="filterActiveCount">00</span></button>
-        <button class="dash-filter" data-filter="finalizing" onclick="setDashboardFilter('finalizing')">收尾 <span id="filterFinalizingCount">00</span></button>
-        <button class="dash-filter" data-filter="completed" onclick="setDashboardFilter('completed')">已闭环 <span id="filterCompletedCount">00</span></button>
-        <button class="dash-filter" onclick="location.href='/library'">书稿库 <span id="filterLibraryCount">00</span></button>
+        <button class="dash-filter active" data-filter="all" onclick="setDashboardFilter('all')">全部 <span id="filterAllCount">--</span></button>
+        <button class="dash-filter" data-filter="active" onclick="setDashboardFilter('active')">运行中 <span id="filterActiveCount">--</span></button>
+        <button class="dash-filter" data-filter="finalizing" onclick="setDashboardFilter('finalizing')">收尾 <span id="filterFinalizingCount">--</span></button>
+        <button class="dash-filter" data-filter="completed" onclick="setDashboardFilter('completed')">已闭环 <span id="filterCompletedCount">--</span></button>
+        <button class="dash-filter" onclick="location.href='/library'">书稿库 <span id="filterLibraryCount">--</span></button>
       </div>
       <div class="dash-controls">
         <span class="dash-control">排序 <strong>更新时间 ↓</strong></span>
@@ -4252,6 +4336,19 @@
             <span class="hint" style="font-size:12px;">（可选；勾选后只保存构思，不进入整本书规划与写作）</span>
           </label>
         </div>
+        <!-- concept_seed 断链修复(2026-07-24):后端全链早已就绪(user_hints →
+             淘汰赛 seed_concept,conception.py:3948),但表单从未提供输入口,
+             用户只能空题材掷硬币——空样板 premise 是当日 4 连挂在构思门禁的
+             共同根因之一。 -->
+        <div class="summary-row summary-option" style="flex-direction:column;align-items:stretch;gap:6px;">
+          <label for="conceptSeedInput" style="cursor:pointer;">
+            <span>故事创意（可选，强烈推荐）</span>
+            <span class="hint" style="font-size:12px;">一句话：主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。它会成为概念生成的种子，显著提高过门率。</span>
+          </label>
+          <textarea id="conceptSeedInput" rows="3" maxlength="300"
+            placeholder="例：靠给宗门死人验尸糊口的贱籍少年，发现每具尸体死前都听到了同一句话——而今天他自己也听到了。"
+            style="width:100%;resize:vertical;font-size:13px;line-height:1.5;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);"></textarea>
+        </div>
       </div>
       <div class="nav-buttons" style="flex-direction:column;gap:12px;">
         <button class="btn btn-primary btn-start" id="startBtn">开始创作</button>
@@ -4343,6 +4440,14 @@
         <a href="#" id="pvReadAll" class="btn btn-secondary btn-sm" target="_blank">阅读全部</a>
       </h4>
       <div class="pv-ch-grid" id="pvChGrid"></div>
+    </div>
+
+    <div class="pv-chapters" id="pvManifestSec" style="display:none;">
+      <h4>
+        <span>生效片段 <span style="font-weight:400;color:var(--text-dim);">（本章 writer Prompt Compiler）</span></span>
+        <select id="pvManifestChapter" class="btn btn-secondary btn-sm" style="min-width:7rem;"></select>
+      </h4>
+      <div id="pvManifestBody" class="pm-body"></div>
     </div>
 
     <div class="pv-timeline">
@@ -4467,6 +4572,19 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ ARCHITECTURE DESIGN VIEW ═══════════ -->
+  <div class="view" id="viewArchitecture" aria-label="架构设计展厅">
+    <div class="arch-frame-wrap">
+      <iframe
+        id="architectureFrame"
+        title="BestSeller 架构设计展厅"
+        src="/architecture-course?embed=1"
+        loading="lazy"
+        referrerpolicy="same-origin"
+      ></iframe>
     </div>
   </div>
 
@@ -4825,12 +4943,42 @@
      ═══════════════════════════════════════ */
   window.switchView = function(name) {
     $$('.view').forEach(v => v.classList.remove('active'));
-    $(`#view${name.charAt(0).toUpperCase() + name.slice(1)}`).classList.add('active');
+    const viewEl = $(`#view${name.charAt(0).toUpperCase() + name.slice(1)}`);
+    if (!viewEl) return;
+    viewEl.classList.add('active');
     $$('.header-nav button').forEach(b => b.classList.remove('active'));
-    if (name === 'dashboard') { $('#navDash').classList.add('active'); stopProgressPoll(); refreshDashboard(); }
-    else if (name === 'wizard') { $('#navNew').classList.add('active'); stopProgressPoll(); }
-    else if (name === 'progress') { /* no nav highlight — sub-view of dashboard */ }
+    document.body.classList.toggle('arch-tab-open', name === 'architecture');
+    if (name === 'architecture') {
+      syncArchitectureHeaderOffset();
+      $('#navArchitecture')?.classList.add('active');
+      stopProgressPoll();
+      const frame = $('#architectureFrame');
+      if (frame && !frame.dataset.loaded) {
+        frame.dataset.loaded = '1';
+        // 强制刷新一次，避免旧缓存
+        frame.src = '/architecture-course?embed=1';
+      }
+      try { history.replaceState(null, '', '#architecture'); } catch (_) {}
+    } else if (name === 'dashboard') {
+      $('#navDash').classList.add('active');
+      stopProgressPoll();
+      refreshDashboard();
+      try { if (location.hash === '#architecture') history.replaceState(null, '', location.pathname); } catch (_) {}
+    } else if (name === 'wizard') {
+      $('#navNew').classList.add('active');
+      stopProgressPoll();
+    } else if (name === 'progress') { /* no nav highlight — sub-view of dashboard */ }
   };
+
+  function syncArchitectureHeaderOffset() {
+    const header = document.querySelector('.header');
+    if (!header) return;
+    const h = Math.ceil(header.getBoundingClientRect().height);
+    document.documentElement.style.setProperty('--app-header-offset', `${h}px`);
+  }
+  window.addEventListener('resize', () => {
+    if (document.body.classList.contains('arch-tab-open')) syncArchitectureHeaderOffset();
+  });
 
   function resetWizardState() {
     selectedGenreKey = null;
@@ -4903,7 +5051,12 @@
 	    dashboardRefreshInFlight = (async () => {
 	    try {
 	      const [taskRes, projectRes] = await Promise.all([
-	        fetch('/api/tasks?summary=1', { cache: 'no-store' }),
+	        // include_inactive=1 是必需的：后端默认只返回 queued/running
+	        // (_DASHBOARD_VISIBLE_TASK_STATUSES)，所以任何被门禁拦截或崩溃的书
+	        // 会直接从接口消失——用户看到空面板、看不到任何原因，失败理由只躺在
+	        // .web_tasks.json 里(2026-07-24/25 连续四次拦截全部无声消失)。
+	        // 本页早已内建失败卡片的渲染(需要处理页签/错误徽章/重试)，只是从未索要数据。
+	        fetch('/api/tasks?summary=1&include_inactive=1', { cache: 'no-store' }),
 	        fetch('/api/projects?light=1', { cache: 'no-store' }),
 	      ]);
 	      const rawTasks = taskRes.ok ? await taskRes.json() : [];
@@ -7006,6 +7159,82 @@
     $('#pvElapsed').textContent = fmtDur(sec);
   }
 
+
+  async function loadPromptManifest(slug, chapterNumber) {
+    const body = document.getElementById('pvManifestBody');
+    const sec = document.getElementById('pvManifestSec');
+    if (!body || !sec || !slug || !chapterNumber) return;
+    sec.style.display = '';
+    body.textContent = '加载生效片段…';
+    try {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(slug)}/chapters/${chapterNumber}/prompt-manifest`
+      );
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        body.textContent = data.error || '加载失败';
+        return;
+      }
+      if (!data.found) {
+        body.textContent = `第 ${chapterNumber} 章暂无 writer Prompt Compiler 报告（尚未写到该章或报告未落库）。`;
+        return;
+      }
+      const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+      const sizes = data.block_sizes || {};
+      const reasons = data.drop_reasons || {};
+      const keptNames = data.kept || [];
+      const droppedNames = data.dropped || [];
+      const keptHtml = keptNames.length
+        ? keptNames.map((name) => {
+            const sz = sizes[name];
+            const size = sz != null ? `<span class="pm-size">${esc(sz)}</span>` : '';
+            return `<li class="pm-kept"><code>${esc(name)}</code>${size}</li>`;
+          }).join('')
+        : '<li class="pm-empty">（空）</li>';
+      // Dropped blocks are what an operator is actually scanning for: a user
+      // option that never reached the writer shows up here, not in kept.
+      const droppedHtml = droppedNames.length
+        ? droppedNames.map((name) => {
+            const why = reasons[name];
+            const reason = why ? `<span class="pm-why">${esc(why)}</span>` : '';
+            return `<li class="pm-dropped"><code>${esc(name)}</code>${reason}</li>`;
+          }).join('')
+        : '<li class="pm-empty">（空）</li>';
+      const hash = data.final_hash
+        ? `<span class="pm-hash">hash ${esc(String(data.final_hash).slice(0, 16))}…</span>`
+        : '';
+      body.innerHTML = [
+        `<div class="pm-head">第 ${esc(data.chapter_number)} 章 · `,
+        `mode=${esc(data.generation_mode || '-')} / ${esc(data.prompt_mode || '-')} ${hash}</div>`,
+        `<div class="pm-group"><div class="pm-label">已注入 kept · ${keptNames.length}</div>`,
+        `<ul class="pm-list">${keptHtml}</ul></div>`,
+        `<div class="pm-group"><div class="pm-label pm-label-drop">未注入 dropped · ${droppedNames.length}</div>`,
+        `<ul class="pm-list">${droppedHtml}</ul></div>`,
+      ].join('');
+    } catch (err) {
+      body.textContent = '加载失败: ' + (err && err.message ? err.message : err);
+    }
+  }
+
+  function refreshPromptManifestSelector(slug, chapterNumbers) {
+    const sec = document.getElementById('pvManifestSec');
+    const sel = document.getElementById('pvManifestChapter');
+    if (!sec || !sel) return;
+    const nums = Array.from(new Set((chapterNumbers || []).filter((n) => Number.isFinite(n)))).sort((a, b) => a - b);
+    if (!slug || !nums.length) {
+      sec.style.display = 'none';
+      return;
+    }
+    const prev = Number(sel.value || 0);
+    sel.innerHTML = nums.map((n) => `<option value="${n}">第 ${n} 章</option>`).join('');
+    const pick = nums.includes(prev) ? prev : nums[nums.length - 1];
+    sel.value = String(pick);
+    sel.onchange = () => loadPromptManifest(slug, Number(sel.value));
+    loadPromptManifest(slug, pick);
+  }
+
   async function updateProgressView(taskId) {
     let data;
     try {
@@ -7259,6 +7488,14 @@
     } else {
       $('#pvModel').textContent = llmModel || '-';
     }
+
+    // B3: Prompt Compiler 生效片段（按已完成章号）
+    try {
+      const manifestChs = doneChs.length
+        ? doneChs
+        : (displayWritingCh ? [displayWritingCh] : []);
+      refreshPromptManifestSelector(slug, manifestChs);
+    } catch (_) { /* non-fatal */ }
 
     // ── Timeline rendering ───────────────────────────────────────────
     // Friendly fallback label for any stage missing a STAGE entry, so a new
@@ -8351,6 +8588,9 @@
       stop_after_conception: !!$('#stopAfterConceptionToggle').checked,
       story_enhancers: collectStoryEnhancers(),
       llm_model_id: ($('#createModelSelect')?.value || undefined),
+      // 用户故事创意 → 后端 user_hints.concept_seed → 概念淘汰赛种子。
+      // 后端链路一直就绪(server.py:4286),此前表单从未发送该字段。
+      concept_seed: ($('#conceptSeedInput')?.value || '').trim() || undefined,
     };
   }
 
@@ -9004,6 +9244,11 @@
 	    // Previously this auto-hijacked the user into the progress view of any
 	    // running task, which made it look like the system refused new creations.
 	    await refreshDashboard();
+
+    // 深链：/quickstart#architecture 直接打开架构设计 Tab
+    if ((location.hash || '').replace(/^#/, '') === 'architecture') {
+      switchView('architecture');
+    }
     if (bootHighlightTaskId) {
       setTimeout(() => { highlightTaskId = null; renderDashboard(); }, 4000);
     }

@@ -1553,6 +1553,176 @@ def test_quickstart_task_passes_selected_concept_lab_bundle(
     assert task["quickstart_meta"]["concept_lab_summary"]["bundle_id"] == bundle["bundle_id"]
 
 
+def test_every_long_serial_creation_input_reaches_its_runtime_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One rich request pins the complete UI -> task -> prompt/outline contract.
+
+    Individual option tests remain useful diagnostics, but this test prevents a
+    field from being accepted at the page boundary while silently disappearing
+    before conception, planning, writer routing, or flow control.
+    """
+
+    from bestseller.services import model_catalog
+    from bestseller.services.conception import _creation_intent_prompt_block
+    from bestseller.services.planner import (
+        _concept_lab_contract_block,
+        _story_enhancer_contract_line,
+    )
+
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+    bundle = web_server.build_concept_lab_catalog(
+        "apocalypse-supply", count=1
+    ).bundles[0]
+
+    def fake_create_autowrite_task(
+        self: object, payload: dict[str, object]
+    ) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "all-inputs-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager,
+        "create_autowrite_task",
+        fake_create_autowrite_task,
+    )
+    monkeypatch.setattr(
+        model_catalog,
+        "get_model_catalog_entry",
+        lambda model_id: SimpleNamespace(available=model_id == "test/model"),
+    )
+
+    manager.create_quickstart_task(
+        {
+            "creation_mode": "long_serial",
+            "genre_key": "apocalypse-supply",
+            "audience_orientation": "male",
+            "narrative_scale": "epic",
+            "tone_preference": "hot",
+            "concept_lab_bundle_id": bundle.bundle_id,
+            "concept_lab_bundle": bundle.model_dump(mode="json"),
+            "chapter_count": 3,
+            "draft_mode": True,
+            "stop_after_conception": False,
+            "story_enhancers": {
+                "brainhole": True,
+                "wild_concept": True,
+                "cost_style": "external",
+                "concept_lab": True,
+                "creativity_direction": bundle.creative_key,
+                "effect_skills": ["suspense_reveal_engine"],
+            },
+            "llm_model_id": "test/model",
+            "concept_seed": "用户明确要求：资源窗口每章缩短一次。",
+        }
+    )
+
+    payload = captured["payload"]
+    intent = payload["creation_intent_contract"]
+    assert payload["_run_conception"] is True
+    assert payload["_genre_key"] == "apocalypse-supply"
+    assert payload["target_chapters"] == 3
+    assert payload["target_words"] == (
+        3 * web_server.load_settings().generation.words_per_chapter.target
+    )
+    assert payload["draft_mode"] is True
+    assert payload["stop_after_conception"] is False
+    assert payload["llm_model_id"] == "test/model"
+    assert payload["audience"] == "男频"
+    assert payload["user_hints"]["concept_seed"].startswith("用户明确要求")
+    assert payload["concept_lab_bundle"]["bundle_id"] == bundle.bundle_id
+
+    assert intent["creation_mode"] == "long_serial"
+    assert intent["audience_orientation"] == "male"
+    assert intent["narrative_scale"] == "epic"
+    assert intent["tone_preference"] == "hot"
+    assert intent["chapter_count"] == 3
+    assert intent["length_key"] == "long"
+    assert intent["pov"] == "third-limited"
+    assert intent["draft_mode"] is True
+    assert intent["stop_after_conception"] is False
+    assert intent["llm_model_id"] == "test/model"
+    assert intent["concept_seed"].startswith("用户明确要求")
+    assert intent["concept_lab"]["bundle_id"] == bundle.bundle_id
+    assert intent["story_enhancers"]["effect_skills"] == [
+        "suspense_reveal_engine"
+    ]
+
+    conception_block = _creation_intent_prompt_block(
+        {
+            "genre_intent_contract": payload["genre_intent_contract"],
+            "language": payload["language"],
+        }
+    )
+    assert "建书页明确选择" in conception_block
+    assert '"audience": "male"' in conception_block
+    assert '"scale": "epic"' in conception_block
+    assert '"tone": "hot"' in conception_block
+    assert "suspense_reveal_engine" in conception_block
+
+    project = SimpleNamespace(
+        genre=payload["genre"],
+        sub_genre=payload["sub_genre"],
+        audience=payload["audience"],
+        metadata_json={
+            "genre_intent_contract": payload["genre_intent_contract"],
+            "story_enhancers": payload["story_enhancers"],
+            "concept_lab": payload["concept_lab_bundle"],
+        },
+    )
+    outline_contract = _story_enhancer_contract_line(project, "zh-CN")
+    assert "宏大长篇" in outline_contract
+    assert "目标读者画像" in outline_contract
+    assert "不要写成中性通用大纲" in outline_contract
+    assert "suspense_reveal_engine" in outline_contract
+    assert bundle.bundle_id in _concept_lab_contract_block(project, language="zh-CN")
+
+
+def test_fanqie_length_and_pov_override_structure_and_writer_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(
+        self: object, payload: dict[str, object]
+    ) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "fanqie-inputs-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager,
+        "create_autowrite_task",
+        fake_create_autowrite_task,
+    )
+
+    manager.create_quickstart_task(
+        {
+            "creation_mode": "fanqie_short",
+            "genre_key": "urban-power-reversal",
+            "length_key": "fanqie-short-8k",
+            "pov": "third_limited",
+            "chapter_count": 999,
+        }
+    )
+
+    payload = captured["payload"]
+    intent = payload["creation_intent_contract"]
+    assert payload["project_type"] == "fanqie_short"
+    assert payload["creation_mode"] == "fanqie_short"
+    assert payload["length_key"] == "fanqie-short-8k"
+    assert payload["pov"] == "third_limited"
+    assert payload["metadata"]["content_mode"] == "fanqie_short_story"
+    assert intent["creation_mode"] == "fanqie_short"
+    assert intent["length_key"] == "fanqie-short-8k"
+    assert intent["pov"] == "third_limited"
+    # The short-story preset, not the irrelevant long-book chapter input,
+    # owns the materialized segment/word budget.
+    assert payload["target_chapters"] != 999
+    assert intent["chapter_count"] == payload["target_chapters"]
+
+
 def test_project_repair_status_payload_marks_repair_gate() -> None:
     project = SimpleNamespace(
         status="paused",
@@ -1885,6 +2055,59 @@ def test_stale_autowrite_repair_block_task_can_be_hidden_by_db_repair() -> None:
         {"exorcist-detective-1778051012"},
     )
     assert not web_server._is_stale_autowrite_repair_block_task(task, set())
+
+
+def test_dashboard_requests_inactive_tasks_so_failures_stay_visible() -> None:
+    """A blocked/failed book must remain on screen with its reason.
+
+    ``_DASHBOARD_VISIBLE_TASK_STATUSES`` is {queued, running}: the moment a
+    conception is rejected by a gate (or crashes), the task is stripped from
+    ``/api/tasks`` and the card silently vanishes — the user sees an empty
+    dashboard and no explanation, while the real reason sits unread in
+    ``.web_tasks.json``. Observed repeatedly on 2026-07-24/25: four blocked
+    conceptions in a row, every one of them invisible.
+
+    The backend already exposes ``include_inactive`` as the escape hatch and
+    the dashboard already ships the rendering for failed cards (attention
+    filter, error badges, retry/cleanup actions) — it simply never asked for
+    the data. Pin that it does.
+    """
+
+    from pathlib import Path
+
+    html = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "bestseller"
+        / "web"
+        / "novel_quickstart.html"
+    ).read_text(encoding="utf-8")
+
+    idx = html.index("/api/tasks?summary=1")
+    request_line = html[idx : idx + 120]
+    assert "include_inactive=1" in request_line, (
+        "the dashboard must request inactive tasks, otherwise gate-blocked "
+        "books disappear instead of showing why they were blocked"
+    )
+
+
+def test_dashboard_boot_state_does_not_claim_there_are_zero_tasks() -> None:
+    """The async dashboard fetch must not render a false empty state first."""
+
+    from pathlib import Path
+
+    html = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "bestseller"
+        / "web"
+        / "novel_quickstart.html"
+    ).read_text(encoding="utf-8")
+
+    assert 'id="navTaskCount">--</span>' in html
+    assert 'id="dashMetricActive">--</div>' in html
+    assert 'id="dashEmpty" style="display:none;"' in html
+    assert '<p id="dashResultSummary">正在加载任务。</p>' in html
 
 
 def test_repair_attention_task_is_dashboard_visible() -> None:
@@ -2554,6 +2777,73 @@ def test_one_sentence_outline_gate_stops_before_project_planning(
     ]
     assert len(blocked_events) == 1
     assert blocked_events[0]["payload"]["planning_started"] is False
+
+
+def test_creation_intent_contract_is_persisted_to_project_metadata() -> None:
+    """The creation-intent contract must survive into project metadata.
+
+    It used to live only on the task payload: every downstream reader keyed on
+    ``metadata["creation_intent_contract"]`` (the writing-profile pov/tone
+    bridge, the draft_mode snapshot) read None for every book ever created —
+    a whole class of "选项没生效" with one shared root. Pinned structurally:
+    the worker must re-assert the payload contract AFTER the extra_meta merge,
+    so a stale preview copy cannot shadow it.
+    """
+
+    import inspect
+
+    source = inspect.getsource(web_server.WebTaskManager._run_autowrite_worker)
+
+    merge_idx = source.index("project_metadata.update(extra_meta)")
+    tail = source[merge_idx:]
+    assert 'project_metadata["creation_intent_contract"]' in tail, (
+        "creation_intent_contract must be persisted after the metadata merge"
+    )
+    assert 'payload.get("creation_intent_contract")' in tail
+
+
+def test_appeal_block_closes_the_conception_workflow_row() -> None:
+    """A blocked conception must not leak its workflow row as ``running``.
+
+    The success path sets the ``conception_initial`` row to COMPLETED, but the
+    AppealBarNotMetError path unwinds the inner ``session_scope`` (which rolls
+    back) without closing it, so the row stuck at ``running`` for 35 min on
+    custom-xuanhuan-1784875202 (2026-07-24) — the logline gate blocked the book
+    correctly, but the row leaked until the 2h reaper. It also blocks retrying
+    the same attempt_id via ``uq_conception_workflow_idempotency``.
+
+    Structural pin (the handler is inlined in the ~600-line worker, mocked
+    wholesale elsewhere): assert the block handler marks the row failed in a
+    fresh session rather than relying on the periodic reaper.
+    """
+
+    import inspect
+
+    source = inspect.getsource(web_server.WebTaskManager._run_autowrite_worker)
+
+    # The closure lives INSIDE runner(), around the run_conception_pipeline
+    # call — NOT in the sync ``except AppealBarNotMetError`` handler, because
+    # ``conception_workflow_run`` / ``settings`` / ``session`` are locals of the
+    # async runner frame and are simply not in scope in the sync handler.
+    call_idx = source.index("run_conception_pipeline(")
+    region = source[call_idx : call_idx + 3800]
+
+    assert "except (AppealBarNotMetError, ConceptContractError)" in region, (
+        "the conception call must catch BOTH deliberate-block exception types "
+        "to close the workflow row — ConceptContractError is raised by the "
+        "dry-tournament fail-fast from the same spot, and leaking it would "
+        "re-introduce the stuck-running row for that path"
+    )
+    assert "conception_workflow_run" in region, (
+        "must reference the workflow row id"
+    )
+    assert "session_scope(" in region, (
+        "row must be closed in a FRESH session — the outer one rolled back"
+    )
+    assert "WorkflowStatus.FAILED" in region, (
+        "the leaked row must be marked failed, not left running"
+    )
+    assert "raise" in region, "must re-raise so the sync handler still fails the task"
 
 
 def test_stop_after_conception_persists_contract_without_entering_planning(

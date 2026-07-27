@@ -63,6 +63,7 @@ from bestseller.services.inspection import (
 )
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.pipelines import ProjectRepairPauseError, run_autowrite_pipeline
+from bestseller.services.planner import PlannerFallbackError
 from bestseller.services.story_appeal import AppealBarNotMetError
 from bestseller.services.pipelines import run_chapter_pipeline
 from bestseller.services.chapter_revision import (
@@ -117,6 +118,7 @@ _PIPELINE_FLOW_HTML_PATH = Path(__file__).with_name("novel_pipeline_flow.html")
 _CHARACTER_NETWORK_HTML_PATH = Path(__file__).with_name("novel_character_network.html")
 _READER_REVIEW_HTML_PATH = Path(__file__).with_name("novel_reader_review.html")
 _METHODOLOGY_COURSE_HTML_PATH = Path(__file__).with_name("novel_methodology_course.html")
+_ARCHITECTURE_COURSE_HTML_PATH = Path(__file__).with_name("novel_architecture_course.html")
 _METHODOLOGY_COURSE_MD_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "novel-writing-methodology-course.md"
 )
@@ -179,6 +181,11 @@ def _json_default(value: object) -> object:
 
 _SELF_HEAL_SCAN_DONE_KEY = "bestseller:self_heal:scan_done"
 _HEAL_KEY_PREFIXES: dict[str, tuple[str, ...]] = {
+    "outline_replan": (
+        "arq:job:outline-replan:heal:",
+        "arq:in-progress:outline-replan:heal:",
+        "arq:retry:outline-replan:heal:",
+    ),
     "autowrite": (
         "arq:job:autowrite:heal:",
         "arq:in-progress:autowrite:heal:",
@@ -635,7 +642,10 @@ def _load_worker_task_summary(
     settings: AppSettings,
     task_id: str,
 ) -> dict[str, object] | None:
-    if task_id.startswith("autowrite:heal:"):
+    if task_id.startswith("outline-replan:heal:"):
+        task_type = "outline_replan"
+        slug = task_id.removeprefix("outline-replan:heal:")
+    elif task_id.startswith("autowrite:heal:"):
         task_type = "autowrite"
         slug = task_id.removeprefix("autowrite:heal:")
     elif task_id.startswith("repair:heal:"):
@@ -1062,6 +1072,21 @@ def _quickstart_payload_has_genre(payload: dict) -> bool:
 
 def _project_output_dir(settings: AppSettings, project_slug: str) -> Path:
     return (Path(settings.output.base_dir) / project_slug).resolve()
+
+
+
+async def _load_chapter_prompt_manifest_payload(
+    settings: AppSettings, project_slug: str, chapter_number: int
+) -> dict[str, object]:
+    """B3: writer Prompt Compiler kept/dropped blocks for one chapter."""
+    from bestseller.services.prompt_manifest import load_chapter_prompt_manifest
+
+    async with session_scope(settings) as session:
+        return await load_chapter_prompt_manifest(
+            session,
+            project_slug=project_slug,
+            chapter_number=chapter_number,
+        )
 
 
 def _match_project_route(path: str, suffix: str) -> str | None:
@@ -3476,22 +3501,77 @@ class WebTaskManager:
                                 "Story Architect failed; proceeding without facets", exc_info=True
                             )
 
-                        with bind_conception_model(
-                            _conception_model,
-                            call_timeout_seconds=_CONCEPTION_CALL_TIMEOUT_SECONDS,
-                        ):
-                            conception_result = await run_conception_pipeline(
-                                session,
-                                settings,
-                                genre_key=genre_key,
-                                genre=str(payload.get("genre") or ""),
-                                sub_genre=str(payload.get("sub_genre") or ""),
-                                chapter_count=int(payload["target_chapters"]),
-                                user_hints=user_hints,
-                                story_facets=story_facets_obj,
-                                genre_intent_contract=genre_intent_contract,
-                                progress=progress,
+                        try:
+                            with bind_conception_model(
+                                _conception_model,
+                                call_timeout_seconds=_CONCEPTION_CALL_TIMEOUT_SECONDS,
+                            ):
+                                conception_result = await run_conception_pipeline(
+                                    session,
+                                    settings,
+                                    genre_key=genre_key,
+                                    genre=str(payload.get("genre") or ""),
+                                    sub_genre=str(payload.get("sub_genre") or ""),
+                                    chapter_count=int(payload["target_chapters"]),
+                                    user_hints=user_hints,
+                                    story_facets=story_facets_obj,
+                                    genre_intent_contract=genre_intent_contract,
+                                    progress=progress,
+                                )
+                        except (AppealBarNotMetError, ConceptContractError):
+                            # A deliberate gate block, not a crash. The success
+                            # path below sets this row COMPLETED, but these
+                            # exceptions unwind the outer ``session_scope`` which
+                            # ROLLS BACK without closing it — so the row leaks as
+                            # ``running`` until the 2h safety reaper, and (being
+                            # keyed on attempt_id under
+                            # ``uq_conception_workflow_idempotency``) blocks
+                            # retrying the same attempt. Close it in a FRESH
+                            # session that commits independently of the rollback,
+                            # then re-raise for the sync handler's user-facing
+                            # _mark_failed. Observed 2026-07-24 on
+                            # custom-xuanhuan-1784875202 (logline gate blocked it
+                            # correctly; the row stuck at running for 35 min).
+                            # ConceptContractError joined 2026-07-24: the dry-
+                            # tournament fail-fast raises it from the same spot.
+                            _blocked_wf_id = getattr(
+                                conception_workflow_run, "id", None
                             )
+                            if _blocked_wf_id is not None:
+                                try:
+                                    from sqlalchemy import (  # noqa: PLC0415
+                                        update as _sql_update,
+                                    )
+
+                                    async with session_scope(
+                                        settings
+                                    ) as _close_session:
+                                        await _close_session.execute(
+                                            _sql_update(WorkflowRunModel)
+                                            .where(
+                                                WorkflowRunModel.id
+                                                == _blocked_wf_id,
+                                                WorkflowRunModel.status.in_(
+                                                    [
+                                                        WorkflowStatus.PENDING.value,
+                                                        WorkflowStatus.QUEUED.value,
+                                                        WorkflowStatus.RUNNING.value,
+                                                    ]
+                                                ),
+                                            )
+                                            .values(
+                                                status=WorkflowStatus.FAILED.value,
+                                                current_step="blocked",
+                                            )
+                                        )
+                                except Exception:
+                                    logger.debug(
+                                        "closing blocked conception workflow row "
+                                        "failed (non-fatal); the periodic reaper "
+                                        "will catch it",
+                                        exc_info=True,
+                                    )
+                            raise
                         effective_premise = conception_result.premise
                         effective_title = conception_result.title
                         self._update_task_title(task_id, effective_title)
@@ -3678,6 +3758,18 @@ class WebTaskManager:
                 if genre_intent_contract is not None:
                     project_metadata["genre_intent_contract"] = genre_intent_contract.model_dump(
                         mode="json"
+                    )
+                # Persist the full creation-intent contract. It previously
+                # lived only on the task payload, so every downstream reader
+                # keyed on metadata["creation_intent_contract"] (e.g. the
+                # writing-profile pov/tone bridge in writing_profile.py) read
+                # None for every book, and options that rode ONLY this
+                # contract were silently dropped after conception. Placed
+                # after the extra_meta merge so a stale preview copy cannot
+                # shadow the validated creation-time contract.
+                if isinstance(payload.get("creation_intent_contract"), dict):
+                    project_metadata["creation_intent_contract"] = json.loads(
+                        json.dumps(payload["creation_intent_contract"])
                     )
                 # Request metadata is user-controlled and may contain stale
                 # preview values.  Re-assert the verified concept contract
@@ -3908,6 +4000,29 @@ class WebTaskManager:
                 ),
             )
             logger.info("Autowrite task %s blocked by structural repair pause: %s", task_id, exc)
+        except PlannerFallbackError as exc:
+            # A deliberate planning block, not a crash. Without this handler it
+            # fell through to the generic ``except Exception`` and the user saw
+            # a raw Python traceback (2026-07-26,
+            # urban-power-reversal-1785026717: "PlannerFallbackError:
+            # Whole-book outline semantic gate rejected promotion") — the same
+            # UX defect its sibling deliberate-block exceptions already avoid.
+            detail = str(exc)
+            try:
+                progress(
+                    "planning_blocked",
+                    {"reason": detail, "planning_completed": False},
+                )
+            except Exception:
+                logger.debug("planning_blocked progress emit failed", exc_info=True)
+            logger.info("Autowrite task %s blocked during planning: %s", task_id, detail)
+            self._mark_failed(
+                task_id,
+                "规划阶段未通过门禁，已停止；书籍已创建但未进入正文。\n\n"
+                f"{detail}\n\n"
+                "整改方向：在书籍详情页查看大纲诊断，修正被点名的章节后重新规划；"
+                "若同一诊断反复出现，说明该门禁与本书的核心设定冲突，需要调整设定或该门禁阈值。",
+            )
         except ConceptContractError as exc:
             reasons = list(exc.violations)
             try:
@@ -3935,6 +4050,10 @@ class WebTaskManager:
         except AppealBarNotMetError as exc:
             # 这是【刻意拦截】不是崩溃：一句话故事大纲或上架文案未过硬门，
             # 必须在 create_project/run_autowrite_pipeline 之前终止，不留僵尸项目。
+            # NOTE: the conception workflow row is closed inside ``runner()``
+            # (see the try/except around run_conception_pipeline) — not here —
+            # because ``conception_workflow_run``/``settings``/``session`` are
+            # locals of the async runner frame, not of this sync handler.
             report = exc.report or {}
             logline_gate = report.get("logline_gate") or {}
             blurb_total = (report.get("blurb") or {}).get("total")
@@ -4344,7 +4463,15 @@ class WebTaskManager:
             tone_preference=_tone_preference,
             chapter_count=chapter_count,
             length_key=length_key or (fanqie_length_key or "long"),
-            pov=str(payload.get("pov") or fanqie_pov or "third-limited"),
+            # ``fanqie_pov`` defaults to first-person for the short-story
+            # product.  It must not leak into long-serial books whose form has
+            # no POV selector; those retain the framework's third-limited
+            # default unless a caller explicitly supplies a POV.
+            pov=(
+                fanqie_pov
+                if is_fanqie_short
+                else str(payload.get("pov") or "third-limited")
+            ),
             draft_mode=bool(payload.get("draft_mode", False)),
             stop_after_conception=bool(payload.get("stop_after_conception", False)),
             llm_model_id=_model_id or None,
@@ -9009,6 +9136,12 @@ def _read_methodology_course_html() -> str:
     return "<!DOCTYPE html><html><body><h1>Methodology course page not found.</h1></body></html>"
 
 
+def _read_architecture_course_html() -> str:
+    if _ARCHITECTURE_COURSE_HTML_PATH.exists():
+        return _ARCHITECTURE_COURSE_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Architecture course page not found.</h1></body></html>"
+
+
 def _methodology_course_config(language: str = "zh") -> dict[str, str | Path]:
     if language == "en":
         return {
@@ -11002,6 +11135,12 @@ def serve_web_app(
                 if path == "/library":
                     self._send_text(_read_library_html(), content_type="text/html; charset=utf-8")
                     return
+                if path == "/architecture-course":
+                    self._send_text(
+                        _read_architecture_course_html(),
+                        content_type="text/html; charset=utf-8",
+                    )
+                    return
                 if path == "/methodology-course":
                     self._send_text(
                         _read_methodology_course_html(),
@@ -11296,6 +11435,34 @@ def serve_web_app(
                     else:
                         self._send_json(enriched_task)
                     return
+                # B3: Prompt Compiler「生效片段」manifest for a chapter.
+                if (
+                    path.startswith("/api/projects/")
+                    and "/chapters/" in path
+                    and path.endswith("/prompt-manifest")
+                ):
+                    parts = [p for p in path.split("/") if p]
+                    # ["api","projects",slug,"chapters",n,"prompt-manifest"]
+                    if len(parts) >= 6 and parts[0] == "api" and parts[1] == "projects":
+                        project_slug = parts[2]
+                        try:
+                            chapter_number = int(parts[4])
+                        except (TypeError, ValueError):
+                            raise ValueError("chapter_number must be an integer")
+                        try:
+                            self._send_json(
+                                asyncio.run(
+                                    _load_chapter_prompt_manifest_payload(
+                                        settings, project_slug, chapter_number
+                                    )
+                                )
+                            )
+                        except ValueError as exc:
+                            self._send_json(
+                                {"ok": False, "error": str(exc)},
+                                status=HTTPStatus.NOT_FOUND,
+                            )
+                        return
                 project_slug = _match_project_route(path, "summary")
                 if project_slug is not None:
                     self._send_json(

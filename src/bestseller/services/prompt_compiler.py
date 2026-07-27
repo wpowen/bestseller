@@ -7,7 +7,7 @@ duplicates, structural limits, and the *combined* system + user input budget.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from hashlib import sha256
 import json
 import math
@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PromptChannel = Literal["system", "user"]
 PromptLayer = Literal["hard_canon", "scene_spec", "output", "craft", "optional"]
+PromptPhase = Literal["macro_outline", "rolling_outline", "scene", "writer"]
 TrimPolicy = Literal["drop", "truncate_tail", "truncate_head", "preserve"]
 
 _LAYER_RANK: dict[PromptLayer, int] = {
@@ -50,6 +51,8 @@ class PromptBlock(BaseModel):
     # canonical provenance gate below.
     provenance: PromptProvenance | None = None
     enhancer_key: str | None = Field(default=None, max_length=160)
+    phase: PromptPhase = "writer"
+    semantic_key: str | None = Field(default=None, max_length=240)
 
     @model_validator(mode="after")
     def validate_token_window(self) -> PromptBlock:
@@ -105,6 +108,19 @@ class PromptCompilerReport(BaseModel):
     final_hash: str = Field(min_length=64, max_length=64)
     provenance_sources: tuple[str, ...] = ()
     canonical_snapshot_hash: str | None = None
+    source_snapshot_hash: str | None = None
+    drop_reasons: dict[str, str] = Field(default_factory=dict)
+    block_sizes: dict[str, dict[str, int]] = Field(default_factory=dict)
+    block_source_hashes: dict[str, str] = Field(default_factory=dict)
+    phase: str | None = None
+
+    @property
+    def dropped_reasons(self) -> dict[str, str]:
+        return self.drop_reasons
+
+    @property
+    def kept_sizes(self) -> dict[str, dict[str, int]]:
+        return self.block_sizes
 
 
 class CompiledPrompt(BaseModel):
@@ -126,9 +142,45 @@ class PromptConflictError(PromptCompilerError):
 
 
 class PromptBudgetError(PromptCompilerError):
-    def __init__(self, message: str, *, required_keys: Sequence[str]) -> None:
+    """A budget failure whose *message* is self-sufficient.
+
+    Callers persist ``str(exc)`` into ``workflow_runs.error_message``, which is
+    all an operator ever sees. Keeping the keys and the numbers only as
+    attributes produced three unactionable book failures on 2026-07-26 whose
+    stored reason was the bare sentence "required hard core exceeds combined
+    writer prompt budget" — no block names, no gap, nothing to act on. The
+    diagnostic detail is therefore appended to the message itself.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        required_keys: Sequence[str],
+        required_tokens: int | None = None,
+        usable_budget: int | None = None,
+        total_budget_tokens: int | None = None,
+        safety_margin: float | None = None,
+    ) -> None:
         self.required_keys = tuple(required_keys)
-        super().__init__(message)
+        self.required_tokens = required_tokens
+        self.usable_budget = usable_budget
+        self.total_budget_tokens = total_budget_tokens
+        self.safety_margin = safety_margin
+
+        details: list[str] = []
+        if self.required_keys:
+            details.append(f"required_blocks={', '.join(self.required_keys)}")
+        if required_tokens is not None and usable_budget is not None:
+            details.append(
+                f"required_tokens={required_tokens} > usable_budget={usable_budget} "
+                f"(over by {required_tokens - usable_budget})"
+            )
+        if total_budget_tokens is not None:
+            details.append(f"total_budget_tokens={total_budget_tokens}")
+        if safety_margin is not None:
+            details.append(f"safety_margin={safety_margin}")
+        super().__init__(f"{message}; {'; '.join(details)}" if details else message)
 
 
 def estimate_prompt_tokens(text: str) -> int:
@@ -149,19 +201,45 @@ def estimate_prompt_tokens(text: str) -> int:
 def compile_prompt(
     blocks: Iterable[PromptBlock],
     *,
-    total_budget_tokens: int,
-    safety_margin: float,
+    total_budget_tokens: int | None = None,
+    safety_margin: float = 0.0,
     canonical_snapshot_hash: str | None = None,
+    source_snapshot_hash: str | None = None,
     require_provenance: bool = False,
     selected_enhancer_keys: Iterable[str] | None = None,
+    phase: str | None = None,
+    phase_allowlist: Mapping[str, Iterable[str]] | None = None,
+    total_budget_chars: int | None = None,
+    token_budget: int | None = None,
+    character_budget: int | None = None,
 ) -> CompiledPrompt:
     """Compile typed blocks without fallback or process-global report state."""
 
-    if total_budget_tokens <= 0:
+    if token_budget is not None:
+        if total_budget_tokens is not None and total_budget_tokens != token_budget:
+            raise ValueError("token_budget conflicts with total_budget_tokens")
+        total_budget_tokens = token_budget
+    if character_budget is not None:
+        if total_budget_chars is not None and total_budget_chars != character_budget:
+            raise ValueError("character_budget conflicts with total_budget_chars")
+        total_budget_chars = character_budget
+    if total_budget_tokens is None or total_budget_tokens <= 0:
         raise ValueError("total_budget_tokens must be positive")
     if not 0 <= safety_margin < 1:
         raise ValueError("safety_margin must be in [0, 1)")
 
+    if total_budget_chars is not None and total_budget_chars <= 0:
+        raise ValueError("total_budget_chars must be positive")
+    if (
+        source_snapshot_hash
+        and canonical_snapshot_hash
+        and source_snapshot_hash != canonical_snapshot_hash
+    ):
+        raise PromptConflictError(
+            "source snapshot hash does not match canonical snapshot hash",
+            conflicts=(source_snapshot_hash, canonical_snapshot_hash),
+        )
+    effective_snapshot_hash = canonical_snapshot_hash or source_snapshot_hash
     block_list = list(blocks)
     selected_effects = {
         str(key).strip() for key in (selected_enhancer_keys or ()) if str(key).strip()
@@ -171,11 +249,40 @@ def compile_prompt(
         for item in block_list
         if item.enhancer_key is not None and item.enhancer_key not in selected_effects
     )
+    required_enhancer_dropped = tuple(
+        item.key
+        for item in block_list
+        if item.required
+        and item.enhancer_key is not None
+        and item.enhancer_key not in selected_effects
+    )
+    if required_enhancer_dropped:
+        raise PromptConflictError(
+            "required prompt blocks reference unselected enhancers",
+            conflicts=required_enhancer_dropped,
+        )
+    allowlisted = None
+    if phase is not None and phase_allowlist is not None:
+        allowlisted = {str(key) for key in phase_allowlist.get(phase, ())}
+    phase_dropped = tuple(
+        item.key
+        for item in block_list
+        if allowlisted is not None and item.key not in allowlisted
+    )
+    required_phase_dropped = tuple(
+        item.key for item in block_list if item.key in phase_dropped and item.required
+    )
+    if required_phase_dropped:
+        raise PromptConflictError(
+            f"required prompt blocks are not allowlisted for phase {phase}",
+            conflicts=required_phase_dropped,
+        )
     ordered = sorted(
         (
             item
             for item in block_list
-            if item.enhancer_key is None or item.enhancer_key in selected_effects
+            if (item.enhancer_key is None or item.enhancer_key in selected_effects)
+            and (allowlisted is None or item.key in allowlisted)
         ),
         key=_block_sort_key,
     )
@@ -186,13 +293,13 @@ def compile_prompt(
                 "prompt provenance is required for canonical compilation",
                 conflicts=missing,
             )
-    if canonical_snapshot_hash:
+    if effective_snapshot_hash:
         stale = tuple(
             item.key
             for item in ordered
             if item.provenance is not None
             and item.provenance.kind == "canonical_snapshot"
-            and item.provenance.source_hash != canonical_snapshot_hash
+            and item.provenance.source_hash != effective_snapshot_hash
         )
         if stale:
             raise PromptConflictError(
@@ -215,6 +322,9 @@ def compile_prompt(
         raise PromptBudgetError(
             "writer prompt safety margin leaves no usable budget",
             required_keys=tuple(item.key for item in selected if item.required),
+            usable_budget=usable_budget,
+            total_budget_tokens=total_budget_tokens,
+            safety_margin=safety_margin,
         )
     safety_tokens = total_budget_tokens - usable_budget
 
@@ -226,10 +336,14 @@ def compile_prompt(
         raise PromptBudgetError(
             "required hard core exceeds combined writer prompt budget",
             required_keys=core_keys or tuple(item.key for item in required),
+            required_tokens=required_total,
+            usable_budget=usable_budget,
+            total_budget_tokens=total_budget_tokens,
+            safety_margin=safety_margin,
         )
 
     kept: list[PromptBlock] = list(required)
-    dropped: list[str] = [*enhancer_dropped, *structurally_dropped, *capped_dropped]
+    dropped: list[str] = [*enhancer_dropped, *phase_dropped, *structurally_dropped, *capped_dropped]
     truncated: list[str] = list(capped_truncated)
     for candidate in sorted((item for item in selected if not item.required), key=_block_sort_key):
         trial = sorted([*kept, candidate], key=_block_sort_key)
@@ -251,6 +365,12 @@ def compile_prompt(
     if total_tokens > usable_budget:
         raise PromptBudgetError(
             "compiled prompt exceeds combined writer prompt budget",
+            required_keys=tuple(item.key for item in required),
+        )
+    total_chars = len(system) + len(user)
+    if total_budget_chars is not None and total_chars > total_budget_chars:
+        raise PromptBudgetError(
+            "compiled prompt exceeds explicit character budget",
             required_keys=tuple(item.key for item in required),
         )
 
@@ -285,13 +405,37 @@ def compile_prompt(
                 }
             )
         ),
-        canonical_snapshot_hash=canonical_snapshot_hash,
+        canonical_snapshot_hash=effective_snapshot_hash,
+        source_snapshot_hash=effective_snapshot_hash,
+        drop_reasons=_drop_reasons(
+            enhancer_dropped=enhancer_dropped,
+            phase_dropped=phase_dropped,
+            structural=structurally_dropped,
+            capped=capped_dropped,
+            truncated=truncated,
+        ),
+        block_sizes={
+            item.key: {"characters": len(item.text), "tokens": estimate_prompt_tokens(item.text)}
+            for item in kept
+        },
+        block_source_hashes={
+            item.key: item.provenance.source_hash
+            for item in kept
+            if item.provenance is not None and item.provenance.source_hash
+        },
+        phase=phase,
     )
     return CompiledPrompt(system=system, user=user, report=report)
 
 
-def _block_sort_key(block: PromptBlock) -> tuple[int, int, str, str]:
-    return (_LAYER_RANK[block.layer], -block.authority, block.key, block.source)
+def _block_sort_key(block: PromptBlock) -> tuple[int, int, int, str, str]:
+    family = _canonical_semantic_key(block)
+    event_priority = (
+        0
+        if "event_contract" in family or "event_contract" in block.key.casefold()
+        else 1
+    )
+    return (_LAYER_RANK[block.layer], event_priority, -block.authority, block.key, block.source)
 
 
 def _normalize_family(value: str) -> str:
@@ -317,7 +461,7 @@ def _dedupe_semantic_families(
 ) -> tuple[list[PromptBlock], tuple[str, ...]]:
     families: dict[str, list[PromptBlock]] = {}
     for item in blocks:
-        families.setdefault(_normalize_family(item.instruction_family), []).append(item)
+        families.setdefault(_canonical_semantic_key(item), []).append(item)
 
     selected: list[PromptBlock] = []
     duplicates: list[str] = []
@@ -335,6 +479,12 @@ def _dedupe_semantic_families(
         selected.append(winner)
         duplicates.extend(item.key for item in members if item.key != winner.key)
     return sorted(selected, key=_block_sort_key), tuple(duplicates)
+
+
+def _canonical_semantic_key(block: PromptBlock) -> str:
+    """Stable semantic identity; callers may override family normalization."""
+
+    return _normalize_family(block.semantic_key or block.instruction_family)
 
 
 def _enforce_structure_limits(
@@ -517,6 +667,28 @@ def _unique_tuple(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
+def _drop_reasons(
+    *,
+    enhancer_dropped: Iterable[str],
+    phase_dropped: Iterable[str],
+    structural: Iterable[str],
+    capped: Iterable[str],
+    truncated: Iterable[str],
+) -> dict[str, str]:
+    reasons: dict[str, str] = {}
+    for key in enhancer_dropped:
+        reasons[key] = "enhancer_not_selected"
+    for key in phase_dropped:
+        reasons[key] = "phase_not_allowlisted"
+    for key in structural:
+        reasons[key] = "structural_limit"
+    for key in capped:
+        reasons[key] = "block_max_tokens"
+    for key in truncated:
+        reasons[key] = "truncated_to_budget"
+    return reasons
+
+
 __all__ = [
     "CompiledPrompt",
     "PromptBlock",
@@ -525,6 +697,7 @@ __all__ = [
     "PromptCompilerReport",
     "PromptConflictError",
     "PromptProvenance",
+    "PromptPhase",
     "compile_prompt",
     "estimate_prompt_tokens",
 ]

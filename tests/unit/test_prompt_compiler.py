@@ -9,6 +9,7 @@ from bestseller.services.prompt_compiler import (
     PromptBlock,
     PromptBudgetError,
     PromptConflictError,
+    PromptProvenance,
     compile_prompt,
 )
 from bestseller.settings import load_settings
@@ -29,6 +30,7 @@ def block(
     max_tokens: int | None = None,
     trim_policy: str = "drop",
     source: str = "test",
+    provenance: PromptProvenance | None = None,
 ) -> PromptBlock:
     return PromptBlock(
         key=key,
@@ -42,6 +44,7 @@ def block(
         trim_policy=trim_policy,
         source=source,
         text=text or key,
+        provenance=provenance,
     )
 
 
@@ -139,6 +142,59 @@ def test_required_hard_core_over_budget_fails_closed() -> None:
         )
 
     assert exc_info.value.required_keys == ("canon",)
+
+
+def test_budget_error_message_names_the_blocks_and_the_gap() -> None:
+    """The operator only ever sees ``str(exc)``.
+
+    ``required_keys`` lives on the exception object, but the volume workflow
+    persists ``str(exc)`` into ``workflow_runs.error_message`` — three real
+    books failed on 2026-07-26 showing nothing but "required hard core exceeds
+    combined writer prompt budget", with no way to tell which blocks were
+    oversized or by how much. Whoever reads the failure must be able to act on
+    the text alone.
+    """
+
+    with pytest.raises(PromptBudgetError) as exc_info:
+        compile_prompt(
+            [
+                block(
+                    "canon",
+                    text="必须遵守。" * 120,
+                    layer="hard_canon",
+                    required=True,
+                    trim_policy="preserve",
+                ),
+                block(
+                    "spec",
+                    text="章节计划。" * 80,
+                    layer="scene_spec",
+                    required=True,
+                    trim_policy="preserve",
+                ),
+            ],
+            total_budget_tokens=20,
+            safety_margin=0,
+        )
+
+    message = str(exc_info.value)
+    assert "canon" in message, "the offending block keys must be in the message"
+    assert "20" in message, "the available budget must be in the message"
+    # The measured requirement, so the reader can size the gap without a repro.
+    assert any(str(n) in message for n in (exc_info.value.required_tokens,))
+
+
+def test_no_usable_budget_error_also_names_the_numbers() -> None:
+    with pytest.raises(PromptBudgetError) as exc_info:
+        compile_prompt(
+            [block("canon", text="x", layer="hard_canon", required=True)],
+            total_budget_tokens=10,
+            safety_margin=0.99,
+        )
+
+    message = str(exc_info.value)
+    assert "10" in message, "the configured budget must be in the message"
+    assert "0.99" in message, "the safety margin that consumed it must be too"
 
 
 def test_compilation_and_hash_are_deterministic_for_same_blocks() -> None:
@@ -287,3 +343,81 @@ def test_legacy_assembly_report_can_adapt_compiler_report_without_global_state()
     assert adapted.total_kept_tokens == compiled.report.total_tokens
     assert adapted.mode == "compiled"
     assert adapted.dropped_keys == compiled.report.dropped
+
+
+def test_phase_allowlist_keeps_only_phase_blocks_and_reports_reasons() -> None:
+    result = compile_prompt(
+        [
+            block("event", layer="scene_spec", required=True),
+            block("enhancer", layer="craft"),
+        ],
+        total_budget_tokens=100,
+        safety_margin=0,
+        phase="scene",
+        phase_allowlist={"scene": ("event",)},
+    )
+
+    assert result.report.kept == ("event",)
+    assert "enhancer" in result.report.dropped
+    assert result.report.drop_reasons["enhancer"] == "phase_not_allowlisted"
+
+
+def test_disallowed_required_phase_block_fails_closed() -> None:
+    with pytest.raises(PromptConflictError, match="allowlist"):
+        compile_prompt(
+            [block("event", required=True)],
+            total_budget_tokens=100,
+            safety_margin=0,
+            phase="macro_outline",
+            phase_allowlist={"macro_outline": ()},
+        )
+
+
+def test_required_unselected_enhancer_fails_closed() -> None:
+    with pytest.raises(PromptConflictError, match="unselected enhancers"):
+        compile_prompt(
+            [
+                PromptBlock(
+                    key="required-effect",
+                    channel="user",
+                    layer="scene_spec",
+                    authority=100,
+                    instruction_family="required-effect",
+                    required=True,
+                    source="test",
+                    text="必须执行反转",
+                    enhancer_key="twist_reversal_engine",
+                )
+            ],
+            total_budget_tokens=100,
+            safety_margin=0,
+            selected_enhancer_keys=(),
+        )
+
+
+def test_explicit_character_budget_fails_without_silent_truncation() -> None:
+    with pytest.raises(PromptBudgetError):
+        compile_prompt(
+            [block("required", text="x" * 20, required=True)],
+            total_budget_tokens=100,
+            total_budget_chars=10,
+            safety_margin=0,
+        )
+
+
+def test_source_snapshot_hash_alias_is_checked_and_reported() -> None:
+    result = compile_prompt(
+        [
+            block(
+                "canon",
+                required=True,
+                provenance=PromptProvenance(
+                    kind="canonical_snapshot", source_id="snap", source_hash="hash"
+                ),
+            )
+        ],
+        total_budget_tokens=100,
+        source_snapshot_hash="hash",
+        safety_margin=0,
+    )
+    assert result.report.source_snapshot_hash == "hash"

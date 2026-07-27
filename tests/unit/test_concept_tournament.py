@@ -1757,7 +1757,10 @@ class TestConceptionWiring:
     def test_user_concept_is_seeded_but_cannot_bypass_capacity_gate(self):
         source = self._source()
         idx = source.index("run_concept_tournament(")
-        call_region = source[idx : idx + 1200]
+        # Window sized for the full argument list — the call gained
+        # audience/cost_style forwarding (2026-07-24), which pushed the
+        # seed_concept expression further down.
+        call_region = source[idx : idx + 2200]
         assert "seed_concept=" in call_region
         assert 'user_hints.get("concept_seed")' in source
         assert "concept_bundle.one_liner or concept_bundle.reader_promise" in call_region

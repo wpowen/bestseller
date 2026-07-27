@@ -767,11 +767,18 @@ def _cand(concept, rejected, **scores):
 
 
 def test_best_dry_seed_picks_fewest_failed_axes_then_highest_scores() -> None:
+    """挂的轴越少越优先，同数比分——排序规则本身不变。
+
+    2026-07-26：示例轴由「新颖度/题材保真」换成两条纯执行层的轴。新颖度与可预测性
+    现在会取消种子资格（同源补强要求保留故事身份，修不了点子本身），用它们举例会
+    把本例测成那条新规则而不是排序规则。见 test_dry_retry_seed_refinability.py。
+    """
+
     from bestseller.services.conception import _best_dry_tournament_seed
 
-    near_miss = _cand("近失王者", "钩子硬门失败: 新颖度/题材保真",
+    near_miss = _cand("近失王者", "钩子硬门失败: 大白话/题材保真",
                       judge_click=8.0, judge_story_motion=8.0)
-    weak = _cand("全灭候选", "钩子硬门失败: 新颖度/想点欲/可预测性/人物决策/机制因果/题材保真")
+    weak = _cand("全灭候选", "钩子硬门失败: 大白话/想点欲/人物决策/机制因果/题材保真")
     assert _best_dry_tournament_seed([weak, near_miss]) == "近失王者"
 
 

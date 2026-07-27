@@ -17,9 +17,16 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import DBAPIError
 
 from bestseller.domain.enums import ProjectStatus, WorkflowStatus
-from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+from bestseller.infra.db.models import (
+    ChapterDraftVersionModel,
+    ChapterModel,
+    PlanningArtifactVersionModel,
+    ProjectModel,
+    WorkflowRunModel,
+)
 from bestseller.infra.db.session import get_server_session
 from bestseller.settings import get_settings
+from bestseller.services.planning_concurrency import PlanningConflictError
 from bestseller.services.progress_context import set_ambient
 from bestseller.worker.progress import RedisProgressReporter, make_sync_callback
 
@@ -63,6 +70,88 @@ _ATTENTION_VERDICTS = frozenset(
 _AUTO_QUALITY_CLOSURE_ENV = "BESTSELLER_AUTO_QUALITY_CLOSURE"
 _DEFAULT_CLOSURE_MAX_ROUNDS = int(os.getenv("BESTSELLER_CLOSURE_MAX_ROUNDS", "8"))
 _DEFAULT_CLOSURE_ROUND_SIZE = int(os.getenv("BESTSELLER_CLOSURE_ROUND_SIZE", "10"))
+MAX_OUTLINE_REPLAN_ATTEMPTS = int(
+    os.getenv("BESTSELLER_OUTLINE_REPLAN_MAX_ATTEMPTS", "5")
+)
+OUTLINE_REPLAN_RETRY_BASE_SECONDS = int(
+    os.getenv("BESTSELLER_OUTLINE_REPLAN_RETRY_BASE_SECONDS", "120")
+)
+OUTLINE_REPLAN_RETRY_MAX_SECONDS = int(
+    os.getenv("BESTSELLER_OUTLINE_REPLAN_RETRY_MAX_SECONDS", "1800")
+)
+
+
+def _metadata_int_value(metadata: dict[str, Any], key: str, default: int = 0) -> int:
+    try:
+        return int(metadata.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _outline_replan_retry_delay_seconds(attempt: int) -> int:
+    """Apply exponential backoff for bounded outline replan retries."""
+
+    attempt_index = max(1, attempt)
+    return min(
+        OUTLINE_REPLAN_RETRY_MAX_SECONDS,
+        OUTLINE_REPLAN_RETRY_BASE_SECONDS * (2 ** (attempt_index - 1)),
+    )
+
+
+def _outline_replan_retry_exhausted_metadata(
+    metadata: dict[str, Any],
+    attempts: int,
+    now_iso: str,
+    reason: str,
+) -> dict[str, Any]:
+    metadata.update(
+        {
+            "outline_replan_retry_attempts": attempts,
+            "outline_replan_retry_exhausted": True,
+            "outline_replan_required": True,
+            "requires_human_review": True,
+            "requires_machine_repair": True,
+            "production_paused": True,
+            "production_pause_reason": "outline_replan_retry_exhausted",
+            "planning_status": "needs_replan",
+            "outline_semantic_gate_status": "needs_replan",
+            "outline_replan_last_failed_at": now_iso,
+            "outline_replan_last_error": reason[:4000],
+        }
+    )
+    metadata.pop("outline_replan_in_progress", None)
+    metadata.pop("outline_replan_prior_outline_version", None)
+    metadata.pop("outline_replan_next_retry_at", None)
+    return metadata
+
+
+def _outline_replan_retry_pending_metadata(
+    metadata: dict[str, Any],
+    attempts: int,
+    now_iso: str,
+    reason: str,
+) -> tuple[dict[str, Any], str]:
+    metadata.update(
+        {
+            "outline_replan_retry_attempts": attempts,
+            "outline_replan_required": True,
+            "outline_replan_last_failed_at": now_iso,
+            "outline_replan_last_error": reason[:4000],
+            "planning_status": "needs_replan",
+            "outline_semantic_gate_status": "needs_replan",
+            "production_paused": True,
+            "production_pause_reason": "volume_outline_gate_failed",
+            "generation_resume_blocked_until_repair_audit": True,
+        }
+    )
+    next_retry_seconds = _outline_replan_retry_delay_seconds(attempts)
+    next_retry_at = (
+        _dt.datetime.now(_dt.UTC) + _dt.timedelta(seconds=next_retry_seconds)
+    ).isoformat()
+    metadata["outline_replan_next_retry_at"] = next_retry_at
+    metadata.pop("outline_replan_in_progress", None)
+    metadata.pop("outline_replan_prior_outline_version", None)
+    return metadata, str(next_retry_at)
 
 
 def _coerce_workflow_run_uuid(workflow_run_id: str) -> UUID | None:
@@ -155,6 +244,49 @@ async def _skip_archived_project_if_needed(
     return payload
 
 
+async def _skip_outline_replan_project_if_needed(
+    reporter: RedisProgressReporter,
+    project_slug: str,
+    workflow_run_id: str,
+) -> dict[str, Any] | None:
+    """Fail closed before any worker prose entry point consumes a bad outline."""
+
+    from bestseller.services.gate_registry import project_blocks_all_prose_generation
+
+    try:
+        async with get_server_session() as session:
+            project = await session.scalar(
+                select(ProjectModel).where(ProjectModel.slug == project_slug)
+            )
+    except Exception:
+        logger.debug(
+            "Could not check outline-replan state for project %s",
+            project_slug,
+            exc_info=True,
+        )
+        return None
+    if project is None or not project_blocks_all_prose_generation(project):
+        return None
+    payload = {
+        "status": "skipped_outline_replan",
+        "project_slug": project_slug,
+        "workflow_run_id": workflow_run_id,
+        "reason": "outline_semantic_gate_failed",
+        "requires_machine_repair": True,
+    }
+    await reporter.emit(
+        "repairable_auto_continue_pending",
+        payload,
+        event_type="repairable_auto_continue_pending",
+    )
+    logger.info(
+        "Worker skipped prose task %s for %s because outline replan is required",
+        workflow_run_id,
+        project_slug,
+    )
+    return payload
+
+
 async def _workflow_heartbeat_loop(
     workflow_run_id: str,
     *,
@@ -215,6 +347,16 @@ def _generation_gate_block(exc: Exception) -> tuple[str, str] | None:
     """
     message = str(exc)
 
+    # A judge outage is not evidence that the outline itself is defective.
+    # Let the normal task retry/self-heal path retry the same immutable
+    # planning input instead of launching an outline rewrite that can pollute
+    # an otherwise valid plan during a transient provider failure.
+    if (
+        "COMMERCIAL_LLM_JUDGE_UNAVAILABLE" in message
+        or "commercial llm judge unavailable" in message.lower()
+    ):
+        return None
+
     def _with_subcode(reason: str) -> tuple[str, str]:
         # Best-effort extraction of the first structured violation code
         # from the error blob. Adds it as a sub-slug so the UI / log
@@ -229,6 +371,21 @@ def _generation_gate_block(exc: Exception) -> tuple[str, str] | None:
         return _with_subcode("story_bible_gate_failed")
     if "failed chapter-outline repair loop" in message:
         return _with_subcode("volume_outline_gate_failed")
+    if "Progressive volume outline did not earn semantic promotion" in message:
+        import re
+
+        match = re.search(r"promotion;\s*([A-Z][A-Z_0-9]+)", message)
+        reason = "outline_semantic_gate_failed"
+        if match:
+            reason = f"{reason}:{match.group(1).lower()}"
+        return reason, message
+    if (
+        "Whole-book outline semantic gate failed" in message
+        or "Whole-book outline semantic gate rejected promotion" in message
+    ):
+        return _with_subcode("outline_semantic_gate_failed")
+    if "Commercial planning readiness gate failed" in message:
+        return _with_subcode("commercial_planning_readiness_gate_failed")
     if "chapter_plan_contract failed" in message:
         # Structured violation codes live as ``PLAN_*`` tokens not in
         # brackets — fish out the first occurrence so the slug is
@@ -270,6 +427,11 @@ def _generation_gate_block(exc: Exception) -> tuple[str, str] | None:
 
 def _result_payload_requires_attention(payload: dict[str, Any]) -> bool:
     if payload.get("requires_machine_repair") is True or payload.get("requires_human_review") is True:
+        return True
+    # A full-book run without a terminal export is never a clean completion,
+    # even when the last consistency verdict happened to be ``pass``.  Keep it
+    # in the autonomous closure lane so export/preflight failures are retried.
+    if str(payload.get("export_status") or "").strip().lower() == "not_exported":
         return True
     verdict = (
         str(
@@ -398,6 +560,14 @@ def _project_repair_job_id(slug: str) -> str:
     return f"repair:heal:{slug}"
 
 
+def _outline_replan_job_id(slug: str) -> str:
+    return f"outline-replan:heal:{slug}"
+
+
+def _project_pipeline_job_id(slug: str) -> str:
+    return f"project-pipeline:heal:{slug}"
+
+
 def _auto_quality_closure_enabled() -> bool:
     return os.getenv(_AUTO_QUALITY_CLOSURE_ENV, "1").strip().lower() not in {
         "0",
@@ -501,14 +671,33 @@ async def _enqueue_project_repair_if_needed(
         "pending_rewrite_task_limit": 25,
         "scan_publication_gate_candidates": False,
     }
-    try:
-        job = await redis.enqueue_job(
+    async def _enqueue() -> Any:
+        return await redis.enqueue_job(
             "run_project_repair_task",
             workflow_run_id=job_id,
             payload=repair_payload,
             _job_id=job_id,
             _expires=_dt.timedelta(days=7),
         )
+
+    try:
+        job = await _enqueue()
+        if job is None:
+            active = bool(
+                await redis.exists(
+                    f"arq:job:{job_id}",
+                    f"arq:in-progress:{job_id}",
+                    f"arq:retry:{job_id}",
+                )
+            )
+            if not active:
+                active = await redis.zscore("arq:queue", job_id) is not None
+            if not active:
+                await redis.delete(
+                    f"arq:result:{job_id}",
+                    f"arq:retry:{job_id}",
+                )
+                job = await _enqueue()
     except AttributeError:
         return False
     if job is None:
@@ -532,6 +721,152 @@ async def _enqueue_project_repair_if_needed(
             "reason": reason,
         },
         event_type="repairable_auto_continue",
+    )
+    return True
+
+
+async def _enqueue_outline_replan_if_needed(
+    redis: Any,
+    reporter: RedisProgressReporter,
+    project_slug: str,
+    *,
+    source: str,
+    reason: str,
+    current_job_id: str | None = None,
+) -> bool:
+    """Immediately hand an exhausted outline judge to its dedicated owner.
+
+    Waiting for the periodic stale-project scan made a fresh semantic failure
+    look dead even though the recovery lane existed.  The deterministic job id
+    preserves single ownership; a terminal ARQ result is cleared only after no
+    live job/in-progress/queue evidence remains.
+    """
+
+    project_slug = str(project_slug or "").strip()
+    if not project_slug:
+        return False
+    job_id = _outline_replan_job_id(project_slug)
+    if current_job_id and job_id == current_job_id:
+        return False
+    payload = {
+        "project_slug": project_slug,
+        "premise": None,
+        "progress_fingerprint": f"{reason}:{source}",
+    }
+
+    async def _enqueue() -> Any:
+        return await redis.enqueue_job(
+            "run_outline_replan_task",
+            workflow_run_id=job_id,
+            payload=payload,
+            _job_id=job_id,
+            _expires=_dt.timedelta(days=7),
+        )
+
+    try:
+        job = await _enqueue()
+        if job is None:
+            active = bool(
+                await redis.exists(
+                    f"arq:job:{job_id}",
+                    f"arq:in-progress:{job_id}",
+                    f"arq:retry:{job_id}",
+                )
+            )
+            if not active:
+                active = await redis.zscore("arq:queue", job_id) is not None
+            if not active:
+                await redis.delete(
+                    f"arq:result:{job_id}",
+                    f"arq:retry:{job_id}",
+                )
+                job = await _enqueue()
+    except AttributeError:
+        return False
+
+    event = "repairable_auto_continue" if job is not None else "repairable_auto_continue_already_queued"
+    await reporter.emit(
+        event,
+        {
+            "project_slug": project_slug,
+            "job_id": job_id,
+            "source": source,
+            "reason": reason,
+            "recovery_kind": "outline_replan",
+        },
+        event_type=event,
+    )
+    return True
+
+
+async def _enqueue_project_pipeline_if_needed(
+    redis: Any,
+    reporter: RedisProgressReporter,
+    project_slug: str,
+    *,
+    source: str,
+    reason: str,
+    current_job_id: str | None = None,
+) -> bool:
+    """Immediately continue an approved outline into chapter writing.
+
+    This lane is intentionally different from ``project_repair``: a project
+    with approved planned chapters but zero drafts needs the generation
+    pipeline, not a quality sweep over drafts that do not exist yet.
+    """
+
+    project_slug = str(project_slug or "").strip()
+    if not project_slug:
+        return False
+    job_id = _project_pipeline_job_id(project_slug)
+    if current_job_id and job_id == current_job_id:
+        return False
+
+    async def _enqueue() -> Any:
+        return await redis.enqueue_job(
+            "run_project_pipeline_task",
+            workflow_run_id=job_id,
+            payload={"project_slug": project_slug},
+            _job_id=job_id,
+            _expires=_dt.timedelta(days=7),
+        )
+
+    try:
+        job = await _enqueue()
+        if job is None:
+            active = bool(
+                await redis.exists(
+                    f"arq:job:{job_id}",
+                    f"arq:in-progress:{job_id}",
+                    f"arq:retry:{job_id}",
+                )
+            )
+            if not active:
+                active = await redis.zscore("arq:queue", job_id) is not None
+            if not active:
+                await redis.delete(
+                    f"arq:result:{job_id}",
+                    f"arq:retry:{job_id}",
+                )
+                job = await _enqueue()
+    except AttributeError:
+        return False
+
+    event = (
+        "repairable_auto_continue"
+        if job is not None
+        else "repairable_auto_continue_already_queued"
+    )
+    await reporter.emit(
+        event,
+        {
+            "project_slug": project_slug,
+            "job_id": job_id,
+            "source": source,
+            "reason": reason,
+            "recovery_kind": "project_pipeline",
+        },
+        event_type=event,
     )
     return True
 
@@ -601,6 +936,66 @@ async def _mark_project_generation_repair_exhausted(
             }
 
 
+async def _mark_project_outline_replan_required(
+    project_slug: str,
+    *,
+    reason: str,
+    error_message: str,
+    settings: Any,
+) -> bool:
+    """Persist the semantic-gate state before queueing its replan owner."""
+
+    async with get_server_session() as session:
+        project = await session.scalar(
+            select(ProjectModel).where(ProjectModel.slug == project_slug)
+        )
+        if project is None:
+            return False
+        now = _dt.datetime.now(_dt.UTC).isoformat()
+        metadata = dict(project.metadata_json or {})
+        max_attempts = int(getattr(settings, "outline_replan_auto_retry_max_attempts", 3) or 3)
+        attempts = int(metadata.get("outline_replan_auto_retry_count") or 0)
+        if attempts >= max_attempts:
+            metadata.update(
+                {
+                    "outline_replan_required": False,
+                    "outline_replan_auto_retry_exhausted": True,
+                    "outline_replan_auto_retry_last_reason": reason,
+                    "outline_replan_auto_retry_last_error": error_message[:4000],
+                    "production_paused": True,
+                    "production_pause_reason": "outline_replan_auto_retry_exhausted",
+                    "requires_human_review": True,
+                    "planning_status": "needs_replan",
+                    "outline_semantic_gate_status": "needs_replan",
+                }
+            )
+            project.metadata_json = metadata
+            project.status = ProjectStatus.NEEDS_REPLAN.value
+            return False
+
+        attempts += 1
+        metadata.pop("outline_replan_auto_retry_exhausted", None)
+        metadata.update(
+            {
+                "planning_status": "needs_replan",
+                "outline_semantic_gate_status": "needs_replan",
+                "outline_replan_required": True,
+                "production_paused": True,
+                "production_pause_reason": "outline_semantic_gate_failed",
+                "generation_resume_blocked_until_repair_audit": True,
+                "outline_replan_last_error": error_message[:4000],
+                "outline_replan_last_failed_at": now,
+                "last_generation_gate_reason": reason,
+                "outline_replan_auto_retry_count": attempts,
+                "outline_replan_auto_retry_last_reason": reason,
+                "outline_replan_auto_retry_last_error": error_message[:4000],
+            }
+        )
+        project.metadata_json = metadata
+        project.status = ProjectStatus.NEEDS_REPLAN.value
+        return True
+
+
 async def _handle_generation_gate_auto_continue(
     redis: Any,
     reporter: RedisProgressReporter,
@@ -611,19 +1006,44 @@ async def _handle_generation_gate_auto_continue(
     source: str,
     current_job_id: str | None = None,
 ) -> dict[str, Any]:
+    settings = get_settings()
     await _mark_project_generation_repair_exhausted(
         project_slug,
         reason=reason,
         error_message=message,
     )
-    queued = await _enqueue_project_repair_if_needed(
-        redis,
-        reporter,
-        project_slug,
-        source=source,
-        reason=reason,
-        current_job_id=current_job_id,
-    )
+    if reason.startswith(
+        (
+            "outline_semantic_gate_failed",
+            "commercial_planning_readiness_gate_failed",
+        )
+    ):
+        can_retry = await _mark_project_outline_replan_required(
+            project_slug,
+            reason=reason,
+            error_message=message,
+            settings=settings,
+        )
+        if can_retry:
+            queued = await _enqueue_outline_replan_if_needed(
+                redis,
+                reporter,
+                project_slug,
+                source=source,
+                reason=reason,
+                current_job_id=current_job_id,
+            )
+        else:
+            queued = False
+    else:
+        queued = await _enqueue_project_repair_if_needed(
+            redis,
+            reporter,
+            project_slug,
+            source=source,
+            reason=reason,
+            current_job_id=current_job_id,
+        )
     if not queued:
         await reporter.emit(
             "repairable_auto_continue_pending",
@@ -663,6 +1083,495 @@ async def run_self_heal_task(ctx: dict[str, Any]) -> dict[str, Any]:
     return {"dispatched": dispatched}
 
 
+def _apply_cancelled_outline_replan_state(
+    project: ProjectModel,
+    active_runs: list[WorkflowRunModel],
+    *,
+    error_message: str = "worker outline replan cancelled; safe retry required",
+) -> None:
+    """Close only the cancelled planner owner's rows and retain the hard gate."""
+
+    now = _dt.datetime.now(_dt.UTC).isoformat()
+    metadata = dict(project.metadata_json or {})
+    metadata.pop("outline_replan_in_progress", None)
+    metadata.pop("outline_replan_prior_outline_version", None)
+    metadata.update(
+        {
+            "outline_replan_required": True,
+            "planning_status": "needs_replan",
+            "outline_semantic_gate_status": "needs_replan",
+            "production_paused": True,
+            "production_pause_reason": "outline_replan_cancelled_recoverable",
+            "generation_resume_blocked_until_repair_audit": True,
+            "outline_replan_last_failed_at": now,
+            "outline_replan_last_error": error_message,
+        }
+    )
+    project.metadata_json = metadata
+    project.status = ProjectStatus.NEEDS_REPLAN.value
+    for run in active_runs:
+        run.status = WorkflowStatus.FAILED.value
+        run.current_step = "cancelled_recoverable"
+        run.error_message = error_message
+        run.metadata_json = {
+            **(run.metadata_json or {}),
+            "cancelled_recoverable": True,
+            "cancelled_at": now,
+        }
+
+
+async def _mark_cancelled_outline_replan_recoverable(project_slug: str) -> None:
+    """Persist a fail-closed, retryable state before ARQ requeues cancellation."""
+
+    async with get_server_session() as session:
+        project = await session.scalar(
+            select(ProjectModel).where(ProjectModel.slug == project_slug)
+        )
+        if project is None:
+            return
+        active_runs = list(
+            await session.scalars(
+                select(WorkflowRunModel).where(
+                    WorkflowRunModel.project_id == project.id,
+                    WorkflowRunModel.requested_by == "worker_outline_replan",
+                    WorkflowRunModel.status.in_(_ACTIVE_WORKFLOW_STATUSES),
+                )
+            )
+        )
+        _apply_cancelled_outline_replan_state(project, active_runs)
+        await session.commit()
+
+
+async def _recover_owned_outline_replan_conflict(
+    project_slug: str,
+    exc: PlanningConflictError,
+    reporter: RedisProgressReporter,
+) -> dict[str, Any]:
+    """Close a prior dedicated-owner row that blocks its idempotent retry.
+
+    The ARQ job id is unique per project, so a retry entering this handler
+    cannot be a second legitimate outline owner.  The conflicting
+    ``worker_outline_replan`` database row belongs to the interrupted prior
+    attempt and must be closed before the next self-heal scan can requeue it.
+    """
+
+    await _mark_cancelled_outline_replan_recoverable(project_slug)
+    failure = {
+        "status": "outline_replan_retry_pending",
+        "project_slug": project_slug,
+        "reason": "owned_planning_conflict_recovered",
+        "error": str(exc)[:4000],
+    }
+    await reporter.emit(
+        "outline_replan_retry_pending",
+        failure,
+        event_type="repairable_auto_continue_pending",
+    )
+    return failure
+
+
+async def run_outline_replan_task(
+    ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Dedicated owner for a bounded ``needs_replan`` recovery.
+
+    Normal prose and repair workers remain fail-closed.  This owner alone may
+    enter the existing progressive pipeline with the structural-repair bypass;
+    that pipeline still runs deterministic contract checks and the LLM outline
+    judge before any prose step.  Failure restores ``needs_replan`` atomically,
+    leaving the self-heal fingerprint budget to decide whether another attempt
+    is useful.
+    """
+
+    from bestseller.domain.project import ProjectCreate, ProjectType
+    from bestseller.services.pipelines import run_autowrite_pipeline
+    from bestseller.services.projects import get_project_by_slug
+
+    settings = get_settings()
+    redis = ctx["redis"]
+    reporter = RedisProgressReporter(redis, workflow_run_id)
+    set_ambient(make_sync_callback(reporter))
+    project_slug = str(payload.get("project_slug") or "").strip()
+    if not project_slug:
+        raise ValueError("outline replan requires project_slug")
+
+    archived = await _skip_archived_project_if_needed(reporter, project_slug)
+    if archived is not None:
+        return archived
+
+    async with get_server_session() as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' not found")
+        metadata = dict(project.metadata_json or {})
+        if metadata.get("outline_replan_auto_retry_exhausted"):
+            now_iso = _dt.datetime.now(_dt.UTC).isoformat()
+            metadata = _outline_replan_retry_exhausted_metadata(
+                metadata,
+                attempts=_metadata_int_value(
+                    metadata, "outline_replan_auto_retry_count", 0
+                ),
+                now_iso=now_iso,
+                reason="outline_replan_auto_retry_exhausted",
+            )
+            project.status = ProjectStatus.PAUSED.value
+            project.metadata_json = metadata
+            await session.commit()
+            blocked = {
+                "status": "outline_replan_retry_exhausted",
+                "project_slug": project_slug,
+                "reason": "outline_replan_auto_retry_exhausted",
+                "requires_human_review": True,
+            }
+            await reporter.emit(
+                "outline_replan_retry_exhausted",
+                blocked,
+                event_type="repairable_auto_continue_pending",
+            )
+            logger.info(
+                "outline replan skipped for %s because auto-retry was already exhausted",
+                project_slug,
+            )
+            return blocked
+        draft_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ChapterDraftVersionModel)
+                .join(ChapterModel, ChapterModel.id == ChapterDraftVersionModel.chapter_id)
+                .where(
+                    ChapterModel.project_id == project.id,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                )
+            )
+            or 0
+        )
+        if draft_count:
+            blocked = {
+                "status": "skipped_outline_replan_after_prose",
+                "project_slug": project_slug,
+                "draft_count": draft_count,
+                "reason": "outline_replan_requires_suffix_preserving_repair",
+                "requires_machine_repair": True,
+            }
+            await reporter.emit(
+                "repairable_auto_continue_pending",
+                blocked,
+                event_type="repairable_auto_continue_pending",
+            )
+            return blocked
+
+        prior_outline_version = int(
+            await session.scalar(
+                select(func.max(PlanningArtifactVersionModel.version_no)).where(
+                    PlanningArtifactVersionModel.project_id == project.id,
+                    PlanningArtifactVersionModel.artifact_type
+                    == "volume_chapter_outline",
+                )
+            )
+            or 0
+        )
+
+        previous_gate = {
+            "status": project.status,
+            "planning_status": metadata.get("planning_status"),
+            "outline_semantic_gate_status": metadata.get(
+                "outline_semantic_gate_status"
+            ),
+            "production_pause_reason": metadata.get("production_pause_reason"),
+            "fingerprint": payload.get("progress_fingerprint"),
+        }
+        metadata.update(
+            {
+                "outline_replan_in_progress": True,
+                "outline_replan_started_at": _dt.datetime.now(_dt.UTC).isoformat(),
+                "outline_replan_source_gate": previous_gate,
+                "outline_replan_prior_outline_version": prior_outline_version,
+                "planning_status": "replanning",
+                "production_paused": True,
+                "production_pause_reason": "outline_replan_in_progress",
+                "generation_resume_blocked_until_repair_audit": True,
+            }
+        )
+        project.metadata_json = metadata
+        project.status = ProjectStatus.PLANNING.value
+        project_payload = ProjectCreate(
+            slug=project.slug,
+            title=project.title,
+            genre=project.genre,
+            sub_genre=project.sub_genre,
+            audience=project.audience,
+            target_word_count=project.target_word_count,
+            target_chapters=project.target_chapters,
+            project_type=ProjectType(project.project_type),
+            metadata=dict(metadata),
+        )
+        premise = str(payload.get("premise") or metadata.get("premise") or project.title)
+        await session.commit()
+
+    await reporter.emit(
+        "outline_replan_started",
+        {
+            "project_slug": project_slug,
+            "workflow_run_id": workflow_run_id,
+            "progress_fingerprint": payload.get("progress_fingerprint"),
+        },
+    )
+
+    try:
+        async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
+            async with get_server_session() as session:
+                result = await run_autowrite_pipeline(
+                    session=session,
+                    settings=settings,
+                    project_payload=project_payload,
+                    premise=premise,
+                    requested_by="worker_outline_replan",
+                    progress=make_sync_callback(reporter),
+                    allow_outline_replan=True,
+                )
+    except asyncio.CancelledError:
+        # ARQ requeues a cancelled job during rolling deployment, but the
+        # planning workflow row created inside ``run_autowrite_pipeline`` is
+        # independently committed. Leaving it ``running`` makes the retried
+        # job collide with its own orphan via PlanningConflictError.
+        await _mark_cancelled_outline_replan_recoverable(project_slug)
+        raise
+    except PlanningConflictError as exc:
+        # A replacement worker may inherit the ARQ retry after the prior
+        # process died before its independently committed planning row closed.
+        # Treat that row as the interrupted attempt owned by this same
+        # idempotent project job, close it fail-closed, and let self-heal retry.
+        logger.warning(
+            "outline replan recovered owned planning conflict for %s: %s",
+            project_slug,
+            exc,
+        )
+        return await _recover_owned_outline_replan_conflict(
+            project_slug,
+            exc,
+            reporter,
+        )
+    except Exception as exc:  # keep the project blocked; scanner owns retries
+        replan_gate_released = False
+        async with get_server_session() as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is not None:
+                metadata = dict(project.metadata_json or {})
+                replan_gate_released = not bool(
+                    metadata.get("outline_replan_in_progress")
+                )
+                if replan_gate_released:
+                    for key in (
+                        "outline_replan_required",
+                        "generation_resume_blocked_until_repair_audit",
+                        "production_paused",
+                        "production_pause_reason",
+                    ):
+                        metadata.pop(key, None)
+                    metadata.update(
+                        {
+                            "outline_replan_downstream_retry_pending": True,
+                            "outline_replan_downstream_error": str(exc)[:4000],
+                            "planning_status": "writing",
+                            "outline_semantic_gate_status": "approved",
+                        }
+                    )
+                    if project.status in {
+                        ProjectStatus.PLANNING.value,
+                        ProjectStatus.NEEDS_REPLAN.value,
+                        ProjectStatus.PAUSED.value,
+                    }:
+                        project.status = ProjectStatus.WRITING.value
+                else:
+                    now_iso = _dt.datetime.now(_dt.UTC).isoformat()
+                    metadata.pop("outline_replan_in_progress", None)
+                    metadata.pop("outline_replan_prior_outline_version", None)
+                    metadata["outline_replan_last_failed_at"] = now_iso
+                    metadata["outline_replan_last_error"] = str(exc)[:4000]
+                    status = ProjectStatus.NEEDS_REPLAN.value
+                    attempts = _metadata_int_value(
+                        metadata, "outline_replan_retry_attempts", 0
+                    ) + 1
+                    if attempts >= MAX_OUTLINE_REPLAN_ATTEMPTS:
+                        metadata = _outline_replan_retry_exhausted_metadata(
+                            metadata,
+                            attempts=attempts,
+                            now_iso=now_iso,
+                            reason=str(exc),
+                        )
+                        status = ProjectStatus.PAUSED.value
+                    else:
+                        metadata, _ = _outline_replan_retry_pending_metadata(
+                            metadata,
+                            attempts=attempts,
+                            now_iso=now_iso,
+                            reason=str(exc),
+                        )
+                    if not metadata.get("outline_replan_retry_exhausted"):
+                        metadata["outline_replan_last_retry_attempt"] = attempts
+                    project.status = status
+                project.metadata_json = metadata
+                await session.commit()
+        if replan_gate_released:
+            queued = await _enqueue_project_pipeline_if_needed(
+                redis,
+                reporter,
+                project_slug,
+                source="outline_replan_downstream",
+                reason="outline_replan_completed_downstream_failure",
+                current_job_id=workflow_run_id,
+            )
+            failure = {
+                "status": "outline_replan_completed_downstream_retry_pending",
+                "project_slug": project_slug,
+                "error": str(exc),
+                "repair_queued": queued,
+            }
+            await reporter.emit(
+                "outline_replan_completed_downstream_retry_pending",
+                failure,
+                event_type="repairable_auto_continue_pending",
+            )
+            logger.warning(
+                "outline replan passed for %s but downstream writing failed; "
+                "ordinary self-heal remains enabled: %s",
+                project_slug,
+                exc,
+            )
+            return failure
+        failure = {
+            "status": "outline_replan_retry_pending",
+            "project_slug": project_slug,
+            "error": str(exc),
+        }
+        await reporter.emit(
+            "outline_replan_retry_pending",
+            failure,
+            event_type="repairable_auto_continue_pending",
+        )
+        logger.warning("outline replan failed for %s: %s", project_slug, exc)
+        return failure
+
+    async with get_server_session() as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is not None:
+            metadata = dict(project.metadata_json or {})
+            semantic_report = metadata.get("outline_semantic_gate_report")
+            current_outline_version = int(
+                await session.scalar(
+                    select(func.max(PlanningArtifactVersionModel.version_no)).where(
+                        PlanningArtifactVersionModel.project_id == project.id,
+                        PlanningArtifactVersionModel.artifact_type
+                        == "volume_chapter_outline",
+                    )
+                )
+                or 0
+            )
+            semantic_promoted = bool(
+                isinstance(semantic_report, dict)
+                and semantic_report.get("promotion_allowed") is True
+                and current_outline_version > prior_outline_version
+            )
+            if not semantic_promoted:
+                now_iso = _dt.datetime.now(_dt.UTC).isoformat()
+                attempts = _metadata_int_value(
+                    metadata, "outline_replan_retry_attempts", 0
+                ) + 1
+                status = ProjectStatus.NEEDS_REPLAN.value
+                metadata.pop("outline_replan_in_progress", None)
+                if attempts >= MAX_OUTLINE_REPLAN_ATTEMPTS:
+                    _outline_replan_retry_exhausted_metadata(
+                        metadata,
+                        attempts=attempts,
+                        now_iso=now_iso,
+                        reason="replan pipeline returned without a new approved outline",
+                    )
+                    status = ProjectStatus.PAUSED.value
+                else:
+                    metadata["outline_replan_last_error"] = (
+                        "replan pipeline returned without a new approved outline"
+                    )
+                    metadata, _ = _outline_replan_retry_pending_metadata(
+                        metadata,
+                        attempts=attempts,
+                        now_iso=now_iso,
+                        reason="replan pipeline returned without a new approved outline",
+                    )
+                if not metadata.get("outline_replan_retry_exhausted"):
+                    metadata["outline_replan_last_retry_attempt"] = attempts
+                project.metadata_json = metadata
+                project.status = status
+                await session.commit()
+                failure = {
+                    "status": "outline_replan_retry_pending",
+                    "project_slug": project_slug,
+                    "error": "new approved outline missing",
+                }
+                await reporter.emit(
+                    "outline_replan_retry_pending",
+                    failure,
+                    event_type="repairable_auto_continue_pending",
+                )
+                return failure
+            for key in (
+                "outline_replan_in_progress",
+                "outline_replan_prior_outline_version",
+                "outline_replan_required",
+                "outline_replan_retry_exhausted",
+                "outline_replan_retry_attempts",
+                "outline_replan_auto_retry_exhausted",
+                "outline_replan_auto_retry_count",
+                "outline_replan_auto_retry_last_reason",
+                "outline_replan_auto_retry_last_error",
+                "outline_replan_next_retry_at",
+                "generation_resume_blocked_until_repair_audit",
+                "production_paused",
+                "production_pause_reason",
+                "outline_replan_downstream_retry_pending",
+                "outline_replan_downstream_error",
+                "outline_replan_last_error",
+                "outline_replan_last_failed_at",
+                "outline_replan_last_retry_attempt",
+                "self_heal_abandoned",
+                "self_heal_abandoned_at",
+                "self_heal_abandoned_progress_fingerprint",
+                "self_heal_abandoned_progress_rank",
+                "self_heal_no_actionable_progress",
+                "self_heal_no_progress_escalated",
+                "self_heal_no_progress_escalated_at",
+                "self_heal_no_progress_giveup",
+                "self_heal_no_progress_machine_repair",
+                "self_heal_last_progress_fingerprint",
+                "self_heal_last_progress_rank",
+                "self_heal_last_chapters_total",
+            ):
+                metadata.pop(key, None)
+            metadata.update(
+                {
+                    "outline_replan_completed_at": _dt.datetime.now(
+                        _dt.UTC
+                    ).isoformat(),
+                    "planning_status": "writing",
+                    "outline_semantic_gate_status": "approved",
+                    "self_heal_no_progress_attempts": 0,
+                }
+            )
+            project.metadata_json = metadata
+            if project.status in {
+                ProjectStatus.PLANNING.value,
+                ProjectStatus.NEEDS_REPLAN.value,
+                ProjectStatus.PAUSED.value,
+            }:
+                project.status = ProjectStatus.WRITING.value
+            await session.commit()
+
+    result_payload = result.model_dump(mode="json")
+    await reporter.emit(
+        "outline_replan_completed", result_payload, event_type="completed"
+    )
+    return result_payload
+
+
 async def run_autowrite_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -686,6 +1595,11 @@ async def run_autowrite_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    replan_block = await _skip_outline_replan_project_if_needed(
+        reporter, project_slug, workflow_run_id
+    )
+    if replan_block is not None:
+        return replan_block
 
     await reporter.emit(
         "autowrite_started",
@@ -811,6 +1725,11 @@ async def run_project_pipeline_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    replan_block = await _skip_outline_replan_project_if_needed(
+        reporter, project_slug, workflow_run_id
+    )
+    if replan_block is not None:
+        return replan_block
 
     await reporter.emit(
         "project_pipeline_started",
@@ -973,6 +1892,11 @@ async def run_chapter_pipeline_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    replan_block = await _skip_outline_replan_project_if_needed(
+        reporter, project_slug, workflow_run_id
+    )
+    if replan_block is not None:
+        return replan_block
 
     await reporter.emit("started", {"chapter_number": payload["chapter_number"]})
 
@@ -1032,6 +1956,11 @@ async def run_project_repair_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    replan_block = await _skip_outline_replan_project_if_needed(
+        reporter, project_slug, workflow_run_id
+    )
+    if replan_block is not None:
+        return replan_block
 
     await reporter.emit("project_repair_started", {"project_slug": project_slug})
 

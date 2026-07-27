@@ -30,18 +30,20 @@ same DB rows.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import datetime as _dt
+import hashlib
+import json
 import logging
 import os
 import pickle
 import time
-import uuid
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
+import uuid
 
-from sqlalchemy import and_, func, or_, select, text, update
 from redis.asyncio.client import NEVER_DECODE
+from sqlalchemy import and_, func, or_, select, text, update
 
 if TYPE_CHECKING:  # pragma: no cover — import only for type hints
     from arq.connections import ArqRedis
@@ -57,6 +59,7 @@ from bestseller.infra.db.models import (
 from bestseller.infra.db.session import get_server_session
 from bestseller.services.gate_registry import (
     gate_continuation_impact,
+    project_blocks_all_prose_generation,
     project_resume_is_terminally_blocked,
 )
 from bestseller.services.projects import is_project_delete_tombstoned
@@ -84,6 +87,24 @@ _WRITING_WORKFLOW_TYPES = frozenset(
 )
 _HEARTBEAT_REAP_WORKFLOW_TYPES = _WRITING_WORKFLOW_TYPES | frozenset({"project_repair"})
 
+# Conception runs in the WEB process, owns no project row yet, and never
+# heartbeats — ``updated_at`` stays equal to ``created_at`` for its whole life.
+# So neither of the rules above can classify it: the heartbeat windows would
+# measure total age rather than liveness, and the startup rules (5s grace) would
+# mark a healthy in-flight conception failed whenever a worker restarts alone.
+#
+# It still needs SOME rule: the web layer only closes the row on the success
+# path, so an appeal-gate block or a crash leaks a permanently "running" row —
+# and ``uq_conception_workflow_idempotency`` then refuses to retry that same
+# attempt_id. Hence a plain ceiling on total age.
+#
+# 2h clears a normal conception (~20-30 min) and the worst observed stuck-but-
+# alive case (1.5h) with margin.
+ORPHAN_CONCEPTION_WORKFLOW_TIMEOUT_SECONDS = 2 * 60 * 60
+_CONCEPTION_WORKFLOW_TYPES = frozenset(
+    {"conception_initial", "conception_revision"}
+)
+
 # Anything active + older than this at worker startup is, by definition,
 # a ghost from a prior container that died before updating its row. The
 # grace window accounts for rare cases where a job was just enqueued but
@@ -107,6 +128,17 @@ SELF_HEAL_LOCK_TTL_SECONDS = 180
 # the ARQ keys themselves are the source of truth once present.
 SELF_HEAL_SCAN_DONE_KEY = "bestseller:self_heal:scan_done"
 SELF_HEAL_SCAN_DONE_TTL_SECONDS = 7200
+# Worker replicas initialise optional MCP processes at different speeds before
+# entering startup self-heal. Their per-process ``startup_cutoff`` timestamps
+# can therefore differ by several seconds even though they belong to the same
+# Compose restart. Accept a small backward skew when matching the completed
+# marker so a slow replica cannot count the same book as another heal attempt.
+SELF_HEAL_STARTUP_COHORT_SKEW_SECONDS = 30
+
+# A worker task refreshes its active workflow rows every 60 seconds.  Use a
+# generous window here so a live long-running planner remains protected when a
+# sibling worker restarts, while a dead owner can still be reaped promptly.
+ACTIVE_ARQ_OWNER_HEARTBEAT_GRACE_SECONDS = 5 * 60
 
 # Escalation threshold. A project that self-heal re-queues this many times
 # WITHOUT the chapter count increasing is likely hard-blocked (planner schema
@@ -188,6 +220,23 @@ _AUTO_REPAIRABLE_WRITE_SAFETY_BLOCK_CODES = frozenset(
 # older deployment paused a project after exhausting that path, startup self-heal
 # may retry once the pause is no longer fresh instead of treating it as a manual
 # structural stop forever.
+# How many times ONE unchanged generation-gate failure may be auto-resumed
+# before the project stays paused for a human.
+#
+# Without a budget this path spins forever: the gate fails, the pause is
+# cleared after the cooldown, the identical work reruns, the same gate fails.
+# 《仇人膝上养帝王》 burned 118 LLM calls / ~880k tokens in 2.5 hours that way
+# (2026-07-25) without producing one chapter — regenerating eight identical
+# copies of outline batch 1-3 while batch 4-6 kept failing the same semantic
+# check, with concurrent retries racing into PlanningConflictError.
+#
+# Small on purpose: a gate that rejected the same artifact three times will
+# reject the fourth. Transient faults (a timed-out judge, a truncated
+# completion) clear well inside this budget; a genuinely unsatisfiable gate
+# stops and surfaces instead of quietly spending the user's tokens.
+GENERATION_GATE_MAX_AUTO_RESUMES = int(
+    os.getenv("BESTSELLER_GENERATION_GATE_MAX_AUTO_RESUMES", "3")
+)
 GENERATION_GATE_RESUME_COOLDOWN_SECONDS = int(
     os.getenv("BESTSELLER_GENERATION_GATE_RESUME_COOLDOWN_SECONDS", "60")
 )
@@ -276,6 +325,188 @@ class StuckProject:
     chapters_with_draft: int
     heal_kind: str = "autowrite"
     progress_fingerprint: str | None = None
+    # Ordered quality rank for planner-only recovery.  A changed error label is
+    # not progress; only a strictly better score/blocker profile is.
+    progress_rank: tuple[int, int, int, int] | None = None
+
+
+_AUTO_OUTLINE_REPLAN_REASONS = frozenset(
+    {
+        "outline_semantic_gate_failed",
+        "outline_replan_in_progress",
+        "volume_outline_gate_failed",
+        "commercial_planning_readiness_gate_failed",
+    }
+)
+
+
+def _project_requires_auto_outline_replan(project: ProjectModel) -> bool:
+    """Whether a planning failure is safe for the bounded planner-only lane."""
+
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        return False
+    if metadata.get("outline_replan_auto_retry_exhausted"):
+        return False
+    # The project status and metadata are persisted by separate recovery
+    # boundaries on some failure paths.  During that narrow window the status
+    # can already be ``needs_replan`` while the detailed gate report has not
+    # landed yet.  Treat the status itself as the safe planner-only signal;
+    # ``find_stuck_projects`` still requires zero committed drafts before it
+    # dispatches this lane.
+    if str(getattr(project, "status", "") or "").strip().lower() == "needs_replan":
+        return True
+    # The no-progress watchdog may replace ``production_pause_reason`` with
+    # ``self_heal_no_actionable_progress`` while the authoritative planning
+    # failure remains in ``last_generation_gate_reason``.  Treating the first
+    # non-empty reason as exclusive stranded zero-draft books even though the
+    # dedicated replan marker was still present.
+    if metadata.get("outline_replan_required"):
+        return True
+    reasons = {
+        str(metadata.get(key) or "").strip().lower().split(":", 1)[0]
+        for key in ("production_pause_reason", "last_generation_gate_reason")
+    }
+    if reasons & _AUTO_OUTLINE_REPLAN_REASONS:
+        return True
+    return bool(
+        metadata.get("outline_replan_in_progress")
+        or (
+            metadata.get("outline_semantic_gate_status") == "needs_replan"
+            and metadata.get("outline_semantic_gate_report")
+        )
+    )
+
+
+def _outline_replan_progress_fingerprint(project: ProjectModel) -> str:
+    """Fingerprint the blocker, not mutable chapter counts, for bounded retries."""
+
+    metadata = getattr(project, "metadata_json", None) or {}
+    report = metadata.get("outline_semantic_gate_report")
+    findings = report.get("findings") if isinstance(report, dict) else []
+    adjudication = report.get("llm_adjudication") if isinstance(report, dict) else None
+    commercial_failure = metadata.get("outline_commercial_last_failure")
+    compact_findings = []
+    for finding in findings if isinstance(findings, list) else []:
+        if not isinstance(finding, dict):
+            continue
+        compact_findings.append(
+            {
+                "code": finding.get("code"),
+                "chapter": finding.get("chapter"),
+                "evidence": finding.get("evidence"),
+            }
+        )
+    payload = {
+        "reason": metadata.get("production_pause_reason")
+        or metadata.get("last_generation_gate_reason"),
+        "error": str(metadata.get("last_generation_gate_error") or "")[:1000],
+        "findings": compact_findings,
+        # Retain score / issue detail for diagnostics.  The monotonic rank
+        # helper below, rather than this volatile hash, decides whether the
+        # generic chapter-count watchdog observed real planning progress.
+        "llm_overall_score": (
+            adjudication.get("overall_score")
+            if isinstance(adjudication, dict)
+            else None
+        ),
+        "llm_issue_codes": sorted(
+            str(item.get("code"))
+            for item in (
+                adjudication.get("issues", [])
+                if isinstance(adjudication, dict)
+                else []
+            )
+            if isinstance(item, dict) and item.get("code")
+        ),
+        "promotion_allowed": (
+            report.get("promotion_allowed") if isinstance(report, dict) else None
+        ),
+        # Progressive volume-outline rejection is persisted separately from
+        # ``outline_semantic_gate_report``. Ignoring it kept the fingerprint
+        # constant even when the LLM score improved from 0.55 to 0.825, so the
+        # generic watchdog abandoned a visibly improving replan on attempt 5.
+        "commercial_overall_score": (
+            commercial_failure.get("overall_score")
+            if isinstance(commercial_failure, dict)
+            else None
+        ),
+        "commercial_blocking_codes": sorted(
+            str(code)
+            for code in (
+                commercial_failure.get("blocking_codes", [])
+                if isinstance(commercial_failure, dict)
+                else []
+            )
+            if code
+        ),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:20]
+    return f"outline_replan:{digest}"
+
+
+def _outline_replan_progress_rank(
+    project: ProjectModel,
+) -> tuple[int, int, int, int]:
+    """Return a monotonic quality rank for bounded outline recovery.
+
+    Exact blocker text remains useful in the diagnostic fingerprint, but it is
+    too volatile to prove progress: one failed generation can merely rename a
+    problem while keeping (or lowering) the judge score.  Rank candidates by
+    the commercial judge first, then its blocker count, followed by the
+    architecture judge and its issue count.  Higher tuples are better.
+    """
+
+    metadata = getattr(project, "metadata_json", None) or {}
+    report = metadata.get("outline_semantic_gate_report")
+    adjudication = report.get("llm_adjudication") if isinstance(report, dict) else None
+    commercial_failure = metadata.get("outline_commercial_last_failure")
+
+    def _score(value: Any) -> int:
+        try:
+            return int(round(float(value) * 10_000))
+        except (TypeError, ValueError):
+            return -1
+
+    commercial_score = None
+    commercial_codes: Any = []
+    if isinstance(commercial_failure, dict):
+        # The final repair sample may regress after an earlier round produced a
+        # much stronger candidate. Planner persistence deliberately keeps that
+        # best failed baseline for the next retry; convergence accounting must
+        # rank the retained candidate, not the last (possibly worse) sample.
+        commercial_score = commercial_failure.get(
+            "recovery_baseline_score",
+            commercial_failure.get("overall_score"),
+        )
+        commercial_codes = commercial_failure.get(
+            "recovery_blocking_codes",
+            commercial_failure.get("blocking_codes", []),
+        )
+    semantic_issues = (
+        adjudication.get("issues", []) if isinstance(adjudication, dict) else []
+    )
+    return (
+        _score(commercial_score),
+        -len(commercial_codes) if isinstance(commercial_codes, list) else -10_000,
+        _score(
+            adjudication.get("overall_score")
+            if isinstance(adjudication, dict)
+            else None
+        ),
+        -len(semantic_issues) if isinstance(semantic_issues, list) else -10_000,
+    )
+
+
+def _normalize_progress_rank(value: Any) -> tuple[int, ...] | None:
+    if not isinstance(value, (list, tuple)) or not value:
+        return None
+    try:
+        return tuple(int(part) for part in value)
+    except (TypeError, ValueError):
+        return None
 
 
 async def reap_orphan_workflow_runs(
@@ -342,6 +573,26 @@ async def reap_orphan_workflow_runs(
     result = await session.execute(reap_stmt)
     reaped = int(result.rowcount or 0)
 
+    # Conception rows get their own statement rather than joining
+    # ``_REAPABLE_WORKFLOW_TYPES``: sharing that set would also subject them to
+    # the startup_cutoff conditions, whose 5s grace would reap a live one.
+    conception_cutoff = now - _dt.timedelta(
+        seconds=ORPHAN_CONCEPTION_WORKFLOW_TIMEOUT_SECONDS
+    )
+    conception_result = await session.execute(
+        update(WorkflowRunModel)
+        .where(
+            WorkflowRunModel.workflow_type.in_(_CONCEPTION_WORKFLOW_TYPES),
+            WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
+            WorkflowRunModel.created_at < conception_cutoff,
+        )
+        .values(
+            status=WorkflowStatus.FAILED.value,
+            error_message=_ORPHAN_ERROR_MESSAGE,
+        )
+    )
+    reaped += int(conception_result.rowcount or 0)
+
     if startup_cutoff is not None:
         startup_stmt = (
             update(WorkflowRunModel)
@@ -404,7 +655,7 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
         return set()
 
     slugs: set[str] = set()
-    job_states: dict[str, set[str]] = {}
+    job_ids: set[str] = set()
     try:
         scan_iter = getattr(redis, "scan_iter", None)
         patterns = ("arq:in-progress:*", "arq:job:*", "arq:retry:*")
@@ -426,38 +677,15 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
         key_text = key.decode() if isinstance(key, bytes) else str(key)
         if key_text.startswith("arq:in-progress:"):
             job_id = key_text.removeprefix("arq:in-progress:")
-            state = "in-progress"
         elif key_text.startswith("arq:job:"):
             job_id = key_text.removeprefix("arq:job:")
-            state = "job"
         elif key_text.startswith("arq:retry:"):
             job_id = key_text.removeprefix("arq:retry:")
-            state = "retry"
         else:
             continue
-        job_states.setdefault(job_id, set()).add(state)
+        job_ids.add(job_id)
 
-    for job_id, states in job_states.items():
-        if await _arq_owner_is_stale(redis, job_id, states):
-            # Clear the stale ``arq:in-progress`` lock a dead worker left behind.
-            # ARQ keeps that lock for the job timeout (~24h here); while it
-            # exists, ARQ silently DEDUPES any re-enqueue of the same job_id, so
-            # self-heal would mark the project eligible, try to re-queue, and the
-            # enqueue would be dropped — deadlocking the book for up to 24h.
-            # Deleting the lock lets the still-queued job (or a fresh re-queue)
-            # dispatch to a live worker. Safe: the owner is confirmed stale.
-            try:
-                await _arq_clear_stale_inprogress_lock(redis, job_id)
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "self-heal: failed to clear stale ARQ lock job_id=%s", job_id
-                )
-            logger.info(
-                "self-heal: cleared stale ARQ owner job_id=%s states=%s",
-                job_id,
-                sorted(states),
-            )
-            continue
+    for job_id in job_ids:
         try:
             raw = await _redis_get_bytes(redis, f"arq:job:{job_id}")
         except Exception:  # noqa: BLE001
@@ -481,60 +709,6 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
     return slugs
 
 
-async def _arq_clear_stale_inprogress_lock(redis: Any, job_id: str) -> None:
-    """Delete the stale ``arq:in-progress:<job_id>`` lock left by a dead worker.
-
-    Only the in-progress lock is removed — the job payload and its queue entry
-    are left intact so ARQ can re-dispatch the already-scheduled job to a live
-    worker. The caller has already confirmed the owner is stale.
-    """
-    delete = getattr(redis, "delete", None)
-    if delete is None:
-        return
-    await delete(f"arq:in-progress:{job_id}")
-
-
-async def _arq_owner_is_stale(redis: Any, job_id: str, states: set[str]) -> bool:
-    """True when an ARQ owner key is old enough to be a ghost lock.
-
-    ``arq:job:*`` by itself can represent a real queued job, so stale filtering
-    is limited to ownership states that claim execution/scheduled retry. Missing
-    queue scores are treated as live because ARQ variants differ in how they
-    retain scores for active jobs.
-    """
-    if "in-progress" not in states and "retry" not in states:
-        return False
-    zscore = getattr(redis, "zscore", None)
-    if zscore is None:
-        return False
-    cutoff_ms = (time.time() - STALE_ARQ_IN_PROGRESS_GRACE_SECONDS) * 1000
-    # Check BOTH the main queue and the retry queue. A failed job is moved out of
-    # ``arq:queue`` into ``arq:retry``, so a job stuck in retry with a stale
-    # in-progress lock (dead worker) has a None ``arq:queue`` score — the old
-    # code then treated it as "live" and never cleared the ghost lock, so the job
-    # deadlocked for the full ~24h in-progress TTL (observed on a worker-crash +
-    # job-retry race). If EITHER queue's score is older than the grace, the owner
-    # is a ghost.
-    found_score = False
-    for zset in ("arq:queue", "arq:retry"):
-        try:
-            score = await zscore(zset, job_id)
-        except Exception:  # noqa: BLE001
-            logger.exception("self-heal: failed to read %s score %s", zset, job_id)
-            continue
-        if score is None:
-            continue
-        try:
-            score_ms = float(score)
-        except (TypeError, ValueError):
-            continue
-        if score_ms < cutoff_ms:
-            return True
-    # A present-but-recent score (or no score at all) is treated as live — ARQ
-    # variants differ in how they retain scores for active jobs.
-    return False
-
-
 async def _redis_get_bytes(redis: Any, key: str) -> bytes | None:
     execute_command = getattr(redis, "execute_command", None)
     if execute_command is not None:
@@ -545,8 +719,18 @@ async def _redis_get_bytes(redis: Any, key: str) -> bytes | None:
 async def _resolve_project_ids_for_slugs(session: Any, slugs: set[str]) -> set[Any]:
     if not slugs:
         return set()
+    heartbeat_cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(
+        seconds=ACTIVE_ARQ_OWNER_HEARTBEAT_GRACE_SECONDS
+    )
     result = await session.scalars(
-        select(ProjectModel.id).where(ProjectModel.slug.in_(sorted(slugs))),
+        select(WorkflowRunModel.project_id)
+        .join(ProjectModel, ProjectModel.id == WorkflowRunModel.project_id)
+        .where(
+            ProjectModel.slug.in_(sorted(slugs)),
+            WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
+            WorkflowRunModel.updated_at >= heartbeat_cutoff,
+        )
+        .distinct(),
     )
     return set(result)
 
@@ -579,7 +763,6 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             continue
         if _project_is_focus_paused(project):
             continue
-
         # Skip only when a forward-writing/planning run is active. A repair run
         # may coexist with continuation when all current blocks are local prose
         # defects; treating project_repair/scene_pipeline as globally active
@@ -593,6 +776,7 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
 
         meta = project.metadata_json or {}
         explicit_stuck_ch = meta.get("stuck_at_chapter")
+        now = _dt.datetime.now(_dt.UTC)
 
         chapters_total = (
             await session.scalar(
@@ -618,6 +802,77 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                 )
             )
         ) or 0
+
+        # A rejected architecture must never reach a prose worker.  It does,
+        # however, remain actionable for a dedicated planner owner while no
+        # prose has been committed.  The older blanket ``continue`` here
+        # accidentally disabled the self-heal path itself and left every
+        # ``needs_replan`` project permanently inert.
+        if (
+            _project_requires_auto_outline_replan(project)
+            and int(chapters_with_draft) == 0
+        ):
+            if meta.get("outline_replan_retry_exhausted"):
+                logger.info(
+                    "self-heal: skipped slug=%s — outline replan retries exhausted",
+                    project.slug,
+                )
+                continue
+            next_retry = _metadata_datetime(
+                dict(meta),
+                "outline_replan_next_retry_at",
+            )
+            if next_retry is not None and next_retry > now:
+                logger.info(
+                    "self-heal: skipped slug=%s — outline replan backoff until %s",
+                    project.slug,
+                    next_retry.isoformat(),
+                )
+                continue
+            # Also cover deploy-window legacy state where the commercial gate
+            # reason was persisted before ``outline_replan_required`` itself.
+            # Requiring the hard-block marker first routed that book straight
+            # back into the same project pipeline instead of upgrading repair.
+            fingerprint = _outline_replan_progress_fingerprint(project)
+            progress_rank = _outline_replan_progress_rank(project)
+            metadata = project.metadata_json or {}
+            abandoned_rank = _normalize_progress_rank(
+                metadata.get("self_heal_abandoned_progress_rank")
+            )
+            same_or_worse_than_abandoned = bool(
+                metadata.get("self_heal_abandoned")
+                and (
+                    (abandoned_rank is not None and progress_rank <= abandoned_rank)
+                    or (
+                        abandoned_rank is None
+                        and metadata.get("self_heal_abandoned_progress_fingerprint")
+                        == fingerprint
+                    )
+                )
+            )
+            if not same_or_worse_than_abandoned:
+                stuck.append(
+                    StuckProject(
+                        project_id=project.id,
+                        slug=project.slug,
+                        reason="outline_replan_required",
+                        stuck_at_chapter=None,
+                        chapters_total=int(chapters_total),
+                        chapters_with_draft=0,
+                        heal_kind="outline_replan",
+                        progress_fingerprint=fingerprint,
+                        progress_rank=progress_rank,
+                    )
+                )
+            continue
+
+        if project_blocks_all_prose_generation(project):
+            logger.info(
+                "self-heal: skipped slug=%s — outline replan is not safely "
+                "auto-runnable after prose was committed",
+                project.slug,
+            )
+            continue
 
         explicit_stuck_chapter: int | None = None
         if explicit_stuck_ch is not None:
@@ -1082,14 +1337,16 @@ def _compute_heal_progress_state(
     chapters_total: int,
     *,
     progress_fingerprint: str | None = None,
+    progress_rank: tuple[int, ...] | None = None,
     max_attempts: int = MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS,
 ) -> tuple[dict[str, Any], bool]:
     """Pure helper: update the no-progress attempt counter and decide escalation.
 
     Returns ``(new_metadata, abandoned)``. Progress compares the chapter count
-    and, when supplied, the actionable blocker fingerprint:
+    and, when supplied, an actionable blocker fingerprint or monotonic rank:
 
-    * progressed (count increased, or first ever) → counter resets to 0
+    * progressed (count increased, first ever, or rank strictly improved)
+      → counter resets to 0
     * no progress → counter increments
 
     When the same fingerprint reaches ``max_attempts`` the current repair is
@@ -1103,12 +1360,25 @@ def _compute_heal_progress_state(
         last_int = None
 
     previous_fingerprint = updated.get("self_heal_last_progress_fingerprint")
+    normalized_rank = _normalize_progress_rank(progress_rank)
+    previous_rank = _normalize_progress_rank(
+        updated.get("self_heal_last_progress_rank")
+    )
+    rank_improved = normalized_rank is not None and (
+        previous_rank is None or normalized_rank > previous_rank
+    )
     fingerprint_changed = (
+        normalized_rank is None
+        and
         progress_fingerprint is not None
-        and previous_fingerprint is not None
         and progress_fingerprint != previous_fingerprint
     )
-    progressed = last_int is None or chapters_total > last_int or fingerprint_changed
+    progressed = (
+        last_int is None
+        or chapters_total > last_int
+        or rank_improved
+        or fingerprint_changed
+    )
     if progressed:
         attempts = 0
     else:
@@ -1118,11 +1388,14 @@ def _compute_heal_progress_state(
     updated["self_heal_no_progress_attempts"] = attempts
     if progress_fingerprint is not None:
         updated["self_heal_last_progress_fingerprint"] = progress_fingerprint
+    if rank_improved and normalized_rank is not None:
+        updated["self_heal_last_progress_rank"] = list(normalized_rank)
 
     if progressed:
         updated.pop("self_heal_abandoned", None)
         updated.pop("self_heal_abandoned_at", None)
         updated.pop("self_heal_abandoned_progress_fingerprint", None)
+        updated.pop("self_heal_abandoned_progress_rank", None)
 
     if attempts >= max_attempts:
         now = _dt.datetime.now(_dt.UTC).isoformat()
@@ -1137,6 +1410,9 @@ def _compute_heal_progress_state(
         updated["self_heal_abandoned_progress_fingerprint"] = (
             progress_fingerprint or f"chapters_total:{int(chapters_total)}"
         )
+        best_rank = _normalize_progress_rank(updated.get("self_heal_last_progress_rank"))
+        if best_rank is not None:
+            updated["self_heal_abandoned_progress_rank"] = list(best_rank)
         return updated, True
     return updated, False
 
@@ -1170,6 +1446,18 @@ def _project_has_stale_auto_resumable_generation_gate(project: ProjectModel) -> 
     base_reason = reason.split(":", 1)[0]
     if base_reason not in _AUTO_RESUMABLE_GENERATION_GATE_REASONS:
         return False
+    # Budget is per failure mode: spinning on ONE unsatisfiable gate must stop,
+    # but making progress and hitting a different gate earns a fresh budget.
+    spent_reason = str(
+        metadata.get("generation_gate_auto_resume_reason") or ""
+    ).split(":", 1)[0]
+    if not spent_reason or spent_reason == base_reason:
+        try:
+            spent = int(metadata.get("generation_gate_auto_resume_count") or 0)
+        except (TypeError, ValueError):
+            spent = 0
+        if spent >= GENERATION_GATE_MAX_AUTO_RESUMES:
+            return False
     if not (
         metadata.get("generation_gate_auto_retry_needed")
         or metadata.get("generation_resume_blocked_by_planning_gate")
@@ -1212,6 +1500,23 @@ async def _clear_auto_resumable_generation_gate_pause(
     )
     metadata["last_generation_gate_auto_resumed_at"] = _dt.datetime.now(_dt.UTC).isoformat()
     metadata["last_generation_gate_auto_resumed_reason"] = reason
+    # Spend one unit of the retry budget. This MUST survive the key purge below
+    # (which wipes last_generation_gate_blocked_at among others) — otherwise
+    # every failure looks like the first, the budget never accrues, and the
+    # 2026-07-25 token-burning loop returns. Reset the count when the failure
+    # mode itself changes: that is progress, not a spin.
+    _base_reason = reason.split(":", 1)[0]
+    _prev_reason = str(
+        metadata.get("generation_gate_auto_resume_reason") or ""
+    ).split(":", 1)[0]
+    try:
+        _spent = int(metadata.get("generation_gate_auto_resume_count") or 0)
+    except (TypeError, ValueError):
+        _spent = 0
+    metadata["generation_gate_auto_resume_count"] = (
+        _spent + 1 if _prev_reason == _base_reason else 1
+    )
+    metadata["generation_gate_auto_resume_reason"] = _base_reason
     for key in (
         "generation_gate_auto_retry_needed",
         "generation_resume_blocked_by_planning_gate",
@@ -1269,6 +1574,12 @@ def _autowrite_heal_job_id(slug: str) -> str:
     even if the Redis lock somehow lapses.
     """
     return f"autowrite:heal:{slug}"
+
+
+def _outline_replan_heal_job_id(slug: str) -> str:
+    """Deterministic owner for planner recovery; never shared with prose jobs."""
+
+    return f"outline-replan:heal:{slug}"
 
 
 def _repair_heal_job_id(slug: str) -> str:
@@ -1486,6 +1797,66 @@ async def _requeue_autowrite(
     return job_id
 
 
+async def _requeue_outline_replan(
+    pool: "ArqRedis",
+    stuck: StuckProject,
+) -> str | None:
+    """Queue the only worker allowed to recover a rejected outline."""
+
+    for competing_job_id in (
+        _autowrite_heal_job_id(stuck.slug),
+        _repair_heal_job_id(stuck.slug),
+        _project_pipeline_heal_job_id(stuck.slug),
+    ):
+        if await _heal_job_exists(pool, competing_job_id):
+            if not await _clear_stale_heal_job_if_needed(pool, competing_job_id):
+                logger.info(
+                    "self-heal: skipped outline replan slug=%s — job %s owns project",
+                    stuck.slug,
+                    competing_job_id,
+                )
+                return None
+
+    job_id = _outline_replan_heal_job_id(stuck.slug)
+    job = await pool.enqueue_job(
+        "run_outline_replan_task",
+        workflow_run_id=job_id,
+        payload={
+            "project_slug": stuck.slug,
+            "premise": None,
+            "progress_fingerprint": stuck.progress_fingerprint,
+        },
+        _job_id=job_id,
+        _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
+    )
+    if job is not None:
+        return job_id
+    if not await _clear_stale_heal_job_if_needed(pool, job_id):
+        # ARQ deduplicates against a terminal result key even after the live
+        # job/in-progress/queue keys have disappeared. A failed outline replan
+        # intentionally returns ``outline_replan_retry_pending``; retaining
+        # that terminal result must not strand the book forever. Only clear it
+        # after proving there is no active owner.
+        if await _heal_job_exists(pool, job_id):
+            return None
+        await pool.delete(
+            f"arq:result:{job_id}",
+            f"arq:retry:{job_id}",
+        )
+    job = await pool.enqueue_job(
+        "run_outline_replan_task",
+        workflow_run_id=job_id,
+        payload={
+            "project_slug": stuck.slug,
+            "premise": None,
+            "progress_fingerprint": stuck.progress_fingerprint,
+        },
+        _job_id=job_id,
+        _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
+    )
+    return job_id if job is not None else None
+
+
 async def _requeue_repair(
     pool: "ArqRedis",
     stuck: StuckProject,
@@ -1596,6 +1967,8 @@ async def _requeue_stuck_project(
     pool: "ArqRedis",
     stuck: StuckProject,
 ) -> str | None:
+    if stuck.heal_kind == "outline_replan":
+        return await _requeue_outline_replan(pool, stuck)
     if stuck.heal_kind == "repair":
         return await _requeue_repair(pool, stuck)
     if stuck.heal_kind == "project_pipeline":
@@ -1610,7 +1983,12 @@ def _coalesce_stuck_projects_for_enqueue(
 
     chosen: dict[str, StuckProject] = {}
     order: list[str] = []
-    priority = {"autowrite": 3, "project_pipeline": 2, "repair": 1}
+    priority = {
+        "outline_replan": 4,
+        "autowrite": 3,
+        "project_pipeline": 2,
+        "repair": 1,
+    }
     for stuck in stuck_list:
         if stuck.slug not in chosen:
             chosen[stuck.slug] = stuck
@@ -1692,6 +2070,23 @@ async def _try_acquire_heal_lock(
     return bool(acquired)
 
 
+async def _release_heal_lock(redis: Any | None, worker_id: str) -> None:
+    """Release the singleton lock only when ``worker_id`` still owns it."""
+
+    if redis is None:
+        return
+    script = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+    end
+    return 0
+    """
+    try:
+        await redis.eval(script, 1, SELF_HEAL_LOCK_KEY, worker_id)
+    except Exception:  # noqa: BLE001 — expiry remains the safe fallback
+        logger.exception("self-heal: failed to release boot lock")
+
+
 async def heal_stuck_projects(
     settings: AppSettings,
     startup_cutoff: _dt.datetime | None = None,
@@ -1725,6 +2120,24 @@ async def heal_stuck_projects(
         except Exception:  # noqa: BLE001
             logger.exception("self-heal: failed to read existing scan-done marker")
 
+    # All replicas in one Compose boot start within the same five-second
+    # cohort.  The Redis lock serialises overlapping scans, but without this
+    # completed-marker check a slightly slower replica can acquire the lock
+    # immediately after the first releases it and count the same project as a
+    # second no-progress attempt.  Only startup scans use this shortcut;
+    # periodic scans (startup_cutoff=None) must still run normally.
+    if (
+        startup_cutoff is not None
+        and _scan_done_marker_at_or_after(
+            previous_scan_done_marker,
+            startup_cutoff,
+        )
+    ):
+        logger.info(
+            "self-heal: startup cohort already scanned by another worker — skipping scan",
+        )
+        return dispatched
+
     if not await _try_acquire_heal_lock(redis, effective_worker_id):
         logger.info(
             "self-heal: another worker holds the boot lock — skipping scan",
@@ -1732,14 +2145,33 @@ async def heal_stuck_projects(
         if await _wait_for_scan_done(redis, previous_marker=previous_scan_done_marker):
             return dispatched
         logger.warning(
-            "self-heal: boot lock holder did not publish scan-done marker; retrying lock",
+            "self-heal: boot lock holder did not publish scan-done marker; "
+            "skipping this scan",
         )
-        if not await _try_acquire_heal_lock(redis, effective_worker_id):
-            logger.warning("self-heal: boot lock still held after scan wait — skipping scan")
-            return dispatched
+        return dispatched
 
     pool: "ArqRedis | None" = None
     try:
+        # A replica can read an empty marker, wait for the first scanner to
+        # finish, then acquire the just-released lock. Re-check *after* lock
+        # acquisition before deleting the marker; otherwise that slower replica
+        # performs a second startup scan and increments no-progress counters for
+        # the same recovery cohort (observed live with three worker replicas).
+        if redis is not None and startup_cutoff is not None:
+            try:
+                current_marker = await redis.get(SELF_HEAL_SCAN_DONE_KEY)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "self-heal: failed to re-read scan-done marker after lock acquisition"
+                )
+            else:
+                if _scan_done_marker_at_or_after(current_marker, startup_cutoff):
+                    logger.info(
+                        "self-heal: startup cohort completed while waiting for lock "
+                        "— skipping duplicate scan",
+                    )
+                    return dispatched
+
         if redis is not None:
             try:
                 await redis.delete(SELF_HEAL_SCAN_DONE_KEY)
@@ -1787,7 +2219,28 @@ async def heal_stuck_projects(
                 continue
             try:
                 async with get_server_session() as session:
-                    if stuck.heal_kind in {"autowrite", "project_pipeline"}:
+                    project = await session.get(ProjectModel, stuck.project_id)
+                    if project is None:
+                        logger.info(
+                            "self-heal: skipped slug=%s — project disappeared before enqueue",
+                            stuck.slug,
+                        )
+                        continue
+                    if (
+                        project_blocks_all_prose_generation(project)
+                        and stuck.heal_kind != "outline_replan"
+                    ):
+                        logger.info(
+                            "self-heal: skipped slug=%s — outline replan became "
+                            "required before enqueue",
+                            stuck.slug,
+                        )
+                        continue
+                    if stuck.heal_kind in {
+                        "autowrite",
+                        "project_pipeline",
+                        "outline_replan",
+                    }:
                         active_workflow = await _has_active_continuation_pipeline_run(
                             session, stuck.project_id
                         )
@@ -1801,9 +2254,12 @@ async def heal_stuck_projects(
                             stuck.slug,
                         )
                         continue
-                    if await _clear_auto_resumable_generation_gate_pause(
-                        session,
-                        stuck.project_id,
+                    if (
+                        stuck.heal_kind != "outline_replan"
+                        and await _clear_auto_resumable_generation_gate_pause(
+                            session,
+                            stuck.project_id,
+                        )
                     ):
                         await session.commit()
             except Exception:  # noqa: BLE001
@@ -1833,6 +2289,7 @@ async def heal_stuck_projects(
                                     ]
                                 )
                             ),
+                            progress_rank=stuck.progress_rank,
                         )
                         project.metadata_json = new_meta
                         await session.commit()
@@ -1909,8 +2366,35 @@ async def heal_stuck_projects(
                 )
             except Exception:  # noqa: BLE001 — marker is advisory
                 logger.exception("self-heal: failed to publish scan-done marker")
+            finally:
+                await _release_heal_lock(redis, effective_worker_id)
 
     return dispatched
+
+
+def _scan_done_marker_at_or_after(
+    marker: Any | None,
+    cutoff: _dt.datetime,
+) -> bool:
+    """Return whether a scan marker belongs to the current startup cohort."""
+
+    if isinstance(marker, bytes):
+        try:
+            marker = marker.decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+    if not isinstance(marker, str):
+        return False
+    try:
+        timestamp = int(marker.rsplit(":", 1)[1])
+    except (IndexError, TypeError, ValueError):
+        return False
+    normalized_cutoff = cutoff
+    if normalized_cutoff.tzinfo is None:
+        normalized_cutoff = normalized_cutoff.replace(tzinfo=_dt.UTC)
+    return timestamp >= int(
+        normalized_cutoff.timestamp() - SELF_HEAL_STARTUP_COHORT_SKEW_SECONDS
+    )
 
 
 async def _wait_for_scan_done(

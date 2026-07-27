@@ -934,18 +934,34 @@ def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
     ):
         return ""
     language = str(ctx.get("language") or "zh-CN")
-    if language.lower().startswith("en"):
+    is_en = language.lower().startswith("en")
+    # cost_style must arrive as a TRANSLATED directive, not a bare enum token:
+    # the model cannot act on ``"cost_style": "minimal"`` alone, and the layer
+    # that used to translate it (ideology_kernel) only runs at planning — too
+    # late for a book that dies at the conception gates. 2026-07-24: a 纯爽
+    # (minimal) book had a 随机系统收税 invented at finalize and was then
+    # hard-killed by the logline gate for exactly that cost.
+    from bestseller.services.ideology_kernel import (  # noqa: PLC0415
+        cost_style_directive,
+    )
+
+    _cost_directive = cost_style_directive(
+        str(selected["cost_style"] or "standard"), is_en=is_en
+    )
+    if is_en:
         return (
             "\n\n[EXPLICIT CREATION INTENT — scoped, not a genre override]\n"
             + json.dumps(selected, ensure_ascii=False)
             + "\nUse only these user-selected constraints. Do not invent extra skills,"
             " modern settings, professions, or cross-genre mechanisms."
+            + _cost_directive
         )
     return (
         "\n\n【建书页明确选择——仅作局部约束，不得改写题材】\n"
         + json.dumps(selected, ensure_ascii=False)
         + "\n只能兑现用户实际勾选的脑洞、调性和 Skill；未勾选的能力不得自行启用，"
         "不得把可选增强器变成新的题材、职业、现代设定或跨题材机制。"
+        + _cost_directive
     )
 
 
@@ -3423,6 +3439,360 @@ async def _polish_story_spine(
     return spine or {}, ids
 
 
+async def _reconcile_concept_seed_with_final_premise(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    winner: object,
+    premise: str,
+    synopsis: str,
+    writing_profile: Mapping[str, Any],
+    authoritative_name: str,
+    ctx: dict[str, Any],
+) -> tuple[dict[str, Any], list[UUID]]:
+    """Rebuild a tournament seed when later audits materially changed the book.
+
+    Causality and market audits are allowed to improve the final premise.  They
+    are not allowed to leave HookCard/SerialityProof pointing at a different
+    protagonist or mechanism.  A focused LLM call realigns the complete seed;
+    the deterministic concept-contract builder still owns hashes and capacity
+    validation afterwards.
+    """
+
+    if isinstance(winner, Mapping):
+        original = dict(winner)
+    else:
+        to_dict = getattr(winner, "to_dict", None)
+        original_payload = to_dict() if callable(to_dict) else {}
+        original = dict(original_payload) if isinstance(original_payload, Mapping) else {}
+    schema = {
+        "concept": "一句话读者承诺",
+        "mechanism": "可持续产生剧情的核心机制",
+        "hook_question": "读者追问",
+        "protagonist_identity": f"必须明确包含姓名 {authoritative_name}",
+        "protagonist_private_desire": "具体、可验收的私人目标",
+        "protagonist_flaw": "会制造选择代价的缺陷",
+        "core_abnormality": "题材内成立的异常/能力",
+        "opening_crisis": "开篇立刻发生的危机",
+        "opponent_system": "持续反制主角的对手系统",
+        "decision_proof": "为何必须行动且不能安全退出",
+        "emotional_promise": "读者持续获得的情绪体验",
+        "repeatable_story_unit": "每若干章可换内容重复一次的故事单元",
+        "unit_families": ["至少三类不同单元"],
+        "unit_frequency": "例如每2-4章一次",
+        "unit_count_estimate": 5,
+        "renewal_sources": ["至少两个新冲突来源"],
+        "accumulation_tracks": ["至少两个不可逆累积轨道"],
+        "phase_transitions": ["按目标篇幅给出阶段变化"],
+        "opposing_ecology": ["至少两个会主动反应的对手/阵营"],
+        "question_ladder": ["至少三个逐层升级的问题"],
+        "endgame_direction": "终局方向",
+    }
+    premise_surface = f"{premise}\n{synopsis}"
+    infant_body_contract = ""
+    if any(marker in premise_surface for marker in ("婴儿", "襁褓", "新生儿", "三个月")):
+        infant_body_contract = (
+            "\n本书含成年意识进入婴儿身体：前世记忆、判断和内心策略属于合法知识来源，"
+            "但感知距离、发声、抓握、翻身、注视控制和精细动作必须服从真实婴儿身体。"
+            "不得把精确假哭节拍、注视时长/方向、抓握力度或呼吸深浅写成可稳定操控成人、"
+            "决定军政表态、暴露/处死旧臣的遥控器。重大转折必须由有独立动机的成人角色"
+            "或外部事件触发；婴儿只能观察、记忆、被动伪装、做粗粒度且可能失败的反应，"
+            "最多改变结果的边际程度。前三章的正向兑现也必须由外部因果链完成，不能靠婴儿"
+            "突然具备精细运动或语言能力。删除为微动作强行发明的术语体系。"
+            "即使加上‘粗粒度/不能精准遥控’免责声明，也不得继续把婴啼、注视、抓握、"
+            "呼吸组成暗号、竞价或可升级的机制；mechanism、repeatable_story_unit、"
+            "core_abnormality 必须改由成人阵营的自主行动和外部事件发动。推荐循环："
+            "成人阵营因各自利益行动→被抱在场的婴儿被动获得信息碎片→婴儿只做不暴露"
+            "成年意识的保命伪装→成人因自身目标作出后续决定。任何旧臣的调离、暴露或"
+            "死亡都必须有成人调查/军政利益的独立因果，不能由婴儿对望、哭声或抓握触发。"
+        )
+
+    fixed, ids = await _llm_call_json(
+        session,
+        settings,
+        role="planner",
+        system_prompt=(
+            "你是长篇小说构思契约主编。最终 premise 是唯一事实源。"
+            "发现旧候选与最终 premise 冲突时，要重建一份完整、单一故事的冠军种子，"
+            "不能混用旧主角、旧能力、旧道具或旧世界规则。只输出 JSON。"
+        ),
+        user_prompt=(
+            f"题材：{ctx.get('genre')}（{ctx.get('sub_genre')}）\n"
+            f"目标章节：{ctx.get('chapter_count') or ctx.get('target_chapters')}\n"
+            f"最终 premise：{premise}\n"
+            f"最终 synopsis：{synopsis}\n"
+            "最终 writing_profile："
+            f"{json.dumps(dict(writing_profile), ensure_ascii=False)[:12000]}\n"
+            "旧冠军种子（仅用于识别并删除漂移，不是事实源）："
+            f"{json.dumps(original, ensure_ascii=False)[:12000]}\n\n"
+            f"严格按此 schema 返回全部字段：{json.dumps(schema, ensure_ascii=False)}\n"
+            f"protagonist_identity 必须包含姓名“{authoritative_name}”；"
+            "所有机制、道具、阵营和问题梯度必须能从最终 premise/synopsis 推导。"
+            f"{infant_body_contract}"
+        ),
+        fallback=json.dumps(original, ensure_ascii=False),
+        template="conception_concept_seed_final_premise_reconciliation",
+        stage="conception.concept_seed_final_premise_reconciliation",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    if not isinstance(fixed, Mapping) or any(key not in fixed for key in schema):
+        return original, ids
+    merged = {**original, **fixed}
+    return merged, ids
+
+
+async def _judge_explicit_concept_seed_fidelity(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    concept_seed: str,
+    final_result: Mapping[str, Any],
+    ctx: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[UUID]]:
+    """Use an LLM adjudicator to prove that a user seed survived conception.
+
+    Prompt presence alone is not evidence that an input took effect.  This gate
+    compares the user's explicit facts with the materialized premise, synopsis,
+    profile, and story spine.  Genre-fitting elaboration is allowed; replacing
+    the protagonist, core mechanism, deadline, objective, or stated cost is not.
+    """
+
+    fallback = {
+        "passed": True,
+        "evaluator_error": "judge_unavailable_fail_open",
+        "hard_conflicts": [],
+        "preserved_facts": [],
+        "repair_directives": [],
+    }
+    payload, ids = await _llm_call_json(
+        session,
+        settings,
+        role="critic",
+        system_prompt=(
+            "你是小说创建意图保真判官。只判断用户明确写出的事实是否在终稿构思中保留。"
+            "允许补充人物、世界与商业包装，但不得替换主角身份/姓名、核心能力或机制、"
+            "明确时限、具体目标、数额、代价和结局承诺。不要用题材相似替代事实一致。"
+            "只输出 JSON。"
+        ),
+        user_prompt=(
+            f"用户明确故事创意（唯一上位事实源）：\n{concept_seed}\n\n"
+            "构思终稿：\n"
+            f"{json.dumps(dict(final_result), ensure_ascii=False)[:30000]}\n\n"
+            f"题材上下文：{json.dumps(dict(ctx), ensure_ascii=False)[:5000]}\n\n"
+            "返回 schema：{\"passed\": true, \"hard_conflicts\": "
+            "[{\"classification\":\"hard_conflict\",\"fact\":\"用户事实\","
+            "\"generated\":\"终稿冲突事实\",\"reason\":\"为何属于替换而非扩写\"}], "
+            "\"compatible_extensions\":[{\"classification\":\"compatible_extension\","
+            "\"fact\":\"新增细节\",\"reason\":\"为何不替换上位事实\"}], "
+            "\"preserved_facts\":[], \"repair_directives\":[]}。"
+            "hard_conflicts 只能放真正替换/删除/反转用户事实的项目；凡结论含"
+            "‘合理扩写’‘不构成替换’‘并未替换’的项目必须放 compatible_extensions。"
+            "只要有一项硬冲突，passed 必须为 false；没有硬冲突必须为 true。"
+        ),
+        fallback=json.dumps(fallback, ensure_ascii=False),
+        template="conception_explicit_seed_fidelity_judge",
+        stage="conception.explicit_seed_fidelity_judge",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    report = dict(payload) if isinstance(payload, Mapping) else dict(fallback)
+    report["passed"] = bool(report.get("passed"))
+    hard_conflicts: list[dict[str, Any]] = []
+    compatible_extensions = [
+        dict(item)
+        for item in report.get("compatible_extensions", [])
+        if isinstance(item, Mapping)
+    ]
+    for raw_item in report.get("hard_conflicts", []):
+        if not isinstance(raw_item, Mapping):
+            continue
+        item = dict(raw_item)
+        classification = str(item.get("classification") or "").strip().lower()
+        if classification in {"preserved", "compatible_extension", "extension"}:
+            compatible_extensions.append(item)
+            continue
+        # Older/less disciplined judges occasionally put an explanation that
+        # explicitly says "not a replacement" into hard_conflicts.  Treat that
+        # as an internally labelled compatible extension, not as a semantic
+        # verdict from a regex.  The LLM still owns every substantive finding.
+        conclusion = str(item.get("reason") or "")
+        if any(
+            marker in conclusion
+            for marker in ("不构成替换", "并未替换", "合理扩写", "符合扩写")
+        ):
+            item["classification"] = "compatible_extension"
+            compatible_extensions.append(item)
+            continue
+        item["classification"] = "hard_conflict"
+        hard_conflicts.append(item)
+    report["hard_conflicts"] = hard_conflicts
+    report["compatible_extensions"] = compatible_extensions
+    report["repair_directives"] = [
+        str(item).strip() for item in report.get("repair_directives", []) if str(item).strip()
+    ][:8]
+
+    # Hybrid guard: the LLM owns semantic adjudication, while an explicit
+    # protagonist name is also a cheap invariant.  This prevents a permissive
+    # judge response from approving a visibly different book.
+    try:
+        from bestseller.services.book_design import extract_creation_protagonist_name
+
+        seed_name = extract_creation_protagonist_name({"premise": concept_seed})
+    except Exception:
+        seed_name = ""
+    generated_surface = json.dumps(dict(final_result), ensure_ascii=False)
+    if seed_name and seed_name not in generated_surface:
+        report["passed"] = False
+        report["hard_conflicts"].append(
+            {
+                "source": "deterministic_invariant",
+                "fact": f"主角姓名：{seed_name}",
+                "generated": "构思终稿未保留该姓名",
+                "reason": "用户显式主角身份被替换",
+            }
+        )
+        report["repair_directives"].insert(
+            0, f"全量恢复主角姓名与身份“{seed_name}”，删除替代主角。"
+        )
+    elif not report["hard_conflicts"]:
+        report["passed"] = True
+    return report, ids
+
+
+async def _arbitrate_explicit_seed_fidelity_report(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    concept_seed: str,
+    final_result: Mapping[str, Any],
+    challenged_report: Mapping[str, Any],
+    ctx: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[UUID]]:
+    """Second-model semantic appeal for a disputed fidelity rejection.
+
+    The first judge sometimes calls a generated constraint a "replacement"
+    solely because the user did not specify that degree of freedom.  That is a
+    logical category error, not something a growing regex vocabulary can solve.
+    This independent appeal asks whether both statements can be true at once.
+    Deterministic invariants (for example a missing explicit protagonist name)
+    are intentionally outside the appeal surface.
+    """
+
+    fallback = dict(challenged_report)
+    payload, ids = await _llm_call_json(
+        session,
+        settings,
+        role="critic",
+        system_prompt=(
+            "你是小说创建意图保真复核仲裁官。复核初审提出的硬冲突是否真的构成逻辑矛盾。"
+            "判定标准只有一个：终稿事实与用户明确原文能否同时为真。用户没有说明、没有限定、"
+            "没有禁止的细节，只要不改变其明确事实、目标、时限与代价，就属于兼容扩写；"
+            "不得因为新增了更具体的执行顺序、场景条件或边界而判成替换。只有不同主角、改变"
+            "明确时长/数额、删除或反转目标、用另一套能力或代价取代原设定，才是硬冲突。"
+            "只输出 JSON。"
+        ),
+        user_prompt=(
+            f"用户明确故事创意（唯一上位事实源）：\n{concept_seed}\n\n"
+            "待复核构思终稿：\n"
+            f"{json.dumps(dict(final_result), ensure_ascii=False)[:30000]}\n\n"
+            "初审报告（允许推翻）：\n"
+            f"{json.dumps(dict(challenged_report), ensure_ascii=False)[:12000]}\n\n"
+            f"题材上下文：{json.dumps(dict(ctx), ensure_ascii=False)[:4000]}\n\n"
+            "返回 schema：{\"passed\":true,\"hard_conflicts\":[],"
+            "\"compatible_extensions\":[],\"preserved_facts\":[],"
+            "\"repair_directives\":[],\"arbitration_reason\":\"...\"}。"
+            "若初审理由依赖‘用户未限定/未禁止/未规定’，且两者能同时为真，必须改判为"
+            "compatible_extension。passed 必须与 hard_conflicts 是否为空严格一致。"
+        ),
+        fallback=json.dumps(fallback, ensure_ascii=False),
+        template="conception_explicit_seed_fidelity_arbitration",
+        stage="conception.explicit_seed_fidelity_arbitration",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    report = dict(payload) if isinstance(payload, Mapping) else fallback
+    report["hard_conflicts"] = [
+        dict(item)
+        for item in report.get("hard_conflicts", [])
+        if isinstance(item, Mapping)
+    ]
+    report["compatible_extensions"] = [
+        dict(item)
+        for item in report.get("compatible_extensions", [])
+        if isinstance(item, Mapping)
+    ]
+    report["repair_directives"] = [
+        str(item).strip()
+        for item in report.get("repair_directives", [])
+        if str(item).strip()
+    ][:8]
+    report["passed"] = not bool(report["hard_conflicts"])
+    return report, ids
+
+
+async def _repair_final_result_to_explicit_seed(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    concept_seed: str,
+    final_result: Mapping[str, Any],
+    report: Mapping[str, Any],
+    ctx: Mapping[str, Any],
+    attempt: int = 1,
+    max_attempts: int = 3,
+) -> tuple[dict[str, Any], list[UUID]]:
+    """Regenerate the complete final conception around the authoritative seed."""
+
+    conservative_lock = ""
+    if attempt >= max_attempts:
+        conservative_lock = (
+            "\n这是最后一次保守锁定修复：premise 必须直接包含用户原文；"
+            "删除用户未明确提供的能力升级、能力分支、作用范围、延长时限、永久留存、"
+            "积分/等级/分段扣除/额外代价体系。宁可让设定更朴素，也不能再发明机制。"
+            "synopsis 与 story_spine 只能扩写人物行动和场景阻力，不得扩写能力、时限、"
+            "目标、数额或代价。"
+        )
+
+    repaired, ids = await _llm_call_json(
+        session,
+        settings,
+        role="editor",
+        system_prompt=(
+            "你是小说创建意图修复主编。用户明确故事创意是不可替换的上位事实。"
+            "请重建同一本书的完整构思终稿，保留原 JSON 结构；不得只改名字，"
+            "主角身份、核心机制、时限、目标、数额、代价与因果必须整体一致。"
+            "用户没有写出的能力升级、积分制、分段触发、额外能力形态和额外现实代价，"
+            "都必须删除，不能以商业化包装为由保留。只输出 JSON。"
+        ),
+        user_prompt=(
+            f"修复轮次：{attempt}/{max_attempts}\n"
+            f"用户明确故事创意：\n{concept_seed}\n\n"
+            "当前错误终稿：\n"
+            f"{json.dumps(dict(final_result), ensure_ascii=False)[:30000]}\n\n"
+            "保真判官报告：\n"
+            f"{json.dumps(dict(report), ensure_ascii=False)[:12000]}\n\n"
+            f"题材上下文：{json.dumps(dict(ctx), ensure_ascii=False)[:5000]}\n"
+            "输出完整终稿 JSON，至少保留 title、premise、synopsis、tags、"
+            "writing_profile、story_spine 字段。"
+            f"{conservative_lock}"
+        ),
+        fallback=json.dumps(dict(final_result), ensure_ascii=False),
+        template="conception_explicit_seed_fidelity_repair",
+        stage="conception.explicit_seed_fidelity_repair",
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    return (dict(repaired) if isinstance(repaired, Mapping) else dict(final_result)), ids
+
+
+# 同源补强指令写着「保留其故事身份，只修被判不达标的轴」，所以它只能修执行层。
+# 这两轴度量的是**点子本身**：新颖度问「这个故事是不是已经被写烂了」，可预测性
+# 问「读者是不是已经猜到走向」。保留故事身份 = 保留问题，指令自相矛盾。
+#
+# 真机取证（2026-07-26「东方玄幻」空题材建书）：两轮共 6 个候选**全是同一个故事**
+# （杂役掏沟挖出戴木镯的腕骨＝失踪师姐遗骸），6/6 挂新颖度。根因就在下面的排序：
+# 「挂的轴越少越优先」使「只挂新颖度」的候选成为**最优先**种子，而那正是改良
+# 修不好的那一个——第 2 轮于是结构性必败。
+_REFINEMENT_RESISTANT_AXES: frozenset[str] = frozenset({"新颖度", "可预测性"})
+
+
 def _best_dry_tournament_seed(candidates: list[Any]) -> str:
     """Pick the best near-miss from a dry tournament to seed the retry attempt.
 
@@ -3434,6 +3804,12 @@ def _best_dry_tournament_seed(candidates: list[Any]) -> str:
     this selector feeds it. Only floor-rejected candidates qualify — a
     deterministic KO (俗套/种子审计) is dead by policy, and a candidate that
     failed 4+ axes is not a near-miss worth refining.
+
+    A candidate is also disqualified when any failed axis is refinement
+    resistant: 同源补强 cannot repair the premise it is told to preserve.
+    Returning "" there is not a loss — the caller simply omits the
+    identity-preserving directive, so the retry re-rolls freely while
+    ``retry_feedback`` still shows it what failed and why.
     """
 
     _FLOOR_PREFIX = "钩子硬门失败"
@@ -3444,6 +3820,8 @@ def _best_dry_tournament_seed(candidates: list[Any]) -> str:
             continue
         failed_axes = [a for a in rejected.split(":", 1)[-1].split("/") if a.strip()]
         if len(failed_axes) > 3:
+            continue
+        if any(axis.strip() in _REFINEMENT_RESISTANT_AXES for axis in failed_axes):
             continue
         concept = str(getattr(candidate, "concept", "") or "").strip()
         if not concept:
@@ -4073,6 +4451,17 @@ async def run_conception_pipeline(
                     audience_orientation=str(
                         (ctx.get("user_hints") or {}).get("audience_orientation") or ""
                     ),
+                    # 纯爽/外置代价档同样必须进淘汰赛 prompt——规划期的 ideology
+                    # 翻译对死在构思门禁的书永远来不及(2026-07-24 实录)。
+                    cost_style=str(
+                        (
+                            (ctx.get("genre_intent_contract") or {}).get(
+                                "explicit_enhancers"
+                            )
+                            or {}
+                        ).get("cost_style")
+                        or "standard"
+                    ),
                     seed_concept=(
                         explicit_concept_seed
                         or (
@@ -4230,14 +4619,43 @@ async def run_conception_pipeline(
                 )
             else:
                 logger.info("Concept tournament produced no winner after all attempts")
-                if chapter_count >= 200:
+                # A dry tournament only used to hard-stop long books (>=200
+                # chapters); short quickstarts coasted on with "no injection".
+                # 2026-07-24 (custom-xuanhuan-1784899694) showed where that
+                # coast ends: a bare auto-premise has nothing else to stand on,
+                # finalize invents genre-default 系统爽文 clichés for ~10
+                # minutes, and the logline gate then rejects at 3.0 USING THE
+                # TOURNAMENT'S OWN judged evidence — a guaranteed death with
+                # the cause misattributed to the logline gate. So: no winner +
+                # no substantive user story seed → stop now, for every length,
+                # and say why in the tournament's own words. Creations that DID
+                # supply real material (explicit seed / concept-lab bundle /
+                # hook spec) keep the old behavior — their material can still
+                # carry finalize past the gate on its own.
+                _has_user_story_seed = bool(
+                    explicit_concept_seed
+                    or concept_bundle is not None
+                    or str(getattr(selected_hook_spec, "one_liner", "") or "").strip()
+                )
+                if chapter_count >= 200 or not _has_user_story_seed:
                     from bestseller.services.concept_contract import (  # noqa: PLC0415
                         ConceptContractError,
                     )
+                    from bestseller.services.concept_tournament import (  # noqa: PLC0415
+                        dry_tournament_rejection_summary,
+                    )
 
+                    _dry_reasons = dry_tournament_rejection_summary(
+                        list(getattr(_ct_result, "candidates", []) or [])
+                    )
                     raise ConceptContractError([
-                        f"目标为 {int(chapter_count)} 章，但多轮候选均未通过一句话钩子、"
-                        "人物因果与长篇承载门；已在市场/角色/世界观生成前终止"
+                        f"概念淘汰赛 {max_concept_attempts} 轮均未产出合格冠军，"
+                        "且本次创建没有可独立支撑故事的用户创意种子；"
+                        "已在市场/角色/世界观生成前终止（避免空概念走完全流程后"
+                        "被一句话硬门必然拒绝）。",
+                        *_dry_reasons,
+                        "整改方向：给一句具体的故事创意（主角是谁/撞上什么反常事件/"
+                        "第一个不可逆选择），或换一个题材切入角度后重试。",
                     ])
         except Exception as exc:
             from bestseller.services.concept_contract import (  # noqa: PLC0415
@@ -4502,6 +4920,16 @@ async def run_conception_pipeline(
         # synopsis/hook (as in「龙椅上坐着我亡夫」: 认账/讨账 + 借尸还魂) is caught.
         _debt_ok = _user_requested_debt(ctx)
         _death_ok = _user_requested_death_revival(ctx)
+        # The ontology equivalent of the two flags above: the text the user
+        # explicitly supplied. Terms they typed themselves are never "drift".
+        _ontology_user_seed = (
+            explicit_concept_seed
+            or (
+                str(concept_bundle.one_liner or concept_bundle.reader_promise)
+                if concept_bundle is not None
+                else str(getattr(selected_hook_spec, "one_liner", "") or "")
+            )
+        )
 
         def _concept_scan_blob(result: Any) -> str:
             if not isinstance(result, dict):
@@ -4540,9 +4968,17 @@ async def run_conception_pipeline(
                     detect_genre_native_ontology_violations,
                 )
 
-                return detect_genre_native_ontology_violations(
+                hits = detect_genre_native_ontology_violations(
                     _concept_scan_blob(result), genre_intent_contract
                 )
+                # Same user-intent exemption its two siblings above already
+                # apply (``_debt_ok`` / ``_death_ok``) and the tournament-winner
+                # gate applies: a word the user typed into their own seed is a
+                # choice, not drift. Without it this burns a regeneration round
+                # trying to "correct" the user's own premise.
+                if hits and _ontology_user_seed:
+                    hits = tuple(t for t in hits if t not in _ontology_user_seed)
+                return hits
             except Exception:
                 return ()
 
@@ -4610,6 +5046,127 @@ async def run_conception_pipeline(
             )
     except Exception:
         logger.warning("mechanism echo/debt retry failed; keeping original finalize", exc_info=True)
+
+    # A frontend field is not "effective" merely because it appears in a
+    # prompt.  When the user supplied a concrete story seed, prove that the
+    # materialized conception still describes that same book.  Repair is a
+    # bounded judge→editor→judge loop: early rounds may preserve compatible
+    # elaboration, while the final round deliberately becomes conservative and
+    # removes invented power/cost systems.  Only an unclosed third round blocks
+    # project creation, so a model's first imperfect edit cannot strand a book.
+    if explicit_concept_seed and isinstance(final_result, Mapping):
+        seed_fidelity, seed_judge_ids = await _judge_explicit_concept_seed_fidelity(
+            session,
+            settings,
+            concept_seed=explicit_concept_seed,
+            final_result=final_result,
+            ctx=ctx,
+        )
+        llm_run_ids.extend(seed_judge_ids)
+        conception_log.append(
+            {
+                "round": 3,
+                "agent": "explicit_seed_fidelity_judge",
+                "report": seed_fidelity,
+            }
+        )
+        if not seed_fidelity.get("passed") and not any(
+            item.get("source") == "deterministic_invariant"
+            for item in seed_fidelity.get("hard_conflicts", [])
+            if isinstance(item, Mapping)
+        ):
+            seed_fidelity, arbitration_ids = (
+                await _arbitrate_explicit_seed_fidelity_report(
+                    session,
+                    settings,
+                    concept_seed=explicit_concept_seed,
+                    final_result=final_result,
+                    challenged_report=seed_fidelity,
+                    ctx=ctx,
+                )
+            )
+            llm_run_ids.extend(arbitration_ids)
+            conception_log.append(
+                {
+                    "round": 3,
+                    "agent": "explicit_seed_fidelity_arbitrator",
+                    "attempt": 0,
+                    "report": seed_fidelity,
+                }
+            )
+        max_seed_repair_attempts = 3
+        repair_attempt = 0
+        while not seed_fidelity.get("passed") and repair_attempt < max_seed_repair_attempts:
+            repair_attempt += 1
+            _emit(
+                "conception_seed_fidelity_repair",
+                {
+                    "attempt": repair_attempt,
+                    "max_attempts": max_seed_repair_attempts,
+                    "hard_conflict_count": len(seed_fidelity.get("hard_conflicts") or []),
+                },
+            )
+            final_result, seed_repair_ids = await _repair_final_result_to_explicit_seed(
+                session,
+                settings,
+                concept_seed=explicit_concept_seed,
+                final_result=final_result,
+                report=seed_fidelity,
+                ctx=ctx,
+                attempt=repair_attempt,
+                max_attempts=max_seed_repair_attempts,
+            )
+            llm_run_ids.extend(seed_repair_ids)
+            seed_fidelity, repaired_judge_ids = (
+                await _judge_explicit_concept_seed_fidelity(
+                    session,
+                    settings,
+                    concept_seed=explicit_concept_seed,
+                    final_result=final_result,
+                    ctx=ctx,
+                )
+            )
+            llm_run_ids.extend(repaired_judge_ids)
+            if not seed_fidelity.get("passed") and not any(
+                item.get("source") == "deterministic_invariant"
+                for item in seed_fidelity.get("hard_conflicts", [])
+                if isinstance(item, Mapping)
+            ):
+                seed_fidelity, arbitration_ids = (
+                    await _arbitrate_explicit_seed_fidelity_report(
+                        session,
+                        settings,
+                        concept_seed=explicit_concept_seed,
+                        final_result=final_result,
+                        challenged_report=seed_fidelity,
+                        ctx=ctx,
+                    )
+                )
+                llm_run_ids.extend(arbitration_ids)
+            conception_log.append(
+                {
+                    "round": 3,
+                    "agent": "explicit_seed_fidelity_repair",
+                    "attempt": repair_attempt,
+                    "repaired_report": seed_fidelity,
+                }
+            )
+        if not seed_fidelity.get("passed"):
+            from bestseller.services.concept_contract import ConceptContractError
+
+            conflicts = seed_fidelity.get("hard_conflicts") or []
+            conflict_lines = [
+                str(item.get("reason") or item.get("fact") or "创建意图未保留")
+                for item in conflicts
+                if isinstance(item, Mapping)
+            ]
+            raise ConceptContractError(
+                [
+                    "用户明确故事创意与构思终稿不一致，三轮自动重生后仍未闭合；"
+                    "已阻止错误书籍进入大纲。",
+                    *(conflict_lines[:6] or ["核心人物、机制或目标发生替换。"]),
+                ]
+            )
 
     # Extract final outputs with fallbacks
     writing_profile = final_result.get("writing_profile", {})
@@ -4805,8 +5362,97 @@ async def run_conception_pipeline(
             validate_concept_contract,
         )
 
+        contract_winner: object = _ct_result.winner
+        from bestseller.services.book_design import (  # noqa: PLC0415
+            extract_creation_protagonist_name,
+        )
+
+        authoritative_name = extract_creation_protagonist_name({"premise": premise})
+        winner_payload = (
+            dict(contract_winner)
+            if isinstance(contract_winner, Mapping)
+            else dict(contract_winner.to_dict())
+            if callable(getattr(contract_winner, "to_dict", None))
+            else {}
+        )
+        winner_identity = str(winner_payload.get("protagonist_identity") or "")
+        spine_identity = str(story_spine.get("who") or "")
+        contract_surface = json.dumps(
+            {"winner": winner_payload, "story_spine": story_spine},
+            ensure_ascii=False,
+        )
+        infant_body_story = any(
+            marker in f"{premise}\n{synopsis}"
+            for marker in ("婴儿", "襁褓", "新生儿", "三个月")
+        )
+        infant_precision_candidate = infant_body_story and any(
+            marker in contract_surface
+            for marker in (
+                "精确假哭",
+                "啼哭节奏",
+                "注视时长",
+                "注视方向",
+                "抓握力度",
+                "呼吸深浅",
+                "操控萧崇",
+                "三连暗号",
+                "竞价解读",
+            )
+        )
+        if authoritative_name and (
+            authoritative_name not in winner_identity
+            or authoritative_name not in spine_identity
+            or infant_precision_candidate
+        ):
+            contract_winner, _lineage_ids = await _reconcile_concept_seed_with_final_premise(
+                session,
+                settings,
+                winner=contract_winner,
+                premise=premise,
+                synopsis=synopsis,
+                writing_profile=writing_profile,
+                authoritative_name=authoritative_name,
+                ctx={**ctx, "chapter_count": chapter_count},
+            )
+            llm_run_ids.extend(_lineage_ids)
+            reconciled_seed = (
+                contract_winner if isinstance(contract_winner, Mapping) else {}
+            )
+            reconciled_identity = str(
+                reconciled_seed.get("protagonist_identity") or ""
+            )
+            if authoritative_name not in reconciled_identity:
+                raise ConceptContractError(
+                    [
+                        "最终 premise 与概念冠军契约主角不一致，LLM 对齐后仍未闭合："
+                        f"premise={authoritative_name}，contract={reconciled_identity or '缺失'}"
+                    ]
+                )
+            story_spine = {
+                **story_spine,
+                "who": reconciled_identity,
+                "wants": str(
+                    reconciled_seed.get("protagonist_private_desire") or ""
+                ),
+                "why_now": str(reconciled_seed.get("opening_crisis") or ""),
+                "against": str(reconciled_seed.get("opponent_system") or ""),
+                "stakes": str(reconciled_seed.get("emotional_promise") or ""),
+                "question": str(reconciled_seed.get("hook_question") or ""),
+            }
+            conception_log.append(
+                {
+                    "round": 3,
+                    "agent": "concept_contract_final_premise_reconciliation",
+                    "authoritative_protagonist": authoritative_name,
+                    "old_winner_identity": winner_identity,
+                    "old_spine_identity": spine_identity,
+                    "new_winner_identity": reconciled_identity,
+                    "infant_precision_candidate": infant_precision_candidate,
+                }
+            )
+
         concept_contract = build_concept_contract(
-            winner=_ct_result.winner,
+            winner=contract_winner,
             story_spine=story_spine,
             target_chapters=chapter_count,
             genre=str(ctx.get("genre") or genre_key),
@@ -5113,13 +5759,20 @@ async def run_conception_pipeline(
     # fail-open ``except`` below cannot swallow the block (product line "低于blurb_min不通过"，见 config/story_appeal.yaml)。
     _appeal_block_below = False
     _appeal_blocked_feedback = ""
+    # Which gate(s) actually rejected. Several can raise the same
+    # AppealBarNotMetError; without the name the operator-facing message
+    # misdirects (a field block reported the blurb/title scores as the cause
+    # while both were above threshold and persona_judge was the real blocker).
+    _appeal_blocked_by: list[str] = []
     try:
         from bestseller.domain.appeal import grade_rank  # noqa: PLC0415
         from bestseller.services.story_appeal import (  # noqa: PLC0415
+            appeal_regen_should_continue,
             build_improvement_feedback,
             evaluate_story_appeal,
             is_appeal_enabled,
             load_story_appeal_config,
+            persona_hard_veto,
         )
 
         _appeal_cfg = load_story_appeal_config()
@@ -5156,16 +5809,25 @@ async def run_conception_pipeline(
                 title=title, synopsis=synopsis, genre=_ap_genre, sub_genre=_ap_sub,
                 tags=tags, config=_appeal_cfg,
             )
+            # A gate that can BLOCK must also be able to DRIVE the repair loop.
+            # persona_judge holds block_below veto power, so its verdict joins the
+            # continuation decision — keying the loop on the numeric bar alone
+            # starved it: books clearing meets_bar but scoring 0/3 simulated clicks
+            # were killed at attempts=0 with _persona_fb built and then dropped,
+            # since its only consumer was this loop body (2026-07-24, two books).
+            _persona_blocks = persona_hard_veto(_persona_report, _appeal_cfg)
             # Product hard line: regenerate while not meeting the bar (blurb<blurb_min,
             # calibrated to 68 in config/story_appeal.yaml); else fall back to the grade floor.
-            while (
-                bool(regen.get("enabled", False))
-                and (
+            while appeal_regen_should_continue(
+                enabled=bool(regen.get("enabled", False)),
+                attempts=attempts,
+                max_attempts=max_attempts,
+                needs_score_regen=(
                     (not report.meets_bar)
                     if regen_below_bar
                     else grade_rank(report.overall_grade) <= grade_rank(floor)
-                )
-                and attempts < max_attempts
+                ),
+                persona_blocks=_persona_blocks,
             ):
                 attempts += 1
                 # Heartbeat: the finalize→blurb stretch (conception_finalize at
@@ -5238,6 +5900,17 @@ async def run_conception_pipeline(
                         report.meets_bar == best[0].meets_bar and cur_sum > best_sum
                     ):
                         best = (report, r_premise, r_syn, r_tags, r_title)
+                    # Re-judge the CURRENT BEST against the reader persona. Without
+                    # this the loop could neither exit early on a fixed blurb nor
+                    # feed the next round fresh 划走原因 — it would spend its whole
+                    # budget re-polishing against a stale initial verdict.
+                    _persona_report, _persona_fb = await _persona_click_advisory(
+                        session, settings,
+                        title=best[4], synopsis=best[2],
+                        genre=_ap_genre, sub_genre=_ap_sub,
+                        tags=best[3], config=_appeal_cfg,
+                    )
+                    _persona_blocks = persona_hard_veto(_persona_report, _appeal_cfg)
                 except Exception:
                     logger.warning("appeal regeneration attempt %d failed", attempts, exc_info=True)
                     break
@@ -5249,28 +5922,21 @@ async def run_conception_pipeline(
                 report.premise.total, report.blurb.total, _t_total,
                 report.overall_grade, report.meets_bar, attempts,
             )
-            # ── 画像判官终评：重生改过稿则对终稿再评一次，否则复用初评 ──
-            # 结果持久化进 appeal 报告（web 可见）。persona_judge.block_below=true
-            # 时与绝对分门并联硬拦（同一 AppealBarNotMetError 拦截链）。
-            if attempts > 0:
-                _persona_report, _persona_fb = await _persona_click_advisory(
-                    session, settings,
-                    title=title, synopsis=synopsis, genre=_ap_genre, sub_genre=_ap_sub,
-                    tags=tags, config=_appeal_cfg,
-                )
+            # ── 画像判官终评 ──
+            # 终评已在重生循环内对每一轮的 best 做过（见循环体末尾），attempts==0
+            # 时初评的输入就是 best，两种情况下 _persona_report 都已对应终稿；
+            # 这里只做持久化 + 硬拦判定，不再重复调用判官。
             if _persona_report is not None:
                 story_appeal_report["persona_judge"] = _persona_report
                 logger.info(
-                    "Persona click judge: channel=%s clicks=%s/%s rate=%s pass=%s",
+                    "Persona click judge: channel=%s clicks=%s/%s rate=%s pass=%s regen=%d",
                     _persona_report.get("channel"), _persona_report.get("clicks"),
                     _persona_report.get("samples"), _persona_report.get("click_rate"),
-                    _persona_report.get("advisory_pass"),
+                    _persona_report.get("advisory_pass"), attempts,
                 )
-                _pj_cfg = (_appeal_cfg.get("persona_judge", {}) or {}) \
-                    if isinstance(_appeal_cfg, dict) else {}
-                if bool(_pj_cfg.get("block_below", False)) \
-                        and not _persona_report.get("advisory_pass", True):
+                if persona_hard_veto(_persona_report, _appeal_cfg):
                     _appeal_block_below = True
+                    _appeal_blocked_by.append("persona_judge")
                     _appeal_blocked_feedback = (
                         (_appeal_blocked_feedback + "\n" if _appeal_blocked_feedback else "")
                         + _persona_fb
@@ -5293,6 +5959,7 @@ async def run_conception_pipeline(
             if bool((_appeal_cfg.get("meets_bar", {}) or {}).get("block_below_bar", False)) \
                     and not report.meets_bar:
                 _appeal_block_below = True
+                _appeal_blocked_by.append("meets_bar")
                 _appeal_blocked_feedback = build_improvement_feedback(report, _appeal_cfg)
     except Exception:
         logger.warning("Story appeal evaluation failed (non-fatal)", exc_info=True)
@@ -5359,7 +6026,15 @@ async def run_conception_pipeline(
                 _lg, _rescued_logline, _lg_regen_used = await _logline_regen_rescue(
                     verdict=_lg,
                     logline=str(_logline_text or ""),
-                    max_attempts=int(_lg_cfg.get("regenerate_attempts", 2)),
+                    # ``load_logline_gate_config`` emits ``max_regen`` — the key
+                    # ``regenerate_attempts`` was never produced by it, so the
+                    # yaml's configured value was dead and this silently ran a
+                    # hardcoded 2 rescues forever. Read the key that exists.
+                    max_attempts=int(
+                        _lg_cfg.get("max_regen")
+                        or _lg_cfg.get("regenerate_attempts")
+                        or 2
+                    ),
                     rewrite_fn=_lg_rewrite,
                     judge_fn=_lg_rejudge,
                 )
@@ -5379,6 +6054,7 @@ async def run_conception_pipeline(
             if bool(_lg_cfg.get("block_expansion", True)) \
                     and _lg.action is not LoglineAction.EXPAND:
                 _appeal_block_below = True
+                _appeal_blocked_by.append("logline_gate")
                 _appeal_blocked_feedback = (
                     "一句话故事大纲未过前置硬门，未进入书籍规划：\n"
                     + "\n".join(_lg.reasons)
@@ -5398,6 +6074,7 @@ async def run_conception_pipeline(
             "weakest_axis": "gate_execution",
         }
         _appeal_block_below = True
+        _appeal_blocked_by.append("logline_gate_execution")
         _appeal_blocked_feedback = (
             "一句话故事大纲硬门执行失败，未创建书籍、未进入规划。"
         )
@@ -5430,11 +6107,14 @@ async def run_conception_pipeline(
 
         _b = (story_appeal_report.get("blurb") or {}).get("total")
         _t = (story_appeal_report.get("title") or {}).get("total")
+        _by = _appeal_blocked_by or ["appeal_bar"]
         logger.warning(
-            "Conception BLOCKED: appeal bar not met (blurb=%s title=%s) — "
-            "not advancing to planning.", _b, _t,
+            "Conception BLOCKED by %s (blurb=%s title=%s) — "
+            "not advancing to planning.", "+".join(_by), _b, _t,
         )
-        raise AppealBarNotMetError(story_appeal_report, _appeal_blocked_feedback)
+        raise AppealBarNotMetError(
+            story_appeal_report, _appeal_blocked_feedback, blocked_by=tuple(_by)
+        )
 
     # Final ontology tripwire: a native 仙侠/历史/悬疑 project must not silently
     # become an APP/phone/workplace/forensic-modern story after all agents merge.
@@ -5459,12 +6139,46 @@ async def run_conception_pipeline(
             generated_surface,
             genre_intent_contract,
         )
-        if ontology_violations:
-            raise ValueError(
-                "Genre intent ontology violation: "
-                f"{', '.join(ontology_violations)} in generated conception artifacts; "
-                "native-genre books cannot enter planning with unexplained modern drift."
+        # Honor what the user explicitly asked for — the same exemption the
+        # EARLY tournament-winner gate already applies (see
+        # ``_unexpected_violations`` above). Without it the two call sites of
+        # ONE detector contradict each other: the early gate lets the user's own
+        # premise through, then this final gate kills the finished book for the
+        # very words the user typed. Now that the create form ships a
+        # 故事创意 field, that contradiction is reachable by design.
+        _final_seed_text = (
+            explicit_concept_seed
+            or (
+                str(concept_bundle.one_liner or concept_bundle.reader_promise)
+                if concept_bundle is not None
+                else str(getattr(selected_hook_spec, "one_liner", "") or "")
             )
+        )
+        ontology_violations = tuple(
+            term for term in ontology_violations if term not in _final_seed_text
+        )
+        if ontology_violations:
+            # A deliberate content block, not a crash. A bare ValueError fell
+            # through to the generic handler and showed the user a raw Python
+            # traceback — indistinguishable from a framework bug, with no hint
+            # of what to change (2026-07-25, custom-xuanhuan-1784908885).
+            # ConceptContractError is the shared deliberate-block type: the web
+            # layer renders its reasons as an actionable message AND closes the
+            # conception workflow row instead of leaking it as `running`.
+            from bestseller.services.concept_contract import (  # noqa: PLC0415
+                ConceptContractError,
+            )
+
+            _terms = "、".join(ontology_violations)
+            raise ConceptContractError([
+                f"生成结果混入了与本书题材不符的现代设定词：{_terms}。"
+                f"本书题材契约为【{genre_intent_contract.genre_label}】"
+                f"/【{genre_intent_contract.sub_genre_label or '未指定子题材'}】，"
+                "属于原生题材世界，不能出现现代科技、现代职场或现代法医/殡葬机构。",
+                "整改方向：把这些词替换成本题材世界内成立的说法"
+                "（例如以宗门、族老、仵作、验尸吏、丧仪等古典称谓与器物承担同样的功能），"
+                "或改用另一个不依赖现代设定的故事切入点后重试。",
+            ])
 
     logger.info(
         "Conception pipeline completed for genre=%s: title=%s, premise_len=%d, synopsis_len=%d, tags=%s, profile_keys=%s",

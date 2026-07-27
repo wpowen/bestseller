@@ -14,6 +14,7 @@ redis_module.asyncio = redis_asyncio_module
 sys.modules.setdefault("redis", redis_module)
 sys.modules.setdefault("redis.asyncio", redis_asyncio_module)
 
+from bestseller.services.planning_concurrency import PlanningConflictError
 from bestseller.worker import tasks as worker_tasks
 
 pytestmark = pytest.mark.unit
@@ -38,6 +39,102 @@ def test_generation_gate_block_classifies_volume_outline_gate() -> None:
 
     assert result is not None
     assert result[0] == "volume_outline_gate_failed"
+
+
+def test_generation_gate_block_classifies_progressive_semantic_failure() -> None:
+    result = worker_tasks._generation_gate_block(
+        RuntimeError(
+            "Progressive volume outline did not earn semantic promotion; "
+            "OPENING_PULL_PARAGRAPH_FAIL, PROTAGONIST_PLOT_SERVING_STUPIDITY_CH1_CH3"
+        )
+    )
+
+    assert result is not None
+    assert result[0] == "outline_semantic_gate_failed:opening_pull_paragraph_fail"
+
+
+def test_generation_gate_block_classifies_commercial_planning_readiness() -> None:
+    result = worker_tasks._generation_gate_block(
+        ValueError(
+            "Commercial planning readiness gate failed: "
+            "llm:PROTAGONIST_PLOT_SERVING_STUPIDITY"
+        )
+    )
+
+    assert result is not None
+    assert result[0] == "commercial_planning_readiness_gate_failed"
+
+
+def test_cancelled_outline_replan_closes_owner_and_keeps_hard_gate() -> None:
+    project = types.SimpleNamespace(
+        status="planning",
+        metadata_json={
+            "outline_replan_in_progress": True,
+            "outline_replan_prior_outline_version": 12,
+        },
+    )
+    owner = types.SimpleNamespace(
+        status="running",
+        current_step="generate_volume_1_outline",
+        error_message=None,
+        metadata_json={},
+    )
+
+    worker_tasks._apply_cancelled_outline_replan_state(project, [owner])
+
+    assert project.status == "needs_replan"
+    assert project.metadata_json["outline_replan_required"] is True
+    assert project.metadata_json["production_pause_reason"] == (
+        "outline_replan_cancelled_recoverable"
+    )
+    assert "outline_replan_in_progress" not in project.metadata_json
+    assert owner.status == "failed"
+    assert owner.current_step == "cancelled_recoverable"
+    assert owner.metadata_json["cancelled_recoverable"] is True
+
+
+@pytest.mark.asyncio
+async def test_owned_outline_replan_conflict_is_closed_and_left_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recovered: list[str] = []
+    events: list[tuple[str, dict, str | None]] = []
+
+    async def fake_mark(project_slug: str) -> None:
+        recovered.append(project_slug)
+
+    class _Reporter:
+        async def emit(
+            self,
+            message: str,
+            data: dict,
+            event_type: str | None = None,
+        ) -> None:
+            events.append((message, data, event_type))
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "_mark_cancelled_outline_replan_recoverable",
+        fake_mark,
+    )
+    conflict = PlanningConflictError(uuid4(), "generate_volume_plan")
+
+    result = await worker_tasks._recover_owned_outline_replan_conflict(
+        "novel",
+        conflict,
+        _Reporter(),
+    )
+
+    assert recovered == ["novel"]
+    assert result["status"] == "outline_replan_retry_pending"
+    assert result["reason"] == "owned_planning_conflict_recovered"
+    assert events == [
+        (
+            "outline_replan_retry_pending",
+            result,
+            "repairable_auto_continue_pending",
+        )
+    ]
 
 
 def test_generation_gate_block_classifies_chapter_plan_contract() -> None:
@@ -482,6 +579,45 @@ async def test_run_autowrite_task_marks_attention_as_auto_continue_pending(
     assert events[-1][1]["reason"] == "autowrite_requires_attention"
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Whole-book outline semantic gate failed; prose promotion is blocked "
+        "until replan. issues=OUTLINE_IDENTITY_MISMATCH",
+        "Whole-book outline semantic gate rejected promotion; replan is "
+        "required. [OUTLINE_INFORMATION_CONTRACT_GAP]",
+    ],
+)
+def test_generation_gate_block_routes_whole_book_semantic_failures_to_replan(
+    message: str,
+) -> None:
+    reason, returned_message = worker_tasks._generation_gate_block(
+        RuntimeError(message)
+    ) or ("", "")
+
+    assert reason.startswith("outline_semantic_gate_failed")
+    assert returned_message == message
+
+
+def test_generation_gate_block_does_not_replan_for_transient_judge_outage() -> None:
+    error = RuntimeError(
+        "Commercial planning readiness gate failed: "
+        "COMMERCIAL_LLM_JUDGE_UNAVAILABLE [LLM judge]"
+    )
+
+    assert worker_tasks._generation_gate_block(error) is None
+
+
+def test_not_exported_result_requires_autonomous_attention_even_when_review_passed() -> None:
+    assert worker_tasks._result_payload_requires_attention(
+        {
+            "final_verdict": "pass",
+            "export_status": "not_exported",
+            "requires_human_review": False,
+        }
+    ) is True
+
+
 @pytest.mark.asyncio
 async def test_run_autowrite_self_heal_skips_framework_owned_project(
     monkeypatch: pytest.MonkeyPatch,
@@ -529,6 +665,56 @@ async def test_run_autowrite_self_heal_skips_framework_owned_project(
     assert result["status"] == "skipped_framework_owned"
     assert events[-1][0] == "framework_owned_self_heal_skipped"
     assert events[-1][2] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_run_autowrite_skips_project_that_requires_outline_replan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict, str | None]] = []
+
+    class _FakeReporter:
+        async def emit(
+            self,
+            message: str,
+            data: dict,
+            event_type: str | None = None,
+        ) -> None:
+            events.append((message, data, event_type))
+
+    project = types.SimpleNamespace(
+        slug="bad-outline",
+        status="needs_replan",
+        metadata_json={"production_pause_reason": "outline_semantic_gate_failed"},
+    )
+
+    class _FakeSession:
+        async def scalar(self, _stmt: object) -> object:
+            return project
+
+    @asynccontextmanager
+    async def fake_session_scope():
+        yield _FakeSession()
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "RedisProgressReporter",
+        lambda *_args, **_kwargs: _FakeReporter(),
+    )
+    monkeypatch.setattr(worker_tasks, "make_sync_callback", lambda _reporter: None)
+    monkeypatch.setattr(worker_tasks, "get_server_session", fake_session_scope)
+
+    result = await worker_tasks.run_autowrite_task(
+        {"redis": object()},
+        "autowrite:heal:bad-outline",
+        {"project_slug": "bad-outline"},
+    )
+
+    assert result["status"] == "skipped_outline_replan"
+    assert result["reason"] == "outline_semantic_gate_failed"
+    assert result["requires_machine_repair"] is True
+    assert events[-1][0] == "repairable_auto_continue_pending"
+    assert events[-1][2] == "repairable_auto_continue_pending"
 
 
 @pytest.mark.asyncio

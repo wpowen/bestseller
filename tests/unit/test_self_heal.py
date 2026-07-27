@@ -20,19 +20,80 @@ import pytest
 from bestseller.worker.self_heal import (
     GENERATION_GATE_RESUME_COOLDOWN_SECONDS,
     SELF_HEAL_PENDING_REWRITE_TASK_LIMIT,
+    SELF_HEAL_STARTUP_COHORT_SKEW_SECONDS,
     STARTUP_GRACE_SECONDS,
     UNDER_TARGET_SELF_HEAL_GRACE_SECONDS,
     WAITING_REPAIR_SUPPRESSION_SECONDS,
     StuckProject,
     _active_arq_project_slugs,
     _clear_auto_resumable_generation_gate_pause,
+    _project_requires_auto_outline_replan,
     _project_resume_is_blocked,
+    _release_heal_lock,
+    _resolve_project_ids_for_slugs,
+    _scan_done_marker_at_or_after,
     find_stuck_projects,
     heal_stuck_projects,
     reap_orphan_workflow_runs,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_commercial_planning_failure_routes_to_outline_replan() -> None:
+    project = SimpleNamespace(
+        metadata_json={
+            "last_generation_gate_reason": (
+                "commercial_planning_readiness_gate_failed:protagonist_plot_serving_stupidity"
+            )
+        }
+    )
+
+    assert _project_requires_auto_outline_replan(project) is True
+
+
+def test_no_progress_pause_does_not_hide_authoritative_outline_replan() -> None:
+    project = SimpleNamespace(
+        metadata_json={
+            "production_pause_reason": "self_heal_no_actionable_progress",
+            "last_generation_gate_reason": (
+                "outline_semantic_gate_failed:opening_pull_paragraph_fail"
+            ),
+            "outline_replan_required": True,
+        }
+    )
+
+    assert _project_requires_auto_outline_replan(project) is True
+
+
+def test_needs_replan_status_bridges_metadata_persistence_race() -> None:
+    project = SimpleNamespace(status="needs_replan", metadata_json={})
+
+    assert _project_requires_auto_outline_replan(project) is True
+
+
+def test_exhausted_marker_wins_over_needs_replan_status() -> None:
+    project = SimpleNamespace(
+        status="needs_replan",
+        metadata_json={"outline_replan_auto_retry_exhausted": True},
+    )
+
+    assert _project_requires_auto_outline_replan(project) is False
+
+
+def test_scan_done_marker_suppresses_only_current_startup_cohort() -> None:
+    cutoff = _dt.datetime(2026, 7, 25, 0, 0, 5, tzinfo=_dt.UTC)
+
+    assert _scan_done_marker_at_or_after(b"worker-1:1784937610", cutoff) is True
+    assert _scan_done_marker_at_or_after("worker-1:1784937600", cutoff) is True
+    assert (
+        _scan_done_marker_at_or_after(
+            f"worker-1:{1784937605 - SELF_HEAL_STARTUP_COHORT_SKEW_SECONDS - 1}",
+            cutoff,
+        )
+        is False
+    )
+    assert _scan_done_marker_at_or_after("malformed", cutoff) is False
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +230,8 @@ class _FakeSession:
         from bestseller.infra.db.models import (  # noqa: PLC0415
             ChapterDraftVersionModel,
             ChapterModel,
-            WorkflowRunModel,
             RewriteTaskModel,
+            WorkflowRunModel,
         )
 
         target = self._target_model(stmt)
@@ -304,7 +365,10 @@ class _FakeSession:
         created_cutoff = self._filter_created_before(stmt)
         protected_project_ids = self._filter_project_id_not_in(stmt)
         statuses = {"pending", "queued", "running"}
-        reapable_types = {
+        # Scope to the types THIS statement targets. The reaper issues several
+        # differently-scoped update statements; hardcoding one union here let a
+        # later statement reap rows the earlier one owned.
+        reapable_types = self._filter_workflow_types(stmt) or {
             "autowrite_pipeline",
             "generate_foundation_plan",
             "generate_novel_plan",
@@ -314,6 +378,15 @@ class _FakeSession:
             "scene_pipeline",
             "project_repair",
         }
+        # Conception rows are reaped purely on total age (they never heartbeat),
+        # so an absent updated_at cutoff must not degrade into "now".
+        conception_only = reapable_types and reapable_types <= {
+            "conception_initial",
+            "conception_revision",
+        }
+        if conception_only:
+            heartbeat_cutoff = _dt.datetime.min.replace(tzinfo=_dt.UTC)
+            short_window_cutoff = heartbeat_cutoff
         short_window_types = {
             "project_pipeline",
             "chapter_pipeline",
@@ -514,6 +587,40 @@ class _FakeSession:
                 if key == "created_at":
                     return getattr(right, "value", None)
             return None
+
+        whereclause = getattr(stmt, "whereclause", None)
+        if whereclause is None:
+            whereclause = getattr(stmt, "_whereclause", None)
+        return _walk(whereclause)
+
+    @staticmethod
+    def _filter_workflow_types(stmt: Any) -> set[str]:
+        """Read the ``workflow_type IN (...)`` set the statement actually targets.
+
+        Previously this stand-in hardcoded the reapable set, so ANY update
+        statement it did not special-case was executed as "the" generic reap —
+        a second, differently-scoped statement (e.g. the conception-age reap)
+        silently reaped rows belonging to the first one's types.
+        """
+
+        def _walk(node: Any) -> set[str]:
+            found: set[str] = set()
+            try:
+                clauses = list(getattr(node, "clauses", []) or [])
+            except Exception:  # noqa: BLE001
+                clauses = []
+            for c in clauses:
+                found.update(_walk(c))
+            left = getattr(node, "left", None)
+            right = getattr(node, "right", None)
+            operator = getattr(node, "operator", None)
+            if left is not None and right is not None:
+                key = getattr(left, "key", None) or getattr(left, "name", None)
+                operator_name = getattr(operator, "__name__", "")
+                if key == "workflow_type" and "not_in" not in operator_name:
+                    values = getattr(right, "value", None) or ()
+                    found.update(str(v) for v in values)
+            return found
 
         whereclause = getattr(stmt, "whereclause", None)
         if whereclause is None:
@@ -1107,6 +1214,108 @@ async def test_find_stuck_projects_repairs_paused_structural_repair_project(
     assert stuck[0].slug == "book-paused"
     assert stuck[0].reason == "blocked_chapters"
     assert stuck[0].heal_kind == "repair"
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_skips_needs_replan_with_blocked_chapter() -> None:
+    """Rejected architecture must block both continuation and prose repair."""
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-needs-replan",
+        status="needs_replan",
+        metadata_json={
+            "outline_semantic_gate_status": "needs_replan",
+            "generation_resume_blocked_until_repair_audit": True,
+            "production_pause_reason": "outline_semantic_gate_failed",
+        },
+    )
+    chapters = [
+        _FakeChapter(id=uuid4(), project_id=p.id, production_state="blocked"),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_dispatches_planner_owner_before_any_prose() -> None:
+    """A rejected outline remains self-healable while no draft was committed."""
+
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-needs-replan-no-prose",
+        status="needs_replan",
+        metadata_json={
+            "outline_semantic_gate_status": "needs_replan",
+            "outline_semantic_gate_report": {
+                "findings": [
+                    {
+                        "code": "OUTLINE_INFORMATION_CONTRACT_GAP",
+                        "chapter": 4,
+                        "evidence": {"missing": "information_revealed"},
+                    }
+                ]
+            },
+            "generation_resume_blocked_until_repair_audit": True,
+            "production_pause_reason": "outline_semantic_gate_failed",
+        },
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(9)]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=[])
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].heal_kind == "outline_replan"
+    assert stuck[0].reason == "outline_replan_required"
+    assert stuck[0].progress_fingerprint.startswith("outline_replan:")
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_upgrades_legacy_commercial_gate_to_replan() -> None:
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-commercial-gate-legacy",
+        status="writing",
+        metadata_json={
+            "last_generation_gate_reason": (
+                "commercial_planning_readiness_gate_failed:protagonist_logic"
+            ),
+            "outline_commercial_last_failure": {
+                "overall_score": 0.58,
+                "blocking_codes": ["PROTAGONIST_PLOT_SERVING_STUPIDITY"],
+            },
+        },
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(9)]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=[])
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].heal_kind == "outline_replan"
+    assert stuck[0].reason == "outline_replan_required"
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_skips_outline_gate_reason_even_if_status_stale() -> None:
+    """Metadata gate is authoritative while a stale writer status is repaired."""
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-outline-gate-failed",
+        status="revising",
+        metadata_json={
+            "production_pause_reason": "outline_semantic_gate_failed:duplicate_events",
+        },
+    )
+    chapters = [
+        _FakeChapter(id=uuid4(), project_id=p.id, production_state="blocked"),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    assert await find_stuck_projects(session) == []
 
 
 @pytest.mark.asyncio
@@ -1982,7 +2191,7 @@ async def test_active_arq_project_slugs_reads_retry_payload() -> None:
 
 
 @pytest.mark.asyncio
-async def test_active_arq_project_slugs_ignores_stale_in_progress_owner() -> None:
+async def test_active_arq_project_slugs_keeps_long_running_owner_candidate() -> None:
     redis = _FakeInProgressRedis(
         {
             "job-stale": {
@@ -1996,7 +2205,30 @@ async def test_active_arq_project_slugs_ignores_stale_in_progress_owner() -> Non
         queue_scores={"arq:queue:job-stale": 0.0},
     )
 
-    assert await _active_arq_project_slugs(redis) == set()
+    # Queue age cannot distinguish a dead worker from a legitimate long LLM
+    # call.  DB workflow heartbeat freshness makes the final protection choice.
+    assert await _active_arq_project_slugs(redis) == {"book-stale"}
+
+
+@pytest.mark.asyncio
+async def test_resolve_project_ids_for_slugs_requires_fresh_active_workflow() -> None:
+    project_id = uuid4()
+
+    class _CaptureSession:
+        statement: Any | None = None
+
+        async def scalars(self, stmt: Any) -> _FakeResult:
+            self.statement = stmt
+            return _FakeResult([project_id])
+
+    session = _CaptureSession()
+    protected = await _resolve_project_ids_for_slugs(session, {"book-live"})
+
+    assert protected == {project_id}
+    sql = str(session.statement)
+    assert "JOIN projects" in sql
+    assert "workflow_runs.status IN" in sql
+    assert "workflow_runs.updated_at >=" in sql
 
 
 @pytest.mark.asyncio
@@ -2042,6 +2274,29 @@ class _FakeRedis:
         self.store[key] = value
         return True
 
+    async def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    async def delete(self, *keys: str) -> int:
+        deleted = 0
+        for key in keys:
+            if key in self.store:
+                del self.store[key]
+                deleted += 1
+        return deleted
+
+    async def eval(
+        self,
+        _script: str,
+        _numkeys: int,
+        key: str,
+        expected_owner: str,
+    ) -> int:
+        if self.store.get(key) != expected_owner:
+            return 0
+        del self.store[key]
+        return 1
+
 
 @pytest.mark.asyncio
 async def test_try_acquire_heal_lock_first_caller_wins() -> None:
@@ -2079,6 +2334,91 @@ async def test_try_acquire_heal_lock_falls_back_on_redis_error() -> None:
     redis.fail_on_set = True
 
     assert await _try_acquire_heal_lock(redis, "worker-y") is True
+
+
+@pytest.mark.asyncio
+async def test_release_heal_lock_is_owner_safe() -> None:
+    from bestseller.worker.self_heal import SELF_HEAL_LOCK_KEY
+
+    redis = _FakeRedis()
+    redis.store[SELF_HEAL_LOCK_KEY] = "worker-a"
+
+    await _release_heal_lock(redis, "worker-b")
+    assert redis.store[SELF_HEAL_LOCK_KEY] == "worker-a"
+
+    await _release_heal_lock(redis, "worker-a")
+    assert SELF_HEAL_LOCK_KEY not in redis.store
+
+
+@pytest.mark.asyncio
+async def test_heal_stuck_projects_does_not_reacquire_after_marker_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bestseller.worker import self_heal as sh
+
+    redis = _FakeRedis()
+    acquire_calls: list[str] = []
+
+    async def _never_acquire(_redis: Any, worker_id: str) -> bool:
+        acquire_calls.append(worker_id)
+        return False
+
+    async def _marker_timeout(*_args: Any, **_kwargs: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(sh, "_try_acquire_heal_lock", _never_acquire)
+    monkeypatch.setattr(sh, "_wait_for_scan_done", _marker_timeout)
+
+    settings = SimpleNamespace()
+    dispatched = await heal_stuck_projects(
+        settings,
+        redis=redis,
+        worker_id="worker-waiter",
+    )
+
+    assert dispatched == []
+    assert acquire_calls == ["worker-waiter"]
+
+
+@pytest.mark.asyncio
+async def test_heal_stuck_projects_rechecks_marker_after_acquiring_released_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slower replica must not scan after the first replica releases the lock."""
+    from bestseller.worker import self_heal as sh
+
+    cutoff = _dt.datetime(2026, 7, 25, 0, 0, 5, tzinfo=_dt.UTC)
+
+    class _MarkerAppearsWhileWaitingRedis(_FakeRedis):
+        def __init__(self) -> None:
+            super().__init__()
+            self.marker_gets = 0
+
+        async def get(self, key: str) -> str | None:
+            if key == sh.SELF_HEAL_SCAN_DONE_KEY:
+                self.marker_gets += 1
+                if self.marker_gets == 1:
+                    return None
+                return "worker-first:1784937610"
+            return await super().get(key)
+
+    redis = _MarkerAppearsWhileWaitingRedis()
+
+    async def _must_not_scan(*_args: Any, **_kwargs: Any) -> list[StuckProject]:
+        raise AssertionError("duplicate startup scan must be skipped")
+
+    monkeypatch.setattr(sh, "find_stuck_projects", _must_not_scan)
+
+    dispatched = await heal_stuck_projects(
+        SimpleNamespace(),
+        startup_cutoff=cutoff,
+        redis=redis,
+        worker_id="worker-slow",
+    )
+
+    assert dispatched == []
+    assert redis.marker_gets == 2
+    assert sh.SELF_HEAL_LOCK_KEY not in redis.store
 
 
 def test_autowrite_heal_job_id_is_deterministic() -> None:
@@ -2388,6 +2728,34 @@ async def test_requeue_autowrite_clears_stale_result_before_retry() -> None:
     assert job_id == "autowrite:heal:book-result"
     assert len(pool.enqueued) == 2
     assert "arq:result:autowrite:heal:book-result" in pool.deleted
+
+
+@pytest.mark.asyncio
+async def test_requeue_outline_replan_clears_terminal_result_before_retry() -> None:
+    """A failed-but-finished replan result is not an active owner."""
+    from bestseller.worker.self_heal import _requeue_outline_replan
+
+    job_id = "outline-replan:heal:book-result"
+    pool = _FakeArqPool(
+        reject_once_job_ids={job_id},
+        existing_keys={f"arq:result:{job_id}"},
+    )
+    stuck = StuckProject(
+        project_id="p-outline",
+        slug="book-result",
+        reason="outline_semantic_gate_failed",
+        stuck_at_chapter=None,
+        chapters_total=9,
+        chapters_with_draft=0,
+        heal_kind="outline_replan",
+        progress_fingerprint="outline_replan:abc",
+    )
+
+    queued_job_id = await _requeue_outline_replan(pool, stuck)  # type: ignore[arg-type]
+
+    assert queued_job_id == job_id
+    assert len(pool.enqueued) == 2
+    assert f"arq:result:{job_id}" in pool.deleted
 
 
 @pytest.mark.asyncio

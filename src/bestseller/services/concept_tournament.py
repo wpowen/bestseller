@@ -803,6 +803,7 @@ def _build_engine_kernel_messages(
     seed_support: dict[str, Any] | None = None,
     audience_orientation: str = "",
     banned: tuple[str, ...] = (),
+    cost_style: str = "standard",
 ) -> tuple[str, str]:
     """Build a minimal premise card before any marketing sentence."""
 
@@ -841,11 +842,17 @@ def _build_engine_kernel_messages(
         if str(audience_orientation or "").strip()
         else ""
     )
+    # 纯爽/外置代价档来自建书页勾选；standard 为空串保持 prompt 逐字节不变。
+    from bestseller.services.ideology_kernel import cost_style_directive
+
+    cost_line = cost_style_directive(cost_style, is_en=False).strip()
+    cost_line = f"{cost_line}\n" if cost_line else ""
     user = (
         "【PREMISE_CARD】本轮不写一句话钩子，也不规划卷章。\n"
         f"题材：{genre}（{sub_genre}）；目标形态：约{chapter_count}章长篇；"
         f"破题路线：{lane.split('#', 1)[0]}。\n"
         f"{audience_line}"
+        f"{cost_line}"
         f"路线边界：{lane_brief}\n"
         f"{seed}"
         f"{support}"
@@ -910,10 +917,24 @@ def _build_raw_idea_pool_messages(
     seed_concept: str = "",
     prompt_arm: str = "enhanced",
     focus_hint: str = "",
+    audience_orientation: str = "",
 ) -> tuple[str, str]:
-    """Minimal baseline: concrete person plus abnormal situation, nothing else."""
+    """Minimal baseline: concrete person plus abnormal situation, nothing else.
 
-    system = "你是小说作者。只负责想故事，不解释方法。只输出JSON。"
+    The channel anchor rides on the SYSTEM message so every prompt arm gets it
+    with one injection point. 蒸钩 is the layer that mints the seeds everything
+    downstream expands — before 2026-07-24 it had no channel anchor at all
+    (the documented contract says 内核/蒸钩/候选 all three), so a 男频 request
+    could seed female-lead ideas that the later anchors then fought uphill.
+    """
+
+    channel = (
+        f"频道/受众：{audience_orientation}。每个创意的主角设定与爽点形态都必须"
+        "写给该频道读者，频道错位的创意直接作废。"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
+    system = "你是小说作者。只负责想故事，不解释方法。只输出JSON。" + channel
     seed = (
         f"围绕这个原始想法做不同方向的强化，但保留其职业或核心发现：{seed_concept.strip()}\n"
         if seed_concept.strip()
@@ -1039,13 +1060,27 @@ def _parse_raw_idea_pool(raw: str, *, limit: int) -> list[tuple[str, str]]:
 
 
 def _build_raw_idea_rank_messages(
-    *, genre: str, sub_genre: str, ideas: list[tuple[str, str]]
+    *,
+    genre: str,
+    sub_genre: str,
+    ideas: list[tuple[str, str]],
+    audience_orientation: str = "",
 ) -> tuple[str, str]:
-    """Rank raw ideas in one independent call before expensive card expansion."""
+    """Rank raw ideas in one independent call before expensive card expansion.
 
+    The ranker needs the channel anchor too: without it, a channel-mismatched
+    seed can outrank a fitting one and the mismatch propagates into every
+    downstream expansion.
+    """
+
+    channel = (
+        f"频道/受众：{audience_orientation}。频道错位的胚子直接排到末位。"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
     system = (
         "你是严苛的商业长篇选题编辑。只审原始故事胚子，不替它补设定。"
-        "表达长短不加分，只输出JSON。"
+        "表达长短不加分，只输出JSON。" + channel
     )
     rows = [
         {"index": index, "lane": lane, "seed": seed}
@@ -1695,8 +1730,18 @@ def _build_engine_kernel_repair_messages(
     card: dict[str, Any],
     missing_fields: list[str],
     seed_support: dict[str, Any] | None = None,
+    audience_orientation: str = "",
+    cost_style: str = "standard",
 ) -> tuple[str, str]:
-    """Repair malformed structure once without changing the premise itself."""
+    """Repair malformed structure once without changing the premise itself.
+
+    "Without changing the premise" includes who the book is FOR: this rebuild
+    used to drop ``audience_orientation``, so any card that needed JSON repair
+    regenerated with no channel anchor — a 男频 request came back female-lead,
+    the judge killed it, and the tournament went dry (2026-07-24,
+    custom-xuanhuan-1784899694, attempt 2's second kernel call was exactly this
+    repair). Every rebuilt prompt must carry the same anchors as the original.
+    """
 
     system, base = _build_engine_kernel_messages(
         genre=genre,
@@ -1705,6 +1750,8 @@ def _build_engine_kernel_repair_messages(
         chapter_count=chapter_count,
         seed_concept=seed_concept,
         seed_support=seed_support,
+        audience_orientation=audience_orientation,
+        cost_style=cost_style,
     )
     repair = (
         "\n\n【PREMISE_CARD_REPAIR】上次项目卡的JSON结构不完整。"
@@ -2158,6 +2205,7 @@ async def run_concept_tournament(
     seed_concept: str = "",
     retry_feedback: str = "",
     audience_orientation: str = "",
+    cost_style: str = "standard",
 ) -> ConceptTournamentResult:
     """跑一轮概念淘汰赛。异常转成 winner=None，由调用方按目标篇幅决定是否阻断。
 
@@ -2380,6 +2428,7 @@ async def run_concept_tournament(
                     seed_concept=seed_concept,
                     prompt_arm=raw_idea_prompt_arm,
                     focus_hint=focus_hint,
+                    audience_orientation=audience_orientation,
                 )
                 result.candidate_prompt_chars += len(pool_system) + len(pool_user)
                 result.candidate_generation_calls += 1
@@ -2419,6 +2468,7 @@ async def run_concept_tournament(
                             genre=genre,
                             sub_genre=sub_genre,
                             ideas=batch,
+                            audience_orientation=audience_orientation,
                         )
                         rank_raw, rank_run_id = await raw_idea_rank_fn(
                             rank_system, rank_user
@@ -2447,6 +2497,7 @@ async def run_concept_tournament(
                                 genre=genre,
                                 sub_genre=sub_genre,
                                 ideas=retry_batch,
+                                audience_orientation=audience_orientation,
                             )
                             retry_raw, retry_run_id = await raw_idea_rank_fn(
                                 retry_system, retry_user
@@ -2548,6 +2599,7 @@ async def run_concept_tournament(
                         seed_concept=premise_seed,
                         seed_support=raw_pitch_by_seed.get(premise_seed),
                         audience_orientation=audience_orientation,
+                        cost_style=cost_style,
                         banned=banned,
                     )
                     result.candidate_prompt_chars += len(engine_system) + len(engine_user)
@@ -2578,6 +2630,8 @@ async def run_concept_tournament(
                                 card=kernel,
                                 missing_fields=missing_card_fields,
                                 seed_support=raw_pitch_by_seed.get(premise_seed),
+                                audience_orientation=audience_orientation,
+                                cost_style=cost_style,
                             )
                         )
                         result.candidate_prompt_chars += len(repair_system) + len(
@@ -2731,6 +2785,7 @@ async def run_concept_tournament(
                             seed_concept=premise_seed,
                             seed_support=raw_pitch_by_seed.get(premise_seed),
                             audience_orientation=audience_orientation,
+                            cost_style=cost_style,
                             banned=banned,
                         )
                         result.candidate_prompt_chars += len(engine_system) + len(engine_user)
@@ -2835,6 +2890,13 @@ async def run_concept_tournament(
                         retry_feedback=retry_feedback,
                         audience_orientation=audience_orientation,
                     )
+                # cost_style rides on the chosen builder's output so all three
+                # candidate prompt modes get it from this single injection point.
+                from bestseller.services.ideology_kernel import cost_style_directive
+
+                _cost_line = cost_style_directive(cost_style, is_en=False).strip()
+                if _cost_line:
+                    system = f"{system}{_cost_line}"
                 result.candidate_prompt_chars += len(system) + len(user)
                 result.candidate_generation_calls += 1
                 raw, run_id = await gen_fn(system, user)
@@ -3429,9 +3491,45 @@ def render_high_concept_block(result: ConceptTournamentResult) -> str:
     return "\n".join(parts)
 
 
+def dry_tournament_rejection_summary(
+    candidates: list[ConceptCandidate] | tuple[ConceptCandidate, ...],
+    *,
+    max_lines: int = 6,
+    concept_chars: int = 60,
+) -> list[str]:
+    """User-facing lines explaining WHY a dry tournament rejected everything.
+
+    A dry run (winner=None after all attempts) used to surface only as a
+    downstream logline-gate verdict, which misattributed the failure — the
+    2026-07-24 user read a 3.0 cost_integrity reject and concluded the book
+    had been "lost". The abort error must instead carry the tournament's own
+    per-candidate rejection evidence, bounded so it stays readable.
+    """
+
+    lines: list[str] = []
+    for candidate in candidates:
+        if len(lines) >= max_lines:
+            break
+        concept = (candidate.concept or "").strip()
+        if len(concept) > concept_chars:
+            concept = concept[: concept_chars - 1] + "…"
+        reason = (candidate.rejected_reason or "").strip() or "未通过（原因未记录）"
+        label = concept or f"({candidate.dimension or '未命名候选'})"
+        lines.append(f"候选「{label}」：{reason}")
+    if not lines:
+        # Screen-dry path: every candidate died before annotation, or the
+        # generator produced none at all. Still give the user a real sentence.
+        lines.append(
+            "淘汰赛没有产出任何可评审的候选（生成或确定性筛全灭），"
+            "本次创意方向可能与题材/受众锚点冲突。"
+        )
+    return lines
+
+
 __all__ = [
     "ConceptCandidate",
     "ConceptTournamentResult",
+    "dry_tournament_rejection_summary",
     "load_concept_tournament_config",
     "render_high_concept_block",
     "resolve_banned_cliches",

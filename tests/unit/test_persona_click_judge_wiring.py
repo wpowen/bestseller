@@ -102,19 +102,24 @@ async def test_run_persona_click_judge_without_injected_judge_does_not_crash(mon
 @pytest.mark.unit
 def test_finalize_wires_persona_advisory_at_initial_and_terminal_eval() -> None:
     """结构断言：finalize 的 appeal 重生块必须在初评（重生循环前）与终评
-    （attempts>0 时用重生后的 synopsis 再评一次）各调用一次
-    ``_persona_click_advisory``，且结果必须落进 story_appeal_report["persona_judge"]。
-    防止未来重构时静默丢掉终评那一次（终评拿到的是重生后的新简介，不是初评时的
-    旧简介——两次调用不是重复代码，是两个不同输入）。
+    （循环体内对每轮 best 再评一次）各调用一次 ``_persona_click_advisory``，
+    且结果必须落进 story_appeal_report["persona_judge"]。防止未来重构时静默
+    丢掉终评那一次（终评拿到的是重生后的新简介，不是初评时的旧简介——两次
+    调用不是重复代码，是两个不同输入）。
+
+    2026-07-24 更新：终评从"循环后 ``if attempts > 0`` 再调一次"移进循环体
+    末尾。原因见 test_conception_appeal_persona_veto.py——画像判官持一票否决
+    权却不参与循环续跑条件，导致数值门达标的书 attempts=0 直接被毙。判决现在
+    要驱动循环，就必须每轮刷新，循环后那次调用因此变成冗余并被删除。调用点
+    数量仍是 2，位置变了。
     """
 
     source = inspect.getsource(conception_services.run_conception_pipeline)
 
     call_count = source.count("_persona_click_advisory(")
     assert call_count == 2, (
-        f"expected exactly 2 call sites (initial + terminal re-eval), found {call_count}"
+        f"expected exactly 2 call sites (initial + in-loop re-eval), found {call_count}"
     )
-    assert 'if attempts > 0:' in source
     assert 'story_appeal_report["persona_judge"] = _persona_report' in source
 
 
@@ -128,9 +133,13 @@ def test_finalize_wires_persona_block_below_into_shared_appeal_bar_error() -> No
 
     source = inspect.getsource(conception_services.run_conception_pipeline)
 
-    assert 'bool(_pj_cfg.get("block_below", False))' in source
+    # block_below 判定统一走 story_appeal.persona_hard_veto（含 fail-open 语义），
+    # 不再在管线里手抄 _pj_cfg.get("block_below") —— 同一判定此前存在两份副本
+    # （循环续跑用一份、硬拦用另一份），正是判决没能驱动重生的原因之一。
+    assert "persona_hard_veto(_persona_report, _appeal_cfg)" in source
     assert "_appeal_block_below = True" in source
-    assert "raise AppealBarNotMetError(story_appeal_report, _appeal_blocked_feedback)" in source
+    assert "raise AppealBarNotMetError(" in source
+    assert "blocked_by=tuple(_by)" in source
 
 
 @pytest.mark.unit

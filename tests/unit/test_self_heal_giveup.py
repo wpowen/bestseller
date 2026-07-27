@@ -8,6 +8,8 @@ import pytest
 from bestseller.worker.self_heal import (
     MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS,
     _compute_heal_progress_state,
+    _outline_replan_progress_fingerprint,
+    _outline_replan_progress_rank,
     _project_self_heal_abandoned,
 )
 
@@ -88,6 +90,25 @@ class TestComputeHealProgressState:
         )
         assert meta["self_heal_no_progress_attempts"] == 1
 
+    def test_first_fingerprint_establishes_new_repair_baseline(self) -> None:
+        meta = {
+            "self_heal_last_chapters_total": 0,
+            "self_heal_no_progress_attempts": 4,
+        }
+
+        meta, abandoned = _compute_heal_progress_state(
+            meta,
+            chapters_total=0,
+            progress_fingerprint="outline_replan:commercial-score-062",
+        )
+
+        assert abandoned is False
+        assert meta["self_heal_no_progress_attempts"] == 0
+        assert (
+            meta["self_heal_last_progress_fingerprint"]
+            == "outline_replan:commercial-score-062"
+        )
+
         meta, abandoned = _compute_heal_progress_state(
             meta, chapters_total=50, progress_fingerprint="repair:40"
         )
@@ -95,6 +116,51 @@ class TestComputeHealProgressState:
         assert abandoned is False
         assert meta["self_heal_no_progress_attempts"] == 0
         assert meta["self_heal_last_progress_fingerprint"] == "repair:40"
+
+    def test_same_rank_with_renamed_blockers_is_not_progress(self) -> None:
+        meta, _ = _compute_heal_progress_state(
+            {},
+            chapters_total=0,
+            progress_fingerprint="outline_replan:first-codes",
+            progress_rank=(6200, -4, -1, 0),
+        )
+        meta, abandoned = _compute_heal_progress_state(
+            meta,
+            chapters_total=0,
+            progress_fingerprint="outline_replan:renamed-codes",
+            progress_rank=(6200, -4, -1, 0),
+        )
+
+        assert abandoned is False
+        assert meta["self_heal_no_progress_attempts"] == 1
+
+    def test_worse_rank_does_not_replace_best_or_reset_counter(self) -> None:
+        meta, _ = _compute_heal_progress_state(
+            {}, chapters_total=0, progress_rank=(6200, -4, -1, 0)
+        )
+        meta, _ = _compute_heal_progress_state(
+            meta, chapters_total=0, progress_rank=(5200, -2, -1, 0)
+        )
+
+        assert meta["self_heal_no_progress_attempts"] == 1
+        assert meta["self_heal_last_progress_rank"] == [6200, -4, -1, 0]
+
+    def test_strictly_better_rank_resets_counter(self) -> None:
+        meta, _ = _compute_heal_progress_state(
+            {}, chapters_total=0, progress_rank=(5200, -8, -1, 0)
+        )
+        meta, _ = _compute_heal_progress_state(
+            meta, chapters_total=0, progress_rank=(5200, -8, -1, 0)
+        )
+        assert meta["self_heal_no_progress_attempts"] == 1
+
+        meta, abandoned = _compute_heal_progress_state(
+            meta, chapters_total=0, progress_rank=(6200, -4, -1, 0)
+        )
+
+        assert abandoned is False
+        assert meta["self_heal_no_progress_attempts"] == 0
+        assert meta["self_heal_last_progress_rank"] == [6200, -4, -1, 0]
 
     def test_does_not_mutate_input_metadata(self) -> None:
         original = {"self_heal_last_chapters_total": 0, "other_key": "keep"}
@@ -127,7 +193,6 @@ class TestProjectSelfHealAbandoned:
     def test_legacy_abandoned_without_fingerprint_is_not_a_runtime_stop(self) -> None:
         p = SimpleNamespace(metadata_json={"self_heal_abandoned": True})
         assert _project_self_heal_abandoned(p) is False
-
     def test_current_fingerprinted_abandonment_is_a_runtime_stop(self) -> None:
         p = SimpleNamespace(
             metadata_json={
@@ -148,3 +213,85 @@ class TestProjectSelfHealAbandoned:
     def test_abandoned_false_when_metadata_not_dict(self) -> None:
         p = SimpleNamespace(metadata_json="garbage")
         assert _project_self_heal_abandoned(p) is False
+
+
+def test_outline_replan_fingerprint_tracks_llm_semantic_progress() -> None:
+    def project(score: float, codes: list[str]) -> SimpleNamespace:
+        return SimpleNamespace(
+            metadata_json={
+                "production_pause_reason": "outline_semantic_gate_failed",
+                "outline_semantic_gate_report": {
+                    "findings": [],
+                    "promotion_allowed": False,
+                    "llm_adjudication": {
+                        "overall_score": score,
+                        "issues": [{"code": code} for code in codes],
+                    },
+                },
+            }
+        )
+
+    first = _outline_replan_progress_fingerprint(project(0.42, ["AGENCY_BREACH"]))
+    improved = _outline_replan_progress_fingerprint(project(0.52, ["HOOK_DEBT"]))
+
+    assert first != improved
+
+
+def test_outline_replan_fingerprint_tracks_progressive_commercial_progress() -> None:
+    def project(score: float, codes: list[str]) -> SimpleNamespace:
+        return SimpleNamespace(
+            metadata_json={
+                "production_pause_reason": "volume_outline_gate_failed",
+                "outline_commercial_last_failure": {
+                    "overall_score": score,
+                    "blocking_codes": codes,
+                },
+            }
+        )
+
+    first = _outline_replan_progress_fingerprint(
+        project(0.55, ["OPENING_CONFLICT_MISSING"])
+    )
+    improved = _outline_replan_progress_fingerprint(
+        project(0.825, ["LLM_DIMENSION_BELOW_THRESHOLD_KNOWLEDGE_BOUNDARY"])
+    )
+
+    assert first != improved
+
+
+def test_outline_replan_progress_rank_ignores_blocker_renames_at_equal_quality() -> None:
+    def project(score: float, codes: list[str]) -> SimpleNamespace:
+        return SimpleNamespace(
+            metadata_json={
+                "outline_commercial_last_failure": {
+                    "overall_score": score,
+                    "blocking_codes": codes,
+                }
+            }
+        )
+
+    first = _outline_replan_progress_rank(
+        project(0.62, ["AGENCY_BREACH", "HOOK_DEBT"])
+    )
+    renamed = _outline_replan_progress_rank(
+        project(0.62, ["KNOWLEDGE_BOUNDARY", "STAKE_VAGUE"])
+    )
+    improved = _outline_replan_progress_rank(project(0.65, ["HOOK_DEBT"]))
+
+    assert first == renamed
+    assert improved > first
+
+
+def test_outline_replan_progress_rank_uses_retained_best_failed_candidate() -> None:
+    project = SimpleNamespace(
+        metadata_json={
+            "outline_commercial_last_failure": {
+                "overall_score": 0.62,
+                "blocking_codes": ["REGRESSED_A", "REGRESSED_B", "REGRESSED_C"],
+                "recovery_baseline_score": 0.83,
+                "recovery_blocking_codes": ["OPENING_PULL", "METHODOLOGY"],
+            }
+        }
+    )
+
+    assert _outline_replan_progress_rank(project)[:2] == (8300, -2)

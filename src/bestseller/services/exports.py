@@ -1197,11 +1197,39 @@ async def load_publication_comparison_payloads(
     return list(result.all())
 
 
+# 修复循环停下来时留下的状态。它们的共同点是**循环已经做完裁决**：ok 是通过，
+# 其余几个是「不再修了，发布这份最优稿」。导出门再拿 debt 去毙书，等于用一道门
+# 推翻另一道门刚做完的判决——书就此永远卡在管线里没人能救。
+#
+# 2026-07-26 实证：两本三章书全链跑通、0 失败工作流、三章全部 quality_debt，
+# 于是两本都导不出去，项目停在 revising；而全仓库只有一个**手动 API** 能置
+# COMPLETED，没人点按钮就永远不完结。
+#
+# 不在此集合里的状态（blocked / pending / 未设置）意思是「还没写完」，那是另一
+# 回事，必须继续拦——否则导出的是一本被中断的书。
+EXPORT_SHIPPABLE_PRODUCTION_STATES: frozenset[str] = frozenset(
+    {
+        "ok",
+        "quality_debt",
+        "repair_exhausted",
+        "quality_reviewed",
+        "needs_human_review",
+    }
+)
+
+# 除 ok 之外都带缺陷，发布时必须留痕：走 preflight_warnings → 导出产物的
+# metadata_json["warnings"]，可查可审计，但不阻断。
+_EXPORT_DEBT_PRODUCTION_STATES: frozenset[str] = (
+    EXPORT_SHIPPABLE_PRODUCTION_STATES - {"ok"}
+)
+
+
 def collect_publication_blockers(
     project: ProjectModel,
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
     *,
     comparison_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] | None = None,
+    debt_warnings: list[str] | None = None,
 ) -> list[str]:
     language = getattr(project, "language", None)
     is_en = normalize_language(language).lower().startswith("en")
@@ -1223,8 +1251,9 @@ def collect_publication_blockers(
         chapter_number = int(chapter.chapter_number)
         status = (getattr(chapter, "status", "") or "").lower()
         production_state = (getattr(chapter, "production_state", "") or "").lower()
+        shippable_state = production_state in EXPORT_SHIPPABLE_PRODUCTION_STATES
         status_publishable = status == "complete" or (
-            status == "revision" and production_state == "ok"
+            status == "revision" and shippable_state
         )
         if not status_publishable:
             blockers.append(
@@ -1233,12 +1262,21 @@ def collect_publication_blockers(
                     if is_en else f"第{chapter_number}章：状态为{status or '未设置'}，不是可发布状态，禁止发布"
                 )
             )
-        if production_state != "ok":
+        if not shippable_state:
             blockers.append(
                 (
-                    f"Chapter {chapter_number}: production_state is {production_state or 'unset'}, not ok"
-                    if is_en else f"第{chapter_number}章：门禁状态为{production_state or '未设置'}，不是 ok，禁止发布"
+                    f"Chapter {chapter_number}: production_state is "
+                    f"{production_state or 'unset'}, chapter is not finished"
+                    if is_en else
+                    f"第{chapter_number}章：门禁状态为{production_state or '未设置'}，"
+                    "该章尚未写完，禁止发布"
                 )
+            )
+        elif production_state in _EXPORT_DEBT_PRODUCTION_STATES and debt_warnings is not None:
+            debt_warnings.append(
+                f"Chapter {chapter_number} shipped with {production_state}"
+                if is_en
+                else f"第{chapter_number}章带缺陷发布（{production_state}）"
             )
         if not list(getattr(draft, "assembled_from_scene_draft_ids", None) or []):
             blockers.append(
@@ -1505,11 +1543,16 @@ def _raise_if_export_blocked(
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
     *,
     comparison_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] | None = None,
+    debt_warnings: list[str] | None = None,
 ) -> None:
+    """Raise on genuine blockers; collect shipped-with-debt notes into
+    ``debt_warnings`` so they reach the artifact instead of stopping the book."""
+
     blockers = collect_publication_blockers(
         project,
         chapter_payloads,
         comparison_payloads=comparison_payloads,
+        debt_warnings=debt_warnings,
     )
     if not blockers:
         return
@@ -1717,7 +1760,10 @@ async def export_project_markdown(
     final_quality_gate: Callable[..., object] | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads, skipped = await _load_project_export_payload(session, project_slug)
-    _raise_if_export_blocked(project, chapter_payloads)
+    # Chapters the repair loop deliberately shipped with debt export, but the
+    # debt is recorded on the artifact rather than silently dropped.
+    debt_warnings: list[str] = []
+    _raise_if_export_blocked(project, chapter_payloads, debt_warnings=debt_warnings)
     if final_quality_gate is not None:
         gate_failures: list[str] = []
         for chapter, draft in chapter_payloads:
@@ -1745,6 +1791,7 @@ async def export_project_markdown(
     else:
         _run_terminal_export_gate(project, chapter_payloads, settings=settings)
     preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
+    preflight_warnings = [*debt_warnings, *preflight_warnings]
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)

@@ -3781,7 +3781,10 @@ def test_publication_gate_blocks_unapproved_chapter_state() -> None:
     blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
 
     assert any("不是可发布状态" in blocker for blocker in blockers)
-    assert any("不是 ok" in blocker for blocker in blockers)
+    # 2026-07-26：门禁项的判据由「等于 ok」改为「是不是终态」——quality_debt 是修复
+    # 循环自己的裁决，拦它等于用一道门推翻另一道门。pending 仍然是「没写完」，
+    # 照样拦，只是文案随之改变。见 test_export_ships_terminal_debt.py。
+    assert any("尚未写完" in blocker for blocker in blockers)
 
 
 def test_publication_gate_allows_repaired_revision_ok_chapter() -> None:

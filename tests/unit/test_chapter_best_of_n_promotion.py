@@ -125,12 +125,27 @@ class TestImplementationMatchesTheRule:
         assert ".outerjoin(" in source
         assert ".join(\n" not in source
 
-    def test_ranks_floor_first(self) -> None:
-        source = inspect.getsource(
+    def test_ranks_length_compliance_before_score(self) -> None:
+        """Length compliance outranks the quality score.
+
+        2026-07-26: the rule is now the whole contract BAND, not just the floor
+        — the ceiling was computed and discarded, so an over-long draft could
+        win on term 2 using a score its own excess length inflates (《纸背》
+        shipped 4942 words against a 2600 target while a 2702-word draft sat
+        unused). The ordering itself is unchanged and now lives in a testable
+        helper instead of a closure; see test_chapter_best_draft_band.py.
+        """
+
+        promotion = inspect.getsource(
             pipelines._promote_best_scoring_chapter_draft_on_stall
         )
-        assert "meets_floor" in source
-        assert "return (meets_floor, score," in source
+        assert "rank_chapter_draft_candidate(" in promotion, (
+            "promotion must delegate to the shared, tested ranking helper"
+        )
+
+        ranking = inspect.getsource(pipelines.rank_chapter_draft_candidate)
+        assert "return (in_band, score," in ranking
+        assert "hard_max" in ranking, "the ceiling must actually be consulted"
 
     def test_length_band_failure_degrades_instead_of_raising(self) -> None:
         source = inspect.getsource(

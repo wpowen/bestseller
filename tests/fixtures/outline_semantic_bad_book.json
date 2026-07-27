@@ -1,0 +1,10 @@
+{
+  "story_spine": {"title": "灰港回声", "protagonist": "林岑", "genre": "悬疑", "tone": "阴郁"},
+  "commercial_brief": {"title": "白塔遗嘱", "protagonist": "周遥", "genre": "言情", "tone": "轻松"},
+  "identity_manifest": {"title": "灰港回声", "protagonist": "林岑", "genre": "悬疑", "tone": "阴郁"},
+  "word_budget": {"min": 1800, "target": 2600, "max": 3500},
+  "chapters": [
+    {"chapter_number": 1, "chapter_title": "第X章", "chapter_goal": "推进主线", "conflict": "继续调查", "opening": "本章只推进", "estimated_chapter_words": 1200, "event_signature": "港口调查", "summary": "transfer the file; accept and return the file"},
+    {"chapter_number": 2, "chapter_title": "第X章", "chapter_goal": "推进主线", "conflict": "继续调查", "opening": "本章只推进", "estimated_chapter_words": "2600", "event_signature": "港口调查", "summary": "等待下一章钩子"}
+  ]
+}

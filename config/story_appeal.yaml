@@ -126,12 +126,36 @@ blurb_pathology:
 # 才允许建项和进入书籍规划。REGENERATE/REJECT 均不放行；判官不可用也不放行。
 logline_gate:
   enabled: true
-  block_expansion: true
+  # ── 2026-07-25：降为 advisory，直到这道门自己通过校准 ──────────────────
+  # 用生产判官(M3)+生产阈值+与 conception 相同的调用形状，跑本仓自带的爆款
+  # 参照集(config/appeal_reference_blurbs.yaml)：
+  #     《斗破苍穹》REJECT 1.59/5（9条核心轴挂8条）
+  #     《完美世界》REJECT 1.98/5（9条全挂）
+  #     《诡秘之主》REJECT 2.93/5（挂7条）
+  # 3/3 真实爆款被毙。把《斗破苍穹》的反差张力打成 1.0 的判官，其裁决不携带
+  # 任何信息量——不能让它拥有一票否决权。
+  #
+  # 结构上还有一处自相矛盾，不需要跑模型就能看出：判官锚点写着
+  #   「3：合格但平庸，会划走　4：被钩住、想点」
+  # 而 pass_floor=3.5 高于它自己的"合格"定义，等于要求 9 条硬否决轴同时接近
+  # "每一维都让读者想点"。9 条合取否决本身就会指数级压低通过率
+  # （即便每轴 85% 也只剩 0.85^9 ≈ 23%）。
+  #
+  # 先例：隔壁简介门是同一个病，量过真爆款(斗破71/诡秘68/大奉68)后从 80 降到
+  # 68，配置里写着"旧值80脱离现实"。这道门从没做过这次测量。
+  #
+  # 恢复硬门的条件（不要凭感觉改回 true）：
+  #   python scripts/logline_gate_calibration.py
+  # 参照爆款全部 PASS 后，再把 block_expansion 改回 true。
+  # 期间它照常评分、照常驱动回炉重写，只是不再杀书。
+  block_expansion: false
   require_llm: true
   fallback_score: 0.0          # 仅用于完成请求的 fallback JSON；require_llm 会阻止默认分放行
   # —— 严格卡控 ——
   reject_floor: 2.5            # 任一【核心命门】< 此 → REJECT：根本性硬伤，不予扩充
-  pass_floor: 3.5             # 任一【核心命门】< 此 → REGENERATE：回炉重写卖点
+  # 3.0 = 判官锚点里的"合格"。原值 3.5 高于判官自己的合格线，等于把所有
+  # "judge 认为合格"的稿子也判不合格——9 条轴同时如此。
+  pass_floor: 3.0             # 任一【核心命门】< 此 → REGENERATE：回炉重写卖点
   overall_floor: 3.6          # 加权总分 < 此 → REGENERATE：各维勉强但整体平庸，不放行
   max_regen: 3                # 回炉上限，用尽仍不过 → 升级人工/标记可见拦截态
   # 12 维 / 两档；权重和=100。前 9 项是核心命门，后 3 项是增益维。

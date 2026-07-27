@@ -38,21 +38,85 @@ _SHORT_FORM_MAX_CHAPTERS = 24
 
 
 class AppealBarNotMetError(Exception):
-    """Raised by conception when ``meets_bar.block_below_bar`` is on and the idea
-    still fails the bar after bounded regeneration — the product's "低于80不通过".
+    """Raised by conception when a blocking appeal gate still rejects the idea
+    after bounded regeneration — the product's "低于80不通过".
 
     Carries the final report dict + human-readable feedback so the web layer can
     surface a visible, inspectable blocked state (NOT a silent proceed-to-planning,
-    NOT a crash/zombie)."""
+    NOT a crash/zombie).
 
-    def __init__(self, report: dict[str, Any], feedback: str = "") -> None:
+    ``blocked_by`` names the gate(s) that actually rejected. Two gates can raise
+    this: the numeric ``meets_bar`` line and ``persona_judge`` (block_below).
+    Without the name the message misdirects — a 2026-07-24 field block read
+    "appeal bar not met (blurb=81.4 title=94.8)" while BOTH numbers were above
+    their thresholds and the persona judge was the real blocker.
+    """
+
+    def __init__(
+        self,
+        report: dict[str, Any],
+        feedback: str = "",
+        *,
+        blocked_by: tuple[str, ...] | list[str] = (),
+    ) -> None:
         self.report = report or {}
         self.feedback = feedback or ""
+        self.blocked_by = tuple(blocked_by)
         blurb = (self.report.get("blurb") or {}).get("total")
         title = (self.report.get("title") or {}).get("total")
+        cause = "+".join(self.blocked_by) if self.blocked_by else "appeal bar"
         super().__init__(
-            f"appeal bar not met (blurb={blurb}, title={title})"
+            f"{cause} not met (blurb={blurb}, title={title})"
         )
+
+
+def persona_hard_veto(
+    persona_report: Any,
+    config: dict[str, Any] | None,
+) -> bool:
+    """True when ``persona_judge`` holds veto power AND the idea failed it.
+
+    Fail-open by construction: a missing, malformed or non-dict report never
+    blocks a book (the judge is an LLM call and must not kill production when
+    it is unavailable). Mirrors ``_persona_click_advisory``'s fail-open return.
+    """
+
+    if not isinstance(persona_report, dict):
+        return False
+    cfg = config if isinstance(config, dict) else {}
+    persona_cfg = cfg.get("persona_judge") or {}
+    if not isinstance(persona_cfg, dict):
+        return False
+    if not bool(persona_cfg.get("block_below", False)):
+        return False
+    return not bool(persona_report.get("advisory_pass", True))
+
+
+def appeal_regen_should_continue(
+    *,
+    enabled: bool,
+    attempts: int,
+    max_attempts: int,
+    needs_score_regen: bool,
+    persona_blocks: bool,
+) -> bool:
+    """Whether conception's bounded blurb-regeneration loop should run again.
+
+    Any gate that can BLOCK the book must also be able to DRIVE the repair loop.
+    Keying the loop on the numeric bar alone starved the persona judge: books
+    that cleared ``meets_bar`` but scored 0/3 simulated clicks were hard-killed
+    at ``attempts=0``, with the persona feedback built and then dropped because
+    its only consumer was the loop body that never ran (2026-07-24: two books).
+
+    Bounded regardless of cause — a permanently-vetoing judge burns at most
+    ``max_attempts`` rounds, then the caller hard-blocks with feedback.
+    """
+
+    if not enabled:
+        return False
+    if attempts >= max_attempts:
+        return False
+    return bool(needs_score_regen or persona_blocks)
 
 
 def _config_path() -> Path:
@@ -471,6 +535,7 @@ def _empty_premise_verdict() -> PremiseAppealVerdict:
 
 __all__ = [
     "AppealBarNotMetError",
+    "appeal_regen_should_continue",
     "apply_premise_gating",
     "build_improvement_feedback",
     "evaluate_story_appeal",
@@ -480,6 +545,7 @@ __all__ = [
     "is_appeal_enabled",
     "load_story_appeal_config",
     "meets_bar",
+    "persona_hard_veto",
     "meets_story_bar",
     "resolve_genre_lexicon",
 ]

@@ -14,6 +14,24 @@ from dataclasses import dataclass, field
 import re
 from typing import Any
 
+#: Chapter target at and above which the FULL seriality proof is generated —
+#: and therefore the only band where it may be demanded.
+#:
+#: This constant exists because the two halves of the system disagreed and the
+#: gap was a silent, deterministic book-killer. ``concept_tournament`` gates its
+#: seriality expansion / repair / audit loop behind ``chapter_count >= 200``, so
+#: below that the engine kernel is never asked for ``accumulation_tracks`` or
+#: ``phase_transitions``. ``validate_concept_contract`` nevertheless ran the
+#: full capacity proof at EVERY length — and without accumulation tracks the
+#: ceiling is pinned at 50. Result: every book targeting 51–199 chapters died
+#: with ``target_exceeds_capacity`` after a full conception run, 100% of the
+#: time, including three shipped length presets (54 / 108 / 180). 50 chapters
+#: survived only by landing exactly on the ceiling.
+#:
+#: Import this instead of writing ``>= 200`` again; the drift is what caused
+#: the bug. Pinned by ``tests/unit/test_seriality_capacity_dead_band.py``.
+SERIALITY_PROOF_REQUIRED_MIN_CHAPTERS = 200
+
 
 @dataclass(frozen=True, slots=True)
 class SerialityFinding:

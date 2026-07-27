@@ -7,7 +7,10 @@ import hashlib
 import json
 from typing import Any
 
-from bestseller.services.seriality_capacity import evaluate_seriality_capacity
+from bestseller.services.seriality_capacity import (
+    SERIALITY_PROOF_REQUIRED_MIN_CHAPTERS,
+    evaluate_seriality_capacity,
+)
 
 CONCEPT_CONTRACT_VERSION = "concept-contract.v2"
 
@@ -306,7 +309,19 @@ def validate_concept_contract(
             if expected_hash != input_hash:
                 violations.append("concept_contract.input_hash 与当前内容或目标篇幅不一致")
     proof = contract.get("seriality_proof")
-    if isinstance(proof, Mapping):
+    # Only demand the full capacity proof in the band where it is actually
+    # generated. ``concept_tournament`` runs its seriality expansion / repair /
+    # audit loop behind the same constant, so below it the engine kernel is
+    # never asked for accumulation_tracks / phase_transitions — and without
+    # accumulation tracks the measured ceiling is pinned at 50. Validating it
+    # anyway made every 51–199-chapter book die with target_exceeds_capacity
+    # after a full conception run (verified 2026-07-25 across 51/54/100/108/
+    # 180/199; three shipped presets sit in that band). The measurement
+    # function is intentionally left untouched — it is a ruler, not a policy.
+    if (
+        isinstance(proof, Mapping)
+        and int(target_chapters) >= SERIALITY_PROOF_REQUIRED_MIN_CHAPTERS
+    ):
         fresh_report = evaluate_seriality_capacity(
             proof,
             target_chapters=target_chapters,

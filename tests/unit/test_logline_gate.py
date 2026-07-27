@@ -48,7 +48,9 @@ def test_config_loads_story_intelligence_axes_and_hard_blocking():
     # 严格：reject < pass，且 overall_floor 已设。
     assert cfg["reject_floor"] < cfg["pass_floor"]
     assert cfg["overall_floor"] >= 3.5
-    assert cfg["block_expansion"] is True
+    # 2026-07-25 起为 advisory —— 实测毙掉 3/3 真实爆款，veto 权收回待校准。
+    # 判定逻辑本身(轴/权重/裁决)未变，仍照常评分与驱动回炉。
+    assert cfg["block_expansion"] is False
     assert cfg["require_llm"] is True
 
 
@@ -100,9 +102,20 @@ def test_story_intelligence_hard_failures_reject(axis: str, expected_text: str):
 
 @pytest.mark.unit
 def test_predictable_arc_regenerates():
-    v = decide_logline_action(_scores(unpredictability=3.0))
+    # 2026-07-25: pass_floor 3.5 → 3.0（判官锚点里 3 就是"合格"，旧值高于
+    # 判官自己的合格线）。本例改用 2.8 —— 意图不变（可预测的走向要回炉），
+    # 只是把探针挪到重新标定后的门槛之下。
+    v = decide_logline_action(_scores(unpredictability=2.8))
     assert v.action is LoglineAction.REGENERATE
     assert any("一眼望到头" in r for r in v.reasons)
+
+
+@pytest.mark.unit
+def test_axis_at_the_judges_own_pass_anchor_is_not_regenerated():
+    # 判官锚点：3=合格。合格就不该被判回炉——这正是旧 pass_floor=3.5 的病：
+    # 它把判官认定合格的稿子全部打回，而且是 9 条轴同时如此。
+    v = decide_logline_action(_scores(unpredictability=3.0))
+    assert v.action is LoglineAction.EXPAND
 
 
 @pytest.mark.unit
@@ -215,9 +228,13 @@ def test_verdict_dict_is_json_serializable_for_persistence():
 
 
 @pytest.mark.unit
-def test_block_expansion_flag_loads_default_true():
+def test_block_expansion_flag_is_advisory_pending_calibration():
+    # 实测这道门毙掉 3/3 真实爆款(斗破1.59/完美1.98/诡秘2.93,满分5)，
+    # 故降为 advisory：照常评分与驱动回炉，但不再一票否决。
+    # 恢复条件见 scripts/logline_gate_calibration.py 与
+    # tests/unit/test_logline_gate_calibration_contract.py。
     cfg = load_logline_gate_config()
-    assert cfg["block_expansion"] is True
+    assert cfg["block_expansion"] is False
 
 
 @pytest.mark.unit

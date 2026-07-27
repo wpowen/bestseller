@@ -21,6 +21,15 @@ from bestseller.services.story_enhancers import StoryEnhancerSelection
 # Strong signals that the global forensic/funeral hybrid lane leaked into a
 # genre-native book. These are not blanket bans on fantasy corpses; they are
 # final-tripwire terms for unexplained modern/professional ontology.
+#
+# ADMISSION TEST — a term belongs here only if it denotes something that CANNOT
+# exist in a pre-modern world (an institution, a technology, a profession born
+# of modern science). Classical words must stay out: 收尸/入殓/殡葬 are rites
+# older than the genre itself, and banning them killed a 玄幻 book whose
+# premise was a sect corpse-handler (2026-07-25, custom-xuanhuan-1784908885)
+# — while ``writing_presets`` was simultaneously SELLING 收尸人 as a
+# genre-native profession and the tournament tests used it as a valid seed.
+# ``test_ontology_tripwire_false_positives`` enforces both halves of this rule.
 _GENRE_NATIVE_MODERNITY_CJK: tuple[str, ...] = (
     "手机",
     "微信",
@@ -28,13 +37,12 @@ _GENRE_NATIVE_MODERNITY_CJK: tuple[str, ...] = (
     "写字楼",
     "职场",
     "现代都市",
+    # Forensic science — the discipline itself is modern.
     "尸检",
     "法医",
     "法医鉴定",
+    # Modern institutions/technology, not rites.
     "殡仪馆",
-    "殡葬",
-    "入殓",
-    "收尸",
     "停尸房",
     "器官移植",
 )

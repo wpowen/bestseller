@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,7 +16,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.enums import ArtifactType, ChapterStatus, WorkflowStatus
+from bestseller.domain.enums import ArtifactType, ChapterStatus, ProjectStatus, WorkflowStatus
 from bestseller.domain.planning import (
     NovelPlanningResult,
     PlanningArtifactCreate,
@@ -158,7 +158,6 @@ from bestseller.services.story_enhancers import (
     render_story_enhancer_contract_block,
     resolve_cost_style,
     resolve_story_enhancers,
-    story_enhancer_repair_directives,
 )
 from bestseller.services.brainhole_engine import BRAINHOLE_PROFILE_METADATA_KEY
 from bestseller.domain.ideology import (
@@ -268,6 +267,21 @@ class OutlineFieldDegeneracyError(PlannerFallbackError):
     that explain each field's distinct semantics instead of asking for a blind
     full rewrite. Treated as soft on the final attempt: a quality gap must
     never abort the book.
+    """
+
+    def __init__(self, message: str, *, findings: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.findings = findings
+
+
+class OutlineSemanticQualityError(PlannerFallbackError):
+    """Raised when a structurally complete outline is still narratively unsafe.
+
+    This covers cross-field failures that existence-only validation cannot see:
+    stale event payload replay, planning/meta language in story fields, repeated
+    hook mechanisms, role-schema leakage, and copied causal-contract slots.
+    ``findings`` is kept structured so the bounded repair loop can tell the
+    planner exactly which chapters and duties to rewrite.
     """
 
     def __init__(self, message: str, *, findings: list[dict[str, Any]]) -> None:
@@ -1679,7 +1693,15 @@ def _outline_chapter_goal_repair(chapter: Any, *, protagonist_name: str) -> str:
         getattr(chapter, "hook_description", None),
     )
     if candidate:
-        return candidate
+        grounded = re.split(r"[，,；;。]", candidate, maxsplit=1)[0].strip()
+        # Preserve the concrete story pressure instead of wrapping it in a
+        # generic "take action / get a result" template.  The latter passed
+        # shape checks but diluted the very scene evidence the repair was
+        # meant to recover.
+        return (
+            f"{grounded}；{protagonist_name}必须采取主动行动，在本章结束前取得"
+            "能推进下一步的具体证据或筹码。"
+        )
     label = _outline_chapter_label(chapter)
     return f"{protagonist_name}在「{label}」中面对当前压力并做出可见选择。"
 
@@ -1691,7 +1713,11 @@ def _outline_chapter_conflict_repair(chapter: Any, *, protagonist_name: str) -> 
         getattr(chapter, "hook_description", None),
     )
     if candidate:
-        return candidate
+        grounded = _outline_first_clauses(candidate, 1)
+        return (
+            f"对手或环境围绕「{grounded}」施加反制；"
+            f"{protagonist_name}若无法突破，就会失去眼前机会并承担新的代价。"
+        )
     label = _outline_chapter_label(chapter)
     return f"{protagonist_name}必须在「{label}」里处理当前阻力，否则失去关键线索。"
 
@@ -2171,7 +2197,10 @@ def _enrich_generated_volume_outline_systemic_fields(
             else ""
         )
         key_reveals = "；".join(_string_list(getattr(chapter, "key_reveals", None)))
-        volume_label = getattr(chapter, "volume_number", None) or "?"
+        goal_text = _non_empty_string(chapter_goal, "")
+        conflict_text = _non_empty_string(main_conflict, "")
+        hook_text = _non_empty_string(hook_description, "")
+        action_text = _first_non_empty_text(last_scene_text, goal_text, default="")
         derived = {
             "pressure": _first_non_empty_text(
                 getattr(chapter, "opening_pressure", None),
@@ -2183,20 +2212,42 @@ def _enrich_generated_volume_outline_systemic_fields(
                 main_conflict,
                 default="",
             ),
-            "protagonist_desire": _non_empty_string(chapter_goal, ""),
-            "protagonist_choice": _non_empty_string(chapter_goal, ""),
-            "visible_action_or_reaction": _first_non_empty_text(
-                last_scene_text, chapter_goal, default=""
+            "protagonist_desire": goal_text,
+            "protagonist_choice": (
+                f"The protagonist chooses a visible action: {action_text}"
+                if is_en and action_text
+                else f"主角选择采取可见行动：{action_text}"
+                if action_text
+                else ""
             ),
-            "state_change": _first_non_empty_text(exit_text, hook_description, default=""),
-            "gain_or_reveal": _first_non_empty_text(key_reveals, hook_description, default=""),
-            "cost_or_tradeoff": _outline_first_clauses(main_conflict, 1),
+            "visible_action_or_reaction": action_text,
+            "state_change": (
+                f"Irreversible end state: {_first_non_empty_text(exit_text, hook_text, default='')}"
+                if is_en and _first_non_empty_text(exit_text, hook_text, default="")
+                else f"章末不可逆变化：{_first_non_empty_text(exit_text, hook_text, default='')}"
+                if _first_non_empty_text(exit_text, hook_text, default="")
+                else ""
+            ),
+            "gain_or_reveal": (
+                f"Concrete gain or reveal: {_first_non_empty_text(key_reveals, hook_text, default='')}"
+                if is_en and _first_non_empty_text(key_reveals, hook_text, default="")
+                else f"具体获得或揭露：{_first_non_empty_text(key_reveals, hook_text, default='')}"
+                if _first_non_empty_text(key_reveals, hook_text, default="")
+                else ""
+            ),
+            "cost_or_tradeoff": (
+                f"The choice creates a concrete cost through this obstacle: {conflict_text}"
+                if is_en and conflict_text
+                else f"这一选择通过当前阻力产生具体代价：{conflict_text}"
+                if conflict_text
+                else ""
+            ),
             "chapter_function": _first_non_empty_text(
                 getattr(chapter, "chapter_event_role", None),
                 default=(
-                    f"Advance volume {volume_label} main line"
+                    f"Move from the current goal into a changed situation: {goal_text} -> {hook_text}"
                     if is_en
-                    else f"推进第{volume_label}卷主线"
+                    else f"由当前目标推进到新的局势：{goal_text}→{hook_text}"
                 ),
             ),
             "next_reader_desire": _first_non_empty_text(
@@ -2218,7 +2269,59 @@ def _enrich_generated_volume_outline_systemic_fields(
             repaired += 1
             _tag_enriched_outline_field(chapter, "causal_contract")
 
-        # ── 4) hook_type: derive a canonical taxonomy label when the planner
+        # ── 4) information contract: recover a concrete reveal that the model
+        # already placed in the causal/methodology contract but forgot to copy
+        # into the dedicated chapter field.  This is evidence-preserving (no
+        # generic fact is invented) and closes the aggregate-batch hole where
+        # ch1-6 carry information fields but ch7 silently drops the schema.
+        introduced = _string_list(
+            getattr(chapter, "chapter_information_introduced", None)
+        )
+        if not introduced and not _string_list(getattr(chapter, "key_reveals", None)):
+            methodology = getattr(chapter, "methodology_contract", None)
+            methodology = dict(methodology) if isinstance(methodology, Mapping) else {}
+            scene_reveal = ""
+            for scene in scenes:
+                scene_methodology = getattr(scene, "methodology_contract", None)
+                if not isinstance(scene_methodology, Mapping):
+                    continue
+                scene_reveal = _first_non_empty_text(
+                    scene_methodology.get("reveal_mode"),
+                    scene_methodology.get("information_control_mode"),
+                    default="",
+                )
+                if scene_reveal:
+                    break
+            reveal = _first_non_empty_text(
+                filled.get("gain_or_reveal"),
+                methodology.get("hooks_to_resolve"),
+                scene_reveal,
+                default="",
+            )
+            if reveal:
+                chapter.chapter_information_introduced = [
+                    reveal[:_OUTLINE_CONTRACT_VALUE_MAX_CHARS]
+                ]
+                repaired += 1
+                _tag_enriched_outline_field(
+                    chapter, "chapter_information_introduced"
+                )
+
+        held_back = _string_list(
+            getattr(chapter, "chapter_information_held_back", None)
+        )
+        if not held_back:
+            methodology = getattr(chapter, "methodology_contract", None)
+            methodology = dict(methodology) if isinstance(methodology, Mapping) else {}
+            withheld = _non_empty_string(methodology.get("hooks_to_plant"), "")
+            if withheld:
+                chapter.chapter_information_held_back = [
+                    withheld[:_OUTLINE_CONTRACT_VALUE_MAX_CHARS]
+                ]
+                repaired += 1
+                _tag_enriched_outline_field(chapter, "chapter_information_held_back")
+
+        # ── 5) hook_type: derive a canonical taxonomy label when the planner
         # left it blank (observed empty on whole batches, e.g. ch1-5 / ch21-30).
         # The chapter already carries a concrete hook_description / tail_hook; we
         # map it to the nearest canonical hook key, falling back to the first
@@ -2229,7 +2332,8 @@ def _enrich_generated_volume_outline_systemic_fields(
             )
             derived_hook = _match_hook_type_key(hook_source) if hook_source else None
             if not derived_hook:
-                derived_hook = _HOOK_KEYS[0]
+                chapter_number = int(getattr(chapter, "chapter_number", 1) or 1)
+                derived_hook = _HOOK_KEYS[(chapter_number - 1) % len(_HOOK_KEYS)]
             chapter.hook_type = derived_hook
             repaired += 1
             _tag_enriched_outline_field(chapter, "hook_type")
@@ -2817,6 +2921,47 @@ def _detect_degenerate_outline_fields(batch: Any) -> list[dict[str, Any]]:
     return findings
 
 
+def _enforce_outline_field_degeneracy(
+    batch: Any,
+    *,
+    logical_name: str,
+    strict: bool,
+    phase: str,
+) -> list[dict[str, Any]]:
+    """Enforce distinct goal/opening/conflict semantics at a named boundary.
+
+    The planner validates both the model payload and the fully normalized
+    payload.  Deterministic enrichment and contract repair are allowed to fill
+    missing fields, but they are not allowed to manufacture a promotion-safe
+    outline by copying one semantic field into another.
+    """
+
+    findings = _detect_degenerate_outline_fields(batch)
+    if not findings:
+        return []
+    summary = "; ".join(
+        f"ch{finding['chapter_number']} {finding['field_a']}≈{finding['field_b']}"
+        f"(sim={finding['similarity']})"
+        for finding in findings[:20]
+    )
+    if strict:
+        raise OutlineFieldDegeneracyError(
+            f"Planner artifact '{logical_name}' has degenerate outline fields "
+            f"after {phase} (chapter_goal/opening_situation/main_conflict "
+            f"collapsed into near-duplicates): {summary}",
+            findings=findings,
+        )
+    logger.warning(
+        "Soft-accepting %s with %d degenerate outline field pair(s) after %s: %s",
+        logical_name,
+        len(findings),
+        phase,
+        summary,
+    )
+    _tag_degenerate_outline_fields(batch, findings)
+    return findings
+
+
 def _validate_generated_volume_outline_or_raise(
     payload: Any,
     *,
@@ -2838,14 +2983,9 @@ def _validate_generated_volume_outline_or_raise(
     title duplicates become a hard validation error and the repair loop
     can re-prompt the planner with a targeted directive.
 
-    ``strict_field_degeneracy``：三字段退化查重的严格档独立开关。``None``（默认）
-    跟随 ``strict_story_effects``——修复循环内按轮次收紧/放宽。合并终验
-    (:func:`_generate_volume_outline_batched` 的 combine 调用) 必须显式传
-    ``False``：L3 真机验收(2026-07-09, female-growth 书)证实管线自己的确定性
-    修复会在批内校验【之后】制造退化——``_repair_generated_volume_outline_
-    contract_inputs`` 把元话术 goal 用 main_conflict 首句重写、enrichment 再
-    把 goal 复制进 opening_situation——合并终验没有回炉循环兜着，strict 一抛
-    整本书直接死（与上方 title 撞名同款的老坑）。合并终验对退化只软接受+打标。
+    ``strict_field_degeneracy`` controls whether collapsed goal/opening/conflict
+    fields can be promoted.  Whole-volume promotion always uses strict mode:
+    a failed outline must be replanned rather than relabelled as acceptable.
     """
 
     from bestseller.domain.workflow import ChapterOutlineBatchInput
@@ -2930,30 +3070,15 @@ def _validate_generated_volume_outline_or_raise(
     # main_conflict 三字段字面相同，下游 existence-only 闸门("非空即过")照样
     # 全通过。在 enrichment 之前检测——enrichment 只填空字段，不该让它把已经
     # 退化的模型输出洗白成"看起来正常"；退化必须回炉重写，而不是被复制掩盖。
-    _degeneracy_findings = _detect_degenerate_outline_fields(batch)
     _strict_degeneracy = (
         strict_story_effects if strict_field_degeneracy is None else strict_field_degeneracy
     )
-    if _degeneracy_findings:
-        _degeneracy_summary = "; ".join(
-            f"ch{f['chapter_number']} {f['field_a']}≈{f['field_b']}(sim={f['similarity']})"
-            for f in _degeneracy_findings[:20]
-        )
-        if _strict_degeneracy:
-            raise OutlineFieldDegeneracyError(
-                f"Planner artifact '{logical_name}' has degenerate outline fields "
-                "(chapter_goal/opening_situation/main_conflict collapsed into "
-                f"near-duplicates): {_degeneracy_summary}",
-                findings=_degeneracy_findings,
-            )
-        logger.warning(
-            "Soft-accepting %s with %d degenerate outline field pair(s) after "
-            "final attempt: %s",
-            logical_name,
-            len(_degeneracy_findings),
-            _degeneracy_summary,
-        )
-        _tag_degenerate_outline_fields(batch, _degeneracy_findings)
+    _enforce_outline_field_degeneracy(
+        batch,
+        logical_name=logical_name,
+        strict=_strict_degeneracy,
+        phase="model output normalization",
+    )
 
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
     _cast_protagonist = _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
@@ -3055,7 +3180,56 @@ def _validate_generated_volume_outline_or_raise(
             "Outline word-target normalization skipped for %s", logical_name, exc_info=True
         )
     _require_outline_systemic_fields_or_raise(batch, logical_name=logical_name)
-    return batch.model_dump(mode="json", by_alias=True)
+
+    # Enrichment and deterministic contract repair run after the first check
+    # and can synthesize opening/conflict text from sibling fields.  Recheck the
+    # actual payload that is about to be promoted so post-processing collapse is
+    # handled by the existing LLM repair loop at batch scope, rather than
+    # surfacing only after all batches have been combined.
+    _enforce_outline_field_degeneracy(
+        batch,
+        logical_name=logical_name,
+        strict=_strict_degeneracy,
+        phase="system enrichment and contract repair",
+    )
+    normalized_payload = batch.model_dump(mode="json", by_alias=True)
+    if _strict_degeneracy:
+        from bestseller.services.outline_semantic_gate import (
+            evaluate_outline_semantic_gate,
+            hard_contract_findings,
+        )
+
+        semantic_report = evaluate_outline_semantic_gate(
+            {"chapters": normalized_payload.get("chapters", [])}
+        )
+        if not semantic_report.promotion_allowed:
+            # OUTLINE_REUSED_PAYLOAD_ANCHOR is deliberately NOT enforced here.
+            # It looks for "a stale batch replaying an already-spent payload",
+            # but this call site only ever sees ONE batch (3 chapters), so
+            # cross-batch replay is invisible to it. What its rule actually
+            # catches at 3-chapter scope is "the first and last chapter quote
+            # the same phrase" — which is precisely what a book with a named
+            # recurring mechanism does on purpose. 《仇人膝上养帝王》
+            # (2026-07-25) failed it three times on its own core device
+            # (“婴啼-注视-回应三连暗号”); the repair directive asks the model to
+            # delete that device, so no attempt could ever pass, and the
+            # auto-resume loop then burned 118 calls / ~880k tokens. Still
+            # detected and reported — just not a veto on this evidence.
+            semantic_findings = [
+                finding.to_dict()
+                for finding in hard_contract_findings(semantic_report)
+            ]
+            if semantic_findings:
+                summary = "; ".join(
+                    f"{finding['code']}@ch{finding.get('chapter') or '-'}"
+                    for finding in semantic_findings[:20]
+                )
+                raise OutlineSemanticQualityError(
+                    f"Planner artifact '{logical_name}' failed semantic promotion: "
+                    f"{summary}",
+                    findings=semantic_findings,
+                )
+    return normalized_payload
 
 
 def _derive_information_held_back_seed(
@@ -3303,6 +3477,43 @@ def _outline_repair_directives_from_error(
             )
         else:
             directives.append("其他章节保持不变。仅按上述指令重写指定章节，不要重写整批。")
+        directives.append(preserve_directive)
+        return directives
+
+    if isinstance(error, OutlineSemanticQualityError) and error.findings:
+        directives = []
+        code_guidance_zh = {
+            "OUTLINE_META_LANGUAGE": "删除‘本章交付/本章负责/推进主线’等策划标签，改成故事内发生的具体行动、阻力和结果",
+            "OUTLINE_ROLE_SCHEMA_LEAK": "删除姓名后的角色注释，只保留人物在故事世界中的称呼和当场行为",
+            "OUTLINE_CAUSAL_CONTRACT_DEGENERATE": "分别重写压力、阻力、选择、代价、状态变化、揭露和下一追读欲，禁止复制同一句话填多个槽位",
+            "OUTLINE_INFORMATION_CONTRACT_GAP": "补齐该批次中缺失的具体信息释放，并说明谁在何种行动中获得或误判了它",
+            "OUTLINE_HOOK_TYPE_STREAK": "更换连续重复的钩子机制，让至少一章使用不同的未决行动、关系反转、期限或信息差",
+            "OUTLINE_REUSED_PAYLOAD_ANCHOR": "该情报或事件已被前章消耗，换成新的行动对象、阻力、代价和不可逆状态变化",
+        }
+        code_guidance_en = {
+            "OUTLINE_META_LANGUAGE": "remove planning labels and replace them with an in-world action, obstacle, and result",
+            "OUTLINE_ROLE_SCHEMA_LEAK": "remove cast-schema role annotations and keep only in-world names and behavior",
+            "OUTLINE_CAUSAL_CONTRACT_DEGENERATE": "rewrite pressure, resistance, choice, cost, state change, reveal, and next desire separately; never copy one sentence across duties",
+            "OUTLINE_INFORMATION_CONTRACT_GAP": "restore the missing concrete information release and show who learns or misreads it through action",
+            "OUTLINE_HOOK_TYPE_STREAK": "replace the repeated hook mechanism with a different unresolved action, relationship reversal, deadline, or information gap",
+            "OUTLINE_REUSED_PAYLOAD_ANCHOR": "this information or event was already spent; replace it with a new action object, obstacle, cost, and irreversible state change",
+        }
+        for finding in error.findings[:20]:
+            code = str(finding.get("code") or "OUTLINE_SEMANTIC_FAILURE")
+            chapter = finding.get("chapter")
+            evidence = finding.get("evidence") or {}
+            if is_en:
+                directives.append(
+                    f"Chapter {chapter or 'batch'} [{code}]: "
+                    f"{code_guidance_en.get(code, 'rewrite the named semantic defect with concrete story evidence')}. "
+                    f"Evidence: {_json_dumps(evidence)[:500]}"
+                )
+            else:
+                directives.append(
+                    f"第{chapter or '整批'}章 [{code}]："
+                    f"{code_guidance_zh.get(code, '按证据重写对应语义缺陷，必须落到具体故事行动与结果')}。"
+                    f"证据：{_json_dumps(evidence)[:500]}"
+                )
         directives.append(preserve_directive)
         return directives
 
@@ -3647,6 +3858,12 @@ async def _generate_volume_outline_with_repair_loop(
             project_ctx=project,
             token_budget=600,
         )
+        vol_outline_system, vol_outline_user = _compile_volume_outline_prompt(
+            project,
+            settings,
+            system_prompt=vol_outline_system,
+            user_prompt=vol_outline_user,
+        )
         try:
             raw_payload, llm_run_id = await _generate_structured_artifact(
                 session,
@@ -3676,6 +3893,10 @@ async def _generate_volume_outline_with_repair_loop(
                 volume_entry=volume_entry,
                 existing_titles=existing_titles,
                 strict_story_effects=attempt < max_repair_attempts,
+                # Narrative semantics never soft-accept on the last attempt.
+                # A complete-looking but duplicated/degenerate outline is not
+                # a quality warning; it is unsafe input for prose generation.
+                strict_field_degeneracy=True,
             )
             if raw_meta:
                 payload["_meta"] = raw_meta
@@ -3694,41 +3915,32 @@ async def _generate_volume_outline_with_repair_loop(
                         )
                         for f in duplicate_findings[:10]
                     )
-                    if attempt >= max_repair_attempts:
-                        # Soft-accept: a residual near-duplicate event must not
-                        # abort the book. Surface it operationally via the WARN
-                        # log below and the repair_history entry; the _meta key
-                        # carries the structured findings for any consumer.
-                        logger.warning(
-                            "Volume %d outline batch '%s': accepting with %d "
-                            "unresolved consumed-event duplicate(s) after %d "
-                            "attempt(s): %s",
-                            volume_number,
-                            logical_name,
-                            len(duplicate_findings),
-                            attempt,
-                            summary,
-                        )
-                        meta = _mapping(payload.get("_meta"))
-                        meta["event_dedup_unresolved"] = duplicate_findings
-                        payload["_meta"] = meta
-                        repair_history.append(
-                            {
-                                "attempt": attempt,
-                                "status": "passed_with_event_duplicates",
-                                "event_duplicates": duplicate_findings[:10],
-                            }
-                        )
-                    else:
+                    if attempt < max_repair_attempts:
                         raise OutlineEventDuplicationError(
                             f"Planner artifact '{logical_name}' re-narrated "
                             f"already-consumed events: {summary}",
                             findings=duplicate_findings,
                         )
-            # Story-enhancer coverage gate (#28): if the book checked enhancer
-            # effects at creation, every batch must actually cash them. Systemic
-            # absence (the zhaoshen-hr-v13 bland-outline failure) triggers repair;
-            # soft-accept on the final attempt so a quality gap never aborts.
+                    # Character n-gram similarity is evidence, not proof of the
+                    # same narrative event. Preserve the final-attempt hits for
+                    # the full-volume LLM judge instead of letting a heuristic
+                    # preempt contextual adjudication forever.
+                    meta = dict(_mapping(payload.get("_meta")))
+                    meta["cross_batch_event_similarity_candidates"] = duplicate_findings
+                    payload["_meta"] = meta
+                    logger.warning(
+                        "Volume %d outline batch '%s': forwarding %d residual "
+                        "event-similarity candidate(s) to the LLM judge: %s",
+                        volume_number,
+                        logical_name,
+                        len(duplicate_findings),
+                        summary,
+                    )
+            # Book-level enhancer distribution is contextual, not an objective
+            # schema fact. A structured route is strong evidence; keyword hits
+            # are only weak evidence. Preserve any apparent gap for the full
+            # outline LLM judge instead of forcing every selected effect into
+            # every chapter and undoing agency/knowledge-boundary repairs.
             _enhancer_selection = resolve_story_enhancers(
                 project.metadata_json if isinstance(project.metadata_json, dict) else {}
             )
@@ -3736,42 +3948,23 @@ async def _generate_volume_outline_with_repair_loop(
                 _mapping_list(payload.get("chapters")), _enhancer_selection
             )
             if _enhancer_gaps:
-                _enhancer_directives = story_enhancer_repair_directives(
-                    _mapping_list(payload.get("chapters")), _enhancer_selection
-                )
                 _gap_summary = ", ".join(
                     f"{g['effect']}={int(g['coverage'] * 100)}%" for g in _enhancer_gaps
                 )
-                if attempt >= max_repair_attempts:
-                    logger.warning(
-                        "Volume %d outline batch '%s': accepting with %d "
-                        "under-delivered story enhancer(s) after %d attempt(s): %s",
-                        volume_number,
-                        logical_name,
-                        len(_enhancer_gaps),
-                        attempt,
-                        _gap_summary,
-                    )
-                    meta = _mapping(payload.get("_meta"))
-                    meta["story_enhancer_gaps"] = _enhancer_gaps
-                    payload["_meta"] = meta
-                    repair_history.append(
-                        {
-                            "attempt": attempt,
-                            "status": "passed_with_enhancer_gaps",
-                            "enhancer_gaps": _enhancer_gaps,
-                        }
-                    )
-                else:
-                    raise StoryEnhancerCoverageError(
-                        f"Planner artifact '{logical_name}' left selected story "
-                        f"enhancers uncashed: {_gap_summary}",
-                        directives=_enhancer_directives,
-                    )
+                meta = dict(_mapping(payload.get("_meta")))
+                meta["story_enhancer_distribution_candidates"] = _enhancer_gaps
+                payload["_meta"] = meta
+                logger.warning(
+                    "Volume %d outline batch '%s': forwarding %d story-enhancer "
+                    "distribution candidate(s) to the LLM judge: %s",
+                    volume_number,
+                    logical_name,
+                    len(_enhancer_gaps),
+                    _gap_summary,
+                )
             if repair_history and repair_history[-1].get("status") not in (
                 "passed",
                 "passed_with_enhancer_gaps",
-                "passed_with_event_duplicates",
             ):
                 repair_history.append({"attempt": attempt, "status": "passed"})
             _emit_planner_progress(
@@ -3971,6 +4164,190 @@ def _outline_batch_constraints(
             _outline_event_ledger_constraint(consumed_event_ledger, language=language)
         )
     return constraints
+
+
+def _previous_outline_batch_constraints(
+    previous_outline_payload: Mapping[str, Any] | None,
+    *,
+    chapter_start: int,
+    chapter_end: int,
+    language: str | None,
+) -> list[str]:
+    """Render the prior judge round as an explicit edit baseline.
+
+    Commercial-judge repair rounds used to regenerate every batch from only
+    textual diagnostics. That made the model repair one defect while silently
+    discarding previously-correct agency, knowledge-boundary, or payoff work.
+    Supplying the exact prior batch turns the next round into a bounded rewrite.
+    """
+
+    if not isinstance(previous_outline_payload, Mapping):
+        return []
+    chapters = [
+        copy.deepcopy(chapter)
+        for chapter in _mapping_list(previous_outline_payload.get("chapters"))
+        if (
+            (chapter_number := _int_or_none(chapter.get("chapter_number")))
+            is not None
+            and chapter_start <= chapter_number <= chapter_end
+        )
+    ]
+    if not chapters:
+        return []
+    # The baseline shares the writer prompt with canonical context and judge
+    # directives. Keep only the fields needed to preserve story causality and
+    # scene execution; large seriality/methodology execution contracts remain
+    # governed by the ordinary prompt and validators. Strings are bounded while
+    # the JSON stays valid (never slice serialized JSON).
+    def _bounded(value: Any) -> Any:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped if len(stripped) <= 48 else stripped[:48].rstrip() + "..."
+        if isinstance(value, Mapping):
+            return {
+                str(key): _bounded(raw)
+                for key, raw in value.items()
+                if raw not in (None, "", [])
+            }
+        if isinstance(value, list):
+            return [_bounded(item) for item in value[:4]]
+        return value
+
+    chapter_keys = (
+        "chapter_number",
+        "title",
+        "goal",
+        "chapter_goal",
+        "opening_situation",
+        "main_conflict",
+        "world_rule_landing",
+    )
+    causal_keys = (
+        "pressure",
+        "resistance",
+        "immediate_pressure",
+        "opposition",
+        "protagonist_choice",
+        "cost_or_tradeoff",
+        "state_change",
+        "visible_action_or_reaction",
+    )
+    scene_keys = (
+        "scene_number",
+        "participants",
+        "purpose",
+        "entry_state",
+        "exit_state",
+        "hook_requirement",
+        "information_control_mode",
+    )
+    compact_chapters: list[dict[str, Any]] = []
+    for chapter in chapters:
+        compact_chapter = {
+            key: _bounded(chapter[key])
+            for key in chapter_keys
+            if chapter.get(key) not in (None, "", [])
+        }
+        causal = _mapping(chapter.get("causal_contract"))
+        compact_chapter["causal_contract"] = {
+            key: _bounded(causal[key])
+            for key in causal_keys
+            if causal.get(key) not in (None, "", [])
+        }
+        compact_chapter["scenes"] = [
+            {
+                key: _bounded(scene[key])
+                for key in scene_keys
+                if scene.get(key) not in (None, "", [])
+            }
+            for scene in _mapping_list(chapter.get("scenes"))[:2]
+        ]
+        compact_chapters.append(compact_chapter)
+    baseline = _json_dumps({"chapters": compact_chapters})
+    if is_english_language(language):
+        return [
+            "[PREVIOUS JUDGE-ROUND EDIT BASELINE — DO NOT RESTART] The JSON below "
+            "contains the prior batch's authoritative story facts and causal/scene spine. "
+            "Return the same complete chapter range after applying the named judge repairs. "
+            "Preserve every unmentioned fact, decision, knowledge boundary, causal link, and "
+            "scene spine. Do not replace the plot with a new version:\n" + baseline
+        ]
+    return [
+        "【上一轮章纲编辑基线——定点修改，禁止推倒重写】以下 JSON 保留了上一轮的权威剧情事实、"
+        "因果链与场景骨架。本轮必须仍返回同一完整章节范围，只修改裁决明确点名的问题；未点名的"
+        "事实、人物决定、知识边界、因果链和场景骨架必须保留，不得另起一版剧情：\n" + baseline
+    ]
+
+
+def _compact_outline_repair_baseline(
+    outline_payload: Mapping[str, Any] | None,
+    *,
+    language: str | None,
+) -> dict[str, Any] | None:
+    """Persist a bounded cross-run edit baseline for autonomous replans.
+
+    The full generated outline can be very large, while the compact baseline
+    rendered above is deliberately prompt-safe. Reuse that exact bounded JSON
+    representation across outer self-heal attempts so a failed commercial
+    judge round is repaired rather than forgotten and regenerated from zero.
+    """
+
+    chapters = _mapping_list(_mapping(outline_payload).get("chapters"))
+    chapter_numbers = [
+        chapter_number
+        for chapter in chapters
+        if (chapter_number := _int_or_none(chapter.get("chapter_number"))) is not None
+    ]
+    if not chapter_numbers:
+        return None
+    constraints = _previous_outline_batch_constraints(
+        outline_payload,
+        chapter_start=min(chapter_numbers),
+        chapter_end=max(chapter_numbers),
+        language=language,
+    )
+    if not constraints:
+        return None
+    marker = "\n"
+    raw = constraints[0].split(marker, 1)[-1]
+    try:
+        baseline = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return baseline if isinstance(baseline, dict) else None
+
+
+def _prefer_outline_repair_baseline(
+    *,
+    best_payload: Mapping[str, Any] | None,
+    best_report: Mapping[str, Any] | None,
+    candidate_payload: Mapping[str, Any] | None,
+    candidate_report: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Keep the highest-scoring rejected outline as the next repair baseline.
+
+    A bounded repair loop can improve and then regress.  Persisting the last
+    rejected payload would make the outer self-heal restart from the worse
+    version.  Keep payload and report paired so the next run receives repair
+    directives that actually describe the retained baseline.
+    """
+
+    if candidate_payload is None or candidate_report is None:
+        return (
+            copy.deepcopy(dict(best_payload)) if best_payload is not None else None,
+            copy.deepcopy(dict(best_report)) if best_report is not None else None,
+        )
+    try:
+        candidate_score = float(candidate_report.get("overall_score") or 0.0)
+    except (TypeError, ValueError):
+        candidate_score = 0.0
+    try:
+        best_score = float((best_report or {}).get("overall_score") or 0.0)
+    except (TypeError, ValueError):
+        best_score = 0.0
+    if best_payload is None or best_report is None or candidate_score > best_score:
+        return copy.deepcopy(dict(candidate_payload)), copy.deepcopy(dict(candidate_report))
+    return copy.deepcopy(dict(best_payload)), copy.deepcopy(dict(best_report))
 
 
 def _chapter_exit_state_summary(chapter: dict[str, Any]) -> str | None:
@@ -4345,6 +4722,7 @@ async def _generate_volume_outline_batched(
     chapter_number_offset: int,
     revealed_ledger_block: str | None,
     base_constraints: list[str],
+    previous_outline_payload: Mapping[str, Any] | None = None,
     progress: PlanningProgressCallback | None = None,
 ) -> tuple[dict[str, Any], list[UUID], list[dict[str, Any]]]:
     batch_size = _chapter_outline_batch_size(settings, project)
@@ -4379,6 +4757,8 @@ async def _generate_volume_outline_batched(
     repair_history: list[dict[str, Any]] = []
     previous_exit_state: str | None = None
     reused_batch_count = 0
+    event_similarity_candidates: list[dict[str, Any]] = []
+    story_enhancer_distribution_candidates: list[dict[str, Any]] = []
     # R5: consumed-event ledger accumulated across batches so later batches
     # cannot re-narrate arcs earlier batches already spent.
     consumed_event_entries: list[dict[str, Any]] = []
@@ -4388,6 +4768,12 @@ async def _generate_volume_outline_batched(
         batch_logical_name = f"{logical_name}_batch_{chapter_start}_{chapter_end}"
         batch_constraints = [
             *base_constraints,
+            *_previous_outline_batch_constraints(
+                previous_outline_payload,
+                chapter_start=chapter_start,
+                chapter_end=chapter_end,
+                language=_planner_language(project),
+            ),
             *_outline_batch_constraints(
                 project,
                 volume_number=volume_number,
@@ -4452,6 +4838,12 @@ async def _generate_volume_outline_batched(
             for sub_start, sub_end, sub_count in shrink_ranges:
                 sub_constraints = [
                     *base_constraints,
+                    *_previous_outline_batch_constraints(
+                        previous_outline_payload,
+                        chapter_start=sub_start,
+                        chapter_end=sub_end,
+                        language=_planner_language(project),
+                    ),
                     *_outline_batch_constraints(
                         project,
                         volume_number=volume_number,
@@ -4502,6 +4894,16 @@ async def _generate_volume_outline_batched(
             if llm_run_id is not None:
                 llm_run_ids.append(llm_run_id)
             batch_meta = _mapping(_mapping(batch_payload).get("_meta"))
+            event_similarity_candidates.extend(
+                _mapping_list(
+                    batch_meta.get("cross_batch_event_similarity_candidates")
+                )
+            )
+            story_enhancer_distribution_candidates.extend(
+                _mapping_list(
+                    batch_meta.get("story_enhancer_distribution_candidates")
+                )
+            )
             if batch_meta.get("reused"):
                 reused_batch_count += 1
             await import_planning_artifact(
@@ -4547,6 +4949,10 @@ async def _generate_volume_outline_batched(
             "batch_ranges": [[start, end] for start, end, _count in batch_ranges],
             "reused_batch_count": reused_batch_count,
             "reused": reused_batch_count == len(batch_ranges),
+            "cross_batch_event_similarity_candidates": event_similarity_candidates,
+            "story_enhancer_distribution_candidates": (
+                story_enhancer_distribution_candidates
+            ),
         },
     }
     existing_titles = await _fetch_existing_chapter_titles(
@@ -4599,11 +5005,9 @@ async def _generate_volume_outline_batched(
         cast_spec=cast_spec,
         volume_entry=volume_entry,
         existing_titles=existing_titles,
-        # 合并终验没有回炉循环兜着，且管线自身的确定性修复(元话术goal重写/
-        # enrichment复制)会在批内校验之后制造三字段退化——此处 strict 一抛整本书
-        # 直接死(L3真机验收 female-growth 书即此死法，与上方title撞名同款老坑)。
-        # 退化在这里只软接受+打 degenerate_fields 标，把关留给批内修复循环。
-        strict_field_degeneracy=False,
+        # Whole-volume promotion is the final boundary before persistence.
+        # Collapsed fields are a structural planning failure, not a warning.
+        strict_field_degeneracy=True,
     )
     validated["_meta"] = combined["_meta"]
     return validated, llm_run_ids, repair_history
@@ -5649,6 +6053,7 @@ async def _generate_character_names(
             f"Premise: {premise[:300]}\n"
             f"Protagonist archetype: {archetype}\n\n"
             "Requirements:\n"
+            "0. If the premise already names its protagonist, copy that exact name; do not rename them.\n"
             "1. Names must feel natural for English-language commercial fiction in this genre.\n"
             "2. The protagonist name should be memorable and easy to pronounce.\n"
             "3. Avoid confusingly similar initials or sounds across the core cast.\n"
@@ -5667,6 +6072,7 @@ async def _generate_character_names(
             f"故事前提：{premise[:300]}\n"
             f"主角原型：{archetype}\n\n"
             f"要求：\n"
+            f"0. 如果故事前提已经明确写出主角姓名，必须原样沿用该姓名，不得另起新名\n"
             f"1. 根据题材和时代选择合适的姓名风格：\n"
             f"   - 古代/仙侠/玄幻：古典、利落、带意象感\n"
             f"   - 现代/都市：现代自然、易读、口语化场景适配\n"
@@ -5960,6 +6366,63 @@ def _generic_name_bundle(language: str | None = None) -> dict[str, Any]:
             },
         ],
     }
+
+
+def _persist_creation_protagonist_choice(
+    project: ProjectModel,
+    generated_name: object,
+) -> str:
+    """Lock the LLM-resolved protagonist before downstream artifact import."""
+
+    from bestseller.services.book_design import (  # noqa: PLC0415
+        extract_creation_protagonist_name,
+    )
+
+    metadata = dict(project.metadata_json or {})
+    snapshot_name = _non_empty_string(
+        _mapping(_mapping(metadata.get("book_design_snapshot")).get("protagonist")).get(
+            "name"
+        ),
+        "",
+    )
+    existing_name = _first_non_empty_text(
+        metadata.get("creation_protagonist_name"),
+        metadata.get("protagonist_name"),
+        metadata.get("canonical_protagonist_name"),
+        default="",
+    )
+    premise_name = extract_creation_protagonist_name(
+        {"premise": metadata.get("premise")}
+    )
+    chosen = (
+        existing_name
+        or premise_name
+        or snapshot_name
+        or _non_empty_string(generated_name, "")
+    )
+    generic = {
+        "主角",
+        "主人公",
+        "男主",
+        "女主",
+        "protagonist",
+        "the protagonist",
+        "hero",
+    }
+    if not chosen or chosen.casefold() in generic:
+        raise PlannerFallbackError(
+            "creation protagonist adjudication did not return a concrete name"
+        )
+    metadata["creation_protagonist_name"] = chosen
+    metadata["creation_protagonist_source"] = metadata.get(
+        "creation_protagonist_source"
+    ) or (
+        "original_premise"
+        if premise_name and chosen == premise_name
+        else "llm_premise_identity_resolution"
+    )
+    project.metadata_json = metadata
+    return chosen
 
 
 def _genre_name_pool(
@@ -9148,11 +9611,18 @@ def _planner_tone_is_low_pressure(project: ProjectModel) -> bool:
 
         meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
         pack_key = meta.get("prompt_pack_key") or meta.get("prompt_pack_name")
+        intent_contract = meta.get("genre_intent_contract")
+        tone_preference = (
+            intent_contract.get("tone_preference")
+            if isinstance(intent_contract, dict)
+            else None
+        )
         return bool(
             is_low_pressure_tone(
                 pack_key,
                 getattr(project, "genre", None),
                 getattr(project, "sub_genre", None),
+                tone_preference,
             )
         )
     except Exception:
@@ -14445,6 +14915,63 @@ def _compact_concept_lab_contract_block(project: ProjectModel, *, language: str)
     return f"\n\n{label}\n{directive}\n{_json_dumps(payload)}\n"
 
 
+def _protagonist_embodiment_contract_block(
+    project: ProjectModel, *, language: str
+) -> str:
+    """Keep contextual agency compatible with the protagonist's actual body.
+
+    This is a planning instruction, not a regex gate.  A narrow deterministic
+    trigger selects the relevant context; the outline LLM and both LLM judges
+    still read the real chapter plan and decide whether its agency is credible.
+    """
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    concept = _mapping(metadata.get("concept_contract"))
+    spine = _mapping(concept.get("story_spine"))
+    hook = _mapping(concept.get("hook_card"))
+    protagonist_context = "\n".join(
+        _first_non_empty_text(value, default="")
+        for value in (
+            metadata.get("premise"),
+            spine.get("who"),
+            hook.get("protagonist"),
+            hook.get("one_liner"),
+        )
+        if _first_non_empty_text(value, default="")
+    )
+    infant_markers = (
+        "婴儿",
+        "婴孩",
+        "新生婴",
+        "襁褓",
+        "baby",
+        "infant",
+        "newborn",
+    )
+    if not any(marker.lower() in protagonist_context.lower() for marker in infant_markers):
+        return ""
+    if is_english_language(language):
+        return (
+            "\n[Embodiment authority: infant protagonist]\n"
+            "Adult memory and judgment may remain, but infant sensation, motor control, "
+            "speech, reach, and timing limits are real. Before the body develops, never "
+            "use exact crying rhythm, gaze duration/direction, grip, breathing, or other "
+            "micro-signals as encoded commands, remote control, or the main cause of an "
+            "adult decision. Adults and external events must move the plot from their own "
+            "motives. Protagonist agency means feasible choices such as conceal, endure, "
+            "interpret, remember, or choose whom to trust, each with a visible cost. This "
+            "authority overrides any stale upstream phase/ability wording that conflicts.\n"
+        )
+    return (
+        "\n【身体能力权威合同·婴儿主角】\n"
+        "成年记忆与判断可以保留，但婴儿期的感知距离、动作、发声、抓握与时机控制必须真实受限。"
+        "身体发育到位前，严禁把精确啼哭节奏、注视时长/方向、抓握力度、呼吸深浅等微信号写成"
+        "暗号、遥控指令或成年人决策的主要触发器。外部剧情必须由成年人基于自身利益自主推动。"
+        "主角能动性应落在身体可完成的选择上：隐藏反应、忍耐、判断、记忆、选择信任对象，且每次"
+        "选择都有可见代价。若旧阶段表、旧能力描述与本合同冲突，以本合同为准。\n"
+    )
+
+
 def _stash_distilled_strategy_card(
     project: ProjectModel,
     *,
@@ -15540,10 +16067,17 @@ def _outline_prompts(
     from bestseller.services.invariants import is_low_pressure_tone as _is_low_pressure_tone
 
     _proj_meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    _intent_contract = _proj_meta.get("genre_intent_contract")
+    _tone_preference = (
+        _intent_contract.get("tone_preference")
+        if isinstance(_intent_contract, dict)
+        else None
+    )
     _outline_low_pressure = _is_low_pressure_tone(
         getattr(prompt_pack, "key", None) or _proj_meta.get("prompt_pack_key"),
         project.genre,
         project.sub_genre,
+        _tone_preference,
     )
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
@@ -16014,6 +16548,113 @@ def _render_existing_titles_block(
     return en_block, zh_block
 
 
+def _compile_volume_outline_prompt(
+    project: ProjectModel,
+    settings: AppSettings,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+) -> tuple[str, str]:
+    """Compile the real outline prompt with snapshot lineage and a hard budget."""
+
+    from bestseller.services.book_design import ensure_project_book_design_snapshot
+    from bestseller.services.prompt_compiler import (
+        PromptBlock,
+        PromptProvenance,
+        compile_prompt,
+    )
+
+    task_positions = [
+        position
+        for marker in ("Generate a ChapterOutlineBatch", "请仅生成第")
+        if (position := user_prompt.find(marker)) >= 0
+    ]
+    if not task_positions:
+        raise PlannerFallbackError(
+            "Volume outline prompt is missing its primary task boundary."
+        )
+    task_position = min(task_positions)
+    context_text = user_prompt[:task_position].strip()
+    task_text = user_prompt[task_position:].strip()
+    snapshot = ensure_project_book_design_snapshot(project)
+    compiled = compile_prompt(
+        [
+            PromptBlock(
+                key="rolling_outline.system_contract",
+                channel="system",
+                layer="output",
+                authority=100,
+                instruction_family="hard_obligation.output_format",
+                semantic_key="rolling_outline.output_format",
+                required=True,
+                source="planner._volume_outline_prompts.system",
+                text=system_prompt,
+                provenance=PromptProvenance(
+                    kind="derived",
+                    source_id="volume_outline_system",
+                ),
+                phase="rolling_outline",
+            ),
+            PromptBlock(
+                key="rolling_outline.canonical_context",
+                channel="user",
+                layer="hard_canon",
+                authority=100,
+                instruction_family="hard_obligation.canonical_context",
+                semantic_key="rolling_outline.canonical_context",
+                required=True,
+                min_tokens=1000,
+                max_tokens=4500,
+                trim_policy="truncate_tail",
+                source="book_design_snapshot+planning_artifacts",
+                text=context_text,
+                provenance=PromptProvenance(
+                    kind="canonical_snapshot",
+                    source_id=snapshot.snapshot_id,
+                    source_hash=snapshot.source_hash,
+                    field_paths=(
+                        "creation_intent",
+                        "protagonist",
+                        "tone",
+                        "word_budget",
+                    ),
+                ),
+                phase="rolling_outline",
+            ),
+            PromptBlock(
+                key="rolling_outline.primary_task",
+                channel="user",
+                layer="scene_spec",
+                authority=100,
+                instruction_family="primary_task",
+                semantic_key="rolling_outline.primary_task",
+                required=True,
+                source="planner._volume_outline_prompts.task",
+                text=task_text,
+                provenance=PromptProvenance(
+                    kind="creation_intent",
+                    source_id=snapshot.creation_intent.contract_hash(),
+                ),
+                phase="rolling_outline",
+            ),
+        ],
+        total_budget_tokens=int(settings.llm.planner_prompt_budget_tokens),
+        safety_margin=float(settings.llm.planner_prompt_safety_margin),
+        canonical_snapshot_hash=snapshot.source_hash,
+        source_snapshot_hash=snapshot.source_hash,
+        require_provenance=True,
+        phase="rolling_outline",
+    )
+    report_payload = compiled.report.model_dump(mode="json")
+    metadata = dict(getattr(project, "metadata_json", None) or {})
+    prior_reports = metadata.get("planner_prompt_compiler_reports")
+    reports = list(prior_reports) if isinstance(prior_reports, list) else []
+    metadata["planner_prompt_compiler_reports"] = [*reports[-19:], report_payload]
+    metadata["planner_prompt_compiler_latest"] = report_payload
+    project.metadata_json = metadata
+    return compiled.system, compiled.user
+
+
 def _volume_outline_prompts(
     project: ProjectModel,
     book_spec: dict[str, Any],
@@ -16060,10 +16701,17 @@ def _volume_outline_prompts(
     from bestseller.services.invariants import is_low_pressure_tone as _is_low_pressure_tone
 
     _proj_meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    _intent_contract = _proj_meta.get("genre_intent_contract")
+    _tone_preference = (
+        _intent_contract.get("tone_preference")
+        if isinstance(_intent_contract, dict)
+        else None
+    )
     _outline_low_pressure = _is_low_pressure_tone(
         getattr(prompt_pack, "key", None) or _proj_meta.get("prompt_pack_key"),
         project.genre,
         project.sub_genre,
+        _tone_preference,
     )
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
@@ -16345,6 +16993,9 @@ def _volume_outline_prompts(
         if compact_outline_mode
         else _concept_lab_contract_block(project, language=language)
     )
+    _embodiment_contract_line = _protagonist_embodiment_contract_block(
+        project, language=language
+    )
     _story_enhancer_line = _story_enhancer_contract_line(project, language)
     _prior_vols_block = render_prior_volumes_summary_block(
         volume_plan,
@@ -16407,6 +17058,7 @@ def _volume_outline_prompts(
             f"{_methodology_line}"
             f"{render_planner_decision_protocol_contract(language='en')}\n"
             f"{_concept_lab_contract_line}"
+            f"{_embodiment_contract_line}"
             f"{_story_enhancer_line}"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
@@ -16510,6 +17162,7 @@ def _volume_outline_prompts(
             f"{_methodology_line}"
             f"{render_planner_decision_protocol_contract(language=language)}\n"
             f"{_concept_lab_contract_line}"
+            f"{_embodiment_contract_line}"
             f"{_story_enhancer_line}"
             f"{_anti_commonsense_hook_line}"
             f"{_hook_ledger_v2_line}"
@@ -17053,6 +17706,10 @@ async def _generate_structured_artifact(
     if (
         bool(getattr(settings.pipeline, "planning_artifact_reuse_enabled", True))
         and artifact_type is not None
+        and _planning_artifact_reuse_allowed(
+            project,
+            artifact_type=artifact_type,
+        )
     ):
         reusable = await _latest_reusable_planning_artifact(
             session,
@@ -17456,6 +18113,32 @@ def _reusable_artifact_policy_report(
     )
 
 
+def _planning_artifact_reuse_allowed(
+    project: ProjectModel,
+    *,
+    artifact_type: ArtifactType,
+) -> bool:
+    """Refuse outline-cache reuse while semantic repair owns the project.
+
+    Per-batch outline artifacts are persisted after schema/contract validation
+    so interrupted jobs can be inspected. Their database status ``approved``
+    means structurally valid, not that the whole-volume LLM commercial judge
+    promoted them. Reusing those candidates during ``needs_replan`` turns the
+    self-heal loop into a replay of known-bad input. Other artifact types remain
+    reusable, and a semantically released project can still reuse its outline.
+    """
+
+    if artifact_type != ArtifactType.VOLUME_CHAPTER_OUTLINE:
+        return True
+    metadata = _mapping(project.metadata_json)
+    return not bool(
+        str(getattr(project, "status", "") or "") == ProjectStatus.NEEDS_REPLAN.value
+        or metadata.get("outline_replan_in_progress")
+        or metadata.get("planning_status") == "needs_replan"
+        or metadata.get("outline_semantic_gate_status") == "needs_replan"
+    )
+
+
 async def _heartbeat_planner_workflow(
     session: AsyncSession,
     *,
@@ -17525,6 +18208,28 @@ async def _latest_reusable_planning_artifact(
         )
         artifact = await session.scalar(legacy_stmt)
     if artifact is None:
+        return None
+    project_meta = (
+        project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    )
+    current_snapshot_hash = project_meta.get("book_design_snapshot_hash")
+    artifact_meta = (
+        artifact.content.get("_meta")
+        if isinstance(artifact.content, dict)
+        and isinstance(artifact.content.get("_meta"), dict)
+        else {}
+    )
+    if (
+        current_snapshot_hash
+        and artifact_meta.get("source_snapshot_hash") != current_snapshot_hash
+    ):
+        logger.warning(
+            "Skipping reusable %s artifact %s for project '%s': "
+            "book-design snapshot lineage is stale or missing",
+            artifact_type.value,
+            artifact.id,
+            project.slug,
+        )
         return None
     policy_report = _reusable_artifact_policy_report(
         project,
@@ -19952,7 +20657,106 @@ def _outline_judge_repair_directives(
         return []
     if judge_payload.get("passed"):
         return []
-    return _string_list(judge_payload.get("repair_directives"))
+    # Blocking issues are emitted first; later dimension hints largely repeat
+    # them. Bound the repair payload so it can coexist with the prior-round
+    # edit baseline inside the writer prompt's non-negotiable token budget.
+    return _string_list(judge_payload.get("repair_directives"))[:8]
+
+
+def _select_active_commercial_repair_directives(
+    *, stored: Sequence[str], current: Sequence[str]
+) -> list[str]:
+    """Use the newest commercial verdict without stacking stale verdicts."""
+
+    source = current if current else stored
+    return [str(item).strip() for item in source if str(item).strip()][:8]
+
+
+def _outline_judge_project_brief(
+    project: ProjectModel,
+    *,
+    metadata: Mapping[str, Any],
+    semantic_candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Build a compact, identity-authoritative brief for the LLM gate."""
+
+    snapshot = _mapping(metadata.get("book_design_snapshot"))
+    snapshot_protagonist = _mapping(snapshot.get("protagonist"))
+    concept_contract = _mapping(metadata.get("concept_contract"))
+    canonical_protagonist = _first_non_empty_text(
+        metadata.get("creation_protagonist_name"),
+        metadata.get("canonical_protagonist_name"),
+        snapshot_protagonist.get("name"),
+        default="",
+    )
+    premise = _first_non_empty_text(
+        metadata.get("premise"),
+        concept_contract.get("premise"),
+        default="",
+    )
+    selected_contracts = {
+        key: metadata.get(key)
+        for key in (
+            "creation_intent_contract",
+            "genre_intent_contract",
+            "commercial_brief",
+            "story_enhancers",
+            "selected_effect_skills",
+            "ability_origin_contract",
+            "knowledge_boundary_contract",
+        )
+        if metadata.get(key) not in (None, "", [], {})
+    }
+    hook_card = _mapping(concept_contract.get("hook_card"))
+    story_spine = _mapping(concept_contract.get("story_spine"))
+    seriality_proof = _mapping(concept_contract.get("seriality_proof"))
+    approved_concept_authority = {
+        "champion_id": concept_contract.get("champion_id"),
+        "one_liner": hook_card.get("one_liner"),
+        "protagonist": hook_card.get("protagonist"),
+        "abnormality": hook_card.get("abnormality"),
+        "story_motion": hook_card.get("story_motion"),
+        "who": story_spine.get("who"),
+        "unit_engine_ref": story_spine.get("unit_engine_ref"),
+        "repeatable_story_unit": seriality_proof.get("repeatable_story_unit"),
+    }
+    embodiment_contract = _protagonist_embodiment_contract_block(
+        project, language=project.language
+    ).strip()
+    return {
+        "slug": project.slug,
+        "title": project.title,
+        "genre": project.genre,
+        "sub_genre": project.sub_genre,
+        "language": project.language,
+        "target_chapters": project.target_chapters,
+        "premise": premise,
+        "canonical_protagonist": canonical_protagonist,
+        "identity_authority": (
+            "canonical_protagonist and book_design_snapshot are authoritative; "
+            "ignore obsolete generated aliases from older conception artifacts"
+        ),
+        # Keep the authoritative concept and physical capability boundary near
+        # the front: both judge prompts intentionally cap the brief length.
+        "approved_concept_authority": approved_concept_authority,
+        "protagonist_embodiment_authority": embodiment_contract,
+        "book_design_snapshot": {
+            "protagonist": snapshot_protagonist,
+            "identity": _mapping(snapshot.get("identity")),
+        },
+        "reader_contract": project.reader_contract_json or {},
+        "hype_scheme": project.hype_scheme_json or {},
+        "approved_creation_contracts": selected_contracts,
+        "deterministic_semantic_candidates": [
+            dict(candidate) for candidate in semantic_candidates
+        ],
+        "deterministic_semantic_contract": (
+            "Candidates are regex/similarity/heuristic evidence only. Confirm or "
+            "dismiss each against the actual outline; do not treat a detector hit "
+            "as proof. Objective missing-field/state contracts are enforced "
+            "separately and cannot be overridden."
+        ),
+    }
 
 
 async def _run_planner_outline_commercial_judge(
@@ -19976,20 +20780,62 @@ async def _run_planner_outline_commercial_judge(
         genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
         sub_genre=getattr(project, "sub_genre", None),
     )
+    from bestseller.services.outline_semantic_gate import (
+        evaluate_outline_semantic_gate,
+        llm_adjudication_candidates,
+    )
+
+    deterministic_report = evaluate_outline_semantic_gate(outline_payload)
+    semantic_candidates = [
+        finding.to_dict()
+        for finding in llm_adjudication_candidates(deterministic_report)
+    ]
+    for candidate in _mapping_list(
+        _mapping(outline_payload.get("_meta")).get(
+            "cross_batch_event_similarity_candidates"
+        )
+    ):
+        semantic_candidates.append(
+            {
+                "code": "OUTLINE_EVENT_SIMILARITY_CANDIDATE",
+                "severity": "high",
+                "chapter": candidate.get("chapter_number"),
+                "message": (
+                    "character n-gram similarity suggests this goal may replay "
+                    "an earlier event; confirm or dismiss from narrative context"
+                ),
+                "evidence": dict(candidate),
+            }
+        )
+    for candidate in _mapping_list(
+        _mapping(outline_payload.get("_meta")).get(
+            "story_enhancer_distribution_candidates"
+        )
+    ):
+        semantic_candidates.append(
+            {
+                "code": "STORY_ENHANCER_DISTRIBUTION_CANDIDATE",
+                "severity": "high",
+                "chapter": None,
+                "message": (
+                    "structured chapter routing suggests a creator-selected story "
+                    "effect may be absent or under-distributed. Inspect the actual "
+                    "outline and project story_enhancers: confirm a real missing "
+                    "reader payoff or dismiss the detector. Do not require every "
+                    "selected effect in every chapter."
+                ),
+                "evidence": dict(candidate),
+            }
+        )
     result = await judge_outline_commercial_readiness(
         session,
         settings,
         outline_payload=outline_payload,
-        project_brief={
-            "slug": project.slug,
-            "title": project.title,
-            "genre": project.genre,
-            "sub_genre": project.sub_genre,
-            "target_chapters": project.target_chapters,
-            "reader_contract": project.reader_contract_json or {},
-            "hype_scheme": project.hype_scheme_json or {},
-            "metadata": metadata,
-        },
+        project_brief=_outline_judge_project_brief(
+            project,
+            metadata=metadata,
+            semantic_candidates=semantic_candidates,
+        ),
         threshold=float(
             getattr(
                 settings.pipeline,
@@ -20017,6 +20863,8 @@ async def _run_planner_outline_commercial_judge(
         build_outline_repair_directives(result) if not result.passed else []
     )
     payload["passed"] = bool(result.passed)
+    payload["deterministic_semantic_candidates"] = semantic_candidates
+    payload["semantic_candidates_adjudicated_by_llm"] = True
     output_ref = {
         **payload,
         "blocking_codes": blocking_codes,
@@ -20528,6 +21376,16 @@ async def generate_novel_plan(
     progress: PlanningProgressCallback | None = None,
 ) -> NovelPlanningResult:
     project = await _assert_plan_writer_not_locked(session, project_slug)
+    if (
+        getattr(settings.pipeline, "enable_rolling_outline", True)
+        and int(project.target_chapters or 0)
+        > int(getattr(settings.pipeline, "rolling_outline_window_size", 8) or 8)
+    ):
+        raise RuntimeError(
+            "Monolithic detailed planning is disabled for books larger than one "
+            "rolling window. Use generate_foundation_plan followed by bounded "
+            "generate_volume_plan windows."
+        )
     from bestseller.services.concept_contract import require_valid_concept_contract
 
     # New v2 projects fail before any optional HookSpec generation or planning
@@ -20537,7 +21395,6 @@ async def generate_novel_plan(
         project.metadata_json if isinstance(project.metadata_json, dict) else {},
         target_chapters=int(project.target_chapters or 0),
     )
-
     # Sweep/refuse BEFORE creating our own workflow_run row: a genuinely live
     # sibling planning run must abort this request outright, not get its row
     # marked FAILED after the fact while it keeps running underneath us.
@@ -20707,14 +21564,18 @@ async def generate_novel_plan(
             workflow_run_id=workflow_run.id,
             project_id=project.id,
         )
-        llm_protagonist_name = (
+        llm_protagonist_name = _persist_creation_protagonist_choice(
+            project,
             _mapping(character_name_pool.get("protagonist")).get("name")
             or _genre_name_pool(
                 project.genre,
                 language=project.language,
                 seed_text=_project_name_seed(project, premise),
-            )["protagonist"]["name"]
+            )["protagonist"]["name"],
         )
+        from bestseller.services.book_design import ensure_project_book_design_snapshot
+
+        ensure_project_book_design_snapshot(project)
         await create_workflow_step_run(
             session,
             workflow_run_id=workflow_run.id,
@@ -22126,6 +22987,7 @@ async def generate_novel_plan(
             category_key=_category_key,
         )
         all_outline_chapters: list[dict[str, Any]] = []
+        outline_llm_adjudications: list[dict[str, Any]] = []
         chapter_offset = 1
 
         _project_total_chapters = max(int(getattr(project, "target_chapters", 0) or 0), 1)
@@ -22297,6 +23159,7 @@ async def generate_novel_plan(
             all_outline_chapters.extend(vol_chapters)
 
             if outline_commercial_report is not None:
+                outline_llm_adjudications.append(dict(outline_commercial_report))
                 vol_outline_payload = _attach_prewrite_quality_report(
                     vol_outline_payload,
                     step_name=current_step_name,
@@ -22357,10 +23220,210 @@ async def generate_novel_plan(
             chapter_offset += vol_ch_count
 
         # Merge into combined CHAPTER_OUTLINE_BATCH for backward compatibility
+        from bestseller.services.book_design import ensure_project_book_design_snapshot
+        from bestseller.services.book_design import extract_creation_protagonist_name
+        from bestseller.services.outline_semantic_gate import (
+            blocking_findings_for_promotion,
+            evaluate_outline_semantic_gate,
+            hard_contract_findings,
+        )
+        from bestseller.services.rolling_outline import (
+            build_macro_plan,
+            build_rolling_outline_plan,
+            promote_rolling_outline,
+        )
+        from bestseller.services.word_targets import (
+            authoritative_book_word_targets,
+            project_word_target_policy,
+        )
+
+        design_snapshot = ensure_project_book_design_snapshot(project)
+        exact_word_targets = authoritative_book_word_targets(project, settings)
+        if len(exact_word_targets) != len(all_outline_chapters):
+            raise PlannerFallbackError(
+                "Whole-book outline chapter count does not match the creation word budget."
+            )
+        for chapter, word_target in zip(
+            sorted(
+                all_outline_chapters,
+                key=lambda item: int(item.get("chapter_number") or 0),
+            ),
+            exact_word_targets,
+            strict=True,
+        ):
+            chapter["target_word_count"] = word_target
+
+        macro_plan = build_macro_plan(
+            [
+                {
+                    "chapter_number": int(chapter.get("chapter_number") or index),
+                    "anchor": str(
+                        chapter.get("chapter_goal")
+                        or chapter.get("goal")
+                        or chapter.get("hook_description")
+                        or chapter.get("title")
+                        or f"chapter-{index}"
+                    ).strip(),
+                    "metadata": {
+                        "title": chapter.get("title"),
+                        "volume_number": chapter.get("volume_number"),
+                    },
+                }
+                for index, chapter in enumerate(all_outline_chapters, start=1)
+            ]
+        )
+        rolling_window_size = min(
+            int(getattr(settings.pipeline, "rolling_outline_window_size", 8) or 8),
+            macro_plan.total_chapters,
+        )
+        rolling_plan = promote_rolling_outline(
+            build_rolling_outline_plan(
+                macro_plan,
+                current_state_snapshot={"current_chapter": 0, "facts": []},
+                next_macro_anchor=(
+                    macro_plan.slots[rolling_window_size].to_dict()
+                    if rolling_window_size < macro_plan.total_chapters
+                    else "book_complete"
+                ),
+                source_snapshot_hash=design_snapshot.source_hash,
+                window_size=rolling_window_size,
+                batch_size=int(
+                    getattr(settings.pipeline, "rolling_outline_batch_size", 4) or 4
+                ),
+            ),
+            "approved",
+        )
+        for chapter in all_outline_chapters:
+            chapter_number = int(chapter.get("chapter_number") or 0)
+            chapter["rolling_outline_status"] = (
+                "approved"
+                if rolling_plan.window_start <= chapter_number <= rolling_plan.window_end
+                else "macro_only"
+            )
+            chapter["source_snapshot_hash"] = design_snapshot.source_hash
+            chapter["macro_plan_hash"] = macro_plan.macro_plan_hash
+        project.metadata_json = {
+            **(project.metadata_json or {}),
+            "macro_outline_plan": macro_plan.to_dict(),
+            "rolling_outline_plan": rolling_plan.to_dict(),
+            "rolling_outline_status": "approved",
+        }
+        project_metadata = dict(project.metadata_json or {})
+        writing_profile = project_metadata.get("writing_profile")
+        profile = writing_profile if isinstance(writing_profile, Mapping) else {}
+        style = profile.get("style") if isinstance(profile.get("style"), Mapping) else {}
+        tone_keywords = style.get("tone_keywords") or profile.get("tone_keywords") or ()
+        writing_tone = (
+            tone_keywords
+            if isinstance(tone_keywords, str)
+            else "、".join(str(item) for item in tone_keywords)
+            if isinstance(tone_keywords, Sequence)
+            else ""
+        )
+        intent = project_metadata.get("genre_intent_contract")
+        tone_preference = (
+            str(intent.get("tone_preference") or "")
+            if isinstance(intent, Mapping)
+            else ""
+        )
+        canonical_protagonist_name = (
+            extract_creation_protagonist_name(project_metadata)
+            or design_snapshot.protagonist.name
+        )
+        allocation_policy = project_word_target_policy(project, settings)
+        allocation_average = project.target_word_count / max(project.target_chapters, 1)
+        semantic_report = evaluate_outline_semantic_gate(
+            {
+                "target_word_count": int(project.target_word_count),
+                "target_chapters": int(project.target_chapters),
+                "word_budget": {
+                    "minimum": min(
+                        int(allocation_policy.chapter_min),
+                        math.floor(allocation_average),
+                    ),
+                    "target": round(project.target_word_count / project.target_chapters),
+                    "maximum": max(
+                        int(allocation_policy.chapter_max),
+                        math.ceil(allocation_average),
+                    ),
+                },
+                "story_spine": {
+                    **_mapping(project_metadata.get("story_spine")),
+                    "title": project.title,
+                    "protagonist": canonical_protagonist_name,
+                    "genre": project.genre,
+                    "tone": tone_preference or design_snapshot.tone,
+                },
+                "commercial_brief": {
+                    "title": project.title,
+                    "protagonist": canonical_protagonist_name,
+                    "genre": project.genre,
+                    "tone": writing_tone or tone_preference or design_snapshot.tone,
+                },
+                "identity_manifest": {
+                    "title": project.title,
+                    "genre": project.genre,
+                    "entities": _chapter_outline_identity_manifest(cast_spec_payload),
+                },
+                "chapters": all_outline_chapters,
+            }
+        )
+        llm_adjudicated_all_volumes = bool(outline_llm_adjudications) and all(
+            bool(report.get("passed")) for report in outline_llm_adjudications
+        )
+        # Goes through the shared helper so advisory-only codes cannot be
+        # re-admitted here. The previous inline copy re-derived the blocking set
+        # from raw severity and silently undid the batch gate's exemption —
+        # crashing a book with OUTLINE_REUSED_PAYLOAD_ANCHOR one day after that
+        # code was exempted elsewhere (2026-07-26).
+        effective_blocking_findings = blocking_findings_for_promotion(
+            semantic_report,
+            llm_adjudicated=llm_adjudicated_all_volumes,
+        )
+        semantic_report_payload = semantic_report.to_dict()
+        semantic_report_payload.update(
+            {
+                "raw_promotion_allowed": semantic_report.promotion_allowed,
+                "promotion_allowed": not effective_blocking_findings,
+                "llm_adjudicated_all_volumes": llm_adjudicated_all_volumes,
+                "effective_blocking_findings": [
+                    finding.to_dict() for finding in effective_blocking_findings
+                ],
+                "adjudication_policy": "hard_contract_plus_llm_contextual",
+            }
+        )
+        project.metadata_json = {
+            **(project.metadata_json or {}),
+            "outline_semantic_gate_report": semantic_report_payload,
+            "outline_semantic_gate_status": (
+                "approved" if not effective_blocking_findings else "needs_replan"
+            ),
+        }
+        if effective_blocking_findings:
+            project.metadata_json = {
+                **project.metadata_json,
+                "planning_status": "needs_replan",
+                "production_paused": True,
+                "production_pause_reason": "outline_semantic_gate_failed",
+                "generation_resume_blocked_until_repair_audit": True,
+            }
+            project.status = ProjectStatus.NEEDS_REPLAN.value
+            finding_codes = ", ".join(
+                finding.code for finding in effective_blocking_findings[:12]
+            )
+            raise PlannerFallbackError(
+                "Whole-book outline semantic gate rejected promotion; replan is "
+                f"required. issues={finding_codes or 'unknown'}"
+            )
         outline_payload = {
             "batch_name": "auto-generated-full-outline",
             "chapters": all_outline_chapters,
-            "_meta": planning_artifact_meta(project),
+            "_meta": {
+                **planning_artifact_meta(project),
+                "macro_plan_hash": macro_plan.macro_plan_hash,
+                "rolling_outline_plan_hash": rolling_plan.plan_hash,
+                "rolling_window": [rolling_plan.window_start, rolling_plan.window_end],
+            },
         }
         outline_artifact = await import_planning_artifact(
             session,
@@ -22743,13 +23806,14 @@ async def generate_foundation_plan(
             workflow_run_id=workflow_run.id,
             project_id=project.id,
         )
-        llm_protagonist_name = (
+        llm_protagonist_name = _persist_creation_protagonist_choice(
+            project,
             _mapping(character_name_pool.get("protagonist")).get("name")
             or _genre_name_pool(
                 project.genre,
                 language=project.language,
                 seed_text=_project_name_seed(project, premise),
-            )["protagonist"]["name"]
+            )["protagonist"]["name"],
         )
         await create_workflow_step_run(
             session,
@@ -23480,6 +24544,7 @@ async def generate_volume_plan(
     # extra_constraints are per-call overrides. Both are appended to cast-expansion
     # and volume-outline prompts so the LLM treats them as hard constraints.
     _stored_directives: list[str] = []
+    _commercial_repair_directives: list[str] = []
     if isinstance(project.metadata_json, dict):
         _raw = project.metadata_json.get("mid_flight_directives") or []
         if isinstance(_raw, list):
@@ -23490,6 +24555,18 @@ async def generate_volume_plan(
                 text = str(directive).strip()
                 if text and text not in _stored_directives:
                     _stored_directives.append(text)
+        # Carry the final LLM commercial-judge findings across outer self-heal
+        # attempts. Without this handoff, every retry starts from the original
+        # prompt and has no memory of why the immediately preceding candidate
+        # was rejected.
+        _commercial_raw = (
+            project.metadata_json.get("outline_commercial_repair_directives") or []
+        )
+        if isinstance(_commercial_raw, list):
+            for directive in _commercial_raw[:8]:
+                text = str(directive).strip()
+                if text and text not in _commercial_repair_directives:
+                    _commercial_repair_directives.append(text)
     _all_constraints: list[str] = list(_stored_directives) + list(extra_constraints or [])
 
     workflow_run = await create_workflow_run(
@@ -23768,30 +24845,107 @@ async def generate_volume_plan(
             effective_cast_spec, vol_entry, language=project.language or "zh-CN"
         )
         _all_constraints = (_all_constraints or []) + _deceased_constraints
-        (
-            vol_outline_payload,
-            outline_llm_run_ids,
-            outline_repair_history,
-        ) = await _generate_volume_outline_batched(
-            session,
-            settings,
-            project=project,
-            workflow_run_id=workflow_run.id,
-            logical_name=f"volume_{volume_number}_chapter_outline",
-            book_spec=book_spec,
-            cast_spec=effective_cast_spec,
-            volume_plan=_mapping_list(volume_plan),
-            volume_entry=vol_entry,
-            fallback_payload=vol_fallback,
-            volume_number=volume_number,
-            expected_count=int(
-                vol_entry.get("chapter_count_target", len(vol_fallback_chapters) or 1)
-            ),
-            chapter_number_offset=chapter_number_offset,
-            revealed_ledger_block=_ledger_block,
-            base_constraints=_all_constraints or [],
-            progress=progress,
+        _max_judge_repair_rounds = int(
+            getattr(settings.pipeline, "outline_commercial_judge_repair_rounds", 1)
+            or 0
         )
+        outline_llm_run_ids: list[UUID] = []
+        outline_repair_history: list[Any] = []
+        outline_commercial_report: dict[str, Any] | None = None
+        _best_failed_outline: dict[str, Any] | None = None
+        _best_failed_report: dict[str, Any] | None = None
+        _judge_directives: list[str] = []
+        _stored_repair_baseline = _mapping(
+            _mapping(project.metadata_json).get("outline_commercial_repair_baseline")
+        )
+        _previous_round_outline: dict[str, Any] | None = (
+            copy.deepcopy(_stored_repair_baseline) if _stored_repair_baseline else None
+        )
+        vol_outline_payload: dict[str, Any] = {}
+        for _judge_round in range(_max_judge_repair_rounds + 1):
+            (
+                vol_outline_payload,
+                _round_llm_run_ids,
+                _round_repair_history,
+            ) = await _generate_volume_outline_batched(
+                session,
+                settings,
+                project=project,
+                workflow_run_id=workflow_run.id,
+                logical_name=f"volume_{volume_number}_chapter_outline",
+                book_spec=book_spec,
+                cast_spec=effective_cast_spec,
+                volume_plan=_mapping_list(volume_plan),
+                volume_entry=vol_entry,
+                fallback_payload=vol_fallback,
+                volume_number=volume_number,
+                expected_count=int(
+                    vol_entry.get("chapter_count_target", len(vol_fallback_chapters) or 1)
+                ),
+                chapter_number_offset=chapter_number_offset,
+                revealed_ledger_block=_ledger_block,
+                # The current in-loop verdict supersedes the previous outer
+                # heal's commercial directives.  Appending both sets grew the
+                # required prompt core until the second repair round failed
+                # before generation (8 old + 8 new directives).  Long-lived
+                # non-commercial constraints remain additive.
+                base_constraints=[
+                    *_all_constraints,
+                    *_select_active_commercial_repair_directives(
+                        stored=_commercial_repair_directives,
+                        current=_judge_directives,
+                    ),
+                ],
+                previous_outline_payload=_previous_round_outline,
+                progress=progress,
+            )
+            outline_llm_run_ids.extend(_round_llm_run_ids)
+            outline_repair_history.extend(_round_repair_history)
+
+            judge_step_name = (
+                f"volume_{volume_number}_outline_commercial_judge_round_"
+                f"{_judge_round + 1}"
+            )
+            workflow_run.current_step = judge_step_name
+            outline_commercial_report = await _run_planner_outline_commercial_judge(
+                session,
+                settings,
+                project=project,
+                workflow_run_id=workflow_run.id,
+                step_name=judge_step_name,
+                step_order=step_order,
+                outline_payload=vol_outline_payload,
+            )
+            if outline_commercial_report is None:
+                break
+            step_order += 1
+            if not outline_commercial_report.get("passed"):
+                _best_failed_outline, _best_failed_report = (
+                    _prefer_outline_repair_baseline(
+                        best_payload=_best_failed_outline,
+                        best_report=_best_failed_report,
+                        candidate_payload=vol_outline_payload,
+                        candidate_report=outline_commercial_report,
+                    )
+                )
+            _judge_directives = _outline_judge_repair_directives(
+                outline_commercial_report,
+                round_idx=_judge_round,
+                max_rounds=_max_judge_repair_rounds,
+            )
+            if not _judge_directives:
+                break
+            _previous_round_outline = copy.deepcopy(vol_outline_payload)
+            logger.warning(
+                "progressive volume_%d outline judge failed (score=%.3f); "
+                "repair round %d/%d with %d directive(s).",
+                volume_number,
+                float(outline_commercial_report.get("overall_score") or 0.0),
+                _judge_round + 1,
+                _max_judge_repair_rounds,
+                len(_judge_directives),
+            )
+
         llm_run_ids.extend(outline_llm_run_ids)
         if outline_repair_history:
             workflow_run.metadata_json = {
@@ -23813,6 +24967,121 @@ async def generate_volume_plan(
             vol_outline_payload.get("chapters", []) if isinstance(vol_outline_payload, dict) else []
         )
 
+        from bestseller.services.outline_semantic_gate import (
+            evaluate_outline_semantic_gate,
+            hard_contract_findings,
+            llm_adjudication_candidates,
+        )
+
+        deterministic_report = evaluate_outline_semantic_gate(vol_outline_payload)
+        hard_findings = hard_contract_findings(deterministic_report)
+        contextual_candidates = llm_adjudication_candidates(deterministic_report)
+        llm_adjudicated = bool(
+            outline_commercial_report is not None
+            and outline_commercial_report.get("semantic_candidates_adjudicated_by_llm")
+        )
+        llm_passed = bool(
+            llm_adjudicated and outline_commercial_report.get("passed")
+        )
+        judge_failed = bool(
+            outline_commercial_report is not None
+            and not outline_commercial_report.get("passed")
+        )
+        if hard_findings or judge_failed or (contextual_candidates and not llm_adjudicated):
+            blocking = [
+                *(finding.to_dict() for finding in hard_findings),
+                *(
+                    finding.to_dict()
+                    for finding in contextual_candidates
+                    if not llm_adjudicated
+                ),
+            ]
+            if judge_failed:
+                blocking.extend(_mapping_list(outline_commercial_report.get("blocking_issues")))
+                # Persist both the LLM's exact next actions and a bounded edit
+                # baseline before the volume workflow commits its failed state.
+                # The periodic self-heal owner can then resume from evidence
+                # instead of re-rolling a semantically rejected outline.
+                recovery_report = _best_failed_report or outline_commercial_report
+                recovery_outline = _best_failed_outline or vol_outline_payload
+                failure_directives = _string_list(
+                    recovery_report.get("repair_directives")
+                )[:8]
+                failure_baseline = _compact_outline_repair_baseline(
+                    recovery_outline,
+                    language=_planner_language(project),
+                )
+                project.metadata_json = {
+                    **(project.metadata_json or {}),
+                    "outline_commercial_repair_directives": failure_directives,
+                    "outline_commercial_repair_baseline": failure_baseline,
+                    "outline_commercial_last_failure": {
+                        "workflow_run_id": str(workflow_run.id),
+                        "volume_number": volume_number,
+                        "overall_score": float(
+                            outline_commercial_report.get("overall_score") or 0.0
+                        ),
+                        "recovery_baseline_score": float(
+                            recovery_report.get("overall_score") or 0.0
+                        ),
+                        "recovery_blocking_codes": [
+                            str(item.get("code") or "unknown")
+                            for item in _mapping_list(
+                                recovery_report.get("blocking_issues")
+                            )[:12]
+                        ],
+                        "blocking_codes": [
+                            str(item.get("code") or "unknown")
+                            for item in _mapping_list(
+                                outline_commercial_report.get("blocking_issues")
+                            )[:12]
+                        ],
+                        "recorded_at": datetime.now(UTC).isoformat(),
+                    },
+                }
+            raise PlannerFallbackError(
+                "Progressive volume outline did not earn semantic promotion; "
+                + ", ".join(str(item.get("code") or "unknown") for item in blocking[:12])
+            )
+
+        semantic_report_payload = deterministic_report.to_dict()
+        semantic_report_payload.update(
+            {
+                "raw_promotion_allowed": deterministic_report.promotion_allowed,
+                "promotion_allowed": True,
+                "effective_blocking_findings": [],
+                "llm_adjudicated_contextual_candidates": llm_adjudicated,
+                "llm_adjudication_passed": llm_passed,
+                "llm_adjudication": outline_commercial_report,
+                "adjudication_policy": "hard_contract_plus_llm_contextual",
+            }
+        )
+        promoted_metadata = dict(project.metadata_json or {})
+        promoted_metadata.pop("outline_commercial_repair_directives", None)
+        promoted_metadata.pop("outline_commercial_repair_baseline", None)
+        project.metadata_json = {
+            **promoted_metadata,
+            "outline_semantic_gate_report": semantic_report_payload,
+            "outline_semantic_gate_status": "approved",
+            "outline_commercial_last_approved": {
+                "workflow_run_id": str(workflow_run.id),
+                "volume_number": volume_number,
+                "overall_score": float(
+                    (outline_commercial_report or {}).get("overall_score") or 1.0
+                ),
+                "recorded_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        if outline_commercial_report is not None:
+            vol_outline_payload = _attach_prewrite_quality_report(
+                vol_outline_payload,
+                step_name=f"volume_{volume_number}_outline_commercial_judge",
+                report=outline_commercial_report,
+                project=project,
+            )
+
+        current_step_name = f"generate_volume_{volume_number}_outline"
+        workflow_run.current_step = current_step_name
         vol_outline_artifact = await import_planning_artifact(
             session,
             project_slug,

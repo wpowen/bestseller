@@ -70,6 +70,16 @@ async def test_outline_llm_judge_enforces_threshold(monkeypatch: pytest.MonkeyPa
     assert "角色基线" in _judge_prompt
     assert "暂时忘掉作者想让剧情去哪里" in _judge_prompt
     assert "PROTAGONIST_PLOT_SERVING_STUPIDITY" in _judge_prompt
+    assert "数字化伪精确" in _judge_prompt
+    assert "当前提供的滚动章纲窗口" in _judge_prompt
+    assert "魂穿/重生角色" in _judge_prompt
+    assert "前世经历本身就是合法知识来源" in _judge_prompt
+    assert "不得额外发明并强制要求" in _judge_prompt
+    assert "婴幼儿躯体的视距/动作能力" in _judge_prompt
+    assert "本系统的正式场景状态 schema" in _judge_prompt
+    assert "不得要求 schema 中不存在" in _judge_prompt
+    assert "禁止建议婴儿用哭声气流吹落纸张" in _judge_prompt
+    assert "禁止输出互相冲突的整改" in _judge_prompt
     # The old detective-specific props must be gone.
     assert "铜钱 / 罗盘 / 青囊等物件信号必须有稳定含义" not in _judge_prompt
 
@@ -148,6 +158,220 @@ async def test_outline_llm_judge_parses_fenced_json(monkeypatch: pytest.MonkeyPa
 
     assert result.passed is True
     assert result.overall_score == 0.84
+
+
+@pytest.mark.asyncio
+async def test_outline_judge_second_pass_dismisses_contradictory_blocker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_complete_text(session, settings, request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            payload = {
+                "pass": False,
+                "overall_score": 0.62,
+                "dimension_scores": {"commercial_pull": 0.62},
+                "blocking_issues": [
+                    {
+                        "code": "BABY_ACTION_IMPOSSIBLE",
+                        "severity": "critical",
+                        "evidence": "婴儿不能精确三段抓握。",
+                        "required_fix": "删除精确三段抓握。",
+                    },
+                    {
+                        "code": "GOLDEN_FINGER_NOT_VISIBLE",
+                        "severity": "critical",
+                        "evidence": "核心能力未展示。",
+                        "required_fix": "增加精确三段抓握来展示能力。",
+                    },
+                ],
+                "audit_issues": [],
+                "rewrite_plan": {"scope": "outline"},
+            }
+        else:
+            payload = {
+                "adjudication_complete": True,
+                "decisions": [
+                    {
+                        "index": 1,
+                        "decision": "CONFIRM",
+                        "reason": "动作超出婴儿身体能力。",
+                        "required_fix": "改成符合婴儿身体能力的单一反射动作。",
+                    },
+                    {
+                        "index": 2,
+                        "decision": "DISMISS",
+                        "reason": "修法与第一条直接矛盾。",
+                        "required_fix": "",
+                    },
+                ],
+            }
+        return LLMCompletionResult(
+            content=json.dumps(payload, ensure_ascii=False),
+            provider="mock",
+            model_name="mock-critic",
+            llm_run_id=uuid4(),
+        )
+
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fake_complete_text)
+
+    result = await outline_llm_judge.judge_outline_commercial_readiness(
+        FakeSession(),
+        load_settings(env={}),
+        outline_payload={"chapters": [{"chapter_number": 1}]},
+        threshold=0.82,
+    )
+
+    assert calls == 2
+    assert [issue.code for issue in result.blocking_issues] == [
+        "BABY_ACTION_IMPOSSIBLE"
+    ]
+    assert any(
+        issue.code == "OUTLINE_JUDGE_CONSISTENCY_ADJUDICATED"
+        for issue in result.audit_issues
+    )
+
+
+@pytest.mark.asyncio
+async def test_outline_judge_second_pass_normalizes_compact_model_variants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_complete_text(session, settings, request):
+        nonlocal calls
+        calls += 1
+        payload = (
+            {
+                "pass": False,
+                "overall_score": 0.62,
+                "dimension_scores": {"commercial_pull": 0.62},
+                "blocking_issues": [
+                    {
+                        "code": "FALSE_POSITIVE",
+                        "severity": "critical",
+                        "evidence": "初审误读。",
+                        "required_fix": "错误修法。",
+                    }
+                ],
+                "audit_issues": [],
+                "rewrite_plan": {"scope": "outline"},
+            }
+            if calls == 1
+            else {
+                "adjudication_complete": "true",
+                "decisions": [
+                    {
+                        "index": "issue_1",
+                        "verdict": "驳回",
+                        "reason": "实际章纲不支持该结论。",
+                        "required_fix": "",
+                    }
+                ],
+            }
+        )
+        return LLMCompletionResult(
+            content=json.dumps(payload, ensure_ascii=False),
+            provider="mock",
+            model_name="mock-critic",
+            llm_run_id=uuid4(),
+        )
+
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fake_complete_text)
+
+    result = await outline_llm_judge.judge_outline_commercial_readiness(
+        FakeSession(),
+        load_settings(env={}),
+        outline_payload={"chapters": [{"chapter_number": 1}]},
+        threshold=0.82,
+    )
+
+    assert calls == 2
+    assert result.blocking_issues == ()
+    assert any(
+        issue.code == "OUTLINE_JUDGE_CONSISTENCY_ADJUDICATED"
+        for issue in result.audit_issues
+    )
+
+
+@pytest.mark.asyncio
+async def test_outline_judge_second_pass_keeps_partial_confirm_and_ignores_extra_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake_complete_text(session, settings, request):
+        nonlocal calls
+        calls += 1
+        payload = (
+            {
+                "pass": False,
+                "overall_score": 0.62,
+                "dimension_scores": {"commercial_pull": 0.62},
+                "blocking_issues": [
+                    {
+                        "code": "BABY_BODY_BOUNDARY",
+                        "severity": "critical",
+                        "evidence": "婴儿动作越界。",
+                        "required_fix": "删除动作。",
+                    },
+                    {
+                        "code": "CONTRADICTORY_FIX",
+                        "severity": "critical",
+                        "evidence": "修法与身体边界冲突。",
+                        "required_fix": "增加同一动作。",
+                    },
+                ],
+                "audit_issues": [],
+                "rewrite_plan": {"scope": "outline"},
+            }
+            if calls == 1
+            else {
+                "adjudication_complete": True,
+                "decisions": [
+                    {
+                        "index": 1,
+                        "decision": "PARTIAL_CONFIRM",
+                        "reason": "问题成立，但原修法过度。",
+                        "required_fix": "改成婴儿本能反射。",
+                    },
+                    {
+                        "index": 2,
+                        "decision": "DISMISS",
+                        "reason": "与第一条修法冲突。",
+                        "required_fix": "",
+                    },
+                    {
+                        "index": 99,
+                        "decision": "CONFIRM",
+                        "reason": "越界噪声。",
+                        "required_fix": "",
+                    },
+                ],
+            }
+        )
+        return LLMCompletionResult(
+            content=json.dumps(payload, ensure_ascii=False),
+            provider="mock",
+            model_name="mock-critic",
+            llm_run_id=uuid4(),
+        )
+
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fake_complete_text)
+
+    result = await outline_llm_judge.judge_outline_commercial_readiness(
+        FakeSession(),
+        load_settings(env={}),
+        outline_payload={"chapters": [{"chapter_number": 1}]},
+        threshold=0.82,
+    )
+
+    assert calls == 2
+    assert [issue.code for issue in result.blocking_issues] == ["BABY_BODY_BOUNDARY"]
+    assert result.blocking_issues[0].required_fix == "改成婴儿本能反射。"
 
 
 def test_quality_judge_accepts_ten_point_scores_and_type_aliases() -> None:
@@ -479,6 +703,34 @@ async def test_commercial_planning_judge_reuses_cached_verdict(
 
 
 @pytest.mark.asyncio
+async def test_default_stable_judge_uses_independent_cached_sample_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_complete_text = _verdict_completion(0.84)
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fake_complete_text)
+    project = _fake_project("book-independent-samples")
+    session = _FakeProjectSession(project)
+    kwargs = dict(
+        chapters_payload=[{"chapter_number": 1, "chapter_goal": "目标"}],
+        samples=3,
+        project_brief={"slug": "book-independent-samples"},
+        threshold=0.75,
+    )
+
+    first = await outline_llm_judge.judge_commercial_planning_readiness_stable(
+        session, load_settings(env={}), **kwargs
+    )
+    assert first.passed is True
+    assert fake_complete_text.calls == 3
+
+    second = await outline_llm_judge.judge_commercial_planning_readiness_stable(
+        session, load_settings(env={}), **kwargs
+    )
+    assert second.passed is True
+    assert fake_complete_text.calls == 3
+
+
+@pytest.mark.asyncio
 async def test_commercial_planning_judge_cache_misses_on_changed_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -552,6 +804,41 @@ async def test_commercial_planning_judge_without_slug_skips_cache(
 
     assert result.overall_score == 0.82
     assert fake_complete_text.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_commercial_pass_true_is_not_flipped_by_hidden_dimension_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_complete_text(session, settings, request):
+        return LLMCompletionResult(
+            content=json.dumps(
+                {
+                    "pass": True,
+                    "overall_score": 0.78,
+                    "dimension_scores": {"decision_intelligence": 0.78},
+                    "blocking_issues": [],
+                    "rewrite_plan": {
+                        "scope": "commercial_planning",
+                        "change": ["正文微调"],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            provider="mock",
+            model_name="mock-critic",
+        )
+
+    monkeypatch.setattr(outline_llm_judge, "complete_text", fake_complete_text)
+    result = await outline_llm_judge.judge_commercial_planning_readiness(
+        FakeSession(),
+        load_settings(env={}),
+        chapters_payload=[{"chapter_number": 1, "chapter_goal": "目标"}],
+        threshold=0.75,
+    )
+
+    assert result.passed is True
+    assert result.blocking_issues == ()
 
 
 def test_repair_directives_target_failed_methodology_dimension() -> None:

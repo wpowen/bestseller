@@ -110,9 +110,21 @@ def check_opening_hook_density(
     if anomaly_hits < anomaly_threshold:
         findings.append(
             OpeningHookFinding(
+                # ADVISORY, not blocking. Counting twelve words is a proxy for
+                # "does this opening grab", and the proxy fails exactly where
+                # the prose is strongest: an anomaly carried by ACTION scores
+                # zero. It blocked the first chapter this framework ever
+                # produced — a coercion scene with a countdown, a crumpled IOU
+                # and a concrete threat in the first 200 characters
+                # (2026-07-26, urban-power-reversal-1785026717 ch1).
+                # Write-safety promotion keys off {critical, high}, so anything
+                # below that bar reports without vetoing. Same lesson as the
+                # scene emotion/hook scorer, which punished show-don't-tell for
+                # the same reason: a lexical count cannot judge whether a scene
+                # is gripping, and must not be the thing that stops a book.
                 code="OPENING_NO_ANOMALY",
-                severity="critical",
-                detail=f"前 200 字仅含 {anomaly_hits} 个异常信号关键词，开篇不抓人",
+                severity="medium",
+                detail=f"前 200 字仅含 {anomaly_hits} 个异常信号关键词，开篇可能不够抓人",
                 evidence={"first_200": first_200, "hits": anomaly_hits},
             )
         )

@@ -9,13 +9,26 @@ from typing import Final
 PAYOFF_LEDGER_LOW: Final[str] = "PAYOFF_LEDGER_LOW"
 PAYOFF_HOOK_ONLY: Final[str] = "PAYOFF_HOOK_ONLY"
 
+# Signals are matched as bare substrings, so every entry must denote an EVENT,
+# never a place or an organisational unit — otherwise a genre's own setting
+# vocabulary saturates the count. The bare character 「门」 used to be here and
+# did exactly that: in xianxia-upgrade-1785036205 ch1 it produced all 22 of the
+# chapter's "hooks" out of 内门 / 外门 / 门派 / 门槛 / 门帘 / 入门 / 出门, while
+# every other signal scored zero, and the gate declared a chapter with no
+# detected hooks at all guilty of teasing without landing. Door *events* keep
+# the original intent (something arrives, someone interrupts) and cannot match
+# the compounds.
 _HOOK_SIGNALS = (
     "却",
     "没想到",
     "突然",
     "究竟",
     "到底",
-    "门",
+    "叩门",
+    "敲门",
+    "推门",
+    "门开",
+    "门被",
     "电话",
     "脚步声",
     "回头",

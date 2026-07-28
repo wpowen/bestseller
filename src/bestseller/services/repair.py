@@ -1525,6 +1525,44 @@ async def run_project_repair(
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
 
+    # A finished book is finished. Repair used to keep working on one, and
+    # every pass drafted a new version and reopened chapters it had already
+    # settled — undoing the completion rather than improving anything. A live
+    # book went from `completed` with three promoted chapters to `revising`
+    # with one chapter blocked and one back to `candidate` after a single
+    # pass (2026-07-28). Whoever triggers it does not matter; self-heal does
+    # the same, which is why such a book never came to rest.
+    if str(project.status or "") == ProjectStatus.COMPLETED.value:
+        workflow_run = await create_workflow_run(
+            session,
+            project_id=project.id,
+            workflow_type="project_repair",
+            requested_by=requested_by,
+        )
+        workflow_run.status = WorkflowStatus.COMPLETED.value
+        workflow_run.current_step = "skipped_project_completed"
+        await session.flush()
+        _emit_progress(
+            progress,
+            "project_repair_skipped_completed",
+            {"project_slug": project_slug, "project_status": str(project.status)},
+        )
+        return ProjectRepairResult(
+            workflow_run_id=workflow_run.id,
+            project_id=project.id,
+            project_slug=project.slug,
+            pending_rewrite_task_count=0,
+            superseded_task_count=0,
+            processed_chapters=[],
+            review_report_id=None,
+            quality_score_id=None,
+            final_verdict="project_completed",
+            export_artifact_id=None,
+            output_path=None,
+            remaining_pending_rewrite_count=0,
+            requires_human_review=False,
+        )
+
     target_chapter_scope = _normalize_chapter_scope(target_chapter_numbers)
     pending_tasks = (
         await _load_pending_rewrite_tasks(

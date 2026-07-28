@@ -196,7 +196,12 @@ class TestEveryRepairExitSettlesClosure:
         )
 
     def test_every_repair_return_is_preceded_by_a_closure_decision(self) -> None:
-        """出口数量可以变，但每个出口都得先结算。"""
+        """每个**可能留下未结算状态**的出口都得先结算。
+
+        2026-07-28：这条断言抓到了新增的第四个出口（项目已 completed 时直接跳过）。
+        那一个是唯一的豁免——书本来就已结算，再判一次没有意义。豁免写在这里而不是
+        把数字调大，是因为下一个新出口仍然应该让它变红。
+        """
 
         import inspect
 
@@ -205,8 +210,10 @@ class TestEveryRepairExitSettlesClosure:
         source = inspect.getsource(repair.run_project_repair)
         exits = source.count("return ProjectRepairResult")
         settles = source.count("settle_project_status_on_closure(")
-        assert settles >= exits, (
-            f"{exits} 个返回点但只有 {settles} 处闭环结算——有出口会漏掉判决"
+        already_settled_exits = source.count("skipped_project_completed")
+        assert settles + already_settled_exits >= exits, (
+            f"{exits} 个返回点，只有 {settles} 处结算 + {already_settled_exits} 处"
+            "「已完结跳过」——有出口会漏掉判决"
         )
 
 

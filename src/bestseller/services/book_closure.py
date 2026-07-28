@@ -158,6 +158,7 @@ async def settle_project_status_on_closure(
     session: Any,
     project: Any,
     *,
+    settings: Any,
     fallback_status: str,
     now_iso: str,
 ) -> BookClosureVerdict:
@@ -198,17 +199,42 @@ async def settle_project_status_on_closure(
     except Exception:  # noqa: BLE001 - closure must never abort a finished run
         verdict = evaluate_book_closure([], expected_chapters=0)
 
-    if verdict.is_complete:
-        project.status = "completed"
-        project.metadata_json = {
-            **(getattr(project, "metadata_json", None) or {}),
-            "completed_at": now_iso,
-            "completion_reason": verdict.reason,
-            "completion_debt_chapters": list(verdict.debt_chapters),
-            "completion_is_clean": verdict.is_clean,
-        }
-    else:
+    if not verdict.is_complete:
         project.status = fallback_status
+        return verdict
+
+    project.status = "completed"
+    metadata = {
+        **(getattr(project, "metadata_json", None) or {}),
+        "completed_at": now_iso,
+        "completion_reason": verdict.reason,
+        "completion_debt_chapters": list(verdict.debt_chapters),
+        "completion_is_clean": verdict.is_clean,
+    }
+
+    # Export here, where completion is decided, so the two cannot diverge.
+    # They already did: the first working closure marked a book completed with
+    # its debt correctly recorded and produced no combined export, because the
+    # `no_actionable_repair` exit returns export_artifact_id=None and the
+    # pipeline's own export had run earlier, while chapters were still
+    # unsettled and the publication gate still (correctly) refused them.
+    #
+    # Non-fatal: the book *is* finished — a failed export must not revoke that,
+    # and the next settle attempt retries it.
+    try:
+        from bestseller.services.exports import export_project_markdown
+
+        artifact, path = await export_project_markdown(
+            session,
+            settings,
+            str(getattr(project, "slug", "") or ""),
+        )
+        metadata["completion_export_artifact_id"] = str(getattr(artifact, "id", ""))
+        metadata["completion_export_path"] = str(path)
+    except Exception as exc:  # noqa: BLE001 - completion stands on its own
+        metadata["completion_export_error"] = str(exc)[:500]
+
+    project.metadata_json = metadata
     return verdict
 
 

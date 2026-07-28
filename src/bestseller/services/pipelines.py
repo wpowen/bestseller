@@ -13490,6 +13490,7 @@ async def run_project_pipeline(
         closure = await settle_project_status_on_closure(
             session,
             project,
+            settings=settings,
             fallback_status=(
                 ProjectStatus.REVISING.value
                 if requires_human_review

@@ -1645,6 +1645,7 @@ async def run_project_repair(
                 await settle_project_status_on_closure(
                     session,
                     project,
+                    settings=settings,
                     fallback_status=ProjectStatus.REVISING.value,
                     now_iso=datetime.now(UTC).isoformat(),
                 )
@@ -1862,6 +1863,7 @@ async def run_project_repair(
             await settle_project_status_on_closure(
                 session,
                 project,
+                settings=settings,
                 fallback_status=str(project.status),
                 now_iso=datetime.now(UTC).isoformat(),
             )
@@ -2128,6 +2130,7 @@ async def run_project_repair(
         closure = await settle_project_status_on_closure(
             session,
             project,
+            settings=settings,
             fallback_status=(
                 ProjectStatus.REVISING.value
                 if requires_human_review

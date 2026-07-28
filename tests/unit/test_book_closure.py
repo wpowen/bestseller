@@ -210,6 +210,46 @@ class TestEveryRepairExitSettlesClosure:
         )
 
 
+class TestCompletionAndExportCannotDiverge:
+    """完结与导出必须在同一处发生。
+
+    2026-07-28 第三次真机取证：闭环判定修好后书翻到了 ``completed``，debt 也正确
+    记在 ``[1,2,3]``，但**全书导出产物是 0**。章节 markdown 在盘上，缺的是合并
+    导出——因为判定完结的地方和触发导出的地方是分开的：``no_actionable_repair``
+    出口返回 ``export_artifact_id=None``，而管线那次导出发生在章节结算之前，必然
+    被发布门拦下。
+
+    这与前三个 bug 同形：两处必须一致的逻辑分居两地，迟早分叉。所以完结时就地
+    导出，两者不可能再不一致。
+    """
+
+    def test_settling_a_complete_book_also_exports_it(self) -> None:
+        import inspect
+
+        from bestseller.services.book_closure import (
+            settle_project_status_on_closure,
+        )
+
+        source = inspect.getsource(settle_project_status_on_closure)
+        assert "export_project_markdown" in source, (
+            "完结判定处必须同时触发全书导出，否则两者会再次分叉"
+        )
+
+    def test_export_failure_does_not_undo_completion(self) -> None:
+        """导出失败不该把已完结的书打回去——书确实写完了。"""
+
+        import inspect
+
+        from bestseller.services.book_closure import (
+            settle_project_status_on_closure,
+        )
+
+        source = inspect.getsource(settle_project_status_on_closure)
+        export_at = source.index("export_project_markdown")
+        tail = source[export_at:]
+        assert "except" in tail, "导出必须是非致命的"
+
+
 class TestNoHumanConfirmationOutcomeExists:
     def test_the_verdict_is_binary(self) -> None:
         """没有第三种「待人工」结果——这是本模块的设计约束。"""

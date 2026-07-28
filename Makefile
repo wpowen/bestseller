@@ -239,6 +239,24 @@ docker-ps:
 docker-restart:
 	./scripts/docker-stop.sh && ./scripts/docker-start.sh
 
+# The SSD override moves PGDATA onto the external volume. Deploying without it
+# points the stack at a different data directory, so it is not optional here.
+COMPOSE_FILES ?= -f docker-compose.yml -f docker-compose.ssd.yml
+
+# Rebuild the code images and bring the WHOLE stack up.
+#
+# Deploying by hand invites naming only the services you were thinking about
+# (`up -d worker api web`), which silently leaves everything else stopped.
+# The backup sidecar was dropped that way repeatedly and its dumps directory
+# stayed empty through three library wipes — the one service whose absence is
+# invisible until you need it. Naming no services here means compose starts
+# them all, so a partial deploy is not something you can forget your way into.
+.PHONY: docker-deploy
+docker-deploy:
+	docker compose $(COMPOSE_FILES) build worker api web
+	docker compose $(COMPOSE_FILES) up -d
+	docker compose $(COMPOSE_FILES) ps
+
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------

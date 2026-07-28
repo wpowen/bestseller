@@ -1637,7 +1637,17 @@ async def run_project_repair(
             if source_audit_blocks:
                 workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
                 workflow_run.current_step = "source_artifact_audit_blocked"
-                project.status = ProjectStatus.REVISING.value
+                # A source-artifact finding is about planning material, not about
+                # the prose: it cannot un-write chapters that are already
+                # settled. Closure still requires every chapter to be terminal,
+                # so this can never complete an unfinished book — it only stops
+                # a finished one from being stranded here forever.
+                await settle_project_status_on_closure(
+                    session,
+                    project,
+                    fallback_status=ProjectStatus.REVISING.value,
+                    now_iso=datetime.now(UTC).isoformat(),
+                )
                 await session.flush()
                 await _checkpoint_repair_progress(session)
                 return ProjectRepairResult(
@@ -1841,6 +1851,20 @@ async def run_project_repair(
             # the same stale attention verdict into ``machine_blocked`` every
             # scheduler tick.  Converge here and preserve the user's project
             # lifecycle state (including an explicit focus pause).
+            # "Nothing left to repair" is not a reason to skip the verdict — it
+            # is the exact condition under which a book whose chapters have all
+            # settled IS finished. Preserving the status here (the original
+            # intent: do not stomp an explicit focus pause) also preserved
+            # ``revising`` on a completed book, so a real run with three settled
+            # chapters exited through here and stayed unfinished forever
+            # (2026-07-28). The fallback keeps the pause-preserving behaviour;
+            # only a genuinely complete book is promoted.
+            await settle_project_status_on_closure(
+                session,
+                project,
+                fallback_status=str(project.status),
+                now_iso=datetime.now(UTC).isoformat(),
+            )
             current_step_name = "completed_no_actionable_repair"
             workflow_run.status = WorkflowStatus.COMPLETED.value
             workflow_run.current_step = current_step_name

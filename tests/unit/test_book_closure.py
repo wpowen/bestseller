@@ -169,6 +169,47 @@ class TestBothTerminalLanesUseTheSameVerdict:
             )
 
 
+class TestEveryRepairExitSettlesClosure:
+    """修复有三个出口，全部必须给出闭环判决。
+
+    2026-07-28 第二次真机取证：修好共享入口后，触发一次修复，它走的是**第三个
+    出口** ``completed_no_actionable_repair``——「没有可修的东西」时提前 return，
+    并显式 ``project_status_preserved``，于是三章全部结算的书仍然停在 revising。
+
+    保留状态的本意是别覆盖用户的显式暂停，那是对的；但「无事可修」+「章全结算」
+    恰恰**就是**书写完了的定义，是闭环最该触发的时刻，不是最该跳过的时刻。
+    """
+
+    def test_no_actionable_repair_exit_still_evaluates_closure(self) -> None:
+        import inspect
+
+        from bestseller.services import repair
+
+        source = inspect.getsource(repair.run_project_repair)
+        marker = source.index("completed_no_actionable_repair")
+        exit_point = source.index("return ProjectRepairResult", marker)
+        # 该出口自身的代码段：从上一个返回点之后，到它自己的返回为止。
+        prev_return = source.rfind("return ProjectRepairResult", 0, marker)
+        block = source[max(prev_return, 0) : exit_point]
+        assert "settle_project_status_on_closure(" in block, (
+            "「无事可修」出口必须也给出闭环判决——那正是书写完了的时刻"
+        )
+
+    def test_every_repair_return_is_preceded_by_a_closure_decision(self) -> None:
+        """出口数量可以变，但每个出口都得先结算。"""
+
+        import inspect
+
+        from bestseller.services import repair
+
+        source = inspect.getsource(repair.run_project_repair)
+        exits = source.count("return ProjectRepairResult")
+        settles = source.count("settle_project_status_on_closure(")
+        assert settles >= exits, (
+            f"{exits} 个返回点但只有 {settles} 处闭环结算——有出口会漏掉判决"
+        )
+
+
 class TestNoHumanConfirmationOutcomeExists:
     def test_the_verdict_is_binary(self) -> None:
         """没有第三种「待人工」结果——这是本模块的设计约束。"""

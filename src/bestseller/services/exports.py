@@ -1285,6 +1285,31 @@ def collect_publication_blockers(
                     if is_en else f"第{chapter_number}章：当前稿缺少场景来源记录，禁止发布"
                 )
             )
+
+        # Everything above is structural: no current draft, an unpublishable
+        # status, no provenance. Those mean the chapter is not finished, and no
+        # amount of conceded debt makes a half-written chapter publishable.
+        #
+        # Everything below judges quality — length, hygiene, causality,
+        # repetition. On a chapter the repair loop conceded, re-running those
+        # re-tries a verdict the quality system itself reached: quality_debt
+        # means "budget exhausted, ship this draft". A real book with three
+        # promoted chapters and status completed was still refused on
+        # "第3章：常识因果门禁 lay_character_rule_knowledge_leak" (2026-07-28).
+        # This gate already honours one such ruling — the LLM-dismissed
+        # common-sense codes, whose comment says not to re-litigate prose
+        # causality without context — and repair's concession is the same kind
+        # of ruling.
+        _conceded = production_state in _EXPORT_DEBT_PRODUCTION_STATES
+
+        def _content_blocker(message: str) -> None:
+            """A quality finding: blocking normally, recorded once conceded."""
+
+            if _conceded and debt_warnings is not None:
+                debt_warnings.append(f"[{production_state}] {message}")
+                return
+            blockers.append(message)
+
         if not is_en:
             try:
                 from bestseller.services.chapter_quality_bundle import (
@@ -1329,11 +1354,11 @@ def collect_publication_blockers(
                     )
                     if quality_report.blocking_findings:
                         codes = ", ".join(quality_report.to_dict()["blocking_codes"])
-                        blockers.append(
+                        _content_blocker(
                             f"第{chapter_number}章：统一质量快照未通过（{codes}），禁止发布"
                         )
             except Exception:
-                blockers.append(
+                _content_blocker(
                     f"第{chapter_number}章：统一质量快照执行失败，严格商业模式禁止发布"
                 )
         # Word-count deviations are logged as warnings but never block export.
@@ -1387,7 +1412,7 @@ def collect_publication_blockers(
                 enabled=True,
             )
             if not is_en and _wc < CHINESE_CHAPTER_HARD_MIN_WORDS:
-                blockers.append(
+                _content_blocker(
                     (
                         f"Chapter {chapter_number}: chapter length {_wc} below commercial floor "
                         f"{CHINESE_CHAPTER_HARD_MIN_WORDS}, export blocked"
@@ -1398,7 +1423,7 @@ def collect_publication_blockers(
             )
             elif _length_report.is_warning or _length_report.is_blocking:
                 if _length_report.is_blocking and not is_en:
-                    blockers.append(
+                    _content_blocker(
                         (
                             f"Chapter {chapter_number}: chapter length {_wc} outside commercial "
                             f"window {CHINESE_CHAPTER_HARD_MIN_WORDS}-{CHINESE_CHAPTER_HARD_MAX_WORDS}, "
@@ -1423,7 +1448,7 @@ def collect_publication_blockers(
             logger.warning("Length stability check failed for chapter %s (non-fatal): %s", chapter.chapter_number, e)
         hygiene_issues = collect_unfinished_artifact_issues(draft.content_md, language=language)
         for issue in hygiene_issues:
-            blockers.append(
+            _content_blocker(
                 (
                     f"Chapter {chapter.chapter_number}: {issue}"
                     if is_en else f"第{chapter.chapter_number}章：{issue}"
@@ -1453,7 +1478,7 @@ def collect_publication_blockers(
                     continue
                 if finding.code in _adjudicated_clear:
                     continue
-                blockers.append(
+                _content_blocker(
                     (
                         f"Chapter {chapter_number}: common-sense gate {finding.code}: {finding.message}"
                         if is_en
@@ -1476,14 +1501,14 @@ def collect_publication_blockers(
             )
             for finding in local_findings[:5]:
                 message = str(finding.get("message") or "duplicate content")
-                blockers.append(
+                _content_blocker(
                     (
                         f"Chapter {chapter_number}: {message}"
                         if is_en else f"第{chapter_number}章：{message}"
                     )
                 )
             if len(local_findings) > 5:
-                blockers.append(
+                _content_blocker(
                     (
                         f"Chapter {chapter_number}: {len(local_findings) - 5} more duplicate findings"
                         if is_en else f"第{chapter_number}章：另有{len(local_findings) - 5}条重复问题"
@@ -1516,7 +1541,7 @@ def collect_publication_blockers(
             code = str(finding.get("code") or "")
             if code == "CROSS_CHAPTER_REPETITION" and "跨章段落重复" not in message:
                 message = f"跨章段落重复/整体重复：{message}"
-            blockers.append(message if not is_en else f"Chapter {finding_chapter}: {message}")
+            _content_blocker(message if not is_en else f"Chapter {finding_chapter}: {message}")
             emitted += 1
             if emitted >= 10:
                 break
@@ -1526,7 +1551,7 @@ def collect_publication_blockers(
             in target_chapter_numbers
         ]) - emitted
         if remaining > 0:
-            blockers.append(
+            _content_blocker(
                 (
                     f"{remaining} more cross-chapter duplicate finding(s)"
                     if is_en else f"另有{remaining}条跨章重复问题"

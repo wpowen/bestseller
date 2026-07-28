@@ -65,6 +65,25 @@ class TestOnlySettledChaptersArePromoted:
         assert "is_current" in source
 
 
+class TestItWalksTheStateMachine:
+    """提升不能跳步：candidate → under_review → eligible → promoted。
+
+    第一版直接 transition 到 promoted，被状态机以
+    ``invalid automated promotion transition: candidate -> promoted`` 拒绝——
+    而 ``except: continue`` 把这个拒绝吞掉了，于是「零提升」现场没有任何线索。
+    """
+
+    def test_it_goes_through_under_review_and_eligible(self) -> None:
+        source = inspect.getsource(book_closure._promote_settled_chapter_drafts)
+        assert "UNDER_REVIEW" in source and "ELIGIBLE" in source
+
+    def test_failures_are_recorded_not_swallowed(self) -> None:
+        source = inspect.getsource(book_closure._promote_settled_chapter_drafts)
+        assert "closure_promotion_errors" in source, (
+            "吞掉的异常制造了一次纯靠手工探针才找到的盲区"
+        )
+
+
 class TestItNeverBreaksAFinishedBook:
     def test_promotion_failure_is_not_fatal(self) -> None:
         """书确实写完了，一次提升失败不该撤销这个事实。"""

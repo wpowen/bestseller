@@ -194,25 +194,49 @@ async def _promote_settled_chapter_drafts(session: Any, project: Any) -> None:
     except Exception:  # noqa: BLE001 - a finished book must not fail on bookkeeping
         return
 
+    # Promotion is a state machine: candidate → under_review → eligible →
+    # promoted, and it rejects a jump straight to promoted. Walking the same
+    # path the pass-verdict route walks keeps one set of rules; skipping steps
+    # was silently refused with "invalid automated promotion transition".
+    ladder = (
+        DraftPromotionState.UNDER_REVIEW,
+        DraftPromotionState.ELIGIBLE,
+        DraftPromotionState.PROMOTED,
+    )
+    failures: list[str] = []
     for chapter, draft in rows:
         state = str(getattr(chapter, "production_state", "") or "").strip().lower()
         if state not in SETTLED_PRODUCTION_STATES:
             continue
         if str(getattr(draft, "promotion_state", "")) == DraftPromotionState.PROMOTED.value:
             continue
-        try:
-            await transition_draft_state(
-                session,
-                project_id=project.id,
-                draft_kind="chapter",
-                draft_id=draft.id,
-                to_state=DraftPromotionState.PROMOTED,
-                decision_source="book_closure",
-                reason_codes=["settled_at_closure"],
-                reason=f"chapter settled as {state}",
-            )
-        except Exception:  # noqa: BLE001 - one chapter must not sink the book
-            continue
+        for step in ladder:
+            if str(getattr(draft, "promotion_state", "")) == step.value:
+                continue
+            try:
+                await transition_draft_state(
+                    session,
+                    project_id=project.id,
+                    draft_kind="chapter",
+                    draft_id=draft.id,
+                    to_state=step,
+                    decision_source="book_closure",
+                    reason_codes=["settled_at_closure"],
+                    reason=f"chapter settled as {state}",
+                )
+            except Exception as exc:  # noqa: BLE001 - one chapter must not sink the book
+                # Recorded, not swallowed. The first version of this loop hid
+                # its own rejection and left no trace of why nothing promoted.
+                failures.append(
+                    f"ch{getattr(chapter, 'chapter_number', '?')}"
+                    f"->{step.value}: {str(exc)[:120]}"
+                )
+                break
+    if failures:
+        project.metadata_json = {
+            **(getattr(project, "metadata_json", None) or {}),
+            "closure_promotion_errors": failures[:10],
+        }
 
 
 async def settle_project_status_on_closure(

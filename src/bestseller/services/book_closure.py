@@ -365,6 +365,10 @@ async def settle_project_status_on_closure(
         )
         metadata["completion_export_artifact_id"] = str(getattr(artifact, "id", ""))
         metadata["completion_export_path"] = str(path)
+        # A successful export clears the previous failure. Leaving it behind
+        # showed a completed, exported book still carrying the error that a
+        # since-fixed gate had raised.
+        metadata.pop("completion_export_error", None)
         if conceded:
             metadata["completion_conceded_gate_findings"] = conceded[:10]
     except Exception as exc:  # noqa: BLE001 - completion stands on its own

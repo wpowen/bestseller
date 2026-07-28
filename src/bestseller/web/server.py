@@ -2748,7 +2748,12 @@ class WebTaskManager:
             task = self._tasks.get(task_id)
             if task is None:
                 return False
-            if task.status not in ("running", "queued"):
+            # Deliberately not gated on the task looking live. A card reads
+            # ``incomplete`` once its ARQ job is gone, but the book itself is
+            # usually still being driven by self-heal at exactly that point —
+            # which is when the user most wants Stop to work. Refusing there
+            # made the button do nothing on the runs it was needed for.
+            if task.status in ("completed", "failed", "cancelled"):
                 return False
             force = bool(task.cancel_requested)
             task.cancel_requested = True
@@ -6735,9 +6740,25 @@ def _request_visible_task_cancel(
 
     task = task_manager.get_task(normalized_task_id)
     if task is not None:
-        if task_manager.request_cancel(normalized_task_id):
-            return "cancel_requested"
-        return "not_running"
+        marked = task_manager.request_cancel(normalized_task_id)
+        # Marking the task is not enough. That flag lives in this process's
+        # memory, while the thing that keeps the book running — self-heal —
+        # only reads the database. A live run showed the cost: the repair the
+        # user stopped went to `cancelled`, and self-heal had queued a fresh
+        # chapter pipeline three minutes later, with no cancel/pause marker
+        # anywhere on the project. Stop is a decision about the *book*, so it
+        # has to land where self-heal will see it.
+        if not marked:
+            # Already finished — nothing to stop, and pausing its project here
+            # would strand a book that legitimately completed.
+            return "not_running"
+        slug = str(task.get("project_slug") or "").strip()
+        if slug:
+            try:
+                _cancel_project_task(settings, f"project:{slug}")
+            except Exception:
+                logger.exception("task cancel: failed to pause project %s", slug)
+        return "cancel_requested"
 
     if normalized_task_id.startswith("db-repair:"):
         return _cancel_db_repair_task(settings, normalized_task_id)

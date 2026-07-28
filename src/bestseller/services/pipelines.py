@@ -13591,6 +13591,131 @@ async def run_project_pipeline(
         raise
 
 
+def _repair_round_made_progress(*, previous: int, current: int) -> bool:
+    """Whether a repair round settled more chapters than the one before it.
+
+    Repair reopens chapters it decides to rework, so the settled count both
+    rises and falls during a run. Only an increase counts: equal means the
+    round achieved nothing, and a decrease means it reopened more than it
+    closed. Either way, running the same round again would repeat it.
+    """
+
+    return int(current) > int(previous)
+
+
+async def _settled_chapter_count(session: AsyncSession, project_id: Any) -> int | None:
+    """Settled chapters, or ``None`` when the count cannot be read.
+
+    ``None`` is not zero: an unreadable count means the driver has no evidence
+    of progress either way, and it stops rather than guessing. A book that
+    generated successfully must never be disrupted by a bookkeeping query.
+    """
+
+    from bestseller.services.book_closure import SETTLED_PRODUCTION_STATES
+
+    try:
+        rows = (
+            (
+                await session.execute(
+                    select(ChapterModel.production_state).where(
+                        ChapterModel.project_id == project_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    except Exception:  # noqa: BLE001 - convergence bookkeeping is never fatal
+        return None
+    return sum(
+        1
+        for state in rows
+        if str(state or "").strip().lower() in SETTLED_PRODUCTION_STATES
+    )
+
+
+async def _drive_repair_to_closure(
+    session: AsyncSession,
+    settings: AppSettings,
+    project: Any,
+    *,
+    requested_by: str,
+    export_markdown: bool,
+    progress: Any,
+    first_result: Any,
+    max_rounds: int = 6,
+) -> Any:
+    """Keep repairing until the book closes or a round stops helping.
+
+    One repair pass rarely settles every chapter — on real runs the first pass
+    ends at one or two of three — and the previous code stopped there, leaving
+    the book in ``revising`` until a self-heal sweep happened along. It did get
+    there (three sweeps drove one book to completion over half an hour), but
+    "start the project and it finishes" should not depend on a background
+    sweep's cadence.
+
+    Bounded twice over: it stops as soon as closure reports the book complete,
+    and it stops when a round fails to settle more chapters than the one before
+    — which is also what a stuck book looks like. Self-heal remains the safety
+    net for the cases this cannot cover, such as the process dying mid-run.
+    """
+
+    from bestseller.services.book_closure import evaluate_book_closure
+    from bestseller.services.repair import run_project_repair
+
+    result = first_result
+    settled = await _settled_chapter_count(session, project.id)
+    if settled is None:
+        return result
+
+    for round_index in range(2, max_rounds + 1):
+        try:
+            chapters = list(
+                (
+                    await session.execute(
+                        select(ChapterModel).where(ChapterModel.project_id == project.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        except Exception:  # noqa: BLE001 - convergence bookkeeping is never fatal
+            return result
+        verdict = evaluate_book_closure(
+            chapters,
+            expected_chapters=int(getattr(project, "target_chapters", 0) or 0),
+        )
+        if verdict.is_complete:
+            return result
+
+        result = await run_project_repair(
+            session,
+            settings,
+            project.slug,
+            requested_by=requested_by,
+            export_markdown=export_markdown,
+            progress=progress,
+        )
+        current = await _settled_chapter_count(session, project.id)
+        _emit_progress(
+            progress,
+            "auto_repair_round_completed",
+            {
+                "project_slug": project.slug,
+                "round": round_index,
+                "settled_chapters": current,
+                "previous_settled_chapters": settled,
+            },
+        )
+        if current is None or not _repair_round_made_progress(
+            previous=settled, current=current
+        ):
+            return result
+        settled = current
+
+    return result
+
+
 async def run_autowrite_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -14071,6 +14196,17 @@ async def run_autowrite_pipeline(
                 "final_verdict": repair_result.final_verdict,
                 "requires_human_review": repair_result.requires_human_review,
             },
+        )
+        # One pass rarely settles every chapter. Keep going in this run rather
+        # than leaving the book for the next self-heal sweep.
+        repair_result = await _drive_repair_to_closure(
+            session,
+            settings,
+            project,
+            requested_by=requested_by,
+            export_markdown=export_markdown,
+            progress=progress,
+            first_result=repair_result,
         )
 
     final_review_report_id = (

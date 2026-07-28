@@ -442,8 +442,10 @@ def test_apply_project_titles_to_tasks_uses_database_title(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeSession:
-        async def execute(self, _stmt: object) -> list[tuple[str, str]]:
-            return [("book-a", "青囊不语问阴阳")]
+        # 2026-07-28: 该查询同时取 status，任务卡才能承认已完结的书
+        # （见 test_task_card_follows_project_completion.py）。
+        async def execute(self, _stmt: object) -> list[tuple[str, str, str]]:
+            return [("book-a", "青囊不语问阴阳", "writing")]
 
     class _SessionScope:
         async def __aenter__(self) -> _FakeSession:

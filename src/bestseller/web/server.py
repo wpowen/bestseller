@@ -10475,6 +10475,40 @@ def _task_project_slug(task: Mapping[str, object]) -> str:
     return ""
 
 
+def _settle_task_cards_from_project_status(
+    tasks: list[dict[str, object]],
+    project_statuses: dict[str, str],
+) -> None:
+    """Let a finished book close its own task card.
+
+    Task status is derived from the ARQ job plus the last stage it emitted.
+    An autowrite task ends when it hands the book to self-heal, and nothing
+    ever emits onto it again — so when the book later completes, the card
+    stays frozen at the hand-off. A real run finished with
+    ``status=completed`` and its debt recorded while its card still read
+    ``project_repair_requires_machine_repair`` (2026-07-28), which is what
+    "every task failed" looks like from the dashboard.
+
+    The project is the authority on whether a book is written; the card is a
+    view of the run that produced it. Only completion is imported, and only
+    onto a card that is not already completed: a task that genuinely failed
+    in conception has no project row at all, so it can never be resurrected
+    here.
+    """
+
+    for task in tasks:
+        slug = _task_project_slug(task)
+        if not slug:
+            continue
+        if project_statuses.get(slug) != "completed":
+            continue
+        if str(task.get("status") or "") == "completed":
+            continue
+        task["status"] = "completed"
+        # The hand-off reason described a book that was still unfinished.
+        task["error"] = None
+
+
 async def _apply_project_titles_to_tasks(
     settings: AppSettings,
     tasks: list[dict[str, object]],
@@ -10489,15 +10523,30 @@ async def _apply_project_titles_to_tasks(
         from bestseller.infra.db.models import ProjectModel
 
         async with session_scope(settings) as sess:
-            rows = await sess.execute(
-                select(ProjectModel.slug, ProjectModel.title).where(ProjectModel.slug.in_(slugs))
+            rows = list(
+                await sess.execute(
+                    select(
+                        ProjectModel.slug,
+                        ProjectModel.title,
+                        ProjectModel.status,
+                    ).where(ProjectModel.slug.in_(slugs))
+                )
             )
             titles = {
-                str(slug): str(title) for slug, title in rows if slug and str(title or "").strip()
+                str(slug): str(title)
+                for slug, title, _status in rows
+                if slug and str(title or "").strip()
+            }
+            project_statuses = {
+                str(slug): str(status or "").strip().lower() for slug, _title, status in rows if slug
             }
     except Exception:
         logger.warning("Failed to apply DB project titles to task cards", exc_info=True)
         return tasks
+
+    # Runs before the title early-return: a completed book must close its card
+    # even if its title happens to be blank.
+    _settle_task_cards_from_project_status(tasks, project_statuses)
     if not titles:
         return tasks
 

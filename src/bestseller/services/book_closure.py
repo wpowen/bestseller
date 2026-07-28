@@ -154,6 +154,67 @@ def evaluate_book_closure(
     )
 
 
+async def _promote_settled_chapter_drafts(session: Any, project: Any) -> None:
+    """Record that a settled chapter's current draft is the one being shipped.
+
+    ``promotion_state`` only reaches ``promoted`` when the chapter review
+    returns ``pass``. A ``quality_debt`` chapter never gets that verdict — the
+    state means "stop repairing and ship the best draft" — so its draft stays
+    ``candidate``, and the combined export, which requires promoted drafts,
+    fails with "chapters without a promoted draft: 1, 2, 3" on a book whose
+    every chapter is terminal (2026-07-28, urban-power-reversal-1785219308).
+
+    Settling *is* the decision to ship. Promotion records that decision; it is
+    not a second approval the draft has to earn again. Only terminal chapters
+    qualify — an in-flight draft can still be rewritten — and the audited
+    transition is used rather than assigning the column, so the promotion
+    leaves the same trail any other promotion would.
+    """
+
+    from sqlalchemy import select
+
+    from bestseller.domain.promotion import DraftPromotionState
+    from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
+    from bestseller.services.draft_promotion import transition_draft_state
+
+    try:
+        rows = list(
+            await session.execute(
+                select(ChapterModel, ChapterDraftVersionModel)
+                .join(
+                    ChapterDraftVersionModel,
+                    ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                )
+                .where(
+                    ChapterModel.project_id == project.id,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                )
+            )
+        )
+    except Exception:  # noqa: BLE001 - a finished book must not fail on bookkeeping
+        return
+
+    for chapter, draft in rows:
+        state = str(getattr(chapter, "production_state", "") or "").strip().lower()
+        if state not in SETTLED_PRODUCTION_STATES:
+            continue
+        if str(getattr(draft, "promotion_state", "")) == DraftPromotionState.PROMOTED.value:
+            continue
+        try:
+            await transition_draft_state(
+                session,
+                project_id=project.id,
+                draft_kind="chapter",
+                draft_id=draft.id,
+                to_state=DraftPromotionState.PROMOTED,
+                decision_source="book_closure",
+                reason_codes=["settled_at_closure"],
+                reason=f"chapter settled as {state}",
+            )
+        except Exception:  # noqa: BLE001 - one chapter must not sink the book
+            continue
+
+
 async def settle_project_status_on_closure(
     session: Any,
     project: Any,
@@ -204,6 +265,7 @@ async def settle_project_status_on_closure(
         return verdict
 
     project.status = "completed"
+    await _promote_settled_chapter_drafts(session, project)
     metadata = {
         **(getattr(project, "metadata_json", None) or {}),
         "completed_at": now_iso,

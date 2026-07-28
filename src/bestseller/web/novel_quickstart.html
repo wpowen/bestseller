@@ -4342,8 +4342,8 @@
              共同根因之一。 -->
         <div class="summary-row summary-option" style="flex-direction:column;align-items:stretch;gap:6px;">
           <label for="conceptSeedInput" style="cursor:pointer;">
-            <span>故事创意（可选，强烈推荐）</span>
-            <span class="hint" style="font-size:12px;">一句话：主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。它会成为概念生成的种子，显著提高过门率。</span>
+            <span>故事创意（不填几乎必挂）</span>
+            <span class="hint" style="font-size:12px;">一句话：主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。它会成为概念生成的种子。实测：不填的书至今没有一本走出构思——空题材下淘汰赛生成不出能过门的概念，两轮跑完才失败。</span>
           </label>
           <textarea id="conceptSeedInput" rows="3" maxlength="300"
             placeholder="例：靠给宗门死人验尸糊口的贱籍少年，发现每具尸体死前都听到了同一句话——而今天他自己也听到了。"
@@ -8542,6 +8542,7 @@
         return;
       }
     }
+    if (!_confirmEmptyConceptSeed()) return;
     const btn = $('#startBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> 提交中...';
@@ -8568,6 +8569,22 @@
       btn.textContent = '开始创作';
       alert('提交失败: ' + err.message);
     }
+  }
+
+  // 空种子在花掉两轮淘汰赛之前先问一句。后端已经会在市场/角色/世界观生成前
+  // 停下，但那两轮本身就是真金白银的 LLM 调用，而这条路径至今零成功——
+  // 2026-07-28《玄幻》四个候选在 大白话/想点欲/故事运动 上 4/4 全挂，不是
+  // 新颖度不够，是空题材下生成不出站得住的概念。提示而非禁令：用户有权坚持。
+  function _confirmEmptyConceptSeed() {
+    const seed = ($('#conceptSeedInput')?.value || '').trim();
+    if (seed) return true;
+    return confirm(
+      '没有填「故事创意」。\n\n' +
+      '实测:不填的书至今没有一本走出构思——空题材下概念淘汰赛跑满两轮也产不出' +
+      '能过门的冠军,两轮的 LLM 开销会照常花掉。\n\n' +
+      '填一句就够:主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。\n\n' +
+      '仍要继续吗?'
+    );
   }
 
   function buildQuickstartPayload() {

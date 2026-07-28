@@ -126,6 +126,49 @@ class TestDegradesSafely:
         assert verdict.is_complete, "计划 2 章都好了；第 3 章超出计划不该拖住完结"
 
 
+class TestBothTerminalLanesUseTheSameVerdict:
+    """管线和修复各有一份终态赋值——只改一处等于没改。
+
+    2026-07-28 真机取证(urban-power-reversal-1785201018):三章全部结算,书却
+    停在 revising、零导出。原因是 run_project_pipeline 的闭环检查在**几分钟前**
+    就跑过了(那时章节还在途),真正最后收尾的是 run_project_repair,而它带着
+    自己那份 `REVISING if requires_human_review else WRITING`,把状态又写了回去。
+    **最后写的那一方说了算,而哪一方最后写取决于这次跑到哪里结束。**
+    """
+
+    def test_repair_lane_settles_through_the_shared_helper(self) -> None:
+        import inspect
+
+        from bestseller.services import repair
+
+        source = inspect.getsource(repair.run_project_repair)
+        assert "settle_project_status_on_closure(" in source, (
+            "修复车道必须走共享入口,不能自带一份终态赋值"
+        )
+
+    def test_pipeline_lane_settles_through_the_shared_helper(self) -> None:
+        import inspect
+
+        from bestseller.services import pipelines
+
+        source = inspect.getsource(pipelines.run_project_pipeline)
+        assert "settle_project_status_on_closure(" in source
+
+    def test_neither_lane_keeps_a_private_terminal_assignment(self) -> None:
+        """那句原始赋值只允许作为 fallback_status 出现在共享入口的调用里。"""
+
+        import inspect
+
+        from bestseller.services import pipelines, repair
+
+        needle = "ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value"
+        for module in (pipelines, repair):
+            src = inspect.getsource(module)
+            assert needle not in src, (
+                f"{module.__name__} 仍有一份独立的终态赋值,会覆盖闭环判决"
+            )
+
+
 class TestNoHumanConfirmationOutcomeExists:
     def test_the_verdict_is_binary(self) -> None:
         """没有第三种「待人工」结果——这是本模块的设计约束。"""

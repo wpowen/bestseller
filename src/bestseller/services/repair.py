@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable
+from datetime import UTC, datetime
 import json
 import logging
 from pathlib import Path
@@ -26,6 +27,7 @@ from bestseller.infra.db.models import (
     SceneDraftVersionModel,
     WorkflowRunModel,
 )
+from bestseller.services.book_closure import settle_project_status_on_closure
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.exports import export_project_markdown
 from bestseller.services.generation_policy import generation_unit_preference_from_metadata
@@ -2095,17 +2097,30 @@ async def run_project_repair(
                 max(item.chapter_number for item in processed_chapters),
             )
         await sync_world_expansion_progress(session, project=project)
-        project.status = (
-            ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value
+        # The repair lane is where a real run actually ends: the pipeline's own
+        # closure check runs minutes earlier, while chapters are still in
+        # flight. Both lanes therefore route through the same helper — patching
+        # only one leaves the verdict to whichever lane happens to finish last.
+        closure = await settle_project_status_on_closure(
+            session,
+            project,
+            fallback_status=(
+                ProjectStatus.REVISING.value
+                if requires_human_review
+                else ProjectStatus.WRITING.value
+            ),
+            now_iso=datetime.now(UTC).isoformat(),
         )
 
         workflow_run.status = (
             WorkflowStatus.MACHINE_BLOCKED.value
-            if requires_human_review
+            if requires_human_review and not closure.is_complete
             else WorkflowStatus.COMPLETED.value
         )
         workflow_run.current_step = (
-            "machine_repair_required" if requires_human_review else "completed"
+            "machine_repair_required"
+            if requires_human_review and not closure.is_complete
+            else "completed"
         )
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,

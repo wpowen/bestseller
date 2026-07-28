@@ -154,8 +154,67 @@ def evaluate_book_closure(
     )
 
 
+async def settle_project_status_on_closure(
+    session: Any,
+    project: Any,
+    *,
+    fallback_status: str,
+    now_iso: str,
+) -> BookClosureVerdict:
+    """Stamp COMPLETED when the book has finished; otherwise leave the caller's
+    status. Returns the verdict so the caller can also settle its workflow row.
+
+    Both terminal paths must call this. ``run_project_pipeline`` and
+    ``run_project_repair`` each carry their own copy of
+
+        project.status = REVISING if requires_human_review else WRITING
+
+    and a live run (2026-07-28, urban-power-reversal-1785201018) exited through
+    the *repair* copy: all three chapters settled, the pipeline copy had already
+    run minutes earlier while chapters were still in flight, and the book
+    finished in ``revising`` with no export. Patching one copy fixes nothing —
+    the last writer wins, and which one that is depends on where the run
+    happens to end.
+    """
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ChapterModel
+
+    try:
+        chapters = list(
+            (
+                await session.execute(
+                    select(ChapterModel).where(ChapterModel.project_id == project.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        verdict = evaluate_book_closure(
+            chapters,
+            expected_chapters=int(getattr(project, "target_chapters", 0) or 0),
+        )
+    except Exception:  # noqa: BLE001 - closure must never abort a finished run
+        verdict = evaluate_book_closure([], expected_chapters=0)
+
+    if verdict.is_complete:
+        project.status = "completed"
+        project.metadata_json = {
+            **(getattr(project, "metadata_json", None) or {}),
+            "completed_at": now_iso,
+            "completion_reason": verdict.reason,
+            "completion_debt_chapters": list(verdict.debt_chapters),
+            "completion_is_clean": verdict.is_clean,
+        }
+    else:
+        project.status = fallback_status
+    return verdict
+
+
 __all__ = [
     "SETTLED_PRODUCTION_STATES",
     "BookClosureVerdict",
     "evaluate_book_closure",
+    "settle_project_status_on_closure",
 ]

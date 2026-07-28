@@ -116,7 +116,7 @@ from bestseller.services.drafts import (
     generate_scene_draft,
     _front10_forbidden_signal_terms,
 )
-from bestseller.services.book_closure import evaluate_book_closure
+from bestseller.services.book_closure import settle_project_status_on_closure
 from bestseller.services.exports import (
     export_chapter_markdown,
     export_project_markdown,
@@ -13484,45 +13484,19 @@ async def run_project_pipeline(
         # and promotion paths after these rows were last loaded, so anything
         # cached in this scope would judge the book on a stale state.
         #
-        # Degrades like the neighbouring closing stages: a book that generated
-        # successfully must never fail because the closure check could not run.
-        # An unreadable verdict simply leaves the pre-existing behaviour.
-        try:
-            chapters_for_closure = list(
-                (
-                    await session.execute(
-                        select(ChapterModel).where(ChapterModel.project_id == project.id)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            closure = evaluate_book_closure(
-                chapters_for_closure,
-                expected_chapters=int(getattr(project, "target_chapters", 0) or 0),
-            )
-        except Exception as closure_exc:  # noqa: BLE001 - closure must never abort a run
-            logger.warning(
-                "Book closure check failed for project %s: %s", project.slug, closure_exc
-            )
-            closure = evaluate_book_closure([], expected_chapters=0)
-        if closure.is_complete:
-            project.status = ProjectStatus.COMPLETED.value
-            project.metadata_json = {
-                **(project.metadata_json or {}),
-                "completed_at": datetime.now(UTC).isoformat(),
-                "completion_reason": closure.reason,
-                # Debt is recorded, never a reason to park: the repair loop
-                # already decided to ship these chapters.
-                "completion_debt_chapters": list(closure.debt_chapters),
-                "completion_is_clean": closure.is_clean,
-            }
-        else:
-            project.status = (
+        # Shared with the repair lane, which is where a real run usually ends:
+        # this check fires while chapters may still be in flight, so whichever
+        # lane finishes last must reach the same verdict from the same code.
+        closure = await settle_project_status_on_closure(
+            session,
+            project,
+            fallback_status=(
                 ProjectStatus.REVISING.value
                 if requires_human_review
                 else ProjectStatus.WRITING.value
-            )
+            ),
+            now_iso=_dt.datetime.now(_dt.UTC).isoformat(),
+        )
         workflow_run.status = (
             WorkflowStatus.MACHINE_BLOCKED.value
             if requires_human_review and not closure.is_complete

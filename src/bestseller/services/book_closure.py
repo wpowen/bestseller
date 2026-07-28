@@ -239,6 +239,52 @@ async def _promote_settled_chapter_drafts(session: Any, project: Any) -> None:
         }
 
 
+def _closure_quality_gate(debt_chapters: tuple[int, ...], conceded: list[str]) -> Any:
+    """The terminal export gate, minus the chapters repair already conceded.
+
+    Before export, the exact bytes are re-checked by the final quality gates.
+    On a clean book that is a worthwhile last line of defence and stays fully
+    in force here. On a ``quality_debt`` chapter it re-litigates a verdict the
+    quality system itself reached — that state means "budget exhausted, ship
+    this draft" — and a real book with three promoted chapters was refused on
+    exactly that basis (2026-07-28: "第2章：常识因果门禁
+    rule_term_onboarding_failure"), the same deadlock as the publication gate
+    and the promotion gate, one layer further down.
+
+    So the gate keeps its teeth for chapters nobody conceded, and for the ones
+    repair gave up on it downgrades to a recorded concession rather than a
+    veto. Nothing is dropped silently: every downgrade lands in the artifact's
+    warnings.
+    """
+
+    debt = set(int(number) for number in debt_chapters)
+
+    def _gate(**kwargs: Any) -> Any:
+        from bestseller.services.pipelines import run_final_quality_gates
+
+        result = run_final_quality_gates(**kwargs)
+        number = int(kwargs.get("chapter_number") or 0)
+        if number not in debt or bool(getattr(result, "passed", False)):
+            return result
+        details = "; ".join(
+            [
+                *list(getattr(result, "errors", ()) or ()),
+                *list(getattr(result, "issues", ()) or ()),
+            ]
+        )
+        conceded.append(f"第{number}章带缺陷发布，未过终局质量门：{details[:200]}")
+
+        class _Conceded:
+            passed = True
+            patched_text = getattr(result, "patched_text", None)
+            errors: tuple[str, ...] = ()
+            issues: tuple[str, ...] = ()
+
+        return _Conceded()
+
+    return _gate
+
+
 async def settle_project_status_on_closure(
     session: Any,
     project: Any,
@@ -310,13 +356,17 @@ async def settle_project_status_on_closure(
     try:
         from bestseller.services.exports import export_project_markdown
 
+        conceded: list[str] = []
         artifact, path = await export_project_markdown(
             session,
             settings,
             str(getattr(project, "slug", "") or ""),
+            final_quality_gate=_closure_quality_gate(verdict.debt_chapters, conceded),
         )
         metadata["completion_export_artifact_id"] = str(getattr(artifact, "id", ""))
         metadata["completion_export_path"] = str(path)
+        if conceded:
+            metadata["completion_conceded_gate_findings"] = conceded[:10]
     except Exception as exc:  # noqa: BLE001 - completion stands on its own
         metadata["completion_export_error"] = str(exc)[:500]
 

@@ -4342,8 +4342,8 @@
              共同根因之一。 -->
         <div class="summary-row summary-option" style="flex-direction:column;align-items:stretch;gap:6px;">
           <label for="conceptSeedInput" style="cursor:pointer;">
-            <span>故事创意（不填几乎必挂）</span>
-            <span class="hint" style="font-size:12px;">一句话：主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。它会成为概念生成的种子。实测：不填的书至今没有一本走出构思——空题材下淘汰赛生成不出能过门的概念，两轮跑完才失败。</span>
+            <span>故事创意（可选）</span>
+            <span class="hint" style="font-size:12px;">一句话：主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。留空时系统会用该题材自动生成的最优钩子作种子；填了就以你这句为准。</span>
           </label>
           <textarea id="conceptSeedInput" rows="3" maxlength="300"
             placeholder="例：靠给宗门死人验尸糊口的贱籍少年，发现每具尸体死前都听到了同一句话——而今天他自己也听到了。"
@@ -8570,9 +8570,32 @@
     }
   }
 
+  // 断链修复(2026-07-29):后端为每个题材生成 4 个钩子候选并随 writing-presets
+  // 送来,前端却只把它存进 hookCandidates 就再没读过——声明、赋值、清空三处引用,
+  // 没有选择器也不提交。构思端取种子是三级链:
+  //     手填创意 → 脑洞实验室选的 → selected_hook_spec.one_liner
+  // 第三级来自 user_hints["hook_spec"],而表单从不发它。于是只选题材建书时三级
+  // 全空,淘汰赛在完全没有种子的情况下硬造概念——空题材反复失败的真因在这里,
+  // 不是「用户必须手填创意」。与 07-24 修过的 concept_seed 断链完全同形。
+  //
+  // 用户给了创意或选了脑洞组合时不插手:那是更强的意图,系统钩子只补空缺。
+  function _autoHookSpecForSeeding() {
+    const typed = ($('#conceptSeedInput')?.value || '').trim();
+    if (typed) return undefined;
+    if (selectedConceptBundle()) return undefined;
+    const list = (hookCandidates || {})[selectedGenreKey] || [];
+    if (!list.length) return undefined;
+    const best = list.reduce(
+      (a, b) => ((b?.combined_rank ?? 0) > (a?.combined_rank ?? 0) ? b : a),
+      list[0]
+    );
+    return best?.spec || undefined;
+  }
+
   function buildQuickstartPayload() {
     const selectedConcept = selectedConceptBundle();
     return {
+      hook_spec: _autoHookSpecForSeeding(),
       creation_mode: creationMode,
       genre_key: selectedGenreKey,
       selection: customSelection || undefined,

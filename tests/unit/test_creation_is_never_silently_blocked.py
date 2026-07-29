@@ -55,11 +55,10 @@ class TestSubmissionIsNeverAbortedSilently:
 
 
 class TestTheWarningIsStillVisible:
-    def test_the_label_explains_what_happens_when_left_blank(self) -> None:
-        """2026-07-29：原文案「不填几乎必挂」描述的是钩子候选断链的症状，
-        修好断链后它就不成立了——留空会用系统自动生成的钩子。"""
+    def test_the_label_states_the_measured_outcome(self) -> None:
+        """代价信息要在点击**之前**就在界面上，而不是点击时才弹。"""
 
-        assert "系统会用该题材自动生成的最优钩子作种子" in _HTML
+        assert "不填几乎必挂" in _HTML
 
-    def test_the_hint_does_not_claim_blank_is_doomed(self) -> None:
-        assert "不填几乎必挂" not in _HTML
+    def test_the_hint_explains_the_cost(self) -> None:
+        assert "两轮" in _HTML or "淘汰赛" in _HTML

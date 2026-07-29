@@ -8542,7 +8542,6 @@
         return;
       }
     }
-    if (!_confirmEmptyConceptSeed()) return;
     const btn = $('#startBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> 提交中...';
@@ -8569,22 +8568,6 @@
       btn.textContent = '开始创作';
       alert('提交失败: ' + err.message);
     }
-  }
-
-  // 空种子在花掉两轮淘汰赛之前先问一句。后端已经会在市场/角色/世界观生成前
-  // 停下，但那两轮本身就是真金白银的 LLM 调用，而这条路径至今零成功——
-  // 2026-07-28《玄幻》四个候选在 大白话/想点欲/故事运动 上 4/4 全挂，不是
-  // 新颖度不够，是空题材下生成不出站得住的概念。提示而非禁令：用户有权坚持。
-  function _confirmEmptyConceptSeed() {
-    const seed = ($('#conceptSeedInput')?.value || '').trim();
-    if (seed) return true;
-    return confirm(
-      '没有填「故事创意」。\n\n' +
-      '实测:不填的书至今没有一本走出构思——空题材下概念淘汰赛跑满两轮也产不出' +
-      '能过门的冠军,两轮的 LLM 开销会照常花掉。\n\n' +
-      '填一句就够:主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。\n\n' +
-      '仍要继续吗?'
-    );
   }
 
   function buildQuickstartPayload() {

@@ -3792,6 +3792,43 @@ async def _repair_final_result_to_explicit_seed(
 # 修不好的那一个——第 2 轮于是结构性必败。
 _REFINEMENT_RESISTANT_AXES: frozenset[str] = frozenset({"新颖度", "可预测性"})
 
+# 无种子建书时的采样量。淘汰赛有七个硬门且必须同时达标，真机实测（2026-07-29
+# 空题材玄幻，10 候选）单候选通过率约 10%：人物决策/机制因果稳定 7~8 全过，
+# 新颖度分布 3~6、中位数 4.5 而地板 6.0——它是主要杀手。默认 6 个候选的全灭率
+# 是 0.9⁶≈53%，宽到 16 个降到 18%。
+_SEEDLESS_CANDIDATE_COUNT: int = 16
+
+
+def _tournament_attempt_candidate_count(
+    *,
+    attempt: int,
+    baseline: int,
+    has_seed: bool,
+    refining: bool,
+) -> int:
+    """How many candidates this attempt should draw.
+
+    The count used to be pinned to the attempt number: ``2`` for anything past
+    the first. That is right for 定向补强 — polishing one near-miss does not
+    need six variants — but 2026-07-28 changed the retry so a novelty failure
+    no longer seeds it, making the retry a fresh re-roll. A re-roll needs a wide
+    sample, and it was left with the polishing budget: P(dry) went from 53% on
+    the first attempt to 81% on the second, so the retry was *less* likely to
+    succeed than the try it was rescuing. The two fixes cancelled each other.
+
+    So the sample follows what the attempt is *doing*, not which attempt it is.
+    A run with no user idea also leans entirely on drawing a lucky candidate,
+    so its first attempt is widened too — bounded, because the point is to
+    clear the gates, not to spend without limit.
+    """
+
+    base = max(1, int(baseline or 0) or 6)
+    if refining and has_seed:
+        return 2
+    if has_seed:
+        return base
+    return max(base, _SEEDLESS_CANDIDATE_COUNT)
+
 
 def _best_dry_tournament_seed(candidates: list[Any]) -> str:
     """Pick the best near-miss from a dry tournament to seed the retry attempt.
@@ -4434,11 +4471,21 @@ async def run_conception_pipeline(
                     "max_attempts": max_concept_attempts,
                     "wild_concept": bool(ctx.get("wild_concept")),
                 })
-                attempt_config = (
-                    {**_ct_config, "n_candidates": 2}
-                    if concept_attempt > 1
-                    else _ct_config
+                _seed_for_attempt = bool(
+                    explicit_concept_seed
+                    or concept_bundle is not None
+                    or selected_hook_spec is not None
+                    or _dry_retry_seed
                 )
+                attempt_config = {
+                    **_ct_config,
+                    "n_candidates": _tournament_attempt_candidate_count(
+                        attempt=concept_attempt,
+                        baseline=int(_ct_config.get("n_candidates") or 6),
+                        has_seed=_seed_for_attempt,
+                        refining=bool(_dry_retry_seed),
+                    ),
+                }
                 _ct_result = await run_concept_tournament(
                     session, settings,
                     genre=str(ctx.get("genre") or genre_key),

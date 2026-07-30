@@ -793,6 +793,41 @@ def _build_native_candidate_messages(
     return system, user
 
 
+# 建书页那四档调性。只认这四个键，未知值忽略而不是原样塞进 prompt——一个拼错的值
+# 不该变成模型眼里的写作指令。
+_TONE_DIRECTIVES: dict[str, str] = {
+    "light": "调性：轻松。日常质感、能自嘲，冲突要真但不压抑；禁止把苦难当深度。",
+    "epic": "调性：宏大。格局与阶段跨度要撑得起长篇，代价落在具体人身上而非抽象天下。",
+    "dark": "调性：暗黑。代价不可逆、选择有污点；但仍要给读者继续读下去的牵引。",
+    "hot": "调性：热血。行动密度高、正面对撞，情绪往上走而不是往下压。",
+}
+
+
+def _tone_directive_line(tone_preference: str) -> str:
+    directive = _TONE_DIRECTIVES.get(str(tone_preference or "").strip().lower())
+    return f"{directive}\n" if directive else ""
+
+
+def _effect_skills_directive_line(effect_skills: tuple[str, ...] | list[str]) -> str:
+    """Name the ticked story skills so the premise is built to deliver them."""
+
+    keys = [str(item).strip() for item in (effect_skills or []) if str(item).strip()]
+    if not keys:
+        return ""
+    try:
+        from bestseller.services.story_effect_skills import story_effect_skill_labels
+
+        labels = story_effect_skill_labels(keys)
+    except Exception:
+        labels = []
+    if not labels:
+        return ""
+    return (
+        f"故事技能（建书页勾选，必须在概念层就能兑现）：{'、'.join(labels)}。"
+        "概念本身要给这些技能留出发挥空间，而不是等后面章节再硬加。\n"
+    )
+
+
 def _build_engine_kernel_messages(
     *,
     genre: str,
@@ -804,6 +839,8 @@ def _build_engine_kernel_messages(
     audience_orientation: str = "",
     banned: tuple[str, ...] = (),
     cost_style: str = "standard",
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] | list[str] = (),
 ) -> tuple[str, str]:
     """Build a minimal premise card before any marketing sentence."""
 
@@ -847,12 +884,21 @@ def _build_engine_kernel_messages(
 
     cost_line = cost_style_directive(cost_style, is_en=False).strip()
     cost_line = f"{cost_line}\n" if cost_line else ""
+    # 建书页勾的调性与故事技能此前只进「商业定位 brief」——那是市场／角色／世界观
+    # 那批 agent 的输入，而淘汰赛跑在它们之前。用户要的「轻松＋喜剧＋爽感」于是
+    # 从未到达概念生成：真机四个候选全是沉重路子，判官正确判它们不想点、不好懂，
+    # 干涸，书死，而用户的要求从头到尾没被任何模型看见（2026-07-29 玄幻）。
+    # 未选时为空串，prompt 逐字节不变——与 cost_style 同一约定。
+    tone_line = _tone_directive_line(tone_preference)
+    skills_line = _effect_skills_directive_line(effect_skills)
     user = (
         "【PREMISE_CARD】本轮不写一句话钩子，也不规划卷章。\n"
         f"题材：{genre}（{sub_genre}）；目标形态：约{chapter_count}章长篇；"
         f"破题路线：{lane.split('#', 1)[0]}。\n"
         f"{audience_line}"
         f"{cost_line}"
+        f"{tone_line}"
+        f"{skills_line}"
         f"路线边界：{lane_brief}\n"
         f"{seed}"
         f"{support}"
@@ -1732,6 +1778,8 @@ def _build_engine_kernel_repair_messages(
     seed_support: dict[str, Any] | None = None,
     audience_orientation: str = "",
     cost_style: str = "standard",
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] | list[str] = (),
 ) -> tuple[str, str]:
     """Repair malformed structure once without changing the premise itself.
 
@@ -1752,6 +1800,8 @@ def _build_engine_kernel_repair_messages(
         seed_support=seed_support,
         audience_orientation=audience_orientation,
         cost_style=cost_style,
+        tone_preference=tone_preference,
+        effect_skills=effect_skills,
     )
     repair = (
         "\n\n【PREMISE_CARD_REPAIR】上次项目卡的JSON结构不完整。"
@@ -2206,6 +2256,8 @@ async def run_concept_tournament(
     retry_feedback: str = "",
     audience_orientation: str = "",
     cost_style: str = "standard",
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] | list[str] = (),
 ) -> ConceptTournamentResult:
     """跑一轮概念淘汰赛。异常转成 winner=None，由调用方按目标篇幅决定是否阻断。
 
@@ -2600,6 +2652,8 @@ async def run_concept_tournament(
                         seed_support=raw_pitch_by_seed.get(premise_seed),
                         audience_orientation=audience_orientation,
                         cost_style=cost_style,
+                        tone_preference=tone_preference,
+                        effect_skills=effect_skills,
                         banned=banned,
                     )
                     result.candidate_prompt_chars += len(engine_system) + len(engine_user)
@@ -2632,6 +2686,8 @@ async def run_concept_tournament(
                                 seed_support=raw_pitch_by_seed.get(premise_seed),
                                 audience_orientation=audience_orientation,
                                 cost_style=cost_style,
+                                tone_preference=tone_preference,
+                                effect_skills=effect_skills,
                             )
                         )
                         result.candidate_prompt_chars += len(repair_system) + len(
@@ -2786,6 +2842,8 @@ async def run_concept_tournament(
                             seed_support=raw_pitch_by_seed.get(premise_seed),
                             audience_orientation=audience_orientation,
                             cost_style=cost_style,
+                            tone_preference=tone_preference,
+                            effect_skills=effect_skills,
                             banned=banned,
                         )
                         result.candidate_prompt_chars += len(engine_system) + len(engine_user)

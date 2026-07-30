@@ -32,6 +32,44 @@ class StoryEffectSkillCatalogActivation(BaseModel):
     affects_legacy_projects: bool = False
 
 
+# 建书页那 18 个技能的中文标签。此前只存在于 novel_quickstart.html 的 SE_SKILLS
+# 数组里，后端拿到的永远是 comedy_engine 这样的键——需要把用户勾了什么讲给模型时
+# 无从下手。词表放这里做单一来源，前端那份是显示用的副本。
+STORY_EFFECT_SKILL_LABELS: dict[str, str] = {
+    "brainhole_engine": "脑洞",
+    "comedy_engine": "喜剧",
+    "hype_satisfaction_engine": "爽点满足",
+    "twist_reversal_engine": "反转",
+    "suspense_reveal_engine": "悬念揭示",
+    "emotional_payoff_engine": "情感兑现",
+    "relationship_chemistry_engine": "关系化学",
+    "moral_dilemma_engine": "道德困境",
+    "system_payoff_engine": "系统兑现",
+    "tension_pressure_engine": "张力压迫",
+    "danger_action_engine": "危险动作",
+    "dialogue_spark_engine": "对话火花",
+    "callback_motif_engine": "回调母题",
+    "world_texture_engine": "世界质感",
+    "wonder_awe_engine": "惊奇敬畏",
+    "rhythm_pacing_engine": "节奏",
+    "healing_grief_engine": "治愈悲伤",
+    "romance_tenderness_engine": "浪漫温柔",
+}
+
+
+def story_effect_skill_labels(keys: object) -> list[str]:
+    """Chinese labels for ticked skill keys; unknown keys are dropped."""
+
+    if not isinstance(keys, (list, tuple, set)):
+        return []
+    labels: list[str] = []
+    for key in keys:
+        label = STORY_EFFECT_SKILL_LABELS.get(str(key).strip())
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
 class StoryEffectSkillEntry(BaseModel):
     model_config = ConfigDict(frozen=True)
 

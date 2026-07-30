@@ -4509,6 +4509,24 @@ async def run_conception_pipeline(
                         ).get("cost_style")
                         or "standard"
                     ),
+                    # 建书页勾的调性与故事技能。此前它们只进「商业定位 brief」——
+                    # 市场／角色／世界观那批 agent 的输入，而淘汰赛跑在它们之前。
+                    # 用户要的「轻松＋喜剧＋爽感」于是从未到达概念生成，模型按玄幻
+                    # 默认调性产出沉重候选，判官正确判它们不想点、不好懂，干涸，
+                    # 书死（2026-07-29）。凡影响故事内容的选择必须在这里就在场。
+                    tone_preference=str(
+                        (ctx.get("genre_intent_contract") or {}).get("tone_preference")
+                        or ""
+                    ),
+                    effect_skills=list(
+                        (
+                            (ctx.get("genre_intent_contract") or {}).get(
+                                "explicit_enhancers"
+                            )
+                            or {}
+                        ).get("effect_skills")
+                        or []
+                    ),
                     seed_concept=(
                         explicit_concept_seed
                         or (

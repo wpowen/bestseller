@@ -1757,10 +1757,10 @@ class TestConceptionWiring:
     def test_user_concept_is_seeded_but_cannot_bypass_capacity_gate(self):
         source = self._source()
         idx = source.index("run_concept_tournament(")
-        # Window sized for the full argument list — the call gained
-        # audience/cost_style forwarding (2026-07-24), which pushed the
-        # seed_concept expression further down.
-        call_region = source[idx : idx + 2200]
+        # 锚点定位而不是固定窗口:调用参数只会越来越多(2026-07-24 加了
+        # audience/cost_style,07-30 又加了 tone/effect_skills/入参集),每次都靠
+        # 调大字符数来救测试,等于让测试跟着实现漂。取到调用结束括号为止。
+        call_region = source[idx : source.index("\n                _emit(", idx)]
         assert "seed_concept=" in call_region
         assert 'user_hints.get("concept_seed")' in source
         assert "concept_bundle.one_liner or concept_bundle.reader_promise" in call_region
@@ -1769,7 +1769,8 @@ class TestConceptionWiring:
     def test_fail_open_and_injection_shape(self):
         source = self._source()
         idx = source.index("run_concept_tournament(")
-        region = source[max(0, idx - 1200) : idx + 5200]
+        # 同理:注入段落在调用之后,用它自己的锚点收尾,不用字符数。
+        region = source[max(0, idx - 1200) : source.index('ctx["high_concept"]', idx) + 200]
         assert "except Exception as exc:" in source
         assert "if isinstance(exc, ConceptContractError):" in source
         assert 'logger.warning("Concept tournament failed (non-fatal)' in source

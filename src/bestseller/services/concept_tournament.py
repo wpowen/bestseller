@@ -841,6 +841,7 @@ def _build_engine_kernel_messages(
     cost_style: str = "standard",
     tone_preference: str = "",
     effect_skills: tuple[str, ...] | list[str] = (),
+    creation_intent_block: str = "",
 ) -> tuple[str, str]:
     """Build a minimal premise card before any marketing sentence."""
 
@@ -891,6 +892,14 @@ def _build_engine_kernel_messages(
     # 未选时为空串，prompt 逐字节不变——与 cost_style 同一约定。
     tone_line = _tone_directive_line(tone_preference)
     skills_line = _effect_skills_directive_line(effect_skills)
+    # 入参集整体在场：表单每加一个影响故事的选项都自动到达这里，不需要
+    # 记得再补一次接线。逐字段补是治症状——2026-07-30 审计时叙事规模、
+    # 反常识方向（界面自称「决定全书冲突轴」）、脑洞引擎全部到不了这一层。
+    intent_line = (
+        f"{creation_intent_block.strip()}\n"
+        if str(creation_intent_block or "").strip()
+        else ""
+    )
     user = (
         "【PREMISE_CARD】本轮不写一句话钩子，也不规划卷章。\n"
         f"题材：{genre}（{sub_genre}）；目标形态：约{chapter_count}章长篇；"
@@ -899,6 +908,7 @@ def _build_engine_kernel_messages(
         f"{cost_line}"
         f"{tone_line}"
         f"{skills_line}"
+        f"{intent_line}"
         f"路线边界：{lane_brief}\n"
         f"{seed}"
         f"{support}"
@@ -1780,6 +1790,7 @@ def _build_engine_kernel_repair_messages(
     cost_style: str = "standard",
     tone_preference: str = "",
     effect_skills: tuple[str, ...] | list[str] = (),
+    creation_intent_block: str = "",
 ) -> tuple[str, str]:
     """Repair malformed structure once without changing the premise itself.
 
@@ -1802,6 +1813,7 @@ def _build_engine_kernel_repair_messages(
         cost_style=cost_style,
         tone_preference=tone_preference,
         effect_skills=effect_skills,
+        creation_intent_block=creation_intent_block,
     )
     repair = (
         "\n\n【PREMISE_CARD_REPAIR】上次项目卡的JSON结构不完整。"
@@ -2258,6 +2270,7 @@ async def run_concept_tournament(
     cost_style: str = "standard",
     tone_preference: str = "",
     effect_skills: tuple[str, ...] | list[str] = (),
+    creation_intent_block: str = "",
 ) -> ConceptTournamentResult:
     """跑一轮概念淘汰赛。异常转成 winner=None，由调用方按目标篇幅决定是否阻断。
 
@@ -2654,6 +2667,7 @@ async def run_concept_tournament(
                         cost_style=cost_style,
                         tone_preference=tone_preference,
                         effect_skills=effect_skills,
+                        creation_intent_block=creation_intent_block,
                         banned=banned,
                     )
                     result.candidate_prompt_chars += len(engine_system) + len(engine_user)
@@ -2688,6 +2702,7 @@ async def run_concept_tournament(
                                 cost_style=cost_style,
                                 tone_preference=tone_preference,
                                 effect_skills=effect_skills,
+                                creation_intent_block=creation_intent_block,
                             )
                         )
                         result.candidate_prompt_chars += len(repair_system) + len(
@@ -2844,6 +2859,7 @@ async def run_concept_tournament(
                             cost_style=cost_style,
                             tone_preference=tone_preference,
                             effect_skills=effect_skills,
+                            creation_intent_block=creation_intent_block,
                             banned=banned,
                         )
                         result.candidate_prompt_chars += len(engine_system) + len(engine_user)

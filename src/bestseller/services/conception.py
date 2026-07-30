@@ -4527,6 +4527,12 @@ async def run_conception_pipeline(
                         ).get("effect_skills")
                         or []
                     ),
+                    # 入参集整体交给规划层。这个块 conception 早就在构造了,但此前
+                    # 只喂给商业定位 brief——市场/角色/世界观那批 agent 的输入,而
+                    # 一句话规划跑在它们之前。2026-07-30 审计:叙事规模、反常识
+                    # 方向、脑洞引擎全部到不了这一层。整块传比逐字段补可靠:以后
+                    # 新增选项自动在场。
+                    creation_intent_block=_creation_intent_prompt_block(ctx),
                     seed_concept=(
                         explicit_concept_seed
                         or (

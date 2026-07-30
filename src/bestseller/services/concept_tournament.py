@@ -93,6 +93,29 @@ _NATIVE_STORY_LANE_BRIEFS = {
 }
 
 
+# 有 brief 时用来区分候选的轴。这些是**故事自身的维度**，不是题材指令——
+# 「主角的社会位置」要求这个候选和别的不同，「资源分配」则是在规定故事写什么。
+# 九条框架路线属于后者：候选按固定轮转分配，用户选轻松＋喜剧＋爽感时，世界规则／
+# 势力选择／资源分配照样占掉一半候选，产出必然沉重，判官再正确地判它们不喜剧。
+# 加权仍是在那九个桶里选，框架还是在替用户决定故事写什么。
+#
+# 但差异性不能跟着一起丢：它此前完全靠那九个标签撑着，六个候选共享一份 brief 会
+# 退化成同一个故事的多种措辞（2026-07-28《东方玄幻》六个候选全是「杂役掏沟挖出
+# 戴木镯的腕骨」，6/6 挂新颖度）。所以换成只约束彼此不同、不干涉题材的轴。
+_GROWTH_DIFFERENTIATION_AXES: tuple[str, ...] = (
+    "主角的社会位置",
+    "异常的来源",
+    "压力来自谁",
+    "主角与对手的关系结构",
+    "故事发生的舞台",
+    "主角最初想要的东西",
+    "第一个不可逆选择的性质",
+    "谁最先发现主角不对劲",
+)
+
+_GROWTH_LANE_PREFIX = "自然生长"
+
+
 class GeneratorFn(Protocol):
     """(system_prompt, user_prompt) -> (raw_text, llm_run_id)."""
 
@@ -871,9 +894,20 @@ def _build_engine_kernel_messages(
                 "不得借机替换一句话中的主角、异常或关系）："
                 f"{json.dumps(support_payload, ensure_ascii=False)}\n"
             )
-    lane_brief = _NATIVE_STORY_LANE_BRIEFS.get(
-        lane.split("#", 1)[0], _NATIVE_STORY_LANE_BRIEFS["纯题材直觉"]
-    )
+    lane_head, _, lane_axis = lane.partition("#")
+    if lane_head == _GROWTH_LANE_PREFIX:
+        # 不规定写什么，只要求这一个候选在指定维度上与其他候选不同。
+        lane_brief = _NATIVE_STORY_LANE_BRIEFS["纯题材直觉"]
+        if lane_axis.strip():
+            lane_brief += (
+                f"本候选的区分维度是【{lane_axis.strip()}】：这一维必须与同批其他"
+                "候选明显不同，其余全部顺着上面的建书要求自然长出来，不要为了凑"
+                "维度去改题材或调性。"
+            )
+    else:
+        lane_brief = _NATIVE_STORY_LANE_BRIEFS.get(
+            lane_head, _NATIVE_STORY_LANE_BRIEFS["纯题材直觉"]
+        )
     audience_line = (
         f"频道/受众：{audience_orientation}。主角设定、reader_promise 和 emotional_promise "
         "必须写给该频道的目标读者；频道错位（如男频给出文艺女主向项目卡）即项目不成立。\n"
@@ -2291,7 +2325,19 @@ async def run_concept_tournament(
         ).strip().lower()
         pool = [str(d) for d in (cfg.get("dimension_pool") or []) if str(d).strip()]
         rand = rng if rng is not None else random.Random()
-        if candidate_prompt_mode in {"native_baseline", "engine_first"}:
+        # 有建书要求时，别把候选摊到框架自己的九条路线上。那是固定轮转，用户选
+        # 轻松＋喜剧＋爽感也照样把世界规则／势力选择／资源分配塞进一半候选，产出
+        # 必然沉重，判官再正确地判它们不喜剧、不想点（2026-07-30 实测：10 个候选
+        # 只过 1 个，新颖度 9/10 低于地板）。让故事从要求里长出来，候选之间只在
+        # 故事自身的维度上被要求不同——那是区分约束，不是题材指令。
+        _has_brief = bool(str(creation_intent_block or "").strip())
+        if candidate_prompt_mode in {"native_baseline", "engine_first"} and _has_brief:
+            dimensions = [
+                f"{_GROWTH_LANE_PREFIX}#"
+                f"{_GROWTH_DIFFERENTIATION_AXES[index % len(_GROWTH_DIFFERENTIATION_AXES)]}"
+                for index in range(n_candidates)
+            ]
+        elif candidate_prompt_mode in {"native_baseline", "engine_first"}:
             dimensions = [
                 _NATIVE_STORY_LANES[index % len(_NATIVE_STORY_LANES)]
                 for index in range(n_candidates)

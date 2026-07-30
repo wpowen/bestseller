@@ -2330,16 +2330,14 @@ async def run_concept_tournament(
         # 必然沉重，判官再正确地判它们不喜剧、不想点（2026-07-30 实测：10 个候选
         # 只过 1 个，新颖度 9/10 低于地板）。让故事从要求里长出来，候选之间只在
         # 故事自身的维度上被要求不同——那是区分约束，不是题材指令。
-        _has_brief = bool(str(creation_intent_block or "").strip())
-        if candidate_prompt_mode in {"native_baseline", "engine_first"} and _has_brief:
+        # 触发条件是「从零生成」，不是「有没有 brief」。只选一个题材时
+        # _creation_intent_prompt_block 按它的无选择契约返回空串（那是对的：不替
+        # 用户注入任何东西），但那恰恰是最不该让框架替用户决定故事写什么的时候，
+        # 而它此前正好回落到九条路线——用户最初反复失败的场景就是这个。
+        if candidate_prompt_mode in {"native_baseline", "engine_first"}:
             dimensions = [
                 f"{_GROWTH_LANE_PREFIX}#"
                 f"{_GROWTH_DIFFERENTIATION_AXES[index % len(_GROWTH_DIFFERENTIATION_AXES)]}"
-                for index in range(n_candidates)
-            ]
-        elif candidate_prompt_mode in {"native_baseline", "engine_first"}:
-            dimensions = [
-                _NATIVE_STORY_LANES[index % len(_NATIVE_STORY_LANES)]
                 for index in range(n_candidates)
             ]
         elif seed_concept.strip():

@@ -77,3 +77,35 @@ class TestVarietyIsPreserved:
     def test_axes_are_distinct(self) -> None:
         axes = list(ct._GROWTH_DIFFERENTIATION_AXES)
         assert len(axes) == len(set(axes))
+
+
+class TestGrowthAppliesToBareGenreToo:
+    """「只选一个题材、其他都不选」也必须自然生长。
+
+    2026-07-30 实测：只选题材时 ``_creation_intent_prompt_block`` 返回空串（那是
+    它的「无选择契约」——不替用户注入任何东西，本身是对的），于是 ``_has_brief``
+    为假，候选又回落到九条框架路线。而这恰恰是用户最初的场景：
+
+    「就比如说我只选一个题材，只选一个选项，只是单单选一个题材也应该能生成。」
+
+    自然生长的触发条件应当是「从零生成」而不是「有没有 brief」：没有 brief 时
+    更没有理由让框架替用户决定故事写什么。
+    """
+
+    def test_growth_is_not_conditional_on_a_brief(self) -> None:
+        source = inspect.getsource(ct.run_concept_tournament)
+        assert "_has_brief" not in source, (
+            "自然生长不该以 brief 为条件——只选题材时更需要它"
+        )
+
+    def test_fresh_generation_no_longer_rotates_framework_lanes(self) -> None:
+        """九条框架路线不再参与从零生成。"""
+
+        source = inspect.getsource(ct.run_concept_tournament)
+        assert "_NATIVE_STORY_LANES[index" not in source
+        assert "_GROWTH_DIFFERENTIATION_AXES" in source
+
+    def test_the_lane_briefs_survive_for_seeded_paths(self) -> None:
+        """词表本身保留：种子打磨仍可能落到某条框架路线上。"""
+
+        assert ct._NATIVE_STORY_LANE_BRIEFS["人际困局"]

@@ -69,7 +69,10 @@ LEAN_DROPPED_SECTIONS: frozenset[str] = frozenset(
     {
         "acceptance_contract",  # 写前验收契约 — 2578 chars; runs as a gate already
         "contract_must_hit",  # 必须显性兑现的章节契约 — same
-        "word_count_rules",  # 字数与结构 — length_stability_gate owns this
+        "word_count_rules",  # 字数与结构 289-char block — lean swaps in a
+        #                      one-sentence band (same numbers the gate reads);
+        #                      an invisible floor made the writer underproduce
+        #                      ~21% and fail a contract it never saw
         "front_forbidden_terms",  # 前十章禁写与物件信号 — deterministic audit owns it
         "slop_blacklist",  # AI套话黑名单 — blacklist priming is falsified
         "opening_retention",  # 前十章留存硬规则 — compressed into core rules

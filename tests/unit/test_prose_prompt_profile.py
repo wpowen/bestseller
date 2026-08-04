@@ -28,7 +28,7 @@ from bestseller.services.prose_prompt_profile import (
 pytestmark = pytest.mark.unit
 
 
-def _prompts(profile: str | None = None, metadata: dict | None = None) -> tuple[str, str]:
+def _project(metadata: dict | None = None) -> ProjectModel:
     project = ProjectModel(
         slug="prose-profile-test",
         title="遗物师",
@@ -39,6 +39,11 @@ def _prompts(profile: str | None = None, metadata: dict | None = None) -> tuple[
         metadata_json=metadata or {},
     )
     project.id = uuid4()
+    return project
+
+
+def _prompts(profile: str | None = None, metadata: dict | None = None) -> tuple[str, str]:
+    project = _project(metadata)
     chapter = ChapterModel(
         project_id=project.id,
         chapter_number=7,
@@ -172,7 +177,9 @@ class TestLeanDropsOnlyWhatItShould:
         "marker",
         [
             "【写前验收契约】",
-            "【字数与结构】",
+            # The 289-char word-count blob. Its 【字数与结构】 heading survives
+            # lean on the one-sentence band line, so assert on blob-only text.
+            "字数是硬交付",
             "AI套话黑名单",
             "【方法论证据】",
             "【章末收尾钩子】",
@@ -246,6 +253,45 @@ class TestProfileTable:
         ):
             assert field not in LEAN_DROPPED_CONSTRAINT_FIELDS
             assert constraint_field_enabled(field, "lean")
+
+
+class TestLeanKeepsTheWordBand:
+    """The length gate enforces a floor the writer must be able to see.
+
+    2026-08-04: with the whole 【字数与结构】 block dropped under lean, the
+    only number left in the prompt was the 3500 cap inside 【删减策略】 —
+    11 drafts underproduced ~21% (first-chapter runs clustered at 2000±70
+    against floor 1800 / target 2600) and every draft paid a repair loop.
+    Lean must keep a one-sentence band whose numbers come from the same
+    ``_chapter_length_contract_band`` the gate reads.
+    """
+
+    def _band(self) -> tuple[int, int, int]:
+        from bestseller.services.drafts import _chapter_length_contract_band
+
+        return _chapter_length_contract_band(_project(), 2_600)
+
+    def test_lean_prompt_carries_gate_floor_target_and_cap(self) -> None:
+        hard_min, target, hard_max = self._band()
+        lean_user = _prompts("lean")[1]
+        assert f"本章正文 {hard_min}-{hard_max} 个汉字，目标约 {target} 字。" in lean_user
+
+    def test_lean_band_heading_feeds_the_protected_contract_marker(self) -> None:
+        # llm_runs metadata computes protected_contract_markers.word_count as
+        # ``"字数与结构" in user_prompt``; the heading keeps it truthful.
+        assert "【字数与结构】" in _prompts("lean")[1]
+
+    def test_lean_still_drops_the_fat_word_count_blob(self) -> None:
+        lean_user = _prompts("lean")[1]
+        assert "字数是硬交付" not in lean_user
+        assert "发布硬范围" not in lean_user
+
+    def test_full_profile_does_not_gain_the_band_line(self) -> None:
+        hard_min, target, hard_max = self._band()
+        band_line = f"本章正文 {hard_min}-{hard_max} 个汉字，目标约 {target} 字。"
+        full_user = _prompts("full")[1]
+        assert band_line not in full_user
+        assert "字数是硬交付" in full_user
 
 
 class TestTrimAnchorsSurviveLean:

@@ -26,7 +26,7 @@ def _ready_metadata() -> dict[str, object]:
     }
 
 
-def test_blocks_missing_category_and_distilled_strategy_in_strict_mode() -> None:
+def test_strict_mode_does_not_require_optional_distillation_reference() -> None:
     report = evaluate_book_creation_readiness(
         project_slug="demo",
         project_metadata={"methodology_contract_mode": "strict"},
@@ -45,7 +45,7 @@ def test_blocks_missing_category_and_distilled_strategy_in_strict_mode() -> None
     assert report.aggregate_gate_report.verdict == "blocked"
     assert "category_key_missing" in codes
     assert "story_design_grammar_key_missing" in codes
-    assert "distilled_strategy_card_missing" in codes
+    assert "distilled_strategy_card_missing" not in codes
 
 
 def test_passes_when_all_lifecycle_assets_are_ready() -> None:

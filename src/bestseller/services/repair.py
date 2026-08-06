@@ -1506,6 +1506,88 @@ async def _mark_workflow_run_failed_isolated(
         return False
 
 
+async def _restore_best_chapter_drafts(
+    session: AsyncSession,
+    project: ProjectModel,
+) -> list[int]:
+    """Make every chapter ship the best draft it actually has.
+
+    The chapter loops flip ``is_current`` to whatever they just produced and
+    only rank the alternatives at the end of the run. A run that dies in
+    between — a worker restart, a cancelled ARQ job, a lock timeout — leaves the
+    chapter shipping the last thing written, which may be a degenerate stub.
+    Nothing ever revisits it: the chapter is already ``blocked``, its repair
+    budget is spent, so no pipeline opens it again and the good draft sits in
+    history forever.
+
+    2026-08-03, xianxia-upgrade-1785697772 chapter 7: the writer returned a
+    9-character stub, the repair run that would have ranked it was cancelled 78
+    seconds later, and that stub blocked the book's closure for eight hours
+    while a 2474-word draft sat one row away.
+
+    Repair is the right owner: it is the pass that runs when a chapter is known
+    to be in trouble. Ranking is delegated to the same helper the chapter loops
+    use, so "best" means one thing in one place.
+
+    Returns the chapter numbers whose current draft changed.
+    """
+
+    from bestseller.services.pipelines import (
+        _promote_best_scoring_chapter_draft_on_stall,
+    )
+
+    restored: list[int] = []
+    rows = list(
+        await session.scalars(
+            select(ChapterModel).where(ChapterModel.project_id == project.id)
+        )
+    )
+    for chapter in rows:
+        current = await session.scalar(
+            select(ChapterDraftVersionModel)
+            .where(
+                ChapterDraftVersionModel.chapter_id == chapter.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+            .limit(1)
+        )
+        if current is None:
+            continue
+        try:
+            best = await _promote_best_scoring_chapter_draft_on_stall(
+                session,
+                chapter=chapter,
+                current_draft=current,
+                project=project,
+            )
+            changed = (
+                best is not None
+                and getattr(best, "id", None) is not None
+                and getattr(best, "id", None) != getattr(current, "id", None)
+            )
+        except Exception:  # noqa: BLE001 - bookkeeping must not sink a repair pass
+            logger.warning(
+                "best-draft restore skipped for chapter %s",
+                getattr(chapter, "chapter_number", "?"),
+                exc_info=True,
+            )
+            continue
+        if changed:
+            number = int(getattr(chapter, "chapter_number", 0) or 0)
+            restored.append(number)
+            logger.warning(
+                "chapter %s %d was shipping draft v%s (%d words); restored v%s "
+                "(%d words) — a run died before it could rank its own drafts",
+                project.slug,
+                number,
+                getattr(current, "version_no", "?"),
+                int(getattr(current, "word_count", 0) or 0),
+                getattr(best, "version_no", "?"),
+                int(getattr(best, "word_count", 0) or 0),
+            )
+    return restored
+
+
 async def run_project_repair(
     session: AsyncSession,
     settings: AppSettings,
@@ -1612,6 +1694,25 @@ async def run_project_repair(
     )
     workflow_run_id = workflow_run.id
     await _checkpoint_repair_progress(session)
+
+    # Before repairing anything, make sure each chapter is shipping the best
+    # draft it already has. A chapter left on a stub by an interrupted run has
+    # no other route back: it is blocked, its budget is spent, and no pipeline
+    # opens it again. Cheap, idempotent, and it runs before the gates read the
+    # drafts, so a restored chapter is judged on the right text.
+    try:
+        restored_chapters = await _restore_best_chapter_drafts(session, project)
+        if restored_chapters:
+            await _checkpoint_repair_progress(session)
+            _emit_progress(
+                progress,
+                "project_repair_restored_best_drafts",
+                {"project_slug": project_slug, "chapters": restored_chapters},
+            )
+    except Exception:  # noqa: BLE001 - never let this pre-step sink the repair
+        logger.warning(
+            "best-draft restore sweep failed for %s", project_slug, exc_info=True
+        )
 
     step_order = 1
     current_step_name = "collect_pending_rewrite_tasks"

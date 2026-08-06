@@ -279,6 +279,31 @@ class TestCharacterPersonhoodCheck:
         assert len(deficiencies) == 1
         assert "life_history" in deficiencies[0].detail
 
+    def test_source_bound_minimal_protagonist_does_not_require_invented_history(self) -> None:
+        protag = _full_protagonist().model_copy(
+            update={
+                "life_history": CharacterLifeHistory(),
+                "metadata": {"source_bound_minimal": True},
+            }
+        )
+
+        deficiencies = list(
+            CharacterPersonhoodCheck().check(_draft(protag), _invariants())
+        )
+
+        assert deficiencies == []
+
+    def test_protagonist_does_not_need_invented_family_history(self) -> None:
+        protag = _full_protagonist().model_copy(
+            update={"family_imprint": CharacterFamilyImprint()}
+        )
+
+        deficiencies = list(
+            CharacterPersonhoodCheck().check(_draft(protag), _invariants())
+        )
+
+        assert deficiencies == []
+
     def test_supporting_cast_exempt(self) -> None:
         # A role of "supporting" should not trigger the check.
         supporting = CharacterInput(name="侍女", role="supporting")

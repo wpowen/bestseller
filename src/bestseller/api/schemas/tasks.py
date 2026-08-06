@@ -28,6 +28,7 @@ class TaskEnqueuedResponse(BaseModel):
 
 class AutowriteRequest(BaseModel):
     premise: str | None = None  # overrides project premise if provided
+    force: bool = False  # rerun even if a pipeline is already active
 
 
 class PipelineRequest(BaseModel):

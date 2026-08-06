@@ -186,7 +186,10 @@ def evaluate_planning_readiness(
                             "to phone/message mediation instead of visible pressure."
                         ),
                         path=f"chapters[{chapter_index}].opening_situation",
-                        repair_hint="黄金三章优先用现场画面、门口、电梯、尸证、物件异常或面对面冲突开局。",
+                        repair_hint=(
+                            "黄金三章优先用当面可见的压力开局：现场画面、物件异常"
+                            "或面对面冲突，让事件发生在人物眼前而不是电话/消息里。"
+                        ),
                     )
                 )
             if (

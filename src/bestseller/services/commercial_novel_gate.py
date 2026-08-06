@@ -1055,8 +1055,8 @@ def _check_early_cast_usage(
                         f"or later, but appears in chapter {chapter.chapter_no}."
                     ),
                     suggestion=(
-                        "把该名字改回当前正典人物，或把它降级为不可行动的账页/旧名线索；"
-                        "黄金三章不得让后期账名作为现场人物抢焦点。"
+                        "把该名字改回当前正典人物，或把它降级为不可行动的历史记录；"
+                        "黄金三章不得让后期人物作为现场角色抢焦点。"
                     ),
                     evidence={
                         "name": name,
@@ -1641,7 +1641,7 @@ def _closure_for_commercial_issue(issue: CommercialGateIssue) -> CommercialIssue
         ),
         "CAST_NAME_EARLY_USE": CommercialIssueClosure(
             immediate_repair=(
-                f"删除或改写{chapter}中过早出现的后期角色名；必要时只保留物件、账页或传闻。"
+                f"删除或改写{chapter}中过早出现的后期角色名；必要时只保留正典允许的记录或传闻。"
             ),
             recurrence_prevention=(
                 "从 cast-and-promises 编译每章 allowed_characters / must_not_appear 白名单，"

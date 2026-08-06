@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import LlmRunModel, ProjectModel
+from bestseller.services.cost_attribution import merge_attribution_into
 from bestseller.services.word_targets import (
     model_min_output_tokens,
     model_output_token_ceiling,
@@ -692,10 +693,91 @@ def _extract_prompt_contract_text(prompt: str, *field_names: str) -> str:
     return ""
 
 
+def _generic_mock_scene_content(request: LLMCompletionRequest) -> str:
+    """Create test-only prose from this request without a baked story world.
+
+    Mock output used to embed one apocalypse story and one space-investigation
+    story. Provider fallback could therefore inject their cast, props, deaths,
+    and backstory into unrelated books. This fixture now uses only the current
+    request's explicit scene fields plus domain-neutral action scaffolding.
+    """
+
+    prompt_signal = "\n".join(
+        (
+            request.system_prompt,
+            request.user_prompt,
+            str(request.metadata.get("context_query") or ""),
+        )
+    )
+    protagonist = str(request.metadata.get("protagonist_name") or "").strip() or "主角"
+    supporting = str(request.metadata.get("supporting_name") or "").strip() or "对手"
+    scene_number = int(request.metadata.get("scene_number") or 1)
+    location = _extract_prompt_contract_text(
+        prompt_signal, "location", "scene_location", "地点"
+    ) or "当前现场"
+    objective = _extract_prompt_contract_text(
+        prompt_signal, "objective", "scene_objective", "purpose", "场景目标"
+    ) or "完成眼前目标并确认下一步"
+    signature_image = _extract_prompt_contract_text(
+        prompt_signal, "signature_image", "标志画面"
+    )
+    cut_point = _extract_prompt_contract_text(
+        prompt_signal,
+        "cut_point",
+        "breakpoint",
+        "断点",
+        "ending_hook_payload",
+    )
+    actions = (
+        "先观察现场里真正发生变化的部分",
+        "把可验证的信息与旁人的说法逐一对照",
+        "用一个小动作试探阻力会如何回应",
+        "在对方表态前保留自己的退路",
+        "抓住最具体的矛盾继续追问",
+        "把刚得到的结果立刻换成下一步行动",
+        "让旁观者看见选择带来的即时后果",
+        "在局势收紧时重新确认目标没有被偷换",
+        "拒绝用猜测替代已经出现的事实",
+        "承担一次可见代价换取有限主动权",
+        "迫使对方在沉默与回应之间做出选择",
+        "把场面的重心拉回当下尚未解决的问题",
+    )
+    consequences = (
+        "现场因此多出一项可以继续核验的事实",
+        "原本模糊的阻力第一次露出具体边界",
+        "双方的关系没有缓和，但行动条件已经改变",
+        "这一步没有解决全部问题，却排除了一条错误方向",
+        "新的结果让下一次选择更紧迫也更清楚",
+        "旁观者的反应把私人判断变成公开压力",
+    )
+    paragraphs = [
+        f"{protagonist}抵达{location}后没有急着解释。第{scene_number}场的目标很明确：{objective}。"
+    ]
+    if signature_image:
+        paragraphs.append(signature_image)
+    for index in range(28):
+        action = actions[index % len(actions)]
+        consequence = consequences[(index + scene_number) % len(consequences)]
+        paragraphs.append(
+            f"{protagonist}{action}。{supporting}没有顺着他的节奏行动，而是用第{index + 1}个现场反应增加压力。"
+            f"{consequence}。{protagonist}压住情绪，把注意力放回能执行的细节，并为下一步保留一个明确选择。"
+        )
+    paragraphs.append(
+        f"{protagonist}完成了本场最小闭环，刚准备推进下一步，"
+        f"{cut_point or '现场又出现一项与预期不一致的新变化'}"
+    )
+    return "\n\n".join(paragraphs)
+
+
 def _mock_content_for_request(request: LLMCompletionRequest) -> str:
     """Return deterministic mock content that can pass local functional verification."""
 
     content = request.fallback_response.strip()
+    if (
+        request.prompt_template in {"scene_writer", "scene_writer_regen"}
+        and content.startswith("<!-- scene-draft-fallback")
+    ):
+        return _generic_mock_scene_content(request)
     if (
         request.prompt_template in {"scene_writer", "scene_writer_regen"}
         and content.startswith("<!-- scene-draft-fallback")
@@ -1939,6 +2021,11 @@ async def complete_text(
                     exc,
                 )
     latency_ms = int((perf_counter() - started_at) * 1000)
+
+    # Attach ambient attribution (chapter / gate / rework event) so spend can be
+    # grouped by the work that caused it while a loop is still running, instead
+    # of being reconstructed from the bill afterwards.
+    metadata = merge_attribution_into(metadata)
 
     llm_run = LlmRunModel(
         project_id=request.project_id,

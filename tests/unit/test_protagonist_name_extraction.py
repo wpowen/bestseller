@@ -194,6 +194,14 @@ class TestExtractionPriority:
 
         assert extract_creation_protagonist_name(meta) == "姬衡"
 
+    def test_age_prefixed_mortal_identity_is_extracted(self) -> None:
+        meta = {
+            "premise": "十九岁凡人沉骨在灰烬荒原替散修补破衣度日。",
+            "story_spine": {"who": "苏沉，祠堂守夜人。"},
+        }
+
+        assert extract_creation_protagonist_name(meta) == "沉骨"
+
     def test_falls_back_to_spine_when_premise_has_no_name(self) -> None:
         meta = {
             "premise": "一个少年在雨夜里捡到一把断剑。",

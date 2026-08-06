@@ -51,7 +51,7 @@ schema:
       need: 一句话，角色内心真正缺的（角色自己不承认）
       tension: 一句话，want 与 need 冲突点
     example_protagonist: |
-      want: 查清十五年前沈家灭门真相，杀掉幕后凶手
+      want: 查清十五年前那桩灭门旧案的真相，杀掉幕后凶手
       need: 接受自己"南茅北马混血"的身份，停止用"复仇" 当唯一存在意义
       tension: 越接近真相，越被迫面对"母亲可能是凶手之一" 的可能
 
@@ -144,13 +144,13 @@ sample_profiles:
     profession: 巡捕房副捕头 + 茅山外门弟子
 
     want_vs_need:
-      want: 查清十五年前沈家灭门真相，找到那个"没有影子的人"
+      want: 查清十五年前那桩灭门旧案的真相，找到那个"没有影子的人"
       need: 接受自己南茅北马混血身份，承认"复仇" 不是唯一存在意义
       tension: 越接近真相越发现自己和"凶手们" 同源；查到最后可能要审判自己的家族
 
     three_layer_motivation:
       surface: 我是巡捕，我查案——这是我的职责
-      hidden: 我要替沈家人讨债，让十五年前烧人的那群人偿命
+      hidden: 我要替死去的家人讨还，让当年放火的那群人偿命
       suppressed: 我恨自己当年躲在井底没出声；我活下来是因为懦弱，不是因为聪明
 
     values_and_redlines:
@@ -231,7 +231,7 @@ sample_profiles:
       tic: 摸食指外沿旧疤（疤每次见死者喉间有灰就发痒）
 
     weakness_and_killshot:
-      weakness_emotional: 七岁井底活下来的羞耻；觉得自己"不够格" 替沈家讨债
+      weakness_emotional: 七岁井底活下来的羞耻；觉得自己"不够格" 替家人讨还
       weakness_physical: 重瞳开第二重时会喉间见血 + 耗心血；连续开 3 次会昏
       killshot: 任何让他重新经历"井底听见烧干净" 的场面会让他短暂失能
       visibility_to_self: true（自知）
@@ -268,7 +268,7 @@ sample_profiles:
     profession: 巡捕房探长 / 暗中某神秘组织渗透者
 
     want_vs_need:
-      want: 把"十五年前沈家旧案" 永远封死，保住自己在某神秘组织的位置
+      want: 把"十五年前那桩旧案" 永远封死，保住自己在某神秘组织的位置
       need: 摆脱某神秘组织对他家人的胁迫；可他不敢
       tension: 越想立功越要灭口；越灭口越被某神秘组织拿捏更紧
 
@@ -308,7 +308,7 @@ sample_profiles:
     relationship_memory:
       shen_qingya:
         good_will: -0.4（不是恨，是"麻烦")
-        unfinished_business: 十五年前沈家旧案，他经手过一份盖章文件
+        unfinished_business: 十五年前那桩旧案，他经手过一份盖章文件
         current_stance: 不杀只压
       master_at_guishu_hui:
         good_will: -0.9（恨却怕）
@@ -366,7 +366,7 @@ sample_profiles:
       suppressed: 他知道自己其实早就该死在井里
 
     values_and_redlines:
-      core_value: 不留活口（活口=债务追溯到我）
+      core_value: 不留活口（活口=线索追回到我身上）
       absolute_no:
         - 不在白天露脸
         - 不让自己的影子被人看见
@@ -388,7 +388,7 @@ sample_profiles:
       tic: 帽檐压低；露出霜冻鬓角；脚下从无影
 
     weakness_and_killshot:
-      weakness_emotional: 害怕被人指出"你自己也是债务人"
+      weakness_emotional: 害怕被人指出"你自己也脱不了干系"
       killshot: 让他自己看见自己的影子（这需要某种灵异条件）
       visibility_to_self: true（自知，但深埋）
       visibility_to_others: []
@@ -397,7 +397,7 @@ sample_profiles:
       sentence_length_preference: short（残句）
       vocabulary_register: 古旧 / 借他人声音
       forbidden_words: 自指词（"我 / 自己 / 在下"）—— 他永远不用"我"
-      signature_words: 副捕头 / 沈家 / 归位 / 到期
+      signature_words: 副捕头 / 旧案 / 归位 / 到期
       response_pattern_to_question: 不答，反问 / 用借来的声音再说一遍问题
       anger_expression: 帽檐再压低一寸
       lie_pattern: 不说谎，只说半句

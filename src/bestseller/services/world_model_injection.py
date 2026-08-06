@@ -29,15 +29,24 @@ def extract_world_model(metadata: Mapping[str, Any] | None) -> dict[str, Any] | 
 
     if not isinstance(metadata, Mapping):
         return None
-    direct = metadata.get("world_model")
-    if isinstance(direct, Mapping) and direct.get("world_laws"):
-        return dict(direct)
+    def _approved(value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, Mapping) or not value.get("world_laws"):
+            return None
+        if value.get("source_artifact_type") != "world_spec":
+            return None
+        if not str(value.get("source_artifact_hash") or "").strip():
+            return None
+        return dict(value)
+
+    # The nested story kernel is produced after WorldSpec approval and is the
+    # current canonical location.  Never let an old top-level free-derived model
+    # outrank it merely because it was persisted earlier.
     sdk = metadata.get("story_design_kernel")
     if isinstance(sdk, Mapping):
-        nested = sdk.get("world_model")
-        if isinstance(nested, Mapping) and nested.get("world_laws"):
-            return dict(nested)
-    return None
+        nested = _approved(sdk.get("world_model"))
+        if nested:
+            return nested
+    return _approved(metadata.get("world_model"))
 
 
 def _coerce_model(world_model: WorldModel | Mapping[str, Any] | None) -> WorldModel | None:

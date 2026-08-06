@@ -112,12 +112,10 @@ def test_legacy_path_when_flag_off(
     assert result == "<<LEGACY:planner_book_spec>>\n"
 
 
-def test_settings_exception_falls_through_to_metadata_check(
+def test_settings_exception_does_not_make_material_inventory_canon(
     fake_pack: FakePack, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """If settings load raises, the helper should not crash — it swallows
-    the exception and proceeds to inspect ``metadata_json``.
-    """
+    """Methodology remains selected even when stale material metadata exists."""
     def boom() -> None:
         raise RuntimeError("settings blew up")
 
@@ -129,13 +127,13 @@ def test_settings_exception_falls_through_to_metadata_check(
         fake_pack, project_a, "planner_cast_spec"
     ) == "<<LEGACY:planner_cast_spec>>\n"
 
-    # Case B: reference block present → suppress
+    # Case B: reference inventory present → still methodology, never canon
     project_b = FakeProject(
         metadata_json={"material_reference_block": "## refs\n§world/x/y: Z"}
     )
     assert planner_services._planner_fragment_or_ref(
         fake_pack, project_b, "planner_cast_spec"
-    ) == ""
+    ) == "<<LEGACY:planner_cast_spec>>\n"
 
 
 # --------------------------------------------------------------------------
@@ -195,10 +193,10 @@ def test_empty_string_block_treated_as_no_block(
     assert result == "<<LEGACY:planner_outline>>\n"
 
 
-def test_reference_block_suppresses_legacy_fragment(
+def test_reference_block_cannot_suppress_selected_methodology(
     fake_pack: FakePack, flag_on: None
 ) -> None:
-    """The whole point: Forge ran, §slugs exist, legacy fragment is killed."""
+    """Unscoped Forge output never outranks the selected prompt pack."""
     project = FakeProject(
         metadata_json={
             "material_reference_block": (
@@ -210,7 +208,7 @@ def test_reference_block_suppresses_legacy_fragment(
     result = planner_services._planner_fragment_or_ref(
         fake_pack, project, "planner_book_spec"
     )
-    assert result == ""
+    assert result == "<<LEGACY:planner_book_spec>>\n"
 
 
 @pytest.mark.parametrize(
@@ -223,18 +221,16 @@ def test_reference_block_suppresses_legacy_fragment(
         "planner_outline",
     ],
 )
-def test_all_five_fragment_keys_are_suppressed_symmetrically(
+def test_all_five_fragment_keys_ignore_unscoped_material_inventory(
     fake_pack: FakePack, flag_on: None, fragment_name: str
 ) -> None:
-    """All 5 planner fragment keys used in the planner must be suppressed
-    when reference-style is active — no key gets special exemption.
-    """
+    """All planner stages retain methodology until scoped canon exists."""
     project = FakeProject(
         metadata_json={"material_reference_block": "non-empty"}
     )
     assert planner_services._planner_fragment_or_ref(
         fake_pack, project, fragment_name
-    ) == ""
+    ) == f"<<LEGACY:{fragment_name}>>\n"
 
 
 def test_malformed_metadata_non_dict_falls_through(

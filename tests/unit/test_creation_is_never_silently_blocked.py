@@ -54,11 +54,11 @@ class TestSubmissionIsNeverAbortedSilently:
         assert "'/api/tasks/quickstart'" in body
 
 
-class TestTheWarningIsStillVisible:
-    def test_the_label_states_the_measured_outcome(self) -> None:
-        """代价信息要在点击**之前**就在界面上，而不是点击时才弹。"""
+class TestTheSeedContractIsVisible:
+    def test_the_label_states_priority_without_making_the_seed_mandatory(self) -> None:
+        assert "故事创意（可选；填写后为最高优先级）" in _HTML
 
-        assert "不填几乎必挂" in _HTML
-
-    def test_the_hint_explains_the_cost(self) -> None:
-        assert "两轮" in _HTML or "淘汰赛" in _HTML
+    def test_the_hint_explains_both_seeded_and_option_driven_paths(self) -> None:
+        assert "填写后会原样进入建书契约" in _HTML
+        assert "不填则由上方题材、调性和故事技能共同生成" in _HTML
+        assert 'id="conceptSeedReceipt"' in _HTML

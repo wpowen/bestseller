@@ -80,6 +80,49 @@ def test_clean_outline_is_promotable() -> None:
     assert report.findings == ()
 
 
+def test_blended_tone_is_compatible_with_creator_light_preference() -> None:
+    report = evaluate_outline_semantic_gate(
+        {
+            "story_spine": {"tone": "light"},
+            "commercial_brief": {"tone": "冷硬悬疑，间以克制幽默"},
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "chapter_title": "剑鸣",
+                    "chapter_goal": "酌泉确认议事录今夜是否落笔",
+                    "main_conflict": "值夜弟子正循着剑纹余光逼近",
+                    "opening_situation": "子时三刻，剑柄旧纹在烛火里亮了一格",
+                }
+            ],
+        }
+    )
+
+    assert "OUTLINE_TONE_MISMATCH" not in {
+        finding.code for finding in report.findings
+    }
+
+
+def test_role_word_inside_normal_parenthetical_action_is_not_schema_leak() -> None:
+    report = evaluate_outline_semantic_gate(
+        {
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "chapter_title": "入档",
+                    "chapter_goal": "酌泉逼议事堂承认第一条记录",
+                    "main_conflict": "外务堂坚持把异动定为伪器灵惑众",
+                    "opening_situation": "弟子举灯靠近剑架",
+                    "hook_description": "严宿落笔（弟子轻声复述‘疑似伪器灵惑众’）",
+                }
+            ]
+        }
+    )
+
+    assert "OUTLINE_ROLE_SCHEMA_LEAK" not in {
+        finding.code for finding in report.findings
+    }
+
+
 def test_project_specific_long_chapter_target_is_not_compared_to_hidden_defaults() -> None:
     report = evaluate_outline_semantic_gate(
         {

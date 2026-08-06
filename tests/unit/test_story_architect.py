@@ -14,7 +14,9 @@ from bestseller.services.story_architect import (
     _build_user_prompt,
     _fallback_facets,
     _parse_architect_output,
-    _render_persona_spine_lock,
+    _story_facets_default_motif_findings,
+    _story_facets_ontology_findings,
+    architect_story_facets,
 )
 
 
@@ -94,6 +96,24 @@ class TestParseArchitectOutput:
         assert facets.narrative_drive == "progression"
         assert facets.relationship_mode == "no-cp"
 
+    def test_overlong_narrative_drive_is_bounded_without_retry(self) -> None:
+        narrative_drive = (
+            "每卷以血脉祭典为倒计时，轮流用资源封锁、天骄围猎和岛主试炼推动主角破局，"
+            "并在每个章节尾部继续解释下一轮升级压力的来源与变化以及敌我双方的新选择"
+        )
+        raw = json.dumps({
+            "sub_genres": ["升级"],
+            "setting": "断脉群岛",
+            "tone": "lighthearted",
+            "narrative_drive": narrative_drive,
+            "trope_tags": ["废柴逆袭"],
+        })
+
+        facets = _parse_architect_output(raw, "xuanhuan", "zh-CN")
+
+        assert facets.narrative_drive == narrative_drive[:64]
+        assert len(facets.narrative_drive) == 64
+
     def test_sub_genres_capped_at_3(self) -> None:
         raw = json.dumps({
             "sub_genres": ["a", "b", "c", "d", "e"],
@@ -155,8 +175,6 @@ class TestBuildPrompts:
             language="zh-CN",
             user_hints=None,
             existing_facets=[],
-            trend_data={"trend_keywords": ["灵气复苏"], "trend_summary": "hot"},
-            dimensions_summary="test dimensions",
         )
         assert "xianxia" in prompt
         assert "zh-CN" in prompt
@@ -170,8 +188,6 @@ class TestBuildPrompts:
             language="zh-CN",
             user_hints=None,
             existing_facets=[],
-            trend_data={},
-            dimensions_summary="test",
             genre_intent=contract,
         )
         assert "Genre Intent Contract" in prompt
@@ -192,14 +208,13 @@ class TestBuildPrompts:
             language="zh-CN",
             user_hints=None,
             existing_facets=[existing],
-            trend_data={},
-            dimensions_summary="test",
         )
-        assert "differentiate" in prompt.lower() or "MUST" in prompt
-        # Peers are shown by SURFACE (setting + trope combo), so the new book
-        # differentiates the skin — NOT by copying/avoiding tone or drive.
-        assert "荒古矿脉的签到少年" in prompt
-        assert "废柴逆袭" in prompt
+        assert "differ only" in prompt.lower()
+        # Existing books are compared by the deterministic similarity gate.
+        # Their concrete text must never become prompt material for a new book.
+        assert "荒古矿脉的签到少年" not in prompt
+        assert "废柴逆袭" not in prompt
+        assert "intentionally not shown" in prompt
 
     def test_peer_section_tells_model_to_share_spine_not_differ_on_it(self) -> None:
         # Regression (cross-book contamination): the old Section-2 header
@@ -213,9 +228,9 @@ class TestBuildPrompts:
         )
         prompt = _build_user_prompt(
             primary_genre="xianxia", language="zh-CN", user_hints=None,
-            existing_facets=[existing], trend_data={}, dimensions_summary="t",
+            existing_facets=[existing],
         )
-        assert "SURFACE" in prompt
+        assert "concrete `setting`" in prompt
         assert "spine" in prompt.lower()
         # must NOT instruct differing on tone/drive
         assert "MUST differentiate from these" not in prompt
@@ -226,8 +241,6 @@ class TestBuildPrompts:
             language="en",
             user_hints={"mood": "lighthearted", "avoid": "dark themes"},
             existing_facets=[],
-            trend_data={},
-            dimensions_summary="test",
         )
         assert "lighthearted" in prompt
         assert "dark themes" in prompt
@@ -243,8 +256,6 @@ class TestBuildPrompts:
                 "mood": "高压破局",
             },
             existing_facets=[],
-            trend_data={},
-            dimensions_summary="test",
         )
 
         assert "Selected Concept Lab Contract" in prompt
@@ -253,39 +264,250 @@ class TestBuildPrompts:
         assert "per_chapter_contract" in prompt
         assert "高压破局" in prompt
 
+    def test_prompt_includes_all_explicit_creation_controls(self) -> None:
+        from bestseller.services.story_enhancers import StoryEnhancerSelection
 
-class TestPersonaSpineLock:
-    """The genre SPINE LOCK keeps differentiation from subverting the genre's
-    load-bearing 爽点 spine (regression: 仙侠升级 drifted to 克系/无金手指)."""
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xuanhuan", "sub_genre": "eastern-xuanhuan"},
+            tone_preference="light",
+            enhancers=StoryEnhancerSelection(
+                effect_skills=("comedy_engine", "hype_satisfaction_engine"),
+                cost_style="minimal",
+            ),
+        )
 
-    def test_male_channel_spine_lock_mandates_payoff_and_forbids_literary_drift(self) -> None:
-        block = _render_persona_spine_lock("仙侠升级", None, "zh-CN")
-        assert "SPINE LOCK" in block
-        assert "男频" in block
-        # MUST keep the power-fantasy payoff spine
-        assert "金手指" in block
-        # MUST forbid exactly the drift we observed (no golden-finger / literary tone)
-        assert "power_system=null" in block
-        assert ("文艺" in block or "道德灰色" in block or "melancholic" in block)
-        # differentiation is surface-only, not spine-breaking
-        assert "表皮" in block
+        prompt = _build_user_prompt(
+            primary_genre="xuanhuan",
+            language="zh-CN",
+            user_hints=None,
+            existing_facets=[],
+            genre_intent=contract,
+        )
 
-    def test_female_channel_spine_is_emotional_not_power_fantasy(self) -> None:
-        block = _render_persona_spine_lock("现代言情", {"audience_orientation": "女频"}, "zh-CN")
-        assert "女频" in block
-        # female spine is emotional payoff, not 金手指 power-fantasy
-        assert ("情感" in block or "重生" in block or "打脸渣" in block or "偏爱" in block)
+        assert "tone_preference: light" in prompt
+        assert "cost_style: minimal" in prompt
+        assert "comedy_engine" in prompt
+        assert "hype_satisfaction_engine" in prompt
+        assert "must not be replaced by a darker" in prompt
 
-    def test_spine_lock_wired_into_user_prompt(self) -> None:
+    def test_selected_tone_is_reasserted_at_the_architect_boundary(self) -> None:
+        from bestseller.services.story_architect import _apply_genre_intent_to_facets
+
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xuanhuan", "sub_genre": "eastern-xuanhuan"},
+            tone_preference="light",
+        )
+        facets = StoryFacets(
+            primary_genre="xuanhuan",
+            setting="边陲灵田里的少年修补失控灌溉阵",
+            tone="epic",
+        )
+
+        aligned = _apply_genre_intent_to_facets(
+            facets,
+            genre_intent=contract,
+            language="zh-CN",
+        )
+
+        assert aligned.tone == "lighthearted"
+
+
+class TestStoryFacetsOntologyBoundary:
+    def test_motif_rejection_is_retired(self) -> None:
+        """2026-08-02: facets are no longer re-rolled for touching death/debt.
+
+        The gate meant a 玄幻 book could not open on a graveyard unless the user
+        had named the theme first, so the architect was retried until the
+        premise was bloodless. Genre fidelity is the ontology guard's job.
+        """
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xuanhuan", "sub_genre": "eastern-xuanhuan"}
+        )
+        facets = StoryFacets(
+            primary_genre="xuanhuan",
+            setting="守墓人发现两具尸体后按账本收债",
+            trope_tags=("尸体", "账本"),
+        )
+
+        assert (
+            _story_facets_default_motif_findings(
+                facets,
+                genre_intent=contract,
+                user_hints=None,
+            )
+            == []
+        )
+
+    def test_explicit_user_motif_is_not_rejected(self) -> None:
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xuanhuan", "sub_genre": "eastern-xuanhuan"}
+        )
+        facets = StoryFacets(
+            primary_genre="xuanhuan",
+            setting="守墓人发现两具尸体后按账本收债",
+            trope_tags=("尸体", "账本"),
+        )
+
+        assert _story_facets_default_motif_findings(
+            facets,
+            genre_intent=contract,
+            user_hints={"concept_seed": "守墓人调查尸体并用账本追查债务"},
+        ) == []
+
+    def test_explicit_concept_lab_and_hook_motifs_are_not_rejected(self) -> None:
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xuanhuan", "sub_genre": "eastern-xuanhuan"}
+        )
+        facets = StoryFacets(
+            primary_genre="xuanhuan",
+            setting="守墓人发现两具尸体后按账本追查债务",
+        )
+
+        assert _story_facets_default_motif_findings(
+            facets,
+            genre_intent=contract,
+            user_hints={
+                "concept_lab": {
+                    "one_liner": "守墓人从尸体与账本追查债务网络",
+                    "reader_promise": "每次追索都会改变墓园势力关系",
+                }
+            },
+        ) == []
+        assert _story_facets_default_motif_findings(
+            facets,
+            genre_intent=contract,
+            user_hints={"hook_spec": {"one_liner": "守墓人查验尸体并追查旧债"}},
+        ) == []
+
+    def test_genre_native_rejects_modern_delivery_worker_setting(self) -> None:
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xianxia", "sub_genre": "xianxia"}
+        )
+        facets = StoryFacets(
+            primary_genre="xianxia",
+            setting="破落山神庙里的外卖小哥误吞龟壳",
+            tone="lighthearted",
+        )
+
+        findings = _story_facets_ontology_findings(facets, contract)
+
+        assert findings
+        assert findings[0].code == "STORY_FACETS_ONTOLOGY_MISMATCH"
+        # Repair feedback reports only a count. Echoing the rejected word back
+        # into the next prompt would itself become a prompt-pollution channel.
+        assert findings[0].actual == "1 incompatible term(s)"
+
+    def test_genre_native_accepts_native_food_runner_role(self) -> None:
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xianxia", "sub_genre": "xianxia"}
+        )
+        facets = StoryFacets(
+            primary_genre="xianxia",
+            setting="破落山神庙的送膳杂役误吞龟壳",
+            tone="lighthearted",
+        )
+
+        assert _story_facets_ontology_findings(facets, contract) == []
+
+    def test_modern_genre_allows_delivery_worker_setting(self) -> None:
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "urban", "sub_genre": "urban-life"}
+        )
+        facets = StoryFacets(
+            primary_genre="urban",
+            setting="外卖骑手在写字楼发现时间停摆",
+            tone="lighthearted",
+        )
+
+        assert _story_facets_ontology_findings(facets, contract) == []
+
+    @pytest.mark.asyncio
+    async def test_architect_retries_ontology_drift_without_echoing_terms(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        contract = contract_from_selection(
+            {"channel": "male", "genre": "xianxia", "sub_genre": "xianxia"}
+        )
+        calls: list[list[object]] = []
+
+        async def _no_existing(*_args: object, **_kwargs: object) -> list[StoryFacets]:
+            return []
+
+        async def _fake_call(*_args: object, **kwargs: object) -> StoryFacets:
+            findings = list(kwargs.get("repair_findings") or [])
+            calls.append(findings)
+            if len(calls) == 1:
+                return StoryFacets(
+                    primary_genre="xianxia",
+                    setting="破庙里的外卖小哥误吞龟壳",
+                    tone="lighthearted",
+                )
+            return StoryFacets(
+                primary_genre="xianxia",
+                setting="破庙送膳杂役误吞龟壳后听见山神求救",
+                tone="lighthearted",
+            )
+
+        monkeypatch.setattr(
+            "bestseller.services.story_architect.list_existing_facets", _no_existing
+        )
+        monkeypatch.setattr(
+            "bestseller.services.story_architect._call_architect_llm", _fake_call
+        )
+
+        result = await architect_story_facets(
+            object(),
+            object(),
+            primary_genre="xianxia",
+            genre_key="xianxia",
+            genre_intent=contract,
+        )
+
+        assert len(calls) == 2
+        assert calls[0] == []
+        assert calls[1][0].code == "STORY_FACETS_ONTOLOGY_MISMATCH"
+        assert "外卖" not in str(calls[1][0].actual)
+        assert "外卖" not in calls[1][0].repair_action
+        assert result.setting.startswith("破庙送膳杂役")
+
+
+class TestPromptPurity:
+    """2026-07-31 product ruling: no hardcoded persona tables, no dimension
+    enum catalogs, no framework-baked trend keywords in the architect prompt.
+    Genre fidelity is carried by the user's Genre Intent Contract plus the
+    deterministic ontology guard at the agent boundary."""
+
+    def test_persona_table_injection_is_gone(self) -> None:
         prompt = _build_user_prompt(
             primary_genre="仙侠升级",
             language="zh-CN",
             user_hints=None,
             existing_facets=[],
-            trend_data={},
-            dimensions_summary="test",
         )
-        assert "SPINE LOCK" in prompt
+        assert "SPINE LOCK" not in prompt
+        assert "点击钩" not in prompt
+        assert "读者雷点" not in prompt
+
+    def test_dimension_enum_catalog_and_trends_are_gone(self) -> None:
+        prompt = _build_user_prompt(
+            primary_genre="xianxia",
+            language="zh-CN",
+            user_hints=None,
+            existing_facets=[],
+        )
+        assert "Available Dimensions" not in prompt
+        assert "Market Trends" not in prompt
+        # tone is freeform wording now, not an enum list
+        assert "From: dark/lighthearted" not in prompt
+        assert "your own words" in prompt
+
+    def test_validation_warnings_do_not_trigger_retry(self) -> None:
+        import inspect
+
+        from bestseller.services import story_architect
+
+        source = inspect.getsource(story_architect.architect_story_facets)
+        assert "STORY_FACETS_VALIDATION_WARNING" not in source
 
     def test_system_prompt_constraints_are_surface_only(self) -> None:
         zh = _build_system_prompt("zh-CN")

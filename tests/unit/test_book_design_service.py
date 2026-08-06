@@ -228,3 +228,11 @@ def test_authoritative_premise_repairs_legacy_snapshot_identity_drift() -> None:
         "reason": "authoritative_creation_identity_drift",
         "replacement_name": "姬衡",
     }
+
+
+def test_name_followed_by_shi_is_creation_boundary_identity() -> None:
+    from bestseller.services.book_design import extract_creation_protagonist_name
+
+    assert extract_creation_protagonist_name(
+        {"premise": "余烬是青衡宗渣道倒渣杂役，七年没有挪过位置。"}
+    ) == "余烬"

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any, Literal
 
@@ -16,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from bestseller.services.genre_taxonomy import ResolvedSelection, resolve_selection
 from bestseller.services.story_enhancers import StoryEnhancerSelection
+
+logger = logging.getLogger(__name__)
 
 # CJK tripwire terms are matched as substrings (Chinese has no word boundaries).
 # Strong signals that the global forensic/funeral hybrid lane leaked into a
@@ -37,6 +40,14 @@ _GENRE_NATIVE_MODERNITY_CJK: tuple[str, ...] = (
     "写字楼",
     "职场",
     "现代都市",
+    # Contemporary platform-economy / internet roles.  These are precise
+    # compounds rather than the broad word ``外卖`` so a pre-modern inn or
+    # food-delivery scene is not rejected accidentally.
+    "外卖小哥",
+    "外卖骑手",
+    "外卖员",
+    "直播间",
+    "程序员",
     # Forensic science — the discipline itself is modern.
     "尸检",
     "法医",
@@ -180,14 +191,24 @@ def contract_from_selection(
 
 
 def contract_from_payload(payload: dict[str, Any]) -> GenreIntentContract | None:
-    """Read a persisted contract defensively; invalid data never becomes authority."""
+    """Read a persisted contract defensively; invalid data never becomes authority.
 
+    ``None`` here has two meanings and they must stay distinguishable:
+    * no contract present        -> expected, silent (legacy/self-heal rebuilds)
+    * contract present but invalid -> a corruption that used to silently drop
+      EVERY user creation option with no trace (P11). Log it loudly so a
+      downstream empty intent block is explainable instead of mysterious.
+    """
     raw = payload.get("genre_intent_contract")
     if not isinstance(raw, dict):
         return None
     try:
         return GenreIntentContract.model_validate(raw)
-    except ValueError:
+    except ValueError as exc:
+        logger.warning(
+            "genre_intent_contract present but invalid -> creation intent dropped "
+            "(model_validate failed): %s", exc,
+        )
         return None
 
 

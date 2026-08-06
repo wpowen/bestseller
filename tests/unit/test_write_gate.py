@@ -176,8 +176,18 @@ class TestDefaultPolicyLockIn:
             "QUIRK_SLOT_MISSING",
             "ANTAGONIST_MOTIVE_OVERLAP",
             "WORLD_TAXONOMY_BOILERPLATE",
-            "NAMING_POOL_UNDERSIZED",
         ],
     )
     def test_high_confidence_code_is_block(self, code: str) -> None:
         assert resolve_mode(code, DEFAULT_GATE_CONFIG) == "block"
+
+    def test_naming_pool_reserve_is_advisory_not_a_blocker(self) -> None:
+        """2026-08-03: a short spare-name list is preparedness, not a defect.
+
+        As a blocker it was deterministic — the same draft failed the same count
+        on every retry — and it deadlocked a real book: 《雾街债主》 had chapters
+        1-6 refused materialization on this code alone, leaving the rolling
+        outline window incomplete, so self-heal re-queued the same replan
+        forever. Its sibling NAMING_OUT_OF_POOL was already audit_only.
+        """
+        assert resolve_mode("NAMING_POOL_UNDERSIZED", DEFAULT_GATE_CONFIG) == "audit_only"

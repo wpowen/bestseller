@@ -13,7 +13,7 @@
 于是「只挂新颖度」的候选是**最优先**被选中的种子——而那恰恰是改良修不好的
 那一个。第 2 轮在结构上就不可能通过。
 
-修法：改良友好的轴（大白话／题材保真／机制因果／人物决策／故事运动）才配当
+修法：改良友好的轴（大白话／机制因果／人物决策／故事运动）才配当
 种子；一旦挂了新颖度或可预测性，返回空串，让重试轮自由重掷（那条路径已经存在，
 且 retry_feedback 仍会把失败候选与理由喂给它）。
 """
@@ -58,6 +58,12 @@ class TestRefinementResistantAxesDisqualify:
         candidate = _cand("同上", "钩子硬门失败: 新颖度/大白话")
         assert _best_dry_tournament_seed([candidate]) == ""
 
+    def test_genre_fidelity_failure_is_not_seedable(self) -> None:
+        """故事身份已偏离所选题材时，保留身份补强只会锁死错误方向。"""
+
+        candidate = _cand("仙侠里替前任代写情书", "钩子硬门失败: 题材保真/想点欲")
+        assert _best_dry_tournament_seed([candidate]) == ""
+
     def test_the_live_six_candidate_dry_run_yields_no_seed(self) -> None:
         """真机六候选全部挂新颖度 → 不该产生任何种子。"""
 
@@ -80,18 +86,35 @@ class TestExecutionAxesStillSeed:
         assert _best_dry_tournament_seed([candidate]) == "设定绕但点子新"
 
     def test_execution_axis_combination_is_seedable(self) -> None:
-        candidate = _cand("可修候选", "钩子硬门失败: 大白话/题材保真/机制因果")
+        candidate = _cand("可修候选", "钩子硬门失败: 大白话/人物决策/机制因果")
         assert _best_dry_tournament_seed([candidate]) == "可修候选"
 
     def test_seedable_candidate_wins_over_a_novelty_failed_one(self) -> None:
         """即使新颖度候选挂的轴更少，它也不该赢——改良修不了它。"""
 
         novelty_only = _cand("点子旧", "钩子硬门失败: 新颖度", judge_click=9.5)
-        fixable = _cand("点子新但写糊了", "钩子硬门失败: 大白话/题材保真")
+        fixable = _cand("点子新但写糊了", "钩子硬门失败: 大白话/故事运动")
         assert _best_dry_tournament_seed([novelty_only, fixable]) == "点子新但写糊了"
 
 
 class TestExistingGuaranteesPreserved:
+    def test_near_miss_is_promoted_regardless_of_its_vocabulary(self) -> None:
+        """2026-08-02: a near-miss is refined on its merits, not its words."""
+        candidate = _cand(
+            "守墓人用账本追查尸体债务",
+            "钩子硬门失败: 大白话",
+        )
+        assert _best_dry_tournament_seed([candidate]) == "守墓人用账本追查尸体债务"
+
+    def test_explicit_user_theme_can_still_refine_same_theme(self) -> None:
+        intentional = _cand(
+            "守墓人用账本追查尸体债务",
+            "钩子硬门失败: 大白话",
+        )
+        assert _best_dry_tournament_seed(
+            [intentional], allow_debt=True, allow_death=True
+        ) == "守墓人用账本追查尸体债务"
+
     def test_deterministic_ko_still_never_resurrected(self) -> None:
         cliche = _cand("废脉其实是宝脉", "俗套KO: 废脉觉醒是隐藏宝脉")
         assert _best_dry_tournament_seed([cliche]) == ""
@@ -102,10 +125,10 @@ class TestExistingGuaranteesPreserved:
 
     def test_fewer_failed_axes_still_wins_among_seedable_candidates(self) -> None:
         one_axis = _cand("一轴", "钩子硬门失败: 大白话")
-        three_axis = _cand("三轴", "钩子硬门失败: 大白话/题材保真/故事运动")
+        three_axis = _cand("三轴", "钩子硬门失败: 大白话/人物决策/故事运动")
         assert _best_dry_tournament_seed([three_axis, one_axis]) == "一轴"
 
     def test_higher_scores_break_ties_among_seedable_candidates(self) -> None:
         low = _cand("低分", "钩子硬门失败: 大白话", judge_click=6.0)
-        high = _cand("高分", "钩子硬门失败: 题材保真", judge_click=9.0)
+        high = _cand("高分", "钩子硬门失败: 故事运动", judge_click=9.0)
         assert _best_dry_tournament_seed([low, high]) == "高分"

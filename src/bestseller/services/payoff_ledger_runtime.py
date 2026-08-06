@@ -288,12 +288,12 @@ def _payoff_ledger_rewrite_instructions(
             + evidence_block
         )
     return (
-        "【兑现账本修复】\n"
-        f"修复第 {chapter_number} 章的兑现账本缺口：{', '.join(codes)}。\n"
+        "【兑现清单修复】\n"
+        f"修复第 {chapter_number} 章的兑现清单缺口：{', '.join(codes)}。\n"
         "- 保留既有章节结果，不要重开新支线。\n"
         "- 如果 payoff 到期或超期，正文必须可见地兑现、转化或明确退场。\n"
         "- 如果兑现缺少铺垫距离，补出对早前铺垫的具体回扣，而不是空降结果。\n"
-        "- 正文禁止出现 payoff ledger、方法论、兑现账本等创作术语。"
+        "- 正文禁止出现 payoff ledger、方法论、兑现清单等创作术语。"
         + evidence_block
     )
 
@@ -345,7 +345,7 @@ def render_payoff_ledger_planner_contract(*, language: str | None = None) -> str
             "what an earlier hook promised; do not cash what was never planted."
         )
     return (
-        "【方法论 v2 兑现账本合同】\n"
+        "【方法论 v2 兑现清单合同】\n"
         "- 把 `methodology_contract.payoffs_due` 当成本章必兑现清单，不是装饰性说明。"
         "每项应当是早前章节铺垫、本章必须兑现的 payoff code。\n"
         "- 条件允许时每章至少兑现 1 个到期 payoff；若本章无到期 payoff，"
@@ -359,8 +359,8 @@ def render_payoff_ledger_planner_contract(*, language: str | None = None) -> str
         "需让有心的读者能找到对应回扣。\n"
         "- 如果 payoff 超期，转化或明确退场，不要让它悬空。\n"
         "- 不要悄悄引入新 payoff；每个新 payoff 必须有可追踪的 code "
-        "加入滚动台账。\n"
-        "- 兑现台账与钩子台账是兄弟：payoff 兑现早前 hook 承诺的事，"
+        "加入滚动清单。\n"
+        "- 兑现清单与钩子清单是兄弟：payoff 兑现早前 hook 承诺的事，"
         "不要兑现从未铺垫的内容。"
     )
 

@@ -81,14 +81,14 @@ _NATIVE_STORY_LANES = (
     "纯题材直觉",
 )
 _NATIVE_STORY_LANE_BRIEFS = {
-    "人际困局": "从一段无法轻易割舍的人际关系和两难选择起步；不要写契约、债务或仲裁。",
-    "世界规则": "从一个能被场景直接证明的自然或超凡现象起步；不要写账本、债形或制度设计。",
-    "成长道路": "从一门具体本事如何学、练、用、犯错和改变处境起步；不要用升官代替成长。",
-    "世界扩张": "从探索、迁徙、建设、经营或夺取生存空间起步；不要默认成为规则制定者。",
-    "势力选择": "从多个聪明势力都需要主角、但目标互斥的选择起步；避免万能幕后组织。",
-    "身份变化": "从身份秘密、角色冲突或被迫承担的新位置起步；不要靠失忆或人格消失。",
-    "职业处境": "从题材内一项具体工作、客户、工具和现场事故起步；不能只是接委托换皮。",
-    "资源分配": "从一种稀缺资源被谁生产、分配和争夺起步；用具体物件与行动，不写金融术语。",
+    "人际困局": "从一段无法轻易割舍的人际关系和两难选择起步，用人物当下的目标与行动推动。",
+    "世界规则": "从一个能被场景直接证明的自然或超凡现象起步，让主角通过行动认识并利用它。",
+    "成长道路": "从一门具体本事如何学、练、用、犯错和改变处境起步，让能力与角色共同变化。",
+    "世界扩张": "从探索、迁徙、建设、经营或夺取生存空间起步，让扩张来自既有行动的后果。",
+    "势力选择": "从多个聪明势力都需要主角、但目标互斥的选择起步，让每方都有可理解的利益。",
+    "身份变化": "从身份秘密、角色冲突或被迫承担的新位置起步，让变化产生新的职责与选择。",
+    "职业处境": "从题材内一项具体工作、客户、工具和现场事故起步，让专业行动持续产生故事。",
+    "资源分配": "从一种稀缺资源被谁生产、分配和争夺起步，用具体物件、场景与行动表达。",
     "纯题材直觉": "忘掉框架术语，先写一个该题材读者会立刻想看的具体人、事和反转。",
 }
 
@@ -590,7 +590,6 @@ def _build_candidate_messages(
             "人物核心与现实行动上，并真实改变关系、资源、暴露风险、制度压力或未来选择；"
             "若去掉这个脑洞主线仍能成立，就说明只是装饰，必须重做。"
         )
-    ban_block = "\n".join(f"- {b}" for b in banned) if banned else "（无）"
     seed_block = (
         f"【用户已选核心创意——必须保留其故事身份，只能补强长篇机制】\n{seed_concept}\n\n"
         if seed_concept.strip()
@@ -629,7 +628,7 @@ def _build_candidate_messages(
         f"{seed_block}"
         f"{retry_block}"
         f"{hybrid_directive}\n\n"
-        f"【本题材烂大街俗套——出现任何一条的变体即为废稿】\n{ban_block}\n"
+        f"{render_cliche_avoidance_block(banned)}\n"
         f"{avoid_mechanisms_block}\n"
         f"{scale_directive}"
         "【硬性要求】\n"
@@ -651,7 +650,7 @@ def _build_candidate_messages(
         "读者持续获得的核心情绪。不得留给后续 Agent 临时拼接。\n"
         "决策证明必须明确比较至少一个更安全、更便宜或更直接的方案，并说明它为何不可行；"
         "禁止用任意倒计时、强塞代价或‘别无选择’四字代替因果。\n\n"
-        "机制不得用‘每发动一次就随机折寿/失忆/器官衰竭/寿命扣除’等外置惩罚制造戏剧性；"
+        "机制不得用与核心动作没有因果关系的固定惩罚制造戏剧性；"
         "风险必须是主角行为改变名额、资源、关系、证据或制度之后自然产生的后果。"
         "如果没有额外代价故事也成立，就不要硬塞代价。\n\n"
         "一句话必须是普通目标读者一遍就懂的大白话：专业领域可以决定冲突，但禁止把"
@@ -709,8 +708,6 @@ def _build_lean_candidate_messages(
         if retry_feedback.strip()
         else ""
     )
-    ban_items = [item.strip() for item in banned if item.strip()][:8]
-    ban_block = "、".join(ban_items) if ban_items else "无"
     dimension_instruction = (
         "在题材内部寻找反共识的人物困局"
         if dimension in {_CONTROL_DIMENSION, _CHARACTER_CONTROL_DIMENSION}
@@ -728,7 +725,7 @@ def _build_lean_candidate_messages(
         f"{seed_block}{retry_block}"
         f"探索方向：{dimension_instruction}。\n"
         "一句话必须是目标读者一遍就懂的大白话，生造术语/需要解释的机构名不得进钩子。\n"
-        f"禁用题材众数：{ban_block}。\n"
+        f"{render_cliche_avoidance_block(banned)}"
         f"{avoid_mechanisms_block}"
         "\n先在内部完成三项检查，不输出分析过程：\n"
         "1. 人物：站在主角第一人称，正常聪明人会这样选吗？至少比较一个更安全、"
@@ -737,7 +734,7 @@ def _build_lean_candidate_messages(
         "2. 对手：对手有自己的目标，会学习主角的方法并作出聪明反制；下一轮问题来自本轮造成的"
         "资源、关系、证据、规则或暴露变化，而非再换一个对象重复任务。\n"
         "3. 脑洞：只保留一条原则——第一眼意外，解释后必然。新奇点必须改变人物行动；"
-        "随机折寿、失忆、寿命扣除等外置代价一律删除，除非它是行为的必然后果。\n\n"
+        "与核心动作没有因果关系的外置代价一律删除；风险必须是行为的必然后果。\n\n"
         "一句话职责：40-90字为佳，硬上限120字，最多两个分句；只写主角最有辨识度的发现/行动"
         "及立即后果，让普通目标读者一遍看懂并想追问后续。不要写世界观说明、阶段表、卷纲或终局。\n\n"
         "优先使用‘独特规则+一个具体悖论’或‘标志性行动+立即后果’，不要硬塞幕后集团。\n\n"
@@ -851,6 +848,115 @@ def _effect_skills_directive_line(effect_skills: tuple[str, ...] | list[str]) ->
     )
 
 
+_LIGHT_TONE_MARKERS: tuple[str, ...] = (
+    "轻松", "幽默", "喜剧", "诙谐", "明快", "自嘲", "吐槽", "荒诞", "好笑", "反差",
+)
+_HEAVY_TONE_MARKERS: tuple[str, ...] = (
+    "黑暗", "暗黑", "压抑", "沉重", "阴冷", "冷峻", "惨烈", "绝望", "尸首", "尸体", "收尸",
+)
+def _creation_intent_content_violations(
+    text: str,
+    *,
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] | list[str] = (),
+    cost_style: str = "",
+) -> tuple[str, ...]:
+    """Deterministic proof that explicit creation choices shaped the concept.
+
+    Prompt presence is not option adherence.  The final candidate must expose
+    the selected tone/effect promise in its own story-bearing fields; otherwise
+    downstream planners receive a contradictory concept and can only decorate
+    it after the fact.
+    """
+
+    blob = str(text or "")
+    if not blob:
+        return ()
+    violations: list[str] = []
+    tone = str(tone_preference or "").strip().lower()
+    del effect_skills
+    heavy_hits = sum(blob.count(token) for token in _HEAVY_TONE_MARKERS)
+    # Positive style labels are control-plane metadata, not evidence that the
+    # story surface is light.  Never let a trailing ``轻松/幽默`` tag cancel
+    # repeated corpse/bleak imagery in the actual premise or opening.
+    if tone == "light" and heavy_hits >= 2:
+        violations.append("轻松调性被沉重/阴冷/尸体叙事覆盖")
+    # (2026-08-02) The minimal-cost vocabulary rejection was removed. 纯爽 is a
+    # pacing preference — payoff lands fast and the protagonist keeps winning —
+    # not a ban on the words a cultivation novel uses for its own costs.
+    del cost_style
+    # Effect skills are whole-book preferences, not literal vocabulary
+    # requirements. Requiring “喜剧/打脸/爽” in a one-line premise made an
+    # optional control decide whether the entire book could exist and rejected
+    # semantically valid concepts that expressed the effect through scenes.
+    # Keep only the high-confidence contradiction gate here. Selected skills
+    # still reach generation and the outline/writer contracts, where they are
+    # evaluated against actual beats instead of keyword presence.
+    return tuple(violations)
+
+
+def _candidate_story_text(candidate: ConceptCandidate) -> str:
+    payload = candidate.to_dict()
+    control_fields = {
+        "seriality_report", "seriality_judge", "judge_reason", "rejected_reason",
+        "judge_freshness", "judge_click", "judge_predictable", "judge_character_logic",
+        "judge_mechanism_causality", "judge_genre_fidelity", "judge_plain_language",
+        "judge_story_motion", "composite", "dimension",
+    }
+
+    def _texts(value: Any) -> list[str]:
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, dict):
+            out: list[str] = []
+            for key, item in value.items():
+                if key not in control_fields:
+                    out.extend(_texts(item))
+            return out
+        if isinstance(value, (list, tuple)):
+            out = []
+            for item in value:
+                out.extend(_texts(item))
+            return out
+        return []
+
+    return "\n".join(_texts(payload))
+
+
+def _candidate_hard_rejection_reason(
+    candidate: ConceptCandidate,
+    *,
+    seed_concept: str,
+    tone_preference: str,
+    effect_skills: tuple[str, ...] | list[str],
+    cost_style: str = "",
+    allow_debt_theme: bool | None = None,
+    allow_death_theme: bool | None = None,
+) -> str | None:
+    """Reject a candidate that contradicts an EXPLICIT user選択 — nothing else.
+
+    (2026-08-02) The debt-dominated / death-motif rejections were removed. They
+    threw away candidates for containing ordinary story material the user had
+    not pre-authorised by name, which is not how story ideas work: a reader who
+    picks 仙侠 has not thereby forbidden a funeral. What remains here enforces
+    the creation form's own switches (tone, cost pacing, effect skills) — that
+    is executing the user's choice, not the framework's taste.
+    """
+
+    del seed_concept, allow_debt_theme, allow_death_theme
+
+    text = _candidate_story_text(candidate)
+    reasons = list(
+        _creation_intent_content_violations(
+            text,
+            tone_preference=tone_preference,
+            effect_skills=effect_skills,
+            cost_style=cost_style,
+        )
+    )
+    return "；".join(reasons) if reasons else None
+
+
 def _build_engine_kernel_messages(
     *,
     genre: str,
@@ -871,7 +977,7 @@ def _build_engine_kernel_messages(
     system = (
         "你是小说选题编辑。先判断一个人物是否能自然产生许多不同场景，不写宣传文案、"
         "卷纲、体系说明或500章阶段表。禁止把提示词里的禁用词和示例当故事素材。"
-        "禁止用每使用一次能力就折寿、失忆、残缺、失去人格或抵押命数来假装张力。"
+        "禁止用与核心动作没有因果关系的固定惩罚来假装张力。"
         "只输出JSON。"
     )
     seed = (
@@ -948,8 +1054,10 @@ def _build_engine_kernel_messages(
         f"{support}"
         "只做最小项目判断：谁的正常生活已无法维持；他眼下要完成什么可观察行动；谁有"
         "能力让他失败；失败会失去什么；成功又会伤害、暴露或放弃什么；选择后什么不能"
-        "复原。failure_cost和success_cost只解释开局这一次决定，不得变成每使用一次能力"
-        "就扣除寿命、身份、记忆、家底或亲情的收费表，也不得写进长期读者承诺。\n"
+        # 2026-08-03：删掉「寿命、身份、记忆、家底、亲情」的点名列举——它把这五样
+        # 直接摆进每一次概念生成的 prompt。只留正向判据：这两个字段解释开局一次决定。
+        "复原。failure_cost和success_cost只解释开局这一次决定，不要把它们扩写成"
+        "每次使用能力都要结算的固定收费表，也不得写进长期读者承诺。\n"
         "scene_seeds 必须给出5个彼此不同的具体场面，每个都写主角动作、当场阻力和选择，"
         "且至少覆盖关系、技能/行动、公开冲突、探索/发现、建设/改变中的4类。若只能把"
         "同一案件换人换地，项目不成立。至少3个场面必须使用目标题材原生的行动、资源和"
@@ -1008,6 +1116,9 @@ def _build_raw_idea_pool_messages(
     prompt_arm: str = "enhanced",
     focus_hint: str = "",
     audience_orientation: str = "",
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] | list[str] = (),
+    creation_intent_block: str = "",
 ) -> tuple[str, str]:
     """Minimal baseline: concrete person plus abnormal situation, nothing else.
 
@@ -1024,7 +1135,22 @@ def _build_raw_idea_pool_messages(
         if str(audience_orientation or "").strip()
         else ""
     )
-    system = "你是小说作者。只负责想故事，不解释方法。只输出JSON。" + channel
+    intent = (
+        _tone_directive_line(tone_preference)
+        + _effect_skills_directive_line(effect_skills)
+        + (f"{creation_intent_block.strip()}\n" if str(creation_intent_block or "").strip() else "")
+    )
+    system = (
+        "你是小说作者。只负责想故事，不解释方法。只输出JSON。"
+        + channel
+        + (
+            intent
+            + "以上建书约束与故事起点从原始创意这一层就必须成立；不得先生成相反调性、"
+            "相反技能或无关故事的种子再交给下游补救。"
+            if intent
+            else ""
+        )
+    )
     seed = (
         f"围绕这个原始想法做不同方向的强化，但保留其职业或核心发现：{seed_concept.strip()}\n"
         if seed_concept.strip()
@@ -1079,8 +1205,8 @@ def _build_raw_idea_pool_messages(
             f"为{genre}（{sub_genre}）想{count}个不同的小说选题。{seed}"
             f"{focus}"
             "每个只写一句具体人物加异常处境。异常被公开或第一次使用之后，主角仍会因它"
-            "持续做出不同选择；一句里必须看见主角会做什么。不要用随机折寿、失忆、伤身"
-            "或强制死亡倒计时推进。"
+            "持续做出不同选择；一句里必须看见主角会做什么。不要用与核心动作无因果"
+            "关系的固定惩罚或强制倒计时推进。"
             f"{output_contract}"
         )
     if prompt_arm != "enhanced":
@@ -1094,8 +1220,8 @@ def _build_raw_idea_pool_messages(
         "它仍应长期改变主角的身份、关系或生存方式，让主角自然需要做许多不同的事。"
         "至少一半创意必须是稳定的故事场：即使第20章公开所有开局秘密，主角仍因新的"
         "职业位置、移动世界、建设目标、多势力夹缝、成长技艺或关系网络而持续行动。"
-        "这些创意的一句里必须出现主角将长期做的可见动词。不要用按次折寿、失忆、残缺"
-        "或离死亡更近来制造张力。"
+        "这些创意的一句里必须出现主角将长期做的可见动词。不要用与核心动作无因果"
+        "关系的按次固定惩罚来制造张力。"
         "题材必须长在故事骨头里：至少三分之二的创意要由该题材特有的身份道路、社会关系、"
         "资源争夺或行动方式发动；只把地名和名词换成仙门、灵气、法器不算。"
         "先追求故事本身有意思，不写大纲、世界观说明、系统字段、长篇规划或能力收费表。"
@@ -1408,33 +1534,22 @@ def render_plain_language_judge_rule() -> str:
 
 
 def render_cliche_avoidance_block(banned: tuple[str, ...]) -> str:
-    """Show the generator the SAME cliché list the judge will KO it with.
+    """Render a positive anti-cliche instruction without quoting the corpus.
 
-    Root cause this fixes (2026-07-22, book creation blocked): the judge
-    eliminates any candidate matching ``cliche_seeds`` *before* scoring, but the
-    production ``engine_first`` generators (``_build_native_candidate_messages``
-    ``del``s the ban list, and the raw-idea / kernel / hook builders never
-    received it). On a cold start with no premise the model regresses to the
-    genre's most worn openings — 师父坟前 / 遗物 / 借尸还魂 / 替死人还债 — which
-    is exactly what the seed list bans, so every candidate is KO'd and the
-    tournament dries up. Same 生成端↔判官端不同源 shape as the plain_language and
-    anti-AI disciplines before they got a single source.
-
-    Kept compact and framed as "avoid, and go concrete instead" rather than a
-    bare enumeration: bare prohibitions prime what they forbid (2026-07-18
-    arena), and dumping 20+ phrases would itself become a death-motif menu.
+    The ban bank remains the single source for deterministic post-generation
+    screening. It must not become generation material: negative examples are
+    prompt tokens too, and repeated exact phrases made new books absorb the
+    motifs the gate was meant to reject.
     """
 
     items = [b.strip() for b in banned if b.strip()]
     if not items:
         return ""
-    listed = "、".join(items[:12])
     return (
-        "【这些开局已经被写烂，别往上撞】\n"
-        f"避开：{listed}。\n"
-        "尤其不要默认从“死人/坟墓/遗物/遗书/灭门/借尸还魂/替死人还债”起手——"
-        "这是冷启动时最容易滑进去的套路。把独特性放在“这个活人此刻要争取什么、"
-        "手上有什么别人没有的筹码”上，而不是放在一桩旧死亡上。\n"
+        "【原创开局约束】\n"
+        "俗套库将在生成后由程序独立检查，具体禁用文本不进入本轮提示词。"
+        "请从在世主角此刻要完成的具体行动、可见阻力、手中独有资源和当场选择出发；"
+        "开局事件必须由本题材当前世界状态触发，而不是照搬任何预设模板。\n"
     )
 
 
@@ -1452,7 +1567,7 @@ def _build_hook_from_engine_messages(
 
     system = (
         "你是商业小说主编。候选项目卡已经冻结，你只负责找到其中最有人味、最想点的"
-        "开局表达；不得添加随机代价、折寿失忆残缺、幕后集团或新主线。只输出JSON。"
+        "开局表达；不得添加无因果的固定惩罚、幕后集团或新主线。只输出JSON。"
     )
     audience_line = (
         f"频道/受众：{audience_orientation}（三条钩子都写给该频道读者，用他们要的爽点角度切入）\n"
@@ -1471,7 +1586,8 @@ def _build_hook_from_engine_messages(
         "但都必须是完整故事，不能只有气氛或一个片段。每条30-75字、单句。\n"
         + render_plain_language_writer_rule()
         + "\n"
-        "删除债、账、规则、体系、权限、概率、循环等抽象词，除非是场景中摸得到的物件。"
+        "概念只使用读者能在开局场景直接看见或理解的人、物、行动与结果；"
+        "抽象机制必须改写成主角当场能做的具体事情。"
         "删除‘一步步、从此、真正的、命运齿轮、随着真相浮现’等AI概括词。不要解释500章、"
         "不要写‘他只能/他必须/否则’，不要照抄字段名。\n"
         # The judge KOs these before scoring; show them here so the generator
@@ -1620,14 +1736,14 @@ def _build_seriality_messages(
         "1.1 unit_frequency 写清2-4章内主角会作出的选择、试错或遭遇的反制。"
         f"unit_count_estimate 填不少于{required_units}的节奏预算；少于该数说明2-4章一次"
         "与目标篇幅自相矛盾。裁判不会因数字高而加分，容量仍由行动家族、阶段变化和"
-        "后果链证明。禁止用新尸体/新案件/新产品换名凑数；\n"
+        "后果链证明。每个单元必须由既有行动、关系或规则变化自然触发；\n"
         f"1.2 unit_families 至少{family_min}类不同冲突语法，例如发现、交易、关系选择、公开博弈、"
         "建设、反制、内部裂变；每类都必须由核心机制触发，不是外部随机投喂。\n"
         "1.3 role_ladder 与 world_ladder 各至少4级。前者写每阶段主角的新职责和新动作，"
         "后者写资源、关系网络、规则与利益相关者如何变化；不得只升官、换地图或成神。\n"
         f"2. renewal_sources 至少含{renewal_min}种相互独立的来源，并至少两种来自主角既有行动的"
-        "后果、团队新发现、对手反制、客户/关系变化或制度反馈；不得只依赖外部不断送来"
-        "新尸体、新委托、新遗迹、新失败项目；\n"
+        "后果、团队新发现、对手反制、客户/关系变化或制度反馈；各种来源必须能回溯到"
+        "主角已经做出的选择和逐步扩大的世界关系；\n"
         "3. accumulation_tracks 每轮都必须留下不可逆变化，禁止打完复位；\n"
         f"4. phase_transitions 至少{phase_min}阶段，每项必须写明确连续章号范围，"
         f"从第1章连续覆盖到第{chapter_count}章；最后一项未到第{chapter_count}章即失败，"
@@ -1946,25 +2062,38 @@ def _hard_floor_failed_axes(
 ) -> list[str]:
     """Two-tier floor verdict. Returns the axes that make the candidate fail
     (empty list = qualified). Catastrophes always fail; soft misses fail only
-    when there is more than one, in which case every miss is named so the
-    retry feedback / near-miss selector see the full picture."""
+    when they exceed the configured allowance, in which case every miss is
+    named so the retry feedback / near-miss selector sees the full picture."""
 
+    catastrophe_floor = float(
+        hard_floors.get("catastrophe_floor", _FLOOR_CATASTROPHE)
+    )
+    predictable_catastrophe = float(
+        hard_floors.get(
+            "predictable_catastrophe",
+            _PREDICTABLE_CATASTROPHE,
+        )
+    )
+    soft_miss_allowance = max(
+        0,
+        int(hard_floors.get("soft_miss_allowance", _SOFT_MISS_ALLOWANCE)),
+    )
     catastrophes: list[str] = []
     soft: list[str] = []
     for key, label, default in _FLOOR_AXIS_LABELS:
         value = float(scores.get(key, 0.0))
-        if value < _FLOOR_CATASTROPHE:
+        if value < catastrophe_floor:
             catastrophes.append(label)
         elif value < float(hard_floors.get(key, default)):
             soft.append(label)
     predictable = float(scores.get("predictable", 10.0))
-    if predictable > _PREDICTABLE_CATASTROPHE:
+    if predictable > predictable_catastrophe:
         catastrophes.append("可预测性")
     elif predictable > float(hard_floors.get("predictable_max", 5.5)):
         soft.append("可预测性")
     if catastrophes:
         return catastrophes + soft
-    if len(soft) > _SOFT_MISS_ALLOWANCE:
+    if len(soft) > soft_miss_allowance:
         return soft
     return []
 
@@ -2271,16 +2400,73 @@ async def _default_generator(
 
 
 def _render_avoid_mechanisms_block(avoid_mechanisms: list[dict[str, Any]]) -> str:
-    entries = [
-        str(item.get("golden_finger") or item.get("premise") or "").strip()[:60]
-        for item in avoid_mechanisms
-        if isinstance(item, dict)
-    ]
-    entries = [e for e in entries if e][:6]
-    if not entries:
+    count = sum(1 for item in avoid_mechanisms if isinstance(item, dict))
+    if not count:
         return ""
-    lines = "\n".join(f"- {e}" for e in entries)
-    return f"【本站同题材旧书已用机制——不得复用其核心】\n{lines}\n"
+    return (
+        f"【跨书差异化】已有{count}条同题材机制指纹将在生成后做程序化比对；"
+        "旧书标题、前提、金手指和意象原文均不进入提示词。"
+        "请让本书的作用原理、局面变化和持续冲突从当前用户设定独立生长。\n"
+    )
+
+
+def _prefer_ontology_clean(
+    finalists: list[Any],
+    genre_intent_contract: Any,
+) -> list[Any]:
+    """Prefer champions that already sit inside the chosen genre's ontology.
+
+    Deliberately a *preference*, not a filter. If every finalist trips the
+    ontology check, the whole list is returned unchanged: emptying the pool
+    would turn a book that merely needs a nudge into a book that cannot be
+    created at all, and this repo has already paid for gates that starve their
+    own candidate pool.
+
+    The downstream tripwire stays exactly as strict as before — this only stops
+    the tournament from *volunteering* a champion that the tripwire will kill.
+    """
+
+    if genre_intent_contract is None or len(finalists) < 2:
+        return finalists
+    try:
+        from bestseller.services.genre_intent_contract import (  # noqa: PLC0415
+            detect_genre_native_ontology_violations,
+        )
+    except Exception:  # pragma: no cover — defensive
+        return finalists
+
+    clean: list[Any] = []
+    drifted: list[tuple[Any, tuple[str, ...]]] = []
+    for candidate in finalists:
+        surface = " ".join(
+            str(getattr(candidate, field, "") or "")
+            for field in ("concept", "mechanism", "hook_question", "progress_bar")
+        )
+        try:
+            hits = detect_genre_native_ontology_violations(
+                surface, genre_intent_contract
+            )
+        except Exception:  # pragma: no cover — never fail the tournament
+            hits = ()
+        if hits:
+            drifted.append((candidate, tuple(hits)))
+        else:
+            clean.append(candidate)
+
+    if not clean:
+        logger.info(
+            "concept tournament: every finalist trips the genre ontology "
+            "(%s); keeping the full pool rather than starving it",
+            ", ".join(sorted({h for _, hs in drifted for h in hs})) or "?",
+        )
+        return finalists
+    if drifted:
+        logger.info(
+            "concept tournament: demoted %d ontology-drifting finalist(s) (%s)",
+            len(drifted),
+            ", ".join(sorted({h for _, hs in drifted for h in hs})),
+        )
+    return clean
 
 
 async def run_concept_tournament(
@@ -2305,10 +2491,20 @@ async def run_concept_tournament(
     tone_preference: str = "",
     effect_skills: tuple[str, ...] | list[str] = (),
     creation_intent_block: str = "",
+    allow_debt_theme: bool | None = None,
+    allow_death_theme: bool | None = None,
+    genre_intent_contract: Any = None,
 ) -> ConceptTournamentResult:
     """跑一轮概念淘汰赛。异常转成 winner=None，由调用方按目标篇幅决定是否阻断。
 
     四个模型工序均可注入（测试）；``rng`` 可注入固定维度抽样。
+
+    ``genre_intent_contract`` lets the tournament prefer a champion that already
+    lives inside the chosen genre's ontology. Without it the tournament was free
+    to crown a concept that the fail-closed ontology tripwire at the end of
+    conception would then kill — generator and acceptor disagreeing, with a whole
+    conception burned in between (2026-08-05, 东方玄幻 request crowned an
+    underworld-civil-servant KPI comedy and the book died at the last gate).
     """
 
     cfg = config if config is not None else load_concept_tournament_config()
@@ -2538,6 +2734,9 @@ async def run_concept_tournament(
                     prompt_arm=raw_idea_prompt_arm,
                     focus_hint=focus_hint,
                     audience_orientation=audience_orientation,
+                    tone_preference=tone_preference,
+                    effect_skills=effect_skills,
+                    creation_intent_block=creation_intent_block,
                 )
                 result.candidate_prompt_chars += len(pool_system) + len(pool_user)
                 result.candidate_generation_calls += 1
@@ -2547,6 +2746,25 @@ async def run_concept_tournament(
                 for record in _parse_raw_idea_records(pool_raw, limit=batch_count):
                     lane = str(record["lane"])
                     seed = str(record["seed"])
+                    raw_guard = _candidate_hard_rejection_reason(
+                        ConceptCandidate(dimension=lane, concept=seed),
+                        seed_concept=seed_concept,
+                        tone_preference=tone_preference,
+                        effect_skills=effect_skills,
+                        cost_style=cost_style,
+                        allow_debt_theme=allow_debt_theme,
+                        allow_death_theme=allow_death_theme,
+                    )
+                    if raw_guard:
+                        result.engine_rejections.append(
+                            {
+                                "dimension": lane,
+                                "scores": {},
+                                "reason": "原始创意反污染门失败: " + raw_guard,
+                                "failed_axes": ["creation_intent_pollution"],
+                            }
+                        )
+                        continue
                     normalized_seed = "".join(seed.split())
                     if normalized_seed in seen_seeds:
                         continue
@@ -2785,6 +3003,31 @@ async def run_concept_tournament(
                             }
                         )
                         continue
+                    kernel_guard = _candidate_hard_rejection_reason(
+                        _attach_engine_kernel(
+                            ConceptCandidate(
+                                dimension=dimension,
+                                concept=premise_seed,
+                            ),
+                            kernel,
+                        ),
+                        seed_concept=seed_concept,
+                        tone_preference=tone_preference,
+                        effect_skills=effect_skills,
+                        cost_style=cost_style,
+                        allow_debt_theme=allow_debt_theme,
+                        allow_death_theme=allow_death_theme,
+                    )
+                    if kernel_guard:
+                        result.engine_rejections.append(
+                            {
+                                "dimension": dimension,
+                                "scores": {},
+                                "reason": "项目卡反污染门失败: " + kernel_guard,
+                                "failed_axes": ["creation_intent_pollution"],
+                            }
+                        )
+                        continue
                     prebuilt_kernels[(dimension, premise_seed)] = kernel
                     cards.append((dimension, premise_seed, kernel))
                 except Exception:
@@ -2809,6 +3052,9 @@ async def run_concept_tournament(
                 verdicts = verdict_payload.get("verdicts")
                 if isinstance(verdicts, list):
                     approved: list[tuple[str, str]] = []
+                    clean_near_passes: list[
+                        tuple[float, float, str, str]
+                    ] = []
                     verdict_by_index: dict[int, dict[str, Any]] = {}
                     for verdict in verdicts:
                         if not isinstance(verdict, dict):
@@ -2877,8 +3123,36 @@ async def run_concept_tournament(
                                     "failed_axes": failed_engine_axes,
                                 }
                             )
+                            clean_near_passes.append(
+                                (
+                                    min(engine_scores.values()),
+                                    sum(engine_scores.values()),
+                                    dimension,
+                                    premise_seed,
+                                )
+                            )
                         else:
                             approved.append((dimension, premise_seed))
+                    minimum_survivors = min(
+                        len(cards),
+                        max(
+                            0,
+                            int(cfg.get("premise_card_min_survivors", 0) or 0),
+                        ),
+                    )
+                    if len(approved) < minimum_survivors:
+                        approved_keys = set(approved)
+                        for _, _, dimension, premise_seed in sorted(
+                            clean_near_passes,
+                            reverse=True,
+                        ):
+                            key = (dimension, premise_seed)
+                            if key in approved_keys:
+                                continue
+                            approved.append(key)
+                            approved_keys.add(key)
+                            if len(approved) >= minimum_survivors:
+                                break
                     work_items = approved
                     batch_review_complete = True
         for _card_idx, (dimension, premise_seed) in enumerate(work_items):
@@ -3059,6 +3333,23 @@ async def run_concept_tournament(
         penalty_by_concept: dict[str, float] = {}
         for candidate in candidates:
             penalty = 0.0
+            hard_reason = _candidate_hard_rejection_reason(
+                candidate,
+                seed_concept=seed_concept,
+                tone_preference=tone_preference,
+                effect_skills=effect_skills,
+                cost_style=cost_style,
+                allow_debt_theme=allow_debt_theme,
+                allow_death_theme=allow_death_theme,
+            )
+            if hard_reason:
+                annotated.append(
+                    _dc_replace(
+                        candidate,
+                        rejected_reason="建书选项/反污染门失败: " + hard_reason,
+                    )
+                )
+                continue
             anti_pattern = _deterministic_anti_pattern(candidate)
             if anti_pattern:
                 annotated.append(
@@ -3392,6 +3683,43 @@ async def run_concept_tournament(
                 )
                 return result
 
+        # Prompt presence is not adherence.  Before a contender becomes the
+        # shared source for every downstream agent, deterministically reject
+        # explicit-option drift and the recurring debt/death default motifs.
+        guarded_contenders: list[ConceptCandidate] = []
+        guarded_by_concept: dict[str, ConceptCandidate] = {}
+        for contender in contenders:
+            hard_reason = _candidate_hard_rejection_reason(
+                contender,
+                seed_concept=seed_concept,
+                tone_preference=tone_preference,
+                effect_skills=effect_skills,
+                cost_style=cost_style,
+                allow_debt_theme=allow_debt_theme,
+                allow_death_theme=allow_death_theme,
+            )
+            guarded = (
+                _dc_replace(
+                    contender,
+                    rejected_reason="建书选项/反污染门失败: " + hard_reason,
+                )
+                if hard_reason
+                else contender
+            )
+            guarded_by_concept[guarded.concept] = guarded
+            if guarded.rejected_reason is None:
+                guarded_contenders.append(guarded)
+        result.candidates = [
+            guarded_by_concept.get(candidate.concept, candidate)
+            for candidate in result.candidates
+        ]
+        contenders = guarded_contenders
+        if not contenders:
+            logger.warning(
+                "concept tournament: all contenders failed creation-intent/pollution gate"
+            )
+            return result
+
         # ── 5) 长篇决赛：只扩展独立终审前列，禁止反向修改故事种子 ─────────
         finalist_count = max(1, int(cfg.get("seriality_finalist_count", 2)))
         # 承载力属于冻结项目卡，不属于 promise/paradox/scene 三种广告切口。
@@ -3580,6 +3908,7 @@ async def run_concept_tournament(
         if not passed:
             logger.warning("concept tournament: no seriality-qualified finalists")
             return result
+        passed = _prefer_ontology_clean(passed, genre_intent_contract)
         result.winner = max(passed, key=lambda c: c.composite or 0.0)
         return result
     except Exception:
@@ -3595,7 +3924,6 @@ def render_high_concept_block(result: ConceptTournamentResult) -> str:
     if winner is None:
         return ""
     ladder = "→".join(winner.question_ladder[:3])
-    ban_lines = "\n".join(f"- {b}" for b in result.banned_cliches[:10])
     parts = [
         "",
         "【本书已选定高概念——全程必须严格围绕它展开，禁止回归题材默认套路】",
@@ -3604,8 +3932,8 @@ def render_high_concept_block(result: ConceptTournamentResult) -> str:
         f"认知缺口：{winner.hook_question}",
         f"长线引擎：进度条={winner.progress_bar}；问题梯={ladder}；中期战场(约第50章)={winner.ch50}",
     ]
-    if ban_lines:
-        parts.append(f"【本题材禁用俗套——沾任何一条即为不合格产物】\n{ban_lines}")
+    if result.banned_cliches:
+        parts.append("俗套库已在生成后完成程序化筛查；禁用样本文本不向下游传播。")
     return "\n".join(parts)
 
 

@@ -62,6 +62,7 @@ from bestseller.services.gate_registry import (
     project_blocks_all_prose_generation,
     project_resume_is_terminally_blocked,
 )
+from bestseller.services.production_control import halted_project_ids
 from bestseller.services.projects import is_project_delete_tombstoned
 from bestseller.services.repair_impact import compute_continuation_readiness
 from bestseller.settings import AppSettings
@@ -338,6 +339,10 @@ _AUTO_OUTLINE_REPLAN_REASONS = frozenset(
         "commercial_planning_readiness_gate_failed",
     }
 )
+
+# slug -> the pause reason already announced, so a project no lane can own is
+# reported once at WARNING instead of once a minute at INFO.
+_INERT_PROJECTS_ANNOUNCED: dict[str, str] = {}
 
 
 def _project_requires_auto_outline_replan(project: ProjectModel) -> bool:
@@ -758,7 +763,15 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
     projects = list(await session.scalars(select(ProjectModel)))
     stuck: list[StuckProject] = []
 
+    # Operator intent lives in its own table precisely so this check cannot be
+    # defeated by the pipeline rewriting ``projects.metadata`` wholesale. Read
+    # it fresh on every sweep: a stop issued since the last scan must take
+    # effect on this one.
+    halted = await halted_project_ids(session)
+
     for project in projects:
+        if project.id in halted:
+            continue
         if _project_is_archived(project):
             continue
         if _project_is_focus_paused(project):
@@ -867,11 +880,33 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             continue
 
         if project_blocks_all_prose_generation(project):
-            logger.info(
-                "self-heal: skipped slug=%s — outline replan is not safely "
-                "auto-runnable after prose was committed",
-                project.slug,
+            # Genuine dead end, and it must say so out loud. The replan lane
+            # above only runs while zero drafts are committed and this lane
+            # refuses every project whose architecture is rejected, so a book
+            # that lands here is owned by nobody. It used to leave nothing but
+            # an INFO line once a minute — the same "the book just vanished"
+            # failure mode as a task whose error is invisible in the dashboard.
+            # Persist why it is inert so the UI can show it, and say it at
+            # WARNING once rather than whispering it forever.
+            #
+            # The reason is not written back to ``projects.metadata`` on
+            # purpose: a running pipeline rewrites that JSONB wholesale from its
+            # own stale copy, so an external write here would be silently
+            # clobbered. ``production_pause_reason`` already records the cause.
+            reason = (
+                str(meta.get("production_pause_reason") or "").strip()
+                or "planning_architecture_rejected"
             )
+            if _INERT_PROJECTS_ANNOUNCED.get(project.slug) != reason:
+                _INERT_PROJECTS_ANNOUNCED[project.slug] = reason
+                logger.warning(
+                    "self-heal: slug=%s is inert — outline replan is not safely "
+                    "auto-runnable after prose was committed (reason=%s); "
+                    "no lane owns this project, an operator must decide whether "
+                    "to replan or accept the written chapters",
+                    project.slug,
+                    reason,
+                )
             continue
 
         explicit_stuck_chapter: int | None = None
@@ -939,21 +974,31 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                 )
                 continue
             if not readiness.local_blocked_chapters:
+                # Nothing left to repair — which is not the same as nothing
+                # left to do. ``continue`` here skipped the project outright,
+                # so the continuation lanes below (under-target writing) never
+                # got a turn: a 30-chapter book whose first 8 chapters had all
+                # settled as ``quality_debt`` reported "no actionable repair"
+                # every five minutes and never wrote chapter 9
+                # (2026-08-03, xianxia-upgrade-1785697772). We are already past
+                # the ``can_continue`` check, so writing is explicitly allowed.
                 logger.info(
-                    "self-heal: slug=%s has only terminal quality-debt chapters; no actionable repair",
+                    "self-heal: slug=%s has only terminal quality-debt chapters; "
+                    "no repair to do — continuation lanes still apply",
                     project.slug,
                 )
-                continue
-            # Only local-quality blocks remain — do not starve continuation.
-            local_repair_pending = True
-            local_repair_chapters = readiness.local_blocked_chapters
-            logger.info(
-                "self-heal: slug=%s has %d local-quality block(s) — writing "
-                "continues in parallel (%s)",
-                project.slug,
-                len(readiness.local_blocked_chapters),
-                readiness.reason,
-            )
+                local_repair_pending = False
+            else:
+                # Only local-quality blocks remain — do not starve continuation.
+                local_repair_pending = True
+                local_repair_chapters = readiness.local_blocked_chapters
+                logger.info(
+                    "self-heal: slug=%s has %d local-quality block(s) — writing "
+                    "continues in parallel (%s)",
+                    project.slug,
+                    len(readiness.local_blocked_chapters),
+                    readiness.reason,
+                )
 
         pending_rewrite_tasks = await _pending_rewrite_task_count(session, project.id)
         if pending_rewrite_tasks > 0:

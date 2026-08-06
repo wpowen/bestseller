@@ -69,6 +69,155 @@ def test_genuinely_modern_terms_still_trip(premise: str) -> None:
     assert detect_genre_native_ontology_violations(premise, _native_contract())
 
 
+def test_final_surface_ignores_guardrails_and_judge_commentary() -> None:
+    """Control-plane text is not story ontology.
+
+    A tournament judge may correctly say "this is not a workplace story", and
+    a profile guardrail may forbid phones/APPs.  Serialising those metadata
+    fields into the final story scan turns the *prohibition* into evidence of
+    drift and kills an otherwise native book.
+    """
+
+    from bestseller.services.conception import _conception_ontology_story_surface
+
+    surface = _conception_ontology_story_surface(
+        title="祖脉无名账",
+        premise="宗门账房追查一笔没有署名的祖脉供奉。",
+        synopsis="他沿灵契与香火流向追到被抹去的旧峰。",
+        tags=["仙侠", "宗门"],
+        writing_profile={
+            "character": {"protagonist_archetype": "宗门底层账房"},
+            "world": {"setting": "山门、灵契与祖脉构成秩序"},
+            "style": {
+                "taboo_topics": ["现代职场", "手机", "APP"],
+                "custom_rules": ["不得写成职场故事"],
+            },
+        },
+        high_concept={
+            "concept": "底层账房发现祖脉供奉正在喂养一个不存在的峰主。",
+            "opponent_system": "控制香火账与灵契的长老会",
+            "judge_reason": "不像现代职场文，题材原生度合格",
+            "seriality_judge": {"reason": "没有依赖APP或手机推进"},
+            "rejected_reason": "职场感过强",
+        },
+        story_spine={"against": "控制香火账与灵契的长老会"},
+    )
+
+    assert detect_genre_native_ontology_violations(surface, _native_contract()) == ()
+
+
+def test_final_surface_still_scans_story_facts() -> None:
+    """Narrowing the surface must not weaken the actual ontology guard."""
+
+    from bestseller.services.conception import _conception_ontology_story_surface
+
+    surface = _conception_ontology_story_surface(
+        title="掌门群聊",
+        premise="弟子掏出手机查看宗门群聊。",
+        synopsis="",
+        tags=[],
+        writing_profile={
+            "character": {"golden_finger": "用APP查看灵脉价格"},
+            "world": {"setting": "写字楼里的修仙公司"},
+            "style": {"taboo_topics": ["现代职场"]},
+        },
+        high_concept={
+            "concept": "他在职场里修炼",
+            "judge_reason": "题材原生度不足",
+        },
+        story_spine={"who": "手机不离手的弟子"},
+    )
+
+    assert set(detect_genre_native_ontology_violations(surface, _native_contract())) >= {
+        "手机",
+        "写字楼",
+        "职场",
+        "app",
+    }
+
+
+@pytest.mark.asyncio
+async def test_late_story_drift_gets_one_genre_native_repair(monkeypatch) -> None:
+    """Copywriting may introduce drift after the early scan; repair it once."""
+
+    from bestseller.services import conception
+
+    async def fake_llm_call_json(*args, **kwargs):
+        return (
+            {
+                "title": "祖脉无名账",
+                "premise": "宗门账房追查祖脉供奉。",
+                "synopsis": "他沿灵契追到被抹去的旧峰。",
+                "tags": ["仙侠", "宗门"],
+                "writing_profile_story": {
+                    "character": {"golden_finger": "能辨认被篡改的灵契"},
+                    "world": {"setting": "山门、灵契与祖脉构成秩序"},
+                    "market": {"logline": "一笔无名供奉牵出失落旧峰"},
+                },
+                "story_spine": {"against": "控制香火账的长老会"},
+                "high_concept_story": {"mechanism": "以香火供奉考绩弟子"},
+            },
+            ["repair-run"],
+        )
+
+    monkeypatch.setattr(conception, "_llm_call_json", fake_llm_call_json)
+    repaired = await conception._repair_final_ontology_drift(
+        object(),
+        object(),
+        violations=("职场",),
+        title="祖脉无名账",
+        premise="宗门账房追查祖脉供奉。",
+        synopsis="他像处理职场工单一样处理供奉。",
+        tags=["仙侠", "职场"],
+        writing_profile={
+            "character": {"golden_finger": "职场报表术"},
+            "world": {"setting": "宗门"},
+            "market": {"logline": "修真职场账房"},
+            "style": {"taboo_topics": ["职场"]},
+        },
+        story_spine={"against": "职场式长老会"},
+        # The champion is part of the verdict surface, so it is part of the
+        # repair surface too — a term landing here used to be unfixable.
+        high_concept={"mechanism": "以职场KPI考核弟子"},
+        genre_label="仙侠",
+        sub_genre_label="修真文明",
+        language="zh-CN",
+    )
+
+    title, premise, synopsis, tags, profile, spine, champion, run_ids = repaired
+    surface = conception._conception_ontology_story_surface(
+        title=title,
+        premise=premise,
+        synopsis=synopsis,
+        tags=tags,
+        writing_profile=profile,
+        high_concept=champion,
+        story_spine=spine,
+    )
+    assert detect_genre_native_ontology_violations(surface, _native_contract()) == ()
+    assert profile["style"]["taboo_topics"] == ["职场"]
+    assert run_ids == ["repair-run"]
+    # Scanning the repaired champion is the point: the verdict surface reads it,
+    # so leaving it out of the re-scan would let this test pass while a book
+    # with a modern term in high_concept still died at the gate.
+    assert champion["mechanism"] == "以香火供奉考绩弟子"
+
+
+def test_final_tripwire_consumes_repair_and_rechecks() -> None:
+    """The helper must be wired into the production final gate."""
+
+    import inspect
+
+    from bestseller.services import conception
+
+    source = inspect.getsource(conception.run_conception_pipeline)
+    final_gate = source[source.index("# Final ontology tripwire") :]
+    assert "await _repair_final_ontology_drift(" in final_gate
+    assert final_gate.count("detect_genre_native_ontology_violations(") >= 2
+    assert "if ontology_violations:" in final_gate
+    assert "raise ConceptContractError" in final_gate
+
+
 def test_the_exact_field_premise_survives() -> None:
     """The premise the user actually tried, verbatim in shape."""
 
@@ -215,7 +364,10 @@ def test_ontology_block_is_actionable_not_a_raw_crash() -> None:
 
     source = inspect.getsource(conception.run_conception_pipeline)
     idx = source.index("ontology_violations:")
-    region = source[idx : idx + 1400]
+    # The bounded late-drift repair now sits between detection and the final
+    # deliberate block, so keep the assertion window wide enough to include
+    # both the repair and its fail-closed fallback.
+    region = source[idx : idx + 5200]
 
     assert "ConceptContractError" in region, (
         "the ontology tripwire must raise the graceful block exception, not "

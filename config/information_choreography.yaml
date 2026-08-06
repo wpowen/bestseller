@@ -113,7 +113,7 @@ sample_belief_audit:
   ch1_b2:
     planted_in_chapter: 1
     reader_belief: 主角只是要查死者溺死案
-    truth: 这是十五年前沈家旧案的连锁灭口
+    truth: 这是十五年前那桩旧案的连锁灭口
     payoff_chapter: 3  # 在 ch3 信件里揭一半
     payoff_method: 清尘信件
     misdirection_type: 半真半假

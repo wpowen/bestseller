@@ -78,7 +78,7 @@ class BookDesignValidationReport:
         }
 
 
-_CJK_NAME_RE = re.compile(r"^([\u4e00-\u9fff]{2,4})(?=[，,、：:\s]|$)")
+_CJK_NAME_RE = re.compile(r"^([\u4e00-\u9fff]{2,4})(?=[，,、：:\s]|$|是)")
 _NON_NAME_PREFIXES = (
     "一个",
     "一名",
@@ -99,7 +99,7 @@ _NAME_LEADING_TITLES = (
     "矿场贱民", "贱民",
     "少年剑修", "剑修", "剑客", "书生", "画师", "捕快", "仵作", "医师", "药师",
     "审计员", "审计师", "工程监理", "监理", "会计师", "记者", "律师", "警察",
-    "少年", "少女", "青年", "男人", "女人", "落魄", "前世", "重生",
+    "少年", "少女", "青年", "男人", "女人", "凡人", "落魄", "前世", "重生",
 )
 # A "name" containing these is a phrase, not a person.
 _NAME_DISQUALIFYING_TOKENS = (

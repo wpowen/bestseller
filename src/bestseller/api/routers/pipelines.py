@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-import uuid
+import time
 from typing import Any
 from urllib.parse import urlparse
+import uuid
 
 from arq.connections import ArqRedis, RedisSettings, create_pool
-from fastapi import APIRouter, HTTPException, Path, status
+from fastapi import APIRouter, Header, HTTPException, Path, status
 from sqlalchemy import select
 
 from bestseller.api.deps import ApiKeyDep, RedisDep, SessionDep, SettingsDep
@@ -28,10 +29,17 @@ router = APIRouter(tags=["pipelines"])
 # starts (no permanent lock), and it never blocks legitimate re-runs once a
 # pipeline has finished.
 _PIPELINE_START_TTL_SECONDS = 120
+# Keep the enqueue-time task metadata long enough for the caller to poll it out
+# of a slow/heavy run (matches the worker's 24h job timeout + headroom).
+_TASK_META_TTL_SECONDS = 7 * 86400
 
 
 def _pipeline_start_key(project_id: Any) -> str:
     return f"pipeline:starting:{project_id}"
+
+
+def _task_meta_key(task_id: str) -> str:
+    return f"task:{task_id}:meta"
 
 
 async def _reserve_pipeline_start(redis: Any, project_id: Any) -> str | None:
@@ -82,9 +90,13 @@ async def _release_pipeline_start(redis: Any, project_id: Any, token: str | None
 # Workflow types that count as "pipeline in progress" for concurrency guard.
 # Planning types included so double-click / heal-job cannot spawn zombie
 # generate_volume_plan runs that thrash outline artifacts (2026-07-09).
+# chapter_pipeline/scene_pipeline included so a chapter start is also guarded
+# by the DB (a single chapter run is still a project pipeline in flight).
 _PIPELINE_WORKFLOW_TYPES = frozenset({
     "autowrite_pipeline",
     "project_pipeline",
+    "chapter_pipeline",
+    "scene_pipeline",
     "generate_novel_plan",
     "generate_volume_plan",
     "generate_foundation_plan",
@@ -173,8 +185,13 @@ async def _enqueue(
     settings: AppSettings,
     task_name: str,
     payload: dict[str, Any],
+    idempotency_key: str | None = None,
 ) -> TaskEnqueuedResponse:
-    task_id = str(uuid.uuid4())
+    # Request-level idempotency (P09): a caller-supplied Idempotency-Key header
+    # becomes the ARQ job id, which ARQ dedups — re-sending the same key does
+    # not enqueue a duplicate job. Absent the header we fall back to a fresh
+    # UUID (legacy behavior).
+    task_id = idempotency_key or str(uuid.uuid4())
     pool = await _get_arq_pool(settings)
     await pool.enqueue_job(
         task_name,
@@ -182,6 +199,22 @@ async def _enqueue(
         payload=payload,
         _job_id=task_id,
     )
+    # Best-effort: record the enqueue-time mapping so /tasks/{id} can fall back
+    # to DB workflow state before the first Redis progress event exists. Without
+    # it a task that fails before its first emit (worker not started / project
+    # missing) returns 404 forever and "queued" is unobservable (P04).
+    try:
+        await pool.hset(  # type: ignore[misc]
+            _task_meta_key(task_id),
+            mapping={
+                "task_name": task_name,
+                "project_slug": str(payload.get("project_slug") or ""),
+                "created_at": str(time.time()),
+            },
+        )
+        await pool.expire(_task_meta_key(task_id), _TASK_META_TTL_SECONDS)
+    except Exception:
+        logger.debug("task meta write skipped (redis unavailable)", exc_info=True)
     return TaskEnqueuedResponse(task_id=task_id)
 
 
@@ -197,15 +230,18 @@ async def start_autowrite(
     settings: SettingsDep,
     redis: RedisDep,
     _key: ApiKeyDep,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> TaskEnqueuedResponse:
     project = await _get_project_or_404(slug, session)
-    await _assert_no_active_pipeline(session, project)
+    if not body.force:
+        await _assert_no_active_pipeline(session, project)
     token = await _reserve_pipeline_start(redis, project.id)
     try:
         return await _enqueue(
             settings,
             "run_autowrite_task",
             {"project_slug": slug, "premise": body.premise},
+            idempotency_key=idempotency_key,
         )
     except Exception:
         await _release_pipeline_start(redis, project.id, token)
@@ -224,9 +260,11 @@ async def start_project_pipeline(
     settings: SettingsDep,
     redis: RedisDep,
     _key: ApiKeyDep,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> TaskEnqueuedResponse:
     project = await _get_project_or_404(slug, session)
-    await _assert_no_active_pipeline(session, project)
+    if not body.force:
+        await _assert_no_active_pipeline(session, project)
     token = await _reserve_pipeline_start(redis, project.id)
     try:
         return await _enqueue(
@@ -237,6 +275,7 @@ async def start_project_pipeline(
                 "chapter_first": body.chapter_first,
                 "stop_on_chapter_failure": body.stop_on_chapter_failure,
             },
+            idempotency_key=idempotency_key,
         )
     except Exception:
         await _release_pipeline_start(redis, project.id, token)
@@ -253,18 +292,33 @@ async def start_chapter_pipeline(
     chapter_number: int,
     session: SessionDep,
     settings: SettingsDep,
+    redis: RedisDep,
     _key: ApiKeyDep,
     body: PipelineRequest | None = None,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> TaskEnqueuedResponse:
     if chapter_number < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="chapter_number must be >= 1")
-    await _get_project_or_404(slug, session)
-    return await _enqueue(
-        settings,
-        "run_chapter_pipeline_task",
-        {
-            "project_slug": slug,
-            "chapter_number": chapter_number,
-            "chapter_first": body.chapter_first if body is not None else None,
-        },
-    )
+    project = await _get_project_or_404(slug, session)
+    if not (body is not None and body.force):
+        await _assert_no_active_pipeline(session, project)
+    # Same per-project start reservation as autowrite/project pipelines: a
+    # double-click or near-simultaneous retry used to enqueue duplicate chapter
+    # runs (each call used a fresh job id, and this endpoint had no guard). The
+    # reservation covers the enqueue→row window; the DB active-run guard above
+    # covers the rest of the run.
+    token = await _reserve_pipeline_start(redis, project.id)
+    try:
+        return await _enqueue(
+            settings,
+            "run_chapter_pipeline_task",
+            {
+                "project_slug": slug,
+                "chapter_number": chapter_number,
+                "chapter_first": body.chapter_first if body is not None else None,
+            },
+            idempotency_key=idempotency_key,
+        )
+    except Exception:
+        await _release_pipeline_start(redis, project.id, token)
+        raise

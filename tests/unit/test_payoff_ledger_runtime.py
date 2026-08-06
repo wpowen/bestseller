@@ -88,7 +88,7 @@ def test_merge_payoff_ledger_audit_promotes_rewrite_for_due_payoff() -> None:
 
     assert merged.verdict == "rewrite"
     assert merged.severity_max == "major"
-    assert "兑现账本修复" in (merged.rewrite_instructions or "")
+    assert "兑现清单修复" in (merged.rewrite_instructions or "")
     assert "payoff_ledger_audit" in merged.evidence_summary
     assert any(f.category == "payoff_ledger" for f in merged.findings)
 
@@ -118,7 +118,7 @@ def test_render_payoff_ledger_planner_contract_when_enabled_zh() -> None:
     with mock.patch.dict("os.environ", {"BESTSELLER_METHODOLOGY_V2": "1"}):
         block = render_payoff_ledger_planner_contract(language="zh-CN")
 
-    assert "方法论 v2 兑现账本合同" in block
+    assert "方法论 v2 兑现清单合同" in block
     assert "payoffs_due" in block
     assert "payoff_evidence_paths" in block
     assert "至少兑现 1 个到期 payoff" in block

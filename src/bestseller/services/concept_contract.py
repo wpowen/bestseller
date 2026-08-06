@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import copy
 import hashlib
 import json
 from typing import Any
@@ -222,6 +223,86 @@ def build_concept_contract(
     }
 
 
+def _concept_contract_hash_source(
+    contract: Mapping[str, Any],
+    *,
+    target_chapters: int,
+) -> dict[str, Any] | None:
+    hook = contract.get("hook_card")
+    proof = contract.get("seriality_proof")
+    if not isinstance(hook, Mapping) or not isinstance(proof, Mapping):
+        return None
+    return {
+        "concept": _text(hook.get("one_liner")),
+        "mechanism": _text(hook.get("story_motion")),
+        "hook_question": _text(hook.get("reader_question")),
+        "protagonist_identity": _text(hook.get("protagonist")),
+        "protagonist_private_desire": _text(hook.get("private_desire")),
+        "protagonist_flaw": _text(hook.get("protagonist_flaw")),
+        "core_abnormality": _text(hook.get("abnormality")),
+        "opening_crisis": _text(hook.get("opening_event")),
+        "opponent_system": _text(hook.get("central_contradiction")),
+        "decision_proof": _text(hook.get("decision_proof")),
+        "emotional_promise": _text(hook.get("emotional_promise")),
+        "genre": _text(contract.get("genre")),
+        "sub_genre": _text(contract.get("sub_genre")),
+        "target_chapters": int(target_chapters),
+        "repeatable_story_unit": _text(proof.get("repeatable_story_unit")),
+        "unit_families": _items(proof.get("unit_families")),
+        "unit_frequency": _text(proof.get("unit_frequency")),
+        "unit_count_estimate": _nonnegative_int(proof.get("unit_count_estimate")),
+        "renewal_sources": _items(proof.get("renewal_sources")),
+        "accumulation_tracks": _items(proof.get("accumulation_tracks")),
+        "phase_transitions": _items(proof.get("phase_transitions")),
+        "opposing_ecology": _items(proof.get("opposing_ecology")),
+        "mystery_ladder": _items(proof.get("mystery_ladder")),
+        "endgame_direction": _text(proof.get("endgame_direction")),
+    }
+
+
+def reseal_concept_contract_lineage(
+    contract: Mapping[str, Any],
+    *,
+    target_chapters: int,
+) -> dict[str, Any]:
+    """Recompute lineage after a deterministic creation-identity migration."""
+
+    result = copy.deepcopy(dict(contract))
+    source = _concept_contract_hash_source(
+        result,
+        target_chapters=target_chapters,
+    )
+    if source is None:
+        raise ConceptContractError(["concept_contract 缺少可重新封印的 hook/proof"])
+    input_hash = _stable_hash(source)
+    champion_id = f"concept-{input_hash[:16]}"
+    result.update(
+        {
+            "schema_version": CONCEPT_CONTRACT_VERSION,
+            "input_hash": input_hash,
+            "champion_id": champion_id,
+            "target_chapters": int(target_chapters),
+        }
+    )
+    for key in ("hook_card", "seriality_proof", "story_spine"):
+        child = result.get(key)
+        if not isinstance(child, Mapping):
+            continue
+        result[key] = {
+            **dict(child),
+            "input_hash": input_hash,
+            "champion_id": champion_id,
+            "target_chapters": int(target_chapters),
+        }
+    violations = validate_concept_contract(
+        result,
+        target_chapters=target_chapters,
+    )
+    if violations:
+        raise ConceptContractError(violations)
+    return result
+
+
 def validate_concept_contract(
     contract: Mapping[str, Any] | None,
     *,
@@ -262,50 +343,12 @@ def validate_concept_contract(
         ):
             if not _text(hook.get(field_name)):
                 violations.append(f"hook_card.{field_name} 缺失")
-        proof_for_hash = contract.get("seriality_proof")
-        if isinstance(proof_for_hash, Mapping):
-            expected_hash = _stable_hash(
-                {
-                    "concept": _text(hook.get("one_liner")),
-                    "mechanism": _text(hook.get("story_motion")),
-                    "hook_question": _text(hook.get("reader_question")),
-                    "protagonist_identity": _text(hook.get("protagonist")),
-                    "protagonist_private_desire": _text(hook.get("private_desire")),
-                    "protagonist_flaw": _text(hook.get("protagonist_flaw")),
-                    "core_abnormality": _text(hook.get("abnormality")),
-                    "opening_crisis": _text(hook.get("opening_event")),
-                    "opponent_system": _text(hook.get("central_contradiction")),
-                    "decision_proof": _text(hook.get("decision_proof")),
-                    "emotional_promise": _text(hook.get("emotional_promise")),
-                    "genre": _text(contract.get("genre")),
-                    "sub_genre": _text(contract.get("sub_genre")),
-                    "target_chapters": int(target_chapters),
-                    "repeatable_story_unit": _text(
-                        proof_for_hash.get("repeatable_story_unit")
-                    ),
-                    "unit_families": _items(proof_for_hash.get("unit_families")),
-                    "unit_frequency": _text(proof_for_hash.get("unit_frequency")),
-                    "unit_count_estimate": _nonnegative_int(
-                        proof_for_hash.get("unit_count_estimate")
-                    ),
-                    "renewal_sources": _items(
-                        proof_for_hash.get("renewal_sources")
-                    ),
-                    "accumulation_tracks": _items(
-                        proof_for_hash.get("accumulation_tracks")
-                    ),
-                    "phase_transitions": _items(
-                        proof_for_hash.get("phase_transitions")
-                    ),
-                    "opposing_ecology": _items(
-                        proof_for_hash.get("opposing_ecology")
-                    ),
-                    "mystery_ladder": _items(proof_for_hash.get("mystery_ladder")),
-                    "endgame_direction": _text(
-                        proof_for_hash.get("endgame_direction")
-                    ),
-                }
-            )
+        source = _concept_contract_hash_source(
+            contract,
+            target_chapters=target_chapters,
+        )
+        if source is not None:
+            expected_hash = _stable_hash(source)
             if expected_hash != input_hash:
                 violations.append("concept_contract.input_hash 与当前内容或目标篇幅不一致")
     proof = contract.get("seriality_proof")
@@ -390,6 +433,26 @@ def apply_concept_contract_to_book_spec(
     proof = contract.get("seriality_proof")
     hook = contract.get("hook_card")
     if not isinstance(proof, Mapping) or not isinstance(hook, Mapping):
+        return result
+    meta = result.get("_meta")
+    source_bound = bool(
+        isinstance(meta, Mapping) and meta.get("source_bound_design")
+    )
+    if source_bound:
+        # A source-bound BookSpec has already been compiled from the immutable
+        # creation snapshot.  The concept contract is older, model-authored
+        # evidence and may contain speculative unit families, opponents,
+        # mysteries, or backstory.  Preserve only its lineage identifiers;
+        # never let it become a second writer that overwrites canonical fields.
+        result["concept_contract_lineage"] = {
+            key: contract.get(key)
+            for key in (
+                "schema_version",
+                "champion_id",
+                "input_hash",
+                "target_chapters",
+            )
+        }
         return result
     engine = result.get("series_engine")
     engine = dict(engine) if isinstance(engine, Mapping) else {}
@@ -530,6 +593,7 @@ __all__ = [
     "build_concept_contract",
     "render_concept_contract_block",
     "render_volume_seriality_execution_block",
+    "reseal_concept_contract_lineage",
     "require_conception_contract_for_target",
     "require_valid_concept_contract",
     "validate_concept_contract",

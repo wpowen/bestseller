@@ -164,8 +164,21 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = _redis_settings()
-    max_jobs = int(os.getenv("WORKER_MAX_JOBS", "1"))
+    # Allow a worker to host several jobs so a single long book (24h) does not
+    # starve other projects on a one-worker deployment. Safe now that pipeline
+    # starts are per-project serialized (api/routers/pipelines.py reservation +
+    # DB active-run guard), so two jobs for the SAME project cannot overlap.
+    # Raise further only with memory: each job peaks ~300-500MB during LLM calls.
+    max_jobs = int(os.getenv("WORKER_MAX_JOBS", "2"))
     job_timeout = int(os.getenv("WORKER_JOB_TIMEOUT", "86400"))  # 24 h (supports 200+ chapter novels)
+    # Book jobs are re-dispatched deliberately — by self-heal, by gate
+    # auto-continue, by the repair/closure loop — and every one of those paths
+    # is budgeted and stop-checked. ARQ's implicit retry is none of those
+    # things: with the default ``max_tries=5`` a SIGTERM, a container restart or
+    # the 24h timeout silently re-ran an entire book up to five times, counted
+    # only in a Redis key no application budget can see. One try; recovery is
+    # the application's job, where it can be observed and bounded.
+    max_tries = int(os.getenv("WORKER_MAX_TRIES", "1"))
 
 
 def main() -> None:

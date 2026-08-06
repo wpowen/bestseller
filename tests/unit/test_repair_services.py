@@ -1566,7 +1566,10 @@ async def test_run_project_repair_normalizes_stale_word_targets_before_collectin
 
     session = FakeSession(
         scalar_results=[0],
-        scalars_results=[[], [chapter], scenes],
+        # The first entry feeds the best-draft restore sweep that now runs
+        # before repair proper (empty → no chapter to restore); the rest is
+        # this test's own word-target normalization fixture.
+        scalars_results=[[], [], [chapter], scenes],
         execute_results=[[]],
     )
     result = await repair_services.run_project_repair(

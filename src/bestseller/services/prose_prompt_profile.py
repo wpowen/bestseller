@@ -82,6 +82,44 @@ LEAN_DROPPED_SECTIONS: frozenset[str] = frozenset(
 )
 
 
+def prose_profile_drops_section(
+    section: str,
+    *,
+    project_metadata: object | None = None,
+    explicit: str | None = None,
+) -> bool:
+    """Whether the resolved profile omits ``section`` from the writer prompt.
+
+    Callers outside the chapter-first builder need this because the decision
+    "does this block reach the writer" must have one answer. The rewrite path
+    used to append 【全书重复词禁用清单】 unconditionally while ``lean`` had
+    deliberately dropped it from the first-draft prompt — and most shipped prose
+    comes from the rewrite path, so the block the profile had excluded reached
+    the writer anyway, through the back door (2026-08-04).
+    """
+
+    if section not in LEAN_DROPPED_SECTIONS:
+        return False
+    # Same resolution chain the chapter-first builder uses, global default
+    # included — reading it is the whole point, since ``prose_prompt_profile``
+    # is normally set there rather than per book.
+    settings_default: str | None = None
+    try:
+        from bestseller.settings import load_settings
+
+        settings_default = getattr(
+            getattr(load_settings(), "pipeline", None), "prose_prompt_profile", None
+        )
+    except Exception:  # noqa: BLE001 - an unreadable setting must not change the prompt
+        settings_default = None
+    profile = resolve_prose_prompt_profile(
+        explicit=explicit,
+        project_metadata=project_metadata,
+        settings_default=settings_default,
+    )
+    return not section_enabled(section, profile)
+
+
 def resolve_prose_prompt_profile(
     *,
     explicit: str | None = None,

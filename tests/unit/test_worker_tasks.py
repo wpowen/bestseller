@@ -20,6 +20,102 @@ from bestseller.worker import tasks as worker_tasks
 pytestmark = pytest.mark.unit
 
 
+def test_outline_semantic_promotion_accepts_adjudicated_combined_batch_version() -> None:
+    assert worker_tasks._outline_semantic_report_proves_promotion(
+        {
+            "promotion_allowed": True,
+            "llm_adjudicated_all_volumes": True,
+        },
+        current_outline_version=3,
+        prior_outline_version=26,
+    )
+
+
+def test_outline_semantic_promotion_rejects_unadjudicated_stale_version() -> None:
+    assert not worker_tasks._outline_semantic_report_proves_promotion(
+        {"promotion_allowed": True},
+        current_outline_version=3,
+        prior_outline_version=26,
+    )
+
+
+def test_new_repair_revision_unlocks_exactly_one_exhausted_replan_attempt() -> None:
+    metadata = {
+        "outline_replan_retry_exhausted": True,
+        "outline_replan_retry_attempts": 5,
+        "requires_human_review": True,
+        "requires_machine_repair": True,
+        "production_pause_reason": "outline_replan_retry_exhausted",
+    }
+
+    assert worker_tasks._unlock_outline_replan_for_repair_revision(
+        metadata,
+        "best-baseline-v1",
+    )
+    assert metadata["outline_replan_retry_attempts"] == 4
+    assert "outline_replan_retry_exhausted" not in metadata
+    assert "requires_human_review" not in metadata
+    assert "requires_machine_repair" not in metadata
+    assert not worker_tasks._unlock_outline_replan_for_repair_revision(
+        metadata,
+        "best-baseline-v1",
+    )
+
+
+def test_successful_outline_replan_clears_stale_planning_self_heal_blockers() -> None:
+    metadata = {
+        "last_generation_gate_reason": "outline_semantic_gate_failed:duplicate_events",
+        "self_heal_repair_strategy": "deep_machine_repair",
+        "requires_machine_repair": True,
+        "requires_human_review": True,
+        "generation_gate_auto_retry_needed": True,
+        "generation_resume_blocked_by_planning_gate": True,
+        "generation_auto_repair_exhausted": True,
+        "generation_gate_auto_resume_reason": "outline_semantic_gate_failed",
+        "generation_gate_auto_resume_count": 3,
+        "production_pause_reason": "outline_semantic_gate_failed",
+    }
+
+    worker_tasks._clear_successful_outline_replan_blockers(metadata)
+
+    for key in (
+        "self_heal_repair_strategy",
+        "requires_machine_repair",
+        "requires_human_review",
+        "generation_gate_auto_retry_needed",
+        "generation_resume_blocked_by_planning_gate",
+        "generation_auto_repair_exhausted",
+        "generation_gate_auto_resume_reason",
+        "generation_gate_auto_resume_count",
+        "last_generation_gate_reason",
+        "production_pause_reason",
+    ):
+        assert key not in metadata
+
+
+def test_successful_outline_replan_preserves_non_planning_review_flags() -> None:
+    metadata = {
+        "last_generation_gate_reason": "chapter_quality_gate_failed",
+        "self_heal_repair_strategy": "deep_machine_repair",
+        "requires_machine_repair": True,
+        "requires_human_review": True,
+        "human_review_reason": "editorial_review_required",
+        "generation_gate_auto_retry_needed": True,
+        "generation_resume_blocked_by_planning_gate": True,
+        "production_pause_reason": "chapter_quality_gate_failed",
+    }
+
+    worker_tasks._clear_successful_outline_replan_blockers(metadata)
+
+    assert metadata["requires_machine_repair"] is True
+    assert metadata["requires_human_review"] is True
+    assert metadata["human_review_reason"] == "editorial_review_required"
+    assert metadata["last_generation_gate_reason"] == "chapter_quality_gate_failed"
+    assert metadata["production_pause_reason"] == "chapter_quality_gate_failed"
+    assert "self_heal_repair_strategy" not in metadata
+    assert "generation_gate_auto_retry_needed" not in metadata
+
+
 def test_generation_gate_block_classifies_l2_bible_gate() -> None:
     result = worker_tasks._generation_gate_block(
         ValueError("L2 bible gate failed for project 'demo'. Regenerate the story bible.")
@@ -91,6 +187,99 @@ def test_cancelled_outline_replan_closes_owner_and_keeps_hard_gate() -> None:
     assert owner.status == "failed"
     assert owner.current_step == "cancelled_recoverable"
     assert owner.metadata_json["cancelled_recoverable"] is True
+
+
+def test_outline_replan_reconciles_repaired_premise_identity_and_snapshot() -> None:
+    from bestseller.infra.db.models import ProjectModel
+    from bestseller.services.concept_contract import build_concept_contract
+
+    contract = build_concept_contract(
+        winner={
+            "concept": "苏沉用死人旧账向修士讨活路。",
+            "mechanism": "每章搬一条旧账并承担债气代价。",
+            "hook_question": "旧账用完前他能否活下来？",
+            "protagonist_identity": "苏沉，灰烬荒原边缘的守夜人",
+            "protagonist_private_desire": "活过追捕",
+            "protagonist_flaw": "过度相信程序",
+            "core_abnormality": "凡人能读懂被抹掉的旧账",
+            "opening_crisis": "缉捕队三日内抵达",
+            "opponent_system": "驭尸宗合规追杀体系",
+            "decision_proof": "逃跑必死，只能公开搬账",
+            "emotional_promise": "底层凡人用规则反制修士",
+        },
+        story_spine={
+            "who": "苏沉，灰烬荒原边缘的守夜人",
+            "wants": "活过追捕",
+            "why_now": "缉捕队三日内抵达",
+            "against": "驭尸宗",
+            "stakes": "失败即死",
+            "question": "能否活下来？",
+        },
+        target_chapters=3,
+        genre="xianxia",
+        sub_genre="cultivation-civilization",
+    )
+
+    project = ProjectModel(
+        slug="identity-replan",
+        title="欠债修仙",
+        genre="xianxia",
+        target_word_count=6_600,
+        target_chapters=3,
+        metadata_json={
+            "premise": "旧稿没有稳定身份。",
+            "creation_protagonist_name": "苏沉",
+            "creation_protagonist_source": "llm_premise_identity_resolution",
+            "story_spine": {"who": "苏沉，灰烬荒原边缘的守夜人"},
+            "concept_contract": contract,
+            "conception_log": [{"old_winner_identity": "苏沉"}],
+        },
+    )
+    from bestseller.services.book_design import ensure_project_book_design_snapshot
+
+    ensure_project_book_design_snapshot(project, protagonist_name="苏沉")
+
+    chosen = worker_tasks._reconcile_outline_replan_creation_identity(
+        project,
+        "十九岁凡人沉骨在灰烬荒原替散修补破衣度日。",
+    )
+
+    assert chosen == "沉骨"
+    assert project.metadata_json["premise"].startswith("十九岁凡人沉骨")
+    assert project.metadata_json["creation_protagonist_source"] == "original_premise"
+    assert project.metadata_json["protagonist_forbidden_names"] == ["苏沉"]
+    assert project.metadata_json["book_design_snapshot"]["protagonist"]["name"] == "沉骨"
+    assert project.metadata_json["book_design_snapshot_superseded"][-1][
+        "protagonist_name"
+    ] == "苏沉"
+    assert project.metadata_json["story_spine"]["who"].startswith("沉骨")
+    assert project.metadata_json["concept_contract"]["story_spine"][
+        "who"
+    ].startswith("沉骨")
+    assert project.metadata_json["concept_contract"]["hook_card"][
+        "protagonist"
+    ].startswith("沉骨")
+    assert project.metadata_json["conception_log"][0]["old_winner_identity"] == "苏沉"
+
+    # A later retry starts with the canonical name already persisted.  The
+    # forbidden-name ledger must still scrub any stale active surface that was
+    # introduced or left behind after the first failed recovery attempt.
+    project.metadata_json["hook_card"] = {"protagonist": "苏沉，凡人搬账人"}
+    project.metadata_json["concept_contract"]["core_reader_promise"] = (
+        "苏沉必须在三日内用旧账活下来"
+    )
+    assert (
+        worker_tasks._reconcile_outline_replan_creation_identity(
+            project,
+            "十九岁凡人沉骨在灰烬荒原替散修补破衣度日。",
+        )
+        == "沉骨"
+    )
+    assert project.metadata_json["hook_card"]["protagonist"].startswith("沉骨")
+    assert project.metadata_json["book_design_snapshot"]["reader_promise"].startswith(
+        "沉骨"
+    )
+    assert "苏沉" not in str(project.metadata_json["book_design_snapshot"])
 
 
 @pytest.mark.asyncio
@@ -528,10 +717,18 @@ async def test_run_autowrite_task_marks_attention_as_auto_continue_pending(
 
     @asynccontextmanager
     async def fake_session_scope():
-        yield object()
+        class _FakeSession:
+            async def scalar(self, _stmt: object) -> object:
+                return None
+
+            async def flush(self) -> None:  # pragma: no cover
+                return None
+
+        yield _FakeSession()
 
     async def fake_get_project_by_slug(*_args, **_kwargs):
         return types.SimpleNamespace(
+            id=uuid4(),
             slug="novel",
             title="Novel",
             genre="sci-fi",

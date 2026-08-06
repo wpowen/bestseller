@@ -341,20 +341,55 @@ def _cost_style_directive(cost_style: str, *, is_en: bool) -> str:
                 "cost) — NEVER the protagonist's own memory/body/relationships/lifespan/status. "
                 "The hero never self-harms.\n"
             )
+        # Same phrasing rule as ``minimal`` below: name the direction, not the
+        # motif. This branch used to enumerate 记忆/寿命/身体/关系/地位 — the
+        # exact 《雾街债主》 defect, sitting in a prompt that reaches every
+        # concept generation. Saying who bears the pressure is enough.
         return (
             "\n代价风格=外置：设计 cost_system 时，每条 costs 必须由【世界/对手/资源】承担"
-            "（树敌、暴露、资源消耗、机会成本、招来强敌），绝不能削减主角自己的记忆/身体/关系/"
-            "寿命/地位。主角一路爽，不自损。\n"
+            "（树敌、暴露、资源消耗、机会成本、招来强敌）；主角本人不承担任何折损，"
+            "他的能力与身心状态不因使用而下降。主角一路爽。\n"
         )
     if cs == "minimal":
+        # (2026-08-02) Rewritten from an allowlist prescription to a pacing
+        # preference. The old text enumerated the ONLY permitted cost categories
+        # (inventory, permits, access, orders…), which is how a cultivation world
+        # ended up sounding like a logistics operation — and the matching gate
+        # then killed books for using the vocabulary the genre actually needs.
+        #
+        # (2026-08-05) That rewrite went one step too far: it ended with "whether
+        # this book has costs at all is its own design", which hands the decision
+        # straight back to the model. A book created with this switch then
+        # invented a 破碗 ledger as its CORE mechanic and wrote "the protagonist
+        # must pay a cost" into its own writing profile — the exact inversion of
+        # what the create form promises ("金手指是否强制自损代价").
+        #
+        # The constraint is back, but stated as a DIRECTION rather than a menu:
+        # say what the cost must not BECOME, never which categories are allowed.
+        # A direction cannot flatten a genre's vocabulary the way an allowlist
+        # did, and it leaves the world free to be dangerous.
+        # Phrasing rule for everything below: state the constraint WITHOUT
+        # naming the thing it forbids. A prohibition that spells out its own
+        # motif vocabulary plants that vocabulary — 2026-08-03's 《雾街债主》
+        # came out of two such prohibitions, and this text tripped the guard
+        # that was written to hold that line (`test_prompt_pollution_sweep`).
+        # So: describe how the protagonist's advantage should *behave*, and let
+        # the absence of a price be an absence, not a named prohibition.
         if is_en:
             return (
-                "\nCOST STYLE = MINIMAL: keep cost_system light (opportunity cost / time / making "
-                "enemies), never weakening the hero; costs must not interrupt payoff.\n"
+                "\nCOST STYLE = MINIMAL: the protagonist's advantage is theirs to use freely. "
+                "Using it does not diminish them, and using it more does not make it more "
+                "expensive. What it costs is never the engine of the book, never its selling "
+                "point, and never what a chapter is mainly about. Keep the story "
+                "satisfaction-forward: payoff lands quickly and momentum carries between wins. "
+                "The world stays dangerous and rule-bound; the danger simply comes from what "
+                "opposes the protagonist rather than from the advantage itself.\n"
             )
         return (
-            "\n代价风格=极简：cost_system 从简（机会成本/时间/树敌为主），不削弱主角，代价不得"
-            "打断爽点兑现。\n"
+            "\n代价风格=极简：主角的能力可以放心使用——用它不会削弱主角，用得越多也不会越难用。"
+            "它需要付出什么，永远不是本书的引擎、不是卖点、也不构成某一章的主要内容。"
+            "保持爽点前置、兑现要快，主角在两次胜利之间不要长期失能或进度清零。"
+            "世界依然凶险、依然有硬规则，但压力来自与主角对抗的人和局势，而不是来自他自己的能力。\n"
         )
     return ""
 

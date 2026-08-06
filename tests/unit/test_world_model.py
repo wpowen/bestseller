@@ -22,10 +22,48 @@ from bestseller.services.world_dimensions import (
 from bestseller.services.world_model_deriver import (
     _balanced_objects_with_key,
     _salvage_payload,
+    compile_world_model_from_world_spec,
     extract_axioms,
     fallback_world_model,
     parse_world_model,
 )
+
+
+def test_compile_world_model_uses_only_approved_world_spec_facts() -> None:
+    world_spec = {
+        "world_name": "苍梧废园",
+        "world_premise": "废园枯草是沉睡灵药，只响应陆沉的照料节奏。",
+        "rules": [
+            {
+                "rule_name": "照料认主",
+                "description": "灵药只响应陆沉的浇灌节奏。",
+                "story_consequence": "外人无法代替他完成唤醒。",
+            }
+        ],
+        "power_system": {
+            "name": "灵药共鸣",
+            "acquisition_method": "照料成熟灵药获得共鸣。",
+            "hard_limits": "每次只能照料有限株数。",
+            "tier_progression": [
+                {"tier": "初醒", "breakthrough_cost": "消耗一株成熟灵药"}
+            ],
+        },
+    }
+
+    model = compile_world_model_from_world_spec(
+        premise="陆沉经营一座废药园。",
+        world_spec=world_spec,
+    )
+    blob = str(world_model_to_dict(model))
+
+    assert model.source_artifact_type == "world_spec"
+    assert len(model.source_artifact_hash) == 64
+    assert {law.dimension for law in model.world_laws} == {
+        "approved_world_rule_1",
+        "approved_power_system",
+    }
+    for invented_domain in ("账", "债", "尸", "寿命", "货币", "婚姻", "交通"):
+        assert invented_domain not in blob
 
 # ---------------------------------------------------------------------------
 # Dimension table — genre-neutral machine (zero hardcoded story content)

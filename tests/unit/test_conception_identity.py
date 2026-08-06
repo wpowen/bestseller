@@ -217,7 +217,7 @@ async def test_explicit_seed_fidelity_gate_does_not_block_judge_labeled_extensio
 
 
 @pytest.mark.asyncio
-async def test_explicit_seed_fidelity_repair_receives_authoritative_seed_and_report(
+async def test_explicit_seed_fidelity_repair_uses_seed_without_replaying_bad_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, str] = {}
@@ -251,7 +251,9 @@ async def test_explicit_seed_fidelity_repair_receives_authoritative_seed_and_rep
 
     assert repaired["premise"].startswith("审计员沈砚")
     assert "用户明确故事创意" in captured["prompt"]
-    assert "恢复沈砚与合同指纹机制" in captured["prompt"]
+    assert "监理岑野追查空钢印" not in captured["prompt"]
+    assert "恢复沈砚与合同指纹机制" not in captured["prompt"]
+    assert "被拒终稿和判官自由文本已隔离" in captured["prompt"]
 
 
 @pytest.mark.asyncio
@@ -280,8 +282,9 @@ async def test_explicit_seed_fidelity_final_repair_uses_conservative_lock(
 
     assert "修复轮次：3/3" in captured["prompt"]
     assert "最后一次保守锁定修复" in captured["prompt"]
-    assert "积分/等级/分段扣除" in captured["prompt"]
-    assert "额外能力形态" in captured["system"]
+    assert "只能直接保留用户已经写明的事实" in captured["prompt"]
+    assert "任何新增事实只能由原文或题材原生规律直接推出" in captured["system"]
+    assert "可升级的永久指纹能力" not in captured["prompt"]
 
 
 @pytest.mark.asyncio

@@ -9,17 +9,18 @@ import pytest
 from bestseller.domain.enums import ArtifactType
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import ProjectModel, WorkflowRunModel, WorkflowStepRunModel
+from bestseller.services import planner as planner_services
+from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.distilled_strategy_compiler import (
     DistilledStrategyCard,
     SelectedMechanism,
 )
-from bestseller.services.concept_lab import build_concept_lab_catalog
-from bestseller.services import planner as planner_services
+from bestseller.services.methodology_overlay import validate_ability_origin_contract
+from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
 from bestseller.services.story_effect_skills import (
     STORY_EFFECT_SKILL_SELECTION_METADATA_KEY,
 )
-from bestseller.services.methodology_overlay import validate_ability_origin_contract
-from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
+from bestseller.services.story_enhancers import StoryEnhancerSelection
 from bestseller.settings import load_settings
 
 pytestmark = pytest.mark.unit
@@ -55,6 +56,10 @@ class FakeSession:
         # Fresh project — no written chapters to guard against.
         return None
 
+    async def scalars(self, _stmt: object) -> _FakeExecuteResult:
+        # Fresh project — no historical workflow steps or chapters.
+        return _FakeExecuteResult()
+
     async def execute(self, _stmt: object) -> _FakeExecuteResult:
         # Fresh project — no rows. Used by helpers that query the
         # `chapters` table (e.g. existing-title dedup fetch).
@@ -85,6 +90,267 @@ def build_project() -> ProjectModel:
     )
     project.id = uuid4()
     return project
+
+
+def lock_design_snapshot(
+    project: ProjectModel,
+    *,
+    protagonist_name: str,
+    reader_promise: str,
+    core_story_engine: str,
+    tone: str = "light",
+    cost_style: str = "minimal",
+    effect_skills: list[str] | None = None,
+) -> None:
+    project.metadata_json.update(
+        {
+            "book_design_snapshot_status": "locked",
+            "book_design_snapshot": {
+                "schema_version": "book-design-snapshot.v1",
+                "snapshot_id": "source-bound-test",
+                "source_hash": "a" * 64,
+                "tone": tone,
+                "protagonist": {"name": protagonist_name},
+                "reader_promise": reader_promise,
+                "core_story_engine": core_story_engine,
+                "creation_intent": {
+                    "tone_preference": tone,
+                    "genre_intent": {"tone_preference": tone},
+                    "story_enhancers": {
+                        "cost_style": cost_style,
+                        "effect_skills": effect_skills or [],
+                    },
+                },
+            },
+        }
+    )
+
+
+def test_planner_injects_no_guardrail_blocks_regardless_of_seed() -> None:
+    """2026-08-01 product ruling: guardrail blocks were deleted from prompts.
+    Whatever the creation seed says, ``_append_category_context`` must not
+    append any anti-default-motif contract text — drift is caught by the
+    output-side detectors instead."""
+    project = build_project()
+    project.metadata_json.update(
+        {
+            "premise": "模型生成的尸体账本故事不应关闭护栏",
+            "creation_intent_contract": {"concept_seed": "修阵师让阵眼重新发光"},
+        }
+    )
+    prompt = planner_services._append_category_context("BASE", project)
+    assert "【事实源与自然因果契约】" not in prompt
+    assert "【当下动机契约】" not in prompt
+
+    project.metadata_json["creation_intent_contract"] = {
+        "concept_seed": "守墓人必须在坟中找到两具尸体留下的线索"
+    }
+    prompt = planner_services._append_category_context("BASE", project)
+    assert "【当下动机契约】" not in prompt
+    assert "【事实源与自然因果契约】" not in prompt
+
+
+def test_persisted_methodology_keeps_this_books_own_wording() -> None:
+    """2026-08-02: the methodology sanitiser no longer censors motif words.
+
+    It used to delete any field mentioning debt/death and substitute framework
+    filler, so every book that tripped it received the same generic replacement.
+    A methodology belongs to its own project; only genuinely empty fields are
+    filled now.
+    """
+    project = build_project()
+    project.metadata_json.update(
+        {
+            "writing_profile": {
+                "concept_methodology": {
+                    "mindset": "旧账簿唤醒了一具尸体",
+                    "mechanism_types": ["行动反差", "欠条结算"],
+                    "reader_promise_axis": "主角持续修复航道",
+                    "shuangdian_cadence": ["发现断点"],
+                    "design_axes": ["资源变化"],
+                    "anti_patterns": ["开局解释过长"],
+                    "market_signals": [],
+                    "rationale": "本书自己的设计说明",
+                    "source": "llm",
+                }
+            },
+        }
+    )
+
+    block = planner_services._concept_methodology_block(project, language="zh-CN")
+
+    assert "旧账簿唤醒了一具尸体" in block
+    assert "欠条结算" in block
+
+
+def test_minimal_cost_reaches_world_prompt_as_pacing_not_an_allowlist() -> None:
+    """纯爽 arrives as one pacing line; the world vocabulary stays the book's own.
+
+    The deleted apparatus rewrote 分账→利益分配 inside the assembled prompt and
+    appended a lock confining every world rule to an approved pressure list.
+    """
+    project = build_project()
+    project.metadata_json["story_enhancers"] = {"cost_style": "minimal"}
+
+    premise = "巡航员利用价格同盟内部分账不均修复航线。"
+    _, prompt = planner_services._world_spec_prompts(
+        project,
+        premise,
+        planner_services._fallback_book_spec(project, premise),
+    )
+
+    assert "最终极简代价世界锁" not in prompt
+    assert "因果白名单" not in prompt
+    # The premise reaches the prompt verbatim — no substitution table.
+    assert "分账不均" in prompt
+
+
+def test_minimal_light_book_fallback_does_not_seed_stock_loss_trauma() -> None:
+    project = build_project()
+    project.metadata_json["story_enhancers"] = {"cost_style": "minimal"}
+    project.metadata_json["writing_profile"] = {
+        "style": {"tone_keywords": ["轻松", "幽默"]}
+    }
+
+    fallback = planner_services._fallback_book_spec(
+        project,
+        "陆沉守住废药园，把苏醒的灵药拿来养猪换钱。",
+        category_key="action-progression",
+    )
+    protagonist = fallback["protagonist"]
+
+    assert "失去了最重要的人或事物" not in protagonist["core_wound"]
+    assert "轻视" in protagonist["core_wound"]
+    assert "资源" in protagonist["core_wound"]
+    assert "接受力量的代价" not in protagonist["internal_need"]
+    assert "失去自己仍在意的人" not in fallback["stakes"]["personal"]
+
+    world = planner_services._fallback_world_spec(
+        project,
+        "陆沉守住废药园，把苏醒的灵药拿来养猪换钱。",
+        fallback,
+        category_key="action-progression",
+    )
+    world_blob = json.dumps(world, ensure_ascii=False)
+
+    assert "反噬代价规则" not in world_blob
+    assert "不可逆牺牲" not in world_blob
+    assert "操作容量规则" in world_blob
+    assert "资源、时间、资格与暴露风险" in world_blob
+    assert "长期被现有秩序排除在资源与机会之外" in world_blob
+
+
+def test_planner_no_longer_vetoes_ordinary_story_material() -> None:
+    """2026-08-02: the motif police were dismantled.
+
+    Every payload below was a hard veto before. They are ordinary cultivation
+    material — a shop's unpaid bill, a tier named 枯骨期, a backlash, owing an
+    elder a favour, tending a garden for thirty days. The framework ordered
+    costs elsewhere and then executed the book for writing them; two real books
+    died in the foundation stage this way. None of these may block a book now.
+    """
+    project = build_project()
+    project.metadata_json.update({"story_enhancers": {"cost_style": "minimal"}})
+
+    for payload in (
+        {"world_name": "旧账之城"},
+        {"rule": "巡查拿走药渣抵账"},
+        {"forbidden_zones": "百草堂同盟上游账房"},
+        {"tiers": ["枯骨期"]},
+        {"forbidden_zones": "邻派后山旧墓坑"},
+        {"cost": "突破失败会废修为"},
+        {"tier_progression": [{"breakthrough_cost": "晋升后强制停摆三天"}]},
+        {"rule": "力量使用会反噬，主角短期失声"},
+        {"rule": "封印残力让主角三个月无法调动灵气，需要休息养伤"},
+        {"tier_progression": [{"breakthrough_cost": "晋升后欠长老一个人情"}]},
+        {"rule": "照料期间不能离开废园半步"},
+        {"rule": "连续照料三十日，中断就前功尽弃"},
+        {"power_system": {"story_use": "灵药入菜延寿，境界按寿命增长"}},
+    ):
+        planner_services._validate_planner_creation_intent_payload(
+            payload,
+            project=project,
+            logical_name="world_spec",
+        )
+
+
+def test_planner_motif_veto_is_a_no_op_that_cannot_raise() -> None:
+    """The gate function must stay inert — no detector, no raise."""
+    import inspect
+
+    source = inspect.getsource(
+        planner_services._validate_planner_creation_intent_payload
+    )
+    assert "raise" not in source
+    assert "violations" not in source
+    assert "anti_default_motif" not in source
+
+
+def test_minimal_cost_world_prompt_carries_no_allowlist_lock() -> None:
+    """纯爽 is a pacing preference, not a world-vocabulary allowlist.
+
+    The deleted lock confined every world rule, location, faction asset and
+    historical event to resources / windows / permits / inventory / orders,
+    which is how a cultivation world came out reading like a logistics firm.
+    """
+    project = build_project()
+    project.metadata_json["story_enhancers"] = {"cost_style": "minimal"}
+
+    system, user = planner_services._world_spec_prompts(
+        project,
+        "少年守住废药园，把苏醒的灵药拿来换钱。",
+        planner_services._fallback_book_spec(
+            project,
+            "少年守住废药园，把苏醒的灵药拿来换钱。",
+        ),
+    )
+
+    assert "字段级硬契约" not in system
+    assert "最终极简代价世界锁" not in user
+    assert "可恢复的资源选择" not in user
+    assert "每个输出字段都必须标明来自上述已确认事实" not in user
+    # The structural tier contract survives — it defines fields, not content.
+    assert "power_system 必须是结构化对象" in user
+
+
+@pytest.mark.asyncio
+async def test_structured_planner_accepts_story_material_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A first-pass artifact containing death/ledger words is now accepted."""
+    project = build_project()
+    project.metadata_json.update({"story_enhancers": {"cost_style": "minimal"}})
+    calls: list[str] = []
+
+    async def fake_complete_text(session: object, settings: object, request: object):
+        calls.append(request.user_prompt)
+        payload = {"world_name": "枯骨账本", "cost": "突破失败会爆体", "rules": []}
+        return type(
+            "CompletionStub",
+            (),
+            {
+                "content": json.dumps(payload, ensure_ascii=False),
+                "llm_run_id": uuid4(),
+                "finish_reason": "stop",
+                "provider": "openai",
+            },
+        )()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+
+    payload, _ = await planner_services._generate_structured_artifact(
+        FakeSession(),
+        build_settings(),
+        project=project,
+        logical_name="world_spec",
+        system_prompt="system",
+        user_prompt="user",
+        fallback_payload={"world_name": "fallback", "rules": []},
+        workflow_run_id=uuid4(),
+    )
+
+    assert len(calls) == 1
+    assert payload["world_name"] == "枯骨账本"
 
 
 def test_extract_json_payload_handles_wrapped_json() -> None:
@@ -923,9 +1189,12 @@ def test_stash_distilled_strategy_card_populates_project_metadata(
         assert kwargs["project_context"]["unique_hook"] == "失效航图修复异界法则"
         return DistilledStrategyCard(
             aggregate_key="otherworld-cross-system",
-            maturity_score=0.42,
+            maturity_score=0.80,
             maturity_status="review",
             source_count=1,
+            provenance_status="anonymous_aggregate",
+            privacy_status="redacted",
+            genre_profile_key="otherworld-cross-system",
             selected_mechanisms=[
                 SelectedMechanism(
                     mechanism_id="cross-system-rule-arbitrage",
@@ -964,6 +1233,44 @@ def test_stash_distilled_strategy_card_populates_project_metadata(
     assert "agency" in project.metadata_json["character_strategy"]["required_axes"]
     assert "architecture" in project.metadata_json["distilled_strategy_blocks"]
     assert "cross-system-rule-arbitrage" in project.metadata_json["distilled_strategy_block"]
+
+
+def test_stash_distilled_strategy_card_removes_unsafe_stale_prompt_material(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        "premise": "少年接手废药园，发现杂草都是上古灵药。",
+        "distilled_strategy_expected": True,
+        "distilled_strategy_card": {"aggregate_key": "distillation-generic"},
+        "distilled_strategy_blocks": {"volume_plan": "unrelated old plot"},
+        "distilled_strategy_block": "unrelated old plot",
+        "character_strategy": {"source": "distillation_character_intelligence"},
+    }
+    settings = build_settings()
+
+    from bestseller.services import distilled_strategy_compiler
+
+    monkeypatch.setattr(
+        distilled_strategy_compiler,
+        "compile_distilled_strategy_card",
+        lambda **_: DistilledStrategyCard(
+            aggregate_key="distillation-generic",
+            maturity_score=0.5,
+            maturity_status="review",
+            source_count=0,
+        ),
+    )
+
+    planner_services._stash_distilled_strategy_card(
+        project,
+        category_key="xuanhuan-power-fantasy",
+        settings=settings,
+    )
+
+    assert project.metadata_json == {
+        "premise": "少年接手废药园，发现杂草都是上古灵药。"
+    }
 
 
 def test_fallback_world_spec_uses_neutral_rule_scaffold() -> None:
@@ -1499,6 +1806,7 @@ def test_generated_volume_outline_accepts_raw_chapter_list_from_llm() -> None:
     }
     payload = [
         {
+            "chapter_number": 1,
             "title": "井底回声",
             "goal": "沈青崖追查井底异响，必须在封门前找到血雨源头。",
             "main_conflict": "巡捕房误封现场，沈青崖必须避开阻拦读取井底痕迹。",
@@ -1531,6 +1839,238 @@ def test_generated_volume_outline_accepts_raw_chapter_list_from_llm() -> None:
 
     assert repaired["batch_name"] == "volume-1-outline"
     assert repaired["chapters"][0]["chapter_number"] == 1
+
+
+def _single_chapter_effect_outline(*, primary=None, secondary=None):
+    selected = {
+        key: value
+        for key, value in (("primary", primary), ("secondary", secondary))
+        if value
+    }
+    return [
+        {
+            "chapter_number": 1,
+            "title": "井底回声",
+            "goal": "沈青崖追查井底异响，必须在封门前找到血雨源头。",
+            "main_conflict": "巡捕房误封现场，沈青崖必须避开阻拦读取井底痕迹。",
+            "hook_description": "井底浮出一枚刻着沈家旧印的铜钱。",
+            "selected_effect_skills": selected,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "time_label": "李宅封门前",
+                    "participants": ["沈青崖", "阿洛"],
+                    "purpose": {
+                        "story": "沈青崖撬开井盖，阿洛在巷口望风，两人付出暴露行踪的代价。",
+                        "emotion": "压力上升。",
+                    },
+                }
+            ],
+        }
+    ]
+
+
+def _effect_outline_cast_spec():
+    return {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
+    }
+
+
+def test_volume_outline_rejects_unrouted_creation_effects() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "story_enhancers": {
+            "effect_skills": ["comedy_engine", "hype_satisfaction_engine"]
+        }
+    }
+
+    with pytest.raises(
+        planner_services.StoryEnhancerCoverageError,
+        match="STORY_ENHANCER_DISTRIBUTION_MISSING.*comedy_engine=0%.*hype_satisfaction_engine=0%",
+    ) as exc_info:
+        planner_services._validate_generated_volume_outline_or_raise(
+            _single_chapter_effect_outline(),
+            project=project,
+            logical_name="volume_1_chapter_outline",
+            volume_number=1,
+            expected_count=1,
+            chapter_number_offset=1,
+            cast_spec=_effect_outline_cast_spec(),
+        )
+
+    assert len(exc_info.value.directives) == 2
+    assert any("comedy_engine" in item for item in exc_info.value.directives)
+    assert any("hype_satisfaction_engine" in item for item in exc_info.value.directives)
+
+
+def test_volume_outline_accepts_creation_effects_distributed_as_primary_secondary() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "story_enhancers": {
+            "effect_skills": ["comedy_engine", "hype_satisfaction_engine"]
+        }
+    }
+
+    repaired = planner_services._validate_generated_volume_outline_or_raise(
+        _single_chapter_effect_outline(
+            primary="comedy_engine", secondary="hype_satisfaction_engine"
+        ),
+        project=project,
+        logical_name="volume_1_chapter_outline",
+        volume_number=1,
+        expected_count=1,
+        chapter_number_offset=1,
+        cast_spec=_effect_outline_cast_spec(),
+    )
+
+    selected = repaired["chapters"][0]["selected_effect_skills"]
+    assert selected["primary"] == "comedy_engine"
+    assert selected["secondary"] == "hype_satisfaction_engine"
+
+
+def test_story_enhancer_route_patch_adds_structured_route_and_concrete_scene_beat() -> None:
+    payload = {"chapters": _single_chapter_effect_outline()}
+    repaired = planner_services._apply_story_enhancer_route_patches(
+        payload,
+        [
+            {
+                "chapter_number": 1,
+                "scene_number": 1,
+                "effect": "comedy_engine",
+                "slot": "primary",
+                "reason": "剑灵误把威胁说成老匠人的欠账，形成处境反差。",
+                "growth_stage_fit": "主角初次学会借剑身传声。",
+                "beat": "沈青崖试图借剑鸣示警，出口却变成催老匠人还三百年前的酒钱。",
+            }
+        ],
+        selection=StoryEnhancerSelection(effect_skills=("comedy_engine",)),
+    )
+
+    chapter = repaired["chapters"][0]
+    selected = chapter["selected_effect_skills"]
+    assert selected["primary"] == "comedy_engine"
+    assert selected["expected_contracts"]["comedy_engine"]["concrete_beat"].startswith(
+        "沈青崖"
+    )
+    assert "催老匠人还三百年前的酒钱" in chapter["scenes"][0]["purpose"]["story"]
+
+
+def test_story_enhancer_route_patch_replaces_unselected_occupied_slot() -> None:
+    payload = {
+        "chapters": _single_chapter_effect_outline(
+            primary="tension_pressure_engine",
+            secondary="suspense_reveal_engine",
+        )
+    }
+    repaired = planner_services._apply_story_enhancer_route_patches(
+        payload,
+        [
+            {
+                "effect": "comedy_engine",
+                "chapter_number": 1,
+                "scene_number": 1,
+                "beat": "主角顺着制度漏洞反问查验者，让僵持现场出现行动反差。",
+            }
+        ],
+        selection=StoryEnhancerSelection(effect_skills=("comedy_engine",)),
+    )
+
+    selected = repaired["chapters"][0]["selected_effect_skills"]
+    assert selected["primary"] == "tension_pressure_engine"
+    assert selected["secondary"] == "comedy_engine"
+    assert selected["expected_contracts"]["comedy_engine"]["concrete_beat"]
+
+
+@pytest.mark.asyncio
+async def test_story_enhancer_route_retries_only_residual_and_uses_safe_placement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json["story_enhancers"] = {
+        "effect_skills": ["comedy_engine", "hype_satisfaction_engine"]
+    }
+    payload = {
+        "chapters": [
+            {
+                "chapter_number": 1,
+                "title": "一",
+                "unrelated": {"keep": True},
+                "selected_effect_skills": {"primary": "existing"},
+                "scenes": [{"scene_number": 1, "purpose": {"story": "原场景"}}],
+            },
+            {
+                "chapter_number": 2,
+                "title": "二",
+                "selected_effect_skills": {},
+                "scenes": [{"scene_number": 1, "purpose": {"story": "第二场景"}}],
+            },
+        ],
+        "preserve_me": "yes",
+    }
+    calls: list[list[str]] = []
+
+    async def fake_complete_text(session: object, settings: object, request: object):
+        effects = json.loads(request.metadata["missing_effects"] if isinstance(request.metadata["missing_effects"], str) else json.dumps(request.metadata["missing_effects"]))
+        calls.append(effects)
+        patches = (
+            [
+                {"effect": "comedy_engine", "chapter_number": 999, "slot": "bogus", "scene_number": 999, "beat": "主角误把敌人的威胁当成收费通知，当众讨价还价化解追兵。"},
+                {"effect": "hype_satisfaction_engine", "chapter_number": 1, "slot": "primary", "beat": ""},
+            ]
+            if len(calls) == 1
+            else [
+                {"effect": "hype_satisfaction_engine", "chapter_number": 999, "slot": "bogus", "scene_number": 999, "beat": "主角在封锁线前公开亮出证据，迫使敌方首领当众撤令。"}
+            ]
+        )
+        return type("CompletionStub", (), {"content": json.dumps({"patches": patches}, ensure_ascii=False), "llm_run_id": uuid4(), "provider": "openai"})()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+    repaired, run_id = await planner_services._repair_story_enhancer_distribution(
+        FakeSession(), build_settings(), project=project, workflow_run_id=uuid4(), logical_name="volume_1", payload=payload
+    )
+    assert calls == [["comedy_engine", "hype_satisfaction_engine"], ["hype_satisfaction_engine"]]
+    assert run_id is not None
+    assert repaired["preserve_me"] == "yes"
+    assert repaired["chapters"][0]["unrelated"] == {"keep": True}
+    assert repaired["chapters"][0]["selected_effect_skills"]["secondary"] == "comedy_engine"
+    assert repaired["chapters"][1]["selected_effect_skills"]["primary"] == "hype_satisfaction_engine"
+
+
+@pytest.mark.asyncio
+async def test_story_enhancer_route_exhausted_residual_fails_closed_with_run_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json["story_enhancers"] = {"effect_skills": ["comedy_engine"]}
+    payload = {"chapters": [{"chapter_number": 1, "selected_effect_skills": {"primary": "full", "secondary": "full2"}, "scenes": []}]}
+    run_ids = [uuid4(), uuid4(), uuid4()]
+    calls = 0
+
+    async def fake_complete_text(session: object, settings: object, request: object):
+        nonlocal calls
+        calls += 1
+        return type("CompletionStub", (), {"content": '{"patches": []}', "llm_run_id": run_ids[calls - 1], "provider": "openai"})()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+    with pytest.raises(planner_services.StoryEnhancerCoverageError, match="llm_run_id="):
+        await planner_services._repair_story_enhancer_distribution(
+            FakeSession(), build_settings(), project=project, workflow_run_id=uuid4(), logical_name="volume_1", payload=payload
+        )
+    assert calls == 3
 
 
 def test_volume_outline_requires_selected_brainhole_contract_when_selected() -> None:
@@ -2371,7 +2911,7 @@ async def test_generate_character_names_prompt_does_not_embed_fixed_example_name
 
 
 @pytest.mark.asyncio
-async def test_generate_structured_artifact_merges_partial_llm_payload_with_fallback(
+async def test_generate_structured_artifact_never_merges_fallback_into_fail_closed_story_truth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
@@ -2414,10 +2954,271 @@ async def test_generate_structured_artifact_merges_partial_llm_payload_with_fall
     assert llm_run_id is not None
     assert payload["title"] == "Gemini Book"
     assert payload["protagonist"]["name"] == "沈砚"
-    assert (
-        payload["protagonist"]["external_goal"]
-        == fallback_book_spec["protagonist"]["external_goal"]
+    assert "external_goal" not in payload["protagonist"]
+
+
+def test_minimal_cost_cast_prompt_keeps_full_characterisation() -> None:
+    """2026-08-02: 纯爽 no longer amputates the cast prompt.
+
+    The deleted apparatus cut the personhood and villain-charisma sections out
+    of the prompt and appended a contract forbidding childhood incidents,
+    family history, hidden origins, prior failures and private wounds — for a
+    book whose only crime was ticking a pacing preference. Characters need
+    histories in every kind of story.
+    """
+    project = build_project()
+    project.metadata_json["story_enhancers"] = {"cost_style": "minimal"}
+    premise = "少年守住废药园，把苏醒的灵药拿来换钱。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+
+    _system, prompt = planner_services._cast_spec_prompts(
+        project,
+        book_spec,
+        world_spec,
     )
+
+    assert "最终人物事实源契约" not in prompt
+    assert "来源受限的人格合同" not in prompt
+
+    # And the same prompt for a standard-cost book is now identical in shape.
+    standard = build_project()
+    standard.metadata_json["story_enhancers"] = {"cost_style": "standard"}
+    _system2, standard_prompt = planner_services._cast_spec_prompts(
+        standard,
+        planner_services._fallback_book_spec(standard, premise),
+        world_spec,
+    )
+    assert ("人格底层" in prompt) == ("人格底层" in standard_prompt)
+
+
+def test_minimal_cast_is_compiled_only_from_approved_design() -> None:
+    project = build_project()
+    project.genre = "东方玄幻"
+    project.sub_genre = "东方玄幻"
+    project.metadata_json.update(
+        {
+            "story_enhancers": {"cost_style": "minimal"},
+            "creation_intent_contract": {"audience_orientation": "male"},
+        }
+    )
+    premise = "陆沉接手废药园，发现杂草是上古灵药，一边装废物，一边拿灵药喂猪。"
+    lock_design_snapshot(
+        project,
+        protagonist_name="陆沉",
+        reader_promise=premise,
+        core_story_engine="每次灵药产出都会改变资源与下一轮外部试探",
+        effect_skills=["comedy_engine", "hype_satisfaction_engine"],
+    )
+    book_spec = {
+        "title": "我的废药园通神了",
+        "tone": "轻松爽文",
+        "logline": premise,
+        "unique_hook": "灵药只认陆沉的浇水节奏与搭话。",
+        "theme_statement": "把根扎稳，让所有人离不开自己。",
+        "dramatic_question": "陆沉能否守住废园？",
+        "protagonist": {
+            "name": "陆沉",
+            "archetype": "底层扮猪吃虎型经营主角",
+            "outer_motivation": "盘活废园",
+            "core_drive": "守住废园",
+            "weakness": "根骨垫底，正面战力弱",
+            "secret": "能按节奏唤醒灵药",
+            "growth_curve": "从看园人到药市中间人",
+        },
+        "stakes": {
+            "personal": "失去废园",
+            "interpersonal": "能力暴露会被争抢",
+        },
+        "series_engine": {
+            "core_serial_engine": "灵药换资源、地盘扩张、对手升级",
+            "repeatable_story_unit": "每次出货都会引来更精明的试探",
+        },
+        "power_system": {
+            "upgrade_engine": {"core_mechanism": "灵药苏醒反哺根骨"},
+            "antagonist_ladder": [
+                {"tier": "Tier-1 散户试探", "tactic": "低价收药并窥探废园"},
+                {"tier": "Tier-2 药商压价", "tactic": "联合压价并争夺货源"},
+            ],
+        },
+    }
+    world_spec = {
+        "world_premise": "陆沉是苍梧宗记名弟子和废药园看园人。",
+        "power_system": {
+            "protagonist_starting_tier": "枯草期",
+            "hard_limits": "只认陆沉，不能外包",
+        },
+    }
+
+    cast = planner_services._compile_source_bound_cast_spec(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+    )
+
+    assert planner_services._source_bound_cast_enabled(project) is True
+    assert cast["_meta"]["source_compiler"] == "approved-design-cast.v1"
+    assert cast["protagonist"]["name"] == "陆沉"
+    assert cast["protagonist"]["age"] is None
+    assert cast["protagonist"]["family_imprint"]["family_secrets"] == []
+    assert cast["protagonist"]["life_history"]["trauma"] == []
+    assert cast["antagonist"] is None
+    assert cast["supporting_cast"] == []
+    assert [item["name"] for item in cast["antagonist_forces"]] == [
+        "散户试探",
+        "药商压价",
+    ]
+    assert cast["conflict_map"] == []
+    from bestseller.services.bible_gate import (
+        build_draft_from_materialization_content,
+        validate_bible_completeness,
+    )
+    from bestseller.services.invariants import seed_invariants
+
+    report = validate_bible_completeness(
+        build_draft_from_materialization_content(
+            book_spec_content=book_spec,
+            world_spec_content=world_spec,
+            cast_spec_content=cast,
+        ),
+        seed_invariants(
+            project_id=project.id,
+            language=project.language,
+            words_per_chapter=None,
+            genre=project.genre,
+            sub_genre=project.sub_genre,
+        ),
+    )
+    assert not {
+        item.code for item in report.deficiencies
+    }.intersection(planner_services._CAST_PERSONHOOD_REPAIR_CODES)
+    serialized = json.dumps(cast, ensure_ascii=False)
+    for polluted in (
+        "尸体",
+        "墓穴",
+        "旧债",
+        "血债",
+        "账房",
+        "账本",
+        "童年",
+        "父亲",
+        "母亲",
+        "家族秘密",
+        "反噬",
+        "寿元",
+    ):
+        assert polluted not in serialized
+
+    emotion = planner_services._compile_source_bound_emotion_driven_kernel(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast,
+    )
+    assert emotion["_meta"]["source_compiler"] == "approved-design-emotion.v1"
+    assert emotion["antagonist_moral_contracts"] == []
+    assert emotion["empathy_contracts"][0]["current_desire"] == "盘活废园"
+    emotion_serialized = json.dumps(emotion, ensure_ascii=False)
+    for polluted in (
+        "尸体",
+        "墓穴",
+        "旧债",
+        "血债",
+        "账房",
+        "账本",
+        "童年",
+        "父亲",
+        "母亲",
+        "崩塌伤口",
+        "墓志铭",
+        "反噬",
+        "寿命",
+        "寿元",
+    ):
+        assert polluted not in emotion_serialized
+
+
+def test_source_bound_planning_spine_is_domain_neutral_and_snapshot_only() -> None:
+    project = build_project()
+    project.title = "回声航线"
+    project.genre = "科幻"
+    project.sub_genre = "太空冒险"
+    project.target_chapters = 50
+    project.target_word_count = 100000
+    premise = "巡航员沈砚发现封锁航线会回应他的导航脉冲，每次修复都会让下一段航路主动改道。"
+    engine = "每轮用导航脉冲确认一段航路、取得通行成果，并面对依据公开航迹升级的阻力。"
+    project.metadata_json["story_enhancers"] = {
+        "cost_style": "minimal",
+        "effect_skills": ["hype_satisfaction_engine"],
+    }
+    lock_design_snapshot(
+        project,
+        protagonist_name="沈砚",
+        reader_promise=premise,
+        core_story_engine=engine,
+        effect_skills=["hype_satisfaction_engine"],
+    )
+
+    book = planner_services._compile_source_bound_book_spec(project, premise)
+    book = planner_services._ensure_book_spec_bible_fields(project, premise, book)
+    world = planner_services._compile_source_bound_world_spec(project, premise, book)
+    cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
+    emotion = planner_services._compile_source_bound_emotion_driven_kernel(
+        project,
+        premise,
+        book,
+        world,
+        cast,
+    )
+    volumes = planner_services._compile_source_bound_volume_plan(
+        project,
+        premise,
+        book,
+        world,
+        cast,
+    )
+    disclosure = planner_services._compile_source_bound_world_disclosure(
+        project,
+        volumes[0],
+    )
+
+    assert planner_services._source_bound_cast_enabled(project) is True
+    assert book["_meta"]["source_compiler"] == "approved-design-book.v1"
+    assert world["_meta"]["source_compiler"] == "approved-design-world.v1"
+    assert cast["_meta"]["source_compiler"] == "approved-design-cast.v1"
+    assert emotion["_meta"]["source_compiler"] == "approved-design-emotion.v1"
+    assert volumes[0]["_meta"]["source_compiler"] == "approved-design-volume.v1"
+    assert disclosure["_meta"]["source_compiler"] == "approved-design-world-disclosure.v1"
+    assert book["naming_pool"] == ["沈砚"]
+    assert world["history_key_events"] == []
+    assert disclosure["new_locations"] == []
+    assert disclosure["new_rules_revealed"] == []
+    serialized = json.dumps(
+        [book, world, cast, emotion, volumes, disclosure],
+        ensure_ascii=False,
+    )
+    assert premise in serialized
+    assert engine in serialized
+    for unrelated_domain_seed in (
+        "废药园",
+        "灵药",
+        "药畦",
+        "猪圈",
+        "异变猪",
+        "浇水",
+        "地契",
+        "账本",
+        "尸体",
+        "旧灵脉",
+        "封园事件",
+        "老瞎子",
+        "碎木牌",
+        "童年",
+        "父母",
+    ):
+        assert unrelated_domain_seed not in serialized
 
 
 @pytest.mark.asyncio
@@ -2907,6 +3708,58 @@ async def test_repair_cast_personhood_regenerates_incomplete_character_bible(
     assert payload["antagonist"]["ip_anchor"]["core_wound"]
     assert "Bible 回炉整改清单" in prompts[0]
     assert "CHARACTER_PERSONHOOD_INCOMPLETE" in prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_source_bound_cast_skips_biography_invention_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json.update(
+        {
+            "story_enhancers": {"cost_style": "minimal"},
+            "book_design_snapshot_status": "locked",
+            "book_design_snapshot": {
+                "snapshot_id": "approved-snapshot",
+                "source_hash": "approved-source-hash",
+                "protagonist": {"name": "余烬"},
+            },
+        }
+    )
+    source_bound_cast = {
+        "protagonist": {
+            "name": "余烬",
+            "role": "protagonist",
+            "goal": "利用当旬雷元完成炼器",
+            "metadata": {"source_bound_minimal": True},
+        },
+        "antagonist": None,
+        "supporting_cast": [],
+        "antagonist_forces": [],
+        "conflict_map": [],
+    }
+
+    async def unexpected_generate(*args: object, **kwargs: object):
+        raise AssertionError("source-bound cast must not enter biography repair")
+
+    monkeypatch.setattr(
+        planner_services,
+        "_generate_structured_artifact",
+        unexpected_generate,
+    )
+
+    payload, llm_run_id = await planner_services._repair_cast_personhood_if_needed(
+        session=FakeSession(),
+        settings=build_settings(),
+        project=project,
+        book_spec_payload={},
+        world_spec_payload={},
+        cast_spec_payload=source_bound_cast,
+        workflow_run_id=uuid4(),
+    )
+
+    assert payload == source_bound_cast
+    assert llm_run_id is None
 
 
 def test_fallback_volume_plan_has_different_obstacles_per_volume() -> None:

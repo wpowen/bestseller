@@ -358,8 +358,8 @@ def build_improvement_feedback(
         f"达标硬线：简介点击力 ≥ {blurb_min:.0f} 分。当前仅 {report.blurb.total:.0f} 分，"
         f"还差 {gap:.0f} 分。下面是最该补的几项(分越低越拖分)，请逐条改到位：",
     ]
-    # 题材感知的情绪范例——玄幻别拿"退婚/重生"串台，用灭门/夺宝/绝境突破/碾压打脸。
-    _emo = "、".join(genre_emotion_exemplars(report.genre, report.sub_genre, cfg)[:5])
+    # (2026-08-01 product ruling) framework event menus no longer enter repair
+    # prompts — the fix hint asks for THIS book's own strongest event instead.
     # 简介(blurb)是达标信号——按最弱维度排序，给诊断+具体修法，引导改到 blurb_min。
     blurb_dims = sorted(report.blurb.dimensions, key=lambda d: d.score)
     suggestions = list(report.blurb.suggestions)
@@ -367,8 +367,8 @@ def build_improvement_feedback(
     for d in blurb_dims:
         if d.score >= 4.0 or shown >= 5:
             continue
-        if d.key == "emotion_charge" and _emo:
-            fix = f"把【{_emo}】这类本题材高唤起情绪事件提到最前（别用其他题材的情绪词）"
+        if d.key == "emotion_charge":
+            fix = "把本书自己最强的高唤起情绪事件提到最前（从前提与冲突里选，别用其他题材的情绪词）"
         else:
             fix = _DIMENSION_FIX_HINT.get(d.key, "")
         line = f"- 简介·{d.label}（{d.score:.1f}/5）：{d.rationale}"
@@ -400,7 +400,7 @@ def build_improvement_feedback(
         lines.append("故事层提醒（advisory）：" + "、".join(report.premise.gating_caps[:2]))
     lines.append(
         "重写要求：首句≤30字的强钩(疑问/反差/冲突)、卖点三要素齐(身份+冲突+代价)、"
-        f"高唤起情绪前置（本题材如：{_emo}）、长度按目标平台带"
+        "高唤起情绪前置（从本书前提与冲突里选）、长度按目标平台带"
         "（番茄80-130/起点140-220/七猫80-140，未知平台80-220）、结尾留悬念不剧透、禁AI腔套话。"
     )
     text = "\n".join(lines)

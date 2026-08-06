@@ -467,13 +467,20 @@ def _extract_unique_hook(
         value = _text(metadata.get(key) or commercial_brief.get(key))
         if value:
             return value
-    tags = _string_list(story_facets.get("trope_tags"))
-    setting = _text(story_facets.get("setting"))
-    drive = _text(story_facets.get("narrative_drive"))
-    if tags or setting or drive:
-        return " / ".join([item for item in (setting, drive, ", ".join(tags[:5])) if item])
-    # Fallback: a fresh book always has a hook in its own spec — pull it from
-    # book_spec so a populated premise is never falsely flagged unique_hook_missing.
+    # Final conception truth must outrank preliminary Story Architect facets.
+    # Legacy projects may still contain both; choosing facets first lets an
+    # abandoned exploration (setting/drive/tags) overwrite the selected premise
+    # in planning and outline prompts.
+    story_spine = _as_mapping(metadata.get("story_spine"))
+    for value in (
+        story_spine.get("core_reader_promise"),
+        metadata.get("premise"),
+        metadata.get("synopsis"),
+    ):
+        text = _text(value)
+        if text:
+            return text
+    # A fresh book also carries its hook in BookSpec.
     spec = _as_mapping(book_spec)
     for key in (
         "unique_hook",
@@ -489,6 +496,13 @@ def _extract_unique_hook(
         value = _text(spec.get(key))
         if value:
             return value
+    # Compatibility fallback for old/non-conception projects that genuinely
+    # use top-level facets as their only creative positioning input.
+    tags = _string_list(story_facets.get("trope_tags"))
+    setting = _text(story_facets.get("setting"))
+    drive = _text(story_facets.get("narrative_drive"))
+    if tags or setting or drive:
+        return " / ".join([item for item in (setting, drive, ", ".join(tags[:5])) if item])
     return ""
 
 

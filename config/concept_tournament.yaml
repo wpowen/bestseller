@@ -42,6 +42,10 @@ raw_idea_batch_focuses:
   - 题材原生职业、资源争夺与势力夹缝
   - 成长道路、移动世界与建设目标
 premise_card_count: 4
+# 项目卡初审是便宜的排序层，不是最终故事门。真实运行中 4 张已付费生成的完整卡
+# 被单模型一次性压到 2 张，其中 1 张又命中尸体母题，最终只剩 1 个项目方向撞
+# 八轴硬门。保留最多 4 张干净近失卡进入钩子终审；污染卡仍在更早的确定性门淘汰。
+premise_card_min_survivors: 4
 engine_kernel_max_tokens: 3500  # M3项目卡较长；给完整JSON与一次结构修复留出正文预算
 raw_idea_floor: 7.0
 raw_idea_progression_floor: 5.0  # 仅获 premise card 展开资格；不代表通过最终生产门禁
@@ -52,6 +56,12 @@ n_candidates: 6          # 六路题材原生故事发动机候选
 control_candidates: 2    # 兼容旧配置；engine_first 不再从全局异质池抽样
 winner_min: 5.5          # 冠军综合分低于此线 → 不注入(宁可回落现状,不硬塞烂概念)
 judge_hard_floors:       # 任何单轴不达标直接出局，禁止用其他高分平均掉硬伤
+  # 2026-08-01 两轮真实轻松玄幻：最佳干净候选题材/表达/运动均达 7-9，仍因
+  # freshness=4、mechanism=6、predictable=6 三个软缺陷被独立终审全灭。4 分本身
+  # 不是题材错位或逻辑灾难；污染与题材漂移另有确定性门，下游还有长篇承载和
+  # logline 终审。
+  catastrophe_floor: 4.0
+  soft_miss_allowance: 3
   # 2026-07-17 校准(五轮真机E2E取证):freshness 7.0/click 7.5 在脑洞关闭的默认
   # 建书下=淘汰赛干涸常态(16+候选零通过;click 8.0/motion 8.0 的候选因 fresh 6.0
   # 被整个丢弃)。而干涸的下场是注入【保底概念】——比任何被拒候选都弱,2/3 直接死

@@ -11,8 +11,11 @@ WITHIN the run, bounded by a round counter.
 
 from __future__ import annotations
 
+import inspect
+
 from bestseller.services.planner import (
     _outline_judge_repair_directives,
+    _outline_next_repair_directives,
     _select_active_commercial_repair_directives,
 )
 
@@ -56,6 +59,57 @@ def test_directives_are_bounded_to_preserve_writer_prompt_budget() -> None:
     assert _outline_judge_repair_directives(
         payload, round_idx=0, max_rounds=1
     ) == [f"directive-{index}" for index in range(8)]
+
+
+def test_creator_selected_effect_gaps_enter_next_repair_round() -> None:
+    directives = _outline_next_repair_directives(
+        {"passed": True, "repair_directives": []},
+        {
+            "chapters": [
+                {"chapter_number": 1, "title": "第一章"},
+                {"chapter_number": 2, "title": "第二章"},
+                {"chapter_number": 3, "title": "第三章"},
+            ]
+        },
+        project_metadata={
+            "story_enhancers": {
+                "effect_skills": ["comedy_engine", "hype_satisfaction_engine"]
+            }
+        },
+        round_idx=0,
+        max_rounds=2,
+    )
+
+    assert len(directives) == 2
+    assert "`comedy_engine`" in directives[0]
+    assert "`hype_satisfaction_engine`" in directives[1]
+    assert all("不得把该效果或全部建书效果硬塞进每一章" in item for item in directives)
+
+
+def test_creator_selected_effect_repairs_share_the_existing_round_bound() -> None:
+    assert (
+        _outline_next_repair_directives(
+            {"passed": False, "repair_directives": ["commercial"]},
+            {"chapters": [{"chapter_number": 1, "title": "第一章"}]},
+            project_metadata={
+                "story_enhancers": {"effect_skills": ["comedy_engine"]}
+            },
+            round_idx=2,
+            max_rounds=2,
+        )
+        == []
+    )
+
+
+def test_both_full_and_progressive_planners_consume_enhancer_repair_directives() -> None:
+    from bestseller.services import planner
+
+    assert "_outline_next_repair_directives" in inspect.getsource(
+        planner.generate_novel_plan
+    )
+    assert "_outline_next_repair_directives" in inspect.getsource(
+        planner.generate_volume_plan
+    )
 
 
 def test_current_round_directives_replace_outer_heal_directives() -> None:

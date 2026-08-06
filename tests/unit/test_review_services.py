@@ -1605,8 +1605,8 @@ def test_scene_rewrite_prompts_switch_to_english_for_english_projects() -> None:
     assert "Rewrite the current scene in English only" in user_prompt
     assert "Project: Storm Ledger" in user_prompt
     assert "Chapter 1" in user_prompt
-    assert "[Project material anchors]" in user_prompt
-    assert "§world_settings/proj/storm-archive" in user_prompt
+    assert "[Project material anchors]" not in user_prompt
+    assert "§world_settings/proj/storm-archive" not in user_prompt
     assert "长篇中文小说" not in combined
 
 
@@ -2208,8 +2208,8 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
     assert "反派推进" in user_prompt
     assert "章节重写编辑" in rewrite_system_prompt
     assert "补强场景衔接" in rewrite_user_prompt
-    assert "【本书素材锚点】" in rewrite_user_prompt
-    assert "§scene_templates/proj/warehouse-pressure" in rewrite_user_prompt
+    assert "【本书素材锚点】" not in rewrite_user_prompt
+    assert "§scene_templates/proj/warehouse-pressure" not in rewrite_user_prompt
 
 
 def test_render_rewritten_chapter_markdown_preserves_existing_body_verbatim() -> None:

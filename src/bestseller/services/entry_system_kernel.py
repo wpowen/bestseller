@@ -143,6 +143,41 @@ def _genre_profile(project_like: object) -> str:
     )
 
 
+def _requested_cost_style(project_like: object) -> str:
+    """Resolve the user's cost preference from creation-time truth.
+
+    Entry-system defaults used to infer costs from genre alone, so a Xuanhuan
+    book explicitly created with ``cost_style=minimal`` still received injury,
+    backlash, and compulsory-debt vocabulary.  Read the creation contract
+    before applying genre defaults; explicit user intent outranks category
+    heuristics.
+    """
+
+    candidates: list[object] = [project_like]
+    metadata = _as_mapping(_get(project_like, "metadata"))
+    if metadata:
+        candidates.append(metadata)
+    for container in candidates:
+        direct = _text(_get(container, "cost_style"))
+        if direct:
+            return direct.lower()
+        enhancers = _as_mapping(_get(container, "story_enhancers"))
+        direct = _text(enhancers.get("cost_style"))
+        if direct:
+            return direct.lower()
+        creation = _as_mapping(_get(container, "creation_intent_contract"))
+        direct = _text(_as_mapping(creation.get("story_enhancers")).get("cost_style"))
+        if direct:
+            return direct.lower()
+        genre_intent = _as_mapping(_get(container, "genre_intent_contract"))
+        direct = _text(
+            _as_mapping(genre_intent.get("explicit_enhancers")).get("cost_style")
+        )
+        if direct:
+            return direct.lower()
+    return "standard"
+
+
 def _taxonomy_for_profile(profile: str) -> tuple[EntryTypeDefinition, ...]:
     if _contains_any(profile, _PROGRESSION_MARKERS):
         specs = (
@@ -364,6 +399,25 @@ def _taxonomy_for_profile(profile: str) -> tuple[EntryTypeDefinition, ...]:
     )
 
 
+def _minimal_cost_taxonomy(
+    taxonomy: Sequence[EntryTypeDefinition],
+) -> tuple[EntryTypeDefinition, ...]:
+    """Remove obligation-shaped taxonomy roles for a minimal-cost book."""
+
+    return tuple(
+        item.model_copy(
+            update={
+                "allowed_roles": tuple(
+                    role
+                    for role in item.allowed_roles
+                    if str(role).strip().lower() not in {"debt", "repayment", "backlash"}
+                )
+            }
+        )
+        for item in taxonomy
+    )
+
+
 def _grade_ladders_for_taxonomy(
     taxonomy: Sequence[EntryTypeDefinition],
 ) -> tuple[EntryGradeLadder, ...]:
@@ -490,7 +544,17 @@ def _grade_ladders_for_taxonomy(
     return tuple(ladders)
 
 
-def _default_cost_types(profile: str, blueprints: Sequence[EntryBlueprint]) -> tuple[str, ...]:
+def _default_cost_types(
+    profile: str,
+    blueprints: Sequence[EntryBlueprint],
+    *,
+    cost_style: str = "standard",
+) -> tuple[str, ...]:
+    if cost_style == "minimal":
+        # Minimal-cost is a creation contract, not a cosmetic hint.  Do not
+        # let genre packs or distilled blueprints reintroduce severe physical,
+        # repayment, or recovery obligations through the back door.
+        return ("resource_choice", "exposure", "time_window", "opponent_attention")
     values: list[str] = []
     if _contains_any(profile, _PROGRESSION_MARKERS):
         values.extend(["injury", "resource_spend", "exposure", "faction_attention"])
@@ -582,7 +646,10 @@ def build_fallback_entry_system_kernel(
 
     story_design = _as_mapping(story_design_kernel)
     profile = _genre_profile(project_like)
+    cost_style = _requested_cost_style(project_like)
     taxonomy = _taxonomy_for_profile(profile)
+    if cost_style == "minimal":
+        taxonomy = _minimal_cost_taxonomy(taxonomy)
     target_chapters_raw = _get(project_like, "target_chapters", 60)
     try:
         target_chapters = int(target_chapters_raw or 60)
@@ -591,11 +658,19 @@ def build_fallback_entry_system_kernel(
     reader_promise = _text(story_design.get("reader_promise"))
     change_vectors = _story_design_keywords(story_design)
     blueprint_summaries = [bp.mechanism_summary for bp in blueprints[:3]]
-    system_promise_parts = [
-        reader_promise or "本书词条必须服务剧情推进、状态变化和可见代价。",
-        *change_vectors[:2],
-        *blueprint_summaries,
-    ]
+    default_promise = (
+        "本书词条服务剧情推进和状态变化，能力收益只附带轻量、即时、可选择的压力。"
+        if cost_style == "minimal"
+        else "本书词条必须服务剧情推进、状态变化和可见代价。"
+    )
+    # Free-form story/blueprint prose may carry a generic genre cost model.
+    # For a minimal-cost book the explicit creation contract owns this layer,
+    # so the entry kernel remains structural and does not echo those phrases.
+    system_promise_parts = (
+        [default_promise]
+        if cost_style == "minimal"
+        else [reader_promise or default_promise, *change_vectors[:2], *blueprint_summaries]
+    )
     anti_copy_rules = [
         "只借鉴抽象机制,不复用来源书人名、地名、法宝名、功法名或获取桥段。",
         "新词条必须改变机制、代价或叙事功能,不能只改名。",
@@ -612,10 +687,18 @@ def build_fallback_entry_system_kernel(
         grade_ladders=_grade_ladders_for_taxonomy(taxonomy),
         capability_axes=_capability_axes(taxonomy, blueprints),
         cost_model=EntryCostModel(
-            default_cost_types=_default_cost_types(profile, blueprints),
+            default_cost_types=_default_cost_types(
+                profile,
+                blueprints,
+                cost_style=cost_style,
+            ),
             hard_rule=(
                 "任何改变战力、权限、真相、资源或局势的词条效果,"
-                "都必须支付读者可见的代价或制造后续压力。"
+                + (
+                    "只允许形成轻量、即时、可选择的资源取舍、暴露风险、时间窗口或对手关注。"
+                    if cost_style == "minimal"
+                    else "都必须支付读者可见的代价或制造后续压力。"
+                )
             ),
         ),
         acquisition_model=EntryAcquisitionModel(
@@ -634,8 +717,16 @@ def build_fallback_entry_system_kernel(
         lifecycle=EntryLifecycle(),
         uniqueness_rules=(
             "同一卷内不得出现两个承担相同 narrative_role 的支柱词条。",
-            "支柱词条必须有未来兑现、反噬或升级路径。",
-            "章节奖励必须指向具体词条、具体状态变化或具体资源账。",
+            (
+                "支柱词条必须有未来兑现或升级路径，不能追加新的强制负担。"
+                if cost_style == "minimal"
+                else "支柱词条必须有未来兑现、反噬或升级路径。"
+            ),
+            (
+                "章节奖励必须指向具体词条、具体状态变化或具体资源变化。"
+                if cost_style == "minimal"
+                else "章节奖励必须指向具体词条、具体状态变化或具体资源账。"
+            ),
         ),
         anti_copy_rules=_dedupe(anti_copy_rules),
         coverage_targets=_coverage_targets(taxonomy, target_chapters=target_chapters),

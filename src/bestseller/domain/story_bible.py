@@ -362,6 +362,25 @@ def _split_label_description(value: str) -> tuple[str, str | None]:
     return text, None
 
 
+def _coerce_named_entry_list(value: Any) -> Any:
+    """Recover list-shaped world entries emitted as one delimited string.
+
+    World planners occasionally serialize the complete locations or factions
+    array as a single Chinese-semicolon-delimited string.  Each entry model
+    already accepts a plain string, so splitting only on strong record
+    boundaries preserves the descriptions while restoring the intended list
+    cardinality.  A scalar without a record delimiter remains one entry.
+    """
+
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return []
+    entries = [part.strip(" \t\r\n-•") for part in re.split(r"[；;\n]+", text)]
+    return [entry for entry in entries if entry]
+
+
 def coerce_to_int_list(value: Any) -> Any:
     """Coerce human-shaped descriptors like ``'1-10章'`` / ``'1,3,5'`` into ``list[int]``.
 
@@ -623,6 +642,11 @@ class WorldSpecInput(BaseModel):
     power_structure: str | None = None
     history_key_events: list[HistoryEventInput] = Field(default_factory=list)
     forbidden_zones: str | None = None
+
+    @field_validator("locations", "factions", mode="before")
+    @classmethod
+    def _coerce_named_entry_lists(cls, v: Any) -> Any:
+        return _coerce_named_entry_list(v)
 
     @field_validator("power_structure", "forbidden_zones", "world_premise", mode="before")
     @classmethod

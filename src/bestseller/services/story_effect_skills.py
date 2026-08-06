@@ -705,6 +705,29 @@ def render_story_effect_skill_catalog_prompt_block(
     *,
     language: str = "zh-CN",
 ) -> str:
+    # (2026-08-03) The 18-skill menu only renders when the creator actually
+    # ticked skills. It is ~8,300 characters — a quarter of the whole
+    # chapter-outline prompt — and it used to render for every book, including
+    # the ones that asked for no skills at all. Filtering at RENDER time (not
+    # just at bake time) also rescues books already carrying a baked catalog:
+    # 《雾街债主》 deadlocked because its batch 1-3 prompt never fit the budget,
+    # so those chapters never materialized and the rolling window could not
+    # close — self-heal then re-queued the same replan indefinitely.
+    if isinstance(catalog_or_metadata, Mapping):
+        from bestseller.services.story_enhancers import resolve_story_enhancers
+
+        creator_picked = bool(
+            resolve_story_enhancers(catalog_or_metadata).effect_skills
+        )
+        # A per-artifact runtime selection also justifies the menu: the planner
+        # routed a skill for this artifact, so the writer needs the catalog row
+        # it refers to.
+        runtime_selection = bool(
+            catalog_or_metadata.get(STORY_EFFECT_SKILL_SELECTION_METADATA_KEY)
+        )
+        if not creator_picked and not runtime_selection:
+            return ""
+
     catalog = _catalog_or_metadata(catalog_or_metadata)
     if catalog is None:
         return ""

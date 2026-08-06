@@ -193,10 +193,10 @@ def test_outline_prompt_lists_brainhole_but_does_not_expand_without_selection() 
         project, book_spec, cast_spec, volume_plan
     )
 
-    assert "【故事效果 Skill 清单】" in user_prompt
-    assert "brainhole_engine" in user_prompt
-    assert "world_texture_engine" in user_prompt
-    assert "`selected_effect_skills`" in user_prompt
+    # 2026-08-03：既没有建书页勾选、也没有运行时按产物选择时，整份清单不渲染。
+    # 它约 8300 字，占章纲 prompt 的四分之一，对一本没要过任何技能的书是纯负担
+    # ——《雾街债主》正因此撑爆 prompt 预算（必需 15336 > 可用 14400）。
+    assert "【故事效果 Skill 清单】" not in user_prompt
     assert "【脑洞生成合同】" not in user_prompt
     assert "【世界质感合同】" not in user_prompt
     assert "只要本合同存在，每章必须输出 `brainhole_contract`" not in user_prompt

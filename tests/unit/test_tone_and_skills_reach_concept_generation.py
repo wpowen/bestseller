@@ -67,6 +67,95 @@ class TestTheyReachTheGeneratorPrompt:
         assert "轻松" in user, "调性必须出现在生成 prompt 里"
         assert "喜剧" in user, "喜剧技能必须出现在生成 prompt 里"
 
+    def test_the_raw_idea_pool_receives_choices_before_it_mints_the_seed(self) -> None:
+        """原始种子比 premise card 更早；这里断线会让后层被污染种子锁死。"""
+
+        _system, user = ct._build_raw_idea_pool_messages(
+            genre="仙侠",
+            sub_genre="仙侠",
+            count=4,
+            tone_preference="light",
+            effect_skills=["comedy_engine", "hype_satisfaction_engine"],
+            creation_intent_block="【建书页明确选择】tone=light",
+        )
+        combined = _system + user
+        assert "轻松" in combined
+        assert "喜剧" in combined
+        assert "建书页明确选择" in combined
+
+    def test_contradiction_gate_rejects_a_dark_concept_for_light_tone(self) -> None:
+        violations = ct._creation_intent_content_violations(
+            "阴冷仙城里，主角背着尸体追查惨烈旧案。",
+            tone_preference="light",
+            effect_skills=["comedy_engine", "hype_satisfaction_engine"],
+        )
+        assert any("轻松调性" in item for item in violations)
+
+    def test_effect_skills_do_not_require_literal_keywords(self) -> None:
+        violations = ct._creation_intent_content_violations(
+            "小贩借一次公开比试夺回摊位，还让执事不得不改掉旧规。",
+            effect_skills=["comedy_engine", "hype_satisfaction_engine"],
+        )
+        assert violations == ()
+
+    def test_strict_option_gate_accepts_visible_light_comedy_and_hype(self) -> None:
+        violations = ct._creation_intent_content_violations(
+            "主角用荒诞反差和自嘲拆穿仙门骗局，当众翻盘打脸，整体轻松明快。",
+            tone_preference="light",
+            effect_skills=["comedy_engine", "hype_satisfaction_engine"],
+        )
+        assert violations == ()
+
+    def test_style_labels_cannot_cancel_heavy_story_surface(self) -> None:
+        """writing_profile labels must never neutralize corpse/death prose."""
+
+        violations = ct._creation_intent_content_violations(
+            "主角背着尸体穿过矿道，第二具尸首堵住了出口。\n"
+            "writing_profile.style.tone_keywords=轻松、幽默、明快",
+            tone_preference="light",
+        )
+        assert any("轻松调性" in item for item in violations)
+
+    def test_minimal_cost_no_longer_rejects_a_lifespan_mechanic(self) -> None:
+        """2026-08-02: 纯爽 is pacing, not a ban on the genre's cost words."""
+        assert (
+            ct._creation_intent_content_violations(
+                "幼崽越强，宿主寿命越短，把喂养变强和倒计时绑定。",
+                tone_preference="",
+                cost_style="minimal",
+            )
+            == ()
+        )
+
+    def test_minimal_cost_no_longer_rejects_meridian_injury_phrases(self) -> None:
+        assert (
+            ct._creation_intent_content_violations(
+                "雷意灼脉后，经脉灼伤仍被迫继续施术。",
+                cost_style="minimal",
+            )
+            == ()
+        )
+
+    def test_standard_cost_allows_production_meridian_injury_phrases(self) -> None:
+        violations = ct._creation_intent_content_violations(
+            "雷意灼脉后，经脉灼伤仍被迫继续施术。",
+            cost_style="standard",
+        )
+        assert violations == ()
+
+    def test_non_minimal_cost_does_not_activate_the_minimal_gate(self) -> None:
+        violations = ct._creation_intent_content_violations(
+            "幼崽越强，宿主寿命越短。",
+            cost_style="standard",
+        )
+        assert violations == ()
+
+    def test_corpse_motif_detector_is_retired(self) -> None:
+        """A mine full of unclaimed bodies is a setting, not a defect."""
+        from bestseller.services.anti_default_motif import is_anonymous_death_dominated
+
+        assert not is_anonymous_death_dominated("矿工尸体没人收，另一具遗体堵在矿道")
+
 
 class TestDefaultsChangeNothing:
     def test_no_tone_and_no_skills_leaves_the_prompt_as_before(self) -> None:

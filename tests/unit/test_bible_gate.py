@@ -251,6 +251,25 @@ class TestCharacterIPAnchorCheck:
         codes = {d.code for d in deficiencies}
         assert "CORE_WOUND_MISSING" in codes
 
+    def test_source_bound_minimal_protagonist_does_not_require_invented_anchors(self) -> None:
+        hero = _character(
+            "陆沉",
+            "protagonist",
+            quirks=[],
+            core_wound=None,
+            metadata={"source_bound_minimal": True},
+        )
+
+        deficiencies = list(
+            CharacterIPAnchorCheck().check(
+                _minimal_draft(characters=[hero]), _invariants()
+            )
+        )
+
+        codes = {item.code for item in deficiencies}
+        assert "CHARACTER_IP_ANCHOR_MISSING" not in codes
+        assert "CORE_WOUND_MISSING" not in codes
+
     def test_antagonist_needs_only_two_quirks(self) -> None:
         villain = _character(
             "暗影",

@@ -21,6 +21,7 @@ import logging
 import re
 
 from bestseller.services.ai_flavor.detector import detect
+from bestseller.services.cost_attribution import attribution_scope
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.quality_levers.cinematic_pov import render_cinematic_pov_block
 
@@ -68,11 +69,9 @@ _EXTRA_SELF_CHECK = (
     "11) 高冲击具身动词词族复读（撞/烫/钻/爬/砸/攥/掐/拧/碾/蹿/洇）：这类词单个很有力，"
     "复读就是最扎眼的 AI 腔——全章同一个词最多 2 次、整个词族合计最多 4 次；"
     "超出的换成平实动词（碰/热/进/伸/握/挤）或普通说法，普通动作用普通词。\n"
-    "12) 债务化比喻回流（除非本书明确是债务/借贷题材）：描写代价/后果被接受时，"
-    "严禁用'认下这笔账/欠条/入账/结算/还债'这类财务记账措辞当修辞框架——即使"
-    "设定层的金手指/代价写得干干净净（污染值/反噬/烙印这类具身形态），写手仍可能"
-    "在描述'接受代价'这个动作时自己套上记账比喻，这是最容易漏改的一条。"
-    "改用具身的非金融意象（反噬、灼烧、印记、感官剥夺）。\n"
+    "12) 无来源的修辞体系：代价、后果与人物关系只能用本章章纲和世界事实已经授权的具体动作、"
+    "资源变化、进入权变化、当下对手压力与人物选择呈现。找不到事实来源的新比喻家族、道具或"
+    "背景发动机直接删除，不要用另一套新意象替换。\n"
     "改写后请自己再过一遍上面 12 条，确认一句不剩。"
 )
 
@@ -80,7 +79,11 @@ _EXTRA_SELF_CHECK = (
 def _findings_text(content: str, language: str) -> tuple[str, float, int]:
     report = detect(content, language=language)
     lines = "\n".join(
-        f"- [{s.category}] 「{s.matched_text[:34]}」：{s.why[:60]}"
+        (
+            f"- [{s.category}] 删除无事实来源的修辞体系，只保留章纲已授权的具体动作和状态变化。"
+            if s.category == "debt_metaphor_leak"
+            else f"- [{s.category}] 「{s.matched_text[:34]}」：{s.why[:60]}"
+        )
         for s in report.spans
     )
     return lines, report.overall_score, len(report.spans)
@@ -134,6 +137,37 @@ async def revise_prose_deslop(
     rubric = render_cinematic_pov_block(language=language)
     if not rubric:  # English / no directive — nothing to enforce
         return content
+
+    # Everything this loop spends is attributable to one deslop event, so a
+    # loop that starts costing more than the chapter it is cleaning is visible
+    # while it runs rather than in the monthly bill.
+    with attribution_scope(rework_kind="deslop", gate="ai_flavor_gate"):
+        return await _revise_prose_deslop_inner(
+            session,
+            settings,
+            content=content,
+            language=language,
+            project_id=project_id,
+            target_chars=target_chars,
+            rounds=rounds,
+            logical_role=logical_role,
+            rubric=rubric,
+        )
+
+
+async def _revise_prose_deslop_inner(
+    session,
+    settings,
+    *,
+    content: str,
+    language: str,
+    project_id,
+    target_chars: int,
+    rounds: int,
+    logical_role: str,
+    rubric: str,
+) -> str:
+    """Body of :func:`revise_prose_deslop`, running inside its attribution scope."""
 
     # Keep-better bookkeeping: the last round's rewrite was historically never
     # re-detected (accepted on length alone), so a final rewrite that *added*

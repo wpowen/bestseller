@@ -510,14 +510,24 @@ def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfi
             prompt_pack_key=writing_profile.market.prompt_pack_key,
         ).to_metadata(),
     )
-    metadata.setdefault(
-        STORY_EFFECT_SKILL_CATALOG_METADATA_KEY,
-        resolve_story_effect_skill_catalog(
-            payload.genre,
-            payload.sub_genre,
-            prompt_pack_key=writing_profile.market.prompt_pack_key,
-        ).to_metadata(),
-    )
+    # (2026-08-03) The 18-skill effect catalog is only baked in when the creator
+    # actually ticked skills on the creation page. It used to be unconditional,
+    # and it rendered into EVERY chapter-outline prompt at ~8,300 characters —
+    # the single largest block, a quarter of the whole prompt, and a menu of 18
+    # options for a book that had asked for none. Live evidence 2026-08-03:
+    # 《雾街债主》 died with "required hard core exceeds combined writer prompt
+    # budget" (15,336 required vs 14,400 usable) while carrying this catalog.
+    from bestseller.services.story_enhancers import resolve_story_enhancers
+
+    if resolve_story_enhancers(metadata).effect_skills:
+        metadata.setdefault(
+            STORY_EFFECT_SKILL_CATALOG_METADATA_KEY,
+            resolve_story_effect_skill_catalog(
+                payload.genre,
+                payload.sub_genre,
+                prompt_pack_key=writing_profile.market.prompt_pack_key,
+            ).to_metadata(),
+        )
     metadata.setdefault("golden_finger", writing_profile.character.golden_finger)
     metadata.setdefault("protagonist_archetype", writing_profile.character.protagonist_archetype)
     metadata.setdefault("growth_curve", writing_profile.character.growth_curve)

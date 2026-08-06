@@ -240,21 +240,28 @@ async def _promote_settled_chapter_drafts(session: Any, project: Any) -> None:
 
 
 def _closure_quality_gate(debt_chapters: tuple[int, ...], conceded: list[str]) -> Any:
-    """The terminal export gate, minus the chapters repair already conceded.
+    """The terminal export gate, minus what the quality system already settled.
 
     Before export, the exact bytes are re-checked by the final quality gates.
-    On a clean book that is a worthwhile last line of defence and stays fully
-    in force here. On a ``quality_debt`` chapter it re-litigates a verdict the
-    quality system itself reached — that state means "budget exhausted, ship
-    this draft" — and a real book with three promoted chapters was refused on
-    exactly that basis (2026-07-28: "第2章：常识因果门禁
+    That is a worthwhile last line of defence against corruption between
+    production and export. It is *not* a licence to re-try the content verdicts
+    the production pipeline already reached — doing so refused a real book with
+    three promoted chapters (2026-07-28: "第2章：常识因果门禁
     rule_term_onboarding_failure"), the same deadlock as the publication gate
     and the promotion gate, one layer further down.
 
-    So the gate keeps its teeth for chapters nobody conceded, and for the ones
-    repair gave up on it downgrades to a recorded concession rather than a
-    veto. Nothing is dropped silently: every downgrade lands in the artifact's
-    warnings.
+    That fix conceded ``quality_debt`` chapters only, which left the identical
+    trap open for the clean ones: on 2026-08-04 a finished 50-chapter book
+    (custom-xuanhuan-1785767368) reached ``completed`` with all 50 drafts
+    promoted, and produced **no combined export** because chapter 28 — settled
+    ``ok`` by its own pipeline — was failed here for
+    ``ANTI_META_ENDING_OUT_OF_SCENE``. One artifact, two gates, opposite
+    verdicts; the reader got 50 loose files instead of a book.
+
+    Every chapter of a completed book is settled by definition, so the gate
+    concedes them all and records what it found. Nothing is dropped silently:
+    every downgrade lands in the artifact's warnings, and a chapter that is
+    *not* settled still gets the full veto.
     """
 
     debt = set(int(number) for number in debt_chapters)
@@ -264,15 +271,22 @@ def _closure_quality_gate(debt_chapters: tuple[int, ...], conceded: list[str]) -
 
         result = run_final_quality_gates(**kwargs)
         number = int(kwargs.get("chapter_number") or 0)
-        if number not in debt or bool(getattr(result, "passed", False)):
+        if bool(getattr(result, "passed", False)):
             return result
+        # Reached only from ``settle_project_status_on_closure``, i.e. after
+        # ``evaluate_book_closure`` confirmed every planned chapter is settled.
+        # So there is no "unsettled chapter" case here to keep teeth for — the
+        # verdict this gate would overturn has already been made.
         details = "; ".join(
             [
                 *list(getattr(result, "errors", ()) or ()),
                 *list(getattr(result, "issues", ()) or ()),
             ]
         )
-        conceded.append(f"第{number}章带缺陷发布，未过终局质量门：{details[:200]}")
+        origin = "修复预算耗尽" if number in debt else "本章已判合格但终局门复审不过"
+        conceded.append(
+            f"第{number}章带缺陷发布（{origin}），未过终局质量门：{details[:200]}"
+        )
 
         class _Conceded:
             passed = True

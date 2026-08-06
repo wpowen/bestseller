@@ -32,15 +32,16 @@ class TestAvoidanceBlock:
     def test_empty_ban_list_injects_nothing(self) -> None:
         assert ct.render_cliche_avoidance_block(()) == ""
 
-    def test_names_the_death_relic_default_explicitly(self) -> None:
+    def test_never_quotes_the_ban_corpus(self) -> None:
         block = ct.render_cliche_avoidance_block(_banned())
-        assert "死人/坟墓/遗物" in block
+        assert all(item not in block for item in _banned())
+        assert "禁用文本不进入" in block
 
     def test_frames_as_substitution_not_bare_enumeration(self) -> None:
         """Bare prohibitions prime what they forbid; the block must redirect."""
 
         block = ct.render_cliche_avoidance_block(_banned())
-        assert "把独特性放在" in block
+        assert "在世主角" in block
 
     def test_stays_compact(self) -> None:
         """Dumping 20+ phrases would itself become a death-motif menu."""
@@ -58,7 +59,7 @@ class TestReachesBothGenerators:
             chapter_count=100,
             banned=_banned(),
         )
-        assert "这些开局已经被写烂" in user
+        assert "原创开局约束" in user
 
     def test_hook_generator_carries_the_avoidance(self) -> None:
         _system, user = ct._build_hook_from_engine_messages(
@@ -67,7 +68,7 @@ class TestReachesBothGenerators:
             kernel={"protagonist_identity": "少年"},
             banned=_banned(),
         )
-        assert "这些开局已经被写烂" in user
+        assert "原创开局约束" in user
 
     def test_generators_omit_it_without_a_ban_list(self) -> None:
         """No-op guard: a caller that passes no ban list gets no block."""
@@ -78,8 +79,8 @@ class TestReachesBothGenerators:
         _s2, h = ct._build_hook_from_engine_messages(
             genre="玄幻", sub_genre="玄幻", kernel={"protagonist_identity": "少年"}
         )
-        assert "这些开局已经被写烂" not in k
-        assert "这些开局已经被写烂" not in h
+        assert "原创开局约束" not in k
+        assert "原创开局约束" not in h
 
 
 class TestProductionCallSitesPassBanned:

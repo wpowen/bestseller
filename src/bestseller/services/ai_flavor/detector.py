@@ -1280,38 +1280,14 @@ def _detect_debt_metaphor_leak(content_md: str, *, lang: str) -> list[AiFlavorSp
     （不是"什么都像什么"的密度问题，一处也不该有）。
     """
 
-    if lang != "zh" or not content_md:
-        return []
-    from bestseller.services.conception import _DEBT_LEDGER_TOKENS
-
-    out: list[AiFlavorSpan] = []
-    for token in _DEBT_LEDGER_TOKENS:
-        start = 0
-        while True:
-            idx = content_md.find(token, start)
-            if idx == -1:
-                break
-            out.append(
-                AiFlavorSpan(
-                    start=idx,
-                    end=idx + len(token),
-                    matched_text=content_md[idx : idx + len(token)],
-                    rule_id="zh.debt_metaphor.leak",
-                    category="debt_metaphor_leak",
-                    severity="warn",
-                    suggestions=(),
-                    sentence_span=_sentence_bounds(content_md, idx, lang),
-                    why=(
-                        f"财务记账类比喻回流（'{token}'）——除非本书明确是债务/借贷题材，"
-                        "描写代价/后果被接受时不许用欠条/认账/结算这类记账措辞当修辞框架，"
-                        "改用具身的非金融意象（反噬、灼烧、印记、感官代价）。"
-                    ),
-                    remove_sentence_on_block=False,
-                )
-            )
-            start = idx + len(token)
-
-    return out
+    # RETIRED 2026-08-02 together with the rest of the motif police. Flagging
+    # every 债/账/欠 in finished prose treated a whole vocabulary as an AI tell,
+    # and the deslop pass then rewrote those sentences out of the chapter. In a
+    # book about a debt, a sect's resource accounts, or a favour owed, that is
+    # the story being deleted. AI-flavour detection stays on the things that are
+    # actually AI tells: staccato paragraphs, sensation stacking, near-copy lines.
+    del content_md, lang
+    return []
 
 
 # ── First-person inner-voice absence (advisory) ─────────────────────────────

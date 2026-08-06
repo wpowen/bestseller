@@ -240,8 +240,14 @@ def test_genre_emotion_exemplars_generic_fallback():
     assert len(unknown) >= 4  # never empty → guidance never degrades to nothing
 
 
-def test_feedback_emotion_hint_is_genre_aware_for_xuanhuan():
-    """A weak-emotion 玄幻 blurb's repair feedback must use 玄幻 beats, not 退婚/重生."""
+def test_feedback_emotion_hint_points_at_this_books_own_material():
+    """2026-08-01: the per-genre event menu left the repair feedback.
+
+    A shared list of 玄幻 events (灭门/夺宝/绝境突破) steered every same-genre
+    book toward the same beats. The hint now asks for the strongest event in
+    THIS book's premise and conflict, and still must not cross-pollinate the
+    urban 退婚/重生 vocabulary.
+    """
     cfg = load_story_appeal_config()
     dims = (
         AppealDimension(key="emotion_charge", label="情绪强度", score=1.5, weight=8,
@@ -255,7 +261,9 @@ def test_feedback_emotion_hint_is_genre_aware_for_xuanhuan():
     )
     fb = build_improvement_feedback(rep, cfg)
     assert "退婚" not in fb, "玄幻 feedback must not cross-pollinate urban 退婚"
-    assert ("灭门" in fb or "夺宝" in fb or "绝境突破" in fb), fb
+    assert "本书自己最强的高唤起情绪事件" in fb, fb
+    for framework_menu_item in ("灭门", "夺宝", "绝境突破"):
+        assert framework_menu_item not in fb, fb
 
 
 def test_genre_emotion_primary_dominates_drifted_subgenre():

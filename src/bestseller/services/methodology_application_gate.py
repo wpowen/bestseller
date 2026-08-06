@@ -304,9 +304,9 @@ def build_methodology_application_contract(
                 "chapter.hook_description",
             ),
             gate="character_debt",
-            # 2026-07-04: block→warn. 强制每章产出 debtor/creditor 六字段台账是
+            # 2026-07-04: block→warn. 强制每章产出 debtor/creditor 六字段表格是
             # 债务同质化的结构性根因（55a3d4c 只改了话术没动结构）——人际张力
-            # 保留为建议，不再作为硬合约逼出记账型设定。
+            # 保留为建议，不再作为硬合约逼出财务化设定。
             mode="warn",
             measurement=(
                 "chapter_predraft_quality_gate",
@@ -665,7 +665,7 @@ def _append_scene_repetition_findings(
                     "每场 relationship_debts 至少一条包含 debtor、creditor、"
                     "evidence_or_handle、due_condition、breach_consequence、repayment_modes。"
                     "这些字段记录的是人际亏欠/承诺/把柄（谁对谁负有什么、何时必须兑现、失约后果），"
-                    "不是金钱债务；严禁因此在剧情里加入记账、欠条、账本、债契类设定。"
+                    "属于人物关系层；不得因此把人际关系写成任何财务往来形态的设定。"
                 ),
                 path="scene_cards[*].metadata.methodology_contract.relationship_debts",
             )
@@ -688,8 +688,10 @@ def _append_scene_repetition_findings(
                 severity="minor",
                 message="场景人际张力仍是占位模板，方法论没有落到具体关系变化。",
                 repair_hint=(
-                    "把 relationship_debts 改成具体的人际亏欠或承诺：谁对谁负有什么、"
-                    "因为什么、下一场如何回响；不得写成金钱债务或记账设定。"
+                    # 字段名叫 debts 是框架自己的历史包袱；这里只澄清它的语义层，
+                    # 不再用禁令句式（禁令本身会把"金钱债务"塞进模型上下文）。
+                    "把 relationship_debts 改成具体的人际亏欠或承诺（关系层面）："
+                    "谁对谁负有什么、因为什么、下一场如何回响。"
                 ),
                 path="scene_cards[*].metadata.methodology_contract.relationship_debts",
             )

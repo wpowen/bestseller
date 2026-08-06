@@ -20,7 +20,9 @@ Pins three deterministic, genre-free behaviors in ``planner``:
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -31,6 +33,7 @@ import bestseller.services.planner as planner_services
 from bestseller.services.planner import (
     OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT,
     OutlineEventDuplicationError,
+    _apply_outline_commercial_patches,
     _cast_spec_prompts,
     _compact_outline_repair_baseline,
     _extract_concrete_title_phrase,
@@ -45,9 +48,13 @@ from bestseller.services.planner import (
     _planning_artifact_reuse_allowed,
     _persist_creation_protagonist_choice,
     _prefer_outline_repair_baseline,
+    _restore_persisted_outline_repair_baseline,
+    _restore_best_historical_outline_repair_baseline,
+    _historical_outline_report_meets_declared_gate,
     _previous_outline_batch_constraints,
     _outline_repair_directives_from_error,
     _repair_clipped_dedup_titles,
+    _strip_outline_goal_meta_prefixes,
 )
 from bestseller.settings import load_settings
 
@@ -228,6 +235,156 @@ def test_outer_heal_promotes_a_later_higher_scoring_failed_outline() -> None:
     assert report["repair_directives"] == ["修改良版"]
 
 
+def test_outer_heal_restores_persisted_baseline_with_its_best_score() -> None:
+    payload, report = _restore_persisted_outline_repair_baseline(
+        {
+            "outline_commercial_repair_baseline": {
+                "chapters": [{"chapter_number": 1, "goal": "保住旧账"}]
+            },
+            "outline_commercial_repair_directives": ["修复知识边界"],
+            "outline_commercial_last_failure": {
+                "overall_score": 0.58,
+                "recovery_baseline_score": 0.62,
+                "recovery_blocking_codes": ["KNOWLEDGE_BOUNDARY_VIOLATION"],
+            },
+        }
+    )
+
+    assert payload["chapters"][0]["goal"] == "保住旧账"
+    assert report["overall_score"] == 0.62
+    assert report["repair_directives"] == ["修复知识边界"]
+    assert report["restored_from_previous_replan"] is True
+
+
+@pytest.mark.asyncio
+async def test_outer_heal_restores_best_historical_outline_and_matching_report() -> None:
+    project = build_project()
+    workflow_run_id = uuid4()
+    step = SimpleNamespace(
+        workflow_run_id=workflow_run_id,
+        created_at=datetime.now(UTC),
+        output_ref={
+            "passed": False,
+            "overall_score": 0.83,
+            "repair_directives": ["只修知识边界"],
+        },
+    )
+    artifact = SimpleNamespace(
+        id=uuid4(),
+        version_no=7,
+        content={
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "旧账",
+                    "goal": "沉骨守住凡人的认知边界",
+                }
+            ]
+        },
+    )
+
+    class HistoricalSession:
+        async def scalars(self, _statement):
+            return SimpleNamespace(all=lambda: [step])
+
+        async def scalar(self, _statement):
+            return artifact
+
+    payload, report = await _restore_best_historical_outline_repair_baseline(
+        HistoricalSession(),
+        project=project,
+        volume_number=1,
+    )
+
+    assert payload["chapters"][0]["goal"] == "沉骨守住凡人的认知边界"
+    assert report["overall_score"] == 0.83
+    assert report["repair_directives"] == ["只修知识边界"]
+    assert report["restored_artifact_version"] == 7
+
+
+def test_commercial_surgical_repair_changes_only_allowlisted_fields() -> None:
+    original = {
+        "chapters": [
+            {
+                "chapter_number": 1,
+                "title": "旧账",
+                "goal": "保住残页",
+                "causal_contract": {"pressure": "追兵将至"},
+                "scenes": [
+                    {
+                        "scene_number": 1,
+                        "participants": ["沉骨"],
+                        "purpose": {"story": "摸到残页"},
+                    }
+                ],
+            }
+        ]
+    }
+
+    repaired = _apply_outline_commercial_patches(
+        original,
+        [
+            {
+                "chapter_number": 1,
+                "scope": "chapter",
+                "field": "information_gap_mode",
+                "value": "沉骨只按亲眼所见判断",
+            },
+            {
+                "chapter_number": 1,
+                "scope": "scene",
+                "scene_number": 1,
+                "field": "purpose",
+                "value": {"story": "沉骨亲眼比对刻痕后才翻页"},
+            },
+            {
+                "chapter_number": 1,
+                "scope": "chapter",
+                "field": "title",
+                "value": "不允许改标题",
+            },
+        ],
+    )
+
+    chapter = repaired["chapters"][0]
+    assert chapter["title"] == "旧账"
+    assert chapter["goal"] == "保住残页"
+    assert chapter["information_gap_mode"] == "沉骨只按亲眼所见判断"
+    assert chapter["scenes"][0]["purpose"]["story"] == (
+        "摸到残页；定点补强：沉骨亲眼比对刻痕后才翻页"
+    )
+    assert original["chapters"][0]["scenes"][0]["purpose"]["story"] == "摸到残页"
+
+
+def test_historical_outline_can_restore_only_the_declared_noncritical_gate() -> None:
+    marginal_dimensions = {
+        "overall_score": 0.83,
+        "blocking_issues": [
+            {
+                "code": "LLM_DIMENSION_BELOW_THRESHOLD_KNOWLEDGE_BOUNDARY",
+                "severity": "high",
+            }
+        ],
+    }
+    assert _historical_outline_report_meets_declared_gate(
+        marginal_dimensions,
+        threshold=0.82,
+    )
+    assert not _historical_outline_report_meets_declared_gate(
+        {
+            "overall_score": 0.83,
+            "blocking_issues": [
+                {"code": "KNOWLEDGE_BOUNDARY_VIOLATION", "severity": "critical"}
+            ],
+        },
+        threshold=0.82,
+    )
+    assert not _historical_outline_report_meets_declared_gate(
+        {"overall_score": 0.81, "blocking_issues": []},
+        threshold=0.82,
+    )
+
+
 def test_llm_creation_protagonist_is_persisted_before_snapshot_creation() -> None:
     project = build_project()
 
@@ -252,6 +409,31 @@ def test_original_premise_identity_overrides_conflicting_generated_name() -> Non
     assert chosen == "纪赊"
     assert project.metadata_json["creation_protagonist_name"] == "纪赊"
     assert project.metadata_json["creation_protagonist_source"] == "original_premise"
+
+
+def test_replan_replaces_stale_llm_identity_with_repaired_premise_name() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "premise": "十九岁凡人沉骨在灰烬荒原替散修补破衣度日。",
+        "creation_protagonist_name": "苏沉",
+        "creation_protagonist_source": "llm_premise_identity_resolution",
+    }
+
+    chosen = _persist_creation_protagonist_choice(project, "苏沉")
+
+    assert chosen == "沉骨"
+    assert project.metadata_json["creation_protagonist_source"] == "original_premise"
+    assert project.metadata_json["protagonist_forbidden_names"] == ["苏沉"]
+
+
+def test_outline_goal_task_wrapper_is_removed_without_rewriting_story_event() -> None:
+    chapter = SimpleNamespace(
+        goal="本章交付『震撼』基调下的卷尾大节点——庄不言亲临山口，苏沉被迫摊开残页。"
+    )
+    batch = SimpleNamespace(chapters=[chapter])
+
+    assert _strip_outline_goal_meta_prefixes(batch) == 1
+    assert chapter.goal == "庄不言亲临山口，苏沉被迫摊开残页。"
 
 
 def test_outline_judge_brief_uses_snapshot_identity_not_stale_story_spine() -> None:
@@ -701,6 +883,14 @@ class TestPremiseRosterPassthrough:
         )
         names = _extract_premise_locked_names(premise)
         assert names == ["林晚秋"]  # not 问题/故事/这个, not 林晚/晚秋
+
+    def test_frequency_path_does_not_turn_repeated_mechanism_term_into_person(self) -> None:
+        premise = (
+            "歪剑吸收雷元。炼器受当旬雷元封顶；超过上限会让雷元散尽。"
+            "下一旬才能重新积蓄雷元。"
+        )
+
+        assert "雷元" not in _extract_premise_locked_names(premise)
 
     def test_empty_premise_returns_no_names(self) -> None:
         assert _extract_premise_locked_names("") == []

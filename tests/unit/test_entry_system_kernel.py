@@ -57,6 +57,39 @@ def test_fallback_kernel_uses_blueprint_state_variables_and_costs() -> None:
     assert "no source names" in kernel.anti_copy_rules
 
 
+def test_minimal_cost_creation_contract_overrides_genre_and_blueprint_costs() -> None:
+    blueprint = EntryBlueprint(
+        blueprint_id="severe-cost",
+        dimension="plot_patterns",
+        name="重代价",
+        mechanism_summary="能力升级附带长期损耗。",
+        state_variables=("power",),
+        required_cost_patterns=("injury", "relationship_debt"),
+        anti_copy_boundaries=(),
+        confidence=0.8,
+    )
+
+    kernel = build_fallback_entry_system_kernel(
+        {
+            "genre": "东方玄幻",
+            "story_enhancers": {"cost_style": "minimal"},
+        },
+        blueprints=(blueprint,),
+    )
+    rendered = render_entry_system_kernel_prompt_block(kernel)
+
+    assert kernel.cost_model.default_cost_types == (
+        "resource_choice",
+        "exposure",
+        "time_window",
+        "opponent_attention",
+    )
+    assert "injury" not in rendered
+    assert "debt" not in rendered.lower()
+    assert "反噬" not in rendered
+    assert "资源账" not in rendered
+
+
 def test_render_entry_system_kernel_prompt_block_includes_rules() -> None:
     kernel = build_fallback_entry_system_kernel({"genre": "悬疑生存", "sub_genre": "规则怪谈"})
 

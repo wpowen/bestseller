@@ -99,7 +99,17 @@ DEFAULT_GATE_CONFIG: GateConfig = GateConfig(
         "CHARACTER_PERSONHOOD_INCOMPLETE": "block",
         "ANTAGONIST_MOTIVE_OVERLAP": "block",
         "WORLD_TAXONOMY_BOILERPLATE": "block",
-        "NAMING_POOL_UNDERSIZED": "block",
+        # (2026-08-03) block → audit_only. This asks for a naming pool of at
+        # least 2× the expected cast, as a reserve for characters introduced
+        # later. That is preparedness, not structural integrity: a book whose
+        # spare-name list is short is not malformed, and the writer can name a
+        # new character when one appears. As a blocker it was deterministic —
+        # the same draft failed the same count on every retry — and it deadlocked
+        # a real book: 《雾街债主》 2026-08-03 had chapters 1-6 refused
+        # materialization on this code alone, which left the rolling outline
+        # window incomplete, which made self-heal re-queue the same replan
+        # forever. Its sibling NAMING_OUT_OF_POOL is already audit_only.
+        "NAMING_POOL_UNDERSIZED": "audit_only",
         # NOTE (2026-05-26 architecture cleanup): these used to be block-level.
         # The underlying detectors had hardcoded user-feedback keyword lists
         # (phone/text/heat-sensation words) and were producing false positives

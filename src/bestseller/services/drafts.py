@@ -3488,6 +3488,12 @@ def strip_scaffolding_echoes(content_md: str) -> str:
 
 logger = logging.getLogger(__name__)
 
+# Second half of the degenerate-regeneration test: a candidate that is below the
+# chapter's hard floor is only treated as a failed generation when it is also
+# materially shorter than the draft it would replace. Mirrors the ratio the two
+# rewrite guards in ``reviews`` use, so the same judgement cannot drift apart.
+_DEGENERATE_REGENERATION_RATIO = 0.85
+
 
 def _bundle_hook_domain_tokens(project) -> tuple[str, ...]:
     """Book-derived hook vocabulary for the quality bundle's hook-echo check.
@@ -5301,33 +5307,18 @@ def _score_writer_candidate(content: str, *, target_word_count: int | None, lang
 
 
 def render_anti_debt_prose_guardrail(premise: str | None, *, is_en: bool) -> str:
-    """正文层反债务化护栏(2026-07-08 用户终审)。
+    """Retired 2026-08-02 — renders nothing.
 
-    真机原文：构思层金手指干干净净（"污染值/协议区共生绑定"，不含一个"账"
-    字），写手描述"签字接受代价"这类动作时却自己长出"认下这笔账……第一条
-    欠条"。反债务化闸门此前只在 conception.py 生效（治金手指/前提文本），
-    没接到正文层——写手不知道"描述代价/后果不许用财务记账比喻"这条规矩。
-    复用同一份用户意图判定（``_mentions_debt_theme``），除非用户明确要写
-    债务题材，否则每场都提醒。
+    The prose-layer twin of the planner motif police. It appended a
+    "source-bound prose contract" to every scene whose premise did not already
+    mention debt, telling the writer that every consequence had to be
+    "immediate, concrete, reversible" and that any metaphor without a source in
+    the outline must be omitted. That is a ban on the writer inventing imagery —
+    in the one place where inventing imagery is the entire job.
     """
 
-    from bestseller.services.conception import _mentions_debt_theme
-
-    if _mentions_debt_theme(premise):
-        return ""
-    if is_en:
-        return (
-            "[Anti-debt-metaphor guardrail] When narrating a cost/consequence being "
-            "accepted, do NOT reach for debt/IOU/ledger/account/repayment vocabulary "
-            "(owe, IOU, settle the account) as the figurative frame — use embodied, "
-            "non-financial imagery instead (backlash, corrosion, a mark left on the "
-            "body, a price paid in sensation).\n\n"
-        )
-    return (
-        "【反债务化护栏】描写代价/后果被接受时,禁止用财务记账类比喻"
-        "(认账、欠条、还债、结算、入账这类措辞)当作修辞框架——"
-        "改用具身的非金融意象(反噬、灼烧、印记、感官代价)。\n\n"
-    )
+    del premise, is_en
+    return ""
 
 
 def _render_story_principle_execution_section(
@@ -7086,27 +7077,10 @@ def build_scene_draft_prompts(
     if library_reference_block:
         _library_reference_line = f"{library_reference_block}\n\n"
 
+    # A whole project-material inventory is not chapter canon.  Injecting it
+    # here let genre-seeded Forge candidates overwrite the approved WorldSpec.
+    # Only the scoped lifecycle/obligation packet below may enter prose.
     _project_material_reference_line = ""
-    if _project_meta:
-        _project_material_reference_block = str(
-            _project_meta.get("material_reference_block") or ""
-        ).strip()
-        if _project_material_reference_block:
-            _project_material_lead = (
-                "=== Project material anchors ===\n"
-                "Use these §slug anchors as canonical project material. Do not invent "
-                "equivalent rules, factions, devices, locations, or motif systems when "
-                "an anchor already covers the function.\n"
-                if is_en
-                else (
-                    "=== 本书素材锚点（必须优先使用）===\n"
-                    "以下 §slug 是本书已落库素材。写作时必须优先使用这些既有规则、地点、人物、物件、情绪弧和反套路约束；"
-                    "不得另造同功能的新名词、新规则或无关怪谈。\n"
-                )
-            )
-            _project_material_reference_line = (
-                f"{_project_material_lead}{_project_material_reference_block}\n\n"
-            )
     _project_material_obligation_line = _render_project_material_obligation_packet(
         project,
         chapter_number=chapter.chapter_number,
@@ -10355,6 +10329,62 @@ async def generate_chapter_draft_once(
         content_md,
         language=project.language or "zh-CN",
     )
+    # A degenerate generation must not evict a healthy chapter. The writer can
+    # return a couple of tokens and stop cleanly — on 2026-08-03 the
+    # chapter-first writer answered chapter 7 of xianxia-upgrade-1785697772
+    # with "# 第7章：灶桩\n\n阿苓先醒的。" (7 output tokens, finish_reason=stop),
+    # and this path made that 9-character stub the current draft, demoting a
+    # 2474-word one. The chapter was then permanently ``blocked`` — a stub
+    # fails every gate — which in turn poisoned two downstream counters.
+    #
+    # The same judgement already exists in ``reviews``' two rewrite guards;
+    # regenerating a chapter was the entry point without it. It is deliberately
+    # the *same shape* as those: below the chapter's hard floor AND materially
+    # shorter than the draft it would replace. A pure ratio would misfire —
+    # chapter 11 of the same book legitimately went 4541 → 2226 words against a
+    # ~2600 target, which is a correct trim, not a degenerate generation.
+    # Keep the stub as a non-current version so the failure stays visible, and
+    # leave the known-good draft in place.
+    _prior_current = await session.scalar(
+        select(ChapterDraftVersionModel)
+        .where(
+            ChapterDraftVersionModel.chapter_id == chapter.id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .limit(1)
+    )
+    _prior_words = int(getattr(_prior_current, "word_count", 0) or 0)
+    _keeps_prior_draft = False
+    if _prior_current is not None and _prior_words > 0:
+        try:
+            _floor, _, _ = _chapter_length_contract_band(
+                project,
+                getattr(chapter, "target_word_count", None),
+            )
+        except Exception:  # noqa: BLE001 - a floor we cannot compute must not block a draft
+            logger.warning(
+                "chapter %s %d: length floor unavailable; degenerate-output guard "
+                "skipped",
+                project.slug,
+                chapter_number,
+                exc_info=True,
+            )
+            _floor = 0
+        _keeps_prior_draft = bool(
+            _floor > 0
+            and word_count < _floor
+            and word_count < int(_prior_words * _DEGENERATE_REGENERATION_RATIO)
+        )
+    if _keeps_prior_draft:
+        logger.warning(
+            "chapter %s %d regeneration produced degenerate output "
+            "(%d words, below floor, vs current draft %d) — keeping the current "
+            "draft and recording the stub as a non-current version.",
+            project.slug,
+            chapter_number,
+            word_count,
+            _prior_words,
+        )
     next_version = int(
         (
             await session.scalar(
@@ -10365,14 +10395,15 @@ async def generate_chapter_draft_once(
         )
         or 0
     ) + 1
-    await session.execute(
-        update(ChapterDraftVersionModel)
-        .where(
-            ChapterDraftVersionModel.chapter_id == chapter.id,
-            ChapterDraftVersionModel.is_current.is_(True),
+    if not _keeps_prior_draft:
+        await session.execute(
+            update(ChapterDraftVersionModel)
+            .where(
+                ChapterDraftVersionModel.chapter_id == chapter.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+            .values(is_current=False)
         )
-        .values(is_current=False)
-    )
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
@@ -10380,17 +10411,20 @@ async def generate_chapter_draft_once(
         content_md=content_md,
         word_count=word_count,
         assembled_from_scene_draft_ids=[f"chapter_first_scene:{scene.id}" for scene in scenes],
-        is_current=True,
+        is_current=not _keeps_prior_draft,
         llm_run_id=completion.llm_run_id,
     )
     session.add(chapter_draft)
-    chapter.current_word_count = word_count
+    # The chapter's own counters must describe the draft it is shipping. When
+    # the stub was rejected above, that is still the prior draft.
+    chapter.current_word_count = _prior_words if _keeps_prior_draft else word_count
     chapter.status = (
         ChapterStatus.REVISION.value
         if previous_chapter_status == ChapterStatus.REVISION.value
         else ChapterStatus.DRAFTING.value
     )
-    chapter.production_state = quality_gate_outcome or "ok"
+    if not _keeps_prior_draft:
+        chapter.production_state = quality_gate_outcome or "ok"
     try:
         from bestseller.services.chapter_generation_input_builder import (
             build_chapter_generation_input_bundle,
@@ -12716,7 +12750,7 @@ async def maybe_prepare_chapter_auto_repair(
             "本章铺垫/设定解释过密。重写时必须把设定切碎进动作、对话和当下冲突，删除连续解释段。"
         ),
         "CAST_VIOLATION": (
-            "本章出现了当前章节不允许登场的角色或旧设定名。重写时必须删除违规角色的对白、动作、视角、心声和在场描写；若只是旧账名，只能短暂作为账页/案卷名出现一次。"
+            "本章出现了当前章节不允许登场的角色或旧设定名。重写时必须删除违规角色的对白、动作、视角、心声和在场描写；若只是历史称谓，只能作为既有记录短暂提及一次。"
         ),
         "TIMELINE_INCONSISTENT": (
             "本章时间线锚点与正典冲突。重写时必须按下方具体锚点做局部替换，禁止重排全章事件或新增解释性闪回。"

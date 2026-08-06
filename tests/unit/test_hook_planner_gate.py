@@ -10,7 +10,11 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.mark.asyncio
-async def test_planner_hook_gate_generates_passing_or_repaired_hook() -> None:
+async def test_planner_hook_gate_skips_instead_of_fabricating_a_hook() -> None:
+    """2026-07-31 product ruling: a build-time hook/金手指 must never be
+    fabricated from the framework's mechanism template library. When neither
+    conception nor the user supplied a hook_spec, the gate skips — it must not
+    invent one and must leave project metadata untouched."""
     settings = SimpleNamespace(
         hook_engine=SimpleNamespace(
             enabled=True,
@@ -35,8 +39,7 @@ async def test_planner_hook_gate_generates_passing_or_repaired_hook() -> None:
         premise="主角被困在一所每天改写病历的规则医院。",
     )
 
-    assert spec is not None
-    assert payload is not None
-    assert payload["score"]["verdict"] != "reject"
-    assert project.metadata_json["hook_spec"]["one_liner"] == spec.one_liner
-    assert project.metadata_json["hook_strength_gate"]["h_norm"] == payload["h_norm"]
+    assert spec is None
+    assert payload is None
+    assert "hook_spec" not in project.metadata_json
+    assert "hook_candidates" not in project.metadata_json

@@ -24,6 +24,40 @@ from uuid import UUID, uuid4
 import webbrowser
 from zoneinfo import ZoneInfo
 
+
+QUICKSTART_CLIENT_SCHEMA_VERSION = "quickstart-client.v2"
+
+
+def _quickstart_seed_hash(seed: str) -> str | None:
+    value = str(seed or "").strip()
+    return hashlib.sha256(value.encode("utf-8")).hexdigest() if value else None
+
+
+def _quickstart_seed_length(seed: str) -> int:
+    """Return the manifest length in UTF-8 bytes, matching TextEncoder in JS."""
+
+    return len(str(seed or "").strip().encode("utf-8"))
+
+
+def _validate_quickstart_client_schema(payload: Mapping[str, object]) -> None:
+    """Fail closed for first-party quickstart requests from stale pages."""
+    version = str(payload.get("client_schema_version") or "").strip()
+    if version != QUICKSTART_CLIENT_SCHEMA_VERSION:
+        raise ValueError("快速建书页面版本已过期，请刷新页面后重新提交。")
+    manifest = payload.get("client_intent_manifest")
+    if not isinstance(manifest, Mapping):
+        raise ValueError("快速建书输入校验缺失，请刷新页面后重新提交。")
+    seed = str(payload.get("concept_seed") or "").strip()[:500]
+    expected = {
+        "schema_version": QUICKSTART_CLIENT_SCHEMA_VERSION,
+        "concept_seed_present": bool(seed),
+        "concept_seed_length": _quickstart_seed_length(seed),
+        "concept_seed_hash": _quickstart_seed_hash(seed),
+    }
+    for key, value in expected.items():
+        if manifest.get(key) != value:
+            raise ValueError("快速建书输入校验不一致，请刷新页面后重新提交。")
+
 from bestseller.domain.enums import ProjectStatus
 from bestseller.domain.fanqie_short import is_fanqie_short_project
 from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
@@ -65,6 +99,7 @@ from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.pipelines import ProjectRepairPauseError, run_autowrite_pipeline
 from bestseller.services.planner import PlannerFallbackError
 from bestseller.services.story_appeal import AppealBarNotMetError
+from bestseller.services.story_enhancers import STORY_ENHANCERS_METADATA_KEY
 from bestseller.services.pipelines import run_chapter_pipeline
 from bestseller.services.chapter_revision import (
     apply_chapter_revision_task,
@@ -293,7 +328,10 @@ def _worker_heal_job_id(task_type: str, slug: str) -> str | None:
     slug = (slug or "").strip()
     if not slug:
         return None
-    kind = "repair" if task_type == "repair" else "autowrite"
+    kind = {
+        "repair": "repair",
+        "outline_replan": "outline-replan",
+    }.get(task_type, "autowrite")
     return f"{kind}:heal:{slug}"
 
 
@@ -799,6 +837,131 @@ def _enqueue_repair_heal_job(redis_url: str, slug: str) -> str | None:
             slug,
         )
         return None
+
+
+async def _enqueue_outline_replan_heal_job_async(
+    settings: AppSettings, redis_url: str, slug: str
+) -> str | None:
+    """Push a zero-draft planning recovery into the dedicated worker lane."""
+    from arq.connections import create_pool
+
+    from bestseller.worker.self_heal import (
+        StuckProject,
+        _outline_replan_heal_job_id,
+        _outline_replan_progress_fingerprint,
+        _requeue_outline_replan,
+    )
+
+    pool = await create_pool(_arq_redis_settings_from_url(redis_url))
+    try:
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, slug)
+            if project is None:
+                return None
+            fingerprint = _outline_replan_progress_fingerprint(project)
+        stuck = StuckProject(
+            project_id=None,
+            slug=slug,
+            reason="web_manual_outline_replan_resume",
+            stuck_at_chapter=None,
+            chapters_total=0,
+            chapters_with_draft=0,
+            heal_kind="outline_replan",
+            progress_fingerprint=fingerprint,
+        )
+        job_id = await _requeue_outline_replan(pool, stuck)
+        if job_id is None and slug in _fetch_heal_owned_slugs_by_kind(redis_url, "outline_replan"):
+            return _outline_replan_heal_job_id(slug)
+        return job_id
+    finally:
+        closer = getattr(pool, "aclose", None) or getattr(pool, "close", None)
+        if closer is not None:
+            result = closer()
+            if asyncio.iscoroutine(result):
+                await result
+
+
+def _enqueue_outline_replan_heal_job(
+    settings: AppSettings, redis_url: str, slug: str
+) -> str | None:
+    if not redis_url or not slug:
+        return None
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning("outline replan resume: cannot enqueue ARQ job from an active event loop")
+        return None
+    try:
+        return asyncio.run(_enqueue_outline_replan_heal_job_async(settings, redis_url, slug))
+    except Exception:
+        logger.exception("outline replan resume: failed to enqueue worker job for slug=%s", slug)
+        return None
+
+
+async def _clear_outline_replan_resume_abandonment(settings: AppSettings, slug: str) -> bool:
+    """Reset only stale self-heal abandonment budget for a zero-draft replan."""
+    from sqlalchemy import func, select
+    from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
+
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, slug)
+        if project is None:
+            return False
+        metadata = dict(getattr(project, "metadata_json", None) or {})
+        needs_replan = (
+            str(getattr(project, "status", "") or "").lower() == "needs_replan"
+            or str(metadata.get("planning_status") or "").lower() == "needs_replan"
+            or str(metadata.get("outline_semantic_gate_status") or "").lower() == "needs_replan"
+            or bool(metadata.get("outline_replan_required"))
+        )
+        if not needs_replan:
+            return False
+        draft_count = int(
+            await session.scalar(
+                select(func.count(func.distinct(ChapterDraftVersionModel.chapter_id)))
+                .select_from(ChapterDraftVersionModel)
+                .join(ChapterModel, ChapterModel.id == ChapterDraftVersionModel.chapter_id)
+                .where(
+                    ChapterModel.project_id == project.id,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                )
+            )
+            or 0
+        )
+        if draft_count:
+            return False
+        prefixes = ("self_heal_abandoned", "self_heal_no_progress")
+        explicit = {
+            "self_heal_strategy",
+            "self_heal_next_retry_at",
+            "outline_replan_next_retry_at",
+        }
+        updated = {
+            key: value
+            for key, value in metadata.items()
+            if not key.startswith(prefixes) and key not in explicit
+        }
+        if updated == metadata:
+            return True
+        project.metadata_json = updated
+        await session.flush()
+        return True
+
+
+def _clear_outline_replan_resume_abandonment_sync(settings: AppSettings, slug: str) -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        return False
+    try:
+        return asyncio.run(_clear_outline_replan_resume_abandonment(settings, slug))
+    except Exception:
+        logger.exception("outline replan resume: failed to clear abandonment for slug=%s", slug)
+        return False
 
 
 def _clear_repair_resume_focus_pause_on_project(project: Any) -> bool:
@@ -2033,7 +2196,21 @@ class WebTaskManager:
                 # loop is up; otherwise we have no way to continue, so mark
                 # it failed and let the user decide.
                 if task.status in ("running", "queued"):
-                    if task.payload and task.task_type in ("autowrite", "repair"):
+                    if task.cancel_requested:
+                        # A persisted cancellation is user intent, not a
+                        # recoverable zombie.  Clearing this flag used to
+                        # resurrect the pre-restart payload and could replay
+                        # obsolete conception prompts into an already-cleaned
+                        # project.
+                        task.status = "cancelled"
+                        task.current_stage = "cancelled"
+                        task.error = task.error or "Task cancelled before server restart"
+                        task.cancel_requested = False
+                        task.record_event(
+                            "cancelled_after_restart",
+                            {"reason": "persisted_cancel_request"},
+                        )
+                    elif task.payload and task.task_type in ("autowrite", "repair"):
                         task.status = "queued"
                         task.current_stage = "auto_resume_pending"
                         task.error = None
@@ -2380,6 +2557,7 @@ class WebTaskManager:
     def create_autowrite_task(self, payload: dict[str, object]) -> dict[str, object]:
         slug = str(payload.get("slug") or "").strip()
         title = str(payload.get("title") or "")
+        serialized_payload = json.loads(json.dumps(payload, default=_json_default))
         with self._lock:
             # An autowrite already queued/running for this slug owns the project;
             # return it instead of spawning a competing second run.
@@ -2430,11 +2608,15 @@ class WebTaskManager:
                     current_stage="queued",
                 )
                 self._tasks[task_id] = task
+            # Persist the exact creation envelope before returning or starting
+            # the worker.  A refresh/restart between enqueue and worker startup
+            # must not turn a seeded book into an unseeded resume.
+            task.payload = serialized_payload
             self._save_to_disk()
             snapshot = task.to_dict()
         thread = threading.Thread(
             target=self._run_with_slot,
-            args=(task_id, self._run_autowrite_worker, payload),
+            args=(task_id, self._run_autowrite_worker, serialized_payload),
             daemon=True,
         )
         thread.start()
@@ -3160,6 +3342,20 @@ class WebTaskManager:
                     # Already transitioned (e.g. user cancelled between
                     # startup and this call) — skip.
                     continue
+                if task.cancel_requested:
+                    # Cancellation can arrive after disk recovery queued the
+                    # task but before the auto-resume sweep claims it.  Never
+                    # turn that race into a resumed writer.
+                    task.status = "cancelled"
+                    task.current_stage = "cancelled"
+                    task.error = task.error or "Task cancelled before auto-resume"
+                    task.cancel_requested = False
+                    task.record_event(
+                        "cancelled_before_auto_resume",
+                        {"reason": "cancel_request_won_startup_race"},
+                    )
+                    self._save_to_disk()
+                    continue
                 slug = (task.project_slug or "").strip()
                 if task.task_type == "repair":
                     heal_owned = bool(slug and slug in repair_heal_owned_slugs)
@@ -3389,6 +3585,19 @@ class WebTaskManager:
             from bestseller.services.genre_intent_contract import contract_from_payload
 
             genre_intent_contract = contract_from_payload(payload)
+            # Fail closed (P11): the quickstart boundary always persists a
+            # validated genre_intent_contract on the task envelope. If that
+            # envelope re-reads as invalid here, it is corruption, not absence —
+            # silently continuing would drop EVERY user creation option with no
+            # recoverable path. Absence (legacy/resume rebuilds) stays valid.
+            if genre_intent_contract is None and isinstance(
+                payload.get("genre_intent_contract"), dict
+            ):
+                raise ValueError(
+                    "genre_intent_contract in the task envelope is present but invalid; "
+                    "refusing to continue without the user's creation intent. "
+                    "Recreate the book (or fix the persisted contract) before retrying."
+                )
             creation_intent_contract = None
             conception_attempt = None
             if run_conception and isinstance(payload.get("creation_intent_contract"), dict):
@@ -3711,16 +3920,6 @@ class WebTaskManager:
                     _spine = getattr(conception_result, "story_spine", None)
                     if isinstance(_spine, dict) and _spine:
                         project_metadata["story_spine"] = _spine
-                    # 世界模型(2026-07-08 设定/逻辑框架层):构思终稿已用它做机制因果
-                    # 审计,持久化在顶层供 planner 直接复用(见 world_model_injection.
-                    # extract_world_model),避免 planner 用已终稿的 premise 二次派生
-                    # 出一份不同的世界模型造成漂移。
-                    _world_model = getattr(conception_result, "world_model", None)
-                    if isinstance(_world_model, dict) and _world_model.get("world_laws"):
-                        project_metadata["world_model"] = _world_model
-                # Store StoryFacets in metadata for future reference and anti-repetition
-                if story_facets_obj is not None:
-                    project_metadata["story_facets"] = story_facets_obj.model_dump(mode="json")
                 if conception_brief:
                     project_metadata["commercial_brief"] = conception_brief
                     project_metadata["benchmark_works"] = conception_brief.get(
@@ -3729,8 +3928,6 @@ class WebTaskManager:
                     project_metadata["target_audiences"] = conception_brief.get(
                         "target_audiences", []
                     )
-                if conception_log:
-                    project_metadata["conception_log"] = conception_log
                 if conception_degradation:
                     project_metadata["conception_degraded"] = True
                     project_metadata["conception_degradation_events"] = (
@@ -3739,6 +3936,18 @@ class WebTaskManager:
                 # Persist conception artifacts so they are inspectable in the
                 # book document view (/design/{slug}) alongside planning output.
                 conception_artifacts: dict[str, object] = {}
+                if story_facets_obj is not None:
+                    # Story Architect runs before the conception tournament.  Its
+                    # facets are an exploration proposal, not the final project
+                    # truth: the tournament may (and often should) select a
+                    # different setting/mechanism.  Persisting the proposal at
+                    # top level made planning_kernel and later outline prompts
+                    # treat it as authoritative, so a winning concept such as a
+                    # herb-garden story could retain an unrelated bloodline-island
+                    # setting.  Keep it only as an auditable conception artifact.
+                    conception_artifacts["story_architect_proposal"] = (
+                        story_facets_obj.model_dump(mode="json")
+                    )
                 if conception_methodology:
                     conception_artifacts["concept_methodology"] = conception_methodology
                 if conception_hook_candidates:
@@ -3747,8 +3956,6 @@ class WebTaskManager:
                     conception_artifacts["story_appeal"] = conception_story_appeal
                 if conception_brief:
                     conception_artifacts["commercial_brief"] = conception_brief
-                if conception_artifacts:
-                    project_metadata["conception_artifacts"] = conception_artifacts
                 creative_brief = payload.get("creative_brief")
                 if isinstance(creative_brief, dict) and creative_brief:
                     project_metadata["creative_brief"] = creative_brief
@@ -3758,6 +3965,11 @@ class WebTaskManager:
                 extra_meta = payload.get("metadata")
                 if isinstance(extra_meta, dict):
                     project_metadata.update(extra_meta)
+                if run_conception:
+                    # A request may carry a stale preview copy in extra metadata.
+                    # Once conception has produced the validated winner, no
+                    # preliminary facets may shadow that winner downstream.
+                    project_metadata.pop("story_facets", None)
                 # Request metadata may contain stale preview values. Re-assert
                 # the validated creation-time genre contract after the merge.
                 if genre_intent_contract is not None:
@@ -3776,6 +3988,36 @@ class WebTaskManager:
                     project_metadata["creation_intent_contract"] = json.loads(
                         json.dumps(payload["creation_intent_contract"])
                     )
+                if creation_intent_contract is not None:
+                    # Keep an audit-friendly projection alongside the frozen
+                    # contract. Older downstream readers and support queries
+                    # still inspect these top-level keys; without the projection
+                    # a correctly transported seed/tone looked absent after
+                    # project materialisation even though it was nested in V1.
+                    project_metadata["concept_seed"] = (
+                        creation_intent_contract.concept_seed
+                    )
+                    project_metadata["tone_preference"] = (
+                        creation_intent_contract.tone_preference
+                    )
+                    project_metadata["audience_orientation"] = (
+                        creation_intent_contract.audience_orientation
+                    )
+                    project_metadata["creation_input_receipt"] = {
+                        "schema_version": creation_intent_contract.schema_version,
+                        "contract_hash": creation_intent_contract.contract_hash(),
+                        "field_sources": {
+                            key: (
+                                value.value
+                                if hasattr(value, "value")
+                                else str(value)
+                            )
+                            for key, value in creation_intent_contract.field_sources.items()
+                        },
+                        "concept_seed_present": bool(
+                            creation_intent_contract.concept_seed
+                        ),
+                    }
                 # Request metadata is user-controlled and may contain stale
                 # preview values.  Re-assert the verified concept contract
                 # after the merge so it cannot be replaced by an unvalidated
@@ -3858,7 +4100,6 @@ class WebTaskManager:
                         else {},
                         "concept_contract": conception_contract or {},
                         "story_spine": getattr(conception_result, "story_spine", {}) or {},
-                        "world_model": getattr(conception_result, "world_model", {}) or {},
                         "commercial_brief": conception_brief or {},
                         "conception_artifacts": conception_artifacts,
                     }
@@ -4447,17 +4688,17 @@ class WebTaskManager:
             contract,
             field_sources={
                 "audience_orientation": "explicit" if audience_orientation else "default",
-                "narrative_scale": "explicit" if _narrative_scale else "default",
+                "narrative_scale": "explicit" if _narrative_scale == "epic" else "default",
                 "tone_preference": "explicit" if _tone_preference else "default",
                 "chapter_count": "explicit" if payload.get("chapter_count") not in (None, "") else "default",
                 "length_key": "explicit" if length_key else "default",
                 "pov": "explicit" if payload.get("pov") else "default",
-                "draft_mode": "explicit" if "draft_mode" in payload else "default",
+                "draft_mode": "explicit" if bool(payload.get("draft_mode")) else "default",
                 "stop_after_conception": "explicit"
-                if "stop_after_conception" in payload
+                if bool(payload.get("stop_after_conception"))
                 else "default",
                 "llm_model_id": "explicit" if _model_id else "default",
-                "story_enhancers": "explicit" if raw_enhancers else "default",
+                "story_enhancers": "explicit" if not selected_enhancers.is_default() else "default",
                 "creative_direction": "explicit" if creative_direction else "default",
                 "concept_seed": "explicit" if explicit_concept_seed else "default",
                 "hook_spec": "explicit" if selected_hook_spec else "default",
@@ -4510,7 +4751,50 @@ class WebTaskManager:
             autowrite_payload["creation_mode"] = "fanqie_short"
             autowrite_payload["length_key"] = fanqie_length_key
             autowrite_payload["pov"] = fanqie_pov
+        creation_input_receipt = {
+            "schema_version": QUICKSTART_CLIENT_SCHEMA_VERSION,
+            "concept_seed_present": bool(explicit_concept_seed),
+            "concept_seed_length": _quickstart_seed_length(explicit_concept_seed),
+            "concept_seed_hash": _quickstart_seed_hash(explicit_concept_seed),
+            "tone_preference": creation_intent.tone_preference,
+            "effect_skills": list(creation_intent.story_enhancers.effect_skills),
+            "contract_hash": creation_intent.contract_hash(),
+        }
+        # Store the browser-visible controls and receipt in the durable task
+        # envelope, not only in the one-shot HTTP response.  Failed conception
+        # may have no Project row yet, so this payload is the sole resume source.
+        autowrite_payload.update(
+            {
+                "concept_seed": explicit_concept_seed,
+                "tone_preference": _tone_preference or None,
+                "audience_orientation": _orientation or None,
+                "narrative_scale": _narrative_scale or None,
+                "client_schema_version": str(
+                    payload.get("client_schema_version") or ""
+                ),
+                "client_intent_manifest": json.loads(
+                    json.dumps(payload.get("client_intent_manifest") or {})
+                ),
+                "creation_input_receipt": creation_input_receipt,
+            }
+        )
+        if resume_slug:
+            # Re-entry is not a second creation request. Rebase the transport
+            # envelope on the materialized project and its latest accepted
+            # premise so generic preset text or refreshed form defaults cannot
+            # become a competing story source.
+            rebuilt_payload = asyncio.run(
+                _rebuild_payload_from_db(load_settings(), resume_slug)
+            )
+            if not rebuilt_payload:
+                raise ValueError(f"Project '{resume_slug}' cannot be rebuilt for resume")
+            autowrite_payload = _merge_resume_payload_with_project_truth(
+                autowrite_payload,
+                rebuilt_payload,
+            )
+            autowrite_payload["_run_conception"] = False
         task = self.create_autowrite_task(autowrite_payload)
+        task["creation_input_receipt"] = creation_input_receipt
         # Enrich response with quickstart metadata
         task["quickstart_meta"] = {
             "creation_mode": creation_mode,
@@ -4548,6 +4832,7 @@ class WebTaskManager:
             "target_words": target_words,
             "length_key": fanqie_length_key if is_fanqie_short else length_key,
             "pov": fanqie_pov if is_fanqie_short else None,
+            "creation_input_receipt": creation_input_receipt,
         }
         return task
 
@@ -5142,11 +5427,64 @@ def _payload_from_project_model(project: Any) -> dict[str, object]:
         "_run_conception": False,
         "_genre_key": genre_key,
     }
+
+    # Carry forward core creative controls for legacy recovery resume paths.
+    # Without this, some historical/recovered tasks only containing a
+    # persisted project row lose user-authored intent and drift into generic
+    # defaults.
+    creative_transfer_fields = {
+        "creation_intent_contract": metadata.get("creation_intent_contract"),
+        "genre_intent_contract": metadata.get("genre_intent_contract"),
+        "creative_key": metadata.get("creative_key"),
+        "concept_seed": metadata.get("concept_seed"),
+        "tone_preference": metadata.get("tone_preference"),
+        "audience_orientation": metadata.get("audience_orientation"),
+        "story_enhancers": metadata.get(STORY_ENHANCERS_METADATA_KEY),
+        "hook_spec": metadata.get("hook_spec"),
+        "concept_lab_bundle": metadata.get("concept_lab")
+        or metadata.get("concept_lab_bundle"),
+        "length_key": metadata.get("length_key"),
+        "pov": metadata.get("pov"),
+    }
+    for key, value in creative_transfer_fields.items():
+        if value not in (None, ""):
+            payload[key] = value
+
+    # Restore user_hints + direct user-facing intent markers so planning layers
+    # can rebuild prompt blocks exactly as the original creation flow.
+    user_hints = metadata.get("user_hints")
+    if isinstance(user_hints, dict) and user_hints:
+        payload["user_hints"] = user_hints
+
     if is_fanqie_short_project(project):
         payload["creation_mode"] = "fanqie_short"
         payload["length_key"] = metadata.get("length_key")
         payload["pov"] = metadata.get("pov")
     return payload
+
+
+def _merge_resume_payload_with_project_truth(
+    saved_payload: dict[str, object],
+    rebuilt_payload: dict[str, object] | None,
+) -> dict[str, object]:
+    """Rebase a resume request on the materialized project truth.
+
+    ``saved_payload`` is the pre-materialization request envelope persisted by
+    the web task manager.  It is valuable for operational switches and for
+    legacy fields that were never copied into the project row, but it must not
+    outrank the project once that row exists.  In particular, conception may
+    replace the generic form premise with the approved concept, while the old
+    task envelope still carries the generic premise and exploratory metadata.
+
+    Keep saved-only fields, then let every field rebuilt from PostgreSQL win.
+    This makes the project row the sole resume truth without dropping legacy
+    request controls that the DB projection does not know about.
+    """
+
+    merged = dict(saved_payload)
+    if rebuilt_payload:
+        merged.update(rebuilt_payload)
+    return merged
 
 
 async def _rebuild_payload_from_db(
@@ -5163,7 +5501,14 @@ async def _rebuild_payload_from_db(
         project = await get_project_by_slug(session, slug)
         if project is None:
             return None
-        return _payload_from_project_model(project)
+        payload = _payload_from_project_model(project)
+        # Resume from the accepted, versioned premise. The original web
+        # envelope may contain a generic pre-conception sentence, while a
+        # title-derived fallback is not story truth at all.
+        from bestseller.services.story_source import load_accepted_project_premise
+
+        payload["premise"] = await load_accepted_project_premise(session, project)
+        return payload
 
 
 async def _load_project_autowrite_block_payload(
@@ -5964,6 +6309,7 @@ async def _cancel_project_task_async(settings: AppSettings, task_id: str) -> str
     from sqlalchemy import select, update
 
     from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+    from bestseller.services.production_control import request_pause
 
     async with session_scope(settings) as session:
         project = (
@@ -5971,6 +6317,16 @@ async def _cancel_project_task_async(settings: AppSettings, task_id: str) -> str
         ).scalar_one_or_none()
         if project is None:
             return "not_found"
+        # Record the operator's intent where the pipeline cannot overwrite it.
+        # ``project.status`` and ``projects.metadata`` are both rewritten by the
+        # running pipeline from its own in-memory copy, which is why a stopped
+        # book used to be requeued by self-heal a minute later.
+        await request_pause(
+            session,
+            project.id,
+            actor="web_dashboard",
+            reason="cancelled_from_project_task",
+        )
         result = await session.execute(
             update(WorkflowRunModel)
             .where(
@@ -6008,6 +6364,47 @@ async def _cancel_project_task_async(settings: AppSettings, task_id: str) -> str
     if cancelled_rows or job_cancelled or status_changed:
         return "cancel_requested"
     return "not_running"
+
+
+async def _clear_production_halt_async(settings: AppSettings, slug: str) -> bool:
+    """Clear an operator halt because the operator explicitly asked to write.
+
+    Starting a book from the dashboard *is* an instruction to run, so it must
+    lift a previous stop. Without this a stopped book would be permanently
+    unstartable — trading the zombie-resume bug for a stuck-forever one.
+    """
+
+    slug = (slug or "").strip()
+    if not slug:
+        return False
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ProjectModel
+    from bestseller.services.production_control import load_control_state, request_run
+
+    try:
+        async with session_scope(settings) as session:
+            project = (
+                await session.execute(
+                    select(ProjectModel).where(ProjectModel.slug == slug)
+                )
+            ).scalar_one_or_none()
+            if project is None:
+                return False
+            state = await load_control_state(session, project.id)
+            if not state.halted:
+                return False
+            await request_run(
+                session,
+                project.id,
+                actor="web_dashboard",
+                reason="operator started writing",
+            )
+            return True
+    except Exception:
+        logger.exception("failed to clear production halt for %s", slug)
+        return False
 
 
 def _cancel_project_task(settings: AppSettings, task_id: str) -> str:
@@ -6600,6 +6997,10 @@ async def _load_db_repair_task_summaries(
             settings.redis.url,
             "repair",
         )
+        outline_replan_heal_owned_slugs = _fetch_heal_owned_slugs_by_kind(
+            settings.redis.url,
+            "outline_replan",
+        )
         summaries: list[dict[str, object]] = []
         for row in rows:
             if row.slug in active_slugs:
@@ -6609,6 +7010,8 @@ async def _load_db_repair_task_summaries(
                 repair_counts.get(row.id, []),
                 autonomous_repair_counts.get(row.id, {}),
                 latest_repair_workflows.get(row.id),
+                repair_owner_active=row.slug in repair_heal_owned_slugs,
+                outline_replan_owner_active=row.slug in outline_replan_heal_owned_slugs,
             )
             summary = _build_db_repair_task_summary(row, repair_status)
             if summary is not None:
@@ -6623,6 +7026,15 @@ async def _load_db_repair_task_summaries(
                         job_id,
                         worker_progress,
                     )
+                elif row.slug in outline_replan_heal_owned_slugs:
+                    job_id = f"outline-replan:heal:{row.slug}"
+                    worker_progress = _load_worker_heal_progress_snapshot(
+                        settings.redis.url,
+                        job_id,
+                    )
+                    summary["worker_job_id"] = job_id
+                    summary["repair_status"]["is_repairing"] = True
+                    _merge_worker_progress_into_db_repair_summary(summary, worker_progress)
                 summaries.append(summary)
         return summaries
 
@@ -6857,6 +7269,9 @@ def _build_project_repair_status_payload(
     chapter_state_counts: list[dict[str, object]],
     autonomous_repair_task_counts: dict[str, int] | None = None,
     latest_repair_workflow: dict[str, object] | None = None,
+    *,
+    repair_owner_active: bool = False,
+    outline_replan_owner_active: bool = False,
 ) -> dict[str, object]:
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
@@ -6913,7 +7328,10 @@ def _build_project_repair_status_payload(
     production_paused = bool(metadata.get("production_paused"))
     production_pause_reason = str(metadata.get("production_pause_reason") or "").strip()
     resume_blocked = bool(metadata.get("generation_resume_blocked_until_repair_audit"))
-    generation_gate_blocked = any(bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS)
+    generation_gate_blocked = any(bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS) or any(
+        str(metadata.get(flag) or "").strip().lower() == "needs_replan"
+        for flag in ("planning_status", "outline_semantic_gate_status", "rolling_outline_status")
+    ) or bool(metadata.get("outline_replan_required"))
     structural_repair_required = bool(metadata.get("structural_repair_required"))
     latest_workflow = latest_repair_workflow if isinstance(latest_repair_workflow, dict) else {}
     latest_workflow_status = str(latest_workflow.get("status") or "").strip().lower()
@@ -6932,10 +7350,16 @@ def _build_project_repair_status_payload(
         phase = "completed"
         label = "已完成"
         detail = "项目已标记完成，不会进入自动写作或自动修复。"
-    elif generation_gate_blocked:
+    elif generation_gate_blocked and (
+        repair_owner_active or outline_replan_owner_active or latest_workflow_active
+    ):
         phase = "planning_gate"
         label = "规划门禁续跑中"
         detail = "规划/世界观门禁未闭合，系统会携带诊断重新进入自动修复链路。"
+    elif generation_gate_blocked:
+        phase = "needs_attention"
+        label = "需要重新规划"
+        detail = "规划/世界观门禁未闭合，自愈巡检会携带诊断重新接管这本书。"
     elif latest_workflow_active:
         phase = "repair_gate"
         label = "结构修复执行中"
@@ -6976,7 +7400,7 @@ def _build_project_repair_status_payload(
     is_repairing = (
         False
         if library_archived or project_closed
-        else (phase != "normal" or project_status == "paused")
+        else bool(latest_workflow_active or repair_owner_active or outline_replan_owner_active)
     )
     return {
         "phase": phase,
@@ -7937,33 +8361,6 @@ async def _load_execution_progress_payload(
         "health": health,
         "run_count": overview.get("run_count", 0),
     }
-
-
-def _load_model_bakeoff_payload(settings: AppSettings) -> dict[str, object]:
-    """读取 output/model-bakeoff/ 下各模型第一章产出,供平台对比阅读。"""
-
-    base = Path(getattr(settings.output, "base_dir", "/app/output")) / "model-bakeoff"
-    items: list[dict[str, object]] = []
-    prompt_used = ""
-    if base.is_dir():
-        for f in sorted(base.glob("第一章-*.md")):
-            try:
-                text = f.read_text(encoding="utf-8")
-            except Exception:  # noqa: BLE001
-                continue
-            label = f.stem.replace("第一章-", "")
-            items.append({
-                "model": label,
-                "chars": len(text),
-                "content": text,
-            })
-        pu = base / "_prompt_used.md"
-        if pu.is_file():
-            try:
-                prompt_used = pu.read_text(encoding="utf-8")
-            except Exception:  # noqa: BLE001
-                prompt_used = ""
-    return {"book": "借运成神 · 第一章多模型对比", "models": items, "prompt_used": prompt_used}
 
 
 async def _load_pipeline_flow_payload(
@@ -11149,7 +11546,7 @@ def serve_web_app(
             # serves old JS after a rebuild ("rebuilt but nothing changed").
             # Force the browser to revalidate the HTML shell on every load.
             if "text/html" in content_type:
-                self.send_header("Cache-Control", "no-cache, must-revalidate")
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -11192,6 +11589,11 @@ def serve_web_app(
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             query = parse_qs(parsed.query)
+            # Defense-in-depth (P17): when BESTSELLER_WEB_TOKEN is configured,
+            # GET /api/* must present the token too, not only POST/DELETE. With
+            # no token configured this is a no-op (local default stays open).
+            if path.startswith("/api/") and not self._require_auth():
+                return
             try:
                 if path == "/" or path == "/quickstart":
                     # Legacy `/` (novel_studio) was retired — quickstart is the
@@ -11242,12 +11644,6 @@ def serve_web_app(
                         )
                         return
                     self._route_not_found()
-                    return
-                if path == "/bakeoff":
-                    self._send_text(
-                        Path(__file__).with_name("novel_bakeoff.html").read_text(encoding="utf-8"),
-                        content_type="text/html; charset=utf-8",
-                    )
                     return
                 if path.startswith("/design/"):
                     project_slug = path.removeprefix("/design/").strip("/")
@@ -11324,9 +11720,6 @@ def serve_web_app(
                         self._route_not_found()
                         return
                     self._send_json(payload)
-                    return
-                if path == "/api/bakeoff":
-                    self._send_json(_load_model_bakeoff_payload(settings))
                     return
                 if path == "/api/status":
                     llm_profile = runtime_llm_profile_payload(settings)
@@ -12142,6 +12535,13 @@ def serve_web_app(
                     if block_payload:
                         self._send_json(block_payload, status=HTTPStatus.CONFLICT)
                         return
+                    # An explicit start is an operator instruction to run, so it
+                    # lifts any earlier stop/pause.
+                    asyncio.run(
+                        _clear_production_halt_async(
+                            settings, str(payload.get("slug") or "")
+                        )
+                    )
                     task = task_manager.create_autowrite_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
@@ -12445,6 +12845,7 @@ def serve_web_app(
                     return
                 if path == "/api/tasks/quickstart":
                     payload = self._read_json_body()
+                    _validate_quickstart_client_schema(payload)
                     # Accept either a legacy genre_key (热门开局模板) OR a structured
                     # taxonomy selection (频道·题材·子题材·标签 free picker).
                     if not _quickstart_payload_has_genre(payload):
@@ -12558,6 +12959,7 @@ def serve_web_app(
                     return
                 if path == "/api/tasks/quickstart/schedule":
                     payload = self._read_json_body()
+                    _validate_quickstart_client_schema(payload)
                     schedule_dict = _create_book_generation_schedule(
                         settings,
                         task_type="quickstart",
@@ -12596,7 +12998,19 @@ def serve_web_app(
                         if task_id.startswith("db-repair:"):
                             slug = task_id.removeprefix("db-repair:").strip()
                             _clear_repair_resume_focus_pause_sync(settings, slug)
-                            job_id = _enqueue_repair_heal_job(settings.redis.url, slug)
+                            outline_resume = _clear_outline_replan_resume_abandonment_sync(
+                                settings,
+                                slug,
+                            )
+                            job_id = (
+                                _enqueue_outline_replan_heal_job(
+                                    settings,
+                                    settings.redis.url,
+                                    slug,
+                                )
+                                if outline_resume
+                                else _enqueue_repair_heal_job(settings.redis.url, slug)
+                            )
                             if job_id:
                                 self._send_json(
                                     {
@@ -12604,7 +13018,11 @@ def serve_web_app(
                                         "task_id": task_id,
                                         "project_slug": slug,
                                         "status": "queued",
-                                        "current_stage": "delegated_to_worker_self_heal",
+                                        "current_stage": (
+                                            "delegated_to_worker_outline_replan"
+                                            if outline_resume
+                                            else "delegated_to_worker_self_heal"
+                                        ),
                                         "worker_job_id": job_id,
                                     },
                                     status=HTTPStatus.ACCEPTED,
@@ -12627,14 +13045,28 @@ def serve_web_app(
                     # Fallback: rebuild payload from the stored ProjectModel.
                     # Enables resume for historical / recovered tasks that
                     # pre-date payload persistence.
+                    slug = str(saved_payload.get("slug") or old.get("project_slug") or "")
                     if not saved_payload:
-                        slug = old.get("project_slug") or ""
                         if slug:
                             rebuilt = asyncio.run(
                                 _rebuild_payload_from_db(settings, str(slug)),
                             )
                             if rebuilt:
                                 saved_payload = rebuilt
+                    else:
+                        # Once a project exists, PostgreSQL is the canonical
+                        # resume truth.  The persisted task payload is the
+                        # pre-conception request envelope and may still carry a
+                        # generic premise or exploratory world/material data.
+                        # Preserve only saved-only controls; every field that
+                        # can be rebuilt from the project must win.
+                        rebuilt = asyncio.run(
+                            _rebuild_payload_from_db(settings, slug),
+                        ) if slug else None
+                        saved_payload = _merge_resume_payload_with_project_truth(
+                            dict(saved_payload),
+                            rebuilt,
+                        )
                     if not saved_payload:
                         self._send_json(
                             {

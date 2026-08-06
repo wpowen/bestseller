@@ -345,10 +345,13 @@ class PipelineSettings(BaseModel):
     methodology_planning_readiness_block_on_failure: bool = False
     enable_outline_llm_commercial_judge: bool = True
     outline_llm_commercial_judge_block_on_failure: bool = False
-    # Progressive outline self-heal gets two bounded feedback regenerations
-    # (three judge passes total). One round improved the live target from 0.42
-    # to 0.52 but could not close confirmed agency/knowledge/payoff defects.
-    outline_commercial_judge_repair_rounds: int = 2
+    # Progressive outline self-heal gets three bounded feedback regenerations
+    # (four judge passes total). Two rounds took the live target from 0.42 to
+    # 0.52 without closing confirmed agency/knowledge/payoff defects, and live
+    # outlines commonly converged 7 findings -> 6 -> 3, so stopping at two
+    # discarded an outline that was still improving. Keep this in step with
+    # ``config/default.yaml``: the value is set in both places.
+    outline_commercial_judge_repair_rounds: int = 3
     outline_replan_auto_retry_max_attempts: int = 3
     # Heuristic platform-fit gate (七猫 golden-three). Warn-only by default so
     # a flagged opening becomes a rewrite directive rather than aborting the

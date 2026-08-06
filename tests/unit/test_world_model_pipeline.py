@@ -24,6 +24,8 @@ from bestseller.services.world_ripple import (
 
 # A representative derived world model reused across the pipeline tests.
 WORLD_MODEL = {
+    "source_artifact_type": "world_spec",
+    "source_artifact_hash": "a" * 64,
     "axioms": ["灵力成为唯一能源", "人人可飞"],
     "baseline": "现代都市社会",
     "world_laws": [
@@ -74,6 +76,27 @@ def test_extract_world_model_finds_nested_and_top_level() -> None:
     assert extract_world_model(nested)["baseline"] == "现代都市社会"
     assert extract_world_model({}) is None
     assert extract_world_model(None) is None
+
+
+def test_extract_world_model_rejects_unlineaged_legacy_model() -> None:
+    legacy = dict(WORLD_MODEL)
+    legacy.pop("source_artifact_type")
+    legacy.pop("source_artifact_hash")
+
+    assert extract_world_model({"world_model": legacy}) is None
+    assert extract_world_model({"story_design_kernel": {"world_model": legacy}}) is None
+
+
+def test_extract_world_model_prefers_approved_story_kernel_over_top_level() -> None:
+    stale = dict(WORLD_MODEL, baseline="旧的自由生成世界")
+    current = dict(WORLD_MODEL, baseline="正式世界观")
+
+    extracted = extract_world_model(
+        {"world_model": stale, "story_design_kernel": {"world_model": current}}
+    )
+
+    assert extracted is not None
+    assert extracted["baseline"] == "正式世界观"
 
 
 def test_select_active_laws_prefers_context_relevant() -> None:

@@ -505,12 +505,14 @@ def _is_strict(metadata: Mapping[str, Any]) -> bool:
 
 
 def _distilled_expected(metadata: Mapping[str, Any], strict: bool) -> bool:
+    # Distillation is an optional external reference capability, not project
+    # truth.  Strict story planning must never make an unavailable or unsafe
+    # aggregate mandatory merely because the book has a category.  Only an
+    # explicitly enabled or already materialized card participates in gates.
     return bool(
         metadata.get("distilled_strategy_expected")
         or metadata.get("distilled_strategy_card")
         or metadata.get("distilled_strategy_blocks")
-        or (strict and metadata.get("category_key"))
-        or strict
     )
 
 

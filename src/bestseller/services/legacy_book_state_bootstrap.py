@@ -608,7 +608,7 @@ def _suspect_timeline_entries(
                     "id": f"legacy-suspect-role-{index:03d}",
                     "role": "clue_related_actor_or_force",
                     "chapter_number": _chapter_number(row.get("投放章节")),
-                    "state": "由线索账本抽象出的候选压力源",
+                    "state": "由线索记录抽象出的候选压力源",
                     "evidence_refs": [_first_text(row.get("ID"), f"legacy-clue-{index:03d}")],
                     "validation_status": "needs_live_validation",
                 }

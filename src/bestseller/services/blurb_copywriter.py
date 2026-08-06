@@ -178,7 +178,7 @@ def _build_candidate_messages(
     directive = _STRATEGY_DIRECTIVES.get(strategy, _STRATEGY_DIRECTIVES["scene_hook"])
     lo, hi = band
     jargon_ban = "、".join(book_jargon_terms[:12]) if book_jargon_terms else "（无）"
-    emo = "、".join(emotion_exemplars[:5]) if emotion_exemplars else ""
+    del emotion_exemplars  # (2026-08-01) framework event menus no longer enter prompts
     spine_block = "\n".join(
         f"  {k}：{v}" for k, v in spine.items() if str(v or "").strip()
     )
@@ -191,11 +191,8 @@ def _build_candidate_messages(
         f"【故事核】{_truncate(premise, 300)}\n\n"
         f"【金手指/核心规则一句话】{golden_finger_line or '（无）'}\n\n"
         f"【书名】{title}\n"
-        f"【目标读者】{getattr(persona, 'channel', '通用')}：{getattr(persona, 'who', '')}\n"
-        f"【他的知识面】{getattr(persona, 'knowledge', '')}\n"
-        f"【他要的爽点】{getattr(persona, 'fantasy', '')}\n"
-        f"【他的雷点】{'、'.join(getattr(persona, 'turnoffs', ()))}\n"
-        f"【题材高唤起情绪范例】{emo or '（用本题材最匹配的情绪事件，不套其他题材）'}\n\n"
+        f"【频道】{getattr(persona, 'channel', '通用')}\n"
+        "【情绪事件】从本书自己的前提与冲突里选最强的高唤起事件前置，不套其他题材的情绪词。\n\n"
         f"{directive}\n\n"
         f"硬性要求：\n"
         f"①字数 {lo}-{hi} 字，分 2-4 段；\n"

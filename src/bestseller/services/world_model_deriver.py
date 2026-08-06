@@ -23,6 +23,7 @@ Split into pure, unit-testable pieces (mirrors ``services/ideology_kernel.py``):
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from typing import Any
 
@@ -144,6 +145,132 @@ def fallback_world_model(
         "content_settings": [],
     }
     return payload
+
+
+def compile_world_model_from_world_spec(
+    *,
+    premise: str,
+    world_spec: dict[str, Any],
+) -> WorldModel:
+    """Compile the only injectable WorldModel from an approved WorldSpec.
+
+    This is deliberately deterministic.  The previous production path asked a
+    second LLM to invent a broad differential world from the premise and then
+    promoted it above WorldSpec as a "constitution".  Its fixed dimension menu
+    made unrelated finance, mortality, transport, and kinship systems appear in
+    every genre.  Compilation keeps every emitted fact traceable to the already
+    validated WorldSpec and cannot add a new story domain.
+    """
+
+    canonical = json.dumps(world_spec, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    source_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    world_name = str(world_spec.get("world_name") or "").strip()
+    world_premise = str(world_spec.get("world_premise") or premise or "").strip()
+    axioms = [text for text in (str(premise or "").strip(), world_premise) if text]
+    axioms = list(dict.fromkeys(axioms))[:2]
+    laws: list[dict[str, Any]] = []
+    raw_rules = world_spec.get("rules")
+    if isinstance(raw_rules, list):
+        for index, raw_rule in enumerate(raw_rules, start=1):
+            if not isinstance(raw_rule, dict):
+                continue
+            name = str(raw_rule.get("rule_name") or raw_rule.get("name") or f"规则{index}").strip()
+            description = str(raw_rule.get("description") or raw_rule.get("rule") or "").strip()
+            consequence = str(
+                raw_rule.get("story_consequence")
+                or raw_rule.get("consequence")
+                or description
+            ).strip()
+            if not description or not consequence:
+                continue
+            dimension = f"approved_world_rule_{index}"
+            laws.append(
+                {
+                    "dimension": dimension,
+                    "baseline": "",
+                    "delta": f"{name}：{description}",
+                    "order": 1,
+                    "derived_from": [name],
+                    "depends_on": [],
+                    "enforcement": consequence,
+                    "tiers": [],
+                    "story_use": consequence,
+                    "specificity": 1.0,
+                }
+            )
+
+    power = world_spec.get("power_system")
+    if isinstance(power, dict):
+        power_name = str(power.get("name") or "成长体系").strip()
+        acquisition = str(power.get("acquisition_method") or "").strip()
+        hard_limits = str(power.get("hard_limits") or "").strip()
+        power_delta = "；".join(part for part in (power_name, acquisition) if part)
+        if power_delta and hard_limits:
+            tier_steps: list[dict[str, str]] = []
+            progression = power.get("tier_progression")
+            if isinstance(progression, list):
+                for raw_step in progression:
+                    if not isinstance(raw_step, dict):
+                        continue
+                    tier = str(raw_step.get("tier") or "").strip()
+                    value = str(
+                        raw_step.get("breakthrough_cost")
+                        or raw_step.get("bottleneck")
+                        or ""
+                    ).strip()
+                    if tier and value:
+                        tier_steps.append({"tier": tier, "value": value})
+            laws.append(
+                {
+                    "dimension": "approved_power_system",
+                    "baseline": "",
+                    "delta": power_delta,
+                    "order": 1,
+                    "derived_from": [power_name],
+                    "depends_on": [],
+                    "enforcement": hard_limits,
+                    "tiers": tier_steps,
+                    "story_use": hard_limits,
+                    "specificity": 1.0,
+                }
+            )
+
+    if not laws:
+        # A schema-valid but non-injectable empty model is safer than inventing
+        # generic laws.  The caller's planning readiness gate decides whether an
+        # empty WorldSpec is acceptable.
+        return WorldModel(
+            source_artifact_type="world_spec",
+            source_artifact_hash=source_hash,
+            axioms=axioms,
+            baseline=world_name,
+            uniqueness_principle="只允许复用已批准 WorldSpec 中存在的事实。",
+        )
+
+    fault_lines = [
+        {
+            "name": str(law["derived_from"][0]),
+            "tension": str(law["story_use"]),
+            "world_law_refs": [str(law["dimension"])],
+            "used_by_protagonist": index == 0,
+        }
+        for index, law in enumerate(laws[:3])
+    ]
+    return WorldModel.model_validate(
+        {
+            "version": 2,
+            "source_artifact_type": "world_spec",
+            "source_artifact_hash": source_hash,
+            "axioms": axioms,
+            "baseline": world_name,
+            "baseline_layers": [],
+            "baseline_rationale": "从已批准 WorldSpec 确定性编译，不做第二次世界设定生成。",
+            "uniqueness_principle": "所有规律逐条来自已批准 WorldSpec，禁止增加新世界维度。",
+            "world_laws": laws,
+            "fault_lines": fault_lines,
+            "content_settings": [],
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +624,7 @@ async def derive_world_model(
 __all__ = [
     "build_world_model_system_prompt",
     "build_world_model_user_prompt",
+    "compile_world_model_from_world_spec",
     "derive_world_model",
     "extract_axioms",
     "fallback_world_model",

@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+import copy
 from dataclasses import dataclass, field
 import hashlib
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Final
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +32,7 @@ from bestseller.services.blurb_pathology import (
     detect_blurb_pathology,
     truncate_at_sentence,
 )
+from bestseller.services.copy_flavor import pick_reader_facing
 from bestseller.services.concept_lab import (
     coerce_concept_lab_bundle,
     render_concept_lab_prompt_block,
@@ -224,32 +226,14 @@ def _deep_merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str
     return merged
 
 
-_ZH_DEFAULT_MOTIF_RE = re.compile(
-    r"((父母|父亲|母亲|双亲|家人|亲人|亲属|兄长|哥哥|姐姐|妹妹|弟弟|妻子|丈夫|未婚妻|未婚夫)"
-    r"[^。！？；;，,\n]{0,12}"
-    r"(失踪|消失|死亡|死去|被害|遇害|惨死|离奇|旧案|真相|身世|血脉|秘密)"
-    r"|"
-    r"(失踪|消失|死亡|死去|被害|遇害|惨死|离奇|旧案|真相|身世|血脉|秘密)"
-    r"[^。！？；;，,\n]{0,12}"
-    r"(父母|父亲|母亲|双亲|家人|亲人|亲属)"
-    r"|"
-    # 死亡/复活模板(旧正则盲区,证据书「龙椅上坐着我亡夫」正走这条):
-    r"(亡夫|亡妻|亡妇|亡儿|亡女|遗孀|未亡人|借尸还魂|借尸|还魂|还阳|诈尸|死而复生"
-    r"|起死回生|死者归来|死人复活|开棺|掘坟|灭门遗孤|灭门血仇))"
-)
-
-_EN_DEFAULT_MOTIF_RE = re.compile(
-    r"\b("
-    r"(missing|dead|death|murdered|killed|disappeared|lost|vanished|orphaned|family secret|bloodline)"
-    r"[\w\s-]{0,40}"
-    r"(parents?|father|mother|family|relatives?|siblings?)"
-    r"|"
-    r"(parents?|father|mother|family|relatives?|siblings?)"
-    r"[\w\s-]{0,40}"
-    r"(missing|dead|death|murdered|killed|disappeared|lost|vanished|secret|bloodline)"
-    r")\b",
-    re.IGNORECASE,
-)
+# (2026-08-02) The family-trauma motif regexes were retired together with the
+# rest of the motif police. They matched any sentence linking a relative to a
+# death, disappearance, secret, or bloodline — i.e. the premise of a large share
+# of published fiction — and rewrote it. Kept as never-matching patterns so the
+# few remaining call sites stay valid.
+_NEVER_MATCH = re.compile(r"(?!x)x")
+_ZH_DEFAULT_MOTIF_RE = _NEVER_MATCH
+_EN_DEFAULT_MOTIF_RE = _NEVER_MATCH
 
 _ZH_DEFAULT_MOTIF_REPLACEMENT = "由本书题材核心机制触发的具体危机与选择代价"
 _EN_DEFAULT_MOTIF_REPLACEMENT = "a genre-specific initiating crisis with visible choice costs"
@@ -262,85 +246,41 @@ _EN_DEFAULT_MOTIF_REPLACEMENT = "a genre-specific initiating crisis with visible
 # not need an external cheat, and let it choose the freshest form that grows out
 # of THIS book's world rules. This is injected into the conception prompts.
 _GOLDEN_FINGER_DESIGN_PRINCIPLE = (
-    "## 金手指设计原则（务必遵守，否则烂大街没人点）\n"
-    "金手指 = 主角的差异化优势，但【形态绝不固定为系统/属性面板】。系统/面板/签到/商城/抽奖"
-    "只是众多形态之一，且已极度烂大街——非本书设定的强需求，禁止默认选它。\n"
-    "从下列形态按【与本书核心冲突 / 主角 / 世界规律的贴合度】择优，优先新鲜、与本题材独特结合者："
-    "血脉或瞳术觉醒 · 上古传承 / 残魂之师 · 丹道炼器符阵的独门手艺 · 特殊体质 / 道身 · "
-    "契约异兽 / 器灵 · 重生 / 先知 / 记忆回溯 · 气运掠夺 · 武学功法的推演领悟 · "
-    "身份势力 / 信息差 · 逆练禁术 · 词条 / 规则具现 · 一件兵器或宝物 · 因果命格操作"
-    "（也可自创更贴合本书的形态）。\n"
-    "以上只是形态清单，禁止原样照抄某一项的字面塞进本书——必须结合本书前提与"
-    "世界规律给出这本书专属的具体形态与命名，照搬清单原词=同质化。\n"
-    "形态必须长在世界规律上（从设定差分出来，而非硬贴一个外挂）；金手指的【代价 / 限制】"
-    "必须与其形态匹配，不能无代价。\n"
-    "若本书题材本不依赖外挂（纯武侠 / 历史 / 权谋 / 文学向 / 群像），可不设显性金手指，"
-    "改以【谋略 / 武学境界 / 人脉信息 / 性格意志】为差异化优势，并明确写明“无显性金手指，优势在 X”。\n"
-    "反同质化：不要与平台上已扎堆的同形态金手指重复。\n"
-    "【代价形态硬约束 · 反债务化】除非用户明确要求写债务/借贷/记账题材，金手指与其代价、"
-    "以及违反世界规则的代价，【禁止】表达为债、账本、欠条、记账、债务、因果债、灵石债、"
-    "宗债、道债等任何金融记账形态（“欠债/还债/连本带利/结算/赎买/记一笔/入账”皆禁）。"
-    "代价也不是必选槽位：只有能从金手指的机制因果里必然推导出来时才写"
-    "（用了什么，就在什么上留下痕迹），推导不出来就不写代价；"
-    "【禁止】随机失忆、扣命、掉寿命、按次折寿、资源债这类与行动无因果、"
-    "可被停用/代劳/记录轻易规避的系统收税。“债”只可作个别角色的背景动机，"
-    "不得成为金手指机制或全书代价的默认表达。"
+    "## 主角差异化优势设计原则\n"
+    "优势必须从本书已经选定的主角身份、当前目标、题材原生资源和世界规律中推导，"
+    "不得先套一个平台常见外挂，再给它换名字。先说明主角具体能做成什么、怎样改变局面，"
+    "再决定是否需要显性能力；不依赖外挂的题材可以直接使用谋略、技能、人脉或意志作为优势。\n"
+    "不要向模型提供可照抄的能力菜单。至少在内部比较三种不同原理，只保留最贴合本书冲突、"
+    "最能引发对手反应和后续局面变化的一种。\n"
+    "限制也不是必填槽位。只有能从该优势的作用过程自然推出时才写，并落实为行动造成的"
+    "具体资源、关系、暴露或身体状态变化；推导不出来就不额外安装统一收费装置。"
 )
 _GOLDEN_FINGER_DESIGN_PRINCIPLE_EN = (
-    "## Golden-finger design rule (mandatory; a fixed form = cliché = no clicks)\n"
-    "The golden finger is the protagonist's differentiating edge, but its FORM must "
-    "NOT default to a stat/system panel. Panels/check-ins/shops are ONE option among "
-    "many and are heavily oversaturated — never pick one unless this book's premise "
-    "truly requires it.\n"
-    "Choose the form that best FITS this book's core conflict / protagonist / world "
-    "rules, favouring fresh forms unique to the genre: bloodline or eye awakening, "
-    "ancient inheritance / mentor-remnant, a signature alchemy/forging/array craft, "
-    "special physique, contracted beast / artifact spirit, rebirth/precognition/memory, "
-    "fortune-plunder, technique insight, identity/faction/information edge, forbidden "
-    "reverse-cultivation, rule/keyword manifestation, a single weapon or treasure, "
-    "karma/fate manipulation (or invent a better-fitting one).\n"
-    "The list above is examples only — never copy one verbatim into this book; give a "
-    "form and naming that grow specifically from THIS book's premise and world laws. "
-    "Lifting a list entry word-for-word is homogenisation, not differentiation.\n"
-    "The form must grow out of the world's laws (derived, not bolted on), and its "
-    "cost/limit must match the form.\n"
-    "If the genre does not need an external cheat (pure wuxia / history / intrigue / "
-    "literary / ensemble), the book may have NO explicit golden finger — use strategy / "
-    "martial attainment / network / will as the edge, and state 'no explicit golden "
-    "finger; the edge is X'.\n"
-    "Anti-homogenisation: do not reuse a golden-finger form already crowded on the platform.\n"
-    "[Cost-form hard rule — no debt framing] Unless the user explicitly asked for a "
-    "debt/lending/bookkeeping premise, the golden finger's cost — and any world-rule "
-    "violation cost — MUST NOT be expressed as debt / ledger / IOU / bookkeeping / "
-    "karmic-debt / spirit-stone-debt or any financial-accounting form (no owe/repay/"
-    "settle/redeem/'record an entry'). Costs must be non-financial embodied forms: "
-    "backlash, corruption, depletion (qi/lifespan/spirit), causal branding, rule-price, "
-    "cultivation instability, sensory deprivation, memory erosion, relationship fallout. "
-    "'Debt' may appear only as an individual character's backstory motive, never as the "
-    "default framing of the mechanism or of the book's costs."
+    "## Protagonist differentiating-edge design rule\n"
+    "Derive the edge from the selected protagonist, present goal, genre-native resources, "
+    "and world rules. Do not start from a platform-standard power template and rename it. "
+    "State what the protagonist can concretely accomplish and how it changes the situation "
+    "before deciding whether an explicit power is needed.\n"
+    "Do not provide or copy a menu of power forms. Internally compare three different "
+    "principles and keep only the one that best fits this book and provokes changing responses.\n"
+    "A limitation is optional. Include one only when it follows naturally from use, as a "
+    "concrete change in resources, relationships, exposure, or physical state; otherwise do "
+    "not install a generic charging device."
 )
 
 
 def _default_motif_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool | None = None) -> str:
-    """Prompt block that bans fixed family-trauma defaults for new-book conception."""
+    """(2026-08-01 product ruling) Returns "" — guardrails no longer enter prompts.
 
-    if is_en is None:
-        is_en = str((ctx or {}).get("language") or "").startswith("en")
-    if is_en:
-        return (
-            "\n\n[Default-motivation ban]\n"
-            "Do not use family disappearance/death, hidden bloodline cases, magic heirlooms, "
-            "humiliation engagements, or generic revenge as default motivation. Build the protagonist "
-            "drive from the selected genre, platform promise, profession/system/world rules, and the "
-            "opening event. Unless explicitly supplied by the user, do not make the story about finding "
-            "relatives, investigating family cases, or inheriting family secrets."
-        )
-    return (
-        "\n\n【默认动机禁用】\n"
-        "不要把亲属失踪/死亡、身世旧案、神秘信物、退婚羞辱、通用复仇当作默认驱动。"
-        "主角目标必须从题材类型、平台读者承诺、职业/制度/世界规则、当前开局事件中动态生成。"
-        "除非用户明确提供，不得写成寻找亲属、调查家族旧案或继承家族秘密。"
-    )
+    A guard rendered into the prompt is itself an injection: it makes the
+    framework's fear part of every book's context. Default-motif drift is
+    caught only on the OUTPUT side (deterministic candidate/facet detectors in
+    ``anti_default_motif``), whose retry feedback names no vocabulary. The
+    function is kept so 22 call sites stay no-ops until they are swept away.
+    """
+
+    del ctx, is_en
+    return ""
 
 
 # Financial/ledger vocabulary that keeps colonising cultivation golden fingers.
@@ -348,7 +288,11 @@ def _default_motif_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool |
 # prose layers can never drift apart (the cross-book leakage test enforces sync).
 from bestseller.services.anti_default_motif import (  # noqa: E402
     DEBT_LEDGER_TOKENS as _DEBT_LEDGER_TOKENS,
+    contains_default_death_motif as _contains_default_death_motif,
+    is_anonymous_death_dominated as _is_anonymous_death_dominated,
     is_death_revival_dominated as _is_death_revival_dominated,
+    is_debt_dominated as _canonical_is_debt_dominated,
+    mentions_death_theme as _mentions_death_theme,
     snapshot_user_intent as _snapshot_user_intent,
     user_requested_death_revival as _user_requested_death_revival,
     user_requested_debt as _user_requested_debt,
@@ -367,78 +311,34 @@ def _mentions_debt_theme(*texts: Any) -> bool:
 
 
 def _is_debt_dominated_mechanism(text: Any) -> bool:
-    """True when a golden finger / mechanism leans on ledger framing.
+    """Compatibility wrapper around the shared concentration-based detector."""
 
-    Dominated = at least two ledger-token occurrences, so a single incidental
-    mention (``一笔旧债`` in passing) does not trip it but ``债币/欠账/入账``
-    stacked into one mechanism does.
-    """
-
-    blob = str(text or "")
-    if not blob:
-        return False
-    hits = 0
-    for token in _DEBT_LEDGER_TOKENS:
-        hits += blob.count(token)
-        if hits >= 2:
-            return True
-    return False
+    return _canonical_is_debt_dominated(text)
 
 
 def _anti_debt_metaphor_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool) -> str:
-    """Ban ledger framing of the golden finger / cost — the debt twin of the
-    family-trauma ``_default_motif_guardrail``.
+    """(2026-08-01 product ruling) Returns "" — guardrails no longer enter prompts.
 
-    Empty when the user explicitly asked for a debt-themed book (intent in the
-    description or hints), so a deliberate 讨债/记账 premise is never gagged.
+    The debt twin of ``_default_motif_guardrail``; same reasoning. Drift is
+    caught by the output-side detectors (``_is_debt_dominated_mechanism`` and
+    the candidate hard-rejection gates), never by prompt text.
     """
 
-    ctx = ctx or {}
-    # Key off the frozen ORIGINAL user intent (snapshot), never the live
-    # ctx["description"] — the tournament champion is merged into description and
-    # a generated 债/账 token there must not disable the guard (C3 self-poisoning).
-    if _user_requested_debt(ctx):
-        return ""
-    if is_en:
-        return (
-            "\n\n[Anti-debt-metaphor guardrail — hard default]\n"
-            "Unless the user explicitly asked for a debt/lending/bookkeeping premise, the "
-            "golden finger and its cost must NOT be a financial ledger. Ban debt/IOU/ledger/"
-            "account/repayment/'owe-and-repay' framing as the FORM of the power or its price. "
-            "Express the cost through non-financial, embodied forms instead: backlash, "
-            "dao-heart fractures, lifespan drain, sensory deprivation, memory erosion, "
-            "bloodline burn, rule/karma branding, personality overwrite — matched to the "
-            "golden finger's form."
-        )
-    return (
-        "\n\n【金手指与代价 · 反债务化(硬性默认)】\n"
-        "除非用户明确要求写“债务/借贷/记账”题材,金手指的形态与其代价【绝不表达为金融记账形态】:"
-        "禁止债、账本、欠条、欠账、记账、债务、连本带利、抹账、还债、债币、赎身、抵押、"
-        "“欠了要还”这类债务隐喻当作金手指或其代价的主体。"
-        "代价不是必选槽位:只有能从金手指的机制因果里必然推导出来时才写"
-        "(用了什么,就在什么上留下痕迹),推导不出来就不写代价;"
-        "禁止随机失忆、扣命、掉寿命、按次折寿、资源债这类与行动无因果、"
-        "可被停用/代劳/记录轻易规避的系统收税。"
-    )
+    del ctx, is_en
+    return ""
 
 
 def _sanitize_forbidden_default_motifs(value: Any, *, is_en: bool) -> Any:
-    """Remove family-trauma default motifs from LLM/fallback conception payloads."""
+    """Retired 2026-08-02 — returns the payload untouched.
 
-    if isinstance(value, str):
-        replacement = _EN_DEFAULT_MOTIF_REPLACEMENT if is_en else _ZH_DEFAULT_MOTIF_REPLACEMENT
-        pattern = _EN_DEFAULT_MOTIF_RE if is_en else _ZH_DEFAULT_MOTIF_RE
-        sanitized = pattern.sub(replacement, value)
-        return sanitized.strip()
-    if isinstance(value, list):
-        return [_sanitize_forbidden_default_motifs(item, is_en=is_en) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_sanitize_forbidden_default_motifs(item, is_en=is_en) for item in value)
-    if isinstance(value, dict):
-        return {
-            key: _sanitize_forbidden_default_motifs(item, is_en=is_en)
-            for key, item in value.items()
-        }
+    This walked every string in a conception payload and regex-replaced any
+    family-trauma phrasing with one framework-authored sentence ("由本书题材核心
+    机制触发的具体危机与选择代价"). It was censorship and injection at once: the
+    book lost its own words, and every book that tripped it received the same
+    substitute text. A protagonist whose parents died is a premise, not a defect.
+    """
+
+    del is_en
     return value
 
 
@@ -965,6 +865,359 @@ def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
     )
 
 
+def _build_automatic_story_seed(story_facets: object | None) -> str:
+    """Render Story Architect output as system-owned conception material.
+
+    The user may intentionally leave the free-text idea blank and ask the
+    product to create from selected options.  Story Architect already spends
+    an LLM call producing a concrete setting for exactly that path; previously
+    the result lived only in ``ctx['story_facets']`` / a progress event while
+    the concept tournament started from an empty seed.  Keep this source
+    clearly labelled as system-generated so it can guide ideation without
+    masquerading as an explicit user fact.
+    """
+
+    if story_facets is None:
+        return ""
+
+    def _value(name: str) -> object:
+        if isinstance(story_facets, Mapping):
+            return story_facets.get(name)
+        return getattr(story_facets, name, None)
+
+    setting = str(_value("setting") or "").strip()
+    if not setting:
+        return ""
+    fields: list[tuple[str, str]] = [("具体故事起点", setting)]
+    for label, field_name in (
+        ("题材原生优势", "power_system"),
+        ("叙事驱动", "narrative_drive"),
+        ("关系模式", "relationship_mode"),
+        ("调性", "tone"),
+    ):
+        value = str(_value(field_name) or "").strip()
+        if value:
+            fields.append((label, value))
+    raw_tags = _value("trope_tags")
+    if isinstance(raw_tags, (list, tuple, set)):
+        tags = [str(item).strip() for item in raw_tags if str(item).strip()][:6]
+        if tags:
+            fields.append(("可用表层标签", "、".join(tags)))
+    rendered = "\n".join(f"- {label}：{value}" for label, value in fields)
+    return (
+        "\n\n【系统自动故事种子——用户未填写自由创意时的故事起点】\n"
+        f"{rendered}\n"
+        "围绕这个起点生成同一本书的不同可行版本；先补齐主角眼前目标、反常事件和"
+        "第一次不可逆选择。它不是用户明确事实，可优化表达与机制，但不得无视后另起"
+        "一个泛化题材故事。"
+    )
+
+
+def _automatic_story_seed_for_tournament_attempt(
+    automatic_story_seed: str,
+    *,
+    attempt: int,
+) -> str:
+    """Let Story Architect anchor the first draw without locking a reroll.
+
+    Story Architect output is generated guidance, not user-owned story intent.
+    If every first-round candidate fails a refinement-resistant axis such as
+    novelty, replaying the same automatic seed makes the advertised fresh
+    reroll structurally identical to the failed round.  Only explicit user
+    material or an eligible near-miss may survive into later attempts.
+    """
+
+    value = str(automatic_story_seed or "").strip()
+    return value if attempt == 1 else ""
+
+
+_ONTOLOGY_MARKET_STORY_FIELDS: tuple[str, ...] = (
+    "logline",
+    "reader_promise",
+    "selling_points",
+    "trope_keywords",
+    "hook_keywords",
+    "unique_hook",
+)
+
+_ONTOLOGY_HIGH_CONCEPT_STORY_FIELDS: tuple[str, ...] = (
+    "concept",
+    "mechanism",
+    "hook_question",
+    "protagonist_identity",
+    "protagonist_private_desire",
+    "protagonist_flaw",
+    "core_abnormality",
+    "opening_crisis",
+    "opponent_system",
+    "decision_proof",
+    "emotional_promise",
+    "core_promise_invariant",
+    "role_ladder",
+    "world_ladder",
+    "repeatable_story_unit",
+    "unit_families",
+    "progress_bar",
+    "question_ladder",
+    "ch50",
+    "renewal_sources",
+    "accumulation_tracks",
+    "phase_transitions",
+    "opposing_ecology",
+    "endgame_direction",
+)
+
+
+def _ontology_text_values(value: Any) -> list[str]:
+    """Flatten only textual values from a story-bearing structured field."""
+
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Mapping):
+        values: list[str] = []
+        for item in value.values():
+            values.extend(_ontology_text_values(item))
+        return values
+    if isinstance(value, (list, tuple, set)):
+        values = []
+        for item in value:
+            values.extend(_ontology_text_values(item))
+        return values
+    return []
+
+
+def _conception_ontology_story_surface(
+    *,
+    title: str,
+    premise: str,
+    synopsis: str,
+    tags: list[str] | tuple[str, ...],
+    writing_profile: Mapping[str, Any] | None,
+    high_concept: Mapping[str, Any] | None,
+    story_spine: Mapping[str, Any] | None,
+) -> str:
+    """Build the final ontology scan from story facts, not control metadata.
+
+    ``writing_profile`` also stores taboos/custom rules, while a tournament
+    winner stores judge reasons and rejection diagnostics.  Those fields often
+    mention forbidden modern terms precisely to reject them.  Serialising the
+    whole objects made a sentence such as ``不得写成职场故事`` indistinguishable
+    from an actual workplace premise.  Keep the tripwire strict on title,
+    premise, synopsis, character/world facts, reader-facing promises, the
+    champion's story contract, and the story spine; omit control-plane prose.
+    """
+
+    pieces = [str(title or ""), str(premise or ""), str(synopsis or "")]
+    pieces.extend(_ontology_text_values(tags))
+
+    profile = writing_profile if isinstance(writing_profile, Mapping) else {}
+    pieces.extend(_ontology_text_values(profile.get("character")))
+    pieces.extend(_ontology_text_values(profile.get("world")))
+    market = profile.get("market")
+    if isinstance(market, Mapping):
+        for field in _ONTOLOGY_MARKET_STORY_FIELDS:
+            pieces.extend(_ontology_text_values(market.get(field)))
+
+    champion = high_concept if isinstance(high_concept, Mapping) else {}
+    for field in _ONTOLOGY_HIGH_CONCEPT_STORY_FIELDS:
+        pieces.extend(_ontology_text_values(champion.get(field)))
+    pieces.extend(_ontology_text_values(story_spine))
+    return "\n".join(piece for piece in pieces if piece.strip())
+
+
+def _contains_ontology_term(value: Any, violations: tuple[str, ...]) -> bool:
+    text = "\n".join(_ontology_text_values(value)).lower()
+    return any(term.lower() in text for term in violations)
+
+
+def _merge_ontology_repair(
+    original: Any,
+    repaired: Any,
+    violations: tuple[str, ...],
+) -> Any:
+    """Adopt repair output only where the original actually contained drift."""
+
+    if not _contains_ontology_term(original, violations):
+        return original
+    if isinstance(original, Mapping) and isinstance(repaired, Mapping):
+        merged = dict(original)
+        for key, old_value in original.items():
+            if key in repaired:
+                merged[key] = _merge_ontology_repair(
+                    old_value,
+                    repaired[key],
+                    violations,
+                )
+        return merged
+    if isinstance(original, list) and isinstance(repaired, list):
+        return repaired
+    if isinstance(original, tuple) and isinstance(repaired, (list, tuple)):
+        return tuple(repaired)
+    if isinstance(original, str) and isinstance(repaired, str) and repaired.strip():
+        return repaired.strip()
+    return original
+
+
+async def _repair_final_ontology_drift(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    violations: tuple[str, ...],
+    title: str,
+    premise: str,
+    synopsis: str,
+    tags: list[str],
+    writing_profile: dict[str, Any],
+    story_spine: dict[str, Any],
+    high_concept: dict[str, Any] | None,
+    genre_label: str,
+    sub_genre_label: str,
+    language: str,
+) -> tuple[
+    str,
+    str,
+    str,
+    list[str],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    list[Any],
+]:
+    """One bounded repair for ontology drift introduced by late copywriting.
+
+    The early concept scan cannot see later title/blurb/logline/spine rewrites.
+    Instead of discarding an otherwise approved conception at the last step,
+    give those story fields one terminology-only repair.  The merge below only
+    adopts fields that contained a detected term; all other story facts and all
+    control metadata remain byte-for-byte unchanged.  The caller re-runs the
+    deterministic detector and still fails closed if any drift survives.
+
+    ``high_concept`` is repaired too (2026-08-06). The verdict surface reads 24
+    champion fields that the repair could not reach, so a modern term landing in
+    any of them was structurally unfixable: the repair would run, change
+    nothing, and the re-scan would kill an otherwise approved book. A region
+    that is judged must also be repairable — otherwise the gate is a coin toss
+    on where the model happened to put the word.
+    """
+
+    profile_story: dict[str, Any] = {
+        "character": dict(writing_profile.get("character") or {}),
+        "world": dict(writing_profile.get("world") or {}),
+        "market": {
+            field: writing_profile.get("market", {}).get(field)
+            for field in _ONTOLOGY_MARKET_STORY_FIELDS
+            if isinstance(writing_profile.get("market"), Mapping)
+            and writing_profile.get("market", {}).get(field) is not None
+        },
+    }
+    champion = high_concept if isinstance(high_concept, Mapping) else {}
+    champion_story: dict[str, Any] = {
+        field: champion.get(field)
+        for field in _ONTOLOGY_HIGH_CONCEPT_STORY_FIELDS
+        if champion.get(field) is not None
+    }
+    repair_input = {
+        "title": title,
+        "premise": premise,
+        "synopsis": synopsis,
+        "tags": tags,
+        "writing_profile_story": profile_story,
+        "story_spine": story_spine,
+        "high_concept_story": champion_story,
+    }
+    is_en = str(language or "").lower().startswith("en")
+    if is_en:
+        system_prompt = (
+            "You are a fiction ontology copy editor. Replace only the listed "
+            "setting-incompatible terms with equivalents native to the selected "
+            "genre. Preserve every character, causal fact, promise, and structure. "
+            "Return valid JSON only."
+        )
+        user_prompt = (
+            f"Genre: {genre_label} / {sub_genre_label or 'unspecified'}\n"
+            f"Incompatible terms: {', '.join(violations)}\n"
+            "Repair only fields containing those terms. Do not modernize, add a "
+            "profession, or invent a new mechanism. Keep the same JSON shape:\n"
+            f"{json.dumps(repair_input, ensure_ascii=False)}"
+        )
+    else:
+        system_prompt = (
+            "你是小说题材本体校对编辑。只把列出的越界现代设定词改成本题材世界内"
+            "成立的等价称谓；人物、因果、卖点、冲突与结构一律不变。只输出合法 JSON。"
+        )
+        user_prompt = (
+            f"题材：{genre_label} / {sub_genre_label or '未指定子题材'}\n"
+            f"越界词：{'、'.join(violations)}\n"
+            "只改含越界词的字段，不得现代化，不得新增职业或机制，不得改换故事。"
+            "保持下列 JSON 结构原样返回：\n"
+            f"{json.dumps(repair_input, ensure_ascii=False)}"
+        )
+    repaired, llm_ids = await _llm_call_json(
+        session,
+        settings,
+        role="editor",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        fallback=json.dumps(repair_input, ensure_ascii=False),
+        template="conception_final_ontology_repair",
+        stage="conception.final_ontology_repair",
+        language=language,
+    )
+    if not isinstance(repaired, Mapping):
+        repaired = repair_input
+
+    repaired_profile = repaired.get("writing_profile_story")
+    repaired_profile = repaired_profile if isinstance(repaired_profile, Mapping) else {}
+    new_profile = dict(writing_profile)
+    for section in ("character", "world"):
+        new_profile[section] = _merge_ontology_repair(
+            writing_profile.get(section, {}),
+            repaired_profile.get(section, {}),
+            violations,
+        )
+    original_market = writing_profile.get("market")
+    if isinstance(original_market, Mapping):
+        new_profile["market"] = _merge_ontology_repair(
+            original_market,
+            repaired_profile.get("market", {}),
+            violations,
+        )
+
+    repaired_tags = repaired.get("tags")
+    new_tags = _merge_ontology_repair(
+        tags,
+        repaired_tags if isinstance(repaired_tags, list) else tags,
+        violations,
+    )
+    repaired_spine = repaired.get("story_spine")
+    new_spine = _merge_ontology_repair(
+        story_spine,
+        repaired_spine if isinstance(repaired_spine, Mapping) else story_spine,
+        violations,
+    )
+    repaired_champion = repaired.get("high_concept_story")
+    new_champion = dict(champion)
+    if isinstance(repaired_champion, Mapping):
+        for field in _ONTOLOGY_HIGH_CONCEPT_STORY_FIELDS:
+            if field not in champion:
+                continue
+            new_champion[field] = _merge_ontology_repair(
+                champion.get(field),
+                repaired_champion.get(field),
+                violations,
+            )
+    return (
+        str(_merge_ontology_repair(title, repaired.get("title"), violations)),
+        str(_merge_ontology_repair(premise, repaired.get("premise"), violations)),
+        str(_merge_ontology_repair(synopsis, repaired.get("synopsis"), violations)),
+        [str(item).strip() for item in new_tags if str(item).strip()][:10],
+        new_profile,
+        dict(new_spine) if isinstance(new_spine, Mapping) else story_spine,
+        new_champion,
+        list(llm_ids),
+    )
+
+
 def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
     brief = ctx.get("commercial_brief")
     qimao_block = _qimao_regeneration_prompt_block(ctx)
@@ -1020,9 +1273,20 @@ def _build_commercial_fallback(ctx: dict[str, Any]) -> dict[str, Any]:
         "platform_target": market.get("platform_target") or ctx.get("default_platform"),
         "target_audiences": target_audiences,
         "benchmark_works": benchmark_works,
-        "reader_promise": market.get("reader_promise") or (
-            f"以{ctx.get('genre')}核心爽点提供稳定追读回报。"
-            if not is_en else f"Deliver a dependable {ctx.get('genre')} page-turning payoff."
+        # Two defects lived on this line. ``market.reader_promise`` arrives from
+        # the genre preset's writing_profile_overrides, where it is an order to
+        # the writer ("开篇快速亮出…持续维持强追读") — so it is filtered, not taken
+        # on trust. And the hand-written fallback itself said 「核心爽点…稳定追读
+        # 回报」: when the model failed, the framework wrote the worst copy in the
+        # book by hand.
+        "reader_promise": pick_reader_facing(
+            market.get("reader_promise"),
+            (
+                f"看主角在{ctx.get('genre')}的世界里，一次次把眼看要输的局面翻过来。"
+                if not is_en
+                else f"Watch the lead turn a losing position around, again and "
+                f"again, in a {ctx.get('genre')} world."
+            ),
         ),
         "selling_points": _normalize_string_list(market.get("selling_points")) or trend_keywords[:3],
         "trope_keywords": _normalize_string_list(market.get("trope_keywords")) or trend_keywords[:3],
@@ -1070,8 +1334,15 @@ def _apply_commercial_brief_to_profile(
     brief: dict[str, Any],
 ) -> dict[str, Any]:
     merged = dict(profile)
-    market = dict(merged.get("market") or {})
-    style = dict(merged.get("style") or {})
+    # The LLM occasionally emits ``market`` / ``style`` as a bare string instead
+    # of the required object; ``dict("some string")`` then raises
+    # "ValueError: dictionary update sequence element #0 has length 1".
+    # Normalize to empty dict so the whole conception run does not crash on a
+    # single malformed field (2026-08-02 observed on xianxia-upgrade creation).
+    raw_market = merged.get("market") or {}
+    raw_style = merged.get("style") or {}
+    market = dict(raw_market) if isinstance(raw_market, dict) else {}
+    style = dict(raw_style) if isinstance(raw_style, dict) else {}
 
     for key in (
         "platform_target",
@@ -1129,6 +1400,164 @@ _COMMERCIAL_POSITIONING_SYSTEM_EN = (
 )
 
 
+def _cost_style_block_for_ctx(ctx: dict[str, Any], *, is_en: bool) -> str:
+    """Translated cost-style directive for any stage that designs mechanics.
+
+    This is a *user choice*, not a framework guardrail, so unlike
+    ``_default_motif_guardrail`` it belongs in the prompt — and because it names
+    no motif vocabulary it cannot seed the thing it constrains.
+
+    Added for the commercial-positioning stage (2026-08-06): that stage owns
+    ``book_spec_instruction``, which orders a 力量体系 + 升级引擎 while knowing
+    nothing about cost_style. A 爽文无代价 book came back with 「人情债滚动；
+    每10章解一层境界，但必须先还清上一阶段欠下的债」 — cost promoted to the
+    progression engine itself, the exact thing the switch excludes.
+    """
+
+    contract = ctx.get("genre_intent_contract")
+    contract = contract if isinstance(contract, Mapping) else {}
+    enhancers = contract.get("explicit_enhancers")
+    enhancers = enhancers if isinstance(enhancers, Mapping) else {}
+    style = str(enhancers.get("cost_style") or "standard")
+    if style == "standard":
+        return ""
+    from bestseller.services.ideology_kernel import (  # noqa: PLC0415
+        cost_style_directive,
+    )
+
+    directive = cost_style_directive(style, is_en=is_en)
+    if not directive:
+        return ""
+    # The directive shapes the story; it is not copy. Without this line the
+    # model paraphrased it straight into selling_points — a real book shipped
+    # 「极简代价、不掉链子」「绝不反向惩罚主角」 as its cover blurb, which is the
+    # framework's internal instruction printed in the shop window.
+    scope = (
+        "\nThis instruction shapes the design only. Never quote or paraphrase it "
+        "in reader-facing copy (logline, blurb, selling points, tags).\n"
+        if is_en
+        else "\n以上只约束设定与机制的设计，不是文案素材。"
+        "禁止把它的措辞复述或改写进任何对外文字（一句话、简介、卖点、标签）。\n"
+    )
+    return f"\n{directive}{scope}"
+
+
+#: Fields of the commercial brief a reader will actually be shown. The rest of
+#: the brief (opening_strategy, chapter_hook_strategy, payoff_rhythm …) is meant
+#: to instruct the generator, so directive voice is correct there and must not
+#: be scrubbed.
+_READER_FACING_BRIEF_FIELDS: Final[tuple[str, ...]] = ("reader_promise", "selling_points")
+
+
+def _brief_copy_flavour(brief: Mapping[str, Any]) -> tuple[float, list[str]]:
+    """Score the reader-facing part of a commercial brief. Higher is worse."""
+
+    from bestseller.services.copy_flavor import detect_copy_flavor  # noqa: PLC0415
+
+    total = 0.0
+    evidence: list[str] = []
+    for field in _READER_FACING_BRIEF_FIELDS:
+        value = brief.get(field)
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            report = detect_copy_flavor(item if isinstance(item, str) else None)
+            total += report.score
+            evidence.extend(f"{span.matched}（{span.why}）" for span in report.spans)
+    return round(total, 1), evidence
+
+
+async def _rewrite_flavoured_copy(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    brief: dict[str, Any],
+    is_en: bool,
+    language: str,
+) -> tuple[dict[str, Any], list[UUID]]:
+    """Rewrite reader-facing copy that addresses an editor instead of a reader.
+
+    The schema now states the register, which fixed most of it — but a schema is
+    advice, and the model still reaches for 追读/爽点/每章 when the surrounding
+    context is full of them. So the copy gets read back and, if it still smells,
+    re-asked once with its own offending phrases quoted.
+
+    The rewrite is adopted **only when it actually scores lower**. A rewrite that
+    is no better is discarded and the original kept: a repair loop that ships its
+    last attempt regardless of score is how a book ends up published from its
+    worst draft.
+    """
+
+    before, evidence = _brief_copy_flavour(brief)
+    if before <= 0.0:
+        return brief, []
+
+    quoted = "\n".join(f"- {item}" for item in dict.fromkeys(evidence))
+    current = json.dumps(
+        {field: brief.get(field) for field in _READER_FACING_BRIEF_FIELDS},
+        ensure_ascii=False,
+    )
+    if is_en:
+        system = (
+            "You rewrite marketing copy. You speak to a reader who has never "
+            "heard of this book, never to an editor or a producer."
+        )
+        user = (
+            "Rewrite the fields below. They currently read like a production "
+            "brief.\n\nWhat is wrong with them:\n"
+            f"{quoted}\n\nCurrent value:\n{current}\n\n"
+            "Rules: name a person and what happens to them. No industry terms, "
+            "no chapter arithmetic, no talk of what the book 'must' do.\n"
+            'Return JSON only: {"reader_promise": "...", "selling_points": ["...", "..."]}'
+        )
+    else:
+        system = (
+            "你是写书封文案的人。你的听众是一个从没听说过这本书的读者，"
+            "不是编辑，不是平台，也不是写手。"
+        )
+        user = (
+            "下面这几个字段现在读起来像一份生产任务书，请重写。\n\n"
+            f"具体问题：\n{quoted}\n\n当前内容：\n{current}\n\n"
+            "要求：说人、说这个人身上发生了什么、说读者会看到什么画面。"
+            "不用行业词，不写第几章会发生什么，不说这本书「必须」怎样。"
+            "像跟朋友安利一本书那样说话。\n"
+            '只输出 JSON：{"reader_promise": "...", "selling_points": ["...", "..."]}'
+        )
+
+    rewritten, run_ids = await _llm_call_json(
+        session,
+        settings,
+        role="planner",
+        system_prompt=system,
+        user_prompt=user,
+        fallback=current,
+        template="conception_copy_deflavour",
+        stage="conception.copy_deflavour",
+        language=language,
+    )
+    if not isinstance(rewritten, dict):
+        return brief, run_ids
+
+    candidate = dict(brief)
+    for field in _READER_FACING_BRIEF_FIELDS:
+        value = rewritten.get(field)
+        if isinstance(value, list):
+            cleaned = _normalize_string_list(value)
+            if cleaned:
+                candidate[field] = cleaned
+        elif isinstance(value, str) and value.strip():
+            candidate[field] = value.strip()
+
+    after, _ = _brief_copy_flavour(candidate)
+    if after >= before:
+        logger.info(
+            "Copy de-flavour discarded: %.1f -> %.1f (no improvement)", before, after
+        )
+        return brief, run_ids
+
+    logger.info("Copy de-flavour applied: %.1f -> %.1f", before, after)
+    return candidate, run_ids
+
+
 def _commercial_positioning_user_prompt(
     ctx: dict[str, Any],
     genre_profile: GenreReviewProfile | None = None,
@@ -1146,8 +1575,10 @@ def _commercial_positioning_user_prompt(
         '  "platform_target": "最优平台",\n'
         '  "target_audiences": ["核心受众1", "核心受众2"],\n'
         '  "benchmark_works": ["对标作品1", "对标作品2"],\n'
-        '  "reader_promise": "一句话追读承诺",\n'
-        '  "selling_points": ["卖点1", "卖点2", "卖点3"],\n'
+        '  "reader_promise": "一句话说清读者能持续得到什么体验。写给读者听，'
+        '不用行业词（追读/爽点/留存/黄金三章），不写章节节奏（每N章…）",\n'
+        '  "selling_points": ["卖点1：用故事本身的人、事、反常之处说，'
+        '像跟朋友安利一本书", "卖点2：同上", "卖点3：同上"],\n'
         '  "trope_keywords": ["题材标签1", "题材标签2"],\n'
         '  "hook_keywords": ["钩子词1", "钩子词2"],\n'
         '  "content_mode": "内容模式",\n'
@@ -1167,6 +1598,7 @@ def _commercial_positioning_user_prompt(
         instruction = genre_profile.planner_prompts.book_spec_instruction_zh
         if instruction:
             prompt += f"\n\n【品类商业定位要求】\n{instruction}"
+    prompt += _cost_style_block_for_ctx(ctx, is_en=False)
     prompt += _default_motif_guardrail(ctx, is_en=False)
     prompt += _qimao_regeneration_prompt_block(ctx)
     return prompt
@@ -1210,6 +1642,7 @@ def _commercial_positioning_user_prompt_en(
         instruction = genre_profile.planner_prompts.book_spec_instruction_en
         if instruction:
             prompt += f"\n\n[Genre commercial requirements]\n{instruction}"
+    prompt += _cost_style_block_for_ctx(ctx, is_en=True)
     prompt += _default_motif_guardrail(ctx, is_en=True)
     prompt += _qimao_regeneration_prompt_block(ctx)
     return prompt
@@ -1257,8 +1690,10 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
         f"趋势评分：{ctx['trend_score']}/100\n"
         f"\n请生成 market 定位 JSON，包含：\n"
         f'{{"platform_target": "最适合的平台",\n'
-        f'  "reader_promise": "给读者的核心承诺（一句话）",\n'
-        f'  "selling_points": ["卖点1", "卖点2", "卖点3", "卖点4"],\n'
+        f'  "reader_promise": "一句话说清读者能持续得到什么体验。写给读者听，'
+        f'不用行业词（追读/爽点/留存/黄金三章），不写章节节奏（每N章…）",\n'
+        f'  "selling_points": ["卖点1：用故事本身的人、事、反常之处说，'
+        f'像跟朋友安利一本书", "卖点2：同上", "卖点3：同上", "卖点4：同上"],\n'
         f'  "trope_keywords": ["标签1", "标签2", "标签3"],\n'
         f'  "hook_keywords": ["钩子词1", "钩子词2"],\n'
         f'  "opening_strategy": "开篇策略描述",\n'
@@ -1277,6 +1712,11 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
     prompt += _concept_methodology_prompt_block(ctx)
     prompt += _mechanism_dedup_prompt_block(ctx, is_en=False)
     prompt += _anti_debt_metaphor_guardrail(ctx, is_en=False)
+    # cost_style is a user CHOICE, not a framework guardrail, so it belongs
+    # in the stage that designs mechanics. The retired motif police left
+    # nothing on the output side (2026-08-02, all detectors are False-shims),
+    # so a 爽文无代价 book kept acquiring a debt/backlash engine here.
+    prompt += _cost_style_block_for_ctx(ctx, is_en=False)
     return prompt
 
 
@@ -1391,6 +1831,8 @@ _GENRE_CLICHE_BASELINE: dict[str, list[dict[str, Any]]] = {
     "suspense-mystery": [
         {
             "title": "（平台俗套·规则怪谈反转）",
+            "source": "platform_cliche",
+            "intent_aliases": ["规则书写者", "怪谈本体", "你就是鬼"],
             "golden_finger": "主角发现自己就是规则的原始书写者/编写者",
             "premise": "记录或研究诡异规则的人，到头来发现规则其实是他自己写的，"
             "或者他本人就是大家都在躲避的那个'鬼'/怪谈本体",
@@ -1398,6 +1840,8 @@ _GENRE_CLICHE_BASELINE: dict[str, list[dict[str, Any]]] = {
         },
         {
             "title": "（平台俗套·世界是实验）",
+            "source": "platform_cliche",
+            "intent_aliases": ["世界是实验", "实验场", "游戏世界"],
             "golden_finger": "主角发现所在世界是上位者/组织设计的实验或游戏",
             "premise": "所有诡异现象、规则副本，最终揭示是某个组织或文明用来"
             "测试、豢养或收割参与者的实验场/游戏关卡",
@@ -1410,6 +1854,8 @@ _GENRE_CLICHE_BASELINE: dict[str, list[dict[str, Any]]] = {
     "action-progression": [
         {
             "title": "（平台俗套·死者归来讨旧账）",
+            "source": "platform_cliche",
+            "intent_aliases": ["死者归来", "借尸还魂", "死而复生", "亡者复生"],
             "golden_finger": "亲人（亡夫/亡妻/亡母）借尸还魂或死而复生归来，主角被迫认账/对质",
             "premise": "主角亲手埋葬/钉棺的亲人十七年后借尸还魂、诈尸或登基归来，"
             "回来讨一笔旧债、索一条命或掀翻主角赖以自欺的十七年谎言",
@@ -1417,6 +1863,8 @@ _GENRE_CLICHE_BASELINE: dict[str, list[dict[str, Any]]] = {
         },
         {
             "title": "（平台俗套·灭门遗孤复仇）",
+            "source": "platform_cliche",
+            "intent_aliases": ["灭门", "遗孤复仇", "血仇", "复仇"],
             "golden_finger": "灭门夜唯一活口，血脉/剑骨觉醒后复仇",
             "premise": "全家/全宗被屠，主角是唯一幸存的遗孤/遗脉，靠觉醒的血脉或"
             "上古传承一路复仇雪恨、血债血偿",
@@ -1424,12 +1872,16 @@ _GENRE_CLICHE_BASELINE: dict[str, list[dict[str, Any]]] = {
         },
         {
             "title": "（平台俗套·废材觉醒逆袭）",
+            "source": "platform_cliche",
+            "intent_aliases": ["废柴逆袭", "废材逆袭", "血脉觉醒", "退婚打脸"],
             "golden_finger": "被诊断为废脉/废体，其实是隐藏的绝世天赋",
             "premise": "开局废材被退婚/被瞧不起，觉醒后发现废脉是伪装的宝脉/特殊体质，一路打脸逆袭",
             "trope_keywords": ["废材觉醒", "废脉是宝脉", "退婚打脸", "扮猪吃虎"],
         },
         {
             "title": "（平台俗套·钻天道规则漏洞）",
+            "source": "platform_cliche",
+            "intent_aliases": ["天道漏洞", "规则漏洞", "系统漏洞", "卡bug"],
             "golden_finger": "发现并钻天道/系统/世界规则的漏洞白嫖",
             "premise": "主角找到天道或修炼体系的 bug/漏洞，靠规则套利、卡 bug 无限刷取变强",
             "trope_keywords": ["天道漏洞", "钻规则漏洞", "卡bug变强", "系统套利"],
@@ -1488,6 +1940,7 @@ async def _recent_core_mechanisms(
                     ProjectModel.genre,
                     ProjectModel.sub_genre,
                     ProjectModel.metadata_json,
+                    ProjectModel.id,
                 )
                 .order_by(ProjectModel.created_at.desc())
                 .limit(limit * 8)
@@ -1497,8 +1950,34 @@ async def _recent_core_mechanisms(
         logger.debug("recent core-mechanism fetch failed", exc_info=True)
         return []
 
+    # A book that never got written is not prior art. An abandoned shell — no
+    # chapters, still carrying its conception placeholder title — used to count
+    # as a "previous book" for cross-book echo, so the next book in the same
+    # genre collided with a story that does not exist and was killed for
+    # plagiarising it (2026-08-06: collisions=["东方玄幻·构思中"], a 0-chapter
+    # husk that was deleted minutes later).
+    written_ids: set[Any] = set()
+    try:
+        from bestseller.infra.db.models import ChapterModel  # noqa: PLC0415
+
+        written_ids = {
+            row[0]
+            for row in (
+                await session.execute(
+                    select(ChapterModel.project_id).distinct()
+                )
+            ).all()
+        }
+    except Exception:
+        # Fail open: if we cannot tell which books have prose, keep the old
+        # behaviour rather than silently disabling cross-book de-dup.
+        logger.debug("chapter presence lookup failed for echo baseline", exc_info=True)
+        written_ids = None  # type: ignore[assignment]
+
     entries: list[dict[str, Any]] = []
-    for title, row_genre, row_sub_genre, metadata in rows:
+    for title, row_genre, row_sub_genre, metadata, row_id in rows:
+        if written_ids is not None and row_id not in written_ids:
+            continue
         try:
             row_key = canonicalize(row_genre, row_sub_genre)
         except Exception:
@@ -1542,11 +2021,11 @@ async def _recent_core_mechanisms(
 
 
 def _mechanism_dedup_prompt_block(ctx: dict[str, Any], *, is_en: bool) -> str:
-    """Render ``ctx['avoid_mechanisms']`` as a hard differentiate-from list.
+    """Render cross-book novelty pressure without exposing prior-book text.
 
-    Empty string when there is nothing to avoid, so prompts are untouched for
-    the first book of a genre. Deliberately names no concrete mechanism family
-    itself — the avoid-list is data-driven, never baked content.
+    Exact prior mechanisms remain in ``ctx`` for deterministic comparison after
+    generation. They must never become a negative-example mood board inside an
+    LLM prompt.
     """
 
     items = [
@@ -1555,63 +2034,21 @@ def _mechanism_dedup_prompt_block(ctx: dict[str, Any], *, is_en: bool) -> str:
     if not items:
         return ""
 
-    lines: list[str] = []
-    for item in items[:_MECHANISM_DEDUP_MAX_BOOKS]:
-        title = str(item.get("title") or "").strip()
-        golden_finger = str(item.get("golden_finger") or "").strip()[
-            :_MECHANISM_DEDUP_FIELD_CHARS
-        ]
-        premise = str(item.get("premise") or "").strip()[:_MECHANISM_DEDUP_FIELD_CHARS]
-        tropes = _normalize_string_list(item.get("trope_keywords"))[
-            :_MECHANISM_DEDUP_MAX_TROPES
-        ]
-        parts: list[str] = []
-        if is_en:
-            if golden_finger:
-                parts.append(f"golden finger: {golden_finger}")
-            if premise:
-                parts.append(f"premise: {premise}")
-            if tropes:
-                parts.append("tropes: " + ", ".join(tropes))
-            lines.append(f'- "{title}" — ' + "; ".join(parts))
-        else:
-            if golden_finger:
-                parts.append(f"金手指：{golden_finger}")
-            if premise:
-                parts.append(f"前提：{premise}")
-            if tropes:
-                parts.append("标签：" + "、".join(tropes))
-            lines.append(f"- 《{title}》{'；'.join(parts)}")
-    if not lines:
-        return ""
-
+    count = min(len(items), _MECHANISM_DEDUP_MAX_BOOKS)
     if is_en:
         return (
             "\n\n[Mechanism de-duplication — cross-book differentiation, hard constraint]\n"
-            "Core mechanisms already used by recent same-genre books in this system:\n"
-            + "\n".join(lines)
-            + "\nThe new book's core mechanism MUST visibly diverge from every entry above: "
-            "how the golden finger works, the cost it exacts, and the premise conflict must "
-            "not be isomorphic to any of them. Renaming or reskinning the same mechanism "
-            "family does not count as differentiation; if your concept mirrors any entry, "
-            "discard it and rebuild from a different mechanism family."
-            "\nBeyond the mechanism, the imagery must change too: any image or word that "
-            "recurs across two or more entries above (in their titles, golden fingers, or "
-            "tropes) must NOT anchor the new book's title, golden-finger name, or selling "
-            "points — a new mechanism wearing the same thematic skin still reads as the "
-            "same book."
+            f"{count} same-genre mechanism fingerprints will be compared by code after "
+            "generation; their titles, premises, powers, and imagery are intentionally "
+            "withheld from this prompt. Build independently from the user's current intent. "
+            "The operating principle, state changes, and recurring conflict must be original; "
+            "renaming a familiar structure does not count."
         )
     return (
         "\n\n【机制去重 · 跨书差异化（硬约束）】\n"
-        "以下核心机制已被本系统近期同题材作品使用（金手指/前提/卖点标签摘要）：\n"
-        + "\n".join(lines)
-        + "\n新书的核心机制必须与上述每一条做出肉眼可见的分化：金手指的作用原理、"
-        "代价形态、前提冲突都不得与任何一条同构。只换名词、换皮不换骨"
-        "（同一机制家族的变体）不算分化；若当前构思与其中任何一条同构，"
-        "必须推翻重来，从另一个机制家族另起炉灶。"
-        "\n换骨之外还要换皮：凡在上述两条以上条目的书名/金手指/标签里反复出现的"
-        "意象或字眼，禁止再充当新书的书名、金手指命名或核心卖点的主导意象——"
-        "机制原理不同但主题外衣相同，读者仍会当成同一本书。"
+        f"已有{count}条同题材机制指纹将在生成后由程序比对；旧书书名、前提、能力与"
+        "意象原文均不进入提示词。请只从本次用户设定独立生长作用原理、局面变化和"
+        "持续冲突；只换名词、换皮不换骨不算原创。"
     )
 
 
@@ -1732,6 +2169,7 @@ def _mechanism_echo_report(
     *,
     genre: str | None = None,
     sub_genre: str | None = None,
+    user_intent_text: str = "",
 ) -> list[dict[str, Any]]:
     """Per-old-book surface-echo findings for a finalized concept.
 
@@ -1769,6 +2207,26 @@ def _mechanism_echo_report(
         span = _longest_common_cjk_span(candidate_text, _entry_echo_text(entry))
         if len(span) < _ECHO_SPAN_MIN_CHARS:
             span = ""
+
+        # Static platform clichés are broad category guardrails, not prior-book
+        # fingerprints.  Two generic bigrams (for example 血脉/觉醒/逆袭) must
+        # never turn a user-selected genre trope into "cross-book pollution".
+        # Only a specific cliché phrase or a long copied span may flag these
+        # entries, and an explicitly requested matching trope is authoritative.
+        is_platform_cliche = entry.get("source") == "platform_cliche"
+        if is_platform_cliche:
+            aliases = _normalize_string_list(entry.get("intent_aliases"))
+            if any(alias and alias in user_intent_text for alias in aliases):
+                continue
+            trope_phrases = _normalize_string_list(entry.get("trope_keywords"))
+            specific_phrase_hit = any(
+                len("".join(ch for ch in phrase if _is_cjk_char(ch))) >= 4
+                and phrase in candidate_text
+                for phrase in trope_phrases
+            )
+            if not specific_phrase_hit and len(span) < 8:
+                continue
+
         if span or len(shared) >= _ECHO_BIGRAM_MIN_HITS:
             report.append(
                 {
@@ -1790,114 +2248,88 @@ def _echo_severity(report: list[dict[str, Any]]) -> int:
     return score
 
 
+def _should_adopt_mechanism_retry(
+    *,
+    retry_result: Any,
+    original_echo: list[dict[str, Any]],
+    retry_echo: list[dict[str, Any]],
+    original_hard: tuple[bool, ...],
+    retry_hard: tuple[bool, ...],
+) -> bool:
+    """Hard pollution repair outranks weak surface-similarity noise.
+
+    The real failure case produced a debt-free retry, then discarded it because
+    two generic numeral bigrams made ``retry_echo`` one point worse.  When the
+    original has a hard violation, a valid retry that clears every hard class is
+    always safer than the original; echo severity is only a tie-breaker when
+    neither side has a hard violation.
+    """
+
+    if not isinstance(retry_result, dict) or not retry_result:
+        return False
+    if any(original_hard):
+        return not any(retry_hard)
+    return not any(retry_hard) and _echo_severity(retry_echo) <= _echo_severity(
+        original_echo
+    )
+
+
 def _render_mechanism_echo_feedback(
     report: list[dict[str, Any]], *, is_en: bool
 ) -> str:
-    """Hard retry feedback naming each collision, empty when report is clean."""
+    """Hard retry feedback that never quotes prior-book material."""
 
     if not report:
         return ""
-    lines: list[str] = []
-    for item in report:
-        title = str(item.get("title") or "").strip()
-        span = str(item.get("shared_span") or "")
-        grams = [str(g) for g in (item.get("shared_bigrams") or [])][:8]
-        if is_en:
-            detail: list[str] = []
-            if span:
-                detail.append(f'verbatim span "{span}"')
-            if grams:
-                detail.append("shared imagery: " + ", ".join(grams))
-            lines.append(f'- Collides with "{title}" — ' + "; ".join(detail))
-        else:
-            detail = []
-            if span:
-                detail.append(f"逐字雷同片段「{span}」")
-            if grams:
-                detail.append("复用意象：" + "、".join(grams))
-            lines.append(f"- 与《{title}》撞车：" + "；".join(detail))
+    count = len(report)
     if is_en:
         return (
-            "\n\n[Rewrite required — your final plan echoes existing books]\n"
-            + "\n".join(lines)
-            + "\nRegenerate the final plan JSON now. The premise opening, golden-finger "
-            "name and principle, and dominant imagery must all be rebuilt so none of "
-            "the collisions above remain. Do not reuse any quoted span or imagery."
+            "\n\n[Rewrite required — cross-book similarity gate]\n"
+            f"The result matched {count} withheld prior-book fingerprint(s). Their text is "
+            "not shown to avoid priming. Rebuild the opening situation, differentiating "
+            "edge, operating principle, and dominant imagery from the user's current intent."
         )
     return (
-        "\n\n【重写要求 · 终稿与已有作品撞车】\n"
-        + "\n".join(lines)
-        + "\n请立即重新生成最终方案 JSON：主角开局处境、金手指命名与作用原理、"
-        "书名与核心意象必须全部另起，上面引用的雷同片段与复用意象一个都不得保留。"
+        "\n\n【重写要求 · 跨书相似度门】\n"
+        f"当前结果命中{count}条已隔离的旧书指纹；为避免反向提示，旧书原文不会展示。"
+        "请从本次用户设定重新生成主角开局处境、差异化优势、作用原理与核心意象，"
+        "不得沿用上一版的名词和句式。"
     )
 
 
 def _render_debt_rewrite_feedback(*, is_en: bool) -> str:
-    """Retry feedback for a debt-dominated golden finger the user didn't ask for."""
+    """Retired 2026-08-02 — unreachable, renders nothing.
 
-    if is_en:
-        return (
-            "\n\n[Rewrite required — the golden finger is a financial ledger]\n"
-            "The premise/golden finger leans on debt/ledger/IOU/bookkeeping framing, "
-            "which the user did NOT request. Rebuild the mechanism: a cost is only "
-            "written when it derives inevitably from the mechanism's own causality "
-            "(what you use is what bears the mark); if it cannot be derived, write no "
-            "cost at all. Never bolt on random amnesia / lifespan-tax / resource-debt "
-            "style system taxes — remove every "
-            "debt/账/欠条/记账/结算 word from the golden finger and premise."
-        )
-    return (
-        "\n\n【重写要求 · 金手指沦为账本】\n"
-        "当前前提/金手指依赖债、账本、欠条、记账、结算这类金融记账形态，而用户并未要求债务题材。"
-        "请重构机制：删掉一切账本形态；若代价能从金手指的机制因果里必然推导，就改写为那个"
-        "因果后果（用了什么，就在什么上留下痕迹），推导不出来就不写代价——禁止随机失忆、"
-        "扣命、掉寿命、资源债这类系统收税。金手指与前提里的债/账/欠条/记账/结算字样一个都不得保留。"
-    )
+    Its trigger (a "debt-dominated" mechanism the user had not named) was part
+    of the motif police. There is no reserved mechanism family any more.
+    """
+
+    del is_en
+    return ""
 
 
 def _render_death_revival_rewrite_feedback(*, is_en: bool) -> str:
-    """Retry feedback for a death-revival-template concept the user didn't ask for."""
+    """Retired 2026-08-02 — unreachable, renders nothing."""
 
-    if is_en:
-        return (
-            "\n\n[Rewrite required — worn death-revival template]\n"
-            "The concept leans on the platform's most-worn trope: a dead spouse/kin "
-            "returning (soul-transfer/resurrection/'the dead come back to settle a score') "
-            "or a massacre orphan's revenge. The user did NOT request it. Rebuild the "
-            "opening around a fresh initiating crisis that grows from the genre / world "
-            "rules / protagonist — NOT a grave, a coffin, a resurrected relative, or a "
-            "wiped-out clan. Remove 亡夫/亡妻/借尸还魂/诈尸/死者归来/灭门 framing."
-        )
-    return (
-        "\n\n【重写要求 · 死者归来烂梗】\n"
-        "当前概念撞上全平台最烂大街的套路：亲人（亡夫/亡妻）借尸还魂/诈尸/死而复生归来讨旧账，"
-        "或灭门遗孤复仇，而用户并未要求这种设定。请把开局重构为一个从题材/世界规律/主角长出来的"
-        "全新起始危机——不要从一座坟、一具棺、一个复活的亲人、一场灭门案开始。"
-        "删掉亡夫/亡妻/借尸还魂/诈尸/死者归来/灭门遗孤这类框架。"
-    )
+    del is_en
+    return ""
 
 
 def _render_ontology_drift_rewrite_feedback(hits: tuple[str, ...], *, is_en: bool) -> str:
-    """Retry feedback when a native-genre concept drifted to modern/workplace/forensic.
+    """Retry feedback that withholds the drift vocabulary from generation."""
 
-    Given ONE regeneration chance before the fail-closed ontology tripwire kills
-    the book, so a recoverable drift self-corrects instead of failing the run.
-    """
-
-    joined = (", " if is_en else "、").join(hits)
+    count = len(hits)
     if is_en:
         return (
-            "\n\n[Rewrite required — genre drift into modern/workplace/forensic]\n"
-            f"The concept leaked modern/workplace/forensic terms ({joined}) into what must be a "
-            "genre-native story (xianxia/xuanhuan/historical). Remove them and rebuild the setting, "
-            "roles and institutions in native-genre terms — do NOT turn this into a modern office / "
-            "morgue / forensic story."
+            "\n\n[Rewrite required — genre ontology mismatch]\n"
+            f"The deterministic gate found {count} incompatible setting term(s); their text is "
+            "withheld to avoid priming. Rebuild every setting, role, institution, tool, and action "
+            "from the selected genre's native world rules and present story source."
         )
     return (
-        "\n\n【重写要求 · 题材漂移到现代/职场/法医】\n"
-        f"概念里混进了现代/职场/法医词（{joined}），而这是一本【原生题材】书（玄幻/仙侠/历史）。"
-        "请删掉这些现代设定，把场景、身份、机构都改用本题材原生的说法重写——"
-        "不要把它写成现代职场/停尸房/法医故事。"
+        "\n\n【重写要求 · 题材本体不一致】\n"
+        f"确定性检测发现{count}个不属于所选题材世界的设定词；为避免反向提示，具体词不展示。"
+        "请只依据已选题材的原生世界规律和当前故事事实，重新建立场景、身份、机构、工具与行动。"
     )
 
 
@@ -2018,6 +2450,11 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
     prompt += _mechanism_dedup_prompt_block(ctx, is_en=False)
     prompt += _anti_debt_metaphor_guardrail(ctx, is_en=False)
     prompt += _naming_constraint_block(ctx, is_en=False)
+    # cost_style is a user CHOICE, not a framework guardrail, so it belongs
+    # in the stage that designs mechanics. The retired motif police left
+    # nothing on the output side (2026-08-02, all detectors are False-shims),
+    # so a 爽文无代价 book kept acquiring a debt/backlash engine here.
+    prompt += _cost_style_block_for_ctx(ctx, is_en=False)
     return prompt
 
 
@@ -2044,6 +2481,11 @@ def _world_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | 
             prompt += f"\n\n【品类世界构建要求】\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=False)
     prompt += _concept_methodology_prompt_block(ctx)
+    # cost_style is a user CHOICE, not a framework guardrail, so it belongs
+    # in the stage that designs mechanics. The retired motif police left
+    # nothing on the output side (2026-08-02, all detectors are False-shims),
+    # so a 爽文无代价 book kept acquiring a debt/backlash engine here.
+    prompt += _cost_style_block_for_ctx(ctx, is_en=False)
     return prompt
 
 
@@ -2104,6 +2546,11 @@ def _market_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfil
     prompt += _concept_methodology_prompt_block(ctx)
     prompt += _mechanism_dedup_prompt_block(ctx, is_en=True)
     prompt += _anti_debt_metaphor_guardrail(ctx, is_en=True)
+    # cost_style is a user CHOICE, not a framework guardrail, so it belongs
+    # in the stage that designs mechanics. The retired motif police left
+    # nothing on the output side (2026-08-02, all detectors are False-shims),
+    # so a 爽文无代价 book kept acquiring a debt/backlash engine here.
+    prompt += _cost_style_block_for_ctx(ctx, is_en=True)
     return prompt
 
 
@@ -2165,6 +2612,11 @@ def _character_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewPro
     prompt += _mechanism_dedup_prompt_block(ctx, is_en=True)
     prompt += _anti_debt_metaphor_guardrail(ctx, is_en=True)
     prompt += _naming_constraint_block(ctx, is_en=True)
+    # cost_style is a user CHOICE, not a framework guardrail, so it belongs
+    # in the stage that designs mechanics. The retired motif police left
+    # nothing on the output side (2026-08-02, all detectors are False-shims),
+    # so a 爽文无代价 book kept acquiring a debt/backlash engine here.
+    prompt += _cost_style_block_for_ctx(ctx, is_en=True)
     return prompt
 
 
@@ -2191,6 +2643,11 @@ def _world_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfile
             prompt += f"\n\n[Genre world-building requirements]\n{instruction}"
     prompt += _default_motif_guardrail(ctx, is_en=True)
     prompt += _concept_methodology_prompt_block(ctx)
+    # cost_style is a user CHOICE, not a framework guardrail, so it belongs
+    # in the stage that designs mechanics. The retired motif police left
+    # nothing on the output side (2026-08-02, all detectors are False-shims),
+    # so a 爽文无代价 book kept acquiring a debt/backlash engine here.
+    prompt += _cost_style_block_for_ctx(ctx, is_en=True)
     return prompt
 
 
@@ -2352,12 +2809,13 @@ def _finalize_user_prompt(
     review: dict[str, Any],
     genre_profile: GenreReviewProfile | None = None,
 ) -> str:
-    # 题材感知的高唤起情绪范例——让玄幻用灭门/夺宝/绝境突破/碾压打脸，而非都市的退婚/重生。
+    # (2026-08-01 product ruling) The framework-authored 高唤起情绪范例表
+    # (genre_emotion_exemplars) was deleted from this prompt: a shared per-genre
+    # event list steers every same-genre book toward the same events. The
+    # requirement stays ("front-load THIS book's high-arousal event") without
+    # the framework supplying the events.
     from bestseller.services.blurb_appeal_gate import platform_blurb_band  # noqa: PLC0415
-    from bestseller.services.genre_persona import resolve_persona  # noqa: PLC0415
-    from bestseller.services.story_appeal import genre_emotion_exemplars  # noqa: PLC0415
 
-    _emo = "、".join(genre_emotion_exemplars(ctx.get("genre"), ctx.get("sub_genre"))[:6])
     # 简介字数带与验收闸门同源（按目标平台解析；旧版硬编码 80-140 与起点 140-220 打架）。
     _blurb_platform = str(
         market.get("platform_target")
@@ -2370,18 +2828,11 @@ def _finalize_user_prompt(
     # here too. The outline layer already passes it (planner._planner_channel_key);
     # conception was silently dropping it and re-inferring 男频 from the genre,
     # so a 通用 selection on a 玄幻 book still got the 打脸/扮猪吃虎 persona.
-    _persona = resolve_persona(
-        ctx.get("genre"), ctx.get("sub_genre"),
-        tuple(str(t) for t in (ctx.get("tags") or [])),
-        channel=(ctx.get("user_hints") or {}).get("audience_orientation"),
-    )
-    _persona_anchor = (
-        f"【目标读者画像·先想清写给谁】{_persona.channel}：{_persona.who}。"
-        f"他的知识面：{_persona.knowledge}。他要的爽点：{_persona.fantasy}。"
-        f"他的雷点(必须避开)：{('、'.join(_persona.turnoffs))}。"
-        f"一句话钩子公式：{_persona.hook_formula}。"
-        f"——简介与首句钩子必须为这个具体读者量身定做，让他一眼就想点。"
-    )
+    # (2026-08-01 product ruling) The hardcoded reader-persona anchor
+    # (who/knowledge/fantasy/turnoffs/hook_formula from genre_persona tables)
+    # was deleted: framework-authored persona sheets must not enter prompts.
+    # The channel stamp below survives because it only translates the USER's
+    # explicit 男频/女频 pick.
     from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
 
     _channel_stamp = render_channel_style_stamp(
@@ -2391,6 +2842,8 @@ def _finalize_user_prompt(
         f"{_channel_stamp}"
         f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
         f"目标章节数：{ctx['chapter_count']}章\n"
+        f"权威故事创意：{ctx.get('description') or '按冻结建书选项生成'}\n"
+        f"最终方案必须保留这条故事身份，不得用提案中的新故事替换。\n"
         f"\n## 市场定位提案\n{json.dumps(market, ensure_ascii=False, indent=2)}\n"
         f"\n## 角色体系提案\n{json.dumps(character, ensure_ascii=False, indent=2)}\n"
         f"\n## 世界观提案\n{json.dumps(world, ensure_ascii=False, indent=2)}\n"
@@ -2405,21 +2858,18 @@ def _finalize_user_prompt(
         f'  "premise": "小说前提/核心设定（100-200字，包含主角、核心冲突、主角差异化优势'
         f'（金手指或谋略/境界/人脉等，不必是系统）和悬念）",\n'
         f'  "synopsis": "面向读者的【点击型】作品简介（番茄/起点详情页文案，目标：读者只看这段就忍不住点进去）。'
-        f'{_persona_anchor}'
         f'硬性要求，逐条照做：'
         f'①长度 {_band_min}-{_band_max} 字（中文字符，目标平台带），不是长设定介绍——要短、要狠；'
         f'②首句 ≤30 字，必须是一句能瞬间抓人的强钩：用疑问、反差、或开局冲突事件开场，'
         f'严禁用"穿越到…的他/本以为…"这类平铺设定句开头；'
         f'③卖点三要素必须齐全：主角身份反差 + 开局冲突事件 + 失败代价（不做到会怎样）；'
-        f'③b【金手指爽点必须讲清，不能只写代价】：用一句大白话让读者看懂主角靠什么'
+        f'③b【主角优势必须讲清】：用一句大白话让读者看懂主角靠什么'
         f'（能力/机缘/谋略/外挂）能做到别人做不到的事、由此拿到什么好处或翻盘——'
-        f'这一句要读起来"爽/想代入"，而不是只写他要付出什么代价。'
-        f'反例（劝退）：只说"那张纸替他扛下代价，扣他十年阳寿"——读者分不清这是金手指还是诅咒；'
-        f'正例：先点破"他能把诡异规则里的杀招收进纸里、反手当成自家护身符"，再提代价。'
+        f'这一句先写可见行动与直接收益，再写由该行动自然产生的限制。'
         f'③c【主线上升感必须可见】：用一句让读者看到这书的上升阶梯或终极目标'
         f'（从X做到Y、越做越大、最终要成为/夺下/对上谁），'
         f'让人知道爽点会持续升级、这书值得一路追——只有开局没有"往哪走"= 主线模糊，必劝退；'
-        f'④把【{_emo}】这类【本题材】高唤起情绪事件放在最前面（别用其他题材的情绪词）；'
+        f'④把本书自己最强的高唤起情绪事件放在最前面（从本书前提与冲突里选，不套其他题材的情绪词）；'
         f'⑤结尾留一个悬念钩子，绝不剧透关键反转或结局；'
         f'⑥分 2-4 段、动词驱动、克制形容词。'
         f'⑦【新读者可懂铁律】当成写给一个完全没读过本书、不懂任何设定的陌生人看：'
@@ -2520,6 +2970,8 @@ def _finalize_user_prompt_en(
     base = (
         f"Genre: {ctx['genre']} ({ctx['sub_genre']})\n"
         f"Target chapters: {ctx['chapter_count']}\n"
+        f"Authoritative story idea: {ctx.get('description') or 'derive from frozen creation controls'}\n"
+        f"Preserve this story identity; do not replace it with a new story from the proposals.\n"
         f"\n## Market Positioning Proposal\n{json.dumps(market, ensure_ascii=False, indent=2)}\n"
         f"\n## Character System Proposal\n{json.dumps(character, ensure_ascii=False, indent=2)}\n"
         f"\n## World-Building Proposal\n{json.dumps(world, ensure_ascii=False, indent=2)}\n"
@@ -2593,6 +3045,85 @@ def _finalize_user_prompt_en(
     base += _mechanism_dedup_prompt_block(ctx, is_en=True)
     base += _anti_debt_metaphor_guardrail(ctx, is_en=True)
     return base
+
+
+def _pollution_retry_finalize_prompt(
+    ctx: dict[str, Any],
+    *,
+    genre_profile: GenreReviewProfile | None,
+    is_en: bool,
+) -> str:
+    """Build a clean-room finalization prompt after a pollution rejection.
+
+    Market, character, world, review, exploration, and old-book material are
+    mutable model outputs. Feeding them into the repair round reproduces the
+    rejected story. The clean-room retry sees only the frozen creation choices
+    and the tournament champion that already passed deterministic screening.
+    """
+
+    clean_ctx = copy.deepcopy(ctx)
+    for key in (
+        "commercial_brief",
+        "avoid_mechanisms",
+        "creative_premise_seed",
+        "creative_hook",
+    ):
+        clean_ctx.pop(key, None)
+
+    user_hints = clean_ctx.get("user_hints")
+    explicit_seed = (
+        str(user_hints.get("concept_seed") or "").strip()
+        if isinstance(user_hints, Mapping)
+        else ""
+    )
+    champion = clean_ctx.get("high_concept")
+    champion_source = {
+        key: champion.get(key)
+        for key in (
+            "concept",
+            "mechanism",
+            "protagonist_identity",
+            "protagonist_private_desire",
+            "core_abnormality",
+            "opening_crisis",
+            "opponent_system",
+            "decision_proof",
+        )
+        if isinstance(champion, Mapping) and champion.get(key) not in (None, "", [], {})
+    }
+    automatic_seed = str(clean_ctx.get("automatic_story_seed") or "").strip()
+    # A dry tournament has no champion.  In that branch the validated
+    # Story-Architect seed is the only authoritative story identity; putting it
+    # only in the trailing prose is insufficient because the base finalizer can
+    # still invent a new premise before reading the source note.
+    if not explicit_seed and not champion_source and automatic_seed:
+        clean_ctx["description"] = automatic_seed
+
+    prompt_fn = _finalize_user_prompt_en if is_en else _finalize_user_prompt
+    base = prompt_fn(clean_ctx, {}, {}, {}, {}, genre_profile)
+    base = _attach_conception_methodology(
+        base,
+        ctx=clean_ctx,
+        is_en=is_en,
+        token_budget=800,
+    )
+    if is_en:
+        source = (
+            "\n\n[Clean-room authoritative story source]\n"
+            f"Explicit user seed: {explicit_seed or '(not provided; follow frozen controls)'}\n"
+            f"Screened champion: {json.dumps(champion_source, ensure_ascii=False)}\n"
+            f"Automatic story seed: {automatic_seed or '(none)'}\n"
+            "Generate only from this source and the frozen creation controls above."
+        )
+    else:
+        source = (
+            "\n\n【隔离后的权威故事事实】\n"
+            f"用户原始创意：{explicit_seed or '未填写；按冻结建书选项生成'}\n"
+            f"已过筛冠军：{json.dumps(champion_source, ensure_ascii=False)}\n"
+            f"系统自动故事种子：{automatic_seed or '(无)'}\n"
+            "只从这里和上方冻结建书选项生成，不继承任何被拒中间稿。"
+        )
+    return base + source
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -2711,6 +3242,17 @@ async def _attach_concept_methodology(
             orientation_raw, ""
         )
         language = str(ctx.get("language") or "zh-CN")
+        intent_contract = (
+            ctx.get("genre_intent_contract")
+            if isinstance(ctx.get("genre_intent_contract"), dict)
+            else {}
+        )
+        enhancers = (
+            intent_contract.get("explicit_enhancers")
+            if isinstance(intent_contract.get("explicit_enhancers"), dict)
+            else {}
+        )
+        explicit_seed = str(hints.get("concept_seed") or "").strip()
         emit_activity(
             "methodology_selection_started",
             {
@@ -2731,10 +3273,13 @@ async def _attach_concept_methodology(
             trend_keywords=list(ctx.get("trend_keywords") or []),
             language=language,
             allowed_modernity=(
-                str(ctx.get("genre_intent_contract", {}).get("allowed_modernity") or "genre_native")
-                if isinstance(ctx.get("genre_intent_contract"), dict)
-                else "genre_native"
+                str(intent_contract.get("allowed_modernity") or "genre_native")
             ),
+            tone_preference=str(intent_contract.get("tone_preference") or ""),
+            effect_skills=list(enhancers.get("effect_skills") or []),
+            cost_style=str(enhancers.get("cost_style") or "standard"),
+            allow_debt=_mentions_debt_theme(explicit_seed),
+            allow_death=_mentions_death_theme(explicit_seed),
         )
         methodology_payload = methodology.model_dump(mode="json")
         ctx["concept_methodology"] = methodology_payload
@@ -2937,29 +3482,16 @@ async def _derive_conception_world_model(
     premise: str,
     ctx: dict[str, Any],
 ) -> tuple[dict[str, Any], Any, list[UUID]]:
-    """造世前置——从终稿草稿前提差分出本书世界模型(fail-open)。
+    """Compatibility shim: conception no longer invents a second world truth.
 
-    真机终审："记忆消解"代价/"21天"期限/"记忆备份"道具全部无来源——因为
-    这本书的世界模型此前只在 planner 阶段才派生(premise 早已定稿，只能事后
-    描补而非事前约束)。此处把同一个 derive_world_model 引擎前移到构思终稿
-    之后，供 _audit_mechanism_causality 用它做"验"。
+    The authoritative WorldModel is now deterministically compiled only after
+    WorldSpec passes planning validation.  Returning an empty result here keeps
+    older callers stable while preventing an unapproved premise-only model from
+    being persisted or used to rewrite the chosen concept.
     """
 
-    from bestseller.domain.world_model import world_model_to_dict
-    from bestseller.services.world_model_deriver import derive_world_model
-
-    try:
-        model = await derive_world_model(
-            session,
-            settings,
-            premise=premise,
-            genre=str(ctx.get("genre") or "") or None,
-            language=str(ctx.get("language") or "zh-CN"),
-        )
-    except Exception:
-        logger.warning("conception world model derivation failed; skipping grounding", exc_info=True)
-        return {}, None, []
-    return world_model_to_dict(model), model, []
+    del session, settings, premise, ctx
+    return {}, None, []
 
 
 async def _audit_mechanism_causality(
@@ -3195,8 +3727,14 @@ _LOGLINE_VOICE_RULES = (
     "①像跟朋友安利这本书时脱口而出的那句话——自然口语句式，主谓宾完整，"
     "读出来不打磕巴；25-45字。\n"
     "②必须有一个具体的画面或反常事实（人+事+压力），让人听完想追问'然后呢？'。\n"
-    "③禁止四字生造压缩词（如'闻鞋识脏'式自造短语——要说就说'闻一下鞋底就知道"
-    "谁干了脏事'）；禁止把柄/筹码/代价/博弈这类抽象记账词；禁止逗号串三段摘要。\n"
+    # 不点名要禁的词。2026-08-03 的《雾街债主》就是这样长出来的：概念生成
+    # prompt 里两条禁令分别点名了「资源债」等词，删掉后同一条 prompt 里这些词
+    # 全部归零（见 test_concept_generation_prompt_names_no_motif_vocabulary）。
+    # 这一条是同一次清剿的漏网——它点名「把柄/筹码/代价/博弈/记账」，而 2026-08-04
+    # 的样本书 logline 里就写着「多换一枚筹码」。改成只说要什么，不说不要什么。
+    "③用日常说得出口的词。四字生造压缩词要拆开说（不说'闻鞋识脏'，说'闻一下"
+    "鞋底就知道谁干了脏事'）；说人在做的具体事，不用抽象名词概括利害关系；"
+    "禁止逗号串三段摘要。\n"
     "④禁止生造机制黑话，不剧透结局。\n"
 )
 
@@ -3739,17 +4277,35 @@ async def _repair_final_result_to_explicit_seed(
     attempt: int = 1,
     max_attempts: int = 3,
 ) -> tuple[dict[str, Any], list[UUID]]:
-    """Regenerate the complete final conception around the authoritative seed."""
+    """Regenerate from the authoritative seed without replaying the bad draft."""
 
     conservative_lock = ""
     if attempt >= max_attempts:
         conservative_lock = (
             "\n这是最后一次保守锁定修复：premise 必须直接包含用户原文；"
-            "删除用户未明确提供的能力升级、能力分支、作用范围、延长时限、永久留存、"
-            "积分/等级/分段扣除/额外代价体系。宁可让设定更朴素，也不能再发明机制。"
-            "synopsis 与 story_spine 只能扩写人物行动和场景阻力，不得扩写能力、时限、"
-            "目标、数额或代价。"
+            "所有机制、边界、时限、目标、数额和代价都只能直接保留用户已经写明的事实。"
+            "新增内容只限人物当下行动、现存关系、场景阻力和题材原生环境，不再补充新的机制事实。"
         )
+
+    # A repair prompt is another generation prompt. Replaying the rejected
+    # draft, free-form judge report, or the entire mutable ctx taught the model
+    # the exact foreign story it was supposed to remove. Pass only frozen
+    # creation controls and conflict counts; the evaluator keeps the detailed
+    # evidence out-of-band for logging and the next deterministic re-check.
+    context_projection = {
+        key: ctx.get(key)
+        for key in (
+            "genre",
+            "sub_genre",
+            "chapter_count",
+            "language",
+            "genre_intent_contract",
+        )
+        if ctx.get(key) not in (None, "", {}, [])
+    }
+    conflict_count = len(
+        [item for item in report.get("hard_conflicts", []) if isinstance(item, Mapping)]
+    )
 
     repaired, ids = await _llm_call_json(
         session,
@@ -3757,19 +4313,16 @@ async def _repair_final_result_to_explicit_seed(
         role="editor",
         system_prompt=(
             "你是小说创建意图修复主编。用户明确故事创意是不可替换的上位事实。"
-            "请重建同一本书的完整构思终稿，保留原 JSON 结构；不得只改名字，"
-            "主角身份、核心机制、时限、目标、数额、代价与因果必须整体一致。"
-            "用户没有写出的能力升级、积分制、分段触发、额外能力形态和额外现实代价，"
-            "都必须删除，不能以商业化包装为由保留。只输出 JSON。"
+            "请从该原文重新建立同一本书的完整构思终稿。主角身份、核心机制、时限、"
+            "目标、数额、代价与因果必须整体一致；任何新增事实只能由原文或题材原生规律"
+            "直接推出。只输出 JSON。"
         ),
         user_prompt=(
             f"修复轮次：{attempt}/{max_attempts}\n"
             f"用户明确故事创意：\n{concept_seed}\n\n"
-            "当前错误终稿：\n"
-            f"{json.dumps(dict(final_result), ensure_ascii=False)[:30000]}\n\n"
-            "保真判官报告：\n"
-            f"{json.dumps(dict(report), ensure_ascii=False)[:12000]}\n\n"
-            f"题材上下文：{json.dumps(dict(ctx), ensure_ascii=False)[:5000]}\n"
+            f"本轮需闭合的事实冲突数：{conflict_count}\n"
+            f"冻结建书上下文：{json.dumps(context_projection, ensure_ascii=False)[:8000]}\n"
+            "被拒终稿和判官自由文本已隔离，不得猜测或复述它们。\n"
             "输出完整终稿 JSON，至少保留 title、premise、synopsis、tags、"
             "writing_profile、story_spine 字段。"
             f"{conservative_lock}"
@@ -3790,7 +4343,9 @@ async def _repair_final_result_to_explicit_seed(
 # （杂役掏沟挖出戴木镯的腕骨＝失踪师姐遗骸），6/6 挂新颖度。根因就在下面的排序：
 # 「挂的轴越少越优先」使「只挂新颖度」的候选成为**最优先**种子，而那正是改良
 # 修不好的那一个——第 2 轮于是结构性必败。
-_REFINEMENT_RESISTANT_AXES: frozenset[str] = frozenset({"新颖度", "可预测性"})
+_REFINEMENT_RESISTANT_AXES: frozenset[str] = frozenset(
+    {"新颖度", "可预测性", "题材保真"}
+)
 
 # 无种子建书时的采样量。淘汰赛有七个硬门且必须同时达标，真机实测（2026-07-29
 # 空题材玄幻，10 候选）单候选通过率约 10%：人物决策/机制因果稳定 7~8 全过，
@@ -3830,7 +4385,12 @@ def _tournament_attempt_candidate_count(
     return max(base, _SEEDLESS_CANDIDATE_COUNT)
 
 
-def _best_dry_tournament_seed(candidates: list[Any]) -> str:
+def _best_dry_tournament_seed(
+    candidates: list[Any],
+    *,
+    allow_debt: bool = False,
+    allow_death: bool = False,
+) -> str:
     """Pick the best near-miss from a dry tournament to seed the retry attempt.
 
     Three consecutive real dry runs (2026-07-16) exposed the starvation paradox:
@@ -3851,6 +4411,19 @@ def _best_dry_tournament_seed(candidates: list[Any]) -> str:
 
     _FLOOR_PREFIX = "钩子硬门失败"
     best: tuple[int, float, str] | None = None
+    story_fields = (
+        "concept",
+        "mechanism",
+        "hook_question",
+        "protagonist_identity",
+        "protagonist_private_desire",
+        "protagonist_flaw",
+        "core_abnormality",
+        "opening_crisis",
+        "opponent_system",
+        "decision_proof",
+        "emotional_promise",
+    )
     for candidate in candidates or []:
         rejected = str(getattr(candidate, "rejected_reason", "") or "")
         if not rejected.startswith(_FLOOR_PREFIX):
@@ -3863,6 +4436,14 @@ def _best_dry_tournament_seed(candidates: list[Any]) -> str:
         concept = str(getattr(candidate, "concept", "") or "").strip()
         if not concept:
             continue
+        story_text = "\n".join(
+            str(getattr(candidate, field_name, "") or "")
+            for field_name in story_fields
+        )
+        # (2026-08-02) The motif filter here was retired with the rest. A
+        # near-miss candidate is refined by the next round on its own merits;
+        # its vocabulary is not grounds for throwing the whole seed away.
+        del story_text
         score_sum = sum(
             float(getattr(candidate, f"judge_{axis}", 0.0) or 0.0)
             for axis in (
@@ -4036,12 +4617,11 @@ async def _polish_blurb_synopsis(
             "Output only the blurb."
         )
     else:
+        # (2026-08-01 product ruling) persona table + emotion exemplar list
+        # deleted from this repair prompt — framework-authored reader sheets
+        # and event menus steer every same-genre book toward the same content.
         from bestseller.services.blurb_appeal_gate import platform_blurb_band  # noqa: PLC0415
-        from bestseller.services.genre_persona import resolve_persona  # noqa: PLC0415
-        from bestseller.services.story_appeal import genre_emotion_exemplars  # noqa: PLC0415
 
-        _emo = "、".join(genre_emotion_exemplars(genre, sub_genre)[:6])
-        _p = resolve_persona(genre, sub_genre)
         # 与验收闸门同源的平台字数带（旧版硬编码 80-140 与起点 140-220 打架）。
         _band_min, _band_max = platform_blurb_band(platform)
         system_prompt = (
@@ -4050,10 +4630,9 @@ async def _polish_blurb_synopsis(
         )
         user_prompt = (
             f"题材：{genre}（{sub_genre}）\n"
-            f"【目标读者】{_p.channel}：{_p.who}；他要的爽点：{_p.fantasy}；雷点(避开)：{('、'.join(_p.turnoffs))}；"
-            f"钩子公式：{_p.hook_formula}\n\n【当前简介】\n{synopsis}\n\n【整改要求】\n{feedback}\n\n"
+            f"【当前简介】\n{synopsis}\n\n【整改要求】\n{feedback}\n\n"
             f"硬性：{_band_min}-{_band_max}字（按目标平台带）；首句≤30字的强钩（疑问/反差/开局冲突）；卖点三要素齐（身份+冲突+代价）；"
-            f"高唤起情绪前置——用【本题材】的情绪事件（如：{_emo}），别套其他题材的情绪词；"
+            f"高唤起情绪前置——从本书自己的前提与冲突里选最强的情绪事件，别套其他题材的情绪词；"
             "结尾留悬念不剧透；禁AI腔（本以为/却没想到/何去何从/敬请期待）；"
             "【新读者可懂铁律】当成写给完全不懂本书设定的陌生人:删掉生造黑话/自定义机制名/系统术语/"
             "等级编号(如灵码编辑器/怪谈词条/S级/#0371/数据化修炼),独特概念要么不出现要么紧跟一句大白话"
@@ -4349,6 +4928,17 @@ async def run_conception_pipeline(
         if isinstance(user_hints, dict)
         else ""
     )
+    # Explicit user material remains the only authoritative identity source.
+    # The automatic seed exists solely for the genuine zero-input path.
+    automatic_story_seed = (
+        ""
+        if (
+            explicit_concept_seed
+            or concept_bundle is not None
+            or selected_hook_spec is not None
+        )
+        else _build_automatic_story_seed(story_facets)
+    )
     hook_candidates_payload: list[dict[str, Any]] = []
     if getattr(settings.hook_engine, "enabled", True):
         try:
@@ -4464,6 +5054,14 @@ async def run_conception_pipeline(
             max_concept_attempts = 3 if chapter_count >= 200 else 2
             concept_retry_feedback = ""
             _dry_retry_seed = ""
+            _user_owned_story_seed = (
+                explicit_concept_seed
+                or (
+                    str(concept_bundle.one_liner or concept_bundle.reader_promise)
+                    if concept_bundle is not None
+                    else str(getattr(selected_hook_spec, "one_liner", "") or "")
+                )
+            )
             for concept_attempt in range(1, max_concept_attempts + 1):
                 _emit("concept_tournament_started", {
                     "round": -1,
@@ -4471,11 +5069,21 @@ async def run_conception_pipeline(
                     "max_attempts": max_concept_attempts,
                     "wild_concept": bool(ctx.get("wild_concept")),
                 })
+                _automatic_seed_for_attempt = (
+                    _automatic_story_seed_for_tournament_attempt(
+                        automatic_story_seed,
+                        attempt=concept_attempt,
+                    )
+                    if not _user_owned_story_seed
+                    else ""
+                )
+                # Generated StoryFacets are not user-owned evidence.  They may
+                # anchor round one, but must neither shrink the zero-input
+                # search budget nor keep a novelty-failed reroll on the same
+                # story identity.  Only explicit material or a gate-eligible
+                # near miss counts as a real refinement seed.
                 _seed_for_attempt = bool(
-                    explicit_concept_seed
-                    or concept_bundle is not None
-                    or selected_hook_spec is not None
-                    or _dry_retry_seed
+                    _user_owned_story_seed or _dry_retry_seed
                 )
                 attempt_config = {
                     **_ct_config,
@@ -4518,6 +5126,11 @@ async def run_conception_pipeline(
                         (ctx.get("genre_intent_contract") or {}).get("tone_preference")
                         or ""
                     ),
+                    # 同一形状的第四条：题材本体此前只在构思最末端 fail-closed 检查，
+                    # 淘汰赛完全不知道它，于是可以堂堂正正加冕一个「阴间挂号处 KPI
+                    # 喜剧」当东方玄幻的冠军，再被最后那道闸门连书带稿一起打死
+                    # (2026-08-05 实录)。冠军由本体优先挑选，闸门本身不放宽。
+                    genre_intent_contract=genre_intent_contract,
                     effect_skills=list(
                         (
                             (ctx.get("genre_intent_contract") or {}).get(
@@ -4527,23 +5140,35 @@ async def run_conception_pipeline(
                         ).get("effect_skills")
                         or []
                     ),
+                    # Only explicit user material can authorize a debt/death
+                    # story theme. Story Architect and previous generated
+                    # candidates are system output, so they must never turn a
+                    # recurring default motif into apparent user intent.
+                    allow_debt_theme=_mentions_debt_theme(
+                        _user_owned_story_seed
+                    ),
+                    allow_death_theme=_mentions_death_theme(
+                        _user_owned_story_seed
+                    ),
                     # 入参集整体交给规划层。这个块 conception 早就在构造了,但此前
                     # 只喂给商业定位 brief——市场/角色/世界观那批 agent 的输入,而
                     # 一句话规划跑在它们之前。2026-07-30 审计:叙事规模、反常识
                     # 方向、脑洞引擎全部到不了这一层。整块传比逐字段补可靠:以后
                     # 新增选项自动在场。
-                    creation_intent_block=_creation_intent_prompt_block(ctx),
+                    creation_intent_block=(
+                        _creation_intent_prompt_block(ctx) + _automatic_seed_for_attempt
+                    ),
                     seed_concept=(
-                        explicit_concept_seed
-                        or (
-                            str(concept_bundle.one_liner or concept_bundle.reader_promise)
-                            if concept_bundle is not None
-                            else str(getattr(selected_hook_spec, "one_liner", "") or "")
-                        )
+                        _user_owned_story_seed
                         # 干涸重试改定向补强：上一轮最优近失候选(≤3轴差距)升为种子,
                         # 让重试轮改良 6.5 分的具体概念而不是从零重掷(近失候选输给
                         # 空手=淘汰赛饥饿悖论,2026-07-16 三连干涸实录)。
                         or _dry_retry_seed
+                        # Zero-input creation still gets Story Architect's
+                        # selected-options-aligned start in round one.  A later
+                        # free reroll deliberately drops it after novelty or
+                        # predictability proved that identity unrepairable.
+                        or _automatic_seed_for_attempt
                     ),
                     retry_feedback=concept_retry_feedback,
                 )
@@ -4592,6 +5217,14 @@ async def run_conception_pipeline(
                 # ctx["description"] = f"{ctx.get('description') or ''}\n{_hc_block}"
                 # ctx["high_concept"] = _ct_result.winner.to_dict()
                 if _ct_result.winner is not None:
+                    _explicit_seed_text = (
+                        explicit_concept_seed
+                        or (
+                            str(concept_bundle.one_liner or concept_bundle.reader_promise)
+                            if concept_bundle is not None
+                            else str(getattr(selected_hook_spec, "one_liner", "") or "")
+                        )
+                    )
                     # Reject ontology leakage before the winner can become the
                     # shared description for every downstream agent. Explicit
                     # user seeds remain authoritative: only terms absent from
@@ -4606,32 +5239,114 @@ async def run_conception_pipeline(
                             _winner_text,
                             genre_intent_contract,
                         )
-                        _explicit_seed_text = (
-                            explicit_concept_seed
-                            or (
-                                str(concept_bundle.one_liner or concept_bundle.reader_promise)
-                                if concept_bundle is not None
-                                else str(getattr(selected_hook_spec, "one_liner", "") or "")
-                            )
-                        )
                         _unexpected_violations = tuple(
                             term for term in _violations if term not in _explicit_seed_text
                         )
                         if _unexpected_violations:
-                            _ct_result.winner.rejected_reason = (
-                                "题材本体污染: " + "/".join(_unexpected_violations)
-                            )
+                            from dataclasses import replace as _dc_replace  # noqa: PLC0415
+
+                            _rejected_winner = _ct_result.winner
+                            _ct_result.candidates = [
+                                _dc_replace(
+                                    candidate,
+                                    rejected_reason=(
+                                        "题材本体污染: "
+                                        + "/".join(_unexpected_violations)
+                                    ),
+                                )
+                                if candidate is _rejected_winner
+                                else candidate
+                                for candidate in _ct_result.candidates
+                            ]
                             _ct_result.winner = None
                             concept_retry_feedback = (
-                                "上一轮冠军混入未被用户明确选择的题材本体："
-                                + "/".join(_unexpected_violations)
-                                + "；必须回到题材原生的职业、规则、关系和资源冲突。"
+                                "上一轮冠军越过所选题材本体边界；必须回到题材原生的"
+                                "职业、规则、关系和资源冲突。被拒词不回放。"
                             )
                             _emit("concept_tournament_winner_rejected", {
                                 "attempt": concept_attempt,
                                 "violations": list(_unexpected_violations),
                             })
                             continue
+                    # Defense in depth at the exact shared-context boundary.
+                    # The tournament already screens candidates, but no future
+                    # prompt mode or judge path may inject a debt/corpse winner
+                    # into every downstream agent merely because it scored well.
+                    from bestseller.services.anti_default_motif import (  # noqa: PLC0415
+                        DEATH_MOTIF_RE,
+                    )
+                    from bestseller.services.concept_tournament import (  # noqa: PLC0415
+                        _creation_intent_content_violations,
+                    )
+
+                    _winner_payload = _ct_result.winner.to_dict()
+                    _winner_story_text = "\n".join(
+                        _ontology_text_values(
+                            {
+                                key: _winner_payload.get(key)
+                                for key in _ONTOLOGY_HIGH_CONCEPT_STORY_FIELDS
+                            }
+                        )
+                    )
+                    _pollution_reasons = list(
+                        _creation_intent_content_violations(
+                            _winner_story_text,
+                            tone_preference=str(
+                                (ctx.get("genre_intent_contract") or {}).get(
+                                    "tone_preference"
+                                )
+                                or ""
+                            ),
+                            effect_skills=list(
+                                (
+                                    (ctx.get("genre_intent_contract") or {}).get(
+                                        "explicit_enhancers"
+                                    )
+                                    or {}
+                                ).get("effect_skills")
+                                or []
+                            ),
+                            cost_style=str(
+                                (
+                                    (ctx.get("genre_intent_contract") or {}).get(
+                                        "explicit_enhancers"
+                                    )
+                                    or {}
+                                ).get("cost_style")
+                                or ""
+                            ),
+                        )
+                    )
+                    if (
+                        not _user_requested_debt(ctx)
+                        and _is_debt_dominated_mechanism(_winner_story_text)
+                    ):
+                        _pollution_reasons.append("UNREQUESTED_DEFAULT_MOTIF_A")
+                    _seed_has_default_death = bool(
+                        _mentions_death_theme(_explicit_seed_text)
+                        or _user_requested_death_revival(ctx)
+                        or DEATH_MOTIF_RE.search(_explicit_seed_text)
+                    )
+                    if not _seed_has_default_death and (
+                        _is_death_revival_dominated(_winner_story_text)
+                        or _is_anonymous_death_dominated(_winner_story_text)
+                        or _contains_default_death_motif(_winner_story_text)
+                    ):
+                        _pollution_reasons.append("UNREQUESTED_DEFAULT_MOTIF_B")
+                    if _pollution_reasons:
+                        _ct_result.winner = None
+                        concept_retry_feedback = (
+                            "上一轮冠军命中未选择的默认母题门禁。必须只从本次建书合同"
+                            "重新生成开局、机制和情绪承诺，不得复用或改写被拒文本。"
+                        )
+                        _emit(
+                            "concept_tournament_winner_rejected",
+                            {
+                                "attempt": concept_attempt,
+                                "violations": _pollution_reasons,
+                            },
+                        )
+                        continue
                     break
                 if concept_attempt < max_concept_attempts:
                     failed_finalists = sorted(
@@ -4652,13 +5367,50 @@ async def run_conception_pipeline(
                         ),
                         reverse=True,
                     )[:2]
-                    concept_retry_feedback = "；".join(
-                        f"{candidate.concept}｜{candidate.rejected_reason or '未通过'}｜"
-                        f"判官：{candidate.seriality_judge.get('reason') or candidate.judge_reason or '未说明'}"
-                        for candidate in failed_finalists
-                    ) or "上一轮没有候选同时通过钩子与长篇承载门。"
+                    # Never paste rejected candidates or free-form judge prose
+                    # back into generation. They may contain exactly the motif
+                    # that a deterministic gate rejected, turning retry into a
+                    # second pollution channel. Only stable axis codes cross the
+                    # retry boundary; an eligible near-miss is separately passed
+                    # as the intentional refinement seed below.
+                    _failed_axis_codes: list[str] = []
+                    for candidate in failed_finalists:
+                        rejected = str(candidate.rejected_reason or "")
+                        if rejected.startswith("钩子硬门失败:"):
+                            _failed_axis_codes.extend(
+                                axis.strip()
+                                for axis in rejected.split(":", 1)[1].split("/")
+                                if axis.strip()
+                            )
+                        seriality = candidate.seriality_report or {}
+                        _failed_axis_codes.extend(
+                            str(code).strip()
+                            for code in (seriality.get("blocking_codes") or [])
+                            if str(code).strip()
+                        )
+                    _failed_axis_codes = list(dict.fromkeys(_failed_axis_codes))[:8]
+                    concept_retry_feedback = (
+                        "上一轮没有候选同时通过钩子与长篇承载门；只修这些验收轴："
+                        + ("/".join(_failed_axis_codes) or "候选完整性与长篇承载力")
+                        + "。不得复用上一轮被拒文本。"
+                    )
+                    _explicit_retry_intent = (
+                        explicit_concept_seed
+                        or (
+                            str(
+                                concept_bundle.one_liner
+                                or concept_bundle.reader_promise
+                            )
+                            if concept_bundle is not None
+                            else str(
+                                getattr(selected_hook_spec, "one_liner", "") or ""
+                            )
+                        )
+                    )
                     _dry_retry_seed = _best_dry_tournament_seed(
-                        list(_ct_result.candidates)
+                        list(_ct_result.candidates),
+                        allow_debt=_mentions_debt_theme(_explicit_retry_intent),
+                        allow_death=_mentions_death_theme(_explicit_retry_intent),
                     )
                     if _dry_retry_seed:
                         concept_retry_feedback += (
@@ -4703,12 +5455,12 @@ async def run_conception_pipeline(
                 # supply real material (explicit seed / concept-lab bundle /
                 # hook spec) keep the old behavior — their material can still
                 # carry finalize past the gate on its own.
-                _has_user_story_seed = bool(
+                _has_substantive_story_seed = bool(
                     explicit_concept_seed
                     or concept_bundle is not None
                     or str(getattr(selected_hook_spec, "one_liner", "") or "").strip()
                 )
-                if chapter_count >= 200 or not _has_user_story_seed:
+                if chapter_count >= 200 or not _has_substantive_story_seed:
                     from bestseller.services.concept_contract import (  # noqa: PLC0415
                         ConceptContractError,
                     )
@@ -4762,6 +5514,14 @@ async def run_conception_pipeline(
     llm_run_ids.extend(stage_llm_ids)
     if not commercial_brief:
         commercial_brief = _build_commercial_fallback(ctx)
+    commercial_brief, deflavour_ids = await _rewrite_flavoured_copy(
+        session,
+        settings,
+        brief=commercial_brief,
+        is_en=is_en,
+        language=str(ctx.get("language") or "zh-CN"),
+    )
+    llm_run_ids.extend(deflavour_ids)
     ctx["commercial_brief"] = commercial_brief
     conception_log.append({"round": 0, "agent": "commercial_commissioner", "brief": commercial_brief})
 
@@ -4974,14 +5734,27 @@ async def run_conception_pipeline(
     # material (verbatim premise openings, ledger-named golden fingers) and
     # (b) defaults cultivation costs to debt/ledger framing. One focused finalize
     # retry with the specific problems named; keep whichever result is cleaner.
-    # Fail-open.
+    # Cross-book/default-motif and explicit-option violations fail closed after
+    # the bounded repair; a polluted book must never be persisted as success.
+    _unresolved_concept_guard: tuple[str, ...] = ()
+    _detected_concept_guard: tuple[str, ...] = ()
     try:
         _avoid_entries = list(ctx.get("avoid_mechanisms") or [])
+        _echo_contract = ctx.get("genre_intent_contract")
+        _echo_contract = _echo_contract if isinstance(_echo_contract, Mapping) else {}
+        _echo_user_intent_text = " ".join(
+            [
+                *_normalize_string_list(_echo_contract.get("tags")),
+                *_normalize_string_list(_echo_contract.get("user_tags")),
+                str(explicit_concept_seed or ""),
+            ]
+        )
         echo_report = _mechanism_echo_report(
             final_result,
             _avoid_entries,
             genre=str(ctx.get("genre") or "") or None,
             sub_genre=str(ctx.get("sub_genre") or "") or None,
+            user_intent_text=_echo_user_intent_text,
         )
         # Debt + death-revival gates: fire only when the user did NOT ask for the
         # theme and the finalized concept leans on ledger framing or the worn
@@ -5001,32 +5774,50 @@ async def run_conception_pipeline(
                 else str(getattr(selected_hook_spec, "one_liner", "") or "")
             )
         )
+        _death_default_ok = bool(
+            _death_ok
+            or _mentions_death_theme(_ontology_user_seed)
+            or _ZH_DEFAULT_MOTIF_RE.search(_ontology_user_seed)
+        )
 
         def _concept_scan_blob(result: Any) -> str:
             if not isinstance(result, dict):
                 return ""
-            gf = ""
             prof = result.get("writing_profile")
-            if isinstance(prof, dict) and isinstance(prof.get("character"), dict):
-                gf = str(prof["character"].get("golden_finger") or "")
             hc = ctx.get("high_concept") if isinstance(ctx.get("high_concept"), dict) else {}
-            return " ".join(
-                str(x or "")
-                for x in (
-                    gf,
-                    result.get("premise"),
-                    result.get("synopsis"),
-                    result.get("blurb"),
-                    hc.get("one_liner"),
-                    hc.get("story_motion"),
-                    hc.get("abnormality"),
-                    hc.get("premise"),
-                )
+            return _conception_ontology_story_surface(
+                title=str(result.get("title") or ""),
+                premise=str(result.get("premise") or ""),
+                synopsis="\n".join(
+                    (str(result.get("synopsis") or ""), str(result.get("blurb") or ""))
+                ),
+                tags=[],
+                writing_profile=prof if isinstance(prof, Mapping) else None,
+                high_concept=hc,
+                story_spine=None,
             )
 
         _final_blob = _concept_scan_blob(final_result)
-        debt_hit = (not _debt_ok) and _is_debt_dominated_mechanism(_final_blob)
-        death_hit = (not _death_ok) and _is_death_revival_dominated(_final_blob)
+        debt_hit = (not _debt_ok) and bool(
+            _is_debt_dominated_mechanism(_final_blob)
+        )
+        death_hit = (not _death_default_ok) and bool(
+            _is_death_revival_dominated(_final_blob)
+            or _is_anonymous_death_dominated(_final_blob)
+            or _contains_default_death_motif(_final_blob)
+        )
+        from bestseller.services.concept_tournament import (  # noqa: PLC0415
+            _creation_intent_content_violations,
+        )
+
+        _contract = ctx.get("genre_intent_contract") or {}
+        _explicit_enhancers = _contract.get("explicit_enhancers") or {}
+        intent_violations = _creation_intent_content_violations(
+            _final_blob,
+            tone_preference=str(_contract.get("tone_preference") or ""),
+            effect_skills=list(_explicit_enhancers.get("effect_skills") or []),
+            cost_style=str(_explicit_enhancers.get("cost_style") or ""),
+        )
 
         def _ontology_hits(result: Any) -> tuple[str, ...]:
             # Native-genre modern-drift (职场/停尸房/尸检/法医/APP). The final
@@ -5054,7 +5845,24 @@ async def run_conception_pipeline(
                 return ()
 
         ontology_hit = _ontology_hits(final_result)
-        if echo_report or debt_hit or death_hit or ontology_hit:
+        if echo_report or debt_hit or death_hit or ontology_hit or intent_violations:
+            detected: list[str] = []
+            if echo_report:
+                detected.append("跨书机制回声污染")
+            if debt_hit:
+                detected.append("非用户指定的机制母题污染")
+            if death_hit:
+                detected.append("非用户指定的沉重开局母题污染")
+            if ontology_hit:
+                # Name the offending tokens. The bare label "题材本体漂移" sent a
+                # user to a dead end (2026-08-05): the book was gone, the error
+                # said only that something drifted, and finding the single word
+                # responsible took a full forensic pass over the task events.
+                detected.append(
+                    "题材本体漂移（命中：" + "、".join(ontology_hit) + "）"
+                )
+            detected.extend(intent_violations)
+            _detected_concept_guard = tuple(dict.fromkeys(detected))
             _emit(
                 "conception_mechanism_echo_retry",
                 {
@@ -5062,6 +5870,7 @@ async def run_conception_pipeline(
                     "debt_dominated": debt_hit,
                     "death_revival": death_hit,
                     "ontology_drift": list(ontology_hit),
+                    "creation_intent_violations": list(intent_violations),
                 },
             )
             retry_feedback = _render_mechanism_echo_feedback(echo_report, is_en=is_en)
@@ -5071,11 +5880,22 @@ async def run_conception_pipeline(
                 retry_feedback += _render_death_revival_rewrite_feedback(is_en=is_en)
             if ontology_hit:
                 retry_feedback += _render_ontology_drift_rewrite_feedback(ontology_hit, is_en=is_en)
+            if intent_violations:
+                retry_feedback += (
+                    "\n\n【重写要求 · 严格兑现建书选项】\n"
+                    + "；".join(intent_violations)
+                    + "。重做概念的情绪承诺、主角行动与场景引擎；不得只在标签里补词。"
+                )
+            clean_retry_prompt = _pollution_retry_finalize_prompt(
+                ctx,
+                genre_profile=_genre_profile,
+                is_en=is_en,
+            )
             retry_result, retry_llm_ids = await _llm_call_json(
                 session, settings,
                 role="editor",
                 system_prompt=_FINALIZE_SYSTEM_EN if is_en else _FINALIZE_SYSTEM,
-                user_prompt=finalize_user_prompt + retry_feedback,
+                user_prompt=clean_retry_prompt + retry_feedback,
                 fallback=json.dumps(final_result, ensure_ascii=False),
                 template="conception_finalize_echo_retry",
                 stage="conception.final_echo_retry",
@@ -5087,23 +5907,46 @@ async def run_conception_pipeline(
                 _avoid_entries,
                 genre=str(ctx.get("genre") or "") or None,
                 sub_genre=str(ctx.get("sub_genre") or "") or None,
+                user_intent_text=_echo_user_intent_text,
             )
             _retry_blob = _concept_scan_blob(retry_result)
-            retry_debt = (not _debt_ok) and _is_debt_dominated_mechanism(_retry_blob)
-            retry_death = (not _death_ok) and _is_death_revival_dominated(_retry_blob)
+            retry_debt = (not _debt_ok) and bool(
+                _is_debt_dominated_mechanism(_retry_blob)
+            )
+            retry_death = (not _death_default_ok) and bool(
+                _is_death_revival_dominated(_retry_blob)
+                or _is_anonymous_death_dominated(_retry_blob)
+                or _contains_default_death_motif(_retry_blob)
+            )
             retry_ontology = _ontology_hits(retry_result)
-            # Adopt the retry when it is a valid payload that is no worse on echo
-            # and strictly resolves the debt/death/ontology hits (or there were none).
-            adopted = (
-                isinstance(retry_result, dict)
-                and bool(retry_result)
-                and _echo_severity(retry_report) <= _echo_severity(echo_report)
-                and (not debt_hit or not retry_debt)
-                and (not death_hit or not retry_death)
-                and (not ontology_hit or not retry_ontology)
+            retry_intent_violations = _creation_intent_content_violations(
+                _retry_blob,
+                tone_preference=str(_contract.get("tone_preference") or ""),
+                effect_skills=list(_explicit_enhancers.get("effect_skills") or []),
+                cost_style=str(_explicit_enhancers.get("cost_style") or ""),
+            )
+            adopted = _should_adopt_mechanism_retry(
+                retry_result=retry_result,
+                original_echo=echo_report,
+                retry_echo=retry_report,
+                original_hard=(
+                    debt_hit,
+                    death_hit,
+                    bool(ontology_hit),
+                    bool(intent_violations),
+                ),
+                retry_hard=(
+                    retry_debt,
+                    retry_death,
+                    bool(retry_ontology),
+                    bool(retry_intent_violations),
+                ),
             )
             if adopted:
                 final_result = retry_result
+                _unresolved_concept_guard = ()
+            else:
+                _unresolved_concept_guard = _detected_concept_guard
             conception_log.append(
                 {
                     "round": 3,
@@ -5112,11 +5955,26 @@ async def run_conception_pipeline(
                     "retry_collisions": retry_report,
                     "debt_dominated": debt_hit,
                     "retry_debt_dominated": retry_debt,
+                    "creation_intent_violations": list(intent_violations),
+                    "retry_creation_intent_violations": list(retry_intent_violations),
                     "adopted_retry": adopted,
                 }
             )
     except Exception:
-        logger.warning("mechanism echo/debt retry failed; keeping original finalize", exc_info=True)
+        # The original finalize was already proven polluted.  A retry/scanner
+        # exception cannot erase that evidence and silently promote the book.
+        _unresolved_concept_guard = _detected_concept_guard
+        logger.warning("conception pollution retry failed; blocking original finalize", exc_info=True)
+    if _unresolved_concept_guard:
+        from bestseller.services.concept_contract import ConceptContractError
+
+        raise ConceptContractError(
+            [
+                "CONCEPTION_POLLUTION_GATE_UNRESOLVED: "
+                + "；".join(_unresolved_concept_guard)
+                + "。已阻止污染构思进入建书与大纲。"
+            ]
+        )
 
     # A frontend field is not "effective" merely because it appears in a
     # prompt.  When the user supplied a concrete story seed, prove that the
@@ -6196,15 +7054,18 @@ async def run_conception_pipeline(
             detect_genre_native_ontology_violations,
         )
 
-        generated_surface = "\n".join(
-            (
-                str(title or ""),
-                str(premise or ""),
-                str(synopsis or ""),
-                json.dumps(writing_profile or {}, ensure_ascii=False),
-                json.dumps(ctx.get("high_concept") or {}, ensure_ascii=False),
-                json.dumps(tags or [], ensure_ascii=False),
-            )
+        generated_surface = _conception_ontology_story_surface(
+            title=title,
+            premise=premise,
+            synopsis=synopsis,
+            tags=tags,
+            writing_profile=writing_profile,
+            high_concept=(
+                ctx.get("high_concept")
+                if isinstance(ctx.get("high_concept"), Mapping)
+                else None
+            ),
+            story_spine=story_spine if isinstance(story_spine, Mapping) else None,
         )
         ontology_violations = detect_genre_native_ontology_violations(
             generated_surface,
@@ -6228,6 +7089,91 @@ async def run_conception_pipeline(
         ontology_violations = tuple(
             term for term in ontology_violations if term not in _final_seed_text
         )
+        if ontology_violations:
+            # Late title/blurb/logline/spine editors run after the first concept
+            # ontology scan. Give their terminology one bounded, field-scoped
+            # repair before discarding an otherwise approved conception. The
+            # deterministic scan below remains the authority and still fails
+            # closed when the repair cannot remove real drift.
+            _emit(
+                "conception_final_ontology_repair",
+                {"violations": list(ontology_violations), "attempt": 1},
+            )
+            try:
+                (
+                    title,
+                    premise,
+                    synopsis,
+                    tags,
+                    writing_profile,
+                    story_spine,
+                    _repaired_high_concept,
+                    _ontology_repair_ids,
+                ) = await _repair_final_ontology_drift(
+                    session,
+                    settings,
+                    violations=ontology_violations,
+                    title=title,
+                    premise=premise,
+                    synopsis=synopsis,
+                    tags=tags,
+                    writing_profile=writing_profile,
+                    story_spine=(
+                        story_spine if isinstance(story_spine, dict) else {}
+                    ),
+                    high_concept=(
+                        dict(ctx["high_concept"])
+                        if isinstance(ctx.get("high_concept"), Mapping)
+                        else None
+                    ),
+                    genre_label=genre_intent_contract.genre_label,
+                    sub_genre_label=(
+                        genre_intent_contract.sub_genre_label or ""
+                    ),
+                    language=str(ctx.get("language") or "zh-CN"),
+                )
+                llm_run_ids.extend(_ontology_repair_ids)
+                # Write the repaired champion back before re-scanning. Computing
+                # a fix and then re-reading the unrepaired value is how a repair
+                # silently becomes a no-op.
+                if isinstance(_repaired_high_concept, Mapping) and _repaired_high_concept:
+                    ctx["high_concept"] = dict(_repaired_high_concept)
+                generated_surface = _conception_ontology_story_surface(
+                    title=title,
+                    premise=premise,
+                    synopsis=synopsis,
+                    tags=tags,
+                    writing_profile=writing_profile,
+                    high_concept=(
+                        ctx.get("high_concept")
+                        if isinstance(ctx.get("high_concept"), Mapping)
+                        else None
+                    ),
+                    story_spine=(
+                        story_spine if isinstance(story_spine, Mapping) else None
+                    ),
+                )
+                ontology_violations = detect_genre_native_ontology_violations(
+                    generated_surface,
+                    genre_intent_contract,
+                )
+                ontology_violations = tuple(
+                    term
+                    for term in ontology_violations
+                    if term not in _final_seed_text
+                )
+                conception_log.append(
+                    {
+                        "round": 3,
+                        "agent": "final_ontology_repair",
+                        "remaining_violations": list(ontology_violations),
+                    }
+                )
+            except Exception:
+                logger.warning(
+                    "final ontology repair failed; preserving fail-closed gate",
+                    exc_info=True,
+                )
         if ontology_violations:
             # A deliberate content block, not a crash. A bare ValueError fell
             # through to the generic handler and showed the user a raw Python

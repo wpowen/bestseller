@@ -95,13 +95,38 @@ class BibleDeficiency:
         )
 
 
+# Codes that describe *preparedness*, not structural integrity. They are still
+# reported and still reach the planner as feedback, but they must never refuse
+# to persist a book that is otherwise well-formed.
+#
+# ``NAMING_POOL_UNDERSIZED`` asks for a spare-name list of 2× the expected cast
+# so a character introduced at chapter 30 has a pre-approved name waiting. A
+# book with a short spare list is not malformed — the writer can name a new
+# character when one actually appears. As a blocker it was deterministic (the
+# same draft failed the same count on every retry) and it deadlocked real books
+# twice: it refused materialization, which left the rolling outline window
+# incomplete, which made self-heal re-queue the same plan forever. Downgraded
+# in ``write_gate`` on 2026-08-03; this is the *second* enforcement site, which
+# kept raising and blocked 《废意回收》 at the window-2 boundary the same day.
+# Two enforcement points for one judgement must not give two answers.
+ADVISORY_CODES: frozenset[str] = frozenset({"NAMING_POOL_UNDERSIZED"})
+
+
 @dataclass(frozen=True)
 class BibleCompletenessReport:
     deficiencies: tuple[BibleDeficiency, ...]
 
     @property
+    def blocking_deficiencies(self) -> tuple[BibleDeficiency, ...]:
+        return tuple(d for d in self.deficiencies if d.code not in ADVISORY_CODES)
+
+    @property
+    def advisory_deficiencies(self) -> tuple[BibleDeficiency, ...]:
+        return tuple(d for d in self.deficiencies if d.code in ADVISORY_CODES)
+
+    @property
     def passes(self) -> bool:
-        return not self.deficiencies
+        return not self.blocking_deficiencies
 
     def by_code(self) -> dict[str, list[BibleDeficiency]]:
         bucket: dict[str, list[BibleDeficiency]] = {}
@@ -171,6 +196,16 @@ class BibleValidator(Protocol):
     ) -> Iterable[BibleDeficiency]: ...  # pragma: no cover - protocol
 
 
+def _is_source_bound_minimal_character(character: CharacterInput) -> bool:
+    """Return whether biography expansion is forbidden for this character."""
+
+    metadata = character.metadata if isinstance(character.metadata, dict) else {}
+    if metadata.get("source_bound_minimal") is True:
+        return True
+    extra = character.model_extra if isinstance(character.model_extra, dict) else {}
+    return extra.get("source_bound_minimal") is True
+
+
 # ---------------------------------------------------------------------------
 # Character IP anchors (bug #14).
 # ---------------------------------------------------------------------------
@@ -203,6 +238,7 @@ class CharacterIPAnchorCheck:
             anchor = char.ip_anchor
             quirk_count = len([q for q in anchor.quirks if q and q.strip()])
             role_lower = (char.role or "").lower()
+            source_bound_minimal = _is_source_bound_minimal_character(char)
 
             if "protagonist" in role_lower:
                 required_quirks = self.PROTAGONIST_MIN_QUIRKS
@@ -211,7 +247,12 @@ class CharacterIPAnchorCheck:
             else:
                 continue  # supporting cast exempt — would explode the bible
 
-            if quirk_count < required_quirks:
+            # In source-bound minimal mode, an empty quirk list is an explicit
+            # provenance decision: the creator did not authorize additional
+            # habits, objects, catchphrases, wounds, or biography.  Forcing the
+            # generic richness gate here would route the cast through an LLM
+            # repair and silently create a second character premise.
+            if not source_bound_minimal and quirk_count < required_quirks:
                 yield BibleDeficiency(
                     code=self.code,
                     location=f"character:{char.name}",
@@ -228,7 +269,10 @@ class CharacterIPAnchorCheck:
                     ),
                 )
 
-            if not anchor.core_wound or not anchor.core_wound.strip():
+            if (
+                not source_bound_minimal
+                and (not anchor.core_wound or not anchor.core_wound.strip())
+            ):
                 if "protagonist" in role_lower:
                     yield BibleDeficiency(
                         code="CORE_WOUND_MISSING",
@@ -312,6 +356,8 @@ class IndependentLifeCheck:
             role_lower = (char.role or "").lower()
             if "protagonist" in role_lower or "antagonist" in role_lower:
                 continue  # covered by personhood / villain charisma checks
+            if _is_source_bound_minimal_character(char):
+                continue
 
             il = (char.ip_anchor.independent_life or "").strip()
             if not il:
@@ -454,11 +500,11 @@ class AbilityOriginContractCheck:
 
 
 class CharacterPersonhoodCheck:
-    """Protagonists need a psychology, a past, a family, and beliefs.
+    """Protagonists need psychology, lived role context, and beliefs.
 
     The IP anchor check ensures readers *remember* a character; this check
     ensures readers *believe* the character. Without psych_profile,
-    life_history, family_imprint, or beliefs, the LLM falls back to
+    life_history or beliefs, the LLM falls back to
     archetype defaults — chapter prompts produce technically-correct
     decisions that feel hollow because they have no internal cause.
 
@@ -488,18 +534,8 @@ class CharacterPersonhoodCheck:
                 or history.career_history
                 or history.defining_moments
             )
-            if not has_history:
+            if not has_history and not _is_source_bound_minimal_character(char):
                 missing.append("life_history（formative_events / defining_moments / education / career_history）")
-
-            family = char.family_imprint
-            has_family = bool(
-                family.parenting_style
-                or family.family_socioeconomic
-                or family.sibling_dynamics
-                or family.inherited_values
-            )
-            if not has_family:
-                missing.append("family_imprint（parenting_style / sibling_dynamics / inherited_values）")
 
             beliefs = char.beliefs
             has_beliefs = bool(

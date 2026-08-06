@@ -8,7 +8,6 @@ import pytest
 import bestseller.services.material_density as material_density
 from bestseller.services.material_density import (
     PROJECT_MATERIAL_TARGETS,
-    _build_qingnang_pack,
     _category_pack_spec,
     _decision_policy_for_pack,
     _initial_premium_state_ledger_for_pack,
@@ -27,43 +26,39 @@ from bestseller.services.writing_presets import GenrePreset, load_writing_preset
 pytestmark = pytest.mark.unit
 
 
-def test_qingnang_pack_meets_density_targets() -> None:
-    materials = _build_qingnang_pack("proj-1")
-    counts: dict[str, int] = {}
-    for material in materials:
-        counts[material.material_type] = counts.get(material.material_type, 0) + 1
-
-    assert len(materials) >= sum(PROJECT_MATERIAL_TARGETS.values())
-    for dimension, target in PROJECT_MATERIAL_TARGETS.items():
-        assert counts.get(dimension, 0) >= target
+_DELETED_SINGLE_BOOK_PACKS = {
+    "qingnang",
+    "english_romantasy",
+    "english_superhero_breaking_point",
+    "english_superhero_witness_protocol",
+    "female_no_cp_apocalypse",
+    "xianxia_upgrade",
+}
 
 
 @pytest.mark.parametrize(
-    ("title", "genre", "sub_genre", "language", "signal", "expected_pack"),
+    ("title", "genre", "sub_genre", "language", "signal"),
     [
         (
             "Shadowbound to the Crown",
             "Fantasy Romance",
             "Fae & Chosen One",
             "en",
-            "shadow sight court bargain exile mystery",
-            "english_romantasy",
+            "shadowbound shadow sight court bargain exile mystery",
         ),
         (
             "Breaking Point",
-            "Science Fiction / Urban Power Fantasy / Superhero Progression",
-            "Superhero",
+            "Science Fiction",
+            "Progression",
             "en",
-            "Cole reservoir kinetics Sophie deadline Victor Kane",
-            "english_superhero_breaking_point",
+            "breaking point reservoir kinetics sophie deadline",
         ),
         (
             "The Witness Protocol",
             "Science Fiction",
-            "Superhero",
+            "Progression",
             "en",
-            "Kade sixty-second mimicry Maya Marcus Mercer",
-            "english_superhero_witness_protocol",
+            "witness protocol sixty-second marcus mercer",
         ),
         (
             "代价之鸢",
@@ -71,7 +66,6 @@ def test_qingnang_pack_meets_density_targets() -> None:
             "无CP大女主",
             "zh-CN",
             "方舟城 源初 代价转化 末世异能",
-            "female_no_cp_apocalypse",
         ),
         (
             "道种破虚",
@@ -79,19 +73,27 @@ def test_qingnang_pack_meets_density_targets() -> None:
             "宗门逆袭",
             "zh-CN",
             "道种破虚 道种 炼气 宗门资源账",
-            "xianxia_upgrade",
+        ),
+        (
+            "青囊不语问阴阳",
+            "民俗灵异",
+            "风水悬疑",
+            "zh-CN",
+            "青囊 困魂镜 三族 林渊",
         ),
     ],
 )
-def test_supported_type_packs_meet_density_targets(
+def test_single_book_reference_packs_never_route(
     title: str,
     genre: str,
     sub_genre: str,
     language: str,
     signal: str,
-    expected_pack: str,
 ) -> None:
-    pack_id, materials = _select_material_pack(
+    """2026-07-31 product ruling: historical books' private worlds were
+    deleted from framework source. Even an exact-title signal must not
+    resurrect them — a new book only ever gets category-level material."""
+    pack_id, _materials = _select_material_pack(
         "proj-1",
         signal,
         title=title,
@@ -99,11 +101,23 @@ def test_supported_type_packs_meet_density_targets(
         sub_genre=sub_genre,
         language=language,
     )
+    assert pack_id not in _DELETED_SINGLE_BOOK_PACKS
+
+
+def test_generic_superhero_pack_still_routes_and_meets_density() -> None:
+    pack_id, materials = _select_material_pack(
+        "proj-1",
+        "superhero urban power progression",
+        title="Cape City",
+        genre="Superhero",
+        sub_genre="Progression",
+        language="en",
+    )
     counts: dict[str, int] = {}
     for material in materials:
         counts[material.material_type] = counts.get(material.material_type, 0) + 1
 
-    assert pack_id == expected_pack
+    assert pack_id == "english_superhero_progression"
     assert len(materials) >= sum(PROJECT_MATERIAL_TARGETS.values())
     for dimension, target in PROJECT_MATERIAL_TARGETS.items():
         assert counts.get(dimension, 0) >= target
@@ -207,9 +221,11 @@ def test_all_novel_creation_categories_have_density_and_premium_pack(
         assert validate_premium_state_ledger(ledger).passed
 
 
-async def test_hydrate_story_bible_materials_detects_qingnang_dry_run(
+async def test_hydrate_story_bible_materials_no_longer_recognises_qingnang(
     tmp_path: Path,
 ) -> None:
+    """The qingnang single-book pack was deleted; its package signal must
+    return an empty dry report instead of the historical book's world."""
     package = tmp_path / "qingnang"
     story_bible = package / "story-bible"
     story_bible.mkdir(parents=True)
@@ -222,8 +238,7 @@ async def test_hydrate_story_bible_materials_detects_qingnang_dry_run(
         apply=False,
     )
 
-    assert result["supported_pack"] == "qingnang"
-    assert result["candidate_count"] >= sum(PROJECT_MATERIAL_TARGETS.values())
+    assert result["supported_pack"] != "qingnang"
     assert result["applied"] is False
 
 
@@ -231,16 +246,16 @@ async def test_hydrate_story_bible_materials_apply_refreshes_reference_block(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    package = tmp_path / "qingnang"
+    package = tmp_path / "some-book"
     package.mkdir()
-    (package / "README.md").write_text("青囊 困魂镜 三族 林渊", encoding="utf-8")
+    (package / "README.md").write_text("普通题材 参考包信号", encoding="utf-8")
     material = material_density._mat(  # noqa: SLF001
         "proj-1",
         "world_settings",
-        "mirror-debt-city",
-        "镜债外溢都市",
-        "困魂镜规则外溢到现实城市。",
-        {"rules": ["回执外开门"]},
+        "test-world",
+        "测试世界",
+        "一条测试用世界规则。",
+        {"rules": ["测试规则"]},
     )
     inserted: list[object] = []
 
@@ -263,8 +278,8 @@ async def test_hydrate_story_bible_materials_apply_refreshes_reference_block(
 
     monkeypatch.setattr(
         material_density,
-        "_build_qingnang_pack",
-        lambda project_id: [material],
+        "_select_material_pack",
+        lambda project_id, package_text, **kwargs: ("test_pack", [material]),
     )
     monkeypatch.setattr(material_density, "insert_project_material", _fake_insert)
     monkeypatch.setattr(

@@ -174,6 +174,38 @@ class TestResolveBannedCliches:
 
 
 class TestDeterministicScreens:
+    def test_hook_floor_can_allow_three_non_catastrophic_soft_misses(self):
+        from bestseller.services.concept_tournament import _hard_floor_failed_axes
+
+        scores = {
+            "freshness": 4,
+            "click": 5,
+            "predictable": 6.5,
+            "character_logic": 7,
+            "mechanism_causality": 7,
+            "genre_fidelity": 8,
+            "plain_language": 7,
+            "story_motion": 7,
+        }
+        calibrated = {
+            **_CFG["judge_hard_floors"],
+            "catastrophe_floor": 4.0,
+            "soft_miss_allowance": 3,
+        }
+
+        strict = {
+            **_CFG["judge_hard_floors"],
+            "soft_miss_allowance": 2,
+        }
+        assert _hard_floor_failed_axes(scores, strict)
+        assert _hard_floor_failed_axes(scores, calibrated) == []
+        assert _hard_floor_failed_axes(
+            {**scores, "plain_language": 4}, calibrated
+        )
+        assert _hard_floor_failed_axes(
+            {**scores, "freshness": 3}, calibrated
+        )
+
     def test_incomplete_engine_verdict_is_not_coerced_to_zero(self):
         from bestseller.services.concept_tournament import (
             _parse_complete_axis_scores,
@@ -499,6 +531,97 @@ class TestDeterministicScreens:
         )
         assert result.candidates
 
+    @pytest.mark.asyncio
+    async def test_engine_batch_keeps_clean_near_passes_for_the_final_hook_gate(self):
+        """A strict card prefilter must not shrink four paid cards to zero hooks."""
+
+        kernel = {
+            "protagonist_identity": "外门种药的废脉少年",
+            "protagonist_private_desire": "保住自己培育的第一块药田",
+            "protagonist_flaw": "嘴硬又不肯求人",
+            "core_abnormality": "他能听见灵草嫌弃功法里的错处",
+            "current_goal": "在考核前救活整片枯黄灵草",
+            "effective_resistance": "管事要收回药田交给内门弟子",
+            "failure_cost": "失去外门资格",
+            "success_cost": "公开暴露自己能听懂灵草",
+            "irreversible_change": "灵草当众改认他为主",
+            "reader_promise": "看他用灵草吐槽拆穿天才功法并连续翻盘",
+            "difference_point": "灵草会直接吐槽修炼错误",
+            "deformable_loop": "每次纠错都会让对手换功法并暴露新的漏洞",
+            "expansion_axes": ["药田", "宗门考核", "功法争夺"],
+            "opposing_ecology": ["外门管事", "抢药田的内门弟子"],
+            "scene_seeds": ["场面1", "场面2", "场面3", "场面4", "场面5"],
+            "post_reveal_scene_seeds": ["揭晓后场面1", "揭晓后场面2", "揭晓后场面3"],
+            "opening_crisis": "考核前夜药田突然全枯",
+            "emotional_promise": "轻松吐槽、连续打脸和成长兑现",
+        }
+        hook_calls: list[str] = []
+
+        async def generator(system: str, user: str):
+            if '"ideas"' in user:
+                return json.dumps(
+                    {
+                        "ideas": [
+                            {"lane": "成长道路", "seed": "少年听见灵草吐槽功法漏洞"},
+                            {"lane": "职业处境", "seed": "药童靠灵草纠错保住药田"},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ), None
+            if "PREMISE_CARD" in user:
+                return json.dumps(kernel, ensure_ascii=False), None
+            hook_calls.append(user)
+            return json.dumps(GOOD_PAYLOAD, ensure_ascii=False), None
+
+        weak_card_scores = {
+            "seed_fidelity": 6,
+            "freshness": 6,
+            "click_seed": 6,
+            "action_conflict": 6,
+            "reader_promise": 6,
+            "character_choice": 6,
+            "scene_generation": 6,
+            "promise_survival": 6,
+            "deformable_loop": 6,
+            "post_reveal_engine": 6,
+            "genre_fidelity": 6,
+            "reason": "可进入最终钩子门继续竞争",
+        }
+
+        async def premise_judge(system: str, user: str):
+            return json.dumps(
+                {
+                    "verdicts": [
+                        {**weak_card_scores, "index": 0},
+                        {**weak_card_scores, "index": 1},
+                    ]
+                },
+                ensure_ascii=False,
+            ), None
+
+        result = await run_concept_tournament(
+            None,
+            None,
+            genre="东方玄幻",
+            sub_genre="东方玄幻",
+            chapter_count=50,
+            config={
+                **_CFG,
+                "n_candidates": 2,
+                "candidate_prompt_mode": "engine_first",
+                "raw_idea_prompt_arm": "methodology",
+                "raw_idea_pool_multiplier": 1,
+                "premise_card_min_survivors": 2,
+            },
+            generator=generator,
+            judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
+            premise_judge=premise_judge,
+            rng=random.Random(7),
+        )
+
+        assert len(hook_calls) == 2
+        assert result.candidates
+
     def test_engine_judge_does_not_trust_claimed_unit_count(self):
         from bestseller.services.concept_tournament import _build_engine_judge_messages
 
@@ -759,8 +882,8 @@ class TestDeterministicScreens:
         assert "持续选择" not in minimal
         assert "持续做出不同选择" in methodology
         assert "稳定的故事场" not in methodology
-        assert "随机折寿" not in methodology
-        assert "随机折寿" in guarded
+        assert "固定惩罚" not in methodology
+        assert "与核心动作无因果关系的固定惩罚" in guarded
         assert "稳定的故事场" in enhanced
         assert len(minimal) < len(methodology) < len(guarded) < len(enhanced)
 
@@ -1503,7 +1626,7 @@ class TestJudgeTournament:
         assert result.winner.concept == compact["concept"]
         assert result.winner.progress_bar == GOOD_PAYLOAD["progress_bar"]
         assert "内生微单元" in prompts[0]
-        assert "不得只依赖外部不断送来" in prompts[0]
+        assert "回溯到主角已经做出的选择" in prompts[0]
         assert "失败反馈" in prompts[1]
         assert "三级发动机" in prompts[1]
 
@@ -1709,7 +1832,7 @@ class TestFailOpen:
 
 
 class TestRenderHighConceptBlock:
-    def test_winner_block_carries_concept_engine_and_bans(self):
+    def test_winner_block_carries_concept_engine_without_ban_samples(self):
         winner = ConceptCandidate(
             dimension="电网调度与停电分配",
             concept=GOOD_PAYLOAD["concept"],
@@ -1726,7 +1849,8 @@ class TestRenderHighConceptBlock:
         block = render_high_concept_block(result)
         assert GOOD_PAYLOAD["concept"] in block
         assert "进度条=" in block and "问题梯=" in block and "第50章" in block
-        assert "废脉其实是宝脉" in block
+        assert "废脉其实是宝脉" not in block
+        assert "禁用样本文本不向下游传播" in block
         assert "禁止回归题材默认套路" in block
 
     def test_no_winner_renders_empty(self):
@@ -1763,7 +1887,8 @@ class TestConceptionWiring:
         call_region = source[idx : source.index("\n                _emit(", idx)]
         assert "seed_concept=" in call_region
         assert 'user_hints.get("concept_seed")' in source
-        assert "concept_bundle.one_liner or concept_bundle.reader_promise" in call_region
+        assert "_user_owned_story_seed" in call_region
+        assert "concept_bundle.one_liner or concept_bundle.reader_promise" in source
         assert "require_conception_contract_for_target" in source
 
     def test_fail_open_and_injection_shape(self):
@@ -2009,11 +2134,9 @@ class TestWildConceptWiring:
     def test_wild_flag_read_and_config_passed(self):
         source = self._source()
         assert 'ctx["wild_concept"] = bool(user_hints.get("wild_concept"))' in source
-        idx = source.index("run_concept_tournament(")
-        # Window sized in lines, not a fixed char offset — a char window broke
-        # every time an unrelated line landed between config resolution and the
-        # call (2026-07-16).
-        region = source[max(0, idx - 1600) : idx + 600]
+        config_idx = source.index("resolve_tournament_config(")
+        call_end = source.index("retry_feedback=concept_retry_feedback", config_idx)
+        region = source[config_idx:call_end]
         assert 'resolve_tournament_config(\n                wild=bool(ctx.get("wild_concept"))' in region
         assert 'ctx.get("wild_concept")' in region
         assert "config=attempt_config," in region

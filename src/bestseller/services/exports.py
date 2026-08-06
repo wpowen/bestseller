@@ -1300,7 +1300,27 @@ def collect_publication_blockers(
         # common-sense codes, whose comment says not to re-litigate prose
         # causality without context — and repair's concession is the same kind
         # of ruling.
-        _conceded = production_state in _EXPORT_DEBT_PRODUCTION_STATES
+        #
+        # A *promoted* draft is that same ruling in its strongest form. Promotion
+        # is the decision to ship this exact text; it happens at closure, after
+        # the chapter passed its own gates. Conceding only the debt states left
+        # the trap open for chapters that came out **clean**: on 2026-08-04 a
+        # finished 50-chapter book (custom-xuanhuan-1785767368) reached
+        # ``completed`` with all 50 drafts promoted and produced no combined
+        # export, because chapter 28 — ``production_state = ok`` — failed a
+        # re-run of the quality bundle here. The two runs are not even the same
+        # check: generation sees a narrow context window, this one is handed
+        # every prior chapter, so the same bundle can reasonably disagree with
+        # itself. Re-deciding a shipped chapter on that basis withheld the whole
+        # book and handed the reader 50 loose files.
+        #
+        # Structural checks above still block: promotion cannot make a chapter
+        # with no draft or no provenance publishable.
+        _is_promoted = (
+            str(getattr(draft, "promotion_state", "") or "").strip().lower()
+            == "promoted"
+        )
+        _conceded = production_state in _EXPORT_DEBT_PRODUCTION_STATES or _is_promoted
 
         def _content_blocker(message: str) -> None:
             """A quality finding: blocking normally, recorded once conceded."""

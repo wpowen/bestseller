@@ -367,7 +367,10 @@ pipeline:
   methodology_planning_readiness_block_on_failure: false
   enable_outline_llm_commercial_judge: true
   outline_llm_commercial_judge_block_on_failure: false
-  outline_commercial_judge_repair_rounds: 2
+  # Three bounded edit rounds: live outline runs commonly converged from
+  # 7 findings -> 6 -> 3, so stopping after two discarded a still-improving
+  # outline before it could enter prose generation.
+  outline_commercial_judge_repair_rounds: 3
   outline_llm_commercial_judge_threshold: 0.82
   enable_outline_reader_experience_judge: true
   outline_reader_experience_judge_block_on_failure: false

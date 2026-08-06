@@ -343,7 +343,7 @@ def test_complete_text_records_mock_run_when_mock_enabled() -> None:
     asyncio.run(_run())
 
 
-def test_mock_scene_writer_uses_apocalypse_supply_prompt_signal() -> None:
+def test_mock_scene_writer_uses_only_current_scene_contract() -> None:
     async def _run() -> None:
         session = FakeSession()
         settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
@@ -372,15 +372,15 @@ def test_mock_scene_writer_uses_apocalypse_supply_prompt_signal() -> None:
         )
 
         assert result.provider == "mock"
-        assert "净水片" in result.content
-        assert "仓库" in result.content
+        assert "当前现场" in result.content
+        assert "林野" in result.content
         assert len(result.content.split("。", 1)[0]) <= 25
         assert "冷库灯管照亮三箱胰岛素。" in result.content
         assert "门禁卡显示城北私仓正在转移。" in result.content
-        assert "胸口" in result.content or "心头" in result.content
-        assert any(term in result.content[-120:] for term in ("？", "忽然", "突然", "倒计时"))
         assert "星港" not in result.content
         assert "航标" not in result.content
+        assert "尸体" not in result.content
+        assert "旧账" not in result.content
         assert "带来的压力没有重复上一段" not in result.content
 
         scene_two = await complete_text(
@@ -402,8 +402,8 @@ def test_mock_scene_writer_uses_apocalypse_supply_prompt_signal() -> None:
                 },
             ),
         )
-        assert "地下车库" in scene_two.content
-        assert "柴油机" in scene_two.content
+        assert "林野" in scene_two.content
+        assert "第2场" in scene_two.content
         assert "三箱胰岛素" not in scene_two.content
 
     import asyncio

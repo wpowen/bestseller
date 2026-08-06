@@ -7,7 +7,7 @@ import logging
 import os
 import random
 from argparse import Namespace
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -31,6 +31,28 @@ from bestseller.services.progress_context import set_ambient
 from bestseller.worker.progress import RedisProgressReporter, make_sync_callback
 
 logger = logging.getLogger(__name__)
+
+
+def _pipeline_start_key(project_id: Any) -> str:
+    """Mirror of api/routers/pipelines.py::_pipeline_start_key."""
+    return f"pipeline:starting:{project_id}"
+
+
+async def _clear_pipeline_start_marker(redis: Any, project_id: Any) -> None:
+    """Drop the API's start reservation once the worker is actually running.
+
+    The API holds a short-lived NX marker (``pipeline:starting:{project_id}``)
+    to close the TOCTOU between the DB guard and the worker materializing its
+    workflow row. Once the worker has loaded the project and is about to write
+    rows, the marker is no longer needed; leaving it would 409 legitimate
+    re-triggers of fast pipelines until its TTL expired (P07).
+    """
+    if project_id is None:
+        return
+    try:
+        await redis.delete(_pipeline_start_key(project_id))
+    except Exception:
+        logger.debug("pipeline start marker clear failed", exc_info=True)
 
 
 _ACTIVE_WORKFLOW_STATUSES = frozenset(
@@ -79,6 +101,86 @@ OUTLINE_REPLAN_RETRY_BASE_SECONDS = int(
 OUTLINE_REPLAN_RETRY_MAX_SECONDS = int(
     os.getenv("BESTSELLER_OUTLINE_REPLAN_RETRY_MAX_SECONDS", "1800")
 )
+
+_OUTLINE_REPLAN_GATE_REASONS = frozenset(
+    {
+        "outline_semantic_gate_failed",
+        "outline_replan_in_progress",
+        "volume_outline_gate_failed",
+        "commercial_planning_readiness_gate_failed",
+        "outline_replan_required",
+    }
+)
+
+
+def _clear_successful_outline_replan_blockers(metadata: dict[str, Any]) -> None:
+    """Remove stale planning/self-heal blockers after an approved replan.
+
+    A project can carry an independent quality/manual-review stop alongside a
+    planning failure.  The planning replan must not erase that authoritative
+    stop, so attention flags are only purged when the persisted gate reason is
+    itself a planning reason (or no reason was recorded).
+    """
+
+    reason = str(
+        metadata.get("last_generation_gate_reason")
+        or metadata.get("production_pause_reason")
+        or ""
+    ).strip().lower().split(":", 1)[0]
+    has_non_planning_attention = reason not in _OUTLINE_REPLAN_GATE_REASONS and bool(
+        metadata.get("requires_human_review")
+        or metadata.get("requires_machine_repair")
+        or metadata.get("human_review_reason")
+        or metadata.get("review_reason")
+        or metadata.get("human_review_source")
+    )
+
+    planning_keys = (
+        "self_heal_repair_strategy",
+        "generation_gate_auto_retry_needed",
+        "generation_resume_blocked_by_planning_gate",
+        "generation_auto_repair_exhausted",
+        "generation_gate_auto_resume_reason",
+        "generation_gate_auto_resume_count",
+    )
+    for key in planning_keys:
+        metadata.pop(key, None)
+    if not has_non_planning_attention:
+        metadata.pop("requires_human_review", None)
+        metadata.pop("requires_machine_repair", None)
+        for key in (
+            "production_pause_reason",
+            "last_generation_gate_reason",
+            "last_generation_gate_error",
+            "last_generation_gate_blocked_at",
+        ):
+            metadata.pop(key, None)
+
+
+def _unlock_outline_replan_for_repair_revision(
+    metadata: dict[str, Any],
+    repair_revision: str,
+) -> bool:
+    """Grant one bounded retry after code/data repair changed the failure shape."""
+
+    revision = str(repair_revision or "").strip()
+    if (
+        not revision
+        or not metadata.get("outline_replan_retry_exhausted")
+        or metadata.get("outline_replan_last_manual_repair_revision") == revision
+    ):
+        return False
+    metadata["outline_replan_last_manual_repair_revision"] = revision
+    metadata["outline_replan_retry_attempts"] = max(
+        0,
+        MAX_OUTLINE_REPLAN_ATTEMPTS - 1,
+    )
+    metadata.pop("outline_replan_retry_exhausted", None)
+    metadata.pop("outline_replan_next_retry_at", None)
+    if metadata.get("production_pause_reason") == "outline_replan_retry_exhausted":
+        metadata.pop("requires_human_review", None)
+        metadata.pop("requires_machine_repair", None)
+    return True
 
 
 def _metadata_int_value(metadata: dict[str, Any], key: str, default: int = 0) -> int:
@@ -152,6 +254,103 @@ def _outline_replan_retry_pending_metadata(
     metadata.pop("outline_replan_in_progress", None)
     metadata.pop("outline_replan_prior_outline_version", None)
     return metadata, str(next_retry_at)
+
+
+def _reconcile_outline_replan_creation_identity(
+    project: ProjectModel,
+    premise: str,
+) -> str:
+    """Refresh inferred creation identity before reusing foundation artifacts.
+
+    Outline-only recovery deliberately skips foundation planning.  That also
+    skips the normal character-name adjudication step, so a premise repaired
+    after conception could otherwise remain paired with the stale inferred
+    name stored by the first planning attempt.  Re-run the same deterministic
+    adjudication here and let the snapshot service supersede the old lineage.
+    """
+
+    from bestseller.services.book_design import (  # noqa: PLC0415
+        ensure_project_book_design_snapshot,
+    )
+    from bestseller.services.planner import (  # noqa: PLC0415
+        _persist_creation_protagonist_choice,
+        _replace_name_drift_in_value,
+    )
+
+    metadata = dict(project.metadata_json or {})
+    previous_name = str(metadata.get("creation_protagonist_name") or "").strip()
+    if premise:
+        metadata["premise"] = premise
+    project.metadata_json = metadata
+    chosen = _persist_creation_protagonist_choice(
+        project,
+        metadata.get("creation_protagonist_name"),
+    )
+    forbidden_names = {
+        str(item).strip()
+        for item in (project.metadata_json.get("protagonist_forbidden_names") or [])
+        if str(item).strip() and str(item).strip() != chosen
+    }
+    if previous_name and previous_name != chosen:
+        forbidden_names.add(previous_name)
+    if forbidden_names:
+        # Only rewrite live inputs that subsequent planning/writing consumes.
+        # Historical logs, reports, superseded snapshots, and forbidden-name
+        # evidence intentionally keep the old value for auditability.
+        for key in (
+            "story_spine",
+            "concept_contract",
+            "hook_card",
+            "commercial_brief",
+            "seriality_proof",
+            "series_engine",
+            "conception_artifacts",
+            "book_spec",
+            "protagonist",
+            "opening_quality_contract",
+            "qimao_opening_contract",
+        ):
+            if key in project.metadata_json:
+                project.metadata_json[key] = _replace_name_drift_in_value(
+                    project.metadata_json[key],
+                    forbidden_names=forbidden_names,
+                    replacement=chosen,
+                )
+        concept_contract = project.metadata_json.get("concept_contract")
+        if isinstance(concept_contract, dict):
+            from bestseller.services.concept_contract import (  # noqa: PLC0415
+                reseal_concept_contract_lineage,
+            )
+
+            resealed = reseal_concept_contract_lineage(
+                concept_contract,
+                target_chapters=int(project.target_chapters),
+            )
+            project.metadata_json["concept_contract"] = resealed
+            project.metadata_json["hook_card"] = dict(resealed["hook_card"])
+            project.metadata_json["story_spine"] = dict(resealed["story_spine"])
+            project.metadata_json["seriality_proof"] = dict(
+                resealed["seriality_proof"]
+            )
+    active_snapshot = project.metadata_json.get("book_design_snapshot")
+    active_snapshot_protagonist = (
+        str(active_snapshot.get("protagonist", {}).get("name") or "").strip()
+        if isinstance(active_snapshot, dict)
+        and isinstance(active_snapshot.get("protagonist"), dict)
+        else ""
+    )
+    # When the canonical protagonist was already repaired on an earlier retry,
+    # ``ensure_project_book_design_snapshot`` would otherwise return the old
+    # hash-valid snapshot without rebuilding stale reader-promise/engine text
+    # that still names a forbidden protagonist. Rebuild only after active
+    # surfaces were scrubbed and the snapshot identity itself is already
+    # canonical; the first identity change still goes through the normal
+    # supersession history path.
+    ensure_project_book_design_snapshot(
+        project,
+        force_rebuild=bool(forbidden_names and active_snapshot_protagonist == chosen),
+    )
+    return chosen
 
 
 def _coerce_workflow_run_uuid(workflow_run_id: str) -> UUID | None:
@@ -241,6 +440,63 @@ async def _skip_archived_project_if_needed(
         "reason": "library_archived",
     }
     await reporter.emit("skipped_archived", payload, event_type="skipped_archived")
+    return payload
+
+
+async def _skip_halted_project_if_needed(
+    reporter: RedisProgressReporter,
+    project_slug: str,
+) -> dict[str, Any] | None:
+    """Refuse to run work on a book the operator stopped or paused.
+
+    Guarding the *entry points* rather than the ~15 enqueue sites is deliberate.
+    Every automatic continuation — gate auto-continue, repair/closure ping-pong,
+    self-heal requeue, web zombie resume — ultimately arrives here, so one check
+    covers all of them and no future enqueue path can be added that bypasses it.
+
+    Reads ``book_production_control``, which the pipeline never rewrites; the
+    old marker in ``projects.metadata`` was erased by the next checkpoint.
+    """
+
+    from bestseller.services.production_control import (
+        auto_recovery_is_permitted,
+        load_control_state,
+    )
+
+    try:
+        async with get_server_session() as session:
+            project = await session.scalar(
+                select(ProjectModel).where(ProjectModel.slug == project_slug)
+            )
+            if project is None:
+                return None
+            state = await load_control_state(session, project.id)
+    except Exception:
+        # Fail *open* on infrastructure errors: a database blip must not look
+        # like a stop and strand every book on the platform.
+        logger.debug(
+            "Could not check production control for project %s",
+            project_slug,
+            exc_info=True,
+        )
+        return None
+
+    if auto_recovery_is_permitted(state):
+        return None
+
+    payload = {
+        "status": "skipped_halted",
+        "project_slug": project_slug,
+        "reason": state.reason or state.intent.value,
+        "intent": state.intent.value,
+    }
+    logger.info(
+        "worker task skipped: project %s halted by operator (intent=%s reason=%s)",
+        project_slug,
+        state.intent.value,
+        state.reason,
+    )
+    await reporter.emit("skipped_halted", payload, event_type="skipped_halted")
     return payload
 
 
@@ -881,6 +1137,35 @@ def _load_closure_runner_module() -> Any:
     return module
 
 
+def _outline_semantic_report_proves_promotion(
+    semantic_report: Mapping[str, Any] | None,
+    *,
+    current_outline_version: int,
+    prior_outline_version: int,
+) -> bool:
+    """Accept either a newer artifact or an explicitly adjudicated restore.
+
+    The replan owner records the prior version from ``volume_chapter_outline``
+    while the full-book path promotes a ``chapter_outline_batch``. Comparing
+    those independent version sequences can make a newly approved batch look
+    older. The semantic gate's all-volume adjudication is the authoritative
+    proof at that boundary.
+    """
+
+    if not isinstance(semantic_report, Mapping):
+        return False
+    adjudication = semantic_report.get("llm_adjudication")
+    adjudication = adjudication if isinstance(adjudication, Mapping) else {}
+    return bool(
+        semantic_report.get("promotion_allowed") is True
+        and (
+            current_outline_version > prior_outline_version
+            or semantic_report.get("llm_adjudicated_all_volumes") is True
+            or adjudication.get("restored_declared_gate_pass") is True
+        )
+    )
+
+
 async def _mark_project_generation_repair_exhausted(
     project_slug: str,
     *,
@@ -996,6 +1281,99 @@ async def _mark_project_outline_replan_required(
         return True
 
 
+async def _mark_generation_gate_budget_exhausted(
+    project_slug: str,
+    *,
+    reason: str,
+    detail: str,
+) -> None:
+    """Park the book in a visible terminal state once its budget runs out.
+
+    Deliberately clears ``generation_gate_auto_retry_needed`` so the self-heal
+    scanner stops treating the book as a retry candidate, and sets a pause the
+    operator can see and act on. The only ways out are human: fix the blocking
+    gate, or explicitly restart the book (which re-opens a fresh chain).
+    """
+
+    async with get_server_session() as session:
+        project = await session.scalar(
+            select(ProjectModel).where(ProjectModel.slug == project_slug)
+        )
+        if project is None:
+            return
+        metadata = dict(project.metadata_json or {})
+        metadata.pop("generation_gate_auto_retry_needed", None)
+        metadata.update(
+            {
+                "production_paused": True,
+                "production_pause_reason": "generation_gate_retry_budget_exhausted",
+                "generation_gate_retry_budget_exhausted": True,
+                "generation_gate_retry_budget_exhausted_reason": reason,
+                "generation_gate_retry_budget_exhausted_detail": detail,
+                "generation_gate_retry_budget_exhausted_at": _dt.datetime.now(
+                    _dt.UTC
+                ).isoformat(),
+            }
+        )
+        project.metadata_json = metadata
+
+
+async def _consume_generation_gate_retry_budget(
+    project_slug: str,
+    *,
+    reason: str,
+) -> "RetryDecision | None":
+    """Spend one unit of the gate's automatic-retry budget, or report exhaustion.
+
+    The chain is persisted in ``projects.metadata`` — the same mapping that
+    holds ``last_generation_gate_reason``, i.e. the state it guards — and is
+    written *before* the retry is dispatched. Both properties are load-bearing:
+    a counter kept somewhere else got purged independently (2026-07-25), and a
+    counter written afterwards would be lost by a crash mid-attempt, in either
+    case making the loop immortal.
+    """
+
+    from bestseller.services.retry_ledger import (
+        RetryTrigger,
+        evaluate_retry,
+        generation_gate_budget,
+        generation_gate_scope,
+        load_chain,
+        store_chain,
+    )
+
+    scope = generation_gate_scope(reason)
+    try:
+        async with get_server_session() as session:
+            project = await session.scalar(
+                select(ProjectModel).where(ProjectModel.slug == project_slug)
+            )
+            if project is None:
+                return None
+            metadata = dict(project.metadata_json or {})
+            decision = evaluate_retry(
+                load_chain(metadata, scope=scope),
+                trigger=RetryTrigger.AUTO,
+                budget=generation_gate_budget(),
+                reason=reason,
+            )
+            if decision.allowed:
+                metadata = store_chain(metadata, scope=scope, chain=decision.chain)
+                metadata["generation_gate_retry_budget"] = decision.to_event_payload()
+                project.metadata_json = metadata
+            return decision
+    except Exception:
+        # Fail open on infrastructure errors — but say so, because a budget that
+        # silently stops being enforced is how this class of bug returns.
+        logger.warning(
+            "could not evaluate generation gate retry budget for %s; "
+            "allowing this attempt",
+            project_slug,
+            exc_info=True,
+        )
+        return None
+
+
 async def _handle_generation_gate_auto_continue(
     redis: Any,
     reporter: RedisProgressReporter,
@@ -1012,6 +1390,34 @@ async def _handle_generation_gate_auto_continue(
         reason=reason,
         error_message=message,
     )
+
+    budget_decision = await _consume_generation_gate_retry_budget(
+        project_slug, reason=reason
+    )
+    if budget_decision is not None and budget_decision.exhausted:
+        # Exhaustion is a terminal, visible state — never "try once more".
+        await _mark_generation_gate_budget_exhausted(
+            project_slug, reason=reason, detail=budget_decision.detail
+        )
+        payload = {
+            "status": "generation_gate_budget_exhausted",
+            "project_slug": project_slug,
+            "reason": reason,
+            "budget": budget_decision.to_event_payload(),
+        }
+        logger.warning(
+            "%s for %s exhausted the generation-gate retry budget (%s); "
+            "stopping automatic recovery and awaiting a human",
+            source,
+            project_slug,
+            budget_decision.detail,
+        )
+        await reporter.emit(
+            "generation_gate_budget_exhausted",
+            payload,
+            event_type="generation_gate_budget_exhausted",
+        )
+        return payload
     if reason.startswith(
         (
             "outline_semantic_gate_failed",
@@ -1198,12 +1604,20 @@ async def run_outline_replan_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    halted = await _skip_halted_project_if_needed(reporter, project_slug)
+    if halted is not None:
+        return halted
 
     async with get_server_session() as session:
         project = await get_project_by_slug(session, project_slug)
         if project is None:
             raise ValueError(f"Project '{project_slug}' not found")
         metadata = dict(project.metadata_json or {})
+        _unlock_outline_replan_for_repair_revision(
+            metadata,
+            str(payload.get("repair_revision") or ""),
+        )
+        project.metadata_json = metadata
         if metadata.get("outline_replan_auto_retry_exhausted"):
             now_iso = _dt.datetime.now(_dt.UTC).isoformat()
             metadata = _outline_replan_retry_exhausted_metadata(
@@ -1271,6 +1685,60 @@ async def run_outline_replan_task(
             or 0
         )
 
+        from bestseller.services.story_source import (
+            load_accepted_project_premise,
+            minimal_cost_source_contract_violations,
+            repair_minimal_cost_source_contract,
+        )
+
+        premise = await load_accepted_project_premise(session, project)
+        source_contract_requires_repair = bool(
+            minimal_cost_source_contract_violations(project, premise)
+        )
+        force_foundation_replan = bool(
+            payload.get("repair_foundation") or source_contract_requires_repair
+        )
+        if force_foundation_replan:
+            from bestseller.domain.enums import ArtifactType  # noqa: PLC0415
+            from bestseller.domain.planning import PlanningArtifactCreate  # noqa: PLC0415
+            from bestseller.services.projects import import_planning_artifact  # noqa: PLC0415
+
+            repaired_premise, source_repair = await repair_minimal_cost_source_contract(
+                session,
+                settings,
+                project,
+                premise,
+                repair_revision=str(payload.get("repair_revision") or ""),
+                workflow_run_id=_coerce_workflow_run_uuid(workflow_run_id),
+            )
+            if repaired_premise != premise:
+                premise = repaired_premise
+                await import_planning_artifact(
+                    session,
+                    project.slug,
+                    PlanningArtifactCreate(
+                        artifact_type=ArtifactType.PREMISE,
+                        content={"premise": premise},
+                        notes=(
+                            "creation contract repair: minimal-cost source conflict; "
+                            f"revision={source_repair.get('repair_revision')}"
+                        ),
+                    ),
+                )
+                await reporter.emit(
+                    "source_contract_repaired",
+                    {
+                        "project_slug": project.slug,
+                        "repair_revision": source_repair.get("repair_revision"),
+                        "changed_active_paths": source_repair.get(
+                            "changed_active_paths", []
+                        ),
+                        "requires_foundation_replan": True,
+                    },
+                )
+        _reconcile_outline_replan_creation_identity(project, premise)
+        metadata = dict(project.metadata_json or {})
+
         previous_gate = {
             "status": project.status,
             "planning_status": metadata.get("planning_status"),
@@ -1305,7 +1773,6 @@ async def run_outline_replan_task(
             project_type=ProjectType(project.project_type),
             metadata=dict(metadata),
         )
-        premise = str(payload.get("premise") or metadata.get("premise") or project.title)
         await session.commit()
 
     await reporter.emit(
@@ -1328,6 +1795,7 @@ async def run_outline_replan_task(
                     requested_by="worker_outline_replan",
                     progress=make_sync_callback(reporter),
                     allow_outline_replan=True,
+                    force_foundation_replan=force_foundation_replan,
                 )
     except asyncio.CancelledError:
         # ARQ requeues a cancelled job during rolling deployment, but the
@@ -1467,10 +1935,10 @@ async def run_outline_replan_task(
                 )
                 or 0
             )
-            semantic_promoted = bool(
-                isinstance(semantic_report, dict)
-                and semantic_report.get("promotion_allowed") is True
-                and current_outline_version > prior_outline_version
+            semantic_promoted = _outline_semantic_report_proves_promotion(
+                semantic_report,
+                current_outline_version=current_outline_version,
+                prior_outline_version=prior_outline_version,
             )
             if not semantic_promoted:
                 now_iso = _dt.datetime.now(_dt.UTC).isoformat()
@@ -1526,7 +1994,6 @@ async def run_outline_replan_task(
                 "outline_replan_next_retry_at",
                 "generation_resume_blocked_until_repair_audit",
                 "production_paused",
-                "production_pause_reason",
                 "outline_replan_downstream_retry_pending",
                 "outline_replan_downstream_error",
                 "outline_replan_last_error",
@@ -1546,6 +2013,7 @@ async def run_outline_replan_task(
                 "self_heal_last_chapters_total",
             ):
                 metadata.pop(key, None)
+            _clear_successful_outline_replan_blockers(metadata)
             metadata.update(
                 {
                     "outline_replan_completed_at": _dt.datetime.now(
@@ -1556,6 +2024,11 @@ async def run_outline_replan_task(
                     "self_heal_no_progress_attempts": 0,
                 }
             )
+            if force_foundation_replan:
+                metadata["source_contract_repair_status"] = "completed"
+                metadata["source_contract_repair_completed_at"] = _dt.datetime.now(
+                    _dt.UTC
+                ).isoformat()
             project.metadata_json = metadata
             if project.status in {
                 ProjectStatus.PLANNING.value,
@@ -1565,7 +2038,18 @@ async def run_outline_replan_task(
                 project.status = ProjectStatus.WRITING.value
             await session.commit()
 
-    result_payload = result.model_dump(mode="json")
+    writing_queued = await _enqueue_project_pipeline_if_needed(
+        redis,
+        reporter,
+        project_slug,
+        source="outline_replan_completed",
+        reason="approved_outline_ready_for_writing",
+        current_job_id=workflow_run_id,
+    )
+    result_payload = {
+        **result.model_dump(mode="json"),
+        "writing_queued": writing_queued,
+    }
     await reporter.emit(
         "outline_replan_completed", result_payload, event_type="completed"
     )
@@ -1595,6 +2079,9 @@ async def run_autowrite_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    halted = await _skip_halted_project_if_needed(reporter, project_slug)
+    if halted is not None:
+        return halted
     replan_block = await _skip_outline_replan_project_if_needed(
         reporter, project_slug, workflow_run_id
     )
@@ -1610,6 +2097,7 @@ async def run_autowrite_task(
         },
     )
 
+    _project_id: Any = None
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
         try:
             async with get_server_session() as session:
@@ -1617,6 +2105,7 @@ async def run_autowrite_task(
                 project = await get_project_by_slug(session, project_slug)
                 if project is None:
                     raise ValueError(f"Project '{project_slug}' not found")
+                _project_id = getattr(project, "id", None)
 
                 # Build ProjectCreate from the existing project record
                 meta = project.metadata_json or {}
@@ -1652,7 +2141,9 @@ async def run_autowrite_task(
                     metadata=dict(meta),
                 )
 
-                premise = payload.get("premise") or str(meta.get("premise") or project.title)
+                from bestseller.services.story_source import load_accepted_project_premise
+
+                premise = await load_accepted_project_premise(session, project)
 
                 if project_payload.project_type == ProjectType.FANQIE_SHORT:
                     from bestseller.services.fanqie_short_pipeline import (
@@ -1691,6 +2182,11 @@ async def run_autowrite_task(
             raise
 
     result_payload = result.model_dump(mode="json")
+    # The run has finished (rows materialized); the start reservation is no
+    # longer protecting anything and must not 409 legitimate re-triggers of a
+    # short run. Held until here so a second request during the run cannot slip
+    # through the enqueue→row window.
+    await _clear_pipeline_start_marker(redis, _project_id)
     if await _enqueue_quality_closure_if_needed(
         redis,
         reporter,
@@ -1725,6 +2221,9 @@ async def run_project_pipeline_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    halted = await _skip_halted_project_if_needed(reporter, project_slug)
+    if halted is not None:
+        return halted
     replan_block = await _skip_outline_replan_project_if_needed(
         reporter, project_slug, workflow_run_id
     )
@@ -1740,6 +2239,7 @@ async def run_project_pipeline_task(
         },
     )
 
+    _project_id: Any = None
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
         try:
             async with get_server_session() as session:
@@ -1769,6 +2269,12 @@ async def run_project_pipeline_task(
                             "project_slug": project_slug,
                             "workflow_run_id": workflow_run_id,
                         }
+                try:
+                    _proj = await get_project_by_slug(session, project_slug)
+                    if _proj is not None:
+                        _project_id = getattr(_proj, "id", None)
+                except Exception:
+                    logger.debug("project lookup for marker clear skipped", exc_info=True)
                 result = await pipeline_services.run_project_pipeline(
                     session=session,
                     settings=settings,
@@ -1814,6 +2320,7 @@ async def run_project_pipeline_task(
             raise
 
     result_payload = result.model_dump(mode="json")
+    await _clear_pipeline_start_marker(redis, _project_id)
     if await _enqueue_quality_closure_if_needed(
         redis,
         reporter,
@@ -1880,6 +2387,7 @@ async def run_chapter_pipeline_task(
     scene-level emits surface in the SSE stream consumed by the Web UI.
     """
     from bestseller.services.pipelines import run_chapter_pipeline
+    from bestseller.services.projects import get_project_by_slug
 
     settings = get_settings()
     redis = ctx["redis"]
@@ -1892,6 +2400,9 @@ async def run_chapter_pipeline_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    halted = await _skip_halted_project_if_needed(reporter, project_slug)
+    if halted is not None:
+        return halted
     replan_block = await _skip_outline_replan_project_if_needed(
         reporter, project_slug, workflow_run_id
     )
@@ -1900,12 +2411,20 @@ async def run_chapter_pipeline_task(
 
     await reporter.emit("started", {"chapter_number": payload["chapter_number"]})
 
+    _project_id: Any = None
     async with _workflow_db_heartbeat(
         workflow_run_id,
         project_slug=project_slug,
     ):
         async def _chapter_op() -> Any:
             async with get_server_session() as session:
+                nonlocal _project_id
+                try:
+                    _proj = await get_project_by_slug(session, project_slug)
+                    if _proj is not None:
+                        _project_id = getattr(_proj, "id", None)
+                except Exception:
+                    logger.debug("project lookup for marker clear skipped", exc_info=True)
                 return await run_chapter_pipeline(
                     session=session,
                     settings=settings,
@@ -1925,6 +2444,7 @@ async def run_chapter_pipeline_task(
             raise
 
     result_payload = result.model_dump(mode="json")
+    await _clear_pipeline_start_marker(redis, _project_id)
     await _emit_terminal_pipeline_event(
         reporter,
         result_payload,
@@ -1956,6 +2476,9 @@ async def run_project_repair_task(
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
+    halted = await _skip_halted_project_if_needed(reporter, project_slug)
+    if halted is not None:
+        return halted
     replan_block = await _skip_outline_replan_project_if_needed(
         reporter, project_slug, workflow_run_id
     )

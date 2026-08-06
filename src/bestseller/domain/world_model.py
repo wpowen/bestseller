@@ -254,6 +254,10 @@ class WorldModel(BaseModel, frozen=True):
     """The book's derived world: axioms diffed against a baseline into laws."""
 
     version: int = 1
+    # Lineage is mandatory for production injection.  Older free-derived
+    # models have no source and must never outrank an approved WorldSpec.
+    source_artifact_type: str = ""
+    source_artifact_hash: str = ""
     axioms: list[str] = Field(default_factory=list)
     baseline: str = ""
     baseline_layers: list[str] = Field(default_factory=list)
@@ -291,6 +295,8 @@ class WorldModel(BaseModel, frozen=True):
             elif isinstance(raw, dict):
                 data[key] = [raw]
         data["version"] = max(1, _int(data.get("version"), 1))
+        data["source_artifact_type"] = _text(data.get("source_artifact_type"))
+        data["source_artifact_hash"] = _text(data.get("source_artifact_hash"))
         return data
 
     def covered_dimensions(self) -> set[str]:

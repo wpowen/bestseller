@@ -345,7 +345,7 @@ def render_promises_block(
     lines: list[str] = []
     if is_en:
         lines.append(
-            "[Open interpersonal promises — promises / oaths / debts "
+            "[Open interpersonal promises — promises / oaths / pledges "
             "between characters that are still binding. The chapter "
             "does NOT have to resolve them, but a character carrying "
             "an open vow should let the weight show in their action / "
@@ -354,7 +354,7 @@ def render_promises_block(
         )
     else:
         lines.append(
-            "【未了的人际承诺 — 角色之间尚在束缚的诺言、誓言或亏欠。"
+            "【未了的人际承诺 — 角色之间尚在束缚的诺言、誓言或约定。"
             "本章不必逐项兑现，但身负承诺者应让其重量在动作/念头/沉默"
             "之间渗出；下方标注为"
             "「逾期」的承诺已滑过截止章节，本章宜推动其了结，"

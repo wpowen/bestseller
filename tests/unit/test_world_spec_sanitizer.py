@@ -139,3 +139,22 @@ def test_coerces_string_locations_and_factions_into_structured_entries() -> None
     assert spec.locations[0].story_role == "林渊的执业场所，建在旧债清偿地遗址上。"
     assert [faction.name for faction in spec.factions] == ["收账人公会", "账房"]
     assert spec.factions[1].goal == "旧账体系的行政中枢，负责维护账册完整性。"
+
+
+def test_splits_scalar_location_and_faction_collections_on_record_boundaries() -> None:
+    """Production models sometimes serialize the entire array as one string."""
+    spec = parse_world_spec_input(
+        {
+            "locations": "灰烬荒原（开篇压力场）；山口边卡：荒原唯一出入口\n灰律府档房",
+            "factions": "驭尸宗（垄断执法解释权）；灰律府: 颁授合规调用资格",
+        }
+    )
+
+    assert [location.name for location in spec.locations] == [
+        "灰烬荒原（开篇压力场）",
+        "山口边卡",
+        "灰律府档房",
+    ]
+    assert spec.locations[1].story_role == "荒原唯一出入口"
+    assert [faction.name for faction in spec.factions] == ["驭尸宗（垄断执法解释权）", "灰律府"]
+    assert spec.factions[1].goal == "颁授合规调用资格"

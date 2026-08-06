@@ -195,6 +195,154 @@ def test_commercial_readiness_accepts_concrete_golden_three_and_artifacts(
     assert report.golden_three_external_pressure_chapters == 3
 
 
+def test_commercial_readiness_accepts_institutional_pressure_for_single_participant(
+    tmp_path: Path,
+) -> None:
+    """Institutional action can be a live counter-force without inventing cast."""
+
+    _write_required_artifacts(tmp_path)
+    chapters = [
+        {
+            "chapter_number": number,
+            "title": f"复核窗口第{number}次关闭",
+            "chapter_goal": "顾遥阻止许可被冻结并取得下一条审查记录。",
+            "opening_situation": "港务系统已经启动复核，货运许可即将被冻结。",
+            "main_conflict": "审查程序开始冻结许可，复核结束就会取消货运资格。",
+            "hook_description": "被隐藏的审查签名指向下一处仓库。",
+            "hype_type": "reversal",
+            "hype_intensity": 8.0,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "scene_type": "appeal",
+                    "title": "冻结前复核",
+                    "participants": ["顾遥"],
+                    "purpose": {
+                        "story": "顾遥调查冻结决定后拒绝离场，当场提交清单并要求复核。"
+                    },
+                    "entry_state": {"permit": "即将冻结"},
+                    "exit_state": {"permit": "暂缓冻结"},
+                    "hook_requirement": "审查签名来自已经撤销的部门。",
+                }
+            ],
+        }
+        for number in (1, 2, 3)
+    ]
+
+    report = evaluate_commercial_planning_readiness(
+        chapters,
+        target_chapters=500,
+        package_root=tmp_path,
+    )
+
+    blocking_codes = {
+        finding.code for finding in report.findings if finding.severity == "critical"
+    }
+    assert "golden_three_solo_scene_chain" not in blocking_codes
+    assert "golden_three_external_pressure_missing" not in blocking_codes
+    assert "golden_three_visible_loss_missing" not in blocking_codes
+    assert "golden_three_protagonist_agency_missing" not in blocking_codes
+
+
+def test_commercial_readiness_keeps_passive_single_participant_investigation_blocked(
+    tmp_path: Path,
+) -> None:
+    """Adding institutional nouns alone must not lower the opening-pressure gate."""
+
+    _write_required_artifacts(tmp_path)
+    chapters = [
+        {
+            "chapter_number": number,
+            "title": f"档案室第{number}日",
+            "chapter_goal": "顾遥整理旧档案。",
+            "opening_situation": "顾遥一个人在档案室。",
+            "main_conflict": "顾遥查看审核记录。",
+            "hook_description": "记录里还有一页没有看完。",
+            "hype_type": "reveal",
+            "hype_intensity": 8.0,
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "scene_type": "investigation",
+                    "title": "独自整理",
+                    "participants": ["顾遥"],
+                    "purpose": {"story": "顾遥独自调查并记录审核信息。"},
+                    "hook_requirement": "下一页仍待查看。",
+                }
+            ],
+        }
+        for number in (1, 2, 3)
+    ]
+
+    report = evaluate_commercial_planning_readiness(
+        chapters,
+        target_chapters=500,
+        package_root=tmp_path,
+    )
+
+    codes = {finding.code for finding in report.findings}
+    assert "golden_three_solo_scene_chain" in codes
+    assert "golden_three_visible_loss_missing" in codes
+
+
+def test_commercial_readiness_reads_structured_contract_pressure_evidence(
+    tmp_path: Path,
+) -> None:
+    """Do not discard pressure evidence stored in the planner's typed contracts."""
+
+    _write_required_artifacts(tmp_path)
+    chapters = [
+        {
+            "chapter_number": number,
+            "title": f"停航复核第{number}轮",
+            "chapter_goal": "顾遥保住通行许可并取得复核编号。",
+            "opening_situation": "复核窗口已经关闭，系统正在处理最后一批申请。",
+            "main_conflict": "顾遥必须在审查结束前完成现场处置。",
+            "hook_description": "复核编号显示下一批许可也将停用。",
+            "hype_type": "reversal",
+            "hype_intensity": 8.0,
+            "causal_contract": {
+                "pressure": "监管程序正在排查异常清单并冻结许可。",
+                "protagonist_choice": "顾遥放弃等待，提交原始清单并当场申诉。",
+                "resistance": "系统拒绝接收补件。",
+                "cost_or_tradeoff": "复核失败就会取消货运资格。",
+                "state_change": "许可从待冻结转为复核中。",
+            },
+            "methodology_contract": {
+                "conflict_stakes": "窗口关闭后许可将被收回权限。"
+            },
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "scene_type": "appeal",
+                    "title": "窗口外调查",
+                    "participants": ["顾遥"],
+                    "purpose": {"story": "顾遥独自调查申请状态。"},
+                    "hook_requirement": "系统弹出下一批停用名单。",
+                    "methodology_contract": {
+                        "action_sequence": "核对清单→拒绝离场→提交原件→要求复核"
+                    },
+                }
+            ],
+        }
+        for number in (1, 2, 3)
+    ]
+
+    report = evaluate_commercial_planning_readiness(
+        chapters,
+        target_chapters=500,
+        package_root=tmp_path,
+    )
+
+    blocking_codes = {
+        finding.code for finding in report.findings if finding.severity == "critical"
+    }
+    assert "golden_three_solo_scene_chain" not in blocking_codes
+    assert "golden_three_external_pressure_missing" not in blocking_codes
+    assert "golden_three_visible_loss_missing" not in blocking_codes
+    assert "golden_three_protagonist_agency_missing" not in blocking_codes
+
+
 def test_abstract_main_conflict_passes_when_hook_has_concrete_terms(
     tmp_path: Path,
 ) -> None:

@@ -41,6 +41,7 @@ class FakeSession:
         self.scalars_results = list(scalars_results or [])
         self.get_map = dict(get_map or {})
         self.added: list[object] = []
+        self.deleted: list[object] = []
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -65,6 +66,9 @@ class FakeSession:
         if not self.scalars_results:
             return []
         return self.scalars_results.pop(0)
+
+    async def delete(self, obj: object) -> None:
+        self.deleted.append(obj)
 
 
 def build_project() -> ProjectModel:
@@ -468,6 +472,99 @@ async def test_upsert_cast_spec_creates_characters_relationships_and_snapshots()
     assert protagonist.metadata_json["gender"] == "male"
     assert protagonist.metadata_json["pronoun_set_zh"] == "他"
     assert protagonist.metadata_json["cast_entry"]["gender"] == "male"
+
+
+@pytest.mark.asyncio
+async def test_foundation_truth_supersession_uses_latest_cast_as_complete_authority() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "identity_manifest": [
+            {"name": "白榆", "role": "protagonist"},
+            {"name": "顾潮", "role": "protagonist"},
+        ],
+        "entities": [
+            {"entity_type": "character", "canonical_name": "顾潮"},
+            {"entity_type": "location", "canonical_name": "北港"},
+        ],
+        "entity_registry": {
+            "entities": [
+                {"entity_type": "character", "canonical_name": "顾潮"},
+                {"entity_type": "character", "canonical_name": "白榆"},
+            ]
+        },
+    }
+    active = CharacterModel(
+        id=uuid4(),
+        project_id=project.id,
+        name="白榆",
+        role="protagonist",
+        metadata_json={},
+    )
+    stale = CharacterModel(
+        id=uuid4(),
+        project_id=project.id,
+        name="顾潮",
+        role="protagonist",
+        metadata_json={},
+    )
+    session = FakeSession(
+        scalar_results=[0],
+        scalars_results=[[active, stale]],
+    )
+
+    audit = await story_bible_services.supersede_materialized_cast_for_foundation(
+        session,
+        project,
+        cast_spec_content={
+            "protagonist": {"name": "白榆"},
+            "supporting_cast": [{"name": "岑野"}],
+        },
+        source_artifact_id=uuid4(),
+    )
+
+    assert session.deleted == [stale]
+    assert audit["active_character_names"] == ["岑野", "白榆"]
+    assert audit["removed_materialized_character_names"] == ["顾潮"]
+    assert project.metadata_json["identity_manifest"] == [
+        {"name": "白榆", "role": "protagonist"}
+    ]
+    assert project.metadata_json["entities"] == [
+        {"entity_type": "location", "canonical_name": "北港"}
+    ]
+    assert project.metadata_json["foundation_truth_status"] == (
+        "superseded_pending_materialization"
+    )
+
+
+@pytest.mark.asyncio
+async def test_conflict_map_never_materializes_undeclared_force_as_character() -> None:
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None], scalars_results=[[]])
+    cast = {
+        "protagonist": {"name": "白榆"},
+        "supporting_cast": [],
+        "antagonist_forces": [
+            {
+                "name": "逐步收紧的通行条件",
+                "force_type": "system",
+                "threat_description": "每轮提高进入门槛",
+            }
+        ],
+        "conflict_map": [
+            {
+                "character_a": "白榆",
+                "character_b": "逐步收紧的通行条件",
+                "conflict_type": "条件升级",
+                "trigger_condition": "公开一次成果后",
+            }
+        ],
+    }
+
+    await story_bible_services.upsert_cast_spec(session, project, cast)
+
+    characters = [item for item in session.added if isinstance(item, CharacterModel)]
+    assert [item.name for item in characters] == ["白榆"]
+    assert not any(isinstance(item, RelationshipModel) for item in session.added)
 
 
 @pytest.mark.asyncio

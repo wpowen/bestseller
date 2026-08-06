@@ -340,6 +340,22 @@ def test_prewrite_readiness_accepts_rich_planning_kernel() -> None:
     assert report.capability_snapshot["emotion_driven_core"] is False
 
 
+def test_final_conception_premise_outranks_stale_story_facets() -> None:
+    project = _project(
+        premise="废柴少年守着废药园，发现枯草都是只认他的上古灵药。",
+        story_facets={
+            "setting": "漂浮云海的血脉群岛",
+            "narrative_drive": "血脉祭典倒计时",
+            "trope_tags": ["岛屿争霸", "天骄围猎"],
+        },
+    )
+
+    kernel = build_project_planning_kernel(project, book_spec=_book_spec())
+
+    assert kernel["creative_positioning"]["unique_hook"] == project.metadata_json["premise"]
+    assert "血脉群岛" not in kernel["creative_positioning"]["unique_hook"]
+
+
 def test_prewrite_readiness_blocks_thin_generic_planning() -> None:
     kernel = build_project_planning_kernel(
         _project(),

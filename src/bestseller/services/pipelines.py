@@ -10,8 +10,11 @@ import math
 import os
 from pathlib import Path
 import traceback
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
+
+if TYPE_CHECKING:  # pragma: no cover — import only for type hints
+    from bestseller.services.book_runtime_guard import DriftReport
 
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import DBAPIError, MissingGreenlet, PendingRollbackError
@@ -38,12 +41,14 @@ from bestseller.domain.planning import AutowriteResult, PlanningArtifactCreate
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import (
+    CharacterModel,
     ChapterDraftVersionModel,
     ChapterContractModel,
     ChapterModel,
     ChapterQualityReportModel,
     ChapterStateSnapshotModel,
     ChaseDebtModel,
+    PlanningArtifactVersionModel,
     ProjectModel,
     QualityScoreModel,
     RewriteTaskModel,
@@ -51,6 +56,7 @@ from bestseller.infra.db.models import (
     SceneDraftVersionModel,
     VolumeModel,
     WorkflowRunModel,
+    WorldRuleModel,
 )
 from bestseller.services.draft_promotion import (
     mark_candidate_under_review,
@@ -116,7 +122,10 @@ from bestseller.services.drafts import (
     generate_scene_draft,
     _front10_forbidden_signal_terms,
 )
-from bestseller.services.book_closure import settle_project_status_on_closure
+from bestseller.services.book_closure import (
+    SETTLED_PRODUCTION_STATES,
+    settle_project_status_on_closure,
+)
 from bestseller.services.exports import (
     export_chapter_markdown,
     export_project_markdown,
@@ -156,6 +165,7 @@ from bestseller.services.planner import (
     project_uses_signing_quality_gate,
 )
 from bestseller.services.premium_genre_engine import build_premium_genre_engine_blocks
+from bestseller.services.production_control import load_control_state
 from bestseller.services.projects import (
     create_project,
     get_project_by_slug,
@@ -581,6 +591,10 @@ async def _evaluate_retention_safety_after_assembly(
         **_length_kwargs,
     )
 
+    # Initialised before the guard so the metadata write below is safe whether
+    # the persona gate ran, was disabled, or raised. A NameError here would take
+    # down the whole chapter pipeline over a diagnostics field.
+    _persona_evidence: dict[str, Any] | None = None
     if _rq_cfg.enabled and _rq_cfg.block_on_persona_failure and output_base_dir:
         try:
             from bestseller.domain.reader_persona import PersonaSimulationResult
@@ -622,6 +636,27 @@ async def _evaluate_retention_safety_after_assembly(
                     min_payoff_density=_rq_cfg.min_payoff_density,
                     block_on_payoff=_block_on_payoff,
                 )
+                # Persist what the personas actually said, not only the score
+                # they produced. A verdict of "weighted_score=0.53 < 0.62" is
+                # unactionable on its own: it cannot distinguish prose that is
+                # genuinely weak from a ruler that does not fit this book, and
+                # the simulation already computed the concerns and the at-risk
+                # personas before discarding them (2026-08-06 — five chapters
+                # scored 0.49–0.61 with no recorded reason anywhere).
+                _persona_evidence = {
+                    "weighted_score": _persona_result.weighted_score,
+                    "abandon_rate": _persona_result.abandon_rate,
+                    "high_risk_personas": list(_persona_result.high_risk_personas),
+                    "concerns": list(_persona_result.aggregated_concerns)[:8],
+                    "next_chapter_directives": list(
+                        _persona_result.next_chapter_directives
+                    )[:5],
+                    "thresholds": {
+                        "min_weighted_score": _rq_cfg.min_weighted_score,
+                        "max_abandon_rate": _rq_cfg.max_abandon_rate,
+                        "min_payoff_density": _rq_cfg.min_payoff_density,
+                    },
+                }
                 if not _pq.passed:
                     merged_findings = list(report.findings) + [
                         RetentionGateFinding(
@@ -647,6 +682,8 @@ async def _evaluate_retention_safety_after_assembly(
                 exc_info=True,
             )
     metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    if _persona_evidence is not None:
+        metadata["persona_gate_evidence"] = _persona_evidence
     metadata["retention_gate_last_findings"] = [
         {
             "code": finding.code,
@@ -803,7 +840,7 @@ def _render_deterministic_hook_echo_bridge(tokens: list[str]) -> str:
         subject = visible[0]
     else:
         subject = "、".join(visible[:-1]) + "和" + visible[-1]
-    return f"{subject}没有消失，反而成了清晨压到眼前的第一桩旧账。"
+    return f"{subject}没有消失，反而成了清晨必须先处理的未解问题。"
 
 
 async def _maybe_apply_deterministic_hook_echo_bridge_before_review(
@@ -2133,6 +2170,83 @@ async def _enforce_book_design_consistency(
     )
 
 
+async def _checkpoint_book_runtime_guard(
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    *,
+    progress: ProgressCallback | None = None,
+) -> "DriftReport | None":
+    """Freeze the book's contract on first sight, verify it on every later one.
+
+    Returns the drift report, or ``None`` when the guard is disabled or could
+    not run. Swallows its own errors deliberately: a guard that can abort a
+    book is a worse bug than the drift it looks for.
+    """
+
+    from bestseller.services.book_contract_snapshot import collect_book_contract
+    from bestseller.services.book_runtime_guard import (
+        GuardMode,
+        build_guard,
+        guard_mode,
+        load_guard,
+        store_guard,
+        verify_guard,
+    )
+
+    mode = guard_mode()
+    if mode is GuardMode.OFF:
+        return None
+
+    try:
+        contract = collect_book_contract(settings, project)
+        metadata = dict(getattr(project, "metadata_json", None) or {})
+
+        if load_guard(metadata) is None:
+            project.metadata_json = store_guard(
+                metadata,
+                build_guard(contract, frozen_by="autowrite_pipeline"),
+            )
+            await session.flush()
+            _emit_progress(progress, "book_runtime_guard_frozen", {
+                "project_slug": project.slug,
+                "contract_parts": sorted(contract.keys()),
+            })
+            return None
+
+        report = verify_guard(metadata, contract, mode=mode)
+        if not report.has_drift:
+            return report
+
+        logger.warning(
+            "config drift detected for project=%s: %s (mode=%s)",
+            project.slug,
+            report.describe(),
+            mode.value,
+        )
+        metadata["book_runtime_guard_drift"] = {
+            **report.to_payload(),
+            "detected_at": _dt.datetime.now(_dt.UTC).isoformat(),
+        }
+        if report.blocks_production:
+            metadata["production_paused"] = True
+            metadata["production_pause_reason"] = "book_runtime_config_drift"
+        project.metadata_json = metadata
+        await session.flush()
+        _emit_progress(progress, "book_runtime_guard_drift", {
+            "project_slug": project.slug,
+            **report.to_payload(),
+        })
+        return report
+    except Exception:
+        logger.warning(
+            "book runtime guard checkpoint failed for %s; continuing",
+            getattr(project, "slug", "?"),
+            exc_info=True,
+        )
+        return None
+
+
 async def _clear_auto_resumable_project_pause(
     session: AsyncSession,
     project: ProjectModel,
@@ -2449,6 +2563,7 @@ def _qimao_planning_gate_error_message(report_payload: dict[str, Any]) -> str:
 
 
 def _scene_probe_from_model(scene: SceneCardModel) -> ScenePlanProbe:
+    metadata = dict(getattr(scene, "metadata_json", None) or {})
     return ScenePlanProbe(
         scene_number=int(getattr(scene, "scene_number", 0) or 0),
         scene_type=str(getattr(scene, "scene_type", "") or ""),
@@ -2462,6 +2577,21 @@ def _scene_probe_from_model(scene: SceneCardModel) -> ScenePlanProbe:
         entry_state=str(getattr(scene, "entry_state", None) or ""),
         exit_state=str(getattr(scene, "exit_state", None) or ""),
         hook_requirement=str(getattr(scene, "hook_requirement", "") or ""),
+        contract_context=json.dumps(
+            {
+                key: metadata.get(key)
+                for key in (
+                    "methodology_contract",
+                    "action_sequence",
+                    "concrete_goal",
+                    "protagonist_state",
+                    "cut_point",
+                )
+                if metadata.get(key)
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
     )
 
 
@@ -2470,6 +2600,7 @@ def _chapter_probe_from_model(chapter: ChapterModel) -> ChapterPlanProbe:
         raw_scenes = list(getattr(chapter, "scenes", []) or [])
     except Exception:
         raw_scenes = []
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
     return ChapterPlanProbe(
         chapter_number=int(getattr(chapter, "chapter_number", 0) or 0),
         title=str(getattr(chapter, "title", "") or ""),
@@ -2482,6 +2613,15 @@ def _chapter_probe_from_model(chapter: ChapterModel) -> ChapterPlanProbe:
             float(getattr(chapter, "hype_intensity"))
             if getattr(chapter, "hype_intensity", None) is not None
             else None
+        ),
+        contract_context=json.dumps(
+            {
+                key: metadata.get(key)
+                for key in ("causal_contract", "methodology_contract")
+                if metadata.get(key)
+            },
+            ensure_ascii=False,
+            sort_keys=True,
         ),
         scenes=tuple(_scene_probe_from_model(scene) for scene in raw_scenes),
     )
@@ -2639,10 +2779,46 @@ def _record_outline_semantic_gate(
         payload = report.to_dict()
         hard_findings = hard_contract_findings(report)
         candidates = llm_adjudication_candidates(report)
+        # A finding about a chapter whose prose is already committed cannot be
+        # acted on: you do not replan the outline of a chapter the book has
+        # already shipped, and blocking on it starves every chapter that has not
+        # been written yet. 2026-08-03, xianxia-upgrade-1785697772: with 16
+        # chapters written and 23 planned, this gate blocked the whole book on
+        # one OUTLINE_STATE_REGRESSION at chapter 13 plus seven
+        # OUTLINE_REUSED_PAYLOAD_ANCHOR at chapter 1 — all of them behind the
+        # written frontier. The project then had no owner at all: the prose lane
+        # refuses a ``needs_replan`` project and the replan lane refuses one that
+        # already has drafts.
+        #
+        # The frontier is ``current_chapter_number`` — the same pointer the
+        # rolling window advances on — so the two cannot disagree. Findings
+        # behind it are kept in the report as advisory.
+        _written_frontier = int(getattr(project, "current_chapter_number", 0) or 0)
+        _settled_findings = tuple(
+            finding
+            for finding in hard_findings
+            if finding.chapter is not None and int(finding.chapter) <= _written_frontier
+        )
+        if _settled_findings:
+            hard_findings = tuple(
+                finding for finding in hard_findings if finding not in _settled_findings
+            )
+            logger.warning(
+                "outline semantic gate for %s: %d finding(s) concern chapters at or "
+                "behind the written frontier (chapter %d) and are advisory: %s",
+                getattr(project, "slug", "?"),
+                len(_settled_findings),
+                _written_frontier,
+                sorted({finding.code for finding in _settled_findings}),
+            )
         payload.update(
             {
                 "raw_promotion_allowed": report.promotion_allowed,
                 "promotion_allowed": not hard_findings,
+                "settled_chapter_findings": [
+                    finding.to_dict() for finding in _settled_findings
+                ],
+                "written_frontier": _written_frontier,
                 "effective_blocking_findings": [
                     finding.to_dict() for finding in hard_findings
                 ],
@@ -2712,10 +2888,23 @@ def _release_approved_outline_replan_gate(
     except (TypeError, ValueError):
         return False
     semantic_report = metadata.get("outline_semantic_gate_report")
+    semantic_adjudication = (
+        semantic_report.get("llm_adjudication")
+        if isinstance(semantic_report, dict)
+        and isinstance(semantic_report.get("llm_adjudication"), dict)
+        else {}
+    )
+    adjudicated_promotion = bool(
+        isinstance(semantic_report, dict)
+        and (
+            semantic_report.get("llm_adjudicated_all_volumes") is True
+            or semantic_adjudication.get("restored_declared_gate_pass") is True
+        )
+    )
     if not (
         isinstance(semantic_report, dict)
         and semantic_report.get("promotion_allowed") is True
-        and current_version > prior_version
+        and (current_version > prior_version or adjudicated_promotion)
     ):
         return False
 
@@ -2942,7 +3131,35 @@ async def _select_rolling_outline_window(
     }
     expected_numbers = set(range(window_start, window_end + 1))
     if selected_numbers != expected_numbers:
+        missing = expected_numbers - selected_numbers
+        materialized_frontier = max(
+            (int(getattr(chapter, "chapter_number", 0) or 0) for chapter in chapters),
+            default=0,
+        )
         metadata = dict(getattr(project, "metadata_json", None) or {})
+        # Advancing off the end of what has been planned is *progress*, not a
+        # broken architecture. The window promoted above moves to the next
+        # range as soon as the previous one is written, so on every multi-window
+        # book there is a moment where the new window exists and its chapters do
+        # not yet. Marking that ``needs_replan`` poisoned the project: the
+        # planner lane in self-heal only runs while zero drafts are committed,
+        # and the prose lane refuses any project whose architecture is rejected,
+        # so a book that had just written 8 good chapters became permanently
+        # inert with nothing but a once-a-minute skip log
+        # (2026-08-03, xianxia-upgrade-1785697772).
+        #
+        # A hole *below* the frontier is the real defect this branch was written
+        # for, and it still takes the replan path.
+        if missing == expected_numbers and min(missing) > materialized_frontier:
+            metadata["rolling_window_pending_materialization"] = sorted(missing)
+            metadata.pop("rolling_window_missing_chapters", None)
+            project.metadata_json = metadata
+            await _checkpoint_commit(session)
+            raise ProjectRepairPauseError(
+                "Rolling outline advanced to chapters "
+                f"{min(missing)}-{max(missing)}, which are not planned yet; "
+                "the next window must be planned before writing continues."
+            )
         metadata.update(
             {
                 "rolling_outline_status": "needs_replan",
@@ -2950,9 +3167,7 @@ async def _select_rolling_outline_window(
                 "production_paused": True,
                 "production_pause_reason": "rolling_window_not_materialized",
                 "generation_resume_blocked_until_repair_audit": True,
-                "rolling_window_missing_chapters": sorted(
-                    expected_numbers - selected_numbers
-                ),
+                "rolling_window_missing_chapters": sorted(missing),
             }
         )
         project.metadata_json = metadata
@@ -3054,15 +3269,14 @@ def _commercial_planning_issue_codes_from_payload(
     return codes
 
 
+# (2026-08-02) Only structural gaps remain actionable blockers. The retention
+# opinions — "the opening lacks live pressure", "the golden finger is not
+# visible in the first three chapters", "the scene chain is solo" — are editing
+# judgements, and they were deterministic: the repair rounds re-rolled against
+# the same verdict and the book then died before writing a word. They stay in
+# the report as advisory findings and ride the quality-debt record instead.
 _ACTIONABLE_COMMERCIAL_PLANNING_BLOCK_CODES = {
-    "OPENING_LACKS_LIVE_PRESSURE",
-    "GOLDEN_FINGER_NOT_VISIBLE_IN_GT3",
-    "SUSPENDED_FULFILLMENT_NO_PAYOFF",
     "missing_opening_situation",
-    "golden_three_external_pressure_missing",
-    "golden_three_solo_scene_chain",
-    "llm:GOLDEN_FINGER_NOT_VISIBLE_IN_GT3",
-    "llm:SUSPENDED_FULFILLMENT_NO_PAYOFF",
 }
 
 
@@ -3601,12 +3815,17 @@ async def _enforce_whole_book_quality_gate_after_chapter(
     if chapter_draft is None or not getattr(chapter_draft, "content_md", None):
         return
 
+    from bestseller.services.story_enhancers import resolve_cost_style
+
     chapter_texts[chapter.chapter_number] = chapter_draft.content_md or ""
     metadata = getattr(project, "metadata_json", None) or {}
     report = evaluate_whole_book_quality(
         chapter_texts,
         volume_plan=metadata.get("volume_plan"),
         emotion_driven_kernel=metadata.get("emotion_driven_kernel"),
+        # Without this the gate flags a 爽文无代价 book for the very thing the
+        # user asked for — cost-free wins.
+        cost_style=resolve_cost_style(metadata),
     )
     report_payload = whole_book_quality_report_to_dict(report)
     project.metadata_json = {
@@ -4233,12 +4452,29 @@ def _project_consistency_warn_only_scope(
     *,
     current_volume_number: int | None,
     chapter_numbers: set[int] | None,
+    written_chapters: int = 0,
+    target_chapters: int = 0,
 ) -> str | None:
-    """Project consistency is advisory while processing a partial write slice."""
+    """Project consistency is advisory while processing a partial write slice.
+
+    A book that is still being written is a partial slice too. The progressive
+    loop says so explicitly via ``current_volume_number``, but the self-heal
+    lane calls ``run_project_pipeline`` for the whole project with neither
+    marker set — so an 8-of-30-chapter book was judged by whole-book criteria,
+    came back ``attention`` (correctly: it has no ending yet), and was
+    hard-blocked with ``requires_human_review``. That stopped the per-window
+    loop from ever planning window 2, and the book could not pass chapter 8
+    (2026-08-03, xianxia-upgrade-1785697772).
+
+    You cannot review the consistency of a whole book that is not whole yet.
+    The full verdict still applies in force once every planned chapter exists.
+    """
     if current_volume_number is not None:
         return "partial_volume"
     if chapter_numbers is not None:
         return "chapter_slice"
+    if target_chapters > 0 and written_chapters < target_chapters:
+        return "book_in_progress"
     return None
 
 
@@ -4300,6 +4536,16 @@ async def _count_written_chapters_in_volume(
     for a volume whose chapters are already drafted. Prevents the re-plan path
     from globally re-numbering chapters and re-inserting them after the writer
     has advanced (the root cause of the 200-chapter gap incident).
+
+    "Written" means *settled*, not *flawless*. ``quality_debt`` is the quality
+    system's own terminal verdict — "stop repairing, ship the best draft" — and
+    ``book_closure`` already ships and promotes such a chapter. Counting only
+    ``production_state == "ok"`` here put the same fact in two places with two
+    answers: closure called a chapter shipped while this counter called it
+    unwritten. A 30-chapter book whose first window settled all 8 chapters as
+    ``quality_debt`` reported ``0/8 written``, so the per-window loop logged
+    "not advancing to later volumes", never planned window 2, and the writer
+    was stranded at chapter 8 forever (2026-08-03, xianxia-upgrade-1785697772).
     """
     stmt = (
         select(func.count(ChapterModel.id))
@@ -4308,7 +4554,7 @@ async def _count_written_chapters_in_volume(
             ChapterModel.project_id == project_id,
             VolumeModel.volume_number == volume_number,
             ChapterModel.status.in_(_WRITTEN_CHAPTER_STATUSES),
-            ChapterModel.production_state == "ok",
+            ChapterModel.production_state.in_(tuple(SETTLED_PRODUCTION_STATES)),
         )
     )
     result = await session.scalar(stmt)
@@ -4601,6 +4847,60 @@ async def _checkpoint_commit(session: AsyncSession) -> None:
     if commit is None:
         return
     await commit()
+
+
+async def _completed_story_bible_materialization_is_reusable(
+    session: AsyncSession,
+    workflow_run: WorkflowRunModel | None,
+) -> bool:
+    """Reject completion markers whose committed outputs no longer exist.
+
+    Workflow rows are audit records and may survive a scoped project cleanup or
+    a cancelled outer transaction. They therefore cannot, by themselves, prove
+    that the story bible and its source artifacts are reusable.
+    """
+
+    if workflow_run is None:
+        return False
+    metadata = workflow_run.metadata_json or {}
+    source_ids = metadata.get("source_artifact_ids")
+    if not isinstance(source_ids, Mapping) or not source_ids:
+        # Legacy completed runs predate output lineage. Preserve their existing
+        # resume behavior; new runs always record source_artifact_ids.
+        return True
+    try:
+        expected_artifact_ids = {UUID(str(value)) for value in source_ids.values()}
+    except (TypeError, ValueError):
+        return False
+    artifact_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(PlanningArtifactVersionModel)
+            .where(PlanningArtifactVersionModel.id.in_(expected_artifact_ids))
+        )
+        or 0
+    )
+    if artifact_count != len(expected_artifact_ids):
+        return False
+    for model, metadata_key in (
+        (CharacterModel, "characters_upserted"),
+        (WorldRuleModel, "world_rules_upserted"),
+        (VolumeModel, "volumes_upserted"),
+    ):
+        expected_count = int(metadata.get(metadata_key) or 0)
+        if expected_count <= 0:
+            continue
+        actual_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(model)
+                .where(model.project_id == workflow_run.project_id)
+            )
+            or 0
+        )
+        if actual_count < expected_count:
+            return False
+    return True
 
 
 async def _count_pending_chapter_rewrite_tasks(
@@ -9882,7 +10182,10 @@ async def run_chapter_pipeline(
                 and chapter_draft is not None
                 and chapter_draft.content_md
             ):
-                from bestseller.services.ai_flavor_gate import run_ai_flavor_gate
+                from bestseller.services.ai_flavor_gate import (
+                    has_category_issue,
+                    run_ai_flavor_gate,
+                )
 
                 _af_lang = getattr(project, "language", None) or "zh-CN"
                 _af_output_dir = (
@@ -9904,6 +10207,11 @@ async def run_chapter_pipeline(
                 # 触发条件不止「block」：规则解释/对仗/结论先行这类话语腔分数低
                 # (advisory) 却恰是 deslop 专治、span patcher 改不掉的，必须也触发。
                 from bestseller.services.ai_flavor_gate import needs_deslop_revise
+
+                def needs_debt_leak_ai_flavor(
+                    outcome: object,
+                ) -> bool:
+                    return has_category_issue(outcome, "debt_metaphor_leak")
 
                 if needs_deslop_revise(ai_flavor_outcome) and getattr(
                     _af_gates_cfg.ai_flavor, "deslop_revise_enabled", True
@@ -9944,13 +10252,21 @@ async def run_chapter_pipeline(
                             "ai_flavor_gate: deslop revise failed (non-fatal)",
                             exc_info=True,
                         )
-                if ai_flavor_outcome.decision == "block":
+                if ai_flavor_outcome.decision == "block" or needs_debt_leak_ai_flavor(
+                    ai_flavor_outcome
+                ):
                     logger.warning(
                         "ai_flavor_gate ch%d: residual score %.1f >= threshold, "
                         "routing to machine repair",
                         chapter_number,
                         ai_flavor_outcome.after_score,
                     )
+                    if needs_debt_leak_ai_flavor(ai_flavor_outcome):
+                        logger.warning(
+                            "ai_flavor_gate ch%d: debt_metaphor_leak detected, "
+                            "force hard block for AI-flavor contamination",
+                            chapter_number,
+                        )
                     chapter.status = ChapterStatus.REVISION.value
                     chapter.production_state = "blocked"
                     scene_requires_human_review = True
@@ -9959,6 +10275,9 @@ async def run_chapter_pipeline(
                         "blocked_by_ai_flavor_gate": True,
                         "ai_flavor_before_score": ai_flavor_outcome.before_score,
                         "ai_flavor_after_score": ai_flavor_outcome.after_score,
+                        "blocked_by_ai_flavor_debt_metaphor_leak": needs_debt_leak_ai_flavor(
+                            ai_flavor_outcome
+                        ),
                     }
                 # Only record a workflow step when the gate actually
                 # detected something. Clean-pass no-ops would otherwise
@@ -11673,7 +11992,22 @@ async def _load_prior_incomplete_chapter_numbers(
         if not has_current_draft:
             incomplete.append(int(chapter_number))
             continue
-        if production_state != "ok" and chapter_block_is_structural(metadata_json):
+        state = str(production_state or "").strip().lower()
+        if state in SETTLED_PRODUCTION_STATES:
+            # Settled means the quality system finished with this chapter and
+            # chose to ship the draft it has. That is not a gap, and it must not
+            # gate the next chapter.
+            #
+            # The old test was ``production_state != "ok"``, which sent every
+            # ``quality_debt`` chapter into ``chapter_block_is_structural`` — a
+            # classifier whose own docstring says it is for chapters that are
+            # ``blocked``. Such a chapter carries no recognized gate key, so it
+            # hit the conservative "unrecognized → structural" fallback and was
+            # reported as incomplete. On 2026-08-03 that made chapters 1, 2, 5
+            # and 8 of xianxia-upgrade-1785697772 — all settled, all with a
+            # current draft — block chapter 9 from ever being written.
+            continue
+        if chapter_block_is_structural(metadata_json):
             incomplete.append(int(chapter_number))
     return incomplete
 
@@ -11748,81 +12082,11 @@ async def run_project_pipeline(
         progress=progress,
     )
 
-    # ── Batch 2: Material Forge ────────────────────────────────────────────
-    # When ``enable_forge_pipeline`` is on, run all 5 Forges before the
-    # Planner so that project_materials exist for reference-style prompting.
-    # Runs only on the first pass (when no project_materials exist yet) to
-    # avoid re-forging on every resume.  Failures are logged but do NOT
-    # abort the pipeline — the old non-reference path is the safe fallback.
-    if settings.pipeline.enable_forge_pipeline:
-        try:
-            from sqlalchemy import func, select
-
-            from bestseller.infra.db.models import ProjectMaterialModel
-            from bestseller.services.concept_lab import (
-                render_concept_lab_material_brief_block,
-            )
-            from bestseller.services.material_forge import forge_all_materials
-
-            existing_count_result = await session.execute(
-                select(func.count()).where(
-                    ProjectMaterialModel.project_id == project.id
-                )
-            )
-            if existing_count_result is None or not hasattr(
-                existing_count_result,
-                "scalar_one",
-            ):
-                existing_count = 1
-            else:
-                existing_count = existing_count_result.scalar_one()
-            if existing_count == 0:
-                _emit_progress(
-                    progress,
-                    "material_forge_started",
-                    {"project_slug": project_slug},
-                )
-                project_metadata = project.metadata_json or {}
-                genre = (
-                    getattr(project, "genre", None)
-                    or project_metadata.get("genre")
-                    or ""
-                )
-                sub_genre = (
-                    getattr(project, "sub_genre", None)
-                    or project_metadata.get("sub_genre")
-                )
-                concept_lab_context = render_concept_lab_material_brief_block(
-                    project_metadata,
-                    language=(
-                        getattr(project, "language", None)
-                        or project_metadata.get("language")
-                        or "zh-CN"
-                    ),
-                )
-                forge_results = await forge_all_materials(
-                    session,
-                    project_id=project.id,
-                    genre=genre,
-                    settings=settings,
-                    sub_genre=sub_genre,
-                    concept_lab_context=concept_lab_context or None,
-                )
-                await _checkpoint_commit(session)
-                total_forged = sum(r.emitted_count for r in forge_results)
-                _emit_progress(
-                    progress,
-                    "material_forge_completed",
-                    {
-                        "project_slug": project_slug,
-                        "total_forged": total_forged,
-                        "concept_lab_material_brief": bool(concept_lab_context),
-                    },
-                )
-        except Exception:
-            logger.exception(
-                "run_project_pipeline: material forge failed — continuing with legacy path"
-            )
+    # Material Forge is intentionally not run before planning.  Before an
+    # approved WorldSpec exists it can only differentiate generic genre seeds,
+    # which are reference candidates rather than this book's facts.  Scoped
+    # material compilation may run after canon materialisation in a dedicated
+    # lane; the core generation path never promotes the unscoped inventory.
 
     story_bible_result = None
     narrative_graph_result = None
@@ -12638,9 +12902,17 @@ async def run_project_pipeline(
                         break
 
                 if not commercial_gate_passed:
+                    # (2026-08-02) Exhausting the repair rounds no longer kills
+                    # the book. This verdict is about retention craft — whether
+                    # the first three chapters hook hard enough — and the model
+                    # already had its repair rounds against the same feedback.
+                    # Blocking here meant a book that had passed conception,
+                    # foundation and the full outline died before writing a
+                    # single word. The unresolved findings are recorded as
+                    # quality debt so the report still shows what was conceded.
                     _emit_progress(
                         progress,
-                        "commercial_planning_readiness_gate_failed",
+                        "commercial_planning_readiness_gate_conceded",
                         {
                             "project_slug": project_slug,
                             "findings": commercial_gate_report.get("findings", []),
@@ -12648,17 +12920,23 @@ async def run_project_pipeline(
                         },
                     )
                     _block_reason = (
-                        "LLM judge"
-                        if use_llm_judge
-                        else "deterministic gate"
+                        "LLM judge" if use_llm_judge else "deterministic gate"
                     )
-                    raise ValueError(
-                        _commercial_planning_readiness_error_message(
-                            commercial_gate_report,
-                            llm_judge_payload=llm_judge_payload,
-                        )
-                        + f" [{_block_reason}]"
+                    logger.warning(
+                        "commercial planning readiness conceded for %s after repair "
+                        "rounds (%s); proceeding with recorded quality debt",
+                        project_slug,
+                        _block_reason,
                     )
+                    project.metadata_json = {
+                        **(getattr(project, "metadata_json", None) or {}),
+                        "commercial_planning_readiness_status": "conceded_quality_debt",
+                        "commercial_planning_readiness_debt": {
+                            "block_reason": _block_reason,
+                            "findings": commercial_gate_report.get("findings", [])[:12],
+                            "recorded_at": _dt.datetime.now(_dt.UTC).isoformat(),
+                        },
+                    }
                 await create_workflow_step_run(
                     session,
                     workflow_run_id=workflow_run.id,
@@ -12672,11 +12950,17 @@ async def run_project_pipeline(
                     },
                 )
                 step_order += 1
-                _emit_progress(
-                    progress,
-                    "commercial_planning_readiness_gate_passed",
-                    {"project_slug": project_slug},
-                )
+                # Only a book that actually cleared the gate reports as passed.
+                # Emitting this unconditionally showed a green gate on the
+                # dashboard for a book whose own metadata says
+                # ``conceded_quality_debt`` — the concession event above would
+                # scroll past and the last word the operator saw was "passed".
+                if commercial_gate_passed:
+                    _emit_progress(
+                        progress,
+                        "commercial_planning_readiness_gate_passed",
+                        {"project_slug": project_slug},
+                    )
 
         # Child chapter pipelines can roll back the shared session. Persist
         # the project workflow shell before entering the chapter loop.
@@ -13229,6 +13513,8 @@ async def run_project_pipeline(
         project_consistency_warn_only_scope = _project_consistency_warn_only_scope(
             current_volume_number=current_volume_number,
             chapter_numbers=requested_chapter_numbers,
+            written_chapters=int(getattr(project, "current_chapter_number", 0) or 0),
+            target_chapters=int(getattr(project, "target_chapters", 0) or 0),
         )
         if project_review_not_pass:
             if settings.quality.draft_mode:
@@ -13728,6 +14014,7 @@ async def run_autowrite_pipeline(
     progress: ProgressCallback | None = None,
     use_conception: bool = False,
     allow_outline_replan: bool = False,
+    force_foundation_replan: bool = False,
 ) -> AutowriteResult:
     """Run the full novel pipeline.
 
@@ -13785,11 +14072,9 @@ async def run_autowrite_pipeline(
         _meta.update({
             "premise": premise,
             "conception_brief": conception_result.commercial_brief,
-            "conception_log": conception_result.conception_log,
             "synopsis": conception_result.synopsis,
             "tags": conception_result.tags,
             "story_spine": conception_result.story_spine,
-            "world_model": conception_result.world_model,
             "concept_methodology": conception_result.concept_methodology,
             "conception_degraded": conception_result.degraded,
             "conception_degradation_events": [
@@ -13845,6 +14130,7 @@ async def run_autowrite_pipeline(
             auto_repair_on_attention=auto_repair_on_attention,
             progress=progress,
             allow_outline_replan=allow_outline_replan,
+            force_foundation_replan=force_foundation_replan,
         )
 
     project = await get_project_by_slug(session, project_payload.slug)
@@ -13912,6 +14198,7 @@ async def run_autowrite_pipeline(
                 auto_repair_on_attention=auto_repair_on_attention,
                 progress=progress,
                 allow_outline_replan=allow_outline_replan,
+                force_foundation_replan=force_foundation_replan,
             )
     if (
         existing_plan_artifact is not None
@@ -13968,6 +14255,19 @@ async def run_autowrite_pipeline(
         if existing_plan_artifact is not None and settings.pipeline.resume_enabled
         else None
     )
+    if completed_bible_run is not None and not await _completed_story_bible_materialization_is_reusable(
+        session, completed_bible_run
+    ):
+        _emit_progress(
+            progress,
+            "story_bible_materialization_resume_invalidated",
+            {
+                "project_slug": project.slug,
+                "workflow_run_id": str(completed_bible_run.id),
+                "reason": "completed_marker_outputs_missing",
+            },
+        )
+        completed_bible_run = None
     if completed_bible_run is not None:
         from bestseller.domain.story_bible import StoryBibleMaterializationResult
 
@@ -14294,6 +14594,7 @@ async def run_progressive_autowrite_pipeline(
     auto_repair_on_attention: bool = True,
     progress: ProgressCallback | None = None,
     allow_outline_replan: bool = False,
+    force_foundation_replan: bool = False,
 ) -> AutowriteResult:
     """Progressive planning pipeline: Foundation → per-volume (plan → write → feedback) loop.
 
@@ -14326,7 +14627,11 @@ async def run_progressive_autowrite_pipeline(
     existing_volume_plan = await get_latest_planning_artifact(
         session, project_id=project.id, artifact_type=ArtifactType.VOLUME_PLAN,
     )
-    if existing_volume_plan is not None and settings.pipeline.resume_enabled:
+    if (
+        existing_volume_plan is not None
+        and settings.pipeline.resume_enabled
+        and not force_foundation_replan
+    ):
         _emit_progress(progress, "foundation_planning_skipped_resume", {"project_slug": project.slug})
         from bestseller.domain.planning import NovelPlanningResult
         planning_result = NovelPlanningResult(
@@ -14345,6 +14650,42 @@ async def run_progressive_autowrite_pipeline(
             "volume_count": planning_result.volume_count,
         })
 
+    if force_foundation_replan:
+        latest_cast_for_supersession = await get_latest_planning_artifact(
+            session,
+            project_id=project.id,
+            artifact_type=ArtifactType.CAST_SPEC,
+        )
+        if latest_cast_for_supersession is None or not isinstance(
+            latest_cast_for_supersession.content, dict
+        ):
+            raise ValueError(
+                "foundation replan did not produce an active cast contract"
+            )
+        from bestseller.services.book_design import (  # noqa: PLC0415
+            ensure_project_book_design_snapshot,
+        )
+        from bestseller.services.story_bible import (  # noqa: PLC0415
+            supersede_materialized_cast_for_foundation,
+        )
+
+        supersession_audit = await supersede_materialized_cast_for_foundation(
+            session,
+            project,
+            cast_spec_content=latest_cast_for_supersession.content,
+            source_artifact_id=latest_cast_for_supersession.id,
+        )
+        ensure_project_book_design_snapshot(project, force_rebuild=True)
+        await _checkpoint_commit(session)
+        _emit_progress(
+            progress,
+            "foundation_truth_superseded",
+            {
+                "project_slug": project.slug,
+                **supersession_audit,
+            },
+        )
+
     # ── Materialize story bible from foundation ──
     # Resume guard: re-running materialization on every restart is non-idempotent
     # because the L2 bible-completeness gate may now reject content that was
@@ -14356,7 +14697,20 @@ async def run_progressive_autowrite_pipeline(
         project_id=project.id,
         workflow_type=WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
     )
-    if existing_bible_run is not None and settings.pipeline.resume_enabled:
+    if existing_bible_run is not None and not await _completed_story_bible_materialization_is_reusable(
+        session, existing_bible_run
+    ):
+        _emit_progress(progress, "story_bible_materialization_resume_invalidated", {
+            "project_slug": project.slug,
+            "workflow_run_id": str(existing_bible_run.id),
+            "reason": "completed_marker_outputs_missing",
+        })
+        existing_bible_run = None
+    if (
+        existing_bible_run is not None
+        and settings.pipeline.resume_enabled
+        and not force_foundation_replan
+    ):
         _emit_progress(progress, "story_bible_materialization_skipped_resume", {
             "project_slug": project.slug,
             "workflow_run_id": str(existing_bible_run.id),
@@ -14369,6 +14723,13 @@ async def run_progressive_autowrite_pipeline(
     else:
         _emit_progress(progress, "story_bible_materialization_started", {"project_slug": project.slug})
         story_bible_result = await materialize_latest_story_bible(session, project.slug, requested_by=requested_by)
+        if force_foundation_replan:
+            refreshed_metadata = dict(project.metadata_json or {})
+            refreshed_metadata["foundation_truth_status"] = "active"
+            refreshed_metadata["foundation_truth_materialized_run_id"] = str(
+                story_bible_result.workflow_run_id
+            )
+            project.metadata_json = refreshed_metadata
         await _checkpoint_commit(session)
         _emit_progress(progress, "story_bible_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(story_bible_result.workflow_run_id)})
 
@@ -14391,6 +14752,50 @@ async def run_progressive_autowrite_pipeline(
     world_spec_payload = world_spec_art.content if world_spec_art else {}
     cast_spec_payload = cast_spec_art.content if cast_spec_art else {}
     volume_plan_payload = volume_plan_art.content if volume_plan_art else []
+
+    # An outline-only replan intentionally reuses foundation artifacts.  If a
+    # repaired final premise changed a planner-inferred protagonist, scrub the
+    # superseded name from those reused payloads before they enter outline
+    # prompts, and persist the repaired versions so later resumes cannot reload
+    # the stale identity.
+    if allow_outline_replan:
+        from bestseller.services.book_design import extract_creation_protagonist_name
+        from bestseller.services.planner import _repair_protagonist_name_drift_for_planner
+
+        canonical_name = extract_creation_protagonist_name(project.metadata_json or {})
+        repaired_book_spec = _repair_protagonist_name_drift_for_planner(
+            project,
+            dict(book_spec_payload) if isinstance(book_spec_payload, Mapping) else {},
+            protagonist_name=canonical_name,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+        )
+        if repaired_book_spec != book_spec_payload:
+            book_spec_payload = repaired_book_spec
+            await import_planning_artifact(
+                session,
+                project.slug,
+                PlanningArtifactCreate(
+                    artifact_type=ArtifactType.BOOK_SPEC,
+                    content=book_spec_payload,
+                ),
+            )
+        repaired_cast_spec = _repair_protagonist_name_drift_for_planner(
+            project,
+            dict(cast_spec_payload) if isinstance(cast_spec_payload, Mapping) else {},
+            protagonist_name=canonical_name,
+            artifact_type=ArtifactType.CAST_SPEC.value,
+        )
+        if repaired_cast_spec != cast_spec_payload:
+            cast_spec_payload = repaired_cast_spec
+            await import_planning_artifact(
+                session,
+                project.slug,
+                PlanningArtifactCreate(
+                    artifact_type=ArtifactType.CAST_SPEC,
+                    content=cast_spec_payload,
+                ),
+            )
+        await _checkpoint_commit(session)
 
     # Normalize volume plan. Some recovered/legacy plans store chapter_range
     # but omit chapter_count_target; the planner can derive the count, so use
@@ -14629,6 +15034,49 @@ async def run_progressive_autowrite_pipeline(
 
     # ── Phase B: Per-volume loop ──
     for vol_idx, vol_entry in enumerate(execution_plan_list, start=1):
+        # Operator stop/pause checkpoint. Read fresh from ``book_production_control``
+        # (never from a value captured before the loop) so a command issued while
+        # this run is in flight takes effect at the next volume boundary instead
+        # of only being noticed by the next self-heal sweep.
+        try:
+            _control = await load_control_state(session, project.id)
+        except Exception:
+            # Never let the stop check itself end a run. The authoritative
+            # enforcement points are the worker entry guard and the self-heal
+            # sweep; this one is a fast path for a book already in flight.
+            logger.debug(
+                "could not read production control for %s; continuing",
+                project.slug,
+                exc_info=True,
+            )
+            _control = None
+        if _control is not None and _control.halted:
+            logger.info(
+                "autowrite halted by operator intent project=%s intent=%s reason=%s",
+                project.slug,
+                _control.intent.value,
+                _control.reason,
+            )
+            _emit_progress(progress, "autowrite_halted_by_operator", {
+                "project_slug": project.slug,
+                **_control.to_payload(),
+            })
+            break
+
+        # Configuration-drift checkpoint. Freezing on the first volume and
+        # re-verifying on every later one is what turns "chapters 51+ die for no
+        # visible reason" into a named, actionable event.
+        _drift = await _checkpoint_book_runtime_guard(
+            session, settings, project, progress=progress
+        )
+        if _drift is not None and _drift.blocks_production:
+            logger.warning(
+                "autowrite halted by config drift project=%s detail=%s",
+                project.slug,
+                _drift.describe(),
+            )
+            break
+
         vol_num = int(vol_entry.get("volume_number", 0)) or vol_idx
         active_volume_plan = (
             _volume_plan_for_rolling_window(volume_plan_list, vol_entry)
@@ -14675,6 +15123,49 @@ async def run_progressive_autowrite_pipeline(
                         "replan is required."
                     )
                 if present_window_numbers == expected_window_numbers:
+                    # A window whose chapters are all settled is done: the
+                    # rolling plan has already promoted the *next* window, so
+                    # re-entering this one made ``run_project_pipeline`` select
+                    # a window whose chapters do not exist yet and abort. The
+                    # loop then never reached the window that actually needed
+                    # planning, and a 30-chapter book sat at chapter 8 while
+                    # both self-heal lanes handed it back and forth
+                    # (2026-08-03, xianxia-upgrade-1785697772).
+                    #
+                    # "Behind the frontier" is decided by the same pointer the
+                    # window selector uses to advance (``current_chapter >=
+                    # window_end``), so the two can never disagree. An earlier
+                    # attempt counted settled chapters instead, and a repair
+                    # pass that flipped one chapter from ``quality_debt`` to
+                    # ``blocked`` made the count 7-of-8 — the loop re-entered a
+                    # finished window and aborted again. Repairing that one
+                    # chapter is the repair lane's job, not this write loop's.
+                    written_frontier = int(
+                        getattr(project, "current_chapter_number", 0) or 0
+                    )
+                    if written_frontier >= window_end:
+                        logger.info(
+                            "Rolling window %d-%d is behind the written frontier "
+                            "(chapter %d) — advancing to the next window.",
+                            window_start,
+                            window_end,
+                            written_frontier,
+                        )
+                        _emit_progress(
+                            progress,
+                            "rolling_window_skipped_already_settled",
+                            {
+                                "project_slug": project.slug,
+                                "volume_number": vol_num,
+                                "window_start": window_start,
+                                "window_end": window_end,
+                                "written_frontier": written_frontier,
+                            },
+                        )
+                        global_completed_chapter_offset = max(
+                            global_completed_chapter_offset, window_end
+                        )
+                        continue
                     resume_existing_chapter_numbers = present_window_numbers
                     _emit_progress(
                         progress,
@@ -14843,24 +15334,57 @@ async def run_progressive_autowrite_pipeline(
                     cast_spec_payload = latest_cast_spec.content
 
                 # Materialize the per-volume outline into the combined CHAPTER_OUTLINE_BATCH
-                # so the existing chapter writing pipeline can pick it up
-                vol_outline_art = await get_latest_planning_artifact(
-                    session, project_id=project.id, artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                # so the existing chapter writing pipeline can pick it up.
+                #
+                # (2026-08-03) Fold EVERY volume-outline version, oldest first —
+                # not just the latest. The rolling planner writes one
+                # VOLUME_CHAPTER_OUTLINE version per batch (v1=ch1-3, v2=ch4-6,
+                # v3=ch7-8), and this merge runs once at the end of the volume.
+                # Reading only the newest version therefore materialized the
+                # LAST batch alone: 《雾街债主》 and its A/B twin both ended up
+                # with chapters [7,8] and nothing else, which left the approved
+                # rolling window incomplete, which made every write attempt raise
+                # "Approved rolling outline window is not fully materialized" and
+                # self-heal re-queue the same replan indefinitely.
+                # `_merge_progressive_outline_batch` makes each incoming batch
+                # authoritative from its own first chapter onward, so folding in
+                # ascending version order is order-safe and idempotent: replaying
+                # v1 drops the tail, and v2/v3 immediately restore it.
+                vol_outline_versions = list(
+                    (
+                        await session.scalars(
+                            select(PlanningArtifactVersionModel)
+                            .where(
+                                PlanningArtifactVersionModel.project_id == project.id,
+                                PlanningArtifactVersionModel.artifact_type
+                                == ArtifactType.VOLUME_CHAPTER_OUTLINE.value,
+                            )
+                            .order_by(
+                                PlanningArtifactVersionModel.version_no.asc(),
+                                PlanningArtifactVersionModel.created_at.asc(),
+                            )
+                        )
+                    ).all()
                 )
+                vol_outline_art = vol_outline_versions[-1] if vol_outline_versions else None
                 vol_chapters = []
                 if vol_outline_art and vol_outline_art.content:
                     # Merge volume outline into cumulative CHAPTER_OUTLINE_BATCH
                     existing_batch_art = await get_latest_planning_artifact(
                         session, project_id=project.id, artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
                     )
-                    existing_chapters = _outline_content_chapters(
+                    merged_chapters = _outline_content_chapters(
                         existing_batch_art.content if existing_batch_art else None
                     )
+                    for _version in vol_outline_versions:
+                        _version_chapters = _outline_content_chapters(_version.content)
+                        if not _version_chapters:
+                            continue
+                        merged_chapters = _merge_progressive_outline_batch(
+                            merged_chapters,
+                            _version_chapters,
+                        )
                     vol_chapters = _outline_content_chapters(vol_outline_art.content)
-                    merged_chapters = _merge_progressive_outline_batch(
-                        existing_chapters,
-                        vol_chapters,
-                    )
                     merged = {
                         "batch_name": "progressive-merged-outline",
                         "chapters": merged_chapters,
@@ -15202,3 +15726,4 @@ async def run_progressive_autowrite_pipeline(
         final_verdict=final_verdict,
         requires_human_review=final_requires_human_review,
     )
+    PlanningArtifactVersionModel,

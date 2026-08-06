@@ -109,26 +109,30 @@ ARCHETYPE_LIBRARY: dict[str, DialogueVoiceDNA] = {
         relationship_rules=("softens only with protected juniors", "hardens under disrespect"),
         genre_adaptations=(
             "xianxia/folk horror: ritual objects and obligation language",
-            "western/fantasy: craft, debt, oath, or frontier idiom",
+            "western/fantasy: craft, oath, or frontier idiom",
             "contemporary: local trade, family, or community idiom",
         ),
-        pet_phrases=("这笔", "老规矩", "亏不亏", "后生"),
+        # 2026-07-31: de-ledgered. This archetype is inferred for ANY elderly
+        # character in ANY genre (老人/爷/奶/高人 tokens), so ledger-flavoured
+        # phrases here injected bookkeeping imagery into every book's dialogue
+        # layer. Keep the craft-elder register; keep props/idiom book-neutral.
+        pet_phrases=("老规矩", "亏不亏", "后生"),
         forbidden_phrases=(*COMMON_DIALOGUE_FORBIDDEN_PHRASES, "小子"),
         vocab_ceiling="初中以下",
         vocab_floor="可带土腥但不能堆方言",
         speech_speed="慢",
         body_tells=("不抬眼", "袖口抹嘴角", "指节摩挲旧物"),
-        taboo_topics=("年轻时", "为什么收账", "术法代价"),
+        taboo_topics=("年轻时", "当年为什么收手", "术法代价"),
         context_modulation=(
-            _ctx("施压", (3, 7), "慢", "账上添一笔。", density="高", body_tell="不抬眼"),
-            _ctx("对主角", (5, 12), "中", "后生，这笔亏不亏。"),
+            _ctx("施压", (3, 7), "慢", "老规矩，不能破。", density="高", body_tell="不抬眼"),
+            _ctx("对主角", (5, 12), "中", "后生，这事亏不亏。"),
             _ctx("被冒犯", (1, 4), "极慢", "再说。"),
             _ctx("回忆触发", (8, 20), "快", "那年也是这个雨声。算了。"),
         ),
         negative_space=(
-            _neg("被问敏感问题", "翻账本或摸旧物代替回答"),
+            _neg("被问敏感问题", "摸旧物或摆弄手边物件代替回答"),
             _neg("被催", "放慢语速，只回半句"),
-            _neg("被夸", "岔开到茶、账、天气等小事"),
+            _neg("被夸", "岔开到茶饭、天气等小事"),
         ),
         regional_markers=("本地量词", "旧称呼", "乡土语气词"),
         accent_profile="轻方言口音；只点到为止，优先可读性",

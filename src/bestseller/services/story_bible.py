@@ -3,14 +3,15 @@ from __future__ import annotations
 from collections import defaultdict
 import copy
 from dataclasses import dataclass
+import datetime as dt
 import hashlib
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Mapping
 from uuid import UUID, uuid5
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import ChapterStateSnapshotContext, HardFactContext
@@ -22,6 +23,7 @@ from bestseller.domain.story_bible import (
     WorldSpecInput,
 )
 from bestseller.infra.db.models import (
+    ChapterDraftVersionModel,
     ChapterModel,
     ChapterStateSnapshotModel,
     CharacterModel,
@@ -1552,20 +1554,17 @@ async def upsert_cast_spec(
 
     conflict_buckets: dict[tuple[UUID, UUID], list[dict[str, Any]]] = defaultdict(list)
     for conflict in cast_spec.conflict_map:
-        left_model = characters_by_name.get(
-            conflict.character_a
-        ) or await get_or_create_character_by_name(
-            session,
-            project_id=project.id,
-            character_name=conflict.character_a,
-        )
-        right_model = characters_by_name.get(
-            conflict.character_b
-        ) or await get_or_create_character_by_name(
-            session,
-            project_id=project.id,
-            character_name=conflict.character_b,
-        )
+        left_model = characters_by_name.get(conflict.character_a)
+        right_model = characters_by_name.get(conflict.character_b)
+        if left_model is None or right_model is None:
+            logger.warning(
+                "Skipping conflict_map entry whose endpoint is not declared in cast: "
+                "project=%s character_a=%s character_b=%s",
+                project.slug,
+                conflict.character_a,
+                conflict.character_b,
+            )
+            continue
         if left_model.id == right_model.id:
             logger.warning(
                 "Skipping self-referential conflict relationship project=%s character=%s "
@@ -1620,6 +1619,129 @@ async def upsert_cast_spec(
         "moral_frameworks_populated": moral_frameworks_populated,
         "novelty_fingerprints_registered": fingerprints_registered,
     }
+
+
+def _active_character_names_from_cast_spec(content: dict[str, Any]) -> set[str]:
+    cast_spec = parse_cast_spec_input(content)
+    return {
+        _normalize_name(character.name)
+        for character in cast_spec.all_characters()
+        if _normalize_name(character.name)
+    }
+
+
+def _prune_superseded_character_entities(
+    value: Any,
+    *,
+    active_names: set[str],
+) -> Any:
+    if not isinstance(value, list):
+        return value
+    kept: list[Any] = []
+    for item in value:
+        if not isinstance(item, dict):
+            kept.append(item)
+            continue
+        entity_type = str(item.get("entity_type") or item.get("type") or "").strip().lower()
+        name = str(item.get("canonical_name") or item.get("name") or "").strip()
+        if entity_type in {"character", "人物", "角色"} and name not in active_names:
+            continue
+        kept.append(dict(item))
+    return kept
+
+
+async def supersede_materialized_cast_for_foundation(
+    session: AsyncSession,
+    project: ProjectModel,
+    *,
+    cast_spec_content: dict[str, Any],
+    source_artifact_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Retire materialized identities superseded by a new foundation truth.
+
+    This transition is deliberately generic: the accepted CAST_SPEC is the
+    complete active identity set. A zero-draft guard makes it safe to delete
+    identities from the superseded foundation before the new story bible is
+    materialized. No title, project id, character name, or exact source phrase
+    participates in the decision.
+    """
+
+    current_draft_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ChapterDraftVersionModel)
+            .join(ChapterModel, ChapterModel.id == ChapterDraftVersionModel.chapter_id)
+            .where(
+                ChapterModel.project_id == project.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+        )
+        or 0
+    )
+    if current_draft_count:
+        raise ValueError(
+            "foundation truth supersession is forbidden after prose exists: "
+            f"current_drafts={current_draft_count}"
+        )
+
+    active_names = _active_character_names_from_cast_spec(cast_spec_content)
+    if not active_names:
+        raise ValueError("foundation truth supersession requires a non-empty active cast")
+
+    existing_rows = list(
+        await session.scalars(
+            select(CharacterModel).where(CharacterModel.project_id == project.id)
+        )
+    )
+    removed_names: list[str] = []
+    for row in existing_rows:
+        name = _normalize_name(row.name or "")
+        if name in active_names:
+            continue
+        await session.delete(row)
+        removed_names.append(name)
+
+    metadata = dict(project.metadata_json or {})
+    manifest = metadata.get("identity_manifest")
+    if isinstance(manifest, list):
+        metadata["identity_manifest"] = [
+            dict(item)
+            for item in manifest
+            if isinstance(item, Mapping)
+            and str(item.get("name") or item.get("canonical_name") or "").strip()
+            in active_names
+        ]
+    metadata["entities"] = _prune_superseded_character_entities(
+        metadata.get("entities"), active_names=active_names
+    )
+    registry = metadata.get("entity_registry")
+    if isinstance(registry, Mapping):
+        cleaned_registry = dict(registry)
+        cleaned_registry["entities"] = _prune_superseded_character_entities(
+            registry.get("entities"), active_names=active_names
+        )
+        metadata["entity_registry"] = cleaned_registry
+
+    history = [
+        dict(item)
+        for item in (metadata.get("foundation_truth_supersession_history") or [])
+        if isinstance(item, Mapping)
+    ]
+    audit = {
+        "superseded_at": dt.datetime.now(dt.UTC).isoformat(),
+        "source_artifact_id": str(source_artifact_id) if source_artifact_id else None,
+        "active_character_names": sorted(active_names),
+        "removed_materialized_character_names": sorted(
+            name for name in removed_names if name
+        ),
+        "current_draft_count": 0,
+    }
+    history.append(audit)
+    metadata["foundation_truth_supersession_history"] = history[-10:]
+    metadata["foundation_truth_status"] = "superseded_pending_materialization"
+    project.metadata_json = metadata
+    await session.flush()
+    return audit
 
 
 async def upsert_volume_plan(
@@ -2338,7 +2460,7 @@ _BIBLE_UPDATE_SYSTEM_PROMPT_ZH = """\
 1. 通读章节，标记触发事件段（明确发生角色变化 / 关系变化 / 规则演示 / 升级 / 选择）
 2. 对每条变化：能否在正文找到 ≥ 1 句 source quote？不能 → 不抽取
 3. progression_events：只抽明确「消耗 / 获得 / 突破 / 受伤 / 解锁」事件，不抽推测
-4. agency_debts：只抽本章主角**主动做出**的选择留下的债务
+4. agency_debts：只抽本章主角**主动做出**的选择留下的、尚未了结的后果
 
 # TASK
 阅读章节文本，提取以下变化：
@@ -3342,6 +3464,7 @@ async def apply_scene_bible_delta(
     behaviour deterministic; new paths can be added in future PRs.
     """
     from sqlalchemy import select
+
     from bestseller.infra.db.models import (
         CharacterModel,
         RelationshipModel,

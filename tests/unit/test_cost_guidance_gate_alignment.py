@@ -36,14 +36,28 @@ _SENTENCE_SPLIT = re.compile(r"[。；;.!?！？\n]")
 
 
 def _guidance_blocks() -> list[tuple[str, str]]:
+    """Guidance surfaces that still render text.
+
+    (2026-08-02) ``anti_debt_block`` and ``_render_debt_rewrite_feedback`` were
+    retired and now return "", so they are no longer guidance — an empty block
+    cannot recommend a gate-banned cost family, and cannot be asked to state a
+    replacement rule either. Only the golden-finger design principle remains.
+    """
     return [
         ("golden_finger_principle", _GOLDEN_FINGER_DESIGN_PRINCIPLE),
-        ("anti_debt_guardrail_zh", _anti_debt_metaphor_guardrail({}, is_en=False)),
-        ("debt_rewrite_feedback_zh", _render_debt_rewrite_feedback(is_en=False)),
-        ("debt_rewrite_feedback_en", _render_debt_rewrite_feedback(is_en=True)),
-        ("anti_debt_block_zh", anti_debt_block(is_en=False)),
-        ("anti_debt_block_en", anti_debt_block(is_en=True)),
     ]
+
+
+def test_retired_debt_guidance_renders_nothing() -> None:
+    assert anti_debt_block(is_en=False) == ""
+    assert anti_debt_block(is_en=True) == ""
+    assert _render_debt_rewrite_feedback(is_en=False) == ""
+    assert _render_debt_rewrite_feedback(is_en=True) == ""
+
+
+def test_conception_prompt_guard_is_intentionally_empty() -> None:
+    assert _anti_debt_metaphor_guardrail({}, is_en=False) == ""
+    assert _anti_debt_metaphor_guardrail({}, is_en=True) == ""
 
 
 @pytest.mark.parametrize(("name", "text"), _guidance_blocks())

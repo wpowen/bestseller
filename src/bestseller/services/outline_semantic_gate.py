@@ -107,8 +107,8 @@ _META_RE = re.compile(
     re.IGNORECASE,
 )
 _ROLE_SCHEMA_LEAK_RE = re.compile(
-    r"[（(][^）)\n]{0,24}(?:母亲|父亲|主角|反派|导师|徒弟|哑仆|执事|弟子|"
-    r"protagonist|antagonist|mentor|mother|father)[^）)\n]{0,24}[）)]",
+    r"[（(]\s*(?:母亲|父亲|主角|反派|导师|徒弟|哑仆|执事|弟子|"
+    r"protagonist|antagonist|mentor|mother|father)\s*[）)]",
     re.IGNORECASE,
 )
 _QUOTED_ANCHOR_RE = re.compile(r"[“‘'\"]([^”’'\"\n]{6,80})[”’'\"]")
@@ -476,18 +476,32 @@ def _identity_findings(findings: list[OutlineSemanticFinding], *sources: Mapping
 def _tone_findings(findings: list[OutlineSemanticFinding], *sources: Mapping[str, Any]) -> None:
     values = [_norm(_value(source, _TONE_KEYS)) for source in sources]
     present = [value for value in values if value]
-    groups = [
-        index
-        for index, group in enumerate(_TONE_GROUPS)
-        if any(token in value for value in present for token in group)
+    source_groups = [
+        {
+            index
+            for index, group in enumerate(_TONE_GROUPS)
+            if any(token in value for token in group)
+        }
+        for value in present
     ]
-    if len(set(groups)) > 1:
+    classified = [groups for groups in source_groups if groups]
+    shared_groups = set.intersection(*classified) if classified else set()
+    all_groups = set().union(*classified) if classified else set()
+    # A source may intentionally declare a blended tone (for example
+    # "cold suspense with restrained humour").  That remains compatible with
+    # a creator's `light` preference because the sources share the light group.
+    # Only flag when independently authoritative sources have no tone family in
+    # common at all.
+    if len(classified) > 1 and len(all_groups) > 1 and not shared_groups:
         _add(
             findings,
             "OUTLINE_TONE_MISMATCH",
             "high",
             None,
-            {"values": values, "tone_groups": sorted(set(groups))},
+            {
+                "values": values,
+                "tone_groups_by_source": [sorted(groups) for groups in source_groups],
+            },
             "tone labels conflict across artifacts",
         )
 

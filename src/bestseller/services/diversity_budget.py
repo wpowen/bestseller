@@ -810,7 +810,28 @@ async def save_diversity_budget(
         index_elements=["project_id"],
         set_=update_cols,
     )
-    await session.execute(stmt)
+    # One row per project, written by every chapter pipeline — so two pipelines
+    # running concurrently on the same book contend for the same row lock. With
+    # ``lock_timeout = 2s`` the loser's statement is cancelled, which aborts the
+    # *whole* transaction it was running in: on 2026-08-03 that killed a
+    # 28-minute autowrite of xianxia-upgrade-1785697772 outright, and the next
+    # statement in the pipeline surfaced as
+    # ``InFailedSQLTransactionError: current transaction is aborted``.
+    #
+    # This is bookkeeping — a diversity ledger the prompt reads as advice. It
+    # must never be able to sink the book. The savepoint confines a lock
+    # timeout to this statement so the pipeline's transaction survives, and a
+    # skipped update is recovered by the next chapter's write.
+    try:
+        async with session.begin_nested():
+            await session.execute(stmt)
+    except Exception:  # noqa: BLE001 - bookkeeping must not sink a generation run
+        logger.warning(
+            "diversity budget upsert skipped for project %s (contended row); "
+            "the next chapter's write will carry it",
+            budget.project_id,
+            exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------------------

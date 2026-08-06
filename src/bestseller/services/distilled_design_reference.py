@@ -563,6 +563,17 @@ def render_distilled_design_reference_block(
     )
     if not ref:
         return ""
+    # ``distillation-generic`` mixes narrative summaries from unrelated source
+    # genres. Even anonymised, those summaries are still concrete story seeds:
+    # a progression book previously received an English debtor-rise arc here
+    # and carried it into planning. Generic aggregates may support offline
+    # analysis, but they are never safe prompt material for a new book. Only a
+    # category/grammar-specific aggregate can be rendered into planner prompts.
+    if str(ref.get("key") or "").strip() == "distillation-generic":
+        return ""
+    manifest = ref.get("manifest") if isinstance(ref.get("manifest"), dict) else {}
+    if int(manifest.get("source_count") or 0) <= 0:
+        return ""
     if str(language or "").lower().startswith("en"):
         return _render_en(
             ref,

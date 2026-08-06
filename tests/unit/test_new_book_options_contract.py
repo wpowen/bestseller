@@ -277,9 +277,9 @@ def test_generic_books_never_get_a_single_book_material_pack() -> None:
         pack_id, _ = _select_material_pack("p", text, genre=genre, sub_genre=sub_genre)
         assert pack_id not in single_book_packs, f"{text!r} 被灌进单书包 {pack_id}"
 
-    # 而真正属于那本书的输入仍应命中它自己的包
+    # 2026-08-01 起单书参考包被整体删除：连完整书名也不再命中，新书只拿题材级物料。
     pack_id, _ = _select_material_pack("p", "道种破虚：少年得道种，破虚而上", genre="玄幻")
-    assert pack_id == "xianxia_upgrade"
+    assert pack_id not in single_book_packs
 
 
 @pytest.mark.unit

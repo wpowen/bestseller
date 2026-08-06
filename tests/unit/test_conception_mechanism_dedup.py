@@ -30,11 +30,30 @@ class _FakeExecuteResult:
 
 
 class _FakeSession:
+    """Project rows first, then the chapter-owner ids.
+
+    ``_recent_core_mechanisms`` issues two queries since 2026-08-06: the project
+    list, then which of those projects actually have prose. A 0-chapter husk is
+    not prior art (a book was killed for plagiarising a placeholder-titled shell
+    that had never been written). These fixtures describe written books, so the
+    second query reports every row as written and the original assertions keep
+    testing what they were written to test.
+    """
+
     def __init__(self, rows: list[tuple[Any, ...]]) -> None:
-        self._rows = rows
+        # Rows in these fixtures are (title, genre, sub_genre, metadata); the
+        # production query also selects the id, so append a synthetic one.
+        self._rows = [
+            row if len(row) >= 5 else (*row, f"pid-{index}")
+            for index, row in enumerate(rows)
+        ]
+        self._calls = 0
 
     async def execute(self, _stmt: object) -> _FakeExecuteResult:
-        return _FakeExecuteResult(self._rows)
+        self._calls += 1
+        if self._calls == 1:
+            return _FakeExecuteResult(self._rows)
+        return _FakeExecuteResult([(row[4],) for row in self._rows])
 
 
 class _BoomSession:
@@ -191,17 +210,21 @@ def _avoid_ctx() -> dict[str, Any]:
     }
 
 
-def test_mechanism_dedup_block_zh_lists_recent_mechanisms() -> None:
+def test_mechanism_dedup_block_zh_withholds_all_recent_mechanisms() -> None:
     block = conception_services._mechanism_dedup_prompt_block(_avoid_ctx(), is_en=False)
     assert "机制去重" in block
-    assert "宗债簿之书" in block and "蚀刻之页之书" in block
-    assert "宗债簿——人心愿力折算为债币" in block
-    assert "因果债约" in block
+    assert "蚀刻之页之书" not in block
+    assert "蚀刻之页——吞噬术法残骸复刻融合" not in block
+    # All old books still participate in deterministic comparison, but no
+    # title/mechanism/premise is allowed back into the generation prompt.
+    assert "宗债簿之书" not in block
+    assert "宗债簿——人心愿力折算为债币" not in block
+    assert "旧书书名、前提、能力与意象原文均不进入提示词" in block
     # the constraint is about mechanism families, not just literal names
     assert "换皮" in block or "同构" in block
     # …and it extends to thematic imagery: a new mechanism wearing the same
     # skin (the recurring 债/账 title-and-imagery problem) is also banned
-    assert "意象" in block
+    assert "原文" in block
 
 
 def test_mechanism_dedup_block_is_noop_without_entries() -> None:
@@ -213,7 +236,7 @@ def test_mechanism_dedup_block_is_noop_without_entries() -> None:
 
 def test_mechanism_dedup_block_en_has_no_zh_header() -> None:
     block = conception_services._mechanism_dedup_prompt_block(_avoid_ctx(), is_en=True)
-    assert "宗债簿之书" in block
+    assert "宗债簿之书" not in block
     assert "机制去重" not in block
     assert "Mechanism de-duplication" in block
     assert "imagery" in block
@@ -239,7 +262,8 @@ def _full_ctx() -> dict[str, Any]:
 def test_market_prompt_embeds_mechanism_dedup() -> None:
     prompt = conception_services._market_user_prompt(_full_ctx())
     assert "机制去重" in prompt
-    assert "宗债簿之书" in prompt
+    assert "宗债簿之书" not in prompt
+    assert "蚀刻之页之书" not in prompt
 
 
 def test_market_prompt_unchanged_without_avoid_mechanisms() -> None:
@@ -251,13 +275,13 @@ def test_market_prompt_unchanged_without_avoid_mechanisms() -> None:
 def test_character_prompt_embeds_mechanism_dedup() -> None:
     prompt = conception_services._character_user_prompt(_full_ctx())
     assert "机制去重" in prompt
-    assert "宗债簿——人心愿力折算为债币" in prompt
+    assert "宗债簿——人心愿力折算为债币" not in prompt
 
 
 def test_finalize_prompt_embeds_mechanism_dedup() -> None:
     prompt = conception_services._finalize_user_prompt(_full_ctx(), {}, {}, {}, {})
     assert "机制去重" in prompt
-    assert "宗债簿之书" in prompt
+    assert "宗债簿之书" not in prompt
 
 
 # ── attach helper + settings kill-switch ───────────────────────────────────
@@ -375,6 +399,77 @@ def test_echo_report_passes_genuinely_new_mechanism() -> None:
     assert report == []
 
 
+def test_platform_cliche_echo_ignores_weak_overlap_with_selected_user_tropes() -> None:
+    """用户明确选的废柴逆袭/血脉觉醒不能被静态俗套库反向误杀。"""
+
+    candidate = {
+        "title": "鼎纹少年",
+        "premise": "废矿少年以兽血点亮图腾，靠一次次狩猎完成血脉觉醒与逆袭。",
+        "writing_profile": {
+            "character": {"golden_finger": "青铜鼎纹"},
+            "market": {"trope_keywords": ["废柴逆袭", "血脉觉醒", "升级流"]},
+        },
+    }
+    baseline = conception_services._genre_cliche_baseline("东方玄幻", "东方玄幻")
+
+    report = conception_services._mechanism_echo_report(
+        candidate,
+        baseline,
+        genre="东方玄幻",
+        sub_genre="东方玄幻",
+        user_intent_text="废柴逆袭 血脉觉醒 升级流",
+    )
+
+    assert report == []
+
+
+def test_platform_cliche_echo_still_flags_specific_unrequested_cliche() -> None:
+    candidate = {
+        "title": "血仇遗脉",
+        "premise": "灭门遗孤觉醒剑骨后踏上复仇之路，要让仇家血债血偿。",
+        "writing_profile": {
+            "character": {"golden_finger": "灭门夜留下的剑骨"},
+            "market": {"trope_keywords": ["灭门遗孤", "复仇"]},
+        },
+    }
+    baseline = conception_services._genre_cliche_baseline("东方玄幻", "东方玄幻")
+
+    report = conception_services._mechanism_echo_report(
+        candidate,
+        baseline,
+        genre="东方玄幻",
+        sub_genre="东方玄幻",
+        user_intent_text="废柴逆袭 血脉觉醒 升级流",
+    )
+
+    assert any("灭门遗孤复仇" in item["title"] for item in report)
+
+
+def test_hard_pollution_repair_outranks_weak_echo_noise() -> None:
+    """真实事故：去账修正版只因「七年/十七」两个弱 bigram 被错误丢弃。"""
+
+    retry_echo = [
+        {"title": "平台俗套", "shared_span": "", "shared_bigrams": ["七年", "十七"]}
+    ]
+    assert conception_services._should_adopt_mechanism_retry(
+        retry_result={"premise": "全新无账务机制"},
+        original_echo=[],
+        retry_echo=retry_echo,
+        original_hard=(True, False, False, False),
+        retry_hard=(False, False, False, False),
+    ) is True
+
+
+def test_retry_cannot_trade_debt_pollution_for_death_pollution() -> None:
+    assert conception_services._should_adopt_mechanism_retry(
+        retry_result={"premise": "亡亲归来"},
+        original_echo=[],
+        retry_echo=[],
+        original_hard=(True, False, False, False),
+        retry_hard=(False, True, False, False),
+    ) is False
+
+
 def test_echo_report_noop_without_entries_or_junk() -> None:
     assert conception_services._mechanism_echo_report(_ECHOING_CANDIDATE, [], genre="仙侠升级") == []
     assert conception_services._mechanism_echo_report({}, [_JIWOKAIZONG_ENTRY], genre="仙侠升级") == []
@@ -412,15 +507,17 @@ def test_echo_report_ignores_genre_background_bigrams() -> None:
     )
 
 
-def test_echo_feedback_names_collisions_zh_and_en() -> None:
+def test_echo_feedback_withholds_colliding_book_text_zh_and_en() -> None:
     report = conception_services._mechanism_echo_report(
         _ECHOING_CANDIDATE, [_JIWOKAIZONG_ENTRY], genre="仙侠升级", sub_genre="宗门逆袭"
     )
     zh = conception_services._render_mechanism_echo_feedback(report, is_en=False)
-    assert "祭我开宗" in zh
-    assert "灵根枯竭" in zh
+    assert "祭我开宗" not in zh
+    assert "灵根枯竭" not in zh
+    assert "旧书原文不会展示" in zh
     en = conception_services._render_mechanism_echo_feedback(report, is_en=True)
-    assert "祭我开宗" in en
+    assert "祭我开宗" not in en
+    assert "withheld" in en
     assert conception_services._render_mechanism_echo_feedback([], is_en=False) == ""
 
 

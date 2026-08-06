@@ -122,7 +122,6 @@ _STRUCTURE_POOL = ConceptPool(
         _seed("case_of_the_week", "单元案推主线", saturation=0.50),
         _seed("vault_heist", "盗匣/团队劫案", saturation=0.30),
         _seed("forbidden_tournament", "禁忌大赛/年度淘汰", saturation=0.60),
-        _seed("ledger_of_souls", "因果账本/善恶薄", saturation=0.20),
         _seed("identity_swap", "身份调换/双重生活", saturation=0.30),
         _seed("memory_palace", "记忆宫殿/碎片回溯", saturation=0.15),
         _seed("oracle_pact", "占卜契约/预言代价", saturation=0.20),

@@ -822,6 +822,40 @@ def test_payload_from_project_model_preserves_fanqie_short_contract() -> None:
     assert payload["_run_conception"] is False
 
 
+def test_resume_payload_rebases_on_materialized_project_truth() -> None:
+    saved = {
+        "slug": "custom-xuanhuan-1",
+        "premise": "基于东方玄幻题材的通用升级故事。",
+        "metadata": {
+            "premise": "旧预览",
+            "world_model": {"source_artifact_type": "premise"},
+            "material_reference_block": "旧通用物料",
+        },
+        "export_markdown": False,
+        "client_schema_version": "quickstart-client.v2",
+    }
+    rebuilt = {
+        "slug": "custom-xuanhuan-1",
+        "title": "我的废药园通神了",
+        "premise": "陆沉发现废药园的杂草都是被压制的上古灵药。",
+        "metadata": {
+            "premise": "陆沉发现废药园的杂草都是被压制的上古灵药。",
+            "tone_preference": "light",
+        },
+        "export_markdown": True,
+        "_run_conception": False,
+    }
+
+    merged = web_server._merge_resume_payload_with_project_truth(saved, rebuilt)
+
+    assert merged["premise"] == rebuilt["premise"]
+    assert merged["metadata"] == rebuilt["metadata"]
+    assert "world_model" not in merged["metadata"]
+    assert "material_reference_block" not in merged["metadata"]
+    assert merged["export_markdown"] is True
+    assert merged["client_schema_version"] == "quickstart-client.v2"
+
+
 def test_attach_task_stats_maps_fanqie_export_to_current_project_title(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1163,7 +1197,10 @@ def test_quickstart_defaults_to_full_book_writing_after_conception() -> None:
     html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
 
     assert 'id="stopAfterConceptionToggle" checked' not in html
-    assert "stop_after_conception: !!$('#stopAfterConceptionToggle').checked" in html
+    assert (
+        "stop_after_conception: $('#stopAfterConceptionToggle').checked ? true : undefined"
+        in html
+    )
     assert "不进入整本书规划与写作" in html
 
 
@@ -1374,6 +1411,105 @@ def test_quickstart_propagates_frozen_concept_seed_without_concept_bundle(
     assert captured["payload"]["user_hints"]["concept_seed"] == seed
     assert captured["payload"]["concept_lab_bundle"] == {}
     assert task["quickstart_meta"]["concept_seed"] == seed
+
+
+def test_quickstart_response_contains_frozen_input_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    seed = "修理师用废旧零件重建一台失落的机器。"
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        return {"task_id": "receipt-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+    task = manager.create_quickstart_task(
+        {
+            "genre_key": "urban-blacktech",
+            "chapter_count": 12,
+            "concept_seed": seed,
+            "tone_preference": "light",
+            "story_enhancers": {"effect_skills": ["comedy_engine"]},
+            "client_schema_version": web_server.QUICKSTART_CLIENT_SCHEMA_VERSION,
+        }
+    )
+
+    receipt = task["creation_input_receipt"]
+    assert receipt["concept_seed_present"] is True
+    assert receipt["concept_seed_length"] == len(seed.encode("utf-8"))
+    assert receipt["concept_seed_hash"] == web_server._quickstart_seed_hash(seed)
+    assert receipt["tone_preference"] == "light"
+    assert receipt["effect_skills"] == ["comedy_engine"]
+    assert receipt["contract_hash"] == task["quickstart_meta"]["creation_input_receipt"]["contract_hash"]
+
+
+def test_autowrite_task_persists_creation_envelope_before_worker_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(web_server.threading.Thread, "start", lambda self: None)
+    persist_path = tmp_path / "web-tasks.json"
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+    payload = {
+        "slug": "seeded-refresh-book",
+        "title": "构思中",
+        "concept_seed": "修阵师发现阵眼会提前预告下一次断裂🧭",
+        "creation_intent_contract": {"concept_seed": "修阵师发现阵眼会提前预告下一次断裂🧭"},
+        "creation_input_receipt": {"concept_seed_present": True, "contract_hash": "abc"},
+    }
+
+    created = manager.create_autowrite_task(payload)
+    task_id = str(created["task_id"])
+    assert created["payload"] == payload
+    assert manager.get_task(task_id)["payload"] == payload
+
+    reloaded = web_server.WebTaskManager(persist_path=persist_path)
+    assert reloaded.get_task(task_id)["payload"] == payload
+
+
+def test_quickstart_client_schema_rejects_missing_or_stale_versions() -> None:
+    with pytest.raises(ValueError, match="刷新页面"):
+        web_server._validate_quickstart_client_schema({})
+    with pytest.raises(ValueError, match="刷新页面"):
+        web_server._validate_quickstart_client_schema({"client_schema_version": "old"})
+    web_server._validate_quickstart_client_schema(
+        {
+            "client_schema_version": web_server.QUICKSTART_CLIENT_SCHEMA_VERSION,
+            "client_intent_manifest": {
+                "schema_version": web_server.QUICKSTART_CLIENT_SCHEMA_VERSION,
+                "concept_seed_present": False,
+                "concept_seed_length": 0,
+                "concept_seed_hash": None,
+            },
+        }
+    )
+
+
+def test_quickstart_client_schema_validates_seed_manifest_in_utf8_bytes() -> None:
+    seed = "阵眼会说话🧭"
+    valid = {
+        "client_schema_version": web_server.QUICKSTART_CLIENT_SCHEMA_VERSION,
+        "concept_seed": seed,
+        "client_intent_manifest": {
+            "schema_version": web_server.QUICKSTART_CLIENT_SCHEMA_VERSION,
+            "concept_seed_present": True,
+            "concept_seed_length": len(seed.encode("utf-8")),
+            "concept_seed_hash": web_server._quickstart_seed_hash(seed),
+        },
+    }
+    web_server._validate_quickstart_client_schema(valid)
+
+    for key, wrong in (
+        ("concept_seed_present", False),
+        ("concept_seed_length", len(seed)),
+        ("concept_seed_hash", "wrong-hash"),
+    ):
+        broken = {**valid, "client_intent_manifest": dict(valid["client_intent_manifest"])}
+        broken["client_intent_manifest"][key] = wrong
+        with pytest.raises(ValueError, match="校验不一致"):
+            web_server._validate_quickstart_client_schema(broken)
 
 
 def test_quickstart_task_title_uses_local_time(
@@ -1675,8 +1811,8 @@ def test_every_long_serial_creation_input_reaches_its_runtime_owner(
     )
     outline_contract = _story_enhancer_contract_line(project, "zh-CN")
     assert "宏大长篇" in outline_contract
-    assert "目标读者画像" in outline_contract
-    assert "不要写成中性通用大纲" in outline_contract
+    # (2026-08-01 product ruling) persona sheets no longer enter outline prompts.
+    assert "目标读者画像" not in outline_contract
     assert "suspense_reveal_engine" in outline_contract
     assert bundle.bundle_id in _concept_lab_contract_block(project, language="zh-CN")
 
@@ -1741,6 +1877,7 @@ def test_project_repair_status_payload_marks_repair_gate() -> None:
             {"status": "revision", "production_state": "blocked", "count": 470},
             {"status": "revision", "production_state": "ok", "count": 3},
         ],
+        repair_owner_active=True,
     )
 
     assert payload["phase"] == "repair_gate"
@@ -1750,6 +1887,25 @@ def test_project_repair_status_payload_marks_repair_gate() -> None:
     assert payload["repair_completed"] == 0
     assert payload["progress_percent"] == 0
     assert payload["complete_ok_chapters"] == 27
+
+
+def test_project_repair_status_needs_replan_without_owner_is_not_repairing() -> None:
+    project = SimpleNamespace(
+        slug="custom-xianxia-1785594546",
+        status="needs_replan",
+        metadata_json={
+            "planning_status": "needs_replan",
+            "outline_replan_required": True,
+            "self_heal_abandoned": True,
+        },
+    )
+    payload = web_server._build_project_repair_status_payload(project, [])
+    assert payload["phase"] == "needs_attention"
+    assert payload["is_repairing"] is False
+    owned = web_server._build_project_repair_status_payload(
+        project, [], outline_replan_owner_active=True
+    )
+    assert owned["is_repairing"] is True
 
 
 def test_project_repair_status_payload_archived_is_not_repairing() -> None:
@@ -2005,7 +2161,7 @@ def test_db_repair_summary_rehydrates_latest_workflow_progress() -> None:
     assert "project_repair_chapter_completed" in stages
 
 
-def test_db_repair_summary_keeps_generation_gate_retry_out_of_failed_state() -> None:
+def test_db_repair_summary_does_not_claim_retry_without_an_active_owner() -> None:
     project = SimpleNamespace(
         slug="oracle-pilot-dianshen",
         title="借运成神",
@@ -2035,11 +2191,11 @@ def test_db_repair_summary_keeps_generation_gate_retry_out_of_failed_state() -> 
     )
     task = web_server._build_db_repair_task_summary(project, repair_status)
 
-    assert repair_status["phase"] == "planning_gate"
+    assert repair_status["phase"] == "needs_attention"
     assert task is not None
-    assert task["status"] == "queued"
-    assert task["current_stage"] == "planning_gate_auto_retry_pending"
-    assert task["error"] is None
+    assert task["status"] == "failed"
+    assert task["current_stage"] == "repair_chapter_1"
+    assert task["error"] == "Scene 1.2 blocked by plan-richness gate"
 
 
 def test_stale_autowrite_repair_block_task_can_be_hidden_by_db_repair() -> None:
@@ -2555,6 +2711,7 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
     manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
     task_id = "concept-worker-task"
     bundle = web_server.build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
+    explicit_seed = "仓储调度员发现每次重排货架都会提前暴露下一处供应断点"
     captured: dict[str, object] = {}
 
     def _capture_autowrite_task(
@@ -2584,6 +2741,7 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
             "hook_spec": bundle.hook_spec,
             "concept_lab_bundle_id": bundle.bundle_id,
             "concept_lab_bundle": bundle.model_dump(mode="json"),
+            "concept_seed": explicit_seed,
         }
     )
     autowrite_payload = captured["autowrite_payload"]
@@ -2592,6 +2750,8 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
         == bundle.bundle_id
     )
     assert autowrite_payload["user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
+    assert autowrite_payload["user_hints"]["concept_seed"] == explicit_seed
+    assert autowrite_payload["creation_intent_contract"]["concept_seed"] == explicit_seed
 
     with manager._lock:
         manager._tasks[task_id] = web_server.WebTaskState(
@@ -2680,9 +2840,14 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
     assert task["status"] == "completed"
     assert captured["architect_user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
     assert captured["conception_user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
+    assert captured["architect_user_hints"]["concept_seed"] == explicit_seed
+    assert captured["conception_user_hints"]["concept_seed"] == explicit_seed
     project_payload = captured["pipeline_kwargs"]["project_payload"]
     assert project_payload.metadata["concept_lab"]["bundle_id"] == bundle.bundle_id
     assert project_payload.metadata["hook_spec"]["one_liner"] == bundle.hook_spec["one_liner"]
+    assert project_payload.metadata["concept_seed"] == explicit_seed
+    assert "story_facets" not in project_payload.metadata
+    assert "conception_artifacts" not in project_payload.metadata
     assert project_payload.writing_profile.market.reader_promise == bundle.reader_promise
 
 
@@ -2802,6 +2967,9 @@ def test_creation_intent_contract_is_persisted_to_project_metadata() -> None:
         "creation_intent_contract must be persisted after the metadata merge"
     )
     assert 'payload.get("creation_intent_contract")' in tail
+    assert 'project_metadata["concept_seed"]' in tail
+    assert 'project_metadata["creation_input_receipt"]' in tail
+    assert '"concept_seed_present": bool(' in tail
 
 
 def test_appeal_block_closes_the_conception_workflow_row() -> None:
@@ -3191,6 +3359,39 @@ def test_load_from_disk_flags_resumable_zombies_as_queued(tmp_path: Path) -> Non
     assert "auto_resume_queued" in stages
 
 
+def test_load_from_disk_never_resumes_persisted_cancel_request(tmp_path: Path) -> None:
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "cancelled-zombie",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "demo",
+                "title": "Demo",
+                "current_stage": "planning_outline_attempt_started",
+                "progress_events": [],
+                "cancel_requested": True,
+                "payload": {"slug": "demo", "title": "Demo"},
+            },
+        ],
+    )
+
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    task = manager.get_task("cancelled-zombie")
+    assert task is not None
+    assert task["status"] == "cancelled"
+    assert task["current_stage"] == "cancelled"
+    assert task["cancel_requested"] is False
+    assert manager._pending_auto_resume_ids == []
+    assert [event["stage"] for event in task["progress_events"]] == [
+        "cancelled_after_restart"
+    ]
+
+
 def test_load_from_disk_dedupes_active_same_slug_zombies(tmp_path: Path) -> None:
     persist_path = _write_persisted_tasks(
         tmp_path,
@@ -3516,6 +3717,40 @@ def test_auto_resume_zombies_marks_unclaimed_without_redis(
     assert task["current_stage"] == "auto_resume_not_claimed"
     assert "Auto-resume was not claimed" in str(task["error"])
     assert manager.watchdog_sweep(stale_after_seconds=1) == 0
+
+
+def test_auto_resume_zombies_honors_cancel_requested_after_disk_recovery(
+    tmp_path: Path,
+) -> None:
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "startup-race",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "demo",
+                "title": "Demo",
+                "current_stage": "chapter_pipeline_started",
+                "progress_events": [],
+                "payload": {"slug": "demo", "title": "Demo"},
+            },
+        ],
+    )
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+    assert manager.request_cancel("startup-race") is True
+
+    delegated = manager.auto_resume_zombies()
+
+    assert delegated == []
+    task = manager.get_task("startup-race")
+    assert task is not None
+    assert task["status"] == "cancelled"
+    assert task["current_stage"] == "cancelled"
+    assert task["cancel_requested"] is False
+    assert task["progress_events"][-1]["stage"] == "cancelled_before_auto_resume"
 
 
 def test_auto_resume_zombies_reruns_conception_phase_in_process(

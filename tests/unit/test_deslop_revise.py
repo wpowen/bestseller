@@ -121,10 +121,10 @@ def test_self_check_covers_staccato_and_system_ladder() -> None:
     assert "系统刷屏" in chk and "数字递增" in chk, "system-ladder self-check missing"
     # The closing instruction must re-count to the new total so the model
     # actually re-scans the added items (12 = +具身动词词族纪律
-    # +债务化比喻回流纪律, 2026-07-08).
+    # +无来源修辞体系纪律, 2026-08-01).
     assert "上面 12 条" in chk
     assert "具身动词词族" in chk, "verb-tic family discipline missing"
-    assert "债务化比喻回流" in chk, "anti-debt-metaphor self-check missing"
+    assert "无来源的修辞体系" in chk, "source-bound imagery self-check missing"
 
 
 def test_staccato_saturation_routes_to_deslop() -> None:

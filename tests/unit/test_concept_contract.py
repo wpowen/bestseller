@@ -4,6 +4,7 @@ from __future__ import annotations
 from bestseller.services.concept_contract import (
     apply_concept_contract_to_book_spec,
     build_concept_contract,
+    reseal_concept_contract_lineage,
     render_concept_contract_block,
     render_volume_seriality_execution_block,
     require_conception_contract_for_target,
@@ -99,6 +100,39 @@ def test_contract_has_one_lineage_and_passes_capacity() -> None:
     assert len(ids) == 1
 
 
+def test_identity_migration_reseals_all_concept_lineage_hashes() -> None:
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=500,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+    old_hash = contract["input_hash"]
+    contract["hook_card"]["protagonist"] = contract["hook_card"][
+        "protagonist"
+    ].replace("林默", "沉骨")
+    contract["story_spine"]["who"] = contract["story_spine"]["who"].replace(
+        "林默", "沉骨"
+    )
+
+    assert any(
+        "input_hash" in violation
+        for violation in validate_concept_contract(contract, target_chapters=500)
+    )
+
+    resealed = reseal_concept_contract_lineage(contract, target_chapters=500)
+
+    assert resealed["input_hash"] != old_hash
+    assert validate_concept_contract(resealed, target_chapters=500) == []
+    assert {
+        resealed["champion_id"],
+        resealed["hook_card"]["champion_id"],
+        resealed["seriality_proof"]["champion_id"],
+        resealed["story_spine"]["champion_id"],
+    } == {resealed["champion_id"]}
+
+
 def test_approved_contract_is_authoritative_logline_evidence() -> None:
     contract = build_concept_contract(
         winner=WINNER,
@@ -171,6 +205,36 @@ def test_contract_applies_serial_engine_without_hook_cost_pollution() -> None:
     assert book["series_engine"]["phase_transitions"] == WINNER["phase_transitions"]
     assert "cost_engine" not in book["series_engine"]
     assert "可再生故事单元" in render_concept_contract_block(contract)
+
+
+def test_source_bound_book_keeps_contract_as_lineage_only() -> None:
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=500,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+    book = apply_concept_contract_to_book_spec(
+        {
+            "series_engine": {
+                "reader_promise": "锁定创建快照中的承诺",
+                "repeatable_story_unit": "锁定创建快照中的故事引擎",
+                "unit_families": [],
+                "mystery_ladder": [],
+            },
+            "_meta": {"source_bound_design": True},
+        },
+        contract,
+    )
+
+    assert book["series_engine"] == {
+        "reader_promise": "锁定创建快照中的承诺",
+        "repeatable_story_unit": "锁定创建快照中的故事引擎",
+        "unit_families": [],
+        "mystery_ladder": [],
+    }
+    assert book["concept_contract_lineage"]["champion_id"] == contract["champion_id"]
 
 
 def test_seriality_proof_tampering_invalidates_lineage_hash() -> None:

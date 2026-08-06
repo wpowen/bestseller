@@ -38,6 +38,28 @@ def test_fallback_entry_system_kernel_persists_to_metadata() -> None:
     assert "artifact" in {item["type"] for item in payload["taxonomy"]}
 
 
+def test_planner_entry_kernel_receives_minimal_cost_creation_option() -> None:
+    project = _project()
+    project.metadata_json = {
+        "story_enhancers": {"cost_style": "minimal"},
+        "creation_intent_contract": {
+            "story_enhancers": {"cost_style": "minimal"},
+        },
+    }
+
+    payload = planner_services._persist_entry_system_kernel_metadata(project)
+    block = planner_services._entry_system_kernel_prompt_block(project)
+
+    assert payload["cost_model"]["default_cost_types"] == [
+        "resource_choice",
+        "exposure",
+        "time_window",
+        "opponent_attention",
+    ]
+    assert "反噬" not in block
+    assert "资源账" not in block
+
+
 def test_entry_system_prompt_block_renders_metadata_kernel() -> None:
     project = _project()
     planner_services._persist_entry_system_kernel_metadata(project)

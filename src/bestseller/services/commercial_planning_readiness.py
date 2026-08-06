@@ -26,6 +26,7 @@ class ScenePlanProbe:
     entry_state: str = ""
     exit_state: str = ""
     hook_requirement: str = ""
+    contract_context: str = ""
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class ChapterPlanProbe:
     hook_description: str = ""
     hype_type: str = ""
     hype_intensity: float | None = None
+    contract_context: str = ""
     scenes: tuple[ScenePlanProbe, ...] = ()
 
 
@@ -72,7 +74,75 @@ _LONG_SERIAL_REQUIRED_ARTIFACTS: tuple[str, ...] = (
     "story-bible/volume-plan.csv",
 )
 
+_INSTITUTIONAL_PRESSURE_TERMS: tuple[str, ...] = (
+    "巡查",
+    "排查",
+    "查验",
+    "审核",
+    "审查",
+    "稽核",
+    "稽查",
+    "复核",
+    "冻结",
+    "扣减",
+    "削减",
+    "逐出",
+    "清退",
+    "没收",
+    "断供",
+    "收紧",
+    "限制",
+    "禁入",
+    "封禁",
+    "追责",
+    "撤销",
+    "取消资格",
+    "收回权限",
+    "停用",
+    "停发",
+    "停供",
+    "inspection",
+    "audit",
+    "review",
+    "freeze",
+    "suspend",
+    "revoke",
+    "expel",
+    "restrict",
+)
+
+_ENVIRONMENTAL_PRESSURE_TERMS: tuple[str, ...] = (
+    "坍塌",
+    "塌方",
+    "洪水",
+    "火势",
+    "暴雨",
+    "风暴",
+    "缺氧",
+    "断电",
+    "断粮",
+    "泄漏",
+    "失控",
+    "过载",
+    "锁死",
+    "封闭",
+    "下沉",
+    "collapse",
+    "flood",
+    "wildfire",
+    "storm",
+    "outage",
+    "leak",
+    "overload",
+)
+
+_EXTERNAL_COUNTER_FORCE_TERMS: tuple[str, ...] = (
+    *_INSTITUTIONAL_PRESSURE_TERMS,
+    *_ENVIRONMENTAL_PRESSURE_TERMS,
+)
+
 _CONCRETE_PRESSURE_TERMS: tuple[str, ...] = (
+    *_EXTERNAL_COUNTER_FORCE_TERMS,
     "逼",
     "否则",
     "威胁",
@@ -177,6 +247,7 @@ _CONCRETE_PRESSURE_TERMS: tuple[str, ...] = (
 )
 
 _LIVE_PRESSURE_TERMS: tuple[str, ...] = (
+    *_EXTERNAL_COUNTER_FORCE_TERMS,
     "官府",
     "巡捕",
     "捕头",
@@ -237,6 +308,35 @@ _VISIBLE_LOSS_TERMS: tuple[str, ...] = (
     "七天",
     "停职",
     "递解",
+    "暴露",
+    "冻结",
+    "扣减",
+    "削减",
+    "逐出",
+    "清退",
+    "没收",
+    "断供",
+    "禁入",
+    "封禁",
+    "撤销",
+    "取消资格",
+    "收回权限",
+    "停用",
+    "停发",
+    "停供",
+    "坍塌",
+    "塌方",
+    "洪水",
+    "火势",
+    "缺氧",
+    "断电",
+    "断粮",
+    "泄漏",
+    "失控",
+    "过载",
+    "锁死",
+    "封闭",
+    "下沉",
     "证据被毁",
     "真凶脱身",
     "魂飞魄散",
@@ -248,6 +348,16 @@ _VISIBLE_LOSS_TERMS: tuple[str, ...] = (
     "destroyed",
     "burned",
     "case closed",
+    "freeze",
+    "suspend",
+    "revoke",
+    "expel",
+    "restrict",
+    "collapse",
+    "flood",
+    "outage",
+    "leak",
+    "overload",
 )
 
 _AGENCY_TERMS: tuple[str, ...] = (
@@ -270,6 +380,19 @@ _AGENCY_TERMS: tuple[str, ...] = (
     "冒险",
     "赌",
     "交易",
+    "放弃",
+    "改用",
+    "转用",
+    "申诉",
+    "提交",
+    "拆除",
+    "关闭",
+    "切断",
+    "撤离",
+    "绕开",
+    "公开",
+    "取证",
+    "保护",
     "counter",
     "refuse",
     "force",
@@ -390,6 +513,7 @@ def _scene_text(scene: ScenePlanProbe) -> str:
             scene.entry_state,
             scene.exit_state,
             scene.hook_requirement,
+            scene.contract_context,
         )
         if item
     )
@@ -406,6 +530,7 @@ def _chapter_text(chapter: ChapterPlanProbe) -> str:
             chapter.main_conflict,
             chapter.hook_description,
             chapter.hype_type,
+            chapter.contract_context,
             scene_block,
         )
         if item
@@ -419,7 +544,10 @@ def _chapter_has_hook(chapter: ChapterPlanProbe) -> bool:
 
 
 def _chapter_has_external_pressure(chapter: ChapterPlanProbe) -> bool:
-    if _contains_any(chapter.main_conflict, _LIVE_PRESSURE_TERMS):
+    if _contains_any(
+        " ".join((chapter.main_conflict, chapter.contract_context)),
+        _LIVE_PRESSURE_TERMS,
+    ):
         return True
     for scene in chapter.scenes:
         if _meaningful_participant_count(scene.participants) >= 2:
@@ -442,16 +570,23 @@ def _chapter_is_solo_chain(
     if not every_scene_solo:
         return False
     scene_text = " ".join(_scene_text(scene) for scene in chapter.scenes)
+    pressure_text = " ".join(
+        (scene_text, chapter.main_conflict, chapter.contract_context)
+    )
     # A first-three chapter that only has the protagonist "discovering clues"
     # is still low-pressure even when the clue text mentions a corpse, killer,
     # or evidence.  It needs an active counter-force or an explicit loss.
-    if not _contains_any(scene_text + " " + chapter.main_conflict, _LIVE_PRESSURE_TERMS):
+    if not _contains_any(pressure_text, _LIVE_PRESSURE_TERMS):
         return True
-    if not _contains_any(scene_text + " " + chapter.main_conflict, _VISIBLE_LOSS_TERMS):
+    if not _contains_any(pressure_text, _VISIBLE_LOSS_TERMS):
         return True
-    return (
-        not _contains_any(scene_text, concrete_pressure_terms)
-        or _contains_any(scene_text, _SOLO_PASSIVITY_TERMS)
+    if not _contains_any(pressure_text, concrete_pressure_terms):
+        return True
+    # Investigation/observation language is only passive when the same scene
+    # lacks a decisive response.  Treating those words as an unconditional
+    # veto misclassifies active appeals, refusals, rescues, and countermeasures.
+    return _contains_any(scene_text, _SOLO_PASSIVITY_TERMS) and not _contains_any(
+        scene_text, _AGENCY_TERMS
     )
 
 
@@ -467,8 +602,19 @@ def _chapter_has_protagonist_agency(chapter: ChapterPlanProbe) -> bool:
     text = _chapter_text(chapter)
     if not _contains_any(text, _AGENCY_TERMS):
         return False
-    protagonist_markers = ("主角", "沈", "宁", "她", "他", "protagonist")
-    return _contains_any(text, protagonist_markers)
+    protagonist_markers = ("主角", "她", "他", "protagonist")
+    if _contains_any(text, protagonist_markers):
+        return True
+    # The readiness probe does not receive a separate cast manifest.  Scene
+    # participants are therefore the authoritative, project-agnostic names we
+    # can use to attribute an explicit action without hard-coding surnames.
+    participant_names = {
+        participant.strip()
+        for scene in chapter.scenes
+        for participant in scene.participants
+        if participant and participant.strip()
+    }
+    return any(name in text for name in participant_names)
 
 
 def _finding(
@@ -558,6 +704,13 @@ def chapter_plan_probe_from_mapping(value: Mapping[str, Any]) -> ChapterPlanProb
         hook_description=_text(value.get("hook_description")),
         hype_type=_text(value.get("hype_type")),
         hype_intensity=hype_intensity,
+        contract_context=_jsonish_text(
+            {
+                key: value.get(key)
+                for key in ("causal_contract", "methodology_contract")
+                if value.get(key)
+            }
+        ),
         scenes=scenes,
     )
 
@@ -572,6 +725,19 @@ def scene_plan_probe_from_mapping(value: Mapping[str, Any]) -> ScenePlanProbe:
         entry_state=_jsonish_text(value.get("entry_state")),
         exit_state=_jsonish_text(value.get("exit_state")),
         hook_requirement=_text(value.get("hook_requirement")),
+        contract_context=_jsonish_text(
+            {
+                key: value.get(key)
+                for key in (
+                    "methodology_contract",
+                    "action_sequence",
+                    "concrete_goal",
+                    "protagonist_state",
+                    "cut_point",
+                )
+                if value.get(key)
+            }
+        ),
     )
 
 

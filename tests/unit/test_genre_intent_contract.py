@@ -4,6 +4,7 @@ import pytest
 
 from bestseller.services.genre_intent_contract import (
     build_genre_intent_contract,
+    contract_from_payload,
     contract_from_selection,
     detect_genre_native_ontology_violations,
 )
@@ -96,6 +97,47 @@ def test_detective_genre_may_use_its_own_forensic_vocabulary() -> None:
     )
     forensic = "法医在停尸房完成尸检，确认死者身份。"
     assert detect_genre_native_ontology_violations(forensic, contract) == ()
+
+
+@pytest.mark.unit
+def test_contract_from_payload_round_trips_valid_contract() -> None:
+    contract = contract_from_selection(
+        {"channel": "male", "genre": "玄幻", "sub_genre": "东方玄幻", "tags": []},
+        audience_orientation="male",
+        tone_preference="light",
+        enhancers=StoryEnhancerSelection(brainhole=True, cost_style="minimal"),
+    )
+    reloaded = contract_from_payload({"genre_intent_contract": contract.model_dump(mode="json")})
+    assert reloaded is not None
+    assert reloaded.audience_orientation == "male"
+    assert reloaded.tone_preference == "light"
+    assert reloaded.explicit_enhancers.brainhole is True
+    assert reloaded.explicit_enhancers.cost_style == "minimal"
+
+
+@pytest.mark.unit
+def test_contract_from_payload_invalid_contract_logs_and_returns_none(caplog: pytest.LogCaptureFixture) -> None:
+    """A corrupt persisted contract must be observable (P11): log a warning,
+    never silently drop the whole creation intent with no trace."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="bestseller.services.genre_intent_contract"):
+        result = contract_from_payload({"genre_intent_contract": {"genre_key": 42}})
+    assert result is None
+    assert any(
+        "genre_intent_contract present but invalid" in r.message for r in caplog.records
+    )
+
+
+@pytest.mark.unit
+def test_contract_from_payload_absent_is_silent(caplog: pytest.LogCaptureFixture) -> None:
+    """No contract in the payload is a legitimate state (legacy/self-heal) and
+    must NOT log as corruption."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="bestseller.services.genre_intent_contract"):
+        assert contract_from_payload({}) is None
+    assert not caplog.records
 
 
 @pytest.mark.unit

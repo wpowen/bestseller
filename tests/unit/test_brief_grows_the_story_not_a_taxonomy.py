@@ -60,12 +60,18 @@ class TestTheGeneratorIsToldToGrowNotToFillABucket:
         assert "忘掉框架术语" in user, "边界应回到纯题材直觉，而不是某个分类的边界"
 
     def test_a_framework_lane_still_works_for_seeded_refinement(self) -> None:
-        """种子打磨路径不变——它本来就该顺着既有故事走。"""
+        """种子打磨路径不变——它本来就该顺着既有故事走。
+
+        2026-08-02：轴的边界改成正向描述（"从什么起步"），不再附"不要写契约、
+        债务或仲裁"这类禁令——禁令进 prompt 本身就是注入。
+        """
 
         _system, user = ct._build_engine_kernel_messages(
             genre="玄幻", sub_genre="玄幻", lane="人际困局", chapter_count=50
         )
-        assert "不要写契约、债务或仲裁" in user
+        assert "人际困局" in user
+        assert "从一段无法轻易割舍的人际关系和两难选择起步" in user
+        assert "不要写契约、债务或仲裁" not in user
 
 
 class TestVarietyIsPreserved:

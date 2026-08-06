@@ -301,15 +301,18 @@ def test_generation_neutral_surfaces_stay_debt_free() -> None:
 
 
 @pytest.mark.unit
-def test_debt_ledger_token_bank_stays_in_sync_and_covers_known_leaks() -> None:
-    """conception 复用 anti_default_motif 的债务词银行(单一事实源,防漂移)；
-    认账/讨账 必须在内——证据书 premise/world_model 用的正是这两个,旧词表漏了。"""
+def test_debt_ledger_token_bank_is_retired_and_empty() -> None:
+    """2026-08-02: 债务词银行连同整套母题警察退役。
+
+    这份词表原本是"单一事实源防漂移"的正确工程做法——错的是它服务的目的：
+    用词表判定一本书能不能存在。债务是普通故事材料，框架无权因为它出现就
+    毙掉产物；跨书同质化由隔离 + 指纹查重解决。词表保留为空元组，只为让
+    残余 import 不炸。"""
 
     from bestseller.services import anti_default_motif, conception
 
     assert conception._DEBT_LEDGER_TOKENS is anti_default_motif.DEBT_LEDGER_TOKENS
-    for tok in ("认账", "讨账", "欠账", "账本", "还债"):
-        assert tok in anti_default_motif.DEBT_LEDGER_TOKENS, f"缺债务词 {tok}"
+    assert anti_default_motif.DEBT_LEDGER_TOKENS == ()
 
 
 @pytest.mark.unit
@@ -361,30 +364,22 @@ def test_genre_emotion_exemplars_do_not_lead_with_death() -> None:
 
 
 @pytest.mark.unit
-def test_material_density_genre_packs_stay_free_of_ledger_framing() -> None:
-    """题材物料包(修仙升级 / 女频无CP,均由通用词触发写进整题材)不得用账本/账目/
-    记账/资源账/后账/欠条 框架——这是"修仙债务同质化"的物料源。qingnang 单书块
-    (SRC_ALLOWLIST 内、青囊+困魂镜+三族 三token门后)不在此网。"""
-
-    import json as _json
+def test_single_book_material_pack_builders_are_deleted() -> None:
+    """2026-07-31 裁决：单书参考包（历史书私有世界）从源码整体删除。此前这里
+    检查它们不得回流账本/债务框架；现在的更强保证是——它们不存在。"""
 
     from bestseller.services import material_density
 
-    ledger = (
-        "账本", "账目", "账簿", "记账", "资源账", "境界账", "后账",
-        "欠条", "债务系统", "代价账本", "代价账卡", "记一笔",
-    )
-    specs = {
-        "xianxia_upgrade": material_density._xianxia_upgrade_pack_spec(),
-        "female_no_cp": material_density._female_no_cp_pack_spec(),
-    }
-    violations: list[str] = []
-    for name, spec in specs.items():
-        blob = _json.dumps(spec, default=str, ensure_ascii=False)
-        hits = [t for t in ledger if t in blob]
-        if hits:
-            violations.append(f"{name}: {hits}")
-    assert not violations, "题材物料包回流账本/债务框架：\n" + "\n".join(violations)
+    for name in (
+        "_build_qingnang_pack",
+        "_looks_like_qingnang",
+        "_xianxia_upgrade_pack_spec",
+        "_female_no_cp_pack_spec",
+        "_english_romantasy_pack_spec",
+        "_breaking_point_pack_spec",
+        "_witness_protocol_pack_spec",
+    ):
+        assert not hasattr(material_density, name), name
 
 
 @pytest.mark.unit

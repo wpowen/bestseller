@@ -12,10 +12,11 @@ and asked "书是不是又丢了".
 The fail-fast for winner=None already existed — but only for chapter_count
 >= 200. Short books were left to coast on a known 2/3 death rate (the code
 comment records it). These tests pin the extension: a dry tournament with NO
-substantive user story seed stops conception immediately for every length,
-carrying the tournament's own rejection reasons; creations that DID supply
-real story material (explicit seed / concept bundle / hook spec) still
-continue, because their material can pass the logline gate on its own.
+substantive story seed stops conception immediately for every length, carrying
+the tournament's own rejection reasons. Creations that DID supply user-owned
+story material (explicit seed / concept bundle / hook spec) may still continue.
+A Story Architect seed is generated material and must pass the same tournament
+gates; it cannot waive them.
 """
 
 from __future__ import annotations
@@ -28,7 +29,6 @@ from bestseller.services.concept_tournament import (
     ConceptCandidate,
     dry_tournament_rejection_summary,
 )
-
 
 pytestmark = pytest.mark.unit
 
@@ -100,19 +100,20 @@ class TestConceptionDryTournamentFailFast:
 
         source = inspect.getsource(conception_services.run_conception_pipeline)
         start = source.index("Concept tournament produced no winner")
-        return source[start : start + 2200]
+        end = source.index("except Exception as exc:", start)
+        return source[start:end]
 
-    def test_short_books_without_user_seed_also_abort(self) -> None:
+    def test_short_books_without_any_story_seed_also_abort(self) -> None:
         branch = self._no_winner_branch()
 
-        assert "_has_user_story_seed" in branch, (
+        assert "_has_substantive_story_seed" in branch, (
             "the no-winner branch must distinguish bare quickstarts from "
-            "creations that carry real user story material"
+            "creations that carry real story material"
         )
         assert "raise ConceptContractError" in branch
-        assert "chapter_count >= 200 or not _has_user_story_seed" in branch, (
-            "fail-fast must cover every length when there is no user seed — "
-            "coasting on a bare premise is a guaranteed logline reject "
+        assert "chapter_count >= 200 or not _has_substantive_story_seed" in branch, (
+            "fail-fast must cover every length when there is no story seed — "
+            "coasting on a generic genre card is a guaranteed logline reject "
             "(2026-07-24: 3.0 reject after 10 wasted minutes)"
         )
 
@@ -125,12 +126,17 @@ class TestConceptionDryTournamentFailFast:
             "made the user think the book was lost"
         )
 
-    def test_user_seed_definition_matches_the_tournament_inputs(self) -> None:
-        """The seed test must mirror exactly what the tournament itself was
-        fed — explicit seed, concept-lab bundle, or a selected hook spec."""
+    def test_substantive_seed_definition_matches_the_tournament_inputs(self) -> None:
+        """Only user-owned story material may keep a dry run alive."""
 
         branch = self._no_winner_branch()
 
         assert "explicit_concept_seed" in branch
         assert "concept_bundle" in branch
         assert "selected_hook_spec" in branch
+        definition = branch[
+            branch.index("_has_substantive_story_seed") : branch.index(
+                "if chapter_count", branch.index("_has_substantive_story_seed")
+            )
+        ]
+        assert "automatic_story_seed" not in definition

@@ -79,6 +79,43 @@ def test_build_genre_context_synthesizes_custom_picker_key() -> None:
     assert ctx["genre"] == "末世"
     assert ctx["sub_genre"] == "天灾囤货"
 
+
+@pytest.mark.asyncio
+async def test_conception_discards_polluted_world_model_before_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bestseller.domain.world_model import world_model_from_dict
+    from bestseller.services import world_model_deriver
+
+    payload = world_model_deriver.fallback_world_model(
+        premise="陆沉照料废药园里的上古灵药",
+        genre="东方玄幻",
+    )
+    payload["world_laws"][0]["enforcement"] = "使用力量会反噬，并以延寿作为升级阶梯"
+    model = world_model_from_dict(payload)
+
+    async def fake_derive(*args: object, **kwargs: object):
+        return model
+
+    monkeypatch.setattr(world_model_deriver, "derive_world_model", fake_derive)
+    result, model_result, run_ids = await conception_services._derive_conception_world_model(
+        object(),
+        object(),
+        premise="陆沉照料废药园里的上古灵药",
+        ctx={
+            "_user_intent_snapshot": "轻松经营废药园",
+            "genre": "东方玄幻",
+            "language": "zh-CN",
+            "genre_intent_contract": {
+                "explicit_enhancers": {"cost_style": "minimal"}
+            },
+        },
+    )
+
+    assert result == {}
+    assert model_result is None
+    assert run_ids == []
+
     # Even without threaded genre/sub_genre it derives from the canonical key.
     ctx2 = conception_services._build_genre_context("custom-xuanhuan", 120)
     assert ctx2["genre"] == "玄幻"
@@ -276,7 +313,14 @@ def test_qimao_conception_prompt_includes_regeneration_contract() -> None:
     assert "weak_immersion" in prompt
 
 
-def test_conception_sanitizes_family_loss_default_motifs() -> None:
+def test_conception_no_longer_rewrites_a_family_loss_premise() -> None:
+    """2026-08-02: the motif rewriter is retired.
+
+    It walked every string in a conception payload and replaced any sentence
+    linking a relative to a death/disappearance/secret with one framework
+    sentence — so a premise about a missing father came out as "由本书题材核心
+    机制触发的具体危机", and every book that tripped it got the same substitute.
+    """
     payload = {
         "premise": "主角因为父亲失踪踏上修行路。",
         "writing_profile": {
@@ -292,12 +336,14 @@ def test_conception_sanitizes_family_loss_default_motifs() -> None:
     sanitized = conception_services._sanitize_forbidden_default_motifs(payload, is_en=False)
     text = json.dumps(sanitized, ensure_ascii=False)
 
-    assert "父亲失踪" not in text
-    assert "父母失踪" not in text
-    assert "由本书题材核心机制触发的具体危机与选择代价" in text
+    assert "父亲失踪" in text
+    assert "由本书题材核心机制触发的具体危机与选择代价" not in text
 
 
-def test_conception_prompts_ban_fixed_family_loss_motivation() -> None:
+def test_conception_prompts_carry_no_guardrail_blocks() -> None:
+    """2026-08-01 product ruling: guardrail blocks were deleted from prompts —
+    a guard rendered into the prompt is itself an injection. Drift is caught by
+    the output-side detectors instead."""
     ctx = {
         "genre": "悬疑",
         "sub_genre": "规则悬疑",
@@ -315,8 +361,8 @@ def test_conception_prompts_ban_fixed_family_loss_motivation() -> None:
 
     prompt = conception_services._character_user_prompt(ctx)
 
-    assert "默认动机禁用" in prompt
-    assert "动态生成" in prompt
+    assert "当下动机规则" not in prompt
+    assert "自然后果规则" not in prompt
     assert "父母失踪" not in prompt
 
 
@@ -529,22 +575,18 @@ async def test_polish_blurb_synopsis_rewrites_and_fails_open(monkeypatch: pytest
 
 
 def test_finalize_prompt_carries_golden_finger_diversity_principle():
-    """The conception finalize prompt must inject the golden-finger DESIGN
-    principle (form pool + 'never default to 系统/面板' + opt-out), so every book
-    does not homogenise into a 系统流. Methodology-driven, not a hardcoded form.
-    """
+    """The prompt derives an edge without seeding a copyable power menu."""
     from bestseller.services import conception as C
 
     ctx = {"genre": "玄幻", "sub_genre": "诡异修仙", "chapter_count": 500, "language": "zh-CN"}
     zh = C._finalize_user_prompt(ctx, {}, {}, {}, {})
-    assert "形态绝不固定为系统" in zh  # explicit anti-system-default
-    assert "上古传承" in zh and "契约异兽" in zh  # diverse form pool
-    assert "无显性金手指" in zh  # opt-out for genres that don't need a cheat
+    assert "主角身份、当前目标、题材原生资源和世界规律中推导" in zh
+    assert "不要向模型提供可照抄的能力菜单" in zh
+    assert "不依赖外挂的题材" in zh
+    assert "上古传承" not in zh and "契约异兽" not in zh
 
-    # Both language constants exist and carry the anti-system-default rule so the
-    # EN finalize branch is covered too.
-    assert "NOT default to a stat/system panel" in C._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
-    assert "no explicit golden" in C._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
+    assert "Do not provide or copy a menu" in C._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
+    assert "whether an explicit power is needed" in C._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
 
 
 # ── 画像点击判官 advisory 接线（审计 P1-6 接活）──────────────────────────────
@@ -769,14 +811,14 @@ def _cand(concept, rejected, **scores):
 def test_best_dry_seed_picks_fewest_failed_axes_then_highest_scores() -> None:
     """挂的轴越少越优先，同数比分——排序规则本身不变。
 
-    2026-07-26：示例轴由「新颖度/题材保真」换成两条纯执行层的轴。新颖度与可预测性
+    2026-07-31：示例轴换成纯执行层的轴。新颖度、可预测性与题材保真
     现在会取消种子资格（同源补强要求保留故事身份，修不了点子本身），用它们举例会
     把本例测成那条新规则而不是排序规则。见 test_dry_retry_seed_refinability.py。
     """
 
     from bestseller.services.conception import _best_dry_tournament_seed
 
-    near_miss = _cand("近失王者", "钩子硬门失败: 大白话/题材保真",
+    near_miss = _cand("近失王者", "钩子硬门失败: 大白话/故事运动",
                       judge_click=8.0, judge_story_motion=8.0)
     weak = _cand("全灭候选", "钩子硬门失败: 大白话/想点欲/人物决策/机制因果/题材保真")
     assert _best_dry_tournament_seed([weak, near_miss]) == "近失王者"
@@ -895,11 +937,27 @@ def test_character_and_finalize_prompts_carry_channel_stamp() -> None:
 
 def test_logline_voice_rules_forbid_compression_cadence() -> None:
     """The logline instruction literally said 压缩成25-40字 — telegram cadence was
-    ordered, not emergent (real product: '凭闻鞋识脏，…把柄换筹码，…口中夺命')."""
+    ordered, not emergent (real product: '凭闻鞋识脏，…把柄换筹码，…口中夺命').
+
+    The original fix banned the abstraction *by naming it* (把柄/筹码/代价/博弈).
+    Two real loglines now bracket that ban and show it does not hold:
+
+        before  凭闻鞋识脏，…把柄换筹码，…口中夺命
+        after   每一处漏口都让他在祠堂里多换一枚筹码      (2026-08-04 样本书)
+
+    The named word survived its own prohibition — the same shape as 2026-08-03's
+    《雾街债主》, where deleting the naming prohibitions from the concept prompt
+    dropped those words to zero (see the sweep suite's
+    ``test_concept_generation_prompt_names_no_motif_vocabulary``). So the rule now
+    states what to write instead of listing what not to, and this test asserts the
+    constraint still reaches the model without handing it the vocabulary.
+    """
 
     from bestseller.services.conception import _LOGLINE_VOICE_RULES
 
     assert "脱口而出" in _LOGLINE_VOICE_RULES or "口语" in _LOGLINE_VOICE_RULES
     assert "四字生造" in _LOGLINE_VOICE_RULES
-    assert "筹码" in _LOGLINE_VOICE_RULES  # named as banned abstraction
+    # 约束仍在，但改为正面表述，不再点名 把柄/筹码/代价/博弈
+    assert "抽象名词" in _LOGLINE_VOICE_RULES
+    assert "筹码" not in _LOGLINE_VOICE_RULES
     assert "压缩" not in _LOGLINE_VOICE_RULES.split("铁律")[-1] or True

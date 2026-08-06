@@ -64,7 +64,7 @@ def test_render_hook_ledger_planner_contract_when_enabled() -> None:
     with mock.patch.dict("os.environ", {"BESTSELLER_METHODOLOGY_V2": "1"}):
         block = render_hook_ledger_planner_contract(language="zh-CN")
 
-    assert "方法论 v2 钩子台账合同" in block
+    assert "方法论 v2 钩子清单合同" in block
     assert "hooks_to_resolve" in block
     assert "information_gap" in block
     assert "第 1 章可植入 2-3 个钩子" in block
@@ -97,7 +97,7 @@ def test_merge_hook_ledger_audit_promotes_rewrite_for_missing_plant_and_resolve(
 
     assert merged.verdict == "rewrite"
     assert merged.severity_max == "major"
-    assert "钩子台账修复" in (merged.rewrite_instructions or "")
+    assert "钩子清单修复" in (merged.rewrite_instructions or "")
     assert "hook_ledger_audit" in merged.evidence_summary
     assert any(f.category == "hook_ledger" for f in merged.findings)
 

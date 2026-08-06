@@ -1168,6 +1168,60 @@ class FakeSession:
 
 
 @pytest.mark.asyncio
+async def test_completed_story_bible_marker_is_invalid_when_sources_are_missing() -> None:
+    project_id = uuid4()
+    run = WorkflowRunModel(
+        project_id=project_id,
+        workflow_type=pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        status="completed",
+    )
+    run.metadata_json = {
+        "source_artifact_ids": {
+            "book_spec": str(uuid4()),
+            "world_spec": str(uuid4()),
+            "cast_spec": str(uuid4()),
+            "volume_plan": str(uuid4()),
+        },
+        "characters_upserted": 1,
+        "world_rules_upserted": 10,
+        "volumes_upserted": 1,
+    }
+
+    reusable = await pipeline_services._completed_story_bible_materialization_is_reusable(
+        FakeSession(scalar_results=[0]), run
+    )
+
+    assert reusable is False
+
+
+@pytest.mark.asyncio
+async def test_completed_story_bible_marker_requires_committed_rows() -> None:
+    project_id = uuid4()
+    run = WorkflowRunModel(
+        project_id=project_id,
+        workflow_type=pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        status="completed",
+    )
+    run.metadata_json = {
+        "source_artifact_ids": {
+            "book_spec": str(uuid4()),
+            "world_spec": str(uuid4()),
+            "cast_spec": str(uuid4()),
+            "volume_plan": str(uuid4()),
+        },
+        "characters_upserted": 1,
+        "world_rules_upserted": 10,
+        "volumes_upserted": 1,
+    }
+
+    reusable = await pipeline_services._completed_story_bible_materialization_is_reusable(
+        FakeSession(scalar_results=[4, 1, 10, 1]), run
+    )
+
+    assert reusable is True
+
+
+@pytest.mark.asyncio
 async def test_recover_session_after_nonfatal_error_rolls_back_missing_greenlet() -> None:
     session = FakeSession()
 
@@ -6122,7 +6176,7 @@ async def test_run_project_pipeline_exports_project_checkpoint_when_machine_repa
 
 
 @pytest.mark.asyncio
-async def test_run_project_pipeline_passes_concept_lab_context_to_material_forge(
+async def test_run_project_pipeline_does_not_forge_unscoped_materials_before_canon(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -6247,16 +6301,9 @@ async def test_run_project_pipeline_passes_concept_lab_context_to_material_forge
         progress=lambda stage, payload: progress_events.append((stage, payload)),
     )
 
-    context = str(captured["concept_lab_context"])
     assert result.final_verdict == "pass"
-    assert "已选脑洞物料合同" in context
-    assert bundle.reader_promise in context
-    assert bundle.material_brief.query_terms[0] in context
-    assert ("material_forge_completed", {
-        "project_slug": project.slug,
-        "total_forged": 3,
-        "concept_lab_material_brief": True,
-    }) in progress_events
+    assert captured == {}
+    assert not any(stage.startswith("material_forge_") for stage, _ in progress_events)
 
 
 @pytest.mark.asyncio
@@ -6729,6 +6776,13 @@ async def test_run_project_pipeline_blocks_project_consistency_failure_despite_a
         ),
     )
 
+    # A whole-book verdict only applies to a whole book. A project still
+    # mid-write is a partial slice and gets a warning instead (the self-heal
+    # lane calls this pipeline with no slice markers, so an 8-of-30-chapter
+    # book used to be hard-blocked for having no ending yet). This test is
+    # about the finished book, where the verdict does block.
+    project.current_chapter_number = project.target_chapters
+
     settings = build_settings()
     settings.pipeline.accept_on_stall = True
     result = await pipeline_services.run_project_pipeline(
@@ -6741,6 +6795,106 @@ async def test_run_project_pipeline_blocks_project_consistency_failure_despite_a
 
     assert result.requires_human_review is True
     assert result.final_verdict == "attention"
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_warns_when_the_book_is_not_finished_yet(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An unfinished book must not be hard-blocked by whole-book consistency.
+
+    2026-08-03, xianxia-upgrade-1785697772: the self-heal ``project_pipeline``
+    lane passes neither ``current_volume_number`` nor ``chapter_numbers``, so a
+    book with 8 of 30 chapters written was judged by whole-book criteria, came
+    back ``attention`` (correctly — it has no ending yet) and was blocked with
+    ``requires_human_review``. That stopped the per-window loop from planning
+    window 2, and the book could never pass chapter 8.
+    """
+    project = build_project()
+    project.current_chapter_number = 8
+    assert project.target_chapters == 30
+    chapter = build_chapter(project.id)
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=uuid4(),
+        chapter_draft_version_no=1,
+        requires_human_review=False,
+    )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return chapter_result
+
+    async def fake_review_project_consistency(
+        session,
+        settings,
+        project_slug: str,
+        **kwargs,
+    ):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "attention"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        AsyncMock(
+            return_value=type(
+                "NarrativeGraphResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "plot_arc_count": 3, "clue_count": 1},
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        AsyncMock(
+            return_value=type(
+                "NarrativeTreeResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "node_count": 16},
+            )()
+        ),
+    )
+
+    settings = build_settings()
+    settings.pipeline.accept_on_stall = True
+    result = await pipeline_services.run_project_pipeline(
+        FakeSession(),
+        settings,
+        "my-story",
+        requested_by="tester",
+        export_markdown=False,
+    )
+
+    assert result.requires_human_review is False
 
 
 @pytest.mark.asyncio
@@ -7184,18 +7338,31 @@ def test_commercial_planning_llm_judge_blocks_with_actionable_issues() -> None:
     )
 
 
-def test_commercial_planning_actionable_retention_codes_are_hard_blockers() -> None:
-    report = {
+def test_retention_opinions_are_no_longer_hard_blockers() -> None:
+    """2026-08-02: retention craft verdicts stopped blocking the book.
+
+    "The golden finger is not visible in the first three chapters" is an
+    editing opinion; it was deterministic, so the repair rounds re-rolled
+    against the same verdict and the book died before writing a word. Only a
+    structural gap (a chapter with no opening situation) still blocks.
+    """
+    opinion_report = {
         "passed": False,
-        "findings": [
-            {
-                "code": "GOLDEN_FINGER_NOT_VISIBLE_IN_GT3",
-                "severity": "medium",
-            }
-        ],
+        "findings": [{"code": "GOLDEN_FINGER_NOT_VISIBLE_IN_GT3", "severity": "medium"}],
+    }
+    structural_report = {
+        "passed": False,
+        "findings": [{"code": "missing_opening_situation", "severity": "critical"}],
     }
 
-    assert pipeline_services._commercial_planning_has_actionable_blockers(report) is True
+    assert (
+        pipeline_services._commercial_planning_has_actionable_blockers(opinion_report)
+        is False
+    )
+    assert (
+        pipeline_services._commercial_planning_has_actionable_blockers(structural_report)
+        is True
+    )
 
 
 def test_commercial_planning_non_actionable_codes_remain_soft() -> None:
@@ -10046,3 +10213,30 @@ def test_outline_replan_gate_stays_closed_without_both_proofs(
     assert project.status == "planning"
     assert project.metadata_json["outline_replan_in_progress"] is True
     assert project.metadata_json["production_paused"] is True
+
+
+def test_approved_outline_replan_releases_gate_for_adjudicated_combined_batch() -> None:
+    project = SimpleNamespace(
+        status="planning",
+        metadata_json={
+            "outline_replan_in_progress": True,
+            # This version belongs to volume_chapter_outline. The promoted
+            # artifact below belongs to chapter_outline_batch.
+            "outline_replan_prior_outline_version": 26,
+            "outline_semantic_gate_report": {
+                "promotion_allowed": True,
+                "llm_adjudicated_all_volumes": True,
+            },
+            "production_paused": True,
+            "generation_resume_blocked_until_repair_audit": True,
+        },
+    )
+
+    released = pipeline_services._release_approved_outline_replan_gate(
+        project,
+        SimpleNamespace(version_no=3),
+    )
+
+    assert released is True
+    assert project.status == "writing"
+    assert "outline_replan_in_progress" not in project.metadata_json

@@ -199,6 +199,60 @@ def test_rescue_skips_non_golden_chapters() -> None:
     assert {p for p in batch.chapters[0].scenes[0].participants} == {"纪渊"}
 
 
+def test_quiet_solo_opening_no_longer_kills_the_volume() -> None:
+    """2026-08-02: the golden-three pressure contract became advisory.
+
+    "The first three chapters must be high-pressure and feature a second named
+    participant" is an editing opinion, and it was deterministic: the repair
+    loop re-rolled the same batch three times and then killed the book
+    (《渣道剑主》, 2026-08-02). A quiet opening is a legitimate way to begin.
+    """
+
+    batch = _batch(
+        [
+            _chapter(
+                1,
+                main_conflict="密室寂静，他独自研究名册。",
+                scene_story="纪渊独自翻看名册。",
+                participants=["纪渊"],
+            )
+        ]
+    )
+    planner._enrich_generated_volume_outline_systemic_fields(
+        batch, identity_manifest=[_MANIFEST[0]], language="zh-CN"
+    )
+
+    planner._require_outline_systemic_fields_or_raise(
+        batch,
+        logical_name="volume_1_chapter_outline_batch_1_1",
+        identity_manifest=[_MANIFEST[0]],
+    )
+
+
+def test_single_character_manifest_accepts_concrete_non_person_pressure() -> None:
+    """A singleton cast can still pass without lowering the pressure standard."""
+
+    batch = _batch(
+        [
+            _chapter(
+                1,
+                main_conflict="宗门阵法封锁出口，否则名册会在天亮前烧掉。",
+                scene_story="封锁阵法当场收紧，纪渊拒绝退走并冒险拆掉阵眼保护名册。",
+                participants=["纪渊"],
+            )
+        ]
+    )
+    planner._enrich_generated_volume_outline_systemic_fields(
+        batch, identity_manifest=[_MANIFEST[0]], language="zh-CN"
+    )
+
+    planner._require_outline_systemic_fields_or_raise(
+        batch,
+        logical_name="volume_1_chapter_outline_batch_1_1",
+        identity_manifest=[_MANIFEST[0]],
+    )
+
+
 def test_enrich_synthesizes_opening_situation_in_medias_res() -> None:
     batch = _batch([_chapter(1)])
     planner._enrich_generated_volume_outline_systemic_fields(
@@ -284,7 +338,9 @@ def test_require_passes_after_enrichment() -> None:
     )
 
 
-def test_require_raises_for_missing_fields_and_golden_three_solo() -> None:
+def test_require_raises_for_missing_structural_fields_only() -> None:
+    """Structure still blocks (a chapter without an opening or causal contract
+    starves every downstream consumer); taste no longer does."""
     chapters = [_chapter(1), _chapter(2)]
     chapters[0]["causal_contract"] = {}
     batch = _batch(chapters)
@@ -296,8 +352,7 @@ def test_require_raises_for_missing_fields_and_golden_three_solo() -> None:
     message = str(exc_info.value)
     assert "opening_situation" in message
     assert "causal_contract" in message
-    assert "golden-three" in message
-    assert "participants" in message
+    assert "golden-three" not in message
 
 
 def test_require_allows_solo_scenes_outside_golden_three() -> None:

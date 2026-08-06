@@ -37,8 +37,12 @@ def _real_world_model():
     return world_model_from_dict(payload)
 
 
-def test_derive_conception_world_model_returns_payload(monkeypatch) -> None:
+def test_conception_world_model_lane_is_disabled_until_world_spec(monkeypatch) -> None:
+    called = False
+
     async def fake_derive_world_model(*a, **k):
+        nonlocal called
+        called = True
         return _real_world_model()
 
     monkeypatch.setattr(
@@ -49,9 +53,10 @@ def test_derive_conception_world_model_returns_payload(monkeypatch) -> None:
             None, object(), premise="测试前提", ctx=dict(_CTX)
         )
     )
-    assert model is not None
-    assert payload.get("world_laws")
+    assert payload == {}
+    assert model is None
     assert ids == []
+    assert called is False
 
 
 def test_derive_conception_world_model_fails_open(monkeypatch) -> None:
@@ -350,9 +355,9 @@ def test_reconcile_cross_artifact_facts_fails_open_on_garbage(monkeypatch) -> No
 # ── Phase 5：模板回声防御 ─────────────────────────────────────────────────
 
 
-def test_golden_finger_design_principle_bans_literal_copy() -> None:
-    assert "禁止原样照抄" in conception._GOLDEN_FINGER_DESIGN_PRINCIPLE
-    assert "verbatim" in conception._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
+def test_golden_finger_design_principle_withholds_copyable_form_menu() -> None:
+    assert "不要向模型提供可照抄的能力菜单" in conception._GOLDEN_FINGER_DESIGN_PRINCIPLE
+    assert "Do not provide or copy a menu" in conception._GOLDEN_FINGER_DESIGN_PRINCIPLE_EN
 
 
 def test_genre_cliche_baseline_resolves_for_rule_horror() -> None:

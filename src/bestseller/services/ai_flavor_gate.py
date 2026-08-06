@@ -176,6 +176,20 @@ def needs_deslop_revise(outcome: "AiFlavorGateOutcome") -> bool:
     return any(getattr(i, "id", "") in deslop_ids for i in report.issues)
 
 
+def has_category_issue(
+    outcome: "AiFlavorGateOutcome", category: str
+) -> bool:
+    """Return True when any issue belongs to the given checker category."""
+
+    target = f"AI_FLAVOR_{str(category).upper()}"
+    report = outcome.report
+    if report is None:
+        return False
+    return any(
+        getattr(item, "id", "") == target for item in (report.issues or [])
+    )
+
+
 # ---------------------------------------------------------------------------
 # CheckerReport adaptation.
 # ---------------------------------------------------------------------------

@@ -89,11 +89,37 @@ def test_mythic_stage_preferences_use_second_batch_defaults_without_romance() ->
     assert "romance_tenderness_engine" not in all_default_skills
 
 
+def test_catalog_prompt_renders_nothing_when_no_skill_was_ticked() -> None:
+    """2026-08-03: the ~8,300-char menu is filtered at RENDER time too.
+
+    Bake-time filtering alone would leave already-created books carrying the
+    catalog forever. 《雾街债主》 deadlocked exactly that way: its batch 1-3
+    outline prompt never fit the budget, those chapters never materialized, the
+    rolling window could not close, and self-heal re-queued the same replan
+    indefinitely.
+    """
+    catalog = resolve_story_effect_skill_catalog("都市神仙", "神仙招聘")
+
+    assert (
+        render_story_effect_skill_catalog_prompt_block(
+            {
+                STORY_EFFECT_SKILL_CATALOG_METADATA_KEY: catalog.to_metadata(),
+                "story_enhancers": {"effect_skills": []},
+            },
+            language="zh-CN",
+        )
+        == ""
+    )
+
+
 def test_catalog_prompt_is_short_router_not_full_contract() -> None:
     catalog = resolve_story_effect_skill_catalog("都市神仙", "神仙招聘")
 
     block = render_story_effect_skill_catalog_prompt_block(
-        {STORY_EFFECT_SKILL_CATALOG_METADATA_KEY: catalog.to_metadata()},
+        {
+            STORY_EFFECT_SKILL_CATALOG_METADATA_KEY: catalog.to_metadata(),
+            "story_enhancers": {"effect_skills": ["brainhole_engine"]},
+        },
         language="zh-CN",
     )
 
@@ -240,18 +266,41 @@ def test_build_project_metadata_adds_story_effect_catalog_without_overriding_inp
     )
 
 
-def test_catalog_round_trip_from_new_project_metadata() -> None:
-    payload = ProjectCreate(
-        slug="effect-catalog-roundtrip",
-        title="Effect Catalog Roundtrip",
-        genre="都市神仙",
-        sub_genre="神仙招聘",
-        target_word_count=120000,
-        target_chapters=60,
-    )
-    writing_profile = resolve_project_create_writing_profile(payload)
+def test_catalog_is_baked_only_when_the_creator_ticked_skills() -> None:
+    """2026-08-03: the 18-skill catalog stopped being unconditional.
 
-    metadata = build_project_metadata(payload, writing_profile)
+    It rendered into every chapter-outline prompt at ~8,300 characters — the
+    single largest block, a quarter of the whole prompt — offering 18 options
+    to books that had asked for none. 《雾街债主》 then died on
+    "required hard core exceeds combined writer prompt budget".
+    """
+
+    def _payload(slug: str, metadata: dict | None = None) -> ProjectCreate:
+        return ProjectCreate(
+            slug=slug,
+            title="Effect Catalog Roundtrip",
+            genre="都市神仙",
+            sub_genre="神仙招聘",
+            target_word_count=120000,
+            target_chapters=60,
+            metadata=metadata or {},
+        )
+
+    # No skills ticked → no catalog, no 8k prompt block.
+    bare = _payload("effect-catalog-none")
+    bare_metadata = build_project_metadata(
+        bare, resolve_project_create_writing_profile(bare)
+    )
+    assert story_effect_skill_catalog_from_metadata(bare_metadata) is None
+
+    # Skills ticked → the catalog rides along, routed by genre as before.
+    chosen = _payload(
+        "effect-catalog-roundtrip",
+        {"story_enhancers": {"effect_skills": ["brainhole_engine"]}},
+    )
+    metadata = build_project_metadata(
+        chosen, resolve_project_create_writing_profile(chosen)
+    )
     catalog = story_effect_skill_catalog_from_metadata(metadata)
 
     assert catalog is not None

@@ -193,13 +193,13 @@ profiles:
     must_achieve:
       - id: volume_climax_lands
         rule: 本卷预定的 volume_climax 事件必须在本章发生（落地，不能推迟）
-      - id: cost_paid
-        rule: 主角必须为本卷成果付出可感代价（伤 / 失 / 关系破 / 身份暴露 等）
       - id: cross_volume_hook
         rule: 章末必须留下卷的"必须看下去"勾子（新反派 / 新真相一角 / 主角身份巨变）
+    # 2026-08-02 移除 cost_paid：它要求每个卷末都写"伤/失/关系破/身份暴露"，
+    # 与建书页的"纯爽"选项直接冲突，也把"必须付代价"变成了全书恒定教条。
+    # 结果是模型被命令写代价、再被代价门禁处决。代价是否出现由故事决定。
     hard_gates:
       - volume_climax_lands
-      - cost_paid
       - cross_volume_hook
 
   # ===========================================================================
@@ -211,14 +211,14 @@ profiles:
     detection_rules:
       - chapter_contains_event == "first_full_powerup_display"
     must_achieve:
-      - id: power_cost_account
-        rule: 必须同时写出能力的代价账（寿元 / 灵力 / 情感 / 关系 / 副作用 之一）
       - id: power_external_signal
         rule: 能力发动必须有可感外显（温度 / 光 / 声 / 味 / 体感 至少一项）
       - id: reaction_amplification
         rule: 必须有 ≥ 1 个旁观者的具体反应（震惊 / 不可置信 / 后悔 / 恐惧）
+    # 2026-08-02 移除 power_cost_account。它是"所有书都以寿元为代价"的直接源头：
+    # 一条 hard_gate 把「寿元」摆在菜单第一位，命令每本书的金手指首秀都记一笔代价账。
+    # 能力有没有代价、代价是什么，属于该书的设定，不是框架的规定。
     hard_gates:
-      - power_cost_account
       - reaction_amplification
 
   # ===========================================================================
@@ -254,11 +254,10 @@ profiles:
         rule: 反派必须在场内对主角施加可感压迫（行动 / 言语 / 处境逼迫，至少一项）
       - id: villain_specific_threat
         rule: 反派必须展示一个具体的"我能伤到你"的具象点（不是"我很强"那种笼统）
-      - id: protagonist_meaningful_loss
-        rule: 主角必须在本章付出代价（让步 / 失物 / 伤 / 被看穿一角）
+    # 2026-08-02 移除 protagonist_meaningful_loss：反派登场时主角是否吃亏，
+    # 取决于这本书怎么写；强制"每次都付代价"与爽文选项冲突且从未验证。
     hard_gates:
       - villain_pressure_visible
-      - protagonist_meaningful_loss
 
   # ===========================================================================
   # 7. 大反转章

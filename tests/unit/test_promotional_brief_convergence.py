@@ -104,7 +104,8 @@ class TestGeneratePromotionalBriefWiring:
     def test_blurb_resolution_is_wired(self):
         source = self._source()
         assert "blurb = _resolve_promotional_brief_blurb(" in source
-        assert 'converged_synopsis=str(_metadata.get("synopsis") or "")' in source
+        assert 'str(_metadata.get("synopsis") or "")' in source
+        assert "converged_synopsis=" in source
 
     def test_title_overwrite_gate_is_wired(self):
         source = self._source()

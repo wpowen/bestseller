@@ -292,7 +292,7 @@ _SYSTEM_PROMPT_ZH = """\
 4. 伏笔状态（哪些伏笔被埋下或兑现了）
 5. 世界细节补充（正文中揭露了哪些新的地点/规则/势力细节）
 6. 新事实（正文中确立了哪些重要事实）
-7. 新立的承诺/誓言/债务（promises_made）
+7. 新立的承诺/誓言/约定（promises_made）
 
 【立场、存活状态、生命周期离场状态的特殊规则】
 - 只有正文明确写出触发事件时才填写变化后的值；否则全部留 null 维持原状。
@@ -305,11 +305,11 @@ _SYSTEM_PROMPT_ZH = """\
   若正文中有明确的恢复/解封章节预告，填入 lifecycle_exit_chapter（整数），否则填 null。
 - lifecycle_status 与 alive_status=deceased 互斥；如角色已死，只填 alive_status=deceased。
 
-【承诺/誓言/债务提取规则（promises_made）】
-- 只提取本章正文中**新立的**承诺、誓言、债务或义务；已有的承诺不重复提取。
+【承诺/誓言/约定提取规则（promises_made）】
+- 只提取本章正文中**新立的**承诺、誓言或义务；已有的承诺不重复提取。
 - 必须同时有立誓者（promisor）和受诺者（promisee），且两人都是已知角色。
 - kind 可选值：revenge（复仇）/ protection（守护）/ message（传话）/ fealty（效忠）/
-  debt（债务）/ quest（任务）/ deathbed（临终遗愿）/ null（其他）。
+  quest（任务）/ deathbed（临终遗愿）/ null（其他）。
 - 若正文明确提及兑现章节，填入 due_chapter（整数），否则填 null。
 
 只提取正文中明确呈现的内容，不要推测或虚构。
@@ -338,10 +338,10 @@ Rules:
   lifecycle_exit_chapter (integer); otherwise null.
 - lifecycle_status and alive_status=deceased are mutually exclusive.
 
-For promises_made: only extract NEW promises / oaths / vows / debts that are
+For promises_made: only extract NEW promises / oaths / vows that are
 explicitly established in this chapter's prose. A promise requires both a
 promisor (the one making it) and a promisee (the recipient). Valid kinds are:
-revenge, protection, message, fealty, debt, quest, deathbed. If the prose
+revenge, protection, message, fealty, quest, deathbed. If the prose
 explicitly names a chapter where the promise will be fulfilled, fill
 due_chapter (integer); otherwise null.
 

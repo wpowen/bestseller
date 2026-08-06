@@ -109,7 +109,7 @@ def compute_ngram_overuse_from_chapters(
     for chapter_number, text in chapter_texts:
         grams = Counter(_iter_cjk_ngrams(text, min_ngram=min_ngram, max_ngram=max_ngram))
         for ngram in tuple(grams):
-            if ngram in excluded:
+            if ngram in excluded or _is_grammatical_collocation(ngram):
                 del grams[ngram]
         chapter_counter[int(chapter_number)] = grams
         total_counter.update(grams)
@@ -206,18 +206,70 @@ def render_ngram_avoidance_block(
     return "\n".join(lines)
 
 
+# Characters that carry grammar rather than content. An ngram made only of
+# these is Chinese syntax, not a stylistic tic — banning it tells the writer to
+# stop writing Chinese. 2026-08-04, custom-xuanhuan-1785767368 shipped a ban
+# list whose top three entries were 「了一下」「出来的」「的时候」.
+_FUNCTION_CHARS: frozenset[str] = frozenset(
+    "的了着过地得是在有和与也都就还又将把被给让从对向到于其之而且或如"
+    "这那哪些个们一二三四五六七八九十不没很太更最上下里外前后中间时候起来去"
+)
+
+# Frequent grammatical collocations that survive the ratio test because one of
+# their characters is nominally content-bearing (时/候). Explicit, auditable,
+# and deliberately short: the admission rule is "is this a way of writing
+# Chinese, or a way this book writes?"
+_GRAMMATICAL_COLLOCATIONS: frozenset[str] = frozenset(
+    {"的时候", "出来的", "了一下", "起来的", "下去的", "过来的", "上去的", "的样子"}
+)
+
+
+def _is_grammatical_collocation(ngram: str) -> bool:
+    """Whether an ngram is syntax rather than style."""
+
+    if ngram in _GRAMMATICAL_COLLOCATIONS:
+        return True
+    if not ngram:
+        return False
+    functional = sum(1 for ch in ngram if ch in _FUNCTION_CHARS)
+    return functional / len(ngram) >= 0.6
+
+
+def _windows_of_one_phrase(a: str, b: str) -> bool:
+    """Whether two equal-ish ngrams are sliding windows over one phrase.
+
+    Strict-substring matching misses the common case: 「左手虎口那」、
+    「手虎口那道」、「虎口那道旧」 are three 5-char windows over
+    「左手虎口那道旧疤」. None contains another, so all three used to be listed
+    as separate bans — one phrase presented to the writer as three violations
+    (2026-08-04, custom-xuanhuan-1785767368 listed six slices of it).
+    """
+
+    if a == b:
+        return False
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    if shorter in longer:
+        return True
+    # Maximal overlap of a's suffix with b's prefix (and the mirror image).
+    limit = len(shorter) - 1
+    for size in range(limit, 2, -1):
+        if a[-size:] == b[:size] or b[-size:] == a[:size]:
+            return True
+    return False
+
+
 def _dedupe_overlapping_ngrams(
     items: Sequence[NgramUsageStats],
 ) -> tuple[NgramUsageStats, ...]:
-    """Keep only the longest ngram in each overlap cluster.
+    """Keep one representative per overlap cluster.
 
-    Two ngrams "overlap" when one is a strict substring of the other AND
-    their ``total_count`` is identical (the substring's extra count comes
-    from the same prose occurrences). When both conditions hold the shorter
-    one is redundant for the writer prompt.
+    Two ngrams belong to the same cluster when one is a strict substring of the
+    other with an identical ``total_count``, or when they are sliding windows
+    over the same underlying phrase. The longest / most-used form represents the
+    cluster; the rest are redundant noise in the writer prompt.
 
-    When counts differ — e.g. "林渊" (50) vs "林渊盯着" (16) — both are
-    kept because they describe distinct overuse problems.
+    When counts differ on a strict substring — e.g. "林渊" (50) vs "林渊盯着"
+    (16) — both are kept: those describe distinct overuse problems.
     """
     if not items:
         return ()
@@ -226,9 +278,15 @@ def _dedupe_overlapping_ngrams(
     kept: list[NgramUsageStats] = []
     for candidate in ordered:
         is_redundant = any(
-            candidate.ngram != kept_item.ngram
-            and candidate.ngram in kept_item.ngram
-            and int(candidate.total_count) == int(kept_item.total_count)
+            (
+                candidate.ngram != kept_item.ngram
+                and candidate.ngram in kept_item.ngram
+                and int(candidate.total_count) == int(kept_item.total_count)
+            )
+            or (
+                len(candidate.ngram) == len(kept_item.ngram)
+                and _windows_of_one_phrase(candidate.ngram, kept_item.ngram)
+            )
             for kept_item in kept
         )
         if is_redundant:

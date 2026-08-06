@@ -16,8 +16,6 @@ import pytest
 
 from bestseller.services import reviews
 from bestseller.services.ai_flavor.detector import detect, _detect_debt_metaphor_leak
-from bestseller.services.ai_flavor_gate import DESLOP_DISCOURSE_CATEGORIES
-from bestseller.services.deslop_revise import _EXTRA_SELF_CHECK
 from bestseller.services.drafts import render_anti_debt_prose_guardrail
 
 pytestmark = pytest.mark.unit
@@ -26,71 +24,30 @@ pytestmark = pytest.mark.unit
 # ── 检测器：正文债务化比喻回流 ────────────────────────────────────────────
 
 
-def test_debt_metaphor_leak_catches_real_calibration_sentence() -> None:
+def test_debt_metaphor_leak_detector_is_retired() -> None:
+    """2026-08-02: flagging every 债/账/欠 in finished prose deleted the story.
+
+    The deslop pass rewrote the flagged sentences out of the chapter. In a book
+    about an unpaid bill, a sect's resource accounts, or a favour owed, that is
+    the plot being edited away.
+    """
     text = (
         "但写了他就是认下这笔账：协议区以'写下副作用'完成对宿主的握手确认，"
         "白板上的字就是给协议区的欠条，第一条欠条。"
     )
-    spans = _detect_debt_metaphor_leak(text, lang="zh")
-    assert spans
-    assert all(s.category == "debt_metaphor_leak" for s in spans)
-    assert any("欠条" in s.matched_text for s in spans)
-
-
-def test_debt_metaphor_leak_silent_on_clean_embodied_cost() -> None:
-    text = (
-        "他知道自己不写，下次照镜延迟翻倍——代价是感官剥离，"
-        "镜像、声纹、时间感、记忆逐项失真。"
-    )
     assert _detect_debt_metaphor_leak(text, lang="zh") == []
-
-
-def test_debt_metaphor_leak_empty_for_english_or_empty_text() -> None:
-    assert _detect_debt_metaphor_leak("some debt IOU text", lang="en") == []
     assert _detect_debt_metaphor_leak("", lang="zh") == []
 
-
-def test_debt_metaphor_leak_wired_into_deslop_discourse_categories() -> None:
-    assert "debt_metaphor_leak" in DESLOP_DISCOURSE_CATEGORIES
-
-
-def test_debt_metaphor_leak_wired_into_full_detect_pipeline() -> None:
-    text = (
-        "他把手贴在墙上，感受着规则的震动。" * 5
-        + "但写了他就是认下这笔账：白板上的字就是给协议区的欠条，第一条欠条。"
-    )
-    report = detect(text, language="zh-CN", chapter_number=1)
-    assert any(s.category == "debt_metaphor_leak" for s in report.spans)
+    report = detect(text * 3, language="zh-CN", chapter_number=1)
+    assert not any(s.category == "debt_metaphor_leak" for s in report.spans)
 
 
-def test_deslop_self_check_mentions_debt_metaphor_item() -> None:
-    assert "债务化比喻回流" in _EXTRA_SELF_CHECK
-    assert "欠条" in _EXTRA_SELF_CHECK
-
-
-# ── prompt 层：正文写手反债务化护栏 ───────────────────────────────────────
-
-
-def test_anti_debt_prose_guardrail_fires_for_clean_premise() -> None:
-    premise = "夜班便利店店员纪昀凌晨两点照镜子，看见规则在空气中显形，代价是污染值累积。"
-    line = render_anti_debt_prose_guardrail(premise, is_en=False)
-    assert "反债务化护栏" in line
-    assert "欠条" in line
-
-
-def test_anti_debt_prose_guardrail_empty_when_user_wants_debt_theme() -> None:
-    premise = "主角是讨债公司的职员，专门帮死者向阳间亲属讨要欠债，每笔欠账都要还。"
+def test_anti_debt_prose_guardrail_is_retired() -> None:
+    """The writer's job is to invent imagery; the guardrail forbade exactly that."""
+    premise = "夜班便利店店员凌晨两点照镜子，看见规则在空气中显形。"
     assert render_anti_debt_prose_guardrail(premise, is_en=False) == ""
-
-
-def test_anti_debt_prose_guardrail_english_variant() -> None:
-    line = render_anti_debt_prose_guardrail("A clean embodied-cost premise.", is_en=True)
-    assert "Anti-debt-metaphor guardrail" in line
-
-
-def test_anti_debt_prose_guardrail_handles_missing_premise() -> None:
-    line = render_anti_debt_prose_guardrail(None, is_en=False)
-    assert "反债务化护栏" in line
+    assert render_anti_debt_prose_guardrail(premise, is_en=True) == ""
+    assert render_anti_debt_prose_guardrail(None, is_en=False) == ""
 
 
 # ── 场景评审：比喻/意象逻辑自洽（逻辑自洽硬轴第⑤条） ──────────────────────

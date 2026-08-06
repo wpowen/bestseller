@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="quickstart-client-schema" content="quickstart-client.v2">
 <title>BestSeller 一键创作 · Imprint Workbench</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3985,8 +3986,7 @@
     <a href="/library">书稿库 <span class="nav-count" id="navLibraryCount">00</span></a>
     <button id="navArchitecture" type="button" onclick="switchView('architecture')">架构设计</button>
     <a href="/methodology-course">写作方法论</a>
-    <a href="/quickstart">上架资料</a>
-    <a href="/quickstart">工作室设置</a>
+    <a href="/library">上架资料</a>
     <div class="header-status" aria-label="服务状态">
       <span class="health-dot"></span><span class="ok-text">服务正常</span>
       <span class="sep"></span>
@@ -4217,11 +4217,11 @@
             <span style="font-size:13px;">脑洞组合 story-loop<span class="hint" style="display:block;font-size:11px;">每章推进主回路</span></span>
           </label>
         </div>
-        <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">代价强度 <span class="hint">纯正爽文 · 单选 · 金手指是否强制自损代价</span></div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">代价强度 <span class="hint">纯正爽文 · 单选 · 金手指是否向主角本人收费</span></div>
         <div id="seCostRow" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
-          <span class="se-dir on" data-v="standard">标准</span>
-          <span class="se-dir" data-v="external">代价外置（主角不自损）</span>
-          <span class="se-dir" data-v="minimal">极简代价（服务爽感）</span>
+          <span class="se-dir on" data-v="standard" title="代价是真实系统：获得力量/真相要付费，代价可以延迟、可以不可逆。">标准（代价是真实系统）</span>
+          <span class="se-dir" data-v="external" title="世界与对手替主角付账：树敌、暴露、招来强敌；绝不削减主角的身体/记忆/关系/寿命/地位。">代价外置（世界买单，主角不自损）</span>
+          <span class="se-dir" data-v="minimal" title="金手指不向主角收费：不自损、不建「越用越亏」的账本，代价不做成核心机制或卖点。世界仍可危险。">爽文无代价（金手指不收费）</span>
         </div>
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">反常识方向 <span class="hint">单选 · 决定全书冲突轴</span></div>
         <div id="seDirRow" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
@@ -4342,12 +4342,13 @@
              共同根因之一。 -->
         <div class="summary-row summary-option" style="flex-direction:column;align-items:stretch;gap:6px;">
           <label for="conceptSeedInput" style="cursor:pointer;">
-            <span>故事创意（不填几乎必挂）</span>
-            <span class="hint" style="font-size:12px;">一句话：主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。它会成为概念生成的种子。实测：不填的书至今没有一本走出构思——空题材下淘汰赛生成不出能过门的概念，两轮跑完才失败。</span>
+            <span>故事创意（可选；填写后为最高优先级）</span>
+            <span class="hint" style="font-size:12px;">一句话：主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。填写后会原样进入建书契约；不填则由上方题材、调性和故事技能共同生成。</span>
           </label>
-          <textarea id="conceptSeedInput" rows="3" maxlength="300"
-            placeholder="例：靠给宗门死人验尸糊口的贱籍少年，发现每具尸体死前都听到了同一句话——而今天他自己也听到了。"
+          <textarea id="conceptSeedInput" rows="3" maxlength="500"
+            placeholder="例：外门杂役每次修复废弃阵眼，都能短暂看见灵脉下一次断裂的位置；今天断点落在宗门大殿，而执事命他当众证明阵法无恙。"
             style="width:100%;resize:vertical;font-size:13px;line-height:1.5;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);"></textarea>
+          <span class="hint" id="conceptSeedReceipt" style="font-size:12px;">当前：未填写，将按页面选项生成。</span>
         </div>
       </div>
       <div class="nav-buttons" style="flex-direction:column;gap:12px;">
@@ -5002,6 +5003,10 @@
     seCostStyle = 'standard';
     fanqiePov = 'first_person';
     chapterCount = DEFAULT_CHAPTER_COUNT;
+    const conceptSeedInput = $('#conceptSeedInput');
+    if (conceptSeedInput) conceptSeedInput.value = '';
+    const conceptSeedReceipt = $('#conceptSeedReceipt');
+    if (conceptSeedReceipt) conceptSeedReceipt.textContent = '当前：未填写，将按页面选项生成。';
     $('#genreSearch').value = '';
     $$('.lang-tab').forEach(t => t.classList.toggle('active', t.dataset.lang === DEFAULT_LANG));
     $('#toStep2').disabled = true;
@@ -5660,6 +5665,13 @@
 	    return String(task?.repair_status?.phase || '').trim();
 	  }
 
+  // 任务在概念阶段停止（stop_after_conception）：已完成概念构思但未进入正文。
+  // 这类任务没有章节能读，若按普通完成渲染会显示误导性的「共 0 章已完成」。
+  function isConceptionOnlyTask(task) {
+    const result = task?.result || {};
+    return result.mode === 'conception_only' || result.planning_started === false;
+  }
+
   function isFanqieShortTask(task) {
     const quick = task?.quickstart_meta || {};
     const payload = task?.payload || {};
@@ -5671,8 +5683,7 @@
       task?.project_type,
       payload.project_type,
       result.project_type,
-      stats.project_type,
-      task?.content_mode,
+      stats.project_type,      task?.content_mode,
       payload.content_mode,
       result.content_mode,
       stats.content_mode,
@@ -6529,7 +6540,8 @@
     let healthCls = 'ok';
     let healthText = '良好';
     const healthReasons = [];
-    if (status === 'failed') { healthCls = 'bad'; healthText = '异常'; healthReasons.push(task.error || '任务失败'); }
+    if (isConceptionOnlyTask(task)) { healthCls = 'warn'; healthText = '概念就绪'; healthReasons.push('等待审批后进入正文'); }
+    else if (status === 'failed') { healthCls = 'bad'; healthText = '异常'; healthReasons.push(task.error || '任务失败'); }
     else if (repairBlocked) { healthCls = 'warn'; healthText = '续跑'; healthReasons.push(task.current_stage === 'blocked_generation_gate' ? '规划门禁携带诊断续跑' : (task.current_stage === 'repair_needs_attention' || task.repair_status?.phase === 'needs_attention' ? '章节门禁修复中' : '结构修复续跑中')); }
     else if (errEvents.length > 0) { healthCls = 'bad'; healthText = '有错误'; healthReasons.push(`${errEvents.length} 项错误事件`); }
     else if (status === 'cancelled' || status === 'incomplete') { healthCls = 'warn'; healthText = '中止'; }
@@ -7058,21 +7070,50 @@
 	    }
 	  };
 
-	  window.resumeProjectBySlug = async function(slug) {
+	window.resumeProjectBySlug = async function(slug) {
 	    if (!slug) return;
 	    const project = projectBySlug.get(slug) || {};
 	    const genreKey = slug.replace(/-\d+$/, '');
-	    const chapterCount = Number(project.target_chapters || project.payload?.target_chapters || 100);
+	    const chapterCount = Number(
+	      project.target_chapters
+	      || project.payload?.target_chapters
+	      || 100,
+	    );
+	    const quickMeta = (project.quickstart_meta || project.payload || {});
 	    try {
+	      const quickstartPayload = {
+	        genre_key: genreKey,
+	        creation_mode: quickMeta.creation_mode,
+	        audience_orientation: quickMeta.audience_orientation,
+	        narrative_scale: quickMeta.narrative_scale,
+	        tone_preference: quickMeta.tone_preference,
+	        concept_seed: quickMeta.concept_seed,
+	        creative_key: quickMeta.creative_key,
+	        hook_spec: quickMeta.hook_spec,
+	        concept_lab_bundle: quickMeta.concept_lab_bundle,
+	        story_enhancers: quickMeta.story_enhancers,
+	        concept_lab_summary: quickMeta.concept_lab_summary,
+	        genre_intent_contract: quickMeta.genre_intent_contract,
+	        creation_intent_contract: quickMeta.creation_intent_contract,
+	        length_key: quickMeta.length_key,
+	        pov: quickMeta.pov,
+	        user_hints: quickMeta.user_hints,
+	        llm_model_id: quickMeta.llm_model_id || project.payload?.llm_model_id,
+	        target_words: quickMeta.target_words || project.payload?.target_words,
+	        project_slug: slug,
+	        chapter_count: chapterCount > 0 ? chapterCount : 100,
+
+	        client_schema_version: QUICKSTART_CLIENT_SCHEMA_VERSION,
+	      };
+	      for (const k of Object.keys(quickstartPayload)) {
+	        if (quickstartPayload[k] === undefined) delete quickstartPayload[k];
+	      }
+	      await attachClientIntentManifest(quickstartPayload);
 	      const res = await fetch('/api/tasks/quickstart', {
 	        method: 'POST',
 	        headers: { 'Content-Type': 'application/json' },
-	        body: JSON.stringify({
-	          genre_key: genreKey,
-	          project_slug: slug,
-	          chapter_count: chapterCount > 0 ? chapterCount : 100,
-	        }),
-	      });
+	        body: JSON.stringify(quickstartPayload),
+      });
 	      const data = await res.json().catch(() => ({}));
 	      if (!res.ok) {
 	        alert(data.error || '恢复任务失败');
@@ -7119,15 +7160,53 @@
     if (!task) return;
     // Re-submit with same project_slug to trigger resume
     const genreKey = slug.replace(/-\d+$/, '');
-    // Recover original chapter count from task metadata or progress events
-    const meta = task.quickstart_meta || {};
+    // Recover original chapter count and creative fields from stored snapshot,
+    // fallback to current task/payload fields.
+    const meta = task.quickstart_meta || task.payload || {};
     const pipeEvt = (task.progress_events || []).find(e => e.stage === 'project_pipeline_started');
-    const origChapters = meta.chapter_count || pipeEvt?.payload?.chapter_count || 100;
+    const origChapters =
+      Number(meta.chapter_count || meta.target_chapters || task.payload?.target_chapters || task.payload?.chapter_count)
+      || Number(pipeEvt?.payload?.chapter_count)
+      || Number(task.payload?.target_chapters)
+      || 100;
+
+    const quickstartPayload = {
+      client_schema_version: QUICKSTART_CLIENT_SCHEMA_VERSION,
+      genre_key: genreKey,
+      project_slug: slug,
+      chapter_count: origChapters > 0 ? origChapters : 100,
+      creation_mode: meta.creation_mode,
+      audience_orientation: meta.audience_orientation,
+      narrative_scale: meta.narrative_scale,
+      tone_preference: meta.tone_preference,
+      concept_seed: meta.concept_seed,
+      creative_key: meta.creative_key,
+      hook_spec: meta.hook_spec,
+      concept_lab_bundle: meta.concept_lab_bundle,
+      story_enhancers: meta.story_enhancers || task.payload?.story_enhancers,
+      concept_lab_summary: meta.concept_lab_summary,
+      genre_intent_contract: meta.genre_intent_contract,
+      creation_intent_contract: meta.creation_intent_contract,
+      length_key: meta.length_key,
+      pov: meta.pov,
+      user_hints: meta.user_hints,
+      llm_model_id: meta.llm_model_id || task.payload?.llm_model_id,
+      target_words: meta.target_words || task.payload?.target_words,
+    };
+
+    // Keep only defined values so backend receives a clean request.
+    for (const k of Object.keys(quickstartPayload)) {
+      if (quickstartPayload[k] === undefined) {
+        delete quickstartPayload[k];
+      }
+    }
+
     try {
+      await attachClientIntentManifest(quickstartPayload);
       const res = await fetch('/api/tasks/quickstart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ genre_key: genreKey, project_slug: slug, chapter_count: origChapters }),
+        body: JSON.stringify(quickstartPayload),
       });
       if (!res.ok) { const d = await res.json(); alert(d.error || '续传失败'); return; }
       const data = await res.json();
@@ -7260,7 +7339,8 @@
     taskStartTime = data.created_at;
 
     // Title
-    $('#pvTitle').textContent = status === 'completed' ? '创作完成!' : status === 'failed' ? '创作出错' : status === 'incomplete' ? '等待续跑' : '正在创作中...';
+    const conceptionOnly = status === 'completed' && isConceptionOnlyTask(data);
+    $('#pvTitle').textContent = conceptionOnly ? '概念已就绪' : status === 'completed' ? '创作完成!' : status === 'failed' ? '创作出错' : status === 'incomplete' ? '等待续跑' : '正在创作中...';
     $('#pvTitle').style.color = status === 'completed' ? 'var(--success)' : status === 'failed' ? 'var(--danger)' : status === 'incomplete' ? 'var(--warning)' : 'var(--text-bright)';
     $('#pvSub').textContent = data.title || slug || '';
     const flowLink = $('#pvFlowLink');
@@ -7658,10 +7738,19 @@
     if (status === 'completed') {
       stopProgressPoll();
       $('#pvDoneBanner').style.display = '';
-      $('#pvDoneSummary').textContent = isFanqieShort
-        ? `番茄短故事单篇已完成 · 全文约 ${fmtWords(completedWordCount || qsMeta.target_words || data.payload?.target_words || 0)}（见 exports/fanqie-short.md）`
-        : `共 ${bookDoneCount} 章已完成`;
-      $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
+      if (isConceptionOnlyTask(data)) {
+        $('#pvDoneBanner h2').textContent = '概念已就绪';
+        $('#pvDoneSummary').textContent = '概念构思已完成，等待审阅审批后进入正文。';
+        const readerLink = $('#pvReaderLink');
+        readerLink.textContent = '审阅概念 · 进入写作';
+        readerLink.href = `/design/${encodeURIComponent(slug)}`;
+      } else {
+        $('#pvDoneBanner h2').textContent = '创作完成!';
+        $('#pvDoneSummary').textContent = isFanqieShort
+          ? `番茄短故事单篇已完成 · 全文约 ${fmtWords(completedWordCount || qsMeta.target_words || data.payload?.target_words || 0)}（见 exports/fanqie-short.md）`
+          : `共 ${bookDoneCount} 章已完成`;
+        $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
+      }
     }
     if (status === 'failed' || status === 'incomplete') {
       stopProgressPoll();
@@ -8532,6 +8621,15 @@
     };
   }
 
+  $('#conceptSeedInput')?.addEventListener('input', (event) => {
+    const value = String(event.target?.value || '').trim();
+    const receipt = $('#conceptSeedReceipt');
+    if (!receipt) return;
+    receipt.textContent = value
+      ? `当前：已锁定 ${value.length} 字原始创意，将作为最高优先级事实源。`
+      : '当前：未填写，将按页面选项生成。';
+  });
+
   // Start
   async function startCreation() {
     if (creationMode === 'fanqie_short') {
@@ -8547,6 +8645,7 @@
     btn.innerHTML = '<span class="loading-spinner"></span> 提交中...';
     try {
       const body = buildQuickstartPayload();
+      await attachClientIntentManifest(body);
       const res = await fetch('/api/tasks/quickstart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -8554,6 +8653,15 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.detail || '提交失败');
+      const receipt = data.creation_input_receipt || data.quickstart_meta?.creation_input_receipt;
+      const localSeed = String(body.concept_seed || '').trim();
+      const localHash = await sha256Hex(localSeed);
+      if (!receipt || receipt.schema_version !== QUICKSTART_CLIENT_SCHEMA_VERSION
+          || receipt.concept_seed_present !== !!localSeed
+          || receipt.concept_seed_length !== utf8ByteLength(localSeed)
+          || receipt.concept_seed_hash !== localHash) {
+        throw new Error('服务端回执与本地创意不一致，任务未确认，请刷新页面后重试。');
+      }
       // Refresh task list so the new card appears, highlight it briefly,
       // then jump back to the dashboard. Avoid hijacking into progress view —
       // keeps the new vs. old running tasks clearly distinguishable.
@@ -8572,26 +8680,63 @@
 
   function buildQuickstartPayload() {
     const selectedConcept = selectedConceptBundle();
+    const storyEnhancers = collectStoryEnhancers();
+    const hasStoryEnhancers = (
+      storyEnhancers.brainhole
+      || storyEnhancers.wild_concept
+      || storyEnhancers.concept_lab
+      || !!storyEnhancers.creativity_direction
+      || storyEnhancers.effect_skills.length > 0
+      || storyEnhancers.cost_style !== 'standard'
+    );
     return {
+      client_schema_version: QUICKSTART_CLIENT_SCHEMA_VERSION,
       creation_mode: creationMode,
       genre_key: selectedGenreKey,
       selection: customSelection || undefined,
       audience_orientation: selectedAudience || undefined,
-      narrative_scale: selectedNarrativeScale || undefined,
+      // serial is the untouched UI baseline, not an explicit creative order.
+      narrative_scale: selectedNarrativeScale === 'epic' ? 'epic' : undefined,
       tone_preference: selectedTonePreference || undefined,
       concept_lab_bundle_id: selectedConcept?.bundle_id || undefined,
       concept_lab_bundle: selectedConcept || undefined,
       chapter_count: chapterCount,
       length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
       pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
-      draft_mode: !!$('#draftModeToggle').checked,
-      stop_after_conception: !!$('#stopAfterConceptionToggle').checked,
-      story_enhancers: collectStoryEnhancers(),
+      draft_mode: $('#draftModeToggle').checked ? true : undefined,
+      stop_after_conception: $('#stopAfterConceptionToggle').checked ? true : undefined,
+      story_enhancers: hasStoryEnhancers ? storyEnhancers : undefined,
       llm_model_id: ($('#createModelSelect')?.value || undefined),
       // 用户故事创意 → 后端 user_hints.concept_seed → 概念淘汰赛种子。
       // 后端链路一直就绪(server.py:4286),此前表单从未发送该字段。
-      concept_seed: ($('#conceptSeedInput')?.value || '').trim() || undefined,
+      // 截断到与服务端一致的 500 字:粘贴可绕过 maxlength,不截断会让回执哈希
+      // 对不上、误报「服务端回执与本地创意不一致 / 请刷新页面」。
+      concept_seed: ($('#conceptSeedInput')?.value || '').trim().slice(0, 500) || undefined,
     };
+  }
+
+  const QUICKSTART_CLIENT_SCHEMA_VERSION = 'quickstart-client.v2';
+
+  async function sha256Hex(value) {
+    if (!value) return null;
+    const bytes = new TextEncoder().encode(value);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function utf8ByteLength(value) {
+    return new TextEncoder().encode(String(value || '')).length;
+  }
+
+  async function attachClientIntentManifest(body) {
+    const seed = String(body.concept_seed || '').trim();
+    body.client_intent_manifest = {
+      schema_version: QUICKSTART_CLIENT_SCHEMA_VERSION,
+      concept_seed_present: !!seed,
+      concept_seed_length: utf8ByteLength(seed),
+      concept_seed_hash: await sha256Hex(seed),
+    };
+    return body;
   }
 
   function _localIsoWithOffset(input) {
@@ -8618,6 +8763,7 @@
       const isoWithTz = _localIsoWithOffset(raw);
       if (!isoWithTz) throw new Error('请先选择一个有效的启动时间');
       const body = { ...buildQuickstartPayload(), scheduled_at: isoWithTz };
+      await attachClientIntentManifest(body);
       const res = await fetch('/api/tasks/quickstart/schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

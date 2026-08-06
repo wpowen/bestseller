@@ -54,6 +54,82 @@ class ConceptMethodology(BaseModel, frozen=True):
     source: str = "static_fallback"  # llm | static_fallback
 
 
+def sanitize_concept_methodology(
+    methodology: ConceptMethodology,
+    *,
+    genre: str,
+    tone_preference: str = "",
+    cost_style: str = "standard",
+    allow_debt: bool = False,
+    allow_death: bool = False,
+) -> ConceptMethodology:
+    """Fill structural gaps in a model-authored methodology.
+
+    (2026-08-02) The motif filter was removed. This used to delete any field
+    containing debt/death/cost vocabulary and substitute framework-authored
+    filler — censoring ordinary story material AND injecting the same generic
+    replacement text into every book that tripped it. Methodology is advisory;
+    its content belongs to the book. Only genuinely empty fields are filled so
+    downstream renderers never see a blank contract.
+    """
+
+    del allow_debt, allow_death, cost_style
+
+    def _scalar(value: str, fallback: str) -> str:
+        text = str(value or "").strip()
+        return text or fallback
+
+    def _items(values: list[str], fallback: list[str]) -> list[str]:
+        clean = [str(item).strip() for item in values if str(item).strip()]
+        return clean or fallback
+
+    light = str(tone_preference or "").strip().lower() == "light"
+    safe_mindset = (
+        f"{genre}题材内的轻快行动反差与局面升级"
+        if light
+        else f"{genre}题材内的行动反差与局面升级"
+    )
+    updates = {
+        "mindset": _scalar(methodology.mindset, safe_mindset),
+        "mechanism_types": _items(
+            methodology.mechanism_types,
+            ["行动反差", "信息变化", "关系推进", "递进升级"],
+        ),
+        "reader_promise_axis": _scalar(
+            methodology.reader_promise_axis,
+            "主角通过可见选择持续改变关系、资源与对手反应",
+        ),
+        "shuangdian_cadence": _items(
+            methodology.shuangdian_cadence,
+            ["开篇建立具体压力", "行动获得可见回报", "章末产生新的主动选择"],
+        ),
+        "design_axes": _items(
+            methodology.design_axes,
+            ["压力升级", "信息揭示", "关系与能力变化"],
+        ),
+        "anti_patterns": _items(
+            methodology.anti_patterns,
+            ["大段世界观开篇", "回报缺少可见结果", "机制脱离当前冲突"],
+        ),
+        "market_signals": _items(methodology.market_signals, []),
+        "rationale": _scalar(
+            methodology.rationale,
+            "依据当前建书合同保留可执行、可升级且不替换题材的设计方向。",
+        ),
+    }
+    filled = any(
+        getattr(methodology, field_name) != value
+        for field_name, value in updates.items()
+    )
+    if filled:
+        updates["source"] = (
+            methodology.source
+            if methodology.source.endswith("_filled")
+            else f"{methodology.source}_filled"
+        )
+    return methodology.model_copy(update=updates)
+
+
 # ── Static market-heat fallback ─────────────────────────────────────────────
 
 # Heuristic genre → seed market profile (config/market_profiles/fanqie/*.yaml).
@@ -204,7 +280,7 @@ def fallback_concept_methodology(
         list(market_signals or [])
     ) or _static_market_signals(genre=genre, sub_genre=sub_genre, genre_key=genre_key)
     keywords = [k for k in (trend_keywords or []) if k][:6]
-    mechanism_types = keywords[:4] or ["反差/反转", "信息差", "代价绑定回报", "递进升级"]
+    mechanism_types = keywords[:4] or ["反差/反转", "信息差", "行动回报", "递进升级"]
     return ConceptMethodology(
         audience_orientation=orientation,
         mindset=f"{genre}核心爽感引擎（按题材自然生长）",
@@ -212,11 +288,11 @@ def fallback_concept_methodology(
         reader_promise_axis=(signals[0] if signals else f"{genre}读者的核心期待"),
         shuangdian_cadence=[
             "开篇即建立反常识/反差压力",
-            "每章给一次可见回报并同时付出代价",
+            "每章给一次可见回报并产生新的选择",
             "章末抛出更高一层的钩子",
         ],
         design_axes=signals[:4] or ["压力升级", "信息揭示", "关系/实力跃迁"],
-        anti_patterns=["大段世界观开篇", "回报无代价", "套路化金手指"],
+        anti_patterns=["大段世界观开篇", "回报缺少可见结果", "套路化金手指"],
         market_signals=signals,
         rationale="无可用模型输出，按题材趋势关键词 + 静态市场画像生成的兜底方法论。",
         source="static_fallback",
@@ -242,7 +318,7 @@ def build_methodology_system_prompt(*, language: str = "zh") -> str:
             "should look visibly different from recent new books in this genre. "
             "Output a methodology, NOT a concrete plot. "
             "Never name a specific gimmick or borrow a source work's setting — only "
-            "directions the writer must transform into an original, cost-bearing, "
+            "directions the writer must transform into an original, executable, "
             "escalating mechanism. Respond with a single valid JSON object, no prose."
         )
     return (
@@ -256,7 +332,7 @@ def build_methodology_system_prompt(*, language: str = "zh") -> str:
         "应当有肉眼可见的差异，而不是又一本同款。"
         "你输出的是方法论（思维方向 + 机制类型 + 节奏轴），不是具体剧情，"
         "更不是某个固定金手指。绝不照搬任何源作品的设定或专属名词；"
-        "你给的每一项都必须是写手可以在该题材里重新长出「可执行、可付代价、可升级」"
+        "你给的每一项都必须是写手可以在该题材里重新长出「可执行、可升级、能持续变化」"
         "原创机制的方向。只输出一个合法 JSON 对象，不要解释。"
     )
 
@@ -273,6 +349,9 @@ def build_methodology_user_prompt(
     fallback: ConceptMethodology,
     language: str = "zh",
     allowed_modernity: str = "genre_native",
+    tone_preference: str = "",
+    effect_skills: list[str] | tuple[str, ...] = (),
+    cost_style: str = "standard",
 ) -> str:
     orientation_label = {
         "male": "男频（男性向）",
@@ -296,7 +375,24 @@ def build_methodology_user_prompt(
         "workplace, or contemporary-city framing unless the user-selected taxonomy explicitly "
         "allows modernity.\n"
         if allowed_modernity == "genre_native"
-        else "Ontology boundary: modernity is allowed only within the selected genre contract; do not let it replace the genre spine.\n"
+        else (
+            "Ontology boundary: modernity is allowed only within the selected genre "
+            "contract; do not let it replace the genre spine.\n"
+        )
+    )
+    creation_controls = json.dumps(
+        {
+            "tone_preference": tone_preference or None,
+            "effect_skills": list(effect_skills),
+            "cost_style": cost_style or "standard",
+        },
+        ensure_ascii=False,
+    )
+    control_rule = (
+        "Creation controls are authoritative: "
+        f"{creation_controls}. Methodology must support them, not replace them. "
+        "For minimal cost style, build momentum from choices, opposition, exposure, "
+        "resource movement, and relationships; do not require a recurring universal price.\n"
     )
     if str(language or "").startswith("en"):
         return (
@@ -305,6 +401,7 @@ def build_methodology_user_prompt(
             f"Premise: {premise}\n"
             f"Reader orientation: {orientation_label}\n\n"
             f"{ontology_rule}"
+            f"{control_rule}"
             f"Market-heat signals:\n{signals_block}\n\n"
             "Return JSON with exactly these keys (values illustrate intent):\n"
             f"{json.dumps(schema, ensure_ascii=False, indent=2)}"
@@ -315,6 +412,7 @@ def build_methodology_user_prompt(
         f"前提：{premise}\n"
         f"读者取向：{orientation_label}\n\n"
         f"{ontology_rule}"
+        f"{control_rule}"
         f"市场热度信号：\n{signals_block}\n\n"
         "请输出 JSON，键固定如下（值仅示意，请替换为贴合本题材的内容）：\n"
         f"{json.dumps(schema, ensure_ascii=False, indent=2)}"
@@ -396,6 +494,11 @@ async def select_concept_methodology(
     project_id: Any | None = None,
     workflow_run_id: Any | None = None,
     allowed_modernity: str = "genre_native",
+    tone_preference: str = "",
+    effect_skills: list[str] | tuple[str, ...] = (),
+    cost_style: str = "standard",
+    allow_debt: bool = False,
+    allow_death: bool = False,
 ) -> ConceptMethodology:
     """Choose a 脑洞/爽点 methodology for this genre (fallback-safe)."""
 
@@ -449,6 +552,9 @@ async def select_concept_methodology(
                     fallback=fallback,
                     language=language,
                     allowed_modernity=allowed_modernity,
+                    tone_preference=tone_preference,
+                    effect_skills=effect_skills,
+                    cost_style=cost_style,
                 ),
                 fallback_response=json.dumps(
                     fallback.model_dump(mode="json"), ensure_ascii=False
@@ -462,8 +568,23 @@ async def select_concept_methodology(
         )
     except Exception:  # pragma: no cover - LLM failure → deterministic fallback
         logger.warning("concept methodology LLM failed; using fallback", exc_info=True)
-        return fallback
-    return parse_concept_methodology(completion.content, fallback=fallback)
+        return sanitize_concept_methodology(
+            fallback,
+            genre=genre,
+            tone_preference=tone_preference,
+            cost_style=cost_style,
+            allow_debt=allow_debt,
+            allow_death=allow_death,
+        )
+    parsed = parse_concept_methodology(completion.content, fallback=fallback)
+    return sanitize_concept_methodology(
+        parsed,
+        genre=genre,
+        tone_preference=tone_preference,
+        cost_style=cost_style,
+        allow_debt=allow_debt,
+        allow_death=allow_death,
+    )
 
 
 # ── Soft-advisory render ────────────────────────────────────────────────────
@@ -498,7 +619,7 @@ def render_concept_methodology_block(
     return (
         "【脑洞/爽点方法论 — 软框架（参考，非硬合同）】\n"
         "把它当作思维方向，而不是套路模板。请基于本题材与主角，长出你自己的"
-        "「可执行、可付代价、可升级」的原创机制；不要照抄这些类型词，更不要稀释成普通题材说明。\n"
+        "「可执行、可升级、会改变局面」的原创机制；不要照抄这些类型词，更不要稀释成普通题材说明。\n"
         f"{body}\n"
     )
 
@@ -510,5 +631,6 @@ __all__ = [
     "fallback_concept_methodology",
     "parse_concept_methodology",
     "render_concept_methodology_block",
+    "sanitize_concept_methodology",
     "select_concept_methodology",
 ]

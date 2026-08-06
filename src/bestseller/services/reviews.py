@@ -613,23 +613,12 @@ def _material_reference_prompt_block(
     *,
     language: str | None,
 ) -> str:
-    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-    block = str(metadata.get("material_reference_block") or "").strip()
-    if not block:
-        return ""
-    if is_english_language(language):
-        lead = (
-            "[Project material anchors]\n"
-            "Use these §slug anchors as canonical project material. Do not invent "
-            "new equivalent names, rules, factions, or devices when an anchor already covers the function.\n"
-        )
-    else:
-        lead = (
-            "【本书素材锚点】\n"
-            "以下 §slug 是本书已落库素材。重写时必须优先使用这些既有规则、地点、人物、物件、情绪弧和反套路约束；"
-            "不得另造同功能的新名词、新规则或无关怪谈。\n"
-        )
-    return f"{lead}{block}\n"
+    # The global project-material inventory is a retrieval pool, not approved
+    # book canon.  Review/repair must use the chapter's scoped canon packet and
+    # formal planning artifacts; otherwise a rewrite can reintroduce concepts
+    # that the planning gates already rejected.
+    del project, language
+    return ""
 
 
 def _clamp_score(value: float) -> float:
@@ -3208,8 +3197,8 @@ def build_chapter_rewrite_prompts(
             "人物动作、物件变化、威胁逼近、证据显现或主角选择。若章末钩子是对白，"
             "必须在对白之后再补一句现场动作/物件变化作为最后帧；禁止最后一句只是台词、"
             "抽象解释、设定总结，或仍悬在未完成的进行中动作。章末只能保留一个主钩子，"
-            "最多一个辅助信息；不得连续堆叠电梯异象、门缝渗水、短信、电话、新人名、"
-            "账页弹窗等多个未解悬念。选择最服务下一章的钩子，并把最后一句写成已完成的"
+            "最多一个辅助信息；不得连续堆叠与本书正典无关的异象、通信、陌生人名或物件提示。"
+            "选择最服务下一章的钩子，并把最后一句写成已完成的"
             "画面定格、物件状态变化或主角明确选择。\n"
         )
     )
@@ -3220,8 +3209,8 @@ def build_chapter_rewrite_prompts(
         if is_en
         else (
             "【场景转场闸门·硬性要求】禁止用 ---、***、小节分隔符或空行硬切换场景。"
-            "每次地点或时间变化，必须先写一句可见转场动作，例如挂断电话、出门、下楼、"
-            "电梯移动、门牌变化、时间跳动或物件反应，再进入新地点。\n"
+            "每次地点或时间变化，必须先写一句符合本书世界与当前人物行动的可见转场动作，"
+            "再进入新地点。\n"
         )
     )
     _front10_rewrite_contract_block = _render_front10_rewrite_contract_block(
@@ -3229,7 +3218,7 @@ def build_chapter_rewrite_prompts(
         chapter_context,
         language=language,
     )
-    _quality_uplift_rewrite_block = _render_quality_uplift_rewrite_block(chapter)
+    _quality_uplift_rewrite_block = _render_quality_uplift_rewrite_block(chapter, project)
     user_prompt = (
         (
             f"Project: {project.title}\n"
@@ -3296,8 +3285,37 @@ def build_chapter_rewrite_prompts(
     return system_prompt, user_prompt
 
 
-def _render_quality_uplift_rewrite_block(chapter: ChapterModel) -> str:
+def _render_quality_uplift_rewrite_block(
+    chapter: ChapterModel,
+    project: ProjectModel | None = None,
+) -> str:
+    """The rewrite path's copy of the quality-uplift blocks.
+
+    Honours the prose profile. ``lean`` drops 【全书重复词禁用清单】 from the
+    first-draft prompt because it "pushes the writer into inventing fresh jargon
+    to dodge banned words" — but this path appended it unconditionally, and most
+    shipped prose comes from rewrites, so the excluded block reached the writer
+    anyway. One judgement, one answer (2026-08-04).
+
+    The rewrite-escalation directive is not part of that section and still
+    applies: it is this chapter's own repair instruction, not a book-wide ban
+    list.
+    """
+
+    from bestseller.services.prose_prompt_profile import prose_profile_drops_section
+
     metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    if prose_profile_drops_section(
+        "quality_uplift",
+        project_metadata=getattr(project, "metadata_json", None),
+    ):
+        escalation = metadata.get("rewrite_escalation")
+        directive = (
+            str(escalation.get("strict_directive") or "").strip()
+            if isinstance(escalation, dict)
+            else ""
+        )
+        return f"{directive}\n" if directive else ""
     blocks = metadata.get("quality_uplift_prompt_blocks")
     rewrite_escalation = metadata.get("rewrite_escalation")
     parts: list[str] = []

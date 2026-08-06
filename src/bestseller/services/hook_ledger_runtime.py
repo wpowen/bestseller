@@ -77,12 +77,12 @@ def render_hook_ledger_planner_contract(*, language: str | None = None) -> str:
             "mystery, desire, threat."
         )
     return (
-        "【方法论 v2 钩子台账合同】\n"
+        "【方法论 v2 钩子清单合同】\n"
         "- 把 `methodology_contract.hooks_to_resolve` 和 "
         "`methodology_contract.hooks_to_plant` 当成本章 hook ledger delta，"
         "不是装饰性说明。\n"
         "- 每章在条件允许时至少消解一个旧钩子，并至少植入一个新钩子。\n"
-        "- 滚动台账保持 3-7 个活跃钩子，避免悬念饥饿或过载。\n"
+        "- 滚动清单保持 3-7 个活跃钩子，避免悬念饥饿或过载。\n"
         "- 控制本章 delta：第 1 章可植入 2-3 个钩子；第 2 章以后通常只植入 "
         "1-2 个、消解 1-2 个。若活跃钩子会超过 7 个，必须消解数不少于植入数，"
         "且不得额外加钩子。\n"
@@ -306,13 +306,13 @@ def _hook_ledger_rewrite_instructions(
             "- Do not mention hook-ledger terminology in prose."
         )
     return (
-        "【钩子台账修复】\n"
-        f"修复第 {chapter_number} 章的钩子台账缺口：{', '.join(codes)}。\n"
+        "【钩子清单修复】\n"
+        f"修复第 {chapter_number} 章的钩子清单缺口：{', '.join(codes)}。\n"
         "- 保留既有剧情结果，不要重开新章。\n"
         "- 至少补出一个读者可见的新植入钩子；除第 1 章外，还要补出一个旧钩子的可见消解。\n"
         "- 如果存在超期钩子，必须在正文中解决、转化或明确退场。\n"
         "- 如果本章有 payoff / 情绪释放，章末前必须种下下一轮压力或未答问题。\n"
-        "- 正文禁止出现 hook ledger、方法论、钩子台账等创作术语。"
+        "- 正文禁止出现 hook ledger、方法论、钩子清单等创作术语。"
     )
 
 

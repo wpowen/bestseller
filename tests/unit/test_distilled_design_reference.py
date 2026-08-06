@@ -32,6 +32,7 @@ def _aggregate(tmp_path: Path, key: str = "otherworld-cross-system") -> Path:
         {
             "aggregate_key": key,
             "source_count": 3,
+            "source_ids": ["source-0001", "source-0002", "source-0003"],
             "material_rows": 2,
             "mechanism_rows": 2,
         },
@@ -152,3 +153,48 @@ def test_render_all_distilled_design_reference_blocks_are_phase_specific(
     assert "双规则城邦" in blocks["world"]
     assert "冒犯权威的专业外来者" not in blocks["world"]
     assert "冒犯权威的专业外来者" in blocks["cast"]
+
+
+def test_generic_distillation_never_enters_generation_prompts(tmp_path: Path) -> None:
+    root = _aggregate(tmp_path, key="distillation-generic")
+    _write_jsonl(
+        root / "volume_design_paths.jsonl",
+        [
+            {
+                "volume_no": 1,
+                "arc_function": "A debtor rises through repeated financial opportunities.",
+            }
+        ],
+    )
+
+    block = render_distilled_design_reference_block(
+        category_key="action-progression",
+        genre="仙侠",
+        phase="architecture",
+        repo_root=tmp_path,
+    )
+
+    assert block == ""
+
+
+def test_unverified_zero_source_aggregate_never_enters_generation_prompts(
+    tmp_path: Path,
+) -> None:
+    root = _aggregate(tmp_path)
+    _write_json(
+        root / "aggregate_manifest.json",
+        {
+            "aggregate_key": "otherworld-cross-system",
+            "source_count": 0,
+            "maturity_score": 0.6,
+            "maturity_status": "review",
+        },
+    )
+
+    block = render_distilled_design_reference_block(
+        category_key="otherworld-cross-system",
+        phase="volume_plan",
+        repo_root=tmp_path,
+    )
+
+    assert block == ""

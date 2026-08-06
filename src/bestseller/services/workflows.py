@@ -3280,6 +3280,17 @@ def _audit_bible_completeness(
         )
         return
 
+    if report.advisory_deficiencies:
+        # Reported, never blocking: these describe preparedness, not a
+        # malformed bible. Staying silent about them would trade one failure
+        # mode (a deadlock) for another (an invisible defect).
+        logger.warning(
+            "L2 bible gate advisory findings for project %s: codes=%s "
+            "(recorded, not blocking)",
+            project_slug,
+            sorted({d.code for d in report.advisory_deficiencies}),
+        )
+
     if report.passes:
         logger.info("L2 bible gate passed for project %s", project_slug)
         return
@@ -3287,11 +3298,11 @@ def _audit_bible_completeness(
     # Summarise deficiencies for observability. The full prompt feedback is
     # already wrapped by report.feedback_for_regen() — log it at DEBUG so
     # the info level stays scannable.
-    codes = sorted({d.code for d in report.deficiencies})
+    codes = sorted({d.code for d in report.blocking_deficiencies})
     feedback = report.feedback_for_regen()
     logger.warning(
         "L2 bible gate blocked materialization with %d deficiencies for project %s: codes=%s",
-        len(report.deficiencies),
+        len(report.blocking_deficiencies),
         project_slug,
         codes,
     )

@@ -25,6 +25,13 @@ Four families, all evidenced by real output from custom-xuanhuan-1785980083:
 * ``framework_leak`` — 极简代价/绝不反向惩罚主角/不进度清零 : the framework's own
   directives copied verbatim into reader-facing text. This one is the most
   embarrassing: it means an internal instruction escaped into the shop window.
+* ``directive_voice`` — 开篇就亮出…/必须持续兑现/不允许无效日常堆积 : an order given
+  to the *generator*, not a promise made to a reader. The lexical families above
+  cannot see this one — 「主角成长路径、体系升级…必须持续兑现」 contains no jargon
+  at all and still scores 0.0, yet nobody would print it on a book's listing.
+  The discriminator is not vocabulary but addressee: the sentence commands the
+  text's own production units (开篇 / 全书 / 章末 / 前三章) instead of describing
+  what happens to a person.
 
 Deliberately narrow. Copy is allowed to be punchy, exaggerated, even trashy —
 those are genre registers, not defects. Only the four families above are
@@ -41,6 +48,7 @@ __all__ = [
     "CopyFlavorReport",
     "CopyFlavorSpan",
     "detect_copy_flavor",
+    "pick_reader_facing",
 ]
 
 
@@ -98,6 +106,21 @@ _RULES: Final[tuple[tuple[str, str, float, str], ...]] = (
         10.0,
         "框架内部指令泄漏进对外文案——这是给生成器看的话，不该出现在成品里",
     ),
+    (
+        # Two shapes of the same defect. First: a production unit of the text
+        # itself (开篇/全书/章末/前三章) followed by an order. Second: bare
+        # production orders that need no such subject. 「他必须在三天内赶到」 is
+        # narrative and must stay clean — that is why the modal alone is never
+        # enough, it has to be aimed at the manuscript.
+        "directive_voice",
+        r"(开篇|全书|正文|章末|收尾|前\s*[一二三四五六七八九十百千万\d]+\s*[章字])"
+        r"[^。；！？]{0,16}?(必须|一定要|得先|亮出|抛出|给出|推进|证明|拉住)"
+        r"|必须(持续|不断|连续)(兑现|推进|升级|维持)"
+        r"|不允许[^。；！？]{0,12}(堆积|空转|注水|拖沓)"
+        r"|不能只(靠|写|停留)",
+        6.0,
+        "在命令生成器该怎么写，而不是在告诉读者会看到什么——这话的听众是写手，不是读者",
+    ),
 )
 
 _COMPILED: Final[tuple[tuple[str, re.Pattern[str], float, str], ...]] = tuple(
@@ -122,3 +145,33 @@ def detect_copy_flavor(text: str | None) -> CopyFlavorReport:
             score += weight
 
     return CopyFlavorReport(score=round(score, 1), spans=tuple(spans))
+
+
+def pick_reader_facing(*candidates: str | None) -> str:
+    """Pick the first candidate a reader could actually be shown.
+
+    Several places choose a reader-facing string from a preference chain whose
+    first link is a generator directive. The clearest case: a genre preset's
+    ``market.reader_promise`` holds an order to the writer —
+
+        开篇快速亮出主角差异化优势、当前利益、即时危险和连载钩子，持续维持强追读。
+
+    — and that string was becoming the listing subtitle. One field name, two
+    jobs; the instruction shipped as shop-window text.
+
+    Preference order is preserved, so this is a filter and not a reorder: a
+    candidate that reads as a directive is skipped, nothing is promoted. When
+    every candidate is a directive the **last** one is kept — callers order
+    these directive-first and copy-last, so that degrades to the previous
+    behaviour rather than to an empty field.
+
+    Lives here rather than at either call site because both chains must make
+    the same judgement; a second copy of this rule is a second place for it to
+    drift.
+    """
+
+    texts = [str(candidate or "").strip() for candidate in candidates]
+    for text in texts:
+        if text and detect_copy_flavor(text).clean:
+            return text
+    return next((text for text in reversed(texts) if text), "")

@@ -65,6 +65,48 @@ class TestCatchesTheRealDefects:
             assert span.why
 
 
+class TestDirectiveVoice:
+    """The family the word-lists cannot see.
+
+    Every fixture is a real ``reader_promise`` from ``writing_presets`` that was
+    reaching the listing subtitle. The first one carries no jargon at all — it
+    scored 0.0 before this family existed — and is still obviously not copy.
+    """
+
+    @pytest.mark.parametrize(
+        "directive",
+        [
+            "主角成长路径、体系升级、势力扩张和更大世界必须持续兑现。",
+            "开篇快速亮出主角差异化优势、当前利益、即时危险和连载钩子，持续维持强追读。",
+            "第一页给压力和问题，前三章给主角优势与小爽点，前一万字证明可持续追读循环。",
+            "每章都要有比赛结果、技术反差、直播反馈或职业推进，不允许无效日常堆积。",
+            "每章必须推进线索、扩大不安或揭开一层旧案关系，不能只靠氛围空转。",
+        ],
+    )
+    def test_generator_orders_are_flagged(self, directive: str) -> None:
+        assert any(
+            span.category == "directive_voice"
+            for span in detect_copy_flavor(directive).spans
+        )
+
+    @pytest.mark.parametrize(
+        "narrative",
+        [
+            "他必须在三天内赶到雁门关，否则母亲活不过这个冬天。",
+            "她证明了自己不是废物，代价是再也回不去。",
+            "全宗门都以为他废了，只有他自己知道，那道断掉的经脉里藏着什么。",
+        ],
+    )
+    def test_a_modal_inside_a_story_is_not_a_directive(self, narrative: str) -> None:
+        """「必须」「证明」 belong to characters too.
+
+        The discriminator is the addressee, not the verb: a directive commands
+        the manuscript's own units (开篇/前三章/章末), a story commands a person.
+        """
+
+        assert detect_copy_flavor(narrative).clean
+
+
 class TestDoesNotPunishGoodCopy:
     def test_the_real_logline_stays_clean(self) -> None:
         assert detect_copy_flavor(_GOOD_LOGLINE).clean

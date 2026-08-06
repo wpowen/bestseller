@@ -16,6 +16,7 @@ from bestseller.domain.concept_lab import (
     ConceptTitleSeed,
 )
 from bestseller.services.anti_commonsense_hook import generate_hook_candidates
+from bestseller.services.copy_flavor import pick_reader_facing
 from bestseller.services.genre_creativity import (
     GenreCreativeDirection,
     get_genre_creative_direction,
@@ -332,7 +333,9 @@ def _build_bundle(
     novelty_score = hook.novelty_score if isinstance(hook, HookCandidate) else 0.0
     combined_rank = hook.combined_rank if isinstance(hook, HookCandidate) else 0.0
     hype = hype_scheme_from_preset_overrides(preset.writing_profile_overrides)
-    reader_promise = hype.reader_promise or preset.trend_summary or direction.logline
+    reader_promise = pick_reader_facing(
+        hype.reader_promise, preset.trend_summary, direction.logline
+    )
     one_liner = hook_spec.one_liner or direction.logline
     bundle_id = _bundle_id(preset.key, direction.key, hook_spec.mechanism_key, one_liner)
     selling_points = _dedupe(

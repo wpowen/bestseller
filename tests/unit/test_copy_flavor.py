@@ -103,3 +103,67 @@ class TestScoring:
     def test_empty_input_is_clean(self, value: str | None) -> None:
         assert detect_copy_flavor(value).clean
         assert detect_copy_flavor(value).score == 0.0
+
+
+class TestGenerationSideFixes:
+    """The prompts that produced the flagged copy.
+
+    Two root causes, both visible in the schema the model was handed:
+    1. ``selling_points`` was described only as 「卖点1, 卖点2, 卖点3」 — a field
+       name with no register, so the model filled the vacuum with whatever it
+       had just read, which was the framework's own cost directive.
+    2. ``reader_promise`` was literally described as 「一句话追读承诺」 — the
+       schema itself used the trade jargon the copy then echoed.
+    """
+
+    def test_selling_points_schema_states_the_register(self) -> None:
+        from bestseller.services import conception
+
+        import inspect
+
+        source = inspect.getsource(conception._commercial_positioning_user_prompt)
+        assert "像跟朋友安利一本书" in source
+
+    def test_reader_promise_schema_bans_trade_jargon(self) -> None:
+        from bestseller.services import conception
+
+        import inspect
+
+        source = inspect.getsource(conception._commercial_positioning_user_prompt)
+        assert "追读" in source and "不用行业词" in source, (
+            "schema 必须显式禁用行业词——它自己写「一句话追读承诺」时，"
+            "模型只是照做"
+        )
+
+    def test_cost_directive_is_scoped_to_design_not_copy(self) -> None:
+        """The leak this caused: 「极简代价、不掉链子」 shipped as a selling point."""
+
+        from bestseller.services.conception import _cost_style_block_for_ctx
+
+        block = _cost_style_block_for_ctx(
+            {"genre_intent_contract": {"explicit_enhancers": {"cost_style": "minimal"}}},
+            is_en=False,
+        )
+        assert "不是文案素材" in block
+        assert "禁止把它的措辞复述" in block
+
+    def test_scope_line_absent_for_standard_books(self) -> None:
+        from bestseller.services.conception import _cost_style_block_for_ctx
+
+        assert (
+            _cost_style_block_for_ctx(
+                {"genre_intent_contract": {"explicit_enhancers": {"cost_style": "standard"}}},
+                is_en=False,
+            )
+            == ""
+        )
+
+    def test_scope_line_names_no_motif_vocabulary(self) -> None:
+        from bestseller.services.conception import _cost_style_block_for_ctx
+
+        block = _cost_style_block_for_ctx(
+            {"genre_intent_contract": {"explicit_enhancers": {"cost_style": "minimal"}}},
+            is_en=False,
+        )
+        for token in ("债", "账", "欠", "寿", "记忆"):
+            assert token not in block

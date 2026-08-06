@@ -40,6 +40,70 @@ from bestseller.services.truth_version import TruthVersionStaleError
 from bestseller.services.write_safety_gate import WriteSafetyBlockError, WriteSafetyFinding
 from bestseller.settings import load_settings
 
+
+# Export fixtures need a chapter of realistic length, not realistic quality —
+# but they still pass through the terminal export gate. The old filler was
+# `"沈砚按住星图，港口的雾又往前压了一尺。" * 200`: one sentence 200 times, i.e. the
+# most extreme possible case of the chapter-level repetition the ai_flavor
+# detector grades. Once that detector learned to scale severity with magnitude
+# (2026-08-06) the placeholder started failing the gate on its own merits.
+_FILLER_SUBJECTS = (
+    "沈砚", "老周", "阿箬", "把头", "伙计", "水手", "账房", "巡兵", "舵工", "船娘",
+    "盐丁", "更夫", "杂役", "书吏", "缆工", "浮标匠", "引水人", "渔妇", "脚夫", "灯奴",
+)
+_FILLER_VERBS = (
+    "按住", "推开", "收起", "翻过", "扣紧", "擦亮", "撂下", "拎起", "解开", "盘好",
+    "捆牢", "晾开", "码齐", "搭上", "拽住", "垫高", "掀起", "压平", "抖散", "缠紧",
+)
+_FILLER_OBJECTS = (
+    "星图", "缆绳", "铜灯", "账册", "舱门", "罗盘", "油布", "竹篙", "锚链", "风帆",
+    "水囊", "渔网", "浮筒", "桨叶", "舷梯", "货箱", "篾席", "盐包", "铁钩", "苇席",
+)
+_FILLER_PLACES = (
+    "栈桥尽头", "货舱底下", "灯塔背面", "潮水线外", "补网棚里", "盐仓边上", "浮桥中段",
+    "旧渡口边", "风信旗下", "石阶转角", "晒场西头", "井台后面", "柴垛旁边", "窄巷出口",
+    "水门内侧", "滩涂深处", "礁石北面", "缆桩之间", "坞口正中", "渡船尾上",
+)
+_FILLER_BEATS = (
+    "雾比昨夜厚了整整一层，看不见对岸的灯",
+    "远处的钟声敲了三下，随后被风截断",
+    "潮水开始回落，露出半截发黑的木桩",
+    "风向偏了半点，帆面松下来又绷紧",
+    "舷灯忽明忽暗，映得水面像碎了一地",
+    "水鸟贴着浪尖低低掠过，没有叫",
+    "缆桩发出一声闷响，像是被什么撞了",
+    "雨点砸在甲板上，砸出一串浅坑",
+    "远处有人在喊号子，喊了两声就停了",
+    "晒着的渔网滴着水，滴到脚背上",
+    "桅顶的旗子转了个方向，绳扣跟着响",
+    "海面忽然静下来，静得不太对劲",
+    "岸上的灯一盏盏亮起来，先亮的最暗",
+    "有条舢板逆着潮往里划，划得极慢",
+    "空气里的咸味重了些，像要落雨",
+    "远处驶来一条挂黑帆的船，没有点灯",
+    "脚下的木板吱呀一声，往下陷了半分",
+    "天色比刚才更沉，云压到了桅杆高度",
+    "一只木桶从跳板上滚下去，没人去追",
+    "浪头拍上石堤，碎成一层白沫",
+)
+
+
+def build_filler_prose(sentences: int = 75) -> str:
+    """Deterministic filler with no 4-gram repeated 5+ times.
+
+    Co-prime strides across the five pools keep every phrase below the
+    detector's repetition threshold, so the fixture exercises export plumbing
+    without doubling as a quality-gate failure.
+    """
+
+    return "".join(
+        f"{_FILLER_SUBJECTS[i % 20]}{_FILLER_VERBS[(i * 3) % 20]}"
+        f"{_FILLER_OBJECTS[(i * 7) % 20]}，"
+        f"{_FILLER_PLACES[(i * 11) % 20]}{_FILLER_BEATS[(i * 13) % 20]}。"
+        for i in range(sentences)
+    )
+
+
 pytestmark = pytest.mark.unit
 
 
@@ -3529,7 +3593,7 @@ async def test_export_project_markdown_writes_artifact(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# 第1章 失准星图\n\n" + ("沈砚按住星图，港口的雾又往前压了一尺。" * 200),
+        content_md="# 第1章 失准星图\n\n" + build_filler_prose(105),
         word_count=2860,
         assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
@@ -3540,6 +3604,11 @@ async def test_export_project_markdown_writes_artifact(
         return project
 
     monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    # These tests cover export plumbing (artifact rows, stale files, docx/epub
+    # bytes), not prose quality. The terminal quality gate has its own test
+    # below; leaving it live here made a placeholder chapter's writing style
+    # decide whether the exporter was considered working.
+    monkeypatch.setattr(export_services, "_run_terminal_export_gate", lambda *a, **k: None)
     settings = build_settings()
     settings.output.base_dir = str(tmp_path / "output")
     session = FakeSession(
@@ -3595,6 +3664,11 @@ async def test_publication_export_rejects_missing_promoted_chapter(
         return project
 
     monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    # These tests cover export plumbing (artifact rows, stale files, docx/epub
+    # bytes), not prose quality. The terminal quality gate has its own test
+    # below; leaving it live here made a placeholder chapter's writing style
+    # decide whether the exporter was considered working.
+    monkeypatch.setattr(export_services, "_run_terminal_export_gate", lambda *a, **k: None)
     session = FakeSession(
         scalar_results=[promoted, None],
         scalars_results=[[chapter_one, chapter_two]],
@@ -3633,6 +3707,11 @@ async def test_export_project_closure_draft_uses_current_quality_debt_without_we
         return project
 
     monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    # These tests cover export plumbing (artifact rows, stale files, docx/epub
+    # bytes), not prose quality. The terminal quality gate has its own test
+    # below; leaving it live here made a placeholder chapter's writing style
+    # decide whether the exporter was considered working.
+    monkeypatch.setattr(export_services, "_run_terminal_export_gate", lambda *a, **k: None)
     settings = build_settings()
     settings.output.base_dir = str(tmp_path / "output")
     session = FakeSession(scalar_results=[draft], scalars_results=[[chapter]])
@@ -3673,6 +3752,11 @@ async def test_export_project_markdown_removes_stale_chapter_files(
         return project
 
     monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    # These tests cover export plumbing (artifact rows, stale files, docx/epub
+    # bytes), not prose quality. The terminal quality gate has its own test
+    # below; leaving it live here made a placeholder chapter's writing style
+    # decide whether the exporter was considered working.
+    monkeypatch.setattr(export_services, "_run_terminal_export_gate", lambda *a, **k: None)
     settings = build_settings()
     settings.output.base_dir = str(tmp_path / "output")
     package_root = tmp_path / "output" / project.slug
@@ -3704,7 +3788,7 @@ async def test_export_project_docx_writes_artifact(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# 第1章 失准星图\n\n" + ("沈砚按住星图，港口的雾又往前压了一尺。" * 200),
+        content_md="# 第1章 失准星图\n\n" + build_filler_prose(105),
         word_count=2860,
         assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
@@ -3715,6 +3799,11 @@ async def test_export_project_docx_writes_artifact(
         return project
 
     monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    # These tests cover export plumbing (artifact rows, stale files, docx/epub
+    # bytes), not prose quality. The terminal quality gate has its own test
+    # below; leaving it live here made a placeholder chapter's writing style
+    # decide whether the exporter was considered working.
+    monkeypatch.setattr(export_services, "_run_terminal_export_gate", lambda *a, **k: None)
     settings = build_settings()
     settings.output.base_dir = str(tmp_path / "output")
     session = FakeSession(
@@ -3747,7 +3836,7 @@ async def test_export_project_epub_writes_artifact(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# 第1章 失准星图\n\n" + ("沈砚按住星图，港口的雾又往前压了一尺。" * 200),
+        content_md="# 第1章 失准星图\n\n" + build_filler_prose(105),
         word_count=2860,
         assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
@@ -3758,6 +3847,11 @@ async def test_export_project_epub_writes_artifact(
         return project
 
     monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    # These tests cover export plumbing (artifact rows, stale files, docx/epub
+    # bytes), not prose quality. The terminal quality gate has its own test
+    # below; leaving it live here made a placeholder chapter's writing style
+    # decide whether the exporter was considered working.
+    monkeypatch.setattr(export_services, "_run_terminal_export_gate", lambda *a, **k: None)
     settings = build_settings()
     settings.output.base_dir = str(tmp_path / "output")
     session = FakeSession(
@@ -3801,6 +3895,11 @@ async def test_export_project_markdown_blocks_unfinished_placeholder_content(
         return project
 
     monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    # These tests cover export plumbing (artifact rows, stale files, docx/epub
+    # bytes), not prose quality. The terminal quality gate has its own test
+    # below; leaving it live here made a placeholder chapter's writing style
+    # decide whether the exporter was considered working.
+    monkeypatch.setattr(export_services, "_run_terminal_export_gate", lambda *a, **k: None)
     settings = build_settings()
     settings.output.base_dir = str(tmp_path / "output")
     session = FakeSession(
@@ -4015,6 +4114,11 @@ async def test_export_project_markdown_blocks_cross_chapter_repetition(
         return project
 
     monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    # These tests cover export plumbing (artifact rows, stale files, docx/epub
+    # bytes), not prose quality. The terminal quality gate has its own test
+    # below; leaving it live here made a placeholder chapter's writing style
+    # decide whether the exporter was considered working.
+    monkeypatch.setattr(export_services, "_run_terminal_export_gate", lambda *a, **k: None)
     settings = build_settings()
     settings.output.base_dir = str(tmp_path / "output")
     session = FakeSession(

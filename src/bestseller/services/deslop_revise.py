@@ -113,6 +113,30 @@ def _staccato_ratio(content: str) -> float:
     return solo / len(paras)
 
 
+def _deslop_length_floor(current_len: int, target_chars: int) -> float:
+    """Shortest rewrite this stage may accept.
+
+    The floor used to be ``max(len(content) * 0.6, target * 0.7)`` — anchored on
+    the draft being repaired. That made the worst chapters unrepairable, because
+    length *is* the defect here: a chapter reaches 2.2x target by writing one
+    beat over and over (live ch16: 47.6% of its 4-grams belonged to phrases
+    repeated 5+ times, the top one 75 times). Cutting that padding honestly
+    lands near target — which the draft-anchored floor rejected as "too short",
+    and the caller then ``break``s out of every remaining round. The padding
+    defended itself: the more a chapter repeated, the more repetition it was
+    required to keep.
+
+    So an over-long draft is measured against its contract instead. A draft that
+    is already at or under target has no padding to give back, and keeps the
+    original relative guard so a rewrite cannot gut it.
+    """
+
+    contract_floor = float(min(current_len, int(target_chars * 0.7)))
+    if current_len <= target_chars:
+        return max(contract_floor, current_len * 0.6)
+    return contract_floor
+
+
 async def revise_prose_deslop(
     session,
     settings,
@@ -233,10 +257,7 @@ async def _revise_prose_deslop_inner(
         # never let a rewrite drag an on-target draft below ~70% of the
         # chapter target (which would trip the downstream LENGTH gate and
         # start a rewrite loop).
-        length_floor = max(
-            len(content) * 0.6,
-            min(len(content), int(target_chars * 0.7)),
-        )
+        length_floor = _deslop_length_floor(len(content), target_chars)
         if revised and len(revised) >= length_floor:
             content = revised
         else:

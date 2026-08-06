@@ -1081,6 +1081,19 @@ def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
     if len(repeated) >= 4:
         top_gram, top_count = max(repeated, key=lambda kv: kv[1])
         pos = max(0, content_md.find(top_gram))
+        # Severity has to track magnitude. Emitting one fixed ``warn`` meant a
+        # chapter with 4 repeated phrases and a chapter with 198 scored exactly
+        # the same 4.0 points, so the worst prose in the book cleared the gate:
+        # live ch16 had 198 repeated phrases, the top one 75 times, and 47.6% of
+        # its 4-grams belonged to a heavy repeat — it passed.
+        #
+        # ``load`` is the share of the chapter's 4-grams sitting inside a heavy
+        # repeat, so it is length-normalised: on the same 50-chapter book the
+        # clean chapters measured 0.0–1.2% and the unreadable ones 19.8–47.6%,
+        # a clean 15x separation with nothing in between.
+        total_grams = sum(grams.values()) or 1
+        load = sum(count for _, count in repeated) / total_grams
+        severe = load >= 0.15 or top_count >= 20
         out.append(
             AiFlavorSpan(
                 start=pos,
@@ -1088,12 +1101,13 @@ def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
                 matched_text=top_gram,
                 rule_id=f"{lang}.repetition.ngram",
                 category="narrative_repetition",
-                severity="warn",
+                severity="block" if severe else "warn",
                 suggestions=(),
                 sentence_span=(pos, pos + len(top_gram)),
                 why=(
                     f"篇章级车轱辘：{len(repeated)} 个实义短语各重复≥5次"
-                    f"（如「{top_gram}」{top_count}次）——同一意思反复换皮写，"
+                    f"（如「{top_gram}」{top_count}次），占全章四字串 {load:.0%}"
+                    "——同一意思反复换皮写，"
                     "删冗余、把重复的身体感觉/心理解读合并成一次"
                 ),
                 remove_sentence_on_block=False,

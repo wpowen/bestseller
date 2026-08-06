@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 import contextlib
 from functools import lru_cache
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -42,6 +43,8 @@ from bestseller.services.word_targets import (
     resolve_llm_role_max_tokens,
     resolve_llm_role_model,
 )
+
+logger = logging.getLogger(__name__)
 from bestseller.settings import AppSettings
 
 
@@ -800,13 +803,36 @@ async def judge_chapter_commercial_quality_stable(
         # sampling on the shared session (original behavior, concurrency-safe).
         results = [await _one_sample(session) for _ in range(n)]
 
-    med_overall = statistics.median(r.overall_score for r in results)
+    # A sample that never got a verdict scores 0.0 with a
+    # CHAPTER_JUDGE_UNAVAILABLE blocking issue. Feeding those zeros into the
+    # median makes one timed-out call drag a perfectly good chapter under the
+    # floor — a judge outage rendered as a prose defect, then "fixed" by
+    # rewriting prose that was never the problem. Aggregate over real verdicts
+    # only; if none survive, report the infrastructure failure as itself.
+    answered = [r for r in results if not r.infrastructure_failure]
+    if not answered:
+        logger.warning(
+            "chapter %s: all %d judge samples failed to return a verdict; "
+            "reporting infrastructure failure rather than a quality score",
+            chapter_number,
+            len(results),
+        )
+        return results[0]
+    if len(answered) < len(results):
+        logger.info(
+            "chapter %s: %d/%d judge samples failed to answer; aggregating the rest",
+            chapter_number,
+            len(results) - len(answered),
+            len(results),
+        )
+
+    med_overall = statistics.median(r.overall_score for r in answered)
     dim_keys: set[str] = set()
-    for r in results:
+    for r in answered:
         dim_keys.update(r.dimension_scores.keys())
     med_dims: dict[str, float] = {}
     for k in dim_keys:
-        vals = [float(r.dimension_scores[k]) for r in results if k in r.dimension_scores]
+        vals = [float(r.dimension_scores[k]) for r in answered if k in r.dimension_scores]
         if vals:
             med_dims[k] = statistics.median(vals)
 
@@ -822,7 +848,7 @@ async def judge_chapter_commercial_quality_stable(
         med_dims.get(k, 0.0) >= m - _eps for k, m in min_dims.items()
     )
     # 取最接近中位的那次作为代表(保留其 issues/rewrite_plan),覆盖聚合分与 pass
-    rep = min(results, key=lambda r: abs(r.overall_score - med_overall))
+    rep = min(answered, key=lambda r: abs(r.overall_score - med_overall))
     return rep.model_copy(update={
         "passed": passed,
         "overall_score": float(med_overall),

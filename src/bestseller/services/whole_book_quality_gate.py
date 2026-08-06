@@ -569,6 +569,8 @@ def _repeated_emotion_modes(kernel: EmotionDrivenKernel) -> list[dict[str, objec
 def _emotion_quality_metrics_and_findings(
     emotion_driven_kernel: EmotionDrivenKernel | Mapping[str, Any] | None,
     ledger: Sequence[ChapterEngagementRecord],
+    *,
+    cost_style: str = "standard",
 ) -> tuple[dict[str, object], list[WholeBookQualityFinding]]:
     chapter_numbers = [record.chapter_number for record in ledger]
     chapter_count = len(chapter_numbers)
@@ -737,7 +739,17 @@ def _emotion_quality_metrics_and_findings(
                 evidence=str(repeated_modes[:3] or "emotion_chain_missing"),
             )
         )
-    if cost_free_sources:
+    # A cost-free win is a defect only when the book was supposed to charge for
+    # its wins. When the reader of the create form ticked 爽文无代价 / 代价外置,
+    # cost-free wins are the product, not a fault.
+    #
+    # This is the self-harm shape this repo has hit before from the other side
+    # (a book was ordered to write a cost and then killed by a gate for having
+    # one). Repairing the generator without teaching the gate would simply
+    # invert it: the generator would correctly omit costs and this finding would
+    # then flag every chapter of a book that is doing exactly what was asked.
+    _cs = str(cost_style or "standard").strip().lower()
+    if cost_free_sources and _cs not in ("minimal", "external"):
         findings.append(
             WholeBookQualityFinding(
                 code="emotion_cost_free_win",
@@ -775,7 +787,16 @@ def evaluate_whole_book_quality(
     volume_plan: object = None,
     rolling_window: int = 10,
     emotion_driven_kernel: EmotionDrivenKernel | Mapping[str, Any] | None = None,
+    cost_style: str = "standard",
 ) -> WholeBookQualityReport:
+    """Whole-book structural report.
+
+    ``cost_style`` carries the creation-form cost option so cost-shaped checks
+    can tell "this book failed to pay for its wins" apart from "this book was
+    explicitly asked not to charge for them". Defaulting to ``standard`` keeps
+    every existing caller byte-identical.
+    """
+
     chapters = _normalize_chapter_texts(chapter_texts)
     ledger = tuple(
         _record_for_chapter(number, text)
@@ -905,6 +926,7 @@ def evaluate_whole_book_quality(
     emotion_metrics, emotion_findings = _emotion_quality_metrics_and_findings(
         emotion_driven_kernel,
         ledger,
+        cost_style=cost_style,
     )
     findings.extend(emotion_findings)
 

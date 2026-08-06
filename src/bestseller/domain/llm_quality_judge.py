@@ -112,6 +112,21 @@ class LLMRewritePlan(BaseModel):
         return str(value).strip()
 
 
+#: Blocking-issue codes that mean "the judge did not answer", not "the prose is
+#: bad". They must never be treated as a quality verdict: rewriting prose cannot
+#: fix a timeout, so a chapter routed into the rewrite loop on one of these
+#: burns budget on a defect that does not exist, and its 0.0 score poisons any
+#: quality statistic that averages it in.
+JUDGE_INFRASTRUCTURE_FAILURE_CODES: frozenset[str] = frozenset(
+    {
+        "CHAPTER_JUDGE_UNAVAILABLE",
+        "JUDGE_UNAVAILABLE",
+        "JUDGE_TIMEOUT",
+        "JUDGE_PARSE_FAILED",
+    }
+)
+
+
 class LLMQualityJudgeResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
@@ -129,6 +144,28 @@ class LLMQualityJudgeResult(BaseModel):
     raw_excerpt: str = ""
     llm_run_id: str | None = None
     schema_version: str = "llm-quality-judge.v1"
+
+    @property
+    def infrastructure_failure(self) -> bool:
+        """True when the judge failed to answer rather than rejecting the prose.
+
+        A judge verdict has three outcomes, not two: pass, quality-reject, and
+        "no verdict". Callers must branch on this before reacting to
+        ``passed``: an infrastructure failure deserves a bounded retry of the
+        *judge*, never a rewrite of the chapter, and must be excluded from
+        acceptance statistics instead of counting as a 0.0.
+        """
+
+        return any(
+            (issue.code or "").strip().upper() in JUDGE_INFRASTRUCTURE_FAILURE_CODES
+            for issue in self.blocking_issues
+        )
+
+    @property
+    def quality_rejected(self) -> bool:
+        """A real quality rejection: the judge answered, and said no."""
+
+        return not self.passed and not self.infrastructure_failure
 
     @field_validator("overall_score", mode="before")
     @classmethod

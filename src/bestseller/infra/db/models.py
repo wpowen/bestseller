@@ -2608,3 +2608,55 @@ class InterpersonalPromiseModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     metadata_json: Mapped[JSON_DICT] = mapped_column(
         "metadata", JSONB, nullable=False, default=dict
     )
+
+
+class BookProductionControlModel(TimestampMixin, Base):
+    """Operator intent (run / pause / stop) for one book — its own row, on purpose.
+
+    This deliberately does NOT live in ``projects.metadata``. Operator commands
+    arrive from the web process while the pipeline runs in a worker, and the
+    pipeline rewrites ``projects.metadata`` as a whole block from its own
+    in-memory copy. A stop written by the web process was therefore erased by
+    the next pipeline checkpoint, which is the mechanical reason books could not
+    be stopped and kept coming back as ``running`` zombies a minute later.
+
+    Quality-driven pauses (``production_paused`` and friends) stay in
+    ``projects.metadata``: they are written by the pipeline itself, in the same
+    session that rewrites the block, so they were never at risk.
+
+    ``command_serial`` is a monotonic generation counter. In-memory derivatives
+    (timers, queued jobs) capture it and must re-check before acting, so an
+    order issued before the latest command cannot be honoured afterwards.
+    """
+
+    __tablename__ = "book_production_control"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    desired_state: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        server_default=text("'run'"),
+    )
+    state_reason: Mapped[str | None] = mapped_column(Text())
+    requested_by: Mapped[str | None] = mapped_column(String(128))
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    command_serial: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    # Persistent "we decided to resume" intent. Without it, a crash between the
+    # decision and the dispatch loses the resume entirely.
+    resume_pending: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    resume_pending_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detail_json: Mapped[JSON_DICT] = mapped_column(
+        "detail", JSONB, nullable=False, default=dict
+    )

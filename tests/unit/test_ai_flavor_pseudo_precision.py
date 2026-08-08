@@ -56,3 +56,14 @@ def test_dialogue_exempt() -> None:
 def test_deslop_self_check_mentions_pseudo_precision() -> None:
     assert "伪精确计量" in _EXTRA_SELF_CHECK
     assert "13 条" in _EXTRA_SELF_CHECK
+
+
+def test_pseudo_precision_triggers_deslop_rewrite() -> None:
+    """检出但不在触发集 = 检测了从不清理（R9 老坑）。
+
+    伪精确没有静态替换可用（要按上下文改成瞬时态或后果，常需重排半句），
+    只有整段 deslop 重写能治；人类≈0 命中故罕见即触发划算。
+    """
+    from bestseller.services.ai_flavor_gate import DESLOP_DISCOURSE_CATEGORIES
+
+    assert "pseudo_precision" in DESLOP_DISCOURSE_CATEGORIES

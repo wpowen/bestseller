@@ -1430,7 +1430,19 @@ async def test_materialize_story_bible_creates_workflow_records(
         requested_by="tester",
         book_spec_content={"title": "长夜巡航"},
         world_spec_content={"rules": []},
-        cast_spec_content={"supporting_cast": []},
+        # 非空占位：空 cast 现在被 CastSpecInput 拒绝（真机空壳落库教训），
+        # 身份契约另要求性别与中英代词锁。本测试关心的是 workflow 记录与
+        # artifact 顺序，不是 cast 内容。
+        cast_spec_content={
+            "supporting_cast": [
+                {
+                    "name": "配角甲",
+                    "gender": "male",
+                    "pronoun_set_zh": "他",
+                    "pronoun_set_en": "he/him",
+                }
+            ]
+        },
         volume_plan_content=[],
     )
 

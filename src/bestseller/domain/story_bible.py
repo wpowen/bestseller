@@ -1582,6 +1582,31 @@ class CastSpecInput(BaseModel):
         return patched
 
     @model_validator(mode="after")
+    def reject_empty_cast(self) -> "CastSpecInput":
+        """An all-empty cast is a failed generation, not a valid CastSpec.
+
+        Every field here is optional-with-default, so a model response that
+        carries none of the contract keys used to validate into
+        ``{protagonist: None, antagonist: None, supporting_cast: [], …}`` —
+        a total parse failure silently degraded into a legal-looking object.
+        It was then persisted as the cast_spec artifact and only blew up
+        several steps later at ``ensure_project_identity_manifest`` with
+        "CastSpec produced an empty identity manifest", which points at the
+        wrong step entirely (real book run 2026-08-08, deai-verify-20260808).
+
+        Failing here instead routes the empty response into the planner's
+        existing retry-with-diagnostics path, the same way a malformed
+        JSON payload already does.
+        """
+
+        if self.protagonist is None and self.antagonist is None and not self.supporting_cast:
+            raise ValueError(
+                "CastSpec is empty: no protagonist, no antagonist and no supporting_cast. "
+                "The model response carried none of the contract fields."
+            )
+        return self
+
+    @model_validator(mode="after")
     def normalize_roles(self) -> "CastSpecInput":
         if self.protagonist is not None:
             self.protagonist.role = "protagonist"

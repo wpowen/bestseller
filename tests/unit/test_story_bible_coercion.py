@@ -490,7 +490,9 @@ class TestCastSpecInputCoercion:
         assert "包装角色" in names
 
     def test_conflict_map_empty_passthrough(self) -> None:
-        spec = CastSpecInput.model_validate({})
+        # 最小合法 cast：空 cast 现在是校验错误（见 test_cast_spec_empty_guard），
+        # 这里要测的是 conflict_map 缺省时的 passthrough，与 cast 是否为空无关。
+        spec = CastSpecInput.model_validate({"protagonist": {"name": "主角"}})
         assert spec.conflict_map == []
 
     def test_protagonist_role_normalized(self) -> None:

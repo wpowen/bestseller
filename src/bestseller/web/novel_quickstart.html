@@ -4602,7 +4602,9 @@
     html += (modelCatalog || []).map(m => {
       const sel = m.id === curId ? 'selected' : '';
       const dis = m.available ? '' : 'disabled';
-      const label = (m.vendor ? m.vendor + ' · ' : '') + m.display_name + (m.available ? '' : '（未配置）');
+      // unavailable_reason 形如「已下线：…」「未配置 API Key（…）」，取冒号前的短语作标签
+      const label = (m.vendor ? m.vendor + ' · ' : '') + m.display_name
+        + (m.available ? '' : '（' + (m.unavailable_reason || '未配置').split('：')[0] + '）');
       return `<option value="${esc(m.id)}" ${sel} ${dis}>${esc(label)}</option>`;
     }).join('');
     html += `</select>`;
@@ -8223,7 +8225,7 @@
     html += (modelCatalog || []).map(m => {
       const dis = m.available ? '' : 'disabled';
       const label = (m.vendor ? m.vendor + ' · ' : '') + m.display_name
-        + (m.available ? '' : '（未配置）');
+        + (m.available ? '' : '（' + (m.unavailable_reason || '未配置').split('：')[0] + '）');
       return `<option value="${esc(m.id)}" ${dis}>${esc(label)}</option>`;
     }).join('');
     sel.innerHTML = html;

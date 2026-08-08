@@ -127,9 +127,9 @@ def test_apply_override_clears_header_when_switching_to_bearer():
         timeout_seconds=120, api_base="https://token-plan-cn.xiaomimimo.com/v1",
         api_key_env="XIAOMI_MIMO_API_KEY", api_key_header="api-key",
     )
-    ds = mc.get_model_catalog_entry("nim-deepseek-v4-pro")
-    out = _apply_model_override(rs, ds)
-    assert out.model == "openai/deepseek-ai/deepseek-v4-pro"
+    nim = mc.get_model_catalog_entry("nim-mistral-large-3")
+    out = _apply_model_override(rs, nim)
+    assert out.model == "openai/mistralai/mistral-large-3-675b-instruct-2512"
     assert out.api_key_header is None
     assert out.api_key_env == "NVIDIA_API_KEY"
 
@@ -141,3 +141,61 @@ def test_catalog_has_expanded_vendors():
         "nim-mistral-large-3", "nim-llama-3.3-70b", "minimax-m3",
     ):
         assert expected in ids, expected
+
+
+def test_retired_entries_unavailable_even_with_key(monkeypatch):
+    # Upstream removed these models (410 Gone / 404 Function Not Found); the
+    # shared NVIDIA_API_KEY being present must NOT make them available.
+    monkeypatch.setenv("NVIDIA_API_KEY", "x")
+    by_id = {e.id: e for e in mc.load_model_catalog()}
+    for dead in ("nim-deepseek-v4-pro", "nim-kimi-k2.6"):
+        entry = by_id[dead]
+        assert entry.retired is True, dead
+        assert entry.available is False, dead
+        assert entry.unavailable_reason, dead
+        assert "已下线" in entry.unavailable_reason, dead
+    # Live NVIDIA entries on the same key stay available.
+    assert by_id["nim-mistral-large-3"].available is True
+    assert by_id["nim-mistral-large-3"].unavailable_reason is None
+
+
+def test_resolve_skips_retired_selection(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "x")
+    assert mc.resolve_project_model_entry({"llm_model_id": "nim-kimi-k2.6"}) is None
+
+
+def test_missing_key_reason_names_the_env_var(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(mc, "get_runtime_env_value", lambda name: None)
+    by_id = {e.id: e for e in mc.load_model_catalog()}
+    entry = by_id["claude-opus-4-5"]
+    assert entry.available is False
+    assert "ANTHROPIC_API_KEY" in (entry.unavailable_reason or "")
+
+
+def test_runtime_dead_registry_flips_availability(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "x")
+    mc.clear_runtime_dead_models()
+    try:
+        by_id = {e.id: e for e in mc.load_model_catalog()}
+        assert by_id["nim-mistral-large-3"].available is True
+        mc.mark_model_runtime_dead(
+            "openai/mistralai/mistral-large-3-675b-instruct-2512",
+            "NotFoundError: 404 Function Not Found",
+        )
+        by_id = {e.id: e for e in mc.load_model_catalog()}
+        entry = by_id["nim-mistral-large-3"]
+        assert entry.available is False
+        assert "404" in (entry.unavailable_reason or "")
+        # Registry keys are model strings; other entries are untouched.
+        assert by_id["nim-llama-3.3-70b"].available is True
+    finally:
+        mc.clear_runtime_dead_models()
+
+
+def test_mark_model_runtime_dead_ignores_empty_model():
+    mc.clear_runtime_dead_models()
+    mc.mark_model_runtime_dead(None, "reason")
+    mc.mark_model_runtime_dead("", "reason")
+    assert mc.runtime_dead_reason(None) is None
+    assert mc.runtime_dead_reason("") is None

@@ -1225,6 +1225,7 @@ bestseller/
 | [脑洞全开开关（wild_concept） 记录与验证](docs/新建创作-脑洞全开开关-记录与验证-20260710.md) | 建书勾选「脑洞全开」松开概念淘汰赛三道收敛闸门（俗套/审计 eliminate→penalize、winner_min 5.5→4.0、偏新颖）；默认不勾字节级不变；44 测 + 352 集成零回归 + L3-lite 端到端标志翻转行为 |
 | [纯正爽文·代价强度三档（cost_style） 记录与验证](docs/新建创作-纯正爽文代价档-记录与验证-20260710.md) | 建书选代价强度 standard/external(外置,主角不自损)/minimal(极简)，贯穿意识形态内核派生+渲染脊柱；默认 standard 字节级不变；6 测(含 no-op) + L3-lite 端到端脊柱翻转；番茄硬毙门 additive 防误伤 |
 | [创意面板重设计（选项 C）设计+实施](docs/plans/2026-07-10-creative-panels-redesign.md) | 三个"活代码死UI"面板(CSS特性bug隐藏)：复活 conceptLab 为「手动指定概念·覆写淘汰赛」入口(后端零改动已就绪)，删 creativeLab+hookLab(能力已被自动化覆盖)；node --check + 残留/保留 grep 结构验证 |
+| [模型目录死条目治理 记录与验证](docs/模型目录死条目治理-记录与验证-20260808.md) | 上游 EOL 模型(410/404)从「静默 fallback+污染共享 breaker」改为 retired 标记+运行时死模型登记+fail-fast；L3 真机探测抓出 NIM 404 拆分短语分类盲区 |
 | [架构设计](docs/architecture.md) | 系统架构详解（真值源、分层、事务边界） |
 | [Story Design 集成计划](docs/plans/2026-05-12-story-design-core-capability-integration.md) | 剧情设计内核与规划链集成 |
 | [方法论框架优化方案](docs/methodology-framework-optimization-development-plan.md) | Plova 方法论资产化、profile、gate 与 health 设计 |

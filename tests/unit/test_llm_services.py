@@ -1615,3 +1615,167 @@ def test_retry_loop_raises_after_rate_limit_budget_exhausted(
         asyncio.run(
             _call_litellm_with_retry(request, _make_role_settings(), retry)
         )
+
+
+# ── Dead-model (410 Gone / 404 model-not-found) handling ────────────────
+
+
+def test_is_model_gone_error_classification() -> None:
+    from bestseller.services.llm import _is_model_gone_error
+
+    class GoneError(Exception):
+        status_code = 410
+
+    class NotFoundError(Exception):
+        status_code = 404
+
+    class Plain404(Exception):
+        status_code = 404
+
+    class ServerError(Exception):
+        status_code = 500
+
+    # 410 is always permanent, whatever the message says.
+    assert _is_model_gone_error(GoneError("upstream says bye"))
+    assert _is_model_gone_error(Exception("HTTP 410 Gone"))
+    # 404 needs a model/function-level marker (NIM: "Function Not Found").
+    assert _is_model_gone_error(NotFoundError("Function Not Found"))
+    assert _is_model_gone_error(
+        NotFoundError("The model `x` does not exist or you do not have access")
+    )
+    # NVIDIA NIM's real shape splits the phrase (live-probed 2026-08-08):
+    assert _is_model_gone_error(
+        NotFoundError(
+            "litellm.NotFoundError: NotFoundError: OpenAIException - "
+            "Error code: 404 - {'status': 404, 'title': 'Not Found', 'detail': "
+            "\"Function '23d4f03a-b8a6-4adb-a183-7daa083a09cc': Not found for "
+            "account 'acct'\"}"
+        )
+    )
+    # A plain 404 (wrong path) stays a generic retryable failure.
+    assert not _is_model_gone_error(Plain404("page missing"))
+    # Transient/other errors are untouched.
+    assert not _is_model_gone_error(ServerError("boom"))
+    assert not _is_model_gone_error(FakeRateLimitError())
+
+
+def test_retry_loop_fails_fast_on_model_gone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A gone model must not burn retries, must not trip the shared breaker,
+    and must be reported to the runtime dead-model registry."""
+    from bestseller.services import model_catalog as mc
+
+    class GoneError(Exception):
+        status_code = 410
+
+    call_count = {"n": 0}
+
+    async def fake_call_litellm(request, role_settings):  # type: ignore[no-untyped-def]
+        call_count["n"] += 1
+        raise GoneError("410 Gone")
+
+    monkeypatch.setattr("bestseller.services.llm._call_litellm", fake_call_litellm)
+
+    _llm_breaker.reset()
+    mc.clear_runtime_dead_models()
+
+    retry = RetrySettings(max_attempts=3, wait_min_seconds=1, wait_max_seconds=2)
+    request = LLMCompletionRequest(
+        logical_role="writer",
+        system_prompt="s",
+        user_prompt="u",
+        fallback_response="fb",
+    )
+
+    import asyncio
+
+    try:
+        with pytest.raises(GoneError):
+            asyncio.run(
+                _call_litellm_with_retry(request, _make_role_settings(), retry)
+            )
+        # Single attempt — no retry budget burned on a permanent error.
+        assert call_count["n"] == 1
+        # The shared breaker stays closed for healthy models.
+        assert _llm_breaker._consecutive_failures == 0
+        assert _llm_breaker.state == "closed"
+        # The model is reported dead so catalog availability flips.
+        assert mc.runtime_dead_reason("openai/test")
+    finally:
+        mc.clear_runtime_dead_models()
+
+
+def test_complete_text_marks_model_gone_fallback_in_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dead-model fallback must be queryable in llm_runs metadata."""
+    from bestseller.services import model_catalog as mc
+
+    class GoneError(Exception):
+        status_code = 410
+
+    async def fake_call_litellm(request, role_settings):  # type: ignore[no-untyped-def]
+        raise GoneError("410 Gone")
+
+    monkeypatch.setattr("bestseller.services.llm._call_litellm", fake_call_litellm)
+
+    session = FakeSession()
+
+    async def _run() -> None:
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__RETRY__RATE_LIMIT_FALLBACK_ENABLED": "false",
+            }
+        )
+        await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="s",
+                user_prompt="u",
+                fallback_response="fb",
+            ),
+        )
+
+    import asyncio
+
+    try:
+        asyncio.run(_run())
+        runs = [obj for obj in session.added if isinstance(obj, LlmRunModel)]
+        assert len(runs) == 1
+        assert runs[0].provider == "fallback"
+        assert runs[0].metadata_json.get("model_gone") is True
+    finally:
+        mc.clear_runtime_dead_models()
+
+
+def test_complete_text_reports_unavailable_catalog_override() -> None:
+    """A per-call catalog key naming a retired entry is skipped LOUDLY: the
+    llm_run metadata records the key and the reason instead of a silent skip."""
+    session = FakeSession()
+
+    async def _run() -> None:
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="critic",
+                model_catalog_key="nim-kimi-k2.6",  # retired in the catalog
+                system_prompt="s",
+                user_prompt="u",
+                fallback_response="fb",
+            ),
+        )
+
+    import asyncio
+
+    asyncio.run(_run())
+    runs = [obj for obj in session.added if isinstance(obj, LlmRunModel)]
+    assert len(runs) == 1
+    meta = runs[0].metadata_json
+    assert meta.get("model_catalog_override_key") == "nim-kimi-k2.6"
+    assert "已下线" in str(meta.get("model_catalog_override_unavailable"))
+    # The mock provider handled the call — no dead-endpoint fallback content.
+    assert runs[0].provider == "mock"

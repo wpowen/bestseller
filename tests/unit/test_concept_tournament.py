@@ -1343,23 +1343,23 @@ class TestJudgeTournament:
             None,
             template="concept_tournament_candidate",
             logical_role="planner",
-            model_catalog_key="nim-kimi-k2.6",
+            model_catalog_key="nim-llama-3.3-70b",
         )
         judge = await module._default_generator(
             None,
             None,
             template="concept_tournament_judge",
             logical_role="critic",
-            model_catalog_key="nim-deepseek-v4-pro",
+            model_catalog_key="nim-mistral-large-3",
         )
 
         await generator("system", "user")
         await judge("system", "user")
 
         assert captured[0].logical_role == "planner"
-        assert captured[0].model_catalog_key == "nim-kimi-k2.6"
+        assert captured[0].model_catalog_key == "nim-llama-3.3-70b"
         assert captured[1].logical_role == "critic"
-        assert captured[1].model_catalog_key == "nim-deepseek-v4-pro"
+        assert captured[1].model_catalog_key == "nim-mistral-large-3"
 
     def test_plain_language_rubric_is_calibrated_for_genre_vocabulary(self):
         from bestseller.services.concept_tournament import _build_judge_messages

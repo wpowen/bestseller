@@ -1406,9 +1406,13 @@
       "id": "cn.discourse.dash_density",
       "category": "dash_density",
       "severity": "warn",
-      "threshold": 2,
-      "pattern": "——[^\\n]{0,120}——",
-      "why": "破折号过密（一段两对以上）——AI最扎眼的标点痕迹。按其职能替换：停顿改句号/逗号、补充改括号、引出改冒号；全章留一两处真正需要的转折即可"
+      "pattern": "——",
+      "per_1k_threshold": 4.0,
+      "escalate_per_1k": 10.0,
+      "escalate_category": "dash_train",
+      "why": "破折号密度超出人类写作区间——AI最扎眼的标点痕迹。实测 1187 篇真实出版章：中位 0/千字、p99=3.85/千字；本章已越过 p99。按其职能替换：停顿改句号/逗号、补充改括号、引出改冒号；全章留一两处真正需要的转折即可",
+      "min_chars": 1200,
+      "threshold": 4
     },
     {
       "id": "cn.discourse.then_now",
@@ -1425,6 +1429,30 @@
       "threshold": 2,
       "pattern": "(?:很|极其|相当|太)[一-鿿]{1,4}[：:](?![「『“‘\"'])",
       "why": "「形容词+冒号」替读者下判断（答案很简单：/问题很直接：）——删掉定性词让事实自己说话；引入对白的「声音很冷：『滚』」是合法用法，不在此列"
+    },
+    {
+      "id": "cn.discourse.pseudo_precision_len",
+      "category": "pseudo_precision",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "(?:推|拉|递|移|挪|缩|退|抬|压|送|拧|抽|探|滑|偏|倾|迈|蹭)[了出去进前后开低]{0,2}[一两三半][寸分尺](?!钟)|一寸一寸",
+      "why": "动作幅度量化=伪精确（人类语料4494万字0命中；读者分不出半寸和一寸）。具体≠量化：幅度用瞬时态（往前一推/一把夺过）或后果（纸角戳到对方胸口）。注意「退一步/敲两下/几下」是人类正常写法，不在此列；剧情需要精确证据（侦探取证）除外"
+    },
+    {
+      "id": "cn.discourse.pseudo_precision_time",
+      "category": "pseudo_precision",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "(?:停|顿|沉默|愣|看|盯|数|等|站|坐|想)了[一两二三四五数几]秒|(?:停|顿|等)(?:了)?[一两半]拍",
+      "why": "停顿/动作用钟表计时=伪精确（人类0.7/百万字，「慢半拍」熟语与仙侠「数息」不在此列）。改「半晌/片刻」，或干脆直接切下一个动作"
+    },
+    {
+      "id": "cn.discourse.pseudo_precision_turn",
+      "category": "pseudo_precision",
+      "severity": "warn",
+      "threshold": 1,
+      "pattern": "[拧旋][了动过]?半圈",
+      "why": "「拧了半圈」类角度计量=伪精确（人类0.3/百万字）。写瞬时态（猛地一拧）或后果（锁芯咔哒咬死）"
     }
   ],
   "terse_tag_rules": [

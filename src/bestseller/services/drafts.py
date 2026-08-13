@@ -660,23 +660,46 @@ def mark_chapter_rounds_budget_exhausted(
     total_scene_rounds: int,
     budget: int,
 ) -> None:
-    """Stamp ``chapter`` so it follows the existing machine-repair route.
+    """Stamp ``chapter`` when auto-repair stops, routing it by what's wrong.
 
     Writes the known block codes (plus the observed round count and budget)
-    under ``rounds_budget_exhausted`` and sets ``requires_machine_repair`` —
-    the same metadata contract the cross-run exhaustion path uses, so the
-    downstream pipeline routing needs no new branches.
+    under ``rounds_budget_exhausted``. When there ARE block codes it also sets
+    ``requires_machine_repair`` + ``production_state="blocked"`` — the same
+    metadata contract the cross-run exhaustion path uses, so the downstream
+    pipeline routing needs no new branches.
+
+    **A chapter with zero block codes is not routed to repair.** "We stopped
+    spending rounds" and "this chapter is broken" are different facts, and
+    conflating them cost real books: the C3 plateau detector measures progress
+    as *blockers removed per pass*, so a chapter already sitting at zero
+    blockers scores as making no progress — there is nothing left to remove —
+    and got stamped blocked. Real run 2026-08-06 (custom-xuanhuan-1786023406):
+    「chapter 8: repair plateau after 4 gain-less pass(es) (history=5 passes,
+    best had 0 blocking codes) … (block codes: [])」; 3 of 9 chapters were
+    marked ``blocked`` despite never having produced a single blocking quality
+    report, and editor+critic burned 68% of the book's tokens. The round record
+    is still written either way — stopping is worth auditing; blaming the
+    chapter for it is not.
     """
 
+    codes = [str(c) for c in block_codes if c]
     metadata = dict(getattr(chapter, "metadata_json", None) or {})
     metadata[CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY] = {
-        "block_codes": [str(c) for c in block_codes if c],
+        "block_codes": codes,
         "total_scene_rounds": int(total_scene_rounds),
         "budget": int(budget),
     }
+    metadata["auto_repair_in_progress"] = False
+    if not codes:
+        # Clean chapter: record that repair stopped, leave production_state
+        # alone (the quality report already says it passes) and do NOT claim it
+        # needs a machine.
+        metadata["requires_machine_repair"] = False
+        metadata["rounds_budget_stopped_while_clean"] = True
+        chapter.metadata_json = metadata
+        return
     metadata["requires_machine_repair"] = True
     metadata["requires_human_review"] = False
-    metadata["auto_repair_in_progress"] = False
     metadata["auto_accepted"] = False
     chapter.metadata_json = metadata
     chapter.production_state = "blocked"
@@ -1132,6 +1155,96 @@ def _maybe_write_scene_prompt_trace(
         return str(path)
     except Exception:
         logger.debug("scene prompt trace write failed", exc_info=True)
+        return None
+
+
+def _maybe_write_chapter_prompt_trace(
+    settings: AppSettings,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    workflow_run_id: UUID | None,
+    step_run_id: UUID | None,
+    model_tier: str,
+    trace_kind: str = "chapter-first",
+) -> str | None:
+    """Trace the chapter-first writer prompt.
+
+    Chapter-first had no trace of any kind: ``_maybe_write_scene_prompt_trace``
+    is keyed on a SceneCardModel and only fires on the scene / rewrite paths.
+    A book generated entirely chapter-first therefore left no record of what the
+    writer was actually shown, which is why the 2026-08-09 ledger saturation
+    could only be reconstructed by re-rendering the profile block by hand. Same
+    env switch (``BESTSELLER_TRACE_SCENE_PROMPTS``), same directory, same
+    payload shape minus the scene-specific fields.
+    """
+
+    mode = _scene_prompt_trace_mode()
+    if mode is None:
+        return None
+
+    try:
+        output_dir = Path(settings.output.base_dir) / project.slug / "traces"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        safe_trace_kind = (
+            re.sub(r"[^a-z0-9_-]+", "-", trace_kind.lower()).strip("-") or "chapter"
+        )
+        path = output_dir / (
+            f"{safe_trace_kind}-prompt-ch{chapter.chapter_number:04d}-{timestamp}.json"
+        )
+        payload: dict[str, Any] = {
+            "trace_version": 1,
+            "created_at": datetime.now(UTC).isoformat(),
+            "mode": mode,
+            "workflow_run_id": workflow_run_id,
+            "step_run_id": step_run_id,
+            "project": {
+                "id": project.id,
+                "slug": project.slug,
+                "title": project.title,
+                "language": project.language,
+                "genre": project.genre,
+                "sub_genre": project.sub_genre,
+                "status": project.status,
+            },
+            "chapter": {
+                "id": chapter.id,
+                "number": chapter.chapter_number,
+                "title": chapter.title,
+                "status": chapter.status,
+                "production_state": chapter.production_state,
+                "target_word_count": chapter.target_word_count,
+                "current_word_count": chapter.current_word_count,
+                "metadata": chapter.metadata_json,
+            },
+            "model_tier": model_tier,
+            "trace_kind": safe_trace_kind,
+            "prompt_stats": {
+                "system_chars": len(system_prompt),
+                "system_estimated_tokens": _estimate_tokens(system_prompt),
+                "user_chars": len(user_prompt),
+                "user_estimated_tokens": _estimate_tokens(user_prompt),
+                "context_budget_tokens": settings.generation.context_budget_tokens,
+            },
+        }
+        if mode == "full":
+            payload["prompts"] = {"system": system_prompt, "user": user_prompt}
+        else:
+            payload["prompt_previews"] = {
+                "system_head": system_prompt[:2000],
+                "user_head": user_prompt[:4000],
+                "user_tail": user_prompt[-2000:],
+            }
+        path.write_text(
+            json.dumps(_jsonable(payload), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return str(path)
+    except Exception:
+        logger.debug("chapter prompt trace write failed", exc_info=True)
         return None
 
 
@@ -5853,8 +5966,13 @@ def _render_knowledge_state_section(
         else "=== 角色的对话和行为不得超越其认知边界 ==="
     )
     lines.append(header)
+    rendered_any = False
     for ks in knowledge_states:
         name = ks.get("character_name", "?")
+        # 空条目跳过：一个只有名字、没有任何认知内容的条目（真机 prompt review
+        # 2026-08-07：「归野:」「纪釜:」两行空壳挂在"写作必须遵守"下面）对写手
+        # 是纯噪声，还暗示"认知状态=空白"。全空则整块省略。
+        entry_start = len(lines)
         lines.append(f"{name}:")
         knows = ks.get("knows", [])
         if knows:
@@ -5901,6 +6019,12 @@ def _render_knowledge_state_section(
             hint = _phase_hints.get(phase, "")
             if hint:
                 lines.append(f"  → {hint}")
+        if len(lines) == entry_start + 1:
+            lines.pop()  # 只有名字没内容 → 撤掉这个空条目
+        else:
+            rendered_any = True
+    if not rendered_any:
+        return ""
     lines.append(footer)
     return "\n".join(lines)
 
@@ -7972,13 +8096,50 @@ def _render_compact_constraint_blocks(blocks: Sequence[str]) -> str:
     return "\n\n".join(rendered)
 
 
+# 进写手 prompt 的上下文条目里，这些键是纯工程元数据（UUID/状态机/作用域指针），
+# 写手一个都用不上。真机 prompt review（2026-08-07）：卷级伏笔块 ~1500 字里
+# 近半是 id/null/status 噪声，而块头写着「不要堆术语」。
+_PROMPT_NOISE_KEYS = frozenset({
+    "id", "chapter_id", "plot_arc_id", "source_id",
+    "status", "scope_level", "scope_volume_number", "scope_chapter_number",
+    "planted_in_scene_number", "expected_payoff_by_scene_number",
+    "actual_paid_off_chapter_number", "actual_paid_off_scene_number",
+})
+
+
+def _strip_prompt_noise(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k: v
+        for k, v in payload.items()
+        if k not in _PROMPT_NOISE_KEYS and v is not None and v != "" and v != []
+    }
+
+
+# 章节契约 dump 专用：UUID 列表对写手同样是噪声。
+_CONTRACT_NOISE_KEYS = frozenset({"active_arc_beat_ids", "payoff_evidence_paths"})
+
+
+def _strip_prompt_noise_deep(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            k: _strip_prompt_noise_deep(v)
+            for k, v in value.items()
+            if k not in _PROMPT_NOISE_KEYS
+            and k not in _CONTRACT_NOISE_KEYS
+            and v is not None and v != "" and v != [] and v != {}
+        }
+    if isinstance(value, list):
+        return [_strip_prompt_noise_deep(v) for v in value]
+    return value
+
+
 def _chapter_context_list(items: Sequence[Any], *, max_items: int = 8) -> list[dict[str, Any]]:
     compacted: list[dict[str, Any]] = []
     for item in items[:max_items]:
         if hasattr(item, "model_dump"):
-            compacted.append(item.model_dump(mode="json"))
+            compacted.append(_strip_prompt_noise(item.model_dump(mode="json")))
         elif isinstance(item, Mapping):
-            compacted.append(dict(item))
+            compacted.append(_strip_prompt_noise(dict(item)))
         else:
             compacted.append({"value": str(item)})
     return compacted
@@ -8113,7 +8274,9 @@ def _render_chapter_first_scene_cards(scenes: Sequence[SceneCardModel]) -> str:
         return ""
     header = (
         "这是低优先级的弱场景逻辑地图，只回答事件顺序与状态变化，不提供正文句子、对白、描写或段落结构。\n"
-        "优先级：整章逻辑合同/状态台账/上一章结尾 > 章节契约 > 本地图；冲突时忽略本地图。\n"
+        # 「台账」是框架黑话，不是本书词汇。它每章都摆在写手眼前，2026-08-09
+        # 的账本书就是一边被画像命令写账、一边被这里加持（见 motif_concentration）。
+        "优先级：整章逻辑合同/状态清单/上一章结尾 > 章节契约 > 本地图；冲突时忽略本地图。\n"
         "不得复述、扩写或换词改写节点措辞。场景感必须由连续现场中的全新动作、对话、失误与后果产生。"
     )
     per_scene_budget = max(
@@ -8247,7 +8410,7 @@ def _render_whole_chapter_logic_contract(
         "【整章逻辑合同·隐藏硬事实】\n"
         "事件顺序只是整章内部节点，不是多个可见场景，也不得平均分段或分别扩写后拼接。"
         "进入状态、因果主链、数字依据、知识边界、物品归属、廉价解法排除和退出状态均为硬事实；"
-        "逻辑只能通过事件发生方式体现，不得向读者解释台账、合同或方法论。\n"
+        "逻辑只能通过事件发生方式体现，不得向读者解释清单、合同或方法论。\n"
         + compact
     )
 
@@ -9188,7 +9351,7 @@ def build_chapter_first_draft_prompts(
             "\n"
             "# CONTEXT · 整章合同（chapter-first 模式）\n"
             "弱场景逻辑地图只是**低优先级顺序约束**，不是正文素材，也不是可见结构。\n"
-            "不得照抄、扩写或换词改写地图措辞；整章逻辑合同、状态台账和上章承接的优先级更高。\n"
+            "不得照抄、扩写或换词改写地图措辞；整章逻辑合同、状态清单和上章承接的优先级更高。\n"
             "你必须把所有场景揉进一段连续叙事，正文中不许出现「第一场 / 第二场 / 场景 X」等标签。\n"
             "也不许写「内部说明 / 写法注释 / 场景目的」——这些是策划信息，不进正文。\n"
             "\n"
@@ -9588,7 +9751,10 @@ def build_chapter_first_draft_prompts(
             concept_lab_contract_block,
             contract_must_hit_block if _keep("contract_must_hit") else "",
             volume_seed_block,
-            "【章节契约】\n" + _compact_json_block(chapter_contract, max_chars=3500)
+            "【章节契约】\n"
+            + _compact_json_block(
+                _strip_prompt_noise_deep(chapter_contract), max_chars=3500
+            )
             if chapter_contract
             else "",
             "【故事圣经上下文】\n" + story_bible_block,
@@ -10114,12 +10280,23 @@ async def generate_chapter_draft_once(
         project,
         writer_target_word_count,
     )
+    _writer_model_tier = "strong" if chapter.chapter_number <= 3 else "standard"
+    chapter_prompt_trace_path = _maybe_write_chapter_prompt_trace(
+        effective_settings,
+        project,
+        chapter,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        workflow_run_id=workflow_run_id,
+        step_run_id=step_run_id,
+        model_tier=_writer_model_tier,
+    )
     completion = await complete_text(
         session,
         effective_settings,
         LLMCompletionRequest(
             logical_role="writer",
-            model_tier="strong" if chapter.chapter_number <= 3 else "standard",
+            model_tier=_writer_model_tier,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             fallback_response=fallback_content,
@@ -10142,6 +10319,11 @@ async def generate_chapter_draft_once(
                 "scene_numbers": [scene.scene_number for scene in scenes],
                 "generation_mode": "chapter_first",
                 "prompt_mode": writer_prompt_mode,
+                **(
+                    {"prompt_trace_path": chapter_prompt_trace_path}
+                    if chapter_prompt_trace_path
+                    else {}
+                ),
                 "prompt_compiler_report": (
                     compiler_report.model_dump(mode="json")
                     if compiler_report is not None
@@ -12634,15 +12816,20 @@ async def maybe_prepare_chapter_auto_repair(
                         str(c) for c in (_latest_payload.get("blocking_codes") or ()) if c
                     )
                 )
+                # 「没长进」在零违规的章上是恒真的——没有 blocker 可消。日志分开
+                # 说，否则「routing to machine repair / block codes: []」这种自相
+                # 矛盾的行会把排查引向错误方向（真机排查时正是它误导了半小时）。
                 logger.warning(
                     "chapter %d: repair plateau after %d gain-less pass(es) "
                     "(history=%d passes, best had %d blocking codes); stopping "
-                    "auto-repair early and routing to machine repair "
-                    "(block codes: %s)",
+                    "auto-repair early — %s (block codes: %s)",
                     chapter.chapter_number,
                     _plateau.rounds_without_gain,
                     len(_history),
                     int(-_plateau.best_score) if _plateau.best_score > -1e308 else -1,
+                    "chapter is already clean, leaving it alone"
+                    if not _known_codes
+                    else "routing to machine repair",
                     list(_known_codes),
                 )
                 mark_chapter_rounds_budget_exhausted(

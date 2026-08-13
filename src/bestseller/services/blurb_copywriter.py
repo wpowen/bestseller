@@ -33,7 +33,11 @@ import json
 import logging
 from typing import Any, Protocol
 
-from bestseller.services.blurb_pathology import PathologyFinding, detect_blurb_pathology
+from bestseller.services.blurb_pathology import (
+    PathologyFinding,
+    detect_blurb_pathology,
+    detect_ungrounded_blurb_claims,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +87,18 @@ class BlurbCandidate:
     persona_click_rate: float | None = None
     persona_avg_score: float | None = None
     llm_run_id: Any = None
+    # 引文核对过的自相矛盾（blurb_coherence_judge）。2026-08-07：四条倒计时
+    # 互相打架的简介拿了 comprehensibility 满分——词表尺子对逻辑全盲，
+    # 淘汰赛必须自己把矛盾候选踢出可选集。
+    coherence_contradictions: tuple[dict[str, Any], ...] = ()
 
     @property
     def has_fatal_pathology(self) -> bool:
         return any(f.severity == "fatal" for f in self.pathology)
+
+    @property
+    def has_verified_contradiction(self) -> bool:
+        return bool(self.coherence_contradictions)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -96,6 +108,7 @@ class BlurbCandidate:
             "pathology": [f.to_dict() for f in self.pathology],
             "persona_click_rate": self.persona_click_rate,
             "persona_avg_score": self.persona_avg_score,
+            "coherence_contradictions": list(self.coherence_contradictions),
         }
 
 
@@ -110,6 +123,10 @@ class BlurbCopywritingResult:
     fell_back_to_v0: bool = False
     persona_used: bool = False
     llm_run_ids: list[Any] = field(default_factory=list)
+    # 冠军换掉了正典主角 → 调用方拒绝该冠军、保留 v0。记录下来而不是静默丢弃：
+    # 这是文案工序的产出缺陷，必须能在 story_appeal 报告里被看到和追责。
+    canon_name_rejected: bool = False
+    canon_name_rogue: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,6 +135,8 @@ class BlurbCopywritingResult:
             "polish_rounds": self.polish_rounds,
             "fell_back_to_v0": self.fell_back_to_v0,
             "persona_used": self.persona_used,
+            "canon_name_rejected": self.canon_name_rejected,
+            "canon_name_rogue": list(self.canon_name_rogue),
             "schema_version": "blurb-copywriting.v1",
         }
 
@@ -195,17 +214,43 @@ def _build_candidate_messages(
         "【情绪事件】从本书自己的前提与冲突里选最强的高唤起事件前置，不套其他题材的情绪词。\n\n"
         f"{directive}\n\n"
         f"硬性要求：\n"
-        f"①字数 {lo}-{hi} 字，分 2-4 段；\n"
-        "②首句≤30字；③禁止出现设计/机制黑话——尤其是这些词："
+        # 形态规则重校于 2026-08-11 百本榜单实抓（docs/research/board-blurb-hook-
+        # research-20260811.md）：中位 209 字 / 9 句 / 10 行 / 句均 23 字 / 一句
+        # 一行；52% 头部直接贴正文级样本；62% 有标签行。旧的长句形态规则出自
+        # 42 条精选语料，与在榜活数据冲突，废弃。
+        "①【形态】第一行是标签行：3-6 个词用+号连接、外加【】（如【无系统+单女主+"
+        "轻松爽文】），只许写题材元素、设定关键词和避雷契约，且每个词都必须能从"
+        "上面给的事实推出——禁止编造出版/短剧/评分/完本字数这类信用背书。"
+        f"标签行之后是正文：{lo}-{hi} 字（不含标签行），短句分行，一句一意，"
+        "6-12 行，每行都能独立成立；不写大段落；\n"
+        "②【体验样本，缺失即废稿】至少一段"
+        "正文级样本原文——对白名场面、系统弹窗原文、或旁观者/对手的原话引语，"
+        "用引号直接呈现，禁止转述成'他说了什么'。读者要的是预先尝到读这本书的"
+        "感觉，不是听你介绍它；\n"
+        "③【预期违背】至少一拍'以为X→实则Y'，能做三拍递进最好"
+        "（第一天嗤之以鼻→第二天瞳孔地震→第三天三步一叩）；\n"
+        "④【爽点见证】主角的强/爽必须由第三方反应呈现——对手颤抖、围观惊呼、"
+        "亲友'？？？'——一句自夸都不许有；\n"
+        "⑤正文首句≤30字；禁止设计/机制黑话——尤其是这些词："
         f"{jargon_ban}；出现即视为不合格；\n"
-        "④不得剧透结局；结尾悬念必须落在一个【具体的、即将发生的】威胁、选择或期限上"
-        "（如'第七天日落前根会碰到妹妹心口'），禁止'殊不知/却不知道/她自己都不知道/"
+        "⑥不得剧透结局；收尾用陈述句或名场面截断——真榜单只有 6% 用问句收尾，"
+        "问句的唯一合法位置是开头排比；禁止'殊不知/却不知道/她自己都不知道/"
         "到底还瞒着她什么'这类全知旁白式吊胃口；\n"
-        "⑤零AI腔（本以为/却没想到/命运的齿轮/何去何从/敬请期待）；\n"
-        "⑥只输出正文，不要小标题；\n"
-        "⑦设定里的学术词/机构名/生造术语（拓扑、语义、某某署这类）一律翻译成"
+        "⑦零AI腔（本以为/却没想到/命运的齿轮/何去何从/敬请期待）；\n"
+        "⑧设定里的学术词/机构名/生造术语（拓扑、语义、某某署这类）一律翻译成"
         "读者秒懂的大白话或具体画面——你在给完全不懂设定的人卖书，不是给设定"
         "集写目录；机制再聪明，说不成人话就是废稿。\n"
+        "⑨【自洽铁律，违反即废稿】全文只许存在一条倒计时/期限——脊柱里若有多个"
+        "时间压力，选最狠的一个，其余不写；只许使用上面【故事脊柱】【故事核】里"
+        "已有的人物、物品、数字，不得发明新实体；每一句要能从上一句顺着因果读"
+        "下来，不是各写各的卖点然后拼起来；交稿前逐句自查：任何两句放在一起"
+        "不能互相矛盾（时间、物品在谁手里、人物年龄经历），发现矛盾删掉弱的那句。\n"
+        "⑨b【机制保真】金手指/核心规则的因果链必须与【故事核】逐点一致——什么"
+        "动作触发、产出什么（形态和数量）、发生在哪里，一个都不许改：正文按故事核"
+        "写，简介许了不一样的诺，读者点进来就是上当。可以少写，不许改写。\n"
+        "⑨c【脊柱有病自己裁决】若【故事脊柱】各字段互相打架（多个互斥期限、"
+        "年龄与经历年数对不上），以【故事核】为准取其一，其余当作不存在——"
+        "把矛盾照抄进简介同样算废稿。\n"
         '只输出 JSON：{"synopsis": "..."}，不要解释。'
     )
     return system, user
@@ -214,17 +259,30 @@ def _build_candidate_messages(
 def _parse_synopsis_json(raw: str) -> str:
     text = (raw or "").strip()
     try:
-        payload = json.loads(text)
+        payload = json.loads(text, strict=False)
     except json.JSONDecodeError:
         start, end = text.find("{"), text.rfind("}")
         payload = None
         if start != -1 and end != -1 and end > start:
             try:
-                payload = json.loads(text[start : end + 1])
+                payload = json.loads(text[start : end + 1], strict=False)
             except json.JSONDecodeError:
                 payload = None
     if isinstance(payload, dict):
         return str(payload.get("synopsis") or "").strip()
+    # 兜底：未闭合 JSON。真机自闭环实测（2026-08-07）：模型偶发丢收尾的 "}"，
+    # 内容完好却因 rfind("}") 落空整条报废——18 个候选里 5 个这样白扔（28%）。
+    # 直接截取 synopsis 字符串体：取键后第一个引号到文本里最后一个引号。
+    key = text.find('"synopsis"')
+    if key != -1:
+        colon = text.find(":", key)
+        q1 = text.find('"', colon + 1) if colon != -1 else -1
+        if q1 != -1:
+            rest = text[q1 + 1 :]
+            q2 = rest.rfind('"')
+            body = rest[:q2] if q2 > 0 else rest
+            body = body.replace("\\n", "\n").replace('\\"', '"')
+            return body.strip()
     return ""
 
 
@@ -260,18 +318,41 @@ async def _polish_champion(
     genre: str,
     sub_genre: str,
     language: str,
+    premise: str = "",
+    spine: dict[str, Any] | None = None,
 ) -> tuple[str, Any]:
-    """One bounded focused-rewrite pass on the tournament champion."""
+    """One bounded focused-rewrite pass on the tournament champion.
+
+    2026-08-07 修：此前编辑只拿到「当前简介 + 诊断意见」，手里没有任何事实
+    基准——改写时自由变造事实（真机产出土豆自相矛盾、期限互斥的简介后，
+    打磨环节无从发现也无从纠正）。现在把 premise/spine 作为事实准绳喂进去，
+    并明令只调表达，不得增删改事实。
+    """
 
     from bestseller.services.llm import LLMCompletionRequest, complete_text
 
+    spine_block = "\n".join(
+        f"  {k}：{v}" for k, v in (spine or {}).items() if str(v or "").strip()
+    )
+    anchor = ""
+    if premise.strip() or spine_block:
+        anchor = (
+            f"【事实准绳（只许用这里的事实，一个字不许编）】\n"
+            f"{premise.strip()}\n{spine_block}\n\n"
+        )
     system = "你是顶尖中文网文详情页文案编辑，专精把不达标的简介按诊断意见改到位。"
     user = (
-        f"题材：{genre}（{sub_genre}）\n当前简介：\n{synopsis}\n\n"
+        f"题材：{genre}（{sub_genre}）\n{anchor}当前简介：\n{synopsis}\n\n"
         f"诊断意见：\n{feedback}\n\n"
         "请按诊断意见逐条改写这段简介：先给具体冲突，再讲规则代价，最后留下一个"
         "必须继续看的选择。删掉口语凑句、设定清单、泛泛反问和任何解释给策划看的话。"
-        "读者只该看到人物正在被什么逼到墙角。"
+        "读者只该看到人物正在被什么逼到墙角。\n"
+        "保持榜单形态：保留开头的【标签行】；短句分行，一句一意；至少一段正文级"
+        "样本原文（对白/弹窗/旁观者原话，引号直贴不转述）；爽点由第三方反应呈现；"
+        "陈述句或名场面收尾。\n"
+        "改写只许调整表达、顺序与详略：不得新增人物/物品/数字/期限，不得改变"
+        "事实准绳里的任何事实；全文只许保留一条倒计时；交稿前逐句自查任何两句"
+        "不得互相矛盾。"
         '只输出 JSON：{"synopsis": "..."}，不要解释。'
     )
     completion = await complete_text(
@@ -307,6 +388,7 @@ async def run_blurb_copywriting(
     platform: str | None,
     language: str,
     v0_synopsis: str,
+    hook_card: dict[str, Any] | None = None,
     emotion_exemplars: tuple[str, ...] = (),
     book_jargon_terms: tuple[str, ...] = (),
     config: dict[str, Any] | None = None,
@@ -324,6 +406,22 @@ async def run_blurb_copywriting(
         return BlurbCopywritingResult(
             champion=v0_synopsis, champion_strategy="v0_disabled", fell_back_to_v0=True,
         )
+
+    # Fact-grounding canon for ``detect_ungrounded_blurb_claims``: EVERY approved
+    # surface, not just the premise. Calibration on the live negative control
+    # 《灵根废我用烂账翻盘》 proved the difference — its blurb's 「赶在天亮前把泥封
+    # 糊回去」 is absent from the premise but present in hook_card.decision_proof,
+    # so a premise-only canon would have failed a perfectly grounded blurb.
+    _canon_text = "\n".join(
+        part
+        for part in (
+            str(premise or ""),
+            "\n".join(f"{k}：{v}" for k, v in (spine or {}).items() if str(v or "").strip()),
+            json.dumps(hook_card, ensure_ascii=False) if hook_card else "",
+            str(golden_finger_line or ""),
+        )
+        if part.strip()
+    )
 
     from bestseller.services.blurb_appeal_gate import (
         evaluate_blurb_appeal,
@@ -369,6 +467,7 @@ async def run_blurb_copywriting(
                 continue
             pathology = tuple(
                 detect_blurb_pathology(synopsis, book_jargon_terms=book_jargon_terms)
+                + detect_ungrounded_blurb_claims(synopsis, canon_text=_canon_text)
             )
             verdict = evaluate_blurb_appeal(
                 title=title, synopsis=synopsis, premise=premise, tags=tags,
@@ -410,9 +509,62 @@ async def run_blurb_copywriting(
             logger.warning("persona tournament failed; ranking by gate score", exc_info=True)
             persona_used = False
 
+    # 自洽校验（引文核对式，fail-open）：词表尺子和画像判官对逻辑矛盾全盲
+    # （2026-08-07 四条倒计时的简介拿 comprehensibility 满分），必须在选冠军前
+    # 把核实有矛盾的候选踢出可选集。只对没有 fatal 病理的候选花这笔钱。
+    try:
+        from bestseller.services.blurb_coherence_judge import verify_blurb_coherence
+
+        checked: list[BlurbCandidate] = []
+        for cand in candidates:
+            if cand.has_fatal_pathology:
+                checked.append(cand)
+                continue
+            report = await verify_blurb_coherence(
+                session, settings,
+                synopsis=cand.synopsis, premise=premise, spine=spine,
+            )
+            # 只拿【涉及简介本身】的矛盾连坐候选；纯正典矛盾（premise↔spine）
+            # 是构思的错，毙掉全部候选再回退到同病的 v0 等于白跑。
+            checked.append(
+                BlurbCandidate(
+                    strategy=cand.strategy, synopsis=cand.synopsis,
+                    gate_score=cand.gate_score, pathology=cand.pathology,
+                    persona_click_rate=cand.persona_click_rate,
+                    persona_avg_score=cand.persona_avg_score,
+                    coherence_contradictions=tuple(
+                        f.to_dict() for f in report.synopsis_findings
+                    ),
+                )
+            )
+            if report.synopsis_findings:
+                logger.warning(
+                    "blurb candidate '%s' rejected: %d verified contradiction(s): %s",
+                    cand.strategy, len(report.synopsis_findings),
+                    "; ".join(
+                        f"{f.quote_a}↔{f.quote_b}" for f in report.synopsis_findings
+                    ),
+                )
+            if report.canon_findings:
+                logger.warning(
+                    "canon itself is contradictory (premise↔spine), not the blurb: %s",
+                    "; ".join(
+                        f"{f.quote_a}↔{f.quote_b}" for f in report.canon_findings
+                    ),
+                )
+        candidates = checked
+    except Exception:
+        logger.warning("blurb coherence screen failed (fail-open)", exc_info=True)
+
     # Score every generated candidate for a complete audit trail, but keep
-    # fatal-pathology candidates ineligible for selection.
-    survivors = [c for c in candidates if not c.has_fatal_pathology] or list(candidates)
+    # fatal-pathology / verified-contradiction candidates ineligible for
+    # selection. `or list(candidates)` 是刻意保留的救援路径：全员不合格时仍选
+    # 一个去打磨——打磨稿要重新过病理+自洽检查，救不回来的由下方结构性废单
+    # 拦住回退 v0（那里同时检查 fatal 与矛盾），带病文案没有出场通道。
+    survivors = [
+        c for c in candidates
+        if not c.has_fatal_pathology and not c.has_verified_contradiction
+    ] or list(candidates)
 
     def _rank_key(c: BlurbCandidate) -> tuple[float, float]:
         return (
@@ -462,20 +614,40 @@ async def run_blurb_copywriting(
                 polished, run_id = await _polish_champion(
                     session, settings, synopsis=champion.synopsis, feedback=feedback,
                     genre=genre, sub_genre=sub_genre, language=language,
+                    premise=premise, spine=spine,
                 )
                 if run_id is not None:
                     llm_run_ids.append(run_id)
                 polished_pathology = tuple(
                     detect_blurb_pathology(polished, book_jargon_terms=book_jargon_terms)
+                    + detect_ungrounded_blurb_claims(polished, canon_text=_canon_text)
                 )
                 polished_verdict = evaluate_blurb_appeal(
                     title=title, synopsis=polished, premise=premise, tags=tags,
                     genre=genre, sub_genre=sub_genre, language=language, platform=platform,
                     book_jargon_terms=book_jargon_terms,
                 )
+                # 打磨稿是新文本，必须重新过自洽校验——改写完全可能把原本
+                # 干净的冠军改出矛盾（fail-open：判官不可用时视为通过）。
+                polished_contradictions: tuple[dict[str, Any], ...] = ()
+                try:
+                    from bestseller.services.blurb_coherence_judge import (
+                        verify_blurb_coherence as _verify_polished,
+                    )
+
+                    _pol_report = await _verify_polished(
+                        session, settings,
+                        synopsis=polished, premise=premise, spine=spine,
+                    )
+                    polished_contradictions = tuple(
+                        f.to_dict() for f in _pol_report.synopsis_findings
+                    )
+                except Exception:
+                    logger.warning("polished coherence verify failed (fail-open)", exc_info=True)
                 polish_rounds = 1
                 if (
                     not any(f.severity == "fatal" for f in polished_pathology)
+                    and not polished_contradictions
                     and polished_verdict.total >= (champion.gate_score or 0.0)
                 ):
                     champion = BlurbCandidate(
@@ -498,10 +670,13 @@ async def run_blurb_copywriting(
     except Exception:
         logger.warning("v0 synopsis scoring failed (non-fatal)", exc_info=True)
 
-    # 结构性废单：champion 为空，或 champion 是"全员致命病理"兜底出来的候选
-    # （此时 has_fatal_pathology 恒真——只要 survivors 里有一个干净候选，champion
-    # 就不可能带 fatal 病理）。这两种情况必须回退 v0，不看任何分数。
-    if champion is None or champion.has_fatal_pathology:
+    # 结构性废单：champion 为空（含全员致命病理/全员核实矛盾——这两类现在
+    # 直接不进 survivors），或残留 fatal/矛盾。必须回退 v0，不看任何分数。
+    if (
+        champion is None
+        or champion.has_fatal_pathology
+        or champion.has_verified_contradiction
+    ):
         return BlurbCopywritingResult(
             champion=v0_synopsis, champion_strategy="v0_fallback",
             candidates=candidates, polish_rounds=polish_rounds,

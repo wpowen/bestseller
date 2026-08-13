@@ -344,6 +344,9 @@ pipeline:
   enable_fanqie_market_profile: false
   enable_fanqie_long_ranking_gate: true
   fanqie_long_ranking_block_on_failure: true
+  # Advisory market validation after conception (services/market_validation).
+  # Off by default: pipeline output is byte-identical unless the operator opts in.
+  enable_market_validation: false
   # Chapter-length stability gate.  Reads min/target/max from
   # ``generation.words_per_chapter`` above and turns large drifts
   # (>±warn_margin beyond the hard window) into blocking findings.

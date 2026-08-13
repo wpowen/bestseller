@@ -323,15 +323,25 @@ def _mark_chapter_materialized(
 
 
 def _chapter_information_release(chapter: Any) -> str:
+    """本章信息释放 = 章纲声明的 information_revealed，不含章末钩子。
+
+    2026-08-07 真机 prompt review：hook 此前被追加进 information_release，而
+    closing_hook 又单独赋成同一个 hook——information_revealed 为空时，同一句话
+    在写手 prompt 的章节契约里逐字出现三次（information_release / closing_hook /
+    hooks_to_plant）。信息释放和章末钩子是两个语义字段，钩子自有其位。
+    """
+
     items: list[str] = []
     for item in list(getattr(chapter, "information_revealed", None) or []):
         rendered = _render_information_item(item)
         if rendered:
             items.append(rendered)
     hook = _text(getattr(chapter, "hook_description", None))
-    if hook:
-        items.append(hook)
-    return "；".join(_unique_texts(items)) or hook
+    joined = "；".join(_unique_texts(items))
+    if joined and hook:
+        # 章纲把钩子也塞进 revealed 列表时同样去重。
+        joined = "；".join(t for t in _unique_texts(items) if t != hook) or joined
+    return joined
 
 
 def _render_information_item(item: Any) -> str:

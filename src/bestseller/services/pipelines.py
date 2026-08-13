@@ -14104,6 +14104,47 @@ async def run_autowrite_pipeline(
             _meta.pop("hook_spec", None)
         if conception_result.hook_spec:
             _meta["hook_spec"] = conception_result.hook_spec
+        # ── Advisory market validation (opt-in, never gates) ──
+        # Runs against the conception outputs (title/premise/synopsis) and
+        # stashes only a summary into metadata; any failure degrades silently
+        # so the pipeline is byte-identical when the flag is off or data
+        # sources are down.
+        # Defensive flag read: an advisory add-on must never crash creation,
+        # and ``settings`` may be a stub without ``.pipeline`` in some callers.
+        if bool(
+            getattr(
+                getattr(settings, "pipeline", None),
+                "enable_market_validation",
+                False,
+            )
+        ):
+            try:
+                from bestseller.services.market_validation.request_builder import (
+                    build_creation_request,
+                )
+                from bestseller.services.market_validation.service import (
+                    run_market_validation,
+                )
+
+                _mv_report = await run_market_validation(
+                    build_creation_request(
+                        metadata=_meta,
+                        genre_label=str(project_payload.genre or ""),
+                        sub_genre_label=str(project_payload.sub_genre or ""),
+                        title=str(project_payload.title or ""),
+                        concept=str(premise or ""),
+                        blurb=str(conception_result.synopsis or ""),
+                        fallback_genre_key=genre_key,
+                        project_slug=str(project_payload.slug or ""),
+                    ),
+                    settings=settings,
+                    session=session,
+                )
+                _meta["market_validation_summary"] = _mv_report.summary()
+            except Exception:
+                logger.warning(
+                    "Advisory market validation failed (fail-open)", exc_info=True
+                )
         project_payload = project_payload.model_copy(update={"metadata": _meta})
 
     if project_payload.project_type == ProjectType.FANQIE_SHORT:

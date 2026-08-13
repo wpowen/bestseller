@@ -106,6 +106,46 @@ _CREATION_TONE_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 
+def fold_near_duplicate_points(points: list[str] | tuple[str, ...]) -> list[str]:
+    """折叠近重复的卖点/标签条目（保序，先到先留）。
+
+    真机 prompt review（2026-08-07，custom-xianxia-1786104488）：conception 产出的
+    selling_points 里同一卖点带 2-3 个措辞版本（"赚钱和升级是同一口锅里颠出来的事，
+    看着就上头" / "…是同一口锅里的事，看着就上瘾"），全部灌进写手 prompt。
+    虫书同病（7 条实为 4 条）。
+
+    阈值用真实数据定（同书 6 条实测）：异义对相似度最高 0.206，同义对最低
+    0.467——取 0.35，两边各有 ~2 倍余量。另收「公共连续片段 ≥12 字」：换头换尾
+    的同款（共享"酒楼、地府、仙门轮着来踢馆，每一波麻烦都"20 字）整体相似度可以
+    被新增内容稀释到 0.35 以下，但 12 字连续原文共享在异义对里从未出现。
+    """
+
+    from difflib import SequenceMatcher
+
+    def _long_common_run(a: str, b: str, need: int = 12) -> bool:
+        if len(a) < need or len(b) < need:
+            return False
+        m = SequenceMatcher(None, a, b).find_longest_match(0, len(a), 0, len(b))
+        return m.size >= need
+
+    kept: list[str] = []
+    kept_norm: list[str] = []
+    for raw in points or []:
+        p = str(raw or "").strip()
+        if not p:
+            continue
+        norm = "".join(p.split())
+        if any(
+            SequenceMatcher(None, norm, k).ratio() >= 0.35
+            or _long_common_run(norm, k)
+            for k in kept_norm
+        ):
+            continue
+        kept.append(p)
+        kept_norm.append(norm)
+    return kept
+
+
 def is_english_language(language: str | None) -> bool:
     normalized = (language or "").strip().lower()
     return normalized.startswith("en")
@@ -463,6 +503,50 @@ def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingPro
     return profile
 
 
+#: A one-line hook is a one-line hook. Anything past this is a premise wearing
+#: the logline's name tag (live 2026-08-09: 258 chars in this slot).
+_LOGLINE_MAX_CHARS = 120
+
+
+def _apply_logline_to_metadata(
+    metadata: dict[str, Any], writing_profile: WritingProfile
+) -> None:
+    """Surface the derived logline at ``metadata["logline"]``.
+
+    The T6 stage (``conception._derive_logline_from_champion``) distils a short,
+    market-calibrated hook from the finalized blurb and writes it to
+    ``writing_profile.market.logline``. That slot was added on 2026-07-09 for
+    exactly this reason — the value used to be dropped by Pydantic — but the
+    metadata flattener next to it copies ``platform_target / reader_promise /
+    selling_points / trope_keywords / opening_strategy / chapter_hook_strategy /
+    prompt_pack_key`` and never copied this one.
+
+    So the distillation ran on every book and no consumer ever saw it: exports,
+    ``commercial_novel_gate``, ``imagery_system_design``, ``narrative``,
+    ``narrative_tree``, ``book_listing`` and the dashboard's 一句话钩子 all read
+    ``metadata["logline"]``. Live 2026-08-09 《废脉炉子天天骂我》: the derived
+    hook was 80 chars, ``metadata["logline"]`` was the 258-char premise verbatim.
+
+    Precedence: the derived hook wins. An existing value is kept only when it is
+    actually hook-shaped — a premise-length string, or a verbatim copy of the
+    premise, is not a logline no matter who put it there.
+    """
+
+    derived = str(writing_profile.market.logline or "").strip()
+    existing = str(metadata.get("logline") or "").strip()
+    premise = str(metadata.get("premise") or "").strip()
+    existing_is_hook_shaped = bool(
+        existing and len(existing) <= _LOGLINE_MAX_CHARS and existing != premise
+    )
+    if derived and not existing_is_hook_shaped:
+        metadata["logline"] = derived
+        return
+    if existing and not existing_is_hook_shaped and not derived:
+        # No derived hook to promote, but a premise must not keep masquerading
+        # as one — downstream readers treat this field as short copy.
+        metadata.pop("logline", None)
+
+
 def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfile) -> dict[str, Any]:
     from bestseller.services.brainhole_engine import (
         BRAINHOLE_PROFILE_METADATA_KEY,
@@ -489,6 +573,7 @@ def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfi
     metadata["writing_profile"] = writing_profile.model_dump(mode="json")
     metadata.setdefault("platform_target", writing_profile.market.platform_target)
     metadata.setdefault("reader_promise", writing_profile.market.reader_promise)
+    _apply_logline_to_metadata(metadata, writing_profile)
     metadata.setdefault("selling_points", writing_profile.market.selling_points)
     metadata.setdefault("trope_keywords", writing_profile.market.trope_keywords)
     metadata.setdefault("opening_strategy", writing_profile.market.opening_strategy)
@@ -768,11 +853,16 @@ def render_writing_profile_prompt_block(
         f"- 读者承诺：{profile.market.reader_promise or '必须快速建立持续追读欲。'}",
     ]
     # 开篇章节（黄金三章窗口）必须兑现核心卖点，scene 模式下保留。
+    # 卖点逐条一行：顿号拼接会把 5-7 条卖点糊成 500 字长句（真机 prompt review
+    # 2026-08-07），近重复条目先折叠（部分重叠的treat为不同条，交给上游约束）。
     if not scene_mode or opening_phase:
-        lines += [
-            f"- 核心卖点：{'、'.join(profile.market.selling_points) or '暂无明确卖点'}",
-            f"- 套路标签：{'、'.join(profile.market.trope_keywords) or '暂无'}",
-        ]
+        _points = fold_near_duplicate_points(profile.market.selling_points)
+        if _points:
+            lines.append("- 核心卖点：")
+            lines.extend(f"  · {p}" for p in _points[:6])
+        else:
+            lines.append("- 核心卖点：暂无明确卖点")
+        lines.append(f"- 套路标签：{'、'.join(profile.market.trope_keywords) or '暂无'}")
     lines += [
         f"- 钩子标签：{'、'.join(profile.market.hook_keywords) or '暂无'}",
     ]

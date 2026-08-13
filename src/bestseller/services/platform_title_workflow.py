@@ -1719,8 +1719,12 @@ def build_story_grounded_title_revision_messages(
         f"你是中文网络小说{style.label}平台的资深起名编辑。"
         "必须根据已批准的大纲和故事动作命名，不得根据题材标签命名。"
         "标题必须读得通，动词和宾语要自然，不能把关键词硬拼。"
-        "如果涉及报告/清单/台账/执照，只能使用签出、写进、钉死、触发复检、扣分等符合故事逻辑的动作，"
-        "禁止“不开整改单”这类动宾不通表达。"
+        # The old wording enumerated 报告/清单/台账/执照 + 整改单 — the private
+        # vocabulary of one 验房合规 book, handed to the namer of EVERY book
+        # (2026-08-09 ledger sweep). The defect it guarded against is generic:
+        # a title whose verb does not actually govern its object.
+        "标题里的动词必须真的支配它的宾语，读出来是一句人话；"
+        "宾语是文书或器物时，动作要用这本书里真会发生的那个动作。"
         f"长度 {style.min_chars}-{style.max_chars} 字。"
         "输出 5 个候选，每行一个书名，不要解释。"
     )

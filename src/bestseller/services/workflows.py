@@ -1229,9 +1229,11 @@ def _repair_chapter_outline_contract_inputs(
 
         conflict_buffs = list(contract.get("conflict_buffs") or [])
         if len([buff for buff in conflict_buffs if _has_value(buff)]) < 2:
+            # 兜底 buff 也要带本章信息：旧文案第二条是万金油（"每一次试探都逼近
+            # 时间边界…"），对任何书任何章都成立 = 对写手零信息，纯占 prompt 字数。
             conflict_buffs = [
                 f"{protagonist}面对{_text_value(opponent) or '外部势力'}的持续压迫，必须在有限时窗内完成选择。",
-                "每一次试探都逼近时间边界，信息延误将导致代价从局部变成整体。",
+                f"「{_clause_of(base_conflict)}」每拖一步，代价就从{protagonist}一人蔓延到他要护的人和物。",
             ]
             contract["conflict_buffs"] = conflict_buffs
             repairs += 1
@@ -1271,8 +1273,12 @@ def _repair_chapter_outline_contract_inputs(
         if scenes:
             if not _clean_list(contract.get("relationship_debts") or []):
                 if opponent:
+                    # base_conflict 是整段 core_conflict——原样塞进「因…形成」句槽
+                    # 会产出 90+ 字不可读怪句（真机 prompt review 2026-08-07）。
+                    # 只取第一子句当归因。
                     contract["relationship_debts"] = [
-                        f"{protagonist}与{opponent}因{base_conflict}形成新的可见债务，必须交换信息或承担后果。"
+                        f"{protagonist}与{opponent}因「{_clause_of(base_conflict)}」"
+                        "形成新的可见债务，必须交换信息或承担后果。"
                     ]
                 elif len(first_participants) >= 2:
                     contract["relationship_debts"] = [
@@ -1838,6 +1844,24 @@ def _text_value(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _clause_of(text: Any, *, limit: int = 40) -> str:
+    """取整段文本的第一个子句（≤``limit`` 字），用于把长冲突塞进句槽。
+
+    契约兜底文案里的「因 X 形成…」「『X』每拖一步…」句槽只能容纳短语；
+    core_conflict 往往是 80-120 字的整段，原样内插会产出不可读的怪句
+    （真机 prompt review 2026-08-07：relationship_debts 一条 130 字）。
+    """
+
+    s = _text_value(text)
+    if not s:
+        return "本章核心冲突"
+    for sep in ("——", "。", "；", "，", ","):
+        head = s.split(sep, 1)[0].strip()
+        if 6 <= len(head) <= limit:
+            return head
+    return s[:limit]
 
 
 async def _sync_existing_chapter_from_outline(

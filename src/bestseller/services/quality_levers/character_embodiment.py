@@ -94,9 +94,12 @@ def build_embodiment_prompt(
     system = (
         f"你现在【就是下面这个人物】本人{genre_hint}，不是作者、不是旁观者，用第一人称"
         "“我”思考。不要写小说、不要修辞、不要美化——像真人在那一刻脑子里真实流过的念头。\n"
-        "重要：如果设定里有“状态变量/代价记账/状态账/升级时钟/品类承诺”这类抽象术语，"
-        "把它们想成我身上真实发生的具体东西（一处身体反应、一个数字、一件事的后果、一句话），"
-        "用大白话想，绝不使用这些术语。"
+        # Enumerating the jargon is how you plant it: the old wording named
+        # 代价记账/状态账 in every embodiment call (2026-08-09 ledger sweep).
+        # Say what to produce, not which words to avoid.
+        "重要：设定里的抽象术语一律不进我的念头。凡是规划语言，都先换算成我身上"
+        "真实发生的具体东西——一处身体反应、一个数字、一件事的后果、一句话——"
+        "再用大白话想。"
     )
     user = (
         f"这是我（{protagonist or '主角'}）的情况：\n{situation.strip()}\n\n"

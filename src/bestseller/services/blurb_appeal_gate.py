@@ -119,7 +119,28 @@ def _count_hits(text: str, terms: list[str] | tuple[str, ...]) -> int:
     return sum(1 for t in terms if t and str(t) in text)
 
 
+def strip_leading_tag_line(text: str) -> str:
+    """Drop a leading 【标签行】 before sentence-level scoring.
+
+    2026-08-11 board research (100 live books): 62/100 open with a bracketed
+    tag line (【无系统+单女主+爽文】). The generator now produces one on purpose.
+    It is a reader-contract slot, not a sentence — left in place it fuses with
+    the real first sentence (it carries no sentence-ending punctuation), and
+    the ≤30-char hook check would penalise every on-format blurb.
+    """
+
+    stripped = (text or "").lstrip()
+    while stripped[:1] in ("【", "["):
+        closer = "】" if stripped[0] == "【" else "]"
+        end = stripped.find(closer)
+        if end == -1 or end > 80:
+            break
+        stripped = stripped[end + 1 :].lstrip("＋+ \n\r\t")
+    return stripped
+
+
 def _first_sentence(text: str) -> str:
+    text = strip_leading_tag_line(text)
     for seg in _SENTENCE_SPLIT_RE.split((text or "").strip()):
         seg = seg.strip()
         if seg:
@@ -128,6 +149,7 @@ def _first_sentence(text: str) -> str:
 
 
 def _last_sentence(text: str) -> str:
+    text = strip_leading_tag_line(text)
     segs = [s.strip() for s in _SENTENCE_SPLIT_RE.split((text or "").strip()) if s.strip()]
     return segs[-1] if segs else ""
 

@@ -23,6 +23,12 @@ class AiFlavorSpan:
     patcher can hand a sentence-sized context window to an LLM rewriter
     without re-splitting the text. ``suggestions`` empty + severity=block
     means the patcher should drop the entire sentence.
+
+    ``hit_count`` is how many raw matches the span stands for. Per-sentence
+    rules always report 1; chapter-level density rules fold every match into
+    one advisory span and record the magnitude here, so downstream readers can
+    tell "2 hits, borderline" from "170 hits, pathological" instead of seeing
+    one indistinguishable warn either way.
     """
 
     start: int
@@ -35,6 +41,7 @@ class AiFlavorSpan:
     sentence_span: tuple[int, int]
     why: str
     remove_sentence_on_block: bool = True
+    hit_count: int = 1
 
 
 @dataclass(frozen=True)

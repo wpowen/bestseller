@@ -3580,6 +3580,7 @@ class WebTaskManager:
             # ``if conception_story_appeal`` reference would raise
             # UnboundLocalError and fail the whole resumed task.
             conception_story_appeal: dict[str, object] | None = None
+            conception_motif_amplification: dict[str, object] | None = None
             conception_degradation: list[dict[str, object]] = []
             story_facets_obj = None
             from bestseller.services.genre_intent_contract import contract_from_payload
@@ -3816,6 +3817,9 @@ class WebTaskManager:
                         conception_story_appeal = getattr(
                             conception_result, "story_appeal", None
                         )
+                        conception_motif_amplification = getattr(
+                            conception_result, "motif_amplification", None
+                        )
                         conception_degradation = [
                             {
                                 "stage": event.stage,
@@ -3954,6 +3958,10 @@ class WebTaskManager:
                     conception_artifacts["hook_candidates"] = conception_hook_candidates
                 if conception_story_appeal:
                     conception_artifacts["story_appeal"] = conception_story_appeal
+                if conception_motif_amplification:
+                    conception_artifacts["motif_amplification"] = (
+                        conception_motif_amplification
+                    )
                 if conception_brief:
                     conception_artifacts["commercial_brief"] = conception_brief
                 creative_brief = payload.get("creative_brief")
@@ -4052,6 +4060,65 @@ class WebTaskManager:
                     generation_unit_mode=payload.get("generation_unit_mode"),
                     prose_prompt_profile=payload.get("prose_prompt_profile"),
                 )
+                # ── Advisory market validation (opt-in, never gates) ──
+                # Runs against the conception outputs on the REAL web creation
+                # path (the pipelines.py hook only covers the CLI
+                # use_conception path). Summary lands in project metadata; the
+                # full report is persisted as an artifact by
+                # persist_creation_snapshots. Any failure degrades silently.
+                market_validation_report_obj = None
+                # Read the flag defensively: an advisory add-on must never be
+                # able to crash creation, and ``settings`` is a stub in some
+                # callers/tests where ``.pipeline`` is absent entirely.
+                _mv_enabled = bool(
+                    getattr(
+                        getattr(settings, "pipeline", None),
+                        "enable_market_validation",
+                        False,
+                    )
+                )
+                if run_conception and _mv_enabled:
+                    try:
+                        from bestseller.services.market_validation.request_builder import (
+                            build_creation_request,
+                        )
+                        from bestseller.services.market_validation.service import (
+                            run_market_validation,
+                        )
+
+                        market_validation_report_obj = await run_market_validation(
+                            build_creation_request(
+                                metadata=project_metadata,
+                                genre_label=str(payload.get("genre") or ""),
+                                sub_genre_label=str(payload.get("sub_genre") or ""),
+                                title=effective_title,
+                                concept=effective_premise,
+                                blurb=effective_synopsis,
+                                fallback_genre_key=genre_key,
+                                project_slug=str(payload.get("slug") or ""),
+                            ),
+                            settings=settings,
+                            session=session,
+                        )
+                        _mv_summary = market_validation_report_obj.summary()
+                        project_metadata["market_validation_summary"] = _mv_summary
+                        progress(
+                            "market_validation_completed",
+                            {
+                                "score": _mv_summary["verdict"]["score"],
+                                "band": _mv_summary["verdict"]["band"],
+                                "title_verdicts": _mv_summary["title_check"][
+                                    "verdicts"
+                                ],
+                                "platforms": _mv_summary["platforms_used"],
+                            },
+                        )
+                    except Exception:
+                        market_validation_report_obj = None
+                        logger.warning(
+                            "Advisory market validation failed (fail-open)",
+                            exc_info=True,
+                        )
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
                 stop_after_conception = bool(payload.get("stop_after_conception", False))
@@ -4135,6 +4202,26 @@ class WebTaskManager:
                             "snapshot_hash": snapshot_hash(snapshot_artifact.content),
                         }
                     await session.flush()
+                    # Full market-validation report as a versioned artifact
+                    # (summary already rode in via project metadata). Advisory:
+                    # persistence failure must never fail creation.
+                    if market_validation_report_obj is not None:
+                        try:
+                            from bestseller.services.market_validation.repository import (
+                                persist_market_validation_report,
+                            )
+
+                            await persist_market_validation_report(
+                                session,
+                                str(project.slug),
+                                market_validation_report_obj,
+                            )
+                        except Exception:
+                            logger.debug(
+                                "market validation artifact persist failed "
+                                "(non-fatal)",
+                                exc_info=True,
+                            )
 
                 if stop_after_conception and run_conception:
                     if not conception_contract:
@@ -4207,12 +4294,42 @@ class WebTaskManager:
                 # web-ui path and worker self-heal path pick the same pipeline
                 # for the same target_chapters. See PROGRESSIVE_CHAPTER_THRESHOLD
                 # in services.pipelines.
-                result = await run_autowrite_pipeline(**common_kwargs)
-                if creation_intent_contract is not None and hasattr(session, "scalar"):
-                    project = await get_project_by_slug(session, str(payload["slug"]))
-                    if project is None:
-                        raise RuntimeError("autowrite completed without a project row")
-                    await persist_creation_snapshots(project)
+                # Conception evidence must survive a pipeline failure. Until
+                # 2026-08-10 the snapshot was written only after the pipeline
+                # RETURNED, so any book that died in planning lost its
+                # story_appeal / motif_amplification / hook_candidates /
+                # market_validation report entirely — precisely the books whose
+                # concept you most need to inspect. Live case: 《废脉炉子天天骂我》
+                # died in foundation and left zero conception artifacts behind.
+                pipeline_succeeded = False
+                try:
+                    result = await run_autowrite_pipeline(**common_kwargs)
+                    pipeline_succeeded = True
+                finally:
+                    if creation_intent_contract is not None and hasattr(
+                        session, "scalar"
+                    ):
+                        try:
+                            project = await get_project_by_slug(
+                                session, str(payload["slug"])
+                            )
+                            if project is not None:
+                                await persist_creation_snapshots(project)
+                            elif pipeline_succeeded:
+                                raise RuntimeError(
+                                    "autowrite completed without a project row"
+                                )
+                        except Exception:
+                            if pipeline_succeeded:
+                                raise
+                            # Mid-failure: snapshot persistence is evidence,
+                            # never the outcome. It must not replace the
+                            # pipeline's own exception with its own.
+                            logger.warning(
+                                "creation snapshot persistence failed for %s",
+                                payload.get("slug"),
+                                exc_info=True,
+                            )
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
 
         # Overall pipeline cap: 24h. Long enough for 100+ chapters.
@@ -4304,7 +4421,20 @@ class WebTaskManager:
             logline_gate = report.get("logline_gate") or {}
             blurb_total = (report.get("blurb") or {}).get("total")
             title_total = (report.get("title") or {}).get("total")
-            if logline_gate and str(logline_gate.get("action") or "") != "expand":
+            # Attribute the block to the bar that ACTUALLY raised it. The
+            # logline gate has been advisory since 2026-07-25
+            # (``block_expansion: false`` — it vetoed 3/3 real bestsellers), so
+            # a non-expand verdict from it is a note, not a cause. Reporting it
+            # as the cause sent this session chasing the wrong gate: live 2026-08-10
+            # 《搓背》 was killed by the BLURB bar (persona 0/3 on a one-sentence
+            # v0 fallback) and the failure read "一句话故事大纲不成立" with blurb
+            # feedback pasted underneath.
+            logline_gate_blocked = bool(
+                logline_gate
+                and logline_gate.get("blocking")
+                and str(logline_gate.get("action") or "") != "expand"
+            )
+            if logline_gate_blocked:
                 try:
                     progress(
                         "one_sentence_outline_blocked",

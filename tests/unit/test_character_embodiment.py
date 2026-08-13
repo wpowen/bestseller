@@ -53,7 +53,13 @@ def test_build_embodiment_prompt_shape() -> None:
         protagonist="陆沉", situation="母亲住院要补三万押金", genre="都市异能"
     )
     assert "就是" in system and "第一人称" in system
-    assert "大白话" in system and "状态变量" in system  # mechanism→concrete instruction
+    # mechanism→concrete instruction. It used to be pinned by asserting the prompt
+    # ENUMERATED the jargon it banned (状态变量/代价记账/状态账) — which is how the
+    # jargon got planted in every embodiment call (2026-08-09 ledger sweep). The
+    # contract is the conversion, not the word list, so assert the conversion.
+    assert "大白话" in system and "抽象术语" in system
+    for planted in ("状态变量", "代价记账", "状态账", "升级时钟"):
+        assert planted not in system, planted
     assert "陆沉" in user and "母亲住院" in user
     assert "只输出我的内心" in user
 

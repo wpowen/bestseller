@@ -62,6 +62,24 @@ class PersonaClickVerdict:
     click: bool
     score: float  # 0-10
     reason: str
+    # ── 追读侧信号（2026-08-07 加）────────────────────────────────────────
+    # 「会点」不等于「读得下去」。真机 custom-xuanhuan-1786023406：3/3 会点、
+    # 均分 8.67 一路绿灯，而三条点击理由都是「这套路太爽了」「套路太对胃口」
+    # ——判官在为**可预测性**点赞，而读者抱怨的正是一眼看穿、没有惊喜、观感
+    # 反胃。点击判断本身没错（书城 3 秒点击本来就靠套路识别驱动），错在系统里
+    # 没有任何一处measure「点进去之后」。这两维和 click 同一次调用产出，零额外
+    # 成本，先只上报不设门——阈值要拿真实爆款简介校准过才能生效。
+    surprise: float = -1.0   # 0=接下来全能猜到 … 10=完全猜不到；-1=模型没给
+    aversion: float = -1.0   # 0=毫无不适 … 10=强烈反胃；-1=模型没给
+
+
+def _mean_of_present(values: tuple[float, ...]) -> float:
+    """只对模型真给了的样本求均值；一个都没有时返回 -1（表示未测量）。"""
+
+    present = [v for v in values if v >= 0.0]
+    if not present:
+        return -1.0
+    return sum(present) / len(present)
 
 
 @dataclass(frozen=True)
@@ -73,9 +91,15 @@ class PersonaClickReport:
     avg_score: float
     reasons: tuple[str, ...]
     llm_used: bool
+    avg_surprise: float = -1.0
+    avg_aversion: float = -1.0
 
     def advisory_pass(self, click_rate_min: float) -> bool:
-        """fail-open：判官不可用（llm_used=False）绝不误毙。"""
+        """fail-open：判官不可用（llm_used=False）绝不误毙。
+
+        刻意只看 click_rate：``surprise``/``aversion`` 是本轮新加的观测量，
+        在拿真实爆款校准出阈值之前不参与任何放行判断。
+        """
 
         return (not self.llm_used) or self.click_rate >= float(click_rate_min)
 
@@ -86,6 +110,8 @@ class PersonaClickReport:
             "clicks": self.clicks,
             "click_rate": round(self.click_rate, 3),
             "avg_score": round(self.avg_score, 2),
+            "avg_surprise": round(self.avg_surprise, 2),
+            "avg_aversion": round(self.avg_aversion, 2),
             "reasons": list(self.reasons),
             "llm_used": self.llm_used,
             "schema_version": "persona-click-judge.v1",
@@ -111,7 +137,13 @@ def build_persona_judge_messages(
         "下面给你一本书的【书名】和【简介】——就像你在书城列表里刷到它。"
         "按你的真实习惯 3 秒内决定：点，还是划走？不要用编辑/作者视角分析，"
         "只凭这个读者的第一反应。\n"
+        "点完之后再回答两个问题（这两个不影响你点不点，照实说）：\n"
+        "① 光看这段简介，你能猜到接下来大致会发生什么吗？"
+        "全都猜得到=0，完全猜不到=10。「熟悉的套路」意味着猜得到，给低分。\n"
+        "② 里面有没有哪里让你生理上不舒服、反胃、不想细看？"
+        "毫无不适=0，强烈反胃=10。\n"
         '只输出严格 JSON：{"click": true|false, "score": 0到10的吸引力分, '
+        '"surprise": 0到10, "aversion": 0到10, '
         '"reason": "一句大白话说为什么点/为什么划走"}'
     )
     user = (
@@ -147,7 +179,24 @@ def parse_persona_click_verdict(raw: str) -> PersonaClickVerdict | None:
     except (TypeError, ValueError):
         score = 0.0
     score = max(0.0, min(10.0, score))
-    return PersonaClickVerdict(click=click, score=score, reason=str(payload.get("reason", "")))
+
+    def _optional_0_10(key: str) -> float:
+        """缺字段/不可解析 → -1（未测量），不要伪装成 0（0 是「毫无惊喜」的真值）。"""
+
+        if key not in payload:
+            return -1.0
+        try:
+            return max(0.0, min(10.0, float(payload.get(key))))
+        except (TypeError, ValueError):
+            return -1.0
+
+    return PersonaClickVerdict(
+        click=click,
+        score=score,
+        reason=str(payload.get("reason", "")),
+        surprise=_optional_0_10("surprise"),
+        aversion=_optional_0_10("aversion"),
+    )
 
 
 def _make_default_judge(session: Any, settings: Any) -> JudgeFn:
@@ -226,6 +275,8 @@ async def run_persona_click_judge(
         clicks=clicks,
         click_rate=clicks / len(verdicts),
         avg_score=sum(v.score for v in verdicts) / len(verdicts),
+        avg_surprise=_mean_of_present(tuple(v.surprise for v in verdicts)),
+        avg_aversion=_mean_of_present(tuple(v.aversion for v in verdicts)),
         reasons=tuple(v.reason for v in verdicts if v.reason),
         llm_used=True,
     )

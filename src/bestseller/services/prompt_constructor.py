@@ -65,6 +65,7 @@ from bestseller.services.methodology_compiler import (
     compile_methodology,
 )
 from bestseller.services.reader_persona_simulator import render_persona_feedback_block
+from bestseller.services.writing_profile import fold_near_duplicate_points
 from bestseller.services.voice_signature import render_voice_dna_block
 
 logger = logging.getLogger(__name__)
@@ -576,7 +577,7 @@ def build_reader_contract_section(
         if scheme.selling_points:
             lines.append(
                 "- 读者要看见的吸引力："
-                + " / ".join(_sanitize_reader_contract_phrase(p) for p in scheme.selling_points)
+                + " / ".join(_sanitize_reader_contract_phrase(p) for p in fold_near_duplicate_points(scheme.selling_points))
             )
         if scheme.reader_promise:
             lines.append(
@@ -596,7 +597,7 @@ def build_reader_contract_section(
         if scheme.selling_points:
             lines.append(
                 "- Visible appeal: "
-                + " / ".join(_sanitize_reader_contract_phrase(p) for p in scheme.selling_points)
+                + " / ".join(_sanitize_reader_contract_phrase(p) for p in fold_near_duplicate_points(scheme.selling_points))
             )
         if scheme.reader_promise:
             lines.append(

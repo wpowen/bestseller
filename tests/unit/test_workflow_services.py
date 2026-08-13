@@ -1434,6 +1434,13 @@ async def test_materialize_story_bible_creates_workflow_records(
         # 身份契约另要求性别与中英代词锁。本测试关心的是 workflow 记录与
         # artifact 顺序，不是 cast 内容。
         cast_spec_content={
+            "protagonist": {
+                "name": "主角甲",
+                "role": "protagonist",
+                "gender": "female",
+                "pronoun_set_zh": "她",
+                "pronoun_set_en": "she/her",
+            },
             "supporting_cast": [
                 {
                     "name": "配角甲",
@@ -1441,7 +1448,7 @@ async def test_materialize_story_bible_creates_workflow_records(
                     "pronoun_set_zh": "他",
                     "pronoun_set_en": "he/him",
                 }
-            ]
+            ],
         },
         volume_plan_content=[],
     )
@@ -1531,7 +1538,18 @@ async def test_ensure_project_identity_manifest_backfills_project_and_characters
                 "role": "protagonist",
                 "gender": "male",
                 "aliases": ["沈导航"],
-            }
+            },
+            # 名册非空占位：身份契约现在要求 cast 本身完整（空名册曾空真放行）。
+            # 本测试关心的是身份锁回填到 project 与 character 行。
+            "supporting_cast": [
+                {
+                    "name": "沈观棋",
+                    "role": "supporting",
+                    "gender": "female",
+                    "pronoun_set_zh": "她",
+                    "pronoun_set_en": "she/her",
+                }
+            ],
         },
         created_by="tester",
     )
@@ -1672,12 +1690,23 @@ async def test_materialize_story_bible_manifest_keeps_persisted_character_rows(
                 "gender": "male",
                 "pronoun_set_zh": "他",
                 "pronoun_set_en": "he/him",
-            }
+            },
+            # 名册非空占位：身份契约现在要求 cast 本身完整。沈怀远 刻意不在
+            # cast_spec 里——本测试就是要它只能来自已落库的 character 行。
+            "supporting_cast": [
+                {
+                    "name": "沈观棋",
+                    "role": "supporting",
+                    "gender": "female",
+                    "pronoun_set_zh": "她",
+                    "pronoun_set_en": "she/her",
+                }
+            ],
         },
     )
 
     names = {entry["name"] for entry in project.metadata_json["identity_manifest"]}
-    assert names == {"沈砚", "沈怀远"}
+    assert names == {"沈砚", "沈观棋", "沈怀远"}
     assert persisted_character.metadata_json["cast_entry"]["pronoun_set_en"] == "he/him"
 
 

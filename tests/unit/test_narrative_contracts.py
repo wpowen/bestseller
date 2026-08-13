@@ -74,6 +74,17 @@ def test_repair_legacy_foundation_identity_locks_uses_hints() -> None:
         {
             "protagonist": {"name": "Rowan Ashford", "role": "protagonist"},
             "antagonist": {"name": "Victor Hale", "role": "antagonist"},
+            # 名册非空占位：身份契约现在要求 cast 本身完整（空名册曾空真放行）。
+            # 本测试关心的是身份锁回填，不是名册规模。
+            "supporting_cast": [
+                {
+                    "name": "Mara Quill",
+                    "role": "supporting",
+                    "gender": "female",
+                    "pronoun_set_zh": "她",
+                    "pronoun_set_en": "she/her",
+                }
+            ],
         },
         identity_hints=[
             {
@@ -134,6 +145,15 @@ def test_repair_legacy_foundation_identity_locks_defaults_unknowns_to_nonbinary(
 def test_repair_legacy_foundation_identity_locks_removes_alias_colliding_with_name() -> None:
     repaired, count = repair_legacy_foundation_identity_locks(
         {
+            # 主角占位：身份契约现在要求 cast 本身完整（缺主角曾空真放行）。
+            # 本测试关心的是与他人本名撞车的别名被摘掉。
+            "protagonist": {
+                "name": "周小满",
+                "role": "protagonist",
+                "gender": "female",
+                "pronoun_set_zh": "她",
+                "pronoun_set_en": "she/her",
+            },
             "supporting_cast": [
                 {
                     "name": "周建设",

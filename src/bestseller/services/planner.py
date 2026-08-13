@@ -681,6 +681,22 @@ def _strip_markdown_fences(text: str) -> str:
     return body
 
 
+def _json_container_order(text: str) -> list[tuple[str, str]]:
+    """Order the container types by which one the payload actually opens with."""
+
+    obj = ("{", "}")
+    arr = ("[", "]")
+    brace = text.find("{")
+    bracket = text.find("[")
+    if brace == -1 and bracket == -1:
+        return []
+    if brace == -1:
+        return [arr]
+    if bracket == -1:
+        return [obj]
+    return [obj, arr] if brace < bracket else [arr, obj]
+
+
 def _extract_json_payload(text: str) -> Any:
     stripped = text.strip()
     if not stripped:
@@ -694,30 +710,53 @@ def _extract_json_payload(text: str) -> Any:
     except json.JSONDecodeError:
         pass
 
-    # Strategy 1: balanced brace/bracket matching from the first opener.
-    # This is robust against prose prefixes *and* prose suffixes that
-    # happen to contain stray closers — unlike ``rfind(closing)`` which
-    # is fooled by trailing example text.
-    for opening, closing in (("{", "}"), ("[", "]")):
-        candidate = _find_balanced_json_substring(unfenced, opening, closing)
-        if candidate is not None:
-            try:
-                return json.loads(candidate)
-            except json.JSONDecodeError:
-                continue
+    # Which container does this payload actually open with? A nested array
+    # can only appear *after* the object enclosing it, so whichever opener
+    # comes first is the outermost container.
+    container_order = _json_container_order(unfenced)
+    primary = container_order[:1]
+    secondary = container_order[1:]
 
-    # Strategy 2 (legacy): rfind-based widest-span scan.  Kept as a
-    # fallback in case brace-matching missed an edge case (e.g. JSON
-    # containing literal unescaped control characters that make the
-    # balanced scan's string-literal tracking over-consume).
-    for opening, closing in (("{", "}"), ("[", "]")):
-        start = unfenced.find(opening)
-        end = unfenced.rfind(closing)
-        if start != -1 and end != -1 and end > start:
-            try:
-                return json.loads(unfenced[start : end + 1])
-            except json.JSONDecodeError:
-                continue
+    def _scan(pairs: Sequence[tuple[str, str]]) -> tuple[bool, Any]:
+        # Strategy 1: balanced brace/bracket matching from the first opener.
+        # This is robust against prose prefixes *and* prose suffixes that
+        # happen to contain stray closers — unlike ``rfind(closing)`` which
+        # is fooled by trailing example text.
+        for opening, closing in pairs:
+            candidate = _find_balanced_json_substring(unfenced, opening, closing)
+            if candidate is not None:
+                try:
+                    return True, json.loads(candidate)
+                except json.JSONDecodeError:
+                    continue
+        # Strategy 2 (legacy): rfind-based widest-span scan.  Kept as a
+        # fallback in case brace-matching missed an edge case (e.g. JSON
+        # containing literal unescaped control characters that make the
+        # balanced scan's string-literal tracking over-consume).
+        for opening, closing in pairs:
+            start = unfenced.find(opening)
+            end = unfenced.rfind(closing)
+            if start != -1 and end != -1 and end > start:
+                try:
+                    return True, json.loads(unfenced[start : end + 1])
+                except json.JSONDecodeError:
+                    continue
+        return False, None
+
+    found, result = _scan(primary)
+    if found:
+        return result
+
+    # NOTE: the other container type is deliberately NOT tried here — it is
+    # the last resort below, after the repair strategies. Scanning both up
+    # front is what let a nested fragment beat a repairable payload:
+    # production 2026-08-09 (castspec-repro-1, cast_spec attempts 3 and 4)
+    # returned a syntactically broken top-level object, the ``{`` scan
+    # failed, the ``[`` scan matched the first nested array, and the
+    # 4-string list ``["灾难化推演", …]`` from a psych profile was returned
+    # as the entire CastSpec. json-repair below recovers the real object
+    # from both of those responses. Repairing the right container must
+    # outrank a fragment of the wrong one.
 
     # Strategy 3: tolerate truncation at max_tokens — drop the incomplete
     # trailing object and close any still-open containers.
@@ -756,6 +795,16 @@ def _extract_json_payload(text: str) -> Any:
             return result
     except Exception:
         pass
+
+    # Last resort: the other container type. A fragment of the wrong shape
+    # beats nothing at all, but only after every repair above has failed.
+    found, result = _scan(secondary)
+    if found:
+        logger.warning(
+            "Planner output parsed only as a %s fragment after all repairs failed.",
+            "array" if secondary and secondary[0][0] == "[" else "object",
+        )
+        return result
 
     raise ValueError("Planner output does not contain valid JSON.")
 
@@ -4225,7 +4274,8 @@ async def _generate_volume_outline_with_repair_loop(
                 if duplicate_findings:
                     summary = "; ".join(
                         (
-                            f"ch{f['chapter_number']} goal duplicates consumed event "
+                            f"ch{f['chapter_number']} {f.get('field', 'goal')} "
+                            f"duplicates consumed event "
                             f"ch{f['ledger_chapter_number']} "
                             f"(similarity {f['similarity']:.2f})"
                         )
@@ -5094,12 +5144,16 @@ def _outline_duplicate_event_findings(
     *,
     threshold: float = OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT,
 ) -> list[dict[str, Any]]:
-    """Deterministic acceptance check: flag new chapters whose goal is a
-    near-rewrite of an already-consumed ledger event.
+    """Deterministic acceptance check: flag new chapters whose goal OR hook is
+    a near-rewrite of an already-consumed ledger event.
 
-    Similarity is character 2-gram Jaccard (same primitive the title
-    dedup uses), computed goal-vs-goal. One finding per chapter (the
-    highest-similarity ledger match).
+    Similarity is character 2-gram Jaccard (same primitive the title dedup
+    uses). Both channels are compared — the ledger has always carried hooks,
+    but the check historically ran goal-vs-goal only, and hooks re-bloomed
+    straight through it: real run 2026-08-07 (custom-xianxia-1786104488),
+    batch 4-6 received ch3's hook in the ledger and planned a near-identical
+    hook for ch4 (雷音入体→灶眼再烫一层→温知晚批注). One finding per chapter
+    (the highest-similarity ledger match across both channels).
     """
 
     if threshold <= 0 or not consumed_event_entries:
@@ -5109,22 +5163,29 @@ def _outline_duplicate_event_findings(
         if not isinstance(chapter, dict):
             continue
         goal = _outline_chapter_goal_text(chapter)[:_OUTLINE_EVENT_LEDGER_GOAL_CHARS]
-        if not goal:
+        hook = _outline_chapter_hook_text(chapter)[:_OUTLINE_EVENT_LEDGER_HOOK_CHARS]
+        if not goal and not hook:
             continue
         best: dict[str, Any] | None = None
         for entry in consumed_event_entries:
-            ledger_goal = str(entry.get("goal") or "")
-            if not ledger_goal:
-                continue
-            similarity = jaccard_similarity(goal, ledger_goal)
-            if similarity >= threshold and (best is None or similarity > best["similarity"]):
-                best = {
-                    "chapter_number": _int_or_none(chapter.get("chapter_number")),
-                    "goal": goal,
-                    "ledger_chapter_number": entry.get("chapter_number"),
-                    "ledger_goal": ledger_goal,
-                    "similarity": round(similarity, 4),
-                }
+            for field, text in (("goal", goal), ("hook", hook)):
+                if not text:
+                    continue
+                ledger_text = str(entry.get(field) or "")
+                if not ledger_text:
+                    continue
+                similarity = jaccard_similarity(text, ledger_text)
+                if similarity >= threshold and (
+                    best is None or similarity > best["similarity"]
+                ):
+                    best = {
+                        "chapter_number": _int_or_none(chapter.get("chapter_number")),
+                        "field": field,
+                        "goal": text,
+                        "ledger_chapter_number": entry.get("chapter_number"),
+                        "ledger_goal": ledger_text,
+                        "similarity": round(similarity, 4),
+                    }
         if best is not None:
             findings.append(best)
     return findings
@@ -19392,6 +19453,162 @@ def _merge_volume_world_disclosure_into_world_spec(
     return merged
 
 
+#: Contract fields that carry the actual content of a fail-closed planner
+#: artifact. If a payload has nothing in *any* of them, the model returned a
+#: skeleton, not an artifact.
+_PLANNER_PAYLOAD_SIGNAL_KEYS: dict[str, tuple[str, ...]] = {
+    "cast_spec": ("protagonist", "antagonist", "supporting_cast", "antagonist_forces"),
+    "book_spec": (
+        "title",
+        "logline",
+        "protagonist",
+        "narrative_lines",
+        "themes",
+        "core_loop",
+        "selling_points",
+    ),
+    "world_spec": (
+        "world_name",
+        "world_premise",
+        "rules",
+        "power_system",
+        "locations",
+        "factions",
+    ),
+    "volume_plan": ("volumes",),
+}
+
+
+#: Generic wrapper keys models reach for when they narrate their own output.
+_PLANNER_GENERIC_ENVELOPE_KEYS = frozenset(
+    {"data", "result", "output", "payload", "response", "json"}
+)
+
+
+def _normalize_envelope_key(value: str) -> str:
+    return re.sub(r"[\s_-]+", "", value).lower()
+
+
+def _unwrap_planner_envelope(payload: Any, logical_name: str) -> Any:
+    """Unwrap ``{"cast_spec": {...}}`` into the CastSpec itself.
+
+    Production 2026-08-09 (castspec-repro-1): MiniMax-M3 returned a complete,
+    high-quality cast — nested one level down under a ``cast_spec`` key. Because
+    ``CastSpecInput`` is ``extra="ignore"``, that envelope validated as an
+    all-default object, and ``_repair_cast_identity_locks_for_planner``'s
+    ``model_dump()`` then materialised it as the all-null 5-key shell that got
+    persisted (deai-verify-20260808). The model's content was never the problem;
+    one level of nesting was. Unwrap it instead of burning the retry budget.
+
+    Deliberately narrow: only a single-key object whose key names this very
+    artifact (or is a generic envelope word) is unwrapped, so a real payload
+    that happens to have one field is never mistaken for a wrapper.
+    """
+
+    if not isinstance(payload, dict) or len(payload) != 1:
+        return payload
+    (key, inner), = payload.items()
+    if not isinstance(inner, (dict, list)) or not inner:
+        return payload
+
+    normalized = _normalize_envelope_key(str(key))
+    group = _planner_payload_signal_group(logical_name)
+    accepted = {_normalize_envelope_key(logical_name)}
+    if group:
+        accepted.add(_normalize_envelope_key(group))
+    if normalized not in accepted and normalized not in _PLANNER_GENERIC_ENVELOPE_KEYS:
+        return payload
+
+    logger.warning(
+        "Planner artifact %s arrived wrapped in a '%s' envelope; unwrapping.",
+        logical_name,
+        key,
+    )
+    return inner
+
+
+def _planner_payload_signal_group(logical_name: str) -> str | None:
+    """Map ``cast_spec_personhood_repair`` → ``cast_spec`` and friends.
+
+    Repair rounds overwrite the artifact with a fresh version, so they are
+    measured by the same ruler as the original generation.
+    """
+
+    for group in _PLANNER_PAYLOAD_SIGNAL_KEYS:
+        if logical_name == group or logical_name.startswith(f"{group}_"):
+            return group
+    return None
+
+
+def _payload_field_has_content(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(_payload_field_has_content(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(_payload_field_has_content(item) for item in value)
+    return True
+
+
+def _assert_planner_payload_has_content(logical_name: str, payload: Any) -> None:
+    """Reject a fail-closed planner artifact that came back as an empty shell.
+
+    Production 2026-08-08 (deai-verify-20260808), three facts that only bite
+    together:
+
+    1. ``cast_spec`` is in ``fail_closed_artifacts``, and
+       ``effective_merge_fallback = merge_fallback and not
+       effective_abort_on_fallback`` — for this set the fallback is
+       deliberately NOT merged, so the model's output stands alone.
+    2. Their contracts are optional-with-default all the way down
+       (``book_spec`` has no validator at all), so a response carrying none
+       of the contract fields still validates.
+    3. The empty shell was therefore persisted verbatim as the artifact, and
+       only failed several steps later at ``ensure_project_identity_manifest``
+       — an error pointing at the wrong step, on a book that was already dead.
+
+    Raising here routes the empty response into the planner's existing
+    retry-with-diagnostics loop (and dumps the raw content to
+    ``artifacts/planner_failures/``); if every attempt comes back empty the
+    loop fail-fasts with an error that names this artifact.
+    """
+
+    group = _planner_payload_signal_group(logical_name)
+    if group is None:
+        return
+
+    if isinstance(payload, list):
+        # ``volume_plan`` arrives as a bare array; other groups never do.
+        if not payload:
+            raise ValueError(
+                f"Planner artifact '{logical_name}' came back empty: the model "
+                "returned an empty array instead of the planned entries."
+            )
+        return
+
+    if not isinstance(payload, dict):
+        return
+
+    if group == "volume_plan" and "volume_number" in payload:
+        # ``parse_volume_plan_input`` accepts a bare single-volume object as
+        # well as ``{"volumes": [...]}``. Rejecting that shape would be a
+        # false positive, not a caught defect.
+        return
+
+    signal_keys = _PLANNER_PAYLOAD_SIGNAL_KEYS[group]
+    if any(_payload_field_has_content(payload.get(key)) for key in signal_keys):
+        return
+
+    raise ValueError(
+        f"Planner artifact '{logical_name}' came back as an empty shell: none of "
+        f"{', '.join(signal_keys)} carried any content "
+        f"(keys present: {sorted(k for k in payload if k != '_meta')}). "
+        "Treating this as a failed generation instead of persisting a hollow artifact."
+    )
+
+
 async def _generate_structured_artifact(
     session: AsyncSession,
     settings: AppSettings,
@@ -19438,6 +19655,11 @@ async def _generate_structured_artifact(
 
     def validate_candidate(value: Any) -> None:
         clean = _without_planning_meta(value)
+        # Runs before the schema validator: an empty shell parses cleanly
+        # against these optional-with-default contracts, so the schema can
+        # never be the thing that catches it. Also guards the reuse path so a
+        # hollow artifact already in the table is never handed back.
+        _assert_planner_payload_has_content(logical_name, clean)
         if validator is not None:
             validator(clean)
         _validate_planner_creation_intent_payload(
@@ -19600,7 +19822,10 @@ async def _generate_structured_artifact(
                 continue
             raise error
         try:
-            generated = _extract_json_payload(completion.content)
+            generated = _unwrap_planner_envelope(
+                _extract_json_payload(completion.content),
+                logical_name,
+            )
             payload = (
                 _merge_planning_payload(fallback_payload, generated)
                 if effective_merge_fallback

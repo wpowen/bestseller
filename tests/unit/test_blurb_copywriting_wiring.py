@@ -47,7 +47,9 @@ def test_copywriting_champion_is_sanitized_and_truncated():
 
     source = _source()
     cw_call_pos = source.index("_copywriting_result = await run_blurb_copywriting(")
-    surrounding = source[cw_call_pos : cw_call_pos + 1200]
+    # 窗口 2400（原 1200）：2026-08-06 在赋值前插入了正典人名校验分支，两道防线
+    # 仍在同一段里，只是往后挪了。放宽的是取样窗口，不是断言本身。
+    surrounding = source[cw_call_pos : cw_call_pos + 2400]
     assert "_sanitize_forbidden_default_motifs(_copywriting_result.champion" in surrounding
     assert "truncate_at_sentence(synopsis, 500)" in surrounding
 
@@ -64,7 +66,8 @@ def test_copywriting_call_receives_v0_synopsis_and_book_jargon_terms():
 def test_copywriting_block_is_wrapped_in_fail_open_try_except():
     source = _source()
     block_start = source.index("# ── 简介独立文案工序（T6")
-    surrounding = source[block_start : block_start + 4500]
+    # 窗口 6500（原 4500）：同上，正典人名校验分支加长了该块。
+    surrounding = source[block_start : block_start + 6500]
     assert "try:" in surrounding
     assert 'logger.warning("Blurb copywriting tournament failed (non-fatal)"' in surrounding
 
@@ -88,14 +91,24 @@ def test_max_attempts_compressed_when_copywriting_ran():
     assert "if _copywriting_ran" in source
 
 
-def test_logline_rederivation_only_when_not_fallen_back_to_v0():
+def test_logline_rederivation_only_when_champion_is_actually_in_use():
+    """logline 只在 synopsis 真的换成冠军时才重新提炼。
+
+    守卫原本只看 ``fell_back_to_v0``。2026-08-06 增加了第二条回退路径——冠军换掉
+    正典主角时被拒、synopsis 保持 v0——它同样必须阻断重提炼，否则会从一份并未
+    采用的简介里推导 logline。
+    """
+
     source = _source()
-    logline_call_pos = source.index("_new_logline, _logline_ids = await _derive_logline_from_champion(")
-    guard_pos = source.rindex(
-        "if not _copywriting_result.fell_back_to_v0:", 0, logline_call_pos
+    logline_call_pos = source.index(
+        "_new_logline, _logline_ids = await _derive_logline_from_champion("
     )
+    guard_pos = source.rindex("if not (", 0, logline_call_pos)
+    guard = source[guard_pos:logline_call_pos]
+    assert "_copywriting_result.fell_back_to_v0" in guard
+    assert "_copywriting_result.canon_name_rejected" in guard
     # 守卫必须紧挨着调用点(中间不该隔着别的无关大段代码)。
-    assert logline_call_pos - guard_pos < 200
+    assert logline_call_pos - guard_pos < 300
 
 
 def test_derive_logline_from_champion_fails_open_on_pathology():
@@ -117,4 +130,36 @@ def test_final_prompt_bans_omniscient_tease_ending() -> None:
 
     source = inspect.getsource(bc)
     assert "全知旁白式吊胃口" in source
-    assert "具体的、即将发生的" in source
+    # 2026-08-11 百本调研后收尾规则改为「陈述句或名场面截断」（问句仅 6/100，
+    # 全知吊胃口仍然违禁）。
+    assert "名场面截断" in source
+
+
+def test_prompt_encodes_board_research_form() -> None:
+    """2026-08-11 百本榜单调研的三条硬改（docs/research/board-blurb-hook-research）。
+
+    ①标签行（62/100 头部有，且必须事实接地、禁编信用背书）；②体验样本硬要求
+    （52/100 直贴正文级引语，我们此前零引语是最大缺口）；③短句分行+第三方见证
+    +预期违背。旧「三五个长句」规则出自 42 条精选语料，与在榜活数据（中位 209 字
+    /9 句/10 行）冲突，已废弃——本测试同时钉住它不许回潮。
+    """
+
+    import inspect
+
+    from bestseller.services import blurb_copywriter as bc
+
+    source = inspect.getsource(bc)
+    for token in ("标签行", "体验样本，缺失即废稿", "短句分行", "预期违背",
+                  "第三方反应", "禁止编造出版/短剧/评分"):
+        assert token in source, token
+    assert "三五个长句" not in source, "42 条语料的旧形态规则不得回潮"
+
+
+def test_appeal_gate_scores_past_the_tag_line() -> None:
+    """标签行是契约槽位不是句子——首句 30 字钩子检查必须跳过它评分。"""
+
+    from bestseller.services.blurb_appeal_gate import strip_leading_tag_line
+
+    body = strip_leading_tag_line("【无系统+单女主+轻松爽文】\n岁首前一天，许拙被按住了肩膀。")
+    assert body.startswith("岁首前一天")
+    assert strip_leading_tag_line("岁首前一天。") == "岁首前一天。"

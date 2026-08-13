@@ -20,6 +20,22 @@ from bestseller.services.blurb_copywriter import (
 
 pytestmark = pytest.mark.unit
 
+
+@pytest.fixture(autouse=True)
+def _stub_coherence_verifier(monkeypatch):
+    """单测密封：自洽校验默认判空（真校验走 test_blurb_coherence.py 的解析测试）。
+
+    2026-08-07 淘汰赛接了引文核对式矛盾扫描；不打桩的话，这里每个用例都会
+    带着 fake session 去打真 LLM 路径（慢、可能碰网络、且与被测逻辑无关）。
+    """
+
+    from bestseller.services import blurb_coherence_judge as bcj
+
+    async def _clean(*args, **kwargs):
+        return bcj.CoherenceReport(findings=(), llm_used=True)
+
+    monkeypatch.setattr(bcj, "verify_blurb_coherence", _clean)
+
 _SPINE = {
     "who": "十年凶宅试睡员闻雀，对异常早已麻木",
     "wants": "在槐安公寓602室熬满七天并交出合格报告",
@@ -273,7 +289,7 @@ class TestChampionPolish:
 
             return BlurbAppealVerdict(total=78.0, grade="consider")
 
-        async def _fake_polish(session, settings, *, synopsis, feedback, genre, sub_genre, language):
+        async def _fake_polish(session, settings, *, synopsis, feedback, genre, sub_genre, language, **kwargs):
             calls["count"] += 1
             return synopsis, "polish-run-id"
 
@@ -303,7 +319,7 @@ class TestChampionPolish:
 
         import bestseller.services.blurb_copywriter as mod
 
-        async def _fake_polish(session, settings, *, synopsis, feedback, genre, sub_genre, language):
+        async def _fake_polish(session, settings, *, synopsis, feedback, genre, sub_genre, language, **kwargs):
             polish_called["n"] += 1
             return _GOOD_SYNOPSIS, "polish-run-id"
 

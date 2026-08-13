@@ -127,6 +127,57 @@ def test_mark_chapter_rounds_budget_exhausted_stamps_machine_repair_route() -> N
 
 
 # ---------------------------------------------------------------------------
+# 零违规的章不许被「停止修复」判成坏章
+# ---------------------------------------------------------------------------
+#
+# 真机 2026-08-06 custom-xuanhuan-1786023406：C3 plateau 用「每轮消掉几个
+# blocker」当进度曲线，已经 0 blocker 的章永远「没长进」（没有 blocker 可消），
+# 于是被 plateau → 标 blocked → machine_blocked。9 章里 3 章从未产生过任何
+# blocking 质量报告却被标 blocked，editor+critic 吃掉全书 68% token。
+# 「不再花修复轮次」和「这章有问题」是两件事。
+
+
+def test_clean_chapter_is_not_marked_blocked_when_repair_stops() -> None:
+    chapter = _chapter()
+    chapter.production_state = "pending"
+    mark_chapter_rounds_budget_exhausted(
+        chapter, block_codes=(), total_scene_rounds=6, budget=6,
+    )
+    meta = chapter.metadata_json
+    # 状态不动：质量报告已经说它通过了，停修复不构成毙它的理由。
+    assert chapter.production_state == "pending"
+    assert meta["requires_machine_repair"] is False
+    assert meta["rounds_budget_stopped_while_clean"] is True
+    # 轮次记录仍要写——停这件事本身值得审计。
+    assert meta[CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY]["block_codes"] == []
+    assert meta[CHAPTER_ROUNDS_BUDGET_EXHAUSTED_KEY]["total_scene_rounds"] == 6
+    assert meta["auto_repair_in_progress"] is False
+
+
+def test_blank_only_block_codes_count_as_clean() -> None:
+    # 真机 block codes 里混过空串；过滤后为空就是干净，不能因为"传了个列表"就毙章。
+    chapter = _chapter()
+    chapter.production_state = "ok"
+    mark_chapter_rounds_budget_exhausted(
+        chapter, block_codes=("", ""), total_scene_rounds=3, budget=3,
+    )
+    assert chapter.production_state == "ok"
+    assert chapter.metadata_json["requires_machine_repair"] is False
+
+
+def test_dirty_chapter_still_routes_to_machine_repair() -> None:
+    # no-op 契约：有真违规时行为与修复前逐字节一致。
+    chapter = _chapter()
+    chapter.production_state = "pending"
+    mark_chapter_rounds_budget_exhausted(
+        chapter, block_codes=("LENGTH_UNDER",), total_scene_rounds=9, budget=8,
+    )
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["requires_machine_repair"] is True
+    assert "rounds_budget_stopped_while_clean" not in chapter.metadata_json
+
+
+# ---------------------------------------------------------------------------
 # Guard inside maybe_prepare_chapter_auto_repair
 # ---------------------------------------------------------------------------
 

@@ -92,7 +92,15 @@ _CATEGORY_CHECKS_ZH: dict[str, tuple[str, ...]] = {
     "action-progression": (
         "主角立得住:出身/处境/缺憾让读者愿意跟随,起点低也要有翻盘的钩子。",
         "升级动机充分:主角为什么要变强/复仇/求生?目标要具体且有压力。",
-        "金手指可见:本书的核心金手指/系统/功法(以本书设定为准)黄金三章必须有一次清晰的实战/实效展示,并付出可见代价。",
+        # 「并付出可见代价」 was dropped 2026-08-09. This judge has no access to
+        # cost_style, so it demanded a visible price from every 爽文无代价 book —
+        # while that book's own generation prompt was told the opposite ("能力
+        # 可以放心使用…它需要付出什么，永远不是本书的引擎"). Generation and
+        # acceptance were ordering opposite things, and "pay a visible price" is
+        # exactly the push that turns a cultivation opening into IOUs and leverage.
+        # Cost is enforced where cost_style is actually known (ideology_kernel's
+        # cost_style_directive, the per-chapter causal contract), not here.
+        "金手指可见:本书的核心金手指/系统/功法(以本书设定为准)黄金三章必须有一次清晰的实战/实效展示。",
         "实力体系自洽:境界/等级/规则前后一致,战力可比较,主角的胜负有逻辑而非作者强行。",
         "爽点兑现:本章须兑现一个打脸/逆袭/突破/获得的爽点,给读者明确追更理由。",
         "信息密度可控:世界观与术语循序释放,第一章不一次性灌输设定。",
@@ -126,7 +134,7 @@ _CATEGORY_CHECKS_EN: dict[str, tuple[str, ...]] = {
     "action-progression": (
         "Protagonist holds up: background/situation/flaw makes the reader want to follow; a low start still needs a comeback hook.",
         "Progression motive: why does the protagonist seek power/revenge/survival? concrete goal under pressure.",
-        "Golden-finger on-screen: this book's core system/cheat/art (per its setting) shows one clear combat/effect demonstration in the golden three, at a visible cost.",
+        "Golden-finger on-screen: this book's core system/cheat/art (per its setting) shows one clear combat/effect demonstration in the golden three.",
         "Self-consistent power: tiers/levels/rules stay consistent, power is comparable, wins follow logic not author fiat.",
         "Payoff delivered: this chapter delivers one face-slap/comeback/breakthrough/gain to justify reading on.",
         "Controlled info density: worldbuilding and terms release gradually; chapter 1 does not front-load the setting.",

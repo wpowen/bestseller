@@ -343,7 +343,59 @@ def validate_foundation_identity_contract(
         )
 
     violations: list[NarrativeContractViolation] = []
+    warnings: list[NarrativeContractViolation] = []
     alias_owner: dict[str, str] = {}
+
+    # Non-emptiness comes first. Everything below only inspects the entries
+    # that ARE present, so an empty roster used to pass with zero violations
+    # — the gate was vacuously true. Production 2026-08-08
+    # (deai-verify-20260808): an all-null CastSpec cleared this gate, got
+    # persisted, and only blew up several steps later inside
+    # ``ensure_project_identity_manifest`` with "CastSpec produced an empty
+    # identity manifest", which points at the wrong step entirely. A cast
+    # without a named protagonist is a failed generation, and this is the step
+    # that has to say so.
+    protagonist_name = (
+        _clean(cast_spec.protagonist.model_dump(mode="json").get("name"))
+        if cast_spec.protagonist is not None
+        else ""
+    )
+    if not protagonist_name:
+        violations.append(
+            NarrativeContractViolation(
+                code="FOUNDATION_CAST_PROTAGONIST_MISSING",
+                location="cast_spec.protagonist",
+                message=(
+                    "CastSpec has no named protagonist. Downstream identity locks, "
+                    "the identity manifest and every chapter prompt are built from it."
+                ),
+            )
+        )
+    # Empty supporting_cast is a WARNING, never a block (demoted 2026-08-09,
+    # same day it shipped as a block). Production 《废脉炉子天天骂我》
+    # (custom-xianxia-1786282198): the source-bound cast compiler
+    # (approved-design-cast.v1) emits supporting_cast=[] BY DESIGN — it only
+    # carries what the approved concept names, and supporting characters live
+    # in premise/writing_profile instead. The compiler is deterministic, so
+    # "retry" re-hits the same wall until the book dies: a gate false-positive
+    # of exactly the class this codebase keeps re-learning (gate-false-positive
+    # audit 2026-07-25). The counterexample is on record: the 2026-08-08 ledger
+    # book shipped 50 chapters from a cast_spec with this exact shape. The
+    # empty-SHELL failure this check was written against (deai-verify-20260808)
+    # had no protagonist either — the protagonist check above already blocks it.
+    if not cast_spec.supporting_cast:
+        warnings.append(
+            NarrativeContractViolation(
+                code="FOUNDATION_CAST_ROSTER_EMPTY",
+                location="cast_spec.supporting_cast",
+                message=(
+                    "CastSpec has an empty supporting_cast roster. Supporting "
+                    "characters will only exist in premise/profile prose until the "
+                    "roster patch fills them in; naming pools and relationship "
+                    "contracts start protagonist-only."
+                ),
+            )
+        )
 
     for location, character in _iter_cast_characters(cast_spec):
         data = character.model_dump(mode="json")
@@ -407,6 +459,7 @@ def validate_foundation_identity_contract(
     return NarrativeContractReport(
         gate_name="foundation_identity_contract",
         violations=tuple(violations),
+        warnings=tuple(warnings),
     )
 
 

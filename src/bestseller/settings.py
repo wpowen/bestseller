@@ -493,6 +493,10 @@ class PipelineSettings(BaseModel):
     enable_fanqie_market_profile: bool = False
     enable_fanqie_long_ranking_gate: bool = True
     fanqie_long_ranking_block_on_failure: bool = True
+    # Market validation (services/market_validation): advisory report after
+    # conception. Default False — off means the pipeline output is
+    # byte-identical. Never gates; failures degrade silently.
+    enable_market_validation: bool = False
     # Per-chapter cap on how many times the keyword-matching fanqie ranking
     # gate is allowed to *hard-block* the same chapter across pipeline
     # runs. Once a chapter has tripped the gate this many times we demote

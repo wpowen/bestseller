@@ -91,6 +91,95 @@ def test_ledger_jargon_is_renamed_in_every_zh_prompt_surface() -> None:
     assert "线索账本" not in inspect.getsource(autonomous_book_repair)
 
 
+def test_ledger_jargon_is_absent_from_the_prompts_the_writer_actually_reads() -> None:
+    """2026-08-09: the test above never covered the writer itself.
+
+    The chapter-first system prompt said 「整章逻辑合同、状态台账和上章承接的优先级
+    更高」 and the whole-chapter logic contract said 「不得向读者解释台账」 — every
+    chapter of every book, while that same book's profile was ordering it to write
+    a ledger. The embodiment pass named 「代价记账/状态账」 to forbid them, which is
+    how you plant them. Comments are exempt (they are not prompt text); string
+    literals are not.
+    """
+    import ast
+
+    from bestseller.services import drafts
+    from bestseller.services.quality_levers import character_embodiment
+
+    for module in (drafts, character_embodiment):
+        tree = ast.parse(inspect.getsource(module))
+        docstrings = {
+            id(node.body[0].value)
+            for node in ast.walk(tree)
+            if isinstance(
+                node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            )
+            and node.body
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+        }
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docstrings
+            ):
+                for token in ("台账", "账本", "代价记账", "状态账"):
+                    assert token not in node.value, (
+                        f"{module.__name__}:{node.lineno} 又把框架账务黑话写进了 prompt 面：{token}"
+                    )
+
+
+def test_title_prompt_carries_no_prior_books_private_vocabulary() -> None:
+    """起名 prompt 曾把某本验房合规书的私有词表发给每一本书的起名编辑。"""
+    from bestseller.services.platform_title_workflow import (
+        build_story_grounded_title_revision_messages,
+    )
+
+    system, user = build_story_grounded_title_revision_messages(
+        {"protagonist": "沈潮生", "genre": "东方玄幻"},
+        current_title="东方玄幻升级流",
+    )
+    blob = system + user
+    for token in ("台账", "整改单", "验房报告", "执照", "复检"):
+        assert token not in blob, f"起名 prompt 又出现旧书私货：{token}"
+
+
+def test_qimao_pressure_terms_do_not_reward_writing_a_ledger() -> None:
+    """具体压力词表是加分项；把「账本」放进去等于让门禁奖励写账本。"""
+    from bestseller.services.qimao_planning_gate import _CONCRETE_PRESSURE_TERMS
+
+    assert "账本" not in _CONCRETE_PRESSURE_TERMS
+
+
+def test_progression_judge_does_not_demand_cost_the_user_switched_off() -> None:
+    """判官不得无条件要求「可见代价」——用户可以勾爽文无代价。
+
+    生成端 prompt 明说「它需要付出什么，永远不是本书的引擎」；判官同时要求付出
+    可见代价，两端在对同一本书下相反的命令，而「付出可见代价」正是把修真开局推向
+    欠条/把柄的那句话。代价由知道 cost_style 的那一层管（ideology_kernel）。
+    """
+    from bestseller.services.judge_genre_context import resolve_judge_genre_context
+
+    ctx = resolve_judge_genre_context(genre="东方玄幻", sub_genre="东方玄幻")
+    assert ctx.category_key == "action-progression"
+    checks = "".join(ctx.story_logic_checks_zh)
+    assert "金手指" in checks  # the real check survives
+    assert "可见代价" not in checks
+    assert "visible cost" not in "".join(ctx.story_logic_checks_en)
+
+
+def test_chapter_first_writer_prompts_are_traceable() -> None:
+    """整章模式此前完全没有 prompt trace，导致污染只能靠手工复原。"""
+    from bestseller.services import drafts
+
+    assert hasattr(drafts, "_maybe_write_chapter_prompt_trace")
+    source = inspect.getsource(drafts.generate_chapter_draft_once)
+    assert "_maybe_write_chapter_prompt_trace(" in source
+    assert 'prompt_template="chapter_first_writer"' in source
+
+
 def test_methodology_relationship_debt_hints_carry_no_ledger_props() -> None:
     """relationship_debts 的解释性提示不得枚举 记账/欠条/账本/债契 等道具词。"""
     from bestseller.services import methodology_application_gate

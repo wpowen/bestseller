@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any
 
@@ -134,10 +134,15 @@ def load_logline_gate_config(cfg: dict[str, Any] | None = None) -> dict[str, Any
     }
 
 
+def _normalized_judged_text(value: Any) -> str:
+    return "".join(str(value or "").split())
+
+
 def verdict_from_approved_concept_contract(
     contract: dict[str, Any] | None,
     *,
     target_chapters: int,
+    logline_text: str | None = None,
 ) -> LoglineGateVerdict | None:
     """Reuse the stricter tournament verdict instead of judging the same hook twice.
 
@@ -146,9 +151,25 @@ def verdict_from_approved_concept_contract(
     seriality judge evidence that still clears the current tournament floors.
     Missing, stale, or sub-floor evidence returns ``None`` so the independent
     logline judge remains fail-closed.
+
+    **Evidence transfer requires text identity** (2026-08-11). The tournament
+    judged exactly one sentence: ``hook_card.one_liner``. "The same hook twice"
+    stopped being true the day T6 started REWRITING the logline from the
+    champion's synopsis — live 《摆摊求死》: the judged one_liner was plain and
+    causally intact, T6's rewrite (天煞孤星/真心人/「杀一回」病句, causality
+    dropped) shipped under the original's flat-4.0 pass with ``llm_used=True``
+    and no LLM ever reading it. A verdict certifies a TEXT, not a book:
+    ``logline_text`` must match the judged sentence or the real judge runs.
     """
 
     if not isinstance(contract, dict) or not contract:
+        return None
+    judged = _normalized_judged_text(
+        (contract.get("hook_card") or {}).get("one_liner")
+        if isinstance(contract.get("hook_card"), dict)
+        else ""
+    )
+    if not judged or _normalized_judged_text(logline_text) != judged:
         return None
     try:
         from bestseller.services.concept_contract import validate_concept_contract
@@ -472,6 +493,41 @@ def _build_reader_judge_system_prompt(cfg: dict[str, Any]) -> str:
         '"causal_coherence":n,"cost_integrity":n,"genre_fidelity":n,'
         '"serial_sustainability":n,"payoff_promise":n,"differentiation":n,'
         '"concrete_picture":n},"why":{...}}'
+    )
+
+
+def downgrade_for_condemned_structures(
+    verdict: LoglineGateVerdict, logline_text: str
+) -> LoglineGateVerdict:
+    """定罪句式的确定性一票（2026-08-12）。
+
+    「天煞孤星…杀一回」当年就是从这个出口拿着 3.91 分出的书。本门测的是
+    故事智力，测不了句式病——四族定罪句式（谁A谁就B/对称机制条款/维持式
+    处境/每X就Y）全部有 0 误报的人类语料校准（100 本榜单全量简介逐行），
+    所以在门的裁决**之上**做确定性降级：命中且本判 EXPAND → 降为
+    REGENERATE，让既有复活循环按整改指令重写；复审同样过此检查，
+    带病稿无法借复活循环回魂。不命中时原判原样返回。
+    """
+
+    from bestseller.services.hook_pull_judge import (  # noqa: PLC0415
+        detect_condemned_hook_structures,
+    )
+
+    hits = detect_condemned_hook_structures(logline_text or "")
+    if not hits or verdict.action is not LoglineAction.EXPAND:
+        return verdict
+    return replace(
+        verdict,
+        action=LoglineAction.REGENERATE,
+        reasons=(
+            *verdict.reasons,
+            "命中定罪句式（" + "、".join(hits) + "）：该句式在 100 本榜单钩子中出现 0 次，属 AI 特有结构",
+        ),
+        fix_directives=(
+            *verdict.fix_directives,
+            "把机制条款/宿命处境改写成主角正在经历的一件已发生的具体事及其当场后果",
+        ),
+        weakest_axis="condemned_structure",
     )
 
 

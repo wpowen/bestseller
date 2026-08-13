@@ -40,6 +40,7 @@ class ArtifactType(StrEnum):
     FANQIE_CRAFT_PROFILE = "fanqie_craft_profile"
     FANQIE_ENTRY_CONTRACT = "fanqie_entry_contract"
     FANQIE_LONG_RANKING_READINESS = "fanqie_long_ranking_readiness"
+    MARKET_VALIDATION_REPORT = "market_validation_report"
 
 
 class ProjectType(StrEnum):

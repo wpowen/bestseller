@@ -625,15 +625,35 @@ def _detect_discourse(
 ) -> list[AiFlavorSpan]:
     """Density-gated discourse-level tells (the sticky ones prompt can't kill).
 
-    Each rule has a regex ``pattern`` and a ``threshold``: count narration-only
-    matches and, if they cross the threshold, emit ONE advisory ``warn`` span
-    for the chapter (anchored at the first hit). Used for constructs that are
-    fine in moderation but read as a tic when repeated — anonymous crowd-
-    reaction beats, 「他没X」negative-action filler. Advisory only (no
-    suggestion → patcher skips); capped at the score layer.
+    Each rule has a regex ``pattern`` and a gate: count narration-only matches
+    and, if they cross it, emit ONE advisory ``warn`` span for the chapter
+    (anchored at the first hit). Used for constructs that are fine in
+    moderation but read as a tic when repeated — anonymous crowd-reaction
+    beats, 「他没X」negative-action filler. Advisory only (no suggestion →
+    patcher skips); capped at the score layer.
+
+    Two gate flavours:
+
+    * ``threshold`` (default) — absolute match count. Right for constructs
+      that are rare-by-nature, where one extra occurrence is one too many.
+    * ``per_1k_threshold`` — matches per 1000 characters. Right for
+      punctuation and other constructs whose acceptable count scales with
+      chapter length, so a 6000-char chapter is not flagged for doing twice
+      what a 3000-char chapter does. A rate is only meaningful at chapter
+      scale, so these rules also require ``min_chars`` of text (default 1200)
+      and ``threshold`` raw hits (default 3) before the rate is consulted —
+      otherwise one dash in a 20-char scene fragment reads as 50 per 1000.
+
+    ``escalate_per_1k`` adds a second, higher band: above it the span is
+    re-tagged with ``escalate_category``. That is how a rule separates
+    "denser than a human writer, worth noting" from "pathological, must be
+    rewritten" — the two bands can then be wired to different consequences
+    (see ``DESLOP_DISCOURSE_CATEGORIES``). Without this, folding N matches
+    into one flat span made 2 hits and 170 hits score identically.
     """
 
     out: list[AiFlavorSpan] = []
+    total_chars = max(1, len(content_md))
     for rule in discourse_rules:
         raw_pat = rule.get("pattern")
         if not raw_pat:
@@ -646,15 +666,37 @@ def _detect_discourse(
         severity = _coerce_severity(rule.get("severity"), default="warn")
         rule_id = str(rule.get("id") or f"{lang}.discourse.{category}")
         why = str(rule.get("why") or "")
-        threshold = int(rule.get("threshold", 3))
 
         hits: list[tuple[int, int]] = []
         for m in pattern.finditer(content_md):
             if _is_in_ranges(m.start(), dialogue_ranges):
                 continue
             hits.append((m.start(), m.end()))
-        if len(hits) < threshold:
+        if not hits:
             continue
+
+        raw_per_1k = rule.get("per_1k_threshold")
+        rate = len(hits) / total_chars * 1000.0
+        if raw_per_1k is not None:
+            if total_chars < int(rule.get("min_chars", 1200)):
+                continue
+            if len(hits) < int(rule.get("threshold", 3)):
+                continue
+            if rate < float(raw_per_1k):
+                continue
+            magnitude = f"{len(hits)}处/{rate:.1f}每千字"
+        else:
+            if len(hits) < int(rule.get("threshold", 3)):
+                continue
+            magnitude = f"共{len(hits)}处"
+
+        escalate_at = rule.get("escalate_per_1k")
+        if escalate_at is not None and rate >= float(escalate_at):
+            category = str(rule.get("escalate_category") or category)
+            severity = _coerce_severity(
+                rule.get("escalate_severity"), default=severity
+            )
+
         span_start, _ = hits[0]
         _, span_end = hits[-1]
         out.append(
@@ -667,8 +709,9 @@ def _detect_discourse(
                 severity=severity,
                 suggestions=(),
                 sentence_span=(span_start, span_end),
-                why=f"{why}（共{len(hits)}处）" if why else f"{len(hits)} hits",
+                why=f"{why}（{magnitude}）" if why else magnitude,
                 remove_sentence_on_block=False,
+                hit_count=len(hits),
             )
         )
     return out
@@ -713,6 +756,11 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         # 2026-07-03): legitimate in moderation, so they stay advisory-capped.
         # Distinctive shapes (category "translationese") are NOT capped.
         "lifted_copula",
+        # Only the mild dash band is capped. Its escalated twin "dash_train"
+        # (≥10 dashes/1k chars — above the max of 1187 real published
+        # chapters) is deliberately absent so it scores uncapped: at that
+        # density the punctuation is not a stylistic preference, it is the
+        # chapter's dominant sentence-joining device.
         "dash_density",
         "then_now_contrast",
         "adjective_colon_verdict",

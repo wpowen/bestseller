@@ -124,6 +124,12 @@ def test_fanqie_market_pipeline_keeps_profile_opt_in_and_blocks_long_gate() -> N
     assert settings.pipeline.fanqie_long_ranking_block_on_failure is True
 
 
+def test_market_validation_stays_opt_in() -> None:
+    settings = load_settings(env={})
+
+    assert settings.pipeline.enable_market_validation is False
+
+
 def test_env_overrides_nested_values(tmp_path: Path) -> None:
     config_path = tmp_path / "default.yaml"
     config_path.write_text(

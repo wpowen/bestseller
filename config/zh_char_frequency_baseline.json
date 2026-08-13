@@ -1,0 +1,8 @@
+{
+  "schema_version": "zh-char-baseline.v1",
+  "note": "Top-400 most frequent CJK characters in 444,434,960 CJK characters of real published Chinese web fiction (400 books sampled from the distillation corpus, 2026-08-09). They cover 72.6% of all running text, so none of them can be a book's distinctive motif. Used ONLY as a stop-list by motif_concentration; it never enters a prompt.",
+  "corpus_books": 400,
+  "corpus_cjk_chars": 444434960,
+  "coverage": 0.726,
+  "common_chars": "的一了是不这人在有他我来道个大就你着到上说也那们出下之么然子中时要过没看可自地天为得都能去后还里以会心好身手对而起只想小如头和无面她事前多些什己样声已开力知现方但神家成点生所经笑两将气间见眼此当话老意法发被情于明真很回又却动十长三让用从正才年军几本把行再门打光实便向高女其定进问王听口走最给同白主儿死李战种边何少外次分太色觉直全等怎果与吧因候住二剑感接师相脸啊空山名更重做比入张第马东风作者体位难杀飞处内国武应兵轻西魔城快先云算强金别四放连并龙完像黑带万火世公水部量士虽变清加刚原吗微跟百至安关林灵日目叫数望竟惊理命今信随机常立远五通非刻海罗转击界怕般似思物解月冷血离步呢乎由弟受落平场该使许修功阵双即反突传够且学倒满绝化任亲若怪半路影找青红失度越玉利皇仙暗指息容言文美始千往必冲德族表音奇早夫深伤朝花吃阳特合极势叶尔衣令队根秦哪紧结斯新石提众元周破整近底敢丝流掌拉认形片夏谁星未它哥教干姐消活备江攻"
+}

@@ -98,7 +98,12 @@ _CONCRETE_PRESSURE_TERMS = (
     "保住",
     "拿到",
     "证据",
-    "账本",
+    # 「账本」 was removed 2026-08-09: as a "concrete pressure" term it made this
+    # gate *reward* an outline for writing a ledger — a scoring nudge pointing
+    # the same way as the motif amplification that produced 《灵根废我用烂账翻盘》.
+    # 证据/人质 stay because they are genre-neutral; 火把/柴堆 below have the same
+    # prop-shaped bias (古代/乡土) but no evidence of harm yet, so they are left
+    # alone rather than changed unmeasured.
     "火把",
     "柴堆",
     "人质",

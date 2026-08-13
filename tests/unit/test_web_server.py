@@ -2891,6 +2891,9 @@ def test_one_sentence_outline_gate_stops_before_project_planning(
                     "weakest_axis": "protagonist_rationality",
                     "reasons": ["正常人有更低成本、更直接的选择。"],
                     "fix_directives": ["重做主角的决策链，而不是润色句子。"],
+                    # 本例测的是「这道门确实行使了否决权」。归因看的是这个标志，
+                    # 不是裁决字面值——它自 2026-07-25 起默认 advisory。
+                    "blocking": True,
                 }
             },
             "主角不会这样做，故事因而没有成立。",
@@ -5066,3 +5069,90 @@ def test_quickstart_rejects_unresolvable_genre_contract() -> None:
                 "chapter_count": 12,
             }
         )
+
+
+@pytest.mark.unit
+def test_advisory_outline_verdict_is_not_reported_as_the_cause(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """真机 2026-08-10《搓背》：杀书的是**文案**硬门，报错却说「一句话故事大纲不成立」。
+
+    logline 门自 2026-07-25 起是 advisory（实测毙掉 3/3 真实爆款，veto 权已收回），
+    它的非 expand 裁决是备注不是原因。web 层此前只看裁决字面值就把标题写成大纲不
+    成立，正文却贴着简介的整改意见——排查方向因此整个跑偏。
+    """
+
+    manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
+    task_id = "advisory-outline-not-the-cause"
+
+    with manager._lock:
+        manager._tasks[task_id] = web_server.WebTaskState(
+            task_id=task_id,
+            task_type="autowrite",
+            status="queued",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            project_slug="must-not-exist",
+            title="待裁决",
+            current_stage="queued",
+        )
+
+    class _SessionScope:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    async def _blocked_by_blurb(*_args: object, **_kwargs: object) -> object:
+        from bestseller.services.story_appeal import AppealBarNotMetError
+
+        raise AppealBarNotMetError(
+            {
+                # advisory：没有 blocking 标志 → 不是原因
+                "logline_gate": {"action": "reject", "overall": 3.2},
+                "blurb": {"total": 41.0},
+                "title": {"total": 78.0},
+            },
+            "模拟读者 0/3 会点：简介只有一句话，看不出剧情。",
+        )
+
+    async def _must_not_enter_planning(**_kwargs: object) -> object:
+        raise AssertionError("blurb-bar failure entered planning")
+
+    from bestseller.services import conception as conception_services
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(
+        web_server,
+        "load_settings",
+        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
+    )
+    monkeypatch.setattr(
+        conception_services, "run_conception_pipeline", _blocked_by_blurb
+    )
+    monkeypatch.setattr(web_server, "run_autowrite_pipeline", _must_not_enter_planning)
+
+    manager._run_autowrite_worker(
+        task_id,
+        {
+            "_run_conception": True,
+            "_genre_key": "xuanhuan",
+            "slug": "must-not-exist",
+            "title": "待裁决",
+            "genre": "东方玄幻",
+            "sub_genre": "东方玄幻",
+            "language": "zh-CN",
+            "target_words": 200_000,
+            "target_chapters": 50,
+            "premise": "待构思。",
+        },
+    )
+
+    task = manager.get_task(task_id)
+    assert task is not None and task["status"] == "failed"
+    stages = [event["stage"] for event in task["progress_events"]]
+    assert "appeal_blocked" in stages, "必须归因到真正拦截的那道门"
+    assert "one_sentence_outline_blocked" not in stages
+    assert "一句话故事大纲不成立" not in str(task["error"])

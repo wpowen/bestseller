@@ -28,6 +28,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.services.blurb_pathology import (
+    champion_swaps_protagonist,
     derive_book_jargon_terms,
     detect_blurb_pathology,
     truncate_at_sentence,
@@ -67,6 +68,7 @@ from bestseller.services.platform_title_workflow import (
 from bestseller.services.progress_context import emit_activity, emit_milestone
 from bestseller.services.writing_presets import list_genre_presets
 from bestseller.services.writing_profile import (
+    fold_near_duplicate_points,
     resolve_writing_profile,
     sanitize_genre_story_overrides,
 )
@@ -109,6 +111,10 @@ class ConceptionResult:
     # 供 planner/prose 复用同一份世界宪法(避免二次派生产生的漂移)。
     # 见 world_model_deriver.derive_world_model / domain.world_model.WorldModel。
     world_model: dict[str, Any] = field(default_factory=dict)
+    # 母题放大报告(2026-08-09):一个词是否占满了全部设计轴,以及那一次重写有没有
+    # 解决它。advisory——它只换一次重写,永不阻断建书;但结论必须落库可查,否则
+    # 等于没检测(见 motif_concentration)。
+    motif_amplification: dict[str, Any] = field(default_factory=dict)
     # 降级追踪(2026-07-10):记录哪些轮次/门触发了 fallback 或异常。
     # 如 ("market_strategist:fallback", "concept_tournament:error")。
     # 下游可据此感知 conception 质量降级。
@@ -298,6 +304,14 @@ from bestseller.services.anti_default_motif import (  # noqa: E402
     user_requested_debt as _user_requested_debt,
 )
 
+# Vocabulary-free successor to the retired debt/ledger police (2026-08-09).
+from bestseller.services.motif_concentration import (  # noqa: E402
+    AmplifiedMotif,
+    detect_profile_motif_amplification,
+    flatten_text as _motif_flatten,
+    render_motif_amplification_feedback as _render_motif_amplification_feedback,
+)
+
 
 def _mentions_debt_theme(*texts: Any) -> bool:
     """True when any text already frames the book around debt/lending.
@@ -311,9 +325,137 @@ def _mentions_debt_theme(*texts: Any) -> bool:
 
 
 def _is_debt_dominated_mechanism(text: Any) -> bool:
-    """Compatibility wrapper around the shared concentration-based detector."""
+    """Compatibility wrapper around the shared concentration-based detector.
+
+    Still a retired shim (always False). The live replacement is
+    ``_motif_amplification_hits`` below, which is vocabulary-free and therefore
+    cannot repeat this one's fatal flaw of outlawing a book's own premise.
+    """
 
     return _canonical_is_debt_dominated(text)
+
+
+def _champion_story_text(high_concept: Any) -> str:
+    """The approved champion's STORY facts, without any judging commentary.
+
+    ``ctx["high_concept"]`` is the winning candidate's full dict, which carries
+    ``judge_reason`` / ``rejected_reason`` / ``seriality_judge`` alongside the
+    story. Those fields quote the story back at itself, so including them in the
+    amplification baseline both enlarges the denominator and hands the baseline
+    the very words being measured — the gate then under-detects.
+    """
+
+    if not isinstance(high_concept, Mapping):
+        return ""
+    pieces = [
+        _motif_flatten(high_concept.get(field))
+        for field in _ONTOLOGY_HIGH_CONCEPT_STORY_FIELDS
+    ]
+    # A champion may also arrive already distilled into a hook card.
+    for field in ("hook_card", "one_liner", "premise", "synopsis"):
+        pieces.append(_motif_flatten(high_concept.get(field)))
+    return "\n".join(piece for piece in pieces if piece.strip())
+
+
+_MARKET_COMPETITORS_CTX_KEY = "_market_competitor_rows"
+
+
+def _market_competitor_rows(ctx: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    """On-board rival books, prefetched into ``ctx`` before the tournament."""
+
+    rows = ctx.get(_MARKET_COMPETITORS_CTX_KEY)
+    return tuple(rows) if isinstance(rows, (list, tuple)) else ()
+
+
+async def _prefetch_market_competitors(
+    session: AsyncSession, settings: AppSettings, ctx: dict[str, Any]
+) -> None:
+    """Pull the current board for this genre so the tournament can use it.
+
+    Ordering is the entire point. Market validation already existed but ran
+    AFTER conception finalized, writing a summary next to a title/premise/blurb
+    that were already locked — a receipt, not an input, and
+    ``metadata["market_validation_summary"]`` was never non-empty for a single
+    project in the database. The documented process starts with "does the market
+    already have this book?"; that question can only change an outcome while the
+    candidates are still being picked.
+
+    Fail-open and advisory: no rows simply means the tournament screens nothing,
+    exactly as before. Never raises, never gates, never touches a prompt.
+    """
+
+    if not bool(
+        getattr(getattr(settings, "pipeline", None), "enable_market_validation", False)
+    ):
+        return
+    try:
+        from bestseller.services.market_validation.request_builder import (  # noqa: PLC0415
+            build_creation_request,
+        )
+        from bestseller.services.market_validation.service import (  # noqa: PLC0415
+            run_market_validation,
+        )
+
+        report = await run_market_validation(
+            build_creation_request(
+                metadata={},
+                genre_label=str(ctx.get("genre") or ""),
+                sub_genre_label=str(ctx.get("sub_genre") or ""),
+                title="",
+                concept="",
+                blurb="",
+                fallback_genre_key=str(ctx.get("genre_key") or ""),
+                project_slug="",
+            ),
+            settings=settings,
+            session=session,
+        )
+        seen: dict[str, dict[str, Any]] = {}
+        for book in [
+            *report.genre_heat.top_books,
+            *report.competitor_scan.competitors,
+        ]:
+            title = str(getattr(book, "title", "") or "").strip()
+            if title and title not in seen:
+                seen[title] = {
+                    "title": title,
+                    "intro": str(getattr(book, "intro", "") or ""),
+                    "tags": [str(t) for t in (getattr(book, "tags", None) or [])],
+                }
+        ctx[_MARKET_COMPETITORS_CTX_KEY] = list(seen.values())
+        logger.info(
+            "market prefetch: %d on-board competitors available to the tournament",
+            len(seen),
+        )
+    except Exception:
+        logger.warning("market competitor prefetch failed (fail-open)", exc_info=True)
+
+
+def _motif_amplification_hits(
+    result: Any, approved_source: str
+) -> tuple[AmplifiedMotif, ...]:
+    """One token owning every design axis of the generated writing profile.
+
+    ``approved_source`` is what the user asked for plus the tournament champion
+    they approved. Measuring against it is what separates "this book is about a
+    ledger" (fine — the source says so) from "an incidental noun became the
+    golden finger, the romance mode and the per-chapter law" (the 2026-08-09
+    《灵根废我用烂账翻盘》 defect). Fail-open: a detector fault must never stop a
+    conception.
+    """
+
+    if not isinstance(result, Mapping):
+        return ()
+    profile = result.get("writing_profile")
+    if not isinstance(profile, Mapping):
+        return ()
+    try:
+        return detect_profile_motif_amplification(
+            profile, source_text=approved_source
+        )
+    except Exception:
+        logger.warning("motif amplification scan failed", exc_info=True)
+        return ()
 
 
 def _anti_debt_metaphor_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool) -> str:
@@ -1288,7 +1430,11 @@ def _build_commercial_fallback(ctx: dict[str, Any]) -> dict[str, Any]:
                 f"again, in a {ctx.get('genre')} world."
             ),
         ),
-        "selling_points": _normalize_string_list(market.get("selling_points")) or trend_keywords[:3],
+        # fold_near_duplicate_points：同一卖点的多个措辞版本在此折叠（真机两书
+        # 复现：7 条实为 4 条 / 500 字长句），这里是所有来源入库前的单一咽喉。
+        "selling_points": fold_near_duplicate_points(
+            _normalize_string_list(market.get("selling_points"))
+        ) or trend_keywords[:3],
         "trope_keywords": _normalize_string_list(market.get("trope_keywords")) or trend_keywords[:3],
         "hook_keywords": _normalize_string_list(market.get("hook_keywords")) or trend_keywords[:2],
         "content_mode": market.get("content_mode") or (
@@ -2255,6 +2401,8 @@ def _should_adopt_mechanism_retry(
     retry_echo: list[dict[str, Any]],
     original_hard: tuple[bool, ...],
     retry_hard: tuple[bool, ...],
+    original_motif_count: int = 0,
+    retry_motif_count: int = 0,
 ) -> bool:
     """Hard pollution repair outranks weak surface-similarity noise.
 
@@ -2263,15 +2411,23 @@ def _should_adopt_mechanism_retry(
     original has a hard violation, a valid retry that clears every hard class is
     always safer than the original; echo severity is only a tie-breaker when
     neither side has a hard violation.
+
+    Motif amplification (2026-08-09) is advisory and cannot make a retry
+    mandatory, so it only decides the case where it is the *sole* complaint:
+    there, swap only if the rewrite actually reduced the takeover. Trading one
+    concept for an equally saturated one buys nothing and risks losing a better
+    premise.
     """
 
     if not isinstance(retry_result, dict) or not retry_result:
         return False
     if any(original_hard):
         return not any(retry_hard)
-    return not any(retry_hard) and _echo_severity(retry_echo) <= _echo_severity(
-        original_echo
-    )
+    if any(retry_hard):
+        return False
+    if original_motif_count and _echo_severity(original_echo) == 0:
+        return retry_motif_count < original_motif_count
+    return _echo_severity(retry_echo) <= _echo_severity(original_echo)
 
 
 def _render_mechanism_echo_feedback(
@@ -2877,13 +3033,19 @@ def _finalize_user_prompt(
         f'「S级/#0371」「数据化修炼」之类）——每个独特概念要么不出现、要么紧跟一句大白话点破'
         f'它是什么、有什么用、不做会怎样；一整段最多保留 1 个需要脑补的专有名词。'
         f'读者看完必须能一句话说出：主角是谁、要干什么、爽点/钩子在哪。'
+        f'⑧【自洽铁律，违反即废稿】简介全文只许存在一条倒计时/期限（多个时间压力'
+        f'选最狠的一个写，其余不写）；人物年龄、经历年数、物品在谁手里，必须与'
+        f'premise 和 story_spine 完全一致；每句由上句因果引出，不是各写各的卖点'
+        f'再拼起来；写完逐句自查任何两句不得互相矛盾。'
         f'严禁 AI 腔与套话：本以为/却没想到/命运的齿轮/何去何从/拭目以待/敬请期待/一段不平凡的旅程）",\n'
         f'  "tags": ["标签1", "标签2", "...（5-10个作品标签，包括题材、风格、元素、受众标签）"],\n'
         f'  "story_spine": {{\n'
         f'    "who": "主角一句话身份（名字+处境）",\n'
         f'    "wants": "他要的具体目标——可验收（拿到X/救出X/在X之前做到X）。'
         f'严禁\'活下去/变强/复仇\'这类没有宾语的模糊词",\n'
-        f'    "why_now": "触发事件：为什么是现在非动不可",\n'
+        f'    "why_now": "触发事件：为什么是现在非动不可。只写一个触发事件 + '
+        f'至多一条期限——把多个时间压力塞进这一格（灶火只剩一个时辰+月底断租）'
+        f'会让下游文案自相矛盾；数字必须与 premise 一致（年龄/从业年数别打架）",\n'
         f'    "against": "挡路的人/势力/规则（有名字或有形态）",\n'
         f'    "stakes": "做不到就失去什么（具体：谁的命/什么身份/哪个家）",\n'
         f'    "question": "读者一路追的问题，一句疑问句（他能不能……？）"\n'
@@ -4474,24 +4636,30 @@ async def _logline_regen_rescue(
     saw "cannot create projects"). This loop is that missing consumer.
 
     Semantics:
-    - ``reject`` is fatal by definition — returned untouched, zero attempts,
-      including a reject produced mid-loop by a rewrite that made things worse.
+    - repairable = ``regenerate`` OR ``reject`` (changed 2026-08-10). Reject used
+      to mean "fatal by definition, zero attempts", so a rejected pitch killed
+      the book without a single repair try — while the very same verdict carried
+      ``fix_directives`` written specifically to be applied. Live case: 《搓背》
+      died at overall 3.2 with two directives generated and never consumed.
+      A gate that produces repair instructions and then refuses to run them is
+      not a hard gate, it is a dropped loop.
     - keep-best: the best-overall (verdict, logline) pair seen wins, so a
       failed rescue can never ship a worse pitch than the one it started with.
-    - fail-closed: any rewrite/judge error returns the best verdict so far —
-      a broken rescue must block exactly like no rescue at all.
+    - fail-closed: any rewrite/judge error returns the best verdict so far, and
+      an exhausted budget still blocks — repair earns attempts, not a pass.
     """
 
     from bestseller.services.logline_gate import LoglineAction  # noqa: PLC0415
 
+    repairable = (LoglineAction.REGENERATE, LoglineAction.REJECT)
     best_verdict, best_logline = verdict, logline
     attempts = 0
-    if getattr(verdict, "action", None) is not LoglineAction.REGENERATE:
+    if getattr(verdict, "action", None) not in repairable:
         return best_verdict, best_logline, attempts
 
     current_verdict, current_logline = verdict, logline
     for _ in range(max(0, int(max_attempts))):
-        if getattr(current_verdict, "action", None) is not LoglineAction.REGENERATE:
+        if getattr(current_verdict, "action", None) not in repairable:
             break
         attempts += 1
         try:
@@ -4708,6 +4876,163 @@ async def _persona_click_advisory(
     except Exception:
         logger.warning("persona click advisory failed (non-fatal)", exc_info=True)
         return None, ""
+
+
+async def _repair_canon_contradictions(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    premise: str,
+    spine: dict[str, Any] | None,
+    synopsis: str,
+) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+    """finalize 正典自洽：验出 premise↔spine 硬矛盾 → 一次有界最小修复 → 复验。
+
+    毒正典的产地就是 finalize（真机：premise 35 岁 vs spine「三十年厨房功夫」、
+    why_now 一格双期限）。自闭环 5 轮证明下游救不回——文案照抄毒、候选全被筛掉、
+    回退的 v0 同病。修复必须发生在产地。
+
+    协议：只统一数字/期限/事实（最小改动），禁止重写措辞、禁止新增内容；
+    修复稿必须**复验通过且矛盾数下降**才采纳，否则原样返回（fail-open）。
+    返回 ``(premise, spine, report_dict|None)``。永不 raise。
+    """
+
+    try:
+        from bestseller.services.blurb_coherence_judge import (  # noqa: PLC0415
+            verify_blurb_coherence,
+        )
+
+        report = await verify_blurb_coherence(
+            session, settings, synopsis=synopsis, premise=premise, spine=spine,
+        )
+        canon = report.canon_findings
+        if not canon:
+            return premise, spine, (report.to_dict() if report.llm_used else None)
+
+        findings_text = "\n".join(
+            f"- 「{f.quote_a}」与「{f.quote_b}」不能同时成立（{f.explanation}）"
+            for f in canon[:4]
+        )
+        spine_json = json.dumps(spine or {}, ensure_ascii=False)
+        repair_user = (
+            f"【前提】\n{premise}\n\n【故事脊柱】\n{spine_json}\n\n"
+            f"【已核实的硬矛盾（引文均为原文）】\n{findings_text}\n\n"
+            "请做**最小修复**：对每条矛盾，二选一保留其中一个说法，把另一处改成与之"
+            "一致（数字/期限/年数/物品状态）。不重写其他内容，不换措辞，不新增实体；"
+            "一个字段里若挤着多条期限，只留最狠的一条。\n"
+            '只输出 JSON：{"premise": "...", "spine": {...原字段名不变...}}'
+        )
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="editor",
+                model_tier="strong",
+                system_prompt=(
+                    "你是设定校对编辑。你只统一互相矛盾的事实，从不改写内容。"
+                ),
+                user_prompt=repair_user,
+                fallback_response="{}",
+                prompt_template="canon_contradiction_repair",
+                prompt_version="v1",
+                max_tokens_override=1400,
+            ),
+        )
+        raw = (completion.content or "").strip()
+        try:
+            payload = json.loads(raw, strict=False)
+        except json.JSONDecodeError:
+            s0, s1 = raw.find("{"), raw.rfind("}")
+            payload = (
+                json.loads(raw[s0 : s1 + 1], strict=False)
+                if s0 != -1 and s1 > s0 else None
+            )
+        if not isinstance(payload, dict):
+            return premise, spine, report.to_dict()
+        new_premise = str(payload.get("premise") or "").strip()
+        new_spine = payload.get("spine")
+        # 结构守卫：premise 非空且长度同量级；spine 字段集合不许缩水。
+        if not new_premise or len(new_premise) < len(premise) * 0.5:
+            return premise, spine, report.to_dict()
+        if spine and (
+            not isinstance(new_spine, dict)
+            or not set(spine.keys()) <= set(new_spine.keys())
+        ):
+            return premise, spine, report.to_dict()
+        recheck = await verify_blurb_coherence(
+            session, settings,
+            synopsis=synopsis, premise=new_premise,
+            spine=new_spine if isinstance(new_spine, dict) else spine,
+        )
+        if len(recheck.canon_findings) < len(canon):
+            logger.warning(
+                "canon contradiction repair adopted: %d -> %d finding(s)",
+                len(canon), len(recheck.canon_findings),
+            )
+            out = recheck.to_dict()
+            out["repaired"] = True
+            out["findings_before"] = len(canon)
+            return new_premise, (
+                new_spine if isinstance(new_spine, dict) else spine
+            ), out
+        logger.warning(
+            "canon contradiction repair NOT adopted (%d -> %d finding(s)); keeping original",
+            len(canon), len(recheck.canon_findings),
+        )
+        out = report.to_dict()
+        out["repaired"] = False
+        return premise, spine, out
+    except Exception:
+        logger.warning("canon contradiction repair failed (fail-open)", exc_info=True)
+        return premise, spine, None
+
+
+async def _coherence_advisory(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    synopsis: str,
+    premise: str,
+    spine: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, str, bool]:
+    """简介/正典自洽 advisory（2026-08-07 接活）：引文核对式矛盾扫描。
+
+    返回 ``(report_dict | None, 反馈行, 简介侧是否有矛盾)``。
+    真机根因：四条互斥倒计时的简介拿了 comprehensibility 满分——全链没有一处
+    测逻辑。涉及简介的矛盾（第三返回值）驱动重生循环回灌重写；纯正典矛盾
+    （premise↔spine，如 35 岁 vs 三十年）重写简介修不了，只持久化+日志，
+    修它属于 finalize 结构问题。fail-open，永不 raise。
+    """
+
+    try:
+        from bestseller.services.blurb_coherence_judge import (  # noqa: PLC0415
+            verify_blurb_coherence,
+        )
+
+        report = await verify_blurb_coherence(
+            session, settings, synopsis=synopsis, premise=premise, spine=spine,
+        )
+        report_dict = report.to_dict()
+        syn_findings = report.synopsis_findings
+        if report.canon_findings:
+            logger.warning(
+                "canon itself is contradictory (premise↔spine): %s",
+                "; ".join(f"{f.quote_a}↔{f.quote_b}" for f in report.canon_findings),
+            )
+        if not syn_findings:
+            return report_dict, "", False
+        lines = "；".join(
+            f"「{f.quote_a}」与「{f.quote_b}」不能同时成立（{f.explanation}）"
+            for f in syn_findings[:3]
+        )
+        feedback = (
+            f"【简介自相矛盾（引文已核对）】{lines}。"
+            "重写时全文只保留一条倒计时/一个说法，逐句自查任何两句不得互相矛盾。"
+        )
+        return report_dict, feedback, True
+    except Exception:
+        logger.warning("coherence advisory failed (non-fatal)", exc_info=True)
+        return None, "", False
 
 
 async def _run_finalize_arena(
@@ -5008,6 +5333,8 @@ async def run_conception_pipeline(
 
     llm_run_ids: list[UUID] = []
     conception_log: list[dict[str, Any]] = []
+    # Board data must be in hand BEFORE the tournament picks candidates.
+    await _prefetch_market_competitors(session, settings, ctx)
     if genre_intent_contract is not None:
         conception_log.append(
             {
@@ -5131,6 +5458,11 @@ async def run_conception_pipeline(
                     # 喜剧」当东方玄幻的冠军，再被最后那道闸门连书带稿一起打死
                     # (2026-08-05 实录)。冠军由本体优先挑选，闸门本身不放宽。
                     genre_intent_contract=genre_intent_contract,
+                    # 第五条，同一形状（2026-08-10）：竞品调研此前跑在构思**之后**，
+                    # 只落一份 metadata 摘要——书名、premise、简介都已定稿，它改不动
+                    # 任何东西，是收据不是输入。文档写的流程第一步「竞品有没有这本
+                    # 书」于是从未被真正问过。榜单在这里就位，撞车的胚子拿不到展开位。
+                    market_competitors=_market_competitor_rows(ctx),
                     effect_skills=list(
                         (
                             (ctx.get("genre_intent_contract") or {}).get(
@@ -5797,6 +6129,31 @@ async def run_conception_pipeline(
                 story_spine=None,
             )
 
+        # Motif amplification (2026-08-09). The retired debt/ledger police left
+        # `_is_debt_dominated_mechanism` a `return False` shim, so the one thing
+        # this gate claimed to catch it could not catch. This replacement carries
+        # no vocabulary: it asks whether ONE token the approved concept barely
+        # used ended up owning the reader promise, the golden finger, the
+        # relationship mode, the power system AND the per-chapter rule at once.
+        # Advisory by design — it earns a regeneration round, never a block.
+        # STORY fields of the champion only. Flattening the whole winner dict
+        # put judge_reason / rejected_reason / seriality_judge into the baseline
+        # — control-plane prose that quotes the story's own words back at it.
+        # That inflates the denominator and understates lift, so the gate
+        # under-detects (2026-08-09 A/B run 1: production reported the rewrite
+        # clean while the shipped profile still had a term at lift 3.0 measured
+        # against the story facts alone). Reuses the field list the ontology
+        # tripwire already trusts for the same reason.
+        _approved_source = "\n".join(
+            piece
+            for piece in (
+                str(explicit_concept_seed or ""),
+                _ontology_user_seed,
+                _champion_story_text(ctx.get("high_concept")),
+            )
+            if piece.strip()
+        )
+        motif_hits = _motif_amplification_hits(final_result, _approved_source)
         _final_blob = _concept_scan_blob(final_result)
         debt_hit = (not _debt_ok) and bool(
             _is_debt_dominated_mechanism(_final_blob)
@@ -5845,7 +6202,14 @@ async def run_conception_pipeline(
                 return ()
 
         ontology_hit = _ontology_hits(final_result)
-        if echo_report or debt_hit or death_hit or ontology_hit or intent_violations:
+        if (
+            echo_report
+            or debt_hit
+            or death_hit
+            or ontology_hit
+            or intent_violations
+            or motif_hits
+        ):
             detected: list[str] = []
             if echo_report:
                 detected.append("跨书机制回声污染")
@@ -5862,6 +6226,11 @@ async def run_conception_pipeline(
                     "题材本体漂移（命中：" + "、".join(ontology_hit) + "）"
                 )
             detected.extend(intent_violations)
+            # Motif amplification stays OUT of ``detected``: that tuple becomes
+            # ``_detected_concept_guard`` and can terminate the book. A word
+            # occupying every axis is a quality defect worth one rewrite, not a
+            # reason to refuse to create the project — the whole point of the
+            # 2026-08-02 retirement was that this class of gate kills books.
             _detected_concept_guard = tuple(dict.fromkeys(detected))
             _emit(
                 "conception_mechanism_echo_retry",
@@ -5871,6 +6240,7 @@ async def run_conception_pipeline(
                     "death_revival": death_hit,
                     "ontology_drift": list(ontology_hit),
                     "creation_intent_violations": list(intent_violations),
+                    "motif_amplification": [m.to_dict() for m in motif_hits],
                 },
             )
             retry_feedback = _render_mechanism_echo_feedback(echo_report, is_en=is_en)
@@ -5885,6 +6255,10 @@ async def run_conception_pipeline(
                     "\n\n【重写要求 · 严格兑现建书选项】\n"
                     + "；".join(intent_violations)
                     + "。重做概念的情绪承诺、主角行动与场景引擎；不得只在标签里补词。"
+                )
+            if motif_hits:
+                retry_feedback += _render_motif_amplification_feedback(
+                    motif_hits, is_en=is_en
                 )
             clean_retry_prompt = _pollution_retry_finalize_prompt(
                 ctx,
@@ -5925,6 +6299,9 @@ async def run_conception_pipeline(
                 effect_skills=list(_explicit_enhancers.get("effect_skills") or []),
                 cost_style=str(_explicit_enhancers.get("cost_style") or ""),
             )
+            retry_motif_hits = _motif_amplification_hits(
+                retry_result, _approved_source
+            )
             adopted = _should_adopt_mechanism_retry(
                 retry_result=retry_result,
                 original_echo=echo_report,
@@ -5941,12 +6318,31 @@ async def run_conception_pipeline(
                     bool(retry_ontology),
                     bool(retry_intent_violations),
                 ),
+                original_motif_count=len(motif_hits),
+                retry_motif_count=len(retry_motif_hits),
             )
             if adopted:
                 final_result = retry_result
                 _unresolved_concept_guard = ()
             else:
                 _unresolved_concept_guard = _detected_concept_guard
+            # Whichever version ships, record the motif verdict. An advisory
+            # finding that leaves no trace is the same as no finding at all
+            # (2026-07-25: a book "disappeared" only because its failure reason
+            # was never surfaced anywhere the user could read).
+            _shipped_motifs = retry_motif_hits if adopted else motif_hits
+            if motif_hits or retry_motif_hits:
+                ctx["motif_amplification_report"] = {
+                    "detected": [m.to_dict() for m in motif_hits],
+                    "after_retry": [m.to_dict() for m in retry_motif_hits],
+                    "adopted_retry": adopted,
+                    "resolved": not _shipped_motifs,
+                }
+                if _shipped_motifs:
+                    logger.warning(
+                        "conception shipped with motif amplification unresolved: %s",
+                        "、".join(m.label for m in _shipped_motifs),
+                    )
             conception_log.append(
                 {
                     "round": 3,
@@ -5957,6 +6353,10 @@ async def run_conception_pipeline(
                     "retry_debt_dominated": retry_debt,
                     "creation_intent_violations": list(intent_violations),
                     "retry_creation_intent_violations": list(retry_intent_violations),
+                    "motif_amplification": [m.to_dict() for m in motif_hits],
+                    "retry_motif_amplification": [
+                        m.to_dict() for m in retry_motif_hits
+                    ],
                     "adopted_retry": adopted,
                 }
             )
@@ -6579,6 +6979,9 @@ async def run_conception_pipeline(
     # 核心规则）里提取，双重条件避免误伤正常叙事用词。主角名/书名进白名单，
     # 不会被自己名字误伤。golden_finger/character/hook_spec 此时不再变化
     # （只有 synopsis/premise/title/tags 会在下面被改写），派生一次全程复用。
+    # 主角名在 try 内赋值，但下面的正典人名校验也要用它——派生失败时它必须仍有
+    # 定义，否则一个「非致命」的黑话派生异常会把校验变成 NameError。
+    _protagonist_name = ""
     try:
         _jargon_char = (
             writing_profile.get("character") if isinstance(writing_profile, dict) else {}
@@ -6606,6 +7009,20 @@ async def run_conception_pipeline(
     except Exception:
         logger.warning("book jargon term derivation failed (non-fatal)", exc_info=True)
         _book_jargon_terms = ()
+
+    # ── 正典自洽修复（P4, 2026-08-07）───────────────────────────────────────
+    # 必须在文案工序之前：毒正典（premise↔spine 数字/期限互斥）在 finalize 产出，
+    # 自闭环证明下游救不回——先把正典修干净，冠军简介才有干净的事实准绳。
+    _canon_repair_report: dict[str, Any] | None = None
+    try:
+        premise, story_spine, _canon_repair_report = await _repair_canon_contradictions(
+            session, settings,
+            premise=premise,
+            spine=story_spine if isinstance(story_spine, dict) else None,
+            synopsis=synopsis,
+        )
+    except Exception:
+        logger.warning("canon repair step failed (fail-open)", exc_info=True)
 
     # ── 简介独立文案工序（T6, 2026-07-09）──────────────────────────────────
     # 简介是产品不是元数据：finalize 顺手产出的 synopsis(v0) 只作兜底，真正
@@ -6636,26 +7053,55 @@ async def run_conception_pipeline(
                 title=title, tags=tags, genre=_ap_genre, sub_genre=_ap_sub,
                 platform=_ap_platform, language=_ap_language,
                 v0_synopsis=synopsis, book_jargon_terms=_book_jargon_terms,
+                # The approved hook card is part of the fact-grounding canon:
+                # a deadline or relationship the champion states must trace to
+                # SOME approved surface, and several live in the hook card only.
+                hook_card=(
+                    dict(concept_contract.get("hook_card") or {})
+                    if isinstance(concept_contract, Mapping)
+                    else {}
+                ),
                 config=_appeal_cfg_for_cw,
             )
             _copywriting_ran = True
-            # 冠军简介同样要过跨书污染消毒 + 句界截断——它是新产线的输出，不能
-            # 绕开原有 synopsis 早就享有的这两道防线（消毒发生在本函数更早处，
-            # 冠军产出在那之后才落地，必须在这里补跑一次；两者都是幂等操作）。
-            synopsis = str(
-                _sanitize_forbidden_default_motifs(_copywriting_result.champion, is_en=is_en)
-            )
-            if len(synopsis) > 500:
-                synopsis = truncate_at_sentence(synopsis, 500)
+            # 正典人名一致性——冠军不得换掉主角。文案工序为防黑话泄漏收窄了输入，
+            # 模型会据此自己编一个主角名，而这份简介是**唯一对外见光**的文案。
+            # 真机 2026-08-06：正典主角「纪蛰」被冠军换成「沈落」，全书其他字段
+            # 仍是纪蛰，读者看到的那份是错的。校验放在覆盖之前，违规就不覆盖。
+            _canon_swap = champion_swaps_protagonist(
+                _copywriting_result.champion,
+                canon_text=premise,
+                protagonist_name=_protagonist_name,
+            ) if not _copywriting_result.fell_back_to_v0 else None
+            if _canon_swap:
+                logger.warning(
+                    "Blurb copywriting: champion swapped the protagonist "
+                    "(canon=%s absent; non-canon names=%s) — rejecting champion, keeping v0",
+                    _protagonist_name, list(_canon_swap),
+                )
+                _copywriting_result.canon_name_rejected = True
+                _copywriting_result.canon_name_rogue = list(_canon_swap)
+            else:
+                # 冠军简介同样要过跨书污染消毒 + 句界截断——它是新产线的输出，不能
+                # 绕开原有 synopsis 早就享有的这两道防线（消毒发生在本函数更早处，
+                # 冠军产出在那之后才落地，必须在这里补跑一次；两者都是幂等操作）。
+                synopsis = str(
+                    _sanitize_forbidden_default_motifs(_copywriting_result.champion, is_en=is_en)
+                )
+                if len(synopsis) > 500:
+                    synopsis = truncate_at_sentence(synopsis, 500)
             llm_run_ids.extend(_copywriting_result.llm_run_ids)
             logger.info(
                 "Blurb copywriting: champion_strategy=%s fell_back_to_v0=%s polish_rounds=%d",
                 _copywriting_result.champion_strategy, _copywriting_result.fell_back_to_v0,
                 _copywriting_result.polish_rounds,
             )
-            # logline 同源：只在冠军是真新内容(非回退v0)时才重新提炼，
-            # 否则 finalize 产出的原 logline 已经和 v0 简介同源，无需重跑。
-            if not _copywriting_result.fell_back_to_v0:
+            # logline 同源：只在冠军是真新内容(非回退v0、且未因换主角被拒)时才
+            # 重新提炼，否则 synopsis 仍是 v0，原 logline 已经与之同源，无需重跑。
+            if not (
+                _copywriting_result.fell_back_to_v0
+                or _copywriting_result.canon_name_rejected
+            ):
                 try:
                     _new_logline, _logline_ids = await _derive_logline_from_champion(
                         session, settings,
@@ -6745,6 +7191,14 @@ async def run_conception_pipeline(
             # were killed at attempts=0 with _persona_fb built and then dropped,
             # since its only consumer was this loop body (2026-07-24, two books).
             _persona_blocks = persona_hard_veto(_persona_report, _appeal_cfg)
+            # ── 自洽 advisory（2026-08-07）：涉简介的核实矛盾与 persona 同渠道
+            # 驱动重生（复用 persona_blocks 入参——语义同为「advisory 判官要求
+            # 再来一轮」）；反馈行并入每轮改写指令。
+            _coherence_report, _coherence_fb, _coherence_blocks = await _coherence_advisory(
+                session, settings,
+                synopsis=synopsis, premise=premise,
+                spine=story_spine if isinstance(story_spine, dict) else None,
+            )
             # Product hard line: regenerate while not meeting the bar (blurb<blurb_min,
             # calibrated to 68 in config/story_appeal.yaml); else fall back to the grade floor.
             while appeal_regen_should_continue(
@@ -6756,7 +7210,7 @@ async def run_conception_pipeline(
                     if regen_below_bar
                     else grade_rank(report.overall_grade) <= grade_rank(floor)
                 ),
-                persona_blocks=_persona_blocks,
+                persona_blocks=_persona_blocks or _coherence_blocks,
             ):
                 attempts += 1
                 # Heartbeat: the finalize→blurb stretch (conception_finalize at
@@ -6772,6 +7226,8 @@ async def run_conception_pipeline(
                     feedback = build_improvement_feedback(report, _appeal_cfg)
                     if _persona_fb:
                         feedback = f"{feedback}\n{_persona_fb}"
+                    if _coherence_fb:
+                        feedback = f"{feedback}\n{_coherence_fb}"
                     # 聚焦【点击型简介】打磨：从当前最优 synopsis 出发，按反馈只重写简介，
                     # 不重跑整段 finalize（整段 finalize 同时产 premise/profile，对简介不够
                     # 聚焦——实测真机现实题材重跑 finalize 卡 74.7，而聚焦重写可达 84）。
@@ -6840,6 +7296,15 @@ async def run_conception_pipeline(
                         tags=best[3], config=_appeal_cfg,
                     )
                     _persona_blocks = persona_hard_veto(_persona_report, _appeal_cfg)
+                    # 自洽同款回评：矛盾修好了就别再逼着重生；没修好则带着
+                    # 新一轮引文反馈继续。
+                    _coherence_report, _coherence_fb, _coherence_blocks = (
+                        await _coherence_advisory(
+                            session, settings,
+                            synopsis=best[2], premise=best[1],
+                            spine=story_spine if isinstance(story_spine, dict) else None,
+                        )
+                    )
                 except Exception:
                     logger.warning("appeal regeneration attempt %d failed", attempts, exc_info=True)
                     break
@@ -6855,6 +7320,18 @@ async def run_conception_pipeline(
             # 终评已在重生循环内对每一轮的 best 做过（见循环体末尾），attempts==0
             # 时初评的输入就是 best，两种情况下 _persona_report 都已对应终稿；
             # 这里只做持久化 + 硬拦判定，不再重复调用判官。
+            # ── 自洽终报持久化：判官说了什么必须可查（含正典侧矛盾——它们
+            # 改简介修不了，落库是唯一让人看见的通道）。
+            if _canon_repair_report is not None:
+                story_appeal_report["canon_repair"] = _canon_repair_report
+            if _coherence_report is not None:
+                story_appeal_report["coherence"] = _coherence_report
+                if not _coherence_report.get("passed", True):
+                    logger.warning(
+                        "Blurb coherence at finalize: %d finding(s) persisted "
+                        "(synopsis-touching drove %d regen round(s))",
+                        len(_coherence_report.get("findings") or ()), attempts,
+                    )
             if _persona_report is not None:
                 story_appeal_report["persona_judge"] = _persona_report
                 logger.info(
@@ -6914,6 +7391,10 @@ async def run_conception_pipeline(
             _lg = verdict_from_approved_concept_contract(
                 concept_contract,
                 target_chapters=chapter_count,
+                # Evidence transfer is only valid for the exact judged sentence.
+                # When T6 rewrote the logline, this mismatches and the real
+                # judge below runs on what will actually ship.
+                logline_text=str(_logline_text or ""),
             )
             if _lg is None:
                 _lg = await evaluate_logline_gate(
@@ -6925,6 +7406,13 @@ async def run_conception_pipeline(
                     sub_genre=_ap_sub,
                     config=_appeal_cfg,
                 )
+            # 定罪句式确定性降级（0 误报校准）：故事门看不见句式病，
+            # 「天煞孤星」当年正是从这里拿高分出的书。
+            from bestseller.services.logline_gate import (  # noqa: PLC0415
+                downgrade_for_condemned_structures,
+            )
+
+            _lg = downgrade_for_condemned_structures(_lg, str(_logline_text or ""))
             logger.info(
                 "Logline gate: action=%s overall=%.2f weakest=%s%s",
                 _lg.action.value,
@@ -6936,7 +7424,8 @@ async def run_conception_pipeline(
             # （keep-best + fail-closed）。reject 仍然立即死。此前任何非 EXPAND
             # 都直接毙任务，整改指令从未被消费（真机 4.38 regenerate 也照死）。
             _lg_regen_used = 0
-            if _lg.action is LoglineAction.REGENERATE:
+            _rescued_logline = ""
+            if _lg.action in (LoglineAction.REGENERATE, LoglineAction.REJECT):
                 async def _lg_rewrite(cur_logline: str, cur_verdict: Any) -> str:
                     return await _rewrite_logline_for_gate(
                         session, settings,
@@ -6946,11 +7435,13 @@ async def run_conception_pipeline(
                     )
 
                 async def _lg_rejudge(cur_logline: str) -> Any:
-                    return await evaluate_logline_gate(
+                    rejudged = await evaluate_logline_gate(
                         session, settings,
                         logline=cur_logline, premise=premise,
                         genre=_ap_genre, sub_genre=_ap_sub, config=_appeal_cfg,
                     )
+                    # 复审同样过定罪句式检查——带病稿不得借复活循环回魂
+                    return downgrade_for_condemned_structures(rejudged, cur_logline)
 
                 _lg, _rescued_logline, _lg_regen_used = await _logline_regen_rescue(
                     verdict=_lg,
@@ -6980,8 +7471,44 @@ async def run_conception_pipeline(
             story_appeal_report = dict(story_appeal_report or {})
             story_appeal_report["logline_gate"] = _lg.to_dict()
             story_appeal_report["logline_gate"]["regen_attempts"] = _lg_regen_used
-            if bool(_lg_cfg.get("block_expansion", True)) \
-                    and _lg.action is not LoglineAction.EXPAND:
+            # 点开欲判官 advisory 测量（2026-08-12）：榜单验证过的双通道判官
+            # （欲望分+证据定罪，检察官通道 46 次在榜书判定零冤案）。此处
+            # **只记录不投票**——先在生产上积累命中率，再决定是否给否决权
+            # （2026-07-25 门禁误杀全量审计的教训：新门先 advisory）。
+            try:
+                from bestseller.services.hook_pull_judge import (  # noqa: PLC0415
+                    evaluate_hook_pull,
+                )
+
+                _final_logline = str(
+                    (_lg_regen_used and _rescued_logline) or _logline_text or ""
+                ).strip()
+                if _final_logline:
+                    _hp = await evaluate_hook_pull(
+                        session, settings,
+                        title="（未命名）", hook=_final_logline,
+                        genre=_ap_genre or "", channel="男频", samples=2,
+                    )
+                    if _hp is not None:
+                        story_appeal_report["hook_pull"] = {
+                            **_hp.to_dict(),
+                            "advisory_only": True,
+                        }
+                        logger.info(
+                            "Hook pull probe (advisory): score=%.1f flags=%s",
+                            _hp.score, list(_hp.flags),
+                        )
+            except Exception:
+                logger.warning("hook pull probe failed (advisory, ignored)", exc_info=True)
+            # Record whether this gate actually held veto power on THIS run.
+            # It has been advisory since 2026-07-25, so downstream error
+            # reporting must not read a non-expand verdict as the cause of a
+            # block that some other bar raised.
+            _lg_blocking = bool(_lg_cfg.get("block_expansion", True)) and (
+                _lg.action is not LoglineAction.EXPAND
+            )
+            story_appeal_report["logline_gate"]["blocking"] = _lg_blocking
+            if _lg_blocking:
                 _appeal_block_below = True
                 _appeal_blocked_by.append("logline_gate")
                 _appeal_blocked_feedback = (
@@ -7245,6 +7772,7 @@ async def run_conception_pipeline(
         concept_methodology=dict(ctx.get("concept_methodology") or {}),
         hook_candidates=list(ctx.get("hook_candidates") or []),
         story_appeal=story_appeal_report,
+        motif_amplification=dict(ctx.get("motif_amplification_report") or {}),
         story_spine=story_spine if isinstance(story_spine, dict) else {},
         world_model=world_model_payload if isinstance(world_model_payload, dict) else {},
         degraded_rounds=degradation_tracker.events,

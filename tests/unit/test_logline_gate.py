@@ -334,13 +334,44 @@ def _run_rescue(first, *, rewrites, rejudges, max_attempts=2):
     return verdict, logline, attempts, calls
 
 
-def test_reject_verdict_is_fatal_and_never_rewritten() -> None:
+def test_reject_verdict_also_earns_repair_attempts() -> None:
+    """契约变更 2026-08-10：reject 不再等于零尝试。
+
+    此前 reject 被定义为「根本性硬伤，直接毙」，于是被拒的一句话大纲连一次修复都
+    没有就把整本书杀掉——而同一份裁决里明明带着专为回炉而写的 ``fix_directives``。
+    真机《搓背》：overall 3.2，两条整改方向生成了、一次都没被消费，书没建成。
+    产出修复指令却拒绝执行它们的，不是硬门，是漏掉的回路。
+    """
+
     first = _verdict(LoglineAction.REJECT, overall=2.0)
-    verdict, logline, attempts, calls = _run_rescue(first, rewrites=[], rejudges=[])
-    assert verdict is first
-    assert logline == "旧的一句话"
-    assert attempts == 0
-    assert calls == {"rewrite": 0, "judge": 0}
+    verdict, logline, attempts, calls = _run_rescue(
+        first,
+        rewrites=["按整改方向重写的一句话"],
+        rejudges=[_verdict(LoglineAction.EXPAND, overall=4.8)],
+    )
+    assert verdict.action is LoglineAction.EXPAND
+    assert logline == "按整改方向重写的一句话"
+    assert attempts == 1
+    assert calls == {"rewrite": 1, "judge": 1}
+
+
+def test_reject_that_cannot_be_repaired_still_blocks() -> None:
+    """修复挣来的是尝试机会，不是通行证：预算耗尽仍然拦截。"""
+
+    first = _verdict(LoglineAction.REJECT, overall=2.0)
+    verdict, _, attempts, _ = _run_rescue(
+        first,
+        rewrites=["改一", "改二"],
+        rejudges=[
+            _verdict(LoglineAction.REJECT, overall=1.5),
+            _verdict(LoglineAction.REJECT, overall=1.8),
+        ],
+        max_attempts=2,
+    )
+    assert verdict.action is LoglineAction.REJECT
+    assert attempts == 2
+    # keep-best：绝不发布比原稿更差的版本
+    assert verdict.overall == 2.0
 
 
 def test_regenerate_verdict_gets_rescued_to_expand() -> None:
@@ -382,18 +413,100 @@ def test_rescue_fails_closed_when_rewrite_llm_errors() -> None:
     assert logline == "旧的一句话"
 
 
-def test_rescue_escalation_to_reject_mid_loop_stops_immediately() -> None:
-    """A rewrite that makes things WORSE (re-judged reject) must not burn the
-    remaining budget — reject is fatal by definition."""
+def test_mid_loop_reject_keeps_trying_within_budget() -> None:
+    """改写把结果改坏（复判为 reject）时，不再立刻收手。
+
+    reject 现在是可修裁决，所以继续用完预算是一致的行为；keep-best 保证最终返回的
+    仍是见过的最好那版，改坏的稿子不会被发布。
+    """
 
     first = _verdict(LoglineAction.REGENERATE, overall=4.0)
     verdict, logline, attempts, calls = _run_rescue(
         first,
         rewrites=["改一", "改二"],
-        rejudges=[_verdict(LoglineAction.REJECT, overall=1.0)],
+        rejudges=[
+            _verdict(LoglineAction.REJECT, overall=1.0),
+            _verdict(LoglineAction.REJECT, overall=1.2),
+        ],
         max_attempts=2,
     )
-    assert calls["rewrite"] == 1
-    # keep-best still returns the least-bad verdict (the original regenerate)
+    assert calls["rewrite"] == 2
+    assert attempts == 2
     assert verdict.action is LoglineAction.REGENERATE
     assert verdict.overall == 4.0
+    assert logline == "旧的一句话"
+
+
+@pytest.mark.unit
+def test_advisory_gate_records_that_it_did_not_block() -> None:
+    """报错归因必须看「这次有没有否决权」，不能看「裁决是不是 expand」。
+
+    真机 2026-08-10《搓背》：杀书的是**文案**硬门（读者画像 0/3，因为冠军简介被
+    人名误报丢弃、回退成一句话的 v0），但 web 层只要看到 logline 裁决≠expand 就把
+    失败标题写成「一句话故事大纲不成立」，正文却贴着简介的整改意见。这条 advisory
+    的门自 2026-07-25 起就没有否决权（实测毙掉 3/3 真实爆款），它的裁决是备注不是
+    原因。归因错了，排查方向就整个跑偏——本次会话就先去查了那道门。
+    """
+
+    cfg = load_logline_gate_config(None)
+    assert cfg["block_expansion"] is False, (
+        "若要恢复否决权，必须同步更新 web 层的失败归因分支"
+    )
+
+
+# ── 定罪句式确定性降级（2026-08-12：天煞孤星出口终于有了句式检查）──────────
+
+
+from bestseller.services.logline_gate import downgrade_for_condemned_structures
+
+
+def _structure_verdict(action: LoglineAction) -> LoglineGateVerdict:
+    return LoglineGateVerdict(
+        action=action, scores={}, overall=4.0,
+        reasons=("原判理由",), fix_directives=("原整改",),
+    )
+
+
+def test_condemned_structure_downgrades_expand_to_regenerate() -> None:
+    verdict = downgrade_for_condemned_structures(
+        _structure_verdict(LoglineAction.EXPAND),
+        "末世黑雨落在谁身上，谁就说出一个秘密。",
+    )
+    assert verdict.action is LoglineAction.REGENERATE
+    assert verdict.weakest_axis == "condemned_structure"
+    assert any("定罪句式" in r for r in verdict.reasons)
+    # 原判理由与整改保留（复活循环靠 fix_directives 重写）
+    assert "原判理由" in verdict.reasons
+    assert len(verdict.fix_directives) == 2
+
+
+def test_clean_logline_passes_through_unchanged() -> None:
+    original = _structure_verdict(LoglineAction.EXPAND)
+    verdict = downgrade_for_condemned_structures(
+        original, "昔日天骄被诬陷入狱七年，出狱那天整个世界猛然惊觉。"
+    )
+    assert verdict is original
+
+
+def test_non_expand_verdicts_are_not_touched() -> None:
+    """已经是 REJECT/REGENERATE 的原判不动——降级只堵放行口。"""
+
+    original = _structure_verdict(LoglineAction.REJECT)
+    verdict = downgrade_for_condemned_structures(
+        original, "黑雨落在谁身上，谁就说出秘密。"
+    )
+    assert verdict is original
+
+
+def test_conception_wires_downgrade_at_both_exits() -> None:
+    """接线断言：初判和复活循环复审都必须过定罪句式降级——
+    复审不接=带病稿借复活循环回魂（本分支已修过一次同形状漏洞）。"""
+
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    assert src.count("downgrade_for_condemned_structures(") >= 2, (
+        "conception 必须在初判与复审两处调用定罪句式降级"
+    )

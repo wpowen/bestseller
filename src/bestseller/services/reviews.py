@@ -10332,12 +10332,27 @@ async def rewrite_chapter_from_task(
                         "material with one concise plot-bearing beat instead of summarizing."
                     )
                 elif code == "LENGTH_UNDER" or code.endswith("_BLOCK_LOW"):
+                    # Extend-in-place instead of full expansion rewrite. Writers
+                    # reliably land ~65-80% of any total-length target (P1
+                    # self-test 2026-08-07: 2068/2017/1701 vs 2600; two prior
+                    # A/B levers falsified), so "rewrite the whole chapter but
+                    # longer" re-rolls the same attractor and burned 8/12
+                    # repair calls on the ninth book. Anchoring the existing
+                    # prose and asking only for the missing delta is an easier
+                    # compliance target than re-deciding total length.
+                    _missing = max(
+                        200, int(_chapter_band_under.safe_min) - int(word_count or 0)
+                    )
                     repair_action = (
-                        "Return a complete chapter in expansion mode: "
-                        f"{_chapter_band_under.safe_min}-{_chapter_band_under.safe_max} Chinese "
-                        "characters. Add only useful action pressure, sensory specifics, "
-                        "clue movement, cost, or transition beats; do not add new people, "
-                        "places, titles, factions, or lore."
+                        "EXTEND, do not rewrite: keep the existing prose verbatim "
+                        "(light seam edits at the join are allowed), then deepen or "
+                        f"extend the mid/late scenes by roughly {_missing}-"
+                        f"{_missing + 400} additional Chinese characters of action "
+                        "pressure, sensory specifics, clue movement, or cost. Land "
+                        "the SAME closing hook as the original. Total must end at "
+                        f"{_chapter_band_under.safe_min}-{_chapter_band_under.safe_max} "
+                        "Chinese characters. Do not add new people, places, titles, "
+                        "factions, or lore."
                     )
                 elif code in {"CANON_FORBIDDEN_TERM", "NAMING_OUT_OF_POOL"}:
                     repair_action = (
@@ -10818,6 +10833,53 @@ async def rewrite_chapter_from_task(
                 "chapter %d: candidate micro length trim failed",
                 chapter.chapter_number,
                 exc_info=True,
+            )
+    # ── AI 味回归复检（2026-08-08）────────────────────────────────────────
+    # ai_flavor 闸门只在首稿后跑一次；此后的 rewrite 循环修长度时会顺手注入
+    # 「不是X而是Y」和破折号，而候选验收此前不复检 AI 味。真机第十本（碑里
+    # 夺命）实锤：238 次 rewrite 后 10/50 章以 ≥38 分出货（ch15=96、ch28=92，
+    # 全部 negated_definition 驱动），破折号中位 5.33→6.13 越修越糟。
+    # 判据是【回归】不是绝对分：候选比原稿更脏且越过修复线才拒——修长度不许
+    # 以搞脏文风为代价；本来就脏的章不因此多拦（那是 deslop 的活）。
+    if quality_gate_outcome != "blocked" and content_md:
+        try:
+            from bestseller.services.ai_flavor.detector import detect as _af_detect
+
+            _af_lang = "en" if is_english_language(
+                getattr(project, "language", None)
+            ) else "zh"
+            _cand_score = _af_detect(content_md, language=_af_lang).overall_score
+            _orig_score = _af_detect(
+                current_draft.content_md or "", language=_af_lang
+            ).overall_score
+            _af_cfg = get_quality_gates_config().ai_flavor
+            _af_block = float(
+                _af_cfg.block_score_en if _af_lang == "en" else _af_cfg.block_score_cn
+            )
+            if _cand_score >= _af_block and _cand_score > _orig_score + 8.0:
+                quality_gate_outcome = "blocked"
+                quality_gate_violations = [
+                    *quality_gate_violations,
+                    {
+                        "code": "AI_FLAVOR_REGRESSION",
+                        "severity": "block",
+                        "message": (
+                            f"rewrite candidate AI-flavor {_cand_score:.0f} crosses the "
+                            f"repair line ({_af_block:.0f}) and regresses vs original "
+                            f"{_orig_score:.0f} — the repair traded style damage for its fix"
+                        ),
+                        "detail": f"candidate={_cand_score:.0f} original={_orig_score:.0f}",
+                    },
+                ]
+                logger.warning(
+                    "chapter %d: rewrite candidate rejected for AI-flavor regression "
+                    "(%.0f -> %.0f, block line %.0f)",
+                    chapter.chapter_number, _orig_score, _cand_score, _af_block,
+                )
+        except Exception:
+            logger.debug(
+                "chapter %d: AI-flavor regression recheck failed (fail-open)",
+                chapter.chapter_number, exc_info=True,
             )
     quality_gate_rejected_current_promotion = quality_gate_outcome == "blocked"
     llm_candidate_quality_gate_outcome = quality_gate_outcome

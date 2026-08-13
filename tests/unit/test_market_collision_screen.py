@@ -173,3 +173,51 @@ def test_prefetch_is_a_noop_when_the_flag_is_off() -> None:
     settings = SimpleNamespace(pipeline=SimpleNamespace(enable_market_validation=False))
     asyncio.run(conception._prefetch_market_competitors(None, settings, ctx))
     assert conception._market_competitor_rows(ctx) == ()
+
+
+# ── 调性服从（2026-08-13《摸一摸，救我妹》定罪：选题必须服从用户选项）────
+
+
+from bestseller.services.concept_tournament import (
+    _coercion_stake_hits,
+    _creation_intent_content_violations,
+)
+
+
+def test_coercion_stakes_violate_light_tone_without_mood_words() -> None:
+    """情绪词表测不出用事件写的沉重：人质+限期+沉河零情绪词照样定罪。"""
+
+    premise = (
+        "沈鲤替他垫付旧债欠下赌坊三吊钱，被漕帮盐枭扣做人质，"
+        "逼沈砚一夜摸完三百箱私盐，否则天亮沈鲤沉河。"
+    )
+    violations = _creation_intent_content_violations(premise, tone_preference="light")
+    assert any("胁迫式生死赌注" in v for v in violations)
+
+
+def test_coercion_check_only_applies_to_light_tone() -> None:
+    premise = "他被扣做人质，否则天亮沉河。"
+    assert _creation_intent_content_violations(premise, tone_preference="") == ()
+    assert _creation_intent_content_violations(premise, tone_preference="hot") == ()
+
+
+def test_light_board_hooks_do_not_trip_coercion() -> None:
+    """轻松系真实榜单钩子零误报（100 本全量简介实测 0 命中）。"""
+
+    for text in (
+        "白野穿越到了二百年后的大灾变时代，他每天能静止时间一分钟。",
+        "季白随手选了北大录取通知书加北京一套房——系统绑定完成，消费成功。",
+        "三岁半小魔童在修仙界超凶逆袭，一路找娘。",
+    ):
+        assert _coercion_stake_hits(text) == ()
+
+
+def test_tone_conflicting_ideas_are_demoted_at_selection() -> None:
+    ranking = [
+        _rank_item(0, tone_conflict=True),
+        _rank_item(1),
+    ]
+    picked = ct._select_raw_ideas_for_expansion(
+        ranking, raw_floor=7.0, progression_floor=5.0, limit=2
+    )
+    assert [item["index"] for item in picked] == [1, 0]

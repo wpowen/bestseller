@@ -10344,3 +10344,44 @@ def test_approved_outline_replan_releases_gate_for_adjudicated_combined_batch() 
     assert released is True
     assert project.status == "writing"
     assert "outline_replan_in_progress" not in project.metadata_json
+
+
+def test_length_block_repair_switches_to_deficit_contract() -> None:
+    """2026-08-13 真机定罪：LENGTH_UNDER 修复轮被无条件「保持篇幅稳定」
+    稳定器顶掉，只补了 ~60 字白烧一轮。命中字数下限必须切换成补缺口合同。"""
+
+    project_id = uuid4()
+    chapter = build_chapter(project_id)
+    chapter.target_word_count = 2600
+
+    instructions = pipeline_services._render_chapter_first_local_repair_instructions(
+        chapter=chapter,
+        block_codes=("LENGTH_UNDER", "NAMING_OUT_OF_POOL"),
+        scene_hints=["场景1：正文过短。"],
+    )
+
+    assert "字数缺口优先" in instructions
+    assert "2600" in instructions
+    assert "再加约 200 字缓冲" in instructions
+    # 稳定器指令不得出现在字数修复合同里（它就是白烧一轮的元凶）
+    assert "保持当前篇幅基本稳定" not in instructions
+    assert "删掉等量" not in instructions
+    # 防注水与防超带两头都要钉住
+    assert "抻长" in instructions
+    assert "不得超过章节动态字数带上限" in instructions
+
+
+def test_non_length_repair_keeps_the_stabilizer() -> None:
+    """普通 patch-first 修复必须保留篇幅稳定器（防修复性膨胀）。"""
+
+    project_id = uuid4()
+    chapter = build_chapter(project_id)
+
+    instructions = pipeline_services._render_chapter_first_local_repair_instructions(
+        chapter=chapter,
+        block_codes=("TIMELINE_INCONSISTENT",),
+        scene_hints=[],
+    )
+
+    assert "保持当前篇幅基本稳定" in instructions
+    assert "字数缺口优先" not in instructions

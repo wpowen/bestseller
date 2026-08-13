@@ -690,3 +690,31 @@ def test_public_emotion_title_does_not_leak_between_projects() -> None:
 
     assert "甲书专属翻案" in [item["title"] for item in first["candidates"]]
     assert "甲书专属翻案" not in [item["title"] for item in second["candidates"]]
+
+
+# ── premise 直通让位过门产物（2026-08-13 门验A落B）──────────────────────
+
+
+def test_premise_passthrough_metadata_logline_yields_to_gated_hook_card():
+    from bestseller.services.book_listing import build_book_listing_profile
+
+    premise = "沈砚是个被判定终生不能引气的运河纤夫，被漕帮盐枭扣做人质逼他一夜摸完三百箱私盐。"
+
+    class _P:
+        slug = "t"; title = "书"; genre = "玄幻"; sub_genre = "玄幻脑洞"
+        audience = "male"; language = "zh-CN"
+
+    class _Proj(_P):
+        metadata_json = {
+            "logline": premise,
+            "premise": premise,
+            "hook_card": {"one_liner": "纤夫一摸便知来路，当众摸出漕帮暗器反将一军。"},
+            "tags": [],
+        }
+
+    profile = build_book_listing_profile(
+        project=_Proj(),
+        writing_profile={"market": {}},
+    )
+    assert profile["logline_source"] == "hook_card"
+    assert "反将一军" in profile["logline"]

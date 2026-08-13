@@ -39,6 +39,7 @@ import logging
 import math
 from pathlib import Path
 import random
+import re
 from typing import Any, Protocol
 
 import yaml
@@ -854,6 +855,28 @@ _LIGHT_TONE_MARKERS: tuple[str, ...] = (
 _HEAVY_TONE_MARKERS: tuple[str, ...] = (
     "黑暗", "暗黑", "压抑", "沉重", "阴冷", "冷峻", "惨烈", "绝望", "尸首", "尸体", "收尸",
 )
+
+# 胁迫式生死赌注（2026-08-13 真机定罪《摸一摸，救我妹》）：情绪词表测不出
+# **用事件写的沉重**——该书 premise 零情绪词，却是「妹妹被扣人质+限期一夜
+# +否则天亮沉河」的最重开局，在 tone=light 下原样通过。结构不看心情看事件：
+# ①人质扣押 ②限期处刑句（否则/不然/逾期 + 死亡后果）。只在 tone=light 时
+# 参与判定；悬疑/末世等重压题材不选轻松调性时不受影响。
+_COERCION_STAKE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"人质"),
+    re.compile(
+        r"(?:否则|不然|要不然|逾期|到期)[^，。；！？\n]{0,14}"
+        r"(?:死|沉[河江湖海]|杀|活埋|活不|没命|偿命|陪葬|撕票|喂鱼)"
+    ),
+)
+
+
+def _coercion_stake_hits(text: str) -> tuple[str, ...]:
+    blob = str(text or "")
+    return tuple(
+        pattern.pattern[:24]
+        for pattern in _COERCION_STAKE_PATTERNS
+        if pattern.search(blob)
+    )
 def _creation_intent_content_violations(
     text: str,
     *,
@@ -881,6 +904,11 @@ def _creation_intent_content_violations(
     # repeated corpse/bleak imagery in the actual premise or opening.
     if tone == "light" and heavy_hits >= 2:
         violations.append("轻松调性被沉重/阴冷/尸体叙事覆盖")
+    if tone == "light" and _coercion_stake_hits(blob):
+        violations.append(
+            "轻松调性与胁迫式生死赌注冲突（人质扣押/限期处刑式开局，"
+            "事件层面的沉重不因缺少情绪词而豁免）"
+        )
     # (2026-08-02) The minimal-cost vocabulary rejection was removed. 纯爽 is a
     # pacing preference — payoff lands fast and the protagonist keeps winning —
     # not a ban on the words a cultivation novel uses for its own costs.
@@ -1547,11 +1575,13 @@ def _select_raw_ideas_for_expansion(
     # expand the best of them rather than returning nothing — this codebase has
     # killed enough books with hard gates.
     # 定罪结构（谁A谁就B/对称机制条款）沉底比撞车更深：撞车只是市场巧合，
-    # 定罪结构是用户逐条终审判死的形态。都不过滤——池永远不清空。
+    # 定罪结构是用户逐条终审判死的形态；调性冲突（用户选轻松却是胁迫式
+    # 生死赌注）沉得同样深——选题必须服从用户选项。都不过滤——池永远不清空。
     ordered = sorted(
         strict + near,
         key=lambda item: (
             bool(item.get("condemned_structure")),
+            bool(item.get("tone_conflict")),
             bool(item.get("market_collision")),
         ),
     )
@@ -3079,6 +3109,9 @@ async def run_concept_tournament(
                         detect_condemned_hook_structures,
                     )
 
+                    _light_tone = (
+                        str(tone_preference or "").strip().lower() == "light"
+                    )
                     for item in ranking:
                         idx = int(item.get("index", -1))
                         if not 0 <= idx < len(parsed_pool):
@@ -3098,6 +3131,22 @@ async def run_concept_tournament(
                                         + "），展开位让给结构干净的候选"
                                     ),
                                     "failed_axes": ["condemned_structure"],
+                                }
+                            )
+                        # 用户选轻松调性时，胁迫式生死赌注的胚子沉底
+                        # （2026-08-13《摸一摸，救我妹》：人质+限期+沉河
+                        # 内核在 tone=light 下夺冠——选题层必须服从用户选项）。
+                        if _light_tone and _coercion_stake_hits(parsed_pool[idx][1]):
+                            item["tone_conflict"] = True
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": parsed_pool[idx][0],
+                                    "scores": {},
+                                    "reason": (
+                                        "用户选择轻松调性，该胚子是胁迫式"
+                                        "生死赌注开局，展开位让给合调性的候选"
+                                    ),
+                                    "failed_axes": ["tone_conflict"],
                                 }
                             )
                     raw_floor = float(cfg.get("raw_idea_floor", 7.0))

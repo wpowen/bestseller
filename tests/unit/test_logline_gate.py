@@ -510,3 +510,17 @@ def test_conception_wires_downgrade_at_both_exits() -> None:
     assert src.count("downgrade_for_condemned_structures(") >= 2, (
         "conception 必须在初判与复审两处调用定罪句式降级"
     )
+
+
+def test_final_logline_with_condemned_structure_blocks_shipping() -> None:
+    """2026-08-13：确定性定罪（0误报族）救援后仍在场→拦下，不静默发货。
+    LLM 判官维持 advisory（硬门误杀前科），只有确定性家族有否决权。"""
+
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    # 接线断言：blocking 计算必须包含确定性定罪检查且能强制置 True
+    assert "_det_hits = _detect_condemned(_final_logline_text)" in src
+    assert "if _det_hits:" in src and "_lg_blocking = True" in src

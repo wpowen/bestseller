@@ -1018,6 +1018,18 @@ def build_book_listing_profile(
         )
     ):
         metadata_logline = ""
+    # premise 直通不是编辑一句话（2026-08-13《摸一摸，救我妹》：metadata
+    # 顶层 logline=premise 原文，从未过 logline 门，却压过了过门的 hook_card
+    # 候选——门验 A 落 B）。识别出直通就让位，让过门产物接管；真正由人写的
+    # 一句话与 premise 不同文，不受影响。
+    if metadata_logline and premise_text:
+        _premise_clean = _clean_text(premise_text)
+        if (
+            metadata_logline == _premise_clean
+            or _premise_clean.startswith(metadata_logline)
+            or metadata_logline.startswith(_premise_clean[:80])
+        ):
+            metadata_logline = ""
     logline_candidates = (
         ("listing_override", override_logline),
         ("metadata_logline", metadata_logline),

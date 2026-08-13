@@ -5229,12 +5229,42 @@ def _render_chapter_first_local_repair_instructions(
             chapter,
             scenes,
         )
+    # 字数阻断与「保持篇幅稳定」是互斥任务（2026-08-13 真机定罪：ch1 的
+    # LENGTH_UNDER 修复轮在无条件稳定器指令下只补了 ~60 字，整轮白烧）。
+    # 命中字数下限时切换成补缺口合同，其余场合维持 patch-first 稳定器。
+    length_codes = {"LENGTH_UNDER", "CHAPTER_LENGTH_BLOCK_LOW", "LENGTH_BLOCK_LOW"}
+    if normalized_codes & length_codes:
+        target_wc = int(getattr(chapter, "target_word_count", 0) or 0)
+        target_line = (
+            f"本章目标篇幅 {target_wc} 字（动态字数带内），" if target_wc else ""
+        )
+        lines = [
+            "【章节自动修复任务｜字数缺口优先】",
+            f"命中阻断码：{', '.join(block_codes) if block_codes else 'unknown'}。",
+            f"{target_line}首要任务是补足字数缺口：按质检结论给出的当前字数与"
+            "下限的差值，一次性补齐差值并再加约 200 字缓冲——只补几十个字"
+            "等于白烧一轮，下一轮还会因为同一个码被打回。",
+            "补进来的必须是有推进的新内容：一段新的对话交锋、一个当场落地的"
+            "动作后果、或对本章钩子的一步深化；禁止把已有句子抻长、堆环境"
+            "形容或复述设定——注水段落会被去水门撤销，补了也白补。",
+            "总篇幅不得超过章节动态字数带上限（超上限同样阻断，宁可停在带内中位）。",
+            "其余命中的问题仍按 patch-first 局部替换：不得改变核心事件顺序、"
+            "章末主钩子、人物在场关系。",
+            hard_constraints,
+            "【具体修复要求】",
+            _compact_repair_instruction_text(merged_hints),
+        ]
+        return _redact_front10_prompt_leaks(
+            "\n".join(line for line in lines if str(line or "").strip()),
+            chapter,
+            scenes,
+        )
     lines = [
         "【章节自动修复任务｜局部替换优先】",
         f"命中阻断码：{', '.join(block_codes) if block_codes else 'unknown'}。",
         "本次不是重新生成章节，也不是按场景卡扩写新稿。必须以当前草稿为底稿，只替换问题段、"
         "补一两句必要桥接、或删除/合并导致问题的句段。",
-        "除非命中 LENGTH_UNDER/CHAPTER_LENGTH_BLOCK_LOW，不得大幅扩写环境、心理、设定解释或新增场景；"
+        "不得大幅扩写环境、心理、设定解释或新增场景；"
         "除非命中全文结构不可用，不得改变核心事件顺序、章末主钩子、人物在场关系。",
         "如果修复一个问题需要新增信息，必须删掉等量解释或重复句，保持当前篇幅基本稳定。",
         "输出仍然是一章完整正文，但改动策略必须是 patch-first：问题点替换、局部段落重写、全章一致性轻校准。",

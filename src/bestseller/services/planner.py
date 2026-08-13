@@ -1111,7 +1111,17 @@ def _build_story_grounded_title_profile(
             for tag in _string_list(metadata.get("tags"))
             if tag and tag not in {project.genre, project.sub_genre}
         ][:8],
-        "logline": premise,
+        # 过门的一句话优先（hook_card 走过 logline 门），premise 只作兜底——
+        # 门验 A 落 B 的教训（2026-08-13）。
+        "logline": (
+            str(
+                ((metadata.get("hook_card") or {}).get("one_liner") or "")
+                if isinstance(metadata.get("hook_card"), dict)
+                else ""
+            ).strip()
+            or str(market.get("logline") or "").strip()
+            or premise
+        ),
         "reader_promise": market.get("reader_promise") or "",
         "story_title_dna": {
             "protagonist": protagonist,

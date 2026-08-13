@@ -7507,15 +7507,52 @@ async def run_conception_pipeline(
             _lg_blocking = bool(_lg_cfg.get("block_expansion", True)) and (
                 _lg.action is not LoglineAction.EXPAND
             )
+            # 确定性定罪的否决权（2026-08-13《摸一摸，救我妹》：定罪句式在
+            # 创建当刻就被记录在案，却因 advisory 配置静默发货）。LLM 判官
+            # 维持 advisory（硬门有 3/3 误杀真爆款的前科），但 0 误报校准的
+            # 确定性家族例外：救援循环用尽后成稿仍带定罪结构 → 拦下重来，
+            # 不静默发货。
+            from bestseller.services.hook_pull_judge import (  # noqa: PLC0415
+                detect_condemned_hook_structures as _detect_condemned,
+            )
+
+            _final_logline_text = str(
+                (_lg_regen_used and _rescued_logline) or _logline_text or ""
+            ).strip()
+            _det_hits = _detect_condemned(_final_logline_text)
+            if _det_hits:
+                _lg_blocking = True
+                story_appeal_report.setdefault("logline_gate", _lg.to_dict())
+                story_appeal_report["logline_gate"]["condemned_structures"] = list(
+                    _det_hits
+                )
             story_appeal_report["logline_gate"]["blocking"] = _lg_blocking
             if _lg_blocking:
                 _appeal_block_below = True
                 _appeal_blocked_by.append("logline_gate")
+                _det_line = (
+                    "一句话钩子在救援后仍带定罪句式（"
+                    + "、".join(_det_hits)
+                    + "），该句式在 100 本榜单钩子中出现 0 次，不得发货。"
+                    if _det_hits
+                    else ""
+                )
                 _appeal_blocked_feedback = (
                     "一句话故事大纲未过前置硬门，未进入书籍规划：\n"
-                    + "\n".join(_lg.reasons)
+                    + "\n".join((*_lg.reasons, *((_det_line,) if _det_line else ())))
                     + "\n\n整改方向：\n"
-                    + "\n".join(_lg.fix_directives)
+                    + "\n".join(
+                        (
+                            *_lg.fix_directives,
+                            *(
+                                (
+                                    "把机制条款改写成主角正在经历的一件已发生的具体事及其当场后果",
+                                )
+                                if _det_hits
+                                else ()
+                            ),
+                        )
+                    )
                 )
     except Exception:
         logger.exception("一句话故事大纲硬门执行失败，故障关闭并停止规划")

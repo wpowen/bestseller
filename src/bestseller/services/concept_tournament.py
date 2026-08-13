@@ -31,7 +31,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 import json
@@ -1143,6 +1143,13 @@ def _build_raw_idea_pool_messages(
     system = (
         "你是小说作者。只负责想故事，不解释方法。只输出JSON。"
         + channel
+        # 场域多样性硬约束（2026-08-09）。真机探针：同参数下模型自发把 62%
+        # (25/40) 的创意押在同一个题材场域（丧葬/冥界一族），四次建书三次撞车。
+        # prompt 面全程干净——这是模型自己对「新颖玄幻」的先验塌缩。约束只说
+        # 类别与要求，不点名任何场域（点名即种词，见《雾街债主》案）。
+        + "这一批创意必须来自彼此不同的生活场域与行当：任何两个创意不得共享"
+        "同一职业、同一场所类型或同一核心题材元素；发现两个创意是同一类故事"
+        "换皮时，必须把其中一个换成完全不同的场域重想。"
         + (
             intent
             + "以上建书约束与故事起点从原始创意这一层就必须成立；不得先生成相反调性、"
@@ -1151,8 +1158,14 @@ def _build_raw_idea_pool_messages(
             else ""
         )
     )
+    # seed 锚定之罪（2026-08-12 四臂对照定案）：旧措辞「保留其职业或核心
+    # 发现」让模型把 seed 的**句法骨架**复印成整批创意——同 seed 两臂
+    # 24/24 全是「天生X命+师父+每X一劫」克隆，同 prompt 去掉 seed 立刻
+    # 四条四种骨架。seed 只许当方向罗盘，不许当句式模板。
     seed = (
-        f"围绕这个原始想法做不同方向的强化，但保留其职业或核心发现：{seed_concept.strip()}\n"
+        "题材方向参考（只取它指向的世界和读者想要的爽感方向；"
+        "**禁止沿用它的句式、开头词、人物身份和能力设定**——"
+        f"每个创意必须换一种完全不同的切入骨架）：{seed_concept.strip()}\n"
         if seed_concept.strip()
         else ""
     )
@@ -1167,8 +1180,46 @@ def _build_raw_idea_pool_messages(
             f"为{genre}（{sub_genre}）认真构思{count}个不同的长篇小说创意。{seed}"
             f"{focus}"
             "像真正准备写书的作者一样，先把人物、开篇和故事为什么会继续想通，再提炼"
-            "一句话；不要从流行设定词或反转模板开始拼装。每个创意都写：一句话故事、"
-            "开篇发生什么、开篇后主角为什么仍会持续行动，以及三个彼此不同的未来场面。"
+            "一句话；不要从流行设定词或反转模板开始拼装。\n"
+            # 欲望钩铁律（2026-08-11 用户逐条终审 + 百本榜单钩子分类的共同结论）：
+            # 头部钩子全是"渴望引擎"（想看他赢/翻身/兑现/清算），没有一个止于
+            # 反讽或好奇。旧要求「让人想追问」选出的是文学杂志式反讽处境。
+            "铁律一【欲望钩】：这一句话必须让目标频道读者立刻产生"
+            "『我想看他赢下这件事 / 翻这个身 / 兑现这个优势 / 清算这笔账』"
+            "其中一种渴望——读者要的是渴望，不是好奇；处境再巧妙，若读者说不出"
+            "自己想看主角接下来赢什么，这条创意作废（悬疑品类例外：悬念钩合法）。\n"
+            "铁律二【主角主动】：主角必须有自己想要的东西并已经开始动手去拿；"
+            "全程被动（被逼着、被迫、被卷入而无自己的目标）的创意作废。\n"
+            "铁律三【不写机制句】：禁止把创意写成规则说明——"
+            "『谁A，谁就B』『X多了怎样、X少了怎样』这类对称条款是设计文档腔，"
+            "把同样的内容改写成主角正在经历的具体事。\n"
+            # 铁律四（2026-08-11 三批终审）：榜单钩子是「已经发生的事+当场
+            # 兑现的后果」（预言当场应验、算命先生自己当场暴毙），我们的失败
+            # 品全是「身份+宿命+日常维持」的处境陈述——没有事件就没有故事。
+            "铁律四【事件先行】：这一句话里必须有一件**已经发生**的具体事件"
+            "和它**当场兑现**的后果（预言当场应验、身份当场戳穿、代价当场"
+            "收走这类）；只交代主角是谁、守着什么规矩、日常反复做什么的"
+            "处境陈述不是故事，作废。\n"
+            # 铁律五（2026-08-12 四批终审）：「假招其实是绝学」这类断言式
+            # 反转被判死——优势是宣称出来的，读者找不到买账的因果。
+            "铁律五【机制可信】：主角的优势必须自带读者一眼能懂的因果"
+            "（会挖矿→矿越挖越多→变强）；只宣称『其实反而最强』却给不出"
+            "当场机制的反转作废。\n"
+            # 欲望形态多样性（2026-08-12 四批终审）：悬疑池整批押在同一种
+            # 欲望上（全员同一种事故+同一种追查）。集合层面的令，正向列举。
+            "整批多样性令：这一批创意的**欲望形态必须彼此不同**——活下来、"
+            "破解规则、镇压收服、揭开身边人的不对劲、逃出去、兑现优势、"
+            "夺回属于自己的东西、把小生意做大……同一种欲望形态在整批里"
+            "最多出现一次。\n"
+            # 异常来源多样性（2026-08-12 真机定罪：悬疑池两轮 5/5 候选同一
+            # 内容族）。纯正向类别列举，不点任何族名 token（种词铁律）。
+            "若题材含悬疑/灵异/怪谈成分，整批的**异常来源也必须彼此不同**，"
+            "从这些方向各取其一：住的地方不对劲、每天打交道的活人不对劲、"
+            "一件旧物不对劲、一条人人默守的规矩不对劲、时间或记忆不对劲、"
+            "自己的身体不对劲、一门老手艺不对劲——恐怖可以来自任何日常，"
+            "整批不许挤在同一种来源上。\n"
+            "每个创意都写：一句话故事、开篇发生什么、开篇后主角为什么仍会持续行动，"
+            "以及三个彼此不同的未来场面。"
             "这些辅助字段只用于帮助你把故事想通，不写卷纲、体系表或章数计划。"
             "只输出JSON："
             '{"ideas":[{"lane":"人际困局|世界规则|成长道路|世界扩张|势力选择|身份变化|职业处境|资源分配|纯题材直觉",'
@@ -1304,8 +1355,13 @@ def _build_raw_idea_rank_messages(
     ]
     user = (
         f"题材={genre}（{sub_genre}）\n候选={json.dumps(rows, ensure_ascii=False)}\n\n"
-        "逐项评分0-10：freshness 核心组合是否区别于常见同类；click_seed 是否让目标读者"
-        "立刻想追问；character_logic 正常聪明人是否会作出原句暗示的选择；action_seed "
+        "逐项评分0-10：freshness 核心组合是否区别于常见同类；"
+        "click_seed 只问一件事：目标频道读者能否一秒说出自己想看主角接下来"
+        "赢什么/翻什么身/兑现什么（悬疑品类可用悬念代替）——说不出即无渴望，"
+        "处境再巧妙 click_seed 不得超过4；主角全程被动（被逼着/被迫/被卷入而无"
+        "自己的目标）不得超过4；钩子止于反讽或荒诞处境、没有读者在乎的赌注，"
+        "不得超过4；写成对称机制条款（谁A谁就B、X多了怎样X少了怎样）不得超过4；"
+        "character_logic 正常聪明人是否会作出原句暗示的选择；action_seed "
         "是否已经看得见主角要做什么；promise_survival 开局异常"
         "被揭晓或第一次使用后，是否仍能持续产生同类但不同的选择与场景。若点子依赖"
         "会归零的次数、一次性谜底、不断来新委托或同一能力重复使用，promise_survival"
@@ -1321,11 +1377,17 @@ def _build_raw_idea_rank_messages(
         "不同主角行动；growth_surface 写会因这些行动持续积累或扩大的关系、能力、事业、"
         "地盘、势力或世界变化。after_opening_promise 禁止写问号、为何、能否、谁是；"
         "growth_surface 禁止写可能、也许、或将。任一证据只能靠新增设定才能成立，则留空且"
-        "promise_survival不得超过4分。不要因缺少大纲扣分。只返回综合最强的8项，"
+        "promise_survival不得超过4分。不要因缺少大纲扣分。"
+        # domain 标签（2026-08-09）：下游据此保证被展开的候选不全来自同一场域
+        # （真机探针：模型自发把六成创意押在同一场域）。标签由裁判自拟，
+        # 框架不提供词表；同场域必须同标签，是唯一的格式要求。
+        "另给每项 domain：2-6字的核心场域/行当标签（如主角职业或故事发生的行当），"
+        "本次候选里属于同一场域的必须给完全相同的标签。只返回综合最强的8项，"
         "按强到弱排序。只输出JSON：{\"ranked\":["
         "{\"index\":0,\"freshness\":0-10,\"click_seed\":0-10,"
         "\"character_logic\":0-10,\"action_seed\":0-10,\"promise_survival\":0-10,"
         "\"genre_fidelity\":0-10,\"ai_assembly\":0-10,\"dumb_cost\":false,"
+        "\"domain\":\"场域标签\","
         "\"after_opening_promise\":\"持续承诺或空字符串\","
         "\"action_families\":[\"行动1\",\"行动2\",\"行动3\"],"
         "\"growth_surface\":\"持续积累面或空字符串\"}]}"
@@ -1363,6 +1425,7 @@ def _parse_raw_idea_ranking(raw: str) -> list[dict[str, Any]]:
                 "index": index,
                 **scores,
                 "dumb_cost": bool(item.get("dumb_cost")),
+                "domain": str(item.get("domain") or "").strip(),
                 "after_opening_promise": str(
                     item.get("after_opening_promise") or ""
                 ).strip(),
@@ -1470,7 +1533,42 @@ def _select_raw_ideas_for_expansion(
     ]
     strict.sort(key=score, reverse=True)
     near.sort(key=score, reverse=True)
-    return (strict + near)[: max(0, limit)]
+    # Domain cap (2026-08-09): at most ONE expansion slot per rank-judge domain
+    # label. Live probe with the ledger book's exact params: the model spent 62%
+    # (25/40) of the pool on a single domain family and ranking kept that share
+    # (65% of selected) — 3 of 4 same-parameter conceptions crowned the same
+    # family. Expansion slots are the scarce resource; a skewed pool must not
+    # buy several of them for one domain. Ideas the judge left unlabeled are
+    # never grouped (fail-open), and the cap relaxes back to pure score order
+    # when distinct domains cannot fill the limit.
+    # Ideas the market already has go to the back of the queue (2026-08-10).
+    # Demotion, not rejection: an expansion slot should prefer a concept the
+    # board does not already carry, but if every candidate collides we still
+    # expand the best of them rather than returning nothing — this codebase has
+    # killed enough books with hard gates.
+    # 定罪结构（谁A谁就B/对称机制条款）沉底比撞车更深：撞车只是市场巧合，
+    # 定罪结构是用户逐条终审判死的形态。都不过滤——池永远不清空。
+    ordered = sorted(
+        strict + near,
+        key=lambda item: (
+            bool(item.get("condemned_structure")),
+            bool(item.get("market_collision")),
+        ),
+    )
+
+    capped: list[dict[str, Any]] = []
+    seen_domains: set[str] = set()
+    overflow: list[dict[str, Any]] = []
+    for item in ordered:
+        domain = str(item.get("domain") or "").strip()
+        if domain and domain in seen_domains:
+            overflow.append(item)
+            continue
+        if domain:
+            seen_domains.add(domain)
+        capped.append(item)
+    capped.extend(overflow)
+    return capped[: max(0, limit)]
 
 
 # ── plain_language: one contract, rendered to BOTH the writer and the judge ──
@@ -1803,6 +1901,52 @@ def _build_seriality_judge_messages(
     return system, user
 
 
+def creation_intent_judge_axes(
+    *, tone_preference: str = "", cost_style: str = ""
+) -> tuple[tuple[str, str], ...]:
+    """Per-option fit axes for the engine judge, derived from creation choices.
+
+    Why the judge and not a detector (2026-08-09, live A/B): a 爽文无代价 book
+    shipped a golden finger whose core loop was 「每说一个重字，消耗一日寿元」,
+    and a 轻松 request shipped 殡仪馆/缝尸 openings that dodge any word list by
+    paraphrase (缝尸 is not 尸体). The acceptance question — "is per-use
+    self-cost the ENGINE?", "is the whole card tonally heavy?" — is semantic,
+    so it belongs on the judge that already reads every card, as a floored
+    axis. `_creation_intent_content_violations` deliberately dropped its
+    cost-vocabulary check in 2026-08-02 (words are not violations); this is the
+    structural replacement it never got. Instructions stay category-level:
+    naming specific props here would seed them (《雾街债主》 lesson).
+    """
+
+    axes: list[tuple[str, str]] = []
+    if str(tone_preference or "").strip().lower() == "light":
+        axes.append((
+            "tone_fit",
+            "tone_fit 用户建书时明确选择了轻松明快基调：看项目卡的核心处境、"
+            "场面与意象整体是否兑现这个基调；若通篇沉重压抑、以死亡仪式或阴森"
+            "氛围为主体验，本轴不得超过4分；轻松、幽默、烟火气或热血爽快的按"
+            "贴合度给分",
+        ))
+    if str(cost_style or "").strip().lower() == "minimal":
+        axes.append((
+            "cost_style_fit",
+            "cost_style_fit 用户建书时明确选择了爽文无代价（金手指不向主角收费）："
+            "外部风险、交换条件与选择后果都合法；但若能力每次使用都让主角自身"
+            "付出持续损耗，或这种自损构成核心循环/卖点，本轴不得超过4分",
+        ))
+    return tuple(axes)
+
+
+def _render_intent_axis_schema(intent_axes: tuple[tuple[str, str], ...]) -> tuple[str, str]:
+    """(instruction sentences, JSON schema fragment) for the fit axes."""
+
+    if not intent_axes:
+        return "", ""
+    instructions = "".join(f"{text}；" for _, text in intent_axes)
+    schema = "".join(f'"{key}":0-10,' for key, _ in intent_axes)
+    return instructions, schema
+
+
 def _build_engine_judge_messages(
     *,
     kernel: dict[str, Any],
@@ -1810,9 +1954,11 @@ def _build_engine_judge_messages(
     sub_genre: str,
     chapter_count: int,
     seed_concept: str,
+    intent_axes: tuple[tuple[str, str], ...] = (),
 ) -> tuple[str, str]:
     """Judge a premise card before hook copy can hide a weak project."""
 
+    intent_text, intent_schema = _render_intent_axis_schema(intent_axes)
     system = (
         "你是极其苛刻的小说选题编辑。此时还没有宣传钩子，只审项目卡。字段写满、"
         "解释很长或声称能写500章都不能加分。只输出JSON。"
@@ -1821,6 +1967,7 @@ def _build_engine_judge_messages(
         f"题材={genre}（{sub_genre}）；目标={chapter_count}章\n"
         f"原始创意={seed_concept}\n"
         f"项目卡={json.dumps(kernel, ensure_ascii=False)}\n\n"
+        f"{intent_text}"
         "十一轴0-10：seed_fidelity 项目卡是否保留原始创意中的主角身份、核心异常与关键"
         "关系；只要替换了其中任一核心事实，seed_fidelity不得超过4分。freshness 人物与"
         "异常处境的核心组合是否明显区别于常见同类；"
@@ -1840,6 +1987,7 @@ def _build_engine_judge_messages(
         '"reader_promise":0-10,"character_choice":0-10,'
         '"scene_generation":0-10,"promise_survival":0-10,'
         '"deformable_loop":0-10,"post_reveal_engine":0-10,"genre_fidelity":0-10,'
+        f'{intent_schema}'
         '"reason":"40字内"}'
     )
     return system, user
@@ -1851,9 +1999,11 @@ def _build_engine_batch_judge_messages(
     genre: str,
     sub_genre: str,
     chapter_count: int,
+    intent_axes: tuple[tuple[str, str], ...] = (),
 ) -> tuple[str, str]:
     """Judge several premise cards in one independent call to avoid serial latency."""
 
+    intent_text, intent_schema = _render_intent_axis_schema(intent_axes)
     system = (
         "你是极其苛刻的长篇小说选题编辑。批量独立审项目卡，不替它们补设定。"
         "字段写满、解释很长或声称能写500章不能加分。只输出JSON。"
@@ -1865,6 +2015,7 @@ def _build_engine_batch_judge_messages(
     user = (
         f"题材={genre}（{sub_genre}）；目标={chapter_count}章\n"
         f"候选={json.dumps(rows, ensure_ascii=False)}\n\n"
+        f"{intent_text}"
         "逐项评分0-10：seed_fidelity保留原始主角/异常/关系；freshness核心组合新鲜；"
         "click_seed故事胚子想点；action_conflict目标阻力与自然后果咬合；reader_promise"
         "持续体验具体；character_choice能持续产生聪明人的两难；scene_generation五个"
@@ -1878,6 +2029,7 @@ def _build_engine_batch_judge_messages(
         "\"character_choice\":0-10,\"scene_generation\":0-10,"
         "\"promise_survival\":0-10,\"deformable_loop\":0-10,"
         "\"post_reveal_engine\":0-10,\"genre_fidelity\":0-10,"
+        f"{intent_schema}"
         "\"reason\":\"40字内\"}]}"
     )
     return system, user
@@ -2494,6 +2646,7 @@ async def run_concept_tournament(
     allow_debt_theme: bool | None = None,
     allow_death_theme: bool | None = None,
     genre_intent_contract: Any = None,
+    market_competitors: Sequence[Mapping[str, Any]] = (),
 ) -> ConceptTournamentResult:
     """跑一轮概念淘汰赛。异常转成 winner=None，由调用方按目标篇幅决定是否阻断。
 
@@ -2595,6 +2748,20 @@ async def run_concept_tournament(
                     2200,
                     int(cfg.get("engine_kernel_max_tokens", 3500)),
                 ),
+                logical_role="planner",
+                model_catalog_key=generation_model_key,
+            )
+        # The raw-idea pool is now generated as ONE batch (see config comment on
+        # raw_idea_generation_batch_size): 8-12 full pitches in a single reply
+        # need far more room than a single premise card, and at 3500 tokens the
+        # reply truncates into half a pool.
+        pool_fn = engine_fn
+        if using_default_generator:
+            pool_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_raw_idea_pool",
+                max_tokens=max(3500, int(cfg.get("raw_idea_pool_max_tokens", 6000))),
                 logical_role="planner",
                 model_catalog_key=generation_model_key,
             )
@@ -2717,15 +2884,8 @@ async def run_concept_tournament(
             ] if isinstance(focus_values, list) else []
             parsed_pool: list[tuple[str, str]] = []
             seen_seeds: set[str] = set()
-            for batch_index, batch_start in enumerate(
-                range(0, pool_count, generation_batch_size)
-            ):
-                batch_count = min(generation_batch_size, pool_count - batch_start)
-                focus_hint = (
-                    batch_focuses[batch_index % len(batch_focuses)]
-                    if batch_focuses
-                    else ""
-                )
+            async def _generate_pool_batch(batch_count: int, focus_hint: str) -> None:
+                """One pool call; absorbs its ideas into the shared pool."""
                 pool_system, pool_user = _build_raw_idea_pool_messages(
                     genre=genre,
                     sub_genre=sub_genre,
@@ -2740,7 +2900,7 @@ async def run_concept_tournament(
                 )
                 result.candidate_prompt_chars += len(pool_system) + len(pool_user)
                 result.candidate_generation_calls += 1
-                pool_raw, pool_run_id = await engine_fn(pool_system, pool_user)
+                pool_raw, pool_run_id = await pool_fn(pool_system, pool_user)
                 if pool_run_id is not None:
                     result.llm_run_ids.append(pool_run_id)
                 for record in _parse_raw_idea_records(pool_raw, limit=batch_count):
@@ -2771,6 +2931,32 @@ async def run_concept_tournament(
                     seen_seeds.add(normalized_seed)
                     parsed_pool.append((lane, seed))
                     raw_pitch_by_seed[seed] = record
+
+            for batch_index, batch_start in enumerate(
+                range(0, pool_count, generation_batch_size)
+            ):
+                batch_count = min(generation_batch_size, pool_count - batch_start)
+                focus_hint = (
+                    batch_focuses[batch_index % len(batch_focuses)]
+                    if batch_focuses and batch_count == 1
+                    else ""
+                )
+                await _generate_pool_batch(batch_count, focus_hint)
+
+            # Top-up. Batching the pool is what breaks the mode collapse, but a
+            # single long reply occasionally comes back short or unparseable
+            # (measured 83% yield, including one empty reply in 6). batch=1 had
+            # 100% yield and that must not be traded away: ask again for exactly
+            # what is missing until the pool is whole or the call budget runs out.
+            for _ in range(max(0, int(cfg.get("raw_idea_pool_topup_calls", 2)))):
+                missing = pool_count - len(parsed_pool)
+                if missing <= 0:
+                    break
+                logger.info(
+                    "raw idea pool short (%d/%d); topping up",
+                    len(parsed_pool), pool_count,
+                )
+                await _generate_pool_batch(missing, "")
             parsed_pool = parsed_pool[:pool_count]
             if parsed_pool:
                 result.raw_ideas = [
@@ -2855,6 +3041,65 @@ async def run_concept_tournament(
                         "retry_calls": rank_retry_calls,
                         "complete": len(ranked_indexes) == len(parsed_pool),
                     }
+                    # Does the market already have this book? Asked HERE, at
+                    # the only point where the answer can still change anything:
+                    # before an expansion slot is spent on it. Deterministic, so
+                    # rival premises never touch a prompt (quoting them at the
+                    # generator is how the framework seeded its own motifs).
+                    if market_competitors:
+                        from bestseller.services.market_validation.analyzer import (  # noqa: PLC0415
+                            concept_market_collisions,
+                        )
+
+                        for item in ranking:
+                            idx = int(item.get("index", -1))
+                            if not 0 <= idx < len(parsed_pool):
+                                continue
+                            hits = concept_market_collisions(
+                                parsed_pool[idx][1], market_competitors
+                            )
+                            if hits:
+                                item["market_collision"] = [
+                                    {"title": t, "overlap": v} for t, v in hits
+                                ]
+                                result.engine_rejections.append(
+                                    {
+                                        "dimension": parsed_pool[idx][0],
+                                        "scores": {},
+                                        "reason": (
+                                            "榜单已有高度相似作品，展开位让给未撞车的候选："
+                                            + "、".join(t for t, _ in hits)
+                                        ),
+                                        "failed_axes": ["market_collision"],
+                                    }
+                                )
+                    # 用户定罪的规则句结构是句法层的，确定性检出（LLM 判官
+                    # 3 采样只抓到 1 次），命中者沉底展开队列并留案底。
+                    from bestseller.services.hook_pull_judge import (  # noqa: PLC0415
+                        detect_condemned_hook_structures,
+                    )
+
+                    for item in ranking:
+                        idx = int(item.get("index", -1))
+                        if not 0 <= idx < len(parsed_pool):
+                            continue
+                        structure_hits = detect_condemned_hook_structures(
+                            parsed_pool[idx][1]
+                        )
+                        if structure_hits:
+                            item["condemned_structure"] = structure_hits
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": parsed_pool[idx][0],
+                                    "scores": {},
+                                    "reason": (
+                                        "命中定罪句式（"
+                                        + "、".join(structure_hits)
+                                        + "），展开位让给结构干净的候选"
+                                    ),
+                                    "failed_axes": ["condemned_structure"],
+                                }
+                            )
                     raw_floor = float(cfg.get("raw_idea_floor", 7.0))
                     card_count = max(1, int(cfg.get("premise_card_count", 4)))
                     qualified = _select_raw_ideas_for_expansion(
@@ -2890,6 +3135,13 @@ async def run_concept_tournament(
                         for item in qualified[:card_count]
                     ]
 
+        # Fit axes for explicit creation options (tone/cost). They ride the
+        # same judge call and the same floor as every other axis, so a card
+        # that ignores what the user ticked fails HERE — before expansion —
+        # instead of shipping and contradicting the book's own directives.
+        intent_axes = creation_intent_judge_axes(
+            tone_preference=tone_preference, cost_style=cost_style
+        )
         engine_axes = (
             "seed_fidelity",
             "freshness",
@@ -2902,6 +3154,7 @@ async def run_concept_tournament(
             "deformable_loop",
             "post_reveal_engine",
             "genre_fidelity",
+            *(key for key, _ in intent_axes),
         )
         engine_floor = float(cfg.get("engine_judge_floor", 7.0))
         prebuilt_kernels: dict[tuple[str, str], dict[str, Any]] = {}
@@ -3042,6 +3295,7 @@ async def run_concept_tournament(
                     genre=genre,
                     sub_genre=sub_genre,
                     chapter_count=chapter_count,
+                    intent_axes=intent_axes,
                 )
                 batch_raw, batch_run_id = await premise_judge_fn(
                     batch_system, batch_user
@@ -3086,6 +3340,7 @@ async def run_concept_tournament(
                                 sub_genre=sub_genre,
                                 chapter_count=chapter_count,
                                 seed_concept=premise_seed,
+                                intent_axes=intent_axes,
                             )
                             retry_raw, retry_run_id = await premise_judge_fn(
                                 retry_system, retry_user
@@ -3219,6 +3474,7 @@ async def run_concept_tournament(
                                 sub_genre=sub_genre,
                                 chapter_count=chapter_count,
                                 seed_concept=premise_seed,
+                                intent_axes=intent_axes,
                             )
                         )
                         engine_judge = premise_judge_fn or seriality_judge_fn

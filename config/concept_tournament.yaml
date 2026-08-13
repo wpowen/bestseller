@@ -35,8 +35,25 @@ finalist_seriality_judge_max_tokens: 7000
 engine_judge_floor: 7.0   # 钩子文案生成前先审长篇机器，任一结构轴低于此线即淘汰
 finalist_pool_size: 4     # M3 初筛后只送少量候选给独立模型复核
 seriality_finalist_count: 3
-raw_idea_pool_multiplier: 2
-raw_idea_generation_batch_size: 1  # 真机盲比：先展开完整pitch再提炼，6条有1条硬通过；直接一句话为0/6
+raw_idea_pool_multiplier: 3
+# 2026-08-10 消融定案：跨书「殡葬/阴间」同质化的根因是**采样结构**，不是任何一条
+# prompt 措辞。多样性是集合层面的属性——一次只生成一个创意，就没有集合可言，
+# 8 次独立抽样必然收敛到该题材分布的众数（玄幻＝殡葬/阴间）。
+#
+# 单变量实测（东方玄幻/男频/light，其余与生产逐字一致，每格 40-48 样本）：
+#   无 focus，每次 1 个  → 死亡族 60.4%
+#   无 focus，一次 12 个 →           7.5%   ← 8 倍差，唯一变量是批量
+#   有 focus，每次 1 个  →          41.7%   （focus 只是批量的弱替代品）
+#   无 focus，一次  8 个 →          20.0%
+# 历次治理都在改 prompt 里的词（删禁令/加正向/换措辞），治不了众数塌缩。
+#
+# batch = pool_count：整池一次生成，模型必须在一次输出里给出互不重复的一组。
+# 代价是偶发短产（实测 83%），由下面的补齐兜底消化。
+raw_idea_generation_batch_size: 12
+raw_idea_pool_max_tokens: 6000  # 一次 12 条完整 pitch；3500 会截断成半池
+raw_idea_pool_topup_calls: 2    # 短产时最多补几次，保住 batch=1 时代的 100% 产出率
+# focus 只在退化到「每次一个」时才有意义（那时它是唯一的区分手段）。批量生成时
+# 给一条 focus 等于把整池 8-12 条全焊死在一个维度上——实测反而更差。
 raw_idea_batch_focuses:
   - 人物关系、身份错位与私人欲望
   - 题材原生职业、资源争夺与势力夹缝

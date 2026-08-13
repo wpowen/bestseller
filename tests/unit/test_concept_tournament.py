@@ -415,6 +415,10 @@ class TestDeterministicScreens:
                 "n_candidates": 2,
                 "candidate_prompt_mode": "engine_first",
                 "raw_idea_prompt_arm": "methodology",
+                # This test is about architect → hook distillation, not pool
+                # replenishment. The stub returns a deliberately short pool, so
+                # leave the (separately tested) top-up out of the call count.
+                "raw_idea_pool_topup_calls": 0,
             },
             generator=generator,
             judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
@@ -856,10 +860,14 @@ class TestDeterministicScreens:
             rng=random.Random(7),
         )
 
+        # 2026-08-10: a focus hint is the ONE-AT-A-TIME case's only diversity
+        # lever. These batches carry 2 ideas each, so the model must make the
+        # set internally distinct instead — pinning a batched call to a single
+        # dimension measurably worsened the attractor (20.0% batched-and-free
+        # vs 36.4% batched-and-focused, live ablation).
         assert len(pool_prompts) == 3
-        assert "本批优先从人物寻找" in pool_prompts[0]
-        assert "本批优先从职业寻找" in pool_prompts[1]
-        assert "本批优先从世界寻找" in pool_prompts[2]
+        for prompt in pool_prompts:
+            assert "本批优先从" not in prompt
 
     def test_raw_idea_ablation_arms_add_only_the_intended_context(self):
         from bestseller.services.concept_tournament import (

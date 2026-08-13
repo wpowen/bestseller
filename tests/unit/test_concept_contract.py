@@ -142,15 +142,52 @@ def test_approved_contract_is_authoritative_logline_evidence() -> None:
         sub_genre="都市奇幻",
     )
 
+    judged_one_liner = str(contract["hook_card"]["one_liner"])
     verdict = verdict_from_approved_concept_contract(
         contract,
         target_chapters=500,
+        # 复用只对「被审过的那句原文」成立——通行证认文本，不认书。
+        logline_text=judged_one_liner,
     )
 
     assert verdict is not None
     assert verdict.action is LoglineAction.EXPAND
     assert verdict.llm_used is True
     assert verdict.weakest_axis == "concept_contract_evidence"
+
+
+def test_rewritten_logline_cannot_ride_the_champions_verdict() -> None:
+    """证据转移要求文本同一（2026-08-11 真机《摆摊求死》）。
+
+    淘汰赛审过的是钩子卡 one_liner（大白话、因果完整）；T6 又从冠军简介另写了
+    一句（天煞孤星/真心人/「杀一回」病句、因果断裂）塞进 market.logline。复用
+    分支此前不接收文本参数，把原句的 12 轴全 4.0 通行证盖到了改写稿上，还标
+    ``llm_used=True``——没有任何 LLM 读过那句话。改写稿必须交给真判官。
+    """
+
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=500,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+
+    assert verdict_from_approved_concept_contract(
+        contract,
+        target_chapters=500,
+        logline_text="修了八百多年从没惦记过谁的天煞孤星，被逼着交出一个真心人的名字。",
+    ) is None
+    # 不带文本的旧式调用同样不许放行——宁可请真判官，不可默认同一。
+    assert verdict_from_approved_concept_contract(
+        contract,
+        target_chapters=500,
+    ) is None
+    # 空白差异不算改写。
+    spaced = "  " + str(contract["hook_card"]["one_liner"]) + "\n"
+    assert verdict_from_approved_concept_contract(
+        contract, target_chapters=500, logline_text=spaced
+    ) is not None
 
 
 def test_contract_without_tournament_quality_cannot_bypass_logline_judge() -> None:
@@ -167,6 +204,7 @@ def test_contract_without_tournament_quality_cannot_bypass_logline_judge() -> No
     assert verdict_from_approved_concept_contract(
         contract,
         target_chapters=500,
+        logline_text=str(contract["hook_card"]["one_liner"]),
     ) is None
 
 

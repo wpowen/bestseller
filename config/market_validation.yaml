@@ -1,0 +1,209 @@
+# 市场验证能力配置（advisory-only；关掉即字节级不变）
+# 设计文档：docs/dev-plans/2026-08-08-market-validation-capability.md
+# 人工 SOP 来源：docs/book-title-market-validation-process.md
+#
+# enabled=false 时 run_market_validation 直接返回 SKIPPED 报告，不发起任何外部请求。
+version: 1
+enabled: true
+
+sources:
+  # FanqieHub 第三方聚合站：一次请求返回番茄当日全量榜单（37 个频道×分类）。
+  # 2026-08-08 实测参数：category=<精确中文分类名>、platform=男频/女频、per_page 可拉满；
+  # 旧版 rank_type=reading 参数已失效，榜单类型需客户端按「榜单类型」字段过滤。
+  fanqiehub:
+    enabled: true
+    base_url: "https://www.fanqiehub.com"
+    timeout_seconds: 25.0
+  # 七猫官方站 JSON 接口（2026-08-08 实测可用，无签名）：
+  # /api/rank/book-list?is_girl={0男|1女}&rank_type={1大热|2新书|3完结|4收藏|5更新}&date_type={1日|2月}&page=N
+  qimao:
+    enabled: true
+    base_url: "https://www.qimao.com"
+    timeout_seconds: 20.0
+    rank_pages: 3          # 每榜抓几页（20 本/页）
+  # 微信读书分类书单（免登录，__INITIAL_STATE__ 内嵌 JSON）：评分/好中差分布=口碑维度。
+  # 口径提示：偏付费精品侧，与番茄/七猫免费大盘互补，只作参考信号。
+  weread:
+    enabled: false
+    base_url: "https://weread.qq.com"
+    timeout_seconds: 20.0
+  # Web 检索查重（复用 services/search_client.py；无 TAVILY/SERPER key 时自动 Noop 降级）
+  websearch:
+    enabled: true
+    site_filters:
+      - "fanqienovel.com"
+      - "qimao.com"
+
+genre_heat:
+  min_sample: 10
+  top_books: 5
+
+competitor_scan:
+  max_candidates: 24      # 送 LLM 判官前按热度截断
+
+title_check:
+  near_distance_max: 1    # 归一化编辑距离阈值（去掉标点/空白后）
+  core_token_min_len: 3   # 核心词包含判定的最小长度
+  shell_crowd_min_books: 3
+  shell_weak_heat_median: 100000   # 同壳书热度中位数低于此=壳弱
+  # 书名格式壳抽取规则（正则按序匹配，第一个命中即为壳）；X/Y 槽位用 (.+?) 表达
+  shells:
+    - name: "我在X当/做Y"
+      pattern: "^我在(.{1,8})(当|做|开|收|养|修|学|卖|送|签|带)(.{1,8})$"
+    - name: "开局X"
+      pattern: "^开局"
+    - name: "全民X"
+      pattern: "^全民"
+    - name: "从X开始Y"
+      pattern: "^从(.{1,8})开始"
+    - name: "重生X"
+      pattern: "^重生"
+    - name: "穿越/穿书X"
+      pattern: "^(穿越|穿书|穿成)"
+    - name: "X：Y副标题壳"
+      pattern: "^(.{2,10})[：:](.+)$"
+      advisory_only: true   # 冒号副标题是主流健康形态，只统计不判罚
+    - name: "X后壳（被…后/成为…后）"
+      pattern: "^(被|成为)(.+)(后|之后)"
+
+verdict:
+  llm_enabled: true
+
+blurb_benchmark:
+  min_board_samples: 8
+
+# ---------------------------------------------------------------------------
+# 番茄分类注册表（cat_id 来自 oh-story story-long-scan 逆向映射表，2026-08 校验；
+# 分类名与 FanqieHub「分类」字段逐字对齐）
+# ---------------------------------------------------------------------------
+fanqie_categories:
+  男频:
+    - {label: 西方奇幻, cat_id: "1141"}
+    - {label: 东方仙侠, cat_id: "1140"}
+    - {label: 科幻末世, cat_id: "8"}
+    - {label: 都市日常, cat_id: "261"}
+    - {label: 都市修真, cat_id: "124"}
+    - {label: 都市高武, cat_id: "1014"}
+    - {label: 历史古代, cat_id: "273"}
+    - {label: 战神赘婿, cat_id: "27"}
+    - {label: 都市种田, cat_id: "263"}
+    - {label: 传统玄幻, cat_id: "258"}
+    - {label: 历史脑洞, cat_id: "272"}
+    - {label: 悬疑脑洞, cat_id: "539"}
+    - {label: 都市脑洞, cat_id: "262"}
+    - {label: 玄幻脑洞, cat_id: "257"}
+    - {label: 悬疑灵异, cat_id: "751"}
+    - {label: 抗战谍战, cat_id: "504"}
+    - {label: 游戏体育, cat_id: "746"}
+    - {label: 动漫衍生, cat_id: "718"}
+    - {label: 男频衍生, cat_id: "1016"}
+  女频:
+    - {label: 古风世情, cat_id: "1139"}
+    - {label: 科幻末世, cat_id: "8"}
+    - {label: 游戏体育, cat_id: "746"}
+    - {label: 女频衍生, cat_id: "1015"}
+    - {label: 玄幻言情, cat_id: "248"}
+    - {label: 种田, cat_id: "23"}
+    - {label: 年代, cat_id: "79"}
+    - {label: 现言脑洞, cat_id: "267"}
+    - {label: 宫斗宅斗, cat_id: "246"}
+    - {label: 悬疑脑洞, cat_id: "539"}
+    - {label: 古言脑洞, cat_id: "253"}
+    - {label: 快穿, cat_id: "24"}
+    - {label: 青春甜宠, cat_id: "749"}
+    - {label: 星光璀璨, cat_id: "745"}
+    - {label: 女频悬疑, cat_id: "747"}
+    - {label: 职场婚恋, cat_id: "750"}
+    - {label: 豪门总裁, cat_id: "748"}
+    - {label: 民国言情, cat_id: "1017"}
+
+# ---------------------------------------------------------------------------
+# 题材映射：taxonomy genre_key（config/genre_taxonomy.yaml）→ 番茄分类（按相关度排序）。
+# sub_overrides 按 sub_genre_key 覆盖（比 genre 级更准时才写）。
+# 七猫/微信读书不在此硬映射：运行时用 taxonomy 标签 + qimao_label_aliases 做名称匹配。
+# ---------------------------------------------------------------------------
+genre_map:
+  xuanhuan:
+    fanqie: {channel: 男频, categories: [传统玄幻, 玄幻脑洞]}
+    sub_overrides:
+      otherworld-continent: {fanqie: {channel: 男频, categories: [西方奇幻, 传统玄幻]}}
+      high-martial: {fanqie: {channel: 男频, categories: [都市高武, 传统玄幻]}}
+      beast-taming: {fanqie: {channel: 男频, categories: [玄幻脑洞, 传统玄幻]}}
+  xianxia:
+    fanqie: {channel: 男频, categories: [东方仙侠]}
+    sub_overrides:
+      urban-cultivation: {fanqie: {channel: 男频, categories: [都市修真, 东方仙侠]}}
+      spiritual-revival: {fanqie: {channel: 男频, categories: [都市修真, 都市高武]}}
+  wuxia:
+    fanqie: {channel: 男频, categories: [东方仙侠]}
+  urban:
+    fanqie: {channel: 男频, categories: [都市日常, 都市脑洞]}
+    sub_overrides:
+      urban-psionic: {fanqie: {channel: 男频, categories: [都市高武, 都市脑洞]}}
+      divine-doctor-soldier: {fanqie: {channel: 男频, categories: [战神赘婿, 都市高武]}}
+      urban-slacker: {fanqie: {channel: 男频, categories: [都市日常, 都市种田]}}
+  history:
+    fanqie: {channel: 男频, categories: [历史古代, 历史脑洞]}
+  military:
+    fanqie: {channel: 男频, categories: [抗战谍战]}
+  scifi:
+    fanqie: {channel: 男频, categories: [科幻末世]}
+  apocalypse:
+    fanqie: {channel: 男频, categories: [科幻末世]}
+    sub_overrides:
+      rule-apocalypse: {fanqie: {channel: 男频, categories: [悬疑脑洞, 科幻末世]}}
+  game:
+    fanqie: {channel: 男频, categories: [游戏体育]}
+  suspense:
+    fanqie: {channel: 男频, categories: [悬疑脑洞, 悬疑灵异]}
+    sub_overrides:
+      rule-horror: {fanqie: {channel: 男频, categories: [悬疑脑洞, 悬疑灵异]}}
+      tomb-raiding: {fanqie: {channel: 男频, categories: [悬疑灵异]}}
+      folk-mystery: {fanqie: {channel: 男频, categories: [悬疑灵异, 悬疑脑洞]}}
+  occult:
+    fanqie: {channel: 男频, categories: [悬疑灵异]}
+  infinite-flow:
+    fanqie: {channel: 男频, categories: [玄幻脑洞, 悬疑脑洞]}
+    sub_overrides:
+      anime-crossover: {fanqie: {channel: 男频, categories: [动漫衍生]}}
+  light-novel:
+    fanqie: {channel: 男频, categories: [动漫衍生]}
+  gu-yan:
+    fanqie: {channel: 女频, categories: [古言脑洞, 宫斗宅斗, 古风世情]}
+    sub_overrides:
+      palace-intrigue: {fanqie: {channel: 女频, categories: [宫斗宅斗]}}
+      gu-farming: {fanqie: {channel: 女频, categories: [种田, 古风世情]}}
+  xian-yan:
+    fanqie: {channel: 女频, categories: [现言脑洞, 豪门总裁]}
+    sub_overrides:
+      sweet-ceo: {fanqie: {channel: 女频, categories: [豪门总裁, 青春甜宠]}}
+      marriage-emotion: {fanqie: {channel: 女频, categories: [职场婚恋]}}
+      entertainment-romance: {fanqie: {channel: 女频, categories: [星光璀璨]}}
+      era-romance: {fanqie: {channel: 女频, categories: [年代]}}
+      workplace-romance: {fanqie: {channel: 女频, categories: [职场婚恋]}}
+  fantasy-romance:
+    fanqie: {channel: 女频, categories: [玄幻言情]}
+  female-growth:
+    fanqie: {channel: 女频, categories: [现言脑洞, 古言脑洞]}
+  pure-love:
+    fanqie: {channel: 女频, categories: []}   # 番茄无对应分类；该平台节降级
+  female-derivative:
+    fanqie: {channel: 女频, categories: [快穿, 女频衍生]}
+  realistic:
+    fanqie: {channel: 男频, categories: [都市日常]}
+
+# 七猫名称匹配的补充别名（运行时基础集 = 题材 label + 全部 sub_genre label）
+qimao_label_aliases:
+  xuanhuan: [玄幻, 东方玄幻]
+  xianxia: [仙侠, 武侠仙侠, 修真]
+  wuxia: [武侠, 武侠仙侠]
+  urban: [都市]
+  history: [历史, 架空历史]
+  scifi: [科幻]
+  apocalypse: [末世, 科幻末世]
+  suspense: [悬疑, 悬疑灵异]
+  occult: [灵异, 悬疑灵异]
+  game: [游戏, 体育, 游戏竞技]
+  gu-yan: [古代言情, 古言]
+  xian-yan: [现代言情, 都市言情]
+  fantasy-romance: [玄幻言情, 幻想言情]

@@ -31,6 +31,10 @@
    - 验证证据（搜索结果、竞品流量）写入该书设计文档的书名章节，可追溯。
 
 ## 工具
+- **【2026-08-08 起首选】`uv run bestseller market-validation validate --genre <题材> --title <候选> ...`**
+  ——本流程第 1/2/4 步已自动化（榜单查重 + 同壳拥挤度/热度中位 + 榜单命名形态统计），
+  设计与用法见 `docs/dev-plans/2026-08-08-market-validation-capability.md`。
+  Web 站内查重需配置 TAVILY/SERPER key，未配置时该维度自动降级，仍建议人工补搜。
 - WebSearch（番茄站内被搜索引擎部分收录，`fanqienovel.com/keyword/` 页可作拥挤度信号）
 - `src/bestseller/services/fanqie_market_client.py`（fanqiehub 快照，可做榜单对标）
 - `config/concept_title_formulas.yaml`（框架命名公式库——注意公式要先过本流程再用）

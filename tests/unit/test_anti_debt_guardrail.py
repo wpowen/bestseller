@@ -63,9 +63,15 @@ def test_conception_prompts_carry_no_ledger_ban() -> None:
         assert "自然后果规则" not in prompt
 
 
-def test_debt_dominance_detectors_no_longer_flag_anything() -> None:
+def test_debt_dominance_detector_revived_at_champion_level_only() -> None:
+    """2026-08-13 修订（用户令）：连续两本用户书在未要求下撞进债务/丧葬默认族，
+    冠军级 is_debt_dominated 靶向复活（支配阈值+用户意图豁免+只在构思冠军层
+    消费）。账簿型金手指正是被定罪的收敛原型，必须可检出；其余债务检测器
+    （contains_*、正文层）维持 8·2 退役。"""
+
     ledger_heavy = "金手指是一本账簿：每次出手都记一笔欠账，债主按利息讨债。"
-    assert not M.is_debt_dominated(ledger_heavy)
+    assert M.is_debt_dominated(ledger_heavy)
+    assert not M.is_debt_dominated("突破需要偿还一份人情")
     assert not M.contains_debt_motif(ledger_heavy)
     assert not M.contains_core_debt_framing({"golden_finger": ledger_heavy})
 

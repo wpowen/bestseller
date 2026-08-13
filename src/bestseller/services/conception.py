@@ -2454,14 +2454,27 @@ def _render_mechanism_echo_feedback(
 
 
 def _render_debt_rewrite_feedback(*, is_en: bool) -> str:
-    """Retired 2026-08-02 — unreachable, renders nothing.
+    """2026-08-13 复活（词汇 withhold 版）。
 
-    Its trigger (a "debt-dominated" mechanism the user had not named) was part
-    of the motif police. There is no reserved mechanism family any more.
+    触发条件回到「用户没点名 + 冠军被该默认族支配」。反馈沿用本体漂移
+    渲染器的策略：不点任何族内词汇（点名即种词），只下达换族指令。
     """
 
-    del is_en
-    return ""
+    if is_en:
+        return (
+            "\n\n[Rewrite required — default-theme convergence]\n"
+            "The core mechanism/scenes of this concept fall into a theme "
+            "family this framework has measurably over-reused, and the user "
+            "did not ask for it. Rebuild around a COMPLETELY different "
+            "mechanism family and scene family; do not reuse this concept's "
+            "core nouns or their close synonyms."
+        )
+    return (
+        "\n\n【必须重写——默认主题族收敛】\n"
+        "本次构思的核心机制与场景落在了本框架被实测过度复用的默认主题族上，"
+        "且用户并没有要求它。换一个**完全不同**的机制家族与场景家族重新构思；"
+        "不得沿用本次构思的核心名词及其近义词。"
+    )
 
 
 def _render_death_revival_rewrite_feedback(*, is_en: bool) -> str:

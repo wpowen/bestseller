@@ -221,3 +221,59 @@ def test_tone_conflicting_ideas_are_demoted_at_selection() -> None:
         ranking, raw_floor=7.0, progression_floor=5.0, limit=2
     )
     assert [item["index"] for item in picked] == [1, 0]
+
+
+# ── 默认债务/丧葬族复活（2026-08-13：连续两本用户书撞同族，双保险死代码）──
+
+
+from bestseller.services.anti_default_motif import (
+    default_debt_family_hits,
+    is_debt_dominated,
+    user_requested_debt,
+)
+
+_BOOK_A = "沈鲤替他垫付旧债欠下赌坊三吊钱，孙疤脸把欠条拍在木桩上，被扣做人质。"
+_BOOK_B = "十六岁少年随母在旧县灵堂被刁难开棺，每替母亲讨回一桩旧账就多解一层，从死不认账到抢功办丧。"
+
+
+def test_both_real_champions_are_debt_dominated() -> None:
+    assert is_debt_dominated(_BOOK_A)
+    assert is_debt_dominated(_BOOK_B)
+
+
+def test_single_incidental_mention_is_not_dominated() -> None:
+    """退役档案第二死因防复发：一处顺带提及不是污染。"""
+
+    cfo = "她是丈夫家族企业的隐形CFO，十年来所有对外账目和税务全出自她手；离婚那天她转身去了对手公司。"
+    assert not is_debt_dominated(cfo)
+    assert not is_debt_dominated("凡骨许太平誓要向修行界证明：凡骨亦能登仙。")
+
+
+def test_user_intent_probe_is_honest_now() -> None:
+    assert user_requested_debt({"description": "我想写一个讨债师傅的故事"}) is True
+    assert user_requested_debt({"allow_debt_theme": True}) is True
+    assert user_requested_debt({"description": "轻松爽文，少年在游戏里挖矿"}) is False
+    assert user_requested_debt(None) is False
+
+
+def test_default_family_ideas_sink_below_clean_but_above_nothing() -> None:
+    ranking = [
+        _rank_item(0, default_family=True),
+        _rank_item(1, market_collision=[{"title": "撞", "overlap": 0.3}]),
+        _rank_item(2),
+    ]
+    picked = ct._select_raw_ideas_for_expansion(
+        ranking, raw_floor=7.0, progression_floor=5.0, limit=3
+    )
+    # 干净 > 默认族 > 撞车？不——默认族沉得比撞车浅一档以上：condemned > tone > family > collision
+    assert [item["index"] for item in picked] == [2, 1, 0]
+
+
+def test_debt_feedback_renders_without_family_vocabulary() -> None:
+    from bestseller.services.conception import _render_debt_rewrite_feedback
+
+    fb = _render_debt_rewrite_feedback(is_en=False)
+    assert "必须重写" in fb
+    # 种词铁律：反馈不得携带族内词汇
+    for token in ("债", "账", "灵堂", "棺", "丧", "寿"):
+        assert token not in fb, token

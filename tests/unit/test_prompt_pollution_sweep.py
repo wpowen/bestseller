@@ -240,12 +240,24 @@ def test_the_motif_police_stay_retired() -> None:
     """
     from bestseller.services import anti_default_motif, planner
 
-    # 检测器全部退役
+    # 规划/正文层检测器维持退役（8·2 裁决不动摇：普通故事素材不是污染）
     for text in ("债主拿着欠条来讨债", "矿洞深处埋着一具枯骨", "力量反噬后短期失声"):
         assert not anti_default_motif.contains_debt_motif(text)
         assert not anti_default_motif.contains_default_death_motif(text)
         assert not anti_default_motif.contains_minimal_cost_violation(text)
-        assert not anti_default_motif.is_debt_dominated(text)
+
+    # 2026-08-13 修订（用户令）：连续两本用户书（《摸一摸，救我妹》《我替娘
+    # 讨旧账》）在用户未要求下撞进同一默认族——冠军级 is_debt_dominated 靶向
+    # 复活：支配阈值（≥2 子族或≥3 次）+ user_requested_debt 诚实意图豁免 +
+    # 只在构思冠军层消费。8·2 的两条死因由此规避：不进 prompt、不禁单次
+    # 顺带提及。顺带一提的债依旧自由：
+    assert not anti_default_motif.is_debt_dominated("突破需要偿还一份人情")
+    # 债务支配的冠军内核在用户未要求时必须可检出：
+    assert anti_default_motif.is_debt_dominated("债主拿着欠条来讨债")
+    assert not anti_default_motif.user_requested_debt(
+        {"description": "轻松爽文，游戏里挖矿"}
+    )
+    assert anti_default_motif.user_requested_debt({"description": "写一个讨债人"})
 
     # 护栏块不渲染任何文本
     assert anti_default_motif.anti_debt_block(is_en=False) == ""

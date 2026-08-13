@@ -1582,6 +1582,7 @@ def _select_raw_ideas_for_expansion(
         key=lambda item: (
             bool(item.get("condemned_structure")),
             bool(item.get("tone_conflict")),
+            bool(item.get("default_family")),
             bool(item.get("market_collision")),
         ),
     )
@@ -3131,6 +3132,32 @@ async def run_concept_tournament(
                                         + "），展开位让给结构干净的候选"
                                     ),
                                     "failed_axes": ["condemned_structure"],
+                                }
+                            )
+                        # 默认债务/丧葬族沉底（2026-08-13《我替娘讨旧账》：
+                        # 连续两本用户书撞进同一默认族）。用户自己的创意里
+                        # 提过该族=用户的选择，豁免。
+                        from bestseller.services.anti_default_motif import (  # noqa: PLC0415
+                            default_debt_family_hits,
+                            is_debt_dominated,
+                        )
+
+                        _user_named_family = bool(
+                            default_debt_family_hits(str(seed_concept or ""))
+                        )
+                        if not _user_named_family and is_debt_dominated(
+                            parsed_pool[idx][1]
+                        ):
+                            item["default_family"] = True
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": parsed_pool[idx][0],
+                                    "scores": {},
+                                    "reason": (
+                                        "命中框架实测过度复用的默认主题族"
+                                        "（用户未要求），展开位让给未收敛的候选"
+                                    ),
+                                    "failed_axes": ["default_family"],
                                 }
                             )
                         # 用户选轻松调性时，胁迫式生死赌注的胚子沉底

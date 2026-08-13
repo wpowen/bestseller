@@ -115,9 +115,47 @@ def contains_minimal_cost_violation(text: Any) -> bool:
     return False
 
 
+# ── 2026-08-13 靶向复活（仅冠军级，其余层维持退役）─────────────────────────
+# 《摸一摸，救我妹》（欠条/垫债/三吊钱）与《我替娘讨旧账》（旧账×3+灵堂开棺）
+# 连续两本用户书撞进同一默认族——冠军级的债务/丧葬引力在退役后失去了全部
+# 反压：user_requested_debt 恒 True + is_debt_dominated 恒 False 使 finalize
+# 与 winner 两处检查成为双保险死代码。本次复活遵守退役档案里的两条死因：
+# ① 不进任何 prompt（检测器专用；重试反馈不点名词汇，沿用本体漂移渲染器的
+#   withhold 策略）；② 不禁一本书自己的素材——支配判定（≥2 个子族或≥3 次
+#   出现）+ 用户意图豁免（用户自己的输入提过该族即视为选择）+ 只在构思冠军
+#   层生效，规划/正文层的旧警察不复活。
+_DEFAULT_DEBT_FAMILY_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"账(?![号户])"),
+    re.compile(r"[债賬]|欠(?:[债款钱条账]|下)"),
+    re.compile(r"讨[债账]|要账|清算旧"),
+    re.compile(r"灵堂|棺|出殡|殡[仪葬]|丧(?!尸)"),
+    re.compile(r"阳寿|寿元"),
+)
+
+
+def default_debt_family_hits(text: Any) -> tuple[str, ...]:
+    """命中的子族样式列表（冠军级检测与选题沉底共用）。"""
+
+    blob = text if isinstance(text, str) else _blob(text)
+    return tuple(
+        pattern.pattern for pattern in _DEFAULT_DEBT_FAMILY_RES if pattern.search(blob)
+    )
+
+
 def is_debt_dominated(text: Any) -> bool:
-    del text
-    return False
+    """冠军级支配判定：≥2 个子族在场，或全族合计出现 ≥3 次。
+
+    单次顺带提及（如女频冠军里一处「账目」）不构成支配——退役档案的
+    第二死因（把普通故事素材当污染）由该阈值防复发。"""
+
+    blob = text if isinstance(text, str) else _blob(text)
+    if not blob:
+        return False
+    distinct = sum(1 for p in _DEFAULT_DEBT_FAMILY_RES if p.search(blob))
+    if distinct >= 2:
+        return True
+    total = sum(len(p.findall(blob)) for p in _DEFAULT_DEBT_FAMILY_RES)
+    return total >= 3
 
 
 def contains_core_debt_framing(payload: Any) -> bool:
@@ -153,10 +191,23 @@ def snapshot_user_intent(ctx: dict[str, Any]) -> None:
 
 
 def user_requested_debt(ctx: dict[str, Any] | None) -> bool:
-    """Retired — returns True so residual ``if not user_requested_debt`` guards pass."""
+    """诚实的用户意图探针（2026-08-13 复活）。
 
-    del ctx
-    return True
+    用户自己的输入（故事创意/描述/提示）里提过债务/丧葬族，或显式打开
+    allow_debt_theme，都视为用户的选择——用户点名的族永远不算污染。
+    恒 True 的退役语义等于「所有书都是用户要的账」，让冠军级检查双保险
+    失效，连续两本用户书撞进同一默认族。"""
+
+    if not isinstance(ctx, dict):
+        return False
+    if bool(ctx.get("allow_debt_theme")):
+        return True
+    intent_blob = str(ctx.get(_USER_INTENT_KEY) or "")
+    if not intent_blob:
+        intent_blob = _blob(
+            ctx.get("description"), ctx.get("user_hints"), ctx.get("premise_seed")
+        )
+    return bool(default_debt_family_hits(intent_blob))
 
 
 def user_requested_death_revival(ctx: dict[str, Any] | None) -> bool:

@@ -49,10 +49,16 @@ def _guidance_blocks() -> list[tuple[str, str]]:
 
 
 def test_retired_debt_guidance_renders_nothing() -> None:
+    # prompt 护栏块维持退役（8·2：枚举禁词=种词）
     assert anti_debt_block(is_en=False) == ""
     assert anti_debt_block(is_en=True) == ""
-    assert _render_debt_rewrite_feedback(is_en=False) == ""
-    assert _render_debt_rewrite_feedback(is_en=True) == ""
+    # 2026-08-13 修订（用户令）：冠军级债务支配的重试反馈复活，但必须
+    # withhold 词汇——只下达换族指令，不携带任何族内 token（种词铁律）。
+    for is_en in (False, True):
+        feedback = _render_debt_rewrite_feedback(is_en=is_en)
+        assert feedback.strip()
+        for token in ("债", "账", "灵堂", "棺", "丧", "寿", "欠"):
+            assert token not in feedback, token
 
 
 def test_conception_prompt_guard_is_intentionally_empty() -> None:

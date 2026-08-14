@@ -361,3 +361,24 @@ def test_rejected_default_family_champion_is_kept_as_fallback() -> None:
     fallback_idx = src.index("elif _default_family_fallback_winner is not None:")
     raise_idx = src.index("概念淘汰赛 ")
     assert fallback_idx < raise_idx, "兜底分支必须在硬失败分支之前"
+
+
+def test_retry_refinement_seed_is_quota_capped() -> None:
+    """2026-08-14 真机：重试轮 6 个候选里 4 个是同一个故事的复述，
+    6/6 挂在新颖度 → 无冠军 → 整本书死。
+
+    根因是两条指令自相矛盾：seed 块要求「禁止沿用身份/骨架」，重试反馈却说
+    「保留其故事身份，不要另起炉灶」。近失补强要留（饥饿悖论），但必须限额，
+    其余名额换骨架。
+    """
+
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    assert "定向补强·限额" in src
+    assert "只用 2 个名额" in src
+    assert "其余名额必须是完全不同的故事" in src
+    # 旧的整池锚定措辞不得复活
+    assert "不要另起炉灶。\"\n" not in src or "限额" in src

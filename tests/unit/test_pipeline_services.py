@@ -10386,3 +10386,25 @@ def test_non_length_repair_keeps_the_stabilizer() -> None:
 
     assert "保持当前篇幅基本稳定" in instructions
     assert "字数缺口优先" not in instructions
+
+
+def test_design_consistency_recovery_clears_its_own_pause_flags() -> None:
+    """立锁的人负责解锁（2026-08-14 真机死锁）。
+
+    一致性失败时本函数设 production_paused +
+    generation_resume_blocked_until_repair_audit；复检转绿时若只改 status，
+    书就卡在「approved 但不许写作」的僵局里（自愈的解锁条件不认这一族），
+    真机 custom-xuanhuan-1786703729 即因此被 blocked_structural_repair 取消。
+    """
+
+    import inspect
+
+    src = inspect.getsource(pipeline_services)
+    idx = src.index('"approved" if report.passed else "approved_with_advisories"')
+    window = src[idx : idx + 900]
+    for key in (
+        "production_paused",
+        "generation_resume_blocked_until_repair_audit",
+    ):
+        assert key in window, key
+    assert "metadata.pop(key, None)" in window

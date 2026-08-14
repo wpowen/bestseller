@@ -2148,6 +2148,17 @@ async def _enforce_book_design_consistency(
         metadata["book_design_consistency_status"] = (
             "approved" if report.passed else "approved_with_advisories"
         )
+        # 立锁的人负责解锁（2026-08-14 真机死锁）：本函数在 needs_replan 时
+        # 设 production_paused + generation_resume_blocked_until_repair_audit，
+        # 复检转绿时却只改 status，封锁标记留在原地——书卡成
+        # 「一致性 approved 但不许写作」的永久僵局，自愈的解锁条件又不认这一族。
+        # 同一个事实不能住在两个地方，谁设谁清。
+        for key in (
+            "production_paused",
+            "production_pause_reason",
+            "generation_resume_blocked_until_repair_audit",
+        ):
+            metadata.pop(key, None)
         project.metadata_json = metadata
         await session.flush()
         return

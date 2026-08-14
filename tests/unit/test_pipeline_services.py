@@ -10426,3 +10426,37 @@ def test_clean_chapter_is_never_left_in_blocked_state() -> None:
     window = src[max(0, idx - 1200) : idx]
     assert "if not block_codes:" in window
     assert 'chapter.production_state = "quality_debt"' in window
+
+
+def test_over_length_repair_gets_a_compression_contract() -> None:
+    """2026-08-14 真机 ch3：首稿 5116 字 / 目标 2600，修复轮砍到 2095 又反弹
+    4972，6 轮全阻断。超长时走通用分支会读到「保持当前篇幅基本稳定」——
+    对必须砍一半的稿子是自相矛盾的指令，于是来回震荡。"""
+
+    project_id = uuid4()
+    chapter = build_chapter(project_id)
+    chapter.target_word_count = 2600
+
+    instructions = pipeline_services._render_chapter_first_local_repair_instructions(
+        chapter=chapter,
+        block_codes=("LENGTH_OVER", "CHAPTER_LENGTH_BLOCK_HIGH"),
+        scene_hints=["场景1：正文过长。"],
+    )
+
+    assert "超长压缩优先" in instructions
+    assert "一次压到位" in instructions
+    assert "2600" in instructions and "2392" in instructions  # 0.92 下沿，防砍过头
+    assert "保持当前篇幅基本稳定" not in instructions
+    # 防砍骨头
+    assert "压缩的是水，不是骨头" in instructions
+
+
+def test_under_length_branch_still_wins_for_short_chapters() -> None:
+    project_id = uuid4()
+    chapter = build_chapter(project_id)
+    chapter.target_word_count = 2600
+    instructions = pipeline_services._render_chapter_first_local_repair_instructions(
+        chapter=chapter, block_codes=("LENGTH_UNDER",), scene_hints=[]
+    )
+    assert "字数缺口优先" in instructions
+    assert "超长压缩优先" not in instructions

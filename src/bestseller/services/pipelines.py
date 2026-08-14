@@ -5243,6 +5243,40 @@ def _render_chapter_first_local_repair_instructions(
     # 字数阻断与「保持篇幅稳定」是互斥任务（2026-08-13 真机定罪：ch1 的
     # LENGTH_UNDER 修复轮在无条件稳定器指令下只补了 ~60 字，整轮白烧）。
     # 命中字数下限时切换成补缺口合同，其余场合维持 patch-first 稳定器。
+    # 超长侧（2026-08-14 真机 ch3）：首稿 5116 字对 2600 目标，修复轮砍到
+    # 2095（偏短）又反弹到 4972，6 轮全阻断——因为超长时走的是通用
+    # patch-first 分支，那里写着「保持当前篇幅基本稳定」，对一篇必须砍掉
+    # 一半的稿子是自相矛盾的指令，于是模型要么不敢砍要么砍过头来回震荡。
+    over_length_codes = {
+        "LENGTH_OVER", "CHAPTER_LENGTH_BLOCK_HIGH", "LENGTH_BLOCK_HIGH",
+    }
+    if normalized_codes & over_length_codes:
+        target_wc = int(getattr(chapter, "target_word_count", 0) or 0)
+        band = (
+            f"本章目标篇幅 {target_wc} 字。请压到 {int(target_wc * 0.92)}–{target_wc} 字之间"
+            if target_wc
+            else "请压到章节动态字数带内"
+        )
+        lines = [
+            "【章节自动修复任务｜超长压缩优先】",
+            f"命中阻断码：{', '.join(block_codes) if block_codes else 'unknown'}。",
+            f"{band}——**一次压到位**：只砍几十字会在下一轮因同一个码被打回，"
+            "白烧一轮；砍过头掉到下限以下同样阻断，来回震荡最伤稿子。",
+            "先砍这些：与主线无关的环境铺陈、重复的心理复述、同义的动作描写、"
+            "把一件事说两遍的段落、可以并入前后句的过渡句。",
+            "禁止砍掉：已发生的关键事件、人物的当场决定与后果、章末钩子、"
+            "本章必须交代的信息——压缩的是水，不是骨头。",
+            "其余命中的问题仍按 patch-first 局部替换：不得改变核心事件顺序、"
+            "章末主钩子、人物在场关系。",
+            hard_constraints,
+            "【具体修复要求】",
+            _compact_repair_instruction_text(merged_hints),
+        ]
+        return _redact_front10_prompt_leaks(
+            "\n".join(line for line in lines if str(line or "").strip()),
+            chapter,
+            scenes,
+        )
     length_codes = {"LENGTH_UNDER", "CHAPTER_LENGTH_BLOCK_LOW", "LENGTH_BLOCK_LOW"}
     if normalized_codes & length_codes:
         target_wc = int(getattr(chapter, "target_word_count", 0) or 0)

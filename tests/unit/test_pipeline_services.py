@@ -10408,3 +10408,21 @@ def test_design_consistency_recovery_clears_its_own_pause_flags() -> None:
     ):
         assert key in window, key
     assert "metadata.pop(key, None)" in window
+
+
+def test_clean_chapter_is_never_left_in_blocked_state() -> None:
+    """0 阻断码 = 这一章是干净的（2026-08-14 真机 ch1 复现 08-07 的 plateau 误杀）。
+
+    留存门这类软判定（PERSONA_WEIGHTED_SCORE_LOW）给不出可修的东西，
+    修复循环无处下手；此时把章留在 blocked 只是让它去排机器修复的队、
+    并给全书攒一笔假债。指纹：production_state=blocked 而该章从无
+    blocks_write=true 的质检报告。
+    """
+
+    import inspect
+
+    src = inspect.getsource(pipeline_services)
+    idx = src.index("not auto-repairable — leaving ")
+    window = src[max(0, idx - 1200) : idx]
+    assert "if not block_codes:" in window
+    assert 'chapter.production_state = "quality_debt"' in window

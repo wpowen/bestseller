@@ -9526,11 +9526,26 @@ async def run_chapter_pipeline(
                 break
 
             if not repair_triggered:
+                # 没有任何阻断码 = 这一章其实是干净的（软判定如
+                # PERSONA_WEIGHTED_SCORE_LOW 给不出可修的东西），把它留在
+                # blocked 只是让它去排机器修复的队、并给全书攒一笔假债。
+                # 2026-08-07 已为同一族误杀（plateau 判「没长进」标 blocked）
+                # 付过学费，指纹相同：production_state=blocked 而该章从无
+                # blocks_write=true 的质检报告。真机 2026-08-14 ch1 复现。
+                if not block_codes:
+                    logger.info(
+                        "Chapter %d: no blocking codes — clean chapter, "
+                        "recording quality debt instead of blocking",
+                        chapter_number,
+                    )
+                    chapter.production_state = "quality_debt"
+                    await session.flush()
+                    break
                 logger.info(
                     "Chapter %d: block codes %s not auto-repairable — leaving "
                     "chapter in blocked state",
                     chapter_number,
-                    list(block_codes) if block_codes else [],
+                    list(block_codes),
                 )
                 break
 

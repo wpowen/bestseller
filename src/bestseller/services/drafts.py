@@ -1710,7 +1710,7 @@ def _offstage_reference_guidance(codes: Iterable[str]) -> str:
     if death_like:
         return (
             "如需提及，仅可：旁人怀念/悲悼/提起；引用其先前的话或留下的文字；"
-            "以遗体/画像/坟前/灵堂/信物/远闻线索的形态被提及；"
+            "以他们留下的物件、画像、文字、声音或尚未解开的线索被提及；"
             "或在显式标注的回忆/闪回/祭奠/梦境/幻象场景中出现。"
         )
     return (
@@ -4317,7 +4317,8 @@ def _render_story_bible_section(
                 "  * remembered / mourned by another character;\n"
                 "  * quoted from earlier dialogue, letters, recordings, or "
                 "written works they left behind;\n"
-                "  * referenced as a corpse, image, grave, or relic;\n"
+                "  * referenced through an object, image, letter, recording, "
+                "or relic they left behind;\n"
                 "  * the subject of a clearly-labelled flashback / memorial / "
                 "vision / dream scene.\n"
                 "If a planted clue (a will, a cipher, a sealed message) was "
@@ -4336,7 +4337,7 @@ def _render_story_bible_section(
                 "允许的做法：\n"
                 "  · 旁人怀念、悲悼、提起；\n"
                 "  · 引用其先前的对话、书信、遗书、录音、留下的文字或卷轴；\n"
-                "  · 以遗体／画像／坟前／灵堂／信物等形态出现；\n"
+                "  · 以他们留下的信物、画像、文字、声音、物件或未解线索等形态出现；\n"
                 "  · 在显式标注的回忆／闪回／祭奠／梦境／幻象场景中出现。\n"
                 "若该角色生前留下的伏笔（密信、信物、机关）在本章被发现或"
                 "触发——可以让信物/线索发挥作用，但角色本人不登场。】：\n"
@@ -4481,27 +4482,28 @@ def _render_story_bible_section(
         if is_en:
             prot_lines = [
                 f"- {pc['name']}(planned death ch{pc.get('death_chapter_number') or '?'}, "
-                "MUST stay alive in this chapter — no death scene, no fatal injury, "
-                "no 'before X died' framing, no 'fell and never rose' implication)"
+                "MUST stay alive in this chapter — no death scene, no fatal wound, "
+                "no deathbed moment; keep them injured, captured, trapped, missing, "
+                "or in danger without confirming an exit)"
                 for pc in protected_characters
             ]
             lines.append(
                 "[PROTECTED ROSTER — these characters MUST survive this chapter; "
                 "the planner has scheduled their death for a later chapter, "
-                "and any death/dying language here is a hard violation]:\n"
+                "and any confirmed-exit language here is a hard violation]:\n"
                 + "\n".join(prot_lines)
             )
         else:
             prot_lines = [
                 f"- {pc['name']}（计划死于第{pc.get('death_chapter_number') or '?'}章，"
-                "本章必须存活：不得出现死亡、断气、倒地不起、临终遗言、"
-                "「X死前」「魂飞」「殒命」「气绝」等任何死亡相关描写或暗示）"
+                "本章必须存活：不得出现死亡场景、致命伤、濒死或临终描写；"
+                "可写受伤、被俘、被困、失踪或濒危，但不得在本章确认其退场）"
                 for pc in protected_characters
             ]
             lines.append(
                 "【保护名单（绝对硬约束）— 这些角色本章必须存活；"
                 "他们的死亡时机由长线规划者锁定在更后面的章节，"
-                "本章任何死亡/濒死/临终描写都是硬性违规】：\n"
+                "本章任何确认退场/濒死/临终描写都是硬性违规】：\n"
                 + "\n".join(prot_lines)
             )
 
@@ -9643,7 +9645,7 @@ def build_chapter_first_draft_prompts(
         "未写在场景卡、章节契约、角色安全块或故事圣经里的死亡、关键不可逆事件、额外活人 NPC 等一律禁止。"
         "不得临时发明未在场景卡、角色池、章节契约或故事圣经中出现的人名；功能性人物只用"
         "司机、邻居、保安、摊主、送货员等身份称谓。"
-        "如果角色安全块要求某角色本章不能确认死亡，连疑问句、传闻句和旁人推测式「已经死了，对吧？」"
+        "如果角色安全块要求某角色本章不能确认死亡，连疑问句、传闻句和旁人推测式表达"
         "也不能写，只能写成失踪、被困、生死未明或还不能确认。"
     )
     output_character_rules = (
@@ -13539,7 +13541,7 @@ async def maybe_prepare_chapter_auto_repair(
             "不可让其在本章「登场」（即不可发出当下动作、不可说出新台词、"
             "不可作为活跃参与者参与场景）。\n"
             "允许的处理：旁人怀念、悲悼、提起；引用其先前说过的话或留下的文字；"
-            "以遗体、画像、坟前、灵堂、信物、远闻线索等形态被提及；"
+            "以他们留下的物件、画像、文字、声音或尚未解开的线索被提及；"
             "或仅在显式标注的回忆／闪回／祭奠／梦境／幻象场景中出现。"
         )
     if "CANON_FORBIDDEN_TERM" in canonical_hits:

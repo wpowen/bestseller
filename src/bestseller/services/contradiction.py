@@ -2283,14 +2283,13 @@ async def check_premature_death_in_prose(
             else:
                 msg = (
                     f"疑似提前死亡：「{name}」在第{chapter_number}章周围出现"
-                    f"事后追述（如「X死前」「临终」「遗体」），"
+                    f"死亡或事后追述表述，"
                     f"但其计划死亡章节为第{scheduled}章。"
                     "请确认这是回忆/前瞻还是误写。"
                 )
                 rec = (
-                    f"若为回忆/前瞻，请显式标记；否则改写表述，"
-                    f"避免在第{scheduled}章之前出现「{name}死前/临终/遗体」"
-                    "等已死去的修辞。"
+                    f"若为回忆/前瞻，请显式标记；否则在第{scheduled}章之前"
+                    "改写为受伤、失踪、被困或生死未明，不要确认其死亡。"
                 )
             warnings.append(
                 ContradictionWarning(

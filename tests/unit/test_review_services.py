@@ -693,7 +693,8 @@ def test_chapter_rewrite_prompt_includes_qimao_opening_contract() -> None:
     assert "先保住账本并确认谁在灭口" in user_prompt
     assert "只输出一遍完整章节正文" in user_prompt
     assert "局部替换和等量压缩式修复" in user_prompt
-    assert "已经死了，对吧？" in user_prompt
+    assert "受伤/失踪/被困/生死未明/还不能确认" in user_prompt
+    assert "已经死了，对吧？" not in user_prompt
     assert "最后300字连续叠加多个未解悬念" in user_prompt
 
 

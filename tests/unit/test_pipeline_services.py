@@ -2166,7 +2166,8 @@ def test_chapter_first_prompt_includes_character_safety_block() -> None:
     assert "【角色生死与登场安全】" in user_prompt
     assert "王建业" in user_prompt
     assert "本章禁止写成已死" in user_prompt
-    assert "已经死了，对吧？" in user_prompt
+    assert "只能写成失踪、被困、生死未明或还不能确认" in user_prompt
+    assert "已经死了，对吧？" not in user_prompt
 
 
 def test_chapter_first_prompt_includes_character_knowledge_boundary() -> None:

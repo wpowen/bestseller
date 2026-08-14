@@ -48,3 +48,15 @@ plan.md
 
 # Node (if any)
 node_modules
+
+# ── 构建上下文瘦身（2026-08-14）────────────────────────────────────────────
+# 实测：这些目录从未被 Dockerfile COPY，却每次都随构建上下文被扫描/传输，
+# 合计约 52 GB（.distillation_private 47G + .claude 4.4G + .venv-test 467M）。
+# 这是 `docker compose build` 极慢、以及一次 OOM 失败（cannot allocate memory）
+# 的直接原因。data/ 不在此列——Dockerfile 确实 COPY 它。
+.distillation_private
+.claude
+.venv-test
+.claude-flow
+*.dump
+backups/

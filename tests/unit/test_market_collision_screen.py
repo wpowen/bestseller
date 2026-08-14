@@ -320,3 +320,44 @@ def test_default_family_never_kills_the_book() -> None:
     block = block[: block.index("_detected_concept_guard = tuple")]
     # debt_hit 可以出现在注释里解释原因，但不得有 `if debt_hit:` 的追加分支
     assert not _re.search(r"if debt_hit:\s*\n\s*detected\.append", block)
+
+
+def test_default_family_winner_rejection_stops_at_the_last_attempt() -> None:
+    """默认族只在还有重试机会时作废冠军（2026-08-14 真机）。
+
+    最后一轮仍命中就带案底发货：否则 winner=None 会掉进
+    「N 轮均未产出合格冠军」的 ConceptContractError，把整本书打死——
+    用户创意种子为空时这条路径必然触发。
+    """
+
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    idx = src.index('_pollution_reasons.append("UNREQUESTED_DEFAULT_MOTIF_A")')
+    window = src[max(0, idx - 900) : idx]
+    assert "_is_last_concept_attempt" in window
+    assert "default_family_winner_advisory" in window
+
+
+def test_rejected_default_family_champion_is_kept_as_fallback() -> None:
+    """2026-08-14 真机死书链：第1轮有冠军→被默认族(品味门)拒→第2轮候选全挂
+    在钩子硬门→「2轮均未产出合格冠军」→raise→整本书死。
+
+    被口味门拒掉的冠军是完整可用产物，必须留作兜底：后续轮次颗粒无收时
+    带案底发货，绝不因一项偏好杀书。
+    """
+
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    # 拒绝时入栈
+    assert "_default_family_fallback_winner = _ct_result.winner" in src
+    # 无冠军时优先兜底，而不是直接落到 raise 分支
+    assert "elif _default_family_fallback_winner is not None:" in src
+    fallback_idx = src.index("elif _default_family_fallback_winner is not None:")
+    raise_idx = src.index("概念淘汰赛 ")
+    assert fallback_idx < raise_idx, "兜底分支必须在硬失败分支之前"

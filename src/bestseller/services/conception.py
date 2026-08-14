@@ -5394,6 +5394,9 @@ async def run_conception_pipeline(
             max_concept_attempts = 3 if chapter_count >= 200 else 2
             concept_retry_feedback = ""
             _dry_retry_seed = ""
+            # 被默认族（品味门）拒掉的第一个完整冠军。后续轮次若一个冠军都
+            # 产不出来，用它兜底发货，而不是让整本书死在「N 轮无合格冠军」。
+            _default_family_fallback_winner: Any = None
             _user_owned_story_seed = (
                 explicit_concept_seed
                 or (
@@ -5662,11 +5665,25 @@ async def run_conception_pipeline(
                             ),
                         )
                     )
+                    # 默认族只在**还有重试机会时**才作废冠军（2026-08-14）：
+                    # 它是品味偏好，不是硬错误。最后一轮仍命中就带案底发货——
+                    # 否则 winner=None 会走到「N 轮均未产出合格冠军」那条
+                    # ConceptContractError，把整本书打死（用户创意种子为空时
+                    # 尤其必然），正是 8·2 母题警察的死因。
+                    _is_last_concept_attempt = concept_attempt >= max_concept_attempts
                     if (
                         not _user_requested_debt(ctx)
                         and _is_debt_dominated_mechanism(_winner_story_text)
                     ):
-                        _pollution_reasons.append("UNREQUESTED_DEFAULT_MOTIF_A")
+                        if _is_last_concept_attempt:
+                            ctx["default_family_winner_advisory"] = True
+                            logger.warning(
+                                "final concept attempt still inside the default "
+                                "family; shipping with advisory instead of killing "
+                                "the book"
+                            )
+                        else:
+                            _pollution_reasons.append("UNREQUESTED_DEFAULT_MOTIF_A")
                     _seed_has_default_death = bool(
                         _mentions_death_theme(_explicit_seed_text)
                         or _user_requested_death_revival(ctx)
@@ -5679,6 +5696,15 @@ async def run_conception_pipeline(
                     ):
                         _pollution_reasons.append("UNREQUESTED_DEFAULT_MOTIF_B")
                     if _pollution_reasons:
+                        # 被口味门拒掉的冠军仍是**完整可用**的产物：留作兜底。
+                        # 2026-08-14 真机：第1轮有冠军但被默认族拒→第2轮候选全
+                        # 挂在钩子硬门→「2轮均未产出合格冠军」→ raise → 整本书死。
+                        # 后面几轮可能一个冠军都产不出，那时宁可带案底发货，
+                        # 也不能因为一项品味偏好把书判死。
+                        if _pollution_reasons == ["UNREQUESTED_DEFAULT_MOTIF_A"] and (
+                            _default_family_fallback_winner is None
+                        ):
+                            _default_family_fallback_winner = _ct_result.winner
                         _ct_result.winner = None
                         concept_retry_feedback = (
                             "上一轮冠军命中未选择的默认母题门禁。必须只从本次建书合同"
@@ -5784,6 +5810,25 @@ async def run_conception_pipeline(
                     "Concept tournament winner (dim=%s, composite=%s): %s",
                     _ct_result.winner.dimension, _ct_result.winner.composite,
                     _ct_result.winner.concept[:120],
+                )
+            elif _default_family_fallback_winner is not None:
+                # 兜底发货（2026-08-14 真机定案）：本轮无冠军，但前面轮次有一个
+                # 只因品味门被拒的完整冠军。带案底用它，绝不因一项偏好杀书。
+                _ct_result.winner = _default_family_fallback_winner
+                ctx["high_concept"] = _ct_result.winner.to_dict()
+                ctx["default_family_winner_advisory"] = True
+                logger.warning(
+                    "no fresh winner after %d attempts; shipping the "
+                    "default-family champion from an earlier attempt (advisory)",
+                    max_concept_attempts,
+                )
+                _emit(
+                    "concept_tournament_winner",
+                    {
+                        "dimension": _ct_result.winner.dimension,
+                        "concept": _ct_result.winner.concept[:120],
+                        "default_family_advisory": True,
+                    },
                 )
             else:
                 logger.info("Concept tournament produced no winner after all attempts")

@@ -7779,11 +7779,31 @@ def _render_project_material_obligation_packet(
             chapter_position=chapter_position,
             prompt_pack_key=prompt_pack_key,
         )
+        # 本书自己的题材键：物料/语料只许按本书题材匹配注入
+        # （2026-08-14：写死的 urban_modern 调色板与 suspense-mystery 语料
+        # 曾被注进一本东方玄幻书的场景 prompt）。
+        _pm_meta = dict(getattr(project, "metadata_json", None) or {})
+        _pm_genre_keys = tuple(
+            str(value).strip()
+            for value in (
+                _pm_meta.get("category_key"),
+                getattr(project, "genre", None),
+                getattr(project, "sub_genre", None),
+                (_pm_meta.get("genre_intent_contract") or {}).get("genre_key")
+                if isinstance(_pm_meta.get("genre_intent_contract"), dict)
+                else None,
+                (_pm_meta.get("genre_intent_contract") or {}).get("sub_genre_key")
+                if isinstance(_pm_meta.get("genre_intent_contract"), dict)
+                else None,
+            )
+            if str(value or "").strip()
+        )
         obligation_block = render_material_injection_blocks(
             project_dir,
             chapter_number=chapter_number,
             chapter_position=chapter_position,
             prompt_pack_key=prompt_pack_key,
+            genre_keys=_pm_genre_keys,
             total_token_budget=3000,
         )
     except Exception:
@@ -9177,10 +9197,15 @@ async def _render_chapter_first_character_safety_block(
         "以下角色在当前章节只是可以受伤、失踪、被困、濒危或留下生死悬念，不能被正文确认死亡："
     ]
     lines.extend(f"- {name}：计划死亡/退场章为第{death_chapter}章之后；本章禁止写成已死。" for name, death_chapter in protected)
+    # 类别级表述 + 正例（2026-08-14）：原文逐字列出七个确认死亡的词，
+    # 属于框架自己立过三次实证的「点名即种词」反模式（prompt 只许类别与
+    # 正例，token 词表归检测器）。违规仍由 contradiction 的确定性词表捕捉，
+    # 这里只需说清楚「不许确认死亡」并给出可写的替代。
     lines.append(
-        "禁止使用“死了、死亡、尸体、遗体、断气、没命、临终”等确认死亡表述指向上述角色；"
-        "包括疑问句、传闻句和旁人推测式表达，例如“已经死了，对吧？”“是不是死了？”也禁止。"
-        "如果需要强钩子，改写为“被卷入险境后生死不明、声音断掉、只留下物件、下一章需确认”。"
+        "对上述角色，本章不得出现任何确认其已经死亡的表述——包括直述、"
+        "旁人转述、传闻与推测式疑问（“是不是已经不在了？”这类同样禁止）。"
+        "需要强钩子时改写为：被卷入险境后生死不明、通讯中断、只留下物件、"
+        "下一章再确认。"
     )
     return "\n".join(lines)
 

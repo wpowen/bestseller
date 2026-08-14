@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -42,6 +43,7 @@ def render_material_injection_blocks(
     chapter_number: int,
     chapter_position: str | None = None,
     prompt_pack_key: str | None = None,
+    genre_keys: Sequence[str] | None = None,
     total_token_budget: int = 4000,
 ) -> str:
     """Return a compact prompt block assembled from all available material loaders."""
@@ -51,6 +53,7 @@ def render_material_injection_blocks(
         chapter_number=chapter_number,
         chapter_position=chapter_position,
         prompt_pack_key=prompt_pack_key,
+        genre_keys=genre_keys,
         total_token_budget=total_token_budget,
     )
     if not blocks:
@@ -70,6 +73,7 @@ def collect_material_blocks(
     chapter_number: int,
     chapter_position: str | None = None,
     prompt_pack_key: str | None = None,
+    genre_keys: Sequence[str] | None = None,
     total_token_budget: int = 4000,
 ) -> tuple[MaterialBlock, ...]:
     """Collect prioritized material blocks and scale budgets to ``total_token_budget``."""
@@ -85,11 +89,11 @@ def collect_material_blocks(
         "active_rules": _active_rules(root, chapter_number),
         "historical_clues": _historical_clues(root),
         "kernels": _kernel_snippets(root),
-        "cultural_archetypes": _cultural_archetypes(prompt_pack_key),
+        "cultural_archetypes": _cultural_archetypes(prompt_pack_key, genre_keys),
         "tease_reveals": _reveals(root, chapter_number, mode="tease"),
         "signature_audit": _signature_audit(root, chapter_position),
         "anti_cliche": _anti_cliche_patterns(root, chapter_number),
-        "reference_corpora": _reference_corpora(prompt_pack_key),
+        "reference_corpora": _reference_corpora(prompt_pack_key, genre_keys),
     }
     scale = min(1.0, max(total_token_budget, 0) / sum(item[3] for item in DEFAULT_BUDGETS))
     blocks: list[MaterialBlock] = []
@@ -256,16 +260,55 @@ def _kernel_snippets(project_dir: Path) -> str:
     return "\n".join(snippets)
 
 
-def _cultural_archetypes(prompt_pack_key: str | None) -> str:
-    keys = ["urban_modern", "classical_chinese"]
+def _normalized_genre_keys(
+    prompt_pack_key: str | None, genre_keys: Sequence[str] | None
+) -> tuple[str, ...]:
+    raw = [prompt_pack_key or "", *(genre_keys or ())]
+    return tuple(
+        item
+        for item in (str(value or "").strip().lower() for value in raw)
+        if item
+    )
+
+
+def _cultural_archetypes(
+    prompt_pack_key: str | None, genre_keys: Sequence[str] | None = None
+) -> str:
+    """Only inject palettes this book's genre actually claims.
+
+    2026-08-14 真机定罪：本函数写死注入 ``urban_modern + classical_chinese``，
+    于是一本东方玄幻的场景写手 prompt 里出现「便利店饭团／外卖咖啡／工牌挂绳／
+    电梯门禁卡／蓝牙耳机」。每份 yaml 自己声明了 ``applicable_categories``
+    （urban_modern 写的是 都市轻喜/urban-contemporary），代码却完全无视它。
+    匹配不上就**什么都不注入**——注错题材的物料比不注入更坏。
+    """
+
     root = Path("config") / "cultural_archetypes"
+    if not root.exists():
+        return ""
+    book_keys = _normalized_genre_keys(prompt_pack_key, genre_keys)
+    if not book_keys:
+        return ""
     lines: list[str] = []
-    for key in keys:
-        path = root / f"{key}.yaml"
-        if path.exists():
-            text = path.read_text(encoding="utf-8", errors="ignore")[:500].strip()
-            lines.append(f"- {key}: {text}")
-    if prompt_pack_key:
+    for path in sorted(root.glob("*.yaml")):
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        try:
+            declared = yaml.safe_load(text) or {}
+        except Exception:
+            continue
+        applicable = [
+            str(item).strip().lower()
+            for item in (declared.get("applicable_categories") or [])
+            if str(item).strip()
+        ]
+        if not applicable:
+            continue
+        matched = any(
+            claim in key or key in claim for claim in applicable for key in book_keys
+        )
+        if matched:
+            lines.append(f"- {path.stem}: {text[:500].strip()}")
+    if lines and prompt_pack_key:
         lines.append(f"- prompt_pack: {prompt_pack_key}")
     return "\n".join(lines)
 
@@ -303,13 +346,24 @@ def _anti_cliche_patterns(project_dir: Path, chapter_number: int) -> str:
     return "\n".join(f"- {line.lstrip('- ')}" for line in picked)
 
 
-def _reference_corpora(prompt_pack_key: str | None) -> str:
-    keys = [prompt_pack_key, "suspense-mystery"]
+def _reference_corpora(
+    prompt_pack_key: str | None, genre_keys: Sequence[str] | None = None
+) -> str:
+    """Style anchors must come from this book's own genre, never a fixed one.
+
+    2026-08-14 真机定罪：兜底键写死 ``suspense-mystery``，而
+    ``xuanhuan-power-fantasy.yaml`` 并不存在，于是玄幻书的「风格参照」拿到的
+    是「suspense-mystery / exorcism genre」语料——跨题材串味的教科书案例。
+    改为：本书 pack → 本书题材/类别键 → 题材中立的 ``generic``；没有中立语料
+    就不注入，绝不回退到某个具体题材。
+    """
+
     root = Path("config") / "reference_corpora"
-    for key in keys:
-        if not key:
+    for key in (prompt_pack_key, *(genre_keys or ()), "generic"):
+        name = str(key or "").strip()
+        if not name:
             continue
-        path = root / f"{key}.yaml"
+        path = root / f"{name}.yaml"
         if path.exists():
             return path.read_text(encoding="utf-8", errors="ignore")[:700]
     return ""

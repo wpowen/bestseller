@@ -236,3 +236,36 @@ def test_name_followed_by_shi_is_creation_boundary_identity() -> None:
     assert extract_creation_protagonist_name(
         {"premise": "余烬是青衡宗渣道倒渣杂役，七年没有挪过位置。"}
     ) == "余烬"
+
+
+# ── 别号括注 / 推断名（2026-08-14 真机停产事故）────────────────────────────
+
+
+def test_alias_bracketed_name_is_the_same_protagonist() -> None:
+    """真机 custom-xuanhuan-1786703729：主角「哑丫头阿缨」本名沈絮，
+    身份清单写成「沈絮(阿缨)」，快照存「沈絮」，全等比较判身份不一致并停产。"""
+
+    from bestseller.services.book_design import _same_protagonist
+
+    assert _same_protagonist("沈絮(阿缨)", "沈絮")
+    assert _same_protagonist("沈絮（阿缨）", "沈絮")
+    assert _same_protagonist("沈絮", "沈絮（阿缨）")
+    # 真不同的人仍要判出来
+    assert not _same_protagonist("林渊", "沈絮")
+
+
+def test_llm_inferred_name_is_not_an_explicit_user_choice() -> None:
+    """planner 早就判定 llm_premise_identity_resolution 不权威
+    （existing_is_authoritative），一致性门却把它当成用户选择，
+    于是管线自己起的名字把命名分歧升级成停产阻断。"""
+
+    from bestseller.services.book_design import _has_explicit_protagonist_choice
+
+    inferred = {
+        "creation_protagonist_name": "沈絮",
+        "creation_protagonist_source": "llm_premise_identity_resolution",
+    }
+    assert not _has_explicit_protagonist_choice(inferred)
+
+    chosen = {"creation_protagonist_name": "沈絮", "creation_protagonist_source": "user"}
+    assert _has_explicit_protagonist_choice(chosen)

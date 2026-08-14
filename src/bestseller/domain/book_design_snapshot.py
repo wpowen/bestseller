@@ -32,6 +32,15 @@ def _normalise_text(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+_ALIAS_BRACKETS = re.compile(r"[（(\[【][^）)\]】]*[）)\]】]")
+
+
+def _strip_alias_brackets(value: str) -> str:
+    """剥掉别号/艺名括注：本名带括注仍是同一个人，不是身份不一致。"""
+
+    return _ALIAS_BRACKETS.sub("", str(value or "")).strip()
+
+
 def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -417,7 +426,11 @@ def validate_cross_asset_consistency(
         protagonist = data.get("protagonist") or data.get("protagonist_name")
         if protagonist is not None:
             name = protagonist.get("name") if isinstance(protagonist, Mapping) else protagonist
-            if _normalise_text(name) != snapshot.protagonist.name:
+            # 本名带别号括注是同一个人（沈絮 / 沈絮(阿缨)）——见
+            # services/book_design._same_protagonist 的真机案例。
+            _actual = _strip_alias_brackets(_normalise_text(name))
+            _expected = _strip_alias_brackets(snapshot.protagonist.name)
+            if _actual != _expected:
                 issues.append(
                     ConsistencyIssue(
                         code="protagonist_identity_mismatch",

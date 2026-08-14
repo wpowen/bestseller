@@ -221,9 +221,37 @@ _EXPLICIT_PROTAGONIST_KEYS = (
 )
 
 
+# 由 LLM 从 premise 里推断出来的名字不是「用户的选择」。planner 早就用同一个
+# 判据决定它不权威（见 existing_is_authoritative），一致性门却没读它——于是
+# 一个管线自己起的名字把命名分歧升级成停产阻断（2026-08-14 真机：
+# custom-xuanhuan-1786703729 因「沈絮」vs「沈絮(阿缨)」停在 needs_replan）。
+_INFERRED_PROTAGONIST_SOURCES = frozenset({"", "llm_premise_identity_resolution"})
+
+# 本名带别号/艺名/括注是同一个人，不是身份不一致：真机 custom-xuanhuan-1786703729
+# 的主角是「哑丫头阿缨」，身份清单写成「沈絮(阿缨)」，快照存的是「沈絮」，
+# 全等比较判它不符并停产。剥掉括注再比，另允许一方是另一方的括注展开。
+_ALIAS_BRACKETS = re.compile(r"[（(\[【][^）)\]】]*[）)\]】]")
+
+
+def _protagonist_core_name(value: str) -> str:
+    return _ALIAS_BRACKETS.sub("", str(value or "")).strip()
+
+
+def _same_protagonist(actual: str, expected: str) -> bool:
+    if actual == expected:
+        return True
+    core_actual = _protagonist_core_name(actual)
+    core_expected = _protagonist_core_name(expected)
+    if not core_actual or not core_expected:
+        return False
+    return core_actual == core_expected
+
+
 def _has_explicit_protagonist_choice(metadata: Mapping[str, Any]) -> bool:
     """True when the protagonist name was CHOSEN, not inferred from prose."""
 
+    if _text(metadata.get("creation_protagonist_source")) in _INFERRED_PROTAGONIST_SOURCES:
+        return False
     return any(_text(metadata.get(key)) for key in _EXPLICIT_PROTAGONIST_KEYS)
 
 
@@ -528,7 +556,7 @@ def validate_project_book_design(project: Any) -> BookDesignValidationReport:
         ),
         ("identity_manifest", _manifest_protagonist(metadata)),
     ):
-        if actual and actual != expected_name:
+        if actual and not _same_protagonist(actual, expected_name):
             issues.append(
                 BookDesignIssue(
                     "protagonist_identity_mismatch",

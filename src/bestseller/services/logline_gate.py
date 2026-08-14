@@ -531,6 +531,23 @@ def downgrade_for_condemned_structures(
     )
 
 
+def clear_structural_downgrade(verdict: LoglineGateVerdict) -> LoglineGateVerdict:
+    """救援用尽后，把「仅因句式降级」的裁决还原为放行（2026-08-14）。
+
+    ``downgrade_for_condemned_structures`` 把 EXPAND 降成 REGENERATE 是为了
+    **驱动重写**；但下游的阻断判据是「非 EXPAND 即阻断」，于是一条 3.81 分
+    （本可放行）的卖点在救援没洗干净时把整本书打死了。定罪句式值几轮重写，
+    不值一本书——卖点是营销工件，故事本身并没有不成立。
+    仅当 weakest_axis 是本模块打的结构标记时还原，LLM 自己判的不达标不受影响。
+    """
+
+    if verdict.weakest_axis != "condemned_structure":
+        return verdict
+    if verdict.action is LoglineAction.EXPAND:
+        return verdict
+    return replace(verdict, action=LoglineAction.EXPAND)
+
+
 async def evaluate_logline_gate(
     session: Any,
     settings: Any,

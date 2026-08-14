@@ -512,15 +512,60 @@ def test_conception_wires_downgrade_at_both_exits() -> None:
     )
 
 
-def test_final_logline_with_condemned_structure_blocks_shipping() -> None:
-    """2026-08-13：确定性定罪（0误报族）救援后仍在场→拦下，不静默发货。
-    LLM 判官维持 advisory（硬门误杀前科），只有确定性家族有否决权。"""
+def test_condemned_structure_earns_rewrites_but_never_kills_the_book() -> None:
+    """2026-08-14 定案（推翻 08-13 的否决权设计）。
+
+    真机：一条 3.81 分（LLM 判 EXPAND）的卖点因救援后仍带 per_action_rule 被
+    我的确定性否决打死，整本书没了——两天内第三次门禁自伤。定罪句式值几轮
+    重写，不值一本书：卖点是营销工件，故事本身并不因此不成立。
+    """
 
     import inspect
 
     from bestseller.services import conception
 
     src = inspect.getsource(conception)
-    # 接线断言：blocking 计算必须包含确定性定罪检查且能强制置 True
+    # 仍然驱动重写
     assert "_det_hits = _detect_condemned(_final_logline_text)" in src
-    assert "if _det_hits:" in src and "_lg_blocking = True" in src
+    # 但不得再直接置阻断，改为记 advisory
+    assert "condemned_advisory_only" in src
+    idx = src.index("_det_hits = _detect_condemned(_final_logline_text)")
+    window = src[idx : idx + 1200]
+    assert "_lg_blocking = True" not in window
+
+
+def test_structural_downgrade_is_cleared_after_rescue() -> None:
+    from bestseller.services.logline_gate import clear_structural_downgrade
+
+    downgraded = downgrade_for_condemned_structures(
+        _structure_verdict(LoglineAction.EXPAND), "黑雨落在谁身上，谁就说出秘密。"
+    )
+    assert downgraded.action is LoglineAction.REGENERATE  # 先驱动重写
+    restored = clear_structural_downgrade(downgraded)
+    assert restored.action is LoglineAction.EXPAND  # 救援后不得因此杀书
+
+
+def test_llm_judged_failure_is_never_restored() -> None:
+    """只还原本模块打的结构标记；LLM 自己判的不达标必须原样保留。"""
+
+    from bestseller.services.logline_gate import clear_structural_downgrade
+
+    real_fail = LoglineGateVerdict(
+        action=LoglineAction.REGENERATE, scores={}, overall=2.1,
+        weakest_axis="click_hook",
+    )
+    assert clear_structural_downgrade(real_fail).action is LoglineAction.REGENERATE
+
+
+def test_conception_clears_downgrade_before_computing_blocking() -> None:
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    clear_idx = src.index("clear_structural_downgrade(_lg)")
+    block_idx = src.index("_lg_blocking = bool(_lg_cfg.get(")
+    assert clear_idx < block_idx, "还原必须发生在阻断判据之前"
+    # 句式命中不得再直接置阻断
+    window = src[clear_idx:block_idx]
+    assert "_lg_blocking = True" not in window

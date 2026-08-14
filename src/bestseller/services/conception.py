@@ -7590,6 +7590,14 @@ async def run_conception_pipeline(
             # It has been advisory since 2026-07-25, so downstream error
             # reporting must not read a non-expand verdict as the cause of a
             # block that some other bar raised.
+            # 救援已尽力：把「仅因句式降级」的裁决还原成放行。下游判据是
+            # 「非 EXPAND 即阻断」，不还原的话一条 3.81 分（本可通过）的卖点
+            # 会把整本书打死（2026-08-14 真机，两天内第三次门禁自伤）。
+            from bestseller.services.logline_gate import (  # noqa: PLC0415
+                clear_structural_downgrade,
+            )
+
+            _lg = clear_structural_downgrade(_lg)
             _lg_blocking = bool(_lg_cfg.get("block_expansion", True)) and (
                 _lg.action is not LoglineAction.EXPAND
             )
@@ -7607,10 +7615,20 @@ async def run_conception_pipeline(
             ).strip()
             _det_hits = _detect_condemned(_final_logline_text)
             if _det_hits:
-                _lg_blocking = True
+                # 2026-08-14 真机：这条否决权把一本 3.81 分（本可 EXPAND）的书
+                # 打死了——救援轮没洗掉句式，于是整本书没了。定罪句式值几轮
+                # 重写，但**不值一本书**：卖点是营销工件，故事本身没问题。
+                # 与默认族同待遇：赚重生，不赚生杀权（本仓库为「门禁误杀」
+                # 付过太多次学费，这是两天内第三次自伤）。
                 story_appeal_report.setdefault("logline_gate", _lg.to_dict())
                 story_appeal_report["logline_gate"]["condemned_structures"] = list(
                     _det_hits
+                )
+                story_appeal_report["logline_gate"]["condemned_advisory_only"] = True
+                logger.warning(
+                    "logline still carries condemned structures after rescue "
+                    "(%s); shipping with advisory instead of blocking the book",
+                    "、".join(_det_hits),
                 )
             story_appeal_report["logline_gate"]["blocking"] = _lg_blocking
             if _lg_blocking:

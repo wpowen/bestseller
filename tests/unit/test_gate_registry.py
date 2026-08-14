@@ -297,3 +297,23 @@ def test_pause_reason_classification() -> None:
     assert pause_reason_is_structural("self_heal_no_progress_giveup") is True
     assert pause_reason_is_structural(None) is True
     assert pause_reason_is_structural("") is True
+
+
+def test_production_block_code_is_read_like_write_safety_code() -> None:
+    """2026-08-14 真机全书停摆：管线把阻断码写在 production_block_code，
+    分类器只读 write_safety_block_code——同一事实两个名字。于是一条明明列在
+    LOCAL_WRITE_SAFETY_BLOCK_CODES 的 CHAPTER_LENGTH_BLOCK_HIGH 落到
+    「无法识别→保守判结构性」，第 3 章短了 800 字就关掉了后续 41 章的写作。
+    """
+
+    from bestseller.services.gate_registry import chapter_block_is_structural
+
+    # 局部码（长度）→ 允许后续章节并行推进
+    assert not chapter_block_is_structural(
+        {"production_block_code": "CHAPTER_LENGTH_BLOCK_HIGH"}
+    )
+    assert not chapter_block_is_structural({"production_block_code": "LENGTH_UNDER"})
+    # 真结构性码仍必须拦
+    assert chapter_block_is_structural({"production_block_code": "CANON_CONTRADICTION"})
+    # 无码仍保守
+    assert chapter_block_is_structural({})

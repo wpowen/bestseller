@@ -476,6 +476,19 @@ def chapter_block_is_structural(metadata: Mapping[str, object] | None) -> bool:
             return True
         recognized_local = True
 
+    # 3b. 生产阻断码同样是可识别的证据（2026-08-14 真机停摆）：管线把码写在
+    # ``production_block_code``，而本函数只读 ``write_safety_block_code``——
+    # 同一个事实两个名字，于是一条明明列在 LOCAL_WRITE_SAFETY_BLOCK_CODES 里
+    # 的 CHAPTER_LENGTH_BLOCK_HIGH 落到了第 5 步「无法识别→保守判结构性」，
+    # 一章短了 800 字就关掉了整本书后续 41 章的写作。
+    # 长度/对白/重复这类只影响本章文字的缺陷，绝不该 gate 掉下游。
+    if data.get("production_block_code") or data.get("production_block_codes"):
+        if write_safety_block_is_structural(
+            data.get("production_block_code") or data.get("production_block_codes")
+        ):
+            return True
+        recognized_local = True
+
     # 4. Any local gate hit → confined to this chapter's prose.
     if recognized_local or any(
         bool(data.get(key)) for key in _LOCAL_BLOCK_METADATA_KEYS

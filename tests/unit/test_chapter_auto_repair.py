@@ -1397,3 +1397,37 @@ async def test_mixed_blocking_codes_picks_only_repairable_subset() -> None:
     hint = scenes[0].metadata_json["auto_repair_hint"]
     assert "受控补写" in hint
     assert scenes[0].metadata_json["auto_repair_block_codes"] == ["BLOCK_LOW"]
+
+
+def test_stale_length_code_from_a_discarded_draft_is_replaced() -> None:
+    """2026-08-14 真机 ch3 卡死：草稿序列 5116(超长) → 2095(偏短·被保留)
+    → 4972(超长·被丢弃)；最后一份报告来自被丢弃那份，于是章的阻断码是
+    「太长」，修复轮拿着「太长」去砍一份本来就偏短的稿子——越砍越短，
+    再补又超长，永远震荡直到卡死。
+
+    已有的 _drop_conflicting_length_repair_codes 只在长短两码同时出现时才
+    生效，单个方向的过期码漏网。当前草稿的长度是可确定性计算的事实，
+    与之矛盾的过期码必须被它自己的判决替换。
+    """
+
+    from bestseller.services.drafts import (
+        _drop_conflicting_length_repair_codes,
+        _length_direction_from_payload,
+    )
+
+    short_draft = {"word_count": 1762, "target_words": 2600}
+    assert _length_direction_from_payload(short_draft) == "BLOCK_LOW"
+
+    # 冲突时旧逻辑仍按当前草稿方向裁决（回归保护）
+    assert _drop_conflicting_length_repair_codes(
+        ("LENGTH_OVER", "LENGTH_UNDER"), length_payload=short_draft
+    ) == ("LENGTH_UNDER",)
+
+    # 单方向过期码的替换发生在 maybe_prepare_chapter_auto_repair 内
+    import inspect
+
+    from bestseller.services import drafts
+
+    src = inspect.getsource(drafts.maybe_prepare_chapter_auto_repair)
+    assert "_reconcile_length" in src
+    assert "stale length code replaced by the CURRENT draft" in src

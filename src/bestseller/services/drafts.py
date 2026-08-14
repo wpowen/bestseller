@@ -13220,6 +13220,43 @@ async def maybe_prepare_chapter_auto_repair(
     if not isinstance(length_payload, Mapping):
         length_payload = {}
 
+    # 长度码必须描述**当前保留的草稿**，不是最后生成的那份（2026-08-14 真机
+    # ch3）：草稿序列 5116(超长) → 2095(偏短,被保留) → 4972(超长,被丢弃)，
+    # 而最后一份报告来自被丢弃的 4972，于是章的阻断码是「太长」、修复轮拿着
+    # 「太长」去砍一份本来就偏短的稿子——越砍越短，再补又超长，永远震荡，
+    # 最后卡死在 blocked。当前草稿的长度是可确定性计算的事实，让它说了算。
+    _current_direction = _length_direction_from_payload(length_payload)
+    if _current_direction in {"BLOCK_LOW", "BLOCK_HIGH"}:
+        _opposite = "BLOCK_HIGH" if _current_direction == "BLOCK_LOW" else "BLOCK_LOW"
+        _replacement = (
+            "LENGTH_UNDER" if _current_direction == "BLOCK_LOW" else "LENGTH_OVER"
+        )
+
+        def _reconcile_length(codes: tuple[str, ...]) -> tuple[str, ...]:
+            kept = tuple(
+                c for c in codes if _canonical_repair_code(str(c)) != _opposite
+            )
+            has_length = any(
+                _canonical_repair_code(str(c)) in {"BLOCK_LOW", "BLOCK_HIGH"}
+                for c in kept
+            )
+            had_length = len(kept) != len(codes)
+            if had_length and not has_length:
+                return (*kept, _replacement)
+            return kept
+
+        _before = (latest_block_codes, metadata_codes)
+        latest_block_codes = _reconcile_length(latest_block_codes)
+        metadata_codes = _reconcile_length(metadata_codes)
+        if _before != (latest_block_codes, metadata_codes):
+            logger.info(
+                "chapter %s: stale length code replaced by the CURRENT draft's "
+                "own verdict (%s chars → %s)",
+                getattr(chapter, "chapter_number", "?"),
+                length_payload.get("word_count"),
+                _replacement,
+            )
+
     if metadata_codes:
         if latest_block_codes:
             # Blocker-drift guard: retention/audit codes are re-derived on

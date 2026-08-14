@@ -142,11 +142,24 @@ def default_debt_family_hits(text: Any) -> tuple[str, ...]:
     )
 
 
-def is_debt_dominated(text: Any) -> bool:
-    """冠军级支配判定：≥2 个子族在场，或全族合计出现 ≥3 次。
+# 密度阈值由人类语料标定（2026-08-14）：90 本榜单简介（与 premise 同体裁）
+# 的债/丧族密度 中位=0.00 / p90=2.02 / p95=6.49 / p99=21.2。阈值取 8.0（p95 之上），
+# 拍脑袋的 2.0 会误伤 9/90 本真在榜书。
+# 另：这 90 本里 **0 本** 出现 ≥2 个子族——distinct≥2 是零误报的强判据。
+_DEBT_DENSITY_PER_1K = 8.0
+_DEBT_DENSITY_MIN_CHARS = 200
 
-    单次顺带提及（如女频冠军里一处「账目」）不构成支配——退役档案的
-    第二死因（把普通故事素材当污染）由该阈值防复发。"""
+
+def is_debt_dominated(text: Any) -> bool:
+    """冠军级支配判定。
+
+    ≥2 个子族同时在场 = 支配（《我替娘讨旧账》：旧账+灵堂开棺）。
+    只有单一子族时改看**密度**而不是绝对次数：finalize 的扫描 blob 是
+    premise+synopsis+金手指+钩子拼起来的长文本，「合计≥3 次」在这种长度上
+    近乎恒真——2026-08-14 真机误杀即此：一本弃婴测灵根的书只因通篇偶尔
+    出现「旧账」被判污染并**打死**。绝对计数对变长文本量级失明，速率规则
+    必须配最小长度（本仓库已为此付过一次学费）。
+    """
 
     blob = text if isinstance(text, str) else _blob(text)
     if not blob:
@@ -155,7 +168,10 @@ def is_debt_dominated(text: Any) -> bool:
     if distinct >= 2:
         return True
     total = sum(len(p.findall(blob)) for p in _DEFAULT_DEBT_FAMILY_RES)
-    return total >= 3
+    if total < 3:
+        return False
+    length = max(len(blob), _DEBT_DENSITY_MIN_CHARS)
+    return (total / (length / 1000.0)) >= _DEBT_DENSITY_PER_1K
 
 
 def contains_core_debt_framing(payload: Any) -> bool:

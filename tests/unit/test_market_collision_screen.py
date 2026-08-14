@@ -277,3 +277,46 @@ def test_debt_feedback_renders_without_family_vocabulary() -> None:
     # 种词铁律：反馈不得携带族内词汇
     for token in ("债", "账", "灵堂", "棺", "丧", "寿"):
         assert token not in fb, token
+
+
+# ── 2026-08-14 真机误杀：门不该杀书，阈值不该对长文本失明 ──────────────────
+
+
+def test_incidental_family_word_in_a_long_blob_is_not_dominated() -> None:
+    """被误杀的真实冠军：弃婴测灵根，通篇只偶尔出现一次「旧账」。
+
+    旧规则「全族合计≥3 次」对 finalize 那种 premise+synopsis+金手指拼起来的
+    长 blob 近乎恒真——绝对计数对变长文本量级失明。
+    """
+
+    long_blob = "猎户村弃婴测灵根散脉指骨认主，梦里女人替他挡刀。" * 80 + "旧账，旧账，旧账。"
+    assert not is_debt_dominated(long_blob)
+
+
+def test_density_threshold_is_calibrated_above_human_board_corpus() -> None:
+    """阈值由 90 本榜单简介标定：中位0.00/p90 2.02/p95 6.49。
+    拍脑袋的 2.0 会误伤 9/90 本真在榜书，故取 8.0。"""
+
+    from bestseller.services import anti_default_motif as M
+
+    assert M._DEBT_DENSITY_PER_1K >= 6.5
+    assert M._DEBT_DENSITY_MIN_CHARS >= 100
+
+
+def test_default_family_never_kills_the_book() -> None:
+    """8·2 母题警察的死因就是硬杀书；靶向复活只许挣一次重生。
+
+    ``detected`` 会变成 ``_detected_concept_guard`` 并 raise
+    ConceptContractError（整本书死在构思阶段）——debt_hit 不得进入该列表。
+    """
+
+    import inspect
+    import re as _re
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    block = src[src.index("detected: list[str] = []"):]
+    block = block[: block.index("_detected_concept_guard = tuple")]
+    # debt_hit 可以出现在注释里解释原因，但不得有 `if debt_hit:` 的追加分支
+    assert not _re.search(r"if debt_hit:\s*\n\s*detected\.append", block)

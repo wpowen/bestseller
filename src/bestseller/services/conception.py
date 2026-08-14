@@ -6226,8 +6226,11 @@ async def run_conception_pipeline(
             detected: list[str] = []
             if echo_report:
                 detected.append("跨书机制回声污染")
-            if debt_hit:
-                detected.append("非用户指定的机制母题污染")
+            # debt_hit 只挣一次重生，**不进 detected**（2026-08-14 真机误杀）：
+            # detected 会变成 _detected_concept_guard 并 raise，把整本书打死。
+            # 一本弃婴测灵根的玄幻书只因通篇偶尔出现「旧账」就在构思阶段被
+            # 处决——这正是 8·2 母题警察退役的死因（命令写代价，再因代价杀书）。
+            # 与 motif_amplification 同待遇：值一次重写，不构成拒绝建书的理由。
             if death_hit:
                 detected.append("非用户指定的沉重开局母题污染")
             if ontology_hit:
@@ -6339,6 +6342,22 @@ async def run_conception_pipeline(
                 _unresolved_concept_guard = ()
             else:
                 _unresolved_concept_guard = _detected_concept_guard
+            # 默认族的最终去向也必须留痕（同下方 motif 的理由）：它不再阻断
+            # 建书，但用户有权知道成稿是否仍落在被过度复用的族里。
+            _shipped_debt = retry_debt if adopted else debt_hit
+            if debt_hit or retry_debt:
+                ctx["default_family_report"] = {
+                    "detected": bool(debt_hit),
+                    "after_retry": bool(retry_debt),
+                    "adopted_retry": bool(adopted),
+                    "resolved": not _shipped_debt,
+                    "blocking": False,
+                }
+                if _shipped_debt:
+                    logger.warning(
+                        "conception shipped inside an over-reused default family "
+                        "(advisory, not blocking)"
+                    )
             # Whichever version ships, record the motif verdict. An advisory
             # finding that leaves no trace is the same as no finding at all
             # (2026-07-25: a book "disappeared" only because its failure reason

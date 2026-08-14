@@ -10364,6 +10364,10 @@ def test_length_block_repair_switches_to_deficit_contract() -> None:
     assert "字数缺口优先" in instructions
     assert "2600" in instructions
     assert "再加约 200 字缓冲" in instructions
+    # 2026-08-14 真机 ch7：补字数的轮次把 1594 字重写成 1020 字，9 轮全挂
+    # 同一个码。短章修复必须是保底追加，不是整章重写。
+    assert "一字不改地全部保留" in instructions
+    assert "只许加，不许删改已有段落" in instructions
     # 稳定器指令不得出现在字数修复合同里（它就是白烧一轮的元凶）
     assert "保持当前篇幅基本稳定" not in instructions
     assert "删掉等量" not in instructions

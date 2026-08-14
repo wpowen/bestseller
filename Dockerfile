@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # ── Stage 1: Build ─────────────────────────────────────────────────────────
 FROM python:3.11-slim AS builder
 
@@ -11,7 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast dependency resolution
-RUN pip install --no-cache-dir uv==0.4.30
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install uv==0.4.30
 
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
@@ -25,11 +27,13 @@ ARG https_proxy=
 ENV HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy=
 
 # Install CPU-only PyTorch first (avoids pulling ~5GB of NVIDIA CUDA packages)
-RUN uv pip install --system --no-cache \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system \
     torch --index-url https://download.pytorch.org/whl/cpu
 
 # Install all extras (torch is already satisfied from CPU index above)
-RUN uv pip install --system --no-cache ".[all,api]"
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system ".[all,api]"
 
 # ── Stage 2: Runtime ────────────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime

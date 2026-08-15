@@ -19510,23 +19510,50 @@ def _unwrap_planner_envelope(payload: Any, logical_name: str) -> Any:
     persisted (deai-verify-20260808). The model's content was never the problem;
     one level of nesting was. Unwrap it instead of burning the retry budget.
 
-    Deliberately narrow: only a single-key object whose key names this very
-    artifact (or is a generic envelope word) is unwrapped, so a real payload
-    that happens to have one field is never mistaken for a wrapper.
+    Two envelope shapes are accepted, and they need different guards:
+
+    * A key that *names this very artifact* (``{"cast_spec": {...}}``) is an
+      envelope no matter what sits beside it. Production 2026-08-15
+      (custom-light-novel-1786808728) returned
+      ``{"book_title": "破澡堂真话局", "cast_spec": {…full cast, 主角李吹…}}`` —
+      the 08-09 fix required a *single*-key object, so one extra sibling key
+      sent a perfectly good cast back through the empty-shell path and burned
+      the whole retry budget. Sibling keys are how a model volunteers extras,
+      not a signal that the wrapper isn't a wrapper; the name match is what
+      makes it unambiguous (no CastSpec field is itself called ``cast_spec``).
+    * A *generic* envelope word (``data``/``result``/…) stays strictly
+      single-key: those names carry no artifact-specific meaning, so a real
+      payload could legitimately own one.
     """
 
-    if not isinstance(payload, dict) or len(payload) != 1:
+    if not isinstance(payload, dict) or not payload:
+        return payload
+
+    group = _planner_payload_signal_group(logical_name)
+    named = {_normalize_envelope_key(logical_name)}
+    if group:
+        named.add(_normalize_envelope_key(group))
+
+    for key, inner in payload.items():
+        if _normalize_envelope_key(str(key)) not in named:
+            continue
+        if not isinstance(inner, (dict, list)) or not inner:
+            continue
+        logger.warning(
+            "Planner artifact %s arrived wrapped in a '%s' envelope "
+            "(siblings: %s); unwrapping.",
+            logical_name,
+            key,
+            sorted(k for k in payload if k != key) or "none",
+        )
+        return inner
+
+    if len(payload) != 1:
         return payload
     (key, inner), = payload.items()
     if not isinstance(inner, (dict, list)) or not inner:
         return payload
-
-    normalized = _normalize_envelope_key(str(key))
-    group = _planner_payload_signal_group(logical_name)
-    accepted = {_normalize_envelope_key(logical_name)}
-    if group:
-        accepted.add(_normalize_envelope_key(group))
-    if normalized not in accepted and normalized not in _PLANNER_GENERIC_ENVELOPE_KEYS:
+    if _normalize_envelope_key(str(key)) not in _PLANNER_GENERIC_ENVELOPE_KEYS:
         return payload
 
     logger.warning(

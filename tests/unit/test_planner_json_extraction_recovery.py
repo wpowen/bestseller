@@ -42,6 +42,41 @@ def test_envelope_unwrap_covers_repair_rounds_and_generic_keys() -> None:
     ) == {"protagonist": {"name": "林晚秋"}}
 
 
+def test_named_envelope_unwraps_despite_sibling_keys() -> None:
+    """信封带兄弟键仍是信封（真机 2026-08-15 custom-light-novel-1786808728）。
+
+    模型返回 ``{"book_title": "破澡堂真话局", "cast_spec": {…主角李吹…}}``。
+    08-09 的修复要求「单键对象」，多一个 book_title 就不认，于是一份完整的
+    cast 被当成空壳、烧光重试预算、整本书死在 planning。兄弟键是模型主动多给
+    的东西，不是「这不是信封」的信号——键名正是本产物名才是判据（CastSpec
+    自身没有任何字段叫 cast_spec，不存在歧义）。
+    """
+
+    payload = _unwrap_planner_envelope(
+        {
+            "book_title": "破澡堂真话局",
+            "cast_spec": {"protagonist": {"name": "李吹"}, "supporting_cast": [1, 2]},
+        },
+        "cast_spec",
+    )
+    assert payload == {"protagonist": {"name": "李吹"}, "supporting_cast": [1, 2]}
+
+
+def test_generic_envelope_key_stays_single_key_only() -> None:
+    """泛用信封词不放宽：data/result 这类名字没有产物指向性，
+    多键时可能本来就是真实载荷的一个字段，拆了会丢内容。"""
+
+    multi = {"data": {"protagonist": {"name": "李吹"}}, "note": "扩展说明"}
+    assert _unwrap_planner_envelope(multi, "cast_spec") == multi
+
+
+def test_named_envelope_with_empty_inner_is_not_unwrapped() -> None:
+    """键名对但内容为空 → 不拆，让空壳守卫照常判失败生成。"""
+
+    empty = {"book_title": "x", "cast_spec": {}}
+    assert _unwrap_planner_envelope(empty, "cast_spec") == empty
+
+
 def test_real_payload_is_not_mistaken_for_an_envelope() -> None:
     """单字段的真实载荷不是信封 —— 收窄到「键名就是这份产物」才拆。"""
 

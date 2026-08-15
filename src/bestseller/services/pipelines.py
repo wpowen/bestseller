@@ -10105,6 +10105,45 @@ async def run_chapter_pipeline(
                     current_draft=chapter_draft,
                     project=project,
                 )
+            # 进终态前按**当前保留的草稿**重判一次长度（2026-08-14 真机 ch3）：
+            # 提升「最佳草稿」之后，章带的往往是上一份被丢弃草稿的码。ch3 就
+            # 这样带着「太长」进了 requires_machine_repair——而它实际只有 1762
+            # 字（偏短）。终态是进得去出不来的：此后再也不走自动修复，我那条
+            # 「按当前草稿重判长度」的修复根本够不到它，只能靠人手捞。
+            # 码与稿子矛盾时，先纠正码，别把错误判决锁进终态。
+            try:
+                from bestseller.services.drafts import (
+                    _length_direction_from_payload as _len_dir,
+                )
+
+                _cur_wc = int(getattr(chapter, "current_word_count", 0) or 0)
+                _tgt_wc = int(getattr(chapter, "target_word_count", 0) or 0)
+                _dir = _len_dir({"word_count": _cur_wc, "target_words": _tgt_wc})
+                _stale_meta = dict(chapter.metadata_json or {})
+                _stale_code = str(_stale_meta.get("production_block_code") or "")
+                _wrong_high = _dir == "BLOCK_LOW" and "HIGH" in _stale_code.upper()
+                _wrong_low = _dir == "BLOCK_HIGH" and "LOW" in _stale_code.upper()
+                if _wrong_high or _wrong_low:
+                    _fixed = (
+                        "CHAPTER_LENGTH_BLOCK_LOW"
+                        if _dir == "BLOCK_LOW"
+                        else "CHAPTER_LENGTH_BLOCK_HIGH"
+                    )
+                    logger.warning(
+                        "Chapter %d: stale block code %s contradicts the promoted "
+                        "draft (%d chars); correcting to %s before machine repair",
+                        chapter_number, _stale_code, _cur_wc, _fixed,
+                    )
+                    chapter.metadata_json = {
+                        **_stale_meta,
+                        "production_block_code": _fixed,
+                        "production_block_code_corrected_from": _stale_code,
+                    }
+            except Exception:
+                logger.debug(
+                    "chapter %d: stale length-code correction skipped",
+                    chapter_number, exc_info=True,
+                )
             chapter.status = ChapterStatus.REVISION.value
             chapter.production_state = "blocked"
             scene_requires_human_review = True

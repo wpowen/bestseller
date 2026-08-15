@@ -10464,3 +10464,25 @@ def test_under_length_branch_still_wins_for_short_chapters() -> None:
     )
     assert "字数缺口优先" in instructions
     assert "超长压缩优先" not in instructions
+
+
+def test_stale_length_code_is_corrected_before_machine_repair() -> None:
+    """终态是进得去出不来的（2026-08-14 真机 ch3）。
+
+    提升「最佳草稿」后，章往往还带着上一份被丢弃草稿的码：ch3 带着
+    CHAPTER_LENGTH_BLOCK_HIGH 进了 requires_machine_repair，而它实际只有
+    1762 字（偏短）。此后它再也不走自动修复，「按当前草稿重判长度」的修复
+    够不到它，只能人手捞出来——它卡了整整一天，且从不是真的质量问题。
+    """
+
+    import inspect
+
+    src = inspect.getsource(pipeline_services)
+    idx = src.index("routing best available draft to machine repair")
+    window = src[idx : idx + 6000]
+    assert "stale block code" in window
+    assert "production_block_code_corrected_from" in window
+    # 纠正必须发生在写入终态标记之前
+    assert window.index("production_block_code_corrected_from") < window.index(
+        '"auto_repair_exhausted": True'
+    )

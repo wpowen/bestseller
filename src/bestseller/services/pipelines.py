@@ -9585,6 +9585,18 @@ async def run_chapter_pipeline(
                         "recording quality debt instead of blocking",
                         chapter_number,
                     )
+                    # 这条出口是 2026-08-14 修 plateau 误杀时新开的，当时漏了
+                    # 选稿：和另外三条 quality_debt 出口一样，必须先把分最高的
+                    # 草稿扶正再盖债务戳，否则发布的是「最后跑完的那一版」而不是
+                    # 「最好的那一版」（真机 ch1 曾 1860→1599→1570 逐版退化）。
+                    # 债务戳一旦盖在即将被替换的稿子上，账就记错了对象。
+                    if use_chapter_first and chapter_draft is not None:
+                        chapter_draft = await _promote_best_scoring_chapter_draft_on_stall(
+                            session,
+                            chapter=chapter,
+                            current_draft=chapter_draft,
+                            project=project,
+                        )
                     chapter.production_state = "quality_debt"
                     await session.flush()
                     break

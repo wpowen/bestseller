@@ -91,17 +91,45 @@ _EXTRA_SELF_CHECK = (
 )
 
 
+# Categories whose finding line must NOT quote the offending text back to the
+# writer. The default line shape is 「<matched_text>」：<why>, which is right for
+# a lexical tell the model must find and swap — but for a *syntactic template*
+# the quote hands the model the very skeleton to copy (种词铁律). Live A/B on
+# ch25, same code, per-sentence quotes vs none: {8.63, 4.42} vs {0.29, 2.20,
+# 2.35}/千字. These categories get category + fix instruction only.
+_QUOTE_FREE_CATEGORIES = frozenset(
+    {"debt_metaphor_leak", "moment_slice", "moment_slice_train"}
+)
+
+
+def _finding_line(span) -> str:
+    if span.category == "debt_metaphor_leak":
+        return (
+            f"- [{span.category}] 删除无事实来源的修辞体系，"
+            "只保留章纲已授权的具体动作和状态变化。"
+        )
+    if span.category in _QUOTE_FREE_CATEGORIES:
+        # why[:60] used to truncate mid-description and drop the 改法 entirely —
+        # the writer was told a disease exists, shown an example of it, and never
+        # told what to do. Keep the whole why for these (it is written fix-first).
+        return f"- [{span.category}] {span.why}"
+    return f"- [{span.category}] 「{span.matched_text[:34]}」：{span.why[:60]}"
+
+
 def _findings_text(content: str, language: str) -> tuple[str, float, int]:
     report = detect(content, language=language)
-    lines = "\n".join(
-        (
-            f"- [{s.category}] 删除无事实来源的修辞体系，只保留章纲已授权的具体动作和状态变化。"
-            if s.category == "debt_metaphor_leak"
-            else f"- [{s.category}] 「{s.matched_text[:34]}」：{s.why[:60]}"
-        )
-        for s in report.spans
-    )
+    lines = "\n".join(_finding_line(s) for s in report.spans)
     return lines, report.overall_score, len(report.spans)
+
+
+# ⚠️ 2026-08-15 已实证证伪：不要把病句原文列进 findings 喂给写手。
+# 试过「逐句引文点名」（判官侧验证有效的那把杠杆），写手侧适得其反：
+#   不引文 {0.29, 2.20, 2.35}/千字  vs  引文 {8.63, 4.42}/千字（同代码各采样）
+# 原因是种词铁律——引用旧措辞会让模型复印那套句法骨架（同族证据：seed 锚定
+# 实验中沿用旧措辞令句法被复印 24/24，改「只取方向禁沿用句式」后 0/12）。
+# 判官读证据 ≠ 写手读证据：给生成端看病文就是给它模板。
+# prompt 层只许写类别 + 正例改法（见 _EXTRA_SELF_CHECK 第 14 条），
+# 具体 token 只留在检测器层。
 
 
 _MOMENT_SLICE_RE = re.compile(r"[一-鿿]{1,6}的那一瞬(?:间)?|[一两三半][寸分步息拍瞬]里")

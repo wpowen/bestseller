@@ -95,7 +95,7 @@ async def run_live(chapters: list[int], *, rounds: int) -> list[dict]:
 
     settings = load_settings()
     engine = create_engine(settings)
-    session_factory = create_session_factory(engine)
+    session_factory = create_session_factory(settings, engine)
     results: list[dict] = []
     try:
         for num in chapters:

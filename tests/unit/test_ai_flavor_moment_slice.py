@@ -16,11 +16,14 @@ ch38 一轮 4→41 处；ch25 发布稿 61 处 13.2/千字）。
 
 from __future__ import annotations
 
+import re
+
 from bestseller.services.ai_flavor.detector import detect
 from bestseller.services.ai_flavor_gate import DESLOP_DISCOURSE_CATEGORIES
 from bestseller.services.deslop_revise import (
     _EXTRA_SELF_CHECK,
     _badness_components_for_test,
+    _findings_text,
     _moment_slice_rate,
 )
 
@@ -114,6 +117,25 @@ def test_badness_rewards_removing_slices() -> None:
     diseased = PAD + "".join(_sliced_sentence(i) for i in range(25)) + PAD
     cleaned = PAD + "她退开半步，看见灰落到桌角，随即被老妪拢进袖中。" + PAD
     assert _badness_components_for_test(diseased) > _badness_components_for_test(cleaned) + 5.0
+
+
+def test_writer_instruction_carries_no_disease_tokens() -> None:
+    """种词铁律（2026-08-15 真机 A/B 实证）：给写手的 finding 不许含病句 token。
+
+    默认 finding 形状是「<matched_text>」：<why>，对词汇型 tell 是对的，但对
+    *句法模板* 等于把骨架交给模型复印。同代码 A/B（ch25，每千字）：
+        引文 {8.63, 4.42}  vs  不引文 {0.29, 2.20, 2.35}
+    另外 why[:60] 曾把改法整段截断——写手被告知有病、被展示了病、却没被告知
+    怎么改。这条测试同时锁住「无 token」和「改法完整」两件事。
+    """
+
+    heavy = PAD + "".join(_sliced_sentence(i) for i in range(25)) + PAD
+    findings, _score, _n = _findings_text(heavy, "zh-CN")
+    line = next(ln for ln in findings.split("\n") if "moment_slice" in ln)
+    assert not re.search(r"的那一瞬|[一两三半][寸分步息拍瞬]里", line), (
+        f"finding 行含病句 token（种词）：{line}"
+    )
+    assert "改法" in line, f"finding 行缺改法指令（被截断？）：{line}"
 
 
 def test_no_op_guard_detector_actually_ran() -> None:

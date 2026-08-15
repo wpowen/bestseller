@@ -82,7 +82,12 @@ _EXTRA_SELF_CHECK = (
     "→ 幅度只有两种合法写法：瞬时态（往前一推、一把夺过、猛地一拧）或后果（纸角戳到对方胸口）；"
     "停顿用'半晌/片刻'或直接切下一个动作。注意'退一步/敲两下/几下'是人类正常写法别误改；"
     "同理提防加字变体（'指节收得发白'='指节发白'换皮）——判断标准是套路本身，不是字面。\n"
-    "改写后请自己再过一遍上面 13 条，确认一句不剩。"
+    "14) 时刻切片套娃（真实出版语料 1335 章 99.6% 零命中，是最重的注水句法）：把一个动作切成"
+    "多个瞬间接力推进——上一句的动词被下一句拎出来接「的那一瞬」，或用「半分里/一寸里」这类"
+    "量词切片续步（'退的那一瞬她的眼睛移过去。移的那一瞬灰接住了。接住的那一瞬…'）。"
+    "→ 一个动作一句写完：合并整条切片链为一两句正常叙述，「瞬间」只留真正的转折那一处；"
+    "并链砍掉的字数必须用新事件、对话或后果补，不许用更细的切片或更慢的镜头补回来。\n"
+    "改写后请自己再过一遍上面 14 条，确认一句不剩。"
 )
 
 
@@ -97,6 +102,28 @@ def _findings_text(content: str, language: str) -> tuple[str, float, int]:
         for s in report.spans
     )
     return lines, report.overall_score, len(report.spans)
+
+
+_MOMENT_SLICE_RE = re.compile(r"[一-鿿]{1,6}的那一瞬(?:间)?|[一两三半][寸分步息拍瞬]里")
+_DIALOGUE_RE = re.compile(r"[“「][^”」]*[”」]")
+
+
+def _moment_slice_rate(content: str) -> float:
+    """时刻切片密度（每千字，叙述部分）。
+
+    Deterministic twin of the detector's ``moment_slice`` rule, computed here
+    for the same reason as :func:`_staccato_ratio`: the detector folds all hits
+    into ONE span, so span-count bookkeeping cannot tell a rewrite that removed
+    43 slices from one that kept them all. Human corpus baseline is zero
+    (1335 published chapters: 99.6% zero hits; 量词+里 0 hits in 5.44M chars),
+    so any residual rate is real badness — no allowance band needed.
+    """
+
+    body = _DIALOGUE_RE.sub("", content)
+    chars = len(re.sub(r"\s", "", body))
+    if chars < 400:
+        return 0.0
+    return len(_MOMENT_SLICE_RE.findall(body)) / chars * 1000.0
 
 
 def _staccato_ratio(content: str) -> float:
@@ -121,6 +148,31 @@ def _staccato_ratio(content: str) -> float:
         if len(re.sub(r"\s", "", p)) <= 25 and len(re.findall(r"[。！？…]", p)) <= 1
     )
     return solo / len(paras)
+
+
+def _content_badness(text: str, language: str = "zh-CN") -> float:
+    """Keep-better metric for the deslop loop (lower is cleaner).
+
+    Lexical span count PLUS a penalty for staccato above the 25% budget PLUS a
+    penalty for moment-slice density. Both extras exist because the detector
+    folds each of these diseases into ONE (or score-capped) span, so span-count
+    alone never rewards a rewrite that actually removed them — keep-better
+    would accept a rewrite keeping all 43 slices (ch25 shipped 12→31 exactly
+    this way).
+    """
+
+    _f, _s, spans = _findings_text(text, language)
+    return (
+        spans
+        + 8.0 * max(0.0, _staccato_ratio(text) - 0.25)
+        + 4.0 * _moment_slice_rate(text)
+    )
+
+
+def _badness_components_for_test(text: str, language: str = "zh-CN") -> float:
+    """Stable test hook for the keep-better contract (see unit tests)."""
+
+    return _content_badness(text, language)
 
 
 def _deslop_length_floor(current_len: int, target_chars: int) -> float:
@@ -157,6 +209,7 @@ async def revise_prose_deslop(
     target_chars: int = 1600,
     rounds: int = 2,
     logical_role: str = "writer",
+    chapter_number: int | None = None,
 ) -> str:
     """Run the bounded deslop self-review loop; return the cleaned content.
 
@@ -174,8 +227,12 @@ async def revise_prose_deslop(
 
     # Everything this loop spends is attributable to one deslop event, so a
     # loop that starts costing more than the chapter it is cleaning is visible
-    # while it runs rather than in the monthly bill.
-    with attribution_scope(rework_kind="deslop", gate="ai_flavor_gate"):
+    # while it runs rather than in the monthly bill. chapter_number rides along
+    # so per-chapter deslop history is queryable (2026-08-15: its absence made
+    # 84 real calls look like "deslop never ran" in every per-chapter rollup).
+    with attribution_scope(
+        rework_kind="deslop", gate="ai_flavor_gate", chapter_number=chapter_number
+    ):
         return await _revise_prose_deslop_inner(
             session,
             settings,
@@ -211,20 +268,20 @@ async def _revise_prose_deslop_inner(
     best_badness: float | None = None
 
     def _badness(text: str) -> float:
-        # Lexical span count PLUS a penalty for staccato above the 25% budget.
-        # Staccato is score-capped in the detector, so span-count alone never
-        # rewards a rewrite that merged 分镜脚本 paragraphs; the penalty makes the
-        # keep-better bookkeeping actually prefer the de-staccato'd draft.
-        _f, _s, spans = _findings_text(text, language)
-        return spans + 8.0 * max(0.0, _staccato_ratio(text) - 0.25)
+        return _content_badness(text, language)
 
     for _ in range(max(0, rounds)):
         findings, _score, n_spans = _findings_text(content, language)
-        cur_badness = n_spans + 8.0 * max(0.0, _staccato_ratio(content) - 0.25)
+        cur_badness = _badness(content)
         if best_badness is None or cur_badness < best_badness:
             best_content, best_badness = content, cur_badness
-        # Keep revising while either lexical tells OR heavy staccato remain.
-        if n_spans == 0 and _staccato_ratio(content) <= 0.25:
+        # Keep revising while lexical tells, heavy staccato, or moment-slice
+        # padding remain (slice threshold matches the detector's base band).
+        if (
+            n_spans == 0
+            and _staccato_ratio(content) <= 0.25
+            and _moment_slice_rate(content) < 1.2
+        ):
             break
         system_prompt = (
             "你是最严苛的中文网文编辑，专做去 AI 味改写。下面是写作铁律；逐条核对正文，"

@@ -776,6 +776,9 @@ def _build_ai_flavor(raw: dict[str, Any]) -> AiFlavorGateConfig:
         data_dir=str(raw.get("data_dir") or "data/ai_flavor"),
         block_on_residual=bool(raw.get("block_on_residual", True)),
         deslop_on_warn=bool(raw.get("deslop_on_warn", True)),
+        # 2026-08-15: was a dataclass field but never parsed — the yaml key
+        # silently did nothing and the switch was stuck at the default.
+        deslop_revise_enabled=bool(raw.get("deslop_revise_enabled", True)),
     )
 
 

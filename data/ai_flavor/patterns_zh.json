@@ -1453,6 +1453,18 @@
       "threshold": 1,
       "pattern": "[拧旋][了动过]?半圈",
       "why": "「拧了半圈」类角度计量=伪精确（人类0.3/百万字）。写瞬时态（猛地一拧）或后果（锁芯咔哒咬死）"
+    },
+    {
+      "id": "cn.discourse.moment_slice",
+      "category": "moment_slice",
+      "severity": "warn",
+      "pattern": "[一-鿿]{1,6}的那一瞬(?:间)?|[一两三半][寸分步息拍瞬]里",
+      "per_1k_threshold": 1.2,
+      "escalate_per_1k": 3.0,
+      "escalate_category": "moment_slice_train",
+      "min_chars": 1200,
+      "threshold": 3,
+      "why": "时刻切片套娃：把一个动作切成多个瞬间接力推进（「退的那一瞬…移的那一瞬…」「半分里她…一寸里灰…」），是模型注水最便宜的句法。语料定罪：1335 篇真实出版章中 99.6% 为 0 命中、「量词+里」544 万字 0 命中，本章已越过人类全语料最大值。改法：一个动作一句写完，瞬间只留真正的转折那一处；砍掉的字数用新事件或对话补，不是用更细的切片补"
     }
   ],
   "terse_tag_rules": [

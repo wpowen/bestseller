@@ -5298,6 +5298,13 @@ def _render_chapter_first_local_repair_instructions(
             "补进来的必须是有推进的新内容：一段新的对话交锋、一个当场落地的"
             "动作后果、或对本章钩子的一步深化；禁止把已有句子抻长、堆环境"
             "形容或复述设定——注水段落会被去水门撤销，补了也白补。",
+            # 2026-08-15《端盘画神》定罪：扩写轮是「时刻切片」句法病的出生地
+            # （病变均值 +6.8/轮、62% 恶化；ch38 一轮 4→41 处）。字数最便宜的
+            # 写法就是把一个动作切成一串瞬间，必须点名禁止。
+            "尤其禁止用「时刻切片」凑字数：把一个动作切成多个瞬间接力"
+            "（上一句动词被下一句拎出来续写那个瞬间，或用量词切片逐步推进）"
+            "——这是检测器盯防的注水句法，写了整章会被打回重写。"
+            "一个动作一句写完；要加字就加新的事件、对话或后果。",
             "总篇幅不得超过章节动态字数带上限（超上限同样阻断，宁可停在带内中位）。",
             "其余命中的问题仍按 patch-first 局部替换：不得改变核心事件顺序、"
             "章末主钩子、人物在场关系。",
@@ -10354,14 +10361,24 @@ async def run_chapter_pipeline(
                     try:
                         from bestseller.services.deslop_revise import revise_prose_deslop
 
+                        # target_chars must anchor on the chapter CONTRACT, not
+                        # the draft's own length: a padded draft (ch25: 5091 字,
+                        # 43 处时刻切片) fed back as its own target means honest
+                        # de-padding gets rejected as "too short" — the padding
+                        # defends itself (2026-08-15, same shape as the deslop
+                        # length-floor fix inside revise itself).
+                        _af_target = int(
+                            getattr(chapter, "target_word_count", 0) or 0
+                        ) or len(chapter_draft.content_md)
                         _revised = await revise_prose_deslop(
                             session,
                             settings,
                             content=chapter_draft.content_md,
                             language=_af_lang,
                             project_id=project.id,
-                            target_chars=len(chapter_draft.content_md),
+                            target_chars=_af_target,
                             rounds=2,
+                            chapter_number=chapter_number,
                         )
                         _recheck = run_ai_flavor_gate(
                             chapter_number=chapter_number,

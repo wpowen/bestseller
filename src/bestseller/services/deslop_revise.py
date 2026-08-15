@@ -21,6 +21,7 @@ import logging
 import re
 
 from bestseller.services.ai_flavor.detector import detect
+from bestseller.services.chapter_length_gate import count_zh_chars
 from bestseller.services.cost_attribution import attribution_scope
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.quality_levers.cinematic_pov import render_cinematic_pov_block
@@ -203,6 +204,34 @@ def _badness_components_for_test(text: str, language: str = "zh-CN") -> float:
     return _content_badness(text, language)
 
 
+# Above this rate the detector calls the chapter pathological (moment_slice_train,
+# escalate band): the syntax is no longer a stylistic quirk, it is the chapter's
+# dominant sentence-joining device. Human corpus max is 1.14/千字.
+_SLICE_PATHOLOGICAL = 3.0
+
+
+def _keep_better_key(text: str, language: str, *, slice_first: bool) -> tuple:
+    """Ordering key for keep-better (lower is better).
+
+    Normally one scalar (:func:`_content_badness`) decides. That scalar weighs a
+    slice reduction at 4×rate against +1 per lexical span, which lets a rewrite
+    that genuinely collapsed the slice chains lose to the padded original because
+    two unrelated advisory spans appeared — live full-book run, ch26/32/33 each
+    came back byte-identical to their diseased original for exactly this reason.
+
+    When the draft being repaired *starts* in the pathological band, that trade is
+    wrong: the band's whole meaning is "this must be rewritten". So for those
+    chapters the slice rate is compared first and total badness only breaks ties.
+    Chapters below the band keep the single-scalar behaviour unchanged, so this
+    cannot alter healthy or mildly-affected drafts.
+    """
+
+    badness = _content_badness(text, language)
+    if not slice_first:
+        return (0.0, badness)
+    return (round(_moment_slice_rate(text), 2), badness)
+
+
 def _deslop_length_floor(current_len: int, target_chars: int) -> float:
     """Shortest rewrite this stage may accept.
 
@@ -293,20 +322,47 @@ async def _revise_prose_deslop_inner(
     # AI-flavor shipped silently. Track the cleanest content seen and fall
     # back to it if the final rewrite measures worse.
     best_content = content
-    best_badness: float | None = None
+    best_key: tuple | None = None
 
-    def _badness(text: str) -> float:
-        return _content_badness(text, language)
+    # Decided once, from the draft as it arrived: a chapter that starts in the
+    # pathological slice band is judged slice-first for the whole loop (see
+    # _keep_better_key). Re-deciding per round would let a rewrite that dipped
+    # under the band switch the comparison mid-flight.
+    slice_first = _moment_slice_rate(content) >= _SLICE_PATHOLOGICAL
+    restore_length = False
+
+    def _key(text: str) -> tuple:
+        return _keep_better_key(text, language, slice_first=slice_first)
+
+    def _length_ok(text: str) -> bool:
+        """Shippable length, measured the way the downstream gate measures it.
+
+        Keep-better must not crown a short-but-clean intermediate: returning it
+        would trip the LENGTH gate. Such a draft is carried forward (so the
+        restore round can grow it back) but only length-valid drafts are
+        eligible to be the answer.
+
+        Counted with ``count_zh_chars`` — the same function the chapter LENGTH
+        gate uses. ``len()`` includes punctuation, whitespace and markdown, so
+        it reads ~15% longer than the gate will: a draft this loop called
+        long enough could still come back LENGTH_UNDER (live ch26: len 2000+
+        passed, 1730 Chinese chars did not).
+        """
+
+        return count_zh_chars(text) >= target_chars * 0.7
 
     for _ in range(max(0, rounds)):
         findings, _score, n_spans = _findings_text(content, language)
-        cur_badness = _badness(content)
-        if best_badness is None or cur_badness < best_badness:
-            best_content, best_badness = content, cur_badness
+        cur_key = _key(content)
+        if _length_ok(content) and (best_key is None or cur_key < best_key):
+            best_content, best_key = content, cur_key
         # Keep revising while lexical tells, heavy staccato, or moment-slice
         # padding remain (slice threshold matches the detector's base band).
+        # A pending length-restore round is never skipped: the draft is clean
+        # but too short, which is precisely what that round exists to fix.
         if (
-            n_spans == 0
+            not restore_length
+            and n_spans == 0
             and _staccato_ratio(content) <= 0.25
             and _moment_slice_rate(content) < 1.2
         ):
@@ -323,14 +379,29 @@ async def _revise_prose_deslop_inner(
             "——情节是'发生了什么'，重复/碎段是'同一件事写了几遍/切了几段'，改后者天经地义。"
             "直接输出改写后的完整正文，不要任何解释或标注。\n\n" + rubric
         )
-        user_prompt = (
-            "【检测出的 AI 味问题（必须逐条消除）】\n"
-            + (findings or "（检测器未标出，但仍按下面自查表清查）")
-            + _EXTRA_SELF_CHECK
-            + f"\n\n【目标字数】约 {target_chars} 字，不足补足、不许砍情节。\n\n"
-            "【待改写正文】\n"
-            + content
-        )
+        if restore_length:
+            # 上一轮把切片链并干净了、字数掉到合同以下。这一轮只补长度，且用
+            # 与 LENGTH_UNDER 修复轮相同的疫苗话术，防止模型拿切片把字数塞回来。
+            user_prompt = (
+                "【本轮唯一任务：补足字数】上一版已经把句法问题改干净了，"
+                "现在只缺篇幅。**已有正文一字不改地全部保留**，在合适位置插入新增内容。\n"
+                f"【目标字数】约 {target_chars} 字（当前约 {len(content)} 字）。\n"
+                "补进来的必须是有推进的新内容：一段新的对话交锋、一个当场落地的动作后果、"
+                "或对本章钩子的一步深化。\n"
+                "严禁用下面这些方式凑字数：把一个动作切成多个瞬间接力推进、"
+                "给动作加分解镜头、把已有句子抻长、堆环境形容、复述设定"
+                "——这些都会被检测器打回，补了也白补。\n\n"
+                "【待补写正文】\n" + content
+            )
+        else:
+            user_prompt = (
+                "【检测出的 AI 味问题（必须逐条消除）】\n"
+                + (findings or "（检测器未标出，但仍按下面自查表清查）")
+                + _EXTRA_SELF_CHECK
+                + f"\n\n【目标字数】约 {target_chars} 字，不足补足、不许砍情节。\n\n"
+                "【待改写正文】\n"
+                + content
+            )
         request = LLMCompletionRequest(
             logical_role=logical_role,
             model_tier="strong",
@@ -355,6 +426,28 @@ async def _revise_prose_deslop_inner(
         length_floor = _deslop_length_floor(len(content), target_chars)
         if revised and len(revised) >= length_floor:
             content = revised
+            restore_length = False
+        elif (
+            revised
+            and slice_first
+            and _moment_slice_rate(revised) < _moment_slice_rate(content) - 1.0
+        ):
+            # 注水在保护自己，第三次复发（2026-08-15 ch26 实测）：一份把切片链
+            # 并回正常叙述的改稿必然变短（2773→1733 字，floor 1819），旧逻辑判它
+            # "太短"并 break，于是整轮预算作废、发布的是那份注水原稿。
+            # 短而干净的稿不该丢：留下它，下一轮改用"只许加新事件/对白/后果、
+            # 不许加分解镜头"的补字数指令把长度补回来——和 LENGTH_UNDER 修复轮
+            # 用的是同一条疫苗。仅对病态档生效，且要求切片确有实质下降。
+            logger.info(
+                "deslop_revise: keeping short-but-cleaner draft (%.2f→%.2f/千字, "
+                "%d→%d chars); next round restores length",
+                _moment_slice_rate(content),
+                _moment_slice_rate(revised),
+                len(content),
+                len(revised),
+            )
+            content = revised
+            restore_length = True
         else:
             logger.debug("deslop_revise: rewrite too short, keeping previous draft")
             break
@@ -365,12 +458,12 @@ async def _revise_prose_deslop_inner(
     # rewrite that re-introduced 分镜脚本 paragraphs is rejected even if its
     # lexical span count happened to tie.
     if content is not best_content:
-        final_badness = _badness(content)
-        if best_badness is not None and final_badness > best_badness:
+        final_key = _key(content)
+        if best_key is not None and (not _length_ok(content) or final_key > best_key):
             logger.info(
-                "deslop_revise: final rewrite regressed (badness %.2f→%.2f); keeping best draft",
-                best_badness,
-                final_badness,
+                "deslop_revise: final rewrite regressed (key %s→%s); keeping best draft",
+                best_key,
+                final_key,
             )
             content = best_content
     return content

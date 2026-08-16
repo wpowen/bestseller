@@ -86,3 +86,30 @@ def test_finding_line_is_fix_first_and_not_truncated() -> None:
     line = next(ln for ln in findings.split("\n") if "dialogue_famine" in ln)
     assert "改法" in line
     assert "不要硬塞寒暄" in line, "必须明确禁止硬塞寒暄，否则模型会灌水对白"
+
+
+def test_all_quote_styles_are_recognized() -> None:
+    """引号风格盲区（2026-08-16 真机《健身房》ch1 抓到）。
+
+    模型会在轮次之间切换引号：v1/v3 用弯引号“”，v2 整章改用直引号 "。
+    只认弯引号的正则把 v2 读成「零对话」→ dialogue_famine 误报整章，
+    moment_slice 的对白屏蔽也同时失效（三处正则同源，必须一起认）。
+    """
+
+    line = "今天什么鬼，你自己看那台配重。"
+    for opener, closer in (("“", "”"), ("「", "」"), ("『", "』"), ('"', '"')):
+        talky = NARRATION + f"{opener}{line}{closer}" * 30
+        assert "dialogue_famine" not in _cats(talky), (
+            f"引号风格 {opener}{closer} 未被识别，会造成整章误报"
+        )
+
+
+def test_straight_quotes_count_toward_ratio() -> None:
+    """直引号必须真的计入占比，不是只要不报就算过。"""
+
+    from bestseller.services.ai_flavor.detector import _detect_dialogue_famine
+
+    curly = NARRATION + "“今天什么鬼。”" * 20
+    straight = NARRATION + '"今天什么鬼。"' * 20
+    assert not _detect_dialogue_famine(curly, lang="zh")
+    assert not _detect_dialogue_famine(straight, lang="zh")

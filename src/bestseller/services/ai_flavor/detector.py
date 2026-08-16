@@ -1458,7 +1458,11 @@ def _detect_dialogue_famine(content_md: str, *, lang: str) -> list[AiFlavorSpan]
     chars = len(re.findall(r"[一-鿿]", content_md))
     if chars < _DIALOGUE_FAMINE_MIN_CHARS:
         return []
-    spoken = sum(len(m) for m in re.findall(r"[“「]([^”」]{1,400})[”」]", content_md))
+    spoken = sum(
+        len(next(g for g in groups if g))
+        for groups in _DIALOGUE_SPOKEN_RE.findall(content_md)
+        if any(groups)
+    )
     ratio = spoken / chars * 100.0
     if ratio >= _DIALOGUE_FAMINE_RATIO:
         return []
@@ -1519,7 +1523,15 @@ _FP_INNER_VOICE_RE = re.compile(
     r"不会是|要不要|还是说|凭什么|说不定"
 )
 _INNER_MARKER_RE = re.compile(r"心里默念|心道|心想|心说|暗道|暗想|自问|腹诽")
-_DIALOGUE_QUOTE_RE = re.compile(r"“[^”\n]*”|「[^」\n]*」")
+# 对白引号：模型在不同轮次会切换引号风格——真机《健身房》ch1 v1/v3 用弯引号
+# “”，v2 整章改用直引号 "。只认弯引号的正则会把 v2 读成「零对话」，于是
+# dialogue_famine 误报、moment_slice 的对白屏蔽也失效。三处正则必须同源。
+_DIALOGUE_QUOTE_RE = re.compile(
+    r"“[^”\n]*”|「[^」\n]*」|『[^』\n]*』|\"[^\"\n]*\""
+)
+_DIALOGUE_SPOKEN_RE = re.compile(
+    r"“([^”\n]{1,400})”|「([^」\n]{1,400})」|『([^』\n]{1,400})』|\"([^\"\n]{1,400})\""
+)
 _INNER_VOICE_MIN_CHARS = 1500  # 全章口径，短卡/片段不评
 _FIRST_PERSON_MIN_WO = 8  # 叙述层「我」达此数才认定第一人称叙述
 

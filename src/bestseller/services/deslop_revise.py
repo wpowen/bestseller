@@ -142,7 +142,11 @@ def _findings_text(content: str, language: str) -> tuple[str, float, int]:
 
 
 _MOMENT_SLICE_RE = re.compile(r"[一-鿿]{1,6}的那一瞬(?:间)?|[一两三半][寸分步息拍瞬]里")
-_DIALOGUE_RE = re.compile(r"[“「][^”」]*[”」]")
+# 与 detector._DIALOGUE_QUOTE_RE 同源：模型会在轮次之间切换引号风格
+# （真机 ch1 v2 整章改用直引号），只认弯引号会让对白屏蔽失效。
+_DIALOGUE_RE = re.compile(
+    r"“[^”\n]*”|「[^」\n]*」|『[^』\n]*』|\"[^\"\n]*\""
+)
 
 
 def _moment_slice_rate(content: str) -> float:

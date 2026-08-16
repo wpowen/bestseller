@@ -12064,6 +12064,136 @@ async def generate_scene_draft(
     return draft
 
 
+
+async def stamp_chapter_hype(
+    session,
+    *,
+    chapter,
+    chapter_number: int,
+    content_md: str,
+    project=None,
+    scene_drafts=(),
+) -> None:
+    """把爽点三字段盖到 chapter 行，并把这次爽点登记进 DiversityBudget。
+
+    **两条生成路径都必须调用它。** 2026-08-16 真机定罪：这段逻辑原本内联在
+    ``assemble_chapter_draft`` 里，而整章生成（chapter_first）直接产出草稿、
+    根本不经过那个函数——于是三本真书 109 章的 ``hype_type`` /
+    ``hype_intensity`` / ``hype_recipe_key`` **100% NULL**，连兜底分类器本可
+    救回的 14 章也没救到。能力存在，只是长在我们的书不走的那条路上
+    （与 deslop 那次同形：造了能力却没接到实际跑的那条链）。
+
+    ``scene_drafts`` 为空时（整章路径就是如此）自动走兜底分类器读成稿正文。
+    分类器返回 None 时保持 NULL —— 那是诚实信号，表示这一章确实没有可读出的
+    爽点结算，不要用假值把它填上。
+    """
+
+    # ── Reader Hype Engine — persist chapter metadata + register the moment ──
+    # Scene drafts carry the assignment in ``generation_params``; all scenes of
+    # the same chapter share the same pick (the per-chapter picker is
+    # deterministic until ``register_hype_moment`` mutates the budget). Pick
+    # the first non-null triple and use it as the chapter-level assignment.
+    try:
+        _hype_type: str | None = None
+        _hype_recipe_key: str | None = None
+        _hype_intensity: float | None = None
+        for _sd in scene_drafts:
+            _gp = dict(_sd.generation_params or {})
+            if _gp.get("assigned_hype_type"):
+                _hype_type = str(_gp["assigned_hype_type"])
+                _hype_recipe_key = (
+                    str(_gp["assigned_hype_recipe_key"])
+                    if _gp.get("assigned_hype_recipe_key") is not None
+                    else None
+                )
+                _hype_intensity = (
+                    float(_gp["assigned_hype_intensity"])
+                    if _gp.get("assigned_hype_intensity") is not None
+                    else None
+                )
+                break
+        # ── Fallback classifier ───────────────────────────────────────────
+        # Blood-twins' 30/30 NULL-hype-type chapters happened because the
+        # upstream assignment pipeline never stamped ``assigned_hype_type`` on
+        # scene_drafts. Without this fallback the chapter row stays NULL
+        # silently. Read the assembled text, run the hype-engine classifier,
+        # and stamp a best-effort guess so downstream analytics (golden_three
+        # health, diversity budget decay, recipe variety scoring) at least
+        # have *something* to work with. The classifier never raises —
+        # ``None`` is returned when no keyword fires, in which case we stay
+        # NULL (honest signal that the chapter has zero readable payoff).
+        if _hype_type is None and content_md:
+            try:
+                from bestseller.services.hype_engine import (  # noqa: PLC0415
+                    HypeType as _HypeTypeEnum,
+                )
+                from bestseller.services.hype_engine import (
+                    classify_hype,
+                )
+
+                _classifier_language = (
+                    str(project.language or "zh-CN") if project is not None else "zh-CN"
+                )
+                _classifier_result = classify_hype(
+                    content_md,
+                    language=_classifier_language,
+                    segment="tail",
+                )
+                if _classifier_result is not None:
+                    _inferred_type, _inferred_confidence = _classifier_result
+                    _hype_type = _inferred_type.value
+                    # No recipe_key is available from the classifier path — it
+                    # was never actually picked by ``plan_chapter_hype``.
+                    _hype_recipe_key = None
+                    # Normalise confidence (0-10) into the 0-1 intensity scale
+                    # the downstream engine uses.
+                    _hype_intensity = max(0.0, min(1.0, float(_inferred_confidence) / 10.0))
+                    logger.info(
+                        "Chapter %d: hype_type fallback-classified as %s "
+                        "(confidence=%.1f) — upstream assignment was missing.",
+                        chapter_number,
+                        _hype_type,
+                        _inferred_confidence,
+                    )
+            except Exception:
+                logger.debug(
+                    "Chapter %d: hype fallback classifier failed (non-fatal)",
+                    chapter_number,
+                    exc_info=True,
+                )
+        if _hype_type:
+            chapter.hype_type = _hype_type
+            chapter.hype_recipe_key = _hype_recipe_key
+            chapter.hype_intensity = _hype_intensity
+
+            from bestseller.services.diversity_budget import (
+                load_diversity_budget,
+                save_diversity_budget,
+            )
+            from bestseller.services.hype_engine import HypeType as _HypeTypeEnum
+
+            try:
+                _hype_enum = _HypeTypeEnum(_hype_type)
+            except ValueError:
+                _hype_enum = None
+            # project 是可选参数（签名如此声明），拿不到就只盖章级戳、跳过
+            # 多样性预算登记——盖戳本身不该因为缺少 project 而整个失败。
+            if _hype_enum is not None and getattr(project, "id", None) is not None:
+                _budget = await load_diversity_budget(session, project.id)
+                _budget.register_hype_moment(
+                    chapter_no=chapter_number,
+                    hype_type=_hype_enum,
+                    recipe_key=_hype_recipe_key,
+                    intensity=float(_hype_intensity or 0.0),
+                )
+                await save_diversity_budget(session, _budget)
+    except Exception:
+        logger.warning(
+            "Hype metadata persistence failed for chapter %d (non-fatal)",
+            chapter_number,
+            exc_info=True,
+        )
+
 async def assemble_chapter_draft(
     session: AsyncSession,
     project_slug: str,
@@ -12502,109 +12632,19 @@ async def assemble_chapter_draft(
     if quality_gate_outcome is not None:
         chapter.production_state = quality_gate_outcome
 
-    # ── Reader Hype Engine — persist chapter metadata + register the moment ──
-    # Scene drafts carry the assignment in ``generation_params``; all scenes of
-    # the same chapter share the same pick (the per-chapter picker is
-    # deterministic until ``register_hype_moment`` mutates the budget). Pick
-    # the first non-null triple and use it as the chapter-level assignment.
-    try:
-        _hype_type: str | None = None
-        _hype_recipe_key: str | None = None
-        _hype_intensity: float | None = None
-        for _sd in scene_drafts:
-            _gp = dict(_sd.generation_params or {})
-            if _gp.get("assigned_hype_type"):
-                _hype_type = str(_gp["assigned_hype_type"])
-                _hype_recipe_key = (
-                    str(_gp["assigned_hype_recipe_key"])
-                    if _gp.get("assigned_hype_recipe_key") is not None
-                    else None
-                )
-                _hype_intensity = (
-                    float(_gp["assigned_hype_intensity"])
-                    if _gp.get("assigned_hype_intensity") is not None
-                    else None
-                )
-                break
-        # ── Fallback classifier ───────────────────────────────────────────
-        # Blood-twins' 30/30 NULL-hype-type chapters happened because the
-        # upstream assignment pipeline never stamped ``assigned_hype_type`` on
-        # scene_drafts. Without this fallback the chapter row stays NULL
-        # silently. Read the assembled text, run the hype-engine classifier,
-        # and stamp a best-effort guess so downstream analytics (golden_three
-        # health, diversity budget decay, recipe variety scoring) at least
-        # have *something* to work with. The classifier never raises —
-        # ``None`` is returned when no keyword fires, in which case we stay
-        # NULL (honest signal that the chapter has zero readable payoff).
-        if _hype_type is None and content_md:
-            try:
-                from bestseller.services.hype_engine import (  # noqa: PLC0415
-                    HypeType as _HypeTypeEnum,
-                )
-                from bestseller.services.hype_engine import (
-                    classify_hype,
-                )
-
-                _classifier_language = (
-                    str(project.language or "zh-CN") if project is not None else "zh-CN"
-                )
-                _classifier_result = classify_hype(
-                    content_md,
-                    language=_classifier_language,
-                    segment="tail",
-                )
-                if _classifier_result is not None:
-                    _inferred_type, _inferred_confidence = _classifier_result
-                    _hype_type = _inferred_type.value
-                    # No recipe_key is available from the classifier path — it
-                    # was never actually picked by ``plan_chapter_hype``.
-                    _hype_recipe_key = None
-                    # Normalise confidence (0-10) into the 0-1 intensity scale
-                    # the downstream engine uses.
-                    _hype_intensity = max(0.0, min(1.0, float(_inferred_confidence) / 10.0))
-                    logger.info(
-                        "Chapter %d: hype_type fallback-classified as %s "
-                        "(confidence=%.1f) — upstream assignment was missing.",
-                        chapter_number,
-                        _hype_type,
-                        _inferred_confidence,
-                    )
-            except Exception:
-                logger.debug(
-                    "Chapter %d: hype fallback classifier failed (non-fatal)",
-                    chapter_number,
-                    exc_info=True,
-                )
-        if _hype_type:
-            chapter.hype_type = _hype_type
-            chapter.hype_recipe_key = _hype_recipe_key
-            chapter.hype_intensity = _hype_intensity
-
-            from bestseller.services.diversity_budget import (
-                load_diversity_budget,
-                save_diversity_budget,
-            )
-            from bestseller.services.hype_engine import HypeType as _HypeTypeEnum
-
-            try:
-                _hype_enum = _HypeTypeEnum(_hype_type)
-            except ValueError:
-                _hype_enum = None
-            if _hype_enum is not None:
-                _budget = await load_diversity_budget(session, project.id)
-                _budget.register_hype_moment(
-                    chapter_no=chapter_number,
-                    hype_type=_hype_enum,
-                    recipe_key=_hype_recipe_key,
-                    intensity=float(_hype_intensity or 0.0),
-                )
-                await save_diversity_budget(session, _budget)
-    except Exception:
-        logger.warning(
-            "Hype metadata persistence failed for chapter %d (non-fatal)",
-            chapter_number,
-            exc_info=True,
-        )
+    # 落库逻辑已抽成 stamp_chapter_hype()，整章路径同样调用它。
+    # 2026-08-16 定罪：这段原本只活在场景装配路径里，而整章生成
+    # (chapter_first) 直接产出草稿、根本不经过 assemble_chapter_draft，
+    # 于是三本真书 109 章 hype 三字段 100% NULL——连兜底分类器本可救回的
+    # 14 章也没救到。能力存在，但长在我们的书不走的那条路上。
+    await stamp_chapter_hype(
+        session,
+        chapter=chapter,
+        chapter_number=chapter_number,
+        content_md=content_md,
+        project=project,
+        scene_drafts=scene_drafts,
+    )
 
     await session.flush()
 

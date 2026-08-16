@@ -8988,6 +8988,31 @@ async def run_chapter_pipeline(
                 )
         if chapter_draft is None and not _scene_loop_blocked:
             chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
+        if chapter_draft is not None and getattr(chapter, "hype_type", None) is None:
+            # 爽点落库的汇合点。整章生成(chapter_first)直接产出草稿、不经过
+            # assemble_chapter_draft，而爽点盖戳逻辑原本只内联在后者里——
+            # 2026-08-16 真机定罪：三本书 109 章 hype 三字段 100% NULL，
+            # 连兜底分类器本可救回的 14 章也没救到。
+            # 放在汇合点而不是两个生成点上，避免同一动作写两遍；
+            # `hype_type is None` 这道守卫保证走场景装配路径的章不会被二次盖戳
+            # （二次盖戳会把同一次爽点重复登记进 DiversityBudget，污染多样性预算）。
+            try:
+                from bestseller.services.drafts import stamp_chapter_hype
+
+                await stamp_chapter_hype(
+                    session,
+                    chapter=chapter,
+                    chapter_number=chapter_number,
+                    content_md=chapter_draft.content_md or "",
+                    project=project,
+                    scene_drafts=(),
+                )
+            except Exception:
+                logger.debug(
+                    "chapter %d: hype stamping at convergence failed (non-fatal)",
+                    chapter_number,
+                    exc_info=True,
+                )
         if chapter_draft is not None:
             _emit_progress(
                 progress,

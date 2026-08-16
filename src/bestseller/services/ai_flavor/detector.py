@@ -1009,6 +1009,9 @@ def detect(
     # ── 默认母题族饱和 (一族意象占满全章，不是"出现"是"支配") ───────────
     spans.extend(_detect_motif_saturation(content_md, lang=lang))
 
+    # ── 对话饥饿 (整章几乎没有人说话 → 评委口中的断代级差距) ─────────────
+    spans.extend(_detect_dialogue_famine(content_md, lang=lang))
+
     spans.sort(key=lambda s: (s.start, s.end))
     return AiFlavorReport(
         language=lang,
@@ -1427,6 +1430,57 @@ def _detect_motif_saturation(content_md: str, *, lang: str) -> list[AiFlavorSpan
             ),
             remove_sentence_on_block=False,
             hit_count=total,
+        )
+    ]
+
+
+# ── 对话饥饿 (2026-08-16) ───────────────────────────────────────────────────
+# 评委盲评把它判成断代级差距（对话维 AI 2 分 vs 人类 7 分），两本真机书都复发：
+#   《端盘画神》全书对话占比中位 0.0%（44/50 章 ≤5%）——主角设定成哑女；
+#   《破澡堂真话局》中位 1.3%、24/50 章一句对白都没有——而它的核心机制
+#   就是「人必须当众说真心话」。机制写在设定里，正文里没人开口。
+# 语料标定（.distillation_private 1160 章）：
+#   对话占比 中位 26.5% / p10 7.2% / p5 3.6% / p1 0.3%
+#   完全没有对话的章只占 1.7%
+# 阈值取 p5=3.6%：人类里 5% 的章会命中（写景/赶路/单人潜行确实存在），
+# 换来对我们这种「整本书没人说话」的高召回。
+# 处置：advisory + 计分封顶（缺对话不是句法 tell，不该独立毙章）+ 进 deslop
+# 触发集；改法只说「把已有的信息交换改成人物开口」，绝不要求硬塞对白。
+_DIALOGUE_FAMINE_MIN_CHARS = 1200
+_DIALOGUE_FAMINE_RATIO = 3.6  # 人类 p5
+
+
+def _detect_dialogue_famine(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """整章几乎无人说话 —— 全章级 advisory，CJK only。"""
+
+    if lang.startswith("en") or not content_md:
+        return []
+    chars = len(re.findall(r"[一-鿿]", content_md))
+    if chars < _DIALOGUE_FAMINE_MIN_CHARS:
+        return []
+    spoken = sum(len(m) for m in re.findall(r"[“「]([^”」]{1,400})[”」]", content_md))
+    ratio = spoken / chars * 100.0
+    if ratio >= _DIALOGUE_FAMINE_RATIO:
+        return []
+    return [
+        AiFlavorSpan(
+            start=0,
+            end=min(30, len(content_md)),
+            matched_text=content_md[:30],
+            rule_id=f"{lang}.dialogue.famine",
+            category="dialogue_famine",
+            severity="warn",
+            suggestions=(),
+            sentence_span=(0, min(30, len(content_md))),
+            why=(
+                "改法：本章几乎没有人开口。不要硬塞寒暄——把章里已经发生的"
+                "信息交换、试探、讨价还价、下判断，改成人物当场说出来，"
+                "让对方接话；叙述者替人物转述的那些内容，正是该由人物自己讲的。"
+                "真实出版章节的对话占比中位数是四分之一强，完全没有对话的章"
+                f"只占百分之二（本章 {ratio:.1f}%）"
+            ),
+            remove_sentence_on_block=False,
+            hit_count=1,
         )
     ]
 

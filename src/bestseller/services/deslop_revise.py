@@ -105,6 +105,8 @@ _QUOTE_FREE_CATEGORIES = frozenset(
         "moment_slice_train",
         # 母题饱和同理：引用一句带「账簿」的原文＝把这个词再喂给写手一次。
         "motif_saturation",
+        # 对话饥饿：本来就没有对白可引，引叙述句只会让写手照抄那句的语气。
+        "dialogue_famine",
     }
 )
 

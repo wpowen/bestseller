@@ -252,6 +252,9 @@ l6_write_gate:
     ENDING_SENTENCE_WEAK: audit_only
     GOLDEN_THREE_WEAK: audit_only
     PLEASURE_HYPE_GAP: audit_only
+    # 书级爽点覆盖率低于人类分位（双档：全语料 p10=0.14 / 爽文组 p10=0.29）。
+    # audit_only —— 最强的爽文单指标 AUC 也只有 0.72，不配拥有杀权。
+    PLEASURE_HYPE_COVERAGE_LOW: audit_only
     PLEASURE_COMEDIC_BEAT_STARVED: audit_only
     PLEASURE_SETUP_PAYOFF_DEBT: audit_only
     # Phase B 软启动（榜单对标闭环 P3.1）：code 默认 LINE_GAP_OVER=block，但

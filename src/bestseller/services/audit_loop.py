@@ -472,6 +472,33 @@ class PleasureDistributionAudit:
     code_gap = "PLEASURE_HYPE_GAP"
     code_comedic = "PLEASURE_COMEDIC_BEAT_STARVED"
     code_hogs_ending = "PLEASURE_HYPE_HOGS_ENDING"
+    code_coverage = "PLEASURE_HYPE_COVERAGE_LOW"
+
+    # 人类语料标定（.distillation_private，按书抽样 ≥6 章，2026-08-16）——
+    # 指标是「有可读出爽点结算的章占比」，按**书名分组**分别标定：
+    #
+    #   爽文向（216 本样本）   p10=0.29  中位=0.60  p75=0.70
+    #   文学/译作（199 本）    p10=0.10  中位=0.25  p75=0.40
+    #   全语料混合            p10=0.14  中位=0.42
+    #   我们两本真书                     0.16
+    #
+    # 两档阈值，因为参照系不同：
+    # * ``coverage_floor`` = 全语料 p10。任何书低于它都是灾难性缺失。
+    # * ``coverage_floor_shuangwen`` = 爽文组 p10。声称是爽文的书要按爽文量。
+    #
+    # ⚠️ 单档会漏判：我们两本 0.16 **高于**全语料 p10（不报），却低于爽文 p10、
+    # 甚至低于文学组中位——而读者判它们「50 章零爽点结算」。用全语料 p10 当
+    # 爽文的尺子，等于拿包含大量文学与译作的分布去要求一本爽文，必然过松。
+    # 这个分组同时验证了分类器在书级是有效判别器（爽文 0.60 vs 文学 0.25，
+    # 2.4 倍分离），尽管它的词表偏玄幻。
+    #
+    # 两档都是**告警带不是及格线**：最强的爽文单指标 AUC 也只有 0.72，不配有杀权。
+    coverage_floor = 0.14
+    coverage_floor_shuangwen = 0.29
+    coverage_min_chapters = 8
+    # 判定「这本书自称爽文」的标记（题材/标签里出现即算）。没有专门的爽度档位
+    # 轴之前，用它做代理；轴建好后应改读轴。
+    shuangwen_markers = ("爽文", "无脑爽", "打脸", "逆袭", "扮猪吃虎", "碾压", "爽")
 
     def __init__(
         self,
@@ -553,6 +580,7 @@ class PleasureDistributionAudit:
 
         findings: list[AuditFinding] = []
         comedic_chapters = 0
+        payoff_chapters = 0
         total_chapters = 0
         gap_run = 0
         gap_start: int | None = None
@@ -601,6 +629,9 @@ class PleasureDistributionAudit:
                 gap_run += 1
             else:
                 _flush_gap(end_chapter=chapter_no - 1)
+
+            if effective is not None:
+                payoff_chapters += 1
 
             if effective == HypeType.COMEDIC_BEAT:
                 comedic_chapters += 1
@@ -655,6 +686,46 @@ class PleasureDistributionAudit:
                 )
 
         # Hype hogging the ending.
+        # 书级爽点覆盖率告警带（阈值锚在人类 p10，见类常量注释）。
+        # 与 PLEASURE_HYPE_GAP 是两回事：那个测「连续断多久」，这个测「总量够不够」。
+        # 一本每隔两章来一次小爽点、但全书只有 15% 的章有结算的书，gap 检查看不出来。
+        if total_chapters >= self.coverage_min_chapters:
+            coverage = payoff_chapters / total_chapters
+            # 自称爽文的书按爽文分布量，其余按全语料地板量。
+            _decl = " ".join(
+                str(x or "")
+                for x in (
+                    getattr(project, "genre", ""),
+                    getattr(project, "sub_genre", ""),
+                    " ".join((project.metadata_json or {}).get("tags") or [])
+                    if getattr(project, "metadata_json", None)
+                    else "",
+                )
+            )
+            _is_shuangwen = any(m in _decl for m in self.shuangwen_markers)
+            _floor = (
+                self.coverage_floor_shuangwen if _is_shuangwen else self.coverage_floor
+            )
+            if coverage < _floor:
+                findings.append(
+                    AuditFinding(
+                        auditor=self.name,
+                        code=self.code_coverage,
+                        severity="warn",
+                        chapter_no=None,
+                        detail=(
+                            f"全书仅 {payoff_chapters}/{total_chapters} 章"
+                            f"（{coverage:.0%}）能读出爽点结算，低于"
+                            f"{'爽文向人类语料 p10' if _is_shuangwen else '人类语料 p10'}"
+                            f"（{_floor:.0%}；爽文向中位 60%，全语料中位 42%）。"
+                            f"读者判断爽不爽的通用律是：赢要落到一个具体的人脸上、"
+                            f"被具体的人看见、并在主角账上留下一笔能带走的东西——"
+                            f"三件缺一件就不算结算。"
+                        ),
+                        auto_repairable=False,
+                    )
+                )
+
         if hogs_ending_total >= 5:
             ratio = hogs_ending_matches / hogs_ending_total
             if ratio >= self.hogs_ending_threshold:

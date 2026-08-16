@@ -15121,6 +15121,14 @@ async def _fetch_existing_chapter_titles(
             .where(
                 (VolumeModel.volume_number == None)  # noqa: E711 — SQL NULL match
                 | (VolumeModel.volume_number != exclude_volume_number)
+                # 2026-08-16：同卷但**正文已写出来**的章仍算前作。
+                # 这个排除本来是给「整卷重规划」用的（旧章即将被替换，不算
+                # 前作），但滚动章纲每批都在扩*同一卷*：真机《端盘画神》全书
+                # 只有 1 卷，生成第 43-50 章那批时 exclude_volume_number=1
+                # 把已经写完的 1-42 章全屏蔽了，于是第 50 章又叫了一次
+                # 第 3 章的「油渍」——查重函数本身是对的，是喂给它的前作被
+                # 清空了。已落地成文的章不可能"即将被替换"，必须留在对照集里。
+                | (ChapterModel.current_word_count > 0)
             )
             .order_by(ChapterModel.chapter_number.asc())
         )

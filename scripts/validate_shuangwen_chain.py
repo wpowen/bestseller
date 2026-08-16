@@ -180,6 +180,24 @@ def report(slug: str) -> dict[str, object]:
     )
     print(f"④ 杀权    爽点类阻断 {blocks} 次   {'✓ 零杀权' if blocks == 0 else '✗ 新检查夺权了'}")
 
+    # 归因（不计入验收）：这本书用的是哪一版读者判官。
+    # payoff_density 判据换成读者三段律时升到了 1.2。不查这一条，跑完只能说
+    # 「我改了代码」，不能说「这本书用了新判据」——1.1 上已积累 1437 次调用，
+    # 不升版就改前改后混在一起，事后无法归因。
+    judge = _psql(
+        # GROUP BY 必须落在裸列上：拼接式里含 count(*) 时 `GROUP BY 1` 非法。
+        "SELECT v||' x'||n FROM (SELECT coalesce(r.prompt_version,'?') AS v, "
+        "count(*) AS n FROM llm_runs r JOIN projects p ON r.project_id=p.id "
+        f"WHERE p.slug='{slug}' AND r.prompt_template='reader_judge' "
+        "GROUP BY r.prompt_version ORDER BY n DESC) t"
+    ).strip()
+    if judge:
+        versions = " · ".join(judge.split("\n"))
+        flag = "✓ 新判据" if "1.2" in versions else "⚠️ 仍是旧判据"
+        print(f"   判官     reader_judge {versions}   {flag}")
+    else:
+        print("   判官     reader_judge 零调用 ⚠️（评测体系的判官这半没跑到）")
+
     # 观察项（不计入验收）：立意↔调性 cap 会把简介封顶 78（<80 不达标）→ 触发重生。
     # 它的 AND 条件写对了（严肃信号≥2 **且** 爽文套词≥3，纯爽文不罚），但严肃词表里
     # 「真相/代价/命运/抉择」极通用，爽文书的立意凑够 2 个并不难。目前**零误伤证据**，

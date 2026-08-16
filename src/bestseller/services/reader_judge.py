@@ -203,7 +203,11 @@ async def judge_chapter_readability(
                 user_prompt=user_prompt,
                 fallback_response=_FALLBACK_JSON,
                 prompt_template="reader_judge",
-                prompt_version="1.1",
+                # 1.2：payoff_density 判据换成读者三段律（落到有名字的人 / 被具体的人
+                # 看见 / 账上留下能带走的东西）。改了 prompt 就必须升版本——prompt 身份
+                # 活在 prompt_version 里，不升版则 llm_runs 里改前改后混在一起，
+                # 事后无法证明某本书用的是哪一版判据。1.1 上已积累 1437 次调用。
+                prompt_version="1.2",
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,

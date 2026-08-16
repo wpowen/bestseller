@@ -516,8 +516,17 @@ class PleasureDistributionAudit:
         except InvariantSeedError:
             invariants = None
         scheme = invariants.hype_scheme if invariants is not None else None
-        if scheme is None or scheme.is_empty:
-            return []
+        # ⚠️ 这里原本是 `if scheme is None or scheme.is_empty: return []`，
+        # 整个审计对空 scheme 的项目直接 no-op。2026-08-16 真机定罪：taxonomy
+        # 建的书 scheme 恒空（见 writing_presets._synthesized_hype_block 的修复），
+        # 于是三本书 84% 的章没有爽点、连续无爽点章远超阈值，这个审计却**一次都
+        # 没报过**——守卫开得太宽，把不需要 scheme 的检查一起关掉了。
+        #
+        # 实际只有喜剧密度检查需要 scheme（读 comedic_beat_density_target）；
+        # HYPE_GAP 与 HOGS_ENDING 都是纯文本判据（分类器 + 落库字段），legacy
+        # 项目上照样成立。兄弟审计 SetupPayoffTrackerAudit 正是特意做成不依赖
+        # scheme 的（见本文件工厂函数的 docstring），这里对齐它。
+        scheme_available = scheme is not None and not scheme.is_empty
 
         language = (project.language or "zh-CN").strip() or "zh-CN"
         rows = (
@@ -609,9 +618,13 @@ class PleasureDistributionAudit:
 
         _flush_gap(end_chapter=int(rows[-1][0]) if rows else 0)
 
-        # Comedic beat starvation.
-        target = max(scheme.comedic_beat_density_target, 0.0)
-        if total_chapters >= 5 and target > 0.0:
+        # Comedic beat starvation —— 唯一真正需要 scheme 的检查（读它的
+        # comedic_beat_density_target）。scheme 缺席时跳过这一项即可，
+        # 上面两项纯文本判据照常执行。
+        target = (
+            max(scheme.comedic_beat_density_target, 0.0) if scheme_available else 0.0
+        )
+        if scheme_available and total_chapters >= 5 and target > 0.0:
             observed = comedic_chapters / total_chapters
             floor = target * (1.0 - self.starvation_slack)
             if observed < floor:

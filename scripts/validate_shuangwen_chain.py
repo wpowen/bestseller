@@ -43,7 +43,14 @@ SLICE_BAND = 1.2
 
 
 def _psql(sql: str) -> str:
-    return subprocess.run(
+    """跑一条只读查询；**查询报错必须炸，不许静默返回空**。
+
+    第一版只取 stdout 就返回。psql 把错误写 stderr，于是一条列名写错的
+    SQL 返回空字符串，被 `int(row or 0)` 变成 0 —— 第④条判据「零杀权」
+    因此显示 ✓，而它其实一次都没查成。验收台自己产假绿，比没有验收台更糟。
+    """
+
+    proc = subprocess.run(
         [
             "docker",
             "exec",
@@ -53,12 +60,19 @@ def _psql(sql: str) -> str:
             "bestseller",
             "-d",
             "bestseller",
+            "-v",
+            "ON_ERROR_STOP=1",
             "-tAc",
             sql,
         ],
         capture_output=True,
         text=True,
-    ).stdout
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"psql 查询失败（不静默吞掉）：{proc.stderr.strip()}\nSQL: {sql}"
+        )
+    return proc.stdout
 
 
 def _chapters(slug: str) -> list[str]:
@@ -98,13 +112,19 @@ def _hype_blocks_write_count(slug: str) -> int:
     不得出现在阻断码里。
     """
 
+    # ⚠️ chapter_quality_reports 上**没有** production_block_code 列——阻断码住在
+    # report_json->'blocking_codes' 数组里。第一版按不存在的列查，psql 报错、
+    # 空 stdout、计数 0、判据显示「✓ 零杀权」。现在 _psql 会炸，这类错不再变成绿。
+    # 现存真实码：LENGTH_UNDER / LENGTH_OVER / CHAPTER_LENGTH_BLOCK_{LOW,HIGH}
+    #             / DIALOG_UNPAIRED / UNFINISHED_ARTIFACT —— 全是既有门禁，与本轮无关。
     row = _psql(
         "SELECT count(*) FROM chapter_quality_reports q "
         "JOIN chapters c ON q.chapter_id=c.id "
         "JOIN projects p ON c.project_id=p.id "
-        f"WHERE p.slug='{slug}' AND q.blocks_write "
-        "AND (q.production_block_code LIKE 'PLEASURE_%' "
-        "  OR q.production_block_code LIKE 'HYPE_%')"
+        f"WHERE p.slug='{slug}' AND q.blocks_write AND EXISTS ("
+        "  SELECT 1 FROM jsonb_array_elements_text("
+        "    coalesce(q.report_json->'blocking_codes','[]'::jsonb)) code"
+        "  WHERE code LIKE 'PLEASURE\\_%' OR code LIKE 'HYPE\\_%')"
     ).strip()
     return int(row or 0)
 
@@ -167,7 +187,9 @@ def report(slug: str) -> dict[str, object]:
     tone = _psql(
         "SELECT count(*) FROM planning_artifact_versions v "
         "JOIN projects p ON v.project_id=p.id "
-        f"WHERE p.slug='{slug}' AND v.payload::text LIKE '%立意↔调性错配%'"
+        # 列名是 content 不是 payload。这条同样曾静默返回 0 —— 探针永不点亮，
+        # 而「从不报警」看起来和「没问题」一模一样。是 _psql 改成会炸才抓到的。
+        f"WHERE p.slug='{slug}' AND v.content::text LIKE '%立意↔调性错配%'"
     ).strip()
     if int(tone or 0) > 0:
         print(f"   ⚠️ 观察   简介被「立意↔调性错配」封顶 {tone} 次——爽文书被罚，该复检那道门了")

@@ -4086,6 +4086,37 @@ def get_platform_preset(key_or_name: str | None) -> PlatformPreset | None:
     return None
 
 
+def _synthesized_hype_block(resolved: Any) -> dict[str, Any]:
+    """给 taxonomy 合成预设选一副爽点配方（永不返回空 deck）。
+
+    按方法论 v1：**爽 = 题材 × 爽度档位**，爽感是正交轴而不是某些题材的
+    专属属性。所以这里的职责不是「判断这本书爽不爽」，而是保证**任何**
+    taxonomy 路径建出来的书都拿得到一副配方——空 deck 会让整套引擎短路
+    （`hype_scheme.is_empty` → `EMPTY_HYPE_BLOCKS`），那才是真正的失败模式。
+
+    路由用 taxonomy 已解析出的 ``category``（叙事类别），它比子题材字符串
+    稳定，也避免在这里再造一套题材词表（本仓库反复出现「同一事实住两地」）。
+    匹配不上时退到通用牌——**退到通用牌是正确行为，退到空牌不是**。
+    """
+
+    category = str(getattr(resolved, "novel_category", "") or "").strip().lower()
+    pack = str(getattr(resolved, "pack", "") or "").strip().lower()
+    haystack = f"{category} {pack}"
+
+    if "xianxia" in haystack or "cultivation" in haystack or "仙侠" in haystack:
+        deck = _XIANXIA_UPGRADE_HYPE_DECK
+    elif "palace" in haystack or "宅斗" in haystack or "宫斗" in haystack:
+        deck = _PALACE_REVENGE_HYPE_DECK
+    elif "apocalypse" in haystack or "末日" in haystack:
+        deck = _APOCALYPSE_SUPPLY_HYPE_DECK
+    elif "power" in haystack or "progression" in haystack or "urban" in haystack:
+        deck = _MALE_POWER_HYPE_DECK
+    else:
+        deck = _GENERIC_FALLBACK_HYPE_DECK
+
+    return _hype_block(deck)
+
+
 def synthesize_genre_preset(
     genre_key: str,
     *,
@@ -4137,6 +4168,16 @@ def synthesize_genre_preset(
         prompt_pack_key=resolved.pack,
         target_chapter_options=[120, 300, 600],
         suitable_for_short_story=False,
+        # 2026-08-16 真机定罪：taxonomy 建的书拿不到爽点配方。
+        # 这个合成函数原本不产 hype 命名空间 → writing_profile_overrides 无 hype
+        # → hype_scheme.is_empty=True → build_chapter_hype_blocks 立即返回
+        # EMPTY_HYPE_BLOCKS → 爽点约束整块不进 prompt。实测后果：三本真书
+        # 109 章的 hype_type/hype_intensity/hype_recipe_key **100% NULL**，
+        # 正文零爽点结算（《破澡堂真话局》不对称碾压覆盖率 0.00，50 章零次，
+        # 而人类语料中位是 0.37）。
+        # 爽点配方此前只挂在旧的 curated preset 上，taxonomy 路径整套引擎拿不到
+        # ——「目录↔taxonomy 两套词汇表」老病的新形态。
+        writing_profile_overrides={"hype": _synthesized_hype_block(resolved)},
     )
 
 

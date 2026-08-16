@@ -18,9 +18,11 @@ import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 import copy
 from dataclasses import dataclass, field
+from functools import lru_cache
 import hashlib
 import json
 import logging
+from pathlib import Path
 import re
 from typing import Any, Final
 from uuid import UUID, uuid4
@@ -2246,6 +2248,11 @@ _ECHO_SPAN_MIN_CHARS = 5
 _ECHO_BIGRAM_MIN_HITS = 2
 # A bigram present in at least this many avoid entries is genre background
 # (宗门/升级/修仙…) rather than one book's identity, and never counts.
+#
+# ⚠️ 这条过滤在**小书库下会退化**：库里只有 2 本书时,没有任何二元组能出现在
+# ≥3 个条目里,于是最常见的虚词也成了「独特指纹」。2026-08-16 实测:一本新书
+# 因为与旧书共享「事情」「所有」两个词被判跨书污染、构思整体毙掉。
+# 故取 `min(该常数, max(2, 条目数))`——两个条目都出现即算背景。
 _ECHO_BACKGROUND_ENTRY_COUNT = 3
 
 
@@ -2253,13 +2260,45 @@ def _is_cjk_char(ch: str) -> bool:
     return "一" <= ch <= "鿿"
 
 
-def _content_bigrams(text: str) -> set[str]:
-    """All CJK-only character bigrams in ``text``."""
+@lru_cache(maxsize=1)
+def _background_bigrams_zh() -> frozenset[str]:
+    """人类语料里的通用二元组——跨书回声里一律不算指纹。
 
+    文档频率 ≥5% 标定自 `.distillation_private`(3969 章抽样)。分离度是三个
+    数量级:「一个」95.2%、「自己」89.6%、「事情」56.6%、「所有」53.8%,而真正的
+    书指纹「澡堂」0.2%、「真话」0.9%、「挂号」0.1%、「画符」0.4% 全在 1% 以下。
+    5%~12% 这一带抽检 40 项全是通用词(隐隐/错了/严重/一顿…),无题材或机制词,
+    所以 5% 这个切点有 5 倍安全边际。
+
+    缺文件时返回空集:回声门禁退回原行为(会更容易误报),但绝不因为读不到词表
+    而放行或崩溃。
+    """
+
+    path = Path(__file__).resolve().parents[3] / "data" / "echo" / "background_bigrams_zh.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning("background bigram list unavailable at %s", path, exc_info=True)
+        return frozenset()
+    grams = payload.get("bigrams") if isinstance(payload, dict) else payload
+    if not isinstance(grams, list):
+        return frozenset()
+    return frozenset(str(g) for g in grams if isinstance(g, str) and len(g) == 2)
+
+
+def _content_bigrams(text: str) -> set[str]:
+    """CJK 二元组，**扣掉人类语料里的通用词**。
+
+    函数名一直承诺「content」,但原实现返回的是全部 CJK 二元组、没有任何内容
+    过滤——唯一的过滤在调用方那个「≥3 个条目」的背景集里,而它在小书库下失效。
+    真正的过滤放这里,名字才成立。
+    """
+
+    background = _background_bigrams_zh()
     grams: set[str] = set()
     for i in range(len(text) - 1):
         pair = text[i : i + 2]
-        if _is_cjk_char(pair[0]) and _is_cjk_char(pair[1]):
+        if _is_cjk_char(pair[0]) and _is_cjk_char(pair[1]) and pair not in background:
             grams.add(pair)
     return grams
 
@@ -2342,8 +2381,11 @@ def _mechanism_echo_report(
     for grams in entry_grams:
         for g in grams:
             gram_entry_count[g] = gram_entry_count.get(g, 0) + 1
+    # 小书库退化保护：只有 2 本旧书时，`>= 3` 永远不成立，于是背景过滤整体空转。
+    # 两个条目都出现的词，按任何合理定义都是背景而不是某一本的身份。
+    background_entry_min = min(_ECHO_BACKGROUND_ENTRY_COUNT, max(2, len(clean_entries)))
     background = {
-        g for g, n in gram_entry_count.items() if n >= _ECHO_BACKGROUND_ENTRY_COUNT
+        g for g, n in gram_entry_count.items() if n >= background_entry_min
     }
     background |= _content_bigrams(f"{genre or ''} {sub_genre or ''}")
 

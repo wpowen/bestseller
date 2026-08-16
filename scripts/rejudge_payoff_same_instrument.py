@@ -11,8 +11,13 @@ prompt_version 从 1.1 升到 1.2。升版本换来了归因能力——能证�
 本脚本只读不写：拉历史章的正文，用当前判官重新打分，打印分布。
 不落库，不改任何章的 metadata——历史读数保持原样，免得覆盖掉 v1.1 的记录。
 
+⚠️ **必须重复采样**。真机实测：同一段文字（内容 md5 未变、当前稿版本未变）
+两次评分给出 0.88 和 0.78——判官单次读数的方差约 0.10。用单次评分去判别
+0.1 量级的差异，得到的是噪声。本脚本默认每章评 3 次取均值，并打印章内极差，
+让噪声本身可见。
+
 用法：
-    python scripts/rejudge_payoff_same_instrument.py <slug> [<slug>...] [-n 20]
+    python scripts/rejudge_payoff_same_instrument.py <slug> [<slug>...] [-n 20] [-k 3]
 """
 
 from __future__ import annotations
@@ -67,7 +72,29 @@ async def _chapters(session, slug: str, limit: int):
     return project, usable
 
 
-async def run(slugs: list[str], limit: int) -> int:
+async def _judge_repeated(session, settings, content, number, project_id, k):
+    """同一章评 k 次，返回 (均值, 极差, 有效次数)。
+
+    判官的 temperature 是确定性档，但仍有 ~0.10 的读数方差（真机实测：
+    同一段文字两次给 0.88 / 0.78）。取均值 + 打印极差，让噪声可见而不是
+    被一个漂亮的单次读数掩盖。
+    """
+
+    scores = []
+    for _ in range(k):
+        result = await judge_chapter_readability(
+            session, settings, content, chapter_number=number, project_id=project_id
+        )
+        payoff = result.dimensions.get("payoff_density")
+        if payoff is not None and result.used_llm:
+            scores.append(float(payoff))
+    if not scores:
+        return None, None, 0, ""
+    spread = max(scores) - min(scores)
+    return statistics.fmean(scores), spread, len(scores), result.comment
+
+
+async def run(slugs: list[str], limit: int, repeats: int) -> int:
     settings = load_settings()
     summary: dict[str, list[float]] = {}
 
@@ -84,20 +111,23 @@ async def run(slugs: list[str], limit: int) -> int:
             print(f"\n=== {project.title}（{slug}）· {project.genre} ===")
             print(f"    均匀抽样 {len(chapters)} 章，用当前判官重评（只读，不落库）")
             scores: list[float] = []
+            spreads: list[float] = []
             for number, content in chapters:
-                result = await judge_chapter_readability(
-                    session,
-                    settings,
-                    content,
-                    chapter_number=number,
-                    project_id=project.id,
+                mean, spread, got, comment = await _judge_repeated(
+                    session, settings, content, number, project.id, repeats
                 )
-                payoff = result.dimensions.get("payoff_density")
-                if payoff is None or not result.used_llm:
-                    print(f"    ch{number:<4} —（判官未生效：{result.comment}）")
+                if mean is None:
+                    print(f"    ch{number:<4} —（判官未生效）")
                     continue
-                scores.append(float(payoff))
-                print(f"    ch{number:<4} payoff={payoff:.2f}  『{result.comment}』")
+                scores.append(mean)
+                spreads.append(spread)
+                flag = "  ⚠️噪声大" if spread > 0.15 else ""
+                print(
+                    f"    ch{number:<4} payoff={mean:.2f} (±{spread:.2f}, {got}次)"
+                    f"{flag}  『{comment}』"
+                )
+            if spreads:
+                print(f"    —— 章内极差中位 {statistics.median(spreads):.2f}（判别力下限）")
             if scores:
                 summary[f"{project.title}｜{project.genre}"] = scores
 
@@ -116,6 +146,7 @@ async def run(slugs: list[str], limit: int) -> int:
             f"{scores_sorted[0]:>6.2f} {scores_sorted[-1]:>6.2f}"
         )
     print("\n同一把尺子量的，可以直接比。")
+    print("⚠️ 判别时先看章内极差：小于极差的书间差异是噪声，不是改善或退化。")
     return 0
 
 
@@ -123,8 +154,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("slugs", nargs="+")
     parser.add_argument("-n", "--limit", type=int, default=15)
+    parser.add_argument(
+        "-k", "--repeats", type=int, default=3,
+        help="每章重复评分次数（默认 3；单次评分测不出 0.1 量级差异）",
+    )
     args = parser.parse_args()
-    return asyncio.run(run(args.slugs, args.limit))
+    return asyncio.run(run(args.slugs, args.limit, args.repeats))
 
 
 if __name__ == "__main__":

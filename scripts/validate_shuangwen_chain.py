@@ -199,6 +199,16 @@ def report(slug: str) -> dict[str, object]:
         f"② 覆盖率  {payoff}/{n} = {coverage:.2f}   "
         f"{'✓ 达同层 p10' if coverage >= floor else f'✗ 低于 {stratum} 层 p10({floor})'}"
     )
+    # ①和②答的是**两个不同的问题**，数字对不上是正常的，不是 bug：
+    #   ① 盖戳 = 生成当时那一稿的快照（引擎有没有认出爽点）
+    #   ② 覆盖率 = 拿**当前稿**重算（发布出去的文本里还有没有）
+    # 章在盖戳后被修订，两者就会分叉。真机实测 18 章时 盖戳 2 / 重算 1。
+    # 分叉本身是有信息的：说明修订把某章的爽点改没了。
+    if typed != payoff:
+        print(
+            f"            ⓘ 盖戳 {typed} 与重算 {payoff} 不一致 —— "
+            f"有章在盖戳后被修订，爽点在当前稿里已读不出（分叉本身是信号）"
+        )
     if stratum == "market":
         print(f"            ⚠️ {CLASSIFIER_GENRE_BIAS_NOTE}")
     print(

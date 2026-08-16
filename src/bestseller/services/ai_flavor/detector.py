@@ -772,6 +772,11 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         # Inner-voice ABSENCE is a chapter-level readability nudge, not a
         # per-sentence defect — advisory forever, never a block driver.
         "inner_voice_absence",
+        # 母题族饱和：判据（密度越 p99 + ≥2 子族）虽是强信号，但它测的是
+        # *题材内容*，不是句法 tell。给它独立推高分数=把一本真写债务/丧礼的
+        # 书推进 block→重写，正是 debt_metaphor_leak 退役的死因。封顶留在
+        # advisory，靠 deslop 触发集拿定向重写，不靠分数。
+        "motif_saturation",
     }
     _STRUCTURAL_CAP = 24.0
 
@@ -1000,6 +1005,9 @@ def detect(
 
     # ── 第一人称内心声音缺失 (全章零盘算/自问 → 冷读者跟不上动机) ────────
     spans.extend(_detect_inner_voice_absence(content_md, lang=lang))
+
+    # ── 默认母题族饱和 (一族意象占满全章，不是"出现"是"支配") ───────────
+    spans.extend(_detect_motif_saturation(content_md, lang=lang))
 
     spans.sort(key=lambda s: (s.start, s.end))
     return AiFlavorReport(
@@ -1328,6 +1336,99 @@ def _detect_simile_overrun(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
         )
 
     return out
+
+
+# ── 默认母题族饱和 (2026-08-16) ─────────────────────────────────────────────
+# 与上面那个**已退役**的 debt_metaphor_leak 是两回事，区别就是它退役的理由：
+# 那个把正文里每一个 债/账/欠 都当 AI 味标记，于是在一本本来就写债务的书里
+# 「把故事本身删掉」。出现 ≠ 病。
+#
+# 这里测的是**支配**：整章密度越过人类天花板，且多个子族同时在场。
+# 语料标定（.distillation_private 969 章，与 anti_default_motif 同一套正则）：
+#   每千字 中位 0.00 / p90 0.38 / p95 0.56 / p99 1.67 / max 14.88
+#   子族数 ≥2 的章 占 2.8%
+# 真机《破澡堂真话局》（爽文喜剧）：中位 3.88（人类 p99 的 2.3 倍），
+#   34/50 章越过 p99，24/50 章 ≥2 子族 —— 相对人类 2.8% 是 17 倍富集。
+#   一本澡堂喜剧的正文被丧葬账簿和命债填满，而它的种子里只提过一次「追债的」。
+#
+# 判据要求**两个条件同时成立**（任一单独都会误伤真写债务的书）：
+#   ① 每千字密度 ≥ 人类 p99；② 同时命中 ≥2 个子族。
+# 处置遵守铁律：advisory + 计分封顶（永不单独把一章打成 block），只进 deslop
+# 触发集拿重写；改写指令只给类别与改法，不给 token（种词铁律）。
+_MOTIF_SATURATION_MIN_CHARS = 1200
+_MOTIF_SATURATION_PER_1K = 1.67  # 人类 p99
+_MOTIF_SATURATION_MIN_DISTINCT = 2  # 人类仅 2.8% 的章达到
+
+
+def _motif_family_patterns() -> tuple[tuple[str, tuple[re.Pattern[str], ...]], ...]:
+    """按**语义**分族（不是按正则条数分）。
+
+    anti_default_motif 的正则表把「账」「债/欠」「讨债」拆成三条，但语义上
+    它们是同一件事：钱。按条数数「子族」会让一本真写债务的书天然凑够 2 条
+    —— 正是它保护不了的那种书。按语义合并后，「≥2 族」才真正意味着
+    *不同题材的意象同时占满一章*（钱 + 丧葬），也就是真机那本澡堂喜剧
+    被丧葬账簿填满的形状。
+    """
+
+    from bestseller.services.anti_default_motif import _DEFAULT_DEBT_FAMILY_RES
+
+    money = tuple(_DEFAULT_DEBT_FAMILY_RES[0:3])
+    funeral = (_DEFAULT_DEBT_FAMILY_RES[3],)
+    lifespan = (_DEFAULT_DEBT_FAMILY_RES[4],)
+    return (("金钱账目", money), ("丧葬", funeral), ("寿元", lifespan))
+
+
+def _detect_motif_saturation(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """默认母题族占满全章 —— 全章级 advisory，CJK only。"""
+
+    if lang.startswith("en") or not content_md:
+        return []
+    body = _DIALOGUE_QUOTE_RE.sub("", content_md)
+    chars = len(re.findall(r"[一-鿿]", body))
+    if chars < _MOTIF_SATURATION_MIN_CHARS:
+        return []
+
+    total = 0
+    distinct = 0
+    first: int | None = None
+    for _label, patterns in _motif_family_patterns():
+        found = [m for pattern in patterns for m in pattern.finditer(body)]
+        if not found:
+            continue
+        distinct += 1
+        total += len(found)
+        start = min(m.start() for m in found)
+        if first is None or start < first:
+            first = start
+    if distinct < _MOTIF_SATURATION_MIN_DISTINCT:
+        return []
+    rate = total / chars * 1000.0
+    if rate < _MOTIF_SATURATION_PER_1K:
+        return []
+
+    anchor = first or 0
+    return [
+        AiFlavorSpan(
+            start=anchor,
+            end=min(anchor + 30, len(content_md)),
+            matched_text=content_md[anchor : anchor + 30],
+            rule_id=f"{lang}.motif.saturation",
+            category="motif_saturation",
+            severity="warn",
+            suggestions=(),
+            sentence_span=(anchor, min(anchor + 30, len(content_md))),
+            why=(
+                "改法：金钱债务与丧葬两类意象已经占满全章，把它们压回背景——"
+                "只在真正推进剧情的那一两处保留，其余换成本章场景里已有的"
+                "具体事物、动作或人物关系。这类意象在真实出版章节里的中位数是"
+                "零，本章的密度和同时出场的子族数都远超人类写作区间，"
+                f"读起来会像整本书只有这一个话题（{total}处/{rate:.1f}每千字/"
+                f"{distinct}个子族）"
+            ),
+            remove_sentence_on_block=False,
+            hit_count=total,
+        )
+    ]
 
 
 def _detect_debt_metaphor_leak(content_md: str, *, lang: str) -> list[AiFlavorSpan]:

@@ -226,6 +226,41 @@ def user_requested_debt(ctx: dict[str, Any] | None) -> bool:
     return bool(default_debt_family_hits(intent_blob))
 
 
+# 用户意图里这一族出现到什么程度，才算「用户要的是这个题材」而不只是
+# 「顺口提了一句」。真机 2026-08-16《破澡堂真话局》：种子里三个来客之一是
+# 「追债的」——一次、一个子族——豁免却是二元的，等于给整本书发了无限放大
+# 许可证，正文最终 34/50 章越过人类 p99、24/50 章 ≥2 子族。
+# 豁免应当许可这一族**出场**，不许可它**支配**。
+_INTENT_DOMINANT_MIN_DISTINCT = 2
+_INTENT_DOMINANT_MIN_HITS = 3
+
+
+def user_intent_is_motif_dominant(ctx: dict[str, Any] | None) -> bool:
+    """用户是不是真把这一族当题材要的（而不是顺口提了一句）。
+
+    显式 allow_debt_theme 永远算数。否则要求用户自己的输入里这一族
+    **≥2 个子族** 或 **≥3 次命中** —— 单次顺带一提不构成「我要写一本
+    债务小说」，因此也不该让下游把它放大成全书的支配母题。
+    """
+
+    if not isinstance(ctx, dict):
+        return False
+    if bool(ctx.get("allow_debt_theme")):
+        return True
+    intent_blob = str(ctx.get(_USER_INTENT_KEY) or "")
+    if not intent_blob:
+        intent_blob = _blob(
+            ctx.get("description"), ctx.get("user_hints"), ctx.get("premise_seed")
+        )
+    if not intent_blob:
+        return False
+    distinct = len(default_debt_family_hits(intent_blob))
+    if distinct >= _INTENT_DOMINANT_MIN_DISTINCT:
+        return True
+    total = sum(len(p.findall(intent_blob)) for p in _DEFAULT_DEBT_FAMILY_RES)
+    return total >= _INTENT_DOMINANT_MIN_HITS
+
+
 def user_requested_death_revival(ctx: dict[str, Any] | None) -> bool:
     del ctx
     return True

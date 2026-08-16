@@ -99,7 +99,13 @@ _EXTRA_SELF_CHECK = (
 # ch25, same code, per-sentence quotes vs none: {8.63, 4.42} vs {0.29, 2.20,
 # 2.35}/千字. These categories get category + fix instruction only.
 _QUOTE_FREE_CATEGORIES = frozenset(
-    {"debt_metaphor_leak", "moment_slice", "moment_slice_train"}
+    {
+        "debt_metaphor_leak",
+        "moment_slice",
+        "moment_slice_train",
+        # 母题饱和同理：引用一句带「账簿」的原文＝把这个词再喂给写手一次。
+        "motif_saturation",
+    }
 )
 
 

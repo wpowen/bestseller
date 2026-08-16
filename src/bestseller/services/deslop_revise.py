@@ -163,6 +163,50 @@ def _moment_slice_rate(content: str) -> float:
     return len(_MOMENT_SLICE_RE.findall(body)) / chars * 1000.0
 
 
+_SLICE_CHAIN_RE = re.compile(
+    r"([一-鿿]{1,6})的那一瞬(?:间)?[，,]?\s*|([一两三半][寸分步息拍瞬])里\s*"
+)
+_SLICE_CHAIN_WINDOW = 40
+
+
+def collapse_moment_slice_chains(content: str, *, window: int = _SLICE_CHAIN_WINDOW) -> str:
+    """确定性拆除「时刻切片」顶针接力链（保留孤立用法）。
+
+    为什么要在把稿子交给模型之前先动手：整章重写治不好重症章（真机 17 病章
+    只治愈 6），天花板不在预算也不在指令，而在 DITTO 自我强化（NeurIPS 2022,
+    arxiv 2206.02369 实证：上下文里某句重复越多，模型继续重复它的概率越高）。
+    模型看着满屏「X的那一瞬→Y」，就会照着写。既然如此，**别让它看见**：
+    先机械把链拆掉，模型拿到的是已经没有模板的稿子，只需顺句。
+
+    ⚠️ 只拆**顶针式接力**：切片前缀的词必须在前 ``window`` 字内刚出现过
+    （「挪了半步。半步里…」「退开。退的那一瞬…」）。孤立的一次
+    「门倒下的那一瞬间，他看清了里面的人」是正常中文，前文没有「门倒下」，
+    不会被拆——没有这道守卫，机械拆解会把事件本身删掉。
+
+    真机实测（《端盘画神》病章，每千字）：
+        ch25 11.98→0.62  ch24 7.33→0.85  ch38 8.24→2.77  ch26 5.35→1.94
+        文字保留 95-98%
+    """
+
+    if not content:
+        return content
+    out: list[str] = []
+    last = 0
+    for match in _SLICE_CHAIN_RE.finditer(content):
+        head = match.group(1) or match.group(2)
+        if not head:
+            continue
+        preceding = content[max(0, match.start() - window) : match.start()]
+        if head not in preceding:
+            continue  # 孤立用法，保留
+        out.append(content[last : match.start()])
+        last = match.end()
+    if not out:
+        return content
+    out.append(content[last:])
+    return "".join(out)
+
+
 def _staccato_ratio(content: str) -> float:
     """Fraction of paragraphs that are a single short sentence (碎句独段).
 
@@ -339,6 +383,32 @@ async def _revise_prose_deslop_inner(
     slice_first = _moment_slice_rate(content) >= _SLICE_PATHOLOGICAL
     restore_length = False
 
+    # DITTO 前置：先确定性拆掉切片链，模型永远看不到那套模板。
+    # 整章重写对重症章有天花板（17 病章只治愈 6，加轮数无效、改指令只减半），
+    # 因为每一轮模型都在照抄它眼前的病文。拆完再交给它顺句，链就不会重生。
+    #
+    # 触发用**基础档**（1.2）而不是病态档（3.0）：拆链对干净文是 no-op、
+    # 对孤立用法有顶针守卫，代价为零；而挂在病态档时 ch31(2.34)、ch50(2.75)
+    # 这类基础档的章一次都没拆过，白白留着链让模型照抄。
+    # 注意与 ``slice_first``（keep-better 按切片轴优先）用的是两个阈值——
+    # 两者做的是不同的事：这里是「要不要先动手拆」，那里是「选稿时谁优先」。
+    _seam_cleaned = False
+    if _moment_slice_rate(content) >= 1.2:
+        collapsed = collapse_moment_slice_chains(content)
+        if collapsed and collapsed is not content:
+            before, after = _moment_slice_rate(content), _moment_slice_rate(collapsed)
+            if after < before:
+                logger.info(
+                    "deslop_revise: pre-collapsed moment-slice chains "
+                    "(%.2f→%.2f/千字, %d→%d chars) before showing the model",
+                    before,
+                    after,
+                    len(content),
+                    len(collapsed),
+                )
+                content = collapsed
+                _seam_cleaned = True
+
     def _key(text: str) -> tuple:
         return _keep_better_key(text, language, slice_first=slice_first)
 
@@ -402,10 +472,19 @@ async def _revise_prose_deslop_inner(
                 "【待补写正文】\n" + content
             )
         else:
+            seam_note = (
+                "\n\n【注意】这份稿子刚做过一轮确定性清理，删掉了一批冗余的"
+                "承接词，可能留下不通顺的接缝：读到句子衔接生硬、主语突然缺失、"
+                "两句挤在一起的地方，补上必要的主语或连接把它顺过来。"
+                "顺句时不要重新引入被删掉的那种承接方式。\n"
+                if _seam_cleaned
+                else ""
+            )
             user_prompt = (
                 "【检测出的 AI 味问题（必须逐条消除）】\n"
                 + (findings or "（检测器未标出，但仍按下面自查表清查）")
                 + _EXTRA_SELF_CHECK
+                + seam_note
                 + f"\n\n【目标字数】约 {target_chars} 字，不足补足、不许砍情节。\n\n"
                 "【待改写正文】\n"
                 + content

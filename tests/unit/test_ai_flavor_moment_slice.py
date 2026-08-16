@@ -146,3 +146,36 @@ def test_no_op_guard_detector_actually_ran() -> None:
     hit = [s for s in report.spans if s.category.startswith("moment_slice")]
     assert hit, "moment_slice 规则未加载——检查 patterns_zh.json discourse_rules"
     assert hit[0].hit_count >= 20
+
+
+def test_collapse_removes_anadiplosis_chains() -> None:
+    """确定性拆链：顶针接力被拆掉（DITTO 前置，模型看不到模板）。"""
+
+    from bestseller.services.deslop_revise import collapse_moment_slice_chains
+
+    chain = (
+        "老妪的左脚往里挪了半步。半步里老妪把灯往门框里探了一寸，"
+        "一寸里沈絮看见灯盏沿口的黄。她退开。退的那一瞬她的眼睛移过去。"
+    )
+    out = collapse_moment_slice_chains(chain)
+    assert "半步里" not in out
+    assert "一寸里" not in out
+    assert "退的那一瞬" not in out
+    # 事件内容仍在
+    assert "老妪把灯往门框里探" in out
+    assert "眼睛移过去" in out
+
+
+def test_collapse_keeps_isolated_legitimate_use() -> None:
+    """孤立用法是正常中文，前文没有同词 → 不拆（否则会删掉事件本身）。"""
+
+    from bestseller.services.deslop_revise import collapse_moment_slice_chains
+
+    isolated = "门倒下的那一瞬间，他终于看清了里面的人。他站起来往外走。"
+    assert collapse_moment_slice_chains(isolated) == isolated
+
+
+def test_collapse_is_noop_on_clean_prose() -> None:
+    from bestseller.services.deslop_revise import collapse_moment_slice_chains
+
+    assert collapse_moment_slice_chains(PAD) == PAD

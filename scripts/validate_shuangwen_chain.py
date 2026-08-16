@@ -5,14 +5,15 @@
 （deslop 84 次调用被误判为 0、爽点引擎 109 章零产出都是这个形状）。
 
     ① 落库：hype_type / hype_intensity / hype_recipe_key 不再是 NULL
-    ② 覆盖：爽点覆盖率向人类爽文分位靠（p10=0.29 / 中位 0.60；旧书 0.16）
+    ② 覆盖：爽点覆盖率 ≥ **同题材层**人类 p10（阈值从审计导入，不在此复制）
     ③ 无回潮：时刻切片仍干净（不因为加了爽点约束而复发）
-    ④ 零杀权：全程无 blocks_write
+    ④ 零杀权：新增的 PLEASURE_* / HYPE_* 检查零阻断
 
-人类基线（.distillation_private 按书分组标定）：
-    爽文向 216 本  p10=0.29  中位=0.60
-    文学/译作      p10=0.10  中位=0.25
-    全语料         p10=0.14  中位=0.42
+⚠️ ①和②不是独立的两条：stamp_chapter_hype 取不到指派时用同一个分类器读正文，
+读不出结算就保持 NULL——所以「非 NULL 的章数」就是覆盖率的分子。①是②的弱化版。
+
+⚠️ ②对市井/现实类书只是弱信号：词表分类器在玄幻章命中 73.2%、市井章仅 24.1%
+（人类语料实测）。市井书的低读数是尺子的偏向，以语义判官 payoff_density 为准。
 
 用法：
     python scripts/validate_shuangwen_chain.py <slug> [--compare <旧书slug>...]
@@ -33,13 +34,22 @@ from bestseller.services.ai_flavor.detector import (  # noqa: E402
     _DIALOGUE_SPOKEN_RE,
     detect,
 )
+from bestseller.services.audit_loop import PleasureDistributionAudit  # noqa: E402
 from bestseller.services.deslop_revise import _moment_slice_rate  # noqa: E402
 from bestseller.services.hype_engine import classify_hype  # noqa: E402
 
 
-SHUANGWEN_P10 = 0.29
-SHUANGWEN_MEDIAN = 0.60
+# 阈值**从审计本身导入**，不在这里复制一份。
+# 第一版把 0.29 硬写在这里，审计改成题材分层之后验收台还在用旧数——
+# 「同一事实住两地」，本项目今晚已经定罪三次的元病，验收台自己也犯。
 SLICE_BAND = 1.2
+
+# ⚠️ 覆盖率这一条对市井/现实类书只是弱信号：确定性分类器的 94 个中文词
+# 重度玄幻偏向，人类语料实测玄幻章命中 73.2%、市井章仅 24.1%。
+# 以语义判官的 payoff_density 为准，本行只作参考。
+CLASSIFIER_GENRE_BIAS_NOTE = (
+    "词表分类器在玄幻上命中 73%、市井上仅 24%——市井类书读数偏低是尺子的偏向"
+)
 
 
 def _psql(sql: str) -> str:
@@ -129,6 +139,24 @@ def _hype_blocks_write_count(slug: str) -> int:
     return int(row or 0)
 
 
+def _stratum_and_floor(slug: str) -> tuple[str, float]:
+    """题材层与阈值**从审计导入**，保证验收台和生产用同一套数。"""
+
+    audit = PleasureDistributionAudit
+    decl = _psql(
+        "SELECT coalesce(genre,'')||' '||coalesce(sub_genre,'')||' '"
+        "||coalesce(metadata->>'tags','') FROM projects "
+        f"WHERE slug='{slug}'"
+    ).strip()
+    if any(m in decl for m in audit.stratum_markers_xuanhuan):
+        stratum = "xuanhuan"
+    elif any(m in decl for m in audit.stratum_markers_market):
+        stratum = "market"
+    else:
+        stratum = "unknown"
+    return stratum, audit.coverage_floor_by_stratum.get(stratum, audit.coverage_floor)
+
+
 def report(slug: str) -> dict[str, object]:
     chapters = _chapters(slug)
     n = len(chapters)
@@ -166,11 +194,13 @@ def report(slug: str) -> dict[str, object]:
         f"① 落库    hype_type {typed}/{total} · intensity {intens}/{total} · "
         f"recipe {recipe}/{total}   {'✓' if typed > 0 else '✗ 仍是 NULL'}"
     )
+    stratum, floor = _stratum_and_floor(slug)
     print(
         f"② 覆盖率  {payoff}/{n} = {coverage:.2f}   "
-        f"{'✓ 达爽文 p10' if coverage >= SHUANGWEN_P10 else f'✗ 低于爽文 p10({SHUANGWEN_P10})'}"
-        f"   （爽文中位 {SHUANGWEN_MEDIAN}；旧书 0.16）"
+        f"{'✓ 达同层 p10' if coverage >= floor else f'✗ 低于 {stratum} 层 p10({floor})'}"
     )
+    if stratum == "market":
+        print(f"            ⚠️ {CLASSIFIER_GENRE_BIAS_NOTE}")
     print(
         f"③ 时刻切片 患病 {sick}/{n} · 最高 {max(slices):.2f}/千字   "
         f"{'✓ 无回潮' if sick == 0 else '✗ 复发'}"
@@ -216,6 +246,7 @@ def report(slug: str) -> dict[str, object]:
         "slug": slug,
         "n": n,
         "coverage": coverage,
+        "floor": floor,
         "hype_typed": typed,
         "slice_sick": sick,
         "blocks": blocks,
@@ -236,7 +267,7 @@ def main() -> int:
         return 2
     passed = (
         int(main_result["hype_typed"]) > 0
-        and float(main_result["coverage"]) >= SHUANGWEN_P10
+        and float(main_result["coverage"]) >= main_result["floor"]
         and int(main_result["slice_sick"]) == 0
         and int(main_result["blocks"]) == 0
     )

@@ -2,10 +2,29 @@
 # Maps Docker named volumes to external SSD bind mounts for faster I/O
 # and to keep large data off the internal disk.
 #
-# Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.ssd.yml up -d
+# ⚠️ 这个文件通常**不该**再被显式带上。用：
 #
-# The docker-start.sh script auto-detects SSD and applies this override.
+#   docker compose up -d
+#
+# ── 为什么（2026-08-16 花了一整晚才定位）────────────────────────────────────
+# 曾经写在这里的用法是：
+#     docker compose -f docker-compose.yml -f docker-compose.ssd.yml up -d
+# 显式 `-f` 会**关掉 docker-compose.override.yml 的自动加载**，而 override 里
+# 才有 `./src:/app/src:ro`（以及 config/data）的活挂载。于是栈跑的是镜像里
+# 烘焙的旧代码 —— 改了代码、重启了容器、断言仍然失败，症状酷似「Python 进程
+# 缓存导入」，实际是源码根本没进容器。整整一批修复没有一次真正运行过。
+#
+# 不带 -f 也不会丢 SSD：override 用 `external: true` + `name: bestseller_pgdata`
+# 直接引用**已经创建好、已经绑在 SSD 上**的那两个卷，效果等同本文件。
+# 两者还在 pgdata 上互斥（external vs driver），三个文件一起带会直接报
+# "conflicting parameters"。
+#
+# 只有在**首次创建**这两个卷时才需要本文件：
+#   docker compose -f docker-compose.yml -f docker-compose.ssd.yml up -d
+# 卷建成之后一律回到 `docker compose up -d`。
+#
+# 自检：`docker exec bestseller-worker-1 sh -c 'mount | grep /app/src'` 有输出
+# 才说明活挂载在。或直接跑 scripts/verify_live_code_mount.sh。
 #
 # 2026-07-06: migrated pgdata/artifacts from /Volumes/SSD to /Volumes/MACSSD
 # after /Volumes/SSD had a transient I/O drop (write errors mid-run corrupted

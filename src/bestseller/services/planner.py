@@ -18573,7 +18573,28 @@ def _volume_outline_prompts(
             ]
             or [volume_number]
         )
-        if volume_number <= 1:
+        # 阶段必须按**本批次覆盖的章位置**定，不能只看卷号。
+        # 2026-08-16 真机定罪：两本书都只有 1 卷，`volume_number <= 1` 于是把
+        # 第 1 章到第 50 章**整本书**都判成 "opening" 档，finale 档永远到不了。
+        # 后果是终章拿到的是开篇推荐钩子——《破澡堂真话局》第 50 章 hook=
+        # sudden_reveal（全书最后一章还在「突然揭示」），书structurally 没有结局，
+        # 作家评审原话「50 章的书没有结局，这是结构层的死刑」。
+        # 卷号只在多卷书里才等价于进度；单卷书里它恒等于 1。
+        _book_total = int(getattr(project, "target_chapters", 0) or 0)
+        _batch_end = None
+        if chapter_bounds is not None:
+            _batch_end = int(chapter_bounds[1])
+        if _book_total > 0 and _batch_end:
+            _progress = _batch_end / _book_total
+            if _batch_end >= _book_total:
+                _method_stage = "finale"
+            elif _progress >= 0.8:
+                _method_stage = "pre_climax"
+            elif _progress <= 0.2:
+                _method_stage = "opening"
+            else:
+                _method_stage = "middle"
+        elif volume_number <= 1:
             _method_stage = "opening"
         elif volume_number >= _total_volumes:
             _method_stage = "finale"

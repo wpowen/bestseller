@@ -228,7 +228,10 @@ from bestseller.services.write_safety_gate import (
     findings_from_identity_violations,
     serialize_write_safety_findings,
 )
-from bestseller.services.writing_presets import infer_genre_preset
+from bestseller.services.writing_presets import (
+    infer_genre_preset,
+    synthesize_genre_preset,
+)
 from bestseller.services.writing_profile import is_english_language
 from bestseller.settings import AppSettings
 
@@ -4694,17 +4697,33 @@ async def _ensure_project_invariants(
     # (reader_promise, selling_points, hook_keywords, chapter_hook_strategy)
     # without going through ``sanitize_genre_story_overrides`` — the latter
     # intentionally strips story content on the story-framework path.
-    preset_overrides: dict[str, Any] = {}
-    genre_preset = infer_genre_preset(project.genre, project.sub_genre)
-    if genre_preset is not None:
-        preset_overrides = dict(genre_preset.writing_profile_overrides)
-
+    #
+    # ⚠️ `infer_genre_preset` 只查 curated 预设表。表里没有的题材（taxonomy 建的
+    # 书，例如「搞笑沙雕」）返回 None，于是 preset_overrides 保持 {}，
+    # hype_scheme 落成空壳，爽点约束块 0 字——整条爽点链从第一环就断了。
+    # 真机对照（2026-08-16）：
+    #     infer_genre_preset('东方玄幻') → 12 条配方（curated 表里有）
+    #     infer_genre_preset('搞笑沙雕') → None  ← 三本书 109 章 hype 全 NULL 的源头
+    # `synthesize_genre_preset` 正是为这种情况准备的兜底合成（5 条通用配方），
+    # 但此处从未调用它——「目录↔taxonomy 两套词汇表」老病的又一处新形态。
     _project_meta = getattr(project, "metadata_json", None)
     _pack_key = (
         _project_meta.get("prompt_pack_key")
         if isinstance(_project_meta, Mapping)
         else None
     )
+
+    preset_overrides: dict[str, Any] = {}
+    genre_preset = infer_genre_preset(project.genre, project.sub_genre)
+    if genre_preset is None:
+        genre_preset = synthesize_genre_preset(
+            str(_pack_key or project.sub_genre or project.genre or "").strip()
+            or "light-novel",
+            genre=getattr(project, "genre", None),
+            sub_genre=getattr(project, "sub_genre", None),
+        )
+    if genre_preset is not None:
+        preset_overrides = dict(genre_preset.writing_profile_overrides)
 
     try:
         invariants = seed_invariants(

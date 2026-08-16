@@ -67,45 +67,62 @@ def test_gap_and_hogs_codes_still_declared() -> None:
 
 
 def test_coverage_thresholds_are_corpus_calibrated() -> None:
-    """两档阈值必须来自人类语料分组标定，不是拍脑袋。
+    """阈值必须来自人类语料标定，且**按题材层分组**——不是拍脑袋，也不是单一档。
 
-    标定（.distillation_private，按书抽样 ≥6 章）：
-        爽文向 216 本   p10=0.29  中位=0.60
-        文学/译作 199 本 p10=0.10  中位=0.25
-        全语料           p10=0.14  中位=0.42
+    2026-08-16 更正：原来的「爽文档 0.29 / 全语料 0.14」双档已退役。
+    它按爽文标签分组，但这个指标的读数取决于确定性分类器在该题材上的响应，
+    而那个响应差 3 倍（玄幻章命中 73.2%、市井/现实章 24.1%，n=425/79）。
+    拿玄幻占多数的样本标出的 0.29 去要求市井书，是在要求它高于该题材人类中位。
+
+    新基线（272 本人类书按书统计覆盖率，取所在层 p10）：
+        玄幻向      175 本  p10=0.23  中位=0.42
+        市井/现实向   60 本  p10=0.17  中位=0.31
+        混合/其它     37 本  p10=0.00  中位=0.38  ← 分层不明退回全语料 p10
     """
 
-    assert PleasureDistributionAudit.coverage_floor == 0.14  # 全语料 p10
-    assert PleasureDistributionAudit.coverage_floor_shuangwen == 0.29  # 爽文组 p10
-    assert PleasureDistributionAudit.coverage_floor_shuangwen > (
-        PleasureDistributionAudit.coverage_floor
-    ), "爽文的尺子必须比全语料地板严"
+    floors = PleasureDistributionAudit.coverage_floor_by_stratum
+    assert floors["xuanhuan"] == 0.23
+    assert floors["market"] == 0.17
+    assert PleasureDistributionAudit.coverage_floor == 0.14
+    assert floors["xuanhuan"] > floors["market"] > PleasureDistributionAudit.coverage_floor, (
+        "尺子响应越强的题材，门槛必须越高"
+    )
 
 
-def test_single_tier_would_have_missed_our_books() -> None:
-    """单档会漏判——这正是加第二档的理由。
+def test_retired_single_and_shuangwen_tiers_are_gone() -> None:
+    """退役的方案必须真的删掉——两套并存就是「同一事实住两地」。"""
 
-    我们两本真书覆盖率 0.16：高于全语料 p10（0.14，不报），却低于爽文 p10
-    （0.29）甚至低于文学组中位（0.25），而读者判它们「50 章零爽点结算」。
-    用包含大量文学与译作的分布去要求一本爽文，必然过松。
+    assert not hasattr(PleasureDistributionAudit, "coverage_floor_shuangwen")
+    assert not hasattr(PleasureDistributionAudit, "shuangwen_markers")
+
+
+def test_both_known_bad_books_still_caught() -> None:
+    """换参照系不能放走已知的坏书。
+
+    端盘画神（东方玄幻）实测覆盖 0.16 < 玄幻 p10 0.23；
+    市井验证书实测 0.16 < 市井 p10 0.17。两本都仍然报得出。
     """
 
     ours = 0.16
-    assert ours > PleasureDistributionAudit.coverage_floor, "单档确实不会报"
-    assert ours < PleasureDistributionAudit.coverage_floor_shuangwen, "双档才报得出"
+    floors = PleasureDistributionAudit.coverage_floor_by_stratum
+    assert ours < floors["xuanhuan"]
+    assert ours < floors["market"]
 
 
-def test_shuangwen_markers_cover_platform_vocabulary() -> None:
-    """自称爽文的判定要覆盖平台真实词汇。
+def test_stratum_markers_use_genre_vocabulary_not_hype_vocabulary() -> None:
+    """题材层标记只用来选**参照系**，不该混进爽点词。
 
-    平台实证：四大平台官方标签体系里**都没有「爽文」这个 token**——番茄用
-    「无脑爽」，起点拆成升级流/扮猪吃虎/杀伐果断等流派词。只认「爽文」二字
-    必然 0 命中（与「升级」token 错配仙侠 pack 同病）。
+    旧的 shuangwen_markers 里有「打脸」「逆袭」「碾压」——那些是爽点词汇，
+    既做过判定标记又出现在别处，正是「同一个词同时承担两种职责」的老病。
+    新标记只描述题材。
     """
 
-    markers = PleasureDistributionAudit.shuangwen_markers
-    for word in ("爽文", "无脑爽", "打脸", "逆袭", "扮猪吃虎"):
-        assert word in markers, f"缺平台真实标签词：{word}"
+    audit = PleasureDistributionAudit
+    all_markers = set(audit.stratum_markers_xuanhuan) | set(audit.stratum_markers_market)
+    for hype_word in ("打脸", "逆袭", "碾压", "扮猪吃虎", "无脑爽"):
+        assert hype_word not in all_markers, f"爽点词混进了题材标记：{hype_word}"
+    for genre_word in ("玄幻", "仙侠", "修真", "市井", "都市", "沙雕"):
+        assert genre_word in all_markers, f"缺题材词：{genre_word}"
 
 
 def test_coverage_check_is_warn_not_block() -> None:

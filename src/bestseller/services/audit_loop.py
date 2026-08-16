@@ -482,23 +482,51 @@ class PleasureDistributionAudit:
     #   全语料混合            p10=0.14  中位=0.42
     #   我们两本真书                     0.16
     #
-    # 两档阈值，因为参照系不同：
-    # * ``coverage_floor`` = 全语料 p10。任何书低于它都是灾难性缺失。
-    # * ``coverage_floor_shuangwen`` = 爽文组 p10。声称是爽文的书要按爽文量。
+    # 阈值按**题材层**分组，因为这个指标的读数取决于尺子在该题材上的响应。
     #
-    # ⚠️ 单档会漏判：我们两本 0.16 **高于**全语料 p10（不报），却低于爽文 p10、
-    # 甚至低于文学组中位——而读者判它们「50 章零爽点结算」。用全语料 p10 当
-    # 爽文的尺子，等于拿包含大量文学与译作的分布去要求一本爽文，必然过松。
-    # 这个分组同时验证了分类器在书级是有效判别器（爽文 0.60 vs 文学 0.25，
-    # 2.4 倍分离），尽管它的词表偏玄幻。
+    # ⚠️ 2026-08-16 定罪：确定性分类器 `classify_hype` 的 94 个中文词重度玄幻偏向
+    # （突破/晋阶/真身/金光/神识/机缘/认主/碾压/镇压…）。同一批人类出版章分层实测：
     #
-    # 两档都是**告警带不是及格线**：最强的爽文单指标 AUC 也只有 0.72，不配有杀权。
-    coverage_floor = 0.14
-    coverage_floor_shuangwen = 0.29
+    #     玄幻向     n=425   命中率 73.2%
+    #     市井/现实向 n= 79   命中率 24.1%      ← 3 倍差距
+    #
+    # 差的是尺子不是书。真机佐证：一本市井喜剧第 1 章写了教科书式的三段律结算
+    # （有名字的对手被当众"手滑"少打了肉、第三方在场、主角全程没出手），
+    # 分类器返回 None——那几个字里没有一个在词表上。
+    #
+    # 因此**旧的「爽文档 0.29 / 全语料 0.14」双档退役**：它按爽文标签分组，
+    # 而这个指标必须按尺子的响应分组。两套并存就是「同一事实住两地」。
+    # 拿玄幻占多数的样本标出的 0.29 去要求市井书，是在要求它高于该题材人类中位。
+    #
+    # 新基线：272 本人类书按书统计覆盖率，按题材层取 p10（告警带取 p10 的含义是
+    # ——90% 的同题材人类书都做得到，做不到才值得说一句）：
+    #
+    #     层          本数   p10    中位
+    #     玄幻向       175   0.23   0.42
+    #     市井/现实向   60   0.17   0.31
+    #     混合/其它     37   0.00   0.38   ← 分层不明时退回全语料 p10
+    #
+    # 两本已知的坏书都还抓得住：端盘画神 0.16 < 玄幻 0.23 ✓，市井书 0.16 < 0.17 ✓。
+    #
+    # ⚠️ 分层阈值只是**缓解**，不是根治：词表尺子本身读不懂市井爽点。根治要靠
+    # 语义判官（reader_judge 的 payoff_density 已换成读者三段律，v1.2），
+    # 那条路不依赖词表。在它接管之前，本检查对市井类书只能算弱信号。
+    #
+    # 一律是**告警带不是及格线**：最强的爽文单指标 AUC 也只有 0.72，不配有杀权。
+    coverage_floor = 0.14  # 分层不明时的兜底（全语料 p10）
+    coverage_floor_by_stratum = {
+        "xuanhuan": 0.23,
+        "market": 0.17,
+    }
     coverage_min_chapters = 8
-    # 判定「这本书自称爽文」的标记（题材/标签里出现即算）。没有专门的爽度档位
-    # 轴之前，用它做代理；轴建好后应改读轴。
-    shuangwen_markers = ("爽文", "无脑爽", "打脸", "逆袭", "扮猪吃虎", "碾压", "爽")
+    # 题材层判定词（题材/子题材/标签里出现即算）。只用来选**参照系**，
+    # 不参与判定书的好坏，所以宽松命中即可。
+    stratum_markers_xuanhuan = (
+        "玄幻", "仙侠", "修真", "修仙", "武侠", "洪荒", "宗门", "灵气", "剑修",
+    )
+    stratum_markers_market = (
+        "市井", "都市", "现实", "日常", "职场", "沙雕", "喜剧", "生活", "校园", "美食",
+    )
 
     def __init__(
         self,
@@ -691,7 +719,8 @@ class PleasureDistributionAudit:
         # 一本每隔两章来一次小爽点、但全书只有 15% 的章有结算的书，gap 检查看不出来。
         if total_chapters >= self.coverage_min_chapters:
             coverage = payoff_chapters / total_chapters
-            # 自称爽文的书按爽文分布量，其余按全语料地板量。
+            # 取题材层作参照系：同一把尺子在不同题材上的响应差 3 倍，
+            # 不分层就是拿玄幻的读数去要求市井书。
             _decl = " ".join(
                 str(x or "")
                 for x in (
@@ -702,10 +731,15 @@ class PleasureDistributionAudit:
                     else "",
                 )
             )
-            _is_shuangwen = any(m in _decl for m in self.shuangwen_markers)
-            _floor = (
-                self.coverage_floor_shuangwen if _is_shuangwen else self.coverage_floor
-            )
+            # 先定参照系（题材层），再比。玄幻优先判定：同时命中两层时按玄幻算，
+            # 因为分类器在玄幻词上响应更强，用低的那条会过松。
+            if any(m in _decl for m in self.stratum_markers_xuanhuan):
+                _stratum = "xuanhuan"
+            elif any(m in _decl for m in self.stratum_markers_market):
+                _stratum = "market"
+            else:
+                _stratum = "unknown"
+            _floor = self.coverage_floor_by_stratum.get(_stratum, self.coverage_floor)
             if coverage < _floor:
                 findings.append(
                     AuditFinding(
@@ -715,9 +749,11 @@ class PleasureDistributionAudit:
                         chapter_no=None,
                         detail=(
                             f"全书仅 {payoff_chapters}/{total_chapters} 章"
-                            f"（{coverage:.0%}）能读出爽点结算，低于"
-                            f"{'爽文向人类语料 p10' if _is_shuangwen else '人类语料 p10'}"
-                            f"（{_floor:.0%}；爽文向中位 60%，全语料中位 42%）。"
+                            f"（{coverage:.0%}）能读出爽点结算，低于同题材层人类语料 p10"
+                            f"（{_stratum}={_floor:.0%}）。"
+                            f"⚠️ 本检查用的是词表分类器，它在玄幻上命中 73%、"
+                            f"在市井/现实上只有 24%——市井类书的读数偏低是尺子的偏向，"
+                            f"请以语义判官的 payoff_density 为准。"
                             f"读者判断爽不爽的通用律是：赢要落到一个具体的人脸上、"
                             f"被具体的人看见、并在主角账上留下一笔能带走的东西——"
                             f"三件缺一件就不算结算。"

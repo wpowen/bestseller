@@ -12197,9 +12197,14 @@ async def stamp_chapter_hype(
                     # No recipe_key is available from the classifier path — it
                     # was never actually picked by ``plan_chapter_hype``.
                     _hype_recipe_key = None
-                    # Normalise confidence (0-10) into the 0-1 intensity scale
-                    # the downstream engine uses.
-                    _hype_intensity = max(0.0, min(1.0, float(_inferred_confidence) / 10.0))
+                    # ⚠️ 量纲统一为 0-10（2026-08-17 定罪）：指派路径写
+                    # intensity_target（7.5 之类，0-10 制），配置 intensity_floor
+                    # 也是 0-10，消费方 commercial_planning_readiness 按
+                    # `>= 7.0` 判黄金章强度——而这里曾把 confidence ÷10 存成
+                    # 0-1 制，真机整本书 0.1-0.4，**黄金章强度检查恒 False
+                    # 空转**（双保险死代码家族又一员）。confidence 本身就是
+                    # 0-10，直接存。
+                    _hype_intensity = max(0.0, min(10.0, float(_inferred_confidence)))
                     logger.info(
                         "Chapter %d: hype_type fallback-classified as %s "
                         "(confidence=%.1f) — upstream assignment was missing.",

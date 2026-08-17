@@ -120,3 +120,33 @@ async def test_first_stamp_stays_null_on_no_hype():
     )
     assert chapter.hype_type is None
     assert "hype_regressions" not in chapter.metadata_json
+
+
+@pytest.mark.asyncio
+async def test_fallback_intensity_uses_0_to_10_scale():
+    """量纲统一（2026-08-17）：兜底分类器的 intensity 必须与指派路径同为 0-10 制。
+
+    曾经这里 ÷10 存成 0-1 制，而指派路径写 intensity_target（7.5）、消费方
+    commercial_planning_readiness 按 `>= 7.0` 判黄金章强度——整本书 0.1-0.4，
+    检查恒 False 空转。
+    """
+
+    from bestseller.services.hype_engine import classify_hype
+
+    expected = classify_hype(_TEXT_WITH_HYPE, language="zh-CN", segment="tail")
+    assert expected is not None, "测试文本必须能被分类器读出"
+    _, expected_confidence = expected
+
+    chapter = _FakeChapter()
+    await stamp_chapter_hype(
+        _FakeSession(),
+        chapter=chapter,
+        chapter_number=7,
+        content_md=_TEXT_WITH_HYPE,
+        project=None,
+        scene_drafts=(),
+    )
+    assert chapter.hype_intensity == pytest.approx(float(expected_confidence)), (
+        "兜底 intensity 应直接存 confidence（0-10 制），不得再 ÷10"
+    )
+    assert chapter.hype_intensity > 1.0, "0-1 制残留（÷10 又回来了）"

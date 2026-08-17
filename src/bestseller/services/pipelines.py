@@ -9007,14 +9007,18 @@ async def run_chapter_pipeline(
                 )
         if chapter_draft is None and not _scene_loop_blocked:
             chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
-        if chapter_draft is not None and getattr(chapter, "hype_type", None) is None:
+        if chapter_draft is not None:
             # 爽点落库的汇合点。整章生成(chapter_first)直接产出草稿、不经过
             # assemble_chapter_draft，而爽点盖戳逻辑原本只内联在后者里——
-            # 2026-08-16 真机定罪：三本书 109 章 hype 三字段 100% NULL，
-            # 连兜底分类器本可救回的 14 章也没救到。
-            # 放在汇合点而不是两个生成点上，避免同一动作写两遍；
-            # `hype_type is None` 这道守卫保证走场景装配路径的章不会被二次盖戳
-            # （二次盖戳会把同一次爽点重复登记进 DiversityBudget，污染多样性预算）。
+            # 2026-08-16 真机定罪：三本书 109 章 hype 三字段 100% NULL。
+            #
+            # ⚠️ 这里曾有守卫 `hype_type is None 才盖`，本意是防止二次盖戳把
+            # 同一爽点重复登记进 DiversityBudget。但它把「防重复登记」做成了
+            # 「戳永不刷新」：整章重生成产出丢失爽点的新版无条件上位后，旧戳
+            # 变成幽灵——2026-08-17 真机定罪，玄幻书 20 个戳 11 个幽灵
+            # （ch18 v1-v5 全有 status_jump，v6 重写丢失后照样上位）。
+            # 改为 refresh 模式：已盖戳章重算戳（预算不重复登记——守卫的本意
+            # 由 stamp 内部的 refresh 分支承担），爽点丢失时清戳留痕。
             try:
                 from bestseller.services.drafts import stamp_chapter_hype
 
@@ -9025,6 +9029,7 @@ async def run_chapter_pipeline(
                     content_md=chapter_draft.content_md or "",
                     project=project,
                     scene_drafts=(),
+                    refresh=getattr(chapter, "hype_type", None) is not None,
                 )
             except Exception:
                 logger.debug(

@@ -6811,14 +6811,18 @@ def build_scene_draft_prompts(
             _pacing_mode_val = "breathe"  # periodic breathing room
         else:
             _pacing_mode_val = "build"
-    # 爽文融合 (enable_shuangwen_fusion, default True): lift the 爽点 engines above
-    # the 文采 flourish levers in PROSE_SCENE so 爽点 is never starved by the budget.
-    # 文采 still ships — fusion reorders, it does not remove. See methodology_compiler.
+    # 爽文融合: flag True forces every book; default False auto-enables only
+    # for commercial loop packs (see methodology_bridge.pack_uses_shuangwen_loop).
     from bestseller.settings import get_settings  # noqa: PLC0415
+    from bestseller.services.methodology_bridge import resolve_shuangwen_fusion  # noqa: PLC0415
 
     _settings_for_methodology = get_settings()
-    _shuangwen_on = bool(
-        getattr(_settings_for_methodology.pipeline, "enable_shuangwen_fusion", True)
+    _pack_key_for_methodology = _resolve_prompt_pack_key(project)
+    _shuangwen_on = resolve_shuangwen_fusion(
+        enabled_flag=bool(
+            getattr(_settings_for_methodology.pipeline, "enable_shuangwen_fusion", False)
+        ),
+        pack_key=_pack_key_for_methodology,
     )
     # C1-rules trim (prompt-ablation ladder, 2026-06-10): drop the abstract
     # writing-methodology说教 bridge from the writer prompt unless explicitly
@@ -6834,7 +6838,7 @@ def build_scene_draft_prompts(
     # prompt 3× and is a top dilution source (prompt-ablation ladder).
     _compiled_methodology = compile_methodology(
         stage=MethodologyStage.PROSE_SCENE,
-        prompt_pack_key=_resolve_prompt_pack_key(project),
+        prompt_pack_key=_pack_key_for_methodology,
         language=language,
         chapter_no=chapter.chapter_number,
         chapter_position=_infer_chapter_position(project, chapter),
@@ -6937,12 +6941,15 @@ def build_scene_draft_prompts(
         _methodology_line += f"{_quality_levers_block}\n\n"
     _methodology_line = _dedupe_methodology_sections(_methodology_line)
     _qimao_opening_contract_line = ""
-    _qimao_opening_contract_block = render_qimao_opening_contract_block(
-        _project_meta.get("opening_quality_contract") or _project_meta.get("qimao_opening_contract"),
-        chapter_number=chapter.chapter_number,
-        language=language,
-        rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
-    )
+    _qimao_opening_contract_block = ""
+    from bestseller.services.planner import opening_quality_gate_requested
+    if opening_quality_gate_requested(project):
+        _qimao_opening_contract_block = render_qimao_opening_contract_block(
+            _project_meta.get("opening_quality_contract") or _project_meta.get("qimao_opening_contract"),
+            chapter_number=chapter.chapter_number,
+            language=language,
+            rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
+        )
     if _qimao_opening_contract_block:
         _qimao_opening_contract_line = f"{_qimao_opening_contract_block}\n\n"
     _hard_fact_line = f"{hard_fact_section}\n\n" if hard_fact_section else ""
@@ -12103,6 +12110,7 @@ async def stamp_chapter_hype(
     content_md: str,
     project=None,
     scene_drafts=(),
+    refresh: bool = False,
 ) -> None:
     """把爽点三字段盖到 chapter 行，并把这次爽点登记进 DiversityBudget。
 
@@ -12116,6 +12124,20 @@ async def stamp_chapter_hype(
     ``scene_drafts`` 为空时（整章路径就是如此）自动走兜底分类器读成稿正文。
     分类器返回 None 时保持 NULL —— 那是诚实信号，表示这一章确实没有可读出的
     爽点结算，不要用假值把它填上。
+
+    ``refresh=True`` = 已盖戳章换了新当前稿，重算戳使数据跟正文一致。
+    2026-08-17 真机定罪：整章重生成（长度/质量债触发 chapter_first 再跑）会
+    产出丢失爽点的新版并**无条件上位**（旧 current 直接翻 false，零比较），
+    而旧守卫「hype_type 非空即跳过」让戳永不刷新——玄幻书 20 个戳里 **11 个
+    是幽灵**（当前稿已读不出，ch18 六个版本 v1-v5 全有 status_jump，v6 重写
+    丢失后照样上位）。refresh 模式下：
+      * 重算出新类型 → 更新三字段（**不再登记 DiversityBudget**——该章首次
+        盖戳时已登记过，重复登记会污染多样性窗口，这正是旧守卫存在的原因；
+        守卫护的是预算，不该连带把戳冻结）
+      * 重算为 None 而旧戳存在 → **清空三字段**（数据诚实：覆盖率①与重算②
+        自此同源），并把丢失记录进 chapter.metadata_json['hype_regressions']
+        留痕 + warning 日志——爽点被重生成写丢这件事从此可见、可审计、
+        可被修复轮消费。
     """
 
     # ── Reader Hype Engine — persist chapter metadata + register the moment ──
@@ -12191,6 +12213,7 @@ async def stamp_chapter_hype(
                     chapter_number,
                     exc_info=True,
                 )
+        _previous_type = getattr(chapter, "hype_type", None)
         if _hype_type:
             chapter.hype_type = _hype_type
             chapter.hype_recipe_key = _hype_recipe_key
@@ -12208,7 +12231,13 @@ async def stamp_chapter_hype(
                 _hype_enum = None
             # project 是可选参数（签名如此声明），拿不到就只盖章级戳、跳过
             # 多样性预算登记——盖戳本身不该因为缺少 project 而整个失败。
-            if _hype_enum is not None and getattr(project, "id", None) is not None:
+            # refresh 模式一律不登记：该章首次盖戳时已经登记过，重复登记会把
+            # 同一章的爽点在多样性窗口里数两遍。
+            if (
+                not refresh
+                and _hype_enum is not None
+                and getattr(project, "id", None) is not None
+            ):
                 _budget = await load_diversity_budget(session, project.id)
                 _budget.register_hype_moment(
                     chapter_no=chapter_number,
@@ -12217,6 +12246,32 @@ async def stamp_chapter_hype(
                     intensity=float(_hype_intensity or 0.0),
                 )
                 await save_diversity_budget(session, _budget)
+        elif refresh and _previous_type:
+            # 新当前稿读不出任何爽点，而旧稿盖过戳——爽点被重生成写丢了。
+            # 清戳保持数据诚实（否则覆盖率指标①盖戳与②当前稿重算永久分叉，
+            # 真机实测 20 个戳 11 个幽灵），并留痕供审计与修复轮消费。
+            from datetime import datetime, timezone
+
+            chapter.hype_type = None
+            chapter.hype_recipe_key = None
+            chapter.hype_intensity = None
+            _meta = dict(getattr(chapter, "metadata_json", None) or {})
+            _regressions = list(_meta.get("hype_regressions") or [])
+            _regressions.append(
+                {
+                    "lost_type": _previous_type,
+                    "lost_at": datetime.now(timezone.utc).isoformat(),
+                    "reason": "re-stamp on new current draft found no readable payoff",
+                }
+            )
+            _meta["hype_regressions"] = _regressions
+            chapter.metadata_json = _meta  # 整体重赋值触发 JSONB 变更跟踪
+            logger.warning(
+                "Chapter %d: hype regression — previous stamp '%s' no longer "
+                "readable in the new current draft; stamp cleared and recorded.",
+                chapter_number,
+                _previous_type,
+            )
     except Exception:
         logger.warning(
             "Hype metadata persistence failed for chapter %d (non-fatal)",
@@ -12702,6 +12757,9 @@ async def assemble_chapter_draft(
         content_md=content_md,
         project=project,
         scene_drafts=scene_drafts,
+        # 已盖戳章重新装配 = 换稿，走 refresh：重算戳、不重复登记预算、
+        # 爽点丢失时清戳留痕（2026-08-17 幽灵戳定罪，详见函数 docstring）。
+        refresh=getattr(chapter, "hype_type", None) is not None,
     )
 
     await session.flush()

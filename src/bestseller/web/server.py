@@ -3863,12 +3863,54 @@ class WebTaskManager:
                                 ),
                             },
                         )
+                        # ── conception_log 落盘 ──────────────────────────────
+                        # 2026-08-17 定罪：conception_log（淘汰赛点子池全文、每轮
+                        # 评分、淘汰理由）在此被取出后曾无任何下游写入——91 次
+                        # LLM 调用的中间产物全部丢弃，只有胜出者落库。后果：
+                        # ①构思平庸时无法事后审计哪一环丢了质量（本次调研只能从
+                        # 最终产物反推）②前端「看不到构思了什么」的根子不是没
+                        # 展示，是没存 ③池子里是否有更好的点子被埋没，永远无人知。
+                        # 落成文件（可能上百 KB，不塞 JSONB），路径记进 workflow_run
+                        # 供前端与审计取用。失败不阻断建书。
+                        conception_log_path: str | None = None
+                        if conception_log:
+                            try:
+                                _log_dir = (
+                                    Path(settings.output.base_dir) / "conception-logs"
+                                )
+                                _log_dir.mkdir(parents=True, exist_ok=True)
+                                _log_file = _log_dir / f"{task_id}.json"
+                                _log_file.write_text(
+                                    json.dumps(
+                                        {
+                                            "task_id": task_id,
+                                            "title": effective_title,
+                                            "conception_log": conception_log,
+                                            "hook_candidates": conception_hook_candidates,
+                                            "degradation_events": conception_degradation,
+                                        },
+                                        ensure_ascii=False,
+                                        indent=1,
+                                        default=str,
+                                    ),
+                                    encoding="utf-8",
+                                )
+                                conception_log_path = str(_log_file)
+                            except Exception:
+                                logger.warning(
+                                    "conception_log persistence failed for task %s "
+                                    "(non-fatal)",
+                                    task_id,
+                                    exc_info=True,
+                                )
+
                         if conception_workflow_run is not None:
                             conception_workflow_run.status = WorkflowStatus.COMPLETED.value
                             conception_workflow_run.current_step = "completed"
                             conception_workflow_run.metadata_json = {
                                 **(conception_workflow_run.metadata_json or {}),
                                 "result_title": effective_title,
+                                "conception_log_path": conception_log_path,
                                 "result_hash": hashlib.sha256(
                                     json.dumps(
                                         {

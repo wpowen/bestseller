@@ -208,8 +208,12 @@ main() {
   # Wrapper: run docker compose with stdin closed so any interactive prompt
   # (e.g. "Recreate volume? (y/N)") immediately auto-answers N. This makes
   # the script bulletproof against accidental pgdata wipes.
+  # ⚠️ macOS 自带 bash 3.2：`set -u` 下展开**空数组** "${A[@]}" 会报
+  # unbound variable。COMPOSE_FILES 现在默认就是空的（裸 docker compose，
+  # 让 override 自动加载），所以必须用 ${A[@]+"${A[@]}"} 这个惯用法。
+  # 不加这层保护脚本会在第一条 compose 命令上直接退出——本次改动实测踩到。
   compose() {
-    $COMPOSE "${COMPOSE_FILES[@]}" "$@" < /dev/null
+    $COMPOSE ${COMPOSE_FILES[@]+"${COMPOSE_FILES[@]}"} "$@" < /dev/null
   }
 
   # ── Step 0: Stop existing BestSeller containers (releases ports) ────────
@@ -265,33 +269,75 @@ main() {
   printf "${BOLD}BestSeller Docker Stack${NC}\n"
   echo "========================================"
 
-  # Show SSD status
-  if [[ ${#COMPOSE_FILES[@]} -gt 2 ]]; then
-    ok "SSD detected — volumes mapped to ${SSD_DATA_DIR}"
+  # Show SSD status —— 按**卷实际指向哪**判断，不按 COMPOSE_FILES 长度。
+  # 改用 override(external:true) 之后 COMPOSE_FILES 是空的，按长度判断会谎报
+  # "SSD not detected"，而数据其实一直在 SSD 上。
+  local _pgdev
+  _pgdev="$(docker volume inspect bestseller_pgdata --format '{{.Options.device}}' 2>/dev/null || true)"
+  if [[ -n "$_pgdev" ]]; then
+    ok "SSD volumes in use — pgdata → ${_pgdev}"
   else
-    log "SSD not detected — using Docker named volumes"
+    log "pgdata is a plain Docker named volume (not SSD-bound)"
   fi
 
-  # ── Step 1: Build images ─────────────────────────────────────────────────
-  # Always invoke `compose build` and let Docker's layer cache decide what's
-  # actually stale. If no source/Dockerfile change is detected, the build is
-  # a few-second no-op; otherwise the affected images are rebuilt automatically.
+  # ── Step 1: Build images（默认跳过）──────────────────────────────────────
+  #
+  # ⚠️ 这里曾经**无条件**跑 `compose build`，注释写着「没改动就是几秒 no-op」。
+  # 那个假设是错的：Dockerfile 里有 `COPY src/ ./src/`，**只要动过源码那层缓存
+  # 就失效**，后面全部重建（6 镜像 ×2.98GB，本机还会在 apt 层 OOM）。
+  # 而源码是天天改的 —— 于是每次启动都变成全量重建，配合 Step 0 的 down，
+  # 整个重建期间服务是停的。用户实测「部署怎么这么久」就是这段。
+  #
+  # src/config/data 都是活挂载（docker-compose.override.yml），**改代码不需要
+  # rebuild**，起容器即可生效。只有这三类改动才真的需要重建：
+  #   Dockerfile / pyproject.toml / uv.lock（依赖或镜像本身变了）
+  # 下面按时间戳自动检测这三个文件，真变了才建；否则跳过。
+  # 想强制全量重建：--build
+  # 判据用**内容哈希**，不用 mtime。
+  # ⚠️ 第一版按 mtime 比镜像新就重建，实测立刻误判：pyproject.toml 内容自
+  # 6-05 起没变过，mtime 却是当天 09:52（被某个工具碰过一下）——于是又触发
+  # 全量重建，卡在 apt 层。**文件被摸一下不等于依赖变了。**
+  local _stamp_file="$ROOT_DIR/.docker-build-stamp"
+  local _cur_hash=""
+  local _f
+  for _f in Dockerfile pyproject.toml uv.lock; do
+    if [[ -f "$ROOT_DIR/$_f" ]]; then
+      _cur_hash="${_cur_hash}$(shasum -a 256 "$ROOT_DIR/$_f" 2>/dev/null | cut -d' ' -f1)"
+    fi
+  done
+  _cur_hash="$(printf '%s' "$_cur_hash" | shasum -a 256 | cut -d' ' -f1)"
+
+  local _need_build=false
+  local _build_reason=""
   if [[ "$FORCE_BUILD" == "true" ]]; then
-    log "Force-building Docker images (--no-cache) ..."
-    if ! compose --profile migrate build --no-cache; then
+    _need_build=true
+    _build_reason="--build 强制"
+  elif ! docker image inspect bestseller-worker:latest >/dev/null 2>&1; then
+    _need_build=true
+    _build_reason="镜像不存在"
+  elif [[ ! -f "$_stamp_file" ]]; then
+    # 首次引入 stamp：镜像在、依赖大概率没变，别为了建 stamp 而全量重建。
+    _build_reason="首次记录依赖指纹（不重建）"
+    printf '%s' "$_cur_hash" > "$_stamp_file"
+  elif [[ "$(cat "$_stamp_file" 2>/dev/null)" != "$_cur_hash" ]]; then
+    _need_build=true
+    _build_reason="Dockerfile/pyproject/uv.lock 内容变了"
+  fi
+
+  if [[ "$_need_build" == "true" ]]; then
+    log "需要重建镜像（${_build_reason}）..."
+    local _build_args=(--profile migrate build)
+    [[ "$FORCE_BUILD" == "true" ]] && _build_args+=(--no-cache)
+    if ! compose "${_build_args[@]}"; then
       refresh_images_from_local_base || {
         err "Docker build failed and no local BestSeller image was available for fallback."
         exit 1
       }
     fi
+    printf '%s' "$_cur_hash" > "$_stamp_file"
   else
-    log "Building Docker images (incremental, layer-cache aware) ..."
-    if ! compose --profile migrate build; then
-      refresh_images_from_local_base || {
-        err "Docker build failed and no local BestSeller image was available for fallback."
-        exit 1
-      }
-    fi
+    ok "跳过镜像构建：src/config/data 是活挂载，改代码无需重建。${_build_reason:+（$_build_reason）}"
+    log "（依赖真变了会自动重建；强制重建用 --build）"
   fi
 
   # ── Step 2: Start infrastructure (DB + Redis) ────────────────────────────
@@ -386,11 +432,20 @@ main() {
   # Show running containers
   compose ps
 
+  # 活挂载自检：容器跑的到底是不是宿主机这份代码。
+  # 2026-08-16 整批修复因为活挂载被 -f 关掉而一次都没运行过，症状酷似
+  # 「Python 缓存导入」。这一步把那个假设变成每次启动都验的判断。
+  if [[ -x "$ROOT_DIR/scripts/verify_live_code_mount.sh" ]]; then
+    echo ""
+    bash "$ROOT_DIR/scripts/verify_live_code_mount.sh" || \
+      warn "活挂载自检未通过 —— 容器可能在跑镜像里的旧代码，见上面的修法。"
+  fi
+
   # In foreground mode, tail all logs
   if [[ "$DETACH" == "false" ]]; then
     echo ""
     log "Tailing logs (Ctrl+C to detach, services keep running) ..."
-    $COMPOSE "${COMPOSE_FILES[@]}" logs -f --tail=50
+    $COMPOSE ${COMPOSE_FILES[@]+"${COMPOSE_FILES[@]}"} logs -f --tail=50
   fi
 }
 

@@ -71,3 +71,4 @@ docker-compose.override.yml
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json
 .claude/routines/.state/
+.docker-build-stamp

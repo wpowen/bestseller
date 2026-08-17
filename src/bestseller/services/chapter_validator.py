@@ -683,7 +683,35 @@ class HypeOccurrenceCheck:
 
         recipe = ctx.assigned_hype_recipe
         if recipe is None or not isinstance(recipe, HypeRecipe):
-            return []
+            # ── recipe=NULL 盲区（2026-08-17 定罪）─────────────────────────
+            # 旧行为：没有完整 HypeRecipe 就整体跳过。但兜底分类器路径的指派
+            # 只有类型没有配方（recipe=NULL）——于是这些章的爽点丢失静默无察，
+            # 幽灵戳事故里 11 个丢失章无一被本检查报出。
+            # 只要指派了类型，就用分类器确认（没有触发词表可查，分类器是
+            # 唯一可用信号）。仍是 warn（无杀权），只为让丢失可见并喂给修复轮。
+            assigned_type = ctx.assigned_hype_type
+            if assigned_type is None or not text:
+                return []
+            classified = classify_hype(text, ctx.invariants.language)
+            if classified is not None:
+                return []  # 读得出任一爽点即算兑现（无配方时不苛求同型）
+            return [
+                Violation(
+                    code=self.code,
+                    severity="warn",
+                    location="chapter:hype:typed-no-recipe",
+                    detail=(
+                        f"Assigned hype type '{assigned_type}' (no recipe) "
+                        f"did not land: classifier reads no payoff in the draft."
+                    ),
+                    prompt_feedback=(
+                        "本章被指定要有一次可读出的爽点结算，但成稿里读不出任何"
+                        "结算。请保持剧情不变，在中段或末段补一个明确的兑现："
+                        "赢落到一个有名字的人身上、有具体的人看见并因此改变、"
+                        "主角账上多一样下一章还能用的东西。"
+                    ),
+                )
+            ]
         # Allow presets to opt out by setting min_hype_per_chapter = 0
         # (carried through ``assigned_hype_type``/``assigned_hype_recipe``
         # being populated only when the scheme demands a hype).

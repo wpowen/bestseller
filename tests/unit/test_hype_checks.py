@@ -133,10 +133,30 @@ class TestHypeOccurrenceCheck:
         )
         assert list(check.run("", ctx)) == []
 
-    def test_no_assigned_recipe_is_noop(self) -> None:
+    def test_typed_without_recipe_flags_missing_payoff(self) -> None:
+        """2026-08-17 起：有指派类型、无配方，不再静默。
+
+        旧契约「无配方即 no-op」锁的正是幽灵戳事故的盲区——兜底分类器路径的
+        指派只有类型没有配方（recipe=NULL），11 个丢爽点章无一被报出。
+        新契约：有类型无配方 → 分类器确认，读不出任何爽点则报 warn（无杀权）。
+        """
+
         check = HypeOccurrenceCheck()
         ctx = _ctx(
             assigned_hype_type=HypeType.FACE_SLAP,
+            assigned_hype_recipe=None,
+        )
+        text = "这是一段平铺直叙的叙事内容，没有任何爽点特征。" * 20
+        violations = list(check.run(text, ctx))
+        assert violations, "有指派无配方的丢爽点章不该再被静默放过"
+        assert violations[0].severity == "warn"
+
+    def test_no_assignment_at_all_is_noop(self) -> None:
+        """完全无指派（预设 opt-out）仍然 no-op——盲区修复不得误伤退出机制。"""
+
+        check = HypeOccurrenceCheck()
+        ctx = _ctx(
+            assigned_hype_type=None,
             assigned_hype_recipe=None,
         )
         text = "这是一段平铺直叙的叙事内容，没有任何爽点特征。" * 20

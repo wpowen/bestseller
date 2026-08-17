@@ -10444,6 +10444,36 @@ async def generate_chapter_draft_once(
     except Exception:
         logger.debug("chapter_first deterministic audit failed", exc_info=True)
 
+    # Contract receipt: declared participants/locations vs actual prose.
+    # Warn-only by design — stamped + logged, no consumer blocks on this key
+    # (see chapter_contract_receipt module docstring for the kill-power rule).
+    try:
+        from bestseller.services.chapter_contract_receipt import (
+            build_chapter_contract_receipt,
+        )
+
+        contract_receipt = build_chapter_contract_receipt(
+            chapter_text=content_md,
+            chapter_number=chapter_number,
+            scenes=scenes,
+        )
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "contract_receipt_latest": contract_receipt.to_dict(),
+        }
+        if not contract_receipt.clean:
+            logger.info(
+                "chapter %d: contract receipt — missing=%s silent=%s "
+                "missing_locations=%s coverage=%.2f",
+                chapter_number,
+                list(contract_receipt.missing_participants),
+                list(contract_receipt.silent_participants),
+                list(contract_receipt.missing_locations),
+                contract_receipt.participant_coverage,
+            )
+    except Exception:
+        logger.debug("chapter_first contract receipt failed (non-fatal)", exc_info=True)
+
     # Intra-chapter continuity is the one failure mode chapter-first loses on
     # (2026-07-20 A/B: the arm that weighed 低筋面粉 then kneaded 高筋面粉 lost
     # 4-0). Advisory only — findings steer the repair patch, never block a write.
@@ -12462,6 +12492,34 @@ async def assemble_chapter_draft(
         }
     except Exception:
         logger.debug("post-assembly deterministic audit failed (non-fatal)", exc_info=True)
+
+    # Contract receipt (warn-only, trace + log; see chapter_contract_receipt).
+    try:
+        from bestseller.services.chapter_contract_receipt import (
+            build_chapter_contract_receipt,
+        )
+
+        contract_receipt = build_chapter_contract_receipt(
+            chapter_text=content_md,
+            chapter_number=chapter_number,
+            scenes=scenes,
+        )
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "contract_receipt_latest": contract_receipt.to_dict(),
+        }
+        if not contract_receipt.clean:
+            logger.info(
+                "chapter %d: contract receipt — missing=%s silent=%s "
+                "missing_locations=%s coverage=%.2f",
+                chapter_number,
+                list(contract_receipt.missing_participants),
+                list(contract_receipt.silent_participants),
+                list(contract_receipt.missing_locations),
+                contract_receipt.participant_coverage,
+            )
+    except Exception:
+        logger.debug("post-assembly contract receipt failed (non-fatal)", exc_info=True)
 
     duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
         session,

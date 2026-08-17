@@ -24,6 +24,7 @@ Output layout
         volume-plan.md         # VOLUME_PLAN entries + per-volume current frontier
         plot-arcs.md           # deferred reveals, expansion gates, foreshadowing
         writing-profile.md     # POV / tone / banned words / chapter discipline
+        diagrams.md            # mermaid: 人物关系 / 势力分布 / 等级体系 / 剧情时间线
         raw/
             book_spec.json
             world_spec.json
@@ -126,6 +127,10 @@ async def export_story_bible_to_disk(
     )
     (out_dir / "writing-profile.md").write_text(
         _render_writing_profile(title, project, book_spec),
+        encoding="utf-8",
+    )
+    (out_dir / "diagrams.md").write_text(
+        _render_diagrams(title, overview, cast_spec, world_spec, volume_plan),
         encoding="utf-8",
     )
 
@@ -750,9 +755,209 @@ def _render_writing_profile(
     return "\n".join(lines)
 
 
+def _render_diagrams(
+    title: str,
+    overview: StoryBibleOverview,
+    cast_spec: dict[str, Any] | None,
+    world_spec: dict[str, Any] | None,
+    volume_plan: dict[str, Any] | None,
+) -> str:
+    """Render four mermaid diagrams for at-a-glance review.
+
+    Each section degrades to the placeholder text when its data is missing —
+    never emit a broken/empty mermaid block. Node ids are generated ASCII
+    (``C0``/``F0``/``T0``/``V0``…); display names only ever appear inside
+    sanitized labels.
+    """
+
+    lines: list[str] = [f"# Diagrams — {title}", ""]
+
+    # ── 1. 人物关系图 ──────────────────────────────────────────────
+    lines.append("## 人物关系图")
+    char_ids: dict[str, str] = {}
+
+    def _char_id(name: str) -> str:
+        key = name.strip()
+        if key not in char_ids:
+            char_ids[key] = f"C{len(char_ids)}"
+        return char_ids[key]
+
+    role_label = {"protagonist": "主角", "antagonist": "反派"}
+    node_lines: list[str] = []
+    for char in overview.characters:
+        node_id = _char_id(char.name)
+        prefix = role_label.get(char.role, char.role or "")
+        label = f"{prefix}·{char.name}" if prefix else char.name
+        node_lines.append(f'    {node_id}["{_mermaid_label(label)}"]')
+
+    edge_lines: list[str] = []
+    for rel in overview.relationships:
+        a = _char_id(rel.character_a)
+        b = _char_id(rel.character_b)
+        rel_label = _mermaid_label(
+            f"{rel.relationship_type} {rel.strength:+.1f}"
+            if rel.strength is not None
+            else rel.relationship_type
+        )
+        edge_lines.append(f"    {a} -->|{rel_label}| {b}")
+    if isinstance(cast_spec, dict):
+        for conflict in cast_spec.get("conflict_map") or []:
+            if not isinstance(conflict, dict):
+                continue
+            name_a = str(conflict.get("character_a") or "").strip()
+            name_b = str(conflict.get("character_b") or "").strip()
+            if not name_a or not name_b:
+                continue
+            a = _char_id(name_a)
+            b = _char_id(name_b)
+            kind = _mermaid_label(f"冲突:{conflict.get('conflict_type') or '?'}")
+            edge_lines.append(f"    {a} -.->|{kind}| {b}")
+
+    # Referenced-but-undeclared names (edges may name characters missing from
+    # the overview roster) still need node declarations to render.
+    known_ids = {line.strip().split("[", 1)[0] for line in node_lines}
+    for name, node_id in char_ids.items():
+        if node_id not in known_ids:
+            node_lines.append(f'    {node_id}["{_mermaid_label(name)}"]')
+
+    if node_lines:
+        lines.append("```mermaid")
+        lines.append("graph TD")
+        lines.extend(node_lines)
+        lines.extend(edge_lines)
+        lines.append("```")
+    else:
+        lines.append(_PLACEHOLDER)
+    lines.append("")
+
+    # ── 2. 势力分布图 ──────────────────────────────────────────────
+    lines.append("## 势力分布图")
+    if overview.factions:
+        lines.append("```mermaid")
+        lines.append("graph LR")
+        lines.append('    P(("主角"))')
+        for idx, fac in enumerate(overview.factions):
+            fac_id = f"F{idx}"
+            lines.append(f'    {fac_id}["{_mermaid_label(fac.name)}"]')
+            stance = _mermaid_label(fac.relationship_to_protagonist or "关系未明")
+            lines.append(f"    {fac_id} -->|{stance}| P")
+        lines.append("```")
+    else:
+        lines.append(_PLACEHOLDER)
+    lines.append("")
+
+    # ── 3. 等级体系图 ──────────────────────────────────────────────
+    lines.append("## 等级体系图")
+    power_system = (
+        world_spec.get("power_system")
+        if isinstance(world_spec, dict) and isinstance(world_spec.get("power_system"), dict)
+        else {}
+    )
+    tiers = [
+        str(t).strip()
+        for t in (power_system.get("tiers") if isinstance(power_system.get("tiers"), list) else [])
+        if str(t).strip()
+    ]
+    if tiers:
+        starting = str(power_system.get("protagonist_starting_tier") or "").strip()
+        lines.append("```mermaid")
+        lines.append("graph BT")
+        for idx, tier in enumerate(tiers):
+            lines.append(f'    T{idx}["{_mermaid_label(tier)}"]')
+        for idx in range(len(tiers) - 1):
+            lines.append(f"    T{idx} --> T{idx + 1}")
+        if starting in tiers:
+            lines.append(f"    style T{tiers.index(starting)} stroke-width:3px")
+        lines.append("```")
+    else:
+        lines.append(_PLACEHOLDER)
+    lines.append("")
+
+    # ── 4. 剧情时间线 ──────────────────────────────────────────────
+    lines.append("## 剧情时间线")
+    volume_nodes: list[tuple[int, str]] = []
+    if overview.volume_frontiers:
+        for frontier in overview.volume_frontiers:
+            end = frontier.end_chapter_number or "?"
+            volume_nodes.append(
+                (
+                    frontier.volume_number,
+                    f"V{frontier.volume_number} {frontier.title} "
+                    f"ch{frontier.start_chapter_number}-{end}",
+                )
+            )
+    elif isinstance(volume_plan, dict):
+        for entry in volume_plan.get("volumes") or volume_plan.get("volume_plan") or []:
+            if not isinstance(entry, dict):
+                continue
+            num = entry.get("volume_number") or entry.get("volume_no")
+            if not isinstance(num, int):
+                continue
+            vol_title = entry.get("volume_title") or entry.get("title") or ""
+            volume_nodes.append((num, f"V{num} {vol_title}"))
+    volume_nodes.sort(key=lambda item: item[0])
+
+    if volume_nodes:
+        lines.append("```mermaid")
+        lines.append("graph LR")
+        vol_id_by_number: dict[int, str] = {}
+        for num, label in volume_nodes:
+            vol_id = f"V{num}"
+            vol_id_by_number[num] = vol_id
+            lines.append(f'    {vol_id}["{_mermaid_label(label)}"]')
+        ordered = [vol_id_by_number[num] for num, _ in volume_nodes]
+        for left, right in zip(ordered, ordered[1:]):
+            lines.append(f"    {left} --> {right}")
+        for idx, reveal in enumerate(overview.deferred_reveals):
+            vol_id = vol_id_by_number.get(reveal.reveal_volume_number)
+            if vol_id is None:
+                continue
+            reveal_label = _mermaid_label(
+                f"{reveal.reveal_code} {reveal.label} ch{reveal.reveal_chapter_number}"
+            )
+            lines.append(f'    R{idx}(["{reveal_label}"])')
+            lines.append(f"    R{idx} -.-> {vol_id}")
+        lines.append("```")
+    else:
+        lines.append(_PLACEHOLDER)
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
+
+_MERMAID_LABEL_MAX = 24
+
+
+def _mermaid_label(value: Any) -> str:
+    """Sanitize a display string for use inside a quoted mermaid node label."""
+    text = str(value or "").strip()
+    table = str.maketrans(
+        {
+            '"': "'",
+            "\n": " ",
+            "\r": " ",
+            "|": "/",
+            "[": "（",
+            "]": "）",
+            "{": "（",
+            "}": "）",
+            "(": "（",
+            ")": "）",
+            "<": "（",
+            ">": "）",
+            "`": "'",
+            "#": "＃",
+            ";": "，",
+        }
+    )
+    text = text.translate(table)
+    if len(text) > _MERMAID_LABEL_MAX:
+        text = text[: _MERMAID_LABEL_MAX - 1] + "…"
+    return text
 
 def _kv_table(rows: dict[str, Any], *, prefer_keys: list[str] | None = None) -> list[str]:
     items: list[tuple[str, Any]] = []

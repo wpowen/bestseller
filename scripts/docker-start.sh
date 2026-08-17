@@ -405,6 +405,28 @@ main() {
   log "Starting MCP server ..."
   compose up -d mcp
 
+  # ── Step 6: 起**其余所有**服务（关键是 backup sidecar）────────────────────
+  #
+  # ⚠️ 上面每一步都点名了服务（db redis / api worker scheduler web / mcp），
+  # 于是**没被点到名的服务永远起不来**。backup sidecar 就是这么一直没跑的：
+  # 实测备份卷 0 个文件，而 2026-08-17 又发生一次删库（3 本书、209 章、
+  # 964 个草稿版本），没有任何转储可恢复。
+  #
+  # Makefile 里早写过这条教训：「backup sidecar 被这样漏掉过很多次，它的
+  # dumps 目录在三次删库中一直是空的——这是唯一一个『不在』的时候你看不出来、
+  # 需要它的时候才发现的服务。」这个脚本正是那句话描述的行为。
+  #
+  # 不点名 = compose 起全部，将来新增的服务也不会被忘掉。
+  log "Starting remaining services (backup sidecar 等) ..."
+  compose up -d
+
+  # 备份在不在，是唯一「不在时看不出来」的东西，所以必须显式验。
+  if docker compose ps --format '{{.Service}}' 2>/dev/null | grep -qx backup; then
+    ok "backup sidecar 在运行。"
+  else
+    warn "backup sidecar 未运行 —— 删库时将无任何转储可恢复，请检查 compose 配置。"
+  fi
+
   # ── Summary ────────────────────────────────────────────────────────────────
   echo ""
   echo "========================================"

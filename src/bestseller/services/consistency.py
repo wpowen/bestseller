@@ -239,6 +239,57 @@ def _check_foreshadowing_density(
             )
         )
 
+    # Open-clue inventory pressure (advisory; thresholds are uncalibrated
+    # placeholders — see foreshadowing.OPEN_CLUE_SOFT_CAP).
+    from bestseller.services.foreshadowing import (
+        OPEN_CLUE_MAX_AGE_CHAPTERS,
+        OPEN_CLUE_SOFT_CAP,
+    )
+
+    if result.open_clue_count > OPEN_CLUE_SOFT_CAP:
+        codes_str = ", ".join(result.open_clue_codes[:5])
+        findings.append(
+            ProjectConsistencyFinding(
+                category="foreshadowing_open_inventory",
+                severity="medium",
+                message=(
+                    (
+                        f"{result.open_clue_count} clues are in flight simultaneously "
+                        f"(soft cap {OPEN_CLUE_SOFT_CAP}, uncalibrated): {codes_str}"
+                        f"{'...' if result.open_clue_count > 5 else ''}. "
+                        "Readers lose track of too many open threads; resolve some before planting more."
+                    ) if _is_en else (
+                        f"当前同时在飞的伏笔有 {result.open_clue_count} 条"
+                        f"（软上限 {OPEN_CLUE_SOFT_CAP}，阈值未标定）：{codes_str}"
+                        f"{'...' if result.open_clue_count > 5 else ''}。"
+                        "在飞坑过多读者会记不住，建议先回收再新埋。"
+                    )
+                ),
+            )
+        )
+
+    if result.overaged_clue_codes:
+        codes_str = ", ".join(result.overaged_clue_codes[:5])
+        findings.append(
+            ProjectConsistencyFinding(
+                category="foreshadowing_overaged",
+                severity="medium",
+                message=(
+                    (
+                        f"These clues have been open for more than {OPEN_CLUE_MAX_AGE_CHAPTERS} "
+                        f"chapters (uncalibrated cap): {codes_str}"
+                        f"{'...' if len(result.overaged_clue_codes) > 5 else ''}. "
+                        f"Oldest open clue age: {result.max_open_clue_age_chapters} chapters."
+                    ) if _is_en else (
+                        f"以下伏笔挂起已超过 {OPEN_CLUE_MAX_AGE_CHAPTERS} 章仍未回收"
+                        f"（阈值未标定）：{codes_str}"
+                        f"{'...' if len(result.overaged_clue_codes) > 5 else ''}。"
+                        f"当前最老在飞伏笔龄期 {result.max_open_clue_age_chapters} 章。"
+                    )
+                ),
+            )
+        )
+
     if result.balance_score < 0.5:
         findings.append(
             ProjectConsistencyFinding(

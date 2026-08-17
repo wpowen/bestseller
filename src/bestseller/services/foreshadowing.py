@@ -5,6 +5,8 @@ detecting imbalances such as:
 - Dead zones (3+ consecutive chapters with no clue activity)
 - Orphan clues (planted but not recovered well past their expected payoff chapter)
 - Front/back loading (all planting in Act 1, all recovery in Act 3)
+- Open-clue inventory pressure (too many clues in flight at once, or a single
+  clue left open far longer than a reader can be expected to remember it)
 """
 
 from __future__ import annotations
@@ -12,6 +14,20 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+# Reader-memory invariants for the open-clue inventory. Per-clue orphan
+# detection (above) misses the aggregate case where every clue is individually
+# on schedule but 14 of them are in flight at once. These caps make that
+# aggregate visible.
+#
+# ⚠️ 占位阈值，未经人类语料标定。Calibrate against the human-published corpus
+# percentiles (`.distillation_private`) before treating either number as a
+# quality claim; until then they only gate advisory findings.
+OPEN_CLUE_SOFT_CAP = 5
+OPEN_CLUE_MAX_AGE_CHAPTERS = 30
+
+# Keep the result payload bounded on clue-heavy projects.
+_OPEN_CLUE_CODES_LIMIT = 20
 
 
 class ForeshadowingDensityResult(BaseModel, frozen=True):
@@ -26,6 +42,12 @@ class ForeshadowingDensityResult(BaseModel, frozen=True):
     act3_recoveries: int = 0
     dead_zone_chapters: list[tuple[int, int]] = Field(default_factory=list)
     orphan_clue_codes: list[str] = Field(default_factory=list)
+    # Open-clue inventory observations (advisory; never feed balance_score so
+    # the historical score stays comparable across runs).
+    open_clue_count: int = 0
+    max_open_clue_age_chapters: int = 0
+    open_clue_codes: list[str] = Field(default_factory=list)
+    overaged_clue_codes: list[str] = Field(default_factory=list)
 
 
 def analyze_foreshadowing_density(
@@ -123,6 +145,31 @@ def analyze_foreshadowing_density(
             code = getattr(clue, "clue_code", "?")
             orphan_codes.append(code)
 
+    # Open-clue inventory: every planted-but-unresolved clue, regardless of
+    # whether its own expected payoff chapter has passed. Age is measured
+    # against the current chapter frontier (``total_chapters``).
+    open_codes: list[str] = []
+    overaged_codes: list[str] = []
+    open_count = 0
+    max_open_age = 0
+    for clue in clues:
+        status = getattr(clue, "status", "planted")
+        if status in ("paid_off", "cancelled"):
+            continue
+        if getattr(clue, "actual_paid_off_chapter_number", None) is not None:
+            continue
+        planted = getattr(clue, "planted_in_chapter_number", None)
+        if planted is None:
+            continue
+        open_count += 1
+        code = str(getattr(clue, "clue_code", "?"))
+        if len(open_codes) < _OPEN_CLUE_CODES_LIMIT:
+            open_codes.append(code)
+        age = max(0, total_chapters - int(planted))
+        max_open_age = max(max_open_age, age)
+        if age > OPEN_CLUE_MAX_AGE_CHAPTERS and len(overaged_codes) < _OPEN_CLUE_CODES_LIMIT:
+            overaged_codes.append(code)
+
     # Balance score: penalise dead zones and orphans
     total_events = (
         act1_plants + act2_plants + act3_plants
@@ -160,4 +207,8 @@ def analyze_foreshadowing_density(
         act3_recoveries=act3_recoveries,
         dead_zone_chapters=dead_zones,
         orphan_clue_codes=orphan_codes,
+        open_clue_count=open_count,
+        max_open_clue_age_chapters=max_open_age,
+        open_clue_codes=open_codes,
+        overaged_clue_codes=overaged_codes,
     )

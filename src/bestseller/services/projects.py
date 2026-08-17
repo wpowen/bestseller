@@ -247,9 +247,83 @@ async def delete_project_completely(
         result["errors"].append(f"delete_tombstone_failed: {exc}")
         logger.exception("Failed to write delete tombstone for project %s", slug)
 
+    # Step 0.6: 删前抢救转储 ─────────────────────────────────────────────────
+    # 2026-08-17 真机事故：UI 批量删除 3 本书（209 章 / 964 草稿版本）时
+    # backup sidecar 恰好没在运行，当日无任何转储——数据能救回纯属侥幸
+    # （几小时前一次误打误撞的 up -d 让 sidecar 短暂跑过一次）。
+    # DB 级「批量>5行」护栏也拦不住这条路：batch-delete 在循环里逐本删，
+    # 每次都低于阈值。
+    # 因此删除路径自带兜底：DB 级联删除**之前**，把项目行+全部章+当前稿
+    # 正文导出到 output/backups/pre-delete/。不依赖 sidecar 是否在跑，
+    # 导出失败只记 error 不阻断删除（删除是用户明确意图）。
+    project = await get_project_by_slug(session, slug)
+    # getattr 守卫：真实 ORM 行必有 id；测试假对象/异常行没有 id 时跳过转储
+    # 而不是让 AttributeError 污染 errors 列表。
+    if project is not None and getattr(project, "id", None) is not None:
+        try:
+            from datetime import datetime, timezone
+
+            from sqlalchemy import select as _select
+
+            from bestseller.infra.db.models import (
+                ChapterDraftVersionModel as _CDV,
+            )
+            from bestseller.infra.db.models import ChapterModel as _CM
+
+            _rows = (
+                await session.execute(
+                    _select(
+                        _CM.chapter_number,
+                        _CM.title,
+                        _CM.hype_type,
+                        _CDV.version_no,
+                        _CDV.content_md,
+                    )
+                    .join(_CDV, _CDV.chapter_id == _CM.id)
+                    .where(
+                        _CM.project_id == project.id,
+                        _CDV.is_current.is_(True),
+                    )
+                    .order_by(_CM.chapter_number)
+                )
+            ).all()
+            _dump = {
+                "slug": slug,
+                "title": getattr(project, "title", None),
+                "genre": getattr(project, "genre", None),
+                "deleted_at": datetime.now(timezone.utc).isoformat(),
+                "metadata": dict(getattr(project, "metadata_json", None) or {}),
+                "chapters": [
+                    {
+                        "chapter_number": int(n),
+                        "title": t,
+                        "hype_type": h,
+                        "version_no": int(v),
+                        "content_md": c,
+                    }
+                    for n, t, h, v, c in _rows
+                ],
+            }
+            _rescue_dir = Path(settings.output.base_dir) / "backups" / "pre-delete"
+            _rescue_dir.mkdir(parents=True, exist_ok=True)
+            _stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            _rescue_file = _rescue_dir / f"{slug}-{_stamp}.json"
+            _rescue_file.write_text(
+                json.dumps(_dump, ensure_ascii=False), encoding="utf-8"
+            )
+            result["pre_delete_dump"] = str(_rescue_file)
+            logger.info(
+                "Pre-delete rescue dump for %s: %d chapters → %s",
+                slug,
+                len(_dump["chapters"]),
+                _rescue_file,
+            )
+        except Exception as exc:
+            result["errors"].append(f"pre_delete_dump_failed: {exc}")
+            logger.exception("Pre-delete rescue dump failed for project %s", slug)
+
     # Step 1: DB delete (cascades via ondelete="CASCADE"), with bounded retry on
     # transient lock contention from a concurrent self-heal / repair workflow.
-    project = await get_project_by_slug(session, slug)
     if project is None:
         result["errors"].append("project_not_found_in_db")
     else:

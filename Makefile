@@ -239,9 +239,21 @@ docker-ps:
 docker-restart:
 	./scripts/docker-stop.sh && ./scripts/docker-start.sh
 
-# The SSD override moves PGDATA onto the external volume. Deploying without it
-# points the stack at a different data directory, so it is not optional here.
-COMPOSE_FILES ?= -f docker-compose.yml -f docker-compose.ssd.yml
+# ⚠️ 曾经写成 `-f docker-compose.yml -f docker-compose.ssd.yml`，理由是
+# 「SSD override 把 PGDATA 挪到外置卷，不带它会指向另一个数据目录」。
+# **那个理由已经过期**：docker-compose.override.yml 用
+# `external: true` + `name: bestseller_pgdata` 直接引用**已经创建好、
+# 已经绑在 SSD 上**的同一批卷（实测 device=/Volumes/MACSSD/Docker/bestseller/pgdata），
+# 效果与 ssd.yml 等同。
+#
+# 而显式 `-f` 会**关掉 docker-compose.override.yml 的自动加载**，代价有两个：
+#   ① 丢掉 `./src:/app/src` 活挂载 → 容器跑镜像里烘焙的旧代码
+#      （2026-08-16 因此整批修复一次都没运行过）
+#   ② 每次改代码都得 rebuild → 6 个镜像 ×2.98GB，这台机器还会在 apt 层 OOM
+#
+# 留空即用 `docker compose`，override 自动加载。只有**首次创建那两个卷**
+# 时才需要 ssd.yml，见 docker-bootstrap-volumes。
+COMPOSE_FILES ?=
 
 # Rebuild the code images and bring the WHOLE stack up.
 #
@@ -253,9 +265,23 @@ COMPOSE_FILES ?= -f docker-compose.yml -f docker-compose.ssd.yml
 # them all, so a partial deploy is not something you can forget your way into.
 .PHONY: docker-deploy
 docker-deploy:
-	docker compose $(COMPOSE_FILES) build worker api web
 	docker compose $(COMPOSE_FILES) up -d
 	docker compose $(COMPOSE_FILES) ps
+	@bash scripts/verify_live_code_mount.sh
+
+# 改了代码**不需要**这个：src/config/data 都是活挂载，`docker-deploy` 即可
+# （进程要重新导入的话 `docker compose restart worker web`）。
+# 只有改了 Dockerfile / pyproject / 系统依赖才需要 rebuild。
+.PHONY: docker-rebuild
+docker-rebuild:
+	docker compose $(COMPOSE_FILES) build worker api web
+	$(MAKE) docker-deploy
+
+# 首次在一台新机器上创建 SSD 卷。卷建成后一律回到 docker-deploy。
+.PHONY: docker-bootstrap-volumes
+docker-bootstrap-volumes:
+	docker compose -f docker-compose.yml -f docker-compose.ssd.yml up -d --no-start
+	@echo "卷已创建。以后一律用 make docker-deploy（不带 -f）。"
 
 # ---------------------------------------------------------------------------
 # Database

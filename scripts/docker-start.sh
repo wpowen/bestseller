@@ -22,14 +22,28 @@ export PATH="/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:$PAT
 FORCE_BUILD=false
 DETACH=true
 RUN_MIGRATE=true
-COMPOSE_FILES=("-f" "docker-compose.yml")
+# 留空 = 用裸 `docker compose`，让 docker-compose.override.yml 自动加载。
+#
+# ⚠️ 这里曾经拼 ("-f" "docker-compose.yml" "-f" "docker-compose.ssd.yml")。
+# 显式 -f 会**关掉 override 的自动加载**，代价有两个：
+#   ① 丢掉 ./src:/app/src 活挂载 → 容器跑镜像里烘焙的旧代码
+#      （2026-08-16 因此整批修复一次都没运行过，症状酷似「Python 缓存导入」）
+#   ② 逼着每次改代码都 rebuild → 6 镜像 ×2.98GB，本机还会在 apt 层 OOM
+#
+# 不带 ssd.yml **不会**丢 SSD：override 用 external:true + name:bestseller_pgdata
+# 引用的就是已经绑在 /Volumes/MACSSD/Docker/bestseller 上的同一批卷。
+# 两者还在 pgdata 上互斥（external vs driver），三个一起带直接报
+# conflicting parameters —— 当初为绕开这个报错而丢掉 override，
+# 一个绕过变成了长期失明。
+COMPOSE_FILES=()
 
-# Auto-detect external-SSD override (2026-07-06: moved to MACSSD after the
-# /Volumes/SSD disk had a transient I/O drop that corrupted the WAL).
+# 首次在新机器上创建那两个卷时才需要 ssd.yml；卷已存在则一律不带。
 SSD_COMPOSE="docker-compose.ssd.yml"
 SSD_DATA_DIR="/Volumes/MACSSD/Docker/bestseller"
-if [[ -f "$ROOT_DIR/$SSD_COMPOSE" && -d "$SSD_DATA_DIR" ]]; then
-  COMPOSE_FILES+=("-f" "$SSD_COMPOSE")
+if [[ -f "$ROOT_DIR/$SSD_COMPOSE" && -d "$SSD_DATA_DIR" ]] \
+   && ! docker volume inspect bestseller_pgdata >/dev/null 2>&1; then
+  echo "首次运行：卷 bestseller_pgdata 不存在，用 ssd.yml 创建它。"
+  COMPOSE_FILES=("-f" "docker-compose.yml" "-f" "$SSD_COMPOSE")
 fi
 
 # ── Parse arguments ───────────────────────────────────────────────────────────

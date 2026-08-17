@@ -1233,6 +1233,52 @@ def _quickstart_payload_has_genre(payload: dict) -> bool:
     return isinstance(selection, dict) and bool(selection)
 
 
+def _persist_conception_log(
+    settings: AppSettings,
+    task_id: str,
+    title: str | None,
+    conception_log: object,
+    hook_candidates: object = None,
+    degradation_events: object = None,
+) -> str | None:
+    """构思中间产物落盘（成功与**失败**路径共用）。
+
+    2026-08-18 定罪：首版只挂在成功路径上，而被榜单达标线拦截的构思——
+    恰恰最需要审计的那种——什么都没留下。构思失败时这份 log 是唯一能回答
+    「淘汰赛选了什么、为什么没达标、池子里有没有更好的」的证据。
+    """
+
+    if not conception_log:
+        return None
+    try:
+        log_dir = Path(settings.output.base_dir) / "conception-logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"{task_id}.json"
+        log_file.write_text(
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "title": title,
+                    "conception_log": conception_log,
+                    "hook_candidates": hook_candidates,
+                    "degradation_events": degradation_events,
+                },
+                ensure_ascii=False,
+                indent=1,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+        return str(log_file)
+    except Exception:
+        logger.warning(
+            "conception_log persistence failed for task %s (non-fatal)",
+            task_id,
+            exc_info=True,
+        )
+        return None
+
+
 def _project_output_dir(settings: AppSettings, project_slug: str) -> Path:
     return (Path(settings.output.base_dir) / project_slug).resolve()
 
@@ -3872,37 +3918,14 @@ class WebTaskManager:
                         # 展示，是没存 ③池子里是否有更好的点子被埋没，永远无人知。
                         # 落成文件（可能上百 KB，不塞 JSONB），路径记进 workflow_run
                         # 供前端与审计取用。失败不阻断建书。
-                        conception_log_path: str | None = None
-                        if conception_log:
-                            try:
-                                _log_dir = (
-                                    Path(settings.output.base_dir) / "conception-logs"
-                                )
-                                _log_dir.mkdir(parents=True, exist_ok=True)
-                                _log_file = _log_dir / f"{task_id}.json"
-                                _log_file.write_text(
-                                    json.dumps(
-                                        {
-                                            "task_id": task_id,
-                                            "title": effective_title,
-                                            "conception_log": conception_log,
-                                            "hook_candidates": conception_hook_candidates,
-                                            "degradation_events": conception_degradation,
-                                        },
-                                        ensure_ascii=False,
-                                        indent=1,
-                                        default=str,
-                                    ),
-                                    encoding="utf-8",
-                                )
-                                conception_log_path = str(_log_file)
-                            except Exception:
-                                logger.warning(
-                                    "conception_log persistence failed for task %s "
-                                    "(non-fatal)",
-                                    task_id,
-                                    exc_info=True,
-                                )
+                        conception_log_path = _persist_conception_log(
+                            settings,
+                            task_id,
+                            effective_title,
+                            conception_log,
+                            hook_candidates=conception_hook_candidates,
+                            degradation_events=conception_degradation,
+                        )
 
                         if conception_workflow_run is not None:
                             conception_workflow_run.status = WorkflowStatus.COMPLETED.value
@@ -4517,10 +4540,19 @@ class WebTaskManager:
                 )
             except Exception:
                 logger.debug("appeal_blocked progress emit failed", exc_info=True)
+            # 被拦截的构思恰恰最需要审计——中间产物照样落盘（2026-08-18）。
+            _failed_log_path = _persist_conception_log(
+                settings, task_id, None, conception_log
+            )
             msg = (
                 "未达【榜单达标线 80 分】，已拦截，未进入规划。\n"
                 f"简介点击力：{blurb_total}　书名点击力：{title_total}\n\n"
-                "（已自动多轮重生仍未达标，需调整设定/方向后重建。整改建议：）\n"
+                + (
+                    f"（构思全过程已存档：{_failed_log_path}）\n"
+                    if _failed_log_path
+                    else ""
+                )
+                + "（已自动多轮重生仍未达标，需调整设定/方向后重建。整改建议：）\n"
                 f"{exc.feedback}"
             )
             logger.info("Autowrite task %s blocked: appeal bar not met (blurb=%s title=%s)",

@@ -1388,10 +1388,20 @@ def _build_raw_idea_rank_messages(
     ]
     user = (
         f"题材={genre}（{sub_genre}）\n候选={json.dumps(rows, ensure_ascii=False)}\n\n"
-        "逐项评分0-10：freshness 核心组合是否区别于常见同类；"
+        # C 层判据（2026-08-18 榜单 70 本蒸馏）：合法的新=熟机制×异场景一处
+        # 嫁接；孤立新异常（无读者已知框架可挂载又无可复述规则）是怪不是新。
+        "逐项评分0-10：freshness 核心组合是否区别于常见同类——注意：合法的新"
+        "是『读者熟悉的机制×意外场景』的一处嫁接；若异常既没有读者已知框架"
+        "可挂载（穿越/重生/系统面板/全民降临/获得传承/民俗或历史体系等），"
+        "又复述不出一条『输入→输出→限制』的规则，那是孤立怪象不是新鲜，"
+        "freshness 不得超过4；对题材默认套路的偏离≥2处=认知过载，"
+        "freshness 不得超过5；"
         "click_seed 只问一件事：目标频道读者能否一秒说出自己想看主角接下来"
         "赢什么/翻什么身/兑现什么（悬疑品类可用悬念代替）——说不出即无渴望，"
-        "处境再巧妙 click_seed 不得超过4；主角全程被动（被逼着/被迫/被卷入而无"
+        "处境再巧妙 click_seed 不得超过4；同时你必须能用一个词指认这个创意"
+        "承诺的爽的类型（数值碾压/身份反差/规则玩弄/见证兑现/囤积独活/收集"
+        "成长之一），指认不出=只有怪事没有承诺，click_seed 不得超过4；"
+        "主角全程被动（被逼着/被迫/被卷入而无"
         "自己的目标）不得超过4；钩子止于反讽或荒诞处境、没有读者在乎的赌注，"
         "不得超过4；写成对称机制条款（谁A谁就B、X多了怎样X少了怎样）不得超过4；"
         "character_logic 正常聪明人是否会作出原句暗示的选择；action_seed "
@@ -2200,12 +2210,15 @@ def _build_story_layer_judge_messages(
     return system, user
 
 
-def _parse_story_layer_verdict(raw: str) -> dict[str, Any] | None:
+def _parse_story_layer_verdict(
+    raw: str,
+    axes: tuple[str, ...] = _STORY_LAYER_AXES,
+) -> dict[str, Any] | None:
     payload = _parse_json_object(raw)
     if payload is None:
         return None
     verdict: dict[str, Any] = {"axes": {}, "failed_axes": []}
-    for axis in _STORY_LAYER_AXES:
+    for axis in axes:
         entry = payload.get(axis)
         if not isinstance(entry, dict):
             # 判官漏轴不视为 fail（无杀权精神：缺失≠定罪），只标 unknown
@@ -2219,6 +2232,94 @@ def _parse_story_layer_verdict(raw: str) -> dict[str, Any] | None:
             verdict["failed_axes"].append(axis)
     verdict["revise_direction"] = str(payload.get("revise_direction") or "").strip()
     return verdict
+
+
+# ── E 层编辑判官（2026-08-18 榜单市场调研蒸馏，docs/concept-quality-system-
+# redesign-20260818.md）────────────────────────────────────────────────────
+# 判据来源：70 本在榜男频逐本细读。定罪本尊：《九姓井口只认我》按 12 条判据
+# 1.5/12（榜单头部 8-11），系统性缺失通行证/规则/循环/爽型四大件——全链没有
+# 任何判官在判这些。E 轴审「展开后的设定质量」，与 S 轴（故事结构）互补，
+# 分开调用（缺陷清单塞进同一评分调用=注意力稀释，已定案）。
+_EXPANSION_EDITOR_AXES: tuple[str, ...] = (
+    "e1_rule_demonstrable",
+    "e2_constraint_plot",
+    "e3_paradox_engine",
+    "e4_world_rule_first",
+    "e5_witness_slot",
+    "e6_goal_quantified",
+)
+# 只有承重轴参与定罪（e3/e6 是加分项：40% 在榜执行流没有它们照样活；
+# 拿加分项定罪会把整个池打死）。e4 是「无法自圆其说」的形式化判定。
+_EXPANSION_EDITOR_CONVICTION_AXES: frozenset[str] = frozenset(
+    {"e1_rule_demonstrable", "e2_constraint_plot", "e4_world_rule_first"}
+)
+
+
+def _build_expansion_editor_messages(
+    card: dict[str, Any],
+    *,
+    genre: str,
+    sub_genre: str,
+) -> tuple[str, str]:
+    """编辑视角设定质量判官——判据锚定真实榜单书（判官读例证≠写手读例证，
+    例证只进判官 prompt、绝不进生成 prompt，不违种词铁律）。"""
+
+    subset = {
+        key: card.get(key)
+        for key in (
+            "protagonist_identity",
+            "core_abnormality",
+            "current_goal",
+            "deformable_loop",
+            "failure_cost",
+            "success_cost",
+            "reader_promise",
+            "opening_crisis",
+            "difference_point",
+            "scene_seeds",
+        )
+    }
+    system = (
+        "你是网文平台资深选题编辑，用在榜书的标准审一张项目卡的设定质量。"
+        "每项判定必须按规定给出引文或改写句作证据；给不出就按该项规则判否。"
+        "只输出JSON。"
+    )
+    user = (
+        f"题材：{genre}（{sub_genre}）\n"
+        f"【项目卡】{json.dumps(subset, ensure_ascii=False)}\n\n"
+        "六项判定（每项给 pass 布尔值 + 规定的证据字段）：\n"
+        "1. e1_rule_demonstrable 规则可演示：核心异常/金手指能否用第一章内"
+        "一个≤500字的事件演示，且演示有明确的输入→输出差"
+        "（参照《聚宝仙盆》：丹药放入→一日后两颗且升品）？quote=引出卡里"
+        "写明输入输出差的句子；引不出（异常只有名词或氛围、演示无收益差）"
+        "→ pass=false。\n"
+        "2. e2_constraint_plot 限制生剧情：核心能力是否带至少一条限制/代价，"
+        "且从这条限制能推出≥3个不同的情节？plots=列出这3个情节各一句话"
+        "（参照《每天六千万，只能在县城花》：限制条款本身就是全书剧情）；"
+        "列不满3个 → pass=false。注意「独占/别人用不了」不是限制。\n"
+        "3. e3_paradox_engine 悖论引擎（加分项）：设定是否含『越X越Y』"
+        "反直觉引擎或可叠加复利（参照《洪武苟神》越不想升官越被当肱骨）？"
+        "quote=该机制句。没有 → pass=false（不定罪，只记录）。\n"
+        "4. e4_world_rule_first 世界规则先行：能否把设定改写成两句——"
+        "第一句是**不含主角**的世界规则，第二句是主角的例外位置"
+        "（参照《凡骨》：世界=灵骨四品方可修行/主角=凡骨誓登仙）？"
+        "world_rule=你写出的第一句，exception=第二句；写不出不含主角的"
+        "世界规则句（异常凭空只属于主角、在世界体系里没有位置）"
+        "→ pass=false。这是『无法自圆其说』的形式化判定。\n"
+        "5. e5_witness_slot 见证槽位：卡里是否指明了**谁**将目睹主角的"
+        "收益兑现（具名角色/群体）？quote=该句；只有主角自知自爽 → pass=false。\n"
+        "6. e6_goal_quantified 目标数值化（加分项）：是否有带数字的目标或"
+        "可核验终点？quote=该句。没有 → pass=false（不定罪，只记录）。\n\n"
+        "输出JSON：{\"e1_rule_demonstrable\":{\"pass\":true,\"quote\":\"…\"},"
+        "\"e2_constraint_plot\":{\"pass\":true,\"plots\":[\"…\",\"…\",\"…\"]},"
+        "\"e3_paradox_engine\":{\"pass\":false,\"quote\":\"\"},"
+        "\"e4_world_rule_first\":{\"pass\":true,\"world_rule\":\"…\",\"exception\":\"…\"},"
+        "\"e5_witness_slot\":{\"pass\":true,\"quote\":\"…\"},"
+        "\"e6_goal_quantified\":{\"pass\":false,\"quote\":\"\"},"
+        "\"revise_direction\":\"e1/e2/e4/e5任一false时给修正方向，"
+        "只给方向不给措辞，≤40字；否则空串\"}"
+    )
+    return system, user
 
 
 def _build_engine_kernel_repair_messages(
@@ -3612,6 +3713,160 @@ async def run_concept_tournament(
                             else:
                                 # 重展开失败/结构不全 → 保留原卡继续（零杀权）
                                 card_record["story_layer"]["revised"] = False
+
+                    # ── E 层编辑判官（2026-08-18 接线）────────────────────
+                    # S 轴审故事结构，E 轴审设定质量（规则可演示/限制生剧情/
+                    # 世界规则先行……榜单 70 本蒸馏）。两通道分开调用防注意力
+                    # 稀释。零杀权：承重轴(e1/e2/e4)两票定罪 → 一次方向性
+                    # 重展开+复核，加分项(e3/e6)只记录。
+                    if story_judge_fn is not None and bool(
+                        cfg.get("expansion_editor_judge_enabled", True)
+                    ):
+                        _ee_votes: list[dict[str, Any]] = []
+                        for _ee_i in range(
+                            max(1, int(cfg.get("story_layer_votes", 2)))
+                        ):
+                            _ee_sys, _ee_user = _build_expansion_editor_messages(
+                                kernel, genre=genre, sub_genre=sub_genre
+                            )
+                            try:
+                                _ee_raw, _ee_run_id = await story_judge_fn(
+                                    _ee_sys, _ee_user
+                                )
+                            except Exception:
+                                break
+                            if _ee_run_id is not None:
+                                result.llm_run_ids.append(_ee_run_id)
+                            _ee_parsed = _parse_story_layer_verdict(
+                                _ee_raw, axes=_EXPANSION_EDITOR_AXES
+                            )
+                            if _ee_parsed is not None:
+                                _ee_votes.append(_ee_parsed)
+                        _ee_convicted: list[str] = []
+                        if len(_ee_votes) >= 2:
+                            _ee_convicted = sorted(
+                                set.intersection(
+                                    *(set(v["failed_axes"]) for v in _ee_votes)
+                                )
+                                & _EXPANSION_EDITOR_CONVICTION_AXES
+                            )
+                        card_record["expansion_editor"] = {
+                            "votes": _ee_votes,
+                            "convicted_axes": _ee_convicted,
+                        }
+                        if _ee_convicted:
+                            _ee_first = _ee_votes[0].get("axes", {})
+                            _ee_quotes: list[str] = []
+                            for _axis in _ee_convicted:
+                                _entry = _ee_first.get(_axis) or {}
+                                for _qk in ("quote", "world_rule", "exception"):
+                                    _qv = str(_entry.get(_qk) or "").strip()
+                                    if _qv:
+                                        _ee_quotes.append(f"{_axis}={_qv}")
+                            _ee_directions = "；".join(
+                                d
+                                for d in (
+                                    v.get("revise_direction", "")
+                                    for v in _ee_votes
+                                )
+                                if d
+                            )
+                            _ee_revise_user = (
+                                engine_user
+                                + "\n\n【编辑审设定未过——按方向修正后重新输出"
+                                "完整JSON项目卡，未点名的部分保持原样】\n"
+                                + f"未过项：{'、'.join(_ee_convicted)}\n"
+                                + (
+                                    "证据："
+                                    + "；".join(_ee_quotes)
+                                    + "\n"
+                                    if _ee_quotes
+                                    else ""
+                                )
+                                + (
+                                    f"修正方向：{_ee_directions}\n"
+                                    if _ee_directions
+                                    else ""
+                                )
+                            )
+                            result.candidate_generation_calls += 1
+                            result.candidate_prompt_chars += len(
+                                engine_system
+                            ) + len(_ee_revise_user)
+                            try:
+                                _ee_new_raw, _ee_new_run_id = await engine_fn(
+                                    engine_system, _ee_revise_user
+                                )
+                            except Exception:
+                                _ee_new_raw, _ee_new_run_id = None, None
+                            if _ee_new_run_id is not None:
+                                result.llm_run_ids.append(_ee_new_run_id)
+                            _ee_revised = (
+                                _parse_json_object(_ee_new_raw)
+                                if _ee_new_raw
+                                else None
+                            )
+                            if _ee_revised is not None and not _premise_card_audit(
+                                _ee_revised
+                            ):
+                                _ee_recheck: list[dict[str, Any]] = []
+                                for _ee_j in range(
+                                    max(1, int(cfg.get("story_layer_votes", 2)))
+                                ):
+                                    _er_sys, _er_user = (
+                                        _build_expansion_editor_messages(
+                                            _ee_revised,
+                                            genre=genre,
+                                            sub_genre=sub_genre,
+                                        )
+                                    )
+                                    try:
+                                        _er_raw, _er_run_id = await story_judge_fn(
+                                            _er_sys, _er_user
+                                        )
+                                    except Exception:
+                                        break
+                                    if _er_run_id is not None:
+                                        result.llm_run_ids.append(_er_run_id)
+                                    _er_parsed = _parse_story_layer_verdict(
+                                        _er_raw, axes=_EXPANSION_EDITOR_AXES
+                                    )
+                                    if _er_parsed is not None:
+                                        _ee_recheck.append(_er_parsed)
+                                _ee_recheck_convicted: list[str] = []
+                                if len(_ee_recheck) >= 2:
+                                    _ee_recheck_convicted = sorted(
+                                        set.intersection(
+                                            *(
+                                                set(v["failed_axes"])
+                                                for v in _ee_recheck
+                                            )
+                                        )
+                                        & _EXPANSION_EDITOR_CONVICTION_AXES
+                                    )
+                                card_record["expansion_editor"][
+                                    "recheck_convicted"
+                                ] = _ee_recheck_convicted
+                                if (
+                                    len(_ee_recheck) >= 2
+                                    and len(_ee_recheck_convicted)
+                                    >= len(_ee_convicted)
+                                ):
+                                    card_record["expansion_editor"]["revised"] = (
+                                        False
+                                    )
+                                    card_record["expansion_editor"][
+                                        "revise_rejected_reason"
+                                    ] = "recheck_no_improvement"
+                                else:
+                                    card_record["expansion_editor"]["revised"] = (
+                                        True
+                                    )
+                                    card_record.setdefault("initial_card", kernel)
+                                    card_record["card"] = _ee_revised
+                                    kernel = _ee_revised
+                            else:
+                                card_record["expansion_editor"]["revised"] = False
 
                     kernel_guard = _candidate_hard_rejection_reason(
                         _attach_engine_kernel(

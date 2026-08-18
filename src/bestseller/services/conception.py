@@ -3054,6 +3054,14 @@ def _finalize_user_prompt(
         f"\n## 角色体系提案\n{json.dumps(character, ensure_ascii=False, indent=2)}\n"
         f"\n## 世界观提案\n{json.dumps(world, ensure_ascii=False, indent=2)}\n"
         f"\n## 审查意见\n{json.dumps(review, ensure_ascii=False, indent=2)}\n"
+        # 2026-08-18《九姓井口只认我》定罪：chief_editor 抓到 8 条真矛盾
+        # （世代数打架/死因两版本/标签与体系冲突）但审查意见只是背景资料，
+        # director 从不逐条裁决——矛盾直通成稿。矛盾清单必须变成必裁清单。
+        f"\n【必裁清单——审查意见里的 contradictions 与 gaps 逐条裁决】\n"
+        f"上面审查意见中列出的每一条 contradiction 和 gap，你必须二选一：\n"
+        f"(a) 在最终方案的对应字段里直接消除它（改数字/删冲突设定/统一事实）；\n"
+        f"(b) 在输出 JSON 的 review_adjudications 数组里写明为何保留原样。\n"
+        f"世代数、年份、死亡地点、人名这类硬事实在所有字段间必须只有一个版本。\n"
         f"\n{_GOLDEN_FINGER_DESIGN_PRINCIPLE}\n"
         f"\n请根据以上讨论成果，生成最终方案 JSON：\n"
         f'{{\n'
@@ -3066,7 +3074,8 @@ def _finalize_user_prompt(
         f'  "synopsis": "面向读者的【点击型】作品简介（番茄/起点详情页文案，目标：读者只看这段就忍不住点进去）。'
         f'硬性要求，逐条照做：'
         f'①长度 {_band_min}-{_band_max} 字（中文字符，目标平台带），不是长设定介绍——要短、要狠；'
-        f'②首句 ≤30 字，必须是一句能瞬间抓人的强钩：用疑问、反差、或开局冲突事件开场，'
+        f'②首句 ≤30 字，必须是一句能瞬间抓人的强钩：用反差或开局冲突事件开场'
+        f'（陈述句；真榜单只有 6% 问句收尾、问句钩也已过时），'
         f'严禁用"穿越到…的他/本以为…"这类平铺设定句开头；'
         f'③卖点三要素必须齐全：主角身份反差 + 开局冲突事件 + 失败代价（不做到会怎样）；'
         f'③b【主角优势必须讲清】：用一句大白话让读者看懂主角靠什么'
@@ -3076,7 +3085,8 @@ def _finalize_user_prompt(
         f'（从X做到Y、越做越大、最终要成为/夺下/对上谁），'
         f'让人知道爽点会持续升级、这书值得一路追——只有开局没有"往哪走"= 主线模糊，必劝退；'
         f'④把本书自己最强的高唤起情绪事件放在最前面（从本书前提与冲突里选，不套其他题材的情绪词）；'
-        f'⑤结尾留一个悬念钩子，绝不剧透关键反转或结局；'
+        f'⑤结尾用陈述句或名场面截断（不许问句收尾、不许"殊不知/却不知道"式'
+        f'全知吊胃口），绝不剧透关键反转或结局；'
         f'⑥分 2-4 段、动词驱动、克制形容词。'
         f'⑦【新读者可懂铁律】当成写给一个完全没读过本书、不懂任何设定的陌生人看：'
         f'禁止堆砌生造黑话/自定义机制名/系统术语/等级编号（如「灵码编辑器」「怪谈词条」'
@@ -3089,6 +3099,8 @@ def _finalize_user_prompt(
         f'再拼起来；写完逐句自查任何两句不得互相矛盾。'
         f'严禁 AI 腔与套话：本以为/却没想到/命运的齿轮/何去何从/拭目以待/敬请期待/一段不平凡的旅程）",\n'
         f'  "tags": ["标签1", "标签2", "...（5-10个作品标签，包括题材、风格、元素、受众标签）"],\n'
+        f'  "review_adjudications": ["对审查意见中每条 contradiction/gap 的裁决：'
+        f'已消除的写「已消除：怎么改的」，保留的写「保留：理由」"],\n'
         f'  "story_spine": {{\n'
         f'    "who": "主角一句话身份（名字+处境）",\n'
         f'    "wants": "他要的具体目标——可验收（拿到X/救出X/在X之前做到X）。'
@@ -4958,16 +4970,30 @@ async def _repair_canon_contradictions(
             verify_blurb_coherence,
         )
 
+        from bestseller.services.concept_fact_consistency import (  # noqa: PLC0415
+            detect_numeric_fact_conflicts,
+        )
+
+        def _det_conflicts(p: str, s: dict[str, Any] | None) -> list[Any]:
+            fields: dict[str, str] = {"premise": p, "synopsis": synopsis}
+            for k, v in (s or {}).items():
+                if isinstance(v, str):
+                    fields[f"spine.{k}"] = v
+            return detect_numeric_fact_conflicts(fields)
+
         report = await verify_blurb_coherence(
             session, settings, synopsis=synopsis, premise=premise, spine=spine,
         )
         canon = report.canon_findings
-        if not canon:
+        # 确定性数字事实对表（2026-08-18：七代vs十八代同字段并存直通成稿）
+        # ——LLM 判官漏的这类冲突纯规则可判，作为额外 findings 一并进修复轮。
+        det_before = _det_conflicts(premise, spine)
+        if not canon and not det_before:
             return premise, spine, (report.to_dict() if report.llm_used else None)
 
         findings_text = "\n".join(
             f"- 「{f.quote_a}」与「{f.quote_b}」不能同时成立（{f.explanation}）"
-            for f in canon[:4]
+            for f in list(canon[:4]) + det_before[:4]
         )
         spine_json = json.dumps(spine or {}, ensure_ascii=False)
         repair_user = (
@@ -5020,14 +5046,23 @@ async def _repair_canon_contradictions(
             synopsis=synopsis, premise=new_premise,
             spine=new_spine if isinstance(new_spine, dict) else spine,
         )
-        if len(recheck.canon_findings) < len(canon):
+        det_after = _det_conflicts(
+            new_premise, new_spine if isinstance(new_spine, dict) else spine
+        )
+        if (len(recheck.canon_findings) + len(det_after)) < (
+            len(canon) + len(det_before)
+        ):
             logger.warning(
-                "canon contradiction repair adopted: %d -> %d finding(s)",
-                len(canon), len(recheck.canon_findings),
+                "canon contradiction repair adopted: %d(+%d det) -> %d(+%d det) finding(s)",
+                len(canon), len(det_before),
+                len(recheck.canon_findings), len(det_after),
             )
             out = recheck.to_dict()
             out["repaired"] = True
-            out["findings_before"] = len(canon)
+            out["findings_before"] = len(canon) + len(det_before)
+            out["deterministic_conflicts_before"] = [
+                f"{f.quote_a}↔{f.quote_b}" for f in det_before
+            ]
             return new_premise, (
                 new_spine if isinstance(new_spine, dict) else spine
             ), out
@@ -6170,6 +6205,44 @@ async def run_conception_pipeline(
     )
     llm_run_ids.extend(stage_llm_ids)
     conception_log.append({"round": 3, "agent": "project_director", "final": final_result})
+
+    # 必裁回执核对（warn-only）：矛盾清单非空而 director 没交 review_adjudications
+    # =矛盾可能直通成稿。零杀权，只留痕——回执数量与矛盾数的比对进 conception_log，
+    # 供事后审计与后续校准（真机观测一批后再谈这里要不要挣重生）。
+    try:
+        _review_contradictions = [
+            str(x).strip()
+            for x in (review_result.get("contradictions") or [])
+            if str(x).strip()
+        ]
+        _review_gaps = [
+            str(x).strip() for x in (review_result.get("gaps") or []) if str(x).strip()
+        ]
+        _adjudications = [
+            str(x).strip()
+            for x in (final_result.get("review_adjudications") or [])
+            if str(x).strip()
+        ]
+        if _review_contradictions or _review_gaps:
+            _issues_total = len(_review_contradictions) + len(_review_gaps)
+            conception_log.append(
+                {
+                    "round": 3,
+                    "agent": "review_adjudication_audit",
+                    "issues_total": _issues_total,
+                    "adjudications_returned": len(_adjudications),
+                    "adjudications": _adjudications,
+                }
+            )
+            if not _adjudications:
+                logger.warning(
+                    "conception finalize: chief_editor raised %d contradiction/gap "
+                    "item(s) but director returned no review_adjudications — "
+                    "contradictions may ship unadjudicated",
+                    _issues_total,
+                )
+    except Exception:
+        logger.debug("review adjudication audit failed (non-fatal)", exc_info=True)
 
     # Mechanism echo screen + anti-debt gate: the avoid-list and prompt guardrail
     # are not enough — the model still (a) absorbs the forbidden vocabulary as

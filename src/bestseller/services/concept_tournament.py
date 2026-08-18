@@ -3554,10 +3554,61 @@ async def run_concept_tournament(
                             if _sl_revised is not None and not _premise_card_audit(
                                 _sl_revised
                             ):
-                                card_record["story_layer"]["revised"] = True
-                                card_record.setdefault("initial_card", kernel)
-                                card_record["card"] = _sl_revised
-                                kernel = _sl_revised
+                                # 复核（2026-08-18《九姓井口只认我》定罪：revised
+                                # 采纳后不复核=白判——终稿 wants 仍是防守型。
+                                # 复核只花在已定罪的卡上；revised 定罪轴数没有
+                                # 变少就不采纳，防止「改了个寂寞」甚至改更坏。
+                                _sl_recheck: list[dict[str, Any]] = []
+                                for _sl_j in range(
+                                    max(1, int(cfg.get("story_layer_votes", 2)))
+                                ):
+                                    _rc_sys, _rc_user = (
+                                        _build_story_layer_judge_messages(
+                                            _sl_revised,
+                                            genre=genre,
+                                            sub_genre=sub_genre,
+                                            audience_orientation=audience_orientation,
+                                        )
+                                    )
+                                    try:
+                                        _rc_raw, _rc_run_id = await story_judge_fn(
+                                            _rc_sys, _rc_user
+                                        )
+                                    except Exception:
+                                        break
+                                    if _rc_run_id is not None:
+                                        result.llm_run_ids.append(_rc_run_id)
+                                    _rc_parsed = _parse_story_layer_verdict(_rc_raw)
+                                    if _rc_parsed is not None:
+                                        _sl_recheck.append(_rc_parsed)
+                                _sl_recheck_convicted: list[str] = []
+                                if len(_sl_recheck) >= 2:
+                                    _sl_recheck_convicted = sorted(
+                                        set.intersection(
+                                            *(
+                                                set(v["failed_axes"])
+                                                for v in _sl_recheck
+                                            )
+                                        )
+                                    )
+                                card_record["story_layer"]["recheck_convicted"] = (
+                                    _sl_recheck_convicted
+                                )
+                                if (
+                                    len(_sl_recheck) >= 2
+                                    and len(_sl_recheck_convicted)
+                                    >= len(_sl_convicted)
+                                ):
+                                    # 复核显示没修好 → 保留原卡（零杀权，留痕）
+                                    card_record["story_layer"]["revised"] = False
+                                    card_record["story_layer"][
+                                        "revise_rejected_reason"
+                                    ] = "recheck_no_improvement"
+                                else:
+                                    card_record["story_layer"]["revised"] = True
+                                    card_record.setdefault("initial_card", kernel)
+                                    card_record["card"] = _sl_revised
+                                    kernel = _sl_revised
                             else:
                                 # 重展开失败/结构不全 → 保留原卡继续（零杀权）
                                 card_record["story_layer"]["revised"] = False

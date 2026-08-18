@@ -91,6 +91,7 @@ from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
     _NOVEL_OUTPUT_PROHIBITION_EN,
     _chapter_first_writer_aim,
+    render_hype_preservation_block,
     _clean_generated_chapter_text,
     _collect_post_assembly_duplicate_findings,
     _collect_previous_current_chapter_texts,
@@ -527,6 +528,9 @@ def _qimao_opening_contract_prompt_block(
     chapter_number: int,
     language: str | None,
 ) -> str:
+    from bestseller.services.planner import opening_quality_gate_requested
+    if not opening_quality_gate_requested(project):
+        return ""
     block = render_qimao_opening_contract_block(
         _project_metadata(project).get("opening_quality_contract")
         or _project_metadata(project).get("qimao_opening_contract"),
@@ -747,7 +751,6 @@ _FOLK_HORROR_TAIL_HOOK_TERMS = (
     "倒影",
     "一模一样",
     "同一个动作",
-    "铜钱",
     "缺口",
     "冒血",
     "血",
@@ -3043,6 +3046,9 @@ def build_chapter_rewrite_prompts(
             + _NOVEL_OUTPUT_PROHIBITION
             + _REWRITE_STRATEGY_CONTRACT
             + render_anti_ai_voice_discipline(language=language, scope="chapter")
+            # 爽点保全（2026-08-19）：写手带合同写出结算段，重写不知道合同
+            # 把它改没——真机一轮修订吃掉 3 个爽点。修复通道必须同见合同。
+            + render_hype_preservation_block(chapter)
         )
     )
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""

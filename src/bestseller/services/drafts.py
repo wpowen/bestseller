@@ -12115,6 +12115,34 @@ async def generate_scene_draft(
 
 
 
+def render_hype_preservation_block(chapter) -> str:
+    """修复/重写通道的爽点保全硬约束（2026-08-19《摔下山三次》定罪）。
+
+    写手拿着爽点合同写出结算段，长度/质量修复的重写 prompt 却不知道合同的
+    存在——真机一轮修订吃掉 3 个爽点（盖戳 14→11，全部留痕在案）。拆东墙
+    补西墙的结构病：修复通道必须与写手同见合同。本块只声明本章自己的合同
+    （写手 prompt 已注入过同一信息，不是新种词），空合同返回空串。
+    """
+
+    hype_type = getattr(chapter, "hype_type", None)
+    recipe = getattr(chapter, "hype_recipe_key", None)
+    _assigned = (
+        (getattr(chapter, "metadata_json", None) or {}).get("assigned_hype") or {}
+    )
+    hype_type = hype_type or _assigned.get("type")
+    recipe = recipe or _assigned.get("recipe_key")
+    if not hype_type:
+        return ""
+    recipe_line = f"（配方：{recipe}）" if recipe else ""
+    return (
+        "\n# CONSTRAINTS · 爽点保全（硬约束）\n"
+        f"- 本章挂有爽点结算合同：类型 {hype_type}{recipe_line}。"
+        "正文里主角当场兑现、旁观者可见、账面有得的那段结算是本章承重段——"
+        "修复其他问题时**必须原样保留或增强**，不得删除、压缩、"
+        "移出可见位置或改写成转述。\n"
+    )
+
+
 async def stamp_chapter_hype(
     session,
     *,

@@ -124,3 +124,36 @@ def test_generation_writes_chapter_level_assignment():
     assert '"assigned_hype"' in src and "assigned_hype" in src
     # 生成端写入点必须以 packet 为源、整字典重赋值（JSONB 变更追踪）
     assert '_hype_meta["assigned_hype"]' in src
+
+
+# ── 修复通道爽点保全（2026-08-19 第三环）──────────────────────────────────
+# 写手带合同写出结算段，重写 prompt 不知道合同把它改没（真机一轮修订
+# 吃掉 3 个爽点，盖戳 14→11 全部留痕）。修复通道必须同见合同。
+
+
+def test_hype_preservation_block_renders_from_stamp_or_assignment():
+    from bestseller.services.drafts import render_hype_preservation_block
+
+    stamped = _FakeChapter()
+    stamped.hype_type = "face_slap"
+    stamped.hype_recipe_key = "仙侠-宗门打脸"
+    text = render_hype_preservation_block(stamped)
+    assert "爽点保全" in text and "face_slap" in text and "仙侠-宗门打脸" in text
+
+    planned = _FakeChapter(
+        assigned={"type": "reversal", "recipe_key": None, "intensity": 7.0}
+    )
+    text2 = render_hype_preservation_block(planned)
+    assert "reversal" in text2
+
+    empty = _FakeChapter()
+    assert render_hype_preservation_block(empty) == "", "无合同章不注入（防空喊）"
+
+
+def test_chapter_rewrite_prompt_consumes_preservation_block():
+    import inspect
+
+    from bestseller.services import reviews
+
+    src = inspect.getsource(reviews)
+    assert "render_hype_preservation_block(chapter)" in src, "重写通道必须同见爽点合同"

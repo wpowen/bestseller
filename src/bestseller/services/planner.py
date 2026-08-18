@@ -29,6 +29,7 @@ from bestseller.domain.story_bible import (
     normalize_character_role_label,
 )
 from bestseller.infra.db.models import (
+    ChapterContractModel,
     ChapterModel,
     LlmRunModel,
     PlanningArtifactVersionModel,
@@ -5475,6 +5476,56 @@ async def _generate_volume_outline_batched(
     # R5: consumed-event ledger accumulated across batches so later batches
     # cannot re-narrate arcs earlier batches already spent.
     consumed_event_entries: list[dict[str, Any]] = []
+    # ── 跨窗事实源重建（2026-08-18《九姓井口只认我》定罪）──────────────────
+    # 本台账原本是 run 内变量：每个滚动窗口的 outline run 都从空表开始，
+    # 「已消耗事件」跨窗全部失忆——窗2 在前 9 章**已经写完成稿**的情况下把
+    # ch1-3 的事件原样重规划（低头交桶/浮字/卷高潮兑付三次、两个「第一次」、
+    # 时间线倒流回午饭前）。后半段劣化的生成机制就是每开新窗失忆一次。
+    # 事实源一直躺在 DB（chapter_contracts.chapter_goal/hook_description），
+    # 只是没人读。此处按台账同一格式从 DB 重建**本窗之前所有章**的种子；
+    # fail-open——重建失败退回旧行为（run 内累积），不阻断规划。
+    try:
+        _first_batch_start = batch_ranges[0][0] if batch_ranges else None
+        if _first_batch_start is not None and int(_first_batch_start) > 1:
+            _prior_rows = (
+                await session.execute(
+                    select(
+                        ChapterContractModel.chapter_number,
+                        ChapterContractModel.chapter_goal,
+                        ChapterContractModel.hook_description,
+                    )
+                    .where(
+                        ChapterContractModel.project_id == project.id,
+                        ChapterContractModel.chapter_number
+                        < int(_first_batch_start),
+                    )
+                    .order_by(ChapterContractModel.chapter_number)
+                )
+            ).all()
+            _seed_chapters = [
+                {
+                    "chapter_number": int(_row[0]),
+                    "chapter_goal": str(_row[1] or ""),
+                    "hook_description": str(_row[2] or ""),
+                }
+                for _row in _prior_rows
+            ]
+            _seed_entries = _outline_consumed_event_entries(_seed_chapters)
+            if _seed_entries:
+                consumed_event_entries.extend(_seed_entries)
+                logger.info(
+                    "outline window ledger rebuilt from DB: %d consumed-event "
+                    "entries seeded for chapters < %s (project=%s)",
+                    len(_seed_entries),
+                    _first_batch_start,
+                    project.slug,
+                )
+    except Exception:
+        logger.warning(
+            "outline window ledger rebuild failed (fail-open, run-scoped "
+            "ledger only)",
+            exc_info=True,
+        )
     event_dedup_threshold = _outline_event_dedup_threshold(settings)
 
     for chapter_start, chapter_end, count in batch_ranges:
@@ -5745,7 +5796,7 @@ def _text_mentions_qimao(value: Any) -> bool:
 
 
 def _project_platform_candidates(project: ProjectModel) -> list[Any]:
-    metadata = _mapping(project.metadata_json)
+    metadata = _mapping(getattr(project, "metadata_json", None))
     profile = _mapping(metadata.get("writing_profile"))
     market = _mapping(profile.get("market"))
     serialization = _mapping(profile.get("serialization"))
@@ -5759,7 +5810,7 @@ def _project_platform_candidates(project: ProjectModel) -> list[Any]:
         market.get("content_mode"),
         market.get("reader_promise"),
         serialization.get("opening_mandate"),
-        project.audience,
+        getattr(project, "audience", None),
     ]
 
 
@@ -5776,15 +5827,22 @@ def project_targets_qimao(project: ProjectModel) -> bool:
     return project_targets_signing_platform(project) == "qimao"
 
 
-def project_uses_signing_quality_gate(project: ProjectModel) -> bool:
-    metadata = _mapping(project.metadata_json)
+def opening_quality_gate_requested(project: ProjectModel) -> bool:
+    """True only when the project opted into a signing-platform gate.
+
+    Leftover ``opening_quality_contract`` / ``qimao_opening_contract``
+    metadata must not enable the gate on a general-purpose book.
+    """
+    metadata = _mapping(getattr(project, "metadata_json", None))
     if metadata.get("opening_quality_gate_disabled") is True:
         return False
-    return bool(
-        metadata.get("opening_quality_contract")
-        or metadata.get("qimao_opening_contract")
-        or project_targets_signing_platform(project)
-    )
+    if metadata.get("opening_quality_gate_enabled") is True:
+        return True
+    return project_targets_signing_platform(project) is not None
+
+
+def project_uses_signing_quality_gate(project: ProjectModel) -> bool:
+    return opening_quality_gate_requested(project)
 
 
 def _project_platform_label(project: ProjectModel, market: dict[str, Any]) -> str:
@@ -6073,6 +6131,8 @@ def persist_qimao_opening_contract(
     cast_spec: dict[str, Any],
     volume_plan: Any,
 ) -> dict[str, Any] | None:
+    if not opening_quality_gate_requested(project):
+        return None
     contract = build_qimao_opening_contract(
         project,
         premise=premise,

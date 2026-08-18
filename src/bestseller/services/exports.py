@@ -373,7 +373,13 @@ def _write_commercial_package_sidecars(
     title = getattr(project, "title", "") or getattr(project, "slug", "")
     logline = _metadata_first_text(metadata, "logline", "premise", "synopsis")
     reader_promise = _metadata_first_text(metadata, "reader_promise")
-    selling_points = _metadata_text_list(metadata, "selling_points", "tags", "trope_keywords")
+    # 卖点只取 selling_points 本尊；把 tags/trope_keywords 一并拼进来会让
+    # 详情页「卖点」变成 24 条标签堆（2026-08-18《矿脉认主》用户终审：
+    # 「东方玄幻/男频爽文」混在卖点里，一眼 AI）。标签在 tags 字段自有其位，
+    # 只在卖点完全缺失时才降级借用。
+    selling_points = _metadata_text_list(metadata, "selling_points")
+    if not selling_points:
+        selling_points = _metadata_text_list(metadata, "tags", "trope_keywords")
     audiences = _metadata_text_list(metadata, "target_audiences")
     series_engine = metadata.get("series_engine") if isinstance(metadata.get("series_engine"), dict) else {}
     stakes = metadata.get("stakes") if isinstance(metadata.get("stakes"), dict) else {}

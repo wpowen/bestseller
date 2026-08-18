@@ -994,6 +994,9 @@ def detect(
     # ── Embodied-verb tic saturation (撞/烫/爬 复读) ─────────────────────
     spans.extend(_detect_verb_tic_spam(content_md, lang=lang))
 
+    # ── 无生命主语拟人动词过密 (凿子吃进/石头拱 万物皆动腔) ─────────────
+    spans.extend(_detect_inanimate_agency(content_md, lang=lang))
+
     # ── Chapter-level repetition (车轱辘内心戏 / 感觉词堆叠) ─────────────
     spans.extend(_detect_repetition(content_md, lang=lang))
 
@@ -1106,6 +1109,80 @@ def _detect_verb_tic_spam(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
                 f"高冲击具身动词复读（{detail}）——同一动词全章应≤4次；"
                 "改用平实动词（闻到/听见/看见/摸到）或换具体动作，"
                 "这是读者最容易识别的AI腔之一。"
+            ),
+            remove_sentence_on_block=False,
+        )
+    ]
+
+
+# 无生命主语 + 强施动动词 = 万物拟人腔（2026-08-18《矿脉认主》用户终审
+# 「凿子吃进/石头拱了一下——动词总是用错，一个字都不想读」）。
+# 病根是「生动压力」：纪律禁了动词复读后，模型改为轮换生僻强动词，
+# 给声音/影子/寒意逐句安排吃/咬/爬/蹿这类肢体动作。人类写手 90% 用平实
+# 动词，把强动词留给高潮。词表只在检测器层（种词铁律）。
+_INANIMATE_SUBJECTS_ZH: tuple[str, ...] = (
+    # 跨题材普适的无生命名词（避免题材专名，防题材不公平）
+    "影子", "声音", "风", "光", "月光", "灯火", "火把", "血", "字",
+    "名字", "空气", "地面", "墙", "雾", "夜色", "寒意", "凉意", "疼痛",
+    "痛感", "汗", "石头", "规矩", "热气", "哨声", "靴声", "脚步声",
+)
+_AGENCY_VERBS_ZH: tuple[str, ...] = (
+    # 强施动动词：安在无生命主语上时构成拟人/错搭配。
+    # 只收肢体/口部类施动词；状态词（烫/沉/凉）不算拟人——「石头烫」是
+    # 合法搭配，收进来会让 deslop 去改合法句（真机 ch2「滚烫石头」教训）。
+    "吃进", "拱", "钻", "爬", "舔", "啃", "咬", "挤", "撞", "劈",
+    "淌", "蹿", "弹", "压过", "压得", "扑", "抓", "攥", "嚼",
+    "吞", "漫过", "犁", "挠", "撕", "掐", "勒", "扎进",
+)
+_INANIMATE_AGENCY_RE = re.compile(
+    r"(" + "|".join(_INANIMATE_SUBJECTS_ZH) + r")"
+    r"[^。！？\n]{0,8}"
+    r"(" + "|".join(_AGENCY_VERBS_ZH) + r")"
+)
+
+
+def _detect_inanimate_agency(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """无生命主语拟人动词过密 —— chapter-level advisory, CJK only.
+
+    量的是「东西在做人的动作」的密度，不是单处修辞：单处拟人是合法重锤，
+    逐句拟人是 AI 腔（每个名词都被安排一个"生动"动词，读者读三句就累）。
+
+    校准（2026-08-18，.distillation_private 400 章抽样，同一正则）：
+    人类 中位 0.00/千字、p90 0.31、p99 0.95；《矿脉认主》中位 1.25、
+    ch1=5.94（人类 p99 的 6 倍）。阈值取人类 p99：密度 ≥1.0/千字 且
+    绝对数 ≥4（防短章折叠计数的量级失明）。误报率按校准 ≈1%。
+    """
+
+    if lang != "zh" or not content_md:
+        return []
+    total = len(content_md)
+    if total < 800:
+        return []
+    matches = list(_INANIMATE_AGENCY_RE.finditer(content_md))
+    count = len(matches)
+    if count < 4 or count * 1000 / total < 1.0:
+        return []
+    pair_counts: Counter[str] = Counter(
+        f"{m.group(1)}…{m.group(2)}" for m in matches
+    )
+    detail = "、".join(f"{p}×{c}" for p, c in pair_counts.most_common(5))
+    first = matches[0]
+    return [
+        AiFlavorSpan(
+            start=first.start(),
+            end=first.end(),
+            matched_text=content_md[first.start() : first.end()],
+            rule_id="zh.tic.inanimate_agency",
+            category="inanimate_agency",
+            severity="warn",
+            suggestions=(),
+            sentence_span=_sentence_bounds(content_md, first.start(), lang),
+            why=(
+                f"万物拟人过密（全章 {count} 处无生命主语接强施动动词，"
+                f"{count * 1000 / total:.1f}/千字，人类出版章 p99=0.95；如 {detail}）"
+                "——东西只做它物理上真会做的事，用平实动词写"
+                "（响、落、晃、停、亮、渗）；拟人化动词是重锤，"
+                "全章至多保留 1-2 处最关键的，其余全部换平实说法。"
             ),
             remove_sentence_on_block=False,
         )

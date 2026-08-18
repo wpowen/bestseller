@@ -123,7 +123,7 @@ def test_self_check_covers_staccato_and_system_ladder() -> None:
     # actually re-scans the added items (12 = +具身动词词族纪律
     # +无来源修辞体系纪律, 2026-08-01; 13 = +伪精确计量, 2026-08-08;
     # 14 = +时刻切片套娃, 2026-08-15).
-    assert "上面 14 条" in chk
+    assert "上面 15 条" in chk
     assert "具身动词词族" in chk, "verb-tic family discipline missing"
     assert "无来源的修辞体系" in chk, "source-bound imagery self-check missing"
 

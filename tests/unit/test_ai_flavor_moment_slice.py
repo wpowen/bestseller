@@ -97,7 +97,7 @@ def test_both_bands_in_deslop_trigger_set() -> None:
 
 def test_self_check_covers_moment_slice() -> None:
     assert "时刻切片" in _EXTRA_SELF_CHECK
-    assert "14 条" in _EXTRA_SELF_CHECK
+    assert "15 条" in _EXTRA_SELF_CHECK
 
 
 def test_moment_slice_rate_dialogue_masked() -> None:

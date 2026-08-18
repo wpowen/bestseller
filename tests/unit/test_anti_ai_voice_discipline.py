@@ -133,7 +133,9 @@ class TestAllProsePathsCarryTheDiscipline:
         from _prose_prompt_fixtures import build_chapter_first_system_prompt
 
         prompt = build_chapter_first_system_prompt()
-        assert "同一个高冲击动词全章别超过 4 次" in prompt
+        # 2026-08-18 措辞升级：由「同一个动词≤4次」改为词族总量限制——旧措辞
+        # 是轮换生僻强动词的许可证（《矿脉认主》凿子吃进/石头拱 定罪）。
+        assert "高冲击动词全章合计别超过 4 次" in prompt
         assert "全场" not in prompt
 
     def test_chapter_first_discipline_stays_within_the_ablation_band(self) -> None:

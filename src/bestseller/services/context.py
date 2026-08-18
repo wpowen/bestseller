@@ -2533,11 +2533,94 @@ async def build_chapter_writer_context(
                     )
                 )
 
+    # ── Reader Hype Engine（chapter-first 第一环接线，2026-08-18）──────────
+    # build_chapter_hype_blocks 此前只活在 run_scene_pipeline（场景模式）：
+    # chapter-first 书的写手 prompt 爽点约束恒为空、配方零落库、盖戳只剩
+    # 分类器兜底（《九姓井口只认我》8 章零配方定罪——8·16 四环断链
+    # 「能力长在书不走的那条路上」的残留环）。此处按场景管线同参调用，
+    # 填进 packet 后由 chapter-first prompt 与装配落库两端自然消费。
+    _hype_reader_contract: str | None = None
+    _hype_constraints: str | None = None
+    _hype_assigned_type: str | None = None
+    _hype_assigned_recipe_key: str | None = None
+    _hype_assigned_intensity: float | None = None
+    try:
+        from bestseller.services.diversity_budget import (  # noqa: PLC0415
+            load_diversity_budget as _load_hype_budget,
+        )
+        from bestseller.services.hype_engine import (  # noqa: PLC0415
+            GoldenFingerLadder,
+            extract_ladder_from_growth_curve,
+        )
+        from bestseller.services.invariants import (  # noqa: PLC0415
+            invariants_from_dict as _hype_invariants_from_dict,
+        )
+        from bestseller.services.prompt_constructor import (  # noqa: PLC0415
+            build_chapter_hype_blocks,
+        )
+        from bestseller.services.quality_gates_config import (  # noqa: PLC0415
+            get_quality_gates_config as _hype_gates_cfg,
+        )
+        from bestseller.settings import load_settings as _hype_load_settings  # noqa: PLC0415
+
+        if project.invariants_json:
+            _hype_inv = _hype_invariants_from_dict(project.invariants_json)
+            if not _hype_inv.hype_scheme.is_empty:
+                _hype_bud = await _load_hype_budget(session, project.id)
+                _hype_total = (
+                    getattr(project, "target_chapters", None)
+                    or (project.metadata_json or {}).get("target_chapter_count")
+                    or 100
+                )
+                _hype_curve = (project.metadata_json or {}).get("growth_curve") or ""
+                _hype_ladder: GoldenFingerLadder | None = None
+                if _hype_curve:
+                    _hype_ladder = extract_ladder_from_growth_curve(
+                        _hype_curve, int(_hype_total)
+                    )
+                    if _hype_ladder.is_empty:
+                        _hype_ladder = None
+                _hype_blocks = build_chapter_hype_blocks(
+                    _hype_inv,
+                    _hype_bud,
+                    chapter_no=chapter.chapter_number,
+                    total_chapters=int(_hype_total),
+                    pacing_profile=(
+                        getattr(
+                            getattr(_hype_load_settings(), "generation", None),
+                            "pacing_profile",
+                            "medium",
+                        )
+                        or "medium"
+                    ),
+                    golden_finger_ladder=_hype_ladder,
+                    sanitize_for_prose=_hype_gates_cfg().prose_quality.sanitize_prompt,
+                )
+                _hype_reader_contract = _hype_blocks.reader_contract_block or None
+                _hype_constraints = _hype_blocks.hype_constraints_block or None
+                if _hype_blocks.assigned_hype_type is not None:
+                    _hype_assigned_type = _hype_blocks.assigned_hype_type.value
+                if _hype_blocks.assigned_hype_recipe is not None:
+                    _hype_assigned_recipe_key = _hype_blocks.assigned_hype_recipe.key
+                if _hype_blocks.assigned_hype_intensity is not None:
+                    _hype_assigned_intensity = float(
+                        _hype_blocks.assigned_hype_intensity
+                    )
+    except Exception:
+        logger.debug(
+            "chapter-first hype block wiring failed (non-fatal)", exc_info=True
+        )
+
     return ChapterWriterContextPacket(
         project_id=project.id,
         project_slug=project.slug,
         chapter_id=chapter.id,
         chapter_number=chapter.chapter_number,
+        reader_contract_block=_hype_reader_contract,
+        hype_constraints_block=_hype_constraints,
+        assigned_hype_type=_hype_assigned_type,
+        assigned_hype_recipe_key=_hype_assigned_recipe_key,
+        assigned_hype_intensity=_hype_assigned_intensity,
         query_text=query_text,
         chapter_goal=chapter.chapter_goal,
         story_bible=story_bible_context,

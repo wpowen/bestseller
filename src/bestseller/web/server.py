@@ -1410,6 +1410,60 @@ def _delete_project_full(
         "errors": [],
     }
     if task_manager.has_active_task_for_project(slug):
+        # 卡片不是事实源：委托给 worker 的卡可能是僵尸（job 被重启杀掉、
+        # 重试超限后永不回写）。删除前按 DB + ARQ 队列对账一次，僵尸卡
+        # 判死后重查；任何一侧探测失败都按"活着"处理，绝不误杀活任务。
+        try:
+            heal_job_active = any(
+                slug in _fetch_heal_owned_slugs_by_kind(settings.redis.url, kind)
+                for kind in ("autowrite", "repair", "outline_replan")
+            )
+        except Exception:
+            heal_job_active = True
+
+        async def _db_workflow_active() -> bool:
+            from sqlalchemy import select
+
+            from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+
+            async with session_scope(settings) as session:
+                project = (
+                    await session.execute(
+                        select(ProjectModel.id).where(ProjectModel.slug == slug)
+                    )
+                ).scalar_one_or_none()
+                if project is None:
+                    return False
+                running = (
+                    await session.execute(
+                        select(WorkflowRunModel.id)
+                        .where(
+                            WorkflowRunModel.project_id == project,
+                            WorkflowRunModel.status.in_(
+                                ("pending", "queued", "running", "machine_blocked")
+                            ),
+                        )
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                return running is not None
+
+        try:
+            db_workflow_active = asyncio.run(_db_workflow_active())
+        except Exception:
+            db_workflow_active = True
+        reconciled = task_manager.reconcile_delegated_zombie_tasks(
+            slug,
+            db_workflow_active=db_workflow_active,
+            heal_job_active=heal_job_active,
+        )
+        if reconciled:
+            logger.warning(
+                "project delete: reconciled %d zombie delegated task card(s) for %s",
+                reconciled,
+                slug,
+            )
+    if task_manager.has_active_task_for_project(slug):
         out["errors"].append("project has running or queued tasks")
         return out
     try:
@@ -3079,6 +3133,59 @@ class WebTaskManager:
                 t.project_slug == project_slug and t.status in ("running", "queued")
                 for t in self._tasks.values()
             )
+
+    def reconcile_delegated_zombie_tasks(
+        self,
+        project_slug: str,
+        *,
+        db_workflow_active: bool,
+        heal_job_active: bool,
+    ) -> int:
+        """Fail delegated task cards whose worker-side execution no longer exists.
+
+        2026-08-18 定罪（custom-xuanhuan-1787015909）：重启把委托给 worker 的
+        自愈 job 杀了（``max retries exceeded``），它再也不会回来更新卡片——
+        卡片永远停在 running，``has_active_task_for_project`` 因此永远拒绝删书。
+        卡片不是事实源；执行活不活要问 DB（running workflow）和 ARQ 队列
+        （heal job key）。两边都说死了，卡片才许被判死——任何一边活着都不动
+        （fail-safe：探测失败的一侧由调用方按 active=True 传入）。
+
+        只动**委托型**卡片（progress 里出现过 ``delegated_to_worker_self_heal``）：
+        in-process 跑者（如构思期任务）的执行体是 web 自己的线程，DB/队列探测
+        看不见它，误判会把活任务的卡标死而线程还在写。
+        """
+
+        if not project_slug or db_workflow_active or heal_job_active:
+            return 0
+        changed = 0
+        with self._lock:
+            for task in self._tasks.values():
+                if task.project_slug != project_slug:
+                    continue
+                if task.status not in ("running", "queued"):
+                    continue
+                delegated = any(
+                    isinstance(event, dict)
+                    and event.get("stage") == "delegated_to_worker_self_heal"
+                    for event in task.progress_events
+                )
+                if not delegated:
+                    continue
+                task.status = "failed"
+                task.current_stage = "delegated_job_lost"
+                task.error = (
+                    "Delegated worker self-heal job is gone (no running DB "
+                    "workflow, no queued ARQ job) — card reconciled from zombie."
+                )
+                task.cancel_requested = False
+                task.record_event(
+                    "delegated_job_lost_reconciled",
+                    {"db_workflow_active": False, "heal_job_active": False},
+                )
+                changed += 1
+            if changed:
+                self._save_to_disk()
+        return changed
 
     def cleanup_tasks(self, statuses: set[str]) -> int:
         """Bulk-delete all tasks whose status is in *statuses*.

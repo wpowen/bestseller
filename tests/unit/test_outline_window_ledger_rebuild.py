@@ -40,7 +40,10 @@ def test_ledger_entry_format_accepts_contract_row_keys():
 
 def test_batched_generator_rebuilds_ledger_from_db():
     src = inspect.getsource(planner._generate_volume_outline_batched)
-    assert "ChapterContractModel.chapter_number" in src, "必须从 DB 事实源重建"
+    # 事实源=chapters 行（chapter_goal/hook_description 物化时抄写在章行；
+    # chapter_contracts 没有这两列——2026-08-19 窗 2 真机 AttributeError 定罪）
+    assert "ChapterModel.chapter_goal" in src, "必须从 chapters 事实源重建"
+    assert "ChapterModel.hook_description" in src
     assert "_outline_consumed_event_entries(_seed_chapters)" in src, "种子必须走同一格式函数"
     # 窗1（从第1章起）不查库；fail-open 不阻断规划
     assert "int(_first_batch_start) > 1" in src

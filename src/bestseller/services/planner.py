@@ -29,7 +29,6 @@ from bestseller.domain.story_bible import (
     normalize_character_role_label,
 )
 from bestseller.infra.db.models import (
-    ChapterContractModel,
     ChapterModel,
     LlmRunModel,
     PlanningArtifactVersionModel,
@@ -5487,19 +5486,22 @@ async def _generate_volume_outline_batched(
     try:
         _first_batch_start = batch_ranges[0][0] if batch_ranges else None
         if _first_batch_start is not None and int(_first_batch_start) > 1:
+            # 事实源在 chapters 行本身（chapter_goal/hook_description 是
+            # 章纲物化时抄写到章行的字段；chapter_contracts 存的是合同摘要，
+            # 没有这两列——2026-08-19 窗 2 真机 AttributeError 定罪，fail-open
+            # 兜住后重建未生效，本次改正）。
             _prior_rows = (
                 await session.execute(
                     select(
-                        ChapterContractModel.chapter_number,
-                        ChapterContractModel.chapter_goal,
-                        ChapterContractModel.hook_description,
+                        ChapterModel.chapter_number,
+                        ChapterModel.chapter_goal,
+                        ChapterModel.hook_description,
                     )
                     .where(
-                        ChapterContractModel.project_id == project.id,
-                        ChapterContractModel.chapter_number
-                        < int(_first_batch_start),
+                        ChapterModel.project_id == project.id,
+                        ChapterModel.chapter_number < int(_first_batch_start),
                     )
-                    .order_by(ChapterContractModel.chapter_number)
+                    .order_by(ChapterModel.chapter_number)
                 )
             ).all()
             _seed_chapters = [

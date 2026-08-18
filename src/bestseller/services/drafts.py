@@ -10281,6 +10281,19 @@ async def generate_chapter_draft_once(
             effective_settings.pipeline, "prose_prompt_profile", None
         ),
     )
+    # 爽点分配的章级事实源（2026-08-19）：chapter-first 没有 scene_drafts，
+    # 盖戳函数落库时读不到 packet——把分配写进章行 metadata，stamp_chapter_hype
+    # 以此兜底（与场景路径「盖计划值」同语义）。
+    if context_packet is not None and getattr(
+        context_packet, "assigned_hype_type", None
+    ):
+        _hype_meta = dict(chapter.metadata_json or {})
+        _hype_meta["assigned_hype"] = {
+            "type": context_packet.assigned_hype_type,
+            "recipe_key": context_packet.assigned_hype_recipe_key,
+            "intensity": context_packet.assigned_hype_intensity,
+        }
+        chapter.metadata_json = _hype_meta
     compiler_report = None
     if isinstance(prompt_result, CompiledPrompt):
         system_prompt = prompt_result.system
@@ -12164,6 +12177,29 @@ async def stamp_chapter_hype(
                     else None
                 )
                 break
+        # ── chapter-first 分配兜底（2026-08-19《摔下山三次》定罪）──────────
+        # 整章路径没有 scene_drafts：分配合同在 packet→写手 prompt 里活着，
+        # 但盖戳端只会读 scene_drafts → 章行配方键恒 NULL、直接掉进分类器
+        # 兜底（观测值），计划值丢失。生成端已把分配写进
+        # chapter.metadata_json["assigned_hype"]（章级事实源），此处按
+        # 场景路径同语义（盖计划值）兜底读取。refresh 重算不受影响。
+        if _hype_type is None and not refresh:
+            _assigned_meta = (
+                (getattr(chapter, "metadata_json", None) or {}).get("assigned_hype")
+                or {}
+            )
+            if _assigned_meta.get("type"):
+                _hype_type = str(_assigned_meta["type"])
+                _hype_recipe_key = (
+                    str(_assigned_meta["recipe_key"])
+                    if _assigned_meta.get("recipe_key")
+                    else None
+                )
+                _hype_intensity = (
+                    float(_assigned_meta["intensity"])
+                    if _assigned_meta.get("intensity") is not None
+                    else None
+                )
         # ── Fallback classifier ───────────────────────────────────────────
         # Blood-twins' 30/30 NULL-hype-type chapters happened because the
         # upstream assignment pipeline never stamped ``assigned_hype_type`` on

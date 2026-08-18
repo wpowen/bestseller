@@ -49,3 +49,78 @@ def test_packet_class_carries_all_five_fields():
         "assigned_hype_intensity",
     ):
         assert name in fields
+
+
+# ── 盖戳端兜底（2026-08-19 第二环）────────────────────────────────────────
+# packet 有合同但章行配方键恒 NULL：盖戳只读 scene_drafts（chapter-first 为空）。
+# 生成端把分配写进 chapter.metadata_json["assigned_hype"]，盖戳按场景路径
+# 同语义（盖计划值）兜底。
+
+
+class _FakeChapter:
+    def __init__(self, assigned=None):
+        self.hype_type = None
+        self.hype_recipe_key = None
+        self.hype_intensity = None
+        self.metadata_json = {"assigned_hype": assigned} if assigned else {}
+
+
+class _FakeSession:
+    def add(self, *a, **k):  # pragma: no cover
+        raise AssertionError("stamp 不应向 session add 对象")
+
+
+@pytest.mark.asyncio
+async def test_stamp_reads_chapter_level_assignment_when_no_scene_drafts():
+    from bestseller.services.drafts import stamp_chapter_hype
+
+    chapter = _FakeChapter(
+        assigned={"type": "face_slap", "recipe_key": "仙侠-宗门打脸", "intensity": 8.0}
+    )
+    await stamp_chapter_hype(
+        _FakeSession(),
+        chapter=chapter,
+        chapter_number=2,
+        content_md="他把水烧开，倒进壶里。" * 60,
+        project=None,
+        scene_drafts=(),
+        refresh=False,
+    )
+    assert chapter.hype_type == "face_slap", "计划值必须落章行（场景路径同语义）"
+    assert chapter.hype_recipe_key == "仙侠-宗门打脸"
+    assert chapter.hype_intensity == 8.0
+
+
+@pytest.mark.asyncio
+async def test_refresh_ignores_assignment_and_recomputes():
+    # refresh=换稿重算：以正文观测为准，不回填计划值
+    from bestseller.services.drafts import stamp_chapter_hype
+
+    chapter = _FakeChapter(
+        assigned={"type": "face_slap", "recipe_key": "仙侠-宗门打脸", "intensity": 8.0}
+    )
+    chapter.hype_type = "face_slap"
+    chapter.hype_recipe_key = "仙侠-宗门打脸"
+    chapter.hype_intensity = 8.0
+    await stamp_chapter_hype(
+        _FakeSession(),
+        chapter=chapter,
+        chapter_number=2,
+        content_md="他把水烧开，倒进壶里。" * 60,
+        project=None,
+        scene_drafts=(),
+        refresh=True,
+    )
+    assert chapter.hype_type is None, "新稿读不出爽点必须清戳（不许拿计划值糊）"
+    assert (chapter.metadata_json.get("hype_regressions") or []), "清戳必须留痕"
+
+
+def test_generation_writes_chapter_level_assignment():
+    import inspect
+
+    from bestseller.services import drafts
+
+    src = inspect.getsource(drafts)
+    assert '"assigned_hype"' in src and "assigned_hype" in src
+    # 生成端写入点必须以 packet 为源、整字典重赋值（JSONB 变更追踪）
+    assert '_hype_meta["assigned_hype"]' in src

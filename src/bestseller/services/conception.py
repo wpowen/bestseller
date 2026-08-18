@@ -4844,19 +4844,25 @@ async def _polish_blurb_synopsis(
         # deleted from this repair prompt — framework-authored reader sheets
         # and event menus steer every same-genre book toward the same content.
         from bestseller.services.blurb_appeal_gate import platform_blurb_band  # noqa: PLC0415
+        from bestseller.services.blurb_copywriter import render_blurb_form_reminder  # noqa: PLC0415
 
         # 与验收闸门同源的平台字数带（旧版硬编码 80-140 与起点 140-220 打架）。
         _band_min, _band_max = platform_blurb_band(platform)
+        # 形态规则只从单一来源拼入（2026-08-18 定罪）：本路径旧版自带一套
+        # 与 copywriter 百本榜单实抓形态（标签行/分行/陈述收尾/仅6%问句）
+        # 正面互斥的旧规——冠军先按榜单形态产出、再被本打磨改回单段问句
+        # 收尾，见光的简介两头不沾。详见 render_blurb_form_reminder docstring。
         system_prompt = (
-            "你是网文平台资深编辑。把给定简介按【整改要求】重写成一段【点击型】作品简介"
-            "（番茄/起点详情页文案）。只输出重写后的简介正文，不要解释、不要标题。"
+            "你是网文平台资深编辑。把给定简介按【整改要求】改到位（番茄/起点详情页文案）。"
+            "只输出重写后的简介正文，不要解释、不要标题。"
         )
         user_prompt = (
             f"题材：{genre}（{sub_genre}）\n"
             f"【当前简介】\n{synopsis}\n\n【整改要求】\n{feedback}\n\n"
-            f"硬性：{_band_min}-{_band_max}字（按目标平台带）；首句≤30字的强钩（疑问/反差/开局冲突）；卖点三要素齐（身份+冲突+代价）；"
-            f"高唤起情绪前置——从本书自己的前提与冲突里选最强的情绪事件，别套其他题材的情绪词；"
-            "结尾留悬念不剧透；禁AI腔（本以为/却没想到/何去何从/敬请期待）；"
+            f"{render_blurb_form_reminder(lo=_band_min, hi=_band_max)}\n"
+            "其余硬性：卖点三要素齐（身份+冲突+代价）；"
+            "高唤起情绪前置——从本书自己的前提与冲突里选最强的情绪事件，别套其他题材的情绪词；"
+            "不剧透结局；"
             "【新读者可懂铁律】当成写给完全不懂本书设定的陌生人:删掉生造黑话/自定义机制名/系统术语/"
             "等级编号(如灵码编辑器/怪谈词条/S级/#0371/数据化修炼),独特概念要么不出现要么紧跟一句大白话"
             "点破,一段最多留1个专名;读完能一句话说出主角是谁、要干嘛、爽点在哪。只输出简介正文。"

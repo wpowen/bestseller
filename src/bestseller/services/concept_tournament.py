@@ -2109,6 +2109,113 @@ def _premise_card_audit(card: dict[str, Any]) -> list[str]:
     return missing
 
 
+_STORY_LAYER_AXES = (
+    "s1_wants_aggression",
+    "s2_stakes_upside",
+    "s3_exclusivity",
+    "s4_promise_survival",
+    "s5_three_second_pitch",
+)
+
+
+def _build_story_layer_judge_messages(
+    card: dict[str, Any],
+    *,
+    genre: str,
+    sub_genre: str,
+    audience_orientation: str = "",
+) -> tuple[str, str]:
+    """故事层判卡（P0，2026-08-18 接线）。
+
+    背景：概念层判据只看「概念一句话」（click 轴原文），项目卡展开层的
+    wants/stakes/系列引擎**零业务判据**——《丑石》的防守型欲望、两头输赌注、
+    金手指自我稀释全部漏过，成书后被用户判差；下一本直接被榜单达标线拦截
+    （简介 78<80，模拟读者 0/3 会点，划走原因全是「看不懂/不够爽」）。
+    判据来源=爽文方法论 v2 的读者三段律与分档表，写成结构判定、**不种词**；
+    输出强制逐项证据引文（裸分数=注意力稀释，hook_pull_judge 46 次榜单书
+    零冤案用的正是引文模式）。零杀权：结果只用于一次带方向的重展开与留痕，
+    **不淘汰任何卡**。
+    """
+
+    subset = {
+        key: card.get(key)
+        for key in (
+            "protagonist_identity",
+            "protagonist_private_desire",
+            "protagonist_flaw",
+            "current_goal",
+            "core_abnormality",
+            "deformable_loop",
+            "failure_cost",
+            "success_cost",
+            "reader_promise",
+            "emotional_promise",
+            "opening_crisis",
+            "difference_point",
+        )
+    }
+    audience_line = (
+        f"目标读者：{audience_orientation}频主流读者。"
+        if str(audience_orientation or "").strip()
+        else ""
+    )
+    system = (
+        "你是商业长篇选题的故事层审稿人，只审项目卡文本本身。"
+        "每一项判定都必须引用卡片原文作证据；按各项的引文规则执行，"
+        "引不出规定的证据就按该项规则判否。只输出JSON。"
+    )
+    user = (
+        f"{audience_line}题材：{genre}（{sub_genre}）\n"
+        f"【项目卡】{json.dumps(subset, ensure_ascii=False)}\n\n"
+        "五项判定（每项给 pass 布尔值 + 规定的引文字段）：\n"
+        "1. s1_wants_aggression 欲望攻性：protagonist_private_desire 与 current_goal 里，"
+        "是否至少有一件是『要拿到此刻还不属于他的东西』？quote=逐字引出那句话。"
+        "注意：挣回颜面、抵清欠款、洗清冤屈这类**恢复原状**的目标只是回到零，"
+        "不算拿到新东西；但『连本带利夺回并让对方付出代价』越过了原状线，算。"
+        "引不出（全是保住/守住/不被怎样/恢复原状）→ pass=false。\n"
+        "2. s2_stakes_upside 赌注有赢面：主角若达成目标，净得是否为正？"
+        "win_quote=引出『赢了得到什么』的原句，cost_quote=引出 success_cost 原句；"
+        "若成功的代价吞掉或反超收益（赢了也是灾难）→ pass=false。\n"
+        "3. s3_exclusivity 能力排他：core_abnormality 与 deformable_loop 里，"
+        "主角核心能力是否保持排他？若机制描述能力会扩散/复制/传染/转移给他人"
+        "→ pass=false，quote=该句。\n"
+        "4. s4_promise_survival 承诺可持续：deformable_loop 能否持续产生"
+        "同类但不同的局面？依赖一次性谜底、会耗尽的次数、或同一动作原样重复"
+        "→ pass=false，quote=依据句。\n"
+        "5. s5_three_second_pitch 三秒可述：用一句大白话写出『主角接下来要赢什么』，"
+        "这句话里不得出现卡片里的生造名词；写得出 → pass=true 并给 pitch 字段；"
+        "写不出或必须先解释设定才能说清 → pass=false。\n\n"
+        "输出JSON：{\"s1_wants_aggression\":{\"pass\":true,\"quote\":\"…\"},"
+        "\"s2_stakes_upside\":{\"pass\":true,\"win_quote\":\"…\",\"cost_quote\":\"…\"},"
+        "\"s3_exclusivity\":{\"pass\":true,\"quote\":\"…\"},"
+        "\"s4_promise_survival\":{\"pass\":true,\"quote\":\"…\"},"
+        "\"s5_three_second_pitch\":{\"pass\":true,\"pitch\":\"…\"},"
+        "\"revise_direction\":\"任一false时给修正方向，只给方向不给措辞，≤40字；全过则空串\"}"
+    )
+    return system, user
+
+
+def _parse_story_layer_verdict(raw: str) -> dict[str, Any] | None:
+    payload = _parse_json_object(raw)
+    if payload is None:
+        return None
+    verdict: dict[str, Any] = {"axes": {}, "failed_axes": []}
+    for axis in _STORY_LAYER_AXES:
+        entry = payload.get(axis)
+        if not isinstance(entry, dict):
+            # 判官漏轴不视为 fail（无杀权精神：缺失≠定罪），只标 unknown
+            verdict["axes"][axis] = {"pass": None}
+            continue
+        passed = entry.get("pass")
+        verdict["axes"][axis] = {
+            k: v for k, v in entry.items() if isinstance(k, str)
+        }
+        if passed is False:
+            verdict["failed_axes"].append(axis)
+    verdict["revise_direction"] = str(payload.get("revise_direction") or "").strip()
+    return verdict
+
+
 def _build_engine_kernel_repair_messages(
     *,
     genre: str,
@@ -2806,6 +2913,18 @@ async def run_concept_tournament(
                 logical_role="critic",
                 model_catalog_key=judge_model_key,
             )
+        # P0 故事层判卡（2026-08-18）：独立模板便于 llm_runs 归因与事后审计。
+        # 注入自定义 judge（测试路径）时复用之，保持可测性。
+        story_judge_fn = judge
+        if using_default_judge:
+            story_judge_fn = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_story_judge",
+                max_tokens=max(900, int(cfg.get("story_judge_max_tokens", 1600))),
+                logical_role="critic",
+                model_catalog_key=judge_model_key,
+            )
         expand_fn = expander
         if expand_fn is None and using_default_generator:
             expand_fn = await _default_generator(
@@ -3332,6 +3451,112 @@ async def run_concept_tournament(
                             }
                         )
                         continue
+
+                    # ── P0 故事层判卡（2026-08-18 接线）──────────────────────
+                    # 概念层判据只看「概念一句话」，展开层的 wants/stakes/
+                    # 系列引擎此前零业务判据（《丑石》三缺陷全部漏过；下一本
+                    # 直接被榜单线拦截）。零杀权：两票定罪（判官单票噪声已
+                    # 定量不可信），定罪也**不淘汰卡**——只做一次带证据引文的
+                    # 方向性重展开并全程留痕进 conception_log。
+                    if story_judge_fn is not None and bool(
+                        cfg.get("story_layer_judge_enabled", True)
+                    ):
+                        _sl_votes: list[dict[str, Any]] = []
+                        for _sl_i in range(
+                            max(1, int(cfg.get("story_layer_votes", 2)))
+                        ):
+                            _sl_sys, _sl_user = _build_story_layer_judge_messages(
+                                kernel,
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                audience_orientation=audience_orientation,
+                            )
+                            try:
+                                _sl_raw, _sl_run_id = await story_judge_fn(
+                                    _sl_sys, _sl_user
+                                )
+                            except Exception:
+                                break
+                            if _sl_run_id is not None:
+                                result.llm_run_ids.append(_sl_run_id)
+                            _sl_parsed = _parse_story_layer_verdict(_sl_raw)
+                            if _sl_parsed is not None:
+                                _sl_votes.append(_sl_parsed)
+                        _sl_convicted: list[str] = []
+                        if len(_sl_votes) >= 2:
+                            _sl_fail_sets = [
+                                set(v["failed_axes"]) for v in _sl_votes
+                            ]
+                            _sl_convicted = sorted(
+                                set.intersection(*_sl_fail_sets)
+                            )
+                        card_record["story_layer"] = {
+                            "votes": _sl_votes,
+                            "convicted_axes": _sl_convicted,
+                        }
+                        if _sl_convicted:
+                            _sl_first = _sl_votes[0].get("axes", {})
+                            _sl_quotes: list[str] = []
+                            for _axis in _sl_convicted:
+                                _entry = _sl_first.get(_axis) or {}
+                                for _qk in ("quote", "win_quote", "cost_quote"):
+                                    _qv = str(_entry.get(_qk) or "").strip()
+                                    if _qv:
+                                        _sl_quotes.append(f"{_axis}={_qv}")
+                            _sl_directions = "；".join(
+                                d
+                                for d in (
+                                    v.get("revise_direction", "")
+                                    for v in _sl_votes
+                                )
+                                if d
+                            )
+                            _sl_revise_user = (
+                                engine_user
+                                + "\n\n【故事层判卡未过——按方向修正后重新输出"
+                                "完整JSON项目卡，未点名的部分保持原样】\n"
+                                + f"未过项：{'、'.join(_sl_convicted)}\n"
+                                + (
+                                    "证据引文："
+                                    + "；".join(_sl_quotes)
+                                    + "\n"
+                                    if _sl_quotes
+                                    else ""
+                                )
+                                + (
+                                    f"修正方向：{_sl_directions}\n"
+                                    if _sl_directions
+                                    else ""
+                                )
+                            )
+                            result.candidate_generation_calls += 1
+                            result.candidate_prompt_chars += len(
+                                engine_system
+                            ) + len(_sl_revise_user)
+                            try:
+                                _sl_new_raw, _sl_new_run_id = await engine_fn(
+                                    engine_system, _sl_revise_user
+                                )
+                            except Exception:
+                                _sl_new_raw, _sl_new_run_id = None, None
+                            if _sl_new_run_id is not None:
+                                result.llm_run_ids.append(_sl_new_run_id)
+                            _sl_revised = (
+                                _parse_json_object(_sl_new_raw)
+                                if _sl_new_raw
+                                else None
+                            )
+                            if _sl_revised is not None and not _premise_card_audit(
+                                _sl_revised
+                            ):
+                                card_record["story_layer"]["revised"] = True
+                                card_record.setdefault("initial_card", kernel)
+                                card_record["card"] = _sl_revised
+                                kernel = _sl_revised
+                            else:
+                                # 重展开失败/结构不全 → 保留原卡继续（零杀权）
+                                card_record["story_layer"]["revised"] = False
+
                     kernel_guard = _candidate_hard_rejection_reason(
                         _attach_engine_kernel(
                             ConceptCandidate(

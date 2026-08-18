@@ -29,6 +29,42 @@ from typing import Iterable, Mapping
 logger = logging.getLogger(__name__)
 
 
+# Web-novel cast names so overused — or baked into legacy material packs — that
+# generation LLMs keep defaulting to them, collapsing unrelated books onto the
+# same handful of protagonists (the recurring 陆沉/宁尘/苏瑶 problem).
+#
+# Single source of truth (2026-08-18《九姓井口只认我》定罪): the ban used to
+# live only on the CAST prompt (conception), but protagonist names are minted
+# upstream in the concept-tournament expansion — 陆沉 sailed straight through
+# title/premise/blurb before any cast prompt existed. Both sites now import
+# this list; do not re-inline it.
+CLICHE_NAME_BLOCKLIST: tuple[str, ...] = (
+    "陆沉", "陆尘", "陆轩", "陆离", "陆鸣", "陆晨",
+    "叶凡", "叶尘", "叶轩", "叶天", "叶辰",
+    "林轩", "林动", "林凡", "林夕", "林墨",
+    "苏瑶", "苏沐", "苏晴", "苏白",
+    "楚风", "楚枫", "萧炎", "萧晨",
+    "江晚", "沈追", "顾沉", "宁尘", "方域", "韩立", "秦尘",
+)
+
+
+def render_protagonist_name_ban(*, compact: bool = False) -> str:
+    """One-line (compact) or block-form naming ban for zh generation prompts."""
+
+    joined = "、".join(CLICHE_NAME_BLOCKLIST)
+    if compact:
+        return (
+            "主角与配角命名硬约束：禁止使用下列烂大街网文名及仅差一字的近似变体："
+            f"{joined}。取贴合本书具体设定的新鲜姓名。"
+        )
+    return (
+        "【命名去重 · 硬约束】\n"
+        "以下名字在网文里被严重滥用、或被旧模板固化，主角与主要配角一律禁止使用，"
+        "也不要用仅差一字的高度雷同变体：\n"
+        f"{joined}。"
+    )
+
+
 # Distinct neutral referents so two normalized walk-ons in one scene stay
 # distinguishable. Order matters: earlier entries read more naturally.
 _ZH_GENERIC_REFERENTS: tuple[str, ...] = (

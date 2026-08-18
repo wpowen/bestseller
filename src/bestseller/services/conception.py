@@ -1868,18 +1868,13 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
     return prompt
 
 
-# Web-novel cast names so overused — or baked into legacy material packs — that
-# the conception LLM keeps defaulting to them, collapsing unrelated books onto
-# the same handful of protagonists (the recurring 陆沉/宁尘/苏瑶 problem). These
-# are banned outright in zh casts. Cross-book de-dup against actually-used names
-# is layered on top via ``_recent_cast_names`` → ``ctx['avoid_names']``.
-_CLICHE_NAME_BLOCKLIST: tuple[str, ...] = (
-    "陆沉", "陆尘", "陆轩", "陆离", "陆鸣", "陆晨",
-    "叶凡", "叶尘", "叶轩", "叶天", "叶辰",
-    "林轩", "林动", "林凡", "林夕", "林墨",
-    "苏瑶", "苏沐", "苏晴", "苏白",
-    "楚风", "楚枫", "萧炎", "萧晨",
-    "江晚", "沈追", "顾沉", "宁尘", "方域", "韩立", "秦尘",
+# 烂名黑名单单一来源在 naming_normalizer（2026-08-18《九姓井口只认我》定罪：
+# 禁令只挂 cast prompt，而主角名在概念淘汰赛展开层就铸死了——陆沉一路进了
+# 书名/前提/简介）。此处保留旧名做别名，勿再内联词表。
+# Cross-book de-dup against actually-used names is layered on top via
+# ``_recent_cast_names`` → ``ctx['avoid_names']``.
+from bestseller.services.naming_normalizer import (  # noqa: E402
+    CLICHE_NAME_BLOCKLIST as _CLICHE_NAME_BLOCKLIST,
 )
 
 

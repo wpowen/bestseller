@@ -44,6 +44,7 @@ from typing import Any, Protocol
 
 import yaml
 
+from bestseller.services.naming_normalizer import render_protagonist_name_ban
 from bestseller.services.progress_context import emit_activity
 
 logger = logging.getLogger(__name__)
@@ -1116,6 +1117,10 @@ def _build_engine_kernel_messages(
         # opening_crisis + core_abnormality are where the death/relic default
         # gets baked; steer them here, upstream of the hook sentence.
         + "\n" + render_cliche_avoidance_block(banned)
+        # 主角名也是在这里铸死的（protagonist_identity 常带具名），cast 层的
+        # 烂名禁令管不到已进书名/前提/简介的名字——同一份黑名单在此下沉
+        # （2026-08-18《九姓井口只认我》：陆沉复发定罪）。
+        + "\n" + render_protagonist_name_ban(compact=True)
         # The pre-planning logline gate hard-kills on story-logic axes
         # (protagonist_rationality / cost_integrity / causal_coherence) that are
         # decided HERE, in current_goal / opening_crisis / failure_cost — and

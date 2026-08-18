@@ -124,7 +124,9 @@ def test_repair_legacy_foundation_identity_locks_uses_existing_pronouns_without_
     assert count == 1
     assert repaired is not None
     assert repaired["supporting_cast"][0]["gender"] == "nonbinary"
-    assert repaired["supporting_cast"][1].get("gender") is None
+    # 不许发明性别：缺失或显式 unknown 都算「未锁定」（2026-08-19 起修复器
+    # 先走验收器同一套归一，归一会把缺失补成显式 unknown——语义等价）。
+    assert repaired["supporting_cast"][1].get("gender") in (None, "unknown")
 
 
 def test_repair_legacy_foundation_identity_locks_defaults_unknowns_to_nonbinary() -> None:

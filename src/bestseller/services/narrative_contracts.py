@@ -669,6 +669,24 @@ def repair_legacy_foundation_identity_locks(
     if not isinstance(cast_spec_content, dict):
         return cast_spec_content, 0
 
+    # 修复器必须与验收器看同一份形状（2026-08-19《摔下山三次》定罪）：
+    # 验收器经 parse_cast_spec_input 归一后校验（名字作键的角色条目会被解包、
+    # 多余主角/反派会被挤进 supporting_cast），而本修复器此前在**原始 dict**上
+    # 迭代——名字作键的条目 character.get("name") 为空直接跳过，永远修不到；
+    # 验收器解包后看得到，FOUNDATION_IDENTITY_GENDER/PRONOUN_MISSING 直接
+    # 毙掉奠基。「声明带括号别名」匹配盲区同族：两把尺子不同视图。
+    # CharacterInput extra="allow"，归一不丢字段；解析失败 fail-open 回原始形状。
+    try:
+        from bestseller.services.story_bible import parse_cast_spec_input  # noqa: PLC0415
+
+        _coerced = parse_cast_spec_input(cast_spec_content).model_dump(mode="json")
+        for _extra_key, _extra_value in cast_spec_content.items():
+            if _extra_key not in _coerced:
+                _coerced[_extra_key] = _extra_value
+        cast_spec_content = _coerced
+    except Exception:
+        pass
+
     hint_index = _identity_index_from_manifest(identity_hints)
     patched = _deepcopy_json_mapping(cast_spec_content)
     repaired = 0

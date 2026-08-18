@@ -7757,9 +7757,15 @@ async def run_conception_pipeline(
             "Conception BLOCKED by %s (blurb=%s title=%s) — "
             "not advancing to planning.", "+".join(_by), _b, _t,
         )
-        raise AppealBarNotMetError(
+        _appeal_exc = AppealBarNotMetError(
             story_appeal_report, _appeal_blocked_feedback, blocked_by=tuple(_by)
         )
+        # 被拦截的构思恰恰最需要审计，但 web 的同步 handler 拿不到 runner
+        # 帧里的局部变量（conception_log/settings 都是 async 帧的 locals，
+        # 见 server._run_autowrite_worker 的 NOTE）——把全过程日志挂在异常上
+        # 带出去，落盘由 handler 用 load_settings() 完成。
+        _appeal_exc.conception_log = list(conception_log)
+        raise _appeal_exc
 
     # Final ontology tripwire: a native 仙侠/历史/悬疑 project must not silently
     # become an APP/phone/workplace/forensic-modern story after all agents merge.

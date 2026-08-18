@@ -138,7 +138,11 @@ def test_finalize_wires_persona_block_below_into_shared_appeal_bar_error() -> No
     # （循环续跑用一份、硬拦用另一份），正是判决没能驱动重生的原因之一。
     assert "persona_hard_veto(_persona_report, _appeal_cfg)" in source
     assert "_appeal_block_below = True" in source
-    assert "raise AppealBarNotMetError(" in source
+    # 2026-08-18 起异常先落变量再 raise（为挂 conception_log 带出 async 帧），
+    # 锁的是「抛的是共享错误类型且带全过程日志」，不是字面 raise 形态。
+    assert "AppealBarNotMetError(" in source
+    assert "raise _appeal_exc" in source
+    assert "_appeal_exc.conception_log" in source
     assert "blocked_by=tuple(_by)" in source
 
 

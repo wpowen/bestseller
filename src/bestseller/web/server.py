@@ -4648,8 +4648,15 @@ class WebTaskManager:
             except Exception:
                 logger.debug("appeal_blocked progress emit failed", exc_info=True)
             # 被拦截的构思恰恰最需要审计——中间产物照样落盘（2026-08-18）。
+            # 本 handler 是 sync 帧：``settings``/``conception_log`` 都是 async
+            # runner 的 locals，在这里引用是 NameError（首版真踩了——拦截时
+            # 炸 NameError，用户看到的是崩溃栈而不是拦截报告，档案也没落）。
+            # 日志由 raise 点挂在异常上带出，settings 现场加载。
             _failed_log_path = _persist_conception_log(
-                settings, task_id, None, conception_log
+                load_settings(),
+                task_id,
+                None,
+                getattr(exc, "conception_log", None),
             )
             msg = (
                 "未达【榜单达标线 80 分】，已拦截，未进入规划。\n"

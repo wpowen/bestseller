@@ -331,6 +331,7 @@ async def revise_prose_deslop(
     rounds: int = 2,
     logical_role: str = "writer",
     chapter_number: int | None = None,
+    hype_preservation_block: str = "",
 ) -> str:
     """Run the bounded deslop self-review loop; return the cleaned content.
 
@@ -364,6 +365,7 @@ async def revise_prose_deslop(
             rounds=rounds,
             logical_role=logical_role,
             rubric=rubric,
+            hype_preservation_block=hype_preservation_block,
         )
 
 
@@ -378,6 +380,7 @@ async def _revise_prose_deslop_inner(
     rounds: int,
     logical_role: str,
     rubric: str,
+    hype_preservation_block: str = "",
 ) -> str:
     """Body of :func:`revise_prose_deslop`, running inside its attribution scope."""
 
@@ -467,7 +470,14 @@ async def _revise_prose_deslop_inner(
             "（乙）车轱辘重复（同一身体感觉/动作/潜台词解读反复写好几遍、感觉词排比堆叠）——删重复表达。"
             "字数原则上不减；但（甲）合并分段、（乙）删重复导致字数下降都是正确的，不算砍情节"
             "——情节是'发生了什么'，重复/碎段是'同一件事写了几遍/切了几段'，改后者天经地义。"
-            "直接输出改写后的完整正文，不要任何解释或标注。\n\n" + rubric
+            "直接输出改写后的完整正文，不要任何解释或标注。\n\n"
+            + rubric
+            # 爽点保全（2026-08-19 真机复发）：deslop 是主要修订通道之一
+            # （真机 16 次），此前只有 chapter_rewrite 带保全块，去 AI 味时
+            # 照样把爽点结算段删成转述——盖戳继续掉。修复通道必须**全部**
+            # 同见合同，不能只修其中一条（这正是「修在书不走的那条路上」
+            # 的同形复发，作者本人当场再犯一次）。
+            + hype_preservation_block
         )
         if restore_length:
             # 上一轮把切片链并干净了、字数掉到合同以下。这一轮只补长度，且用

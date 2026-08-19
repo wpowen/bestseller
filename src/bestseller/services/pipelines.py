@@ -120,6 +120,7 @@ from bestseller.services.drafts import (
     authoritative_word_count_for_language,
     generate_chapter_draft_once,
     generate_scene_draft,
+    render_hype_preservation_block,
     _front10_forbidden_signal_terms,
 )
 from bestseller.services.book_closure import (
@@ -10440,6 +10441,12 @@ async def run_chapter_pipeline(
                             target_chars=_af_target,
                             rounds=2,
                             chapter_number=chapter_number,
+                            # 爽点保全：deslop 是主要修订通道之一，去 AI 味
+                            # 时同样会把结算段删成转述（2026-08-19 真机：
+                            # 只给 chapter_rewrite 加保全后盖戳照掉）。
+                            hype_preservation_block=render_hype_preservation_block(
+                                chapter
+                            ),
                         )
                         _recheck = run_ai_flavor_gate(
                             chapter_number=chapter_number,

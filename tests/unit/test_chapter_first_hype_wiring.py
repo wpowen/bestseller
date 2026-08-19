@@ -157,3 +157,23 @@ def test_chapter_rewrite_prompt_consumes_preservation_block():
 
     src = inspect.getsource(reviews)
     assert "render_hype_preservation_block(chapter)" in src, "重写通道必须同见爽点合同"
+
+
+def test_all_three_rewrite_channels_see_the_contract():
+    """三条修订通道必须全部同见合同（2026-08-19 复发定罪）。
+
+    首修只给了 chapter_rewrite（真机 23 次），而 deslop_revise（16 次）
+    没有——盖戳照掉。chapter_rewrite_repair（19 次）复用同一 system prompt
+    因此自动继承。「修在书不走的那条路上」的同形复发。
+    """
+    import inspect
+
+    from bestseller.services import deslop_revise, pipelines, reviews
+
+    assert "render_hype_preservation_block(chapter)" in inspect.getsource(reviews)
+    ds = inspect.getsource(deslop_revise)
+    assert "hype_preservation_block" in ds, "deslop system prompt 必须带保全块"
+    pl = inspect.getsource(pipelines)
+    assert "hype_preservation_block=render_hype_preservation_block(" in pl, (
+        "deslop 调用点必须传本章合同"
+    )

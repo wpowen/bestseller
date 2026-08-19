@@ -186,6 +186,10 @@ def test_cost_rule_only_for_no_selfharm_tiers():
         assert "代价档判定" in u and "cost_violations" in u
         # 限制≠代价：边界条件不得被当成违规上报
         assert "不算自损，属于合法限制" in u
+        # 召回收紧（2026-08-19 真机漏报「每逆转一次少一炷香寿」）：
+        # 给判定公式而不是类别列举，文学化损耗照报
+        assert "使用即扣减" in u
+        assert "独立检查项" in u
     assert "代价档判定" not in user_std, "standard 档允许自损，不判"
 
 

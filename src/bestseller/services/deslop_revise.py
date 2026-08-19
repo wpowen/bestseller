@@ -296,6 +296,23 @@ def _keep_better_key(text: str, language: str, *, slice_first: bool) -> tuple:
     return (round(_moment_slice_rate(text), 2), badness)
 
 
+def _hype_survives(text: str, language: str) -> bool:
+    """正文里还读得出爽点结算吗（复用盖戳同一分类器，口径一致）。
+
+    2026-08-19 真机定罪：8 章修订丢 6 个爽点（75%）。prompt 层的保全块是
+    **软**约束，模型照删不误——因为去水规则要求删「同一件事写几遍」，而
+    爽点三拍正好长成那样。所以采纳判据这一层必须硬：删掉爽点的修订稿，
+    除非 AI 味改善巨大，否则不予采纳。
+    """
+
+    try:
+        from bestseller.services.hype_engine import classify_hype  # noqa: PLC0415
+
+        return classify_hype(text, language=language, segment="tail") is not None
+    except Exception:  # pragma: no cover - 探针永不影响主流程
+        return True
+
+
 def _deslop_length_floor(current_len: int, target_chars: int) -> float:
     """Shortest rewrite this stage may accept.
 
@@ -533,6 +550,30 @@ async def _revise_prose_deslop_inner(
         # chapter target (which would trip the downstream LENGTH gate and
         # start a rewrite loop).
         length_floor = _deslop_length_floor(len(content), target_chars)
+        # 爽点存活兜底（2026-08-19：8 章丢 6 个，prompt 软约束拦不住）。
+        # 改稿把本章唯一的爽点结算删掉时，除非 AI 味改善巨大（badness 降幅
+        # ≥40%，说明这一稿确实治好了主病），否则不予采纳——宁可带点 AI 味，
+        # 不要一章读完什么都没兑现。只在**原稿本来有爽点**时才判（原本就
+        # 没有的章不受影响），且只用于 deslop 这条去水通道。
+        _hype_lost = False
+        if revised and hype_preservation_block:
+            if _hype_survives(content, language) and not _hype_survives(
+                revised, language
+            ):
+                _before_bad = _content_badness(content, language)
+                _after_bad = _content_badness(revised, language)
+                _big_win = _before_bad > 0 and _after_bad <= _before_bad * 0.6
+                if not _big_win:
+                    _hype_lost = True
+                    logger.warning(
+                        "deslop rewrite dropped the chapter's payoff "
+                        "(badness %.2f→%.2f, not a big enough win) — "
+                        "keeping the previous draft",
+                        _before_bad,
+                        _after_bad,
+                    )
+        if _hype_lost:
+            break
         if revised and len(revised) >= length_floor:
             content = revised
             restore_length = False

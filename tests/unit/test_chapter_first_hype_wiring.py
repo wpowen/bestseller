@@ -213,3 +213,18 @@ async def test_refresh_keeps_recipe_when_type_still_matches():
     )
     assert chapter.hype_type == "face_slap"
     assert chapter.hype_recipe_key == "仙侠-宗门打脸", "同类型重算必须保住配方身份"
+
+
+def test_chapter_first_regen_also_carries_preservation():
+    """整章重生成路径同样注入保全块（2026-08-19 真机 ch3/ch4 掉戳）。
+
+    合同(hype_constraints_block)在 prompt 里，模型重写时仍没兑现——
+    注意力被「修上一稿的问题」占满，结算段被挤掉。已盖戳=上一稿写出
+    过爽点，新稿必须同样写出。首次生成(未盖戳)不注入，避免空喊。
+    """
+    import inspect
+
+    from bestseller.services import drafts
+
+    src = inspect.getsource(drafts.build_chapter_first_draft_prompts)
+    assert "render_hype_preservation_block(chapter)" in src

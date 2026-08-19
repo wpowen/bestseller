@@ -9400,6 +9400,14 @@ def build_chapter_first_draft_prompts(
             "\n"
             f"{_chapter_position_block}"
             "\n"
+            # 重写场景的爽点保全（2026-08-19 真机：ch3/ch4 整章重生成后
+            # 爽点消失，盖戳 8→6）。合同（hype_constraints_block）明明在
+            # prompt 里，模型仍没兑现——因为重写时注意力被「修上一稿的
+            # 问题」占满，结算段被挤掉。已盖戳=上一稿确实写出过爽点，
+            # 那么新稿必须同样写出：把保全块作为硬约束再声明一次。
+            # 首次生成（未盖戳）不注入，避免空喊。
+            f"{render_hype_preservation_block(chapter)}"
+            "\n"
             "# TASK\n"
             "以整章逻辑合同和连续上下文为主，一次性写完完整一章（Markdown 正文）。\n"
             "**只输出正文**：不要提纲、不要评语、不要场景标签、不要策划说明。\n"

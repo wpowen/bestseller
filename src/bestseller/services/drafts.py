@@ -12268,6 +12268,22 @@ async def stamp_chapter_hype(
                     # No recipe_key is available from the classifier path — it
                     # was never actually picked by ``plan_chapter_hype``.
                     _hype_recipe_key = None
+                    # 例外（2026-08-19）：refresh 重算时若观测出的类型与本章
+                    # **计划的**类型一致，说明写的还是同一个爽点，配方身份
+                    # 不该丢。真机《替嫁夜…》配方 8→2 而盖戳稳定 7：六章
+                    # 爽点还在、配方键却被观测路径抹成 NULL，于是「计划了
+                    # 什么 vs 实际有什么」再也对不上账（审计能力自损）。
+                    _planned = (
+                        (getattr(chapter, "metadata_json", None) or {}).get(
+                            "assigned_hype"
+                        )
+                        or {}
+                    )
+                    if (
+                        _planned.get("recipe_key")
+                        and str(_planned.get("type") or "") == _hype_type
+                    ):
+                        _hype_recipe_key = str(_planned["recipe_key"])
                     # ⚠️ 量纲统一为 0-10（2026-08-17 定罪）：指派路径写
                     # intensity_target（7.5 之类，0-10 制），配置 intensity_floor
                     # 也是 0-10，消费方 commercial_planning_readiness 按

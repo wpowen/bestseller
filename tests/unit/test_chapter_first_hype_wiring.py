@@ -181,3 +181,35 @@ def test_all_three_rewrite_channels_see_the_contract():
     assert "hype_preservation_block=render_hype_preservation_block(" in pl, (
         "deslop 调用点必须传本章合同"
     )
+
+
+@pytest.mark.asyncio
+async def test_refresh_keeps_recipe_when_type_still_matches():
+    """观测类型==计划类型时保留配方身份（2026-08-19：配方8→2而盖戳稳7）。
+
+    重生成后爽点还在、配方键却被观测路径抹成 NULL，「计划了什么 vs
+    实际有什么」就再也对不上账——审计能力自损。
+    """
+    from bestseller.services.drafts import stamp_chapter_hype
+
+    text = (
+        "他一步不退。" * 30
+        + "满堂宾客看着长老僵住，脸色铁青，这一记当众打脸来得又快又狠，"
+        "谁都没想到废柴会赢。他把令牌拍在案上，无人再敢出声。"
+    )
+    chapter = _FakeChapter(
+        assigned={"type": "face_slap", "recipe_key": "仙侠-宗门打脸", "intensity": 8.0}
+    )
+    chapter.hype_type = "face_slap"
+    chapter.hype_recipe_key = "仙侠-宗门打脸"
+    await stamp_chapter_hype(
+        _FakeSession(),
+        chapter=chapter,
+        chapter_number=3,
+        content_md=text,
+        project=None,
+        scene_drafts=(),
+        refresh=True,
+    )
+    assert chapter.hype_type == "face_slap"
+    assert chapter.hype_recipe_key == "仙侠-宗门打脸", "同类型重算必须保住配方身份"

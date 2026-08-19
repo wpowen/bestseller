@@ -7868,6 +7868,13 @@ async def run_conception_pipeline(
                 if _vals:
                     _intent_tags = _vals
                     break
+        # 代价档也是用户设定的一部分（2026-08-19）：勾了「不自损」却把反噬
+        # 当核心笔墨，此前无人对表。
+        _ia_cost_style = "standard"
+        if genre_intent_contract is not None:
+            _ia_enh = getattr(genre_intent_contract, "explicit_enhancers", None)
+            if isinstance(_ia_enh, Mapping):
+                _ia_cost_style = str(_ia_enh.get("cost_style") or "standard")
         if _intent_tags:
             _ia_missing = missing_intent_tags(_intent_tags, tags or [])
             # 确定性补全（2026-08-19 用户第二次定罪：勾了「金手指」而成品 tags
@@ -7892,6 +7899,7 @@ async def run_conception_pipeline(
                     premise=premise,
                     synopsis=synopsis,
                     spine=story_spine if isinstance(story_spine, Mapping) else None,
+                    cost_style=_ia_cost_style,
                 )
                 _ia_payload, _ia_ids = await _llm_call_json(
                     session, settings,
@@ -8009,6 +8017,7 @@ async def run_conception_pipeline(
                             spine=_ia_new_spine
                             if isinstance(_ia_new_spine, dict)
                             else story_spine,
+                            cost_style=_ia_cost_style,
                         )
                         _rc_payload, _rc_ids = await _llm_call_json(
                             session, settings,

@@ -122,10 +122,18 @@ def build_intent_alignment_messages(
     premise: str,
     synopsis: str,
     spine: Mapping[str, Any] | None,
+    cost_style: str = "standard",
 ) -> tuple[str, str]:
     """每个意图项逐一找落点引文；找不到或找到对抗元素即 fail。
 
     判官读证据≠写手读证据：意图 tag 本身就是用户给的词，不构成种词。
+
+    ``cost_style``（2026-08-19 追加）：建书页勾的代价档也是「用户设定」的
+    一部分，此前无人对表——真机《替嫁夜…》勾了 minimal（能力不带自损），
+    成品却把「反噬压在自己胸口／灰印多爬一寸」当核心笔墨，判官因为只判
+    tag 落点而放行。代价档是**方向性**判据：限制≠代价（限制任何档都要有，
+    见 docs/shuangwen-config-concept-design-20260819.md），所以只判自损，
+    不判限制。
     """
 
     spine_json = json.dumps(dict(spine or {}), ensure_ascii=False)
@@ -134,8 +142,20 @@ def build_intent_alignment_messages(
         "每一项判定必须给引文证据；给不出落点引文就判否。只输出JSON。"
     )
     items = "、".join(intent_tags)
+    _cs = str(cost_style or "standard").strip().lower()
+    cost_rule = ""
+    if _cs in ("external", "minimal"):
+        cost_rule = (
+            "\n【代价档判定】用户勾的是「能力不带自损」档：主角使用核心能力"
+            "不应付出自身折损（身体/寿命/记忆/心智/关系被能力本身消耗）。"
+            "能力的**边界条件**（用不了什么、要什么资格才能用、招来多强的敌人）"
+            "不算自损，属于合法限制，不要报。\n"
+            "在 cost_violations 里列出成品中让主角因使用能力而自身受损的设定，"
+            "每条给逐字引文；没有则空数组。\n"
+        )
     user = (
-        f"题材：{genre_label}\n用户勾选的意图标签：{items}\n\n"
+        f"题材：{genre_label}\n用户勾选的意图标签：{items}\n"
+        f"{cost_rule}\n"
         f"【前提】{premise}\n\n【简介】{synopsis}\n\n【故事脊柱】{spine_json}\n\n"
         "逐项判定：\n"
         "1. 对每个意图标签给 {\"pass\": bool, \"quote\": \"成品里兑现该意图的"
@@ -147,6 +167,7 @@ def build_intent_alignment_messages(
         "只给方向不给措辞，≤40字；否则空串。\n\n"
         "输出JSON：{\"items\":{\"<意图标签>\":{\"pass\":true,\"quote\":\"…\"}},"
         "\"counter_elements\":[{\"quote\":\"…\",\"against\":\"<意图标签>\"}],"
+        "\"cost_violations\":[{\"quote\":\"…\"}],"
         "\"revise_direction\":\"…\"}"
     )
     return system, user
@@ -183,5 +204,14 @@ def parse_intent_alignment_verdict(
             for c in counters
             if isinstance(c, Mapping) and str(c.get("quote") or "").strip()
         ]
+    # 代价档违规并入同一条修复通道（against 标为代价档，修复 prompt 一视同仁）
+    cost_bad = payload.get("cost_violations")
+    if isinstance(cost_bad, list):
+        verdict["cost_violations"] = [
+            {"quote": str(c.get("quote") or "").strip(), "against": "代价档（能力不带自损）"}
+            for c in cost_bad
+            if isinstance(c, Mapping) and str(c.get("quote") or "").strip()
+        ]
+        verdict["counter_elements"].extend(verdict["cost_violations"])
     verdict["revise_direction"] = str(payload.get("revise_direction") or "").strip()
     return verdict

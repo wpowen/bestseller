@@ -162,3 +162,54 @@ def test_pollution_gate_block_persists_conception_log():
     assert web_src.count("_persist_conception_log") >= 2, (
         "AppealBar 与 ConceptContract 两条拦截路径都必须落档"
     )
+
+
+# ── 代价档纳入意图对表（2026-08-19 真机《替嫁夜…》）─────────────────────
+# 用户勾 minimal（能力不带自损），成品把「反噬压在自己胸口/灰印多爬一寸」
+# 当核心笔墨，判官只判 tag 落点因而放行——代价档也是用户设定。
+
+
+def test_cost_rule_only_for_no_selfharm_tiers():
+    _, user_min = build_intent_alignment_messages(
+        intent_tags=["金手指"], genre_label="东方玄幻",
+        premise="p", synopsis="s", spine=None, cost_style="minimal",
+    )
+    _, user_ext = build_intent_alignment_messages(
+        intent_tags=["金手指"], genre_label="东方玄幻",
+        premise="p", synopsis="s", spine=None, cost_style="external",
+    )
+    _, user_std = build_intent_alignment_messages(
+        intent_tags=["金手指"], genre_label="东方玄幻",
+        premise="p", synopsis="s", spine=None, cost_style="standard",
+    )
+    for u in (user_min, user_ext):
+        assert "代价档判定" in u and "cost_violations" in u
+        # 限制≠代价：边界条件不得被当成违规上报
+        assert "不算自损，属于合法限制" in u
+    assert "代价档判定" not in user_std, "standard 档允许自损，不判"
+
+
+def test_cost_violations_join_repair_channel():
+    verdict = parse_intent_alignment_verdict(
+        {
+            "items": {"金手指": {"pass": True, "quote": "灰鳞骨"}},
+            "counter_elements": [],
+            "cost_violations": [{"quote": "反噬也压在自己胸口"}],
+        },
+        intent_tags=["金手指"],
+    )
+    assert verdict is not None
+    assert verdict["failed_tags"] == []
+    # 并入 counter_elements → 复用同一条定向修复通道
+    assert len(verdict["counter_elements"]) == 1
+    assert "代价档" in verdict["counter_elements"][0]["against"]
+
+
+def test_conception_passes_cost_style_to_judge():
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception.run_conception_pipeline)
+    assert src.count("cost_style=_ia_cost_style") == 2, "主判与复核都必须带代价档"
+    assert 'explicit_enhancers' in src

@@ -7835,6 +7835,103 @@ async def run_conception_pipeline(
         _appeal_exc.conception_log = list(conception_log)
         raise _appeal_exc
 
+    # ── 意图对表（2026-08-19《摔下山三次》定罪）─────────────────────────────
+    # 用户意图 tags（废柴逆袭/升级流/血脉觉醒）此前只用于路由，没有任何门把
+    # 它与成品对表：成品丢「升级流」、简介标签行模型自产「慢热」直接对抗
+    # 爽文意图、设定把题材必给的升级预期反着写。三面对账：
+    # ①意图 tags ⊆ 成品 tags（缺失留痕）②简介标签行 token 接地——标签行是
+    # 契约槽位不是句子，异物确定性重建整行 ③LLM 判官逐意图找落点引文+
+    # 对抗元素，两票交集定罪。首跑 warn-only 全程留痕（新判官只挣重生和
+    # 留痕铁律；设定层定向重生成待真机观测一批后接）。
+    try:
+        from bestseller.services.intent_alignment import (  # noqa: PLC0415
+            audit_and_rebuild_tagline,
+            build_intent_alignment_messages,
+            missing_intent_tags,
+            parse_intent_alignment_verdict,
+            replace_tagline,
+        )
+
+        _intent_tags: list[str] = []
+        if genre_intent_contract is not None:
+            for _key in ("user_tags", "tags", "default_tags"):
+                _vals = [
+                    str(t).strip()
+                    for t in (getattr(genre_intent_contract, _key, None) or [])
+                    if str(t).strip()
+                ]
+                if _vals:
+                    _intent_tags = _vals
+                    break
+        if _intent_tags:
+            _ia_missing = missing_intent_tags(_intent_tags, tags or [])
+            _ia_tagline = audit_and_rebuild_tagline(
+                synopsis,
+                intent_tags=_intent_tags,
+                final_tags=tags or [],
+                genre_labels=[str(_ap_genre or ""), str(_ap_sub or "")],
+            )
+            if _ia_tagline.rebuilt_line:
+                synopsis = replace_tagline(synopsis, _ia_tagline.rebuilt_line)
+            _ia_votes: list[dict[str, Any]] = []
+            for _ia_i in range(2):
+                _ia_sys, _ia_user = build_intent_alignment_messages(
+                    intent_tags=_intent_tags,
+                    genre_label=str(_ap_genre or ""),
+                    premise=premise,
+                    synopsis=synopsis,
+                    spine=story_spine if isinstance(story_spine, Mapping) else None,
+                )
+                _ia_payload, _ia_ids = await _llm_call_json(
+                    session, settings,
+                    role="critic",
+                    system_prompt=_ia_sys,
+                    user_prompt=_ia_user,
+                    fallback="{}",
+                    template="conception_intent_alignment",
+                    stage="conception.intent_alignment",
+                    language=str(ctx.get("language") or "zh-CN"),
+                )
+                llm_run_ids.extend(_ia_ids)
+                _ia_v = parse_intent_alignment_verdict(
+                    _ia_payload, intent_tags=_intent_tags
+                )
+                if _ia_v is not None:
+                    _ia_votes.append(_ia_v)
+            _ia_convicted: list[str] = []
+            if len(_ia_votes) >= 2:
+                _ia_convicted = sorted(
+                    set.intersection(
+                        *(set(v["failed_tags"]) for v in _ia_votes)
+                    )
+                )
+            _ia_counters = [
+                c for v in _ia_votes for c in v.get("counter_elements", [])
+            ]
+            conception_log.append(
+                {
+                    "round": 3.6,
+                    "agent": "intent_alignment",
+                    "intent_tags": _intent_tags,
+                    "missing_in_tags": _ia_missing,
+                    "tagline_aliens": _ia_tagline.alien_tokens,
+                    "tagline_rebuilt": bool(_ia_tagline.rebuilt_line),
+                    "convicted_tags": _ia_convicted,
+                    "counter_elements": _ia_counters[:6],
+                    "votes": _ia_votes,
+                }
+            )
+            if _ia_missing or _ia_convicted or _ia_counters:
+                logger.warning(
+                    "intent alignment: missing_in_tags=%s convicted=%s "
+                    "counter_elements=%d (warn-only, audit in conception_log)",
+                    _ia_missing,
+                    _ia_convicted,
+                    len(_ia_counters),
+                )
+    except Exception:
+        logger.warning("intent alignment audit failed (non-fatal)", exc_info=True)
+
     # Final ontology tripwire: a native 仙侠/历史/悬疑 project must not silently
     # become an APP/phone/workplace/forensic-modern story after all agents merge.
     # Failing here is safer than creating a book whose prompt pack says one thing

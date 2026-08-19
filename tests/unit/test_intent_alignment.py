@@ -1,0 +1,117 @@
+"""意图对表门（2026-08-19《摔下山三次》定罪）。
+
+用户意图 tags 只用于路由、无人对表成品：成品丢「升级流」、简介标签行
+模型自产「慢热」对抗爽文意图、设定反着写题材升级预期。三面对账 +
+两票判官，首跑 warn-only 留痕。
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from bestseller.services.intent_alignment import (
+    audit_and_rebuild_tagline,
+    build_intent_alignment_messages,
+    intent_tags_from_contract,
+    missing_intent_tags,
+    parse_intent_alignment_verdict,
+    replace_tagline,
+)
+
+pytestmark = pytest.mark.unit
+
+_INTENT = ["废柴逆袭", "升级流", "血脉觉醒"]
+
+
+def test_missing_intent_tags_catches_the_shuaixia_case():
+    final = ["东方玄幻", "废柴逆袭", "血脉觉醒", "锻体流", "门派经营"]
+    assert missing_intent_tags(_INTENT, final) == ["升级流"]
+
+
+def test_tagline_alien_rebuild():
+    synopsis = (
+        "标签：东方玄幻+宗门+废柴逆袭+热血+慢热+成长\n\n"
+        "我蹲在山门石桩上十二年。"
+    )
+    audit = audit_and_rebuild_tagline(
+        synopsis,
+        intent_tags=_INTENT,
+        final_tags=["东方玄幻", "废柴逆袭", "血脉觉醒"],
+        genre_labels=["东方玄幻"],
+    )
+    # 宗门/热血/慢热/成长 都不在 意图∪成品∪题材 里 → 异物
+    assert "慢热" in audit.alien_tokens
+    assert audit.rebuilt_line is not None
+    assert "慢热" not in audit.rebuilt_line
+    assert "升级流" in audit.rebuilt_line, "重建行必须带全意图 tags"
+    rebuilt = replace_tagline(synopsis, audit.rebuilt_line)
+    assert rebuilt.splitlines()[0] == audit.rebuilt_line
+    assert "我蹲在山门石桩上十二年。" in rebuilt, "正文不许动"
+
+
+def test_clean_tagline_untouched():
+    synopsis = "标签：东方玄幻+废柴逆袭+升级流\n\n正文。"
+    audit = audit_and_rebuild_tagline(
+        synopsis, intent_tags=_INTENT, final_tags=[], genre_labels=["东方玄幻"]
+    )
+    assert audit.alien_tokens == []
+    assert audit.rebuilt_line is None
+
+
+def test_no_tagline_is_not_a_disease():
+    audit = audit_and_rebuild_tagline(
+        "我蹲在山门石桩上十二年。", intent_tags=_INTENT
+    )
+    assert audit.tagline is None and audit.rebuilt_line is None
+
+
+def test_judge_messages_and_parser():
+    system, user = build_intent_alignment_messages(
+        intent_tags=_INTENT,
+        genre_label="东方玄幻",
+        premise="p",
+        synopsis="s",
+        spine={"wants": "w"},
+    )
+    assert "落点引文" in user and "counter_elements" in user
+    assert "只输出JSON" in system
+
+    verdict = parse_intent_alignment_verdict(
+        {
+            "items": {
+                "废柴逆袭": {"pass": True, "quote": "最没用的弟子"},
+                "升级流": {"pass": False, "quote": ""},
+            },
+            "counter_elements": [
+                {"quote": "连飞都不会是他的道", "against": "升级流"}
+            ],
+            "revise_direction": "给锻体一条可感的升级阶梯",
+        },
+        intent_tags=_INTENT,
+    )
+    assert verdict is not None
+    assert verdict["failed_tags"] == ["升级流"]
+    assert verdict["items"]["血脉觉醒"]["pass"] is None, "判官漏项=unknown 不定罪"
+    assert verdict["counter_elements"][0]["against"] == "升级流"
+
+
+def test_contract_tag_extraction_priority():
+    contract = {
+        "genre_intent": {
+            "user_tags": [],
+            "tags": ["废柴逆袭", "升级流", "血脉觉醒"],
+            "default_tags": ["x"],
+        }
+    }
+    assert intent_tags_from_contract(contract) == _INTENT
+
+
+def test_finalize_wires_intent_alignment():
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception.run_conception_pipeline)
+    assert "intent_alignment" in src
+    assert "audit_and_rebuild_tagline" in src
+    assert "conception_intent_alignment" in src, "判官调用必须有独立模板名可查"

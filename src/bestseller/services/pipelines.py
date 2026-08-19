@@ -13211,6 +13211,42 @@ async def run_project_pipeline(
         whole_book_quality_texts: dict[int, str] = {}
 
         for chapter in pending_chapters:
+            # 操作台停止/暂停检查点（2026-08-19 用户报「停止有延迟」）。
+            # 此前唯一的在飞检查点在**卷边界**（run_progressive_autowrite_pipeline
+            # 的 volume 循环）——一卷 8-16 章、每章数分钟，于是点了停止要等到
+            # 下一卷才生效，用户体感就是"停不掉/延迟很久"。章边界是最细的
+            # 安全切点（章内停会留半截草稿），读的是同一个事实源
+            # book_production_control，与卷边界检查同源。
+            try:
+                _ch_control = await load_control_state(session, project.id)
+            except Exception:
+                # 停止检查自身永远不许中断一次运行（与卷边界同款 fail-open）
+                logger.debug(
+                    "could not read production control for %s at chapter %s; continuing",
+                    project_slug,
+                    chapter.chapter_number,
+                    exc_info=True,
+                )
+                _ch_control = None
+            if _ch_control is not None and _ch_control.halted:
+                logger.info(
+                    "chapter loop halted by operator intent project=%s chapter=%s "
+                    "intent=%s reason=%s",
+                    project_slug,
+                    chapter.chapter_number,
+                    _ch_control.intent.value,
+                    _ch_control.reason,
+                )
+                _emit_progress(
+                    progress,
+                    "chapter_loop_halted_by_operator",
+                    {
+                        "project_slug": project_slug,
+                        "chapter_number": chapter.chapter_number,
+                        **_ch_control.to_payload(),
+                    },
+                )
+                break
             local_done = len(chapter_results) + skipped_count + 1
             global_done = global_chapter_offset + local_done
             _total = total_target_chapters or len(chapters)

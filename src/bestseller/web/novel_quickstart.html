@@ -6908,21 +6908,51 @@
 	    const isSyntheticProjectRow = task?.synthetic_project === true || taskIdValue.startsWith('project:');
 	    const active = task && !isSyntheticProjectRow && (task.status === 'running' || task.status === 'queued');
 	    if (active) {
-	      const stopFirst = confirm(
+	      // 一次点击=停止+等待+删除（2026-08-19 用户报「停止并删除有延迟」）：
+	      // 旧版发完停止就 return，让用户自己盯状态、停稳后再点一次删除，
+	      // 这个两段式被体感成“延迟”。现在把等待做进同一次操作里。
+	      const stopThenDelete = confirm(
 	        `《${title}》当前仍在运行/排队。\n\n` +
-	        `为避免后台写入和删除同时发生，必须先停止任务。\n` +
-	        `现在先发送停止请求吗？任务停止后，再点击“完全删除”即可彻底删除。`
+	        `将先发送停止请求，等后台停稳后【自动彻底删除】这本书。\n\n` +
+	        `删除后不可恢复。确认继续？`
 	      );
-	      if (!stopFirst) return;
+	      if (!stopThenDelete) return;
 	      if (taskIdValue) {
 	        try {
 	          const res = await fetch(`/api/tasks/${encodeURIComponent(taskIdValue)}/cancel`, { method: 'POST' });
 	          const data = await res.json().catch(() => ({}));
-	          if (!res.ok) alert(data.error || '停止请求失败');
+	          if (!res.ok && res.status !== 409) alert(data.error || '停止请求失败');
 	        } catch (err) {
 	          alert('停止请求失败: ' + err.message);
 	        }
 	      }
+	      // 停止已落生产控制位，后台在下一个章边界收手。删除端对活跃任务返回
+	      // 409 并自带僵尸卡对账，所以这里直接轮询重试即可。
+	      const deadlineMs = Date.now() + 180000;
+	      let lastDetail = '';
+	      while (Date.now() < deadlineMs) {
+	        try {
+	          const res = await fetch(`/api/projects/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+	          const data = await res.json().catch(() => ({}));
+	          if (res.ok && data.ok !== false) {
+	            selectedSlugs.delete(slug);
+	            refreshDashboard();
+	            return;
+	          }
+	          lastDetail = Array.isArray(data.errors) && data.errors.length
+	            ? data.errors.join('; ')
+	            : (data.error || '');
+	        } catch (err) {
+	          lastDetail = err.message;
+	        }
+	        await new Promise(r => setTimeout(r, 3000));
+	        refreshDashboard();
+	      }
+	      alert(
+	        `已发出停止请求，但后台 3 分钟内仍未停稳，暂未删除。\n` +
+	        (lastDetail ? `最近一次原因：${lastDetail}\n` : '') +
+	        `任务停止后再点一次「完全删除」即可。`
+	      );
 	      refreshDashboard();
 	      return;
 	    }

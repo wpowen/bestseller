@@ -986,6 +986,18 @@ def _candidate_hard_rejection_reason(
     return "；".join(reasons) if reasons else None
 
 
+def constraint_ladder_tier_target(chapter_count: int) -> int:
+    """目标章节数 → 概念层必须给出的限制阶梯层数（卷级）。
+
+    2026-08-19 用户定案：构思必须支撑不同章节数——限制阶梯即卷结构，
+    50 章书 3 阶够用，1000 章书需要 8 阶的世界纵深。与 seriality 微单元
+    密度（每 2-4 章一单元）是两个粒度：这里数的是「能力/地图/对手整体
+    升一层」的卷级台阶。
+    """
+
+    return max(3, min(8, 2 + int(chapter_count or 0) // 150))
+
+
 def _build_engine_kernel_messages(
     *,
     genre: str,
@@ -1070,13 +1082,17 @@ def _build_engine_kernel_messages(
     # 限制锁当下不锁世界（2026-08-19 用户定案）：为自圆其说把限制钉死成
     # 永久窄边界（能力=单一场景）撑不起长篇——能力本体要大、开局表现形态
     # 要小，范围限制必须写成随资格解锁的阶梯，每解锁一层=一卷新地图。
+    # 阶数随目标章节数伸缩（构思必须支撑不同章节数）。
+    _ladder_tiers = constraint_ladder_tier_target(chapter_count)
     cost_line += (
-        "长篇容量铁律：限制只锁『当前阶段』，不锁世界。核心能力的范围限制"
-        "必须设计成**随资格逐级解锁的阶梯**——开局只是能力的最低阶表现"
-        "形态（第一卷的场景），每解锁一阶，能力可作用的事、面对的对手和"
-        "所在的地图都升一层。自检：按你设计的限制阶梯，写出至少 5 个"
-        "**分属不同阶层**的卷级场景；若所有场景都在同一层次打转（能力被"
-        "钉死在单一行当/单一场景），项目不成立。\n"
+        f"长篇容量铁律（本书目标 {chapter_count} 章）：限制只锁『当前阶段』，"
+        "不锁世界。核心能力的范围限制必须设计成**随资格逐级解锁的阶梯**——"
+        "开局只是能力的最低阶表现形态（第一卷的场景），每解锁一阶，能力可"
+        "作用的事、面对的对手和所在的地图都升一层。"
+        f"constraint_ladder 字段写出 {_ladder_tiers} 阶：每阶一句"
+        "『解锁什么范围+该阶的一个卷级场景』，各阶必须分属不同层次；"
+        "若所有场景都在同一层次打转（能力被钉死在单一行当/单一场景），"
+        "项目不成立。\n"
     )
     # 建书页勾的调性与故事技能此前只进「商业定位 brief」——那是市场／角色／世界观
     # 那批 agent 的输入，而淘汰赛跑在它们之前。用户要的「轻松＋喜剧＋爽感」于是
@@ -1136,6 +1152,7 @@ def _build_engine_kernel_messages(
         "\"post_reveal_scene_seeds\":[\"揭晓后场面1\",\"揭晓后场面2\",\"揭晓后场面3\"],"
         "\"deformable_loop\":\"前轮后果会改变下一轮的核心循环\","
         "\"expansion_axes\":[\"深化方向1\",\"深化方向2\",\"深化方向3\"],"
+        "\"constraint_ladder\":[\"第一阶：解锁范围+该阶卷级场景\",\"…（按容量铁律的阶数给足，各属不同层次）\"],"
         "\"opposing_ecology\":[\"自主阻力1\",\"自主阻力2\"],"
         "\"opening_crisis\":\"开局具体危机\",\"emotional_promise\":\"持续情绪\"}"
         # opening_crisis + core_abnormality are where the death/relic default

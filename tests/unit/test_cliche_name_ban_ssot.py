@@ -42,3 +42,31 @@ def test_ban_renderers():
     for text in (compact, block):
         assert "陆沉" in text and "近似变体" in text
     assert len(compact) < len(block) or "硬约束" in compact
+
+
+# ── 长篇容量铁律：阶梯随目标章节数伸缩（2026-08-19 用户定案）──────────────
+
+
+def test_constraint_ladder_tier_scaling():
+    from bestseller.services.concept_tournament import constraint_ladder_tier_target
+
+    assert constraint_ladder_tier_target(50) == 3
+    assert constraint_ladder_tier_target(200) == 3
+    assert constraint_ladder_tier_target(500) == 5
+    assert constraint_ladder_tier_target(1000) == 8
+    assert constraint_ladder_tier_target(5000) == 8, "上限8阶防阶梯表爆炸"
+
+
+def test_kernel_prompt_carries_scaled_ladder():
+    _, user_50 = _build_engine_kernel_messages(
+        genre="东方玄幻", sub_genre="东方玄幻", lane="纯题材直觉",
+        chapter_count=50, seed_concept="一支笔",
+    )
+    _, user_1000 = _build_engine_kernel_messages(
+        genre="东方玄幻", sub_genre="东方玄幻", lane="纯题材直觉",
+        chapter_count=1000, seed_concept="一支笔",
+    )
+    assert "目标 50 章" in user_50 and "3 阶" in user_50
+    assert "目标 1000 章" in user_1000 and "8 阶" in user_1000
+    assert "constraint_ladder" in user_50, "输出契约必须带阶梯字段"
+    assert "不锁世界" in user_50

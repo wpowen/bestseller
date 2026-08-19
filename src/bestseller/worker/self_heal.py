@@ -88,6 +88,23 @@ _WRITING_WORKFLOW_TYPES = frozenset(
 )
 _HEARTBEAT_REAP_WORKFLOW_TYPES = _WRITING_WORKFLOW_TYPES | frozenset({"project_repair"})
 
+# 规划类工作流（2026-08-19 起）：planner 每完成一个章纲批次刷新自己的行
+# （services.planner 的 outline batch heartbeat），所以停止心跳=进程已死，
+# 不再需要 3 小时长窗口。真机两次事故都是这条：web 重启杀掉在飞规划、
+# worker 没重启⇒启动清理不触发、行以 running 僵在库里阻塞自愈
+# （`_has_active_pipeline_run`），书永久卡死。
+# 窗口取 45 分钟：单次 planner 调用上限 ~15 分钟、批次含重试，45 分钟无
+# 心跳可安全判死；仍比 3 小时短一个量级。
+ORPHAN_PLANNING_WORKFLOW_TIMEOUT_SECONDS = 45 * 60
+_PLANNING_HEARTBEAT_REAP_WORKFLOW_TYPES = frozenset(
+    {
+        "autowrite_pipeline",
+        "generate_foundation_plan",
+        "generate_novel_plan",
+        "generate_volume_plan",
+    }
+)
+
 # Conception runs in the WEB process, owns no project row yet, and never
 # heartbeats — ``updated_at`` stays equal to ``created_at`` for its whole life.
 # So neither of the rules above can classify it: the heartbeat windows would
@@ -543,12 +560,20 @@ async def reap_orphan_workflow_runs(
     writing_cutoff = now - _dt.timedelta(
         seconds=ORPHAN_WRITING_WORKFLOW_TIMEOUT_SECONDS
     )
+    planning_cutoff = now - _dt.timedelta(
+        seconds=ORPHAN_PLANNING_WORKFLOW_TIMEOUT_SECONDS
+    )
     stale_conditions = [
         WorkflowRunModel.updated_at < heartbeat_cutoff,
         # Writing-stage runs reap on the shorter heartbeat window.
         and_(
             WorkflowRunModel.workflow_type.in_(_HEARTBEAT_REAP_WORKFLOW_TYPES),
             WorkflowRunModel.updated_at < writing_cutoff,
+        ),
+        # 规划类同理：它们现在也写心跳（每章纲批次一次），停跳即死。
+        and_(
+            WorkflowRunModel.workflow_type.in_(_PLANNING_HEARTBEAT_REAP_WORKFLOW_TYPES),
+            WorkflowRunModel.updated_at < planning_cutoff,
         ),
     ]
     if startup_cutoff is not None:

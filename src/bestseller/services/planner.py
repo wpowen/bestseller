@@ -14,6 +14,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.enums import ArtifactType, ChapterStatus, ProjectStatus, WorkflowStatus
@@ -5704,6 +5705,27 @@ async def _generate_volume_outline_batched(
                 # batch is prompted with — and checked against — them.
                 consumed_event_entries.extend(
                     _outline_consumed_event_entries(batch_chapters)
+                )
+            # 规划心跳（2026-08-19 定罪）：planning 类工作流此前从不刷新自己的
+            # 行，updated_at 停在开跑那一刻——于是它只能走 3 小时长窗口收尸。
+            # web 重启杀掉在飞规划后（worker 没重启⇒启动清理不触发），这行以
+            # running 状态僵在库里，`_has_active_pipeline_run` 因此判定「有活跃
+            # 流程」，自愈跳过不救，书永久卡死（真机两次：1787068477 手工清行、
+            # 1787158026 复发）。每批刷新一次=真在跑的规划持续心跳，死掉的行
+            # 停止心跳后可被短窗口安全收尸。best-effort，永不影响规划本身。
+            try:
+                await session.execute(
+                    sa_update(WorkflowRunModel)
+                    .where(WorkflowRunModel.id == workflow_run_id)
+                    .values(updated_at=datetime.now(UTC))
+                    .execution_options(synchronize_session=False)
+                )
+                await session.flush()
+            except Exception:
+                logger.debug(
+                    "outline batch heartbeat failed for %s (non-fatal)",
+                    project.slug,
+                    exc_info=True,
                 )
 
     combined = {

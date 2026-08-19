@@ -7865,6 +7865,12 @@ async def run_conception_pipeline(
                     break
         if _intent_tags:
             _ia_missing = missing_intent_tags(_intent_tags, tags or [])
+            # 确定性补全（2026-08-19 用户第二次定罪：勾了「金手指」而成品 tags
+            # 里彻底没有它）。tags 是元数据不是正文，用户明确勾选的标签缺失
+            # 属于纯粹的契约违约，补回去无损且可解释；default_tags 不补
+            # （那是子题材默认值，硬塞会制造跨书同质化，2026-08-01 裁决）。
+            if _ia_missing:
+                tags = [*(tags or []), *_ia_missing]
             _ia_tagline = audit_and_rebuild_tagline(
                 synopsis,
                 intent_tags=_intent_tags,
@@ -7924,11 +7930,134 @@ async def run_conception_pipeline(
             if _ia_missing or _ia_convicted or _ia_counters:
                 logger.warning(
                     "intent alignment: missing_in_tags=%s convicted=%s "
-                    "counter_elements=%d (warn-only, audit in conception_log)",
+                    "counter_elements=%d",
                     _ia_missing,
                     _ia_convicted,
                     len(_ia_counters),
                 )
+            # 定向重生成（2026-08-19 用户第二次定罪后从 warn-only 升级）：
+            # 真机《逢魔夜市签收人》勾了「金手指」，判官抓到两条**方向相反**
+            # 的设定（越签越被推出去挡枪／筹码先被对手拿走），门却只留痕，
+            # 书照建——「抓到了不修」等于没抓。按铁律「新判官先观测一本真机
+            # 再发修复权」，观测已完成，这里发一次**定向重生成**：只改
+            # premise/synopsis/story_spine 三件套，带证据引文与方向；复核不
+            # 改善就保留原样（同 S/E 判卡 recheck 语义，零杀权）。
+            if _ia_convicted or _ia_counters:
+                try:
+                    _ia_fix_lines = []
+                    for _tag in _ia_convicted:
+                        _ia_fix_lines.append(f"- 意图「{_tag}」在成品里找不到落点，必须写显")
+                    for _c in _ia_counters[:4]:
+                        _ia_fix_lines.append(
+                            f"- 与意图「{_c.get('against')}」方向相反："
+                            f"「{_c.get('quote')}」——改成兑现该意图的写法"
+                        )
+                    _ia_dir = "；".join(
+                        d for d in (v.get("revise_direction", "") for v in _ia_votes) if d
+                    )
+                    _ia_repair_user = (
+                        f"用户下单时勾选的题材意图：{'、'.join(_intent_tags)}\n\n"
+                        f"【当前前提】{premise}\n\n【当前简介】{synopsis}\n\n"
+                        f"【当前故事脊柱】{json.dumps(story_spine if isinstance(story_spine, dict) else {}, ensure_ascii=False)}\n\n"
+                        "【必须修正】\n" + "\n".join(_ia_fix_lines) + "\n"
+                        + (f"修正方向：{_ia_dir}\n" if _ia_dir else "")
+                        + "\n只做定向修改：保持故事身份、主角、核心机制与世界观不变，"
+                        "把上面点名的地方改成兑现用户意图的写法（该给的爽感给到、"
+                        "方向相反的设定改掉）。不得新增人物或另起炉灶。\n"
+                        '只输出 JSON：{"premise":"…","synopsis":"…","story_spine":{…原字段名不变…}}'
+                    )
+                    _ia_fixed, _ia_fix_ids = await _llm_call_json(
+                        session, settings,
+                        role="editor",
+                        system_prompt=(
+                            "你是选题编辑，只做定向修正：让成品兑现用户下单时"
+                            "勾选的题材意图，不改动故事身份。只输出JSON。"
+                        ),
+                        user_prompt=_ia_repair_user,
+                        fallback="{}",
+                        template="conception_intent_repair",
+                        stage="conception.intent_repair",
+                        language=str(ctx.get("language") or "zh-CN"),
+                    )
+                    llm_run_ids.extend(_ia_fix_ids)
+                    _ia_new_premise = str((_ia_fixed or {}).get("premise") or "").strip()
+                    _ia_new_syn = str((_ia_fixed or {}).get("synopsis") or "").strip()
+                    _ia_new_spine = (_ia_fixed or {}).get("story_spine")
+                    # 结构守卫：三件套都要在且长度同量级，spine 字段不许缩水
+                    _ia_ok = bool(
+                        _ia_new_premise
+                        and _ia_new_syn
+                        and len(_ia_new_premise) >= len(premise) * 0.5
+                        and len(_ia_new_syn) >= len(synopsis) * 0.5
+                    )
+                    if _ia_ok and isinstance(story_spine, dict):
+                        _ia_ok = isinstance(_ia_new_spine, dict) and set(
+                            story_spine.keys()
+                        ) <= set(_ia_new_spine.keys())
+                    if _ia_ok:
+                        # 复核一轮：定罪没减少就不采纳（改了个寂寞甚至改更坏）
+                        _rc_sys, _rc_user = build_intent_alignment_messages(
+                            intent_tags=_intent_tags,
+                            genre_label=str(_ap_genre or ""),
+                            premise=_ia_new_premise,
+                            synopsis=_ia_new_syn,
+                            spine=_ia_new_spine
+                            if isinstance(_ia_new_spine, dict)
+                            else story_spine,
+                        )
+                        _rc_payload, _rc_ids = await _llm_call_json(
+                            session, settings,
+                            role="critic",
+                            system_prompt=_rc_sys,
+                            user_prompt=_rc_user,
+                            fallback="{}",
+                            template="conception_intent_alignment",
+                            stage="conception.intent_alignment_recheck",
+                            language=str(ctx.get("language") or "zh-CN"),
+                        )
+                        llm_run_ids.extend(_rc_ids)
+                        _rc_v = parse_intent_alignment_verdict(
+                            _rc_payload, intent_tags=_intent_tags
+                        )
+                        _rc_bad = (
+                            len(_rc_v.get("failed_tags", []))
+                            + len(_rc_v.get("counter_elements", []))
+                            if _rc_v
+                            else 99
+                        )
+                        _was_bad = len(_ia_convicted) + len(_ia_counters)
+                        if _rc_bad < _was_bad:
+                            premise = _ia_new_premise
+                            synopsis = _ia_new_syn
+                            if isinstance(_ia_new_spine, dict):
+                                story_spine = _ia_new_spine
+                            conception_log.append(
+                                {
+                                    "round": 3.7,
+                                    "agent": "intent_repair",
+                                    "adopted": True,
+                                    "before": _was_bad,
+                                    "after": _rc_bad,
+                                }
+                            )
+                            logger.warning(
+                                "intent repair adopted: %d -> %d issue(s)",
+                                _was_bad,
+                                _rc_bad,
+                            )
+                        else:
+                            conception_log.append(
+                                {
+                                    "round": 3.7,
+                                    "agent": "intent_repair",
+                                    "adopted": False,
+                                    "reason": "recheck_no_improvement",
+                                    "before": _was_bad,
+                                    "after": _rc_bad,
+                                }
+                            )
+                except Exception:
+                    logger.warning("intent repair failed (fail-open)", exc_info=True)
     except Exception:
         logger.warning("intent alignment audit failed (non-fatal)", exc_info=True)
 

@@ -115,3 +115,34 @@ def test_finalize_wires_intent_alignment():
     assert "intent_alignment" in src
     assert "audit_and_rebuild_tagline" in src
     assert "conception_intent_alignment" in src, "判官调用必须有独立模板名可查"
+
+
+# ── 从 warn-only 升级为定向修复（2026-08-19 用户第二次定罪）──────────────
+# 真机《逢魔夜市签收人》：用户勾「金手指」，成品 tags 无它、判官抓到两条
+# 方向相反的设定，门却只留痕，书照建——「抓到了不修」等于没抓。
+
+
+def test_missing_user_tags_are_backfilled_deterministically():
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception.run_conception_pipeline)
+    assert "tags = [*(tags or []), *_ia_missing]" in src, "用户勾的标签缺失必须确定性补回"
+    # default_tags 不许硬塞（跨书同质化，2026-08-01 裁决）
+    assert "_ia_missing" in src
+
+
+def test_intent_repair_is_wired_with_recheck():
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception.run_conception_pipeline)
+    assert "conception_intent_repair" in src, "定罪必须挣到一次定向重生成"
+    assert "intent_alignment_recheck" in src, "重生成后必须复核"
+    assert "recheck_no_improvement" in src, "复核没改善不得采纳"
+    # 修复只动三件套，不许另起炉灶
+    assert "保持故事身份、主角、核心机制与世界观不变" in src
+    # 结构守卫：长度同量级 + spine 字段不缩水
+    assert "len(premise) * 0.5" in src

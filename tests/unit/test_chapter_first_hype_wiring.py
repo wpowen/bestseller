@@ -139,6 +139,10 @@ def test_hype_preservation_block_renders_from_stamp_or_assignment():
     stamped.hype_recipe_key = "仙侠-宗门打脸"
     text = render_hype_preservation_block(stamped)
     assert "爽点保全" in text and "face_slap" in text and "仙侠-宗门打脸" in text
+    # 三段律豁免：爽点三拍不是车轱辘，去水规则不得作用于它们
+    # （2026-08-19：8 章修订丢 5 个爽点的根因是这条规则冲突）
+    assert "不是车轱辘" in text
+    assert "优先级高于任何去水/去重规则" in text
 
     planned = _FakeChapter(
         assigned={"type": "reversal", "recipe_key": None, "intensity": 7.0}

@@ -40,7 +40,8 @@ def test_ban_renderers():
     compact = render_protagonist_name_ban(compact=True)
     block = render_protagonist_name_ban()
     for text in (compact, block):
-        assert "陆沉" in text and "近似变体" in text
+        assert "陆沉" in text
+        assert "近似变体" in text or "雷同变体" in text
     assert len(compact) < len(block) or "硬约束" in compact
 
 

@@ -10455,15 +10455,28 @@ async def run_chapter_pipeline(
                             config=_af_gates_cfg.ai_flavor,
                             project_output_dir=_af_output_dir,
                         )
-                        if _recheck.decision != "block":
+                        # 采纳判据：清干净了收，**没清干净但更干净了也收**
+                        # （2026-08-19 定罪）。旧逻辑是 all-or-nothing：只有
+                        # decision != block 才采纳，于是把 12 处命中清到 4 处
+                        # 的改稿整份丢弃、用回脏原稿——「越脏的章越改不动」，
+                        # 与「注水在保护自己」「算了却丢弃」同族。真机受控
+                        # 实验：ch13 命中 12→4（negated_definition 5→1）却因
+                        # 残留仍 block 而被扔掉，成稿 16 章 AI 味几乎零改善。
+                        _af_improved = (
+                            _recheck.after_score < ai_flavor_outcome.after_score
+                        )
+                        if _recheck.decision != "block" or _af_improved:
                             chapter_draft.content_md = (
                                 _recheck.patched_text or _revised
                             )
                             ai_flavor_outcome = _recheck
                             logger.info(
-                                "ai_flavor_gate ch%d: deslop revise cleared block "
+                                "ai_flavor_gate ch%d: deslop revise %s "
                                 "(%.1f → %.1f)",
                                 chapter_number,
+                                "cleared block"
+                                if _recheck.decision != "block"
+                                else "kept as improvement (still blocking)",
                                 _recheck.before_score,
                                 _recheck.after_score,
                             )

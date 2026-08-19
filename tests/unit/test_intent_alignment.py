@@ -146,3 +146,19 @@ def test_intent_repair_is_wired_with_recheck():
     assert "保持故事身份、主角、核心机制与世界观不变" in src
     # 结构守卫：长度同量级 + spine 字段不缩水
     assert "len(premise) * 0.5" in src
+
+
+def test_pollution_gate_block_persists_conception_log():
+    """污染门毙书也要留档（2026-08-19：撞了哪本书只能从任务事件人肉挖）。"""
+    import inspect
+
+    from bestseller.services import conception
+    from bestseller.web import server
+
+    src = inspect.getsource(conception.run_conception_pipeline)
+    assert "_cc_exc.conception_log" in src, "拦截异常必须携带构思日志带出 async 帧"
+
+    web_src = inspect.getsource(server.WebTaskManager._run_autowrite_worker)
+    assert web_src.count("_persist_conception_log") >= 2, (
+        "AppealBar 与 ConceptContract 两条拦截路径都必须落档"
+    )

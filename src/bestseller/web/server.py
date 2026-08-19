@@ -4577,10 +4577,19 @@ class WebTaskManager:
                 task_id,
                 "; ".join(reasons),
             )
+            # 被门拦下的构思同样要留档（2026-08-19 污染门毙书零档案）：
+            # 日志由 raise 点挂在异常上带出 async 帧，settings 现场加载。
+            _cc_log_path = _persist_conception_log(
+                load_settings(),
+                task_id,
+                None,
+                getattr(exc, "conception_log", None),
+            )
             self._mark_failed(
                 task_id,
                 "一句话创意未通过长篇门禁，已停止；未创建书籍、未进入规划。\n\n"
-                + "\n".join(f"- {reason}" for reason in reasons),
+                + "\n".join(f"- {reason}" for reason in reasons)
+                + (f"\n\n（构思全过程已存档：{_cc_log_path}）" if _cc_log_path else ""),
             )
         except AppealBarNotMetError as exc:
             # 这是【刻意拦截】不是崩溃：一句话故事大纲或上架文案未过硬门，

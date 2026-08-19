@@ -6570,13 +6570,18 @@ async def run_conception_pipeline(
     if _unresolved_concept_guard:
         from bestseller.services.concept_contract import ConceptContractError
 
-        raise ConceptContractError(
+        _cc_exc = ConceptContractError(
             [
                 "CONCEPTION_POLLUTION_GATE_UNRESOLVED: "
                 + "；".join(_unresolved_concept_guard)
                 + "。已阻止污染构思进入建书与大纲。"
             ]
         )
+        # 被拦截的构思照样落档（2026-08-19：污染门毙书后什么档案都没留，
+        # 撞了哪本书只能从任务事件里人肉挖）。与 AppealBarNotMetError 同款：
+        # 日志挂在异常上带出 async 帧，由 web 的 sync handler 落盘。
+        _cc_exc.conception_log = list(conception_log)
+        raise _cc_exc
 
     # A frontend field is not "effective" merely because it appears in a
     # prompt.  When the user supplied a concrete story seed, prove that the

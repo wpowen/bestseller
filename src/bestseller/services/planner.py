@@ -4576,18 +4576,38 @@ def _previous_outline_batch_constraints(
     # scene execution; large seriality/methodology execution contracts remain
     # governed by the ordinary prompt and validators. Strings are bounded while
     # the JSON stays valid (never slice serialized JSON).
-    def _bounded(value: Any) -> Any:
+    # 2026-08-19 定罪：48 字上限把底稿截成碎片。章纲 chapter_goal / main_conflict
+    # 普遍 60-120 字，截断后模型看到的是「半句话+…」的残稿——没法在它上面做
+    # 「有界重写」，只能整批重编。真机后果：判官修复三轮分数恒定 0.520、
+    # directive 恒定 8 条，最后带质量债放行（未解决项含主角为剧情降智、
+    # 关键道具逻辑不一致）。设计意图（给底稿做定向修复）被实现（截断）自毁。
+    # 承重字段给足长度，其余保持紧凑；字段筛选本来就已经限制了 payload 规模。
+    _WIDE_KEYS = frozenset(
+        {
+            "goal",
+            "chapter_goal",
+            "main_conflict",
+            "opening_situation",
+            "protagonist_choice",
+            "state_change",
+            "cost_or_tradeoff",
+        }
+    )
+
+    def _bounded(value: Any, *, limit: int = 48) -> Any:
         if isinstance(value, str):
             stripped = value.strip()
-            return stripped if len(stripped) <= 48 else stripped[:48].rstrip() + "..."
+            return stripped if len(stripped) <= limit else stripped[:limit].rstrip() + "..."
         if isinstance(value, Mapping):
             return {
-                str(key): _bounded(raw)
+                str(key): _bounded(
+                    raw, limit=200 if str(key) in _WIDE_KEYS else limit
+                )
                 for key, raw in value.items()
                 if raw not in (None, "", [])
             }
         if isinstance(value, list):
-            return [_bounded(item) for item in value[:4]]
+            return [_bounded(item, limit=limit) for item in value[:4]]
         return value
 
     chapter_keys = (
@@ -4621,13 +4641,13 @@ def _previous_outline_batch_constraints(
     compact_chapters: list[dict[str, Any]] = []
     for chapter in chapters:
         compact_chapter = {
-            key: _bounded(chapter[key])
+            key: _bounded(chapter[key], limit=200 if key in _WIDE_KEYS else 48)
             for key in chapter_keys
             if chapter.get(key) not in (None, "", [])
         }
         causal = _mapping(chapter.get("causal_contract"))
         compact_chapter["causal_contract"] = {
-            key: _bounded(causal[key])
+            key: _bounded(causal[key], limit=200 if key in _WIDE_KEYS else 48)
             for key in causal_keys
             if causal.get(key) not in (None, "", [])
         }

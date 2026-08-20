@@ -83,10 +83,14 @@ class TestFilterBlocking:
         assert [v.code for v in blocking] == ["LANG_LEAK_CJK_IN_EN"]
 
     def test_all_audit_only_yields_empty(self) -> None:
+        # POV_DRIFT 用 warn 档：2026-08-20 起它的 block 档由检测器自己分级
+        # （≥6 句整场写错人称），门不再无条件压平——见
+        # test_pov_drift_tier_survives_gate.py。这里要测的是 audit_only 语义，
+        # 所以给它 warn。
         report = QualityReport(
             violations=(
                 _violation("NAMING_OUT_OF_POOL"),
-                _violation("POV_DRIFT"),
+                _violation("POV_DRIFT", severity="warn"),
             )
         )
         assert filter_blocking(report) == ()
@@ -117,7 +121,7 @@ class TestAssertWritable:
     def test_mixed_report_blocks_on_block_code(self) -> None:
         report = QualityReport(
             violations=(
-                _violation("POV_DRIFT"),
+                _violation("POV_DRIFT", severity="warn"),
                 _violation("DIALOG_UNPAIRED"),
             )
         )

@@ -9260,6 +9260,54 @@ def _chapter_first_compiler_section_name(text: str, index: int) -> str:
     return f"section_{index:03d}"
 
 
+
+
+_THIRD_POV_KEYS = ("third", "close_third", "third-limited", "third_limited", "限知", "第三")
+_FIRST_POV_KEYS = ("first", "first_person", "第一")
+
+
+def _pov_hard_constraint(pov_type: str, *, language: str) -> str:
+    """人称的硬约束句（2026-08-20 真机《罚我守坟》定罪）。
+
+    真机 8/21 章整章第一人称而全书 close_third。查 prompt 发现 POV 只以
+    「- 视角：third-limited / 时态：present」一行埋在 PROJECT PROFILE 的
+    ~20 行画像 blob 里，user prompt 一个字都没有，而 system 的
+    「硬约束（违反即重写）」列了场景标签/策划泄漏/角色名/输出格式四条，
+    唯独没有人称——人称写错比场景标签泄漏严重得多。
+
+    类别级指令 + 正例，不是词表种词。未知 / 全知视角返回空串（全知本就
+    允许切换人称，与 PovConsistencyCheck 的豁免保持一致）。
+    """
+
+    key = str(pov_type or "").strip().lower()
+    if not key:
+        return ""
+    is_en = is_english_language(language)
+    if any(k in key for k in _FIRST_POV_KEYS):
+        if is_en:
+            return (
+                "- Person: the narration layer stays FIRST person throughout "
+                "(I/me); third-person pronouns are for other characters only.\n"
+            )
+        return (
+            "- 人称：叙述层全程第一人称（我），不得中途改用第三人称转述主角；"
+            "「他/她」只用于别的角色。\n"
+        )
+    if any(k in key for k in _THIRD_POV_KEYS):
+        if is_en:
+            return (
+                "- Person: the narration layer stays THIRD person throughout "
+                "(he/she); the word \"I\" appears only inside quoted dialogue "
+                "or quoted inner speech, never in narration.\n"
+            )
+        return (
+            "- 人称：叙述层全程第三人称（他/她），不得整段改用「我」转述。"
+            "「我」只能出现在引号内的对白或引号内的内心声里；"
+            "引号外的叙述、感受、动作一律写成「他……」。\n"
+        )
+    return ""
+
+
 def build_chapter_first_draft_prompts(
     project: ProjectModel,
     chapter: ChapterModel,
@@ -9379,6 +9427,7 @@ def build_chapter_first_draft_prompts(
             "- No scene labels in body text.\n"
             "- No internal scaffolding leaks (entry_state / exit_state / contract / scene_type tags).\n"
             "- Use EXACT character names from the participants list.\n"
+            f"{_pov_hard_constraint(writing_profile.style.pov_type, language=language)}"
             "\n"
             "# OUTPUT · Chapter delivery hard indicators\n"
             "- Terminology release: only what THIS chapter must reveal; don't pile lore.\n"
@@ -9433,6 +9482,7 @@ def build_chapter_first_draft_prompts(
             "- 策划泄漏：不许出现 entry_state / exit_state / contract / scene_type 等英文结构标签。\n"
             "- 角色名：只能使用「参与者」列表中声明的规范名或化名；组合标签中的括号说明是元数据，不要求原样重复。禁止引入未声明的新姓名。\n"
             "- 输出格式：纯 Markdown 正文，不带 # 标题、不带 ``` 代码块。\n"
+            f"{_pov_hard_constraint(writing_profile.style.pov_type, language=language)}"
             "\n"
             "# OUTPUT · 章节交付硬指标\n"
             "- **术语释放**：只释放章节契约要求的信息，不要按场景卡逐项报账或堆设定。\n"

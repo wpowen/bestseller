@@ -257,6 +257,23 @@ def resolve_mode(
     return base
 
 
+# 检测器自己已按证据强度分级的码：对这些码，violation 自带的
+# severity="block" 是权威的，config 里的 audit_only 只覆盖其 warn 档。
+#
+# 2026-08-20 真机《罚我守坟》定罪：21 章里 8 章整章第一人称（去对白后叙述句
+# 含「我」28.8%-48.6%，其余 13 章 0-1.6%），全书声明 close_third。检测器
+# 2026-07-08 就已经分好级（≥6 句 = 整场写错人称 → block；3-5 句 = 自由间接
+# 思维噪声 → warn），但这里一条无条件 "POV_DRIFT": "audit_only" 把分级压平，
+# 因为 resolve_mode 只看 code 不看这条 violation 自己的 severity。
+# 8 章带病 ship，blocking_codes 里从来只有 LENGTH 系。
+# 又一次「同一事实住两地，后写的赢」——分级修在检测器侧，压平留在门侧。
+#
+# 人类语料校准（.distillation_private 275 篇第三人称章）：40 句抽样里含「我」
+# 的句数分布 0→199 / 1→41 / 2→16 / 3→8 / 4→6 / 5→1，**5 到 9 之间是空的**，
+# 9-12 各 1 篇（多半本就是混合人称章）。≥6 正落在经验空档，误报率 1.5%。
+_DETECTOR_TIERED_CODES: frozenset[str] = frozenset({"POV_DRIFT"})
+
+
 # ---------------------------------------------------------------------------
 # Pure gate logic.
 # ---------------------------------------------------------------------------
@@ -278,17 +295,19 @@ def filter_blocking(
     downgrade block → audit_only.
     """
 
-    return tuple(
-        v
-        for v in report.violations
-        if resolve_mode(
+    def _blocks(v: Violation) -> bool:
+        mode = resolve_mode(
             v.code,
             config,
             chapter_no=chapter_no,
             override_lookup=override_lookup,
         )
-        == "block"
-    )
+        if mode == "block":
+            return True
+        # 检测器自带分级的码：它的 severity="block" 不被 config 压平。
+        return v.code in _DETECTOR_TIERED_CODES and v.severity == "block"
+
+    return tuple(v for v in report.violations if _blocks(v))
 
 
 def assert_writable(

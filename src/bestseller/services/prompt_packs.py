@@ -253,7 +253,13 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
     if any(token in label for token in ("游戏", "电竞", "无限流", "怪物猎人", "副本", "系统流")):
         return "game-esport"
     # Eastern aesthetic fantasy
-    if any(token in label for token in ("东方美学", "国风", "水墨", "诗词", "古典仙侠")):
+    # 2026-08-19 定罪：「古典仙侠」曾列在这里，但它是 genre_taxonomy 的正式
+    # 子题材，官方 pack 是 xianxia-upgrade-core（action-progression 升级爽文）。
+    # 同一个词在两处定性相反：用户在建书页选「古典仙侠」（爽文向），推断函数
+    # 却把它判成东方美学（国风/水墨/诗词，文艺向），污染守卫按「跨家族」处理
+    # 并采信推断路由，推翻了用户选的 pack——正文于是按文艺美学写，
+    # 与用户勾的爽点引擎/轻松基调直接冲突。此处只保留真正的美学向 token。
+    if any(token in label for token in ("东方美学", "国风", "水墨", "诗词")):
         return "eastern-aesthetic"
     # ── Xianxia sub-genre fan-out (L1 de-homogenisation) ──
     # Problem: every plain "仙侠" / "玄幻" book routed to the same
@@ -323,11 +329,17 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
     # catch-all, since "成长" frequently pairs with "升级" in these labels.
     if any(token in label for token in ("女频", "言情", "成长", "恋爱")):
         return "romance-tension-growth"
+    # Western / epic fantasy — must not fall through to 仙侠升级 pack.
+    if any(
+        token in label
+        for token in ("西方奇幻", "史诗奇幻", "epic fantasy", "high fantasy", "epic-fantasy")
+    ):
+        return "epic-fantasy"
     # Generic Xianxia / xuanhuan (catch-all) — intentionally runs LAST so the
     # specific sub-routes above and the urban/romance routes just above win
-    # first. A pure 升级流 / 仙侠 / 玄幻 label with no urban or romance token
-    # still lands here.
-    if any(token in label for token in ("仙", "玄幻", "奇幻", "升级", "修真")):
+    # first. Do NOT match bare 「升级」 or 「奇幻」: those tokens appear in
+    # urban 系统升级流, 科技跃迁, and western fantasy labels.
+    if any(token in label for token in ("仙", "玄幻", "升级流", "修真")):
         return "xianxia-upgrade-core"
     # ── Canonical fallback (convergence) ──
     # The keyword cascade above misses some valid taxonomy genres whose label

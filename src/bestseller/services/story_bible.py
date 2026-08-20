@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bestseller.services.tone_keywords import merge_tone_keywords
+
 from collections import defaultdict
 import copy
 from dataclasses import dataclass
@@ -870,7 +872,13 @@ async def apply_book_spec(
 
     tone_keywords = content.get("tone")
     if isinstance(tone_keywords, list) and tone_keywords:
-        style_guide.tone_keywords = [str(item) for item in tone_keywords]
+        # 2026-08-20：此处原本是整体覆盖，把用户在建书页选的调性（已由
+        # projects._tone_keywords_for 领衔写入）无声抹掉——「同一事实住两地，
+        # 后写的赢」。改为以既有调性领衔、模型自产 tone 跟随并剔除冲突项。
+        style_guide.tone_keywords = merge_tone_keywords(
+            lead=list(style_guide.tone_keywords or []),
+            base=[str(item) for item in tone_keywords],
+        )
     if content.get("themes"):
         _is_en = is_english_language(project.language)
         _theme_prefix = "Theme: " if _is_en else "主题:"

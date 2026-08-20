@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.enums import ProjectType
 from bestseller.domain.planning import PlanningArtifactCreate
+from bestseller.services.tone_keywords import merge_tone_keywords
 from bestseller.domain.project import ChapterCreate, ProjectCreate, SceneCardCreate, VolumeCreate
 from bestseller.infra.db.models import (
     ChapterModel,
@@ -428,13 +429,9 @@ def _tone_keywords_for(payload: ProjectCreate, writing_profile: WritingProfile) 
     if isinstance(contract, dict):
         preference = str(contract.get("tone_preference") or "").strip().lower()
     lead = _TONE_PREFERENCE_KEYWORDS.get(preference, ())
-    if not lead:
-        return base
-    ordered: list[str] = []
-    for keyword in [*lead, *base]:
-        if keyword and keyword not in ordered:
-            ordered.append(keyword)
-    return ordered
+    # 2026-08-20：此前是直接拼接，真机产出「轻松/幽默/明快/冷/压/悬/慢火」——
+    # 自相矛盾的七条逐字进每章 system prompt。合并口径下沉到单一模块。
+    return merge_tone_keywords(lead=lead, base=base)
 
 
 async def create_project(

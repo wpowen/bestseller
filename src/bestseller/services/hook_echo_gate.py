@@ -135,7 +135,11 @@ _QUESTION_TAIL_RE = re.compile(r"[^\n。！？!?]{3,30}[？?]")
 # (followed by 说 / 道 / 喊 / 笑 etc.) — these are usually character names.
 _DIALOGUE_NAME_RE = re.compile(r"([一-鿿]{2,4})(?:[说道喊笑问答嗤哼])")
 _DIALOGUE_NAME_STOP_CHARS = frozenset(
-    "的了一是在有和与也都就又还很更被把将着过出进来去上下一不我你他她它这那"
+    # 2026-08-20：原表有「不」却独缺「没」，于是贪婪正则把「钟楼没说话」
+    # 抽成人名「钟楼没」（真机出现 4 次、只有 25% 被回声 = 制造假 miss）。
+    # 补的是**形状**（否定词永不出现在人名里），不是再往 stopword 表里
+    # 加一条实例——表里那条 "今天没" 正是补实例的痕迹。
+    "的了一是在有和与也都就又还很更被把将着过出进来去上下一不没我你他她它这那"
 )
 
 # Generic roles and sentence fragments frequently match the loose Chinese
@@ -300,11 +304,20 @@ def _clean_question_token(raw: str) -> str:
     return token
 
 
+# 序数词形状：「第二/第三/第十/第2」。2026-08-20 真机《罚我守坟》——
+# 裸序数被当人名抽成钩子 token，出现 5 次回声 4-5 次（80-100%），
+# 下一章只要出现「第二」就算兑现，**结构上不可能失败**。与
+# 「裸字『门』使 91% 钩子为幻影」同形：按形状挡，不按实例补词表。
+_ORDINAL_TOKEN_RE = re.compile(r"^第[一二三四五六七八九十百千零两0-9]+$")
+
+
 def _looks_like_dialogue_name(token: str) -> bool:
     token = token.strip()
     if not (2 <= len(token) <= 3):
         return False
     if any(ch in _DIALOGUE_NAME_STOP_CHARS for ch in token):
+        return False
+    if _ORDINAL_TOKEN_RE.match(token):
         return False
     return True
 

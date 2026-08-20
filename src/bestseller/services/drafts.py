@@ -5718,12 +5718,28 @@ def _resolve_project_writing_profile(project: Any, style_guide: StyleGuideModel 
         if style_guide is not None
         else None
     )
+    # 用户在建书页选定的 taxonomy pack 是权威（2026-08-19 定罪）：
+    # resolve_project_create_writing_profile 建书时正确地把
+    # genre_intent_contract.prompt_pack_key 作为 forced pack 传下去，
+    # 但**写作路径没传**——于是每次写章都重新跑一遍关键词推断，
+    # 污染守卫按「跨家族」把用户选的 pack 翻掉（真机：古典仙侠的
+    # xianxia-upgrade-core 被 eastern-aesthetic 顶替，正文改按文艺
+    # 美学写）。同一条边界在建书处守住、在写作处失守——
+    # 「同一事实住两地」的又一形态。
+    _forced_pack: str | None = None
+    if isinstance(metadata, dict):
+        _intent = metadata.get("genre_intent_contract")
+        if isinstance(_intent, dict):
+            _raw_pack = _intent.get("prompt_pack_key")
+            if isinstance(_raw_pack, str) and _raw_pack.strip():
+                _forced_pack = _raw_pack.strip()
     return resolve_writing_profile(
         raw_profile or fallback_style,
         genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
         sub_genre=getattr(project, "sub_genre", None),
         audience=getattr(project, "audience", None),
         language=getattr(project, "language", None),
+        forced_prompt_pack_key=_forced_pack,
     )
 
 

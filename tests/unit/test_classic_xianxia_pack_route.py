@@ -28,3 +28,34 @@ def test_classic_xianxia_stays_in_cultivation_family():
 def test_real_aesthetic_tokens_still_route_there():
     for genre, sub in (("东方美学", ""), ("国风", ""), ("仙侠", "水墨")):
         assert infer_default_prompt_pack_key(genre, sub) == "eastern-aesthetic"
+
+
+def test_writing_path_honours_user_selected_pack():
+    """写作路径必须沿用建书时用户选的 taxonomy pack（2026-08-19 定罪）。
+
+    建书处正确地把 genre_intent_contract.prompt_pack_key 作为 forced pack，
+    写作处却没传——每写一章都重跑关键词推断，污染守卫把用户选择翻掉。
+    同一条边界在一处守住、另一处失守。
+    """
+    import inspect
+
+    from bestseller.services import drafts
+
+    src = inspect.getsource(drafts._resolve_project_writing_profile)
+    assert "genre_intent_contract" in src, "写作路径必须读意图契约里的 pack"
+    assert "forced_prompt_pack_key=_forced_pack" in src
+
+
+def test_forced_pack_survives_contradicting_route():
+    """有 forced pack 时，推断路由不得改写它（守卫只管 LLM 编的 pack）。"""
+    from bestseller.services.writing_profile import resolve_writing_profile
+
+    profile = resolve_writing_profile(
+        {"market": {"prompt_pack_key": "suspense-mystery"}},
+        genre="古典仙侠",
+        sub_genre="古典仙侠",
+        audience="male",
+        language="zh-CN",
+        forced_prompt_pack_key="xianxia-upgrade-core",
+    )
+    assert profile is not None

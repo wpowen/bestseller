@@ -1,7 +1,7 @@
 {
-  "chapters": 28,
+  "chapters": 30,
   "dialogue_ratio": {
-    "median": 0.0612,
+    "median": 0.0638,
     "human_median": 0.207,
     "below_human_p05": 6
   },
@@ -16,16 +16,16 @@
       "delta": 1.6
     },
     "3500-5000": {
-      "n": 1,
-      "mean": 49.0,
+      "n": 2,
+      "mean": 46.5,
       "human_mean": 37.5,
-      "delta": 11.5
+      "delta": 9.0
     },
     "<2500": {
-      "n": 4,
-      "mean": 30.5,
+      "n": 5,
+      "mean": 26.8,
       "human_mean": 18.9,
-      "delta": 11.6
+      "delta": 7.9
     }
   },
   "detector_flags": {
@@ -396,16 +396,18 @@
     },
     {
       "chapter": 24,
-      "chars": 1893,
-      "band": "<2500",
-      "ai_flavor_score": 36.0,
+      "chars": 4695,
+      "band": "3500-5000",
+      "ai_flavor_score": 44.0,
       "dialogue_ratio": 0.0,
       "first_person_share": 0.0,
       "flags": [
         "corpus_overamplified",
+        "dash_train",
         "dialogue_famine",
         "dialogue_starvation",
         "narrative_repetition",
+        "pseudo_precision",
         "staccato_saturation",
         "verb_tic_spam"
       ]
@@ -459,13 +461,44 @@
     },
     {
       "chapter": 28,
-      "chars": 2845,
+      "chars": 2958,
       "band": "2500-3500",
       "ai_flavor_score": 16.0,
-      "dialogue_ratio": 0.1257,
+      "dialogue_ratio": 0.1221,
       "first_person_share": 0.0,
       "flags": [
         "narrative_repetition",
+        "staccato_saturation",
+        "terse_dialogue_tag",
+        "verb_tic_spam"
+      ]
+    },
+    {
+      "chapter": 29,
+      "chars": 2006,
+      "band": "<2500",
+      "ai_flavor_score": 20.0,
+      "dialogue_ratio": 0.0876,
+      "first_person_share": 0.0,
+      "flags": [
+        "narrative_repetition",
+        "staccato_saturation",
+        "terse_dialogue_tag",
+        "verb_tic_spam"
+      ]
+    },
+    {
+      "chapter": 30,
+      "chars": 2263,
+      "band": "<2500",
+      "ai_flavor_score": 28.0,
+      "dialogue_ratio": 0.132,
+      "first_person_share": 0.0,
+      "flags": [
+        "choppy_rhythm",
+        "narrative_repetition",
+        "negated_definition",
+        "pseudo_precision",
         "staccato_saturation",
         "terse_dialogue_tag",
         "verb_tic_spam"

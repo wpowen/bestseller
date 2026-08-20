@@ -1897,7 +1897,50 @@ async def _sync_existing_chapter_from_outline(
     chapter.hook_type = chapter_outline.hook_type
     chapter.hook_description = chapter_outline.hook_description
     chapter.target_word_count = chapter_outline.target_word_count
+    _sync_chapter_outline_semantics(chapter, chapter_outline)
     return True
+
+
+_PRIMARY_EMOTION_MAX_CHARS = 32
+
+
+def _sync_chapter_outline_semantics(chapter: Any, chapter_outline: Any) -> None:
+    """把章纲已经答出来的情绪与信息字段落到章节行上。
+
+    2026-08-20 真机《罚我守坟》定罪：章纲→章节行的映射只搬 6 个字段
+    （chapter_goal / opening_situation / main_conflict / hook_type /
+    hook_description / target_word_count）。而模型其实答得很好——
+    planning_artifact_versions 里存着 ``target_emotion="爽"`` 和
+    ``chapter_information_introduced=[...]`` 三条具体信息——**落库时丢了**。
+
+    后果沿着链条一路放大：``chapters.primary_emotion`` 0/38、
+    ``information_revealed`` 0/38、``chapter_emotion_arc`` 全库 0/111
+    → ``chapter_contracts.emotional_shift`` 38/38 空、``information_release``
+    38/38 与 ``closing_hook`` 逐字相同 → 写手拿到的章节契约只有一半信息
+    → contract_alignment 0.250 → 审稿 132 次 pass 零次 → 全书质量门 43 项
+    未过（其中一条正是 ``emotion_visible_desire_gap``）。
+
+    「算出来了却丢掉」的又一例。这里只做搬运：**空值不覆盖既有值**，
+    不发明任何内容。
+    """
+
+    emotion = str(getattr(chapter_outline, "target_emotion", "") or "").strip()
+    if emotion:
+        chapter.primary_emotion = emotion[:_PRIMARY_EMOTION_MAX_CHARS]
+
+    reveals = [
+        str(item).strip()
+        for item in (getattr(chapter_outline, "chapter_information_introduced", None) or [])
+        if str(item).strip()
+    ]
+    if not reveals:
+        reveals = [
+            str(item).strip()
+            for item in (getattr(chapter_outline, "key_reveals", None) or [])
+            if str(item).strip()
+        ]
+    if reveals:
+        chapter.information_revealed = reveals
 
 
 def _sync_chapter_causality_metadata(
@@ -2982,6 +3025,7 @@ async def materialize_chapter_outline_batch(
                 chapters_created += 1
                 should_sync_causality_metadata = True
             if should_sync_causality_metadata:
+                _sync_chapter_outline_semantics(chapter, chapter_outline)
                 _sync_chapter_causality_metadata(
                     chapter,
                     chapter_outline,

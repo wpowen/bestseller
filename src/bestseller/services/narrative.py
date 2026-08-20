@@ -84,6 +84,39 @@ def _unique_preserve(items: list[str]) -> list[str]:
     return result
 
 
+def _contract_emotional_shift(chapter: Any) -> str | None:
+    """章节契约的情绪弧：优先真弧，退回章纲答出的单一目标情绪。
+
+    2026-08-20：`chapter_emotion_arc` 全库 111/111 空（唯一写入方是互动小说
+    路径），于是 `chapter_contracts.emotional_shift` 38/38 空。而章纲其实答了
+    `target_emotion`（受控词表，真机是「爽」），只是此前没落库也没被契约读到。
+    """
+
+    arc = str(getattr(chapter, "chapter_emotion_arc", "") or "").strip()
+    if arc:
+        return arc
+    emotion = str(getattr(chapter, "primary_emotion", "") or "").strip()
+    return emotion or None
+
+
+def _contract_information_release(chapter: Any) -> str:
+    """章节契约的信息释放：用章纲答出的具体信息点，不再与收尾钩子同源。
+
+    2026-08-20：此前 `information_release` 与 `closing_hook` 都读
+    `hook_description`，38/38 逐字相同——契约看着有 5 个字段，实际只有 3 条
+    信息。章纲答出的 `chapter_information_introduced` 是真正的信息释放来源。
+    """
+
+    reveals = [
+        str(item).strip()
+        for item in (getattr(chapter, "information_revealed", None) or [])
+        if str(item).strip()
+    ]
+    if reveals:
+        return "；".join(reveals)
+    return getattr(chapter, "hook_description", None) or "本章需要释放新的信息增量。"
+
+
 def _chapter_contract_metadata_from_chapter(chapter: ChapterModel) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
     chapter_metadata = chapter.metadata_json or {}
@@ -1796,8 +1829,8 @@ async def rebuild_narrative_graph(
             ),
             opening_state={"opening_situation": chapter.opening_situation} if chapter.opening_situation else {},
             core_conflict=chapter.main_conflict,
-            emotional_shift=chapter.chapter_emotion_arc,
-            information_release=chapter.hook_description or "本章需要释放新的信息增量。",
+            emotional_shift=_contract_emotional_shift(chapter),
+            information_release=_contract_information_release(chapter),
             closing_hook=chapter.hook_description,
             primary_arc_codes=primary_arc_codes,
             supporting_arc_codes=supporting_arc_codes,

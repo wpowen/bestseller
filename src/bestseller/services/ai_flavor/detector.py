@@ -777,6 +777,10 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         # 书推进 block→重写，正是 debt_metaphor_leak 退役的死因。封顶留在
         # advisory，靠 deslop 触发集拿定向重写，不靠分数。
         "motif_saturation",
+        # 对话占比是**章级可读性提示**，与 inner_voice_absence 同族：
+        # 它测的是这一章有没有人开口，不是句法 tell。给它独立推高分数
+        # = 把一章合法的独处/赶路章推进 block→重写。advisory forever。
+        "dialogue_starvation",
     }
     _STRUCTURAL_CAP = 24.0
 
@@ -996,6 +1000,7 @@ def detect(
 
     # ── 无生命主语拟人动词过密 (凿子吃进/石头拱 万物皆动腔) ─────────────
     spans.extend(_detect_inanimate_agency(content_md, lang=lang))
+    spans.extend(_detect_dialogue_starvation(content_md, lang=lang))
 
     # ── Chapter-level repetition (车轱辘内心戏 / 感觉词堆叠) ─────────────
     spans.extend(_detect_repetition(content_md, lang=lang))
@@ -1183,6 +1188,63 @@ def _detect_inanimate_agency(content_md: str, *, lang: str) -> list[AiFlavorSpan
                 "——东西只做它物理上真会做的事，用平实动词写"
                 "（响、落、晃、停、亮、渗）；拟人化动词是重锤，"
                 "全章至多保留 1-2 处最关键的，其余全部换平实说法。"
+            ),
+            remove_sentence_on_block=False,
+        )
+    ]
+
+
+# 对话引号：中文出版章的三种成对写法。只用于**测量占比**，不做任何改写。
+_DIALOGUE_QUOTE_RE = re.compile(r"[“\"「][^”\"」]{1,400}[”\"」]")
+_ZH_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
+
+# 人类出版章校准（2026-08-20，.distillation_private 1526 章 / 400 本，同一正则）：
+# p05=1.4% p10=3.1% p25=9.3% 中位=20.7% p75=34.0% p90=46.5%。
+# 阈值不取分位数而取**实测误报率**：另一份 400 章独立抽样上
+# 1.4%→7.5% 误报、1.0%→4.2%、0.8%→2.8%、0.6%→2.0%。取 0.8%
+# （实测误报 2.8%），只报「整章确实没有人开口」。
+_DIALOGUE_STARVATION_FLOOR = 0.008
+
+
+def _detect_dialogue_starvation(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """整章几乎无人开口 —— chapter-level advisory, CJK only.
+
+    `style_guide.dialogue_ratio` 此前只被**声明进 prompt**（本书声明 0.35），
+    全库没有任何一处测量它。真机《罚我守坟》21 章实测中位 6.1%，
+    ch08/ch20/ch21 分别 0.8%/0.7%/1.0%——整章基本没有人说话，
+    读起来是一条不断的旁白。
+
+    warn-only，且**故意不进 deslop 触发集**：去水器换的是措辞，
+    凭空造对话是内容捏造。本观测器只挣留痕。
+    """
+
+    if lang != "zh" or not content_md:
+        return []
+    zh_total = len(_ZH_CHAR_RE.findall(content_md))
+    if zh_total < 800:
+        return []
+    quoted = sum(
+        len(_ZH_CHAR_RE.findall(m.group(0)))
+        for m in _DIALOGUE_QUOTE_RE.finditer(content_md)
+    )
+    ratio = quoted / zh_total
+    if ratio >= _DIALOGUE_STARVATION_FLOOR:
+        return []
+    return [
+        AiFlavorSpan(
+            start=0,
+            end=min(40, len(content_md)),
+            matched_text=content_md[:40],
+            rule_id="zh.structure.dialogue_starvation",
+            category="dialogue_starvation",
+            severity="warn",
+            suggestions=(),
+            sentence_span=(0, min(40, len(content_md))),
+            why=(
+                f"整章几乎没有人开口（引号内文字占 {ratio:.1%}，"
+                f"人类出版章 p05=1.4%、中位 20.7%）——"
+                "冲突、身份、情绪在网文里主要靠人物当场说出来推进；"
+                "整章旁白会让读者失去可代入的落点。"
             ),
             remove_sentence_on_block=False,
         )

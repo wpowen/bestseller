@@ -781,6 +781,9 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         # 它测的是这一章有没有人开口，不是句法 tell。给它独立推高分数
         # = 把一章合法的独处/赶路章推进 block→重写。advisory forever。
         "dialogue_starvation",
+        # 语料级词频放大同族：章级可读性提示，靠 deslop 触发集拿定向重写，
+        # 不靠分数——单独推高分数会把一本正当反复使用核心物件的书推进 block。
+        "corpus_overamplified",
     }
     _STRUCTURAL_CAP = 24.0
 
@@ -1001,6 +1004,11 @@ def detect(
     # ── 无生命主语拟人动词过密 (凿子吃进/石头拱 万物皆动腔) ─────────────
     spans.extend(_detect_inanimate_agency(content_md, lang=lang))
     spans.extend(_detect_dialogue_starvation(content_md, lang=lang))
+    spans.extend(
+        _detect_corpus_overamplification(
+            content_md, lang=lang, data_dir=effective_dir
+        )
+    )
 
     # ── Chapter-level repetition (车轱辘内心戏 / 感觉词堆叠) ─────────────
     spans.extend(_detect_repetition(content_md, lang=lang))
@@ -1197,6 +1205,7 @@ def _detect_inanimate_agency(content_md: str, *, lang: str) -> list[AiFlavorSpan
 # 对话引号：中文出版章的三种成对写法。只用于**测量占比**，不做任何改写。
 _DIALOGUE_QUOTE_RE = re.compile(r"[“\"「][^”\"」]{1,400}[”\"」]")
 _ZH_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
+_ZH_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
 
 # 人类出版章校准（2026-08-20，.distillation_private 1526 章 / 400 本，同一正则）：
 # p05=1.4% p10=3.1% p25=9.3% 中位=20.7% p75=34.0% p90=46.5%。
@@ -1245,6 +1254,101 @@ def _detect_dialogue_starvation(content_md: str, *, lang: str) -> list[AiFlavorS
                 f"人类出版章 p05=1.4%、中位 20.7%）——"
                 "冲突、身份、情绪在网文里主要靠人物当场说出来推进；"
                 "整章旁白会让读者失去可代入的落点。"
+            ),
+            remove_sentence_on_block=False,
+        )
+    ]
+
+
+@lru_cache(maxsize=4)
+def _load_corpus_bigram_max(data_dir_str: str) -> dict[str, float]:
+    """人类出版语料的逐 bigram 密度**最大值**表（次/千汉字）。
+
+    由 .distillation_private 的 1200 篇真实出版章离线算出（df ≥ 10%，
+    共 3723 条），只存统计量不存原文。缺文件时返回空表 = 检测器静默关闭。
+    """
+
+    path = Path(data_dir_str) / "zh_corpus_bigram_max.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    table = payload.get("bigram_max")
+    if not isinstance(table, dict):
+        return {}
+    return {str(k): float(v) for k, v in table.items()}
+
+
+# 判据阈值。留出校准（另一颗种子的 343 篇人类章，与建表样本不重叠）：
+# 「本章密度超过人类语料该词最大值」的词个数 中位 0 / p90 2 / p95 3 /
+# p99 5 / max 7，62% 的章为 0。取 ≥8 → 人类误报 0/343。
+_OVERAMP_MIN_WORDS = 8
+# 单词最低绝对密度，防短章折叠计数造成的量级失明（同 dash/inanimate 判例）。
+_OVERAMP_MIN_DENSITY = 3.0
+
+
+def _detect_corpus_overamplification(
+    content_md: str, *, lang: str, data_dir: Path
+) -> list[AiFlavorSpan]:
+    """少数几个词占满整章 —— chapter-level advisory, CJK only.
+
+    真机《罚我守坟》：全书「方向」417 次 = 8.10/千字，ch20 达 23.38/千字，
+    而 400 篇人类出版章的中位是 0.00、p99 是 1.70、**最大值只有 2.65**。
+    ch10-ch18 连续九章以「指方向」的动作收尾。用户读到的「一个字都不想读」
+    正是这个——不是词汇差，是一个词变成了整本书的主导句法装置。
+
+    量具**不带词表**：阈值逐词来自人类语料，所以下一本书改成复读
+    「弧度」「轮廓」「缝隙」一样抓得到。治的是形状，不是这一个词。
+    """
+
+    if lang != "zh" or not content_md:
+        return []
+    table = _load_corpus_bigram_max(str(data_dir))
+    if not table:
+        return []
+    runs = _ZH_RUN_RE.findall(content_md)
+    total = sum(len(r) for r in runs)
+    if total < 1200:
+        return []
+    counts: Counter[str] = Counter()
+    for run in runs:
+        for i in range(len(run) - 1):
+            counts[run[i : i + 2]] += 1
+
+    hits: list[tuple[float, str, float, float]] = []
+    for word, n in counts.items():
+        ceiling = table.get(word)
+        if ceiling is None:
+            continue
+        density = n * 1000 / total
+        if density < _OVERAMP_MIN_DENSITY:
+            continue
+        # 语料最大值极小的词给个下限，避免除出天文数字的倍数
+        ceiling = max(ceiling, 1.0)
+        if density > ceiling:
+            hits.append((density / ceiling, word, density, ceiling))
+    if len(hits) < _OVERAMP_MIN_WORDS:
+        return []
+    hits.sort(reverse=True)
+    detail = "、".join(
+        f"{w}（本章 {d:.1f}/千字，人类语料最高 {c:.1f}）" for _lift, w, d, c in hits[:5]
+    )
+    return [
+        AiFlavorSpan(
+            start=0,
+            end=min(40, len(content_md)),
+            matched_text=content_md[:40],
+            rule_id="zh.tic.corpus_overamplified",
+            category="corpus_overamplified",
+            severity="warn",
+            suggestions=(),
+            sentence_span=(0, min(40, len(content_md))),
+            why=(
+                f"少数几个词占满了整章：有 {len(hits)} 个词的密度超过 1200 篇"
+                f"人类出版章里该词的**最高**记录（人类章通常 0 个，最多 7 个）。"
+                f"最突出的是 {detail}。"
+                "把其中大部分换成别的说法或直接删掉——"
+                "同一个空间/方位词反复出现，读者会觉得整章在原地打转。"
             ),
             remove_sentence_on_block=False,
         )

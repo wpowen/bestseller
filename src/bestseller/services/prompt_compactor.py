@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -13,6 +16,9 @@ class CompactionReport:
     original_chars: int
     compacted_chars: int
     saved_tokens_estimate: int
+    # 被上限淘汰掉的段标题。淘汰此前完全静默——真机《罚我守坟》18/18 章
+    # 每章都在丢规划段而没有任何一行日志。留痕不夺权，只让损失可查。
+    evicted_sections: tuple[str, ...] = ()
 
 
 # Craft-theory / metadata / reference-dump sections that belong to the planner
@@ -136,11 +142,19 @@ def compact_user_prompt(
     compacted = _wrap_retention_findings(compacted)
     compacted = _prune_placeholder_lines(compacted)
     compacted = _collapse_blank_lines(compacted)
-    compacted = _cap_prompt(compacted, max_chars=_DEFAULT_MAX_CHARS)
+    compacted, evicted = _cap_prompt(compacted, max_chars=_DEFAULT_MAX_CHARS)
+    if evicted:
+        logger.info(
+            "writer prompt over budget: %d sections evicted (chapter %s): %s",
+            len(evicted),
+            chapter_no,
+            "/".join(evicted[:12]),
+        )
     report = CompactionReport(
         original_chars=len(original),
         compacted_chars=len(compacted),
         saved_tokens_estimate=max(0, _estimate_tokens(original) - _estimate_tokens(compacted)),
+        evicted_sections=evicted,
     )
     return compacted, report
 
@@ -184,6 +198,30 @@ _PROTECTED_SECTION_MARKERS: tuple[str, ...] = (
     "主角决策",
 )
 
+# 连贯性核心：按价值排序的 PLAN 层。消融证据（prose-prompt-diet）里
+# PLAN 层的贡献高于 CONST，更高于 CRAFT，可上限淘汰此前只按"谁靠前、谁小"
+# 决定去留——最大的那块（近期章节摘要 / 活动主线伏笔账本）永远第一个被跳过，
+# 靠后的小块反而活下来。写手因此在后半段拿不到前情与伏笔账本。
+# 这里不抬预算（10k 对应 8000 token 的写手上下文预算，是刻意的），
+# 只把淘汰顺序从"位置与大小的意外"改成"按价值"。
+# 排序即价值排序：先保证"这一章要写什么"（承接/爽点/契约/场景卡），
+# 再保证"接得住前文"（前情/伏笔账本/硬事实）。
+_CONTINUITY_SECTION_MARKERS: tuple[str, ...] = (
+    "上一章硬承接",
+    "本章爽点约束",
+    "章节契约",
+    "弱场景逻辑地图",
+    "近期章节/场景摘要",
+    "活动主线/伏笔/回收",
+    "时间线与硬事实快照",
+    "读者期望画面",
+    # 故事圣经排在最后一档：它是静态世界信息，pack 与 system prompt 里另有
+    # 一份；前情摘要与伏笔账本则**只有这一份**，丢了就没有第二个来源。
+    # 排在这里保证它仍然赢过检索补充/方法论证据这类纯参考段。
+    "故事圣经上下文",
+)
+
+
 _CAP_MARKER = "【写作提示已压缩】规划层冗余内容已移除；只服从本场正典、场景目标和输出契约。"
 
 
@@ -192,7 +230,23 @@ def _section_is_protected(section: str) -> bool:
     return any(marker in head for marker in _PROTECTED_SECTION_MARKERS)
 
 
-def _cap_prompt(text: str, *, max_chars: int) -> str:
+def _continuity_rank(section: str) -> int | None:
+    """连贯性核心的价值序号；不属于核心返回 None。"""
+
+    head = section.lstrip()[:80]
+    for rank, marker in enumerate(_CONTINUITY_SECTION_MARKERS):
+        if marker in head:
+            return rank
+    return None
+
+
+def _section_label(section: str) -> str:
+    head = section.lstrip()
+    match = re.match(r"(【[^】]{1,24}】|#{1,3} [^\n]{1,40}|=== [^\n]{1,40})", head)
+    return match.group(1).strip() if match else head[:24].strip()
+
+
+def _cap_prompt(text: str, *, max_chars: int) -> tuple[str, tuple[str, ...]]:
     """Cap the writer prompt without deleting high-value middle sections.
 
     This is a safety boundary, not a quality rewrite. Rather than slicing an
@@ -205,7 +259,7 @@ def _cap_prompt(text: str, *, max_chars: int) -> str:
     """
 
     if max_chars <= 0 or len(text) <= max_chars:
-        return text
+        return text, ()
 
     sections = _split_sections(text)
     if len(sections) <= 2:
@@ -216,7 +270,7 @@ def _cap_prompt(text: str, *, max_chars: int) -> str:
         tail_chars = available - head_chars
         head = text[:head_chars].rstrip()
         tail = text[-tail_chars:].lstrip()
-        return f"{head}\n\n{_CAP_MARKER}\n\n{tail}"
+        return f"{head}\n\n{_CAP_MARKER}\n\n{tail}", ("<未分段正文中段>",)
 
     first, last = sections[0], sections[-1]
     middle = sections[1:-1]
@@ -227,6 +281,19 @@ def _cap_prompt(text: str, *, max_chars: int) -> str:
         if _section_is_protected(section):
             keep_ids.add(id(section))
             used += len(section)
+    # 连贯性核心按价值序号优先入选（同序号保持出现顺序）。仍受预算约束——
+    # 它们只是排在通用段前面，不像 protected 那样可以撑破上限。
+    ranked = [
+        (rank, index, section)
+        for index, section in enumerate(middle)
+        if id(section) not in keep_ids
+        and (rank := _continuity_rank(section)) is not None
+    ]
+    for _rank, _index, section in sorted(ranked, key=lambda row: (row[0], row[1])):
+        if used + len(section) > max_chars:
+            continue
+        keep_ids.add(id(section))
+        used += len(section)
     # Fill remaining budget with the earliest normal sections.
     for section in middle:
         if id(section) in keep_ids:
@@ -238,13 +305,16 @@ def _cap_prompt(text: str, *, max_chars: int) -> str:
 
     out: list[str] = []
     elided = False
+    evicted: list[str] = []
     for section in sections:
         if id(section) in keep_ids:
             out.append(section)
-        elif not elided:
+            continue
+        evicted.append(_section_label(section))
+        if not elided:
             out.append(f"\n\n{_CAP_MARKER}\n\n")
             elided = True
-    return "".join(out)
+    return "".join(out), tuple(evicted)
 
 
 def _dedupe_chapter_contract_digest_blocks(text: str) -> str:

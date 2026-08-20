@@ -10423,6 +10423,7 @@ async def generate_chapter_draft_once(
                         "original_chars": compaction_report.original_chars,
                         "compacted_chars": compaction_report.compacted_chars,
                         "saved_tokens_estimate": compaction_report.saved_tokens_estimate,
+                        "evicted_sections": list(compaction_report.evicted_sections),
                     }
                 ),
                 "max_tokens_policy": "runaway_guard_not_length_control",
@@ -11901,6 +11902,9 @@ async def generate_scene_draft(
                                 "original_chars": variant_compaction_report.original_chars,
                                 "compacted_chars": variant_compaction_report.compacted_chars,
                                 "saved_tokens_estimate": variant_compaction_report.saved_tokens_estimate,
+                                "evicted_sections": list(
+                                    variant_compaction_report.evicted_sections
+                                ),
                             }
                         ),
                         "protagonist_name": str((scene.participants or [""])[0] or "").strip(),
@@ -11939,6 +11943,9 @@ async def generate_scene_draft(
                             "original_chars": variant_compaction_report.original_chars,
                             "compacted_chars": variant_compaction_report.compacted_chars,
                             "saved_tokens_estimate": variant_compaction_report.saved_tokens_estimate,
+                            "evicted_sections": list(
+                                variant_compaction_report.evicted_sections
+                            ),
                         }
                     ),
                     "_completion": variant_completion,

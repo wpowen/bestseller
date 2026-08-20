@@ -867,7 +867,11 @@ _ENDING_RESOLUTION_WORDS_EN: tuple[str, ...] = (
     "peace at last",
 )
 
-_ENDING_STRONG_PUNCT_ZH = "！？…"
+# 2026-08-20：原集只有全角。501 篇真实出版章里以全角「！？…」收尾的是
+# 0/501，而真正用了感叹/问号的 35 篇**全是半角** —— 这一维对所有人恒为 0
+# （人类得分分布从来没有 4 分）。补半角是纯扩集：句号收尾仍不得分，
+# 门的松紧几乎不变，修的是正确性不是收益。
+_ENDING_STRONG_PUNCT_ZH = "！？…!?"
 _ENDING_STRONG_PUNCT_EN = "!?"
 
 

@@ -48,6 +48,42 @@ class _EligibleDraft:
     candidate: PromotionCandidate
 
 
+def draft_supersession_codes(
+    *,
+    origin: str,
+    took_current: bool,
+    chars: int,
+    supersedes_version: int | None = None,
+    hold_reason: str | None = None,
+) -> list[str]:
+    """一条新稿为什么产生、有没有接管 current —— 写进 promotion_reason_codes。
+
+    2026-08-20 真机《罚我守坟》定罪：全库 518 个 chapter_draft_versions 的
+    promotion_state 100% 停在 candidate，promotion_score /
+    promotion_reason_codes / promoted_at 一个都没写过，
+    draft_promotion_decisions 表 0 行——本模块这套按分选优在生产里从未跑过。
+    真正决定「哪一稿上线」的是四处构造点各自的
+    「先把当前那版翻 False，再插一条新的」，其中两处带条件
+    （not _keeps_prior_draft / not quality_gate_rejected_current_promotion），
+    但条件的结果没有任何地方记录。于是 ch20 五个版本 AI 味 84/88/32/68/96，
+    上线的是 68 那版而手上有 32 的，**没有一行记录说明为什么**。
+
+    本函数只补记账，不参与任何选优判定。返回的是纯字符串码，因为
+    promotion_reason_codes 的既有消费方按字符串码读。
+    """
+
+    codes = [
+        f"origin:{origin}",
+        f"took_current:{'yes' if took_current else 'no'}",
+        f"chars:{int(chars)}",
+    ]
+    if supersedes_version is not None:
+        codes.append(f"supersedes:v{int(supersedes_version)}")
+    if not took_current and hold_reason:
+        codes.append(f"hold:{hold_reason}")
+    return codes
+
+
 def _models_for_kind(draft_kind: DraftKind) -> tuple[type, type, object, object]:
     if draft_kind == "scene":
         return (

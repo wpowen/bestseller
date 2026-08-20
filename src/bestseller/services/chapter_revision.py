@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bestseller.services.draft_promotion import draft_supersession_codes
+
 # ruff: noqa: RUF001
 import logging
 from datetime import UTC, datetime
@@ -384,6 +386,12 @@ async def apply_chapter_revision_task(
         word_count=word_count,
         assembled_from_scene_draft_ids=list(current.assembled_from_scene_draft_ids or []),
         is_current=True,
+        promotion_reason_codes=draft_supersession_codes(
+            origin="revision",
+            took_current=True,
+            chars=len(content_md or ""),
+            supersedes_version=next_version - 1 if next_version > 1 else None,
+        ),
         llm_run_id=llm_run_id,
     )
     session.add(new_draft)

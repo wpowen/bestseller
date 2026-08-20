@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bestseller.services.draft_promotion import draft_supersession_codes
+
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 import json
@@ -10746,6 +10748,13 @@ async def generate_chapter_draft_once(
         word_count=word_count,
         assembled_from_scene_draft_ids=[f"chapter_first_scene:{scene.id}" for scene in scenes],
         is_current=not _keeps_prior_draft,
+        promotion_reason_codes=draft_supersession_codes(
+            origin="chapter_first",
+            took_current=not _keeps_prior_draft,
+            chars=len(content_md or ""),
+            supersedes_version=next_version - 1 if next_version > 1 else None,
+            hold_reason="prior_draft_kept",
+        ),
         llm_run_id=completion.llm_run_id,
     )
     session.add(chapter_draft)
@@ -12911,6 +12920,12 @@ async def assemble_chapter_draft(
         word_count=word_count,
         assembled_from_scene_draft_ids=[str(scene_draft.id) for scene_draft in scene_drafts],
         is_current=True,
+        promotion_reason_codes=draft_supersession_codes(
+            origin="scene_assembly",
+            took_current=True,
+            chars=len(content_md or ""),
+            supersedes_version=next_version - 1 if next_version > 1 else None,
+        ),
     )
     session.add(chapter_draft)
     chapter.current_word_count = word_count

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bestseller.services.draft_promotion import draft_supersession_codes
+
 import asyncio
 import contextlib
 import logging
@@ -11011,6 +11013,13 @@ async def rewrite_chapter_from_task(
         word_count=word_count,
         assembled_from_scene_draft_ids=list(current_draft.assembled_from_scene_draft_ids),
         is_current=not quality_gate_rejected_current_promotion,
+        promotion_reason_codes=draft_supersession_codes(
+            origin="rewrite",
+            took_current=not quality_gate_rejected_current_promotion,
+            chars=len(content_md or ""),
+            supersedes_version=next_version - 1 if next_version > 1 else None,
+            hold_reason="quality_gate_rejected",
+        ),
         llm_run_id=llm_run_id,
     )
     session.add(new_draft)

@@ -934,6 +934,55 @@ def _strip_en_possessive(candidate: str) -> str | None:
     return None
 
 
+
+# ── 人物语境要求（2026-08-20 真机《罚我守坟》定罪）──────────────────────
+# 23 章报 NAMING_OUT_OF_POOL 75 次，去重 43 个「人名」里 42 个是误报
+# （余温/成旧疤/章盖/陈粮/米粒大/和昨夜 …），全部形如「常见姓氏字 + 散字」。
+# 病根不是漏了哪个词，是**形状反了**：先用姓氏正则捞候选，再靠手工黑名单
+# 做减法——`_ZH_COMMON_WORD_2ND_CHARS` 的注释里写满了「Qiyouhun audit /
+# Qingnang audit / opening-rescue audit / v4 audit」，每来一本新书就加一批字，
+# 永远收敛不了。改成**要求正面证据**：候选必须在文本里至少出现一次
+# 人物语境。纯减法——只可能减少 finding，不涉及任何杀权变化。
+#
+# 判据的核心是**子句首位**：真名占主语位（前面是句读或引号），
+# 散文碎片则黏在短语中间（「边缘结成旧疤」的「成旧疤」前面是「结」）。
+# 真机分离度：43 个误报剔除 43 个，4 个真名（吴六/赵无极×2/孙小明）全保留。
+_ZH_PERSON_ACT_VERBS = (
+    "说|道|问|答|应|笑|喊|叫|骂|哼|嗤|点头|摇头|抬头|低头|转身|伸手|皱眉|"
+    "盯|蹲|跪|递|扶|站|坐|走|退|看|想|挥|抬|抱|举|停"
+)
+_ZH_PERSON_TITLES = (
+    "师兄|师弟|师姐|师妹|师父|师叔|长老|执事|道友|前辈|大人|公子|姑娘|"
+    "先生|掌柜|夫人|叔|伯|婶|哥|姐|爷"
+)
+# 子句边界：句读、顿号、引号、行首。
+_ZH_CLAUSE_BOUNDARY = r"(?:^|[。！？；：，、\n“「『”」』])"
+
+
+def _zh_name_has_person_context(candidate: str, text: str) -> bool:
+    """候选人名是否在文本里以「人」的身份出现过至少一次。
+
+    命中任一即算：
+      * 子句首位出现且两字内接言行动词（。赵无极站在远处 / 赵无极冷笑一声）
+      * 由 叫/名叫/唤作/人称/称作 引出（卖葱那个叫吴六）
+      * 称谓紧随（季伯执事 / 苗师兄）
+      * 子句首位后紧跟逗号 —— 直呼其名（赵无极，你为什么回来？）
+      * 对白归属（苗青灯道：“…”）
+    """
+
+    if not candidate or not text:
+        return False
+    name = re.escape(candidate)
+    patterns = (
+        rf"{_ZH_CLAUSE_BOUNDARY}{name}[^。！？\n]{{0,2}}(?:{_ZH_PERSON_ACT_VERBS})",
+        rf"(?:叫|名叫|唤作|人称|称作)\s*{name}",
+        rf"{name}(?:{_ZH_PERSON_TITLES})",
+        rf"{_ZH_CLAUSE_BOUNDARY}{name}[，,]",
+        rf"{name}(?:{_ZH_PERSON_ACT_VERBS})?[:：]?[“「『]",
+    )
+    return any(re.search(p, text) for p in patterns)
+
+
 def _is_allowed_name(candidate: str, allowed: frozenset[str]) -> bool:
     """Return True when ``candidate`` corresponds to an allowed name.
 
@@ -1002,6 +1051,15 @@ class NamingConsistencyCheck:
 
         # Filter to frequency floor.
         rogue = {name: count for name, count in rogue.items() if count >= self.frequency_floor}
+        # 人物语境要求：候选必须在本章至少出现一次「以人的身份」的用法。
+        # 真机 43 个候选里剔除 42 个误报，唯一真名「吴六」靠
+        # 「卖葱那个叫吴六」保住。纯减法，不新增任何 finding。
+        if language.lower().startswith("zh"):
+            rogue = {
+                name: count
+                for name, count in rogue.items()
+                if _zh_name_has_person_context(name, text)
+            }
         if not rogue:
             return []
 

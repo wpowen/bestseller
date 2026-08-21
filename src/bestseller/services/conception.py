@@ -615,6 +615,176 @@ async def _llm_call(
     return result.content, result.llm_run_id
 
 
+def _safe_extract_json(text: str) -> dict[str, Any]:
+    """书名工序专用的不抛版 JSON 解析——解析失败只当作「没有候选」。
+
+    书名不该有能力阻断建书：`_extract_json` 解析失败会抛，
+    这里吞掉并返回空字典，让淘汰赛静默退回现任书名。
+    """
+
+    try:
+        return _extract_json(text)
+    except Exception:
+        return {}
+
+
+async def _run_title_tournament(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    incumbent: str,
+    title_profile: Mapping[str, Any],
+    golden_finger: str,
+    logline: str,
+    genre_label: str,
+    platform_label: str,
+    is_en: bool,
+) -> tuple[str, dict[str, Any] | None, list[UUID]]:
+    """书名淘汰赛：候选 → 确定性门 → 榜单并排盲评 → 胜出。
+
+    2026-08-21 真机 custom-xuanhuan-1787320762 定罪：书名此前是**单发调用**
+    （`title_platform_revision` 全书仅 1 次），而概念有 16 次判官 + 4 轮候选。
+    更糟的是它上游的 65 个模板候选全是把分类标签塞进槽位
+    （「开局市井日常，我用市井日常证道」），因为槽位词来自 tags、
+    物件抽取器写死了**上一本书**的清单。用户原话：「更像是一些字符串的拼接」。
+
+    这里另起一条按**故事实体**竞争的路。三条自我约束：
+      * 全程 fail-open——任何异常都保留现任书名，不让书名工序阻断建书；
+      * **判官只挣排序权**，确定性门（接地/长度/查重）才有否决权；
+      * 留回执，让「书名为什么是这个」以后可查（真机上这件事查不到任何记录）。
+    """
+
+    run_ids: list[UUID] = []
+    if is_en:
+        # 句式家族按中文网文书名总结，英文书走原路径。
+        return incumbent, None, run_ids
+
+    from bestseller.services.title_tournament import (
+        apply_arena_verdict,
+        build_title_arena_messages,
+        build_title_candidate_messages,
+        deterministic_title_defects,
+        extract_title_entities,
+        parse_title_candidates,
+        select_title_winner,
+        title_tournament_receipt,
+        TitleCandidate,
+    )
+
+    entities = extract_title_entities(
+        protagonist_name=str(
+            ((title_profile.get("main_characters") or [{}])[0] or {}).get("name") or ""
+        ),
+        golden_finger=golden_finger,
+        logline=logline,
+        premise=logline,
+    )
+    if entities.is_empty:
+        # 抽不出任何实体就没有竞争的基础——不要靠标签硬凑（那正是旧病）。
+        return incumbent, None, run_ids
+
+    cand_system, cand_user = build_title_candidate_messages(
+        entities=entities,
+        logline=logline,
+        genre_label=genre_label,
+        platform_label=platform_label or "番茄小说",
+    )
+    raw, cand_run_id = await _llm_call(
+        session,
+        settings,
+        role="editor",
+        system_prompt=cand_system,
+        user_prompt=cand_user,
+        fallback="{}",
+        template="title_tournament_candidates",
+    )
+    if cand_run_id is not None:
+        run_ids.append(cand_run_id)
+    candidates = parse_title_candidates(_safe_extract_json(raw))
+    if not candidates:
+        return incumbent, None, run_ids
+
+    # 现任书名也进场比——不是替换，是竞争。
+    if incumbent.strip() and all(row.title != incumbent.strip() for row in candidates):
+        candidates.append(TitleCandidate(title=incumbent.strip(), family="现任"))
+
+    tags = list(title_profile.get("tags") or [])
+    prose = " ".join(
+        str(title_profile.get(key) or "")
+        for key in ("logline", "short_intro", "reader_promise")
+    )
+    for row in candidates:
+        row.rejected_by = deterministic_title_defects(
+            row.title, tags=tags, prose=prose
+        )
+
+    survivors = [row for row in candidates if row.survives]
+    if len(survivors) >= 2:
+        arena_system, arena_user = build_title_arena_messages(
+            titles=[row.title for row in survivors],
+            logline=logline,
+            genre_label=genre_label,
+            platform_label=platform_label or "番茄小说",
+        )
+        arena_raw, arena_run_id = await _llm_call(
+            session,
+            settings,
+            role="editor",
+            system_prompt=arena_system,
+            user_prompt=arena_user,
+            fallback="{}",
+            template="title_tournament_arena",
+        )
+        if arena_run_id is not None:
+            run_ids.append(arena_run_id)
+        apply_arena_verdict(survivors, _safe_extract_json(arena_raw))
+
+    winner = select_title_winner(candidates, incumbent=incumbent)
+    receipt = title_tournament_receipt(candidates, winner)
+    receipt["entities"] = entities.to_dict()
+    receipt["incumbent"] = incumbent
+    return (winner.title if winner else incumbent), receipt, run_ids
+
+
+def _title_profile_protagonist(
+    *,
+    metadata: Mapping[str, Any],
+    premise: str,
+    is_en: bool,
+) -> str:
+    """书名生成器要用的主角名。
+
+    2026-08-21 真机 custom-xuanhuan-1787320762：这里原本写死成「主角」，
+    书名生成器因此永远不知道主角叫什么，`_resolve_identity` 只好退回 tags，
+    于是 65 个候选全是把分类标签塞模板（「开局市井日常，我用市井日常证道」）。
+
+    取名顺序刻意与身份层一致：
+      1. **用户显式选定**的名字（creation_protagonist_source 不是 LLM 推断）；
+      2. 已批准构思正文里抽出的名字——真机上 creation_protagonist_name 是
+         LLM 从**旧候选**猜的「沈小禾」，而定稿构思写的是「温迟」，
+         猜来的名字不能盖过构思正文；
+      3. 都拿不到才退回占位符（不制造新的失败模式）。
+    """
+
+    from bestseller.services.book_design import _has_explicit_protagonist_choice
+    from bestseller.services.concept_entities import (
+        extract_role_bound_name,
+        is_placeholder_name,
+    )
+
+    placeholder = "Protagonist" if is_en else "主角"
+    meta = metadata if isinstance(metadata, Mapping) else {}
+    if _has_explicit_protagonist_choice(meta):
+        for key in ("creation_protagonist_name", "protagonist_name", "canonical_protagonist_name"):
+            explicit = str(meta.get(key) or "").strip()
+            if explicit and not is_placeholder_name(explicit):
+                return explicit
+    extracted = extract_role_bound_name(premise or "")
+    if extracted and not is_placeholder_name(extracted):
+        return extracted
+    return placeholder
+
+
 async def _maybe_revise_platform_title(
     session: AsyncSession,
     settings: AppSettings,
@@ -7107,7 +7277,14 @@ async def run_conception_pipeline(
         ),
         "main_characters": [
             {
-                "name": "主角" if not is_en else "Protagonist",
+                # 构思阶段项目行还没有 metadata 可读，与同函数里既有的
+                # `extract_creation_protagonist_name({"premise": premise})`
+                # 保持一致：这一层以已批准构思正文为准。
+                "name": _title_profile_protagonist(
+                    metadata={},
+                    premise=_hc_concept or premise,
+                    is_en=is_en,
+                ),
                 "role": "主角" if not is_en else "Protagonist",
                 "identity": (
                     writing_profile.get("character", {}).get("protagonist_archetype")
@@ -7157,6 +7334,34 @@ async def run_conception_pipeline(
                 title_workflow_primary["llm_revised"] = True
     except Exception:
         logger.warning("Platform title workflow failed during conception", exc_info=True)
+
+    # ── 书名淘汰赛（2026-08-21）──────────────────────────────────────────
+    # 此前书名是单发调用（title_platform_revision 全书 1 次），而概念有 16 次
+    # 判官 + 4 轮候选。现任书名也进场比，不是无条件替换。全程 fail-open：
+    # 书名工序绝不允许阻断建书。
+    try:
+        _tt_title, _tt_receipt, _tt_run_ids = await _run_title_tournament(
+            session,
+            settings,
+            incumbent=title,
+            title_profile=title_profile,
+            golden_finger=str(
+                (writing_profile.get("character") or {}).get("golden_finger") or ""
+            )
+            if isinstance(writing_profile.get("character"), dict)
+            else "",
+            logline=_hc_concept or premise,
+            genre_label=str(genre_intent_contract.genre_label or ""),
+            platform_label=str(target_platform or ""),
+            is_en=is_en,
+        )
+        llm_run_ids.extend(_tt_run_ids)
+        if _tt_receipt:
+            writing_profile.setdefault("market", {})["title_tournament"] = _tt_receipt
+        if _tt_title.strip():
+            title = _tt_title.strip()
+    except Exception:
+        logger.warning("Title tournament failed during conception", exc_info=True)
 
     # Final invariant: a book is never named after its genre, and never blank.
     # If the workflow errored or returned nothing usable, derive a clean,

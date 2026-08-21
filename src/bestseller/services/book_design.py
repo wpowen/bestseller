@@ -291,11 +291,22 @@ def _authoritative_creation_protagonist_name(metadata: Mapping[str, Any]) -> str
     original premise are creation-boundary evidence.
     """
 
-    for key in _EXPLICIT_PROTAGONIST_KEYS:
-        explicit = _text(metadata.get(key))
-        if explicit:
-            return explicit
-    return _protagonist_name_from_text(metadata.get("premise"))
+    # 2026-08-21 补接线：此前这里只遍历 _EXPLICIT_PROTAGONIST_KEYS，不看
+    # creation_protagonist_source，于是 LLM 从旧候选猜出来的名字被当成用户选择，
+    # 漂移检测恒不触发。项目里早有正确判据 _has_explicit_protagonist_choice
+    # （2026-08-14 为「沈絮 vs 沈絮(阿缨)」加的），只是做决定的这个函数没调它。
+    if _has_explicit_protagonist_choice(metadata):
+        for key in _EXPLICIT_PROTAGONIST_KEYS:
+            explicit = _text(metadata.get(key))
+            if explicit:
+                return explicit
+    name = _protagonist_name_from_text(metadata.get("premise"))
+    if name:
+        return name
+    # 身份词表抽不到时退回通用形状抽取（「温符徒温迟」这类自造身份词）。
+    from bestseller.services.concept_entities import extract_role_bound_name
+
+    return extract_role_bound_name(_text(metadata.get("premise")))
 
 
 _CONCEPT_TEXT_KEYS = ("logline", "premise", "synopsis")
@@ -323,9 +334,14 @@ def _identity_mismatch_is_advisory(metadata: Mapping[str, Any]) -> bool:
 
     if _has_explicit_protagonist_choice(metadata):
         return False
-    canonical = _protagonist_core_name(
-        _authoritative_creation_protagonist_name(metadata)
-    )
+    # 要判的是**实际落在各产物上的那个规范名**（真机是沈小禾），
+    # 不是重新解析出来的名字——后者修好之后会返回构思里的「温迟」，
+    # 那样就永远判成 advisory，把这条判据自己架空了。
+    canonical = ""
+    for key in _EXPLICIT_PROTAGONIST_KEYS:
+        canonical = _protagonist_core_name(_text(metadata.get(key)))
+        if canonical:
+            break
     if not canonical:
         return True
     concept_text = " ".join(

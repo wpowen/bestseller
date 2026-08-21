@@ -41,7 +41,7 @@ def test_codes_record_origin_and_whether_it_took_current():
     )
     assert "origin:chapter_first" in codes
     assert "wrote_as_current:yes" in codes
-    assert "chars:2768" in codes
+    # chars 已删（会过期的副本，见文末测试）
     assert "supersedes:v3" in codes
 
 
@@ -107,3 +107,31 @@ def test_intent_is_still_recorded_both_ways():
     no = draft_supersession_codes(origin="rewrite", took_current=False, chars=10)
     assert "wrote_as_current:yes" in yes
     assert "wrote_as_current:no" in no
+
+
+# ── chars 是会过期的副本，删掉（2026-08-22 真机《书院笔仙》）──────────────
+# 回执记的 chars 与行里实际内容长度对不上 24/111 次。原因：章级稿在创建之后
+# 有 6 条路径原地改 content_md（micro-trim / 钩子桥接 / deslop / AI味补丁 /
+# 复检补丁 / 终局补丁），而回执是创建那一刻算的，之后没人更新它。
+#
+# 这与本回执的第一个缺陷（took_current 用一个字段冒充意图与结果）同源：
+# **同一事实住两地，后写的赢**。行的真实长度永远可以 length(content_md) 查到，
+# 一份会过期的副本比没有更糟。
+
+
+def test_receipt_does_not_duplicate_derivable_length():
+    codes = draft_supersession_codes(origin="rewrite", took_current=True, chars=3062)
+    assert not any(c.startswith("chars:") for c in codes), (
+        "chars 复制了 length(content_md)，会在事后原地改写时过期"
+    )
+
+
+def test_receipt_still_records_what_is_not_derivable():
+    codes = draft_supersession_codes(
+        origin="rewrite", took_current=False, chars=0,
+        supersedes_version=2, hold_reason="quality_gate_rejected",
+    )
+    assert "origin:rewrite" in codes
+    assert "wrote_as_current:no" in codes
+    assert "supersedes:v2" in codes
+    assert "hold:quality_gate_rejected" in codes

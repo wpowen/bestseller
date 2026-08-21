@@ -52,7 +52,7 @@ def draft_supersession_codes(
     *,
     origin: str,
     took_current: bool,
-    chars: int,
+    chars: int = 0,  # 已废弃：见下方说明，保留仅为兼容既有调用点
     supersedes_version: int | None = None,
     hold_reason: str | None = None,
 ) -> list[str]:
@@ -76,10 +76,14 @@ def draft_supersession_codes(
     # ch15 v2 回执写着 no 而它就是当前稿——该版后来通过别的路径成了 current。
     # 最终状态由 `chapter_draft_versions.is_current` 表达；用一个字段冒充两件事
     # 会让以后的归因读错，所以字段名必须自带「写入时」这层含义。
+    # ⚠️ 刻意**不记 chars**：章级稿在创建之后有 6 条路径原地改写 content_md
+    # （micro-trim / 钩子桥接 / deslop / AI味补丁 / 复检补丁 / 终局补丁），
+    # 回执是创建那一刻算的，真机上 24/111 个版本与行里的实际长度对不上。
+    # 行的真实长度永远可以 `length(content_md)` 查到——一份会过期的副本
+    # 比没有更糟（「同一事实住两地，后写的赢」）。
     codes = [
         f"origin:{origin}",
         f"wrote_as_current:{'yes' if took_current else 'no'}",
-        f"chars:{int(chars)}",
     ]
     if supersedes_version is not None:
         codes.append(f"supersedes:v{int(supersedes_version)}")

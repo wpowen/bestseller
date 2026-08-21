@@ -2644,7 +2644,12 @@ def _evaluate_title_candidate(
     reader_check = _evaluate_reader_attraction(title, style)
     story_check = _evaluate_story_transmission(title, signals, profile)
     platform_check = _evaluate_platform_fit(title, style)
-    quality_check = _evaluate_title_quality(title, signals)
+    quality_check = _evaluate_title_quality(
+        title,
+        signals,
+        tags=_string_list(profile.get("tags")),
+        prose=_story_prose(profile),
+    )
     checks = {
         "reader_attraction": reader_check,
         "story_transmission": story_check,
@@ -2861,9 +2866,80 @@ def _evaluate_platform_fit(title: str, style: PlatformTitleStyle) -> dict[str, A
     }
 
 
-def _evaluate_title_quality(title: str, signals: Mapping[str, str]) -> dict[str, Any]:
+def _story_prose(profile: Mapping[str, Any]) -> str:
+    """书名槽位词的接地文本：只用故事正文，不含标签行。"""
+
+    # reader_promise 是故事内容（对读者的承诺、代价机制），不是分类标签——
+    # 漏掉它会误杀「记忆代价」这类真实机制词（既有测试 test_book_listing 抓到）。
+    parts = [
+        _stringify_story_value(profile.get(key))
+        for key in ("logline", "premise", "short_intro", "synopsis", "reader_promise")
+    ]
+    return " ".join(part for part in parts if part)
+
+
+def is_story_grounded_token(token: str, prose: str) -> bool:
+    """槽位词是否在故事正文里真的出现过。
+
+    2026-08-21 真机 custom-xuanhuan-1787320762 定罪：书名的 65 个候选全部是
+    把 ``tags``（玄幻/市井日常/奇物养成/轻松解压/单元剧/男频/番茄爽文…）
+    塞进模板——「开局市井日常，我用市井日常证道」「月照市井日常」。
+    这些是**分类与营销标签，不是故事里的实体**，当名词用必然读成拼接。
+
+    判据零词表、可确定性核对，与身份修复同源：**在故事正文里出现过吗**。
+    真机分离度：10 个分类标签命中 0/10，6 个故事实体（温迟/蒸灵锅/
+    通灵百家巷/老灶君/早市/欠条）命中 6/6。
+
+    正文缺失时一律放行——无法判断就不制造新的阻断。
+    """
+
+    token = str(token or "").strip()
+    if not token:
+        return True
+    text = str(prose or "").strip()
+    if not text:
+        return True
+    return token in text
+
+
+def ungrounded_title_tokens(
+    title: str,
+    tags: Sequence[str] | None,
+    prose: str,
+) -> tuple[str, ...]:
+    """标题里用到了哪些「没有故事依据」的分类标签。
+
+    只检查该书自己的 ``tags``——不猜词表，因此不会误伤真实的世界观名词
+    （某本书的门派若真叫「奇物养成」，它会出现在正文里从而接地）。
+    """
+
+    haystack = str(title or "")
+    if not haystack:
+        return ()
+    hits: list[str] = []
+    for tag in tags or ():
+        token = str(tag or "").strip()
+        if not token or token in hits:
+            continue
+        if token in haystack and not is_story_grounded_token(token, prose):
+            hits.append(token)
+    return tuple(hits)
+
+
+def _evaluate_title_quality(
+    title: str,
+    signals: Mapping[str, str],
+    *,
+    tags: Sequence[str] | None = None,
+    prose: str = "",
+) -> dict[str, Any]:
     bare = _is_bare_taxonomy_title(title)
-    bad = bare or _is_low_quality_title(title, signals)
+    # 2026-08-21：此前这个检查只认「纯粹由题材词堆成」的标题，于是
+    # 「市井日常藏娇」「月照市井日常」全部 100 分通过，判词还写着
+    # 「不是内部标签…拼接」。改为按故事接地判：标题里用到的分类标签，
+    # 只要在故事正文里一次都没出现，就是拼接。
+    ungrounded = ungrounded_title_tokens(title, tags, prose)
+    bad = bare or bool(ungrounded) or _is_low_quality_title(title, signals)
     result: dict[str, Any] = {
         "passed": not bad,
         "score": 100 if not bad else 35,
@@ -2873,6 +2949,13 @@ def _evaluate_title_quality(title: str, signals: Mapping[str, str]) -> dict[str,
             else "标题像题材评述、内部标签、半句碎片或关键词拼接。"
         ),
     }
+    if ungrounded and not bare:
+        result["reason"] = (
+            "标题把分类/营销标签当成故事实体使用（"
+            + "、".join(ungrounded)
+            + "），这些词在故事正文里一次都没出现。"
+        )
+        result["ungrounded_tokens"] = list(ungrounded)
     if bare:
         # Pure taxonomy names (题材名 = 书名) are a product red line → hard reject,
         # so selection can never ship them and downstream LLM revision must fire.

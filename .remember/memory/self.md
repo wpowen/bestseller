@@ -151,3 +151,56 @@ Mistake: 创作向导 Step2「定篇幅」中间空白，短篇三档不可见�
 Wrong: `stepper` 夹在标题与 `wpanel` 之间占满视口；`fanqieLengthBlock` 用 `style="display:none"` 且 `longSerialLengthBlock` 内 `length-presets` 未正确闭合；`syncCreationModeUi` 未在 `resetWizardState` 调用。
 Correct: `wizard-steps-footer` 将步骤条移到底部；`#viewWizard` flex 列 + `#ws2` 合法 DOM；`fanqieLengthBlock` 用 `hidden` + JS `longBlock.hidden`/`fanqieBlock.hidden`；`wizGo(2)` 与 `resetWizardState` 均调用 `syncCreationModeUi()`。
 
+---
+
+Mistake: 把 `docs/PIPELINE_HARDENING_PLAN.md` 未勾选框当成现行代码，把 qimao 死循环熔断写成未完成。
+Wrong: 报告写「P0-1 仍是风险面 / C31 未知」，只因 hardening 文档 checkbox 未勾。
+Correct: 对照 hardening 必须 `rg` 实现。现行：`qimao_opening_max_attempts=3` + `qimao_opening_gate_attempts_by_chapter`；耗尽打章级 `needs_human_review`，默认不再无条件 `production_paused`。文档勾选滞后不等于未落地。
+
+---
+
+Mistake: 把 reviews folk-horror 写成「已移除」，实际是换血 + 题材门控。
+Wrong: 「`_FOLK_HORROR_*` 已从全量评分器删除」。
+Correct: 词表仍在；认账/镜债/三短一长已删；仅 `category_key == "suspense-mystery"` 时并入；≥3 视觉标记有 0.82 地板。`铜钱` **已从** `_FOLK_HORROR_TAIL_HOOK_TERMS` 删除。`persist_qimao_opening_contract` 有两处调用，入口必须 `opening_quality_gate_requested`（残留 contract 不够）；Mode B pass 是三合取（含 `not block_codes`）；ai_flavor 键名是 `block_score.cn` 不是 `block_cn`。
+
+---
+
+Mistake: drafts 每次组 prompt 都调 `opening_quality_gate_requested`，测试用 SimpleNamespace 没有 `audience` 会 AttributeError。
+Wrong: `_project_platform_candidates` 直接读 `project.audience`。
+Correct: 用 `getattr(project, "audience", None)` 与 `getattr(project, "metadata_json", None)`；残留 `qimao_opening_contract` 不得单独开闸。
+
+---
+
+Mistake: 修横切默认后仍按旧测试断言「无平台书也会 persist 七猫合同 / 默认 fusion=True」。
+Wrong: `test_persist_qimao_opening_contract_applies_to_general_projects` 断言 contract is not None。
+Correct: 通用书 `contract is None`；签约测例加 `platform_target: 七猫小说` 或 `opening_quality_gate_enabled: True`。本地子集必须 `pytest --no-cov`，且 `BESTSELLER_ALLOW_PROD_DB_IN_TESTS=1`（或指向 `bestseller_test`）。
+
+---
+
+Mistake: 一句话构思示例写成结论先行（不是X而是Y / 先定义机制再演示），与榜单钩子和已有章级 `negated_definition` 规则相反。
+Wrong: 「验伤官验的不是伤多重，是这伤会逼谁还手。他当众验出师兄的刀伤，债主写的是师父。」
+Correct: 先写当场事件和有名字的人的反应，机制让读者自己看出来。例如公证员当众冷笑下一息死在自己印里；不要先解释「测的不是品阶」。爽点必须落到具体的人脸上并被看见，不能停在规则巧妙。
+
+---
+
+Mistake: 把「一句话构思」误做成章首镜头（对白+道具翻转+旁观者定住），十二条同模具，没有卖「想看他赢什么」。
+Wrong: 「米呢？」他把升斗放进空仓。秤杆抬起来，对准王府正门。管事的手停在半空。
+Correct: 构思句是全书渴望种子（谁、凭什么赢、对谁算账），像跟朋友安利；书名才是 3 秒槽位；简介才是试吃。三个槽位不能写成同一种微型场面。
+
+---
+
+Mistake: 第三波构思句信息齐了，但有的撞现书、有的一句里塞多段剧情、有的半句没有因果。
+Wrong: 杂役破盆翻倍（撞聚宝仙盆）；师兄追着别逃课（有梗无因）；辞职进神界再跳地狱工单（三套设定）；开挂→金牌→赶走→收回→差班第一（情节齐、句子不连）。
+Correct: 一句只走一次因果，同一世界同一岗位；优势从这份工作里长出来；喜剧的笑点必须是「她不干了，原本由她扛的事砸到别人头上」这种接得上的结果，不能另起一句无关动作。
+
+---
+
+Mistake: 把构思卖点压成章末钩（二十来字一个画面），用户判定根本不是卖点。
+Wrong: 「看灵田的人被换走那天，后山灵谷全枯了。」
+Correct: 卖点要能安利整本书：谁、凭什么、对谁、往后追什么，大约 90–160 字、两三句说完；短到只剩一个画面就不是卖点。
+
+---
+
+Mistake: 玄幻爽文卖点写成报复循环，没有金手指。
+Wrong: 「谁再拿他试药，他就把药还回谁嘴里」——谁A就B + 对方倒霉、自己账上为零。
+Correct: 玄幻卖点先给可反复用、能变强的外挂，再用一次当场多出读者能数的好处（废丹入口试力石跳两格），然后才打到有名字的脸上。还药不是金手指。

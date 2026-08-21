@@ -37,6 +37,33 @@
 - **ai_flavor block=50 过松**：score 32 仍 pass；deslop 主要在 block/特定 discourse；auto-repair 偏字数/钩子/重复，`DIALOGUE_AI_FLAVOR` 无 playbook。
 - **文采/蒸馏未进硬路径**：`prose_craft` 已撤出 PROSE_SCENE；`enable_library_soft_reference=false`；pack `structure_guidance` 0/31、`opening_rules` 2/31。
 
+## Framework Architecture Audit (2026-08-17)
+- 横切默认已改为 opt-in（晚间修复）：`MarketPositioningConfig` 默认「未指定平台」；`enable_shuangwen_fusion=False`（loop pack 自动开）；`persist_qimao_opening_contract` / writer 合同块走 `opening_quality_gate_requested`（残留 contract 不够）；pack 推断去掉裸「升级」「奇幻」，西方/史诗奇幻 → `epic-fantasy`。账单/尸体不进 writer；folk-horror 仍是题材门控，`铜钱` 已从 TAIL_HOOK 删除。
+- 签约路径仍在：显式 `opening_quality_gate_enabled` 或平台含七猫/起点/番茄。番茄仍是平台 preset / 末日 pack YAML，不是空书默认。
+- 有意不改：`quality_mode=closure`、persona 软熔断、reader-judge 影子、scene 密度加分。回归 `tests/unit/test_genre_neutral_defaults.py`。
+- 对照稿：`docs/框架深度排查与开源对照分析-20260817.md`（§0.2）。
+
+## Ranking Conception / Quality Research (2026-08-17)
+- 生成书「平庸无逻辑不可读」首先是概念层均值回归，不是缺标签。铁律在 `concept_tournament.py`：不可自动补全 / 反共识非反处境 / 杂交新物种 / 概念自带长篇引擎。批量 12 候选才能压众数（单条玄幻死亡族 60% vs 一次 12 条 7.5%）；干涸保底仍会发货众数概念。
+- 爽文是正交轴 `题材 × 爽度档`，不是官方标签。章级唯一共识：赢落到有名字的人脸上 + 被具体的人看见 + 账上留下能带走的东西。A 碾压 / B 智斗 / C 关系，不定档就判等于掷骰子。碾压密度是属性标记不是质量标记。
+- 喜剧走 `shezhu-bailan-comedy` 时禁止「摆烂两章就打脸收割」。不要给喜剧默认开 shuangwen fusion。
+- 优化顺序：构思强制锦标赛冠军且禁止保底众数 → logline 机制因果校准后硬拦 → reader-judge 校准后再 enforce 并去掉 scene 密度加分。分析画布：`canvases/ranking-book-conception-quality.canvas.tsx`。
+
+## One-liner Conception Pipeline (2026-08-17)
+- 生产路径 `engine_first`：12 条 raw pitch → rank → premise card（本轮不写钩子）→ HOOK_DISTILL 压成 30–75 字 → 八轴 → seriality → `winner.concept`。冠军进 `ctx.description` 高概念块和 `concept_contract.hook_card.one_liner`。
+- 构思后 logline 12 轴 / story_appeal 当前 **advisory**（`block_expansion=false`，因误杀斗破/完美/诡秘）；定罪句式也不杀书。`verdict_from_approved_concept_contract` 可用八轴证据直接 EXPAND。
+- **逻辑审计空转**：`_derive_conception_world_model` 恒返回空，`_audit_mechanism_causality` 因 `world_model is None` 直接跳过。
+- **世界观断层**：BookSpec 注入 `render_concept_contract_block`；WorldSpec **不注入**。v2 会 `pop hook_spec`，`hook_spec_from_metadata` 对 v2 返回 None，`apply_hook_to_world_spec` 不跑。画布：`canvases/one-sentence-conception-pipeline.canvas.tsx`。
+- 人工评测样本：12 条正例 + 4 条对照废案，画布 `canvases/one-liner-eval-set.canvas.tsx`。四问：可读 / 想点 / 逻辑 / 能否补全全书。先只看一句话。
+- 用户评测（2026-08-17）：最大问题是结论先行 AI 味，其次是钩子无爽点/无点击欲。根因：章级 `negated_definition` 不跑构思；`plain_language` 只测好不好懂；`hook_pull` advisory；HOOK_DISTILL 教「先定义再演示」。榜单：书名才是 3 秒槽位；简介是试吃装（对白/弹窗）；爽点靠第三方反应。画布 `canvases/hook-ai-flavor-vs-board.canvas.tsx`。
+- 第二波评测样本（场面+当场反应，带书名）：`canvases/one-liner-eval-set-r2.canvas.tsx`。
+- 用户指出第二波仍无吸引力、AI 味足：根因是把构思句写成章首镜头模具。正确：构思=渴望种子（谁/凭什么赢/对谁算账）；书名=3秒；简介=试吃+四条信息。画布 `canvases/one-liner-role-vs-board.canvas.tsx`。
+- 第三波评测：S01 撞《聚宝仙盆》；灯/印逻辑不清；摆烂「别逃课」无因果；摸鱼跨世界跳跃；都市打脸情节齐但句子不连。第四波改成一条因果链：`canvases/conception-eval-round4.canvas.tsx`。
+- 本轮结果 V01–V06（去撞书、一句一因、都市改述职工号）：`canvases/conception-eval-result.canvas.tsx`。章级 detect 对短构思句打不出分，不能当已去 AI 味。
+- 用户评 V01–V06 太短、不是卖点。加长为完整安利段 W01–W06（约 90–160 字）：`canvases/conception-selling-points.canvas.tsx`。章末钩 ≠ 卖点。
+- 用户评 W01 无爽感：还药是报复循环不是金手指；「谁A就B」是定罪句。玄幻卖点必须有可升级外挂 + 当场多出能数的好处。画布 `canvases/xuanhuan-shuanggan-analysis.canvas.tsx`。
+- 创意层修复计划：先改 HOOK_DISTILL（90–160 字卖点 + 金手指演示）和项目卡 golden_finger；蒸馏后跑定罪句式/negated_definition；无冠军不保底。不先开 logline 硬杀。画布 `canvases/conception-repair-plan.canvas.tsx`。
+
 ## Working Conventions
 - **交接文档（2026-07-24）**：完整进展/未完成项见 `docs/plans/2026-07-24-quality-remediation-handoff.md`（给下一任模型）。结项卡在真书验收（≥10章）与 B1/B2 校准，不是 A1–A5 代码。
 - **Phase A 正文止血已落地（2026-07-24）**：`prose_prompt_profile` 默认/配置均为 `lean`；chapter-first lean 用 `render_compact_writer_discipline`；`reviews` 保留 density 抬分并加同词复读+中文套话罚分；`ai_flavor` block_cn=38 且 warn 带强制 deslop；短章 playbook 去感官灌水并补 `DIALOGUE_AI_FLAVOR`。单测 `tests/unit/test_quality_remediation_phase_a.py`。Docker 经 override 热挂载 `src/config`。

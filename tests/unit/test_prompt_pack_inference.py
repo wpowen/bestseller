@@ -70,6 +70,9 @@ from bestseller.services.prompt_packs import infer_default_prompt_pack_key
         ("异能", "现实升级打脸", "urban-power-reversal"),
         # Romance
         ("女频言情", None, "romance-tension-growth"),
+        # Western / epic fantasy must not fall through to 仙侠升级
+        ("西方奇幻", None, "epic-fantasy"),
+        ("史诗奇幻", "high fantasy", "epic-fantasy"),
         # Unknown
         ("未知题材", None, None),
     ],

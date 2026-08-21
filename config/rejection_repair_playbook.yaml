@@ -43,9 +43,10 @@ causes:
       - id: regenerate_opening_event
         priority: 1
         action: |
-          从 opening_hook_bank 中重新 sample 2-3 个 hook_type（优先 strength ≥ 8）。
-          按每个 hook_type 写一个候选开场（前 500 字）。
-          选最强者落笔。
+          仅当本书已选手台（七猫/番茄/起点）时，才从 opening_hook_bank
+          sample 2-3 个 hook_type（优先 strength ≥ 8）。未选手台则按本书
+          题材与开篇合同重写，不要套用烧尸/尸体说话等平台模板。
+          按每个 hook_type 写一个候选开场（前 500 字）。选最强者落笔。
       - id: rewrite_first_line
         priority: 2
         action: |
@@ -163,7 +164,7 @@ causes:
       - 爽点只在主角内心存在（如他暗自冷笑），读者看不见
       - 没有反派 / 旁观者反应放大爽感
     diagnosis_checklist:
-      - q: 章内主角是否完成至少一次可感正反馈（打脸 / 救成功 / 拿证据 / 揭穿伪装 / 反将一军）？
+      - q: 章内主角是否完成至少一次可感正反馈（局面扭转 / 目标推进 / 关键信息到手 / 关系变化 / 危机暂缓）？
         pass_if: 是
       - q: 正反馈是否有反派或旁观者的可感反应（脸色变 / 后退 / 沉默 / 议论）？
         pass_if: 是

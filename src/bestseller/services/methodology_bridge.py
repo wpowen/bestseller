@@ -89,6 +89,18 @@ _SHUANGWEN_LOOP_PACK_KEYS = frozenset(
 )
 
 
+def pack_uses_shuangwen_loop(pack_key: str | None) -> bool:
+    """Return True when this prompt pack runs on the 憋屈-兑现 commercial loop."""
+    return bool(pack_key) and pack_key in _SHUANGWEN_LOOP_PACK_KEYS
+
+
+def resolve_shuangwen_fusion(*, enabled_flag: bool, pack_key: str | None) -> bool:
+    """True forces fusion on every book; False enables it only for loop packs."""
+    if enabled_flag:
+        return True
+    return pack_uses_shuangwen_loop(pack_key)
+
+
 def _master_fallback_allowed(pack: PromptPack | None, fragment_key: str) -> bool:
     if fragment_key not in _SHUANGWEN_EMOTION_FRAGMENT_KEYS:
         return True

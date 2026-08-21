@@ -611,7 +611,7 @@ def test_persist_qimao_opening_contract_updates_project_metadata() -> None:
     assert project.metadata_json["qimao_opening_contract_status"] == "planned"
 
 
-def test_persist_qimao_opening_contract_applies_to_general_projects() -> None:
+def test_persist_qimao_opening_contract_skips_general_projects() -> None:
     project = build_project()
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
 
@@ -628,10 +628,9 @@ def test_persist_qimao_opening_contract_applies_to_general_projects() -> None:
         volume_plan=volume_plan,
     )
 
-    assert contract is not None
-    assert project.metadata_json["opening_quality_contract"] == contract
-    assert project.metadata_json["opening_quality_contract_status"] == "planned"
-    assert project.metadata_json["qimao_opening_contract"] == contract
+    assert contract is None
+    assert "opening_quality_contract" not in (project.metadata_json or {})
+    assert "qimao_opening_contract" not in (project.metadata_json or {})
 
 
 def test_resolve_fallback_volume_title_cycles_phase_pool() -> None:

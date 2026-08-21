@@ -7274,6 +7274,7 @@ def test_qimao_planning_gate_repairs_abstract_contract_from_outline() -> None:
     project = build_project()
     project.metadata_json = {
         **(project.metadata_json or {}),
+        "opening_quality_gate_enabled": True,
         "qimao_opening_contract": {
             "protagonist_name": "沈青崖",
             "opening_incident": "开篇以灵异案件建立视觉锚点，展示主角差异化身份。",
@@ -7361,6 +7362,7 @@ def test_record_commercial_planning_readiness_gate_blocks_thin_long_serial(
     project.target_chapters = 500
     project.metadata_json = {
         **(project.metadata_json or {}),
+        "opening_quality_gate_enabled": True,
         "qimao_opening_contract": {"opening_incident": "尸体喊冤，当场逼主角保住证据。"},
     }
     chapters: list[ChapterModel] = []
@@ -7784,6 +7786,7 @@ def test_record_commercial_planning_readiness_reports_weak_hype_without_mutation
     project.target_chapters = 500
     project.metadata_json = {
         **(project.metadata_json or {}),
+        "opening_quality_gate_enabled": True,
         "qimao_opening_contract": {"opening_incident": "尸体喊冤，当场逼主角保住证据。"},
     }
     chapters: list[ChapterModel] = []
@@ -7828,6 +7831,7 @@ def test_record_commercial_planning_readiness_reports_missing_visible_loss_witho
     project.target_chapters = 500
     project.metadata_json = {
         **(project.metadata_json or {}),
+        "opening_quality_gate_enabled": True,
         "qimao_opening_contract": {"opening_incident": "主角当场被迫保住证据。"},
     }
     chapters: list[ChapterModel] = []
@@ -7862,12 +7866,13 @@ def test_record_commercial_planning_readiness_reports_missing_visible_loss_witho
 
 
 @pytest.mark.asyncio
-async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_general_project(
+async def test_run_project_pipeline_skips_opening_quality_gate_for_leftover_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
     project.metadata_json = {
         **(project.metadata_json or {}),
+        "whole_book_quality_gate_disabled": True,
         "editor_rejection_reasons": "开篇切入点比较普通，缺乏足够吸引力。",
         "opening_quality_contract": {
             "platform_target": "商业网文签约口径",
@@ -7921,35 +7926,40 @@ async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_gen
     async def fake_run_chapter_pipeline(*args, **kwargs):
         return chapter_result
 
+    async def fake_review_project_consistency(*args, **kwargs):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "pass", "findings": []})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
     monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
 
     session = FakeSession(get_map={(ChapterDraftVersionModel, draft_id): chapter_draft})
-    # Legacy hard-block mode keeps the gate raising (soft-continue is now default).
     gate_settings = build_settings()
     gate_settings.pipeline.qimao_opening_gate_block_on_failure = True
-    with pytest.raises(ValueError, match="Qimao opening gate failed"):
-        await pipeline_services.run_project_pipeline(
-            session,
-            gate_settings,
-            "my-story",
-            requested_by="tester",
-            export_markdown=False,
-            materialize_narrative_graph=False,
-            materialize_narrative_tree=False,
-        )
+    result = await pipeline_services.run_project_pipeline(
+        session,
+        gate_settings,
+        "my-story",
+        requested_by="tester",
+        export_markdown=False,
+        materialize_narrative_graph=False,
+        materialize_narrative_tree=False,
+    )
 
     rewrite_tasks = [obj for obj in session.added if isinstance(obj, RewriteTaskModel)]
-    assert len(rewrite_tasks) == 1
-    assert rewrite_tasks[0].trigger_type == "qimao_opening_gate"
-    assert project.metadata_json.get("qimao_opening_gate_blocked") is True
-    assert rewrite_tasks[0].rewrite_strategy == "qimao_opening_incident_rewrite"
-    assert "这不是润色任务" in rewrite_tasks[0].instructions
-    assert project.metadata_json["opening_quality_gate_blocked"] is True
-    assert project.metadata_json["opening_quality_gate_report"]["passed"] is False
-    assert project.metadata_json["qimao_opening_gate_blocked"] is True
-    assert project.metadata_json["qimao_opening_gate_report"]["passed"] is False
+    assert result.requires_human_review is False
+    assert rewrite_tasks == []
+    assert project.metadata_json.get("opening_quality_gate_blocked") is not True
+    assert project.metadata_json.get("qimao_opening_gate_blocked") is not True
 
 
 @pytest.mark.asyncio
@@ -7959,6 +7969,7 @@ async def test_run_project_pipeline_pauses_after_qimao_opening_attempts_exhauste
     project = build_project()
     project.metadata_json = {
         **(project.metadata_json or {}),
+        "opening_quality_gate_enabled": True,
         "opening_quality_contract": {
             "platform_target": "商业网文签约口径",
             "protagonist_name": "沈姝",
@@ -8336,6 +8347,7 @@ async def test_qimao_opening_gate_soft_continue_does_not_raise() -> None:
     project = build_project()
     project.metadata_json = {
         **(project.metadata_json or {}),
+        "opening_quality_gate_enabled": True,
         "opening_quality_contract": {
             "platform_target": "商业网文签约口径",
             "protagonist_name": "沈姝",

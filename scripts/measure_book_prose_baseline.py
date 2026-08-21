@@ -24,7 +24,6 @@
 from __future__ import annotations
 
 # ruff: noqa: RUF001, RUF002, RUF003 — 中文标点是刻意的。
-
 import argparse
 import asyncio
 import collections

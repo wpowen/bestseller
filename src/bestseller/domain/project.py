@@ -64,8 +64,8 @@ def _coerce_profile_text_list(value: object) -> object:
 
 
 class MarketPositioningConfig(BaseModel):
-    platform_target: str = Field(default="番茄小说", min_length=1, max_length=4000)
-    content_mode: str = Field(default="中文网文长篇连载", min_length=1, max_length=4000)
+    platform_target: str = Field(default="未指定平台", min_length=1, max_length=4000)
+    content_mode: str = Field(default="长篇小说", min_length=1, max_length=4000)
     prompt_pack_key: str | None = Field(default=None, max_length=4000)
     reader_promise: str | None = Field(default=None, max_length=4000)
     # 2026-07-09 L3真机验收发现:conception 把冠军简介同源提炼的 logline 写进
@@ -77,19 +77,19 @@ class MarketPositioningConfig(BaseModel):
     hook_keywords: list[str] = Field(default_factory=list)
     opening_contract: str | None = Field(default=None, max_length=4000)
     opening_strategy: str = Field(
-        default="开篇先亮出主角差异化优势、异常事件、即时利益与明确危险。",
+        default="开篇尽快让读者看见主角、当前处境，以及本章要解决的具体问题。",
         min_length=1,
         max_length=4000,
     )
     chapter_hook_strategy: str = Field(
-        default="章节尾部必须留下强迫读者继续阅读的问题、威胁或利益诱因。",
+        default="章末留下未完成的问题、变化或新信息，使读者想看下一章。",
         min_length=1,
         max_length=4000,
     )
     hook_deadline_words: int = Field(default=1500, ge=200, le=20000)
-    pacing_profile: str = Field(default="fast", min_length=1, max_length=4000)
-    payoff_rhythm: str = Field(default="短回报密集，长回报递延", min_length=1, max_length=4000)
-    update_strategy: str = Field(default="日更连载", min_length=1, max_length=4000)
+    pacing_profile: str = Field(default="medium", min_length=1, max_length=4000)
+    payoff_rhythm: str = Field(default="按题材节奏兑现承诺，不强制短回报密度", min_length=1, max_length=4000)
+    update_strategy: str = Field(default="按项目规划推进", min_length=1, max_length=4000)
 
     @field_validator(
         "platform_target",

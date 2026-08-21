@@ -385,13 +385,11 @@ class PipelineSettings(BaseModel):
     # emits RAW first-person interiority, injected verbatim into the writer prompt.
     # Soft + zh-only; one cheap LLM call per scene; failure = no-op.
     enable_character_embodiment: bool = True
-    # 爽文融合层（爽点强化）。开启后正文阶段(PROSE_SCENE)把爽点引擎(弹簧法情绪
-    # 压缩/释放、节奏、信息节奏、章节爽点)顶到文采润色层(留白框架/金句/意象)之前。
-    # 文采层全部保留、仅排其后——文采与爽文并存，不二选一。修的是排序：爽点引擎
-    # 原本排在最低位(11–14)，运行时被 token 预算最先挤掉，正文遂"像作文不像爽文"。
-    # 默认 True：大多数商业书都该带爽点；文艺/慢热题材可按项目关掉。Soft：只改
-    # PROSE_SCENE 段落优先级，不新增闸门、不删任何能力。
-    enable_shuangwen_fusion: bool = True
+    # 爽文融合层（爽点强化）。True：正文阶段(PROSE_SCENE)对所有书把爽点引擎
+    # 顶到文采润色层之前。False（默认）：只对 methodology_bridge 里的爽文 loop
+    # pack（仙侠升级/都市逆袭等）自动开启，言情/悬疑/cozy 等不再被横切注入。
+    # Soft：只改 PROSE_SCENE 段落优先级，不新增闸门、不删任何能力。
+    enable_shuangwen_fusion: bool = False
     enable_chapter_window_llm_judge: bool = True
     chapter_window_llm_judge_block_on_failure: bool = False
     chapter_window_llm_judge_size: int = 5

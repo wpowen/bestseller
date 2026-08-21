@@ -44,6 +44,9 @@ def test_load_chapter_position_profiles_loads_sensitive_windows() -> None:
     assert "psychological_dumping" in banned_ids
     assert "cold_protagonist" in banned_ids
     assert "no_payoff_in_ch1" in banned_ids
+    no_payoff = next(item for item in opening_window.banned if item.pattern_id == "no_payoff_in_ch1")
+    assert "打脸" not in no_payoff.definition
+    assert "局面扭转" in no_payoff.definition
 
 
 def test_sensitive_windows_for_chapter_matches_range() -> None:

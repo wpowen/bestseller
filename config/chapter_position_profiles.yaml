@@ -41,8 +41,8 @@ sensitive_window_anti_patterns:
           why_banned: 第一章心智带宽溢出 = 弃读
         - id: no_payoff_in_ch1
           name: 第一章无可感小爽点
-          definition: 主角在第 1 章未完成任意一次"打脸 / 救成功 / 拿到关键证据 / 反将一军 / 关系建立"
-          why_banned: 平台 qimao_regeneration_contract.weak_satisfaction 直接对应
+          definition: 主角在第 1 章未完成任意一次"局面扭转 / 目标推进 / 关键信息到手 / 关系变化 / 危机暂缓"
+          why_banned: 开篇窗口需要一次可感进展；具体形态由题材决定，不要求打脸或碾压
         - id: explanatory_dialogue
           name: 解释性对白
           definition: 角色用对白替读者总结"对方高明在哪 / 这意味着什么 / 推理结论"
@@ -101,7 +101,7 @@ profiles:
         rule: 前 2000 字内形成可述情绪钩子（读者带着具体情绪进入后半段：好奇 / 不甘 / 紧张 / 期待）
         validation: critic 主观打分
       - id: small_payoff_before_chapter_end
-        rule: 章末前主角必须完成一次"可感小回报"——任意一种正反馈：打脸 / 救成功 / 拿到关键证据 / 反将一军 / 揭穿伪装 / 关系建立 / 揭露真相一角
+        rule: 章末前主角必须完成一次"可感小回报"——任意一种正反馈：局面扭转 / 目标推进 / 关键信息到手 / 关系变化 / 危机暂缓 / 新能力或证据显现
         validation: critic 主观打分 + 列出本章爽点位置
       - id: chapter_end_hook
         rule: 章末最后 150 字内必须放下一章勾子（新威胁 / 新变量 / 颠覆瞬间 / 身体异动 / 未答之问）
@@ -137,7 +137,7 @@ profiles:
         rubric: 主角会失去什么 在前 1500 字内是否清晰可述
       - id: payoff_visibility
         weight: 0.10
-        rubric: 小爽点的可感程度（被反派吃瘪 = 满分；只是说硬话 = 0.5；只在内心想赢 = 0）
+        rubric: 小回报的可感程度（局面可见推进 = 满分；只口头表态 = 0.5；只在内心想赢 = 0）
       - id: end_hook_strength
         weight: 0.10
         rubric: 章末勾子是否能用一句话讲出 我下一章想看到什么

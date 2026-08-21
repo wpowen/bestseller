@@ -3,7 +3,7 @@
 The switch keeps every 文采 lever in the PROSE_SCENE writer prompt but lifts the
 爽点 engines (弹簧法情绪压缩/释放、节奏、信息节奏、章节爽点) above the literary
 flourish levers (金句/意象/留白), so 爽点 is never the first content the token
-budget drops. Default ON — most commercial books should carry 爽点.
+budget drops. Default OFF — only commercial loop packs auto-enable fusion.
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from bestseller.settings import PipelineSettings
 _PAYOFF = "emotion_choreography_current"  # 弹簧法 — 爽点核心
 
 
-def test_pipeline_enables_shuangwen_fusion_by_default() -> None:
-    assert PipelineSettings().enable_shuangwen_fusion is True
+def test_pipeline_disables_shuangwen_fusion_by_default() -> None:
+    assert PipelineSettings().enable_shuangwen_fusion is False
 
 
 def test_default_priority_keeps_payoff_after_concrete_grounding() -> None:

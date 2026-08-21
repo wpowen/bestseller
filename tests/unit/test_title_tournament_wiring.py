@@ -40,8 +40,18 @@ def test_incumbent_competes_rather_than_being_replaced():
 
 
 def test_receipt_is_persisted_for_later_forensics():
+    """⚠️ 这条断言最初写成「源码里出现 "title_tournament" 字符串」并且**绿着**，
+    而回执其实正在被 pydantic 的 extra=ignore 吃掉（2026-08-22 真机首跑实测）。
+    断言「代码里写了这一行」不等于断言「这一行的结果活下来了」。
+    改成盯真正落库的那条路：ConceptionResult 一等字段。
+    """
+
+    import dataclasses
+
+    names = {f.name for f in dataclasses.fields(conception.ConceptionResult)}
+    assert "title_tournament" in names
     src = inspect.getsource(conception.run_conception_pipeline)
-    assert '"title_tournament"' in src, "「书名为什么是这个」必须留痕可查"
+    assert "title_tournament=dict(_title_tournament_receipt" in src
 
 
 def test_llm_runs_are_recorded():

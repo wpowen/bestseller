@@ -3734,6 +3734,7 @@ class WebTaskManager:
             # UnboundLocalError and fail the whole resumed task.
             conception_story_appeal: dict[str, object] | None = None
             conception_motif_amplification: dict[str, object] | None = None
+            conception_title_tournament: dict[str, object] | None = None
             conception_degradation: list[dict[str, object]] = []
             story_facets_obj = None
             from bestseller.services.genre_intent_contract import contract_from_payload
@@ -3973,6 +3974,9 @@ class WebTaskManager:
                         conception_motif_amplification = getattr(
                             conception_result, "motif_amplification", None
                         )
+                        conception_title_tournament = getattr(
+                            conception_result, "title_tournament", None
+                        )
                         conception_degradation = [
                             {
                                 "stage": event.stage,
@@ -4133,6 +4137,10 @@ class WebTaskManager:
                 if conception_motif_amplification:
                     conception_artifacts["motif_amplification"] = (
                         conception_motif_amplification
+                    )
+                if conception_title_tournament:
+                    conception_artifacts["title_tournament"] = (
+                        conception_title_tournament
                     )
                 if conception_brief:
                     conception_artifacts["commercial_brief"] = conception_brief

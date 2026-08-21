@@ -117,6 +117,11 @@ class ConceptionResult:
     # 解决它。advisory——它只换一次重写,永不阻断建书;但结论必须落库可查,否则
     # 等于没检测(见 motif_concentration)。
     motif_amplification: dict[str, Any] = field(default_factory=dict)
+    # 书名淘汰赛回执(2026-08-22):谁参赛、谁被哪道确定性门淘汰、谁赢、赢了几票。
+    # 首跑时我把它写进 writing_profile.market，**被 extra=ignore 吃掉了**——
+    # 与既有的 title_workflow_primary 同样下场。回执不落库等于没留痕，
+    # 照 motif_amplification 的先例走一等字段。
+    title_tournament: dict[str, Any] = field(default_factory=dict)
     # 降级追踪(2026-07-10):记录哪些轮次/门触发了 fallback 或异常。
     # 如 ("market_strategist:fallback", "concept_tournament:error")。
     # 下游可据此感知 conception 质量降级。
@@ -7339,6 +7344,7 @@ async def run_conception_pipeline(
     # 此前书名是单发调用（title_platform_revision 全书 1 次），而概念有 16 次
     # 判官 + 4 轮候选。现任书名也进场比，不是无条件替换。全程 fail-open：
     # 书名工序绝不允许阻断建书。
+    _title_tournament_receipt: dict[str, Any] = {}
     try:
         _tt_title, _tt_receipt, _tt_run_ids = await _run_title_tournament(
             session,
@@ -7357,7 +7363,9 @@ async def run_conception_pipeline(
         )
         llm_run_ids.extend(_tt_run_ids)
         if _tt_receipt:
-            writing_profile.setdefault("market", {})["title_tournament"] = _tt_receipt
+            # 注意不要写进 writing_profile——那里的额外键会被 extra=ignore 吃掉
+            # （2026-08-22 首跑实测，既有的 title_workflow_primary 同样丢失）。
+            _title_tournament_receipt = _tt_receipt
         if _tt_title.strip():
             title = _tt_title.strip()
     except Exception:
@@ -8481,6 +8489,7 @@ async def run_conception_pipeline(
         hook_candidates=list(ctx.get("hook_candidates") or []),
         story_appeal=story_appeal_report,
         motif_amplification=dict(ctx.get("motif_amplification_report") or {}),
+        title_tournament=dict(_title_tournament_receipt or {}),
         story_spine=story_spine if isinstance(story_spine, dict) else {},
         world_model=world_model_payload if isinstance(world_model_payload, dict) else {},
         degraded_rounds=degradation_tracker.events,

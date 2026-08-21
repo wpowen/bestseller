@@ -184,6 +184,7 @@ from bestseller.services.title_dedup import (
     find_title_collisions,
     jaccard_similarity,
 )
+from bestseller.services.concept_entities import extract_place_names
 from bestseller.services.platform_title_workflow import (
     build_platform_title_workflow,
     build_story_grounded_title_revision_messages,
@@ -12390,6 +12391,77 @@ def _compile_source_bound_book_spec(
     return _sanitize_book_spec_against_project_scale(project, payload)
 
 
+def _source_bound_world_name(project: ProjectModel, places: list[str]) -> str:
+    """世界名优先用构思里的真地名，绝不退回题材标签。
+
+    2026-08-21 真机：`_first_non_empty_text(project.sub_genre, project.genre, …)`
+    让世界名变成「玄幻」——bare-taxonomy 在世界层的变种
+    （书名层同病见 memory genre-name-as-title-bare-taxonomy）。
+    """
+
+    if places:
+        return places[0]
+    title = _first_non_empty_text(getattr(project, "title", ""), default="")
+    if title and not is_bare_taxonomy_title(title):
+        return title
+    return _first_non_empty_text(
+        getattr(project, "sub_genre", ""), getattr(project, "genre", ""), default="故事世界"
+    )
+
+
+def _source_bound_locations(places: list[str]) -> list[dict[str, Any]]:
+    """把功能位置锚到构思里的真地名上；抽不出来才退回原模板。
+
+    刻意**保持 5 个**——world_richness 门按数量判「饥饿世界」，
+    减少数量会触发误修。改的是名字不是数量。
+    """
+
+    # 只用**第一个**地名做锚，其余从它派生。第二、第三个抽得不可靠
+    # （真机从「敢接镇店符」切出过「敢接镇」），宁可派生也不用脏数据。
+    anchor = places[0] if places else ""
+    names = (
+        [
+            anchor,
+            f"{anchor}外围",
+            f"{anchor}深处",
+            f"{anchor}的账面",
+            f"{anchor}之外",
+        ]
+        if anchor
+        else [
+            "构思中的当前主场",
+            "当前主场边界",
+            "核心行动区域",
+            "结果验证区域",
+            "外部交互区域",
+        ]
+    )
+    roles = (
+        ("承载核心机制第一次生效", ["SB-R001", "SB-R002"], "以已批准构思原文为准"),
+        ("承载下一轮当下压力", ["SB-R004", "SB-R005"], "只承接构思中已有的内外互动"),
+        ("承载核心机制复现", ["SB-R002", "SB-R003"], "通过行动验证未知细节"),
+        ("承载阶段结果兑现", ["SB-R003", "SB-R007"], "让机制结果在场景中可见"),
+        ("让结果改变资源、关系、位置或压力", ["SB-R005", "SB-R008"], "只使用构思已经许可的社会关系"),
+    )
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, (story_role, rules, atmosphere) in enumerate(roles):
+        name = names[index] or f"功能位置{index + 1}"
+        while name in seen:
+            name = f"{name}·{len(seen) + 1}"
+        seen.add(name)
+        out.append(
+            {
+                "name": name,
+                "type": "功能位置",
+                "atmosphere": atmosphere,
+                "key_rules": rules,
+                "story_role": story_role,
+            }
+        )
+    return out
+
+
 def _compile_source_bound_world_spec(
     project: ProjectModel,
     premise: str,
@@ -12431,13 +12503,10 @@ def _compile_source_bound_world_spec(
         }
         for index, (label, description, consequence) in enumerate(rule_rows, start=1)
     ]
-    locations = [
-        {"name": "构思中的当前主场", "type": "功能位置", "atmosphere": "以已批准构思原文为准", "key_rules": ["SB-R001", "SB-R002"], "story_role": "承载核心机制第一次生效"},
-        {"name": "当前主场边界", "type": "功能位置", "atmosphere": "只承接构思中已有的内外互动", "key_rules": ["SB-R004", "SB-R005"], "story_role": "承载下一轮当下压力"},
-        {"name": "核心行动区域", "type": "功能位置", "atmosphere": "通过行动验证未知细节", "key_rules": ["SB-R002", "SB-R003"], "story_role": "承载核心机制复现"},
-        {"name": "结果验证区域", "type": "功能位置", "atmosphere": "让机制结果在场景中可见", "key_rules": ["SB-R003", "SB-R007"], "story_role": "承载阶段结果兑现"},
-        {"name": "外部交互区域", "type": "功能位置", "atmosphere": "只使用构思已经许可的社会关系", "key_rules": ["SB-R005", "SB-R008"], "story_role": "让结果改变资源、关系、位置或压力"},
-    ]
+    story_places = extract_place_names(premise) or extract_place_names(
+        _first_non_empty_text(getattr(project, "title", ""), default="")
+    )
+    locations = _source_bound_locations(story_places)
     factions = [
         {"name": f"{name}的当前行动单元", "goal": engine, "method": "运行已批准核心机制并积累结果", "relationship_to_protagonist": "主角当前行动单元", "internal_conflict": "每轮只能依据已经确认的事实做选择"},
         {"name": "当前直接阻力", "goal": "阻碍本轮目标兑现", "method": "只使用已批准构思允许的当下手段", "relationship_to_protagonist": "开局外部阻力", "internal_conflict": "没有构思授权时不得实体化为新组织或命名角色"},
@@ -12445,7 +12514,7 @@ def _compile_source_bound_world_spec(
     ]
     normalized = parse_world_spec_input(
         {
-            "world_name": _first_non_empty_text(project.sub_genre, project.genre, default=project.title),
+            "world_name": _source_bound_world_name(project, story_places),
             "world_premise": premise,
             "rules": rules,
             "power_system": {

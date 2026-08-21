@@ -38,6 +38,14 @@ import json
 import re
 from typing import Any
 
+from bestseller.services.concept_entities import (
+    extract_leading_noun_phrase,
+    extract_place_names,
+    extract_role_bound_name,
+    first_clause,
+    is_placeholder_name,
+)
+
 _ZH = r"一-鿿"
 _CJK_RE = re.compile(f"[{_ZH}]")
 
@@ -78,21 +86,6 @@ TITLE_PATTERN_FAMILIES: tuple[tuple[str, str, str], ...] = (
     ),
 )
 
-# 金手指/器物描述里常见的分隔符：取破折号、逗号、括号之前的那个名词短语。
-_OBJECT_SPLIT_RE = re.compile(r"[——\-—－,，。;；:：（(\[【]")
-# 地名后缀：中文地点名的常见收尾字，用于从 logline 首句切出场所。
-_PLACE_SUFFIX = "巷街市镇村城乡坊宗门派谷峰山岭洞府院阁楼寺观塔堂殿域界州郡county"
-_PLACE_RE = re.compile(f"([{_ZH}]{{2,6}}[{_PLACE_SUFFIX}])")
-# 地名里不会出现的结构助词/动词尾：命中即说明正则回溯吃进了动词短语
-# （真机把「守着父亲留下的早市」当成了地名）。
-_NOT_A_PLACE = re.compile(r"[的了着是在和与把被让从对给下留]")
-# 角色/身份词之后紧跟的名字（与 book_design 的同类判据同源思路，但只取候选）
-_ROLE_THEN_NAME_RE = re.compile(
-    f"(?:少年|少女|弟子|徒|师兄|师弟|掌柜|摊主|书生|捕快|道士|和尚|郎中|铁匠|"
-    f"厨子|杂役|守夜人|说书人)([{_ZH}]{{2,3}})[，,。]"
-)
-
-
 @dataclass(frozen=True)
 class TitleEntities:
     """书名可用的故事实体。全部来自构思正文，缺失就是空串。"""
@@ -117,39 +110,6 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _first_clause(text: str) -> str:
-    return re.split(r"[。！？!?\n]", _text(text), maxsplit=1)[0]
-
-
-def _leading_noun_phrase(text: str) -> str:
-    """从「百年蒸灵锅——一只能听见、能说话的老锅」里取出「百年蒸灵锅」。"""
-
-    head = _OBJECT_SPLIT_RE.split(_text(text), maxsplit=1)[0].strip()
-    if not head or not _CJK_RE.search(head):
-        return ""
-    return head if len(head) <= 10 else ""
-
-
-def _clean_place_names(text: str) -> list[str]:
-    """从一段话里取出干净的地名，剔除正则回溯吃进来的动词短语。"""
-
-    out: list[str] = []
-    body = _text(text)
-    # 地名必须落在小句开头：真机上不加这条会从「每天辰时开锅替坊民」
-    # 中间切出「天辰时开锅替坊」当地名。
-    for clause in re.split(r"[，,。；;、！？!?\s]", body):
-        clause = clause.strip()
-        if not clause:
-            continue
-        match = _PLACE_RE.match(clause)
-        if not match:
-            continue
-        token = match.group(1)
-        if token and token not in out and not _NOT_A_PLACE.search(token):
-            out.append(token)
-    return out
-
-
 def extract_title_entities(
     *,
     protagonist_name: str = "",
@@ -167,15 +127,13 @@ def extract_title_entities(
 
     prose = f"{_text(logline)} {_text(premise)}".strip()
     protagonist = _text(protagonist_name)
-    if protagonist in {"主角", "Protagonist", "主角设定"}:
+    if is_placeholder_name(protagonist):
         protagonist = ""
     if not protagonist:
-        match = _ROLE_THEN_NAME_RE.search(prose)
-        if match:
-            protagonist = match.group(1)
+        protagonist = extract_role_bound_name(prose)
 
-    object_name = _leading_noun_phrase(golden_finger)
-    places = _clean_place_names(_first_clause(logline) or _first_clause(premise))
+    object_name = extract_leading_noun_phrase(golden_finger)
+    places = extract_place_names(first_clause(logline) or first_clause(premise))
     place = places[0] if places else ""
     return TitleEntities(
         protagonist=protagonist,

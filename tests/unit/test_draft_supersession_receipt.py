@@ -40,7 +40,7 @@ def test_codes_record_origin_and_whether_it_took_current():
         supersedes_version=3,
     )
     assert "origin:chapter_first" in codes
-    assert "took_current:yes" in codes
+    assert "wrote_as_current:yes" in codes
     assert "chars:2768" in codes
     assert "supersedes:v3" in codes
 
@@ -53,7 +53,7 @@ def test_withheld_draft_records_the_reason():
         supersedes_version=2,
         hold_reason="gate_rejected",
     )
-    assert "took_current:no" in codes
+    assert "wrote_as_current:no" in codes
     assert "hold:gate_rejected" in codes
 
 
@@ -83,3 +83,27 @@ def test_drafts_wires_both_of_its_sites():
     from bestseller.services import drafts
 
     assert inspect.getsource(drafts).count("draft_supersession_codes(") == 2
+
+
+# ── 回执记的是「写入时的意图」，不是「最终是否上线」───────────────────
+# 2026-08-22 真机《书院笔仙》ch15 v2 的回执写着 took_current:no，
+# 而它**就是当前稿**——因为 took_current 取自构造时的
+# `not quality_gate_rejected_current_promotion`，这一版后来通过别的路径
+# 成了当前稿。用一个字段冒充两件事，会让以后的归因读错。
+# 最终状态由 chapter_draft_versions.is_current 表达，回执只负责记意图，
+# 字段名必须说清楚这一点。
+
+
+def test_receipt_field_name_says_it_is_write_time_intent():
+    codes = draft_supersession_codes(origin="rewrite", took_current=False, chars=10)
+    assert any(c.startswith("wrote_as_current:") for c in codes), (
+        "字段名要写明这是写入时的意图，不能叫 took_current 让人以为是最终结果"
+    )
+    assert not any(c.startswith("took_current:") for c in codes)
+
+
+def test_intent_is_still_recorded_both_ways():
+    yes = draft_supersession_codes(origin="chapter_first", took_current=True, chars=10)
+    no = draft_supersession_codes(origin="rewrite", took_current=False, chars=10)
+    assert "wrote_as_current:yes" in yes
+    assert "wrote_as_current:no" in no

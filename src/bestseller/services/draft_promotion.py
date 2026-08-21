@@ -72,9 +72,13 @@ def draft_supersession_codes(
     promotion_reason_codes 的既有消费方按字符串码读。
     """
 
+    # ⚠️ 记的是**写入时的意图**，不是最终是否上线。2026-08-22 真机《书院笔仙》
+    # ch15 v2 回执写着 no 而它就是当前稿——该版后来通过别的路径成了 current。
+    # 最终状态由 `chapter_draft_versions.is_current` 表达；用一个字段冒充两件事
+    # 会让以后的归因读错，所以字段名必须自带「写入时」这层含义。
     codes = [
         f"origin:{origin}",
-        f"took_current:{'yes' if took_current else 'no'}",
+        f"wrote_as_current:{'yes' if took_current else 'no'}",
         f"chars:{int(chars)}",
     ]
     if supersedes_version is not None:

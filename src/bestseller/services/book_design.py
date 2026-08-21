@@ -298,6 +298,44 @@ def _authoritative_creation_protagonist_name(metadata: Mapping[str, Any]) -> str
     return _protagonist_name_from_text(metadata.get("premise"))
 
 
+_CONCEPT_TEXT_KEYS = ("logline", "premise", "synopsis")
+
+
+def _identity_mismatch_is_advisory(metadata: Mapping[str, Any]) -> bool:
+    """命名分歧是「写法差异」还是「身份分裂」。
+
+    2026-08-14 加 advisory 是对的：管线自己起的名字之间，「沈絮」与
+    「沈絮(阿缨)」是同一个人的两种写法，为此停产是自伤。
+
+    2026-08-21 真机 custom-xuanhuan-1787320762 暴露它吞掉了另一类：淘汰赛
+    胜出的构思通篇写**温迟**，而身份层（protagonist / identity_manifest /
+    cast_spec / world_spec 势力名）全是**沈小禾**——两个完全不同的人，且
+    「沈小禾」在 logline/premise/synopsis 里**一次都没出现**。门抓到了
+    `protagonist_identity_mismatch`，却按 advisory 放行，书带着两个主角出厂。
+
+    判据只有一条、可确定性核对：**规范名在最终构思正文里出现过**吗？
+      * 出现过 → 写法差异，维持 advisory（2026-08-14 的案子照常放行）；
+      * 一次都没出现 → 身份分裂，不得 advisory；
+      * 构思正文缺失 → 无法判断，退回旧行为，不制造新的停产。
+
+    用户显式选定的主角名一律不 advisory（既有行为不变）。
+    """
+
+    if _has_explicit_protagonist_choice(metadata):
+        return False
+    canonical = _protagonist_core_name(
+        _authoritative_creation_protagonist_name(metadata)
+    )
+    if not canonical:
+        return True
+    concept_text = " ".join(
+        _text(metadata.get(key)) for key in _CONCEPT_TEXT_KEYS
+    ).strip()
+    if not concept_text:
+        return True
+    return canonical in concept_text
+
+
 def _manifest_protagonist(metadata: Mapping[str, Any]) -> str:
     manifest = metadata.get("identity_manifest")
     if not isinstance(manifest, Sequence) or isinstance(manifest, (str, bytes)):
@@ -585,9 +623,9 @@ def validate_project_book_design(project: Any) -> BookDesignValidationReport:
     # reported but does not pause the book; an explicitly chosen protagonist
     # still blocks. See BookDesignValidationReport.blocking_issues.
     advisory: frozenset[str] = (
-        frozenset()
-        if _has_explicit_protagonist_choice(metadata)
-        else frozenset({"protagonist_identity_mismatch"})
+        frozenset({"protagonist_identity_mismatch"})
+        if _identity_mismatch_is_advisory(metadata)
+        else frozenset()
     )
     return BookDesignValidationReport(
         snapshot.snapshot_id, tuple(issues), advisory_codes=advisory

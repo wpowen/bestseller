@@ -1310,6 +1310,33 @@ def count_words(text: str) -> int:
 
 
 
+# 一行在正文里重复多少次算「写手陷进了循环」。
+#
+# 2026-08-22 真机定罪（custom-xuanhuan-1787383584 第 7 章）：写手把三行
+# 重复了 121-123 遍，一直写到撞 max_tokens（output_tokens 恰好 16384），
+# 产出 18902 汉字——目标 2600、上限 3500 的 7.3 倍。那份稿成了在架稿、
+# **从未被质量门评估**、最后带质量债出货。读者会看到同一句话 121 遍。
+#
+# 阈值落在实测的两个量级之间：《书院笔仙》50 章一行最多重复 2 次，
+# 退化那章是 123 次。取 5 既远高于正常上限，又远低于退化量级。
+DEGENERATE_LINE_REPEAT_LIMIT = 5
+
+# 短句本来就会复现（「他没有回头。」），不是退化信号。
+_DEGENERATE_LINE_MIN_CHARS = 12
+
+
+def max_repeated_line_count(text: str) -> int:
+    """正文里同一行最多出现几次（只看有实质长度的行）。"""
+
+    counts: dict[str, int] = {}
+    for raw in str(text or "").split("\n"):
+        line = raw.strip()
+        if len(line) < _DEGENERATE_LINE_MIN_CHARS:
+            continue
+        counts[line] = counts.get(line, 0) + 1
+    return max(counts.values()) if counts else 0
+
+
 def authoritative_word_count_for_language(text: str, *, language: str = "zh-CN") -> int:
     """Body-truth word count for chapter/scene commit (CJK for zh)."""
 
@@ -10788,6 +10815,22 @@ async def generate_chapter_draft_once(
             and word_count < _floor
             and word_count < int(_prior_words * _DEGENERATE_REGENERATION_RATIO)
         )
+
+    # 另一种退化：写手陷进循环，把同几行重复上百遍直到撞 max_tokens。
+    # 既有守卫只防「太短」，这条防「重复」——两者都是「这一稿不该顶掉
+    # 上一稿」，所以走同一条降级路径，不新增杀权。
+    _repeat_hits = max_repeated_line_count(content_md)
+    if _repeat_hits >= DEGENERATE_LINE_REPEAT_LIMIT:
+        logger.warning(
+            "chapter %s %d regeneration is a degenerate loop "
+            "(one line repeated %d times, limit %d) — not promoting it.",
+            project.slug,
+            chapter_number,
+            _repeat_hits,
+            DEGENERATE_LINE_REPEAT_LIMIT,
+        )
+        if _prior_current is not None:
+            _keeps_prior_draft = True
     if _keeps_prior_draft:
         logger.warning(
             "chapter %s %d regeneration produced degenerate output "

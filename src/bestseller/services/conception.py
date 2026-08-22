@@ -2419,6 +2419,16 @@ async def _attach_mechanism_dedup(
 _ECHO_SPAN_MIN_CHARS = 5
 # Distinct non-background bigrams shared with a single old book to flag it.
 _ECHO_BIGRAM_MIN_HITS = 2
+# 没有任何连续共享片段（span）时的门槛。
+#
+# 2026-08-22 真机定罪：《书院笔仙》完本后用同参数建第二本玄幻书，构思被
+# 整体毙掉，证据是 span="" + shared_bigrams=["杂役","逆袭"]——两个玄幻
+# 题材通用词，没有一段机制描述被复制。重试那次是 ["废柴","打脸","柴逆",
+# "逆袭"]，其中「柴逆」跨了词边界根本不是词。
+#
+# span 为空意味着**没有任何一段机制描述被抄**，此时零散的两字词证据力
+# 弱得多，门槛必须更高（两票定罪）。有 span 时维持原门槛不变。
+_ECHO_BIGRAM_MIN_HITS_WITHOUT_SPAN = 3
 # A bigram present in at least this many avoid entries is genre background
 # (宗门/升级/修仙…) rather than one book's identity, and never counts.
 #
@@ -2588,7 +2598,12 @@ def _mechanism_echo_report(
             if not specific_phrase_hit and len(span) < 8:
                 continue
 
-        if span or len(shared) >= _ECHO_BIGRAM_MIN_HITS:
+        # 重叠的 bigram 先合并回原短语——「废柴逆袭」是一份证据不是三份。
+        shared = merge_overlapping_bigrams(shared)
+        _min_hits = (
+            _ECHO_BIGRAM_MIN_HITS if span else _ECHO_BIGRAM_MIN_HITS_WITHOUT_SPAN
+        )
+        if span or len(shared) >= _min_hits:
             report.append(
                 {
                     "title": str(entry.get("title") or "").strip(),
@@ -2597,6 +2612,39 @@ def _mechanism_echo_report(
                 }
             )
     return report
+
+
+def merge_overlapping_bigrams(bigrams: list[str] | tuple[str, ...]) -> list[str]:
+    """把首尾重叠的 2-gram 合并回它们本来的短语，再计数。
+
+    2026-08-22 真机定罪：滑动 2-gram 会把「废柴逆袭」拆成「废柴」「柴逆」
+    「逆袭」三条——**一个共享短语被数成三份独立证据**，命中数虚高 3 倍，
+    直接冲破定罪门槛。而「柴逆」根本不是词，它跨了词边界。
+
+    合并后一个短语只算一份证据，这才是它本来的证据力。
+    """
+
+    items = sorted({str(b).strip() for b in bigrams if str(b).strip()})
+    if len(items) <= 1:
+        return items
+    remaining = list(items)
+    merged: list[str] = []
+    while remaining:
+        run = remaining.pop(0)
+        extended = True
+        while extended:
+            extended = False
+            for candidate in list(remaining):
+                if run.endswith(candidate[0]) and run[-1] == candidate[0]:
+                    run = run + candidate[1:]
+                    remaining.remove(candidate)
+                    extended = True
+                elif candidate.endswith(run[0]) and candidate[-1] == run[0]:
+                    run = candidate[:-1] + run
+                    remaining.remove(candidate)
+                    extended = True
+        merged.append(run)
+    return sorted(merged)
 
 
 def _echo_severity(report: list[dict[str, Any]]) -> int:

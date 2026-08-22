@@ -49,7 +49,10 @@ _LLM_PASS_OVERRIDABLE_RULE_CATEGORIES: frozenset[str] = frozenset(
 # out on 3 sequential calls is no longer the bottleneck. The extra headroom
 # ensures a slow single sample still returns a real verdict instead of forcing
 # a blind accept-on-stall — the judge IS the bestseller-level quality bar.
-_OPTIONAL_CHAPTER_REVIEW_LLM_TIMEOUT_SECONDS = 150.0
+# 2026-08-23 从 150 抬到 240：真机观测判官在供应商延迟高峰连续超时，
+# 而提升资格现在认它的判决（66264a7）——超时=语义层跳过=该章失去提升
+# 资格，代价比从前大得多。240s 仍有界（多采样并发，取决于最慢样本）。
+_OPTIONAL_CHAPTER_REVIEW_LLM_TIMEOUT_SECONDS = 240.0
 
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -77,6 +77,7 @@ from bestseller.services.chapter_length_gate import (
     DEFAULT_HARD_FLOOR_ZH_CHARS,
     DEFAULT_HARD_MAX_ZH_CHARS,
     DEFAULT_SOFT_WARNING_ZH_CHARS,
+    count_zh_chars,
 )
 from bestseller.services.chapter_outline_readiness_gate import (
     chapter_scene_budget_sum_thresholds,
@@ -5718,7 +5719,23 @@ def rank_chapter_draft_candidate(
     missing band never invents a length preference.
     """
 
-    words = int(getattr(draft, "word_count", 0) or 0)
+    # 字数**现算**，不信 `word_count` 列。
+    #
+    # 2026-08-22 真机（custom-xuanhuan-1787383584 ch7）：v1 的 word_count
+    # 记着 2558 而正文实际是 18902 汉字（三行各重复 121 遍的退化稿）。
+    # 于是它靠这个过期字段落进 1800-3500 的窗口拿到 in_band=1，而两份
+    # 真实字数超上限的重写稿都是 0——**退化稿因此胜出，被换回在架稿**。
+    #
+    # `word_count` 是 content_md 的副本，而 9 个原地修改 content_md 的地方
+    # 只有 2 个同步了它：全库 19% 的稿字数记录与实际不符（《书院笔仙》
+    # 276 稿里 52 稿，最大偏差 16688）。排序判据不能建在这种字段上。
+    #
+    # 读不到正文时退回存储值——取不到内容不该把一份稿判死。
+    _body = getattr(draft, "content_md", None)
+    if isinstance(_body, str) and _body:
+        words = count_zh_chars(_body)
+    else:
+        words = int(getattr(draft, "word_count", 0) or 0)
     above_floor = words >= hard_min if hard_min else True
     below_ceiling = words <= hard_max if hard_max else True
     in_band = 1 if (hard_min or hard_max) and above_floor and below_ceiling else 0

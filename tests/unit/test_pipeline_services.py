@@ -6118,7 +6118,10 @@ async def test_best_chapter_draft_tie_prefers_target_and_syncs_chapter_word_coun
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="接近目标的版本",
+        # 正文长度必须与 word_count 一致：排序判据现在**现算**字数，
+        # 因为真机上 19% 的稿 word_count 是过期副本（2026-08-22 ch7：
+        # 记 2558 而实际 18902，退化稿靠这个字段赢了 in_band）。
+        content_md="字" * 2_598,
         word_count=2_598,
         assembled_from_scene_draft_ids=[],
         is_current=False,
@@ -6128,7 +6131,7 @@ async def test_best_chapter_draft_tie_prefers_target_and_syncs_chapter_word_coun
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=2,
-        content_md="更短但同分的版本",
+        content_md="字" * 2_477,
         word_count=2_477,
         assembled_from_scene_draft_ids=[],
         is_current=True,

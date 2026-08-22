@@ -6701,6 +6701,58 @@ async def _cancel_project_task_async(settings: AppSettings, task_id: str) -> str
     return "not_running"
 
 
+async def _has_live_pipeline_run_async(settings: AppSettings, slug: str) -> bool:
+    """DB 里这本书还有正在跑的流水线吗？
+
+    2026-08-22 真机：书停在 `machine_repair_required`（任务卡片显示
+    incomplete），我点了 resume，结果**两个 project_pipeline + 两个
+    chapter_pipeline 同时 running**，几分钟后
+
+        asyncpg.exceptions.DeadlockDetectedError: deadlock detected
+
+    整本书失败在第 22 章。根因是同一事实住两地：web 的任务卡片说
+    incomplete，`workflow_runs` 表说 running，而 resume 的忙碌判据只看
+    前者。恢复前必须按**事实源**对账。
+
+    ⚠️ 查不到就返回 False（放行）——探针本身不该变成新的卡死来源。
+    """
+
+    slug = (slug or "").strip()
+    if not slug:
+        return False
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+
+    try:
+        async with session_scope(settings) as session:
+            project = (
+                await session.execute(
+                    select(ProjectModel).where(ProjectModel.slug == slug)
+                )
+            ).scalar_one_or_none()
+            if project is None:
+                return False
+            row = (
+                await session.execute(
+                    select(WorkflowRunModel.id)
+                    .where(
+                        WorkflowRunModel.project_id == project.id,
+                        WorkflowRunModel.status == "running",
+                        WorkflowRunModel.workflow_type.in_(
+                            ("project_pipeline", "chapter_pipeline", "scene_pipeline")
+                        ),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            return row is not None
+    except Exception:
+        logger.exception("live-pipeline probe failed for %s", slug)
+        return False
+
+
 async def _clear_production_halt_async(settings: AppSettings, slug: str) -> bool:
     """Clear an operator halt because the operator explicitly asked to write.
 
@@ -13456,6 +13508,28 @@ def serve_web_app(
                             "autowrite",
                         )
                     )
+                    # DB 里还有活跃流水线时不许再起一个执行器。
+                    #
+                    # 2026-08-22 真机：卡片显示 incomplete、DB 里
+                    # workflow_runs 仍是 running，resume 放行后两个
+                    # project_pipeline 并发写同一本书，几分钟后 Postgres
+                    # 报 DeadlockDetectedError，整本书失败在第 22 章。
+                    if slug and asyncio.run(
+                        _has_live_pipeline_run_async(settings, slug)
+                    ):
+                        self._send_json(
+                            {
+                                "ok": False,
+                                "error": (
+                                    "这本书还有正在运行的流水线，不能重复恢复"
+                                    "（会造成并发写入与数据库死锁）。请等它结束，"
+                                    "或先点停止再恢复。"
+                                ),
+                            },
+                            status=HTTPStatus.CONFLICT,
+                        )
+                        return
+
                     # 恢复同样是「操作者要求运行」，必须解掉之前那次 Stop
                     # 写下的暂停指令——它被刻意写在流水线覆盖不到的
                     # book_production_control 里，不会自己消失。

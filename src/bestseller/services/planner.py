@@ -17055,8 +17055,16 @@ def _book_spec_prompts(
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "Generate a BookSpec JSON with title, logline, genre, target_audience, tone, themes, "
-            "theme_statement, dramatic_question, expected_character_count, naming_pool, protagonist, stakes, series_engine, "
+            "theme_statement, dramatic_question, expected_character_count, naming_pool, protagonist, cast, stakes, series_engine, "
             "unique_hook, and benchmark_works. "
+            # cast 是 2026-08-22 补进契约的。此前它不在必需字段里，模型只是
+            # 偶尔多给——于是下游 CastSpec 编译器读不到名册，characters 表
+            # 全书只有主角一行，人物 / 关系 / 情绪轨 / 反派计划整条链塌掉。
+            "cast: an array of the named characters this book actually needs, "
+            "one object each with name (taken from naming_pool), role (what they "
+            "are to the protagonist), and function (what they DO in the plot). "
+            "Size it to expected_character_count. At least one entry must be the "
+            "book's main opposition. Names only from naming_pool; invent no one. "
             "theme_statement must be a single falsifiable sentence. dramatic_question must be a yes/no question answered only in the finale. "
             "naming_pool must contain at least 2x expected_character_count style-consistent names. "
             "unique_hook: a one-sentence anti-cliche selling point that differentiates this book from others in the same genre. "
@@ -17086,7 +17094,12 @@ def _book_spec_prompts(
             f"{_methodology_line}"
             "请生成一个 BookSpec JSON，包含 title、logline、genre、target_audience、tone、themes、"
             "theme_statement、dramatic_question、expected_character_count、naming_pool、"
-            "protagonist、stakes、series_engine、unique_hook、benchmark_works。"
+            "protagonist、cast、stakes、series_engine、unique_hook、benchmark_works。"
+            # cast 是 2026-08-22 补进契约的，理由见 en 分支同位置注释。
+            "cast 是本书真正需要的具名角色数组，每个对象写 name（取自 naming_pool）、"
+            "role（他对主角是什么人）、function（他在情节里做什么事）；"
+            "数量与 expected_character_count 一致；其中至少一个必须是本书的主要对抗方；"
+            "姓名只能取自 naming_pool，不得另造。"
             "theme_statement 必须是一句可被全书证明/反证的核心命题；dramatic_question 必须是结尾才能回答的 yes/no 问题；"
             "naming_pool 至少包含 expected_character_count 两倍数量、风格一致的候选姓名。"
             "其中 series_engine 必须清楚写出：核心连载引擎、读者承诺、前三章抓手、章节尾钩策略、"

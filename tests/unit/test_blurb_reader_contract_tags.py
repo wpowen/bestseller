@@ -59,3 +59,43 @@ def test_labels_are_deduped_and_stable() -> None:
     b = reader_contract_labels({"story_enhancers": {"effect_skills": ["hype_satisfaction_engine"]}})
     assert a == b
     assert len(set(a)) == len(a)
+
+
+def test_prompt_asks_for_the_category_not_the_exact_tokens() -> None:
+    """要的是「读者决策信息」这一类，不是我给的那几个词——给词就是种词。
+
+    2026-08-22 真机：prompt 里写的是「【读者契约】里若有词，至少 1 个
+    必须出现在标签行」，模型产出的标签行是
+    【废契+玄幻+宗门+苟道+反派视角+智商在线】——我给的三个词一个没用，
+    但它自选的「苟道 / 反派视角 / 智商在线」**更贴这本书**，而且全是
+    读者决策信息。
+
+    强制具体 token 既没被遵守，本身也违反本项目的铁律：prompt 只给类别
+    和正例，token 词表归检测器。所以改成要类别、允许换写法。
+    """
+
+    from bestseller.services.blurb_copywriter import _build_candidate_messages
+
+    class _Persona:
+        channel = "male"
+
+    _system, user = _build_candidate_messages(
+        "scene_hook",
+        spine={},
+        premise="测试",
+        golden_finger_line="",
+        title="X",
+        tags=["玄幻"],
+        genre="玄幻",
+        sub_genre="玄幻",
+        platform=None,
+        persona=_Persona(),
+        emotion_exemplars=(),
+        book_jargon_terms=(),
+        band=(150, 250),
+        reader_contract=("轻松", "爽文", "不虐主角"),
+    )
+    assert "读者决策信息" in user
+    assert "也可以换成更贴本书的写法" in user
+    # 不许再要求「必须出现这几个词」
+    assert "必须出现在标签行" not in user

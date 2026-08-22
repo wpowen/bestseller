@@ -153,7 +153,27 @@ def _eligible_row(
         hard_gates_passed=evidence_json.get("hard_gates_passed") is True,
         blocking_codes=_blocking_codes(evidence_json),
     )
-    if not is_promotion_eligible(
+    # 资格判据认**商业判官**，数值路径只作判官缺席时的回退。
+    #
+    # 2026-08-23 定罪：章审 verdict 修好后（历史首批 pass），提升仍然
+    # 失败——min_overall=0.85 对照的 score_overall 是回声公式合成分
+    # （ch6=0.56，全库最好 0.600，0.85 恒不可达），core_scores 里还混着
+    # 回声 hook。而同一行 evidence 里躺着 16 维商业判官的完整判决
+    # （ch6 判 fail 的理由正是「主角原地坐等、无自保动作」——真编辑
+    # 意见），它有判断力没有权力。真尺子掌权；硬门与阻断码不豁免。
+    _judge = evidence_json.get("llm_commercial_judge")
+    _judge_verdict = (
+        _judge.get("pass") if isinstance(_judge, dict) and "pass" in _judge else None
+    )
+    if _judge_verdict is not None:
+        if (
+            evidence.score_draft_id != evidence.draft_id
+            or not evidence.hard_gates_passed
+            or evidence.blocking_codes
+            or _judge_verdict is not True
+        ):
+            return None
+    elif not is_promotion_eligible(
         evidence,
         min_overall=min_overall,
         min_core=min_core,

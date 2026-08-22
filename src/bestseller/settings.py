@@ -197,6 +197,14 @@ class QualitySettings(BaseModel):
     # scenes instead of forcing every scene to the rewrite/stall/human-review
     # path. Set False to restore the legacy "any finding => rewrite" behaviour.
     scene_verdict_advisory_axes: bool = True
+    # 章级同款政策（2026-08-22）：回声代理轴（contract_alignment / 主副线
+    # 推进 / 尾钩 / 卷任务 / continuity——全是关键词公式，不是 LLM 判分）
+    # 不再持有 verdict 否决权。此前全库 197 份审稿报告 pass=0：这些轴真机
+    # 均值 0.27-0.53 对着 0.75 阈值，pass 结构性不可达，每章 670-1115 次
+    # LLM 调用烧在不可能收敛的重写循环上。阻断力保留给真缺陷
+    # （duplication / output_hygiene / common_sense / 核心轴）与 LLM critic
+    # 多数票。Set False 恢复旧行为。
+    chapter_verdict_advisory_echo_axes: bool = True
     # When LLM scene commentary is enabled, trust an explicit LLM "pass" over a
     # rule-based "rewrite" when only advisory craft-axis findings remain (no
     # structural defect). This is the semantic-authority escape hatch from the

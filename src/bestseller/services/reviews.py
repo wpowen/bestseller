@@ -3437,6 +3437,75 @@ def _measure_dialogue_distinctiveness(
 # to the rewrite instructions but do NOT alone force a "rewrite" verdict. The
 # categories NOT listed here (duplication, character_consistency, output_hygiene)
 # are structural and always block. See QualitySettings.scene_verdict_advisory_axes.
+# 章级「回声代理轴」——这些分不是 LLM 判的，是关键词公式：
+# hook = 0.24 + 尾部信号 + 0.08*(有"必须"/"立刻") + 0.12*(有"下一步"…)，
+# main/subplot = 0.24 + keyword_score(策划文字的字面回声)*0.62，
+# contract_alignment = 契约文字在正文中的子串匹配率。
+# 它们奖励把策划词逐字贴进正文、惩罚戏剧化（同族旧案：裸字「门」91% 幻影
+# 钩子、场景打分惩罚 show-don't-tell）。真机分布 0.27-0.53，对着 0.75 的
+# 统一阈值稳定产出 high/medium blocking finding → 全库 197 份审稿报告
+# pass=0，提升状态机恒死，每章 670-1115 次 LLM 调用烧在不可能收敛的重写
+# 循环上（重写不会增加关键词回声：九项管道修复只让这些分涨 0.02-0.03）。
+#
+# 修法沿用场景层已有的 scene_verdict_advisory_axes 政策：回声轴 advisory
+# （仍产 finding、仍进 rewrite_instructions），否决权只留给真缺陷
+# （duplication / output_hygiene / common_sense / 核心轴）与下游的
+# LLM critic 多数票——那才是真判官，原样保留。
+_CHAPTER_ECHO_PROXY_AXES = frozenset(
+    {
+        "contract_alignment",
+        "main_plot_progression",
+        "subplot_progression",
+        "ending_hook_effectiveness",
+        "volume_mission_alignment",
+        "continuity",
+    }
+)
+
+# 开篇章（1-3）自旧行为起就豁免的推进轴（见章审稿函数内的原注释）。
+_CHAPTER_OPENING_EXEMPT_AXES = frozenset(
+    {
+        "main_plot_progression",
+        "subplot_progression",
+        "volume_mission_alignment",
+    }
+)
+
+
+def resolve_chapter_verdict(
+    *,
+    core_overall: float,
+    threshold: float,
+    findings: list,
+    is_opening_chapter: bool,
+    advisory_echo_axes: bool,
+) -> tuple[str, list]:
+    """章级 verdict 的唯一裁决点，抽成纯函数以便离线可测。
+
+    ``core_overall``：本裁决对照阈值的 overall——advisory 模式下调用方传
+    核心轴（goal/coverage/coherence/style）加权分（真机均值 0.82-0.92，
+    可达但不免费：重复惩罚照扣在上面）；旧模式下传含回声轴的全量 overall，
+    行为逐字等于历史版本。
+
+    返回 ``(verdict, blocking_findings)``。
+    """
+
+    exempt = set(_CHAPTER_OPENING_EXEMPT_AXES) if is_opening_chapter else set()
+    if advisory_echo_axes:
+        exempt |= _CHAPTER_ECHO_PROXY_AXES
+    blocking = [
+        finding
+        for finding in findings
+        if getattr(finding, "severity", "") in {"high", "medium"}
+        and getattr(finding, "category", "") not in exempt
+    ]
+    if is_opening_chapter:
+        return ("pass" if not blocking else "rewrite"), blocking
+    return (
+        "pass" if core_overall >= threshold and not blocking else "rewrite"
+    ), blocking
+
+
 _SCENE_ADVISORY_FINDING_CATEGORIES = frozenset(
     {
         "goal",
@@ -4906,6 +4975,17 @@ def evaluate_chapter_draft(
         _ch_weighted_parts.append((contract_alignment, _cw.contract_alignment))
     _ch_total_weight = sum(w for _, w in _ch_weighted_parts)
     overall = _clamp_score(sum(s * w for s, w in _ch_weighted_parts) / max(_ch_total_weight, 0.01))
+    # 核心轴 overall：advisory 模式下 verdict 对照的是它（不含回声代理轴）。
+    _ch_core_parts = [
+        (goal, _cw.goal),
+        (coverage, _cw.coverage),
+        (coherence, _cw.coherence),
+        (style, _cw.style),
+    ]
+    _ch_core_weight = sum(w for _, w in _ch_core_parts)
+    core_overall = _clamp_score(
+        sum(s * w for s, w in _ch_core_parts) / max(_ch_core_weight, 0.01)
+    )
     threshold = _ch_profile.chapter_threshold_override or settings.quality.thresholds.chapter_coherence_min_score
 
     findings: list[ChapterReviewFinding] = []
@@ -5077,33 +5157,22 @@ def evaluate_chapter_draft(
             )
     if _ch_dup_score < 1.0:
         overall = _clamp_score(overall - (1.0 - _ch_dup_score) * 0.3)
+        core_overall = _clamp_score(core_overall - (1.0 - _ch_dup_score) * 0.3)
 
     # Advancement axes (main/sub/volume progression) are excluded from blocking
     # for opening chapters — see _is_opening_chapter rationale above.
-    _advancement_categories = {
-        "main_plot_progression",
-        "subplot_progression",
-        "volume_mission_alignment",
-    }
-    blocking_findings = [
-        finding
-        for finding in findings
-        if finding.severity in {"high", "medium"}
-        and not (_is_opening_chapter and finding.category in _advancement_categories)
-    ]
-    if _is_opening_chapter:
-        # Opening chapters (1-3) are graded by their OWN opening contract
-        # (hook / immersion / golden-three payoff — already surfaced as
-        # _chapter_opening_contract_findings / ending_hook / contract / hygiene /
-        # common-sense / duplication blocking findings above), NOT by the
-        # main/sub/volume advancement axes that an opening legitimately scores
-        # low on. The advancement-dragged ``overall`` must therefore NOT force a
-        # rewrite: accept when no genuine (non-advancement) blocking finding
-        # remains. This terminates the ch1 drafting<->revision oscillation where
-        # the advancement axes kept overall < threshold forever.
-        verdict = "pass" if not blocking_findings else "rewrite"
-    else:
-        verdict = "pass" if overall >= threshold and not blocking_findings else "rewrite"
+    # 裁决收敛到 resolve_chapter_verdict（纯函数，离线可测）。
+    # advisory 模式下对照核心轴 overall；旧模式传全量 overall，逐字复现历史行为。
+    _advisory_echo = bool(
+        getattr(settings.quality, "chapter_verdict_advisory_echo_axes", True)
+    )
+    verdict, _blocking_findings = resolve_chapter_verdict(
+        core_overall=core_overall if _advisory_echo else overall,
+        threshold=threshold,
+        findings=findings,
+        is_opening_chapter=_is_opening_chapter,
+        advisory_echo_axes=_advisory_echo,
+    )
     rewrite_instructions = None
     if verdict == "rewrite":
         contract_hint = ""

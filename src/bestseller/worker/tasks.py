@@ -360,6 +360,55 @@ def _coerce_workflow_run_uuid(workflow_run_id: str) -> UUID | None:
         return None
 
 
+def _single_run_heartbeat_stmt(run_uuid: UUID):
+    # 经 FOR UPDATE SKIP LOCKED 子查询：行正被别的事务改时，那个事务自己就会
+    # 刷 updated_at，心跳跳过它零损失；换来的是心跳事务从不等行锁，
+    # 无法参与死锁环（2026-08-23 真机：批量心跳等锁 18s 与 heal 长事务
+    # 互相持锁，postgres 杀掉 heal）。
+    locked = (
+        select(WorkflowRunModel.id)
+        .where(
+            WorkflowRunModel.id == run_uuid,
+            WorkflowRunModel.status.in_(_ACTIVE_WORKFLOW_STATUSES),
+        )
+        .with_for_update(skip_locked=True)
+        .scalar_subquery()
+    )
+    return (
+        update(WorkflowRunModel)
+        .where(WorkflowRunModel.id.in_(locked))
+        .values(updated_at=func.now())
+    )
+
+
+def _project_heartbeat_stmt(
+    *,
+    project_slug: str,
+    active_since: _dt.datetime | None,
+):
+    project_id = (
+        select(ProjectModel.id)
+        .where(ProjectModel.slug == project_slug)
+        .scalar_subquery()
+    )
+    locked = (
+        select(WorkflowRunModel.id)
+        .where(
+            WorkflowRunModel.project_id == project_id,
+            WorkflowRunModel.workflow_type.in_(_PROJECT_HEARTBEAT_WORKFLOW_TYPES),
+            WorkflowRunModel.status.in_(_ACTIVE_WORKFLOW_STATUSES),
+        )
+        .with_for_update(skip_locked=True)
+    )
+    if active_since is not None:
+        locked = locked.where(WorkflowRunModel.created_at >= active_since)
+    return (
+        update(WorkflowRunModel)
+        .where(WorkflowRunModel.id.in_(locked.scalar_subquery()))
+        .values(updated_at=func.now())
+    )
+
+
 async def _touch_workflow_run_heartbeat(
     workflow_run_id: str,
     *,
@@ -369,35 +418,15 @@ async def _touch_workflow_run_heartbeat(
     run_uuid = _coerce_workflow_run_uuid(workflow_run_id)
     async with get_server_session() as session:
         if run_uuid is not None:
-            await session.execute(
-                update(WorkflowRunModel)
-                .where(
-                    WorkflowRunModel.id == run_uuid,
-                    WorkflowRunModel.status.in_(_ACTIVE_WORKFLOW_STATUSES),
-                )
-                .values(updated_at=func.now())
-            )
+            await session.execute(_single_run_heartbeat_stmt(run_uuid))
 
         if project_slug:
-            project_id = (
-                select(ProjectModel.id)
-                .where(ProjectModel.slug == project_slug)
-                .scalar_subquery()
-            )
-            heartbeat_stmt = (
-                update(WorkflowRunModel)
-                .where(
-                    WorkflowRunModel.project_id == project_id,
-                    WorkflowRunModel.workflow_type.in_(_PROJECT_HEARTBEAT_WORKFLOW_TYPES),
-                    WorkflowRunModel.status.in_(_ACTIVE_WORKFLOW_STATUSES),
+            await session.execute(
+                _project_heartbeat_stmt(
+                    project_slug=project_slug,
+                    active_since=active_since,
                 )
-                .values(updated_at=func.now())
             )
-            if active_since is not None:
-                heartbeat_stmt = heartbeat_stmt.where(
-                    WorkflowRunModel.created_at >= active_since,
-                )
-            await session.execute(heartbeat_stmt)
 
         await session.commit()
 

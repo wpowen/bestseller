@@ -2345,6 +2345,32 @@ async def load_scene_story_bible_context(
     # between characters. Surfaces both fresh active rows and recently-
     # overdue ones so the writer feels the long-running emotional debt
     # the cast carries even when this chapter doesn't advance them.
+    # 角色停滞警告——character_evolution 的首次接线（此前全库零引用）。
+    # 建在 character_state_snapshots 之上；表活了，读取层才有意义。
+    # fail-open：查不到就空，绝不拖垮上下文构建。
+    character_stagnation_payload: list[dict[str, Any]] = []
+    try:
+        from bestseller.services.character_evolution import (
+            detect_character_stagnation,
+        )
+
+        _stag_warnings = await detect_character_stagnation(
+            session,
+            project_id=project.id,
+            current_chapter_number=chapter.chapter_number,
+        )
+        character_stagnation_payload = [
+            {
+                "character_name": w.character_name,
+                "last_update_chapter": w.last_update_chapter,
+                "chapters_since_update": w.chapters_since_update,
+                "stagnant_fields": list(w.stagnant_fields),
+            }
+            for w in _stag_warnings
+        ]
+    except Exception:  # pragma: no cover — 提示层缺席不影响写作
+        logger.debug("character stagnation probe failed (non-fatal)", exc_info=True)
+
     interpersonal_promises_payload: list[dict[str, Any]] = []
     try:
         from bestseller.services.interpersonal_promises import (  # noqa: PLC0415
@@ -2448,6 +2474,7 @@ async def load_scene_story_bible_context(
         "restricted_characters": restricted_characters,
         "memory_recall_cues": memory_recall_cues,
         "interpersonal_promises": interpersonal_promises_payload,
+        "character_stagnation": character_stagnation_payload,
     }
 
 

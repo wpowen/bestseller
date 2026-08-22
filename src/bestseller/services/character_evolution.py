@@ -228,3 +228,44 @@ async def get_relationship_evolution(
         }
         for evt in events
     ]
+
+
+def render_stagnation_block(
+    warnings: list[CharacterStagnationWarning],
+    *,
+    language: str = "zh-CN",
+) -> str:
+    """把停滞警告渲染成写手 prompt 的**软提示块**。
+
+    2026-08-22 接线：本模块此前在全库零引用——它建在
+    character_state_snapshots 与 relationship_events 之上，而那两张表
+    直到同日才被修活（快照脱离 verdict=="pass" 恒假条件、feedback 抽取
+    复活），接了也没数据。现在有数据了。
+
+    按铁律只挣提示与留痕，不发杀权：停滞不是缺陷，是给写手的信息；
+    措辞明确允许写手在不自然时不动它。最多点名 3 人——写手 prompt 有
+    10k 预算与淘汰机制，长清单会挤掉更重要的块。
+    """
+
+    rows = [w for w in warnings if w.character_name][:3]
+    if not rows:
+        return ""
+    if str(language or "").lower().startswith("en"):
+        names = "; ".join(
+            f"{w.character_name} (no state change for {w.chapters_since_update} chapters)"
+            for w in rows
+        )
+        return (
+            "[Character-motion cue - soft] These characters have not moved in a "
+            f"while: {names}. If it fits naturally, give ONE of them a visible "
+            "change (a decision, a shift in status or feeling) this chapter. "
+            "Skip this entirely if it would feel forced."
+        )
+    names = "；".join(
+        f"{w.character_name}（已 {w.chapters_since_update} 章无状态变化）" for w in rows
+    )
+    return (
+        "【角色动向提示·软约束】以下角色已多章没有可见变化：" + names + "。"
+        "若本章剧情自然容得下，给其中一人一个看得见的变化（一个当场的决定、"
+        "地位或心境的移动）；接不进去就整条忽略，不要生硬安排出场。"
+    )

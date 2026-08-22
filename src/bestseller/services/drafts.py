@@ -4509,6 +4509,36 @@ def _render_story_bible_section(
         except Exception:  # pragma: no cover — defensive
             pass
 
+    # 角色停滞软提示——character_evolution 的首次接线。只提示不阻断：
+    # 停滞的配角是「工具人化」的早期信号，给写手一个自然带动的机会。
+    character_stagnation = story_bible_context.get("character_stagnation") or []
+    if character_stagnation:
+        try:
+            from bestseller.domain.contradiction import (
+                CharacterStagnationWarning,
+            )
+            from bestseller.services.character_evolution import (
+                render_stagnation_block,
+            )
+
+            _stag_objs = [
+                CharacterStagnationWarning(
+                    character_name=str(w.get("character_name") or ""),
+                    last_update_chapter=int(w.get("last_update_chapter") or 0),
+                    chapters_since_update=int(w.get("chapters_since_update") or 0),
+                    stagnant_fields=list(w.get("stagnant_fields") or []),
+                )
+                for w in character_stagnation
+                if isinstance(w, dict)
+            ]
+            _stag_block = render_stagnation_block(
+                _stag_objs, language=language or "zh-CN"
+            )
+            if _stag_block:
+                lines.append(_stag_block)
+        except Exception:  # pragma: no cover — defensive
+            pass
+
     # Memory-recall cues — at +3 / +10 / +30 / +80 chapters past a
     # close-relationship death, suggest a brief memory beat for the
     # survivor. Soft constraint: writer is asked to weave at most one

@@ -879,8 +879,54 @@ def _skill_entry_by_key(skill_key: str) -> StoryEffectSkillEntry | None:
     return None
 
 
+# 勾了「纯爽 / 无代价」时，爽点合同不许再要求「爽必须留下代价」。
+#
+# 2026-08-22 用户定罪：《书院笔仙》建书时勾的是 hype_satisfaction_engine +
+# cost_style=minimal，产出的简介却是「他不敢撕、不敢改、不敢停」，8 句里
+# 主角受动 5 句、主动用金手指 0 句。机制就是这条 guardrail：
+#     "satisfaction must leave a new pressure or cost behind"
+# 而 cost_style 字段自己的注释写着它「控制金手指是否强制自损代价」——
+# 同一件事住两地，合同赢了。
+#
+# 修法不是删掉压力：爽文同样需要「赢完引来更强的对手」这种上行压力。
+# 区别只在压力落在谁身上——外部对抗升级是爽文，主角自损是憋屈。
+_MINIMAL_COST_GUARDRAIL_ZH = (
+    "爽点之后留下的必须是外部对抗升级（更强的对手 / 更大的势力盯上来），"
+    "不是主角自身的损失"
+)
+_MINIMAL_COST_GUARDRAIL_EN = (
+    "what a payoff leaves behind must be escalating external opposition "
+    "(a stronger rival / a bigger faction taking notice), never a loss "
+    "shouldered by the protagonist"
+)
+
+
+def _guardrails_for_cost_style(
+    entry: StoryEffectSkillEntry, *, cost_style: str, is_en: bool
+) -> list[str]:
+    """按代价档过滤 / 替换护栏文本。
+
+    只动**要求主角付出代价**的那一条，其余原样保留。
+    """
+
+    rails = list(entry.misuse_guardrails[:2])
+    if cost_style != "minimal":
+        return rails
+    replacement = _MINIMAL_COST_GUARDRAIL_EN if is_en else _MINIMAL_COST_GUARDRAIL_ZH
+    out: list[str] = []
+    replaced = False
+    for rail in rails:
+        if "cost" in rail.lower():
+            if not replaced:
+                out.append(replacement)
+                replaced = True
+            continue
+        out.append(rail)
+    return out
+
+
 def _render_generic_story_effect_contract(
-    entry: StoryEffectSkillEntry, *, language: str
+    entry: StoryEffectSkillEntry, *, language: str, cost_style: str = ""
 ) -> str:
     """Hard contract for a skill routed into one chapter.
 
@@ -893,10 +939,12 @@ def _render_generic_story_effect_contract(
     renderers' shape so the gate can verify it downstream.
     """
 
-    guardrails = "；".join(entry.misuse_guardrails[:2])
+    is_en = language.lower().startswith("en")
+    _rails = _guardrails_for_cost_style(entry, cost_style=cost_style, is_en=is_en)
+    guardrails = "；".join(_rails)
     use_when = "、".join(entry.use_when[:3])
-    if language.lower().startswith("en"):
-        rails = "; ".join(entry.misuse_guardrails[:2])
+    if is_en:
+        rails = "; ".join(_rails)
         return (
             f"[{entry.skill_key.upper()} CONTRACT — required when routed into "
             "this chapter]\n"
@@ -918,7 +966,9 @@ def _render_generic_story_effect_contract(
     )
 
 
-def _render_selected_story_effect_contract(skill_key: str, *, language: str) -> str:
+def _render_selected_story_effect_contract(
+    skill_key: str, *, language: str, cost_style: str = ""
+) -> str:
     renderers = {
         "tension_pressure_engine": _render_tension_pressure_contract,
         "rhythm_pacing_engine": _render_rhythm_pacing_contract,
@@ -931,7 +981,9 @@ def _render_selected_story_effect_contract(skill_key: str, *, language: str) -> 
     entry = _skill_entry_by_key(skill_key)
     if entry is None:
         return ""
-    return _render_generic_story_effect_contract(entry, language=language)
+    return _render_generic_story_effect_contract(
+        entry, language=language, cost_style=cost_style
+    )
 
 
 def render_selected_story_effect_skill_contracts(

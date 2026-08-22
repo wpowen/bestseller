@@ -11416,6 +11416,43 @@ async def run_chapter_pipeline(
                             "chapter_quality_debt_reason": chapter_source_mode,
                         }
 
+            # 章节状态快照：**所有产出了正文的章都要做**，不管审稿过没过。
+            #
+            # 2026-08-22 定罪：它原先长在下面那个
+            # ``verdict == "pass" and chapter_promoted`` 分支里，而 verdict
+            # 全库 197 份报告只有 rewrite(184) / attention(13)，**pass 是 0**
+            # ——恒假。于是《书院笔仙》整整 50 章 chapter_state_snapshots=0，
+            # 跨章硬事实一条都没落库，长程连贯全靠 prompt 硬扛。
+            #
+            # 同一个恒假条件在这个代码库里已经杀死过提升状态机（memory
+            # review-never-passes-promotion-dead）。这次它挂着的是连贯性——
+            # 而代码自己的注释写着「continuity is a quality enhancement,
+            # not a hard dependency」：那就更不该只发给通过审稿的章，带质量
+            # 债的章恰恰更需要它。
+            #
+            # ⚠️ 只把**纯落库**的快照提上来。Phase B/C/D 留在原分支不动：
+            # Phase D 带 blocks_write，把它扩到所有章等于给检测器发杀权，
+            # 那是本项目定罪过四次的自伤模式，不在这条修复的范围内。
+            _snapshot_row = None
+            try:
+                async with session.begin_nested():
+                    _snapshot_row = await extract_chapter_state_snapshot(
+                        session,
+                        settings,
+                        project_id=project_id,
+                        chapter=chapter,
+                        chapter_md=chapter_draft.content_md,
+                        source_chapter_draft_version_id=chapter_draft.id,
+                        source_is_promoted=chapter_promoted,
+                        workflow_run_id=workflow_run_id,
+                    )
+            except Exception:
+                logger.warning(
+                    "chapter %d: state snapshot extraction failed (non-fatal)",
+                    chapter_number,
+                    exc_info=True,
+                )
+
             if (chapter_review_result.verdict == "pass" and chapter_promoted) or accept_chapter_on_stall:
                 if accept_chapter_on_stall:
                     reached_chapter_revision_limit = True
@@ -11448,16 +11485,7 @@ async def run_chapter_pipeline(
                 # transaction shared across the rest of the chapter loop.
                 try:
                     async with session.begin_nested():
-                        _snapshot_row = await extract_chapter_state_snapshot(
-                            session,
-                            settings,
-                            project_id=project_id,
-                            chapter=chapter,
-                            chapter_md=chapter_draft.content_md,
-                            source_chapter_draft_version_id=chapter_draft.id,
-                            source_is_promoted=chapter_promoted,
-                            workflow_run_id=workflow_run_id,
-                        )
+                        # 快照已在进入本分支前提取（见上），这里直接复用。
                         # Phase B — classify + persist dominance history.
                         await _apply_post_chapter_phase_b(
                             session=session,

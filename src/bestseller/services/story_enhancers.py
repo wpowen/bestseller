@@ -216,7 +216,10 @@ def render_story_enhancer_contract_block(
             "micro-conflicts."
         )
     for skill_key in selection.effect_skills:
-        contract = _render_selected_story_effect_contract(skill_key, language=language)
+        # 代价档必须传进去：勾了「无代价」的书，爽点合同不许再要求代价。
+        contract = _render_selected_story_effect_contract(
+            skill_key, language=language, cost_style=selection.cost_style
+        )
         if contract:
             parts.append(contract)
     return "\n\n".join(parts)

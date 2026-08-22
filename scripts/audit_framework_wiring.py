@@ -45,11 +45,36 @@ SRC = Path(bestseller.__file__).resolve().parent
 
 
 def find_orphan_modules() -> list[tuple[str, int]]:
-    """src 内零引用的 service 模块——它的代码永远不会被执行。"""
+    """src / scripts / tests 里都没人 import 的 service 模块。"""
 
     services = SRC / "services"
     mods = sorted(p.stem for p in services.glob("*.py") if p.stem != "__init__")
-    files = {p: p.read_text(encoding="utf-8", errors="ignore") for p in SRC.rglob("*.py")}
+
+    # ⚠️ 扫描面必须含 scripts/ 与 tests/，不只是 src/。
+    # 2026-08-22 第一版只扫 src/，把「竞技场 / 离线评测 / 校准」这类**本来
+    # 就该由脚本调用**的模块一并报成零引用——判据太窄会把正常的东西判成
+    # 死代码，和判据太宽一样有害。
+    # SRC = <repo>/src/bestseller，所以仓库根是 .parent.parent。
+    # ⚠️ 第一版写成 .parent.parent.parent，多退一级到了 workspace/，
+    # scripts 与 tests 都不存在 → 扫描面根本没扩大，而报告文案已经改成
+    # 「src / scripts / tests」——挂了个假声明，比不改更糟。
+    # 所以下面对每个根做存在性断言，路径错了就当场报错而不是静默少扫。
+    repo = SRC.parent.parent
+    roots = [SRC]
+    missing: list[str] = []
+    for extra in ("scripts", "tests"):
+        candidate = repo / extra
+        if candidate.is_dir():
+            roots.append(candidate)
+        else:
+            missing.append(str(candidate))
+    if missing:
+        raise SystemExit("扫描根不存在，本表无效（路径推导错了）：\n  " + "\n  ".join(missing))
+    files = {
+        path: path.read_text(encoding="utf-8", errors="ignore")
+        for root in roots
+        for path in root.rglob("*.py")
+    }
     orphans: list[tuple[str, int]] = []
     for mod in mods:
         pattern = re.compile(
@@ -102,7 +127,7 @@ async def main() -> int:
         return 2
     print("# 全框架接线普查\n")
     print(f"service 模块总数：{total}")
-    print(f"零引用模块：{len(orphans)}（它们的代码永远不会被执行）\n")
+    print(f"零引用模块：{len(orphans)}（src / scripts / tests 里都没人 import）\n")
 
     print("## 零引用模块\n")
     print(f"{'模块':50}{'行数':>8}")

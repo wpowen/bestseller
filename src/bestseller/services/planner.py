@@ -12550,6 +12550,88 @@ def _compile_source_bound_world_spec(
     return normalized
 
 
+_ANTAGONIST_ROLE_MARKERS = ("反派", "对手", "敌", "宿敌", "反面")
+
+
+def _source_bound_roster_from_book_spec(
+    project: ProjectModel,
+    book_spec: Mapping[str, Any],
+    protagonist_name: str,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """把**已批准构思自己点过名**的角色搬进名册。
+
+    2026-08-22 定罪：《书院笔仙》完本 50 章，`characters` 表只有 1 行，
+    而 `book_spec.cast` 里躺着 14 个具名角色（含 role「明线反派」的赵同）。
+    编译器读遍了 book_spec 的其它字段，唯独没读 ``cast``，antagonist 与
+    supporting_cast 是硬编码的 ``None`` / ``[]``。后果不是少几行数据：
+    配角没有 goal / voice_profile 就是纸片人，主角因此没有对手压力
+    （「有神器还到处被人拿捏」），对话也没有区分度（真机对话占比 7.6%，
+    人类 20.7%）。
+
+    ⚠️ 编译器的原则是「**不发明**」，不是「不搬」。docstring 里禁的童年、
+    亲属、秘密出身、年龄，这里一个都不造——只搬 name / role / function /
+    tag 四个已批准字段。搬已批准构思点的名，正是 source-bound 的本意。
+    """
+
+    entries = _mapping_list(book_spec.get("cast"))
+    if not entries:
+        return None, []
+
+    minimal = (
+        resolve_cost_style(_mapping(getattr(project, "metadata_json", None))) == "minimal"
+    )
+    protagonist_key = str(protagonist_name or "").strip()
+
+    antagonist: dict[str, Any] | None = None
+    supporting: list[dict[str, Any]] = []
+    seen: set[str] = {protagonist_key} if protagonist_key else set()
+
+    for entry in entries:
+        name = _first_non_empty_text(entry.get("name"), default="")
+        key = name.strip()
+        if not name or not key or key in seen:
+            continue
+        role_label = _first_non_empty_text(entry.get("role"), default="")
+        # 主角可能在 cast 里以「主角」这类角色名出现而不是本名重复——两条都挡。
+        if "主角" in role_label or "protagonist" in role_label.lower():
+            seen.add(key)
+            continue
+        seen.add(key)
+
+        function = _first_non_empty_text(entry.get("function"), default="")
+        tag = _first_non_empty_text(entry.get("tag"), default="")
+        member: dict[str, Any] = {
+            "name": name,
+            "role": role_label or "supporting",
+            # function 是构思给这个角色派的活儿——它就是这个人在故事里要干的事。
+            "goal": function,
+            "metadata": {
+                "source_bound_design": True,
+                # 没有这个标记，只有 name/role/function 的条目会被 bible_gate
+                # 按「缺 quirk / 缺 history」判违规——修一个空名册反而把书卡死。
+                "source_bound_minimal": minimal,
+                "source_fields": ["book_spec.cast"],
+            },
+        }
+        if tag:
+            # tag 是构思写的辨识特征（「袖口常沾墨」「墙根听壁角」），
+            # 正是 quirk 该有的形状。不改写，原样搬。
+            member["ip_anchor"] = {"quirks": [tag], "tag_memory": tag}
+            member["voice_profile"] = {"mannerisms": [tag]}
+        if function:
+            member["strength"] = function
+
+        if antagonist is None and any(
+            marker in role_label for marker in _ANTAGONIST_ROLE_MARKERS
+        ):
+            member["role"] = role_label or "antagonist"
+            antagonist = member
+            continue
+        supporting.append(member)
+
+    return antagonist, supporting
+
+
 def _compile_source_bound_cast_spec(
     project: ProjectModel,
     premise: str,
@@ -12772,11 +12854,14 @@ def _compile_source_bound_cast_spec(
                 }
             )
 
+    named_antagonist, named_supporting = _source_bound_roster_from_book_spec(
+        project, book_spec, protagonist_name
+    )
     payload = {
         "protagonist": protagonist,
-        "antagonist": None,
+        "antagonist": named_antagonist,
         "antagonist_forces": antagonist_forces,
-        "supporting_cast": [],
+        "supporting_cast": named_supporting,
         "conflict_map": conflict_map,
     }
     normalized = parse_cast_spec_input(payload).model_dump(mode="json")

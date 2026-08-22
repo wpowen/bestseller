@@ -890,6 +890,173 @@ def _skill_entry_by_key(skill_key: str) -> StoryEffectSkillEntry | None:
 #
 # 修法不是删掉压力：爽文同样需要「赢完引来更强的对手」这种上行压力。
 # 区别只在压力落在谁身上——外部对抗升级是爽文，主角自损是憋屈。
+# 18 个 skill 的中文本地化（description / use_when / misuse_guardrails）。
+#
+# 2026-08-22 定罪：中文章节 prompt 里渲染出「效果：Deliver visible gain,
+# reversal, …」「禁忌：satisfaction must leave a new pressure or cost
+# behind」——**中文 prompt 嵌英文判据，失效的不只是腔调，判据本身会被
+# 绕过**（同日实证：一条断言中文「代价」的测试假绿，因为 guardrail 原文
+# 是英文 cost）。zh 渲染一律用这张表；英文原文留给 en 路径。
+_SKILL_ZH_TEXTS: dict[str, dict[str, object]] = {
+    "brainhole_engine": {
+        "description": "用熟悉的人物卡 × 题材原生机制 × 主角成长阶段做高概念反差，且不破坏人设。",
+        "use_when": ("开篇钩子", "人设反差", "机制碰撞"),
+        "guardrails": (
+            "不许为一个廉价笑点破坏人设不变量",
+            "成长阶段没挣到的权限不许提前给主角",
+        ),
+    },
+    "comedy_engine": {
+        "description": (
+            "用身份错位、规则错位、层层升级、回环呼应和一本正经对待荒诞，"
+            "制造推动剧情的喜剧。"
+        ),
+        "use_when": ("节奏需要提气", "荒诞处境", "人物或系统错位"),
+        "guardrails": (
+            "喜剧必须改变剧情压力或关系状态",
+            "不许用嘲讽段子或元评论代替真实行动",
+        ),
+    },
+    "emotional_payoff_engine": {
+        "description": "把埋好的情感债兑成具体行动的回报，不用作者视角的情绪标签，不硬煽。",
+        "use_when": ("关系债到期", "误会修复", "牺牲揭示"),
+        "guardrails": (
+            "回报必须是看得见的行动，不是作者贴的情绪标签",
+            "情感债没埋够就不许兑现",
+        ),
+    },
+    "relationship_chemistry_engine": {
+        "description": "用互相需要、摩擦、误会、援手、亏欠与共享秘密塑造人物配对。",
+        "use_when": ("新人物入场", "队伍摩擦", "信任变化"),
+        "guardrails": (
+            "化学反应要有具体的需要、亏欠、风险或信任交换",
+            "不许用泛泛斗嘴代替关系变化",
+        ),
+    },
+    "suspense_reveal_engine": {
+        "description": "规划信息缺口、误导、部分揭示和章末问题，不提前暴露后文真相。",
+        "use_when": ("线索转折", "秘密施压", "需要追读问题"),
+        "guardrails": (
+            "扣住的是一个可行动的缺口，不是整个局面",
+            "本章没挣到的后文真相不许提前揭开",
+        ),
+    },
+    "hype_satisfaction_engine": {
+        "description": "交付看得见的收获、反转、地位变化、升级、打脸或奖励，同时保住后续压力。",
+        "use_when": ("小高潮", "第一轮得失循环", "承诺该兑现了"),
+        "guardrails": (
+            "爽点之后必须留下新的压力或代价",
+            "不许用没挣来的奖励解决主线",
+        ),
+    },
+    "moral_dilemma_engine": {
+        "description": "让主角在每个选项都有代价、关系后果或体制后果的抉择里被迫成长。",
+        "use_when": ("权限变大", "价值观冲突", "没有干净答案"),
+        "guardrails": (
+            "每个选项都必须带具体代价",
+            "已有正确答案的选择不许伪装成两难",
+        ),
+    },
+    "system_payoff_engine": {
+        "description": "把积累的规则、机构或流程压力兑成看得见的政策、职位、资源或权力结构变化。",
+        "use_when": ("弧线收束", "体制后果", "后期主角权限"),
+        "guardrails": (
+            "体制变化必须兑付此前积累的压力",
+            "主角没挣到权限之前不许重设机构",
+        ),
+    },
+    "tension_pressure_engine": {
+        "description": "用期限、公开后果、资源稀缺、关系风险和收窄的选择空间给章节加压。",
+        "use_when": ("期限出现", "赌注需要力度", "选择空间收窄"),
+        "guardrails": (
+            "压力必须改变主角接下来能做什么",
+            "不许只写氛围式紧张而没有看得见的约束",
+        ),
+    },
+    "rhythm_pacing_engine": {
+        "description": "变化节拍大小、场景速度、静场、反转与回报间距，让相邻章不机械雷同。",
+        "use_when": ("相邻章太像", "批次需要节奏变化"),
+        "guardrails": (
+            "节奏变化要服务故事状态，不是装饰性交替",
+            "不许把每一章都压进同一个三场结构",
+        ),
+    },
+    "twist_reversal_engine": {
+        "description": "用埋过的证据、角色反转、代价倒置或旧线索的新解读，翻转一个挣来的预设。",
+        "use_when": ("读者预设可翻了", "中点转折", "线索重释"),
+        "guardrails": (
+            "反转必须有此前可观察的细节作铺垫",
+            "不许为了惊讶推翻已确立的事实",
+        ),
+    },
+    "callback_motif_engine": {
+        "description": (
+            "复用一个物件、句子、笑点、规则、旧伤或意象并改变其含义，"
+            "让章节像埋过种子而不是单集。"
+        ),
+        "use_when": ("种子可以回响", "母题该兑付", "章节需要连续感"),
+        "guardrails": (
+            "回环必须改变当下的含义、地位或选择",
+            "不许只报旧物件的名而没有兑付或压力",
+        ),
+    },
+    "world_texture_engine": {
+        "description": "用具体地点、物件、社会规则、劳作、感官锚点和物质后果，让世界像被住过。",
+        "use_when": ("环境太抽象", "新地点", "规则需要落地"),
+        "guardrails": (
+            "质感必须影响行动、地位、证据或代价",
+            "场景用不上的装饰性风景不许加",
+        ),
+    },
+    "wonder_awe_engine": {
+        "description": (
+            "通过具体揭示与可见后果，呈现挣来的规模感、美、不可能之物、"
+            "神圣感或体系之巨。"
+        ),
+        "use_when": ("重大揭示", "尺度扩张", "后期体系震撼"),
+        "guardrails": (
+            "震撼必须揭示规则、代价或改变了的可能性",
+            "不许堆空泛的宏大形容词而没有具体画面",
+        ),
+    },
+    "danger_action_engine": {
+        "description": (
+            "把危险写成可读的动作：威胁几何、被迫移动、伤势与资源损耗、"
+            "压力下的战术选择。"
+        ),
+        "use_when": ("肢体危险", "追逐", "营救", "公开对峙"),
+        "guardrails": (
+            "动作必须改变位置、资源、伤势、暴露度或筹码",
+            "不许把危险写成没有战术后果的噪音",
+        ),
+    },
+    "dialogue_spark_engine": {
+        "description": "用冲突的目的、地位博弈、潜台词、回环、打断和具体讨价还价写出锋利对白。",
+        "use_when": ("初次见面", "斗嘴", "谈判", "关系摩擦"),
+        "guardrails": (
+            "对白必须追逐冲突目标或改变地位",
+            "场景能演出来的，不许让人物用嘴解释",
+        ),
+    },
+    "healing_grief_engine": {
+        "description": "用具体的照护行为处理失去、修复、悔恨、原谅与安静的恢复，不贴煽情标签。",
+        "use_when": ("事后余波", "原谅", "修复失去", "后期情感收束"),
+        "guardrails": (
+            "疗愈要靠一个具体的选择、物件或动作呈现",
+            "不许抹掉悲伤，也不许没有可见代价就原谅背叛",
+        ),
+    },
+    "romance_tenderness_engine": {
+        "description": "仅当项目元数据明确要感情线时，加入克制的温柔、亲密、保护、思念与相互认出。",
+        "use_when": ("明确的感情线", "温柔的信任变化", "相互保护"),
+        "guardrails": (
+            "只在元数据或勾选明确要求感情线时使用",
+            "不许把每个关系节拍都写成暧昧",
+        ),
+    },
+}
+
+
 _MINIMAL_COST_GUARDRAIL_ZH = (
     "爽点之后留下的必须是外部对抗升级（更强的对手 / 更大的势力盯上来），"
     "不是主角自身的损失"
@@ -902,21 +1069,27 @@ _MINIMAL_COST_GUARDRAIL_EN = (
 
 
 def _guardrails_for_cost_style(
-    entry: StoryEffectSkillEntry, *, cost_style: str, is_en: bool
+    entry: StoryEffectSkillEntry,
+    *,
+    cost_style: str,
+    is_en: bool,
+    rails: tuple[str, ...] | None = None,
 ) -> list[str]:
     """按代价档过滤 / 替换护栏文本。
 
     只动**要求主角付出代价**的那一条，其余原样保留。
+    匹配必须中英同查（"cost" 与「代价」）——判据本地化之后，只认英文的
+    匹配器会静默失效，正是这个模块要防的那类病。
     """
 
-    rails = list(entry.misuse_guardrails[:2])
+    source = list((rails if rails is not None else entry.misuse_guardrails)[:2])
     if cost_style != "minimal":
-        return rails
+        return source
     replacement = _MINIMAL_COST_GUARDRAIL_EN if is_en else _MINIMAL_COST_GUARDRAIL_ZH
     out: list[str] = []
     replaced = False
-    for rail in rails:
-        if "cost" in rail.lower():
+    for rail in source:
+        if "cost" in rail.lower() or "代价" in rail:
             if not replaced:
                 out.append(replacement)
                 replaced = True
@@ -940,9 +1113,16 @@ def _render_generic_story_effect_contract(
     """
 
     is_en = language.lower().startswith("en")
-    _rails = _guardrails_for_cost_style(entry, cost_style=cost_style, is_en=is_en)
+    # zh 路径一律用本地化文本——中文 prompt 嵌英文判据会让判据被绕过。
+    _zh = {} if is_en else _SKILL_ZH_TEXTS.get(entry.skill_key, {})
+    _desc = str(_zh.get("description") or entry.description)
+    _use = tuple(_zh.get("use_when") or entry.use_when)
+    _entry_rails = tuple(_zh.get("guardrails") or entry.misuse_guardrails)
+    _rails = _guardrails_for_cost_style(
+        entry, cost_style=cost_style, is_en=is_en, rails=_entry_rails
+    )
     guardrails = "；".join(_rails)
-    use_when = "、".join(entry.use_when[:3])
+    use_when = "、".join(_use[:3])
     if is_en:
         rails = "; ".join(_rails)
         return (
@@ -958,7 +1138,7 @@ def _render_generic_story_effect_contract(
         )
     return (
         f"【{entry.skill_key} 合同 — 路由到本章时必须兑现】\n"
-        f"效果：{entry.description}\n"
+        f"效果：{_desc}\n"
         f"选择本 skill 的章节必须输出 `{entry.output_contract}`：一个落在页面上的具体 beat，"
         "通过行动/选择/揭示真正兑现这个效果（不是贴标签、不是旁白概述）。"
         f"适合用在：{use_when}。\n"

@@ -8780,7 +8780,9 @@
       schema_version: QUICKSTART_CLIENT_SCHEMA_VERSION,
       concept_seed_present: !!seed,
       concept_seed_length: utf8ByteLength(seed),
-      concept_seed_hash: await sha256Hex(seed),
+      // 空 seed 必须传 null：后端 _quickstart_seed_hash 对空值返回 None，
+      // 传 sha256("") 会被校验判「输入不一致」直接 400（2026-08-22 实测）。
+      concept_seed_hash: seed ? await sha256Hex(seed) : null,
     };
     return body;
   }

@@ -13456,6 +13456,19 @@ def serve_web_app(
                             "autowrite",
                         )
                     )
+                    # 恢复同样是「操作者要求运行」，必须解掉之前那次 Stop
+                    # 写下的暂停指令——它被刻意写在流水线覆盖不到的
+                    # book_production_control 里，不会自己消失。
+                    #
+                    # 2026-08-22 真机：点 Stop 再点 Resume，书立刻走
+                    # progressive_autowrite_started → autowrite_halted_by_operator
+                    # → autowrite_completed，0 章却显示「已完成」。
+                    # 显式启动那条路径（/api/tasks/autowrite）早就在做这件事，
+                    # 注释写着「An explicit start is an operator instruction to
+                    # run, so it lifts any earlier stop/pause」——恢复这条只是
+                    # 漏了，不是设计如此。
+                    if slug:
+                        asyncio.run(_clear_production_halt_async(settings, slug))
                     resumed = task_manager.resume_autowrite_task(
                         task_id,
                         saved_payload,

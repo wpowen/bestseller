@@ -91,6 +91,47 @@ async def audit(slug: str) -> int:
             or 0
         )
 
+        judge_rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT k AS dim,
+                           avg((r.structured_output->'scores'->>k)::numeric) AS mean,
+                           count(*) AS n
+                    FROM review_reports r,
+                         LATERAL jsonb_object_keys(r.structured_output->'scores') k
+                    WHERE r.project_id = :pid
+                      AND jsonb_typeof(r.structured_output->'scores'->k) = 'number'
+                    GROUP BY 1 ORDER BY 2
+                    """
+                ),
+                {"pid": project_id},
+            )
+        ).all()
+        judge_scores = [(str(row[0]), float(row[1])) for row in judge_rows]
+        judge_n = int(judge_rows[0][2]) if judge_rows else 0
+
+        violations = [
+            (str(row[0]), str(row[1]), int(row[2]))
+            for row in (
+                await session.execute(
+                    text(
+                        """
+                        SELECT v->>'code', v->>'severity', count(*)
+                        FROM chapter_quality_reports qr
+                        JOIN chapters c ON qr.chapter_id = c.id,
+                             LATERAL jsonb_array_elements(
+                                 coalesce(qr.report_json->'violations', '[]'::jsonb)
+                             ) v
+                        WHERE c.project_id = :pid
+                        GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20
+                        """
+                    ),
+                    {"pid": project_id},
+                )
+            ).all()
+        ]
+
     print(f"# 框架能力驱动体检 · {slug}（{chapters} 章）\n")
     print(f"{'能力':14}{'行数':>6}  判定")
     print("-" * 88)
@@ -106,6 +147,24 @@ async def audit(slug: str) -> int:
             verdict = f"❌ 空 → {why}"
             root_causes.append(f"{label}：{why}")
         print(f"{label:14}{n:>6}  {verdict}")
+
+    # ── 判官分数：结构层 vs 文笔层，一眼看出瓶颈在哪一层 ────────────────
+    if judge_scores:
+        print()
+        print(f"## 判官分数（n={judge_n} 份审稿报告）\n")
+        print(f"{'维度':32}{'均分':>7}")
+        print("-" * 44)
+        for dim, val in judge_scores:
+            print(f"{dim:32}{val:>7.3f}")
+
+    # ── 违规码普查：哪些门在真的开火 ────────────────────────────────────
+    if violations:
+        print()
+        print("## 违规码普查（从不失败的门等于不存在的门）\n")
+        print(f"{'码':32}{'级别':>8}{'次数':>8}")
+        print("-" * 50)
+        for code, sev, n in violations:
+            print(f"{code:32}{sev:>8}{n:>8}")
 
     print()
     if root_causes:

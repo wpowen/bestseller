@@ -123,6 +123,7 @@ from bestseller.services.drafts import (
     generate_scene_draft,
     render_hype_preservation_block,
     _front10_forbidden_signal_terms,
+    resync_draft_word_count,
 )
 from bestseller.services.book_closure import (
     SETTLED_PRODUCTION_STATES,
@@ -3644,6 +3645,7 @@ async def _enforce_qimao_opening_gate_after_chapter(
                 )
                 if _recheck.passed:
                     chapter_draft.content_md = _revised
+                    resync_draft_word_count(chapter_draft, language=project.language or "zh-CN")
                     opening_texts[chapter.chapter_number] = _revised
                     await session.flush()
                     _emit_progress(
@@ -5304,12 +5306,28 @@ def _render_chapter_first_local_repair_instructions(
         target_line = (
             f"本章目标篇幅 {target_wc} 字（动态字数带内），" if target_wc else ""
         )
+        # 具体数字必须逐字写进 prompt——模型看不见的契约就是不存在的契约。
+        # 2026-08-22 真机（ch11）：在架稿 1797 字、下限 1800，差 3 个字整本
+        # 书停产；三轮重写 1726/1726/1797 全在下限边缘试——因为 prompt 只说
+        # 「按质检结论的差值补齐」，从没写出当前多少字、要补多少。
+        # 补字对齐**目标**而不是下限：贴着下限的稿后续任何修改都会再跌破。
+        _cur_wc = int(getattr(chapter, "current_word_count", 0) or 0)
+        gap_line = ""
+        if target_wc and _cur_wc:
+            _required = max(target_wc - _cur_wc, 300)
+            gap_line = (
+                f"当前草稿约 {_cur_wc} 字、目标 {target_wc} 字："
+                f"本轮必须新增至少 {_required} 字的新内容，"
+                "补到目标附近，而不是刚过下限——贴着下限的稿会在后续修改中"
+                "再次跌破，又挂回同一个码。"
+            )
         lines = [
             "【章节自动修复任务｜字数缺口优先】",
             f"命中阻断码：{', '.join(block_codes) if block_codes else 'unknown'}。",
             f"{target_line}首要任务是补足字数缺口：按质检结论给出的当前字数与"
             "下限的差值，一次性补齐差值并再加约 200 字缓冲——只补几十个字"
             "等于白烧一轮，下一轮还会因为同一个码被打回。",
+            gap_line,
             # 2026-08-14 真机 ch7：合同在场，模型仍把 1594 字的稿子「重写」成
             # 1020 字——补字数的轮次反而丢了内容，9 轮全挂同一个码。短章修复
             # 必须是「保底追加」而不是「整章重写」。
@@ -7694,6 +7712,7 @@ async def run_scene_pipeline(
                                 _new_pronoun,
                             )
                             draft.content_md = _fixed_text
+                            resync_draft_word_count(draft, language=project.language or "zh-CN")
                             await session.flush()
                             _id_violations = _revalidated
                 if _id_violations:
@@ -10421,6 +10440,7 @@ async def run_chapter_pipeline(
                 )
                 if ai_flavor_outcome.patched_text is not None:
                     chapter_draft.content_md = ai_flavor_outcome.patched_text
+                    resync_draft_word_count(chapter_draft, language=_af_lang)
                 # 去 AI 味二次清洗：gate 判 block(AI 味过多)时，先让写手做一遍
                 # 定向去AI味改写再复检，而不是直接打回人工修复。span 级 patcher 只
                 # 能删/换词，改不了"信息旁白/结论先行/解释规则"这类话语腔；这一步
@@ -10486,6 +10506,7 @@ async def run_chapter_pipeline(
                             chapter_draft.content_md = (
                                 _recheck.patched_text or _revised
                             )
+                            resync_draft_word_count(chapter_draft, language=_af_lang)
                             ai_flavor_outcome = _recheck
                             logger.info(
                                 "ai_flavor_gate ch%d: deslop revise %s "
@@ -10857,6 +10878,7 @@ async def run_chapter_pipeline(
             )
             if terminal_result.patched_text is not None and chapter_draft is not None:
                 chapter_draft.content_md = terminal_result.patched_text
+                resync_draft_word_count(chapter_draft, language=project.language or "zh-CN")
             terminal_gate_error = None
             if not terminal_result.passed:
                 terminal_gate_error = "terminal_quality_gate_blocked: " + ";".join(

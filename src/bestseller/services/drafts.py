@@ -1337,6 +1337,21 @@ def max_repeated_line_count(text: str) -> int:
     return max(counts.values()) if counts else 0
 
 
+def resync_draft_word_count(draft: Any, *, language: str = "zh-CN") -> None:
+    """原地修改 ``content_md`` 之后必须调用——让 ``word_count`` 跟上正文。
+
+    2026-08-22 定罪：9 处原地改 content_md 只有 2 处同步字数，全库 19% 的
+    稿 word_count 与实际不符（最大偏差 16688），ch7 的退化稿（实际 18902
+    字、记录 2558）靠过期字段赢了「在窗口内」判据、被换回在架稿。
+    """
+
+    body = getattr(draft, "content_md", None)
+    if isinstance(body, str):
+        draft.word_count = authoritative_word_count_for_language(
+            body, language=language
+        )
+
+
 def authoritative_word_count_for_language(text: str, *, language: str = "zh-CN") -> int:
     """Body-truth word count for chapter/scene commit (CJK for zh)."""
 

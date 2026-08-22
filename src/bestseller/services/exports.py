@@ -31,6 +31,7 @@ from bestseller.services.book_listing import (
 from bestseller.services.drafts import (
     count_words,
     format_chapter_heading,
+    resync_draft_word_count,
     sanitize_novel_markdown_content,
 )
 from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
@@ -1263,20 +1264,20 @@ def collect_publication_blockers(
         )
         if not status_publishable:
             blockers.append(
-                (
+
                     f"Chapter {chapter_number}: status is {status or 'unset'}, not publishable"
                     if is_en else f"第{chapter_number}章：状态为{status or '未设置'}，不是可发布状态，禁止发布"
-                )
+
             )
         if not shippable_state:
             blockers.append(
-                (
+
                     f"Chapter {chapter_number}: production_state is "
                     f"{production_state or 'unset'}, chapter is not finished"
                     if is_en else
                     f"第{chapter_number}章：门禁状态为{production_state or '未设置'}，"
                     "该章尚未写完，禁止发布"
-                )
+
             )
         elif production_state in _EXPORT_DEBT_PRODUCTION_STATES and debt_warnings is not None:
             debt_warnings.append(
@@ -1286,10 +1287,10 @@ def collect_publication_blockers(
             )
         if not list(getattr(draft, "assembled_from_scene_draft_ids", None) or []):
             blockers.append(
-                (
+
                     f"Chapter {chapter_number}: current draft has no scene provenance, export blocked"
                     if is_en else f"第{chapter_number}章：当前稿缺少场景来源记录，禁止发布"
-                )
+
             )
 
         # Everything above is structural: no current draft, an unpublishable
@@ -1439,25 +1440,25 @@ def collect_publication_blockers(
             )
             if not is_en and _wc < CHINESE_CHAPTER_HARD_MIN_WORDS:
                 _content_blocker(
-                    (
+
                         f"Chapter {chapter_number}: chapter length {_wc} below commercial floor "
                         f"{CHINESE_CHAPTER_HARD_MIN_WORDS}, export blocked"
                         if is_en
                         else f"第{chapter_number}章：章节体量 {_wc} 字低于商业硬底线 "
                         f"{CHINESE_CHAPTER_HARD_MIN_WORDS} 字，禁止发布"
-                )
+
             )
             elif _length_report.is_warning or _length_report.is_blocking:
                 if _length_report.is_blocking and not is_en:
                     _content_blocker(
-                        (
+
                             f"Chapter {chapter_number}: chapter length {_wc} outside commercial "
                             f"window {CHINESE_CHAPTER_HARD_MIN_WORDS}-{CHINESE_CHAPTER_HARD_MAX_WORDS}, "
                             "export blocked"
                             if is_en
                             else f"第{chapter_number}章：章节体量 {_wc} 字超出商业硬范围 "
                             f"{CHINESE_CHAPTER_HARD_MIN_WORDS}-{CHINESE_CHAPTER_HARD_MAX_WORDS} 字，禁止发布"
-                        )
+
                     )
                     continue
                 logger.warning(
@@ -1475,10 +1476,10 @@ def collect_publication_blockers(
         hygiene_issues = collect_unfinished_artifact_issues(draft.content_md, language=language)
         for issue in hygiene_issues:
             _content_blocker(
-                (
+
                     f"Chapter {chapter.chapter_number}: {issue}"
                     if is_en else f"第{chapter.chapter_number}章：{issue}"
-                )
+
             )
         try:
             from bestseller.services.common_sense_gate import evaluate_common_sense_gate
@@ -1505,11 +1506,11 @@ def collect_publication_blockers(
                 if finding.code in _adjudicated_clear:
                     continue
                 _content_blocker(
-                    (
+
                         f"Chapter {chapter_number}: common-sense gate {finding.code}: {finding.message}"
                         if is_en
                         else f"第{chapter_number}章：常识因果门禁 {finding.code}：{finding.message}"
-                    )
+
                 )
         except Exception as e:
             logger.warning("Publication gate: common-sense check failed for chapter %s (non-fatal): %s", chapter_number, e)
@@ -1528,17 +1529,17 @@ def collect_publication_blockers(
             for finding in local_findings[:5]:
                 message = str(finding.get("message") or "duplicate content")
                 _content_blocker(
-                    (
+
                         f"Chapter {chapter_number}: {message}"
                         if is_en else f"第{chapter_number}章：{message}"
-                    )
+
                 )
             if len(local_findings) > 5:
                 _content_blocker(
-                    (
+
                         f"Chapter {chapter_number}: {len(local_findings) - 5} more duplicate findings"
                         if is_en else f"第{chapter_number}章：另有{len(local_findings) - 5}条重复问题"
-                    )
+
                 )
         except Exception as e:
             logger.warning("Publication gate: local duplicate check failed for chapter %s (non-fatal): %s", chapter_number, e)
@@ -1578,10 +1579,10 @@ def collect_publication_blockers(
         ]) - emitted
         if remaining > 0:
             _content_blocker(
-                (
+
                     f"{remaining} more cross-chapter duplicate finding(s)"
                     if is_en else f"另有{remaining}条跨章重复问题"
-                )
+
             )
     except Exception as e:
         logger.warning("Publication gate: cross-chapter duplicate check failed (non-fatal): %s", e)
@@ -1632,6 +1633,7 @@ def _run_terminal_export_gate(
         )
         if result.patched_text is not None:
             draft.content_md = result.patched_text
+            resync_draft_word_count(draft, language=project.language or "zh-CN")
         if not result.passed:
             details = "; ".join([*result.errors, *result.issues])
             raise ValueError(
@@ -1828,6 +1830,7 @@ async def export_project_markdown(
                 # The callback may perform a localized patch. Persisting that
                 # exact text here keeps the export bytes and gate bytes equal.
                 draft.content_md = result.patched_text
+                resync_draft_word_count(draft, language=project.language or "zh-CN")
             if not bool(getattr(result, "passed", False)):
                 details = [
                     *list(getattr(result, "errors", ()) or ()),

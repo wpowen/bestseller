@@ -97,6 +97,19 @@ def count_zh_chars(text: str) -> int:
     return sum(1 for _ in _CJK_CHAR_RE.finditer(text))
 
 
+def cjk_chars_only(text: str) -> str:
+    """The CJK characters of *text*, in order, with everything else dropped.
+
+    Same character set as :func:`count_zh_chars` — exposed so callers that
+    need the *content* (e.g. content-addressing a draft) cannot drift into a
+    second definition of "which characters count". A duplicated regex here
+    was off by one CJK-Extension-A character on real data, which was enough
+    to break matching a quality report to the draft it graded.
+    """
+
+    return "".join(_CJK_CHAR_RE.findall(text or ""))
+
+
 def trim_chapter_to_hard_max(
     content_md: str,
     hard_max_zh_chars: int,
@@ -155,10 +168,7 @@ def check_chapter_length(
     if zh_count > hard_max:
         severity = "critical"
         code = CHAPTER_LENGTH_BLOCK_HIGH_CODE
-        detail = (
-            f"chapter has {zh_count} CJK chars, "
-            f"above hard max {hard_max} — must shrink"
-        )
+        detail = f"chapter has {zh_count} CJK chars, above hard max {hard_max} — must shrink"
     elif zh_count < hard_floor:
         severity = "critical"
         code = CHAPTER_TOO_SHORT_BLOCK_CODE

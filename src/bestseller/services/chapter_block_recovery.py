@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+# ruff: noqa: RUF002 — 中文注释里的全角标点是刻意的。
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import (
     ChapterAuditFindingModel,
+    ChapterDraftVersionModel,
     ChapterModel,
     ChapterQualityReportModel,
     ProjectModel,
@@ -22,6 +25,12 @@ from bestseller.services.chapter_outline_readiness_gate import (
     evaluate_chapter_outline_readiness,
 )
 from bestseller.services.gate_registry import registered_block_metadata_keys
+from bestseller.services.quality_report_claim import (
+    REPORT_CLAIM_LOOKBACK,
+    claim_report_for_draft,
+)
+
+logger = logging.getLogger(__name__)
 
 _OUTLINE_KEYS = (
     "blocked_by_chapter_outline_readiness_gate",
@@ -162,11 +171,40 @@ async def _latest_quality_report(
     session: AsyncSession,
     chapter: ChapterModel,
 ) -> ChapterQualityReportModel | None:
-    return await session.scalar(
-        select(ChapterQualityReportModel)
-        .where(ChapterQualityReportModel.chapter_id == chapter.id)
-        .order_by(ChapterQualityReportModel.created_at.desc())
+    """判定这一章是否已经复检转绿时，看的必须是**在架稿**的那份报告。
+
+    2026-08-22：标锁端因为取「时间上最新的一份」而误锁过一个干净的章
+    （见 :mod:`quality_report_claim`）。解锁端用的是同一个口径，错的
+    方向相反——若最新那份评的是一版被丢弃的**干净**稿，而在架稿其实
+    还有问题，这里就会误放。两端必须同源。
+
+    认不出来（旧行没有指纹、或读不到在架稿）时退回旧行为。
+    """
+
+    rows = list(
+        await session.scalars(
+            select(ChapterQualityReportModel)
+            .where(ChapterQualityReportModel.chapter_id == chapter.id)
+            .order_by(ChapterQualityReportModel.created_at.desc())
+            .limit(REPORT_CLAIM_LOOKBACK)
+        )
     )
+    if not rows:
+        return None
+    current_text = await session.scalar(
+        select(ChapterDraftVersionModel.content_md).where(
+            ChapterDraftVersionModel.chapter_id == chapter.id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+    )
+    claimed, reason = claim_report_for_draft(rows, current_text)
+    if reason == "claimed" and claimed is not rows[0]:
+        logger.info(
+            "chapter %s: newest quality report graded a draft that was never "
+            "shipped; judging staleness on the shipped draft's report instead",
+            getattr(chapter, "chapter_number", "?"),
+        )
+    return claimed
 
 
 async def _clear_scene_auto_repair_residue(

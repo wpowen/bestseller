@@ -135,6 +135,11 @@ from bestseller.services.quality_levers import (
     build_writer_quality_levers_block,
     extract_quality_levers_meta,
 )
+from bestseller.services.quality_report_claim import (
+    REPORT_CLAIM_LOOKBACK,
+    claim_report_for_draft,
+    graded_text_fingerprint,
+)
 from bestseller.services.quality_levers.character_engine import (
     collect_forbidden_words_from_profiles,
     collect_signature_words_from_profiles,
@@ -2465,6 +2470,7 @@ async def _evaluate_chapter_quality_gate(
         report=report,
         blocking_codes=_persisted_blocking_codes,
         extra_payload=_extra_payload,
+        graded_text=content,
     )
 
     # Only register diversity telemetry for chapters that actually ship —
@@ -2508,6 +2514,72 @@ async def _evaluate_chapter_quality_gate(
     return outcome
 
 
+async def _resolve_shipped_report_payload(
+    session: AsyncSession,
+    chapter: ChapterModel,
+    newest_report: Any,
+) -> dict[str, Any]:
+    """要拿一份报告去**标 blocked** 时，先确认它评的是在架的那一版。
+
+    只在 R20（预算耗尽）与 C3（plateau）两个分支调用——它们是唯二会把
+    章标成 blocked 的地方，也是唯二会因为认错版而误锁的地方。其余路径
+    保持零额外查询（这条修复的第一版在所有路径上都多查了一次，把 34 个
+    用例的替身队列全打乱了：修复不该改变它不需要改变的东西）。
+    """
+
+    newest_payload = dict(getattr(newest_report, "report_json", None) or {})
+    try:
+        rows = list(
+            await session.scalars(
+                select(ChapterQualityReportModel)
+                .where(ChapterQualityReportModel.chapter_id == chapter.id)
+                .order_by(ChapterQualityReportModel.created_at.desc())
+                .limit(REPORT_CLAIM_LOOKBACK)
+            )
+        )
+        current_text = await _load_current_draft_text(session, chapter)
+    except Exception:  # pragma: no cover — 认领是加固，查不到就按旧行为走
+        return newest_payload
+
+    claimed, reason = claim_report_for_draft(rows, current_text)
+    if reason != "claimed":
+        if reason == "no_claim":
+            logger.info(
+                "chapter %d: no quality report claims the shipped draft; "
+                "using the newest verdict as before",
+                chapter.chapter_number,
+            )
+        return newest_payload
+
+    claimed_payload = dict(getattr(claimed, "report_json", None) or {})
+    if claimed is not rows[0]:
+        logger.info(
+            "chapter %d: newest quality report graded a draft that was never "
+            "shipped; blocking on the shipped draft's verdict instead "
+            "(newest codes=%s, shipped codes=%s)",
+            chapter.chapter_number,
+            list(newest_payload.get("blocking_codes") or ()),
+            list(claimed_payload.get("blocking_codes") or ()),
+        )
+    return claimed_payload
+
+
+async def _load_current_draft_text(
+    session: AsyncSession, chapter: ChapterModel
+) -> str | None:
+    """在架稿的正文；读不到就返回 None（调用方退回旧行为）。"""
+
+    try:
+        return await session.scalar(
+            select(ChapterDraftVersionModel.content_md).where(
+                ChapterDraftVersionModel.chapter_id == chapter.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+        )
+    except Exception:  # pragma: no cover — 认领是优化，读不到不该拖垮修复轮
+        return None
+
+
 async def _persist_chapter_quality_report(
     session: AsyncSession,
     *,
@@ -2516,6 +2588,7 @@ async def _persist_chapter_quality_report(
     report: QualityReport,
     blocking_codes: tuple[str, ...],
     extra_payload: dict[str, Any] | None = None,
+    graded_text: str | None = None,
 ) -> None:
     """Insert a ``ChapterQualityReportModel`` row snapshotting this gate pass.
 
@@ -2550,6 +2623,10 @@ async def _persist_chapter_quality_report(
             ],
             "blocking_codes": list(blocking_codes),
         }
+        if graded_text is not None:
+            # 报告必须自报它评的是哪一版正文，否则下游只能靠 created_at
+            # 猜——而「最新的报告」和「在架的草稿」不是同一条选择规则。
+            payload["graded"] = graded_text_fingerprint(graded_text)
         if extra_payload:
             # Never let extra_payload overwrite the structural keys above —
             # the contract with downstream readers is that those keys always
@@ -13077,6 +13154,12 @@ async def maybe_prepare_chapter_auto_repair(
 
     # Load the most recent report row — there can be multiple if the chapter
     # has been re-drafted before; we only care about the latest verdict.
+    #
+    # ⚠️ 「最新」在只有一版稿时等于「在架的那版」，多候选稿时不等于。
+    # 真正会因此误判的是下面 R20 / C3 两个**标 blocked** 的分支，那里
+    # 走 _resolve_shipped_report_payload() 重新认领；正常路径保持零额外
+    # 查询（这条修复第一版在所有路径上多查了一次，把 34 个用例的替身
+    # 队列全打乱了——修复不该改变它不需要改变的东西）。
     try:
         latest_report = await session.scalar(
             select(ChapterQualityReportModel)
@@ -13126,7 +13209,9 @@ async def maybe_prepare_chapter_auto_repair(
         _budget_scenes = await _load_repair_scenes()
         _total_rounds = total_chapter_scene_repair_rounds(_budget_scenes)
         if _total_rounds >= _rounds_budget:
-            _latest_payload = dict(getattr(latest_report, "report_json", None) or {})
+            _latest_payload = await _resolve_shipped_report_payload(
+                session, chapter, latest_report
+            )
             _known_codes = tuple(
                 dict.fromkeys(
                     str(c)
@@ -13181,7 +13266,9 @@ async def maybe_prepare_chapter_auto_repair(
                 min_delta=BLOCKING_CODE_MIN_DELTA,
             )
             if _plateau.should_stop and _plateau.reason == "plateau":
-                _latest_payload = dict(getattr(latest_report, "report_json", None) or {})
+                _latest_payload = await _resolve_shipped_report_payload(
+                    session, chapter, latest_report
+                )
                 _known_codes = tuple(
                     dict.fromkeys(
                         str(c) for c in (_latest_payload.get("blocking_codes") or ()) if c

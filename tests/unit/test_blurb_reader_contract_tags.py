@@ -26,7 +26,7 @@
 
 from __future__ import annotations
 
-# ruff: noqa: RUF002 — 中文标点是刻意的。
+# ruff: noqa: RUF001, RUF002 — 中文标点是刻意的。
 from bestseller.services.story_enhancers import reader_contract_labels
 
 
@@ -99,3 +99,48 @@ def test_prompt_asks_for_the_category_not_the_exact_tokens() -> None:
     assert "也可以换成更贴本书的写法" in user
     # 不许再要求「必须出现这几个词」
     assert "必须出现在标签行" not in user
+
+
+def test_field_labels_never_leak_into_the_tag_line() -> None:
+    """字段名不能被模型当成要输出的内容。
+
+    2026-08-22 真机回归（custom-xuanhuan-1787383584）：产出的第一行是
+
+        【标签行】玄幻+废柴逆袭+符道+分院试炼+学院
+
+    「标签行」三个字被写进了【】里。上一本还是正确的
+    【废契+玄幻+宗门+苟道+反派视角+智商在线】——两者之间我把字段名
+    改成了「【读者契约·标签行优先用这些】」，**字段名里带「标签行」
+    三个字**，模型据此以为要输出这个标记。
+
+    修法两条：字段名不再含「标签行」；形态规则明说【】里不放字段名。
+    """
+
+    from bestseller.services.blurb_copywriter import _build_candidate_messages
+
+    class _Persona:
+        channel = "male"
+
+    _system, user = _build_candidate_messages(
+        "scene_hook",
+        spine={},
+        premise="测试",
+        golden_finger_line="",
+        title="X",
+        tags=["玄幻"],
+        genre="玄幻",
+        sub_genre="玄幻",
+        platform=None,
+        persona=_Persona(),
+        emotion_exemplars=(),
+        book_jargon_terms=(),
+        band=(150, 250),
+        reader_contract=("轻松",),
+    )
+    # 字段名里不许再出现「标签行」
+    for line in user.split("\n"):
+        if line.startswith("【") and "】" in line:
+            label = line[: line.index("】") + 1]
+            assert "标签行" not in label, f"字段名带「标签行」会被模型抄进输出：{label}"
+    # 形态规则要明确禁止
+    assert "不要把上面任何字段名" in user

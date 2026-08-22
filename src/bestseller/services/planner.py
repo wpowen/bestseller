@@ -12621,6 +12621,26 @@ def _source_bound_roster_from_book_spec(
         if function:
             member["strength"] = function
 
+        # 每个具名角色都要有一条**指向主角**的关系，否则 relationships 表
+        # 是空的（`upsert_cast_spec` 遍历 `all_characters()` 的
+        # `relationships` 建关系）。
+        #
+        # 2026-08-22 真机：契约修好后 book_spec.cast=12、characters=12，
+        # relationships 仍是 0——搬来的角色没有这个字段，而编译器里
+        # conflict_map 也是初始化成 [] 后从未被填。没有关系就没有关系
+        # 张力，也就没有对话动机（真机对话占比 7.6%，人类 20.7%）。
+        #
+        # 零发明：type 取 role 原文、tension 取 function 原文，
+        # 都来自已批准构思，不新编任何情节。
+        if protagonist_key and name != protagonist_key:
+            member["relationships"] = [
+                {
+                    "character": protagonist_key,
+                    "type": role_label or "supporting",
+                    "tension": function or role_label or "",
+                }
+            ]
+
         if antagonist is None and any(
             marker in role_label for marker in _ANTAGONIST_ROLE_MARKERS
         ):

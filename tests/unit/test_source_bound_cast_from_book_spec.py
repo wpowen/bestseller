@@ -24,12 +24,11 @@ name / role / function / tag，一个字段都不新编。
 from __future__ import annotations
 
 # ruff: noqa: RUF001, RUF002, RUF003 — 中文标点是刻意的。
-
 import json
 
-from bestseller.services import planner as planner_services
-
 from test_planner_services import build_project, lock_design_snapshot
+
+from bestseller.services import planner as planner_services
 
 
 def _project_with_cast(cast: list[dict[str, str]]) -> tuple[object, str, dict, dict]:
@@ -122,3 +121,70 @@ def test_no_cast_in_book_spec_keeps_the_old_shape() -> None:
     cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
     assert cast["antagonist"] is None
     assert cast["supporting_cast"] == []
+
+
+# ── 每个搬来的角色要带一条与主角的关系 ────────────────────────────────────
+#
+# 2026-08-22 真机（custom-xuanhuan-1787383584）：契约修好后 book_spec.cast=12、
+# characters=12，**relationships 仍然是 0**。
+#
+# 追下去有两条路会生成关系，编译器一条都没走：
+#   * `cast_spec.<character>.relationships`（主路径，`upsert_cast_spec`
+#     遍历 `all_characters()` 逐条建）
+#   * `cast_spec.conflict_map`（补充，只表达冲突）
+# 编译器里 `conflict_map` 初始化成 `[]` 之后从未被填，搬来的配角也没有
+# `relationships` 字段——又一个硬编码空数组。
+#
+# 后果是没有关系张力 → 对话没有动机（真机对话占比 7.6%，人类 20.7%）。
+#
+# ⚠️ 零发明：关系对象只要 character / type / tension 三个字段，全部取自
+# 已批准构思里的 role 与 function，不新编任何情节。
+
+
+def test_every_named_character_gets_a_relationship_to_the_protagonist() -> None:
+    project, premise, book, world = _project_with_cast(
+        [
+            {"name": "沈砚", "role": "主角", "function": "领航", "tag": "袖口常沾墨"},
+            {
+                "name": "赵同",
+                "role": "主要对手·航线赌局",
+                "function": "升级封锁",
+                "tag": "逼稿成瘾",
+            },
+            {"name": "周砚", "role": "同伴", "function": "通风报信", "tag": "墙根听壁角"},
+        ]
+    )
+    cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
+
+    everyone = [cast["antagonist"], *cast["supporting_cast"]]
+    for member in everyone:
+        assert member is not None
+        rels = member.get("relationships") or []
+        assert rels, f"{member['name']} 没有任何关系——关系表会因此是空的"
+        assert any(r.get("character") == "沈砚" for r in rels)
+
+
+def test_relationship_type_comes_from_the_approved_role() -> None:
+    """对抗方与同伴要能区分开，且措辞取自构思原文，不新编。"""
+
+    project, premise, book, world = _project_with_cast(
+        [
+            {"name": "沈砚", "role": "主角", "function": "领航", "tag": "x"},
+            {"name": "赵同", "role": "主要对手·航线赌局", "function": "升级封锁", "tag": "y"},
+            {"name": "周砚", "role": "同伴", "function": "通风报信", "tag": "z"},
+        ]
+    )
+    cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
+    ant = cast["antagonist"]
+    ally = next(c for c in cast["supporting_cast"] if c["name"] == "周砚")
+
+    assert ant["relationships"][0]["type"] != ally["relationships"][0]["type"]
+    # 张力描述必须来自构思里的 function，不是模板句
+    assert "升级封锁" in json.dumps(ant["relationships"], ensure_ascii=False)
+
+
+def test_no_relationships_when_the_concept_named_nobody() -> None:
+    project, premise, book, world = _project_with_cast([])
+    cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
+    assert cast["supporting_cast"] == []
+    assert cast["antagonist"] is None

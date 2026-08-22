@@ -225,6 +225,48 @@ def render_story_enhancer_contract_block(
     return "\n\n".join(parts)
 
 
+# ── 读者契约标签（对外见光的那一行）─────────────────────────────────────────
+# 2026-08-22 用户定罪：《书院笔仙》的简介标签行是【代笔杂役+话本成真+
+# 笔即是命+书院权斗】——四个全是**设定关键词**，对陌生读者不提供任何
+# 「我要不要点进去」的信息。真实榜单的标签行是【无系统+单女主+轻松爽文】
+# 这类**避雷契约**：有没有系统、几个女主、虐不虐。
+#
+# 而这本书建书时勾的恰恰就是这类信息（comedy_engine / hype /
+# cost_style=minimal），一个都没传给文案师。
+#
+# ⚠️ 这不是种词：标签由**用户自己勾的选项**确定性推导，没勾就没有，
+# 绝不凭空替一本书对读者作出承诺。
+_READER_CONTRACT_BY_SKILL: dict[str, str] = {
+    "comedy_engine": "轻松",
+    "hype_satisfaction_engine": "爽文",
+    "romance_tenderness_engine": "有感情线",
+    "suspense_reveal_engine": "强悬念",
+    "system_payoff_engine": "有系统",
+}
+_READER_CONTRACT_BY_COST_STYLE: dict[str, str] = {
+    # 「无代价」对读者的意思就是主角不受虐——这正是读者最想先知道的一条。
+    "minimal": "不虐主角",
+}
+
+
+def reader_contract_labels(metadata: Mapping[str, Any] | None) -> tuple[str, ...]:
+    """把建书时勾的选项翻译成**读者看得懂的**契约标签。
+
+    只翻译已勾选项；没勾就返回空。顺序稳定、去重。
+    """
+
+    selection = resolve_story_enhancers(metadata)
+    labels: list[str] = []
+    for skill_key in selection.effect_skills:
+        label = _READER_CONTRACT_BY_SKILL.get(skill_key)
+        if label and label not in labels:
+            labels.append(label)
+    cost_label = _READER_CONTRACT_BY_COST_STYLE.get(selection.cost_style)
+    if cost_label and cost_label not in labels:
+        labels.append(cost_label)
+    return tuple(labels)
+
+
 # ── coverage audit (the 校验门) ───────────────────────────────────────────────
 # Heuristic on-page signals per effect. The audit only catches the *systemic
 # absence* case (the zhaoshen-hr-v13 failure: a selected effect appears in ~0

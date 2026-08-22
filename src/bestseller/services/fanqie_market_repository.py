@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+# ruff: noqa: RUF003 — 中文注释里的全角标点是刻意的。
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -25,6 +26,7 @@ from bestseller.infra.db.models import (
     FanqieCompetitorProfileModel,
     FanqieRankingSnapshotModel,
     PlanningArtifactVersionModel,
+    ProjectModel,
 )
 from bestseller.services.fanqie_long_ranking_gate import evaluate_fanqie_long_ranking_gate
 from bestseller.services.fanqie_market_analyzer import build_market_analysis_bundle
@@ -34,6 +36,7 @@ from bestseller.services.fanqie_seed_profiles import (
     seed_profile_to_artifacts,
 )
 from bestseller.services.projects import get_project_by_slug, import_planning_artifact
+from bestseller.services.story_enhancers import resolve_cost_style
 
 
 @dataclass(frozen=True)
@@ -307,10 +310,22 @@ async def evaluate_and_persist_fanqie_long_readiness(
 ) -> PlanningArtifactVersionModel:
     """Evaluate and store the long-form Fanqie readiness report."""
 
+    # 代价档必须传下去：勾了「无代价」的书不该每章被要求给能力加代价
+    # （否则门禁在系统性地奖励「能力被暴露」）。查不到项目就按默认档走。
+    _cost_style = ""
+    try:
+        _project = await session.scalar(
+            select(ProjectModel).where(ProjectModel.slug == project_slug)
+        )
+        _meta = getattr(_project, "metadata_json", None)
+        _cost_style = resolve_cost_style(_meta if isinstance(_meta, Mapping) else {})
+    except Exception:  # pragma: no cover — 取不到项目就按默认档走，别拖垮体检
+        _cost_style = ""
     report = evaluate_fanqie_long_ranking_gate(
         chapter_texts,
         project_slug=project_slug,
         protagonist_name=protagonist_name,
+        cost_style=_cost_style,
     )
     return await import_planning_artifact(
         session,

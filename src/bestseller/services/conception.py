@@ -318,6 +318,9 @@ from bestseller.services.motif_concentration import (  # noqa: E402
     flatten_text as _motif_flatten,
     render_motif_amplification_feedback as _render_motif_amplification_feedback,
 )
+from bestseller.services.story_enhancers import (  # noqa: E402
+    reader_contract_labels,
+)
 
 
 def _mentions_debt_theme(*texts: Any) -> bool:
@@ -7473,6 +7476,11 @@ async def run_conception_pipeline(
                 title=title, tags=tags, genre=_ap_genre, sub_genre=_ap_sub,
                 platform=_ap_platform, language=_ap_language,
                 v0_synopsis=synopsis, book_jargon_terms=_book_jargon_terms,
+                # 建书勾选（轻松/爽文/不虐主角…）翻译成读者看得懂的契约标签。
+                # 标签行是读者决定点不点进去的依据，不是设定名词表。
+                reader_contract=reader_contract_labels(
+                    getattr(project, "metadata_json", None)
+                ),
                 # The approved hook card is part of the fact-grounding canon:
                 # a deadline or relationship the champion states must trace to
                 # SOME approved surface, and several live in the hook card only.

@@ -193,6 +193,7 @@ def _build_candidate_messages(
     emotion_exemplars: tuple[str, ...],
     book_jargon_terms: tuple[str, ...],
     band: tuple[int, int],
+    reader_contract: tuple[str, ...] = (),
 ) -> tuple[str, str]:
     directive = _STRATEGY_DIRECTIVES.get(strategy, _STRATEGY_DIRECTIVES["scene_hook"])
     lo, hi = band
@@ -211,6 +212,10 @@ def _build_candidate_messages(
         f"【金手指/核心规则一句话】{golden_finger_line or '（无）'}\n\n"
         f"【书名】{title}\n"
         f"【频道】{getattr(persona, 'channel', '通用')}\n"
+        # 标签行的素材。读者契约来自建书勾选（轻松/爽文/不虐主角…），
+        # 本书标签来自选题——两者都是**这本书自己的事实**，不是通用词表。
+        f"【读者契约·标签行优先用这些】{'、'.join(reader_contract) or '（无）'}\n"
+        f"【本书标签·可作补充】{'、'.join(tags[:10]) or '（无）'}\n"
         "【情绪事件】从本书自己的前提与冲突里选最强的高唤起事件前置，不套其他题材的情绪词。\n\n"
         f"{directive}\n\n"
         f"硬性要求：\n"
@@ -221,6 +226,9 @@ def _build_candidate_messages(
         "①【形态】第一行是标签行：3-6 个词用+号连接、外加【】（如【无系统+单女主+"
         "轻松爽文】），只许写题材元素、设定关键词和避雷契约，且每个词都必须能从"
         "上面给的事实推出——禁止编造出版/短剧/评分/完本字数这类信用背书。"
+        "【读者契约】里若有词，**至少 1 个必须出现在标签行**：标签行是读者"
+        "决定点不点进去的依据（虐不虐、轻不轻松、爽不爽），不是设定名词表；"
+        "四个词全是设定关键词的标签行等于没写。"
         f"标签行之后是正文：{lo}-{hi} 字（不含标签行），短句分行，一句一意，"
         "6-12 行，每行都能独立成立；不写大段落；\n"
         "②【体验样本，缺失即废稿】至少一段"
@@ -414,6 +422,7 @@ async def run_blurb_copywriting(
     hook_card: dict[str, Any] | None = None,
     emotion_exemplars: tuple[str, ...] = (),
     book_jargon_terms: tuple[str, ...] = (),
+    reader_contract: tuple[str, ...] = (),
     config: dict[str, Any] | None = None,
     generator: GeneratorFn | None = None,
     persona_judge: Any = None,
@@ -481,6 +490,7 @@ async def run_blurb_copywriting(
                 title=title, tags=tags, genre=genre, sub_genre=sub_genre,
                 platform=platform, persona=persona, emotion_exemplars=emotion_exemplars,
                 book_jargon_terms=book_jargon_terms, band=band,
+                reader_contract=reader_contract,
             )
             raw, run_id = await gen_fn(system, user)
             if run_id is not None:

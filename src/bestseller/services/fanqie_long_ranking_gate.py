@@ -1,4 +1,4 @@
-# ruff: noqa: RUF001
+# ruff: noqa: RUF001, RUF003 — 中文注释里的全角标点是刻意的。
 """Deterministic long-form Fanqie ranking readiness gate."""
 
 from __future__ import annotations
@@ -269,6 +269,7 @@ def evaluate_fanqie_long_ranking_gate(
     *,
     project_slug: str = "",
     protagonist_name: str | None = None,
+    cost_style: str = "",
 ) -> FanqieLongRankingReport:
     """Evaluate long-form opening and chapter-loop readiness for Fanqie."""
 
@@ -298,7 +299,7 @@ def evaluate_fanqie_long_ranking_gate(
         )
     )
     findings.extend(_first_three_findings(chapters))
-    findings.extend(_per_chapter_findings(chapters))
+    findings.extend(_per_chapter_findings(chapters, cost_style=cost_style))
     metrics = _metrics(chapters)
     return FanqieLongRankingReport(
         passed=not any(finding.severity == "critical" for finding in findings),
@@ -421,7 +422,9 @@ def _first_three_findings(chapters: list[tuple[int, str]]) -> list[FanqieLongRan
     return findings
 
 
-def _per_chapter_findings(chapters: list[tuple[int, str]]) -> list[FanqieLongRankingFinding]:
+def _per_chapter_findings(
+    chapters: list[tuple[int, str]], *, cost_style: str = ""
+) -> list[FanqieLongRankingFinding]:
     findings: list[FanqieLongRankingFinding] = []
     exposition_streak: list[int] = []
     for number, text in chapters:
@@ -452,7 +455,18 @@ def _per_chapter_findings(chapters: list[tuple[int, str]]) -> list[FanqieLongRan
                     repair_hint="章末留下新问题、新危险、新选择或下一场明确目标。",
                 )
             )
-        if has_ability and not has_cost:
+        # 勾了「无代价」的书不查这一条。
+        #
+        # 2026-08-22 用户定罪：这条 finding 的修复提示是「给能力增加冷却、
+        # 疼痛、暴露、资源消耗或道德代价」，每章都跑、完全不认 cost_style。
+        # 而 minimal 档的语义就是「不要自损代价」。于是框架在系统性地奖励
+        # 「能力被暴露」——用户看到的现象是「有这样的神器了不得藏着掖着，
+        # 还能被发现？」
+        #
+        # 这是 motif-police-self-contradiction（命令写代价再因代价杀书）
+        # 的镜像版：用户说不要代价，门禁要求有代价。只关 minimal 档的这
+        # 一条，其余档位与其余判据一律不动。
+        if has_ability and not has_cost and cost_style != "minimal":
             findings.append(
                 _finding(
                     "advantage_cost_missing",

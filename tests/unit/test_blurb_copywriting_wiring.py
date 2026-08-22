@@ -47,9 +47,15 @@ def test_copywriting_champion_is_sanitized_and_truncated():
 
     source = _source()
     cw_call_pos = source.index("_copywriting_result = await run_blurb_copywriting(")
-    # 窗口 2400（原 1200）：2026-08-06 在赋值前插入了正典人名校验分支，两道防线
-    # 仍在同一段里，只是往后挪了。放宽的是取样窗口，不是断言本身。
-    surrounding = source[cw_call_pos : cw_call_pos + 2400]
+    # 取到本段末尾，而不是固定字符窗口。
+    #
+    # 这个窗口 2026-08-06 已经因为在中间插入代码放宽过一次（1200→2400），
+    # 2026-08-22 又被插入的 reader_contract 参数挤破了第二次。每次插入几行
+    # 就要来调一次常数，说明脆的是取样方式不是断言——改成按下一个顶层
+    # 语句边界切，断言一字未动。
+    _tail = source[cw_call_pos:]
+    _next_block = _tail.find("\n        # ── ")
+    surrounding = _tail[: _next_block if _next_block > 0 else 4000]
     assert "_sanitize_forbidden_default_motifs(_copywriting_result.champion" in surrounding
     assert "truncate_at_sentence(synopsis, 500)" in surrounding
 

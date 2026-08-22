@@ -1825,6 +1825,32 @@ def _should_generate_chapter_review_commentary(settings: AppSettings) -> bool:
     return settings.quality.enable_llm_chapter_commentary
 
 
+def _log_optional_review_llm_failure(
+    exc: BaseException, *, what: str, chapter_number: int
+) -> None:
+    """可选 LLM 判官层失败的统一降级日志。
+
+    区分两类（2026-08-22，用户在前端看到超时的完整 traceback）：
+
+    * ``TimeoutError``：预期的有界降级——供应商延迟尖峰，语义层本轮跳过。
+      一行 WARNING，不带堆栈；把它打成事故现场只会淹没真故障。
+    * 其他异常：真故障，保留完整 ``logger.exception``。此处曾因 debug 级
+      静默吞掉判官崩溃、让语义层整体失效无人知晓——那个教训不能回退。
+    """
+
+    if isinstance(exc, TimeoutError):
+        logger.warning(
+            "ch%d: %s timed out — semantic layer skipped for this round (%s)",
+            chapter_number,
+            what,
+            exc,
+        )
+        return
+    logger.exception(
+        "%s failed for ch%d (judge ran but raised)", what, chapter_number
+    )
+
+
 async def _await_optional_chapter_review_llm(
     awaitable: Any,
     *,
@@ -8510,9 +8536,8 @@ async def review_chapter_draft(
             # change) without anyone noticing — the entire semantic quality
             # layer would be effectively disabled with no signal.  Escalated to
             # `logger.exception` so production logs surface the failure.
-            logger.exception(
-                "chapter LLM commercial judge failed for ch%d (judge ran but raised)",
-                chapter_number,
+            _log_optional_review_llm_failure(
+                exc, what="chapter LLM commercial judge", chapter_number=chapter_number
             )
             if getattr(
                 settings.pipeline,
@@ -8635,9 +8660,8 @@ async def review_chapter_draft(
                         judge_result=window_judge_result,
                     )
         except Exception as exc:
-            logger.exception(
-                "chapter window LLM judge failed for ch%d (judge ran but raised)",
-                chapter_number,
+            _log_optional_review_llm_failure(
+                exc, what="chapter window LLM judge", chapter_number=chapter_number
             )
             if getattr(
                 settings.pipeline,
@@ -8725,9 +8749,8 @@ async def review_chapter_draft(
                         judge_result=volume_judge_result,
                     )
         except Exception as exc:
-            logger.exception(
-                "volume LLM checkpoint judge failed for ch%d (judge ran but raised)",
-                chapter_number,
+            _log_optional_review_llm_failure(
+                exc, what="volume LLM checkpoint judge", chapter_number=chapter_number
             )
             if getattr(
                 settings.pipeline,
@@ -8780,10 +8803,9 @@ async def review_chapter_draft(
                 label="chapter_review_commentary",
                 chapter_number=chapter.chapter_number,
             )
-        except Exception:
-            logger.exception(
-                "chapter review commentary failed for ch%d (ignored)",
-                chapter_number,
+        except Exception as exc:
+            _log_optional_review_llm_failure(
+                exc, what="chapter review commentary", chapter_number=chapter_number
             )
         else:
             critic_response = completion.content.strip() or critic_response

@@ -144,3 +144,24 @@ def test_field_labels_never_leak_into_the_tag_line() -> None:
             assert "标签行" not in label, f"字段名带「标签行」会被模型抄进输出：{label}"
     # 形态规则要明确禁止
     assert "不要把上面任何字段名" in user
+
+
+def test_conception_call_site_does_not_reference_project() -> None:
+    """构思阶段还没有 project——书是构思之后才创建的。
+
+    2026-08-22 真机：接线第一版在 run_conception_pipeline 里写了
+    `getattr(project, "metadata_json", None)`，NameError 让文案淘汰赛
+    整体失败回退 v0（fail-open 掩盖了它，靠全容器错误扫描才捞出来）。
+    勾选项的正确来源是 ctx 的 genre_intent_contract.explicit_enhancers。
+    """
+
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    anchor = src.index("reader_contract=reader_contract_labels(")
+    window = src[anchor : anchor + 600]
+    # 断言正确来源在场、错误来源不在场
+    assert "explicit_enhancers" in window
+    assert "getattr(project" not in window

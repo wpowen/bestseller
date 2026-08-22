@@ -7526,8 +7526,23 @@ async def run_conception_pipeline(
                 v0_synopsis=synopsis, book_jargon_terms=_book_jargon_terms,
                 # 建书勾选（轻松/爽文/不虐主角…）翻译成读者看得懂的契约标签。
                 # 标签行是读者决定点不点进去的依据，不是设定名词表。
+                #
+                # ⚠️ 勾选项从 ctx 的 genre_intent_contract 取——构思阶段
+                # **还没有 project**（书是构思之后才创建的）。第一版写了
+                # `getattr(project, ...)`，NameError 让文案淘汰赛整体失败
+                # 回退 v0（真机 custom-xuanhuan-1787407568 撞上，fail-open
+                # 掩盖了它，靠全容器错误扫描才捞出来）。
                 reader_contract=reader_contract_labels(
-                    getattr(project, "metadata_json", None)
+                    {
+                        "story_enhancers": (
+                            (ctx.get("genre_intent_contract") or {}).get(
+                                "explicit_enhancers"
+                            )
+                            or {}
+                        )
+                        if isinstance(ctx, dict)
+                        else {}
+                    }
                 ),
                 # The approved hook card is part of the fact-grounding canon:
                 # a deadline or relationship the champion states must trace to

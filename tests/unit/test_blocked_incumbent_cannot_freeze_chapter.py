@@ -26,7 +26,7 @@ current，条件是它自己**没被质量门 blocked**。三份稿实测：
 
 from __future__ import annotations
 
-# ruff: noqa: RUF002 — 中文标点是刻意的。
+# ruff: noqa: RUF001, RUF002, RUF003 — 中文标点是刻意的。
 from bestseller.services.reviews import challenger_takes_current
 
 
@@ -118,3 +118,99 @@ class TestWiring:
         assert "challenger_takes_current(" in src
         # 旧的「只看自己是否 blocked」写法必须消失
         assert "is_current=not quality_gate_rejected_current_promotion" not in src
+
+
+class TestIncumbentEvidenceIsReadNotRecomputed:
+    """⚠️ 首版接线用两值解包 `_evaluate_chapter_quality_gate`，而它返回
+    `str | None`（单值）——运行时抛 ValueError、被 except 吞掉、退回旧行为，
+    **整个修复在生产上是空操作**。源码字符串断言的接线测试抓不到这种错，
+    所以这里断言真实签名与真实取数路径。
+    """
+
+    def test_quality_gate_returns_a_single_value(self) -> None:
+        import inspect
+        import typing
+
+        from bestseller.services.drafts import _evaluate_chapter_quality_gate
+
+        ret = inspect.signature(_evaluate_chapter_quality_gate).return_annotation
+        text = ret if isinstance(ret, str) else typing.get_type_hints(
+            _evaluate_chapter_quality_gate
+        ).get("return", "")
+        assert "tuple" not in str(text).lower(), (
+            "它是单值返回——任何两值解包都会在运行时炸"
+        )
+
+    def test_incumbent_path_does_not_rerun_the_gate(self) -> None:
+        """比较用**已有证据**，不重跑网关（那会写一行质量报告作为副作用）。"""
+
+        import inspect
+
+        from bestseller.services import reviews
+
+        src = inspect.getsource(reviews.rewrite_chapter_from_task)
+        # 首版那行破代码必须消失
+        assert "_inc_outcome, _inc_violations" not in src
+        # 任何对网关的两值解包都不允许
+        import re
+
+        assert not re.search(
+            r"\w+\s*,\s*\w+\s*=\s*await\s+_evaluate_chapter_quality_gate", src
+        )
+        # 在架稿判定用已在作用域内的章节状态，不额外查库
+        idx = src.find("_incumbent_blocked: bool | None")
+        assert idx != -1
+        assert "production_state" in src[idx - 600 : idx + 400]
+
+
+class TestUnknownIncumbentIsConservative:
+    """未评分的在架稿 = 未知，不是「无在架稿」。
+
+    ⚠️ 我的首版把「读不到质量分」也当成 None（无在架可比），于是被质量门
+    拦下的挑战者照样上位——直接碰坏了既有保护
+    （test_rewrite_chapter_from_task_preserves_current_when_duplicate_gate_blocks）。
+    未知必须保守：只有**确知在架稿也不合格**时才让挑战者顶上。
+    """
+
+    def test_unknown_incumbent_blocks_a_blocked_challenger(self) -> None:
+        assert (
+            challenger_takes_current(
+                challenger_blocked=True,
+                incumbent_blocked=False,   # 状态干净 → 保护它
+                challenger_violations=1,
+                incumbent_violations=None,
+            )
+            is False
+        )
+
+    def test_both_blocked_without_counts_lets_the_newer_in(self) -> None:
+        """拿不到逐条计数时不能卡死：旧稿已证明不可出厂，继续占位只会让
+        审稿反复评同一份文本。"""
+
+        assert (
+            challenger_takes_current(
+                challenger_blocked=True,
+                incumbent_blocked=True,
+                challenger_violations=3,
+                incumbent_violations=None,
+            )
+            is True
+        )
+
+    def test_wiring_uses_chapter_state_not_an_extra_query(self) -> None:
+        """判定用已在作用域内的章节状态，不额外查库——多一次 session.scalar
+        会打乱按调用序返回的测试桩（我踩过）。"""
+
+        import inspect
+
+        from bestseller.services import reviews
+
+        src = inspect.getsource(reviews.rewrite_chapter_from_task)
+        idx = src.find("_incumbent_state = ")
+        assert idx != -1, "在架稿状态应当直接取自 chapter.production_state"
+        assert "production_state" in src[idx : idx + 200]
+        # 判定语句本身不得引入额外查询（其后的微调逻辑本来就会查库，
+        # 断言范围必须收在判定这几行内，否则又是一条抓不准的钉子）。
+        decision = src[idx : idx + 420]
+        assert "session.scalar" not in decision
+        assert "_incumbent_blocked" in decision

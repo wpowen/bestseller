@@ -10089,7 +10089,11 @@ def challenger_takes_current(
         return True
     if not incumbent_blocked:
         return False
-    return int(challenger_violations) <= int(incumbent_violations or 0)
+    if incumbent_violations is None:
+        # 两边同为不合格、但拿不到逐条计数：让较新的那份上位。旧的那份已经
+        # 被证明不可出厂，继续占位只会让审稿反复评同一份文本。
+        return True
+    return int(challenger_violations) <= int(incumbent_violations)
 
 
 async def rewrite_chapter_from_task(
@@ -11072,31 +11076,19 @@ async def rewrite_chapter_from_task(
                 chapter.chapter_number, exc_info=True,
             )
     quality_gate_rejected_current_promotion = quality_gate_outcome == "blocked"
-    # 在架稿也过一遍同一把门：只有拿两边比，才知道「挑战者不合格」意味着
-    # 「比在架差」还是「和在架一样卡在同一条违规上」。后者若不放行，章节
-    # 就被永久冻结在缺陷稿上（见 challenger_takes_current 的真机定罪）。
-    # 这道门是确定性的、零 LLM 调用，多评一次不增加成本。
-    _incumbent_blocked: bool | None = None
-    _incumbent_violation_count: int | None = None
-    if current_draft is not None and (current_draft.content_md or "").strip():
-        try:
-            _inc_outcome, _inc_violations = await _evaluate_chapter_quality_gate(
-                session=session,
-                project=project,
-                chapter_number=chapter_number,
-                content=current_draft.content_md,
-            )
-            _incumbent_blocked = _inc_outcome == "blocked"
-            _incumbent_violation_count = len(list(_inc_violations or ()))
-        except Exception:
-            logger.warning(
-                "chapter %d: incumbent quality-gate evaluation failed; "
-                "falling back to challenger-only rule",
-                chapter.chapter_number,
-                exc_info=True,
-            )
-            _incumbent_blocked = None if current_draft is None else False
-            _incumbent_violation_count = 0
+    # 在架稿是否「本身就不合格」——用**已在作用域内**的章节生产状态判，
+    # 零额外查询、零副作用。
+    # ⚠️ 我先后走错两次：①两值解包 `_evaluate_chapter_quality_gate`（它返回
+    # `str | None`，运行时抛错被 except 吞掉→修复变空操作）②改成查
+    # QualityScoreModel，多出的一次 session.scalar 打乱了按调用序返回的测试
+    # 桩，碰坏 micro-trim 用例。章节状态本来就在手里，够用且不动别的东西。
+    _incumbent_state = str(getattr(chapter, "production_state", "") or "").lower()
+    _incumbent_blocked: bool | None = (
+        None
+        if current_draft is None
+        else _incumbent_state in {"blocked", "quality_debt", "repair_exhausted"}
+    )
+
     llm_candidate_quality_gate_outcome = quality_gate_outcome
     llm_candidate_word_count = word_count
     llm_candidate_quality_gate_violations = list(quality_gate_violations)
@@ -11218,7 +11210,7 @@ async def rewrite_chapter_from_task(
         challenger_blocked=quality_gate_rejected_current_promotion,
         incumbent_blocked=_incumbent_blocked,
         challenger_violations=len(list(quality_gate_violations or ())),
-        incumbent_violations=_incumbent_violation_count,
+        incumbent_violations=None,  # 无逐条计数可比时按「同为不合格」处理
     )
     new_draft = ChapterDraftVersionModel(
         project_id=project.id,

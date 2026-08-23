@@ -1588,6 +1588,9 @@ async def _restore_best_chapter_drafts(
     return restored
 
 
+from bestseller.services.production_control import load_control_state
+
+
 async def run_project_repair(
     session: AsyncSession,
     settings: AppSettings,
@@ -2069,6 +2072,41 @@ async def run_project_repair(
         # preserved so repair never switches generation units behind the book.
         use_chapter_first = generation_unit_preference_from_metadata(project_metadata)
         for chapter_number in _dedupe_sorted(chapter_task_ids.keys()):
+            # 操作台停止/暂停检查点。2026-08-19 用户报「停止有延迟」时，这个
+            # 逐章检查只加在了写作循环（pipelines 的 chapter loop）上，修复循环
+            # 漏了 —— 又是「豁免只改一处」。实测（2026-08-24）：发出停止后
+            # project_repair 仍从第 21 章一路走到第 23 章，26 章的书要走到底才停。
+            # 章边界是最细的安全切点，读的是同一个事实源 book_production_control。
+            try:
+                _repair_control = await load_control_state(session, project.id)
+            except Exception:
+                # 停止检查自身永远不许中断一次运行（与写作循环同款 fail-open）
+                logger.debug(
+                    "could not read production control for %s at repair chapter %s; continuing",
+                    project_slug,
+                    chapter_number,
+                    exc_info=True,
+                )
+                _repair_control = None
+            if _repair_control is not None and _repair_control.halted:
+                logger.info(
+                    "project repair halted by operator intent project=%s chapter=%s "
+                    "intent=%s reason=%s",
+                    project_slug,
+                    chapter_number,
+                    _repair_control.intent.value,
+                    _repair_control.reason,
+                )
+                _emit_progress(
+                    progress,
+                    "project_repair_halted_by_operator",
+                    {
+                        "project_slug": project_slug,
+                        "chapter_number": chapter_number,
+                        **_repair_control.to_payload(),
+                    },
+                )
+                break
             _emit_progress(
                 progress,
                 "project_repair_chapter_started",

@@ -18,13 +18,22 @@ fail-open：LLM 不可用/超时/全部发现核对失败 → 空报告 + ``llm_
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 # ruff: noqa: RUF001, RUF002, RUF003 — Chinese prompts are intentional.
 import json
 import logging
-from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# 原四类是「两段引文摆在一起矛盾自明」的事实矛盾，真机零冤案，挣到了
+# 候选出局权。2026-08-23 新增的三类逻辑病（机制矛盾/无锚指代/论据不撑
+# 论点）判断成分更重，按「新检测器只挣重生和留痕」规矩先做教学轴：进
+# 打磨反馈与审计痕迹，不参与候选出局；真机验证零冤案后再提权。
+_FATAL_KINDS = frozenset({"timeline", "fact", "reference", "number"})
+_ADVISORY_KINDS = frozenset({"mechanism", "dangling", "claim_unsupported"})
 
 
 @dataclass(frozen=True)
@@ -37,11 +46,17 @@ class CoherenceFinding:
     touches_synopsis=True 的；正典矛盾交给构思重生循环去改正典。
     """
 
-    kind: str        # timeline | fact | reference | number
+    kind: str        # _FATAL_KINDS | _ADVISORY_KINDS 之一
     quote_a: str
-    quote_b: str
+    quote_b: str     # kind=dangling 时允许为空（单引文病：指代在全文找不到着落）
     explanation: str
     touches_synopsis: bool = True
+
+    @property
+    def is_fatal(self) -> bool:
+        """是否有候选出局权。教学轴（机制/无锚/论据）只留痕不杀。"""
+
+        return self.kind in _FATAL_KINDS
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +65,7 @@ class CoherenceFinding:
             "quote_b": self.quote_b,
             "explanation": self.explanation,
             "touches_synopsis": self.touches_synopsis,
+            "fatal": self.is_fatal,
         }
 
 
@@ -67,9 +83,15 @@ class CoherenceReport:
 
     @property
     def synopsis_findings(self) -> tuple[CoherenceFinding, ...]:
-        """涉及简介本身的矛盾（候选淘汰只看这些）。"""
+        """涉及简介本身的全部发现（含教学轴，供留痕与打磨反馈）。"""
 
         return tuple(f for f in self.findings if f.touches_synopsis)
+
+    @property
+    def fatal_synopsis_findings(self) -> tuple[CoherenceFinding, ...]:
+        """涉及简介且有出局权的发现——候选淘汰只看这些。"""
+
+        return tuple(f for f in self.findings if f.touches_synopsis and f.is_fatal)
 
     @property
     def canon_findings(self) -> tuple[CoherenceFinding, ...]:
@@ -106,6 +128,11 @@ def build_coherence_messages(
         spine_block = "\n".join(
             f"  {k}：{v}" for k, v in spine.items() if str(v or "").strip()
         )
+    # ⚠️ 这里保持 2026-08-07 验证过的四类窄任务。逻辑病三新轴
+    # （mechanism/dangling/claim_unsupported）不进这条大杂烩调用——
+    # 2026-08-23 A/B 实测：七类塞一个 prompt 后病稿 3 轮只中 1 次、
+    # 对照稿反被冤 2 次，正是 hook-pull 定过罪的「注意力稀释」。
+    # 新轴走 build_axis_prosecution_messages 的每轴独立检察官调用。
     system = (
         "你是逻辑校对员。只做一件事：在给出的文本里找**互相矛盾**的说法。"
         "矛盾指两处说法不能同时为真——时间期限互斥、同一物品/人物状态冲突、"
@@ -193,15 +220,19 @@ def parse_and_verify(
             continue
         qa = str(item.get("quote_a") or "").strip()
         qb = str(item.get("quote_b") or "").strip()
-        if not qa or not qb or qa == qb:
+        kind = str(item.get("kind") or "fact")
+        if kind not in _FATAL_KINDS | _ADVISORY_KINDS:
+            kind = "fact"
+        # dangling 是单引文病（指代在全文找不到着落，天然没有第二段引文）；
+        # 其余各类仍双引文必填。
+        if not qa or (kind != "dangling" and (not qb or qa == qb)):
             dropped += 1
             continue
-        if not _quote_grounded(qa, haystack) or not _quote_grounded(qb, haystack):
+        if not _quote_grounded(qa, haystack) or (
+            qb and not _quote_grounded(qb, haystack)
+        ):
             dropped += 1  # 幻觉引文，丢弃——这是整个设计的核心保险
             continue
-        kind = str(item.get("kind") or "fact")
-        if kind not in ("timeline", "fact", "reference", "number"):
-            kind = "fact"
         focus = _normalise_for_quote_match(focus_text)
         touches = True
         if focus:
@@ -218,6 +249,62 @@ def parse_and_verify(
     return tuple(verified), dropped
 
 
+# ── 逻辑病每轴检察官（2026-08-23）────────────────────────────────────
+#
+# 真机 v0 简介「判官笔每划一下就吸寡妇一口气 × 划自己掌心救她」的机制自噬、
+# 「三个比宋礼年早动手」的无锚比较、「没人想让他活」+ 三条无关贪腐例证——
+# 用户读得出病，全部量具零发现。把三类病塞进上面的大杂烩调用 A/B 实测是
+# 噪声（病稿 3 轮中 1、对照稿被冤 2），照 hook-pull 定案改成每轴一个窄任务
+# 检察官：一次只诉一种病，带正例+反例边界，引文核对照旧。
+_AXIS_PROSECUTIONS: dict[str, str] = {
+    "mechanism": (
+        "你是设定校对员。只查一种病：**机制自相矛盾**——同一动作/物品在文中"
+        "两处被赋予不能同时成立的效果，且文中毫无交代。\n"
+        "正例：先设定「笔每划一下就吸她一口气」，后文却让主角「划破自己掌心"
+        "救她」——按设定，救人这一划同时又在吸被救者的气，文中没有任何解释。\n"
+        "反例（不算病）：设定「笔吸执笔人自己的阳气」而主角划自己掌心——"
+        "代价一致，机制自洽；或文中明确交代了例外条件。\n"
+        "quote_a 引机制设定原文，quote_b 引与之冲突的动作原文。"
+    ),
+    "dangling": (
+        "你是指代校对员。只查一种病：**无锚指代**——一句话里的比较、代词或"
+        "省略宾语在**全文**找不到着落，读者无法知道它指什么。\n"
+        "正例：「三个比他早动手」——动手做什么，通篇没有说；「那件事之后他变了」"
+        "——那件事全文未提。\n"
+        "反例（不算病）：着落出现在同段或后文（哪怕隔几句）；悬念式留白但"
+        "读者能从上下文锁定所指。\n"
+        "quote_a 引无锚的那句原文，quote_b 留空字符串。"
+    ),
+    "claim_unsupported": (
+        "你是论证校对员。只查一种病：**论据撑不起论点**——文中先下一个断言，"
+        "紧接着给出的例证与断言明显不是一回事。\n"
+        "正例：断言「庙里没人想让他活」，例证却是卖寡妇、抹账、卖名册——"
+        "全是各自谋利的贪腐，没有一条指向要他的命。\n"
+        "反例（不算病）：例证与断言的支撑是间接但在故事逻辑里成立的"
+        "（断言「三人都在抢神位」，例证是三人各自攒筹码——成立）；"
+        "或断言本身是人物的主观感受。\n"
+        "quote_a 引断言原文，quote_b 引例证原文。"
+    ),
+}
+
+_AXIS_SHARED_TAIL = (
+    "\n不评价文笔，不提建议。没有这种病就输出空列表，**宁缺勿滥，不要硬凑**。\n"
+    "引文必须**逐字**来自原文（≤40字，一个字都不能改），引不出原文的不要报。\n"
+    '只输出 JSON：{"contradictions": [{"kind": "%s", '
+    '"quote_a": "...", "quote_b": "...", "why": "一句话说明"}]}'
+)
+
+
+def build_axis_prosecution_messages(axis: str, *, synopsis: str) -> tuple[str, str]:
+    """(system, user) —— 单轴检察官：一次只诉一种逻辑病。"""
+
+    if axis not in _AXIS_PROSECUTIONS:
+        raise ValueError(f"unknown logic axis: {axis}")
+    system = _AXIS_PROSECUTIONS[axis] + _AXIS_SHARED_TAIL % axis
+    user = f"【简介】\n{synopsis.strip()}\n\n只查上述这一种病。输出严格 JSON。"
+    return system, user
+
+
 async def verify_blurb_coherence(
     session: Any,
     settings: Any,
@@ -226,13 +313,18 @@ async def verify_blurb_coherence(
     premise: str = "",
     spine: dict[str, Any] | None = None,
     project_id: Any = None,
+    advisory_axes: bool = True,
 ) -> CoherenceReport:
-    """对（premise + spine + synopsis）跑一次引文核对式矛盾扫描。永不 raise。"""
+    """对（premise + spine + synopsis）跑引文核对式矛盾扫描。永不 raise。
+
+    ``advisory_axes=True`` 时额外为三类逻辑病各跑一次窄任务检察官调用
+    （教学轴：只留痕+喂打磨，不出局——见 ``_ADVISORY_KINDS``）。
+    """
 
     if not str(synopsis or "").strip():
         return CoherenceReport(findings=(), llm_used=False)
     try:
-        from bestseller.services.llm import (  # noqa: PLC0415
+        from bestseller.services.llm import (
             LLMCompletionRequest,
             complete_text,
         )
@@ -265,8 +357,48 @@ async def verify_blurb_coherence(
         findings, dropped = parse_and_verify(
             completion.content or "", source_texts=sources, focus_text=synopsis
         )
+        all_findings = list(findings)
+        if advisory_axes:
+            for axis in sorted(_AXIS_PROSECUTIONS):
+                try:
+                    ax_system, ax_user = build_axis_prosecution_messages(
+                        axis, synopsis=synopsis
+                    )
+                    ax_completion = await complete_text(
+                        session,
+                        settings,
+                        LLMCompletionRequest(
+                            logical_role="critic",
+                            model_tier="standard",
+                            system_prompt=ax_system,
+                            user_prompt=ax_user,
+                            fallback_response='{"contradictions": []}',
+                            prompt_template="blurb_logic_axis_prosecutor",
+                            prompt_version=f"v1-{axis}",
+                            max_tokens_override=500,
+                            project_id=project_id,
+                        ),
+                    )
+                    ax_findings, ax_dropped = parse_and_verify(
+                        ax_completion.content or "",
+                        source_texts=(synopsis,),
+                        focus_text=synopsis,
+                    )
+                    dropped += ax_dropped
+                    # 检察官只许诉自己的轴——串轴产出按幻觉丢弃。
+                    for f in ax_findings:
+                        if f.kind == axis:
+                            all_findings.append(f)
+                        else:
+                            dropped += 1
+                except Exception:
+                    logger.warning(
+                        "logic axis prosecutor '%s' failed (fail-open)",
+                        axis,
+                        exc_info=True,
+                    )
         return CoherenceReport(
-            findings=findings, llm_used=True, dropped_unverified=dropped
+            findings=tuple(all_findings), llm_used=True, dropped_unverified=dropped
         )
     except Exception:
         logger.warning("blurb coherence verify failed (fail-open)", exc_info=True)
@@ -276,6 +408,7 @@ async def verify_blurb_coherence(
 __all__ = [
     "CoherenceFinding",
     "CoherenceReport",
+    "build_axis_prosecution_messages",
     "build_coherence_messages",
     "parse_and_verify",
     "verify_blurb_coherence",

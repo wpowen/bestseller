@@ -98,7 +98,18 @@ class BlurbCandidate:
 
     @property
     def has_verified_contradiction(self) -> bool:
-        return bool(self.coherence_contradictions)
+        # 出局权只归 fatal 轴（原四类事实矛盾，真机零冤案）。教学轴
+        # （mechanism/dangling/claim_unsupported）只留痕+喂打磨，不杀候选。
+        # 旧痕迹没有 fatal 键 → 按 fatal 处理（当年只存 fatal 类）。
+        return any(f.get("fatal", True) for f in self.coherence_contradictions)
+
+    @property
+    def advisory_contradictions(self) -> tuple[dict[str, Any], ...]:
+        """教学轴发现（不出局，供打磨反馈）。"""
+
+        return tuple(
+            f for f in self.coherence_contradictions if not f.get("fatal", True)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -574,13 +585,22 @@ async def run_blurb_copywriting(
                     ),
                 )
             )
-            if report.synopsis_findings:
+            if report.fatal_synopsis_findings:
                 logger.warning(
                     "blurb candidate '%s' rejected: %d verified contradiction(s): %s",
-                    cand.strategy, len(report.synopsis_findings),
+                    cand.strategy, len(report.fatal_synopsis_findings),
                     "; ".join(
-                        f"{f.quote_a}↔{f.quote_b}" for f in report.synopsis_findings
+                        f"{f.quote_a}↔{f.quote_b}"
+                        for f in report.fatal_synopsis_findings
                     ),
+                )
+            _advisory = [f for f in report.synopsis_findings if not f.is_fatal]
+            if _advisory:
+                logger.warning(
+                    "blurb candidate '%s' carries %d advisory logic finding(s) "
+                    "(teaching only, not fatal): %s",
+                    cand.strategy, len(_advisory),
+                    "; ".join(f"[{f.kind}] {f.quote_a}" for f in _advisory),
                 )
             if report.canon_findings:
                 logger.warning(
@@ -626,10 +646,13 @@ async def run_blurb_copywriting(
             ((config or {}).get("meets_bar", {}) or {}).get("blurb_min", 68)
         )
         max_polish = cfg["max_polish_rounds"]
-        needs_polish = (champion.gate_score or 0.0) < max(
-            blurb_min, float(cfg["target_gate_score"])
-        ) or any(
-            f.severity == "warn" for f in champion.pathology
+        needs_polish = (
+            (champion.gate_score or 0.0)
+            < max(blurb_min, float(cfg["target_gate_score"]))
+            or any(f.severity == "warn" for f in champion.pathology)
+            # 教学轴逻辑病（机制矛盾/无锚指代/论据不撑论点）不杀候选，
+            # 但必须触发打磨——这正是它们挣到的「重生」权。
+            or bool(champion.advisory_contradictions)
         )
         if needs_polish and max_polish > 0 and build_improvement_feedback:
             try:
@@ -648,6 +671,22 @@ async def run_blurb_copywriting(
                     overall_grade=verdict.grade,
                 )
                 feedback = build_improvement_feedback(fake_report, _appeal_cfg)
+                # 教学轴发现逐条带引文喂进打磨——量具已把病灶指到句子级，
+                # 不给打磨手就等于白测。
+                for _f in champion.advisory_contradictions:
+                    _qa = str(_f.get("quote_a") or "")
+                    _qb = str(_f.get("quote_b") or "")
+                    _why = str(_f.get("explanation") or "")
+                    if _qb:
+                        feedback.append(
+                            f"逻辑病（{_f.get('kind')}）：「{_qa}」与「{_qb}」"
+                            f"放在一起立不住——{_why}。改到自洽。"
+                        )
+                    else:
+                        feedback.append(
+                            f"逻辑病（{_f.get('kind')}）：「{_qa}」在全文找不到"
+                            f"着落——{_why}。补上着落或删掉。"
+                        )
                 polished, run_id = await _polish_champion(
                     session, settings, synopsis=champion.synopsis, feedback=feedback,
                     genre=genre, sub_genre=sub_genre, language=language,
@@ -684,7 +723,11 @@ async def run_blurb_copywriting(
                 polish_rounds = 1
                 if (
                     not any(f.severity == "fatal" for f in polished_pathology)
-                    and not polished_contradictions
+                    # 打磨稿验收同样只拿 fatal 轴否决；教学轴发现留痕即可，
+                    # 否则教学轴反而会卡死自己触发的打磨。
+                    and not any(
+                        c.get("fatal", True) for c in polished_contradictions
+                    )
                     and polished_verdict.total >= (champion.gate_score or 0.0)
                 ):
                     champion = BlurbCandidate(

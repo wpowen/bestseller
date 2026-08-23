@@ -17,9 +17,9 @@ progression_cap 同构）。``derive_book_jargon_terms`` 从本书的设计字�
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+import re
 from typing import Any
 
 # ruff: noqa: RUF001, RUF002, RUF003 — Chinese punctuation/fixtures are intentional.
@@ -220,6 +220,44 @@ def _detect_template_tease(text: str) -> list[PathologyFinding]:
     ]
 
 
+#: 作品结构单位 + 位置词 = 在谈论「这本书怎么排的」而不是故事本身。
+#: 2026-08-23 真机（验证书 9）：「上一章替他挡刀的人，下一章就得哭着求他还
+#: 人情」——读者此刻还没开始读，「上一章」对他没有指涉。三层量具全漏：
+#: 正文 AI 味检测器对 128 字简介 0 命中（它为几千字正文校准）、简介病理
+#: 0 命中、确定性吸引力门还给了 75.15 分首轮过线。
+#:
+#: 判据只认**结构单位**（章/卷/节/篇/回）紧跟或紧随位置词，因此
+#: 「账本翻到下一页」（实物）、「私章按在契书上」（器物）不受影响。
+_CHAPTER_META_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:上|下|前|后|本|首|末|第[一二三四五六七八九十百零\d]+)\s*[一两]?\s*[章卷回](?![节法程程])"),
+    re.compile(r"[章卷回]\s*(?:末|首|尾)"),
+)
+
+
+def _detect_chapter_meta(text: str) -> list[PathologyFinding]:
+    """简介谈论章节/卷 = 系统在描述自己的组织结构，不是故事在讲自己。"""
+
+    hits: list[str] = []
+    for pattern in _CHAPTER_META_RES:
+        for m in pattern.finditer(text):
+            start = max(0, m.start() - 8)
+            hits.append(text[start : m.end() + 8].strip())
+    if not hits:
+        return []
+    return [
+        PathologyFinding(
+            code="BLURB_CHAPTER_META",
+            # 只挣重写：简介可以改，不该因此毙掉整本书。
+            severity="warn",
+            excerpt="；".join(hits[:3]),
+            detail=(
+                "简介在谈论章节/卷等作品结构单位——读者此刻还没开始读，"
+                "「上一章」对他没有指涉。改成故事内的时间或事件。"
+            ),
+        )
+    ]
+
+
 def detect_blurb_pathology(
     text: str,
     *,
@@ -249,6 +287,7 @@ def detect_blurb_pathology(
 
     findings: list[PathologyFinding] = []
     findings.extend(_detect_template_tease(text))
+    findings.extend(_detect_chapter_meta(text))
     findings.extend(
         _detect_tautology_choice(
             text, antonym_verb_pairs=antonym_pairs, synonym_groups=synonym_groups
@@ -713,7 +752,7 @@ def champion_swaps_protagonist(
     if protagonist_name in champion:
         return None
 
-    from bestseller.services.output_validator import (  # noqa: PLC0415
+    from bestseller.services.output_validator import (
         NamingConsistencyCheck,
     )
 

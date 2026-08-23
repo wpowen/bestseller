@@ -45,6 +45,42 @@ def _clamp_score(value: float) -> float:
     return round(max(0.0, min(1.0, value)), 2)
 
 
+#: 只有这一级发现有资格把整本书钉在人工复核上。
+_PROJECT_BLOCKING_SEVERITIES = frozenset({"high"})
+
+
+def project_verdict_from_findings(
+    *, overall: float, threshold: float, findings: list[Any]
+) -> str:
+    """项目级一致性结论：分数达标且**没有阻断级发现** → pass。
+
+    2026-08-23 定罪（书 7，42 章跑完）：原判定是
+    ``"pass" if overall >= threshold and not findings else "attention"``
+    ——要求**一条发现都没有**。42 章的书必然带 low/medium 级发现，于是这道门
+    结构上不可能通过：真机 12 次审稿全判 attention，且每次的发现完全相同。
+
+    后果是一条完整的卡死链：attention ∈ ``_ATTENTION_VERDICTS`` →
+    ``requires_human_review=True`` → ``if not requires_human_review:
+    status = COMPLETED`` 不执行 → 顶层 workflow 永不完成（project_pipeline
+    6 次运行 0 完成、project_repair 7 次 0 完成）→ 自愈看到未终结的书就重启
+    → 再跑一遍还是 attention → 循环 12 次。用户看到的「时灵时不灵、时而走到
+    时而走不到」，就是每次重启停在不同位置。
+
+    与本仓库定案过的「从不失败的门等于不存在的门」是同一枚硬币的反面：
+    **从不通过的门等于永远卡住**。low/medium 照旧记录并进整改建议，只是不再
+    单独把书钉死；high 仍然拦。
+    """
+
+    if overall < threshold:
+        return "attention"
+    blocking = [
+        f
+        for f in findings
+        if str(getattr(f, "severity", "")) in _PROJECT_BLOCKING_SEVERITIES
+    ]
+    return "attention" if blocking else "pass"
+
+
 def _severity_from_score(score: float) -> str:
     if score < 0.45:
         return "high"
@@ -69,9 +105,9 @@ def _safe_ratio(numerator: int, denominator: int) -> float:
 
 def _check_obligatory_scenes(
     *,
-    project: "ProjectModel",
+    project: ProjectModel,
     chapter_count: int,
-    chapter_drafts: list["ChapterDraftVersionModel"],
+    chapter_drafts: list[ChapterDraftVersionModel],
     chapter_number_by_id: dict[UUID, int] | None = None,
     language: str | None = None,
 ) -> list[ProjectConsistencyFinding]:
@@ -315,12 +351,12 @@ def _check_foreshadowing_density(
 
 
 def _check_chapter_opening_diversity(
-    chapter_drafts: list["ChapterDraftVersionModel"],
+    chapter_drafts: list[ChapterDraftVersionModel],
     *,
     language: str | None = None,
     similarity_threshold: float = 0.72,
     window: int = 5,
-) -> list["ProjectConsistencyFinding"]:
+) -> list[ProjectConsistencyFinding]:
     """Detect chapters whose opening lines are too similar to recent chapters."""
     from bestseller.services.deduplication import check_opening_diversity
 
@@ -362,12 +398,12 @@ def _check_chapter_opening_diversity(
 
 
 def _check_hook_repetition(
-    chapter_drafts: list["ChapterDraftVersionModel"],
+    chapter_drafts: list[ChapterDraftVersionModel],
     *,
     language: str | None = None,
     similarity_threshold: float = 0.78,
     window: int = 3,
-) -> list["ProjectConsistencyFinding"]:
+) -> list[ProjectConsistencyFinding]:
     """Detect chapters whose cliffhanger endings repeat the same phrasing."""
     from bestseller.services.deduplication import check_hook_repetition
 
@@ -405,10 +441,10 @@ _MIN_CHAPTER_WORDS_EN = 1800   # English words
 
 
 def _check_min_chapter_length(
-    chapter_drafts: list["ChapterDraftVersionModel"],
+    chapter_drafts: list[ChapterDraftVersionModel],
     *,
     language: str | None = None,
-) -> list["ProjectConsistencyFinding"]:
+) -> list[ProjectConsistencyFinding]:
     """Flag chapters whose word count falls below the minimum threshold."""
     _is_en = (language or "").lower().startswith("en")
     min_words = _MIN_CHAPTER_WORDS_EN if _is_en else _MIN_CHAPTER_WORDS_ZH
@@ -950,7 +986,9 @@ def evaluate_project_consistency(
         )
 
     threshold = settings.quality.thresholds.chapter_coherence_min_score
-    verdict = "pass" if overall >= threshold and not findings else "attention"
+    verdict = project_verdict_from_findings(
+        overall=overall, threshold=threshold, findings=findings
+    )
     recommended_actions: list[str] = []
     if chapter_draft_count < chapter_count:
         recommended_actions.append("先补齐缺失章节的 draft/assemble 流程。")

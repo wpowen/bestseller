@@ -35,6 +35,7 @@ from bestseller.infra.db.models import (
     TimelineEventModel,
     VolumeModel,
     WorldRuleModel,
+    SceneDraftVersionModel,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.projects import get_project_by_slug
@@ -761,6 +762,14 @@ def evaluate_project_consistency(
     open_arc_count: int = 0,
     open_clue_count: int = 0,
     is_final_volume: bool = False,
+    #: 这本书是否真的在跑场景管线。整章模式的书**从不产场景稿**，而
+    #: canon_coverage / timeline_coverage / scene_knowledge 三个覆盖率的分母
+    #: 全是场景数 —— 真机（书 9，2026-08-24）：88 张场景卡、**0 份场景稿**、
+    #: 190 份章节稿、379 条 canon，于是这三条永远 0/88、永远 high，
+    #: 项目审稿永远 attention → requires_human_review → 顶层 machine_blocked。
+    #: 这不是标准太严，是**量错了对象**：书里有知识，指标在数场景摘要。
+    #: 默认 True＝行为不变；只有确证零场景稿时调用方才传 False。
+    scene_pipeline_active: bool = True,
 ) -> ProjectConsistencyResult:
     safe_chapter_count = max(chapter_count, 1)
     safe_scene_count = max(scene_count, 1)
@@ -858,7 +867,7 @@ def evaluate_project_consistency(
                 message=f"当前只有 {complete_chapter_count}/{chapter_count} 个章节进入 complete 状态。",
             )
         )
-    if scene_summary_count < scene_count:
+    if scene_pipeline_active and scene_summary_count < scene_count:
         findings.append(
             ProjectConsistencyFinding(
                 category="canon_coverage",
@@ -866,7 +875,7 @@ def evaluate_project_consistency(
                 message=f"知识层当前只覆盖 {scene_summary_count}/{scene_count} 个场景摘要。",
             )
         )
-    if timeline_event_count < scene_count:
+    if scene_pipeline_active and timeline_event_count < scene_count:
         findings.append(
             ProjectConsistencyFinding(
                 category="timeline_coverage",
@@ -1336,8 +1345,22 @@ async def review_project_consistency(
         total_volume_count > 0 and project.current_volume_number >= total_volume_count
     )
 
+    # 这本书到底跑没跑场景管线 —— **按真实的场景稿数判定，不靠模式标志猜**。
+    # 整章模式的书有场景卡（规划产物）但一份场景稿都没有；把场景卡当分母算
+    # 覆盖率，那三条 high 级发现就永远成立（真机书 9：88 卡 / 0 稿 / 190 章节稿）。
+    _scene_draft_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(SceneDraftVersionModel)
+            .join(SceneCardModel, SceneCardModel.id == SceneDraftVersionModel.scene_card_id)
+            .where(SceneCardModel.project_id == project.id)
+        )
+        or 0
+    )
+
     review_result = evaluate_project_consistency(
         settings=settings,
+        scene_pipeline_active=_scene_draft_count > 0,
         chapter_count=chapter_count,
         chapter_draft_count=chapter_draft_count,
         complete_chapter_count=complete_chapter_count,

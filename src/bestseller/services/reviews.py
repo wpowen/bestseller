@@ -7465,6 +7465,66 @@ def _merge_llm_quality_judge_into_chapter_review(
     )
 
 
+async def _teach_write_gate_blockers_the_bundle_cannot_see(
+    session: AsyncSession,
+    review_result: ChapterReviewResult,
+    *,
+    chapter: ChapterModel,
+    language: str | None,
+) -> ChapterReviewResult:
+    """把 write_gate 判了 block、但统一质量快照看不见的码补进重写指令。
+
+    2026-08-24 真机（书 9）定罪：``POV_DRIFT`` 在 write_gate 的报告里以
+    ``severity="block"`` 在**全部 26 章**开火（例：「POV declared as
+    'close_third' but 8/40 sampled narrative sentences use the wrong person」），
+    而重写指令是用**统一质量快照**的阻断项渲染的，快照只带 9 个码、里面没有它。
+    结果是 5 章（13/14/15/16/25）整章第一人称出货，这 5 章一共 7 个重写任务，
+    **没有一个**的指令提到人称——``quality_repair_playbooks`` 里那条 POV_DRIFT
+    整改方案从来没被用上。
+
+    「能毙但不教」——与同日修掉的商业判官（34d8d392）是同一个形状，
+    也是本项目的元病「同一事实住两地」：判定在一处，教学读的是另一处。
+
+    这个补丁**只加教学文本**：不改 verdict、不改 severity、不新增任何杀权。
+    """
+
+    latest = await session.scalar(
+        select(ChapterQualityReportModel)
+        .where(ChapterQualityReportModel.chapter_id == chapter.id)
+        .order_by(ChapterQualityReportModel.created_at.desc())
+    )
+    payload = getattr(latest, "report_json", None)
+    if not isinstance(payload, dict):
+        return review_result
+    codes: list[str] = []
+    for item in payload.get("violations") or ():
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("severity") or "").strip().lower() != "block":
+            continue
+        code = str(item.get("code") or "").strip()
+        if code and code not in codes:
+            codes.append(code)
+    existing = str(review_result.rewrite_instructions or "")
+    unseen = [code for code in codes if code not in existing]
+    if not unseen:
+        return review_result
+    playbooks = render_quality_repair_playbooks(unseen, include_book_methodology=False)
+    if not playbooks.strip():
+        return review_result
+    header = (
+        "\n【硬门禁已阻断但整改方案此前从未下发的项】\n"
+        if not is_english_language(language)
+        else "\nBlocking gate findings that never reached a rewrite plan:\n"
+    )
+    # ChapterReviewResult 是 pydantic BaseModel，不是 dataclass——
+    # 我第一版写了 dataclasses.replace，它没导入，运行时会 NameError 并被下面
+    # 的 except 吞成空操作（与今早重写死锁第一版同一个形状，部署前才拦住）。
+    return review_result.model_copy(
+        update={"rewrite_instructions": (existing + header + playbooks).strip()}
+    )
+
+
 def _merge_chapter_quality_bundle_into_review(
     review_result: ChapterReviewResult,
     report: ChapterQualityBundleReport,
@@ -8434,6 +8494,20 @@ async def review_chapter_draft(
             review_result,
             quality_bundle_report,
             language=getattr(project, "language", None),
+        )
+
+    try:
+        review_result = await _teach_write_gate_blockers_the_bundle_cannot_see(
+            session,
+            review_result,
+            chapter=chapter,
+            language=getattr(project, "language", None),
+        )
+    except Exception:  # noqa: BLE001 - 补教学永远不该让审稿失败
+        logger.debug(
+            "chapter %s: could not append unseen write-gate playbooks",
+            getattr(chapter, "chapter_number", None),
+            exc_info=True,
         )
 
     llm_commercial_judge_payload: dict[str, object] | None = None

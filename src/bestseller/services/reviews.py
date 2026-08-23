@@ -7488,23 +7488,38 @@ async def _teach_write_gate_blockers_the_bundle_cannot_see(
     这个补丁**只加教学文本**：不改 verdict、不改 severity、不新增任何杀权。
     """
 
-    latest = await session.scalar(
-        select(ChapterQualityReportModel)
-        .where(ChapterQualityReportModel.chapter_id == chapter.id)
-        .order_by(ChapterQualityReportModel.created_at.desc())
+    # ⚠️ 不能取「最新的那**一**份」：同一秒会写入多份报告，而它们对同一个码的
+    # 分级可能不同。真机（书 9 第 36 章，2026-08-24 06:23:24）同秒三份，其中一份
+    # 是 POV_DRIFT:warn、另两份是 POV_DRIFT:block —— `ORDER BY ... LIMIT 1` 抽到
+    # 哪一份由数据库决定，教学于是随机开火。这正是 2026-08-22 记录过的
+    # 「同一秒三份报告，判定端取『最新报告』」，我又踩了一次。
+    # 取**最新时刻的全部报告**并取并集，消掉这个抽签。
+    rows = list(
+        await session.scalars(
+            select(ChapterQualityReportModel)
+            .where(ChapterQualityReportModel.chapter_id == chapter.id)
+            .order_by(ChapterQualityReportModel.created_at.desc())
+            .limit(8)
+        )
     )
-    payload = getattr(latest, "report_json", None)
-    if not isinstance(payload, dict):
+    if not rows:
         return review_result
+    newest = rows[0].created_at
     codes: list[str] = []
-    for item in payload.get("violations") or ():
-        if not isinstance(item, dict):
+    for row in rows:
+        if row.created_at != newest:
+            break
+        payload = getattr(row, "report_json", None)
+        if not isinstance(payload, dict):
             continue
-        if str(item.get("severity") or "").strip().lower() != "block":
-            continue
-        code = str(item.get("code") or "").strip()
-        if code and code not in codes:
-            codes.append(code)
+        for item in payload.get("violations") or ():
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("severity") or "").strip().lower() != "block":
+                continue
+            code = str(item.get("code") or "").strip()
+            if code and code not in codes:
+                codes.append(code)
     existing = str(review_result.rewrite_instructions or "")
     unseen = [code for code in codes if code not in existing]
     if not unseen:

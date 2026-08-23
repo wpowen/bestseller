@@ -43,14 +43,26 @@ def _review(instructions: str = "") -> ChapterReviewResult:
     )
 
 
-class _Session:
-    def __init__(self, payload: Any) -> None:
-        self._payload = payload
+class _Row:
+    def __init__(self, payload: Any, created_at: Any) -> None:
+        self.report_json = payload
+        self.created_at = created_at
 
-    async def scalar(self, _stmt: Any) -> Any:
-        if self._payload is None:
-            return None
-        return type("Row", (), {"report_json": self._payload})()
+
+class _Session:
+    """按 created_at 倒序返回多份报告——真机同一秒会写入多份。"""
+
+    def __init__(self, payload: Any, *, extra: list[tuple[Any, int]] | None = None) -> None:
+        if payload is None:
+            self._rows: list[_Row] = []
+        else:
+            self._rows = [_Row(payload, 100)]
+        for extra_payload, stamp in extra or []:
+            self._rows.append(_Row(extra_payload, stamp))
+        self._rows.sort(key=lambda r: r.created_at, reverse=True)
+
+    async def scalars(self, _stmt: Any) -> list[_Row]:
+        return list(self._rows)
 
 
 def _chapter() -> ChapterModel:
@@ -110,3 +122,40 @@ async def test_no_report_leaves_the_review_untouched() -> None:
         _Session(None), _review("原有要求"), chapter=_chapter(), language="zh",
     )
     assert out.rewrite_instructions == "原有要求"
+
+
+@pytest.mark.asyncio
+async def test_same_second_reports_do_not_turn_teaching_into_a_lottery() -> None:
+    """同一秒多份报告、对同一个码分级不同 —— 取并集，不抽签。
+
+    真机（书 9 第 36 章，2026-08-24 06:23:24）同秒三份：一份 POV_DRIFT:warn、
+    另两份 POV_DRIFT:block。原实现 ``ORDER BY created_at DESC LIMIT 1`` 抽到哪一份
+    由数据库决定，抽到 warn 那份时教学就不开火 —— 这正是 2026-08-22 记录过的
+    「同一秒三份报告，判定端取『最新报告』」，我又踩了一次。
+    """
+
+    warn_only = {"violations": [{"code": "POV_DRIFT", "severity": "warn"}]}
+    blocking = {"violations": [{"code": "POV_DRIFT", "severity": "block"}]}
+
+    # warn 那份排在前面（模拟数据库先返回它）
+    session = _Session(warn_only, extra=[(blocking, 100)])
+    out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
+        session, _review("原有要求"), chapter=_chapter(), language="zh",
+    )
+
+    assert "POV_DRIFT" in (out.rewrite_instructions or ""), out.rewrite_instructions
+    assert "第一人称" in (out.rewrite_instructions or "")
+
+
+@pytest.mark.asyncio
+async def test_older_reports_are_not_mixed_in() -> None:
+    """只取最新时刻那一批——更早的报告不得混进来。"""
+
+    stale = {"violations": [{"code": "OBSOLETE_CODE", "severity": "block"}]}
+    fresh = {"violations": [{"code": "POV_DRIFT", "severity": "block"}]}
+    session = _Session(fresh, extra=[(stale, 1)])
+    out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
+        session, _review(""), chapter=_chapter(), language="zh",
+    )
+
+    assert "OBSOLETE_CODE" not in (out.rewrite_instructions or "")

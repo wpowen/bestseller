@@ -10058,42 +10058,55 @@ async def _try_localized_chapter_first_ending_repair(
     return f"{prefix}\n\n{replacement}".strip(), completion
 
 
+#: 挑战者「根本不可用」的缺陷类——只有这些才值得保留一份同样不合格的在架稿。
+_HARD_UNUSABLE_VIOLATION_CODES = frozenset({"AI_FLAVOR_REGRESSION"})
+
+
 def challenger_takes_current(
     *,
     challenger_blocked: bool,
-    incumbent_blocked: bool | None,
-    challenger_violations: int,
-    incumbent_violations: int | None,
+    incumbent_gate_outcome: str | None,
+    has_duplicate_findings: bool,
+    deterministic_audit_failed: bool,
+    violation_codes: tuple[str, ...] = (),
 ) -> bool:
     """重写稿是否取代在架稿成为 current。
 
-    2026-08-24 真机（验证书 9 第 8 章）：4 次审稿全部评的是同一份 v3，而 v5/v6/v7
-    在其间陆续生成、从没被看过。原判据只问「挑战者自己有没有被质量门 blocked」，
-    **从不与在架稿比较**。三份稿实测同被 POV_DRIFT 阻断（v3 在架、v5/v6 候选），
-    于是谁也顶不上去：审稿永远读同一份旧文本 → 每轮发现完全相同 → 重写永不收敛
-    → 后续所有重写 token 纯浪费。全书 66 份草稿仅 17 份被评分（26%），
-    一半章节卡在旧版本上。
+    **立足调用点语义**：`rewrite_chapter_from_task` 之所以被调用，就是因为在架稿
+    需要重写——在架稿在这里按定义就是不满意的。所以默认应当换稿，只在挑战者
+    **根本不可用**时才保留旧稿：重复内容、确定性审计不过、或 AI 味实测回退
+    （后者是真正做过「比在架差」比较的信号）。
 
-    两条判据分开：
-    * **绝不让不合格的挑战者顶掉合格的在架稿**——原有保护逐字保留；
-    * 在架稿自己也不合格时，不比它差的挑战者应当上位，否则缺陷被永久固化。
+    2026-08-24 真机（验证书 9 第 8 章）：4 次审稿全部评的是同一份 v3，而
+    v5/v6/v7 在其间陆续生成、从没被看过。原判据只问「挑战者自己有没有被质量门
+    blocked」，三份稿实测同被 POV_DRIFT 阻断，于是谁也顶不上去 → 审稿永远读
+    同一份旧文本 → 每轮发现完全相同 → 重写永不收敛。全书 66 份草稿仅 17 份被
+    评分（26%），一半章节卡在旧版本上。
 
-    同族教训：2026-07-26「选优只看下限致发布最差稿」——同样是把「候选是否达标」
-    与「候选是否比在架好」混为一谈。
+    ⚠️ 我为这条判据走错过两次，都记在这里：
+    ①首版两值解包 `_evaluate_chapter_quality_gate`（它返回 `str | None`），
+      运行时抛错被 except 吞掉 → 修复在生产上是空操作；接线测试是源码字符串
+      断言、不执行代码，所以没抓到。
+    ②二版改用 `chapter.production_state` 判在架稿是否不合格——**那个状态是在
+      决策点之后才写入的**（真机第18章：v2 生成于 01:50:14，而章状态此后才变
+      blocked），判据永远读到「在架稿是干净的」，修复照样不生效。
+
+    教训：判据要么用调用点本身就成立的语义，要么用决策时刻**已经写入**的事实；
+    别用一个下游才产生的状态。
     """
 
     if not challenger_blocked:
         return True
-    if incumbent_blocked is None:
-        # 没有在架稿可比（首稿）：不上位就等于这一章没有正文。
-        return True
-    if not incumbent_blocked:
+    if has_duplicate_findings or deterministic_audit_failed:
         return False
-    if incumbent_violations is None:
-        # 两边同为不合格、但拿不到逐条计数：让较新的那份上位。旧的那份已经
-        # 被证明不可出厂，继续占位只会让审稿反复评同一份文本。
-        return True
-    return int(challenger_violations) <= int(incumbent_violations)
+    if any(code in _HARD_UNUSABLE_VIOLATION_CODES for code in violation_codes):
+        return False
+    if incumbent_gate_outcome is not None and incumbent_gate_outcome != "blocked":
+        # 在架稿自己是干净的：不合格的挑战者不许顶掉它（原有保护）。
+        return False
+    # 两边同样不合格（或在架稿状态未知）：让较新的上位，否则审稿会永远
+    # 重复评同一份文本，重写循环无法收敛。
+    return True
 
 
 async def rewrite_chapter_from_task(
@@ -11076,19 +11089,6 @@ async def rewrite_chapter_from_task(
                 chapter.chapter_number, exc_info=True,
             )
     quality_gate_rejected_current_promotion = quality_gate_outcome == "blocked"
-    # 在架稿是否「本身就不合格」——用**已在作用域内**的章节生产状态判，
-    # 零额外查询、零副作用。
-    # ⚠️ 我先后走错两次：①两值解包 `_evaluate_chapter_quality_gate`（它返回
-    # `str | None`，运行时抛错被 except 吞掉→修复变空操作）②改成查
-    # QualityScoreModel，多出的一次 session.scalar 打乱了按调用序返回的测试
-    # 桩，碰坏 micro-trim 用例。章节状态本来就在手里，够用且不动别的东西。
-    _incumbent_state = str(getattr(chapter, "production_state", "") or "").lower()
-    _incumbent_blocked: bool | None = (
-        None
-        if current_draft is None
-        else _incumbent_state in {"blocked", "quality_debt", "repair_exhausted"}
-    )
-
     llm_candidate_quality_gate_outcome = quality_gate_outcome
     llm_candidate_word_count = word_count
     llm_candidate_quality_gate_violations = list(quality_gate_violations)
@@ -11206,11 +11206,38 @@ async def rewrite_chapter_from_task(
 
     # 回执与实际状态必须共用同一个决定值——两处各算一次就会出现
     # 「回执说没上架、实际上架了」这类自相矛盾（本仓库出过同款事故）。
+    # 在架稿的门结果：框架本来就在拒绝挑战者之后算它
+    # （preserved_current_quality_gate_outcome），只是算得太晚、用不上。
+    # 提前到决策点之前算一次，后面那处直接复用，不重复调用。
+    _incumbent_gate_outcome: str | None = None
+    if quality_gate_rejected_current_promotion and current_draft is not None:
+        try:
+            _incumbent_gate_outcome = await _evaluate_chapter_quality_gate(
+                session=session,
+                project=project,
+                chapter_number=chapter_number,
+                content=current_draft.content_md or "",
+            )
+        except Exception:
+            logger.debug(
+                "chapter %d: incumbent gate recheck failed before takeover decision",
+                chapter.chapter_number,
+                exc_info=True,
+            )
+    # 回执与实际状态共用同一个决定值。
     _took_current = challenger_takes_current(
         challenger_blocked=quality_gate_rejected_current_promotion,
-        incumbent_blocked=_incumbent_blocked,
-        challenger_violations=len(list(quality_gate_violations or ())),
-        incumbent_violations=None,  # 无逐条计数可比时按「同为不合格」处理
+        incumbent_gate_outcome=_incumbent_gate_outcome,
+        has_duplicate_findings=bool(duplicate_gate_findings),
+        deterministic_audit_failed=bool(
+            deterministic_audit_report is not None
+            and not deterministic_audit_report.passed
+        ),
+        violation_codes=tuple(
+            str(v.get("code") or "")
+            for v in (quality_gate_violations or ())
+            if isinstance(v, dict)
+        ),
     )
     new_draft = ChapterDraftVersionModel(
         project_id=project.id,
@@ -11331,14 +11358,17 @@ async def rewrite_chapter_from_task(
     if quality_retrofit_findings:
         metadata["candidate_quality_retrofit_findings"] = quality_retrofit_findings[:12]
     if quality_gate_rejected_current_promotion:
-        preserved_current_quality_gate_outcome: str | None = None
+        preserved_current_quality_gate_outcome: str | None = _incumbent_gate_outcome
         try:
-            preserved_current_quality_gate_outcome = await _evaluate_chapter_quality_gate(
-                session=session,
-                project=project,
-                chapter_number=chapter_number,
-                content=current_draft.content_md or "",
-            )
+            if preserved_current_quality_gate_outcome is None:
+                preserved_current_quality_gate_outcome = (
+                    await _evaluate_chapter_quality_gate(
+                        session=session,
+                        project=project,
+                        chapter_number=chapter_number,
+                        content=current_draft.content_md or "",
+                    )
+                )
             chapter.production_state = preserved_current_quality_gate_outcome
             chapter.current_word_count = count_words(current_draft.content_md or "")
         except Exception:

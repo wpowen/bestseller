@@ -10069,6 +10069,7 @@ def challenger_takes_current(
     has_duplicate_findings: bool,
     deterministic_audit_failed: bool,
     violation_codes: tuple[str, ...] = (),
+    incumbent_audit_failed: bool = False,
 ) -> bool:
     """重写稿是否取代在架稿成为 current。
 
@@ -10097,12 +10098,21 @@ def challenger_takes_current(
 
     if not challenger_blocked:
         return True
-    if has_duplicate_findings or deterministic_audit_failed:
+    # 重复内容是真正的不可用，与在架稿好坏无关。
+    if has_duplicate_findings:
         return False
     if any(code in _HARD_UNUSABLE_VIOLATION_CODES for code in violation_codes):
         return False
     if incumbent_gate_outcome is not None and incumbent_gate_outcome != "blocked":
         # 在架稿自己是干净的：不合格的挑战者不许顶掉它（原有保护）。
+        return False
+    # 两边都不合格时，确定性审计只有在**挑战者比在架差**时才否决。
+    # 2026-08-24 真机：第 19/20/21/22/23/26 章的在架稿最新报告都是 blocks_write，
+    # 挑战者却被一条 ENDING_HOOK_MISSING 拒掉 —— 那是个子串词表检测器
+    # （_HOOK_TERMS + 两条窄正则，注释里已为误报打过两次补丁），在同一个检查上
+    # 两份稿多半一起挂。让它绝对否决，等于把「谁更好」重新退化成「各自对绝对线」，
+    # 章节继续冻结在一份同样不合格的旧稿上。
+    if deterministic_audit_failed and not incumbent_audit_failed:
         return False
     # 两边同样不合格（或在架稿状态未知）：让较新的上位，否则审稿会永远
     # 重复评同一份文本，重写循环无法收敛。
@@ -11224,6 +11234,34 @@ async def rewrite_chapter_from_task(
                 chapter.chapter_number,
                 exc_info=True,
             )
+    # 在架稿跑同一把确定性审计（纯正则、零 LLM，实测 ~29ms），用于对称比较。
+    # 评估失败时保持 False = 退回旧的绝对否决行为，不放宽。
+    _incumbent_audit_failed = False
+    if (
+        quality_gate_rejected_current_promotion
+        and current_draft is not None
+        and deterministic_audit_report is not None
+        and not deterministic_audit_report.passed
+    ):
+        try:
+            _incumbent_audit_report, _ = _audit_chapter_rewrite_candidate(
+                project=project,
+                chapter=chapter,
+                scenes=_scenes,
+                content_md=current_draft.content_md or "",
+                settings=settings,
+            )
+            _incumbent_audit_failed = bool(
+                _incumbent_audit_report is not None
+                and not _incumbent_audit_report.passed
+            )
+        except Exception:
+            logger.debug(
+                "chapter %d: incumbent deterministic audit failed before takeover decision",
+                chapter.chapter_number,
+                exc_info=True,
+            )
+
     # 回执与实际状态共用同一个决定值。
     _took_current = challenger_takes_current(
         challenger_blocked=quality_gate_rejected_current_promotion,
@@ -11238,6 +11276,7 @@ async def rewrite_chapter_from_task(
             for v in (quality_gate_violations or ())
             if isinstance(v, dict)
         ),
+        incumbent_audit_failed=_incumbent_audit_failed,
     )
     new_draft = ChapterDraftVersionModel(
         project_id=project.id,

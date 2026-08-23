@@ -35,11 +35,11 @@ from bestseller.services.blurb_pathology import (
     detect_blurb_pathology,
     truncate_at_sentence,
 )
-from bestseller.services.copy_flavor import pick_reader_facing
 from bestseller.services.concept_lab import (
     coerce_concept_lab_bundle,
     render_concept_lab_prompt_block,
 )
+from bestseller.services.copy_flavor import pick_reader_facing
 from bestseller.services.degradation_tracker import DegradationEvent, DegradationTracker
 from bestseller.services.genre_intent_contract import GenreIntentContract
 
@@ -301,13 +301,29 @@ def _default_motif_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool |
 # prose layers can never drift apart (the cross-book leakage test enforces sync).
 from bestseller.services.anti_default_motif import (  # noqa: E402
     DEBT_LEDGER_TOKENS as _DEBT_LEDGER_TOKENS,
+)
+from bestseller.services.anti_default_motif import (
     contains_default_death_motif as _contains_default_death_motif,
+)
+from bestseller.services.anti_default_motif import (
     is_anonymous_death_dominated as _is_anonymous_death_dominated,
+)
+from bestseller.services.anti_default_motif import (
     is_death_revival_dominated as _is_death_revival_dominated,
+)
+from bestseller.services.anti_default_motif import (
     is_debt_dominated as _canonical_is_debt_dominated,
+)
+from bestseller.services.anti_default_motif import (
     mentions_death_theme as _mentions_death_theme,
+)
+from bestseller.services.anti_default_motif import (
     snapshot_user_intent as _snapshot_user_intent,
+)
+from bestseller.services.anti_default_motif import (
     user_requested_death_revival as _user_requested_death_revival,
+)
+from bestseller.services.anti_default_motif import (
     user_requested_debt as _user_requested_debt,
 )
 
@@ -315,7 +331,11 @@ from bestseller.services.anti_default_motif import (  # noqa: E402
 from bestseller.services.motif_concentration import (  # noqa: E402
     AmplifiedMotif,
     detect_profile_motif_amplification,
+)
+from bestseller.services.motif_concentration import (
     flatten_text as _motif_flatten,
+)
+from bestseller.services.motif_concentration import (
     render_motif_amplification_feedback as _render_motif_amplification_feedback,
 )
 from bestseller.services.story_enhancers import (  # noqa: E402
@@ -399,10 +419,10 @@ async def _prefetch_market_competitors(
     ):
         return
     try:
-        from bestseller.services.market_validation.request_builder import (  # noqa: PLC0415
+        from bestseller.services.market_validation.request_builder import (
             build_creation_request,
         )
-        from bestseller.services.market_validation.service import (  # noqa: PLC0415
+        from bestseller.services.market_validation.service import (
             run_market_validation,
         )
 
@@ -668,6 +688,7 @@ async def _run_title_tournament(
         return incumbent, None, run_ids
 
     from bestseller.services.title_tournament import (
+        TitleCandidate,
         apply_arena_verdict,
         build_title_arena_messages,
         build_title_candidate_messages,
@@ -676,7 +697,6 @@ async def _run_title_tournament(
         parse_title_candidates,
         select_title_winner,
         title_tournament_receipt,
-        TitleCandidate,
     )
 
     entities = extract_title_entities(
@@ -1163,7 +1183,7 @@ def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
     # late for a book that dies at the conception gates. 2026-07-24: a 纯爽
     # (minimal) book had a 随机系统收税 invented at finalize and was then
     # hard-killed by the logline gate for exactly that cost.
-    from bestseller.services.ideology_kernel import (  # noqa: PLC0415
+    from bestseller.services.ideology_kernel import (
         cost_style_directive,
     )
 
@@ -1747,7 +1767,7 @@ def _cost_style_block_for_ctx(ctx: dict[str, Any], *, is_en: bool) -> str:
     style = str(enhancers.get("cost_style") or "standard")
     if style == "standard":
         return ""
-    from bestseller.services.ideology_kernel import (  # noqa: PLC0415
+    from bestseller.services.ideology_kernel import (
         cost_style_directive,
     )
 
@@ -1778,7 +1798,7 @@ _READER_FACING_BRIEF_FIELDS: Final[tuple[str, ...]] = ("reader_promise", "sellin
 def _brief_copy_flavour(brief: Mapping[str, Any]) -> tuple[float, list[str]]:
     """Score the reader-facing part of a commercial brief. Higher is worse."""
 
-    from bestseller.services.copy_flavor import detect_copy_flavor  # noqa: PLC0415
+    from bestseller.services.copy_flavor import detect_copy_flavor
 
     total = 0.0
     evidence: list[str] = []
@@ -2000,7 +2020,7 @@ _WORLD_SYSTEM = (
 
 
 def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | None = None) -> str:
-    from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
+    from bestseller.services.genre_persona import render_channel_style_stamp
 
     _channel_stamp = render_channel_style_stamp(
         (ctx.get("user_hints") or {}).get("audience_orientation")
@@ -2101,9 +2121,9 @@ async def _recent_cast_names(session: AsyncSession, *, limit: int = 60) -> list[
     are stripped so a single character is not counted as many.
     """
 
-    from sqlalchemy import select  # noqa: PLC0415
+    from sqlalchemy import select
 
-    from bestseller.infra.db.models import CharacterModel  # noqa: PLC0415
+    from bestseller.infra.db.models import CharacterModel
 
     try:
         rows = list(
@@ -2242,10 +2262,10 @@ async def _recent_core_mechanisms(
     Best-effort: any failure returns an empty list so conception never blocks.
     """
 
-    from sqlalchemy import select  # noqa: PLC0415
+    from sqlalchemy import select
 
-    from bestseller.infra.db.models import ProjectModel  # noqa: PLC0415
-    from bestseller.services.genre_taxonomy import canonicalize  # noqa: PLC0415
+    from bestseller.infra.db.models import ProjectModel
+    from bestseller.services.genre_taxonomy import canonicalize
 
     try:
         target_key = canonicalize(genre, sub_genre)
@@ -2279,7 +2299,7 @@ async def _recent_core_mechanisms(
     # husk that was deleted minutes later).
     written_ids: set[Any] = set()
     try:
-        from bestseller.infra.db.models import ChapterModel  # noqa: PLC0415
+        from bestseller.infra.db.models import ChapterModel
 
         written_ids = {
             row[0]
@@ -2531,6 +2551,48 @@ def _candidate_echo_text(final_result: dict[str, Any]) -> str:
     )
 
 
+def _label_bigrams(
+    final_result: dict[str, Any], entries: list[dict[str, Any]]
+) -> set[str]:
+    """双方**标签字段**的词汇——按来源判定，不按词频。
+
+    ``trope_keywords`` 是选题标签栏（悬疑/权谋/扮猪吃虎…），同题材书共享它
+    是设计使然。它却被拼进了指纹比对文本，于是「都是玄幻悬疑权谋」被读成
+    「抄了那本书」。
+    """
+
+    texts: list[str] = []
+    profile = final_result.get("writing_profile")
+    market = profile.get("market") if isinstance(profile, dict) else None
+    if isinstance(market, dict):
+        texts.extend(_normalize_string_list(market.get("trope_keywords")))
+    texts.extend(str(t) for t in _normalize_string_list(final_result.get("tags")))
+    for entry in entries:
+        texts.extend(_normalize_string_list(entry.get("trope_keywords")))
+        texts.extend(_normalize_string_list(entry.get("tags")))
+    return _content_bigrams(" ".join(texts))
+
+
+def _echo_report_has_hard_evidence(report: list[dict[str, Any]]) -> bool:
+    """报告里是否有**逐字重合片段**——只有它够格阻断建书。
+
+    2026-08-23 真机：验证书 8 因 `shared_span=""` + 三个零散 bigram 被处决，
+    project_created=false。我随后试了两条统计判据想把噪声 bigram 单独筛掉，
+    都被自己的测量证伪：
+
+      * PMI（词性）：噪声「里那」-0.39 vs 真机制词「神位」-0.34，而边界碎片
+        「了一」2.62 更高 —— 不可分。
+      * 文档频率（12000 章）：「里那」2.9%，真机制词「阵法」5.5%、「丹田」
+        2.1% —— 切点定在哪都会切掉真词。
+
+    既然单个 2 字 bigram 在统计上无法与噪声区分，「3 个零散 bigram」就不足以
+    证明可见复用，更不足以判死刑。它照旧留痕、照旧换来一次重生（与本文件里
+    ``debt_hit`` / ``motif_hits`` 两条先例同待遇），杀权只留给逐字片段。
+    """
+
+    return any(str(item.get("shared_span") or "").strip() for item in report)
+
+
 def _mechanism_echo_report(
     final_result: dict[str, Any],
     entries: list[Any],
@@ -2559,6 +2621,15 @@ def _mechanism_echo_report(
     if not candidate_text.strip():
         return []
 
+    # 标签词永远不是指纹（2026-08-23 真机：验证书 8 被「悬疑/权谋/里那」判死）。
+    # 本函数 docstring 早就写着「present in the genre labels are background
+    # vocabulary and never count」，但只减掉了 genre/sub_genre——而
+    # ``trope_keywords`` 这个同样是标签的字段被 `_candidate_echo_text` /
+    # `_entry_echo_text` 拼进了比对文本，于是同题材书按设计共享的「悬疑」
+    # 「权谋」成了跨书抄袭证据。人类语料 12000 章实测这类词在正文里的
+    # 文档频率只有 0.02%~0.2%（它们活在标签栏不活在正文），DF 背景表在
+    # 结构上就抓不到它们——必须按字段来源减，不能指望词频。
+    label_vocabulary = _label_bigrams(final_result, clean_entries)
     entry_grams = [_content_bigrams(_entry_echo_text(e)) for e in clean_entries]
     gram_entry_count: dict[str, int] = {}
     for grams in entry_grams:
@@ -2571,6 +2642,7 @@ def _mechanism_echo_report(
         g for g, n in gram_entry_count.items() if n >= background_entry_min
     }
     background |= _content_bigrams(f"{genre or ''} {sub_genre or ''}")
+    background |= label_vocabulary
 
     report: list[dict[str, Any]] = []
     for entry, grams in zip(clean_entries, entry_grams):
@@ -2777,7 +2849,7 @@ def _hook_candidate_seed(genre_key: str) -> int:
     """
 
     return int(
-        hashlib.sha256(f"{genre_key}:{uuid4().hex}".encode("utf-8")).hexdigest()[:8],
+        hashlib.sha256(f"{genre_key}:{uuid4().hex}".encode()).hexdigest()[:8],
         16,
     )
 
@@ -2804,7 +2876,7 @@ def _hook_duplicate_corpus(
 
 
 def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | None = None) -> str:
-    from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
+    from bestseller.services.genre_persona import render_channel_style_stamp
 
     # 主角在这里出生:第10轮真机,淘汰赛干涸后保底路径给男频请求生成了虐女主
     # 圣母概念——频道钢印必须盖在主角诞生处,不只盖在包装工序。
@@ -3246,7 +3318,7 @@ def _finalize_user_prompt(
     # event list steers every same-genre book toward the same events. The
     # requirement stays ("front-load THIS book's high-arousal event") without
     # the framework supplying the events.
-    from bestseller.services.blurb_appeal_gate import platform_blurb_band  # noqa: PLC0415
+    from bestseller.services.blurb_appeal_gate import platform_blurb_band
 
     # 简介字数带与验收闸门同源（按目标平台解析；旧版硬编码 80-140 与起点 140-220 打架）。
     _blurb_platform = str(
@@ -3265,7 +3337,7 @@ def _finalize_user_prompt(
     # was deleted: framework-authored persona sheets must not enter prompts.
     # The channel stamp below survives because it only translates the USER's
     # explicit 男频/女频 pick.
-    from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
+    from bestseller.services.genre_persona import render_channel_style_stamp
 
     _channel_stamp = render_channel_style_stamp(
         (ctx.get("user_hints") or {}).get("audience_orientation")
@@ -4937,7 +5009,7 @@ async def _logline_regen_rescue(
       an exhausted budget still blocks — repair earns attempts, not a pass.
     """
 
-    from bestseller.services.logline_gate import LoglineAction  # noqa: PLC0415
+    from bestseller.services.logline_gate import LoglineAction
 
     repairable = (LoglineAction.REGENERATE, LoglineAction.REJECT)
     best_verdict, best_logline = verdict, logline
@@ -5076,8 +5148,8 @@ async def _polish_blurb_synopsis(
         # (2026-08-01 product ruling) persona table + emotion exemplar list
         # deleted from this repair prompt — framework-authored reader sheets
         # and event menus steer every same-genre book toward the same content.
-        from bestseller.services.blurb_appeal_gate import platform_blurb_band  # noqa: PLC0415
-        from bestseller.services.blurb_copywriter import render_blurb_form_reminder  # noqa: PLC0415
+        from bestseller.services.blurb_appeal_gate import platform_blurb_band
+        from bestseller.services.blurb_copywriter import render_blurb_form_reminder
 
         # 与验收闸门同源的平台字数带（旧版硬编码 80-140 与起点 140-220 打架）。
         _band_min, _band_max = platform_blurb_band(platform)
@@ -5142,7 +5214,7 @@ async def _persona_click_advisory(
     """
 
     try:
-        from bestseller.services.persona_click_judge import (  # noqa: PLC0415
+        from bestseller.services.persona_click_judge import (
             load_persona_judge_config,
             run_persona_click_judge,
         )
@@ -5192,11 +5264,10 @@ async def _repair_canon_contradictions(
     """
 
     try:
-        from bestseller.services.blurb_coherence_judge import (  # noqa: PLC0415
+        from bestseller.services.blurb_coherence_judge import (
             verify_blurb_coherence,
         )
-
-        from bestseller.services.concept_fact_consistency import (  # noqa: PLC0415
+        from bestseller.services.concept_fact_consistency import (
             detect_numeric_fact_conflicts,
         )
 
@@ -5322,7 +5393,7 @@ async def _coherence_advisory(
     """
 
     try:
-        from bestseller.services.blurb_coherence_judge import (  # noqa: PLC0415
+        from bestseller.services.blurb_coherence_judge import (
             verify_blurb_coherence,
         )
 
@@ -5370,7 +5441,7 @@ async def _run_finalize_arena(
     """
 
     try:
-        from bestseller.services.story_appeal import (  # noqa: PLC0415
+        from bestseller.services.story_appeal import (
             load_story_appeal_config,
             meets_story_bar,
         )
@@ -5379,7 +5450,7 @@ async def _run_finalize_arena(
         arena_cfg = cfg.get("arena", {}) if isinstance(cfg, dict) else {}
         if not bool(arena_cfg.get("run_at_finalize", False)):
             return None
-        from bestseller.services.premise_appeal_arena import (  # noqa: PLC0415
+        from bestseller.services.premise_appeal_arena import (
             make_deepseek_judge,
             run_appeal_arena,
         )
@@ -5422,7 +5493,7 @@ async def _polish_title(
     original title on any error / if no candidate beats it. Returns (title, run_id).
     """
 
-    from bestseller.services.title_appeal_gate import evaluate_title_appeal  # noqa: PLC0415
+    from bestseller.services.title_appeal_gate import evaluate_title_appeal
 
     if is_en:
         system_prompt = (
@@ -5441,7 +5512,7 @@ async def _polish_title(
             "你是网文平台资深编辑。按【整改要求】给出 6 个【点击型】书名候选。"
             "只输出书名，每行一个，不要编号、不要引号、不要解释。"
         )
-        from bestseller.services.genre_persona import render_channel_style_stamp  # noqa: PLC0415
+        from bestseller.services.genre_persona import render_channel_style_stamp
 
         user_prompt = (
             f"{render_channel_style_stamp(audience_orientation)}"
@@ -5681,7 +5752,7 @@ async def run_conception_pipeline(
     _ct_result: Any | None = None
     if chapter_count > 0:
         try:
-            from bestseller.services.concept_tournament import (  # noqa: PLC0415
+            from bestseller.services.concept_tournament import (
                 render_high_concept_block,
                 resolve_tournament_config,
                 run_concept_tournament,
@@ -5895,7 +5966,7 @@ async def run_conception_pipeline(
                             term for term in _violations if term not in _explicit_seed_text
                         )
                         if _unexpected_violations:
-                            from dataclasses import replace as _dc_replace  # noqa: PLC0415
+                            from dataclasses import replace as _dc_replace
 
                             _rejected_winner = _ct_result.winner
                             _ct_result.candidates = [
@@ -5924,10 +5995,10 @@ async def run_conception_pipeline(
                     # The tournament already screens candidates, but no future
                     # prompt mode or judge path may inject a debt/corpse winner
                     # into every downstream agent merely because it scored well.
-                    from bestseller.services.anti_default_motif import (  # noqa: PLC0415
+                    from bestseller.services.anti_default_motif import (
                         DEATH_MOTIF_RE,
                     )
-                    from bestseller.services.concept_tournament import (  # noqa: PLC0415
+                    from bestseller.services.concept_tournament import (
                         _creation_intent_content_violations,
                     )
 
@@ -6164,10 +6235,10 @@ async def run_conception_pipeline(
                     or str(getattr(selected_hook_spec, "one_liner", "") or "").strip()
                 )
                 if chapter_count >= 200 or not _has_substantive_story_seed:
-                    from bestseller.services.concept_contract import (  # noqa: PLC0415
+                    from bestseller.services.concept_contract import (
                         ConceptContractError,
                     )
-                    from bestseller.services.concept_tournament import (  # noqa: PLC0415
+                    from bestseller.services.concept_tournament import (
                         dry_tournament_rejection_summary,
                     )
 
@@ -6184,7 +6255,7 @@ async def run_conception_pipeline(
                         "第一个不可逆选择），或换一个题材切入角度后重试。",
                     ])
         except Exception as exc:
-            from bestseller.services.concept_contract import (  # noqa: PLC0415
+            from bestseller.services.concept_contract import (
                 ConceptContractError,
             )
 
@@ -6572,7 +6643,7 @@ async def run_conception_pipeline(
             or _is_anonymous_death_dominated(_final_blob)
             or _contains_default_death_motif(_final_blob)
         )
-        from bestseller.services.concept_tournament import (  # noqa: PLC0415
+        from bestseller.services.concept_tournament import (
             _creation_intent_content_violations,
         )
 
@@ -6592,7 +6663,7 @@ async def run_conception_pipeline(
             if genre_intent_contract is None:
                 return ()
             try:
-                from bestseller.services.genre_intent_contract import (  # noqa: PLC0415
+                from bestseller.services.genre_intent_contract import (
                     detect_genre_native_ontology_violations,
                 )
 
@@ -6620,7 +6691,13 @@ async def run_conception_pipeline(
             or motif_hits
         ):
             detected: list[str] = []
-            if echo_report:
+            # 只有**逐字重合片段**够格阻断建书。零散 bigram 照旧留痕、照旧换来
+            # 一次重生，但不进 detected——与紧下方 debt_hit、以及本块末尾
+            # motif_hits 的处置完全同族（2026-08-23 真机：验证书 8 因
+            # shared_span="" + 「悬疑/权谋/里那」三条噪声被处决，
+            # project_created=false；PMI 与文档频率两条判据都实测无法把这类
+            # 噪声与真机制词分开，所以问题在证据等级而不在词表）。
+            if _echo_report_has_hard_evidence(echo_report):
                 detected.append("跨书机制回声污染")
             # debt_hit 只挣一次重生，**不进 detected**（2026-08-14 真机误杀）：
             # detected 会变成 _detected_concept_guard 并 raise，把整本书打死。
@@ -6991,7 +7068,7 @@ async def run_conception_pipeline(
     if not _is_valid_title:
         # Try to extract a usable seed from a longer generated one.
         if title and not is_en and len(title) > 10:
-            import re as _re_title  # noqa: PLC0415
+            import re as _re_title
             m = _re_title.match(r"[\u4e00-\u9fff]{2,18}", title)
             if m:
                 title = m.group(0)
@@ -7125,7 +7202,7 @@ async def run_conception_pipeline(
         )
 
         contract_winner: object = _ct_result.winner
-        from bestseller.services.book_design import (  # noqa: PLC0415
+        from bestseller.services.book_design import (
             extract_creation_protagonist_name,
         )
 
@@ -7502,11 +7579,11 @@ async def run_conception_pipeline(
     _copywriting_result: Any = None
     _copywriting_ran = False
     try:
-        from bestseller.services.blurb_copywriter import (  # noqa: PLC0415
+        from bestseller.services.blurb_copywriter import (
             load_copywriting_config,
             run_blurb_copywriting,
         )
-        from bestseller.services.story_appeal import load_story_appeal_config  # noqa: PLC0415
+        from bestseller.services.story_appeal import load_story_appeal_config
 
         _appeal_cfg_for_cw = load_story_appeal_config()
         _cw_cfg = load_copywriting_config(_appeal_cfg_for_cw)
@@ -7631,8 +7708,8 @@ async def run_conception_pipeline(
     # while both were above threshold and persona_judge was the real blocker).
     _appeal_blocked_by: list[str] = []
     try:
-        from bestseller.domain.appeal import grade_rank  # noqa: PLC0415
-        from bestseller.services.story_appeal import (  # noqa: PLC0415
+        from bestseller.domain.appeal import grade_rank
+        from bestseller.services.story_appeal import (
             appeal_regen_should_continue,
             build_improvement_feedback,
             evaluate_story_appeal,
@@ -7865,7 +7942,7 @@ async def run_conception_pipeline(
     # 一句话故事大纲是建项/规划的独立前置条件，不能被简介、书名或画像评估的
     # fail-open 容错跳过。只有明确 EXPAND 才放行；闸门自身异常同样故障关闭。
     try:
-        from bestseller.services.logline_gate import (  # noqa: PLC0415
+        from bestseller.services.logline_gate import (
             LoglineAction,
             evaluate_logline_gate,
             load_logline_gate_config,
@@ -7899,7 +7976,7 @@ async def run_conception_pipeline(
                 )
             # 定罪句式确定性降级（0 误报校准）：故事门看不见句式病，
             # 「天煞孤星」当年正是从这里拿高分出的书。
-            from bestseller.services.logline_gate import (  # noqa: PLC0415
+            from bestseller.services.logline_gate import (
                 downgrade_for_condemned_structures,
             )
 
@@ -7967,7 +8044,7 @@ async def run_conception_pipeline(
             # **只记录不投票**——先在生产上积累命中率，再决定是否给否决权
             # （2026-07-25 门禁误杀全量审计的教训：新门先 advisory）。
             try:
-                from bestseller.services.hook_pull_judge import (  # noqa: PLC0415
+                from bestseller.services.hook_pull_judge import (
                     evaluate_hook_pull,
                 )
 
@@ -7998,7 +8075,7 @@ async def run_conception_pipeline(
             # 救援已尽力：把「仅因句式降级」的裁决还原成放行。下游判据是
             # 「非 EXPAND 即阻断」，不还原的话一条 3.81 分（本可通过）的卖点
             # 会把整本书打死（2026-08-14 真机，两天内第三次门禁自伤）。
-            from bestseller.services.logline_gate import (  # noqa: PLC0415
+            from bestseller.services.logline_gate import (
                 clear_structural_downgrade,
             )
 
@@ -8011,7 +8088,7 @@ async def run_conception_pipeline(
             # 维持 advisory（硬门有 3/3 误杀真爆款的前科），但 0 误报校准的
             # 确定性家族例外：救援循环用尽后成稿仍带定罪结构 → 拦下重来，
             # 不静默发货。
-            from bestseller.services.hook_pull_judge import (  # noqa: PLC0415
+            from bestseller.services.hook_pull_judge import (
                 detect_condemned_hook_structures as _detect_condemned,
             )
 
@@ -8105,7 +8182,7 @@ async def run_conception_pipeline(
     # 简介/书名经有界重生仍不达标 → 抛 AppealBarNotMetError。
     # 调用方(web)捕获后把项目置为可见拦截态(带分数+整改建议)，不静默进规划、不留 running 僵尸。
     if _appeal_block_below and story_appeal_report:
-        from bestseller.services.story_appeal import AppealBarNotMetError  # noqa: PLC0415
+        from bestseller.services.story_appeal import AppealBarNotMetError
 
         _b = (story_appeal_report.get("blurb") or {}).get("total")
         _t = (story_appeal_report.get("title") or {}).get("total")
@@ -8133,7 +8210,7 @@ async def run_conception_pipeline(
     # 对抗元素，两票交集定罪。首跑 warn-only 全程留痕（新判官只挣重生和
     # 留痕铁律；设定层定向重生成待真机观测一批后接）。
     try:
-        from bestseller.services.intent_alignment import (  # noqa: PLC0415
+        from bestseller.services.intent_alignment import (
             audit_and_rebuild_tagline,
             build_intent_alignment_messages,
             missing_intent_tags,
@@ -8496,7 +8573,7 @@ async def run_conception_pipeline(
             # ConceptContractError is the shared deliberate-block type: the web
             # layer renders its reasons as an actionable message AND closes the
             # conception workflow row instead of leaking it as `running`.
-            from bestseller.services.concept_contract import (  # noqa: PLC0415
+            from bestseller.services.concept_contract import (
                 ConceptContractError,
             )
 

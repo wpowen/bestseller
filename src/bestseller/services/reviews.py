@@ -11529,6 +11529,21 @@ async def rewrite_chapter_from_task(
             "preserved_current_chapter_draft_id": str(current_draft.id),
             "preserved_current_chapter_draft_version_no": current_draft.version_no,
             "preserved_current_quality_gate_outcome": preserved_current_quality_gate_outcome,
+            # 换稿判据的**另一半输入**。只记在架稿的门结果而不记它自己的确定性
+            # 审计，会让回执无法解释「在架稿明明 blocked，挑战者为什么还是没上」
+            # ——2026-08-24 我为这一个盲点连查了三轮，每次都得离线重算一遍。
+            # 回执必须自带判据的全部输入，否则它只是在复述结论。
+            "preserved_current_deterministic_audit_failed": _incumbent_audit_failed,
+            "took_current_decision": _took_current,
+            # 判据的其余两个输入。缺任何一个，回执就只能复述结论、解释不了原因：
+            # 2026-08-24 我拿离线重算去核对时把 has_duplicate_findings 假设成
+            # False，结论「修复没生效」因此站不住——真机上它可能正是否决的那一条。
+            "takeover_had_duplicate_findings": bool(duplicate_gate_findings),
+            "takeover_violation_codes": [
+                str(v.get("code") or "")
+                for v in (quality_gate_violations or ())
+                if isinstance(v, dict) and str(v.get("code") or "").strip()
+            ],
         }
         logger.warning(
             "chapter %d rewrite candidate v%d rejected by quality gate; "

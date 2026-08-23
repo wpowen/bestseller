@@ -11355,6 +11355,19 @@ async def rewrite_chapter_from_task(
         ),
         incumbent_audit_failed=_incumbent_audit_failed,
     )
+    # 每章至多一份在架稿（部分唯一索引 uq_chapter_draft_current）。接管时必须
+    # **先把旧稿降级并单独 flush**，否则新旧两行同时 is_current=True，插入直接
+    # 撞 UniqueViolation。
+    #
+    # 2026-08-24 真机：这个碰撞被死锁掩盖了很久——接管分支几乎从不触发，所以
+    # 从来没撞上。对称否决修复让它开始正常触发，第 23 章当场炸出
+    # `duplicate key value violates unique constraint "uq_chapter_draft_current"`，
+    # 把跑了 1238 秒的 autowrite 与 project_repair 一起打挂。
+    # 与 2026-07-13 场景重写那次同一个形状、同一个解法：分两次 flush。
+    if _took_current and current_draft is not None and current_draft.is_current:
+        current_draft.is_current = False
+        await session.flush()
+
     new_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+from argparse import Namespace
 import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager, suppress
 import datetime as _dt
 import importlib.util
 import logging
 import os
-import random
-from argparse import Namespace
-from collections.abc import Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any, AsyncIterator
+import random
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -25,9 +25,9 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
 )
 from bestseller.infra.db.session import get_server_session
-from bestseller.settings import get_settings
 from bestseller.services.planning_concurrency import PlanningConflictError
 from bestseller.services.progress_context import set_ambient
+from bestseller.settings import get_settings
 from bestseller.worker.progress import RedisProgressReporter, make_sync_callback
 
 logger = logging.getLogger(__name__)
@@ -269,10 +269,10 @@ def _reconcile_outline_replan_creation_identity(
     adjudication here and let the snapshot service supersede the old lineage.
     """
 
-    from bestseller.services.book_design import (  # noqa: PLC0415
+    from bestseller.services.book_design import (
         ensure_project_book_design_snapshot,
     )
-    from bestseller.services.planner import (  # noqa: PLC0415
+    from bestseller.services.planner import (
         _persist_creation_protagonist_choice,
         _replace_name_drift_in_value,
     )
@@ -318,7 +318,7 @@ def _reconcile_outline_replan_creation_identity(
                 )
         concept_contract = project.metadata_json.get("concept_contract")
         if isinstance(concept_contract, dict):
-            from bestseller.services.concept_contract import (  # noqa: PLC0415
+            from bestseller.services.concept_contract import (
                 reseal_concept_contract_lineage,
             )
 
@@ -358,6 +358,118 @@ def _coerce_workflow_run_uuid(workflow_run_id: str) -> UUID | None:
         return UUID(str(workflow_run_id))
     except (TypeError, ValueError):
         return None
+
+
+# ── 项目级管线活体互斥锁（2026-08-23）────────────────────────────────
+#
+# docker rebuild 杀掉跑书中的 worker 后，「继续推进」与「self-heal 补救」
+# 同秒各拉起一条 project_pipeline，双管线在两个 worker 上同时写同一章
+# （55 秒 4 个草稿版本）。既有防线全部失守且各有结构性原因：API 层 start
+# 锁只护 API 入口；self-heal 的所有权检查只枚举 heal 系 job id；
+# workflow_runs 行心跳被项目级批量心跳「保鲜」不可信；arq abort 因
+# allow_abort_jobs 未开从未生效。
+#
+# 修=锁和**进程**绑定：SET NX + TTL + 持锁进程续租。进程死了 TTL 到期
+# 自动让位，僵尸行骗不了它；redis 不可用降级放行（宁可重复也不阻塞
+# 合法工作，与 API start 锁同哲学）。
+_PIPELINE_LIVE_TTL_SECONDS = 300
+_PIPELINE_LIVE_RENEW_SECONDS = 60
+
+
+def _pipeline_live_key(project_slug: str) -> str:
+    return f"bestseller:pipeline-live:{project_slug}"
+
+
+async def _acquire_pipeline_live(redis: Any, project_slug: str, run_token: str) -> str:
+    """尝试取得本书的管线活体锁。
+
+    返回 "acquired"（我持有）、"held_by_other"（另一条活管线在跑，调用方
+    必须放弃）或 "degraded"（redis 不可用，放行但无锁保护）。
+    """
+
+    try:
+        ok = await redis.set(
+            _pipeline_live_key(project_slug),
+            str(run_token),
+            nx=True,
+            ex=_PIPELINE_LIVE_TTL_SECONDS,
+        )
+    except Exception:
+        logger.warning(
+            "pipeline live mutex unavailable for %s (redis down) — proceeding unguarded",
+            project_slug,
+            exc_info=True,
+        )
+        return "degraded"
+    return "acquired" if ok else "held_by_other"
+
+
+async def _release_pipeline_live(redis: Any, project_slug: str, run_token: str) -> None:
+    """只释放自己的锁——迟到的旧进程不得踢掉新任锁主。"""
+
+    key = _pipeline_live_key(project_slug)
+    try:
+        current = await redis.get(key)
+        if isinstance(current, bytes):
+            current = current.decode()
+        if current == str(run_token):
+            await redis.delete(key)
+    except Exception:
+        logger.debug("pipeline live mutex release skipped", exc_info=True)
+
+
+async def _renew_pipeline_live_once(
+    redis: Any, project_slug: str, run_token: str
+) -> None:
+    key = _pipeline_live_key(project_slug)
+    try:
+        current = await redis.get(key)
+        if isinstance(current, bytes):
+            current = current.decode()
+        if current == str(run_token):
+            await redis.expire(key, _PIPELINE_LIVE_TTL_SECONDS)
+    except Exception:
+        logger.debug("pipeline live mutex renew skipped", exc_info=True)
+
+
+async def _pipeline_live_renew_loop(
+    redis: Any, project_slug: str, run_token: str
+) -> None:
+    while True:
+        await asyncio.sleep(_PIPELINE_LIVE_RENEW_SECONDS)
+        await _renew_pipeline_live_once(redis, project_slug, run_token)
+
+
+@asynccontextmanager
+async def _pipeline_live_guard(
+    redis: Any, project_slug: str, run_token: str, state: str
+) -> AsyncIterator[None]:
+    """已 acquired 时维持续租并在退出时释放；degraded 时什么也不做。"""
+
+    if state != "acquired":
+        yield
+        return
+    renew = asyncio.create_task(
+        _pipeline_live_renew_loop(redis, project_slug, run_token)
+    )
+    try:
+        yield
+    finally:
+        renew.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await renew
+        await _release_pipeline_live(redis, project_slug, run_token)
+
+
+def _duplicate_pipeline_skip_payload(
+    project_slug: str, workflow_run_id: str
+) -> dict[str, Any]:
+    return {
+        "status": "skipped_duplicate_pipeline",
+        "project_slug": project_slug,
+        "workflow_run_id": str(workflow_run_id),
+        "reason": "another live project pipeline already owns this book",
+    }
 
 
 def _single_run_heartbeat_stmt(run_uuid: UUID):
@@ -771,7 +883,7 @@ async def _enqueue_benchmark_regression_if_needed(
         return False
     job_id = _benchmark_regression_job_id(project_slug)
     try:
-        job = await reporter._redis.enqueue_job(  # noqa: SLF001 — worker-internal reporter
+        job = await reporter._redis.enqueue_job(
             "run_benchmark_regression_task",
             workflow_run_id=job_id,
             payload={"project_slug": project_slug},
@@ -809,7 +921,7 @@ async def run_benchmark_regression_task(
             project_slug,
             output_base_dir=get_settings().output.base_dir,
         )
-    except Exception as exc:  # noqa: BLE001 — advisory job must never crash the worker
+    except Exception as exc:
         logger.warning("benchmark regression failed for %s", project_slug, exc_info=True)
         await reporter.emit(
             "benchmark_regression_failed",
@@ -1351,7 +1463,7 @@ async def _consume_generation_gate_retry_budget(
     project_slug: str,
     *,
     reason: str,
-) -> "RetryDecision | None":
+) -> RetryDecision | None:
     """Spend one unit of the gate's automatic-retry budget, or report exhaustion.
 
     The chain is persisted in ``projects.metadata`` — the same mapping that
@@ -1728,9 +1840,9 @@ async def run_outline_replan_task(
             payload.get("repair_foundation") or source_contract_requires_repair
         )
         if force_foundation_replan:
-            from bestseller.domain.enums import ArtifactType  # noqa: PLC0415
-            from bestseller.domain.planning import PlanningArtifactCreate  # noqa: PLC0415
-            from bestseller.services.projects import import_planning_artifact  # noqa: PLC0415
+            from bestseller.domain.enums import ArtifactType
+            from bestseller.domain.planning import PlanningArtifactCreate
+            from bestseller.services.projects import import_planning_artifact
 
             repaired_premise, source_repair = await repair_minimal_cost_source_contract(
                 session,
@@ -2117,6 +2229,16 @@ async def run_autowrite_task(
     if replan_block is not None:
         return replan_block
 
+    _live_state = await _acquire_pipeline_live(redis, project_slug, workflow_run_id)
+    if _live_state == "held_by_other":
+        payload_skip = _duplicate_pipeline_skip_payload(project_slug, workflow_run_id)
+        logger.warning(
+            "autowrite for %s skipped: another live project pipeline owns the book",
+            project_slug,
+        )
+        await reporter.emit("autowrite_skipped_duplicate", payload_skip)
+        return payload_skip
+
     await reporter.emit(
         "autowrite_started",
         {
@@ -2127,7 +2249,10 @@ async def run_autowrite_task(
     )
 
     _project_id: Any = None
-    async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
+    async with (
+        _pipeline_live_guard(redis, project_slug, workflow_run_id, _live_state),
+        _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug),
+    ):
         try:
             async with get_server_session() as session:
                 # Load existing project to build ProjectCreate payload
@@ -2259,6 +2384,16 @@ async def run_project_pipeline_task(
     if replan_block is not None:
         return replan_block
 
+    _live_state = await _acquire_pipeline_live(redis, project_slug, workflow_run_id)
+    if _live_state == "held_by_other":
+        payload_skip = _duplicate_pipeline_skip_payload(project_slug, workflow_run_id)
+        logger.warning(
+            "project pipeline for %s skipped: another live pipeline owns the book",
+            project_slug,
+        )
+        await reporter.emit("project_pipeline_skipped_duplicate", payload_skip)
+        return payload_skip
+
     await reporter.emit(
         "project_pipeline_started",
         {
@@ -2269,7 +2404,10 @@ async def run_project_pipeline_task(
     )
 
     _project_id: Any = None
-    async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
+    async with (
+        _pipeline_live_guard(redis, project_slug, workflow_run_id, _live_state),
+        _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug),
+    ):
         try:
             async with get_server_session() as session:
                 if str(workflow_run_id).startswith("project-pipeline:heal:"):

@@ -401,6 +401,8 @@ def _render_recent_length_failure_directive(
             "failure with a summary. Keep the same event set and adjust density.\n"
             "- Before final output, silently count the body. If outside the safe band, self-revise once "
             "and output only the corrected final chapter.\n"
+            "- This band is the single authority on length. Ignore any other word-count figure "
+            "elsewhere in these instructions, including inside a judge's rewrite plan.\n"
         )
     label = {
         "anti_oscillation": "反振荡收敛",
@@ -414,6 +416,7 @@ def _render_recent_length_failure_directive(
         f"目标约 {band.instruction_target} 字。\n"
         "- 禁止“过短后报复性扩写”或“过长后压成梗概”。保持同一条事件线，只调节场景密度、对白密度和过渡长度。\n"
         "- 输出前必须在内部静默计数；若不在安全区，先自我修正一次，只输出修正后的最终正文。\n"
+        "- 本区间是字数的唯一权威：本指令其它位置出现的任何字数数字（含整改方案里的）一律以本区间为准。\n"
     )
 
 

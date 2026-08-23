@@ -15,6 +15,9 @@
 
 from __future__ import annotations
 
+import re
+from uuid import uuid4
+
 # ruff: noqa: RUF001, RUF002, RUF003 — 中文标点是刻意的。
 import pytest
 
@@ -66,3 +69,51 @@ def test_the_instruction_target_is_always_satisfiable(
 
     band = _band(safe_min=safe_min, safe_max=safe_max, hard_target=hard_target)
     assert safe_min <= band.instruction_target <= safe_max
+
+
+def test_the_band_declares_itself_the_single_authority_on_length() -> None:
+    """判官会自己发明字数命令，与权威闸门撞车。
+
+    真机：34 条带商业判官整改方案的重写指令里，10 条含判官自拟的字数数字，
+    **这 10 条全部同时挂着字数收敛闸门**——每次报数字都撞车。判官的整改方案是
+    自由文本，逐句过滤会误伤它其它有用的意见；改为由闸门声明优先级。
+
+    ⚠️ 这条测试**真渲染一次**再断言，不断言源码字符串——后者不执行代码，
+    本项目已因此吃过假绿。
+    """
+
+    from bestseller.infra.db.models import ChapterModel, RewriteTaskModel
+    from bestseller.services.reviews import _render_recent_length_failure_directive
+
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=7,
+        title="断墨",
+        chapter_goal="推进",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+        target_word_count=2600,
+    )
+    failure = RewriteTaskModel(
+        project_id=chapter.project_id,
+        trigger_type="quality_gate",
+        rewrite_strategy="chapter",
+        status="failed",
+        metadata_json={
+            "candidate_word_count": 1773,
+            "candidate_quality_gate_violations": [{"code": "LENGTH_UNDER"}],
+        },
+    )
+
+    text = _render_recent_length_failure_directive(
+        [failure], chapter=chapter, language="zh", project=None
+    )
+
+    assert text, "渲染结果不该为空"
+    assert "唯一权威" in text, text
+    band = re.search(r"落在 (\d+)-(\d+)", text)
+    target = re.search(r"目标约 (\d+)", text)
+    assert band and target, text
+    assert int(band.group(1)) <= int(target.group(1)) <= int(band.group(2)), text

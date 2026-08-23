@@ -133,6 +133,33 @@ _DEFAULT_DEBT_FAMILY_RES: tuple[re.Pattern[str], ...] = (
 )
 
 
+def default_debt_family_matches(text: Any, *, limit: int = 8) -> tuple[str, ...]:
+    """构思**自己写下的**族内词（去重、有上限）。
+
+    2026-08-23：`default_debt_family_hits` 返回的是正则源码，给不了反馈用。
+    重写反馈需要把模型这次自己写的词逐字引回去——只说「换一个完全不同的
+    家族」而不点明踩到了什么，模型会把「旧账」换成「欠条」再换成「人情债」，
+    始终在同一族里（真机验证书 9：原稿与重写稿双双判定债务族支配）。
+
+    ⚠️ 与「否定式指令点名母题词=种词」（2026-08-06 定案）不冲突：那条禁的是
+    **静态禁词表**——它把新词汇塞进模型脑子里；这里引回的是模型自己刚写下的
+    词，不引入任何新词汇。
+    """
+
+    blob = text if isinstance(text, str) else _blob(text)
+    if not blob:
+        return ()
+    seen: list[str] = []
+    for pattern in _DEFAULT_DEBT_FAMILY_RES:
+        for m in pattern.finditer(blob):
+            word = m.group(0).strip()
+            if word and word not in seen:
+                seen.append(word)
+            if len(seen) >= limit:
+                return tuple(seen)
+    return tuple(seen)
+
+
 def default_debt_family_hits(text: Any) -> tuple[str, ...]:
     """命中的子族样式列表（冠军级检测与选题沉底共用）。"""
 

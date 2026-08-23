@@ -2854,13 +2854,29 @@ def _render_mechanism_echo_feedback(
     )
 
 
-def _render_debt_rewrite_feedback(*, is_en: bool) -> str:
+def _render_debt_rewrite_feedback(
+    *, is_en: bool, matched_terms: tuple[str, ...] = ()
+) -> str:
     """2026-08-13 复活（词汇 withhold 版）。
 
     触发条件回到「用户没点名 + 冠军被该默认族支配」。反馈沿用本体漂移
     渲染器的策略：不点任何族内词汇（点名即种词），只下达换族指令。
     """
 
+    quoted_en = ""
+    quoted_zh = ""
+    if matched_terms:
+        joined = ", ".join(f"'{t}'" for t in matched_terms[:8])
+        quoted_en = (
+            f" The words you just wrote that put it in that family: {joined}. "
+            "Swapping them for close synonyms keeps the concept in the SAME "
+            "family and does not count as a rewrite."
+        )
+        joined_zh = "、".join(f"「{t}」" for t in matched_terms[:8])
+        quoted_zh = (
+            f"本次构思里把它归进该族的正是你自己写下的这些词：{joined_zh}。"
+            "把它们换成近义词仍然停在**同一个族**里，不算重写。"
+        )
     if is_en:
         return (
             "\n\n[Rewrite required — default-theme convergence]\n"
@@ -2868,13 +2884,13 @@ def _render_debt_rewrite_feedback(*, is_en: bool) -> str:
             "family this framework has measurably over-reused, and the user "
             "did not ask for it. Rebuild around a COMPLETELY different "
             "mechanism family and scene family; do not reuse this concept's "
-            "core nouns or their close synonyms."
+            "core nouns or their close synonyms." + quoted_en
         )
     return (
         "\n\n【必须重写——默认主题族收敛】\n"
         "本次构思的核心机制与场景落在了本框架被实测过度复用的默认主题族上，"
         "且用户并没有要求它。换一个**完全不同**的机制家族与场景家族重新构思；"
-        "不得沿用本次构思的核心名词及其近义词。"
+        "不得沿用本次构思的核心名词及其近义词。" + quoted_zh
     )
 
 
@@ -6866,7 +6882,20 @@ async def run_conception_pipeline(
             if heavy_tone_hits:
                 retry_feedback += render_heavy_tone_feedback(heavy_tone_hits)
             if debt_hit:
-                retry_feedback += _render_debt_rewrite_feedback(is_en=is_en)
+                # 把这次构思自己写下的族内词逐字引回去——只说「换个家族」
+                # 而不点明踩到了什么，模型会把「旧账」换成「欠条」再换成
+                # 「人情债」，始终在同一族里（真机验证书9：原稿与重写稿双双
+                # 判定债务族支配）。引回模型自己的词不引入新词汇，不是种词。
+                from bestseller.services.anti_default_motif import (
+                    default_debt_family_matches,
+                )
+
+                retry_feedback += _render_debt_rewrite_feedback(
+                    is_en=is_en,
+                    matched_terms=default_debt_family_matches(
+                        _concept_scan_blob(final_result)
+                    ),
+                )
             if death_hit:
                 retry_feedback += _render_death_revival_rewrite_feedback(is_en=is_en)
             if ontology_hit:

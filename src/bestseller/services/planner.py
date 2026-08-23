@@ -4153,6 +4153,10 @@ def _rescue_title_collisions_or_none(
     """
 
     if not isinstance(raw_payload, dict):
+        logger.warning(
+            "title-collision rescue declined for '%s' (no dedupe applicable)",
+            logical_name,
+        )
         return None, []
     from bestseller.services.title_dedup import make_titles_unique
 
@@ -4163,6 +4167,10 @@ def _rescue_title_collisions_or_none(
         language=language,
     )
     if not changes:
+        logger.warning(
+            "title-collision rescue declined for '%s' (no dedupe applicable)",
+            logical_name,
+        )
         return None, []
     deduped, changes = _repair_clipped_dedup_titles(
         deduped,
@@ -4191,6 +4199,17 @@ def _rescue_title_collisions_or_none(
             "Deterministic title rescue for '%s' failed re-validation; "
             "falling through to the original failure.",
             logical_name,
+            exc_info=True,
+        )
+        # ⚠️ 声明为什么放弃。第一版只在**成功**时留痕，于是真机上出现
+        # 「救援没救下来」时，我无法区分「它没开火」与「它开火后重验没过」——
+        # 2026-08-24 书 9 第 49 章标题撞车毙掉卷纲，我为此翻了半天日志才发现
+        # 是自己没写这条。与当天补回执判据输入是同一条原则。
+        logger.warning(
+            "title-collision rescue for '%s' deduped %d title(s) but the "
+            "re-validation still failed; falling through to hard failure",
+            logical_name,
+            len(changes),
             exc_info=True,
         )
         return None, changes

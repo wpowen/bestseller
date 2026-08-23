@@ -78,13 +78,13 @@ class TestQuoteGrounding:
 
     def test_empty_and_garbage_are_safe(self) -> None:
         for raw in ("", "not json", '{"heavy_events": []}', "{}"):
-            found, dropped = parse_and_verify_heavy_tone(raw, source_text=_REAL)
+            found, _dropped = parse_and_verify_heavy_tone(raw, source_text=_REAL)
             assert found == ()
 
     def test_trimmed_quote_still_grounds(self) -> None:
         # 模型常丢标点/空白，逐字核对要容忍这个但不容忍改字。
         raw = '{"heavy_events": [{"quote": "十个当晚必死之人吃的\\n", "why": "y"}]}'
-        found, dropped = parse_and_verify_heavy_tone(raw, source_text=_REAL)
+        found, _dropped = parse_and_verify_heavy_tone(raw, source_text=_REAL)
         assert len(found) == 1
 
 

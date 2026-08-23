@@ -89,7 +89,22 @@ def persona_hard_veto(
         return False
     if not bool(persona_cfg.get("block_below", False)):
         return False
-    return not bool(persona_report.get("advisory_pass", True))
+    if "advisory_pass" in persona_report:
+        # 生产路径手工补进来的判决，优先采信（向后兼容）。
+        return not bool(persona_report.get("advisory_pass"))
+    # 缺键时自己算，而不是默认放行。2026-08-23：`advisory_pass` 是要传阈值的
+    # 方法，因此不在 `PersonaClickReport.to_dict()` 里；任何从序列化报告重建
+    # 的调用方（审计脚本／离线复验／未来新入口）读到的都是缺键 → 默认 True
+    # → 这条否决**永不开火**。真机复现：0/3 点击、均分 1.0 的 AI 腔烂稿被判
+    # 「通过」。判据与数据住两地是本项目的元病，这里就地补齐。
+    if not bool(persona_report.get("llm_used", False)):
+        return False  # fail-open：判官不可用绝不误毙（与 advisory_pass 同义）
+    try:
+        click_rate = float(persona_report.get("click_rate") or 0.0)
+        threshold = float(persona_cfg.get("click_rate_min", 0.34))
+    except (TypeError, ValueError):
+        return False
+    return click_rate < threshold
 
 
 def appeal_regen_should_continue(
@@ -545,7 +560,7 @@ __all__ = [
     "is_appeal_enabled",
     "load_story_appeal_config",
     "meets_bar",
-    "persona_hard_veto",
     "meets_story_bar",
+    "persona_hard_veto",
     "resolve_genre_lexicon",
 ]

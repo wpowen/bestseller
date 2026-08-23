@@ -51,6 +51,48 @@ class _EligibleDraft:
     candidate: PromotionCandidate
 
 
+#: 创建那一刻写下的回执前缀——**它们记的是「这稿怎么来的」**，与提升状态机记的
+#: 「它走到哪一步了」是两件不同的事。共用一个字段而后写的整块覆盖，就等于把
+#: 前一件事抹掉。
+_CREATION_RECEIPT_PREFIXES: tuple[str, ...] = (
+    "origin:",
+    "wrote_as_current:",
+    "supersedes:",
+    "hold:",
+)
+
+
+def merge_promotion_reason_codes(
+    existing: object, incoming: list[str] | None
+) -> list[str]:
+    """保留创建回执，追加状态转移码。
+
+    2026-08-24 真机（书 9）：157 份草稿里 13 份的 promotion_reason_codes 只剩
+    ``["quality_review_started"]`` 或 ``["quality_eligible"]`` —— **其中 7 份正是
+    当前在架稿**。它们不是没写过 origin，是被提升状态机整块覆盖掉了
+    （``transition_draft_state`` 与 ``_promote_selected`` 两处直接赋值）。
+
+    后果是这个字段最该说话的时候哑了：走得最远、被提升的那些稿，恰恰丢掉了
+    「谁写的、有没有接管」的记录；所有按 origin 统计的口径都会系统性少算
+    （我自己这一天的接管计数就一直被它压低）。
+
+    讽刺的是 ``draft_supersession_codes`` 的注释正是为了「没有一行记录说明为什么」
+    才写的 —— 记账加上了，又被下游擦掉。合并而不是覆盖。
+    """
+
+    kept = [
+        str(code)
+        for code in (existing or [])
+        if str(code).startswith(_CREATION_RECEIPT_PREFIXES)
+    ]
+    out: list[str] = []
+    for code in [*kept, *(incoming or [])]:
+        text = str(code).strip()
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
 def draft_supersession_codes(
     *,
     origin: str,
@@ -247,7 +289,9 @@ async def transition_draft_state(
     )
     async with session.begin_nested():
         draft.promotion_state = to_state.value
-        draft.promotion_reason_codes = list(reason_codes or [])
+        draft.promotion_reason_codes = merge_promotion_reason_codes(
+            draft.promotion_reason_codes, list(reason_codes or [])
+        )
         if promotion_score is not None:
             draft.promotion_score = promotion_score
         now = datetime.now(UTC)
@@ -456,7 +500,9 @@ async def _advance_to_promoted(
         draft.promotion_state = target.value
         current = target
     draft.promotion_score = float(score.score_overall)
-    draft.promotion_reason_codes = ["quality_eligible"]
+    draft.promotion_reason_codes = merge_promotion_reason_codes(
+        draft.promotion_reason_codes, ["quality_eligible"]
+    )
     draft.promoted_at = datetime.now(UTC)
     metadata = dict(draft.promotion_metadata or {})
     metadata["quality_score_id"] = str(score.id)

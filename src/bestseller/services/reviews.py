@@ -7580,6 +7580,21 @@ def _merge_chapter_quality_bundle_into_review(
             raw = str(evidence.get(key) or "").strip().replace("\n", " ")
             if len(raw) >= 8:
                 return raw[:60]
+        # ⚠️ 只看 evidence['text'] 会漏掉最主要的两个码。真机分布：
+        #   CROSS_CHAPTER_REPETITION          13 次，12 次有 text  ← 上面能取到
+        #   CHAPTER_SPLICE_REPEATED_SENTENCE  12 次，**0 次**有 text
+        #   INTRA_CHAPTER_REPETITION         157 次，仅 2 次有 text
+        # 后两者把引文嵌在 message 里（「…重复出现 2 次：他那双眼睛先从砚台上…」）。
+        # 部署后实测发现这一半是空操作，这里补回退：从 message 的冒号后取引文，
+        # 没有冒号就取整条 message —— 它至少带着行号与句子，远好过通用配方。
+        message = str(evidence.get("message") or "").strip().replace("\n", " ")
+        if len(message) >= 8:
+            for sep in ("：", ":"):
+                if sep in message:
+                    tail = message.split(sep, 1)[1].strip()
+                    if len(tail) >= 8:
+                        return tail[:60]
+            return message[:60]
         return ""
 
     issue_lines = []

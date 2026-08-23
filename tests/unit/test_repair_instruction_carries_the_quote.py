@@ -102,3 +102,42 @@ def test_the_quote_is_truncated() -> None:
 def test_other_evidence_keys_are_accepted() -> None:
     out = _render((_Finding("X", evidence={"sample": "灶膛里的火舌舔到柴尾的尽头"}),))
     assert "灶膛里的火舌舔到柴尾的尽头" in out
+
+
+# ── 部署后复验暴露的另一半：只看 evidence['text'] 覆盖不到主要的码 ──────────
+#
+# 真机分布（书 9，2026-08-24 07:20）：
+#   CROSS_CHAPTER_REPETITION          13 次，12 次有 text   ← 第一版能取到
+#   CHAPTER_SPLICE_REPEATED_SENTENCE  12 次，**0 次**有 text
+#   INTRA_CHAPTER_REPETITION         157 次，仅 2 次有 text
+# 后两者把引文嵌在 message 里。第一版对它们是空操作——而 SPLICE 正是当初举例
+# 的那条码。下面的夹具用真机原样的 evidence 形状。
+
+
+def test_splice_code_quotes_from_the_message() -> None:
+    """真机形状：CHAPTER_SPLICE_REPEATED_SENTENCE 只有 message，没有 text。"""
+
+    evidence = {
+        "gate": "chapter_splice_coherence",
+        "path": "line:55",
+        "message": "同一句叙事/对白在章内重复出现 2 次：他那双眼睛先从砚台上那卷青布布头上挪到自己袖口",
+    }
+    out = _render((_Finding("CHAPTER_SPLICE_REPEATED_SENTENCE", evidence=evidence),))
+
+    assert "他那双眼睛先从砚台上" in out, out
+
+
+def test_a_message_without_a_colon_is_still_usable() -> None:
+    out = _render((_Finding("X", evidence={"message": "第51–74段构成重复演绎同一事件节拍的段落簇"}),))
+    assert "第51–74段" in out
+
+
+def test_text_still_wins_over_message() -> None:
+    """有 text 时优先用它——它是精确引文，message 带样板话。"""
+
+    out = _render((_Finding("X", evidence={
+        "text": "攥得那只备账册的册页又自个儿翻了一下",
+        "message": "样板：某某检测器报告如下",
+    }),))
+    assert "攥得那只备账册" in out
+    assert "样板" not in out

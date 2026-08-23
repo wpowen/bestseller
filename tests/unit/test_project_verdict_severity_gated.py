@@ -73,7 +73,12 @@ class TestSeverityGating:
                 "foreshadowing_balance",
             )
         ] + [_F("medium", "world_rule_consistency"), _F("low", "revision_pressure")]
-        assert project_verdict_from_findings(overall=0.8, threshold=0.75, findings=findings) == "attention"
+        assert (
+            project_verdict_from_findings(
+                overall=0.8, threshold=0.75, findings=findings
+            )
+            == "attention"
+        )
 
 
 class TestWiring:

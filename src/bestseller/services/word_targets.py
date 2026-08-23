@@ -28,6 +28,21 @@ class RewriteLengthBand:
     safe_max: int
     model_output_chars: int | None
 
+    @property
+    def instruction_target(self) -> int:
+        """写进指令的目标字数——必须落在安全区内。
+
+        扩写模式把安全区整体抬到目标之上（``safe_min = hard_target + 220``），
+        而 ``hard_target`` 原样不动。渲染出来就是「必须落在 2820-3068 个汉字，
+        目标约 2600 字」—— 区间根本不含目标，模型无论听哪一句都会违反另一句。
+        真机（书 9，2026-08-24）10 条带字数闸门的重写指令里有 6 条是这个形状，
+        而这些章正是反复因 LENGTH 触发新一轮重写的那些。
+
+        安全区是刻意的，不动；只把指令里报的目标夹回区间内。
+        """
+
+        return min(max(self.hard_target, self.safe_min), self.safe_max)
+
 
 def resolve_llm_role_max_tokens(settings: AppSettings, role: str = "writer") -> int | None:
     """Return configured max output tokens for a writer role if present."""

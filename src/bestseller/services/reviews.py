@@ -396,7 +396,7 @@ def _render_recent_length_failure_directive(
             "\nLENGTH CONVERGENCE GATE (MANDATORY):\n"
             f"- Recent failed rewrite candidate word counts: {sample_text}; gates: {codes_text}.\n"
             f"- Mode: {label}. Final body must land in {band.safe_min}-{band.safe_max} words, "
-            f"targeting about {band.hard_target}.\n"
+            f"targeting about {band.instruction_target}.\n"
             "- Do not compensate for a short failure with an oversized expansion, or for an oversized "
             "failure with a summary. Keep the same event set and adjust density.\n"
             "- Before final output, silently count the body. If outside the safe band, self-revise once "
@@ -411,7 +411,7 @@ def _render_recent_length_failure_directive(
         "\n【章节字数收敛闸门·硬性要求】\n"
         f"- 最近失败候选稿字数：{sample_text}；触发门：{codes_text}。\n"
         f"- 本轮模式：{label}。最终正文必须落在 {band.safe_min}-{band.safe_max} 个有效中文汉字，"
-        f"目标约 {band.hard_target} 字。\n"
+        f"目标约 {band.instruction_target} 字。\n"
         "- 禁止“过短后报复性扩写”或“过长后压成梗概”。保持同一条事件线，只调节场景密度、对白密度和过渡长度。\n"
         "- 输出前必须在内部静默计数；若不在安全区，先自我修正一次，只输出修正后的最终正文。\n"
     )

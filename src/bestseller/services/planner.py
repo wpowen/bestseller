@@ -4129,6 +4129,74 @@ async def _repair_story_enhancer_distribution(
     )
 
 
+def _rescue_title_collisions_or_none(
+    raw_payload: dict[str, Any] | None,
+    *,
+    project: ProjectModel,
+    logical_name: str,
+    volume_number: int,
+    expected_count: int,
+    chapter_number_offset: int,
+    cast_spec: dict[str, Any],
+    volume_entry: dict[str, Any] | None,
+    existing_titles: list[tuple[int | None, str]] | None,
+) -> tuple[dict[str, Any] | None, list[tuple[int, str, str]]]:
+    """批内修复循环打满仍撞标题时的确定性救援。
+
+    整卷合并层早已定下政策（see ``make_titles_unique``）：标题撞车是表面伤，
+    确定性改名即可，绝不毙书。但批内循环里同一种错 3 轮后仍硬抛
+    PlannerFallbackError（2026-08-23 真机：ch46『血指印』撞 ch2、ch48『阴债』
+    撞 ch3，generate_volume_plan / project_repair / chapter_pipeline 同刻全灭）。
+    本函数把同一条改名路径搬到批内：改名后**完整重验**，重验过了才返回
+    payload；仍有任何其他缺陷（字段退化、数量不符等）就返回 None，上层照旧
+    抛错——救援只吃表面伤，不放行实质缺陷。
+    """
+
+    if not isinstance(raw_payload, dict):
+        return None, []
+    from bestseller.services.title_dedup import make_titles_unique
+
+    language = getattr(project, "language", None)
+    deduped, changes = make_titles_unique(
+        _mapping_list(raw_payload.get("chapters")),
+        existing_titles=existing_titles or (),
+        language=language,
+    )
+    if not changes:
+        return None, []
+    deduped, changes = _repair_clipped_dedup_titles(
+        deduped,
+        changes,
+        existing_titles=list(existing_titles or ()),
+        language=language,
+    )
+    candidate = {**raw_payload, "chapters": deduped}
+    try:
+        payload = _validate_generated_volume_outline_or_raise(
+            candidate,
+            project=project,
+            logical_name=logical_name,
+            volume_number=volume_number,
+            expected_count=expected_count,
+            chapter_number_offset=chapter_number_offset,
+            cast_spec=cast_spec,
+            volume_entry=volume_entry,
+            existing_titles=existing_titles,
+            # 与最后一轮同款校验强度：故事效果软、字段退化硬。
+            strict_story_effects=False,
+            strict_field_degeneracy=True,
+        )
+    except Exception:
+        logger.warning(
+            "Deterministic title rescue for '%s' failed re-validation; "
+            "falling through to the original failure.",
+            logical_name,
+            exc_info=True,
+        )
+        return None, changes
+    return payload, changes
+
+
 async def _generate_volume_outline_with_repair_loop(
     session: AsyncSession,
     settings: AppSettings,
@@ -4168,6 +4236,7 @@ async def _generate_volume_outline_with_repair_loop(
     repair_history: list[dict[str, Any]] = []
     last_error: Exception | None = None
     last_llm_run_id: UUID | None = None
+    last_raw_payload: dict[str, Any] | None = None
 
     # Cross-volume title dedup: fetch every title already persisted for
     # this project, EXCLUDING the volume we are about to (re)generate.
@@ -4230,6 +4299,7 @@ async def _generate_volume_outline_with_repair_loop(
                 merge_fallback=False,
             )
             last_llm_run_id = llm_run_id
+            last_raw_payload = raw_payload if isinstance(raw_payload, dict) else None
             raw_meta = (
                 _mapping(raw_payload.get("_meta")) if isinstance(raw_payload, dict) else {}
             )
@@ -4414,6 +4484,41 @@ async def _generate_volume_outline_with_repair_loop(
                 len(directives),
             )
             repair_constraints = [*base_constraints, *directives]
+
+    # 打满修复轮后，若仅剩的缺陷是标题撞车，走整卷层同款确定性改名救援，
+    # 不毙书（改名后完整重验，重验不过才落入下面的硬抛）。
+    if isinstance(last_error, TitleCollisionError):
+        rescued, title_changes = _rescue_title_collisions_or_none(
+            last_raw_payload,
+            project=project,
+            logical_name=logical_name,
+            volume_number=volume_number,
+            expected_count=expected_count,
+            chapter_number_offset=chapter_number_offset,
+            cast_spec=cast_spec,
+            volume_entry=volume_entry,
+            existing_titles=existing_titles,
+        )
+        if rescued is not None:
+            logger.warning(
+                "Volume %d outline batch '%s': repair loop exhausted on title "
+                "collisions; deterministically deduped %d title(s): %s",
+                volume_number,
+                logical_name,
+                len(title_changes),
+                "; ".join(f"ch{cn} '{old}'->'{new}'" for cn, old, new in title_changes),
+            )
+            repair_history.append(
+                {
+                    "attempt": max_repair_attempts,
+                    "status": "passed_with_deterministic_title_dedupe",
+                    "title_changes": [
+                        {"chapter_number": cn, "old": old, "new": new}
+                        for cn, old, new in title_changes
+                    ],
+                }
+            )
+            return rescued, last_llm_run_id, repair_history
 
     raise PlannerFallbackError(
         f"Planner artifact '{logical_name}' failed chapter-outline repair loop after "

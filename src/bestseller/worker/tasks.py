@@ -2692,6 +2692,39 @@ async def run_project_repair_task(
                     project_slug,
                 )
 
+            # ── 再救回「当时被拒、现在够格」的稿（同样 LLM-free）──────────
+            # 提升资格判据会随框架演进改变，而提升只在章评那一轮尝试一次：
+            # 改判据的那一刻，此前按旧口径判过的稿就永远停在 under_review，
+            # 没有任何路径回头重评。真机（书 9，2026-08-24）第 7 章诚实轴
+            # 0.860、第 11 章 0.863 都过了 0.85 的线，却因为评分发生在改判
+            # 之前而卡死；改判之后评的第 13、15 章一路走到 promoted。
+            # 这个清扫只会**提升**，不降级、不拦截、不改任何门的结论。
+            try:
+                from bestseller.services.draft_promotion import (
+                    repromote_stranded_chapters,
+                )
+
+                async with get_server_session() as promo_session:
+                    project = await get_project_by_slug(promo_session, project_slug)
+                    if project is not None:
+                        rescued = await repromote_stranded_chapters(
+                            promo_session, project_id=project.id
+                        )
+                        if rescued:
+                            await promo_session.commit()
+                            await reporter.emit(
+                                "project_repair_repromoted_stranded_chapters",
+                                {
+                                    "project_slug": project_slug,
+                                    "chapter_count": len(rescued),
+                                },
+                            )
+            except Exception:
+                logger.exception(
+                    "stranded-promotion sweep failed for %s; continuing to repair",
+                    project_slug,
+                )
+
             async def _repair_op() -> Any:
                 async with get_server_session() as session:
                     return await run_project_repair(

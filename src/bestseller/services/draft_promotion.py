@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
@@ -27,6 +28,8 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneDraftVersionModel,
 )
+
+logger = logging.getLogger(__name__)
 
 DraftKind = Literal["scene", "chapter"]
 DraftModel = type[SceneDraftVersionModel] | type[ChapterDraftVersionModel]
@@ -632,6 +635,79 @@ async def promote_best_draft(
         promoted_draft_id=selected.draft.id,
         incumbent_draft_id=incumbent.id if incumbent else None,
     )
+
+
+async def repromote_stranded_chapters(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    workflow_run_id: UUID | None = None,
+    min_overall: float = 0.85,
+    min_core: float = 0.80,
+) -> tuple[UUID, ...]:
+    """把「当时被拒、现在够格」的章节稿重新送去提升，返回真的提升了的章 id。
+
+    资格判据会随框架演进改变。改判据的那一刻，此前按旧口径判过的稿就永远停在
+    ``under_review``——提升只在章节评审的那一轮尝试一次，没有任何路径会回头
+    重评。真机（书 9，2026-08-24）：第 7 章在架稿诚实轴 0.860、第 11 章 0.863，
+    都过了 0.85 的线，却因为评分发生在改判之前而卡死；同一本书里改判之后评
+    的第 13、15 章一路走到 promoted。
+
+    这个清扫**只会提升**：它复用 ``promote_best_draft``（自带资格校验、父行锁
+    与幂等审计），不降级、不拦截、不改任何门的结论。单章失败只跳过该章。
+    """
+
+    chapter_ids = list(
+        await session.scalars(
+            select(ChapterModel.id)
+            .where(ChapterModel.project_id == project_id)
+            .order_by(ChapterModel.chapter_number.asc())
+        )
+    )
+    promoted: list[UUID] = []
+    for chapter_id in chapter_ids:
+        has_promoted = await session.scalar(
+            select(ChapterDraftVersionModel.id).where(
+                ChapterDraftVersionModel.chapter_id == chapter_id,
+                ChapterDraftVersionModel.promotion_state
+                == DraftPromotionState.PROMOTED.value,
+            )
+        )
+        if has_promoted is not None:
+            continue
+        scores = list(
+            await session.scalars(
+                select(QualityScoreModel)
+                .join(
+                    ChapterDraftVersionModel,
+                    QualityScoreModel.chapter_draft_version_id
+                    == ChapterDraftVersionModel.id,
+                )
+                .where(ChapterDraftVersionModel.chapter_id == chapter_id)
+            )
+        )
+        judged = [s for s in scores if str(s.judge_key or "").strip()]
+        if not judged:
+            continue
+        judge_key = str(max(judged, key=_score_recency_key).judge_key or "").strip()
+        try:
+            outcome = await promote_chapter_draft(
+                session,
+                project_id=project_id,
+                chapter_id=chapter_id,
+                judge_key=judge_key,
+                min_overall=min_overall,
+                min_core=min_core,
+                workflow_run_id=workflow_run_id,
+            )
+        except Exception:  # noqa: BLE001 - 一章失败不该拖垮整轮清扫
+            logger.warning(
+                "repromote sweep failed for chapter %s", chapter_id, exc_info=True
+            )
+            continue
+        if outcome.changed:
+            promoted.append(chapter_id)
+    return tuple(promoted)
 
 
 async def promote_scene_draft(

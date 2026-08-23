@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from bestseller.services.draft_promotion import draft_supersession_codes
-
 import asyncio
+from collections.abc import Iterable, Sequence
 import contextlib
 import logging
 from pathlib import Path
 import re
-from typing import Any, Iterable, Sequence
+from typing import Any
 from uuid import UUID
+
+from bestseller.services.draft_promotion import draft_supersession_codes
 
 logger = logging.getLogger(__name__)
 
@@ -82,21 +83,24 @@ from bestseller.infra.db.models import (
     VolumeModel,
 )
 from bestseller.services.action_scene_structure_gate import evaluate_action_scene_structure
-from bestseller.services.progress_context import emit_gate_result
-from bestseller.services.hook_signals import SHARED_HOOK_TERMS as _SHARED_HOOK_TERMS
+from bestseller.services.anti_ai_voice_discipline import render_anti_ai_voice_discipline
 from bestseller.services.chapter_quality_bundle import (
     ChapterQualityBundleContext,
     ChapterQualityBundleReport,
     run_chapter_quality_bundle,
 )
+from bestseller.services.chapter_word_count_truth import authoritative_zh_word_count
 from bestseller.services.checker_schema import CheckerReport
 from bestseller.services.chekhov_emphasis_gate import evaluate_chekhov_emphasis
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
+from bestseller.services.critic_evidence_gate import (
+    build_critic_evidence_prompt_suffix,
+    validate_critic_commentary,
+)
 from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
     _NOVEL_OUTPUT_PROHIBITION_EN,
     _chapter_first_writer_aim,
-    render_hype_preservation_block,
     _clean_generated_chapter_text,
     _collect_post_assembly_duplicate_findings,
     _collect_previous_current_chapter_texts,
@@ -109,19 +113,30 @@ from bestseller.services.drafts import (
     count_words,
     has_meta_leak,
     prose_output_max_tokens_for_target,
+    render_hype_preservation_block,
     sanitize_novel_markdown_content,
     strip_scaffolding_echoes,
     validate_and_clean_novel_content,
 )
-from bestseller.services.chapter_word_count_truth import authoritative_zh_word_count
+from bestseller.services.gate_adjudicator import (
+    adjudicate_findings,
+    is_adjudicable,
+)
+from bestseller.services.hook_ledger import is_methodology_v2_enabled
 from bestseller.services.hook_ledger_runtime import (
     compute_hook_ledger_audit_for_review,
     merge_hook_ledger_audit_into_chapter_review,
 )
+from bestseller.services.hook_signals import SHARED_HOOK_TERMS as _SHARED_HOOK_TERMS
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology import (
     render_methodology_scene_rules,
     render_qimao_opening_contract_block,
+)
+from bestseller.services.methodology_compiler import (
+    ChapterPosition,
+    MethodologyStage,
+    compile_methodology,
 )
 from bestseller.services.methodology_lineage import (
     methodology_lineage_from_object,
@@ -140,28 +155,14 @@ from bestseller.services.payoff_ledger_runtime import (
     compute_payoff_ledger_audit_for_review,
     merge_payoff_ledger_audit_into_chapter_review,
 )
-from bestseller.services.hook_ledger import is_methodology_v2_enabled
+from bestseller.services.progress_context import emit_gate_result
 from bestseller.services.projects import get_project_by_slug
-from bestseller.services.critic_evidence_gate import (
-    build_critic_evidence_prompt_suffix,
-    validate_critic_commentary,
-)
-from bestseller.services.gate_adjudicator import (
-    adjudicate_findings,
-    is_adjudicable,
-)
-from bestseller.services.methodology_compiler import (
-    ChapterPosition,
-    MethodologyStage,
-    compile_methodology,
-)
 from bestseller.services.prompt_packs import (
     render_methodology_block,
     render_prompt_pack_fragment,
     render_prompt_pack_prompt_block,
     resolve_prompt_pack,
 )
-from bestseller.services.anti_ai_voice_discipline import render_anti_ai_voice_discipline
 from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
 from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.quality_levers import (
@@ -1865,7 +1866,7 @@ async def _await_optional_chapter_review_llm(
 
     try:
         return await asyncio.wait_for(awaitable, timeout=timeout_seconds)
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise TimeoutError(
             f"{label} timed out after {timeout_seconds:.1f}s for chapter "
             f"{chapter_number}"
@@ -2629,11 +2630,11 @@ def _render_chapter_context_section(packet, *, language: str | None = None) -> s
     snapshot = getattr(packet, "hard_fact_snapshot", None)
     if snapshot is not None and getattr(snapshot, "facts", None):
         lines.append(
-            (
+
                 f"=== Locked fact state (from the end of Chapter {snapshot.chapter_number}; must be obeyed exactly with no contradictions) ==="
                 if is_en
                 else f"=== 当前事实状态（来自第 {snapshot.chapter_number} 章末 — 必须严格遵守，不得前后矛盾）==="
-            )
+
         )
         for fact in snapshot.facts:
             prefix = f"[{fact.subject}] " if fact.subject else ""
@@ -2641,11 +2642,11 @@ def _render_chapter_context_section(packet, *, language: str | None = None) -> s
             note = f"  // {fact.notes}" if fact.notes else ""
             lines.append(f"- {prefix}{fact.name}: {fact.value}{unit}{note}")
         lines.append(
-            (
+
                 "=== Any change to values, locations, or possessions must have a reader-visible trigger event in this chapter ==="
                 if is_en
                 else "=== 任何数值/位置/物品变化都必须在本章正文里给出读者可见的触发事件 ==="
-            )
+
         )
     if getattr(packet, "active_plot_arcs", None):
         lines.append("Active narrative lines:" if is_en else "激活叙事线：")
@@ -3891,10 +3892,10 @@ def evaluate_scene_draft(
         keywords=[
             getattr(scene_contract, "information_release", None),
             *(getattr(scene_contract, "payoff_codes", []) or []),
-            *(getattr(scene_context, "planned_payoffs", []) and [
+            *((getattr(scene_context, "planned_payoffs", []) and [
                 getattr(item, "label", None)
                 for item in getattr(scene_context, "planned_payoffs", [])[:3]
-            ] or []),
+            ]) or []),
             "真相",
             "终于",
             *_INFO_SIGNAL_TERMS,
@@ -4320,7 +4321,7 @@ def evaluate_scene_draft(
         "会", "可", "能", "得", "该", "须", "应", "当", "正", "再", "只", "已",
     })
     if _expected_participants and content:
-        import re as _re_names  # noqa: PLC0415
+        import re as _re_names
 
         def _participant_name_variants(value: str) -> set[str]:
             """Return canonical and alias forms for a participant label.
@@ -4394,7 +4395,7 @@ def evaluate_scene_draft(
         # English name consistency: check for name variants (e.g. "James" → "Jim")
         # Only runs when language is English and participants have multi-word names
         if _is_en:
-            import re as _re_en_names  # noqa: PLC0415
+            import re as _re_en_names
             _en_participants = [p for p in _expected_participants if _re_en_names.match(r"[A-Za-z]", p)]
             if _en_participants:
                 _en_names_set = set(_en_participants)
@@ -5836,6 +5837,8 @@ async def _compute_chapter_methodology_reports(
     try:
         from bestseller.services.chapter_splice_coherence_gate import (
             as_checker_report as _splice_as_report,
+        )
+        from bestseller.services.chapter_splice_coherence_gate import (
             evaluate_chapter_splice_coherence,
         )
 
@@ -6545,7 +6548,7 @@ async def _compute_premature_death_signal(
     project: ProjectModel,
     chapter: ChapterModel,
     draft: ChapterDraftVersionModel | None,
-) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+) -> tuple[list[ChapterReviewFinding], dict[str, Any]]:
     """Scan the assembled chapter for death descriptions of characters
     whose planned ``death_chapter_number`` is later than the current
     chapter (the "protected roster"). Critical strong-match findings
@@ -6627,7 +6630,7 @@ async def _compute_countdown_regression_signal(
     project: ProjectModel,
     chapter: ChapterModel,
     draft: ChapterDraftVersionModel | None,
-) -> list["ChapterReviewFinding"]:
+) -> list[ChapterReviewFinding]:
     """Cross-chapter countdown continuity: the remaining time stated in this
     chapter must not be larger than the last amount stated in the previous
     chapter (same unit). Audit-level — a legitimate in-story deadline reset
@@ -6669,12 +6672,12 @@ async def _compute_countdown_regression_signal(
 
 
 def _merge_premature_death_into_review(
-    review_result: "ChapterReviewResult",
-    findings: list["ChapterReviewFinding"],
+    review_result: ChapterReviewResult,
+    findings: list[ChapterReviewFinding],
     evidence: dict[str, Any],
     *,
     language: str | None = None,
-) -> "ChapterReviewResult":
+) -> ChapterReviewResult:
     """Fold premature-death findings into an existing review result.
     Mirrors ``_merge_antagonist_scope_into_review`` so behaviour stays
     consistent: any ``critical`` finding pushes verdict→'rewrite' and
@@ -6772,7 +6775,7 @@ async def _compute_chapter_seam_signal(
     draft: ChapterDraftVersionModel | None,
     tail_chars: int = 800,
     opening_window_chars: int = 300,
-) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+) -> tuple[list[ChapterReviewFinding], dict[str, Any]]:
     """Validate the seam between this chapter's opening and the prior
     chapter's tail. Silent drops of cliffhanger threads (immediate threats,
     locations, key participants, body states, unanswered questions) trigger
@@ -6865,7 +6868,7 @@ async def _compute_reader_logic_signal(
     project: ProjectModel,
     chapter: ChapterModel,
     draft: ChapterDraftVersionModel | None,
-) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+) -> tuple[list[ChapterReviewFinding], dict[str, Any]]:
     """Validate reader-visible adjacent chapter state.
 
     ``chapter_seam`` checks dropped hooks; this gate checks contradictions
@@ -6946,12 +6949,12 @@ async def _compute_reader_logic_signal(
 
 
 def _merge_chapter_seam_into_review(
-    review_result: "ChapterReviewResult",
-    findings: list["ChapterReviewFinding"],
+    review_result: ChapterReviewResult,
+    findings: list[ChapterReviewFinding],
     evidence: dict[str, Any],
     *,
     language: str | None = None,
-) -> "ChapterReviewResult":
+) -> ChapterReviewResult:
     if not findings:
         return review_result
 
@@ -7006,12 +7009,12 @@ def _merge_chapter_seam_into_review(
 
 
 def _merge_reader_logic_into_review(
-    review_result: "ChapterReviewResult",
-    findings: list["ChapterReviewFinding"],
+    review_result: ChapterReviewResult,
+    findings: list[ChapterReviewFinding],
     evidence: dict[str, Any],
     *,
     language: str | None = None,
-) -> "ChapterReviewResult":
+) -> ChapterReviewResult:
     if not findings:
         return review_result
 
@@ -7092,7 +7095,7 @@ async def _compute_stitched_draft_signal(
     project: ProjectModel,
     chapter: ChapterModel,
     draft: ChapterDraftVersionModel | None,
-) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+) -> tuple[list[ChapterReviewFinding], dict[str, Any]]:
     """Detect intra-chapter stitched drafts. Uses the project's character
     canon as participant pool when available -- this kills the prose-token
     pollution that drags Jaccard similarities below the threshold."""
@@ -7165,12 +7168,12 @@ async def _compute_stitched_draft_signal(
 
 
 def _merge_stitched_draft_into_review(
-    review_result: "ChapterReviewResult",
-    findings: list["ChapterReviewFinding"],
+    review_result: ChapterReviewResult,
+    findings: list[ChapterReviewFinding],
     evidence: dict[str, Any],
     *,
     language: str | None = None,
-) -> "ChapterReviewResult":
+) -> ChapterReviewResult:
     if not findings:
         return review_result
 
@@ -7224,7 +7227,7 @@ async def _compute_name_canon_signal(
     project: ProjectModel,
     chapter: ChapterModel,
     draft: ChapterDraftVersionModel | None,
-) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+) -> tuple[list[ChapterReviewFinding], dict[str, Any]]:
     """Validate character names in the chapter against the project's
     character-aliases.yaml canon. Skips silently when no canon exists --
     the gate is opt-in via the presence of the YAML file.
@@ -7289,12 +7292,12 @@ async def _compute_name_canon_signal(
 
 
 def _merge_name_canon_into_review(
-    review_result: "ChapterReviewResult",
-    findings: list["ChapterReviewFinding"],
+    review_result: ChapterReviewResult,
+    findings: list[ChapterReviewFinding],
     evidence: dict[str, Any],
     *,
     language: str | None = None,
-) -> "ChapterReviewResult":
+) -> ChapterReviewResult:
     if not findings:
         return review_result
 
@@ -7835,6 +7838,52 @@ def _float_from_payload(value: Any) -> float | None:
     elif parsed > 1.0:
         parsed = parsed / 10.0
     return max(0.0, min(1.0, parsed))
+
+
+def merge_judge_rewrite_direction(
+    existing: str, *, judge_payload: object
+) -> str:
+    """把商业判官的重写方案并进重写指令——与它有没有阻断权无关。
+
+    2026-08-23 离线复验（书 7 的 169 份质量分）：判官 149 份判决全部 fail，
+    均分 0.538、最高 0.78、零份到 0.80，而它的意见逐条带引文、还给出
+    `rewrite_plan.instructions`。可这份方案只在
+    ``chapter_llm_commercial_judge_block_on_failure=True`` 时才会变成重写指令，
+    该开关默认 **False** —— 方案被原样丢弃，只剩 payload 存进证据。
+
+    同日的提升修复又让这个判官掌握了提升否决权。两件事合起来就是
+    **能毙但不教**：它否决章节，却从不把怎么改告诉写手，写手按另一套指令
+    重写，永远收敛不到判官要的方向。
+
+    因此把「是否阻断」与「是否教学」拆开：判官未通过时方案一律回灌，
+    ``block_on_failure`` 只继续决定要不要强制把 verdict 改成 rewrite。
+    """
+
+    base = str(existing or "").strip()
+    if not isinstance(judge_payload, dict):
+        return existing
+    if judge_payload.get("pass") is not False:
+        return existing
+    plan = judge_payload.get("rewrite_plan")
+    plan_text = ""
+    if isinstance(plan, dict):
+        plan_text = str(plan.get("instructions") or "").strip()
+    if not plan_text:
+        issues = judge_payload.get("blocking_issues")
+        lines: list[str] = []
+        if isinstance(issues, list):
+            for issue in issues[:8]:
+                if not isinstance(issue, dict):
+                    continue
+                code = str(issue.get("code") or "").strip()
+                fix = str(issue.get("required_fix") or issue.get("evidence") or "").strip()
+                if code or fix:
+                    lines.append(f"{code}: {fix}" if code else fix)
+        plan_text = "\n".join(lines).strip()
+    if not plan_text or plan_text in base:
+        return existing
+    header = "【商业判官整改方案】"
+    return f"{base}\n{header}\n{plan_text}" if base else f"{header}\n{plan_text}"
 
 
 def _can_accept_llm_pass_over_rule_rewrite(
@@ -8522,7 +8571,12 @@ async def review_chapter_draft(
                         "llm_commercial_judge": llm_commercial_judge_payload,
                         "llm_rule_gate_conflict": rule_conflict,
                     },
-                    rewrite_instructions=review_result.rewrite_instructions,
+                    # 判官未通过时它的整改方案一律回灌，与阻断权无关
+                    # （见 merge_judge_rewrite_direction 的定罪记录）。
+                    rewrite_instructions=merge_judge_rewrite_direction(
+                        review_result.rewrite_instructions,
+                        judge_payload=llm_commercial_judge_payload,
+                    ),
                 )
                 if _can_accept_llm_pass_over_rule_rewrite(
                     review_result,

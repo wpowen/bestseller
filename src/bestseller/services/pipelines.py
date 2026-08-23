@@ -41,12 +41,12 @@ from bestseller.domain.planning import AutowriteResult, PlanningArtifactCreate
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import (
-    CharacterModel,
-    ChapterDraftVersionModel,
     ChapterContractModel,
+    ChapterDraftVersionModel,
     ChapterModel,
     ChapterQualityReportModel,
     ChapterStateSnapshotModel,
+    CharacterModel,
     ChaseDebtModel,
     PlanningArtifactVersionModel,
     ProjectModel,
@@ -58,18 +58,14 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
     WorldRuleModel,
 )
-from bestseller.services.draft_promotion import (
-    mark_candidate_under_review,
-    mark_draft_eligible,
-    promote_chapter_draft,
-    promote_scene_draft,
-    quarantine_draft,
-)
 from bestseller.services.audit_loop import (
     build_phase1_audit,
     run_and_persist_audit,
 )
-from bestseller.services.chase_debt_ledger import accrue_debt_rows
+from bestseller.services.book_closure import (
+    SETTLED_PRODUCTION_STATES,
+    settle_project_status_on_closure,
+)
 from bestseller.services.chapter_generation_input_builder import (
     build_chapter_generation_input_bundle,
 )
@@ -86,11 +82,11 @@ from bestseller.services.chapter_outline_readiness_gate import (
 from bestseller.services.chapter_predraft_quality_gate import (
     evaluate_chapter_predraft_quality,
 )
-from bestseller.services.generation_policy import generation_unit_preference_from_metadata
 from bestseller.services.chapter_scene_contract_materializer import (
     materialize_chapter_contract_from_chapter,
     materialize_chapter_scene_contracts,
 )
+from bestseller.services.chase_debt_ledger import accrue_debt_rows
 from bestseller.services.commercial_planning_readiness import (
     ChapterPlanProbe,
     ScenePlanProbe,
@@ -113,8 +109,16 @@ from bestseller.services.continuity import (
     load_previous_chapter_snapshot,
     validate_fact_monotonicity,
 )
+from bestseller.services.draft_promotion import (
+    mark_candidate_under_review,
+    mark_draft_eligible,
+    promote_chapter_draft,
+    promote_scene_draft,
+    quarantine_draft,
+)
 from bestseller.services.drafts import (
     _chapter_length_contract_band,
+    _front10_forbidden_signal_terms,
     _prompt_safe_forbidden_actions,
     _redact_front10_prompt_leaks,
     assemble_chapter_draft,
@@ -122,20 +126,15 @@ from bestseller.services.drafts import (
     generate_chapter_draft_once,
     generate_scene_draft,
     render_hype_preservation_block,
-    _front10_forbidden_signal_terms,
     resync_draft_word_count,
 )
-from bestseller.services.book_closure import (
-    SETTLED_PRODUCTION_STATES,
-    settle_project_status_on_closure,
-)
+from bestseller.services.emotion_kernel_backfill import ensure_project_emotion_driven_kernel
+from bestseller.services.entry_system_backfill import ensure_project_entry_system_compat
 from bestseller.services.exports import (
     export_chapter_markdown,
     export_project_markdown,
     write_commercial_package_sidecars,
 )
-from bestseller.services.emotion_kernel_backfill import ensure_project_emotion_driven_kernel
-from bestseller.services.entry_system_backfill import ensure_project_entry_system_compat
 from bestseller.services.fanqie_market_repository import (
     evaluate_and_persist_fanqie_long_readiness,
     load_current_chapter_texts_for_fanqie_gate,
@@ -145,7 +144,7 @@ from bestseller.services.gate_registry import (
     core_block_metadata_keys,
     pause_reason_is_structural,
 )
-from bestseller.services.public_emotion_backfill import ensure_project_public_emotion_kernels
+from bestseller.services.generation_policy import generation_unit_preference_from_metadata
 from bestseller.services.invariants import (
     InvariantSeedError,
     invariants_from_dict,
@@ -175,6 +174,7 @@ from bestseller.services.projects import (
     import_planning_artifact,
     load_json_file,
 )
+from bestseller.services.public_emotion_backfill import ensure_project_public_emotion_kernels
 from bestseller.services.qimao_opening_gate import (
     evaluate_qimao_opening_gate,
     qimao_opening_gate_report_to_dict,
@@ -321,7 +321,9 @@ def run_final_quality_gates(
                     f"show_dont_tell:{finding.code}" for finding in report.findings[:6]
                 )
         if chapter_number <= 3:
-            from bestseller.services.opening_golden_chapter_gate import check_opening_golden_chapter_gate
+            from bestseller.services.opening_golden_chapter_gate import (
+                check_opening_golden_chapter_gate,
+            )
 
             report = check_opening_golden_chapter_gate(
                 text,
@@ -604,11 +606,11 @@ async def _evaluate_retention_safety_after_assembly(
     if _rq_cfg.enabled and _rq_cfg.block_on_persona_failure and output_base_dir:
         try:
             from bestseller.domain.reader_persona import PersonaSimulationResult
-            from bestseller.services.persona_quality_gate import (
-                evaluate_persona_quality,
-            )
             from bestseller.services.persona_feedback_repository import (
                 resolve_persona_feedback_path,
+            )
+            from bestseller.services.persona_quality_gate import (
+                evaluate_persona_quality,
             )
             from bestseller.services.retention_safety_gate import (
                 RetentionGateFinding,
@@ -2193,7 +2195,7 @@ async def _checkpoint_book_runtime_guard(
     project: ProjectModel,
     *,
     progress: ProgressCallback | None = None,
-) -> "DriftReport | None":
+) -> DriftReport | None:
     """Freeze the book's contract on first sight, verify it on every later one.
 
     Returns the drift report, or ``None`` when the guard is disabled or could
@@ -3657,7 +3659,7 @@ async def _enforce_qimao_opening_gate_after_chapter(
                         },
                     )
                     return
-        except Exception:  # noqa: BLE001 — never let the closure break generation
+        except Exception:
             logger.warning(
                 "qimao_opening_gate ch%d: inline revise failed; falling back to queue",
                 chapter.chapter_number,
@@ -5544,6 +5546,56 @@ def _chapter_first_requested(
     return False
 
 
+async def _extract_chapter_knowledge_if_enabled(
+    session: Any,
+    settings: Any,
+    *,
+    project_id: Any,
+    chapter: Any,
+    chapter_md: str,
+    workflow_run_id: Any,
+) -> None:
+    """章后知识抽取（canon/承诺/关系事件/线索/世界细节），永不抛出。
+
+    2026-08-23 定罪：这块此前只长在「章节被提升」那条分支上，而提升需要
+    商业判官放行——真机 149 份判决 0 通过。正常流程的章走的是另一条出口
+    （production_state="quality_debt"、reason="chapter_not_promoted"），
+    那条路上一行知识抽取都没有。真机验证书 9 跑 18 章、管线调用抽取 **0 次**。
+
+    后果链：知识层不落库 → 项目级一致性审稿如实报出 canon_coverage /
+    timeline_coverage / foreshadowing_balance 空洞 → 判 attention → 顶层
+    workflow 永不完成 → 自愈反复重启 → 用户看到的「时灵时不灵」。
+
+    判据：章的正文已定稿、书已经往后写，它的事实就是这本书的事实。
+    「够不够好到能提升」是质量判断，「事实进不进知识库」是连续性判断，
+    两者不该共用一个开关。
+    """
+
+    if not getattr(getattr(settings, "pipeline", None), "enable_chapter_feedback", False):
+        return
+    if not str(chapter_md or "").strip():
+        return
+    try:
+        from bestseller.services.feedback import extract_chapter_feedback
+
+        async with session.begin_nested():
+            await extract_chapter_feedback(
+                session,
+                settings,
+                project_id=project_id,
+                chapter=chapter,
+                chapter_md=chapter_md,
+                workflow_run_id=workflow_run_id,
+            )
+    except Exception as exc:
+        logger.warning(
+            "Chapter %s knowledge extraction failed (non-fatal): %s",
+            getattr(chapter, "chapter_number", "?"),
+            exc,
+        )
+        await _recover_session_after_nonfatal_error(session, exc)
+
+
 async def _recover_session_after_nonfatal_error(
     session: AsyncSession,
     exc: Exception,
@@ -5867,7 +5919,7 @@ async def _promote_best_scoring_chapter_draft_on_stall(
                 project,
                 int(getattr(chapter, "target_word_count", 0) or 0) or None,
             )
-        except Exception:  # noqa: BLE001 - ranking must degrade, never raise
+        except Exception:
             logger.debug("chapter %s: length band unavailable for best-of-N", chapter.id)
             hard_min = 0
             hard_max = 0
@@ -6439,14 +6491,14 @@ async def run_scene_pipeline(
             and getattr(settings.pipeline, "require_pre_draft_scene_contract", True)
         ):
             try:
-                from bestseller.services.narrative_contracts import (
-                    repair_legacy_scene_contract_pre_draft,
-                    repair_missing_scene_participants_pre_draft,
-                    repair_missing_scene_methodology_contract_pre_draft,
-                    validate_scene_contract_pre_draft,
-                )
                 from bestseller.services.methodology_overlay import (
                     resolve_methodology_contract_mode,
+                )
+                from bestseller.services.narrative_contracts import (
+                    repair_legacy_scene_contract_pre_draft,
+                    repair_missing_scene_methodology_contract_pre_draft,
+                    repair_missing_scene_participants_pre_draft,
+                    validate_scene_contract_pre_draft,
                 )
 
                 _repair_count = repair_legacy_scene_contract_pre_draft(
@@ -7076,14 +7128,18 @@ async def run_scene_pipeline(
                 if _orig_cfg.enabled:
                     from bestseller.services.chapter_orchestrator import (
                         ensure_signature_plan as _ensure_signature_plan,
-                        prepare_chapter_context as _prepare_chapter_context,
                     )
-                    from bestseller.services.market_constraint_compiler import (
-                        render_chapter_constraints_block as _render_constraints_block,
+                    from bestseller.services.chapter_orchestrator import (
+                        prepare_chapter_context as _prepare_chapter_context,
                     )
                     from bestseller.services.exposition_density_gate import (
                         check_exposition_density as _check_exposition_density,
+                    )
+                    from bestseller.services.exposition_density_gate import (
                         render_exposition_density_block as _render_exposition_block,
+                    )
+                    from bestseller.services.market_constraint_compiler import (
+                        render_chapter_constraints_block as _render_constraints_block,
                     )
                     from bestseller.services.reader_persona_simulator import (
                         render_persona_feedback_block as _render_persona_block,
@@ -7125,6 +7181,8 @@ async def run_scene_pipeline(
                     try:
                         from bestseller.services.imagery_system_design import (
                             ensure_book_imagery_system as _ensure_imagery,
+                        )
+                        from bestseller.services.imagery_system_design import (
                             imagery_anchor_phrases as _imagery_anchors,
                         )
 
@@ -7158,7 +7216,7 @@ async def run_scene_pipeline(
                                 # skeletons and are withheld from prompts.
                                 _outline_hints = None
                                 try:
-                                    from bestseller.services.signature_outline_hints import (  # noqa: PLC0415
+                                    from bestseller.services.signature_outline_hints import (
                                         load_chapter_outline_hints as _load_outline_hints,
                                     )
 
@@ -7258,6 +7316,8 @@ async def run_scene_pipeline(
                     try:
                         from bestseller.services.canon_guardrails import (
                             load_canon_guardrails_for_project as _load_guard,
+                        )
+                        from bestseller.services.canon_guardrails import (
                             render_canon_guardrails_block as _render_guard,
                         )
 
@@ -7296,6 +7356,8 @@ async def run_scene_pipeline(
                         try:
                             from bestseller.services.timeline_consistency_gate import (
                                 load_timeline_canon as _load_canon,
+                            )
+                            from bestseller.services.timeline_consistency_gate import (
                                 render_timeline_canon_block as _render_canon,
                             )
 
@@ -7330,6 +7392,8 @@ async def run_scene_pipeline(
                         try:
                             from bestseller.services.character_role_gate import (
                                 load_character_profiles as _load_profiles,
+                            )
+                            from bestseller.services.character_role_gate import (
                                 render_character_role_block as _render_role,
                             )
                             from bestseller.services.dialogue_voice_blocks import (
@@ -9262,7 +9326,11 @@ async def run_chapter_pipeline(
                 ):
                     from bestseller.services.chapter_orchestrator import (
                         ensure_voice_dna as _ensure_voice_dna,
+                    )
+                    from bestseller.services.chapter_orchestrator import (
                         grade_chapter as _grade_chapter,
+                    )
+                    from bestseller.services.chapter_orchestrator import (
                         prepare_chapter_context as _prep_for_grade,
                     )
 
@@ -11576,26 +11644,14 @@ async def run_chapter_pipeline(
                     await _recover_session_after_nonfatal_error(session, exc)
 
                 # ── Post-chapter feedback extraction (1 LLM call) ──
-                if settings.pipeline.enable_chapter_feedback:
-                    try:
-                        from bestseller.services.feedback import extract_chapter_feedback
-
-                        async with session.begin_nested():
-                            await extract_chapter_feedback(
-                                session,
-                                settings,
-                                project_id=project_id,
-                                chapter=chapter,
-                                chapter_md=chapter_draft.content_md,
-                                workflow_run_id=workflow_run_id,
-                            )
-                    except Exception as exc:
-                        logger.warning(
-                            "Chapter %d feedback extraction failed (non-fatal): %s",
-                            loaded_chapter_number,
-                            exc,
-                        )
-                        await _recover_session_after_nonfatal_error(session, exc)
+                await _extract_chapter_knowledge_if_enabled(
+                    session,
+                    settings,
+                    project_id=project_id,
+                    chapter=chapter,
+                    chapter_md=chapter_draft.content_md,
+                    workflow_run_id=workflow_run_id,
+                )
 
                 # ── Dynamic world-state ripple (case law) ──
                 # When the chapter touches a state variable's change triggers,
@@ -12009,6 +12065,17 @@ async def run_chapter_pipeline(
                 )
             chapter.status = ChapterStatus.REVISION.value
             chapter.production_state = "quality_debt"
+            # 带债出货的章也要进知识库：正文已定稿、书已往后写，它的事实就是
+            # 这本书的事实（见 _extract_chapter_knowledge_if_enabled 的定罪记录）。
+            if chapter_draft is not None:
+                await _extract_chapter_knowledge_if_enabled(
+                    session,
+                    settings,
+                    project_id=project_id,
+                    chapter=chapter,
+                    chapter_md=chapter_draft.content_md,
+                    workflow_run_id=workflow_run_id,
+                )
             # Persist a DURABLE chapter-level debt marker. production_state can be
             # flipped back to "blocked" by a later quality-gate re-run (e.g. a
             # retroactive reassembly), which would erase the only signal that this
@@ -13063,7 +13130,7 @@ async def run_project_pipeline(
                                 else "llm_gate_failed"
                             ),
                         }
-                    except Exception as _llm_exc:  # noqa: BLE001
+                    except Exception as _llm_exc:
                         # A judge outage is not positive quality evidence. Keep
                         # the deterministic report and fail closed so a broken
                         # evaluator cannot promote an unreadable outline.
@@ -14247,7 +14314,7 @@ async def _settled_chapter_count(session: AsyncSession, project_id: Any) -> int 
             .scalars()
             .all()
         )
-    except Exception:  # noqa: BLE001 - convergence bookkeeping is never fatal
+    except Exception:
         return None
     return sum(
         1
@@ -14301,7 +14368,7 @@ async def _drive_repair_to_closure(
                 .scalars()
                 .all()
             )
-        except Exception:  # noqa: BLE001 - convergence bookkeeping is never fatal
+        except Exception:
             return result
         verdict = evaluate_book_closure(
             chapters,
@@ -15039,10 +15106,10 @@ async def run_progressive_autowrite_pipeline(
             raise ValueError(
                 "foundation replan did not produce an active cast contract"
             )
-        from bestseller.services.book_design import (  # noqa: PLC0415
+        from bestseller.services.book_design import (
             ensure_project_book_design_snapshot,
         )
-        from bestseller.services.story_bible import (  # noqa: PLC0415
+        from bestseller.services.story_bible import (
             supersede_materialized_cast_for_foundation,
         )
 

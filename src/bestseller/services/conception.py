@@ -1103,6 +1103,62 @@ def _concept_methodology_prompt_block(ctx: dict[str, Any]) -> str:
     return f"\n\n{block}" if isinstance(block, str) and block.strip() else ""
 
 
+#: 调性键 → 人话。与 `STORY_EFFECT_SKILL_LABELS` 同理：模型读不懂 "light"。
+_TONE_PROSE_ZH: dict[str, str] = {
+    "light": "轻松",
+    "dark": "沉重压抑",
+    "epic": "史诗厚重",
+    "hot": "高热快节奏",
+}
+_TONE_PROSE_EN: dict[str, str] = {
+    "light": "light-hearted",
+    "dark": "dark and heavy",
+    "epic": "epic and weighty",
+    "hot": "hot, fast-paced",
+}
+
+
+def _render_picks_in_prose(selected: dict[str, Any], *, is_en: bool) -> str:
+    """把用户勾选翻成一句人话，附在机器 JSON 之后。
+
+    未知键**降级为原键**而不是丢弃：宁可露出机器键，也不能让用户的勾选
+    在 prompt 里凭空消失。
+    """
+
+    from bestseller.services.story_effect_skills import STORY_EFFECT_SKILL_LABELS
+
+    parts: list[str] = []
+    tone = str(selected.get("tone") or "").strip().lower()
+    tone_map = _TONE_PROSE_EN if is_en else _TONE_PROSE_ZH
+    if tone:
+        parts.append(
+            (f"tone = {tone_map.get(tone, tone)}")
+            if is_en
+            else f"调性＝{tone_map.get(tone, tone)}"
+        )
+    skills = [str(k).strip() for k in (selected.get("effect_skills") or []) if str(k).strip()]
+    if skills:
+        labels = [STORY_EFFECT_SKILL_LABELS.get(k, k) for k in skills]
+        parts.append(
+            ("story effects = " + ", ".join(labels))
+            if is_en
+            else "故事效果＝" + "、".join(labels)
+        )
+    if not parts:
+        return ""
+    if is_en:
+        return (
+            "\nIn plain words, the reader picked: "
+            + "; ".join(parts)
+            + ". These are the promises the concept must deliver."
+        )
+    return (
+        "\n用人话说，用户要的是："
+        + "；".join(parts)
+        + "。这些是本书必须当场兑现的承诺，不是可选装饰。"
+    )
+
+
 def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
     """Render only explicit creation-page choices as a scoped prompt block.
 
@@ -1190,10 +1246,19 @@ def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
     _cost_directive = cost_style_directive(
         str(selected["cost_style"] or "standard"), is_en=is_en
     )
+    # 勾选必须**用人话讲给模型**，不能只丢一串英文机器键。
+    # 2026-08-23 真机：用户勾了轻松+喜剧+爽点满足，模型看到的却是
+    # {"tone": "light", "effect_skills": ["comedy_engine", ...]}——一份中文
+    # 创作 prompt 里嵌英文 snake_case。产出是「市井悬疑/庙堂暗战」的沉重官场
+    # 稿，模拟读者 0/3 会点。翻译表 STORY_EFFECT_SKILL_LABELS 早就建好了
+    # （它的注释正写着「需要把用户勾了什么讲给模型时无从下手」），只是没人用。
+    # 同款教训已定案两次：中文 prompt 嵌英文判据，判据本身会被绕过。
+    _picks_line = _render_picks_in_prose(selected, is_en=is_en)
     if is_en:
         return (
             "\n\n[EXPLICIT CREATION INTENT — scoped, not a genre override]\n"
             + json.dumps(selected, ensure_ascii=False)
+            + _picks_line
             + "\nUse only these user-selected constraints. Do not invent extra skills,"
             " modern settings, professions, or cross-genre mechanisms."
             + _cost_directive
@@ -1201,6 +1266,7 @@ def _creation_intent_prompt_block(ctx: dict[str, Any]) -> str:
     return (
         "\n\n【建书页明确选择——仅作局部约束，不得改写题材】\n"
         + json.dumps(selected, ensure_ascii=False)
+        + _picks_line
         + "\n只能兑现用户实际勾选的脑洞、调性和 Skill；未勾选的能力不得自行启用，"
         "不得把可选增强器变成新的题材、职业、现代设定或跨题材机制。"
         + _cost_directive

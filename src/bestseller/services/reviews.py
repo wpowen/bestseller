@@ -10058,6 +10058,40 @@ async def _try_localized_chapter_first_ending_repair(
     return f"{prefix}\n\n{replacement}".strip(), completion
 
 
+def challenger_takes_current(
+    *,
+    challenger_blocked: bool,
+    incumbent_blocked: bool | None,
+    challenger_violations: int,
+    incumbent_violations: int | None,
+) -> bool:
+    """重写稿是否取代在架稿成为 current。
+
+    2026-08-24 真机（验证书 9 第 8 章）：4 次审稿全部评的是同一份 v3，而 v5/v6/v7
+    在其间陆续生成、从没被看过。原判据只问「挑战者自己有没有被质量门 blocked」，
+    **从不与在架稿比较**。三份稿实测同被 POV_DRIFT 阻断（v3 在架、v5/v6 候选），
+    于是谁也顶不上去：审稿永远读同一份旧文本 → 每轮发现完全相同 → 重写永不收敛
+    → 后续所有重写 token 纯浪费。全书 66 份草稿仅 17 份被评分（26%），
+    一半章节卡在旧版本上。
+
+    两条判据分开：
+    * **绝不让不合格的挑战者顶掉合格的在架稿**——原有保护逐字保留；
+    * 在架稿自己也不合格时，不比它差的挑战者应当上位，否则缺陷被永久固化。
+
+    同族教训：2026-07-26「选优只看下限致发布最差稿」——同样是把「候选是否达标」
+    与「候选是否比在架好」混为一谈。
+    """
+
+    if not challenger_blocked:
+        return True
+    if incumbent_blocked is None:
+        # 没有在架稿可比（首稿）：不上位就等于这一章没有正文。
+        return True
+    if not incumbent_blocked:
+        return False
+    return int(challenger_violations) <= int(incumbent_violations or 0)
+
+
 async def rewrite_chapter_from_task(
     session: AsyncSession,
     project_slug: str,
@@ -11038,6 +11072,31 @@ async def rewrite_chapter_from_task(
                 chapter.chapter_number, exc_info=True,
             )
     quality_gate_rejected_current_promotion = quality_gate_outcome == "blocked"
+    # 在架稿也过一遍同一把门：只有拿两边比，才知道「挑战者不合格」意味着
+    # 「比在架差」还是「和在架一样卡在同一条违规上」。后者若不放行，章节
+    # 就被永久冻结在缺陷稿上（见 challenger_takes_current 的真机定罪）。
+    # 这道门是确定性的、零 LLM 调用，多评一次不增加成本。
+    _incumbent_blocked: bool | None = None
+    _incumbent_violation_count: int | None = None
+    if current_draft is not None and (current_draft.content_md or "").strip():
+        try:
+            _inc_outcome, _inc_violations = await _evaluate_chapter_quality_gate(
+                session=session,
+                project=project,
+                chapter_number=chapter_number,
+                content=current_draft.content_md,
+            )
+            _incumbent_blocked = _inc_outcome == "blocked"
+            _incumbent_violation_count = len(list(_inc_violations or ()))
+        except Exception:
+            logger.warning(
+                "chapter %d: incumbent quality-gate evaluation failed; "
+                "falling back to challenger-only rule",
+                chapter.chapter_number,
+                exc_info=True,
+            )
+            _incumbent_blocked = None if current_draft is None else False
+            _incumbent_violation_count = 0
     llm_candidate_quality_gate_outcome = quality_gate_outcome
     llm_candidate_word_count = word_count
     llm_candidate_quality_gate_violations = list(quality_gate_violations)
@@ -11153,6 +11212,14 @@ async def rewrite_chapter_from_task(
             .values(is_current=False)
         )
 
+    # 回执与实际状态必须共用同一个决定值——两处各算一次就会出现
+    # 「回执说没上架、实际上架了」这类自相矛盾（本仓库出过同款事故）。
+    _took_current = challenger_takes_current(
+        challenger_blocked=quality_gate_rejected_current_promotion,
+        incumbent_blocked=_incumbent_blocked,
+        challenger_violations=len(list(quality_gate_violations or ())),
+        incumbent_violations=_incumbent_violation_count,
+    )
     new_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
@@ -11160,10 +11227,10 @@ async def rewrite_chapter_from_task(
         content_md=content_md,
         word_count=word_count,
         assembled_from_scene_draft_ids=list(current_draft.assembled_from_scene_draft_ids),
-        is_current=not quality_gate_rejected_current_promotion,
+        is_current=_took_current,
         promotion_reason_codes=draft_supersession_codes(
             origin="rewrite",
-            took_current=not quality_gate_rejected_current_promotion,
+            took_current=_took_current,
             chars=len(content_md or ""),
             supersedes_version=next_version - 1 if next_version > 1 else None,
             hold_reason="quality_gate_rejected",

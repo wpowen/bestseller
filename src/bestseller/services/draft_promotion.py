@@ -110,16 +110,26 @@ def _models_for_kind(draft_kind: DraftKind) -> tuple[type, type, object, object]
     raise ValueError(f"Unsupported draft_kind: {draft_kind}")
 
 
+#: 诚实轴：只有这四个维度是对正文本身的判断。
+#: ``score_dialogue``(=continuity) 与 ``score_hook`` 是**关键词回声公式**
+#: （2026-08-22 定案），2026-08-23 已让它们不能否决 chapter verdict——但提升
+#: 路径当时没跟着改，于是同一批回声分继续从这里毙掉每一次上架。
+#: 真机 169 份质量分：含回声时最弱维 ≥0.75 的有 **0 份**；只用诚实轴则
+#: 141 份（83%），诚实轴均分 0.858、106 份（63%）≥0.85。
 def _core_scores(score: QualityScoreModel) -> tuple[float, ...]:
     values = (
         score.score_goal,
         score.score_conflict,
         score.score_emotion,
-        score.score_dialogue,
         score.score_style,
-        score.score_hook,
     )
     return tuple(float(value) for value in values if value is not None)
+
+
+def _core_overall(core_scores: tuple[float, ...]) -> float | None:
+    """诚实轴合成分。空则 None（调用方退回旧口径，不静默放行）。"""
+
+    return sum(core_scores) / len(core_scores) if core_scores else None
 
 
 def _blocking_codes(evidence: dict[str, object]) -> tuple[str, ...]:
@@ -152,28 +162,17 @@ def _eligible_row(
         core_scores=core_scores,
         hard_gates_passed=evidence_json.get("hard_gates_passed") is True,
         blocking_codes=_blocking_codes(evidence_json),
+        core_overall=_core_overall(core_scores),
     )
-    # 资格判据认**商业判官**，数值路径只作判官缺席时的回退。
-    #
-    # 2026-08-23 定罪：章审 verdict 修好后（历史首批 pass），提升仍然
-    # 失败——min_overall=0.85 对照的 score_overall 是回声公式合成分
-    # （ch6=0.56，全库最好 0.600，0.85 恒不可达），core_scores 里还混着
-    # 回声 hook。而同一行 evidence 里躺着 16 维商业判官的完整判决
-    # （ch6 判 fail 的理由正是「主角原地坐等、无自保动作」——真编辑
-    # 意见），它有判断力没有权力。真尺子掌权；硬门与阻断码不豁免。
-    _judge = evidence_json.get("llm_commercial_judge")
-    _judge_verdict = (
-        _judge.get("pass") if isinstance(_judge, dict) and "pass" in _judge else None
-    )
-    if _judge_verdict is not None:
-        if (
-            evidence.score_draft_id != evidence.draft_id
-            or not evidence.hard_gates_passed
-            or evidence.blocking_codes
-            or _judge_verdict is not True
-        ):
-            return None
-    elif not is_promotion_eligible(
+    # ⚠️ 2026-08-23 我曾把资格判据改成认 16 维商业判官（理由「真尺子掌权」），
+    # 2026-08-24 用数据推翻了那个前提并撤回：
+    #   * 该判官对本书 149 份判决 **0 通过**；
+    #   * 拿它去跑 **10 本真实出版小说的章节，10/10 全判 fail**
+    #     （0.42–0.72，与我们自己的 0.538 均值完全重叠）。
+    # 在它的通过线上零区分力 —— 它是优秀的**批评者**（意见带引文，
+    # rewrite_plan 已接进重写反馈），但不是合格的**验收尺**，不该握否决权。
+    # 达标改看诚实轴（见 domain/promotion.py 的 core_overall）。
+    if not is_promotion_eligible(
         evidence,
         min_overall=min_overall,
         min_core=min_core,

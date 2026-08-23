@@ -20,6 +20,11 @@ class PromotionEvidence:
     core_scores: tuple[float, ...]
     hard_gates_passed: bool
     blocking_codes: tuple[str, ...]
+    #: 只由**诚实轴**（goal/coverage/coherence/style）合成的总分。
+    #: ``score_overall`` 掺着回声公式轴（hook/contract_alignment），真机 169 份
+    #: 质量分里它均 0.541、最高 0.62，对着 0.85 的线 **0/169 可达**；诚实轴的
+    #: 最弱维则 83% 在 0.75 以上。None = 老数据没有这个字段，退回旧口径。
+    core_overall: float | None = None
 
 
 @dataclass(frozen=True)
@@ -41,7 +46,18 @@ def is_promotion_eligible(
         return False
     if not evidence.hard_gates_passed or evidence.blocking_codes:
         return False
-    if evidence.score_overall < min_overall or not evidence.core_scores:
+    if not evidence.core_scores:
+        return False
+    # 达标看诚实轴。2026-08-24 定罪：``score_overall`` 掺着回声公式
+    # （hook 0.278 / contract_alignment 0.284），真机 0/169 够得着 0.85——
+    # 提升永不发生的直接原因。同日已让回声轴不能否决 verdict，这里补齐
+    # 另一半：它也不该决定一稿能不能上架。
+    overall = (
+        evidence.core_overall
+        if evidence.core_overall is not None
+        else evidence.score_overall
+    )
+    if overall < min_overall:
         return False
     return min(evidence.core_scores) >= min_core
 

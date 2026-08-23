@@ -5564,6 +5564,52 @@ async def _polish_title(
     return best_title, run_id
 
 
+def build_appeal_regen_trace(
+    history: list[dict[str, Any]], *, blurb_min: float
+) -> dict[str, Any]:
+    """把达标门每一轮的分数压成一条可判读的轨迹。
+
+    2026-08-23 真机（验证书 8）：构思跑满有界重生仍未达标（简介 65.0 < 68），
+    整本书被拦下。而 conception_log 里一条重生记录都没有——15 条日志覆盖了
+    淘汰赛、回声门、脊柱门、契约门，唯独真正毙掉书的这道门没有轨迹，于是
+    无法回答最关键的问题：它在稳步逼近还是原地打转。
+
+    ``verdict`` 三态：``passed`` / ``converging``（总涨幅 ≥1 分，加预算可能
+    有用）/ ``stuck``（几乎没动，加预算没用、要换打法）。判读留给人，这里
+    只负责把事实摆出来。
+    """
+
+    rounds = [r for r in history if isinstance(r, dict)]
+    if not rounds:
+        return {
+            "attempts": 0,
+            "verdict": "no_regen",
+            "blurb_min": float(blurb_min),
+            "rounds": [],
+        }
+    blurbs = [float(r.get("blurb") or 0.0) for r in rounds]
+    passed = any(bool(r.get("meets_bar")) for r in rounds)
+    gain = blurbs[-1] - blurbs[0]
+    best = max(blurbs)
+    if passed:
+        verdict = "passed"
+    elif gain >= 1.0:
+        verdict = "converging"
+    else:
+        verdict = "stuck"
+    return {
+        "attempts": len(rounds),
+        "verdict": verdict,
+        "blurb_min": float(blurb_min),
+        "blurb_first": blurbs[0],
+        "blurb_last": blurbs[-1],
+        "blurb_best": best,
+        "blurb_gain": round(gain, 2),
+        "gap_to_bar": round(float(blurb_min) - best, 2),
+        "rounds": rounds,
+    }
+
+
 async def run_conception_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -7788,6 +7834,17 @@ async def run_conception_pipeline(
                 synopsis=synopsis, premise=premise,
                 spine=story_spine if isinstance(story_spine, dict) else None,
             )
+            # 达标门轨迹（2026-08-23）：这道门能毙掉整本书，却曾经一条重生
+            # 记录都不留，事后无法判断它在收敛还是原地打转。每轮落一条。
+            _appeal_history: list[dict[str, Any]] = [
+                {
+                    "attempt": 0,
+                    "premise": report.premise.total,
+                    "blurb": report.blurb.total,
+                    "title": report.title.total if report.title else None,
+                    "meets_bar": bool(report.meets_bar),
+                }
+            ]
             # Product hard line: regenerate while not meeting the bar (blurb<blurb_min,
             # calibrated to 68 in config/story_appeal.yaml); else fall back to the grade floor.
             while appeal_regen_should_continue(
@@ -7864,6 +7921,15 @@ async def run_conception_pipeline(
                         chapter_count=chapter_count, platform=_ap_platform, config=_appeal_cfg,
                         language=_ap_language, book_jargon_terms=_book_jargon_terms,
                     )
+                    _appeal_history.append(
+                        {
+                            "attempt": attempts,
+                            "premise": report.premise.total,
+                            "blurb": report.blurb.total,
+                            "title": report.title.total if report.title else None,
+                            "meets_bar": bool(report.meets_bar),
+                        }
+                    )
                     cur_sum = report.premise.total + report.blurb.total + (
                         report.title.total if report.title else 0.0
                     )
@@ -7898,6 +7964,23 @@ async def run_conception_pipeline(
                     logger.warning("appeal regeneration attempt %d failed", attempts, exc_info=True)
                     break
             report, premise, synopsis, tags, title = best
+            _appeal_trace = build_appeal_regen_trace(
+                _appeal_history,
+                blurb_min=float(
+                    ((_appeal_cfg or {}).get("meets_bar", {}) or {}).get("blurb_min", 68)
+                ),
+            )
+            conception_log.append(
+                {"round": 3, "agent": "appeal_regen_gate", **_appeal_trace}
+            )
+            logger.info(
+                "Appeal regen trace: attempts=%s verdict=%s blurb %.1f→%.1f (bar %.1f)",
+                _appeal_trace["attempts"],
+                _appeal_trace["verdict"],
+                _appeal_trace.get("blurb_first") or 0.0,
+                _appeal_trace.get("blurb_last") or 0.0,
+                _appeal_trace["blurb_min"],
+            )
             story_appeal_report = report.to_dict()
             _t_total = report.title.total if report.title else None
             logger.info(

@@ -139,3 +139,63 @@ class TestConceptionWiring:
             )
         )
         assert out == ()
+
+
+class TestSelfNegatedFindingsAreDropped:
+    """模型有时把「这条我不报」也写进 findings 列表。
+
+    2026-08-23 真机（验证书 8）第三条发现的理由逐字是：
+        「…本稿此句仅为暗战氛围，不构成事件冲突，不报。」
+    引文接地、格式合法，于是被原样收下，混进重写反馈——写手会被要求整改
+    一处判官自己都说不算数的句子。判决语义写在 why 里，解析器必须读它。
+    """
+
+    _WHY_REAL = (
+        "不是单次死亡事件，但前一稿另一版本中含'看见对手尸体'等描写需复核："
+        "本稿此句仅为暗战氛围，不构成事件冲突，不报。"
+    )
+
+    def test_real_machine_self_negated_finding_is_dropped(self) -> None:
+        import json as _json
+
+        raw = _json.dumps(
+            {"heavy_events": [{"quote": _REAL[:20], "why": self._WHY_REAL}]},
+            ensure_ascii=False,
+        )
+        found, dropped = parse_and_verify_heavy_tone(raw, source_text=_REAL)
+        assert found == ()
+        assert dropped == 1
+
+    def test_genuine_finding_survives_alongside_a_self_negated_one(self) -> None:
+        import json as _json
+
+        raw = _json.dumps(
+            {
+                "heavy_events": [
+                    {"quote": "给十个当晚必死之人吃的", "why": "每夜一批人当晚必死"},
+                    {"quote": _REAL[:20], "why": self._WHY_REAL},
+                ]
+            },
+            ensure_ascii=False,
+        )
+        found, dropped = parse_and_verify_heavy_tone(raw, source_text=_REAL)
+        assert len(found) == 1
+        assert found[0].quote == "给十个当晚必死之人吃的"
+        assert dropped == 1
+
+    def test_negation_inside_story_quote_does_not_drop_the_finding(self) -> None:
+        """判据只看 why（判决语），不看 quote（故事原文）——否则正文里一句
+        「他不构成威胁」就能让真发现被丢掉。"""
+
+        import json as _json
+
+        raw = _json.dumps(
+            {
+                "heavy_events": [
+                    {"quote": "给十个当晚必死之人吃的", "why": "主角每夜处理将死之人"}
+                ]
+            },
+            ensure_ascii=False,
+        )
+        found, _dropped = parse_and_verify_heavy_tone(raw, source_text=_REAL)
+        assert len(found) == 1

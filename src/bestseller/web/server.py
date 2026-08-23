@@ -1,29 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 import hashlib
+import hmac
 import html
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import mimetypes
-import hmac
 import os
 from pathlib import Path
 import re
 import socketserver
 import threading
 import traceback
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import UUID, uuid4
 import webbrowser
 from zoneinfo import ZoneInfo
-
 
 QUICKSTART_CLIENT_SCHEMA_VERSION = "quickstart-client.v2"
 
@@ -71,17 +71,21 @@ from bestseller.infra.db.models import (
 from bestseller.infra.db.session import session_scope
 from bestseller.services.anti_commonsense_hook import generate_hook_candidates
 from bestseller.services.anti_commonsense_mechanisms import get_mechanism
+from bestseller.services.book_listing import _limit_chars as _listing_limit_chars
 from bestseller.services.book_listing import (
     build_book_listing_profile,
     validate_book_listing_profile,
 )
-from bestseller.services.book_listing import _limit_chars as _listing_limit_chars
+from bestseller.services.chapter_revision import (
+    apply_chapter_revision_task,
+    create_chapter_revision_task,
+)
+from bestseller.services.concept_contract import ConceptContractError
 from bestseller.services.concept_lab import (
     build_concept_lab_catalog,
     concept_lab_to_user_hints,
     select_concept_lab_bundle,
 )
-from bestseller.services.concept_contract import ConceptContractError
 from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
 from bestseller.services.genre_creativity import (
     creative_direction_to_user_hints,
@@ -96,15 +100,12 @@ from bestseller.services.inspection import (
     build_story_bible_overview,
 )
 from bestseller.services.narrative import build_narrative_overview
-from bestseller.services.pipelines import ProjectRepairPauseError, run_autowrite_pipeline
-from bestseller.services.planner import PlannerFallbackError
-from bestseller.services.story_appeal import AppealBarNotMetError
-from bestseller.services.story_enhancers import STORY_ENHANCERS_METADATA_KEY
-from bestseller.services.pipelines import run_chapter_pipeline
-from bestseller.services.chapter_revision import (
-    apply_chapter_revision_task,
-    create_chapter_revision_task,
+from bestseller.services.pipelines import (
+    ProjectRepairPauseError,
+    run_autowrite_pipeline,
+    run_chapter_pipeline,
 )
+from bestseller.services.planner import PlannerFallbackError
 from bestseller.services.prewrite_review import (
     approve_prewrite_materials,
     assert_prewrite_review_approved,
@@ -125,6 +126,8 @@ from bestseller.services.projects import (
     list_projects,
 )
 from bestseller.services.repair import run_project_repair
+from bestseller.services.story_appeal import AppealBarNotMetError
+from bestseller.services.story_enhancers import STORY_ENHANCERS_METADATA_KEY
 from bestseller.services.writing_presets import (
     get_genre_preset_dimensions,
     load_writing_preset_catalog,
@@ -903,6 +906,7 @@ def _enqueue_outline_replan_heal_job(
 async def _clear_outline_replan_resume_abandonment(settings: AppSettings, slug: str) -> bool:
     """Reset only stale self-heal abandonment budget for a zero-draft replan."""
     from sqlalchemy import func, select
+
     from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
 
     async with session_scope(settings) as session:
@@ -1171,7 +1175,7 @@ def _channel_of_genre(genre: str | None) -> str | None:
     """
 
     try:
-        from bestseller.services.genre_taxonomy import _resolve_genre  # noqa: PLC0415
+        from bestseller.services.genre_taxonomy import _resolve_genre
 
         resolved = _resolve_genre(genre)
         if resolved is not None and resolved.channel:
@@ -1339,7 +1343,7 @@ def _set_project_model_payload(
     settings: AppSettings,
     slug: str,
     model_id: str | None,
-    task_manager: "WebTaskManager | None" = None,
+    task_manager: WebTaskManager | None = None,
 ) -> dict[str, object]:
     """Set (or clear when falsy) the project's selected catalog model id.
 
@@ -3758,6 +3762,8 @@ class WebTaskManager:
             if run_conception and isinstance(payload.get("creation_intent_contract"), dict):
                 from bestseller.services.creation_intent_contract import (
                     ConceptionAttemptInput,
+                )
+                from bestseller.services.creation_intent_contract import (
                     contract_from_payload as load_creation_intent,
                 )
 
@@ -3908,7 +3914,7 @@ class WebTaskManager:
                             )
                             if _blocked_wf_id is not None:
                                 try:
-                                    from sqlalchemy import (  # noqa: PLC0415
+                                    from sqlalchemy import (
                                         update as _sql_update,
                                     )
 
@@ -4675,9 +4681,29 @@ class WebTaskManager:
                 None,
                 getattr(exc, "conception_log", None),
             )
+            # 阈值必须从配置读，不能写死在文案里：这句原本硬编码「80 分」，
+            # 而简介达标线其实是 68（80 是书名的线）。2026-08-23 真机拦截时
+            # 它报「未达 80 分」而简介 65.0、书名 94.8，排查的人（包括我）
+            # 会以为卡在书名上。报错文案说错阈值，等于把人引向错误的现场。
+            try:
+                from bestseller.services.story_appeal import load_story_appeal_config
+
+                _bars = (load_story_appeal_config() or {}).get("meets_bar", {}) or {}
+                _blurb_min = float(_bars.get("blurb_min", 68))
+                _title_min = float(_bars.get("title_min", 80))
+            except Exception:
+                _blurb_min, _title_min = 68.0, 80.0
+            _unmet = []
+            if isinstance(blurb_total, (int, float)) and blurb_total < _blurb_min:
+                _unmet.append(f"简介 {blurb_total:.1f} < {_blurb_min:.0f}")
+            if isinstance(title_total, (int, float)) and title_total < _title_min:
+                _unmet.append(f"书名 {title_total:.1f} < {_title_min:.0f}")
             msg = (
-                "未达【榜单达标线 80 分】，已拦截，未进入规划。\n"
-                f"简介点击力：{blurb_total}　书名点击力：{title_total}\n\n"
+                "未达榜单达标线（"
+                + ("；".join(_unmet) if _unmet else "综合未达标")
+                + "），已拦截，未进入规划。\n"
+                f"简介点击力：{blurb_total}（线 {_blurb_min:.0f}）　"
+                f"书名点击力：{title_total}（线 {_title_min:.0f}）\n\n"
                 + (
                     f"（构思全过程已存档：{_failed_log_path}）\n"
                     if _failed_log_path
@@ -8880,7 +8906,7 @@ async def _load_project_design_dossier_payload(
         benchmark_report = load_benchmark_report(
             project.slug, output_base_dir=settings.output.base_dir
         )
-    except Exception:  # noqa: BLE001 — dossier must render without the report
+    except Exception:
         benchmark_report = None
     return {
         "generated_at": _utc_now(),
@@ -9247,7 +9273,7 @@ async def _load_reader_review_payload(
             raw_rate = report.get("win_rate")
             if raw_rate is not None:
                 arena_win_rate = float(raw_rate)
-    except Exception:  # noqa: BLE001 — arena score is advisory; page renders without it
+    except Exception:
         arena_win_rate = None
 
     return build_reader_review(

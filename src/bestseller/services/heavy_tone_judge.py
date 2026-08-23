@@ -35,6 +35,22 @@ logger = logging.getLogger(__name__)
 
 _QUOTE_MIN_RUN = 6
 
+#: 模型在 ``why`` 里自己撤回这条发现时的措辞。2026-08-23 真机（验证书 8）：
+#: 第三条 finding 的理由逐字是「…本稿此句仅为暗战氛围，不构成事件冲突，
+#: 不报。」——引文接地、格式合法，于是被原样收下并混进重写反馈，写手会被
+#: 要求整改一处判官自己都说不算数的句子。判决语义写在 why 里，解析必须读它。
+#:
+#: 判据只作用于 ``why``（判决语），绝不作用于 ``quote``（故事原文）——否则
+#: 正文里一句「他不构成威胁」就能把真发现误杀。
+_SELF_NEGATION_MARKERS: tuple[str, ...] = (
+    "不报",
+    "不构成",
+    "不算冲突",
+    "不算病",
+    "无冲突",
+    "不予认定",
+)
+
 
 @dataclass(frozen=True)
 class HeavyToneFinding:
@@ -125,12 +141,14 @@ def parse_and_verify_heavy_tone(
             dropped += 1
             continue
         quote = str(item.get("quote") or "").strip()
+        why = str(item.get("why") or "")
         if not quote or not _grounded(quote, haystack):
             dropped += 1  # 幻觉引文，丢弃——可证伪性的核心保险
             continue
-        verified.append(
-            HeavyToneFinding(quote=quote[:60], why=str(item.get("why") or "")[:120])
-        )
+        if any(marker in why for marker in _SELF_NEGATION_MARKERS):
+            dropped += 1  # 判官自己撤回了这条，不能进整改反馈
+            continue
+        verified.append(HeavyToneFinding(quote=quote[:60], why=why[:120]))
     return tuple(verified), dropped
 
 

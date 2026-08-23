@@ -7558,10 +7558,37 @@ def _merge_chapter_quality_bundle_into_review(
         return review_result
 
     codes = list(dict.fromkeys(f.code for f in blocking_findings if f.code))
-    issue_lines = [
-        f"{finding.code}: {finding.repair_hint or finding.repair_scope}"
-        for finding in blocking_findings[:8]
-    ]
+    def _finding_quote(finding: Any) -> str:
+        """把检测器手上的原文引出来——它本来就在 finding.evidence 里。
+
+        2026-08-24 真机定罪：因重复被否的 8 次重写，**指令里没有一条引文**，
+        只有一句通用配方「合并重复草稿段，只保留一次…」。模型被要求删掉「那段
+        重复」，却没被告知是哪一段，得在两千多字里自己重找一遍——结果 6/8 次
+        没删掉，然后因为这个**它继承来的、且没被指明位置的**缺陷被否决。
+        （同批还证伪了两个更早的假设：重写**从不新增**重复（0/8，全是继承），
+        而且指令**确实**要求了修重复（8/8 提到）——缺的从来只是「哪一段」。）
+
+        引文在 QualityFinding.evidence['text'] 里（真机 159 次命中），
+        原实现只取 code + repair_hint，把它丢了。本项目在别处早已确立
+        「逐项证据引文」，这里补齐。
+        """
+
+        evidence = getattr(finding, "evidence", None)
+        if not isinstance(evidence, dict):
+            return ""
+        for key in ("text", "sample", "quote", "excerpt"):
+            raw = str(evidence.get(key) or "").strip().replace("\n", " ")
+            if len(raw) >= 8:
+                return raw[:60]
+        return ""
+
+    issue_lines = []
+    for finding in blocking_findings[:8]:
+        line = f"{finding.code}: {finding.repair_hint or finding.repair_scope}"
+        quote = _finding_quote(finding)
+        if quote:
+            line += f"（原文：「{quote}」）"
+        issue_lines.append(line)
     playbooks = render_quality_repair_playbooks(codes)
     is_en = is_english_language(language)
     if is_en:

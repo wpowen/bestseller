@@ -10331,8 +10331,20 @@ async def run_chapter_pipeline(
                 if isinstance(project.metadata_json, dict)
                 else {}
             )
+            # 默认值改从 settings 取：这个开关只写在 projects.metadata 里时会被
+            # 跑书中的管线整块覆盖掉（2026-08-24 现场复现，写入几分钟后消失）。
+            # project metadata 仍然优先（它存活时表达的是 per-book 意图）。
+            _stop_default = bool(
+                getattr(
+                    settings.pipeline,
+                    "chapter_first_stop_after_repair_exhaustion",
+                    True,
+                )
+            )
             if use_chapter_first and bool(
-                _project_meta.get("chapter_first_stop_after_repair_exhaustion", True)
+                _project_meta.get(
+                    "chapter_first_stop_after_repair_exhaustion", _stop_default
+                )
             ):
                 workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
                 workflow_run.current_step = "chapter_first_repair_budget_exhausted"

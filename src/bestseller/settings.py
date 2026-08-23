@@ -675,6 +675,13 @@ class PipelineSettings(BaseModel):
     chapter_continuity_critic_enabled: bool = True
     chapter_first_short_chapter_threshold: int = 3500
     chapter_first_supersede_pending_rewrites: bool = False
+    #: 一章修复预算耗尽时，是否停掉整本书等人工。
+    #:
+    #: 这个开关此前**只**活在 ``projects.metadata`` 里，而跑书中的管线会用一份
+    #: 旧的内存副本整块重写那个 JSONB —— 2026-08-24 现场复现：写进去几分钟后
+    #: 两个键一起消失。**一个会被系统自己擦掉的配置开关等于不存在**。
+    #: 给它一个持久的家；project metadata 仍可覆盖（存活时），默认行为不变。
+    chapter_first_stop_after_repair_exhaustion: bool = True
     # Project-level premium-readiness gate. It is enabled as telemetry by
     # default so every project pipeline records whether the structured genre
     # engine is complete; set ``premium_book_gate_block_on_failure`` to turn

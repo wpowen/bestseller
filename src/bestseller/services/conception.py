@@ -6682,6 +6682,22 @@ async def run_conception_pipeline(
                 return ()
 
         ontology_hit = _ontology_hits(final_result)
+        # 事件级沉重度（2026-08-23）：情绪词表测不出「用事件写的沉重」——
+        # 真机验证书 8 原稿在 tone=light 下写「每夜十个当晚必死之人／咽气前
+        # ／人头账／拆骨」，11 个情绪形容词一个没命中，确定性判据零违规。
+        # 与 debt_hit / motif_hits 同族：只挣一次重生 + 留痕，**不进 detected**。
+        from bestseller.services.heavy_tone_judge import (
+            detect_heavy_tone_events,
+            render_heavy_tone_feedback,
+        )
+
+        heavy_tone_hits = await detect_heavy_tone_events(
+            session,
+            settings,
+            text=_concept_scan_blob(final_result),
+            tone_preference=str(_contract.get("tone_preference") or ""),
+            project_id=None,
+        )
         if (
             echo_report
             or debt_hit
@@ -6689,6 +6705,7 @@ async def run_conception_pipeline(
             or ontology_hit
             or intent_violations
             or motif_hits
+            or heavy_tone_hits
         ):
             detected: list[str] = []
             # 只有**逐字重合片段**够格阻断建书。零散 bigram 照旧留痕、照旧换来
@@ -6730,9 +6747,12 @@ async def run_conception_pipeline(
                     "ontology_drift": list(ontology_hit),
                     "creation_intent_violations": list(intent_violations),
                     "motif_amplification": [m.to_dict() for m in motif_hits],
+                    "heavy_tone_events": [h.to_dict() for h in heavy_tone_hits],
                 },
             )
             retry_feedback = _render_mechanism_echo_feedback(echo_report, is_en=is_en)
+            if heavy_tone_hits:
+                retry_feedback += render_heavy_tone_feedback(heavy_tone_hits)
             if debt_hit:
                 retry_feedback += _render_debt_rewrite_feedback(is_en=is_en)
             if death_hit:
@@ -6862,6 +6882,7 @@ async def run_conception_pipeline(
                     "retry_motif_amplification": [
                         m.to_dict() for m in retry_motif_hits
                     ],
+                    "heavy_tone_events": [h.to_dict() for h in heavy_tone_hits],
                     "adopted_retry": adopted,
                 }
             )

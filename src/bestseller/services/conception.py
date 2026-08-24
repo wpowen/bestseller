@@ -117,6 +117,13 @@ class ConceptionResult:
     # 解决它。advisory——它只换一次重写,永不阻断建书;但结论必须落库可查,否则
     # 等于没检测(见 motif_concentration)。
     motif_amplification: dict[str, Any] = field(default_factory=dict)
+    # 默认族(债务/账本)门的结论(2026-08-24):检出/重生成后是否仍在族内/是否采纳。
+    # 此前只写进 ctx["default_family_report"] —— 零消费方、不落库。真机书9
+    # (零创意种子)构思当时 is_debt_dominated=True 且 user_requested_debt=False,
+    # debt_hit 必然成立,可全书上下找不到一条痕迹,事后无法区分「门没跑」与
+    # 「门跑了但没救回来」。与 motif_amplification / title_tournament 同一形状,
+    # 同一结论:回执不落库等于没检测。
+    default_family: dict[str, Any] = field(default_factory=dict)
     # 书名淘汰赛回执(2026-08-22):谁参赛、谁被哪道确定性门淘汰、谁赢、赢了几票。
     # 首跑时我把它写进 writing_profile.market，**被 extra=ignore 吃掉了**——
     # 与既有的 title_workflow_primary 同样下场。回执不落库等于没留痕，
@@ -306,6 +313,9 @@ from bestseller.services.anti_default_motif import (
     contains_default_death_motif as _contains_default_death_motif,
 )
 from bestseller.services.anti_default_motif import (
+    default_debt_family_hits as _default_debt_family_hits,
+)
+from bestseller.services.anti_default_motif import (
     is_anonymous_death_dominated as _is_anonymous_death_dominated,
 )
 from bestseller.services.anti_default_motif import (
@@ -357,9 +367,12 @@ def _mentions_debt_theme(*texts: Any) -> bool:
 def _is_debt_dominated_mechanism(text: Any) -> bool:
     """Compatibility wrapper around the shared concentration-based detector.
 
-    Still a retired shim (always False). The live replacement is
-    ``_motif_amplification_hits`` below, which is vocabulary-free and therefore
-    cannot repeat this one's fatal flaw of outlawing a book's own premise.
+    NOT a shim any more (2026-08-14 靶向复活): it delegates to the canonical
+    concentration detector, which requires ≥2 sub-families or a density above
+    the human-corpus p95 before calling a concept debt-dominated. The docstring
+    that still called it "always False" cost a full diagnosis round on
+    2026-08-24 —— 注释过时会把查案的人送去错误的方向。
+    ``_motif_amplification_hits`` below remains the vocabulary-free companion.
     """
 
     return _canonical_is_debt_dominated(text)
@@ -6737,9 +6750,9 @@ async def run_conception_pipeline(
                 story_spine=None,
             )
 
-        # Motif amplification (2026-08-09). The retired debt/ledger police left
-        # `_is_debt_dominated_mechanism` a `return False` shim, so the one thing
-        # this gate claimed to catch it could not catch. This replacement carries
+        # Motif amplification (2026-08-09). Written when the debt/ledger police
+        # was a `return False` shim; that detector has since been revived
+        # (2026-08-14) and both now run side by side. This one carries
         # no vocabulary: it asks whether ONE token the approved concept barely
         # used ended up owning the reader promise, the golden finger, the
         # relationship mode, the power system AND the per-chapter rule at once.
@@ -6826,6 +6839,20 @@ async def run_conception_pipeline(
             tone_preference=str(_contract.get("tone_preference") or ""),
             project_id=None,
         )
+        # 基线留痕（2026-08-24）：扫描**跑完**这件事本身必须落库。此前回执只在
+        # 有命中时才写，于是「门判干净」和「门在这行之前就抛异常被上面那个
+        # except 吞掉」在事后长得一模一样 —— 真机书9 查了一整轮才靠离线复现
+        # 才敢下结论。有命中时下方会整块覆盖它。
+        ctx["default_family_report"] = {
+            "scanned": True,
+            "detected": bool(debt_hit),
+            "after_retry": bool(debt_hit),
+            "adopted_retry": False,
+            "resolved": not debt_hit,
+            "blocking": False,
+            "user_requested": bool(_debt_ok),
+            "family_hits": list(_default_debt_family_hits(_final_blob)),
+        }
         if (
             echo_report
             or debt_hit
@@ -8836,6 +8863,7 @@ async def run_conception_pipeline(
         hook_candidates=list(ctx.get("hook_candidates") or []),
         story_appeal=story_appeal_report,
         motif_amplification=dict(ctx.get("motif_amplification_report") or {}),
+        default_family=dict(ctx.get("default_family_report") or {}),
         title_tournament=dict(_title_tournament_receipt or {}),
         story_spine=story_spine if isinstance(story_spine, dict) else {},
         world_model=world_model_payload if isinstance(world_model_payload, dict) else {},

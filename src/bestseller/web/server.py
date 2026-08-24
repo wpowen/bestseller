@@ -3983,6 +3983,9 @@ class WebTaskManager:
                         conception_title_tournament = getattr(
                             conception_result, "title_tournament", None
                         )
+                        conception_default_family = getattr(
+                            conception_result, "default_family", None
+                        )
                         conception_degradation = [
                             {
                                 "stage": event.stage,
@@ -4147,6 +4150,10 @@ class WebTaskManager:
                 if conception_title_tournament:
                     conception_artifacts["title_tournament"] = (
                         conception_title_tournament
+                    )
+                if conception_default_family:
+                    conception_artifacts["default_family"] = (
+                        conception_default_family
                     )
                 if conception_brief:
                     conception_artifacts["commercial_brief"] = conception_brief

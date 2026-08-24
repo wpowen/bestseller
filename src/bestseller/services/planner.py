@@ -13853,16 +13853,98 @@ def _compile_source_bound_volume_plan(
     return plans
 
 
+_VOLUME_REVEAL_RE = re.compile(
+    r"卷\s*([0-9零一二三四五六七八九十]+)\s*[揭露显开]\s*[示出]?\s*[：:]?\s*"
+    r"([^，,；;。！!？?]+)"
+)
+
+
+def derive_source_bound_volume_disclosure(
+    project: ProjectModel,
+    *,
+    volume_number: int,
+) -> dict[str, Any]:
+    """本卷的世界揭示——从**已批准的逐卷排程**里取，取不到就空着。
+
+    2026-08-24 真机（书9）：`volume_world_disclosure` 6 份，三个数组全空、
+    摘要六卷同一句框架方法论。而已批准材料逐卷都写好了：
+
+        info_reveal_strategy「…卷一揭清债者一脉守秘人，卷二揭母系血脉源头，
+          卷三揭坊市黑市与遗族守墓人，卷四揭六大宗借力协议，卷五揭上古借力源头」
+        conflict_forces[*].active_volumes + escalation_path
+
+    这是同一形状的第四例（力量阶梯／派系／势力表落库）：路走到了，材料没拿。
+    用户问的「随角色发展的世界观变更（人界/灵界/仙界）」落在的正是这一层。
+
+    ``new_locations`` **故意留空**：没有诚实的结构化来源，凭空造地名比空着坏
+    （同日在 characters.goal 上确诊过反例）。
+    """
+
+    metadata = _mapping(getattr(project, "metadata_json", None))
+    profile = _mapping(metadata.get("writing_profile"))
+    world = _mapping(profile.get("world"))
+    character = _mapping(profile.get("character"))
+
+    rules: list[str] = []
+    for raw_num, body in _VOLUME_REVEAL_RE.findall(
+        str(world.get("info_reveal_strategy") or "")
+    ):
+        if _chapter_ordinal(raw_num) != volume_number:
+            continue
+        text = body.strip()
+        if text and text not in rules:
+            rules.append(text)
+
+    movements: list[dict[str, Any]] = []
+    raw_forces = character.get("conflict_forces")
+    for entry in raw_forces if isinstance(raw_forces, list) else []:
+        force = _mapping(entry)
+        name = str(force.get("name") or "").strip()
+        path = str(force.get("escalation_path") or "").strip()
+        # 没有异动内容就不是异动 —— 不拿名字凑数。
+        if not name or not path:
+            continue
+        # 与 derive_source_bound_factions 用同一条 force_type 过滤：字段叫
+        # faction_movements，装的就该是**势力**的异动。「还力成瘾心结」
+        # (internal) 和「账本本身」(systemic) 不是势力——同一条原则不能只
+        # 落在一处，那正是本仓库反复复发的元病。
+        if str(force.get("force_type") or "").strip().lower() not in _FACTION_FORCE_TYPES:
+            continue
+        volumes = force.get("active_volumes")
+        if not isinstance(volumes, list):
+            continue
+        if volume_number not in {
+            v for v in volumes if isinstance(v, int)
+        } | {
+            _chapter_ordinal(str(v)) for v in volumes if isinstance(v, str)
+        }:
+            continue
+        movements.append({"name": name, "movement": path})
+
+    return {
+        "new_locations": [],
+        "new_rules_revealed": rules,
+        "faction_movements": movements,
+    }
+
+
 def _compile_source_bound_world_disclosure(
     project: ProjectModel,
     volume_entry: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Keep per-volume world disclosure inside the already approved world."""
 
+    try:
+        _volume_no = int(volume_entry.get("volume_number") or 0)
+    except (TypeError, ValueError):
+        _volume_no = 0
+    _approved = (
+        derive_source_bound_volume_disclosure(project, volume_number=_volume_no)
+        if _volume_no
+        else {"new_locations": [], "new_rules_revealed": [], "faction_movements": []}
+    )
     payload = {
-        "new_locations": [],
-        "new_rules_revealed": [],
-        "faction_movements": [],
+        **_approved,
         "frontier_summary": _first_non_empty_text(
             volume_entry.get("volume_goal"),
             default="只推进已批准核心机制和正文已经确认的当下事实。",

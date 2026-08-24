@@ -8897,6 +8897,26 @@ async def run_conception_pipeline(
             },
         )
 
+    # 出货的读者承诺必须是被清洗过的那份——**汇合点**，不是某一条分支。
+    # 2026-08-24 F 验收书 custom-xuanhuan-1787576409：上一版把选择挂在
+    # `if concept_bundle is not None:` 里，那本书 concept_lab=false，整条修复
+    # 被绕过，脏文案（「前几章给出……」6.0）照旧出货，而干净版就在
+    # commercial_brief 里躺着。我在别处的提交里写过「只挂一条分支等于给自己
+    # 留一条绕行路」，然后自己犯了一次。
+    try:
+        _mp = writing_profile.get("market") if isinstance(writing_profile, dict) else None
+        if isinstance(_mp, dict):
+            _picked = prefer_cleaner_reader_copy(
+                [
+                    (commercial_brief or {}).get("reader_promise"),
+                    _mp.get("reader_promise"),
+                ]
+            )
+            if _picked:
+                _mp["reader_promise"] = _picked
+    except Exception:  # noqa: BLE001 - 文案择优永不阻断构思出货
+        logger.warning("reader_promise 择优失败（非致命）", exc_info=True)
+
     return ConceptionResult(
         writing_profile=writing_profile,
         premise=premise,

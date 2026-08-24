@@ -70,3 +70,33 @@ def test_the_overwrite_site_uses_it() -> None:
     idx = src.find('market_profile["reader_promise"] = ')
     assert idx > 0
     assert "prefer_cleaner_reader_copy" in src[idx : idx + 320], src[idx : idx + 200]
+
+
+# ── 2026-08-24 F 验收书 custom-xuanhuan-1787576409 抓到我自己的漏 ──
+# 上一版把选择器挂在 `if concept_bundle is not None:` 分支里。那本书
+# `concept_lab=false` → concept_bundle 为 None → **整条修复被绕过**：
+#
+#     commercial_brief.reader_promise（干净）
+#       「看一个扫厕所的杂役怎么靠别人眼里的废纸浆，把自己泡成仙门外门弟子……」
+#     metadata.reader_promise（出货，脏）
+#       「前几章给出临时杂役身份、废符化浆入口、月底销毁日倒计时……」  → 6.0
+#
+# 我今天在别处的提交信息里写过「只挂一条分支等于给自己留一条绕行路」，
+# 然后自己犯了。选择必须落在**所有分支的汇合点**——ConceptionResult 构造前。
+
+
+def test_the_selection_sits_at_the_join_point_not_in_one_branch() -> None:
+    """选择必须在 ConceptionResult 构造之前做，不能只在 concept_bundle 分支里。"""
+
+    from pathlib import Path
+
+    import bestseller.services.conception as mod
+
+    src = Path(mod.__file__).read_text(encoding="utf-8")
+    tail = src.split("    return ConceptionResult(", 1)[0]
+    # 汇合点：最后一次出现选择器的位置，必须在 concept_bundle 分支之外
+    idx_join = tail.rfind("prefer_cleaner_reader_copy")
+    assert idx_join > 0, "构造前没有做统一选择"
+    idx_bundle = tail.rfind("if concept_bundle is not None:")
+    bundle_block_end = tail.find("\n    ", idx_bundle) if idx_bundle > 0 else -1
+    assert not (0 < idx_join < bundle_block_end), "选择仍然只在 concept_bundle 分支里"

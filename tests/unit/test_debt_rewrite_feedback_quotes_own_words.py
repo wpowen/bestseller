@@ -23,10 +23,14 @@ from bestseller.services.conception import _render_debt_rewrite_feedback
 class TestMatches:
     def test_returns_the_actual_words_not_regex_sources(self) -> None:
         got = default_debt_family_matches(
-            "他替死人还旧账，灵堂里摆着一口棺，阳寿只剩三年。"
+            "他替死人还旧账，灵堂里开棺见了最后一面，阳寿只剩三年。"
         )
         assert "账" in got or "旧账" in got
-        assert any("棺" in g for g in got)
+        # 2026-08-24：丧葬子族改按**事件**匹配后，引回的是「灵堂」「开棺」这类
+        # 事件词，而不再是裸「棺」。裸字在真实出版语料上 15.2%→2.1%（n=2974，
+        # 误报样例：丧心病狂／垂头丧气／不见棺材不流泪／丧失繁殖能力）。本用例
+        # 的设计意图是「引回模型自己写下的词、绝不漏正则源码」，那一条没变。
+        assert any(("灵堂" in g or "开棺" in g) for g in got), got
         assert any("阳寿" in g for g in got)
         # 绝不能把正则源码漏出去
         assert not any("(?!" in g for g in got)

@@ -12731,6 +12731,65 @@ def derive_source_bound_power_system(
     }
 
 
+_FACTION_FORCE_TYPES: frozenset[str] = frozenset(
+    {"faction", "organization", "group", "组织", "势力", "派系"}
+)
+
+
+def derive_source_bound_factions(project: ProjectModel) -> list[dict[str, Any]]:
+    """把构思**已经批准**的冲突势力搬进 world_spec.factions。
+
+    2026-08-24 真机（书9）：source-bound 编译器写出去的是
+    ["祝余的当前行动单元", "当前直接阻力", "升级后的外部压力"] —— 戏剧功能位
+    当势力名，读者会看到一个叫「主角的当前行动单元」的门派。而
+    ``writing_profile.character.conflict_forces`` 里躺着结构化的真势力
+    （名字/威胁描述/升级路径/活跃卷），构思的 prompt 明确要过它。
+
+    与力量阶梯（同日 d4e8db73）同一形状：路走到了，材料没拿。这次连解析都
+    不用——材料本来就是结构化的。
+
+    **goal 故意留空**：同一天在 characters.goal 上确诊了「拿剧情功能描述冒充
+    欲望」，下游 `f"为了{goal}，是否越过…"` 拼出病句。没有诚实来源的字段空着，
+    比塞一段描述进去强。
+    """
+
+    metadata = _mapping(getattr(project, "metadata_json", None))
+    character = _mapping(_mapping(metadata.get("writing_profile")).get("character"))
+    raw_forces = character.get("conflict_forces")
+    if not isinstance(raw_forces, list):
+        return []
+    factions: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in raw_forces:
+        force = _mapping(entry)
+        name = str(force.get("name") or "").strip()
+        if not name or name in seen:
+            continue
+        # 构思契约的 force_type 是 character/faction/environment/internal/systemic。
+        # 只有**群体性外部势力**属于 world_spec.factions：真机书9 的 7 个 force
+        # 里，「同阶镜像陆拾」「真传第一人沈惊」是 character（属于 cast），
+        # 「账本本身」是 systemic，「还力成瘾心结」是 internal —— 把心结塞进
+        # 派系表就是同一天刚在 characters.goal 上确诊的字段语义错位。
+        if str(force.get("force_type") or "").strip().lower() not in _FACTION_FORCE_TYPES:
+            continue
+        seen.add(name)
+        faction: dict[str, Any] = {"name": name}
+        method = str(force.get("escalation_path") or "").strip()
+        if method:
+            faction["method"] = method
+        # 契约里本来就有 relationship_to_protagonist；模型常常不填，
+        # 那时才退回 threat_description（真机书9 七个 force 全都没填）。
+        relationship = str(
+            force.get("relationship_to_protagonist")
+            or force.get("threat_description")
+            or ""
+        ).strip()
+        if relationship:
+            faction["relationship_to_protagonist"] = relationship
+        factions.append(faction)
+    return factions
+
+
 def _compile_source_bound_world_spec(
     project: ProjectModel,
     premise: str,
@@ -12776,7 +12835,8 @@ def _compile_source_bound_world_spec(
         _first_non_empty_text(getattr(project, "title", ""), default="")
     )
     locations = _source_bound_locations(story_places)
-    factions = [
+    approved_factions = derive_source_bound_factions(project)
+    factions = approved_factions or [
         {"name": f"{name}的当前行动单元", "goal": engine, "method": "运行已批准核心机制并积累结果", "relationship_to_protagonist": "主角当前行动单元", "internal_conflict": "每轮只能依据已经确认的事实做选择"},
         {"name": "当前直接阻力", "goal": "阻碍本轮目标兑现", "method": "只使用已批准构思允许的当下手段", "relationship_to_protagonist": "开局外部阻力", "internal_conflict": "没有构思授权时不得实体化为新组织或命名角色"},
         {"name": "升级后的外部压力", "goal": "依据上一轮可见结果提高下一轮难度", "method": "改变条件、资源、关系或位置压力", "relationship_to_protagonist": "随阶段成果升级的压力", "internal_conflict": "只能承接正文已经公开的事实"},

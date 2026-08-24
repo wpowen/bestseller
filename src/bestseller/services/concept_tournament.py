@@ -44,6 +44,10 @@ from typing import Any, Protocol
 
 import yaml
 
+from bestseller.services.anti_default_motif import (
+    default_debt_family_hits,
+    is_debt_dominated,
+)
 from bestseller.services.naming_normalizer import render_protagonist_name_ban
 from bestseller.services.progress_context import emit_activity
 
@@ -950,6 +954,94 @@ def _candidate_story_text(candidate: ConceptCandidate) -> str:
         return []
 
     return "\n".join(_texts(payload))
+
+
+def _demote_default_family_cards(
+    approved: list[tuple[str, str]],
+    *,
+    prebuilt_kernels: dict[tuple[str, str], dict[str, Any]],
+    seed_concept: str,
+    result: ConceptTournamentResult,
+) -> list[tuple[str, str]]:
+    """展开位让给不在默认族里的卡片——降权，不是杀权。
+
+    2026-08-24 真机（书9，零创意种子）逐层量出的覆盖空缺：
+
+        一句话胚子   55字  子族0 命中  0 → 胚子层沉底判据放行
+        展开后卡片 1247字  子族3 命中 39 → **此处**，母题刚可测
+        构思终稿   8861字  子族3 命中183 → advisory，只挣一次重生
+
+    冠军胚子写的是「借力/还力」，零个该族词；是展开把它翻译成了账本与
+    债主。胚子层的判据结构上不可能抓到——它量的是母题出生之前的那一刻。
+
+    卡片层曾有一道硬门，2026-08-02 退役，理由至今成立（「选了仙侠不等于
+    禁止出现葬礼」）。所以这里恢复的不是那道门：
+      * 只在**同一池里存在干净卡片**时才让位（比较式，不是清单式）
+      * 全池同族 → 原样放行，绝不清空池（2026-08-06 定案）
+      * 用户自己点名该族 → 完全跳过，那是用户的选择
+      * 读不到内核的卡片按干净处理——未知不等于有罪
+      * 不向任何 prompt 写一个该族的词（否定式指令点名母题词=种词）
+    """
+
+    if not approved:
+        return approved
+    if bool(default_debt_family_hits(str(seed_concept or ""))):
+        return approved
+
+    dominated: list[tuple[str, str]] = []
+    clean: list[tuple[str, str]] = []
+    for key in approved:
+        kernel = prebuilt_kernels.get(key)
+        if not isinstance(kernel, dict):
+            clean.append(key)
+            continue
+        blob = _flatten_kernel_text(kernel)
+        (dominated if is_debt_dominated(blob) else clean).append(key)
+
+    if not dominated or not clean:
+        return approved
+
+    for dimension, premise_seed in dominated:
+        kernel = prebuilt_kernels.get((dimension, premise_seed)) or {}
+        result.engine_rejections.append(
+            {
+                "dimension": dimension,
+                "scores": {},
+                "reason": (
+                    "展开后落进框架实测过度复用的默认主题族（用户未要求），"
+                    "展开位让给同池中未落进该族的卡片"
+                ),
+                "failed_axes": ["default_family_after_expansion"],
+                "family_hits": list(
+                    default_debt_family_hits(_flatten_kernel_text(kernel))
+                ),
+                "seed_was_clean": not bool(
+                    default_debt_family_hits(str(premise_seed or ""))
+                ),
+            }
+        )
+    return clean
+
+
+def _flatten_kernel_text(kernel: object) -> str:
+    """项目卡里的**故事文字**拼平，供确定性母题判据使用。"""
+
+    def _walk(value: object) -> list[str]:
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, Mapping):
+            out: list[str] = []
+            for v in value.values():
+                out.extend(_walk(v))
+            return out
+        if isinstance(value, (list, tuple)):
+            out = []
+            for v in value:
+                out.extend(_walk(v))
+            return out
+        return []
+
+    return "\n".join(_walk(kernel))
 
 
 def _candidate_hard_rejection_reason(
@@ -4086,6 +4178,15 @@ async def run_concept_tournament(
                                 break
                     work_items = approved
                     batch_review_complete = True
+        # 挂在**所有分支的汇合点**：work_items 有 4 个赋值点（3266/3378/3587
+        # 以及批量评审那条），只挂其中一条等于给自己留一条绕行路。读不到内核
+        # 的分支按干净处理，天然 no-op。
+        work_items = _demote_default_family_cards(
+            work_items,
+            prebuilt_kernels=prebuilt_kernels,
+            seed_concept=seed_concept,
+            result=result,
+        )
         for _card_idx, (dimension, premise_seed) in enumerate(work_items):
             emit_activity(
                 "concept_tournament_progress",

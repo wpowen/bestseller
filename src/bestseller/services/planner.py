@@ -12586,6 +12586,123 @@ def _source_bound_locations(places: list[str]) -> list[dict[str, Any]]:
     return out
 
 
+_GROWTH_STEP_RE = re.compile(
+    r"^(?:第\s*(?P<num>[0-9零一二三四五六七八九十百]+)\s*章(?:后|时)?|(?P<start>起步|开局|起点))"
+    r"\s*[=＝:：]\s*(?P<body>.+)$"
+)
+_CN_DIGITS = {"零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+              "六": 6, "七": 7, "八": 8, "九": 9}
+
+
+def _chapter_ordinal(raw: str) -> int | None:
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return int(raw)
+    # 「第一章」「第十章」「第二十五章」——只解析这本仓库真机出现过的形状
+    total, section = 0, 0
+    for ch in raw:
+        if ch in _CN_DIGITS:
+            section = _CN_DIGITS[ch]
+        elif ch == "十":
+            section = (section or 1) * 10
+            total += section
+            section = 0
+        elif ch == "百":
+            section = (section or 1) * 100
+            total += section
+            section = 0
+        else:
+            return None
+    return (total + section) or None
+
+
+def _tier_label(body: str) -> str:
+    """从一段台阶描述里取一个能当阶名的短标签。
+
+    优先取带「境/阶/层/位面/级」的词——那是故事自己的境界名（真机：执簿境、
+    账本识海位面）。取不到就退回描述的头一小段：短标签比框架术语强，因为
+    它至少还是这本书的话。
+    """
+
+    for m in re.finditer(r"[\u4e00-\u9fff]{1,6}(?:境|阶|层|位面|级)", body):
+        label = m.group(0)
+        if len(label) >= 2:
+            return label
+    head = re.split(r"[，,、；;（(]", body.strip(), maxsplit=1)[0].strip()
+    return head[:12] or body.strip()[:12]
+
+
+def derive_source_bound_power_system(
+    project: ProjectModel,
+    *,
+    engine: str,
+) -> dict[str, Any] | None:
+    """把构思**已经批准**的成长曲线编译成力量体系；没有素材就返回 None。
+
+    2026-08-24 真机（书9）：构思写出了完整阶梯（起步=杂役级／第35章=清债令牌
+    解锁执簿境／第45章=账本识海位面／第50章=清债之钥）以及硬规则（九笔上限、
+    三十章硬时限），全都躺在 project.metadata 里；而 source-bound 编译器写进
+    world_spec 的是 tiers=["确认","复现","转化","扩张"]、name="已批准核心机制
+    的阶段兑现"——框架自己的方法论。于是 480 份角色状态快照只有 16 份有
+    power_tier：阶梯不是故事阶梯，没人能在上面定位。
+
+    这里不发明任何东西，只把已经批准的材料搬到它该在的字段。素材不足时返回
+    None，交还给既有兜底——凭空编一条阶梯比没有阶梯更坏。
+    """
+
+    metadata = _mapping(getattr(project, "metadata_json", None))
+    curve = str(metadata.get("growth_curve") or "").strip()
+    if not curve:
+        return None
+
+    steps: list[tuple[int | None, str]] = []
+    for chunk in re.split(r"[；;]", curve):
+        m = _GROWTH_STEP_RE.match(chunk.strip())
+        if not m:
+            continue
+        body = m.group("body").strip()
+        if not body:
+            continue
+        steps.append(
+            (None if m.group("start") else _chapter_ordinal(m.group("num") or ""), body)
+        )
+    if len(steps) < 2:
+        return None
+
+    tiers: list[str] = []
+    progression: list[dict[str, Any]] = []
+    for index, (chapter, body) in enumerate(steps):
+        label = _tier_label(body)
+        # 同名台阶会让「现在在第几阶」不可判定；加序号而不是丢掉那一阶。
+        if label in tiers:
+            label = f"{label}·{index + 1}"
+        tiers.append(label)
+        entry: dict[str, Any] = {
+            "tier": label,
+            "bottleneck": body,
+            "breakthrough_cost": (
+                steps[index + 1][1] if index + 1 < len(steps) else body
+            ),
+        }
+        if chapter is not None:
+            entry["unlocks_at_chapter"] = chapter
+        progression.append(entry)
+
+    world_profile = _mapping(_mapping(metadata.get("writing_profile")).get("world"))
+    style = str(world_profile.get("power_system_style") or "").strip()
+    golden = str(metadata.get("golden_finger") or "").strip()
+    return {
+        "name": _tier_label(style) if style else (tiers[0] or "力量体系"),
+        "tiers": tiers,
+        "tier_progression": progression,
+        "acquisition_method": golden or engine,
+        "hard_limits": style or engine,
+        "protagonist_starting_tier": tiers[0],
+    }
+
+
 def _compile_source_bound_world_spec(
     project: ProjectModel,
     premise: str,
@@ -12636,12 +12753,16 @@ def _compile_source_bound_world_spec(
         {"name": "当前直接阻力", "goal": "阻碍本轮目标兑现", "method": "只使用已批准构思允许的当下手段", "relationship_to_protagonist": "开局外部阻力", "internal_conflict": "没有构思授权时不得实体化为新组织或命名角色"},
         {"name": "升级后的外部压力", "goal": "依据上一轮可见结果提高下一轮难度", "method": "改变条件、资源、关系或位置压力", "relationship_to_protagonist": "随阶段成果升级的压力", "internal_conflict": "只能承接正文已经公开的事实"},
     ]
+    # 构思已经批准过一条阶梯就用它——框架术语阶梯是最后的兜底，不是首选。
+    # 真机书9：growth_curve 里躺着 执簿境／账本识海位面／清债之钥，而这里
+    # 写出去的是 确认→复现→转化→扩张（2026-08-24）。
+    approved_power_system = derive_source_bound_power_system(project, engine=engine)
     normalized = parse_world_spec_input(
         {
             "world_name": _source_bound_world_name(project, story_places),
             "world_premise": premise,
             "rules": rules,
-            "power_system": {
+            "power_system": approved_power_system or {
                 "name": "已批准核心机制的阶段兑现",
                 "tiers": ["确认", "复现", "转化", "扩张"],
                 "tier_progression": [

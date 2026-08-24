@@ -12600,6 +12600,10 @@ _CN_DIGITS = {"零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
 
 def _chapter_ordinal(raw: str) -> int | None:
     raw = (raw or "").strip()
+    # 「第一卷」「卷一」「第1卷」「第3章」都归一到数字（2026-08-24 端到端验证书：
+    # active_volumes 真机写的是 ["第一卷","第二卷"]，原本直接返回 None，
+    # 三条势力异动一条都没匹配上）。
+    raw = re.sub(r"^第|[卷章回节部]$|^[卷章回节部]", "", raw).strip()
     if not raw:
         return None
     if raw.isdigit():
@@ -12709,6 +12713,21 @@ def derive_source_bound_power_system(
             if body
         ]
     if len(steps) < 2:
+        # 第三种真机格式（2026-08-24 端到端验证书）：纯箭头、**无任何标号**
+        # 「散修→内门弟子→核心弟子→宗门之主→天庭雷部编外→天道核心层，每一步…」
+        # 这恰恰是最自然的境界阶梯写法。要求每段短到像个阶名，且箭头后跟的
+        # 解说（「，每一步都靠…」）在第一个分句处截断，不当台阶。
+        bare: list[tuple[int | None, str]] = []
+        for part in re.split(r"→|->|➜|⟶", curve):
+            head = re.split(r"[，,。；;（(]", part.strip(), maxsplit=1)[0].strip()
+            if 1 <= len(head) <= 12:
+                bare.append((None, head))
+            else:
+                bare = []
+                break
+        if len(bare) >= 2:
+            steps = bare
+    if len(steps) < 2:
         return None
 
     tiers: list[str] = []
@@ -12768,7 +12787,17 @@ _NON_GROUP_FORCE_MARKERS: tuple[str, ...] = (
 )
 
 
-def _is_group_force(force_type: str) -> bool:
+#: 名字里的机构词。真机 2026-08-24：「天道审计司」的 force_type 写的是
+#: 「机械规则碾压」（描述的是**手段**），被 _NON_GROUP_FORCE_MARKERS 的「规则」
+#: 误杀 —— 审计司显然是个机构。名字是比手段描述更可靠的群体证据。
+#: 「会」不单列（「会自己翻页的账本」会误命中），只收 公会/协会/工会。
+_GROUP_NAME_MARKERS: tuple[str, ...] = (
+    "司", "阁", "宗", "盟", "派", "帮", "堂", "殿", "坊", "教", "军", "族",
+    "团", "部", "门", "公会", "协会", "工会", "组织", "联盟", "议会",
+)
+
+
+def _is_group_force(force_type: str, name: str = "") -> bool:
     """这条冲突力量是不是**群体势力**（可以进 factions / faction_movements）。
 
     判据按「是不是群体」而不是「是不是我列过的词」：词表类白名单对自由文本
@@ -12780,9 +12809,13 @@ def _is_group_force(force_type: str) -> bool:
     """
 
     text = (force_type or "").strip().lower()
-    if not text:
+    label = (name or "").strip()
+    if not text and not label:
         return False
     if any(marker in text for marker in _GROUP_FORCE_MARKERS):
+        return True
+    # 名字带机构词 → 是群体，且优先于 force_type 里的手段描述。
+    if any(marker in label for marker in _GROUP_NAME_MARKERS):
         return True
     if text in _NON_GROUP_FORCE_ENUMS:
         return False
@@ -12823,7 +12856,7 @@ def derive_source_bound_factions(project: ProjectModel) -> list[dict[str, Any]]:
         # 里，「同阶镜像陆拾」「真传第一人沈惊」是 character（属于 cast），
         # 「账本本身」是 systemic，「还力成瘾心结」是 internal —— 把心结塞进
         # 派系表就是同一天刚在 characters.goal 上确诊的字段语义错位。
-        if not _is_group_force(str(force.get("force_type") or "")):
+        if not _is_group_force(str(force.get("force_type") or ""), name):
             continue
         seen.add(name)
         faction: dict[str, Any] = {"name": name}
@@ -13954,7 +13987,7 @@ def derive_source_bound_volume_disclosure(
         # faction_movements，装的就该是**势力**的异动。「还力成瘾心结」
         # (internal) 和「账本本身」(systemic) 不是势力——同一条原则不能只
         # 落在一处，那正是本仓库反复复发的元病。
-        if not _is_group_force(str(force.get("force_type") or "")):
+        if not _is_group_force(str(force.get("force_type") or ""), name):
             continue
         volumes = force.get("active_volumes")
         if not isinstance(volumes, list):

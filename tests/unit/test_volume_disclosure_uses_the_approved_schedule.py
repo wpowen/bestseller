@@ -169,3 +169,47 @@ def test_internal_and_systemic_forces_are_not_faction_movements() -> None:
     assert "账本本身" not in names
     assert "真传第一人沈惊" not in names
     assert "杂役班借力成风同辈" in names
+
+
+def test_chinese_ordinal_active_volumes_are_matched() -> None:
+    """active_volumes 真机写的是「第一卷」不是 1。
+
+    2026-08-24 端到端验证书 custom-xuanhuan-1787557783：三条势力的
+    active_volumes 全是 ["第一卷","第二卷"] 这种中文序数串，_chapter_ordinal
+    遇到「第」「卷」直接返回 None，于是一条势力异动都没匹配上。
+    同一天第三次栽在「解析器假定一种规范形态，模型写的是自然中文」。
+    """
+
+    p = SimpleNamespace(
+        metadata_json={
+            "writing_profile": {
+                "character": {
+                    "conflict_forces": [
+                        {"name": "宗门真传师兄派系", "force_type": "同阶天才压制",
+                         "active_volumes": ["第一卷", "第二卷"],
+                         "escalation_path": "单人对线→派系围剿→借宗门大势施压"},
+                        {"name": "天道审计司", "force_type": "机械规则碾压",
+                         "active_volumes": ["第三卷", "第四卷"],
+                         "escalation_path": "例行抽账→专项审查→换届替换"},
+                    ]
+                }
+            }
+        },
+        language="zh-CN",
+    )
+    v1 = derive_source_bound_volume_disclosure(p, volume_number=1)
+    assert [m["name"] for m in v1["faction_movements"]] == ["宗门真传师兄派系"]
+    v3 = derive_source_bound_volume_disclosure(p, volume_number=3)
+    assert [m["name"] for m in v3["faction_movements"]] == ["天道审计司"]
+
+
+def test_mixed_ordinal_forms_all_work() -> None:
+    for form in (["卷一"], ["第1卷"], [1], ["1"], ["第一卷"]):
+        p = SimpleNamespace(
+            metadata_json={"writing_profile": {"character": {"conflict_forces": [
+                {"name": "势力甲", "force_type": "faction", "active_volumes": form,
+                 "escalation_path": "甲的升级路径"}]}}},
+            language="zh-CN",
+        )
+        out = derive_source_bound_volume_disclosure(p, volume_number=1)
+        assert [m["name"] for m in out["faction_movements"]] == ["势力甲"], form

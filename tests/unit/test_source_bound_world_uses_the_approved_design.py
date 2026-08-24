@@ -173,3 +173,54 @@ def test_a_style_without_a_nameable_phrase_falls_back_readably() -> None:
         engine="e",
     )
     assert ps["name"] and "确认" not in ps["name"]
+
+
+# ── 第三种真机格式（2026-08-24 端到端验证书 custom-xuanhuan-1787557783）──
+# 三本零种子书写出了**三种**成长曲线格式，我的解析器原本只认前两种：
+#   书9      起步=杂役级… ；第10章=…            （等号+章号）
+#   末日书    L1 驾驶室独居 → L2 …               （层级标号+箭头）
+#   验证书    散修→内门弟子→核心弟子→宗门之主…    （纯箭头，**无任何标号**）
+# 第三种恰恰是最自然的境界阶梯写法，也正是「人界/灵界/仙界」那种形态。
+# 形态白名单对自由文本必然漏 —— 这是同一天第三次栽在这上面。
+_BARE_ARROW_CURVE = (
+    "散修→内门弟子→核心弟子→宗门之主→天庭雷部编外→天道核心层，"
+    "每一步都靠器灵权限升级+沈渡自身突破双线驱动"
+)
+
+
+def test_bare_arrow_ladder_is_parsed() -> None:
+    ps = derive_source_bound_power_system(
+        _project(growth_curve=_BARE_ARROW_CURVE), engine="雷劫改写"
+    )
+    assert ps is not None, "纯箭头格式必须能解析"
+    assert ps["tiers"] == [
+        "散修", "内门弟子", "核心弟子", "宗门之主", "天庭雷部编外", "天道核心层"
+    ], ps["tiers"]
+    assert not ({"确认", "复现", "转化", "扩张"} & set(ps["tiers"]))
+
+
+def test_trailing_commentary_is_not_a_tier() -> None:
+    """箭头链后面跟的解说（「，每一步都靠…」）不是台阶。"""
+
+    ps = derive_source_bound_power_system(
+        _project(growth_curve=_BARE_ARROW_CURVE), engine="e"
+    )
+    assert all("每一步" not in t for t in ps["tiers"]), ps["tiers"]
+    assert ps["protagonist_starting_tier"] == "散修"
+
+
+def test_prose_with_an_arrow_is_not_a_ladder() -> None:
+    """别把带箭头的散文当阶梯——段落太长的不是台阶名。"""
+
+    assert derive_source_bound_power_system(
+        _project(
+            growth_curve="他先是在宗门里被人瞧不起了整整三年→后来终于有一天翻身做了主人"
+        ),
+        engine="e",
+    ) is None
+
+
+def test_a_single_arrow_segment_is_not_a_ladder() -> None:
+    assert derive_source_bound_power_system(
+        _project(growth_curve="散修"), engine="e"
+    ) is None

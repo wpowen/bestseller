@@ -754,15 +754,34 @@ async def _maybe_apply_deterministic_length_trim_before_export(
         or 0
     )
     previous_text = await _load_prev_chapter_draft_text(session, project, chapter_number)
+    _prior_chapter_texts: tuple[tuple[int, str], ...] = ()
+    try:
+        from bestseller.services.drafts import _collect_previous_current_chapter_texts
+
+        _prior_chapter_texts = await _collect_previous_current_chapter_texts(
+            session, project=project, chapter_number=chapter_number
+        )
+    except Exception:
+        logger.debug(
+            "chapter %s: prior chapter texts for cross-chapter gate unavailable",
+            chapter_number,
+            exc_info=True,
+        )
+        _prior_chapter_texts = (
+            ((chapter_number - 1, previous_text),)
+            if previous_text and chapter_number > 1
+            else ()
+        )
     context = ChapterQualityBundleContext(
         chapter_number=chapter_number,
         previous_chapter_text=previous_text,
         previous_chapter_position=chapter_number - 1 if previous_text else None,
-        previous_chapter_texts=(
-            ((chapter_number - 1, previous_text),)
-            if previous_text and chapter_number > 1
-            else ()
-        ),
+        # 全部前序章，不是只比紧邻的上一章（2026-08-24）：reviews/drafts 两条
+        # 路径用的是 _collect_previous_current_chapter_texts（取全量在架稿），
+        # 只有这条塞一个上一章。而这条恰好是**短书唯一走到的那条**——
+        # reviews 的 bundle 挂在 target_chapters >= 50 后面，12 章的书整块跳过。
+        # 同一个检查两套输入口径，弱的那套服务的是覆盖最薄的书。
+        previous_chapter_texts=_prior_chapter_texts,
         total_chapters=int(getattr(project, "target_chapters", 0) or 500),
         language=str(getattr(project, "language", None) or "zh-CN"),
         target_chapter_words=target_words or None,
@@ -879,15 +898,34 @@ async def _maybe_apply_deterministic_hook_echo_bridge_before_review(
         or 0
     )
     previous_text = await _load_prev_chapter_draft_text(session, project, chapter_number)
+    _prior_chapter_texts: tuple[tuple[int, str], ...] = ()
+    try:
+        from bestseller.services.drafts import _collect_previous_current_chapter_texts
+
+        _prior_chapter_texts = await _collect_previous_current_chapter_texts(
+            session, project=project, chapter_number=chapter_number
+        )
+    except Exception:
+        logger.debug(
+            "chapter %s: prior chapter texts for cross-chapter gate unavailable",
+            chapter_number,
+            exc_info=True,
+        )
+        _prior_chapter_texts = (
+            ((chapter_number - 1, previous_text),)
+            if previous_text and chapter_number > 1
+            else ()
+        )
     context = ChapterQualityBundleContext(
         chapter_number=chapter_number,
         previous_chapter_text=previous_text,
         previous_chapter_position=chapter_number - 1 if previous_text else None,
-        previous_chapter_texts=(
-            ((chapter_number - 1, previous_text),)
-            if previous_text and chapter_number > 1
-            else ()
-        ),
+        # 全部前序章，不是只比紧邻的上一章（2026-08-24）：reviews/drafts 两条
+        # 路径用的是 _collect_previous_current_chapter_texts（取全量在架稿），
+        # 只有这条塞一个上一章。而这条恰好是**短书唯一走到的那条**——
+        # reviews 的 bundle 挂在 target_chapters >= 50 后面，12 章的书整块跳过。
+        # 同一个检查两套输入口径，弱的那套服务的是覆盖最薄的书。
+        previous_chapter_texts=_prior_chapter_texts,
         total_chapters=int(getattr(project, "target_chapters", 0) or 500),
         language=str(getattr(project, "language", None) or "zh-CN"),
         target_chapter_words=target_words or None,

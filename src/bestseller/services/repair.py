@@ -1618,14 +1618,21 @@ async def run_project_repair(
     # pass (2026-07-28). Whoever triggers it does not matter; self-heal does
     # the same, which is why such a book never came to rest.
     if str(project.status or "") == ProjectStatus.COMPLETED.value:
+        # 2026-08-24：这三个必需关键字参数原本没传，于是这条分支一走就
+        # TypeError。它只在**已完本**的书进入修复时才到达，潜伏了近一个月，
+        # 直到端到端验证书的一个自愈任务跑了 2403 秒后崩在这里才暴露。
+        # 见 tests/unit/test_create_workflow_run_call_sites_are_complete.py：
+        # 签名不匹配是静态可查的，现在有 AST 守卫扫全部调用点。
         workflow_run = await create_workflow_run(
             session,
             project_id=project.id,
-            workflow_type="project_repair",
+            workflow_type=WORKFLOW_TYPE_PROJECT_REPAIR,
+            status=WorkflowStatus.COMPLETED,
+            scope_type="project",
+            scope_id=project.id,
             requested_by=requested_by,
+            current_step="skipped_project_completed",
         )
-        workflow_run.status = WorkflowStatus.COMPLETED.value
-        workflow_run.current_step = "skipped_project_completed"
         await session.flush()
         _emit_progress(
             progress,

@@ -3739,6 +3739,7 @@ class WebTaskManager:
             conception_story_appeal: dict[str, object] | None = None
             conception_motif_amplification: dict[str, object] | None = None
             conception_title_tournament: dict[str, object] | None = None
+            conception_default_family: dict[str, object] | None = None
             conception_degradation: list[dict[str, object]] = []
             story_facets_obj = None
             from bestseller.services.genre_intent_contract import contract_from_payload

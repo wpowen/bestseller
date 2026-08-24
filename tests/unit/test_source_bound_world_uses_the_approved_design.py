@@ -113,3 +113,38 @@ def test_compiled_world_spec_carries_the_story_ladder() -> None:
     spec = _compile_source_bound_world_spec(project, "青云宗杂役祝余……", {})
     tiers = spec["power_system"]["tiers"]
     assert not ({"确认", "复现", "转化", "扩张"} & set(tiers)), tiers
+
+
+# ── 第二种真机格式（2026-08-24 末日验证书 custom-apocalypse-1787538561）──
+# 两本零种子书，构思写出了**两种不同格式**的成长曲线。只解析其中一种，
+# 修复在另一半书上就是 no-op —— 本仓库栽过一次的「验证走的路径和真实
+# 路径不是同一条」。
+_APOC_CURVE = (
+    "L1 驾驶室独居（严格遵守应急避险规程，仅靠应急食品维持，拒绝他人靠近）"
+    "→ L2 经地面信号司索何守信配合作业（限载核定+落点警戒），用吊篮完成"
+    "首次人员垂直运输，掌握'垂直运输技术许可'但仍无物资分配权"
+    "→ L3 原项目部、施工班组长、社区商户组成临时中转协调链，他获得"
+    "'调度确认权'但每次起吊仍需班组长签字"
+    "→ L4 形成以塔吊司机、信号司索、地面警戒为核心的临时秩序雏形"
+)
+
+
+def test_the_arrow_and_level_format_is_parsed_too() -> None:
+    ps = derive_source_bound_power_system(
+        _project(growth_curve=_APOC_CURVE), engine="垂直运输"
+    )
+    assert ps is not None, "L1→L2→L3 格式必须也能解析"
+    assert len(ps["tiers"]) == 4, ps["tiers"]
+    assert not ({"确认", "复现", "转化", "扩张"} & set(ps["tiers"]))
+    joined = " ".join(ps["tiers"])
+    assert "驾驶室独居" in joined or "独居" in joined
+
+
+def test_level_format_keeps_order() -> None:
+    ps = derive_source_bound_power_system(
+        _project(growth_curve=_APOC_CURVE), engine="垂直运输"
+    )
+    assert ps["protagonist_starting_tier"] == ps["tiers"][0]
+    bodies = [t["bottleneck"] for t in ps["tier_progression"]]
+    assert "独居" in bodies[0]
+    assert "临时秩序" in bodies[-1]

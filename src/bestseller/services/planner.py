@@ -12590,6 +12590,10 @@ _GROWTH_STEP_RE = re.compile(
     r"^(?:第\s*(?P<num>[0-9零一二三四五六七八九十百]+)\s*章(?:后|时)?|(?P<start>起步|开局|起点))"
     r"\s*[=＝:：]\s*(?P<body>.+)$"
 )
+_LEVEL_STEP_RE = re.compile(
+    r"^\s*(?:L|Lv\.?|LV|level|阶段|第)\s*[0-9零一二三四五六七八九十]+\s*(?:级|阶|层)?\s*[.．、:：]?\s*",
+    re.IGNORECASE,
+)
 _CN_DIGITS = {"零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
               "六": 6, "七": 7, "八": 8, "九": 9}
 
@@ -12630,8 +12634,16 @@ def _tier_label(body: str) -> str:
         label = m.group(0)
         if len(label) >= 2:
             return label
-    head = re.split(r"[，,、；;（(]", body.strip(), maxsplit=1)[0].strip()
-    return head[:12] or body.strip()[:12]
+    # 不在「、」处断：顿号是一个概念内部的并列（「原项目部、施工班组长、
+    # 社区商户组成临时中转协调链」是一个台阶，不是三个）。真机 2026-08-24
+    # 末日验证书在这里被切成了「原项目部」。
+    head = re.split(r"[，,；;。（(]", body.strip(), maxsplit=1)[0].strip()
+    label = head or body.strip()
+    if len(label) > 14:
+        # 截断落在顿号边界上，别切在词中间（真机：「社区商」）。
+        cut = label[:14].rfind("、")
+        label = label[:cut] if cut >= 6 else label[:14]
+    return label
 
 
 def derive_source_bound_power_system(
@@ -12668,6 +12680,22 @@ def derive_source_bound_power_system(
         steps.append(
             (None if m.group("start") else _chapter_ordinal(m.group("num") or ""), body)
         )
+    if len(steps) < 2:
+        # 第二种真机格式（2026-08-24 末日验证书）：「L1 … → L2 … → L3 …」，
+        # 分隔符是箭头、台阶用 L1/阶段1/第一阶 标号、没有等号。两本零种子书
+        # 写出了两种格式；只解析一种，修复在另一半书上就是 no-op。
+        steps = [
+            (None, body)
+            for body in (
+                # 句号之后是解说不是台阶：真机末日书 L4 段后面跟着
+                # 「。每一级升级都伴随一次'账本重写'：…」，不切就会把整段
+                # 解说当成最后一阶的名字。
+                _LEVEL_STEP_RE.sub("", part).split("。", 1)[0].strip(" 　:：、,，")
+                for part in re.split(r"→|->|➜|⟶", curve)
+                if _LEVEL_STEP_RE.match(part.strip())
+            )
+            if body
+        ]
     if len(steps) < 2:
         return None
 

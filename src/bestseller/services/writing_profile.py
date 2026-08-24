@@ -106,6 +106,30 @@ _CREATION_TONE_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 
+_ENUM_LABEL_RE = re.compile(
+    r"^\s*(?:卖点|要点|亮点|看点|point|selling\s*point|item)\s*"
+    r"[0-9零一二三四五六七八九十]+\s*[：:、.．)）]\s*",
+    re.IGNORECASE,
+)
+
+
+def strip_enumeration_label(text: str) -> str:
+    """剥掉「卖点N：」这类**从 prompt 示例里抄来的**序号标签。
+
+    2026-08-24 真机（书9）：落库的 7 条卖点里有 3 条以「卖点1：」「卖点2：」
+    「卖点3：」开头。根因是 conception 的 JSON 示例值自己写成了
+    `["卖点1：用故事本身的人、事、反常之处说…", "卖点2：同上"]` —— 占位符把
+    标签写成了字面内容，模型照抄。示例已改，这里是确定性兜底：模型换个说法
+    再抄一次时不用再等一轮真机才发现。
+
+    只剥「标签词+序号+分隔符」这一个头，正文里的冒号不受影响。
+    """
+
+    if not isinstance(text, str):
+        return text
+    return _ENUM_LABEL_RE.sub("", text).strip() or text.strip()
+
+
 def fold_near_duplicate_points(points: list[str] | tuple[str, ...]) -> list[str]:
     """折叠近重复的卖点/标签条目（保序，先到先留）。
 

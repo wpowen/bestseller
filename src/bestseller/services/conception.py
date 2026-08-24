@@ -71,6 +71,7 @@ from bestseller.services.progress_context import emit_activity, emit_milestone
 from bestseller.services.writing_presets import list_genre_presets
 from bestseller.services.writing_profile import (
     fold_near_duplicate_points,
+    strip_enumeration_label,
     resolve_writing_profile,
     sanitize_genre_story_overrides,
 )
@@ -2002,8 +2003,8 @@ def _commercial_positioning_user_prompt(
         '  "benchmark_works": ["对标作品1", "对标作品2"],\n'
         '  "reader_promise": "一句话说清读者能持续得到什么体验。写给读者听，'
         '不用行业词（追读/爽点/留存/黄金三章），不写章节节奏（每N章…）",\n'
-        '  "selling_points": ["卖点1：用故事本身的人、事、反常之处说，'
-        '像跟朋友安利一本书", "卖点2：同上", "卖点3：同上"],\n'
+        '  "selling_points": ["用故事本身的人、事、反常之处说，'
+        '像跟朋友安利一本书；三条各说不同的点，不要改写同一条", "同上", "同上"],\n'
         '  "trope_keywords": ["题材标签1", "题材标签2"],\n'
         '  "hook_keywords": ["钩子词1", "钩子词2"],\n'
         '  "content_mode": "内容模式",\n'
@@ -2117,8 +2118,8 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
         f'{{"platform_target": "最适合的平台",\n'
         f'  "reader_promise": "一句话说清读者能持续得到什么体验。写给读者听，'
         f'不用行业词（追读/爽点/留存/黄金三章），不写章节节奏（每N章…）",\n'
-        f'  "selling_points": ["卖点1：用故事本身的人、事、反常之处说，'
-        f'像跟朋友安利一本书", "卖点2：同上", "卖点3：同上", "卖点4：同上"],\n'
+        f'  "selling_points": ["用故事本身的人、事、反常之处说，'
+        f'像跟朋友安利一本书；四条各说不同的点，不要改写同一条", "同上", "同上", "同上"],\n'
         f'  "trope_keywords": ["标签1", "标签2", "标签3"],\n'
         f'  "hook_keywords": ["钩子词1", "钩子词2"],\n'
         f'  "opening_strategy": "开篇策略描述",\n'
@@ -7228,13 +7229,22 @@ async def run_conception_pipeline(
                 if concept_bundle.title_seeds
                 else ""
             )
-            market_profile["selling_points"] = list(
-                dict.fromkeys(
-                    [
-                        *list(market_profile.get("selling_points") or []),
-                        *list(concept_bundle.hype_targets[:6]),
-                    ]
-                )
+            # 折叠近重复，不能只 dict.fromkeys（2026-08-24 真机书9）：卖点在
+            # 1714 行已经折叠过一次，这里再拼 hype_targets 时只按逐字去重，
+            # 改写过的同一条卖点全部存活 —— 先折叠后合并等于折叠白做。
+            # 同时剥掉从 prompt 示例抄来的「卖点N：」序号标签。
+            market_profile["selling_points"] = fold_near_duplicate_points(
+                [
+                    _stripped
+                    for _stripped in (
+                        strip_enumeration_label(str(point))
+                        for point in (
+                            *list(market_profile.get("selling_points") or []),
+                            *list(concept_bundle.hype_targets[:6]),
+                        )
+                    )
+                    if _stripped
+                ]
             )
 
     # Fallback premise if empty

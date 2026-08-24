@@ -12344,6 +12344,17 @@ def _source_bound_cost_rules(project: ProjectModel, *, is_en: bool) -> list[str]
     )
 
 
+def _hook_shaped_or_empty(value: object) -> str:
+    """Return the value only when it is actually hook-shaped (≤120 chars).
+
+    Mirrors writing_profile._LOGLINE_MAX_CHARS: a premise- or defense-length
+    string wearing the logline name tag must not be promoted into short copy.
+    """
+
+    text = str(value or "").strip()
+    return text if text and len(text) <= 120 else ""
+
+
 def _compile_source_bound_book_spec(
     project: ProjectModel,
     premise: str,
@@ -12412,7 +12423,29 @@ def _compile_source_bound_book_spec(
         "target_audience": project.audience or genre_intent.get("channel_key") or "web-serial",
         "tone": tone,
         "themes": themes,
-        "logline": premise,
+        # 过门的一句话优先，premise 只作兜底——与本文件 heat-brief 处（门验 A
+        # 落 B，2026-08-13）同一条教训。此前这里硬写 premise，经 ontology 市场
+        # 字段同步盖掉 T6 提炼的 25-40 字 logline：真机《废丹成神》metadata
+        # logline 401 字、《他快死了而我是那道雷》250 字，来路都是这一行
+        # （2026-08-24 全库体检）。
+        "logline": (
+            str(
+                ((metadata.get("hook_card") or {}).get("one_liner") or "")
+                if isinstance(metadata.get("hook_card"), dict)
+                else ""
+            ).strip()
+            or _hook_shaped_or_empty(
+                (
+                    (metadata.get("writing_profile") or {}).get("market") or {}
+                    if isinstance(metadata.get("writing_profile"), dict)
+                    else {}
+                ).get("logline")
+            )
+            # market.logline 可能被 logline 门救援改写灌成 400 字答辩文
+            # （真机《废丹成神》），钩形校验挡住它，别让它顶替 premise 兜底。
+            or _hook_shaped_or_empty(metadata.get("logline"))
+            or premise
+        ),
         "unique_hook": reader_promise,
         "theme_statement": theme_statement,
         "dramatic_question": external_goal,
@@ -12713,6 +12746,30 @@ def derive_source_bound_power_system(
     """
 
     metadata = _mapping(getattr(project, "metadata_json", None))
+    # 结构化阶梯优先（2026-08-25）：五本真书五种散文格式，追着解析必输。
+    # 契约里给了列表就直接用；没给才回到散文解析。
+    _character = _mapping(_mapping(metadata.get("writing_profile")).get("character"))
+    _declared = _character.get("power_tiers")
+    if isinstance(_declared, list):
+        _tiers = [str(t).strip() for t in _declared if str(t or "").strip()]
+        if len(_tiers) >= 2:
+            _world = _mapping(_mapping(metadata.get("writing_profile")).get("world"))
+            _style = str(_world.get("power_system_style") or "").strip()
+            return {
+                "name": _power_system_name(_style) or f"{_tiers[0]}起步的力量体系",
+                "tiers": _tiers,
+                "tier_progression": [
+                    {
+                        "tier": t,
+                        "bottleneck": t,
+                        "breakthrough_cost": _tiers[i + 1] if i + 1 < len(_tiers) else t,
+                    }
+                    for i, t in enumerate(_tiers)
+                ],
+                "acquisition_method": str(metadata.get("golden_finger") or "") or engine,
+                "hard_limits": _style or engine,
+                "protagonist_starting_tier": _tiers[0],
+            }
     curve = str(metadata.get("growth_curve") or "").strip()
     if not curve:
         return None
@@ -20941,9 +20998,11 @@ def _planner_stage_max_tokens(logical_name: str, *, project: Any | None = None) 
         target_chapters = max(int(getattr(project, "target_chapters", 0) or 0), 1)
         volume_count = int(compute_linear_hierarchy(target_chapters).get("volume_count") or 1)
         ceiling = compute_supporting_bounds(volume_count).ceiling
-        # ~600 tokens/character + book-spec overhead; short books (ceiling ~7)
-        # fall back to the 8192 floor, a 10-volume roster (ceiling 30) gets 20k.
-        return min(32768, max(8192, ceiling * 600 + 2000))
+        # ~600 tokens/character + book-spec overhead; a 10-volume roster
+        # (ceiling 30) gets 20k. Floor raised 8192→12288 (2026-08-24 生产体检:
+        # cast_spec 57/277 全期截断、8-24 当天仍有 8192 撞帽——截断 JSON 走的
+        # 正是「空 CastSpec」静默空壳路径).
+        return min(32768, max(12288, ceiling * 600 + 2000))
     if logical_name in {
         "book_spec",
         "book_spec_narrative_lines_repair",
@@ -20954,7 +21013,10 @@ def _planner_stage_max_tokens(logical_name: str, *, project: Any | None = None) 
         "volume_plan_foreshadowing_repair",
         "volume_plan_convergence_repair",
     }:
-        return 8192
+        # 8192 是遗留预算：book_spec 4/20、cast_spec 3/15 近 14 天仍在撞帽，
+        # 截断 JSON→解析失败→空壳成功（optional-defaults 案）。planner 角色
+        # 配置预算 16384，给结构化 spec 留出完成空间（2026-08-24 生产体检）。
+        return 12288
     if logical_name.endswith("_world_disclosure") or logical_name.endswith("_cast_expansion"):
         return 4096
     return None

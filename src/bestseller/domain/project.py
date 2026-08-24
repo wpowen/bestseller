@@ -142,6 +142,23 @@ class CharacterEngineConfig(BaseModel):
     # 它——要了、产了、审了，然后在落库那一步丢掉。与 title_tournament
     # （2026-08-22 写进 writing_profile.market 被 extra=ignore 吃掉）同形。
     conflict_forces: list[dict[str, Any]] = Field(default_factory=list)
+    #: 结构化境界阶梯（2026-08-25）。此前只有自由散文的 growth_curve，
+    #: 五本零种子书写出了**五种**格式（等号+章号／L1箭头／纯箭头／公式／
+    #: 散文连接词），编译器每补一种解析下一本就换一种——「白名单对自由文本
+    #: 必然漏」在结构层的同一形状。让构思直接给列表，散文解析降为兜底。
+    power_tiers: list[str] = Field(default_factory=list)
+
+    @field_validator("power_tiers", mode="before")
+    @classmethod
+    def coerce_power_tiers(cls, value: object) -> object:
+        """只留非空字符串；模型偶尔混进 None/数字，不许因此炸掉整份 profile。"""
+
+        if not isinstance(value, list):
+            return []
+        return [
+            t.strip() for t in value
+            if isinstance(t, str) and t.strip()
+        ][:16]
 
     @field_validator("conflict_forces", mode="before")
     @classmethod

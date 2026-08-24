@@ -3046,6 +3046,11 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         f'【绝不默认系统/属性面板】（已极烂大街）；若题材本不依赖外挂（武侠/历史/权谋/文学向/群像），'
         f'可写“无显性金手指，优势在X（谋略/境界/人脉/性格）”",\n'
         f'  "growth_curve": "成长曲线描述",\n'
+        # 占位符只描述形状，不给会被逐字抄走的假阶名——2026-08-24 真机教训：
+        # `"selling_points": ["卖点1：…", "卖点2：同上"]` 让模型把「卖点1：」
+        # 当成内容抄了出去。
+        f'  "power_tiers": ["主角依次经过的层级名，按顺序，每项不超过8字；'
+        f'没有分层体系就给空数组"],\n'
         f'  "romance_mode": "感情线模式（none/slow-burn/harem/single等）",\n'
         f'  "relationship_tension": "核心关系张力",\n'
         f'  "antagonist_mode": "反派模式（escalating/rotating/hidden等）",\n'

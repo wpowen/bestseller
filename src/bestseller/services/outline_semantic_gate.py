@@ -112,6 +112,31 @@ _ROLE_SCHEMA_LEAK_RE = re.compile(
     re.IGNORECASE,
 )
 _QUOTED_ANCHOR_RE = re.compile(r"[“‘'\"]([^”’'\"\n]{6,80})[”’'\"]")
+
+#: 纯 ASCII 的标识符形态（snake_case / kebab-case / 单个英文词）不可能是中文
+#: 小说的事件载荷。2026-08-24 真机书9 的 outline 门两条 high 全是这一类：
+#: anchor="close_third"（人称视角枚举，19 章）与 anchor="first_sentence"
+#: （钩子锚点枚举，3 章）—— 枚举值当然每章都一样。`_QUOTED_ANCHOR_RE` 抓
+#: 「引号里 6-80 字」，把 JSON 的枚举值连引号一起抓走，于是每本书稳定产两条
+#: 假 high。该码已是 advisory（毙不了书），但假 high 会稀释真发现。
+#: 按**形态**排除一整类机器值，不是按词表排除个别词。
+_MACHINE_ENUM_ANCHOR_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:[_\-][A-Za-z0-9]+)*$")
+
+
+def is_machine_enum_anchor(surface: str) -> bool:
+    """这个「引文」其实是机器枚举值（close_third / third-limited / development）。
+
+    英文书的事件载荷是**带空格的句子**，标识符没有空格；含中日韩字符的一律
+    不是机器值。
+    """
+
+    text = (surface or "").strip()
+    if not text or " " in text:
+        return False
+    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        return False
+    return bool(_MACHINE_ENUM_ANCHOR_RE.match(text))
+
 _CAUSAL_KEYS = (
     "pressure",
     "resistance",
@@ -925,6 +950,8 @@ def _reused_anchor_findings(
         chapter = _chapter_no(row, index)
         for match in _QUOTED_ANCHOR_RE.finditer(_row_text(row)):
             surface = match.group(1).strip()
+            if is_machine_enum_anchor(surface):
+                continue
             normalized = _norm(surface)
             if len(normalized) < 6:
                 continue

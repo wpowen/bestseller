@@ -152,3 +152,60 @@ def test_compiled_world_spec_carries_the_real_factions() -> None:
     spec = _compile_source_bound_world_spec(project, "青云宗杂役祝余……", {})
     names = [f["name"] for f in spec["factions"]]
     assert "杂役班借力成风同辈" in names, names
+
+
+# ── 2026-08-24 验证书 custom-xuanhuan-1787543232 抓到的真机缺口 ──
+# 模型给 force_type 写的是**描述性中文短语**而不是契约枚举：
+#   丹炉阁七长老    force_type="内部逼压势力"
+#   云州药盟巡检官  force_type="外部制度压力"
+# 两个都是实打实的外部势力（各带升级路径），而精确匹配的白名单把两个都丢了
+# → 派系退回占位符模板 → 整条修复在这本书上是 no-op。
+# 词表类过滤对自由文本必然漏，判据要按「是不是群体」而不是「是不是我列过的词」。
+_DESCRIPTIVE = [
+    {"name": "丹炉阁七长老", "force_type": "内部逼压势力", "active_volumes": [1, 2, 3],
+     "escalation_path": "从跪求→围堵→威胁封铺→勾结巡检官→直接对哑娘下手",
+     "threat_description": "靠祖传方吃了几十年，一被试吃令打中就现原形"},
+    {"name": "云州药盟巡检官", "force_type": "外部制度压力", "active_volumes": [1, 2, 3, 4],
+     "escalation_path": "从出怪题→当面试丹→查出哑娘旧档→直接带人上门",
+     "threat_description": "每月底下来试丹的都带着同一个任务"},
+]
+
+
+def test_descriptive_chinese_force_types_are_kept() -> None:
+    out = derive_source_bound_factions(_project(_DESCRIPTIVE))
+    assert [f["name"] for f in out] == ["丹炉阁七长老", "云州药盟巡检官"]
+
+
+def test_the_canonical_non_group_enums_are_still_dropped() -> None:
+    """契约枚举里明确不是势力的那几个，照旧不进。"""
+
+    out = derive_source_bound_factions(
+        _project(
+            [
+                *_DESCRIPTIVE,
+                {"name": "还力成瘾心结", "force_type": "internal"},
+                {"name": "账本本身", "force_type": "systemic"},
+                {"name": "真传第一人沈惊", "force_type": "character"},
+            ]
+        )
+    )
+    names = [f["name"] for f in out]
+    assert "还力成瘾心结" not in names and "账本本身" not in names
+    assert "真传第一人沈惊" not in names
+
+
+def test_descriptive_psyche_and_object_labels_are_dropped_too() -> None:
+    """描述性短语里明确指向心理/物件/单个角色的，同样不是势力。"""
+
+    out = derive_source_bound_factions(
+        _project(
+            [
+                *_DESCRIPTIVE,
+                {"name": "主角的心魔", "force_type": "内心挣扎"},
+                {"name": "会自己翻页的账本", "force_type": "系统性物件"},
+            ]
+        )
+    )
+    names = [f["name"] for f in out]
+    assert "主角的心魔" not in names and "会自己翻页的账本" not in names
+    assert "丹炉阁七长老" in names

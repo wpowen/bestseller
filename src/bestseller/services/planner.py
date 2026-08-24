@@ -12746,9 +12746,47 @@ def derive_source_bound_power_system(
     }
 
 
-_FACTION_FORCE_TYPES: frozenset[str] = frozenset(
-    {"faction", "organization", "group", "组织", "势力", "派系"}
+#: 契约枚举里明确**不是群体势力**的四个（conception.py:3005 定义
+#: character/faction/environment/internal/systemic）。精确匹配这几个是可靠的。
+_NON_GROUP_FORCE_ENUMS: frozenset[str] = frozenset(
+    {"character", "internal", "systemic", "environment"}
 )
+#: 描述性短语里指向「群体」的词。模型经常不按枚举写，而是写
+#: 「内部逼压势力」「外部制度压力」这样的短语（2026-08-24 验证书
+#: custom-xuanhuan-1787543232：丹炉阁七长老／云州药盟巡检官 —— 两个实打实的
+#: 外部势力，被精确匹配的白名单全丢掉，整条派系修复在那本书上成了 no-op）。
+_GROUP_FORCE_MARKERS: tuple[str, ...] = (
+    "faction", "organization", "group",
+    "势力", "派系", "组织", "阵营", "门派", "帮派", "团体", "联盟", "宗门",
+)
+#: 描述性短语里指向「不是群体」的词：心理／物件／单个角色／环境。
+_NON_GROUP_FORCE_MARKERS: tuple[str, ...] = (
+    "心结", "心魔", "内心", "心理", "执念",
+    "角色", "人物", "个人",
+    "系统", "物件", "器物", "规则",
+    "环境", "天灾", "气候",
+)
+
+
+def _is_group_force(force_type: str) -> bool:
+    """这条冲突力量是不是**群体势力**（可以进 factions / faction_movements）。
+
+    判据按「是不是群体」而不是「是不是我列过的词」：词表类白名单对自由文本
+    必然漏（2026-08-24 真机实证）。顺序有意如此——
+    1) 短语里带群体词 → 是（「内部逼压势力」的重点是「势力」不是「内部」）
+    2) 否则命中契约枚举里的非群体项、或描述性的心理／物件／角色词 → 不是
+    3) 其余未知描述 → 放行：字段是 advisory，名字与升级路径仍然有用；
+       宁可多留一条真势力，也不要因为模型换了个说法就整条失效。
+    """
+
+    text = (force_type or "").strip().lower()
+    if not text:
+        return False
+    if any(marker in text for marker in _GROUP_FORCE_MARKERS):
+        return True
+    if text in _NON_GROUP_FORCE_ENUMS:
+        return False
+    return not any(marker in text for marker in _NON_GROUP_FORCE_MARKERS)
 
 
 def derive_source_bound_factions(project: ProjectModel) -> list[dict[str, Any]]:
@@ -12785,7 +12823,7 @@ def derive_source_bound_factions(project: ProjectModel) -> list[dict[str, Any]]:
         # 里，「同阶镜像陆拾」「真传第一人沈惊」是 character（属于 cast），
         # 「账本本身」是 systemic，「还力成瘾心结」是 internal —— 把心结塞进
         # 派系表就是同一天刚在 characters.goal 上确诊的字段语义错位。
-        if str(force.get("force_type") or "").strip().lower() not in _FACTION_FORCE_TYPES:
+        if not _is_group_force(str(force.get("force_type") or "")):
             continue
         seen.add(name)
         faction: dict[str, Any] = {"name": name}
@@ -13908,7 +13946,7 @@ def derive_source_bound_volume_disclosure(
         # faction_movements，装的就该是**势力**的异动。「还力成瘾心结」
         # (internal) 和「账本本身」(systemic) 不是势力——同一条原则不能只
         # 落在一处，那正是本仓库反复复发的元病。
-        if str(force.get("force_type") or "").strip().lower() not in _FACTION_FORCE_TYPES:
+        if not _is_group_force(str(force.get("force_type") or "")):
             continue
         volumes = force.get("active_volumes")
         if not isinstance(volumes, list):
